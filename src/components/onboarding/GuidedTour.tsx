@@ -6,7 +6,7 @@
 // written to the server's hint list first, so a reload lands on the same
 // step.
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ANCHOR_EFFECTS, currentStep, stepNumber, TOUR_STEPS, withTourFinished, type TourEffect, type TourStep } from "@/lib/guided-tour";
+import { ANCHOR_EFFECTS, currentStep, stepNumber, tourInProgress, TOUR_STEPS, withTourFinished, type TourEffect, type TourStep } from "@/lib/guided-tour";
 import { connectedAppsEnabled } from "@/lib/feature-flags";
 import { t } from "@/lib/i18n";
 import type { MausState } from "@/lib/mascot";
@@ -151,7 +151,15 @@ export function GuidedTour() {
     dispatch({ type: "toggleTour", open: false });
   }, [state.computerOpen, state.pluginsOpen, run, save, dispatch]);
 
-  const active = !dismissed && Boolean(record?.completedAt) && !state.welcomeOpen && step !== null;
+  // The tour never starts by itself. It runs when it was opened on purpose
+  // (Settings > General sets tourOpen) or when the person had already begun
+  // it and a reload landed mid-way.
+  const active =
+    !dismissed &&
+    Boolean(record?.completedAt) &&
+    !state.welcomeOpen &&
+    step !== null &&
+    (state.tourOpen || tourInProgress(record));
 
   // entering a step runs its effect once per step
   useEffect(() => {

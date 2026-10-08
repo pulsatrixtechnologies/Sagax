@@ -42,7 +42,7 @@ import {
   markMemoryReviewed,
 } from "@/lib/memory";
 import { ApiError, useStore, type Bot } from "@/state/store";
-import { Switch } from "../SettingsPrimitives";
+import { Switch, SwitchRow } from "../SettingsPrimitives";
 import { inputCls } from "./field";
 
 const buttonCls = "rounded-lg bg-control px-3 py-1.5 text-[13px] text-ink hover:bg-raised-hover disabled:opacity-50";
@@ -62,6 +62,23 @@ interface Conflict {
   /** What is on disk now — the bot's version. */
   current: string;
   currentHash: string;
+}
+
+/** The on/off card at the top of the Memory section: the standard switch row. */
+export function MemoryToggleCard({ enabled, busy, onToggle }: { enabled: boolean; busy: boolean; onToggle: (next: boolean) => void }) {
+  return (
+    <div className="rounded-xl border border-hairline/40 p-4">
+      <div className="text-[13px] font-medium text-ink">{t("botPanel.memory.title")}</div>
+      <SwitchRow
+        className="mt-3"
+        label={t("botPanel.memory.let")}
+        description={<>{t("botPanel.memory.off")}{busy ? t("botPanel.memory.busy") : ""}</>}
+        checked={enabled}
+        disabled={busy}
+        onChange={onToggle}
+      />
+    </div>
+  );
 }
 
 const errorText = (e: unknown) => (e instanceof Error ? e.message : String(e));
@@ -421,17 +438,7 @@ export function MemorySection({ bot, active = true, onToggle }: { bot: Bot; acti
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="rounded-xl border border-hairline/40 p-4">
-        <div className="text-[13px] font-medium text-ink">{t("botPanel.memory.title")}</div>
-        <label className="mt-3 flex items-center gap-2 text-[13px] text-ink">
-          <input type="checkbox" checked={bot.memoryEnabled !== false} disabled={bot.busy} onChange={(event) => onToggle(event.target.checked)} />
-          {t("botPanel.memory.let")}
-        </label>
-        <p className="mt-1 text-[12px] leading-relaxed text-ink-secondary">
-          {t("botPanel.memory.off")}
-          {bot.busy ? t("botPanel.memory.busy") : ""}
-        </p>
-      </div>
+      <MemoryToggleCard enabled={bot.memoryEnabled !== false} busy={Boolean(bot.busy)} onToggle={onToggle} />
 
       {lendingReview && (
         <LendingReviewNotice

@@ -369,6 +369,40 @@ describe("the picker opens as a modal like Settings", () => {
   });
 });
 
+describe("local models in solo", () => {
+  it("lists DwarfStar under Local next to Claude's own models and drops the separate entry", () => {
+    const ds4 = [
+      { id: "dwarfstar::qwen3.8-flash-next", label: "DwarfStar: Qwen3.8 Flash Next (qwen3.8-flash-next)", custom: true, local: true, contextWindow: 262144 },
+      { id: "dwarfstar::qwen3.8-flash-next-chat", label: "DwarfStar: Qwen3.8 Flash Next (qwen3.8-flash-next-chat)", custom: true, local: true, contextWindow: 262144 },
+    ];
+    fixture.instances = [claude({ state: "available", version: "2.1.300", authenticated: true }, [...official, ...ds4])];
+    const onClaude = bot("claude", "claude-opus-5-5");
+    const opened = open(onClaude);
+    const html = menu(opened.html);
+    expect(html).toContain(">Opus 5.5<");
+    expect(html).toContain("data-model-local-group");
+    expect(html).toContain("DwarfStar: Qwen3.8 Flash Next (qwen3.8-flash-next-chat)");
+    // Claude Code talks to a loopback server that answers /v1/messages.
+    expect(html).not.toContain("data-model-unavailable");
+    expect(html).not.toContain("data-model-local-entry");
+    const row = opened.nodes.find((node) => node.props.option && (node.props.option as { id: string }).id === ds4[1]!.id)!;
+    (row.props.onPick as () => void)();
+    expect(fixture.dispatch).toHaveBeenCalledWith(expect.objectContaining({ type: "setModel", selection: expect.objectContaining({ model: ds4[1]!.id }) }));
+  });
+
+  it("greys a local row on an engine that keeps its own endpoint", () => {
+    const gemini: InstanceInfo = {
+      instanceId: "gemini", driverKind: "geminiAgent", displayName: "Gemini", access: "subscription",
+      snapshot: { state: "available", authenticated: true },
+      models: { default: "gemini-pro", options: [{ id: "gemini-pro", label: "Gemini Pro" }, { id: "dwarfstar::qwen3.8-flash-next", label: "DwarfStar: Qwen3.8 Flash Next", custom: true, local: true }] },
+    };
+    fixture.instances = [gemini];
+    const html = menu(open(bot("gemini", "gemini-pro")).html);
+    expect(html).toContain("data-model-unavailable");
+    expect(html).toContain("Gemini cannot run a local model.");
+  });
+});
+
 describe("on an organization server", () => {
   const issuer = "https://px.example.test";
   const orgOf = (viewerRole: "admin" | "member") => ({
@@ -383,9 +417,7 @@ describe("on an organization server", () => {
     instanceId: "ollama", driverKind: "openaiCompatible", displayName: "Ollama", access: "custom",
     snapshot: { state: "available", authenticated: true }, models: { default: "", options: [qwen] },
   };
-  const order = (html: string, ids: string[]) => ids.map((id) => html.indexOf(`data-payer="${id}"`));
-
-  it("opens, shows the speaker's payer order and keeps the server's models pickable without the server's own sign-in", () => {
+  it("opens on a minimal engine card: what pays today, Connect, and the server's models stay pickable without the server's own sign-in", () => {
     fixture.org = orgOf("member");
     fixture.myEngines = [engine()];
     fixture.instances = [signedOut(), ollama];
@@ -393,17 +425,17 @@ describe("on an organization server", () => {
     const opened = open(onClaude);
     const html = menu(opened.html);
     expect(html).toContain('aria-modal="true"');
-    expect(html).toContain("Who pays for your turns");
-    const rows = order(html, ["subscription", "key", "org-key"]);
-    expect(rows.every((index) => index > 0)).toBe(true);
-    expect([...rows].sort((a, b) => a - b)).toEqual(rows);
-    // The server's own sign-ins pay for no one, admins included.
-    expect(html).not.toContain('data-payer="server"');
-    expect(html).toMatch(/data-payer="org-key"[^>]*aria-current="true"/);
-    expect(html).toContain("Used now");
-    // Their own subscription signs in through the organization server.
-    expect(html).toContain("data-model-personal-sign-in");
-    expect(html).toContain("Sign in with your Claude account");
+    // One status line and one button, no payer chain.
+    expect(html).toContain('data-pays-with="org-key"');
+    expect(html).toContain("Pays with: the organization key");
+    expect(html).toContain("Connect Claude");
+    expect(html).not.toContain("Who pays for your turns");
+    expect(html).not.toContain("Checked in this order");
+    expect(html).not.toContain("data-payer=");
+    expect(html).not.toContain("Sign in with your Claude account");
+    expect(html).not.toContain("kept on the organization server for you only");
+    // The small link to their keys, while no subscription is signed in.
+    expect(html).toContain("data-engine-keys-link");
     expect(html).toContain(`${issuer}/console/pulsabot/keys`);
     // The server's sign-in card is not the person's: models stay listed.
     expect(html).toContain(">Opus 5.5<");
@@ -445,25 +477,66 @@ describe("on an organization server", () => {
     expect(menu(render(bot("gemini", "gemini-pro")).html)).not.toContain("data-model-host-tools");
   });
 
-  it("follows the server's answer for an admin too: no server row, the subscription first once signed in", () => {
+  it("lists the person's own computer under Local, pickable on Codex and greyed on Claude Code", () => {
+    fixture.org = orgOf("member");
+    fixture.myEngines = [engine()];
+    const desk = [
+      { id: "deskab12cd8002::qwen3.8-flash-next-chat", label: "DwarfStar: Qwen3.8 Flash Next (qwen3.8-flash-next-chat)", custom: true, local: true },
+    ];
+    // The server's own loopback model never shows on an organization server.
+    const serverLoopback = { id: "ollama::qwen3", label: "Ollama: qwen3", custom: true, local: true };
+    const codexDesk: InstanceInfo = { ...codex, models: { ...codex.models, options: [...codex.models.options, ...desk, serverLoopback] } };
+    fixture.instances = [claude({ state: "available", version: "2.1.300", authenticated: true }, [...official, ...desk, serverLoopback]), codexDesk];
+    const onCodex = bot("codex", "gpt-5.6");
+    const opened = open(onCodex);
+    let html = menu(opened.html);
+    expect(html).toContain("data-model-local-group");
+    expect(html).toContain(">Local<");
+    expect(html).toContain("DwarfStar: Qwen3.8 Flash Next (qwen3.8-flash-next-chat)");
+    expect(html).not.toContain("Ollama: qwen3");
+    expect(html).not.toContain("data-model-unavailable");
+    expect(html).not.toContain("data-model-local-hidden");
+    expect(html).not.toContain("data-model-local-entry");
+    const row = opened.nodes.find((node) => node.props.option && (node.props.option as { id: string }).id === desk[0]!.id)!;
+    (row.props.onPick as () => void)();
+    expect(fixture.dispatch).toHaveBeenCalledWith(expect.objectContaining({ type: "setModel", selection: expect.objectContaining({ instanceId: "codex", model: desk[0]!.id }) }));
+
+    fixture.dispatch = vi.fn();
+    const onClaude = bot("claude", "claude-opus-5-5");
+    const claudeOpen = open(onClaude);
+    html = menu(claudeOpen.html);
+    expect(html).toContain("data-model-local-group");
+    expect(html).toContain("data-model-unavailable");
+    expect(html).toContain("Claude Code cannot run a model from your computer here");
+    const greyed = claudeOpen.nodes.find((node) => node.props.option && (node.props.option as { id: string }).id === desk[0]!.id)!;
+    expect(greyed.props.unavailable).toBeTruthy();
+    (greyed.props.onPick as () => void)();
+    expect(fixture.dispatch).not.toHaveBeenCalled();
+  });
+
+  it("shows Connected and Disconnect once the person's subscription is signed in, for an admin too", () => {
     fixture.org = orgOf("admin");
     fixture.myEngines = [engine({ subscription: { supported: true, signedIn: true }, myKey: true, myTurns: "subscription" })];
     fixture.instances = [signedIn()];
     const html = menu(open(bot("claude", "claude-opus-5-5")).html);
-    const rows = order(html, ["subscription", "key", "org-key"]);
-    expect([...rows].sort((a, b) => a - b)).toEqual(rows);
-    expect(html).not.toContain('data-payer="server"');
-    expect(html).toMatch(/data-payer="subscription"[^>]*aria-current="true"/);
-    expect(html).not.toContain("data-model-personal-sign-in");
+    expect(html).toContain("Pays with: your subscription");
+    expect(html).toContain("data-engine-connected");
+    expect(html).toContain(">Disconnect<");
+    expect(html).not.toContain("Connect Claude");
+    expect(html).not.toContain("data-engine-keys-link");
+    expect(html).not.toContain("data-payer=");
   });
 
-  it("warns when nothing pays yet", () => {
+  it("says Not connected when nothing pays yet, without the old warnings", () => {
     fixture.org = orgOf("member");
     fixture.myEngines = [engine({ orgKey: false, myTurns: "none" })];
     fixture.instances = [signedOut()];
     const html = menu(open(bot("claude", "claude-opus-5-5")).html);
-    expect(html).toContain("Nothing pays for this provider yet");
-    expect(html).not.toContain('aria-current="true"');
+    expect(html).toContain('data-pays-with="none"');
+    expect(html).toContain("Not connected");
+    expect(html).toContain("Connect Claude");
+    expect(html).not.toContain("Nothing pays for this provider yet");
+    expect(html).not.toContain("Can&#x27;t answer you yet");
   });
 
   it("says a routine's thread pays with the bot owner's credentials", () => {
@@ -475,7 +548,7 @@ describe("on an organization server", () => {
     const html = menu(open(onClaude).html);
     expect(html).toContain("data-model-payers-routine");
     expect(html).toContain("Owner&#x27;s credentials");
-    expect(html).not.toContain("data-model-personal-sign-in");
-    expect(html).not.toContain("Nothing pays for this provider yet");
+    expect(html).not.toContain("data-engine-connect=");
+    expect(html).not.toContain("Connect Claude");
   });
 });

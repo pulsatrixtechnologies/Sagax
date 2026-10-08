@@ -71,11 +71,18 @@ Covered by `src/components/SettingsModal.orgCleanup.test.ts`,
   apps steps. The claude.ai connectors status then shows in Settings > Model
   providers (`HarnessConnectorsSection placement="settings"`).
 - A person's own access lives on each engine card of Settings > Model
-  providers (organization server only, 2026-10-02): who pays for their
-  turns, their own Claude/Codex subscription sign-in (`MyEngineAccess`), one
-  "Manage my keys in Perspicax" link; no separate "My subscriptions and
-  keys" card, no engine missing from the server, never the server's own
-  account (it serves no one's turns there).
+  providers (organization server only, 2026-10-02) and is minimal
+  (2026-10-08, `EngineConnect.tsx`, the same card in the model picker): one
+  status line on what pays today ("Pays with: your subscription", "...your
+  key in Perspicax", "...the organization key", or "Not connected"), one
+  button ("Connect ChatGPT", "Connect Claude", ...) or "Connected" with
+  Disconnect, and a small "Manage my keys in Perspicax" link while no
+  subscription is signed in on an engine whose provider key Perspicax can
+  hold. No payer list, no warnings, no explanatory paragraph; the
+  device-code hint shows only after a failed ChatGPT sign-in that did not
+  already say it. No separate "My subscriptions and keys" card, no engine
+  missing from the server, never the server's own account (it serves no
+  one's turns there).
 - A member (not an admin) reads `GET /api/instances` (client scope on an
   organization server, `memberInstanceView`): the engines and their models
   without the server's account, sign-in, CLI paths or install details, so
@@ -364,16 +371,48 @@ status on the left, account, scope, models, effort and payers on the right,
 a bottom sheet on a narrow window; focus stays inside and Escape closes it.
 `contained` (the bot settings dialog) keeps the label and the pill and opens
 the same modal. Thread scope and Effort stay out of that modal. Effort stays
-on its own card. On an organization server it shows the speaker's payer order
-(`src/lib/model-payers.ts`: subscription, key in Perspicax, organization
-key, as `server/engine-credentials.ts` decides; the payer used now is the
-server's `myTurns`, never recomputed; a routine thread shows the owner's
-credentials) and signs in their own subscription through `/api/me/engines/<id>/login`
-(`ModelPickerPayers.tsx`), never the server's engine login; the server's
-local models are not offered. Tests: `ModelPicker.interaction.test.ts`,
+on its own card. On an organization server it shows the speaker's engine
+card, the same minimal one as Settings (`ModelPickerPayers.tsx` around
+`EngineConnect.tsx`, 2026-10-08): one "Pays with" line from the server's
+`myTurns` (the order of `server/engine-credentials.ts`, never recomputed
+and no longer drawn as a list; a routine thread shows the owner's
+credentials), one Connect button or Connected with Disconnect, signing in
+their own subscription through `/api/me/engines/<id>/login`, never the
+server's engine login; the server's local models are not offered. Tests: `ModelPicker.interaction.test.ts`,
 `src/lib/model-payers.test.ts`; real Electron: `scripts/verify-server-mode.ts`
 (org) and `pnpm exec electron scripts/smoke-approval-modes.cjs --model-ui-only`
 (solo).
+
+### Local models in the picker
+
+Local rows (`host::model` inject ids, `local: true` on the option) show under
+a Local group below the engine's own models, in Simple and Advanced
+(`src/lib/local-models.ts`). Labels read "DwarfStar: Qwen3.8 Flash Next" from
+the server's `/v1/models` `name` (the id is added when several ids share one
+name) and `context_length` becomes `contextWindow`.
+
+- Which engines run them: `shared/local-model-engines.ts`. pi, Codex, Grok
+  CLI, Kimi, Qwen, Droid, Hermes and OpenCode take an OpenAI-compatible base
+  URL. Claude Code runs a loopback row (solo: the server answers
+  `/v1/messages`, as DwarfStar, Ollama, LM Studio and llama-server do) but not
+  a desktop row: the bridge carries `/v1/models` and `/v1/chat/completions`
+  only, and there is no protocol proxy. Any other engine keeps its own
+  endpoint. The picker greys a row the engine cannot run, with one line
+  saying why, and `DesktopLocalModels.assertAvailable` refuses it at turn time.
+- Solo: `server/drivers/local-inject.ts` `LOCAL_HOSTS` probes the same ports
+  as the desktop (`shared/desktop-local-models.ts` `SEED_ENDPOINTS`).
+- Organization server: only the person's own computer counts
+  (`isDesktopModelId`); the server's own loopback models are never offered.
+  The desktop probes every 15 s and publishes ids, labels and details, never
+  URLs (`electron/desktop-bridge.mjs`). Own bots may use them by default
+  (`expose` defaults on when the person never chose); `share` stays off until
+  turned on. A failed probe is not cached.
+- Refresh on open: the picker calls `refreshLocalModelsOnOpen` (10 s fresh
+  window). Solo re-reads the engine's catalog; server mode calls
+  `ogb.serverMode.refreshLocalModels()` (IPC `server-mode:refresh-local-models`,
+  5 s fresh window in the bridge), then reloads `/api/instances`.
+- Tests: `src/lib/local-models.test.ts`, `server/desktop-local-models.test.ts`,
+  `server/drivers/local-inject.test.ts`, `electron/local-models.node-test.mjs`.
 
 ## Bot actions
 
@@ -1256,6 +1295,13 @@ The phone stays in Settings and on the collapsed rail. Docs stay on About.
 A failed automation still dots the closed account row. The guided tour's
 `tools` anchor sits on the places stack, or on the foot when that stack is
 empty. Tests: `SidebarProfileMenu.test.ts`, `Sidebar.header.test.ts`.
+
+The guided tour (`GuidedTour.tsx`) never starts by itself: not after the
+welcome flow, not on a new bot, not per version. It runs only when opened on
+purpose (Settings > General > App tour sets `tourOpen`) or when a tour the
+person had already begun is resumed after a reload (`tourInProgress`). The
+first-conversation spotlights (`FirstConversationTour.tsx`) are not mounted
+for the same reason. Tests: `GuidedTour.test.ts`, `guided-tour.test.ts`.
 
 ## Computer tab and Local VM on an organization server
 

@@ -4,6 +4,7 @@ import type { Bot } from "@/state/store";
 import { narrowsNativeTools, parseToolScope } from "../../../shared/tool-scope";
 import { TOOL_SCOPE_SUPPORT } from "../../../shared/tool-scope-support";
 import { useBotEditor } from "./BotEditorContext";
+import { SwitchRow } from "../SettingsPrimitives";
 import { inputCls } from "./field";
 
 type Draft = { custom: boolean; onlyListed: boolean; allow: string; deny: string };
@@ -67,10 +68,7 @@ export function ToolSelectionCard({ bot, engineKind }: { bot: Bot; engineKind?: 
       </select>
     </label>
     {fields.custom && <fieldset disabled={saving || !!bot.busy} className="mt-3 flex flex-col gap-3">
-      <label className="flex items-center gap-2 text-[13px] text-ink">
-        <input type="checkbox" checked={fields.onlyListed} onChange={event => change({ onlyListed: event.target.checked })} />
-        {t("botAccess.tools.onlyListed")}
-      </label>
+      <SwitchRow label={t("botAccess.tools.onlyListed")} checked={fields.onlyListed} onChange={(next) => change({ onlyListed: next })} />
       <label className="text-[13px] text-ink-secondary">{t("botAccess.tools.allow")}
         <textarea aria-label={t("botAccess.tools.allow")} disabled={!fields.onlyListed} rows={3} spellCheck={false}
           className={`${inputCls} mt-1 font-mono text-[12px] disabled:opacity-50`} placeholder={example} value={fields.allow} onChange={event => change({ allow: event.target.value })} />

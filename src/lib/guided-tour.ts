@@ -76,6 +76,15 @@ export function currentStep(record: OnboardingStatus | undefined): TourStep | nu
   return TOUR_STEPS.find((step) => !stepDone(record, step.id)) ?? null;
 }
 
+/**
+ * True when the person already began the tour (at least one step done) and
+ * has not finished it. Only such a tour resumes by itself after a reload; a
+ * tour that was never started opens on purpose only (Settings > General).
+ */
+export function tourInProgress(record: OnboardingStatus | undefined): boolean {
+  return currentStep(record) !== null && TOUR_STEPS.some((step) => stepDone(record, step.id));
+}
+
 /** 1-based position among the steps the user actually sees. */
 export function stepNumber(step: TourStep): { current: number; total: number } {
   const visible = TOUR_STEPS.filter((s) => s.id !== "tour.done");
