@@ -55,25 +55,51 @@ describe("sidebar footer row", () => {
     expect(html).not.toContain('data-testid="footer-attention"');
   });
 
-  it("never shows an achievement title or points, and centres the name beside the avatar", () => {
+  const withBadge = () => {
+    fixture.state = {
+      config: { profile: { name: "Jean-Christophe Proulx", email: "jc@example.com" } } as AppState["config"],
+      bots: [{ id: "b1" }] as AppState["bots"],
+      routines: [{ id: "r1", botId: "b1", enabled: true, nextRunAt: 1 }] as AppState["routines"],
+    };
+  };
+
+  it("shows my title and points under the name when both switches are on", () => {
     resetAchievementsForTests({ status: "ready", snapshot: points() });
     const html = renderToStaticMarkup(createElement(SidebarProfileMenu, {}));
-    expect(html).toContain(">Jean-Christophe Proulx</span>");
-    expect(html).not.toContain("data-gamertag");
-    expect(html).not.toContain("data-member-line");
-    expect(html).not.toContain("data-member-title");
-    expect(html).not.toContain(">Commander<");
-    expect(html).not.toContain(">195<");
-    expect(html).not.toContain("data-routines-line");
-    // no second line: the name sits centred, with no pull-up and no top pad
-    const account = accountTag(html);
-    expect(account).toContain("items-center");
-    expect(account).not.toContain("items-start");
+    const nameAt = html.indexOf(">Jean-Christophe Proulx</span>");
+    const lineAt = html.indexOf("data-member-line");
+    expect(lineAt).toBeGreaterThan(nameAt);
+    expect(html).toContain(">Commander<");
+    expect(html).toContain(">195<");
+    expect(html).toContain("data-gamertag");
     expect(html).not.toContain("-mt-[21px]");
-    expect(html).not.toContain("pt-0.5");
   });
 
-  it("puts the routines icon and the active count under the name, opening Automations", () => {
+  it("shows only the title, or only the points, when one switch is off", () => {
+    const base = points();
+    resetAchievementsForTests({ status: "ready", snapshot: { ...base, settings: { ...base.settings, showPoints: false } } });
+    let html = renderToStaticMarkup(createElement(SidebarProfileMenu, {}));
+    expect(html).toContain(">Commander<");
+    expect(html).not.toContain("data-gamertag");
+    resetAchievementsForTests({ status: "ready", snapshot: { ...base, settings: { ...base.settings, showTitle: false } } });
+    html = renderToStaticMarkup(createElement(SidebarProfileMenu, {}));
+    expect(html).not.toContain(">Commander<");
+    expect(html).toContain(">195<");
+  });
+
+  it("with both switches off the name stands alone, centred beside the avatar", () => {
+    const base = points();
+    resetAchievementsForTests({ status: "ready", snapshot: { ...base, settings: { ...base.settings, showPoints: false, showTitle: false } } });
+    const html = renderToStaticMarkup(createElement(SidebarProfileMenu, {}));
+    expect(html).toContain(">Jean-Christophe Proulx</span>");
+    expect(html).not.toContain("data-member-line");
+    expect(html).not.toContain(">Commander<");
+    expect(html).not.toContain(">195<");
+    expect(accountTag(html)).toContain("items-center");
+    expect(html).not.toContain("data-routines-line");
+  });
+
+  it("puts the routines badge at the right of the row, beside the name, opening Automations", () => {
     fixture.state = {
       config: { profile: { name: "Jean-Christophe Proulx", email: "jc@example.com" } } as AppState["config"],
       bots: [{ id: "b1" }] as AppState["bots"],
@@ -85,28 +111,32 @@ describe("sidebar footer row", () => {
     };
     resetAchievementsForTests({ status: "ready", snapshot: points() });
     const html = renderToStaticMarkup(createElement(SidebarProfileMenu, {}));
-    const rowAt = html.indexOf("data-sidebar-account-row");
     const nameAt = html.indexOf(">Jean-Christophe Proulx</span>");
     const lineAt = html.indexOf("data-routines-line");
     const badgeAt = html.indexOf('data-active-routines="2"');
-    expect(rowAt).toBeGreaterThan(-1);
-    expect(nameAt).toBeGreaterThan(rowAt);
     expect(lineAt).toBeGreaterThan(nameAt);
     expect(badgeAt).toBeGreaterThan(lineAt);
+    // right of the whole account block, same flex row, centred, never under the name
+    expect(html).toContain('<div class="flex items-center gap-1"><div class="min-w-0 flex-1">');
+    expect(html).toContain('class="flex shrink-0 items-center" data-routines-line=""');
+    expect(html).not.toContain("-mt-[21px]");
+    expect(html).not.toContain("pl-[46px]");
     expect(html).toContain('aria-label="2 active routines"');
     expect(html).toContain("lucide-calendar-clock");
     expect(html).toContain("<span>2</span>");
     // the count is its own button, never inside the menu's
-    expect(badgeAt).toBeGreaterThan(html.lastIndexOf("</button>", badgeAt - 200));
     expect(html.lastIndexOf("</button>", badgeAt)).toBeGreaterThan(nameAt);
-    expect(html).toContain("-mt-[21px]");
-    expect(html).toContain("pl-[46px]");
-    const account = accountTag(html);
-    expect(account).toContain("items-start");
-    // still no title or points
-    expect(html).not.toContain(">Commander<");
-    expect(html).not.toContain(">195<");
     expect(html).not.toContain('data-testid="footer-attention"');
+  });
+
+  it("keeps the badge right-aligned with both switches off", () => {
+    withBadge();
+    const base = points();
+    resetAchievementsForTests({ status: "ready", snapshot: { ...base, settings: { ...base.settings, showPoints: false, showTitle: false } } });
+    const html = renderToStaticMarkup(createElement(SidebarProfileMenu, {}));
+    expect(html).toContain('data-active-routines="1"');
+    expect(html).toContain('class="flex shrink-0 items-center" data-routines-line=""');
+    expect(html).not.toContain("data-member-line");
   });
 
   it("says one routine in the singular", () => {

@@ -1,6 +1,6 @@
 # Contributing to Sagax
 
-Thanks for wanting to help — community PRs have already shipped in this repo, and more are welcome.
+Thanks for wanting to help. Community PRs have shipped in this repo, and more are welcome.
 This file tells you how to get a working dev setup, what the codebase expects from a change, and what
 makes a PR easy to merge. Read it once before opening anything; it's short on purpose.
 
@@ -11,7 +11,7 @@ makes a PR easy to merge. Read it once before opening anything; it's short on pu
 - **Match the altitude.** This codebase is deliberately small and direct — plain Node, no frameworks
   on the server, one store, one event bus. Don't introduce a dependency where thirty lines of code
   will do. New runtime dependencies need a reason in the PR description.
-- **Keep it green.** `pnpm typecheck && pnpm test` must pass. Server changes need tests (see below).
+- **Keep it green.** The local gates below must pass. Server changes need tests (see below).
 - **UI changes need screenshots.** Before/after images in the PR body; video for anything animated.
   Match the existing palette and tone in [`src/styles.css`](src/styles.css).
 
@@ -23,7 +23,7 @@ and logged in. macOS is the primary release platform and Ubuntu 24.04 x64 is the
 the harness server itself is portable Node and the test suite runs on macOS, Linux, and Windows.
 
 ```sh
-git clone https://github.com/pulsatrixtechnologies/sagax && cd pulsa-bot
+git clone https://github.com/pulsatrixtechnologies/sagax && cd sagax
 pnpm install
 
 pnpm dev:server    # harness server → 127.0.0.1:8799
@@ -47,24 +47,6 @@ host's desktop package build requires. To stage only the current development tar
 launching Electron, run `node scripts/prepare-cloudflared.mjs --current`.
 
 For Ubuntu installation and real desktop checks, see [`docs/linux-desktop.md`](docs/linux-desktop.md).
-
-## Ubuntu release checklist
-
-Ubuntu release packages must come from the manual **Package Ubuntu** workflow on an exact release commit or tag,
-not from a developer workstation. The Ubuntu 24.04 runner builds and verifies both formats, launches the unpacked
-app and AppImage, routes `click` and `type_text` through the overlay-free bundled Cua runtime on Xorg, runs the
-fail-closed Wayland CUA smoke,
-and produces one release artifact containing:
-
-- the versioned `.deb` and AppImage;
-- stable `Pulsa Bot-amd64.deb` and `Pulsa Bot.AppImage` copies used by the latest-download links;
-- `SHA256SUMS-ubuntu-x64.txt` covering both versioned and stable names.
-
-Before publishing, confirm that `package.json` has the release version and dispatch the workflow against the same
-commit used for the other platforms. Attach all five Ubuntu files to the matching release in the separate
-[Sagax releases](https://github.com/pulsatrixtechnologies/sagax/releases). Then verify the checksum
-file and install the `.deb` plus launch the AppImage in a clean Ubuntu 24.04 x86_64 GNOME environment. Never combine
-packages built from different commits under one version.
 
 ## Repo map
 
@@ -161,6 +143,15 @@ how chat routine proposals failed in the field hours after 0.1.38 shipped (#544)
   After changing one on purpose, run that file once with `UPDATE_AGENTS_CATALOG_GOLDENS=1`,
   review the golden diff, and move its `BUDGET_BASELINE` by hand.
 
+## Translations
+
+The app ships in English, French (`fr`) and Brazilian Portuguese (`pt-br`) as the maintained set;
+other catalogs under `src/locales/` are community packs. English is the source of truth. When you
+change an English string, update `fr.json` and `pt-br.json` and the matching hashes in
+`src/locales/source-hashes.json` (the hash records which English text a translation was reviewed
+against), then run `pnpm i18n:check`. A locale pack that fell behind falls back to English; never
+fix that with a machine draft that nobody read.
+
 ## Adding a language
 
 The renderer's strings live in JSON catalogs under `src/locales/`. English
@@ -232,10 +223,12 @@ responses or events, no baking them into argv where another local process could 
 
 ## Where contributions go
 
-Sagax is developed only in `pulsatrixtechnologies` repositories. Open pull requests against
-[pulsatrixtechnologies/sagax](https://github.com/pulsatrixtechnologies/sagax). Changes made
-here are not submitted to the original OpenMausBot project or any other upstream: no pull requests,
-issues, or pushes there.
+Sagax is developed only in `pulsatrixtechnologies` repositories. Open issues and pull requests on
+[pulsatrixtechnologies/sagax](https://github.com/pulsatrixtechnologies/sagax) and nowhere else.
+**Never open a pull request or issue against the original OpenMausBot project or any other
+upstream**, and never push there. With the GitHub CLI, always pass
+`--repo pulsatrixtechnologies/sagax` so it does not pick a parent repository. Do not add an upstream
+remote with push access.
 
 Release artifacts and update metadata go only to this repository's releases. Before distributing a
 build, review the application name and identifiers, signing configuration, update metadata, and every
@@ -243,48 +236,99 @@ build, review the application name and identifiers, signing configuration, updat
 build paths, account names, credentials, private endpoints, and machine-specific configuration out of
 commits and screenshots.
 
+## Branches, commits and pull requests
+
+- Work on a feature branch (`feat/...`, `fix/...`, `docs/...`) cut from `origin/main`. Do not push to
+  `main`.
+- One concern per PR. PRs are **squash merged** by a maintainer, so the PR title becomes the commit
+  subject on `main`.
+- Commit subjects and PR titles are in English, in the imperative, short ("Play the nudge sound when a
+  nudge is received"). Conventional prefixes (`feat:`, `fix:`, `docs:`) are welcome.
+- The PR body says what changed, why, what you ran (the gates above), and what a reviewer must
+  confirm. Maintainers sometimes put two lines in French for the owner at the top of a body; outside
+  contributors do not need to.
+- Write prose in plain sentences with commas and periods. **No em dashes or en dashes** in code
+  comments, docs, UI strings or commit messages.
+- Commits made with an AI assistant end with its `Co-Authored-By:` trailer, and PR bodies made that
+  way end with the matching "Generated with" line. Human contributors need no trailer. No DCO
+  sign-off is required.
+- Do not use `git stash` in shared worktrees, and do not merge your own PR.
+
+## Docs to update with a change
+
+- `AGENTS.md`: a rule, invariant or decision that future contributors must keep (it is the
+  engineering memory of the project). Keep entries short and dated.
+- Release notes: every release needs `docs/releases/X.Y.Z.md`, French first, then a line that is
+  exactly `## English`. The app shows these notes before and after an update. See
+  [`docs/releasing.md`](docs/releasing.md). Maintainers write them at release time; mention
+  user-visible changes in your PR so they can.
+- `README.md` and the relevant page under `docs/` when behavior users see changes.
+
+## Releases and upstream sync
+
+Maintainers cut releases (`pulsa-vX.Y.Z` tags on this repository) following
+[`docs/releasing.md`](docs/releasing.md). Merging upstream OpenMausBot changes into Sagax is a
+maintainer task with its own procedure (the "Upstream sync" section of `AGENTS.md`: fetch-only
+`upstream` remote, a real merge, `scripts/rebrand-upstream.mjs`, nothing ever pushed upstream).
+Contributors do not need to do it.
+
+## Security and conduct
+
+Report vulnerabilities privately as described in [SECURITY.md](SECURITY.md), never in a public
+issue. Everyone taking part follows the [Code of Conduct](CODE_OF_CONDUCT.md).
+
 ## Contribution licensing
 
-- No DCO sign-off is required. Submit only code you wrote or have the right
-  to contribute under the applicable project license.
-- Sagax is licensed under the PolyForm Noncommercial License 1.0.0 by
-  Pulsatrix Technologies inc. Outside contributions need the signed
-  contributor agreement in [CLA.md](CLA.md) before they are merged. See
-  [LICENSING.md](LICENSING.md).
-- The cloud seam and the licensing files have code owners; a maintainer
-  review is required there.
+- Sagax is owned by Pulsatrix Technologies inc. and licensed under the
+  [PolyForm Noncommercial License 1.0.0](LICENSE-POLYFORM-NC.md). Parts that come unchanged from
+  OpenMausBot stay under Apache 2.0. See [LICENSING.md](LICENSING.md).
+- **Your contribution is accepted under the same license** (PolyForm Noncommercial 1.0.0) as the rest
+  of Sagax. Submit only code you wrote or have the right to contribute.
+- Outside contributions also need the signed contributor agreement in [CLA.md](CLA.md) before they
+  are merged; it lets Pulsatrix Technologies inc. also offer commercial licenses. Ask a maintainer
+  for it before you open a PR.
+- The cloud seam and the licensing files have code owners; a maintainer review is required there.
+- The `enterprise/` directory of the original project is not part of this tree and must not be
+  copied into it.
 
-## CI, in one glance
+## Local gates (no GitHub Actions)
 
-Every PR runs the same checks, each as its own job so a failure names itself.
-The quick static job runs first; only after it passes do the expensive test and
-build jobs enter the runner queue. This saves capacity on submissions with type,
-lint or build errors, without skipping any checks on mergeable PRs. The required
-gates still fail if preflight fails or a required test job is skipped. It adds
-the preflight duration to an otherwise idle runner pool; it does not cure a
-GitHub-wide scheduling backlog.
+Sagax does not rely on GitHub Actions for review: Actions are not paid for on this repository, so a
+red or missing check on a PR carries no weight. The gates run on your machine, and you list what you
+ran in the PR body. Never put a result in the PR that you did not run.
 
-- **typecheck + lint** — typecheck, lint, locale catalogs (`pnpm i18n:check`), Electron syntax check, production UI build. Once, on Ubuntu; none of it is platform-specific.
-- **vitest (os, shard n/4)** — the suite split into four shards per platform: Ubuntu and Windows on a PR; macOS as well on main, in the merge queue and on manual runs (macOS runners are scarce and only a couple of tests are macOS-only). The suite runs its files serially on purpose (fake CLIs and a real harness server), so one runner takes ~19 minutes; a shard takes 4–10. To reproduce a shard's failure locally, run the same `pnpm exec vitest run --shard=n/4`. Failures also appear as annotations on the PR.
-- **packaged server smoke (os)** — the server bundle copied out of the repo and started with no `node_modules` in reach.
-- **Windows CUA host smoke**, **macOS smokes (packaged server + Electron)** — real Electron utility processes against disposable homes; never the live app.
-- **Swift tests + iOS build**, **Kotlin tests + Android build** — only when `ios/` or `android/` (or the CI setup) changes. The iPhone/iPad simulator UI suite runs nightly in `ios-thread-ui.yml`.
-- **CI** — the one check the branch rules require. It only aggregates the jobs above; if it is red, the failing job is named in its log.
+- `pnpm typecheck`
+- `pnpm lint`
+- `pnpm i18n:check`
+- `pnpm test:unit` (about 2.5 minutes) and, for server or conversation changes, `pnpm test:e2e`
+  (about 11 minutes). `pnpm test:shards` runs both. See `AGENTS.md` for the sharded runner.
+- `pnpm test:electron` for desktop-shell changes (also `pnpm check:electron`).
+- `pnpm build` for anything that touches the UI or the server bundle.
 
-A `pre-push` hook installed by `pnpm install` runs lint, typecheck and the locale check before a push (about a minute). `git push --no-verify` skips it once; `SAGAX_SKIP_HOOKS=1` skips it for a session.
+A `pre-push` hook installed by `pnpm install` runs lint, typecheck and the locale check before a
+push. `git push --no-verify` skips it once; `SAGAX_SKIP_HOOKS=1` skips it for a session.
 
-Provider fakes under `server/testing/fake-*.ts` must stay dependency-free: they run as bare subprocesses and at least one is copied out of the repo by a test, so a relative import from the repo dies at link time. `server/testing/fakes-self-contained.test.ts` enforces it.
+Verify behavior against the isolated fixture described in
+[`docs/verification/README.md`](docs/verification/README.md) (`node --experimental-strip-types
+scripts/control-omb.ts launch`). It uses a temporary home and a fake engine. **Never test against live
+data**: not your own `~/.sagax`, not someone's organization server, not a real Perspicax tenant.
+
+Provider fakes under `server/testing/fake-*.ts` must stay dependency-free: they run as bare
+subprocesses and at least one is copied out of the repo by a test, so a relative import from the repo
+dies at link time. `server/testing/fakes-self-contained.test.ts` enforces it.
 
 ## Before you open the PR
 
-- [ ] `pnpm typecheck` and `pnpm test` pass
-- [ ] `pnpm lint` passes
-- [ ] Locale changes pass `pnpm i18n:check` and have been reviewed by a speaker
+- [ ] `pnpm typecheck` and `pnpm lint` pass
+- [ ] `pnpm test:unit` passes (and `pnpm test:e2e` for server changes)
+- [ ] Locale changes pass `pnpm i18n:check`, keep `source-hashes.json` in step, and en, fr and pt-br are all updated
+- [ ] Verified on the isolated fixture, never on live data
 - [ ] `pnpm check:electron` passes for desktop-shell changes
 - [ ] Ubuntu packaging changes pass `pnpm package:linux` and `node scripts/verify-linux-package.mjs`
+- [ ] No em or en dashes, issues and PR target `pulsatrixtechnologies/sagax` only
 - [ ] New server behavior has a test; driver changes keep the contract tests green
 - [ ] No `dist-server/` churn, no lockfile churn beyond your actual dependency change
 - [ ] macOS-only code is platform-gated; nothing breaks the packaged app
 - [ ] UI changes include before/after screenshots
 
-By contributing you agree to the contribution terms in [CLA.md](CLA.md).
+By contributing you agree to the contribution terms above and in [CLA.md](CLA.md).

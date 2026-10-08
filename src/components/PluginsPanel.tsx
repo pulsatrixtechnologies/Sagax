@@ -15,8 +15,9 @@ import { Loader2, TriangleAlert } from "lucide-react";
 import { api, useStore } from "@/state/store";
 import { t } from "@/lib/i18n";
 import { managedConnectorUnavailableReason } from "../../shared/connector-availability";
+import { isWhopServer } from "@/lib/whop-integration";
 import type { SkillsLibrarySkillWire } from "../../shared/wire";
-import { buildPluginItems, type PluginFilter, type PluginItem } from "@/lib/plugins-model";
+import { WHOP_KEY, buildPluginItems, type PluginFilter, type PluginItem } from "@/lib/plugins-model";
 import {
   ClaudeMcpSwitch,
   McpAuthLine,
@@ -24,6 +25,7 @@ import {
   McpImportForm,
   McpMessages,
   McpServerEditor,
+  WhopTile,
   isRemoteMcpListing,
   useMcpServers,
   type McpServerListing,
@@ -135,7 +137,8 @@ export function PluginsPanel() {
     servers: mcp.servers,
     featured,
     skills,
-  }), [apps.cards, apps.status, mcp.servers, featured, skills]);
+    whop: { description: t("whop.description"), server: mcp.whopServer?.name, connected: mcp.whopConnected },
+  }), [apps.cards, apps.status, mcp.servers, featured, skills, mcp.whopServer?.name, mcp.whopConnected]);
 
   const refreshAll = () => {
     void apps.loadConnectionInventory(true);
@@ -145,7 +148,11 @@ export function PluginsPanel() {
   };
   const refreshing = apps.refreshing || mcp.busy === "load";
 
-  const openItem = (item: PluginItem) => setPage((current) => ({ page: "detail", key: item.key, from: current.page === "manage" ? "manage" : "main" }));
+  const openItem = (item: PluginItem) => {
+    // Whop's page is its MCP server's page.
+    const key = item.key === WHOP_KEY && mcp.whopServer ? `mcp:${mcp.whopServer.name}` : item.key;
+    setPage((current) => ({ page: "detail", key, from: current.page === "manage" ? "manage" : "main" }));
+  };
 
   const installFeatured = async (item: PluginItem) => {
     setInstalling(item.id);
@@ -175,9 +182,10 @@ export function PluginsPanel() {
     return <AppActionButton apps={apps} slug={item.id} />;
   };
 
-  const renderBelow = (item: PluginItem) => item.kind === "app" && apps.aliasSlug === item.id && !apps.status[item.id]?.pending
-    ? <AliasForm apps={apps} slug={item.id} name={item.name} draft={aliasDraft} onDraft={setAliasDraft} hasAccounts={Boolean(apps.status[item.id]?.accounts?.length)} />
-    : null;
+  const renderBelow = (item: PluginItem) => {
+    if (item.kind !== "app") return null;
+    return <AppBelow apps={apps} item={item} draft={aliasDraft} onDraft={setAliasDraft} />;
+  };
 
   // Only worth saying once an app is actually connected and reachable.
   const botsWithoutApps = hasUsableConnectedApps(apps.configured, apps.inventoryPhase, apps.stale, apps.status)
@@ -317,6 +325,7 @@ export function PluginsPanel() {
         onOpenItem={openItem}
         renderAction={renderAction}
         renderBelow={renderBelow}
+        renderRow={(item) => item.key === WHOP_KEY ? <WhopTile key={item.key} mcp={mcp} /> : undefined}
         notices={notices}
       />
     );
@@ -346,8 +355,8 @@ export function PluginsPanel() {
 /** Connect / Continue / Add account on a connected app's row. */
 function AppActionButton({ apps, slug }: { apps: ConnectedApps; slug: string }) {
   const serviceStatus = apps.status[slug];
-  const pending = serviceStatus?.pending;
   const failed = Boolean(serviceStatus?.status && /^(expired|failed)$/i.test(serviceStatus.status));
+  const pending = serviceStatus?.pending && !failed;
   const accounts = serviceStatus?.accounts ?? [];
   const busy = apps.busySlug === slug;
   const unavailable = Boolean(managedConnectorUnavailableReason(apps.mode, slug));
@@ -362,12 +371,38 @@ function AppActionButton({ apps, slug }: { apps: ConnectedApps; slug: string }) 
       {unavailable ? t("connectors.selfHostOnly") : busy ? <Loader2 size={13} className="mx-auto animate-spin" /> : connectorActionLabel(apps.inventoryPhase, {
         busy,
         included: false,
-        canContinue: Boolean(pending && apps.pendingUrls[slug]),
+        canContinue: Boolean(pending && apps.pendingUrl(slug)),
         pending,
         hasAccounts: accounts.length > 0,
         failed,
       })}
     </button>
+  );
+}
+
+/** Under an app's row: the link of a sign-in in flight, or the name of the
+ * account about to be connected. */
+function AppBelow({ apps, item, draft, onDraft }: { apps: ConnectedApps; item: PluginItem; draft: string; onDraft: (value: string) => void }) {
+  const slug = item.id;
+  const serviceStatus = apps.status[slug];
+  const failed = /^(expired|failed)$/i.test(serviceStatus?.status ?? "");
+  const url = serviceStatus?.pending && !failed ? apps.pendingUrl(slug) : null;
+  return (
+    <>
+      {url && (
+        <a href={url} target="_blank" rel="noopener noreferrer" onClick={(event) => {
+          if (!apps.pendingUrl(slug)) {
+            event.preventDefault();
+            void apps.connect(slug);
+          }
+        }} className="ml-[52px] mt-1 inline-block text-[12px] text-accent-text underline underline-offset-2">
+          {t("connectors.openAuthorizationPage")}
+        </a>
+      )}
+      {apps.aliasSlug === slug && !item.installed && (
+        <AliasForm apps={apps} slug={slug} name={item.name} draft={draft} onDraft={onDraft} hasAccounts={Boolean(serviceStatus?.accounts?.length)} />
+      )}
+    </>
   );
 }
 
@@ -473,7 +508,7 @@ function appDetail(item: PluginItem, { apps, aliasDraft, setAliasDraft, bots, in
         )}
         {serviceStatus?.pending && (
           <div className="mt-2 flex items-center justify-between gap-2 text-[12px] text-ink-secondary">
-            <span>{apps.pendingUrls[slug] ? t("connectors.finishSetup") : t("connectors.finishSetupOrDisconnect")}</span>
+            <span>{apps.pendingUrl(slug) ? t("connectors.finishSetup") : t("connectors.finishSetupOrDisconnect")}</span>
             <AppActionButton apps={apps} slug={slug} />
           </div>
         )}
@@ -588,6 +623,7 @@ function mcpDetail(item: PluginItem, { mcp }: DetailContext): DetailBase {
     ],
     children: (
       <>
+        {remote && isWhopServer(server) && <p className="rounded-2xl border border-border bg-card px-4 py-3 text-[12px] leading-relaxed text-ink-secondary sm:px-5">{t("whop.notice")}</p>}
         <McpMessages mcp={mcp} />
         {mcp.editing === name && <McpServerEditor mcp={mcp} />}
       </>

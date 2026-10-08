@@ -144,6 +144,8 @@ posixOnly("Live call e2e", () => {
       expect(call).toMatchObject({ botId: bot.id, threadId: bot.threadId, client: "desktop" });
       // the client's data channel may only hang up
       expect(session.body).toMatchObject({ session: { client: { data_channel: { allowed_client_events: ["session.close"] } } } });
+      // a harness that is not a Cloud home runs on the person's own computer
+      expect((session.body.session as { instructions: string }).instructions).toContain("runs in Sagax on the user's own computer.");
       await live.waitForAttach(session.id);
       await sse.until((frame) => frame.kind === "live.call" && frame.call?.callId === call.callId && frame.call?.status === "live");
 
@@ -174,14 +176,16 @@ posixOnly("Live call e2e", () => {
     }
   }, 40_000);
 
+  // The first call comes from a web browser (a Cloud's page): the second
+  // client is told where it is, not "on this computer".
   it("answers 409 with the running call to a second client", async () => {
     const bot = await createBot();
-    const { call, session } = await startCall(bot.id);
+    const { call, session } = await startCall(bot.id, "web");
     await live.waitForAttach(session.id);
 
     const second = await post("/api/live/session", { botId: bot.id, sdp: SDP, client: "ios" });
     expect(second.status).toBe(409);
-    expect((second.body as { activeCall: LiveCallState }).activeCall).toMatchObject({ callId: call.callId, client: "desktop" });
+    expect((second.body as { activeCall: LiveCallState }).activeCall).toMatchObject({ callId: call.callId, client: "web" });
     // the refused start did not reach OpenAI
     expect(live.sessions.at(-1)).toBe(session);
 

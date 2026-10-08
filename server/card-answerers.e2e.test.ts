@@ -16,6 +16,9 @@
 //      admin who does not own a bot may not, nor the operator another's
 //   6. a session-less local service (service loopback trust) answers none
 //   7. the decision row and the card both name who answered
+//   8. Undo on a change that applied without a person follows the same
+//      rule: the owner may, a member may not, even the one who started the
+//      thread
 //
 // No new card, prompt or gate appears anywhere: the provider's own approval
 // is the card, and these only decide whose answer it accepts.
@@ -266,6 +269,33 @@ posixOnly("who may answer an approval card on a shared workspace", () => {
     expect(notMine.body.error).toMatch(refusal);
   }, 90_000);
 
+  it("lets only the owner undo a receipt, not the member who started the thread", async () => {
+    const bot = await makeBot("Undone");
+    const task = await api("POST", `/api/bots/${bot.id}/tasks`, { title: "Bob's thread" }, BOB);
+    expect(task.status).toBe(201);
+    const threadId = task.body.task.threadId as string;
+    const minted = await fetch(`${BASE}/api/testing/internal-capability`, {
+      method: "POST", headers: { "content-type": "application/json", "x-openmausbot-test-capability": CAPABILITY_KEY },
+      body: JSON.stringify({ botId: bot.id, threadId }),
+    });
+    const { token } = await minted.json() as { token: string };
+    const proposed = await fetch(`${BASE}/api/internal/profile-requests`, {
+      method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
+      body: JSON.stringify({ fromBotId: bot.id, fromThreadId: threadId, changes: { title: "Scout" }, reason: "asked" }),
+    });
+    const applied = await proposed.json() as { requestId: string; state: string };
+    expect(applied.state, JSON.stringify(applied)).toBe("applied");
+
+    for (const as of [ADA, BOB]) {
+      const refused = await api("POST", `/api/threads/${threadId}/undo`, { requestId: applied.requestId }, as);
+      expect(refused.status, as).toBe(403);
+      expect(refused.body.error).toMatch(refusal);
+    }
+    const undone = await api("POST", `/api/threads/${threadId}/undo`, { requestId: applied.requestId }, BOSS);
+    expect(undone, JSON.stringify(undone.body)).toMatchObject({ status: 200, body: { ok: true, undone: true } });
+    expect((await api("GET", "/api/bots?messages=0", undefined, BOSS)).body.bots.find((candidate: { id: string }) => candidate.id === bot.id).title).toBe("");
+  }, 90_000);
+
   it("lets a session-less local service answer no approval under service trust", async () => {
     const bot = await makeBot("Serviced");
     await waitForExit(child, { signal: "SIGTERM" });
@@ -281,6 +311,7 @@ posixOnly("who may answer an approval card on a shared workspace", () => {
     // The bot-scoped route and the standing grant are not service routes at all.
     expect((await api("POST", `/api/bots/${bot.id}/respond`, { requestId, behavior: "allow" })).status).toBe(403);
     expect((await api("POST", `/api/bots/${bot.id}/always-allow`, { allowKey: "shell:echo" })).status).toBe(403);
+    expect((await api("POST", `/api/threads/${bot.threadId}/undo`, { requestId })).status).toBe(403);
     expect((await openCard(bot.threadId))?.card.requestId).toBe(requestId);
     const answered = await api("POST", `/api/threads/${bot.threadId}/respond`, { requestId, behavior: "deny" }, BOSS);
     expect(answered.status, JSON.stringify(answered.body)).toBe(200);

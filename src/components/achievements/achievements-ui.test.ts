@@ -48,19 +48,17 @@ afterEach(() => {
 });
 
 describe("member card", () => {
-  it("keeps the title and the points out of the sidebar footer, whatever the toggles say", () => {
-    for (const settings of [
-      { showPoints: true, showTitle: true, toasts: true, native: false, public: true, title: "rookie" },
-      { showPoints: false, showTitle: true, toasts: true, native: false, public: true, title: "rookie" },
-      { showPoints: true, showTitle: false, toasts: true, native: false, public: true, title: "rookie" },
-    ]) {
+  it("shows the title and the points on my own footer row only while their switches are on", () => {
+    const cases: Array<[boolean, boolean]> = [[true, true], [false, true], [true, false], [false, false]];
+    for (const [showPoints, showTitle] of cases) {
+      const settings = { showPoints, showTitle, toasts: true, native: false, public: true, title: "rookie" };
       resetAchievementsForTests({ status: "ready", snapshot: snapshot({ settings }) });
       const html = renderToStaticMarkup(createElement(SidebarProfileMenu, {}));
       expect(html).toContain(">Ada Lovelace</span>");
-      expect(html).not.toContain("data-gamertag");
-      expect(html).not.toContain("data-member-line");
-      expect(html).not.toContain(">Rookie<");
-      expect(html).not.toContain("1,240");
+      expect(html.includes("data-gamertag")).toBe(showPoints);
+      expect(html.includes("1,240")).toBe(showPoints);
+      expect(html.includes(">Rookie<")).toBe(showTitle);
+      expect(html.includes("data-member-line")).toBe(showPoints || showTitle);
     }
   });
 

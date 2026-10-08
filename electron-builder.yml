@@ -215,7 +215,7 @@ linux:
   executableName: openmausbot
   synopsis: Your own team of AI bots, in a chat app
   description: A local-first chat app for running a team of AI agents.
-  maintainer: Milind Soni <46266943+milind-soni@users.noreply.github.com>
+  maintainer: Pulsatrix Technologies Inc. <hello+security@pulsatrix.ca>
   vendor: Pulsatrix Technologies
   syncDesktopName: true
   # The reviewed x64 CLI runtime is staged before packaging and remains

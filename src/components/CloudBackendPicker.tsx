@@ -1,7 +1,8 @@
 // The Boat / Self-hosted VPS segmented control shown under the "Runs on"
 // picker whenever a bot can end up on a cloud computer. One component, two
-// homes (ComputerPanel and the bot settings dialog's Access section), so the copy and the disabled
-// rules can never drift apart.
+// homes (ComputerPanel and the bot settings dialog's Access section), so the
+// copy can never drift apart. Both backends follow one rule
+// (shared/cloud-computer.ts), so neither is offered or refused on its own.
 import type { CloudBackend } from "../../shared/wire";
 import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
@@ -9,7 +10,7 @@ import { t } from "@/lib/i18n";
 export function CloudBackendPicker({
   value,
   compact = false,
-  vpsSupported,
+  vpsSupported = true,
   organization = false,
   boat = true,
   vps = true,
@@ -17,7 +18,8 @@ export function CloudBackendPicker({
 }: {
   value: CloudBackend;
   compact?: boolean;
-  vpsSupported: boolean;
+  /** Optional since one rule covers both backends (shared/cloud-computer.ts). */
+  vpsSupported?: boolean;
   /** An organization server: a bot works in its owner's server environment,
    * so the per-bot VPS computer is not offered. */
   organization?: boolean;

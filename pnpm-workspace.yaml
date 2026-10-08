@@ -19,3 +19,10 @@ allowBuilds:
 onlyBuiltDependencies:
   - electron
   - esbuild
+# mermaid 12.1 still allows dompurify 3.4.13. Force the patched release.
+# Dependabot: transitive copies below the fixed versions (miniflare pins sharp
+# 0.35.4; mermaid and rehype-katex pull katex 0.16.x).
+overrides:
+  dompurify: 3.4.16
+  sharp@<0.35.5: 0.35.5
+  katex@<0.18.2: 0.18.2

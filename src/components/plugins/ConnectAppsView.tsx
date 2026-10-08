@@ -86,11 +86,13 @@ export interface ConnectAppsViewProps {
   renderBelow?: (item: PluginItem) => ReactNode;
   /** notices between the chips and the list */
   notices?: ReactNode;
+  /** a row drawn by its owner (Whop's connect flow) */
+  renderRow?: (item: PluginItem) => ReactNode | undefined;
 }
 
 export function ConnectAppsView(props: ConnectAppsViewProps) {
   const { items, loading, search, onSearch, filter, onFilter, extraSources = [], sourceLabel, refreshing, onRefresh, onClose,
-    onOpenManage, onOpenItem, renderAction, renderBelow, notices } = props;
+    onOpenManage, onOpenItem, renderAction, renderBelow, notices, renderRow } = props;
   const [limit, setLimit] = useState(PAGE);
   const [moreOpen, setMoreOpen] = useState(false);
   const moreRef = useRef<HTMLDivElement>(null);
@@ -238,7 +240,7 @@ export function ConnectAppsView(props: ConnectAppsViewProps) {
                   )}
                 </div>
                 <div className="grid grid-cols-1 gap-x-2 gap-y-0.5 md:grid-cols-2">
-                  {shown.map((item) => (
+                  {shown.map((item) => renderRow?.(item) ?? (
                     <PluginRow key={item.key} item={item} onOpen={onOpenItem} action={renderAction(item)} below={renderBelow?.(item)} />
                   ))}
                 </div>

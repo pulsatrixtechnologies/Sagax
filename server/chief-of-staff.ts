@@ -13,7 +13,9 @@ const sectionKey = (section?: string): string => section?.trim() || "";
 
 /** Dynamic system context for a Primary Bot.
  * It names the current team on every turn, while list_bots remains the
- * authoritative tool for IDs and live availability at delegation time. */
+ * authoritative tool for IDs and live availability at delegation time.
+ * Who is busy right now is not part of it: that changes turn to turn, so it
+ * rides the volatile half (teammateAvailabilityPrompt in peer-roster.ts). */
 export function chiefOfStaffSystemPrompt(
   chiefId: string,
   bots: ChiefTeamMember[],
@@ -27,8 +29,7 @@ export function chiefOfStaffSystemPrompt(
   // the endpoints must agree, or the prompt names teammates the tools will
   // then refuse to reach.
   const team = reachablePeers(bots, chief ?? { id: chiefId, name: "" });
-  // `about: true` keeps the blurb the Primary Bot staffs from — and keeps this
-  // prompt byte-identical to what Primary Bots have always been given. The
+  // `about: true` keeps the blurb the Primary Bot staffs from. The
   // ordinary-bot roster drops it (peer-roster.ts); widening the Primary Bot's
   // existing exposure was never in scope, and narrowing it here would
   // silently change how a Primary Bot picks a specialist.

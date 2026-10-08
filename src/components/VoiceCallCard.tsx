@@ -1,6 +1,7 @@
 // One voice call in the thread: a quiet line, or the spoken lines inside
 // a card. The messages stay stored. Thumbs use the message reaction route
 // on the first real person line of the call (one choice: up or down).
+import { copyText } from "@/lib/copy-text";
 import { useEffect, useState } from "react";
 import { AudioLines, MoreHorizontal, ThumbsDown, ThumbsUp, X } from "lucide-react";
 import { api, useStore, type Message } from "@/state/store";
@@ -76,7 +77,7 @@ export function VoiceCallCard({
 
   const copy = () => {
     const text = voiceCallTranscriptText(shown.filter((line) => !line.id.startsWith("live-")), you, botName);
-    void navigator.clipboard?.writeText(text);
+    void copyText(text);
     setCopied(true);
     window.setTimeout(() => setCopied(false), 1500);
   };

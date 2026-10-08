@@ -1,13 +1,15 @@
-// In-app auto-updater (electron-updater). Downloads are user-driven; macOS
-// stages the downloaded ZIP immediately and the explicit restart applies it.
-// One state object is broadcast on every transition.
+// In-app auto-updater (electron-updater). Updates download by themselves as
+// soon as a check finds one (macOS also stages the ZIP at once) and install
+// when the app quits, or at once on the person's "Restart to update". Nothing
+// restarts by itself in the middle of a call or a turn. One state object is
+// broadcast on every transition, to this app's own page (the local page, or
+// the bundle drawn on an organization server).
 //
 // Only runs in the packaged, signed+notarized app (mac auto-update requires
 // signing). In dev it's a no-op so the browser/dev shell is unaffected.
 // electron-updater is vendored (electron/vendor/electron-updater.cjs) because
 // the packaged app ships no node_modules.
 import { app, clipboard, ipcMain } from "electron";
-import localOriginModule from "./local-origin.cjs";
 import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { join } from "node:path";
@@ -25,9 +27,12 @@ const require = createRequire(import.meta.url);
 
 let autoUpdater = null;
 let win = null;
-// status: idle | checking | available | downloading | preparing | downloaded | installing | handed-off | error
+// status: idle | checking | downloading | preparing | downloaded | installing | handed-off | error
 let state = { status: "idle" };
 let updaterCoordinator = null;
+// Which page may read and drive the updater (main.mjs updaterPageAllowed).
+// Until main says, none may.
+let pageAllowed = () => false;
 
 function updaterLogger() {
   const directory = app.getPath("logs");
@@ -67,22 +72,30 @@ export function handOffDownloadedPackage(packageType) {
 function setState(patch) {
   state = { ...state, ...patch };
   try {
-    win?.webContents?.send("update:state", state);
+    const contents = win?.webContents;
+    // Only the page the window shows now, and only if it may read the state.
+    if (contents && pageAllowed({ sender: contents, senderFrame: contents.mainFrame })) contents.send("update:state", state);
   } catch {
     /* window gone */
   }
 }
 
-// The updater changes THIS app: only this app's own UI may drive it, the
-// local page or the bundle drawn on an organization server (bundled-ui.cjs).
-const { desktopUiOnly: localOnly } = localOriginModule;
-
-export function registerUpdaterIpc() {
-  ipcMain.handle("update:get-state", localOnly("update:get-state", () => state));
-  ipcMain.handle("update:check", localOnly("update:check", () => updaterCoordinator?.check(true)));
-  ipcMain.handle("update:download", localOnly("update:download", () => updaterCoordinator?.download()));
-  ipcMain.handle("update:install", localOnly("update:install", () => updaterCoordinator?.install()));
-  ipcMain.handle("update:set-prereleases", localOnly("update:set-prereleases", (_event, enabled) => setPrereleases(enabled)));
+/** The updater changes THIS app: `allowed(event)` says which page may read
+ * and drive it: this app's own UI, the local page or the bundle drawn on an
+ * organization server (bundled-ui.cjs; main.mjs updaterPageAllowed). */
+export function registerUpdaterIpc({ pageAllowed: allowed }) {
+  pageAllowed = allowed;
+  const guarded = (channel, handler) => (event, ...args) => {
+    if (!pageAllowed(event)) throw new Error(`${channel} is only available in this app's window`);
+    return handler(...args);
+  };
+  ipcMain.handle("update:get-state", guarded("update:get-state", () => state));
+  ipcMain.handle("update:check", guarded("update:check", () => updaterCoordinator?.check(true)));
+  // A download starts by itself after a check. An older page's Download
+  // button asks for one: checking again starts it, as the person's own.
+  ipcMain.handle("update:download", guarded("update:download", () => updaterCoordinator?.check(true)));
+  ipcMain.handle("update:install", guarded("update:install", () => updaterCoordinator?.install()));
+  ipcMain.handle("update:set-prereleases", guarded("update:set-prereleases", (enabled) => setPrereleases(enabled)));
 }
 
 // Pre-releases are opt-in. The choice is this computer's, stored next to the
@@ -124,30 +137,35 @@ export function startUpdater() {
   }
   // Our GitHub releases only, whatever app-update.yml says.
   configureUpdateFeed(autoUpdater, prefs);
-  autoUpdater.autoDownload = false; // button-driven download
+  // The coordinator starts the download itself the moment a check finds an
+  // update, so it owns that download (macOS staging, quiet failures).
+  autoUpdater.autoDownload = false;
   // Every skipped version contributes its GitHub release body. The yml feed
   // leaves releaseNotes empty, so electron-updater fills them from the
   // release. The renderer shows them newest first.
   autoUpdater.fullChangelog = true;
-  // Squirrel.Mac has a second, native staging pass after the ZIP download.
-  // Start it immediately so "Restart to update" never has to begin that slow
-  // pass and wait indefinitely. Windows keeps the explicit installer click.
-  autoUpdater.autoInstallOnAppQuit = process.platform === "darwin";
   autoUpdater.logger = updaterLogger();
 
   // Broadcast the install flavour before the first check so the banner never
   // offers a restart it cannot deliver.
   const packageType = linuxPackageType({ readMarker: (file) => (existsSync(file) ? readFileSync(file, "utf8") : null) });
   const handOff = HAND_OFF_TYPES.has(packageType);
+  // A downloaded update installs when the app quits, on every platform:
+  // Windows (per-user, one-click: silent, no admin prompt) and AppImage swap
+  // it in then. On macOS this also starts Squirrel.Mac's native staging pass
+  // at once, so "Restart to update" never has to begin that slow pass and
+  // wait. A system package (.deb, .rpm, pacman) is the person's to install
+  // in a terminal, never ours on quit.
+  autoUpdater.autoInstallOnAppQuit = !handOff;
   setState({ installMode: handOff ? "handoff" : "restart" });
   updaterCoordinator = createUpdaterCoordinator(autoUpdater, setState, {
     handOffInstall: handOff ? handOffDownloadedPackage(packageType) : null,
     nativeStaging: process.platform === "darwin",
   });
 
-  // first check ~15s after launch (let the app settle), then hourly — both
-  // silent on failure, hence the arrow: a bare `check` would receive the
-  // timer's argument as `manual` and start reporting errors again.
+  // first check ~15s after launch (let the app settle), then hourly — never
+  // the person's own check, hence the arrow: a bare `check` would receive the
+  // timer's argument as `manual` and report every passing network failure.
   setTimeout(() => void updaterCoordinator?.check(), 15_000).unref?.();
   setInterval(() => void updaterCoordinator?.check(), 60 * 60 * 1000).unref?.();
 }

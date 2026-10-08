@@ -18,6 +18,7 @@ import { cn } from "@/lib/cn";
 import { BotAvatar } from "./Avatar";
 import { CallTargetButton, useOrganizationCall } from "./CallView";
 import { VoiceModeCallButton } from "./voice-mode/VoiceModeCallButton";
+import { useDesktopCapabilities } from "./DesktopCapabilities";
 import { isRoutineApproval, isSkillApproval, pendingApprovals, spokenApprovalPrompt } from "./PendingApproval";
 
 const YES = /^(yes|yeah|yep|yup|sure|ok|okay|go ahead|do it|allow|approve|approved|fine|please do)\b/i;
@@ -29,10 +30,15 @@ type Phase = "listening" | "sending" | "working" | "speaking";
 export function GroupCallButton({ group, members }: { group: Group; members: Bot[] }) {
   // a room on an organization server: voice mode talks to one bot at a time
   const organization = useOrganizationCall();
+  const { capabilities, ready } = useDesktopCapabilities();
   if (group.dm) return null;
   if (organization) {
     return <VoiceModeCallButton targetId={group.id} targetName={group.name} group onStart={() => {}} />;
   }
+  // A room call takes turns, which only the Mac app's own page can do, and a
+  // room has no Live call: elsewhere (a browser, the Windows or Linux app, My
+  // Cloud) there is no room call to offer, so no button that can't start one.
+  if (ready && !capabilities.dictation.available) return null;
   return (
     <CallTargetButton
       targetId={group.id}

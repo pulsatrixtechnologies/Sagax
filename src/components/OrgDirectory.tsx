@@ -1,4 +1,5 @@
 import { useState, type FormEvent, type ReactNode } from "react";
+import { copyText } from "@/lib/copy-text";
 import type { OrgRole } from "../../server/org-directory.ts";
 import { t } from "@/lib/i18n";
 import { Card, cardCount } from "./SettingsPrimitives";
@@ -26,7 +27,7 @@ function CopyLinkButton({ link }: { link: string }) {
       type="button"
       className="ui-button"
       onClick={() => {
-        void navigator.clipboard?.writeText(link).then(() => setCopied(true), () => setCopied(false));
+        void copyText(link).then((result) => setCopied(result === "copied"));
       }}
     >
       {copied ? t("org.copied") : t("org.copyLink")}

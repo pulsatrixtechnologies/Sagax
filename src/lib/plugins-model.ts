@@ -74,7 +74,12 @@ export interface PluginSources {
   servers?: readonly McpListing[] | null;
   featured?: readonly FeaturedListing[] | null;
   skills?: readonly SkillListing[] | null;
+  /** Whop, an MCP server connected like an app (#2411): its server's name
+   * once added, and whether it is signed in and on. */
+  whop?: { description: string; server?: string; connected: boolean } | null;
 }
+
+export const WHOP_KEY = "whop:whop";
 
 function hostOf(url: string | undefined): string | null {
   if (!url) return null;
@@ -110,6 +115,21 @@ export function buildPluginItems(sources: PluginSources): PluginItem[] {
       source: "composio",
     });
   }
+  if (sources.whop) {
+    items.push({
+      key: WHOP_KEY,
+      kind: "featured",
+      id: "whop",
+      name: "Whop",
+      description: sources.whop.description,
+      domain: "whop.com",
+      category: "other",
+      installed: sources.whop.connected,
+      status: sources.whop.connected ? "connected" : "available",
+      action: sources.whop.connected ? null : "connect",
+      source: "catalog",
+    });
+  }
   const serverUrls = new Set<string>();
   for (const server of sources.servers ?? []) {
     if (server.url) serverUrls.add(server.url);
@@ -127,6 +147,7 @@ export function buildPluginItems(sources: PluginSources): PluginItem[] {
       status: !server.enabled || server.managedBy ? "off" : needsAuth ? "needs_auth" : "connected",
       action: null,
       source: server.source ?? "manual",
+      ...(sources.whop?.server === server.name ? { parent: WHOP_KEY } : {}),
     });
   }
   for (const listing of sources.featured ?? []) {

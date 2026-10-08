@@ -2059,10 +2059,13 @@ rules, each covered by `shared/achievements-catalog.test.ts`,
   default, and leaves out anyone who turned "Show my points to colleagues"
   off. Unlock percentages show only
   with five people or more.
-- Visibility (2026-10-08). The left sidebar never shows an achievement title
-  or points, for anyone: not on the viewer's account row, not on people
-  rows. Titles and points show only in a person's detail (the person panel,
-  from a people row or a DM header, the viewer's own included) and on
+- Visibility (2026-10-08, corrected). People rows in the sidebar never show an
+  achievement title or points. The viewer's own account row at the bottom
+  does: title then points under the name, each only while its switch is on,
+  the name centred beside the avatar with both off, and the active routines
+  badge always at the right edge of the row, centred (never under the name).
+  Titles and points also show in a person's detail (the person panel, from a
+  people row or a DM header, the viewer's own included) and on
   Settings > Achievements. Two switches there, same style, stored in the
   person's settings on the server (so every device follows): "Show my
   points" (`showPoints`) and "Show my title" (`showTitle`, a missing flag
@@ -2153,8 +2156,10 @@ it after an upstream merge instead of renaming by hand.
 
 ## Upstream sync
 
-Last sync: 2026-10-03, upstream `milind-soni/OpenMausBot` main at
-`04a8bef8` (0.1.95) merged into Sagax; `baseVersion` follows it. To repeat:
+Last sync: 2026-10-08, upstream `milind-soni/OpenMausBot` main at
+`ac9dc481` (0.1.101) merged into Sagax; `baseVersion` follows it. Upstream
+removed `ios/` and `android/` in 0.1.97 (#2382); Sagax keeps its own native
+apps, so those paths stay ours on every later merge. To repeat:
 
 - Keep the `upstream` remote fetch-only (`git remote set-url --push
   upstream no_push`). Never push, open a pull request or file an issue

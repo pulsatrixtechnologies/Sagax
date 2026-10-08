@@ -99,6 +99,14 @@ The [MCP sign-in fixture](mcp-sign-in.md) checks remote sign-in, callback URL
 paste-back, MCP tools and logout cancellation through the real settings panel
 and a synthetic OAuth provider in a disposable workspace.
 
+The [Whop fixture](whop.md) checks its one-click setup, cancellation, denied
+consent, discovery failures, reconnect and disconnect using that same registry
+and a synthetic provider, without accessing a real Whop account.
+
+The [Connected Apps OAuth fixture](connected-apps-oauth.md) checks blocked-popup
+recovery, safe authorization links and abandoned-account retries through real
+renderer components and isolated HTTP routes.
+
 The [desktop server connection smoke](desktop-server-connection.md) mounts the
 real Settings connection component in disposable Electron windows.
 
@@ -151,6 +159,10 @@ route module, and stale-response isolation.
 The [chat and settings polish fixture](chat-polish.md) exercises attachment
 galleries, opt-in video playback, persisted tool details, and responsive settings
 through the real renderer in an isolated fake-engine workspace.
+
+The [rich tables fixture](rich-tables.md) checks Markdown tables and message-scoped
+CSV/TSV previews, large-file virtualization, sorting, search, export and keyboard
+interaction in a disposable workspace.
 
 The [people invitation fixture](people.md) checks hosted workspace sign-in,
 roles and device revocation through the real HTTP API with a stubbed email
