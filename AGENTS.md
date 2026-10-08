@@ -1120,7 +1120,7 @@ empty for everyone, so the section rule of `reachablePeers`
 (`server/peer-roster.ts`) put every person's bots in one "General" team.
 Each bot's roster, `list_bots`, @mentions, `ask_bot`, `delegate_bot` and
 peer threads reached the whole organization. Keep these rules, covered by
-`server/peer-scope.test.ts` and S3-12 in
+`server/peer-scope.test.ts`, `server/incidents.test.ts` and S3-12 in
 `server/org-sharing.e2e.test.ts`:
 
 - On an organization server a bot reaches only its owner's bots and the
@@ -1140,6 +1140,9 @@ peer threads reached the whole organization. Keep these rules, covered by
   `delegate_bot` with 409) into another bot's direct thread or into a room
   the sender is not in needs every reader of the destination in scope, and
   `list_room_targets` lists such a room only on the same condition.
+- A failure report goes to a Primary Bot of the failing bot's own owner
+  (`chiefForBot` with `primaryBotSameOwner`), never the first Primary Bot
+  of the organization.
 - `orgPeerInScope` refuses an empty owner, but index.ts never passes one:
   `effectiveBotOwner` gives a bot with no recorded owner to the local
   operator, so such a bot is in the operator's scope, not shut out.

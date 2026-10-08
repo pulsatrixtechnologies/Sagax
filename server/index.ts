@@ -10563,7 +10563,9 @@ function reportIncident(input: { kind: IncidentKind; bot: BotRecord; threadId: s
   const count = incidentLedger.note(threadId);
   // a crash loop is one incident, not a storm
   if (count.muted) return;
-  const chief = chiefForBot(store.bots, bot);
+  // On an organization server the report (title, room, detail, link) goes
+  // to a Primary Bot of the bot's own owner only, never the first one found.
+  const chief = chiefForBot(store.bots, bot, IDENTITY.kind === "perspicax" ? (candidate) => primaryBotSameOwner(candidate, bot) : undefined);
   // A run that could not start and a failed routine have already buzzed
   // the person (turn-failed, routine-failed) by the time they get here; a
   // failure or stall mid-run has not. One notification per failure, never two.
