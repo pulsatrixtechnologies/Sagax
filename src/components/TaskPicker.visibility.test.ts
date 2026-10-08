@@ -20,7 +20,7 @@ vi.mock("@/state/store", async (importOriginal) => ({
   }),
 }));
 
-const { TaskPicker, BotActivityPicker, GroupTaskPicker, ThreadReturnLink, ThreadsOffReturnLink } = await import("./TaskPicker");
+const { TaskPicker, BotActivityPicker, GroupTaskPicker, ThreadReturnLink, ThreadsOffReturnLink, botPickerThreads } = await import("./TaskPicker");
 const bot: Bot = {
   id: "pepper", name: "Pepper", color: "green", threadId: "current", title: "", description: "",
   notifications: true, unread: false, busy: true, messages: [], modelSelection: { instanceId: "fake", model: "fake" },
@@ -95,6 +95,44 @@ describe("optional bot thread picker", () => {
     const markup = renderToStaticMarkup(createElement(TaskPicker, { bot }));
     expect(markup).toContain("rounded-full border");
     expect(markup).toContain('aria-expanded="false"');
+  });
+});
+
+describe("the header picker lists only the open bot's threads", () => {
+  // Other bots and rooms with threads that need the person: before
+  // 2026-10-08 they rode into this picker as an "Active Threads" section.
+  const talon: Bot = { ...bot, id: "talon", name: "Talon", threadId: "talon-main", busy: false,
+    tasks: [{ threadId: "talon-main", title: "Talon work", createdAt: 1, unread: true }, { threadId: "talon-wait", title: "Talon approval", createdAt: 2, activity: "waiting-on-you" }] };
+  const room: Group = { id: "crew", name: "Crew", threadId: "crew-main", memberIds: [], defaultResponder: { kind: "everyone" }, bulletin: "", createdAt: 1, unread: true, messages: [],
+    tasks: [{ threadId: "crew-main", title: "Crew chat", createdAt: 1 }] };
+  // a thread a peer bot opened on Pepper is still Pepper's thread
+  const pepper: Bot = { ...bot, tasks: [...bot.tasks!,
+    { threadId: "peer-opened", title: "@Talon · work", createdAt: 7, openedBy: { botId: "talon", name: "Talon", at: 7 } },
+    { threadId: "routine-run", title: "Nightly", createdAt: 8, routineRunId: "run-1" }] };
+
+  it("lists this bot's own threads and nothing from other bots or rooms", () => {
+    fixture.bots = [pepper, talon];
+    fixture.groups = [room];
+    const markup = renderToStaticMarkup(createElement(TaskPicker, { bot: pepper, initialOpen: true }));
+    for (const title of ["Current chat", "Quiet history", "Approval needed", "Research", "Next job", "Finished reply", "@Talon · work"]) expect(markup).toContain(title);
+    expect(markup).toContain("opened by Talon");
+    for (const title of ["Talon work", "Talon approval", "Crew chat", "Nightly", "Active Threads"]) expect(markup).not.toContain(title);
+    expect(botPickerThreads(pepper).map((task) => task.threadId).sort())
+      .toEqual(["current", "idle", "waiting", "working", "queued", "unread", "peer-opened"].sort());
+  });
+
+  it("gives each row the actions the sidebar rows had, and each folder its actions", () => {
+    const filed: Bot = { ...pepper, projects: [{ id: "research", name: "Research" }],
+      tasks: pepper.tasks!.map((task) => task.threadId === "idle" ? { ...task, projectId: "research" } : task) };
+    const markup = renderToStaticMarkup(createElement(TaskPicker, { bot: filed, initialOpen: true }));
+    expect(markup).toContain('aria-label="Actions for Quiet history"');
+    expect(markup).toContain('aria-label="Actions for Research folder"');
+    expect(markup).toContain('data-picker-folder="research"');
+  });
+
+  it("keeps a peer-opened thread, labelled by who opened it", () => {
+    const row = botPickerThreads(pepper).find((task) => task.threadId === "peer-opened");
+    expect(row?.openedBy?.name).toBe("Talon");
   });
 });
 
