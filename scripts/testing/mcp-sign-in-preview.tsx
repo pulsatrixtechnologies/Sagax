@@ -1,10 +1,11 @@
 import { createRoot } from "react-dom/client";
-import { McpServersPanel } from "../../src/components/McpServersPanel";
+import { PluginsPanel } from "../../src/components/PluginsPanel";
 import { StoreProvider } from "../../src/state/store";
 import { applySkin, readSkin } from "../../src/lib/skins";
 import "../../src/styles.css";
 
+// The Plugins panel (MCP servers live in its Manage and detail pages).
 applySkin(readSkin());
 createRoot(document.getElementById("root")!).render(
-  <StoreProvider><main className="mx-auto max-w-4xl p-8"><McpServersPanel /></main></StoreProvider>,
+  <StoreProvider><PluginsPanel /></StoreProvider>,
 );

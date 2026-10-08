@@ -55,3 +55,14 @@ Slice 2 (`feat/mascot-desktop-2`):
 - [ ] Still open from the design: the call rail's task chips inside the call, the compact transcript, per-phase clips for each character, the captions switch inside the call bar's settings panel (that panel is being reworked on `fix/call-bar-card-animation`), slice 3 (pointer).
 
 Plan: `docs/plans/2026-10-08-mascot-full-mode.md` (research on ChatGPT Pets and Voice, Clicky, the current code, and the full design).
+
+## Plugins: what the Connect apps redesign left out (JC, 2026-10-08)
+
+Request: the Plugins panel works like the "Connect Apps" screens of Claude Desktop (main view, Manage plugins and skills, plugin detail). These parts of the reference screens are not done yet:
+
+- Categories taxonomy: apps are placed in Productivity, Communication, Design, Code, Password managers or Other by a word list on the client (`src/lib/plugins-model.ts`, `CATEGORY_WORDS`). Composio's catalog carries categories of its own; reading them from `/api/connectors/catalog` would place the long tail correctly.
+- "Recommended for you" is the reviewed plugin catalog (`shared/plugin-catalog.json`), the same for everyone. Nothing is personalised yet.
+- Several accounts per MCP server: an MCP server has one sign-in (one "default" account row). "+ Add another account" exists only for connected apps (Composio). Several OAuth profiles per server need `server/mcp-oauth.ts` to key tokens by server and profile.
+- Per-tool switches for connected apps: the detail page of a Composio app has no Tools card; its tools are chosen per bot in Access settings (`connectorTools` grants). A workspace-wide switch would sit beside the per-bot grants.
+- Uninstall a private skill from the panel: the skills library has no delete endpoint (`/api/skills-library/:name` reads and switches only).
+- Bot templates link from the Manage page (the reference has one); Sagax templates live in the bot creation flow.

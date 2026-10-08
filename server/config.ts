@@ -2067,6 +2067,17 @@ function skipMcpEntry(name: string, why: string): void {
 }
 
 /** The validated, normalized custom servers from config — or {}. */
+/** Per server, the tools switched off on the Plugins detail page. Only
+ * enabled, valid entries with at least one disabled tool are listed. */
+export function mcpDisabledTools(cfg: AppConfig): Record<string, string[]> {
+  const out: Record<string, string[]> = {};
+  for (const [name, raw] of Object.entries(cfg.mcpServers ?? {})) {
+    const parsed = parseStoredMcpServer(name, raw);
+    if (parsed.ok && parsed.server.enabled && parsed.server.disabledTools?.length) out[name] = parsed.server.disabledTools;
+  }
+  return out;
+}
+
 export function customMcpServers(cfg: AppConfig, only?: string[]): Record<string, CustomMcpServer> {
   const out: Record<string, CustomMcpServer> = {};
   for (const [name, raw] of Object.entries(cfg.mcpServers ?? {})) {

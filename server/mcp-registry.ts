@@ -7,6 +7,9 @@ import type { McpServerSpec, RemoteMcpSpec, StdioMcpSpec } from "./contracts.ts"
  * stored entry: a command this machine runs, or a URL to connect to. */
 export interface StoredStdioMcpServer extends StdioMcpSpec {
   enabled: boolean;
+  /** Tools of this server bots never see (the Plugins detail page's
+   * switches). Absent or empty: every tool. */
+  disabledTools?: string[];
 }
 /** An app registered in advance with the server's authorization server,
  * for servers that do not let apps register themselves. The secret is a
@@ -19,6 +22,7 @@ export interface McpOAuthClientConfig {
 export interface StoredRemoteMcpServer extends RemoteMcpSpec {
   enabled: boolean;
   oauth?: McpOAuthClientConfig;
+  disabledTools?: string[];
 }
 export type StoredMcpServer = StoredStdioMcpServer | StoredRemoteMcpServer;
 
@@ -29,6 +33,7 @@ export interface StdioMcpServerListing {
   args: string[];
   envKeys: string[];
   enabled: boolean;
+  disabledTools?: string[];
 }
 export interface RemoteMcpServerListing {
   name: string;
@@ -38,6 +43,7 @@ export interface RemoteMcpServerListing {
   enabled: boolean;
   /** present when a pre-registered sign-in app is set */
   oauth?: { clientId: string; scopes: string[]; clientSecretConfigured: boolean };
+  disabledTools?: string[];
 }
 export type McpServerListing = StdioMcpServerListing | RemoteMcpServerListing;
 
@@ -51,6 +57,18 @@ export const MAX_MCP_SERVERS = 20;
 const MAX_ARGS = 64;
 const MAX_ENV = 64;
 const MAX_HEADERS = 32;
+/** One tool selector per disabled tool must fit a tool scope (256). */
+export const MAX_DISABLED_TOOLS = 256;
+// eslint-disable-next-line no-control-regex
+const TOOL_NAME = /^[^*\x00-\x1f\x7f]{1,256}$/;
+const disabledToolsSchema = z.array(z.string().regex(TOOL_NAME, "A tool name is one line of text without *."))
+  .max(MAX_DISABLED_TOOLS, `Disable at most ${MAX_DISABLED_TOOLS} tools per server.`);
+
+/** The disabled tool list to store: a new one, else the saved one. */
+function disabledToolsFor(incoming: string[] | undefined, existing?: StoredMcpServer): { disabledTools?: string[] } {
+  const list = [...new Set(incoming ?? existing?.disabledTools ?? [])].sort();
+  return list.length ? { disabledTools: list } : {};
+}
 const MCP_NAME = /^[a-z][a-z0-9_-]{0,31}$/;
 const ENV_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
 /** An HTTP header field name: RFC 9110 token characters. */
@@ -110,6 +128,7 @@ const stdioEntrySchema = z.object({
   args: z.array(z.string().max(4_096)).max(MAX_ARGS).optional(),
   env: z.record(z.string(), z.string().max(16_384)).optional(),
   enabled: z.boolean().optional(),
+  disabledTools: disabledToolsSchema.optional(),
 }).strict();
 
 const stdioMutationSchema = stdioEntrySchema.extend({
@@ -136,6 +155,7 @@ const remoteEntrySchema = z.object({
   headers: z.record(z.string(), z.string().max(16_384)).optional(),
   oauth: oauthClientSchema.optional(),
   enabled: z.boolean().optional(),
+  disabledTools: disabledToolsSchema.optional(),
 }).strict();
 
 const remoteMutationSchema = remoteEntrySchema.extend({
@@ -227,6 +247,7 @@ function parseStdio(raw: unknown, mutation: boolean, existing?: StoredMcpServer)
       args: parsed.data.args ?? [],
       env: env.values,
       enabled: enabledFor(parsed.data.enabled, mutation, existing),
+      ...disabledToolsFor(parsed.data.disabledTools, existing),
     },
   };
 }
@@ -256,6 +277,7 @@ function parseRemote(raw: unknown, mutation: boolean, existing?: StoredMcpServer
       headers: headers.values,
       ...(oauth.value ? { oauth: oauth.value } : {}),
       enabled: enabledFor(parsed.data.enabled, mutation, existing),
+      ...disabledToolsFor(parsed.data.disabledTools, existing),
     },
   };
 }
@@ -301,6 +323,7 @@ export function listMcpServers(raw: Record<string, unknown> | undefined): McpSer
         ...(server.oauth ? {
           oauth: { clientId: server.oauth.clientId, scopes: server.oauth.scopes ?? [], clientSecretConfigured: Boolean(server.oauth.clientSecret) },
         } : {}),
+        ...(server.disabledTools?.length ? { disabledTools: server.disabledTools } : {}),
       }];
     }
     return [{
@@ -309,6 +332,7 @@ export function listMcpServers(raw: Record<string, unknown> | undefined): McpSer
       args: server.args,
       envKeys: Object.keys(server.env).sort(),
       enabled: server.enabled,
+      ...(server.disabledTools?.length ? { disabledTools: server.disabledTools } : {}),
     }];
   });
 }

@@ -211,6 +211,7 @@ import {
   EVENTS_DIR,
   NATIVE_DIR,
   customMcpServers,
+  mcpDisabledTools,
   roomHandoffLimits,
   onConfigSaved,
   driverKeyBacked,
@@ -254,6 +255,7 @@ import { attachmentsInText, autoModelRecord, bareModelId, explainPick, familyOfM
 import type { AutoModelRecord } from "../shared/auto-model.ts";
 import { decodeGeneratedImage } from "./generated-image.ts";
 import {
+  MAX_DISABLED_TOOLS,
   MAX_MCP_SERVERS,
   isRemoteMcpServer,
   listMcpServers,
@@ -263,6 +265,7 @@ import {
   parseStoredMcpServer,
   type StoredRemoteMcpServer,
 } from "./mcp-registry.ts";
+import { withDisabledTools } from "./mcp-tool-filter.ts";
 import { probeMcpServer } from "./mcp-probe.ts";
 import { callbackPage, McpOAuthError, McpOAuthManager, McpOAuthVault, phoneOAuthReturns, phoneReturnLocation, resolveVaultKey, type VaultKeySource } from "./mcp-oauth.ts";
 import {
@@ -13012,7 +13015,7 @@ async function startTurn(
       // never pre-allowed, so every call rides the normal permission flow.
       if (instance.adapter.capabilities.customMcp === true) {
         await refreshMcpOAuth(bot);
-        const custom = engineMcpServers(bot);
+        const custom = engineMcpServers(bot, threadId);
         if (Object.keys(custom).length) integrations.custom = custom;
       }
       // Slice 5: the bot's Perspicax profiles, as the person who speaks.
@@ -16008,7 +16011,7 @@ async function runGroupMemberTurn(
   // user-configured MCP servers: same gating as the 1:1 site above.
   if (instance.adapter.capabilities.customMcp === true) {
     await refreshMcpOAuth(bot);
-    const custom = engineMcpServers(bot);
+    const custom = engineMcpServers(bot, threadId);
     if (Object.keys(custom).length) integrations.custom = custom;
   }
   // Slice 5: the bot's Perspicax profiles, as the person who speaks in the room.
@@ -18998,6 +19001,13 @@ function configForAccess(status: ReturnType<typeof configStatus>, admin: boolean
   };
 }
 
+/** PATCH /api/mcp/servers/:name: the on/off switch and the disabled tools. */
+const mcpServerPatchSchema = z.object({
+  enabled: z.boolean().optional(),
+  // eslint-disable-next-line no-control-regex
+  disabledTools: z.array(z.string().regex(/^[^*\x00-\x1f\x7f]{1,256}$/)).max(MAX_DISABLED_TOOLS).optional(),
+}).strict();
+
 function mcpServerResponse() {
   // While enrolled with custom servers off, say which servers stay configured
   // but never reach bots, and why. Nothing here is written to config.json.
@@ -19030,8 +19040,11 @@ function mcpServerBody(body: unknown): Record<string, unknown> {
 
 /** Configured MCP servers that may reach this bot's engine. While enrolled,
  * the organisation's allow-list filters them; config.json is never changed. */
-function engineMcpServers(bot: BotRecord) {
-  return mcpOAuth.withAuthHeaders(managedPolicy.filterMcp(withoutHostCommands(customMcpServers(cfg, bot.mcpServers))));
+function engineMcpServers(bot: BotRecord, threadId?: string) {
+  const servers = mcpOAuth.withAuthHeaders(managedPolicy.filterMcp(withoutHostCommands(customMcpServers(cfg, bot.mcpServers))));
+  // A turn mounts a server with tools switched off through the gate
+  // (server/mcp-tool-filter.ts); listings only need the names.
+  return threadId === undefined ? servers : withDisabledTools(servers, mcpDisabledTools(cfg), threadId);
 }
 /** Organization server: a server-wide MCP server that is a command would
  * run on this host, where no person's tools run (withholdHostTools). It is
@@ -32700,11 +32713,20 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         if (!existing.ok) return json(res, 400, { error: existing.error });
         const body = await readBody(req);
         if (method === "PATCH") {
-          if (!body || typeof body !== "object" || Array.isArray(body)
-            || Object.keys(body).length !== 1 || typeof body.enabled !== "boolean") {
-            return json(res, 400, { error: "Only an enabled boolean can be changed here." });
+          // The server switch, or the tools switched off for every bot
+          // (Plugins > the server > Tools).
+          const patch = mcpServerPatchSchema.safeParse(body);
+          if (!patch.success || Object.keys(patch.data).length === 0) {
+            return json(res, 400, { error: "Only an enabled boolean or a disabledTools list can be changed here." });
           }
-          persistMcpServers({ ...current, [name]: { ...existing.server, enabled: body.enabled } });
+          const next: Record<string, unknown> = { ...existing.server };
+          if (patch.data.enabled !== undefined) next.enabled = patch.data.enabled;
+          if (patch.data.disabledTools !== undefined) {
+            const tools = [...new Set(patch.data.disabledTools)].sort();
+            if (tools.length) next.disabledTools = tools;
+            else delete next.disabledTools;
+          }
+          persistMcpServers({ ...current, [name]: next });
           return json(res, 200, mcpServerResponse());
         }
 

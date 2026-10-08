@@ -1,18 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import {
-  CheckCircle2,
-  ClipboardPaste,
-  FlaskConical,
-  Globe,
-  KeyRound,
-  Loader2,
-  LogOut,
-  Pencil,
-  Plus,
-  RefreshCw,
-  ServerCog,
-  Trash2,
-} from "lucide-react";
+import { CheckCircle2, KeyRound, Loader2 } from "lucide-react";
 
 import { cn } from "@/lib/cn";
 import { claudeUserMcpEnabled } from "@/lib/feature-flags";
@@ -50,7 +37,13 @@ interface RemoteMcpListing {
 export type McpAuthState = "none" | "required" | "connected" | "expired" | "error";
 /** managedBy: the enrolled organisation has not approved this server, so it
  * stays configured but never reaches bots. */
-export type McpServerListing = (StdioMcpListing | RemoteMcpListing) & { managedBy?: string };
+export type McpServerListing = (StdioMcpListing | RemoteMcpListing) & {
+  managedBy?: string;
+  /** tools no bot sees (Plugins > the server > Tools) */
+  disabledTools?: string[];
+  /** where the server came from: absent when added by hand */
+  source?: string;
+};
 
 export function isRemoteMcpListing(server: McpServerListing): server is RemoteMcpListing {
   return "url" in server;
@@ -155,7 +148,7 @@ export function parseMcpHeaders(
   return { ok: true, headers };
 }
 
-function probeToolsLabel(tools: ProbeResult["tools"]): string {
+export function probeToolsLabel(tools: ProbeResult["tools"]): string {
   if (!tools?.length) return t("mcp.probe.noTools");
   const names = tools.map((tool) => tool.name).join(", ");
   return tools.length === 1
@@ -185,9 +178,7 @@ function draftFor(server: McpServerListing): McpDraft {
   };
 }
 
-/** `embedded`: a section of the Apps pop-up's one scrolling view, rather
- * than a page that owns its own scroll. */
-export function McpServersPanel({ embedded = false }: { embedded?: boolean } = {}) {
+export function useMcpServers() {
   const { state: store } = useStore();
   // While enrolled with custom servers off, only approved servers can be added.
   const policy = store.config?.managedPolicy;
@@ -514,65 +505,66 @@ export function McpServersPanel({ embedded = false }: { embedded?: boolean } = {
     }
   };
 
+  /** The tools switched off for every bot (Plugins > the server > Tools). */
+  const setDisabledTools = async (server: McpServerListing, disabledTools: string[]) => {
+    setBusy(`tools:${server.name}`);
+    loadGeneration.current += 1;
+    setError(null);
+    // Show the switch where it was put at once; the answer confirms it.
+    setServers((current) => current?.map((entry) => entry.name === server.name ? { ...entry, disabledTools } : entry) ?? current);
+    try {
+      const result = await api(`/api/mcp/servers/${server.name}`, {
+        method: "PATCH",
+        body: JSON.stringify({ disabledTools }),
+      });
+      setServers(result.servers ?? []);
+      updateMcpServers(result.servers ?? []);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+      void reloadQuietly();
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const startAdd = () => {
+    setEditing("new");
+    setDraft(EMPTY_DRAFT);
+    setError(null);
+    setNotice(null);
+  };
+  const startEdit = (server: McpServerListing) => {
+    setEditing(server.name);
+    setDraft(draftFor(server));
+    setError(null);
+    setNotice(null);
+  };
+  const toggleImport = () => {
+    setImportOpen((open) => !open);
+    setError(null);
+    setNotice(null);
+  };
+  const forgetClientDraft = (name: string) => setClientDraft((current) => {
+    const next = { ...current };
+    delete next[name];
+    return next;
+  });
+
+  return {
+    servers, policy, restricted, editing, draft, setDraft, busy, error, notice, probe, importOpen, setImportOpen, importText, setImportText,
+    oauthError, waiting, clientDraft, setClientDraft, forgetClientDraft, load, signIn, signOut, save, toggle, test, remove,
+    importServers, closeEditor, setDisabledTools, startAdd, startEdit, toggleImport,
+  };
+}
+
+export type McpServers = ReturnType<typeof useMcpServers>;
+
+/** Paste a config block (the shape Claude Code, Cursor and Claude Desktop
+ * write) to add several servers at once. */
+export function McpImportForm({ mcp }: { mcp: McpServers }) {
+  const { importOpen, importText, setImportText, setImportOpen, busy, importServers } = mcp;
   return (
-    <section
-      data-mcp-servers
-      aria-labelledby="mcp-servers-title"
-      className={embedded ? "" : "min-h-0 flex-1 overflow-y-auto px-6 pb-7 pt-5 sm:px-8"}
-    >
-      <div className={embedded ? "" : "mx-auto max-w-[840px]"}>
-        {/* wraps by the room it has, not the window: inside a pop-up a wide
-            window can still leave too little for the intro and the buttons */}
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div className="min-w-0 flex-[1_1_280px]">
-            <h3 id="mcp-servers-title" className="text-[15px] font-semibold text-ink">{t("mcp.title")}</h3>
-            <p className="mt-1 max-w-[610px] break-words text-[12.5px] leading-relaxed text-ink-secondary">
-              {t("mcp.subtitle")}
-            </p>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              onClick={() => void load(true)}
-              disabled={busy !== null}
-              className="rounded-lg p-2 text-ink-secondary transition-colors hover:bg-raised hover:text-ink disabled:opacity-40"
-              aria-label={t("mcp.refreshAria")}
-            >
-              <RefreshCw size={16} className={cn(busy === "load" && "animate-spin")} />
-            </button>
-            <button
-              type="button"
-              disabled={busy !== null || restricted}
-              title={restricted && policy ? t("policy.managedBy", { organization: policy.organizationName }) : undefined}
-              onClick={() => {
-                setImportOpen((open) => !open);
-                setError(null);
-                setNotice(null);
-              }}
-              className="flex items-center gap-1.5 rounded-lg bg-control px-3 py-2 text-[12.5px] font-medium text-ink hover:bg-raised-hover disabled:opacity-40"
-            >
-              <ClipboardPaste size={14} /> {t("mcp.import")}
-            </button>
-            <button
-              type="button"
-              disabled={busy !== null || (restricted && !policy?.mcp.allowlist.length)}
-              title={restricted && policy ? t("policy.managedBy", { organization: policy.organizationName }) : undefined}
-              onClick={() => {
-                setEditing("new");
-                setDraft(EMPTY_DRAFT);
-                setError(null);
-                setNotice(null);
-              }}
-              className="flex items-center gap-1.5 rounded-lg bg-accent px-3 py-2 text-[12.5px] font-medium text-accent-ink disabled:opacity-40"
-            >
-              <Plus size={14} /> {t(embedded ? "apps.mcp.add" : "mcp.addServer")}
-            </button>
-          </div>
-        </div>
-
-        {restricted && policy && <p role="status" className="mt-3 text-[12.5px] leading-relaxed text-ink-secondary">{t("policy.mcpRestricted", { organization: policy.organizationName })}</p>}
-        <ClaudeMcpSwitch />
-
+    <>
         {importOpen && (
           <div className="mt-4 rounded-2xl border border-hairline/60 bg-card p-4 sm:p-5">
             <div className="text-[14px] font-medium text-ink">{t("mcp.import")}</div>
@@ -611,12 +603,16 @@ export function McpServersPanel({ embedded = false }: { embedded?: boolean } = {
           </div>
         )}
 
-        {error && <div role="alert" className="mt-3 rounded-lg bg-danger/10 px-3 py-2 text-[12px] text-danger">{typeof error === "string" ? error : t(error.key, error.params)}</div>}
-        {notice && <div role="status" className="mt-3 rounded-lg bg-success/10 px-3 py-2 text-[12px] text-success">{t(notice.key, {
-          ...notice.params,
-          ...(notice.stateKey ? { state: t(notice.stateKey) } : {}),
-        })}</div>}
+    </>
+  );
+}
 
+/** The add / edit form of one server: a command or an address, with its
+ * environment or headers. Values saved before are never shown again. */
+export function McpServerEditor({ mcp }: { mcp: McpServers }) {
+  const { editing, draft, setDraft, busy, closeEditor, save } = mcp;
+  return (
+    <>
         {editing && (
           <div className="mt-4 rounded-2xl border border-hairline/60 bg-card p-4 sm:p-5">
             <div className="text-[14px] font-medium text-ink">{editing === "new" ? t("mcp.editorNew") : t("mcp.editorEdit", { name: editing })}</div>
@@ -737,127 +733,27 @@ export function McpServersPanel({ embedded = false }: { embedded?: boolean } = {
           </div>
         )}
 
-        {servers === null ? (
-          <div className="flex items-center justify-center gap-2 py-24 text-[13px] text-ink-secondary"><Loader2 size={14} className="animate-spin" /> {t("mcp.loading")}</div>
-        ) : servers.length === 0 && !editing ? (
-          <div className="mt-5 flex min-h-64 flex-col items-center justify-center rounded-2xl border border-dashed border-hairline/60 text-center">
-            <div className="flex size-11 items-center justify-center rounded-xl bg-raised text-ink-secondary"><ServerCog size={21} /></div>
-            <div className="mt-3 text-[14px] font-medium text-ink">{t("mcp.empty.title")}</div>
-            <div className="mt-1 max-w-sm text-[12.5px] text-ink-secondary">{t("mcp.empty.desc")}</div>
-          </div>
-        ) : (
-          <div className="mt-5 space-y-3">
-            {servers.map((server) => {
-              const result = probe[server.name];
-              return (
-                <div key={server.name} className="rounded-2xl border border-hairline/50 bg-card px-4 py-4 sm:px-5">
-                  <div data-mcp-row className="flex flex-wrap items-center gap-3">
-                    <div className={cn("flex size-10 shrink-0 items-center justify-center rounded-xl", server.enabled ? "bg-accent/15 text-accent-text" : "bg-raised text-ink-secondary")}>
-                      {isRemoteMcpListing(server) ? <Globe size={19} /> : <ServerCog size={19} />}
-                    </div>
-                    <div className="min-w-0 flex-[1_1_220px]">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className="min-w-0 truncate text-[14px] font-medium text-ink">{server.name}</span>
-                        <span className={cn("rounded-full px-2 py-0.5 text-[10.5px]", server.enabled ? "bg-accent/15 text-accent-text" : "bg-raised text-ink-secondary")}>{t(server.enabled ? "mcp.badge.on" : "mcp.badge.off")}</span>
-                        {server.managedBy && <span className="rounded-full bg-raised px-2 py-0.5 text-[10.5px] text-ink-secondary">{t("policy.managedBy", { organization: server.managedBy })}</span>}
-                      </div>
-                      {server.managedBy && <div className="mt-1 text-[11.5px] text-ink-secondary">{t("policy.mcpBlocked", { organization: server.managedBy })}</div>}
-                      <div className="mt-1 truncate font-mono text-[11.5px] text-ink-secondary">{isRemoteMcpListing(server) ? server.url : [server.command, ...server.args].join(" ")}</div>
-                      {isRemoteMcpListing(server)
-                        ? server.headerKeys.length > 0 && <div className="mt-1 truncate text-[11px] text-ink-secondary">{t("mcp.headersSaved", { keys: server.headerKeys.join(", ") })}</div>
-                        : server.envKeys.length > 0 && <div className="mt-1 truncate text-[11px] text-ink-secondary">{t("mcp.secretsSaved", { keys: server.envKeys.join(", ") })}</div>}
-                      {isRemoteMcpListing(server) && <McpAuthLine server={server} />}
-                    </div>
-                    <div data-mcp-row-actions className="ml-auto flex flex-wrap items-center justify-end gap-1">
-                      {isRemoteMcpListing(server) && (server.auth === "required" || server.auth === "expired") && (
-                        <button
-                          type="button"
-                          disabled={busy !== null || Boolean(server.managedBy)}
-                          onClick={() => void signIn(server)}
-                          className="ui-button ui-button-primary mr-1 flex items-center gap-1.5 text-[12px] font-medium"
-                          aria-label={t("mcp.oauth.signInAria", { name: server.name })}
-                        >
-                          {busy === `oauth:${server.name}` || waiting[server.name] ? <Loader2 size={13} className="animate-spin" /> : <KeyRound size={13} />}
-                          {t(server.auth === "expired" ? "mcp.oauth.signInAgain" : "mcp.oauth.signIn")}
-                        </button>
-                      )}
-                      {isRemoteMcpListing(server) && server.auth === "connected" && (
-                        <button
-                          type="button"
-                          disabled={busy !== null}
-                          onClick={() => void signOut(server)}
-                          className="ui-button mr-1 flex items-center gap-1.5 text-[12px]"
-                          aria-label={t("mcp.oauth.disconnectAria", { name: server.name })}
-                        >
-                          {busy === `oauth:${server.name}` ? <Loader2 size={13} className="animate-spin" /> : <LogOut size={13} />}
-                          {t("mcp.oauth.disconnect")}
-                        </button>
-                      )}
-                      <button type="button" disabled={busy !== null} onClick={() => void test(server)} className="flex items-center gap-1.5 rounded-lg px-2.5 py-2 text-[12px] text-ink-secondary hover:bg-raised hover:text-ink disabled:opacity-40">
-                        {busy === `test:${server.name}` ? <Loader2 size={14} className="animate-spin" /> : <FlaskConical size={14} />} {t("mcp.test")}
-                      </button>
-                      <button type="button" disabled={busy !== null} onClick={() => { setEditing(server.name); setDraft(draftFor(server)); setError(null); setNotice(null); }} className="rounded-lg p-2 text-ink-secondary hover:bg-raised hover:text-ink disabled:opacity-40" aria-label={t("mcp.editAria", { name: server.name })}><Pencil size={14} /></button>
-                      <button type="button" disabled={busy !== null} onClick={() => void remove(server)} className="rounded-lg p-2 text-ink-secondary hover:bg-danger/10 hover:text-danger disabled:opacity-40" aria-label={t("mcp.removeAria", { name: server.name })}><Trash2 size={14} /></button>
-                      <span className="ml-1 flex items-center">
-                        {busy === `toggle:${server.name}` && <Loader2 size={13} className="mr-1.5 animate-spin text-ink-secondary" />}
-                        <Switch
-                          checked={server.enabled}
-                          disabled={busy !== null}
-                          onClick={() => void toggle(server)}
-                          aria-label={t("mcp.toggleAria", {
-                            name: server.name,
-                            state: t(server.enabled ? "mcp.state.off" : "mcp.state.on"),
-                          })}
-                          className="disabled:opacity-40"
-                        />
-                      </span>
-                    </div>
-                  </div>
-                  {waiting[server.name] && (
-                    <div role="status" className="mt-3 flex items-center gap-2 rounded-lg bg-raised/60 px-3 py-2 text-[12px] text-ink-secondary">
-                      <Loader2 size={13} className="shrink-0 animate-spin" /> {t("mcp.oauth.waiting")}
-                    </div>
-                  )}
-                  {clientDraft[server.name] && (
-                    <McpClientForm
-                      draft={clientDraft[server.name]!}
-                      disabled={busy !== null}
-                      onChange={(next) => setClientDraft((current) => ({ ...current, [server.name]: next }))}
-                      onCancel={() => setClientDraft((current) => {
-                        const next = { ...current };
-                        delete next[server.name];
-                        return next;
-                      })}
-                      onSubmit={() => void signIn(server)}
-                    />
-                  )}
-                  {oauthError[server.name] && (
-                    <div role="alert" className="mt-3 rounded-lg bg-danger/10 px-3 py-2 text-[12px] text-danger">
-                      {(() => {
-                        const value = oauthError[server.name]!;
-                        return typeof value === "string" ? value : t(value.key, value.params);
-                      })()}
-                    </div>
-                  )}
-                  {result && (
-                    <div role="status" className={cn("mt-3 rounded-lg px-3 py-2 text-[12px]", result.ok ? "bg-success/10 text-success" : "bg-danger/10 text-danger")}>
-                      {result.ok ? (
-                        <span className="flex items-start gap-2"><CheckCircle2 size={14} className="mt-px shrink-0" /> {t("mcp.probe.connected")} {probeToolsLabel(result.tools)}</span>
-                      ) : result.error}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
-    </section>
+    </>
+  );
+}
+
+/** The panel's last error or confirmation about MCP servers. */
+export function McpMessages({ mcp }: { mcp: McpServers }) {
+  const { error, notice } = mcp;
+  return (
+    <>
+        {error && <div role="alert" className="mt-3 rounded-lg bg-danger/10 px-3 py-2 text-[12px] text-danger">{typeof error === "string" ? error : t(error.key, error.params)}</div>}
+        {notice && <div role="status" className="mt-3 rounded-lg bg-success/10 px-3 py-2 text-[12px] text-success">{t(notice.key, {
+          ...notice.params,
+          ...(notice.stateKey ? { state: t(notice.stateKey) } : {}),
+        })}</div>}
+
+    </>
   );
 }
 
 /** One line under a remote server: whether bots can reach it signed in. */
-function McpAuthLine({ server }: { server: RemoteMcpListing & { managedBy?: string } }) {
+export function McpAuthLine({ server }: { server: RemoteMcpListing & { managedBy?: string } }) {
   const issuer = server.authIssuer ?? new URL(server.url).host;
   if (!server.auth || server.auth === "none") return null;
   if (server.auth === "connected") {
@@ -885,7 +781,7 @@ function McpAuthLine({ server }: { server: RemoteMcpListing & { managedBy?: stri
 
 /** For a provider without dynamic registration: the client the user made
  * there, and the redirect URI they must give it. */
-function McpClientForm({ draft, disabled, onChange, onCancel, onSubmit }: {
+export function McpClientForm({ draft, disabled, onChange, onCancel, onSubmit }: {
   draft: ClientDraft;
   disabled: boolean;
   onChange: (next: ClientDraft) => void;
@@ -925,7 +821,7 @@ function McpClientForm({ draft, disabled, onChange, onCancel, onSubmit }: {
  * also gives them the MCP servers and connectors of this machine's own
  * Claude Code setup — what Codex bots already do with their config. Saved
  * on the workspace; the next message picks it up. */
-function ClaudeMcpSwitch() {
+export function ClaudeMcpSwitch() {
   const { state, dispatch } = useStore();
   const enabled = claudeUserMcpEnabled(state.config);
   const [saving, setSaving] = useState(false);
