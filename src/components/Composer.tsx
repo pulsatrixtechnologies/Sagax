@@ -99,7 +99,7 @@ import {
 } from "@/lib/composer-commands";
 import { useGroupHarnessCommands, useHarnessCommands } from "@/lib/harness-commands";
 import { ComposerCommandMenu } from "./ComposerCommandMenu";
-import { WorkplaceNotice } from "./WorkplaceNotice";
+import { ComposerNoticeBand, WorkplaceNotice } from "./WorkplaceNotice";
 
 /** The active @mention query at the caret: the text between an `@` that
  * starts a word and the caret. null = no mention being typed. */
@@ -928,16 +928,18 @@ export function Composer({
       {/* No fill or hairline on this wrapper — those were the black frame
           in the pill's top corners. The dock overlays the transcript. */}
       {speechError && (
-        <div className="pointer-events-auto mb-2 w-full rounded-lg border border-warning/30 bg-warning/10 px-3 py-2 text-[12px] text-warning">
-          {speechError}
-        </div>
+        <ComposerNoticeBand className="pointer-events-auto">
+          <div className="w-full rounded-lg border border-warning/30 bg-warning/10 px-3 py-2 text-[12px] text-warning">
+            {speechError}
+          </div>
+        </ComposerNoticeBand>
       )}
       <div className="pointer-events-auto relative w-full">
         <WorkplaceNotice place={modeBot ? effectivePlace(modeBot, composerTask) : null} />
         {failedSends.map((failed) => (
+          <ComposerNoticeBand key={failed.id}>
           <div
-            key={failed.id}
-            className="mb-2 flex items-center gap-2 rounded-lg border border-danger/30 bg-danger/10 px-3 py-2 text-[12.5px] text-danger"
+            className="flex items-center gap-2 rounded-lg border border-danger/30 bg-danger/10 px-3 py-2 text-[12.5px] text-danger"
           >
             <span className="min-w-0 flex-1 truncate">
               {t("composer.failed.notSent", {
@@ -961,6 +963,7 @@ export function Composer({
               <X size={13} strokeWidth={2.5} />
             </button>
           </div>
+          </ComposerNoticeBand>
         ))}
         {commandMotion.shown && (
           <ComposerCommandMenu
