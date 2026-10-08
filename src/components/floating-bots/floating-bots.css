@@ -59,7 +59,28 @@ html[data-floating-bot] #root {
   flex-direction: column;
   min-height: 0;
   margin: 0;
-  animation: fb-in 0.12s ease-out both;
+  transform-origin: bottom right;
+  animation: fb-bubble-in 0.2s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+/* the character near a screen's top or left edge: the chat opens below it, or to its right */
+.fb-root.fb-window.fb-below .fb-balloon {
+  /* the root's bottom padding (4) and 4 more: the same 8 px gap as above */
+  top: calc(100% + 4px);
+  bottom: auto;
+  transform-origin: top right;
+}
+.fb-root.fb-window.fb-left .fb-balloon {
+  right: auto;
+  left: 0;
+  transform-origin: bottom left;
+}
+.fb-root.fb-window.fb-below.fb-left .fb-balloon {
+  transform-origin: top left;
+}
+/* closing: the open played backwards (MenuMotion's length), a picture that takes no clicks */
+.fb-root .fb-balloon[data-closing] {
+  pointer-events: none;
+  animation: fb-bubble-out 0.2s cubic-bezier(0.22, 1, 0.36, 1) forwards;
 }
 .fb-root.fb-window .fb-balloon[data-capped] .fb-thread {
   /* a reply scrolls inside the quick chat; the grip (a chosen height) lifts this cap */
@@ -667,6 +688,15 @@ html[data-floating-bot] #root {
   }
 }
 
+/* the chat grows out of the mascot's side (the app's pop-in, a little shorter in travel) */
+@keyframes fb-bubble-in {
+  from { opacity: 0; transform: scale(0.96); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes fb-bubble-out {
+  from { opacity: 1; transform: none; }
+  to { opacity: 0; transform: scale(0.96); }
+}
 @keyframes fb-pop {
   from { opacity: 0; transform: translateY(6px) scale(0.97); }
   to { opacity: 1; transform: none; }
@@ -902,6 +932,11 @@ html[data-floating-bot] #root {
   line-height: 18px;
   overflow-y: auto;
 }
+/* the composer's field: the app's chat input type (13 px on 20 px) */
+.fb-root .fb-balloon textarea.fb-composer-field {
+  font-size: 13px;
+  line-height: 20px;
+}
 /* the resize grip, at the balloon's corner away from the mascot */
 .fb-root .fb-grip {
   position: absolute;
@@ -924,6 +959,149 @@ html[data-floating-bot] #root {
 }
 .fb-root .r98-balloon .fb-head.r98-titlebar {
   margin: -2px -2px 6px;
+}
+
+/* ─── the chat's surface, list and composer: the app's chat at the balloon's scale ── */
+/* Same tokens and type as the main window's chat (ChatView, Composer): 13 px
+   on a 20 px line, the user's words in the user bubble, the composer pill
+   with its clip, field, model chip and voice button. */
+.fb-root:not(.r98-root) .fb-face {
+  padding: 10px 12px 10px;
+  border: 0.5px solid var(--color-border);
+  border-radius: 18px;
+  background: var(--color-elevated);
+  box-shadow: 0 12px 32px -8px rgb(0 0 0 / 0.32), 0 1px 2px rgb(0 0 0 / 0.08);
+  font-family: var(--font-sans, inherit);
+}
+.fb-root:not(.r98-root) .fb-head {
+  margin: -2px -4px 6px 0;
+}
+.fb-root:not(.r98-root) .fb-name {
+  font-size: 13px;
+}
+.fb-root:not(.r98-root) .fb-thread {
+  font-size: 13px;
+  line-height: 20px;
+}
+.fb-root:not(.r98-root) .fb-exchange + .fb-exchange {
+  margin-top: 12px;
+}
+.fb-root:not(.r98-root) .fb-asked {
+  width: fit-content;
+  max-width: 85%;
+  margin: 0 0 8px auto;
+  padding: 5px 11px;
+  border-radius: 14px;
+  background: var(--color-bubble-user, var(--color-raised));
+  color: var(--color-bubble-user-ink, var(--color-ink));
+  font-size: 13px;
+  line-height: 20px;
+  unicode-bidi: plaintext;
+}
+.fb-root:not(.r98-root) .fb-open {
+  align-self: flex-start;
+  margin-top: 8px;
+}
+.fb-root .fb-composer {
+  display: flex;
+  flex: none;
+  align-items: flex-end;
+  gap: 2px;
+  margin-top: 8px;
+  padding: 4px 4px 4px 6px;
+  border: 0.5px solid var(--color-border);
+  border-radius: 18px;
+  background: var(--color-composer, var(--color-inset));
+  box-shadow: 0 2px 8px -1px #0000000d, 0 1px 2px #00000008;
+  transition: border-color 0.15s ease;
+}
+.fb-root .fb-composer:hover,
+.fb-root .fb-composer:focus-within {
+  border-color: var(--color-border-strong, var(--color-border));
+}
+.fb-root .fb-composer-field {
+  flex: 1;
+  min-width: 0;
+  max-height: 7.5rem;
+  padding: 4px 4px;
+  border: 0;
+  background: transparent;
+  color: var(--color-ink);
+  font-family: inherit;
+  outline: none;
+  resize: none;
+  overflow-y: auto;
+}
+.fb-root .fb-composer-field::placeholder {
+  color: var(--color-ink-secondary);
+}
+.fb-root .fb-composer-btn,
+.fb-root .fb-send-btn,
+.fb-root .fb-voice-btn {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--color-ink-secondary);
+  cursor: pointer;
+  transition: background-color 0.15s ease, color 0.15s ease, filter 0.15s ease;
+}
+.fb-root .fb-composer-btn:hover {
+  background: var(--color-control, var(--color-hover));
+  color: var(--color-ink);
+}
+.fb-root .fb-send-btn {
+  background: var(--color-accent);
+  color: var(--color-accent-ink, #fff);
+}
+.fb-root .fb-send-btn:hover:not(:disabled) {
+  filter: brightness(1.1);
+}
+.fb-root .fb-send-btn:disabled {
+  background: var(--color-raised, var(--color-inset));
+  color: var(--color-ink-secondary);
+  cursor: default;
+}
+.fb-root .fb-voice-btn {
+  background: var(--color-ink);
+  color: var(--color-app, var(--color-elevated));
+}
+.fb-root .fb-voice-btn:hover {
+  filter: brightness(1.1);
+}
+.fb-root .fb-model-chip {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 2px;
+  max-width: 96px;
+  height: 28px;
+  padding: 0 4px 0 6px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--color-ink-secondary);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.fb-root .fb-model-chip span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.fb-root .fb-model-chip:hover {
+  background: var(--color-raised, var(--color-hover));
+  color: var(--color-ink);
+}
+.fb-root .fb-composer :focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 1px;
 }
 
 /* replies in the Hibou 98 balloon: plain 98 colors */

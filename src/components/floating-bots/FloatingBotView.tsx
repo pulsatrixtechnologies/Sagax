@@ -29,7 +29,9 @@ import { completeMascotLook } from "../../../shared/mascot-look";
 import { mascotStage } from "./fit";
 import { mascotFields, type FloatingEvent, type FloatingMenuItem, type FloatingPose, type FloatingSnapshot } from "./protocol";
 import { characterMoves } from "./moves";
-import { dockedWindowSize, type Size } from "./window-frame";
+import { CHAT_BALLOON, dockedWindowSize, type Size } from "./window-frame";
+import type { ChatPlacement } from "./placement";
+import { useHeldMenuMotion } from "@/components/MenuMotion";
 import { MascotCallCardView, MascotCallPill, type LevelSource, type MascotCallCard } from "./MascotCall";
 import type { MascotLook } from "../../../shared/mascot-look";
 
@@ -118,6 +120,22 @@ export interface FloatingBotViewProps {
   menuAt?: (x: number, y: number) => void;
   /** Desktop: a move picked in the native menu's "Moves" (the drawn menu plays its own). */
   onMove?: (listener: (clip: string) => void) => () => void;
+  /**
+   * Desktop: where the chat goes, from where the character stands on its
+   * display (placement.ts). The window holds the chat's room on that side.
+   */
+  layout?: MascotLayout | null;
+}
+
+/** The desktop mascot's layout around its character: the chat's side and room. */
+export interface MascotLayout {
+  side: BalloonSide;
+  chat: ChatPlacement | null;
+}
+
+/** The balloon's room from a placement: as big as that side of the display allows, and how far it may be dragged away. */
+export function chatRoomFor(chat: ChatPlacement): { x: number; y: number; w: number; h: number } {
+  return { x: Math.max(0, chat.room.w - CHAT_BALLOON.w), y: Math.max(0, chat.room.h - CHAT_BALLOON.h), w: chat.room.w, h: chat.room.h };
 }
 
 /** The drawn menu's rows: a submenu's items follow its title, indented. */
@@ -297,7 +315,7 @@ function AwayBadge({ snapshot, onOpen, onMenu, hover }: { snapshot: FloatingSnap
   );
 }
 
-export function FloatingBotView({ snapshot: given, onEvent, mover, interactive, wantsKeyboard, rootRef, className, style, below, pilot = null, onSide, onReserve, onLevels, menuAt, onMove }: FloatingBotViewProps) {
+export function FloatingBotView({ snapshot: given, onEvent, mover, interactive, wantsKeyboard, rootRef, className, style, below, pilot = null, onSide, onReserve, onLevels, menuAt, onMove, layout = null }: FloatingBotViewProps) {
   // an older brain may not send the mascot's fields yet
   const snapshot: FloatingSnapshot = given.hints ? given : { ...given, ...mascotFields(given) };
   const [menuOpen, setMenuOpen] = useState(false);
@@ -484,10 +502,17 @@ export function FloatingBotView({ snapshot: given, onEvent, mover, interactive, 
   }).current;
 
   const balloon = away ? null : snapshot.balloon;
+  // the balloon plays its close before it goes (the open pop backwards; at once under reduced motion)
+  const shown = useHeldMenuMotion(balloon);
   // Which way the balloon opens, decided when it opens and kept while it is open, so the
   // mascot never jumps: above unless the screen's top is too near, to the left unless its edge is
-  const [side, setSide] = useState<BalloonSide>({ below: Boolean(below), right: false });
-  const [room, setRoom] = useState({ x: 0, y: 0, w: BALLOON_MAX_W, h: 420 });
+  const [ownSide, setSide] = useState<BalloonSide>({ below: Boolean(below), right: false });
+  const [ownRoom, setRoom] = useState({ x: 0, y: 0, w: BALLOON_MAX_W, h: 420 });
+  // on the desktop the window's layout decides (FloatingBotWindow, from where the character stands)
+  const desk = pilot && layout ? layout : null;
+  const side = desk ? desk.side : ownSide;
+  const room = desk?.chat ? chatRoomFor(desk.chat) : ownRoom;
+  const shift = desk?.chat?.shift ?? 0;
   const balloonOpen = Boolean(balloon);
   // the call pill's card (settings, transcript) opens where the balloon goes
   const [callCard, setCallCard] = useState<MascotCallCard>(null);
@@ -498,7 +523,7 @@ export function FloatingBotView({ snapshot: given, onEvent, mover, interactive, 
   const panelOpen = balloonOpen || callCardShown;
   chattingRef.current = balloonOpen || Boolean(call);
   useLayoutEffect(() => {
-    if (!panelOpen) return;
+    if (!panelOpen || desk) return;
     const next = balloonSide(pilot ? "desktop" : "overlay", Boolean(below), STAGE.height);
     setSide(next.side);
     setRoom(next.room);
@@ -517,9 +542,9 @@ export function FloatingBotView({ snapshot: given, onEvent, mover, interactive, 
       return;
     }
     const saved = readBalloonPlace(snapshot.id ?? snapshot.name);
-    const held = splitOffset(saved, { below: false, right: false }).away;
-    onReserve(dockedWindowSize(STAGE, { w: saved.w, h: saved.h, dx: held.dx, dy: held.dy }), false);
-  }, [onReserve, pilot, panelOpen, away, snapshot.id, snapshot.name]);
+    const held = splitOffset(saved, side).away;
+    onReserve(dockedWindowSize(STAGE, { w: saved.w, h: saved.h, dx: held.dx + shift, dy: held.dy }), false);
+  }, [onReserve, pilot, panelOpen, away, snapshot.id, snapshot.name, side.below, side.right, shift]);
 
   // On a call the mascot bounces with its bot's voice (the stage's --fb-voice, set
   // straight on the element: no render per level) and leans in while the person talks
@@ -653,24 +678,33 @@ export function FloatingBotView({ snapshot: given, onEvent, mover, interactive, 
   return (
     <div
       ref={rootRef}
-      className={cn("fb-root", retro && "r98-root", (balloon ? side.below : below) && "fb-below", balloon && side.right && "fb-left", className)}
-      style={{ ...style, ...(balloon && side.right ? { alignItems: "flex-start" } : {}), "--fb-tail": `${Math.round(STAGE.width / 2) - 7}px`, "--fb-stage-h": `${STAGE.height}px` } as React.CSSProperties}
+      className={cn(
+        "fb-root",
+        retro && "r98-root",
+        // the desktop window keeps its corner whether the chat is open or not (it holds the chat's room there)
+        (desk ? side.below : balloon ? side.below : below) && "fb-below",
+        (desk ? side.right : balloon && side.right) && "fb-left",
+        className,
+      )}
+      style={{ ...style, ...((desk ? side.right : balloon && side.right) ? { alignItems: "flex-start" } : {}), "--fb-tail": `${Math.round(STAGE.width / 2) - 7}px`, "--fb-stage-h": `${STAGE.height}px` } as React.CSSProperties}
       data-reduced={snapshot.reduced ? "" : undefined}
       data-retro={retro ? "" : undefined}
       data-chatting={balloon ? "" : undefined}
       lang={snapshot.locale}
     >
-      {balloon && (
+      {shown.shown && shown.value && (
         <Balloon
           botId={snapshot.id ?? snapshot.name}
           name={snapshot.name}
-          balloon={balloon}
+          balloon={shown.value}
+          closing={shown.closing}
           retro={retro}
           side={side}
           room={room}
+          shift={shift}
           stage={STAGE}
           owl={OWL_BOX}
-          onReserve={onReserve}
+          onReserve={shown.closing ? undefined : onReserve}
           onEvent={onEvent}
           hover={hover}
           wantsKeyboard={wantsKeyboard}

@@ -56,6 +56,8 @@ import { readVoiceModeSettings, useVoiceModeSettings, writeVoiceModeSettings } f
 import { forgetVoiceprint } from "@/lib/voice-mode/speaker-id";
 import { callLevels, mascotCallSnapshot, NO_PANEL, runMascotCallEvent, type MascotCallDeps, type MascotCallPanel } from "./mascot-call";
 import { characterMoves } from "./moves";
+import { COMPOSER_ATTACH_EVENT } from "@/components/Composer";
+import { COMPOSER_MODEL_EVENT, composerModelLabel } from "@/components/ModelPicker";
 
 /** A picture bigger than this stays in the app; the window shows the owl instead. */
 const AVATAR_BYTES_MAX = 280_000;
@@ -99,6 +101,7 @@ function labelsFor(bot: Pick<Bot, "name">, liveliness: FloatingLiveliness = "nor
     menuHideMascot: t("floatingBots.menu.hideMascot"),
     menuOptions: t("floatingBots.menu.options"),
     menuSettings: t("floatingBots.menu.settings"),
+    attach: t("composer.attach"),
   };
   // "Open in Sagax" (the brand's name), the item that focuses the app on this bot
   return { ...labels, menuOpen: t("floatingBots.menu.openIn", { app: brand().name }) };
@@ -433,6 +436,13 @@ export function FloatingBots() {
           snoozeFloatingBot(botId, Date.now() + SNOOZE_MS);
         } else if (event.id === "settings") dispatch({ type: "toggleAppSettings", open: true, section: "appearance" });
         else if (event.id.startsWith("switch:")) switchMascot(botId, event.id.slice("switch:".length));
+        // the balloon's clip and model chip: the app comes forward (main focused it) on this thread, and its own composer does the rest
+        else if (event.id === "attach" || event.id === "model") {
+          openInApp();
+          const name = event.id === "attach" ? COMPOSER_ATTACH_EVENT : COMPOSER_MODEL_EVENT;
+          // once the thread's composer is drawn
+          setTimeout(() => window.dispatchEvent(new CustomEvent(name, { detail: { botId } })), 120);
+        }
         else if (event.id === "fly") setFloatingFlyAway(!floatingBotPrefs().flyAway);
         else if (event.id === "lively") setFloatingLiveliness(nextLiveliness(floatingBotPrefs().liveliness));
         else if (event.id === "top") {
@@ -481,6 +491,7 @@ export function FloatingBots() {
         liveliness: prefs.liveliness,
         mascot: bot.mascotLook ?? undefined,
         context: floatingContext(bot.tasks?.find((task) => task.threadId === (session.threadId ?? bot.threadId))?.usage),
+        model: { label: composerModelLabel(state.instances, bot.modelSelection), title: t("floatingBots.modelChip") },
         menu: {
           call: thisCall ? "end" : canCall ? "start" : null,
           bots: switchable,

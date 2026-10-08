@@ -7,7 +7,7 @@
 // line, the field grows to four lines, Escape closes. Trombi talks in the
 // Hibou 98 look (a 98 title bar to drag, a 98 grip).
 import { memo, useEffect, useLayoutEffect, useRef, useState, type FormEvent, type PointerEvent as ReactPointerEvent } from "react";
-import { Phone } from "lucide-react";
+import { ArrowUp, AudioLines, ChevronDown, Paperclip } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { BalloonMarkdown } from "./BalloonMarkdown";
 import type { FloatingBalloon, FloatingEvent } from "./protocol";
@@ -168,6 +168,22 @@ export interface BalloonProps {
   owl?: BalloonNear["owl"];
   /** Desktop: the room the balloon may take (null once closed); `exact` fits the window to it now. */
   onReserve?: (reserve: Size | null, exact: boolean) => void;
+  /** px the balloon slides sideways to stay on its display when the mascot's stage hangs off the edge. */
+  shift?: number;
+  /** Playing its close (the snapshot already dropped it): a picture, inert. */
+  closing?: boolean;
+}
+
+/** The balloon's size: the person's (the grip), else as its content wants, never more than the room on its display. */
+export function balloonSize(place: BalloonPlace, room: { w: number; h: number }): { width?: number; height?: number; maxWidth: number; maxHeight: number } {
+  const maxWidth = Math.max(BALLOON_MIN.w, Math.min(place.w ?? BALLOON_MAX_W, room.w));
+  const maxHeight = Math.max(BALLOON_MIN.h, Math.min(place.h ?? CHAT_BALLOON.h, room.h));
+  return {
+    ...(place.w ? { width: Math.min(place.w, maxWidth) } : {}),
+    ...(place.h ? { height: Math.min(place.h, maxHeight) } : {}),
+    maxWidth,
+    maxHeight,
+  };
 }
 
 /**
@@ -183,7 +199,7 @@ const Earlier = memo(function Earlier({ asked, text }: { asked: string; text: st
   );
 });
 
-export function Balloon({ botId, name, balloon, retro, side, room, onEvent, hover, wantsKeyboard, pinLabel, callLabel, stage, owl, onReserve }: BalloonProps) {
+export function Balloon({ botId, name, balloon, retro, side, room, onEvent, hover, wantsKeyboard, pinLabel, callLabel, stage, owl, onReserve, shift = 0, closing = false }: BalloonProps) {
   const [draft, setDraft] = useState("");
   const [place, setPlace] = useState<BalloonPlace>(() => readBalloonPlace(botId));
   const box = useRef<HTMLDivElement>(null);
@@ -197,7 +213,9 @@ export function Balloon({ botId, name, balloon, retro, side, room, onEvent, hove
   // it does not resize. A move or a grip reserves its whole range once, at the start.
   const reserveFor = (range: "place" | "move" | "resize") => {
     if (!stage) return null;
-    const away = splitOffset(place, side).away;
+    const split = splitOffset(place, side).away;
+    // a slide to stay on the display is away from the mascot too: the window holds it
+    const away = { ...split, dx: split.dx + shift };
     if (range === "place") return dockedWindowSize(stage, { w: place.w, h: place.h, dx: away.dx, dy: away.dy });
     const grown = range === "resize" ? { ...place, w: Math.max(place.w ?? 0, room.w), h: Math.max(place.h ?? 0, room.h) } : place;
     // only the part away from the mascot grows the window; toward it the balloon is drawn over the stage
@@ -212,7 +230,7 @@ export function Balloon({ botId, name, balloon, retro, side, room, onEvent, hove
     // after a gesture the window fits the balloon's new size and place again
     onReserve(reserveRef.current("place"), ended.current);
     ended.current = false;
-  }, [onReserve, stage, room.w, room.h, room.x, room.y, place, side.right, side.below]);
+  }, [onReserve, stage, room.w, room.h, room.x, room.y, place, side.right, side.below, shift]);
 
   // A place kept from another opening (another side, another screen) must not cover the face now
   const nearFor = (size: { w: number; h: number }): BalloonNear | undefined => (stage && owl ? { stage, owl, balloon: size } : undefined);
@@ -315,18 +333,15 @@ export function Balloon({ botId, name, balloon, retro, side, room, onEvent, hove
   // Toward it: drawn over the stage's empty room (`translate`, which the opening pop's
   // transform leaves alone), inside the window it already has.
   const { away, toward } = splitOffset(place, side);
+  // the slide that keeps it on its display is a margin too (away from the mascot), so the window holds it
   const offsetStyle: React.CSSProperties = {
-    ...(side.right ? { marginLeft: away.dx } : { marginRight: -away.dx }),
+    ...(side.right ? { marginLeft: away.dx + shift } : { marginRight: -(away.dx + shift) }),
     ...(side.below ? { marginTop: away.dy } : { marginBottom: -away.dy }),
     ...(toward.dx || toward.dy ? { translate: `${toward.dx}px ${toward.dy}px` } : {}),
   };
-  const sizeStyle: React.CSSProperties = {
-    width: place.w ?? undefined,
-    height: place.h ?? undefined,
-    maxWidth: place.w ? undefined : Math.min(BALLOON_MAX_W, room.w),
-    // the quick chat scrolls; a size the person chose (the grip) may be taller
-    maxHeight: place.h ? undefined : Math.min(CHAT_BALLOON.h, room.h),
-  };
+  // it grows with its content up to the room on its display, then scrolls inside
+  const sized = balloonSize(place, room);
+  const sizeStyle: React.CSSProperties = { width: sized.width, height: sized.height, maxWidth: sized.maxWidth, maxHeight: sized.maxHeight };
   const grip = `${side.below ? "bottom" : "top"}-${side.right ? "right" : "left"}`;
 
   return (
@@ -337,6 +352,11 @@ export function Balloon({ botId, name, balloon, retro, side, room, onEvent, hove
       data-kind={balloon.kind}
       data-capped={place.h ? undefined : ""}
       data-detached={detached ? "" : undefined}
+      data-closing={closing ? "" : undefined}
+      data-below={side.below ? "" : undefined}
+      data-right={side.right ? "" : undefined}
+      inert={closing || undefined}
+      aria-hidden={closing || undefined}
       className={cn("fb-balloon", retro && "r98-balloon r98-balloon-docked")}
       style={{ ...offsetStyle, ...sizeStyle }}
       onPointerEnter={() => hover(true)}
@@ -353,9 +373,9 @@ export function Balloon({ botId, name, balloon, retro, side, room, onEvent, hove
         {!detached && (retro ? <span className="r98-tail" aria-hidden="true" /> : <span className="fb-tail" aria-hidden="true" />)}
         <div className={cn("fb-head", retro && "r98-titlebar")} onPointerDown={startGesture("move")} data-drag-handle="">
           <strong className={retro ? "r98-titlebar-text" : "fb-name"}>{balloon.title ?? name}</strong>
-          {callLabel && (
+          {callLabel && (retro || !balloon.input) && (
             <button type="button" className={retro ? "r98-titlebar-btn" : "fb-close fb-call-btn"} aria-label={callLabel} title={callLabel} data-call-start="" onPointerDown={(event) => event.stopPropagation()} onClick={() => onEvent({ type: "call", action: "start" })}>
-              <Phone size={retro ? 9 : 13} strokeWidth={2.25} aria-hidden="true" />
+              <AudioLines size={retro ? 9 : 13} strokeWidth={2.25} aria-hidden="true" />
             </button>
           )}
           {detached && (
@@ -388,12 +408,57 @@ export function Balloon({ botId, name, balloon, retro, side, room, onEvent, hove
         <button type="button" className="fb-open" onClick={() => onEvent({ type: "open" })}>
           {balloon.open}
         </button>
-        {balloon.input && (
+        {balloon.input && !retro && (
+          // the app's composer row, at the balloon's scale: clip, field, model chip, then the voice button (Send once typed)
+          <form className="fb-composer" data-composer-row="" onSubmit={onSubmit}>
+            {balloon.input.attach && (
+              <button type="button" className="fb-composer-btn" aria-label={balloon.input.attach} title={balloon.input.attach} onClick={() => onEvent({ type: "menu", id: "attach" })}>
+                <Paperclip size={16} aria-hidden="true" />
+              </button>
+            )}
+            <textarea
+              ref={field}
+              rows={1}
+              className="fb-composer-field fb-input chat-input-text"
+              value={draft}
+              dir="auto"
+              aria-label={balloon.input.label}
+              placeholder={balloon.input.placeholder}
+              autoComplete="off"
+              maxLength={4000}
+              onFocus={() => wantsKeyboard?.(true)}
+              onChange={(event) => setDraft(event.target.value)}
+              onKeyDown={(event) => {
+                // Enter sends, Shift+Enter starts a new line
+                if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
+                  event.preventDefault();
+                  send();
+                }
+              }}
+            />
+            {balloon.input.model && (
+              <button type="button" className="fb-model-chip" title={balloon.input.modelTitle || balloon.input.model} onClick={() => onEvent({ type: "menu", id: "model" })}>
+                <span>{balloon.input.model}</span>
+                <ChevronDown size={13} aria-hidden="true" />
+              </button>
+            )}
+            {draft.trim() || !callLabel ? (
+              <button type="submit" className="fb-send-btn fb-send" aria-label={balloon.input.send} title={balloon.input.send} disabled={!draft.trim()}>
+                <ArrowUp size={16} aria-hidden="true" />
+              </button>
+            ) : (
+              <button type="button" className="fb-voice-btn" aria-label={callLabel} title={callLabel} data-call-start="" onClick={() => onEvent({ type: "call", action: "start" })}>
+                <AudioLines size={15} aria-hidden="true" />
+              </button>
+            )}
+          </form>
+        )}
+        {balloon.input && retro && (
           <form className="fb-ask" onSubmit={onSubmit}>
             <textarea
               ref={field}
               rows={1}
-              className={retro ? "r98-field fb-input" : "fb-field fb-input"}
+              className="r98-field fb-input"
               value={draft}
               aria-label={balloon.input.label}
               placeholder={balloon.input.placeholder}
@@ -409,7 +474,7 @@ export function Balloon({ botId, name, balloon, retro, side, room, onEvent, hove
                 }
               }}
             />
-            <button type="submit" className={cn(retro ? "r98-btn" : "fb-btn", "fb-send", retro && "r98-default")} disabled={!draft.trim()}>
+            <button type="submit" className="r98-btn fb-send r98-default" disabled={!draft.trim()}>
               {balloon.input.send}
             </button>
           </form>

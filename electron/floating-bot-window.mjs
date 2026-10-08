@@ -409,6 +409,10 @@ export function sanitizeFloatingSnapshot(value) {
             label: text(balloon.input.label, 160) ?? "",
             placeholder: text(balloon.input.placeholder, 160) ?? "",
             send: text(balloon.input.send, 40) ?? "",
+            // the composer row's clip and model chip (labels only; both open the app's composer)
+            ...(typeof balloon.input.attach === "string" ? { attach: balloon.input.attach.slice(0, 80) } : {}),
+            ...(typeof balloon.input.model === "string" && balloon.input.model ? { model: balloon.input.model.slice(0, 80) } : {}),
+            ...(typeof balloon.input.modelTitle === "string" ? { modelTitle: balloon.input.modelTitle.slice(0, 160) } : {}),
           }
         : null,
     };

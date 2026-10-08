@@ -8,7 +8,8 @@
 // calls no API.
 import { Component, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ErrorInfo, type ReactNode } from "react";
 import { OwlAvatar } from "@/components/OwlAvatar";
-import { FloatingBotView, MASCOT_SIZE, OWL_BOX, type FloatingMover } from "./FloatingBotView";
+import { FloatingBotView, MASCOT_SIZE, MASCOT_STAGE, OWL_BOX, type FloatingMover, type MascotLayout } from "./FloatingBotView";
+import { placeChat } from "./placement";
 import { createWindowPilot } from "./pilot";
 import type { BalloonSide } from "./Balloon";
 import { isFloatingSnapshot, mascotFields, type FloatingEvent, type FloatingSnapshot, type FloatingWindowBridge } from "./protocol";
@@ -43,6 +44,16 @@ export function bodyRectIn(root: HTMLElement | null): Rect | null {
 }
 
 const sameRect = (a: Rect | null, b: Rect | null) => Boolean(a && b && a.x === b.x && a.y === b.y && a.width === b.width && a.height === b.height);
+
+/** The layout for where the character stands now: the chat's side (the window's corner) and its room. */
+export function layoutFor(geometry: { body?: Rect; workArea: Rect } | null): MascotLayout | null {
+  if (!geometry?.body) return null;
+  const chat = placeChat({ body: geometry.body, workArea: geometry.workArea, stage: MASCOT_STAGE, owl: OWL_BOX });
+  return { side: chat.side, chat };
+}
+
+const sameLayout = (a: MascotLayout | null, b: MascotLayout | null) =>
+  JSON.stringify(a) === JSON.stringify(b);
 
 /**
  * The plain owl, standing where the mascot would: never an empty, invisible
@@ -117,6 +128,15 @@ export function FloatingBotWindow({ bridge = typeof window === "undefined" ? und
   const onSide = useCallback((side: BalloonSide) => {
     anchor.current = { x: side.right ? "left" : "right", y: side.below ? "top" : "bottom" };
   }, []);
+  // Where the chat goes, from where the character stands on its display. The
+  // window holds the chat's room on that side, so near a screen's top or left
+  // edge the room (and the character's corner) flips. Decided when the
+  // mascot comes to rest, never mid-drag; while the window moves to its new
+  // corner the page is hidden for that frame, so the character never jumps.
+  const [layout, setLayout] = useState<MascotLayout | null>(null);
+  const [relaying, setRelaying] = useState(false);
+  const layoutRef = useRef(layout);
+  layoutRef.current = layout;
 
   // no state yet: keep asking every second (main replays it, or asks the app for it)
   useEffect(() => {
@@ -171,8 +191,11 @@ export function FloatingBotWindow({ bridge = typeof window === "undefined" ? und
   const reportBody = useCallback(() => {
     const rect = bodyRectIn(root.current);
     if (!rect || sameRect(rect, body.current)) return;
+    const first = !body.current;
     body.current = rect;
     bridge?.setBody?.(rect);
+    // main knows the character's box now: where it stands decides the chat's side
+    if (first) relayoutRef.current();
   }, [bridge]);
   useEffect(() => {
     window.addEventListener("resize", reportBody);
@@ -252,16 +275,70 @@ export function FloatingBotWindow({ bridge = typeof window === "undefined" ? und
           frame.current.dragging = false;
           frame.current.report();
           bridge?.moved();
+          // dropped: the chat's side for this spot
+          relayoutRef.current();
         });
       },
     };
   }, [bridge]);
-  // the mascot flies its own window off while its bot works, and back
-  const pilot = useMemo(() => createWindowPilot(bridge), [bridge]);
+  // the mascot flies its own window off while its bot works, and back; a walk that ends re-reads the layout
+  const relayoutRef = useRef<() => void>(() => undefined);
+  const pilot = useMemo(() => createWindowPilot(bridge ? { ...bridge, moved: () => {
+    bridge.moved();
+    relayoutRef.current();
+  } } : undefined), [bridge]);
+  const relayout = useCallback(() => {
+    if (!pilot || frame.current.dragging) return;
+    void pilot.geometry().then((geometry) => {
+      const next = layoutFor(geometry);
+      if (!next || frame.current.dragging || sameLayout(next, layoutRef.current)) return;
+      const before = layoutRef.current?.side ?? { below: false, right: false };
+      const flips = before.below !== next.side.below || before.right !== next.side.right;
+      // the window moves to its new corner with the page hidden for that frame
+      if (flips && bridge?.frame) setRelaying(true);
+      onSide(next.side);
+      setLayout(next);
+    });
+  }, [bridge, onSide, pilot]);
+  relayoutRef.current = relayout;
+  // a new corner: measure where the character is drawn now, and move the window so it stays put on screen
+  const placedSide = useRef<string>("above-left");
+  useLayoutEffect(() => {
+    const key = `${layout?.side.below ? "below" : "above"}-${layout?.side.right ? "right" : "left"}`;
+    if (key === placedSide.current) return;
+    placedSide.current = key;
+    const rect = bodyRectIn(root.current);
+    if (!rect || !bridge?.frame) {
+      setRelaying(false);
+      return;
+    }
+    const size = frame.current.size ?? { width: window.innerWidth, height: window.innerHeight };
+    void bridge.frame(size.width, size.height, rect).then(
+      () => {
+        body.current = rect;
+        setRelaying(false);
+      },
+      () => setRelaying(false),
+    );
+  }, [layout, bridge]);
   // the menu opens natively, right at the pointer (an older preload: the drawn menu)
   const menuAt = useMemo(() => (bridge?.popupMenu ? (x: number, y: number) => bridge.popupMenu!(x, y) : undefined), [bridge]);
   // the voice call's levels, straight from main (an older preload has none)
   const onLevels = useMemo(() => (bridge?.onLevel ? (listener: Parameters<NonNullable<FloatingWindowBridge["onLevel"]>>[0]) => bridge.onLevel!(listener) : undefined), [bridge]);
+
+  // the chat opening: its room for where the character stands now (a display may have changed meanwhile)
+  const chatOpen = Boolean(snapshot?.balloon);
+  useEffect(() => {
+    if (chatOpen) relayout();
+  }, [chatOpen, relayout]);
+  // a display added, removed or rearranged: main may have moved the character; read the layout again
+  useEffect(() => {
+    const screens = typeof window === "undefined" ? null : (window.screen as Screen & Partial<EventTarget>);
+    if (!screens?.addEventListener) return;
+    const onChange = () => relayout();
+    screens.addEventListener("change", onChange);
+    return () => screens.removeEventListener?.("change", onChange);
+  }, [relayout]);
 
   // a move picked in the native menu (an older preload has none)
   const onMove = useMemo(() => (bridge?.onMove ? (listener: (clip: string) => void) => bridge.onMove!(listener) : undefined), [bridge]);
@@ -272,6 +349,8 @@ export function FloatingBotWindow({ bridge = typeof window === "undefined" ? und
     <FloatingBotView
       rootRef={root}
       className="fb-window"
+      style={relaying ? { visibility: "hidden" } : undefined}
+      layout={layout}
       snapshot={snapshot}
       onEvent={onEvent}
       mover={mover}

@@ -93,6 +93,8 @@ export interface FloatingLabels {
   menuHideMascot?: string;
   menuOptions?: string;
   menuSettings?: string;
+  /** The composer row's clip label. */
+  attach?: string;
 }
 
 /** What the menu offers besides the brain's own state: the call, the person's bots, the character's moves. */
@@ -253,6 +255,8 @@ export interface FloatingInput {
   mascot?: MascotLook;
   /** The menu's call item, the person's bots and the character's moves. */
   menu?: FloatingMenuExtras;
+  /** The composer row's model chip: the text the app's chip shows, and its title. */
+  model?: { label: string; title?: string } | null;
 }
 
 /** The pose and balloon for this moment, as one snapshot. */
@@ -271,7 +275,13 @@ export function buildFloatingSnapshot(input: FloatingInput): FloatingSnapshot {
   const mood = Math.round(Math.min(1, Math.max(0, input.mood ?? 0.6)) * 100) / 100;
   const level = moodLevel(mood);
   const flyAway = input.flyAway !== false;
-  const input_ = { label: labels.inputLabel, placeholder: labels.placeholder, send: labels.send };
+  const input_ = {
+    label: labels.inputLabel,
+    placeholder: labels.placeholder,
+    send: labels.send,
+    ...(labels.attach ? { attach: labels.attach } : {}),
+    ...(input.model?.label ? { model: input.model.label, ...(input.model.title ? { modelTitle: input.model.title } : {}) } : {}),
+  };
   let balloon: FloatingBalloon | null = null;
   if (session.open) {
     if (session.error) {

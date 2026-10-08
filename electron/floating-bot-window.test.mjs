@@ -755,6 +755,22 @@ describe("floating bots: the mascot's right-click menu", () => {
   };
   const sentToBrain = (fake) => fake.main.webContents.sent.filter(([channel]) => channel === "floating-bots:event").map(([, value]) => value.event.id);
 
+  it("passes the balloon's composer row labels, bounded, and nothing else", () => {
+    const clean = sanitizeFloatingSnapshot({ ...SNAPSHOT, balloon: { ...SNAPSHOT.balloon, input: { ...SNAPSHOT.balloon.input, attach: "Joindre", model: "m".repeat(200), modelTitle: "t", url: "https://x" } } });
+    expect(clean.balloon.input).toEqual({ label: "Message", placeholder: "Écrire", send: "Envoyer", attach: "Joindre", model: "m".repeat(80), modelTitle: "t" });
+    const none = sanitizeFloatingSnapshot({ ...SNAPSHOT, balloon: { ...SNAPSHOT.balloon, input: { ...SNAPSHOT.balloon.input, attach: 3, model: "" } } });
+    expect(none.balloon.input).toEqual({ label: "Message", placeholder: "Écrire", send: "Envoyer" });
+  });
+
+  it("brings the app forward for the balloon's clip and model chip, then tells the brain", () => {
+    const { open, emit, fake, focusMain } = setup();
+    const { from } = open("bot_a");
+    emit("floating-bots:event", from, { type: "menu", id: "attach" });
+    emit("floating-bots:event", from, { type: "menu", id: "model" });
+    expect(focusMain).toHaveBeenCalledTimes(2);
+    expect(fake.main.webContents.sent.slice(-2).map(([, value]) => value.event.id)).toEqual(["attach", "model"]);
+  });
+
   it("keeps separators, greyed items and one level of submenus, bounded", () => {
     const clean = sanitizeFloatingSnapshot({ ...SNAPSHOT, menu: MENU }).menu;
     expect(clean).toEqual(MENU);

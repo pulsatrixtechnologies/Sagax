@@ -7413,7 +7413,8 @@
       "floatingBots.menu.snooze": "41edebad091a7db68ea8e5275c178af1299c9b79a74925858cdf90b3f0b514e3",
       "floatingBots.menu.hideMascot": "ac20a57bfde0bbc40bfe70895eb1cfacc944aaff06ca784053623c569b3e1b3d",
       "floatingBots.menu.options": "b1e0eb2c3cf5a82c94c958558d4bf66ff9e3cecab859c86ec56d79193f50b5fd",
-      "floatingBots.menu.settings": "7a04083baf8daa20973e671fc0138a81a70c797ef1f28b77e78edbd1acbc57bc"
+      "floatingBots.menu.settings": "7a04083baf8daa20973e671fc0138a81a70c797ef1f28b77e78edbd1acbc57bc",
+      "floatingBots.modelChip": "4fb8ccdef50ea88195b99e332486d77be9f9c022f8d9757812775cb2a8bd99db"
     },
     "hi": {
       "noEngines.title": "77a6e0966b7323ceae6973abb581b31d52263bb0ec8249e2b1c1b7ae1e586f04",
@@ -13074,7 +13075,8 @@
       "floatingBots.menu.snooze": "41edebad091a7db68ea8e5275c178af1299c9b79a74925858cdf90b3f0b514e3",
       "floatingBots.menu.hideMascot": "ac20a57bfde0bbc40bfe70895eb1cfacc944aaff06ca784053623c569b3e1b3d",
       "floatingBots.menu.options": "b1e0eb2c3cf5a82c94c958558d4bf66ff9e3cecab859c86ec56d79193f50b5fd",
-      "floatingBots.menu.settings": "7a04083baf8daa20973e671fc0138a81a70c797ef1f28b77e78edbd1acbc57bc"
+      "floatingBots.menu.settings": "7a04083baf8daa20973e671fc0138a81a70c797ef1f28b77e78edbd1acbc57bc",
+      "floatingBots.modelChip": "4fb8ccdef50ea88195b99e332486d77be9f9c022f8d9757812775cb2a8bd99db"
     },
     "uk": {
       "noEngines.title": "77a6e0966b7323ceae6973abb581b31d52263bb0ec8249e2b1c1b7ae1e586f04",

@@ -52,7 +52,12 @@ export interface FloatingBalloon {
   open: string;
   /** The close button's accessible name. */
   close: string;
-  input: { label: string; placeholder: string; send: string } | null;
+  /**
+   * The composer row (the app's, at the balloon's scale): the field's label
+   * and hint, Send, and, when given, the clip's label and the model chip's
+   * text (both open the app's own composer on this thread).
+   */
+  input: { label: string; placeholder: string; send: string; attach?: string; model?: string; modelTitle?: string } | null;
 }
 
 /**

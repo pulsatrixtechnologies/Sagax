@@ -89,6 +89,15 @@ describe("floating bot brain: poses and balloons", () => {
   const bots = [{ id: "bot_a", name: "Ada", floating: true }, { id: "bot_b", name: "Bo", floating: false }, { id: "bot_c", name: "Cy", floating: true }];
   const moves = [{ clip: "wave", label: "Wave" }, { clip: "dance", label: "Dance" }];
 
+  it("gives the balloon's composer row its clip and the model chip's text", () => {
+    const b = bot();
+    const session = { ...newFloatingSession(), open: true };
+    const withRow = buildFloatingSnapshot({ bot: b, session, status: floatingStatus(b, session, undefined), labels: { ...labels, attach: "Attach a file" }, avatar: null, retro: false, reduced: false, locale: "en", alwaysOnTop: true, model: { label: "GPT-5 high", title: "Change the model in the app" } });
+    expect(withRow.balloon?.input).toEqual({ label: "inputLabel", placeholder: "placeholder", send: "send", attach: "Attach a file", model: "GPT-5 high", modelTitle: "Change the model in the app" });
+    // no model known: no chip
+    expect(snapshot(b, session).balloon?.input).toEqual({ label: "inputLabel", placeholder: "placeholder", send: "send" });
+  });
+
   it("lays the menu out as JC asked: talk, call, open; switch bot and moves; hide; options and settings", () => {
     const menu = floatingMenu(full, newFloatingSession(), true, true, { call: "start", bots, moves }, "bot_a");
     expect(menu.map((item) => item.type === "separator" ? "-" : item.id)).toEqual(["balloon", "call", "open", "-", "switch", "moves", "-", "snooze", "dock", "-", "options", "settings"]);
