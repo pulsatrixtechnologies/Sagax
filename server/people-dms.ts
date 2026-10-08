@@ -64,12 +64,13 @@ export function peopleDmCandidate(entry: { principalId: string; disabled?: boole
 }
 
 /** The routes a person-to-person conversation answers besides reads: a
- * message, a read receipt, and a PATCH that only marks it (checked by
+ * message, a read receipt (unread flag and read position), and a PATCH that only marks it (checked by
  * peopleDmPatchRefusal). Anything else (tasks, setup, members, queue,
  * interrupt, delete) is refused. */
 export function peopleDmRouteRefusal(method: string, path: string): string | null {
   if (method === "GET" || method === "HEAD") return null;
   if (method === "POST" && /^\/api\/groups\/[\w-]+\/(?:messages|read)$/.test(path)) return null;
+  if (method === "POST" && /^\/api\/threads\/[\w-]+\/read$/.test(path)) return null;
   if (method === "PATCH" && /^\/api\/groups\/[\w-]+$/.test(path)) return null;
   return "A conversation between two people only takes messages.";
 }
