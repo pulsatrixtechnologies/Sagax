@@ -106,15 +106,18 @@ export interface Routine {
   resultsThreadId?: string;
   /** Slice 6 (organization server): the person this routine runs as. */
   runAs?: { principalId: string; name: string };
-  /** Slice 6: paused because it cannot act in its person's name. */
+  /** Slice 6: paused because its person is out or lost the right to run
+   * the bot (never for lack of a delegation since 2026-10-08). */
   suspended?: { reason: RoutineSuspendReason; at: number };
   nextRunAt: number | null;
   createdAt: number;
   updatedAt: number;
 }
 
-/** Slice 6: why an organization routine is paused by the server. */
-export type RoutineSuspendReason = "delegation_missing" | "delegation_ended" | "delegation_revoked" | "person_out" | "no_right";
+/** Slice 6: why an organization routine is paused by the server. A routine
+ * always acts in its owner's name (2026-10-08): the old delegation reasons
+ * are gone and a routine paused for one resumes when the server starts. */
+export type RoutineSuspendReason = "person_out" | "no_right";
 
 export interface RoutineRun {
   id: string;

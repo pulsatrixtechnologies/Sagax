@@ -524,6 +524,45 @@ describe("PerspicaxDirectory, slice 5: profiles and token exchange", () => {
     expect(rotated.calls.at(-1)!.headers.authorization).toBe(`Basic ${Buffer.from(`pulsa-bot-server:${TOKEN_B}`).toString("base64")}`);
   });
 
+  it("issues a routine delegation from a sign-in access token, no consent (2026-10-08)", async () => {
+    const issued = { status: 200, body: { access_token: "pxlo1.BOB.delegated", refresh_token: "pxlr1.BOB.delegated", token_type: "Bearer", expires_in: 3600, issued_token_type: "urn:ietf:params:oauth:token-type:refresh_token", scope: "openid profile email offline_access pulsabot:routines" } };
+    const h = exchangeHarness([issued]);
+    expect(await h.sync.issueRoutineDelegation("pxlo1.BOB.subject")).toEqual({ ok: true, refreshToken: "pxlr1.BOB.delegated", accessToken: "pxlo1.BOB.delegated", accessExpiresAt: 5_000_000 + 3_600_000 });
+    const [call] = h.calls;
+    expect(call).toMatchObject({ url: "http://perspicax:8787/oauth/token", method: "POST", redirect: "error" });
+    expect(call!.headers.authorization).toBe(`Basic ${Buffer.from(`pulsa-bot-server:${TOKEN_A}`).toString("base64")}`);
+    expect(Object.fromEntries(new URLSearchParams(call!.body))).toEqual({
+      grant_type: "urn:ietf:params:oauth:grant-type:token-exchange",
+      subject_token: "pxlo1.BOB.subject",
+      subject_token_type: "urn:ietf:params:oauth:token-type:access_token",
+      requested_token_type: "urn:ietf:params:oauth:token-type:refresh_token",
+      scope: "openid profile email offline_access pulsabot:routines",
+      resource: ORIGIN,
+    });
+    // a refresh token without the marker is no delegation: revoked, refused
+    const unmarked = exchangeHarness([{ status: 200, body: { ...issued.body, scope: "openid profile email offline_access" } }, { status: 200, body: {} }]);
+    expect(await unmarked.sync.issueRoutineDelegation("pxlo1.BOB.subject")).toEqual({ ok: false, error: "unsupported" });
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(unmarked.calls[1]).toMatchObject({ url: "http://perspicax:8787/oauth/revoke" });
+    expect(Object.fromEntries(new URLSearchParams(unmarked.calls[1]!.body))).toEqual({ token: "pxlr1.BOB.delegated", token_type_hint: "refresh_token" });
+    const cases: Array<[Answer, string]> = [
+      // Perspicax up to 1.8.13: "requested_token_type must be an access token"
+      [{ status: 400, body: { error: "invalid_request" } }, "unsupported"],
+      [{ status: 400, body: { error: "invalid_grant" } }, "subject"],
+      [{ status: 429, body: { error: "slow_down" } }, "rate_limited"],
+      [{ status: 500, body: "oops" }, "unreachable"],
+      [{ status: 200, body: { access_token: "pxlo1.x", token_type: "Bearer" } }, "unsupported"],
+      ["throw", "unreachable"],
+    ];
+    for (const [answer, error] of cases) {
+      const one = exchangeHarness([answer]);
+      expect(await one.sync.issueRoutineDelegation("pxlo1.BOB.subject")).toEqual({ ok: false, error });
+    }
+    const twice = exchangeHarness([{ status: 401 }, { status: 401 }]);
+    expect(await twice.sync.issueRoutineDelegation("pxlo1.BOB.subject")).toEqual({ ok: false, error: "link" });
+    expect(h.logs.join("\n")).not.toContain("delegated");
+  });
+
   it("revokes with the Basic header and logs a failure without the token", async () => {
     const h = exchangeHarness([{ status: 200, body: {} }, { status: 503 }, "throw"]);
     expect(await h.sync.revokeExchanged("pxlo1.BOB.exchanged-secret")).toBe(true);

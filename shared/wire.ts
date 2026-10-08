@@ -428,8 +428,10 @@ export type CardAnswerer = (
 };
 
 export interface WireAccessCard {
-  /** `routine_delegation` (slice 6): an organization routine paused because
-   * it cannot act in its person's name (`engine` is then ""). */
+  /** `routine_delegation` (slice 6): an organization routine the server
+   * paused, its person out or without `run` (`engine` is then ""). Since
+   * 2026-10-08 never for lack of a delegation; an older card with a
+   * delegation reason renders nothing. */
   reason: "engine_missing" | "no_access" | "key_refused" | "routine_delegation";
   /** The engine's display name, e.g. Claude. */
   engine: string;

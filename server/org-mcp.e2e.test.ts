@@ -76,19 +76,6 @@ async function signIn(user: FakeOidcUser): Promise<Auth> {
   return { cookie: cookiePair(session!) };
 }
 
-/** Slice 6: `auth` allows their routines to act in their name (the consent
- * at the fake provider signs `as` in). Returns where the callback landed. */
-async function consent(auth: Auth, as: FakeOidcUser): Promise<string> {
-  idp.user = { ...as };
-  const started = await fetch(`${BASE}/api/org/routine-delegation`, { method: "POST", headers: { cookie: auth.cookie!, "content-type": "application/json" }, body: "{}" });
-  expect(started.status).toBe(200);
-  const binding = cookiePair(started.headers.getSetCookie().find((c) => c.includes("_oidc="))!);
-  const { authorizationUrl } = await started.json() as { authorizationUrl: string };
-  const authorize = await fetch(authorizationUrl, { redirect: "manual" });
-  const back = await fetch(authorize.headers.get("location")!, { redirect: "manual", headers: { cookie: binding } });
-  return back.headers.get("location") ?? "";
-}
-
 async function waitFor<T>(read: () => Promise<T | null | undefined | false>, ms = 20_000): Promise<T> {
   const deadline = Date.now() + ms;
   for (;;) {
@@ -363,31 +350,26 @@ posixOnly("Perspicax organization, slice 5: MCP for the person who speaks", () =
     expect(row?.tool).toEqual({ name: "Perspicax: Dispatch unavailable for Carol (not_held)", ok: false });
   }, 90_000);
 
-  it("a routine run without its person's delegation is refused and paused, with one card (slice 6)", async () => {
+  it("a routine run acts in its person's name with no consent: never paused, no card (slice 6, 2026-10-08)", async () => {
+    // her delegation came with her sign-in
+    await waitFor(async () => (await api("GET", "/api/org/routine-delegation", alice)).body.state === "active");
     const routine = await api("POST", "/api/routines", alice, { name: "Morning", botId: x.id, prompt: "Check the board.", enabled: false,
       schedule: { type: "interval", everyMinutes: 60, anchorAt: Date.now() + 86_400_000 } });
     expect(routine.status, routine.text).toBe(201);
     expect(routine.body.routine.runAs).toEqual({ principalId: ids.alice, name: "Alice" });
-    const exchangesBefore = idp.exchanges.length;
-    if (existsSync(dump)) rmSync(dump);
     const run = await api("POST", `/api/routines/${routine.body.routine.id}/run`, alice, {});
     expect(run.status, run.text).toBeLessThan(300);
-    const failed = await waitFor(async () => {
+    const done = await waitFor(async () => {
       const runs = ((await api("GET", "/api/routines", alice)).body.runs ?? []) as Array<{ id: string; status: string; error?: string; resultsThreadId?: string }>;
-      return runs.find((r) => r.id === run.body.run.id && r.status === "failed");
-    }, 40_000);
-    expect(failed.error).toBe("This routine cannot act in Alice's name: routines are not allowed yet");
+      return runs.find((r) => r.id === run.body.run.id && ["completed", "failed"].includes(r.status));
+    }, 60_000);
+    expect(done.status, done.error).toBe("completed");
     const listed = ((await api("GET", "/api/routines", alice)).body.routines as Array<{ id: string; suspended?: { reason: string } }>).find((r) => r.id === routine.body.routine.id);
-    expect(listed?.suspended?.reason).toBe("delegation_missing");
-    expect(existsSync(dump)).toBe(false);
-    expect(idp.exchanges.length).toBe(exchangesBefore);
-    const cards = (await threadMessages(alice, failed.resultsThreadId ?? x.threadId)).filter((m) => m.kind === "access") as Array<Message & { access?: { reason: string; routineId?: string } }>;
-    expect(cards.filter((m) => m.access?.reason === "routine_delegation" && m.access.routineId === routine.body.routine.id)).toHaveLength(1);
-    // the consent resumes it
-    expect(await consent(alice, ALICE)).toBe("/#routine-delegation=ok");
-    const resumed = ((await api("GET", "/api/routines", alice)).body.routines as Array<{ id: string; suspended?: unknown }>).find((r) => r.id === routine.body.routine.id);
-    expect(resumed?.suspended).toBeUndefined();
+    expect(listed?.suspended).toBeUndefined();
+    const cards = (await threadMessages(alice, done.resultsThreadId ?? x.threadId)).filter((m) => m.kind === "access") as Array<Message & { access?: { reason: string; routineId?: string } }>;
+    expect(cards.filter((m) => m.access?.reason === "routine_delegation")).toEqual([]);
     expect((await api("GET", "/api/org/routine-delegation", alice)).body).toMatchObject({ state: "active", suspended: 0 });
+    await allIdle(alice);
   }, 90_000);
 
   /** Run a routine and wait until `count` exchanges happened, then check

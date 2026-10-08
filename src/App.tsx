@@ -48,7 +48,6 @@ import { TeamMapPage } from "@/components/TeamMapPage";
 import { setLocale, t } from "@/lib/i18n";
 import { shouldOpenKeyboardShortcuts } from "@/lib/keyboard-shortcuts";
 import { effectiveLanguage, useLanguageChoice } from "@/lib/language-preference";
-import { takeRoutineDelegationReturn } from "@/lib/routine-delegation";
 import { openThreadVisible, pageOpenThreadTarget, type OpenThreadTarget } from "@/lib/open-thread-hash";
 import { botShowsUnread } from "@/lib/bot-unread";
 import { viewerBotsReadOnly, viewerCanCreateBots } from "@/lib/viewer";
@@ -80,11 +79,6 @@ function Shell() {
       open();
     }
     return window.ogb.environments.onOpenSettings?.(open);
-  }, [dispatch]);
-  // Slice 6: back from a routine delegation consent at Perspicax: show the
-  // outcome in Settings > Organization.
-  useEffect(() => {
-    if (takeRoutineDelegationReturn()) dispatch({ type: "toggleAppSettings", open: true, section: "organization" });
   }, [dispatch]);
   // Slice 7: "Open in Sagax" from the Perspicax console (#thread=…&bot=…):
   // the thread opens once the viewer's lists hold it; a thread they may not

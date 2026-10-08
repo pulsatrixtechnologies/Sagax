@@ -23,6 +23,7 @@ import {
   refreshAfterMs,
   resolveIdpVaultKey,
   type IdpRelyingParty,
+  type IdpSessionManagerOptions,
 } from "./idp-session.ts";
 import { RevocationQueue, type RevocationSink } from "./idp-revocations.ts";
 import { TokenCallPacer } from "./idp-token-pacer.ts";
@@ -112,7 +113,7 @@ function scriptedProvider() {
   return { rp, script, calls, revoked };
 }
 
-function setup(options: { refreshAfterMs?: number; revocations?: RevocationSink } = {}) {
+function setup(options: { refreshAfterMs?: number; revocations?: RevocationSink; onRenewed?: IdpSessionManagerOptions["onRenewed"] } = {}) {
   const provider = scriptedProvider();
   const sessions = new SessionRegistry({ file: join(dir, "sessions.json"), now: () => clock });
   let id = 0;
@@ -120,7 +121,7 @@ function setup(options: { refreshAfterMs?: number; revocations?: RevocationSink 
   const vault = new IdpGrantVault(dir, () => ({ kind: "key", key: Buffer.from(KEY, "hex") }));
   const logs: string[] = [];
   const timers: Array<{ run: () => void; at: number }> = [];
-  const manager = new IdpSessionManager({ vault, rp: provider.rp, sessions, principals, now: () => clock, refreshAfterMs: options.refreshAfterMs ?? 3_000_000, log: (l) => logs.push(l), schedule: (run, delayMs) => { timers.push({ run, at: clock + delayMs }); }, ...(options.revocations ? { revocations: options.revocations } : {}) });
+  const manager = new IdpSessionManager({ vault, rp: provider.rp, sessions, principals, now: () => clock, refreshAfterMs: options.refreshAfterMs ?? 3_000_000, log: (l) => logs.push(l), schedule: (run, delayMs) => { timers.push({ run, at: clock + delayMs }); }, ...(options.revocations ? { revocations: options.revocations } : {}), ...(options.onRenewed ? { onRenewed: options.onRenewed } : {}) });
   sessions.onSessionRevoked((sessionId) => manager.release(sessionId, { revokeAtIdp: true }));
   sessions.onExchanged((session) => { if (session.idp?.grantRef) manager.bindSession(session.idp.grantRef, session.id); });
   /** A web sign-in: principal, grant, session bound to it. */
@@ -173,6 +174,22 @@ describe("refresh on use", () => {
     manager.touch(a.record()!);
     await manager.settled();
     expect(provider.calls).toHaveLength(1);
+  });
+
+  it("tells the renewal hook who keeps using Sagax, with the fresh access token, and not a person put out (2026-10-08)", async () => {
+    const renewed: Array<{ sub: string; token?: string }> = [];
+    const { manager, provider, signIn } = setup({ onRenewed: (subject, access) => renewed.push({ sub: subject.sub, ...(access ? { token: access.token } : {}) }) });
+    const a = signIn("S1");
+    clock += 3_000_000;
+    provider.script.push({ ok: true, refreshToken: "pxlr1.r1", accessToken: "pxlo1.a1", expiresIn: 3600 });
+    manager.touch(a.record()!);
+    await manager.settled();
+    expect(renewed).toEqual([{ sub: "S1", token: "pxlo1.a1" }]);
+    clock += 3_000_000;
+    provider.script.push({ ok: true, refreshToken: "pxlr1.r2", identity: { iss: ISS, sub: "S1", role: "guest" } as never });
+    manager.touch(a.record()!);
+    await manager.settled();
+    expect(renewed).toHaveLength(1);
   });
 
   it("revokes every session of a grant the provider rejects, without calling revoke", async () => {

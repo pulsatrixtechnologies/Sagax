@@ -124,11 +124,14 @@ export interface Routine {
 }
 
 /** Slice 6 (D9): why an organization routine is paused by the server. */
-export type RoutineSuspendReason = "delegation_missing" | "delegation_ended" | "delegation_revoked" | "person_out" | "no_right";
-export const ROUTINE_SUSPEND_REASONS: readonly RoutineSuspendReason[] = ["delegation_missing", "delegation_ended", "delegation_revoked", "person_out", "no_right"];
+export type RoutineSuspendReason = "person_out" | "no_right";
+export const ROUTINE_SUSPEND_REASONS: readonly RoutineSuspendReason[] = ["person_out", "no_right"];
+/** Pauses from before 2026-10-08 (JC: a routine always acts in its owner's
+ * name): a routine loaded with one of these resumes from now. */
+export const RETIRED_SUSPEND_REASONS: readonly string[] = ["delegation_missing", "delegation_ended", "delegation_revoked"];
 export interface RoutineSuspension { reason: RoutineSuspendReason; at: number }
-/** The reasons a fresh consent of the person clears. */
-const CONSENT_REASONS: ReadonlySet<RoutineSuspendReason> = new Set(["delegation_missing", "delegation_ended", "delegation_revoked", "person_out"]);
+/** The reasons a fresh delegation of the person clears. */
+const CONSENT_REASONS: ReadonlySet<RoutineSuspendReason> = new Set(["person_out"]);
 
 function loadRunAs(value: unknown): string | undefined {
   return typeof value === "string" && value.length > 0 && value.length <= 64 ? value : undefined;
@@ -938,6 +941,10 @@ export class RoutineManager {
             if (loaded.installedPackage === undefined) delete loaded.installedPackage;
             if (loaded.runAs === undefined) delete loaded.runAs;
             if (loaded.suspended === undefined) delete loaded.suspended;
+            const retired = (routine.suspended as { reason?: unknown } | undefined)?.reason;
+            if (typeof retired === "string" && RETIRED_SUSPEND_REASONS.includes(retired) && loaded.enabled && schedule.type !== "once") {
+              loaded.nextRunAt = this.initialOccurrence(schedule, this.now(), loaded);
+            }
             delete loaded.failureStreak;
             return [loaded];
           })
@@ -1945,7 +1952,7 @@ export class RoutineManager {
     const touched: Routine[] = [];
     const message = reason === "person_out"
       ? "The person this routine runs as was signed out by Perspicax"
-      : "This routine can no longer act in its person's name";
+      : "The person this routine runs as can no longer run this bot's routines";
     for (const routine of this.routines) {
       if (!routine.enabled || (routine.runAs ?? ownerOf(cloneRoutine(routine))) !== principalId) continue;
       if (this.suspendRoutine(routine.id, reason, null)) touched.push(cloneRoutine(routine));
