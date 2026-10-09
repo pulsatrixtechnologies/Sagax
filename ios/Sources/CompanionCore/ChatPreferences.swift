@@ -283,6 +283,13 @@ public func isActivityReceipt(_ message: Message) -> Bool {
     }
 }
 
+/// A finished permission ask leaves the chat. The message stays stored.
+/// An open ask, a question and a quiz stay (they are not this).
+public func settledPermissionLeavesChat(_ message: Message) -> Bool {
+    guard message.kind == .options, let card = message.card, card.isPermission else { return false }
+    return !card.isPending
+}
+
 /// Folds a transcript to the requested level of detail.
 ///
 /// Per-tool activity is omitted at every level. The Success and Error
@@ -355,6 +362,7 @@ public func transcriptRows(_ messages: [Message], detail: ActivityDetail) -> [Tr
         if hiddenIDs.contains(message.id) { continue }
         // Display only. The message remains in the thread store.
         if isToolActivityRow(message) { continue }
+        if settledPermissionLeavesChat(message) { continue }
         // A parallel task's live card and a failed turn are not receipts:
         // the desktop draws them whatever the tool-call setting says, and
         // never folds them into a run (they carry Stop, Open and Retry).
