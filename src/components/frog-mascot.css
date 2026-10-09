@@ -1,13 +1,21 @@
 /* Frog (FrogMascot.tsx): the CSS idle of the app's avatars, a slow breath,
    the throat fluttering with it, a lazy blink one eye then the other, and the
    lips moving while it speaks. Every part turns about its own point in the
-   0..100 box (inline transform-origin, view-box units). The desktop mascot
-   and a move drive the same groups from the rig (frog-moves.ts) instead, and
-   drop these loops (.frog-rig). Reduced motion keeps it still. */
+   0..100 box (frog-art.ts FROG_PIVOTS, view-box units). The desktop mascot and
+   a move drive the same groups from the rig (frog-moves.ts) instead, with the
+   pivots in their transform attributes: the loops and these origins then
+   stand down (.frog-rig), since an origin would shift those transforms too.
+   Reduced motion keeps it still. */
 
-.frog-mascot :is(.frog-whole, .frog-head, .frog-eye, .frog-mouth, .frog-throat) {
+.frog-mascot :is(.frog-whole, .frog-head, .frog-eye, .frog-mouth, .frog-throat, .frog-hand) {
   transform-box: view-box;
 }
+.frog-live:not(.frog-rig) .frog-whole { transform-origin: 50px 99px; }
+.frog-live:not(.frog-rig) .frog-head { transform-origin: 50px 72px; }
+.frog-live:not(.frog-rig) .frog-eye-l { transform-origin: 36px 34px; }
+.frog-live:not(.frog-rig) .frog-eye-r { transform-origin: 64px 34px; }
+.frog-live:not(.frog-rig) .frog-mouth { transform-origin: 50px 65.2px; }
+.frog-live:not(.frog-rig) .frog-throat { transform-origin: 50px 67.5px; }
 
 .frog-live:not(.frog-rig) .frog-whole { animation: frog-breathe 3.4s ease-in-out infinite; }
 .frog-live:not(.frog-rig) .frog-throat { animation: frog-throat 3.4s ease-in-out infinite; }
@@ -26,7 +34,7 @@
 }
 @keyframes frog-throat {
   0%, 100% { transform: scale(0); }
-  50% { transform: scale(0.42); }
+  50% { transform: scale(0.16); }
 }
 @keyframes frog-puff {
   0%, 100% { transform: scale(0); }
@@ -44,7 +52,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .frog-mascot :is(.frog-whole, .frog-head, .frog-eye, .frog-mouth, .frog-throat) {
+  .frog-mascot :is(.frog-whole, .frog-head, .frog-eye, .frog-mouth, .frog-throat, .frog-hand) {
     animation: none !important;
     transition: none !important;
   }

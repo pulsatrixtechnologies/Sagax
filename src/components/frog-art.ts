@@ -62,6 +62,9 @@ export const FROG_PIVOTS = {
   eyeL: [36, 34] as Point,
   eyeR: [64, 34] as Point,
   mouth: FROG_ART.mouth,
+  /** Each hand's wrist: a wave lifts and turns the hand about it. */
+  handL: [38, 93] as Point,
+  handR: [62, 93] as Point,
   /** The hips the hind legs hang from, left and right. */
   hipL: [25, 91] as Point,
   hipR: [75, 91] as Point,
@@ -348,6 +351,52 @@ export function frogEyeOps(spec: FrogEyeSpec, s: -1 | 1, ow: number, blink = 0):
   return ops;
 }
 
+/** An open eye's layers, for the rig: the white, the pupil and its glint (moved by a look), the face's own lid, the outline; all but the outline clipped to `clip`. */
+export interface FrogEyeLayers {
+  clip: string;
+  white: FrogOp[];
+  pupil: FrogOp[];
+  lid: FrogOp[];
+  outline: FrogOp[];
+  /** The blink lid: a full-height lid with its line at the bottom, slid down from above the eye (translate y from -height to 0). */
+  blink: FrogOp[];
+  /** The lower blink lid, slid up from below the eye to meet the upper one. */
+  low: FrogOp[];
+  height: number;
+  /** How far the face's own lid already closes the eye (0..1): a blink shows only past it. */
+  rest: number;
+}
+
+/** The layers of an open eye (null for the closed kinds, which the rig draws as they are). */
+export function frogEyeLayers(spec: FrogEyeSpec, s: -1 | 1, ow: number): FrogEyeLayers | null {
+  if (spec.kind !== "open") return null;
+  const ops = frogEyeOps(spec, s, ow, 0);
+  const { eye } = FROG_ART;
+  const cx = 50 + s * eye.dx;
+  const r = eye.r * spec.scale;
+  const clip = ops[0].d;
+  const unclip = (op: FrogOp): FrogOp => ({ ...op, clip: undefined });
+  const L = r + 3;
+  const top = eye.y - r - 1;
+  const height = 2 * r + 2;
+  const meet = top + height * Math.max(0.6, spec.lid);
+  return {
+    clip,
+    white: [ops[0]],
+    pupil: ops.slice(1, 3).map(unclip),
+    lid: ops.slice(3, -1).map(unclip),
+    outline: [ops[ops.length - 1]],
+    // the upper lid ends at the meeting line, the lower lid starts there; the rig slides them toward it
+    blink: [
+      { d: `M${fmt(cx - L)} ${fmt(top - height)}L${fmt(cx + L)} ${fmt(top - height)}L${fmt(cx + L)} ${fmt(meet)}L${fmt(cx - L)} ${fmt(meet)}Z`, fill: "lid" },
+      { d: `M${fmt(cx - L)} ${fmt(meet)}Q${fmt(cx)} ${fmt(meet + 2.4)} ${fmt(cx + L)} ${fmt(meet)}`, stroke: "lidLine", width: ow },
+    ],
+    low: [{ d: `M${fmt(cx - L)} ${fmt(meet)}Q${fmt(cx)} ${fmt(meet + 2.4)} ${fmt(cx + L)} ${fmt(meet)}L${fmt(cx + L)} ${fmt(top + 2 * height)}L${fmt(cx - L)} ${fmt(top + 2 * height)}Z`, fill: "lid" }],
+    height,
+    rest: spec.lid,
+  };
+}
+
 /** The lips: [outer shape, the dark line that splits them, an open mouth's dark inside]. */
 export const FROG_LIPS: Readonly<Record<FrogMouth, { shape: string; split?: string; inside?: string; tongue?: string }>> = {
   smug: { shape: "M26.5 62Q38 58.6 50 59.2Q62 58.6 73.5 62Q75.4 64.4 73.5 67.2Q62 71.6 50 71.4Q38 71.6 26.5 67.2Q24.6 64.4 26.5 62Z", split: "M27.2 64.4Q50 63.2 72.8 64.4" },
@@ -488,6 +537,26 @@ export function frogHaunchOps(s: -1 | 1, extend: number, ow: number): FrogOp[] {
   return [...shaded(d, "skin", "shade", -1.2, -1.6), { d, stroke: "line", width: ow }];
 }
 
+/** The shoulders the arms hang from, left and right. */
+export const FROG_SHOULDERS: readonly [Point, Point] = [[31, 80], [69, 80]];
+
+/** One arm, `s` -1 left, 1 right, to its hand moved by dx (outward), dy: a thick skin stroke from the shoulder to the wrist, nothing at rest. */
+export function frogArmOps(s: -1 | 1, dx: number, dy: number, ow: number): FrogOp[] {
+  if (Math.abs(dx) + Math.abs(dy) < 3) return [];
+  const [sx, sy] = FROG_SHOULDERS[s < 0 ? 0 : 1];
+  const [wx, wy] = s < 0 ? FROG_PIVOTS.handL : FROG_PIVOTS.handR;
+  const ex = wx + s * dx;
+  const ey = wy + dy;
+  // a slight elbow bend out to the side
+  const mx = (sx + ex) / 2 + s * 4;
+  const my = (sy + ey) / 2 + 2;
+  const d = `M${fmt(sx)} ${fmt(sy)}Q${fmt(mx)} ${fmt(my)} ${fmt(ex)} ${fmt(ey)}`;
+  return [
+    { d, stroke: "line", width: r2(6.5 + 2 * ow), round: true },
+    { d, stroke: "skin", width: 6.5, round: true },
+  ];
+}
+
 /** The lily pad under the frog: a wide flat leaf with its notch toward the viewer. */
 export const FROG_PAD = "M50 94C72 94 92 96.5 92 100.5C92 104.5 72 107 54 107L50 101.5L46 107C28 107 8 104.5 8 100.5C8 96.5 28 94 50 94Z";
 export function frogPadOps(ow: number): FrogOp[] {
@@ -495,24 +564,29 @@ export function frogPadOps(ow: number): FrogOp[] {
 }
 
 /**
- * The water in front of the frog at `level` (the line's height in box units:
- * 100 is no water, 67 hides the lower third) with ripples at `phase` (s).
+ * The pond in front of the frog at `level` (the water line's height in box
+ * units: 100 is no water, 67 hides the lower third), its line rippling at
+ * `phase` (s). A rounded pool, wider than the frog, so it reads as a pond on
+ * the desktop and not as a box.
  */
 export function frogWaterOps(level: number, phase: number, ow: number): FrogOp[] {
   if (level >= 99.5) return [];
-  const amp = 1.1;
+  const amp = 0.9;
   const pts: string[] = [];
-  for (let i = 0; i <= 12; i += 1) {
-    const x = -6 + i * 9.333;
-    const y = level + Math.sin(phase * 3.2 + i * 1.3) * amp;
+  for (let i = 0; i <= 10; i += 1) {
+    const x = 2 + i * 9.6;
+    // the ripples fade toward the pond's ends
+    const y = level + Math.sin(phase * 3.2 + i * 1.3) * amp * Math.sin((i / 10) * Math.PI);
     pts.push(`${fmt(x)} ${fmt(y)}`);
   }
   const top = `M${pts.join("L")}`;
-  const d = `${top}L106 112L-6 112Z`;
+  const bottom = Math.max(level + 14, 106);
+  const d = `${top}C${fmt(104)} ${fmt(level + 1)} ${fmt(104)} ${fmt(bottom)} 86 ${fmt(bottom + 2)}L14 ${fmt(bottom + 2)}C-4 ${fmt(bottom)} -4 ${fmt(level + 1)} 2 ${fmt(level)}Z`;
+  const glint = Math.sin(phase * 2);
   return [
-    { d, fill: "water", opacity: 0.88 },
-    { d: top, stroke: "waterLine", width: ow, round: true },
-    { d: `M${fmt(30 + Math.sin(phase * 2) * 2)} ${fmt(level + 5)}L${fmt(40 + Math.sin(phase * 2) * 2)} ${fmt(level + 5)}M${fmt(60 - Math.sin(phase * 2.4) * 2)} ${fmt(level + 9)}L${fmt(72 - Math.sin(phase * 2.4) * 2)} ${fmt(level + 9)}`, stroke: "white", width: r2(ow * 0.7), round: true, opacity: 0.6 },
+    { d, fill: "water", opacity: 0.9 },
+    { d, stroke: "waterLine", width: ow },
+    { d: `M${fmt(28 + glint * 2)} ${fmt(level + 5)}L${fmt(40 + glint * 2)} ${fmt(level + 5)}M${fmt(60 - glint * 2)} ${fmt(level + 9)}L${fmt(72 - glint * 2)} ${fmt(level + 9)}`, stroke: "white", width: r2(ow * 0.7), round: true, opacity: 0.6 },
   ];
 }
 
@@ -531,6 +605,9 @@ export interface FrogPartsInput {
 /** The drawing's parts as ops, each a group the rig moves on its own. */
 export interface FrogParts {
   body: FrogOp[];
+  /** The two hands, each its own group (a wave lifts one). */
+  handL: FrogOp[];
+  handR: FrogOp[];
   head: FrogOp[];
   /** Empty: a frog has no brows; the lids carry their work. */
   brows: FrogOp[];
@@ -548,9 +625,11 @@ export function frogParts(input: FrogPartsInput): FrogParts {
   const ow = frogOutline(input.size);
   const face = FROG_FACES[input.expression] ?? FROG_FACES.neutral;
   const [bl, br] = input.blink ?? [0, 0];
-  const hands = A.hands.flatMap((d) => [...shaded(d, "toe", "toeShade", -1, -1), outline(d, ow)]);
+  const hand = (d: string) => [...shaded(d, "toe", "toeShade", -1, -1), outline(d, ow)];
   return {
-    body: [...shaded(A.body, "skin", "shade", -3, -1), ...shaded(A.belly, "belly", "bellyShade", -2, -1).map((op) => ({ ...op, clip: A.body })), outline(A.body, ow), ...hands],
+    body: [...shaded(A.body, "skin", "shade", -3, -1), ...shaded(A.belly, "belly", "bellyShade", -2, -1).map((op) => ({ ...op, clip: A.body })), outline(A.body, ow)],
+    handL: hand(A.hands[0]),
+    handR: hand(A.hands[1]),
     head: [...shaded(A.head, "skin", "shade", -2.6, -3.4), outline(A.head, ow)],
     brows: [],
     eyeL: frogEyeOps(face.eyes[0], -1, ow, bl),
@@ -585,7 +664,7 @@ export function frogStillSvg(options: { color?: string | null; expression?: Frog
   const parts = frogParts({ expression: options.expression ?? "neutral", size: options.size });
   const uid = options.uid ?? "frog";
   const draw = (ops: FrogOp[], key: string) => frogOpsToSvg(ops, palette, `${uid}${key}`);
-  const layers = (["body", "head", "brows", "eyeL", "eyeR", "nose", "mouth", "extras"] as const).map((key) => draw(parts[key], key)).join("");
+  const layers = (["body", "handL", "handR", "head", "brows", "eyeL", "eyeR", "nose", "mouth", "extras"] as const).map((key) => draw(parts[key], key)).join("");
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${frogViewBox(options.size)}" width="${options.size}" height="${options.size}">${layers}</svg>`;
 }
 

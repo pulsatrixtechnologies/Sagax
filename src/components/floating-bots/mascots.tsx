@@ -23,9 +23,10 @@ import { SHIBA_MOVE_TIMING, shibaMoveFor, type ShibaMove } from "@/components/sh
 import { playShibaBark } from "@/lib/shiba-bark";
 import { readFloatingBotPrefs } from "@/lib/floating-bots";
 import { FrogMascot } from "@/components/FrogMascot";
+import { FROG_TRACKS, frogCueFor, frogHeldFor, frogMoveFor, type FrogDesktopState } from "@/components/frog-moves";
 import { fxMoveFor, useEquipBurst, useMoveBurst, useReducedMotion, type FxMoveRequest } from "@/components/skin-fx/skin-fx";
 import { completeMascotLook, MASCOT_SHAPES, type MascotCharacter, type MascotLook, type MascotShape } from "../../../shared/mascot-look";
-import { createFrameSmoother, type MascotActivity, type MascotFrame } from "./behavior";
+import { createFrameSmoother, type MascotActivity, type MascotFrame, type MascotTask } from "./behavior";
 import Owl25D, { flatTilt, flatTurn } from "./Owl25D";
 import type { FloatingPose } from "./protocol";
 
@@ -35,6 +36,8 @@ export interface MascotRenderProps {
   skin: string;
   /** The bot's character and its look, every choice filled in. */
   look: CompleteLook;
+  /** The bot's work, when the desktop knows it (a frog sinks in its pond while its bot waits). */
+  task?: MascotTask;
   /** The character's box, px. */
   size: number;
   activity: MascotActivity;
@@ -360,6 +363,8 @@ function barkIfWanted() {
  * and lies down to sleep when snoozed. The others keep their own life (null).
  */
 export function cueClipFor(character: MascotCharacter, cue: "nudge" | "achievement" | "message" | "snooze"): MascotActivity | null {
+  // Frog croaks at a nudge, celebrates an achievement and catches a fly when a message lands
+  if (character === "frog") return cue === "nudge" ? "croak" : cue === "achievement" ? "celebrate" : cue === "message" ? "tongue" : null;
   if (character !== "shiba") return null;
   return cue === "nudge" ? "bark" : cue === "achievement" ? "turnCircles" : cue === "snooze" ? "lieDown" : "excited";
 }
@@ -410,11 +415,40 @@ function ShibaThumb({ color, look, size }: MascotThumbProps) {
 
 /* --------------------------------------------------------------- Frog */
 
-function FrogRender({ color, look, size, activity, pose, frame, fps, onHitTest }: MascotRenderProps) {
-  const move = useClipFx(activity);
+/** Frog's moves in the avatar popover and the mascot's "Moves" menu: its own first, then the shared ones. */
+export const FROG_MENU_MOVES = ["hop", "longJump", "tongue", "croak", "smugNod", "blinkOne", "legStretch", "sideEye", "shiver", "wave"] as const;
+export const FROG_MOVE_LABELS: Partial<Record<string, LocaleKey>> = {
+  hop: "floatingBots.move.hop",
+  longJump: "floatingBots.move.longJump",
+  tongue: "floatingBots.move.tongue",
+  croak: "floatingBots.move.croak",
+  smugNod: "floatingBots.move.smugNod",
+  blinkOne: "floatingBots.move.blinkOne",
+  legStretch: "floatingBots.move.stretch",
+  sideEye: "floatingBots.move.sideEye",
+  shiver: "floatingBots.move.shiver",
+};
+
+/** A new move request each time a clip Frog has a one-shot for starts, or the desktop's state cues one (frog-moves.ts). */
+function useFrogMoves(activity: MascotActivity, pose: FloatingPose, task: MascotTask | undefined): FxMoveRequest | null {
+  const last = useRef<{ state: FrogDesktopState | null; request: FxMoveRequest | null }>({ state: null, request: null });
+  const state: FrogDesktopState = { activity, pose, task };
+  const prev = last.current.state;
+  if (!prev || prev.activity !== activity || prev.pose !== pose || prev.task !== task) {
+    const own = prev?.activity !== activity ? frogMoveFor(activity) : null;
+    const clip = own && !FROG_TRACKS[own].loop ? activity : frogCueFor(prev, state);
+    last.current = { state, request: clip ? { clip, key: Date.now() } : last.current.request };
+  }
+  return last.current.request;
+}
+
+function FrogRender({ color, look, size, activity, pose, task, frame, fps, onHitTest }: MascotRenderProps) {
+  const own = useFrogMoves(activity, pose, task);
+  const fx = useClipFx(activity);
+  const move = own ?? fx;
   return (
-    <Motion25D size={size} frame={frame} fps={fps} onHitTest={onHitTest}>
-      <FrogMascot skin={look.skins.frog} color={color} size={size * 0.9} mood={bunbuMoodFor(activity, pose)} expression={shapeExpressionForClip(activity)} detail="full" move={move} label={null} />
+    <Motion25D size={size} frame={frame} fps={fps} onHitTest={onHitTest} transform={shibaMotionTransform}>
+      <FrogMascot skin={look.skins.frog} color={color} size={size * 0.9} mood={bunbuMoodFor(activity, pose)} expression={shapeExpressionForClip(activity)} detail="full" move={move} activity={frogHeldFor({ activity, pose, task })} rig label={null} />
     </Motion25D>
   );
 }
@@ -447,7 +481,15 @@ export const MASCOTS: readonly MascotDefinition[] = [
     Render: ShibaRender,
     Thumb: ShibaThumb,
   },
-  { id: "frog", capabilities: { walk: true, fly: false, wings: false, blink: true, turn: true, flip: true }, paint: { colors: true, skins: true }, moves: ["wave", "dance", "jump", "hop", "love"], Render: FrogRender, Thumb: FrogThumb },
+  {
+    id: "frog",
+    capabilities: { walk: true, fly: false, wings: false, blink: true, turn: true, flip: true },
+    paint: { colors: true, skins: true },
+    moves: FROG_MENU_MOVES,
+    moveLabels: FROG_MOVE_LABELS,
+    Render: FrogRender,
+    Thumb: FrogThumb,
+  },
 ];
 
 export function mascotFor(look: Pick<MascotLook, "character"> | undefined): MascotDefinition {

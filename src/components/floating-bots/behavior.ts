@@ -90,6 +90,8 @@ export interface MascotOptions {
   depth?: boolean;
   /** The character is a dog (Shiba): it wanders off and back, sniffs, wags, barks, and checks out a new spot when dropped. */
   dog?: boolean;
+  /** The character is a frog (Frog): it hops about, leaps to a random spot, catches flies and croaks. */
+  frog?: boolean;
 }
 
 export type MascotInput =
@@ -279,6 +281,7 @@ function idleAction(state: MascotState, now: number, options: MascotOptions): St
     canMove: options.canMove,
     depth: options.depth,
     dog: options.dog,
+    frog: options.frog,
     random: options.random,
   });
   const gap = idleGapMs({ liveliness: liveliness(options), mood: moodOf(options), reduced: options.reduced, random: options.random });

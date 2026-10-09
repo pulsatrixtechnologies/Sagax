@@ -20,6 +20,7 @@ import {
   type MascotEffect,
   type MascotInput,
   type MascotState,
+  type MascotTask,
 } from "./behavior";
 import { clickGesture, eventsForClick, newStroke, strokeLeave, strokeStep } from "./gestures";
 import type { FloatingPilot } from "./pilot";
@@ -158,6 +159,8 @@ interface CharacterProps {
   look: string;
   pose: FloatingPose;
   activity: MascotActivity;
+  /** The bot's work as the mascot sees it (a frog sinks in its pond while its bot waits). */
+  task?: MascotTask;
   mascot: {
     frame: (at: number) => ReturnType<typeof mascotMotion>;
     fps: () => number;
@@ -169,7 +172,7 @@ interface CharacterProps {
  * The character redraws only when its own looks change: a streaming reply
  * sends a new snapshot many times a second, and none of them concern it.
  */
-const Character = memo(function Character({ color, skin, avatarSrc, avatarX, avatarY, look: lookJson, pose, activity, mascot }: CharacterProps) {
+const Character = memo(function Character({ color, skin, avatarSrc, avatarX, avatarY, look: lookJson, pose, activity, task, mascot }: CharacterProps) {
   const look = useMemo(() => (lookJson ? (JSON.parse(lookJson) as MascotLook) : undefined), [lookJson]);
   const complete = useMemo(() => completeMascotLook(look), [look]);
   // the character the bot wears (mascots.tsx); the owl unless chosen otherwise
@@ -190,6 +193,7 @@ const Character = memo(function Character({ color, skin, avatarSrc, avatarX, ava
         size={OWL_SIZE}
         activity={activity}
         pose={pose}
+        task={task}
         frame={mascot.frame}
         fps={mascot.fps}
         onHitTest={mascot.onHitTest}
@@ -351,11 +355,14 @@ export function FloatingBotView({ snapshot: given, onEvent, mover, interactive, 
   const task = mascotTaskFor(snapshot.task, chatOpen);
   // a dog (Shiba) has its own idle life, and sits and waits while its bot waits for an approval
   const dog = snapshot.mascot?.character === "shiba";
+  // a frog has its own idle life too, and stays in its pond while its bot waits for an approval
+  const frog = snapshot.mascot?.character === "frog";
   const mascotOptions = () => ({
     reduced,
     flyAway: snapshot.flyAway,
-    canMove: Boolean(pilot) && !chatOpen && !(dog && task === "waiting"),
+    canMove: Boolean(pilot) && !chatOpen && !((dog || frog) && task === "waiting"),
     dog,
+    frog,
     random: Math.random,
     liveliness: snapshot.liveliness ?? "normal",
     mood: snapshot.mood,
@@ -926,6 +933,7 @@ export function FloatingBotView({ snapshot: given, onEvent, mover, interactive, 
               look={snapshot.mascot ? JSON.stringify(snapshot.mascot) : ""}
               pose={snapshot.pose}
               activity={activity}
+              task={task}
               mascot={mascot}
             />
           </span>
