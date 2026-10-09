@@ -547,7 +547,8 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   { methods: ["POST"], path: /^\/api\/me\/mcp\/servers$/, feature: "orgDirectory" },
   { methods: ["PATCH", "DELETE"], path: /^\/api\/me\/mcp\/servers\/[a-z][a-z0-9_-]{0,31}$/, feature: "orgDirectory" },
   { methods: ["POST"], path: /^\/api\/me\/mcp\/servers\/[a-z][a-z0-9_-]{0,31}\/oauth\/(?:start|disconnect)$/, feature: "orgDirectory" },
-  // A bot's skills and Claude Code plugins (Library): the handlers let a
+  // A bot's skills (Library) and Claude Code plugins (Connect apps, that
+  // bot's scope): the handlers let a
   // person who may use the bot read them and its owner or a manager change them.
   { methods: ["GET", "POST"], path: /^\/api\/bots\/[\w-]+\/skills$/, feature: "orgDirectory" },
   { methods: ["GET", "PATCH", "DELETE"], path: /^\/api\/bots\/[\w-]+\/skills\/[a-z0-9-]+$/, feature: "orgDirectory" },

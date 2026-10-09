@@ -1,15 +1,17 @@
-// Claude Code plugins on a bot (the bot panel's Library > Plugins). Sagax
-// fetches a marketplace (a git repository with .claude-plugin/marketplace.json)
-// itself and copies the plugins the owner picks into the bot's own folder.
-// Claude loads each enabled folder with `--plugin-dir`. Every other engine
-// gets the same enabled skills and commands in the turn prompt
-// (server/plugin-turn.ts). Nothing here goes through a bot's shell: on an
-// organization server the host Bash is denied (withholdHostTools), so
-// `claude plugin marketplace add` typed by a bot could never run there,
-// whatever SAGAX_CLAUDE_ALLOW says.
+// Claude Code plugins on a bot (Connect apps, scope "For this bot"). The
+// marketplaces are the installation's one list (server/plugin-marketplaces.ts,
+// Connect apps > Manage > Advanced > Marketplaces); Sagax copies the plugins
+// the owner picks from there into the bot's own folder. Claude loads each
+// enabled folder with `--plugin-dir`. Every other engine gets the same
+// enabled skills and commands in the turn prompt (server/plugin-turn.ts).
+// Nothing here goes through a bot's shell: on an organization server the
+// host Bash is denied (withholdHostTools), so `claude plugin marketplace add`
+// typed by a bot could never run there, whatever SAGAX_CLAUDE_ALLOW says.
 //
 // Rules:
-//   - Per bot: DATA_DIR/bot-plugins/<botId>/{state.json, marketplaces/, plugins/}.
+//   - Per bot: DATA_DIR/bot-plugins/<botId>/{state.json, plugins/}. A bot
+//     stored by an older build also kept its own marketplaces/ there:
+//     `migrateBotMarketplaces` moves them into the one list at start.
 //   - Who: the bot's owner or a person with manage on it (the route checks);
 //     reads need use. The organization admin may restrict marketplaces
 //     (organization.pluginMarketplaces: any by default, or a list of
@@ -33,6 +35,7 @@ import { isAbsolute, join, normalize, relative, resolve, sep } from "node:path";
 import { z } from "zod";
 
 import { writeFileAtomic } from "./atomic.ts";
+import type { PluginMarketplaces } from "./plugin-marketplaces.ts";
 import { probeGithubRepo, type GithubCredential, type GithubProbe } from "./github-access.ts";
 import { githubGitEnvironment } from "./github-connect.ts";
 
@@ -40,8 +43,12 @@ const NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
 const BOT_ID = /^[\w-]{1,80}$/;
 const MAX_REPO_BYTES = 64 * 1024 * 1024;
 const MAX_REPO_FILES = 8_000;
-const MAX_MARKETPLACES = 10;
 const MAX_PLUGINS = 50;
+const MAX_CONTENT_NAMES = 50;
+/** Marketplaces a bot package may bring into the one list. */
+const MAX_RESTORED_MARKETPLACES = 10;
+/** The https address of a marketplace.json (plugin-marketplaces.ts isManifestUrl). */
+const MANIFEST_URL = /^https:\/\/\S+\.json(?:\?\S*)?$/i;
 const GIT_TIMEOUT_MS = 120_000;
 /** What a plugin may not bring onto the server host. */
 const STRIPPED_PATHS = ["hooks", ".mcp.json", ".lsp.json", "bin", "monitors"] as const;
@@ -145,6 +152,9 @@ const pluginRecord = z.object({
   marketplace: z.string(),
   description: z.string().optional(),
   version: z.string().optional(),
+  /** what was installed (plugin-marketplaces.ts pluginRevision), to tell an
+   * update without a version change */
+  revision: z.string().optional(),
   enabled: z.boolean(),
   installedAt: z.number(),
   installedBy: z.string().optional(),
@@ -155,15 +165,31 @@ const pluginRecord = z.object({
   declaredMcpServers: z.array(z.string()),
 }).strict();
 
-const stateSchema = z.object({
+/** Before the one marketplace list: each bot kept its own marketplaces. */
+const legacyStateSchema = z.object({
   version: z.literal(1),
   marketplaces: z.record(z.string(), marketplaceRecord),
   plugins: z.record(z.string(), pluginRecord),
 }).strict();
 
+const stateSchema = z.object({
+  version: z.literal(2),
+  plugins: z.record(z.string(), pluginRecord),
+}).strict();
+
 export type PluginState = z.infer<typeof stateSchema>;
+/** A bot's state as an older build kept it, and as a bot package carries
+ * it (server/bot-zip.ts): its marketplaces with its installs. */
+export type LegacyPluginState = z.infer<typeof legacyStateSchema>;
 export type MarketplaceRecord = z.infer<typeof marketplaceRecord>;
 export type InstalledBotPlugin = z.infer<typeof pluginRecord> & { key: string };
+
+/** What a plugin brings to a bot, by name (read from its folder). */
+export interface PluginContents {
+  agents: string[];
+  commands: string[];
+  skills: string[];
+}
 
 export interface MarketplacePluginEntry {
   name: string;
@@ -182,7 +208,38 @@ export interface MarketplaceListing {
   description?: string;
   addedAt: number;
   updatedAt: number;
-  plugins: Array<{ name: string; description?: string; version?: string; category?: string; installed: boolean; external: boolean }>;
+  plugins: Array<{
+    name: string; description?: string; version?: string; category?: string; installed: boolean; external: boolean;
+    /** the version this bot has, when it differs from `version` */
+    installedVersion?: string;
+    /** the marketplace offers another version or other files (Install updates in place) */
+    updateAvailable?: boolean;
+    /** absent for a plugin in another repository (read at install) */
+    contents?: PluginContents;
+  }>;
+}
+
+/** The agents, commands and skills in a plugin folder (names only). */
+export function readPluginContents(root: string): PluginContents {
+  const names = (dir: string, pick: (entry: { name: string; isFile: () => boolean; isDirectory: () => boolean }) => string | null): string[] => {
+    try {
+      if (!statSync(dir).isDirectory()) return [];
+      return readdirSync(dir, { withFileTypes: true })
+        .filter((entry) => !entry.isSymbolicLink())
+        .map(pick)
+        .filter((name): name is string => Boolean(name))
+        .sort((a, b) => a.localeCompare(b))
+        .slice(0, MAX_CONTENT_NAMES);
+    } catch {
+      return [];
+    }
+  };
+  const markdown = (entry: { name: string; isFile: () => boolean }) => (entry.isFile() && entry.name.endsWith(".md") ? entry.name.slice(0, -3) : null);
+  return {
+    agents: names(join(root, "agents"), markdown),
+    commands: names(join(root, "commands"), markdown),
+    skills: names(join(root, "skills"), (entry) => (entry.isDirectory() && existsSync(join(root, "skills", entry.name, "SKILL.md")) ? entry.name : null)),
+  };
 }
 
 // ── marketplace.json ─────────────────────────────────────────────────────
@@ -359,6 +416,8 @@ export const runGit: GitRunner = (args, options) => new Promise((resolvePromise,
 
 export interface BotPluginsOptions {
   dataDir: string;
+  /** The installation's one marketplace list. */
+  marketplaces: PluginMarketplaces;
   git?: GitRunner;
   /** git environment for a clone without a credential of its own (and the
    * whole environment when `credentials` is absent): the acting person's
@@ -379,6 +438,21 @@ export interface BotPluginsOptions {
   probe?: (repo: { owner: string; repo: string }, credentials: readonly GithubCredential[]) => Promise<GithubProbe>;
   policy: () => MarketplacePolicy | undefined;
   now?: () => number;
+}
+
+function readStateFile(file: string): PluginState | null {
+  let raw: unknown;
+  try {
+    raw = JSON.parse(readFileSync(file, "utf8"));
+  } catch {
+    return null;
+  }
+  const current = stateSchema.safeParse(raw);
+  if (current.success) return current.data;
+  // Not migrated yet (or the migration failed for this bot): its installs
+  // still count; its own marketplaces are the migration's to take in.
+  const legacy = legacyStateSchema.safeParse(raw);
+  return legacy.success ? { version: 2, plugins: legacy.data.plugins } : null;
 }
 
 /** A token for a git host other than GitHub, as an extra header for that
@@ -409,11 +483,7 @@ export class BotPlugins {
   }
 
   private read(botId: string): PluginState {
-    try {
-      return stateSchema.parse(JSON.parse(readFileSync(join(this.root(botId), "state.json"), "utf8")));
-    } catch {
-      return { version: 1, marketplaces: {}, plugins: {} };
-    }
+    return readStateFile(join(this.root(botId), "state.json")) ?? { version: 2, plugins: {} };
   }
 
   private write(botId: string, state: PluginState): void {
@@ -466,89 +536,112 @@ export class BotPlugins {
     }
   }
 
-  /** The bot's marketplaces with what each offers. */
+  /** The installation's marketplaces, with what this bot has from each. */
   listMarketplaces(botId: string): MarketplaceListing[] {
     const state = this.read(botId);
     let tokenSources = new Set<string>();
     try { tokenSources = this.options.tokens?.sourcesFor(botId) ?? new Set(); } catch { /* listed without the flag */ }
-    return Object.entries(state.marketplaces).map(([name, record]) => {
+    return this.options.marketplaces.list().map((market) => {
       let plugins: MarketplaceListing["plugins"] = [];
       try {
-        plugins = readMarketplaceManifest(join(this.root(botId), "marketplaces", name)).plugins.map((entry) => ({
-          name: entry.name,
-          ...(entry.description ? { description: entry.description } : {}),
-          ...(entry.version ? { version: entry.version } : {}),
-          ...(entry.category ? { category: entry.category } : {}),
-          installed: Object.hasOwn(state.plugins, `${entry.name}@${name}`),
-          external: entry.source.kind === "git",
-        }));
+        const repo = this.options.marketplaces.repoPath(market.name);
+        const manifestOnly = Boolean(this.options.marketplaces.record(market.name)?.manifestUrl);
+        plugins = readMarketplaceManifest(repo).plugins.map((entry) => {
+          const installed = state.plugins[`${entry.name}@${market.name}`];
+          // the same rule as the workspace scope (pluginUpdateAvailable):
+          // another declared version, or the same version with other files
+          const offered = installed ? this.options.marketplaces.revisionOf(market.name, entry) : undefined;
+          const update = Boolean(installed) && (
+            (Boolean(installed!.version && entry.version) && installed!.version !== entry.version)
+            || (Boolean(installed!.revision && offered) && installed!.revision !== offered)
+          );
+          let contents: PluginContents | undefined;
+          if (entry.source.kind === "path" && !manifestOnly) {
+            try { contents = readPluginContents(insideRoot(repo, entry.source.path)); } catch { contents = undefined; }
+          }
+          return {
+            name: entry.name,
+            ...(entry.description ? { description: entry.description } : {}),
+            ...(entry.version ? { version: entry.version } : {}),
+            ...(entry.category ? { category: entry.category } : {}),
+            installed: Boolean(installed),
+            ...(installed?.version && installed.version !== entry.version ? { installedVersion: installed.version } : {}),
+            ...(update ? { updateAvailable: true } : {}),
+            external: entry.source.kind === "git",
+            ...(contents ? { contents } : {}),
+          };
+        });
       } catch {
         plugins = [];
       }
-      return { name, source: record.source, hasToken: tokenSources.has(record.source), ...(record.description ? { description: record.description } : {}), addedAt: record.addedAt, updatedAt: record.updatedAt, plugins };
-    }).sort((a, b) => a.name.localeCompare(b.name));
+      return {
+        name: market.name, source: market.source, hasToken: tokenSources.has(market.source),
+        ...(market.description ? { description: market.description } : {}), addedAt: market.addedAt, updatedAt: market.updatedAt, plugins,
+      };
+    });
   }
 
   listPlugins(botId: string): InstalledBotPlugin[] {
     return Object.entries(this.read(botId).plugins).map(([key, record]) => ({ key, ...record })).sort((a, b) => a.key.localeCompare(b.key));
   }
 
-  /** Add (or refresh) a marketplace by its source. A `token` is tried
-   * first and saved for this marketplace once the clone works. */
-  addMarketplace(botId: string, input: { source: string; ref?: string; token?: string }, actor: string | undefined): Promise<MarketplaceListing> {
-    return this.withLock(botId, async () => {
-      const source = parseGitSource(input.source, input.ref || undefined);
-      this.checkPolicy(source);
-      const state = this.read(botId);
-      const existing = Object.entries(state.marketplaces).find(([, record]) => record.source === source.id && (record.ref ?? "") === (source.ref ?? ""));
-      if (!existing && Object.keys(state.marketplaces).length >= MAX_MARKETPLACES) throw new BotPluginError(`A bot can have at most ${MAX_MARKETPLACES} marketplaces.`, "too_many", 400);
-      const staging = join(this.root(botId), "marketplaces", `.incoming-${this.now()}`);
-      if (input.token && !this.options.tokens) throw new BotPluginError("This server cannot keep marketplace tokens.", "tokens_unavailable", 503);
-      await this.clone(source, staging, await this.cloneEnvironment(botId, source, actor, input.token ? { token: input.token } : {}));
-      try {
-        const manifest = readMarketplaceManifest(staging);
-        const taken = state.marketplaces[manifest.name];
-        if (taken && taken.source !== source.id) throw new BotPluginError(`This bot already has a marketplace named ${manifest.name} from ${taken.source}.`, "name_taken", 409);
-        const target = join(this.root(botId), "marketplaces", manifest.name);
-        rmSync(target, { recursive: true, force: true });
-        renameSync(staging, target);
-        const now = this.now();
-        state.marketplaces[manifest.name] = {
-          source: source.id, url: source.url, ...(source.ref ? { ref: source.ref } : {}), ...(manifest.description ? { description: manifest.description } : {}),
-          addedAt: taken?.addedAt ?? now, ...(taken?.addedBy ?? actor ? { addedBy: taken?.addedBy ?? actor } : {}), updatedAt: now,
-        };
-        this.write(botId, state);
-        if (input.token) this.options.tokens!.set(botId, source.id, input.token, actor);
-        return this.listMarketplaces(botId).find((listing) => listing.name === manifest.name)!;
-      } finally {
-        rmSync(staging, { recursive: true, force: true });
-      }
+  /** Add (or fetch again) a marketplace of the one list, from a bot. The
+   * clone reads with this bot's token for it first (a `token` sent here is
+   * tried first and saved for this bot and marketplace once the clone
+   * works), then the person's GitHub connection, then the organization's
+   * tokens (`cloneEnvironment`). */
+  async addMarketplace(botId: string, input: { source: string; ref?: string; token?: string }, actor: string | undefined): Promise<MarketplaceListing> {
+    this.root(botId);
+    if (input.token && !this.options.tokens) throw new BotPluginError("This server cannot keep marketplace tokens.", "tokens_unavailable", 503);
+    let cloned: GitSource | undefined;
+    const added = await this.options.marketplaces.add({ source: input.source, ...(input.ref ? { ref: input.ref } : {}) }, actor, {
+      environment: async (source) => {
+        const env = await this.cloneEnvironment(botId, source, actor, input.token ? { token: input.token } : {});
+        cloned = source;
+        return env;
+      },
     });
+    // A manifest address is read over https without a token: none is kept.
+    if (input.token && cloned) this.options.tokens!.set(botId, added.source, input.token, actor);
+    return this.listMarketplaces(botId).find((listing) => listing.name === added.name)!;
   }
 
   /** Pull a marketplace again (its plugins' new versions are offered; the
    * installed ones change only on their own update). */
-  updateMarketplace(botId: string, name: string, actor: string | undefined): Promise<MarketplaceListing> {
-    const record = this.read(botId).marketplaces[name];
-    if (!record) return Promise.reject(new BotPluginError("No marketplace with that name on this bot.", "not_found", 404));
-    return this.addMarketplace(botId, { source: record.source.includes("://") ? record.url : record.source, ...(record.ref ? { ref: record.ref } : {}) }, actor);
+  async updateMarketplace(botId: string, name: string, actor: string | undefined): Promise<MarketplaceListing> {
+    this.root(botId);
+    if (!this.options.marketplaces.record(name)) throw new BotPluginError("No marketplace with that name.", "not_found", 404);
+    // read with this bot's token for it first, as Add does
+    await this.options.marketplaces.refresh(name, actor, { environment: (source) => this.cloneEnvironment(botId, source, actor, {}) });
+    return this.listMarketplaces(botId).find((listing) => listing.name === name)!;
   }
 
-  removeMarketplace(botId: string, name: string): Promise<void> {
+  /** Take this bot's plugins of a marketplace off it. The marketplace itself
+   * leaves the one list only when `removeShared` says the person may remove
+   * it (an admin, or the person who added it) and nothing else uses it. */
+  removeMarketplace(botId: string, name: string, options: { actor?: string; mayManage?: boolean } = {}): Promise<{ sharedRemoved: boolean }> {
     return this.withLock(botId, async () => {
       const state = this.read(botId);
-      if (!state.marketplaces[name]) throw new BotPluginError("No marketplace with that name on this bot.", "not_found", 404);
-      for (const [key, plugin] of Object.entries(state.plugins)) {
-        if (plugin.marketplace !== name) continue;
+      const record = this.options.marketplaces.record(name);
+      const mine = Object.entries(state.plugins).filter(([, plugin]) => plugin.marketplace === name);
+      if (!record && !mine.length) throw new BotPluginError("No marketplace with that name.", "not_found", 404);
+      for (const [key, plugin] of mine) {
         rmSync(this.pluginDir(botId, plugin.marketplace, plugin.name), { recursive: true, force: true });
         delete state.plugins[key];
       }
-      const source = state.marketplaces[name]!.source;
-      delete state.marketplaces[name];
-      rmSync(join(this.root(botId), "marketplaces", name), { recursive: true, force: true });
-      this.write(botId, state);
-      if (!Object.values(state.marketplaces).some((record) => record.source === source)) {
-        try { this.options.tokens?.remove(botId, source); } catch { /* the marketplace is gone either way */ }
+      if (mine.length) this.write(botId, state);
+      // This bot's token for it goes with Remove, as it did per bot.
+      if (record) {
+        try { this.options.tokens?.remove(botId, record.source); } catch { /* the plugins are gone either way */ }
+      }
+      const mayRemove = Boolean(record) && (options.mayManage === true || (Boolean(options.actor) && record?.addedBy === options.actor));
+      if (!mayRemove) return { sharedRemoved: false };
+      try {
+        await this.options.marketplaces.remove(name);
+        return { sharedRemoved: true };
+      } catch (error) {
+        if (error instanceof BotPluginError && (error.code === "has_plugins" || error.code === "in_use")) return { sharedRemoved: false };
+        throw error;
       }
     });
   }
@@ -558,18 +651,21 @@ export class BotPlugins {
     return join(this.root(botId), "plugins", marketplace, plugin);
   }
 
-  /** Install (or update) one plugin of a marketplace this bot has. */
+  /** Install (or update) one plugin of a marketplace of the one list. */
   install(botId: string, input: { marketplace: string; plugin: string }, actor: string | undefined): Promise<InstalledBotPlugin> {
     return this.withLock(botId, async () => {
       const state = this.read(botId);
-      const market = state.marketplaces[input.marketplace];
-      if (!market) throw new BotPluginError("Add the marketplace to this bot first.", "not_found", 404);
+      const market = this.options.marketplaces.record(input.marketplace);
+      if (!market) throw new BotPluginError("Add the marketplace in Connect apps first.", "not_found", 404);
       const key = `${input.plugin}@${input.marketplace}`;
       if (!state.plugins[key] && Object.keys(state.plugins).length >= MAX_PLUGINS) throw new BotPluginError(`A bot can have at most ${MAX_PLUGINS} plugins.`, "too_many", 400);
-      const marketRoot = join(this.root(botId), "marketplaces", input.marketplace);
+      const marketRoot = this.options.marketplaces.repoPath(input.marketplace);
       const manifest = readMarketplaceManifest(marketRoot);
       const entry = manifest.plugins.find((candidate) => candidate.name === input.plugin);
       if (!entry) throw new BotPluginError("That plugin is not in this marketplace.", "not_found", 404);
+      if (entry.source.kind === "path" && market.manifestUrl) {
+        throw new BotPluginError("This marketplace was added by the address of its marketplace.json: its plugins' folders cannot be read. Add its repository instead to install a plugin for one bot.", "manifest_only", 422);
+      }
       const rawEntry = (() => {
         try {
           const all = JSON.parse(readFileSync(join(marketRoot, ".claude-plugin", "marketplace.json"), "utf8")) as { plugins?: Array<Record<string, unknown>> };
@@ -592,10 +688,12 @@ export class BotPlugins {
       }
       const now = this.now();
       const previous = state.plugins[key];
+      const revision = this.options.marketplaces.revisionOf(input.marketplace, entry);
       state.plugins[key] = {
         name: input.plugin, marketplace: input.marketplace,
         ...(entry.description ? { description: entry.description } : {}),
         ...(entry.version ? { version: entry.version } : {}),
+        ...(revision ? { revision } : {}),
         enabled: previous?.enabled ?? true,
         installedAt: previous?.installedAt ?? now,
         ...(previous?.installedBy ?? actor ? { installedBy: previous?.installedBy ?? actor } : {}),
@@ -637,39 +735,88 @@ export class BotPlugins {
       .filter((dir) => existsSync(dir));
   }
 
-  /** The bot's own plugin folder (state.json, marketplaces/, plugins/). */
+  /** The bots with at least one plugin from this marketplace. */
+  botsUsing(marketplace: string): string[] {
+    const base = join(this.options.dataDir, "bot-plugins");
+    let bots: string[];
+    try { bots = readdirSync(base, { withFileTypes: true }).filter((entry) => entry.isDirectory() && BOT_ID.test(entry.name)).map((entry) => entry.name); } catch { return []; }
+    return bots.filter((botId) => Object.values(this.read(botId).plugins).some((plugin) => plugin.marketplace === marketplace)).sort();
+  }
+
+  /** The bot's own plugin folder (state.json, plugins/; marketplaces/ only
+   * while a bot package is restored). */
   folder(botId: string): string {
     return this.root(botId);
   }
 
-  /** The stored state, for the bot package (server/bot-zip.ts). */
-  stateFor(botId: string): PluginState {
-    return structuredClone(this.read(botId));
+  /** A marketplace's files in the one list (its .claude-plugin/marketplace.json). */
+  marketplaceFolder(name: string): string {
+    return this.options.marketplaces.repoPath(name);
   }
 
-  /** Restore a bot package's state on a new bot whose plugin files are
-   * already in place. A plugin whose folder is missing is dropped; a
-   * marketplace keeps its record (Update fetches it again). */
-  restoreState(botId: string, value: unknown): { marketplaces: string[]; plugins: string[] } {
-    const parsed = stateSchema.safeParse(value);
-    if (!parsed.success) return { marketplaces: [], plugins: [] };
-    const state: PluginState = { version: 1, marketplaces: {}, plugins: {} };
-    for (const [name, record] of Object.entries(parsed.data.marketplaces).slice(0, MAX_MARKETPLACES)) {
-      if (NAME.test(name)) state.marketplaces[name] = record;
+  /** The state a bot package carries (server/bot-zip.ts): its installs and
+   * the marketplaces of the one list they come from, or this bot has a
+   * token for, in the per-bot format an older build reads too. */
+  stateFor(botId: string): LegacyPluginState {
+    const state = this.read(botId);
+    let tokenSources = new Set<string>();
+    try { tokenSources = this.options.tokens?.sourcesFor(botId) ?? new Set(); } catch { /* without the token-only ones */ }
+    const used = new Set(Object.values(state.plugins).map((plugin) => plugin.marketplace));
+    const marketplaces: LegacyPluginState["marketplaces"] = {};
+    for (const market of this.options.marketplaces.list()) {
+      if (!used.has(market.name) && !tokenSources.has(market.source)) continue;
+      const record = this.options.marketplaces.record(market.name);
+      if (!record) continue;
+      marketplaces[market.name] = {
+        source: record.source, url: record.manifestUrl ?? record.url, ...(record.ref ? { ref: record.ref } : {}),
+        ...(record.description ? { description: record.description } : {}),
+        addedAt: record.addedAt, ...(record.addedBy ? { addedBy: record.addedBy } : {}), updatedAt: record.updatedAt,
+      };
     }
-    for (const [key, record] of Object.entries(parsed.data.plugins).slice(0, MAX_PLUGINS)) {
+    return structuredClone({ version: 1 as const, marketplaces, plugins: state.plugins });
+  }
+
+  /** Restore a bot package's state on a new bot whose plugin files (and the
+   * marketplace.json of each marketplace, under marketplaces/<name>/) are
+   * already in place. Each marketplace joins the one list as the boot
+   * migration takes one in (the same source is reused, a clash is renamed);
+   * one the organization does not allow is dropped with its plugins. A
+   * plugin whose folder is missing is dropped; a marketplace keeps its
+   * record (Update fetches it again). */
+  restoreState(botId: string, value: unknown): { marketplaces: string[]; plugins: string[] } {
+    const root = this.root(botId);
+    const parsed = legacyStateSchema.safeParse(value);
+    const current = parsed.success ? null : stateSchema.safeParse(value);
+    if (!parsed.success && !current?.success) return { marketplaces: [], plugins: [] };
+    const incoming: LegacyPluginState = parsed.success ? parsed.data : { version: 1, marketplaces: {}, plugins: current!.data!.plugins };
+    const state: LegacyPluginState = { version: 1, marketplaces: {}, plugins: {} };
+    for (const [name, record] of Object.entries(incoming.marketplaces).slice(0, MAX_RESTORED_MARKETPLACES)) {
+      if (!NAME.test(name)) continue;
+      try {
+        const git = MANIFEST_URL.test(record.url) ? undefined : parseGitSource(record.source.includes("://") ? record.url : record.source, record.ref);
+        if (git && !marketplaceAllowed(this.options.policy(), git)) continue;
+      } catch {
+        continue;
+      }
+      state.marketplaces[name] = record;
+    }
+    for (const [key, record] of Object.entries(incoming.plugins).slice(0, MAX_PLUGINS)) {
       if (!NAME.test(record.name) || !NAME.test(record.marketplace) || key !== `${record.name}@${record.marketplace}`) continue;
-      if (!state.marketplaces[record.marketplace] || !existsSync(this.pluginDir(botId, record.marketplace, record.name))) continue;
+      const known = Boolean(state.marketplaces[record.marketplace]) || Boolean(this.options.marketplaces.record(record.marketplace));
+      if (!known || !existsSync(this.pluginDir(botId, record.marketplace, record.name))) continue;
       state.plugins[key] = record;
     }
-    this.write(botId, state);
-    return { marketplaces: Object.keys(state.marketplaces).sort(), plugins: Object.keys(state.plugins).sort() };
+    const moved = moveBotIntoOneList(root, state, this.options.marketplaces);
+    return { marketplaces: [...new Set(moved.names.values())].sort(), plugins: Object.keys(moved.plugins).sort() };
   }
 
-  /** Save, replace or (with null) remove the token of a marketplace. */
+  /** Save, replace or (with null) remove this bot's token for a marketplace
+   * of the one list (server/marketplace-tokens.ts, keyed by bot and source). */
   setMarketplaceToken(botId: string, name: string, token: string | null, actor: string | undefined): MarketplaceListing {
-    const record = this.read(botId).marketplaces[name];
-    if (!record) throw new BotPluginError("No marketplace with that name on this bot.", "not_found", 404);
+    this.root(botId);
+    const record = this.options.marketplaces.record(name);
+    if (!record) throw new BotPluginError("No marketplace with that name.", "not_found", 404);
+    if (record.manifestUrl) throw new BotPluginError("A marketplace added by the address of its marketplace.json is read without a token.", "manifest_only", 422);
     if (!this.options.tokens) throw new BotPluginError("This server cannot keep marketplace tokens.", "tokens_unavailable", 503);
     if (token === null) this.options.tokens.remove(botId, record.source);
     else this.options.tokens.set(botId, record.source, token, actor);
@@ -682,4 +829,79 @@ export class BotPlugins {
     try { this.options.tokens?.forgetBot(botId); } catch { /* the folder still goes */ }
     rmSync(this.root(botId), { recursive: true, force: true });
   }
+}
+
+// ── migration: one marketplace list ──────────────────────────────────────
+
+export interface BotMarketplaceMigration {
+  bots: number;
+  marketplaces: number;
+  plugins: number;
+  /** `old@market -> new@market` for a marketplace stored under another name */
+  renamed: string[];
+  failed: string[];
+}
+
+/** One bot's own marketplaces into the one list (the boot migration, and a
+ * bot package restored on a new bot): each is adopted (the same source is
+ * reused, a clash gets a suffix), every install moves with its marketplace's
+ * name, and the state is written in the current format. */
+function moveBotIntoOneList(root: string, legacy: LegacyPluginState, shared: PluginMarketplaces): { names: Map<string, string>; plugins: PluginState["plugins"]; renamed: string[] } {
+  const names = new Map<string, string>();
+  const renamed: string[] = [];
+  for (const [name, record] of Object.entries(legacy.marketplaces).sort(([a], [b]) => a.localeCompare(b))) {
+    const manifestUrl = MANIFEST_URL.test(record.url) ? record.url : undefined;
+    names.set(name, shared.adopt({ name, record: { ...record, ...(manifestUrl ? { manifestUrl } : {}) }, from: join(root, "marketplaces", name) }));
+  }
+  const plugins: PluginState["plugins"] = {};
+  for (const [key, plugin] of Object.entries(legacy.plugins)) {
+    const market = names.get(plugin.marketplace) ?? plugin.marketplace;
+    if (market !== plugin.marketplace && NAME.test(market) && NAME.test(plugin.name)) {
+      const from = join(root, "plugins", plugin.marketplace, plugin.name);
+      const to = join(root, "plugins", market, plugin.name);
+      if (existsSync(from)) {
+        rmSync(to, { recursive: true, force: true });
+        mkdirSync(join(to, ".."), { recursive: true });
+        renameSync(from, to);
+      }
+      renamed.push(`${key} -> ${plugin.name}@${market}`);
+    }
+    plugins[`${plugin.name}@${market}`] = { ...plugin, marketplace: market };
+  }
+  mkdirSync(root, { recursive: true });
+  writeFileAtomic(join(root, "state.json"), JSON.stringify(stateSchema.parse({ version: 2, plugins }), null, 2));
+  rmSync(join(root, "marketplaces"), { recursive: true, force: true });
+  for (const [old, now] of names) {
+    if (old === now) continue;
+    const dir = join(root, "plugins", old);
+    try { if (readdirSync(dir).length === 0) rmSync(dir, { recursive: true, force: true }); } catch { /* already gone */ }
+  }
+  return { names, plugins, renamed };
+}
+
+/** Move every bot's own marketplaces into the installation's one list, once
+ * per bot (a bot already on version 2 is skipped). Every install stays: a
+ * plugin whose marketplace had to take another name moves with it. */
+export function migrateBotMarketplaces(dataDir: string, shared: PluginMarketplaces): BotMarketplaceMigration {
+  const summary: BotMarketplaceMigration = { bots: 0, marketplaces: 0, plugins: 0, renamed: [], failed: [] };
+  const base = join(dataDir, "bot-plugins");
+  let bots: string[];
+  try { bots = readdirSync(base, { withFileTypes: true }).filter((entry) => entry.isDirectory() && BOT_ID.test(entry.name)).map((entry) => entry.name).sort(); } catch { return summary; }
+  for (const botId of bots) {
+    const root = join(base, botId);
+    let raw: unknown;
+    try { raw = JSON.parse(readFileSync(join(root, "state.json"), "utf8")); } catch { continue; }
+    const legacy = legacyStateSchema.safeParse(raw);
+    if (!legacy.success) continue;
+    try {
+      const moved = moveBotIntoOneList(root, legacy.data, shared);
+      summary.marketplaces += moved.names.size;
+      summary.plugins += Object.keys(moved.plugins).length;
+      summary.renamed.push(...moved.renamed);
+      summary.bots += 1;
+    } catch {
+      summary.failed.push(botId);
+    }
+  }
+  return summary;
 }

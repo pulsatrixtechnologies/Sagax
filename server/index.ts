@@ -750,7 +750,7 @@ import { createMarketplaceRoutes } from "./routes/marketplaces.ts";
 import { PluginMarketplaces, marketplaceServerName, planServerUpdate, updatedServerEntry } from "./plugin-marketplaces.ts";
 import { createAccountRoutes } from "./routes/account.ts";
 import { createRegistrySearch } from "./plugin-registry.ts";
-import { BotPluginError, BotPlugins, marketplaceAllowed, marketplacePolicySchema, normalizePolicyEntry, parseGitSource, type MarketplacePolicy } from "./bot-plugins.ts";
+import { BotPluginError, BotPlugins, marketplaceAllowed, migrateBotMarketplaces, marketplacePolicySchema, normalizePolicyEntry, parseGitSource, type MarketplacePolicy } from "./bot-plugins.ts";
 import { claudePluginDirs, pluginTurnFiles, pluginTurnPrompt } from "./plugin-turn.ts";
 import { createBotPluginRoutes } from "./routes/bot-plugins.ts";
 import { GithubConnect, githubGitEnvironment, githubSandboxArgv } from "./github-connect.ts";
@@ -5277,11 +5277,11 @@ function pluginMarketplacePolicy(): MarketplacePolicy | undefined {
 /** The organization's GitHub tokens (Settings > Organization > Plugins and
  * GitHub, server/org-github-tokens.ts). */
 const orgGithubTokens = new OrgGithubTokens(DATA_DIR, vaultKeySource);
-/** A token per plugin marketplace of a bot (server/marketplace-tokens.ts). */
+/** A token per bot and plugin marketplace (server/marketplace-tokens.ts). */
 const marketplaceTokens = new MarketplaceTokens(DATA_DIR, vaultKeySource);
 /** Who reads a private GitHub repository for `actor`: their own GitHub
  * connection, then the organization's tokens (organization server). The
- * marketplace's own token comes first (server/bot-plugins.ts). */
+ * bot's token for the marketplace comes first (server/bot-plugins.ts). */
 function githubCredentialsFor(actor: string | null | undefined): GithubCredential[] {
   const person = usablePersonGithub(actor)?.token;
   const credentials: GithubCredential[] = person ? [{ token: person, via: "person" }] : [];
@@ -5297,13 +5297,32 @@ function githubCredentialsFor(actor: string | null | undefined): GithubCredentia
   }
   return credentials;
 }
+// The installation's one marketplace list (server/plugin-marketplaces.ts):
+// Connect apps installs a plugin from it for everyone (MCP servers and
+// skills) or for one bot (the whole plugin, server/bot-plugins.ts). Added
+// for everyone, it reads with the person's GitHub connection, then the
+// organization's first GitHub token; added or fetched again from a bot, with
+// that bot's token for it first (BotPlugins.cloneEnvironment).
+const pluginMarketplaces = new PluginMarketplaces({
+  dataDir: DATA_DIR,
+  gitEnvironment: (actor) => githubGitEnvironment(githubCredentialsFor(actor)[0]?.token),
+  policy: pluginMarketplacePolicy,
+  inUse: (name) => botPlugins.botsUsing(name),
+});
 const botPlugins = new BotPlugins({
   dataDir: DATA_DIR,
+  marketplaces: pluginMarketplaces,
   gitEnvironment: (actor) => githubGitEnvironment(usablePersonGithub(actor)?.token),
   credentials: ({ actor }) => githubCredentialsFor(actor),
   tokens: marketplaceTokens,
   policy: pluginMarketplacePolicy,
 });
+{
+  const migrated = migrateBotMarketplaces(DATA_DIR, pluginMarketplaces);
+  if (migrated.bots || migrated.failed.length) {
+    console.log(`[plugins] one marketplace list: ${migrated.bots} bot(s), ${migrated.marketplaces} marketplace(s), ${migrated.plugins} plugin(s) kept${migrated.renamed.length ? `, renamed ${migrated.renamed.join(", ")}` : ""}${migrated.failed.length ? `, failed for ${migrated.failed.join(", ")}` : ""}`);
+  }
+}
 const stdioRelay = new SandboxStdioRelay({
   open: (principalId, spec) => {
     if (!userSandbox) throw new StdioRelayError("This server has no server environments.", "unavailable");
@@ -5488,6 +5507,7 @@ ROUTES.push(createBotPluginRoutes<BotRecord>({
   },
   actor: (auth) => sessionPrincipal(auth) ?? undefined,
   managedByAdmin: integrationsLocked,
+  mayManageMarketplaces: (auth) => mayManageMarketplaces(auth),
   policy: pluginMarketplacePolicy,
   engineLoadsPlugins: botLoadsPlugins,
   changed: (bot, action, detail, auth) => {
@@ -21101,13 +21121,12 @@ ROUTES.push(createComputerStatusRoutes({
 // Registry, what is installed, and adding one with its sign-in.
 const pluginRegistry = createRegistrySearch();
 // Plugins > Manage > Marketplaces (server/routes/marketplaces.ts): plugin
-// marketplaces of the whole installation; Add maps a plugin onto MCP
-// servers (source: the marketplace) and library skills.
-const pluginMarketplaces = new PluginMarketplaces({
-  dataDir: DATA_DIR,
-  gitEnvironment: (actor) => githubGitEnvironment(githubCredentialsFor(actor)[0]?.token),
-  policy: pluginMarketplacePolicy,
-});
+// marketplaces of the whole installation (`pluginMarketplaces`, built with
+// the bots' plugins above); Add maps a plugin onto MCP servers (source: the
+// marketplace) and library skills.
+function mayManageMarketplaces(auth: RequestAuth): boolean {
+  return computerOwner(auth) || (IDENTITY.kind === "perspicax" && callerCan(auth, "apps.marketplaces"));
+}
 /** Add a plugin's servers to `current` (written by the caller) under free
  * names; returns the plugin's name of each to the name it got. */
 function addMarketplaceServers(
@@ -21170,7 +21189,7 @@ function updatedMarketplaceServer(name: string, existing: StoredMcpServer, entry
 }
 ROUTES.push(createMarketplaceRoutes({
   store: pluginMarketplaces,
-  mayManage: (auth) => computerOwner(auth) || (IDENTITY.kind === "perspicax" && callerCan(auth, "apps.marketplaces")),
+  mayManage: mayManageMarketplaces,
   actor: (auth) => sessionPrincipal(auth) ?? undefined,
   install: async (marketplace, plugin, { auth }) => {
     if (pluginMarketplaces.installed().some((entry) => entry.key === `${plugin}@${marketplace}`)) {

@@ -161,11 +161,13 @@ export interface ConnectAppsViewProps {
   renderBelow?: (item: PluginItem) => ReactNode;
   /** notices between the chips and the list */
   notices?: ReactNode;
+  /** the install scope (everyone, or one bot) under the title */
+  scope?: ReactNode;
 }
 
 export function ConnectAppsView(props: ConnectAppsViewProps) {
   const { items, loading, search, onSearch, filter, onFilter, type = "any", onType, extraSources = [], extraConnected = 0, onBotTemplates, sourceLabel,
-    refreshing, onRefresh, onClose, onOpenManage, onOpenItem, renderAction, renderBelow, notices } = props;
+    refreshing, onRefresh, onClose, onOpenManage, onOpenItem, renderAction, renderBelow, notices, scope } = props;
   const [limit, setLimit] = useState(PAGE);
   useEffect(() => setLimit(PAGE), [filter, type, search]);
 
@@ -218,6 +220,8 @@ export function ConnectAppsView(props: ConnectAppsViewProps) {
           </button>
         </div>
       </header>
+
+      {scope && <div className="px-6 pb-3 sm:px-8">{scope}</div>}
 
       <div className="px-6 sm:px-8">
         <div className="flex items-center gap-2">

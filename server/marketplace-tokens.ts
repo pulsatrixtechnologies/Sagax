@@ -1,6 +1,8 @@
-// A token per plugin marketplace of a bot (Library > Plugins): how a bot
-// reads a private repository when nobody's GitHub connection can, and how
-// it reads one on another git host (GitLab, Gitea, a company server).
+// A token per bot and plugin marketplace (Connect apps, "For this bot",
+// Manage > Marketplaces): how a bot reads a private repository when nobody's
+// GitHub connection can, and how it reads one on another git host (GitLab,
+// Gitea, a company server). The marketplace itself is in the installation's
+// one list (server/plugin-marketplaces.ts); its token stays per bot.
 //
 // Stored like MCP header values and the organization's GitHub tokens: one
 // AES-256-GCM file under the data directory (marketplace-tokens.enc),

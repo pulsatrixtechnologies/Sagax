@@ -11,7 +11,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { DATA_DIR } from "../config.ts";
 import { Store } from "../store.ts";
-import { BotPlugins } from "../bot-plugins.ts";
+import { botPluginsWithMarketplaces } from "../testing/plugin-stores.ts";
 import type { BotZipHost } from "../bot-zip.ts";
 import { json, readBody } from "../harness/http.ts";
 import type { RequestAuth } from "../request-auth.ts";
@@ -33,7 +33,7 @@ const person = (principalId: string): RequestAuth => ({
 
 async function boot() {
   const store = new Store(() => ({ instanceId: "fixture", model: "m" }));
-  const plugins = new BotPlugins({ dataDir: DATA_DIR, gitEnvironment: () => ({}), policy: () => undefined });
+  const plugins = botPluginsWithMarketplaces({ dataDir: DATA_DIR, gitEnvironment: () => ({}), policy: () => undefined });
   const host: BotZipHost = {
     store, dataDir: DATA_DIR, appVersion: "test", organization: true, routines: () => null, webhooks: () => null, plugins,
     marketplaceTokenSources: () => new Set(), emailOf: () => undefined, principalByEmail: () => undefined, mcpServer: () => undefined,

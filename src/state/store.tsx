@@ -1147,6 +1147,9 @@ export interface AppState {
   /** Which tab the Plugins panel opens on; "mcp" when a bot's tools
    * sent the user there to add a server. */
   pluginsSurface: "apps" | "mcp";
+  /** The bot Connect apps opens on, in its "For this bot" scope (a bot
+   * panel sent the person there); null: the workspace scope. */
+  pluginsBotId: string | null;
   /** The Triggers pop-up (webhooks, as a sentence: when this happens, that
    * bot should…). */
   triggersOpen: boolean;
@@ -1505,7 +1508,7 @@ export type Action =
    * notification of a routine run refused in another person's thread. */
   | { type: "openBotActivity"; botId: string; itemId: string }
   | { type: "botActivityOpened" }
-  | { type: "togglePlugins"; open?: boolean; surface?: "apps" | "mcp" }
+  | { type: "togglePlugins"; open?: boolean; surface?: "apps" | "mcp"; botId?: string | null }
   | { type: "toggleTriggers"; open?: boolean }
   | { type: "toggleNewBot"; open?: boolean }
   | { type: "toggleComputer"; open?: boolean }
@@ -2449,6 +2452,9 @@ export function reducer(state: AppState, action: Action): AppState {
         ...state,
         pluginsOpen: open,
         pluginsSurface: action.surface ?? state.pluginsSurface,
+        // A bot panel opens it on that bot; a change of surface while it is
+        // open keeps the bot it is on.
+        pluginsBotId: !open ? null : action.botId !== undefined ? action.botId : state.pluginsOpen ? state.pluginsBotId : null,
         ...(open ? { settingsOpen: false, appSettingsOpen: false, achievementsOpen: false, newBotOpen: false, shortcutsOpen: false, triggersOpen: false } : {}),
       };
     }
@@ -2966,6 +2972,7 @@ export const initialState: AppState = {
   personPanelId: null,
   pluginsOpen: false,
   pluginsSurface: "apps",
+  pluginsBotId: null,
   triggersOpen: false,
   newBotOpen: false,
   botCreationPending: false,

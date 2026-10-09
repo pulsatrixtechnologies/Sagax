@@ -81,8 +81,16 @@ export function parseArgsLine(text: string): string[] {
   return out;
 }
 
-// ── a bot's plugins ──────────────────────────────────────────────────────
+// ── a bot's plugins (Connect apps, scope "For this bot") ─────────────────
 
+/** What a plugin brings to a bot, by name. */
+export interface PluginContents {
+  agents: string[];
+  commands: string[];
+  skills: string[];
+}
+
+/** A marketplace of the installation's one list, with this bot's installs. */
 export interface MarketplaceListing {
   name: string;
   source: string;
@@ -91,7 +99,13 @@ export interface MarketplaceListing {
   description?: string;
   addedAt: number;
   updatedAt: number;
-  plugins: Array<{ name: string; description?: string; version?: string; category?: string; installed: boolean; external: boolean }>;
+  plugins: Array<{
+    name: string; description?: string; version?: string; category?: string; installed: boolean; external: boolean; contents?: PluginContents;
+    /** the version this bot has, when it differs from `version` */
+    installedVersion?: string;
+    /** the marketplace offers another version or other files: Install again updates in place */
+    updateAvailable?: boolean;
+  }>;
 }
 
 export interface InstalledPlugin {
@@ -114,12 +128,17 @@ export interface BotPluginsView {
   /** Perspicax `sagax_integrations: off`: an admin manages this person's
    * plugins (canChange is then false). */
   managedByAdmin?: boolean;
+  /** after a remove from this bot: the marketplace also left the one list */
+  sharedRemoved?: boolean;
 }
 
 const pluginsPath = (botId: string) => `/api/bots/${encodeURIComponent(botId)}/plugins`;
 export const loadBotPlugins = (botId: string) => api<BotPluginsView>(pluginsPath(botId));
-export const addMarketplace = (botId: string, source: string, token?: string) =>
-  api<BotPluginsView>(`${pluginsPath(botId)}/marketplaces`, { method: "POST", body: JSON.stringify({ source, ...(token ? { token } : {}) }), timeoutMs: 180_000 });
+export const addMarketplace = (botId: string, source: string, options: { ref?: string; token?: string } = {}) =>
+  api<BotPluginsView>(`${pluginsPath(botId)}/marketplaces`, {
+    method: "POST", body: JSON.stringify({ source, ...(options.ref ? { ref: options.ref } : {}), ...(options.token ? { token: options.token } : {}) }), timeoutMs: 180_000,
+  });
+/** This bot's token for a marketplace of the one list (kept per bot and source). */
 export const setMarketplaceToken = (botId: string, name: string, token: string) =>
   api<BotPluginsView>(`${pluginsPath(botId)}/marketplaces/${encodeURIComponent(name)}/token`, { method: "PUT", body: JSON.stringify({ token }) });
 export const removeMarketplaceToken = (botId: string, name: string) =>

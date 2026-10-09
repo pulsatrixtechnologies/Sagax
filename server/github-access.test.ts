@@ -12,7 +12,8 @@ import { randomBytes } from "node:crypto";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { githubAccessFailure, githubSkillFetch, probeGithubRepo, type GithubCredential } from "./github-access.ts";
-import { BotPlugins, BotPluginError, type GitRunner } from "./bot-plugins.ts";
+import { BotPluginError, type GitRunner } from "./bot-plugins.ts";
+import { botPluginsWithMarketplaces } from "./testing/plugin-stores.ts";
 import { MarketplaceTokens } from "./marketplace-tokens.ts";
 import { fetchSkillFromSource } from "./skill-fetch.ts";
 import { pluginTurnFiles, pluginTurnPrompt } from "./plugin-turn.ts";
@@ -151,7 +152,7 @@ async function plugins(options: { person?: string } = {}) {
     cpSync(repo, args[args.indexOf("--") + 2]!, { recursive: true });
   };
   const tokens = new MarketplaceTokens(dataDir, vaultKey());
-  const store = new BotPlugins({
+  const store = botPluginsWithMarketplaces({
     dataDir, git, gitEnvironment: () => ({}), tokens, policy: () => undefined,
     credentials: () => (options.person ? [{ token: options.person, via: "person" as const }] : []),
     probe: (repoName, credentials) => probeGithubRepo(repoName, credentials, { env: env(github.origin) }),
@@ -170,13 +171,14 @@ describe("a bot's private marketplace", () => {
     expect(added).toMatchObject({ name: "acme-private", source: "acme/private", hasToken: true });
     expect(runs.at(-1)!.args.join(" ")).not.toContain("good-token-123");
     expect(runs.at(-1)!.env).toMatchObject({ GIT_CONFIG_KEY_0: "http.https://github.com/.extraheader", GIT_TERMINAL_PROMPT: "0" });
-    // at rest: encrypted, never in the plugin state
+    // at rest: encrypted, never in the one marketplace list's state
     expect(readFileSync(join(dataDir, "marketplace-tokens.enc"), "utf8")).not.toContain("good-token-123");
-    expect(readFileSync(join(dataDir, "bot-plugins", "bot-1", "state.json"), "utf8")).not.toContain("good-token-123");
+    expect(readFileSync(join(dataDir, "marketplaces", "state.json"), "utf8")).not.toContain("good-token-123");
     // Update reads with the saved token; another bot has none
     await store.updateMarketplace("bot-1", "acme-private", undefined);
     expect(tokens.get("bot-2", "acme/private")).toBeUndefined();
     await store.install("bot-1", { marketplace: "acme-private", plugin: "reviewer" }, undefined);
+    expect(readFileSync(join(dataDir, "bot-plugins", "bot-1", "state.json"), "utf8")).not.toContain("good-token-123");
     await store.removeMarketplace("bot-1", "acme-private");
     expect(tokens.sourcesFor("bot-1").size).toBe(0);
   });

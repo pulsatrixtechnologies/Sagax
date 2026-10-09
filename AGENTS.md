@@ -1550,7 +1550,30 @@ had no gh. Keep these rules, each covered by `server/org-connections.e2e.test.ts
   `server/org-github-tokens.test.ts`, `server/perspicax-org-routes.test.ts`,
   `src/components/settings/OrgPluginPolicy.test.ts`.
 - Plugins (`server/bot-plugins.ts`, `/api/bots/:id/plugins/*`): per bot, the
-  owner or a person with manage changes them, use reads. Sagax clones the
+  owner or a person with manage changes them, use reads. One marketplace
+  list (`server/plugin-marketplaces.ts`, 2026-10-09) serves both install
+  scopes of Connect apps: everyone (a plugin's MCP servers and skills,
+  `/api/marketplaces`, `apps.marketplaces`) and one bot (the whole plugin,
+  the scope toggle "For <bot>", `src/lib/plugin-scope.ts`). A member adds a
+  marketplace through the bot route and it joins that list (the
+  organization's policy still applies); removing it from a bot uninstalls
+  its plugins there and takes it off the list only for a workspace manager
+  or the person who added it, once no bot nor workspace install uses it
+  (the workspace route answers 409 `in_use` while a bot does). Each bot's
+  older marketplaces moved into the list at boot (`migrateBotMarketplaces`,
+  a clashing name gets a suffix, installs kept; tests
+  `server/bot-plugins.test.ts`, `server/routes/bot-plugins.test.ts`). A
+  marketplace known only by its marketplace.json address cannot install on
+  a bot (422 `manifest_only`). Added or fetched again through a bot, a
+  private marketplace reads with that bot's token for it first
+  (`server/marketplace-tokens.ts`, keyed by bot and source, the token field
+  of Connect apps > Manage > Marketplaces in the bot scope), then the
+  person's GitHub connection, then the organization's GitHub tokens; the
+  bot listing says `hasToken`, never the token, and `updateAvailable` when
+  the marketplace offers another version or other files (Install again
+  updates in place, its switch kept). A bot zip restored on a new bot takes
+  its marketplaces into the list the way the migration does, without one
+  the organization does not allow. Sagax clones the
   marketplace (git with the actor's GitHub token in an extra header, only the
   server's proxy, certificate and git config variables), copies a plugin
   without links, hooks, `.mcp.json`, `.lsp.json`, `bin/` or those manifest
@@ -1565,7 +1588,9 @@ had no gh. Keep these rules, each covered by `server/org-connections.e2e.test.ts
 - Skills routes (`/api/bots/:id/skills*`, `skill-template`) are member scope
   on an organization server: use reads, owner or manage changes; an import
   from a private repository reads with the person's GitHub connection.
-- Library tab: Files | Skills | Plugins (`bot-settings/LibraryTab.tsx`).
+- Library tab: Files | Skills (`bot-settings/LibraryTab.tsx`) and a link that
+  opens Connect apps on that bot (`togglePlugins` with `botId`); there is no
+  Plugins tab any more (`src/components/plugins/BotPluginCard.test.ts`).
 - Who manages them comes from Perspicax (migration 0046,
   `sagax_integrations` on each directory person, set by an admin on the
   person's Sagax tab; default and absent mean `manage`;

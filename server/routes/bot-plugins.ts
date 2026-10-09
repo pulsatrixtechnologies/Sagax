@@ -1,14 +1,15 @@
-// A bot's Claude Code plugins (the bot panel's Library > Plugins,
-// server/bot-plugins.ts).
+// A bot's Claude Code plugins (Connect apps, scope "For this bot",
+// server/bot-plugins.ts). The marketplaces are the installation's one list.
 //
 //   GET    /api/bots/:id/plugins
 //          { marketplaces: [MarketplaceListing], plugins: [InstalledBotPlugin], policy, engine }
-//   POST   /api/bots/:id/plugins/marketplaces { source, ref?, token? }  add (or refresh) one;
-//          a token is tried first and saved (encrypted) once the clone works
+//   POST   /api/bots/:id/plugins/marketplaces { source, ref?, token? }  add (or refresh) one, for everyone's list;
+//          a token is tried first and saved (encrypted) for this bot once the clone works
 //   POST   /api/bots/:id/plugins/marketplaces/:name/update
-//   PUT    /api/bots/:id/plugins/marketplaces/:name/token { token }   save or replace
+//   PUT    /api/bots/:id/plugins/marketplaces/:name/token { token }   save or replace this bot's token
 //   DELETE /api/bots/:id/plugins/marketplaces/:name/token             forget it
-//   DELETE /api/bots/:id/plugins/marketplaces/:name                  with its plugins
+//   DELETE /api/bots/:id/plugins/marketplaces/:name                  this bot's plugins from it (and its token); the
+//          marketplace too when the caller may remove it (an admin, or who added it) and nothing uses it
 //   POST   /api/bots/:id/plugins/install { marketplace, plugin }     install or update
 //   PATCH  /api/bots/:id/plugins/:key { enabled }
 //   DELETE /api/bots/:id/plugins/:key
@@ -34,6 +35,8 @@ export interface BotPluginRouteDeps<B extends { id: string }> {
   actor: (auth: RequestAuth) => string | undefined;
   /** An admin manages this person's plugins (never an organization admin). */
   managedByAdmin?: (auth: RequestAuth) => boolean;
+  /** May remove a marketplace from the one list (the workspace's managers). */
+  mayManageMarketplaces?: (auth: RequestAuth) => boolean;
   policy: () => MarketplacePolicy | undefined;
   /** Whether the bot's engine loads plugin skills and commands. */
   engineLoadsPlugins: (bot: B) => boolean;
@@ -116,9 +119,9 @@ export function createBotPluginRoutes<B extends { id: string }>(deps: BotPluginR
           return json(res, 200, { marketplace: refreshed, ...listing() });
         }
         if (method !== "DELETE") return json(res, 405, { error: "DELETE only" });
-        await deps.plugins.removeMarketplace(bot.id, name);
-        deps.changed?.(bot, "plugin.marketplace_remove", { marketplace: name }, auth);
-        return json(res, 200, listing());
+        const removed = await deps.plugins.removeMarketplace(bot.id, name, { ...(actor ? { actor } : {}), mayManage: deps.mayManageMarketplaces?.(auth) === true });
+        deps.changed?.(bot, "plugin.marketplace_remove", { marketplace: name, sharedRemoved: removed.sharedRemoved }, auth);
+        return json(res, 200, { ...listing(), sharedRemoved: removed.sharedRemoved });
       }
       if (section === "install") {
         if (method !== "POST") return json(res, 405, { error: "POST only" });

@@ -12,13 +12,20 @@
 //   - its MCP servers (`.mcp.json`, or `mcpServers` in plugin.json) become
 //     MCP servers of this installation, with the marketplace as their source;
 //   - its skills become skills of the library, switched off until read.
-// Agents, commands and hooks are not installed here (a bot's own Library >
-// Plugins loads whole plugins, server/bot-plugins.ts).
+// Agents, commands and hooks are not installed here: the same plugin
+// installed "For this bot" (server/bot-plugins.ts) loads whole, from this
+// same list. There is one marketplace list for both scopes.
 //
 // Files: DATA_DIR/marketplaces/{state.json, repos/<name>/, plugins/<name>/<plugin>/}.
 // The clone is shallow and uses this computer's git credentials, or the
 // acting person's GitHub connection for github.com: no token is stored here.
-// The organization's allowed-marketplaces policy applies as it does per bot.
+// The organization's allowed-marketplaces policy applies in both scopes.
+// A marketplace a bot still has plugins from is not removed (`inUse`).
+// Added or fetched again from a bot ("For this bot"), the clone uses the
+// environment the bot's store worked out (server/bot-plugins.ts: that bot's
+// token for the marketplace first, then the person's GitHub connection,
+// then the organization's tokens); the token itself stays per bot
+// (server/marketplace-tokens.ts), never here.
 import { createHash } from "node:crypto";
 import { cpSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -41,7 +48,7 @@ import type { StoredMcpServer } from "./mcp-registry.ts";
 import { parseSkillMd } from "../shared/skill-md.ts";
 
 const NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
-const MAX_MARKETPLACES = 20;
+const MAX_MARKETPLACES = 40;
 const GIT_TIMEOUT_MS = 120_000;
 const MAX_MANIFEST_BYTES = 1_048_576;
 const MAX_SKILL_BYTES = 256 * 1024;
@@ -85,6 +92,7 @@ const stateSchema = z.object({
 
 type State = z.infer<typeof stateSchema>;
 export type InstalledMarketplacePlugin = z.infer<typeof installedRecord> & { key: string };
+export type SharedMarketplaceRecord = z.infer<typeof marketplaceRecord>;
 
 export interface MarketplaceView {
   name: string;
@@ -93,6 +101,8 @@ export interface MarketplaceView {
   description?: string;
   addedAt: number;
   updatedAt: number;
+  /** bots with at least one plugin installed from it ("For this bot") */
+  bots: number;
   plugins: Array<{
     name: string;
     description?: string;
@@ -340,6 +350,8 @@ export interface PluginMarketplacesOptions {
   policy: () => MarketplacePolicy | undefined;
   /** reads a manifest address (https only) */
   fetchText?: (url: string) => Promise<string>;
+  /** the bots with plugins installed from a marketplace (server/bot-plugins.ts) */
+  inUse?: (name: string) => string[];
   now?: () => number;
 }
 
@@ -374,6 +386,15 @@ export class PluginMarketplaces {
     return join(this.root, "repos", name);
   }
 
+  /** The marketplace's own files (its marketplace.json and plugin folders). */
+  repoPath(name: string): string {
+    return this.repoDir(name);
+  }
+
+  record(name: string): SharedMarketplaceRecord | undefined {
+    return this.read().marketplaces[name];
+  }
+
   /** Where an installed plugin's files live (its stdio servers run there). */
   pluginDir(marketplace: string, plugin: string): string {
     if (!NAME.test(marketplace) || !NAME.test(plugin)) throw new BotPluginError("invalid plugin", "invalid_plugin");
@@ -406,13 +427,13 @@ export class PluginMarketplaces {
     }
   }
 
-  private async clone(source: GitSource, into: string, actor: string | undefined): Promise<void> {
+  private async clone(source: GitSource, into: string, actor: string | undefined, env?: Record<string, string>): Promise<void> {
     const staging = `${into}.tmp-${process.pid}-${this.now()}`;
     rmSync(staging, { recursive: true, force: true });
     mkdirSync(join(staging, ".."), { recursive: true });
     try {
       await this.git(["clone", "--depth", "1", "--single-branch", "--no-tags", ...(source.ref ? ["--branch", source.ref] : []), "--", source.url, staging], {
-        env: this.options.gitEnvironment(source.github ? actor : undefined), timeoutMs: GIT_TIMEOUT_MS,
+        env: env ?? this.options.gitEnvironment(source.github ? actor : undefined), timeoutMs: GIT_TIMEOUT_MS,
       });
       rmSync(join(staging, ".git"), { recursive: true, force: true });
       rmSync(into, { recursive: true, force: true });
@@ -425,6 +446,11 @@ export class PluginMarketplaces {
   /** Digests of the clone as it is on disk: a fetch again replaces the
    * folder, so its inode and time name the content. */
   private readonly revisions = new Map<string, string | undefined>();
+  /** What this marketplace offers now for one plugin (`pluginRevision`),
+   * for a bot's install of it (server/bot-plugins.ts). */
+  revisionOf(name: string, entry: MarketplacePluginEntry): string | undefined {
+    return this.offeredRevision(name, entry, this.read().marketplaces[name]?.manifestUrl);
+  }
   private offeredRevision(name: string, entry: MarketplacePluginEntry, manifestUrl?: string): string | undefined {
     const repo = this.repoDir(name);
     let key: string;
@@ -457,6 +483,7 @@ export class PluginMarketplaces {
         ...(market.description ? { description: market.description } : {}),
         addedAt: market.addedAt,
         updatedAt: market.updatedAt,
+        bots: this.options.inUse?.(name).length ?? 0,
         plugins: entries.map((entry) => {
           const installed = state.installed[`${entry.name}@${name}`];
           const update = installed
@@ -483,8 +510,15 @@ export class PluginMarketplaces {
   }
 
   /** Add (or fetch again) a marketplace: owner/repo, an https git address,
-   * or the https address of a marketplace.json. */
-  add(input: { source: string; ref?: string }, actor: string | undefined): Promise<MarketplaceView> {
+   * or the https address of a marketplace.json. `name` keeps the name it is
+   * stored under (a refresh of a marketplace renamed at migration).
+   * `environment` gives the git environment of the clone (a bot's store:
+   * its token for this marketplace first); without it, `gitEnvironment`. */
+  add(
+    input: { source: string; ref?: string },
+    actor: string | undefined,
+    options: { name?: string; environment?: (source: GitSource) => Promise<Record<string, string>> } = {},
+  ): Promise<MarketplaceView> {
     return this.serial(async () => {
       const state = this.read();
       const staging = join(this.root, "repos", `.incoming-${this.now()}`);
@@ -502,23 +536,26 @@ export class PluginMarketplaces {
         } else {
           source = parseGitSource(input.source, input.ref?.trim() || undefined);
           this.checkPolicy(source);
-          await this.clone(source, staging, actor);
+          await this.clone(source, staging, actor, options.environment ? await options.environment(source) : undefined);
         }
         const manifest = readMarketplaceManifest(staging);
-        const taken = state.marketplaces[manifest.name];
         const sourceId = manifestUrl ?? source.id;
+        const sameSource = Object.entries(state.marketplaces)
+          .find(([, market]) => (market.manifestUrl ?? market.source) === sourceId && (market.ref ?? "") === (source.ref ?? ""))?.[0];
+        const name = options.name ?? sameSource ?? manifest.name;
+        const taken = state.marketplaces[name];
         if (taken && (taken.manifestUrl ?? taken.source) !== sourceId) {
-          throw new BotPluginError(`A marketplace named ${manifest.name} is already added from ${taken.manifestUrl ?? taken.source}.`, "name_taken", 409);
+          throw new BotPluginError(`A marketplace named ${name} is already added from ${taken.manifestUrl ?? taken.source}.`, "name_taken", 409);
         }
         if (!taken && Object.keys(state.marketplaces).length >= MAX_MARKETPLACES) {
           throw new BotPluginError(`Add at most ${MAX_MARKETPLACES} marketplaces.`, "too_many", 400);
         }
-        const target = this.repoDir(manifest.name);
+        const target = this.repoDir(name);
         rmSync(target, { recursive: true, force: true });
         mkdirSync(join(target, ".."), { recursive: true });
         renameSync(staging, target);
         const now = this.now();
-        state.marketplaces[manifest.name] = {
+        state.marketplaces[name] = {
           source: source.id,
           url: source.url,
           ...(source.ref ? { ref: source.ref } : {}),
@@ -529,31 +566,56 @@ export class PluginMarketplaces {
           updatedAt: now,
         };
         this.write(state);
-        return this.list().find((view) => view.name === manifest.name)!;
+        return this.list().find((view) => view.name === name)!;
       } finally {
         rmSync(staging, { recursive: true, force: true });
       }
     });
   }
 
-  refresh(name: string, actor: string | undefined): Promise<MarketplaceView> {
+  refresh(name: string, actor: string | undefined, options: { environment?: (source: GitSource) => Promise<Record<string, string>> } = {}): Promise<MarketplaceView> {
     const market = this.read().marketplaces[name];
     if (!market) return Promise.reject(new BotPluginError("No marketplace with that name.", "not_found", 404));
-    return this.add({ source: market.manifestUrl ?? (market.source.includes("://") ? market.url : market.source), ...(market.ref ? { ref: market.ref } : {}) }, actor);
+    return this.add({ source: market.manifestUrl ?? (market.source.includes("://") ? market.url : market.source), ...(market.ref ? { ref: market.ref } : {}) }, actor, { name, ...options });
   }
 
   /** Forget a marketplace. Its installed plugins must be uninstalled first,
-   * so no server or skill is left without a source. */
+   * for everyone and on every bot, so nothing is left without a source. */
   remove(name: string): Promise<void> {
     return this.serial(async () => {
       const state = this.read();
       if (!state.marketplaces[name]) throw new BotPluginError("No marketplace with that name.", "not_found", 404);
       const left = Object.values(state.installed).filter((plugin) => plugin.marketplace === name).map((plugin) => plugin.name);
       if (left.length) throw new BotPluginError(`Uninstall its plugins first: ${left.join(", ")}.`, "has_plugins", 409);
+      const bots = this.options.inUse?.(name) ?? [];
+      if (bots.length) throw new BotPluginError(`${bots.length === 1 ? "A bot still uses" : `${bots.length} bots still use`} plugins from this marketplace. Uninstall them for each bot first.`, "in_use", 409);
       delete state.marketplaces[name];
       rmSync(this.repoDir(name), { recursive: true, force: true });
       this.write(state);
     });
+  }
+
+  /** Take in a marketplace a bot had on its own before the two lists were
+   * one (migration). The same source (and ref) already here is reused; a
+   * name taken by another source gets a suffix. Its files are copied from
+   * `from` when this list has none. Returns the name it is stored under. */
+  adopt(input: { name: string; record: SharedMarketplaceRecord; from?: string }): string {
+    const state = this.read();
+    const sourceId = input.record.manifestUrl ?? input.record.source;
+    const same = Object.entries(state.marketplaces)
+      .find(([, market]) => (market.manifestUrl ?? market.source) === sourceId && (market.ref ?? "") === (input.record.ref ?? ""))?.[0];
+    let name = same ?? input.name;
+    for (let suffix = 2; !same && state.marketplaces[name]; suffix++) name = `${input.name.slice(0, 60)}-${suffix}`;
+    if (!NAME.test(name)) throw new BotPluginError("invalid marketplace", "invalid_source");
+    const target = this.repoDir(name);
+    if (input.from && existsSync(join(input.from, ".claude-plugin", "marketplace.json")) && !existsSync(join(target, ".claude-plugin", "marketplace.json"))) {
+      copyPlain(input.from, target);
+    }
+    if (!same) {
+      state.marketplaces[name] = { ...input.record };
+      this.write(state);
+    }
+    return name;
   }
 
   /** Put a plugin's files in place and read what it brings. The caller
