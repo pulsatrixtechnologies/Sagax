@@ -152,3 +152,94 @@ speaker and engine.
 `rights`, `section`, `org`, `approval`, `computer`) and `target` (the id of a
 bot, a person or a routine) narrow the page. Without `category`, the
 organization categories are read as before.
+
+## People
+
+| Method and path | Role | What |
+|---|---|---|
+| `GET people?q&role&presence&disabled&limit&cursor` | manager | every person of the organization in reach |
+| `GET people/{principal}` | manager | a person's page |
+| `POST people/{principal}/disable` | admin | turn a person off or on in this Sagax |
+| `POST people/{principal}/reset-access` | admin | delete their engine sign-ins, end their sessions |
+| `POST people/{principal}/connections/revoke` | admin | remove their own connections |
+
+### `GET people`
+
+`role` is `admin` or `member`, `presence` one of `online`, `idle`, `away`,
+`offline`, `disabled` `true` or `false`, `q` searches the name and the
+Perspicax user id.
+
+```json
+{
+  "items": [{
+    "principalId": "pr_7c1e...", "sub": "01J9...", "name": "Bob", "role": "member",
+    "disabled": false, "disabledBy": null,
+    "presence": { "state": "online", "lastSeenAt": 1791500000000 },
+    "bots": 2, "routines": 1, "lastTurnAt": 1791500100000, "turns30d": 48, "costUsd30d": 3.2,
+    "engines": [{ "id": "claude", "via": "subscription" }, { "id": "codex", "via": "org-key" }]
+  }],
+  "next": null
+}
+```
+
+- `disabledBy`: `perspicax` when Perspicax says the person is out,
+  `sagax` when an admin turned them off here, null otherwise.
+- `routines`: the routines that run as this person.
+- `turns30d`, `costUsd30d`, `lastTurnAt`: the turns this person spoke (a
+  routine counts for the person it ran as) over the last 30 days.
+- `engines[].via`: what their own turns run with on each engine:
+  `subscription` (their own sign-in here), `key` (their model key in
+  Perspicax, named by provider only), `org-key`, or `none`.
+
+### `GET people/{principal}`
+
+The row above, plus:
+
+```json
+{
+  "bots": ["AdminBot, as GET bots answers it"],
+  "shared": [{ "botId": "5e38...", "botName": "Atlas", "level": "use", "via": "team" }],
+  "connections": {
+    "engines": [{ "id": "claude", "via": "subscription", "signedIn": true, "key": false }],
+    "mcpServers": [{ "id": "github", "name": "github", "transport": "remote", "state": "enabled" }],
+    "composioApps": []
+  },
+  "routinesAsRunner": [{ "id": "r_1", "name": "Daily digest", "botId": "5e38..." }]
+}
+```
+
+Connected apps (Composio) belong to the workspace in Sagax, not to a person:
+`composioApps` is always empty. `mcpServers[].state` is `paused` while
+Perspicax `sagax_integrations` is off for the person.
+
+### `POST people/{principal}/disable`
+
+```json
+{ "disabled": true, "reason": "Contract ended" }
+```
+
+Answers `{person}` (the row). Disabling ends every session of the person at
+once; while disabled no request of theirs is served (401
+`principal_disabled`), a new sign-in is refused at its first request, their
+routines do not run, and a console assertion naming them is refused. It is
+independent of Perspicax's own disable: a sign-in does not clear it, only
+`{"disabled": false}` does. An admin cannot disable themselves (409 `self`).
+Audited `person.console_disable` and `person.console_enable`.
+
+### `POST people/{principal}/reset-access`
+
+```json
+{ "scope": "engine-logins" }
+```
+
+`scope` is `engine-logins` (delete the person's subscription sign-ins on
+this server), `sessions` (end every session; they sign in again) or `all`.
+Answers `{person, cleared: {engineLogins, sessions}}`. Audited
+`person.reset_access`.
+
+### `POST people/{principal}/connections/revoke`
+
+The body of the session route: `{"all": true}`, `{"kind": "mcp", "name"}`,
+`{"kind": "github"}` or `{"kind": "plugin", "botId", "key"}`. Answers
+`{removed, connections}` (the listing after the change). Audited
+`connections.revoke` when something was removed.

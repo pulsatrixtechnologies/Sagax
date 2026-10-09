@@ -228,6 +228,21 @@ export class PrincipalEngineLogins {
     await this.sessions.signOut(instance, sessionId);
   }
 
+  /** The console's Reset access (2026-10-08): every subscription sign-in
+   * this person keeps here is deleted; answers how many there were. */
+  clearAll(principalId: string): number {
+    if (!isPrincipalId(principalId)) return 0;
+    let cleared = 0;
+    for (const driver of Object.keys(LOGIN_DIR) as LoginDriver[]) {
+      const dir = this.loginDir(principalId, driver);
+      if (!existsSync(dir)) continue;
+      if (existsSync(join(dir, LOGIN_MARKER))) cleared += 1;
+      rmSync(dir, { recursive: true, force: true });
+    }
+    for (const key of this.controllers.keys()) if (key.startsWith(`${principalId}/`)) this.controllers.delete(key);
+    return cleared;
+  }
+
   /** A session ended: its flows end with it. */
   revokeOwner(sessionId: string): void {
     this.sessions.revokeOwner(sessionId);

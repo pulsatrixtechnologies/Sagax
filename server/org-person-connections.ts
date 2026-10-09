@@ -151,54 +151,64 @@ export function createOrgPersonConnectionRoutes(deps: OrgPersonConnectionsDeps):
     }
     let raw: unknown = null;
     try { raw = await readBody(req); } catch { raw = null; }
-    const parsed = revokeBody.safeParse(raw);
-    if (!parsed.success) return json(res, 400, { error: "Send { all: true } or one connection.", code: "invalid_body" });
-    const removed: RemovedConnection[] = [];
-    const finish = (status: number, body: Record<string, unknown>) => {
-      if (removed.length) deps.audit(auth, principalId, removed);
-      return json(res, status, body);
-    };
-    try {
-      if ("all" in parsed.data) {
-        deps.stopMcp(principalId);
-        const github = await deps.disconnectGithub(principalId);
-        if (github.removed) removed.push({ kind: "github", ...(github.login ? { name: github.login } : {}) });
-        for (const name of Object.keys(deps.servers(principalId)).sort()) {
-          if (await deps.removeMcp(principalId, name)) removed.push({ kind: "mcp", name });
-        }
-        for (const bot of deps.plugins(principalId)) {
-          for (const plugin of bot.plugins) {
-            if (await deps.removePlugin(principalId, bot.botId, plugin.key)) {
-              removed.push({ kind: "plugin", botId: bot.botId, key: plugin.key, name: plugin.name });
-            }
+    const outcome = await revokeOrgConnections(deps, principalId, raw);
+    if (outcome.removed.length) deps.audit(auth, principalId, outcome.removed);
+    return json(res, outcome.status, outcome.body);
+  };
+}
+
+/** The revoke of one person's connections, shared by the session route and
+ * the console's `POST people/{principal}/connections/revoke`: what was
+ * removed (for the caller's audit row) and the answer. */
+export async function revokeOrgConnections(
+  deps: Pick<OrgPersonConnectionsDeps, "servers" | "plugins" | "stopMcp" | "removeMcp" | "disconnectGithub" | "removePlugin">,
+  principalId: string,
+  raw: unknown,
+): Promise<{ status: number; body: Record<string, unknown>; removed: RemovedConnection[] }> {
+  const parsed = revokeBody.safeParse(raw);
+  const removed: RemovedConnection[] = [];
+  if (!parsed.success) return { status: 400, body: { error: "Send { all: true } or one connection.", code: "invalid_body" }, removed };
+  const finish = (status: number, body: Record<string, unknown>) => ({ status, body, removed });
+  try {
+    if ("all" in parsed.data) {
+      deps.stopMcp(principalId);
+      const github = await deps.disconnectGithub(principalId);
+      if (github.removed) removed.push({ kind: "github", ...(github.login ? { name: github.login } : {}) });
+      for (const name of Object.keys(deps.servers(principalId)).sort()) {
+        if (await deps.removeMcp(principalId, name)) removed.push({ kind: "mcp", name });
+      }
+      for (const bot of deps.plugins(principalId)) {
+        for (const plugin of bot.plugins) {
+          if (await deps.removePlugin(principalId, bot.botId, plugin.key)) {
+            removed.push({ kind: "plugin", botId: bot.botId, key: plugin.key, name: plugin.name });
           }
         }
-        return finish(200, { removed });
       }
-      if (parsed.data.kind === "mcp") {
-        if (!Object.hasOwn(deps.servers(principalId), parsed.data.name)) return finish(404, { error: "No connection with that name.", code: "not_found" });
-        deps.stopMcp(principalId, parsed.data.name);
-        if (!await deps.removeMcp(principalId, parsed.data.name)) return finish(404, { error: "No connection with that name.", code: "not_found" });
-        removed.push({ kind: "mcp", name: parsed.data.name });
-        return finish(200, { removed });
-      }
-      if (parsed.data.kind === "github") {
-        const github = await deps.disconnectGithub(principalId);
-        if (!github.removed) return finish(404, { error: "No connection with that name.", code: "not_found" });
-        deps.stopMcp(principalId);
-        removed.push({ kind: "github", ...(github.login ? { name: github.login } : {}) });
-        return finish(200, { removed });
-      }
-      if (parsed.data.kind !== "plugin") return finish(400, { error: "Send { all: true } or one connection.", code: "invalid_body" });
-      const { botId, key } = parsed.data;
-      const bot = deps.plugins(principalId).find((entry) => entry.botId === botId);
-      const plugin = bot?.plugins.find((entry) => entry.key === key);
-      if (!bot || !plugin) return finish(404, { error: "No connection with that name.", code: "not_found" });
-      if (!await deps.removePlugin(principalId, bot.botId, plugin.key)) return finish(404, { error: "No connection with that name.", code: "not_found" });
-      removed.push({ kind: "plugin", botId: bot.botId, key: plugin.key, name: plugin.name });
       return finish(200, { removed });
-    } catch {
-      return finish(500, { error: "The connection could not be removed." });
     }
-  };
+    if (parsed.data.kind === "mcp") {
+      if (!Object.hasOwn(deps.servers(principalId), parsed.data.name)) return finish(404, { error: "No connection with that name.", code: "not_found" });
+      deps.stopMcp(principalId, parsed.data.name);
+      if (!await deps.removeMcp(principalId, parsed.data.name)) return finish(404, { error: "No connection with that name.", code: "not_found" });
+      removed.push({ kind: "mcp", name: parsed.data.name });
+      return finish(200, { removed });
+    }
+    if (parsed.data.kind === "github") {
+      const github = await deps.disconnectGithub(principalId);
+      if (!github.removed) return finish(404, { error: "No connection with that name.", code: "not_found" });
+      deps.stopMcp(principalId);
+      removed.push({ kind: "github", ...(github.login ? { name: github.login } : {}) });
+      return finish(200, { removed });
+    }
+    if (parsed.data.kind !== "plugin") return finish(400, { error: "Send { all: true } or one connection.", code: "invalid_body" });
+    const { botId, key } = parsed.data;
+    const bot = deps.plugins(principalId).find((entry) => entry.botId === botId);
+    const plugin = bot?.plugins.find((entry) => entry.key === key);
+    if (!bot || !plugin) return finish(404, { error: "No connection with that name.", code: "not_found" });
+    if (!await deps.removePlugin(principalId, bot.botId, plugin.key)) return finish(404, { error: "No connection with that name.", code: "not_found" });
+    removed.push({ kind: "plugin", botId: bot.botId, key: plugin.key, name: plugin.name });
+    return finish(200, { removed });
+  } catch {
+    return finish(500, { error: "The connection could not be removed." });
+  }
 }
