@@ -516,6 +516,7 @@ rows and people, (b) Connect apps, (c) settings and approvals, (d) bot panel and
 | DC44 | Person panel resizes like the bot panel (#175) | layout | none | N/A (docked panels); the phone uses a sheet. | N/A | none |
 | DC45 | Hide Go to conversation chips whose conversation was deleted (#176) | ChatView chips | none | The phone decodes the server's `gone` stamp and drops "Open thread" for a thread that no longer exists. | iOS UI | d |
 | DC46 | Plan usage reads the person's own subscription on an org server (#177) | server | GET /api/usage | Server-side. | server | none |
+| DC47 | Mastery tier: 24 hard achievements unlock the Mastery characters and skins; locked looks show their achievement and progress (docs/achievements.md) | AchievementsPage Mastery cards, MascotLookEditor locks, shared/mascot-unlocks.ts | GET /api/me/achievements; PATCH /api/bots/:id(/profile) answers 403 `look_locked` with the achievement id | The achievements sheet lists Mastery (and Tiers) with the generated catalog, shows the progress bar from 0 and a "Locked: N looks to unlock" line on Mastery cards. The phone has no look editor for the Mastery characters yet: when it gets one, it reads the same registry keys (`mastery:<id>`, `character:<id>`, `skin:<character>:<skin>`) from `rewards`. | iOS strings | none |
 
 Not listed: releases and chores with no feature (#190 upstream sync, #192, #193, #195, #202,
 #205, #217, #223).

@@ -20,7 +20,8 @@
 // Each character keeps its own skin, so switching and back finds it again.
 // Loaded lazily with the popover.
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { characterUnlocked, reportAchievement, skinLock, useUnlocks, type LockInfo } from "@/lib/achievements";
+import { Lock } from "lucide-react";
+import { characterLock, characterUnlocked, lockHint, reportAchievement, skinLock, useUnlocks, type LockInfo } from "@/lib/achievements";
 import { useGrokAccountLinked } from "@/lib/grok-account";
 import "@/components/achievements/achievements.css";
 import { cn } from "@/lib/cn";
@@ -226,21 +227,44 @@ function SegmentedTabs<T extends string>({ label, items, value, onChange, idPref
   );
 }
 
-/** A skin's card: its animated preview, its name and its rarity, shimmering above Common. Locked skins are not offered. */
-function SkinCard({ tier, label, checked, disabled, onSelect, data, children }: { tier: SkinTier; label: string; checked: boolean; disabled?: boolean; onSelect: () => void; data: Record<string, string>; children: ReactNode }) {
+/** A Mastery look's lock on its card: the padlock, and how far its achievement went. */
+function LockBadge({ lock }: { lock: LockInfo }) {
+  const item = lock.item;
+  return (
+    <>
+      <span className="unlock-lock" aria-hidden="true"><Lock size={10} strokeWidth={2.6} /></span>
+      {item && item.target > 0 && (
+        <span className="unlock-progress" aria-hidden="true">
+          <span style={{ width: `${Math.round((item.current / item.target) * 100)}%` }} />
+        </span>
+      )}
+    </>
+  );
+}
+
+/**
+ * A skin's card: its animated preview, its name and its rarity, shimmering
+ * above Common. Locked skins are not offered, except a Mastery skin
+ * (shared/mascot-unlocks.ts), shown locked with the achievement that unlocks it.
+ */
+function SkinCard({ tier, label, checked, disabled, onSelect, data, lock, children }: { tier: SkinTier; label: string; checked: boolean; disabled?: boolean; onSelect: () => void; data: Record<string, string>; lock?: LockInfo; children: ReactNode }) {
   const tierLabel = t(SKIN_TIER_LABEL[tier]);
+  const locked = Boolean(lock?.locked);
+  const hint = locked && lock ? lockHint(lock) : "";
   return (
     <button
       type="button"
       role="radio"
-      disabled={disabled}
+      disabled={disabled || locked}
       aria-checked={checked}
-      aria-label={`${label}, ${tierLabel}`}
-      title={`${label} (${tierLabel})`}
+      aria-label={locked ? `${label}, ${tierLabel}. ${hint}` : `${label}, ${tierLabel}`}
+      title={locked ? `${label} (${tierLabel}). ${hint}` : `${label} (${tierLabel})`}
       data-tier={tier}
+      data-locked={locked ? "" : undefined}
+      data-unlock-achievement={locked ? lock?.achievement?.id : undefined}
       {...data}
       onClick={onSelect}
-      className={cn(card, "skin-card h-[70px] gap-0 pt-1", checked && on)}
+      className={cn(card, "skin-card relative h-[70px] gap-0 pt-1", checked && on)}
     >
       <span className="grid size-[40px] place-items-center" aria-hidden="true">
         {children}
@@ -249,6 +273,7 @@ function SkinCard({ tier, label, checked, disabled, onSelect, data, children }: 
       <span className="skin-tier" data-tier={tier} aria-hidden="true">
         {tierLabel}
       </span>
+      {locked && lock && <LockBadge lock={lock} />}
     </button>
   );
 }
@@ -259,8 +284,11 @@ function SkinCard({ tier, label, checked, disabled, onSelect, data, children }: 
  * open tab's cards are drawn, so the popover animates a handful at most.
  */
 function SkinPicker<S extends string>({ skins, tierOf, selected, labelOf, idPrefix, dataKey, disabled, onSelect, preview, lockOf }: { skins: readonly S[]; tierOf: Readonly<Record<S, SkinTier>>; selected: S; labelOf: (skin: S) => string; idPrefix: string; dataKey: string; disabled?: boolean; onSelect: (skin: S) => void; preview: (skin: S) => ReactNode; lockOf?: (skin: S) => LockInfo }) {
-  // A locked skin stays out of the picker. The one this bot wears stays, so the current look never vanishes.
-  const offered = skins.filter((skin) => skin === selected || !lockOf?.(skin).locked);
+  // A locked skin stays out of the picker, but a Mastery one shows locked (the goal is to want it). The one this bot wears stays, so the current look never vanishes.
+  const offered = skins.filter((skin) => {
+    const lock = lockOf?.(skin);
+    return skin === selected || !lock?.locked || lock.mastery === true;
+  });
   const tabs = skinTierTabs(offered, tierOf);
   const [tab, setTab] = useState<SkinTier>(() => skinTabFor(selected, skins, tierOf));
   const followed = useRef(selected);
@@ -285,7 +313,7 @@ function SkinPicker<S extends string>({ skins, tierOf, selected, labelOf, idPref
       <div id={`${idPrefix}-panel`} role="tabpanel" aria-labelledby={`${idPrefix}-tab-${open.tier}`} data-skin-panel={open.tier}>
         <div className="grid grid-cols-5 gap-1.5" role="radiogroup" aria-label={t("mascot.skin.title")}>
           {open.skins.map((skin) => (
-            <SkinCard key={skin} tier={tierOf[skin]} label={labelOf(skin)} checked={selected === skin} disabled={disabled} data={{ [dataKey]: skin }} onSelect={() => onSelect(skin)}>
+            <SkinCard key={skin} tier={tierOf[skin]} label={labelOf(skin)} checked={selected === skin} disabled={disabled} data={{ [dataKey]: skin }} lock={skin === selected ? undefined : lockOf?.(skin)} onSelect={() => onSelect(skin)}>
               {preview(skin)}
             </SkinCard>
           ))}
@@ -352,7 +380,8 @@ export default function MascotLookEditor({ bot, disabled, onPatch: savePatch, on
   const unlocks = grokLinked && stored.enforced && !stored.keys.has("character:shape")
     ? { enforced: true as const, keys: new Set([...stored.keys, "character:shape"]) }
     : stored;
-  const characters = MASCOTS.filter((option) => option.id === look.character || characterUnlocked(unlocks, option.id));
+  // a Mastery character stays in the row, locked, with the achievement that unlocks it
+  const characters = MASCOTS.filter((option) => option.id === look.character || characterUnlocked(unlocks, option.id) || characterLock(unlocks, option.id).mastery === true);
   const onPatch = (patch: MascotLookPatch) => {
     savePatch(patch);
     reportAchievement("bot.customized", { key: patch.mascotLook?.character ?? look.character });
@@ -369,14 +398,20 @@ export default function MascotLookEditor({ bot, disabled, onPatch: savePatch, on
       {/* the character row, full width: the bot's avatar above is the preview */}
       <SectionHead title={t("mascot.character.title")} />
       <div className="grid grid-cols-2 gap-1.5" role="radiogroup" aria-label={t("mascot.character.title")} data-character-row="">
-        {characters.map((option) => (
+        {characters.map((option) => {
+          const lock = option.id === look.character ? undefined : characterLock(unlocks, option.id);
+          const locked = Boolean(lock?.locked);
+          return (
           <button
             key={option.id}
             type="button"
             role="radio"
-            disabled={disabled}
+            disabled={disabled || locked}
             aria-checked={look.character === option.id}
             data-character-option={option.id}
+            data-locked={locked ? "" : undefined}
+            data-unlock-achievement={locked ? lock?.achievement?.id : undefined}
+            title={locked && lock ? lockHint(lock) : undefined}
             onClick={() => setLook({ character: option.id })}
             className={cn(card, "relative h-[46px] flex-row gap-2 px-2", look.character === option.id && on)}
           >
@@ -384,8 +419,10 @@ export default function MascotLookEditor({ bot, disabled, onPatch: savePatch, on
               <option.Thumb color={bot.color} skin={owlSkin} look={{ ...look, character: option.id }} size={30} />
             </span>
             <span className="truncate text-[11.5px] leading-4 text-ink">{t(CHARACTER_LABEL[option.id])}</span>
+            {locked && lock && <LockBadge lock={lock} />}
           </button>
-        ))}
+          );
+        })}
       </div>
 
       {look.character === "owl" && (

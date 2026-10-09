@@ -32,7 +32,8 @@ public struct AchievementText: Hashable, Sendable {
 }
 
 public enum AchievementCategory: String, CaseIterable, Hashable, Sendable {
-    case onboarding, productivity, power, voice, collaboration, streaks, mastery, secrets
+    /// mastery: the Mastery tier (hard, unlocks the Mastery characters); tiers: the points tiers.
+    case onboarding, productivity, power, voice, collaboration, streaks, mastery, tiers, secrets
 }
 
 /// The rarity an achievement's points set (`rarityForPoints`).

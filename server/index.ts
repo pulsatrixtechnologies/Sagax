@@ -235,7 +235,7 @@ import { EngineSelfCheck, readEngineManifest, runEngineSelfCheck, type EngineChe
 import { appendUsage, parseUsageRange, readUsage, flushUsageLedger, type UsageRow, type UsageTrigger } from "./usage-ledger.ts";
 import { loadPlanUsage, orgPlanAccounts, planAccountsFromInstances } from "./plan-usage.ts";
 import { GroupUsageReader } from "./group-thread-usage.ts";
-import { ledgerCost } from "./model-prices.ts";
+import { ledgerCost, listPriceFor } from "./model-prices.ts";
 import type { PriceList } from "./prices.ts";
 import type { RequestAuth } from "./request-auth.ts";
 import { BOT_FIELD_PERMISSIONS, can, permissionRefusal, type PermissionKey } from "../shared/permissions.ts";
@@ -764,6 +764,7 @@ import { createDesktopAppearanceRoutes } from "./routes/desktop-appearance.ts";
 import { createDesktopAppearanceStore } from "./desktop-appearance.ts";
 import { achievementFrameAllowed, achievementRequestEvents, achievementSendEvents, activityEvents, createAchievementStore, routineRunEvents, type AchievementEvent } from "./achievements.ts";
 import { createAchievementRoutes } from "./routes/achievements.ts";
+import { lockedLookChange, masteryDelegationFacts, masteryFrameFacts, masteryRequestFacts, masterySendFacts, threadCensus, type LookRefusal, type PersonFact } from "./achievements-mastery.ts";
 import { grandfatheredFromBots } from "../shared/achievements.ts";
 import { createBotMemoryRoutes } from "./routes/bot-memory.ts";
 import { createBotActivityRoutes, type ActivityChildRef } from "./routes/bot-activity.ts";
@@ -1025,6 +1026,88 @@ function recordAchievements(person: string | null | undefined, events: readonly 
     /* achievements are a bonus: never fail the request that earned one */
   }
 }
+/** Mastery facts (server/achievements-mastery.ts) for their people. Never throws. */
+function recordMastery(facts: readonly PersonFact[]): void {
+  for (const item of facts) recordAchievements(item.person, [{ type: "mastery", fact: item.fact, ...(item.id ? { id: item.id } : {}) }]);
+}
+/** A model's list price per million tokens, input plus output, or null when unlisted. */
+function masteryPrice(model: string | undefined): number | null {
+  const price = model ? listPriceFor(model) : null;
+  return price ? price.inputPerMillion + price.outputPerMillion : null;
+}
+/** The model a thread's turn ran on: Auto's pick, else the thread's, else the bot's. */
+function masteryThreadModel(threadId: string): string | null {
+  const bot = store.botByThread(threadId);
+  if (!bot) return null;
+  return autoTurnsByThread.get(threadId)?.entry.model ?? store.taskByThread(bot.id, threadId)?.modelSelection?.model ?? bot.modelSelection?.model ?? null;
+}
+const masteryFrameLookups: Parameters<typeof masteryFrameFacts>[1] = {
+  threadPerson: (threadId) => achievementThreadPerson(threadId),
+  threadBot: (threadId) => store.botByThread(threadId)?.id ?? null,
+  threadModel: masteryThreadModel,
+  autoCheaper: (threadId) => {
+    const auto = autoTurnsByThread.get(threadId);
+    const bot = auto ? store.botByThread(threadId) : undefined;
+    if (!auto || !bot) return null;
+    const picked = masteryPrice(auto.entry.model);
+    const own = masteryPrice(bot.modelSelection?.model);
+    if (picked !== null && own !== null) return picked < own;
+    return store.taskByThread(bot.id, threadId)?.autoModel?.tier === "fast";
+  },
+  routine: (routineId, run) => {
+    const routine = routines?.listRoutines().find((candidate) => candidate.id === routineId);
+    const botId = typeof run.botId === "string" ? run.botId : routine?.botId;
+    const bot = botId ? store.bot(botId) : undefined;
+    const runAs = typeof run.runAs === "string" ? run.runAs : routine?.runAs;
+    return { person: runAs || (bot ? effectiveBotOwner(bot) : null) || null, ...(botId ? { botId } : {}), continuity: routine?.continuity === true };
+  },
+};
+/** Ten Hands' look at a person's conversations (the bots they own; every bot on a solo server). */
+function masteryCensus(person: string): ReturnType<typeof threadCensus> {
+  const bots = IDENTITY.kind === "perspicax" ? store.bots.filter((bot) => effectiveBotOwner(bot) === person) : store.bots;
+  const tasks = bots.flatMap((bot) => (bot.tasks ?? []).filter((task) => !task.ownerPrincipalId || task.ownerPrincipalId === person));
+  return threadCensus(tasks, new Set(bots.map((bot) => bot.threadId)), Date.now());
+}
+/**
+ * A Mastery look (shared/mascot-unlocks.ts) the person has not unlocked
+ * cannot be saved on a bot: 403 with the achievement that unlocks it. What
+ * the bot already wears stays. A person without a record (a service) is
+ * not checked, like the rest of achievements.
+ */
+function lockedLookRefusal(auth: RequestAuth, bot: BotRecord | null | undefined, nextLook: unknown): LookRefusal | null {
+  if (nextLook === undefined) return null;
+  const person = actorPrincipalId(auth);
+  if (!person) return null;
+  try {
+    return lockedLookChange(bot?.mascotLook, nextLook, new Set(achievementStore.snapshot(person).rewards));
+  } catch {
+    return null;
+  }
+}
+/** A bot's standing instructions saved by a person (Red Pen). */
+function recordPersonaSave(auth: RequestAuth, botId: string, before: { soul: string } | undefined, after: { soul: string }): void {
+  if (!before || before.soul === after.soul) return;
+  recordMastery([{ person: actorPrincipalId(auth), fact: { kind: "persona.saved", botId } }]);
+}
+// The nightly pass (shared/achievements-mastery.ts reconcileMastery): once
+// per person per local day, the measures that span days and Ten Hands' look
+// at their conversations, so a window that closed overnight counts.
+const masteryReconciledDay = new Map<string, string>();
+function masteryNightly(): void {
+  try {
+    for (const person of achievementStore.people()) {
+      const day = achievementStore.localDay(person);
+      if (masteryReconciledDay.get(person) === day) continue;
+      masteryReconciledDay.set(person, day);
+      const unlocked = achievementStore.reconcile(person, [{ kind: "threads.census", ...masteryCensus(person) }]);
+      if (unlocked.length) broadcast({ kind: "achievements", audience: person, unlocked });
+    }
+  } catch (error) {
+    console.warn(`achievements: the nightly pass failed (${error instanceof Error ? error.message : String(error)})`);
+  }
+}
+setTimeout(masteryNightly, 60_000).unref?.();
+setInterval(masteryNightly, 3_600_000).unref?.();
 /** The person a thread's work counts for: its owner, else the bot's owner. */
 function achievementThreadPerson(threadId: string): string | null {
   const bot = store.botByThread(threadId);
@@ -1072,6 +1155,13 @@ function observePushFrame(payload: Record<string, unknown>): void {
 }
 /** Server events read from live frames: a routine run that completed, a sub-agent, Auto picking a computer. */
 function observeAchievementFrame(payload: Record<string, unknown>): void {
+  if (payload.kind === "routine.run" || payload.kind === "runtime" || payload.kind === "message" || payload.kind === "message.patch") {
+    try {
+      recordMastery(masteryFrameFacts(payload, masteryFrameLookups));
+    } catch {
+      /* a bonus: never fail the frame */
+    }
+  }
   if (payload.kind === "routine.run" && payload.run && typeof payload.run === "object") {
     const run = payload.run as { id?: unknown; status?: unknown; routineId?: unknown };
     const events = routineRunEvents(run);
@@ -2142,6 +2232,8 @@ function autoRecallPrompt(bot: BotRecord, threadId: string, message: string, opt
       ...(opts.budget ? { budget: opts.budget } : {}),
     });
     if (recalled) console.log(`auto-recall: ${bot.name} (${bot.id}) got ${recalled.notes} note and ${recalled.conversations} conversation passage(s) in ${threadId}`);
+    // its memory recalled in this conversation (Total Recall, for whoever wrote that memory)
+    if (recalled?.notes) recordMastery([{ person: achievementThreadPerson(threadId) ?? "", fact: { kind: "memory.recalled", botId: bot.id, threadId } }]);
     return recalled?.text ?? "";
   } catch (err) {
     console.warn(`auto-recall failed for ${bot.id}: ${(err as Error).message}`);
@@ -11572,6 +11664,15 @@ function finalizeDelegationWatch(
       result: ok ? reply : failureName,
       ...(worker?.role === "worker" ? { workerModel: { engine: worker.engineLabel, model: worker.modelLabel, ...(worker.taskClass ? { taskClass: worker.taskClass } : {}) } } : {}),
     });
+    recordMastery(masteryDelegationFacts({
+      person: achievementThreadPerson(watched.sourceThreadId),
+      sourceThreadId: watched.sourceThreadId,
+      toBotId: watched.toBotId,
+      ok,
+      id: watched.taskId,
+      sourceModel: masteryThreadModel(watched.sourceThreadId),
+      workerModel: worker?.model ?? store.taskByThread(watched.toBotId, threadId)?.modelSelection?.model ?? target?.modelSelection?.model ?? null,
+    }));
   }
   if (watched.oneWay) {
     if (!ok && store.taskByThread(watched.toBotId, threadId)) {
@@ -25243,12 +25344,25 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
     if (method !== "GET" && method !== "HEAD") {
       const achiever = actorPrincipalId(auth);
       if (achiever) {
-        res.once("finish", () => recordAchievements(achiever, achievementRequestEvents({ method, path, status: res.statusCode }, {
-          group: (id) => {
-            const group = store.group(id);
-            return group ? { peopleDm: group.peopleDm === true, humans: (group.humanIds?.length ?? 0) || 1, bots: group.memberIds?.length ?? 0 } : null;
-          },
-        })));
+        res.once("finish", () => {
+          recordAchievements(achiever, achievementRequestEvents({ method, path, status: res.statusCode }, {
+            group: (id) => {
+              const group = store.group(id);
+              return group ? { peopleDm: group.peopleDm === true, humans: (group.humanIds?.length ?? 0) || 1, bots: group.memberIds?.length ?? 0 } : null;
+            },
+          }));
+          try {
+            recordMastery(masteryRequestFacts({ method, path, status: res.statusCode }, achiever, {
+              catalogPublisher: (botId) => {
+                const catalog = store.bot(botId)?.catalog;
+                return catalog?.published ? catalog.publishedBy ?? null : null;
+              },
+              census: masteryCensus,
+            }));
+          } catch {
+            /* a bonus: never fail the request */
+          }
+        });
       }
     }
     if (await dispatchRoutes(ROUTES, { req, res, url, path, method, auth, json, readBody })) return;
@@ -26687,6 +26801,8 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           source: learnSource(source),
         });
         if ("error" in staged) return json(res, 422, { error: staged.error });
+        // a skill written from a conversation (/learn) counts its uses for Skill Smith
+        if (staged.action === "create" && source === "conversation") recordMastery([{ person: achievementThreadPerson(fromThreadId) ?? "", fact: { kind: "skill.learned", skill: staged.name } }]);
         if (direct) {
           // What an update replaces, so Undo can put it back.
           const previousSkillMd = staged.action === "update" ? readSkillFile(from.id, staged.name) : null;
@@ -30887,6 +31003,8 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         return json(res, 400, { error: "avatarUrl must reference an existing stored image" });
       }
       const existingBot = store.bot(m[1]);
+      const lookLocked = lockedLookRefusal(auth, existingBot, parsed.patch.mascotLook);
+      if (lookLocked) return json(res, 403, lookLocked);
       // On a Cloud home a bot's name, title, description and standing
       // instructions ride every one of the owner's turns (and a lent Mac):
       // only the owner's own devices change them. Anyone else keeps the
@@ -30905,6 +31023,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       const bot = store.patchBotProfile(m[1], parsed.patch);
       if (!bot) return json(res, 404, { error: "no such bot" });
       if (beforeProfile) recordProfileChange(bot.id, "user", "api", beforeProfile, profileSnapshot(bot));
+      recordPersonaSave(auth, bot.id, beforeProfile, profileSnapshot(bot));
       const visible = wireBot(bot);
       broadcast({ kind: "bot", bot: visible });
       return json(res, 200, { bot: visible });
@@ -31196,6 +31315,8 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       if (profile.patch.avatarUrl && !storedAvatarExists(profile.patch.avatarUrl)) {
         return json(res, 400, { error: "avatarUrl must reference an existing stored image" });
       }
+      const lookLocked = lockedLookRefusal(auth, existingBot, profile.patch.mascotLook);
+      if (lookLocked) return json(res, 403, lookLocked);
       const patch: Record<string, unknown> = {};
       Object.assign(patch, profile.patch);
       let section: string | undefined | null;
@@ -31711,6 +31832,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       if (beforeProfile) {
         const now = store.bot(bot.id)!;
         recordProfileChange(bot.id, "user", "api", beforeProfile, profileSnapshot(now));
+        recordPersonaSave(auth, bot.id, beforeProfile, profileSnapshot(now));
       }
       // A new audience changes who may see this bot's rooms and teams too:
       // re-announce them so every member's stream gains or withdraws them.
@@ -32111,6 +32233,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       const updated = store.setSoul(bot.id, parsed.patch.soul ?? "");
       if (!updated) return json(res, 404, { error: "no such bot" });
       recordProfileChange(bot.id, "file", "ui", beforeProfile, profileSnapshot(updated));
+      recordPersonaSave(auth, bot.id, beforeProfile, profileSnapshot(updated));
       const visible = wireBot(updated);
       broadcast({ kind: "bot", bot: visible });
       return json(res, 200, { bot: visible });
@@ -32544,6 +32667,8 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         },
       );
       recordAchievements(actorPrincipalId(auth), achievementSendEvents({ text, parallel: busyMode === "parallel", ...(voiceCall ? { voiceCall } : {}) }, achievementCallStarts, Date.now()));
+      // a correction into the running turn (steer, queued into it) counts for Prompter
+      recordMastery(masterySendFacts({ threadId, text, steered: busyMode === "steer" && (receipt as { queued?: unknown }).queued === true }, actorPrincipalId(auth)));
       return json(res, 202, receipt);
     }
 

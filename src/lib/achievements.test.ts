@@ -110,6 +110,38 @@ describe("locks", () => {
   });
 });
 
+describe("Mastery locks", () => {
+  it("shows a Mastery look locked, with its achievement and progress, before and after its character lands", () => {
+    const items = ACHIEVEMENTS.map((item) => ({ id: item.id, current: item.id === "hands-off" ? 7 : 0, target: item.id === "hands-off" ? 10 : 1 }));
+    resetAchievementsForTests({ status: "ready", snapshot: snapshot({ items }) });
+    const unlocks = achievementsState().unlocks;
+    const shiba = characterLock(unlocks, "shiba");
+    expect(shiba).toMatchObject({ locked: true, mastery: true, achievement: { id: "hands-off" }, item: { current: 7, target: 10 } });
+    expect(lockHint(shiba)).toBe("Unlock: Hands Off (7/10)");
+    // a skin needs its character first
+    expect(skinLock(unlocks, "shiba", "cream").achievement?.id).toBe("hands-off");
+    // a secret Mastery achievement keeps its name
+    const stopped = skinLock(unlocksFromSnapshot({ rewards: ["character:grump", "mastery:reviewer"] }), "grump", "glimmer");
+    expect(stopped.achievement?.id).toBe("not-so-fast");
+    expect(lockHint(stopped)).not.toContain("Not So Fast");
+    // unlocked: the character, and the skin of its first rung
+    const later = unlocksFromSnapshot({ rewards: ["character:shiba", "mastery:hands-off", "mastery:second-wind", "skin:shiba:cream", "skin:shiba:blacktan"] });
+    expect(characterLock(later, "shiba")).toEqual({ locked: false });
+    expect(skinLock(later, "shiba", "blacktan")).toEqual({ locked: false });
+    expect(skinLock(later, "shiba", "white")).toMatchObject({ locked: true, mastery: true, achievement: { id: "quiet-nights" } });
+    // the characters from before keep hiding their locked looks (no mastery flag)
+    expect(characterLock(unlocks, "bunbu").mastery).toBeUndefined();
+  });
+
+  it("names a Mastery character and skin from the registry until the locales have them", () => {
+    setLocale("fr");
+    expect(rewardLabel({ kind: "character", character: "frog" })).toBe("Personnage débloqué : Grenouille");
+    expect(rewardLabel({ kind: "skin", character: "shiba", skin: "blacktan" })).toBe("Skin débloqué : Noir et feu (Shiba)");
+    setLocale("en");
+    expect(rewardLabel({ kind: "skin", character: "ogre", skin: "molten" })).toBe("Skin unlocked: Molten (Ogre)");
+  });
+});
+
 describe("events and unlocks", () => {
   it("batches client events into one POST and queues the unlocks it returns", async () => {
     vi.useFakeTimers();

@@ -10,7 +10,7 @@
 import { lazy, Suspense, useEffect, useMemo, useState } from "react";
 import { Flame, Lock, Trophy } from "lucide-react";
 import { ACHIEVEMENTS } from "../../../shared/achievements-catalog";
-import { rarityForPoints, type AchievementCategory, type AchievementDefinition, type AchievementItemState } from "../../../shared/achievements";
+import { rarityForPoints, type AchievementCategory, type AchievementDefinition, type AchievementItemState, type AchievementReward } from "../../../shared/achievements";
 import { loadAchievements, localized, reportAchievement, rewardLabel, saveAchievementSettings, useAchievements } from "@/lib/achievements";
 import { forgetPublicAchievements } from "@/lib/public-achievements";
 import { requestNotificationPermission } from "@/lib/notify";
@@ -32,6 +32,7 @@ export const CATEGORY_LABEL: Record<AchievementCategory, LocaleKey> = {
   collaboration: "achievements.category.collaboration",
   streaks: "achievements.category.streaks",
   mastery: "achievements.category.mastery",
+  tiers: "achievements.category.tiers",
   secrets: "achievements.category.secrets",
 };
 
@@ -50,12 +51,44 @@ export function formatPoints(points: number, locale = activeLocale()): string {
   }
 }
 
+/** How many looks a Mastery card previews before "+N". */
+const MASTERY_PREVIEWS = 5;
+
+/**
+ * What a Mastery achievement unlocks, drawn: the character or its skins,
+ * greyed until it unlocks (a character that has not landed yet is its
+ * placeholder), then "+N" for the rest.
+ */
+function MasteryUnlockPreview({ item, unlocked }: { item: AchievementDefinition; unlocked: boolean }) {
+  const looks = item.rewards.filter((reward): reward is Extract<AchievementReward, { kind: "character" | "skin" }> => reward.kind === "character" || reward.kind === "skin");
+  if (!looks.length) return null;
+  const shown = looks.slice(0, MASTERY_PREVIEWS);
+  return (
+    <div className="mt-1.5 flex items-center gap-1" data-mastery-preview={item.id} aria-label={t("achievements.mastery.unlocks")}>
+      <span className="mr-0.5 text-[11px] text-ink-tertiary">{t("achievements.mastery.unlocks")}</span>
+      {shown.map((reward) => (
+        <span
+          key={`${reward.character}:${reward.kind === "skin" ? reward.skin : ""}`}
+          className="mastery-look grid size-7 place-items-center"
+          data-locked={unlocked ? undefined : ""}
+          title={rewardLabel(reward)}
+        >
+          <Suspense fallback={null}><RewardPreview reward={reward} size={24} animated={false} /></Suspense>
+        </span>
+      ))}
+      {looks.length > shown.length && <span className="text-[11px] tabular-nums text-ink-tertiary">{t("achievements.mastery.more", { count: looks.length - shown.length })}</span>}
+    </div>
+  );
+}
+
 function AchievementCard({ item, state }: { item: AchievementDefinition; state?: AchievementItemState }) {
   const unlocked = Boolean(state?.unlockedAt);
   const secret = item.hidden && !unlocked;
   const tier = rarityForPoints(item.points);
   const Icon = secret ? Lock : achievementIcon(item.icon);
-  const progress = state && !unlocked && state.target > 1 && state.current > 0 ? state.current / state.target : null;
+  const mastery = item.category === "mastery";
+  // a Mastery card always shows how far it went, 0 included: the bar is the point
+  const progress = state && !unlocked && (mastery ? !secret && state.target > 0 : state.target > 1 && state.current > 0) ? state.current / state.target : null;
   const reward = item.rewards[0];
   return (
     <li
@@ -64,6 +97,7 @@ function AchievementCard({ item, state }: { item: AchievementDefinition; state?:
       data-unlocked={unlocked ? "" : undefined}
       data-achievement={item.id}
       data-secret={secret ? "" : undefined}
+      data-mastery={mastery ? "" : undefined}
     >
       <span className="achievement-card-badge" aria-hidden="true">
         <Icon size={17} strokeWidth={2.2} />
@@ -89,8 +123,9 @@ function AchievementCard({ item, state }: { item: AchievementDefinition; state?:
         <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] leading-[14px]">
           <span className="achievement-card-tier font-semibold uppercase tracking-[0.06em]">{t(TIER_LABEL[tier])}</span>
           {state?.percent !== undefined && <span className="text-ink-tertiary">{t("achievements.percent", { percent: state.percent })}</span>}
-          {reward && !secret && <span className="truncate text-ink-tertiary">{rewardLabel(reward)}</span>}
+          {reward && !secret && !mastery && <span className="truncate text-ink-tertiary">{rewardLabel(reward)}</span>}
         </div>
+        {mastery && !secret && <MasteryUnlockPreview item={item} unlocked={unlocked} />}
       </div>
     </li>
   );

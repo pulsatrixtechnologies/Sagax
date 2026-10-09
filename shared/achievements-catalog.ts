@@ -2,22 +2,36 @@
 //
 // Each one teaches a habit that makes Sagax more useful, in the order a
 // person meets them: onboarding, then productivity, power use, voice,
-// working with others, coming back (streaks), mastery tiers, and a few
-// secrets for the curious. Points are Gamerscore-like (5, 10, 20, 50, 100)
-// and set the rarity; a skin reward's own rarity matches the points it costs
-// (Rare 10 or 20, Epic 20 or 50, Legendary 50 or 100).
+// working with others, coming back (streaks), the Mastery tier, the points
+// tiers, and a few secrets for the curious. Points are Gamerscore-like (5,
+// 10, 20, 50, 100) and set the rarity; a skin reward's own rarity matches the
+// points it costs (Rare 10 or 20, Epic 20 or 50, Legendary 50 or 100).
+//
+// The Mastery tier (category "mastery", docs/achievements.md) is harder: 100
+// to 300 points, each proving real use of AI and of Sagax, measured by the
+// server (shared/achievements-mastery.ts). Its rewards are the four Mastery
+// characters and their skins, read from shared/mascot-unlocks.ts, so a
+// character that has not landed yet is already a reward.
 //
 // Every skin above Common and every character except the owl is a reward of
 // exactly one achievement. Shapes comes from linking a Grok account. Trombi
 // comes only from its hidden command, never from points, and that command is
 // not written down. An id is stored per person: never rename one; retire it
 // by keeping it in the list.
-import type { AchievementDefinition } from "./achievements.ts";
+import type { AchievementDefinition, AchievementReward } from "./achievements.ts";
+import type { MasteryMetric } from "./achievements-mastery.ts";
+import { masteryRewards } from "./mascot-unlocks.ts";
 
 const skin = (character: "owl" | "shape" | "trombi" | "bunbu", id: string) => ({ kind: "skin", character, skin: id }) as const;
 const title = (id: string, en: string, fr: string) => ({ kind: "title", id, name: { en, fr } }) as const;
+const mastery = (id: string, metric: MasteryMetric, target: number) => ({
+  id,
+  category: "mastery" as const,
+  rule: { kind: "mastery" as const, metric, target },
+  rewards: masteryRewards(id) as AchievementReward[],
+});
 
-export const ACHIEVEMENTS: readonly AchievementDefinition[] = [
+const CATALOG: readonly AchievementDefinition[] = [
   /* ------------------------------------------------------------ onboarding */
   {
     id: "first-words",
@@ -431,9 +445,295 @@ export const ACHIEVEMENTS: readonly AchievementDefinition[] = [
   },
 
   /* --------------------------------------------------------------- mastery */
+  // Shiba: delegate and let it run.
+  {
+    ...mastery("hands-off", "routine.clean-streak", 10),
+    name: { en: "Hands Off", fr: "Déléguer sans surveiller", ptBR: "Delegar sem vigiar" },
+    description: {
+      en: "One of your routines completes 10 runs in a row without a failure.",
+      fr: "Une de vos routines complète 10 exécutions de suite sans un seul échec.",
+      ptBR: "Uma das suas rotinas completa 10 execuções seguidas sem nenhuma falha.",
+    },
+    icon: "Dog",
+    points: 100,
+  },
+  {
+    ...mastery("second-wind", "routine.recovered", 2),
+    name: { en: "Second Wind", fr: "Second souffle", ptBR: "Segundo fôlego" },
+    description: {
+      en: "Twice, fix a routine that failed: change it, then see its next 3 runs complete.",
+      fr: "Deux fois, réparez une routine qui a échoué : modifiez-la, puis voyez ses 3 exécutions suivantes réussir.",
+      ptBR: "Duas vezes, conserte uma rotina que falhou: altere-a e veja as 3 execuções seguintes concluírem.",
+    },
+    icon: "LifeBuoy",
+    points: 100,
+  },
+  {
+    ...mastery("common-thread", "routine.continuity-runs", 14),
+    name: { en: "Common Thread", fr: "Fil conducteur", ptBR: "Fio condutor" },
+    description: {
+      en: "A routine that builds on its previous report completes 14 runs.",
+      fr: "Une routine qui reprend son rapport précédent complète 14 exécutions.",
+      ptBR: "Uma rotina que parte do relatório anterior completa 14 execuções.",
+    },
+    icon: "Repeat2",
+    points: 150,
+  },
+  {
+    ...mastery("quiet-nights", "routine.quiet-days", 30),
+    name: { en: "Quiet Nights", fr: "Nuit calme", ptBR: "Noites tranquilas" },
+    description: {
+      en: "30 days in a row where your routines ran and none failed.",
+      fr: "30 jours de suite où vos routines ont roulé sans un seul échec.",
+      ptBR: "30 dias seguidos em que suas rotinas rodaram sem nenhuma falha.",
+    },
+    icon: "MoonStar",
+    points: 150,
+  },
+  {
+    ...mastery("pack-leader", "routine.pack", 3),
+    name: { en: "Pack Leader", fr: "Chef de meute", ptBR: "Líder da matilha" },
+    description: {
+      en: "Routines on 3 different bots each complete 20 runs.",
+      fr: "Des routines sur 3 robots différents complètent chacune 20 exécutions.",
+      ptBR: "Rotinas em 3 robôs diferentes completam 20 execuções cada.",
+    },
+    icon: "Workflow",
+    points: 200,
+  },
+  // Grump: read before you trust.
+  {
+    ...mastery("reviewer", "approval.denied-then-done", 5),
+    name: { en: "Reviewer", fr: "Relecteur", ptBR: "Revisor" },
+    description: {
+      en: "Deny 5 approvals that would have written to a system, and each time the bot still completes the task another way.",
+      fr: "Refusez 5 approbations qui auraient écrit dans un système, et chaque fois le robot termine quand même la tâche autrement.",
+      ptBR: "Negue 5 aprovações que teriam escrito em um sistema e, a cada vez, o robô conclui a tarefa de outro jeito.",
+    },
+    icon: "ThumbsDown",
+    points: 100,
+  },
+  {
+    ...mastery("prompter", "turn.steered-then-done", 15),
+    name: { en: "Prompter", fr: "Souffleur", ptBR: "Ponto" },
+    description: {
+      en: "15 times, correct a bot while it works (a message into its running turn) and the turn completes.",
+      fr: "15 fois, corrigez un robot pendant qu'il travaille (un message dans son tour en cours) et le tour se termine bien.",
+      ptBR: "15 vezes, corrija um robô enquanto ele trabalha (uma mensagem no turno em andamento) e o turno conclui.",
+    },
+    icon: "MessageSquareWarning",
+    points: 100,
+  },
+  {
+    ...mastery("red-pen", "persona.revised", 5),
+    name: { en: "Red Pen", fr: "Stylo rouge", ptBR: "Caneta vermelha" },
+    description: {
+      en: "On 5 different days, revise a bot's standing instructions and see it complete 5 turns with them.",
+      fr: "5 jours différents, révisez les instructions permanentes d'un robot et voyez-le compléter 5 tours avec elles.",
+      ptBR: "Em 5 dias diferentes, revise as instruções permanentes de um robô e veja-o concluir 5 turnos com elas.",
+    },
+    icon: "PenLine",
+    points: 150,
+  },
+  {
+    ...mastery("not-so-fast", "turn.stopped-then-done", 10),
+    name: { en: "Not So Fast", fr: "Pas si vite", ptBR: "Calma lá" },
+    description: {
+      en: "Stop a bot 10 times, and each time its next turn completes.",
+      fr: "Arrêtez un robot 10 fois, et chaque fois son tour suivant se termine bien.",
+      ptBR: "Pare um robô 10 vezes e, a cada vez, o turno seguinte conclui.",
+    },
+    icon: "OctagonPause",
+    points: 150,
+    hidden: true,
+    hint: {
+      en: "Sometimes the best move is the stop button, then a better ask.",
+      fr: "Parfois, le meilleur coup est le bouton Arrêter, puis une meilleure demande.",
+      ptBR: "Às vezes, o melhor lance é o botão Parar e depois um pedido melhor.",
+    },
+  },
+  {
+    ...mastery("justice-of-peace", "approval.judgment", 20),
+    name: { en: "Justice of the Peace", fr: "Juge de paix", ptBR: "Juiz de paz" },
+    description: {
+      en: "Answer 100 approvals, at least 20 of them denials.",
+      fr: "Répondez à 100 approbations, dont au moins 20 refus.",
+      ptBR: "Responda 100 aprovações, com pelo menos 20 negativas.",
+    },
+    icon: "Gavel",
+    points: 200,
+  },
+  // Ogre: carry the heavy work.
+  {
+    ...mastery("conductor", "delegation.conducted", 3),
+    name: { en: "Conductor", fr: "Chef d'orchestre", ptBR: "Maestro" },
+    description: {
+      en: "3 times, a bot hands work to two other bots, both come back done, and its turn completes.",
+      fr: "3 fois, un robot confie du travail à deux autres robots, les deux reviennent avec le travail fait, et son tour se termine bien.",
+      ptBR: "3 vezes, um robô passa trabalho a dois outros robôs, os dois voltam com tudo feito e o turno conclui.",
+    },
+    icon: "Waypoints",
+    points: 100,
+  },
+  {
+    ...mastery("ten-hands", "threads.tidy", 10),
+    name: { en: "Ten Hands", fr: "Dix mains", ptBR: "Dez mãos" },
+    description: {
+      en: "10 open conversations in 5 folders, and none left untouched for 30 days.",
+      fr: "10 conversations ouvertes dans 5 dossiers, et aucune laissée sans activité depuis 30 jours.",
+      ptBR: "10 conversas abertas em 5 pastas, e nenhuma parada há 30 dias.",
+    },
+    icon: "FolderTree",
+    points: 100,
+  },
+  {
+    ...mastery("plugged-in", "integrations.week", 3),
+    name: { en: "Plugged In", fr: "Branché", ptBR: "Conectado" },
+    description: {
+      en: "Your bots use tools from 3 different integrations within one week.",
+      fr: "Vos robots utilisent les outils de 3 intégrations différentes en une semaine.",
+      ptBR: "Seus robôs usam ferramentas de 3 integrações diferentes em uma semana.",
+    },
+    icon: "PlugZap",
+    points: 150,
+  },
+  {
+    ...mastery("swarm", "subagents.turn", 3),
+    name: { en: "Swarm", fr: "Essaim", ptBR: "Enxame" },
+    description: {
+      en: "One turn puts 3 sub-agents to work and completes.",
+      fr: "Un seul tour met 3 sous-agents au travail et se termine bien.",
+      ptBR: "Um único turno põe 3 subagentes para trabalhar e conclui.",
+    },
+    icon: "Boxes",
+    points: 150,
+  },
+  {
+    ...mastery("full-house", "bots.concurrent", 3),
+    name: { en: "Full House", fr: "Salle comble", ptBR: "Casa cheia" },
+    description: {
+      en: "3 of your bots work at the same time, and all of them finish well.",
+      fr: "3 de vos robots travaillent en même temps, et tous terminent bien.",
+      ptBR: "3 dos seus robôs trabalham ao mesmo tempo e todos terminam bem.",
+    },
+    icon: "Orbit",
+    points: 200,
+  },
+  // Frog: know your models and your knowledge.
+  {
+    ...mastery("polyglot", "providers.thread", 3),
+    name: { en: "Polyglot", fr: "Polyglotte", ptBR: "Poliglota" },
+    description: {
+      en: "Run one conversation on models from 3 different providers.",
+      fr: "Faites rouler une même conversation sur des modèles de 3 fournisseurs différents.",
+      ptBR: "Rode uma mesma conversa em modelos de 3 provedores diferentes.",
+    },
+    icon: "GitCompare",
+    points: 100,
+  },
+  {
+    ...mastery("thrifty", "auto.thrifty-weeks", 1),
+    name: { en: "Thrifty", fr: "Économe", ptBR: "Econômico" },
+    description: {
+      en: "In one week of at least 20 Auto turns, Auto picks a cheaper model than the bot's own for more than half.",
+      fr: "Sur une semaine d'au moins 20 tours en Auto, Auto choisit un modèle moins cher que celui du robot pour plus de la moitié.",
+      ptBR: "Em uma semana com pelo menos 20 turnos em Auto, o Auto escolhe um modelo mais barato que o do robô em mais da metade.",
+    },
+    icon: "PiggyBank",
+    points: 100,
+  },
+  {
+    ...mastery("translator", "french.threads", 5),
+    name: { en: "Translator", fr: "Traducteur", ptBR: "Tradutor" },
+    description: {
+      en: "5 conversations of at least 6 turns entirely in French: your messages and the bot's answers.",
+      fr: "5 conversations d'au moins 6 tours entièrement en français : vos messages et les réponses du robot.",
+      ptBR: "5 conversas de pelo menos 6 turnos inteiramente em francês: suas mensagens e as respostas do robô.",
+    },
+    icon: "Languages",
+    points: 150,
+  },
+  {
+    ...mastery("skill-smith", "skills.learned-uses", 20),
+    name: { en: "Skill Smith", fr: "Forgeron de skills", ptBR: "Ferreiro de skills" },
+    description: {
+      en: "A skill a bot wrote from one of your conversations (/learn) is used in 20 turns.",
+      fr: "Une skill qu'un robot a écrite à partir d'une de vos conversations (/learn) sert dans 20 tours.",
+      ptBR: "Uma skill que um robô escreveu a partir de uma conversa sua (/learn) é usada em 20 turnos.",
+    },
+    icon: "BookOpenCheck",
+    points: 150,
+  },
+  {
+    ...mastery("total-recall", "memory.recall-threads", 10),
+    name: { en: "Total Recall", fr: "Mémoire vive", ptBR: "Memória viva" },
+    description: {
+      en: "Write a bot's memory yourself, then see it recalled in 10 different conversations.",
+      fr: "Écrivez vous-même la mémoire d'un robot, puis voyez-la rappelée dans 10 conversations différentes.",
+      ptBR: "Escreva você mesmo a memória de um robô e veja-a lembrada em 10 conversas diferentes.",
+    },
+    icon: "BrainCircuit",
+    points: 200,
+  },
+  // The four hardest: the premium skins of every Mastery character.
+  {
+    ...mastery("ferryman", "catalog.imports", 3),
+    name: { en: "Ferryman", fr: "Passeur", ptBR: "Barqueiro" },
+    description: {
+      en: "Publish a bot to your organization's catalogue, and 3 people import it.",
+      fr: "Publiez un robot dans le catalogue de votre organisation, et 3 personnes l'importent.",
+      ptBR: "Publique um robô no catálogo da sua organização e 3 pessoas o importam.",
+    },
+    icon: "Ship",
+    points: 250,
+  },
+  {
+    ...mastery("second-opinion", "delegation.cross-model", 10),
+    name: { en: "Second Opinion", fr: "Deuxième avis", ptBR: "Segunda opinião" },
+    description: {
+      en: "10 times, a bot hands work to a bot on another model family and it comes back done.",
+      fr: "10 fois, un robot confie du travail à un robot d'une autre famille de modèles, et il revient avec le travail fait.",
+      ptBR: "10 vezes, um robô passa trabalho a um robô de outra família de modelos e ele volta com tudo feito.",
+    },
+    icon: "Scale",
+    points: 250,
+    hidden: true,
+    hint: {
+      en: "Two models see more than one.",
+      fr: "Deux modèles voient plus qu'un seul.",
+      ptBR: "Dois modelos veem mais do que um.",
+    },
+  },
+  {
+    ...mastery("clean-slate", "approvals.clean-days", 20),
+    name: { en: "Clean Slate", fr: "Table rase", ptBR: "Tudo em dia" },
+    description: {
+      en: "20 days where every approval asked of you was answered the same day and none of your routines failed.",
+      fr: "20 jours où chaque approbation demandée a reçu sa réponse le jour même et où aucune de vos routines n'a échoué.",
+      ptBR: "20 dias em que toda aprovação pedida a você foi respondida no mesmo dia e nenhuma rotina sua falhou.",
+    },
+    icon: "Eraser",
+    points: 250,
+  },
+  {
+    id: "sagax-master",
+    category: "mastery",
+    name: { en: "Sagax Master", fr: "Sagax accompli", ptBR: "Mestre Sagax" },
+    description: {
+      en: "Unlock 20 other Mastery achievements.",
+      fr: "Débloquez 20 autres succès de Maîtrise.",
+      ptBR: "Desbloqueie 20 outras conquistas de Maestria.",
+    },
+    icon: "GraduationCap",
+    points: 300,
+    rule: { kind: "category", category: "mastery", target: 20 },
+    rewards: [...(masteryRewards("sagax-master") as AchievementReward[]), title("sage", "Sagax Master", "Sagax accompli")],
+  },
+
+  /* ----------------------------------------------------------------- tiers */
   {
     id: "bronze",
-    category: "mastery",
+    category: "tiers",
     name: { en: "Bronze", fr: "Bronze" },
     description: { en: "Earn 100 points.", fr: "Obtenez 100 points." },
     icon: "Medal",
@@ -443,7 +743,7 @@ export const ACHIEVEMENTS: readonly AchievementDefinition[] = [
   },
   {
     id: "silver",
-    category: "mastery",
+    category: "tiers",
     name: { en: "Silver", fr: "Argent" },
     description: { en: "Earn 300 points.", fr: "Obtenez 300 points." },
     icon: "Award",
@@ -453,7 +753,7 @@ export const ACHIEVEMENTS: readonly AchievementDefinition[] = [
   },
   {
     id: "gold-tier",
-    category: "mastery",
+    category: "tiers",
     name: { en: "Gold", fr: "Or" },
     description: { en: "Earn 600 points.", fr: "Obtenez 600 points." },
     icon: "Trophy",
@@ -463,9 +763,9 @@ export const ACHIEVEMENTS: readonly AchievementDefinition[] = [
   },
   {
     id: "platinum",
-    category: "mastery",
+    category: "tiers",
     name: { en: "Platinum", fr: "Platine" },
-    description: { en: "Unlock every achievement that is not a secret.", fr: "Débloquez tous les succès qui ne sont pas secrets." },
+    description: { en: "Unlock every achievement that is not a secret, Mastery aside.", fr: "Débloquez tous les succès qui ne sont pas secrets, hors Maîtrise." },
     icon: "Gem",
     points: 100,
     rule: { kind: "completion" },
@@ -568,6 +868,17 @@ export const ACHIEVEMENTS: readonly AchievementDefinition[] = [
     rewards: [title("stylist", "Stylist", "Styliste")],
   },
 ];
+
+/**
+ * Every Mastery achievement also gives its own title (its name), so a rung
+ * whose character has not registered its named skins yet still rewards
+ * something, and the Mastery titles show off the hard part of the work.
+ */
+export const ACHIEVEMENTS: readonly AchievementDefinition[] = CATALOG.map((item) =>
+  item.category === "mastery" && !item.rewards.some((reward) => reward.kind === "title")
+    ? { ...item, rewards: [...item.rewards, { kind: "title", id: item.id, name: { en: item.name.en, fr: item.name.fr, ...(item.name.ptBR ? { ptBR: item.name.ptBR } : {}) } }] }
+    : item,
+);
 
 const byId = new Map(ACHIEVEMENTS.map((item) => [item.id, item]));
 
