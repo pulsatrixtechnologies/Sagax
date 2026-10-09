@@ -240,6 +240,14 @@ public struct MascotUnlocks: Hashable, Sendable {
             case "holo", "molten": return .legendary
             default: return .rare
             }
+        case .frog:
+            // `FROG_SKIN_TIER`: Plain comes with it, the real frogs and the premium set are earned (shared/mascot-unlocks.ts)
+            switch skin {
+            case "plain": return .common
+            case "neon", "chrome", "glitch": return .epic
+            case "holo", "molten": return .legendary
+            default: return .rare
+            }
         }
     }
 }

@@ -404,21 +404,21 @@ public extension AchievementDefinition {
             name: AchievementText(en: "Thrifty", fr: "Économe", ptBR: "Econômico"),
             description: AchievementText(en: "In one week of at least 20 Auto turns, Auto picks a cheaper model than the bot's own for more than half.", fr: "Sur une semaine d'au moins 20 tours en Auto, Auto choisit un modèle moins cher que celui du robot pour plus de la moitié.", ptBR: "Em uma semana com pelo menos 20 turnos em Auto, o Auto escolhe um modelo mais barato que o do robô em mais da metade."),
             hint: nil,
-            rewards: [.title(id: "thrifty", name: AchievementText(en: "Thrifty", fr: "Économe", ptBR: "Econômico"))]
+            rewards: [.skin(character: "frog", skin: "leaf", name: AchievementText(en: "Leaf", fr: "Feuille", ptBR: "Folha"), characterName: AchievementText(en: "Frog", fr: "Grenouille", ptBR: "Sapo")), .skin(character: "frog", skin: "tree", name: AchievementText(en: "Tree frog", fr: "Rainette", ptBR: "Perereca"), characterName: AchievementText(en: "Frog", fr: "Grenouille", ptBR: "Sapo")), .title(id: "thrifty", name: AchievementText(en: "Thrifty", fr: "Économe", ptBR: "Econômico"))]
         ),
         AchievementDefinition(
             id: "translator", category: .mastery, icon: "Languages", points: 150, hidden: false,
             name: AchievementText(en: "Translator", fr: "Traducteur", ptBR: "Tradutor"),
             description: AchievementText(en: "5 conversations of at least 6 turns entirely in French: your messages and the bot's answers.", fr: "5 conversations d'au moins 6 tours entièrement en français : vos messages et les réponses du robot.", ptBR: "5 conversas de pelo menos 6 turnos inteiramente em francês: suas mensagens e as respostas do robô."),
             hint: nil,
-            rewards: [.title(id: "translator", name: AchievementText(en: "Translator", fr: "Traducteur", ptBR: "Tradutor"))]
+            rewards: [.skin(character: "frog", skin: "poison", name: AchievementText(en: "Poison dart", fr: "Dendrobate", ptBR: "Sapo-flecha"), characterName: AchievementText(en: "Frog", fr: "Grenouille", ptBR: "Sapo")), .skin(character: "frog", skin: "bullfrog", name: AchievementText(en: "Bullfrog", fr: "Ouaouaron", ptBR: "Rã-touro"), characterName: AchievementText(en: "Frog", fr: "Grenouille", ptBR: "Sapo")), .title(id: "translator", name: AchievementText(en: "Translator", fr: "Traducteur", ptBR: "Tradutor"))]
         ),
         AchievementDefinition(
             id: "skill-smith", category: .mastery, icon: "BookOpenCheck", points: 150, hidden: false,
             name: AchievementText(en: "Skill Smith", fr: "Forgeron de skills", ptBR: "Ferreiro de skills"),
             description: AchievementText(en: "A skill a bot wrote from one of your conversations (/learn) is used in 20 turns.", fr: "Une skill qu'un robot a écrite à partir d'une de vos conversations (/learn) sert dans 20 tours.", ptBR: "Uma skill que um robô escreveu a partir de uma conversa sua (/learn) é usada em 20 turnos."),
             hint: nil,
-            rewards: [.title(id: "skill-smith", name: AchievementText(en: "Skill Smith", fr: "Forgeron de skills", ptBR: "Ferreiro de skills"))]
+            rewards: [.skin(character: "frog", skin: "ghost", name: AchievementText(en: "Ghost", fr: "Fantôme", ptBR: "Fantasma"), characterName: AchievementText(en: "Frog", fr: "Grenouille", ptBR: "Sapo")), .title(id: "skill-smith", name: AchievementText(en: "Skill Smith", fr: "Forgeron de skills", ptBR: "Ferreiro de skills"))]
         ),
         AchievementDefinition(
             id: "total-recall", category: .mastery, icon: "BrainCircuit", points: 200, hidden: false,

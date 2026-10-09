@@ -13764,7 +13764,21 @@
       "mascot.shibaSkin.red": "ba19e9c3d5f49882ddaafed4f286a8a81491150426d321179270e27e74a89097",
       "mascot.shibaSkin.retro98": "e7c85d94b92607564480d3e5110f5c8c6cf8f5cb8e98327c8b5f5ae2603b1557",
       "mascot.shibaSkin.sesame": "d45932dd4ca1d7386ee015cc3f946124b8a4ca7ea59cdc00ee1babba863e9c5f",
-      "mascot.shibaSkin.white": "3495e757855a5c678addcf32516274e2962d0572f065378dba689e22168f28dd"
+      "mascot.shibaSkin.white": "3495e757855a5c678addcf32516274e2962d0572f065378dba689e22168f28dd",
+      "mascot.frogSkin.plain": "8b854ade2cd01bdca1aa982f6ecff0086f70e3d2140d7fae2786a2e4150eeb4c",
+      "mascot.frogSkin.leaf": "b83382a973db8ecae8dcf9e6a712895ab07adb074833dc4b823676c4716f8658",
+      "mascot.frogSkin.tree": "be9db87fc4b35fda47a0a27aebcb011964f8ba5d61c1e01295dbbfe00cb945a8",
+      "mascot.frogSkin.poison": "5cac32615d705efdc41ae23b8105c6b051600fbefab13a4546fd5fa3e7e354e8",
+      "mascot.frogSkin.bullfrog": "22aecddf305bf601c0281b12630c9676f04577075e7ec0917cb666c77d863d54",
+      "mascot.frogSkin.ghost": "df1bc4984a055e10b2863eb03abf11701cb63a1e2371dc398889e8291812fb80",
+      "mascot.frogSkin.retro98": "e7c85d94b92607564480d3e5110f5c8c6cf8f5cb8e98327c8b5f5ae2603b1557",
+      "mascot.frogSkin.gold": "6249df4367d0a2e088c8eb1117ef59430f0d7dad4bf0fcf8a01d7f0415f4d511",
+      "mascot.frogSkin.neon": "618484e2c549451830e2b2c19b498d90b4fc8d206174f13c43ed058e6470ee2f",
+      "mascot.frogSkin.chrome": "c4ef2ec214f90032f39dddfbfe51add7ef2c79da14fb2ccf14cb4c9ad15e5c9a",
+      "mascot.frogSkin.glitch": "14980158e2b551485178daeed2aebddf3a4501de43b492f21a364861bdaa1cce",
+      "mascot.frogSkin.holo": "ec05517c7da0141b76ffc10ff82e36322ca3718d0cc0ab83ebab172736898261",
+      "mascot.frogSkin.molten": "cb028df1c71f86875c523bb3f77aadeb0ab32b850e085fff9a7cab1e2e6f99bc",
+      "floatingBots.mascot.frog": "5a9be7ac6d979ce02968a79b705c21c4f57663a1e6b873a61e86fb0441194330"
     },
     "uk": {
       "approval.action.allowOnce": "168511d24d9ee03122b3200f929be11eaaedad45cb0ecb20a95f549b3e3f4d0f",

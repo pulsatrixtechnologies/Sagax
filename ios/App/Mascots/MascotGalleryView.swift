@@ -1,6 +1,6 @@
 // DEBUG only: every character, skin and a few colours at the reference's
 // frame sizes (24, 42, 85 pt), for comparing the phone's renders with the
-// desktop's. Launch with `-mascotGallery owl|shape|trombi|shiba|group`; the same
+// desktop's. Launch with `-mascotGallery owl|shape|trombi|shiba|frog|group`; the same
 // pages are rendered from the desktop components by
 // `ios/parity/mascot-gallery.render.ts`, with the same layout.
 import SwiftUI
@@ -29,6 +29,7 @@ struct MascotGalleryView: View {
                 case "shape": shapes
                 case "trombi": trombis
                 case "shiba": shibas
+                case "frog": frogs
                 case "group": groups
                 default: owls
                 }
@@ -140,6 +141,31 @@ struct MascotGalleryView: View {
             row("idle and walk, animated") {
                 ShibaMascotView(color: "orange", size: 85, animated: true)
                 ShibaMascotView(color: "orange", size: 85, animated: true, walking: true)
+            }
+        }
+    }
+
+    private var frogs: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            ForEach(FrogSkin.allCases, id: \.self) { skin in
+                row(skin.rawValue) {
+                    let look = CompleteMascotLook(character: .frog, frogSkin: skin)
+                    character(look, "green", .none, 24)
+                    character(look, "green", .none, 42)
+                    character(look, "blue", .none, 42)
+                    character(look, "green", .none, 85)
+                }
+            }
+            row("faces: thinking, happy, laughing, sad, sleeping") {
+                let look = CompleteMascotLook(character: .frog)
+                ForEach([MausState.thinking, .happy, .laughing, .sad, .sleeping], id: \.rawValue) { state in
+                    character(look, "green", .none, 60, state)
+                }
+            }
+            row("idle, throat puff and hop, animated") {
+                FrogMascotView(color: "green", size: 85, animated: true)
+                FrogMascotView(color: "green", size: 85, expression: .curious, animated: true)
+                FrogMascotView(color: "green", size: 85, animated: true, hopping: true)
             }
         }
     }

@@ -91,7 +91,7 @@ final class MascotLookTests: XCTestCase {
     }
 
     func testThePickerOrdersMatchTheDesktop() {
-        XCTAssertEqual(MascotCharacter.allCases.map(\.rawValue), ["owl", "shape", "trombi", "bunbu", "shiba"])
+        XCTAssertEqual(MascotCharacter.allCases.map(\.rawValue), ["owl", "shape", "trombi", "bunbu", "shiba", "frog"])
         // #187: the desktop's stored ids (MASCOT_SHAPES)
         XCTAssertEqual(MascotShape.allCases.map(\.rawValue), ["circle", "bean", "squircle", "pill", "pick", "hexagon", "cloud", "drop"])
         // the rest of the lists are checked against the desktop's own in MascotLookFixtureTests
