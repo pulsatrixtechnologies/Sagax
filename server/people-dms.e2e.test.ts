@@ -8,6 +8,9 @@
 //   PD-2  a service account and oneself are not someone to write to
 //   GM-1  a group's memory: its owner edits it, a member reads it only, a
 //         stranger gets 404, and a removed member loses it at once
+//   RM-1  a room with three people: the one tagged with @ is notified (and
+//         the room is unread for them only), the others are not; a message
+//         that tags nobody notifies nobody; @all only once its owner allows it
 import { spawn, type ChildProcess } from "node:child_process";
 import { chmodSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { request } from "node:http";
@@ -245,6 +248,59 @@ posixOnly("Perspicax organization: direct conversations between people, group me
     expect((await api("POST", "/api/people-dms", alice, { principalId: "pr_nobody" })).status).toBe(400);
     expect((await api("POST", "/api/people-dms", {}, { principalId: ids.bob })).status).not.toBe(201);
   });
+
+  it("RM-1: a person tagged with @ in a room is notified like a direct message, nobody else", async () => {
+    const bob = await signIn(BOB);
+    const carol = await signIn(CAROL);
+    const bot = await api("POST", "/api/bots", alice, { name: "Quietbot" });
+    expect(bot.status, bot.text).toBe(201);
+    // the bot answers when it is tagged only: people talk among themselves
+    const room = await api("POST", "/api/groups", alice, {
+      name: "Release", memberIds: [bot.body.bot.id], humanIds: [ids.alice, ids.bob, ids.carol],
+      setup: { bulletin: "", defaultResponder: { kind: "mentions" } },
+    });
+    expect(room.status, room.text).toBe(201);
+    const roomId = room.body.group.id as string;
+    const threadId = room.body.group.threadId as string;
+    const streams = { alice: await openStream(alice), bob: await openStream(bob), carol: await openStream(carol) };
+    const notices = (text: string, words: string) => text.split("\n").filter((line) => line.startsWith("data:") && line.includes('"kind":"notify"') && line.includes('"kind":"message"') && line.includes(words));
+
+    expect((await api("POST", `/api/groups/${roomId}/messages`, alice, { text: "@Bob can you check the release notes?" })).status).toBe(202);
+    await waitFor(async () => notices(streams.bob.text(), "release notes").length > 0);
+    const [notice] = notices(streams.bob.text(), "release notes");
+    expect(JSON.parse(notice!.slice("data:".length)).notification).toMatchObject({
+      kind: "message", botId: "", threadId, groupId: roomId, title: "Alice in Release", audience: [ids.bob],
+    });
+    // the room is unread for bob, and for nobody else, until he reads it
+    const unread = async (auth: Auth) => ((await api("GET", "/api/groups", auth)).body.groups as Array<{ id: string; unread: boolean }>).find((g) => g.id === roomId)?.unread;
+    expect(await unread(bob)).toBe(true);
+    expect(await unread(carol)).toBe(false);
+    expect((await api("POST", `/api/groups/${roomId}/read`, carol)).status).toBe(200);
+    expect(await unread(bob)).toBe(true);
+    expect((await api("POST", `/api/groups/${roomId}/read`, bob)).status).toBe(200);
+    expect(await unread(bob)).toBe(false);
+
+    // a message that tags nobody keeps the room's rules, and @all is off by default
+    expect((await api("POST", `/api/groups/${roomId}/messages`, alice, { text: "nobody tagged in this one" })).status).toBe(202);
+    expect((await api("POST", `/api/groups/${roomId}/messages`, alice, { text: "@all first call" })).status).toBe(202);
+    // only the owner turns @all on
+    expect((await api("PATCH", `/api/groups/${roomId}`, bob, { mentionAll: true })).status).toBe(403);
+    const allowed = await api("PATCH", `/api/groups/${roomId}`, alice, { mentionAll: true });
+    expect(allowed.status, allowed.text).toBe(200);
+    expect(allowed.body.group.mentionAll).toBe(true);
+    expect((await api("POST", `/api/groups/${roomId}/messages`, bob, { text: "@all second call" })).status).toBe(202);
+    await waitFor(async () => notices(streams.carol.text(), "second call").length > 0 && notices(streams.alice.text(), "second call").length > 0);
+    await sleep(500);
+
+    for (const stream of Object.values(streams)) {
+      expect(notices(stream.text(), "nobody tagged")).toEqual([]);
+      expect(notices(stream.text(), "first call")).toEqual([]);
+    }
+    expect(notices(streams.alice.text(), "release notes")).toEqual([]);
+    expect(notices(streams.carol.text(), "release notes")).toEqual([]);
+    expect(notices(streams.bob.text(), "second call")).toEqual([]);
+    for (const stream of Object.values(streams)) stream.close();
+  }, 60_000);
 
   it("GM-1: the group's owner edits its memory, members read it, a removed member loses it", async () => {
     const bob = await signIn(BOB);

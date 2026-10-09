@@ -65,5 +65,8 @@ describe("mention row description", () => {
   it("counts the bots @everyone reaches", () => {
     expect(mentionRowDescription({ kind: "everyone", count: 1 })).toBe("1 bot in this chat");
     expect(mentionRowDescription({ kind: "everyone", count: 6 })).toBe("6 bots in this chat");
+    expect(mentionRowDescription({ kind: "person" })).toBe("Gets a notification");
+    expect(mentionRowDescription({ kind: "all", count: 1 })).toBe("Notifies the 1 person in this group chat");
+    expect(mentionRowDescription({ kind: "all", count: 3 })).toBe("Notifies the 3 people in this group chat");
   });
 });

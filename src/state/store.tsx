@@ -312,6 +312,8 @@ export interface Group {
   peopleDm?: boolean;
   /** The group's shared memory; absent = on. */
   memoryEnabled?: boolean;
+  /** A room: @all notifies every person in it (server/room-mentions.ts). */
+  mentionAll?: boolean;
   busyBotId?: string | null;
   /** when the busy member's turn started — the group-side twin of a task's
    * turnStartedAt; stamped by the server when the speaker claims the turn */
@@ -1381,7 +1383,7 @@ export type Action =
   | {
       type: "patchGroup";
       groupId: string;
-      patch: Partial<Pick<Group, "name" | "bulletin" | "memberIds" | "humanIds" | "defaultResponder" | "pinnedMessageId" | "section" | "unread" | "pinned">>;
+      patch: Partial<Pick<Group, "name" | "bulletin" | "memberIds" | "humanIds" | "defaultResponder" | "pinnedMessageId" | "section" | "unread" | "pinned" | "mentionAll">>;
     }
   | { type: "deleteGroup"; groupId: string }
   | { type: "newGroupTask"; groupId: string; projectId?: string }

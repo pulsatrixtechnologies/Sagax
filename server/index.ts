@@ -761,6 +761,7 @@ import { parsePersonalMcpInput, personalAuthHeaders, personalMcpHostRefusal, per
 import { createPersonConnectionRoutes } from "./routes/person-connections.ts";
 import { SandboxStdioRelay, StdioRelayError } from "./sandbox-stdio-mcp.ts";
 import { testStdioMcpCommand, testStdioMcpStream } from "./mcp-stdio-test.ts";
+import { roomMentionNotification, roomMentionReadPatch } from "./room-mentions.ts";
 import { PERSONAL_STDIO_TOOL_SERVER } from "./user-sandbox-proxy.ts";
 import { PLUGIN_CATALOG } from "../shared/plugin-catalog.ts";
 import { diskSpace, folderBytes } from "./disk-usage.ts";
@@ -6506,6 +6507,12 @@ function updateChannel(groupId: string, value: unknown): GroupRecord {
   if (body.pinned !== undefined) {
     if (typeof body.pinned !== "boolean") throw Object.assign(new Error("pinned must be true or false"), { status: 400 });
     patch.pinned = body.pinned || undefined;
+  }
+  // Whether @all tags every person in the room (server/room-mentions.ts).
+  if (body.mentionAll !== undefined) {
+    if (existing.dm || existing.peopleDm) throw Object.assign(new Error("only a room can let @all notify its people"), { status: 400 });
+    if (typeof body.mentionAll !== "boolean") throw Object.assign(new Error("mentionAll must be true or false"), { status: 400 });
+    patch.mentionAll = body.mentionAll || undefined;
   }
   if (body.memberIds !== undefined) {
     // A DM is the pair it was opened for; only real rooms have a roster.
@@ -21729,6 +21736,28 @@ function sendPeopleDmMessage(group: GroupRecord, auth: RequestAuth, text: string
   }
   return { ok: true as const, threadId, message };
 }
+/** A person's room message that tags people with @ (or @all, when the room
+ * allows it) notifies them like a direct message (server/room-mentions.ts),
+ * and the room is unread for them until they read it, whoever else does. */
+function notifyRoomMentions(groupId: string, threadId: string, text: string, auth: RequestAuth): void {
+  const room = store.group(groupId);
+  const from = groupReaderId(auth);
+  if (!room || room.peopleDm || room.dm || !from || !(room.humanIds ?? []).length) return;
+  // The operator at this computer has no session: their profile name.
+  const name = messageSender(auth)?.name || (auth.kind !== "session" ? cfg.profile?.name?.trim() : "") || personDisplayName(principals.byId(from));
+  if (!name) return;
+  const people = (room.humanIds ?? []).map((id) => {
+    const person = principals.byId(id);
+    return { id, names: [personDisplayName(person), person?.name ?? "", person?.login ?? ""] };
+  });
+  const avatarUrl = personAvatarUrl(principals.byId(from));
+  const notification = roomMentionNotification({ room, threadId, text, sender: { principalId: from, name, ...(avatarUrl ? { avatarUrl } : {}) }, people });
+  if (!notification?.audience?.length) return;
+  const unreadFor = [...new Set([...(room.unreadFor ?? []), ...notification.audience])].sort();
+  const updated = store.patchGroup(room.id, { unreadFor });
+  if (updated) broadcast({ kind: "group", group: publicGroupState(updated) });
+  broadcast({ kind: "notify", notification });
+}
 /** The owner of a group, as server/group-ownership.ts decides on an
  * organization server (its creator, else its first person, else its
  * admins); on a solo server the operator or an admin session. */
@@ -30786,7 +30815,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         // The owner of an organization group also picks its default responder,
         // and its working folder with folders.roomWorkingFolder (2026-10-09).
         const folder = ownerRule && IDENTITY.kind === "perspicax" && callerCan(auth, "folders.roomWorkingFolder");
-        const field = clientGroupPatchViolation(body, ownerRule ? ["defaultResponder", ...(folder ? ["cwd"] : [])] : []);
+        const field = clientGroupPatchViolation(body, ownerRule ? ["defaultResponder", "mentionAll", ...(folder ? ["cwd"] : [])] : []);
         if (field === "cwd" && ownerRule && IDENTITY.kind === "perspicax") return json(res, 403, { ...permissionRefusal("folders.roomWorkingFolder"), field });
         if (field) return json(res, 403, { error: `forbidden: this session may rename or mark a room, not change "${field}" (needs the admin scope)` });
       }
@@ -30803,9 +30832,15 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         const notYours = cloudThreadRefusal(auth, renamed.threadId);
         if (notYours) return json(res, 403, { error: notYours });
       }
-      const group = updateChannel(m[1], body);
+      let group = updateChannel(m[1], body);
       if (movesSection) recordRoomMove(group.id, fromSection, sectionKey(group.section));
-      return json(res, 200, { group: publicGroupState(group) });
+      // A room marked read by a person reads their @ tag too (server/room-mentions.ts).
+      const reader = groupReaderId(auth);
+      if ((body as { unread?: unknown } | null)?.unread === false) {
+        const mentionRead = roomMentionReadPatch(group, reader);
+        if ("unreadFor" in mentionRead) group = store.patchGroup(group.id, mentionRead) ?? group;
+      }
+      return json(res, 200, { group: peopleDmForViewer(publicGroupState(group), reader) });
     }
     m = path.match(/^\/api\/groups\/([\w-]+)\/read$/);
     if (m && method === "POST") {
@@ -30820,7 +30855,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         ? (readBodyValue as { threadId?: unknown }).threadId
         : undefined;
       const readThreadId = existing?.peopleDm && readThread !== undefined ? peopleDmThreadOf(existing, readThread) : undefined;
-      const group = store.patchGroup(m[1], existing?.peopleDm && reader ? peopleDmThreadUnreadPatch(existing, reader, false, readThreadId) : { unread: false });
+      const group = store.patchGroup(m[1], existing?.peopleDm && reader ? peopleDmThreadUnreadPatch(existing, reader, false, readThreadId) : { unread: false, ...roomMentionReadPatch(existing, reader) });
       if (!group) return json(res, 404, { error: "no such room" });
       // somebody saw it: no push for this conversation (server/push/decide.ts)
       pushHub.noteRead(reader ?? actorPrincipalId(auth), readThreadId ?? group.threadId);
@@ -30965,9 +31000,11 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
               sender: messageSender(auth),
               trigger,
             });
+            notifyRoomMentions(current.id, threadId, text, auth);
             return { ok: true as const, queued: true as const, queueId: queued.id, threadId };
           }
           const message = startGroupTurn(current.id, text, replyTo, sendId, channelMode, undefined, { via, sender: messageSender(auth), trigger, commandRoute: engineCommandRoute });
+          notifyRoomMentions(current.id, threadId, text, auth);
           return { ok: true as const, threadId, message };
         },
       );
