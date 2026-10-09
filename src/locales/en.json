@@ -4202,6 +4202,8 @@
   "plugins.tokenRemove": "Remove the token",
   "plugins.tokenOffer": "Connect GitHub in Connect apps (Personal), or add this marketplace with a token that can read it.",
   "plugins.addWithToken": "Add with this token",
+  "plugins.tokenHintWorkspace": "Kept encrypted on this server for this marketplace, for everyone. Only an admin can change it. Never shown again.",
+  "plugins.tokenOfferWorkspace": "Connect GitHub in Connect apps (Personal), or add this marketplace with a token that can read it, kept for everyone.",
   "policy.managedBy": "Managed by {organization}",
   "policy.mcpBlocked": "Not approved by {organization}; bots do not get this server.",
   "policy.mcpRestricted": "Managed by {organization}: only MCP servers your organization has approved reach bots.",

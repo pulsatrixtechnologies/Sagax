@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { BotPluginsView } from "./my-connections";
-import { botPluginState, botScopeMarketplaces, initialPluginScope, marketplaceRoute, pluginScopeBot } from "./plugin-scope";
+import { botPluginState, botScopeMarketplaces, initialPluginScope, marketplaceRoute, pluginScopeBot, workspaceMarketplaceTokens } from "./plugin-scope";
 
 const view: BotPluginsView = {
   marketplaces: [{
@@ -70,5 +70,31 @@ describe("plugin scope", () => {
     expect(marketplaceRoute({ workspaceManager: false, scope: "workspace", botView: view })).toBe("bot");
     expect(marketplaceRoute({ workspaceManager: false, scope: "bot", botView: { ...view, canChange: false } })).toBeNull();
     expect(marketplaceRoute({ workspaceManager: true, scope: "bot", botView: { ...view, canChange: false } })).toBe("workspace");
+  });
+});
+
+describe("everyone's marketplace token (an admin, Everyone scope)", () => {
+  it("saves it then fetches the marketplace again, removes it, and keeps the listing the server sends", async () => {
+    const calls: string[] = [];
+    const lists: unknown[][] = [];
+    const controls = workspaceMarketplaceTokens<{ name: string; hasToken?: boolean }>({
+      api: async (path, init) => {
+        calls.push(`${init.method} ${path} ${init.body ?? ""}`);
+        return { marketplaces: [{ name: "acme-private", hasToken: init.method !== "DELETE" }] };
+      },
+      run: async (busy, work) => { calls.push(`busy ${busy}`); await work(); return true; },
+      loaded: (list) => { lists.push(list); },
+    });
+    expect(controls.scope).toBe("workspace");
+    expect(await controls.onSave("acme private", "good-token-123")).toBe(true);
+    expect(await controls.onRemove("acme private")).toBe(true);
+    expect(calls).toEqual([
+      "busy refresh:acme private",
+      "PUT /api/marketplaces/acme%20private/token {\"token\":\"good-token-123\"}",
+      "POST /api/marketplaces/acme%20private/refresh {}",
+      "busy token:acme private",
+      "DELETE /api/marketplaces/acme%20private/token ",
+    ]);
+    expect(lists).toEqual([[{ name: "acme-private", hasToken: true }], [{ name: "acme-private", hasToken: false }]]);
   });
 });

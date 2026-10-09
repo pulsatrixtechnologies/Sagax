@@ -5302,9 +5302,10 @@ function githubCredentialsFor(actor: string | null | undefined): GithubCredentia
 // The installation's one marketplace list (server/plugin-marketplaces.ts):
 // Connect apps installs a plugin from it for everyone (MCP servers and
 // skills) or for one bot (the whole plugin, server/bot-plugins.ts). Added
-// for everyone, it reads with the person's GitHub connection, then the
-// organization's first GitHub token; added or fetched again from a bot, with
-// that bot's token for it first (BotPlugins.cloneEnvironment).
+// for everyone, it reads with the installation's token for it (an admin's,
+// Connect apps > Everyone), then the person's GitHub connection, then the
+// organization's GitHub tokens; added or fetched again from a bot, with that
+// bot's token for it first (BotPlugins.cloneEnvironment).
 const pluginMarketplaces = new PluginMarketplaces({
   dataDir: DATA_DIR,
   gitEnvironment: (actor) => githubGitEnvironment(githubCredentialsFor(actor)[0]?.token),
@@ -21198,6 +21199,9 @@ function updatedMarketplaceServer(name: string, existing: StoredMcpServer, entry
 ROUTES.push(createMarketplaceRoutes({
   store: pluginMarketplaces,
   mayManage: mayManageMarketplaces,
+  // the installation's token per marketplace (Everyone scope): an admin's
+  workspace: botPlugins,
+  mayManageTokens: (auth) => (IDENTITY.kind === "perspicax" ? orgAdminCaller(auth) : computerOwner(auth)),
   actor: (auth) => sessionPrincipal(auth) ?? undefined,
   install: async (marketplace, plugin, { auth }) => {
     if (pluginMarketplaces.installed().some((entry) => entry.key === `${plugin}@${marketplace}`)) {
