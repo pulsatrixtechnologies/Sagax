@@ -141,7 +141,8 @@ export function Composer({
   members?: Bot[];
   onEditLast?: () => void;
   /** The other person, only on a person-to-person conversation. */
-  nudgePeer?: { id: string; name: string } | null;
+  /** `threadId`: the person conversation's thread on screen (the nudge line goes there). */
+  nudgePeer?: { id: string; name: string; threadId?: string } | null;
   /** The group chat, when it names someone other than the viewer. */
   nudgeGroup?: { id: string; name: string } | null;
   replyTo?: Message | null;
@@ -1357,7 +1358,7 @@ export function Composer({
             {retroSkin && <span className="r98-send-label">{t("chat.send")}</span>}
           </button>
           )}
-          {nudgePeer && <NudgeButton principalId={nudgePeer.id} name={nudgePeer.name} />}
+          {nudgePeer && <NudgeButton principalId={nudgePeer.id} name={nudgePeer.name} threadId={nudgePeer.threadId} />}
           {!nudgePeer && nudgeGroup && <NudgeButton groupId={nudgeGroup.id} name={nudgeGroup.name} />}
           </div>
         </div>
