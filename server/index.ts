@@ -750,8 +750,10 @@ import { createRegistrySearch } from "./plugin-registry.ts";
 import { BotPluginError, BotPlugins, marketplaceAllowed, marketplacePolicySchema, normalizePolicyEntry, parseGitSource, type MarketplacePolicy } from "./bot-plugins.ts";
 import { claudePluginDirs, pluginTurnFiles, pluginTurnPrompt } from "./plugin-turn.ts";
 import { createBotPluginRoutes } from "./routes/bot-plugins.ts";
-import { GithubConnect, githubAuthorizedFetch, githubGitEnvironment, githubSandboxArgv } from "./github-connect.ts";
+import { GithubConnect, githubGitEnvironment, githubSandboxArgv } from "./github-connect.ts";
 import { OrgGithubTokens } from "./org-github-tokens.ts";
+import { MarketplaceTokens } from "./marketplace-tokens.ts";
+import { githubSkillFetch, type GithubCredential } from "./github-access.ts";
 import { parsePersonalMcpInput, personalAuthHeaders, personalMcpHostRefusal, personalMcpPrivateAllowed, PersonConnections, PersonConnectionsError, principalDir, type PersonalMcpServer } from "./person-connections.ts";
 import { createPersonConnectionRoutes } from "./routes/person-connections.ts";
 import { SandboxStdioRelay, StdioRelayError } from "./sandbox-stdio-mcp.ts";
@@ -5265,9 +5267,34 @@ function pluginMarketplacePolicy(): MarketplacePolicy | undefined {
   const parsed = marketplacePolicySchema.safeParse(cfg.organization?.pluginMarketplaces);
   return parsed.success ? parsed.data : undefined;
 }
+/** The organization's GitHub tokens (Settings > Organization > Plugins and
+ * GitHub, server/org-github-tokens.ts). */
+const orgGithubTokens = new OrgGithubTokens(DATA_DIR, vaultKeySource);
+/** A token per plugin marketplace of a bot (server/marketplace-tokens.ts). */
+const marketplaceTokens = new MarketplaceTokens(DATA_DIR, vaultKeySource);
+/** Who reads a private GitHub repository for `actor`: their own GitHub
+ * connection, then the organization's tokens (organization server). The
+ * marketplace's own token comes first (server/bot-plugins.ts). */
+function githubCredentialsFor(actor: string | null | undefined): GithubCredential[] {
+  const person = usablePersonGithub(actor)?.token;
+  const credentials: GithubCredential[] = person ? [{ token: person, via: "person" }] : [];
+  if (IDENTITY.kind === "perspicax" && !personIntegrationsOff(actor)) {
+    try {
+      for (const entry of orgGithubTokens.list()) {
+        const token = orgGithubTokens.tokenFor(entry.id);
+        if (token) credentials.push({ token, via: "organization", label: entry.label });
+      }
+    } catch {
+      // an unreadable token file leaves the person's own access
+    }
+  }
+  return credentials;
+}
 const botPlugins = new BotPlugins({
   dataDir: DATA_DIR,
   gitEnvironment: (actor) => githubGitEnvironment(usablePersonGithub(actor)?.token),
+  credentials: ({ actor }) => githubCredentialsFor(actor),
+  tokens: marketplaceTokens,
   policy: pluginMarketplacePolicy,
 });
 const stdioRelay = new SandboxStdioRelay({
@@ -7456,6 +7483,9 @@ store.onChange((change) => {
       sentThreads.delete(change.botId);
       try { commandAllowlist.clear(change.botId); }
       catch { console.error("[command-allowlist] Could not remove deleted bot's saved rules."); }
+      // Its plugins and the tokens saved for its marketplaces go with it.
+      try { botPlugins.forgetBot(change.botId); }
+      catch { console.error("[bot-plugins] Could not remove deleted bot's plugins."); }
       broadcast({ kind: "bot.deleted", botId: change.botId });
       break;
     case "group": {
@@ -21020,7 +21050,7 @@ const pluginRegistry = createRegistrySearch();
 // servers (source: the marketplace) and library skills.
 const pluginMarketplaces = new PluginMarketplaces({
   dataDir: DATA_DIR,
-  gitEnvironment: (actor) => githubGitEnvironment(usablePersonGithub(actor)?.token),
+  gitEnvironment: (actor) => githubGitEnvironment(githubCredentialsFor(actor)[0]?.token),
   policy: pluginMarketplacePolicy,
 });
 ROUTES.push(createMarketplaceRoutes({
@@ -23242,7 +23272,6 @@ if (IDENTITY.kind === "perspicax") {
     }),
     attach: ({ from, to, auth }) => attachInterimPerson(from, to, auth),
   }));
-  const orgGithubTokens = new OrgGithubTokens(DATA_DIR, vaultKeySource);
   ROUTES.push(createPerspicaxOrgRoutes({
     issuer,
     orgName: process.env.SAGAX_ORG_NAME?.trim().slice(0, 120) || "Pulsatrix",
@@ -24470,7 +24499,7 @@ const botZipHost: BotZipHost = {
     remove: (id) => webhooks.remove(id),
   }),
   plugins: botPlugins,
-  marketplaceTokenSources: () => new Set(),
+  marketplaceTokenSources: (botId) => marketplaceTokens.sourcesFor(botId),
   emailOf: (principalId) => principals.byId(principalId)?.email ?? undefined,
   principalByEmail: (email) => principals.byEmail(email)?.id ?? undefined,
   mcpServer: mcpServerSummary,
@@ -31021,7 +31050,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       const checked = z.object({ source: z.string().min(1).max(2000) }).strict().safeParse(await readBody(req));
       if (!checked.success) return json(res, 400, { error: checked.error.message });
       const input = checked.data;
-      const fetched = await fetchSkillFromSource(input.source);
+      const fetched = await fetchSkillFromSource(input.source, githubSkillFetch(githubCredentialsFor(sessionPrincipal(auth))));
       if ("error" in fetched) return json(res, 422, { error: fetched.error });
       const skills = [];
       for (const skill of fetched.skills) {
@@ -32237,7 +32266,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       const parsed = z.object({ source: z.string().min(1).max(2000) }).safeParse(await readBody(req));
       if (!parsed.success) return json(res, 400, { error: "source must be a GitHub or skills.sh URL, or owner/repo" });
       // A private repository reads with the person's own GitHub connection.
-      const fetched = await fetchSkillFromSource(parsed.data.source, githubAuthorizedFetch(usablePersonGithub(sessionPrincipal(auth))?.token));
+      const fetched = await fetchSkillFromSource(parsed.data.source, githubSkillFetch(githubCredentialsFor(sessionPrincipal(auth))));
       if ("error" in fetched) return json(res, 422, { error: fetched.error });
       const results = fetched.skills.map((skill) => installSkill(m![1]!, skill.source, skill.files));
       const installed = results.filter((entry): entry is Exclude<typeof entry, { error: string }> => !("error" in entry));

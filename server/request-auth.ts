@@ -546,6 +546,7 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   { methods: ["POST"], path: /^\/api\/bots\/[\w-]+\/skill-template$/, feature: "orgDirectory" },
   { methods: ["GET"], path: /^\/api\/bots\/[\w-]+\/plugins$/, feature: "orgDirectory" },
   { methods: ["POST", "DELETE"], path: /^\/api\/bots\/[\w-]+\/plugins\/marketplaces(?:\/[A-Za-z0-9][A-Za-z0-9._-]{0,63}(?:\/update)?)?$/, feature: "orgDirectory" },
+  { methods: ["PUT", "DELETE"], path: /^\/api\/bots\/[\w-]+\/plugins\/marketplaces\/[A-Za-z0-9][A-Za-z0-9._-]{0,63}\/token$/, feature: "orgDirectory" },
   { methods: ["POST"], path: /^\/api\/bots\/[\w-]+\/plugins\/install$/, feature: "orgDirectory" },
   { methods: ["PATCH", "DELETE"], path: /^\/api\/bots\/[\w-]+\/plugins\/[A-Za-z0-9][A-Za-z0-9._-]{0,63}(?:@|%40)[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/, feature: "orgDirectory" },
   // Slice 5: the Perspicax MCP profiles a bot mounts. server/bot-perspicax.ts

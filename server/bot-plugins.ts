@@ -14,9 +14,14 @@
 //     reads need use. The organization admin may restrict marketplaces
 //     (organization.pluginMarketplaces: any by default, or a list of
 //     owner/repo, owner/* or exact https URLs).
-//   - A private GitHub marketplace is cloned with the acting person's own
-//     GitHub connection (server/github-connect.ts), through an extra header,
-//     never in the URL or on the argv.
+//   - A private marketplace is read with, in order: the token saved for it
+//     on this bot (server/marketplace-tokens.ts), the acting person's own
+//     GitHub connection (server/github-connect.ts), then the organization's
+//     GitHub tokens (server/github-access.ts). For github.com, GitHub's API
+//     says first which one reads the repository, or why none does (404
+//     private, 401 bad token, 403 SAML sign-on, rate limit). The token rides
+//     an extra HTTP header through the environment, never the URL, the argv
+//     or a file.
 //   - What runs on the server host is never taken from a plugin: hooks,
 //     MCP and LSP servers and bin/ are removed at install (they would run on
 //     the Sagax host, outside every person's environment). The plugin's
@@ -28,6 +33,8 @@ import { isAbsolute, join, normalize, relative, resolve, sep } from "node:path";
 import { z } from "zod";
 
 import { writeFileAtomic } from "./atomic.ts";
+import { probeGithubRepo, type GithubCredential, type GithubProbe } from "./github-access.ts";
+import { githubGitEnvironment } from "./github-connect.ts";
 
 const NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
 const BOT_ID = /^[\w-]{1,80}$/;
@@ -43,10 +50,13 @@ const STRIPPED_MANIFEST_KEYS = ["hooks", "mcpServers", "lspServers", "monitors"]
 export class BotPluginError extends Error {
   readonly code: string;
   readonly status: number;
-  constructor(message: string, code: string, status = 400) {
+  /** What the person can do (server/github-access.ts GithubAccessFix). */
+  readonly fix?: string;
+  constructor(message: string, code: string, status = 400, fix?: string) {
     super(message);
     this.code = code;
     this.status = status;
+    if (fix) this.fix = fix;
   }
 }
 
@@ -167,6 +177,8 @@ export interface MarketplacePluginEntry {
 export interface MarketplaceListing {
   name: string;
   source: string;
+  /** A token is saved for this marketplace (never the token). */
+  hasToken: boolean;
   description?: string;
   addedAt: number;
   updatedAt: number;
@@ -328,7 +340,7 @@ export const runGit: GitRunner = (args, options) => new Promise((resolvePromise,
     if (!error) return resolvePromise();
     const detail = String(stderr ?? "");
     if (/Authentication failed|could not read Username|terminal prompts disabled|Repository not found|403/i.test(detail)) {
-      reject(new BotPluginError("GitHub did not let Sagax read this repository. If it is private, connect your GitHub account (Settings > Mes connexions) and try again.", "repository_unreadable", 422));
+      reject(new BotPluginError("The git host did not let Sagax read this repository. If it is private, connect GitHub in Connect apps (Personal), or add a token for this marketplace.", "repository_unreadable", 422, "connect_or_token"));
       return;
     }
     if (/Could not resolve host|unable to access|timed out|Connection refused/i.test(detail) || (error as { killed?: boolean }).killed) {
@@ -348,11 +360,35 @@ export const runGit: GitRunner = (args, options) => new Promise((resolvePromise,
 export interface BotPluginsOptions {
   dataDir: string;
   git?: GitRunner;
-  /** git environment for a clone: the acting person's GitHub token for
-   * github.com (githubGitEnvironment), or none. */
+  /** git environment for a clone without a credential of its own (and the
+   * whole environment when `credentials` is absent): the acting person's
+   * GitHub token for github.com (githubGitEnvironment), or none. */
   gitEnvironment: (actor: string | undefined) => Record<string, string>;
+  /** GitHub credentials to try after the marketplace's own token: the
+   * acting person's connection, then the organization's tokens. */
+  credentials?: (input: { botId: string; source: GitSource; actor: string | undefined }) => GithubCredential[];
+  /** Tokens saved per bot and marketplace (server/marketplace-tokens.ts). */
+  tokens?: {
+    get(botId: string, source: string): string | undefined;
+    set(botId: string, source: string, token: string, addedBy?: string): void;
+    remove(botId: string, source: string): boolean;
+    sourcesFor(botId: string): Set<string>;
+    forgetBot(botId: string): void;
+  };
+  /** GitHub's answer for a repository (tests stand in for api.github.com). */
+  probe?: (repo: { owner: string; repo: string }, credentials: readonly GithubCredential[]) => Promise<GithubProbe>;
   policy: () => MarketplacePolicy | undefined;
   now?: () => number;
+}
+
+/** A token for a git host other than GitHub, as an extra header for that
+ * origin only (basic auth, the token as the password). */
+export function hostGitEnvironment(url: string, token: string | undefined): Record<string, string> {
+  const base = githubGitEnvironment(undefined);
+  if (!token) return base;
+  const origin = new URL(url).origin;
+  const basic = Buffer.from(`x-access-token:${token}`).toString("base64");
+  return { ...base, GIT_CONFIG_COUNT: "1", GIT_CONFIG_KEY_0: `http.${origin}/.extraheader`, GIT_CONFIG_VALUE_0: `AUTHORIZATION: basic ${basic}` };
 }
 
 export class BotPlugins {
@@ -392,13 +428,29 @@ export class BotPlugins {
     return next;
   }
 
-  private async clone(source: GitSource, into: string, actor: string | undefined): Promise<void> {
+  /** The git environment that reads `source` for this bot, or the reason
+   * nothing can. `marketplaceSource` names whose saved token applies (a
+   * plugin in another repository uses its marketplace's token). */
+  private async cloneEnvironment(botId: string, source: GitSource, actor: string | undefined, options: { token?: string; marketplaceSource?: string }): Promise<Record<string, string>> {
+    const saved = options.token ?? this.options.tokens?.get(botId, options.marketplaceSource ?? source.id);
+    if (!source.github) return saved ? hostGitEnvironment(source.url, saved) : this.options.gitEnvironment(undefined);
+    if (!this.options.credentials && !saved) return this.options.gitEnvironment(actor);
+    const credentials: GithubCredential[] = [
+      ...(saved ? [{ token: saved, via: "marketplace" as const }] : []),
+      ...(this.options.credentials?.({ botId, source, actor }) ?? []),
+    ];
+    const probe = await (this.options.probe ?? ((repo, list) => probeGithubRepo(repo, list)))(source.github, credentials);
+    if (probe.ok === false) throw new BotPluginError(probe.failure.message, probe.failure.code, probe.failure.status, probe.failure.fix);
+    return githubGitEnvironment(probe.credential?.token);
+  }
+
+  private async clone(source: GitSource, into: string, env: Record<string, string>): Promise<void> {
     const staging = `${into}.tmp-${process.pid}-${this.now()}`;
     rmSync(staging, { recursive: true, force: true });
     mkdirSync(join(staging, ".."), { recursive: true });
     try {
       await this.git(["clone", "--depth", "1", "--single-branch", "--no-tags", ...(source.ref ? ["--branch", source.ref] : []), "--", source.url, staging], {
-        env: this.options.gitEnvironment(source.github ? actor : undefined), timeoutMs: GIT_TIMEOUT_MS,
+        env, timeoutMs: GIT_TIMEOUT_MS,
       });
       measure(staging);
       rmSync(into, { recursive: true, force: true });
@@ -417,6 +469,8 @@ export class BotPlugins {
   /** The bot's marketplaces with what each offers. */
   listMarketplaces(botId: string): MarketplaceListing[] {
     const state = this.read(botId);
+    let tokenSources = new Set<string>();
+    try { tokenSources = this.options.tokens?.sourcesFor(botId) ?? new Set(); } catch { /* listed without the flag */ }
     return Object.entries(state.marketplaces).map(([name, record]) => {
       let plugins: MarketplaceListing["plugins"] = [];
       try {
@@ -431,7 +485,7 @@ export class BotPlugins {
       } catch {
         plugins = [];
       }
-      return { name, source: record.source, ...(record.description ? { description: record.description } : {}), addedAt: record.addedAt, updatedAt: record.updatedAt, plugins };
+      return { name, source: record.source, hasToken: tokenSources.has(record.source), ...(record.description ? { description: record.description } : {}), addedAt: record.addedAt, updatedAt: record.updatedAt, plugins };
     }).sort((a, b) => a.name.localeCompare(b.name));
   }
 
@@ -439,8 +493,9 @@ export class BotPlugins {
     return Object.entries(this.read(botId).plugins).map(([key, record]) => ({ key, ...record })).sort((a, b) => a.key.localeCompare(b.key));
   }
 
-  /** Add (or refresh) a marketplace by its source. */
-  addMarketplace(botId: string, input: { source: string; ref?: string }, actor: string | undefined): Promise<MarketplaceListing> {
+  /** Add (or refresh) a marketplace by its source. A `token` is tried
+   * first and saved for this marketplace once the clone works. */
+  addMarketplace(botId: string, input: { source: string; ref?: string; token?: string }, actor: string | undefined): Promise<MarketplaceListing> {
     return this.withLock(botId, async () => {
       const source = parseGitSource(input.source, input.ref || undefined);
       this.checkPolicy(source);
@@ -448,7 +503,8 @@ export class BotPlugins {
       const existing = Object.entries(state.marketplaces).find(([, record]) => record.source === source.id && (record.ref ?? "") === (source.ref ?? ""));
       if (!existing && Object.keys(state.marketplaces).length >= MAX_MARKETPLACES) throw new BotPluginError(`A bot can have at most ${MAX_MARKETPLACES} marketplaces.`, "too_many", 400);
       const staging = join(this.root(botId), "marketplaces", `.incoming-${this.now()}`);
-      await this.clone(source, staging, actor);
+      if (input.token && !this.options.tokens) throw new BotPluginError("This server cannot keep marketplace tokens.", "tokens_unavailable", 503);
+      await this.clone(source, staging, await this.cloneEnvironment(botId, source, actor, input.token ? { token: input.token } : {}));
       try {
         const manifest = readMarketplaceManifest(staging);
         const taken = state.marketplaces[manifest.name];
@@ -462,6 +518,7 @@ export class BotPlugins {
           addedAt: taken?.addedAt ?? now, ...(taken?.addedBy ?? actor ? { addedBy: taken?.addedBy ?? actor } : {}), updatedAt: now,
         };
         this.write(botId, state);
+        if (input.token) this.options.tokens!.set(botId, source.id, input.token, actor);
         return this.listMarketplaces(botId).find((listing) => listing.name === manifest.name)!;
       } finally {
         rmSync(staging, { recursive: true, force: true });
@@ -486,9 +543,13 @@ export class BotPlugins {
         rmSync(this.pluginDir(botId, plugin.marketplace, plugin.name), { recursive: true, force: true });
         delete state.plugins[key];
       }
+      const source = state.marketplaces[name]!.source;
       delete state.marketplaces[name];
       rmSync(join(this.root(botId), "marketplaces", name), { recursive: true, force: true });
       this.write(botId, state);
+      if (!Object.values(state.marketplaces).some((record) => record.source === source)) {
+        try { this.options.tokens?.remove(botId, source); } catch { /* the marketplace is gone either way */ }
+      }
     });
   }
 
@@ -522,7 +583,7 @@ export class BotPlugins {
       } else {
         this.checkPolicy(entry.source.git);
         const checkout = join(this.root(botId), "plugins", ".checkout");
-        await this.clone(entry.source.git, checkout, actor);
+        await this.clone(entry.source.git, checkout, await this.cloneEnvironment(botId, entry.source.git, actor, { marketplaceSource: market.source }));
         try {
           result = copySanitizedPlugin(entry.source.path ? insideRoot(checkout, entry.source.path) : checkout, target, rawEntry);
         } finally {
@@ -605,9 +666,20 @@ export class BotPlugins {
     return { marketplaces: Object.keys(state.marketplaces).sort(), plugins: Object.keys(state.plugins).sort() };
   }
 
+  /** Save, replace or (with null) remove the token of a marketplace. */
+  setMarketplaceToken(botId: string, name: string, token: string | null, actor: string | undefined): MarketplaceListing {
+    const record = this.read(botId).marketplaces[name];
+    if (!record) throw new BotPluginError("No marketplace with that name on this bot.", "not_found", 404);
+    if (!this.options.tokens) throw new BotPluginError("This server cannot keep marketplace tokens.", "tokens_unavailable", 503);
+    if (token === null) this.options.tokens.remove(botId, record.source);
+    else this.options.tokens.set(botId, record.source, token, actor);
+    return this.listMarketplaces(botId).find((listing) => listing.name === name)!;
+  }
+
   /** Forget everything of a deleted bot. */
   forgetBot(botId: string): void {
     if (!BOT_ID.test(botId)) return;
+    try { this.options.tokens?.forgetBot(botId); } catch { /* the folder still goes */ }
     rmSync(this.root(botId), { recursive: true, force: true });
   }
 }
