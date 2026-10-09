@@ -49,6 +49,8 @@ final class CallUITests: XCTestCase {
             "-callInjectAudio", Self.iosRoot.appendingPathComponent("UITests/CallAudio/\(audio)").path,
             "-callCaptureSpeech",
             "-callInjectPlan", plan,
+            // the call's settings as on a fresh install (Advanced folded)
+            "-omb.voiceCall.v1", "{}",
         ]
         if let environment = session.environmentId { arguments += ["-parityEnvironment", environment] }
         app.launchArguments = arguments
@@ -206,6 +208,8 @@ final class CallUITests: XCTestCase {
     /// (and the next turn says so), and hanging up leaves the transcript.
     @MainActor
     func testACallIsAConversationWithBargeIn() throws {
+        // the phone's home search opens the chat; the iPad has its own test below
+        guard UIDevice.current.userInterfaceIdiom == .phone else { throw XCTSkip("the phone's layout") }
         let session = try fixtureSession()
         let name = Self.unique("Callie")
         _ = try makeBot(session, name)
@@ -213,9 +217,10 @@ final class CallUITests: XCTestCase {
         open(name, in: app)
 
         app.buttons["composer-voice"].tap()
-        XCTAssertTrue(app.descendants(matching: .any)["call-pill"].waitForExistence(timeout: 15), "the call pill under the name")
+        XCTAssertTrue(app.descendants(matching: .any)["call-pill"].waitForExistence(timeout: 15), "the call bar under the name")
         XCTAssertTrue(app.buttons["composer-end-call"].exists, "the capsule hangs up while on the call")
         wait(15, "connected") { !["", "connecting"].contains(label(app, "call-debug-phase")) }
+        assertCallBar(app)
         attach("Call connected", app)
 
         // the person speaks (the first clip, said once the call listens):
@@ -248,17 +253,122 @@ final class CallUITests: XCTestCase {
         XCTAssertNotEqual(first.voiceCall?.interrupted, true)
         XCTAssertEqual(second.voiceCall?.interrupted, true, "the bot is told it was interrupted")
 
-        // the call is the stage, not a pill over the first bubble
+        // the call is a bar under the name, never a full-screen stage: the
+        // conversation stays on screen under it
         XCTAssertTrue(app.descendants(matching: .any)["call-pill"].exists)
-        attach("Call stage", app)
+        // (the call's turns fold into the thread's "Voice" row)
+        let voiceRow = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Voice ·")).firstMatch
+        XCTAssertTrue(voiceRow.waitForHittable(timeout: 5), "the thread stays visible and usable under the bar")
+        attach("Call bar", app)
+
+        // the gear grows the settings card under the bar, Advanced folded
+        app.buttons["call-settings"].tap()
+        let advanced = app.buttons["call-advanced"]
+        XCTAssertTrue(advanced.waitForExistence(timeout: 5), "the settings card under the bar")
+        let input = app.buttons["Hands-free"]
+        XCTAssertFalse(input.exists && input.isHittable, "Advanced starts folded")
+        attach("Call settings", app)
+        advanced.tap()
+        let unfolded = input.waitForHittable(timeout: 3)
+        attach("Call settings, Advanced open", app)
+        XCTAssertTrue(unfolded, "Advanced unfolds")
+        advanced.tap()
+
+        // the transcript replaces it in the same card, read from its last line
+        app.buttons["call-transcript-toggle"].tap()
+        XCTAssertTrue(app.descendants(matching: .any)["call-transcript"].waitForExistence(timeout: 5), "the transcript card under the bar")
+        XCTAssertFalse(advanced.exists && advanced.isHittable, "one card at a time")
+        attach("Call transcript", app)
+        app.buttons["call-transcript-toggle"].tap()
+        XCTAssertTrue(app.descendants(matching: .any)["call-transcript"].waitForNonExistence(timeout: 3), "the card folds back into the bar")
 
         // hang up: the call is gone, the conversation stays
         app.buttons["call-end"].tap()
         XCTAssertTrue(app.buttons["composer-voice"].waitForExistence(timeout: 10))
         XCTAssertFalse(app.descendants(matching: .any)["call-pill"].exists)
-        XCTAssertTrue(question.exists, "the transcript stays in the thread")
+        // the call's turns stay in the thread, folded in its Voice row
+        XCTAssertTrue(voiceRow.waitForHittable(timeout: 5), "the call's row in the thread")
+        voiceRow.tap()
+        XCTAssertTrue(question.waitForExistence(timeout: 5), "the transcript stays in the thread")
         XCTAssertTrue(followUp.exists)
         attach("After the call", app)
+    }
+
+    // MARK: - The iPad's desktop shell
+
+    /// The same bar under the bot's name in the iPad's desktop header, in
+    /// landscape and portrait: the chat column stays, the card opens under
+    /// the bar, and hanging up leaves the plain header.
+    @MainActor
+    func testTheIPadCallBarSitsUnderTheHeader() throws {
+        guard UIDevice.current.userInterfaceIdiom == .pad else { throw XCTSkip("the iPad's desktop shell") }
+        let session = try fixtureSession()
+        let bot = try makeBot(session, Self.unique("Padcall"))
+        XCUIDevice.shared.orientation = .portrait
+        continueAfterFailure = false
+        let app = XCUIApplication()
+        app.terminate()
+        var arguments = [
+            "-parityEndpoint", session.endpoint, "-parityToken", session.token, "-parityIPadScreen", "main",
+            "-AppleLanguages", "(en)", "-AppleLocale", "en_US",
+            "-companion.prefs.islandIntro", "never",
+            "-companion.onboarding.welcomeSeen", "YES",
+            "-companion.onboarding.notificationsSeen", "YES",
+            "-callInjectAudio", Self.iosRoot.appendingPathComponent("UITests/CallAudio/bot").path,
+            "-callCaptureSpeech",
+            "-callInjectPlan", "listening,speaking",
+            "-omb.voiceCall.v1", "{}",
+        ]
+        if let environment = session.environmentId { arguments += ["-parityEnvironment", environment] }
+        app.launchArguments = arguments
+        app.launch()
+        let row = app.buttons["desktop-row.\(bot.id)"].firstMatch
+        XCTAssertTrue(row.waitForExistence(timeout: 30), "the bot in the sidebar")
+        row.tap()
+        let voice = app.buttons["desktop-composer-voice"].firstMatch
+        XCTAssertTrue(voice.waitForExistence(timeout: 15))
+        voice.tap()
+        XCTAssertTrue(app.descendants(matching: .any)["call-pill"].waitForExistence(timeout: 15), "the call bar under the name")
+        wait(15, "connected") { !["", "connecting"].contains(label(app, "call-debug-phase")) }
+        assertCallBar(app)
+        wait(45, "the reply spoken") { spoken(app).contains { $0.hasSuffix("hello from fake claude") } }
+        attach("iPad call bar", app)
+
+        app.buttons["call-settings"].tap()
+        let advanced = app.buttons["call-advanced"]
+        XCTAssertTrue(advanced.waitForExistence(timeout: 5))
+        let input = app.buttons["Hands-free"]
+        XCTAssertFalse(input.exists && input.isHittable, "Advanced starts folded")
+        attach("iPad call settings", app)
+        advanced.tap()
+        XCTAssertTrue(input.waitForHittable(timeout: 3), "Advanced unfolds")
+        attach("iPad call settings, Advanced open", app)
+        advanced.tap()
+
+        app.buttons["call-transcript-toggle"].tap()
+        XCTAssertTrue(app.descendants(matching: .any)["call-transcript"].waitForExistence(timeout: 5))
+        attach("iPad call transcript", app)
+
+        app.buttons["call-transcript-toggle"].tap()
+        XCTAssertTrue(app.descendants(matching: .any)["call-transcript"].waitForNonExistence(timeout: 3))
+
+        // turned on its side, the bar stays under the header
+        XCUIDevice.shared.orientation = .landscapeLeft
+        RunLoop.current.run(until: Date().addingTimeInterval(1.5))
+        assertBarUnderHeader(app)
+        XCUIDevice.shared.orientation = .portrait
+        RunLoop.current.run(until: Date().addingTimeInterval(1.5))
+
+        app.buttons["call-end"].tap()
+        XCTAssertTrue(app.descendants(matching: .any)["call-pill"].waitForNonExistence(timeout: 10), "hang up leaves the plain header")
+        attach("iPad after the call", app)
+    }
+
+    @MainActor
+    private func assertBarUnderHeader(_ app: XCUIApplication) {
+        let bar = app.descendants(matching: .any)["call-pill"]
+        XCTAssertTrue(bar.exists)
+        XCTAssertLessThan(bar.frame.minY, app.frame.height / 3, "under the header")
     }
 
     // MARK: - A room
@@ -267,6 +377,8 @@ final class CallUITests: XCTestCase {
     /// spoken in turn, in its own voice.
     @MainActor
     func testARoomCallTakesTurns() throws {
+        // the phone's home search opens the chat; the iPad has its own test below
+        guard UIDevice.current.userInterfaceIdiom == .phone else { throw XCTSkip("the phone's layout") }
         let session = try fixtureSession()
         let members = try ["Echo", "Nova", "Rhea"].map { try makeBot(session, Self.unique($0)) }
         let room = Self.unique("Call Room")
@@ -293,11 +405,40 @@ final class CallUITests: XCTestCase {
         XCTAssertFalse(app.descendants(matching: .any)["group-call"].waitForExistence(timeout: 3))
     }
 
+    /// The bar's controls in the desktop's order: face, Settings,
+    /// Transcript, Mic, End, all on the bar's one row under the header.
+    @MainActor
+    private func assertCallBar(_ app: XCUIApplication) {
+        let bar = app.descendants(matching: .any)["call-pill"]
+        let ids = ["call-avatar", "call-settings", "call-transcript-toggle", "call-mute", "call-end"]
+        let frames = ids.map { app.descendants(matching: .any)[$0].firstMatch.frame }
+        for (id, frame) in zip(ids, frames) {
+            XCTAssertFalse(frame.isEmpty, "\(id) on the bar")
+            XCTAssertTrue(bar.frame.insetBy(dx: -1, dy: -1).contains(frame), "\(id) inside the bar")
+        }
+        XCTAssertEqual(frames.map(\.minX), frames.map(\.minX).sorted(), "the desktop's order")
+        XCTAssertLessThan(bar.frame.height, 120, "a bar, not a stage")
+        XCTAssertLessThan(bar.frame.minY, app.frame.height / 3, "under the header")
+        XCTAssertFalse(app.descendants(matching: .any)["call-transcript"].exists, "a call starts folded")
+    }
+
     @MainActor
     private func attach(_ name: String, _ app: XCUIApplication) {
         let attachment = XCTAttachment(screenshot: app.screenshot())
         attachment.name = name
         attachment.lifetime = .keepAlways
         add(attachment)
+    }
+}
+
+private extension XCUIElement {
+    /// Waits until the element exists and can be tapped.
+    func waitForHittable(timeout: TimeInterval) -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if exists && isHittable { return true }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.1))
+        }
+        return exists && isHittable
     }
 }

@@ -519,6 +519,31 @@ rows and people, (b) Connect apps, (c) settings and approvals, (d) bot panel and
 Not listed: releases and chores with no feature (#190 upstream sync, #192, #193, #195, #202,
 #205, #217, #223).
 
+## 15. Voice call bar on iOS (2026-10-09, branch `feat/ios-call-bar`)
+
+JC's ask: on iOS the bot call works exactly like Electron (0.4.10, #178): no full-screen
+page, the floating bar under the bot name. Presentation only: the call engine, the call
+machine states, CallKit and the server routes are unchanged. Sources:
+`ios/App/Call/CallViews.swift` (`CallBar`, `CallSettingsPanel`, `CallTranscriptPanel`),
+`ios/App/Features/Chat/ChatHeader.swift` (`callBar`), `ios/App/ChatView.swift`.
+
+| ID | Desktop behaviour | Desktop path | iOS now | State |
+|---|---|---|---|---|
+| CB1 | No full-screen stage; a call starts folded | VoiceModeBar.tsx | The full-screen `CallPillView` and its collapsed row are gone; the call shows only the bar. | DONE |
+| CB2 | Bar centred under the bot name, in its own row of the banner stack | VoiceModeBar.tsx, ChatView banner stack | `CallBar` under the name capsule (and the pinned banner), 16 pt side gutter, at most 420 pt wide; the transcript's top inset grows by the bar's row, so nothing hides under it. iPhone and the iPad desktop header both. | DONE |
+| CB3 | Order: avatar, waveform, Settings, Transcript, Mic, End (push to talk before Settings when on) | VoiceModeBar.tsx | Same order and same controls; UI test checks the order on screen. | DONE |
+| CB4 | Sizes: row 64, padding 12, avatar 40, round buttons 40, icons 18, gap 8, corners 32 then 22 at the bottom with a card | VoiceModeBar.tsx, layout test | Same values in points (`CallBarMetrics`); Dynamic Type scales them up to 4/3. | DONE |
+| CB5 | Waveform: dotted, 7 px columns, 6 px rows, 4 px dots, bot in accent, person in ink; folds away when the bar is under 21rem | VoiceModeBar.tsx `Waveform` | Same dot grid and colours; hidden under 336 pt of bar width. It draws a scrolling level history (the phone has levels, not an analyser buffer). | DONE (drawing differs slightly) |
+| CB6 | Avatar is the bot's face with the call state's expression; tap interrupts while the bot speaks | VoiceModeBar.tsx | `BotMascotView` with `CallState.mascot`; tap interrupts while audible; VoiceOver reads name, time and state (the desktop's tooltip). | DONE |
+| CB7 | Settings and Transcript open a card under the bar, height and opacity reveal, 200 ms, cubic-bezier(0.22, 1, 0.36, 1); one card, switching moves between heights | MenuMotion.tsx `useHeightReveal` | Card clipped from 0 to the content's measured height with the same curve and length; content never reflows; switching animates between the two heights; Reduce Motion shows and hides without motion. | DONE |
+| CB8 | Transcript scrolled to its last line before it shows | VoiceModeBar.tsx `toLastLine` | Scrolled to the end as it opens and on every new line. | DONE |
+| CB9 | Card closes on a click outside or Escape | VoiceModeBar.tsx | A tap on the thread folds it; Escape on a hardware keyboard too (an open list first). | DONE |
+| CB10 | Settings: Voice, Speed, Language rows, then Advanced folded by default and remembered, then Hold | VoiceModeSettingsPanel.tsx | Same rows (desktop layout: label, value button with a chevron), Advanced folded by default and remembered (`CallSettings.advancedOpen`, same key as the desktop), Hold / Resume under it. | DONE |
+| CB11 | Advanced: Microphone, End of turn, Only my voice (enrollment), Call sounds, Soft tone, streaming voice, faster end of turn, with switches | VoiceModeSettingsPanel.tsx `CallSection` | Microphone, End of turn and Call sounds (switch). Only my voice, Soft tone, streaming voice and faster end of turn need engine work the phone does not have (speaker ID, thinking cue, streaming socket: see DC41). | PARTIAL (follow-up) |
+| CB12 | Alerts (note with Retry, passing notice, access card) in the card under the bar | VoiceModeBar.tsx | Note with Try again and the notice in the card; the access card stays the existing alert at call start. | DONE (access card differs) |
+| CB13 | Hang up returns to the plain header | VoiceModeBar.tsx `onEnd` | End (bar or composer capsule) removes the bar and the transcript inset. | DONE |
+| CB14 | Room call | GroupCallView.tsx | Unchanged: the room keeps its own call screen (`GroupCallOverlay`). | unchanged |
+
 ## Counts
 
 Rows per state, iPhone (a row may cover several closely related controls):

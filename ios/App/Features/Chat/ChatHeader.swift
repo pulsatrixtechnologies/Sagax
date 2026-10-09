@@ -167,27 +167,18 @@ extension ChatView {
         return false
     }
 
-    /// Full-screen call. The chevron folds it; the conversation stays underneath.
+    /// A bot's voice call: the floating bar under the name, as on the
+    /// desktop. It takes only its own row; the conversation stays on screen
+    /// and its card (settings, transcript) lies over the thread.
     @ViewBuilder
-    var callStage: some View {
-        if case let .bot(bot) = current, call.isOnCall(current), !callCollapsed {
-            CallPillView(bot: bot, call: call, onCollapse: { callCollapsed = true })
-                .ignoresSafeArea()
-        }
-    }
-
-    /// A short in-flow row. It does not cover the first message.
-    @ViewBuilder
-    var callCollapsedBar: some View {
-        if callCollapsedBarShown, case let .bot(bot) = current {
-            CallCollapsedBar(bot: bot, call: call, onExpand: { callCollapsed = false })
-                .padding(.top, Self.topBarHeight + (pinnedPreview == nil ? 0 : Self.pinnedBannerHeight) + 4)
+    var callBar: some View {
+        if callPillShown, case let .bot(bot) = current {
+            CallBar(bot: bot, call: call, panel: $callPanel)
+                .padding(.horizontal, CallBarMetrics.gutter)
+                .padding(.top, Self.topBarHeight + (pinnedPreview == nil ? 0 : Self.pinnedBannerHeight) + CallBarMetrics.top)
                 .frame(maxWidth: .infinity)
+                .transition(.opacity.combined(with: .scale(scale: 0.96, anchor: .top)))
         }
-    }
-
-    var callCollapsedBarShown: Bool {
-        callCollapsed && callPillShown
     }
 
     @ViewBuilder

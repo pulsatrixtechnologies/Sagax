@@ -48,8 +48,10 @@ struct ChatView: View {
     @State var panelTab: DesktopPanelTab = .details
     /// The live call (the composer's white capsule): the desktop's voice mode.
     @ObservedObject var call = CallController.shared
-    /// The call stage is folded back to a short row, so the conversation shows.
-    @State var callCollapsed = false
+    /// The card under the call bar: its settings, its transcript, or none.
+    @State var callPanel: CallBarPanel?
+    /// Dynamic Type's factor for the call bar's row (CallBarMetrics.scale).
+    @ScaledMetric(relativeTo: .body) var callBarScale: CGFloat = 1
     @Environment(\.isPresented) var isPresented
     @Environment(\.openURL) var openURL
     /// WP11: the Room info sheet (RM6), opened by a room's header.
@@ -519,11 +521,11 @@ struct ChatView: View {
                 // beneath it: a clear inset the height of the bar, then the
                 // fade and the glass controls float over the content.
                 .safeAreaInset(edge: .top, spacing: 0) {
-                    // voice mode's pill keeps its own row under the name
+                    // voice mode's call bar keeps its own row under the name
                     // capsule (and under the pinned banner when there is one)
                     Color.clear.frame(height: Self.topBarHeight
                         + (pinnedPreview == nil ? 0 : Self.pinnedBannerHeight)
-                        + (callCollapsedBarShown ? 44 : 0))
+                        + (callPillShown ? CallBarMetrics.inset(scale: callBarScale) : 0))
                 }
                 // iPad desktop: an open find bar sits in the column's flow,
                 // so the transcript is cut under it (ChatView.tsx)
@@ -538,7 +540,6 @@ struct ChatView: View {
                 }
                 .overlay(alignment: .top) { pinnedBanner }
                 .overlay(alignment: .top) { chatHeaderSlot }
-                .overlay(alignment: .top) { callCollapsedBar }
                 .overlay(alignment: .bottom) {
                     if !follow.following, !transcript.isEmpty {
                         JumpToLatestButton {
@@ -586,10 +587,18 @@ struct ChatView: View {
                 // that owns it, and only also closes the keyboard.
                 .simultaneousGesture(TapGesture().onEnded {
                     if composerFocused { composerFocused = false }
+                    // and folds the call bar's card, as a click outside it
+                    // does on the desktop
+                    if callPanel != nil {
+                        withAnimation(CallBarMetrics.motion(reduce: reduceMotion)) { callPanel = nil }
+                    }
                 })
                 // And a drag down over the transcript pushes it away, the way
                 // it does in Mail and Messages.
                 .scrollDismissesKeyboard(.interactively)
+                // The call bar sits over the thread, outside the tap above,
+                // so a tap in its card never folds the card it lands in.
+                .overlay(alignment: .top) { callBar }
                 // `initial: true` is what opens the chat on the newest
                 // message where `scrollAnchorCompat` cannot (iOS 16). On 17 the
                 // anchor has already put us there and this is a no-op.
@@ -667,9 +676,8 @@ struct ChatView: View {
         .background(chatBackground)
         .overlay(alignment: .bottom) { plusSheet }
         .overlay { groupCall }
-        .overlay { callStage }
         .onValueChange(of: callPillShown) { shown in
-            if !shown { callCollapsed = false }
+            if !shown { callPanel = nil }
         }
 #if DEBUG
         .overlay(alignment: .bottomLeading) {

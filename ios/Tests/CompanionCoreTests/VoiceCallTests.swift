@@ -501,6 +501,18 @@ final class PlaybackCutTests: XCTestCase {
         XCTAssertEqual(CallSettings.decode(#"{"input":"auto"}"#).pause, .normal)
     }
 
+    /// The settings card's Advanced zone starts folded and is remembered
+    /// with the call's settings (the desktop's `advancedOpen`).
+    func testAdvancedZoneIsFoldedByDefaultAndRemembered() {
+        XCTAssertFalse(CallSettings.default.advancedOpen)
+        XCTAssertFalse(CallSettings.decode(nil).advancedOpen)
+        XCTAssertFalse(CallSettings.decode(#"{"input":"push","earcons":false,"pause":"short"}"#).advancedOpen)
+        XCTAssertTrue(CallSettings.decode(#"{"advancedOpen":true}"#).advancedOpen)
+        let open = CallSettings(input: .push, earcons: false, pause: .patient, advancedOpen: true)
+        XCTAssertEqual(CallSettings.decode(open.encoded), open)
+        XCTAssertTrue(open.encoded.contains(#""advancedOpen":true"#))
+    }
+
     func testNoiseFragments() {
         XCTAssertTrue(CallNoise.isFragment("dwad"))
         XCTAssertTrue(CallNoise.isFragment("a"))
