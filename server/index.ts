@@ -783,6 +783,7 @@ import { createOidcLoginRoutes, identityConfigFromEnv, identityDescriptor, INTER
 import { OidcRelyingParty } from "./oidc-rp.ts";
 import type { BotAttachment, BotFileRoot } from "./org-admin-files.ts";
 import { ADMIN_ACTIVITY_CATEGORIES } from "./admin-activity.ts";
+import { createOrgMemberRoutes, type MemberPerson, type MemberRequest } from "./org-member-routes.ts";
 import { createOrgAdminRoutes, type AccessKind, type AdminApproval, type AdminBot, type AdminBotReach, type AdminPerson, type ApprovalAnswer, type ApprovalType, type OrgAdminViewer } from "./org-admin-routes.ts";
 import { RevocationQueue } from "./idp-revocations.ts";
 import { IDP_REFRESH_WAIT_MS, IDP_SWEEP_INTERVAL_MS, IdpGrantVault, IdpSessionManager, refreshAfterMs, resolveIdpVaultKey, settledWithin } from "./idp-session.ts";
@@ -24402,6 +24403,83 @@ const orgAdmin = createOrgAdminRoutes({
     },
   },
 });
+/** 2026-10-09 (lot C.1): the member API (server/org-member-routes.ts), for
+ * an AI client attached to Perspicax acting for one person. Each route is
+ * performed as that person through a 60 s session of theirs. */
+async function performAsMember(person: MemberPerson, request: MemberRequest): Promise<{ status: number; body: unknown }> {
+  const principal = principals.byId(person.principalId);
+  const scopes: Scope[] = person.admin && principal?.orgRole === "admin" ? ["admin", "client"] : ["client"];
+  const opened = sessions.actAs({
+    principalId: person.principalId,
+    scopes,
+    label: "AI client (Perspicax)",
+    ...(IDENTITY.kind === "perspicax" ? { idp: { iss: IDENTITY.issuer, sub: person.sub, role: person.admin ? "admin" : "employee" } } : {}),
+  });
+  if (!opened) return { status: 403, body: { error: "This person cannot act on this server." } };
+  const url = new URL(`http://127.0.0.1:${PORT}${request.path}`);
+  for (const [key, value] of Object.entries(request.query ?? {})) url.searchParams.set(key, value);
+  const headers = new Headers({ accept: "application/json", authorization: `Bearer ${opened.token}` });
+  if (request.body !== undefined) headers.set("content-type", "application/json");
+  try {
+    const response = await fetch(url, { method: request.method, headers, body: request.body === undefined ? undefined : JSON.stringify(request.body), redirect: "error" });
+    const text = await response.text();
+    let body: unknown = {};
+    try {
+      body = text ? JSON.parse(text) : {};
+    } catch {
+      body = { error: text.slice(0, 300) };
+    }
+    return { status: response.status, body };
+  } catch {
+    return { status: 502, body: { error: "The action could not be completed." } };
+  } finally {
+    sessions.revoke(opened.session.id);
+  }
+}
+const orgMember = createOrgMemberRoutes({
+  identity: IDENTITY.kind,
+  issuer: IDENTITY.kind === "perspicax" ? IDENTITY.issuer : "",
+  publicOrigin: () => (IDENTITY.kind === "perspicax" ? IDENTITY.publicOrigin.replace(/\/+$/, "") : null),
+  linkServerId: () => perspicaxDirectory?.serverId() ?? null,
+  verify: (token, audience, serverId) => {
+    if (!oidcRp) throw new Error("This server has no identity provider configured.");
+    return oidcRp.verifyConsoleAssertion(token, audience, serverId, ["console", "perspicax-mcp"]);
+  },
+  personFor: (iss, sub) => {
+    const person = principals.bySubject(iss, sub);
+    if (!person) return null;
+    const listed = perspicaxDirectory?.directory();
+    const entry = listed?.people.find((candidate) => candidate.sub === sub);
+    const listedActive = listed ? Boolean(entry && entry.status === "active" && entry.kind !== "service" && entry.type !== "service") : true;
+    return {
+      principalId: person.id,
+      name: adminPerson(person.id).name,
+      active: listedActive && person.disabledAt === undefined && !person.consoleDisabled,
+      admin: person.orgRole === "admin",
+    };
+  },
+  permissions: (principalId) => principalPermissions(principalId),
+  perform: performAsMember,
+  threadStatus: (threadId) => {
+    const bot = store.botByThread(threadId);
+    if (!bot) return null;
+    if (store.taskByThread(bot.id, threadId)?.activity === "waiting-on-you") return "waiting";
+    return threadBusy(bot.id, threadId) ? "working" : "idle";
+  },
+  resolvePerson: (ref) => {
+    const id = ref.trim().toLowerCase();
+    if (isPrincipalId(id) && principals.byId(id)) return id;
+    return IDENTITY.kind === "perspicax" ? principals.bySubject(IDENTITY.issuer, ref.trim())?.id ?? null : null;
+  },
+  record: (person, entry) => appendAdminAction(DATA_DIR, {
+    category: "client",
+    action: entry.action,
+    target: entry.target,
+    ...(entry.after ? { after: entry.after } : {}),
+    actor: { kind: "person", principalId: person.principalId, via: person.actor === "console" ? "console" : "perspicax-mcp" },
+  }),
+  version: releaseVersion,
+});
 ROUTES.push(createDeciderRoutes({ decider }));
 ROUTES.push(createAntigravityLeftoverRoutes({
   hosted: Boolean(hostedModels),
@@ -24535,6 +24613,8 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
     // Slice 7: the console's admin API, before every other credential: a
     // console assertion only, never a session cookie or loopback trust.
     if (await orgAdmin(req, res, url)) return;
+    // 2026-10-09: the member API, same credential rule: an assertion only.
+    if (await orgMember(req, res, url)) return;
     // An organization server signs people in with Pulsatrix only: the
     // interim email codes and invitation links are refused outright.
     if (IDENTITY.kind === "perspicax") {

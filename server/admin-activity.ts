@@ -23,13 +23,13 @@ import { actorLabel, boundRetentionDays, pruneMonthFiles, type DecisionActor, ty
 import { redactSecrets } from "./redact.ts";
 import { csvCell, monthKey } from "./usage-ledger.ts";
 
-export const ADMIN_ACTIVITY_CATEGORIES = ["config", "people", "session", "webhook", "mcp", "engine", "bot", "budget", "visibility", "rights", "section", "org", "approval", "computer"] as const;
+export const ADMIN_ACTIVITY_CATEGORIES = ["config", "people", "session", "webhook", "mcp", "engine", "bot", "budget", "visibility", "rights", "section", "org", "approval", "computer", "client"] as const;
 export type AdminActivityCategory = typeof ADMIN_ACTIVITY_CATEGORIES[number];
 
 /** Who acted: as on a decision row, plus the command line, plus (slice 7) a
  * person of the organization by principal id, in Sagax or from the Perspicax
  * console. */
-export type AdminActor = DecisionActor | { kind: "cli" } | { kind: "person"; principalId: string; via: "sagax" | "console" };
+export type AdminActor = DecisionActor | { kind: "cli" } | { kind: "person"; principalId: string; via: "sagax" | "console" | "perspicax-mcp" };
 
 export interface AdminActionRow {
   at: string;
@@ -376,7 +376,7 @@ export function adminActorLabel(actor: AdminActor | undefined, nameOf?: (princip
   if (actor?.kind === "cli") return "Command line";
   if (actor?.kind === "person") {
     const name = nameOf?.(actor.principalId) ?? actor.principalId;
-    return actor.via === "console" ? `${name} (console)` : name;
+    return actor.via === "console" ? `${name} (console)` : actor.via === "perspicax-mcp" ? `${name} (AI client)` : name;
   }
   return actorLabel(actor as DecisionActor | undefined);
 }
@@ -489,7 +489,7 @@ export function activityCsv(entries: readonly ActivityEntry[]): string {
 // ── slice 7: the organization audit read by the Perspicax console ───────
 
 /** The categories the console's Audit page reads. */
-export const ORG_AUDIT_CATEGORIES = ["rights", "section", "bot", "people", "org", "approval"] as const;
+export const ORG_AUDIT_CATEGORIES = ["rights", "section", "bot", "people", "org", "approval", "client"] as const;
 export const ORG_AUDIT_MAX_LIMIT = 500;
 export const ORG_AUDIT_DEFAULT_LIMIT = 200;
 

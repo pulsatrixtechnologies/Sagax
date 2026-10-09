@@ -23,7 +23,7 @@ export const PERMISSION_CATALOGUE_VERSION = 1;
 
 export type PermissionGroupId =
   | "bots" | "sharing" | "engines" | "apps" | "skills" | "folders"
-  | "routines" | "people" | "usage" | "backup" | "host" | "server";
+  | "routines" | "people" | "usage" | "backup" | "host" | "server" | "clients";
 
 export interface LocalizedText {
   en: string;
@@ -61,6 +61,7 @@ export const PERMISSION_GROUPS: readonly PermissionGroup[] = [
   { id: "backup", label: { en: "Backups", fr: "Sauvegardes" } },
   { id: "host", label: { en: "Server host", fr: "Hôte du serveur" } },
   { id: "server", label: { en: "Server", fr: "Serveur" } },
+  { id: "clients", label: { en: "AI clients through Perspicax", fr: "Clients IA par Perspicax" } },
 ];
 
 const definitions = [
@@ -290,6 +291,50 @@ const definitions = [
     adminOnlyReason: {
       en: "It decides who can reach the server at all.",
       fr: "Elle décide qui peut joindre le serveur.",
+    },
+  },
+  // 2026-10-09 (Perspicax plan, lot C.1): what a person may do with their
+  // bots from an AI client attached to Perspicax (Claude Code, claude.ai,
+  // Cursor), through the member API (server/org-member-routes.ts). Each key
+  // is checked on top of the rule the same action meets in Sagax.
+  {
+    key: "clients.botsRead", group: "clients", memberDefault: true, adminOnly: false,
+    label: { en: "See their bots and conversations from an AI client", fr: "Voir leurs bots et leurs conversations depuis un client IA" },
+    description: {
+      en: "List the bots they can use and read their own conversations with them from Claude Code, claude.ai or another client attached to Perspicax.",
+      fr: "Lister les bots qu'ils peuvent utiliser et lire leurs propres conversations avec eux depuis Claude Code, claude.ai ou un autre client relié à Perspicax.",
+    },
+  },
+  {
+    key: "clients.botsMessage", group: "clients", memberDefault: true, adminOnly: false,
+    label: { en: "Message their bots from an AI client", fr: "Écrire à leurs bots depuis un client IA" },
+    description: {
+      en: "Send a message to a bot they can use from a client attached to Perspicax, under their own name, and wait for its answer.",
+      fr: "Envoyer un message à un bot qu'ils peuvent utiliser depuis un client relié à Perspicax, en leur propre nom, et attendre sa réponse.",
+    },
+  },
+  {
+    key: "clients.routinesRun", group: "clients", memberDefault: false, adminOnly: false,
+    label: { en: "Run routines from an AI client", fr: "Lancer des routines depuis un client IA" },
+    description: {
+      en: "Run a routine now and follow its run from a client attached to Perspicax. The routine's own Run now rule still applies.",
+      fr: "Lancer une routine maintenant et suivre son exécution depuis un client relié à Perspicax. La règle Lancer maintenant de la routine s'applique toujours.",
+    },
+  },
+  {
+    key: "clients.approvalsAnswer", group: "clients", memberDefault: false, adminOnly: false,
+    label: { en: "Answer approvals from an AI client", fr: "Répondre aux approbations depuis un client IA" },
+    description: {
+      en: "Allow or deny an approval card they may answer in Sagax, from a client attached to Perspicax.",
+      fr: "Autoriser ou refuser une carte d'approbation à laquelle ils peuvent répondre dans Sagax, depuis un client relié à Perspicax.",
+    },
+  },
+  {
+    key: "clients.peopleNudge", group: "clients", memberDefault: false, adminOnly: false,
+    label: { en: "Nudge people from an AI client", fr: "Faire signe à des personnes depuis un client IA" },
+    description: {
+      en: "Nudge a person of the organization from a client attached to Perspicax, like the nudge button in Sagax.",
+      fr: "Faire signe à une personne de l'organisation depuis un client relié à Perspicax, comme le bouton Faire signe de Sagax.",
     },
   },
 ] as const satisfies readonly PermissionDefinition[];

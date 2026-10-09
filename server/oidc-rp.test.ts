@@ -401,6 +401,17 @@ describe("OIDC relying party: console assertions (slice 7)", () => {
     await expect(party.verifyConsoleAssertion(assertion({ claims: (c: Bend) => { const { teams: _t, ...rest } = c; return rest; } }), ORIGIN)).resolves.toMatchObject({ teams: [] });
   });
 
+  it("names its actor; an AI client's assertion (perspicax-mcp) passes only where the route accepts it", async () => {
+    const party = rp();
+    await expect(party.verifyConsoleAssertion(assertion(), ORIGIN)).resolves.toMatchObject({ actor: "console" });
+    const mcp = (extra = {}) => assertion({ ...extra, claims: (c: Bend) => ({ ...c, act: { sub: "perspicax-mcp" } }) });
+    // the admin API (no actors given): the console only
+    await expect(party.verifyConsoleAssertion(mcp(), ORIGIN)).rejects.toMatchObject({ code: "console_assertion_act" });
+    // the member API: both
+    await expect(party.verifyConsoleAssertion(mcp(), ORIGIN, null, ["console", "perspicax-mcp"])).resolves.toMatchObject({ sub, actor: "perspicax-mcp" });
+    await expect(party.verifyConsoleAssertion(assertion({ claims: (c: Bend) => ({ ...c, act: { sub: "someone" } }) }), ORIGIN, null, ["console", "perspicax-mcp"])).rejects.toMatchObject({ code: "console_assertion_act" });
+  });
+
   it.each([
     ["another typ", { header: (h: Bend) => ({ ...h, typ: "JWT" }) }, "console_assertion_typ"],
     ["no typ", { header: (h: Bend) => { const { typ: _typ, ...rest } = h; return rest; } }, "console_assertion_typ"],

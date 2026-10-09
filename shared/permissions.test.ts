@@ -42,8 +42,8 @@ describe("the permission catalogue", () => {
     }
   });
 
-  it("member defaults are what a plain member could do before the matrix", () => {
-    expect([...MEMBER_DEFAULT_PERMISSIONS].sort()).toEqual(["apps.ownIntegrations", "bots.create", "bots.fullAccess", "sharing.grants"]);
+  it("member defaults are what a plain member could do before the matrix, plus reading and messaging their bots from an AI client", () => {
+    expect([...MEMBER_DEFAULT_PERMISSIONS].sort()).toEqual(["apps.ownIntegrations", "bots.create", "bots.fullAccess", "clients.botsMessage", "clients.botsRead", "sharing.grants"]);
   });
 
   it("maps every bot field a permission opens, and none a member already sets", () => {

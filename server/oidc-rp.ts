@@ -466,12 +466,23 @@ export interface ConsoleAssertion {
   /** The console person's language (`fr`, `en`), when the console sends it:
    * the readable reasons of the admin API follow it. */
   locale?: string;
+  /** Who presents it for the person (`act.sub`): `console` (the Perspicax
+   * console) or `perspicax-mcp` (an AI client attached to Perspicax, the
+   * member API of 2026-10-09). */
+  actor: ConsoleAssertionActor;
 }
+
+/** The actors a console assertion may name. The admin API accepts only the
+ * console; the member API (server/org-member-routes.ts) accepts both. */
+export const CONSOLE_ASSERTION_ACTORS = ["console", "perspicax-mcp"] as const;
+export type ConsoleAssertionActor = typeof CONSOLE_ASSERTION_ACTORS[number];
 
 export interface VerifyConsoleAssertionInput extends JwsCheck {
   /** The link file's server id when a link is loaded: the assertion's
    * `server_id` must equal it. */
   serverId?: string | null;
+  /** The `act.sub` values accepted; the console alone when absent. */
+  actors?: readonly ConsoleAssertionActor[];
 }
 
 const CONSOLE_ROLES = new Set(["admin", "manager", "employee"]);
@@ -489,8 +500,12 @@ export async function verifyConsoleAssertion(input: VerifyConsoleAssertionInput)
   // One audience string, never an array, and no authorized party.
   if (typeof claims.aud !== "string" || claims.aud !== input.audience || claims.azp !== undefined) throw new OidcError(`${kind}_aud`, "The console assertion must name this server as its one audience.");
   const act = claims.act;
-  if (!act || typeof act !== "object" || Array.isArray(act) || (act as Record<string, unknown>).sub !== "console") {
-    throw new OidcError(`${kind}_act`, "The console assertion does not name the console as its actor.");
+  const actors: readonly string[] = input.actors ?? ["console"];
+  const actor = act && typeof act === "object" && !Array.isArray(act) ? (act as Record<string, unknown>).sub : undefined;
+  if (typeof actor !== "string" || !actors.includes(actor)) {
+    throw new OidcError(`${kind}_act`, actors.length === 1 && actors[0] === "console"
+      ? "The console assertion does not name the console as its actor."
+      : "The assertion does not name an actor this route accepts.");
   }
   if (claims.nonce !== undefined) throw new OidcError(`${kind}_nonce`, "A console assertion must not carry a nonce.");
   if (claims.events !== undefined) throw new OidcError(`${kind}_events`, "A console assertion must not carry events.");
@@ -508,7 +523,7 @@ export async function verifyConsoleAssertion(input: VerifyConsoleAssertionInput)
   const serverId = stringClaim(claims.server_id, 256) ?? null;
   if (input.serverId && serverId !== input.serverId) throw new OidcError(`${kind}_server`, "The console assertion is meant for another linked server.");
   const locale = typeof claims.locale === "string" && /^[A-Za-z]{2}([-_][A-Za-z0-9]{2,8})?$/.test(claims.locale) ? claims.locale : undefined;
-  return { iss: input.issuer, sub, jti, iat, exp, serverId, role: role as ConsoleAssertion["role"], teams, ...(locale ? { locale } : {}) };
+  return { iss: input.issuer, sub, jti, iat, exp, serverId, role: role as ConsoleAssertion["role"], teams, ...(locale ? { locale } : {}), actor: actor as ConsoleAssertionActor };
 }
 
 /** An issuer URL the server may talk to: https, or http on this machine
@@ -1004,7 +1019,7 @@ export class OidcRelyingParty {
 
   /** Slice 7: verify a console assertion for this server's public origin
    * (one trailing slash ignored) and, when a link is loaded, its server id. */
-  async verifyConsoleAssertion(token: string, audienceOrigin: string, serverId?: string | null): Promise<ConsoleAssertion> {
+  async verifyConsoleAssertion(token: string, audienceOrigin: string, serverId?: string | null, actors?: readonly ConsoleAssertionActor[]): Promise<ConsoleAssertion> {
     await this.discover();
     return verifyConsoleAssertion({
       token,
@@ -1013,6 +1028,7 @@ export class OidcRelyingParty {
       keyFor: (kid) => this.keyFor(kid),
       nowSeconds: Math.floor(this.now() / 1000),
       ...(serverId ? { serverId } : {}),
+      ...(actors ? { actors } : {}),
     });
   }
 
