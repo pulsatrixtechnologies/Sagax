@@ -140,7 +140,7 @@
     "@gltf-transform/extensions": "4.5.1",
     "@gltf-transform/functions": "4.5.1",
     "@tailwindcss/vite": "^4.3.3",
-    "@types/node": "^26.6.4",
+    "@types/node": "^26.6.5",
     "@types/nodemailer": "^8.0.2",
     "@types/novnc__novnc": "1.6.0",
     "@types/papaparse": "^5.5.2",
