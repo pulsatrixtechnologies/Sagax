@@ -7721,7 +7721,10 @@
       "worksOn.sectionTip": "4def718facaa055fed46fcd9e1979c12014f71fc089bad00efcb785d83267276",
       "worksOn.short.cloud": "b977b950c1ae31e5aeb9ef778cc20a66fc034eb81e738e0206104b677962c465",
       "worksOn.tip.autoOrg": "2feae34d29065e9e0a795d80bb2497a629a3ad4f82ce1b50df395650bbe1d8a8",
-      "permissions.missing": "dff0360d0928066cd99f0a613310310ba104e67d2722ddf7835c62a7a082673c"
+      "permissions.missing": "dff0360d0928066cd99f0a613310310ba104e67d2722ddf7835c62a7a082673c",
+      "settings.routinesBadge.show": "b7630f6ca526465a9a68da76efa879c7d78647609e19c490b7f027ca573ad69b",
+      "settings.routinesBadge.subtitle": "6e04ada1ec06e04977cd3caf2da6dcbacae80fd8ce7464c4aab604e31f113cb0",
+      "settings.routinesBadge.title": "dd75bb631cd7f3b993eb54b531e9d04bed4cf0a3ce6e03ff8c790d3644d71c50"
     },
     "hi": {
       "approval.action.allowOnce": "168511d24d9ee03122b3200f929be11eaaedad45cb0ecb20a95f549b3e3f4d0f",
@@ -13736,7 +13739,10 @@
       "voiceMode.call.fasterEndOfTurn": "49803058d4f6522b3600c47e762aff5288f8b85703523915b45fa3baea6b69e2",
       "voiceMode.call.fasterEndOfTurnHelp": "d9320866da60ee4a0b9a40549e40d433364ce6be1ad0f56f1b1bb73954470529",
       "voiceMode.call.streamingVoice": "2f13c2551cb53b46ece6634228cda8143a32167d9038423f42b9cd06e3ba45c4",
-      "voiceMode.call.streamingVoiceHelp": "38dc3cb3ae644512ce95cd00064ecca1e2057ade41f2b84c1b9d1b2217d426f9"
+      "voiceMode.call.streamingVoiceHelp": "38dc3cb3ae644512ce95cd00064ecca1e2057ade41f2b84c1b9d1b2217d426f9",
+      "settings.routinesBadge.show": "b7630f6ca526465a9a68da76efa879c7d78647609e19c490b7f027ca573ad69b",
+      "settings.routinesBadge.subtitle": "6e04ada1ec06e04977cd3caf2da6dcbacae80fd8ce7464c4aab604e31f113cb0",
+      "settings.routinesBadge.title": "dd75bb631cd7f3b993eb54b531e9d04bed4cf0a3ce6e03ff8c790d3644d71c50"
     },
     "uk": {
       "approval.action.allowOnce": "168511d24d9ee03122b3200f929be11eaaedad45cb0ecb20a95f549b3e3f4d0f",

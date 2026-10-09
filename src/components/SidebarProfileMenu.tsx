@@ -49,6 +49,7 @@ import { t } from "@/lib/i18n";
 import { requestReleaseNotes } from "@/lib/release-notes-ui";
 import { useAchievements } from "@/lib/achievements";
 import { isRoutineProblemRun } from "@/lib/routines";
+import { useShowRoutinesBadge } from "@/lib/routines-badge-preferences";
 import { activeRoutineCount } from "@/lib/active-routines";
 import { viewerActorId } from "@/lib/viewer";
 import { achievementTitleName } from "./achievements/MemberCard";
@@ -312,7 +313,8 @@ export function SidebarProfileMenu({ avatarOnly = false, places = [] }: {
   // the viewer's own title and points, each only while its "Show my ..."
   // switch is on. Nothing under the name when both are off.
   const activeRoutines = activeRoutineCount(state.routines, state.bots, viewerActorId(state.config));
-  const showBadge = activeRoutines > 0;
+  const badgeEnabled = useShowRoutinesBadge();
+  const showBadge = badgeEnabled && activeRoutines > 0;
   const snapshot = achievements.status === "ready" ? achievements.snapshot : undefined;
   const titleName = snapshot && snapshot.settings.showTitle !== false ? achievementTitleName(snapshot.settings.title) : null;
   const pointsText = snapshot && snapshot.settings.showPoints !== false ? formatPoints(snapshot.points) : null;

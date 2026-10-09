@@ -74,6 +74,7 @@ import { parseSidebarDensity, setSidebarDensity, SIDEBAR_DENSITIES, useSidebarDe
 import { currentPhonePairingTarget } from "@/lib/phone-pairing";
 import { setShowRunCard, useShowRunCard } from "@/lib/run-card-preferences";
 import { setShowSidebarLogo, useShowSidebarLogo } from "@/lib/sidebar-logo-preferences";
+import { setShowRoutinesBadge, useShowRoutinesBadge } from "@/lib/routines-badge-preferences";
 import { setShowInspectorButton, useShowInspectorButton } from "@/lib/inspector-preferences";
 import { effectiveLanguage, setLanguageChoice, useLanguageChoice } from "@/lib/language-preference";
 
@@ -656,6 +657,19 @@ function SidebarLogoRow() {
         checked={enabled}
         aria-label={t("settings.sidebarLogo.show")}
         onClick={() => setShowSidebarLogo(!enabled)}
+      />
+    </SettingRow>
+  );
+}
+
+function RoutinesBadgeRow() {
+  const enabled = useShowRoutinesBadge();
+  return (
+    <SettingRow title={t("settings.routinesBadge.title")} subtitle={t("settings.routinesBadge.subtitle")}>
+      <Switch
+        checked={enabled}
+        aria-label={t("settings.routinesBadge.show")}
+        onClick={() => setShowRoutinesBadge(!enabled)}
       />
     </SettingRow>
   );
@@ -1304,6 +1318,7 @@ export function SettingsModal() {
                   <FontRow />
                   <SidebarDensityRow />
                   <SidebarLogoRow />
+                  <RoutinesBadgeRow />
                   {advanced && <InspectorButtonRow />}
                   <ShowThreadsRow />
                   <ThreadsLocationRow />

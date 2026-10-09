@@ -8,7 +8,8 @@ import type { AppState } from "@/state/store";
 import type { AchievementSnapshot } from "../../shared/achievements";
 import { resetAchievementsForTests } from "@/lib/achievements";
 
-const fixture = vi.hoisted(() => ({ state: {} as Partial<AppState> }));
+const fixture = vi.hoisted(() => ({ state: {} as Partial<AppState>, badge: true }));
+vi.mock("@/lib/routines-badge-preferences", () => ({ useShowRoutinesBadge: () => fixture.badge }));
 vi.mock("@/state/store", async (importOriginal) => {
   const original = await importOriginal<typeof import("@/state/store")>();
   return { ...original, useStore: () => ({ state: { ...original.initialState, ...fixture.state }, dispatch: vi.fn() }) };
@@ -35,6 +36,7 @@ const points = (): AchievementSnapshot => ({
 });
 
 beforeEach(() => {
+  fixture.badge = true;
   fixture.state = { config: { profile: { name: "Jean-Christophe Proulx", email: "jc@example.com" } } as AppState["config"] };
   resetAchievementsForTests();
   vi.stubGlobal("window", {});
@@ -97,6 +99,15 @@ describe("sidebar footer row", () => {
     expect(html).not.toContain(">195<");
     expect(accountTag(html)).toContain("items-center");
     expect(html).not.toContain("data-routines-line");
+  });
+
+  it("hides the routines icon and count by default, even with active routines", () => {
+    withBadge();
+    fixture.badge = false;
+    const html = renderToStaticMarkup(createElement(SidebarProfileMenu, {}));
+    expect(html).not.toContain("data-routines-line");
+    expect(html).not.toContain("data-active-routines");
+    expect(html).toContain(">Jean-Christophe Proulx</span>");
   });
 
   it("puts the routines badge at the right of the row, beside the name, opening Automations", () => {
