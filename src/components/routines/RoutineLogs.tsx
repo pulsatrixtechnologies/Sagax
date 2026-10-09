@@ -6,10 +6,15 @@ import { t } from "@/lib/i18n";
 import { isRoutineProblemRun, type RoutineRun, type RoutineRunStatusFilter } from "@/lib/routines";
 import { routineDateTime, routineRunError, routineRunLabel, routineRunTime, routineRunTone } from "@/lib/routine-display";
 import type { Bot } from "@/state/store";
+import { RoutineOwnerBadge } from "./RoutineScopeBar";
 
-export function RoutineLogs({ runs, bots, loading, error, routineId, status, onStatusChange, onClearRoutine, onClearLogs, onOpen }: {
+export function RoutineLogs({ runs, bots, ownerOf, viewerPrincipalId, loading, error, routineId, status, onStatusChange, onClearRoutine, onClearLogs, onOpen }: {
   runs: RoutineRun[];
   bots: Bot[];
+  /** A wider scope (2026-10-09): the owner and bot of a run's routine; the
+   * owner is shown when it is not the viewer, the bot when it is not theirs. */
+  ownerOf?: (run: RoutineRun) => { owner?: { id: string; name: string; avatarUrl?: string }; bot?: { id: string; name: string } } | undefined;
+  viewerPrincipalId?: string | null;
   loading?: boolean;
   error?: boolean;
   routineId?: string;
@@ -40,8 +45,11 @@ export function RoutineLogs({ runs, bots, loading, error, routineId, status, onS
     {!loading && !error && filtered.length === 0 && <div className="rounded-xl border border-dashed border-hairline/50 p-10 text-center text-[13px] text-ink-secondary"><FileText size={24} className="mx-auto mb-3 opacity-50" />{runs.length ? t("routines.noMatchingRuns") : t("routines.noRuns")}</div>}
     <div className="space-y-2">{filtered.slice(0, limit).map((run) => {
       const bot = bots.find((candidate) => candidate.id === run.botId);
+      const about = ownerOf?.(run);
+      const owner = about?.owner;
+      const otherOwner = owner?.id && owner.id.toLowerCase() !== viewerPrincipalId?.toLowerCase() ? owner : null;
       return <button type="button" key={run.id} onClick={() => onOpen(run)} aria-label={t("routines.openRun", { name: run.routineName, status: routineRunLabel(run) }) + (isRoutineProblemRun(run) && !run.seenAt ? ` · ${t("routines.unread")}` : "")} className="block w-full rounded-xl border border-hairline/40 bg-card p-4 text-left hover:border-accent/40 hover:bg-raised/40">
-        <div className="flex items-start justify-between gap-3"><div className="min-w-0"><span className="block truncate text-[13px] font-semibold text-ink">{run.routineName}</span><span className="mt-1 block text-[11px] text-ink-secondary">{bot?.name ?? t("routines.unavailableBot")} · {routineDateTime(run.scheduledFor)} · {t(`routines.trigger.${run.triggerSource ?? (run.manual ? "manual" : "schedule")}`)}</span></div><div className="flex shrink-0 items-center gap-1.5">{isRoutineProblemRun(run) && !run.seenAt && <span className="size-1.5 shrink-0 rounded-full bg-danger" title={t("routines.unread")} />}<span className={cn("text-[11.5px] font-medium", routineRunTone(run))}>{routineRunLabel(run)}</span></div></div>
+        <div className="flex items-start justify-between gap-3"><div className="min-w-0"><span className="block truncate text-[13px] font-semibold text-ink">{run.routineName}</span><span className="mt-1 flex min-w-0 flex-wrap items-center gap-x-1 text-[11px] text-ink-secondary">{otherOwner && <><RoutineOwnerBadge owner={otherOwner} size={14} /> · </>}{bot?.name ?? (about?.bot?.name || t("routines.unavailableBot"))} · {routineDateTime(run.scheduledFor)} · {t(`routines.trigger.${run.triggerSource ?? (run.manual ? "manual" : "schedule")}`)}</span></div><div className="flex shrink-0 items-center gap-1.5">{isRoutineProblemRun(run) && !run.seenAt && <span className="size-1.5 shrink-0 rounded-full bg-danger" title={t("routines.unread")} />}<span className={cn("text-[11.5px] font-medium", routineRunTone(run))}>{routineRunLabel(run)}</span></div></div>
         <p className={cn("mt-2 line-clamp-2 whitespace-pre-wrap text-[12px] leading-relaxed", run.error ? "text-danger" : "text-ink-secondary")}>{run.attention || routineRunError(run.error) || run.output || t("routines.noOutput")}</p>
       </button>;
     })}</div>

@@ -508,6 +508,7 @@ import { RepeatDetector, callKey } from "./repeat-detector.ts";
 import { redactSecretsInText } from "./redact.ts";
 import * as vps from "./vps-computer.ts";
 import { runAsOptions, runAsRefusal, type RunAsChooser, type RunAsPerson } from "./routine-run-as.ts";
+import { parseRoutineScopeQuery, routineRunClearable, routineScopeRefusal, scopedRoutineListing, type RoutineScopeCaller, type RoutineScopeDeps, type RoutineScopeFacts } from "./routine-scope.ts";
 import { RoutineManager, setRoutineTimeZone, type Routine, type RoutineAdmission, type RoutineRun, type RoutineRunOn, type RoutineRunTrigger, type RoutineSuspendReason } from "./routines.ts";
 import { RoutineConsents, routineRenewMs, type RoutineConsentEnd } from "./org-routine-consent.ts";
 import { CalendarCallManager, type CalendarCall } from "./calendar-calls.ts";
@@ -11213,6 +11214,52 @@ function auditRoutineRunsCleared(auth: RequestAuth, count: number): void {
     after: { count },
     actor: IDENTITY.kind === "perspicax" ? orgAuditActor(auth) : decisionActorFor(auth),
   });
+}
+/** The Automations page scope (server/routine-scope.ts, 2026-10-09): who
+ * the caller is for the scope rules. */
+function routineScopeCaller(auth: RequestAuth, viewerId: string | undefined): RoutineScopeCaller {
+  return {
+    admin: orgAdminCaller(auth),
+    viewTeam: callerCan(auth, "routines.viewTeam"),
+    viewAll: callerCan(auth, "routines.viewAll"),
+    teamIds: IDENTITY.kind === "perspicax" && viewerId ? principalTeams(viewerId).map((team) => team.id) : [],
+  };
+}
+/** A routine's or run's owner, run-as person, teams and bot, for the scope. */
+function routineScopeFacts(value: { botId: string; runAs?: string }): RoutineScopeFacts {
+  const bot = store.bot(value.botId);
+  const ownerId = bot ? effectiveBotOwner(bot) : "";
+  const runAsId = effectiveRunAs(value);
+  const teamIds = new Set<string>();
+  if (IDENTITY.kind === "perspicax") {
+    for (const principalId of [ownerId, runAsId]) {
+      if (principalId) for (const team of principalTeams(principalId)) teamIds.add(team.id);
+    }
+    if (bot) for (const grant of botGrants(bot)) if (grant.target.startsWith("team:")) teamIds.add(grant.target.slice("team:".length));
+  }
+  const owner = ownerId && isPrincipalId(ownerId) ? principals.byId(ownerId) : null;
+  const ownerAvatarUrl = personAvatarUrl(owner);
+  return {
+    ownerId,
+    ownerName: owner?.name || owner?.login || "",
+    ...(ownerAvatarUrl ? { ownerAvatarUrl } : {}),
+    ...(runAsId ? { runAsId } : {}),
+    teamIds: [...teamIds],
+    bot: { id: value.botId, name: bot?.name ?? "" },
+  };
+}
+/** The scope's view of one request: `mine` is the listing's own rule, and
+ * Run now and Edit answer what their routes would. */
+function routineScopeDeps(auth: RequestAuth, visible: VisibleSet, viewerId: string | undefined): RoutineScopeDeps<ReturnType<typeof routineOnWire>> {
+  const mine = (value: Routine | RoutineRun) => routineVisible(value, visible) && (!viewerId || routineSeenBy(value, viewerId));
+  return {
+    mine,
+    facts: routineScopeFacts,
+    canRun: (routine) => !routineNeedsRun(auth, routine.botId) && mayRunRoutineNow(auth, routine),
+    canEdit: (routine) => !routineNeedsRun(auth, routine.botId),
+    wire: routineOnWire,
+    teamName: (teamId) => orgTeams.name(teamId),
+  };
 }
 /** The speaker of a routine run's turns. */
 function routineRunSpeaker(run: { runAs?: string; botId: string }): TurnSpeaker {
@@ -28581,18 +28628,26 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
     }
 
     // ── routines calendar ────────────────────────────────────────────────
+    // The Automations page scope (2026-10-09): `scope=mine|team|all` and
+    // `teamId`, `botId`, `ownerId`, `status` (server/routine-scope.ts). No
+    // scope is `mine`: what this listing always answered.
     if (path === "/api/routines" && method === "GET") {
       const fromParam = url.searchParams.get("from");
       const toParam = url.searchParams.get("to");
       const from = fromParam == null ? undefined : Number(fromParam);
       const to = toParam == null ? undefined : Number(toParam);
-      return json(res, 200, {
-        routines: routines!.listRoutines()
-          .filter((routine) => routineVisible(routine, visible) && (!viewerId || routineSeenBy(routine, viewerId)))
-          .map(routineOnWire),
-        runs: routines!.listRuns(from != null && Number.isFinite(from) ? from : undefined, to != null && Number.isFinite(to) ? to : undefined)
-          .filter((run) => routineVisible(run, visible) && (!viewerId || routineSeenBy(run, viewerId))),
-      });
+      const query = parseRoutineScopeQuery(url.searchParams);
+      if ("error" in query) return json(res, 400, query);
+      const caller = routineScopeCaller(auth, viewerId);
+      const refusal = routineScopeRefusal(caller, query.scope);
+      if (refusal) return json(res, 403, refusal);
+      return json(res, 200, scopedRoutineListing(
+        query,
+        caller,
+        routines!.listRoutines(),
+        routines!.listRuns(from != null && Number.isFinite(from) ? from : undefined, to != null && Number.isFinite(to) ? to : undefined),
+        routineScopeDeps(auth, visible, viewerId),
+      ));
     }
     // On a Cloud home a routine reports only where its writer may write: a
     // guest's into a conversation the guest started, never the owner's.
@@ -28721,9 +28776,16 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       return json(res, 200, { runs: routines!.markAllSeen() });
     }
     // Clear logs: every saved run the caller may see (the list's own rule),
-    // never one in progress. Others' runs stay.
+    // never one in progress. Others' runs stay, unless the caller asks
+    // `scope=all` with routines.viewAll (or is an admin); the page's filters
+    // (`botId`, `ownerId`, `teamId`, `status`) narrow it (server/routine-scope.ts).
     if (path === "/api/routine-runs" && method === "DELETE") {
-      const removed = routines!.clearRuns((run) => routineVisible(run, visible) && (!viewerId || routineSeenBy(run, viewerId)));
+      const query = parseRoutineScopeQuery(url.searchParams);
+      if ("error" in query) return json(res, 400, query);
+      const caller = routineScopeCaller(auth, viewerId);
+      const refusal = routineScopeRefusal(caller, query.scope);
+      if (refusal) return json(res, 403, refusal);
+      const removed = routines!.clearRuns(routineRunClearable(query, caller, routines!.listRoutines(), routineScopeDeps(auth, visible, viewerId)));
       if (removed.length) auditRoutineRunsCleared(auth, removed.length);
       return json(res, 200, { ok: true, removed });
     }
