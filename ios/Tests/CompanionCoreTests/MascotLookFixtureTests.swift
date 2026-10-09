@@ -27,12 +27,14 @@ final class MascotLookFixtureTests: XCTestCase {
         var shibaSkins: [String]
         var grumpSkins: [String]
         var ogreSkins: [String]
+        var frogSkins: [String]
         var owlSkins: [String]
         var colorGroups: [String: [String]]
         var colors: [String: String]
         var looks: [Case]
         var owlSkinCases: [SkinCase]
         var shibaPalettes: [ShibaPaletteCase]
+        var frogPalettes: [ShibaPaletteCase]
     }
     struct ShibaPaletteCase: Decodable {
         var skin: String
@@ -102,6 +104,7 @@ final class MascotLookFixtureTests: XCTestCase {
         XCTAssertEqual(ShibaSkin.allCases.map(\.rawValue), f.shibaSkins)
         XCTAssertEqual(GrumpSkin.allCases.map(\.rawValue), f.grumpSkins)
         XCTAssertEqual(OgreSkin.allCases.map(\.rawValue), f.ogreSkins)
+        XCTAssertEqual(FrogSkin.allCases.map(\.rawValue), f.frogSkins)
         XCTAssertEqual(MascotSkin.allCases.map(\.rawValue), f.owlSkins)
     }
 
@@ -229,5 +232,51 @@ final class MascotLookFixtureTests: XCTestCase {
         XCTAssertEqual(MascotUnlocks.tier(.shiba, skin: "plain"), .common)
         XCTAssertEqual(MascotUnlocks.tier(.shiba, skin: "cream"), .rare)
         XCTAssertEqual(MascotUnlocks.tier(.shiba, skin: "molten"), .legendary)
+    }
+
+    /// Frog's palette for every skin is the desktop's (`frogSkinPaint`): the
+    /// skin's tint of the bot colour, every solid role the same colour, a
+    /// gradient or a pattern where the desktop has one.
+    func testFrogPalettesMatchTheDesktop() throws {
+        let f = try fixture()
+        XCTAssertEqual(f.frogPalettes.count, FrogSkin.allCases.count * 6)
+        for c in f.frogPalettes {
+            let skin = try XCTUnwrap(FrogSkin(rawValue: c.skin))
+            let hex = try XCTUnwrap(MausColors.hex(for: c.color))
+            let paint = FrogArt.paint(skin, hex: hex)
+            for role in FrogRole.allCases {
+                let expected = try XCTUnwrap(c.palette[role.rawValue], role.rawValue)
+                let got = try XCTUnwrap(paint[role], "\(c.skin) \(role)")
+                if expected == "gradient" { continue }
+                XCTAssertEqual(got.solidColor, expected, "\(c.skin) on \(c.color): \(role.rawValue)")
+            }
+        }
+    }
+
+    /// Every face Frog wears is drawn from the desktop's layers: the lids and the lips carry it.
+    func testFrogStillArtCoversEveryFace() {
+        for expression in FrogExpression.allCases {
+            XCTAssertFalse(FrogStillArt.eyeL[expression]?.isEmpty ?? true, expression.rawValue)
+            XCTAssertFalse(FrogStillArt.eyeR[expression]?.isEmpty ?? true, expression.rawValue)
+            XCTAssertGreaterThanOrEqual(FrogStillArt.mouth[expression]?.count ?? 0, 3, expression.rawValue)
+        }
+        XCTAssertFalse(FrogStillArt.throat.isEmpty)
+        XCTAssertEqual(FrogStillArt.legs.count % 2, 0)
+        XCTAssertEqual(FrogStillArt.hop.count, 24)
+        XCTAssertEqual(FrogStillArt.hopCycle, 0.95)
+        // the hop rises, lands and squashes
+        XCTAssertLessThan(FrogStillArt.hop.map(\.y).min() ?? 0, -25)
+        XCTAssertLessThan(FrogStillArt.hop.map(\.sy).min() ?? 1, 0.86)
+        XCTAssertGreaterThan(FrogStillArt.puff.map(\.puff).max() ?? 0, 0.95)
+        XCTAssertEqual(FrogExpression.forState("sleeping"), .sleepy)
+        XCTAssertEqual(FrogExpression.forState("laughing"), .laughing)
+        XCTAssertEqual(FrogExpression.forState(nil), .neutral)
+        XCTAssertEqual(FrogArt.outline(size: 240), 1.9, accuracy: 1e-9)
+        XCTAssertEqual(FrogArt.outline(size: 32) * 32 / 78, 1.6, accuracy: 1e-6)
+        XCTAssertEqual(FrogArt.skin(nil), "#74AE48")
+        XCTAssertEqual(CompleteMascotLook(character: .frog).fallbackColor, "green")
+        XCTAssertEqual(MascotUnlocks.tier(.frog, skin: "plain"), .common)
+        XCTAssertEqual(MascotUnlocks.tier(.frog, skin: "tree"), .rare)
+        XCTAssertEqual(MascotUnlocks.tier(.frog, skin: "molten"), .legendary)
     }
 }

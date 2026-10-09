@@ -118,7 +118,13 @@ export const MASTERY_UNLOCKS: Readonly<Record<MasteryCharacter, MasteryCharacter
     unlock: "polyglot",
     namedRungs: ["thrifty", "translator", "skill-smith"],
     premiumRung: "total-recall",
-    namedSkins: [],
+    namedSkins: [
+      { id: "leaf", name: { en: "Leaf", fr: "Feuille", ptBR: "Folha" } },
+      { id: "tree", name: { en: "Tree frog", fr: "Rainette", ptBR: "Perereca" } },
+      { id: "poison", name: { en: "Poison dart", fr: "Dendrobate", ptBR: "Sapo-flecha" } },
+      { id: "bullfrog", name: { en: "Bullfrog", fr: "Ouaouaron", ptBR: "Rã-touro" } },
+      { id: "ghost", name: { en: "Ghost", fr: "Fantôme", ptBR: "Fantasma" } },
+    ],
   },
 };
 

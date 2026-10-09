@@ -30,6 +30,8 @@ export interface IdleAction {
   dog?: boolean;
   /** A cat's own (Grump): only for a character that is one. */
   cat?: boolean;
+  /** A frog's own (Frog): only for a character that is one. */
+  frog?: boolean;
 }
 
 const clip = (id: TimedClip, weight: number, cooldown: number, energy: 0 | 1 | 2, gentle = false): IdleAction => ({
@@ -89,6 +91,14 @@ export const IDLE_ACTIONS: readonly IdleAction[] = [
   { ...clip("knead", 2, 60_000, 0, true), cat: true },
   { ...clip("loaf", 1.5, 120_000, 0), cat: true },
   { ...clip("ledge", 1, 120_000, 2), cat: true },
+  // a frog's own: a hop around and, more rarely, a long jump to a random spot every few minutes,
+  // the one-eye blink, a fly caught now and then, the smug nod, and rarely a croak
+  { id: "hopAbout", choice: { kind: "move", style: "walk" }, weight: 7, cooldown: 150_000, energy: 1, frog: true },
+  { id: "leap", choice: { kind: "move", style: "fly" }, weight: 4, cooldown: 180_000, energy: 2, frog: true },
+  { ...clip("blinkOne", 5, 10_000, 0, true), frog: true },
+  { ...clip("tongue", 3, 40_000, 1), frog: true },
+  { ...clip("smugNod", 1.5, 90_000, 0, true), frog: true },
+  { ...clip("croak", 1, 120_000, 1), frog: true },
 ];
 
 export interface SchedulerMemory {
@@ -112,6 +122,8 @@ export interface SchedulerOptions {
   dog?: boolean;
   /** The character is a cat (Grump): its own actions join the pool. */
   cat?: boolean;
+  /** The character is a frog (Frog): its own actions join the pool. */
+  frog?: boolean;
   random: () => number;
 }
 
@@ -138,6 +150,7 @@ export function idleWeights(memory: SchedulerMemory, now: number, options: Sched
       (action.lively && options.liveliness === "calm") ||
       (action.dog && !options.dog) ||
       (action.cat && !options.cat) ||
+      (action.frog && !options.frog) ||
       (action.choice.kind === "move" && !options.canMove);
     return { action, weight: blocked ? 0 : weight };
   });

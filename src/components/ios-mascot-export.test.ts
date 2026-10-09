@@ -14,6 +14,11 @@
 //   the sixteen faces, the rig's pivots and the walk cycle's keyframes
 //   (shiba-moves.ts). The fixture also carries Shiba's palette for each skin
 //   on a few colors, which ShibaArt.swift must match.
+// - ios/Sources/CompanionCore/FrogStillArt.swift: Frog's parts as draw
+//   operations with paint roles (frog-art.ts) for each of the sixteen faces,
+//   the parts its moves add (throat sac, tongue, fly, legs, pad), the pivots
+//   and the hop and throat puff keyframes (frog-moves.ts). The fixture carries
+//   Frog's palette for each skin on a few colors, which FrogArt.swift must match.
 //
 // - ios/Sources/CompanionCore/OgreStillArt.swift: Ogre's still drawing (the
 //   approved head and shoulders, `ogreParts` in ogre-art.ts) as draw
@@ -28,9 +33,11 @@ import { describe, expect, it } from "vitest";
 import {
   BUNBU_SKINS,
   GRUMP_SKINS,
+  FROG_SKINS,
   LEGACY_BUNBU_SKINS,
   LEGACY_GRUMP_SKINS,
   LEGACY_OGRE_SKINS,
+  LEGACY_FROG_SKINS,
   LEGACY_SHAPE_SKINS,
   LEGACY_SHAPES,
   LEGACY_SHIBA_SKINS,
@@ -56,12 +63,16 @@ import { grumpFlatPalette } from "./skin-fx/grump-skins";
 import { GRUMP_SKINS as GRUMP_SKIN_IDS } from "../../shared/mascot-look";
 import { OGRE_EXPRESSIONS, ogreOutline, ogrePalette, ogreParts, type OgreOp, type OgreParts } from "./ogre-art";
 import { ogreSkinPaint } from "./skin-fx/ogre-skins";
+import { FROG_BUST, FROG_BUST_MAX, FROG_EXPRESSIONS, FROG_MOUTHS, FROG_PIVOTS, FROG_ROLES, frogFlyOps, frogHaunchOps, frogLegOps, frogMouthOps, frogOutline, frogPadOps, frogParts, frogThroatOps, frogTongueOps, type FrogOp } from "./frog-art";
+import { FLY_AT, FROG_TRACKS, frogMoveAt, THROAT_TOP, type FrogMove } from "./frog-moves";
+import { frogSkinPaint } from "./skin-fx/frog-skins";
 
 const ROOT = join(__dirname, "..", "..");
 const FIXTURE = join(ROOT, "ios/Tests/CompanionCoreTests/Fixtures/mascot-looks.json");
 const SWIFT_ART = join(ROOT, "ios/Sources/CompanionCore/ShapeStillArt.swift");
 const SWIFT_SHIBA = join(ROOT, "ios/Sources/CompanionCore/ShibaStillArt.swift");
 const OGRE_ART_SWIFT = join(ROOT, "ios/Sources/CompanionCore/OgreStillArt.swift");
+const SWIFT_FROG = join(ROOT, "ios/Sources/CompanionCore/FrogStillArt.swift");
 const UPDATE = process.env.UPDATE_IOS_MASCOT === "1";
 
 type Case = { name: string; input: unknown; expected: unknown };
@@ -91,9 +102,10 @@ function lookCases(): Case[] {
   for (const skin of SHIBA_SKINS) add(`shiba ${skin}`, { character: "shiba", skins: { shiba: skin } });
   for (const skin of GRUMP_SKINS) add(`grump ${skin}`, { character: "grump", skins: { grump: skin } });
   for (const skin of OGRE_SKINS) add(`ogre ${skin}`, { character: "ogre", skins: { ogre: skin } });
+  for (const skin of FROG_SKINS) add(`frog ${skin}`, { character: "frog", skins: { frog: skin } });
   // the desktop editor saves every choice made (completeMascotLook), every character's skin at once
   for (const character of MASCOT_CHARACTERS) {
-    add(`editor ${character}`, completeMascotLook({ character, shape: "cloud", skins: { shape: "galaxy", trombi: "holo", bunbu: "velvet", shiba: "sesame", grump: "calico", ogre: "lava" } }));
+    add(`editor ${character}`, completeMascotLook({ character, shape: "cloud", skins: { shape: "galaxy", trombi: "holo", bunbu: "velvet", shiba: "sesame", grump: "calico", ogre: "lava", frog: "poison" } }));
     add(`editor default ${character}`, completeMascotLook({ character }));
   }
   for (const [legacy] of Object.entries(LEGACY_SHAPES)) add(`legacy shape ${legacy}`, { character: "shape", shape: legacy });
@@ -103,12 +115,14 @@ function lookCases(): Case[] {
   for (const [legacy] of Object.entries(LEGACY_SHIBA_SKINS)) add(`legacy shiba skin ${legacy}`, { character: "shiba", skins: { shiba: legacy } });
   for (const [legacy] of Object.entries(LEGACY_GRUMP_SKINS)) add(`legacy grump skin ${legacy}`, { character: "grump", skins: { grump: legacy } });
   for (const [legacy] of Object.entries(LEGACY_OGRE_SKINS)) add(`legacy ogre skin ${legacy}`, { character: "ogre", skins: { ogre: legacy } });
+  for (const [legacy] of Object.entries(LEGACY_FROG_SKINS)) add(`legacy frog skin ${legacy}`, { character: "frog", skins: { frog: legacy } });
   // a newer build's skin is dropped, never the character
   add("unknown shape skin", { character: "shape", shape: "pill", skins: { shape: "plasma" } });
   add("unknown bunbu skin", { character: "bunbu", skins: { bunbu: "plasma", shape: "gold" } });
   add("unknown shiba skin", { character: "shiba", skins: { shiba: "plasma", bunbu: "gold" } });
   add("unknown grump skin", { character: "grump", skins: { grump: "plasma", shiba: "gold" } });
   add("unknown ogre skin", { character: "ogre", skins: { ogre: "plasma", shiba: "red" } });
+  add("unknown frog skin", { character: "frog", skins: { frog: "plasma", shiba: "red" } });
   add("unknown skins key", { character: "trombi", skins: { trombi: "gold", dragon: "red" } });
   add("null skins", { character: "bunbu", skins: null });
   add("null skin value", { character: "shape", shape: "drop", skins: { shape: null } });
@@ -135,12 +149,14 @@ function fixture() {
     shibaSkins: SHIBA_SKINS,
     grumpSkins: GRUMP_SKINS,
     ogreSkins: OGRE_SKINS,
+    frogSkins: FROG_SKINS,
     owlSkins: MASCOT_SKIN_IDS,
     colorGroups: Object.fromEntries(MASCOT_COLOR_GROUPS.map((group) => [group, Object.keys(MASCOT_COLOR_PALETTES[group])])),
     colors: MASCOT_COLOR_HEX,
     looks: lookCases(),
     owlSkinCases: owlSkins,
     shibaPalettes: shibaPalettes(),
+    frogPalettes: frogPalettes(),
   };
 }
 
@@ -242,6 +258,93 @@ function shibaSwift(): string {
     lines.push(`        ShibaWalkFrame(legs: [${legs}], y: ${num(pose.y)}, sy: ${num(pose.sy)}, headY: ${num(pose.headY)}, headRot: ${num(pose.headRot)}, earL: ${num(pose.earL)}, earR: ${num(pose.earR)}, tail: ${num(pose.tail)}),`);
   }
   lines.push("    ]", `    /// The art's own box, for reference: the head path.`, `    public static let headPath = ${str(SHIBA_ART.head)}`, "}", "");
+  return lines.join("\n");
+}
+
+/* ---------------------------------------------------------------- Frog */
+
+/** Frog's palette for every skin on a few colors (a gradient or a pattern as `gradient`), which FrogArt.paint must match. */
+function frogPalettes() {
+  const colors = ["green", "blue", "white", "butter", "black", "orange"] as const;
+  return FROG_SKINS.flatMap((skin) =>
+    colors.map((color) => {
+      const palette = frogSkinPaint(skin, MASCOT_COLOR_HEX[color], "u").palette;
+      return { skin, color, palette: Object.fromEntries(FROG_ROLES.map((role) => [role, palette[role].startsWith("url(") ? "gradient" : palette[role].toUpperCase()])) };
+    }),
+  );
+}
+
+/** Frog's ops drawn at two sizes as Swift, each stroke `width + perOutline * outline` (the Shiba's rule). */
+function frogOps(a: readonly FrogOp[], b: readonly FrogOp[], indent: string, hideInBust?: (op: FrogOp) => boolean): string {
+  expect(a.length).toBe(b.length);
+  const [owA, owB] = [frogOutline(SHIBA_A), frogOutline(SHIBA_B)];
+  const items = a.map((op, i) => {
+    const other = b[i];
+    expect(other.d).toBe(op.d);
+    const wa = op.width ?? 0;
+    const wb = other.width ?? 0;
+    const per = owA === owB ? 0 : (wa - wb) / (owA - owB);
+    const base = wa - per * owA;
+    const fields = [
+      `d: ${str(op.d)}`,
+      op.fill ? `fill: .${op.fill}` : null,
+      op.stroke ? `stroke: .${op.stroke}` : null,
+      op.stroke ? `width: ${num(base)}, perOutline: ${num(per)}` : null,
+      op.opacity !== undefined ? `opacity: ${num(op.opacity)}` : null,
+      op.clip ? `clip: ${str(op.clip)}` : null,
+      op.round ? "round: true" : null,
+      hideInBust?.(op) ? "bust: false" : null,
+    ].filter(Boolean);
+    return `${indent}FrogOp(${fields.join(", ")}),`;
+  });
+  return items.length ? `[\n${items.join("\n")}\n${indent.slice(4)}]` : "[]";
+}
+
+/** A track sampled at `count` evenly spaced times, as Swift keyframes. */
+function frogFrames(move: FrogMove, count: number): string[] {
+  const { duration } = FROG_TRACKS[move];
+  return Array.from({ length: count }, (_, i) => {
+    const p = frogMoveAt(move, (i / count) * duration, true);
+    return `        FrogFrame(y: ${num(p.y)}, rot: ${num(p.rot)}, sx: ${num(p.sx)}, sy: ${num(p.sy)}, headY: ${num(p.headY)}, headRot: ${num(p.headRot)}, legs: ${num(p.legs)}, puff: ${num(p.puff)}, blinkL: ${num(p.blinkL)}, blinkR: ${num(p.blinkR)}),`;
+  });
+}
+
+function frogSwift(): string {
+  const lines: string[] = [
+    "// GENERATED by src/components/ios-mascot-export.test.ts from the desktop's",
+    "// Frog (src/components/frog-art.ts, frog-moves.ts): its parts as draw",
+    "// operations with paint roles for each face, the parts its moves add, the",
+    "// pivots and the hop and throat puff keyframes. Box 0..100. Do not edit;",
+    "// regenerate with `UPDATE_IOS_MASCOT=1 pnpm vitest run src/components/ios-mascot-export.test.ts`.",
+    "import CoreGraphics",
+    "",
+    "public enum FrogStillArt {",
+  ];
+  const at = (size: number, expression: (typeof FROG_EXPRESSIONS)[number] = "neutral") => frogParts({ expression, size });
+  const two = (fn: (ow: number) => FrogOp[]) => frogOps(fn(frogOutline(SHIBA_A)), fn(frogOutline(SHIBA_B)), "        ");
+  const z = (op: FrogOp) => op.d.startsWith("M82 12");
+  for (const key of ["body", "handL", "handR", "head"] as const) lines.push(`    public static let ${key}: [FrogOp] = ${frogOps(at(SHIBA_A)[key], at(SHIBA_B)[key], "        ")}`);
+  for (const key of ["eyeL", "eyeR", "mouth", "extras"] as const) {
+    lines.push(`    public static let ${key}: [FrogExpression: [FrogOp]] = [`);
+    for (const expression of FROG_EXPRESSIONS) lines.push(`        .${expression}: ${frogOps(at(SHIBA_A, expression)[key], at(SHIBA_B, expression)[key], "            ", z)},`);
+    lines.push("    ]");
+  }
+  lines.push("    /// A move's own lips over the face's (the croak, the open mouth).", "    public static let mouths: [String: [FrogOp]] = [");
+  for (const mouth of FROG_MOUTHS) lines.push(`        ${str(mouth)}: ${frogOps(frogMouthOps(mouth, frogOutline(SHIBA_A)), frogMouthOps(mouth, frogOutline(SHIBA_B)), "            ")},`);
+  lines.push("    ]");
+  lines.push(`    /// The throat sac full; a puff scales it about its top.`, `    public static let throat: [FrogOp] = ${two((ow) => frogThroatOps(1, ow))}`);
+  lines.push(`    /// The hind legs stretched out (a hop scales them from the hips), shins behind the body, haunches over it.`);
+  lines.push(`    public static let legs: [FrogOp] = ${two((ow) => [...frogLegOps(-1, 1, ow), ...frogLegOps(1, 1, ow)])}`);
+  lines.push(`    public static let haunches: [FrogOp] = ${two((ow) => [...frogHaunchOps(-1, 1, ow), ...frogHaunchOps(1, 1, ow)])}`);
+  lines.push(`    public static let tongue: [FrogOp] = ${two((ow) => frogTongueOps(FLY_AT, 1, ow))}`);
+  lines.push(`    public static let fly: [FrogOp] = ${two((ow) => frogFlyOps(FLY_AT, 0.4, ow))}`);
+  lines.push(`    public static let pad: [FrogOp] = ${two((ow) => frogPadOps(ow))}`);
+  lines.push("    /// Where each part turns.", "    public static let pivots: [String: CGPoint] = [");
+  for (const [name, [x, y]] of Object.entries(FROG_PIVOTS)) lines.push(`        ${str(name)}: CGPoint(x: ${x}, y: ${y}),`);
+  lines.push(`        "throatTop": CGPoint(x: ${THROAT_TOP[0]}, y: ${THROAT_TOP[1]}),`, `        "fly": CGPoint(x: ${FLY_AT[0]}, y: ${FLY_AT[1]}),`);
+  lines.push("    ]", `    /// The bust an avatar of ${FROG_BUST_MAX} pt or less shows.`, `    public static let bust = CGRect(x: ${FROG_BUST.x}, y: ${FROG_BUST.y}, width: ${FROG_BUST.w}, height: ${FROG_BUST.h})`, `    public static let bustMax: CGFloat = ${FROG_BUST_MAX}`);
+  lines.push(`    /// The hop (s) and its keyframes, 24 of them: the jump arc with its squashes.`, `    public static let hopCycle: Double = ${FROG_TRACKS.hop.duration}`, "    public static let hop: [FrogFrame] = [", ...frogFrames("hop", 24), "    ]");
+  lines.push(`    /// The throat puff while thinking (s) and its keyframes.`, `    public static let puffCycle: Double = ${FROG_TRACKS.puff.duration}`, "    public static let puff: [FrogFrame] = [", ...frogFrames("puff", 24), "    ]", "}", "");
   return lines.join("\n");
 }
 
@@ -499,6 +602,10 @@ describe("the phone's copy of the mascot looks", () => {
 
   it("carries Ogre's still drawing, its faces and its skins' colors", () => {
     check(OGRE_ART_SWIFT, swiftOgre());
+  });
+
+  it("carries Frog's parts, faces, move parts, pivots and keyframes as the desktop draws them", () => {
+    check(SWIFT_FROG, frogSwift());
   });
 
   it("covers every known character, shape and skin", () => {

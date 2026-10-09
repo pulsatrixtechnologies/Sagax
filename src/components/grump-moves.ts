@@ -827,6 +827,15 @@ export const GRUMP_CLIP_MOVES: Readonly<Record<string, GrumpMove>> = {
   turnCircles: "curl",
   excited: "pounce",
   sit: "sitUp",
+  // the frog's clips (Frog's), should a cat ever be asked for one
+  croak: "hiss",
+  tongue: "groom",
+  smugNod: "nod",
+  legStretch: "stretch",
+  shiver: "shake",
+  sideEye: "look",
+  blinkOne: "slowBlink",
+  longJump: "pounce",
   // the cat's own clips
   groom: "groom",
   knead: "knead",

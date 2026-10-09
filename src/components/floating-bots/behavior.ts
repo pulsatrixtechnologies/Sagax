@@ -95,6 +95,8 @@ export interface MascotOptions {
   dog?: boolean;
   /** The character is a cat (Grump): every few minutes it stalks low to a spot within its room and loafs there; it grooms, kneads, flicks its tail. */
   cat?: boolean;
+  /** The character is a frog (Frog): it hops about, leaps to a random spot, catches flies and croaks. */
+  frog?: boolean;
 }
 
 export type MascotInput =
@@ -290,6 +292,7 @@ function idleAction(state: MascotState, now: number, options: MascotOptions): St
     depth: options.depth,
     dog: options.dog,
     cat: options.cat,
+    frog: options.frog,
     random: options.random,
   });
   const gap = idleGapMs({ liveliness: liveliness(options), mood: moodOf(options), reduced: options.reduced, random: options.random });

@@ -132,6 +132,15 @@ export const OWL_CLIP_FOR: Record<ClipName, OwlClip> = {
   slowBlink: "blink",
   sitUp: "land",
   loaf: "idle",
+  // a frog's own clips (Frog), should the owl ever play one
+  croak: "ruffle",
+  tongue: "peck",
+  smugNod: "tilt",
+  legStretch: "wake",
+  shiver: "ruffle",
+  sideEye: "lookRight",
+  blinkOne: "blink",
+  longJump: "hop",
 };
 
 /** Activities whose clip loops until the activity changes; the others play once and hold. */

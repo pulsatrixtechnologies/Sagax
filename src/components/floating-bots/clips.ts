@@ -141,6 +141,15 @@ export const CLIP_MS = {
   slowBlink: 1800,
   sitUp: 700,
   loaf: 24000,
+  // a frog's own (Frog, frog-moves.ts FROG_TRACKS); the other characters keep their idle life through them
+  croak: 1500,
+  tongue: 1300,
+  smugNod: 1800,
+  legStretch: 1900,
+  shiver: 1400,
+  sideEye: 2400,
+  blinkOne: 1100,
+  longJump: 1400,
 } as const;
 
 export type TimedClip = keyof typeof CLIP_MS;

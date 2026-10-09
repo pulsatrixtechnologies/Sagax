@@ -33,7 +33,7 @@ import {
   APP_SKINS,
   appTheme,
 } from "./floating-bot-window.mjs";
-import { BUNBU_SKINS, GRUMP_SKINS, LEGACY_BUNBU_SKINS, LEGACY_GRUMP_SKINS, LEGACY_OGRE_SKINS, LEGACY_SHAPE_SKINS, LEGACY_SHIBA_SKINS, LEGACY_TROMBI_SKINS, OGRE_SKINS, SHAPE_SKINS, SHIBA_SKINS, TROMBI_SKINS } from "../shared/mascot-look.ts";
+import { BUNBU_SKINS, FROG_SKINS, GRUMP_SKINS, LEGACY_BUNBU_SKINS, LEGACY_FROG_SKINS, LEGACY_GRUMP_SKINS, LEGACY_OGRE_SKINS, LEGACY_SHAPE_SKINS, LEGACY_SHIBA_SKINS, LEGACY_TROMBI_SKINS, OGRE_SKINS, SHAPE_SKINS, SHIBA_SKINS, TROMBI_SKINS } from "../shared/mascot-look.ts";
 import { displaySignature } from "./retro-assistant-window.mjs";
 import { SKIN_IDS } from "../src/lib/skins.ts";
 
@@ -958,6 +958,12 @@ describe("the desktop window's mascot look", () => {
     for (const skin of OGRE_SKINS) expect(mascotLook({ character: "ogre", skins: { ogre: skin } })).toEqual({ character: "ogre", skins: { ogre: skin } });
     for (const [old, current] of Object.entries(LEGACY_OGRE_SKINS)) expect(mascotLook({ character: "ogre", skins: { ogre: old } }).skins.ogre).toBe(current);
     expect(mascotLook({ character: "ogre", skins: { ogre: "junk", shiba: "red" } })).toEqual({ character: "ogre", skins: { shiba: "red" } });
+  });
+
+  it("knows Frog and its thirteen skins, legacy names included, as the app does", () => {
+    for (const skin of FROG_SKINS) expect(mascotLook({ character: "frog", skins: { frog: skin } })).toEqual({ character: "frog", skins: { frog: skin } });
+    for (const [old, current] of Object.entries(LEGACY_FROG_SKINS)) expect(mascotLook({ character: "frog", skins: { frog: old } }).skins.frog).toBe(current);
+    expect(mascotLook({ character: "frog", skins: { frog: "junk", shiba: "red" } })).toEqual({ character: "frog", skins: { shiba: "red" } });
   });
 });
 

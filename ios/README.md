@@ -113,7 +113,7 @@ ios/
     Session.swift                connection, lifecycle, actions
     Discovery.swift              NWBrowser for _openmausbot._tcp
     Keychain.swift               the device token
-    Mascots/                     the Sagax characters (owl, shapes, Trombi, Bunbu, Shiba, Grump, Ogre), the picture crop,
+    Mascots/                     the Sagax characters (owl, shapes, Trombi, Bunbu, Shiba, Grump, Ogre, Frog), the picture crop,
                                  group faces, and a DEBUG gallery (-mascotGallery owl|shape|trombi|group)
     PairingView.swift            QR handoff, discovery, address and code fallback
     Onboarding/                  welcome (three ways in), organization sign-in, shared page chrome
@@ -232,7 +232,7 @@ the host computer remain unreachable through the companion.
   is a phone that disagrees with the laptop.
 - **Every desktop look decodes, and a known character is drawn as itself.**
   `MascotLook` reads a stored look exactly as `botMascotLook` does: owl,
-  shape, Trombi, Bunbu and Shiba, every skin id of `shared/mascot-look.ts` and
+  shape, Trombi, Bunbu, Shiba and Frog, every skin id of `shared/mascot-look.ts` and
   `shared/mascot-skins.ts` with the legacy ids, and a `skins` key of another
   character is dropped, never the look (the desktop's editor saves every
   character's skin). Only an unknown character, an unknown top-level key or a malformed
@@ -245,7 +245,10 @@ the host computer remain unreachable through the companion.
   shiba-moves.ts) with `ShibaArt` palettes the fixture checks; Ogre is
   `OgreMascotView`, the desktop's own draw operations (`OgreStillArt.swift`,
   generated from `ogre-art.ts` by the same test) painted by `OgreArt` (the
-  palette ported, checked against the desktop's for every bot colour); every colour of `shared/mascot-colors.ts`
+  palette ported, checked against the desktop's for every bot colour); Frog is
+  `FrogMascotView`, drawn from `FrogStillArt.swift` (generated the same way
+  from frog-art.ts and frog-moves.ts) with `FrogArt` palettes the fixture
+  checks; every colour of `shared/mascot-colors.ts`
   (Clay palette included) has its value. Where a premium skin's extra layers
   are not on the phone, its base finish shows and `MascotSubstitution` logs
   it once (category `mascot`). After a desktop change to the looks, run
