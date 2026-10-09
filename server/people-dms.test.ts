@@ -9,12 +9,16 @@ import { json, readBody } from "./harness/http.ts";
 import {
   findPeopleDm,
   isPeopleDmParticipant,
+  migratePeopleDmToThreads,
   otherPerson,
+  PEOPLE_DM_GENERAL_TITLE,
   peopleDmCandidate,
   peopleDmForViewer,
   peopleDmPatchRefusal,
+  peopleDmThreadUnreadPatch,
   peopleDmUnreadPatch,
   peopleDmRouteRefusal,
+  PeopleDmSelections,
 } from "./people-dms.ts";
 import type { RequestAuth } from "./request-auth.ts";
 import { createPeopleDmRoutes } from "./routes/people-dms.ts";
@@ -58,7 +62,7 @@ describe("people dm rules", () => {
     expect(otherPerson(dm, "pr_alice")).toBe("pr_bob");
   });
 
-  it("only marks read or the home pin, only takes messages", () => {
+  it("only marks read or the home pin, takes messages and threads like a bot's", () => {
     expect(peopleDmPatchRefusal({ unread: false })).toBeNull();
     expect(peopleDmPatchRefusal({ unread: true })).toBeNull();
     expect(peopleDmPatchRefusal({ pinned: false })).toBeNull();
@@ -70,9 +74,23 @@ describe("people dm rules", () => {
     expect(peopleDmRouteRefusal("POST", "/api/groups/g1/read")).toBeNull();
     expect(peopleDmRouteRefusal("POST", "/api/threads/t1/read")).toBeNull();
     expect(peopleDmRouteRefusal("GET", "/api/threads/t1/read")).toBeNull();
-    expect(peopleDmRouteRefusal("POST", "/api/groups/g1/tasks")).not.toBeNull();
+    // threads: create, switch, rename/pin/archive/snooze/move, delete
+    expect(peopleDmRouteRefusal("POST", "/api/groups/g1/tasks")).toBeNull();
+    expect(peopleDmRouteRefusal("POST", "/api/groups/g1/tasks/t2")).toBeNull();
+    expect(peopleDmRouteRefusal("PATCH", "/api/groups/g1/tasks/t2")).toBeNull();
+    expect(peopleDmRouteRefusal("DELETE", "/api/groups/g1/tasks/t2")).toBeNull();
+    // folders: create, edit, order, delete
+    expect(peopleDmRouteRefusal("POST", "/api/groups/g1/projects")).toBeNull();
+    expect(peopleDmRouteRefusal("PATCH", "/api/groups/g1/projects/f1")).toBeNull();
+    expect(peopleDmRouteRefusal("PATCH", "/api/groups/g1/projects/order")).toBeNull();
+    expect(peopleDmRouteRefusal("DELETE", "/api/groups/g1/projects/f1")).toBeNull();
+    // never a generated title (the pair's words would reach a model), never
+    // the conversation itself, its memory, members, queue or a turn
+    expect(peopleDmRouteRefusal("POST", "/api/groups/g1/tasks/t2/title")).not.toBeNull();
     expect(peopleDmRouteRefusal("DELETE", "/api/groups/g1")).not.toBeNull();
     expect(peopleDmRouteRefusal("PUT", "/api/groups/g1/memory")).not.toBeNull();
+    expect(peopleDmRouteRefusal("POST", "/api/groups/g1/interrupt")).not.toBeNull();
+    expect(peopleDmRouteRefusal("DELETE", "/api/groups/g1/queue/q1")).not.toBeNull();
   });
 
   it("offers active people only, never a service account or oneself", () => {
@@ -80,6 +98,77 @@ describe("people dm rules", () => {
     expect(peopleDmCandidate({ principalId: "pr_bob", service: true }, "pr_alice")).toBe(false);
     expect(peopleDmCandidate({ principalId: "pr_bob", disabled: true }, "pr_alice")).toBe(false);
     expect(peopleDmCandidate({ principalId: "PR_ALICE" }, "pr_alice")).toBe(false);
+  });
+});
+
+describe("people dm threads", () => {
+  it("unread is per person and per thread; the conversation's flag stays while any thread is unread", () => {
+    const group = { unreadFor: [] as string[], tasks: [{ threadId: "general" }, { threadId: "t2" }] };
+    // bob writes in t2: unread for alice on t2, and on the conversation
+    const sent = peopleDmThreadUnreadPatch(group, "pr_alice", true, "t2");
+    expect(sent.unreadFor).toEqual(["pr_alice"]);
+    expect(sent.tasks).toEqual([{ threadId: "general" }, { threadId: "t2", unreadFor: ["pr_alice"] }]);
+    const both = peopleDmThreadUnreadPatch(sent, "pr_alice", true, "general");
+    // alice reads general only: t2 keeps its dot and the conversation stays unread
+    const readGeneral = peopleDmThreadUnreadPatch(both, "pr_alice", false, "general");
+    expect(readGeneral.unreadFor).toEqual(["pr_alice"]);
+    expect(readGeneral.tasks.find((task) => task.threadId === "general")).toEqual({ threadId: "general" });
+    // bob reading clears nothing of alice's
+    expect(peopleDmThreadUnreadPatch(readGeneral, "pr_bob", false, "t2").unreadFor).toEqual(["pr_alice"]);
+    // a client from before threads reads the conversation: every thread
+    const all = peopleDmThreadUnreadPatch(readGeneral, "pr_alice", false);
+    expect(all).toEqual({ unread: false, unreadFor: [], tasks: [{ threadId: "general" }, { threadId: "t2" }] });
+    // a conversation marked unread (no thread of its own) is read by reading any thread
+    expect(peopleDmThreadUnreadPatch({ unreadFor: ["pr_alice"], tasks: [{ threadId: "general" }] }, "pr_alice", false, "general").unreadFor).toEqual([]);
+  });
+
+  it("a viewer sees their own unread per thread and their own open thread, never the other's state", () => {
+    const group = {
+      id: "g1", peopleDm: true, threadId: "general", unread: true, unreadFor: ["pr_alice"],
+      tasks: [{ threadId: "general", title: "General" }, { threadId: "t2", title: "Budget", unreadFor: ["pr_alice"] }],
+    };
+    const alice = peopleDmForViewer(group, "PR_ALICE", "t2");
+    expect(alice).toEqual({
+      id: "g1", peopleDm: true, threadId: "t2", unread: true,
+      tasks: [{ threadId: "general", title: "General", unread: false }, { threadId: "t2", title: "Budget", unread: true }],
+    });
+    const bob = peopleDmForViewer(group, "pr_bob");
+    expect(bob.threadId).toBe("general");
+    expect(bob.unread).toBe(false);
+    expect(bob.tasks?.[1]).toEqual({ threadId: "t2", title: "Budget", unread: false });
+    expect(JSON.stringify(bob)).not.toContain("unreadFor");
+    // a selection that is not one of its threads opens the default one
+    expect(peopleDmForViewer(group, "pr_alice", "gone").threadId).toBe("general");
+  });
+
+  it("keeps each person's open thread apart and forgets a deleted one", () => {
+    const selections = new PeopleDmSelections();
+    selections.set("g1", "PR_ALICE", "t2");
+    selections.set("g1", "pr_bob", "t3");
+    expect(selections.get("g1", "pr_alice")).toBe("t2");
+    expect(selections.get("g1", "pr_bob")).toBe("t3");
+    expect(selections.get("g2", "pr_alice")).toBeUndefined();
+    expect(selections.get("g1", undefined)).toBeUndefined();
+    selections.forgetThread("t2");
+    expect(selections.get("g1", "pr_alice")).toBeUndefined();
+    expect(selections.get("g1", "pr_bob")).toBe("t3");
+  });
+
+  it("migrates a conversation once: what it was becomes its General thread, nothing moves", () => {
+    // a conversation stored by 0.4.16: one task, the default thread
+    const legacy = { peopleDm: true as const, threadId: "conv", createdAt: 5, tasks: [{ threadId: "conv", title: "New task", createdAt: 5, updatedAt: 9 }] } as Parameters<typeof migratePeopleDmToThreads>[0];
+    expect(migratePeopleDmToThreads(legacy)).toBe(true);
+    expect(legacy).toMatchObject({ threadId: "conv", personThreads: 1, tasks: [{ threadId: "conv", title: PEOPLE_DM_GENERAL_TITLE, general: true, createdAt: 5, updatedAt: 9 }] });
+    // idempotent, and a renamed General is never renamed back
+    legacy.tasks![0]!.title = "Lunch";
+    expect(migratePeopleDmToThreads(legacy)).toBe(false);
+    expect(legacy.tasks![0]!.title).toBe("Lunch");
+    // a record from before tasks existed at all
+    const older = { peopleDm: true as const, threadId: "conv2", createdAt: 7 } as Parameters<typeof migratePeopleDmToThreads>[0];
+    expect(migratePeopleDmToThreads(older)).toBe(true);
+    expect(older.tasks).toEqual([{ threadId: "conv2", title: "General", createdAt: 7, updatedAt: 7, general: true }]);
+    // a room is not a person conversation
+    expect(migratePeopleDmToThreads({ threadId: "r", createdAt: 1, tasks: [] })).toBe(false);
   });
 });
 

@@ -2077,8 +2077,8 @@ const desktopAttention = createDesktopAttention({
   app,
   Notification,
   getWindow: () => mainWindow,
-  onClick: (id) => {
-    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send("desktop:notification-click", id);
+  onClick: (id, target) => {
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send("desktop:notification-click", id, target);
   },
 });
 

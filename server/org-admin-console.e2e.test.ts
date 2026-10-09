@@ -212,8 +212,15 @@ posixOnly("Perspicax console: the Sagax admin routes", () => {
     expect(caps.status, caps.text).toBe(200);
     expect(caps.headers.get("x-sagax-admin-api")).toBe("1");
     const pkg = JSON.parse(readFileSync(join(SERVER_DIR, "..", "package.json"), "utf8")) as { forkVersion: string };
-    expect(caps.body).toMatchObject({ version: pkg.forkVersion, api: 3, permissionsVersion: 1 });
+    expect(caps.body).toMatchObject({ version: pkg.forkVersion, api: 4, permissionsVersion: 1 });
     expect(caps.body.permissions.length).toBeGreaterThan(20);
+    // api 4: every engine with its Cloud or Local group and how people get access
+    expect(caps.body.engines.length).toBeGreaterThan(0);
+    for (const engine of caps.body.engines) {
+      expect(engine).toMatchObject({ id: expect.any(String), name: expect.any(String), installed: expect.any(Boolean) });
+      expect(["cloud", "local"]).toContain(engine.kind);
+      expect(["oauth", "apiKey", "none"]).toContain(engine.auth);
+    }
     expect(caps.body.routes).toEqual(expect.arrayContaining(["GET capabilities", "GET overview", "GET bots", "GET usage", "GET audit"]));
 
     expect((await admin("GET", "overview", ZOE)).body.code).toBe("forbidden_role");
@@ -501,6 +508,14 @@ posixOnly("Perspicax console: the Sagax admin routes", () => {
       org: { allowFullAccess: false },
       policies: { allowedEngines: ["claude", "hold"], allowedMarketplaces: ["acme/plugins"], defaults: { approvalMode: "ask" } },
     });
+    // 2026-10-09: the list reaches the app's config, a bot on an engine left
+    // off moves to Auto on an allowed one, and Sagax refuses a model there
+    expect((await api("GET", "/api/config", alice)).body.allowedEngines).toEqual(["claude", "hold"]);
+    const listed = (await api("GET", "/api/bots", alice)).body.bots as Array<any>;
+    expect(listed.find((bot) => bot.id === bots.brittle!.id)?.modelSelection).toMatchObject({ instanceId: expect.stringMatching(/^(claude|hold)$/), auto: true });
+    expect(listed.find((bot) => bot.id === bots.atlas!.id)?.modelSelection).toMatchObject({ instanceId: "claude", model: "fake-model" });
+    const refused = await api("PATCH", `/api/bots/${bots.atlas!.id}/tasks/${bots.atlas!.threadId}`, alice, { modelSelection: { instanceId: "broken", model: "fake-model" }, updateBotDefault: true });
+    expect(refused.status, refused.text).toBe(403);
     // the engine policy holds for the console's model change
     expect((await admin("POST", `bots/${bots.atlas!.id}/model`, ALICE, { engineInstanceId: "broken", model: null })).body.code).toBe("engine_not_allowed");
     expect((await admin("POST", "settings", ALICE, { allowedEngines: ["ghost"] })).body.code).toBe("engine_not_installed");

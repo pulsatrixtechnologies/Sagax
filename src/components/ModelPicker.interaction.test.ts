@@ -24,6 +24,8 @@ const fixture = vi.hoisted(() => {
     org: null as unknown,
     myEngines: null as unknown,
     bots: [] as unknown[],
+    // state.config: an organization server's allowed model providers ride on it
+    config: null as unknown,
   };
 });
 vi.mock("@/lib/perspicax-org", async (importOriginal) => ({
@@ -49,7 +51,7 @@ vi.mock("./MenuMotion", () => ({ useMenuMotion: (open: boolean) => ({ shown: ope
 vi.mock("@/state/store", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/state/store")>()),
   useStore: () => ({
-    state: { instances: fixture.instances, bots: fixture.bots, modelVariantSessions: {} },
+    state: { instances: fixture.instances, bots: fixture.bots, modelVariantSessions: {}, config: fixture.config },
     dispatch: fixture.dispatch,
     refreshInstances: fixture.refreshInstances,
     refreshModels: fixture.refreshModels,
@@ -59,7 +61,8 @@ vi.mock("@/state/store", async (importOriginal) => ({
 // These cases cover the full picker; Simple mode has its own file.
 vi.mock("@/lib/interface-mode", () => ({ useAdvancedMode: () => true, setAdvancedMode: () => {} }));
 
-const { LOCAL_PROBE_TIMEOUT_MS, ModelEngineRail, ModelPicker, offersLocalModels, probeLocalModels } = await import("./ModelPicker");
+const { FollowBotModelRow, ModelEngineRail, ModelPicker } = await import("./ModelPicker");
+const { ModelDropdown } = await import("./ModelDropdown");
 
 afterAll(() => vi.unstubAllGlobals());
 
@@ -126,14 +129,23 @@ function open(forBot: Bot, options?: { contained?: boolean; threadId?: string; l
   return render(forBot, options);
 }
 
+/** Open the picker, then its model dropdown. */
+function openMenu(forBot: Bot, options?: { contained?: boolean; threadId?: string; label?: string }) {
+  const dropdown = open(forBot, options).nodes.find((node) => node.type === ModelDropdown);
+  expect(dropdown, "the model dropdown").toBeTruthy();
+  (dropdown!.props.onOpenChange as (open: boolean) => void)(true);
+  return render(forBot, options);
+}
+
+/** A model row of the dropdown, by model id. */
+const row = (rendered: ReturnType<typeof render>, id: string) => rendered.nodes.find((node) => node.props["id"] === id && typeof node.props.onPick === "function")!;
+
 function rail(rendered: ReturnType<typeof render>) {
   return rendered.nodes.find((node) => node.type === ModelEngineRail) as ReactElement<{ instances: InstanceInfo[]; onSelect: (instance: InstanceInfo) => void }> | undefined;
 }
 
 /** The open menu only; the trigger always names the saved model. */
 const menu = (html: string) => html.slice(html.indexOf("data-model-picker-content"));
-
-const flush = async () => { for (let index = 0; index < 20; index++) await Promise.resolve(); };
 
 beforeEach(() => {
   fixture.values = [];
@@ -145,6 +157,7 @@ beforeEach(() => {
   fixture.org = null;
   fixture.myEngines = null;
   fixture.bots = [];
+  fixture.config = null;
 });
 afterEach(() => vi.useRealTimers());
 
@@ -244,78 +257,30 @@ describe("the way into API keys", () => {
   });
 });
 
-describe("the way into local models", () => {
-  it.each([["signed in", signedIn], ["signed out", signedOut]])("shows for a %s Claude with no local models found yet, and re-probes when opened", async (_state, make) => {
-    fixture.instances = [make()];
-    let answer!: () => void;
-    fixture.refreshModels = vi.fn(() => new Promise<void>((resolve) => { answer = resolve; }));
-    const onClaude = bot("claude", "claude-opus-5-5");
-    const opened = open(onClaude);
-    const entry = opened.nodes.find((node) => node.props["data-model-local-entry"]);
-    expect(entry?.props["aria-label"]).toBe("Use a local model");
-    expect(entry?.props.disabled).toBe(false);
-
-    (entry!.props.onClick as () => void)();
-    expect(fixture.refreshModels).toHaveBeenCalledExactlyOnceWith("claude");
-    const looking = render(onClaude).html;
-    expect(looking).toContain("Looking for local models…");
-    expect(looking).toContain('role="status"');
-    expect(looking).not.toContain("No local models found");
-
-    // The probe found a model the startup scan missed.
-    fixture.instances = [make()];
-    fixture.instances[0].models.options = [...official, qwen];
-    answer();
-    await flush();
-    const found = render(onClaude).html;
-    expect(found).not.toContain("Looking for local models…");
-    expect(found).toContain(">qwen3 (Ollama)<");
-  });
-
-  it("says nothing was found once the probe settles empty", async () => {
-    fixture.instances = [signedIn()];
-    const onClaude = bot("claude", "claude-opus-5-5");
-    const entry = open(onClaude).nodes.find((node) => node.props["data-model-local-entry"])!;
-    (entry.props.onClick as () => void)();
-    await flush();
-    const html = render(onClaude).html;
-    expect(html).not.toContain("Looking for local models…");
-    expect(html).toContain("No local models found");
-  });
-
-  it("lets a signed-out Claude run a local model it already found", () => {
+describe("local models in the one dropdown", () => {
+  it("lets a signed-out Claude run a local model it already found, below its sign-in card", () => {
     fixture.instances = [claude({ state: "available", authenticated: false }, [...official, qwen])];
     const onClaude = bot("claude", "claude-opus-5-5");
-    const entry = open(onClaude).nodes.find((node) => node.props["data-model-local-entry"])!;
-    expect(entry.props["aria-label"]).toBe("Use a local model (1 available)");
-    (entry.props.onClick as () => void)();
-    const local = render(onClaude);
-    const row = local.nodes.find((node) => (node.props.option as { id?: string } | undefined)?.id === qwen.id) as ReactElement<{ onPick: () => void }>;
-    row.props.onPick();
+    const local = openMenu(onClaude);
+    const html = menu(local.html);
+    expect(html).toContain("Sign in to Claude");
+    expect(html).toContain("data-model-local-group");
+    expect(html).not.toContain("data-model-cloud-group");
+    expect(html).not.toContain("data-model-local-entry");
+    (row(local, qwen.id).props.onPick as () => void)();
     expect(fixture.dispatch).toHaveBeenCalledWith(expect.objectContaining({
-      type: "setModel", botId: "atlas", threadId: "thread-atlas", selection: { instanceId: "claude", model: qwen.id },
+      type: "setModel", botId: "atlas", threadId: "thread-atlas", updateBotDefault: true, selection: { instanceId: "claude", model: qwen.id },
     }));
   });
 
-  it("is offered by Claude whenever its CLI is present, and by other engines once they list a local model", () => {
-    expect(offersLocalModels(signedIn(), 0)).toBe(true);
-    expect(offersLocalModels(signedOut(), 0)).toBe(true);
-    expect(offersLocalModels(notFound(), 0)).toBe(false);
-    expect(offersLocalModels({ ...signedIn(), policy: { organizationName: "Fixture", reason: "Not allowed" } }, 0)).toBe(false);
-    expect(offersLocalModels(codex, 0)).toBe(false);
-    expect(offersLocalModels(codex, 2)).toBe(true);
-    expect(offersLocalModels(undefined, 0)).toBe(false);
-  });
-
-  it("stops looking after a short timeout and never throws", async () => {
-    vi.useFakeTimers();
-    let settled = false;
-    void probeLocalModels("claude", () => new Promise(() => {})).then(() => { settled = true; });
-    await vi.advanceTimersByTimeAsync(LOCAL_PROBE_TIMEOUT_MS - 1);
-    expect(settled).toBe(false);
-    await vi.advanceTimersByTimeAsync(1);
-    expect(settled).toBe(true);
-    await expect(probeLocalModels("claude", () => Promise.reject(new Error("offline")))).resolves.toBeUndefined();
+  it("has no separate local entry, search, suggested list or show-all control", () => {
+    fixture.instances = [claude({ state: "available", version: "2.1.300", authenticated: true }, [...official, qwen])];
+    const html = menu(openMenu(bot("claude", "claude-opus-5-5")).html);
+    for (const gone of ["data-model-local-entry", "Search models", ">Suggested<", "Show all", "Looking for local models", "Use a local model"]) {
+      expect(html).not.toContain(gone);
+    }
+    expect(html).toContain("data-model-cloud-group");
+    expect(html).toContain("data-model-local-group");
   });
 });
 
@@ -333,12 +298,14 @@ describe("the picker opens as a modal like Settings", () => {
     expect(opened.html).toContain("data-model-picker-backdrop");
     expect(html).toContain("data-model-provider-column");
     expect(html).toContain('aria-label="Close"');
-    // Account, scope, models and the way to Settings, each with room.
-    expect(html).toContain(">Only this thread<");
-    expect(html).toContain(">Thread + bot default<");
+    // One mode: no scope chooser. The model is one dropdown, then Settings.
+    expect(html).not.toContain("Apply model changes to");
+    expect(html).not.toContain("Only this thread");
+    expect(html).not.toContain("Thread + bot default");
+    expect(html).not.toContain("Other threads and groups keep their model.");
+    expect(html).toContain("data-model-dropdown");
     expect(html).toContain(">Opus 5.5<");
     expect(html).toContain("Model providers and accounts");
-    expect(html).toContain("data-model-local-entry");
     // Each provider names its status in the column.
     expect(html).toContain("data-rail-status");
 
@@ -363,8 +330,8 @@ describe("the picker opens as a modal like Settings", () => {
     expect(html).toContain("data-model-provider-column");
     expect(html).toContain('aria-label="Close"');
     expect(html).toContain(">Opus 5.5<");
-    // The profile card sets the bot default. Thread scope stays on the composer.
-    expect(html).not.toContain(">Only this thread<");
+    // The profile card sets the bot default; no scope chooser anywhere.
+    expect(html).not.toContain("Only this thread");
     // Effort already has its own card under the pill.
     expect(html).not.toContain(">Effort<");
   });
@@ -390,7 +357,7 @@ describe("local models in solo", () => {
     ];
     fixture.instances = [claude({ state: "available", version: "2.1.300", authenticated: true }, [...official, ...ds4])];
     const onClaude = bot("claude", "claude-opus-5-5");
-    const opened = open(onClaude);
+    const opened = openMenu(onClaude);
     const html = menu(opened.html);
     expect(html).toContain(">Opus 5.5<");
     expect(html).toContain("data-model-local-group");
@@ -398,8 +365,7 @@ describe("local models in solo", () => {
     // Claude Code talks to a loopback server that answers /v1/messages.
     expect(html).not.toContain("data-model-unavailable");
     expect(html).not.toContain("data-model-local-entry");
-    const row = opened.nodes.find((node) => node.props.option && (node.props.option as { id: string }).id === ds4[1]!.id)!;
-    (row.props.onPick as () => void)();
+    (row(opened, ds4[1]!.id).props.onPick as () => void)();
     expect(fixture.dispatch).toHaveBeenCalledWith(expect.objectContaining({ type: "setModel", selection: expect.objectContaining({ model: ds4[1]!.id }) }));
   });
 
@@ -410,9 +376,11 @@ describe("local models in solo", () => {
       models: { default: "gemini-pro", options: [{ id: "gemini-pro", label: "Gemini Pro" }, { id: "dwarfstar::qwen3.8-flash-next", label: "DwarfStar: Qwen3.8 Flash Next", custom: true, local: true }] },
     };
     fixture.instances = [gemini];
-    const html = menu(open(bot("gemini", "gemini-pro")).html);
+    const html = menu(openMenu(bot("gemini", "gemini-pro")).html);
+    // Disabled, the reason as a short tooltip, no paragraph above the rows.
     expect(html).toContain("data-model-unavailable");
-    expect(html).toContain("Gemini cannot run a local model.");
+    expect(html).toContain('title="Gemini cannot run a local model."');
+    expect(html).not.toContain("data-model-local-unavailable");
   });
 });
 
@@ -431,7 +399,7 @@ describe("the Grok list", () => {
 
   it("shows what the engine offers, nothing it does not, and a local row Grok can run", () => {
     fixture.instances = [grok];
-    const html = menu(open(bot("grok", "grok-4.7")).html);
+    const html = menu(openMenu(bot("grok", "grok-4.7")).html);
     expect(html).toContain(">Grok 4.7 Fast<");
     expect(html).not.toContain("Grok 4.5");
     expect(html).not.toContain("Grok 4.6");
@@ -480,7 +448,6 @@ describe("on an organization server", () => {
     // No local model from the server's machine.
     expect(rail(opened)!.props.instances.map((instance) => instance.instanceId)).toEqual(["claude"]);
     expect(html).not.toContain("data-model-local-entry");
-    expect(html).toContain("data-model-local-hidden");
     expect(html).not.toContain("data-model-host-tools");
   });
 
@@ -527,27 +494,25 @@ describe("on an organization server", () => {
     const codexDesk: InstanceInfo = { ...codex, models: { ...codex.models, options: [...codex.models.options, ...desk, serverLoopback] } };
     fixture.instances = [claude({ state: "available", version: "2.1.300", authenticated: true }, [...official, ...desk, serverLoopback]), codexDesk];
     const onCodex = bot("codex", "gpt-5.6");
-    const opened = open(onCodex);
+    const opened = openMenu(onCodex);
     let html = menu(opened.html);
     expect(html).toContain("data-model-local-group");
     expect(html).toContain(">Local<");
     expect(html).toContain("DwarfStar: Qwen3.8 Flash Next (qwen3.8-flash-next-chat)");
     expect(html).not.toContain("Ollama: qwen3");
     expect(html).not.toContain("data-model-unavailable");
-    expect(html).not.toContain("data-model-local-hidden");
     expect(html).not.toContain("data-model-local-entry");
-    const row = opened.nodes.find((node) => node.props.option && (node.props.option as { id: string }).id === desk[0]!.id)!;
-    (row.props.onPick as () => void)();
+    (row(opened, desk[0]!.id).props.onPick as () => void)();
     expect(fixture.dispatch).toHaveBeenCalledWith(expect.objectContaining({ type: "setModel", selection: expect.objectContaining({ instanceId: "codex", model: desk[0]!.id }) }));
 
     fixture.dispatch = vi.fn();
     const onClaude = bot("claude", "claude-opus-5-5");
-    const claudeOpen = open(onClaude);
+    const claudeOpen = openMenu(onClaude);
     html = menu(claudeOpen.html);
     expect(html).toContain("data-model-local-group");
     expect(html).toContain("data-model-unavailable");
-    expect(html).toContain("This local server does not speak the Anthropic protocol.");
-    const greyed = claudeOpen.nodes.find((node) => node.props.option && (node.props.option as { id: string }).id === desk[0]!.id)!;
+    expect(html).toContain('title="This local server does not speak the Anthropic protocol."');
+    const greyed = row(claudeOpen, desk[0]!.id);
     expect(greyed.props.unavailable).toBeTruthy();
     (greyed.props.onPick as () => void)();
     expect(fixture.dispatch).not.toHaveBeenCalled();
@@ -561,10 +526,10 @@ describe("on an organization server", () => {
       { id: "deskab12cd9337::gguf", label: "llama-server: gguf", custom: true, local: true },
     ];
     fixture.instances = [claude({ state: "available", version: "2.1.300", authenticated: true }, [...official, ...desk])];
-    const claudeOpen = open(bot("claude", "claude-opus-5-5"));
+    const claudeOpen = openMenu(bot("claude", "claude-opus-5-5"));
     const html = menu(claudeOpen.html);
     expect(html).toContain("data-model-local-group");
-    const node = (id: string) => claudeOpen.nodes.find((n) => n.props.option && (n.props.option as { id: string }).id === id)!;
+    const node = (id: string) => row(claudeOpen, id);
     expect(node(desk[0]!.id).props.unavailable).toBeFalsy();
     expect(node(desk[1]!.id).props.unavailable).toBe("This local server does not speak the Anthropic protocol.");
     (node(desk[0]!.id).props.onPick as () => void)();
@@ -624,8 +589,9 @@ describe("ModelPicker Auto (docs/plans/2026-10-08-auto-model.md)", () => {
     expect(toggle.props["aria-pressed"]).toBe(false);
     expect(menu(opened.html)).toContain("Auto: the best model per task");
     (toggle.props.onClick as () => void)();
+    // One mode: Auto runs this thread and becomes the bot's model.
     expect(fixture.dispatch).toHaveBeenCalledWith({
-      type: "setModel", botId: "atlas", threadId: "thread-atlas", updateBotDefault: false,
+      type: "setModel", botId: "atlas", threadId: "thread-atlas", updateBotDefault: true,
       selection: { instanceId: "claude", model: "claude-sonnet-5", auto: true },
     });
   });
@@ -648,9 +614,8 @@ describe("ModelPicker Auto (docs/plans/2026-10-08-auto-model.md)", () => {
   it("pins a model again when one is chosen", () => {
     fixture.instances = [signedIn()];
     const forBot = { ...bot("claude", "claude-sonnet-5"), modelSelection: { instanceId: "claude", model: "claude-sonnet-5", auto: true as const } };
-    const opened = open(forBot);
-    const row = opened.nodes.find((node) => (node.props.option as { id?: string } | undefined)?.id === "claude-opus-5-5")!;
-    (row.props.onPick as () => void)();
+    const opened = openMenu(forBot);
+    (row(opened, "claude-opus-5-5").props.onPick as () => void)();
     const call = (fixture.dispatch as ReturnType<typeof vi.fn>).mock.calls.at(-1)![0] as { selection: Record<string, unknown> };
     expect(call.selection).toEqual({ instanceId: "claude", model: "claude-opus-5-5" });
   });
@@ -661,5 +626,160 @@ describe("ModelPicker Auto (docs/plans/2026-10-08-auto-model.md)", () => {
     const html = render(forBot).html;
     expect(html).toContain(">Auto<");
     expect(html).not.toContain(">Sonnet 5<");
+  });
+});
+
+describe("one mode (2026-10-09)", () => {
+  it("makes a model chosen in a thread the thread's and the bot's in one request", () => {
+    fixture.instances = [signedIn()];
+    const opened = openMenu(bot("claude", "claude-opus-5-5"));
+    (row(opened, "claude-sonnet-5").props.onPick as () => void)();
+    expect(fixture.dispatch).toHaveBeenCalledExactlyOnceWith({
+      type: "setModel", botId: "atlas", threadId: "thread-atlas", updateBotDefault: true,
+      selection: { instanceId: "claude", model: "claude-sonnet-5" },
+    });
+  });
+
+  it("keeps Use the bot's model as a way back without touching the bot", () => {
+    fixture.instances = [signedIn()];
+    const profile = { ...bot("claude", "claude-opus-5-5"), tasks: [{ threadId: "thread-atlas", title: "t", createdAt: 1, followsBotModel: false, modelSelection: { instanceId: "claude", model: "claude-sonnet-5" } }] };
+    fixture.bots = [profile];
+    const opened = open({ ...profile, modelSelection: { instanceId: "claude", model: "claude-sonnet-5" } });
+    const follow = opened.nodes.find((node) => node.type === FollowBotModelRow)!;
+    (follow.props.onPick as () => void)();
+    expect(fixture.dispatch).toHaveBeenCalledExactlyOnceWith({
+      type: "setModel", botId: "atlas", threadId: "thread-atlas", updateBotDefault: false,
+      selection: { instanceId: "claude", model: "claude-opus-5-5" },
+    });
+  });
+});
+
+describe("the model dropdown", () => {
+  it("lists the models under Cloud and Local, checks the current one and marks the provider's default", () => {
+    const ds4 = { id: "dwarfstar::qwen3.8-flash-next", label: "DwarfStar: Qwen3.8 Flash Next", custom: true, local: true };
+    fixture.instances = [claude({ state: "available", version: "2.1.300", authenticated: true }, [...official, ds4])];
+    const forBot = bot("claude", "claude-sonnet-5");
+    const closed = menu(open(forBot).html);
+    // Closed, it reads the current model and lists nothing.
+    expect(closed).toContain('aria-haspopup="listbox"');
+    expect(closed).toContain(">Sonnet 5<");
+    expect(closed).not.toContain('role="listbox"');
+    fixture.values = [];
+    const opened = openMenu(forBot);
+    const html = menu(opened.html);
+    expect(html).toContain('role="listbox"');
+    expect(html.indexOf("data-model-cloud-group")).toBeLessThan(html.indexOf("data-model-local-group"));
+    expect(html).toContain('aria-label="Cloud"');
+    expect(html).toContain('aria-label="Local"');
+    expect(row(opened, "claude-sonnet-5").props.current).toBe(true);
+    expect(row(opened, "claude-opus-5-5").props.current).toBe(false);
+    expect(row(opened, "claude-opus-5-5").props.isDefault).toBe(true);
+    expect(html).toMatch(/data-model-option="claude-sonnet-5"[^>]*aria-selected="true"|aria-selected="true"[^>]*data-model-option="claude-sonnet-5"/);
+    expect(html).toContain("data-model-default");
+  });
+
+  it("closes from its own control and leaves the dialog open", () => {
+    fixture.instances = [signedIn()];
+    const forBot = bot("claude", "claude-opus-5-5");
+    const opened = openMenu(forBot);
+    const dropdown = opened.nodes.find((node) => node.type === ModelDropdown)!;
+    (dropdown.props.onOpenChange as (open: boolean) => void)(false);
+    const html = render(forBot).html;
+    expect(html).toContain("data-model-picker-content");
+    expect(html).not.toContain('role="listbox"');
+  });
+});
+
+describe("Connected is said once", () => {
+  it("leaves the header with the provider's name and refresh, and the access card says Connected with Disconnect", () => {
+    fixture.org = { org: { name: "GOX", identity: { kind: "perspicax", issuer: "https://px.example.test" } }, link: { state: "ok" }, viewerRole: "member", settings: {} };
+    fixture.myEngines = [{
+      instanceId: "claude", driver: "claudeAgent", displayName: "Claude", installed: true,
+      subscription: { supported: true, signedIn: true }, myKey: false, orgKey: false, myTurns: "subscription",
+    }];
+    fixture.instances = [signedIn()];
+    const html = menu(open(bot("claude", "claude-opus-5-5")).html);
+    // The right pane starts at its title; the provider column comes before it.
+    const pane = html.slice(html.indexOf('id="model-picker-title"'));
+    expect(pane).not.toContain("data-model-status");
+    expect(pane.match(/Connected/g)).toHaveLength(1);
+    expect(pane).toContain("data-engine-connected");
+    expect(pane).toContain(">Disconnect<");
+    expect(pane).toContain("data-model-refresh");
+  });
+
+  it("has no status badge in the header on a solo server either", () => {
+    fixture.instances = [signedIn()];
+    expect(menu(open(bot("claude", "claude-opus-5-5")).html)).not.toContain("data-model-status");
+  });
+});
+
+describe("the organization's allowed model providers", () => {
+  const orgFixture = { org: { name: "GOX", identity: { kind: "perspicax", issuer: "https://px.example.test" } }, link: { state: "ok" }, viewerRole: "member", settings: {} };
+  const mine = (instanceId: string, driver: string, signedIn: boolean) => ({
+    instanceId, driver, displayName: instanceId, installed: true,
+    subscription: { supported: true, signedIn }, myKey: false, orgKey: true, myTurns: signedIn ? "subscription" : "org-key",
+  });
+  const grok: InstanceInfo = {
+    instanceId: "grok", driverKind: "grokAgent", displayName: "Grok", access: "subscription",
+    snapshot: { state: "available", authenticated: true },
+    models: { default: "grok-4.7", options: [{ id: "grok-4.7", label: "Grok 4.7" }] },
+    capabilities: { withholdsHostTools: true },
+  };
+
+  it("lists only the allowed providers on the rail", () => {
+    fixture.org = orgFixture;
+    fixture.myEngines = [mine("claude", "claudeAgent", false), mine("codex", "codex", false), mine("grok", "grokAgent", false)];
+    fixture.config = { allowedEngines: ["claude", "grok"] };
+    fixture.instances = [signedIn(), codex, grok];
+    const opened = open(bot("claude", "claude-opus-5-5"));
+    expect(rail(opened)!.props.instances.map((instance) => instance.instanceId)).toEqual(["claude", "grok"]);
+  });
+
+  it("lists everything when the list is empty or missing, and on a solo server", () => {
+    fixture.instances = [signedIn(), codex];
+    fixture.config = { allowedEngines: ["claude"] };
+    // Solo: the setting is an organization's; nothing is filtered.
+    expect(rail(open(bot("claude", "claude-opus-5-5")))!.props.instances.map((instance) => instance.instanceId)).toEqual(["claude", "codex"]);
+    fixture.org = orgFixture;
+    fixture.myEngines = [mine("claude", "claudeAgent", false), mine("codex", "codex", false)];
+    for (const config of [{ allowedEngines: [] }, { allowedEngines: null }, null]) {
+      fixture.values = [];
+      fixture.config = config;
+      expect(rail(open(bot("claude", "claude-opus-5-5")))!.props.instances.map((instance) => instance.instanceId)).toEqual(["claude", "codex"]);
+    }
+  });
+
+  it("shows a provider the person connected but no longer allowed once, disabled, and nothing from it can be picked", () => {
+    fixture.org = orgFixture;
+    fixture.myEngines = [mine("claude", "claudeAgent", false), mine("codex", "codex", true)];
+    fixture.config = { allowedEngines: ["claude"] };
+    fixture.instances = [signedIn(), codex];
+    const forBot = bot("claude", "claude-opus-5-5");
+    const opened = open(forBot);
+    const column = rail(opened)!.props as { instances: InstanceInfo[]; notAllowed?: (instance: InstanceInfo) => boolean; onSelect: (instance: InstanceInfo) => void };
+    expect(column.instances.map((instance) => instance.instanceId)).toEqual(["claude", "codex"]);
+    expect(column.notAllowed!(codex)).toBe(true);
+    expect(column.notAllowed!(fixture.instances[0]!)).toBe(false);
+    const html = renderToStaticMarkup(createElement(ModelEngineRail, { ...column, wide: true } as Parameters<typeof ModelEngineRail>[0]));
+    expect(html.match(/data-rail-not-allowed/g)).toHaveLength(1);
+    expect(html).toContain("Not allowed by your organization");
+    // Choosing it does nothing: the pane stays on Claude, no model from Codex.
+    column.onSelect(codex);
+    const after = render(forBot);
+    expect(menu(after.html)).not.toContain("GPT-5.6");
+    expect(row(after, "gpt-5.6")).toBeUndefined();
+    expect(fixture.dispatch).not.toHaveBeenCalled();
+  });
+
+  it("drops a provider that is not allowed and not connected, even the bot's current one", () => {
+    fixture.org = orgFixture;
+    fixture.myEngines = [mine("claude", "claudeAgent", false), mine("codex", "codex", false)];
+    fixture.config = { allowedEngines: ["claude"] };
+    fixture.instances = [signedIn(), codex];
+    const opened = open(bot("codex", "gpt-5.6"));
+    expect(rail(opened)!.props.instances.map((instance) => instance.instanceId)).toEqual(["claude"]);
+    expect(menu(opened.html)).toContain("model-picker-title");
+    expect(row(opened, "gpt-5.6")).toBeUndefined();
   });
 });

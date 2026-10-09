@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { ArrowDown, ArrowUp, CheckCheck, Folder, MoreHorizontal, Pencil, Plus, X } from "lucide-react";
-import { useStore, type Bot, type BotProject } from "@/state/store";
+import { useStore, type Bot, type BotProject, type FolderOwnerKind } from "@/state/store";
 import { cn } from "@/lib/cn";
 import { useHeldMenuMotion } from "./MenuMotion";
 import { t } from "@/lib/i18n";
@@ -73,10 +73,17 @@ export function FolderActions({ project, canMoveUp, canMoveDown, canMarkRead, sa
   </>;
 }
 
+/** Who owns a set of thread folders, as the folder dialog and the new
+ * thread button read it: a bot, or with `owner: "group"` a conversation
+ * with a person (its threads and folders have the same shape). */
+export type FolderOwner = Pick<Bot, "id" | "name" | "threadId" | "projects"> & { tasks?: ReadonlyArray<{ threadId: string; projectId?: string }> };
+
 /** Folders only organize threads. The project-shaped API is retained for
- * compatibility; neither model settings nor working directories live here. */
-export function BotProjectDialog({ bot, project, onClose, onCreated }: {
-  bot: Bot;
+ * compatibility; neither model settings nor working directories live here.
+ * `bot` is the folders' owner: a bot, or a group with `owner: "group"`. */
+export function BotProjectDialog({ bot, owner, project, onClose, onCreated }: {
+  bot: FolderOwner;
+  owner?: FolderOwnerKind;
   project?: BotProject;
   onClose: () => void;
   onCreated?: (project: BotProject) => void;
@@ -102,7 +109,7 @@ export function BotProjectDialog({ bot, project, onClose, onCreated }: {
     nameRef.current?.focus();
     return () => {
       if (opener?.isConnected) opener.focus();
-      else document.querySelector<HTMLElement>(`[data-sidebar-bot-row="${CSS.escape(bot.id)}"]`)?.focus();
+      else document.querySelector<HTMLElement>(owner === "group" ? `[data-sidebar-group-row="${CSS.escape(bot.id)}"]` : `[data-sidebar-bot-row="${CSS.escape(bot.id)}"]`)?.focus();
     };
   }, []);
   return createPortal(
@@ -131,9 +138,9 @@ export function BotProjectDialog({ bot, project, onClose, onCreated }: {
           setError(null);
           const onError = (message: string) => { setSaving(false); setError(message); };
           if (project) {
-            dispatch({ type: "updateProject", botId: bot.id, projectId: project.id, patch: { name: name.trim(), emoji: emoji.trim() || null }, onSaved: onClose, onError });
+            dispatch({ type: "updateProject", botId: bot.id, owner, projectId: project.id, patch: { name: name.trim(), emoji: emoji.trim() || null }, onSaved: onClose, onError });
           } else {
-            dispatch({ type: "createProject", botId: bot.id, name: name.trim(), emoji: emoji.trim() || null, onError,
+            dispatch({ type: "createProject", botId: bot.id, owner, name: name.trim(), emoji: emoji.trim() || null, onError,
               onCreated: (created) => { onCreated?.(created); onClose(); } });
           }
         }}>
@@ -167,7 +174,7 @@ export function BotProjectDialog({ bot, project, onClose, onCreated }: {
             <div className="mt-2 flex items-center gap-3">
               <button type="button" disabled={saving} onClick={() => {
                 setSaving(true); setError(null);
-                dispatch({ type: "deleteProject", botId: bot.id, projectId: project.id, onDeleted: onClose, onError: (message) => { setSaving(false); setError(message); } });
+                dispatch({ type: "deleteProject", botId: bot.id, owner, projectId: project.id, onDeleted: onClose, onError: (message) => { setSaving(false); setError(message); } });
               }} className="text-[12px] text-danger hover:underline disabled:opacity-40">{t("folder.deleteConfirm")}</button>
               <button type="button" onClick={() => setDeleting(false)} className="text-[12px] text-ink-secondary hover:underline">{t("common.cancel")}</button>
             </div>
@@ -178,14 +185,16 @@ export function BotProjectDialog({ bot, project, onClose, onCreated }: {
   );
 }
 
-/** One-click new thread in the current folder. Folder creation lives in the sidebar. */
-export function NewThreadButton({ bot, className, compact = false, onCreated }: { bot: Bot; className?: string; compact?: boolean; onCreated?: () => void }) {
+/** One-click new thread in the current folder. Folder creation lives in the
+ * sidebar. `bot` is the threads' owner: a bot, or a group with `owner: "group"`. */
+export function NewThreadButton({ bot, owner, className, compact = false, onCreated }: { bot: FolderOwner; owner?: FolderOwnerKind; className?: string; compact?: boolean; onCreated?: () => void }) {
   const { dispatch } = useStore();
   const projects = bot.projects ?? [];
   const currentProject = projects.find((project) => project.id === bot.tasks?.find((task) => task.threadId === bot.threadId)?.projectId);
   return <button type="button" aria-label={t("task.newShort")} title={currentProject ? t("task.newIn", { name: currentProject.name }) : t("task.newShort")}
     onClick={() => {
-      dispatch({ type: "newTask", botId: bot.id, ...(currentProject ? { projectId: currentProject.id } : {}) });
+      const projectId = currentProject ? { projectId: currentProject.id } : {};
+      dispatch(owner === "group" ? { type: "newGroupTask", groupId: bot.id, ...projectId } : { type: "newTask", botId: bot.id, ...projectId });
       onCreated?.();
     }}
     className={cn("flex min-w-0 items-center gap-2 rounded-lg px-2.5 text-left text-[12px] text-ink-secondary hover:bg-raised/60 hover:text-ink", compact ? "py-1 @max-4xl/chathead:h-[30px] @max-4xl/chathead:px-2" : "py-2", className)}>

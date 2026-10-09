@@ -10,6 +10,7 @@ import { APP_ICON_CHOICES } from "@/lib/app-icon-choices";
 import { BotAvatar, frogExpressionFor } from "@/components/Avatar";
 import { ACHIEVEMENTS } from "../../shared/achievements-catalog";
 import { rewardKey, skinTier } from "../../shared/achievements";
+import { masterySkins, masteryUnlockFor } from "../../shared/mascot-unlocks";
 import { contrastRatio, MASCOT_COLOR_HEX } from "../../shared/mascot-colors";
 import { botMascotLook, CHARACTER_PAINT, completeMascotLook, FROG_DEFAULT_COLOR, FROG_SKIN_TIER, FROG_SKINS, LEGACY_FROG_SKINS, mascotLookSchema } from "../../shared/mascot-look";
 import { MASCOTS, mascotFor } from "./floating-bots/mascots";
@@ -173,15 +174,16 @@ describe("Frog's look", () => {
     expect(CHARACTER_LABEL.frog).toBe("floatingBots.mascot.frog");
     expect(colorGroupsFor("frog", "green")).toContain("clay");
     expect(APP_ICON_CHOICES.some((choice) => choice.art.kind === "frog")).toBe(true);
+    // the Mastery tier unlocks Frog and its skins (shared/mascot-unlocks.ts): its named skins over its three rungs, easiest first
     const rewarded = ACHIEVEMENTS.flatMap((item) => item.rewards.map(rewardKey));
     expect(rewarded).toContain("character:frog");
-    // the same unlock rules as Shiba's: each premium Frog skin comes with the Shiba skin of the same name
-    for (const skin of FROG_SKINS) {
-      if (skinTier("frog", skin) === "common") continue;
-      expect(rewarded, skin).toContain(`skin:frog:${skin}`);
-      const with_ = ACHIEVEMENTS.find((item) => item.rewards.map(rewardKey).includes(`skin:frog:${skin}`));
-      expect(with_?.rewards.map(rewardKey), skin).toContain(`skin:shiba:${skin}`);
-    }
+    expect(masteryUnlockFor("frog")).toBe("polyglot");
+    expect(["leaf", "tree", "poison", "bullfrog", "ghost"].map((skin) => masteryUnlockFor("frog", skin))).toEqual(["thrifty", "thrifty", "translator", "translator", "skill-smith"]);
+    expect(masteryUnlockFor("frog", "retro98")).toBe("total-recall");
+    expect(masteryUnlockFor("frog", "gold")).toBe("total-recall");
+    expect(masteryUnlockFor("frog", "plain")).toBeNull();
+    expect(masterySkins("frog")).toEqual([...FROG_SKINS]);
+    for (const skin of FROG_SKINS) if (skinTier("frog", skin) !== "common") expect(rewarded, skin).toContain(`skin:frog:${skin}`);
   });
 
   it("maps the app's states to its faces", () => {

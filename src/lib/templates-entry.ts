@@ -1,16 +1,14 @@
-// The Templates library is gone: Browse Bots (src/components/bot-catalog/)
-// is the one place for templates. Every way that used to open the library
-// opens the catalogue on its Templates section instead. Pure, for tests.
+// Browse Bots (src/components/bot-catalog/) is the one place for templates.
+// New bot's "Browse templates", Connect apps' "Browse Bots" and an install
+// link open the catalogue on its Templates section. Pure, for tests.
 import { openBotCatalog, type Action } from "@/state/store";
 
 /** Where a person asked for templates. */
 export type TemplatesEntry =
-  /** Connect apps: "Bot templates" beside the search (it closes Connect apps). */
+  /** Connect apps: "Browse Bots" beside the search (it closes Connect apps). */
   | "connectApps"
   /** New bot: "Browse templates" beside Starting role (it closes New bot). */
   | "newBot"
-  /** The sidebar's Templates place. */
-  | "sidebar"
   /** An install link from outside (openmaus://, a team's address). */
   | "installLink";
 

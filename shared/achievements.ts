@@ -15,18 +15,16 @@ import { botMascotSkin, MASCOT_SKIN_IDS, OWL_SKIN_TIER, type MascotSkinId } from
 import {
   BUNBU_SKIN_TIER,
   BUNBU_SKINS,
-  FROG_SKIN_TIER,
-  FROG_SKINS,
   SHAPE_SKIN_TIER,
   SHAPE_SKINS,
-  SHIBA_SKIN_TIER,
-  SHIBA_SKINS,
   TROMBI_SKIN_TIER,
   TROMBI_SKINS,
   completeMascotLook,
   type MascotCharacter,
   type SkinTier,
 } from "./mascot-look.ts";
+import { isMasteryCharacter, masteryKey, masteryLock, masterySkins, masterySkinTier, type MasteryCharacter } from "./mascot-unlocks.ts";
+import { masteryMetricValue, type MasteryMetric, type MasteryState } from "./achievements-mastery.ts";
 
 /** Events the server records by itself. A client may never post one. */
 export const SERVER_EVENTS = [
@@ -50,6 +48,8 @@ export const SERVER_EVENTS = [
   "voice.call",
   "voice.minutes",
   "voice.interrupt",
+  /** A Mastery fact (shared/achievements-mastery.ts): carries `fact`, counts nothing else. */
+  "mastery",
 ] as const;
 
 /** Events the app reports (POST /api/me/achievements/events). */
@@ -99,16 +99,21 @@ export const EVENT_LIMITS: Readonly<Partial<Record<AchievementEventType, { inter
   "achievements.viewed": { intervalMs: 2_000, perDay: 50 },
   "appicon.changed": { intervalMs: 2_000, perDay: 50 },
   "mascot.floated": { intervalMs: 1_000, perDay: 50 },
+  // every Mastery fact shares this type: tool lines and turns add up on a busy day
+  mastery: { intervalMs: 0, perDay: 50_000 },
 };
 /** The default for any other client event. Server events are trusted but still bounded. */
 export const DEFAULT_CLIENT_LIMIT = { intervalMs: 1_000, perDay: 100 };
 export const DEFAULT_SERVER_LIMIT = { intervalMs: 0, perDay: 5_000 };
 
-export const ACHIEVEMENT_CATEGORIES = ["onboarding", "productivity", "power", "voice", "collaboration", "streaks", "mastery", "secrets"] as const;
+// "mastery" is the Mastery tier (Maîtrise): the hard achievements that prove
+// real use of AI and of Sagax and unlock the Mastery characters
+// (shared/mascot-unlocks.ts). "tiers" holds the points tiers (Bronze to Platinum).
+export const ACHIEVEMENT_CATEGORIES = ["onboarding", "productivity", "power", "voice", "collaboration", "streaks", "mastery", "tiers", "secrets"] as const;
 export type AchievementCategory = (typeof ACHIEVEMENT_CATEGORIES)[number];
 
-/** Gamerscore-like values. */
-export const ACHIEVEMENT_POINTS = [5, 10, 20, 50, 100] as const;
+/** Gamerscore-like values; 150 and above belong to the Mastery tier. */
+export const ACHIEVEMENT_POINTS = [5, 10, 20, 50, 100, 150, 200, 250, 300] as const;
 export type AchievementPoints = (typeof ACHIEVEMENT_POINTS)[number];
 
 /** An achievement's rarity follows its points. */
@@ -136,18 +141,27 @@ export type AchievementRule =
   | { kind: "activeDays"; target: number }
   /** `target` points earned from the other achievements. */
   | { kind: "points"; target: number }
-  /** Every other achievement that is not secret. */
-  | { kind: "completion" };
+  /** Every other achievement that is not secret, the Mastery tier aside. */
+  | { kind: "completion" }
+  /** A Mastery measure (shared/achievements-mastery.ts) reached `target`. */
+  | { kind: "mastery"; metric: MasteryMetric; target: number }
+  /** `target` other achievements of this category unlocked. */
+  | { kind: "category"; category: AchievementCategory; target: number };
+
+/** A character a reward names: one this build draws, or a Mastery character (shared/mascot-unlocks.ts) that may not have landed yet. */
+export type RewardCharacter = MascotCharacter | MasteryCharacter;
 
 export type AchievementReward =
-  | { kind: "character"; character: Extract<MascotCharacter, "shape" | "trombi" | "bunbu" | "shiba" | "frog"> }
-  | { kind: "skin"; character: MascotCharacter; skin: string }
+  | { kind: "character"; character: Exclude<RewardCharacter, "owl"> }
+  | { kind: "skin"; character: RewardCharacter; skin: string }
   | { kind: "appIcon"; id: string }
   | { kind: "title"; id: string; name: Localized };
 
 export interface Localized {
   en: string;
   fr: string;
+  /** Portuguese (Brazil); English stands in when absent. */
+  ptBR?: string;
 }
 
 export interface AchievementDefinition {
@@ -253,6 +267,8 @@ export interface AchievementProgress {
   unlocked: Record<string, number>;
   /** Rewards kept from before achievements existed (what was in use). */
   grandfathered: string[];
+  /** The Mastery tier's measures (shared/achievements-mastery.ts). */
+  mastery?: MasteryState;
 }
 
 export function emptyProgress(): AchievementProgress {
@@ -331,8 +347,14 @@ export function ruleStatus(definition: AchievementDefinition, progress: Achievem
       return of(pointsOf(progress.unlocked, others), rule.target);
     }
     case "completion": {
-      const others = catalog.filter((item) => item.id !== definition.id && !item.hidden && item.rule.kind !== "completion");
+      const others = catalog.filter((item) => item.id !== definition.id && !item.hidden && item.rule.kind !== "completion" && item.category !== "mastery");
       return of(others.filter((item) => progress.unlocked[item.id]).length, others.length);
+    }
+    case "mastery":
+      return of(masteryMetricValue(progress.mastery, rule.metric), rule.target);
+    case "category": {
+      const others = catalog.filter((item) => item.id !== definition.id && item.category === rule.category);
+      return of(others.filter((item) => progress.unlocked[item.id]).length, rule.target);
     }
   }
 }
@@ -397,7 +419,7 @@ export function rewardKey(reward: AchievementReward): string {
 export const DEFAULT_CHARACTERS: readonly MascotCharacter[] = ["owl"];
 
 /** The rarity of a character's skin, by its id. */
-export function skinTier(character: MascotCharacter, skin: string): SkinTier {
+export function skinTier(character: RewardCharacter, skin: string): SkinTier {
   switch (character) {
     case "owl":
       return (OWL_SKIN_TIER as Record<string, SkinTier>)[skin] ?? "common";
@@ -407,14 +429,13 @@ export function skinTier(character: MascotCharacter, skin: string): SkinTier {
       return (TROMBI_SKIN_TIER as Record<string, SkinTier>)[skin] ?? "common";
     case "bunbu":
       return (BUNBU_SKIN_TIER as Record<string, SkinTier>)[skin] ?? "common";
-    case "shiba":
-      return (SHIBA_SKIN_TIER as Record<string, SkinTier>)[skin] ?? "common";
-    case "frog":
-      return (FROG_SKIN_TIER as Record<string, SkinTier>)[skin] ?? "common";
+    default:
+      // a Mastery character, drawn by this build or not yet: the registry's rarity
+      return masterySkinTier(skin);
   }
 }
 
-export function skinsOf(character: MascotCharacter): readonly string[] {
+export function skinsOf(character: RewardCharacter): readonly string[] {
   switch (character) {
     case "owl":
       return MASCOT_SKIN_IDS;
@@ -424,10 +445,8 @@ export function skinsOf(character: MascotCharacter): readonly string[] {
       return TROMBI_SKINS;
     case "bunbu":
       return BUNBU_SKINS;
-    case "shiba":
-      return SHIBA_SKINS;
-    case "frog":
-      return FROG_SKINS;
+    default:
+      return isMasteryCharacter(character) ? masterySkins(character) : [];
   }
 }
 
@@ -445,12 +464,15 @@ export function unlocksFor(progress: Pick<AchievementProgress, "unlocked" | "gra
   for (const item of catalog) {
     if (!progress.unlocked[item.id]) continue;
     for (const reward of item.rewards) keys.add(rewardKey(reward));
+    // a Mastery achievement also unlocks what the registry gives it later (a named skin a character registers after)
+    if (item.category === "mastery") keys.add(masteryKey(item.id));
   }
   return { enforced: true, keys };
 }
 
-export function characterUnlocked(unlocks: Unlocks, character: MascotCharacter): boolean {
+export function characterUnlocked(unlocks: Unlocks, character: RewardCharacter): boolean {
   if (!unlocks.enforced) return true;
+  if (isMasteryCharacter(character)) return !masteryLock(unlocks.keys, character).locked;
   return DEFAULT_CHARACTERS.includes(character) || unlocks.keys.has(`character:${character}`);
 }
 
@@ -458,8 +480,9 @@ export function characterUnlocked(unlocks: Unlocks, character: MascotCharacter):
  * A skin is usable when its character is and it is Common (a character's
  * Common skins come with it), or when it was earned or grandfathered.
  */
-export function skinUnlocked(unlocks: Unlocks, character: MascotCharacter, skin: string): boolean {
+export function skinUnlocked(unlocks: Unlocks, character: RewardCharacter, skin: string): boolean {
   if (!unlocks.enforced) return true;
+  if (isMasteryCharacter(character)) return !masteryLock(unlocks.keys, character, skin).locked;
   if (unlocks.keys.has(`skin:${character}:${skin}`)) return true;
   return skinTier(character, skin) === "common" && characterUnlocked(unlocks, character);
 }

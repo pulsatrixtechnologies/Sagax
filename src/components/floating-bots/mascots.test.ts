@@ -201,7 +201,9 @@ describe("the avatar popover's Bot tab", () => {
     const locked = render(undefined);
     expect(locked).toContain('data-character-option="owl"');
     for (const id of ["shape", "trombi", "bunbu"]) expect(locked).not.toContain(`data-character-option="${id}"`);
-    expect(locked).not.toContain("data-locked");
+    // only the Mastery characters show locked, greyed, so the person sees what there is to earn
+    const lockedTags = [...locked.matchAll(/<[^>]*data-locked[^>]*>/g)].map((match) => match[0]);
+    for (const tag of lockedTags) expect(tag).toMatch(/data-character-option="(shiba|grump|ogre|frog)"/);
     expect(locked).not.toContain('data-tab="epic"');
     expect(locked).toContain('data-mascot-skin-option="none"');
     // the skin this bot already wears stays visible

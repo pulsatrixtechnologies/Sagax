@@ -14,7 +14,7 @@ import { t } from "@/lib/i18n";
 import { BotAvatar } from "./Avatar";
 import { ExportTranscriptMenu } from "./ExportTranscriptMenu";
 import { GroupMemoryTab } from "./GroupMemoryTab";
-import { inputCls } from "./bot-settings/field";
+import { MarkdownEditor } from "./markdown/MarkdownEditor";
 import { InlineEditableText } from "./bot-settings/InlineEditableText";
 import { DescriptionInfo } from "./bot-settings/DescriptionInfo";
 import { useCaptionChrome, useMacInsetChrome } from "./DesktopCapabilities";
@@ -255,17 +255,18 @@ export function GroupPanel({
 
         {tab === "instructions" && (
           <div className="flex flex-col gap-2 px-4 pb-6 pt-2">
-            <label htmlFor={`group-bulletin-${group.id}`} className="text-[13px] text-ink-secondary">{t("groupPanel.instructions")}</label>
+            <label id={`group-bulletin-label-${group.id}`} htmlFor={`group-bulletin-${group.id}`} className="text-[13px] text-ink-secondary">{t("groupPanel.instructions")}</label>
             <p className="text-[12px] text-ink-secondary">{t("groupPanel.instructionsDetail")}</p>
-            <textarea
+            <MarkdownEditor
               id={`group-bulletin-${group.id}`}
+              ariaLabelledBy={`group-bulletin-label-${group.id}`}
               value={bulletin}
               readOnly={!canEdit}
-              onChange={(event) => setBulletin(event.target.value)}
+              onChange={setBulletin}
               onBlur={saveBulletin}
-              rows={10}
+              minHeight={220}
+              dataField="group-instructions"
               placeholder={t("groupPanel.instructionsPlaceholder")}
-              className={cn(inputCls, "resize-y leading-relaxed")}
             />
           </div>
         )}

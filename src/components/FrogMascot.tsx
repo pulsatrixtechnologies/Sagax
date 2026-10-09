@@ -482,3 +482,8 @@ export function FrogMascot({ skin = "plain", color, size = 44, mood = "idle", ex
     </span>
   );
 }
+
+/** Frog as a Mastery reward (achievements/mastery-art.tsx): a skin on the frog green. */
+export function FrogRewardArt({ skin, size, animated }: { skin: string; size: number; animated: boolean }) {
+  return <FrogMascot skin={skin} color="green" size={size} animated={animated} detail="full" label={null} />;
+}

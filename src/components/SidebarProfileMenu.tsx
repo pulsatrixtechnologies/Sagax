@@ -9,7 +9,7 @@
 // Automations, then a hairline, then settings. Archived bots, when there
 // are any, sit above that pair with their own hairline. Your phone and
 // Help Center are not in this menu: the phone stays in Settings and on
-// the collapsed rail, and docs stay on About. Connected apps and Templates
+// the collapsed rail, and docs stay on About. Connected apps and Browse Bots
 // stay rows above this one when they are on (SidebarPlaces). It opens on
 // click. The collapsed rail keeps its own avatar button.
 //
