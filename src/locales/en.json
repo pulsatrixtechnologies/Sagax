@@ -4040,6 +4040,17 @@
   "question.submit": "Submit answer",
   "question.submitAll": "Submit answers",
   "question.tab.numbered": "Question {index}",
+  "reactions.aBot": "A bot",
+  "reactions.add": "Add reaction",
+  "reactions.group": "Reactions",
+  "reactions.list": "{names} and {last}",
+  "reactions.none": "No emoji found",
+  "reactions.reactWith": "React with {emoji}",
+  "reactions.reactedWith": "reacted with {emoji}",
+  "reactions.results": "Emoji",
+  "reactions.search": "Search emoji",
+  "reactions.tooltip": "{names} reacted with {emoji}",
+  "reactions.you": "You",
   "releaseNotes.browseTitle": "Release notes",
   "releaseNotes.close": "Close",
   "releaseNotes.currentTag": "{version} (current)",
@@ -6060,5 +6071,7 @@
   "workspaces.upgraded": "Every running installation restarted on the new release.",
   "workspaces.users": "Users",
   "workspaces.usersTitle": "Who may sign in to {slug}",
-  "workspaces.working": "Working…"
+  "workspaces.working": "Working…",
+  "seen.label": "Seen by",
+  "seen.face": "{name} · {time}"
 }

@@ -18,6 +18,7 @@ import type { MascotBodyId } from "./mascot-bodies.ts";
 import type { MascotColorName } from "./mascot-colors.ts";
 import type { MascotSkinId } from "./mascot-skins.ts";
 import type { MascotLook } from "./mascot-look.ts";
+import type { MessageReaction } from "./reactions.ts";
 import type { BotCatalogListing } from "./bot-catalog.ts";
 import type { BotPublicProfile } from "./bot-public-profile.ts";
 import type { CredentialTargetId } from "./credential-request.ts";
@@ -634,8 +635,10 @@ export interface WireMessage {
   /** Auto: the model this delivered work ran on, and why (the delegation
    * card and the worker's activity row). Clients that do not know it ignore it. */
   autoModel?: AutoModelRecord;
-  /** emoji reactions; by = "user" or a member botId. */
-  reactions?: Array<{ emoji: string; by: string }>;
+  /** Emoji reactions, one entry per emoji with who put it there
+   * (shared/reactions.ts). Older stores may still hold `{ emoji, by }`
+   * entries; read them through normalizeReactions. */
+  reactions?: MessageReaction[];
   /** comm chips: "Messaged @X", linking to the bot-bot channel. */
   /** `gone` is stamped at read time when the channel thread no longer exists. */
   comm?: { groupId: string; threadId?: string; withBotId: string; withName: string; withColor: string; gone?: boolean };

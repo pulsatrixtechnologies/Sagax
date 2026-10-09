@@ -99,6 +99,11 @@ export function seenTooltip(entries: ReadonlyArray<{ name: string; at: number }>
   return t("seen.by", { list: entries.map((entry) => t("seen.entry", { name: entry.name, time: time(entry.at) })).join(", ") });
 }
 
+/** One reader as their avatar's tooltip says it: "Zachary Sellam · 2:46 PM". */
+export function seenFaceLabel(name: string, time: string): string {
+  return t("seen.face", { name, time });
+}
+
 /** "Seen", or "Seen at 14:03" once a minute or more has passed since the
  * message was sent. */
 export function seenCaption(sentAt: number, seenAt: number, time: (at: number) => string): string {

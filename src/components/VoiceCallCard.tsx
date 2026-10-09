@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import { AudioLines, MoreHorizontal, ThumbsDown, ThumbsUp, X } from "lucide-react";
 import { api, useStore, type Message } from "@/state/store";
 import { t } from "@/lib/i18n";
+import { myReactions, reactionSelfIds } from "@/lib/reactions";
 import { cn } from "@/lib/cn";
 import { useLiveCall } from "@/lib/voice-mode/live-call-store";
 import { useVoiceCallClock } from "@/lib/voice-call-clock";
@@ -24,11 +25,16 @@ function reactionAnchor(messages: readonly Message[]): Message | undefined {
   return messages.find((message) => message.role === "user" && !message.id.startsWith("optimistic-"));
 }
 
-function storedThumb(message: Message | undefined): "up" | "down" | null {
-  const mine = (message?.reactions ?? []).filter((reaction) => reaction.by === "user" && (reaction.emoji === UP || reaction.emoji === DOWN));
-  const last = mine.at(-1);
+/** The viewer's thumb on the call, from the reactions they hold on its
+ * first line (src/lib/reactions.ts). */
+function storedThumbs(message: Message | undefined, selfIds: readonly string[]): string[] {
+  return myReactions(message?.reactions, selfIds).filter((emoji) => emoji === UP || emoji === DOWN);
+}
+
+function storedThumb(message: Message | undefined, selfIds: readonly string[]): "up" | "down" | null {
+  const last = storedThumbs(message, selfIds).at(-1);
   if (!last) return null;
-  return last.emoji === UP ? "up" : "down";
+  return last === UP ? "up" : "down";
 }
 
 export function VoiceCallCard({
@@ -44,7 +50,8 @@ export function VoiceCallCard({
   messages: Message[];
   forceOpen?: boolean;
 }) {
-  const { dispatch } = useStore();
+  const { state, dispatch } = useStore();
+  const selfIds = reactionSelfIds(state.config);
   const clock = useVoiceCallClock(callId);
   const live = useLiveCall();
   const liveHere = clock?.endedAt === null && live?.botId === clock.botId;
@@ -73,7 +80,7 @@ export function VoiceCallCard({
   if (open && heard && shown.at(-1)?.text !== heard) shown.push({ id: "live-heard", role: "user", text: heard });
   if (open && caption && shown.at(-1)?.text !== caption) shown.push({ id: "live-caption", role: "bot", text: caption });
   const anchor = reactionAnchor(messages);
-  const choice = pending ?? storedThumb(anchor);
+  const choice = pending ?? storedThumb(anchor, selfIds);
 
   const copy = () => {
     const text = voiceCallTranscriptText(shown.filter((line) => !line.id.startsWith("live-")), you, botName);
@@ -93,19 +100,19 @@ export function VoiceCallCard({
     void (async () => {
       try {
         let current = anchor;
-        const mine = (current.reactions ?? []).filter((reaction) => reaction.by === "user" && (reaction.emoji === UP || reaction.emoji === DOWN));
-        const drop = mine.filter((reaction) => reaction.emoji !== (want === "up" ? UP : want === "down" ? DOWN : ""));
-        for (const reaction of want === null ? mine : drop) {
+        const mine = storedThumbs(current, selfIds);
+        const drop = mine.filter((emoji) => emoji !== (want === "up" ? UP : want === "down" ? DOWN : ""));
+        for (const emoji of want === null ? mine : drop) {
           const body = await api<{ message?: Message }>(`/api/threads/${threadId}/messages/${current.id}/reactions`, {
             method: "POST",
-            body: JSON.stringify({ emoji: reaction.emoji }),
+            body: JSON.stringify({ emoji }),
           });
           if (body?.message) {
             current = body.message;
             dispatch({ type: "messagePatched", threadId, message: body.message });
           }
         }
-        if (want && !mine.some((reaction) => reaction.emoji === (want === "up" ? UP : DOWN))) {
+        if (want && !mine.includes(want === "up" ? UP : DOWN)) {
           const body = await api<{ message?: Message }>(`/api/threads/${threadId}/messages/${current.id}/reactions`, {
             method: "POST",
             body: JSON.stringify({ emoji: want === "up" ? UP : DOWN }),

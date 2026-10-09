@@ -132,4 +132,24 @@ describe("read receipts: storage", () => {
     ]);
     expect(store.messagesFor(bot.threadId)).toHaveLength(before);
   });
+
+  it("stamps who read and when, per thread, for the Seen by tooltip", () => {
+    const store = new Store(selection);
+    const bot = store.createBot({ name: "Cryptic" });
+    const other = store.createTask(bot.id, "Second thread", false)!;
+    const here = store.appendMessage(bot.threadId, { role: "user", kind: "text", text: "here" });
+    const there = store.appendMessage(other.threadId, { role: "user", kind: "text", text: "there" });
+    const changes: StoreChange[] = [];
+    store.onChange((change) => changes.push(change));
+    const before = Date.now();
+    const read = store.markRead(bot.threadId, ALICE, here.id);
+    expect(read?.messageId).toBe(here.id);
+    expect(read!.at).toBeGreaterThanOrEqual(before);
+    store.markRead(other.threadId, ALICE, there.id, 42);
+    // each thread keeps its own reader and time
+    expect(store.threadReads(bot.threadId)[ALICE]).toEqual({ messageId: here.id, at: read!.at });
+    expect(store.threadReads(other.threadId)[ALICE]).toEqual({ messageId: there.id, at: 42 });
+    expect(changes.map((change) => change.type === "thread.read" && [change.threadId, change.participantId, change.read.at]))
+      .toEqual([[bot.threadId, ALICE, read!.at], [other.threadId, ALICE, 42]]);
+  });
 });

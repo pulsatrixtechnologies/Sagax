@@ -1651,6 +1651,17 @@
   "pro.settingsSummary": "Novos recursos primeiro, suporte prioritário e bots sempre ativos na nuvem.",
   "pro.signIn": "Entrar",
   "pro.tax": "Os preços não incluem os impostos aplicáveis, mostrados no pagamento.",
+  "reactions.aBot": "Um bot",
+  "reactions.add": "Adicionar reação",
+  "reactions.group": "Reações",
+  "reactions.list": "{names} e {last}",
+  "reactions.none": "Nenhum emoji encontrado",
+  "reactions.reactWith": "Reagir com {emoji}",
+  "reactions.reactedWith": "Reação {emoji}",
+  "reactions.results": "Emoji",
+  "reactions.search": "Buscar emoji",
+  "reactions.tooltip": "Reação {emoji}: {names}",
+  "reactions.you": "Você",
   "releaseNotes.browseTitle": "Notas de versão",
   "releaseNotes.close": "Fechar",
   "releaseNotes.currentTag": "{version} (atual)",
@@ -2386,5 +2397,7 @@
   "voiceMode.call.fasterEndOfTurn": "Fim de turno mais rápido",
   "voiceMode.call.fasterEndOfTurnHelp": "Sua entonação, analisada neste computador, pode encerrar um turno mais cedo quando sua frase parece terminada. Não é usado com Patient.",
   "voiceMode.call.streamingVoice": "Voz contínua",
-  "voiceMode.call.streamingVoiceHelp": "A resposta começa a falar desde as primeiras palavras, por uma única conexão durante a chamada. Se essa conexão falhar, a chamada volta sozinha a uma solicitação por frase."
+  "voiceMode.call.streamingVoiceHelp": "A resposta começa a falar desde as primeiras palavras, por uma única conexão durante a chamada. Se essa conexão falhar, a chamada volta sozinha a uma solicitação por frase.",
+  "seen.label": "Visto por",
+  "seen.face": "{name} · {time}"
 }

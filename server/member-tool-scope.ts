@@ -39,6 +39,8 @@ export const MEMBER_OWN_SCOPE_AGENT_TOOLS: Readonly<Record<string, MemberToolFam
   delegate_bot: "conversation",
   coordinate_bots: "conversation",
   post_to_room: "conversation",
+  react_to_message: "conversation",
+  remove_reaction: "conversation",
   start_thread: "conversation",
   close_thread: "conversation",
   retry_thread: "conversation",

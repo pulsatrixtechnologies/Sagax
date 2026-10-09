@@ -1,9 +1,10 @@
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
-import { Ellipsis } from "lucide-react";
+import { Ellipsis, SmilePlus } from "lucide-react";
 import { popoverClosesOnKey, usePopoverDismiss } from "@/hooks/use-popover-dismiss";
 import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
 import { useMenuMotion } from "./MenuMotion";
+import { ReactButton, ReactionPicker } from "./Reactions";
 
 const CloseMenu = createContext<() => void>(() => {});
 
@@ -16,6 +17,7 @@ export function MessageMenuItem({
   disabled = false,
   active = false,
   hidden = false,
+  shortcut,
 }: {
   label: string;
   icon: ReactNode;
@@ -24,6 +26,8 @@ export function MessageMenuItem({
   /** A mode that is on (raw markdown, speaking). */
   active?: boolean;
   hidden?: boolean;
+  /** One letter that chooses this entry while the menu is open. */
+  shortcut?: string;
 }) {
   const close = useContext(CloseMenu);
   return (
@@ -32,6 +36,8 @@ export function MessageMenuItem({
       role="menuitem"
       disabled={disabled}
       aria-checked={active || undefined}
+      aria-keyshortcuts={shortcut ? shortcut.toUpperCase() : undefined}
+      data-shortcut={shortcut?.toLowerCase()}
       onClick={() => {
         close();
         onSelect();
@@ -44,6 +50,7 @@ export function MessageMenuItem({
     >
       <span className="flex shrink-0 items-center" aria-hidden="true">{icon}</span>
       <span className="min-w-0 flex-1 truncate">{label}</span>
+      {shortcut && <kbd className="shrink-0 font-sans text-[11px] text-ink-tertiary">{shortcut.toUpperCase()}</kbd>}
     </button>
   );
 }
@@ -61,6 +68,7 @@ export function MessageBar({
   side,
   time,
   copy,
+  react,
   visible = false,
   children,
 }: {
@@ -68,12 +76,16 @@ export function MessageBar({
   time: string;
   /** The copy button, when the message has text to copy. */
   copy?: ReactNode;
+  /** Emoji reactions (src/components/Reactions.tsx): the smiley beside copy,
+   * its picker, and "Add reaction" (E) first in the menu. */
+  react?: { open: boolean; onOpenChange: (open: boolean) => void; onPick: (emoji: string) => void; mine?: readonly string[] };
   visible?: boolean;
   /** The menu's entries, as MessageMenuItem. */
   children: ReactNode;
 }) {
   const rootRef = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
+  const picking = Boolean(react?.open);
   const motion = useMenuMotion(open);
   const mirrored = side === "user";
   usePopoverDismiss(open, rootRef, () => setOpen(false));
@@ -89,17 +101,28 @@ export function MessageBar({
       className={cn(
         "relative flex shrink-0 flex-col self-end pb-0.5 transition-opacity",
         mirrored ? "items-end" : "items-start",
-        open || visible
+        open || visible || picking
           ? "opacity-100"
           : "opacity-0 focus-within:opacity-100 group-hover:opacity-100 group-focus-within:opacity-100 touch:opacity-100",
       )}
       onKeyDown={(event) => {
-        if (!open || !popoverClosesOnKey(event.nativeEvent)) return;
+        if (!open) return;
+        // a letter chooses the menu entry that carries it (E: Add reaction)
+        if (event.key.length === 1 && !event.metaKey && !event.ctrlKey && !event.altKey) {
+          const entry = rootRef.current?.querySelector<HTMLElement>(`[role="menuitem"][data-shortcut="${CSS.escape(event.key.toLowerCase())}"]:not(:disabled)`);
+          if (entry) {
+            event.preventDefault();
+            entry.click();
+            return;
+          }
+        }
+        if (!popoverClosesOnKey(event.nativeEvent)) return;
         event.preventDefault();
         setOpen(false);
       }}
     >
       <div className={cn("flex items-center", mirrored && "flex-row-reverse")}>
+        {react && <ReactButton open={react.open} onToggle={() => react.onOpenChange(!react.open)} />}
         {copy}
         <button
           type="button"
@@ -119,6 +142,14 @@ export function MessageBar({
       <span data-message-time className="px-1.5 text-[11px] tabular-nums leading-4 whitespace-nowrap text-ink-tertiary">
         {time}
       </span>
+      {react?.open && (
+        <ReactionPicker
+          align={mirrored ? "end" : "start"}
+          mine={react.mine}
+          onPick={react.onPick}
+          onClose={() => react.onOpenChange(false)}
+        />
+      )}
       {motion.shown && (
         <CloseMenu.Provider value={() => setOpen(false)}>
           <div
@@ -131,6 +162,9 @@ export function MessageBar({
             )}
             {...motion.exitProps}
           >
+            {react && (
+              <MessageMenuItem label={t("reactions.add")} icon={<SmilePlus size={14} />} shortcut="e" onSelect={() => react.onOpenChange(true)} />
+            )}
             {children}
           </div>
         </CloseMenu.Provider>

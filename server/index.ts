@@ -481,6 +481,7 @@ import {
   composioSystemPrompt,
   customMcpPrompt,
   CREDENTIAL_PROMPT,
+  REACTION_PROMPT,
   mentionPrompt,
   THREADS_PROMPT,
   RICH_OUTPUT_PROMPT,
@@ -725,6 +726,7 @@ import type { BotHost } from "./turn-route.ts";
 import { signInListWithOpenInvites, type OrgRole } from "./org-directory.ts";
 import { createOwnerAvatarRoute, OwnerIdentityStore, parseOwnerIdentityMessage } from "./owner-identity.ts";
 import { configForViewer, personAvatarUrl, personDisplayName, sessionIsOperator, type ViewerIdentity } from "./viewer-identity.ts";
+import { botReactionActorId, normalizeReactions, reactionEmoji, reactionsBy, type ReactionActor } from "../shared/reactions.ts";
 // Keep these two last: a route module may import any server module, and
 // loading the table after everything above leaves module start-up order as is.
 import { json, onJsonBody, parsedBodyOf, readBody } from "./harness/http.ts";
@@ -1449,6 +1451,79 @@ function messageSender(auth: RequestAuth): ResolvedSender | undefined {
   }
   const name = (auth.session.email ?? auth.session.label ?? "").trim();
   return name ? { name, id: actorKey(auth) } : undefined;
+}
+
+/** A person reacting to a message (shared/reactions.ts): their id as read
+ * receipts key it and the name the room shows. Null for a caller who is
+ * nobody in particular (a bot's own shell, an anonymous session). */
+function reactionPersonFor(auth: RequestAuth): ReactionActor | null {
+  const sender = messageSender(auth);
+  const id = personParticipant(actorPrincipalId(auth) || sender?.id || "");
+  if (!id) return null;
+  const local = auth.kind !== "session";
+  const name = sender?.name || (local ? cfg.profile?.name?.trim() : "") || personDisplayName(principals.byId(id)) || "";
+  return { id, kind: "person", name };
+}
+
+/** Who a stored `{ emoji, by: "user" }` reaction was: the operator of a
+ * personal server. An organization server cannot tell, and keeps "user". */
+function legacyReactionUser(): ReactionActor | undefined {
+  if (IDENTITY.kind === "perspicax") return undefined;
+  return { id: personParticipant(localPrincipalId()), kind: "person", name: cfg.profile?.name?.trim() || "" };
+}
+
+/** A reaction is a reader's mark like a read receipt: a read-only member
+ * of a shared room may leave one. */
+const REACTION_ROUTE = /^\/api\/threads\/[\w-]+\/messages\/[\w-]+\/reactions$/;
+
+/** Reactions one bot turn may add (react_to_message), across messages. */
+const MAX_BOT_REACTIONS_PER_TURN = 3;
+
+type BotReactionOutcome =
+  | { ok: true; messageId: string; emoji: string; changed: boolean; removed?: string[] }
+  | { ok: false; status: number; error: string; code: string };
+
+/** A bot's reaction from its turn (react_to_message, remove_reaction). The
+ * message is one of the turn's own thread: `messageId`, or when none is
+ * given the newest chat message someone else wrote (what the bot is
+ * answering). */
+function botReaction(input: { bot: { id: string; name: string }; threadId: string; messageId: string; emoji: unknown; remove: boolean; spent: number }): BotReactionOutcome {
+  const messages = store.messagesFor(input.threadId);
+  const soloBot = store.groupByThread(input.threadId) ? null : store.botByThread(input.threadId)?.id ?? null;
+  const authorBot = (message: Message) => message.role === "user" ? null : message.from?.botId ?? soloBot;
+  const target = input.messageId
+    ? messages.find((message) => message.id === input.messageId)
+    : messages.findLast((message) => message.kind === "text" && authorBot(message) !== input.bot.id && !message.id.startsWith("optimistic-"));
+  if (!target) {
+    return { ok: false, status: 404, code: "reaction_message", error: input.messageId
+      ? "No message with that id in this conversation. Omit message_id to react to the message you are answering."
+      : "There is no message here to react to." };
+  }
+  if (target.kind !== "text") return { ok: false, status: 400, code: "reaction_kind", error: "Only a chat message takes a reaction." };
+  if (authorBot(target) === input.bot.id) return { ok: false, status: 400, code: "reaction_own", error: "Never react to your own message." };
+  const actor: ReactionActor = { id: botReactionActorId(input.bot.id), kind: "bot", name: input.bot.name };
+  const current = normalizeReactions(target.reactions, legacyReactionUser());
+  const mine = reactionsBy(current, actor.id);
+  if (input.remove) {
+    const emoji = input.emoji === undefined || input.emoji === "" ? null : reactionEmoji(input.emoji);
+    if (input.emoji !== undefined && input.emoji !== "" && !emoji) return { ok: false, status: 400, code: "reaction_emoji", error: "emoji must be one emoji, or omitted to remove yours." };
+    const removing = emoji ? mine.filter((held) => held === emoji) : mine;
+    for (const held of removing) store.reactToMessage(input.threadId, target.id, held, actor, { mode: "remove", legacyUser: legacyReactionUser() });
+    return { ok: true, messageId: target.id, emoji: emoji ?? removing[0] ?? "", changed: removing.length > 0, removed: removing };
+  }
+  const emoji = reactionEmoji(input.emoji);
+  if (!emoji) return { ok: false, status: 400, code: "reaction_emoji", error: "emoji must be one emoji, such as 👍, ✅ or 👀." };
+  if (mine.includes(emoji)) return { ok: true, messageId: target.id, emoji, changed: false };
+  if (mine.length) {
+    return { ok: false, status: 409, code: "reaction_one", error: `You already reacted ${mine.join(" ")} to this message: one reaction per message. Use remove_reaction first only if it no longer fits.` };
+  }
+  if (input.spent >= MAX_BOT_REACTIONS_PER_TURN) {
+    return { ok: false, status: 429, code: "reaction_budget", error: `You already added ${MAX_BOT_REACTIONS_PER_TURN} reactions this turn. Reply in words instead.` };
+  }
+  const result = store.reactToMessage(input.threadId, target.id, emoji, actor, { mode: "add", legacyUser: legacyReactionUser() });
+  if (!result) return { ok: false, status: 404, code: "reaction_message", error: "That message is gone." };
+  if (result.full) return { ok: false, status: 409, code: "reaction_full", error: "This message has too many different reactions." };
+  return { ok: true, messageId: target.id, emoji, changed: result.changed };
 }
 
 /** Who a request's turn speaks for (slice 3 engine access): the signed-in
@@ -2901,6 +2976,8 @@ type InternalCapability = {
   attachedFiles?: number;
   /** post_to_room calls this turn has made. */
   roomPosts?: number;
+  /** react_to_message calls this turn has made (MAX_BOT_REACTIONS_PER_TURN). */
+  reactions?: number;
   /** Group memory updates refused this turn (bot memory archives at the cap instead). */
   memoryRefusals?: number;
   /** Delegations this turn handed out: their ids may not be checked or
@@ -5529,6 +5606,7 @@ function previewSystemPrompt(bot: BotRecord) {
     { id: "browser", label: "Browser", text: previewPlan.browser ? BUILT_IN_BROWSER_SYSTEM_PROMPT : "" },
     { id: "coordination", label: "Team", text: agentsMounted && coordination ? ` ${coordination}` : "" },
     { id: "credential", label: "Credentials", text: agentsMounted ? CREDENTIAL_PROMPT : "" },
+    { id: "reactions", label: "Reactions", text: agentsMounted ? REACTION_PROMPT : "" },
     { id: "routine", label: "Routines", text: agentsMounted ? ROUTINE_PROMPT : "" },
     { id: "profile", label: "Profile changes", text: agentsMounted ? PROFILE_PROMPT : "" },
     { id: "rich-output", label: "Rich output", text: RICH_OUTPUT_PROMPT },
@@ -14283,7 +14361,7 @@ async function startTurn(
           // model mostly did not think to make.
           ? peerRosterSystemPrompt(sectionPeers, boundedCoordination)
           : "";
-      const credentialPrompt = integrations.agents ? CREDENTIAL_PROMPT + (boundedCoordination ? "" : THREADS_PROMPT) : "";
+      const credentialPrompt = integrations.agents ? CREDENTIAL_PROMPT + REACTION_PROMPT + (boundedCoordination ? "" : THREADS_PROMPT) : "";
       const routinePrompt = integrations.agents ? ROUTINE_PROMPT : "";
       const profilePrompt = integrations.agents ? PROFILE_PROMPT : "";
       const recallPrompt = integrations.agents && bot.memoryEnabled !== false ? SESSION_SEARCH_SYSTEM_PROMPT : "";
@@ -17114,7 +17192,7 @@ async function runGroupMemberTurn(
     readyGroup.bulletin.trim() && `Room bulletin (shared instructions for everyone):\n${readyGroup.bulletin.trim()}`,
     `Reply as yourself, briefly and conversationally. To bring a teammate in, mention them like @Name — they'll see the conversation and respond.`,
     outsideRoom.length > 0 && roomPeerRosterSystemPrompt(outsideRoom),
-    integrations.agents && (CREDENTIAL_PROMPT + (orchestration && !orchestration.roomHandoffId ? THREADS_PROMPT : "")).trim(),
+    integrations.agents && (CREDENTIAL_PROMPT + REACTION_PROMPT + (orchestration && !orchestration.roomHandoffId ? THREADS_PROMPT : "")).trim(),
     integrations.agents && (!orchestration || orchestration.roomHandoffId) && "For actual Sagax teamwork, discover IDs with list_room_targets and use coordinate_bots for advice or work in this or another room. Do not substitute native coding helpers for these named bots. Consult only when needed to make a decision; no discussion step is mandatory. Give concrete responsibilities, exact accessible paths and acceptance checks. End your turn after assigning; busy teammates queue and results automatically resume you. When they return, finish the requested verification and give the user one final answer. Native helper names are not evidence that a Sagax teammate participated. Plain @mentions are only for conversational replies in this room.",
     integrations.agents && ROUTINE_PROMPT.trim(),
     integrations.agents && PROFILE_PROMPT.trim(),
@@ -25358,7 +25436,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       if (subject && !subjectSeesChannel(subject, viewerId)) return json(res, 404, { error: notFoundFor(subject) });
       // Slice 4: a read-only member of a shared section reads its rooms and
       // changes nothing in them (settings, tasks, queue, interrupt, cards).
-      const room = IDENTITY.kind === "perspicax" && method !== "GET" && method !== "HEAD" && !/^\/api\/(?:groups|threads)\/[\w-]+\/read$/.test(path) ? roomOfSubject(subject) : null;
+      const room = IDENTITY.kind === "perspicax" && method !== "GET" && method !== "HEAD" && !/^\/api\/(?:groups|threads)\/[\w-]+\/read$/.test(path) && !REACTION_ROUTE.test(path) ? roomOfSubject(subject) : null;
       if (room && !groupPostAllowed(room, viewerId)) return json(res, 403, { error: "you may read this channel, not change it", code: "read_only" });
     }
     {
@@ -25893,6 +25971,24 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         const result = updateGroupMemory(room.id, { action: body.action, text: body.text, oldText: body.oldText, ...(body.until !== undefined ? { until: body.until } : {}) }, { source: memorySource() });
         if (!result.ok) internalCapability.memoryRefusals = (internalCapability.memoryRefusals ?? 0) + 1;
         return json(res, result.ok ? 200 : result.code === "conflict" ? 409 : result.code === "over-budget" ? 413 : 400, result);
+      }
+      // react_to_message and remove_reaction (shared/reactions.ts): a bot
+      // marks a message of the conversation its turn is in instead of
+      // replying. Never its own message, one reaction per message, a few per
+      // turn; recorded with the bot as the actor. No message is written.
+      if (method === "POST" && path === "/api/internal/reaction") {
+        const body = await readInternalBody();
+        requireActiveInternalCapability();
+        const outcome = botReaction({
+          bot: internalSender,
+          threadId: internalCapability.threadId,
+          messageId: typeof body.messageId === "string" ? body.messageId.trim() : "",
+          emoji: body.emoji,
+          remove: body.remove === true,
+          spent: internalCapability.reactions ?? 0,
+        });
+        if (outcome.ok && outcome.changed && !body.remove) internalCapability.reactions = (internalCapability.reactions ?? 0) + 1;
+        return json(res, outcome.ok ? 200 : outcome.status, outcome.ok ? outcome : { error: outcome.error, code: outcome.code });
       }
       // Notes written from a room fewer people can see than this bot would
       // carry that room's words to everyone who can see the bot.
@@ -30714,15 +30810,29 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       return json(res, 200, { ok: true });
     }
 
-    // emoji reactions — works on any thread (1:1 or room)
+    // Emoji reactions (shared/reactions.ts, docs/messages-reactions.md): the
+    // caller toggles their own on any text message of a thread they can
+    // read, a 1:1 with a bot, a room or a conversation between people. Who
+    // may reach the thread was decided above, as for reading it. The change
+    // is a message patch: live to everyone who sees the thread, quiet (no
+    // notification, no unread).
     m = path.match(/^\/api\/threads\/([\w-]+)\/messages\/([\w-]+)\/reactions$/);
     if (m && method === "POST") {
+      const [, threadId, messageId] = m;
+      if (!store.botByThread(threadId!) && !store.groupByThread(threadId!)) return json(res, 404, { error: "no such conversation" });
       const body = await readBody(req);
-      const emoji = String(body.emoji ?? "").slice(0, 8);
-      if (!emoji) return json(res, 400, { error: "emoji required" });
-      const patched = store.toggleReaction(m[1], m[2], emoji, typeof body.by === "string" ? body.by : "user");
-      if (!patched) return json(res, 404, { error: "no such message" });
-      return json(res, 200, { message: patched });
+      const emoji = reactionEmoji(body?.emoji);
+      if (!emoji) return json(res, 400, { error: "emoji must be one emoji", code: "reaction_emoji" });
+      const target = store.messagesFor(threadId!).find((message) => message.id === messageId);
+      if (!target) return json(res, 404, { error: "no such message" });
+      if (target.kind !== "text") return json(res, 400, { error: "only a chat message takes reactions", code: "reaction_kind" });
+      const actor = reactionPersonFor(auth);
+      if (!actor) return json(res, 403, { error: "only a person reacts here", code: "reaction_actor" });
+      const mode = body?.mode === "add" || body?.mode === "remove" ? body.mode : "toggle";
+      const result = store.reactToMessage(threadId!, messageId!, emoji, actor, { mode, legacyUser: legacyReactionUser() });
+      if (!result) return json(res, 404, { error: "no such message" });
+      if (result.full) return json(res, 409, { error: "this message has too many different reactions", code: "reaction_full" });
+      return json(res, 200, { message: result.message, added: result.added, reactions: normalizeReactions(result.message.reactions) });
     }
     if (path === "/api/sidebar-sections" && method === "GET") {
       return json(res, 200, { sections: store.sections });

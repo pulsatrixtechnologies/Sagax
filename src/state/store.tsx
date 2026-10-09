@@ -19,6 +19,7 @@ import {
 import { flushSync } from "react-dom";
 import type { BotVisibility, CardAnswerer, CloudBackend, ConnectorToolGrant, EffortLevel, InstalledPackageMetadata, LiveCallState, LiveSettings, ServerFrame, GroupThreadUsage, SteerQueueReason, VoiceCallMark } from "../../shared/wire";
 import type { TurnDigest } from "../../shared/digest";
+import type { MessageReaction } from "../../shared/reactions";
 import type { AutoModelRecord } from "../../shared/auto-model";
 import type { BusySendMode, ParallelTaskRef, TaskParallelOf } from "../../shared/parallel-tasks";
 import type { ToolScope } from "../../shared/tool-scope";
@@ -263,8 +264,9 @@ export interface Message {
   /** Auto: the model this delivered work ran on (the delegation card and the
    * worker's activity row). */
   autoModel?: AutoModelRecord;
-  /** emoji reactions; by = "user" or a member botId. */
-  reactions?: Array<{ emoji: string; by: string }>;
+  /** Emoji reactions, one entry per emoji with who put it there
+   * (shared/reactions.ts; read through normalizeReactions). */
+  reactions?: MessageReaction[];
   /** comm chips: "Messaged @X" linking to the bot⇄bot channel. */
   comm?: { groupId: string; threadId?: string; withBotId: string; withName: string; withColor: MausColor; gone?: boolean };
   /** thread chips: "Opened thread #Title on Bot" linking to that thread */

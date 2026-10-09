@@ -2762,6 +2762,17 @@
   "pro.settingsSummary": "Nouveautés en avant-première, support prioritaire et bots actifs en permanence dans le cloud.",
   "pro.signIn": "Se connecter",
   "pro.tax": "Prix hors taxes applicables, affichées au paiement.",
+  "reactions.aBot": "Un robot",
+  "reactions.add": "Ajouter une réaction",
+  "reactions.group": "Réactions",
+  "reactions.list": "{names} et {last}",
+  "reactions.none": "Aucun emoji trouvé",
+  "reactions.reactWith": "Réagir avec {emoji}",
+  "reactions.reactedWith": "Réaction {emoji}",
+  "reactions.results": "Emoji",
+  "reactions.search": "Chercher un emoji",
+  "reactions.tooltip": "Réaction {emoji} : {names}",
+  "reactions.you": "Vous",
   "releaseNotes.browseTitle": "Notes de version",
   "releaseNotes.close": "Fermer",
   "releaseNotes.currentTag": "{version} (actuelle)",
@@ -4089,5 +4100,7 @@
   "worksOn.section": "Ordinateur",
   "worksOn.sectionTip": "Où ce bot travaille. Cloud est votre environnement serveur ; VM locale et Cet ordinateur utilisent votre propre ordinateur par l'app Sagax.",
   "worksOn.short.cloud": "Cloud",
-  "worksOn.tip.autoOrg": "Commence dans votre environnement serveur (Cloud) ; le bot peut passer à votre ordinateur ou à la VM locale pour une étape quand l'app Sagax est connectée"
+  "worksOn.tip.autoOrg": "Commence dans votre environnement serveur (Cloud) ; le bot peut passer à votre ordinateur ou à la VM locale pour une étape quand l'app Sagax est connectée",
+  "seen.label": "Vu par",
+  "seen.face": "{name} · {time}"
 }

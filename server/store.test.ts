@@ -1875,7 +1875,7 @@ describe("Store change stream", () => {
     store.patchMessage(bot.threadId, first.id, { text: "a2" });
     store.branchMessage(bot.threadId, first.id, "b");
     store.setActiveLeaf(bot.threadId, first.id);
-    store.toggleReaction(bot.threadId, first.id, "👍", "user");
+    store.reactToMessage(bot.threadId, first.id, "👍", { id: "user", kind: "person", name: "" });
     // branchMessage emits message THEN thread (the fork moves the leaf to the
     // new message); setActiveLeaf emits thread naming the version switched to;
     // a reaction is a patch. Both leaf ids are asserted exactly: a frame that
