@@ -761,3 +761,17 @@ branch; the row records the gap.
 | ID | Desktop behaviour | Desktop path | iOS now | State |
 |---|---|---|---|---|
 | ME1 | Every markdown field (SOUL.md, MEMORY.md and topic files, a skill's instructions, routine, trigger and webhook instructions, group and team instructions, group memory, About me) edits in one CodeMirror editor: headings sized, bold, italic, code, quotes, tables and checked tasks styled as typed; Write, Preview (chat renderer) and, in Advanced, Side by side; toolbar with shortcuts (bold, italic, heading, lists, checklist, quote, code, link, table, divider, Format); list continuation, Tab and Shift+Tab in lists, auto-pairs, link and table paste; word and character count. Values and save paths unchanged | markdown/MarkdownEditor.tsx, markdown/MarkdownEditorCore.tsx, markdown/markdown-edits.ts | Plain text fields (`InstructionView` for the soul; memory and skills not on the phone yet, BA4, BA5) | MISSING (iOS follow-up: a formatting bar over the keyboard and a Preview toggle in `InstructionView`, reusing the same edit rules) |
+
+## 18. Bot workspace: Rules, Files, docs/ (2026-10-09, branch `feat/persona-rules-files-docs`)
+
+The persona editor gains Rules and Files (`docs/bot-workspace.md`). Server side every engine
+and every client gets the same prompt; iOS is not in this branch, the rows record the gap.
+RULES.md and docs/ go through the workspace routes, open to the bot's owner like the Soul
+(BA3), so they are tier A for an owner on the phone; memory files stay admin (BA5).
+
+| ID | Desktop behaviour | Desktop path | Routes | iOS now | State |
+|---|---|---|---|---|---|
+| WS1 | Rules: RULES.md in the markdown editor, starter template on first open, counter against 60 lines / 8 KB, the Perspicax inheritance note | bot-settings/RulesSection.tsx | GET/PUT /api/bots/:id/workspace/file?path=RULES.md | none | MISSING (Advanced > Rules, `InstructionView` pattern with a counter; owner or admin) |
+| WS2 | Files: the whole workspace with Every turn / On demand / Never loaded badges, budgets, created, modified, last used, Forgotten marker; Simple mode keeps the badges only | bot-settings/WorkspaceFilesSection.tsx, lib/workspace-files.ts | GET /api/bots/:id/workspace | none | MISSING (Advanced > Files list, read-only first) |
+| WS3 | Documents in docs/: create, upload a .md, rename, delete, edit in place; other files download | WorkspaceFilesSection.tsx | PUT/DELETE /api/bots/:id/workspace/file, POST /api/bots/:id/workspace/docs/rename, GET /api/bots/:id/workspace/download | none | MISSING (follow-up after WS2) |
+| WS4 | The bot's tools rules_update, docs_update, workspace_read, workspace_search; the Rules block after the soul and the docs index in every turn | server/workspace-files.ts, server/workspace-tools.ts | agents MCP | server side: a phone conversation gets them like any other | DONE (no iOS work) |

@@ -20,6 +20,8 @@ import { shortcutLabel } from "../ShortcutHint";
 import { CATEGORY_MODAL, categoryNavItemClass, nextCategory, useCategoryModalKeyboard } from "../category-modal";
 import { BOT_SECTIONS } from "../bot-settings/sections";
 import { MemorySection } from "../bot-settings/MemorySection";
+import { RulesSection } from "../bot-settings/RulesSection";
+import { WorkspaceFilesSection } from "../bot-settings/WorkspaceFilesSection";
 import { botSectionLock, useBotSectionAvailability, useBotSectionContent } from "../bot-settings/useBotSectionContent";
 import { PERSONA_CATEGORIES, isPersonaCategory, type PersonaCategory } from "@/lib/persona-sections";
 import { PersonaOverview } from "./PersonaOverview";
@@ -149,7 +151,8 @@ function PersonaEditor({ bot, section, onClose }: { bot: Bot; section: BotSettin
         </div>
       );
     }
-    if (id === "memory") return null; // mounted below so an unsaved draft survives
+    // mounted below so an unsaved draft survives
+    if (id === "memory" || id === "rules" || id === "files") return null;
     if (id === "access") {
       const worksOn = (advanced || !simpleHidesBotSection("worksOn")) && lockOf("worksOn") === null;
       return (
@@ -276,6 +279,23 @@ function PersonaEditor({ bot, section, onClose }: { bot: Bot; section: BotSettin
               {memoryAllowed && lockOf("memory") === null && (
                 <div hidden={current !== "memory"}>
                   <MemorySection bot={bot} active={current === "memory"} onToggle={(enabled) => derived.patch({ memoryEnabled: enabled })} />
+                </div>
+              )}
+              {/* Rules and Files (the bot workspace, docs/bot-workspace.md)
+                  stay mounted the same way, for the same reason. */}
+              {lockOf("rules") === null && (
+                <div hidden={current !== "rules"}>
+                  <RulesSection bot={bot} active={current === "rules"} />
+                </div>
+              )}
+              {lockOf("files") === null && categories.includes("files") && (
+                <div hidden={current !== "files"}>
+                  <WorkspaceFilesSection
+                    bot={bot}
+                    active={current === "files"}
+                    memoryEditable={memoryAllowed && lockOf("memory") === null}
+                    onOpenSection={(target) => { if (isPersonaCategory(target)) choose(target); }}
+                  />
                 </div>
               )}
             </div>
