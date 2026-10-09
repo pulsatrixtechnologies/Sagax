@@ -2,6 +2,18 @@
 
 Backlog of requests not started yet. One entry per item: the request, who asked, the date, and what is known. An item leaves this file when its pull request is merged.
 
+## A desktop local model on an organization server needs no provider key (JC, 2026-10-08)
+
+Request: a bot or thread whose model points at a local engine that only exists on the person's desktop (pi on a desktop local model, `desk...::model`, #189) must not refuse the turn on the organization server. It should run there through the desktop bridge when the desktop is connected, and fall back to the person's connected cloud engine or the Auto pick (#153) with a notice when it cannot.
+
+Today (fix/routine-run-rpc-error): a thread whose own model has no credentials on the server for the payer gives way to its bot's model with a notice (`healOrgRefusedThreadModel` in `server/index.ts`), the way a model that is gone already did. On GOX this was Cryptic's "Team incidents" thread, pinned to `pi / desk8a1ada8002::qwen3.8-flash-next`, which refused every incident report with `no_access/no_credentials (pi)`.
+
+Still open:
+
+1. `resolveEngineAccess` (`server/engine-credentials.ts`) asks pi for a provider key (anthropic, openai, xai, google, moonshot) even when the picked model is a desktop local model that needs none. A desktop inject model on pi should get its own access (the desktop model grant) instead of `no_credentials`.
+2. When the bot's own model is refused too, the turn is still refused with the access card. Falling back to the payer's connected cloud engine, or to the Auto pick for that payer, needs a rule for who pays and a notice in the thread.
+3. Incident reports (`reportIncident`) could skip a Primary Bot whose engine cannot run for its owner on the server, and notify the person instead.
+
 ## Several accounts in the desktop app (JC, 2026-10-08)
 
 Request: add more than one account to the desktop app and switch between them in one click, like the account menu of Claude Desktop (Switch account, Add account, Log out, the current account checked, name and email on each row).

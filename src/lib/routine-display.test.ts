@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { routineRunsOn } from "./routine-display";
+import { routineRunError, routineRunsOn } from "./routine-display";
 
 describe("where a routine runs", () => {
   it("on My Cloud, every routine runs on schedule even when the person's computer is off", () => {
@@ -38,5 +38,17 @@ describe("where a routine runs", () => {
         expect(`${label} ${hint}`).not.toMatch(/boat|runner|VM\b/i);
       }
     }
+  });
+});
+
+describe("a failed run's error", () => {
+  it("keeps the engine's own words, and turns a bare stop code into a sentence", () => {
+    const words = "Grok refused this turn: the usage balance of the Grok account it runs on is used up.";
+    expect(routineRunError(words)).toBe(words);
+    expect(routineRunError(undefined)).toBeUndefined();
+    // runs recorded before 2026-10-08 kept only the code (GOX, "Failed: rpc_error")
+    expect(routineRunError("rpc_error")).toMatch(/^The bot's engine stopped this run with an internal error/);
+    expect(routineRunError("auth_required")).toMatch(/sign-in, key or credit/);
+    expect(routineRunError("shutdown_timeout")).toBe("The bot's engine stopped this run (shutdown_timeout). Open the results thread for the details.");
   });
 });

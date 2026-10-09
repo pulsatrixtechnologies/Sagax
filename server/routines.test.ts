@@ -2610,8 +2610,10 @@ describe("RoutineManager", () => {
     expect(h.failed).toHaveLength(1);
   });
 
-  it.each(["error", "tool_error"])(
-    "preserves the detailed runtime error when a turn ends with generic %s",
+  // rpc_error and auth_required: GOX 2026-10-08, a Grok 402 showed as a
+  // bare "Failed: rpc_error" in the routine modal.
+  it.each(["error", "tool_error", "rpc_error", "auth_required"])(
+    "preserves the detailed runtime error when a turn ends with the stop code %s",
     async (stopReason) => {
       const h = harness();
       const routine = h.manager.create({
