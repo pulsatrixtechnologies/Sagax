@@ -56694,6 +56694,50 @@
           }
         }
       }
+    },
+    "Your bots stop using it in your conversations and routines.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Your bots stop using it in your conversations and routines."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Vos bots cessent de l'utiliser dans vos conversations et vos routines."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Seus bots deixam de usá-lo nas suas conversas e rotinas."
+          }
+        }
+      }
+    },
+    "Disconnect GitHub?": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Disconnect GitHub?"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Déconnecter GitHub ?"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Desconectar o GitHub?"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

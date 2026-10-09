@@ -6,8 +6,8 @@
 //   (All, Password managers, Productivity, Communication, Design, Code,
 //   More), a section per category with View all, one row per app with Add
 //   or Connect, and "N connected >" to Manage.
-// - Manage: Plugins and skills (Installed, Private skills, Advanced with the
-//   marketplaces) | Providers.
+// - Manage: Plugins and skills (Installed, Private skills, Your connections
+//   on an organization server, Advanced with the marketplaces) | Providers.
 // - A plugin's page: its accounts, its tools with a switch each (applied to
 //   every bot), its details, Uninstall; a private skill's page.
 //
@@ -673,6 +673,10 @@ struct ConnectAppsManage: View {
             }
         } header: {
             Text(String(localized: "Private skills"))
+        }
+        // Your connections (#218): the person's own, on an organization server
+        if session.surfaceGate.allows(.myConnections) {
+            YourConnectionsSection()
         }
         if session.canAdminister {
             // Add manually and Paste config need a keyboard and secrets: they
