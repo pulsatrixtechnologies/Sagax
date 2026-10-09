@@ -788,6 +788,9 @@ import { createLinkedSubjectsRoute, createOrgExportRoute } from "./org-export.ts
 import { createOrgBotForceRoutes } from "./org-bot-force.ts";
 import { createOrgPersonConnectionRoutes, orgConnectionListing, revokeOrgConnections, type OrgPersonConnectionsDeps } from "./org-person-connections.ts";
 import { peopleRoutes, type EngineVia, type PeopleDeps } from "./org-admin-people.ts";
+import { botsRoutes, type BotsDeps } from "./org-admin-bots.ts";
+import { ConsoleRefusal } from "./org-admin-console.ts";
+import { routineScheduleLabel } from "./org-admin-schedule.ts";
 import { createOrgImportRoute } from "./org-import-routes.ts";
 import { readSandboxdKey } from "./sandboxd-auth.ts";
 import { sandboxdClient } from "./user-sandbox-client.ts";
@@ -23633,6 +23636,200 @@ const orgPeopleDeps: PeopleDeps = {
   }),
 };
 
+/** A person who may own a bot on this server: known, of this
+ * organization, not disabled (either way). */
+function consoleOwner(principalId: string): AdminPerson | null {
+  const person = principals.byId(principalId);
+  if (!person || person.disabledAt !== undefined || person.consoleDisabled || person.mergedInto) return null;
+  if (IDENTITY.kind === "perspicax" && person.subject?.iss !== IDENTITY.issuer) return null;
+  return adminPerson(person.id);
+}
+
+/** One bot as a package document v2 (the Share dialog's format): the bot
+ * alone, every skill that fits, no memory; `routines` decides whether its
+ * routines ride along (they arrive off on import). */
+function singleBotPackage(bot: BotRecord, withRoutines: boolean) {
+  const team = sectionKey(bot.section);
+  const exportable = { ...bot, hidden: false } as BotRecord;
+  const skills = collectTeamSkills([exportable], "all");
+  if (!skills.ok) throw new ConsoleRefusal(409, "skills_unreadable", skills.error);
+  try {
+    return createTeamPackageExport({
+      team,
+      name: bot.name,
+      authorName: cfg.profile?.name?.trim(),
+      bots: [exportable],
+      groups: [],
+      routines: withRoutines ? (routines?.listRoutines() ?? []).filter((routine) => routine.botId === bot.id) : [],
+      published: null,
+      skillsByBot: skills.skillsByBot,
+      skillSelection: "all",
+      mcpServers: cfg.mcpServers ?? {},
+      skipped: skills.skipped,
+      preset: null,
+    });
+  } catch (error) {
+    if (error instanceof TeamExportError) throw new ConsoleRefusal(error.status, "export_refused", error.message);
+    throw error;
+  }
+}
+
+/** Import a package document for `ownerPrincipalId` (the console's Import
+ * and Clone): every bot it creates is theirs. */
+async function importPackageFor(raw: unknown, ownerPrincipalId: string): Promise<{ bots: BotRecord[]; warnings: string[] }> {
+  let document: PackageDocument;
+  try {
+    if (!isBotPackage(raw)) throw new Error("This is not a Sagax bot package.");
+    document = parsePackageDocument(raw, { trust: "file" });
+  } catch (error) {
+    throw new ConsoleRefusal(400, "invalid_package", error instanceof Error ? error.message.slice(0, 300) : "Invalid bot package.");
+  }
+  let result: PackageImportResult;
+  try {
+    const imported = importPackageDocument(document, { mode: "add", cwd: null, trust: "file" }, packageImportDeps(await defaultSelection()));
+    if (imported.alreadyAdded) throw new ConsoleRefusal(409, "already_added", "This package was already added.");
+    result = imported;
+  } catch (error) {
+    if (error instanceof PackageImportError) throw new ConsoleRefusal(error.status, error.code ?? "import_refused", error.message);
+    throw error;
+  }
+  for (const bot of result.bots) store.patchBot(bot.id, { ownerUserId: ownerPrincipalId });
+  for (const bot of result.bots) {
+    const current = store.bot(bot.id);
+    if (current) broadcast({ kind: "bot", bot: publicBot(current) });
+  }
+  return { bots: result.bots, warnings: result.skipped.map((skip) => `${skip.part}: ${skip.reason}`) };
+}
+
+/** The console's Bots (server/org-admin-bots.ts). */
+const orgBotsDeps: BotsDeps = {
+  bots: () => orgAdminBots(),
+  detail: (botId) => {
+    const bot = store.bot(botId);
+    if (!bot) return null;
+    const threads = botThreadIds(bot);
+    const lastAt = store.tasks(bot.id).reduce<number | null>((latest, task) => typeof task.updatedAt === "number" && (latest === null || task.updatedAt > latest) ? task.updatedAt : latest, null);
+    const mode = approvalModeFor(bot);
+    return {
+      threads: { count: threads.length, lastAt },
+      soul: { chars: (bot.soul ?? "").length, summary: instructionsLead(bot.soul) ?? null },
+      skills: listBotSkills(bot).map((skill) => ({ id: skill.name, name: skill.name, source: skill.source || null })),
+      permissions: { approvalMode: mode, fullAccess: mode === "full" },
+      routineList: (routines?.listRoutines() ?? []).filter((routine) => routine.botId === bot.id)
+        .map((routine) => ({ id: routine.id, name: routine.name, enabled: routine.enabled, schedule: routineScheduleLabel(routine.schedule) })),
+    };
+  },
+  owner: consoleOwner,
+  ownerBySub: (sub) => {
+    if (IDENTITY.kind !== "perspicax") return null;
+    const person = principals.bySubject(IDENTITY.issuer, sub);
+    return person ? consoleOwner(person.id) : null;
+  },
+  clone: async (botId, input) => {
+    const source = store.bot(botId);
+    if (!source) throw new ConsoleRefusal(404, "not_found", "No such bot.");
+    const exported = singleBotPackage(source, false);
+    const { bots } = await importPackageFor(exported.document, input.ownerPrincipalId);
+    const copy = bots[0];
+    if (!copy) throw new ConsoleRefusal(500, "clone_failed", "The copy could not be made.");
+    // The source's model and settings; a copy starts with no grants, no
+    // memory, no threads and no routines, and never with full access.
+    const mode = approvalModeFor(source);
+    store.patchBot(copy.id, {
+      modelSelection: structuredClone(source.modelSelection),
+      ...(input.name ? { name: input.name } : {}),
+      ...(mode !== "full" && mode !== "custom" ? { approvalMode: mode, autoApprove: source.autoApprove } : {}),
+      ...(source.speakReplies !== undefined ? { speakReplies: source.speakReplies } : {}),
+      ...(source.voice !== undefined ? { voice: source.voice } : {}),
+      ...(source.voiceNotes !== undefined ? { voiceNotes: source.voiceNotes } : {}),
+      ...(source.memoryEnabled !== undefined ? { memoryEnabled: source.memoryEnabled } : {}),
+      ...(source.memoryUpkeep !== undefined ? { memoryUpkeep: source.memoryUpkeep } : {}),
+      ...(source.browser !== undefined ? { browser: source.browser } : {}),
+      ...(source.computer !== undefined ? { computer: source.computer } : {}),
+      ...(source.toolScope !== undefined ? { toolScope: structuredClone(source.toolScope) } : {}),
+      ...(source.mcpServers ? { mcpServers: [...source.mcpServers] } : {}),
+      ...(source.assignedSkills ? { assignedSkills: [...source.assignedSkills] } : {}),
+      ...(source.avatarUrl ? { avatarUrl: source.avatarUrl, ...(source.avatarCrop ? { avatarCrop: source.avatarCrop } : {}) } : {}),
+    });
+    // The source's skills were on: so are the copy's.
+    for (const skill of listSkills(source.id)) if (skill.enabled) setSkillEnabled(copy.id, skill.name, true);
+    const current = store.bot(copy.id);
+    if (current) broadcast({ kind: "bot", bot: publicBot(current) });
+    return copy.id;
+  },
+  setArchived: (botId, archived) => {
+    const bot = store.bot(botId);
+    if (!bot) throw new ConsoleRefusal(404, "not_found", "No such bot.");
+    if (archived && bot.chiefOfStaff) throw new ConsoleRefusal(409, "primary_bot", "This is its owner's Primary Bot: they choose another one before it can be archived.");
+    store.patchBot(botId, { hidden: archived });
+  },
+  transfer: (botId, ownerPrincipalId) => {
+    const bot = store.bot(botId);
+    if (!bot) throw new ConsoleRefusal(404, "not_found", "No such bot.");
+    const facts = botFacts(bot);
+    const previous = facts.ownerPrincipalId;
+    // Grants kept; the old owner keeps the bot at `manage`; a grant to the
+    // new owner becomes ownership. A Primary Bot is its owner's own: it
+    // stops being one.
+    const grants = facts.grants.filter((grant) => grant.target !== `user:${ownerPrincipalId}` && grant.target !== `user:${previous}`);
+    if (previous) grants.push({ target: `user:${previous}`, level: "manage", by: previous, at: Date.now() } as (typeof grants)[number]);
+    if (bot.chiefOfStaff) store.clearPrimaryBot(botId);
+    store.patchBot(botId, { ownerUserId: ownerPrincipalId });
+    store.setBotGrants(botId, grants);
+    audienceChanged();
+  },
+  setModel: (botId, input) => {
+    const bot = store.bot(botId);
+    if (!bot) throw new ConsoleRefusal(404, "not_found", "No such bot.");
+    const instanceId = input.engineInstanceId ?? bot.modelSelection.instanceId;
+    const entry = registry.entries().find((candidate) => candidate.instanceId === instanceId);
+    if (!entry || !engineInstalled(instanceId)) throw new ConsoleRefusal(400, "engine_not_installed", `The engine ${instanceId} is not installed on this server.`);
+    if (!consoleEngineAllowed(instanceId)) throw new ConsoleRefusal(400, "engine_not_allowed", `The organization's policy does not allow the engine ${instanceId}.`);
+    if (bot.approvalGrant) throw new ConsoleRefusal(409, "busy", "Wait for the approval-level change to finish before changing models.");
+    // null: the bot's model on the same engine, else the engine's default.
+    const model = input.model ?? (instanceId === bot.modelSelection.instanceId ? bot.modelSelection.model : registry.get(instanceId)?.models.default ?? null);
+    if (!model) throw new ConsoleRefusal(400, "bad_request", "This engine has no default model: choose one.");
+    const checked = checkedModelSelection({ instanceId, model }, { selection: bot.modelSelection, busy: threadBusy(bot.id, bot.threadId) }, true);
+    if (!checked.ok) throw new ConsoleRefusal(checked.status, checked.status === 409 ? "busy" : "bad_request", checked.error);
+    store.patchBot(bot.id, { modelSelection: checked.selection });
+  },
+  stop: forceStopBot,
+  remove: (botId) => deleteBotWithLifecycle(botId),
+  notifyOwner: (botId, action, adminPrincipalId) => {
+    const bot = store.bot(botId);
+    const owner = bot ? botFacts(bot).ownerPrincipalId : undefined;
+    if (!owner) return;
+    const admin = principals.byId(adminPrincipalId);
+    const who = admin ? personDisplayName(admin) || "An admin" : "An admin";
+    notify({
+      kind: "admin-action", botId, botName: bot?.name ?? "", threadId: bot?.threadId ?? "",
+      title: action === "stop" ? `${bot?.name} was stopped by an admin` : `${bot?.name} was deleted by an admin`,
+      body: action === "stop" ? `${who} stopped all of its work.` : `${who} deleted this bot.`,
+      audience: [owner],
+    });
+  },
+  exportPackage: (botId) => {
+    const bot = store.bot(botId);
+    if (!bot) throw new ConsoleRefusal(404, "not_found", "No such bot.");
+    const exported = singleBotPackage(bot, true);
+    return { document: exported.document, filename: exported.filename, redacted: exported.redacted, skipped: exported.skipped };
+  },
+  importPackage: async (document, input) => {
+    const { bots, warnings } = await importPackageFor(document, input.ownerPrincipalId);
+    const first = bots[0];
+    if (!first) throw new ConsoleRefusal(400, "invalid_package", "The package has no bot.");
+    if (input.name) store.patchBot(first.id, { name: input.name });
+    return { botId: first.id, warnings };
+  },
+};
+
+/** The organization's engine policy (Settings, Policies): every engine
+ * until a list is set. */
+function consoleEngineAllowed(instanceId: string): boolean {
+  const allowed = (cfg as { orgPolicies?: { allowedEngines?: string[] | null } }).orgPolicies?.allowedEngines;
+  return !Array.isArray(allowed) || allowed.includes(instanceId);
+}
+
 /** What a manager's reach is checked against for one bot (the bots route
  * and the files routes of the console's admin API). */
 function orgBotReach(bot: BotRecord): AdminBotReach {
@@ -23726,6 +23923,7 @@ const orgAdmin = createOrgAdminRoutes({
   console: [
     ...overviewRoutes(orgOverviewDeps),
     ...peopleRoutes(orgPeopleDeps),
+    ...botsRoutes(orgBotsDeps),
   ],
   // The console's file browser (Perspicax 2026-10-08, slice 1: read only).
   files: {

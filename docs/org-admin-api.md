@@ -135,9 +135,10 @@ GET /api/org/admin/bots?status=active&q=atl&limit=50
 }
 ```
 
-Every bot now carries `status` (`archived` is a bot hidden from the sidebar,
-which answers nothing until restored), `label` (the sidebar section it is
-filed under) and `threads` (its main conversation plus its tasks).
+Every bot now carries `status` (`archived` is Sagax's archived bot: out of
+the sidebar, skipped by rooms, its routines do not run, until restored),
+`label` (the sidebar section it is filed under) and `threads` (its main
+conversation plus its tasks).
 
 ### `GET usage` (extended)
 
@@ -243,3 +244,127 @@ The body of the session route: `{"all": true}`, `{"kind": "mcp", "name"}`,
 `{"kind": "github"}` or `{"kind": "plugin", "botId", "key"}`. Answers
 `{removed, connections}` (the listing after the change). Audited
 `connections.revoke` when something was removed.
+
+## Bots
+
+| Method and path | Role | What |
+|---|---|---|
+| `GET bots/{id}` | manager | a bot's page |
+| `POST bots/{id}/clone` | manager (bot and new owner in reach) | a copy for its owner or another person |
+| `POST bots/{id}/archive` | manager in reach, admin | archive |
+| `POST bots/{id}/restore` | manager in reach, admin | restore |
+| `POST bots/{id}/transfer` | admin | another owner |
+| `POST bots/{id}/model` | manager in reach, admin | another engine or model |
+| `POST bots/{id}/stop` | admin | stop every running turn, task and routine run |
+| `POST bots/{id}/delete` | admin | delete, with the bot's name as confirmation |
+| `POST bots/bulk` | admin | archive, restore, transfer or model on 1 to 100 bots |
+| `GET bots/{id}/package` | admin | the package document, secrets redacted |
+| `POST bots/import` | admin | a package becomes bots of a chosen owner |
+
+### `GET bots/{id}`
+
+```json
+{
+  "bot": {
+    "id": "5e38...", "name": "Atlas", "status": "active", "label": "Sales",
+    "owner": { "principalId": "pr_1abf...", "sub": "01J9...", "name": "Alice" },
+    "engine": { "instanceId": "claude", "driverKind": "claudeAgent", "installed": true }, "model": "claude-opus-4-1",
+    "threads": { "count": 4, "lastAt": 1791500100000 },
+    "soul": { "chars": 1840, "summary": "Prepares the weekly sales digest." },
+    "skills": [{ "id": "digest", "name": "digest", "source": "https://github.com/acme/skills" }],
+    "permissions": { "approvalMode": "ask", "fullAccess": false },
+    "routineList": [{ "id": "r_1", "name": "Daily digest", "enabled": true, "schedule": "Every weekday at 09:00" }]
+  }
+}
+```
+
+The AdminBot fields of `GET bots`, plus the facts above. `soul.summary` is
+the first line of the instructions (at most 140 characters), never the
+instructions themselves; no message, memory or routine prompt is answered.
+
+### `POST bots/{id}/clone`
+
+```json
+{ "ownerSub": "01J9...", "name": "Atlas for Bob" }
+```
+
+Every route that names an owner (clone, transfer, bulk transfer, import)
+takes `ownerSub` (the Perspicax user id, how the console names people) or
+`ownerPrincipalId` (Sagax's id), not both. Both fields are optional here:
+the owner defaults to the bot's owner, the name to
+a numbered copy ("Atlas 2"). Answers `201 {bot}`. The copy has the
+instructions, the skills (on when they were on), the appearance, the model
+and the settings (voice, memory switches, browser, computer, tool scope, MCP
+servers, approval level except Full access and Custom, which start on Auto);
+it has no threads, no memory, no grants, no routines and no connected-app
+grants. Audited `bot.clone` (`after.from` names the source).
+
+### `POST bots/{id}/archive`, `restore`
+
+`{}`. Answers `{bot}`. Archiving a Primary Bot is refused (409
+`primary_bot`): its owner chooses another one first. Archiving an archived
+bot changes nothing and writes no row. Audited `bot.archive`, `bot.restore`.
+
+### `POST bots/{id}/transfer`
+
+`{"ownerSub": "01J9..."}` (or `ownerPrincipalId`). Answers `{bot}`. Grants are kept; the
+former owner keeps the bot at `manage`; a grant the new owner had becomes
+ownership; a Primary Bot stops being one. 404 `owner_not_found` for an
+unknown or disabled person. Audited `bot.transfer`.
+
+### `POST bots/{id}/model`
+
+`{"engineInstanceId": "codex", "model": "gpt-5"}`; `engineInstanceId` is
+optional (the bot's engine); `model` null means the bot's model on the same
+engine, else the engine's default model. Answers `{bot}`. Refusals: 400
+`engine_not_installed`, 400 `engine_not_allowed` (the organization's engine
+policy, Settings), 400 `bad_request` (a model the engine does not offer), 409
+`busy` (the bot is working). Audited `bot.model`.
+
+### `POST bots/{id}/stop`, `POST bots/{id}/delete`
+
+Stop: `{}`, answers `{bot}`. Delete: `{"confirm": "Atlas"}` (the bot's exact
+name, else 400 `confirm_required`), stops the bot first, answers `{deleted:
+id}`. The owner is told (a notification to them alone) when someone else
+acted. Audited `bot.force_stop`, `bot.force_delete`.
+
+### `POST bots/bulk`
+
+```json
+{ "action": "transfer", "ids": ["5e38...", "77ab..."], "ownerSub": "01J9..." }
+```
+
+`action` is `archive`, `restore`, `transfer` (with `ownerSub` or `ownerPrincipalId`) or
+`model` (with `model`, and optionally `engineInstanceId`); `ids` 1 to 100
+distinct bot ids. Each bot is done on its own:
+
+```json
+{ "results": [{ "id": "5e38...", "ok": true }, { "id": "77ab...", "ok": false, "code": "primary_bot", "message": "..." }] }
+```
+
+One audit row per bot that changed.
+
+### `GET bots/{id}/package`
+
+The package document v2 (`openmaus.package`, the Share dialog's format) of
+this bot alone: its instructions, appearance, skills that fit, its routines
+(they arrive off on import) and the address of its remote MCP servers with
+their value names. Secrets are never in it; `X-Sagax-Package-Redacted` counts
+the redacted values. At most 4 MiB (else 413 `too_large`). Served as an
+attachment. Audited `bot.export`.
+
+### `POST bots/import`
+
+```json
+{ "package": { "format": "openmaus.package", "version": 2, "...": "..." }, "ownerSub": "01J9...", "name": "Atlas" }
+```
+
+The body may be up to 4 MiB plus 64 KiB. The owner is the person of `ownerSub`
+(a Perspicax user id: how another linked server names them too) or
+`ownerPrincipalId`, else the console person. The package is read as a file (it
+cannot claim a publisher; skills, routines and connections arrive off).
+Answers `201 {bot, warnings}` (the first bot it made; every bot it made
+belongs to the owner). 400 `invalid_package`. Audited `bot.import`.
+
+"Copy to another server" is `GET bots/{id}/package` on one server and
+`POST bots/import` on the other.
