@@ -201,7 +201,9 @@ describe("the avatar popover's Bot tab", () => {
     const locked = render(undefined);
     expect(locked).toContain('data-character-option="owl"');
     for (const id of ["shape", "trombi", "bunbu"]) expect(locked).not.toContain(`data-character-option="${id}"`);
-    expect(locked).not.toContain("data-locked");
+    // a Mastery character (Shiba) stays in the row, locked, with its achievement; nothing else shows locked
+    expect(locked).toContain('data-character-option="shiba"');
+    expect(locked.match(/data-locked/g) ?? []).toHaveLength(1);
     expect(locked).not.toContain('data-tab="epic"');
     expect(locked).toContain('data-mascot-skin-option="none"');
     // the skin this bot already wears stays visible
