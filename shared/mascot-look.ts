@@ -71,9 +71,11 @@ export const BUNBU_SKINS = ["plain", "pastel", "night", "plush", "velvet", "gold
 export type BunbuSkin = (typeof BUNBU_SKINS)[number];
 
 /**
- * Skins for Shiba, by rarity: the bot's color (Plain) and the breed's own
- * coats (Cream, Black and tan, Red, Sesame, White), then premium editions with
- * the Trombi and Shapes treatments (src/components/skin-fx/shiba-skins.tsx).
+ * Skins for Shiba: the bot's color (Plain, free with it), the breed's own
+ * coats (Cream, Black and tan, Red, Sesame, White: rare, each on a Mastery
+ * rung, shared/mascot-unlocks.ts), then the premium set every Mastery
+ * character wears, with the Trombi and Shapes treatments
+ * (src/components/skin-fx/shiba-skins.tsx).
  */
 export const SHIBA_SKINS = ["plain", "cream", "blacktan", "red", "sesame", "white", "retro98", "gold", "neon", "chrome", "glitch", "holo", "molten"] as const;
 export type ShibaSkin = (typeof SHIBA_SKINS)[number];
@@ -125,11 +127,11 @@ export const BUNBU_SKIN_TIER: Readonly<Record<BunbuSkin, SkinTier>> = {
 
 export const SHIBA_SKIN_TIER: Readonly<Record<ShibaSkin, SkinTier>> = {
   plain: "common",
-  cream: "common",
-  blacktan: "common",
-  red: "common",
-  sesame: "common",
-  white: "common",
+  cream: "rare",
+  blacktan: "rare",
+  red: "rare",
+  sesame: "rare",
+  white: "rare",
   retro98: "rare",
   gold: "rare",
   neon: "epic",

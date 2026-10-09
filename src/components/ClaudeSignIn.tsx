@@ -89,11 +89,14 @@ export function ClaudeSignIn({ instanceId, base: baseOverride, onSignedIn }: {
     setBusy("finish");
     setError(null);
     try {
+      // The server answers only once Claude Code has finished and confirmed
+      // the sign-in (a refused code is an error), so a 200 is the success.
+      // Asking /status first used to land on a flow the server had already
+      // released: a 404, read as a failure, until Connect was clicked again.
       await api(`${base}/complete`, { method: "POST", body: JSON.stringify({ flowId: auth.flowId, code: code.trim() }) });
-      const { auth: next }: { auth: DeviceSignInStatus } = await api(`${base}/status?flowId=${encodeURIComponent(auth.flowId)}`);
-      setAuth(next);
+      setAuth({ phase: "succeeded", flowId: auth.flowId, authorizationUrl: null, expiresAt: null });
       setCode("");
-      if (next.phase === "succeeded") await refresh();
+      await refresh();
     } catch (cause) {
       if (deviceFlowUnavailable(cause)) {
         // the server already knows the outcome; ask it rather than guess

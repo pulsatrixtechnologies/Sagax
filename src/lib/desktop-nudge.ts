@@ -130,6 +130,7 @@ export async function onNudgeReceived(
       bounce: "critical",
       flash: true,
     },
+    ...(threadId ? { target: { botId: "", threadId } } : {}),
     open: () => {
       if (threadId) openConversation({ botId: "", threadId });
     },

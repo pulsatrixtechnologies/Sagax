@@ -4,7 +4,7 @@
 // are unlocked; the pane is AchievementsPage for the chosen one. Opened from
 // the account menu (store action toggleAchievements).
 import { useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
-import { Crown, Flame, Lock, Mic, Rocket, Trophy, Users, X, Zap, Gauge, type LucideIcon } from "lucide-react";
+import { Crown, Flame, GraduationCap, Lock, Mic, Rocket, Trophy, Users, X, Zap, Gauge, type LucideIcon } from "lucide-react";
 import { ACHIEVEMENTS } from "../../../shared/achievements-catalog";
 import { ACHIEVEMENT_CATEGORIES, type AchievementCategory } from "../../../shared/achievements";
 import { useAchievements } from "@/lib/achievements";
@@ -27,7 +27,8 @@ const CATEGORY_ICON: Record<AchievementsModalCategory, LucideIcon> = {
   voice: Mic,
   collaboration: Users,
   streaks: Flame,
-  mastery: Crown,
+  mastery: GraduationCap,
+  tiers: Crown,
   secrets: Lock,
 };
 

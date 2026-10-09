@@ -7,7 +7,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { DockedPanelResizeHandle, useDockedPanelWidth } from "./DockedPanelResize";
 import { Bug, MoreHorizontal, PanelRight, Pencil } from "lucide-react";
 
-import { openBotCatalog, useStore, visibleMessages, type Bot } from "@/state/store";
+import { useStore, visibleMessages, type Bot } from "@/state/store";
 import { requestPrimaryBot } from "@/lib/bot-quick-actions";
 import { BotContextMenu, type MenuState } from "./Sidebar";
 import { CIRCLE_BUTTON } from "@/lib/circle-button";
@@ -79,7 +79,7 @@ export function BotSettingsDialog({ bot, onOpenVmWorkspace }: {
   };
   const dockedPanel = useDockedPanelWidth();
   // The mascot's menu (right click on it, or the "..." button): Edit
-  // persona, Rename the bot, Put on the desktop, Make primary bot, Browse Bots.
+  // persona, Rename the bot, Put on the desktop, Make primary bot.
   const [mascotMenu, setMascotMenu] = useState<MenuState | null>(null);
   const [renameRequest, setRenameRequest] = useState(0);
   const closeMascotMenu = useCallback(() => setMascotMenu(null), []);
@@ -303,7 +303,6 @@ export function BotSettingsDialog({ bot, onOpenVmWorkspace }: {
         onEditPersona={(target) => dispatch({ type: "openPersonaEditor", botId: target.id })}
         onRename={() => setRenameRequest((count) => count + 1)}
         onMakePrimary={makePrimary}
-        onBrowseBots={() => dispatch(openBotCatalog())}
       />
     </>
   );

@@ -19,6 +19,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { ACHIEVEMENTS } from "../shared/achievements-catalog.ts";
+import { applyMasteryFact, cleanMasteryState, emptyMasteryState, reconcileMastery, type MasteryFact } from "../shared/achievements-mastery.ts";
 import {
   ACHIEVEMENT_EVENTS,
   currentStreak,
@@ -57,6 +58,8 @@ export interface AchievementEvent {
   value?: number;
   /** Counts once: replaying the same id is a no-op. */
   id?: string;
+  /** A Mastery fact (type "mastery" only, server only). */
+  fact?: MasteryFact;
 }
 
 // `public` is shared unless the stored record says false. A missing flag is not an opt-out.
@@ -81,6 +84,16 @@ export interface AchievementStore {
   remove(person: string): void;
   /** Write pending changes now (tests, shutdown). */
   flush(): void;
+  /** Everyone with a record (the nightly pass). */
+  people(): string[];
+  /** The person's day now (YYYY-MM-DD in their time zone). */
+  localDay(person: string): string;
+  /**
+   * The nightly pass for one person: the facts only a look at the whole
+   * picture gives (their conversations), then the measures that span days.
+   * Returns what that unlocked.
+   */
+  reconcile(person: string, facts?: readonly MasteryFact[]): AchievementUnlock[];
 }
 
 export interface AchievementStoreOptions {
@@ -154,6 +167,7 @@ function cleanRecord(input: unknown, now: number): PersonRecord {
   record.migrated = value.migrated === true;
   record.settings = cleanSettings(value.settings);
   record.updatedAt = typeof value.updatedAt === "number" ? value.updatedAt : now;
+  if (value.mastery && typeof value.mastery === "object") record.mastery = cleanMasteryState(value.mastery);
   if (value.unlocked && typeof value.unlocked === "object") {
     for (const [id, at] of Object.entries(value.unlocked as Record<string, unknown>)) {
       if (typeof at === "number" && Number.isFinite(at)) record.unlocked[id] = at;
@@ -303,6 +317,19 @@ export function createAchievementStore(options: AchievementStoreOptions): Achiev
         if (!event || typeof event !== "object") continue;
         const known = source === "client" ? isClientEvent(event.type) : isServerEvent(event.type) || isClientEvent(event.type);
         if (!known) continue;
+        if (event.type === "mastery") {
+          // a Mastery fact: its own state, no counter, no active day (a routine
+          // that ran at night is not the person using Sagax)
+          if (source !== "server" || !event.fact || typeof event.fact !== "object") continue;
+          if (typeof event.id === "string" && event.id) {
+            const id = `mastery:${event.id}`.slice(0, 160);
+            if (record.seen.includes(id)) continue;
+            pushBounded(record.seen, id, MAX_SEEN);
+          }
+          if (!allowed(person, event.type, source, at, day)) continue;
+          if (applyMasteryFact((record.mastery ??= emptyMasteryState()), event.fact, at, day)) accepted += 1;
+          continue;
+        }
         if (typeof event.id === "string" && event.id) {
           const id = `${event.type}:${event.id}`.slice(0, 160);
           if (record.seen.includes(id)) continue;
@@ -377,6 +404,28 @@ export function createAchievementStore(options: AchievementStoreOptions): Achiev
     flush() {
       if (timer) write();
     },
+
+    people() {
+      return Object.keys(load());
+    },
+
+    localDay(person) {
+      return dayKey(now(), recordOf(person).settings.tzOffset ?? 0);
+    },
+
+    reconcile(person, facts = []) {
+      const record = recordOf(person);
+      const at = now();
+      const day = dayKey(at, record.settings.tzOffset ?? 0);
+      const state = (record.mastery ??= emptyMasteryState());
+      for (const fact of facts) applyMasteryFact(state, fact, at, day);
+      reconcileMastery(state, day);
+      const earned = newlyEarned(record, catalog);
+      for (const id of earned) record.unlocked[id] = at;
+      record.updatedAt = at;
+      persist(earned.length > 0);
+      return earned.map((id) => ({ id, points: catalog.find((item) => item.id === id)?.points ?? 0, unlockedAt: at }));
+    },
   };
 }
 
@@ -406,7 +455,8 @@ export function achievementRequestEvents(request: RequestFacts, lookups: Request
   if (method === "POST" && path === "/api/bots") return [{ type: "bot.created" }];
   if (method === "POST" && /^\/api\/bots\/[\w-]+\/primary$/.test(path)) return [{ type: "bot.primary" }];
   if (method === "POST" && path === "/api/routines") return [{ type: "routine.created" }];
-  if ((method === "PATCH" && /^\/api\/bots\/[\w-]+\/cards\/[\w-]+$/.test(path)) || (method === "POST" && /^\/api\/bots\/[\w-]+\/(?:respond|requests\/[A-Za-z0-9_-]{16,80})$/.test(path))) {
+  // an approval answered from the bot's panel or from a thread (/api/threads/:id/respond)
+  if ((method === "PATCH" && /^\/api\/bots\/[\w-]+\/cards\/[\w-]+$/.test(path)) || (method === "POST" && /^\/api\/(?:bots\/[\w-]+\/(?:respond|requests\/[A-Za-z0-9_-]{16,80})|threads\/[\w-]+\/respond)$/.test(path))) {
     return [{ type: "approval.answered" }];
   }
   if (method === "POST" && /^\/api\/bots\/[\w-]+\/computer\/control$/.test(path)) return [{ type: "computer.control" }];

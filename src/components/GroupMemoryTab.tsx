@@ -5,13 +5,12 @@
 // other people read it.
 import { useEffect, useState } from "react";
 
-import { cn } from "@/lib/cn";
 import { fetchGroupMemory, saveGroupMemory, type GroupMemoryView } from "@/lib/group-memory";
 import { t } from "@/lib/i18n";
 import { ApiError } from "@/state/store";
 import { Switch } from "./SettingsPrimitives";
 import { MemoryGauge } from "./bot-settings/MemorySection";
-import { inputCls } from "./bot-settings/field";
+import { MarkdownEditor } from "./markdown/MarkdownEditor";
 
 const buttonCls = "rounded-full border border-hairline/40 bg-panel px-3 py-1 text-[12.5px] text-ink-secondary hover:bg-raised hover:text-ink disabled:opacity-50";
 
@@ -108,14 +107,14 @@ export function GroupMemoryBody({ view, draft, conflict, error, saving, onDraft,
       {!view.canEdit && <p className="text-[12px] text-ink-secondary">{t("groupMemory.readOnly")}</p>}
       {!view.enabled && <p className="text-[12px] text-ink-secondary">{t("groupMemory.off")}</p>}
       <MemoryGauge index={view.capacity} />
-      <textarea
-        aria-label={t("groupMemory.title")}
+      <MarkdownEditor
+        ariaLabel={t("groupMemory.title")}
         value={draft}
         readOnly={!view.canEdit}
-        onChange={(event) => onDraft(event.target.value)}
-        rows={12}
+        onChange={onDraft}
+        minHeight={240}
+        dataField="group-memory"
         placeholder={view.canEdit ? t("groupMemory.placeholder") : t("groupMemory.empty")}
-        className={cn(inputCls, "resize-y font-mono text-[12.5px] leading-relaxed")}
       />
       {conflict && (
         <div role="alert" className="rounded-lg border border-warning/25 bg-warning/10 p-3 text-[12.5px] leading-relaxed text-ink">

@@ -235,6 +235,8 @@ export interface Message {
   sender?: import("../../shared/wire").WireMessage["sender"];
   /** Provider turn that produced this message. */
   turnId?: string;
+  /** What the turn that wrote this reply ran on; no effort = engine default. */
+  turnRun?: { instanceId: string; model: string; effort?: EffortLevel };
   /** Last assistant text item from a settled provider turn. */
   turnTerminal?: boolean;
   /** screen messages: the server holds a frame of the bot's computer,
@@ -337,8 +339,11 @@ export interface Group {
    * global group limit. Channel conversations store theirs on each task. */
   turnTimeoutMinutes?: number | null;
   /** Separate conversations in this channel. DMs deliberately stay on one
-   * thread and omit this collection. */
+   * thread and omit this collection. A conversation with a person has them
+   * like a bot (server/people-dms.ts). */
   tasks?: GroupTask[];
+  /** Folders of a person conversation's threads, in sidebar order. */
+  projects?: BotProject[];
   messages: Message[];
   /** The server answered a bounded page and older messages remain in storage.
    * Absent on an unpaged response, which always carries the whole thread. */
@@ -360,6 +365,15 @@ export interface GroupTask {
   /** This conversation's turn ceiling, in whole minutes. Absent uses the
    * global group limit. */
   turnTimeoutMinutes?: number;
+  /** Archived, snoozed and filed, as a bot thread is (a person
+   * conversation's threads use these). */
+  archivedAt?: number;
+  snoozedUntil?: number;
+  projectId?: string;
+  /** A person conversation: this thread is unread for the viewer. */
+  unread?: boolean;
+  /** A person conversation: the thread it was before threads ("General"). */
+  general?: true;
 }
 
 export interface ModelSelection {
@@ -606,6 +620,14 @@ export interface BotProject {
 }
 
 export type ProjectUpdatePatch = { name?: string; emoji?: string | null };
+/** Who owns a set of thread folders: a bot (the default) or a group. */
+export type FolderOwnerKind = "bot" | "group";
+/** The organization fields of a person conversation's thread; null clears. */
+export type GroupTaskUpdatePatch = { archivedAt?: number | null; snoozedUntil?: number | null; projectId?: string | null; pinned?: boolean };
+/** Sent on every API request: this client knows a conversation with a
+ * person has threads, so the server answers with the thread this person has
+ * open (server/people-dms.ts). */
+export const PERSON_THREADS_HEADER = "x-sagax-person-threads";
 
 /** A conversation uses its own execution settings; the sidebar keeps the
  * original bot's aggregate presence and profile defaults. */
@@ -820,6 +842,10 @@ export interface ConfigStatus {
   /** The enrolled organisation's read-only desktop policy; null when this
    * desktop is not enrolled or its Admin sends no policy. */
   managedPolicy?: ManagedPolicySummary | null;
+  /** Organization server: the model providers (engine instance ids) its
+   * admin allows in Perspicax; null or absent means every provider
+   * (shared/org-allowed-engines.ts). Refreshed by the config frame. */
+  allowedEngines?: string[] | null;
   /** An OMB Cloud home in the upstream project. Sagax runs no Cloud, so no
    * server of ours sets it; kept optional so the shared place logic
    * (src/lib/place-view.ts) reads it as absent. */
@@ -895,7 +921,7 @@ export interface BrowserProfile {
 // Settings shows (a saved key's Test button used to vanish that way).
 export type ConfigStatusFrame = Pick<
   ConfigStatus,
-  "xai" | "mistral" | "cerebras" | "anthropic" | "openai" | "openrouter" | "openaiCompat" | "fleet" | "composio" | "box" | "vps" | "rooms" | "mcp" | "threads" | "automaticRecovery" | "localVm" | "opencodeGo" | "tts" | "decider" | "imageGen" | "live" | "profile" | "language" | "features" | "onboarding" | "browserEngine" | "browserProfiles" | "edition" | "budgets" | "billing" | "managedPolicy" | "viewer"
+  "xai" | "mistral" | "cerebras" | "anthropic" | "openai" | "openrouter" | "openaiCompat" | "fleet" | "composio" | "box" | "vps" | "rooms" | "mcp" | "threads" | "automaticRecovery" | "localVm" | "opencodeGo" | "tts" | "decider" | "imageGen" | "live" | "profile" | "language" | "features" | "onboarding" | "browserEngine" | "browserProfiles" | "edition" | "budgets" | "billing" | "managedPolicy" | "viewer" | "allowedEngines"
 >;
 
 export function configStatusFromFrame(frame: ConfigStatusFrame): ConfigStatus {
@@ -932,6 +958,7 @@ export function configStatusFromFrame(frame: ConfigStatusFrame): ConfigStatus {
     billing: frame.billing,
     managedPolicy: frame.managedPolicy,
     viewer: frame.viewer,
+    allowedEngines: frame.allowedEngines,
   };
 }
 
@@ -1127,12 +1154,12 @@ export interface AppState {
   /** The achievements modal (src/components/achievements/AchievementsModal.tsx),
    * its own window beside Settings: one or the other is open, never both. */
   achievementsOpen: boolean;
-  /** The organisation bot catalogue ("Browse Bots"), opened from the mascot
-   * context menu in the bot panel. Use dispatch(openBotCatalog()) and
+  /** The organisation bot catalogue ("Browse Bots"), opened from the sidebar
+   * row (Settings > Experimental features), New bot and Connect apps. Use dispatch(openBotCatalog()) and
    * dispatch(closeBotCatalog()). */
   botCatalogOpen: boolean;
-  /** Where the catalogue opens: its Templates section (the old Templates
-   * library's entry points, an install link carrying a team's address), or
+  /** Where the catalogue opens: its Templates section (New bot, Connect apps,
+   * an install link carrying a team's address), or
    * null for the home view. A new object on every request, so an open
    * catalogue follows a later one. */
   botCatalogTarget: BotCatalogTarget | null;
@@ -1328,7 +1355,8 @@ export type Action =
    * organization (server/people-dms.ts). */
   | { type: "openPeopleDm"; principalId: string }
   /** Nudge that person (POST /api/nudges). The server enforces the cooldown. */
-  | { type: "nudgePerson"; principalId: string }
+  /** `threadId`: the thread of the pair's conversation the line goes to. */
+  | { type: "nudgePerson"; principalId: string; threadId?: string }
   /** Nudge the other people of a group chat (POST /api/nudges). */
   | { type: "nudgeGroup"; groupId: string }
   | {
@@ -1347,12 +1375,15 @@ export type Action =
       patch: Partial<Pick<Group, "name" | "bulletin" | "memberIds" | "humanIds" | "defaultResponder" | "pinnedMessageId" | "section" | "unread" | "pinned">>;
     }
   | { type: "deleteGroup"; groupId: string }
-  | { type: "newGroupTask"; groupId: string }
+  | { type: "newGroupTask"; groupId: string; projectId?: string }
   | { type: "switchGroupTask"; groupId: string; threadId: string }
   | { type: "renameGroupTask"; groupId: string; threadId: string; title: string }
   | { type: "pinGroupTask"; groupId: string; threadId: string; pinned: boolean; title: string }
   | { type: "setConversationTurnLimit"; groupId: string; threadId: string; minutes: number | null; dm: boolean }
   | { type: "deleteGroupTask"; groupId: string; threadId: string }
+  /** Archive, snooze, pin or file one thread of a person conversation (the
+   * same fields as a bot thread's updateTask). */
+  | { type: "updateGroupTask"; groupId: string; threadId: string; patch: GroupTaskUpdatePatch }
   | { type: "interruptGroup"; groupId: string; threadId?: string; onError?: () => void }
   | { type: "instances"; instances: InstanceInfo[] }
   | { type: "configStatus"; config: ConfigStatus }
@@ -1429,10 +1460,12 @@ export type Action =
   | { type: "refreshTaskPermissions"; botId: string; threadId: string; acknowledgeLocalAuto?: boolean }
   /** "Switch them too": every thread of this bot on a model of its own follows the bot's. */
   | { type: "followBotModel"; botId: string }
-  | { type: "createProject"; botId: string; name: string; emoji?: string | null; onCreated?: (project: BotProject) => void; onError?: (message: string) => void }
-  | { type: "updateProject"; botId: string; projectId: string; patch: ProjectUpdatePatch; onSaved?: () => void; onError?: (message: string) => void }
-  | { type: "deleteProject"; botId: string; projectId: string; onDeleted?: () => void; onError?: (message: string) => void }
-  | { type: "reorderProjects"; botId: string; projectIds: string[]; onSaved?: () => void; onError?: (message: string) => void }
+  // Folders: a bot's, or with `owner: "group"` a person conversation's
+  // (botId is then that conversation's id). One set of actions for both.
+  | { type: "createProject"; botId: string; owner?: FolderOwnerKind; name: string; emoji?: string | null; onCreated?: (project: BotProject) => void; onError?: (message: string) => void }
+  | { type: "updateProject"; botId: string; owner?: FolderOwnerKind; projectId: string; patch: ProjectUpdatePatch; onSaved?: () => void; onError?: (message: string) => void }
+  | { type: "deleteProject"; botId: string; owner?: FolderOwnerKind; projectId: string; onDeleted?: () => void; onError?: (message: string) => void }
+  | { type: "reorderProjects"; botId: string; owner?: FolderOwnerKind; projectIds: string[]; onSaved?: () => void; onError?: (message: string) => void }
   | { type: "botAdded"; bot: Bot; preserveSelection?: boolean }
   | { type: "deleteBot"; botId: string }
   | { type: "botDeletionPending"; botId: string; on: boolean }
@@ -1553,10 +1586,10 @@ export function openNotificationTarget(
     (candidate) =>
       candidate.threadId === target.threadId ||
       (candidate.tasks ?? []).some((task) => task.threadId === target.threadId),
-  );
+  ) ?? (target.groupId ? state.groups.find((candidate) => candidate.id === target.groupId) : undefined);
   if (group) {
     dispatch({ type: "select", id: group.id });
-    if (group.threadId !== target.threadId) {
+    if (target.threadId && group.threadId !== target.threadId && (group.tasks ?? []).some((task) => task.threadId === target.threadId)) {
       dispatch({ type: "switchGroupTask", groupId: group.id, threadId: target.threadId });
     }
     return;
@@ -1703,6 +1736,50 @@ function optimisticUserMessage(
     channelMode,
     ...(voiceCall ? { voiceCall } : {}),
   };
+}
+
+/** Where a folder action goes: a bot's folders, or a group's. */
+export function folderOwnerPath(action: { botId: string; owner?: FolderOwnerKind }): string {
+  return action.owner === "group" ? `/api/groups/${action.botId}` : `/api/bots/${action.botId}`;
+}
+
+/** A folder answer carries its owner as it is now: the bot, or the group. */
+function applyFolderOwner(
+  dispatch: (action: Action) => void,
+  action: { owner?: FolderOwnerKind },
+  answer: { bot?: BotAnnouncement; group?: Partial<Group> & { id: string } },
+): void {
+  if (action.owner === "group") {
+    if (answer.group) dispatch({ type: "groupPatched", group: answer.group });
+  } else if (answer.bot) {
+    dispatch({ type: "botPatched", bot: answer.bot });
+  }
+}
+
+/** A person conversation: an update that names another thread than the one
+ * this client has open keeps it open, unless the update carries a
+ * transcript (the answer to a switch, a create or a fresh load) or that
+ * thread is gone. A live frame always names the conversation's default
+ * thread (server/people-dms.ts). */
+export function personThreadKept(
+  held: Pick<Group, "threadId" | "tasks"> & { peopleDm?: boolean },
+  patch: Partial<Group>,
+): boolean {
+  if (!(held.peopleDm || patch.peopleDm) || patch.messages) return false;
+  if (typeof patch.threadId !== "string" || patch.threadId === held.threadId) return false;
+  return (patch.tasks ?? held.tasks ?? []).some((task) => task.threadId === held.threadId);
+}
+
+/** What reading a person conversation means now: the open thread when it
+ * is unread, the whole conversation when only the conversation itself is
+ * marked unread (Mark unread, or a record from before threads), else
+ * nothing. Never a sibling thread: its dot stays until it is opened. */
+export function peopleDmReadTarget(group: Partial<Pick<Group, "threadId" | "tasks" | "unread">>): { threadId?: string } | null {
+  const tasks = group.tasks ?? [];
+  const open = tasks.find((task) => task.threadId === group.threadId);
+  if (open?.unread) return { threadId: open.threadId };
+  if (group.unread && !tasks.some((task) => task.unread)) return {};
+  return null;
 }
 
 /** The right panel follows the selection, the way the bot panel does: with
@@ -1919,6 +1996,9 @@ export function reducer(state: AppState, action: Action): AppState {
       const groups = exists
         ? fenced.groups.map((g) => (g.id === action.group.id ? {
             ...g, ...action.group,
+            // A person conversation: a frame names its default thread; the
+            // thread this person has open stays open (server/people-dms.ts).
+            threadId: personThreadKept(g, action.group) ? g.threadId : (action.group.threadId ?? g.threadId),
             section: typeof action.group.threadId === "string" || Object.hasOwn(action.group, "section") ? action.group.section : g.section,
             tasks: action.group.tasks ? mergeTaskStamps(g.tasks, action.group.tasks) : g.tasks,
             turnTimeoutMinutes: Object.hasOwn(action.group, "turnTimeoutMinutes")
@@ -2744,6 +2824,32 @@ export function reducer(state: AppState, action: Action): AppState {
             : group,
         ),
       };
+    case "updateGroupTask":
+      return {
+        ...state,
+        groups: state.groups.map((group) =>
+          group.id === action.groupId
+            ? {
+                ...group,
+                tasks: (group.tasks ?? []).map((task) => {
+                  if (task.threadId !== action.threadId) return task;
+                  const next: GroupTask = { ...task };
+                  for (const field of ["archivedAt", "snoozedUntil", "projectId"] as const) {
+                    if (!(field in action.patch)) continue;
+                    const value = action.patch[field];
+                    if (value === null || value === undefined) delete next[field];
+                    else Object.assign(next, { [field]: value });
+                  }
+                  if ("pinned" in action.patch) {
+                    if (action.patch.pinned) next.pinned = true;
+                    else delete next.pinned;
+                  }
+                  return next;
+                }),
+              }
+            : group,
+        ),
+      };
     case "setConversationTurnLimit":
       return {
         ...state,
@@ -2962,7 +3068,7 @@ export async function api<T = any>(path: string, init?: RequestInit & { timeoutM
   // caller signal so either can cancel. Omitted means no behavior change.
   const { timeoutMs, signal, ...rest } = init ?? {};
   const res = await fetch(path, {
-    headers: { "content-type": "application/json" },
+    headers: { "content-type": "application/json", [PERSON_THREADS_HEADER]: "1" },
     ...rest,
     signal: timeoutMs === undefined
       ? signal
@@ -3910,6 +4016,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           const group = stateRef.current.groups.find((g) => g.id === action.id);
           if (bot?.unread) {
             api(`/api/bots/${action.id}/read`, { method: "POST", body: JSON.stringify({ threadId: bot.threadId }) }).catch(() => {});
+          } else if (group?.peopleDm) {
+            // per thread: the one open, or the whole conversation when only
+            // the conversation itself was marked unread
+            const read = peopleDmReadTarget(group);
+            if (read) api(`/api/groups/${action.id}/read`, { method: "POST", body: JSON.stringify(read) }).catch(() => {});
           } else if (group?.unread) {
             api(`/api/groups/${action.id}/read`, { method: "POST" }).catch(() => {});
           }
@@ -3942,7 +4053,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             .catch(showError);
           break;
         case "nudgePerson":
-          api(`/api/nudges`, { method: "POST", body: JSON.stringify({ principalId: action.principalId }) })
+          api(`/api/nudges`, { method: "POST", body: JSON.stringify({ principalId: action.principalId, ...(action.threadId ? { threadId: action.threadId } : {}) }) })
             .then((sent) => onNudgeSent(sent))
             .catch(showError);
           break;
@@ -4059,25 +4170,25 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             .catch(showError);
           break;
         case "createProject":
-          api(`/api/bots/${action.botId}/projects`, { method: "POST", body: JSON.stringify({ name: action.name, emoji: action.emoji }) })
-            .then(({ bot, project }) => {
-              dispatch({ type: "botPatched", bot });
-              action.onCreated?.(project);
+          api(`${folderOwnerPath(action)}/projects`, { method: "POST", body: JSON.stringify({ name: action.name, emoji: action.emoji }) })
+            .then((answer) => {
+              applyFolderOwner(dispatch, action, answer);
+              action.onCreated?.(answer.project);
             }).catch((error) => { showError(error); action.onError?.(error instanceof Error ? error.message : String(error)); });
           break;
         case "updateProject":
-          api(`/api/bots/${action.botId}/projects/${action.projectId}`, { method: "PATCH", body: JSON.stringify(action.patch) })
-            .then(({ bot }) => { dispatch({ type: "botPatched", bot }); action.onSaved?.(); })
+          api(`${folderOwnerPath(action)}/projects/${action.projectId}`, { method: "PATCH", body: JSON.stringify(action.patch) })
+            .then((answer) => { applyFolderOwner(dispatch, action, answer); action.onSaved?.(); })
             .catch((error) => { showError(error); action.onError?.(error instanceof Error ? error.message : String(error)); });
           break;
         case "deleteProject":
-          api(`/api/bots/${action.botId}/projects/${action.projectId}`, { method: "DELETE" })
-            .then(({ bot }) => { dispatch({ type: "botPatched", bot }); action.onDeleted?.(); })
+          api(`${folderOwnerPath(action)}/projects/${action.projectId}`, { method: "DELETE" })
+            .then((answer) => { applyFolderOwner(dispatch, action, answer); action.onDeleted?.(); })
             .catch((error) => { showError(error); action.onError?.(error instanceof Error ? error.message : String(error)); });
           break;
         case "reorderProjects":
-          api(`/api/bots/${action.botId}/projects/order`, { method: "PATCH", body: JSON.stringify({ projectIds: action.projectIds }) })
-            .then(({ bot }) => { dispatch({ type: "botPatched", bot }); action.onSaved?.(); })
+          api(`${folderOwnerPath(action)}/projects/order`, { method: "PATCH", body: JSON.stringify({ projectIds: action.projectIds }) })
+            .then((answer) => { applyFolderOwner(dispatch, action, answer); action.onSaved?.(); })
             .catch((error) => { showError(error); action.onError?.(error instanceof Error ? error.message : String(error)); });
           break;
         case "interrupt":
@@ -4093,6 +4204,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         // because switching changes which conversation is on screen
         case "newTask":
         case "switchTask": {
+          // Opening a task from a notification or the sidebar reads THAT
+          // thread: `select` only reads the bot's current one.
+          if (action.type === "switchTask") {
+            const opened = stateRef.current.bots.find((b) => b.id === action.botId)?.tasks?.find((task) => task.threadId === action.threadId);
+            if (opened?.unread) api(`/api/bots/${action.botId}/read`, { method: "POST", body: JSON.stringify({ threadId: action.threadId }) }).catch(() => {});
+          }
           const revision = (navigation.get(action.botId) ?? 0) + 1;
           navigation.set(action.botId, revision);
           const ready = action.type === "newTask"
@@ -4128,14 +4245,27 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         // Channel tasks mirror bot tasks, but hydrate the whole channel so
         // switching atomically replaces its transcript, folder and pin.
         case "newGroupTask":
-          api<{ group?: Partial<Group> & { id: string } }>(`/api/groups/${action.groupId}/tasks`, { method: "POST", body: "{}" })
+          api<{ group?: Partial<Group> & { id: string } }>(`/api/groups/${action.groupId}/tasks`, { method: "POST", body: JSON.stringify(action.projectId ? { projectId: action.projectId } : {}) })
             .then((r) => r?.group && dispatch({ type: "groupPatched", group: r.group }))
             .catch(showError);
           break;
         case "switchGroupTask":
           api<{ group?: Partial<Group> & { id: string } }>(`/api/groups/${action.groupId}/tasks/${action.threadId}?messages=${MESSAGE_PAGE_SIZE}`, { method: "POST" })
-            .then((r) => r?.group && dispatch({ type: "groupPatched", group: r.group }))
+            .then((r) => {
+              if (!r?.group) return;
+              dispatch({ type: "groupPatched", group: r.group });
+              // A person conversation: opening an unread thread reads it,
+              // for this person only (server/people-dms.ts).
+              const read = peopleDmReadTarget(r.group);
+              if (read) api(`/api/groups/${action.groupId}/read`, { method: "POST", body: JSON.stringify(read) }).catch(() => {});
+            })
             .catch(showError);
+          break;
+        case "updateGroupTask":
+          api(`/api/groups/${action.groupId}/tasks/${action.threadId}`, {
+            method: "PATCH",
+            body: JSON.stringify(action.patch),
+          }).catch(showError);
           break;
         case "renameGroupTask":
           api(`/api/groups/${action.groupId}/tasks/${action.threadId}`, {
@@ -4442,6 +4572,24 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         }
         case "group": {
           const group = frame.group as Partial<Group> & { id: string };
+          const held = stateRef.current.groups.find((candidate) => candidate.id === group.id);
+          if (group.peopleDm || held?.peopleDm) {
+            // A person conversation: the frame names its default thread;
+            // this client keeps the one it has open (groupPatched), and
+            // reads that thread only, so a sibling's dot stays.
+            const open = held && personThreadKept(held, group) ? held.threadId : group.threadId;
+            if (group.id === stateRef.current.selectedId && open) {
+              const read = peopleDmReadTarget({ ...group, threadId: open, tasks: group.tasks ?? held?.tasks });
+              if (read) api(`/api/groups/${group.id}/read`, { method: "POST", body: JSON.stringify(read) }).catch(() => {});
+            }
+            rawDispatch({ type: "groupPatched", group });
+            // the thread on screen was deleted (by the other person): open
+            // the default one with its messages
+            if (held && group.tasks && !group.tasks.some((task) => task.threadId === held.threadId) && typeof group.threadId === "string") {
+              dispatch({ type: "switchGroupTask", groupId: group.id, threadId: group.threadId });
+            }
+            break;
+          }
           // reading the selected room clears its badge immediately
           if (group.unread && group.id === stateRef.current.selectedId) {
             group.unread = false;

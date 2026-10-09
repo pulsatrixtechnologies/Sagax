@@ -815,6 +815,12 @@ describe("notification routing", () => {
     ]);
   });
 
+  it("opens a person's room by its group id when the thread is not in its task list", () => {
+    const dispatch = vi.fn();
+    openNotificationTarget(dispatch, { botId: "", threadId: "person-thread-2", groupId: "room-1" }, { bots, groups });
+    expect(dispatch.mock.calls.map(([action]) => action)).toEqual([{ type: "select", id: "room-1" }]);
+  });
+
   it("lands on a plain bot select for a thread it cannot place, not an error", () => {
     const dispatch = vi.fn();
 
@@ -921,6 +927,11 @@ describe("notification routing", () => {
 });
 
 describe("config status frames", () => {
+  it("carries the organization's allowed model providers, so an open picker follows a change at once", () => {
+    expect(configStatusFromFrame({ allowedEngines: ["claude"] } as ConfigStatusFrame).allowedEngines).toEqual(["claude"]);
+    expect(configStatusFromFrame({ allowedEngines: null } as ConfigStatusFrame).allowedEngines).toBeNull();
+  });
+
   it("keeps each provider's own key flag through a live config update", () => {
     const status = configStatusFromFrame({
       openai: { configured: true },
