@@ -272,6 +272,41 @@ named permission (`shared/permissions.ts`, spec
   (PM-1 to PM-5), `shared/permissions.test.ts`,
   `server/org-permissions.test.ts` and `server/request-auth.test.ts`.
 
+## Automations scope (organization mode, 2026-10-09)
+
+Anyone may be allowed to see the automation schedule beyond their own
+routines (JC). `server/routine-scope.ts` (rules), `shared/routine-scope.ts`
+(names), `src/components/routines/RoutineScopeBar.tsx` and
+`src/lib/use-routine-scope.ts` (page). Rules, covered by
+`server/routine-scope.test.ts`, `server/org-routines-scope.e2e.test.ts` and
+`src/components/routines/RoutineScopeBar.test.ts`:
+
+- `GET /api/routines?scope=mine|team|all&teamId&botId&ownerId&status`. No
+  scope is `mine`, exactly the listing as before (older apps, the member
+  API). `team` needs `routines.viewTeam`, `all` needs `routines.viewAll`; an
+  admin holds both; otherwise 403 `{ error: "forbidden", permission, code:
+  "routine_scope_not_allowed" }`. `team` adds the routines whose bot owner or
+  run-as person is in one of the caller's teams, or whose bot is shared with
+  one (`team:` grant). The server never returns a routine outside the scope.
+- Each routine carries `owner {id, name, avatarUrl?}`, `teamIds`, `bot {id,
+  name}`, `canRun`, `canEdit`. Both flags are false outside `mine`: a wider
+  scope never opens a write (Run now, Edit and Runs as keep their gates).
+  Someone else's routine and runs come `redacted: true`, without prompt,
+  attachments, threads or outputs (an error is cut to 300 characters).
+- The answer adds `scope`, `allowed` and `facets {teams, owners,
+  botChoices}` (never a key named `bots`: `memberBody` narrows those).
+- `DELETE /api/routine-runs` takes the same parameters: the caller's own
+  runs, or every run in scope with `scope=all` and `routines.viewAll` (or an
+  admin); the filters narrow it. Audit rows unchanged.
+- The page: a scope control at the top (organization servers only; My teams
+  and Everyone disabled with a tooltip naming the missing permission), then
+  Team, Owner and Status (advanced mode only), the All bots select listing
+  the bots of the scope. Others' routines show their owner's avatar and name
+  and stay read-only. The problems and paused pills count within the scope;
+  the sidebar count stays the person's (the store keeps `mine`). The choice
+  is `sagax.routineScope.v1`, a user preference keyed by principal.
+- iOS: not yet (parity row AU20).
+
 ## Full access (organization mode, 2026-10-01)
 
 On a solo server Full access is granted only through the packaged desktop

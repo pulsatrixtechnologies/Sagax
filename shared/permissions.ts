@@ -209,6 +209,25 @@ const definitions = [
       fr: "Utiliser Lancer maintenant sur une routine qu'ils voient, même s'ils ne possèdent pas son bot et ne sont pas la personne qui l'exécute.",
     },
   },
+  // 2026-10-09 (JC): who sees the automation schedule beyond their own
+  // routines. Read side only: Run now, Edit and Runs as keep their own gates
+  // (routines.runNowAny, routines.runAsAnyone, the bot's `run` level).
+  {
+    key: "routines.viewTeam", group: "routines", memberDefault: false, adminOnly: false,
+    label: { en: "See their teams' routines", fr: "Voir les routines de leurs équipes" },
+    description: {
+      en: "See on the Automations page the routines of the people in their teams and of the bots shared with their teams, read-only unless they may run or edit them.",
+      fr: "Voir dans la page Automatisations les routines des personnes de leurs équipes et des bots partagés avec leurs équipes, en lecture seule sauf s'ils peuvent les lancer ou les modifier.",
+    },
+  },
+  {
+    key: "routines.viewAll", group: "routines", memberDefault: false, adminOnly: false,
+    label: { en: "See every routine of the organization", fr: "Voir toutes les routines de l'organisation" },
+    description: {
+      en: "See on the Automations page every routine of the server, with its owner, bot and status, and clear any run log. Instructions and run outputs of others' routines stay hidden.",
+      fr: "Voir dans la page Automatisations toutes les routines du serveur, avec leur propriétaire, leur bot et leur état, et effacer n'importe quel journal d'exécution. Les instructions et les résultats des routines des autres restent masqués.",
+    },
+  },
   {
     key: "people.labelAnyone", group: "people", memberDefault: false, adminOnly: false,
     label: { en: "Change anyone's label", fr: "Changer l'étiquette de n'importe qui" },

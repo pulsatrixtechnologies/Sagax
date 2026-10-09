@@ -16,7 +16,10 @@ const IN_FLIGHT = new Set(["queued", "running", "waiting"]);
 /** Whether this viewer may run the routine now: on a solo server (no
  * person), the operator, an owner or admin, the bot's owner, or the person
  * the routine runs as. */
-export function canRunRoutineNow(config: Pick<ConfigStatus, "viewer"> | null | undefined, routine: Pick<Routine, "runAs">, bot: Pick<Bot, "ownerUserId"> | undefined): boolean {
+export function canRunRoutineNow(config: Pick<ConfigStatus, "viewer"> | null | undefined, routine: Pick<Routine, "runAs" | "canRun">, bot: Pick<Bot, "ownerUserId"> | undefined): boolean {
+  // 2026-10-09: the server's word when the listing sent it (a routine seen
+  // through a wider scope is read-only unless the write gates allow it).
+  if (typeof routine.canRun === "boolean") return routine.canRun;
   const viewer = config?.viewer;
   if (!viewer?.principalId || viewer.operator || viewer.role === "owner" || viewer.role === "admin") return true;
   // 2026-10-09: a profile with routines.runNowAny runs any routine they see.

@@ -445,6 +445,19 @@ belongs to the owner). 400 `invalid_package`. Audited `bot.import`.
 A manager reaches a routine whose bot owner or whose runner is in their
 reach. No routine prompt, run output or message is ever answered.
 
+The Automations page of Sagax itself (2026-10-09) widens its own view with
+two permissions of the catalogue, independent of this console route:
+`routines.viewTeam` (the routines of the people in the caller's teams and of
+the bots shared with those teams) and `routines.viewAll` (every routine of
+the organization); an admin holds both, a member holds neither by default.
+They gate `GET /api/routines?scope=mine|team|all&teamId&botId&ownerId&status`
+and `DELETE /api/routine-runs?scope=...` on the Sagax server, not these
+console routes, whose `status`, `bot` and `owner` filters already match
+(`status` there is `enabled|paused|failing`, the Sagax page says
+`active|paused|failing`). A console that wants a team filter can filter its
+items by `owner.principalId` against the directory's teams; no new console
+parameter is needed.
+
 ### `GET routines`
 
 `status` is `enabled`, `paused` or `failing` (its last run failed); `bot` a
