@@ -238,7 +238,7 @@ export function botsRoutes(deps: BotsDeps): ConsoleRoute[] {
         }
         if (action === "transfer" && typeof body.ownerPrincipalId !== "string" && typeof body.ownerSub !== "string") return badRequest("transfer needs ownerSub or ownerPrincipalId.");
         if (action === "model" && !("model" in body)) return badRequest("model needs model (a model id or null).");
-        const fields = action === "transfer" ? { ...(body.ownerSub !== undefined ? { ownerSub: body.ownerSub } : { ownerPrincipalId: body.ownerPrincipalId }) }
+        const fields = action === "transfer" ? (body.ownerSub !== undefined ? { ownerSub: body.ownerSub } : { ownerPrincipalId: body.ownerPrincipalId })
           : action === "model" ? { ...(body.engineInstanceId !== undefined ? { engineInstanceId: body.engineInstanceId } : {}), model: body.model } : {};
         const results = (ids as string[]).map((id) => {
           const result = act(ctx, deps, action, id, fields);
