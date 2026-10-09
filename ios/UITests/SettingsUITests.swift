@@ -189,23 +189,23 @@ final class SettingsUITests: XCTestCase {
         _ = api("DELETE", "/api/mcp/servers/deepwiki")
         let app = launch()
         app.element("settings-plugins").tap()
-        XCTAssertTrue(app.element("plugins-installed").waitForExistence(timeout: 10))
-        let search = app.textFields["plugins-search"]
+        // Settings > Connect apps (#203, #218): search across apps and skills
+        XCTAssertTrue(app.element("connect-apps-manage").waitForExistence(timeout: 10))
+        let search = app.searchFields.firstMatch
+        if !search.exists { app.swipeDown() }
         XCTAssertTrue(search.waitForExistence(timeout: 5))
         search.tap()
-        // Return closes the keyboard, which can otherwise cover the result.
         search.typeText("deepwiki\n")
-        let add = app.element("plugin-add.deepwiki")
-        XCTAssertTrue(add.waitForExistence(timeout: 10))
+        let add = app.element("connect-apps-action.featured:deepwiki")
+        XCTAssertTrue(add.waitForExistence(timeout: 10), app.debugDescription)
         XCTAssertEqual(add.label, "Add")
         add.tap()
         XCTAssertTrue(eventually(30) {
             let plugins = self.api("GET", "/api/plugins/installed").1["plugins"] as? [[String: Any]] ?? []
             return plugins.contains { ($0["url"] as? String)?.contains("deepwiki") == true }
         })
-        let added = NSPredicate(format: "label == 'Added'")
-        expectation(for: added, evaluatedWith: app.element("plugin-add.deepwiki"))
-        waitForExpectations(timeout: 15)
+        // added: the row shows its status, no button
+        XCTAssertTrue(eventually(15) { !app.element("connect-apps-action.featured:deepwiki").exists })
         _ = api("DELETE", "/api/mcp/servers/deepwiki")
     }
 

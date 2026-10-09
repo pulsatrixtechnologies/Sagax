@@ -127,15 +127,9 @@ struct ChatListView: View {
                 }
             }
             .sheet(isPresented: $showingConnectedApps) {
-                NavigationStack {
-                    ConnectedAppsView()
-                        .toolbar {
-                            ToolbarItem(placement: .confirmationAction) {
-                                Button(String(localized: "Done")) { showingConnectedApps = false }
-                            }
-                        }
-                }
-                .environmentObject(session)
+                // the desktop's Connect apps panel (#203, #218)
+                ConnectAppsPage()
+                    .environmentObject(session)
             }
             .sheet(isPresented: $showingTemplates) {
                 DesktopTemplatesSheet { showingTemplates = false }

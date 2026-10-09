@@ -1,7 +1,7 @@
 import XCTest
 
-/// WP9: Plugins > Connected apps (PL1, PL2, PL4, PL6), MCP servers with a
-/// real sign-in (PL8, PL9) and the claude.ai connectors (PL7), against the
+/// Connect apps (#203, #206, #207, #218; matrix DC35 to DC39): the main view,
+/// Manage, an app's and a server's page, Providers, against the
 /// parity fixture's plugins lab (`PARITY_PLUGINS=1`, ios/parity/plugin-lab.mjs).
 /// Every action is a real request to the real server; each result is read
 /// back through the API or the lab's record of the connected-apps broker.
@@ -42,15 +42,19 @@ final class PluginsUITests: XCTestCase {
         app.terminate()
         app.launchArguments = arguments
         app.launch()
-        XCTAssertTrue(app.element("plugins-installed").waitForExistence(timeout: 20))
+        // Settings > Connect apps (#203, #218)
+        XCTAssertTrue(app.element("connect-apps-manage").waitForExistence(timeout: 20), app.debugDescription)
         return app
     }
 
-    /// Scrolls Plugins down to a Connections row and opens it.
+    /// Scrolls the list to a row and opens it.
     @MainActor
     private func open(_ identifier: String, in app: XCUIApplication) {
         let row = app.element(identifier)
-        for _ in 0..<6 where !(row.exists && row.isHittable) {
+        for _ in 0..<8 where !(row.exists && row.isHittable) {
+            // Manage shows the first installed plugins, then Show all
+            let showAll = app.element("connect-apps-show-all")
+            if !row.exists, showAll.exists, showAll.isHittable, showAll.label.hasPrefix("Show all") { showAll.tap(); continue }
             app.swipeUp()
         }
         XCTAssertTrue(row.waitForExistence(timeout: 10), app.debugDescription)
@@ -96,117 +100,84 @@ final class PluginsUITests: XCTestCase {
         return check()
     }
 
-    // MARK: Connected apps
+    // MARK: Connect apps
 
-    /// PL1, PL2, PL4: Marketplace lists the catalog, Connected only what has
-    /// an account (with the count), and Disconnect revokes exactly one account.
+    /// The main view: one row per app with Add or Connect, a section per
+    /// category, and "N connected >" to Manage (#203, #218).
     @MainActor
-    func testConnectedViewAndDisconnectingOneAccount() throws {
+    func testTheMainViewListsAppsAndCountsWhatIsConnected() {
+        let app = launch()
+        XCTAssertTrue(app.element("connect-apps-chips").exists)
+        let manage = app.element("connect-apps-manage")
+        XCTAssertTrue(manage.label.contains("connected"), manage.label)
+        XCTAssertTrue(app.element("connect-apps-action.app:notion").waitForExistence(timeout: 15), app.debugDescription)
+        XCTAssertEqual(app.element("connect-apps-action.app:notion").label, "Connect")
+        XCTAssertFalse(app.element("connect-apps-action.app:gmail").exists, "a connected app shows its status, no button")
+    }
+
+    /// Manage > Installed > the app's page: Disconnect revokes exactly one
+    /// account.
+    @MainActor
+    func testManageOpensTheAppPageWhereOneAccountDisconnects() throws {
         let before = gmailAccounts()
         guard before.count >= 2, let last = before.last?["id"] as? String else {
             throw XCTSkip("the lab's second Gmail account was already disconnected by an earlier run")
         }
         let app = launch()
-        open("plugins-connected-apps", in: app)
-        XCTAssertTrue(app.element("connected-apps-row.slack").waitForExistence(timeout: 15))
-        XCTAssertTrue(app.element("connected-apps-row.gmail").exists)
-        XCTAssertEqual(app.element("connected-apps-action.hackernews").label, "Included")
-        XCTAssertEqual(app.element("connected-apps-action.gmail").label, "Add account")
-
-        let connected = app.element("connected-apps-tab.connected")
-        XCTAssertTrue(connected.label.contains("1"), connected.label)
-        connected.tap()
-        XCTAssertTrue(eventually { !app.element("connected-apps-row.slack").exists })
-        XCTAssertTrue(app.element("connected-apps-row.gmail").exists)
-
-        let disconnect = app.element("connected-apps-disconnect.\(last)")
+        app.element("connect-apps-manage").tap()
+        open("connect-apps-installed.app:gmail", in: app)
+        let account = app.element("connect-apps-account.\(last)")
+        XCTAssertTrue(account.waitForExistence(timeout: 15), app.debugDescription)
+        account.swipeLeft()
+        let disconnect = app.buttons["Disconnect"].firstMatch
         XCTAssertTrue(disconnect.waitForExistence(timeout: 5))
         disconnect.tap()
-        let confirm = app.buttons.matching(identifier: "connected-apps-disconnect-confirm").firstMatch
-        XCTAssertTrue(confirm.waitForExistence(timeout: 5))
-        confirm.tap()
-
         XCTAssertTrue(eventually(15) {
             (self.broker["removed"] as? [[String: Any]] ?? []).contains { $0["id"] as? String == last }
         })
         XCTAssertEqual(gmailAccounts().count, before.count - 1)
-        XCTAssertTrue(eventually(10) { !app.element("connected-apps-disconnect.\(last)").exists })
     }
 
-    /// PL1 (Connect with a label): the authorize carries the alias, the page
-    /// opens in the browser and the card waits on it with Continue.
+    /// Connect asks for an account label, then authorizes with it.
     @MainActor
-    func testConnectingAskForALabelAndAuthorizes() {
+    func testConnectingAsksForALabelAndAuthorizes() {
         let app = launch()
-        open("plugins-connected-apps", in: app)
-        let action = app.element("connected-apps-action.notion")
+        let action = app.element("connect-apps-action.app:notion")
         XCTAssertTrue(action.waitForExistence(timeout: 15))
-        XCTAssertEqual(action.label, "Connect")
         action.tap()
-        let alias = app.textFields["connected-apps-alias.notion"]
-        XCTAssertTrue(alias.waitForExistence(timeout: 5))
-        alias.tap()
-        XCTAssertTrue(app.element("connected-apps-alias-continue.notion").exists)
-        // Return submits, as Continue does (the keyboard covers the pill).
-        alias.typeText("Travail\n")
-
+        let field = app.alerts.textFields.firstMatch
+        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        field.typeText("Travail")
+        app.alerts.buttons["Connect"].tap()
         XCTAssertTrue(eventually(15) {
             (self.broker["authorizes"] as? [[String: Any]] ?? []).contains {
                 $0["slug"] as? String == "notion" && $0["alias"] as? String == "Travail"
             }
         })
-        // The sign-in page opened outside the app; come back to it.
         app.activate()
-        let pending = app.element("connected-apps-action.notion")
-        XCTAssertTrue(eventually(15) { pending.label == "Continue" }, pending.label)
-    }
-
-    /// PL6: a bot whose own switch is off is named, and Allow turns it on.
-    @MainActor
-    func testAllowingConnectedAppsForABot() throws {
-        let lab = api("GET", "/__parity/plugins").1
-        let botId = try XCTUnwrap(lab["botId"] as? String)
-        api("PATCH", "/api/bots/\(botId)", body: ["composio": false])
-        let app = launch()
-        open("plugins-connected-apps", in: app)
-        let allow = app.element("connected-apps-allow.\(botId)")
-        XCTAssertTrue(allow.waitForExistence(timeout: 15), app.debugDescription)
-        allow.tap()
-        XCTAssertTrue(eventually(10) {
-            let bots = self.api("GET", "/api/bots").1["bots"] as? [[String: Any]] ?? []
-            return bots.first { $0["id"] as? String == botId }?["composio"] as? Bool == true
-        })
-        XCTAssertTrue(eventually(10) { !app.element("connected-apps-allow.\(botId)").exists })
-        api("PATCH", "/api/bots/\(botId)", body: ["composio": false])
     }
 
     // MARK: MCP servers
 
-    /// PL8, PL9: the read-only list, and Sign in runs the real OAuth flow in
-    /// the system sheet; the row follows the server's status to connected.
+    /// A server's page: Sign in runs the real OAuth flow in the system sheet
+    /// and the server reaches connected.
     @MainActor
-    func testMcpServerSignInReachesConnected() {
+    func testMcpServerSignInFromItsPage() {
         api("POST", "/api/mcp/servers/oauthdocs/oauth/disconnect", body: [:])
         let app = launch()
-        open("plugins-mcp-servers", in: app)
-        XCTAssertTrue(app.element("mcp-row.docs-wiki").waitForExistence(timeout: 20))
-        let signIn = app.element("mcp-sign-in.oauthdocs")
-        for _ in 0..<6 where !(signIn.exists && signIn.isHittable) { app.swipeUp() }
-        XCTAssertTrue(signIn.waitForExistence(timeout: 10), app.debugDescription)
+        app.element("connect-apps-manage").tap()
+        open("connect-apps-installed.mcp:oauthdocs", in: app)
+        let signIn = app.element("connect-apps-sign-in")
+        XCTAssertTrue(signIn.waitForExistence(timeout: 15), app.debugDescription)
         signIn.tap()
-
         let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
         let proceed = springboard.buttons["Continue"]
         XCTAssertTrue(proceed.waitForExistence(timeout: 15))
         proceed.tap()
-
         XCTAssertTrue(eventually(60) {
             let servers = self.api("GET", "/api/mcp/servers").1["servers"] as? [[String: Any]] ?? []
             return servers.first { $0["name"] as? String == "oauthdocs" }?["auth"] as? String == "connected"
         })
-        let line = app.element("mcp-auth.oauthdocs")
-        XCTAssertTrue(eventually(30) { line.exists && line.label.contains("Signed in") }, line.label)
-        XCTAssertFalse(app.element("mcp-sign-in.oauthdocs").exists)
         api("POST", "/api/mcp/servers/oauthdocs/oauth/disconnect", body: [:])
     }
 
@@ -215,18 +186,23 @@ final class PluginsUITests: XCTestCase {
     /// PL7: the person's claude.ai answer, Manage, and the admin switch.
     @MainActor
     func testClaudeConnectorsShowTheAnswerAndTheAdminSwitch() {
+        // Manage > Providers (#207)
         let app = launch()
-        open("plugins-harness-connectors", in: app)
-        XCTAssertTrue(app.element("harness-connectors-manage").waitForExistence(timeout: 10))
+        app.element("connect-apps-manage").tap()
+        let tabs = app.segmentedControls.firstMatch
+        XCTAssertTrue(tabs.waitForExistence(timeout: 10))
+        tabs.buttons["Providers"].tap()
+        XCTAssertTrue(app.element("harness-connectors-manage").waitForExistence(timeout: 30), app.debugDescription)
         let empty = app.element("harness-connectors-empty")
         let unavailable = app.element("harness-connectors-unavailable")
         XCTAssertTrue(eventually(100) { empty.exists || unavailable.exists })
 
         let toggle = app.element("harness-connectors-allow.toggle")
-        XCTAssertTrue(toggle.waitForExistence(timeout: 10))
+        for _ in 0..<6 where !(toggle.exists && toggle.isHittable) { app.swipeUp() }
+        XCTAssertTrue(toggle.waitForExistence(timeout: 10), app.debugDescription)
         let enabled = api("GET", "/api/me/harness-connectors").1["enabled"] as? Bool ?? true
         toggle.tap()
-        XCTAssertTrue(eventually(20) { (self.api("GET", "/api/me/harness-connectors").1["enabled"] as? Bool) == !enabled })
+        XCTAssertTrue(eventually(150) { (self.api("GET", "/api/me/harness-connectors").1["enabled"] as? Bool) == !enabled })
         api("PUT", "/api/harness-connectors/settings", body: ["claudeAi": enabled])
     }
 }

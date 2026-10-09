@@ -60,7 +60,7 @@ struct SettingsSearchResults: View {
         case .appearance: String(localized: "Appearance")
         case .achievements: String(localized: "Achievements")
         case .experimental: String(localized: "Experimental")
-        case .plugins: String(localized: "Plugins")
+        case .plugins: String(localized: "Connect apps")
         case .account: String(localized: "Account")
         case .botComputer: String(localized: "Computer")
         case .usage: String(localized: "Usage")
