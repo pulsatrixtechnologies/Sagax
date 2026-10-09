@@ -228,6 +228,9 @@ final class ReleaseNotesTests: XCTestCase {
             .deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent("docs/releases")
         let real = ReleaseNotes.catalog(in: folder)
         if !real.isEmpty { XCTAssertTrue(real["0.4.14"]?.contains("## English") == true) }
+    }
+}
+
 final class DeadThreadChipTests: XCTestCase {
     func testAGoneThreadHasNoLiveReference() throws {
         let gone = try JSONDecoder().decode(ThreadRef.self, from: Data(#"{"botId":"b","threadId":"t","title":"x","gone":true}"#.utf8))
