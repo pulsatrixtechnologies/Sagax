@@ -686,7 +686,7 @@ struct DesktopSidebarFooter: View {
         case .connectedApps:
             DesktopPlaceRow(title: String(localized: "Connected apps"), icon: .puzzle, id: place.rawValue, iconOnly: icons) { model.modal = .plugins }
         case .templates:
-            DesktopPlaceRow(title: String(localized: "Templates"), icon: .library, id: place.rawValue, iconOnly: icons) { model.modal = .templates }
+            DesktopPlaceRow(title: String(localized: "Browse Bots"), icon: .library, id: place.rawValue, iconOnly: icons) { model.modal = .templates }
         }
     }
 

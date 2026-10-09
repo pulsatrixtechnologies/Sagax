@@ -266,6 +266,10 @@ public enum SurfaceFeature: String, CaseIterable, Hashable, Sendable {
     /// remote client hides it, a client session may not reach it; an admin
     /// session browses the catalog (`GET /api/team-library/catalog`).
     case templates
+    /// Browse Bots, the organisation bot catalogue (the desktop sidebar's
+    /// place that replaced Templates): `/api/bot-catalog` is in CLIENT_ALLOW
+    /// and the remote client hides it (no sidecar route).
+    case browseBots
 
     // Team map and people (WP15)
     /// The Team map, read-only (TM1): `GET /api/team-map` passes both gates
@@ -420,6 +424,8 @@ public struct SurfaceGate: Hashable, Sendable {
             return true
         case .templates:
             return scope == .serverAdmin
+        case .browseBots:
+            return scope != .sidecar
         case .teamMapMove:
             return scope == .serverAdmin
         case .people:
