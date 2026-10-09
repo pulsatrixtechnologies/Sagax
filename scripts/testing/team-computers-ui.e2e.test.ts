@@ -8,6 +8,7 @@ import { waitForExit } from "../../server/testing/cleanup.ts";
 import { runControlOmb } from "../control-omb.ts";
 import { UI_TOOLS_DIR } from "./control-omb-ui.ts";
 import { fixtureApi } from "./preview-fixture.ts";
+import { jsLiteral } from "./js-literal.mjs";
 
 const ROOT = fileURLToPath(new URL("../..", import.meta.url));
 const binary = resolveAgentBrowserBinary({ dataDir: UI_TOOLS_DIR, env: process.env });
@@ -83,8 +84,8 @@ type Computer = { id: string; name: string; section: string | null; state: strin
     expect((await receipts()).calls.filter((call: { method: string; path: string }) => call.method === "POST" && call.path === "/boxes")).toHaveLength(1);
 
     const drag = (section: string, cancel = false) => evaluate(`(async () => {
-      const source = document.querySelector('[data-computer-drag-id="${machine.id}"]');
-      const target = document.querySelector(${JSON.stringify(`[data-team-key=${JSON.stringify(section)}]`)});
+      const source = document.querySelector(${jsLiteral(`[data-computer-drag-id="${machine.id}"]`)});
+      const target = document.querySelector(${jsLiteral(`[data-team-key=${JSON.stringify(section)}]`)});
       if (!source || !target) throw new Error('missing computer or team drag target');
       const rect = source.getBoundingClientRect(), destination = target.getBoundingClientRect();
       const from = { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
@@ -130,10 +131,10 @@ type Computer = { id: string; name: string; section: string | null; state: strin
     // Exercise the native select's change handler; popup keyboard behavior
     // varies by OS, while confirmation still uses real accessible controls.
     const selectTeam = async (value: string) => {
-      await expect.poll(() => evaluate(`document.getElementById('computer-team-${machine.id}')?.disabled`)).toBe(false);
-      await expect.poll(() => evaluate(`[...document.getElementById('computer-team-${machine.id}').options].some(option => option.value === ${JSON.stringify(value)})`)).toBe(true);
-      await evaluate(`(() => { const select = document.getElementById('computer-team-${machine.id}');
-        select.focus(); select.value = ${JSON.stringify(value)}; select.dispatchEvent(new Event('change', { bubbles: true })); return select.value; })()`);
+      await expect.poll(() => evaluate(`document.getElementById(${jsLiteral(`computer-team-${machine.id}`)})?.disabled`)).toBe(false);
+      await expect.poll(() => evaluate(`[...document.getElementById(${jsLiteral(`computer-team-${machine.id}`)}).options].some(option => option.value === ${jsLiteral(value)})`)).toBe(true);
+      await evaluate(`(() => { const select = document.getElementById(${jsLiteral(`computer-team-${machine.id}`)});
+        select.focus(); select.value = ${jsLiteral(value)}; select.dispatchEvent(new Event('change', { bubbles: true })); return select.value; })()`);
     };
     await selectTeam("unassigned");
     await expect.poll(snapshot).toContain('alertdialog "Unassign Engineering desktop?"');

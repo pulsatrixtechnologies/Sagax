@@ -9,6 +9,7 @@ import { ensureUiBrowser } from "./testing/control-omb-ui.ts";
 import { fixtureApi, mountPreview, type MountedPreview } from "./testing/preview-fixture.ts";
 import { startFakeOAuth } from "../server/testing/fake-oauth-server.ts";
 import { startFakeHttpMcp } from "../server/testing/fake-http-mcp-server.ts";
+import { jsLiteral } from "./testing/js-literal.mjs";
 
 const fixture = await launchVerificationServer();
 let oauth: Awaited<ReturnType<typeof startFakeOAuth>> | undefined;
@@ -62,12 +63,12 @@ try {
   };
   closeBrowser = () => command("close");
   const clickButton = async (name: string) => {
-    await command("wait", "--fn", `[...document.querySelectorAll('button')].some(b => b.textContent.trim() === ${JSON.stringify(name)} && !b.disabled)`);
+    await command("wait", "--fn", `[...document.querySelectorAll('button')].some(b => b.textContent.trim() === ${jsLiteral(name)} && !b.disabled)`);
     await command("find", "role", "button", "click", "--name", name, "--exact");
   };
   const evaluate = async (js: string) => (await command("eval", js)).result;
   await command("open", ui.previewUrl);
-  assert.equal(await evaluate(`(async () => (await fetch('/api/auth/pair', {method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({code:${JSON.stringify(pairing.code)},cookie:true,label:'MCP sign-in fixture'})})).status)()`), 200);
+  assert.equal(await evaluate(`(async () => (await fetch('/api/auth/pair', {method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({code:${jsLiteral(pairing.code)},cookie:true,label:'MCP sign-in fixture'})})).status)()`), 200);
   await command("reload");
   await command("wait", "--fn", "[...document.querySelectorAll('button')].some(b => b.textContent.trim() === 'Sign in')");
   // Simulate a blocked popup; the explicit reopen and paste UI must still work.

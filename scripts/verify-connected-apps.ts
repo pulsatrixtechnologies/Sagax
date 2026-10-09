@@ -8,6 +8,7 @@ import { promisify } from "node:util";
 import { launchVerificationServer, runControlOmb } from "./control-omb.ts";
 import { agentBrowser, ensureUiBrowser, sessionEnv } from "./testing/control-omb-ui.ts";
 import { mountPreview, type MountedPreview } from "./testing/preview-fixture.ts";
+import { jsLiteral } from "./testing/js-literal.mjs";
 
 const fixture = await launchVerificationServer();
 let preview: MountedPreview | undefined;
@@ -90,7 +91,7 @@ try {
     }
   };
   const click = async (name: string) => {
-    await wait(`[...document.querySelectorAll('button')].some(b=>b.textContent.trim()===${JSON.stringify(name)}&&!b.disabled)`);
+    await wait(`[...document.querySelectorAll('button')].some(b=>b.textContent.trim()===${jsLiteral(name)}&&!b.disabled)`);
     await command("find", "role", "button", "click", "--name", name, "--exact");
   };
   await command("open", preview.previewUrl);
@@ -106,8 +107,8 @@ try {
     assert.equal(await evaluate("window.__oauthPages.at(-1).opener===null"), true);
   };
   const checkLink = async (selector: string, attempt: number) => {
-    await wait(`document.querySelector(${JSON.stringify(selector)})!==null`);
-    assert.deepEqual(await evaluate(`(()=>{const a=document.querySelector(${JSON.stringify(selector)});return {href:a.href,target:a.target,rel:a.rel,visible:a.getClientRects().length>0};})()`), {
+    await wait(`document.querySelector(${jsLiteral(selector)})!==null`);
+    assert.deepEqual(await evaluate(`(()=>{const a=document.querySelector(${jsLiteral(selector)});return {href:a.href,target:a.target,rel:a.rel,visible:a.getClientRects().length>0};})()`), {
       href: `${authorizationBase}/authorize?attempt=${attempt}`, target: "_blank", rel: "noopener noreferrer", visible: true,
     });
   };
@@ -117,7 +118,7 @@ try {
     const page = tabs.findLast((tab) => tab.url === url) ?? tabs.findLast((tab) => tab.url === "about:blank");
     assert.ok(page, "the browser must create an authorization tab");
     await command("tab", page.tabId);
-    await wait(`location.href===${JSON.stringify(url)}&&document.body.textContent.includes('syntheticAuthorization')`);
+    await wait(`location.href===${jsLiteral(url)}&&document.body.textContent.includes('syntheticAuthorization')`);
     assert.ok(visitedAuthorizationPages.includes(`/authorize?attempt=${attempt}`));
     assert.equal(await evaluate("window.opener===null"), true);
     await command("tab", "t1");

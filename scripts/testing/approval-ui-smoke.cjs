@@ -3,6 +3,7 @@ const assert = require("node:assert/strict");
 const { mkdirSync, writeFileSync } = require("node:fs");
 const { join } = require("node:path");
 const { pathToFileURL } = require("node:url");
+const { jsLiteral } = require("./js-literal.mjs");
 
 module.exports = async function verifyApprovalUi({ root, url, api, until, grant }) {
   const { mountPreview } = await import(pathToFileURL(join(root, "scripts/testing/preview-fixture.ts")).href);
@@ -25,7 +26,7 @@ module.exports = async function verifyApprovalUi({ root, url, api, until, grant 
   });
   const evaluate = js => window.webContents.executeJavaScript(js).catch(error => { throw new Error(`${error.message}: ${js}`); });
   const text = () => evaluate("document.body.innerText");
-  const click = name => evaluate(`(() => { const button = [...document.querySelectorAll('button')].find(b => b.textContent.trim() === ${JSON.stringify(name)}); if (!button || button.disabled) throw new Error('Missing enabled button'); button.click(); return true; })()`);
+  const click = name => evaluate(`(() => { const button = [...document.querySelectorAll('button')].find(b => b.textContent.trim() === ${jsLiteral(name)}); if (!button || button.disabled) throw new Error('Missing enabled button'); button.click(); return true; })()`);
   const selectFull = async () => {
     await evaluate("document.querySelector('[data-tour=composer] button[aria-haspopup=menu][aria-label*=\" for \"]').click(); true");
     await until(() => evaluate("[...document.querySelectorAll('[role=menuitemradio]')].some(b => b.textContent.trim().startsWith('Full access'))"));
