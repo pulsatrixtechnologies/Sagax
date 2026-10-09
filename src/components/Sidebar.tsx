@@ -37,8 +37,8 @@ import { peerLine } from "@/lib/peer-message";
 import { viewerMayDeleteGroup, viewerOwnsGroup } from "@/lib/group-owner";
 import { viewerActorId } from "@/lib/viewer";
 import { showBotArchive, showBotDelete, showBotRename, showServerSectionMove } from "@/lib/bot-capabilities";
-import { connectedAppsEnabled, llmThreadTitlesEnabled, templatesEnabled } from "@/lib/feature-flags";
-import { OPEN_TEMPLATES_EVENT } from "@/lib/open-templates";
+import { connectedAppsEnabled, llmThreadTitlesEnabled } from "@/lib/feature-flags";
+import { templatesEntryActions } from "@/lib/templates-entry";
 import { useAdvancedMode } from "@/lib/interface-mode";
 
 import { BotAvatar, InitialsAvatar } from "./Avatar";
@@ -93,7 +93,6 @@ import { openCommandPalette } from "./CommandPalette";
 import { APP_NAME } from "@/lib/app-links";
 import { isBotFloating, subscribeFloatingBots, toggleFloatingBot } from "@/lib/floating-bots";
 import { isMacPlatform, SHORTCUT_GROUPS, shortcutKeysForPlatform } from "@/lib/keyboard-shortcuts";
-import { TeamLibraryPanel } from "./TeamLibraryPanel";
 import { ShareTeamDialog } from "./ShareTeamDialog";
 import { TeamDialog } from "./TeamDialog";
 import { RenameTitle } from "./RenameTitle";
@@ -2172,7 +2171,6 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
   const showLogo = useShowSidebarLogo();
   const remoteClient = window.ogb?.remoteClient?.active === true;
   const { capabilities } = useDesktopCapabilities();
-  const importReturnRef = useRef<HTMLButtonElement>(null);
   const sidebarRef = useRef<HTMLElement>(null);
   const [confirm, setConfirm] = useState<{ kind: BotConfirmKind; bot: Bot } | null>(null);
   const cancelConfirm = useCallback(() => setConfirm(null), []);
@@ -2303,8 +2301,6 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
   const [roomSectionPicker, setRoomSectionPicker] = useState<{ groupId: string; x: number; y: number } | null>(null);
   const [deletingRoomId, setDeletingRoomId] = useState<string | null>(null);
   const deletingRoom = deletingRoomId ? state.groups.find((g) => g.id === deletingRoomId) : undefined;
-  const [teamLibraryOpen, setTeamLibraryOpen] = useState(false);
-  const [teamInstallUrl, setTeamInstallUrl] = useState<string | null>(null);
   const [archivedBotsOpen, setArchivedBotsOpen] = useState(false);
   const [teamFeedback, setTeamFeedback] = useState<{
     error: boolean;
@@ -2385,20 +2381,14 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
   }, [open, onClose, confirm, deletingRoom]);
 
 
-  // Connect apps > Bot templates
-  useEffect(() => {
-    const open = () => setTeamLibraryOpen(true);
-    window.addEventListener(OPEN_TEMPLATES_EVENT, open);
-    return () => window.removeEventListener(OPEN_TEMPLATES_EVENT, open);
-  }, []);
-
+  // An install link (openmaus://, a team's address) opens Browse Bots on
+  // Templates, where Import previews it before anything is added.
   useEffect(() => {
     if (remoteClient) return;
     return window.ogb?.onPackageInstall?.((url) => {
-      setTeamInstallUrl(url);
-      setTeamLibraryOpen(true);
+      for (const action of templatesEntryActions("installLink", url)) dispatch(action);
     });
-  }, [remoteClient]);
+  }, [remoteClient, dispatch]);
 
   useEffect(() => {
     if (!teamFeedback) return;
@@ -2641,9 +2631,9 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
   // same rule and order as the sidebar tree, so the bell can never
   // disagree with it.
   const pendingBotUndo = teamFeedback?.restoreBot;
-  // Connected apps and Templates stay in view above the account row when
-  // their experimental flags are on. Team map and Automations are in the
-  // account menu.
+  // Connected apps (when its experimental flag is on) and Templates stay in
+  // view above the account row. Team map and Automations are in the account
+  // menu.
   const places: SidebarPlace[] = [
     // Connected apps is experimental (Settings > Experimental features).
     ...(advanced && connectedAppsEnabled(state.config) ? [{
@@ -2653,12 +2643,13 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
       icon: Puzzle,
       onSelect: () => dispatch({ type: "togglePlugins", open: true }),
     }] : []),
-    // Experimental: hidden until Settings > Experimental features turns it on.
-    ...(!remoteClient && advanced && templatesEnabled(state.config) ? [{
+    // Templates: Browse Bots on its Templates section (no longer a library
+    // of its own, nor behind an experimental switch).
+    ...(!remoteClient && advanced ? [{
       key: "templates",
       label: t("sidebar.teamLibrary"),
       icon: Library,
-      onSelect: () => setTeamLibraryOpen(true),
+      onSelect: () => { for (const action of templatesEntryActions("sidebar")) dispatch(action); },
     }] : []),
   ];
   // Archived bots is housekeeping, not a place: it stays in the account menu.
@@ -2724,7 +2715,6 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
               <Search size={16} strokeWidth={1.75} aria-hidden="true" />
             </button>
             <button
-              ref={importReturnRef}
               type="button"
               onClick={() => onCompose?.()}
               aria-expanded={composeOpen}
@@ -2758,7 +2748,6 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
                   <Search size={16} strokeWidth={1.75} aria-hidden="true" />
                 </button>
                 <button
-                  ref={importReturnRef}
                   type="button"
                   onClick={() => onCompose?.()}
                   aria-expanded={composeOpen}
@@ -3150,30 +3139,6 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
           bots={archivedBots}
           onClose={() => setArchivedBotsOpen(false)}
           onRestored={(message) => setTeamFeedback({ error: false, text: message })}
-        />
-      )}
-      {!remoteClient && teamLibraryOpen && (
-        <TeamLibraryPanel
-          returnFocusRef={importReturnRef}
-          initialUrl={teamInstallUrl ?? undefined}
-          onClose={() => {
-            setTeamLibraryOpen(false);
-            setTeamInstallUrl(null);
-          }}
-          onImported={(result) => {
-            setTeamLibraryOpen(false);
-            setTeamInstallUrl(null);
-            setTeamFeedback({
-              error: false,
-              text:
-                (result.members === 0 && result.presets
-                  ? t("sidebar.presetsImported", { count: result.presets })
-                  : result.members === 1
-                  ? t("sidebar.teamImportedOne")
-                  : t("sidebar.teamImportedMany", { count: result.members })) +
-                (result.connections ? ` · ${t("sidebar.connectionsToFinish", { count: result.connections })}` : ""),
-            });
-          }}
         />
       )}
       {teamFeedback &&

@@ -165,7 +165,9 @@ export function BotSettingsDialog({ bot, onOpenVmWorkspace }: {
                 const box = event.currentTarget.getBoundingClientRect();
                 setMascotMenu((open) => (open ? null : { botId: bot.id, x: box.left, y: box.bottom + 4 }));
               }}
-              className={CIRCLE_BUTTON}
+              // The header's own round control, as Export and Close beside
+              // it (ExportTranscriptMenu: the same hover tone while open).
+              className={cn(CIRCLE_BUTTON, mascotMenu !== null && "bg-elevated-hover")}
             >
               <MoreHorizontal size={18} strokeWidth={1.75} />
             </button>
