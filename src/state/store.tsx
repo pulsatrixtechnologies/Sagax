@@ -3,6 +3,7 @@
 // stream from the harness server into local state. The reducer stays
 // pure; everything async lives in the wrapped dispatch + SSE fold.
 import { receiveThreadReadFrame } from "@/lib/read-receipts-feed";
+import { personaCategoryForSection } from "@/lib/persona-sections";
 import { withPrimaryBot } from "@/lib/primary-bot";
 import {
   createContext,
@@ -1045,7 +1046,7 @@ export type AppSettingsSection =
 
 export type BotSettingsSection =
   | "overview"
-  /** Deep link to the Details tab. Not a row in More. */
+  /** Deep link to the Details tab. */
   | "details"
   | "slack"
   | "soul"
@@ -2300,6 +2301,16 @@ export function reducer(state: AppState, action: Action): AppState {
       return { ...state, personPanelId: personId, settingsOpen: false, computerOpen: false, inspectorOpen: false, appSettingsOpen: false };
     }
     case "toggleSettings": {
+      // Only Details (and Routines) live in the bot panel. A deep link to any
+      // other section opens the persona editor on the matching category over
+      // the panel.
+      const category = action.open !== false && action.section !== undefined ? personaCategoryForSection(action.section) : null;
+      if (category !== null) {
+        const targetId = action.botId ?? state.selectedId;
+        if (!targetId) return state;
+        const opened = reducer(state, { type: "toggleSettings", open: true, botId: action.botId });
+        return reducer(opened, { type: "openPersonaEditor", botId: targetId, section: category });
+      }
       if (action.botId !== undefined && !state.bots.some((bot) => bot.id === action.botId && !bot.hidden)) return state;
       const selectedId = action.botId ?? state.selectedId;
       // A targeted settings link opens that bot without navigating to chat

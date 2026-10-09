@@ -105,7 +105,7 @@ describe("Pulsatrix Light inset frame", () => {
 });
 
 describe("docked panel scrolling", () => {
-  // Short window (JC, 2026-10-08): the More list was cut after "Model" and
+  // Short window (JC, 2026-10-08): the settings list was cut after "Model" and
   // could not be scrolled. The card scrolls, its children never shrink.
   const groupPanel = read("./GroupPanel.tsx");
   const body = (source: string) => source.match(/className="(content-card-body [^"]*)"/)?.[1] ?? "";
@@ -117,7 +117,7 @@ describe("docked panel scrolling", () => {
     }
   });
 
-  it("stops the tab content (Details, Library, Computer, More list) from shrinking inside it", () => {
+  it("stops the tab content (Details, Library, Computer) from shrinking inside it", () => {
     for (const source of [botPanel, personPanel]) expect(body(source)).toContain("[&>*]:shrink-0");
   });
 

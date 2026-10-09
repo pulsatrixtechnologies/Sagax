@@ -7,7 +7,7 @@ import { describe, expect, it } from "vitest";
 import en from "@/locales/en.json";
 import fr from "@/locales/fr.json";
 import { BOT_SECTIONS } from "./sections";
-import { isMoreSection } from "./panel-tabs";
+import { personaCategoryForSection } from "@/lib/persona-sections";
 import { PerspicaxProfileControl, PerspicaxSection, perspicaxErrorKey, perspicaxRows, perspicaxShowsCheckbox, type PerspicaxAnswer } from "./PerspicaxSection";
 
 const DISPATCH = { id: "P1", slug: "dispatch", name: "Dispatch", description: "Tickets" };
@@ -71,7 +71,7 @@ describe("PerspicaxSection rows", () => {
   it("is an Advanced section, labelled in English and Quebec French", () => {
     const entry = BOT_SECTIONS.find((section) => section.id === "perspicax");
     expect(entry?.labelKey).toBe("botSettings.perspicax.title");
-    expect(isMoreSection("perspicax")).toBe(true);
+    expect(personaCategoryForSection("perspicax")).toBe("perspicax");
     expect(en["botSettings.perspicax.title"]).toBe("Perspicax Profiles");
     expect(fr["botSettings.perspicax.title"]).toBe("Profils Perspicax");
     expect(fr["botSettings.perspicax.notHeld"]).toBe("Vous ne détenez pas ce profil");
