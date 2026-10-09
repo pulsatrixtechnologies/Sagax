@@ -14,7 +14,7 @@
 // by keeping it in the list.
 import type { AchievementDefinition } from "./achievements.ts";
 
-const skin = (character: "owl" | "shape" | "trombi" | "bunbu" | "shiba", id: string) => ({ kind: "skin", character, skin: id }) as const;
+const skin = (character: "owl" | "shape" | "trombi" | "bunbu" | "shiba" | "ogre", id: string) => ({ kind: "skin", character, skin: id }) as const;
 const title = (id: string, en: string, fr: string) => ({ kind: "title", id, name: { en, fr } }) as const;
 
 export const ACHIEVEMENTS: readonly AchievementDefinition[] = [
@@ -139,7 +139,7 @@ export const ACHIEVEMENTS: readonly AchievementDefinition[] = [
     icon: "ShieldCheck",
     points: 5,
     rule: { kind: "count", event: "approval.answered", target: 1 },
-    rewards: [title("gatekeeper", "Gatekeeper", "Gardien")],
+    rewards: [title("gatekeeper", "Gatekeeper", "Gardien"), { kind: "character", character: "ogre" }],
   },
   {
     id: "trusted-judge",
@@ -149,7 +149,7 @@ export const ACHIEVEMENTS: readonly AchievementDefinition[] = [
     icon: "Scale",
     points: 20,
     rule: { kind: "count", event: "approval.answered", target: 25 },
-    rewards: [skin("shape", "neon")],
+    rewards: [skin("shape", "neon"), skin("ogre", "lava")],
   },
   {
     id: "slash-and-learn",
@@ -169,7 +169,7 @@ export const ACHIEVEMENTS: readonly AchievementDefinition[] = [
     icon: "SquareTerminal",
     points: 20,
     rule: { kind: "distinct", event: "message.slash", target: 5 },
-    rewards: [skin("shape", "circuit")],
+    rewards: [skin("shape", "circuit"), skin("ogre", "retro98")],
   },
   {
     id: "paperclip",
@@ -241,7 +241,7 @@ export const ACHIEVEMENTS: readonly AchievementDefinition[] = [
     icon: "Layers",
     points: 50,
     rule: { kind: "count", event: "message.parallel", target: 10 },
-    rewards: [skin("shape", "holo")],
+    rewards: [skin("shape", "holo"), skin("ogre", "neon")],
   },
   {
     id: "delegator",
@@ -251,7 +251,7 @@ export const ACHIEVEMENTS: readonly AchievementDefinition[] = [
     icon: "Network",
     points: 20,
     rule: { kind: "count", event: "subagent.used", target: 1 },
-    rewards: [skin("trombi", "neon")],
+    rewards: [skin("trombi", "neon"), skin("ogre", "glitch")],
   },
   {
     id: "hands-on",
@@ -343,7 +343,7 @@ export const ACHIEVEMENTS: readonly AchievementDefinition[] = [
     icon: "PhoneForwarded",
     points: 50,
     rule: { kind: "distinct", event: "voice.call", target: 10 },
-    rewards: [skin("bunbu", "holo")],
+    rewards: [skin("bunbu", "holo"), skin("ogre", "chrome")],
   },
 
   /* --------------------------------------------------------- collaboration */
@@ -355,7 +355,7 @@ export const ACHIEVEMENTS: readonly AchievementDefinition[] = [
     icon: "Share2",
     points: 20,
     rule: { kind: "count", event: "bot.shared", target: 1 },
-    rewards: [skin("shape", "crystal")],
+    rewards: [skin("shape", "crystal"), skin("ogre", "armor")],
   },
   {
     id: "dream-team",
@@ -439,7 +439,7 @@ export const ACHIEVEMENTS: readonly AchievementDefinition[] = [
     icon: "Medal",
     points: 10,
     rule: { kind: "points", target: 100 },
-    rewards: [title("bronze", "Bronze Operator", "Opérateur bronze")],
+    rewards: [title("bronze", "Bronze Operator", "Opérateur bronze"), skin("ogre", "gold")],
   },
   {
     id: "silver",
@@ -459,7 +459,7 @@ export const ACHIEVEMENTS: readonly AchievementDefinition[] = [
     icon: "Trophy",
     points: 50,
     rule: { kind: "points", target: 600 },
-    rewards: [skin("trombi", "holo")],
+    rewards: [skin("trombi", "holo"), skin("ogre", "molten")],
   },
   {
     id: "platinum",
@@ -531,7 +531,7 @@ export const ACHIEVEMENTS: readonly AchievementDefinition[] = [
     hidden: true,
     hint: { en: "Lots and lots of affection.", fr: "Beaucoup, beaucoup d'affection." },
     rule: { kind: "count", event: "mascot.pet", target: 500 },
-    rewards: [skin("trombi", "molten")],
+    rewards: [skin("trombi", "molten"), skin("ogre", "holo")],
   },
   {
     id: "desk-buddy",
