@@ -65,7 +65,8 @@ interface SectionContextResponse {
   maxBytes: number;
 }
 
-function SectionContextDialog({ section, label, onClose }: { section: string; label: string; onClose: () => void }) {
+/** Exported for tests. */
+export function SectionContextDialog({ section, label, onClose }: { section: string; label: string; onClose: () => void }) {
   const dialogRef = useRef<HTMLDivElement>(null);
   const onCloseRef = useRef(onClose);
   const savingRef = useRef(false);

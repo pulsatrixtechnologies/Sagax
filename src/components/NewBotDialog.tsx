@@ -400,7 +400,8 @@ function StartingRole({ draft, defaultsMode }: { draft: BotCreationDraft; defaul
   </div>;
 }
 
-function DraftMemory({ draft }: { draft: BotCreationDraft }) {
+/** Exported for tests. */
+export function DraftMemory({ draft }: { draft: BotCreationDraft }) {
   const [path, setPath] = useState("MEMORY.md");
   const [name, setName] = useState("");
   return <div className="space-y-3">

@@ -991,7 +991,8 @@ function EventEditor({
   );
 }
 
-function QuickComposer({
+/** Exported for tests. */
+export function QuickComposer({
   seed,
   bots,
   routinesOnly = false,
