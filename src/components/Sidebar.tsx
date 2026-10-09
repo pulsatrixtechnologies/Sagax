@@ -414,16 +414,15 @@ export function GroupListItem({
         : <StackedMauses members={members} density={density} viewerId={viewerActorId(state.config)} />}
       <div className={cn("min-w-0 flex-1", density === "icons" && "hidden")}>
         <div className="flex items-baseline justify-between gap-2">
-          <span className={cn("flex min-w-0 grow items-center gap-1.5 text-[14px] leading-5 text-sidebar-ink", selected && !expanded ? "font-semibold" : "font-medium")}>
+          <span className={cn("flex min-w-0 grow items-center gap-1.5 text-[14px] leading-5 text-sidebar-ink", (selected && !expanded) || group.unread ? "font-semibold" : "font-medium")}>
             <span className="min-w-0 truncate">{rowName}</span>
             {peer && !quiet && <PersonLabelTag principalId={peer.id} className="max-w-[46%] shrink" />}
           </span>
           {selected && last && !expanded && <span className="shrink-0 text-[12px] leading-4 text-sidebar-ink-secondary">{formatTime(last.at)}</span>}
-          {(expanded || (quiet && !groupStatus)) && group.unread && <span className="size-1.5 shrink-0 rounded-full bg-unread" aria-label={t("task.unreadMany")} />}
+          {group.unread && <span className="sr-only">{t("task.unreadMany")}</span>}
         </div>
         {previewShown && <div className="flex items-center justify-between gap-2">
-          <span className="truncate text-[13px] leading-[18px] text-sidebar-ink-secondary">{groupPreview(group, state.bots, viewerActorId(state.config), state.instances)}</span>
-          {group.unread && <span className="size-2 shrink-0 rounded-full bg-unread" />}
+          <span className={cn("truncate text-[13px] leading-[18px]", group.unread ? "text-sidebar-ink" : "text-sidebar-ink-secondary")}>{groupPreview(group, state.bots, viewerActorId(state.config), state.instances)}</span>
         </div>}
       </div>
       {density === "icons" && group.unread && (
@@ -1555,7 +1554,7 @@ export function BotThreadList({ bot, selected, density = "comfortable", query = 
             })} className="flex min-h-8 min-w-0 flex-1 cursor-grab select-none items-center gap-1.5 py-1 text-left text-[13px] font-semibold active:cursor-grabbing" title={project.name}>
               <span className="truncate">{project.name}</span>
               <span className="shrink-0 text-[10px] font-normal opacity-50">{projectTasks.length}</span>
-              {!open && (waiting ? <span className="text-[10px] text-warning">{t("task.waiting")}</span> : working ? <Loader2 size={10} className="shrink-0 animate-spin text-success" /> : projectTasks.some((task) => task.unread) ? <span className="size-1.5 shrink-0 rounded-full bg-unread" aria-label={t("task.unreadMany")} /> : null)}
+              {!open && (waiting ? <span className="text-[10px] text-warning">{t("task.waiting")}</span> : working ? <Loader2 size={10} className="shrink-0 animate-spin text-success" /> : projectTasks.some((task) => task.unread) ? <span className="sr-only">{t("task.unreadMany")}</span> : null)}
             </button>
             <button type="button" title={t("task.newIn", { name: project.name })} aria-label={t("task.newIn", { name: project.name })} onClick={() => dispatch({ type: "newTask", botId: bot.id, projectId: project.id })}
               className="flex size-6 items-center justify-center rounded opacity-0 hover:bg-sidebar-hover hover:text-sidebar-ink focus-visible:opacity-100 group-hover/folder:opacity-100 max-md:opacity-70 touch:opacity-70"><Plus size={12} /></button>
@@ -1714,7 +1713,7 @@ export function BotListItem({
       </span>
       <div className={cn("min-w-0 flex-1", iconOnly && "hidden")}>
         <div className="flex items-baseline justify-between gap-2">
-          <span className={cn("flex min-w-0 grow items-center gap-1.5 text-[14px] leading-5 text-sidebar-ink", selected ? "font-semibold" : "font-medium")}>
+          <span className={cn("flex min-w-0 grow items-center gap-1.5 text-[14px] leading-5 text-sidebar-ink", selected || unread ? "font-semibold" : "font-medium")}>
             {bot.pinned && <Pin size={12} className="shrink-0 text-sidebar-ink-secondary" />}
             <RenameTitle
               key={iconOnly ? "icons" : "expanded"}
@@ -1745,7 +1744,7 @@ export function BotListItem({
               {formatTime(last.at)}
             </span>
           )}
-          {(expanded || (quiet && !statusLine)) && unread && <span className="size-1.5 shrink-0 rounded-full bg-unread" aria-label={t("task.unreadMany")} />}
+          {unread && <span className="sr-only">{t("task.unreadMany")}</span>}
         </div>
         {(!expanded || deleting) && (!quiet || statusLine) && <div className="flex items-center justify-between gap-2">
           {deleting ? (
@@ -1754,7 +1753,7 @@ export function BotListItem({
               {t("sidebar.bot.deletingRow")}
             </span>
           ) : (
-            <span className="flex min-h-[18px] min-w-0 items-center gap-1.5 truncate text-[13px] leading-[18px] text-sidebar-ink-secondary">
+            <span className={cn("flex min-h-[18px] min-w-0 items-center gap-1.5 truncate text-[13px] leading-[18px]", unread ? "text-sidebar-ink" : "text-sidebar-ink-secondary")}>
               {working ? (
                 // the same typing dots as the chat header; sized to the text's
                 // line box so the row does not jump when work starts or ends
@@ -1766,9 +1765,6 @@ export function BotListItem({
                 <span className="truncate">{waiting ? t("sidebar.preview.waiting") : teammateWait ? t("sidebar.preview.waitingOnTeammate") : queued ? t("task.queued") : preview(bot, visible, instances)}</span>
               )}
             </span>
-          )}
-          {unread && (
-            <span className="size-2 shrink-0 rounded-full bg-unread" aria-label={t("task.unreadMany")} />
           )}
         </div>}
       </div>

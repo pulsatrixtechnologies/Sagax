@@ -1553,10 +1553,10 @@ export function openNotificationTarget(
     (candidate) =>
       candidate.threadId === target.threadId ||
       (candidate.tasks ?? []).some((task) => task.threadId === target.threadId),
-  );
+  ) ?? (target.groupId ? state.groups.find((candidate) => candidate.id === target.groupId) : undefined);
   if (group) {
     dispatch({ type: "select", id: group.id });
-    if (group.threadId !== target.threadId) {
+    if (target.threadId && group.threadId !== target.threadId && (group.tasks ?? []).some((task) => task.threadId === target.threadId)) {
       dispatch({ type: "switchGroupTask", groupId: group.id, threadId: target.threadId });
     }
     return;
@@ -4093,6 +4093,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         // because switching changes which conversation is on screen
         case "newTask":
         case "switchTask": {
+          // Opening a task from a notification or the sidebar reads THAT
+          // thread: `select` only reads the bot's current one.
+          if (action.type === "switchTask") {
+            const opened = stateRef.current.bots.find((b) => b.id === action.botId)?.tasks?.find((task) => task.threadId === action.threadId);
+            if (opened?.unread) api(`/api/bots/${action.botId}/read`, { method: "POST", body: JSON.stringify({ threadId: action.threadId }) }).catch(() => {});
+          }
           const revision = (navigation.get(action.botId) ?? 0) + 1;
           navigation.set(action.botId, revision);
           const ready = action.type === "newTask"
