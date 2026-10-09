@@ -767,9 +767,10 @@ import { achievementFrameAllowed, achievementRequestEvents, achievementSendEvent
 import { createAchievementRoutes } from "./routes/achievements.ts";
 import { grandfatheredFromBots } from "../shared/achievements.ts";
 import { createBotMemoryRoutes } from "./routes/bot-memory.ts";
+import { createBotWorkspaceRoutes } from "./routes/bot-workspace.ts";
 import { docsIndexPrompt, readWorkspaceText, rulesSystemPrompt, WorkspacePathError } from "./workspace-files.ts";
 import { updateDoc, updateRules } from "./workspace-tools.ts";
-import { markWorkspaceUse } from "./workspace-usage.ts";
+import { markWorkspaceUse, promptSectionPaths } from "./workspace-usage.ts";
 import { createBotActivityRoutes, type ActivityChildRef } from "./routes/bot-activity.ts";
 import { inGitRepository } from "./activity-coding.ts";
 import { repositoryInfo } from "./activity-code-work.ts";
@@ -14305,6 +14306,8 @@ async function startTurn(
         { id: "voice-call", label: "Phone call", text: voiceCallText },
       ]);
       turnPromptBytes.set(threadId, { stable: Buffer.byteLength(prompt.stable), volatile: Buffer.byteLength(prompt.volatile) });
+      // the Files list's "last used": what this turn's prompt carried
+      markWorkspaceUse(bot.id, promptSectionPaths(prompt.sections));
       // Automatic recall rides in front of THIS turn's message, never in the
       // system prompt: the volatile half is re-sent whole whenever any part of
       // it changes, and recall changes nearly every turn.
@@ -17199,6 +17202,7 @@ async function runGroupMemberTurn(
     providerDispatched = true;
     if (roomConsumedId) noteBotRead(readyBot.id, threadId, [roomConsumedId]);
     turnPromptBytes.set(threadId, { stable: Buffer.byteLength(roomSystem.stable), volatile: Buffer.byteLength(roomSystem.volatile) });
+    markWorkspaceUse(bot.id, promptSectionPaths(roomSystem.sections));
     runningTurnEngines.set(threadId, instance);
     // notes only in a room: a private chat reaches a room through the
     // explicit, disclosed session_search, never automatically
@@ -20609,6 +20613,9 @@ ROUTES.push(createBotMemoryRoutes({
     broadcast({ kind: "config", ...configStatus() });
   },
 }));
+// The persona editor's Files category: the workspace tree, downloads, and
+// document renames (server/routes/bot-workspace.ts). Admin scope.
+ROUTES.push(createBotWorkspaceRoutes({ bot: (id) => store.bot(id) }));
 // The usage ledger (JSON and CSV). Admin scope stays in server/request-auth.ts.
 ROUTES.push(createUsageRoutes({
   dataDir: DATA_DIR,

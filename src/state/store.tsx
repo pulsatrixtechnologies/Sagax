@@ -1077,8 +1077,12 @@ export type BotSettingsSection =
   | "details"
   | "slack"
   | "soul"
+  /** RULES.md: hard constraints loaded every turn (docs/bot-workspace.md). */
+  | "rules"
   | "skills"
   | "memory"
+  /** The whole bot workspace: SOUL.md, RULES.md, memory, docs/, skills. */
+  | "files"
   | "routines"
   | "access"
   /** More > Computer. The Works on control. Not a row of the Computer tab. */
