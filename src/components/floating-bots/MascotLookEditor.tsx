@@ -2,7 +2,7 @@
 // stored with the bot (bot.mascotLook, bot.color, bot.mascotSkin), so the
 // change shows everywhere the bot appears and on its desktop mascot.
 //
-//   Character: Owl, Shapes, Trombi, Bunbu (the registry, mascots.tsx), full width:
+//   Character: Owl, Shapes, Trombi, Bunbu, Shiba, Grump, Ogre, Frog (the registry, mascots.tsx), full width:
 //   the bot's avatar above the popover (the bot panel's header) is the
 //   preview, and plays the moves and the equip animation. Then that
 //   character's own options:
@@ -10,6 +10,10 @@
 //     Shapes: shape (8), color (with the Clay palette), shape skin (Clay first)
 //     Trombi: Trombi skin
 //     Bunbu: color, Bunbu skin
+//     Shiba: color, Shiba skin (the breed's coats, then premium editions)
+//     Grump: color (the markings), Grump skin (the cat coats, then premium editions)
+//     Ogre: color, Ogre skin (the ogre's hides, Lava and Armor, then premium editions)
+//     Frog: color (a tint of the skin), Frog skin (real frogs, then premium editions)
 //   Colors show one palette at a time (Vivid, Pastel, Deep, Neon, Neutral),
 //   skins one rarity at a time (Common, Rare, Epic, Legendary), each tab
 //   opening on the current choice (editor-tabs.ts). Skin cards preview the
@@ -31,10 +35,14 @@ import { MAUS_COLORS, swatchStyle, type MausColor, type MausMotion } from "@/lib
 import { MausAvatar } from "@/components/Avatar";
 import { MASCOT_SKIN_IDS, OWL_SKIN_TIER, botMascotSkin, type MascotSkinId } from "../../../shared/mascot-skins";
 import type { MascotColorGroup } from "../../../shared/mascot-colors";
-import { BUNBU_SKIN_TIER, BUNBU_SKINS, completeMascotLook, SHAPE_SKIN_TIER, SHAPE_SKINS, TROMBI_SKIN_TIER, TROMBI_SKINS, type MascotCharacter, type MascotLook, type MascotShape, type ShapeSkin, type SkinTier } from "../../../shared/mascot-look";
+import { BUNBU_SKIN_TIER, BUNBU_SKINS, completeMascotLook, FROG_SKIN_TIER, FROG_SKINS, GRUMP_SKIN_TIER, GRUMP_SKINS, OGRE_SKIN_TIER, OGRE_SKINS, SHIBA_SKIN_TIER, SHIBA_SKINS, SHAPE_SKIN_TIER, SHAPE_SKINS, TROMBI_SKIN_TIER, TROMBI_SKINS, type MascotCharacter, type MascotLook, type MascotShape, type ShapeSkin, type SkinTier } from "../../../shared/mascot-look";
 import { ShapeMascot } from "@/components/ShapeMascot";
 import { SkinnedTrombi } from "@/components/skin-fx/SkinnedTrombi";
 import { BunbuMascot } from "@/components/BunbuMascot";
+import { ShibaMascot } from "@/components/ShibaMascot";
+import { GrumpMascot } from "@/components/GrumpMascot";
+import { OgreMascot } from "@/components/OgreMascot";
+import { FrogMascot } from "@/components/FrogMascot";
 import "@/components/skin-fx/skin-fx.css";
 import { colorGroupsFor, colorTabFor, colorTabs, nextTab, skinTabFor, skinTierTabs } from "./editor-tabs";
 import { MASCOTS, SHAPE_CHOICES } from "./mascots";
@@ -61,6 +69,10 @@ export const CHARACTER_LABEL = {
   shape: "floatingBots.mascot.body",
   trombi: "floatingBots.mascot.trombi",
   bunbu: "floatingBots.mascot.bunbu",
+  shiba: "floatingBots.mascot.shiba",
+  grump: "floatingBots.mascot.grump",
+  ogre: "floatingBots.mascot.ogre",
+  frog: "floatingBots.mascot.frog",
 } satisfies Record<MascotCharacter, LocaleKey>;
 
 export const SHAPE_LABEL = {
@@ -117,6 +129,70 @@ export const BUNBU_SKIN_LABEL = {
   galaxy: "mascot.bunbuSkin.galaxy",
   molten: "mascot.bunbuSkin.molten",
 } satisfies Record<(typeof BUNBU_SKINS)[number], LocaleKey>;
+
+export const SHIBA_SKIN_LABEL = {
+  plain: "mascot.shibaSkin.plain",
+  cream: "mascot.shibaSkin.cream",
+  blacktan: "mascot.shibaSkin.blacktan",
+  red: "mascot.shibaSkin.red",
+  sesame: "mascot.shibaSkin.sesame",
+  white: "mascot.shibaSkin.white",
+  retro98: "mascot.shibaSkin.retro98",
+  gold: "mascot.shibaSkin.gold",
+  neon: "mascot.shibaSkin.neon",
+  chrome: "mascot.shibaSkin.chrome",
+  glitch: "mascot.shibaSkin.glitch",
+  holo: "mascot.shibaSkin.holo",
+  molten: "mascot.shibaSkin.molten",
+} satisfies Record<(typeof SHIBA_SKINS)[number], LocaleKey>;
+
+export const GRUMP_SKIN_LABEL = {
+  plain: "mascot.grumpSkin.plain",
+  tuxedo: "mascot.grumpSkin.tuxedo",
+  calico: "mascot.grumpSkin.calico",
+  tabby: "mascot.grumpSkin.tabby",
+  siamese: "mascot.grumpSkin.siamese",
+  retro98: "mascot.grumpSkin.retro98",
+  gold: "mascot.grumpSkin.gold",
+  void: "mascot.grumpSkin.void",
+  neon: "mascot.grumpSkin.neon",
+  chrome: "mascot.grumpSkin.chrome",
+  glitch: "mascot.grumpSkin.glitch",
+  holo: "mascot.grumpSkin.holo",
+  molten: "mascot.grumpSkin.molten",
+} satisfies Record<(typeof GRUMP_SKINS)[number], LocaleKey>;
+
+export const OGRE_SKIN_LABEL = {
+  plain: "mascot.ogreSkin.plain",
+  swamp: "mascot.ogreSkin.swamp",
+  moss: "mascot.ogreSkin.moss",
+  stone: "mascot.ogreSkin.stone",
+  lava: "mascot.ogreSkin.lava",
+  armor: "mascot.ogreSkin.armor",
+  retro98: "mascot.ogreSkin.retro98",
+  gold: "mascot.ogreSkin.gold",
+  neon: "mascot.ogreSkin.neon",
+  chrome: "mascot.ogreSkin.chrome",
+  glitch: "mascot.ogreSkin.glitch",
+  holo: "mascot.ogreSkin.holo",
+  molten: "mascot.ogreSkin.molten",
+} satisfies Record<(typeof OGRE_SKINS)[number], LocaleKey>;
+
+export const FROG_SKIN_LABEL = {
+  plain: "mascot.frogSkin.plain",
+  leaf: "mascot.frogSkin.leaf",
+  tree: "mascot.frogSkin.tree",
+  poison: "mascot.frogSkin.poison",
+  bullfrog: "mascot.frogSkin.bullfrog",
+  ghost: "mascot.frogSkin.ghost",
+  retro98: "mascot.frogSkin.retro98",
+  gold: "mascot.frogSkin.gold",
+  neon: "mascot.frogSkin.neon",
+  chrome: "mascot.frogSkin.chrome",
+  glitch: "mascot.frogSkin.glitch",
+  holo: "mascot.frogSkin.holo",
+  molten: "mascot.frogSkin.molten",
+} satisfies Record<(typeof FROG_SKINS)[number], LocaleKey>;
 
 export const SKIN_TIER_LABEL = {
   common: "mascot.tier.common",
@@ -516,6 +592,82 @@ export default function MascotLookEditor({ bot, disabled, onPatch: savePatch, on
             onSelect={(skin) => setLook({ skins: { ...look.skins, bunbu: skin } })}
             lockOf={(skin) => skinLock(unlocks, "bunbu", skin)}
             preview={(skin) => <BunbuMascot skin={skin} color={bot.color} size={38} detail="full" label={null} />}
+          />
+        </div>
+      )}
+
+      {look.character === "shiba" && (
+        <div data-character-options="shiba">
+          {colors}
+          <SkinPicker
+            key="shiba"
+            skins={SHIBA_SKINS}
+            tierOf={SHIBA_SKIN_TIER}
+            selected={look.skins.shiba}
+            labelOf={(skin) => t(SHIBA_SKIN_LABEL[skin])}
+            idPrefix="shiba-skin"
+            dataKey="data-shiba-skin-option"
+            disabled={disabled}
+            onSelect={(skin) => setLook({ skins: { ...look.skins, shiba: skin } })}
+            lockOf={(skin) => skinLock(unlocks, "shiba", skin)}
+            preview={(skin) => <ShibaMascot skin={skin} color={bot.color} size={38} detail="full" label={null} />}
+          />
+        </div>
+      )}
+
+      {look.character === "grump" && (
+        <div data-character-options="grump">
+          {colors}
+          <SkinPicker
+            key="grump"
+            skins={GRUMP_SKINS}
+            tierOf={GRUMP_SKIN_TIER}
+            selected={look.skins.grump}
+            labelOf={(skin) => t(GRUMP_SKIN_LABEL[skin])}
+            idPrefix="grump-skin"
+            dataKey="data-grump-skin-option"
+            disabled={disabled}
+            onSelect={(skin) => setLook({ skins: { ...look.skins, grump: skin } })}
+            lockOf={(skin) => skinLock(unlocks, "grump", skin)}
+            preview={(skin) => <GrumpMascot skin={skin} color={bot.color} size={38} detail="full" label={null} />}
+          />
+        </div>
+      )}
+
+      {look.character === "ogre" && (
+        <div data-character-options="ogre">
+          {colors}
+          <SkinPicker
+            key="ogre"
+            skins={OGRE_SKINS}
+            tierOf={OGRE_SKIN_TIER}
+            selected={look.skins.ogre}
+            labelOf={(skin) => t(OGRE_SKIN_LABEL[skin])}
+            idPrefix="ogre-skin"
+            dataKey="data-ogre-skin-option"
+            disabled={disabled}
+            onSelect={(skin) => setLook({ skins: { ...look.skins, ogre: skin } })}
+            lockOf={(skin) => skinLock(unlocks, "ogre", skin)}
+            preview={(skin) => <OgreMascot skin={skin} color={bot.color} size={38} detail="full" label={null} />}
+          />
+        </div>
+      )}
+
+      {look.character === "frog" && (
+        <div data-character-options="frog">
+          {colors}
+          <SkinPicker
+            key="frog"
+            skins={FROG_SKINS}
+            tierOf={FROG_SKIN_TIER}
+            selected={look.skins.frog}
+            labelOf={(skin) => t(FROG_SKIN_LABEL[skin])}
+            idPrefix="frog-skin"
+            dataKey="data-frog-skin-option"
+            disabled={disabled}
+            onSelect={(skin) => setLook({ skins: { ...look.skins, frog: skin } })}
+            lockOf={(skin) => skinLock(unlocks, "frog", skin)}
+            preview={(skin) => <FrogMascot skin={skin} color={bot.color} size={38} detail="full" label={null} />}
           />
         </div>
       )}

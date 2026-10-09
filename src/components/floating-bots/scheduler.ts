@@ -10,7 +10,7 @@ export type Liveliness = "calm" | "normal" | "lively";
 export const LIVELINESS: readonly Liveliness[] = ["calm", "normal", "lively"];
 
 /** What an idle action does: a clip in place, a turn around, or a move along the desk. */
-export type IdleChoice = { kind: "clip"; clip: TimedClip } | { kind: "turn" } | { kind: "move"; style: "walk" | "fly" };
+export type IdleChoice = { kind: "clip"; clip: TimedClip } | { kind: "turn" } | { kind: "move"; style: "walk" | "fly"; trip?: boolean };
 
 export interface IdleAction {
   id: string;
@@ -26,6 +26,12 @@ export interface IdleAction {
   rotates?: boolean;
   /** Never on the calm activity level. */
   lively?: boolean;
+  /** A dog's own (Shiba): only for a character that is one. */
+  dog?: boolean;
+  /** A cat's own (Grump): only for a character that is one. */
+  cat?: boolean;
+  /** A frog's own (Frog): only for a character that is one. */
+  frog?: boolean;
 }
 
 const clip = (id: TimedClip, weight: number, cooldown: number, energy: 0 | 1 | 2, gentle = false): IdleAction => ({
@@ -67,6 +73,32 @@ export const IDLE_ACTIONS: readonly IdleAction[] = [
   clip("yawn", 2, 60_000, 0, true),
   { id: "walk", choice: { kind: "move", style: "walk" }, weight: 6, cooldown: 12_000, energy: 1 },
   { id: "fly", choice: { kind: "move", style: "fly" }, weight: 2, cooldown: 45_000, energy: 2 },
+  // a dog's own: the wander (walk off, sniff, turn, walk back) every few minutes, a wag, an ear
+  // twitch, a sniff, a nap on the floor, turns in circles and, rarely, a bark
+  { id: "wander", choice: { kind: "move", style: "walk", trip: true }, weight: 7, cooldown: 150_000, energy: 1, dog: true },
+  { ...clip("wag", 6, 12_000, 0, true), dog: true },
+  { ...clip("earTwitch", 4, 10_000, 0, true), dog: true },
+  { ...clip("sniff", 4, 20_000, 0), dog: true },
+  { ...clip("lieDown", 1.5, 90_000, 0), dog: true },
+  { ...clip("turnCircles", 1.5, 90_000, 2), dog: true },
+  { ...clip("bark", 1, 120_000, 1), dog: true },
+  // a cat's own: the prowl (stalk low to a spot and loaf there) every few minutes, a groom, a tail
+  // flick, a slow blink, kneading, a stretch on the spot, a hop up onto a ledge, now and then a nap in a loaf
+  { id: "prowl", choice: { kind: "move", style: "walk", trip: true }, weight: 7, cooldown: 180_000, energy: 1, cat: true },
+  { ...clip("groom", 5, 25_000, 0, true), cat: true },
+  { ...clip("tailFlick", 4, 12_000, 0, true), cat: true },
+  { ...clip("slowBlink", 5, 15_000, 0, true), cat: true },
+  { ...clip("knead", 2, 60_000, 0, true), cat: true },
+  { ...clip("loaf", 1.5, 120_000, 0), cat: true },
+  { ...clip("ledge", 1, 120_000, 2), cat: true },
+  // a frog's own: a hop around and, more rarely, a long jump to a random spot every few minutes,
+  // the one-eye blink, a fly caught now and then, the smug nod, and rarely a croak
+  { id: "hopAbout", choice: { kind: "move", style: "walk" }, weight: 7, cooldown: 150_000, energy: 1, frog: true },
+  { id: "leap", choice: { kind: "move", style: "fly" }, weight: 4, cooldown: 180_000, energy: 2, frog: true },
+  { ...clip("blinkOne", 5, 10_000, 0, true), frog: true },
+  { ...clip("tongue", 3, 40_000, 1), frog: true },
+  { ...clip("smugNod", 1.5, 90_000, 0, true), frog: true },
+  { ...clip("croak", 1, 120_000, 1), frog: true },
 ];
 
 export interface SchedulerMemory {
@@ -86,6 +118,12 @@ export interface SchedulerOptions {
   canMove: boolean;
   /** The renderer has real depth (a 3D model): spins, flips and turning in place are allowed. */
   depth?: boolean;
+  /** The character is a dog (Shiba): its own actions join the pool. */
+  dog?: boolean;
+  /** The character is a cat (Grump): its own actions join the pool. */
+  cat?: boolean;
+  /** The character is a frog (Frog): its own actions join the pool. */
+  frog?: boolean;
   random: () => number;
 }
 
@@ -110,6 +148,9 @@ export function idleWeights(memory: SchedulerMemory, now: number, options: Sched
       (options.reduced && !action.gentle) ||
       (action.rotates && !options.depth) ||
       (action.lively && options.liveliness === "calm") ||
+      (action.dog && !options.dog) ||
+      (action.cat && !options.cat) ||
+      (action.frog && !options.frog) ||
       (action.choice.kind === "move" && !options.canMove);
     return { action, weight: blocked ? 0 : weight };
   });

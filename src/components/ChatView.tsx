@@ -1,8 +1,10 @@
 import { Component, createContext, memo, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type Dispatch, type ReactNode } from "react";
 import { useCopyFeedback } from "@/lib/copy-text";
-import { botSeenCaption, messageParticipant, seenCaption as seenCaptionText, seenTooltip } from "@/lib/read-receipts";
+import { botSeenCaption, messageParticipant } from "@/lib/read-receipts";
 import { useReportRead, useThreadReads } from "@/lib/read-receipts-feed";
-import { SeenCaption } from "./SeenBy";
+import { SeenByRow, SEEN_AVATAR_SIZE, type SeenFace } from "./SeenBy";
+import { ReactionChips } from "./Reactions";
+import { myReactions, reactionSelfIds, useToggleReaction } from "@/lib/reactions";
 import {
   AlertTriangle,
   ArrowDown,
@@ -174,6 +176,8 @@ interface ChatRows {
   dispatch: Dispatch<Action>;
   /** Whether a message is on the branch shown now (citation links). */
   onBranch: (messageId: string) => boolean;
+  /** Who "I" am on a reaction chip (src/lib/reactions.ts). */
+  reactionSelf: readonly string[];
 }
 
 const ChatRowsContext = createContext<ChatRows | null>(null);
@@ -477,7 +481,18 @@ const Bubble = memo(function Bubble({
   replyTarget?: Message;
   onReply: (message: Message) => void;
 }) {
-  const { botId, threadId, botName, viewerName, voiceId, tts, localVoice, busy, mentionPeers, focus, dispatch, onBranch } = useChatRows();
+  const { botId, threadId, botName, viewerName, voiceId, tts, localVoice, busy, bots, mentionPeers, focus, dispatch, onBranch, reactionSelf } = useChatRows();
+  // Emoji reactions (src/components/Reactions.tsx): the picker beside the
+  // copy button, the chips under the bubble.
+  const [picking, setPicking] = useState(false);
+  const toggleReactionOn = useToggleReaction(threadId, dispatch);
+  const reactable = message.kind === "text" && !message.id.startsWith("optimistic-");
+  const react = reactable ? {
+    open: picking,
+    onOpenChange: setPicking,
+    onPick: (emoji: string) => toggleReactionOn(message.id, emoji),
+    mine: myReactions(message.reactions, reactionSelf),
+  } : undefined;
   const remoteClient = window.ogb?.remoteClient?.active === true;
   // A user-role line another bot delivered (ask_bot, delegate_bot,
   // start_thread) is that bot speaking, not the person: it takes the
@@ -554,6 +569,7 @@ const Bubble = memo(function Bubble({
             side="user"
             time={formatTime(message.at)}
             copy={visibleText.trim() ? <CopyButton text={visibleText} className="opacity-100" /> : undefined}
+            react={react}
           >
             {/* editing rewinds the thread, so it waits for the turn to end —
                 same rule as the version switcher below */}
@@ -680,6 +696,7 @@ const Bubble = memo(function Bubble({
             time={formatTime(message.at)}
             visible={viewRaw || speaking}
             copy={text ? <CopyButton text={text} className="opacity-100" /> : undefined}
+            react={react}
           >
             {text && (
               <MessageMenuItem
@@ -705,6 +722,7 @@ const Bubble = memo(function Bubble({
           </MessageBar>
         )}
       </div>
+      <ReactionChips reactions={message.reactions} selfIds={reactionSelf} bots={bots} end={user} onToggle={(emoji) => toggleReactionOn(message.id, emoji)} />
       {dwell.mounted && message.turnRun && <TurnRunLine run={message.turnRun} visible={dwell.shown} />}
       {forks.length > 1 && (
         <div className="mt-1 flex items-center gap-0.5 pr-1 text-[12px] text-ink-secondary">
@@ -882,7 +900,7 @@ const MessagesList = memo(function MessagesList({
   onRegenerate: () => void;
   onReply: (message: Message) => void;
   /** The bot's "Seen" caption, under the last message it consumed. */
-  seen?: { messageId: string; text: string; title: string } | null;
+  seen?: { messageId: string; faces: SeenFace[] } | null;
 }) {
   // Sagax's extras below (access cards, bot-to-bot exchange chips, who is
   // viewing) read the store; the rows inside stay memoized on ChatRows.
@@ -1122,7 +1140,7 @@ const MessagesList = memo(function MessagesList({
           <div key={m.id} className="contents" data-mid={m.id}>
             {newDay && <TranscriptDate at={m.at} />}
             {row}
-            {seen?.messageId === m.id && <SeenCaption text={seen.text} title={seen.title} />}
+            {seen?.messageId === m.id && <SeenByRow faces={seen.faces} end time={formatTime} />}
           </div>
         );
       })}
@@ -1233,7 +1251,7 @@ export function ChatView({ bot: profile }: { bot: Bot }) {
   // consumed, until it answers; and this person's own position while the
   // window has focus.
   const threadReads = useThreadReads(bot.threadId);
-  const seenCaption = useMemo(() => {
+  const seenPlace = useMemo(() => {
     const byId = new Map(messages.map((message) => [message.id, message]));
     const anchorable = new Set(messages.filter((message) => message.role === "user" && message.kind === "text").map((message) => message.id));
     const place = botSeenCaption({
@@ -1246,10 +1264,21 @@ export function ChatView({ bot: profile }: { bot: Bot }) {
         return message ? messageParticipant(message, bot.id) : null;
       },
     });
-    const sent = place ? byId.get(place.messageId) : undefined;
-    if (!place || !sent) return null;
-    return { messageId: place.messageId, text: seenCaptionText(sent.at, place.at, formatTime), title: seenTooltip([{ name: bot.name, at: place.at }], formatTime) };
-  }, [messages, threadReads.reads, bot.id, bot.name]);
+    return place && byId.has(place.messageId) ? place : null;
+  }, [messages, threadReads.reads, bot.id]);
+  // "Seen by" and the bot's face; its name and the time in the tooltip.
+  // Rebuilt when the place or the bot's look changes, not on every bot frame.
+  const seenRow = useMemo(() => seenPlace ? {
+    messageId: seenPlace.messageId,
+    faces: [{
+      participantId: `bot:${bot.id}`,
+      name: bot.name,
+      at: seenPlace.at,
+      avatar: <BotAvatar bot={bot} state="happy" size={SEEN_AVATAR_SIZE} motion="none" motionKey={0} animated={false} />,
+    } satisfies SeenFace],
+  } : null,
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  [seenPlace, bot.id, bot.name, bot.color, bot.mascotLook, bot.mascotSkin, bot.avatarUrl, bot.avatarCrop, bot.avatarZoom, bot.avatarFocusX, bot.avatarFocusY]);
   // The bot's run in the current ask — every command it ran, the control-CLI
   // ones verified — for the run card. Saving mirrors the /learn gate: the
   // flag, an engine with the agents tools, and a bot that can take a message
@@ -1312,9 +1341,11 @@ export function ChatView({ bot: profile }: { bot: Bot }) {
   const branch = useRef(messages);
   branch.current = messages;
   const onBranch = useCallback((messageId: string) => branch.current.some((m) => m.id === messageId), []);
+  const reactionSelfKey = reactionSelfIds(state.config, threadReads.self).join("\n");
+  const reactionSelf = useMemo(() => reactionSelfKey.split("\n").filter(Boolean), [reactionSelfKey]);
   const rows = useMemo<ChatRows>(
-    () => ({ botId: bot.id, threadId: bot.threadId, botName: bot.name, viewerName, voiceId: bot.voice, tts, localVoice, busy, bots, mentionPeers, focus, showToolCalls, locale, dispatch, onBranch }),
-    [bot.id, bot.threadId, bot.name, viewerName, bot.voice, tts, localVoice, busy, bots, mentionPeers, focus, showToolCalls, locale, dispatch, onBranch],
+    () => ({ botId: bot.id, threadId: bot.threadId, botName: bot.name, viewerName, voiceId: bot.voice, tts, localVoice, busy, bots, mentionPeers, focus, showToolCalls, locale, dispatch, onBranch, reactionSelf }),
+    [bot.id, bot.threadId, bot.name, viewerName, bot.voice, tts, localVoice, busy, bots, mentionPeers, focus, showToolCalls, locale, dispatch, onBranch, reactionSelf],
   );
   // Where this conversation works, for the place icon on screen and page tools.
   const place = effectivePlace(bot, bot.tasks?.find((task) => task.threadId === bot.threadId));
@@ -1591,7 +1622,7 @@ export function ChatView({ bot: profile }: { bot: Bot }) {
               onSubmitEdit={submitEdit}
               onRegenerate={regenerate}
               onReply={selectReply}
-              seen={seenCaption}
+              seen={seenRow}
             />
             </ConversationGalleryProvider>
           </ChatRowsContext.Provider>

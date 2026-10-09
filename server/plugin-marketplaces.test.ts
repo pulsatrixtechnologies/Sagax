@@ -1,10 +1,20 @@
-import { cpSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { readMarketplaceManifest } from "./bot-plugins.ts";
-import { isManifestUrl, marketplaceServerName, PluginMarketplaces, pluginInstallPlan } from "./plugin-marketplaces.ts";
+import {
+  folderDigest,
+  isManifestUrl,
+  marketplaceServerName,
+  PluginMarketplaces,
+  pluginInstallPlan,
+  pluginRevision,
+  pluginUpdateAvailable,
+  planServerUpdate,
+  updatedServerEntry,
+} from "./plugin-marketplaces.ts";
 
 let dir: string;
 beforeEach(() => { dir = mkdtempSync(join(tmpdir(), "sagax-marketplaces-")); });
@@ -141,6 +151,95 @@ describe("the installation's marketplaces", () => {
       git: async () => { throw new Error("must not clone"); },
     });
     await expect(markets.add({ source: "other/plugins" }, undefined)).rejects.toMatchObject({ code: "marketplace_not_allowed" });
+  });
+});
+
+describe("updating an installed plugin in place", () => {
+  const store = (source: string) => new PluginMarketplaces({
+    dataDir: join(dir, "data"),
+    gitEnvironment: () => ({}),
+    policy: () => undefined,
+    now: () => 1_000,
+    git: async (args) => { cpSync(source, args.at(-1)!, { recursive: true }); },
+  });
+
+  it("offers an update when the version or the plugin's files change", async () => {
+    const source = join(dir, "repo");
+    marketplaceRepo(source);
+    const markets = store(source);
+    await markets.add({ source: "acme/marketplace" }, undefined);
+    const prepared = await markets.prepare("devjc", "notes", undefined);
+    expect(prepared.revision).toMatch(/^sha256:[0-9a-f]{64}$/);
+    markets.recordInstall("devjc", "notes", { version: prepared.version, revision: prepared.revision, servers: ["notes", "search"], serverNames: { notes: "notes", search: "search" }, skills: ["release-notes"] });
+    expect(markets.list()[0]!.plugins[0]).not.toHaveProperty("updateAvailable");
+
+    write(source, { "plugins/notes/skills/release-notes/SKILL.md": `${SKILL}\nNow with dates.\n` });
+    await markets.refresh("devjc", undefined);
+    expect(markets.list()[0]!.plugins[0]).toMatchObject({ version: "1.2.0", updateAvailable: true });
+
+    const manifest = JSON.parse(readFileSync(join(source, ".claude-plugin/marketplace.json"), "utf8")) as { plugins: Array<{ version?: string }> };
+    manifest.plugins[0]!.version = "1.3.0";
+    write(source, { ".claude-plugin/marketplace.json": manifest });
+    await markets.refresh("devjc", undefined);
+    expect(markets.list()[0]!.plugins[0]).toMatchObject({ version: "1.3.0", installedVersion: "1.2.0", updateAvailable: true });
+
+    const next = await markets.prepare("devjc", "notes", undefined);
+    const updated = markets.recordUpdate("devjc", "notes", { version: next.version, revision: next.revision, servers: ["notes"], serverNames: { notes: "notes" }, skills: [] });
+    expect(updated).toMatchObject({ version: "1.3.0", servers: ["notes"], skills: [], installedAt: 1_000, updatedAt: 1_000 });
+    expect(markets.list()[0]!.plugins[0]).not.toHaveProperty("updateAvailable");
+    expect(() => markets.recordUpdate("devjc", "remote-one", { servers: [], serverNames: {}, skills: [] })).toThrow();
+  });
+
+  it("compares only what both sides know", () => {
+    expect(pluginUpdateAvailable({ version: "1.0.0" }, { version: "1.1.0" })).toBe(true);
+    expect(pluginUpdateAvailable({ version: "1.0.0", revision: "a" }, { version: "1.0.0", revision: "b" })).toBe(true);
+    expect(pluginUpdateAvailable({ version: "1.0.0", revision: "a" }, { version: "1.0.0", revision: "a" })).toBe(false);
+    expect(pluginUpdateAvailable({}, { version: "2.0.0", revision: "b" })).toBe(false);
+    expect(pluginUpdateAvailable({ revision: "a" }, {})).toBe(false);
+  });
+
+  it("names a plugin kept elsewhere by its repository, and digests files only", () => {
+    const root = join(dir, "repo");
+    marketplaceRepo(root);
+    const [notes, remote] = readMarketplaceManifest(root).plugins;
+    expect(pluginRevision(root, remote!)).toBe("git:acme/remote-plugin#:");
+    expect(pluginRevision(root, notes!, "https://example.com/marketplace.json")).toBeUndefined();
+    const before = folderDigest(join(root, "plugins/notes"));
+    mkdirSync(join(root, "plugins/notes/.git"));
+    writeFileSync(join(root, "plugins/notes/.git/HEAD"), "ref");
+    expect(folderDigest(join(root, "plugins/notes"))).toBe(before);
+    write(root, { "plugins/notes/agents/helper.md": "changed" });
+    expect(folderDigest(join(root, "plugins/notes"))).not.toBe(before);
+  });
+
+  it("keeps each server under the name it was added as, adds new ones and drops the rest", () => {
+    const plan = { servers: [{ name: "notes", entry: { command: "node" } }, { name: "search", entry: { url: "https://x.test/mcp" } }], skills: [], skipped: [] };
+    expect(planServerUpdate(plan, { name: "notes", servers: ["notes-x", "old"], serverNames: { notes: "notes-x", gone: "old" } })).toEqual({
+      keep: [{ name: "notes", stored: "notes-x", entry: { command: "node" } }],
+      add: [{ name: "search", entry: { url: "https://x.test/mcp" } }],
+      remove: ["old"],
+    });
+    // installed before the names were kept: the plain, prefixed or numbered name
+    expect(planServerUpdate(plan, { name: "notes", servers: ["notes", "notes-search"] })).toMatchObject({
+      keep: [{ name: "notes", stored: "notes" }, { name: "search", stored: "notes-search" }], add: [], remove: [],
+    });
+    expect(planServerUpdate(plan, { name: "notes", servers: ["search-ab12cd"] }).keep).toEqual([]);
+  });
+
+  it("keeps the person's values, switch and turned-off tools over the plugin's new entry", () => {
+    const remote = updatedServerEntry(
+      { type: "http", url: "https://old.test/mcp", headers: { Authorization: "mine" }, enabled: false, disabledTools: ["delete"], source: "devjc" },
+      { type: "http", url: "https://new.test/mcp", headers: { "X-Plugin": "1", Authorization: "placeholder" } },
+      "devjc",
+    );
+    expect(remote).toEqual({ type: "http", url: "https://new.test/mcp", headers: { "X-Plugin": "1", Authorization: "mine" }, enabled: false, disabledTools: ["delete"], source: "devjc" });
+    const command = updatedServerEntry(
+      { command: "node", args: ["a.js"], env: { TOKEN: "mine" }, enabled: true, source: "devjc" },
+      { command: "node", args: ["b.js"], env: { MODE: "fast" } },
+      "devjc",
+    );
+    expect(command).toEqual({ command: "node", args: ["b.js"], env: { MODE: "fast", TOKEN: "mine" }, enabled: true, source: "devjc" });
+    expect(updatedServerEntry({ type: "http", url: "https://a.test", headers: {}, enabled: true }, { command: "node" }, "devjc")).toMatchObject({ enabled: false });
   });
 });
 

@@ -181,6 +181,53 @@ describe("BotPlugins", () => {
     expect(plugins.botsUsing("acme-tools")).toEqual(["bot-1"]);
   });
 
+  it("offers an update for one bot when the marketplace has another version or other files, and Install updates in place", async () => {
+    const dataDir = temp();
+    const repo = marketplaceRepo();
+    const plugins = botPluginsWithMarketplaces({ dataDir, git: fakeGit({ "https://github.com/acme/tools.git": repo }, []), gitEnvironment: () => ({}), policy: () => undefined });
+    await plugins.addMarketplace("bot-1", { source: "acme/tools" }, "pr_alice");
+    await plugins.install("bot-1", { marketplace: "acme-tools", plugin: "reviewer" }, "pr_alice");
+    plugins.setEnabled("bot-1", "reviewer@acme-tools", false);
+    const reviewer = (bot: string) => plugins.listMarketplaces(bot)[0]!.plugins.find((plugin) => plugin.name === "reviewer")!;
+    expect(reviewer("bot-1").updateAvailable).toBeUndefined();
+    // other files, same version
+    write(repo, "plugins/reviewer/commands/explain.md", "Explain the diff");
+    await plugins.updateMarketplace("bot-1", "acme-tools", "pr_alice");
+    expect(reviewer("bot-1")).toMatchObject({ installed: true, updateAvailable: true });
+    expect(reviewer("bot-2").updateAvailable).toBeUndefined();
+    await plugins.install("bot-1", { marketplace: "acme-tools", plugin: "reviewer" }, "pr_alice");
+    expect(reviewer("bot-1").updateAvailable).toBeUndefined();
+    expect(plugins.listPlugins("bot-1")[0]).toMatchObject({ enabled: false, version: "1.2.0" });
+    expect(existsSync(join(dataDir, "bot-plugins", "bot-1", "plugins", "acme-tools", "reviewer", "commands", "explain.md"))).toBe(true);
+    // another declared version
+    const manifest = JSON.parse(readFileSync(join(repo, ".claude-plugin/marketplace.json"), "utf8")) as { plugins: Array<Record<string, unknown>> };
+    manifest.plugins[0]!.version = "1.3.0";
+    write(repo, ".claude-plugin/marketplace.json", JSON.stringify(manifest));
+    await plugins.updateMarketplace("bot-1", "acme-tools", "pr_alice");
+    expect(reviewer("bot-1")).toMatchObject({ version: "1.3.0", installedVersion: "1.2.0", updateAvailable: true });
+  });
+
+  it("restores a bot package's marketplaces into the one list, without one the organization does not allow", () => {
+    const dataDir = temp();
+    const plugins = botPluginsWithMarketplaces({ dataDir, gitEnvironment: () => ({}), policy: () => ({ mode: "list", allow: ["acme/*"] }) });
+    const root = plugins.folder("bot-9");
+    for (const [market, plugin] of [["acme", "reviewer"], ["evil", "spy"]] as const) {
+      write(root, `marketplaces/${market}/.claude-plugin/marketplace.json`, JSON.stringify({ name: market, plugins: [{ name: plugin, source: `./plugins/${plugin}` }] }));
+      write(root, `plugins/${market}/${plugin}/commands/go.md`, "Go");
+    }
+    const record = (source: string) => ({ source, url: `https://github.com/${source}.git`, addedAt: 1, updatedAt: 2 });
+    const plugin = (name: string, marketplace: string) => ({ name, marketplace, enabled: true, installedAt: 1, updatedAt: 2, removed: [], declaredMcpServers: [] });
+    expect(plugins.restoreState("bot-9", {
+      version: 1,
+      marketplaces: { acme: record("acme/tools"), evil: record("evil/tools") },
+      plugins: { "reviewer@acme": plugin("reviewer", "acme"), "spy@evil": plugin("spy", "evil") },
+    })).toEqual({ marketplaces: ["acme"], plugins: ["reviewer@acme"] });
+    expect(plugins.listMarketplaces("bot-9").map((market) => market.name)).toEqual(["acme"]);
+    expect(existsSync(join(root, "marketplaces"))).toBe(false);
+    // what a package carries again: the per-bot format, from the one list
+    expect(plugins.stateFor("bot-9")).toMatchObject({ version: 1, marketplaces: { acme: { source: "acme/tools" } }, plugins: { "reviewer@acme": { name: "reviewer" } } });
+  });
+
   it("keeps the marketplace for everyone unless the person may remove it and nothing else uses it", async () => {
     const dataDir = temp();
     const plugins = botPluginsWithMarketplaces({ dataDir, git: fakeGit({ "https://github.com/acme/tools.git": marketplaceRepo() }, []), gitEnvironment: () => ({}), policy: () => undefined });

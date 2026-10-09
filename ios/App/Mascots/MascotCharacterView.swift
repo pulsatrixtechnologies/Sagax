@@ -1,5 +1,5 @@
 // A bot's character drawn from its stored look: the owl, one of the shapes,
-// Trombi or Bunbu (`CharacterAvatar` and `MausAvatar` in the desktop's
+// Trombi, Bunbu, Shiba, Grump, Ogre or Frog (`CharacterAvatar` and `MausAvatar` in the desktop's
 // `Avatar.tsx`). A known character is always drawn as itself; where a skin's
 // premium layers are not on the phone yet, its base finish shows and
 // `MascotSubstitution` logs it. No picture and no network here, so the widgets and the Live
@@ -32,6 +32,14 @@ struct MascotCharacterView: View {
             TrombiMascotView(skin: look.trombiSkin, size: size, pose: state.trombiPose, animated: animated)
         case .bunbu:
             BunbuMascotView(skin: look.bunbuSkin, color: color, size: size, mood: BunbuMood(state: state), animated: animated)
+        case .shiba:
+            ShibaMascotView(skin: look.shibaSkin, color: color, size: size, expression: ShibaExpression.forState(state.rawValue), animated: animated)
+        case .grump:
+            GrumpMascotView(skin: look.grumpSkin, color: color, size: size, expression: GrumpFace.expression(for: state), animated: animated)
+        case .ogre:
+            OgreMascotView(skin: look.ogreSkin, color: color, size: size, expression: OgreArt.expression(for: state.rawValue), animated: animated)
+        case .frog:
+            FrogMascotView(skin: look.frogSkin, color: color, size: size, expression: FrogExpression.forState(state.rawValue), animated: animated)
         }
     }
 }

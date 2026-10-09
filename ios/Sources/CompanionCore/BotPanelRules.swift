@@ -232,6 +232,37 @@ public struct MascotUnlocks: Hashable, Sendable {
             case "holo", "galaxy", "molten": return .legendary
             default: return .common
             }
+        case .shiba:
+            // `SHIBA_SKIN_TIER`: Plain comes with it, the coats and the premium set are earned (shared/mascot-unlocks.ts)
+            switch skin {
+            case "plain": return .common
+            case "neon", "chrome", "glitch": return .epic
+            case "holo", "molten": return .legendary
+            default: return .rare
+            }
+        case .grump:
+            // a Mastery character (shared/mascot-unlocks.ts masterySkinTier): its named coats cost a rung (Rare)
+            switch skin {
+            case "plain": return .common
+            case "neon", "chrome", "glitch": return .epic
+            case "holo", "molten": return .legendary
+            default: return .rare
+            }
+        case .ogre:
+            switch skin {
+            case "lava", "armor", "retro98", "gold": return .rare
+            case "neon", "chrome", "glitch": return .epic
+            case "holo", "molten": return .legendary
+            default: return .common
+            }
+        case .frog:
+            // `FROG_SKIN_TIER`: Plain comes with it, the real frogs and the premium set are earned (shared/mascot-unlocks.ts)
+            switch skin {
+            case "plain": return .common
+            case "neon", "chrome", "glitch": return .epic
+            case "holo", "molten": return .legendary
+            default: return .rare
+            }
         }
     }
 }

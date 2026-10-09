@@ -130,8 +130,11 @@ const personSchema = z.object({
    * plugins, skills and MCP servers in Sagax (`manage`, the default) or an
    * admin does (`off`). Absent from an older Perspicax: manage. */
   sagax_integrations: z.enum(["manage", "off"]).optional().catch(undefined),
-  /** 2026-10-09: the person's effective Sagax permissions (the union over
-   * the profiles they hold, computed by Perspicax; every key for an admin).
+  /** 2026-10-09: the person's effective Sagax permissions (computed by
+   * Perspicax: the union of its default permission set, the sets given to
+   * the person and the sets of their teams, since Perspicax 0051; every key
+   * for an admin). Perspicax also sends `sagax_permission_sets` (the set
+   * names, display only), dropped here.
    * Absent or null from an older Perspicax, or before it read this server's
    * catalogue: the member defaults apply (shared/permissions.ts). Unknown
    * keys are ignored with a log, never fatal. */
@@ -148,7 +151,8 @@ const profileSchema = z.object({
   name: z.string().max(200),
   description: z.string().max(2_000),
   /** 2026-10-09: the Sagax permissions this profile grants, for display
-   * (null or absent: unknown, an older Perspicax). */
+   * (null or absent: unknown, an older Perspicax). Null from Perspicax 0051
+   * on: permissions come from permission sets, not profiles. */
   sagax_permissions: z.array(z.string().max(64)).max(1_000).nullable().optional().catch(undefined),
 });
 const teamSchema = z.object({

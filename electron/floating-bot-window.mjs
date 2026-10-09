@@ -206,17 +206,25 @@ const BALLOON_KINDS = new Set(["chat", "thinking", "approval", "error"]);
 const TASKS = new Set(["idle", "working", "waiting", "error"]);
 const LIVELINESS = new Set(["calm", "normal", "lively"]);
 const MAX_TOKENS = 1e9;
-const CHARACTERS = new Set(["owl", "shape", "trombi", "bunbu"]);
+const CHARACTERS = new Set(["owl", "shape", "trombi", "bunbu", "shiba", "grump", "ogre", "frog"]);
 const SHAPES = new Set(["circle", "bean", "squircle", "pill", "pick", "hexagon", "cloud", "drop"]);
 /** Shapes from earlier sets and the display names (shared/mascot-look.ts LEGACY_SHAPES). */
 const LEGACY_SHAPES = { blob: "bean", pebble: "bean", triangle: "pick", capsule: "pill", droplet: "drop", sparkle: "squircle", clover: "cloud", flower: "cloud", house: "hexagon", star: "hexagon" };
 const SHAPE_SKINS = new Set(["plain", "pastel", "glossy", "night", "outline", "gold", "neon", "chrome", "crystal", "circuit", "holo", "molten", "galaxy"]);
 const TROMBI_SKINS = new Set(["classic", "retro98", "gold", "neon", "chrome", "glitch", "holo", "molten"]);
 const BUNBU_SKINS = new Set(["plain", "pastel", "night", "plush", "velvet", "gold", "neon", "chrome", "crystal", "holo", "galaxy", "molten"]);
-/** Other names a stored skin may carry (shared/mascot-look.ts LEGACY_SHAPE_SKINS, LEGACY_TROMBI_SKINS, LEGACY_BUNBU_SKINS). */
+const SHIBA_SKINS = new Set(["plain", "cream", "blacktan", "red", "sesame", "white", "retro98", "gold", "neon", "chrome", "glitch", "holo", "molten"]);
+const GRUMP_SKINS = new Set(["plain", "tuxedo", "calico", "tabby", "siamese", "void", "retro98", "gold", "neon", "chrome", "glitch", "holo", "molten"]);
+const OGRE_SKINS = new Set(["plain", "swamp", "moss", "stone", "lava", "armor", "retro98", "gold", "neon", "chrome", "glitch", "holo", "molten"]);
+const FROG_SKINS = new Set(["plain", "leaf", "tree", "poison", "bullfrog", "ghost", "retro98", "gold", "neon", "chrome", "glitch", "holo", "molten"]);
+/** Other names a stored skin may carry (shared/mascot-look.ts LEGACY_SHAPE_SKINS, LEGACY_TROMBI_SKINS, LEGACY_BUNBU_SKINS, LEGACY_SHIBA_SKINS, LEGACY_GRUMP_SKINS, LEGACY_OGRE_SKINS, LEGACY_FROG_SKINS). */
 const LEGACY_SHAPE_SKINS = { ink: "outline", royal: "gold", metal: "chrome", "liquid-metal": "chrome", glass: "crystal", cyber: "circuit", iridescent: "holo", holographic: "holo", lava: "molten", nebula: "galaxy" };
 const LEGACY_TROMBI_SKINS = { retro: "retro98", win98: "retro98", royal: "gold", metal: "chrome", cyber: "glitch", iridescent: "holo", holographic: "holo", lava: "molten" };
 const LEGACY_BUNBU_SKINS = { fur: "plush", fuzzy: "plush", royal: "gold", metal: "chrome", glass: "crystal", iridescent: "holo", holographic: "holo", nebula: "galaxy", lava: "molten" };
+const LEGACY_OGRE_SKINS = { bog: "swamp", marsh: "swamp", forest: "moss", granite: "stone", rock: "stone", grey: "stone", gray: "stone", magma: "lava", basalt: "lava", iron: "armor", steel: "armor", plate: "armor", knight: "armor", retro: "retro98", win98: "retro98", royal: "gold", metal: "chrome", cyber: "glitch", iridescent: "holo", holographic: "holo" };
+const LEGACY_SHIBA_SKINS = { "black-and-tan": "blacktan", black_tan: "blacktan", kuro: "blacktan", aka: "red", goma: "sesame", shiro: "white", retro: "retro98", win98: "retro98", royal: "gold", metal: "chrome", cyber: "glitch", iridescent: "holo", holographic: "holo", lava: "molten" };
+const LEGACY_GRUMP_SKINS = { tux: "tuxedo", "black-and-white": "tuxedo", tortie: "calico", tortoiseshell: "calico", tiger: "tabby", mackerel: "tabby", colorpoint: "siamese", colourpoint: "siamese", "seal-point": "siamese", black: "void", shadow: "void", retro: "retro98", win98: "retro98", royal: "gold", metal: "chrome", cyber: "glitch", iridescent: "holo", holographic: "holo", lava: "molten" };
+const LEGACY_FROG_SKINS = { green: "leaf", "tree-frog": "tree", treefrog: "tree", "red-eyed": "tree", dart: "poison", "poison-dart": "poison", bull: "bullfrog", glass: "ghost", "glass-frog": "ghost", golden: "gold", retro: "retro98", win98: "retro98", royal: "gold", metal: "chrome", cyber: "glitch", iridescent: "holo", holographic: "holo", lava: "molten" };
 /** The app's skins (src/lib/skins.ts SKIN_IDS): the balloon wears the one the app wears. */
 export const APP_SKINS = new Set(["pulsatrix", "pulsatrix-light", "midnight", "atelier", "foundry", "lagoon", "graphite", "linen", "dusk", "daylight", "retro98", "meadow"]);
 const ACCENT_RE = /^#[0-9a-fA-F]{6}$/;
@@ -236,6 +244,10 @@ export function mascotLook(value) {
     ...(SHAPE_SKINS.has(skinOf(skins.shape, LEGACY_SHAPE_SKINS)) ? { shape: skinOf(skins.shape, LEGACY_SHAPE_SKINS) } : {}),
     ...(TROMBI_SKINS.has(skinOf(skins.trombi, LEGACY_TROMBI_SKINS)) ? { trombi: skinOf(skins.trombi, LEGACY_TROMBI_SKINS) } : {}),
     ...(BUNBU_SKINS.has(skinOf(skins.bunbu, LEGACY_BUNBU_SKINS)) ? { bunbu: skinOf(skins.bunbu, LEGACY_BUNBU_SKINS) } : {}),
+    ...(SHIBA_SKINS.has(skinOf(skins.shiba, LEGACY_SHIBA_SKINS)) ? { shiba: skinOf(skins.shiba, LEGACY_SHIBA_SKINS) } : {}),
+    ...(GRUMP_SKINS.has(skinOf(skins.grump, LEGACY_GRUMP_SKINS)) ? { grump: skinOf(skins.grump, LEGACY_GRUMP_SKINS) } : {}),
+    ...(OGRE_SKINS.has(skinOf(skins.ogre, LEGACY_OGRE_SKINS)) ? { ogre: skinOf(skins.ogre, LEGACY_OGRE_SKINS) } : {}),
+    ...(FROG_SKINS.has(skinOf(skins.frog, LEGACY_FROG_SKINS)) ? { frog: skinOf(skins.frog, LEGACY_FROG_SKINS) } : {}),
   };
   return {
     character: value.character,
@@ -427,6 +439,14 @@ export function sanitizeLevels(value) {
   return { bot: clampNumber(value.bot, 0, 1), mic: clampNumber(value.mic, 0, 1) };
 }
 
+const CUES = new Set(["nudge", "achievement", "snooze"]);
+
+/** The last nudge or achievement (src/components/floating-bots/protocol.ts FloatingCue): a known kind and a time, or nothing. */
+export function sanitizeCue(value) {
+  if (!value || typeof value !== "object" || !CUES.has(value.kind) || !isFiniteNumber(value.at) || value.at < 0) return null;
+  return { kind: value.kind, at: value.at };
+}
+
 /**
  * What the brain may tell a floating bot's window: who it is, how it looks, a
  * pose and, when talking, a balloon of short plain texts. Anything else is
@@ -470,6 +490,7 @@ export function sanitizeFloatingSnapshot(value) {
   const theme = appTheme(value.theme);
   if (theme) snapshot.theme = theme;
   snapshot.call = sanitizeCall(value.call);
+  snapshot.cue = sanitizeCue(value.cue);
   snapshot.tray = sanitizeTray(value.tray);
   const balloon = value.balloon;
   if (balloon && typeof balloon === "object" && BALLOON_KINDS.has(balloon.kind)) {

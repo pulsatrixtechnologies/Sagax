@@ -11,6 +11,18 @@ import type { CallSettings } from "@/lib/voice-mode/call-settings";
 import type { VoiceModeSettings } from "../../../shared/voice-mode";
 
 export type FloatingPose = "idle" | "think" | "speak" | "celebrate" | "alert" | "sleep";
+
+/**
+ * Something that just happened, for the mascot to react to: a nudge to the
+ * person (a dog barks), an achievement (it turns in circles), its own snooze
+ * (it lies down and sleeps before it hides).
+ */
+export type FloatingCueKind = "nudge" | "achievement" | "snooze" | "refusal";
+export interface FloatingCue {
+  kind: FloatingCueKind;
+  /** When (ms); a new value is a new cue. */
+  at: number;
+}
 export type { MascotTask };
 export type FloatingBalloonKind = "chat" | "thinking" | "approval" | "error";
 
@@ -165,6 +177,8 @@ export interface FloatingSnapshot {
   call?: FloatingCall | null;
   /** The activity tray, while it is open (the hover controls' bell). */
   tray?: FloatingTray | null;
+  /** The last thing that happened to the person (a nudge, an achievement), for the mascot to react to. */
+  cue?: FloatingCue | null;
 }
 
 

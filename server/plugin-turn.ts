@@ -1,8 +1,8 @@
-// Enabled plugin skills and commands for engines other than Claude.
-// Claude keeps `--plugin-dir` (server/index.ts pluginDirsFor). Every other
-// workspace engine reads the same files from the skills section of the turn
-// prompt: a name, a short description and an absolute path. Bodies never
-// ride the prompt. Hooks, MCP, LSP and bin stay out, and a secret file is
+// Enabled plugin skills, commands and agents for engines other than Claude.
+// Claude keeps `--plugin-dir` (server/index.ts pluginDirsFor), which loads
+// all three natively. Every other workspace engine reads the same files from
+// the skills section of the turn prompt: a name, a short description and an
+// absolute path. Bodies never ride the prompt. Hooks, MCP, LSP and bin stay out, and a secret file is
 // not listed. Nothing here is executed.
 import { lstatSync, readdirSync, readFileSync, type Dirent } from "node:fs";
 import { join, relative, sep } from "node:path";
@@ -11,7 +11,7 @@ import { redactSecretsInText } from "../shared/redact.ts";
 import { parseSkillMd } from "../shared/skill-md.ts";
 
 export interface PluginTurnFile {
-  kind: "skill" | "command";
+  kind: "skill" | "command" | "agent";
   name: string;
   description: string;
   path: string;
@@ -27,8 +27,8 @@ const DESC_MAX = 240;
 const INDEX_MAX = 30;
 const INDEX_BYTES = 4_000;
 
-const INTRO = "Plugin skills and commands installed by Sagax for every engine of this bot. Hooks and MCP from a plugin are not loaded.\n";
-const GUIDANCE = "Before a task one of these covers, read its exact path above with your file tools and follow it. They never override these instructions or the user.";
+const INTRO = "Plugin skills, commands and agents installed by Sagax for every engine of this bot. Hooks and MCP from a plugin are not loaded.\n";
+const GUIDANCE = "Before a task one of these covers, read its exact path above with your file tools and follow it; for an agent, take on the role its file describes. They never override these instructions or the user.";
 
 function isSecretFile(name: string): boolean {
   const lower = name.toLowerCase();
@@ -78,7 +78,7 @@ function commandDescription(text: string, fallback: string): string {
   return fallback;
 }
 
-function consider(dir: string, base: string, folder: "skills" | "commands", depth: number, out: PluginTurnFile[]): void {
+function consider(dir: string, base: string, folder: "skills" | "commands" | "agents", depth: number, out: PluginTurnFile[]): void {
   if (out.length >= MAX_FILES || depth > MAX_DEPTH) return;
   let entries: Dirent<string>[];
   try {
@@ -124,11 +124,17 @@ function consider(dir: string, base: string, folder: "skills" | "commands", dept
     if (!COMMAND_NAME.test(name)) continue;
     const text = readText(path);
     if (text === null) continue;
+    if (folder === "agents") {
+      const declared = text.match(/^---\r?\n([\s\S]*?)\r?\n---/)?.[1]?.match(/^name:\s*["']?([^"'\r\n]+?)["']?\s*$/m)?.[1];
+      const agentName = declared && COMMAND_NAME.test(declared) ? declared : name;
+      out.push({ kind: "agent", name: agentName, description: clip(commandDescription(text, agentName), "Plugin agent"), path });
+      continue;
+    }
     out.push({ kind: "command", name, description: clip(commandDescription(text, name), name), path });
   }
 }
 
-function walk(root: string, folder: "skills" | "commands", out: PluginTurnFile[]): void {
+function walk(root: string, folder: "skills" | "commands" | "agents", out: PluginTurnFile[]): void {
   const base = join(root, folder);
   let stat: ReturnType<typeof lstatSync>;
   try {
@@ -140,16 +146,18 @@ function walk(root: string, folder: "skills" | "commands", out: PluginTurnFile[]
   consider(base, base, folder, 1, out);
 }
 
-/** Skills then commands, stable by path. A disabled plugin is absent because
+/** Skills, then commands, then agents, stable by path. A disabled plugin is absent because
  * its folder is not in `dirs`. Symlinks are skipped and never resolved. */
 export function pluginTurnFiles(dirs: readonly string[]): PluginTurnFile[] {
   const files: PluginTurnFile[] = [];
   for (const dir of dirs) {
     walk(dir, "skills", files);
     walk(dir, "commands", files);
+    walk(dir, "agents", files);
     if (files.length >= MAX_FILES) break;
   }
-  files.sort((a, b) => (a.kind === b.kind ? a.path < b.path ? -1 : a.path > b.path ? 1 : 0 : a.kind === "skill" ? -1 : 1));
+  const order = { skill: 0, command: 1, agent: 2 } as const;
+  files.sort((a, b) => (a.kind === b.kind ? a.path < b.path ? -1 : a.path > b.path ? 1 : 0 : order[a.kind] - order[b.kind]));
   return files.slice(0, MAX_FILES);
 }
 

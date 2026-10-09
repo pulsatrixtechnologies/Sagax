@@ -1543,3 +1543,24 @@ export function removeManifestEntry(botId: string, name: string, expectSha256: s
   syncSkillLinks(botId);
   return { removed: true };
 }
+
+/** A bot's skills manifest as stored (enablement, provenance, hashes), for
+ * the bot package (server/bot-zip.ts). The SKILL.md files themselves live
+ * in the workspace and travel with it. */
+export function skillManifestForExport(botId: string): Record<string, unknown> {
+  return structuredClone(readManifest(botId)) as Record<string, unknown>;
+}
+
+/** Restore a manifest from a bot package: every valid entry lands switched
+ * off; the caller turns on what was on with setSkillEnabled, which checks
+ * each SKILL.md against its recorded hash first. Answers the names kept. */
+export function restoreSkillManifest(botId: string, value: unknown): string[] {
+  const parsed = skillManifestSchema.safeParse(value);
+  if (!parsed.success) return [];
+  const manifest: SkillManifest = {};
+  for (const [name, entry] of Object.entries(parsed.data)) {
+    if (isSkillName(name)) manifest[name] = { ...entry, enabled: false };
+  }
+  writeManifest(botId, manifest);
+  return Object.keys(manifest).sort();
+}

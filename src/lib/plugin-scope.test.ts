@@ -39,6 +39,22 @@ describe("plugin scope", () => {
     expect(market.plugins.every((plugin) => plugin.servers.length === 0 && plugin.skills.length === 0)).toBe(true);
   });
 
+  it("carries this bot's token flag and its own update offer", () => {
+    const next: BotPluginsView = {
+      ...view,
+      marketplaces: [{ ...view.marketplaces[0]!, hasToken: true, plugins: [
+        { name: "reviewer", version: "1.3.0", installedVersion: "1.2.0", updateAvailable: true, installed: true, external: false },
+        { name: "linter", installed: false, external: true, updateAvailable: true },
+      ] }],
+    };
+    const [market] = botScopeMarketplaces(next);
+    expect(market.hasToken).toBe(true);
+    expect(market.plugins[0]).toMatchObject({ installedVersion: "1.2.0", updateAvailable: true });
+    // an update is only ever about an install
+    expect(market.plugins[1]!.updateAvailable).toBeUndefined();
+    expect(botScopeMarketplaces(view)[0]!.hasToken).toBeUndefined();
+  });
+
   it("finds a plugin row's state on the bot", () => {
     const reviewer = botPluginState(view, "reviewer@acme-tools");
     expect(reviewer).toMatchObject({ plugin: "reviewer", marketplace: "acme-tools", contents: { agents: ["critic"] } });

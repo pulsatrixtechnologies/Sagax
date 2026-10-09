@@ -120,15 +120,31 @@ MCP servers (`/api/mcp/servers`, `server/index.ts:33968`) are `host.shell`.
 | `folders.botWorkingFolder` | Set the working folder of their bots | `server/index.ts:30193` (create), `:30644` (`cwd`) | no | no |
 | `folders.roomWorkingFolder` | Set the working folder of their groups | `server/index.ts:29659` `clientGroupPatchViolation`; client `groupPanel.folderAdminOnly` (`src/components/GroupView.tsx:968`) | no | no |
 
-### routines (2)
+### routines (4)
 
 | Key | Label | Today's gate | Default | adminOnly |
 |---|---|---|---|---|
 | `routines.runAsAnyone` | Choose anyone a routine runs as | `server/index.ts:10939` (`admin: orgAdminCaller`), `server/routine-run-as.ts:127` `run_as_not_allowed` | no | no |
 | `routines.runNowAny` | Run any routine now | `server/index.ts:11003` `mayRunRoutineNow`, `:28098` `run_now_not_allowed` | no | no |
+| `routines.viewTeam` | See their teams' routines (added 2026-10-09, routine scope) | new: `GET /api/routines?scope=team` and `DELETE /api/routine-runs?scope=team` (`server/routine-scope.ts`, 403 `routine_scope_not_allowed`); client scope control "My teams" (`src/components/routines/RoutineScopeBar.tsx`) | no | no |
+| `routines.viewAll` | See every routine of the organization (added 2026-10-09, routine scope) | new: `GET /api/routines?scope=all`, Clear logs over every run with `DELETE /api/routine-runs?scope=all`; client scope control "Everyone" | no | no |
 
 Team managers keep reaching their teams' people (run as, labels) without a
 key, as before.
+
+The two view keys (2026-10-09, JC: "give any user the possibility to view
+the automation schedule at large; admins see all of them") are read side
+only. `mine` (what the caller saw before: the routines of the bots and rooms
+they see, by the private-threads rule) is always allowed; `team` adds the
+routines whose bot owner or run-as person shares a team with the caller, or
+whose bot is shared with one of the caller's teams; `all` is every routine.
+An admin holds both. A routine outside `mine` comes without its
+instructions, attachments, threads or run outputs (`redacted: true`), and
+`canRun` / `canEdit` stay false unless the existing write gates
+(`routines.runNowAny`, the bot's `run` level, the path visibility) already
+let the caller act on it. Clear logs clears the caller's own runs, or every
+run in scope with `routines.viewAll`. An older Perspicax that sends neither
+key leaves everyone on `mine`, as before.
 
 ### people (3)
 
@@ -163,13 +179,13 @@ key, as before.
 | apps | 3 | `apps.ownIntegrations` | none |
 | skills | 1 | none | none |
 | folders | 2 | none | none |
-| routines | 2 | none | none |
+| routines | 4 | none | none |
 | people | 3 | none | `people.manage` |
 | usage | 1 | none | none |
 | backup | 1 | none | `backup.workspace` |
 | host | 1 | none | `host.shell` |
 | server | 2 | none | `server.settings`, `server.link` |
-| **total** | **26** | 4 keys | 5 keys |
+| **total** | **28** (plus 5 `clients` keys) | 4 keys | 5 keys |
 
 ## 4. Why each adminOnly key stays hard-coded
 

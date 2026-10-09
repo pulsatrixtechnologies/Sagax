@@ -8,8 +8,10 @@ import type { BotSettingsSection } from "@/state/store";
 export const PERSONA_CATEGORIES = [
   "overview",
   "soul",
+  "rules",
   "skills",
   "memory",
+  "files",
   "access",
   "model",
   "permissions",

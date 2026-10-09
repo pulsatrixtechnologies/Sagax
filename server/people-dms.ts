@@ -227,7 +227,8 @@ export function peopleDmCandidate(entry: { principalId: string; disabled?: boole
 }
 
 /** The routes a person-to-person conversation answers besides reads: a
- * message, a read receipt (unread flag and read position), a PATCH that only
+ * message, a read receipt (unread flag and read position), an emoji
+ * reaction on one of its messages, a PATCH that only
  * marks it (checked by peopleDmPatchRefusal), and its threads and folders
  * like a bot's (create, switch, rename, pin, archive, snooze, move, delete;
  * folder create, edit, order, delete). Anything else (setup, members, queue,
@@ -237,6 +238,7 @@ export function peopleDmRouteRefusal(method: string, path: string): string | nul
   if (method === "GET" || method === "HEAD") return null;
   if (method === "POST" && /^\/api\/groups\/[\w-]+\/(?:messages|read)$/.test(path)) return null;
   if (method === "POST" && /^\/api\/threads\/[\w-]+\/read$/.test(path)) return null;
+  if (method === "POST" && /^\/api\/threads\/[\w-]+\/messages\/[\w-]+\/reactions$/.test(path)) return null;
   if (method === "PATCH" && /^\/api\/groups\/[\w-]+$/.test(path)) return null;
   if (method === "POST" && /^\/api\/groups\/[\w-]+\/(?:tasks|projects)$/.test(path)) return null;
   if ((method === "POST" || method === "PATCH" || method === "DELETE") && /^\/api\/groups\/[\w-]+\/tasks\/[\w-]+$/.test(path)) return null;

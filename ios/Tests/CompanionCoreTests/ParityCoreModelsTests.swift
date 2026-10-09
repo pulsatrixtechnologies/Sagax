@@ -151,6 +151,22 @@ final class ParityCoreModelsTests: XCTestCase {
         XCTAssertTrue(message.isFailed)
         XCTAssertEqual(message.requestCancelled, true)
         XCTAssertEqual(message.reactions?.first?.emoji, "👍")
+        XCTAssertEqual(message.reactions?.first?.count, 1)
+        XCTAssertEqual(try roundTrip(message), message)
+    }
+
+    func testDecodesReactionsWithActors() throws {
+        let message = try decode(Message.self, #"""
+        {"id":"m9","role":"user","kind":"text","at":9,"text":"shipped",
+         "reactions":[{"emoji":"👍","actors":[{"id":"pr_zach","kind":"person","name":"Zachary Sellam"},
+         {"id":"bot:cryptic","kind":"bot","name":"Cryptic"}],"at":12}]}
+        """#)
+        let reaction = try XCTUnwrap(message.reactions?.first)
+        XCTAssertNil(reaction.by)
+        XCTAssertEqual(reaction.count, 2)
+        XCTAssertEqual(reaction.actors?.last?.kind, "bot")
+        XCTAssertTrue(reaction.includes("PR_ZACH"))
+        XCTAssertFalse(reaction.includes(nil))
         XCTAssertEqual(try roundTrip(message), message)
     }
 

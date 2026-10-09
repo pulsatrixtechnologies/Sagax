@@ -1,0 +1,50 @@
+/* Ogre (OgreMascot.tsx): the CSS idle of the app's avatars, a slow heavy
+   breath, a blink, a trumpet twitch now and then. Every part turns about its
+   own point in the 0..100 box (inline transform-origin, view-box units). A
+   move or an action drives the same groups from the rig (ogre-moves.ts)
+   instead, and drops these loops (.ogre-rig). Reduced motion keeps it still. */
+
+.ogre-mascot :is(.ogre-whole, .ogre-head, .ogre-ear, .ogre-eye, .ogre-mouth, .ogre-belly) {
+  transform-box: view-box;
+}
+
+.ogre-live:not(.ogre-rig) .ogre-whole { animation: ogre-breathe 3.8s ease-in-out infinite; }
+.ogre-live:not(.ogre-rig) .ogre-eye { animation: ogre-blink 5.2s ease-in-out infinite; }
+.ogre-live:not(.ogre-rig) .ogre-ear-l { animation: ogre-twitch-l 9.4s ease-in-out infinite; }
+.ogre-live:not(.ogre-rig) .ogre-ear-r { animation: ogre-twitch-r 7.2s ease-in-out infinite; }
+.ogre-live:not(.ogre-rig).ogre-mood-speaking .ogre-mouth { animation: ogre-talk 0.42s ease-in-out infinite alternate; }
+.ogre-live:not(.ogre-rig).ogre-mood-happy .ogre-ear-r { animation-duration: 2.4s; }
+.ogre-live:not(.ogre-rig).ogre-mood-sleeping .ogre-eye { animation: none; }
+.ogre-live:not(.ogre-rig).ogre-mood-sleeping .ogre-whole { animation-duration: 5.2s; }
+
+@keyframes ogre-breathe {
+  0%, 100% { transform: scale(1, 1); }
+  50% { transform: scale(1.012, 0.986); }
+}
+@keyframes ogre-blink {
+  0%, 94%, 100% { transform: scaleY(1); }
+  97% { transform: scaleY(0.1); }
+}
+@keyframes ogre-twitch-l {
+  0%, 86%, 100% { transform: rotate(0deg); }
+  88% { transform: rotate(10deg); }
+  90% { transform: rotate(-4deg); }
+  92% { transform: rotate(5deg); }
+}
+@keyframes ogre-twitch-r {
+  0%, 88%, 100% { transform: rotate(0deg); }
+  90% { transform: rotate(-11deg); }
+  92% { transform: rotate(3deg); }
+  94% { transform: rotate(-6deg); }
+}
+@keyframes ogre-talk {
+  from { transform: scaleY(0.75); }
+  to { transform: scaleY(1.1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ogre-mascot :is(.ogre-whole, .ogre-head, .ogre-ear, .ogre-eye, .ogre-mouth, .ogre-belly) {
+    animation: none !important;
+    transition: none !important;
+  }
+}

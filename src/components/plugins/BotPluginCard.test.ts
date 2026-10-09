@@ -102,6 +102,20 @@ describe("one marketplace list, two scopes", () => {
     const html = renderToStaticMarkup(createElement(MarketplacesSection, { ...props, marketplaces: [{ ...market, plugins: [{ name: "reviewer", installed: true }] }], removeKeepsInstalls: true }));
     expect(html).not.toMatch(/disabled=""[^>]*data-marketplace-remove="acme-tools"/);
   });
+
+  it("has a token field per marketplace for the bot only, says one is saved, and opens it where the git host refused", () => {
+    const tokens = { onSave: async () => true, onRemove: async () => true };
+    expect(renderToStaticMarkup(createElement(MarketplacesSection, { ...props, marketplaces: [market] }))).not.toContain("data-marketplace-token-open");
+    const saved = renderToStaticMarkup(createElement(MarketplacesSection, { ...props, marketplaces: [{ ...market, hasToken: true }], tokens }));
+    expect(saved).toContain("data-marketplace-token-open=\"acme-tools\"");
+    expect(saved).toContain("Token saved");
+    expect(saved).not.toContain("data-marketplace-token-form");
+    const refused = renderToStaticMarkup(createElement(MarketplacesSection, { ...props, marketplaces: [{ ...market, hasToken: true }], tokens, needsToken: "acme-tools" }));
+    expect(refused).toContain("data-marketplace-token-form=\"acme-tools\"");
+    expect(refused).toContain("Replace and update");
+    expect(refused).toContain("Remove the token");
+    expect(refused).toContain("type=\"password\"");
+  });
 });
 
 describe("bot panel > Library", () => {

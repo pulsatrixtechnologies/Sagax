@@ -3,16 +3,21 @@
 //
 //   GET    /api/bots/:id/plugins
 //          { marketplaces: [MarketplaceListing], plugins: [InstalledBotPlugin], policy, engine }
-//   POST   /api/bots/:id/plugins/marketplaces { source, ref? }      add (or refresh) one, for everyone's list
+//   POST   /api/bots/:id/plugins/marketplaces { source, ref?, token? }  add (or refresh) one, for everyone's list;
+//          a token is tried first and saved (encrypted) for this bot once the clone works
 //   POST   /api/bots/:id/plugins/marketplaces/:name/update
-//   DELETE /api/bots/:id/plugins/marketplaces/:name                  this bot's plugins from it; the
+//   PUT    /api/bots/:id/plugins/marketplaces/:name/token { token }   save or replace this bot's token
+//   DELETE /api/bots/:id/plugins/marketplaces/:name/token             forget it
+//   DELETE /api/bots/:id/plugins/marketplaces/:name                  this bot's plugins from it (and its token); the
 //          marketplace too when the caller may remove it (an admin, or who added it) and nothing uses it
 //   POST   /api/bots/:id/plugins/install { marketplace, plugin }     install or update
 //   PATCH  /api/bots/:id/plugins/:key { enabled }
 //   DELETE /api/bots/:id/plugins/:key
 //
 // Reads need use on the bot; every change needs its owner or manage (an
-// organization admin too). Member scope (request-auth.ts CLIENT_ALLOW).
+// organization admin too). A refusal from the git host answers its real
+// cause (`code`: private_needs_token, bad_token, sso_required, rate_limited,
+// not_found_or_no_access, forbidden) and `fix`, never a token. Member scope (request-auth.ts CLIENT_ALLOW).
 // Perspicax `sagax_integrations: off` (server/person-integrations.ts): the
 // listing says `managedByAdmin: true` with `canChange: false`, and every
 // change answers 403 `org_integrations_admin_only`, even on their own bot.
@@ -39,7 +44,14 @@ export interface BotPluginRouteDeps<B extends { id: string }> {
   changed?: (bot: B, action: string, detail: Record<string, unknown>, auth: RequestAuth) => void;
 }
 
-const ROUTE = /^\/api\/bots\/([\w-]+)\/plugins(?:\/(marketplaces|install)(?:\/([A-Za-z0-9][A-Za-z0-9._-]{0,63})(?:\/(update))?)?|\/([A-Za-z0-9][A-Za-z0-9._-]{0,63}@[A-Za-z0-9][A-Za-z0-9._-]{0,63}))?$/;
+const ROUTE = /^\/api\/bots\/([\w-]+)\/plugins(?:\/(marketplaces|install)(?:\/([A-Za-z0-9][A-Za-z0-9._-]{0,63})(?:\/(update|token))?)?|\/([A-Za-z0-9][A-Za-z0-9._-]{0,63}@[A-Za-z0-9][A-Za-z0-9._-]{0,63}))?$/;
+const TOKEN = /^[\x21-\x7e]{8,4096}$/;
+
+function tokenField(value: unknown): string | null | undefined {
+  if (value === undefined || value === null || value === "") return undefined;
+  if (typeof value !== "string" || !TOKEN.test(value.trim())) return null;
+  return value.trim();
+}
 
 function isPluginError(error: unknown): error is BotPluginError {
   return error instanceof Error && typeof (error as { status?: unknown }).status === "number" && typeof (error as { code?: unknown }).code === "string";
@@ -69,7 +81,7 @@ export function createBotPluginRoutes<B extends { id: string }>(deps: BotPluginR
     }
     if (managedByAdmin) return json(res, 403, { ...INTEGRATIONS_ADMIN_ONLY });
     if (!deps.mayChange(auth, bot)) return json(res, 403, { error: "Only the bot's owner, or someone who manages it, can change its plugins.", code: "plugins_owner_only" });
-    const body = method === "DELETE" || update ? null : await (async () => {
+    const body = method === "DELETE" || update === "update" ? null : await (async () => {
       if (!/^application\/json\b/i.test(String(req.headers["content-type"] ?? ""))) return undefined;
       return readBody(req) as Promise<Record<string, unknown> | null>;
     })();
@@ -81,9 +93,24 @@ export function createBotPluginRoutes<B extends { id: string }>(deps: BotPluginR
         const source = typeof body?.source === "string" ? body.source : "";
         const ref = typeof body?.ref === "string" && body.ref.trim() ? body.ref.trim() : undefined;
         if (!source.trim() || source.length > 500) return json(res, 400, { error: "send { source: owner/repo or an https git URL }", code: "invalid_source" });
-        const added = await deps.plugins.addMarketplace(bot.id, { source, ...(ref ? { ref } : {}) }, actor);
+        const token = tokenField(body?.token);
+        if (token === null) return json(res, 400, { error: "The token must be one line of printable characters.", code: "invalid_token" });
+        const added = await deps.plugins.addMarketplace(bot.id, { source, ...(ref ? { ref } : {}), ...(token ? { token } : {}) }, actor);
         deps.changed?.(bot, "plugin.marketplace_add", { marketplace: added.name, source: added.source }, auth);
         return json(res, 201, { marketplace: added, ...listing() });
+      }
+      if (section === "marketplaces" && name && update === "token") {
+        if (method === "DELETE") {
+          const market = deps.plugins.setMarketplaceToken(bot.id, name, null, actor);
+          deps.changed?.(bot, "plugin.marketplace_token_remove", { marketplace: name }, auth);
+          return json(res, 200, { marketplace: market, ...listing() });
+        }
+        if (method !== "PUT") return json(res, 405, { error: "PUT or DELETE" });
+        const token = tokenField(body?.token);
+        if (!token) return json(res, 400, { error: "send { token }: one line of printable characters", code: "invalid_token" });
+        const market = deps.plugins.setMarketplaceToken(bot.id, name, token, actor);
+        deps.changed?.(bot, "plugin.marketplace_token_set", { marketplace: name }, auth);
+        return json(res, 200, { marketplace: market, ...listing() });
       }
       if (section === "marketplaces" && name) {
         if (update) {
@@ -121,7 +148,11 @@ export function createBotPluginRoutes<B extends { id: string }>(deps: BotPluginR
       }
       return json(res, 404, { error: "not found" });
     } catch (error) {
-      if (isPluginError(error)) return json(res, error.status, { error: error.message, code: error.code });
+      if (isPluginError(error)) return json(res, error.status, { error: error.message, code: error.code, ...(error.fix ? { fix: error.fix } : {}) });
+      const tokenStatus = (error as { status?: unknown; code?: unknown })?.status;
+      if (error instanceof Error && error.name === "MarketplaceTokenError" && typeof tokenStatus === "number") {
+        return json(res, tokenStatus, { error: error.message, code: (error as { code?: string }).code });
+      }
       throw error;
     }
   };

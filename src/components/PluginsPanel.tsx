@@ -23,7 +23,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Loader2, TriangleAlert } from "lucide-react";
 
-import { api, useStore } from "@/state/store";
+import { api, ApiError, useStore } from "@/state/store";
 import { t } from "@/lib/i18n";
 import { managedConnectorUnavailableReason } from "../../shared/connector-availability";
 import { isWhopServer } from "@/lib/whop-integration";
@@ -33,13 +33,17 @@ import { usePerspicaxOrg } from "@/lib/perspicax-org";
 import { useOwnerOrAdmin } from "@/lib/use-owner-or-admin";
 import { viewerCan } from "@/lib/viewer";
 import { permissionMissingText } from "@/lib/permissions";
+import { connectorToolRows, loadConnectorTools, saveDisabledTools, toggledDisabledTools, type ConnectorToolsInventory } from "@/lib/connector-tool-switches";
 import type { SkillsLibrarySkillWire } from "../../shared/wire";
 import { WHOP_KEY, buildPluginItems, marketplacePluginKey, type PluginFilter, type PluginItem, type PluginTypeFilter } from "@/lib/plugins-model";
 import {
   addMarketplace as addBotMarketplace,
   installPlugin as installBotPlugin,
   loadBotPlugins,
+  MARKETPLACE_ACCESS_CODES,
   removeMarketplace as removeBotMarketplace,
+  removeMarketplaceToken as removeBotMarketplaceToken,
+  setMarketplaceToken as setBotMarketplaceToken,
   setPluginEnabled as setBotPluginEnabled,
   uninstallPlugin as uninstallBotPlugin,
   updateMarketplace as updateBotMarketplace,
@@ -89,7 +93,12 @@ interface MarketplaceListing {
   description?: string;
   /** bots with plugins from it (the workspace list only) */
   bots?: number;
-  plugins: Array<{ name: string; description?: string; version?: string; category?: string; installed: boolean; servers: string[]; skills: string[] }>;
+  /** the bot scope's bot has a token saved for it (never the token) */
+  hasToken?: boolean;
+  plugins: Array<{
+    name: string; description?: string; version?: string; category?: string; installed: boolean; servers: string[]; skills: string[];
+    installedVersion?: string; updateAvailable?: boolean;
+  }>;
 }
 
 interface FeaturedListing {
@@ -153,9 +162,12 @@ export function PluginsPanel() {
   const [installing, setInstalling] = useState<string | null>(null);
   const [panelError, setPanelError] = useState<string | null>(null);
   const [aliasDraft, setAliasDraft] = useState("");
+  const [mcpAccountDraft, setMcpAccountDraft] = useState<{ server: string; label: string } | null>(null);
   const [marketplaces, setMarketplaces] = useState<MarketplaceListing[] | null>(null);
   const [marketBusy, setMarketBusy] = useState<string | null>(null);
   const [marketError, setMarketError] = useState<string | null>(null);
+  /** the git host refused "add" or a marketplace's refresh: offer a token */
+  const [marketNeedsToken, setMarketNeedsToken] = useState<string | null>(null);
   const [panelNotice, setPanelNotice] = useState<string | null>(null);
   /** the workspace's marketplace routes answered (its managers only) */
   const [workspaceMarkets, setWorkspaceMarkets] = useState(false);
@@ -165,6 +177,26 @@ export function PluginsPanel() {
   const scope: PluginScope = scopeChoice === "bot" && scopeBot ? "bot" : "workspace";
   const [botView, setBotView] = useState<BotPluginsView | null>(null);
   const [botBusy, setBotBusy] = useState<string | null>(null);
+  const [appTools, setAppTools] = useState<DetailContext["appTools"]>({ inventory: null, loading: false, saving: false });
+  const loadAppTools = useCallback(() => {
+    setAppTools((current) => ({ ...current, loading: true, error: undefined }));
+    loadConnectorTools()
+      .then((inventory) => setAppTools((current) => ({ ...current, inventory, loading: false })))
+      .catch((cause) => setAppTools((current) => ({ ...current, loading: false, error: cause instanceof Error ? cause.message : String(cause) })));
+  }, []);
+  const toggleAppTool = (slug: string, tool: string, enabled: boolean) => {
+    const inventory = appTools.inventory;
+    if (!inventory) return;
+    const next = toggledDisabledTools(inventory.disabledTools[slug], tool, enabled);
+    setAppTools((current) => ({ ...current, saving: true, error: undefined }));
+    saveDisabledTools(slug, next)
+      .then((disabledTools) => setAppTools((current) => ({
+        ...current,
+        saving: false,
+        inventory: current.inventory ? { ...current.inventory, disabledTools } : current.inventory,
+      })))
+      .catch((cause) => setAppTools((current) => ({ ...current, saving: false, error: cause instanceof Error ? cause.message : String(cause) })));
+  };
 
   const loadFeatured = useCallback(() => api("/api/plugins/search")
     .then((result) => setFeatured(result.featured ?? []))
@@ -314,11 +346,18 @@ export function PluginsPanel() {
   const marketAction = async (busy: string, work: () => Promise<unknown>): Promise<boolean> => {
     setMarketBusy(busy);
     setMarketError(null);
+    setMarketNeedsToken(null);
     try {
       await work();
       return true;
     } catch (cause) {
       setMarketError(cause instanceof Error ? cause.message : String(cause));
+      // The git host refused (private, bad token, SAML sign-on): in the bot
+      // scope, offer that bot's token field where it failed.
+      if (cause instanceof ApiError && typeof cause.body?.code === "string" && MARKETPLACE_ACCESS_CODES.has(cause.body.code)) {
+        if (busy === "add") setMarketNeedsToken("add");
+        else if (busy.startsWith("refresh:")) setMarketNeedsToken(busy.slice("refresh:".length));
+      }
       return false;
     } finally {
       setMarketBusy(null);
@@ -332,9 +371,9 @@ export function PluginsPanel() {
     setBotView(view);
     if (workspaceMarkets) await loadMarketplaces();
   };
-  const addMarketplace = (source: string, ref: string) => marketAction("add", async () => {
+  const addMarketplace = (source: string, ref: string, token?: string) => marketAction("add", async () => {
     if (marketRoute === "bot" && scopeBotId) {
-      await afterBotMarket(await addBotMarketplace(scopeBotId, source, ref || undefined));
+      await afterBotMarket(await addBotMarketplace(scopeBotId, source, { ...(ref ? { ref } : {}), ...(token ? { token } : {}) }));
       return;
     }
     const result = await api("/api/marketplaces", { method: "POST", body: JSON.stringify({ source, ...(ref ? { ref } : {}) }) });
@@ -366,6 +405,17 @@ export function PluginsPanel() {
       if (filter === `source:${name}`) setFilter("all");
     });
   };
+  /** That bot's token for a marketplace (server/marketplace-tokens.ts):
+   * saved, then the marketplace is fetched again with it. */
+  const marketTokens = marketRoute === "bot" && scopeBotId ? {
+    onSave: (name: string, token: string) => marketAction(`refresh:${name}`, async () => {
+      await setBotMarketplaceToken(scopeBotId, name, token);
+      await afterBotMarket(await updateBotMarketplace(scopeBotId, name));
+    }),
+    onRemove: (name: string) => marketAction(`token:${name}`, async () => {
+      await afterBotMarket(await removeBotMarketplaceToken(scopeBotId, name));
+    }),
+  } : undefined;
   const marketSummaries = marketRoute === "bot" && botView
     ? botScopeMarketplaces(botView)
     : marketRoute === "workspace" ? marketplaces : null;
@@ -431,6 +481,26 @@ export function PluginsPanel() {
       setInstalling(null);
     }
   };
+  /** Update in place: same server names, switches and bot choices. */
+  const updatePlugin = async (item: PluginItem) => {
+    const [plugin, marketplace] = item.id.split("@") as [string, string];
+    setInstalling(item.id);
+    setPanelError(null);
+    setPanelNotice(null);
+    try {
+      const result = await api(`/api/marketplaces/${encodeURIComponent(marketplace)}/plugins/${encodeURIComponent(plugin)}/update`, { method: "POST", body: "{}" });
+      setMarketplaces(result.marketplaces ?? []);
+      await Promise.all([mcp.load(), loadSkills()]);
+      const skipped: string[] = Array.isArray(result.skipped) ? result.skipped : [];
+      setPanelNotice(skipped.length
+        ? t("connectApps.plugin.skipped", { parts: skipped.join("; ") })
+        : t("connectApps.plugin.updated", { name: plugin }));
+    } catch (cause) {
+      setPanelError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setInstalling(null);
+    }
+  };
   const uninstallPlugin = async (item: PluginItem) => {
     const [plugin, marketplace] = item.id.split("@") as [string, string];
     if (!window.confirm(t("connectApps.plugin.uninstallConfirm", { name: plugin }))) return;
@@ -450,12 +520,21 @@ export function PluginsPanel() {
   const renderAction = (item: PluginItem) => {
     if (item.key === WHOP_KEY) return <WhopAction mcp={mcp} />;
     if (item.kind === "plugin") {
-      if (item.installed) return null;
       if (scope === "bot") {
-        if (!botView?.canChange) return null;
+        // installed on this bot: Install again updates it in place (its
+        // switch and install date stay, server/bot-plugins.ts)
+        if (!botView?.canChange || (item.installed && !item.updateAvailable)) return null;
         return (
-          <button type="button" data-bot-plugin-add={item.id} disabled={botBusy !== null} onClick={() => installForBot(item.id)} className="ui-button min-w-[76px] disabled:opacity-40">
-            {botBusy === `install:${item.id}` ? <Loader2 size={13} className="mx-auto animate-spin" /> : t("connectApps.action.add")}
+          <button type="button" {...(item.installed ? { "data-bot-plugin-update": item.id } : { "data-bot-plugin-add": item.id })} disabled={botBusy !== null} onClick={() => installForBot(item.id)} className="ui-button min-w-[76px] disabled:opacity-40">
+            {botBusy === `install:${item.id}` ? <Loader2 size={13} className="mx-auto animate-spin" /> : t(item.installed ? "connectApps.plugin.update" : "connectApps.action.add")}
+          </button>
+        );
+      }
+      if (item.installed && !item.updateAvailable) return null;
+      if (item.installed) {
+        return (
+          <button type="button" disabled={installing !== null} onClick={() => void updatePlugin(item)} className="ui-button min-w-[76px] disabled:opacity-40" data-plugin-update>
+            {installing === item.id ? <Loader2 size={13} className="mx-auto animate-spin" /> : t("connectApps.plugin.update")}
           </button>
         );
       }
@@ -640,6 +719,8 @@ export function PluginsPanel() {
           onRemove={removeMarketplace}
           disabled={marketRoute === null}
           removeKeepsInstalls={marketRoute === "bot"}
+          tokens={marketTokens}
+          needsToken={marketTokens ? marketNeedsToken : null}
         />
         {scope === "workspace" && (
           <section className="mt-6">
@@ -652,8 +733,9 @@ export function PluginsPanel() {
   } else if (page.page === "detail" && detailItem) {
     content = (
       <PluginDetailView
-        {...detailProps(detailItem, { apps, mcp, aliasDraft, setAliasDraft, bots: state.bots, instances: state.instances,
-          items, marketplaces: shownMarketplaces, installing, openItem, uninstallPlugin: (item) => void uninstallPlugin(item),
+        {...detailProps(detailItem, { apps, mcp, aliasDraft, setAliasDraft, mcpAccountDraft, setMcpAccountDraft, bots: state.bots, instances: state.instances,
+          items, marketplaces: shownMarketplaces, installing, openItem, uninstallPlugin: (item) => void uninstallPlugin(item), updatePlugin: (item) => void updatePlugin(item),
+          appTools, loadAppTools, toggleAppTool, canSwitchAppTools: ownerOrAdmin !== false,
           scope, botCard: botCard(detailItem),
           openBotAccess: (botId) => {
             close();
@@ -844,6 +926,9 @@ interface DetailContext {
   mcp: ReturnType<typeof useMcpServers>;
   aliasDraft: string;
   setAliasDraft: (value: string) => void;
+  /** "+ Add another account" on an MCP server: the name being typed */
+  mcpAccountDraft: { server: string; label: string } | null;
+  setMcpAccountDraft: (value: { server: string; label: string } | null) => void;
   bots: ReturnType<typeof useStore>["state"]["bots"];
   instances: ReturnType<typeof useStore>["state"]["instances"];
   openBotAccess: (botId: string) => void;
@@ -855,6 +940,13 @@ interface DetailContext {
   scope: PluginScope;
   /** the plugin "For <bot>" (absent: no bot in reach) */
   botCard: ReactNode;
+  updatePlugin: (item: PluginItem) => void;
+  /** a connected app's tools and the workspace's switches */
+  appTools: { inventory: ConnectorToolsInventory | null; loading: boolean; error?: string; saving: boolean };
+  loadAppTools: () => void;
+  toggleAppTool: (slug: string, tool: string, enabled: boolean) => void;
+  /** only an admin turns an app's tools on or off */
+  canSwitchAppTools: boolean;
 }
 
 type DetailBase = Omit<PluginDetailProps, "onBack" | "onClose">;
@@ -865,7 +957,7 @@ function detailProps(item: PluginItem, context: DetailContext): DetailBase {
   return mcpDetail(item, context);
 }
 
-function appDetail(item: PluginItem, { apps, aliasDraft, setAliasDraft, bots, instances, openBotAccess }: DetailContext): DetailBase {
+function appDetail(item: PluginItem, { apps, aliasDraft, setAliasDraft, bots, instances, openBotAccess, appTools, loadAppTools, toggleAppTool, canSwitchAppTools }: DetailContext): DetailBase {
   const slug = item.id;
   const serviceStatus = apps.status[slug];
   const accounts = serviceStatus?.accounts ?? [];
@@ -921,7 +1013,14 @@ function appDetail(item: PluginItem, { apps, aliasDraft, setAliasDraft, bots, in
         )}
       </>
     ),
-    tools: undefined,
+    tools: accounts.length ? {
+      list: appTools.inventory ? connectorToolRows(appTools.inventory, slug) : null,
+      loading: appTools.loading || appTools.saving,
+      error: appTools.error,
+      onToggle: canSwitchAppTools && !appTools.saving ? (tool, enabled) => toggleAppTool(slug, tool, enabled) : undefined,
+      note: t("connectApps.detail.appToolsNote"),
+      onLoad: loadAppTools,
+    } : undefined,
     details: [
       { label: t("connectApps.detail.source"), value: pluginSourceLabel("composio") },
       { label: t("connectApps.detail.transport"), value: t("connectApps.transport.composio") },
@@ -930,7 +1029,7 @@ function appDetail(item: PluginItem, { apps, aliasDraft, setAliasDraft, bots, in
   };
 }
 
-function mcpDetail(item: PluginItem, { mcp }: DetailContext): DetailBase {
+function mcpDetail(item: PluginItem, { mcp, mcpAccountDraft, setMcpAccountDraft }: DetailContext): DetailBase {
   const server = mcp.servers?.find((entry) => entry.name === item.id);
   if (!server) return { item, subtitle: "", busy: true, details: [] };
   const name = server.name;
@@ -940,10 +1039,19 @@ function mcpDetail(item: PluginItem, { mcp }: DetailContext): DetailBase {
   const toolList = probe?.ok ? (probe.tools ?? []).map((tool) => ({ name: tool.name, description: tool.description, enabled: !disabled.has(tool.name) })) : null;
   const signingIn = mcp.busy === `oauth:${name}` || Boolean(mcp.waiting[name]);
   const issuer = remote ? (server.authIssuer ?? safeHost(server.url)) : "";
+  const others = remote ? (server.accounts ?? []).filter((entry) => entry.id !== "default") : [];
+  // An account the person names, after the first one (MAX_MCP_ACCOUNTS).
+  const canAddAccount = remote && server.auth === "connected" && !server.managedBy && others.length < 9;
   let account: DetailAccount;
   let accountAction: ReactNode = null;
   if (remote && server.auth === "connected") {
-    account = { id: "oauth", label: issuer, detail: t("connectApps.detail.signedIn"), status: "connected", onRemove: () => void mcp.signOut(server), removeLabel: t("mcp.oauth.disconnectAria", { name }) };
+    account = {
+      id: "oauth", label: others.length ? t("mcp.accounts.first", { issuer }) : issuer, detail: t("connectApps.detail.signedIn"), status: "connected",
+      onRemove: () => void mcp.signOut(server), removeLabel: t("mcp.oauth.disconnectAria", { name }),
+    };
+    accountAction = canAddAccount && mcpAccountDraft?.server !== name
+      ? <AddAccountButton label={t("connectApps.detail.addAccount")} disabled={mcp.busy !== null} onClick={() => setMcpAccountDraft({ server: name, label: "" })} />
+      : null;
   } else if (remote && (server.auth === "required" || server.auth === "expired" || server.auth === "error")) {
     account = { id: "oauth", label: issuer, detail: server.authError, status: "needs_auth" };
     accountAction = <SignInButton label={t(server.auth === "expired" ? "mcp.oauth.signInAgain" : "mcp.oauth.signIn")} busy={signingIn} disabled={mcp.busy !== null || Boolean(server.managedBy)} onClick={() => void mcp.signIn(server)} />;
@@ -968,10 +1076,54 @@ function mcpDetail(item: PluginItem, { mcp }: DetailContext): DetailBase {
     onTest: () => void mcp.test(server),
     testing: mcp.busy === `test:${name}`,
     enabled: { value: server.enabled, onToggle: () => void mcp.toggle(server), label: t("mcp.toggleAria", { name, state: t(server.enabled ? "mcp.state.off" : "mcp.state.on") }) },
-    accounts: [account],
+    accounts: [account, ...others.map((other): DetailAccount => {
+      const label = other.label ?? other.id;
+      return {
+        id: other.id,
+        label,
+        detail: other.auth === "connected" ? t("connectApps.detail.signedIn") : other.authError ?? t("mcp.accounts.notSignedIn"),
+        status: other.auth === "connected" ? "connected" : other.authPending ? "pending" : "needs_auth",
+        action: other.auth === "connected" ? undefined : (
+          <button type="button" disabled={mcp.busy !== null} onClick={() => void mcp.signIn(server, { id: other.id })} className="ui-button text-[12px] disabled:opacity-40">
+            {t("mcp.oauth.signInAgain")}
+          </button>
+        ),
+        onRemove: () => {
+          if (!window.confirm(t("mcp.accounts.removeConfirm", { account: label, name }))) return;
+          void mcp.signOut(server, other.id);
+        },
+        removeLabel: t("mcp.accounts.removeAria", { account: label, name }),
+      };
+    })],
     accountAction,
     accountExtra: (
       <>
+        {mcpAccountDraft?.server === name && (
+          <form
+            className="mt-2 flex items-center gap-2"
+            onSubmit={(event) => {
+              event.preventDefault();
+              const label = mcpAccountDraft.label.trim();
+              if (!label) return;
+              void mcp.signIn(server, { label }).then(() => setMcpAccountDraft(null));
+            }}
+          >
+            <input
+              autoFocus
+              value={mcpAccountDraft.label}
+              maxLength={60}
+              onChange={(event) => setMcpAccountDraft({ server: name, label: event.target.value })}
+              onKeyDown={(event) => { if (event.key === "Escape") { event.stopPropagation(); setMcpAccountDraft(null); } }}
+              placeholder={t("mcp.accounts.labelPlaceholder")}
+              aria-label={t("mcp.accounts.labelAria", { name })}
+              className="min-w-0 flex-1 rounded-lg border border-border bg-ink/[0.03] px-2.5 py-1.5 text-[13px] leading-[18px] text-ink placeholder:text-ink-secondary focus:border-border-strong focus:outline-none"
+            />
+            <button type="submit" disabled={mcp.busy !== null || !mcpAccountDraft.label.trim()} className="rounded-lg bg-accent px-3 py-2 text-[12px] font-medium text-accent-ink disabled:opacity-40">
+              {t("mcp.oauth.signIn")}
+            </button>
+            <button type="button" onClick={() => setMcpAccountDraft(null)} className="ui-button text-[12px]">{t("common.cancel")}</button>
+          </form>
+        )}
         {remote && server.auth && server.auth !== "none" && server.auth !== "connected" && <McpAuthLine server={server} />}
         {mcp.waiting[name] && (
           <div role="status" className="mt-2 flex items-center gap-2 rounded-lg bg-raised/60 px-3 py-2 text-[12px] text-ink-secondary">
@@ -1025,13 +1177,22 @@ function mcpDetail(item: PluginItem, { mcp }: DetailContext): DetailBase {
 }
 
 /** A marketplace plugin: what it brought, each one a link to its own page. */
-function pluginDetail(item: PluginItem, { items, marketplaces, installing, openItem, uninstallPlugin, scope, botCard }: DetailContext): DetailBase {
+function pluginDetail(item: PluginItem, { items, marketplaces, installing, openItem, uninstallPlugin, updatePlugin, scope, botCard }: DetailContext): DetailBase {
   const [plugin, marketplace] = item.id.split("@") as [string, string];
   const market = marketplaces?.find((entry) => entry.name === marketplace);
   const entry = market?.plugins.find((candidate) => candidate.name === plugin);
   const children = items.filter((candidate) => candidate.parent === item.key);
-  const subtitle = `${market?.source ?? marketplace}${item.version ? ` · ${item.version}` : ""}`;
-  // For a bot the page is that bot's install: the card says what it brings.
+  const installedVersion = item.installedVersion ?? item.version;
+  const subtitle = `${market?.source ?? marketplace}${installedVersion ? ` · ${installedVersion}` : ""}`;
+  const versionDetails = [
+    ...(installedVersion ? [{ label: t("connectApps.detail.version"), value: installedVersion }] : []),
+    ...(item.updateAvailable ? [{
+      label: t("connectApps.plugin.available"),
+      value: item.installedVersion && item.version ? item.version : t("connectApps.plugin.newerFiles"),
+    }] : []),
+  ];
+  // For a bot the page is that bot's install: the card says what it brings,
+  // and its Update installs the marketplace's files again in place.
   if (scope === "bot") {
     return {
       item,
@@ -1039,7 +1200,7 @@ function pluginDetail(item: PluginItem, { items, marketplaces, installing, openI
       busy: installing !== null,
       details: [
         { label: t("connectApps.detail.source"), value: marketplace },
-        ...(item.version ? [{ label: t("connectApps.detail.version"), value: item.version }] : []),
+        ...versionDetails,
       ],
       children: (
         <>
@@ -1054,9 +1215,10 @@ function pluginDetail(item: PluginItem, { items, marketplaces, installing, openI
     subtitle,
     busy: installing !== null,
     onUninstall: () => uninstallPlugin(item),
+    ...(item.installed && item.updateAvailable ? { onUpdate: () => updatePlugin(item), updating: installing === item.id } : {}),
     details: [
       { label: t("connectApps.detail.source"), value: marketplace },
-      ...(item.version ? [{ label: t("connectApps.detail.version"), value: item.version }] : []),
+      ...versionDetails,
       { label: t("connectApps.plugin.connectors"), value: String(entry?.servers.length ?? 0) },
       { label: t("connectApps.filter.skills"), value: String(entry?.skills.length ?? 0) },
     ],

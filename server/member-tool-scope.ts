@@ -39,6 +39,8 @@ export const MEMBER_OWN_SCOPE_AGENT_TOOLS: Readonly<Record<string, MemberToolFam
   delegate_bot: "conversation",
   coordinate_bots: "conversation",
   post_to_room: "conversation",
+  react_to_message: "conversation",
+  remove_reaction: "conversation",
   start_thread: "conversation",
   close_thread: "conversation",
   retry_thread: "conversation",
@@ -48,6 +50,9 @@ export const MEMBER_OWN_SCOPE_AGENT_TOOLS: Readonly<Record<string, MemberToolFam
   memory_update: "memory",
   memory_log: "memory",
   group_memory_update: "memory",
+  // the bot's own RULES.md and docs/ (server/workspace-files.ts)
+  rules_update: "memory",
+  docs_update: "memory",
   create_bot: "own-setup",
   create_room: "own-setup",
   manage_room: "own-setup",

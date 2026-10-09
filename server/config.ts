@@ -549,7 +549,13 @@ const appConfigSchema = z.object({
     .optional(),
   /** Project key used for Sessions, catalog and agent tools. userId/sessionId
    * are non-secret local identifiers used to reuse one Composio Session. */
-  composio: z.object({ apiKey: optionalText, userId: optionalText, sessionId: optionalText }).optional(),
+  composio: z.object({
+    apiKey: optionalText,
+    userId: optionalText,
+    sessionId: optionalText,
+    /** Tools turned off for every bot, by app slug (connector-tool-switches.ts). */
+    disabledTools: z.record(z.string(), z.array(z.string())).optional(),
+  }).optional(),
   /** Historical config section name "box" (the persisted config.json key); the
    * provider is Boat now and the key is kept for compatibility. */
   box: z.object({ token: optionalText }).optional(),
@@ -749,7 +755,7 @@ export interface AppConfig {
   decisions?: { retentionDays?: number };
   billing?: { currency?: string; prices?: Record<string, { inputPerMillion: number; outputPerMillion: number; cachedInputPerMillion?: number }> };
   openaiCompat?: { key?: string; url?: string; model?: string; provider?: string };
-  composio?: { apiKey?: string; userId?: string; sessionId?: string };
+  composio?: { apiKey?: string; userId?: string; sessionId?: string; disabledTools?: Record<string, string[]> };
   /** Persisted under the historical config key "box" (ascii.dev renamed Box to Boat). */
   box?: { token?: string };
   /** A named host from the user's SSH config. Authentication stays with SSH. */

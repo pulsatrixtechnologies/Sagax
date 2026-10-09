@@ -20,10 +20,11 @@ import {
   type MascotEffect,
   type MascotInput,
   type MascotState,
+  type MascotTask,
 } from "./behavior";
 import { clickGesture, eventsForClick, newStroke, strokeLeave, strokeStep } from "./gestures";
 import type { FloatingPilot } from "./pilot";
-import { mascotFor } from "./mascots";
+import { cueClipFor, mascotFor } from "./mascots";
 import { Balloon, BALLOON_MAX_W, readBalloonPlace, splitOffset, type BalloonSide } from "./Balloon";
 import { completeMascotLook } from "../../../shared/mascot-look";
 import { mascotStage } from "./fit";
@@ -158,6 +159,10 @@ interface CharacterProps {
   look: string;
   pose: FloatingPose;
   activity: MascotActivity;
+  /** A cat stalking out on its prowl (behavior.ts trip "stalk"): low and slow instead of a walk. */
+  prowling?: boolean;
+  /** The bot's work as the mascot sees it (a frog sinks in its pond while its bot waits). */
+  task?: MascotTask;
   mascot: {
     frame: (at: number) => ReturnType<typeof mascotMotion>;
     fps: () => number;
@@ -169,7 +174,7 @@ interface CharacterProps {
  * The character redraws only when its own looks change: a streaming reply
  * sends a new snapshot many times a second, and none of them concern it.
  */
-const Character = memo(function Character({ color, skin, avatarSrc, avatarX, avatarY, look: lookJson, pose, activity, mascot }: CharacterProps) {
+const Character = memo(function Character({ color, skin, avatarSrc, avatarX, avatarY, look: lookJson, pose, activity, prowling = false, task, mascot }: CharacterProps) {
   const look = useMemo(() => (lookJson ? (JSON.parse(lookJson) as MascotLook) : undefined), [lookJson]);
   const complete = useMemo(() => completeMascotLook(look), [look]);
   // the character the bot wears (mascots.tsx); the owl unless chosen otherwise
@@ -189,7 +194,9 @@ const Character = memo(function Character({ color, skin, avatarSrc, avatarX, ava
         look={complete}
         size={OWL_SIZE}
         activity={activity}
+        prowling={prowling}
         pose={pose}
+        task={task}
         frame={mascot.frame}
         fps={mascot.fps}
         onHitTest={mascot.onHitTest}
@@ -337,6 +344,7 @@ export function FloatingBotView({ snapshot: given, onEvent, mover, interactive, 
 
   const mascotRef = useRef<MascotState>(newMascotState(now()));
   const [activity, setActivity] = useState<MascotActivity>("idle");
+  const [prowling, setProwling] = useState(false);
   const [away, setAway] = useState(false);
   const [, setOwlHover] = useState(false);
   const owlHoverRef = useRef(false);
@@ -349,10 +357,19 @@ export function FloatingBotView({ snapshot: given, onEvent, mover, interactive, 
   const call = snapshot.call ?? null;
   const chatOpen = Boolean(snapshot.balloon) || Boolean(call);
   const task = mascotTaskFor(snapshot.task, chatOpen);
+  // a dog (Shiba) has its own idle life, and sits and waits while its bot waits for an approval
+  const dog = snapshot.mascot?.character === "shiba";
+  // a cat (Grump) too: its own idle life, and it sits and watches while its bot waits
+  const cat = snapshot.mascot?.character === "grump";
+  // a frog has its own idle life too, and stays in its pond while its bot waits for an approval
+  const frog = snapshot.mascot?.character === "frog";
   const mascotOptions = () => ({
     reduced,
     flyAway: snapshot.flyAway,
-    canMove: Boolean(pilot) && !chatOpen,
+    canMove: Boolean(pilot) && !chatOpen && !((dog || cat || frog) && task === "waiting"),
+    dog,
+    cat,
+    frog,
     random: Math.random,
     liveliness: snapshot.liveliness ?? "normal",
     mood: snapshot.mood,
@@ -402,6 +419,7 @@ export function FloatingBotView({ snapshot: given, onEvent, mover, interactive, 
     const { state, effects } = stepMascot(mascotRef.current, input, options.current);
     mascotRef.current = state;
     setActivity(state.activity);
+    setProwling(state.activity === "walk" && state.trip?.phase === "stalk");
     // the badge shows once parked (working), and the owl again as soon as it heads home
     setAway(state.away && state.activity === "working");
     for (const effect of effects) runEffect(effect);
@@ -415,6 +433,33 @@ export function FloatingBotView({ snapshot: given, onEvent, mover, interactive, 
     if (move && isMoveClip(move.clip)) dispatchRef.current({ type: "move", now: now(), clip: move.clip });
   }, [lookKey]);
   useEffect(() => onMove?.(playMove), [onMove, playMove]);
+
+  // what just happened to the person, and a reply that lands: the character's own reaction, if it has one
+  const character = snapshot.mascot?.character ?? "owl";
+  const cueAt = snapshot.cue?.at ?? 0;
+  const cueKind = snapshot.cue?.kind ?? null;
+  const seenCue = useRef(cueAt);
+  useEffect(() => {
+    if (!cueAt || cueAt === seenCue.current || !cueKind) return;
+    seenCue.current = cueAt;
+    const clip = cueClipFor(character, cueKind);
+    if (clip) dispatchRef.current({ type: "move", now: now(), clip });
+  }, [cueAt, cueKind, character]);
+  // its bot hit an error: the character's own reaction (a Grump flattens its ears)
+  const seenTask = useRef(task);
+  useEffect(() => {
+    if (task === seenTask.current) return;
+    seenTask.current = task;
+    const clip = task === "error" ? cueClipFor(character, "error") : null;
+    if (clip) dispatchRef.current({ type: "move", now: now(), clip });
+  }, [task, character]);
+  const seenSparkle = useRef(snapshot.sparkle);
+  useEffect(() => {
+    if (snapshot.sparkle === seenSparkle.current) return;
+    seenSparkle.current = snapshot.sparkle;
+    const clip = cueClipFor(character, "message");
+    if (clip) dispatchRef.current({ type: "move", now: now(), clip });
+  }, [snapshot.sparkle, character]);
   /** A choice in the menu: a move plays here; anything else is the brain's. */
   const chooseMenu = (id: string) => {
     setMenuOpen(false);
@@ -904,6 +949,8 @@ export function FloatingBotView({ snapshot: given, onEvent, mover, interactive, 
               look={snapshot.mascot ? JSON.stringify(snapshot.mascot) : ""}
               pose={snapshot.pose}
               activity={activity}
+              prowling={prowling}
+              task={task}
               mascot={mascot}
             />
           </span>

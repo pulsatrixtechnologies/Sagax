@@ -22,21 +22,29 @@ export function initialPluginScope(pluginsBotId: string | null, bot: { id: strin
 }
 
 /** The panel's marketplace rows for the bot scope: installed means on this
- * bot. No servers nor skills: a bot install links nothing of the workspace's. */
+ * bot, and an update is this bot's (Install again updates it in place).
+ * No servers nor skills: a bot install links nothing of the workspace's.
+ * `hasToken`: this bot keeps a token for the marketplace. */
 export function botScopeMarketplaces(view: BotPluginsView): Array<{
-  name: string; source: string; description?: string;
-  plugins: Array<{ name: string; description?: string; version?: string; category?: string; installed: boolean; servers: string[]; skills: string[] }>;
+  name: string; source: string; description?: string; hasToken?: boolean;
+  plugins: Array<{
+    name: string; description?: string; version?: string; category?: string; installed: boolean; servers: string[]; skills: string[];
+    installedVersion?: string; updateAvailable?: boolean;
+  }>;
 }> {
   return view.marketplaces.map((market) => ({
     name: market.name,
     source: market.source,
     ...(market.description ? { description: market.description } : {}),
+    ...(market.hasToken ? { hasToken: true } : {}),
     plugins: market.plugins.map((plugin) => ({
       name: plugin.name,
       ...(plugin.description ? { description: plugin.description } : {}),
       ...(plugin.version ? { version: plugin.version } : {}),
       ...(plugin.category ? { category: plugin.category } : {}),
       installed: plugin.installed,
+      ...(plugin.installed && plugin.installedVersion ? { installedVersion: plugin.installedVersion } : {}),
+      ...(plugin.installed && plugin.updateAvailable ? { updateAvailable: true } : {}),
       servers: [],
       skills: [],
     })),

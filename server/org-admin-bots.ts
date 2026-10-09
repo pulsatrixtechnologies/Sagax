@@ -3,6 +3,9 @@
 // Delete, the bulk variants, Download package and Import. Every write is
 // audited with the console person as actor; the owner is told when someone
 // else stopped or deleted their bot.
+import type { IncomingMessage } from "node:http";
+
+import { BOT_ZIP_MAX_BYTES, type BotZipPreview } from "../shared/bot-zip.ts";
 import type { AdminBot, AdminBotReach, AdminPerson } from "./org-admin-routes.ts";
 import {
   badRequest,
@@ -50,6 +53,13 @@ export interface BotsDeps {
   /** The package document v2 of one bot, secrets redacted. */
   exportPackage(botId: string): { document: unknown; filename: string; redacted: string[]; skipped: unknown[] };
   importPackage(document: unknown, input: { ownerPrincipalId: string; name?: string }): Promise<{ botId: string; warnings: string[] }>;
+  /** The bot as a sagax.bot zip (server/bot-zip.ts): its size before
+   * compression and a writer that streams it. */
+  exportZip?(botId: string, options: { conversations: boolean; sharing: boolean }): { filename: string; bytes: number; write(sink: (chunk: Buffer) => Promise<void>): Promise<{ bytes: number; redacted: number }> };
+  /** A zip (or an older package file) uploaded as the request body: its
+   * preview, or a new bot of `ownerPrincipalId`. */
+  importZip?(request: IncomingMessage, input: { ownerPrincipalId: string; name?: string; conversations: boolean; sharing: boolean; preview: boolean }):
+    Promise<{ preview: BotZipPreview } | { botId: string; warnings: string[] }>;
 }
 
 type Find = { bot: AdminBot; reach: AdminBotReach } | null;
@@ -254,6 +264,23 @@ export function botsRoutes(deps: BotsDeps): ConsoleRoute[] {
       handle(ctx) {
         const entry = find(ctx, deps, ctx.params.id!);
         if (!entry) return notFound("No such bot.");
+        const format = ctx.url.searchParams.get("format");
+        if (format !== null && format !== "zip" && format !== "json") return badRequest("format is zip or json.");
+        if (format === "zip") {
+          if (!deps.exportZip) return fail(404, "not_found", "This server does not export bot zips.");
+          const options = { conversations: ctx.url.searchParams.get("conversations") === "1", sharing: ctx.url.searchParams.get("sharing") === "1" };
+          const zip = deps.exportZip(entry.bot.id, options);
+          if (zip.bytes > BOT_ZIP_MAX_BYTES) return fail(413, "too_large", "This bot is larger than 512 MB. Export it without conversations.");
+          return {
+            status: 200,
+            body: null,
+            headers: { "content-type": "application/zip", "content-disposition": `attachment; filename="${zip.filename}"` },
+            stream: async (write) => {
+              const written = await zip.write(write);
+              ctx.record({ category: "bot", action: "bot.export", target: { kind: "bot", id: entry.bot.id, name: entry.bot.name }, after: { format: "zip", bytes: written.bytes, redacted: written.redacted, ...options } });
+            },
+          };
+        }
         const exported = deps.exportPackage(entry.bot.id);
         const text = JSON.stringify(exported.document);
         if (Buffer.byteLength(text) > BOT_PACKAGE_MAX_BYTES) return fail(413, "too_large", "This bot's package is larger than 4 MiB (its skills or pictures); it cannot be downloaded whole.");
@@ -275,7 +302,28 @@ export function botsRoutes(deps: BotsDeps): ConsoleRoute[] {
       path: "bots/import",
       min: "admin",
       maxBody: BOT_IMPORT_MAX_BODY,
+      rawBody: BOT_ZIP_MAX_BYTES,
       async handle(ctx) {
+        if (ctx.request) {
+          // A file as the body (application/zip): the canonical bot zip, or
+          // an older package file; the fields ride the query string.
+          if (!deps.importZip) return fail(415, "unsupported", "Send the package as JSON.");
+          const params = ctx.url.searchParams;
+          const fields: Record<string, unknown> = {};
+          for (const key of ["ownerPrincipalId", "ownerSub", "name"]) if (params.has(key)) fields[key] = params.get(key);
+          const name = nameField(fields.name);
+          if (name instanceof ConsoleRefusal) return fail(name.status, name.code, name.message);
+          const owner = targetOwner(ctx, deps, fields, ctx.viewer.principalId);
+          if (owner instanceof ConsoleRefusal) return fail(owner.status, owner.code, owner.message);
+          const result = await deps.importZip(ctx.request, {
+            ownerPrincipalId: owner.principalId, ...(name ? { name } : {}), preview: params.get("preview") === "1",
+            conversations: params.get("conversations") === "1", sharing: params.get("sharing") === "1",
+          });
+          if ("preview" in result) return ok({ preview: result.preview });
+          const bot = botOf(deps, result.botId)!;
+          ctx.record({ category: "bot", action: "bot.import", target: { kind: "bot", id: bot.id, name: bot.name }, after: { format: "zip", ownerPrincipalId: owner.principalId, warnings: result.warnings.length } });
+          return ok({ bot, warnings: result.warnings }, 201);
+        }
         const body = objectBody(ctx.body);
         const extra = body ? onlyKeys(body, ["package", "ownerPrincipalId", "ownerSub", "name"]) : null;
         if (!body || extra || !body.package || typeof body.package !== "object") return badRequest(extra ?? "Send { \"package\": the package document, \"ownerPrincipalId\"? or \"ownerSub\"?, \"name\"? }.");

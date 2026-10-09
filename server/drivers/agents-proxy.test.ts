@@ -635,6 +635,8 @@ describe("agents-proxy MCP surface", () => {
       "vm_exec",
       "attach_file",
       "post_to_room",
+      "react_to_message",
+      "remove_reaction",
       "create_bot",
       "list_team_setup",
       "propose_team_setup",
@@ -643,6 +645,10 @@ describe("agents-proxy MCP surface", () => {
       "manage_room",
       "request_credential",
       "memory_update",
+      "rules_update",
+      "docs_update",
+      "workspace_read",
+      "workspace_search",
       "retry_thread",
       "memory_log",
       "session_search",
@@ -724,6 +730,7 @@ describe("agents-proxy MCP surface", () => {
       "list_shared_computers",
       "list_bots", "list_rooms", "check_delegation", "wait_delegation", "list_threads",
       "list_team_setup",
+      "workspace_read", "workspace_search",
       "session_search", "session_read", "list_routines", "skills_list",
     ];
     expect(list.result.tools.filter((tool: any) => tool.annotations?.readOnlyHint)

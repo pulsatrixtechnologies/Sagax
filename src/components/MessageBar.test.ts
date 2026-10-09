@@ -96,3 +96,51 @@ describe("MessageBar", () => {
     }
   });
 });
+
+describe("MessageBar: reactions", () => {
+  async function renderReact(open: boolean, onOpenChange = vi.fn(), onPick = vi.fn()) {
+    await act(async () => {
+      root.render(
+        createElement(MessageBar, {
+          side: "bot",
+          time: "2:45 PM",
+          copy: createElement("button", { type: "button", "aria-label": "Copy message" }),
+          react: { open, onOpenChange, onPick, mine: ["👍"] },
+          children: [createElement(MessageMenuItem, { key: "raw", label: "Show raw markdown", icon: null, onSelect: () => {} })],
+        }),
+      );
+    });
+    return { onOpenChange, onPick };
+  }
+
+  it("puts the smiley before copy, and Add reaction (E) first in the menu", async () => {
+    const { onOpenChange } = await renderReact(false);
+    const buttons = [...bar().querySelectorAll("button")].map((button) => button.getAttribute("aria-label"));
+    expect(buttons).toEqual(["Add reaction", "Copy message", "Message actions"]);
+    await act(async () => bar().querySelector<HTMLButtonElement>("[data-react-button]")!.click());
+    expect(onOpenChange).toHaveBeenLastCalledWith(true);
+    await act(async () => handle().click());
+    expect(items()[0]).toBe("Add reactionE");
+    expect(host.querySelector('[role="menuitem"]')!.getAttribute("aria-keyshortcuts")).toBe("E");
+  });
+
+  it("opens the picker from the … menu with the E key", async () => {
+    const { onOpenChange } = await renderReact(false);
+    await act(async () => handle().click());
+    await act(async () => {
+      host.querySelector<HTMLElement>('[role="menuitem"]')!.dispatchEvent(new KeyboardEvent("keydown", { key: "e", bubbles: true }));
+    });
+    expect(onOpenChange).toHaveBeenCalledWith(true);
+    expect(handle().getAttribute("aria-expanded")).toBe("false");
+  });
+
+  it("shows the picker while open and keeps the bar visible", async () => {
+    const { onPick, onOpenChange } = await renderReact(true);
+    expect(bar().className).toContain("opacity-100");
+    const picker = host.querySelector<HTMLElement>("[data-reaction-picker]")!;
+    expect(picker.getAttribute("role")).toBe("dialog");
+    await act(async () => picker.querySelector<HTMLButtonElement>('[data-quick-reaction="🎉"]')!.click());
+    expect(onPick).toHaveBeenCalledWith("🎉");
+    expect(onOpenChange).toHaveBeenCalledWith(false);
+  });
+});

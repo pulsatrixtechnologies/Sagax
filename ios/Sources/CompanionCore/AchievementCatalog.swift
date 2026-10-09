@@ -299,7 +299,7 @@ public extension AchievementDefinition {
             name: AchievementText(en: "Second Wind", fr: "Second souffle", ptBR: "Segundo fôlego"),
             description: AchievementText(en: "Twice, fix a routine that failed: change it, then see its next 3 runs complete.", fr: "Deux fois, réparez une routine qui a échoué : modifiez-la, puis voyez ses 3 exécutions suivantes réussir.", ptBR: "Duas vezes, conserte uma rotina que falhou: altere-a e veja as 3 execuções seguintes concluírem."),
             hint: nil,
-            rewards: [.skin(character: "shiba", skin: "cream", name: AchievementText(en: "Cream", fr: "Crème", ptBR: "Creme"), characterName: AchievementText(en: "Shiba", fr: "Shiba", ptBR: "Shiba")), .skin(character: "shiba", skin: "blacktan", name: AchievementText(en: "Black and Tan", fr: "Noir et feu", ptBR: "Preto e castanho"), characterName: AchievementText(en: "Shiba", fr: "Shiba", ptBR: "Shiba")), .title(id: "second-wind", name: AchievementText(en: "Second Wind", fr: "Second souffle", ptBR: "Segundo fôlego"))]
+            rewards: [.skin(character: "shiba", skin: "cream", name: AchievementText(en: "Cream", fr: "Crème", ptBR: "Creme"), characterName: AchievementText(en: "Shiba", fr: "Shiba", ptBR: "Shiba")), .skin(character: "shiba", skin: "blacktan", name: AchievementText(en: "Black and tan", fr: "Noir et feu", ptBR: "Preto e castanho"), characterName: AchievementText(en: "Shiba", fr: "Shiba", ptBR: "Shiba")), .title(id: "second-wind", name: AchievementText(en: "Second Wind", fr: "Second souffle", ptBR: "Segundo fôlego"))]
         ),
         AchievementDefinition(
             id: "common-thread", category: .mastery, icon: "Repeat2", points: 150, hidden: false,
@@ -334,21 +334,21 @@ public extension AchievementDefinition {
             name: AchievementText(en: "Prompter", fr: "Souffleur", ptBR: "Ponto"),
             description: AchievementText(en: "15 times, correct a bot while it works (a message into its running turn) and the turn completes.", fr: "15 fois, corrigez un robot pendant qu'il travaille (un message dans son tour en cours) et le tour se termine bien.", ptBR: "15 vezes, corrija um robô enquanto ele trabalha (uma mensagem no turno em andamento) e o turno conclui."),
             hint: nil,
-            rewards: [.title(id: "prompter", name: AchievementText(en: "Prompter", fr: "Souffleur", ptBR: "Ponto"))]
+            rewards: [.skin(character: "grump", skin: "tuxedo", name: AchievementText(en: "Tuxedo", fr: "Smoking", ptBR: "Smoking"), characterName: AchievementText(en: "Grump", fr: "Grognon", ptBR: "Rabugento")), .skin(character: "grump", skin: "calico", name: AchievementText(en: "Calico", fr: "Calico", ptBR: "Tricolor"), characterName: AchievementText(en: "Grump", fr: "Grognon", ptBR: "Rabugento")), .title(id: "prompter", name: AchievementText(en: "Prompter", fr: "Souffleur", ptBR: "Ponto"))]
         ),
         AchievementDefinition(
             id: "red-pen", category: .mastery, icon: "PenLine", points: 150, hidden: false,
             name: AchievementText(en: "Red Pen", fr: "Stylo rouge", ptBR: "Caneta vermelha"),
             description: AchievementText(en: "On 5 different days, revise a bot's standing instructions and see it complete 5 turns with them.", fr: "5 jours différents, révisez les instructions permanentes d'un robot et voyez-le compléter 5 tours avec elles.", ptBR: "Em 5 dias diferentes, revise as instruções permanentes de um robô e veja-o concluir 5 turnos com elas."),
             hint: nil,
-            rewards: [.title(id: "red-pen", name: AchievementText(en: "Red Pen", fr: "Stylo rouge", ptBR: "Caneta vermelha"))]
+            rewards: [.skin(character: "grump", skin: "tabby", name: AchievementText(en: "Tabby", fr: "Tigré", ptBR: "Tigrado"), characterName: AchievementText(en: "Grump", fr: "Grognon", ptBR: "Rabugento")), .skin(character: "grump", skin: "siamese", name: AchievementText(en: "Siamese", fr: "Siamois", ptBR: "Siamês"), characterName: AchievementText(en: "Grump", fr: "Grognon", ptBR: "Rabugento")), .title(id: "red-pen", name: AchievementText(en: "Red Pen", fr: "Stylo rouge", ptBR: "Caneta vermelha"))]
         ),
         AchievementDefinition(
             id: "not-so-fast", category: .mastery, icon: "OctagonPause", points: 150, hidden: true,
             name: AchievementText(en: "Not So Fast", fr: "Pas si vite", ptBR: "Calma lá"),
             description: AchievementText(en: "Stop a bot 10 times, and each time its next turn completes.", fr: "Arrêtez un robot 10 fois, et chaque fois son tour suivant se termine bien.", ptBR: "Pare um robô 10 vezes e, a cada vez, o turno seguinte conclui."),
             hint: AchievementText(en: "Sometimes the best move is the stop button, then a better ask.", fr: "Parfois, le meilleur coup est le bouton Arrêter, puis une meilleure demande.", ptBR: "Às vezes, o melhor lance é o botão Parar e depois um pedido melhor."),
-            rewards: [.title(id: "not-so-fast", name: AchievementText(en: "Not So Fast", fr: "Pas si vite", ptBR: "Calma lá"))]
+            rewards: [.skin(character: "grump", skin: "void", name: AchievementText(en: "Void", fr: "Néant", ptBR: "Vazio"), characterName: AchievementText(en: "Grump", fr: "Grognon", ptBR: "Rabugento")), .title(id: "not-so-fast", name: AchievementText(en: "Not So Fast", fr: "Pas si vite", ptBR: "Calma lá"))]
         ),
         AchievementDefinition(
             id: "justice-of-peace", category: .mastery, icon: "Gavel", points: 200, hidden: false,
@@ -369,21 +369,21 @@ public extension AchievementDefinition {
             name: AchievementText(en: "Ten Hands", fr: "Dix mains", ptBR: "Dez mãos"),
             description: AchievementText(en: "10 open conversations in 5 folders, and none left untouched for 30 days.", fr: "10 conversations ouvertes dans 5 dossiers, et aucune laissée sans activité depuis 30 jours.", ptBR: "10 conversas abertas em 5 pastas, e nenhuma parada há 30 dias."),
             hint: nil,
-            rewards: [.title(id: "ten-hands", name: AchievementText(en: "Ten Hands", fr: "Dix mains", ptBR: "Dez mãos"))]
+            rewards: [.skin(character: "ogre", skin: "swamp", name: AchievementText(en: "Swamp", fr: "Marais", ptBR: "Pântano"), characterName: AchievementText(en: "Ogre", fr: "Ogre", ptBR: "Ogro")), .skin(character: "ogre", skin: "moss", name: AchievementText(en: "Moss", fr: "Mousse", ptBR: "Musgo"), characterName: AchievementText(en: "Ogre", fr: "Ogre", ptBR: "Ogro")), .title(id: "ten-hands", name: AchievementText(en: "Ten Hands", fr: "Dix mains", ptBR: "Dez mãos"))]
         ),
         AchievementDefinition(
             id: "plugged-in", category: .mastery, icon: "PlugZap", points: 150, hidden: false,
             name: AchievementText(en: "Plugged In", fr: "Branché", ptBR: "Conectado"),
             description: AchievementText(en: "Your bots use tools from 3 different integrations within one week.", fr: "Vos robots utilisent les outils de 3 intégrations différentes en une semaine.", ptBR: "Seus robôs usam ferramentas de 3 integrações diferentes em uma semana."),
             hint: nil,
-            rewards: [.title(id: "plugged-in", name: AchievementText(en: "Plugged In", fr: "Branché", ptBR: "Conectado"))]
+            rewards: [.skin(character: "ogre", skin: "stone", name: AchievementText(en: "Stone", fr: "Pierre", ptBR: "Pedra"), characterName: AchievementText(en: "Ogre", fr: "Ogre", ptBR: "Ogro")), .skin(character: "ogre", skin: "lava", name: AchievementText(en: "Lava", fr: "Lave", ptBR: "Lava"), characterName: AchievementText(en: "Ogre", fr: "Ogre", ptBR: "Ogro")), .title(id: "plugged-in", name: AchievementText(en: "Plugged In", fr: "Branché", ptBR: "Conectado"))]
         ),
         AchievementDefinition(
             id: "swarm", category: .mastery, icon: "Boxes", points: 150, hidden: false,
             name: AchievementText(en: "Swarm", fr: "Essaim", ptBR: "Enxame"),
             description: AchievementText(en: "One turn puts 3 sub-agents to work and completes.", fr: "Un seul tour met 3 sous-agents au travail et se termine bien.", ptBR: "Um único turno põe 3 subagentes para trabalhar e conclui."),
             hint: nil,
-            rewards: [.title(id: "swarm", name: AchievementText(en: "Swarm", fr: "Essaim", ptBR: "Enxame"))]
+            rewards: [.skin(character: "ogre", skin: "armor", name: AchievementText(en: "Armor", fr: "Armure", ptBR: "Armadura"), characterName: AchievementText(en: "Ogre", fr: "Ogre", ptBR: "Ogro")), .title(id: "swarm", name: AchievementText(en: "Swarm", fr: "Essaim", ptBR: "Enxame"))]
         ),
         AchievementDefinition(
             id: "full-house", category: .mastery, icon: "Orbit", points: 200, hidden: false,
@@ -404,21 +404,21 @@ public extension AchievementDefinition {
             name: AchievementText(en: "Thrifty", fr: "Économe", ptBR: "Econômico"),
             description: AchievementText(en: "In one week of at least 20 Auto turns, Auto picks a cheaper model than the bot's own for more than half.", fr: "Sur une semaine d'au moins 20 tours en Auto, Auto choisit un modèle moins cher que celui du robot pour plus de la moitié.", ptBR: "Em uma semana com pelo menos 20 turnos em Auto, o Auto escolhe um modelo mais barato que o do robô em mais da metade."),
             hint: nil,
-            rewards: [.title(id: "thrifty", name: AchievementText(en: "Thrifty", fr: "Économe", ptBR: "Econômico"))]
+            rewards: [.skin(character: "frog", skin: "leaf", name: AchievementText(en: "Leaf", fr: "Feuille", ptBR: "Folha"), characterName: AchievementText(en: "Frog", fr: "Grenouille", ptBR: "Sapo")), .skin(character: "frog", skin: "tree", name: AchievementText(en: "Tree frog", fr: "Rainette", ptBR: "Perereca"), characterName: AchievementText(en: "Frog", fr: "Grenouille", ptBR: "Sapo")), .title(id: "thrifty", name: AchievementText(en: "Thrifty", fr: "Économe", ptBR: "Econômico"))]
         ),
         AchievementDefinition(
             id: "translator", category: .mastery, icon: "Languages", points: 150, hidden: false,
             name: AchievementText(en: "Translator", fr: "Traducteur", ptBR: "Tradutor"),
             description: AchievementText(en: "5 conversations of at least 6 turns entirely in French: your messages and the bot's answers.", fr: "5 conversations d'au moins 6 tours entièrement en français : vos messages et les réponses du robot.", ptBR: "5 conversas de pelo menos 6 turnos inteiramente em francês: suas mensagens e as respostas do robô."),
             hint: nil,
-            rewards: [.title(id: "translator", name: AchievementText(en: "Translator", fr: "Traducteur", ptBR: "Tradutor"))]
+            rewards: [.skin(character: "frog", skin: "poison", name: AchievementText(en: "Poison dart", fr: "Dendrobate", ptBR: "Sapo-flecha"), characterName: AchievementText(en: "Frog", fr: "Grenouille", ptBR: "Sapo")), .skin(character: "frog", skin: "bullfrog", name: AchievementText(en: "Bullfrog", fr: "Ouaouaron", ptBR: "Rã-touro"), characterName: AchievementText(en: "Frog", fr: "Grenouille", ptBR: "Sapo")), .title(id: "translator", name: AchievementText(en: "Translator", fr: "Traducteur", ptBR: "Tradutor"))]
         ),
         AchievementDefinition(
             id: "skill-smith", category: .mastery, icon: "BookOpenCheck", points: 150, hidden: false,
             name: AchievementText(en: "Skill Smith", fr: "Forgeron de skills", ptBR: "Ferreiro de skills"),
             description: AchievementText(en: "A skill a bot wrote from one of your conversations (/learn) is used in 20 turns.", fr: "Une skill qu'un robot a écrite à partir d'une de vos conversations (/learn) sert dans 20 tours.", ptBR: "Uma skill que um robô escreveu a partir de uma conversa sua (/learn) é usada em 20 turnos."),
             hint: nil,
-            rewards: [.title(id: "skill-smith", name: AchievementText(en: "Skill Smith", fr: "Forgeron de skills", ptBR: "Ferreiro de skills"))]
+            rewards: [.skin(character: "frog", skin: "ghost", name: AchievementText(en: "Ghost", fr: "Fantôme", ptBR: "Fantasma"), characterName: AchievementText(en: "Frog", fr: "Grenouille", ptBR: "Sapo")), .title(id: "skill-smith", name: AchievementText(en: "Skill Smith", fr: "Forgeron de skills", ptBR: "Ferreiro de skills"))]
         ),
         AchievementDefinition(
             id: "total-recall", category: .mastery, icon: "BrainCircuit", points: 200, hidden: false,

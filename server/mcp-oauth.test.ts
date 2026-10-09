@@ -1,4 +1,5 @@
-import { mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
+import { createCipheriv, randomBytes } from "node:crypto";
+import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -9,9 +10,12 @@ import {
   authorizationServerMetadataUrls,
   callbackPage,
   canonicalResource,
+  DEFAULT_MCP_ACCOUNT,
+  MAX_MCP_ACCOUNTS,
   McpOAuthManager,
   McpOAuthVault,
   parseBearerChallenge,
+  parseMcpAccountChoices,
   PENDING_FLOW_TTL_MS,
   phoneOAuthReturns,
   phoneReturnLocation,
@@ -278,6 +282,97 @@ describe("tokens for engines", () => {
     expect(oauth.vault.get("notes")!.client?.id).toBe("client-1");
     await oauth.forget("notes");
     expect(oauth.vault.get("notes")).toBeUndefined();
+  });
+});
+
+describe("several accounts on one server", () => {
+  async function addAccount(oauth: McpOAuthManager, server: RemoteMcpSpec, account: string, label?: string) {
+    const { authorizationUrl } = await oauth.start("notes", server, { redirectUri: REDIRECT, account, ...(label ? { label } : {}) });
+    const back = await fake!.authorize(authorizationUrl);
+    return oauth.callback(back.searchParams);
+  }
+
+  it("keeps each account's tokens apart and mounts the one a bot picks", async () => {
+    fake = await startFakeOAuthMcp();
+    const oauth = manager();
+    const server = remote(fake.mcpUrl);
+    expect(await signIn(oauth, "notes", server)).toEqual({ ok: true, name: "notes" });
+    expect(await addAccount(oauth, server, "acct-work01", "Work")).toEqual({ ok: true, name: "notes", account: "acct-work01" });
+    const first = oauth.vault.get("notes")!;
+    const work = oauth.vault.get("notes", "acct-work01")!;
+    expect(work).toMatchObject({ label: "Work", issuer: first.issuer, client: { id: first.client!.id } });
+    expect(work.tokens!.access).not.toBe(first.tokens!.access);
+    expect(oauth.accounts("notes", server)).toEqual([
+      expect.objectContaining({ id: "default", auth: "connected" }),
+      expect.objectContaining({ id: "acct-work01", label: "Work", auth: "connected" }),
+    ]);
+
+    const header = (choice?: string) => oauth.withAuthHeaders({ notes: server }, () => choice).notes.headers.Authorization;
+    expect(header()).toBe(`Bearer ${first.tokens!.access}`);
+    expect(header("acct-work01")).toBe(`Bearer ${work.tokens!.access}`);
+    // an account that is gone sends nothing, never the default one's token
+    expect(header("acct-gone00")).toBeUndefined();
+
+    await oauth.disconnect("notes", server, undefined, "acct-work01");
+    expect(oauth.vault.accounts("notes")).toEqual(["default"]);
+    expect(oauth.status("notes", server)).toMatchObject({ auth: "connected" });
+    await oauth.forget("notes");
+    expect(oauth.vault.names()).toEqual([]);
+  });
+
+  it("refreshes the account a turn uses, and only that one", async () => {
+    fake = await startFakeOAuthMcp({ accessTtl: 120 });
+    const oauth = manager();
+    const server = remote(fake.mcpUrl);
+    await signIn(oauth, "notes", server);
+    await addAccount(oauth, server, "acct-work01");
+    const before = { first: oauth.vault.get("notes")!.tokens!.access, work: oauth.vault.get("notes", "acct-work01")!.tokens!.access };
+    clock += 90_000;
+    await oauth.refreshDue({ notes: server }, undefined, () => "acct-work01");
+    expect(oauth.vault.get("notes")!.tokens!.access).toBe(before.first);
+    expect(oauth.vault.get("notes", "acct-work01")!.tokens!.access).not.toBe(before.work);
+  });
+
+  it("caps the accounts of a server", async () => {
+    fake = await startFakeOAuthMcp();
+    const oauth = manager();
+    const server = remote(fake.mcpUrl);
+    await oauth.probe("notes", server);
+    // the default account counts
+    for (let index = 0; index < MAX_MCP_ACCOUNTS - 1; index++) {
+      await oauth.start("notes", server, { redirectUri: REDIRECT, account: `acct-extra${index}` });
+    }
+    await expect(oauth.start("notes", server, { redirectUri: REDIRECT, account: "acct-onemore" })).rejects.toMatchObject({ code: "too_many_accounts" });
+    expect(oauth.pendingFor("notes", "acct-extra3")).toBe(true);
+    expect(oauth.pendingFor("notes", "acct-onemore")).toBe(false);
+  });
+
+  it("reads a bot's account choices: null clears, default is left out, junk is refused", () => {
+    expect(parseMcpAccountChoices(null)).toEqual({ ok: true, choices: undefined });
+    expect(parseMcpAccountChoices({ notes: "acct-work01", linear: "default" })).toEqual({ ok: true, choices: { notes: "acct-work01" } });
+    expect(parseMcpAccountChoices({ linear: "default" })).toEqual({ ok: true, choices: undefined });
+    for (const bad of [[], "acct-work01", { notes: "work" }, { Notes: "acct-work01" }, { notes: 3 }]) {
+      expect(parseMcpAccountChoices(bad).ok, JSON.stringify(bad)).toBe(false);
+    }
+  });
+
+  it("reads a vault from before accounts as each server's default account", () => {
+    const record = { serverUrl: "https://mcp.example.com/mcp", resource: "https://mcp.example.com/mcp", issuer: "https://auth.example.com", authorizationEndpoint: "https://auth.example.com/authorize", tokenEndpoint: "https://auth.example.com/token", tokens: { access: "fake-access" } };
+    const iv = randomBytes(12);
+    const cipher = createCipheriv("aes-256-gcm", FIXED_KEY.kind === "key" ? FIXED_KEY.key : Buffer.alloc(32), iv);
+    cipher.setAAD(Buffer.from("pulsa-bot mcp-oauth v1"));
+    const data = Buffer.concat([cipher.update(JSON.stringify({ version: 1, records: { notes: record } }), "utf8"), cipher.final()]);
+    writeFileSync(join(dir, "mcp-oauth.enc"), JSON.stringify({ v: 1, iv: iv.toString("base64"), tag: cipher.getAuthTag().toString("base64"), data: data.toString("base64") }));
+
+    const vault = new McpOAuthVault(dir, () => FIXED_KEY);
+    expect(vault.get("notes")).toEqual(record);
+    expect(vault.get("notes", DEFAULT_MCP_ACCOUNT)).toEqual(record);
+    expect(vault.accounts("notes")).toEqual(["default"]);
+    // written back in the new shape, still readable by a fresh vault
+    const again = new McpOAuthVault(dir, () => FIXED_KEY);
+    expect(again.get("notes")).toEqual(record);
+    const oauth = new McpOAuthManager({ vault: again, now: () => clock });
+    expect(oauth.withAuthHeaders({ notes: remote(record.serverUrl) }).notes.headers).toEqual({ Authorization: "Bearer fake-access" });
   });
 });
 

@@ -213,6 +213,44 @@ struct CharacterEditor: View {
                     draft.look = next.stored
                 }
             }
+        case .shiba:
+            // a locked skin stays out (the server refuses it anyway: 403 look_locked); the worn one stays
+            let skins = ShibaSkin.allCases.filter { !skinLocked(.shiba, $0.rawValue, worn: wornDraft.complete.shibaSkin.rawValue) }
+            row(count: skins.count, pitch: metrics.skinPitch, height: metrics.skinRowHeight ?? metrics.pitch) { index in
+                thumbnail(look: edited { $0.shibaSkin = skins[index] }, skin: .none, size: metrics.skinCell, selected: draft.complete.shibaSkin == skins[index], label: Text(verbatim: skins[index].rawValue), tier: tierLabel(.shiba, skins[index].rawValue)) {
+                    var next = draft.complete
+                    next.shibaSkin = skins[index]
+                    draft.look = next.stored
+                }
+            }
+        case .grump:
+            let skins = GrumpSkin.allCases.filter { !skinLocked(.grump, $0.rawValue, worn: wornDraft.complete.grumpSkin.rawValue) }
+            row(count: skins.count, pitch: metrics.skinPitch, height: metrics.skinRowHeight ?? metrics.pitch) { index in
+                thumbnail(look: edited { $0.grumpSkin = skins[index] }, skin: .none, size: metrics.skinCell, selected: draft.complete.grumpSkin == skins[index], label: Text(verbatim: skins[index].rawValue), tier: tierLabel(.grump, skins[index].rawValue)) {
+                    var next = draft.complete
+                    next.grumpSkin = skins[index]
+                    draft.look = next.stored
+                }
+            }
+        case .ogre:
+            let skins = OgreSkin.allCases.filter { !skinLocked(.ogre, $0.rawValue, worn: wornDraft.complete.ogreSkin.rawValue) }
+            row(count: skins.count, pitch: metrics.skinPitch, height: metrics.skinRowHeight ?? metrics.pitch) { index in
+                thumbnail(look: edited { $0.ogreSkin = skins[index] }, skin: .none, size: metrics.skinCell, selected: draft.complete.ogreSkin == skins[index], label: Text(verbatim: skins[index].rawValue), tier: tierLabel(.ogre, skins[index].rawValue)) {
+                    var next = draft.complete
+                    next.ogreSkin = skins[index]
+                    draft.look = next.stored
+                }
+            }
+        case .frog:
+            // a locked skin stays out (the server refuses it anyway: 403 look_locked); the worn one stays
+            let skins = FrogSkin.allCases.filter { !skinLocked(.frog, $0.rawValue, worn: wornDraft.complete.frogSkin.rawValue) }
+            row(count: skins.count, pitch: metrics.skinPitch, height: metrics.skinRowHeight ?? metrics.pitch) { index in
+                thumbnail(look: edited { $0.frogSkin = skins[index] }, skin: .none, size: metrics.skinCell, selected: draft.complete.frogSkin == skins[index], label: Text(verbatim: skins[index].rawValue), tier: tierLabel(.frog, skins[index].rawValue)) {
+                    var next = draft.complete
+                    next.frogSkin = skins[index]
+                    draft.look = next.stored
+                }
+            }
         }
     }
 
@@ -378,6 +416,10 @@ struct CharacterEditor: View {
         case .shape: "Shape"
         case .trombi: "Trombi"
         case .bunbu: "Bunbu"
+        case .shiba: "Shiba"
+        case .grump: "Grump"
+        case .ogre: "Ogre"
+        case .frog: "Frog"
         }
     }
 }

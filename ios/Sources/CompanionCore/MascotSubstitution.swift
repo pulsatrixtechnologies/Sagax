@@ -1,7 +1,7 @@
 // Where the phone draws a bot's look with less than the desktop does, and
 // what it draws instead. A known character is never drawn as another one:
-// a shape stays that shape in its colour, Bunbu stays Bunbu, Trombi stays
-// Trombi, and only a skin's premium layers (textures, particles, the
+// a shape stays that shape in its colour, Bunbu stays Bunbu, Shiba stays
+// Shiba, Frog stays Frog, Trombi stays Trombi, and only a skin's premium layers (textures, particles, the
 // repainted wire) give way to the closest finish the phone has. Each
 // substitution is logged once (subsystem `ca.pulsatrix.sagax`, category
 // `mascot`), so a mismatch someone reports can be told apart from a bug.
@@ -26,6 +26,8 @@ public enum MascotSubstitution {
     static let trombiTinted: Set<TrombiSkin> = [.chrome, .glitch, .holo, .molten]
     /// Bunbu skins whose premium layers the phone does not draw.
     static let bunbuBaseOnly: Set<BunbuSkin> = [.velvet, .gold, .neon, .chrome, .crystal, .holo, .galaxy, .molten]
+    /// Ogre skins whose premium layers (auras, foils, scan lines, the plates' sweep) the phone does not draw.
+    static let ogreBaseOnly: Set<OgreSkin> = [.lava, .armor, .retro98, .gold, .neon, .chrome, .glitch, .holo, .molten]
 
     /// The substitutions drawing this look on the phone makes (none for most).
     public static func entries(for look: CompleteMascotLook, owlSkin: MascotSkin = .none) -> [Entry] {
@@ -42,8 +44,23 @@ public enum MascotSubstitution {
         case .bunbu:
             guard bunbuBaseOnly.contains(look.bunbuSkin) else { return [] }
             return [Entry(character: .bunbu, wanted: "Bunbu skin \(look.bunbuSkin.rawValue)", drawn: "its base finish")]
+        case .shiba:
+            guard ShibaArt.baseOnly.contains(look.shibaSkin) else { return [] }
+            return [Entry(character: .shiba, wanted: "Shiba skin \(look.shibaSkin.rawValue)", drawn: "its palette and coat gradient, without its effects")]
+        case .grump:
+            guard grumpFlat.contains(look.grumpSkin) else { return [] }
+            return [Entry(character: .grump, wanted: "Grump skin \(look.grumpSkin.rawValue)", drawn: "its palette, flat, without its effects")]
+        case .ogre:
+            guard ogreBaseOnly.contains(look.ogreSkin) else { return [] }
+            return [Entry(character: .ogre, wanted: "Ogre skin \(look.ogreSkin.rawValue)", drawn: "its colours and marks, without its effects")]
+        case .frog:
+            guard FrogArt.baseOnly.contains(look.frogSkin) else { return [] }
+            return [Entry(character: .frog, wanted: "Frog skin \(look.frogSkin.rawValue)", drawn: "its palette and skin gradient, patterns as their base tone, without its effects")]
         }
     }
+
+    /// Grump's skins whose gradients, patterns and effects the phone draws as a flat palette.
+    static let grumpFlat: Set<GrumpSkin> = [.calico, .tabby, .retro98, .gold, .void, .neon, .chrome, .glitch, .holo, .molten]
 
     private static let logger = Logger(subsystem: "ca.pulsatrix.sagax", category: "mascot")
     private static let lock = NSLock()

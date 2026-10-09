@@ -421,6 +421,14 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   // The bot's standing instructions for the profile's Instructions row
   // (owner or admin, checked in the handler).
   { methods: ["GET"], path: /^\/api\/bots\/[\w-]+\/soul$/ },
+  // The bot workspace (server/routes/bot-workspace.ts): the Files list, a
+  // download, RULES.md and docs/<name>.md read, save, delete and rename.
+  // Same gate as the Soul edit, checked in the handler: owner (or edit
+  // grant) or admin; a person who may only use shared bots is refused.
+  // MEMORY.md and memory/ stay on the admin memory routes.
+  { methods: ["GET"], path: /^\/api\/bots\/[\w-]+\/workspace(?:\/download)?$/ },
+  { methods: ["GET", "PUT", "DELETE"], path: /^\/api\/bots\/[\w-]+\/workspace\/file$/ },
+  { methods: ["POST"], path: /^\/api\/bots\/[\w-]+\/workspace\/docs\/rename$/ },
   { methods: ["POST", "DELETE"], path: /^\/api\/bots\/[\w-]+\/primary$/ }, // the person's own bot only: the handler checks the owner
   // What the bot does, can reach and won't do (the profile's "What this bot
   // does"): the handler lets a client session read it for a bot it owns.
@@ -547,6 +555,7 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   { methods: ["POST"], path: /^\/api\/bots\/[\w-]+\/skill-template$/, feature: "orgDirectory" },
   { methods: ["GET"], path: /^\/api\/bots\/[\w-]+\/plugins$/, feature: "orgDirectory" },
   { methods: ["POST", "DELETE"], path: /^\/api\/bots\/[\w-]+\/plugins\/marketplaces(?:\/[A-Za-z0-9][A-Za-z0-9._-]{0,63}(?:\/update)?)?$/, feature: "orgDirectory" },
+  { methods: ["PUT", "DELETE"], path: /^\/api\/bots\/[\w-]+\/plugins\/marketplaces\/[A-Za-z0-9][A-Za-z0-9._-]{0,63}\/token$/, feature: "orgDirectory" },
   { methods: ["POST"], path: /^\/api\/bots\/[\w-]+\/plugins\/install$/, feature: "orgDirectory" },
   { methods: ["PATCH", "DELETE"], path: /^\/api\/bots\/[\w-]+\/plugins\/[A-Za-z0-9][A-Za-z0-9._-]{0,63}(?:@|%40)[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/, feature: "orgDirectory" },
   // Slice 5: the Perspicax MCP profiles a bot mounts. server/bot-perspicax.ts
@@ -595,6 +604,11 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   { methods: ["GET"], path: /^\/api\/bot-catalog(?:\/[\w-]+)?$/ },
   { methods: ["PUT"], path: /^\/api\/bot-catalog\/[\w-]+\/listing$/ },
   { methods: ["POST"], path: /^\/api\/bot-catalog\/[\w-]+\/import$/ },
+  // A bot as one zip (server/routes/bot-zip.ts): export needs owner or
+  // manage, import the right to create bots; both checked in the handler.
+  { methods: ["GET"], path: /^\/api\/bots\/[\w-]+\/export\.zip$/ },
+  { methods: ["POST"], path: /^\/api\/bots\/import\/(?:upload|[0-9a-f-]{36}(?:\/preview)?)$/ },
+  { methods: ["DELETE"], path: /^\/api\/bots\/import\/[0-9a-f-]{36}$/ },
   // Slice 8: a person copies their own bots from a solo Sagax (the handler
   // checks the session, the caller's right to create bots and the copy).
   { methods: ["POST"], path: /^\/api\/org\/import$/, feature: "orgDirectory" },
@@ -618,7 +632,7 @@ export const PERMISSION_ROUTES: ReadonlyArray<{ methods: readonly string[]; path
   // the admin activity log and its export
   { methods: ["GET"], path: /^\/api\/admin-activity(?:\.csv)?$/, permission: "people.activityLog" },
   // plugin marketplaces (server/routes/marketplaces.ts)
-  { methods: ["GET", "POST", "DELETE"], path: /^\/api\/marketplaces(?:\/[A-Za-z0-9][A-Za-z0-9._-]{0,63}(?:\/(?:refresh|plugins\/[A-Za-z0-9][A-Za-z0-9._-]{0,63}))?)?$/, permission: "apps.marketplaces" },
+  { methods: ["GET", "POST", "DELETE"], path: /^\/api\/marketplaces(?:\/[A-Za-z0-9][A-Za-z0-9._-]{0,63}(?:\/(?:refresh|plugins\/[A-Za-z0-9][A-Za-z0-9._-]{0,63}(?:\/update)?))?)?$/, permission: "apps.marketplaces" },
   // the shared skills library
   { methods: ["GET", "POST", "PUT", "PATCH", "DELETE"], path: /^\/api\/skills-library(?:\/[a-z0-9-]+)?$/, permission: "skills.library" },
   // the server's engines: settings, icon, models, install, sign-in, update

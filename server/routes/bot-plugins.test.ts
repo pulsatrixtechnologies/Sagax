@@ -85,6 +85,8 @@ async function boot() {
       actor: (auth) => who(auth) || undefined,
       install: async (marketplace, plugin) => ({ status: 200, body: { plugin: shared.recordInstall(marketplace, plugin, { servers: [], skills: [] }) } }),
       uninstall: async (marketplace, plugin) => ({ status: 200, body: { plugin: shared.recordUninstall(marketplace, plugin) } }),
+      update: async () => ({ status: 409, body: { error: "not in this test" } }),
+      audit: () => undefined,
     }),
   ];
   const server = createServer(async (req, res) => {

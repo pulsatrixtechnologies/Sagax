@@ -19,6 +19,7 @@ import {
 import { flushSync } from "react-dom";
 import type { BotVisibility, CardAnswerer, CloudBackend, ConnectorToolGrant, EffortLevel, InstalledPackageMetadata, LiveCallState, LiveSettings, ServerFrame, GroupThreadUsage, SteerQueueReason, VoiceCallMark } from "../../shared/wire";
 import type { TurnDigest } from "../../shared/digest";
+import type { MessageReaction } from "../../shared/reactions";
 import type { AutoModelRecord } from "../../shared/auto-model";
 import type { BusySendMode, ParallelTaskRef, TaskParallelOf } from "../../shared/parallel-tasks";
 import type { ToolScope } from "../../shared/tool-scope";
@@ -263,8 +264,9 @@ export interface Message {
   /** Auto: the model this delivered work ran on (the delegation card and the
    * worker's activity row). */
   autoModel?: AutoModelRecord;
-  /** emoji reactions; by = "user" or a member botId. */
-  reactions?: Array<{ emoji: string; by: string }>;
+  /** Emoji reactions, one entry per emoji with who put it there
+   * (shared/reactions.ts; read through normalizeReactions). */
+  reactions?: MessageReaction[];
   /** comm chips: "Messaged @X" linking to the bot⇄bot channel. */
   comm?: { groupId: string; threadId?: string; withBotId: string; withName: string; withColor: MausColor; gone?: boolean };
   /** thread chips: "Opened thread #Title on Bot" linking to that thread */
@@ -587,6 +589,9 @@ export interface Bot {
   /** Which app-wide MCP servers (Plugins → MCP servers) this bot mounts, by
    * name. Absent = every enabled server; [] = none (null clears over PATCH). */
   mcpServers?: string[] | null;
+  /** The account each MCP server signs in with for this bot (absent: the
+   * server's default account; null clears over PATCH). */
+  mcpAccounts?: Record<string, string> | null;
   /** Named browser profile id (config.browserProfiles); absent/null = the
    * bot's own session (null is how a clear travels over PATCH). */
   browserProfile?: string | null;
@@ -1077,8 +1082,12 @@ export type BotSettingsSection =
   | "details"
   | "slack"
   | "soul"
+  /** RULES.md: hard constraints loaded every turn (docs/bot-workspace.md). */
+  | "rules"
   | "skills"
   | "memory"
+  /** The whole bot workspace: SOUL.md, RULES.md, memory, docs/, skills. */
+  | "files"
   | "routines"
   | "access"
   /** More > Computer. The Works on control. Not a row of the Computer tab. */

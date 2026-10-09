@@ -21,6 +21,12 @@
 // acting person's GitHub connection for github.com: no token is stored here.
 // The organization's allowed-marketplaces policy applies in both scopes.
 // A marketplace a bot still has plugins from is not removed (`inUse`).
+// Added or fetched again from a bot ("For this bot"), the clone uses the
+// environment the bot's store worked out (server/bot-plugins.ts: that bot's
+// token for the marketplace first, then the person's GitHub connection,
+// then the organization's tokens); the token itself stays per bot
+// (server/marketplace-tokens.ts), never here.
+import { createHash } from "node:crypto";
 import { cpSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { z } from "zod";
@@ -38,6 +44,7 @@ import {
   type MarketplacePolicy,
   type MarketplacePluginEntry,
 } from "./bot-plugins.ts";
+import type { StoredMcpServer } from "./mcp-registry.ts";
 import { parseSkillMd } from "../shared/skill-md.ts";
 
 const NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
@@ -64,9 +71,15 @@ const installedRecord = z.object({
   name: z.string(),
   marketplace: z.string(),
   version: z.string().optional(),
+  /** what was installed, to tell an update without a version change
+   * (`pluginRevision`) */
+  revision: z.string().optional(),
   installedAt: z.number(),
+  updatedAt: z.number().optional(),
   /** MCP server names this plugin added */
   servers: z.array(z.string()),
+  /** the plugin's own server name to the name it was added under */
+  serverNames: z.record(z.string(), z.string()).optional(),
   /** library skills this plugin added */
   skills: z.array(z.string()),
 }).strict();
@@ -96,6 +109,10 @@ export interface MarketplaceView {
     version?: string;
     category?: string;
     installed: boolean;
+    /** the version installed, when it differs from `version` */
+    installedVersion?: string;
+    /** the marketplace offers a newer version than the one installed */
+    updateAvailable?: boolean;
     servers: string[];
     skills: string[];
   }>;
@@ -218,6 +235,107 @@ export function marketplaceServerName(server: string, plugin: string, taken: Rea
   return `${base.slice(0, 20)}-${Date.now().toString(36).slice(-6)}`;
 }
 
+const MAX_DIGEST_FILES = 5000;
+
+/** A digest of a plugin folder's files (paths and bytes), without links or
+ * git metadata, the files `copyPlain` would copy. */
+export function folderDigest(root: string): string {
+  const hash = createHash("sha256");
+  let files = 0;
+  const walk = (dir: string, prefix: string) => {
+    for (const entry of readdirSync(dir, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
+      if (entry.name === ".git" || entry.isSymbolicLink()) continue;
+      const path = join(dir, entry.name);
+      const relative = prefix ? `${prefix}/${entry.name}` : entry.name;
+      if (entry.isDirectory()) walk(path, relative);
+      else if (entry.isFile() && ++files <= MAX_DIGEST_FILES) hash.update(`${relative}\0`).update(readFileSync(path)).update("\0");
+    }
+  };
+  walk(root, "");
+  return hash.digest("hex");
+}
+
+/** What a marketplace offers for one plugin now: its folder's digest in a
+ * repository marketplace, the repository and ref it points at for a plugin
+ * kept elsewhere; nothing for a manifest address (only the version tells). */
+export function pluginRevision(repo: string, entry: MarketplacePluginEntry, manifestUrl?: string): string | undefined {
+  if (entry.source.kind === "git") return `git:${entry.source.git.id}#${entry.source.git.ref ?? ""}:${entry.source.path ?? ""}`;
+  if (manifestUrl) return undefined;
+  try {
+    const folder = insideRoot(repo, entry.source.path);
+    return existsSync(folder) && statSync(folder).isDirectory() ? `sha256:${folderDigest(folder)}` : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** A newer version than the one installed: another declared version, or
+ * the same version with other files. Unknown on either side says nothing. */
+export function pluginUpdateAvailable(installed: { version?: string; revision?: string }, offered: { version?: string; revision?: string }): boolean {
+  if (installed.version && offered.version && installed.version !== offered.version) return true;
+  return Boolean(installed.revision && offered.revision && installed.revision !== offered.revision);
+}
+
+/** How an update changes the MCP servers an installed plugin added: each
+ * server it still brings keeps the name it was added under (bots choose
+ * servers by name, so their selection and the server's switch stay), new
+ * ones are added, the ones it dropped are removed. */
+export interface PluginServerUpdate {
+  keep: Array<{ name: string; stored: string; entry: Record<string, unknown> }>;
+  add: Array<{ name: string; entry: Record<string, unknown> }>;
+  remove: string[];
+}
+
+export function planServerUpdate(plan: PluginInstallPlan, installed: Pick<InstalledMarketplacePlugin, "name" | "servers" | "serverNames">): PluginServerUpdate {
+  const result: PluginServerUpdate = { keep: [], add: [], remove: [] };
+  const unclaimed = new Set(installed.servers);
+  // An install from before `serverNames` was kept: the names it would have
+  // been given (plain, plugin in front, or a number after).
+  const guess = (name: string): string | undefined => {
+    const base = marketplaceServerName(name, installed.name, new Set());
+    const prefixed = marketplaceServerName(name, installed.name, new Set([base]));
+    // a server name is [a-z0-9_-] only: nothing to escape
+    const numbered = new RegExp(`^${base.slice(0, 28)}-\\d{1,2}$`);
+    return [base, prefixed].find((candidate) => unclaimed.has(candidate)) ?? [...unclaimed].find((candidate) => numbered.test(candidate));
+  };
+  for (const server of plan.servers) {
+    const known = installed.serverNames?.[server.name];
+    const stored = known !== undefined ? (unclaimed.has(known) ? known : undefined) : guess(server.name);
+    if (stored) {
+      unclaimed.delete(stored);
+      result.keep.push({ name: server.name, stored, entry: server.entry });
+    } else {
+      result.add.push(server);
+    }
+  }
+  result.remove = [...unclaimed];
+  return result;
+}
+
+/** The entry an update writes over a server it keeps: the plugin's new
+ * address or command, with the person's own values on top (a header or
+ * variable they filled in, their sign-in app, the switch and the tools
+ * they turned off). */
+export function updatedServerEntry(existing: StoredMcpServer, entry: Record<string, unknown>, marketplace: string): Record<string, unknown> {
+  const own = (value: unknown) => (record(value) ?? {}) as Record<string, string>;
+  const kept = {
+    enabled: existing.enabled,
+    ...(existing.disabledTools?.length ? { disabledTools: existing.disabledTools } : {}),
+    source: marketplace,
+  };
+  if ("url" in entry && "url" in existing) {
+    return {
+      ...entry,
+      headers: { ...own(entry.headers), ...existing.headers },
+      ...(existing.oauth && !entry.oauth ? { oauth: existing.oauth } : {}),
+      ...kept,
+    };
+  }
+  if ("command" in entry && "command" in existing) return { ...entry, env: { ...own(entry.env), ...existing.env }, ...kept };
+  // Another kind of server under the same name: a command waits for a test.
+  return { ...entry, ...kept, enabled: "url" in entry ? existing.enabled : false };
+}
+
 /** Is this the address of a manifest rather than a repository? */
 export function isManifestUrl(source: string): boolean {
   return /^https:\/\/\S+\.json(?:\?\S*)?$/i.test(source.trim());
@@ -309,13 +427,13 @@ export class PluginMarketplaces {
     }
   }
 
-  private async clone(source: GitSource, into: string, actor: string | undefined): Promise<void> {
+  private async clone(source: GitSource, into: string, actor: string | undefined, env?: Record<string, string>): Promise<void> {
     const staging = `${into}.tmp-${process.pid}-${this.now()}`;
     rmSync(staging, { recursive: true, force: true });
     mkdirSync(join(staging, ".."), { recursive: true });
     try {
       await this.git(["clone", "--depth", "1", "--single-branch", "--no-tags", ...(source.ref ? ["--branch", source.ref] : []), "--", source.url, staging], {
-        env: this.options.gitEnvironment(source.github ? actor : undefined), timeoutMs: GIT_TIMEOUT_MS,
+        env: env ?? this.options.gitEnvironment(source.github ? actor : undefined), timeoutMs: GIT_TIMEOUT_MS,
       });
       rmSync(join(staging, ".git"), { recursive: true, force: true });
       rmSync(into, { recursive: true, force: true });
@@ -323,6 +441,30 @@ export class PluginMarketplaces {
     } finally {
       rmSync(staging, { recursive: true, force: true });
     }
+  }
+
+  /** Digests of the clone as it is on disk: a fetch again replaces the
+   * folder, so its inode and time name the content. */
+  private readonly revisions = new Map<string, string | undefined>();
+  /** What this marketplace offers now for one plugin (`pluginRevision`),
+   * for a bot's install of it (server/bot-plugins.ts). */
+  revisionOf(name: string, entry: MarketplacePluginEntry): string | undefined {
+    return this.offeredRevision(name, entry, this.read().marketplaces[name]?.manifestUrl);
+  }
+  private offeredRevision(name: string, entry: MarketplacePluginEntry, manifestUrl?: string): string | undefined {
+    const repo = this.repoDir(name);
+    let key: string;
+    try {
+      const stat = statSync(repo);
+      key = `${name}\0${entry.name}\0${stat.ino}:${stat.mtimeMs}`;
+    } catch {
+      return undefined;
+    }
+    if (!this.revisions.has(key)) {
+      if (this.revisions.size > 500) this.revisions.clear();
+      this.revisions.set(key, pluginRevision(repo, entry, manifestUrl));
+    }
+    return this.revisions.get(key);
   }
 
   list(): MarketplaceView[] {
@@ -344,12 +486,17 @@ export class PluginMarketplaces {
         bots: this.options.inUse?.(name).length ?? 0,
         plugins: entries.map((entry) => {
           const installed = state.installed[`${entry.name}@${name}`];
+          const update = installed
+            ? pluginUpdateAvailable(installed, { version: entry.version, revision: this.offeredRevision(name, entry, market.manifestUrl) })
+            : false;
           return {
             name: entry.name,
             ...(entry.description ? { description: entry.description } : {}),
             ...(entry.version ? { version: entry.version } : {}),
             ...(entry.category ? { category: entry.category } : {}),
             installed: Boolean(installed),
+            ...(installed?.version && installed.version !== entry.version ? { installedVersion: installed.version } : {}),
+            ...(update ? { updateAvailable: true } : {}),
             servers: installed?.servers ?? [],
             skills: installed?.skills ?? [],
           };
@@ -364,8 +511,14 @@ export class PluginMarketplaces {
 
   /** Add (or fetch again) a marketplace: owner/repo, an https git address,
    * or the https address of a marketplace.json. `name` keeps the name it is
-   * stored under (a refresh of a marketplace renamed at migration). */
-  add(input: { source: string; ref?: string }, actor: string | undefined, options: { name?: string } = {}): Promise<MarketplaceView> {
+   * stored under (a refresh of a marketplace renamed at migration).
+   * `environment` gives the git environment of the clone (a bot's store:
+   * its token for this marketplace first); without it, `gitEnvironment`. */
+  add(
+    input: { source: string; ref?: string },
+    actor: string | undefined,
+    options: { name?: string; environment?: (source: GitSource) => Promise<Record<string, string>> } = {},
+  ): Promise<MarketplaceView> {
     return this.serial(async () => {
       const state = this.read();
       const staging = join(this.root, "repos", `.incoming-${this.now()}`);
@@ -383,7 +536,7 @@ export class PluginMarketplaces {
         } else {
           source = parseGitSource(input.source, input.ref?.trim() || undefined);
           this.checkPolicy(source);
-          await this.clone(source, staging, actor);
+          await this.clone(source, staging, actor, options.environment ? await options.environment(source) : undefined);
         }
         const manifest = readMarketplaceManifest(staging);
         const sourceId = manifestUrl ?? source.id;
@@ -420,10 +573,10 @@ export class PluginMarketplaces {
     });
   }
 
-  refresh(name: string, actor: string | undefined): Promise<MarketplaceView> {
+  refresh(name: string, actor: string | undefined, options: { environment?: (source: GitSource) => Promise<Record<string, string>> } = {}): Promise<MarketplaceView> {
     const market = this.read().marketplaces[name];
     if (!market) return Promise.reject(new BotPluginError("No marketplace with that name.", "not_found", 404));
-    return this.add({ source: market.manifestUrl ?? (market.source.includes("://") ? market.url : market.source), ...(market.ref ? { ref: market.ref } : {}) }, actor, { name });
+    return this.add({ source: market.manifestUrl ?? (market.source.includes("://") ? market.url : market.source), ...(market.ref ? { ref: market.ref } : {}) }, actor, { name, ...options });
   }
 
   /** Forget a marketplace. Its installed plugins must be uninstalled first,
@@ -467,7 +620,7 @@ export class PluginMarketplaces {
 
   /** Put a plugin's files in place and read what it brings. The caller
    * adds the servers and skills, then records them with `recordInstall`. */
-  prepare(marketplace: string, plugin: string, actor: string | undefined): Promise<{ dir: string; plan: PluginInstallPlan; version?: string }> {
+  prepare(marketplace: string, plugin: string, actor: string | undefined): Promise<{ dir: string; plan: PluginInstallPlan; version?: string; revision?: string }> {
     return this.serial(async () => {
       const state = this.read();
       const market = state.marketplaces[marketplace];
@@ -475,6 +628,7 @@ export class PluginMarketplaces {
       const repo = this.repoDir(marketplace);
       const entry = readMarketplaceManifest(repo).plugins.find((candidate) => candidate.name === plugin);
       if (!entry) throw new BotPluginError("That plugin is not in this marketplace.", "not_found", 404);
+      const revision = pluginRevision(repo, entry, market.manifestUrl);
       const target = this.pluginDir(marketplace, plugin);
       if (entry.source.kind === "git") {
         this.checkPolicy(entry.source.git);
@@ -492,7 +646,7 @@ export class PluginMarketplaces {
       } else {
         copyPlain(insideRoot(repo, entry.source.path), target);
       }
-      return { dir: target, plan: pluginInstallPlan(target), ...(entry.version ? { version: entry.version } : {}) };
+      return { dir: target, plan: pluginInstallPlan(target), ...(entry.version ? { version: entry.version } : {}), ...(revision ? { revision } : {}) };
     });
   }
 
@@ -511,17 +665,42 @@ export class PluginMarketplaces {
     }
   }
 
-  recordInstall(marketplace: string, plugin: string, result: { version?: string; servers: string[]; skills: string[] }): InstalledMarketplacePlugin {
+  recordInstall(marketplace: string, plugin: string, result: { version?: string; revision?: string; servers: string[]; serverNames?: Record<string, string>; skills: string[] }): InstalledMarketplacePlugin {
     const state = this.read();
     const key = `${plugin}@${marketplace}`;
     const previous = state.installed[key];
+    const serverNames = { ...previous?.serverNames, ...result.serverNames };
     state.installed[key] = {
       name: plugin,
       marketplace,
       ...(result.version ? { version: result.version } : {}),
+      ...(result.revision ? { revision: result.revision } : {}),
       installedAt: previous?.installedAt ?? this.now(),
       servers: [...new Set([...(previous?.servers ?? []), ...result.servers])],
+      ...(Object.keys(serverNames).length ? { serverNames } : {}),
       skills: [...new Set([...(previous?.skills ?? []), ...result.skills])],
+    };
+    this.write(state);
+    return { key, ...state.installed[key]! };
+  }
+
+  /** Record an update in place: what the plugin brings now replaces what
+   * it brought, and the install date stays. */
+  recordUpdate(marketplace: string, plugin: string, result: { version?: string; revision?: string; servers: string[]; serverNames: Record<string, string>; skills: string[] }): InstalledMarketplacePlugin {
+    const state = this.read();
+    const key = `${plugin}@${marketplace}`;
+    const previous = state.installed[key];
+    if (!previous) throw new BotPluginError("That plugin is not installed.", "not_found", 404);
+    state.installed[key] = {
+      name: plugin,
+      marketplace,
+      ...(result.version ? { version: result.version } : {}),
+      ...(result.revision ? { revision: result.revision } : {}),
+      installedAt: previous.installedAt,
+      updatedAt: this.now(),
+      servers: [...new Set(result.servers)],
+      ...(Object.keys(result.serverNames).length ? { serverNames: result.serverNames } : {}),
+      skills: [...new Set(result.skills)],
     };
     this.write(state);
     return { key, ...state.installed[key]! };

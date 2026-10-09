@@ -142,6 +142,7 @@ import {
 } from "./cloud-backend.ts";
 import * as composio from "./composio.ts";
 import { connectorCallFromFrame, connectorRefusalText, connectorUnrecognizedText, evaluateConnectorTools } from "./connector-verdict.ts";
+import { connectorWorkspaceRefusalText, parseDisabledTools, readDisabledTools, withAppDisabledTools, workspaceDisabledTools } from "./connector-tool-switches.ts";
 import { connectorCardText } from "./connector-card-text.ts";
 import { chiefOfStaffSystemPrompt } from "./chief-of-staff.ts";
 import { buildRecall, CALL_RECALL_BUDGET, type RecallBudget } from "./recall.ts";
@@ -277,11 +278,12 @@ import {
   parseMcpServerMutation,
   parseMcpServersImport,
   parseStoredMcpServer,
+  type StoredMcpServer,
   type StoredRemoteMcpServer,
 } from "./mcp-registry.ts";
 import { withDisabledTools } from "./mcp-tool-filter.ts";
 import { probeMcpServer } from "./mcp-probe.ts";
-import { callbackPage, McpOAuthError, McpOAuthManager, McpOAuthVault, phoneOAuthReturns, phoneReturnLocation, resolveVaultKey, type VaultKeySource } from "./mcp-oauth.ts";
+import { callbackPage, DEFAULT_MCP_ACCOUNT, isMcpAccountId, McpOAuthError, McpOAuthManager, McpOAuthVault, parseMcpAccountChoices, phoneOAuthReturns, phoneReturnLocation, resolveVaultKey, type VaultKeySource } from "./mcp-oauth.ts";
 import {
   GROUP_GOAL_MAX_TURNS,
   groupGoalAssignmentKey,
@@ -423,6 +425,7 @@ import {
   memorySystemPrompt,
   memorySourceLabel,
   searchMemoryFiles,
+  searchDocFiles,
   SESSION_SEARCH_SYSTEM_PROMPT,
   TASK_WORKSPACES_DIR,
   workspaceDir,
@@ -481,6 +484,7 @@ import {
   composioSystemPrompt,
   customMcpPrompt,
   CREDENTIAL_PROMPT,
+  REACTION_PROMPT,
   mentionPrompt,
   THREADS_PROMPT,
   RICH_OUTPUT_PROMPT,
@@ -508,6 +512,7 @@ import { RepeatDetector, callKey } from "./repeat-detector.ts";
 import { redactSecretsInText } from "./redact.ts";
 import * as vps from "./vps-computer.ts";
 import { runAsOptions, runAsRefusal, type RunAsChooser, type RunAsPerson } from "./routine-run-as.ts";
+import { parseRoutineScopeQuery, routineRunClearable, routineScopeRefusal, scopedRoutineListing, type RoutineScopeCaller, type RoutineScopeDeps, type RoutineScopeFacts } from "./routine-scope.ts";
 import { RoutineManager, setRoutineTimeZone, type Routine, type RoutineAdmission, type RoutineRun, type RoutineRunOn, type RoutineRunTrigger, type RoutineSuspendReason } from "./routines.ts";
 import { RoutineConsents, routineRenewMs, type RoutineConsentEnd } from "./org-routine-consent.ts";
 import { CalendarCallManager, type CalendarCall } from "./calendar-calls.ts";
@@ -724,6 +729,7 @@ import type { BotHost } from "./turn-route.ts";
 import { signInListWithOpenInvites, type OrgRole } from "./org-directory.ts";
 import { createOwnerAvatarRoute, OwnerIdentityStore, parseOwnerIdentityMessage } from "./owner-identity.ts";
 import { configForViewer, personAvatarUrl, personDisplayName, sessionIsOperator, type ViewerIdentity } from "./viewer-identity.ts";
+import { botReactionActorId, normalizeReactions, reactionEmoji, reactionsBy, type ReactionActor } from "../shared/reactions.ts";
 // Keep these two last: a route module may import any server module, and
 // loading the table after everything above leaves module start-up order as is.
 import { json, onJsonBody, parsedBodyOf, readBody } from "./harness/http.ts";
@@ -731,6 +737,8 @@ import { PASS, ROUTES, dispatchRoutes } from "./routes/table.ts";
 import { createHostedSlackRoutes } from "./routes/hosted-slack.ts";
 import { createBotPresetRoutes } from "./routes/bot-presets.ts";
 import { createBotCatalogRoutes, memberImportReset } from "./routes/bot-catalog.ts";
+import { createBotZipRoutes } from "./routes/bot-zip.ts";
+import { BotZipError, closeInspected, importBotZip, inspectBotZip, planBotZip, previewBotZip, stageBotZipUpload, writeBotZip, type BotZipHost } from "./bot-zip.ts";
 import { MEMORY_INDEX, readMemoryDoc } from "./memory-store.ts";
 import { isExpired as memoryEntryExpired, parseMemoryEntries } from "./memory-entries.ts";
 import { createBotLibraryRoutes } from "./routes/bot-library.ts";
@@ -739,14 +747,16 @@ import { createAutoReviewRuleRoutes } from "./routes/auto-review-rules.ts";
 import { createComputerStatusRoutes, diskStateForFree } from "./routes/computer-status.ts";
 import { createPluginRoutes, pluginServerName, type InstalledPlugin } from "./routes/plugins.ts";
 import { createMarketplaceRoutes } from "./routes/marketplaces.ts";
-import { PluginMarketplaces, marketplaceServerName } from "./plugin-marketplaces.ts";
+import { PluginMarketplaces, marketplaceServerName, planServerUpdate, updatedServerEntry } from "./plugin-marketplaces.ts";
 import { createAccountRoutes } from "./routes/account.ts";
 import { createRegistrySearch } from "./plugin-registry.ts";
 import { BotPluginError, BotPlugins, marketplaceAllowed, migrateBotMarketplaces, marketplacePolicySchema, normalizePolicyEntry, parseGitSource, type MarketplacePolicy } from "./bot-plugins.ts";
 import { claudePluginDirs, pluginTurnFiles, pluginTurnPrompt } from "./plugin-turn.ts";
 import { createBotPluginRoutes } from "./routes/bot-plugins.ts";
-import { GithubConnect, githubAuthorizedFetch, githubGitEnvironment, githubSandboxArgv } from "./github-connect.ts";
+import { GithubConnect, githubGitEnvironment, githubSandboxArgv } from "./github-connect.ts";
 import { OrgGithubTokens } from "./org-github-tokens.ts";
+import { MarketplaceTokens } from "./marketplace-tokens.ts";
+import { githubSkillFetch, type GithubCredential } from "./github-access.ts";
 import { parsePersonalMcpInput, personalAuthHeaders, personalMcpHostRefusal, personalMcpPrivateAllowed, PersonConnections, PersonConnectionsError, principalDir, type PersonalMcpServer } from "./person-connections.ts";
 import { createPersonConnectionRoutes } from "./routes/person-connections.ts";
 import { SandboxStdioRelay, StdioRelayError } from "./sandbox-stdio-mcp.ts";
@@ -767,6 +777,10 @@ import { createAchievementRoutes } from "./routes/achievements.ts";
 import { lockedLookChange, masteryDelegationFacts, masteryFrameFacts, masteryRequestFacts, masterySendFacts, threadCensus, type LookRefusal, type PersonFact } from "./achievements-mastery.ts";
 import { grandfatheredFromBots } from "../shared/achievements.ts";
 import { createBotMemoryRoutes } from "./routes/bot-memory.ts";
+import { createBotWorkspaceRoutes } from "./routes/bot-workspace.ts";
+import { docsIndexPrompt, readWorkspaceText, rulesSystemPrompt, WorkspacePathError } from "./workspace-files.ts";
+import { updateDoc, updateRules } from "./workspace-tools.ts";
+import { markWorkspaceUse, promptSectionPaths } from "./workspace-usage.ts";
 import { createBotActivityRoutes, type ActivityChildRef } from "./routes/bot-activity.ts";
 import { inGitRepository } from "./activity-coding.ts";
 import { repositoryInfo } from "./activity-code-work.ts";
@@ -1448,6 +1462,79 @@ function messageSender(auth: RequestAuth): ResolvedSender | undefined {
   }
   const name = (auth.session.email ?? auth.session.label ?? "").trim();
   return name ? { name, id: actorKey(auth) } : undefined;
+}
+
+/** A person reacting to a message (shared/reactions.ts): their id as read
+ * receipts key it and the name the room shows. Null for a caller who is
+ * nobody in particular (a bot's own shell, an anonymous session). */
+function reactionPersonFor(auth: RequestAuth): ReactionActor | null {
+  const sender = messageSender(auth);
+  const id = personParticipant(actorPrincipalId(auth) || sender?.id || "");
+  if (!id) return null;
+  const local = auth.kind !== "session";
+  const name = sender?.name || (local ? cfg.profile?.name?.trim() : "") || personDisplayName(principals.byId(id)) || "";
+  return { id, kind: "person", name };
+}
+
+/** Who a stored `{ emoji, by: "user" }` reaction was: the operator of a
+ * personal server. An organization server cannot tell, and keeps "user". */
+function legacyReactionUser(): ReactionActor | undefined {
+  if (IDENTITY.kind === "perspicax") return undefined;
+  return { id: personParticipant(localPrincipalId()), kind: "person", name: cfg.profile?.name?.trim() || "" };
+}
+
+/** A reaction is a reader's mark like a read receipt: a read-only member
+ * of a shared room may leave one. */
+const REACTION_ROUTE = /^\/api\/threads\/[\w-]+\/messages\/[\w-]+\/reactions$/;
+
+/** Reactions one bot turn may add (react_to_message), across messages. */
+const MAX_BOT_REACTIONS_PER_TURN = 3;
+
+type BotReactionOutcome =
+  | { ok: true; messageId: string; emoji: string; changed: boolean; removed?: string[] }
+  | { ok: false; status: number; error: string; code: string };
+
+/** A bot's reaction from its turn (react_to_message, remove_reaction). The
+ * message is one of the turn's own thread: `messageId`, or when none is
+ * given the newest chat message someone else wrote (what the bot is
+ * answering). */
+function botReaction(input: { bot: { id: string; name: string }; threadId: string; messageId: string; emoji: unknown; remove: boolean; spent: number }): BotReactionOutcome {
+  const messages = store.messagesFor(input.threadId);
+  const soloBot = store.groupByThread(input.threadId) ? null : store.botByThread(input.threadId)?.id ?? null;
+  const authorBot = (message: Message) => message.role === "user" ? null : message.from?.botId ?? soloBot;
+  const target = input.messageId
+    ? messages.find((message) => message.id === input.messageId)
+    : messages.findLast((message) => message.kind === "text" && authorBot(message) !== input.bot.id && !message.id.startsWith("optimistic-"));
+  if (!target) {
+    return { ok: false, status: 404, code: "reaction_message", error: input.messageId
+      ? "No message with that id in this conversation. Omit message_id to react to the message you are answering."
+      : "There is no message here to react to." };
+  }
+  if (target.kind !== "text") return { ok: false, status: 400, code: "reaction_kind", error: "Only a chat message takes a reaction." };
+  if (authorBot(target) === input.bot.id) return { ok: false, status: 400, code: "reaction_own", error: "Never react to your own message." };
+  const actor: ReactionActor = { id: botReactionActorId(input.bot.id), kind: "bot", name: input.bot.name };
+  const current = normalizeReactions(target.reactions, legacyReactionUser());
+  const mine = reactionsBy(current, actor.id);
+  if (input.remove) {
+    const emoji = input.emoji === undefined || input.emoji === "" ? null : reactionEmoji(input.emoji);
+    if (input.emoji !== undefined && input.emoji !== "" && !emoji) return { ok: false, status: 400, code: "reaction_emoji", error: "emoji must be one emoji, or omitted to remove yours." };
+    const removing = emoji ? mine.filter((held) => held === emoji) : mine;
+    for (const held of removing) store.reactToMessage(input.threadId, target.id, held, actor, { mode: "remove", legacyUser: legacyReactionUser() });
+    return { ok: true, messageId: target.id, emoji: emoji ?? removing[0] ?? "", changed: removing.length > 0, removed: removing };
+  }
+  const emoji = reactionEmoji(input.emoji);
+  if (!emoji) return { ok: false, status: 400, code: "reaction_emoji", error: "emoji must be one emoji, such as 👍, ✅ or 👀." };
+  if (mine.includes(emoji)) return { ok: true, messageId: target.id, emoji, changed: false };
+  if (mine.length) {
+    return { ok: false, status: 409, code: "reaction_one", error: `You already reacted ${mine.join(" ")} to this message: one reaction per message. Use remove_reaction first only if it no longer fits.` };
+  }
+  if (input.spent >= MAX_BOT_REACTIONS_PER_TURN) {
+    return { ok: false, status: 429, code: "reaction_budget", error: `You already added ${MAX_BOT_REACTIONS_PER_TURN} reactions this turn. Reply in words instead.` };
+  }
+  const result = store.reactToMessage(input.threadId, target.id, emoji, actor, { mode: "add", legacyUser: legacyReactionUser() });
+  if (!result) return { ok: false, status: 404, code: "reaction_message", error: "That message is gone." };
+  if (result.full) return { ok: false, status: 409, code: "reaction_full", error: "This message has too many different reactions." };
+  return { ok: true, messageId: target.id, emoji, changed: result.changed };
 }
 
 /** Who a request's turn speaks for (slice 3 engine access): the signed-in
@@ -2900,6 +2987,8 @@ type InternalCapability = {
   attachedFiles?: number;
   /** post_to_room calls this turn has made. */
   roomPosts?: number;
+  /** react_to_message calls this turn has made (MAX_BOT_REACTIONS_PER_TURN). */
+  reactions?: number;
   /** Group memory updates refused this turn (bot memory archives at the cap instead). */
   memoryRefusals?: number;
   /** Delegations this turn handed out: their ids may not be checked or
@@ -5185,12 +5274,38 @@ function pluginMarketplacePolicy(): MarketplacePolicy | undefined {
   const parsed = marketplacePolicySchema.safeParse(cfg.organization?.pluginMarketplaces);
   return parsed.success ? parsed.data : undefined;
 }
+/** The organization's GitHub tokens (Settings > Organization > Plugins and
+ * GitHub, server/org-github-tokens.ts). */
+const orgGithubTokens = new OrgGithubTokens(DATA_DIR, vaultKeySource);
+/** A token per bot and plugin marketplace (server/marketplace-tokens.ts). */
+const marketplaceTokens = new MarketplaceTokens(DATA_DIR, vaultKeySource);
+/** Who reads a private GitHub repository for `actor`: their own GitHub
+ * connection, then the organization's tokens (organization server). The
+ * bot's token for the marketplace comes first (server/bot-plugins.ts). */
+function githubCredentialsFor(actor: string | null | undefined): GithubCredential[] {
+  const person = usablePersonGithub(actor)?.token;
+  const credentials: GithubCredential[] = person ? [{ token: person, via: "person" }] : [];
+  if (IDENTITY.kind === "perspicax" && !personIntegrationsOff(actor)) {
+    try {
+      for (const entry of orgGithubTokens.list()) {
+        const token = orgGithubTokens.tokenFor(entry.id);
+        if (token) credentials.push({ token, via: "organization", label: entry.label });
+      }
+    } catch {
+      // an unreadable token file leaves the person's own access
+    }
+  }
+  return credentials;
+}
 // The installation's one marketplace list (server/plugin-marketplaces.ts):
 // Connect apps installs a plugin from it for everyone (MCP servers and
-// skills) or for one bot (the whole plugin, server/bot-plugins.ts).
+// skills) or for one bot (the whole plugin, server/bot-plugins.ts). Added
+// for everyone, it reads with the person's GitHub connection, then the
+// organization's first GitHub token; added or fetched again from a bot, with
+// that bot's token for it first (BotPlugins.cloneEnvironment).
 const pluginMarketplaces = new PluginMarketplaces({
   dataDir: DATA_DIR,
-  gitEnvironment: (actor) => githubGitEnvironment(usablePersonGithub(actor)?.token),
+  gitEnvironment: (actor) => githubGitEnvironment(githubCredentialsFor(actor)[0]?.token),
   policy: pluginMarketplacePolicy,
   inUse: (name) => botPlugins.botsUsing(name),
 });
@@ -5198,6 +5313,8 @@ const botPlugins = new BotPlugins({
   dataDir: DATA_DIR,
   marketplaces: pluginMarketplaces,
   gitEnvironment: (actor) => githubGitEnvironment(usablePersonGithub(actor)?.token),
+  credentials: ({ actor }) => githubCredentialsFor(actor),
+  tokens: marketplaceTokens,
   policy: pluginMarketplacePolicy,
 });
 {
@@ -5545,13 +5662,16 @@ function previewSystemPrompt(bot: BotRecord) {
     { id: "browser", label: "Browser", text: previewPlan.browser ? BUILT_IN_BROWSER_SYSTEM_PROMPT : "" },
     { id: "coordination", label: "Team", text: agentsMounted && coordination ? ` ${coordination}` : "" },
     { id: "credential", label: "Credentials", text: agentsMounted ? CREDENTIAL_PROMPT : "" },
+    { id: "reactions", label: "Reactions", text: agentsMounted ? REACTION_PROMPT : "" },
     { id: "routine", label: "Routines", text: agentsMounted ? ROUTINE_PROMPT : "" },
     { id: "profile", label: "Profile changes", text: agentsMounted ? PROFILE_PROMPT : "" },
     { id: "rich-output", label: "Rich output", text: RICH_OUTPUT_PROMPT },
     { id: "section-context", label: "Section context", text: sectionContextSystemPrompt(bot.section) },
     { id: "team-memory", label: "Team memory", text: teamMemory.systemPrompt(bot.section) + (agentsMounted ? TEAM_MEMORY_PROMPT : "") },
     teamAvailabilityPart(agentsMounted && coordination ? peers : []),
+    { id: "rules", label: "Rules (RULES.md)", text: rulesSystemPrompt(bot.id, { writes: agentsMounted }) },
     { id: "memory", label: "Memory", text: memorySystemPrompt(bot.id, { managedWrites: agentsMounted, fileTools: Boolean(privateWorkspace), enabled: bot.memoryEnabled !== false }) },
+    { id: "docs", label: "Documents index", text: docsIndexPrompt(bot.id, { tools: agentsMounted ? "agents" : privateWorkspace ? "files" : "none" }) },
     { id: "skills", label: "Skills index", text: privateWorkspace ? skillsSystemPrompt(bot.id, skillsLibraryEnabled(cfg) ? bot.assignedSkills : undefined) + pluginSkillsForTurn(bot, instance) : "" },
   ]);
   const totalBytes = built.sections.reduce((n, s) => n + s.bytes, 0);
@@ -7392,6 +7512,9 @@ store.onChange((change) => {
       sentThreads.delete(change.botId);
       try { commandAllowlist.clear(change.botId); }
       catch { console.error("[command-allowlist] Could not remove deleted bot's saved rules."); }
+      // Its plugins and the tokens saved for its marketplaces go with it.
+      try { botPlugins.forgetBot(change.botId); }
+      catch { console.error("[bot-plugins] Could not remove deleted bot's plugins."); }
       broadcast({ kind: "bot.deleted", botId: change.botId });
       break;
     case "group": {
@@ -11231,6 +11354,52 @@ function auditRoutineRunsCleared(auth: RequestAuth, count: number): void {
     actor: IDENTITY.kind === "perspicax" ? orgAuditActor(auth) : decisionActorFor(auth),
   });
 }
+/** The Automations page scope (server/routine-scope.ts, 2026-10-09): who
+ * the caller is for the scope rules. */
+function routineScopeCaller(auth: RequestAuth, viewerId: string | undefined): RoutineScopeCaller {
+  return {
+    admin: orgAdminCaller(auth),
+    viewTeam: callerCan(auth, "routines.viewTeam"),
+    viewAll: callerCan(auth, "routines.viewAll"),
+    teamIds: IDENTITY.kind === "perspicax" && viewerId ? principalTeams(viewerId).map((team) => team.id) : [],
+  };
+}
+/** A routine's or run's owner, run-as person, teams and bot, for the scope. */
+function routineScopeFacts(value: { botId: string; runAs?: string }): RoutineScopeFacts {
+  const bot = store.bot(value.botId);
+  const ownerId = bot ? effectiveBotOwner(bot) : "";
+  const runAsId = effectiveRunAs(value);
+  const teamIds = new Set<string>();
+  if (IDENTITY.kind === "perspicax") {
+    for (const principalId of [ownerId, runAsId]) {
+      if (principalId) for (const team of principalTeams(principalId)) teamIds.add(team.id);
+    }
+    if (bot) for (const grant of botGrants(bot)) if (grant.target.startsWith("team:")) teamIds.add(grant.target.slice("team:".length));
+  }
+  const owner = ownerId && isPrincipalId(ownerId) ? principals.byId(ownerId) : null;
+  const ownerAvatarUrl = personAvatarUrl(owner);
+  return {
+    ownerId,
+    ownerName: owner?.name || owner?.login || "",
+    ...(ownerAvatarUrl ? { ownerAvatarUrl } : {}),
+    ...(runAsId ? { runAsId } : {}),
+    teamIds: [...teamIds],
+    bot: { id: value.botId, name: bot?.name ?? "" },
+  };
+}
+/** The scope's view of one request: `mine` is the listing's own rule, and
+ * Run now and Edit answer what their routes would. */
+function routineScopeDeps(auth: RequestAuth, visible: VisibleSet, viewerId: string | undefined): RoutineScopeDeps<ReturnType<typeof routineOnWire>> {
+  const mine = (value: Routine | RoutineRun) => routineVisible(value, visible) && (!viewerId || routineSeenBy(value, viewerId));
+  return {
+    mine,
+    facts: routineScopeFacts,
+    canRun: (routine) => !routineNeedsRun(auth, routine.botId) && mayRunRoutineNow(auth, routine),
+    canEdit: (routine) => !routineNeedsRun(auth, routine.botId),
+    wire: routineOnWire,
+    teamName: (teamId) => orgTeams.name(teamId),
+  };
+}
 /** The speaker of a routine run's turns. */
 function routineRunSpeaker(run: { runAs?: string; botId: string }): TurnSpeaker {
   const principalId = effectiveRunAs(run);
@@ -14253,7 +14422,7 @@ async function startTurn(
           // model mostly did not think to make.
           ? peerRosterSystemPrompt(sectionPeers, boundedCoordination)
           : "";
-      const credentialPrompt = integrations.agents ? CREDENTIAL_PROMPT + (boundedCoordination ? "" : THREADS_PROMPT) : "";
+      const credentialPrompt = integrations.agents ? CREDENTIAL_PROMPT + REACTION_PROMPT + (boundedCoordination ? "" : THREADS_PROMPT) : "";
       const routinePrompt = integrations.agents ? ROUTINE_PROMPT : "";
       const profilePrompt = integrations.agents ? PROFILE_PROMPT : "";
       const recallPrompt = integrations.agents && bot.memoryEnabled !== false ? SESSION_SEARCH_SYSTEM_PROMPT : "";
@@ -14401,7 +14570,11 @@ async function startTurn(
         // never redoes — or forgets — what another one already did
         // not on a call: a phone turn stays short (docs/voice-mode-xai.md, "Latency")
         { id: "recent", label: "Recent work", text: onCall ? "" : recentWorkPrompt(recentWorkFor(bot, threadId, { userName: botUserName(bot) })) },
+        // RULES.md: listed here, placed right after the soul by buildSystemPrompt
+        { id: "rules", label: "Rules (RULES.md)", text: rulesSystemPrompt(bot.id, { writes: Boolean(integrations.agents) }) },
         { id: "memory", label: "Memory", text: memorySystemPrompt(bot.id, { managedWrites: Boolean(integrations.agents), fileTools: worksInWorkspace, enabled: bot.memoryEnabled !== false }) },
+        // docs/: an index only, never the documents (server/workspace-files.ts)
+        { id: "docs", label: "Documents index", text: docsIndexPrompt(bot.id, { tools: integrations.agents ? "agents" : worksInWorkspace ? "files" : "none" }) },
         // liveBot was captured before awaited setup work; an assignment PUT
         // in that window must still reach this turn's prompt.
         { id: "skills", label: "Skills index", text: privateWorkspace ? skillsSystemPrompt(bot.id, skillsLibraryEnabled(cfg) ? (store.bot(bot.id)?.assignedSkills ?? bot.assignedSkills) : undefined) + pluginSkillsForTurn(bot, instance) : "" },
@@ -14413,6 +14586,8 @@ async function startTurn(
         { id: "voice-call", label: "Phone call", text: voiceCallText },
       ]);
       turnPromptBytes.set(threadId, { stable: Buffer.byteLength(prompt.stable), volatile: Buffer.byteLength(prompt.volatile) });
+      // the Files list's "last used": what this turn's prompt carried
+      markWorkspaceUse(bot.id, promptSectionPaths(prompt.sections));
       // Automatic recall rides in front of THIS turn's message, never in the
       // system prompt: the volatile half is re-sent whole whenever any part of
       // it changes, and recall changes nearly every turn.
@@ -17084,7 +17259,7 @@ async function runGroupMemberTurn(
     readyGroup.bulletin.trim() && `Room bulletin (shared instructions for everyone):\n${readyGroup.bulletin.trim()}`,
     `Reply as yourself, briefly and conversationally. To bring a teammate in, mention them like @Name — they'll see the conversation and respond.`,
     outsideRoom.length > 0 && roomPeerRosterSystemPrompt(outsideRoom),
-    integrations.agents && (CREDENTIAL_PROMPT + (orchestration && !orchestration.roomHandoffId ? THREADS_PROMPT : "")).trim(),
+    integrations.agents && (CREDENTIAL_PROMPT + REACTION_PROMPT + (orchestration && !orchestration.roomHandoffId ? THREADS_PROMPT : "")).trim(),
     integrations.agents && (!orchestration || orchestration.roomHandoffId) && "For actual Sagax teamwork, discover IDs with list_room_targets and use coordinate_bots for advice or work in this or another room. Do not substitute native coding helpers for these named bots. Consult only when needed to make a decision; no discussion step is mandatory. Give concrete responsibilities, exact accessible paths and acceptance checks. End your turn after assigning; busy teammates queue and results automatically resume you. When they return, finish the requested verification and give the user one final answer. Native helper names are not evidence that a Sagax teammate participated. Plain @mentions are only for conversational replies in this room.",
     integrations.agents && ROUTINE_PROMPT.trim(),
     integrations.agents && PROFILE_PROMPT.trim(),
@@ -17182,7 +17357,9 @@ async function runGroupMemberTurn(
     // byte-identical. The write guidance follows the tools actually
     // mounted, exactly as the 1:1 path decides it: memory_update is on the
     // agents server, so a room turn with it must be told to use it too.
+    { id: "rules", label: "Rules (RULES.md)", text: rulesSystemPrompt(bot.id, { writes: Boolean(integrations.agents) }) },
     { id: "memory", label: "Memory", text: roomMemory ? `\n${roomMemory.trim()}` : "" },
+    { id: "docs", label: "Documents index", text: docsIndexPrompt(bot.id, { tools: integrations.agents ? "agents" : workspace ? "files" : "none" }) },
     // The group's shared memory: every bot of the group reads it here; only
     // explicit group_memory_update writes reach it (server/group-memory.ts).
     { id: "group-memory", label: "Group memory", text: (() => {
@@ -17305,6 +17482,7 @@ async function runGroupMemberTurn(
     providerDispatched = true;
     if (roomConsumedId) noteBotRead(readyBot.id, threadId, [roomConsumedId]);
     turnPromptBytes.set(threadId, { stable: Buffer.byteLength(roomSystem.stable), volatile: Buffer.byteLength(roomSystem.volatile) });
+    markWorkspaceUse(bot.id, promptSectionPaths(roomSystem.sections));
     runningTurnEngines.set(threadId, instance);
     // notes only in a room: a private chat reaches a room through the
     // explicit, disclosed session_search, never automatically
@@ -19760,7 +19938,15 @@ function mcpServerResponse() {
   const remote = remoteMcpServers();
   const servers = listMcpServers(cfg.mcpServers).map(server => {
     const auth = "url" in server && remote[server.name] ? mcpOAuth.status(server.name, remote[server.name]) : undefined;
-    const listed = auth ? { ...server, ...auth, ...(auth.auth === "required" && mcpOAuth.pendingFor(server.name) ? { authPending: true } : {}) } : server;
+    const accounts = auth ? mcpOAuth.accounts(server.name, remote[server.name]!) : [];
+    const listed = auth ? {
+      ...server, ...auth,
+      ...(auth.auth === "required" && mcpOAuth.pendingFor(server.name, DEFAULT_MCP_ACCOUNT) ? { authPending: true } : {}),
+      // the default account first; the listing reads its state above
+      ...(accounts.length ? { accounts: accounts.map((account) => ({
+        ...account, ...(mcpOAuth.pendingFor(server.name, account.id) ? { authPending: true } : {}),
+      })) } : {}),
+    } : server;
     return managedPolicy.mcpAllowed(server.name, "url" in server ? server.url : undefined) ? listed : { ...listed, managedBy: policy!.organizationName };
   });
   return { servers, ...(policy && !policy.mcp.allowCustom ? { managed: { organizationName: policy.organizationName, allowlist: policy.mcp.allowlist } } : {}) };
@@ -19786,7 +19972,7 @@ function mcpServerBody(body: unknown): Record<string, unknown> {
 /** Configured MCP servers that may reach this bot's engine. While enrolled,
  * the organisation's allow-list filters them; config.json is never changed. */
 function engineMcpServers(bot: BotRecord, threadId?: string) {
-  const servers = mcpOAuth.withAuthHeaders(managedPolicy.filterMcp(withoutHostCommands(customMcpServers(cfg, bot.mcpServers))));
+  const servers = mcpOAuth.withAuthHeaders(managedPolicy.filterMcp(withoutHostCommands(customMcpServers(cfg, bot.mcpServers))), (name) => bot.mcpAccounts?.[name]);
   // A turn mounts a server with tools switched off through the gate
   // (server/mcp-tool-filter.ts); listings only need the names.
   return threadId === undefined ? servers : withDisabledTools(servers, mcpDisabledTools(cfg), threadId);
@@ -19804,7 +19990,7 @@ const ORG_HOST_COMMAND_REFUSAL = "On an organization server a command would run 
 /** Refresh the OAuth tokens a turn is about to hand its engine. A failure
  * only marks that server expired; the turn still starts without it signed in. */
 async function refreshMcpOAuth(bot: BotRecord): Promise<void> {
-  await mcpOAuth.refreshDue(managedPolicy.filterMcp(customMcpServers(cfg, bot.mcpServers))).catch(() => undefined);
+  await mcpOAuth.refreshDue(managedPolicy.filterMcp(customMcpServers(cfg, bot.mcpServers)), undefined, (name) => bot.mcpAccounts?.[name]).catch(() => undefined);
 }
 
 /** Every configured remote server, parsed, keyed by name. */
@@ -19836,6 +20022,11 @@ const mcpOAuthStartSchema = z.object({
   // the public origin the phone reached this computer on.
   returnTo: z.string().max(512).optional(),
   callbackOrigin: z.string().max(512).optional(),
+  // Sign in again to one saved account, or add another one with its name.
+  account: z.string().refine(isMcpAccountId, "Unknown account.").optional(),
+  newAccount: z.object({
+    label: z.string().trim().min(1).max(60).regex(/^[^\r\n]+$/, "An account name is one line."),
+  }).strict().optional(),
 }).strict();
 
 /** The origin a companion-relayed sign-in may return through: https, or
@@ -19858,7 +20049,12 @@ async function startMcpSignIn(req: IncomingMessage, auth: RequestAuth, name: str
   Promise<{ status: number; body: Record<string, unknown> }> {
   const input = mcpOAuthStartSchema.safeParse(body ?? {});
   if (!input.success) return { status: 400, body: { error: input.error.issues[0]?.message ?? "Invalid sign-in request." } };
-  const { returnTo, callbackOrigin, ...client } = input.data;
+  const { returnTo, callbackOrigin, account: chosen, newAccount, ...client } = input.data;
+  if (chosen && newAccount) return { status: 400, body: { error: "Name an account or add one, not both." } };
+  if (chosen && chosen !== DEFAULT_MCP_ACCOUNT && !manager.vault.accounts(name).includes(chosen)) {
+    return { status: 404, body: { error: "That account is not saved for this server.", code: "account_not_found" } };
+  }
+  const account = newAccount ? `acct-${randomBytes(5).toString("hex")}` : chosen;
   if (returnTo !== undefined && !phoneOAuthReturns().includes(returnTo)) {
     return { status: 400, body: { error: "returnTo is not an app address this server returns to.", code: "return_not_allowed" } };
   }
@@ -19872,8 +20068,11 @@ async function startMcpSignIn(req: IncomingMessage, auth: RequestAuth, name: str
     return { status: 409, body: { error: "Send the address the phone reaches this computer on (callbackOrigin).", code: "callback_unreachable" } };
   }
   try {
-    const started = await manager.start(name, server, { redirectUri, ...client, ...(returnTo ? { returnTo } : {}) }, AbortSignal.timeout(15_000));
-    return { status: 200, body: { ...started, redirectUri } };
+    const started = await manager.start(name, server, {
+      redirectUri, ...client, ...(returnTo ? { returnTo } : {}),
+      ...(account ? { account } : {}), ...(newAccount ? { label: newAccount.label } : {}),
+    }, AbortSignal.timeout(15_000));
+    return { status: 200, body: { ...started, redirectUri, ...(account ? { account } : {}) } };
   } catch (error) {
     if (error instanceof McpOAuthError) {
       return { status: 400, body: { error: error.message, ...(error.code ? { code: error.code } : {}), ...(error.code === "client_required" ? { redirectUri } : {}) } };
@@ -20715,6 +20914,22 @@ ROUTES.push(createBotMemoryRoutes({
     broadcast({ kind: "config", ...configStatus() });
   },
 }));
+// The persona editor's Files category: the workspace tree, downloads, and
+// document renames, RULES.md and docs/ saves (server/routes/bot-workspace.ts).
+// The Soul edit's gate: owner or admin.
+ROUTES.push(createBotWorkspaceRoutes({
+  bot: (id) => store.bot(id),
+  // the Soul edit's gate (PATCH /api/bots/:id): admin, owner or edit grant;
+  // never a person who may only use shared bots
+  mayEdit: (auth, botId) => {
+    const bot = store.bot(botId);
+    return Boolean(bot) && ownerOrAdminOf(auth, bot!) && !callerBotsReadOnly(auth);
+  },
+  ...(lendingMemory ? {
+    ownersWrite: <T,>(auth: RequestAuth, botId: string, write: () => T): T =>
+      cloudOwnerSession(auth) ? lendingMemory.trustedWrite(botId, write) : write(),
+  } : {}),
+}));
 // The usage ledger (JSON and CSV). Admin scope stays in server/request-auth.ts.
 ROUTES.push(createUsageRoutes({
   dataDir: DATA_DIR,
@@ -20912,6 +21127,66 @@ const pluginRegistry = createRegistrySearch();
 function mayManageMarketplaces(auth: RequestAuth): boolean {
   return computerOwner(auth) || (IDENTITY.kind === "perspicax" && callerCan(auth, "apps.marketplaces"));
 }
+/** Add a plugin's servers to `current` (written by the caller) under free
+ * names; returns the plugin's name of each to the name it got. */
+function addMarketplaceServers(
+  current: Record<string, unknown>,
+  servers: ReadonlyArray<{ name: string; entry: Record<string, unknown> }>,
+  marketplace: string,
+  plugin: string,
+  skipped: string[],
+): Record<string, string> {
+  const added: Record<string, string> = {};
+  const taken = new Set(Object.keys(current));
+  for (const server of servers) {
+    const name = marketplaceServerName(server.name, plugin, taken);
+    if (Object.keys(current).length >= MAX_MCP_SERVERS) {
+      skipped.push(`MCP server ${server.name} (at most ${MAX_MCP_SERVERS} servers)`);
+      continue;
+    }
+    const remote = "url" in server.entry;
+    if (IDENTITY.kind === "perspicax" && !remote) {
+      skipped.push(`MCP server ${server.name} (a command would run on the Sagax server)`);
+      continue;
+    }
+    // A remote server is on at once (one that needs a sign-in is never
+    // mounted before it); a command stays off until it was tested.
+    const parsed = parseMcpServerMutation(name, { ...server.entry, source: marketplace });
+    if (!parsed.ok) {
+      skipped.push(`MCP server ${server.name} (${parsed.error})`);
+      continue;
+    }
+    parsed.server.enabled = remote;
+    const refusal = mcpPolicyRefusal(name, parsed.server);
+    if (refusal) {
+      skipped.push(`MCP server ${server.name} (${refusal})`);
+      continue;
+    }
+    current[name] = parsed.server;
+    taken.add(name);
+    added[server.name] = name;
+  }
+  return added;
+}
+/** A server a plugin update keeps, rewritten from its new entry; null keeps
+ * the stored one as it is (the new one was refused, and why is in `skipped`). */
+function updatedMarketplaceServer(name: string, existing: StoredMcpServer, entry: Record<string, unknown>, marketplace: string, skipped: string[]): StoredMcpServer | null {
+  const parsed = parseMcpServerMutation(name, updatedServerEntry(existing, entry, marketplace), existing);
+  if (!parsed.ok) {
+    skipped.push(`MCP server ${name} (${parsed.error})`);
+    return null;
+  }
+  if (IDENTITY.kind === "perspicax" && !("url" in parsed.server)) {
+    skipped.push(`MCP server ${name} (a command would run on the Sagax server)`);
+    return null;
+  }
+  const refusal = mcpPolicyRefusal(name, parsed.server);
+  if (refusal) {
+    skipped.push(`MCP server ${name} (${refusal})`);
+    return null;
+  }
+  return parsed.server;
+}
 ROUTES.push(createMarketplaceRoutes({
   store: pluginMarketplaces,
   mayManage: mayManageMarketplaces,
@@ -20920,50 +21195,23 @@ ROUTES.push(createMarketplaceRoutes({
     if (pluginMarketplaces.installed().some((entry) => entry.key === `${plugin}@${marketplace}`)) {
       return { status: 409, body: { error: "This plugin is already installed. Uninstall it first to install it again.", code: "already_installed" } };
     }
-    const { plan, version } = await pluginMarketplaces.prepare(marketplace, plugin, sessionPrincipal(auth) ?? undefined);
-    const addedServers: string[] = [];
+    const { plan, version, revision } = await pluginMarketplaces.prepare(marketplace, plugin, sessionPrincipal(auth) ?? undefined);
     const skipped = [...plan.skipped];
+    if (plan.servers.length && mcpConfigBusy) return { status: 409, body: { error: "MCP servers are already being updated." } };
+    const serverNames: Record<string, string> = {};
     if (plan.servers.length) {
-      if (mcpConfigBusy) return { status: 409, body: { error: "MCP servers are already being updated." } };
       mcpConfigBusy = true;
       try {
         const current = { ...cfg.mcpServers };
-        const taken = new Set(Object.keys(current));
-        for (const server of plan.servers) {
-          const name = marketplaceServerName(server.name, plugin, taken);
-          if (Object.keys(current).length >= MAX_MCP_SERVERS) {
-            skipped.push(`MCP server ${server.name} (at most ${MAX_MCP_SERVERS} servers)`);
-            continue;
-          }
-          const remote = "url" in server.entry;
-          if (IDENTITY.kind === "perspicax" && !remote) {
-            skipped.push(`MCP server ${server.name} (a command would run on the Sagax server)`);
-            continue;
-          }
-          // A remote server is on at once (one that needs a sign-in is never
-          // mounted before it); a command stays off until it was tested.
-          const parsed = parseMcpServerMutation(name, { ...server.entry, source: marketplace });
-          if (!parsed.ok) {
-            skipped.push(`MCP server ${server.name} (${parsed.error})`);
-            continue;
-          }
-          parsed.server.enabled = remote;
-          const refusal = mcpPolicyRefusal(name, parsed.server);
-          if (refusal) {
-            skipped.push(`MCP server ${server.name} (${refusal})`);
-            continue;
-          }
-          current[name] = parsed.server;
-          taken.add(name);
-          addedServers.push(name);
-        }
-        if (addedServers.length) persistMcpServers(current);
+        Object.assign(serverNames, addMarketplaceServers(current, plan.servers, marketplace, plugin, skipped));
+        if (Object.keys(serverNames).length) persistMcpServers(current);
       } finally {
         mcpConfigBusy = false;
       }
-      for (const name of addedServers) await mcpOAuth.forget(name).catch(() => undefined);
-      if (addedServers.length) await probeMcpOAuth(addedServers);
     }
+    const addedServers = Object.values(serverNames);
+    for (const name of addedServers) await mcpOAuth.forget(name).catch(() => undefined);
+    if (addedServers.length) await probeMcpOAuth(addedServers);
     const addedSkills: string[] = [];
     for (const skill of plan.skills) {
       const installed = installLibrarySkill({
@@ -20973,9 +21221,82 @@ ROUTES.push(createMarketplaceRoutes({
       if ("error" in installed) skipped.push(`skill ${skill.name} (${installed.error})`);
       else addedSkills.push(skill.name);
     }
-    const record = pluginMarketplaces.recordInstall(marketplace, plugin, { ...(version ? { version } : {}), servers: addedServers, skills: addedSkills });
+    const record = pluginMarketplaces.recordInstall(marketplace, plugin, {
+      ...(version ? { version } : {}), ...(revision ? { revision } : {}), servers: addedServers, serverNames, skills: addedSkills,
+    });
     return { status: 200, body: { plugin: record, skipped, servers: mcpServerResponse().servers } };
   },
+  update: async (marketplace, plugin, { auth }) => {
+    const installed = pluginMarketplaces.installed().find((entry) => entry.key === `${plugin}@${marketplace}`);
+    if (!installed) return { status: 404, body: { error: "That plugin is not installed.", code: "not_installed" } };
+    if (mcpConfigBusy) return { status: 409, body: { error: "MCP servers are already being updated." } };
+    const { plan, version, revision } = await pluginMarketplaces.prepare(marketplace, plugin, sessionPrincipal(auth) ?? undefined);
+    const skipped = [...plan.skipped];
+    const changes = planServerUpdate(plan, installed);
+    const serverNames: Record<string, string> = {};
+    const forget: string[] = [];
+    const added: string[] = [];
+    if (mcpConfigBusy) return { status: 409, body: { error: "MCP servers are already being updated." } };
+    mcpConfigBusy = true;
+    try {
+      const current = { ...cfg.mcpServers };
+      const fresh: Array<{ name: string; entry: Record<string, unknown> }> = [...changes.add];
+      for (const server of changes.keep) {
+        const existing = current[server.stored] === undefined ? null : parseStoredMcpServer(server.stored, current[server.stored]);
+        // Removed or replaced by hand since: added again like a new server.
+        if (!existing?.ok || existing.server.source !== marketplace) {
+          fresh.push({ name: server.name, entry: server.entry });
+          continue;
+        }
+        const kept = updatedMarketplaceServer(server.stored, existing.server, server.entry, marketplace, skipped);
+        if (!kept) {
+          serverNames[server.name] = server.stored;
+          continue;
+        }
+        if ("url" in kept && "url" in existing.server && kept.url !== existing.server.url) forget.push(server.stored);
+        current[server.stored] = kept;
+        serverNames[server.name] = server.stored;
+      }
+      for (const name of changes.remove) {
+        const parsed = current[name] === undefined ? null : parseStoredMcpServer(name, current[name]);
+        if (parsed?.ok && parsed.server.source === marketplace) {
+          delete current[name];
+          forget.push(name);
+        }
+      }
+      const addedNames = addMarketplaceServers(current, fresh, marketplace, plugin, skipped);
+      Object.assign(serverNames, addedNames);
+      added.push(...Object.values(addedNames));
+      persistMcpServers(current);
+    } finally {
+      mcpConfigBusy = false;
+    }
+    for (const name of [...forget, ...added]) await mcpOAuth.forget(name).catch(() => undefined);
+    if (added.length) await probeMcpOAuth(added);
+    const skills: string[] = [];
+    const library = readSkillLibraryIndex();
+    for (const skill of plan.skills) {
+      const warnings = scanSkillText(skill.text);
+      const existing = library[skill.name];
+      const result = existing && existing.source === marketplace && installed.skills.includes(skill.name)
+        // The text changes in place; whether it is on stays the person's.
+        ? updateLibrarySkill(skill.name, { text: skill.text, warnings })
+        : installLibrarySkill({ name: skill.name, instructions: skill.text, source: marketplace, warnings, reviewState: "disabled" });
+      if ("error" in result) skipped.push(`skill ${skill.name} (${result.error})`);
+      else skills.push(skill.name);
+    }
+    for (const name of installed.skills) {
+      if (!plan.skills.some((skill) => skill.name === name)) removeLibrarySkillFrom(name, marketplace);
+    }
+    const record = pluginMarketplaces.recordUpdate(marketplace, plugin, {
+      ...(version ? { version } : {}), ...(revision ? { revision } : {}),
+      servers: Object.values(serverNames), serverNames, skills,
+    });
+    return { status: 200, body: { plugin: record, skipped, servers: mcpServerResponse().servers } };
+  },
+  audit: (auth, row) => appendAdminAction(DATA_DIR, {
+    category: "mcp", ...row, actor: IDENTITY.kind === "perspicax" ? orgAuditActor(auth) : decisionActorFor(auth),
+  }),
   uninstall: async (marketplace, plugin) => {
     const record = pluginMarketplaces.recordUninstall(marketplace, plugin);
     if (record.servers.length) {
@@ -23131,7 +23452,6 @@ if (IDENTITY.kind === "perspicax") {
     }),
     attach: ({ from, to, auth }) => attachInterimPerson(from, to, auth),
   }));
-  const orgGithubTokens = new OrgGithubTokens(DATA_DIR, vaultKeySource);
   ROUTES.push(createPerspicaxOrgRoutes({
     issuer,
     orgName: process.env.SAGAX_ORG_NAME?.trim().slice(0, 120) || "Pulsatrix",
@@ -24191,6 +24511,32 @@ const orgBotsDeps: BotsDeps = {
     const exported = singleBotPackage(bot, true);
     return { document: exported.document, filename: exported.filename, redacted: exported.redacted, skipped: exported.skipped };
   },
+  // The canonical bot zip (server/bot-zip.ts), for "Copy to another server".
+  exportZip: (botId, options) => {
+    const plan = planBotZip(botZipHost, botId, options);
+    return { filename: plan.filename, bytes: plan.bytes, write: (sink) => writeBotZip(plan, sink) };
+  },
+  importZip: async (request, input) => {
+    const file = join(DATA_DIR, "tmp", "bot-imports", `console-${randomUUID()}.upload`);
+    try {
+      await stageBotZipUpload(request, file);
+      const inspected = inspectBotZip(file);
+      try {
+        if (input.preview) return { preview: await previewBotZip(botZipHost, inspected, { asMember: false }, input.name) };
+        const result = await importBotZip(botZipHost, inspected, { ownerPrincipalId: input.ownerPrincipalId, asMember: false, conversations: input.conversations, sharing: input.sharing, ...(input.name ? { name: input.name } : {}) });
+        const bot = store.bot(result.botId);
+        if (bot) broadcast({ kind: "bot", bot: publicBot(bot) });
+        return { botId: result.botId, warnings: result.warnings };
+      } finally {
+        closeInspected(inspected);
+      }
+    } catch (error) {
+      if (error instanceof BotZipError) throw new ConsoleRefusal(error.status, error.code, error.message);
+      throw error;
+    } finally {
+      rmSync(file, { force: true });
+    }
+  },
   importPackage: async (document, input) => {
     const { bots, warnings } = await importPackageFor(document, input.ownerPrincipalId);
     const first = bots[0];
@@ -24296,6 +24642,103 @@ ROUTES.push(createBotCatalogRoutes({
       ...row,
       actor: IDENTITY.kind === "perspicax" ? orgAuditActor(auth) : decisionActorFor(auth),
     });
+  },
+}));
+
+/** A bot as one zip (server/bot-zip.ts, server/routes/bot-zip.ts): the
+ * persona editor's Export and Import, New bot, Browse Bots > Templates and
+ * the admin console all read and write this one format. */
+function mcpServerSummary(name: string): { transport?: string; url?: string; command?: string; valueNames: string[] } | undefined {
+  const raw = (cfg.mcpServers ?? {})[name];
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return undefined;
+  const spec = raw as Record<string, unknown>;
+  const names = (value: unknown) => value && typeof value === "object" && !Array.isArray(value) ? Object.keys(value).slice(0, 50) : [];
+  let url: string | undefined;
+  if (typeof spec.url === "string") {
+    try {
+      const parsed = new URL(spec.url);
+      url = `${parsed.origin}${parsed.pathname}`;
+    } catch { url = undefined; }
+  }
+  return {
+    ...(typeof spec.type === "string" ? { transport: spec.type.slice(0, 20) } : url ? { transport: "http" } : typeof spec.command === "string" ? { transport: "stdio" } : {}),
+    ...(url ? { url } : {}),
+    ...(typeof spec.command === "string" ? { command: spec.command.split(/[\\/]/).pop()!.slice(0, 200) } : {}),
+    valueNames: [...names(spec.headers), ...names(spec.env)],
+  };
+}
+const botZipHost: BotZipHost = {
+  store,
+  dataDir: DATA_DIR,
+  get appVersion() { return serverVersion(); },
+  get organization() { return IDENTITY.kind === "perspicax"; },
+  routines: () => routines,
+  webhooks: () => ({
+    list: () => webhooks.list(),
+    create: (input) => webhooks.create(input as Parameters<typeof webhooks.create>[0]),
+    remove: (id) => webhooks.remove(id),
+  }),
+  plugins: botPlugins,
+  marketplaceTokenSources: (botId) => marketplaceTokens.sourcesFor(botId),
+  emailOf: (principalId) => principals.byId(principalId)?.email ?? undefined,
+  principalByEmail: (email) => principals.byEmail(email)?.id ?? undefined,
+  mcpServer: mcpServerSummary,
+  engineUsable: (selection) => Boolean(registry.get(selection.instanceId)) && engineInstalled(selection.instanceId)
+    && consoleEngineAllowed(selection.instanceId) && (!hostedModels || hostedModels.allows(selection)),
+  defaultSelection: () => defaultSelection(),
+  sectionExists: (name) => store.sections.includes(name),
+  creationRefusal: () => store.bots.length >= MAX_WORKSPACE_BOTS ? `This workspace is limited to ${MAX_WORKSPACE_BOTS} bots.` : null,
+  browserProfileExists: (id) => id === "guest" || (cfg.browserProfiles ?? []).some((profile) => profile.id === id),
+  lookRefusal: (principalId, look) => {
+    if (!principalId) return null;
+    try {
+      return lockedLookChange(undefined, look, new Set(achievementStore.snapshot(principalId).rewards))?.error ?? null;
+    } catch {
+      return null;
+    }
+  },
+  cwdUsable: (path) => validateBotCwd(path).ok,
+  importLegacy: async (document, owner, name) => {
+    const { bots, warnings } = await importPackageFor(document, owner);
+    const first = bots[0];
+    if (!first) throw new ConsoleRefusal(400, "invalid_package", "The package has no bot.");
+    if (name) store.patchBot(first.id, { name });
+    return { botId: first.id, warnings };
+  },
+};
+ROUTES.push(createBotZipRoutes({
+  host: botZipHost,
+  stagingDir: join(DATA_DIR, "tmp", "bot-imports"),
+  mayExport: (auth, botId) => {
+    const bot = store.bot(botId);
+    if (!bot) return false;
+    const level = viewerBotLevel(auth, bot);
+    return level === "owner" || level === "manage" || orgAdminCaller(auth);
+  },
+  importer: (auth) => {
+    const principalId = creatingBotOwnerId(auth);
+    if (auth.kind === "session" && !principalId) return null;
+    return {
+      principalId: principalId || undefined,
+      key: principalId || "local",
+      canCreate: botCreationAllowed(auth) && !callerBotsReadOnly(auth),
+      asMember: IDENTITY.kind === "perspicax" && !orgAdminCaller(auth),
+    };
+  },
+  audit: (auth, row) => {
+    appendAdminAction(DATA_DIR, {
+      category: "bot",
+      ...row,
+      actor: IDENTITY.kind === "perspicax" ? orgAuditActor(auth) : decisionActorFor(auth),
+    });
+  },
+  imported: (botId) => {
+    const bot = store.bot(botId);
+    if (bot) broadcast({ kind: "bot", bot: publicBot(bot) });
+  },
+  wireBot: (botId) => {
+    const bot = store.bot(botId);
+    return bot ? publicBot(bot) : undefined;
   },
 }));
 
@@ -25327,7 +25770,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       if (subject && !subjectSeesChannel(subject, viewerId)) return json(res, 404, { error: notFoundFor(subject) });
       // Slice 4: a read-only member of a shared section reads its rooms and
       // changes nothing in them (settings, tasks, queue, interrupt, cards).
-      const room = IDENTITY.kind === "perspicax" && method !== "GET" && method !== "HEAD" && !/^\/api\/(?:groups|threads)\/[\w-]+\/read$/.test(path) ? roomOfSubject(subject) : null;
+      const room = IDENTITY.kind === "perspicax" && method !== "GET" && method !== "HEAD" && !/^\/api\/(?:groups|threads)\/[\w-]+\/read$/.test(path) && !REACTION_ROUTE.test(path) ? roomOfSubject(subject) : null;
       if (room && !groupPostAllowed(room, viewerId)) return json(res, 403, { error: "you may read this channel, not change it", code: "read_only" });
     }
     {
@@ -25863,6 +26306,24 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         if (!result.ok) internalCapability.memoryRefusals = (internalCapability.memoryRefusals ?? 0) + 1;
         return json(res, result.ok ? 200 : result.code === "conflict" ? 409 : result.code === "over-budget" ? 413 : 400, result);
       }
+      // react_to_message and remove_reaction (shared/reactions.ts): a bot
+      // marks a message of the conversation its turn is in instead of
+      // replying. Never its own message, one reaction per message, a few per
+      // turn; recorded with the bot as the actor. No message is written.
+      if (method === "POST" && path === "/api/internal/reaction") {
+        const body = await readInternalBody();
+        requireActiveInternalCapability();
+        const outcome = botReaction({
+          bot: internalSender,
+          threadId: internalCapability.threadId,
+          messageId: typeof body.messageId === "string" ? body.messageId.trim() : "",
+          emoji: body.emoji,
+          remove: body.remove === true,
+          spent: internalCapability.reactions ?? 0,
+        });
+        if (outcome.ok && outcome.changed && !body.remove) internalCapability.reactions = (internalCapability.reactions ?? 0) + 1;
+        return json(res, outcome.ok ? 200 : outcome.status, outcome.ok ? outcome : { error: outcome.error, code: outcome.code });
+      }
       // Notes written from a room fewer people can see than this bot would
       // carry that room's words to everyone who can see the bot.
       if ((path === "/api/internal/memory" || path === "/api/internal/memory/log") && method === "POST") {
@@ -25892,6 +26353,47 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         const body = await readInternalBody();
         const result = ownersWrite(() => appendMemoryLog(internalSender.id, body.text, { source: memorySource() }));
         return json(res, result.ok ? 200 : 400, result);
+      }
+      // RULES.md and docs/ (server/workspace-files.ts): the bot's own
+      // workspace only. Writes take memory's gates (a Cloud home's owner
+      // only, never from a room fewer people can see) and its refusal cap,
+      // and are journaled like a memory edit; reads are confined to the
+      // workspace, traversal and links refused.
+      if ((path === "/api/internal/workspace/rules" || path === "/api/internal/workspace/docs") && method === "POST") {
+        if (CLOUD_HOME && cloudHomeLendingRefusal(cloudLendingTurn(internalCapability)) !== null) {
+          return json(res, 403, { error: "Rules and documents can only be changed from a conversation that only the owner of this Cloud has written in." });
+        }
+        const room = store.groupByThread(internalCapability.threadId);
+        if (room && !roomFeedsBot(room, internalSender)) {
+          return json(res, 403, { error: "This room is visible to fewer people than you are, so it can't change your rules or documents. Ask in a direct conversation." });
+        }
+        if ((internalCapability.memoryRefusals ?? 0) >= MAX_MEMORY_REFUSALS_PER_TURN) {
+          return json(res, 429, { error: `Workspace updates are closed for the rest of this turn: ${MAX_MEMORY_REFUSALS_PER_TURN} were refused. Do not retry.` });
+        }
+        const body = await readInternalBody();
+        const result = ownersWrite(() => path === "/api/internal/workspace/rules"
+          ? updateRules(internalSender.id, { action: body.action, text: body.text, oldText: body.oldText }, { threadId: internalCapability.threadId })
+          : updateDoc(internalSender.id, { action: body.action, path: body.path, text: body.text, oldText: body.oldText }, { threadId: internalCapability.threadId }));
+        if (!result.ok) internalCapability.memoryRefusals = (internalCapability.memoryRefusals ?? 0) + 1;
+        if (!result.ok) return json(res, result.code === "conflict" ? 409 : result.code === "over-budget" ? 413 : result.code === "missing" ? 404 : 400, result);
+        const { journal: _journal, ...reply } = result;
+        return json(res, 200, reply);
+      }
+      if (method === "GET" && path === "/api/internal/workspace/read") {
+        try {
+          const read = readWorkspaceText(internalSender.id, url.searchParams.get("path") ?? "", Number(url.searchParams.get("offset") ?? 0));
+          markWorkspaceUse(internalSender.id, [read.path]);
+          return json(res, 200, read);
+        } catch (error) {
+          if (error instanceof WorkspacePathError) return json(res, error.status, { error: error.message });
+          throw error;
+        }
+      }
+      if (method === "GET" && path === "/api/internal/workspace/search") {
+        const q = (url.searchParams.get("q") ?? "").trim();
+        if (!q) return json(res, 400, { error: "workspace_search needs a query." });
+        const limit = Math.min(20, Math.max(1, Number(url.searchParams.get("limit") ?? 8) || 8));
+        return json(res, 200, { hits: searchDocFiles(internalSender.id, q, limit) });
       }
       if (method === "POST" && path === "/api/internal/browser/mcp") {
         const body = await readInternalBody();
@@ -28231,6 +28733,27 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           requireActiveInternalCapability();
           currentSender = store.bot(internalCapability.botId);
           if (!currentSender || currentSender.composio === false || !composio.configured(cfg)) return json(res, 403, { error: "connected apps are no longer enabled for this bot" });
+          const switchedOff = workspaceDisabledTools(call.names, readDisabledTools(cfg.composio?.disabledTools));
+          if (switchedOff.length) {
+            for (const tool of switchedOff) {
+              appendDecision(DATA_DIR, {
+                threadId: internalCapability.threadId,
+                botId: currentSender.id,
+                botName: currentSender.name,
+                tool,
+                summary: "tool is turned off for this workspace",
+                decision: "auto-denied",
+                source: "connector-scope",
+                rule: "composio.disabledTools",
+              });
+            }
+            res.writeHead(200, { "content-type": "application/json", "cache-control": "no-store" });
+            return res.end(JSON.stringify({
+              jsonrpc: "2.0",
+              id: (body as { id?: unknown }).id ?? null,
+              result: { content: [{ type: "text", text: connectorWorkspaceRefusalText(switchedOff) }], isError: true },
+            }));
+          }
           const verdict = evaluateConnectorTools(call.names, currentSender.connectorTools, serviceSlugs);
           if (!verdict.allowed) {
             for (const denial of verdict.denials) {
@@ -28417,6 +28940,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
             const freshAccess = connectorAccessDecision(fresh.connectorScopes, connectorCalls, serviceSlugs);
             if (!freshAccess.ok || (opaque && fresh.connectorTools !== undefined) ||
                 (call.kind === "tools" && !evaluateConnectorTools(call.names, fresh.connectorTools, serviceSlugs).allowed) ||
+                (call.kind === "tools" && workspaceDisabledTools(call.names, readDisabledTools(cfg.composio?.disabledTools)).length > 0) ||
                 (call.kind === "unrecognized" && fresh.connectorTools !== undefined)) {
               refuseDispatch("This bot's connected-app permissions changed. The call was not run.");
             }
@@ -28597,18 +29121,26 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
     }
 
     // ── routines calendar ────────────────────────────────────────────────
+    // The Automations page scope (2026-10-09): `scope=mine|team|all` and
+    // `teamId`, `botId`, `ownerId`, `status` (server/routine-scope.ts). No
+    // scope is `mine`: what this listing always answered.
     if (path === "/api/routines" && method === "GET") {
       const fromParam = url.searchParams.get("from");
       const toParam = url.searchParams.get("to");
       const from = fromParam == null ? undefined : Number(fromParam);
       const to = toParam == null ? undefined : Number(toParam);
-      return json(res, 200, {
-        routines: routines!.listRoutines()
-          .filter((routine) => routineVisible(routine, visible) && (!viewerId || routineSeenBy(routine, viewerId)))
-          .map(routineOnWire),
-        runs: routines!.listRuns(from != null && Number.isFinite(from) ? from : undefined, to != null && Number.isFinite(to) ? to : undefined)
-          .filter((run) => routineVisible(run, visible) && (!viewerId || routineSeenBy(run, viewerId))),
-      });
+      const query = parseRoutineScopeQuery(url.searchParams);
+      if ("error" in query) return json(res, 400, query);
+      const caller = routineScopeCaller(auth, viewerId);
+      const refusal = routineScopeRefusal(caller, query.scope);
+      if (refusal) return json(res, 403, refusal);
+      return json(res, 200, scopedRoutineListing(
+        query,
+        caller,
+        routines!.listRoutines(),
+        routines!.listRuns(from != null && Number.isFinite(from) ? from : undefined, to != null && Number.isFinite(to) ? to : undefined),
+        routineScopeDeps(auth, visible, viewerId),
+      ));
     }
     // On a Cloud home a routine reports only where its writer may write: a
     // guest's into a conversation the guest started, never the owner's.
@@ -28737,9 +29269,16 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       return json(res, 200, { runs: routines!.markAllSeen() });
     }
     // Clear logs: every saved run the caller may see (the list's own rule),
-    // never one in progress. Others' runs stay.
+    // never one in progress. Others' runs stay, unless the caller asks
+    // `scope=all` with routines.viewAll (or is an admin); the page's filters
+    // (`botId`, `ownerId`, `teamId`, `status`) narrow it (server/routine-scope.ts).
     if (path === "/api/routine-runs" && method === "DELETE") {
-      const removed = routines!.clearRuns((run) => routineVisible(run, visible) && (!viewerId || routineSeenBy(run, viewerId)));
+      const query = parseRoutineScopeQuery(url.searchParams);
+      if ("error" in query) return json(res, 400, query);
+      const caller = routineScopeCaller(auth, viewerId);
+      const refusal = routineScopeRefusal(caller, query.scope);
+      if (refusal) return json(res, 403, refusal);
+      const removed = routines!.clearRuns(routineRunClearable(query, caller, routines!.listRoutines(), routineScopeDeps(auth, visible, viewerId)));
       if (removed.length) auditRoutineRunsCleared(auth, removed.length);
       return json(res, 200, { ok: true, removed });
     }
@@ -30668,15 +31207,29 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       return json(res, 200, { ok: true });
     }
 
-    // emoji reactions — works on any thread (1:1 or room)
+    // Emoji reactions (shared/reactions.ts, docs/messages-reactions.md): the
+    // caller toggles their own on any text message of a thread they can
+    // read, a 1:1 with a bot, a room or a conversation between people. Who
+    // may reach the thread was decided above, as for reading it. The change
+    // is a message patch: live to everyone who sees the thread, quiet (no
+    // notification, no unread).
     m = path.match(/^\/api\/threads\/([\w-]+)\/messages\/([\w-]+)\/reactions$/);
     if (m && method === "POST") {
+      const [, threadId, messageId] = m;
+      if (!store.botByThread(threadId!) && !store.groupByThread(threadId!)) return json(res, 404, { error: "no such conversation" });
       const body = await readBody(req);
-      const emoji = String(body.emoji ?? "").slice(0, 8);
-      if (!emoji) return json(res, 400, { error: "emoji required" });
-      const patched = store.toggleReaction(m[1], m[2], emoji, typeof body.by === "string" ? body.by : "user");
-      if (!patched) return json(res, 404, { error: "no such message" });
-      return json(res, 200, { message: patched });
+      const emoji = reactionEmoji(body?.emoji);
+      if (!emoji) return json(res, 400, { error: "emoji must be one emoji", code: "reaction_emoji" });
+      const target = store.messagesFor(threadId!).find((message) => message.id === messageId);
+      if (!target) return json(res, 404, { error: "no such message" });
+      if (target.kind !== "text") return json(res, 400, { error: "only a chat message takes reactions", code: "reaction_kind" });
+      const actor = reactionPersonFor(auth);
+      if (!actor) return json(res, 403, { error: "only a person reacts here", code: "reaction_actor" });
+      const mode = body?.mode === "add" || body?.mode === "remove" ? body.mode : "toggle";
+      const result = store.reactToMessage(threadId!, messageId!, emoji, actor, { mode, legacyUser: legacyReactionUser() });
+      if (!result) return json(res, 404, { error: "no such message" });
+      if (result.full) return json(res, 409, { error: "this message has too many different reactions", code: "reaction_full" });
+      return json(res, 200, { message: result.message, added: result.added, reactions: normalizeReactions(result.message.reactions) });
     }
     if (path === "/api/sidebar-sections" && method === "GET") {
       return json(res, 200, { sections: store.sections });
@@ -30748,7 +31301,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       const checked = z.object({ source: z.string().min(1).max(2000) }).strict().safeParse(await readBody(req));
       if (!checked.success) return json(res, 400, { error: checked.error.message });
       const input = checked.data;
-      const fetched = await fetchSkillFromSource(input.source);
+      const fetched = await fetchSkillFromSource(input.source, githubSkillFetch(githubCredentialsFor(sessionPrincipal(auth))));
       if ("error" in fetched) return json(res, 422, { error: fetched.error });
       const skills = [];
       for (const skill of fetched.skills) {
@@ -31479,6 +32032,13 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         }
         patch.mcpServers = requestedMcpServers;
       }
+      // Which saved account each server signs in with for this bot; read at
+      // each turn's start, so a running turn keeps the one it began with.
+      if (body.mcpAccounts !== undefined) {
+        const parsed = parseMcpAccountChoices(body.mcpAccounts);
+        if (!parsed.ok) return json(res, 400, { error: parsed.error });
+        patch.mcpAccounts = parsed.choices;
+      }
       if (body.memoryUpkeep !== undefined) {
         if (typeof body.memoryUpkeep !== "boolean") return json(res, 400, { error: "memoryUpkeep must be true or false" });
         patch.memoryUpkeep = body.memoryUpkeep;
@@ -31964,7 +32524,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       const parsed = z.object({ source: z.string().min(1).max(2000) }).safeParse(await readBody(req));
       if (!parsed.success) return json(res, 400, { error: "source must be a GitHub or skills.sh URL, or owner/repo" });
       // A private repository reads with the person's own GitHub connection.
-      const fetched = await fetchSkillFromSource(parsed.data.source, githubAuthorizedFetch(usablePersonGithub(sessionPrincipal(auth))?.token));
+      const fetched = await fetchSkillFromSource(parsed.data.source, githubSkillFetch(githubCredentialsFor(sessionPrincipal(auth))));
       if ("error" in fetched) return json(res, 422, { error: fetched.error });
       const results = fetched.skills.map((skill) => installSkill(m![1]!, skill.source, skill.files));
       const installed = results.filter((entry): entry is Exclude<typeof entry, { error: string }> => !("error" in entry));
@@ -34520,7 +35080,12 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       if (!server) return json(res, 404, { error: "Remote MCP server not found." });
       res.setHeader("cache-control", "no-store");
       if (action === "status") {
-        return json(res, 200, { ...(mcpOAuth.status(name, server) ?? { auth: "none" }), pending: mcpOAuth.pendingFor(name) });
+        const asked = url.searchParams.get("account");
+        const account = isMcpAccountId(asked) ? asked : DEFAULT_MCP_ACCOUNT;
+        return json(res, 200, {
+          ...(mcpOAuth.status(name, server, account) ?? { auth: account === DEFAULT_MCP_ACCOUNT ? "none" : "required" }),
+          pending: mcpOAuth.pendingFor(name, asked === null ? undefined : account),
+        });
       }
       const body = await readBody(req);
       if (action === "probe") {
@@ -34529,7 +35094,19 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         return json(res, 200, mcpServerResponse());
       }
       if (action === "disconnect") {
-        await mcpOAuth.disconnect(name, server).catch(() => undefined);
+        const asked = body && typeof body === "object" ? (body as Record<string, unknown>).account : undefined;
+        if (asked !== undefined && !isMcpAccountId(asked)) return json(res, 400, { error: "Unknown account." });
+        await mcpOAuth.disconnect(name, server, undefined, asked ?? DEFAULT_MCP_ACCOUNT).catch(() => undefined);
+        // A removed account is gone for the bots that used it: they go back
+        // to the default one rather than mounting the server signed out.
+        if (asked !== undefined && asked !== DEFAULT_MCP_ACCOUNT && !mcpOAuth.vault.accounts(name).includes(asked)) {
+          for (const bot of store.bots) {
+            if (bot.mcpAccounts?.[name] !== asked) continue;
+            const { [name]: _removed, ...rest } = bot.mcpAccounts;
+            const updated = store.patchBot(bot.id, { mcpAccounts: Object.keys(rest).length ? rest : undefined });
+            if (updated) broadcast({ kind: "bot", bot: wireBot(updated) });
+          }
+        }
         return json(res, 200, mcpServerResponse());
       }
       if (!managedPolicy.mcpAllowed(name, server.url)) {
@@ -34945,6 +35522,12 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       // A project key is useful only if it can create/reuse the Session that
       // powers both the connections UI and the agent MCP. Validate it before
       // persisting, and save the non-secret ids needed to reuse that Session.
+      // Tool switches go through PUT /api/connectors/:slug/tools only, which
+      // checks each name against its app and audits the change.
+      if (patch.composio?.disabledTools !== undefined) {
+        const { disabledTools: _ignored, ...rest } = patch.composio;
+        patch.composio = rest;
+      }
       const requestedComposioKey = patch.composio?.apiKey;
       if (requestedComposioKey !== undefined) {
         if (requestedComposioKey.trim()) {
@@ -35341,14 +35924,37 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       // through. Failure is a read-only editor, never a blocked save — the
       // exact-name model does not depend on the listing being reachable.
       const availability = composio.connectorAvailability(cfg);
+      const disabledTools = readDisabledTools(cfg.composio?.disabledTools);
       if (availability !== "configured") {
-        return json(res, 200, { configured: false, services: {} });
+        return json(res, 200, { configured: false, services: {}, disabledTools });
       }
       try {
-        return json(res, 200, { configured: true, services: await composio.listConnectorTools(cfg) });
+        return json(res, 200, { configured: true, services: await composio.listConnectorTools(cfg), disabledTools });
       } catch (e) {
-        return json(res, 502, { configured: true, services: {}, error: e instanceof Error ? e.message : String(e) });
+        return json(res, 502, { configured: true, services: {}, disabledTools, error: e instanceof Error ? e.message : String(e) });
       }
+    }
+    m = path.match(/^\/api\/connectors\/([\w-]+)\/tools$/);
+    if (m && method === "PUT") {
+      const slug = m[1]!;
+      const body = await readBody(req);
+      const parsed = parseDisabledTools(slug, body?.disabledTools);
+      if (!parsed.ok) return json(res, 400, { error: parsed.error });
+      const current = readDisabledTools(cfg.composio?.disabledTools);
+      const next = withAppDisabledTools(current, slug, parsed.tools);
+      if ("error" in next) return json(res, 400, { error: next.error });
+      const before = current[slug] ?? [];
+      if (before.join(",") !== parsed.tools.join(",")) {
+        saveConfig({ composio: { disabledTools: next } });
+        Object.assign(cfg, loadConfig());
+        appendAdminAction(DATA_DIR, {
+          category: "mcp", action: "connector.tools",
+          target: { kind: "connector", id: slug, name: slug },
+          before: { disabledTools: before }, after: { disabledTools: parsed.tools },
+          actor: IDENTITY.kind === "perspicax" ? orgAuditActor(auth) : decisionActorFor(auth),
+        });
+      }
+      return json(res, 200, { disabledTools: readDisabledTools(cfg.composio?.disabledTools) });
     }
     if (method === "GET" && path === "/api/connectors") {
       const services = (url.searchParams.get("services") ?? "").split(",").filter(Boolean);

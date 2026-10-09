@@ -22,6 +22,8 @@ import { SlackSection } from "./SlackSection";
 import { SoulSection } from "./SoulSection";
 import { SkillsSection } from "./SkillsSection";
 import { MemorySection } from "./MemorySection";
+import { RulesSection } from "./RulesSection";
+import { WorkspaceFilesSection } from "./WorkspaceFilesSection";
 import { RoutinesSection } from "./RoutinesSection";
 import { AccessSection } from "./AccessSection";
 import { ModelSection } from "./ModelSection";
@@ -65,6 +67,9 @@ export function botSectionLock(
     id === "access" ? !canEditBotField(config, bot, "computer") && !canEditBotField(config, bot, "cwd")
       : id === "worksOn" ? !canEditBotField(config, bot, "computer")
         : id === "memory" ? !canEditBotField(config, bot, "memoryEnabled")
+          // RULES.md, docs/ and the Files list: the Soul's gate (owner or
+          // admin; JC 2026-10-09, members manage their own bots)
+          : id === "rules" || id === "files" ? !canEditBotField(config, bot, "soul")
           : id === "soul" ? !canEditBotField(config, bot, "soul")
             : id === "history" ? viewerIsOrgMember(config)
               : id === "permissions" ? !canStepPrimary(config, bot) && !canEditBotField(config, bot, "approvalMode")
@@ -264,6 +269,14 @@ export function useBotSectionContent(bot: Bot, {
         // change it; visibility toggled via hidden on the wrapper.
         if (!canEditBotField(state.config, bot, "memoryEnabled")) return null;
         return <MemorySection bot={bot} active={expanded && section === "memory"} onToggle={(enabled) => derived.patch({ memoryEnabled: enabled })} />;
+      case "rules":
+        // Rules and Files have their own Save; the persona editor keeps them
+        // mounted like Memory (PersonaEditorModal).
+        if (!canEditBotField(state.config, bot, "soul")) return null;
+        return <RulesSection bot={bot} active={expanded && section === "rules"} />;
+      case "files":
+        if (!canEditBotField(state.config, bot, "soul")) return null;
+        return <WorkspaceFilesSection bot={bot} active={expanded && section === "files"} onOpenSection={onOpenSection} memoryEditable={canEditBotField(state.config, bot, "memoryEnabled")} />;
       case "routines":
         return <RoutinesSection bot={bot} routines={derived.botRoutines} runs={state.routineRuns} />;
       case "access":

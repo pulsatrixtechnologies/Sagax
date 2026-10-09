@@ -18,6 +18,7 @@ import { peerAllowKey, type PeerAction } from "./peer-approval-key.ts";
 import { DATA_DIR, EVENTS_DIR, NATIVE_DIR, loadBrowserProfileIdAliases } from "./config.ts";
 import * as mdb from "./message-db.ts";
 import { forgetBotMemoryJournal, journalFile } from "./memory-journal.ts";
+import { forgetWorkspaceUsage } from "./workspace-usage.ts";
 import { runCommand, type Command } from "./commands.ts";
 import { workspaceDir } from "./workspace.ts";
 import type { Destination } from "./surface.ts";
@@ -36,6 +37,7 @@ import type { HandedState } from "./delta-context.ts";
 import type { AgentPart, PartPair, RoomPart } from "./package-parts.ts";
 import type { BotHost } from "./turn-route.ts";
 import { advancesPosition, type ReadMap, type ReadPosition } from "./read-receipts.ts";
+import { applyReaction, normalizeReactions, type ReactionActor, type ReactionMode } from "../shared/reactions.ts";
 import { migratePeopleDmToThreads, PEOPLE_DM_GENERAL_TITLE } from "./people-dms.ts";
 import type {
   BotActivity, GroupDefaultResponder, GroupTask as GroupTaskRecord, MausColor,
@@ -1695,14 +1697,25 @@ export class Store {
     return read;
   }
 
-  /** Toggle an emoji reaction on a message ("user" or a member botId). */
-  toggleReaction(threadId: string, messageId: string, emoji: string, by: string): Message | null {
+  /** One actor's emoji reaction on a message (shared/reactions.ts): toggle,
+   * add or remove. The stored list is normalized on the way (an older
+   * `{ emoji, by }` list is rewritten; `legacyUser` is who its "user" was).
+   * A change is a message patch, persisted and emitted like any other; a
+   * no-op writes nothing. Null when the message is not in this thread. */
+  reactToMessage(
+    threadId: string,
+    messageId: string,
+    emoji: string,
+    actor: ReactionActor,
+    options: { mode?: ReactionMode; legacyUser?: ReactionActor; now?: number } = {},
+  ): { message: Message; changed: boolean; added: boolean; full?: true } | null {
     const existing = this.messagesFor(threadId).find((m) => m.id === messageId);
     if (!existing) return null;
-    const reactions = existing.reactions ?? [];
-    const at = reactions.findIndex((r) => r.emoji === emoji && r.by === by);
-    const next = at >= 0 ? reactions.filter((_, i) => i !== at) : [...reactions, { emoji, by }];
-    return this.patchMessage(threadId, messageId, { reactions: next.length ? next : undefined });
+    const current = normalizeReactions(existing.reactions, options.legacyUser);
+    const result = applyReaction(current, emoji, actor, options.mode ?? "toggle", options.now ?? Date.now());
+    if (!result.changed) return { message: existing, changed: false, added: false, ...(result.full ? { full: true as const } : {}) };
+    const message = this.patchMessage(threadId, messageId, { reactions: result.reactions.length ? result.reactions : undefined });
+    return message ? { message, changed: true, added: result.added } : null;
   }
 
   private thread(threadId: string): ThreadState {
@@ -2206,6 +2219,8 @@ export class Store {
     } catch {}
     mdb.deleteBotMemoryFiles(id);
     forgetBotMemoryJournal(id);
+    // the Files list's usage record (server/workspace-usage.ts) is outside too
+    forgetWorkspaceUsage(id);
     // Generated task-workspaces are project files, not bot memory. Keep
     // them (and user-selected cwd folders) when deleting conversations.
     // Approval state deliberately lives outside the bot-writable workspace.
