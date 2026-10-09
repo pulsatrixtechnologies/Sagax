@@ -6,7 +6,13 @@
 // (server/routes/bot-memory.ts), whose store reaches RULES.md and docs/ as
 // well, so every change lands in the memory journal.
 //
-// Admin scope (server/request-auth.ts default), like the memory routes.
+// The same gate as the Soul edit (JC, 2026-10-09: members manage their own
+// bots): an admin, the bot's owner, or someone granted edit on it; a person
+// who may only use shared bots is refused. The scope rule
+// (server/request-auth.ts CLIENT_ALLOW) lets a client session reach the
+// handler; `mayEdit` decides. RULES.md and docs/<name>.md are read and saved
+// here (`/workspace/file`); MEMORY.md and memory/ stay on the admin memory
+// routes.
 import { readFileSync } from "node:fs";
 import { basename } from "node:path";
 import { z } from "zod";
@@ -23,6 +29,9 @@ import {
   resolveWorkspaceFile,
   workspaceTree,
 } from "../workspace-files.ts";
+import { MemoryStoreError, RULES_PATH, parseMemoryPath, readMemoryDoc } from "../memory-store.ts";
+import { journalMemoryDelete, journalMemoryWrite } from "../memory-journal.ts";
+import type { RequestAuth } from "../request-auth.ts";
 import { renameDoc } from "../workspace-tools.ts";
 import { workspaceUsage } from "../workspace-usage.ts";
 import { PASS, type RouteHandler } from "./table.ts";
@@ -33,6 +42,25 @@ const DOWNLOAD_MAX_BYTES = 25 * 1024 * 1024;
 
 export interface BotWorkspaceRouteDeps {
   bot(id: string): { id: string; soul?: string; memoryEnabled?: boolean; updatedAt?: number | string; createdAt?: number | string } | null | undefined;
+  /** Whether this caller may change the bot's Soul: admin, owner, or edit
+   * grant, and not a use-only person. */
+  mayEdit(auth: RequestAuth, botId: string): boolean;
+  /** Wraps a write, as the memory routes do on a Cloud home. */
+  ownersWrite?: <T>(auth: RequestAuth, botId: string, write: () => T) => T;
+}
+
+const FORBIDDEN = { error: "forbidden: only this bot's owner or an admin can change its rules and documents" };
+
+/** RULES.md or docs/<name>.md, nothing else: this route is reachable by a
+ * member, and memory files stay an admin's. */
+function rulesOrDoc(path: string | null): string | null {
+  if (!path) return null;
+  try {
+    const ref = parseMemoryPath(path);
+    return ref.kind === "rules" || ref.kind === "doc" ? path : null;
+  } catch {
+    return null;
+  }
 }
 
 function time(value: number | string | undefined): number | undefined {
@@ -45,7 +73,12 @@ function time(value: number | string | undefined): number | undefined {
 }
 
 export function createBotWorkspaceRoutes(deps: BotWorkspaceRouteDeps): RouteHandler {
-  return async ({ req, res, url, path, method, json, readBody }) => {
+  return async ({ req, res, url, path, method, auth, json, readBody }) => {
+    const gate = path.match(/^\/api\/bots\/([\w-]+)\/workspace(?:\/|$)/);
+    if (!gate) return PASS;
+    if (!deps.bot(gate[1])) return json(res, 404, { error: "no such bot" });
+    if (!deps.mayEdit(auth, gate[1])) return json(res, 403, FORBIDDEN);
+    const write = <T>(botId: string, change: () => T): T => deps.ownersWrite ? deps.ownersWrite(auth, botId, change) : change();
     let m = path.match(/^\/api\/bots\/([\w-]+)\/workspace$/);
     if (m && method === "GET") {
       const bot = deps.bot(m[1]);
@@ -110,6 +143,44 @@ export function createBotWorkspaceRoutes(deps: BotWorkspaceRouteDeps): RouteHand
       } catch (error) {
         if (error instanceof WorkspacePathError) return json(res, error.status, { error: error.message });
         throw error;
+      }
+    }
+    m = path.match(/^\/api\/bots\/([\w-]+)\/workspace\/file$/);
+    if (m && (method === "GET" || method === "PUT" || method === "DELETE")) {
+      const botId = m[1];
+      const reply = (error: unknown) => {
+        if (!(error instanceof MemoryStoreError)) throw error;
+        return error.code === "conflict"
+          ? json(res, error.status, { error: error.message, code: error.code, currentHash: error.currentHash, current: error.current })
+          : json(res, error.status, { error: error.message, code: error.code });
+      };
+      if (method === "GET") {
+        const file = rulesOrDoc(url.searchParams.get("path") ?? RULES_PATH);
+        if (!file) return json(res, 400, { error: "path must be RULES.md or docs/<name>.md" });
+        try {
+          return json(res, 200, readMemoryDoc(botId, file));
+        } catch (error) {
+          return reply(error);
+        }
+      }
+      if (method === "DELETE") {
+        const file = rulesOrDoc(url.searchParams.get("path"));
+        if (!file) return json(res, 400, { error: "path must be RULES.md or docs/<name>.md" });
+        try {
+          write(botId, () => journalMemoryDelete(botId, file, { actor: "person", via: "ui" }));
+          return json(res, 200, { ok: true, path: file });
+        } catch (error) {
+          return reply(error);
+        }
+      }
+      const parsed = z.object({ path: z.string(), text: z.string(), expectedHash: z.string().optional() }).safeParse(await readBody(req));
+      const file = parsed.success ? rulesOrDoc(parsed.data.path) : null;
+      if (!parsed.success || !file) return json(res, 400, { error: "send { path: RULES.md or docs/<name>.md, text, expectedHash? }" });
+      try {
+        const { doc } = write(botId, () => journalMemoryWrite(botId, file, parsed.data.text, { actor: "person", via: "ui", expectedHash: parsed.data.expectedHash }));
+        return json(res, 200, { ok: true, ...doc });
+      } catch (error) {
+        return reply(error);
       }
     }
     m = path.match(/^\/api\/bots\/([\w-]+)\/workspace\/docs\/rename$/);

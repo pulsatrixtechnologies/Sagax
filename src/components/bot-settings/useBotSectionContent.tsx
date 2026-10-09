@@ -66,9 +66,10 @@ export function botSectionLock(
   const locked =
     id === "access" ? !canEditBotField(config, bot, "computer") && !canEditBotField(config, bot, "cwd")
       : id === "worksOn" ? !canEditBotField(config, bot, "computer")
-        // RULES.md and the workspace files go through the memory routes:
-        // the same permission as Memory
-        : id === "memory" || id === "rules" || id === "files" ? !canEditBotField(config, bot, "memoryEnabled")
+        : id === "memory" ? !canEditBotField(config, bot, "memoryEnabled")
+          // RULES.md, docs/ and the Files list: the Soul's gate (owner or
+          // admin; JC 2026-10-09, members manage their own bots)
+          : id === "rules" || id === "files" ? !canEditBotField(config, bot, "soul")
           : id === "soul" ? !canEditBotField(config, bot, "soul")
             : id === "history" ? viewerIsOrgMember(config)
               : id === "permissions" ? !canStepPrimary(config, bot) && !canEditBotField(config, bot, "approvalMode")
@@ -271,11 +272,11 @@ export function useBotSectionContent(bot: Bot, {
       case "rules":
         // Rules and Files have their own Save; the persona editor keeps them
         // mounted like Memory (PersonaEditorModal).
-        if (!canEditBotField(state.config, bot, "memoryEnabled")) return null;
+        if (!canEditBotField(state.config, bot, "soul")) return null;
         return <RulesSection bot={bot} active={expanded && section === "rules"} />;
       case "files":
-        if (!canEditBotField(state.config, bot, "memoryEnabled")) return null;
-        return <WorkspaceFilesSection bot={bot} active={expanded && section === "files"} onOpenSection={onOpenSection} />;
+        if (!canEditBotField(state.config, bot, "soul")) return null;
+        return <WorkspaceFilesSection bot={bot} active={expanded && section === "files"} onOpenSection={onOpenSection} memoryEditable={canEditBotField(state.config, bot, "memoryEnabled")} />;
       case "routines":
         return <RoutinesSection bot={bot} routines={derived.botRoutines} runs={state.routineRuns} />;
       case "access":

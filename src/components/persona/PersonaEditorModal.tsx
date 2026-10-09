@@ -283,16 +283,17 @@ function PersonaEditor({ bot, section, onClose }: { bot: Bot; section: BotSettin
               )}
               {/* Rules and Files (the bot workspace, docs/bot-workspace.md)
                   stay mounted the same way, for the same reason. */}
-              {memoryAllowed && lockOf("rules") === null && (
+              {lockOf("rules") === null && (
                 <div hidden={current !== "rules"}>
                   <RulesSection bot={bot} active={current === "rules"} />
                 </div>
               )}
-              {memoryAllowed && lockOf("files") === null && categories.includes("files") && (
+              {lockOf("files") === null && categories.includes("files") && (
                 <div hidden={current !== "files"}>
                   <WorkspaceFilesSection
                     bot={bot}
                     active={current === "files"}
+                    memoryEditable={memoryAllowed && lockOf("memory") === null}
                     onOpenSection={(target) => { if (isPersonaCategory(target)) choose(target); }}
                   />
                 </div>

@@ -9,7 +9,7 @@ in any editor, and that the persona editor shows under **Rules**, **Memory** and
 | Path | What it holds | When the bot sees it | Budget | Edited in |
 |---|---|---|---|---|
 | `SOUL.md` | Who the bot is: standing instructions. Lives on the bot record; `~/.sagax/bots/<botId>/SOUL.md` is a mirror outside the workspace | Every turn, first | 24 KB | Persona > Soul (changes from the bot need the person's OK, `propose_profile`) |
-| `RULES.md` | Hard constraints the bot checks every turn ("never email a client without my OK") | Every turn, right after the soul, before memory | 60 lines / 8 KB of loaded text | Persona > Rules, Files, or `rules_update` in chat |
+| `RULES.md` | Hard constraints the bot checks every turn ("never email a client without my OK") | Every turn, right after the soul, before memory | 60 lines / 8 KB of loaded text | Persona > Rules, Files (owner or admin), or `rules_update` in chat |
 | `MEMORY.md` | Facts that hold in every session | Every turn (while memory is on) | 200 lines / 24 KB | Persona > Memory, Files, `memory_update` |
 | `memory/<topic>.md` | Longer notes on one topic | On demand; their names, titles and aliases are listed each turn | none | Memory, Files |
 | `memory/archive.md`, `memory/log/<day>.md` | What moved out of MEMORY.md; what happened each day | Never loaded; `session_search` finds them | none | Memory, Files |
@@ -94,18 +94,25 @@ first. Each file carries:
 - **Forgotten**: not loaded every turn, and neither used nor created in the last 30 days
   (daily logs are never marked).
 
-A markdown file the memory store reaches (`MEMORY.md`, `RULES.md`, `memory/`, `docs/`) opens in
-the markdown editor in place and saves with the conflict check of Memory. Other markdown is
+`RULES.md` and `docs/` open in the markdown editor in place and save through
+`/api/bots/:id/workspace/file`; `MEMORY.md` and `memory/` do too for a viewer who may edit
+Memory (the admin memory routes). Every save has Memory's conflict check. Other markdown is
 read-only; any other file downloads (`GET /api/bots/:id/workspace/download`). Documents can be
 created, uploaded (`.md`), renamed (`POST /api/bots/:id/workspace/docs/rename`) and deleted.
 Simple mode shows the list and the badges and leaves out their details.
 
 ## Permissions and clients
 
-The workspace routes and the memory routes are admin scope (`server/request-auth.ts`). In the
-persona editor Rules and Files follow Memory's permission (`memoryEnabled` in
-`canEditBotField`): an organization member sees them locked with the reason, never hidden.
-The org server, the solo server and the desktop remote client use the same routes. iOS is
-not in scope yet: rows WS1 to WS4 of `docs/superpowers/specs/2026-10-03-ios-feature-parity-matrix.md`.
+RULES.md and docs/ follow the Soul's gate (JC, 2026-10-09: members manage their own bots).
+The workspace routes (`/api/bots/:id/workspace`, `/workspace/file` for RULES.md and
+docs/<name>.md, `/workspace/download`, `/workspace/docs/rename`) are open to a client session
+in `server/request-auth.ts`, and the handler lets through only an admin, the bot's owner or
+someone granted edit on it, never a person who may only use shared bots (`ownerOrAdminOf`,
+like `PATCH /api/bots/:id {soul}`). MEMORY.md and memory/ stay on the admin memory routes. In
+the persona editor Rules and Files lock on the Soul's field (`canEditBotField(..., "soul")`);
+inside Files, memory files edit in place only for a viewer who may edit Memory. The bot's
+own tools keep the memory restrictions. The org server, the solo server and the desktop
+remote client use the same routes. iOS is not in scope yet: rows WS1 to WS4 of
+`docs/superpowers/specs/2026-10-03-ios-feature-parity-matrix.md`.
 
 The bot zip export includes `RULES.md` and `docs/` by these exact names.

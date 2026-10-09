@@ -421,6 +421,14 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   // The bot's standing instructions for the profile's Instructions row
   // (owner or admin, checked in the handler).
   { methods: ["GET"], path: /^\/api\/bots\/[\w-]+\/soul$/ },
+  // The bot workspace (server/routes/bot-workspace.ts): the Files list, a
+  // download, RULES.md and docs/<name>.md read, save, delete and rename.
+  // Same gate as the Soul edit, checked in the handler: owner (or edit
+  // grant) or admin; a person who may only use shared bots is refused.
+  // MEMORY.md and memory/ stay on the admin memory routes.
+  { methods: ["GET"], path: /^\/api\/bots\/[\w-]+\/workspace(?:\/download)?$/ },
+  { methods: ["GET", "PUT", "DELETE"], path: /^\/api\/bots\/[\w-]+\/workspace\/file$/ },
+  { methods: ["POST"], path: /^\/api\/bots\/[\w-]+\/workspace\/docs\/rename$/ },
   { methods: ["POST", "DELETE"], path: /^\/api\/bots\/[\w-]+\/primary$/ }, // the person's own bot only: the handler checks the owner
   // What the bot does, can reach and won't do (the profile's "What this bot
   // does"): the handler lets a client session read it for a bot it owns.

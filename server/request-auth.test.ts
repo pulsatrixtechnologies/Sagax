@@ -169,6 +169,10 @@ describe("scopes", () => {
       ["GET", "/api/bots/x/command-allowlist"], ["DELETE", "/api/bots/x/command-allowlist/rule-1"],
       ["POST", "/api/plugins/install"],
       ["GET", "/api/bots/x/overview"],
+      // the bot workspace: the Soul's gate (owner or admin) in the handler
+      ["GET", "/api/bots/x/workspace"], ["GET", "/api/bots/x/workspace/download"],
+      ["GET", "/api/bots/x/workspace/file"], ["PUT", "/api/bots/x/workspace/file"], ["DELETE", "/api/bots/x/workspace/file"],
+      ["POST", "/api/bots/x/workspace/docs/rename"],
     ] as const) expect(requiredScope(method, path), `${method} ${path}`).toBe("client");
     for (const [method, path] of [
       ["POST", "/api/bots/x/command-allowlist"], ["DELETE", "/api/bots/x/command-allowlist"],
@@ -179,6 +183,9 @@ describe("scopes", () => {
       ["PUT", "/api/tts/provider"], ["GET", "/api/bots/x/system-prompt"], ["GET", "/api/bots/x/history"],
       ["POST", "/api/bots/x/history/rollback"], ["GET", "/api/bots/x/skills"], ["GET", "/api/bots/x/memory/file"],
       ["GET", "/api/bot-presets"], ["GET", "/api/bots/x/computer"],
+      // memory stays admin; the workspace routes take only these shapes
+      ["PUT", "/api/bots/x/memory/file"], ["POST", "/api/bots/x/workspace"], ["PUT", "/api/bots/x/workspace/download"],
+      ["GET", "/api/bots/x/workspace/docs/rename"], ["POST", "/api/bots/x/workspace/file"], ["GET", "/api/bots/x/workspace/other"],
     ] as const) expect(requiredScope(method, path), `${method} ${path}`).toBe("admin");
   });
 

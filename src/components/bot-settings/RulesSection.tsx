@@ -1,8 +1,8 @@
 // Rules: the bot's RULES.md, hard constraints it checks every turn, loaded
 // right after the Soul and before memory under its own budget
-// (docs/bot-workspace.md). The file goes through the memory routes, so a
-// save refuses to overwrite a rule the bot added meanwhile (rules_update)
-// and every change lands in the memory journal.
+// (docs/bot-workspace.md). The file goes through /workspace/file (the
+// Soul's gate: owner or admin), so a save refuses to overwrite a rule the
+// bot added meanwhile (rules_update) and every change lands in the journal.
 //
 // Fetched when the category becomes active; kept mounted by the persona
 // editor so an unsaved draft survives a look at another category. A bot
@@ -12,8 +12,8 @@ import { useEffect, useRef, useState } from "react";
 
 import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
-import { fetchMemoryDoc, formatBytes, saveMemoryDoc } from "@/lib/memory";
-import { RULES_PATH, rulesCount } from "@/lib/workspace-files";
+import { formatBytes } from "@/lib/memory";
+import { RULES_PATH, fetchWorkspaceDoc, rulesCount, saveWorkspaceDoc } from "@/lib/workspace-files";
 import type { Bot } from "@/state/store";
 import { MarkdownEditor } from "../markdown/MarkdownEditor";
 
@@ -66,7 +66,7 @@ export function RulesSection({ bot, active, initial }: { bot: Bot; active: boole
   dirtyRef.current = dirty;
 
   const load = () =>
-    fetchMemoryDoc(bot.id, RULES_PATH).then(
+    fetchWorkspaceDoc(bot.id, RULES_PATH).then(
       (doc) => {
         setLoaded({ text: doc.text, hash: doc.hash, exists: doc.exists });
         if (!dirtyRef.current) setDraft(doc.exists ? doc.text : RULES_TEMPLATE);
@@ -87,7 +87,7 @@ export function RulesSection({ bot, active, initial }: { bot: Bot; active: boole
     setError(null);
     setSaved(false);
     try {
-      const result = await saveMemoryDoc(bot.id, RULES_PATH, draft, expectedHash);
+      const result = await saveWorkspaceDoc(bot.id, RULES_PATH, draft, expectedHash);
       if (!result.ok) {
         setConflict({ current: result.current, currentHash: result.currentHash });
         return;

@@ -193,6 +193,19 @@ describe("persona editor categories", () => {
 });
 
 describe("persona editor for an organization member", () => {
+  it("opens Rules and Files on a bot she owns, like the Soul, while Memory stays an admin's", () => {
+    const owned = { ...bot, ownerUserId: "pr_me" } as Bot;
+    const state = { config: memberConfig, bots: [owned, other] };
+    const listed = [...render("overview", state).matchAll(/data-persona-category="(\w+)"( data-locked="")?/g)];
+    const locked = listed.filter((match) => match[2]).map((match) => match[1]);
+    expect(locked).not.toContain("soul");
+    expect(locked).not.toContain("rules");
+    expect(locked).not.toContain("files");
+    expect(locked).toContain("memory");
+    expect(render("rules", state)).toContain('data-section-body="rules"');
+    expect(render("files", state)).toContain('data-section-body="files"');
+  });
+
   it("shows a bot they do not own locked, with the reason, never hidden", () => {
     const state = { config: memberConfig };
     const listed = [...render("overview", state).matchAll(/data-persona-category="(\w+)"( data-locked="")?/g)];

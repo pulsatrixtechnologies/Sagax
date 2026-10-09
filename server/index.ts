@@ -20614,8 +20614,21 @@ ROUTES.push(createBotMemoryRoutes({
   },
 }));
 // The persona editor's Files category: the workspace tree, downloads, and
-// document renames (server/routes/bot-workspace.ts). Admin scope.
-ROUTES.push(createBotWorkspaceRoutes({ bot: (id) => store.bot(id) }));
+// document renames, RULES.md and docs/ saves (server/routes/bot-workspace.ts).
+// The Soul edit's gate: owner or admin.
+ROUTES.push(createBotWorkspaceRoutes({
+  bot: (id) => store.bot(id),
+  // the Soul edit's gate (PATCH /api/bots/:id): admin, owner or edit grant;
+  // never a person who may only use shared bots
+  mayEdit: (auth, botId) => {
+    const bot = store.bot(botId);
+    return Boolean(bot) && ownerOrAdminOf(auth, bot!) && !callerBotsReadOnly(auth);
+  },
+  ...(lendingMemory ? {
+    ownersWrite: <T,>(auth: RequestAuth, botId: string, write: () => T): T =>
+      cloudOwnerSession(auth) ? lendingMemory.trustedWrite(botId, write) : write(),
+  } : {}),
+}));
 // The usage ledger (JSON and CSV). Admin scope stays in server/request-auth.ts.
 ROUTES.push(createUsageRoutes({
   dataDir: DATA_DIR,

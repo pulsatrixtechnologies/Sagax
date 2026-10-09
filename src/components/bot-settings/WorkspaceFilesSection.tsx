@@ -3,9 +3,10 @@
 // against a budget when it has one, its dates, when the bot last used it,
 // and whether it looks forgotten (no use in 30 days, not loaded every turn).
 //
-// A markdown file the memory store reaches (MEMORY.md, RULES.md, memory/,
-// docs/) opens in the markdown editor in place and saves with the same
-// conflict check as Memory; any other file is read-only, with a download.
+// RULES.md and docs/ open in the markdown editor in place for whoever may
+// edit the Soul (owner or admin); MEMORY.md and memory/ do too when the
+// viewer may edit Memory (admin routes). Every save has Memory's conflict
+// check; any other file is read-only, with a download.
 // SOUL.md lives on the bot record and opens the Soul category. Documents in
 // docs/ can be created, uploaded (.md), renamed and deleted here.
 //
@@ -17,14 +18,18 @@ import { useEffect, useRef, useState, type ChangeEvent } from "react";
 import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
 import { useAdvancedMode } from "@/lib/interface-mode";
-import { deleteMemoryDoc, fetchMemoryDoc, formatBytes, relativeTime, saveMemoryDoc } from "@/lib/memory";
+import { fetchMemoryDoc, formatBytes, relativeTime, saveMemoryDoc } from "@/lib/memory";
 import {
   DOCS_DIR,
+  deleteWorkspaceDoc,
   docPathFromName,
   entryDepth,
   entryName,
   fetchWorkspace,
+  fetchWorkspaceDoc,
+  isRulesOrDoc,
   renameWorkspaceDoc,
+  saveWorkspaceDoc,
   workspaceDownloadUrl,
   type WorkspaceEntry,
   type WorkspaceListing,
@@ -123,9 +128,12 @@ export function WorkspaceFilesSection({
   active,
   onOpenSection,
   initial,
+  memoryEditable = false,
 }: {
   bot: Bot;
   active: boolean;
+  /** the viewer may edit Memory too (MEMORY.md, memory/ in place) */
+  memoryEditable?: boolean;
   onOpenSection: (target: BotSettingsSection) => void;
   /** a listing to start from (tests); otherwise fetched when active */
   initial?: WorkspaceListing;
@@ -167,14 +175,16 @@ export function WorkspaceFilesSection({
     }
   };
 
+  const editableHere = (entry: WorkspaceEntry) => entry.editable && (isRulesOrDoc(entry.path) || memoryEditable);
+
   const openEntry = (entry: WorkspaceEntry) => {
     if (entry.virtual === "soul") return onOpenSection("soul");
     if (open?.dirty && !window.confirm(t("persona.files.dropDraft"))) return;
     setConflict(null);
     if (open?.path === entry.path) return setOpen(null);
     void run(async () => {
-      if (entry.editable) {
-        const doc = await fetchMemoryDoc(bot.id, entry.path);
+      if (editableHere(entry)) {
+        const doc = isRulesOrDoc(entry.path) ? await fetchWorkspaceDoc(bot.id, entry.path) : await fetchMemoryDoc(bot.id, entry.path);
         setOpen({ path: entry.path, text: doc.text, hash: doc.hash, dirty: false, readOnly: false });
         return;
       }
@@ -191,7 +201,9 @@ export function WorkspaceFilesSection({
   const save = (expectedHash: string) =>
     run(async () => {
       if (!open) return;
-      const result = await saveMemoryDoc(bot.id, open.path, open.text, expectedHash);
+      const result = isRulesOrDoc(open.path)
+        ? await saveWorkspaceDoc(bot.id, open.path, open.text, expectedHash)
+        : await saveMemoryDoc(bot.id, open.path, open.text, expectedHash);
       if (!result.ok) {
         setConflict({ current: result.current, currentHash: result.currentHash });
         return;
@@ -205,7 +217,7 @@ export function WorkspaceFilesSection({
     run(async () => {
       const path = docPathFromName(name);
       if (!path) throw new Error(t("persona.files.badName"));
-      const result = await saveMemoryDoc(bot.id, path, text, EMPTY_HASH);
+      const result = await saveWorkspaceDoc(bot.id, path, text, EMPTY_HASH);
       if (!result.ok) throw new Error(t("persona.files.exists", { path }));
       setNewName("");
       await reload();
@@ -226,7 +238,7 @@ export function WorkspaceFilesSection({
   const removeDoc = (path: string) => {
     if (!window.confirm(t("persona.files.confirmDelete", { path }))) return;
     void run(async () => {
-      await deleteMemoryDoc(bot.id, path);
+      await deleteWorkspaceDoc(bot.id, path);
       if (open?.path === path) setOpen(null);
       await reload();
     });
