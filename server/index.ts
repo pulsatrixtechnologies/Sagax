@@ -774,6 +774,12 @@ import { createNudgeRoutes } from "./routes/nudges.ts";
 import { createPersonLabelRoutes } from "./routes/person-labels.ts";
 import { createPresenceRoutes, presenceFrameAllowed, type PresenceViewer } from "./routes/presence.ts";
 import { PresenceTracker } from "./presence.ts";
+import { readApnsConfig } from "./push/config.ts";
+import { createPushDeviceStore } from "./push/devices.ts";
+import { PushHub } from "./push/hub.ts";
+import { pushesForFrame } from "./push/frames.ts";
+import { createPushDeviceRoutes } from "./routes/push-devices.ts";
+import { achievementById } from "../shared/achievements-catalog.ts";
 import { PRESENCE_SWEEP_MS, PRESENCE_VISIBLE_PREFERENCE, presenceHidden, publicPresence, type PresenceView } from "../shared/presence.ts";
 import { NudgeCooldown, nudgeFrameAllowed, recordNudgeLine } from "./nudge.ts";
 import { findPeopleDm, isPeopleDmParticipant, otherPerson, peopleDmForViewer, peopleDmPatchRefusal, peopleDmRouteRefusal, peopleDmUnreadPatch } from "./people-dms.ts";
@@ -983,6 +989,26 @@ const achievementStore = createAchievementStore({
 });
 /** When each voice call was first heard from, for its length (bounded in achievementSendEvents). */
 const achievementCallStarts = new Map<string, number>();
+// Pushes to phones through APNs (server/push/, docs/ios-push.md): the
+// devices each person registered, and the hub that decides and sends. Off,
+// with one log line, until SAGAX_APNS_KEY_PATH and SAGAX_APNS_KEY_ID are set.
+const apnsConfig = readApnsConfig();
+const pushDevices = createPushDeviceStore(DATA_DIR);
+const pushHub = new PushHub({
+  config: apnsConfig,
+  store: pushDevices,
+  // a client of this person is here: presence on an organization server,
+  // any live stream on a personal one (its only person is the operator)
+  connected: (person) => IDENTITY.kind === "perspicax" ? presence.view(person).state !== "offline" : sseClients.size > 0,
+  personSound: (person) => {
+    if (IDENTITY.kind !== "perspicax") return true;
+    try {
+      return userPreferenceStore.get(person).preferences["omb-notification-sounds"] !== "0";
+    } catch {
+      return true;
+    }
+  },
+});
 /** Count server events for a person and tell their streams what unlocked. Never throws. */
 function recordAchievements(person: string | null | undefined, events: readonly AchievementEvent[]): void {
   if (!person || !events.length) return;
@@ -998,6 +1024,45 @@ function achievementThreadPerson(threadId: string): string | null {
   const bot = store.botByThread(threadId);
   if (!bot) return null;
   return privateThreadOwner(store.taskByThread(bot.id, threadId), effectiveBotOwner(bot)) || null;
+}
+/** Live frames a person may want on their phone (server/push/frames.ts),
+ * handed to the push hub. Never throws: a push is a bonus. */
+function observePushFrame(payload: Record<string, unknown>): void {
+  const kind = payload.kind;
+  if (kind !== "notify" && kind !== "nudge" && kind !== "achievements") return;
+  try {
+    const messages = pushesForFrame(payload, {
+      notificationPeople: (note) => {
+        if (IDENTITY.kind !== "perspicax") return [localPrincipalId()];
+        const bot = note.botId ? store.bot(note.botId) : note.threadId ? store.botByThread(note.threadId) : undefined;
+        if (!bot) return [];
+        if (note.kind === "approval") return [approvalOwnerId(bot)];
+        const person = note.threadId ? privateThreadOwner(store.taskByThread(bot.id, note.threadId), effectiveBotOwner(bot)) : effectiveBotOwner(bot);
+        return person ? [person] : [];
+      },
+      muted: (note, person) => viewerNotificationMuted({ kind: "notify", notification: note }, person),
+      achievementNotifications: (person) => {
+        try {
+          return achievementStore.snapshot(person).settings.native === true;
+        } catch {
+          return false;
+        }
+      },
+      achievementName: (id, person) => {
+        const item = achievementById(id);
+        if (!item) return undefined;
+        let language = "";
+        try {
+          if (IDENTITY.kind === "perspicax") language = userPreferenceStore.get(person).preferences["omb-language"] ?? "";
+        } catch { /* the default language */ }
+        return language.toLowerCase().startsWith("fr") ? item.name.fr : item.name.en;
+      },
+      now: () => Date.now(),
+    });
+    for (const message of messages) pushHub.submit(message);
+  } catch (error) {
+    console.warn(`push: a frame could not be read for pushes (${error instanceof Error ? error.message : String(error)})`);
+  }
 }
 /** Server events read from live frames: a routine run that completed, a sub-agent, Auto picking a computer. */
 function observeAchievementFrame(payload: Record<string, unknown>): void {
@@ -7527,6 +7592,7 @@ function cursorSeq(raw: string | string[] | undefined): number | null {
  * are withheld from client sessions, live and on replay. */
 function broadcast(payload: Record<string, unknown>, options: { adminOnly?: boolean } = {}) {
   observeAchievementFrame(payload);
+  observePushFrame(payload);
   // Membership may also change through fleet/CLI config writes. Close stale
   // email streams before any further workspace data is delivered.
   sessions.revalidateEmailSessions();
@@ -20874,6 +20940,7 @@ ROUTES.push(createAccountRoutes({
     presence.forget(principalId);
     viewerBotOverrideStore.remove(principalId);
     achievementStore.remove(principalId);
+    pushDevices.removePerson(principalId);
     botSettings.forgetPerson(principalId);
     for (const session of sessions.list()) if (session.principalId === principalId) sessions.revoke(session.id);
     return { bots, threads };
@@ -22789,6 +22856,13 @@ function broadcastPresence(view: PresenceView): void {
   broadcast({ kind: "presence.changed", audience: principalId, people: [{ ...view, principalId, ...(hidden ? { hidden: true } : {}) }] });
 }
 const presence = new PresenceTracker({ onChange: broadcastPresence });
+// This person's phones for APNs pushes (server/routes/push-devices.ts).
+ROUTES.push(createPushDeviceRoutes({
+  person: (auth) => actorPrincipalId(auth) || undefined,
+  store: pushDevices,
+  configured: () => pushHub.enabled,
+  defaultEnvironment: () => (apnsConfig.configured ? apnsConfig.config.environment : "production"),
+}));
 if (IDENTITY.kind === "perspicax") setInterval(() => presence.sweep(), PRESENCE_SWEEP_MS).unref();
 ROUTES.push(createPresenceRoutes({
   organization: () => IDENTITY.kind === "perspicax",
@@ -28631,6 +28705,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       // Someone who sends no receipts leaves no position to show later.
       if (group?.peopleDm && !personSendsReadReceipts(viewer)) return json(res, 200, { read: null });
       store.markRead(threadId, viewer, messageId);
+      pushHub.noteRead(viewer, threadId);
       return json(res, 200, { read: store.threadReads(threadId)[viewer] ?? null });
     }
     // scrollback: the page before a message the client already holds
@@ -29790,6 +29865,8 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       const reader = groupReaderId(auth);
       const group = store.patchGroup(m[1], existing?.peopleDm && reader ? peopleDmUnreadPatch(existing, reader, false) : { unread: false });
       if (!group) return json(res, 404, { error: "no such room" });
+      // somebody saw it: no push for this conversation (server/push/decide.ts)
+      pushHub.noteRead(reader ?? actorPrincipalId(auth), group.threadId);
       broadcast({ kind: "group", group: publicGroupState(group) });
       return json(res, 200, { group: peopleDmForViewer(publicGroupState(group), reader) });
     }
@@ -30582,6 +30659,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       requirePinnedClientThread(m[1], body?.threadId);
       const current = requestedTaskBot(m[1], body?.threadId);
       store.patchTask(current.id, current.threadId, { unread: false });
+      pushHub.noteRead(actorPrincipalId(auth), current.threadId);
       const bot = store.bot(current.id)!;
       const visible = wireBot(bot);
       broadcast({ kind: "bot", bot: visible });

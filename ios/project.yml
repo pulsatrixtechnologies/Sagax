@@ -66,6 +66,12 @@ targets:
     entitlements:
       path: App/Sagax.entitlements
       properties:
+        # APNs (docs/ios-push.md). `development` here; an App Store or
+        # TestFlight export rewrites it to `production`, and the app reads
+        # the real value from its provisioning profile (PushRegistrar.swift).
+        # The App ID needs the Push Notifications capability. The widget and
+        # share extensions get no pushes and keep their own entitlements.
+        aps-environment: development
         com.apple.security.application-groups:
           - group.ca.pulsatrix.sagax
         keychain-access-groups:
@@ -130,6 +136,8 @@ targets:
         # audio running).
         UIBackgroundModes:
           - audio
+          # a push wakes the app for a moment to recount the icon badge
+          - remote-notification
         NSSpeechRecognitionUsageDescription: >-
           Sagax converts your speech into text so you can send it
           to a bot. Recognition runs on this phone when it can.

@@ -3,8 +3,8 @@ import UserNotifications
 import CompanionCore
 
 /// The on-device notification surface. Delivery comes from live or replayed
-/// companion frames; a future APNs relay can feed the same categories and
-/// userInfo without changing the rest of the app.
+/// companion frames, and from APNs pushes the server sends while the app is
+/// closed (PushRegistrar.swift), which carry the same categories and userInfo.
 final class NotificationCoordinator: NSObject, UNUserNotificationCenterDelegate {
     static let shared = NotificationCoordinator()
     private let center = UNUserNotificationCenter.current()
@@ -42,9 +42,10 @@ final class NotificationCoordinator: NSObject, UNUserNotificationCenterDelegate 
         ]
         if notification.isBlocking { content.interruptionLevel = .timeSensitive }
 
-        // A replay after a short disconnect must reconcile a missed alert,
-        // but a repeated frame must not draw it twice.
-        let identifier = "sagax.\(notification.threadId).\(sequence.map(String.init) ?? notification.title)"
+        // One conversation, one banner: a replayed frame, the next line of
+        // the same conversation and the APNs push for it (whose
+        // apns-collapse-id is this same identifier) replace it.
+        let identifier = PushCollapse.identifier(threadId: notification.threadId, kind: notification.kind)
         center.add(UNNotificationRequest(identifier: identifier, content: content, trigger: nil))
     }
 
@@ -59,8 +60,18 @@ final class NotificationCoordinator: NSObject, UNUserNotificationCenterDelegate 
         withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
     ) {
         // nothing for the conversation on a live call: no banner, no sound
-        let threadId = notification.request.content.userInfo["threadId"] as? String
+        let userInfo = notification.request.content.userInfo
+        let threadId = userInfo["threadId"] as? String
         if CallQuiet.shared.silences(threadId: threadId) { return completionHandler([]) }
+        // An APNs push while the app is in front: the live stream usually
+        // got there first. A nudge rings once; a conversation already on
+        // screen shows nothing.
+        if let push = PushPayload(userInfo: userInfo) {
+            Task { @MainActor in
+                completionHandler(AttentionCenter.shared.presentation(for: push))
+            }
+            return
+        }
         completionHandler(NotificationSounds.isEnabled ? [.banner, .list, .sound, .badge] : [.banner, .list, .badge])
     }
 

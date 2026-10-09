@@ -212,6 +212,15 @@ final class Session: ObservableObject {
         NotificationCoordinator.shared.responseHandler = { [weak self] target in
             Task { @MainActor in await self?.openNotification(target) }
         }
+        // APNs (PushRegistrar.swift): the server this phone is signed in to
+        // gets its token; a push that wakes the app recounts the badge.
+        PushRegistrar.shared.activeClient = { [weak self] in
+            guard let self, !self.isDemo, let client = self.client, let id = self.connection?.id else { return nil }
+            return (client, id)
+        }
+        PushRegistrar.shared.backgroundRefresh = { [weak self] in
+            await self?.refreshAfterPush() ?? false
+        }
 #if DEBUG
         // Parity harness: a fixture server, held in memory only (ParityLaunch.swift).
         if let parity = ParityLaunch.current {
@@ -676,9 +685,14 @@ final class Session: ObservableObject {
         let wasActive = registry.activeConnectionID == id
         // A server session is ended on the server too, best effort: the
         // bearer is discarded locally either way.
-        if forgotten.pairedWithServer, let token = try? Keychain.token(for: id) {
+        if let token = try? Keychain.token(for: id) {
             let client = CompanionClient(connection: forgotten, token: token)
-            Task.detached { try? await client.logout() }
+            let endsSession = forgotten.pairedWithServer
+            // that server stops pushing to this phone, then the session ends
+            Task {
+                await PushRegistrar.shared.unregister(client: client, connectionID: id)
+                if endsSession { try? await client.logout() }
+            }
         }
         if wasActive { stopActiveRuntime() }
         preparedPhoneCredentials = preparedPhoneCredentials.filter { $0.value.connectionID != id }
@@ -969,6 +983,8 @@ final class Session: ObservableObject {
                             state.resetCursor(cursor)
                         }
                         status = .live
+                        // this server pushes to the phone while the app is closed
+                        Task { await PushRegistrar.shared.sync() }
                         // Remember what actually carried the stream for
                         // display and legacy ordering. Typed routes retain
                         // their explicit security priority next launch.
@@ -2508,6 +2524,18 @@ final class Session: ObservableObject {
     }
 
     // MARK: - Notification navigation
+
+    /// A push woke the app (`content-available`): fetch the conversations
+    /// again so the icon badge counts what arrived while it was closed.
+    func refreshAfterPush() async -> Bool {
+        guard !isDemo, let client else { return false }
+        do {
+            try await hydrate(using: client)
+            return true
+        } catch {
+            return false
+        }
+    }
 
     func openNotification(_ target: NotificationTarget) async {
         guard let client else {

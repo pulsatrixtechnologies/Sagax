@@ -5,6 +5,11 @@
 // GitHub. Explicit allowlist below; electron/upstream-hosts.mjs is the
 // runtime block for the same hosts.
 //
+// Apple Push Notification service is listed too, with one exception: the
+// server's APNs host table (server/push/config.ts APNS_HOSTS) in the server
+// bundle. Pushes to phones are sent by the server only; the desktop
+// renderer (dist) and the Electron shell never name or call APNs.
+//
 //   node scripts/check-no-phone-home.mjs [--require-bundles]
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
@@ -17,10 +22,12 @@ export const FORBIDDEN = [
   { name: "PostHog", pattern: /posthog/gi },
   { name: "PostHog project key", pattern: /\bphc_[A-Za-z0-9]{20,}/g },
   { name: "upstream author's GitHub", pattern: /milind-soni/gi },
+  { name: "Apple Push Notification service", pattern: /\bapi(?:\.sandbox)?\.push\.apple\.com\b/gi },
 ];
 
-/** Each rule: the match text and the text around it (200 characters each
- * side). Keep it short and specific; every entry is a reviewed exception. */
+/** Each rule: the match text, the text around it (200 characters each
+ * side) and the file (relative, forward slashes). Keep it short and
+ * specific; every entry is a reviewed exception. */
 export const ALLOWED = [
   {
     why: "reverse-DNS app and helper identifiers (appId com.openmausbot.app), not hosts",
@@ -38,6 +45,16 @@ export const ALLOWED = [
   {
     why: "Composio's app catalog: a person may connect their own PostHog account",
     test: (match, around) => /^posthog$/i.test(match) && /slug: "posthog", label: "PostHog", blurb: "Analytics, feature flags, experiments", domain: "posthog\.com"/.test(around),
+  },
+  {
+    // Server side only: the push hub of an organization server (server/push/)
+    // sends to the person's own phones, and only when SAGAX_APNS_* is set.
+    // The same text in dist/ (the desktop renderer) or electron/ fails.
+    why: "APNs hosts of the server's push module (server/push/config.ts APNS_HOSTS), dist-server only",
+    test: (match, around, file = "") =>
+      /^api(?:\.sandbox)?\.push\.apple\.com$/i.test(match) &&
+      file.replaceAll("\\", "/").startsWith("dist-server/") &&
+      /APNS_HOSTS\d*\s*=\s*Object\.freeze\(\{\s*production: "api\.push\.apple\.com",\s*sandbox: "api\.sandbox\.push\.apple\.com",?\s*\}\)/.test(around),
   },
 ];
 
@@ -62,7 +79,7 @@ export function scanText(text, file) {
     for (const found of text.matchAll(pattern)) {
       const at = found.index ?? 0;
       const around = text.slice(Math.max(0, at - 200), at + found[0].length + 200);
-      if (ALLOWED.some((rule) => rule.test(found[0], around))) continue;
+      if (ALLOWED.some((rule) => rule.test(found[0], around, file))) continue;
       const line = text.slice(0, at).split("\n").length;
       findings.push({ file, line, name, match: found[0], context: text.slice(Math.max(0, at - 60), at + found[0].length + 60).replace(/\s+/g, " ") });
     }
