@@ -373,6 +373,7 @@ import type { ProviderInstance, RemoteMcpSpec } from "./contracts.ts";
 import { selectDefaultModelSelection, withNewBotEffort } from "./default-model-selection.ts";
 import { threadModelFallback, type ThreadEngine } from "./thread-model.ts";
 import { sameModelSelection } from "../shared/thread-model.ts";
+import { allowedFallbackSelection, engineAllowed } from "../shared/org-allowed-engines.ts";
 import { computerEngineMoveText, removedComputerInstanceIds, writeComputerEngineMoveLines } from "./computer-engine-removal.ts";
 import { cancelPeerApprovalsFor, cancelPeerApprovalsForThread, dismissStalePeerCards, peerApprovalFailure, requestPeerApproval, resolvePeerComms, type ApprovalBus } from "./peer-approval.ts";
 import { peerDeliveryReceipt, type PeerDeliveryReceipt } from "./peer-delivery.ts";
@@ -791,7 +792,7 @@ import { OidcRelyingParty } from "./oidc-rp.ts";
 import type { BotAttachment, BotFileRoot } from "./org-admin-files.ts";
 import { ADMIN_ACTIVITY_CATEGORIES } from "./admin-activity.ts";
 import { createOrgMemberRoutes, type MemberPerson, type MemberRequest } from "./org-member-routes.ts";
-import { createOrgAdminRoutes, type AccessKind, type AdminApproval, type AdminBot, type AdminBotReach, type AdminPerson, type ApprovalAnswer, type ApprovalType, type OrgAdminViewer } from "./org-admin-routes.ts";
+import { createOrgAdminRoutes, type AccessKind, type AdminApproval, type AdminEngine, type AdminBot, type AdminBotReach, type AdminPerson, type ApprovalAnswer, type ApprovalType, type OrgAdminViewer } from "./org-admin-routes.ts";
 import { RevocationQueue } from "./idp-revocations.ts";
 import { IDP_REFRESH_WAIT_MS, IDP_SWEEP_INTERVAL_MS, IdpGrantVault, IdpSessionManager, refreshAfterMs, resolveIdpVaultKey, settledWithin } from "./idp-session.ts";
 import { acceptOpenInvitesForEmail, createPublicInviteRoutes, createSoloOrgRoutes, inviteMailMessage, PUBLIC_INVITE_PATH, type OrgState } from "./org-routes.ts";
@@ -918,6 +919,8 @@ const ENVIRONMENT_ID = loadEnvironmentId(DATA_DIR);
 // in with Pulsatrix only (Perspicax owns accounts), so the list is empty
 // there and a legacy email session ends at its next request.
 const IDENTITY = identityConfigFromEnv();
+/** A model on an engine the organization's admin does not allow (allowedEngines). */
+const ORG_ENGINE_NOT_ALLOWED = "Your organization does not allow this model provider.";
 /** Organization server: Perspicax owns each signed-in person's name and email. */
 const PROFILE_MANAGEMENT = profileManagement(IDENTITY);
 // Every stream frame and request rechecks email sessions against this list,
@@ -4403,7 +4406,8 @@ async function defaultSelection(saved: ModelSelection | null = cfg.defaultModelS
   if (hostedModels) return hostedModels.select(saved ?? undefined);
   return selectDefaultModelSelection(await registry.describe(), saved ?? undefined, {
     company: (instanceId) => managedDesktop.owns(instanceId),
-    refusal: (instance) => policyModelRefusal(instance),
+    // a new bot starts on an engine the organization allows
+    refusal: (instance) => policyModelRefusal(instance) ?? orgEngineAllowRefusal(instance.instanceId),
   });
 }
 
@@ -4494,6 +4498,11 @@ function checkedModelSelection(
     model: value.model.trim(),
   };
   if (hostedModels && !hostedModels.allows(selection)) return { ok: false, status: 400, error: hostedModels.error() };
+  // The organization's allowed providers; the engine a bot already runs on
+  // stays writable (its effort) until the fallback moves it.
+  if ((!current || current.selection.instanceId !== selection.instanceId) && orgEngineAllowRefusal(selection.instanceId)) {
+    return { ok: false, status: 403, error: ORG_ENGINE_NOT_ALLOWED };
+  }
   // Auto (docs/plans/2026-10-08-auto-model.md): only true is stored.
   if (value.auto !== undefined && value.auto !== true && value.auto !== false) {
     return { ok: false, status: 400, error: "modelSelection.auto must be a boolean" };
@@ -4596,7 +4605,7 @@ function threadModelGivingWay(botId: string, threadId: string): ModelSelection |
   const own = store.taskByThread(botId, threadId)?.modelSelection;
   if (!bot || !own) return null;
   return threadModelFallback(own, bot.modelSelection, threadEngine, {
-    refusal: policyModelRefusal,
+    refusal: (instance) => policyModelRefusal(instance) ?? orgEngineAllowRefusal(instance.instanceId),
     ...(hostedModels ? { allows: (selection: ModelSelection) => hostedModels!.allows(selection) } : {}),
   }) ? own : null;
 }
@@ -12989,6 +12998,8 @@ async function startTurn(
   }
   const policyRefusal = policyModelRefusal(instance);
   if (policyRefusal) throw Object.assign(new Error(policyRefusal), { status: 409, code: "managed_policy" });
+  const orgRefusal = orgEngineAllowRefusal(instance.instanceId);
+  if (orgRefusal) throw Object.assign(new Error(orgRefusal), { status: 409, code: "engine_not_allowed" });
   const toolScope = toolScopeForTurn(bot.id);
   // On a Cloud home a guest's turn never gets a shell or reads outside its
   // own folder (docs/cloud-pro.md): an engine that cannot run it that way is
@@ -19590,6 +19601,8 @@ function configStatus() {
     ...(IDENTITY.kind === "perspicax" ? {} : { signIn: { admins: cfg.signIn?.admins ?? [], members: cfg.signIn?.members ?? [] } }),
     // whether that list decides anything here, or the organisation's Admin does
     membership: workspaceMembership(),
+    // organization server: the model providers its admin allows (null: all)
+    ...(IDENTITY.kind === "perspicax" ? { allowedEngines: orgAllowedEngines() } : {}),
   };
 }
 
@@ -19972,6 +19985,7 @@ function autoEnginesFor(bot: BotRecord, speaker: TurnSpeaker, guestConfined = fa
   }
   for (const instance of registry.instances()) {
     if (!instance.enabled || providerInstancesChanging.has(instance.instanceId) || policyModelRefusal(instance)) continue;
+    if (orgEngineAllowRefusal(instance.instanceId)) continue;
     // A guest's turn on a Cloud home runs only on an engine that confines it.
     if (guestConfined && instance.adapter.capabilities.guestTurns !== "confined") continue;
     const own = instance.instanceId === base?.instanceId;
@@ -24297,6 +24311,9 @@ const orgOpsDeps: OpsDeps = {
       saveConfig({ organization });
       cfg.organization = organization;
       orgAudit({ category: "org", action: "org.settings", target: { kind: "organization" }, changed: ["allowedEngines"], before: { allowedEngines: before }, after: { allowedEngines: changes.allowedEngines }, actor });
+      applyOrgEngineAllowList();
+      // Every open picker lists the new set at once (config frame).
+      broadcast({ kind: "config", ...configStatus() });
     }
     if (changes.defaults) {
       const current = cfg.newBotDefaults?.profile.modelSelection ?? cfg.defaultModelSelection;
@@ -24359,8 +24376,65 @@ function saveOrgPluginMarketplaces(raw: unknown, actor: AdminActor): void {
 /** The organization's engine policy (Settings, Policies): every engine
  * until a list is set. */
 function consoleEngineAllowed(instanceId: string): boolean {
+  return engineAllowed(orgAllowedEngines(), instanceId);
+}
+/** Organization server: the engines its admin allows (Perspicax), null for
+ * every engine (shared/org-allowed-engines.ts). */
+function orgAllowedEngines(): string[] | null {
   const allowed = cfg.organization?.allowedEngines;
-  return !Array.isArray(allowed) || allowed.includes(instanceId);
+  return IDENTITY.kind === "perspicax" && Array.isArray(allowed) && allowed.length ? allowed : null;
+}
+/** Why a turn or a model choice may not use this engine here, if it may not. */
+function orgEngineAllowRefusal(instanceId: string): string | undefined {
+  return consoleEngineAllowed(instanceId) ? undefined : ORG_ENGINE_NOT_ALLOWED;
+}
+/** The engines as the console's Model providers card lists them (GET
+ * capabilities, api 4): the same access groups as the model picker's
+ * provider column (src/lib/engine-rail.ts splitEngineRail: a custom engine
+ * is Local, an API key or a subscription engine is Cloud). */
+function orgAdminEngines(): AdminEngine[] {
+  const configs = providerConfigs();
+  return registry.entries().map((entry) => {
+    const live = registry.get(entry.instanceId);
+    const access = configs[entry.instanceId]?.access ?? registry.access(entry.instanceId);
+    const auth: AdminEngine["auth"] = access === "api" ? "apiKey"
+      : access === "custom" ? "none"
+      : live?.startAuthentication ? "oauth" : "none";
+    return {
+      id: entry.instanceId,
+      name: live ? engineDisplayName(live) : entry.instanceId,
+      kind: access === "custom" ? "local" : "cloud",
+      installed: engineInstalled(entry.instanceId),
+      auth,
+    };
+  });
+}
+/** A bot whose engine left the organization's list falls back to Auto on an
+ * allowed engine (the New bot default when allowed, else the first allowed
+ * engine here), and a thread's own model on such an engine follows its bot
+ * again. At start and whenever the list changes. */
+function applyOrgEngineAllowList(): void {
+  const allowed = orgAllowedEngines();
+  if (!allowed) return;
+  const engines = registry.entries().map((entry) => ({
+    instanceId: entry.instanceId,
+    installed: engineInstalled(entry.instanceId),
+    defaultModel: registry.get(entry.instanceId)?.models.default ?? "",
+  }));
+  const preferred = cfg.newBotDefaults?.profile.modelSelection ?? cfg.defaultModelSelection;
+  for (const { id } of store.bots) {
+    const bot = store.bot(id);
+    if (!bot) continue;
+    const next = allowedFallbackSelection(bot.modelSelection, allowed, engines, preferred);
+    if (next) {
+      store.applyModelDefault(id, next);
+      console.log(`[org] bot=${id} engine ${bot.modelSelection.instanceId} is not allowed by the organization; now on Auto (${next.instanceId})`);
+    }
+    const stray = (store.bot(id)?.tasks ?? [])
+      .filter((task) => task.modelSelection && !engineAllowed(allowed, task.modelSelection.instanceId))
+      .map((task) => task.threadId);
+    if (stray.length) store.followBotModel(id, stray, (from, to) => hostedModels?.resetTask(from, to) ?? {});
+  }
 }
 
 /** What a manager's reach is checked against for one bot (the bots route
@@ -24451,6 +24525,7 @@ const orgAdmin = createOrgAdminRoutes({
   audit: (input) => readOrgAuditPage(DATA_DIR, input),
   auditCategories: ADMIN_ACTIVITY_CATEGORIES,
   version: releaseVersion,
+  engines: orgAdminEngines,
   recordAction: (principalId, entry) => appendAdminAction(DATA_DIR, { ...entry, actor: { kind: "person", principalId, via: "console" } }),
   // The console routes of 2026-10-08 (server/org-admin-console.ts).
   console: [
@@ -35642,6 +35717,13 @@ server.listen(PORT, "127.0.0.1", async () => {
     if (companyShutdown) return;
   }
   settleOrphanedParallelTasks();
+  // A bot left on an engine the organization no longer allows moves to Auto
+  // on an allowed one before any turn starts (engines read above).
+  try {
+    applyOrgEngineAllowList();
+  } catch (error) {
+    console.warn(`[org] applying the allowed model providers failed: ${error instanceof Error ? error.message : String(error)}`);
+  }
   // Startup work uses the same turn dispatcher and local tool endpoint as
   // ordinary chat. Start only once every registry is initialized and the
   // endpoint is listening; earlier dispatch can hit uninitialized bindings.

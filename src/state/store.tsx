@@ -822,6 +822,10 @@ export interface ConfigStatus {
   /** The enrolled organisation's read-only desktop policy; null when this
    * desktop is not enrolled or its Admin sends no policy. */
   managedPolicy?: ManagedPolicySummary | null;
+  /** Organization server: the model providers (engine instance ids) its
+   * admin allows in Perspicax; null or absent means every provider
+   * (shared/org-allowed-engines.ts). Refreshed by the config frame. */
+  allowedEngines?: string[] | null;
   /** An OMB Cloud home in the upstream project. Sagax runs no Cloud, so no
    * server of ours sets it; kept optional so the shared place logic
    * (src/lib/place-view.ts) reads it as absent. */
@@ -897,7 +901,7 @@ export interface BrowserProfile {
 // Settings shows (a saved key's Test button used to vanish that way).
 export type ConfigStatusFrame = Pick<
   ConfigStatus,
-  "xai" | "mistral" | "cerebras" | "anthropic" | "openai" | "openrouter" | "openaiCompat" | "fleet" | "composio" | "box" | "vps" | "rooms" | "mcp" | "threads" | "automaticRecovery" | "localVm" | "opencodeGo" | "tts" | "decider" | "imageGen" | "live" | "profile" | "language" | "features" | "onboarding" | "browserEngine" | "browserProfiles" | "edition" | "budgets" | "billing" | "managedPolicy" | "viewer"
+  "xai" | "mistral" | "cerebras" | "anthropic" | "openai" | "openrouter" | "openaiCompat" | "fleet" | "composio" | "box" | "vps" | "rooms" | "mcp" | "threads" | "automaticRecovery" | "localVm" | "opencodeGo" | "tts" | "decider" | "imageGen" | "live" | "profile" | "language" | "features" | "onboarding" | "browserEngine" | "browserProfiles" | "edition" | "budgets" | "billing" | "managedPolicy" | "viewer" | "allowedEngines"
 >;
 
 export function configStatusFromFrame(frame: ConfigStatusFrame): ConfigStatus {
@@ -934,6 +938,7 @@ export function configStatusFromFrame(frame: ConfigStatusFrame): ConfigStatus {
     billing: frame.billing,
     managedPolicy: frame.managedPolicy,
     viewer: frame.viewer,
+    allowedEngines: frame.allowedEngines,
   };
 }
 

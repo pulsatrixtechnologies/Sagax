@@ -927,6 +927,11 @@ describe("notification routing", () => {
 });
 
 describe("config status frames", () => {
+  it("carries the organization's allowed model providers, so an open picker follows a change at once", () => {
+    expect(configStatusFromFrame({ allowedEngines: ["claude"] } as ConfigStatusFrame).allowedEngines).toEqual(["claude"]);
+    expect(configStatusFromFrame({ allowedEngines: null } as ConfigStatusFrame).allowedEngines).toBeNull();
+  });
+
   it("keeps each provider's own key flag through a live config update", () => {
     const status = configStatusFromFrame({
       openai: { configured: true },
