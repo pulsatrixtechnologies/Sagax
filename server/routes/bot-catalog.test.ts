@@ -9,7 +9,7 @@ import { botLevel, type Level } from "../authz.ts";
 import { json, readBody } from "../harness/http.ts";
 import { requiredScope, type RequestAuth } from "../request-auth.ts";
 import type { BotCatalogDetail, BotCatalogListing, BotCatalogResponse } from "../../shared/bot-catalog.ts";
-import { catalogSource, createBotCatalogRoutes, type CatalogAuditRow, type CatalogBot } from "./bot-catalog.ts";
+import { catalogSource, createBotCatalogRoutes, memberImportReset, type CatalogAuditRow, type CatalogBot } from "./bot-catalog.ts";
 import { dispatchRoutes } from "./table.ts";
 
 const ANA = "pr_00000000-0000-4000-8000-00000000000a";
@@ -17,7 +17,11 @@ const BEN = "pr_00000000-0000-4000-8000-00000000000b";
 const ADMIN = "pr_00000000-0000-4000-8000-0000000000ad";
 const READER = "pr_00000000-0000-4000-8000-0000000000ee";
 
-interface FakeBot extends CatalogBot { grants: Array<{ target: string; level: Level }> }
+interface FakeBot extends CatalogBot {
+  grants: Array<{ target: string; level: Level }>;
+  /** Stand-in for the record's run settings, copied like the console clone. */
+  settings?: Record<string, unknown>;
+}
 
 const look = { color: "blue" as const, avatarUrl: null };
 function bot(id: string, owner: string, extra: Partial<FakeBot> = {}): FakeBot {
@@ -33,7 +37,7 @@ async function serve(options: { organization?: boolean; bots?: FakeBot[] } = {})
   const organization = options.organization ?? true;
   const bots: FakeBot[] = options.bots ?? [];
   const audits: CatalogAuditRow[] = [];
-  const clones: Array<{ from: string; owner: string; name?: string }> = [];
+  const clones: Array<{ from: string; owner: string; name?: string; asMember: boolean }> = [];
   const viewerOf = (auth: RequestAuth) => auth.kind === "session" ? auth.session.principalId ?? "" : "";
   const routes = [createBotCatalogRoutes({
     organization: () => organization,
@@ -63,8 +67,9 @@ async function serve(options: { organization?: boolean; bots?: FakeBot[] } = {})
       else delete found.catalog;
     },
     clone: async (botId, input) => {
-      clones.push({ from: botId, owner: input.ownerPrincipalId, ...(input.name ? { name: input.name } : {}) });
-      const copy = bot(`copy-${clones.length}`, input.ownerPrincipalId);
+      clones.push({ from: botId, owner: input.ownerPrincipalId, ...(input.name ? { name: input.name } : {}), asMember: input.asMember });
+      const source = bots.find((candidate) => candidate.id === botId)!;
+      const copy = bot(`copy-${clones.length}`, input.ownerPrincipalId, { settings: { ...source.settings, ...(input.asMember ? memberImportReset() : {}) } });
       bots.push(copy);
       return copy.id;
     },
@@ -234,13 +239,34 @@ describe("importing a bot from the catalogue", () => {
     const { call, clones, audits } = await serve({ bots: organisation() });
     expect(await call(ANA, "/api/bot-catalog/ben-published/import", { method: "POST", body: {} })).toEqual({ status: 201, body: { botId: "copy-1" } });
     expect(await call(ANA, "/api/bot-catalog/ben-shared/import", { method: "POST", body: { name: "My helper" } })).toEqual({ status: 201, body: { botId: "copy-2" } });
-    expect(clones).toEqual([{ from: "ben-published", owner: ANA }, { from: "ben-shared", owner: ANA, name: "My helper" }]);
+    expect(clones).toEqual([{ from: "ben-published", owner: ANA, asMember: true }, { from: "ben-shared", owner: ANA, name: "My helper", asMember: true }]);
     expect(audits.map((row) => [row.action, row.target.id, row.after])).toEqual([
-      ["bot.catalog_import", "copy-1", { from: "ben-published", source: "organization", ownerPrincipalId: ANA }],
-      ["bot.catalog_import", "copy-2", { from: "ben-shared", source: "shared", ownerPrincipalId: ANA }],
+      ["bot.catalog_import", "copy-1", { from: "ben-published", source: "organization", ownerPrincipalId: ANA, memberDefaults: true }],
+      ["bot.catalog_import", "copy-2", { from: "ben-shared", source: "shared", ownerPrincipalId: ANA, memberDefaults: true }],
     ]);
     // the copy is the viewer's own
     expect(((await call(ANA, "/api/bot-catalog")).body as BotCatalogResponse).entries.filter((entry) => entry.id.startsWith("copy-")).map((entry) => entry.source)).toEqual(["mine", "mine"]);
+  });
+
+  const hostSettings = {
+    modelSelection: { instanceId: "claude", model: "opus" }, soul: "You sell.", skills: ["pricing"], perspicax: { profiles: ["cw-psa"] },
+    computer: "local", browser: true, browserProfile: "work", mcpServers: ["filesystem"], alwaysAllow: ["Bash"], cwd: "/srv/sales",
+  };
+
+  it("drops a member's copy back to a member's defaults: no computer, no browser, no host tools; engine, soul, skills and profiles stay", async () => {
+    const { call, bots } = await serve({ bots: [bot("ben-published", BEN, { catalog: { published: true }, settings: hostSettings })] });
+    const { body } = await call(ANA, "/api/bot-catalog/ben-published/import", { method: "POST", body: {} });
+    expect(bots.find((candidate) => candidate.id === body.botId)!.settings).toEqual({
+      modelSelection: { instanceId: "claude", model: "opus" }, soul: "You sell.", skills: ["pricing"], perspicax: { profiles: ["cw-psa"] },
+      computer: "off", browser: false, browserProfile: undefined, mcpServers: [], alwaysAllow: undefined, cwd: undefined,
+    });
+  });
+
+  it("keeps every setting on an organization admin's copy", async () => {
+    const { call, bots, clones } = await serve({ bots: [bot("ben-published", BEN, { catalog: { published: true }, settings: hostSettings })] });
+    const { body } = await call(ADMIN, "/api/bot-catalog/ben-published/import", { method: "POST", body: {} });
+    expect(clones).toEqual([{ from: "ben-published", owner: ADMIN, asMember: false }]);
+    expect(bots.find((candidate) => candidate.id === body.botId)!.settings).toEqual(hostSettings);
   });
 
   it("refuses a private bot of someone else, an archived published one, and a person limited to shared bots", async () => {

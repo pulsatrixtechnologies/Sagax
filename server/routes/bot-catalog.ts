@@ -14,6 +14,9 @@
 //        A copy for the viewer (the console's clone: soul, skills, model
 //        and settings; no threads, memory, grants or routines), from a bot
 //        they own, one shared with them, or one published to the organisation.
+//        A member's copy (anyone not an organisation admin) drops where the
+//        bot runs and what it reaches on the host (memberImportReset); an
+//        admin's keeps everything.
 //
 // Organisation server only for the shared and published parts: a solo
 // server lists its own bots and refuses a listing. Member scope
@@ -72,7 +75,8 @@ export interface BotCatalogRouteDeps {
   personName(principalId: string): string;
   detail(botId: string, options: { memories: boolean }): Omit<BotCatalogDetail, "entry"> | null;
   setListing(botId: string, listing: BotCatalogListing | null): void;
-  clone(botId: string, input: { ownerPrincipalId: string; name?: string }): Promise<string>;
+  /** `asMember`: reset the copy with memberImportReset. */
+  clone(botId: string, input: { ownerPrincipalId: string; name?: string; asMember: boolean }): Promise<string>;
   audit(auth: RequestAuth, row: CatalogAuditRow): void;
   now?(): number;
 }
@@ -101,6 +105,22 @@ function entryOf(bot: CatalogBot, source: BotCatalogSource, ownerName: string, o
     primary: bot.primary,
     ...(organization && bot.catalog?.published ? { catalog: bot.catalog } : {}),
   };
+}
+
+/** The fields of a member's imported copy that go back to a member's new
+ * bot: no computer, no browser, none of the host's tools (MCP servers,
+ * always-allowed tools, working folder). Engine, model, soul, skills and
+ * the Perspicax profile list stay: whoever speaks to it uses their own
+ * access anyway. */
+export function memberImportReset(): {
+  computer: "off";
+  browser: false;
+  browserProfile: undefined;
+  mcpServers: [];
+  alwaysAllow: undefined;
+  cwd: undefined;
+} {
+  return { computer: "off", browser: false, browserProfile: undefined, mcpServers: [], alwaysAllow: undefined, cwd: undefined };
 }
 
 const ROUTE = /^\/api\/bot-catalog(?:\/([\w-]+)(?:\/(listing|import))?)?$/;
@@ -218,7 +238,7 @@ export function createBotCatalogRoutes(deps: BotCatalogRouteDeps): RouteHandler 
     }
     let copyId: string;
     try {
-      copyId = await deps.clone(bot.id, { ownerPrincipalId: viewer.principalId, ...(name ? { name } : {}) });
+      copyId = await deps.clone(bot.id, { ownerPrincipalId: viewer.principalId, ...(name ? { name } : {}), asMember: !viewer.admin });
     } catch (error) {
       const status = (error as { status?: unknown })?.status;
       if (typeof status === "number" && status >= 400 && status < 500) {
@@ -226,7 +246,7 @@ export function createBotCatalogRoutes(deps: BotCatalogRouteDeps): RouteHandler 
       }
       throw error;
     }
-    deps.audit(auth, { action: "bot.catalog_import", target: { kind: "bot", id: copyId, name: name ?? bot.name }, after: { from: bot.id, source, ownerPrincipalId: viewer.principalId } });
+    deps.audit(auth, { action: "bot.catalog_import", target: { kind: "bot", id: copyId, name: name ?? bot.name }, after: { from: bot.id, source, ownerPrincipalId: viewer.principalId, memberDefaults: !viewer.admin } });
     return json(res, 201, { botId: copyId });
   };
 }

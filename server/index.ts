@@ -724,7 +724,7 @@ import { json, onJsonBody, parsedBodyOf, readBody } from "./harness/http.ts";
 import { PASS, ROUTES, dispatchRoutes } from "./routes/table.ts";
 import { createHostedSlackRoutes } from "./routes/hosted-slack.ts";
 import { createBotPresetRoutes } from "./routes/bot-presets.ts";
-import { createBotCatalogRoutes } from "./routes/bot-catalog.ts";
+import { createBotCatalogRoutes, memberImportReset } from "./routes/bot-catalog.ts";
 import { MEMORY_INDEX, readMemoryDoc } from "./memory-store.ts";
 import { isExpired as memoryEntryExpired, parseMemoryEntries } from "./memory-entries.ts";
 import { createBotLibraryRoutes } from "./routes/bot-library.ts";
@@ -23889,7 +23889,20 @@ ROUTES.push(createBotCatalogRoutes({
     const current = store.bot(botId);
     if (current) broadcast({ kind: "bot", bot: publicBot(current) });
   },
-  clone: (botId, input) => orgBotsDeps.clone(botId, input),
+  clone: async (botId, input) => {
+    const id = await orgBotsDeps.clone(botId, { ownerPrincipalId: input.ownerPrincipalId, ...(input.name ? { name: input.name } : {}) });
+    const source = store.bot(botId);
+    // The Perspicax profile list travels with the copy; a member's copy
+    // also goes back to a member's defaults for where it runs and what it
+    // reaches on the host (an admin's keeps the source's settings).
+    store.patchBot(id, {
+      ...(source?.perspicax ? { perspicax: structuredClone(source.perspicax) } : {}),
+      ...(input.asMember ? memberImportReset() : {}),
+    });
+    const current = store.bot(id);
+    if (current) broadcast({ kind: "bot", bot: publicBot(current) });
+    return id;
+  },
   audit: (auth, row) => {
     appendAdminAction(DATA_DIR, {
       category: "bot",
