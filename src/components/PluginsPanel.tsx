@@ -28,6 +28,7 @@ import { usePerspicaxOrg } from "@/lib/perspicax-org";
 import { useOwnerOrAdmin } from "@/lib/use-owner-or-admin";
 import { viewerCan } from "@/lib/viewer";
 import { permissionMissingText } from "@/lib/permissions";
+import { connectorToolRows, loadConnectorTools, saveDisabledTools, toggledDisabledTools, type ConnectorToolsInventory } from "@/lib/connector-tool-switches";
 import type { SkillsLibrarySkillWire } from "../../shared/wire";
 import { WHOP_KEY, buildPluginItems, marketplacePluginKey, type PluginFilter, type PluginItem, type PluginTypeFilter } from "@/lib/plugins-model";
 import {
@@ -138,6 +139,26 @@ export function PluginsPanel() {
   const [marketBusy, setMarketBusy] = useState<string | null>(null);
   const [marketError, setMarketError] = useState<string | null>(null);
   const [panelNotice, setPanelNotice] = useState<string | null>(null);
+  const [appTools, setAppTools] = useState<DetailContext["appTools"]>({ inventory: null, loading: false, saving: false });
+  const loadAppTools = useCallback(() => {
+    setAppTools((current) => ({ ...current, loading: true, error: undefined }));
+    loadConnectorTools()
+      .then((inventory) => setAppTools((current) => ({ ...current, inventory, loading: false })))
+      .catch((cause) => setAppTools((current) => ({ ...current, loading: false, error: cause instanceof Error ? cause.message : String(cause) })));
+  }, []);
+  const toggleAppTool = (slug: string, tool: string, enabled: boolean) => {
+    const inventory = appTools.inventory;
+    if (!inventory) return;
+    const next = toggledDisabledTools(inventory.disabledTools[slug], tool, enabled);
+    setAppTools((current) => ({ ...current, saving: true, error: undefined }));
+    saveDisabledTools(slug, next)
+      .then((disabledTools) => setAppTools((current) => ({
+        ...current,
+        saving: false,
+        inventory: current.inventory ? { ...current.inventory, disabledTools } : current.inventory,
+      })))
+      .catch((cause) => setAppTools((current) => ({ ...current, saving: false, error: cause instanceof Error ? cause.message : String(cause) })));
+  };
 
   const loadFeatured = useCallback(() => api("/api/plugins/search")
     .then((result) => setFeatured(result.featured ?? []))
@@ -521,6 +542,7 @@ export function PluginsPanel() {
       <PluginDetailView
         {...detailProps(detailItem, { apps, mcp, aliasDraft, setAliasDraft, mcpAccountDraft, setMcpAccountDraft, bots: state.bots, instances: state.instances,
           items, marketplaces, installing, openItem, uninstallPlugin: (item) => void uninstallPlugin(item), updatePlugin: (item) => void updatePlugin(item),
+          appTools, loadAppTools, toggleAppTool, canSwitchAppTools: ownerOrAdmin !== false,
           openBotAccess: (botId) => {
             close();
             dispatch({ type: "toggleSettings", open: true, botId, section: "access" });
@@ -714,6 +736,12 @@ interface DetailContext {
   openItem: (item: PluginItem) => void;
   uninstallPlugin: (item: PluginItem) => void;
   updatePlugin: (item: PluginItem) => void;
+  /** a connected app's tools and the workspace's switches */
+  appTools: { inventory: ConnectorToolsInventory | null; loading: boolean; error?: string; saving: boolean };
+  loadAppTools: () => void;
+  toggleAppTool: (slug: string, tool: string, enabled: boolean) => void;
+  /** only an admin turns an app's tools on or off */
+  canSwitchAppTools: boolean;
 }
 
 type DetailBase = Omit<PluginDetailProps, "onBack" | "onClose">;
@@ -724,7 +752,7 @@ function detailProps(item: PluginItem, context: DetailContext): DetailBase {
   return mcpDetail(item, context);
 }
 
-function appDetail(item: PluginItem, { apps, aliasDraft, setAliasDraft, bots, instances, openBotAccess }: DetailContext): DetailBase {
+function appDetail(item: PluginItem, { apps, aliasDraft, setAliasDraft, bots, instances, openBotAccess, appTools, loadAppTools, toggleAppTool, canSwitchAppTools }: DetailContext): DetailBase {
   const slug = item.id;
   const serviceStatus = apps.status[slug];
   const accounts = serviceStatus?.accounts ?? [];
@@ -780,7 +808,14 @@ function appDetail(item: PluginItem, { apps, aliasDraft, setAliasDraft, bots, in
         )}
       </>
     ),
-    tools: undefined,
+    tools: accounts.length ? {
+      list: appTools.inventory ? connectorToolRows(appTools.inventory, slug) : null,
+      loading: appTools.loading || appTools.saving,
+      error: appTools.error,
+      onToggle: canSwitchAppTools && !appTools.saving ? (tool, enabled) => toggleAppTool(slug, tool, enabled) : undefined,
+      note: t("connectApps.detail.appToolsNote"),
+      onLoad: loadAppTools,
+    } : undefined,
     details: [
       { label: t("connectApps.detail.source"), value: pluginSourceLabel("composio") },
       { label: t("connectApps.detail.transport"), value: t("connectApps.transport.composio") },

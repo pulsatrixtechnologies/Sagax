@@ -142,6 +142,7 @@ import {
 } from "./cloud-backend.ts";
 import * as composio from "./composio.ts";
 import { connectorCallFromFrame, connectorRefusalText, connectorUnrecognizedText, evaluateConnectorTools } from "./connector-verdict.ts";
+import { connectorWorkspaceRefusalText, parseDisabledTools, readDisabledTools, withAppDisabledTools, workspaceDisabledTools } from "./connector-tool-switches.ts";
 import { connectorCardText } from "./connector-card-text.ts";
 import { chiefOfStaffSystemPrompt } from "./chief-of-staff.ts";
 import { buildRecall, CALL_RECALL_BUDGET, type RecallBudget } from "./recall.ts";
@@ -28343,6 +28344,27 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           requireActiveInternalCapability();
           currentSender = store.bot(internalCapability.botId);
           if (!currentSender || currentSender.composio === false || !composio.configured(cfg)) return json(res, 403, { error: "connected apps are no longer enabled for this bot" });
+          const switchedOff = workspaceDisabledTools(call.names, readDisabledTools(cfg.composio?.disabledTools));
+          if (switchedOff.length) {
+            for (const tool of switchedOff) {
+              appendDecision(DATA_DIR, {
+                threadId: internalCapability.threadId,
+                botId: currentSender.id,
+                botName: currentSender.name,
+                tool,
+                summary: "tool is turned off for this workspace",
+                decision: "auto-denied",
+                source: "connector-scope",
+                rule: "composio.disabledTools",
+              });
+            }
+            res.writeHead(200, { "content-type": "application/json", "cache-control": "no-store" });
+            return res.end(JSON.stringify({
+              jsonrpc: "2.0",
+              id: (body as { id?: unknown }).id ?? null,
+              result: { content: [{ type: "text", text: connectorWorkspaceRefusalText(switchedOff) }], isError: true },
+            }));
+          }
           const verdict = evaluateConnectorTools(call.names, currentSender.connectorTools, serviceSlugs);
           if (!verdict.allowed) {
             for (const denial of verdict.denials) {
@@ -28529,6 +28551,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
             const freshAccess = connectorAccessDecision(fresh.connectorScopes, connectorCalls, serviceSlugs);
             if (!freshAccess.ok || (opaque && fresh.connectorTools !== undefined) ||
                 (call.kind === "tools" && !evaluateConnectorTools(call.names, fresh.connectorTools, serviceSlugs).allowed) ||
+                (call.kind === "tools" && workspaceDisabledTools(call.names, readDisabledTools(cfg.composio?.disabledTools)).length > 0) ||
                 (call.kind === "unrecognized" && fresh.connectorTools !== undefined)) {
               refuseDispatch("This bot's connected-app permissions changed. The call was not run.");
             }
@@ -35081,6 +35104,12 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       // A project key is useful only if it can create/reuse the Session that
       // powers both the connections UI and the agent MCP. Validate it before
       // persisting, and save the non-secret ids needed to reuse that Session.
+      // Tool switches go through PUT /api/connectors/:slug/tools only, which
+      // checks each name against its app and audits the change.
+      if (patch.composio?.disabledTools !== undefined) {
+        const { disabledTools: _ignored, ...rest } = patch.composio;
+        patch.composio = rest;
+      }
       const requestedComposioKey = patch.composio?.apiKey;
       if (requestedComposioKey !== undefined) {
         if (requestedComposioKey.trim()) {
@@ -35477,14 +35506,37 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       // through. Failure is a read-only editor, never a blocked save — the
       // exact-name model does not depend on the listing being reachable.
       const availability = composio.connectorAvailability(cfg);
+      const disabledTools = readDisabledTools(cfg.composio?.disabledTools);
       if (availability !== "configured") {
-        return json(res, 200, { configured: false, services: {} });
+        return json(res, 200, { configured: false, services: {}, disabledTools });
       }
       try {
-        return json(res, 200, { configured: true, services: await composio.listConnectorTools(cfg) });
+        return json(res, 200, { configured: true, services: await composio.listConnectorTools(cfg), disabledTools });
       } catch (e) {
-        return json(res, 502, { configured: true, services: {}, error: e instanceof Error ? e.message : String(e) });
+        return json(res, 502, { configured: true, services: {}, disabledTools, error: e instanceof Error ? e.message : String(e) });
       }
+    }
+    m = path.match(/^\/api\/connectors\/([\w-]+)\/tools$/);
+    if (m && method === "PUT") {
+      const slug = m[1]!;
+      const body = await readBody(req);
+      const parsed = parseDisabledTools(slug, body?.disabledTools);
+      if (!parsed.ok) return json(res, 400, { error: parsed.error });
+      const current = readDisabledTools(cfg.composio?.disabledTools);
+      const next = withAppDisabledTools(current, slug, parsed.tools);
+      if ("error" in next) return json(res, 400, { error: next.error });
+      const before = current[slug] ?? [];
+      if (before.join(",") !== parsed.tools.join(",")) {
+        saveConfig({ composio: { disabledTools: next } });
+        Object.assign(cfg, loadConfig());
+        appendAdminAction(DATA_DIR, {
+          category: "mcp", action: "connector.tools",
+          target: { kind: "connector", id: slug, name: slug },
+          before: { disabledTools: before }, after: { disabledTools: parsed.tools },
+          actor: IDENTITY.kind === "perspicax" ? orgAuditActor(auth) : decisionActorFor(auth),
+        });
+      }
+      return json(res, 200, { disabledTools: readDisabledTools(cfg.composio?.disabledTools) });
     }
     if (method === "GET" && path === "/api/connectors") {
       const services = (url.searchParams.get("services") ?? "").split(",").filter(Boolean);
