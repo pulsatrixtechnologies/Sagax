@@ -319,4 +319,82 @@ posixOnly("Perspicax console: the Sagax admin routes", () => {
     expect(audit.map((row) => row.action)).toEqual(expect.arrayContaining(["person.console_disable", "person.console_enable", "person.reset_access"]));
     expect(audit.find((row) => row.action === "person.console_disable")).toMatchObject({ actor: { kind: "person", principalId: ids.alice, via: "console" }, after: { disabled: true, reason: "Contract ended" } });
   }, 60_000);
+
+  it("C3: a bot's page, clone, archive and restore, transfer, model, bulk, package and import, stop and delete", async () => {
+    const page = await admin("GET", `bots/${bots.atlas!.id}`, ALICE);
+    expect(page.status, page.text).toBe(200);
+    expect(page.body.bot).toMatchObject({
+      id: bots.atlas!.id, name: "Atlas", status: "active", threads: { count: 1 }, soul: { chars: expect.any(Number) },
+      permissions: { approvalMode: expect.any(String), fullAccess: false },
+      routineList: [{ id: routineId, name: "Daily digest", enabled: false, schedule: "Every hour" }],
+    });
+    expect(page.text).not.toContain('"prompt"');
+    expect((await admin("GET", `bots/${bots.atlas!.id}`, MONA)).status).toBe(404);
+
+    // clone Atlas for Bob: model and settings, no grants, no routines, no threads
+    const cloned = await admin("POST", `bots/${bots.atlas!.id}/clone`, ALICE, { ownerSub: BOB.sub, name: "Atlas for Bob" });
+    expect(cloned.status, cloned.text).toBe(201);
+    expect(cloned.body.bot).toMatchObject({ name: "Atlas for Bob", owner: { principalId: ids.bob }, engine: { instanceId: "claude" }, model: "fake-model", grants: [], routines: 0, threads: 1, status: "active" });
+    const copyId = cloned.body.bot.id as string;
+    expect(((await api("GET", "/api/bots", bob)).body.bots as Array<{ id: string }>).map((bot) => bot.id)).toContain(copyId);
+    // a manager clones in reach only (Bob's Beacon, for herself)
+    expect((await admin("POST", `bots/${bots.atlas!.id}/clone`, MONA, {})).status).toBe(404);
+    const monaCopy = await admin("POST", `bots/${bots.beacon!.id}/clone`, MONA, { ownerPrincipalId: ids.mona });
+    expect(monaCopy.status, monaCopy.text).toBe(201);
+    expect((await admin("POST", `bots/${bots.beacon!.id}/clone`, MONA, { ownerPrincipalId: ids.alice })).body.code).toBe("owner_not_found");
+
+    // archive and restore
+    const cirrus = await createBot(alice, "Cirrus", "claude");
+    const archived = await admin("POST", `bots/${cirrus.id}/archive`, ALICE, {});
+    expect(archived.body.bot.status, archived.text).toBe("archived");
+    expect((await admin("GET", "bots?status=archived", ALICE)).body.items.map((bot: { id: string }) => bot.id)).toContain(cirrus.id);
+    expect((await admin("POST", `bots/${cirrus.id}/restore`, ALICE, {})).body.bot.status).toBe("active");
+
+    // model: another installed engine; an unknown engine is refused
+    const model = await admin("POST", `bots/${cirrus.id}/model`, ALICE, { engineInstanceId: "hold", model: null });
+    expect(model.status, model.text).toBe(200);
+    expect(model.body.bot).toMatchObject({ engine: { instanceId: "hold" }, model: expect.any(String) });
+    expect((await admin("POST", `bots/${cirrus.id}/model`, ALICE, { engineInstanceId: "ghost", model: "x" })).body.code).toBe("engine_not_installed");
+
+    // transfer: Bob owns it, Alice keeps manage; a manager may not
+    expect((await admin("POST", `bots/${cirrus.id}/transfer`, MONA, { ownerPrincipalId: ids.mona })).body.code).toBe("forbidden_role");
+    const moved = await admin("POST", `bots/${cirrus.id}/transfer`, ALICE, { ownerSub: BOB.sub });
+    expect(moved.status, moved.text).toBe(200);
+    expect(moved.body.bot.owner).toMatchObject({ principalId: ids.bob, name: "Bob" });
+    expect(moved.body.bot.grants).toContainEqual(expect.objectContaining({ target: `user:${ids.alice}`, level: "manage" }));
+
+    // bulk
+    const bulk = await admin("POST", "bots/bulk", ALICE, { action: "archive", ids: [cirrus.id, copyId, "nope-bot"] });
+    expect(bulk.body.results).toEqual([{ id: cirrus.id, ok: true }, { id: copyId, ok: true }, { id: "nope-bot", ok: false, code: "not_found", message: "No such bot." }]);
+
+    // package and import
+    const pkg = await fetch(`${BASE}/api/org/admin/bots/${bots.atlas!.id}/package`, { headers: { authorization: `Bearer ${console$(ALICE).bearer}` } });
+    expect(pkg.status).toBe(200);
+    expect(pkg.headers.get("content-disposition")).toContain("attachment");
+    const document = await pkg.json() as Record<string, unknown>;
+    expect(document).toMatchObject({ format: "openmaus.package", version: 2 });
+    expect(JSON.stringify(document)).not.toContain("sk-ant-");
+    const imported = await admin("POST", "bots/import", ALICE, { package: document, ownerSub: ZOE.sub, name: "Atlas for Zoe" });
+    expect(imported.status, imported.text).toBe(201);
+    expect(imported.body.bot).toMatchObject({ name: "Atlas for Zoe", owner: { principalId: ids.zoe } });
+    expect(imported.body.warnings).toEqual(expect.any(Array));
+    expect((await admin("POST", "bots/import", ALICE, { package: { format: "nope" } })).body.code).toBe("invalid_package");
+
+    // stop and delete
+    expect((await admin("POST", `bots/${bots.atlas!.id}/stop`, ALICE, {})).status).toBe(200);
+    expect((await admin("POST", `bots/${copyId}/delete`, ALICE, { confirm: "wrong" })).body.code).toBe("confirm_required");
+    const deleted = await admin("POST", `bots/${copyId}/delete`, ALICE, { confirm: "Atlas for Bob" });
+    expect(deleted.status, deleted.text).toBe(200);
+    expect(deleted.body).toEqual({ deleted: copyId });
+    expect((await admin("GET", `bots/${copyId}`, ALICE)).status).toBe(404);
+
+    const audit = await waitFor(async () => {
+      const rows = (await admin("GET", "audit?category=bot&limit=100", ALICE)).body.rows as Array<any> | undefined;
+      return rows && rows.some((row) => row.action === "bot.force_delete") ? rows : null;
+    });
+    for (const action of ["bot.clone", "bot.archive", "bot.restore", "bot.model", "bot.transfer", "bot.export", "bot.import", "bot.force_stop", "bot.force_delete"]) {
+      expect(audit.map((row) => row.action), action).toContain(action);
+    }
+    expect(audit.find((row) => row.action === "bot.transfer")).toMatchObject({ actor: { via: "console", principalId: ids.alice }, after: { ownerPrincipalId: ids.bob } });
+  }, 90_000);
 });

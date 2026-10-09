@@ -70,6 +70,18 @@ export interface ConsoleRoute {
 
 export const ok = (body: unknown, status = 200): ConsoleAnswer => ({ status, body });
 
+/** A refusal an area's dependency throws: the router answers it as
+ * `{code, message, reason}` with its status. */
+export class ConsoleRefusal extends Error {
+  readonly status: number;
+  readonly code: string;
+  constructor(status: number, code: string, message: string) {
+    super(message);
+    this.status = status;
+    this.code = code;
+  }
+}
+
 /** A refusal: `{code, message, reason, error}`; `reason` is the readable
  * sentence the console shows, `error` the older field name. */
 export function fail(status: number, code: string, message: string, extra: Record<string, unknown> = {}): ConsoleAnswer {
