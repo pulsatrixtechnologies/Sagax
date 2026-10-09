@@ -169,6 +169,8 @@ struct BrowseBotsSheet: View {
     @StateObject private var model = BrowseBotsModel()
     let close: () -> Void
     @State private var publishing: BotCatalogEntry?
+    /// Templates' "Import from zip" (#271).
+    @State private var importingZip = false
 
     var body: some View {
         NavigationStack {
@@ -199,6 +201,18 @@ struct BrowseBotsSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) { Button("Done", action: close) }
+                if model.data?.viewer.canCreate == true {
+                    ToolbarItem(placement: .topBarLeading) {
+                        Button { importingZip = true } label: { Label("Import from zip", systemImage: "doc.zipper") }
+                            .accessibilityIdentifier("browse-bots.import-zip")
+                    }
+                }
+            }
+            .sheet(isPresented: $importingZip) {
+                BotZipImportSheet(close: { importingZip = false }) { bot in
+                    importingZip = false
+                    if let bot { open(bot) } else { Task { await model.load(session) } }
+                }
             }
             .navigationDestination(for: BotCatalogItem.self) { item in
                 BrowseBotsDetail(item: item, model: model, open: open, publish: { publishing = $0 })
