@@ -1,6 +1,8 @@
-// A bot's character drawn from its stored look: the owl, one of the original
-// shapes, or Trombi (`CharacterAvatar` and `MausAvatar` in the desktop's
-// `Avatar.tsx`). No picture and no network here, so the widgets and the Live
+// A bot's character drawn from its stored look: the owl, one of the shapes,
+// Trombi or Bunbu (`CharacterAvatar` and `MausAvatar` in the desktop's
+// `Avatar.tsx`). A known character is always drawn as itself; where a skin's
+// premium layers are not on the phone yet, its base finish shows and
+// `MascotSubstitution` logs it. No picture and no network here, so the widgets and the Live
 // Activity can draw it too; `BotMascotView` adds the uploaded picture.
 import CompanionCore
 import SwiftUI
@@ -17,6 +19,10 @@ struct MascotCharacterView: View {
     var owlHandle: OwlMascotHandle?
 
     var body: some View {
+        character.onAppear { MascotSubstitution.report(look, owlSkin: skin) }
+    }
+
+    @ViewBuilder private var character: some View {
         switch look.character {
         case .owl:
             OwlMascotView(color: color, skin: skin, size: size, state: state.owlState, animated: animated, handle: owlHandle)
@@ -24,6 +30,8 @@ struct MascotCharacterView: View {
             ShapeMascotView(shape: look.shape, skin: look.shapeSkin, color: color, size: size, mood: state.shapeMood, animated: animated)
         case .trombi:
             TrombiMascotView(skin: look.trombiSkin, size: size, pose: state.trombiPose, animated: animated)
+        case .bunbu:
+            BunbuMascotView(skin: look.bunbuSkin, color: color, size: size, mood: BunbuMood(state: state), animated: animated)
         }
     }
 }

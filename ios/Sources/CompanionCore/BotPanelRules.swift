@@ -225,6 +225,13 @@ public struct MascotUnlocks: Hashable, Sendable {
             case "holo", "molten": return .legendary
             default: return .common
             }
+        case .bunbu:
+            switch skin {
+            case "velvet", "gold": return .rare
+            case "neon", "chrome", "crystal": return .epic
+            case "holo", "galaxy", "molten": return .legendary
+            default: return .common
+            }
         }
     }
 }
