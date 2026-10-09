@@ -42,6 +42,11 @@ describe("who sees Run now", () => {
     expect(canRunRoutineNow(null, routine, bot)).toBe(true);
   });
 
+  it("the server's canRun wins when the listing sent it (a routine seen through a wider scope)", () => {
+    expect(canRunRoutineNow(viewer("pr_owner"), { ...routine, canRun: false }, bot)).toBe(false);
+    expect(canRunRoutineNow(viewer("pr_carol"), { ...routine, canRun: true }, bot)).toBe(true);
+  });
+
   it("nobody else: the button is not rendered", () => {
     expect(canRunRoutineNow(viewer("pr_carol"), routine, bot)).toBe(false);
     fixture.state = { ...fixture.state!, config: viewer("pr_carol") };

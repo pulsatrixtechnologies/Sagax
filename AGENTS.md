@@ -272,6 +272,41 @@ named permission (`shared/permissions.ts`, spec
   (PM-1 to PM-5), `shared/permissions.test.ts`,
   `server/org-permissions.test.ts` and `server/request-auth.test.ts`.
 
+## Automations scope (organization mode, 2026-10-09)
+
+Anyone may be allowed to see the automation schedule beyond their own
+routines (JC). `server/routine-scope.ts` (rules), `shared/routine-scope.ts`
+(names), `src/components/routines/RoutineScopeBar.tsx` and
+`src/lib/use-routine-scope.ts` (page). Rules, covered by
+`server/routine-scope.test.ts`, `server/org-routines-scope.e2e.test.ts` and
+`src/components/routines/RoutineScopeBar.test.ts`:
+
+- `GET /api/routines?scope=mine|team|all&teamId&botId&ownerId&status`. No
+  scope is `mine`, exactly the listing as before (older apps, the member
+  API). `team` needs `routines.viewTeam`, `all` needs `routines.viewAll`; an
+  admin holds both; otherwise 403 `{ error: "forbidden", permission, code:
+  "routine_scope_not_allowed" }`. `team` adds the routines whose bot owner or
+  run-as person is in one of the caller's teams, or whose bot is shared with
+  one (`team:` grant). The server never returns a routine outside the scope.
+- Each routine carries `owner {id, name, avatarUrl?}`, `teamIds`, `bot {id,
+  name}`, `canRun`, `canEdit`. Both flags are false outside `mine`: a wider
+  scope never opens a write (Run now, Edit and Runs as keep their gates).
+  Someone else's routine and runs come `redacted: true`, without prompt,
+  attachments, threads or outputs (an error is cut to 300 characters).
+- The answer adds `scope`, `allowed` and `facets {teams, owners,
+  botChoices}` (never a key named `bots`: `memberBody` narrows those).
+- `DELETE /api/routine-runs` takes the same parameters: the caller's own
+  runs, or every run in scope with `scope=all` and `routines.viewAll` (or an
+  admin); the filters narrow it. Audit rows unchanged.
+- The page: a scope control at the top (organization servers only; My teams
+  and Everyone disabled with a tooltip naming the missing permission), then
+  Team, Owner and Status (advanced mode only), the All bots select listing
+  the bots of the scope. Others' routines show their owner's avatar and name
+  and stay read-only. The problems and paused pills count within the scope;
+  the sidebar count stays the person's (the store keeps `mine`). The choice
+  is `sagax.routineScope.v1`, a user preference keyed by principal.
+- iOS: not yet (parity row AU20).
+
 ## Full access (organization mode, 2026-10-01)
 
 On a solo server Full access is granted only through the packaged desktop
@@ -1169,7 +1204,7 @@ Electron restart (no HMR); launch-test them before committing.
 - Main retries a page that fails to load, reloads a dead or silent one, keeps
   a state sent before its window exists, and logs the page's errors; the
   window falls back to the plain owl rather than drawing nothing.
-- The character (owl, Shapes, Trombi, Bunbu) and its look live with the bot
+- The character (owl, Shapes, Trombi, Bunbu, Shiba) and its look live with the bot
   (`bot.mascotLook`, `shared/mascot-look.ts`, validated by the server), chosen
   in the avatar popover (`MascotLookEditor.tsx`) and drawn by `BotAvatar` for
   every bot avatar in the app; never draw a bot's mascot outside `BotAvatar`.
@@ -1189,6 +1224,20 @@ Electron restart (no HMR); launch-test them before committing.
   finishes from `shape-skins.tsx` plus Plush and Velvet); its signature ear
   flop is the `ruffle` clip (the registry's `moveLabels`). iOS shows the owl
   for it until ported (`ios/README.md`).
+- Shiba (direction C, "aplat net", approved by JC on 2026-10-09) is an
+  original drawing: a front-facing cartoon dog in flat tones, no photo or
+  pose traced. Its art is data in `shiba-art.ts` (draw ops with paint roles,
+  sixteen faces with the Shapes ids, sit, stand and lie stances, the bust
+  under 48 px, the coat darkened when light so the cream mask reads); its
+  moves are pure functions of time in `shiba-moves.ts` (the fourteen shared
+  moves ported plus the dog's own, composed by `ShibaRig`, never run under
+  reduced motion). The CSS idle in `shiba-mascot.css` must keep its
+  transform origins scoped to `:not(.shiba-rig)`: an inline origin would
+  shift the rig's transform attributes. Its skins are palettes per role
+  (`skin-fx/shiba-skins.tsx`); strokes take the solid `lid` role, never a
+  gradient. It is a Mastery character: its unlocks are in
+  `shared/mascot-unlocks.ts` only. iOS draws it from the generated
+  `ShibaStillArt.swift` (`ios-mascot-export.test.ts`).
 - Shapes: clean-room, 2026-10-08. The Shapes character matches the look
   and behaviour JC measured on a public avatar studio, written entirely in
   our own code: no code, data table, path or asset of that site was copied

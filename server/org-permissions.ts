@@ -1,7 +1,8 @@
 // A person's effective permissions on an organization server (2026-10-09).
 //
-// Perspicax computes the union over the profiles a person holds and sends it
-// in the directory (`permissions`). This file turns that list, or its
+// Perspicax computes the union of its permission sets a person gets (the
+// default set, their own sets, their teams' sets) and sends it in the
+// directory (`permissions`). This file turns that list, or its
 // absence, into the set every gate reads through `can` (shared/permissions.ts):
 //
 // - an organization admin (Perspicax role admin, or the operator at the
@@ -9,7 +10,7 @@
 // - a list from Perspicax is taken as is, minus unknown and admin-only keys;
 // - no list (an older Perspicax, a person it does not list yet, before the
 //   first directory) means the member defaults, so nothing regresses;
-// - the person sheet still narrows on top, whatever the profiles grant:
+// - the person sheet still narrows on top, whatever the sets grant:
 //   `sagax_bots: use` takes every key about owning bots, `sagax_integrations:
 //   off` takes apps.ownIntegrations.
 //

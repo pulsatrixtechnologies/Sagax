@@ -114,6 +114,18 @@ export interface Routine {
   nextRunAt: number | null;
   createdAt: number;
   updatedAt: number;
+  /** 2026-10-09 (GET /api/routines, server/routine-scope.ts): its bot's
+   * owner, the teams it belongs to (the owner's and run-as person's teams
+   * and the teams its bot is shared with), its bot, and whether this viewer
+   * may run it now or edit it. Absent on a live frame or an older server. */
+  owner?: { id: string; name: string; avatarUrl?: string };
+  teamIds?: string[];
+  bot?: { id: string; name: string };
+  canRun?: boolean;
+  canEdit?: boolean;
+  /** Someone else's routine seen through a wider scope: its instructions,
+   * attachments and threads are withheld. */
+  redacted?: true;
 }
 
 /** Slice 6: why an organization routine is paused by the server. A routine
@@ -159,6 +171,9 @@ export interface RoutineRun {
   admitAfter?: number;
   /** Slice 6: how many times admission was retried after a rate limit. */
   admitAttempts?: number;
+  /** Someone else's run seen through a wider scope: output, instructions
+   * and threads withheld (server/routine-scope.ts). */
+  redacted?: true;
 }
 
 export interface RoutineInput {
