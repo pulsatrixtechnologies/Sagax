@@ -22,6 +22,9 @@ export interface ViewerIdentity {
    * Sagax (`sagax_bots: use`). They use the bots shared with them and
    * create, edit or own none. Absent otherwise. */
   botsReadOnly?: true;
+  /** Why (2026-10-09): `permission` when their profile lacks bots.create;
+   * absent when the person sheet says use only. */
+  botsReadOnlyReason?: "permission";
   /** Organization server: a Perspicax admin manages this person's plugins,
    * skills and MCP servers (`sagax_integrations: off`); what they have stays
    * usable, read-only (server/person-integrations.ts). */
@@ -40,6 +43,12 @@ export interface ViewerIdentity {
   /** Which installation screens this viewer may change. Absent on a server
    * that predates the field; the client then hides them only for role member. */
   capabilities?: ViewerCapabilities;
+  /** Organization server (2026-10-09): the permissions this person holds
+   * (shared/permissions.ts), every key for an admin. The app hides or
+   * disables with them; the server enforces them. Absent elsewhere. */
+  permissions?: string[];
+  /** Where they came from: admin, perspicax (their profiles) or defaults. */
+  permissionsSource?: "admin" | "perspicax" | "defaults";
 }
 
 /** "zara.q@example.test" becomes "zara.q". Anything without an "@" stays itself. */

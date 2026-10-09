@@ -16,6 +16,7 @@ import { KeyRound } from "lucide-react";
 import { t } from "@/lib/i18n";
 import { SettingsText } from "./SettingsLink";
 import type { WireAccessCard } from "../../shared/wire";
+import { permissionMissingText } from "@/lib/permissions";
 
 export type AccessViewer = { principalId: string | null; admin: boolean };
 
@@ -53,7 +54,7 @@ export function accessCardLines(access: WireAccessCard, viewer: AccessViewer): A
     };
   }
   if (access.reason === "engine_missing") {
-    return { text: t("access.engineMissing", { engine: access.engine }), ...(owner && !viewer.admin ? { hint: t("access.engineMissing.owner") } : {}) };
+    return { text: t("access.engineMissing", { engine: access.engine }), ...(owner && !viewer.admin ? { hint: permissionMissingText("engines.manage") } : {}) };
   }
   if (access.reason === "key_refused") {
     return {

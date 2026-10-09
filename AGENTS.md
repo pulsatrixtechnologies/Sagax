@@ -216,6 +216,40 @@ Covered by `src/components/SettingsModal.orgCleanup.test.ts`,
   the grants open inline, the force actions sit in an admin-only row menu
   and their result is a toast (`src/components/settings/OrgSharing.test.ts`).
 
+## Permission matrix (organization mode, 2026-10-09)
+
+Every "admin only" decision a person meets on an organization server is a
+named permission (`shared/permissions.ts`, spec
+`docs/superpowers/specs/2026-10-09-sagax-permission-matrix.md`). Rules:
+
+- Perspicax computes each person's effective keys (union over their
+  profiles, every key for an admin) and sends them in the directory
+  (`permissions` on the person). No list (an older Perspicax, a person it
+  does not list yet) means the member defaults: `bots.create`,
+  `bots.fullAccess`, `sharing.grants`, `apps.ownIntegrations`, exactly what a
+  member could do before. Unknown keys are ignored with one log line.
+- Every gate asks `callerCan(auth, key)` (`server/index.ts`, built on `can`
+  and `server/org-permissions.ts`). An admin holds every key. The five
+  `adminOnly` keys (`host.shell`, `people.manage`, `backup.workspace`,
+  `server.settings`, `server.link`) are never granted by a profile; keep that
+  list tiny and justify any addition in the spec.
+- An admin-scope route a key opens is listed in `PERMISSION_ROUTES`
+  (`server/request-auth.ts`); a new admin route stays admin until listed
+  there, and its handler must not trust the admin scope for more than the
+  key says (an engine's `cli` and `configDir` stay `host.shell`).
+- A member bot field beyond `MEMBER_BOT_FIELDS` needs its key in
+  `BOT_FIELD_PERMISSIONS`; a field missing there stays an admin's.
+- A refusal is `403 { error: "forbidden", permission, message }`; the app
+  shows "Your profile does not include <label>. Ask an admin to add it in
+  Perspicax." (`src/lib/permissions.ts`, mapped in `api()`).
+- The person sheet still narrows on top (`sagax_bots: use`,
+  `sagax_integrations: off`).
+- `GET /api/org/admin/capabilities` (api 3) returns the catalogue for the
+  Perspicax matrix; `GET /api/org/admin/people/{principal}` returns the
+  person's effective keys. Covered by `server/org-permissions.e2e.test.ts`
+  (PM-1 to PM-5), `shared/permissions.test.ts`,
+  `server/org-permissions.test.ts` and `server/request-auth.test.ts`.
+
 ## Full access (organization mode, 2026-10-01)
 
 On a solo server Full access is granted only through the packaged desktop

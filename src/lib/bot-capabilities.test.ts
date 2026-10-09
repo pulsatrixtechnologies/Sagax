@@ -11,6 +11,16 @@ const own = { ownerUserId: ZARA };
 const other = { ownerUserId: "pr_other" };
 
 describe("canEditBotField", () => {
+  it("opens a field on a bot the member owns when their profile includes its permission (2026-10-09)", () => {
+    const granted = { viewer: { ...member.viewer!, permissions: ["bots.create", "bots.approvalLevel", "folders.botWorkingFolder"] } } as ConfigStatus;
+    expect(canEditBotField(granted, own, "approvalMode")).toBe(true);
+    expect(canEditBotField(granted, own, "cwd")).toBe(true);
+    expect(canEditBotField(granted, own, "computer")).toBe(false);
+    // never on someone else's bot, and never a field no permission opens
+    expect(canEditBotField(granted, other, "approvalMode")).toBe(false);
+    expect(canEditBotField(granted, own, "chiefOfStaff")).toBe(false);
+  });
+
   it("lets a solo server, an admin and a missing viewer edit every field", () => {
     expect(canEditBotField(null, other, "cwd")).toBe(true);
     expect(canEditBotField({ viewer: { ...member.viewer!, role: "admin", operator: false } } as ConfigStatus, other, "approvalMode")).toBe(true);

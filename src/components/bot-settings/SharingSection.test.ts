@@ -146,7 +146,7 @@ describe("the access card", () => {
 
   it("names a missing engine, and shows the provider's words to the owner and admins only", () => {
     expect(accessCardLines({ ...card, reason: "engine_missing", engine: "Codex" }, { principalId: OWNER, admin: false }))
-      .toEqual({ text: "This bot uses Codex, which is not installed on this server.", hint: "Ask an admin." });
+      .toEqual({ text: "This bot uses Codex, which is not installed on this server.", hint: "Your profile does not include \"Manage the server's engines\". Ask an admin to add it in Perspicax." });
     const refused = { ...card, reason: "key_refused" as const, detail: "invalid x-api-key" };
     expect(accessCardLines(refused, { principalId: BOB, admin: false })).toEqual({ text: "The provider refused this bot's key." });
     expect(accessCardLines(refused, { principalId: OWNER, admin: false })?.detail).toBe("invalid x-api-key");

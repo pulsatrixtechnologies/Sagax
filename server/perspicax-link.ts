@@ -18,6 +18,7 @@
 import { lstatSync, readFileSync } from "node:fs";
 import { z } from "zod";
 
+import { normalizePermissions, type PermissionKey } from "../shared/permissions.ts";
 import { effectiveIntegrationRights } from "./person-integrations.ts";
 import type { Principal } from "./principals.ts";
 
@@ -129,6 +130,12 @@ const personSchema = z.object({
    * plugins, skills and MCP servers in Sagax (`manage`, the default) or an
    * admin does (`off`). Absent from an older Perspicax: manage. */
   sagax_integrations: z.enum(["manage", "off"]).optional().catch(undefined),
+  /** 2026-10-09: the person's effective Sagax permissions (the union over
+   * the profiles they hold, computed by Perspicax; every key for an admin).
+   * Absent or null from an older Perspicax, or before it read this server's
+   * catalogue: the member defaults apply (shared/permissions.ts). Unknown
+   * keys are ignored with a log, never fatal. */
+  permissions: z.array(z.string().max(64)).max(1_000).nullable().optional().catch(undefined),
   routine_delegation: z.object({
     consented_at: z.string().max(40),
     renewed_at: z.string().max(40),
@@ -140,6 +147,9 @@ const profileSchema = z.object({
   slug: z.string().max(128),
   name: z.string().max(200),
   description: z.string().max(2_000),
+  /** 2026-10-09: the Sagax permissions this profile grants, for display
+   * (null or absent: unknown, an older Perspicax). */
+  sagax_permissions: z.array(z.string().max(64)).max(1_000).nullable().optional().catch(undefined),
 });
 const teamSchema = z.object({
   id: z.string().min(1).max(64),
@@ -338,6 +348,8 @@ export class PerspicaxDirectory {
   private readonly keyCache = new Map<string, { key: string; fingerprint: string; until: number }>();
   /** Avatars read through the link, by subject and version, in memory only. */
   private readonly avatarCache = new Map<string, AvatarImage>();
+  /** Unknown permission keys already logged (one line each). */
+  private readonly loggedUnknownPermissions = new Set<string>();
 
   constructor(options: PerspicaxDirectoryOptions) {
     this.options = options;
@@ -385,6 +397,30 @@ export class PerspicaxDirectory {
   integrationRights(sub: string): "manage" | "off" {
     const person = this.data?.people.find((entry) => entry.sub === sub);
     return person?.sagax_integrations === "off" ? "off" : "manage";
+  }
+
+  /** 2026-10-09: the permissions Perspicax computed for this subject, or
+   * null when it sent none (an older Perspicax, a subject it does not list,
+   * before the first directory): the caller then uses the member defaults.
+   * Unknown and admin-only keys are dropped here; each unknown key is
+   * logged once per directory. */
+  permissionsOf(sub: string): PermissionKey[] | null {
+    const person = this.data?.people.find((entry) => entry.sub === sub);
+    if (!person || !Array.isArray(person.permissions)) return null;
+    const normalized = normalizePermissions(person.permissions);
+    for (const key of normalized.unknown) {
+      if (this.loggedUnknownPermissions.has(key)) continue;
+      this.loggedUnknownPermissions.add(key);
+      this.log(`[perspicax] directory: unknown permission "${key}" ignored (a newer Perspicax or catalogue?)`);
+    }
+    return normalized.granted;
+  }
+
+  /** 2026-10-09: what a profile grants, as Perspicax sent it (display only). */
+  profilePermissions(profileId: string): PermissionKey[] | null {
+    const profile = this.data?.profiles?.find((entry) => entry.id === profileId);
+    if (!profile || !Array.isArray(profile.sagax_permissions)) return null;
+    return normalizePermissions(profile.sagax_permissions).granted;
   }
 
   /** Slice 5: every MCP profile Perspicax lists, sorted by id ([] before the
@@ -872,6 +908,7 @@ export class PerspicaxDirectory {
     }
     this.apply(parsed, fetchStartedAt);
     this.data = parsed;
+    this.loggedUnknownPermissions.clear();
     this.reportDelegations(parsed, fetchStartedAt);
     const etag = response.headers.get("etag");
     this.etag = etag && etag.length <= 128 ? etag : null;

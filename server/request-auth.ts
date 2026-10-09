@@ -13,6 +13,7 @@ import { timingSafeEqual } from "node:crypto";
 import { isIP } from "node:net";
 
 import type { Scope, SessionRecord, SessionRegistry } from "./sessions.ts";
+import type { PermissionKey } from "../shared/permissions.ts";
 import { denyReason as companionDenial, isCompanionNotice } from "../companion/src/routes.ts";
 import {
   MEMBER_BOT_FIELDS,
@@ -42,6 +43,9 @@ export interface RequestAuthResult {
   /** HTTP status and the reason to send when auth is null. */
   status: 401 | 403;
   error: string;
+  /** 2026-10-09: the permission that would have opened this route
+   * (PERMISSION_ROUTES), when a session without admin scope was refused. */
+  permission?: PermissionKey;
 }
 
 const LOOPBACK_SCOPES: readonly Scope[] = ["admin", "client"];
@@ -594,6 +598,39 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   { methods: ["POST"], path: /^\/api\/workers\/queue\/[\w-]+\/cancel$/ },
 ];
 
+/** Organization server (2026-10-09): admin-scope routes a person reaches
+ * with one permission of their profiles (shared/permissions.ts). Only
+ * honoured with the orgDirectory feature; the handler may still check more
+ * (an engine's program path stays admin, see server/index.ts). A route not
+ * listed here stays admin scope, which the catalogue names server.settings
+ * or another admin-only key. */
+export const PERMISSION_ROUTES: ReadonlyArray<{ methods: readonly string[]; path: RegExp; permission: PermissionKey }> = [
+  // the usage ledger and its export (server/routes/usage.ts)
+  { methods: ["GET"], path: /^\/api\/usage(?:\.csv)?$/, permission: "usage.view" },
+  // the admin activity log and its export
+  { methods: ["GET"], path: /^\/api\/admin-activity(?:\.csv)?$/, permission: "people.activityLog" },
+  // plugin marketplaces (server/routes/marketplaces.ts)
+  { methods: ["GET", "POST", "DELETE"], path: /^\/api\/marketplaces(?:\/[A-Za-z0-9][A-Za-z0-9._-]{0,63}(?:\/(?:refresh|plugins\/[A-Za-z0-9][A-Za-z0-9._-]{0,63}))?)?$/, permission: "apps.marketplaces" },
+  // the shared skills library
+  { methods: ["GET", "POST", "PUT", "PATCH", "DELETE"], path: /^\/api\/skills-library(?:\/[a-z0-9-]+)?$/, permission: "skills.library" },
+  // the server's engines: settings, icon, models, install, sign-in, update
+  { methods: ["PATCH", "DELETE"], path: /^\/api\/instances\/[\w.-]+$/, permission: "engines.manage" },
+  { methods: ["PATCH"], path: /^\/api\/instances\/[\w.-]+\/icon$/, permission: "engines.manage" },
+  { methods: ["GET"], path: /^\/api\/instances\/[\w.-]+\/auth\/status$/, permission: "engines.manage" },
+  { methods: ["POST"], path: /^\/api\/instances\/[\w.-]+\/(?:refresh-models|install|auth\/start|auth\/complete|auth\/cancel|auth\/sign-out|claude-update)$/, permission: "engines.manage" },
+  { methods: ["POST"], path: /^\/api\/instances\/(?:claude|chatgpt)-accounts$/, permission: "engines.manage" },
+];
+
+/** The permission that opens this admin-scope route to a person, or null. */
+export function routePermission(method: string, path: string, features: ClientFeatures = {}): PermissionKey | null {
+  if (features.orgDirectory !== true) return null;
+  const upper = method.toUpperCase();
+  for (const rule of PERMISSION_ROUTES) {
+    if (rule.path.test(path) && rule.methods.includes(upper)) return rule.permission;
+  }
+  return null;
+}
+
 export function requiredScope(method: string, path: string, features: ClientFeatures = {}): Scope {
   const upper = method.toUpperCase();
   for (const rule of CLIENT_ALLOW) {
@@ -619,9 +656,9 @@ export const memberBotFieldViolation = sharedMemberBotFieldViolation;
 /** The capabilities block GET /api/config puts on `viewer`. An admin scope
  * may edit the installation. Pairing is also open to an organization member
  * when org pairing is on (the route itself stays the gate). */
-export function capabilitiesForAuth(auth: { scopes: readonly string[] }, options: { orgPairing: boolean }): ViewerCapabilities {
+export function capabilitiesForAuth(auth: { scopes: readonly string[] }, options: { orgPairing: boolean; viewUsage?: boolean }): ViewerCapabilities {
   const admin = auth.scopes.includes("admin");
-  return viewerCapabilities({ admin, pairDevices: admin || options.orgPairing });
+  return viewerCapabilities({ admin, pairDevices: admin || options.orgPairing, viewUsage: options.viewUsage });
 }
 
 /** What the computer owner's paired phone (through the companion sidecar)
@@ -713,6 +750,9 @@ export interface ResolveOptions {
    * environment, which the server's other children could read). It lets that
    * CLI, and nothing else, mint and list pairing codes. */
   cliOwnerToken?: string;
+  /** Organization server (2026-10-09): whether this session's person holds
+   * a permission, for the admin-scope routes PERMISSION_ROUTES opens. */
+  permits?: (session: SessionRecord, permission: PermissionKey) => boolean;
 }
 
 const CLI_OWNER_HEADER = "x-openmausbot-cli-owner";
@@ -787,7 +827,9 @@ export function resolveRequestAuth(req: IncomingMessage, options: ResolveOptions
     }
     const needed = requiredScope(method, path, options.features ?? {});
     if (!session.scopes.includes(needed)) {
-      return deny(403, `forbidden: this session lacks the ${needed} scope`);
+      const permission = needed === "admin" && session.scopes.includes("client") ? routePermission(method, path, options.features ?? {}) : null;
+      if (!permission) return deny(403, `forbidden: this session lacks the ${needed} scope`);
+      if (!options.permits?.(session, permission)) return { auth: null, status: 403, error: "forbidden", permission };
     }
     // Only a request that passed both checks counts as use of the session,
     // and only a request the client made itself: redeeming a stream ticket

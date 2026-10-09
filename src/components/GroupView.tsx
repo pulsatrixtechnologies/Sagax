@@ -28,7 +28,8 @@ import { TurnPresence } from "./TurnPresence";
 import { showToolCallsEnabled } from "@/lib/feature-flags";
 import { CompactionChip, DigestChip } from "./DigestChip";
 import { roomActivityVisible } from "@/lib/room-activity";
-import { viewerActorId } from "@/lib/viewer";
+import { viewerActorId, viewerCan } from "@/lib/viewer";
+import { permissionMissingText } from "@/lib/permissions";
 import { viewerIsOrgAdmin, viewerOwnsGroup } from "@/lib/group-owner";
 import { PersonAvatar, RoomPersonLabel } from "./MessageAuthor";
 import { peopleDmPeer } from "@/lib/people-dm";
@@ -833,7 +834,7 @@ function RoomWorkingFolder({ group, disabled = false, adminOnlyNote = false }: {
             {shownCwd ? shortPath(shownCwd, home) : <span className="text-ink-secondary">{t("room.folder.own")}</span>}
           </div>
           {!locked && adminOnlyNote && (
-            <div className="mt-2 text-[12px] text-ink-secondary">{t("groupPanel.folderAdminOnly")}</div>
+            <div className="mt-2 text-[12px] text-ink-secondary">{permissionMissingText("folders.roomWorkingFolder")}</div>
           )}
           {locked && (
             <div className="mt-2 text-[12px] text-ink-secondary">
@@ -965,7 +966,7 @@ export function GroupView({ group: stored }: { group: Group }) {
   const editable = !remoteClient && ownsRoom;
   // The working folder touches the host or sandbox filesystem: on an
   // organization server it stays an admin's, even for the group's owner.
-  const folderEditable = group.ownerId === undefined || viewerIsOrgAdmin(state.config);
+  const folderEditable = group.ownerId === undefined || viewerIsOrgAdmin(state.config) || viewerCan(state.config, "folders.roomWorkingFolder");
   const viewerListed = (group.humanIds ?? []).some((id) => {
     const entry = id.trim().toLowerCase();
     return entry === viewerId || (Boolean(viewerEmail) && entry === viewerEmail);

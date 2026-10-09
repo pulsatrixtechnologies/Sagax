@@ -25,6 +25,8 @@ import {
   requestOrigin,
   requestSource,
   requiredScope,
+  routePermission,
+  PERMISSION_ROUTES,
   resolveLoopbackTrust,
   resolveRequestAuth,
   sanitizeSource,
@@ -369,6 +371,48 @@ describe("resolveRequestAuth", () => {
     const foreignOrigin = resolve({ host: "127.0.0.1:8799", origin: "https://evil.example" });
     expect(foreignOrigin.status).toBe(403);
     expect(foreignOrigin.error).toBe("forbidden: cross-origin request");
+  });
+
+  it("opens an admin-scope route to a person holding its permission, and names the permission otherwise (2026-10-09)", () => {
+    const member = sessions.issue({ label: "browser", scopes: ["client"] });
+    const held = new Set<string>();
+    const gate = (method: string, path: string, features: Record<string, boolean> = { orgDirectory: true }) =>
+      resolveRequestAuth(request({ host: "bots.example.com", authorization: `Bearer ${member.token}` }, method), {
+        sessions, cookieName, streamPath: "/api/events", url: new URL(path, "http://x"), features,
+        permits: (session, permission) => session.id === member.session.id && held.has(permission),
+      });
+    expect(gate("GET", "/api/usage")).toMatchObject({ auth: null, status: 403, error: "forbidden", permission: "usage.view" });
+    held.add("usage.view");
+    expect(gate("GET", "/api/usage").auth?.kind).toBe("session");
+    expect(gate("GET", "/api/usage.csv").auth?.kind).toBe("session");
+    // a solo server (no orgDirectory) never opens it
+    expect(gate("GET", "/api/usage", {})).toMatchObject({ auth: null, error: "forbidden: this session lacks the admin scope" });
+    // a route no permission opens keeps the scope refusal
+    expect(gate("PUT", "/api/config")).toMatchObject({ auth: null, error: "forbidden: this session lacks the admin scope" });
+    expect(gate("PUT", "/api/config").permission).toBeUndefined();
+    held.add("engines.manage");
+    expect(gate("PATCH", "/api/instances/codex").auth?.kind).toBe("session");
+    expect(gate("POST", "/api/instances/codex/install").auth?.kind).toBe("session");
+    // never the CLI test, which runs a program
+    expect(gate("POST", "/api/cli-test").auth).toBeNull();
+  });
+
+  it("maps admin-scope routes to permissions only with the organization directory", () => {
+    const org = { orgDirectory: true };
+    expect(routePermission("GET", "/api/usage", org)).toBe("usage.view");
+    expect(routePermission("GET", "/api/admin-activity.csv", org)).toBe("people.activityLog");
+    expect(routePermission("POST", "/api/marketplaces", org)).toBe("apps.marketplaces");
+    expect(routePermission("POST", "/api/marketplaces/acme/plugins/tool", org)).toBe("apps.marketplaces");
+    expect(routePermission("PUT", "/api/skills-library/my-skill", org)).toBe("skills.library");
+    expect(routePermission("POST", "/api/instances/claude-accounts", org)).toBe("engines.manage");
+    expect(routePermission("POST", "/api/instances/claude/leftover-files/remove", org)).toBeNull();
+    expect(routePermission("PUT", "/api/mcp/servers/x", org)).toBeNull();
+    expect(routePermission("GET", "/api/usage", {})).toBeNull();
+    // every route a permission opens is admin scope to begin with
+    for (const [method, path] of [["GET", "/api/usage"], ["GET", "/api/admin-activity"], ["GET", "/api/marketplaces"], ["GET", "/api/skills-library"], ["PATCH", "/api/instances/codex"]] as const) {
+      expect(requiredScope(method, path, org)).toBe("admin");
+      expect(PERMISSION_ROUTES.some((rule) => rule.path.test(path) && rule.methods.includes(method)), path).toBe(true);
+    }
   });
 
   it("issues sgx_sess_ bearers and still accepts an omb_sess_ one issued before Sagax", () => {

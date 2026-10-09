@@ -308,6 +308,23 @@ describe("PerspicaxDirectory, slice 4: teams and owner keys", () => {
     expect(h.sync.providerKeys("NOBODY")).toEqual([]);
   });
 
+  it("reads permissions per person: known keys only, null when Perspicax sends none (2026-10-09)", async () => {
+    const h = harness(withTeams([
+      person("ALICE", { permissions: ["usage.view", "nope.key", "host.shell", "bots.create", "usage.view"] }),
+      person("BOB", { permissions: [] }),
+      person("CAROL"),
+      person("DAN", { permissions: "bogus" as never }),
+    ], []));
+    expect(h.sync.permissionsOf("ALICE")).toBeNull();
+    await h.sync.refresh();
+    // catalogue order, deduplicated; unknown and admin-only keys dropped
+    expect(h.sync.permissionsOf("ALICE")).toEqual(["bots.create", "usage.view"]);
+    expect(h.sync.permissionsOf("BOB")).toEqual([]);
+    expect(h.sync.permissionsOf("CAROL")).toBeNull();
+    expect(h.sync.permissionsOf("DAN")).toBeNull();
+    expect(h.sync.permissionsOf("NOBODY")).toBeNull();
+  });
+
   it("reads sagax_integrations per person: off only when said, manage otherwise (Perspicax 0046)", async () => {
     const h = harness(withTeams([
       person("ALICE", { sagax_integrations: "off" }),

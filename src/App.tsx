@@ -45,6 +45,7 @@ import { dockBadge, useLocalSwitch } from "@/lib/notification-preferences";
 import { primeNudgeSound } from "@/lib/nudge-sound";
 import { viewerBotsReadOnly, viewerCanCreateBots } from "@/lib/viewer";
 import { phonePairingSettingsAction, takePhonePairingRequest } from "@/lib/phone-pairing";
+import { botsReadOnlyText } from "@/lib/permissions";
 
 function Shell() {
   const { state, dispatch } = useStore();
@@ -394,7 +395,7 @@ function Shell() {
                 {t("app.empty.create")}
               </button>
             ) : viewerBotsReadOnly(state.config) && (
-              <p role="note" data-bots-read-only className="max-w-sm text-center text-[13px]">{t("bots.readOnly.notice")}</p>
+              <p role="note" data-bots-read-only className="max-w-sm text-center text-[13px]">{botsReadOnlyText(state.config)}</p>
             )}
           </main>
         ) : (

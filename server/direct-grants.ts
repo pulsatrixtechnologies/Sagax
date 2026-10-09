@@ -59,6 +59,9 @@ export interface DirectGrantRouteDeps {
   /** Organization server: this person may use bots but not grant them
    * (`sagax_bots: use`). Checked before a grantee is resolved. */
   botsReadOnly?(actorId: string): boolean;
+  /** 2026-10-09: the refusal for a caller whose profile lacks
+   * sharing.grants (null: allowed). */
+  shareRefusal?(auth: RequestAuth): Record<string, unknown> | null;
   /** Slice 7: one audit row per saved change (category rights). */
   audit?(auth: RequestAuth, row: { action: "direct_grant.add" | "direct_grant.remove"; botId: string; userId: string }): void;
 }
@@ -93,6 +96,8 @@ export function createDirectGrantRoutes(deps: DirectGrantRouteDeps): RouteHandle
     const removal = path.match(/^\/api\/bots\/([\w-]+)\/direct-grants\/([^/]+)$/);
     if (removal && method === "DELETE") {
       if (actorReadOnly(deps, auth)) return json(res, 403, BOTS_READ_ONLY);
+      const refusedRemoval = deps.shareRefusal?.(auth);
+      if (refusedRemoval) return json(res, 403, refusedRemoval);
       const bot = deps.bot(removal[1]!);
       let userId: string;
       try {
@@ -110,6 +115,8 @@ export function createDirectGrantRoutes(deps: DirectGrantRouteDeps): RouteHandle
     const m = path.match(/^\/api\/bots\/([\w-]+)\/direct-grants$/);
     if (!m || method !== "POST") return PASS;
     if (actorReadOnly(deps, auth)) return json(res, 403, BOTS_READ_ONLY);
+    const refusedShare = deps.shareRefusal?.(auth);
+    if (refusedShare) return json(res, 403, refusedShare);
     const body = await readBody(req);
     if (typeof body?.userId !== "string" || !body.userId) return json(res, 400, { error: "userId is required" });
     const bot = deps.bot(m[1]!);

@@ -63,13 +63,14 @@ export interface ViewerCapabilities {
 
 /** `admin` is the request scope (loopback owner or an admin session).
  * `pairDevices` defaults to that same scope. */
-export function viewerCapabilities(input: { admin: boolean; pairDevices?: boolean }): ViewerCapabilities {
+export function viewerCapabilities(input: { admin: boolean; pairDevices?: boolean; viewUsage?: boolean }): ViewerCapabilities {
   const admin = input.admin;
   return {
     editConfig: admin,
     manageKeys: admin,
     manageComputers: admin,
-    viewUsage: admin,
+    // An organization member whose profile includes usage.view (2026-10-09).
+    viewUsage: admin || input.viewUsage === true,
     manageBackups: admin,
     pairDevices: input.pairDevices ?? admin,
   };

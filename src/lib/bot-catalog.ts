@@ -193,6 +193,8 @@ export interface CatalogActionContext {
   organization: boolean;
   admin: boolean;
   canCreate: boolean;
+  /** 2026-10-09: a profile with bots.catalogFeature features bots too. */
+  feature?: boolean;
   /** Whether a shared bot shows in the viewer's sidebar (not hidden there). */
   inSidebar: (botId: string) => boolean;
 }
@@ -216,10 +218,10 @@ export function catalogActions(item: CatalogItem, ctx: CatalogActionContext): Ca
     if (!entry.archived) out.push("open");
     if (ctx.organization && !entry.archived) out.push(published ? "unpublish" : "publish");
   }
-  if (ctx.organization && ctx.admin && published && !entry.archived) {
+  if (ctx.organization && (ctx.admin || ctx.feature === true) && published && !entry.archived) {
     out.push(entry.catalog?.featured ? "unfeature" : "feature");
-    if (entry.source !== "mine") out.push("unpublish");
   }
+  if (ctx.organization && ctx.admin && published && !entry.archived && entry.source !== "mine") out.push("unpublish");
   return out;
 }
 

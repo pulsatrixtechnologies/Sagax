@@ -3643,6 +3643,7 @@
   "people.title": "People",
   "people.today": "Today",
   "people.turns": "{turns} turns this month",
+  "permissions.missing": "Your profile does not include \"{label}\". Ask an admin to add it in Perspicax.",
   "personLabel.add": "Add a label",
   "personLabel.edit": "Edit label",
   "personLabel.mine": "My label",

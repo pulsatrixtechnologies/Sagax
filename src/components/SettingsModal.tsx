@@ -33,7 +33,7 @@ import { peopleListServed, readMembership } from "../lib/membership";
 import { ActivitySection } from "./ActivitySection";
 import { MailSettings } from "./MailSettings";
 import { useOwnerOrAdmin } from "@/lib/use-owner-or-admin";
-import { canEditConfig, canManageBackups, canManageComputers, canViewUsage } from "@/lib/viewer";
+import { canEditConfig, canManageBackups, canManageComputers, canViewUsage, viewerCan } from "@/lib/viewer";
 import { BrowserProfilesManager } from "./BrowserProfilesManager";
 import { ThisComputerSettings } from "./DesktopWorkspaceSwitcher";
 import { OrganizationSettings } from "./OrganizationSettings";
@@ -1023,7 +1023,8 @@ export function SettingsModal() {
     .filter((entry) => entry.id !== "mail" || ownerOrAdmin === true)
     .filter((entry) => !organizationHidesSection(entry.id, organization))
     // the activity log belongs to a workspace served to a browser, and to its admins
-    .filter((entry) => entry.id !== "activity" || (servedPage() && ownerOrAdmin === true))
+    // (2026-10-09: and to a person whose profile includes people.activityLog)
+    .filter((entry) => entry.id !== "activity" || (servedPage() && (ownerOrAdmin === true || (perspicaxOrg !== null && viewerCan(state.config, "people.activityLog")))))
     // Installation writes the server refuses with 403: hide the section.
     .filter((entry) => !memberHidesSection(entry.id, { editConfig, manageComputers, viewUsage, manageBackups, organization }))
     // Decision model is an experimental section, off until its switch is on.

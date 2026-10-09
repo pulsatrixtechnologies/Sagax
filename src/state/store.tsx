@@ -56,6 +56,7 @@ import { showNotification, type NotificationTarget } from "@/lib/notify";
 import { speaker } from "@/lib/tts";
 import { roleProfilePatch, type BotRole } from "@/lib/bot-roles";
 import { t } from "@/lib/i18n";
+import { permissionMissingMessage } from "@/lib/permissions";
 import { createBotPatchQueue, type BotUpdatePatch } from "./bot-patch-queue";
 import { useChatErrorClear } from "./chat-error";
 import type { OnboardingStatus } from "@/lib/onboarding";
@@ -836,6 +837,9 @@ export interface ConfigViewer {
   /** Organization server: a Perspicax admin lets this person use shared
    * bots only (no creating, editing or owning a bot). */
   botsReadOnly?: true;
+  /** Why (2026-10-09): `permission` when their profile lacks bots.create;
+   * absent when the person sheet says use only. */
+  botsReadOnlyReason?: "permission";
   /** Organization server: a Perspicax admin manages this person's plugins,
    * skills and MCP servers (Perspicax `sagax_integrations: off`). */
   integrationsManagedByAdmin?: true;
@@ -849,6 +853,11 @@ export interface ConfigViewer {
   avatarUrl?: string;
   /** Which installation screens this viewer may change. Absent on an older server. */
   capabilities?: ViewerCapabilities;
+  /** Organization server (2026-10-09): the permissions this person holds
+   * (shared/permissions.ts); every key for an admin. Absent elsewhere and
+   * on an older server (src/lib/viewer.ts viewerCan falls back). */
+  permissions?: string[];
+  permissionsSource?: "admin" | "perspicax" | "defaults";
 }
 
 export interface ManagedPolicySummary {
@@ -2932,7 +2941,7 @@ export async function api<T = any>(path: string, init?: RequestInit & { timeoutM
         : AbortSignal.timeout(timeoutMs),
   });
   const body = await res.json().catch(() => ({}));
-  if (!res.ok) throw new ApiError(body.error ?? `${res.status} ${res.statusText}`, res.status, body);
+  if (!res.ok) throw new ApiError(permissionMissingMessage(body) ?? body.error ?? `${res.status} ${res.statusText}`, res.status, body);
   return body;
 }
 

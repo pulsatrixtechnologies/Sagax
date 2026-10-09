@@ -12,6 +12,8 @@ import { api, useStore, type Bot } from "@/state/store";
 import { t } from "@/lib/i18n";
 import type { GrantAdministration, OrgDirectory, WireGrant } from "@/lib/perspicax-org";
 import { GrantEditor } from "./GrantEditor";
+import { viewerCan } from "@/lib/viewer";
+import { permissionMissingText } from "@/lib/permissions";
 
 /** The grants the bot carries, as the editor's first rows (labels come from
  * the directory once it answers; the server's answer replaces them). */
@@ -47,11 +49,15 @@ export function SharingSection({ bot }: { bot: Bot }) {
   }, [bot.id]);
 
   const rows = useMemo(() => initialGrantRows(bot, directory), [bot, directory]);
-  const ownerAdminister: GrantAdministration | null = isOwner ? { any: true, teamIds: [], maxLevel: "manage", canAdd: true } : null;
+  // 2026-10-09: an owner whose profile lacks sharing.grants sees the
+  // grants without the editor's controls, and why.
+  const mayShare = viewerCan(state.config, "sharing.grants");
+  const ownerAdminister: GrantAdministration | null = isOwner && mayShare ? { any: true, teamIds: [], maxLevel: "manage", canAdd: true } : null;
 
   return (
     <div className="flex flex-col gap-3 rounded-xl border border-hairline/40 p-4" data-bot-sharing>
       <p className="text-[12.5px] leading-relaxed text-ink-secondary">{t("botSettings.sharing.notice")}</p>
+      {isOwner && !mayShare && <p role="note" data-sharing-permission className="text-[12.5px] leading-relaxed text-ink-secondary">{permissionMissingText("sharing.grants")}</p>}
       <GrantEditor
         key={`${bot.id}:${directory ? "directory" : "loading"}`}
         botId={bot.id}

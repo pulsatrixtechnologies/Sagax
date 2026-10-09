@@ -21,7 +21,7 @@ import { ManageMyKeysLink } from "./settings/MyEngines";
 import { EngineConnect, paysWithText } from "./EngineConnect";
 import { HarnessConnectorsSection } from "./HarnessConnectorsSection";
 import { reloadMyEngines, useMyEngines, usePerspicaxOrg, type MyEngine } from "@/lib/perspicax-org";
-import { viewerIsOrgMember } from "@/lib/viewer";
+import { viewerCan, viewerIsOrgMember } from "@/lib/viewer";
 import { connectedAppsEnabled } from "@/lib/feature-flags";
 import { OrgHostToolsNote, orgRefusesEngine } from "./OrgHostToolsNote";
 
@@ -398,7 +398,9 @@ export function EnginesSettings() {
   // reports to them (orgEngineRows keeps the installed ones). Key engines
   // have no CLI; keep them once their key is saved, or the card (and the
   // only way back to a mistyped key) vanishes (MOCA-292).
-  const member = viewerIsOrgMember(state.config);
+  // 2026-10-09: a member whose profile includes engines.manage manages the
+  // server's engines as an admin does (the server sends them the full rows).
+  const member = viewerIsOrgMember(state.config) && !viewerCan(state.config, "engines.manage");
   const rows = state.instances.filter((i) => member || i.readOnly || i.cli !== undefined || i.cliDefault !== undefined || i.snapshot.state === "unavailable" || isApiKeyEngine(i));
   // On an organization server each person signs in their own subscription
   // here, on each engine's card (it was a separate "My subscriptions and
