@@ -568,6 +568,13 @@ function chompFrame(t: number): OgreFrame {
   const bites = t > 0.8 && t < 1.75 ? Math.floor((t - 0.8) / 0.32) + 1 : t >= 1.75 ? 3 : 0;
   const biting = t > 0.8 && t < 1.75 && (t - 0.8) % 0.32 < 0.14;
   const pat = t > 1.9 ? Math.sin((t - 1.9) * TAU * 3) : 0;
+  // a pat on the belly, then the hand back down
+  const patting = keyed(t, [
+    [1.8, 0],
+    [1.92, 1],
+    [2.04, 1],
+    [d, 0],
+  ]);
   const headAt = { ...base, head: { x: 0, y: biting ? 0.9 : 0, rot: toMouth * 4 + (biting ? -2 : 0), scale: biting ? 1.03 : 1 } };
   const mouthAt = headPoint(headAt, [56, 68]);
   const hand = lerpPoint(lerpPoint(OGRE_BODY.handR, [88, 48], grab), [mouthAt[0] + 4.6, mouthAt[1] + 2], toMouth);
@@ -586,7 +593,7 @@ function chompFrame(t: number): OgreFrame {
     look: 0.45 * grab * (1 - toMouth * 0.5),
     ears: { l: biting ? 6 : 2, r: biting ? 6 : 2, back: 0 },
     hands: {
-      l: t > 1.85 ? lerpPoint(OGRE_BODY.handL, [44, 70 + pat], clamp01((t - 1.85) / 0.15)) : OGRE_BODY.handL,
+      l: lerpPoint(OGRE_BODY.handL, [44, 70 + pat], patting),
       r: t > 1.75 ? lerpPoint(hand, OGRE_BODY.handR, clamp01((t - 1.75) / 0.3)) : hand,
       openL: false,
       openR: grab > 0.5 && t < 1.75,
@@ -852,14 +859,14 @@ export function ogreDesktopAction(activity: string, pose: string): OgreMove | nu
 }
 
 /**
- * The one-shot Ogre plays on the desktop when the clip changes (its own
- * move for the clip), or when the pose turns to "celebrate": a reply has
- * just arrived, and the ogre eats the message.
+ * The one-shot Ogre plays on the desktop when the clip changes: its own move
+ * for the clip. The desktop's cues come as clips too (mascots.tsx
+ * cueClipFor): a reply that lands is a peck, so the ogre eats the message.
  */
-export function ogreDesktopShot(activity: string, pose: string, previous: { activity: string; pose: string }): OgreMove | null {
-  if (pose === "celebrate" && previous.pose !== "celebrate") return "chomp";
+export function ogreDesktopShot(activity: string, previous: { activity: string }): OgreMove | null {
   if (activity === previous.activity) return null;
-  if (ogreDesktopAction(activity, pose) !== null && activity !== "idle") return null;
+  // the clips held as an activity (walk, sleep, drag, work) are not one-shots
+  if (ogreDesktopAction(activity, "idle") !== null) return null;
   return ogreMoveFor(activity);
 }
 

@@ -413,12 +413,12 @@ function ShibaThumb({ color, look, size }: MascotThumbProps) {
 
 /* --------------------------------------------------------------- Ogre */
 
-/** Ogre's one-shot for a change of clip or pose (ogre-moves.ts ogreDesktopShot), as a move request. */
-function useOgreShot(activity: MascotActivity, pose: FloatingPose): FxMoveRequest | null {
-  const last = useRef<{ activity: string; pose: string; request: FxMoveRequest | null }>({ activity: "idle", pose: "idle", request: null });
-  if (last.current.activity !== activity || last.current.pose !== pose) {
-    const move = ogreDesktopShot(activity, pose, last.current);
-    last.current = { activity, pose, request: move ? { clip: move, key: Date.now() } : last.current.request };
+/** Ogre's one-shot for a change of clip (ogre-moves.ts ogreDesktopShot), as a move request. */
+function useOgreShot(activity: MascotActivity): FxMoveRequest | null {
+  const last = useRef<{ activity: string; request: FxMoveRequest | null }>({ activity: "idle", request: null });
+  if (last.current.activity !== activity) {
+    const move = ogreDesktopShot(activity, last.current);
+    last.current = { activity, request: move ? { clip: move, key: Date.now() } : null };
   }
   return last.current.request;
 }
@@ -433,7 +433,7 @@ function useOgreShot(activity: MascotActivity, pose: FloatingPose): FxMoveReques
  */
 function OgreRender({ color, look, size, activity, pose, frame, fps, onHitTest }: MascotRenderProps) {
   const fx = useClipFx(activity);
-  const shot = useOgreShot(activity, pose);
+  const shot = useOgreShot(activity);
   const ground = useRef<HTMLSpanElement>(null);
   const jolt = useRef(1);
   const onShake = useCallback(
