@@ -191,7 +191,11 @@ export function createWebhookIngressHandler(
           deliveryId: deliveryId(req),
         });
       }
-      return json(res, status, { error: message });
+      // An error without a status is not one this code meant to show: its
+      // message may name a file path or an internal detail, and this
+      // listener answers the internet. The sender gets a generic line.
+      const deliberate = parsedError.success && parsedError.data.status !== undefined;
+      return json(res, status, { error: deliberate ? message : "The webhook could not be accepted. Try again later." });
     } finally {
       release?.();
     }

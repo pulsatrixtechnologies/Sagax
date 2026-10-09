@@ -1,6 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 import { fetchSkillFromSource } from "./skill-fetch.ts";
 
+/** The host a faked request goes to, compared whole (never a substring of the URL). */
+const hostOf = (url: string) => new URL(url).hostname;
+
 const file = (name: string) => ({ type: "file", name, path: name, download_url: `https://raw.githubusercontent.com/a/b/main/${name}` });
 const dir = (path: string) => ({ type: "dir", name: path.split("/").at(-1), path });
 
@@ -12,7 +15,7 @@ describe("skill import budget", () => {
       const url = String(input);
       if (url.endsWith("/contents/")) return Response.json([dir("skills")]);
       if (url.endsWith("/contents/skills")) return Response.json(Array.from({ length: 30 }, (_, i) => dir(`skills/skill-${i}`)));
-      if (url.includes("api.github.com")) return Response.json([file("SKILL.md"), file("help.md")]);
+      if (hostOf(url) === "api.github.com") return Response.json([file("SKILL.md"), file("help.md")]);
       peak = Math.max(peak, ++active);
       await new Promise((resolve) => setTimeout(resolve, 1));
       active--;
@@ -80,7 +83,7 @@ describe("skill sources", () => {
       const url = String(input);
       if (url.endsWith("/contents/")) return Response.json([dir("skills")]);
       if (url.endsWith("/contents/skills")) return Response.json([dir("skills/pdf"), dir("skills/find-skills")]);
-      if (url.includes("api.github.com")) return Response.json([file("SKILL.md")]);
+      if (hostOf(url) === "api.github.com") return Response.json([file("SKILL.md")]);
       return new Response("# A skill");
     }) as typeof fetch;
     const result = await fetchSkillFromSource("https://skills.sh/vercel-labs/skills/find-skills", fetcher);
@@ -106,7 +109,7 @@ describe("skill sources", () => {
       const url = String(input);
       if (url.endsWith("/contents/")) return Response.json([dir("skills")]);
       if (url.endsWith("/contents/skills")) return Response.json([dir("skills/search-helper")]);
-      if (url.includes("api.github.com")) return Response.json([file("SKILL.md")]);
+      if (hostOf(url) === "api.github.com") return Response.json([file("SKILL.md")]);
       return new Response(skillMd);
     }) as typeof fetch;
     const result = await fetchSkillFromSource("https://skills.sh/vercel-labs/skills/find-skills", fetcher);
@@ -145,7 +148,7 @@ describe("skill sources", () => {
         return Response.json([...filler, dir("skills/find-skills")]);
       }
       if (url.endsWith("/contents/skills/find-skills")) return Response.json([file("SKILL.md")]);
-      if (url.includes("api.github.com")) return Response.json([file("README.md")]);
+      if (hostOf(url) === "api.github.com") return Response.json([file("README.md")]);
       return new Response("# A skill");
     }) as typeof fetch;
     const result = await fetchSkillFromSource("https://skills.sh/vercel-labs/skills/find-skills", fetcher);

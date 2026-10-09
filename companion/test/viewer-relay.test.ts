@@ -129,6 +129,10 @@ describe("VPS companion viewer relay", () => {
     const asset = await fetch(`http://127.0.0.1:${sidecarPort}${sessionPath}`);
     expect(asset.status).toBe(200);
     expect(await asset.text()).toBe("asset:/vnc.html");
+    // A path that reads as another host stays a path on this viewer.
+    const sneaky = await fetch(`http://127.0.0.1:${sidecarPort}/vps-viewer/${sessionId}//evil.example.test/x?q=1`);
+    expect(sneaky.status).toBe(200);
+    expect(await sneaky.text()).toBe("asset://evil.example.test/x?q=1");
 
     const wrongDevice = createServer((req, res) =>
       relay.handleHttp(req, res, { id: "device-2", cloudDesktopAccess: true }));

@@ -338,7 +338,7 @@ describe("a phone's sign-in sheet", () => {
 
   it("returns only to listed app addresses", () => {
     expect(phoneOAuthReturns({})).toEqual(["sagax://oauth-done"]);
-    expect(phoneOAuthReturns({ SAGAX_PHONE_OAUTH_RETURNS: "https://app.example.test/oauth-done, javascript:alert(1), http://evil.test/x, sagaxbeta://done" }))
+    expect(phoneOAuthReturns({ SAGAX_PHONE_OAUTH_RETURNS: "https://app.example.test/oauth-done, javascript:alert(1), VBScript:msgbox(1), blob:https://evil.test/x, data:text/html,x, http://evil.test/x, sagaxbeta://done" }))
       .toEqual(["sagax://oauth-done", "https://app.example.test/oauth-done", "sagaxbeta://done"]);
   });
 });

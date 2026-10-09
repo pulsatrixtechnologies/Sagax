@@ -126,6 +126,24 @@ function tonePcm(seconds: number): Buffer {
   return out;
 }
 
+/** The longest handshake delay a test may ask for: enough to model a slow
+ * provider, never a timer that outlives the run. */
+export const MAX_FAKE_OPEN_DELAY_MS = 30_000;
+
+/** Copy only the known controls, each of its own type, from a test's JSON:
+ * no other key (`__proto__` included) reaches the controls object, and the
+ * delay is bounded. */
+export function applySpeechControls(speech: FakeSpeechControls, input: unknown): void {
+  if (!input || typeof input !== "object" || Array.isArray(input)) return;
+  const next = input as Record<string, unknown>;
+  if (typeof next.refuse === "boolean") speech.refuse = next.refuse;
+  if (typeof next.errorNext === "boolean") speech.errorNext = next.errorNext;
+  if (typeof next.dropAfter === "number" && Number.isFinite(next.dropAfter)) speech.dropAfter = Math.max(0, Math.floor(next.dropAfter));
+  if (typeof next.openDelayMs === "number" && Number.isFinite(next.openDelayMs)) {
+    speech.openDelayMs = Math.min(MAX_FAKE_OPEN_DELAY_MS, Math.max(0, Math.floor(next.openDelayMs)));
+  }
+}
+
 export async function startFakeXaiVoice(options: FakeXaiOptions = {}): Promise<FakeXaiVoice> {
   const requests: FakeXaiRequest[] = [];
   const speech: FakeSpeechControls = { refuse: false, openDelayMs: 0, dropAfter: 0, errorNext: false };
@@ -138,7 +156,7 @@ export async function startFakeXaiVoice(options: FakeXaiOptions = {}): Promise<F
       const path = (req.url ?? "").split("?")[0]!;
       // for the check in another process (the Electron side); not recorded
       if (req.method === "POST" && path === "/__speech") {
-        try { Object.assign(speech, JSON.parse(body.toString("utf8"))); } catch { /* ignored */ }
+        try { applySpeechControls(speech, JSON.parse(body.toString("utf8"))); } catch { /* ignored */ }
         res.writeHead(200, { "content-type": "application/json" });
         res.end(JSON.stringify(speech));
         return;

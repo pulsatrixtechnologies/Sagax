@@ -7863,6 +7863,11 @@ describe("harness HTTP API", () => {
       status: 200,
       body: { ok: true, tools: [{ name: "read_notes", description: "Read saved notes" }] },
     });
+    // Only a configured server is probed: an unknown name, or one that only
+    // exists on Object.prototype, never reaches a probe.
+    for (const name of ["unknown", "constructor", "tostring"]) {
+      expect((await api("POST", `/api/mcp/servers/${name}/test`)).status, name).toBe(404);
+    }
 
     const updated = await api("PUT", "/api/mcp/servers/fixture", {
       command: process.execPath,
@@ -12815,6 +12820,16 @@ describe("instance CLI override API", () => {
     const res = await api("POST", "/api/cli-test", { cli });
     expect(res.status).toBe(200);
     expect(res.body).toMatchObject({ ok: true, version: "wrapper-ok" });
+  });
+
+  it("refuses a shell or inline code as a CLI before running anything", async () => {
+    const marker = join(home, "cli-shell-ran");
+    for (const cli of [`/bin/sh -c "touch ${marker}"`, `${JSON.stringify(process.execPath)} -e "require('fs').writeFileSync(${JSON.stringify(marker)}, '')"`, "./claude", "curl"]) {
+      const probed = await api("POST", "/api/cli-test", { cli });
+      expect(probed.status, cli).toBe(400);
+      expect((await api("PATCH", "/api/instances/claude", { cli })).status, cli).toBe(400);
+    }
+    expect(existsSync(marker)).toBe(false);
   });
 
   it("reports excessive probe output without presenting install guidance", async () => {

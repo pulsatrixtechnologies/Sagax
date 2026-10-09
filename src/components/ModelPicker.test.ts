@@ -269,7 +269,18 @@ describe("ModelPicker trigger", () => {
 
   /** The visible effort suffix, not the tooltip that also names the level. */
   const effortChip = (markup: string) =>
-    markup.match(/<span data-model-effort[^>]*>(.*?)<\/span>/s)?.[1].replace(/<!--.*?-->/g, "").trim();
+    withoutComments(markup.match(/<span data-model-effort[^>]*>(.*?)<\/span>/s)?.[1])?.trim();
+
+  /** React's text separators (`<!-- -->`) removed until none is left. */
+  const withoutComments = (text: string | undefined) => {
+    if (text === undefined) return undefined;
+    let previous;
+    do {
+      previous = text;
+      text = text.replace(/<!--[\s\S]*?-->/g, "");
+    } while (text !== previous);
+    return text.replaceAll("<!--", "");
+  };
 
   /** The trigger's native tooltip as plain text, split into its lines. React
    * HTML-escapes the apostrophe and may encode the newline numerically; both

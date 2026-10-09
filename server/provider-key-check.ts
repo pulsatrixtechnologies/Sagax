@@ -36,6 +36,32 @@ export function providerBaseUrl(provider: ProviderKeyKind, base?: string | null)
   return (base?.trim() || DEFAULT_URLS[provider]).replace(/\/+$/, "");
 }
 
+/** Same base, written either way: trimmed, no trailing slash. */
+function normalizedBase(value: string): string {
+  return value.trim().replace(/\/+$/, "");
+}
+
+/**
+ * The base URL a key test may use when the request names one: only the
+ * provider's own default or a server already configured on this workspace
+ * (the provider's saved URL, an engine instance's URL). Anything else is
+ * refused (null), so a test can never send a key, or a request, to a host
+ * nobody configured. The value returned is the configured entry, not the
+ * requested text.
+ */
+export function allowedProviderTestUrl(
+  provider: ProviderKeyKind,
+  requested: string,
+  configured: ReadonlyArray<string | null | undefined>,
+): string | null {
+  const wanted = normalizedBase(requested);
+  if (!wanted || wanted.length > 2048) return null;
+  const candidates = [DEFAULT_URLS[provider], ...configured]
+    .filter((value): value is string => typeof value === "string" && value.trim().length > 0)
+    .map(normalizedBase);
+  return candidates.find((candidate) => candidate === wanted) ?? null;
+}
+
 /** The models endpoint for a provider, from its base URL or the default. */
 export function providerModelsUrl(provider: ProviderKeyKind, base?: string | null): string {
   const root = providerBaseUrl(provider, base);

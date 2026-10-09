@@ -216,8 +216,12 @@ export class CompanionViewerRelay {
     if (!match) return null;
     const session = this.#sessions.get(match[1]);
     if (!session || session.deviceId !== device.id || session.expiresAt <= Date.now()) return null;
-    const suffix = match[2] || "/";
-    const target = new URL(`${suffix}${incoming.search}`, session.origin);
+    // The host always comes from the session; the request only supplies a
+    // path and a query, set on a copy of that origin so neither can name
+    // another host (a `//host` path stays a path).
+    const target = new URL(session.origin);
+    target.pathname = match[2] || "/";
+    target.search = incoming.search;
     if (target.origin !== session.origin) return null;
     session.expiresAt = Date.now() + SESSION_TTL_MS;
     return { session, target };

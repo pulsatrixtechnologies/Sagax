@@ -23,6 +23,9 @@ import {
 } from "./plan-usage.ts";
 import type { InstanceConfigMap } from "./contracts.ts";
 
+/** The host a faked request goes to, compared whole (never a substring of the URL). */
+const hostOf = (url: string) => new URL(url).hostname;
+
 const NOW = 1_800_000_000_000;
 const ALICE = "pr_11111111-1111-4111-8111-111111111111";
 const BOB = "pr_22222222-2222-4222-8222-222222222222";
@@ -59,8 +62,8 @@ const GROK_CREDITS = { config: { creditUsagePercent: 40, currentPeriod: { type: 
 function fakeFetch(answer?: (url: string) => PlanResponse | Promise<PlanResponse>) {
   return vi.fn<PlanFetch>(async (url) => {
     if (answer) return answer(url);
-    if (url.includes("anthropic.com")) return json(CLAUDE_BODY);
-    if (url.includes("chatgpt.com")) return json(CODEX_BODY);
+    if (hostOf(url) === "api.anthropic.com") return json(CLAUDE_BODY);
+    if (hostOf(url) === "chatgpt.com") return json(CODEX_BODY);
     if (url.includes("billing?format=credits")) return json(GROK_CREDITS);
     return json({}, 404);
   });

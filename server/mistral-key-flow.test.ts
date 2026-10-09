@@ -50,6 +50,12 @@ it("Mistral keys persist, rotate, clear and reach real HTTP turns without leakin
     expect(JSON.stringify(status)).not.toContain("fixture-first-key");
     expect(await api("POST", "/api/keys/test", { provider: "mistral", url: `http://127.0.0.1:${address.port}/v1` }))
       .toEqual({ ok: true, check: "models", models: ["fixture-model"] });
+    // A URL nobody configured is refused before any request leaves.
+    const unconfigured = await fetch(`${fixture.info.url}/api/keys/test`, {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ provider: "mistral", url: `http://127.0.0.1:${address.port}/elsewhere` }),
+    });
+    expect(unconfigured.status).toBe(400);
     for (const key of ["", "   ", 123]) {
       const response = await fetch(`${fixture.info.url}/api/keys/test`, {
         method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ provider: "mistral", key }),

@@ -396,6 +396,8 @@ export class DeviceRegistry {
  */
 export function bearerToken(header: string | undefined): string | undefined {
   if (!header) return undefined;
-  const match = /^Bearer[ \t]+(.+)$/i.exec(header.trim());
+  // The token starts at the first non-blank character, so the blank run and
+  // the token can never trade characters (no backtracking on long blanks).
+  const match = /^Bearer[ \t]+([^ \t].*)$/i.exec(header.trim());
   return match ? match[1].trim() || undefined : undefined;
 }

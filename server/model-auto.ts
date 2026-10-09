@@ -260,7 +260,9 @@ function countHits(patterns: readonly RegExp[], text: string): number {
 /** Whether a pattern matches anywhere (stateless for global patterns). */
 const matches = (pattern: RegExp, text: string) => new RegExp(pattern.source, pattern.flags.replace("g", "")).test(text);
 
-const ATTACHMENT_TAG = /<attached-(image|file)\b[^>]*?(?:\bname="([^"\r\n]*)")?[^>]*\/?>/gi;
+// One bounded scan to the closing `>`: the name and path are read from the
+// matched tag afterwards, so nothing in the pattern can backtrack.
+const ATTACHMENT_TAG = /<attached-(image|file)\b[^>]*>/gi;
 
 /** The attachment tags a message carries (`<attached-image>`, `<attached-file>`),
  * and the text without them. Sizes are the caller's to add. */

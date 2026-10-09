@@ -35,6 +35,10 @@ import { startFakeOidcProvider, type FakeOidcProvider, type FakeOidcUser } from 
 import { freePortBlock } from "./testing/ports.ts";
 import { sandboxdConfigFromEnv } from "./user-sandbox-spec.ts";
 
+// The echo is plain text, never HTML: the request path it repeats cannot
+// become markup in whatever reads it.
+const PLAIN_TEXT = { "content-type": "text/plain; charset=utf-8", "x-content-type-options": "nosniff" } as const;
+
 const SERVER_DIR = dirname(fileURLToPath(import.meta.url));
 const FAKE_CLAUDE = join(SERVER_DIR, "testing", "fake-claude-cli.ts");
 const posixOnly = describe.skipIf(process.platform === "win32");
@@ -163,7 +167,7 @@ posixOnly("organization server: the desktop bridge", () => {
 
   beforeAll(async () => {
     chmodSync(FAKE_CLAUDE, 0o755);
-    intranet = createServer((req, res) => res.end(`intranet says hi to ${req.url}`));
+    intranet = createServer((req, res) => res.writeHead(200, PLAIN_TEXT).end(`intranet says hi to ${req.url}`));
     await new Promise<void>((resolve) => intranet.listen(0, "127.0.0.1", resolve));
     intranetPort = (intranet.address() as AddressInfo).port;
     const service = new SandboxService(docker, sandboxdConfigFromEnv({ SAGAX_SANDBOX_IMAGE: "sagax-sandbox:test", SAGAX_SANDBOX_INSTANCE: INSTANCE }));

@@ -367,6 +367,15 @@ describe("bearerToken", () => {
     expect(bearerToken(undefined)).toBeUndefined();
   });
 
+  it("reads a header of many blanks in linear time", () => {
+    const hostile = `bearer\t${"\t".repeat(100_000)}x`;
+    const started = performance.now();
+    expect(bearerToken(hostile)).toBe("x");
+    expect(bearerToken(`bearer\t${"\t".repeat(100_000)}`)).toBeUndefined();
+    expect(performance.now() - started).toBeLessThan(1_000);
+    expect(bearerToken("Bearer \t omb_abc")).toBe("omb_abc");
+  });
+
   // RFC 7235 says the scheme is case-insensitive, and a client sending
   // "bearer" is within its rights. This is the only parser in the sidecar,
   // so a phone cannot get a 401 from one half disagreeing with the other —

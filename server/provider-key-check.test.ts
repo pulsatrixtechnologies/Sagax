@@ -1,6 +1,6 @@
 import { createServer, type Server } from "node:http";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { checkProviderKey, providerModelsUrl } from "./provider-key-check.ts";
+import { allowedProviderTestUrl, checkProviderKey, providerModelsUrl } from "./provider-key-check.ts";
 
 // A local stand-in for a provider's models endpoint. It records the
 // headers it saw and answers per the key it was given; no real provider
@@ -155,5 +155,30 @@ describe("provider key check", () => {
     expect(await checkProviderKey({ provider: "openaiCompat", key: "good-key", url: "http://models.example.test/v1" }, spy)).toEqual({ ok: false, reason: "unexpected" });
     expect(await checkProviderKey({ provider: "openaiCompat", key: "good-key", url: "not a url" }, spy)).toEqual({ ok: false, reason: "unexpected" });
     expect(called).toBe(false);
+  });
+});
+
+describe("allowedProviderTestUrl", () => {
+  const configured = ["http://127.0.0.1:4321/v1/", undefined, null, "  "];
+
+  it("keeps the provider's default and the configured servers, written either way", () => {
+    expect(allowedProviderTestUrl("mistral", "https://api.mistral.ai/v1/", configured)).toBe("https://api.mistral.ai/v1");
+    expect(allowedProviderTestUrl("openaiCompat", " http://127.0.0.1:4321/v1 ", configured)).toBe("http://127.0.0.1:4321/v1");
+  });
+
+  it("refuses a host nobody configured, another provider's default and lookalikes", () => {
+    for (const requested of [
+      "http://169.254.169.254/latest/meta-data",
+      "https://evil.example.test/v1",
+      "https://api.mistral.ai.evil.example.test/v1",
+      "https://api.mistral.ai/v1/../../internal",
+      "http://127.0.0.1:4322/v1",
+      "https://api.openai.com/v1",
+      "",
+      "   ",
+      `https://api.mistral.ai/v1${"/".repeat(5000)}x`,
+    ]) {
+      expect(allowedProviderTestUrl("mistral", requested, configured), requested).toBeNull();
+    }
   });
 });

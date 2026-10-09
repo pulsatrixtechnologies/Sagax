@@ -389,7 +389,7 @@ export function phoneOAuthReturns(env: NodeJS.ProcessEnv = process.env): string[
   const extra = (env.SAGAX_PHONE_OAUTH_RETURNS ?? "").split(",").map((value) => value.trim()).filter((value) => {
     try {
       const url = new URL(value);
-      return !url.username && !url.password && !url.hash && (url.protocol === "https:" || /^[a-z][a-z0-9+.-]*:$/.test(url.protocol) && !["http:", "javascript:", "data:", "file:"].includes(url.protocol));
+      return !url.username && !url.password && !url.hash && (url.protocol === "https:" || /^[a-z][a-z0-9+.-]*:$/.test(url.protocol) && !["http:", "javascript:", "vbscript:", "data:", "file:", "blob:"].includes(url.protocol));
     } catch { return false; }
   });
   return ["sagax://oauth-done", ...extra];
