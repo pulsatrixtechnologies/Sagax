@@ -245,6 +245,21 @@ struct BotAvatarEditor: View {
                     }
                 }
             }
+        case .shiba:
+            // only what this person unlocked (the server answers 403 look_locked otherwise); the worn skin stays
+            let skins = ShibaSkin.allCases.filter { !unlocks.skinLocked(.shiba, skin: $0.rawValue, current: worn.complete.shibaSkin.rawValue) }
+            LazyVGrid(columns: columns, spacing: 4) {
+                ForEach(skins, id: \.self) { skin in
+                    cell(look: edited { $0.shibaSkin = skin }, skin: .none, name: skinName(skin.rawValue), selected: draft.complete.shibaSkin == skin, height: 60,
+                         locked: false) {
+                        var next = draft
+                        var look = next.complete
+                        look.shibaSkin = skin
+                        next.look = look.stored
+                        save(next)
+                    }
+                }
+            }
         }
     }
 
@@ -445,6 +460,7 @@ struct BotAvatarEditor: View {
         case .shape: String(localized: "Original shapes")
         case .trombi: String(localized: "Trombi")
         case .bunbu: String(localized: "Bunbu")
+        case .shiba: String(localized: "Shiba")
         }
     }
 

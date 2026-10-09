@@ -2367,5 +2367,19 @@
   "voiceMode.call.fasterEndOfTurn": "Fim de turno mais rápido",
   "voiceMode.call.fasterEndOfTurnHelp": "Sua entonação, analisada neste computador, pode encerrar um turno mais cedo quando sua frase parece terminada. Não é usado com Patient.",
   "voiceMode.call.streamingVoice": "Voz contínua",
-  "voiceMode.call.streamingVoiceHelp": "A resposta começa a falar desde as primeiras palavras, por uma única conexão durante a chamada. Se essa conexão falhar, a chamada volta sozinha a uma solicitação por frase."
+  "voiceMode.call.streamingVoiceHelp": "A resposta começa a falar desde as primeiras palavras, por uma única conexão durante a chamada. Se essa conexão falhar, a chamada volta sozinha a uma solicitação por frase.",
+  "mascot.shibaSkin.plain": "Liso",
+  "mascot.shibaSkin.cream": "Creme",
+  "mascot.shibaSkin.blacktan": "Preto e castanho",
+  "mascot.shibaSkin.red": "Vermelho",
+  "mascot.shibaSkin.sesame": "Gergelim",
+  "mascot.shibaSkin.white": "Branco",
+  "mascot.shibaSkin.retro98": "Retrô 98",
+  "mascot.shibaSkin.gold": "Ouro",
+  "mascot.shibaSkin.neon": "Neon",
+  "mascot.shibaSkin.chrome": "Cromado",
+  "mascot.shibaSkin.glitch": "Glitch",
+  "mascot.shibaSkin.holo": "Holográfico",
+  "mascot.shibaSkin.molten": "Magma",
+  "floatingBots.mascot.shiba": "Shiba"
 }

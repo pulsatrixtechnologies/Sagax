@@ -1,7 +1,7 @@
 // Where the phone draws a bot's look with less than the desktop does, and
 // what it draws instead. A known character is never drawn as another one:
-// a shape stays that shape in its colour, Bunbu stays Bunbu, Trombi stays
-// Trombi, and only a skin's premium layers (textures, particles, the
+// a shape stays that shape in its colour, Bunbu stays Bunbu, Shiba stays
+// Shiba, Trombi stays Trombi, and only a skin's premium layers (textures, particles, the
 // repainted wire) give way to the closest finish the phone has. Each
 // substitution is logged once (subsystem `ca.pulsatrix.sagax`, category
 // `mascot`), so a mismatch someone reports can be told apart from a bug.
@@ -42,6 +42,9 @@ public enum MascotSubstitution {
         case .bunbu:
             guard bunbuBaseOnly.contains(look.bunbuSkin) else { return [] }
             return [Entry(character: .bunbu, wanted: "Bunbu skin \(look.bunbuSkin.rawValue)", drawn: "its base finish")]
+        case .shiba:
+            guard ShibaArt.baseOnly.contains(look.shibaSkin) else { return [] }
+            return [Entry(character: .shiba, wanted: "Shiba skin \(look.shibaSkin.rawValue)", drawn: "its palette and coat gradient, without its effects")]
         }
     }
 
