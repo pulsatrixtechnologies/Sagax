@@ -254,6 +254,9 @@ export interface BotZipHost {
   sectionExists(name: string): boolean;
   /** Why no bot can be added now (the workspace's cap), or null. */
   creationRefusal?(): string | null;
+  /** Why this person may not give a bot this look (a Mastery look they have
+   * not unlocked, server/achievements-mastery.ts), or null. */
+  lookRefusal?(principalId: string | undefined, look: unknown): string | null;
   browserProfileExists?(id: string): boolean;
   /** A working folder this server can use. */
   cwdUsable?(path: string): boolean;
@@ -836,11 +839,13 @@ export async function importBotZip(host: BotZipHost, inspected: InspectedBotZip,
     }
 
     // settings, clamped
+    const lookRefused = identity.mascotLook !== undefined ? host.lookRefusal?.(options.ownerPrincipalId, identity.mascotLook) ?? null : null;
+    if (lookRefused) warnings.push(`The mascot look stays the default: ${lookRefused}`);
     const mode = settings.approvalMode;
     const projects = settings.projects?.filter((project) => SAFE_SEGMENT.test(project.id));
     const patch: Partial<BotRecord> = {
       ...(identity.notifications !== undefined ? { notifications: identity.notifications } : {}),
-      ...(identity.mascotLook !== undefined ? { mascotLook: identity.mascotLook } : {}),
+      ...(identity.mascotLook !== undefined && !lookRefused ? { mascotLook: identity.mascotLook } : {}),
       ...(identity.avatarCrop ? { avatarCrop: identity.avatarCrop } : {}),
       ...(identity.avatarZoom !== undefined ? { avatarZoom: identity.avatarZoom } : {}),
       ...(identity.avatarFocusX !== undefined ? { avatarFocusX: identity.avatarFocusX } : {}),

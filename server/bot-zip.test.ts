@@ -282,6 +282,18 @@ describe("bot zip import rules", () => {
     if (inspected.kind === "zip") inspected.reader.close();
   });
 
+  it("a Mastery look the importer has not unlocked stays the default", async () => {
+    const fx = fixture();
+    const source = richBot(fx);
+    const file = await exportToFile(fx.host, source.id);
+    const inspected = inspectBotZip(file);
+    const host = { ...fx.host, lookRefusal: () => "This look is locked until the achievement \"Ten Hands\" is unlocked." };
+    const result = await importBotZip(host, inspected, { ownerPrincipalId: "pr_00000000-0000-4000-8000-000000000001", asMember: false, conversations: false, sharing: false });
+    expect(fx.store.bot(result.botId)!.mascotLook).toBeUndefined();
+    expect(result.warnings.some((warning) => warning.includes("Ten Hands"))).toBe(true);
+    if (inspected.kind === "zip") inspected.reader.close();
+  });
+
   it("an unknown engine falls back to the default model", async () => {
     const fx = fixture();
     const source = richBot(fx);

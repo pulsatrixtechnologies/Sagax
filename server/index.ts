@@ -24509,6 +24509,14 @@ const botZipHost: BotZipHost = {
   sectionExists: (name) => store.sections.includes(name),
   creationRefusal: () => store.bots.length >= MAX_WORKSPACE_BOTS ? `This workspace is limited to ${MAX_WORKSPACE_BOTS} bots.` : null,
   browserProfileExists: (id) => id === "guest" || (cfg.browserProfiles ?? []).some((profile) => profile.id === id),
+  lookRefusal: (principalId, look) => {
+    if (!principalId) return null;
+    try {
+      return lockedLookChange(undefined, look, new Set(achievementStore.snapshot(principalId).rewards))?.error ?? null;
+    } catch {
+      return null;
+    }
+  },
   cwdUsable: (path) => validateBotCwd(path).ok,
   importLegacy: async (document, owner, name) => {
     const { bots, warnings } = await importPackageFor(document, owner);
