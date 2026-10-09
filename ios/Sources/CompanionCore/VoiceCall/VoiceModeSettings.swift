@@ -105,11 +105,15 @@ public struct CallSettings: Codable, Equatable, Sendable {
     public var earcons: Bool
     /// how long a pause ends a turn (short, normal, patient)
     public var pause: CallPause
+    /// the settings card's Advanced zone is unfolded (closed by default,
+    /// remembered with the call's settings, as on the desktop)
+    public var advancedOpen: Bool
 
-    public init(input: Input = .auto, earcons: Bool = true, pause: CallPause = .normal) {
+    public init(input: Input = .auto, earcons: Bool = true, pause: CallPause = .normal, advancedOpen: Bool = false) {
         self.input = input
         self.earcons = earcons
         self.pause = pause
+        self.advancedOpen = advancedOpen
     }
 
     public static let storageKey = "omb.voiceCall.v1"
@@ -121,12 +125,13 @@ public struct CallSettings: Codable, Equatable, Sendable {
         return CallSettings(
             input: (record["input"] as? String) == "push" ? .push : .auto,
             earcons: record["earcons"] as? Bool ?? true,
-            pause: (record["pause"] as? String).flatMap(CallPause.init(rawValue:)) ?? .normal
+            pause: (record["pause"] as? String).flatMap(CallPause.init(rawValue:)) ?? .normal,
+            advancedOpen: record["advancedOpen"] as? Bool ?? false
         )
     }
 
     public var encoded: String {
-        let data = (try? JSONSerialization.data(withJSONObject: ["input": input.rawValue, "earcons": earcons, "pause": pause.rawValue] as [String: Any], options: [.sortedKeys])) ?? Data()
+        let data = (try? JSONSerialization.data(withJSONObject: ["input": input.rawValue, "earcons": earcons, "pause": pause.rawValue, "advancedOpen": advancedOpen] as [String: Any], options: [.sortedKeys])) ?? Data()
         return String(decoding: data, as: UTF8.self)
     }
 }

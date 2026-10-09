@@ -276,8 +276,12 @@ the host computer remain unreachable through the companion.
 The live connection is foreground-only. Notification frames produce native
 banners, sounds, time-sensitive approval alerts, and an app badge while connected;
 the resume cursor replays alerts missed during a short background pause. There is
-no APNs delivery after the app is terminated, no call mode or spoken replies,
-and no cloud-resident bot service. Optional hosted HTTPS is an encrypted route
+no APNs delivery after the app is terminated and no cloud-resident bot service.
+A voice call with a bot is the desktop's floating call bar under the bot's name
+in the chat header (face, waveform, Settings, Transcript, Mic, End); Settings
+and the transcript open in a card under the bar while the conversation stays on
+screen, and there is no full-screen call page. A room's call keeps its own
+screen. Optional hosted HTTPS is an encrypted route
 back to the user's computer, not a second transcript store. Composer dictation is available.
 Task management, SQLite transcript search,
 transcript sharing, reactions, and edit/version controls use narrow companion
