@@ -26,7 +26,7 @@ describe("sanitizeReleaseMarkdown", () => {
   });
 
   it("leaves no comment opener, even one reassembled from split pieces", () => {
-    for (const source of ["a <!<!---->-- b", "a <!<b>-- hidden --> b", "a <!-- never closed", "a <!--<!-- x -->--> b"]) {
+    for (const source of ["a <!<!---->-- b", "a <!<b>-- hidden --> b", "a <!-- never closed", "a <!<!---- b", "a <!--<!-- x -->--> b"]) {
       expect(sanitizeReleaseMarkdown(source), source).not.toContain("<!--");
     }
     expect(sanitizeReleaseMarkdown("Fixed <!-- note --> the sync.")).toBe("Fixed  the sync.");

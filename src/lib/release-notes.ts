@@ -164,7 +164,8 @@ export function sanitizeReleaseMarkdown(source: string): string {
     text = text.replace(/<!--[\s\S]*?-->/g, "").replace(HTML_TAG, "");
   }
   // An opener left without its end starts no comment in the text shown.
-  text = text.replaceAll("<!--", "");
+  // Repeatedly: removing one opener can join the pieces of another (`<!<!----`).
+  while (text.includes("<!--")) text = text.replaceAll("<!--", "");
   text = text.replace(MD_LINK, (_all, bang: string, label: string, raw: string) => {
     const url = raw.trim().replace(/^<|>$/g, "").replace(/\s+["'][^"']*["']\s*$/, "").trim();
     if (bang === "!") return label;
