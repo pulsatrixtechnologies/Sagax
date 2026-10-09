@@ -224,6 +224,7 @@ export function perspicaxKeysUrl(issuer: string): string {
 }
 
 let enginesPending: Promise<MyEngine[] | null> | null = null;
+let enginesGeneration = 0;
 const engineListeners = new Set<(engines: MyEngine[] | null) => void>();
 
 function loadMyEngines(): Promise<MyEngine[] | null> {
@@ -237,8 +238,15 @@ function loadMyEngines(): Promise<MyEngine[] | null> {
  * every useMyEngines on the page. */
 export function reloadMyEngines(): Promise<MyEngine[] | null> {
   enginesPending = null;
+  const generation = ++enginesGeneration;
   const next = loadMyEngines();
-  void next.then((value) => { for (const listener of engineListeners) listener(value); });
+  // Only the newest answer reaches the page: a reload started before a
+  // sign-in finished (opening the picker) must not land after the one
+  // started by the sign-in and show the engine as not connected again.
+  void next.then((value) => {
+    if (generation !== enginesGeneration) return;
+    for (const listener of engineListeners) listener(value);
+  });
   return next;
 }
 

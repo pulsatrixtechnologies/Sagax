@@ -1,7 +1,7 @@
-// The Templates library is gone: every way that opened it now opens Browse
-// Bots on its Templates section (src/lib/templates-entry.ts). Connect apps'
-// "Bot templates", New bot's "Browse templates", the sidebar's Templates
-// place and an install link all go through templatesEntryActions.
+// Browse Bots is the one place for templates (src/lib/templates-entry.ts).
+// Connect apps' "Browse Bots" row, New bot's "Browse templates" button and
+// an install link go through templatesEntryActions. The sidebar's Browse Bots
+// row opens the catalogue's home view, not Templates.
 import { Children, createElement, isValidElement, type ReactElement, type ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
@@ -28,17 +28,16 @@ function nodes(value: ReactNode): Node[] {
 
 const templates = { type: "openBotCatalog", section: "templates" };
 
-describe("the old Templates entry points", () => {
+describe("the templates entry points", () => {
   it("close what they sit in, then open Browse Bots on Templates", () => {
     expect(templatesEntryActions("connectApps")).toEqual([{ type: "togglePlugins", open: false }, templates]);
     expect(templatesEntryActions("newBot")).toEqual([{ type: "toggleNewBot", open: false }, templates]);
-    expect(templatesEntryActions("sidebar")).toEqual([templates]);
     expect(templatesEntryActions("installLink", "https://github.com/acme/team")).toEqual([{ ...templates, installUrl: "https://github.com/acme/team" }]);
   });
 
   it("leave the store with the catalogue open on Templates, and New bot or Connect apps closed", () => {
     const busy = { ...initialState, newBotOpen: true, pluginsOpen: true };
-    for (const entry of ["connectApps", "newBot", "sidebar"] as const) {
+    for (const entry of ["connectApps", "newBot"] as const) {
       const after = templatesEntryActions(entry).reduce(reducer, busy);
       expect(after.botCatalogOpen).toBe(true);
       expect(after.botCatalogTarget).toEqual({ section: "templates" });
@@ -62,7 +61,7 @@ describe("the old Templates entry points", () => {
     expect(renderToStaticMarkup(createElement(() => StartingRole({ draft, defaultsMode: true })))).not.toContain("Browse templates");
   });
 
-  it("Connect apps' Bot templates button dispatches them", () => {
+  it("Connect apps' Browse Bots button dispatches them", () => {
     fixture.dispatch.mockReset();
     vi.stubGlobal("window", { addEventListener: () => {}, removeEventListener: () => {} });
     let tree!: ReturnType<typeof PluginsPanel>;

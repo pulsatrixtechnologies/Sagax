@@ -171,13 +171,13 @@ describe("notifications that stay", () => {
 
   it("the desktop shell shows it, with sound, persistent, a Dock bounce for a person, and a click opens the thread", () => {
     const sent: Array<Record<string, unknown>> = [];
-    let click: ((id: string) => void) | undefined;
+    let click: ((id: string, target?: unknown) => void) | undefined;
     vi.stubGlobal("document", { hasFocus: () => false });
     vi.stubGlobal("window", {
       focus: vi.fn(),
       ogb: {
         notify: (request: Record<string, unknown>) => sent.push(request),
-        onNotificationClick: (cb: (id: string) => void) => { click = cb; return () => {}; },
+        onNotificationClick: (cb: (id: string, target?: unknown) => void) => { click = cb; return () => {}; },
       },
     });
     const onOpen = vi.fn();
@@ -185,10 +185,14 @@ describe("notifications that stay", () => {
     expect(sent).toHaveLength(1);
     expect(sent[0]).toMatchObject({ title: "Alice", body: "lunch?", sound: true, persistent: true, bounce: "critical", flash: true });
     click?.(sent[0]!.id as string);
-    expect(onOpen).toHaveBeenCalledWith({ botId: "", threadId: "dm-thread" });
+    expect(sent[0]!.target).toEqual({ botId: "", threadId: "dm-thread", groupId: "dm-1" });
+    expect(onOpen).toHaveBeenCalledWith({ botId: "", threadId: "dm-thread", groupId: "dm-1" });
     // a second click on the same id does nothing
     click?.(sent[0]!.id as string);
     expect(onOpen).toHaveBeenCalledOnce();
+    // the page forgot the id (reload): the target the shell sent back opens it
+    click?.("sagax-notification:gone", { botId: "bot-1", threadId: "t-7" });
+    expect(onOpen).toHaveBeenLastCalledWith({ botId: "bot-1", threadId: "t-7" });
   });
 
   it("the desktop shell is not asked while the person reads that conversation", () => {

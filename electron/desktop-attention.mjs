@@ -38,7 +38,22 @@ export function normalizeAttentionRequest(value) {
     persistent: value.persistent !== false,
     bounce,
     flash: value.flash === true,
+    target: normalizeTarget(value.target),
   };
+}
+
+/** Where a click goes: the bot, thread, room or routine run the notification
+ * is about, so the page can open it even when it forgot the notification id
+ * (a reload while the banner sat in the notification center). Null when
+ * nothing usable came. */
+export function normalizeTarget(value) {
+  if (!value || typeof value !== "object") return null;
+  const out = {};
+  for (const key of ["botId", "threadId", "groupId", "routineRunId"]) {
+    const field = value[key];
+    if (typeof field === "string" && field.length <= MAX_ID) out[key] = field;
+  }
+  return out.threadId || out.routineRunId || out.botId ? out : null;
 }
 
 /**
@@ -47,7 +62,7 @@ export function normalizeAttentionRequest(value) {
  *   app: { dock?: { bounce?: (type: string) => number, cancelBounce?: (id: number) => void }, setBadgeCount?: (count: number) => boolean },
  *   Notification?: { new (options: object): { show(): void, close?(): void, on(event: string, fn: () => void): void }, isSupported?(): boolean },
  *   getWindow: () => any,
- *   onClick: (id: string) => void,
+ *   onClick: (id: string, target: object | null) => void,
  *   icon?: string,
  * }} deps
  */
@@ -112,7 +127,7 @@ export function createDesktopAttention(deps) {
         win.show?.();
         win.focus?.();
       }
-      if (request.id) deps.onClick(request.id);
+      if (request.id) deps.onClick(request.id, request.target);
     });
     note.on("close", () => forget(key));
     note.show();

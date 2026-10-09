@@ -20,7 +20,8 @@ export interface PeopleDmRouteDeps<G extends PeopleDmLike & { id: string }> {
   displayName(principalId: string): string;
   groups(): readonly G[];
   create(input: { a: string; b: string; name: string }): G;
-  project(group: G): unknown;
+  /** The conversation as the caller sees it. */
+  project(group: G, auth?: RequestAuth): unknown;
 }
 
 const bodySchema = z.object({ principalId: z.string().min(1).max(200) }).strict();
@@ -39,9 +40,9 @@ export function createPeopleDmRoutes<G extends PeopleDmLike & { id: string }>(de
     }
     if (target.id.toLowerCase() === self.toLowerCase()) return json(res, 400, { error: "Choose someone other than yourself.", code: "self" });
     const existing = findPeopleDm(deps.groups(), self, target.id);
-    if (existing) return json(res, 200, { group: deps.project(existing), created: false });
+    if (existing) return json(res, 200, { group: deps.project(existing, auth), created: false });
     const name = `${deps.displayName(self)}, ${target.name}`;
     const group = deps.create({ a: self, b: target.id, name });
-    return json(res, 201, { group: deps.project(group), created: true });
+    return json(res, 201, { group: deps.project(group, auth), created: true });
   };
 }

@@ -127,3 +127,22 @@ test("without a notification class it still asks for attention and reports no ba
   assert.equal(attention.notify({ title: "Alice", bounce: "critical" }), false);
   assert.deepEqual(dock.calls, ["bounce:critical"]);
 });
+
+test("a click sends the notification id with the conversation it is about", () => {
+  const { FakeNotification, made } = fakeNotificationClass();
+  const { win } = fakeWindow();
+  const clicked = [];
+  const attention = createDesktopAttention({ platform: "darwin", app: fakeApp().app, Notification: FakeNotification, getWindow: () => win, onClick: (id, target) => clicked.push([id, target]) });
+  attention.notify({
+    id: "sagax-notification:3",
+    title: "Cryptic finished",
+    target: { botId: "bot-1", threadId: "thread-9", groupId: "room-1", junk: "x", routineRunId: 5 },
+  });
+  made[0].handlers.click();
+  assert.deepEqual(clicked, [["sagax-notification:3", { botId: "bot-1", threadId: "thread-9", groupId: "room-1" }]]);
+});
+
+test("a request without a usable target clicks through with null", () => {
+  assert.equal(normalizeAttentionRequest({ title: "A", target: {} }).target, null);
+  assert.equal(normalizeAttentionRequest({ title: "A", target: "thread" }).target, null);
+});

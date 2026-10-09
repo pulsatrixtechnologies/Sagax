@@ -16,6 +16,7 @@ import { WEBHOOK_DEFAULT_MAX_PENDING_RUNS, webhookActivationDefaults, type Webho
 import { api, useStore, type Bot } from "@/state/store";
 
 import { Switch } from "./SettingsPrimitives";
+import { MarkdownEditor } from "./markdown/MarkdownEditor";
 import {
   WebhookEditor,
   outcomeLabel,
@@ -207,13 +208,15 @@ export function TriggersPanel() {
               </select>
               <span className="font-medium">{t("triggers.should")}</span>
             </div>
-            <textarea
+            <MarkdownEditor
               value={prompt}
-              onChange={(event) => setPrompt(event.target.value)}
-              rows={3}
-              aria-label={t("triggers.instructionsAria")}
+              onChange={setPrompt}
+              minHeight={90}
+              showCount={false}
+              dataField="trigger-instructions"
+              ariaLabel={t("triggers.instructionsAria")}
               placeholder={t("triggers.instructionsPlaceholder")}
-              className="mt-3 w-full resize-y rounded-xl border border-hairline/40 bg-inset px-3.5 py-3 text-[13.5px] leading-relaxed text-ink placeholder:text-ink-tertiary"
+              className="mt-3"
             />
             <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
               {bots.length === 0 ? <p className="text-[12px] text-warning">{t("triggers.noBots")}</p> : <span />}

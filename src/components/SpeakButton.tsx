@@ -4,10 +4,49 @@ import { speaker } from "@/lib/tts";
 import { useSpeech } from "@/lib/tts/useSpeech";
 import type { ConfigStatus } from "@/state/store";
 import { cn } from "@/lib/cn";
+import { MessageMenuItem } from "./MessageBar";
 import { t } from "@/lib/i18n";
 
+/** The state and action of reading one message aloud, shared by the button
+ * and the message menu entry. */
+export function useSpeakControl({
+  text,
+  botId,
+  messageId,
+  voiceId,
+  tts,
+  localVoice,
+}: {
+  text: string;
+  botId?: string;
+  messageId: string;
+  voiceId?: string;
+  /** The server's speech settings (`config.tts`). */
+  tts: ConfigStatus["tts"];
+  /** A paired Mac reads aloud with its own voices ("This Mac"). */
+  localVoice: boolean;
+}) {
+  const speech = useSpeech();
+  const configured = localVoice || Boolean(tts?.configured);
+  const ready = localVoice || (configured && Boolean(voiceId || tts?.voice));
+  const mine = speech.messageId === messageId && speech.status !== "idle";
+  const preparing = mine && speech.status === "preparing";
+  const label = !configured
+    ? t((tts?.provider ?? "elevenlabs") === "elevenlabs" ? "chat.speak.needsKey" : "chat.speak.needsSetup")
+    : !ready
+      ? t("chat.speak.needsVoice")
+    : mine
+      ? t("chat.speak.stop")
+      : t("chat.speak.read");
+  const toggle = () => {
+    if (mine) return speaker.stop();
+    void speaker.speak(text, { botId, messageId, voiceId });
+  };
+  return { label, ready, mine, preparing, toggle };
+}
+
 /** Read one message aloud. Hover-revealed beside the copy control, and it
- * becomes a stop button while this message is the one speaking — the same
+ * becomes a stop button while this message is the one speaking, the same
  * button, because "speak" and "shut up" are the same intent twice.
  *
  * Without a key it stays visible but disabled, saying what it needs: a
@@ -33,25 +72,10 @@ export function SpeakButton({
   localVoice: boolean;
   className?: string;
 }) {
-  const speech = useSpeech();
-  const configured = localVoice || Boolean(tts?.configured);
-  const ready = localVoice || (configured && Boolean(voiceId || tts?.voice));
-  const mine = speech.messageId === messageId && speech.status !== "idle";
-  const preparing = mine && speech.status === "preparing";
-
-  const label = !configured
-    ? t((tts?.provider ?? "elevenlabs") === "elevenlabs" ? "chat.speak.needsKey" : "chat.speak.needsSetup")
-    : !ready
-      ? t("chat.speak.needsVoice")
-    : mine
-      ? t("chat.speak.stop")
-      : t("chat.speak.read");
+  const { label, ready, mine, preparing, toggle } = useSpeakControl({ text, botId, messageId, voiceId, tts, localVoice });
   return (
     <button
-      onClick={() => {
-        if (mine) return speaker.stop();
-        void speaker.speak(text, { botId, messageId, voiceId });
-      }}
+      onClick={toggle}
       disabled={!ready}
       aria-label={label}
       title={label}
@@ -65,5 +89,19 @@ export function SpeakButton({
     >
       {preparing ? <Loader2 size={14} className="animate-spin" /> : mine ? <Square size={14} className="fill-current" /> : <Volume2 size={14} />}
     </button>
+  );
+}
+
+/** The same control as a "…" menu entry, with its words beside the icon. */
+export function SpeakMenuItem(props: Parameters<typeof useSpeakControl>[0]) {
+  const { label, ready, mine, preparing, toggle } = useSpeakControl(props);
+  return (
+    <MessageMenuItem
+      label={label}
+      disabled={!ready}
+      active={mine}
+      onSelect={toggle}
+      icon={preparing ? <Loader2 size={14} className="animate-spin" /> : mine ? <Square size={14} className="fill-current" /> : <Volume2 size={14} />}
+    />
   );
 }

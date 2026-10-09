@@ -10,6 +10,12 @@ const fixture = vi.hoisted(() => {
 });
 vi.mock("@/lib/interface-mode", () => ({ useAdvancedMode: () => false, setAdvancedMode: () => {} }));
 vi.mock("./MenuMotion", () => ({ useMenuMotion: () => ({ shown: true, closing: false, className: "", exitProps: {} }) }));
+// The model dropdown drawn open, so its rows show in static markup.
+vi.mock("./ModelDropdown", async (importOriginal) => {
+  const original = await importOriginal<typeof import("./ModelDropdown")>();
+  const { createElement: h } = await import("react");
+  return { ...original, ModelDropdown: ({ label, children }: { label: unknown; children: unknown }) => h("div", { "data-model-dropdown": "" }, label as never, children as never) };
+});
 vi.mock("@/state/store", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/state/store")>()),
   useStore: () => ({
@@ -61,11 +67,14 @@ function bot(): Bot {
 const html = () => renderToStaticMarkup(createElement(ModelPicker, { bot: bot() }));
 
 describe("model picker in Simple mode", () => {
-  it("keeps suggested models and hides effort, catalog chrome and settings links", () => {
+  it("keeps the model dropdown and hides effort, catalog chrome and settings links", () => {
     fixture.instances = [claude(true)];
     const markup = html();
-    expect(markup).toContain("Suggested");
+    expect(markup).toContain("data-model-dropdown");
     expect(markup).toContain("Opus");
+    // Every model of the provider, in one list, in Simple too.
+    expect(markup).toContain("Extra three");
+    expect(markup).not.toContain("Suggested");
     expect(markup).not.toContain("data-model-effort");
     expect(markup).not.toContain("data-model-add-api-keys");
     expect(markup).not.toContain("data-model-engines-link");

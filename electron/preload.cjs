@@ -279,9 +279,10 @@ const bridge = {
    * page: text the page already shows, capped by main; main accepts it only
    * from the main window's top frame. */
   notify: (request) => ipcRenderer.send("desktop:notify", request),
-  /** The person clicked one of those notifications: its id. */
+  /** The person clicked one of those notifications: its id and the
+   * conversation it is about ({botId, threadId, groupId, routineRunId}). */
   onNotificationClick: (cb) => {
-    const listener = (_event, id) => { if (typeof id === "string") cb(id); };
+    const listener = (_event, id, target) => { if (typeof id === "string") cb(id, target && typeof target === "object" ? target : null); };
     ipcRenderer.on("desktop:notification-click", listener);
     return () => ipcRenderer.removeListener("desktop:notification-click", listener);
   },

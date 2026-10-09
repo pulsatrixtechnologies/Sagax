@@ -7,6 +7,7 @@ import { useEffect, useState, useSyncExternalStore } from "react";
 import { api, useStore, type ConfigStatus } from "@/state/store";
 import { activeLocale, t } from "@/lib/i18n";
 import { createAboutMeDraft } from "./about-me-draft";
+import { MarkdownEditor } from "./markdown/MarkdownEditor";
 
 /** The server's limit (server/config.ts profile.aboutMe). */
 export const ABOUT_ME_MAX = 24_000;
@@ -87,23 +88,28 @@ export function AboutMeEditor() {
     <div data-about-me-editor className="flex min-h-0 flex-1 flex-col gap-4 md:flex-row">
       <div className="flex min-h-[300px] min-w-0 flex-1 flex-col gap-2">
         <p className="text-[13px] leading-[18px] text-ink-secondary">{t("settings.profile.aboutMeHelp")}</p>
-        <div className="flex min-h-[240px] flex-1 flex-col rounded-[14px] border-[0.5px] border-border focus-within:border-border-strong">
-          <label htmlFor="profile-about-me" className="sr-only">{t("settings.profile.aboutMe")}</label>
-          <textarea
-            id="profile-about-me"
-            value={value}
-            maxLength={ABOUT_ME_MAX}
-            autoFocus
-            placeholder={t("settings.aboutMe.placeholder")}
-            onChange={(event) => controller.edit(event.target.value)}
-            onBlur={() => void controller.flush()}
-            className="min-h-0 w-full flex-1 resize-none rounded-t-[14px] bg-transparent px-3.5 py-3 text-[13.5px] leading-[20px] text-ink placeholder:text-ink-secondary focus:outline-none"
-          />
-          <div className="flex shrink-0 items-center justify-between gap-3 border-t-[0.5px] border-border px-3.5 py-2 text-[12px]">
-            <SaveStatus status={status} onRetry={() => void controller.flush()} />
-            <span data-about-me-count className="shrink-0 tabular-nums text-ink-secondary">{aboutMeCount(value.length)}</span>
-          </div>
-        </div>
+        <label id="profile-about-me-label" htmlFor="profile-about-me" className="sr-only">{t("settings.profile.aboutMe")}</label>
+        <MarkdownEditor
+          id="profile-about-me"
+          ariaLabelledBy="profile-about-me-label"
+          dataField="about-me"
+          className="min-h-[240px] flex-1"
+          minHeight={240}
+          maxHeight="none"
+          value={value}
+          maxLength={ABOUT_ME_MAX}
+          showCount={false}
+          autoFocus
+          placeholder={t("settings.aboutMe.placeholder")}
+          onChange={(next) => controller.edit(next)}
+          onBlur={() => void controller.flush()}
+          footer={
+            <span className="flex items-center justify-between gap-3 text-[12px]">
+              <SaveStatus status={status} onRetry={() => void controller.flush()} />
+              <span data-about-me-count className="shrink-0 tabular-nums text-ink-secondary">{aboutMeCount(value.length)}</span>
+            </span>
+          }
+        />
         <LearnedFacts onChanged={(aboutMe) => { controller.confirm(aboutMe); dispatch({ type: "profileSaved", profile: { aboutMe } }); }} />
       </div>
       <aside className="flex shrink-0 flex-col gap-4 md:w-[230px]">

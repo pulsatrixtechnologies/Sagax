@@ -1,5 +1,6 @@
-// POST /api/nudges { principalId } shakes one person and leaves a line in
-// the conversation those two share.
+// POST /api/nudges { principalId, threadId? } shakes one person and leaves a
+// line in the conversation those two share: in the thread named when it is
+// one of theirs (the thread the sender has open), else its default thread.
 // POST /api/nudges { groupId } shakes the other people of that group chat
 // and leaves one line in the group. Exactly one of the two fields.
 // An accepted nudge answers { ok, id, at } and also sends the sender's own
@@ -52,10 +53,10 @@ export interface NudgeRouteDeps {
   /** Persist the accepted nudge. Not called when the nudge is refused.
    * `groupId` writes the line on that group chat. Returns the conversation
    * the line went to, when there is one. */
-  record(line: { fromId: string; fromName: string; toId: string; toName: string; at: number; groupId?: string }): NudgeConversation | undefined | void;
+  record(line: { fromId: string; fromName: string; toId: string; toName: string; at: number; groupId?: string; threadId?: string }): NudgeConversation | undefined | void;
 }
 
-const personBody = z.object({ principalId: z.string().min(1).max(200) }).strict();
+const personBody = z.object({ principalId: z.string().min(1).max(200), threadId: z.string().regex(/^[\w-]{1,128}$/).optional() }).strict();
 const groupBody = z.object({ groupId: z.string().min(1).max(200) }).strict();
 const bodySchema = z.union([personBody, groupBody]);
 
@@ -122,7 +123,7 @@ export function createNudgeRoutes(deps: NudgeRouteDeps): RouteHandler {
       });
     }
     const toName = target.name.trim() || target.id;
-    const open = deps.record({ fromId: self, fromName, toId: target.id, toName, at }) || undefined;
+    const open = deps.record({ fromId: self, fromName, toId: target.id, toName, at, ...(parsed.data.threadId ? { threadId: parsed.data.threadId } : {}) }) || undefined;
     deps.deliver({ audience: target.id, id, fromId: self, fromName, at, ...(open ? { open } : {}) });
     deps.echo?.({ audience: self, id, toId: target.id, toName, at, ...(open ? { open } : {}) });
     return json(res, 200, { ok: true, id, at });

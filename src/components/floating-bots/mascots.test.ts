@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it } from "vitest";
+import { isMasteryCharacter } from "../../../shared/mascot-unlocks";
 import en from "@/locales/en.json";
 import fr from "@/locales/fr.json";
 import { resetAchievementsForTests } from "@/lib/achievements";
@@ -201,7 +202,10 @@ describe("the avatar popover's Bot tab", () => {
     const locked = render(undefined);
     expect(locked).toContain('data-character-option="owl"');
     for (const id of ["shape", "trombi", "bunbu"]) expect(locked).not.toContain(`data-character-option="${id}"`);
-    expect(locked).not.toContain("data-locked");
+    // only the Mastery characters drawn by this build show locked, to be earned (shared/mascot-unlocks.ts)
+    const lockedOptions = [...locked.matchAll(/data-character-option="([a-z]+)" data-locked=""/g)].map((match) => match[1]);
+    expect(lockedOptions.every((id) => isMasteryCharacter(id)), lockedOptions.join()).toBe(true);
+    expect(locked.match(/data-locked/g)?.length ?? 0).toBe(lockedOptions.length);
     expect(locked).not.toContain('data-tab="epic"');
     expect(locked).toContain('data-mascot-skin-option="none"');
     // the skin this bot already wears stays visible
