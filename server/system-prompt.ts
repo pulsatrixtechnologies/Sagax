@@ -19,6 +19,7 @@ export function userProfileSystemPrompt(profile?: { aboutMe?: string }): string 
 
 /** Sections whose text legitimately differs between two turns of one live
  * conversation: memory, because a bot writes to MEMORY.md mid-conversation,
+ * the docs index (docs_update can add a document mid-conversation),
  * mentions, which describe the message being sent right now, outstanding
  * teammate work, which settles while the person keeps talking, recent
  * work, whose relative time labels are recomputed every turn and whose
@@ -34,7 +35,7 @@ export function userProfileSystemPrompt(profile?: { aboutMe?: string }): string 
  * bot, because its "2h ago" labels drift even when nothing else changed.
  * The phone-call section (server/voice-call-prompt.ts) rides only on the
  * turns of a voice call and the first written turn after it. */
-const VOLATILE_SECTIONS = new Set(["memory", "mentions", "outstanding", "recent", "voice-call", "availability"]);
+const VOLATILE_SECTIONS = new Set(["memory", "docs", "mentions", "outstanding", "recent", "voice-call", "availability"]);
 
 /** The team availability section, defined once for the direct turn, the room
  * turn and the preview. Its id is what puts it in the volatile half: a call
@@ -50,10 +51,14 @@ export function buildSystemPrompt(
   soul: string,
   parts: PromptPart[],
 ): { text: string; sections: PromptSection[]; stable: string; volatile: string } {
+  // RULES.md (server/workspace-files.ts) rides right after the soul and
+  // before everything else, wherever a call site lists it: hard constraints
+  // belong next to the standing instructions, ahead of memory.
   const ordered: PromptPart[] = [
     { id: "persona", label: "Identity", text: persona },
     { id: "soul", label: "Standing instructions (SOUL.md)", text: soulSystemPrompt(soul) },
-    ...parts,
+    ...parts.filter((part) => part.id === "rules"),
+    ...parts.filter((part) => part.id !== "rules"),
   ];
   const sections = ordered
     .filter((part) => part.text.length > 0)

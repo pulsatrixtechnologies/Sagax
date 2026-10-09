@@ -240,6 +240,8 @@ function memoryFilesOnDisk(botId: string): Array<{ path: string; mtimeMs: number
     "MEMORY.md",
     ...listMemoryTopics(botId).map((topic) => `memory/${topic.name}`),
     ...listMemoryLogs(botId).map((log) => `memory/${MEMORY_LOG_DIR}/${log}`),
+    // reference documents share the index; recallMemory keeps them apart
+    ...listDocFiles(botId).map((doc) => `${DOCS_DIR}/${doc.name}`),
   ];
   return names.flatMap((relativePath) => {
     try {
@@ -256,7 +258,7 @@ const memoryIndexDates = new Map<string, string>();
 function searchableMemoryText(path: string, text: string): string {
   if (path === "MEMORY.md" && text === MEMORY_SEED) return "";
   // Keep historical records searchable, but do not recall expired current facts.
-  if (path === "memory/archive.md" || path.startsWith(`memory/${MEMORY_LOG_DIR}/`)) return text;
+  if (path === "memory/archive.md" || path.startsWith(`memory/${MEMORY_LOG_DIR}/`) || path.startsWith(`${DOCS_DIR}/`)) return text;
   return withoutExpired(text, memoryDate()).text;
 }
 
@@ -286,6 +288,12 @@ export function syncMemoryIndex(botId: string): void {
 export function searchMemoryFiles(botId: string, query: string, limit = 12, mode: SearchMode = "all"): MemoryHit[] {
   syncMemoryIndex(botId);
   return recallMemory(query, botId, limit, mode);
+}
+
+/** Search one bot's docs/ files (workspace_search), after the same sync. */
+export function searchDocFiles(botId: string, query: string, limit = 12): MemoryHit[] {
+  syncMemoryIndex(botId);
+  return recallMemory(query, botId, limit, "all", "docs");
 }
 
 export interface MemoryUpdate {
@@ -607,6 +615,35 @@ const TOPIC_NAME = /^[\p{L}\p{N}_][\p{L}\p{N}_ .-]{0,199}\.md$/u;
 
 export function isMemoryTopicName(name: string): boolean {
   return TOPIC_NAME.test(name);
+}
+
+/** docs/: reference markdown the bot reads on demand (procedures,
+ * templates, lists), never loaded into a prompt (server/workspace-files.ts
+ * owns the rest). One flat folder, the same name gate as a topic file. */
+export const DOCS_DIR = "docs";
+
+/** The bot's docs/ files, name, size and dates, sorted by name. Empty when
+ * the folder is missing, so a bot without docs changes nothing. */
+export function listDocFiles(botId: string): Array<{ name: string; bytes: number; modifiedAt: number; createdAt: number }> {
+  const dir = join(workspaceDir(botId), DOCS_DIR);
+  let entries: string[];
+  try {
+    entries = memoryFolderEntries(dir);
+  } catch {
+    return [];
+  }
+  return entries
+    .filter(isMemoryTopicName)
+    .flatMap((name) => {
+      try {
+        // lstat: a link in docs/ is not a document (it could point anywhere)
+        const stat = lstatSync(join(dir, name));
+        return stat.isFile() ? [{ name, bytes: stat.size, modifiedAt: Math.round(stat.mtimeMs), createdAt: Math.round(stat.birthtimeMs || stat.ctimeMs) }] : [];
+      } catch {
+        return [];
+      }
+    })
+    .sort((a, b) => a.name.localeCompare(b.name));
 }
 
 /** The bot's memory/ topic files, name + size only — contents are fetched

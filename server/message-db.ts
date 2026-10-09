@@ -884,7 +884,7 @@ export function indexedMemoryFiles(botId: string): MemoryFileStat[] {
 }
 
 export interface MemoryHit {
-  /** workspace-relative: MEMORY.md, memory/<topic>.md, memory/log/<day>.md */
+  /** workspace-relative: MEMORY.md, memory/<topic>.md, memory/log/<day>.md, or docs/<name>.md for a docs search */
   file: string;
   /** the matched passage, with each matched term wrapped in [brackets] */
   snippet: string;
@@ -895,7 +895,7 @@ export interface MemoryHit {
 /** Relevance-ranked recall over ONE bot's memory files. Scoped by bot id
  * in SQL, the same way recallMessages scopes by thread: another bot's
  * memory is not a lower-ranked result, it is not a result. */
-export function recallMemory(query: string, botId: string, limit = 12, mode: SearchMode = "all"): MemoryHit[] {
+export function recallMemory(query: string, botId: string, limit = 12, mode: SearchMode = "all", scope: "memory" | "docs" = "memory"): MemoryHit[] {
   const match = ftsQuery(query, mode);
   if (!match) return [];
   const rows = db()
@@ -904,6 +904,10 @@ export function recallMemory(query: string, botId: string, limit = 12, mode: Sea
         `snippet(memory_fts, 0, '[', ']', '…', ${SNIPPET_TOKENS}) AS snippet ` +
         "FROM memory_fts JOIN memory_files f ON f.rowid = memory_fts.rowid " +
         "WHERE memory_fts MATCH ? AND f.bot_id = ? " +
+        // docs/ (server/workspace-files.ts) shares this index but is never
+        // memory: session_search and automatic recall keep to memory files,
+        // workspace_search keeps to docs.
+        (scope === "docs" ? "AND f.path LIKE 'docs/%' " : "AND f.path NOT LIKE 'docs/%' ") +
         // Automatic recall must filter before LIMIT; historical logs can
         // otherwise crowd all current topic files out of the result set.
         (mode === "any" ? "AND f.path NOT IN ('MEMORY.md', 'memory/archive.md') AND f.path NOT LIKE 'memory/log/%' " : "") +
