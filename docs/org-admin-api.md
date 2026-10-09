@@ -368,3 +368,101 @@ belongs to the owner). 400 `invalid_package`. Audited `bot.import`.
 
 "Copy to another server" is `GET bots/{id}/package` on one server and
 `POST bots/import` on the other.
+
+## Routines
+
+| Method and path | Role | What |
+|---|---|---|
+| `GET routines?q&status&bot&owner&limit&cursor` | manager | every routine in reach |
+| `GET routines/{id}` | manager | one routine |
+| `GET routines/{id}/runs?limit&cursor` | manager | its runs, newest first |
+| `POST routines/{id}/run` | manager in reach, admin | run now |
+| `POST routines/{id}/pause` | manager in reach, admin | pause or resume |
+
+A manager reaches a routine whose bot owner or whose runner is in their
+reach. No routine prompt, run output or message is ever answered.
+
+### `GET routines`
+
+`status` is `enabled`, `paused` or `failing` (its last run failed); `bot` a
+bot id; `owner` the bot owner's principal id or Perspicax user id.
+
+```json
+{
+  "items": [{
+    "id": "r_1", "name": "Daily digest", "botId": "5e38...", "botName": "Atlas",
+    "owner": { "principalId": "pr_1abf...", "sub": "01J9...", "name": "Alice" },
+    "runAs": { "principalId": "pr_1abf...", "sub": "01J9...", "name": "Alice" },
+    "schedule": "Every weekday at 09:00", "enabled": true, "nextRunAt": 1791580000000,
+    "lastRun": { "at": 1791500000000, "status": "failed", "reason": "rate_limited", "label": "The provider is rate limiting" },
+    "failures7d": 1
+  }],
+  "next": null
+}
+```
+
+- `schedule` is the schedule in words (times in the server's zone, `once`
+  in UTC).
+- `lastRun.status`: `ok` (completed), `failed`, `skipped` (cancelled or
+  missed) or `running` (queued, running or waiting). `reason` is a code,
+  `label` its readable words in the assertion's language.
+- `suspended` (`person_out` or `no_right`) is present when Sagax paused the
+  routine for its person.
+
+### `GET routines/{id}/runs`
+
+```json
+{
+  "items": [{ "id": "run_9", "startedAt": 1791500000000, "endedAt": 1791500050000, "status": "ok", "reason": null, "label": null, "threadId": "a5fe...", "turns": 2, "costUsd": 0.04 }],
+  "next": null
+}
+```
+
+`turns` and `costUsd` come from the usage ledger (the run's own cost when
+the run carries one). The thread opens in Sagax at
+`<server>/#thread=<threadId>&bot=<botId>`.
+
+### `POST routines/{id}/run`
+
+`{}`. Answers `{run: {id, startedAt, status: "running"}}`; 409
+`already_running` while a run of the routine is queued, running or waiting.
+Audited `routine.run_now`.
+
+### `POST routines/{id}/pause`
+
+`{"paused": true}` or `{"paused": false}`. Answers `{routine}`. Pausing does
+not change whom the routine runs as. Audited `routine.pause`,
+`routine.resume`.
+
+## Approvals
+
+| Method and path | Role | What |
+|---|---|---|
+| `GET approvals` | employee | the cards the caller may decide (unchanged) |
+| `GET approvals?scope=org` | admin | every pending card of the organization |
+| `GET approvals/history?q&limit&cursor` | admin | decided cards of the last 90 days |
+| `POST approvals/{thread}/{request}` | employee | allow or deny (unchanged) |
+
+`GET approvals?scope=org` answers `{approvals}` in the shape of `GET
+approvals`, at most 2,000, oldest first; `decidable` is true only on a card
+this admin may answer here (an admin card, or a card of their own bot, a
+plain tool card on the fleet host). An owner card of someone else's bot is
+listed, never decidable.
+
+### `GET approvals/history`
+
+```json
+{
+  "items": [{
+    "botId": "77ab...", "botName": "Beacon", "threadId": "c1d2...", "requestId": "req_4",
+    "type": "tool", "tool": "Bash", "summary": "uptime", "decision": "allow",
+    "by": { "principalId": "pr_1abf...", "sub": "01J9...", "name": "Alice" }, "at": 1791500000000
+  }],
+  "next": null
+}
+```
+
+From the decision log: the cards a person answered (in Sagax or from the
+console), newest first. Sagax records no expiry decision: `expired` is never
+answered. `by` names the person when Sagax knows them, else the device
+label.
