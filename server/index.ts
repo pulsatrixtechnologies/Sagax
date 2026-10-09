@@ -760,6 +760,7 @@ import { githubSkillFetch, type GithubCredential } from "./github-access.ts";
 import { parsePersonalMcpInput, personalAuthHeaders, personalMcpHostRefusal, personalMcpPrivateAllowed, PersonConnections, PersonConnectionsError, principalDir, type PersonalMcpServer } from "./person-connections.ts";
 import { createPersonConnectionRoutes } from "./routes/person-connections.ts";
 import { SandboxStdioRelay, StdioRelayError } from "./sandbox-stdio-mcp.ts";
+import { testStdioMcpCommand, testStdioMcpStream } from "./mcp-stdio-test.ts";
 import { PERSONAL_STDIO_TOOL_SERVER } from "./user-sandbox-proxy.ts";
 import { PLUGIN_CATALOG } from "../shared/plugin-catalog.ts";
 import { diskSpace, folderBytes } from "./disk-usage.ts";
@@ -24859,11 +24860,21 @@ const orgOpsDeps: OpsDeps = {
       return { ok: true, reason: null, label: null };
     }
     if (kind === "mcp") {
-      const server = principalId
-        ? (() => { const own = personConnections.servers(principalId)[id]; return own ? { url: own.kind === "stdio" ? null : own.url } : null; })()
-        : orgMcpServers().find((candidate) => candidate.name === id) ?? null;
+      if (principalId) {
+        const own = personConnections.servers(principalId)[id];
+        if (!own) return { ok: false, reason: "not_found", label: "No MCP server with that name." };
+        if (own.kind !== "stdio") return reachable(own.url);
+        // A person's command runs in their server environment, never here.
+        if (!userSandbox) return { ok: false, reason: "no_environment", label: "This server has no server environments: a person's command cannot be started to test it." };
+        const sandbox = userSandbox;
+        return testStdioMcpStream(() => sandbox.stdioStream(principalId, { argv: [own.command, ...own.args], env: own.env }), own);
+      }
+      const server = orgMcpServers().find((candidate) => candidate.name === id);
       if (!server) return { ok: false, reason: "not_found", label: "No MCP server with that name." };
-      return server.url ? reachable(server.url) : null;
+      if (server.url) return reachable(server.url);
+      const parsed = parseStoredMcpServer(id, cfg.mcpServers?.[id]);
+      if (!parsed.ok || isRemoteMcpServer(parsed.server)) return { ok: false, reason: "invalid", label: "This server's saved settings are not valid." };
+      return testStdioMcpCommand(parsed.server);
     }
     if (kind === "marketplace") {
       const market = pluginMarketplaces.list().find((candidate) => candidate.name === id);

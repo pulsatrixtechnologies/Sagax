@@ -20,7 +20,7 @@ function setup() {
   ring.push("error", "[omb-turn] failed");
   const deps: OpsDeps = {
     connections: async () => ({ engines: [{ id: "claude", name: "Claude", installed: true, version: "2.1", orgKey: true, people: 2 }], people: [], mcpServers: [], composio: { configured: false, apps: [] }, marketplaces: [], skills: [] }),
-    test: async (kind, id) => (kind === "mcp" ? null : id === "slow" ? new Promise(() => {}) : id === "boom" ? Promise.reject(new Error("refused by host")) : { ok: id === "claude", reason: id === "claude" ? null : "no_access", label: id === "claude" ? null : "No access" }),
+    test: async (kind, id) => (kind === "marketplace" ? null : id === "slow" ? new Promise(() => {}) : id === "boom" ? Promise.reject(new Error("refused by host")) : { ok: id === "claude", reason: id === "claude" ? null : "no_access", label: id === "claude" ? null : "No access" }),
     logs: (input) => ring.read(input),
     problems: () => [problem("p1", "failed", "rate_limited"), problem("p2", "refused", "no_access"), problem("p3", "stalled", "stalled")],
     settings: () => ({ org: { allowFullAccess: true }, policies: { allowedMarketplaces: null, allowedEngines: null, defaults: { engine: "claude", model: "m", approvalMode: null } }, backup: { enabled: false, schedule: null, lastAt: null, ok: null } }),
@@ -46,7 +46,7 @@ describe("ops", () => {
     expect(console.records.at(-1)).toMatchObject({ category: "engine", action: "connections.test", target: { kind: "engine", id: "claude" }, after: { ok: true } });
     expect((await console.call("POST", "connections/test", { body: { kind: "engine", id: "codex", principalId: "pr_b" } })).body).toMatchObject({ ok: false, reason: "no_access" });
     expect((await console.call("POST", "connections/test", { body: { kind: "engine", id: "boom" } })).body).toMatchObject({ ok: false, reason: "error", label: "refused by host" });
-    expect(await console.call("POST", "connections/test", { body: { kind: "mcp", id: "local" } })).toMatchObject({ status: 501, body: { code: "not_implemented", reason: expect.any(String) } });
+    expect(await console.call("POST", "connections/test", { body: { kind: "marketplace", id: "local" } })).toMatchObject({ status: 501, body: { code: "not_implemented", reason: expect.any(String) } });
     expect((await console.call("POST", "connections/test", { body: { kind: "dns", id: "x" } })).status).toBe(400);
   });
 
