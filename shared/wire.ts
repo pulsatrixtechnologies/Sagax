@@ -18,6 +18,7 @@ import type { MascotBodyId } from "./mascot-bodies.ts";
 import type { MascotColorName } from "./mascot-colors.ts";
 import type { MascotSkinId } from "./mascot-skins.ts";
 import type { MascotLook } from "./mascot-look.ts";
+import type { BotCatalogListing } from "./bot-catalog.ts";
 import type { BotPublicProfile } from "./bot-public-profile.ts";
 import type { CredentialTargetId } from "./credential-request.ts";
 import type { TeamSetupRequest } from "./team-setup.ts";
@@ -347,6 +348,8 @@ export interface WireBot {
   rewound?: boolean;
   pinned?: boolean;
   hidden?: boolean;
+  /** Published to the organisation bot catalogue (shared/bot-catalog.ts). */
+  catalog?: BotCatalogListing;
   /** Optional labeled divider used to organize this bot in the sidebar. */
   section?: string;
   /** the one message pinned to the top of this bot's active thread */
