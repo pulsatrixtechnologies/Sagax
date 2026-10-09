@@ -15,6 +15,7 @@ vi.mock("@/state/store", async (importOriginal) => {
 });
 import { BotSettingsDialog } from "./BotSettingsDialog";
 import { DesktopCapabilitiesProvider } from "./DesktopCapabilities";
+import { CIRCLE_BUTTON } from "@/lib/circle-button";
 
 const bot = { id: "bot-1", name: "Maily", title: "", description: "Sorts the inbox.", messages: [], tasks: [] } as never as Bot;
 // The provider reads window.ogb.platform on render, so each case sees its stub.
@@ -41,6 +42,16 @@ describe("bot settings caption inset", () => {
 });
 
 describe("bot panel header and tabs", () => {
+  it("draws the mascot menu button (...) as the same round control as its neighbours", () => {
+    vi.stubGlobal("window", { ogb: { platform: "darwin" } });
+    const html = renderToStaticMarkup(createElement(DesktopCapabilitiesProvider, null, createElement(BotSettingsDialog, { bot })));
+    const classOf = (marker: RegExp) => html.match(marker)?.[1] ?? html.match(marker)?.[2];
+    const menu = classOf(/<button[^>]*data-mascot-menu-button=""[^>]*class="([^"]*)"|<button[^>]*class="([^"]*)"[^>]*data-mascot-menu-button=""/);
+    const close = classOf(/<button[^>]*aria-label="Close"[^>]*class="([^"]*)"|<button[^>]*class="([^"]*)"[^>]*aria-label="Close"/);
+    expect(menu).toBe(CIRCLE_BUTTON);
+    expect(close).toBe(CIRCLE_BUTTON);
+  });
+
   it("offers one Edit persona button after the tab bar, outside the tab list", () => {
     vi.stubGlobal("window", { ogb: { platform: "darwin" } });
     const html = renderToStaticMarkup(createElement(DesktopCapabilitiesProvider, null, createElement(BotSettingsDialog, { bot })));
