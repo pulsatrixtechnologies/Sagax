@@ -21,6 +21,7 @@ import {
   type OrgAdminViewer,
 } from "./org-admin-routes.ts";
 import type { UsageRow } from "./usage-ledger.ts";
+import { fail, ok, type ConsoleAuditEntry } from "./org-admin-console.ts";
 
 const ISS = "http://127.0.0.1:19191";
 const ORIGIN = "http://127.0.0.1:19192";
@@ -47,6 +48,7 @@ function bot(id: string, owner: string, reach: Partial<AdminBotReach> = {}): { b
       id, name: id.toUpperCase(), owner: { principalId: owner, sub: people[owner]!.sub, name: people[owner]!.name }, ownerRole: owner === ALICE ? "admin" : "member",
       engine: { instanceId: "claude", driverKind: "claudeAgent", installed: true }, model: null, access: "none",
       mcpProfiles: [], grants: [], sections: [], routines: 0, createdAt: null, lastActivityAt: null,
+      status: "active", label: null, threads: 1,
     },
     reach: { ownerPrincipalId: owner, grantTargets: [], sectionMemberTargets: [], ...reach },
   };
@@ -61,14 +63,16 @@ const usageRows: UsageRow[] = [
 let server: ReturnType<typeof createServer>;
 let base = "";
 const answers: Array<{ viewer: OrgAdminViewer; threadId: string; requestId: string; decision: string }> = [];
+const recorded: Array<{ principalId: string; entry: ConsoleAuditEntry }> = [];
+const auditCalls: Array<Record<string, unknown>> = [];
 const tokens = new Map<string, ConsoleAssertion>();
 let jti = 0;
 let identity: "solo" | "perspicax" = "perspicax";
 
-function assertion(sub: string, role: ConsoleAssertion["role"], teams: ConsoleAssertion["teams"] = []): string {
+function assertion(sub: string, role: ConsoleAssertion["role"], teams: ConsoleAssertion["teams"] = [], locale?: string): string {
   const token = `tok${++jti}`;
   const now = Math.floor(Date.now() / 1000);
-  tokens.set(token, { iss: ISS, sub, jti: `jti-${String(jti).padStart(16, "0")}`, iat: now, exp: now + 60, serverId: "srv", role, teams });
+  tokens.set(token, { iss: ISS, sub, jti: `jti-${String(jti).padStart(16, "0")}`, iat: now, exp: now + 60, serverId: "srv", role, teams, ...(locale ? { locale } : {}) });
   return token;
 }
 
@@ -112,7 +116,20 @@ beforeAll(async () => {
       if (requestId === "gone") return { ok: false, status: 404, code: "not_found", message: "No such approval." };
       return { ok: true };
     },
-    audit: (input) => ({ rows: [{ id: "2026-09-1", at: "2026-09-01T00:00:00.000Z", category: "rights", action: "grant.set", target: { kind: "bot", id: "x" }, actor: { kind: "person", principalId: ALICE, via: "sagax" } }], next: input.limit === 1 ? "2026-09-1" : null }),
+    auditCategories: ["rights", "bot", "people"],
+    version: () => "0.4.14",
+    recordAction: (principalId, entry) => recorded.push({ principalId, entry }),
+    console: [
+      { method: "GET", path: "echo/{id}", min: "manager", handle: (ctx) => ok({ id: ctx.params.id, q: ctx.url.searchParams.get("q"), locale: ctx.locale, admin: ctx.reach === null }) },
+      { method: "POST", path: "echo/{id}", min: "admin", handle: (ctx) => {
+        ctx.record({ category: "bot", action: "echo.post", target: { kind: "bot", id: ctx.params.id } });
+        return ok({ body: ctx.body });
+      } },
+      { method: "GET", path: "boom", min: "employee", handle: () => { throw new Error("secret detail /data/x"); } },
+      { method: "GET", path: "refused", min: "employee", handle: () => fail(409, "self", "Not on yourself.") },
+      { method: "GET", path: "approvals?scope=org", min: "admin", handle: () => ok({ approvals: ["org"] }) },
+    ],
+    audit: (input) => (auditCalls.push(input), { rows: [{ id: "2026-09-1", at: "2026-09-01T00:00:00.000Z", category: "rights", action: "grant.set", target: { kind: "bot", id: "x" }, actor: { kind: "person", principalId: ALICE, via: "sagax" } }], next: input.limit === 1 ? "2026-09-1" : null }),
   };
   const handler = createOrgAdminRoutes(deps);
   server = createServer((req: IncomingMessage, res: ServerResponse) => {
@@ -269,5 +286,69 @@ describe("org admin API: pure pieces", () => {
     const list = [bot("b", BOB).bot, bot("a", BOB).bot, bot("c", ALICE).bot];
     expect(sortAdminBots(list).bots.map((b) => b.id)).toEqual(["c", "a", "b"]);
     expect(sortAdminBots(list, 2)).toMatchObject({ truncated: true, bots: [{ id: "c" }, { id: "a" }] });
+  });
+});
+
+describe("org admin API: the console routes (2026-10-08)", () => {
+  const T_MANAGER = [{ id: "T", name: "T", manager: true }];
+  it("capabilities: any role, the release version and every route", async () => {
+    const got = await call("/api/org/admin/capabilities", assertion("bob", "employee"));
+    expect(got).toMatchObject({ status: 200, body: { version: "0.4.14", api: 2 } });
+    expect(got.body.routes).toEqual(expect.arrayContaining(["GET bots", "GET capabilities", "GET echo/{id}", "POST echo/{id}", "POST approvals/{thread}/{request}", "GET files/{bot}/read"]));
+  });
+
+  it("dispatches by template, method and role; the body, the locale and the audit row reach the handler", async () => {
+    expect(await call("/api/org/admin/echo/abc?q=x", assertion("mona", "manager", T_MANAGER, "fr-CA"))).toMatchObject({ status: 200, body: { id: "abc", q: "x", locale: "fr", admin: false } });
+    expect((await call("/api/org/admin/echo/abc", assertion("alice", "admin"))).body).toMatchObject({ locale: "en", admin: true });
+    expect(await call("/api/org/admin/echo/abc", assertion("bob", "employee"))).toMatchObject({ status: 403, body: { code: "forbidden_role", reason: expect.any(String) } });
+    expect(await call("/api/org/admin/echo/abc", assertion("mona", "manager", T_MANAGER), { method: "POST", body: "{}" })).toMatchObject({ status: 403 });
+    const posted = await call("/api/org/admin/echo/abc", assertion("alice", "admin"), { method: "POST", body: JSON.stringify({ a: 1 }) });
+    expect(posted).toMatchObject({ status: 200, body: { body: { a: 1 } } });
+    expect(recorded.at(-1)).toEqual({ principalId: ALICE, entry: { category: "bot", action: "echo.post", target: { kind: "bot", id: "abc" } } });
+    expect(await call("/api/org/admin/echo/abc", assertion("alice", "admin"), { method: "POST", body: "nope" })).toMatchObject({ status: 400, body: { code: "bad_request" } });
+    expect(await call("/api/org/admin/echo/abc", assertion("alice", "admin"), { method: "POST", body: JSON.stringify({ pad: "x".repeat(20_000) }) })).toMatchObject({ status: 413, body: { code: "too_large" } });
+    // a parameter that is not a plain id, a wrong method
+    expect((await call("/api/org/admin/echo/a%20b", assertion("alice", "admin"))).status).toBe(404);
+    expect(await call("/api/org/admin/boom", assertion("alice", "admin"), { method: "POST", body: "{}" })).toMatchObject({ status: 405, body: { code: "method_not_allowed" } });
+  });
+
+  it("a thrown error is a readable 500 without its detail; a refusal keeps its code and reason", async () => {
+    const boom = await call("/api/org/admin/boom", assertion("alice", "admin"));
+    expect(boom).toMatchObject({ status: 500, body: { code: "server_error" }, admin: "1" });
+    expect(JSON.stringify(boom.body)).not.toContain("/data/x");
+    expect(await call("/api/org/admin/refused", assertion("alice", "admin"))).toMatchObject({ status: 409, body: { code: "self", message: "Not on yourself.", reason: "Not on yourself." } });
+  });
+
+  it("approvals?scope=org goes to the console route; plain approvals stays the caller's own", async () => {
+    expect((await call("/api/org/admin/approvals?scope=org", assertion("alice", "admin"))).body).toEqual({ approvals: ["org"] });
+    expect((await call("/api/org/admin/approvals?scope=org", assertion("bob", "employee"))).status).toBe(403);
+    expect((await call("/api/org/admin/approvals", assertion("alice", "admin"))).body.approvals).toHaveLength(2);
+  });
+
+  it("bots: paged and filtered when asked, the whole list otherwise", async () => {
+    const admin = () => assertion("alice", "admin");
+    const first = await call("/api/org/admin/bots?limit=2", admin());
+    expect(first.body.items.map((b: AdminBot) => b.id)).toEqual(["x", "v"]);
+    expect(first.body.next).toEqual(expect.any(String));
+    const second = await call(`/api/org/admin/bots?limit=2&cursor=${first.body.next}`, admin());
+    expect(second.body.items.map((b: AdminBot) => b.id)).toEqual(["y", "z"]);
+    const last = await call(`/api/org/admin/bots?limit=2&cursor=${second.body.next}`, admin());
+    expect(last.body).toMatchObject({ items: [{ id: "w" }], next: null });
+    expect((await call(`/api/org/admin/bots?owner=${BOB}`, admin())).body.items.map((b: AdminBot) => b.id)).toEqual(["v", "y"]);
+    expect((await call("/api/org/admin/bots?q=dave", admin())).body.items.map((b: AdminBot) => b.id)).toEqual(["w"]);
+    expect((await call("/api/org/admin/bots?status=archived", admin())).body.items).toEqual([]);
+    for (const query of ["status=gone", "limit=0", "limit=201", "cursor=zz", `q=${"x".repeat(201)}`]) {
+      expect(await call(`/api/org/admin/bots?${query}`, admin())).toMatchObject({ status: 400, body: { code: "bad_request" } });
+    }
+    // a manager's page is their reach
+    expect((await call("/api/org/admin/bots?limit=50", assertion("mona", "manager", T_MANAGER))).body.items.map((b: AdminBot) => b.id).sort()).toEqual(["v", "x", "z"]);
+  });
+
+  it("usage rows carry their engine; audit filters by category and target", async () => {
+    const usage = await call("/api/org/admin/usage?from=2026-09-01&to=2026-09-30", assertion("alice", "admin"));
+    expect(usage.body.rows.every((row: { engine: string | null }) => row.engine === "claude")).toBe(true);
+    expect((await call("/api/org/admin/audit?category=bot&target=x", assertion("alice", "admin"))).status).toBe(200);
+    expect(auditCalls.at(-1)).toMatchObject({ categories: ["bot"], target: "x" });
+    expect(await call("/api/org/admin/audit?category=nope", assertion("alice", "admin"))).toMatchObject({ status: 400, body: { code: "bad_request" } });
   });
 });

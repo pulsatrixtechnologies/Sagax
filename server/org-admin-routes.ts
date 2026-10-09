@@ -27,6 +27,21 @@ import { aggregateOrgUsage, ORG_USAGE_MAX_ROWS, parseOrgUsageRange, type OrgUsag
 import type { ConsoleAssertion, OidcTeamClaim } from "./oidc-rp.ts";
 import type { IdentifiedAdminAction } from "./admin-activity.ts";
 import { ADMIN_FILES_ROUTE, answerBotFiles, type OrgAdminFilesDeps } from "./org-admin-files.ts";
+import {
+  compileRoutes,
+  consoleLocale,
+  enumParam,
+  isAnswer,
+  matchesQuery,
+  matchRoutes,
+  pageOf,
+  parsePage,
+  routeNames,
+  type ConsoleAnswer,
+  type ConsoleAuditEntry,
+  type ConsoleContext,
+  type ConsoleRoute,
+} from "./org-admin-console.ts";
 
 export const ORG_ADMIN_PREFIX = "/api/org/admin/";
 export const ORG_ADMIN_JTI_MAX = 10_000;
@@ -35,6 +50,23 @@ export const ORG_ADMIN_JTI_GRACE_MS = 60_000;
 export const ORG_ADMIN_MAX_BOTS = 2_000;
 export const ORG_ADMIN_MAX_APPROVALS = 200;
 const MAX_BODY_BYTES = 16 * 1024;
+/** The version of this API `GET capabilities` reports: 1 was the nine first
+ * routes, 2 the console routes of 2026-10-08. */
+export const ORG_ADMIN_API_VERSION = 2;
+/** The built-in routes, as `GET capabilities` names them. */
+const BUILT_IN_ROUTES: Array<Pick<ConsoleRoute, "method" | "path">> = [
+  { method: "GET", path: "capabilities" },
+  { method: "GET", path: "bots" },
+  { method: "GET", path: "usage" },
+  { method: "GET", path: "approvals" },
+  { method: "POST", path: "approvals/{thread}/{request}" },
+  { method: "GET", path: "audit" },
+  { method: "GET", path: "files/{bot}/roots" },
+  { method: "GET", path: "files/{bot}/list" },
+  { method: "GET", path: "files/{bot}/stat" },
+  { method: "GET", path: "files/{bot}/read" },
+  { method: "GET", path: "files/{bot}/download" },
+];
 const MAX_TOKEN_CHARS = 8_192;
 const CARD_ID = /^[A-Za-z0-9_-]{1,128}$/;
 const AUDIT_CURSOR = /^\d{4}-\d{2}-\d{1,9}$/;
@@ -75,6 +107,12 @@ export interface AdminBot {
   routines: number;
   createdAt: number | null;
   lastActivityAt: number | null;
+  /** 2026-10-08: archived is Sagax's hidden bot (restored from the sidebar). */
+  status: "active" | "archived";
+  /** The sidebar label (section) the owner filed it under. */
+  label: string | null;
+  /** Its conversations: the main one plus every task. */
+  threads: number;
 }
 
 /** What a manager's reach is checked against for one bot. */
@@ -127,7 +165,15 @@ export interface OrgAdminRouteDeps {
   usageRows(range: { from: Date; to: Date }): UsageRow[];
   approvalsFor(viewer: OrgAdminViewer): AdminApproval[];
   answer(viewer: OrgAdminViewer, threadId: string, requestId: string, decision: "allow" | "deny"): Promise<ApprovalAnswer>;
-  audit(input: { from?: number; to?: number; limit: number; before?: string | null }): { rows: IdentifiedAdminAction[]; next: string | null };
+  audit(input: { from?: number; to?: number; limit: number; before?: string | null; categories?: readonly string[]; target?: string }): { rows: IdentifiedAdminAction[]; next: string | null };
+  /** The categories `GET audit?category=` accepts. */
+  auditCategories?: readonly string[];
+  /** The release people know (package.json forkVersion). */
+  version?: () => string;
+  /** The console routes of 2026-10-08 (server/org-admin-console.ts). */
+  console?: readonly ConsoleRoute[];
+  /** One admin activity row for a console write, actor the console person. */
+  recordAction?: (principalId: string, entry: ConsoleAuditEntry) => void;
   /** The person rows of the audit actors (`nameOf`). */
   now?: () => number;
   /** A bot's files (read only, org-admin-files.ts) and what a manager's
@@ -216,6 +262,7 @@ export function wireUsageRow(row: OrgUsageAggregate, person: (principalId: strin
     costUsd: row.costUsd,
     estimatedUsd: row.estimatedUsd,
     access: row.access,
+    engine: row.engine,
   };
 }
 
@@ -258,10 +305,20 @@ function send(res: ServerResponse, status: number, body: unknown): void {
 }
 
 function refuse(res: ServerResponse, status: number, code: string, message: string): void {
-  send(res, status, { code, message, error: message });
+  send(res, status, { code, message, reason: message, error: message });
 }
 
-function readSmallJson(req: IncomingMessage): Promise<unknown> {
+function answer(res: ServerResponse, reply: ConsoleAnswer): void {
+  if (reply.raw !== undefined) {
+    res.writeHead(reply.status, { "x-sagax-admin-api": "1", "cache-control": "no-store", ...reply.headers });
+    res.end(reply.raw);
+    return;
+  }
+  for (const [name, value] of Object.entries(reply.headers ?? {})) res.setHeader(name, value);
+  send(res, reply.status, reply.body);
+}
+
+function readSmallJson(req: IncomingMessage, max = MAX_BODY_BYTES): Promise<unknown> {
   return new Promise((resolve) => {
     const chunks: Buffer[] = [];
     let bytes = 0;
@@ -269,7 +326,7 @@ function readSmallJson(req: IncomingMessage): Promise<unknown> {
     req.on("data", (chunk: Buffer) => {
       if (over) return;
       bytes += chunk.length;
-      if (bytes > MAX_BODY_BYTES) {
+      if (bytes > max) {
         over = true;
         resolve(undefined);
         return;
@@ -296,6 +353,8 @@ const ROLE_RANK: Record<ConsoleRole, number> = { employee: 0, manager: 1, admin:
 export function createOrgAdminRoutes(deps: OrgAdminRouteDeps): (req: IncomingMessage, res: ServerResponse, url: URL) => Promise<boolean> {
   const replay = new AssertionReplayCache();
   const now = deps.now ?? Date.now;
+  const consoleRoutes = compileRoutes(deps.console ?? []);
+  const capabilities = routeNames([...BUILT_IN_ROUTES, ...(deps.console ?? [])]);
   return async (req, res, url) => {
     const path = url.pathname;
     if (path !== "/api/org/admin" && !path.startsWith(ORG_ADMIN_PREFIX)) return false;
@@ -380,13 +439,69 @@ export function createOrgAdminRoutes(deps: OrgAdminRouteDeps): (req: IncomingMes
       return true;
     }
     const answerMatch = /^approvals\/([^/]+)\/([^/]+)$/.exec(sub);
-    const route = sub === "bots" || sub === "usage" || sub === "audit" || sub === "approvals"
-      ? { name: sub, method: "GET", min: sub === "audit" ? "admin" as const : sub === "approvals" ? "employee" as const : "manager" as const }
-      : answerMatch && CARD_ID.test(answerMatch[1]!) && CARD_ID.test(answerMatch[2]!)
-        ? { name: "answer", method: "POST", min: "employee" as const }
-        : null;
+    // `approvals?scope=org` and `approvals/history` are console routes.
+    const consoleApprovals = sub === "approvals" && url.searchParams.get("scope") === "org";
+    const route = sub === "capabilities"
+      ? { name: sub, method: "GET", min: "employee" as const }
+      : (sub === "bots" || sub === "usage" || sub === "audit" || sub === "approvals") && !consoleApprovals
+        ? { name: sub, method: "GET", min: sub === "audit" ? "admin" as const : sub === "approvals" ? "employee" as const : "manager" as const }
+        : answerMatch && answerMatch[1] !== "history" && CARD_ID.test(answerMatch[1]!) && CARD_ID.test(answerMatch[2]!)
+          ? { name: "answer", method: "POST", min: "employee" as const }
+          : null;
     if (!route) {
-      refuse(res, 404, "not_found", "No such admin route.");
+      const hits = matchRoutes(consoleRoutes, consoleApprovals ? "approvals?scope=org" : sub);
+      if (!hits.length) {
+        refuse(res, 404, "not_found", "No such admin route.");
+        return true;
+      }
+      const hit = hits.find((candidate) => candidate.route.method === method);
+      if (!hit) {
+        const allowed = [...new Set(hits.map((candidate) => candidate.route.method))].join(", ");
+        res.setHeader("allow", allowed);
+        refuse(res, 405, "method_not_allowed", `Use ${allowed} here.`);
+        return true;
+      }
+      if (ROLE_RANK[viewer.role] < ROLE_RANK[hit.route.min]) {
+        refuse(res, 403, "forbidden_role", `This needs the ${hit.route.min} role in Perspicax.`);
+        return true;
+      }
+      let body: unknown = null;
+      if (method === "POST") {
+        const declared = Number(req.headers["content-length"] ?? 0);
+        const max = hit.route.maxBody ?? MAX_BODY_BYTES;
+        if (Number.isFinite(declared) && declared > max) {
+          refuse(res, 413, "too_large", `The body is larger than ${max} bytes.`);
+          return true;
+        }
+        body = await readSmallJson(req, max);
+        if (body === undefined) {
+          refuse(res, 400, "bad_request", `The body is not JSON, or larger than ${max} bytes.`);
+          return true;
+        }
+      }
+      const reach = managedReach(viewer, deps.teamPeople);
+      const managedTeams = new Set(viewer.teams.filter((team) => team.manager).map((team) => team.id));
+      const ctx: ConsoleContext = {
+        viewer,
+        locale: consoleLocale(assertion.locale),
+        url,
+        params: hit.params,
+        body,
+        reach,
+        managedTeams,
+        inReach: (principalId) => !reach || (principalId ? reach.has(principalId) : false),
+        botVisible: (facts) => botInReach(reach, managedTeams, facts),
+        record: (entry) => deps.recordAction?.(viewer.principalId, entry),
+        now,
+      };
+      try {
+        answer(res, await hit.route.handle(ctx));
+      } catch (error) {
+        const status = typeof (error as { status?: unknown })?.status === "number" ? (error as { status: number }).status : 500;
+        const message = status < 500 && error instanceof Error ? error.message.slice(0, 300) : "The server could not do this; its log has the details.";
+        if (status >= 500) console.error(`[org-admin] ${method} ${sub}: ${error instanceof Error ? error.message : String(error)}`);
+        refuse(res, status, status < 500 ? "refused" : "server_error", message);
+      }
       return true;
     }
     if (method !== route.method) {
@@ -402,9 +517,33 @@ export function createOrgAdminRoutes(deps: OrgAdminRouteDeps): (req: IncomingMes
     const managedTeams = new Set(viewer.teams.filter((team) => team.manager).map((team) => team.id));
     const inReach = (principalId: string | null | undefined) => !reach || (principalId ? reach.has(principalId) : false);
 
+    if (route.name === "capabilities") {
+      send(res, 200, { version: deps.version?.() ?? "unknown", api: ORG_ADMIN_API_VERSION, routes: capabilities });
+      return true;
+    }
     if (route.name === "bots") {
       const listed = deps.bots().filter((entry) => botInReach(reach, managedTeams, entry.reach)).map((entry) => entry.bot);
-      send(res, 200, sortAdminBots(listed));
+      const params = url.searchParams;
+      const paged = ["q", "status", "engine", "owner", "limit", "cursor"].some((name) => params.has(name));
+      if (!paged) {
+        send(res, 200, sortAdminBots(listed));
+        return true;
+      }
+      const page = parsePage(params);
+      const status = enumParam(params, "status", ["active", "archived"] as const);
+      if (isAnswer(page) || isAnswer(status)) {
+        const reply = isAnswer(page) ? page : status as ConsoleAnswer;
+        answer(res, reply);
+        return true;
+      }
+      const engine = params.get("engine") || null;
+      const owner = params.get("owner") || null;
+      const filtered = sortAdminBots(listed, Number.MAX_SAFE_INTEGER).bots.filter((bot) =>
+        (!status || bot.status === status)
+        && (!engine || bot.engine.instanceId === engine || bot.engine.driverKind === engine)
+        && (!owner || bot.owner.principalId === owner || bot.owner.sub === owner)
+        && matchesQuery(page.q, bot.name, bot.owner.name, bot.engine.instanceId, bot.model, bot.label));
+      send(res, 200, pageOf(filtered, page));
       return true;
     }
     if (route.name === "usage") {
@@ -461,7 +600,21 @@ export function createOrgAdminRoutes(deps: OrgAdminRouteDeps): (req: IncomingMes
       refuse(res, 400, "bad_request", "from and to are milliseconds, limit 1 to 500, before an audit row id.");
       return true;
     }
-    const page = deps.audit({ ...(from !== undefined ? { from } : {}), ...(to !== undefined ? { to } : {}), limit, before: before || null });
+    // 2026-10-08: one category, and the id of the target (a bot, a person).
+    const category = params.get("category");
+    const target = params.get("target");
+    if (category && !(deps.auditCategories ?? []).includes(category)) {
+      refuse(res, 400, "bad_request", `category is one of ${(deps.auditCategories ?? []).join(", ")}.`);
+      return true;
+    }
+    if (target !== null && (target.length < 1 || target.length > 160)) {
+      refuse(res, 400, "bad_request", "target is an id of at most 160 characters.");
+      return true;
+    }
+    const page = deps.audit({
+      ...(from !== undefined ? { from } : {}), ...(to !== undefined ? { to } : {}), limit, before: before || null,
+      ...(category ? { categories: [category] } : {}), ...(target ? { target } : {}),
+    });
     send(res, 200, { rows: page.rows.map((row) => wireAuditRow(row, deps.person)), next: page.next });
     return true;
   };

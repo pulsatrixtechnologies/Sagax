@@ -1,0 +1,265 @@
+// The Perspicax console's Sagax admin routes (console design 2026-10-08,
+// section 5) through the real server, with the local fake provider signing
+// console assertions and the fake Claude CLI answering turns.
+//
+// Fixture: Alice (organization admin), Bob (member, team T), Mona (manager
+// of T), Zoe (member, outside T). Two bots: Atlas (Alice's) and Beacon
+// (Bob's, held open so it raises an approval card). A routine on Atlas. A
+// pending admin approval on Beacon.
+//
+//   C1  capabilities and overview
+//   C2  people: list, detail, disable, reset access, connections revoke
+//   C3  bots: list, detail, clone, archive and restore, transfer, model,
+//       bulk, package and import, stop and delete
+//   C4  routines and approvals
+//   C5  connections, usage, logs, incidents, audit, settings
+import { spawn, type ChildProcess } from "node:child_process";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { connect, type Socket } from "node:net";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+
+import { removeTempDir, waitForExit } from "./testing/cleanup.ts";
+import { startFakeOidcProvider, type FakeOidcProvider, type FakeOidcUser } from "./testing/fake-oidc-provider.ts";
+import { freePortBlock } from "./testing/ports.ts";
+
+const SERVER_DIR = dirname(fileURLToPath(import.meta.url));
+const FAKE_CLAUDE = join(SERVER_DIR, "testing", "fake-claude-cli.ts");
+const posixOnly = describe.skipIf(process.platform === "win32");
+const ORG_KEY = "sk-ant-test-org-key-000000";
+const TEAM_T = "01J9C1TEAMT0000000000000TT";
+const ALICE: FakeOidcUser = { sub: "01J9C1ALICE0000000000000A", name: "Alice", preferred_username: "alice", role: "admin", teams: [] };
+const BOB: FakeOidcUser = { sub: "01J9C1BOB00000000000000B", name: "Bob", preferred_username: "bob", role: "employee", teams: [{ id: TEAM_T, name: "T", manager: false }] };
+const MONA: FakeOidcUser = { sub: "01J9C1MONA00000000000000M", name: "Mona", preferred_username: "mona", role: "manager", teams: [{ id: TEAM_T, name: "T", manager: true }] };
+const ZOE: FakeOidcUser = { sub: "01J9C1ZOE00000000000000Z", name: "Zoe", preferred_username: "zoe", role: "employee", teams: [] };
+
+let PORT = 0;
+let BASE = "";
+let child: ChildProcess;
+let home: string;
+let log = "";
+let idp: FakeOidcProvider;
+
+type Auth = { cookie?: string; bearer?: string };
+type Reply = { status: number; body: any; text: string; headers: Headers };
+const api = async (method: string, path: string, auth?: Auth, body?: unknown): Promise<Reply> => {
+  const res = await fetch(`${BASE}${path}`, {
+    method,
+    headers: {
+      ...(body !== undefined ? { "content-type": "application/json" } : {}),
+      ...(auth?.cookie ? { cookie: auth.cookie } : {}),
+      ...(auth?.bearer ? { authorization: `Bearer ${auth.bearer}` } : {}),
+    },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  const text = await res.text();
+  let parsed: any = {};
+  try { parsed = JSON.parse(text); } catch { /* not JSON */ }
+  return { status: res.status, body: parsed, text, headers: res.headers };
+};
+const cookiePair = (setCookie: string) => setCookie.split(";")[0]!;
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+async function signIn(user: FakeOidcUser): Promise<Auth> {
+  idp.user = { ...user };
+  const start = await fetch(`${BASE}/auth/oidc/start`, { redirect: "manual" });
+  const binding = cookiePair(start.headers.getSetCookie().find((c) => c.includes("_oidc="))!);
+  const authorize = await fetch(start.headers.get("location")!, { redirect: "manual" });
+  const callback = await fetch(authorize.headers.get("location")!, { redirect: "manual", headers: { cookie: binding } });
+  const session = callback.headers.getSetCookie().find((c) => c.startsWith("omb_session_") && !c.includes("_oidc="));
+  expect(callback.headers.get("location"), log.slice(-2000)).toBe("/");
+  return { cookie: cookiePair(session!) };
+}
+
+async function waitFor<T>(read: () => Promise<T | null | undefined | false>, ms = 15_000): Promise<T> {
+  const deadline = Date.now() + ms;
+  for (;;) {
+    const value = await read();
+    if (value) return value;
+    if (Date.now() > deadline) throw new Error(`timed out. server log:\n${log.slice(-3000)}`);
+    await sleep(150);
+  }
+}
+
+type AssertionExtra = Partial<Parameters<FakeOidcProvider["consoleAssertion"]>[0]>;
+const console$ = (user: FakeOidcUser, extra: AssertionExtra = {}): Auth => ({
+  bearer: idp.consoleAssertion({ sub: user.sub, aud: BASE, role: user.role === "admin" || user.role === "manager" ? user.role : "employee", teams: user.teams ?? [], ...extra }),
+});
+/** One console call: `GET overview`, `POST bots/x/clone`. */
+const admin = (method: string, sub: string, user: FakeOidcUser, body?: unknown, extra: AssertionExtra = {}) =>
+  api(method, `/api/org/admin/${sub}`, console$(user, extra), body);
+const french = { claims: (c: Record<string, unknown>) => ({ ...c, locale: "fr" }) };
+
+async function createBot(auth: Auth, name: string, instanceId: string): Promise<{ id: string; threadId: string }> {
+  const created = await api("POST", "/api/bots", auth, { name });
+  expect(created.status, created.text).toBe(201);
+  const bot = created.body.bot;
+  const patched = await api("PATCH", `/api/bots/${bot.id}`, auth, { modelSelection: { instanceId, model: "fake-model" } });
+  expect(patched.status, patched.text).toBe(200);
+  return { id: bot.id, threadId: bot.threadId };
+}
+
+async function start() {
+  child = spawn(process.execPath, [join(SERVER_DIR, "index.ts")], {
+    cwd: join(SERVER_DIR, ".."),
+    env: {
+      ...(process.env.PATH ? { PATH: process.env.PATH } : {}),
+      HOME: home, USERPROFILE: home, SAGAX_LOCAL_VM_TEST_NAMESPACE: process.env.SAGAX_LOCAL_VM_TEST_NAMESPACE ?? "", SAGAX_PORT: String(PORT), SAGAX_WEBHOOK_PORT: String(PORT + 1),
+      SAGAX_IDENTITY: "perspicax",
+      SAGAX_PERSPICAX_ISSUER: idp.issuer,
+      SAGAX_PUBLIC_URL: BASE,
+      SAGAX_PERSPICAX_LINK_FILE: join(home, "link", "pulsabot.json"),
+      SAGAX_PERSPICAX_DIRECTORY_SECONDS: "5",
+      SAGAX_ANTHROPIC_API_KEY: ORG_KEY,
+      SAGAX_ORG_NAME: "Acme",
+      SAGAX_IMAGE: "sagax:test",
+      SAGAX_IMAGE_COMMIT: "c0ffee",
+    },
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  child.stdout!.on("data", (c) => (log += c));
+  child.stderr!.on("data", (c) => (log += c));
+  const deadline = Date.now() + 20_000;
+  for (;;) {
+    try {
+      if ((await fetch(`${BASE}/api/health`)).ok) return;
+    } catch {
+      /* not up yet */
+    }
+    if (Date.now() > deadline) throw new Error(`server never came up:\n${log}`);
+    await sleep(150);
+  }
+}
+
+posixOnly("Perspicax console: the Sagax admin routes", () => {
+  let alice: Auth;
+  let bob: Auth;
+  const ids: Record<string, string> = {};
+  const bots: Record<string, { id: string; threadId: string }> = {};
+  let routineId = "";
+  const sockets: Socket[] = [];
+  let cardId = "";
+
+  beforeAll(async () => {
+    chmodSync(FAKE_CLAUDE, 0o755);
+    idp = await startFakeOidcProvider({ user: ALICE });
+    idp.directoryPeople = [ALICE, BOB, MONA, ZOE].map((user) => idp.personOf(user));
+    idp.directoryTeams = [{ id: TEAM_T, name: "T", managers: [MONA.sub], members: [BOB.sub] }];
+    PORT = await freePortBlock([0, 1]);
+    BASE = `http://127.0.0.1:${PORT}`;
+    home = mkdtempSync(join(tmpdir(), "omb-org-console-"));
+    const data = join(home, ".sagax");
+    mkdirSync(data, { recursive: true });
+    mkdirSync(join(home, "link"), { recursive: true, mode: 0o750 });
+    writeFileSync(join(home, "link", "pulsabot.json"), JSON.stringify({
+      version: 1, issuer: idp.issuer, client_id: "pulsa-bot", server_id: idp.serverId, origin: BASE, link_token: idp.linkToken,
+    }), { mode: 0o640 });
+    writeFileSync(join(data, "backup-status.json"), JSON.stringify({ enabled: true, schedule: "daily 03:00 UTC", lastAt: "2026-10-08T03:00:00Z", ok: true }));
+    writeFileSync(join(data, "config.json"), JSON.stringify({
+      instances: {
+        claude: { driver: "claudeAgent", environment: { FAKE_CLAUDE_DUMP: join(home, "claude-dump.json") }, config: { cli: FAKE_CLAUDE, fullAuto: true } },
+        hold: { driver: "claudeAgent", environment: { FAKE_CLAUDE_MODE: "hang", FAKE_CLAUDE_DUMP: join(home, "hold-dump.json") }, config: { cli: FAKE_CLAUDE, fullAuto: true } },
+        broken: { driver: "claudeAgent", environment: { FAKE_CLAUDE_MODE: "api-error", FAKE_CLAUDE_API_ERROR: "429 Too Many Requests: rate limit reached" }, config: { cli: FAKE_CLAUDE, fullAuto: true } },
+      },
+    }));
+    await start();
+    alice = await signIn(ALICE);
+    const people = await waitFor(async () => {
+      const got = (await api("GET", "/api/org/directory", alice)).body.people as Array<{ principalId: string; login: string }> | undefined;
+      return got && got.length === 4 ? got : null;
+    });
+    for (const person of people) ids[person.login] = person.principalId;
+    bob = await signIn(BOB);
+    await signIn(MONA);
+    await signIn(ZOE);
+    bots.atlas = await createBot(alice, "Atlas", "claude");
+    bots.beacon = await createBot(bob, "Beacon", "hold");
+    const routine = await api("POST", "/api/routines", alice, { name: "Daily digest", botId: bots.atlas.id, prompt: "Write the digest.", enabled: false,
+      schedule: { type: "interval", everyMinutes: 60, anchorAt: Date.now() + 86_400_000 } });
+    expect(routine.status, routine.text).toBe(201);
+    routineId = routine.body.routine.id;
+    // one settled turn on Atlas (usage, latency)
+    expect((await api("POST", `/api/bots/${bots.atlas.id}/messages`, alice, { text: "hello" })).status).toBe(202);
+    // a pending admin card on Beacon (a member's server command)
+    expect((await api("POST", `/api/bots/${bots.beacon.id}/messages`, bob, { text: "hold for cards" })).status).toBe(202);
+    const holdDump = join(home, "hold-dump.json");
+    await waitFor(async () => existsSync(holdDump), 20_000);
+    const socketPath = (JSON.parse(readFileSync(holdDump, "utf8")) as { mcpConfig: any }).mcpConfig.mcpServers.ogb.args.at(-1) as string;
+    const socket = connect(socketPath);
+    sockets.push(socket);
+    await new Promise<void>((resolve, reject) => { socket.once("connect", resolve); socket.once("error", reject); });
+    cardId = "c1-bash-1";
+    socket.write(JSON.stringify({ t: "ask", id: cardId, kind: "permission", tool: "Bash", input: { command: "uptime" } }) + "\n");
+    await waitFor(async () => {
+      const got = await api("GET", `/api/threads/${bots.beacon.threadId}/messages?limit=100`, bob);
+      return (got.body.messages as Array<{ card?: any }> | undefined)?.some((m) => m.card?.requestId === cardId);
+    });
+  }, 120_000);
+
+  afterAll(async () => {
+    for (const socket of sockets) socket.destroy();
+    child?.kill("SIGTERM");
+    if (child) await waitForExit(child);
+    await idp?.close();
+    if (home) removeTempDir(home);
+  });
+
+  it("C1: capabilities name the release and every route; the overview counts what happened", async () => {
+    const caps = await admin("GET", "capabilities", ZOE);
+    expect(caps.status, caps.text).toBe(200);
+    expect(caps.headers.get("x-sagax-admin-api")).toBe("1");
+    const pkg = JSON.parse(readFileSync(join(SERVER_DIR, "..", "package.json"), "utf8")) as { forkVersion: string };
+    expect(caps.body).toMatchObject({ version: pkg.forkVersion, api: 2 });
+    expect(caps.body.routes).toEqual(expect.arrayContaining(["GET capabilities", "GET overview", "GET bots", "GET usage", "GET audit"]));
+
+    expect((await admin("GET", "overview", ZOE)).body.code).toBe("forbidden_role");
+    const overview = await waitFor(async () => {
+      const got = await admin("GET", "overview", ALICE);
+      return got.body.turns?.last24h >= 1 && got.body.latency?.some((row: { p50Ms: number | null }) => row.p50Ms !== null) ? got : null;
+    }, 30_000);
+    expect(overview.body).toMatchObject({
+      version: pkg.forkVersion,
+      deploy: { image: "sagax:test", commit: "c0ffee", builtAt: null },
+      sandboxes: { enabled: false, running: 0, limit: null },
+      routines: { runs24h: 0, failed24h: 0 },
+      backup: { lastAt: Date.UTC(2026, 9, 8, 3), ok: true },
+    });
+    expect(overview.body.host.memTotalBytes).toBeGreaterThan(0);
+    expect(overview.body.host.load).toHaveLength(3);
+    expect(overview.body.engines.map((engine: { id: string }) => engine.id)).toEqual(expect.arrayContaining(["claude", "hold", "broken"]));
+    expect(overview.body.latency.find((row: { engine: string }) => row.engine === "claude")).toMatchObject({ turns: 1, p50Ms: expect.any(Number), p90Ms: expect.any(Number) });
+    expect(overview.body.presence).toEqual({ online: expect.any(Number), idle: 0, away: expect.any(Number), offline: expect.any(Number) });
+    // a manager counts their reach: Mona reaches Bob and herself, not Alice's turn
+    const mona = await admin("GET", "overview", MONA);
+    expect(mona.body.turns.last24h).toBe(0);
+    expect(JSON.stringify(overview.body)).not.toContain("sk-ant-");
+  }, 60_000);
+
+  it("C1: a failed turn is an error by readable reason, in the console's language", async () => {
+    const broken = await createBot(alice, "Brittle", "broken");
+    expect((await api("POST", `/api/bots/${broken.id}/messages`, alice, { text: "fail please" })).status).toBe(202);
+    const got = await waitFor(async () => {
+      const reply = await admin("GET", "overview", ALICE, undefined, french);
+      return reply.body.errors?.last24h >= 1 ? reply : null;
+    }, 30_000);
+    expect(got.body.errors.byReason).toContainEqual({ reason: "rate_limited", label: "Le fournisseur limite le débit", count: expect.any(Number) });
+    bots.brittle = broken;
+  }, 60_000);
+
+  it("C1: bots carry status, label and threads, page and filter; usage rows name their engine; audit filters", async () => {
+    const all = await admin("GET", "bots", ALICE);
+    const atlas = (all.body.bots as Array<any>).find((bot) => bot.id === bots.atlas!.id);
+    expect(atlas).toMatchObject({ status: "active", label: null, threads: 1, routines: 1 });
+    expect(routineId).toMatch(/\w/);
+    const paged = await admin("GET", `bots?owner=${ids.bob}&limit=1`, ALICE);
+    expect(paged.body).toMatchObject({ items: [{ id: bots.beacon!.id, owner: { name: "Bob" } }], next: null });
+    expect((await admin("GET", "bots?q=atl", ALICE)).body.items.map((bot: { id: string }) => bot.id)).toEqual([bots.atlas!.id]);
+    const usage = await admin("GET", "usage", ALICE);
+    expect((usage.body.rows as Array<any>).find((row) => row.botId === bots.atlas!.id)).toMatchObject({ engine: "claude", turns: 1 });
+    const audit = await admin("GET", `audit?category=rights&target=${bots.atlas!.id}`, ALICE);
+    expect(audit.status, audit.text).toBe(200);
+    expect((audit.body.rows as Array<any>).every((row) => row.category === "rights" && row.target?.id === bots.atlas!.id)).toBe(true);
+  });
+});

@@ -50,6 +50,9 @@ export interface UsageRow {
   /** Where costUsd came from. Absent on rows written before estimates
    * existed, which read as reported when they carry a cost. */
   costSource?: CostSource;
+  /** 2026-10-08: how long the turn ran, from its start to its settle (ms);
+   * absent on rows written before, and when the start was not seen. */
+  durationMs?: number;
   trigger: UsageTrigger;
   /** Slice 7: the bot owner when the turn settled (organization server). */
   ownerPrincipalId?: string;
@@ -404,6 +407,9 @@ export interface OrgUsageAggregate {
   day: string;
   botId: string;
   botName: string;
+  /** 2026-10-08: the engine instance the turns ran on (the ledger row's
+   * instanceId), null when the row did not know it. */
+  engine: string | null;
   ownerPrincipalId: string | null;
   speaker: OrgUsageSpeaker;
   turns: number;
@@ -451,7 +457,8 @@ export function aggregateOrgUsage(
     const ownerPrincipalId = typeof row.ownerPrincipalId === "string" && row.ownerPrincipalId ? row.ownerPrincipalId : null;
     if (!visible({ speaker, ownerPrincipalId })) continue;
     const day = row.at.slice(0, 10);
-    const key = `${day}|${row.botId}|${speakerKey(speaker)}`;
+    const engine = typeof row.instanceId === "string" && row.instanceId && row.instanceId !== "unknown" ? row.instanceId : null;
+    const key = `${day}|${row.botId}|${speakerKey(speaker)}|${engine ?? ""}`;
     let group = groups.get(key);
     if (!group) {
       if (groups.size >= max) {
@@ -459,7 +466,7 @@ export function aggregateOrgUsage(
         continue;
       }
       group = {
-        day, botId: row.botId, botName: row.botName || row.botId, ownerPrincipalId, speaker,
+        day, botId: row.botId, botName: row.botName || row.botId, engine, ownerPrincipalId, speaker,
         turns: 0, input: 0, output: 0, cachedInput: 0, costUsd: null, estimatedUsd: null,
         access: { subscription: 0, "owner-key": 0, "speaker-key": 0, "org-key": 0, server: 0, unknown: 0 },
       };

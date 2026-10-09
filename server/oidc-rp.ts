@@ -463,6 +463,9 @@ export interface ConsoleAssertion {
   serverId: string | null;
   role: "admin" | "manager" | "employee";
   teams: OidcTeamClaim[];
+  /** The console person's language (`fr`, `en`), when the console sends it:
+   * the readable reasons of the admin API follow it. */
+  locale?: string;
 }
 
 export interface VerifyConsoleAssertionInput extends JwsCheck {
@@ -504,7 +507,8 @@ export async function verifyConsoleAssertion(input: VerifyConsoleAssertionInput)
   if (!teams) throw new OidcError(`${kind}_teams`, "The console assertion teams are not a list.");
   const serverId = stringClaim(claims.server_id, 256) ?? null;
   if (input.serverId && serverId !== input.serverId) throw new OidcError(`${kind}_server`, "The console assertion is meant for another linked server.");
-  return { iss: input.issuer, sub, jti, iat, exp, serverId, role: role as ConsoleAssertion["role"], teams };
+  const locale = typeof claims.locale === "string" && /^[A-Za-z]{2}([-_][A-Za-z0-9]{2,8})?$/.test(claims.locale) ? claims.locale : undefined;
+  return { iss: input.issuer, sub, jti, iat, exp, serverId, role: role as ConsoleAssertion["role"], teams, ...(locale ? { locale } : {}) };
 }
 
 /** An issuer URL the server may talk to: https, or http on this machine

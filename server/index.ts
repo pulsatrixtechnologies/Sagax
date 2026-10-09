@@ -33,7 +33,7 @@ import { botAvatarUrlFromStoredPath } from "../shared/bot-avatar.ts";
 import { botPublicProfile, type BotPublicProfile } from "../shared/bot-public-profile.ts";
 import { BOT_PROFILE_LIMITS } from "../shared/bot-profile.ts";
 import { CLOUD_COMPUTER_BUSY_ERROR } from "../shared/computer-contention.ts";
-import { failedTurnTool } from "../shared/failed-turn.ts";
+import { failedTurnCause, failedTurnTool } from "../shared/failed-turn.ts";
 import { phonePairingLink } from "../shared/pairing-link.ts";
 import { canWorkOnCloud, type CloudEngine } from "../shared/cloud-computer.ts";
 import {
@@ -599,7 +599,9 @@ import {
 import { createGracefulShutdown } from "./graceful-shutdown.ts";
 import { acquireDataDirLeaseForProcess } from "./data-dir-lease.ts";
 import { createWorkspaceAccess, describeEdition, editionStatus, hostedWorkspaceConfiguration, hostedWorkspaceConfigured, editionForMembers, LICENSE_WARN_DAYS, licenseWarning, sharedWorkspaceFullAccessConfigured, loadEnterpriseLayer, workspaceMembership, type EditionStatus, type WorkspaceAccess } from "./enterprise.ts";
-import { environmentDescriptor, environmentLabel, loadEnvironmentId, serverVersion } from "./environment.ts";
+import { environmentDescriptor, environmentLabel, loadEnvironmentId, releaseVersion, serverVersion } from "./environment.ts";
+import { deployFacts, hostFacts, overviewRoutes, readBackupStatus, selfCheckEngines } from "./org-admin-overview.ts";
+import { appendProblem, problemReason, pruneProblemLog, readProblems } from "./org-problem-log.ts";
 import { WorkspaceBackupMaintenance } from "./workspace-backup-maintenance.ts";
 import { createWorkspaceBackupRoutes, isWorkspaceBackupSessionControl } from "./workspace-backup-http.ts";
 import { applyPendingWorkspaceRestore, readLastWorkspaceRestore, type WorkspaceRestoreResult } from "./workspace-backup.ts";
@@ -771,6 +773,7 @@ import type { OrgRecord } from "./org-record.ts";
 import { createOidcLoginRoutes, identityConfigFromEnv, identityDescriptor, INTERIM_SIGNIN_REFUSAL, isInterimSignInRoute, MANAGED_PROFILE_REFUSAL, oidcSessionFields, profileManagement, writesManagedProfile } from "./oidc-login.ts";
 import { OidcRelyingParty } from "./oidc-rp.ts";
 import type { BotAttachment, BotFileRoot } from "./org-admin-files.ts";
+import { ADMIN_ACTIVITY_CATEGORIES } from "./admin-activity.ts";
 import { createOrgAdminRoutes, type AccessKind, type AdminApproval, type AdminBot, type AdminBotReach, type AdminPerson, type ApprovalAnswer, type ApprovalType, type OrgAdminViewer } from "./org-admin-routes.ts";
 import { RevocationQueue } from "./idp-revocations.ts";
 import { IDP_REFRESH_WAIT_MS, IDP_SWEEP_INTERVAL_MS, IdpGrantVault, IdpSessionManager, refreshAfterMs, resolveIdpVaultKey, settledWithin } from "./idp-session.ts";
@@ -1218,8 +1221,11 @@ registerEnginesBinDir();
 // `--version` once, logged, then their installed state for good
 // (server/engines-self-check.ts). No manifest: nothing changes.
 let engineSelfCheck = new EngineSelfCheck(null);
+/** When the boot self-check finished (the console's Overview). */
+let engineSelfCheckAt: number | null = null;
+const SERVER_STARTED_AT = Date.now();
 void runEngineSelfCheck(readEngineManifest())
-  .then((result) => { engineSelfCheck = result; })
+  .then((result) => { engineSelfCheck = result; engineSelfCheckAt = Date.now(); })
   .catch((error) => console.error(`[engines] self-check failed: ${error instanceof Error ? error.message : String(error)}`));
 
 // Who asked for the turn running (or last run) on each thread, read by the
@@ -7899,6 +7905,15 @@ function privateRowHidden(message: unknown, viewer: ApprovalViewer): boolean {
  * (routineAccessNotifications). */
 function notifyAccess(notification: Notification | null, access: WireAccessCard, routineRunId?: string): void {
   if (!notification) return;
+  // A refused turn, for the console's Overview (server/org-problem-log.ts).
+  const refusedBot = store.bot(access.botId);
+  void appendProblem(DATA_DIR, {
+    kind: "refused", botId: access.botId, botName: refusedBot?.name ?? access.botId, ownerPrincipalId: access.ownerPrincipalId || null,
+    threadId: notification.threadId, title: refusedBot ? store.taskByThread(refusedBot.id, notification.threadId)?.title ?? null : null,
+    engine: refusedBot?.modelSelection?.instanceId ?? null,
+    reason: access.cause === "payer_disabled" ? "payer_disabled" : access.reason,
+    detail: redactSecretsInText(notification.body ?? ""),
+  });
   if (IDENTITY.kind !== "perspicax") return notify(notification);
   const bot = store.bot(access.botId);
   const inRoom = Boolean(store.groupByThread(notification.threadId));
@@ -8782,6 +8797,13 @@ function forgetTurnCheckpoint(threadId: string): void {
   if (!checkpoint) return;
   turnCheckpoints.delete(threadId);
   void checkpoints.release(checkpoint.botId, checkpoint.cwd, checkpoint.pin);
+}
+
+/** The usage row's duration (2026-10-08, the console's latency per engine):
+ * from the thread's turn.started to now, when that start was seen. */
+function turnDuration(threadId: string): { durationMs?: number } {
+  const startedAt = turnStartedAt.get(threadId);
+  return startedAt ? { durationMs: Math.max(0, Date.now() - startedAt) } : {};
 }
 
 function clearTurnDigestState(threadId: string): void {
@@ -10552,6 +10574,7 @@ bus.subscribe((event: RuntimeEvent) => {
           ...(typeof tokens?.cachedInput === "number" ? { cachedInput: tokens.cachedInput } : {}),
           ...(promptBytes ? { promptBytes } : {}),
           costUsd: event.cost ?? null,
+          ...turnDuration(event.threadId),
           trigger: routineRun
             ? { kind: "routine", routineId: routineRun.routineId, label: routineRun.routineName, ...(routineRun.runAs ? { runAsPrincipalId: routineRun.runAs } : {}) }
             : internal
@@ -10636,6 +10659,7 @@ bus.subscribe((event: RuntimeEvent) => {
           ...(typeof tokens?.cachedInput === "number" ? { cachedInput: tokens.cachedInput } : {}),
           ...(promptBytes ? { promptBytes } : {}),
           costUsd: event.cost ?? null,
+          ...turnDuration(event.threadId),
           trigger: routineRun
             ? { kind: "routine", routineId: routineRun.routineId, label: routineRun.routineName, ...(routineRun.runAs ? { runAsPrincipalId: routineRun.runAs } : {}) }
             : turnTriggers.get(event.threadId) ?? { kind: "owner" },
@@ -11071,9 +11095,37 @@ function incidentContext(threadId: string): { lastRequest: string | null; lastRe
   };
 }
 
-function reportIncident(input: { kind: IncidentKind; bot: BotRecord; threadId: string; detail: string }): void {
+/** The cause of the thread's last failed-turn row (the words the person
+ * reads), when the turn left one: a provider error is more telling than the
+ * stop reason. */
+function latestFailedTurnCause(threadId: string): string | null {
+  const messages = store.messagesFor(threadId);
+  for (let index = messages.length - 1, seen = 0; index >= 0 && seen < 40; index--, seen++) {
+    const message = messages[index]!;
+    const cause = message.kind === "activity" && message.tool?.name ? failedTurnCause(message.tool.name) : null;
+    if (cause) return cause;
+    if (message.role === "user") return null;
+  }
+  return null;
+}
+
+function reportIncident(input: { kind: IncidentKind; bot: BotRecord; threadId: string; detail: string; routine?: { routineId: string; runAs?: string } }): void {
   const { bot, threadId } = input;
   const task = store.taskByThread(bot.id, threadId);
+  // The console's Overview and Incidents (server/org-problem-log.ts): every
+  // incident, before the delegation and storm rules below decide who hears.
+  const failedCause = input.kind === "failed" ? latestFailedTurnCause(threadId) : null;
+  void appendProblem(DATA_DIR, {
+    kind: input.kind, botId: bot.id, botName: bot.name, ownerPrincipalId: effectiveBotOwner(bot) || null, threadId,
+    title: task?.title ?? store.groupByThread(threadId)?.name ?? null,
+    engine: (task?.modelSelection ?? bot.modelSelection)?.instanceId ?? null,
+    ...(input.routine ? { routineId: input.routine.routineId, ...(input.routine.runAs ? { runAsPrincipalId: input.routine.runAs } : {}) } : {}),
+    // The reason code may read the turn's last reply (a provider error the
+    // engine printed as text, "429 Too Many Requests"); only the cause row
+    // or the stop reason is stored, never a message text (decision T7).
+    ...(failedCause === null && input.kind === "failed" ? { reason: problemReason("failed", `${input.detail} ${incidentContext(threadId).lastReply ?? ""}`) } : {}),
+    detail: redactSecretsInText(failedCause ?? input.detail),
+  });
   // A thread another bot opened and is watching is that bot's to handle:
   // the delegator is woken with the failure already (wakeDelegationSource).
   if (task?.openedBy?.delegationId || delegationWatch.has(threadId) || roomHandoffs.activeDirect(threadId)) return;
@@ -14942,7 +14994,7 @@ routines = new RoutineManager({
     const detail = run.error ? `${run.routineName}: ${run.error}` : run.routineName;
     const notificationBot = routineSourceOwner(run)?.bot ?? bot;
     notify(deliverableNotification("routine-failed", notificationBot, routineSourceThread(run) ?? run.threadId ?? bot.threadId, detail));
-    reportIncident({ kind: "routine-failed", bot, threadId: run.threadId ?? bot.threadId, detail });
+    reportIncident({ kind: "routine-failed", bot, threadId: run.threadId ?? bot.threadId, detail, routine: { routineId: run.routineId, ...(run.runAs ? { runAs: run.runAs } : {}) } });
   },
   onRunDeferred: (run) => {
     const bot = store.bot(run.botId);
@@ -23430,11 +23482,64 @@ function orgAdminBots(): Array<{ bot: AdminBot; reach: AdminBotReach }> {
         routines: routineCounts.get(bot.id) ?? 0,
         createdAt: typeof bot.createdAt === "number" ? bot.createdAt : null,
         lastActivityAt: lastActivity,
+        status: bot.hidden ? "archived" : "active",
+        label: sectionName || null,
+        threads: botThreadIds(bot).length,
       },
       reach: orgBotReach(bot),
     };
   });
 }
+
+/** Every conversation of a bot: its main thread and each task. */
+function botThreadIds(bot: BotRecord): string[] {
+  return [...new Set([bot.threadId, ...store.tasks(bot.id).map((task) => task.threadId)])];
+}
+
+/** The organization's people, as the console's People page and Overview
+ * count them: everyone of the directory who is not a service account. */
+function orgConsolePeople(): Array<{ principalId: string; disabled: boolean }> {
+  if (IDENTITY.kind !== "perspicax" || !perspicaxDirectory) return [];
+  return orgDirectoryEntries(IDENTITY.issuer, perspicaxDirectory.people(), (iss, sub) => principals.bySubject(iss, sub))
+    .filter((entry) => !entry.service && entry.principalId)
+    .map((entry) => ({ principalId: entry.principalId!, disabled: Boolean(entry.disabled) }));
+}
+
+/** The console's Overview (server/org-admin-overview.ts). */
+const orgOverviewDeps = {
+  version: releaseVersion,
+  startedAt: SERVER_STARTED_AT,
+  deploy: () => deployFacts(),
+  host: () => hostFacts(DATA_DIR),
+  engines: () => selfCheckEngines(engineSelfCheck, engineSelfCheckAt, () => registry.entries().map((entry) => {
+    const probe = engineProbes.get(entry.instanceId);
+    return {
+      id: entry.instanceId,
+      name: engineDisplayName(entry.live ?? entry.shadow),
+      installed: probe?.installed ?? engineInstalled(entry.instanceId),
+      version: probe?.version ?? null,
+    };
+  })),
+  sandboxes: async () => {
+    if (!userSandbox) return { enabled: false, running: 0, limit: null };
+    const people = orgConsolePeople().filter((person) => !person.disabled).map((person) => person.principalId);
+    return { enabled: true, ...(await userSandbox.overview(people)) };
+  },
+  presence: () => orgConsolePeople().filter((person) => !person.disabled).map((person) => ({
+    principalId: person.principalId,
+    state: publicPresence(presence.view(person.principalId), presenceHiddenFor(person.principalId)).state,
+  })),
+  usageRows: (range: { from: Date; to: Date }) => readUsage(DATA_DIR, range),
+  routineRuns: (from: number) => (routines?.listRuns(from) ?? []).map((run) => {
+    const bot = store.bot(run.botId);
+    return {
+      routineId: run.routineId, botId: run.botId, status: run.status, at: run.startedAt ?? run.scheduledFor ?? run.createdAt,
+      ownerPrincipalId: bot ? effectiveBotOwner(bot) || null : null, runAsPrincipalId: run.runAs ?? null,
+    };
+  }),
+  problems: (from: number) => readProblems(DATA_DIR, { from }),
+  backup: () => readBackupStatus(process.env.SAGAX_BACKUP_STATUS_FILE?.trim() || join(DATA_DIR, "backup-status.json")),
+};
 
 /** What a manager's reach is checked against for one bot (the bots route
  * and the files routes of the console's admin API). */
@@ -23522,6 +23627,13 @@ const orgAdmin = createOrgAdminRoutes({
   approvalsFor: (viewer) => pendingApprovalsFor(viewer),
   answer: answerCardFromConsole,
   audit: (input) => readOrgAuditPage(DATA_DIR, input),
+  auditCategories: ADMIN_ACTIVITY_CATEGORIES,
+  version: releaseVersion,
+  recordAction: (principalId, entry) => appendAdminAction(DATA_DIR, { ...entry, actor: { kind: "person", principalId, via: "console" } }),
+  // The console routes of 2026-10-08 (server/org-admin-console.ts).
+  console: [
+    ...overviewRoutes(orgOverviewDeps),
+  ],
   // The console's file browser (Perspicax 2026-10-08, slice 1: read only).
   files: {
     reach: (botId) => {
@@ -34426,6 +34538,7 @@ const pruneDecisionLog = () => {
   void pruneDecisions(DATA_DIR, decisionRetentionDays(cfg.decisions?.retentionDays));
   // The admin activity log keeps its months for the same window.
   void pruneAdminActivity(DATA_DIR, decisionRetentionDays(cfg.decisions?.retentionDays));
+  void pruneProblemLog(DATA_DIR);
 };
 pruneDecisionLog();
 setInterval(pruneDecisionLog, 6 * 60 * 60_000).unref();
