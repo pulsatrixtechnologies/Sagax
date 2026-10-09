@@ -148,15 +148,15 @@ final class NavigationMenusTests: XCTestCase {
 
     func testTheAccountMenu() {
         XCTAssertEqual(NavigationMenus.account(gate: admin, hasArchivedBots: true, achievementsReady: true, connected: true),
-                       [[.archivedBots], [.settings, .teamMap, .automations, .achievements], [.about, .help]])
+                       [[.archivedBots], [.settings, .teamMap, .automations, .achievements], [.releaseNotes, .about, .help]])
         XCTAssertEqual(NavigationMenus.account(gate: admin, hasArchivedBots: false, achievementsReady: false, connected: true),
-                       [[.settings, .teamMap, .automations], [.about, .help]])
+                       [[.settings, .teamMap, .automations], [.releaseNotes, .about, .help]])
         // offline: Team map and Automations stay out of the popup
         XCTAssertEqual(NavigationMenus.account(gate: admin, hasArchivedBots: false, achievementsReady: false, connected: false),
-                       [[.settings], [.about, .help]])
+                       [[.settings], [.releaseNotes, .about, .help]])
         // archived bots are an admin's housekeeping: the remote client hides them
         XCTAssertEqual(NavigationMenus.account(gate: sidecar, hasArchivedBots: true, achievementsReady: true, connected: true),
-                       [[.settings, .teamMap, .automations, .achievements], [.about, .help]])
+                       [[.settings, .teamMap, .automations, .achievements], [.releaseNotes, .about, .help]])
     }
 
     func testNewListsCreateThenBotsThenPeople() throws {
@@ -184,13 +184,13 @@ final class NavigationMenusTests: XCTestCase {
 
     func testSettingsFollowTheDesktopOrderPerPairing() {
         XCTAssertEqual(NavigationMenus.settings(gate: admin, connected: true, achievementsAvailable: true),
-                       [.general, .appearance, .achievements, .experimental, .plugins, .pairDevices, .computer, .usage])
+                       [.general, .appearance, .notifications, .experimental, .plugins, .pairDevices, .computer, .usage])
         XCTAssertEqual(NavigationMenus.settings(gate: member, connected: true, achievementsAvailable: true),
-                       [.general, .organization, .appearance, .achievements, .plugins, .pairDevices, .computer, .usage])
+                       [.general, .organization, .appearance, .notifications, .privacy, .plugins, .pairDevices, .computer, .usage])
         XCTAssertEqual(NavigationMenus.settings(gate: SurfaceGate(scope: .sidecar, sidecarRoutes: []), connected: true, achievementsAvailable: true),
-                       [.general, .appearance, .plugins, .pairDevices, .computer, .usage])
+                       [.general, .appearance, .notifications, .plugins, .pairDevices, .computer, .usage])
         XCTAssertEqual(NavigationMenus.settings(gate: .unpaired, connected: false, achievementsAvailable: false),
-                       [.general, .appearance, .pairDevices])
+                       [.general, .appearance, .notifications, .pairDevices])
     }
 
     func testTheNewGates() {

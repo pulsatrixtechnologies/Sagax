@@ -136,11 +136,12 @@ final class SettingsAppearanceUITests: XCTestCase {
 
     @MainActor
     func testNotificationSoundsSwitchIsKept() {
+        // #222: the sounds live in Settings > Notifications with the nudge rows
         let app = launch()
-        openRow("settings-general", app)
-        let haptics = app.element("settings-haptics")
-        for _ in 0..<8 where !haptics.isHittable { app.swipeUp() }
-        haptics.tap()
+        openRow("settings-notifications", app)
+        XCTAssertTrue(app.element("settings-nudge-sound.toggle").waitForExistence(timeout: 5))
+        XCTAssertTrue(app.element("settings-nudge-haptic.toggle").exists)
+        XCTAssertTrue(app.element("settings-notification-badge.toggle").exists)
         let toggle = app.element("settings-notification-sounds.toggle")
         XCTAssertTrue(toggle.waitForExistence(timeout: 5))
         let before = toggle.value as? String ?? "1"
@@ -149,10 +150,7 @@ final class SettingsAppearanceUITests: XCTestCase {
         XCTAssertTrue(eventually(5) { toggle.value as? String == flipped })
         // Kept on this phone after a relaunch, then put back.
         let again = launch()
-        openRow("settings-general", again)
-        let row = again.element("settings-haptics")
-        for _ in 0..<8 where !row.isHittable { again.swipeUp() }
-        row.tap()
+        openRow("settings-notifications", again)
         let kept = again.element("settings-notification-sounds.toggle")
         XCTAssertTrue(kept.waitForExistence(timeout: 5))
         XCTAssertEqual(kept.value as? String, flipped)
@@ -188,18 +186,27 @@ final class SettingsAppearanceUITests: XCTestCase {
         guard status == 200 else { throw XCTSkip("this pairing keeps no achievements (\(status))") }
         let wasPublic = (before["settings"] as? [String: Any])?["public"] as? Bool ?? false
         let app = launch()
-        openRow("settings-achievements", app)
+        // #220: Achievements left Settings for their own window, opened
+        // from the account menu
+        XCTAssertFalse(app.element("settings-achievements").exists)
+        app.element("settings-close").tap()
+        let account = app.element("home-account")
+        XCTAssertTrue(account.waitForExistence(timeout: 10))
+        account.tap()
+        let entry = app.element("account-menu.achievements")
+        XCTAssertTrue(entry.waitForExistence(timeout: 10))
+        entry.tap()
         XCTAssertTrue(app.element("achievements-points").waitForExistence(timeout: 15))
         XCTAssertTrue(app.element("achievement.first-words").exists)
 
-        // A category tab narrows the cards: Getting started keeps its own,
-        // drops Productivity's.
-        app.element("achievements-tab.productivity").tap()
+        // The category select narrows the cards: Productivity drops Getting
+        // started's own.
+        app.element("achievements-category").tap()
+        let productivity = app.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH 'Productivity' AND elementType != %d", XCUIElement.ElementType.other.rawValue)).firstMatch
+        XCTAssertTrue(productivity.waitForExistence(timeout: 5), app.debugDescription)
+        productivity.tap()
         XCTAssertTrue(app.element("achievement.on-schedule").waitForExistence(timeout: 5))
         XCTAssertFalse(app.element("achievement.first-words").exists)
-        app.element("achievements-tab.onboarding").tap()
-        XCTAssertTrue(app.element("achievement.first-words").waitForExistence(timeout: 5))
-        XCTAssertFalse(app.element("achievement.on-schedule").exists)
 
         // The page reported itself viewed (`achievements.viewed`); the
         // launch reported `app.opened`.
@@ -228,8 +235,8 @@ final class SettingsAppearanceUITests: XCTestCase {
         openRow("settings-organization", app)
         XCTAssertTrue(app.element("org-name").waitForExistence(timeout: 15))
         XCTAssertEqual(app.element("org-name").label, (org["org"] as? [String: Any])?["name"] as? String)
-        let delegation = api("GET", "/api/org/routine-delegation").1["state"] as? String ?? "none"
-        XCTAssertTrue(app.element("org-delegation-state.\(delegation)").waitForExistence(timeout: 10))
+        // #149: routines act in the owner's name, one read-only line
+        XCTAssertTrue(app.element("org-delegation-state").waitForExistence(timeout: 10))
 
         // Sharing lists the bots the server says this person sees.
         let bots = api("GET", "/api/org/bots").1["bots"] as? [[String: Any]] ?? []
@@ -249,20 +256,19 @@ final class SettingsAppearanceUITests: XCTestCase {
         XCTAssertTrue(eventually { ((self.api("GET", "/api/org").1["settings"] as? [String: Any])?["allowFullAccess"] as? Bool) == allowed })
     }
 
-    /// A quick create on the Automations calendar sends a person whose
-    /// routines may not act in their name yet to the Perspicax consent, once.
+    /// #149: a quick create on the Automations calendar no longer sends the
+    /// person to a consent; the routine simply exists.
     @MainActor
-    func testAQuickCreateAsksForTheDelegationOnce() throws {
+    func testAQuickCreateAsksForNoConsent() throws {
         guard organization else { throw XCTSkip("start the fixture with PARITY_ORG=1 PARITY_ORG_PHONE=1") }
-        guard api("GET", "/api/org/routine-delegation").1["state"] as? String != "active" else { throw XCTSkip("already allowed") }
-        let names = ["Délégation WP12 A", "Délégation WP12 B"]
+        let names = ["Délégation WP12 A"]
         defer { deleteRoutines(named: names) }
 
         let app = XCUIApplication()
         app.terminate()
         var arguments = [
             "-parityEndpoint", endpoint, "-parityToken", token, "-parityScreen", "01-home",
-            "-AppleLanguages", "(en)", "-AppleLocale", "en_US", "-resetRoutineDelegationConsent",
+            "-AppleLanguages", "(en)", "-AppleLocale", "en_US",
             "-companion.prefs.islandIntro", "never", "-companion.onboarding.welcomeSeen", "YES",
             "-companion.onboarding.notificationsSeen", "YES",
         ]
@@ -272,15 +278,6 @@ final class SettingsAppearanceUITests: XCTestCase {
 
         quickCreate(names[0], in: app)
         XCTAssertTrue(eventually(20) { self.routineExists(names[0]) })
-        let consent = app.element("routine-delegation-help")
-        XCTAssertTrue(consent.waitForExistence(timeout: 20), "the consent opens after the first routine")
-        XCTAssertTrue(app.element("routine-delegation-web").exists)
-        app.element("routine-delegation-close").tap()
-        XCTAssertTrue(eventually(5) { !consent.exists })
-
-        // Once: a second routine does not send the person again.
-        quickCreate(names[1], in: app)
-        XCTAssertTrue(eventually(20) { self.routineExists(names[1]) })
         Thread.sleep(forTimeInterval: 4)
         XCTAssertFalse(app.element("routine-delegation-help").exists)
     }

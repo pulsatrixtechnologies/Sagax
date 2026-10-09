@@ -78,6 +78,7 @@ struct HomeAccountButton: View {
     @EnvironmentObject private var session: Session
     @ObservedObject private var routines = AccountRowModel.shared
     @ObservedObject private var people = PeopleDirectory.shared
+    @ObservedObject private var approvals = OrgApprovalsCenter.shared
 
     var body: some View {
         Menu {
@@ -100,11 +101,35 @@ struct HomeAccountButton: View {
         }
         .buttonStyle(.plain)
         .themeGlass(Circle())
+        .accessibilityLabel(Text("Account"))
+        .accessibilityIdentifier("home-account")
+        // "photo" once the person's own picture shows (UI tests wait on it).
+        .accessibilityValue(Text(verbatim: session.accountPhoto == nil ? "" : "photo"))
+        // after the button's own identifier, so the badges stay their own
+        // elements (the menu button is "home-account" alone)
         // the person's own presence dot (#167)
         .overlay(alignment: .bottomTrailing) {
             if let id = session.account?.principalId, let entry = people.presence.entry(id) {
                 PresenceDot(entry: entry, size: 11)
                     .offset(x: -2, y: -2)
+            }
+        }
+        // commands waiting for an admin (#213): opens Settings
+        .overlay(alignment: .bottomLeading) {
+            if approvals.count > 0 {
+                Button { select(.settings) } label: {
+                    Text(verbatim: "\(approvals.count)")
+                        .font(.system(size: 11, weight: .bold))
+                        .monospacedDigit()
+                        .foregroundStyle(Theme.accentInk)
+                        .padding(.horizontal, 5)
+                        .frame(minWidth: 18, minHeight: 18)
+                        .background(Theme.accent, in: Capsule())
+                }
+                .buttonStyle(.plain)
+                .offset(x: -4, y: 4)
+                .accessibilityLabel(Text(String(localized: "\(approvals.count) commands wait for an admin")))
+                .accessibilityIdentifier("admin-approvals-badge")
             }
         }
         // the desktop row's routines badge (#215): opens Automations
@@ -117,10 +142,6 @@ struct HomeAccountButton: View {
                 .offset(x: 14, y: -4)
             }
         }
-        .accessibilityLabel(Text("Account"))
-        .accessibilityIdentifier("home-account")
-        // "photo" once the person's own picture shows (UI tests wait on it).
-        .accessibilityValue(Text(verbatim: session.accountPhoto == nil ? "" : "photo"))
     }
 
     /// Without a photo or a name, the paired computer's own mascot: its

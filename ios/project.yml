@@ -45,6 +45,10 @@ targets:
       - path: App
       - path: AppShared
       - path: Shared
+      # Release notes in the app (#184): docs/releases/*.md, read offline
+      - path: ../docs/releases
+        type: folder
+        buildPhase: resources
     dependencies:
       - package: CompanionCore
         product: CompanionCore

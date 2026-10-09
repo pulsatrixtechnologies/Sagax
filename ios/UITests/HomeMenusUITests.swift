@@ -179,6 +179,21 @@ final class HomeMenusUITests: XCTestCase {
         XCTAssertFalse(app.descendants(matching: .any)["settings-advanced"].exists, "no Advanced junk drawer")
     }
 
+    /// #184: Release notes sits above About and shows the bundled notes,
+    /// newest first, with a version picker.
+    @MainActor
+    func testReleaseNotesOpenFromTheAccountMenuWithAVersionPicker() {
+        let app = launch()
+        app.buttons["home-account"].tap()
+        let notes = app.buttons["account-menu.releaseNotes"]
+        XCTAssertTrue(notes.waitForExistence(timeout: 5))
+        XCTAssertLessThan(notes.frame.minY, app.buttons["account-menu.about"].frame.minY)
+        notes.tap()
+        XCTAssertTrue(app.descendants(matching: .any)["release-notes-version"].waitForExistence(timeout: 10))
+        let text = app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH 'release-notes-text.'")).firstMatch
+        XCTAssertTrue(text.waitForExistence(timeout: 5), app.debugDescription)
+    }
+
     @MainActor
     func testNewListsTheBotsAndOpensOne() {
         let app = launch()

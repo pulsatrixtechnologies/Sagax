@@ -86,7 +86,7 @@ struct OrganizationSettingsPage: View {
     @Environment(\.themePalette) var themePalette
     @EnvironmentObject private var session: Session
     @StateObject private var model = OrganizationSettingsModel()
-    @ObservedObject private var flow = RoutineDelegationFlow.shared
+    @ObservedObject private var approvals = OrgApprovalsCenter.shared
     @State private var link: URL?
     @State private var query = ""
     @State private var groupByOwner = false
@@ -110,7 +110,8 @@ struct OrganizationSettingsPage: View {
                 ProgressView().tint(Theme.textSecondary).padding(.top, 30)
             }
         }
-        .task(id: flow.generation) { await model.load(client) }
+        // reloads live when an admin approval arrives or settles (#213)
+        .task(id: approvals.generation) { await model.load(client) }
         .sheet(item: Binding(get: { link.map(IdentifiedURL.init) }, set: { link = $0?.url })) { item in
             SafariSheet(url: item.url).ignoresSafeArea()
         }
@@ -193,51 +194,29 @@ struct OrganizationSettingsPage: View {
 
     // MARK: Routines in my name
 
+    /// #149: routines always act in their owner's name; no consent, no
+    /// switch, no reconnect. One read-only line, and the routines the server
+    /// paused (a disabled account or a missing right).
     private var delegationCard: some View {
         Group {
             SettingsSectionLabel(text: "Routines in my name")
             SettingsCard {
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("Your routines run on this server while you are away and act in your name: they use your Perspicax tools and the bot owner's model access. It is allowed by default; Perspicax asks you to confirm it once, after your first routine. You can revoke it in Perspicax.")
+                    Text("Your routines always act in your name on this server, with your Perspicax tools and the bot owner's model access.")
                         .font(Theme.Font.label)
                         .foregroundStyle(Theme.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
-                    if let outcome = flow.pendingOutcome {
-                        Text(verbatim: RoutineDelegationFlow.text(outcome))
+                        .accessibilityIdentifier("org-delegation-state")
+                    if let status = model.delegation, status.suspended > 0 {
+                        Text("\(status.suspended) paused routine(s)")
                             .font(Theme.Font.label)
-                            .foregroundStyle(outcome == .ok ? Theme.textPrimary : Theme.danger)
-                            .accessibilityIdentifier("org-delegation-outcome")
-                    }
-                    if let status = model.delegation {
-                        Group {
-                            if status.active {
-                                Text("Allowed since \(Self.format(status.consentedAt)), renewed \(Self.format(status.renewedAt))")
-                            } else {
-                                Text("Allowed by default. Perspicax confirms it after your first routine.")
-                            }
-                        }
-                        .font(Theme.Font.body)
-                        .foregroundStyle(Theme.textPrimary)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .accessibilityIdentifier("org-delegation-state.\(status.state)")
-                        if status.suspended > 0 {
-                            Text("\(status.suspended) paused routine(s)")
-                                .font(Theme.Font.label)
-                                .foregroundStyle(Theme.warning)
-                        }
-                    } else {
-                        ProgressView().tint(Theme.textSecondary)
+                            .foregroundStyle(Theme.accentText)
                     }
                 }
                 .padding(.horizontal, SettingsMetrics.rowInset)
                 .padding(.vertical, 12)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                if let manage = manageURL {
-                    CardHairline(leadingInset: SettingsMetrics.rowInset)
-                    SettingsRow(title: "Manage in Perspicax", systemImage: "arrow.up.right.square", accessory: .chevron, identifier: "org-delegation-manage") { link = manage }
-                }
             }
-            .onDisappear { flow.pendingOutcome = nil }
         }
     }
 

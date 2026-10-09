@@ -983,8 +983,14 @@ final class Session: ObservableObject {
                     if case let .unknown(kind) = frame.frame, kind.hasPrefix("routine") {
                         Task { await AccountRowModel.shared.refresh(self) }
                     }
-                    if case .nudge = frame.frame {
-                        Haptics.impact(.light)
+                    // a nudge addressed to this person: wizz, buzz and a
+                    // notification that opens its conversation (#222)
+                    if case let .nudge(nudge) = frame.frame {
+                        AttentionCenter.shared.receive(nudge)
+                    }
+                    // admins: commands waiting for an admin (#213)
+                    if case let .orgApprovals(approvals) = frame.frame {
+                        OrgApprovalsCenter.shared.apply(approvals)
                     }
                     if case let .notify(notification) = frame.frame {
                         NotificationCoordinator.shared.deliver(notification, sequence: frame.seq)
@@ -2438,11 +2444,8 @@ final class Session: ObservableObject {
         guard let client else { return nil }
         do {
             if let original { return try await client.updateRoutine(original, input: input) }
-            let created = try await client.createRoutine(input)
-            // An organization server: the routines may need the person's
-            // consent to act in their name (AU19, Session+Settings.swift).
-            routineCreated()
-            return created
+            // routines act in their owner's name, no consent (#149)
+            return try await client.createRoutine(input)
         } catch { actionError = error.localizedDescription; return nil }
     }
 

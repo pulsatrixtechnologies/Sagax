@@ -339,6 +339,25 @@ public enum AchievementFilter: String, CaseIterable, Hashable, Sendable {
 
 public extension AchievementSnapshot {
     /// The cards of a tab and filter, in catalog order.
+    /// The modal's category column (#220): unlocked over total, for All
+    /// (nil) and each category.
+    func categoryCount(_ category: AchievementCategory?) -> (unlocked: Int, total: Int) {
+        let list = AchievementDefinition.catalog.filter { category == nil || $0.category == category }
+        return (list.filter { state($0.id)?.unlocked == true }.count, list.count)
+    }
+
+    /// The cards with the page's search: name or description, in the
+    /// person's language; a locked secret matches nothing.
+    func cards(category: AchievementCategory?, filter: AchievementFilter, query: String, language: String?) -> [AchievementDefinition] {
+        let words = query.lowercased().split(whereSeparator: \.isWhitespace)
+        return cards(category: category, filter: filter).filter { definition in
+            guard !words.isEmpty else { return true }
+            if definition.hidden, state(definition.id)?.unlocked != true { return false }
+            let text = "\(definition.name.resolved(language)) \(definition.description.resolved(language))".lowercased()
+            return words.allSatisfy { text.contains($0) }
+        }
+    }
+
     func cards(category: AchievementCategory?, filter: AchievementFilter) -> [AchievementDefinition] {
         AchievementDefinition.catalog.filter { definition in
             if let category, definition.category != category { return false }

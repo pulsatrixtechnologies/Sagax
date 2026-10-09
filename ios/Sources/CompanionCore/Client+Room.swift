@@ -37,6 +37,22 @@ public extension CompanionClient {
         try await send(setRoomFolderRequest(groupId: groupId, cwd: cwd), as: GroupResponse.self).group
     }
 
+    /// The room's turn limit (#216, ConversationTurnLimit): on the open
+    /// thread (`PATCH /api/groups/:id/tasks/:thread`), or on the group for a
+    /// direct conversation; nil goes back to the server's default.
+    func setRoomTurnLimitRequest(room: Room, minutes: Int?) throws -> URLRequest {
+        guard Self.validRouteID(room.id) else { throw APIError.badURL }
+        let path = room.dm == true ? "/api/groups/\(room.id)" : "/api/groups/\(room.id)/tasks/\(room.threadId)"
+        var request = try makeRequest("PATCH", path)
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = Data((minutes.map { #"{"turnTimeoutMinutes":\#($0)}"# } ?? #"{"turnTimeoutMinutes":null}"#).utf8)
+        return request
+    }
+
+    func setRoomTurnLimit(room: Room, minutes: Int?) async throws {
+        _ = try await perform(setRoomTurnLimitRequest(room: room, minutes: minutes))
+    }
+
     func deleteRoomRequest(groupId: String) throws -> URLRequest {
         guard Self.validRouteID(groupId) else { throw APIError.badURL }
         return try makeRequest("DELETE", "/api/groups/\(groupId)")
