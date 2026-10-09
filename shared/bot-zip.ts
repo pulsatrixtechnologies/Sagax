@@ -86,8 +86,11 @@ export interface BotZipExportOptions {
 /** One line of the preview: what is created, skipped or needs a step. */
 export interface BotZipPreviewLine {
   part: string;
-  /** Shown as is; never a secret. */
+  /** English text, shown when the client has no translation; never a secret. */
   detail: string;
+  /** The client's translation (`botZip.line.*`) and its values. */
+  key?: string;
+  params?: Record<string, string | number>;
 }
 
 export interface BotZipPreview {

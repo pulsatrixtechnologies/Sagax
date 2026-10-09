@@ -159,7 +159,7 @@ describe("persona editor categories", () => {
     expect(html).toContain(">opus</dd>");
     expect(html).toContain(">You</dd>");
     const actions = [...html.matchAll(/data-persona-action="([\w-]+)"/g)].map((match) => match[1]);
-    expect(actions).toEqual(["rename", "put-on-desktop", "make-primary", "archive"]);
+    expect(actions).toEqual(["rename", "put-on-desktop", "make-primary", "export-zip", "archive"]);
     expect(html).toContain('data-section-body="overview"');
     // on a Perspicax server the sharing list sits under the overview
     expect(html).toContain('data-section-body="sharing"');

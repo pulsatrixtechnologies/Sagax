@@ -59,6 +59,8 @@ export interface BotZipRouteDeps {
   audit(auth: RequestAuth, row: BotZipAuditRow): void;
   /** After an import: tell the clients about the new bot. */
   imported?(botId: string): void;
+  /** The new bot as the client sees it, for the import's answer. */
+  wireBot?(botId: string): unknown;
   now?(): number;
 }
 
@@ -208,7 +210,8 @@ export function createBotZipRoutes(deps: BotZipRouteDeps): RouteHandler {
       deps.audit(auth, { action: "bot.import", target: { kind: "bot", id: result.botId, name: result.name },
         after: { from: inspected.kind === "zip" ? inspected.manifest.bot.id : "package", kind: inspected.kind, conversations: body.conversations === true, sharing: body.sharing === true, memberDefaults: importer.asMember, warnings: result.warnings.length } });
       deps.imported?.(result.botId);
-      return json(res, 201, result);
+      const bot = deps.wireBot?.(result.botId);
+      return json(res, 201, { ...result, ...(bot ? { bot } : {}) });
     } catch (error) {
       return fail(error, json, res);
     } finally {

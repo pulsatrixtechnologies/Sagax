@@ -24519,6 +24519,10 @@ ROUTES.push(createBotZipRoutes({
     const bot = store.bot(botId);
     if (bot) broadcast({ kind: "bot", bot: publicBot(bot) });
   },
+  wireBot: (botId) => {
+    const bot = store.bot(botId);
+    return bot ? publicBot(bot) : undefined;
+  },
 }));
 
 /** The console's Routines and Approvals (server/org-admin-routines.ts). */

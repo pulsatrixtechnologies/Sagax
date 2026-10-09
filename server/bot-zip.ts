@@ -617,8 +617,8 @@ const HOST_LABELS: Record<string, string> = {
   browser: "Browser", browserProfile: "Browser profile", mcpServers: "MCP servers", alwaysAllow: "Always allowed tools",
 };
 
-function line(part: string, detail: string): BotZipPreviewLine {
-  return { part, detail };
+function line(part: string, detail: string, key?: string, params?: Record<string, string | number>): BotZipPreviewLine {
+  return { part, detail, ...(key ? { key: `botZip.line.${key}` } : {}), ...(params ? { params } : {}) };
 }
 
 export async function previewBotZip(host: BotZipHost, inspected: InspectedBotZip, viewer: BotZipImportViewer, name?: string): Promise<BotZipPreview> {
@@ -627,8 +627,8 @@ export async function previewBotZip(host: BotZipHost, inspected: InspectedBotZip
     return {
       kind: "legacy", name: inspected.name, importName: takeImportName(name ?? inspected.name, taken), includes: { identity: true, skills: inspected.skills, routines: inspected.routines },
       hasConversations: false, hasSharing: false,
-      created: [line("bot", `${inspected.agents || 1} bot(s) from an older Sagax package`), ...(inspected.skills ? [line("skills", `${inspected.skills} skill(s), off`)] : []), ...(inspected.routines ? [line("routines", `${inspected.routines} routine(s), off`)] : [])],
-      skipped: [line("format", "An older package carries no memory, conversations, plugins or settings.")],
+      created: [line("bot", `${inspected.agents || 1} bot(s) from an older Sagax package`, "legacyBots", { count: inspected.agents || 1 }), ...(inspected.skills ? [line("skills", `${inspected.skills} skill(s), off`, "legacySkills", { count: inspected.skills })] : []), ...(inspected.routines ? [line("routines", `${inspected.routines} routine(s), off`, "legacyRoutines", { count: inspected.routines })] : [])],
+      skipped: [line("format", "An older package carries no memory, conversations, plugins or settings.", "legacyFormat")],
       needsAction: [],
     };
   }
@@ -638,55 +638,54 @@ export async function previewBotZip(host: BotZipHost, inspected: InspectedBotZip
   const skipped: BotZipPreviewLine[] = [];
   const needsAction: BotZipPreviewLine[] = [];
   const settings = document.settings;
-  created.push(line("identity", "Name, label, description, colour and mascot"));
-  if (includes.avatar) created.push(line("avatar", "Picture"));
-  if (includes.soul) created.push(line("soul", "SOUL.md"));
-  if (includes.rules) created.push(line("rules", "RULES.md"));
-  if (includes.memory) created.push(line("memory", `${includes.memory} memory file(s)`));
-  if (includes.docs) created.push(line("docs", `${includes.docs} file(s) in docs/`));
-  if (includes.workspace) created.push(line("workspace", `${includes.workspace} other file(s)`));
+  created.push(line("identity", "Name, label, description, colour and mascot", "identity"));
+  if (includes.avatar) created.push(line("avatar", "Picture", "avatar"));
+  if (includes.soul) created.push(line("soul", "SOUL.md", "soul"));
+  if (includes.rules) created.push(line("rules", "RULES.md", "rules"));
+  if (includes.memory) created.push(line("memory", `${includes.memory} memory file(s)`, "memory", { count: includes.memory }));
+  if (includes.docs) created.push(line("docs", `${includes.docs} file(s) in docs/`, "docs", { count: includes.docs }));
+  if (includes.workspace) created.push(line("workspace", `${includes.workspace} other file(s)`, "workspace", { count: includes.workspace }));
   if (includes.skills) {
     const skills = reader.has("skills.json") ? Object.entries(reader.json("skills.json") as Record<string, { enabled?: boolean }>) : [];
     const on = skills.filter(([, entry]) => entry?.enabled === true).map(([skill]) => skill);
-    created.push(line("skills", `${skills.length} skill(s)${on.length ? `; on: ${on.join(", ")}` : ""}`));
+    created.push(line("skills", `${skills.length} skill(s)${on.length ? `; on: ${on.join(", ")}` : ""}`, on.length ? "skillsOn" : "skills", { count: skills.length, names: on.join(", ") }));
   }
-  if (includes.plugins) created.push(line("plugins", `${includes.plugins} plugin(s)`));
+  if (includes.plugins) created.push(line("plugins", `${includes.plugins} plugin(s)`, "plugins", { count: includes.plugins }));
   for (const market of manifest.marketplaces) {
-    if (market.needsToken) needsAction.push(line("marketplace", `${market.name} (${market.source}) was read with a token: add one in Library > Plugins, then Update.`));
+    if (market.needsToken) needsAction.push(line("marketplace", `${market.name} (${market.source}) was read with a token: add one in Library > Plugins, then Update.`, "marketplaceToken", { name: market.name, source: market.source }));
   }
-  if (manifest.marketplaces.length) created.push(line("marketplaces", manifest.marketplaces.map((market) => market.name).join(", ")));
+  if (manifest.marketplaces.length) created.push(line("marketplaces", manifest.marketplaces.map((market) => market.name).join(", "), "marketplaces", { names: manifest.marketplaces.map((market) => market.name).join(", ") }));
   const selection = settings.modelSelection as ModelSelection | undefined;
   if (selection && typeof selection.instanceId === "string") {
-    if (host.engineUsable(selection)) created.push(line("model", `${selection.instanceId} ${selection.model}${selection.effort ? ` (${selection.effort})` : ""}`));
-    else skipped.push(line("model", `${selection.instanceId} is not available here: the default model is used.`));
+    if (host.engineUsable(selection)) created.push(line("model", `${selection.instanceId} ${selection.model}${selection.effort ? ` (${selection.effort})` : ""}`, "model", { model: `${selection.instanceId} ${selection.model}${selection.effort ? ` (${selection.effort})` : ""}` }));
+    else skipped.push(line("model", `${selection.instanceId} is not available here: the default model is used.`, "modelMissing", { engine: selection.instanceId }));
   }
   const mode = settings.approvalMode;
-  if (mode === "full" || mode === "custom") skipped.push(line("approval", `${mode === "full" ? "Full access" : "Custom"} arrives as Ask: turn it on again in Permissions.`));
-  else if (typeof mode === "string") created.push(line("approval", mode));
+  if (mode === "full" || mode === "custom") skipped.push(line("approval", `${mode === "full" ? "Full access" : "Custom"} arrives as Ask: turn it on again in Permissions.`, mode === "full" ? "approvalFull" : "approvalCustom"));
+  else if (typeof mode === "string") created.push(line("approval", mode, "approval", { mode }));
   const hostKeys = Object.keys(document.host);
   if (viewer.asMember && hostKeys.length) {
-    skipped.push(line("host", `Not for a member's copy: ${hostKeys.map((key) => HOST_LABELS[key] ?? key).join(", ")}.`));
+    skipped.push(line("host", `Not for a member's copy: ${hostKeys.map((key) => HOST_LABELS[key] ?? key).join(", ")}.`, "hostSkipped", { names: hostKeys.map((key) => HOST_LABELS[key] ?? key).join(", ") }));
   } else {
-    if (hostKeys.length) created.push(line("host", hostKeys.map((key) => HOST_LABELS[key] ?? key).join(", ")));
+    if (hostKeys.length) created.push(line("host", hostKeys.map((key) => HOST_LABELS[key] ?? key).join(", "), "host", { names: hostKeys.map((key) => HOST_LABELS[key] ?? key).join(", ") }));
     for (const server of manifest.mcpServers) {
-      if (!host.mcpServer(server.name)) needsAction.push(line("mcp", `MCP server ${server.name} is not installed here${server.url ? ` (${server.url})` : ""}: add it in Connect apps.`));
+      if (!host.mcpServer(server.name)) needsAction.push(line("mcp", `MCP server ${server.name} is not installed here${server.url ? ` (${server.url})` : ""}: add it in Connect apps.`, "mcpMissing", { name: server.name }));
     }
   }
-  for (const app of manifest.connectedApps) needsAction.push(line("app", `${app}: check its sign-in in Connect apps.`));
+  for (const app of manifest.connectedApps) needsAction.push(line("app", `${app}: check its sign-in in Connect apps.`, "app", { name: app }));
   const profiles = (settings.perspicax as { profiles?: string[] } | undefined)?.profiles ?? [];
   if (profiles.length) {
-    if (host.organization) created.push(line("perspicax", `${profiles.length} Perspicax profile(s)`));
-    else skipped.push(line("perspicax", "Perspicax profiles: an organization server only."));
+    if (host.organization) created.push(line("perspicax", `${profiles.length} Perspicax profile(s)`, "perspicax", { count: profiles.length }));
+    else skipped.push(line("perspicax", "Perspicax profiles: an organization server only.", "perspicaxSkipped"));
   }
-  if (includes.routines) created.push(line("routines", `${includes.routines} routine(s), off until you turn them on`));
-  if (includes.webhooks) created.push(line("webhooks", `${includes.webhooks} webhook(s), off, each with a new token`));
-  if (includes.conversations) created.push(line("conversations", `${includes.conversations} thread(s), ${includes.messages ?? 0} message(s), ${includes.attachments ?? 0} attachment(s), if you include them`));
+  if (includes.routines) created.push(line("routines", `${includes.routines} routine(s), off until you turn them on`, "routines", { count: includes.routines }));
+  if (includes.webhooks) created.push(line("webhooks", `${includes.webhooks} webhook(s), off, each with a new token`, "webhooks", { count: includes.webhooks }));
+  if (includes.conversations) created.push(line("conversations", `${includes.conversations} thread(s), ${includes.messages ?? 0} message(s), ${includes.attachments ?? 0} attachment(s), if you include them`, "conversations", { count: includes.conversations, messages: includes.messages ?? 0, attachments: includes.attachments ?? 0 }));
   if (includes.sharing) {
-    if (host.organization) created.push(line("sharing", "Sharing by email, if you include it"));
-    else skipped.push(line("sharing", "Sharing: an organization server only."));
+    if (host.organization) created.push(line("sharing", "Sharing by email, if you include it", "sharing"));
+    else skipped.push(line("sharing", "Sharing: an organization server only.", "sharingSkipped"));
   }
-  if (typeof settings.section === "string" && !host.sectionExists(settings.section)) skipped.push(line("team", `Team ${settings.section} does not exist here.`));
-  for (const excluded of manifest.excluded) skipped.push(line("excluded", excluded));
+  if (typeof settings.section === "string" && !host.sectionExists(settings.section)) skipped.push(line("team", `Team ${settings.section} does not exist here.`, "team", { name: settings.section }));
   return {
     kind: "zip", name: manifest.bot.name, importName: takeImportName(name ?? manifest.bot.name, taken), appVersion: manifest.appVersion, exportedAt: manifest.exportedAt,
     includes, hasConversations: (includes.conversations ?? 0) > 0, hasSharing: (includes.sharing ?? 0) > 0, created, skipped, needsAction,
