@@ -41,7 +41,9 @@ export interface Policies {
 
 export interface OpsDeps {
   connections(): Promise<ConnectionsView>;
-  /** One check; `null` when this kind of line cannot be tested here. */
+  /** One check; `null` when this kind of line cannot be tested here. An
+   * MCP server started by command (stdio) is started, answers the MCP
+   * handshake and lists its tools (server/mcp-stdio-test.ts). */
   test(kind: TestKind, id: string, principalId: string | null): Promise<TestResult | null>;
   logs(input: { level: LogLevel | null; limit: number; before: number | null }): { lines: LogLine[]; next: number | null };
   problems(from: number): ProblemRow[];
@@ -139,7 +141,7 @@ export function opsRoutes(deps: OpsDeps): ConsoleRoute[] {
         }
         const principalId = typeof body.principalId === "string" ? body.principalId : null;
         const { result, latencyMs } = await timed(() => deps.test(kind, body.id as string, principalId));
-        if (!result) return notImplemented(kind === "mcp" ? "A server started by command (stdio) runs in its person's environment; Sagax cannot test it from here yet." : "This line cannot be tested from the console yet.");
+        if (!result) return notImplemented("This line cannot be tested from the console yet.");
         ctx.record({ category: kind === "engine" ? "engine" : kind === "mcp" ? "mcp" : "config", action: "connections.test", target: { kind, id: body.id as string }, after: { ok: result.ok, latencyMs, ...(principalId ? { principalId } : {}) } });
         return ok({ ok: result.ok, latencyMs, reason: result.reason, label: result.label });
       },

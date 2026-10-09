@@ -32,7 +32,9 @@ export const STDIO_PROBE_TIMEOUT_MS = 8_000;
  * failed it was the old 1 MiB response cap, never the clock. */
 export const REMOTE_PROBE_TIMEOUT_MS = REMOTE_MCP_STARTUP_MS;
 
-function probeEnvironment(server: StoredStdioMcpServer): NodeJS.ProcessEnv {
+/** The environment a probed command gets: Sagax's own credentials removed,
+ * the server's configured variables added. */
+export function probeEnvironment(server: Pick<StoredStdioMcpServer, "env">): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = { ...process.env, PATH: augmentedPath() };
   stripWorkspaceCredentialEnv(env);
   for (const key of PROVIDER_CREDENTIAL_ENV) delete env[key];

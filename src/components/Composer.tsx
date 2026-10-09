@@ -3,7 +3,9 @@ import { useCallback, useEffect, useMemo, useRef, useState, type SetStateAction 
 import { ArrowUp, Clock, Mic, Paperclip, Square, Target, Users, X } from "lucide-react";
 import { api, useStore, visibleMessages, currentTaskBot, type Bot, type Group, type Message } from "@/state/store";
 import { fullAccessNeedsConfirmation, orgFullAccessFor } from "@/lib/full-access";
-import { usePerspicaxOrg } from "@/lib/perspicax-org";
+import { useOrgPeople, usePerspicaxOrg } from "@/lib/perspicax-org";
+import { MENTION_ALL, roomAllowsMentionAll, roomMentionPeople, type RoomMentionPerson } from "@/lib/person-mentions";
+import { viewerActorId } from "@/lib/viewer";
 import { cn } from "@/lib/cn";
 import { useMenuMotion } from "./MenuMotion";
 import { activeLocale, t } from "@/lib/i18n";
@@ -115,7 +117,7 @@ function mentionQueryAt(text: string, caret: number): { start: number; query: st
   return { start: at, query };
 }
 
-type MentionChoice = { id: string; name: string; bot?: Bot };
+type MentionChoice = { id: string; name: string; bot?: Bot; person?: RoomMentionPerson; all?: true };
 
 interface ComposerDraftSnapshot extends ComposerSendSnapshot {
   reply: Message | null;
@@ -409,20 +411,30 @@ export function Composer({
   }, [slash, dismissedSlashAt, group, members, bot, state.config, state.instances, locale, engineCommands.answer, groupTargets, groupEngineCommands.lists, groupSlashBotId]);
   const commandPickerOpen = commandCandidates.length > 0;
 
-  // Tag another bot; the agent reaches it via ask_bot.
+  // Tag another bot; the agent reaches it via ask_bot. In a room, tag a
+  // person too: they get a notification (server/room-mentions.ts), and
+  // @all tags all of them when the room allows it.
   const mention = mentionQueryAt(text, caret);
+  const orgPeople = useOrgPeople();
+  const roomPeople = useMemo(
+    () => (group ? roomMentionPeople(group, orgPeople, viewerActorId(state.config)) : []),
+    [group, orgPeople, state.config],
+  );
+  const mentionAll = group ? roomAllowsMentionAll(group) && roomPeople.length > 0 : false;
   const candidates = useMemo(() => {
     if (!mention || mention.start === dismissedAt) return [];
     const pool: MentionChoice[] = group
       ? [
           ...(!group.dm ? [{ id: "__everyone__", name: "everyone" }] : []),
+          ...(mentionAll ? [{ id: "__all__", name: MENTION_ALL, all: true as const }] : []),
           ...(members ?? []).map((member) => ({ id: member.id, name: member.name, bot: member })),
+          ...roomPeople.map((person) => ({ id: `person:${person.id}`, name: person.name, person })),
         ]
       : state.bots
           .filter((member) => member.id !== bot?.id && !member.hidden)
           .map((member) => ({ id: member.id, name: member.name, bot: member }));
     return mentionChoicesForQuery(pool, mention.query);
-  }, [mention, dismissedAt, state.bots, bot?.id, group, members]);
+  }, [mention, dismissedAt, state.bots, bot?.id, group, members, roomPeople, mentionAll]);
   // @everyone reaches the room's visible bots. Hidden members stay out of
   // the count so the line matches who the server will actually answer.
   const mentionEveryoneCount = (members ?? []).filter((member) => !member.hidden).length;
@@ -996,7 +1008,11 @@ export function Composer({
             {candidates.map((peer, i) => {
               const description = mentionRowDescription(peer.bot
                 ? { kind: "bot", title: peer.bot.title }
-                : { kind: "everyone", count: mentionEveryoneCount });
+                : peer.person
+                  ? { kind: "person" }
+                  : peer.all
+                    ? { kind: "all", count: roomPeople.length }
+                    : { kind: "everyone", count: mentionEveryoneCount });
               return (
                 <ComposerMenuRow
                   key={peer.id}
@@ -1013,6 +1029,8 @@ export function Composer({
                       state={normalizeState(peer.bot.mascotExpression) ?? "happy"}
                       size={24}
                     />
+                  ) : peer.person?.avatarUrl ? (
+                    <img src={peer.person.avatarUrl} alt="" className="size-6 rounded-full object-cover" />
                   ) : (
                     <span className="flex size-6 items-center justify-center rounded-full bg-raised text-ink-secondary">
                       <Users size={14} aria-hidden="true" />
@@ -1020,7 +1038,7 @@ export function Composer({
                   )}
                   name={peer.name}
                   description={description || undefined}
-                  kind={peer.bot ? t("composer.mention.agent") : t("composer.mention.channel")}
+                  kind={peer.bot ? t("composer.mention.agent") : peer.person ? t("composer.mention.person") : t("composer.mention.channel")}
                 />
               );
             })}

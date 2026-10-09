@@ -7973,7 +7973,15 @@
       "plugins.tokenReplace": "12c392295c837271f10394cdb16da2b0fcb2c0b3b65e31e53b9f1f0cf6549ad8",
       "plugins.tokenRemove": "3de665bb11ead1a8df439a1d36f72ce8573f1e3f13a5111c076596fbe7c0f734",
       "plugins.tokenOffer": "b3e07164e423765055e21cbb3a7ebd09e97178d39468548f831f2d19ecabd289",
-      "plugins.addWithToken": "1061eaad470bc14fc27f8dca1a705d7911ad0f2a37e483ab73a39ae67358050a"
+      "plugins.addWithToken": "1061eaad470bc14fc27f8dca1a705d7911ad0f2a37e483ab73a39ae67358050a",
+      "composer.mention.allMany": "4fde94c08a06816ecd63f525bb80174329c926b7ec95f83c1a199a3c501bd8ee",
+      "composer.mention.allOne": "83768646c2ea9927b0a1dbc5f79179d61f9dd7514143f4d164a52834a2d21364",
+      "composer.mention.person": "6007db63e18e532c7399975ed77d2e3900810aa75cad165b8d2e5d8b08085c3d",
+      "composer.mention.personDetail": "95b9c9ecd20397f6568f421dcd8b17c5fe32866591121b95ff75ab23c10d841e",
+      "room.mentionAll.label": "a4d289ab989df65c37bbae915b7e0bcd308c7f4461ee97b18f5ef5fe69b0aba9",
+      "room.mentionAll.off": "364693017512c69d432eadcd4539820bfd3e1feb284d18b8f89e2994c547f633",
+      "room.mentionAll.on": "9001f4a1261bb42bafc33ec2e5777a1f82141f8ff0b75890ce8cc002658fbded",
+      "room.mentionAll.title": "6f32e692ede03567b0539f2001b94ed58fbb6e3bd02fa11c5b2e933b1104d36b"
     },
     "hi": {
       "approval.action.allowOnce": "168511d24d9ee03122b3200f929be11eaaedad45cb0ecb20a95f549b3e3f4d0f",
@@ -14180,7 +14188,15 @@
       "plugins.tokenReplace": "12c392295c837271f10394cdb16da2b0fcb2c0b3b65e31e53b9f1f0cf6549ad8",
       "plugins.tokenRemove": "3de665bb11ead1a8df439a1d36f72ce8573f1e3f13a5111c076596fbe7c0f734",
       "plugins.tokenOffer": "b3e07164e423765055e21cbb3a7ebd09e97178d39468548f831f2d19ecabd289",
-      "plugins.addWithToken": "1061eaad470bc14fc27f8dca1a705d7911ad0f2a37e483ab73a39ae67358050a"
+      "plugins.addWithToken": "1061eaad470bc14fc27f8dca1a705d7911ad0f2a37e483ab73a39ae67358050a",
+      "composer.mention.allMany": "4fde94c08a06816ecd63f525bb80174329c926b7ec95f83c1a199a3c501bd8ee",
+      "composer.mention.allOne": "83768646c2ea9927b0a1dbc5f79179d61f9dd7514143f4d164a52834a2d21364",
+      "composer.mention.person": "6007db63e18e532c7399975ed77d2e3900810aa75cad165b8d2e5d8b08085c3d",
+      "composer.mention.personDetail": "95b9c9ecd20397f6568f421dcd8b17c5fe32866591121b95ff75ab23c10d841e",
+      "room.mentionAll.label": "a4d289ab989df65c37bbae915b7e0bcd308c7f4461ee97b18f5ef5fe69b0aba9",
+      "room.mentionAll.off": "364693017512c69d432eadcd4539820bfd3e1feb284d18b8f89e2994c547f633",
+      "room.mentionAll.on": "9001f4a1261bb42bafc33ec2e5777a1f82141f8ff0b75890ce8cc002658fbded",
+      "room.mentionAll.title": "6f32e692ede03567b0539f2001b94ed58fbb6e3bd02fa11c5b2e933b1104d36b"
     },
     "uk": {
       "approval.action.allowOnce": "168511d24d9ee03122b3200f929be11eaaedad45cb0ecb20a95f549b3e3f4d0f",

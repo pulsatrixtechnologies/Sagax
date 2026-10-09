@@ -95,9 +95,16 @@ export function peopleDmForViewer<T extends { peopleDm?: boolean; unread?: boole
   viewerId: string | undefined,
   selectedThreadId?: string,
 ): T {
-  if (!group.peopleDm) return group;
   const viewer = viewerId ? key(viewerId) : "";
   const unreadFor = (ids: readonly string[]) => Boolean(viewer) && ids.some((id) => key(id) === viewer);
+  if (!group.peopleDm) {
+    // A room: `unreadFor` holds the people tagged with @ who have not read
+    // it yet (server/room-mentions.ts). Unread for them whatever the shared
+    // flag says; nobody learns who else is on the list.
+    if (!Array.isArray(group.unreadFor)) return group;
+    const { unreadFor: ids, ...rest } = group;
+    return { ...rest, unread: Boolean(group.unread) || unreadFor(ids) } as T;
+  }
   let out: T = group;
   if (Array.isArray(group.unreadFor)) {
     const { unreadFor: ids, ...rest } = group;

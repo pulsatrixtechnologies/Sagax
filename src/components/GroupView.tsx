@@ -105,6 +105,7 @@ import { latestFailure, latestReply, type TranscriptSnapshot } from "@/lib/trans
 import { pendingApprovals } from "./PendingApproval";
 import { TranscriptAnnouncer } from "./TranscriptAnnouncer";
 import { channelHumanRow, useOrgPeople } from "@/lib/perspicax-org";
+import { Switch } from "./SettingsPrimitives";
 import { groupMemberBots } from "@/lib/group-members";
 import { botPublicProfile } from "../../shared/bot-public-profile";
 import { personAvatarSrc } from "@/lib/profile-management";
@@ -810,6 +811,27 @@ export function DefaultResponderSelect({ group, members, disabled = false }: { g
         size={13}
         aria-hidden="true"
         className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-ink-secondary"
+      />
+    </div>
+  );
+}
+
+/** Whether @all notifies every person in the room (server/room-mentions.ts).
+ * A person tagged by name is notified either way. The owner's setting. */
+function RoomMentionAll({ group, disabled = false }: { group: Group; disabled?: boolean }) {
+  const { dispatch } = useStore();
+  const on = group.mentionAll === true;
+  return (
+    <div className="flex items-start gap-3 rounded-xl bg-card p-3">
+      <div className="min-w-0 flex-1">
+        <div className="text-[12.5px] font-medium text-ink">{t("room.mentionAll.label")}</div>
+        <p className="mt-1 text-[12px] leading-relaxed text-ink-secondary">{on ? t("room.mentionAll.on") : t("room.mentionAll.off")}</p>
+      </div>
+      <Switch
+        checked={on}
+        disabled={disabled}
+        aria-label={t("room.mentionAll.label")}
+        onClick={() => dispatch({ type: "patchGroup", groupId: group.id, patch: { mentionAll: !on } })}
       />
     </div>
   );
@@ -1569,6 +1591,12 @@ export function GroupView({ group: stored }: { group: Group }) {
                   <h3 className="mb-1.5 text-[13px] text-ink-secondary">{t("room.responder.aria")}</h3>
                   <DefaultResponderSelect group={group} members={members} disabled={!ownsRoom} />
                 </section>
+                {(group.humanIds?.length ?? 0) > 0 && (
+                  <section>
+                    <h3 className="mb-1.5 text-[13px] text-ink-secondary">{t("room.mentionAll.title")}</h3>
+                    <RoomMentionAll group={group} disabled={!ownsRoom} />
+                  </section>
+                )}
                 <section>
                   <h3 className="mb-1.5 text-[13px] text-ink-secondary">{t("room.turnLimit.aria")}</h3>
                   <ConversationTurnLimit group={group} />
