@@ -408,9 +408,12 @@ struct NewBotOptionsForm: View {
                 .listRowBackground(Theme.card)
 
                 Section("Instructions") {
-                    TextField("Instructions", text: limited(\.soul, NewBotRules.soulLimit), prompt: Text("How this bot should work"), axis: .vertical)
-                        .lineLimit(5...14)
-                        .accessibilityIdentifier("create-bot-instructions")
+                    // the markdown editor (desktop SoulField in New bot, #258)
+                    MarkdownEditor(
+                        text: limited(\.soul, NewBotRules.soulLimit), placeholder: String(localized: "How this bot should work"),
+                        minHeight: 160, maxLength: NewBotRules.soulLimit,
+                        accessibilityLabel: String(localized: "Instructions"), identifier: "create-bot-instructions"
+                    )
                 }
                 .listRowBackground(Theme.card)
             }

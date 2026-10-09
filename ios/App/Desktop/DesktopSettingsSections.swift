@@ -285,19 +285,13 @@ struct DesktopAboutMeEditor: View {
     var body: some View {
         NavigationStack {
             VStack(alignment: .leading, spacing: 8) {
-                TextEditor(text: $text)
-                    .font(.body)
-                    .frame(minHeight: 240)
-                    .overlay(alignment: .topLeading) {
-                        if text.isEmpty {
-                            Text("For example: I handle IT for a 40-person firm in Montréal. Answer in French, short and direct.")
-                                .foregroundStyle(.secondary)
-                                .padding(.top, 8)
-                                .padding(.leading, 5)
-                                .allowsHitTesting(false)
-                        }
-                    }
-                    .accessibilityIdentifier("desktop-settings.about-me-text")
+                // the markdown editor (desktop AboutMeSettings, #258)
+                MarkdownEditor(
+                    text: $text,
+                    placeholder: String(localized: "For example: I handle IT for a 40-person firm in Montréal. Answer in French, short and direct."),
+                    minHeight: 240, maxLength: 4_000,
+                    accessibilityLabel: String(localized: "About me"), identifier: "desktop-settings.about-me-text"
+                )
                 if let error {
                     Text(verbatim: error).font(.footnote).foregroundStyle(.red)
                 }
