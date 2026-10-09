@@ -11,6 +11,7 @@ import { agentBrowser, ensureUiBrowser, sessionEnv } from "./testing/control-omb
 import { fixtureApi } from "./testing/preview-fixture.ts";
 import { fakeVnc } from "./testing/fake-vnc.ts";
 import { BASE_IMAGE_DIGEST, CUA_DRIVER_VERSION, IMAGE, IMAGE_LAYER_VERSION } from "../server/container-computer.ts";
+import { jsLiteral } from "./testing/js-literal.mjs";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
 const scratch = mkdtempSync(join(tmpdir(), "omb-viewer-fixture-"));
@@ -26,12 +27,12 @@ try {
   writeFileSync(join(bin, "docker"), `#!${process.execPath}
 let args = process.argv.slice(2);
 if (args[0] === "-H") args = args.slice(2);
-const labels = ${JSON.stringify({ "com.openmausbot.local-vm": "1", "com.openmausbot.cua-driver": CUA_DRIVER_VERSION, "com.openmausbot.cua-base": BASE_IMAGE_DIGEST, "com.openmausbot.image-layer": IMAGE_LAYER_VERSION, "com.openmausbot.workspace": "1" })};
+const labels = ${jsLiteral({ "com.openmausbot.local-vm": "1", "com.openmausbot.cua-driver": CUA_DRIVER_VERSION, "com.openmausbot.cua-base": BASE_IMAGE_DIGEST, "com.openmausbot.image-layer": IMAGE_LAYER_VERSION, "com.openmausbot.workspace": "1" })};
 let result;
 const imageId = 'sha256:' + 'a'.repeat(64);
 if (args[0] === 'inspect' && /^openmausbot-vps-/.test(args[1])) result = [{
   Id:'b'.repeat(64), Image:imageId, State:{Running:true}, Mounts:[],
-  Config:{Image:${JSON.stringify(IMAGE)}, Env:['VNC_PW=fixture-password'], Labels:{...labels,
+  Config:{Image:${jsLiteral(IMAGE)}, Env:['VNC_PW=fixture-password'], Labels:{...labels,
     'com.openmausbot.vps':'1', 'com.openmausbot.container':args[1], 'com.openmausbot.vps-viewer':'1'}},
   HostConfig:{Privileged:false,NetworkMode:'bridge',PortBindings:{},Memory:4294967296,MemorySwap:4294967296,NanoCpus:2000000000,
     PidsLimit:512,CapDrop:['ALL'],CapAdd:['CAP_SETUID','CAP_SETGID'],IpcMode:'private',ShmSize:536870912,
@@ -43,7 +44,7 @@ else if (args[0] === 'exec') result = args.includes('--version') ? 'cua-driver $
 else if (args[0] === 'info') result = 'fixture';
 else if (args[0] === 'image' && args[1] === 'inspect') result = [{Id:imageId,Config:{Labels:labels}}];
 else if (args[0] === 'inspect' && args[1] === 'openmausbot-computer') result = [{
-  Config:{Image:${JSON.stringify(IMAGE)},Labels:labels,Env:['VNC_PW=fixture-password']},
+  Config:{Image:${jsLiteral(IMAGE)},Labels:labels,Env:['VNC_PW=fixture-password']},
   State:{Running:true},Image:imageId,
   HostConfig:{PortBindings:{'6901/tcp':[{HostIp:'127.0.0.1',HostPort:'${desktop.port}'}]}},
   NetworkSettings:{Ports:{'6901/tcp':[{HostIp:'127.0.0.1',HostPort:'${desktop.port}'}]}}
@@ -59,7 +60,7 @@ const fs = require('node:fs');
 const args = process.argv.slice(2);
 const forward = args[args.indexOf('-L') + 1];
 if (!args.includes('-N') || !/^127\\.0\\.0\\.1:[0-9]+:172\\.17\\.0\\.5:6901$/.test(forward)) process.exit(1);
-const log = ${JSON.stringify(join(scratch, "tunnels.log"))};
+const log = ${jsLiteral(join(scratch, "tunnels.log"))};
 const server = net.createServer(socket => {
   const peer = net.connect(${desktop.port}, '127.0.0.1');
   socket.on('error',()=>peer.destroy()); peer.on('error',()=>socket.destroy());
@@ -83,7 +84,7 @@ process.on('SIGTERM',()=>{fs.appendFileSync(log,'close ');process.exit(0)});
   await command("open", `${fixture.info.url}/desktop-viewer#target=local%2Fshared`);
   // Pair through the actual HTTP endpoint in this disposable browser. The
   // resulting cookie forces both status and upgrades through session auth.
-  assert.equal(await evaluate(`(async () => (await fetch('/api/auth/pair', {method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({code:${JSON.stringify(pairing.code)},cookie:true,label:'Viewer fixture'})})).status)()`), 200);
+  assert.equal(await evaluate(`(async () => (await fetch('/api/auth/pair', {method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({code:${jsLiteral(pairing.code)},cookie:true,label:'Viewer fixture'})})).status)()`), 200);
   await command("wait", "--fn", "document.getElementById('retry') !== null");
   let nextConnection = desktop.nextConnection();
   await command("click", "#retry");
@@ -241,7 +242,7 @@ process.on('SIGTERM',()=>{fs.appendFileSync(log,'close ');process.exit(0)});
   await api("PATCH", "/api/config", { vps: { sshAlias: "viewer-fixture" } });
   await api("PATCH", `/api/bots/${vpsBot.id}`, { computer: "cloud", cloudBackend: "vps" });
   // Two tabs opening at once share one join instead of the second being refused.
-  const [joined] = await evaluate<{joinUrl:string}[]>(`Promise.all([0, 1].map(() => fetch('/api/bots/${vpsBot.id}/computer/join',{method:'POST',headers:{'content-type':'application/json'},body:'{}'}).then(async r=>{if(!r.ok)throw new Error(await r.text());return r.json()})))`);
+  const [joined] = await evaluate<{joinUrl:string}[]>(`Promise.all([0, 1].map(() => fetch(${jsLiteral(`/api/bots/${vpsBot.id}/computer/join`)},{method:'POST',headers:{'content-type':'application/json'},body:'{}'}).then(async r=>{if(!r.ok)throw new Error(await r.text());return r.json()})))`);
   const viewer = new URL(joined.joinUrl, fixture.info.url);
   assert.equal(viewer.pathname, "/desktop-viewer");
   const target = new URLSearchParams(viewer.hash.slice(1));

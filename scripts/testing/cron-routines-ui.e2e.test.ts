@@ -8,6 +8,7 @@ import { waitForExit } from "../../server/testing/cleanup.ts";
 import type { Routine } from "../../src/lib/routines.ts";
 import { runControlOmb } from "../control-omb.ts";
 import { UI_TOOLS_DIR } from "./control-omb-ui.ts";
+import { jsLiteral } from "./js-literal.mjs";
 
 const ROOT = fileURLToPath(new URL("../..", import.meta.url));
 const enabled = process.env.SAGAX_UI_E2E === "1" || Boolean(resolveAgentBrowserBinary({ dataDir: UI_TOOLS_DIR, env: process.env }));
@@ -30,8 +31,8 @@ afterAll(() => waitForExit(child, { signal: "SIGINT", graceMs: 30_000 }));
   const click = (name: string) => ui("click", "--name", name);
   // The shared harness lacks select/fill verbs. Drive native controls through
   // DOM input/change events; all saves and reads still use the real renderer.
-  const fill = (selector: string, value: string) => evaluate(`(() => { const field = document.querySelector(${JSON.stringify(selector)}); const prototype = field instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype; Object.getOwnPropertyDescriptor(prototype, 'value').set.call(field, ${JSON.stringify(value)}); field.dispatchEvent(new Event('input', { bubbles: true })); return field.value; })()`);
-  const select = (label: string, value: string) => evaluate(`(() => { const field = document.querySelector('select[aria-label=${JSON.stringify(label)}]') ?? [...document.querySelectorAll('label')].find(label => label.firstElementChild?.textContent === ${JSON.stringify(label)})?.control; field.value = ${JSON.stringify(value)}; field.dispatchEvent(new Event('change', { bubbles: true })); return field.value; })()`);
+  const fill = (selector: string, value: string) => evaluate(`(() => { const field = document.querySelector(${jsLiteral(selector)}); const prototype = field instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype; Object.getOwnPropertyDescriptor(prototype, 'value').set.call(field, ${jsLiteral(value)}); field.dispatchEvent(new Event('input', { bubbles: true })); return field.value; })()`);
+  const select = (label: string, value: string) => evaluate(`(() => { const field = document.querySelector('select[aria-label=${jsLiteral(label)}]') ?? [...document.querySelectorAll('label')].find(label => label.firstElementChild?.textContent === ${jsLiteral(label)})?.control; field.value = ${jsLiteral(value)}; field.dispatchEvent(new Event('change', { bubbles: true })); return field.value; })()`);
   const routines = async (): Promise<Routine[]> => (await fetch(`${fixture.url}/api/routines`).then(response => response.json())).routines;
   const repeatOptions = () => evaluate("[...document.querySelector('select[aria-label=Repeat]').options].map(option => option.value)");
   const openOverlap = () => evaluate(`(() => {

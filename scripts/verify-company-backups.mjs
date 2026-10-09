@@ -10,6 +10,7 @@ import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { jsLiteral } from "./testing/js-literal.mjs";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
 const flag = "--omb-company-backup-fixture";
@@ -189,14 +190,14 @@ if (process.versions.electron && process.argv.includes(flag)) {
   });
   handle("company-backups:restore", async input => {
     assert.equal(input.id, prepared); assert.equal(input.confirmation, "REPLACE");
-    assert.equal(await win.webContents.executeJavaScript(`localStorage.getItem(${JSON.stringify(MARKER)})`), input.id, "recovery marker persisted before native commit");
+    assert.equal(await win.webContents.executeJavaScript(`localStorage.getItem(${jsLiteral(MARKER)})`), input.id, "recovery marker persisted before native commit");
     prepared = null; restoreCalls++;
     const result = await localJson("/api/workspace-backup/restore", input);
     publish({ busy: false, pendingRestore: true }); return { restoreId: result.id };
   });
   handle("desktop:relaunch", async () => {
     assert.equal((await localJson("/api/workspace-backup/status")).pendingRestore, true);
-    const marker = await win.webContents.executeJavaScript(`localStorage.getItem(${JSON.stringify(MARKER)})`);
+    const marker = await win.webContents.executeJavaScript(`localStorage.getItem(${jsLiteral(MARKER)})`);
     assert.match(marker, /^[a-f0-9-]{36}$/);
     assert.equal(++restartCalls, 1, "one user action requests exactly one owned restart");
     // Exercise production preload/UI dispatch; only the main-process restart
@@ -206,7 +207,7 @@ if (process.versions.electron && process.argv.includes(flag)) {
       process.once("message", message => { clearTimeout(timer); if (message.ok) done(message); else reject(new Error(message.error)); });
     });
     process.send({ type: "restart-fixture" }); await restarted;
-    assert.equal(await win.webContents.executeJavaScript(`localStorage.getItem(${JSON.stringify(MARKER)})`), marker, "restart action preserves the recovery marker until renderer recovery");
+    assert.equal(await win.webContents.executeJavaScript(`localStorage.getItem(${jsLiteral(MARKER)})`), marker, "restart action preserves the recovery marker until renderer recovery");
     publish({ busy: false });
     setTimeout(() => win.reload(), 50);
     return true;
@@ -233,10 +234,10 @@ if (process.versions.electron && process.argv.includes(flag)) {
       throw new Error(`Timed out: ${description}`);
     };
     const screenshot = async name => { await pause(150); writeFileSync(join(output, name), (await win.webContents.capturePage()).toPNG()); };
-    const button = label => `[...(document.querySelector('dialog[open]') || document).querySelectorAll('button')].find(el => el.textContent.trim() === ${JSON.stringify(label)})`;
+    const button = label => `[...(document.querySelector('dialog[open]') || document).querySelectorAll('button')].find(el => el.textContent.trim() === ${jsLiteral(label)})`;
     const click = async label => { await until(() => evaluate(`Boolean(${button(label)}) && !${button(label)}.disabled`), label); await evaluate(`${button(label)}.click()`); };
-    const fill = (selector, value, index = 0) => evaluate(`(() => { const el = document.querySelectorAll(${JSON.stringify(selector)})[${index}]; if(!el) throw Error('Fixture input absent'); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(el,${JSON.stringify(value)}); el.dispatchEvent(new Event('input',{bubbles:true})); })()`);
-    const rowClick = (id, label) => evaluate(`(() => { const row = [...document.querySelectorAll('li')].find(el => el.textContent.includes(${JSON.stringify(id)})); const el = [...row.querySelectorAll('button')].find(el => el.textContent.trim() === ${JSON.stringify(label)}); if(el.disabled) throw Error('Disabled fixture action'); el.click(); })()`);
+    const fill = (selector, value, index = 0) => evaluate(`(() => { const el = document.querySelectorAll(${jsLiteral(selector)})[${index}]; if(!el) throw Error('Fixture input absent'); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(el,${jsLiteral(value)}); el.dispatchEvent(new Event('input',{bubbles:true})); })()`);
+    const rowClick = (id, label) => evaluate(`(() => { const row = [...document.querySelectorAll('li')].find(el => el.textContent.includes(${jsLiteral(id)})); const el = [...row.querySelectorAll('button')].find(el => el.textContent.trim() === ${jsLiteral(label)}); if(el.disabled) throw Error('Disabled fixture action'); el.click(); })()`);
     const pushOrganization = value => { organization = value; win.webContents.send("organization:state-changed", value); };
     const connected = { status: "connected", cloudBackups: true, organization: { id: "fixture-company", name: "Fixture Studio" }, email: "employee@example.test", deviceId: "fixture-desktop" };
     await until(() => evaluate("document.body.dataset.ready === 'true'"), "fixture renderer mounted");
@@ -269,7 +270,7 @@ if (process.versions.electron && process.argv.includes(flag)) {
       if (capture) await screenshot("company-backup-upload-progress.png");
       await until(() => entries.size > previous && [...entries.values()].at(-1).status === "ready" && !state.busy, "completed encrypted cloud archive");
       const id = [...entries.keys()].at(-1);
-      await until(() => evaluate(`!document.querySelector('dialog[open]') && document.body.textContent.includes(${JSON.stringify(id)})`), "dated completed list row");
+      await until(() => evaluate(`!document.querySelector('dialog[open]') && document.body.textContent.includes(${jsLiteral(id)})`), "dated completed list row");
       assert.ok(objects.get(id).length > 60);
       assert.equal(objects.get(id).includes(Buffer.from("fixture private draft")), false);
       return id;
@@ -277,7 +278,7 @@ if (process.versions.electron && process.argv.includes(flag)) {
     await evaluate("localStorage.setItem('omb-drafts','fixture private draft'); localStorage.setItem('fixture-auth-token','must-stay-local');");
     const first = await createBackup(true), second = await createBackup(false);
     assert.equal(createCalls, 2);
-    assert.equal(await evaluate(`Object.values({...localStorage}).some(value => value.includes(${JSON.stringify(PASSWORD)}))`), false, "backup password never persisted in browser storage");
+    assert.equal(await evaluate(`Object.values({...localStorage}).some(value => value.includes(${jsLiteral(PASSWORD)}))`), false, "backup password never persisted in browser storage");
     assert.equal(await evaluate("document.body.textContent.includes('30 GiB') && document.body.textContent.includes('snapshots kept')"), true);
     await screenshot("company-backup-ready-list.png");
     checks.push("passwordless native encryption, SHA256, multipart upload/completion, progress, dates and quota");
@@ -287,7 +288,7 @@ if (process.versions.electron && process.argv.includes(flag)) {
     assert.equal(await evaluate(`${button("Delete cloud backup")}.disabled`), true);
     await click("Cancel"); assert.equal(deleteCalls, 0); assert.equal(entries.size, 2);
     await rowClick(second, "Delete cloud backup"); await fill("dialog input", "DELETE");
-    assert.equal(await evaluate(`document.querySelector('dialog').textContent.includes(${JSON.stringify(second)})`), true);
+    assert.equal(await evaluate(`document.querySelector('dialog').textContent.includes(${jsLiteral(second)})`), true);
     await screenshot("company-backup-delete-confirmation.png"); await click("Delete cloud backup");
     await until(() => entries.size === 1 && !state.busy, "only selected archive deleted");
     assert.equal(deleteCalls, 1); assert.ok(entries.has(first)); assert.ok(objects.has(first));
@@ -307,7 +308,7 @@ if (process.versions.electron && process.argv.includes(flag)) {
     await click("Validate backup");
     await until(() => evaluate("document.body.textContent.includes('Validated backup')"), "actual decrypted archive preview");
     assert.equal(restoreCalls, 0); assert.ok((await botIds()).includes(extra.bot.id));
-    assert.equal(await evaluate(`localStorage.getItem(${JSON.stringify(MARKER)})`), null);
+    assert.equal(await evaluate(`localStorage.getItem(${jsLiteral(MARKER)})`), null);
     win.setSize(390, 780); await until(() => evaluate("innerWidth === 390"), "narrow viewport");
     assert.equal(await evaluate("document.documentElement.scrollWidth <= innerWidth && document.querySelector('dialog').scrollWidth <= document.querySelector('dialog').clientWidth + 1"), true);
     await screenshot("company-backup-preview-narrow.png");
@@ -317,7 +318,7 @@ if (process.versions.electron && process.argv.includes(flag)) {
     await screenshot("company-backup-replace-narrow.png");
     await click("Replace installation");
     await until(() => evaluate(`Boolean(${button("Restart and restore")}) && !document.querySelector('dialog[open]')`), "restart-required confirmation");
-    const restoreId = await evaluate(`localStorage.getItem(${JSON.stringify(MARKER)})`);
+    const restoreId = await evaluate(`localStorage.getItem(${jsLiteral(MARKER)})`);
     assert.match(restoreId, /^[a-f0-9-]{36}$/); assert.equal(restoreCalls, 1);
     assert.equal((await localJson("/api/workspace-backup/status")).pendingRestore, true);
     assert.equal((await fetch(`${runtimeUrl}/api/bots`)).status, 503, "workspace locked until restart");
@@ -333,7 +334,7 @@ if (process.versions.electron && process.argv.includes(flag)) {
     await screenshot("company-backup-recovery-restart-action.png");
     checks.push("pending restore survives closing and reopening the renderer");
     await click("Restart and restore");
-    await until(() => evaluate(`localStorage.getItem(${JSON.stringify(MARKER)}) === null && document.body.textContent.includes('Company cloud backups')`), "existing recovery restores drafts and clears marker");
+    await until(() => evaluate(`localStorage.getItem(${jsLiteral(MARKER)}) === null && document.body.textContent.includes('Company cloud backups')`), "existing recovery restores drafts and clears marker");
     const afterIds = await botIds(); assert.ok(afterIds.includes(sourceBotId)); assert.equal(afterIds.includes(extra.bot.id), false);
     assert.equal(await evaluate("localStorage.getItem('omb-drafts')"), "fixture private draft");
     assert.equal(await evaluate("localStorage.getItem('fixture-auth-token')"), "must-stay-local");
@@ -364,15 +365,15 @@ if (process.versions.electron && process.argv.includes(flag)) {
     assert.equal(entries.size, existingArchives); assert.equal(scheduledRuns, 0);
     assert.equal(scheduler.state().nextBackupAt, scheduleClock + 24 * 60 * 60_000);
     assert.equal(JSON.stringify(scheduler.state()).includes(PASSWORD), false);
-    assert.equal(await evaluate(`Object.values({...localStorage}).some(value => value.includes(${JSON.stringify(PASSWORD)}))`), false);
+    assert.equal(await evaluate(`Object.values({...localStorage}).some(value => value.includes(${jsLiteral(PASSWORD)}))`), false);
     for (const draft of ["new draft from scheduled day one", "changed draft from scheduled day two"]) {
-      await evaluate(`localStorage.setItem('omb-drafts', ${JSON.stringify(draft)})`);
+      await evaluate(`localStorage.setItem('omb-drafts', ${jsLiteral(draft)})`);
       const previousRuns = scheduledRuns;
       scheduleClock = scheduler.state().nextBackupAt + (previousRuns ? 7 * 24 * 60 * 60_000 : 0);
       const tick = scheduleTimer; assert.equal(typeof tick, "function"); tick();
       await until(() => scheduledRuns === previousRuns + 1 && scheduler.state().status === "waiting", "one scheduled archive completed");
       const latest = [...entries.values()].at(-1);
-      await until(() => evaluate(`document.body.textContent.includes(${JSON.stringify(latest.id)})`), "scheduled archive appears without refresh");
+      await until(() => evaluate(`document.body.textContent.includes(${jsLiteral(latest.id)})`), "scheduled archive appears without refresh");
       const native = createCompanyBackups({ localRequest, portalRequest, tempRoot: join(output, "transfer-cache"), allowLoopbackForTests: true });
       const preview = await native.prepareRestore({ id: latest.id });
       assert.equal(preview.summary.format, "openmaus.workspace-backup");

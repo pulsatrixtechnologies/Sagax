@@ -10,6 +10,7 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { launchVerificationServer, type VerificationServer } from "../scripts/control-omb.ts";
 import { removeTempDir } from "./testing/cleanup.ts";
+import { jsLiteral } from "../scripts/testing/js-literal.mjs";
 
 const DAY_MS = 24 * 60 * 60_000;
 const day = (offsetDays: number) => new Date(Date.now() + offsetDays * DAY_MS).toISOString().slice(0, 10);
@@ -32,7 +33,7 @@ describe("license expiry through the running server", () => {
     layerDir = mkdtempSync(join(tmpdir(), "omb-expiring-layer-"));
     mkdirSync(join(layerDir, "server"));
     writeFileSync(join(layerDir, "server", "index.js"),
-      `export async function register() { return { customer: "Fixture Co", features: ["budgets"], expiresAt: ${JSON.stringify(expiresAt)} }; }\n`);
+      `export async function register() { return { customer: "Fixture Co", features: ["budgets"], expiresAt: ${jsLiteral(expiresAt)} }; }\n`);
     session = await launchVerificationServer(process.env, undefined, undefined, undefined, { dir: layerDir, licenseKey: "fixture-key" });
     const api = (path: string, init: RequestInit = {}) => fetch(`${session!.info.url}${path}`, init);
     const opened = (await (await api("/api/auth/pairing", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ scopes: ["client"] }) })).json()) as { code: string };

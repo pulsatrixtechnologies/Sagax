@@ -9,6 +9,7 @@ import { runControlOmb } from "../control-omb.ts";
 import { request } from "../mcp-server.ts";
 import { mountPreview, type MountedPreview } from "./preview-fixture.ts";
 import { UI_TOOLS_DIR } from "./control-omb-ui.ts";
+import { jsLiteral } from "./js-literal.mjs";
 
 const ROOT = fileURLToPath(new URL("../..", import.meta.url));
 const binary = resolveAgentBrowserBinary({ dataDir: UI_TOOLS_DIR, env: process.env });
@@ -65,9 +66,9 @@ if (!enabled) console.log("skipping team lifecycle UI e2e: set SAGAX_UI_E2E=1 to
     const manage = async (name: string) => {
       // Native summary nodes have no refs in the pinned browser snapshot.
       const selector = `[data-team-key=${JSON.stringify(name)}] summary`;
-      await expect.poll(async () => (await ui("eval", "--js", `Boolean(document.querySelector(${JSON.stringify(selector)}))`)).result,
+      await expect.poll(async () => (await ui("eval", "--js", `Boolean(document.querySelector(${jsLiteral(selector)}))`)).result,
         { timeout: 10_000 }).toBe(true);
-      await ui("eval", "--js", `(() => { const summary = document.querySelector(${JSON.stringify(selector)}); if (!summary.parentElement.open) summary.click(); return summary.parentElement.open; })()`);
+      await ui("eval", "--js", `(() => { const summary = document.querySelector(${jsLiteral(selector)}); if (!summary.parentElement.open) summary.click(); return summary.parentElement.open; })()`);
     };
     const api = (path: string, method = "GET", body?: unknown) => request(path, { method,
       ...(body === undefined ? {} : { body: JSON.stringify(body) }) }, info.url);
@@ -82,7 +83,7 @@ if (!enabled) console.log("skipping team lifecycle UI e2e: set SAGAX_UI_E2E=1 to
     await expect.poll(snapshot, { timeout: 10_000 }).toContain('button "Delivery"');
     expect((await api("/api/bots?messages=0")).sections).toContain("Delivery");
     const teamMenu = async (name: string) => ui("eval", "--js", `(() => {
-      const header = [...document.querySelectorAll('[data-section]')].find(node => node.dataset.section === ${JSON.stringify(name)});
+      const header = [...document.querySelectorAll('[data-section]')].find(node => node.dataset.section === ${jsLiteral(name)});
       if (!header) throw new Error('Missing team header');
       header.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: 120, clientY: 250 })); return true;
     })()`);
@@ -146,7 +147,7 @@ if (!enabled) console.log("skipping team lifecycle UI e2e: set SAGAX_UI_E2E=1 to
     await click("Close");
     await ui("eval", "--js", "window.releaseTeamMember(); true");
     const checked = async (name: string) => (await ui("eval", "--js",
-      `document.querySelector(${JSON.stringify(`[role="checkbox"][aria-label=${JSON.stringify(name)}]`)})?.getAttribute('aria-checked')`)).result;
+      `document.querySelector(${jsLiteral(`[role="checkbox"][aria-label=${JSON.stringify(name)}]`)})?.getAttribute('aria-checked')`)).result;
     await expect.poll(() => checked(created!.name), { timeout: 10_000 }).toBe("true");
     expect(await checked("Researcher")).toBe("false");
     await click("Save");
@@ -252,7 +253,7 @@ if (!enabled) console.log("skipping team lifecycle UI e2e: set SAGAX_UI_E2E=1 to
       );
       await click("Delete team");
       await expect.poll(async () => (await api("/api/sidebar-sections")).sections.includes(name)).toBe(false);
-      await expect.poll(() => evaluate(`Boolean(document.querySelector(${JSON.stringify(`[data-sidebar-section-id="section:${name}"]`)}))`)).toBe(false);
+      await expect.poll(() => evaluate(`Boolean(document.querySelector(${jsLiteral(`[data-sidebar-section-id="section:${name}"]`)}))`)).toBe(false);
     };
     for (const member of [
       { name: "Sidebar populated", pinned: false, hidden: false },
@@ -263,12 +264,12 @@ if (!enabled) console.log("skipping team lifecycle UI e2e: set SAGAX_UI_E2E=1 to
       await api("/api/sidebar-sections", "POST", { name: member.name, botIds: [a.id] });
       await api(`/api/bots/${a.id}`, "PATCH", { pinned: member.pinned, hidden: member.hidden });
       const sectionRow = `[data-sidebar-section-id="section:${member.name}"] [data-sidebar-bot-row="${a.id}"]`;
-      await expect.poll(() => evaluate(`Boolean(document.querySelector(${JSON.stringify(sectionRow)}))`)).toBe(!member.pinned && !member.hidden);
+      await expect.poll(() => evaluate(`Boolean(document.querySelector(${jsLiteral(sectionRow)}))`)).toBe(!member.pinned && !member.hidden);
       if (member.pinned) {
-        await expect.poll(() => evaluate(`Boolean(document.querySelector('[data-sidebar-section-id="builtin:pinned"] [data-sidebar-bot-row="${a.id}"]'))`)).toBe(true);
+        await expect.poll(() => evaluate(`Boolean(document.querySelector(${jsLiteral(`[data-sidebar-section-id="builtin:pinned"] [data-sidebar-bot-row="${a.id}"]`)}))`)).toBe(true);
       }
       if (member.hidden) {
-        await expect.poll(() => evaluate(`Boolean(document.querySelector('[data-sidebar-bot-row="${a.id}"]'))`)).toBe(false);
+        await expect.poll(() => evaluate(`Boolean(document.querySelector(${jsLiteral(`[data-sidebar-bot-row="${a.id}"]`)}))`)).toBe(false);
       }
       await deleteSectionByIcon(member.name);
       const survivor = (await api("/api/bots?messages=0")).bots.find((bot: any) => bot.id === a.id);
@@ -309,13 +310,13 @@ if (!enabled) console.log("skipping team lifecycle UI e2e: set SAGAX_UI_E2E=1 to
         res.end('import "/scripts/testing/sidebar-preview.tsx";');
       } }],
     });
-    await ui("eval", "--js", `location.href = ${JSON.stringify(preview.previewUrl)}; true`);
+    await ui("eval", "--js", `location.href = ${jsLiteral(preview.previewUrl)}; true`);
     const roomMenu = async () => {
       // The new preview must load its module and initial server state first.
       await expect.poll(snapshot, { timeout: 15_000 }).toContain("Drawer: open");
-      await expect.poll(() => evaluate(`Boolean(document.querySelector('[data-sidebar-group-row="${group.id}"]'))`),
+      await expect.poll(() => evaluate(`Boolean(document.querySelector(${jsLiteral(`[data-sidebar-group-row="${group.id}"]`)}))`),
         { timeout: 10_000 }).toBe(true);
-      await ui("eval", "--js", `document.querySelector('[data-sidebar-group-row="${group.id}"]').dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: 120, clientY: 250 })); true`);
+      await ui("eval", "--js", `document.querySelector(${jsLiteral(`[data-sidebar-group-row="${group.id}"]`)}).dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: 120, clientY: 250 })); true`);
       await click("Delete group chat");
       await expect.poll(snapshot).toContain('alertdialog "Delete Sidebar room?"');
       expect(await focused()).toBe("Cancel");
@@ -337,7 +338,7 @@ if (!enabled) console.log("skipping team lifecycle UI e2e: set SAGAX_UI_E2E=1 to
     preview = await mountPreview({ info: { url: info!.url } }, {
       entry: "/scripts/testing/confirm-dialog-preview.tsx", route: "/__confirm-focus.html", title: "Confirmation focus regression", logLevel: "silent",
     });
-    await ui("eval", "--js", `location.href = ${JSON.stringify(preview.previewUrl)}; true`);
+    await ui("eval", "--js", `location.href = ${jsLiteral(preview.previewUrl)}; true`);
     for (const action of ["Cancel", "Escape", "Confirm"]) {
       await click("Open confirmation");
       await expect.poll(async () => (await ui("eval", "--js", "document.activeElement.textContent")).result).toBe("Cancel");

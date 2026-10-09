@@ -21,6 +21,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createFloatingBotWindows } from "../electron/floating-bot-window.mjs";
+import { jsLiteral } from "./testing/js-literal.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const origin = process.env.VERIFY_ORIGIN;
@@ -115,7 +116,7 @@ const MONITOR = `(() => {
 })()`;
 
 const js = (win, code) => win.webContents.executeJavaScript(code);
-const startFrames = (win, still = true) => js(win, `(() => { const fm = window.__fm; fm.gaps = []; fm.long = 0; fm.longMs = 0; fm.last = 0; fm.clipped = 0; fm.jumps = 0; fm.hidden = 0; fm.anchor = null; fm.still = ${still}; fm.on = true; return true; })()`);
+const startFrames = (win, still = true) => js(win, `(() => { const fm = window.__fm; fm.gaps = []; fm.long = 0; fm.longMs = 0; fm.last = 0; fm.clipped = 0; fm.jumps = 0; fm.hidden = 0; fm.anchor = null; fm.still = ${jsLiteral(still)}; fm.on = true; return true; })()`);
 async function stopFrames(win) {
   const r = await js(win, "(() => { const fm = window.__fm; fm.on = false; return { gaps: fm.gaps, long: fm.long, longMs: fm.longMs, clipped: fm.clipped, jumps: fm.jumps, hidden: fm.hidden }; })()");
   const gaps = r.gaps.slice().sort((a, b) => a - b);
@@ -180,7 +181,7 @@ function median(values) {
 
 /** A pointer drag on an element of the page, in screen space, over `steps` frames. */
 async function drag(win, selector, dx, dy, steps, perFrame = 1) {
-  const rect = await js(win, `(() => { const r = document.querySelector(${JSON.stringify(selector)}).getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; })()`);
+  const rect = await js(win, `(() => { const r = document.querySelector(${jsLiteral(selector)}).getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; })()`);
   const start = win.getBounds();
   const sx = start.x + rect.x;
   const sy = start.y + rect.y;
@@ -200,7 +201,7 @@ async function drag(win, selector, dx, dy, steps, perFrame = 1) {
       win.webContents.sendInputEvent({ type: "mouseMove", button: "left", ...at(gx - (dx * k) / steps / perFrame, gy - (dy * k) / steps / perFrame) });
     }
     // where the dragged thing is drawn now, on the screen, against the pointer
-    const now = await js(win, `(() => { const r = document.querySelector(${JSON.stringify(selector)}).getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; })()`);
+    const now = await js(win, `(() => { const r = document.querySelector(${jsLiteral(selector)}).getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; })()`);
     const b = win.getBounds();
     lag += Math.hypot(b.x + now.x - gx, b.y + now.y - gy);
   }
@@ -281,7 +282,7 @@ async function measureNear(win) {
 
 const levels = (bot, mic = 0) => ipcMain.emit("floating-bots:level", { sender: brain }, { botId: BOT, levels: { bot, mic } });
 const click = async (win, selector) => {
-  const at = await js(win, `(() => { const r = document.querySelector(${JSON.stringify(selector)})?.getBoundingClientRect(); return r && { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) }; })()`);
+  const at = await js(win, `(() => { const r = document.querySelector(${jsLiteral(selector)})?.getBoundingClientRect(); return r && { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) }; })()`);
   if (!at) throw new Error(`nothing to click at ${selector}: ${await js(win, "(document.querySelector('.fb-head')?.outerHTML ?? document.body.innerHTML).slice(0, 400)")}`);
   win.webContents.sendInputEvent({ type: "mouseMove", ...at });
   await wait(60);
