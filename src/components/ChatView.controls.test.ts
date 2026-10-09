@@ -132,7 +132,7 @@ describe("thread control placement", () => {
     // a generic failure keeps the row
     const generic = renderToStaticMarkup(createElement(FailedTurnRow, { tool: { name: "error: Network timeout", ok: false }, engine: claude, onRetry: () => {} }));
     expect(generic).toContain("Network timeout");
-    expect(generic).toContain(">Retry<");
+    expect(generic).toContain("Retry</button>");
     // an update offer is not a sign-in: the row keeps the engine's words,
     // on a company-managed Claude too (chat cannot update it, so no offer
     // shows, but the row is still about the update, as the list says)
