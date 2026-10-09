@@ -10,10 +10,15 @@
 // pairing). The parsing, the edits and the layout below mirror those modules
 // line for line, so a value written here reads the same on the desktop.
 //
-// PUT replaces the whole record: a save reads it first and changes only the
-// keys the phone changed, so every other key (skin, language, keys this app
-// does not know) survives. Inside a value, unknown top-level fields survive
-// too.
+// A save sends only the keys the phone changed (PATCH /api/me/preferences
+// `{ set, remove }`), so every other key (skin, language, keys this app does
+// not know, a key another device just saved) survives; an older server
+// without PATCH gets the record read first and PUT back with those keys
+// changed. Every save on any of the person's devices comes back to all of
+// them as a `preferences` frame (`Frame.preferences`), which
+// `SidebarPrefs.receiving` folds in: the server wins, except for the keys
+// changed here and not saved yet. Inside a value, unknown top-level fields
+// survive too.
 import Foundation
 
 /// The localStorage keys, exactly as the desktop names them.
@@ -28,8 +33,11 @@ public enum SidebarPrefKey {
     public static let sectionOrder = "openmausbot.sidebarSectionOrder.v1"
     /// "1" shows thread lists and controls (thread-preferences.ts).
     public static let showThreads = "omb-show-threads"
+    /// The person's own order of each team's bots on the Team map, by
+    /// section key (TeamCanvas.tsx on an organization server; `TeamMap.parseOrders`).
+    public static let teamBotOrder = "sagax.teamCanvasBotOrder.v1"
 
-    public static let all = [personalSections, hidden, collapsedSections, sectionOrder, showThreads]
+    public static let all = [personalSections, hidden, collapsedSections, sectionOrder, showThreads, teamBotOrder]
 }
 
 /// One value must fit one preference (shared/user-preferences.ts).
@@ -545,6 +553,25 @@ public struct SidebarPrefs: Hashable, Sendable {
         values[SidebarPrefKey.showThreads] = on ? "1" : "0"
     }
 
+    /// The Team map's order of each team's bots (`TeamMap.parseOrders`).
+    public var teamBotOrders: [String: [String]] { TeamMap.parseOrders(values[SidebarPrefKey.teamBotOrder]) }
+
+    public mutating func setTeamBotOrders(_ orders: [String: [String]]) {
+        values[SidebarPrefKey.teamBotOrder] = TeamMap.encodeOrders(orders)
+    }
+
+    /// The person's record as the server just sent it (a read, or a
+    /// `preferences` frame after a save on any device): the server's value
+    /// wins for every sidebar key, a key it does not hold is cleared (the
+    /// default, as on a fresh device), and only the keys changed here and
+    /// not saved yet keep this phone's value. So a section deleted on the
+    /// desktop leaves the phone, and one deleted here is not brought back.
+    public func receiving(_ remote: [String: String], pending: Set<String>) -> SidebarPrefs {
+        var next = SidebarPrefs(values: remote)
+        for key in pending where SidebarPrefKey.all.contains(key) { next.values[key] = values[key] }
+        return next
+    }
+
     /// A rename carries the section's fold and place with it.
     public mutating func renameSectionID(from old: String, to new: String) {
         let replace: ([String]) -> [String] = { ids in
@@ -699,14 +726,33 @@ extension CompanionClient {
         }
     }
 
-    /// Saves `changed` (nil removes a key) into the person's record. PUT
-    /// replaces the whole record, so it is read first and every other key
-    /// is sent back as it was.
+    /// Saves `changed` (nil removes a key) into the person's record: PATCH
+    /// with only those keys. An older server without PATCH (405, or 403/404
+    /// from a route table that does not list it) gets the record read
+    /// first and PUT back with only those keys changed.
     @discardableResult
     public func saveSidebarPreferences(_ changed: [String: String?]) async throws -> UserPreferences {
-        var record = try await preferences().preferences
-        for (key, value) in changed { record[key] = value }
-        return try await putPreferences(record)
+        do {
+            return try await patchPreferences(changed)
+        } catch let APIError.status(code, _) where [403, 404, 405].contains(code) {
+            var record = try await preferences().preferences
+            for (key, value) in changed { record[key] = value }
+            return try await putPreferences(record)
+        }
+    }
+
+    /// `PATCH /api/me/preferences` `{ set, remove }`: changes only these
+    /// keys (nil removes one); the answer is the whole record.
+    public func patchPreferences(_ changed: [String: String?]) async throws -> UserPreferences {
+        var set: [String: String] = [:]
+        var remove: [String] = []
+        for (key, value) in changed {
+            if let value { set[key] = value } else { remove.append(key) }
+        }
+        return try await send(
+            makeRequest("PATCH", "/api/me/preferences", encodedBody: UserPreferencesPatch(set: set, remove: remove.sorted())),
+            as: UserPreferences.self
+        )
     }
 
     /// Renames a server section (`PATCH /api/sidebar-sections?section=`).

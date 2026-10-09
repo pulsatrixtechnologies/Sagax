@@ -313,6 +313,76 @@ final class SidebarPrefsTests: XCTestCase {
         XCTAssertEqual(body["preferences"] as? [String: String], ["omb-skin": "dusk", "omb-show-threads": "0", "sagax.busySend.v1": "steer"])
     }
 
+    /// A save sends only the keys it changed, so a key another device just
+    /// saved (a section deleted on the desktop) is never written back.
+    func testSavingPatchesOnlyTheChangedKeys() async throws {
+        let client = stubClient()
+        PrefsStub.requests = []
+        PrefsStub.routes["PATCH /api/me/preferences"] = (200, #"{"stored":true,"preferences":{"omb-show-threads":"0"},"updatedAt":3}"#)
+        let record = try await client.saveSidebarPreferences([SidebarPrefKey.showThreads: "0", SidebarPrefKey.sectionOrder: nil])
+        XCTAssertEqual(record.preferences, ["omb-show-threads": "0"])
+        XCTAssertEqual(PrefsStub.requests.map(\.method), ["PATCH"], "no read-modify-write")
+        let body = try XCTUnwrap(JSONSerialization.jsonObject(with: try XCTUnwrap(PrefsStub.requests[0].body)) as? [String: Any])
+        XCTAssertEqual(body["set"] as? [String: String], ["omb-show-threads": "0"])
+        XCTAssertEqual(body["remove"] as? [String], [SidebarPrefKey.sectionOrder])
+    }
+
+    func testAnOlderServerWithoutPatchGetsTheRecordPutBack() async throws {
+        let client = stubClient()
+        PrefsStub.requests = []
+        PrefsStub.routes["PATCH /api/me/preferences"] = (405, #"{"error":"GET or PUT"}"#)
+        PrefsStub.routes["GET /api/me/preferences"] = (200, #"{"stored":true,"preferences":{"omb-skin":"dusk"},"updatedAt":1}"#)
+        PrefsStub.routes["PUT /api/me/preferences"] = (200, #"{"stored":true,"preferences":{},"updatedAt":2}"#)
+        try await client.saveSidebarPreferences([SidebarPrefKey.showThreads: "1"])
+        XCTAssertEqual(PrefsStub.requests.map(\.method), ["PATCH", "GET", "PUT"])
+        let put = try XCTUnwrap(PrefsStub.requests.last?.body)
+        let body = try XCTUnwrap(JSONSerialization.jsonObject(with: put) as? [String: Any])
+        XCTAssertEqual(body["preferences"] as? [String: String], ["omb-skin": "dusk", "omb-show-threads": "1"])
+    }
+
+    /// The store side of the live sync: the server's record wins, a key it
+    /// no longer holds goes back to the default, and only what this phone
+    /// changed and has not saved yet keeps its value.
+    func testReceivingTheServersRecordWinsExceptForUnsavedKeys() throws {
+        var phone = SidebarPrefs()
+        phone.setPersonalSections(ok(PersonalSections.empty.creating("Ops").flatMap { $0.creating("Clients") }))
+        phone.setCollapsed(["user:Ops"])
+        phone.setSectionOrder(["user:Clients", "user:Ops"])
+        phone.setTeamBotOrders(["Ops": ["b2", "b1"]])
+
+        // the desktop deleted "Clients", unfolded Ops and saved its own order
+        var desktop = SidebarPrefs()
+        desktop.setPersonalSections(ok(PersonalSections.empty.creating("Ops")))
+        desktop.setSectionOrder(["user:Ops"])
+        desktop.setTeamBotOrders(["Ops": ["b1", "b2"]])
+        var remote = desktop.values
+        remote["omb-skin"] = "dusk" // not a sidebar key: never held here
+
+        let received = phone.receiving(remote, pending: [])
+        XCTAssertEqual(received.personalSections?.names, ["Ops"], "the deletion reaches the phone")
+        XCTAssertEqual(received.collapsed, [], "a key the server no longer holds is the default again")
+        XCTAssertEqual(received.sectionOrder, ["user:Ops"])
+        XCTAssertEqual(received.teamBotOrders, ["Ops": ["b1", "b2"]])
+        XCTAssertNil(received.values["omb-skin"])
+
+        // a fold made here and not saved yet survives the frame
+        let unsaved = phone.receiving(remote, pending: [SidebarPrefKey.collapsedSections])
+        XCTAssertEqual(unsaved.collapsed, ["user:Ops"])
+        XCTAssertEqual(unsaved.personalSections?.names, ["Ops"])
+    }
+
+    func testThePreferencesFrameCarriesTheWholeRecord() throws {
+        let json = #"{"kind":"preferences","seq":9,"audience":"pr_1","preferences":{"sagax.sidebarSections.v1":"{\"sections\":[]}","omb-skin":"dusk"},"updatedAt":12}"#
+        let frame = try JSONDecoder().decode(Frame.self, from: Data(json.utf8))
+        guard case let .preferences(record) = frame else { return XCTFail("\(frame)") }
+        XCTAssertTrue(record.stored)
+        XCTAssertEqual(record.updatedAt, 12)
+        XCTAssertEqual(record.preferences["omb-skin"], "dusk")
+        XCTAssertEqual(SidebarPrefs(values: record.preferences).personalSections, .empty)
+        let broken = try JSONDecoder().decode(Frame.self, from: Data(#"{"kind":"preferences","preferences":7}"#.utf8))
+        guard case .unknown = broken else { return XCTFail("\(broken)") }
+    }
+
     func testServerSectionRoutes() async throws {
         let client = stubClient()
         PrefsStub.routes["PATCH /api/sidebar-sections"] = (200, #"{"sections":["Ops QC"]}"#)

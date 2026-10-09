@@ -105,3 +105,42 @@ export function parsePositions(raw: string | null): Record<string, Point> {
     return {};
   }
 }
+
+/**
+ * Where the map's layout (team positions and the personal card order) is
+ * kept. On an organization server it follows the person to every device
+ * (shared/user-preferences.ts, synced through /api/me/preferences); a solo
+ * server keeps it in this browser, per workspace, as before.
+ */
+export const TEAM_CANVAS_POSITIONS_KEY = "sagax.teamCanvasPositions.v1";
+export const TEAM_CANVAS_BOT_ORDER_KEY = "sagax.teamCanvasBotOrder.v1";
+
+export interface TeamCanvasKeys { positions: string; botOrder: string }
+
+/** The per-workspace keys of this browser (`omb-team-canvas:<environment>`). */
+export function workspaceCanvasKeys(environmentId: string): TeamCanvasKeys {
+  const base = `omb-team-canvas:${environmentId}`;
+  return { positions: base, botOrder: `${base}:bot-order` };
+}
+
+export function teamCanvasKeys(environmentId: string, organization: boolean): TeamCanvasKeys {
+  return organization ? { positions: TEAM_CANVAS_POSITIONS_KEY, botOrder: TEAM_CANVAS_BOT_ORDER_KEY } : workspaceCanvasKeys(environmentId);
+}
+
+/**
+ * Reads the layout. On an organization server, a person who arranged the
+ * map before it followed them keeps that arrangement: the browser's own
+ * copy is moved into the synced keys once, when they are still empty.
+ */
+export function loadTeamCanvasLayout(storage: Pick<Storage, "getItem" | "setItem">, environmentId: string, organization: boolean): { keys: TeamCanvasKeys; positions: Record<string, Point>; botOrders: Record<string, string[]> } {
+  const keys = teamCanvasKeys(environmentId, organization);
+  if (organization) {
+    const local = workspaceCanvasKeys(environmentId);
+    for (const [synced, own] of [[keys.positions, local.positions], [keys.botOrder, local.botOrder]] as const) {
+      if (storage.getItem(synced) !== null) continue;
+      const value = storage.getItem(own);
+      if (value !== null) storage.setItem(synced, value);
+    }
+  }
+  return { keys, positions: parsePositions(storage.getItem(keys.positions)), botOrders: parseBotOrders(storage.getItem(keys.botOrder)) };
+}

@@ -4,7 +4,8 @@ import { useStore, type Bot } from "@/state/store";
 import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
 import { teamMapStatus, type TeamMapSection } from "@/lib/team-map";
-import { COMPUTER_DRAG_TYPE, fitTeams, layoutTeams, orderBots, parseBotOrders, parsePositions, reorderBot, zoomAt, type Point, type View } from "@/lib/team-canvas";
+import { COMPUTER_DRAG_TYPE, fitTeams, layoutTeams, loadTeamCanvasLayout, orderBots, parseBotOrders, parsePositions, reorderBot, teamCanvasKeys, zoomAt, type Point, type TeamCanvasKeys, type View } from "@/lib/team-canvas";
+import { loadPerspicaxOrg } from "@/lib/perspicax-org";
 import { BotAvatar } from "./Avatar";
 import { InstanceProviderMark, ProviderMark } from "./ProviderIcons";
 import { fetchEnvironmentDescriptor } from "@/lib/environment-descriptor";
@@ -92,7 +93,7 @@ export function TeamCanvas({ sections, canManage, onMove, onInstructions, onMemo
   const gesture = useRef<Gesture | null>(null);
   const suppressClick = useRef(false);
   const keyboardFocus = useRef(false);
-  const storageKey = useRef<string | null>(null);
+  const storageKeys = useRef<TeamCanvasKeys | null>(null);
   const [positions, setPositions] = useState<Record<string, Point>>({});
   const [botOrders, setBotOrders] = useState<Record<string, string[]>>({});
   const [view, setView] = useState<View>({ x: 40, y: 40, scale: 1 });
@@ -109,26 +110,45 @@ export function TeamCanvas({ sections, canManage, onMove, onInstructions, onMemo
   current.current = { view, positions, tiles, selectedId: state.selectedId, settingsOpen: state.settingsOpen };
 
   // Layout is personal presentation, not team configuration. Key it to the
-  // workspace's identity so switching hosted workspaces never shares a layout.
+  // workspace's identity so switching hosted workspaces never shares a layout;
+  // on an organization server it is the person's own and follows them to
+  // every device (team-canvas.ts loadTeamCanvasLayout).
   useEffect(() => {
     let active = true;
-    void fetchEnvironmentDescriptor({ signal: AbortSignal.timeout(5_000) }).then((res) => (res.ok ? res.json() : Promise.reject(new Error(String(res.status))))).then((environment) => {
+    const environment = fetchEnvironmentDescriptor({ signal: AbortSignal.timeout(5_000) }).then((res) => (res.ok ? res.json() : Promise.reject(new Error(String(res.status)))));
+    void Promise.all([environment, loadPerspicaxOrg()]).then(([environment, org]) => {
       if (!active || typeof environment.environmentId !== "string") return;
-      storageKey.current = `omb-team-canvas:${environment.environmentId}`;
       try {
-        const saved = parsePositions(localStorage.getItem(storageKey.current));
-        setPositions((previous) => ({ ...saved, ...previous }));
-        setBotOrders(parseBotOrders(localStorage.getItem(`${storageKey.current}:bot-order`)));
-      } catch { /* Private browsing may disable storage; the canvas still works. */ }
+        const layout = loadTeamCanvasLayout(localStorage, environment.environmentId, org !== null);
+        storageKeys.current = layout.keys;
+        setPositions((previous) => ({ ...layout.positions, ...previous }));
+        setBotOrders(layout.botOrders);
+      } catch {
+        storageKeys.current = teamCanvasKeys(environment.environmentId, org !== null);
+        /* Private browsing may disable storage; the canvas still works. */
+      }
     }).catch(() => { /* Older companions can use the canvas without persistence. */ }).finally(() => { if (active) setLayoutLoaded(true); });
     return () => { active = false; };
+  }, []);
+  // The same layout changed on another of the person's devices.
+  useEffect(() => {
+    const onStorage = (event: StorageEvent) => {
+      const keys = storageKeys.current;
+      if (!keys) return;
+      try {
+        if (event.key === null || event.key === keys.positions) setPositions(parsePositions(localStorage.getItem(keys.positions)));
+        if (event.key === null || event.key === keys.botOrder) setBotOrders(parseBotOrders(localStorage.getItem(keys.botOrder)));
+      } catch { /* storage refused: the canvas keeps what it shows */ }
+    };
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
   }, []);
 
   const savePositions = (next: Record<string, Point>) => {
     setPositions(next);
-    if (!storageKey.current) return;
+    if (!storageKeys.current) return;
     try {
-      localStorage.setItem(storageKey.current, JSON.stringify(Object.fromEntries(sections
+      localStorage.setItem(storageKeys.current.positions, JSON.stringify(Object.fromEntries(sections
         .filter((section) => Object.hasOwn(next, section.key)).map((section) => [section.key, next[section.key]]))));
     } catch { /* A full/disabled store must not prevent arranging teams. */ }
   };
@@ -139,8 +159,8 @@ export function TeamCanvas({ sections, canManage, onMove, onInstructions, onMemo
       ...orderBots(bot.chiefOfStaff ? section.members : section.chiefs, personalOrder(section.key)).map((item) => item.id),
     ] };
     setBotOrders(next);
-    if (storageKey.current) {
-      try { localStorage.setItem(`${storageKey.current}:bot-order`, JSON.stringify(next)); }
+    if (storageKeys.current) {
+      try { localStorage.setItem(storageKeys.current.botOrder, JSON.stringify(next)); }
       catch { /* Personal ordering remains usable when browser storage is unavailable. */ }
     }
     setAnnouncement(t("canvas.arrangedBot", { name: bot.name, team: section.key ? section.name : t("sidebar.section.general") }));

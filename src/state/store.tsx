@@ -62,6 +62,7 @@ import { useChatErrorClear } from "./chat-error";
 import type { OnboardingStatus } from "@/lib/onboarding";
 import { openLiveEvents, publishLiveFrame, publishMissedFrames } from "@/lib/live-events";
 import { receiveAchievementsFrame } from "@/lib/achievements";
+import { announceServerPreferences } from "@/lib/user-preferences-sync";
 import { applyPersonLabel } from "@/lib/person-labels";
 
 const MAX_ROUTINE_RUNS = 2_000;
@@ -4447,6 +4448,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         // a person's own unlocks (server/achievements.ts sends them to their streams only)
         case "achievements":
           receiveAchievementsFrame(frame);
+          break;
+        // a person's preferences saved on another device (or this one): the
+        // sync module applies them to this page (src/lib/user-preferences-sync.ts)
+        case "preferences":
+          announceServerPreferences(frame);
           break;
         case "routine.run":
           rawDispatch({ type: "routineRunPatched", run: frame.run });

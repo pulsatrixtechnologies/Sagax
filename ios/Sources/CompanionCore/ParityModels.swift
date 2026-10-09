@@ -281,6 +281,12 @@ struct UserPreferencesBody: Encodable {
     var preferences: [String: String]
 }
 
+/// `PATCH /api/me/preferences`: the keys to set and the keys to remove.
+struct UserPreferencesPatch: Encodable {
+    var set: [String: String]
+    var remove: [String]
+}
+
 // MARK: - GET /api/me/server-environment
 
 /// The person's own server environment (organization servers). `configured`

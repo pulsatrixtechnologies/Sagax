@@ -10,7 +10,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { z } from "zod";
-import { cleanUserPreferences, type UserPreferences } from "../shared/user-preferences.ts";
+import { cleanUserPreferences, isUserPreferenceKey, type UserPreferences } from "../shared/user-preferences.ts";
 import { writeFileAtomic } from "./atomic.ts";
 
 const PRINCIPAL_ID = /^pr_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
@@ -34,6 +34,10 @@ export interface UserPreferenceStore {
   get(principalId: string): PersonPreferences;
   /** Replace this person's preferences with the known keys of `input`. */
   put(principalId: string, input: unknown): PersonPreferences;
+  /** Change only some keys: `set` writes the known keys it carries, `remove`
+   * forgets the ones it names; every other key stays as it was. Two devices
+   * saving different keys at once both keep their change. */
+  merge(principalId: string, set: unknown, remove: unknown): PersonPreferences;
   /** Forget this person's preferences (account deletion). */
   remove(principalId: string): void;
 }
@@ -62,6 +66,16 @@ export function createUserPreferenceStore(dataDir: string, now: () => number = D
     if (!PRINCIPAL_ID.test(principalId)) throw Object.assign(new Error("not a person"), { status: 403 });
   };
 
+  const save = (principalId: string, preferences: UserPreferences): PersonPreferences => {
+    requirePerson(principalId);
+    const all = load();
+    if (!all[principalId] && Object.keys(all).length >= MAX_PEOPLE) throw Object.assign(new Error("too many people"), { status: 507 });
+    const entry = { preferences, updatedAt: now() };
+    all[principalId] = entry;
+    writeFileAtomic(file, `${JSON.stringify({ version: 1, people: all }, null, 2)}\n`, { mode: 0o600 });
+    return { stored: true, preferences: { ...entry.preferences }, updatedAt: entry.updatedAt };
+  };
+
   return {
     get(principalId) {
       requirePerson(principalId);
@@ -69,13 +83,14 @@ export function createUserPreferenceStore(dataDir: string, now: () => number = D
       return entry ? { stored: true, preferences: { ...entry.preferences }, updatedAt: entry.updatedAt } : { stored: false, preferences: {}, updatedAt: null };
     },
     put(principalId, input) {
+      return save(principalId, cleanUserPreferences(input));
+    },
+    merge(principalId, set, remove) {
       requirePerson(principalId);
-      const all = load();
-      if (!all[principalId] && Object.keys(all).length >= MAX_PEOPLE) throw Object.assign(new Error("too many people"), { status: 507 });
-      const entry = { preferences: cleanUserPreferences(input), updatedAt: now() };
-      all[principalId] = entry;
-      writeFileAtomic(file, `${JSON.stringify({ version: 1, people: all }, null, 2)}\n`, { mode: 0o600 });
-      return { stored: true, preferences: { ...entry.preferences }, updatedAt: entry.updatedAt };
+      const next: UserPreferences = { ...load()[principalId]?.preferences };
+      if (Array.isArray(remove)) for (const key of remove) if (isUserPreferenceKey(key)) delete next[key];
+      Object.assign(next, cleanUserPreferences(set));
+      return save(principalId, next);
     },
     remove(principalId) {
       const all = load();
@@ -84,4 +99,14 @@ export function createUserPreferenceStore(dataDir: string, now: () => number = D
       writeFileAtomic(file, `${JSON.stringify({ version: 1, people: all }, null, 2)}\n`, { mode: 0o600 });
     },
   };
+}
+
+/**
+ * The live frame a save sends (`{ kind: "preferences", audience, preferences,
+ * updatedAt }`): it reaches the streams of the person it belongs to and no
+ * one else's, so their other devices apply the change within seconds.
+ */
+export function preferencesFrameAllowed(payload: { kind?: unknown; audience?: unknown }, viewerId: string | undefined): boolean {
+  if (payload.kind !== "preferences") return true;
+  return typeof payload.audience === "string" && Boolean(viewerId) && payload.audience === viewerId;
 }
