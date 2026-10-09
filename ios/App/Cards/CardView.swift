@@ -38,9 +38,14 @@ struct CardView: View {
     private var tint: Color { MausPalette.color(chat.color) }
 
     /// A permission ask is answered in the approval dock above the composer
-    /// (PendingApproval.tsx); its card here only records what is asked and,
-    /// once settled, what happened (ApprovalCard.tsx).
+    /// (PendingApproval.tsx). The card stays in the transcript only while
+    /// it is waiting. Allowed, denied and expired asks leave the chat.
     private var answeredInDock: Bool { message.card?.isPermission == true }
+
+    /// Finished permission asks are not drawn. Questions are not this.
+    private var settledPermission: Bool {
+        answeredInDock && message.card?.isPending != true
+    }
 
     /// A first-run quiz goes once picked, dismissed or talked past.
     private var hidden: Bool {
@@ -48,7 +53,9 @@ struct CardView: View {
     }
 
     var body: some View {
-        if let desktop, let card = message.card, !hidden, answeredInDock {
+        if settledPermission {
+            EmptyView()
+        } else if let desktop, let card = message.card, !hidden, answeredInDock {
             DesktopPermissionCard(chat: chat, message: message, card: card, theme: desktop, waiting: waitingLine(card))
         } else if let card = message.card, !hidden {
             VStack(alignment: .leading, spacing: 10) {
