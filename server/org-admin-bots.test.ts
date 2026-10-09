@@ -1,0 +1,144 @@
+// Bots (server/org-admin-bots.ts) with faked dependencies: the reach, the
+// bodies, each action's audit row, the bulk results, package and import.
+import { describe, expect, it } from "vitest";
+
+import { botsRoutes, BULK_MAX_IDS, type BotsDeps } from "./org-admin-bots.ts";
+import { ConsoleRefusal } from "./org-admin-console.ts";
+import type { AdminBot, AdminBotReach } from "./org-admin-routes.ts";
+import { fakeConsole } from "./testing/console-context.ts";
+
+function setup() {
+  const bots = new Map<string, AdminBot>();
+  const reach = new Map<string, AdminBotReach>();
+  const add = (id: string, owner: string, extra: Partial<AdminBot> = {}) => {
+    bots.set(id, {
+      id, name: id.toUpperCase(), owner: { principalId: owner, sub: null, name: owner }, ownerRole: "member",
+      engine: { instanceId: "claude", driverKind: "claudeAgent", installed: true }, model: "m1", access: "org-key",
+      mcpProfiles: [], grants: [], sections: [], routines: 0, createdAt: 1, lastActivityAt: null, status: "active", label: null, threads: 1, ...extra,
+    });
+    reach.set(id, { ownerPrincipalId: owner, grantTargets: [], sectionMemberTargets: [] });
+  };
+  add("a", "pr_alice");
+  add("b", "pr_bob");
+  add("p", "pr_bob", { name: "PRIMARY" });
+  const calls: string[] = [];
+  const deps: BotsDeps = {
+    bots: () => [...bots.values()].map((bot) => ({ bot, reach: reach.get(bot.id)! })),
+    detail: (id) => (bots.has(id) ? { threads: { count: 2, lastAt: 5 }, soul: { chars: 10, summary: "Helps." }, skills: [{ id: "s", name: "s", source: null }], permissions: { approvalMode: "ask", fullAccess: false }, routineList: [] } : null),
+    owner: (id) => (["pr_alice", "pr_bob", "pr_mona"].includes(id) ? { principalId: id, sub: null, name: id } : null),
+    ownerBySub: (sub) => (sub === "bob-sub" ? { principalId: "pr_bob", sub, name: "pr_bob" } : null),
+    clone: async (id, input) => {
+      const copy = `${id}-copy`;
+      add(copy, input.ownerPrincipalId, { name: input.name ?? `${bots.get(id)!.name} 2` });
+      return copy;
+    },
+    setArchived: (id, archived) => {
+      if (id === "p" && archived) throw new ConsoleRefusal(409, "primary_bot", "Primary.");
+      bots.set(id, { ...bots.get(id)!, status: archived ? "archived" : "active" });
+    },
+    transfer: (id, owner) => { bots.set(id, { ...bots.get(id)!, owner: { principalId: owner, sub: null, name: owner } }); reach.set(id, { ...reach.get(id)!, ownerPrincipalId: owner }); },
+    setModel: (id, input) => {
+      if (input.engineInstanceId === "ghost") throw new ConsoleRefusal(400, "engine_not_installed", "Not installed.");
+      bots.set(id, { ...bots.get(id)!, model: input.model });
+    },
+    stop: async (id) => { calls.push(`stop:${id}`); },
+    remove: async (id) => { bots.delete(id); return { status: 200, body: { ok: true } }; },
+    notifyOwner: (id, action) => { calls.push(`notify:${action}:${id}`); },
+    exportPackage: (id) => ({ document: { format: "package", version: 2, bot: id, secret: "[redacted]" }, filename: `${id} pkg.json`, redacted: ["x"], skipped: [] }),
+    importPackage: async (_doc, input) => { add("imported", input.ownerPrincipalId, { name: input.name ?? "IMPORTED" }); return { botId: "imported", warnings: ["agents[x].skills: too_large"] }; },
+  };
+  return { bots, calls, console: fakeConsole(botsRoutes(deps)) };
+}
+
+const MANAGER = { role: "manager" as const, principalId: "pr_mona", reach: ["pr_mona", "pr_bob"] };
+
+describe("bots", () => {
+  it("a bot's page, within reach", async () => {
+    const { console } = setup();
+    expect((await console.call("GET", "bots/a")).body.bot).toMatchObject({ id: "a", threads: { count: 2, lastAt: 5 }, soul: { summary: "Helps." }, permissions: { approvalMode: "ask" } });
+    expect((await console.call("GET", "bots/a", MANAGER)).status).toBe(404);
+    expect((await console.call("GET", "bots/b", MANAGER)).status).toBe(200);
+    expect((await console.call("GET", "bots/zz")).status).toBe(404);
+  });
+
+  it("clone: same owner by default, another owner in reach, a name; audited", async () => {
+    const { console } = setup();
+    const same = await console.call("POST", "bots/b/clone", { body: {} });
+    expect(same).toMatchObject({ status: 201, body: { bot: { id: "b-copy", owner: { principalId: "pr_bob" } } } });
+    expect(console.records.at(-1)).toMatchObject({ category: "bot", action: "bot.clone", after: { from: "b", ownerPrincipalId: "pr_bob" } });
+    const other = await console.call("POST", "bots/a/clone", { body: { ownerPrincipalId: "pr_mona", name: "Atlas for Mona" } });
+    expect(other.body.bot).toMatchObject({ name: "Atlas for Mona", owner: { principalId: "pr_mona" } });
+    // a manager: the bot and the new owner must be in reach
+    expect((await console.call("POST", "bots/a/clone", { ...MANAGER, body: {} })).status).toBe(404);
+    expect(await console.call("POST", "bots/b/clone", { ...MANAGER, body: { ownerPrincipalId: "pr_alice" } })).toMatchObject({ status: 404, body: { code: "owner_not_found" } });
+    expect((await console.call("POST", "bots/b/clone", { body: { name: "" } })).status).toBe(400);
+    expect((await console.call("POST", "bots/b/clone", { body: { other: 1 } })).status).toBe(400);
+  });
+
+  it("archive and restore: idempotent, a Primary Bot refused, audited once", async () => {
+    const { console } = setup();
+    expect((await console.call("POST", "bots/b/archive", MANAGER)).body.bot.status).toBe("archived");
+    const rows = console.records.length;
+    expect((await console.call("POST", "bots/b/archive")).body.bot.status).toBe("archived");
+    expect(console.records.length).toBe(rows);
+    expect(await console.call("POST", "bots/p/archive")).toMatchObject({ status: 409, body: { code: "primary_bot" } });
+    expect((await console.call("POST", "bots/b/restore")).body.bot.status).toBe("active");
+    expect(console.records.at(-1)).toMatchObject({ action: "bot.restore", before: { status: "archived" }, after: { status: "active" } });
+    expect((await console.call("POST", "bots/a/archive", MANAGER)).status).toBe(404);
+  });
+
+  it("transfer and model", async () => {
+    const { console } = setup();
+    expect((await console.call("POST", "bots/a/transfer", { body: { ownerPrincipalId: "pr_bob" } })).body.bot.owner.principalId).toBe("pr_bob");
+    expect(console.records.at(-1)).toMatchObject({ action: "bot.transfer", before: { ownerPrincipalId: "pr_alice" }, after: { ownerPrincipalId: "pr_bob" } });
+    expect((await console.call("POST", "bots/a/transfer", { body: { ownerPrincipalId: "pr_ghost" } })).body.code).toBe("owner_not_found");
+    expect((await console.call("POST", "bots/a/transfer", { body: {} })).status).toBe(400);
+    expect((await console.call("POST", "bots/a/transfer", { body: { ownerSub: "bob-sub" } })).body.bot.owner.principalId).toBe("pr_bob");
+    expect((await console.call("POST", "bots/a/clone", { body: { ownerSub: "bob-sub" } })).body.bot.owner.principalId).toBe("pr_bob");
+    expect((await console.call("POST", "bots/a/clone", { body: { ownerSub: "bob-sub", ownerPrincipalId: "pr_bob" } })).status).toBe(400);
+    expect((await console.call("POST", "bots/a/model", { body: { model: "m2" } })).body.bot.model).toBe("m2");
+    expect(console.records.at(-1)).toMatchObject({ action: "bot.model", before: { model: "m1" }, after: { model: "m2" } });
+    expect(await console.call("POST", "bots/a/model", { body: { engineInstanceId: "ghost", model: "m" } })).toMatchObject({ status: 400, body: { code: "engine_not_installed" } });
+    expect((await console.call("POST", "bots/a/model", { body: { model: 5 } })).status).toBe(400);
+  });
+
+  it("stop and delete: the owner is told; delete needs the bot's name", async () => {
+    const { console, calls, bots } = setup();
+    expect((await console.call("POST", "bots/b/stop", { body: {} })).status).toBe(200);
+    expect(calls).toEqual(["stop:b", "notify:stop:b"]);
+    expect(console.records.at(-1)).toMatchObject({ action: "bot.force_stop" });
+    expect(await console.call("POST", "bots/b/delete", { body: { confirm: "b" } })).toMatchObject({ status: 400, body: { code: "confirm_required" } });
+    expect(await console.call("POST", "bots/b/delete", { body: { confirm: "B" } })).toMatchObject({ status: 200, body: { deleted: "b" } });
+    expect(bots.has("b")).toBe(false);
+    expect(console.records.at(-1)).toMatchObject({ action: "bot.force_delete", target: { id: "b" } });
+  });
+
+  it("bulk: one result per bot, one audit row per change", async () => {
+    const { console } = setup();
+    const got = await console.call("POST", "bots/bulk", { body: { action: "archive", ids: ["a", "p", "zz"] } });
+    expect(got.body.results).toEqual([
+      { id: "a", ok: true },
+      { id: "p", ok: false, code: "primary_bot", message: "Primary." },
+      { id: "zz", ok: false, code: "not_found", message: "No such bot." },
+    ]);
+    expect(console.records.filter((row) => row.action === "bot.archive")).toHaveLength(1);
+    expect((await console.call("POST", "bots/bulk", { body: { action: "transfer", ids: ["a"], ownerPrincipalId: "pr_bob" } })).body.results).toEqual([{ id: "a", ok: true }]);
+    for (const body of [{ action: "delete", ids: ["a"] }, { action: "archive", ids: [] }, { action: "archive", ids: ["a", "a"] }, { action: "archive", ids: Array.from({ length: BULK_MAX_IDS + 1 }, (_, i) => `x${i}`) }, { action: "transfer", ids: ["a"] }]) {
+      expect((await console.call("POST", "bots/bulk", { body })).status).toBe(400);
+    }
+  });
+
+  it("package and import", async () => {
+    const { console } = setup();
+    const pkg = await console.call("GET", "bots/a/package");
+    expect(pkg.status).toBe(200);
+    expect(console.records.at(-1)).toMatchObject({ action: "bot.export", after: { redacted: 1 } });
+    const imported = await console.call("POST", "bots/import", { body: { package: { format: "package" }, ownerSub: "bob-sub", name: "Copied" } });
+    expect(imported).toMatchObject({ status: 201, body: { bot: { id: "imported", name: "Copied", owner: { principalId: "pr_bob" } }, warnings: ["agents[x].skills: too_large"] } });
+    // no owner named: the console person, who must be a person of this server
+    expect((await console.call("POST", "bots/import", { body: { package: { format: "package" } } })).body.code).toBe("owner_not_found");
+    expect((await console.call("POST", "bots/import", { principalId: "pr_alice", body: { package: { format: "package" } } })).body.bot.owner.principalId).toBe("pr_alice");
+    expect((await console.call("POST", "bots/import", { body: { package: "text" } })).status).toBe(400);
+    expect((await console.call("POST", "bots/import", { body: { package: {}, ownerSub: "nobody" } })).body.code).toBe("owner_not_found");
+  });
+});

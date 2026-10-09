@@ -500,7 +500,8 @@ export function createOrgAdminRoutes(deps: OrgAdminRouteDeps): (req: IncomingMes
         const status = typeof (error as { status?: unknown })?.status === "number" ? (error as { status: number }).status : 500;
         const message = status < 500 && error instanceof Error ? error.message.slice(0, 300) : "The server could not do this; its log has the details.";
         if (status >= 500) console.error(`[org-admin] ${method} ${sub}: ${error instanceof Error ? error.message : String(error)}`);
-        refuse(res, status, status < 500 ? "refused" : "server_error", message);
+        const code = status < 500 ? (typeof (error as { code?: unknown })?.code === "string" ? (error as { code: string }).code : "refused") : "server_error";
+        refuse(res, status, code, message);
       }
       return true;
     }

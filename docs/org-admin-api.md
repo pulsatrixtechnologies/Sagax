@@ -135,9 +135,10 @@ GET /api/org/admin/bots?status=active&q=atl&limit=50
 }
 ```
 
-Every bot now carries `status` (`archived` is a bot hidden from the sidebar,
-which answers nothing until restored), `label` (the sidebar section it is
-filed under) and `threads` (its main conversation plus its tasks).
+Every bot now carries `status` (`archived` is Sagax's archived bot: out of
+the sidebar, skipped by rooms, its routines do not run, until restored),
+`label` (the sidebar section it is filed under) and `threads` (its main
+conversation plus its tasks).
 
 ### `GET usage` (extended)
 
@@ -243,3 +244,387 @@ The body of the session route: `{"all": true}`, `{"kind": "mcp", "name"}`,
 `{"kind": "github"}` or `{"kind": "plugin", "botId", "key"}`. Answers
 `{removed, connections}` (the listing after the change). Audited
 `connections.revoke` when something was removed.
+
+## Bots
+
+| Method and path | Role | What |
+|---|---|---|
+| `GET bots/{id}` | manager | a bot's page |
+| `POST bots/{id}/clone` | manager (bot and new owner in reach) | a copy for its owner or another person |
+| `POST bots/{id}/archive` | manager in reach, admin | archive |
+| `POST bots/{id}/restore` | manager in reach, admin | restore |
+| `POST bots/{id}/transfer` | admin | another owner |
+| `POST bots/{id}/model` | manager in reach, admin | another engine or model |
+| `POST bots/{id}/stop` | admin | stop every running turn, task and routine run |
+| `POST bots/{id}/delete` | admin | delete, with the bot's name as confirmation |
+| `POST bots/bulk` | admin | archive, restore, transfer or model on 1 to 100 bots |
+| `GET bots/{id}/package` | admin | the package document, secrets redacted |
+| `POST bots/import` | admin | a package becomes bots of a chosen owner |
+
+### `GET bots/{id}`
+
+```json
+{
+  "bot": {
+    "id": "5e38...", "name": "Atlas", "status": "active", "label": "Sales",
+    "owner": { "principalId": "pr_1abf...", "sub": "01J9...", "name": "Alice" },
+    "engine": { "instanceId": "claude", "driverKind": "claudeAgent", "installed": true }, "model": "claude-opus-4-1",
+    "threads": { "count": 4, "lastAt": 1791500100000 },
+    "soul": { "chars": 1840, "summary": "Prepares the weekly sales digest." },
+    "skills": [{ "id": "digest", "name": "digest", "source": "https://github.com/acme/skills" }],
+    "permissions": { "approvalMode": "ask", "fullAccess": false },
+    "routineList": [{ "id": "r_1", "name": "Daily digest", "enabled": true, "schedule": "Every weekday at 09:00" }]
+  }
+}
+```
+
+The AdminBot fields of `GET bots`, plus the facts above. `soul.summary` is
+the first line of the instructions (at most 140 characters), never the
+instructions themselves; no message, memory or routine prompt is answered.
+
+### `POST bots/{id}/clone`
+
+```json
+{ "ownerSub": "01J9...", "name": "Atlas for Bob" }
+```
+
+Every route that names an owner (clone, transfer, bulk transfer, import)
+takes `ownerSub` (the Perspicax user id, how the console names people) or
+`ownerPrincipalId` (Sagax's id), not both. Both fields are optional here:
+the owner defaults to the bot's owner, the name to
+a numbered copy ("Atlas 2"). Answers `201 {bot}`. The copy has the
+instructions, the skills (on when they were on), the appearance, the model
+and the settings (voice, memory switches, browser, computer, tool scope, MCP
+servers, approval level except Full access and Custom, which start on Auto);
+it has no threads, no memory, no grants, no routines and no connected-app
+grants. Audited `bot.clone` (`after.from` names the source).
+
+### `POST bots/{id}/archive`, `restore`
+
+`{}`. Answers `{bot}`. Archiving a Primary Bot is refused (409
+`primary_bot`): its owner chooses another one first. Archiving an archived
+bot changes nothing and writes no row. Audited `bot.archive`, `bot.restore`.
+
+### `POST bots/{id}/transfer`
+
+`{"ownerSub": "01J9..."}` (or `ownerPrincipalId`). Answers `{bot}`. Grants are kept; the
+former owner keeps the bot at `manage`; a grant the new owner had becomes
+ownership; a Primary Bot stops being one. 404 `owner_not_found` for an
+unknown or disabled person. Audited `bot.transfer`.
+
+### `POST bots/{id}/model`
+
+`{"engineInstanceId": "codex", "model": "gpt-5"}`; `engineInstanceId` is
+optional (the bot's engine); `model` null means the bot's model on the same
+engine, else the engine's default model. Answers `{bot}`. Refusals: 400
+`engine_not_installed`, 400 `engine_not_allowed` (the organization's engine
+policy, Settings), 400 `bad_request` (a model the engine does not offer), 409
+`busy` (the bot is working). Audited `bot.model`.
+
+### `POST bots/{id}/stop`, `POST bots/{id}/delete`
+
+Stop: `{}`, answers `{bot}`. Delete: `{"confirm": "Atlas"}` (the bot's exact
+name, else 400 `confirm_required`), stops the bot first, answers `{deleted:
+id}`. The owner is told (a notification to them alone) when someone else
+acted. Audited `bot.force_stop`, `bot.force_delete`.
+
+### `POST bots/bulk`
+
+```json
+{ "action": "transfer", "ids": ["5e38...", "77ab..."], "ownerSub": "01J9..." }
+```
+
+`action` is `archive`, `restore`, `transfer` (with `ownerSub` or `ownerPrincipalId`) or
+`model` (with `model`, and optionally `engineInstanceId`); `ids` 1 to 100
+distinct bot ids. Each bot is done on its own:
+
+```json
+{ "results": [{ "id": "5e38...", "ok": true }, { "id": "77ab...", "ok": false, "code": "primary_bot", "message": "..." }] }
+```
+
+One audit row per bot that changed.
+
+### `GET bots/{id}/package`
+
+The package document v2 (`openmaus.package`, the Share dialog's format) of
+this bot alone: its instructions, appearance, skills that fit, its routines
+(they arrive off on import) and the address of its remote MCP servers with
+their value names. Secrets are never in it; `X-Sagax-Package-Redacted` counts
+the redacted values. At most 4 MiB (else 413 `too_large`). Served as an
+attachment. Audited `bot.export`.
+
+### `POST bots/import`
+
+```json
+{ "package": { "format": "openmaus.package", "version": 2, "...": "..." }, "ownerSub": "01J9...", "name": "Atlas" }
+```
+
+The body may be up to 4 MiB plus 64 KiB. The owner is the person of `ownerSub`
+(a Perspicax user id: how another linked server names them too) or
+`ownerPrincipalId`, else the console person. The package is read as a file (it
+cannot claim a publisher; skills, routines and connections arrive off).
+Answers `201 {bot, warnings}` (the first bot it made; every bot it made
+belongs to the owner). 400 `invalid_package`. Audited `bot.import`.
+
+"Copy to another server" is `GET bots/{id}/package` on one server and
+`POST bots/import` on the other.
+
+## Routines
+
+| Method and path | Role | What |
+|---|---|---|
+| `GET routines?q&status&bot&owner&limit&cursor` | manager | every routine in reach |
+| `GET routines/{id}` | manager | one routine |
+| `GET routines/{id}/runs?limit&cursor` | manager | its runs, newest first |
+| `POST routines/{id}/run` | manager in reach, admin | run now |
+| `POST routines/{id}/pause` | manager in reach, admin | pause or resume |
+
+A manager reaches a routine whose bot owner or whose runner is in their
+reach. No routine prompt, run output or message is ever answered.
+
+### `GET routines`
+
+`status` is `enabled`, `paused` or `failing` (its last run failed); `bot` a
+bot id; `owner` the bot owner's principal id or Perspicax user id.
+
+```json
+{
+  "items": [{
+    "id": "r_1", "name": "Daily digest", "botId": "5e38...", "botName": "Atlas",
+    "owner": { "principalId": "pr_1abf...", "sub": "01J9...", "name": "Alice" },
+    "runAs": { "principalId": "pr_1abf...", "sub": "01J9...", "name": "Alice" },
+    "schedule": "Every weekday at 09:00", "enabled": true, "nextRunAt": 1791580000000,
+    "lastRun": { "at": 1791500000000, "status": "failed", "reason": "rate_limited", "label": "The provider is rate limiting" },
+    "failures7d": 1
+  }],
+  "next": null
+}
+```
+
+- `schedule` is the schedule in words (times in the server's zone, `once`
+  in UTC).
+- `lastRun.status`: `ok` (completed), `failed`, `skipped` (cancelled or
+  missed) or `running` (queued, running or waiting). `reason` is a code,
+  `label` its readable words in the assertion's language.
+- `suspended` (`person_out` or `no_right`) is present when Sagax paused the
+  routine for its person.
+
+### `GET routines/{id}/runs`
+
+```json
+{
+  "items": [{ "id": "run_9", "startedAt": 1791500000000, "endedAt": 1791500050000, "status": "ok", "reason": null, "label": null, "threadId": "a5fe...", "turns": 2, "costUsd": 0.04 }],
+  "next": null
+}
+```
+
+`turns` and `costUsd` come from the usage ledger (the run's own cost when
+the run carries one). The thread opens in Sagax at
+`<server>/#thread=<threadId>&bot=<botId>`.
+
+### `POST routines/{id}/run`
+
+`{}`. Answers `{run: {id, startedAt, status: "running"}}`; 409
+`already_running` while a run of the routine is queued, running or waiting.
+Audited `routine.run_now`.
+
+### `POST routines/{id}/pause`
+
+`{"paused": true}` or `{"paused": false}`. Answers `{routine}`. Pausing does
+not change whom the routine runs as. Audited `routine.pause`,
+`routine.resume`.
+
+## Approvals
+
+| Method and path | Role | What |
+|---|---|---|
+| `GET approvals` | employee | the cards the caller may decide (unchanged) |
+| `GET approvals?scope=org` | admin | every pending card of the organization |
+| `GET approvals/history?q&limit&cursor` | admin | decided cards of the last 90 days |
+| `POST approvals/{thread}/{request}` | employee | allow or deny (unchanged) |
+
+`GET approvals?scope=org` answers `{approvals}` in the shape of `GET
+approvals`, at most 2,000, oldest first; `decidable` is true only on a card
+this admin may answer here (an admin card, or a card of their own bot, a
+plain tool card on the fleet host). An owner card of someone else's bot is
+listed, never decidable.
+
+### `GET approvals/history`
+
+```json
+{
+  "items": [{
+    "botId": "77ab...", "botName": "Beacon", "threadId": "c1d2...", "requestId": "req_4",
+    "type": "tool", "tool": "Bash", "summary": "uptime", "decision": "allow",
+    "by": { "principalId": "pr_1abf...", "sub": "01J9...", "name": "Alice" }, "at": 1791500000000
+  }],
+  "next": null
+}
+```
+
+From the decision log: the cards a person answered (in Sagax or from the
+console), newest first. Sagax records no expiry decision: `expired` is never
+answered. `by` names the person when Sagax knows them, else the device
+label.
+
+## Connections
+
+| Method and path | Role | What |
+|---|---|---|
+| `GET connections` | admin | engines, people's connections, MCP servers, Composio, marketplaces, skills library |
+| `POST connections/test` | admin | test one line |
+
+### `GET connections`
+
+```json
+{
+  "engines": [{ "id": "claude", "name": "Claude Code", "installed": true, "version": "2.1.0", "orgKey": true, "people": 7 }],
+  "people": [{
+    "person": { "principalId": "pr_7c1e...", "sub": "01J9...", "name": "Bob" },
+    "engines": [{ "id": "claude", "via": "subscription", "ok": null, "checkedAt": null }],
+    "mcpServers": 1, "composioApps": 0
+  }],
+  "mcpServers": [
+    { "id": "docs", "name": "docs", "scope": "org", "owner": null, "transport": "remote", "state": "enabled" },
+    { "id": "github", "name": "github", "scope": "person", "owner": { "principalId": "pr_7c1e...", "sub": "01J9...", "name": "Bob" }, "transport": "remote", "state": "enabled" }
+  ],
+  "composio": { "configured": true, "apps": [{ "slug": "gmail", "name": "gmail", "people": 3 }] },
+  "marketplaces": [{ "id": "acme", "name": "acme", "url": "acme/plugins", "allowed": true, "plugins": 12 }],
+  "skills": [{ "id": "digest", "name": "digest", "source": "https://github.com/acme/skills", "version": "3f2a9c1b7d4e", "bots": 2 }]
+}
+```
+
+- `engines[].people`: active people whose own turns can run on the engine
+  (subscription, key or organization key). `orgKey` says whether the
+  organization's key is set, never the key.
+- `people[].engines[].ok` and `checkedAt` stay null: Sagax does not check a
+  person's engine in the background; `POST connections/test` with
+  `principalId` does it on demand.
+- `composio.apps`: the workspace's connected apps (read from Composio, at
+  most 5 s, empty on a timeout); `people` counts the owners of bots granted
+  the app. `composioApps` per person is 0: connected apps belong to the
+  workspace in Sagax.
+- `skills`: the organization's skills library (empty while the library is
+  off); `version` is the first 12 hex of the skill's SHA-256.
+
+### `POST connections/test`
+
+```json
+{ "kind": "engine", "id": "claude", "principalId": "pr_7c1e..." }
+```
+
+Answers `{ok, latencyMs, reason, label}`, for example
+`{"ok": false, "latencyMs": 12, "reason": "no_access", "label": "This person has no access to this engine (...)"}`.
+
+- `engine`: the engine answers its probe (and, with `principalId`, that
+  person can run on it).
+- `mcp`: a remote MCP server (the organization's, or the person's with
+  `principalId`) answers over HTTP with a status below 500. No credential is
+  sent. A server started by command (stdio) answers `501 not_implemented`
+  with its `reason`: it runs in its person's environment and cannot be
+  tested from here yet.
+- `marketplace`: its address (or `https://github.com/<owner/repo>`) answers.
+- `composio`: Composio answers with the connected apps.
+
+Each test has 10 s. Audited `connections.test`.
+
+## Usage and cost
+
+`GET usage` (above) carries `engine` on each row; the console groups by
+engine, person, bot or day and exports CSV from the rows it holds.
+
+## Logs
+
+| Method and path | Role | What |
+|---|---|---|
+| `GET logs?level&limit&before` | admin | the server log tail |
+| `GET incidents?kind&q&limit&cursor` | admin | failed, stalled and unstartable runs, failed routines |
+| `GET audit` | admin | the admin activity log (above) |
+
+### `GET logs`
+
+`level` is `info`, `warn` or `error` (that level and above), `limit` 1 to 500
+(default 200), `before` the `seq` of a line (the `next` of the last page).
+
+```json
+{
+  "lines": [{ "seq": 1841, "at": 1791500000000, "level": "error", "area": "omb-turn", "message": "bot=5e38... refused: no_access (claude)" }],
+  "next": 1841
+}
+```
+
+The last 2,000 lines this process wrote to its console, kept in memory (a
+restart starts empty), each at most 2,000 characters, secrets redacted when
+captured (`redactSecretsInText`). The container's log driver keeps the
+whole log.
+
+### `GET incidents`
+
+`kind` is `failed`, `stalled`, `could-not-start` or `routine-failed`; the
+last 90 days, newest first.
+
+```json
+{
+  "items": [{
+    "id": "6f9b...", "at": 1791500000000, "kind": "failed", "bot": { "id": "5e38...", "name": "Atlas" },
+    "threadId": "a5fe...", "title": "Weekly digest", "reason": "rate_limited", "label": "The provider is rate limiting",
+    "detail": "429 Too Many Requests"
+  }],
+  "next": null
+}
+```
+
+From the problem log (`<data>/problems/`, 180 days): every incident Sagax
+reports to a Primary Bot, written before its delivery rules. `detail` is the
+cause the person reads in the thread (redacted, at most 300 characters),
+never a message; a routine failure carries `routineId`.
+
+## Settings
+
+| Method and path | Role | What |
+|---|---|---|
+| `GET settings` | admin | organization settings, policies, backup |
+| `POST settings` | admin | change policies |
+
+### `GET settings`
+
+```json
+{
+  "org": { "orgKeyConfigured": true, "allowFullAccess": true, "pluginMarketplaces": { "mode": "any" }, "github": { "clientId": null, "fromEnvironment": false }, "interimAttach": { "until": null, "people": 0 } },
+  "policies": {
+    "allowedMarketplaces": null,
+    "allowedEngines": ["claude", "codex"],
+    "defaults": { "engine": "claude", "model": "claude-opus-4-1", "approvalMode": "ask" }
+  },
+  "backup": { "enabled": true, "schedule": "daily 03:00 UTC", "lastAt": 1791472000000, "ok": true }
+}
+```
+
+`org` is what `GET /api/org` answers as `settings` (no token). `null` in a
+policy list means any. `defaults` are the New bot defaults (engine, model,
+approval level).
+
+### `POST settings`
+
+```json
+{ "allowFullAccess": false, "pluginMarketplaces": { "mode": "list", "allow": ["acme/plugins", "acme/*"] }, "allowedEngines": ["claude"], "defaults": { "engine": "claude", "model": "claude-opus-4-1", "approvalMode": "ask" }, "interimAttachDays": 0 }
+```
+
+Any subset. Answers `{settings}` (the GET shape). Refusals: 400
+`bad_request` (an unknown field or value), 400 `engine_not_installed` (an
+engine in `allowedEngines` this server does not have), 400 `invalid_policy`
+(a marketplace entry). Each changed setting writes its own `org.settings`
+row with its before and after.
+
+`allowedEngines` is enforced by the console's model changes (`POST
+bots/{id}/model`, bulk `model`); Sagax's own model picker does not read it
+yet.
+
+## Not offered yet
+
+| Route | Why |
+|---|---|
+| `POST connections/test` for a stdio MCP server | runs in its person's environment: `501 not_implemented` |
+| `people[].engines[].ok` in `GET connections` | no background check: null, test on demand |
+| `presence.idle` | Sagax knows online, away and offline only: always 0 |
+| `approvals/history` `decision: "expired"` | Sagax records no expiry decision |

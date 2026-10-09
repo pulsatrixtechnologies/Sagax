@@ -1,7 +1,7 @@
 // A console route context for unit tests of the org admin areas
 // (server/org-admin-*.ts): the viewer, the reach, the body, the records.
 import type { ConsoleAuditEntry, ConsoleContext, ConsoleRoute } from "../org-admin-console.ts";
-import { compileRoutes, matchRoutes } from "../org-admin-console.ts";
+import { compileRoutes, ConsoleRefusal, matchRoutes } from "../org-admin-console.ts";
 import type { ConsoleRole } from "../org-admin-routes.ts";
 
 export interface FakeConsole {
@@ -34,8 +34,14 @@ export function fakeConsole(routes: ConsoleRoute[], now = () => Date.now()): Fak
         record: (entry) => records.push(entry),
         now,
       };
-      const answer = await hit.route.handle(ctx);
-      return { status: answer.status, body: answer.body as any };
+      try {
+        const answer = await hit.route.handle(ctx);
+        return { status: answer.status, body: answer.body as any };
+      } catch (error) {
+        // as server/org-admin-routes.ts answers a thrown refusal
+        if (error instanceof ConsoleRefusal) return { status: error.status, body: { code: error.code, message: error.message, reason: error.message } };
+        throw error;
+      }
     },
   };
 }
