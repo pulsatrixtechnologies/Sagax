@@ -7,11 +7,11 @@
 // read receipts' `self`, or the config's viewer). A reaction stored before
 // the current shape names its person "user": the desktop's owner on a
 // personal server.
-import { useCallback } from "react";
+import { useCallback, type Dispatch } from "react";
 
 import { t } from "@/lib/i18n";
 import { viewerActorId } from "@/lib/viewer";
-import { api, useStore, type ConfigStatus, type Message } from "@/state/store";
+import { api, type Action, type ConfigStatus, type Message } from "@/state/store";
 import { normalizeReactions, type MessageReaction, type ReactionActor } from "../../shared/reactions";
 
 export interface ReactionChip {
@@ -73,9 +73,10 @@ export async function toggleReaction(threadId: string, messageId: string, emoji:
   return body?.message ?? null;
 }
 
-/** A toggle bound to one thread that also patches the store. */
-export function useToggleReaction(threadId: string): (messageId: string, emoji: string) => void {
-  const { dispatch } = useStore();
+/** A toggle bound to one thread that also patches the store. Takes the
+ * store's dispatch rather than reading the store, so a transcript row that
+ * uses it does not re-render on every store change. */
+export function useToggleReaction(threadId: string, dispatch: Dispatch<Action>): (messageId: string, emoji: string) => void {
   return useCallback((messageId: string, emoji: string) => {
     if (messageId.startsWith("optimistic-")) return;
     void toggleReaction(threadId, messageId, emoji)

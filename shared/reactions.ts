@@ -40,8 +40,8 @@ export function botReactionActorId(botId: string): string {
   return `${BOT_PREFIX}${botId}`;
 }
 
-const EMOJI_SEQUENCE = /^[\p{Extended_Pictographic}\p{Emoji_Modifier}\p{Emoji_Component}\p{Regional_Indicator}‍️⃣]+$/u;
-const EMOJI_BASE = /[\p{Extended_Pictographic}\p{Regional_Indicator}⃣]/u;
+const EMOJI_SEQUENCE = /^(?:\p{Extended_Pictographic}|\p{Emoji_Modifier}|\p{Emoji_Component}|\p{Regional_Indicator}|\u200D|\uFE0F|\u20E3)+$/u;
+const EMOJI_BASE = /\p{Extended_Pictographic}|\p{Regional_Indicator}|\u20E3/u;
 
 /** The emoji a request names, trimmed, or null when it is not one emoji
  * sequence (text, markup, an empty string, something too long). */

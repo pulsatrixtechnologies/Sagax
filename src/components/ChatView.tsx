@@ -3,6 +3,8 @@ import { useCopyFeedback } from "@/lib/copy-text";
 import { botSeenCaption, messageParticipant } from "@/lib/read-receipts";
 import { useReportRead, useThreadReads } from "@/lib/read-receipts-feed";
 import { SeenByRow, SEEN_AVATAR_SIZE, type SeenFace } from "./SeenBy";
+import { ReactionChips } from "./Reactions";
+import { myReactions, reactionSelfIds, useToggleReaction } from "@/lib/reactions";
 import {
   AlertTriangle,
   ArrowDown,
@@ -174,6 +176,8 @@ interface ChatRows {
   dispatch: Dispatch<Action>;
   /** Whether a message is on the branch shown now (citation links). */
   onBranch: (messageId: string) => boolean;
+  /** Who "I" am on a reaction chip (src/lib/reactions.ts). */
+  reactionSelf: readonly string[];
 }
 
 const ChatRowsContext = createContext<ChatRows | null>(null);
@@ -477,7 +481,18 @@ const Bubble = memo(function Bubble({
   replyTarget?: Message;
   onReply: (message: Message) => void;
 }) {
-  const { botId, threadId, botName, viewerName, voiceId, tts, localVoice, busy, mentionPeers, focus, dispatch, onBranch } = useChatRows();
+  const { botId, threadId, botName, viewerName, voiceId, tts, localVoice, busy, bots, mentionPeers, focus, dispatch, onBranch, reactionSelf } = useChatRows();
+  // Emoji reactions (src/components/Reactions.tsx): the picker beside the
+  // copy button, the chips under the bubble.
+  const [picking, setPicking] = useState(false);
+  const toggleReactionOn = useToggleReaction(threadId, dispatch);
+  const reactable = message.kind === "text" && !message.id.startsWith("optimistic-");
+  const react = reactable ? {
+    open: picking,
+    onOpenChange: setPicking,
+    onPick: (emoji: string) => toggleReactionOn(message.id, emoji),
+    mine: myReactions(message.reactions, reactionSelf),
+  } : undefined;
   const remoteClient = window.ogb?.remoteClient?.active === true;
   // A user-role line another bot delivered (ask_bot, delegate_bot,
   // start_thread) is that bot speaking, not the person: it takes the
@@ -554,6 +569,7 @@ const Bubble = memo(function Bubble({
             side="user"
             time={formatTime(message.at)}
             copy={visibleText.trim() ? <CopyButton text={visibleText} className="opacity-100" /> : undefined}
+            react={react}
           >
             {/* editing rewinds the thread, so it waits for the turn to end —
                 same rule as the version switcher below */}
@@ -680,6 +696,7 @@ const Bubble = memo(function Bubble({
             time={formatTime(message.at)}
             visible={viewRaw || speaking}
             copy={text ? <CopyButton text={text} className="opacity-100" /> : undefined}
+            react={react}
           >
             {text && (
               <MessageMenuItem
@@ -705,6 +722,7 @@ const Bubble = memo(function Bubble({
           </MessageBar>
         )}
       </div>
+      <ReactionChips reactions={message.reactions} selfIds={reactionSelf} bots={bots} end={user} onToggle={(emoji) => toggleReactionOn(message.id, emoji)} />
       {dwell.mounted && message.turnRun && <TurnRunLine run={message.turnRun} visible={dwell.shown} />}
       {forks.length > 1 && (
         <div className="mt-1 flex items-center gap-0.5 pr-1 text-[12px] text-ink-secondary">
@@ -1323,9 +1341,11 @@ export function ChatView({ bot: profile }: { bot: Bot }) {
   const branch = useRef(messages);
   branch.current = messages;
   const onBranch = useCallback((messageId: string) => branch.current.some((m) => m.id === messageId), []);
+  const reactionSelfKey = reactionSelfIds(state.config, threadReads.self).join("\n");
+  const reactionSelf = useMemo(() => reactionSelfKey.split("\n").filter(Boolean), [reactionSelfKey]);
   const rows = useMemo<ChatRows>(
-    () => ({ botId: bot.id, threadId: bot.threadId, botName: bot.name, viewerName, voiceId: bot.voice, tts, localVoice, busy, bots, mentionPeers, focus, showToolCalls, locale, dispatch, onBranch }),
-    [bot.id, bot.threadId, bot.name, viewerName, bot.voice, tts, localVoice, busy, bots, mentionPeers, focus, showToolCalls, locale, dispatch, onBranch],
+    () => ({ botId: bot.id, threadId: bot.threadId, botName: bot.name, viewerName, voiceId: bot.voice, tts, localVoice, busy, bots, mentionPeers, focus, showToolCalls, locale, dispatch, onBranch, reactionSelf }),
+    [bot.id, bot.threadId, bot.name, viewerName, bot.voice, tts, localVoice, busy, bots, mentionPeers, focus, showToolCalls, locale, dispatch, onBranch, reactionSelf],
   );
   // Where this conversation works, for the place icon on screen and page tools.
   const place = effectivePlace(bot, bot.tasks?.find((task) => task.threadId === bot.threadId));
