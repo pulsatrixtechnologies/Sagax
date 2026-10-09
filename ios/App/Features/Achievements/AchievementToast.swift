@@ -65,22 +65,36 @@ final class AchievementToastWindow {
     private var window: PassthroughWindow?
 
     func show(_ item: AchievementToastItem?) {
-        if item != nil, window == nil, let scene = UIApplication.shared.connectedScenes
+        guard item != nil else {
+            // Nothing stays above the app between banners: hide the window
+            // once the banner's exit animation (0.3 s) has played.
+            Task { @MainActor [weak self] in
+                try? await Task.sleep(nanoseconds: 400_000_000)
+                if AchievementStore.shared.toast == nil { self?.window?.isHidden = true }
+            }
+            return
+        }
+        if window == nil, let scene = UIApplication.shared.connectedScenes
             .compactMap({ $0 as? UIWindowScene })
             .first(where: { $0.activationState == .foregroundActive }) ?? UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene }).first {
             let window = PassthroughWindow(windowScene: scene)
             window.windowLevel = .alert + 1
             window.backgroundColor = .clear
-            let host = UIHostingController(rootView: AchievementToastLayer().themeRoot())
+            // The skin's tokens without `themeRoot()`: that one paints the
+            // skin's desktop colour full screen (black on the Black skin),
+            // which covered the whole app for good after the first unlock.
+            let host = UIHostingController(rootView: AchievementToastLayer().themeOverlay())
             host.view.backgroundColor = .clear
             window.rootViewController = host
-            window.isHidden = false
             self.window = window
         }
+        window?.isHidden = false
     }
 }
 
 /// Touches land on the banner only; everywhere else they go to the app.
+/// Always transparent: `ThemeUIKit.apply` leaves it out of the windows it
+/// paints with the skin.
 final class PassthroughWindow: UIWindow {
     override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
         guard let hit = super.hitTest(point, with: event), hit !== rootViewController?.view else { return nil }

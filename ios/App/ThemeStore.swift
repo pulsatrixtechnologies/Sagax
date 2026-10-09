@@ -279,8 +279,27 @@ private struct RetroDesktopStrip: View {
     }
 }
 
+/// For a window drawn above the app (the unlock banner's): the same skin in
+/// the environment and the same tint, but no background, no pinned light or
+/// dark and no UIKit dressing. The window stays transparent and the app
+/// below stays visible.
+struct ThemeOverlayRoot: ViewModifier {
+    @ObservedObject private var store = ThemeStore.shared
+    @Environment(\.colorScheme) private var scheme
+
+    func body(content: Content) -> some View {
+        let palette = store.palette(deviceDark: scheme == .dark)
+        return content
+            .environment(\.themePalette, palette)
+            .modifier(ThemeTint(palette: palette))
+            .preferredColorScheme(store.pinnedScheme)
+    }
+}
+
 extension View {
     func themeRoot() -> some View { modifier(ThemeRoot()) }
+    /// The skin for an overlay window: see `ThemeOverlayRoot`.
+    func themeOverlay() -> some View { modifier(ThemeOverlayRoot()) }
 }
 
 /// The UIKit chrome SwiftUI does not reach: navigation and tab bars in the
@@ -317,7 +336,8 @@ enum ThemeUIKit {
         let tint: UIColor? = (palette.id == .black || palette.id == .dim) ? nil : palette.accent.uiColor
         for scene in UIApplication.shared.connectedScenes {
             guard let windowScene = scene as? UIWindowScene else { continue }
-            for window in windowScene.windows {
+            // An overlay window (the unlock banner's) stays transparent.
+            for window in windowScene.windows where !(window is PassthroughWindow) {
                 window.tintColor = tint
                 window.backgroundColor = palette.desktop.uiColor
             }
