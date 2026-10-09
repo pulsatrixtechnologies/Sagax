@@ -5,15 +5,18 @@
 // arms, the head, the ears, the eyes, the mouth). Small avatars draw a skin's
 // still look (no filter, nothing moving) and the bust under 48 px; larger
 // ones breathe, blink and wiggle a trumpet in CSS (ogre-mascot.css) and play
-// a skin's idle effect, equip animation and move effects. Reduced motion
-// keeps it still.
+// a skin's idle effect, equip animation and move effects. A move (one of
+// Ogre's own, or a clip that maps to one) or an action (the desktop's walk,
+// nap, arms crossed) runs the rig frame by frame, at most 60 times a second.
+// Reduced motion keeps it still.
 import "./ogre-mascot.css";
 import "./skin-fx/skin-fx.css";
-import { memo, useId, useMemo, useRef, type ReactNode, type Ref } from "react";
+import { memo, useEffect, useId, useMemo, useRef, useState, type ReactNode, type Ref } from "react";
 import { MAUS_COLORS } from "@/lib/mascot";
 import { cn } from "@/lib/cn";
 import { OGRE_SKIN_TIER, type OgreSkin } from "../../shared/mascot-look";
 import { LOG_DROP, movePath, OGRE_ART, OGRE_PIVOTS, ogreViewBox, type OgreExpression, type OgreOp, type OgrePalette } from "./ogre-art";
+import { ogreMoveFor, OgreRig, reducedFace, type OgreMove } from "./ogre-moves";
 import { ogreFrameLayers, restFrame, type OgreFrame, type OgreLayer } from "./ogre-rig";
 import { ogreSkinId, ogreSkinLayers, ogreSkinPaint } from "./skin-fx/ogre-skins";
 import { EquipFx, MoveFx } from "./skin-fx/SkinFx";
@@ -51,9 +54,14 @@ export interface OgreMascotProps {
   /** Off draws a still frame (thumbnails, reduced motion). */
   animated?: boolean;
   detail?: FxDetail;
-  /** A one-shot move: its skin effect, and with moveBody the body's own motion. */
+  /** A one-shot move: its skin effect, and with moveBody the body's own motion (one of Ogre's moves, or a clip that maps to one). */
   move?: FxMoveRequest | null;
   moveBody?: boolean;
+  /** What the ogre is doing until told otherwise (the desktop: the walk, the nap, arms crossed), and which way it faces. */
+  action?: OgreMove | null;
+  facing?: 1 | -1;
+  /** The ground shakes (box units, each frame of a step or a stomp): the desktop shakes its window. */
+  onShake?: (amount: number) => void;
   label?: string | null;
   className?: string;
 }
@@ -159,6 +167,63 @@ function Layers({ layers, palette, uid, fx, bodyPath }: { layers: readonly OgreL
   );
 }
 
+/**
+ * Runs the rig while something plays (a one-shot move, or a held action): a
+ * frame at most 60 times a second, none while the page is hidden; null when
+ * the rig rests (the still drawing and its CSS idle show).
+ */
+function useRig(enabled: boolean, action: OgreMove | null, shot: { move: OgreMove; key: number } | null, facing: 1 | -1, onShake: ((amount: number) => void) | undefined): OgreFrame | null {
+  const [frame, setFrame] = useState<OgreFrame | null>(null);
+  const rig = useRef<OgreRig | null>(null);
+  const live = useRef({ onShake });
+  live.current = { onShake };
+  const [awake, setAwake] = useState(0);
+  // the held action and the facing go straight to the rig
+  useEffect(() => {
+    if (!enabled) return;
+    rig.current ??= new OgreRig(performance.now() / 1000);
+    rig.current.facing = facing;
+    rig.current.hold(action, performance.now() / 1000);
+    setAwake((n) => n + 1);
+  }, [enabled, action, facing]);
+  const shotKey = shot?.key ?? 0;
+  const shotMove = shot?.move ?? null;
+  useEffect(() => {
+    if (!enabled || !shotMove || !shotKey) return;
+    rig.current ??= new OgreRig(performance.now() / 1000);
+    rig.current.play(shotMove, performance.now() / 1000);
+    setAwake((n) => n + 1);
+  }, [enabled, shotMove, shotKey]);
+  useEffect(() => {
+    const current = rig.current;
+    if (!enabled || !current || !awake) {
+      setFrame(null);
+      return;
+    }
+    let raf = 0;
+    let last = 0;
+    const tick = (ms: number) => {
+      raf = requestAnimationFrame(tick);
+      if (typeof document !== "undefined" && document.hidden) return;
+      if (ms - last < 1000 / 60 - 3) return;
+      last = ms;
+      const now = performance.now() / 1000;
+      if (!current.busy(now)) {
+        cancelAnimationFrame(raf);
+        live.current.onShake?.(0);
+        setFrame(null);
+        return;
+      }
+      const next = current.frame(now);
+      live.current.onShake?.(next.shake);
+      setFrame(next);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [enabled, awake]);
+  return enabled ? frame : null;
+}
+
 export interface OgreDrawingProps {
   uid: string;
   palette: OgrePalette;
@@ -195,7 +260,7 @@ export function OgreDrawing({ uid, palette, skin, hex, size, frame, full, svgRef
   );
 }
 
-export function OgreMascot({ skin = "plain", color, size = 44, mood = "idle", expression, animated = true, detail, move, moveBody = false, label = null, className }: OgreMascotProps) {
+export function OgreMascot({ skin = "plain", color, size = 44, mood = "idle", expression, animated = true, detail, move, moveBody = false, action = null, facing = 1, onShake, label = null, className }: OgreMascotProps) {
   const known = ogreSkinId(skin);
   const hex = hexOf(color);
   const reduced = useReducedMotion();
@@ -210,17 +275,28 @@ export function OgreMascot({ skin = "plain", color, size = 44, mood = "idle", ex
   const svg = useRef<SVGSVGElement>(null);
   useReplayMove(svg, burst && moveBody ? burst.key : null);
   const face = expression ?? ogreExpressionForMood(mood);
-  const frame = useMemo(() => restFrame("rest", face), [face]);
+  // a one-shot move of the ogre's own (or a clip that maps to one) runs the rig; so does a held action
+  const own = moveBody ? ogreMoveFor(move?.clip) : null;
+  const shot = useMemo(() => (own && move?.key ? { move: own, key: move.key } : null), [own, move?.key]);
+  const rigFrame = useRig(live, action, shot, facing, onShake);
+  // reduced motion: a move shows its face and stance, still
+  const reducedMove = reduced ? (action ?? own) : null;
+  const still = useMemo(() => {
+    const shown = reducedMove ? reducedFace(reducedMove) : null;
+    return shown ? { ...restFrame(shown.stance, shown.expression), mouth: shown.mouth } : restFrame("rest", face);
+  }, [face, reducedMove]);
+  const frame = rigFrame ?? still;
   const fxPal = fxPalette(paint.fx, hex);
   return (
     <span
       ref={root}
-      className={cn("ogre-mascot relative inline-flex shrink-0", animated && `ogre-live ogre-mood-${mood}`, live && "skin-fx-live", className)}
+      className={cn("ogre-mascot relative inline-flex shrink-0", animated && `ogre-live ogre-mood-${mood}`, rigFrame && "ogre-rig", live && "skin-fx-live", className)}
       style={{ width: size, height: size }}
       data-character="ogre"
       data-ogre-skin={known}
       data-skin-tier={OGRE_SKIN_TIER[known]}
       data-expression={frame.expression}
+      data-ogre-action={action ?? undefined}
       data-fx={full ? "full" : "static"}
       role={label ? "img" : undefined}
       aria-label={label ?? undefined}
@@ -235,7 +311,7 @@ export function OgreMascot({ skin = "plain", color, size = 44, mood = "idle", ex
         frame={frame}
         full={full}
         svgRef={svg}
-        svgClass={cn(burst && moveBody && `fx-body-move fx-body-${burst.move}`, equip && "fx-equip-pop")}
+        svgClass={cn(burst && moveBody && !own && `fx-body-move fx-body-${burst.move}`, equip && "fx-equip-pop")}
         defs={paint.defs}
         marks={paint.marks}
       />
