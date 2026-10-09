@@ -5,7 +5,8 @@
 // MASTERY_ART below (no other file needs to know).
 import type { ComponentType } from "react";
 import { MASTERY_UNLOCKS, type MasteryCharacter } from "../../../shared/mascot-unlocks";
-import { FrogRewardArt } from "../FrogMascot";
+import { ShibaMascot } from "@/components/ShibaMascot";
+import { FrogRewardArt } from "@/components/FrogMascot";
 
 export interface MasteryArtProps {
   skin: string;
@@ -15,6 +16,7 @@ export interface MasteryArtProps {
 
 /** Registered art per Mastery character (append only: `shiba: ShibaRewardArt,`). */
 export const MASTERY_ART: Partial<Record<MasteryCharacter, ComponentType<MasteryArtProps>>> = {
+  shiba: ({ skin, size, animated }) => <ShibaMascot skin={skin} color="orange" size={size} animated={animated} detail="full" label={null} />,
   frog: FrogRewardArt,
 };
 

@@ -170,11 +170,11 @@ describe("Shiba's look", () => {
 });
 
 describe("Shiba's skins", () => {
-  it("has thirteen skins over the four rarities: the breed's coats, then the premium editions", () => {
+  it("has thirteen skins: Plain with the character, the breed's coats on the Mastery rungs, then the premium set", () => {
     expect([...SHIBA_SKINS]).toEqual(["plain", "cream", "blacktan", "red", "sesame", "white", "retro98", "gold", "neon", "chrome", "glitch", "holo", "molten"]);
     expect(Object.keys(SHIBA_SKIN_TIER)).toEqual([...SHIBA_SKINS]);
     const counts = Object.fromEntries(skinTierTabs(SHIBA_SKINS, SHIBA_SKIN_TIER).map((tab) => [tab.tier, tab.count]));
-    expect(counts).toEqual({ common: 6, rare: 2, epic: 3, legendary: 2 });
+    expect(counts).toEqual({ common: 1, rare: 7, epic: 3, legendary: 2 });
   });
 
   it("names every skin in English and French", () => {
@@ -239,5 +239,28 @@ describe("Shiba's drawing", () => {
     expect(html).toContain('data-character="shiba"');
     expect(html).toContain('data-shiba-skin="sesame"');
     expect(html).toContain('data-expression="laughing"');
+  });
+});
+
+describe("Shiba's Mastery unlocks", () => {
+  it("registers every skin it ships in shared/mascot-unlocks.ts, with the rarity the registry gives", async () => {
+    const { masterySkins, masteryUnlockFor, masterySkinTier, MASTERY_UNLOCKS } = await import("../../shared/mascot-unlocks");
+    expect([...masterySkins("shiba")].sort()).toEqual([...SHIBA_SKINS].sort());
+    expect(masteryUnlockFor("shiba")).toBe("hands-off");
+    expect(MASTERY_UNLOCKS.shiba.namedSkins.map((skin) => skin.id)).toEqual(["cream", "blacktan", "red", "sesame", "white"]);
+    for (const skin of SHIBA_SKINS) {
+      expect(SHIBA_SKIN_TIER[skin], skin).toBe(masterySkinTier(skin));
+      if (skin !== "plain") expect(masteryUnlockFor("shiba", skin), skin).toBeTruthy();
+    }
+    expect(masteryUnlockFor("shiba", "cream")).toBe("second-wind");
+    expect(masteryUnlockFor("shiba", "white")).toBe("quiet-nights");
+    expect(masteryUnlockFor("shiba", "gold")).toBe("pack-leader");
+  });
+
+  it("shows its real art in the achievements, not the placeholder", async () => {
+    const { MasteryArt } = await import("./achievements/mastery-art");
+    const html = renderToStaticMarkup(createElement(MasteryArt, { character: "shiba", skin: "sesame", size: 40, animated: false }));
+    expect(html).toContain('data-character="shiba"');
+    expect(html).not.toContain("data-mastery-placeholder");
   });
 });

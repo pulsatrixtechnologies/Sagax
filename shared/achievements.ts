@@ -516,7 +516,7 @@ export function grandfatheredFromBots(bots: ReadonlyArray<{ mascotLook?: unknown
     if (look.character !== "owl") keys.add(`character:${look.character}`);
     const owlSkin: MascotSkinId = botMascotSkin(bot.mascotSkin);
     if (OWL_SKIN_TIER[owlSkin] !== "common") keys.add(`skin:owl:${owlSkin}`);
-    for (const character of ["shape", "trombi", "bunbu", "shiba", "frog"] as const) {
+    for (const character of ["shape", "trombi", "bunbu"] as const) {
       // The editor saves every character's skin on any change (filled with
       // the Common default), so only a skin above Common says it was chosen:
       // then that skin, and its character, were in use.

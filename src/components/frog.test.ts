@@ -10,7 +10,8 @@ import { APP_ICON_CHOICES } from "@/lib/app-icon-choices";
 import { BotAvatar, frogExpressionFor } from "@/components/Avatar";
 import { ACHIEVEMENTS } from "../../shared/achievements-catalog";
 import { rewardKey, skinTier } from "../../shared/achievements";
-import { masterySkins, masteryUnlockFor } from "../../shared/mascot-unlocks";
+import { masterySkins, masterySkinTier, masteryUnlockFor } from "../../shared/mascot-unlocks";
+import { MasteryArt } from "./achievements/mastery-art";
 import { contrastRatio, MASCOT_COLOR_HEX } from "../../shared/mascot-colors";
 import { botMascotLook, CHARACTER_PAINT, completeMascotLook, FROG_DEFAULT_COLOR, FROG_SKIN_TIER, FROG_SKINS, LEGACY_FROG_SKINS, mascotLookSchema } from "../../shared/mascot-look";
 import { MASCOTS, mascotFor } from "./floating-bots/mascots";
@@ -183,7 +184,14 @@ describe("Frog's look", () => {
     expect(masteryUnlockFor("frog", "gold")).toBe("total-recall");
     expect(masteryUnlockFor("frog", "plain")).toBeNull();
     expect(masterySkins("frog")).toEqual([...FROG_SKINS]);
-    for (const skin of FROG_SKINS) if (skinTier("frog", skin) !== "common") expect(rewarded, skin).toContain(`skin:frog:${skin}`);
+    for (const skin of FROG_SKINS) {
+      expect(FROG_SKIN_TIER[skin], skin).toBe(masterySkinTier(skin));
+      if (skinTier("frog", skin) !== "common") expect(rewarded, skin).toContain(`skin:frog:${skin}`);
+    }
+    // its real art in the achievements, not the placeholder
+    const html = renderToStaticMarkup(createElement(MasteryArt, { character: "frog", skin: "tree", size: 40, animated: false }));
+    expect(html).toContain('data-character="frog"');
+    expect(html).not.toContain("data-mastery-placeholder");
   });
 
   it("maps the app's states to its faces", () => {
@@ -197,11 +205,11 @@ describe("Frog's look", () => {
 });
 
 describe("Frog's skins", () => {
-  it("has thirteen skins over the four rarities: real frogs, then the premium editions", () => {
+  it("has thirteen skins: Plain with the character, real frogs on the Mastery rungs, then the premium set", () => {
     expect([...FROG_SKINS]).toEqual(["plain", "leaf", "tree", "poison", "bullfrog", "ghost", "retro98", "gold", "neon", "chrome", "glitch", "holo", "molten"]);
     expect(Object.keys(FROG_SKIN_TIER)).toEqual([...FROG_SKINS]);
     const counts = Object.fromEntries(skinTierTabs(FROG_SKINS, FROG_SKIN_TIER).map((tab) => [tab.tier, tab.count]));
-    expect(counts).toEqual({ common: 6, rare: 2, epic: 3, legendary: 2 });
+    expect(counts).toEqual({ common: 1, rare: 7, epic: 3, legendary: 2 });
   });
 
   it("names every skin in English and French", () => {
