@@ -104,6 +104,20 @@ final class PluginsUITests: XCTestCase {
 
     /// The main view: one row per app with Add or Connect, a section per
     /// category, and "N connected >" to Manage (#203, #218).
+    /// "Bot templates" beside the search (ConnectAppsView): Connect apps
+    /// closes, then the new bot sheet opens (Templates is off on the fixture).
+    @MainActor
+    func testBotTemplatesBesideTheSearchOpensTheNewBotSheet() {
+        let app = launch()
+        let button = app.element("connect-apps-bot-templates")
+        XCTAssertTrue(button.waitForExistence(timeout: 10), "Bot templates beside the search")
+        ParityShots.save("Connect apps Bot templates", app)
+        button.tap()
+        XCTAssertTrue(app.element("create-bot-sheet").waitForExistence(timeout: 10), "the new bot sheet")
+        XCTAssertFalse(app.element("connect-apps-manage").exists, "Connect apps closed")
+        ParityShots.save("Bot templates opens New bot", app)
+    }
+
     @MainActor
     func testTheMainViewListsAppsAndCountsWhatIsConnected() {
         let app = launch()
