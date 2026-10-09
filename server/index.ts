@@ -734,6 +734,8 @@ import { PASS, ROUTES, dispatchRoutes } from "./routes/table.ts";
 import { createHostedSlackRoutes } from "./routes/hosted-slack.ts";
 import { createBotPresetRoutes } from "./routes/bot-presets.ts";
 import { createBotCatalogRoutes, memberImportReset } from "./routes/bot-catalog.ts";
+import { createBotZipRoutes } from "./routes/bot-zip.ts";
+import { BotZipError, closeInspected, importBotZip, inspectBotZip, planBotZip, previewBotZip, stageBotZipUpload, writeBotZip, type BotZipHost } from "./bot-zip.ts";
 import { MEMORY_INDEX, readMemoryDoc } from "./memory-store.ts";
 import { isExpired as memoryEntryExpired, parseMemoryEntries } from "./memory-entries.ts";
 import { createBotLibraryRoutes } from "./routes/bot-library.ts";
@@ -24300,6 +24302,32 @@ const orgBotsDeps: BotsDeps = {
     const exported = singleBotPackage(bot, true);
     return { document: exported.document, filename: exported.filename, redacted: exported.redacted, skipped: exported.skipped };
   },
+  // The canonical bot zip (server/bot-zip.ts), for "Copy to another server".
+  exportZip: (botId, options) => {
+    const plan = planBotZip(botZipHost, botId, options);
+    return { filename: plan.filename, bytes: plan.bytes, write: (sink) => writeBotZip(plan, sink) };
+  },
+  importZip: async (request, input) => {
+    const file = join(DATA_DIR, "tmp", "bot-imports", `console-${randomUUID()}.upload`);
+    try {
+      await stageBotZipUpload(request, file);
+      const inspected = inspectBotZip(file);
+      try {
+        if (input.preview) return { preview: await previewBotZip(botZipHost, inspected, { asMember: false }, input.name) };
+        const result = await importBotZip(botZipHost, inspected, { ownerPrincipalId: input.ownerPrincipalId, asMember: false, conversations: input.conversations, sharing: input.sharing, ...(input.name ? { name: input.name } : {}) });
+        const bot = store.bot(result.botId);
+        if (bot) broadcast({ kind: "bot", bot: publicBot(bot) });
+        return { botId: result.botId, warnings: result.warnings };
+      } finally {
+        closeInspected(inspected);
+      }
+    } catch (error) {
+      if (error instanceof BotZipError) throw new ConsoleRefusal(error.status, error.code, error.message);
+      throw error;
+    } finally {
+      rmSync(file, { force: true });
+    }
+  },
   importPackage: async (document, input) => {
     const { bots, warnings } = await importPackageFor(document, input.ownerPrincipalId);
     const first = bots[0];
@@ -24405,6 +24433,91 @@ ROUTES.push(createBotCatalogRoutes({
       ...row,
       actor: IDENTITY.kind === "perspicax" ? orgAuditActor(auth) : decisionActorFor(auth),
     });
+  },
+}));
+
+/** A bot as one zip (server/bot-zip.ts, server/routes/bot-zip.ts): the
+ * persona editor's Export and Import, New bot, Browse Bots > Templates and
+ * the admin console all read and write this one format. */
+function mcpServerSummary(name: string): { transport?: string; url?: string; command?: string; valueNames: string[] } | undefined {
+  const raw = (cfg.mcpServers ?? {})[name];
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return undefined;
+  const spec = raw as Record<string, unknown>;
+  const names = (value: unknown) => value && typeof value === "object" && !Array.isArray(value) ? Object.keys(value).slice(0, 50) : [];
+  let url: string | undefined;
+  if (typeof spec.url === "string") {
+    try {
+      const parsed = new URL(spec.url);
+      url = `${parsed.origin}${parsed.pathname}`;
+    } catch { url = undefined; }
+  }
+  return {
+    ...(typeof spec.type === "string" ? { transport: spec.type.slice(0, 20) } : url ? { transport: "http" } : typeof spec.command === "string" ? { transport: "stdio" } : {}),
+    ...(url ? { url } : {}),
+    ...(typeof spec.command === "string" ? { command: spec.command.split(/[\\/]/).pop()!.slice(0, 200) } : {}),
+    valueNames: [...names(spec.headers), ...names(spec.env)],
+  };
+}
+const botZipHost: BotZipHost = {
+  store,
+  dataDir: DATA_DIR,
+  get appVersion() { return serverVersion(); },
+  get organization() { return IDENTITY.kind === "perspicax"; },
+  routines: () => routines,
+  webhooks: () => ({
+    list: () => webhooks.list(),
+    create: (input) => webhooks.create(input as Parameters<typeof webhooks.create>[0]),
+    remove: (id) => webhooks.remove(id),
+  }),
+  plugins: botPlugins,
+  marketplaceTokenSources: () => new Set(),
+  emailOf: (principalId) => principals.byId(principalId)?.email ?? undefined,
+  principalByEmail: (email) => principals.byEmail(email)?.id ?? undefined,
+  mcpServer: mcpServerSummary,
+  engineUsable: (selection) => Boolean(registry.get(selection.instanceId)) && engineInstalled(selection.instanceId)
+    && consoleEngineAllowed(selection.instanceId) && (!hostedModels || hostedModels.allows(selection)),
+  defaultSelection: () => defaultSelection(),
+  sectionExists: (name) => store.sections.includes(name),
+  creationRefusal: () => store.bots.length >= MAX_WORKSPACE_BOTS ? `This workspace is limited to ${MAX_WORKSPACE_BOTS} bots.` : null,
+  browserProfileExists: (id) => id === "guest" || (cfg.browserProfiles ?? []).some((profile) => profile.id === id),
+  cwdUsable: (path) => validateBotCwd(path).ok,
+  importLegacy: async (document, owner, name) => {
+    const { bots, warnings } = await importPackageFor(document, owner);
+    const first = bots[0];
+    if (!first) throw new ConsoleRefusal(400, "invalid_package", "The package has no bot.");
+    if (name) store.patchBot(first.id, { name });
+    return { botId: first.id, warnings };
+  },
+};
+ROUTES.push(createBotZipRoutes({
+  host: botZipHost,
+  stagingDir: join(DATA_DIR, "tmp", "bot-imports"),
+  mayExport: (auth, botId) => {
+    const bot = store.bot(botId);
+    if (!bot) return false;
+    const level = viewerBotLevel(auth, bot);
+    return level === "owner" || level === "manage" || orgAdminCaller(auth);
+  },
+  importer: (auth) => {
+    const principalId = creatingBotOwnerId(auth);
+    if (auth.kind === "session" && !principalId) return null;
+    return {
+      principalId: principalId || undefined,
+      key: principalId || "local",
+      canCreate: botCreationAllowed(auth) && !callerBotsReadOnly(auth),
+      asMember: IDENTITY.kind === "perspicax" && !orgAdminCaller(auth),
+    };
+  },
+  audit: (auth, row) => {
+    appendAdminAction(DATA_DIR, {
+      category: "bot",
+      ...row,
+      actor: IDENTITY.kind === "perspicax" ? orgAuditActor(auth) : decisionActorFor(auth),
+    });
+  },
+  imported: (botId) => {
+    const bot = store.bot(botId);
+    if (bot) broadcast({ kind: "bot", bot: publicBot(bot) });
   },
 }));
 
