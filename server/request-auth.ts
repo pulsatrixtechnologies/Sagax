@@ -461,6 +461,10 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   { methods: ["POST"], path: /^\/api\/groups\/[\w-]+\/queue\/[\w-]+\/steer$/ },
   { methods: ["POST"], path: /^\/api\/groups\/[\w-]+\/tasks$/ },
   { methods: ["POST", "PATCH", "DELETE"], path: /^\/api\/groups\/[\w-]+\/tasks\/[\w-]+$/ },
+  // the folders of a conversation with a person's threads, its two people's
+  // (server/routes/group-folders.ts; a room has none)
+  { methods: ["POST"], path: /^\/api\/groups\/[\w-]+\/projects$/ },
+  { methods: ["PATCH", "DELETE"], path: /^\/api\/groups\/[\w-]+\/projects\/[\w-]+$/ },
   { methods: ["PATCH"], path: /^\/api\/groups\/[\w-]+$/ }, // display fields only: see clientGroupPatchViolation
   // a group's shared memory: its people read, its owner edits (server/routes/group-memory.ts)
   { methods: ["GET", "PUT"], path: /^\/api\/groups\/[\w-]+\/memory$/ },
