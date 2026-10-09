@@ -1295,6 +1295,8 @@ export type Action =
   | { type: "cancelRoutineRun"; runId: string }
   | { type: "markRoutineRunSeen"; runId: string }
   | { type: "markAllRoutineRunsSeen" }
+  | { type: "clearRoutineRuns" }
+  | { type: "routineRunsRemoved"; ids: string[] }
   | { type: "groupPatched"; group: Partial<Group> & { id: string } }
   | { type: "groupDeleted"; groupId: string }
   | { type: "createGroup"; memberIds: string[]; name?: string; section?: string }
@@ -1824,6 +1826,10 @@ export function reducer(state: AppState, action: Action): AppState {
     }
     case "routineDeleted":
       return { ...state, routines: state.routines.filter((routine) => routine.id !== action.routineId) };
+    case "routineRunsRemoved": {
+      const gone = new Set(action.ids);
+      return { ...state, routineRuns: state.routineRuns.filter((run) => !gone.has(run.id)) };
+    }
     case "routineRunPatched": {
       const exists = state.routineRuns.some((run) => run.id === action.run.id);
       const runs = exists
@@ -2707,6 +2713,7 @@ export function reducer(state: AppState, action: Action): AppState {
     case "cancelRoutineRun":
     case "markRoutineRunSeen":
     case "markAllRoutineRunsSeen":
+    case "clearRoutineRuns":
     case "refreshTaskPermissions":
     case "followBotModel":
       return state;
@@ -3487,6 +3494,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           break;
         case "markAllRoutineRunsSeen":
           api("/api/routine-runs/seen-all", { method: "POST" }).catch(showError);
+          break;
+        case "clearRoutineRuns":
+          api("/api/routine-runs", { method: "DELETE" })
+            .then(({ removed }) => rawDispatch({ type: "routineRunsRemoved", ids: Array.isArray(removed) ? removed : [] }))
+            .catch(showError);
           break;
         case "cancelQueued":
           void api(`/api/bots/${action.botId}/queue/${action.queueId}`, { method: "DELETE", body: JSON.stringify({ threadId: action.threadId }) })

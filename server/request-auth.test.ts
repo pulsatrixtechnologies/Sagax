@@ -114,7 +114,7 @@ describe("scopes", () => {
       ["PATCH", "/api/bots/x/cards/m"], ["POST", "/api/groups/g/messages"], ["PATCH", "/api/groups/g"],
       ["PATCH", "/api/bots/x"], ["PATCH", "/api/bots/x/profile"], ["POST", "/api/attachments"],
       ["GET", "/api/attachments/a.png"], ["POST", "/api/routines"], ["POST", "/api/routines/r/run"],
-      ["POST", "/api/routine-runs/seen-all"],
+      ["POST", "/api/routine-runs/seen-all"], ["DELETE", "/api/routine-runs"],
       // desktop remote-client parity: steer (bot and room) and the engines catalogue (redacted)
       ["POST", "/api/bots/x/queue/q/steer"], ["POST", "/api/groups/g/queue/q/steer"],
       ["GET", "/api/bots"], ["GET", "/api/groups"], ["GET", "/api/threads/t/messages"], ["GET", "/api/search"], ["GET", "/api/events"],

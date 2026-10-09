@@ -183,7 +183,6 @@ describe("profileMenuItems", () => {
     releaseNotesLabel: "Release notes",
     teamMapActive: false,
     automationsActive: true,
-    routineAttention: true,
     updateItem: null,
     handlers,
     ...patch,
@@ -210,15 +209,15 @@ describe("profileMenuItems", () => {
     expect(menu.find((entry) => entry.key === "about")?.separatorBefore).toBe(true);
     expect(menu.find((entry) => entry.key === "team-map")?.separatorBefore).toBeUndefined();
     expect(menu.find((entry) => entry.key === "routines")).toMatchObject({
-      attention: true,
       active: true,
       tourId: "nav-automations",
     });
+    expect(menu.find((entry) => entry.key === "routines")).not.toHaveProperty("attention");
     expect(menu.some((entry) => entry.key === "phone" || entry.key === "help")).toBe(false);
   });
 
   it("drops achievements when they are not ready and keeps one hairline under the pair", () => {
-    const menu = items({ achievementsLabel: null, routineAttention: false, automationsActive: false });
+    const menu = items({ achievementsLabel: null, automationsActive: false });
     expect(menu.map((entry) => entry.key)).toEqual(["team-map", "routines", "settings", "shortcuts", "release-notes", "about"]);
     expect(menu.filter((entry) => entry.separatorBefore).map((entry) => entry.key)).toEqual(["settings", "about"]);
   });

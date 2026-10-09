@@ -1583,6 +1583,19 @@ export class RoutineManager {
     return updated.map(cloneRun);
   }
 
+  /** Delete saved run logs the caller may see (`allow`), never one still
+   * queued, running or waiting. One committed save; a failed save rolls the
+   * runs back. Returns the ids removed. */
+  clearRuns(allow: (run: RoutineRun) => boolean): string[] {
+    const doomed = this.runs.filter((run) => !["queued", "running", "waiting"].includes(run.status) && allow(cloneRun(run)));
+    if (!doomed.length) return [];
+    const ids = new Set(doomed.map((run) => run.id));
+    this.commitMutation(() => {
+      this.runs = this.runs.filter((run) => !ids.has(run.id));
+    });
+    return [...ids];
+  }
+
   get isTicking(): boolean { return this.ticking; }
 
   start() {
