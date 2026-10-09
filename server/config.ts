@@ -462,6 +462,9 @@ const appConfigSchema = z.object({
     /** The organization's GitHub OAuth App (device flow) for "Connecter
      * GitHub"; SAGAX_GITHUB_CLIENT_ID provides a default. */
     githubClientId: z.string().max(128).optional(),
+    /** 2026-10-08, the console's Settings: the engine instances bots may be
+     * switched to from the console. Absent means every engine. */
+    allowedEngines: z.array(z.string().max(80)).max(100).optional(),
   }).optional(),
   /** When stored person references became principal ids (server/identity-migration.ts). */
   identityMigratedAt: z.number().optional(),
@@ -700,6 +703,7 @@ export interface AppConfig {
     allowFullAccess?: boolean;
     pluginMarketplaces?: { mode: "any" } | { mode: "list"; allow: string[] };
     githubClientId?: string;
+    allowedEngines?: string[];
   };
   /** When stored person references became principal ids (server/identity-migration.ts). */
   identityMigratedAt?: number;
