@@ -164,6 +164,11 @@ async function startFakeGithub(): Promise<void> {
       if (req.headers.authorization !== `Bearer ${GITHUB_TOKEN}`) return send(401, { message: "Bad credentials" });
       return send(200, { login: "bob-gh", name: "Bob GitHub" }, { "x-oauth-scopes": "repo, read:org, gist, workflow" });
     }
+    // Before a clone Sagax asks the API which credential reads the repository (github-access.ts, #271).
+    if (req.method === "GET" && req.url === "/repos/acme/tools") {
+      // readable without a credential (a person with no GitHub connection), as the local git marketplace is
+      return send(200, { full_name: "acme/tools", private: false });
+    }
     send(404, { message: "Not Found" });
   });
   await new Promise<void>((resolve) => github.listen(0, "127.0.0.1", resolve));

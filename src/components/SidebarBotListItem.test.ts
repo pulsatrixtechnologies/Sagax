@@ -325,7 +325,7 @@ describe("bot deletion feedback", () => {
         const markup = renderRow(bot(), quiet);
         expect(markup).not.toContain("rounded-full");
         expect(markup).not.toContain("-dot");
-        expect(markup).not.toContain('aria-label="Unread threads"');
+        expect(markup).not.toMatch(/sr-only[^>]*>Unread threads</);
       }
     });
 
@@ -333,14 +333,15 @@ describe("bot deletion feedback", () => {
       expect(renderRow(bot({ busy: true }))).toContain('data-testid="working-dot"');
       expect(renderRow(bot({ activity: "waiting-on-you" }))).toContain('data-testid="waiting-dot"');
       const unread = renderRow(bot({ unread: true }));
-      expect(unread).toContain('aria-label="Unread threads"');
-      expect(unread).toContain("bg-unread");
+      // Unread rows go bold with a screen-reader label instead of a dot (478bd6216); the icon rail keeps its marker.
+      expect(unread).toMatch(/sr-only[^>]*>Unread threads</);
+      expect(unread).toContain("font-semibold");
       expect(unread).not.toContain("bg-white");
     });
 
     it("keeps the unread dot in the name line when the preview line is gone", () => {
       const markup = renderRow(bot({ unread: true, messages: [{ id: "b1", role: "bot", kind: "text", text: "hello", at: 1 }] as Bot["messages"] }), true);
-      expect(markup).toContain('aria-label="Unread threads"');
+      expect(markup).toMatch(/sr-only[^>]*>Unread threads</);
       expect(markup).not.toContain(">hello<");
     });
 

@@ -11193,6 +11193,7 @@ describe("harness HTTP API", () => {
     expect(response.status).toBe(200);
     expect(response.body).toEqual({
       configured: true,
+      disabledTools: {}, // the workspace's per-tool switches (#272)
       services: {
         gmail: [
           { name: "GMAIL_FETCH_EMAILS", description: "Fetch emails" },
@@ -12238,7 +12239,8 @@ describe("bot memory API", () => {
       // bot need exist in this section, and computer defaults to "auto").
       // composio: false makes "Has no connected apps." definite whatever the
       // harness connector reports (an earlier test configures it).
-      await api("PATCH", `/api/bots/${bot.id}`, { computer: "off", peers: [], composio: false });
+      // approvalMode ask: new bots start on Approve for me (51647a630), which has no "Ask mode" sentence.
+      await api("PATCH", `/api/bots/${bot.id}`, { computer: "off", peers: [], composio: false, approvalMode: "ask" });
 
       const fresh = await api("GET", `/api/bots/${bot.id}/overview`);
       expect(fresh.status).toBe(200);

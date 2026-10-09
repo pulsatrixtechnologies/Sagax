@@ -1017,7 +1017,7 @@
   "connectApps.detail.accounts": "Contas",
   "connectApps.detail.accountsCount": "Contas",
   "connectApps.detail.addAccount": "Adicionar outra conta",
-  "connectApps.detail.appToolsNote": "Uma ferramenta desativada aqui fica desativada para todos os bots deste espaço de trabalho. As escolhas de ferramentas de cada bot continuam valendo por cima.",
+  "connectApps.detail.appToolsNote": "Uma ferramenta desativada aqui fica desativada para todos os bots desta instalação. As escolhas de ferramentas de cada bot continuam valendo por cima.",
   "connectApps.detail.command": "Comando",
   "connectApps.detail.defaultAccount": "padrão",
   "connectApps.detail.details": "Detalhes",

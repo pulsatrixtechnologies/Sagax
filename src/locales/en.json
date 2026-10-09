@@ -2021,7 +2021,7 @@
   "connectApps.detail.accounts": "Accounts",
   "connectApps.detail.accountsCount": "Accounts",
   "connectApps.detail.addAccount": "Add another account",
-  "connectApps.detail.appToolsNote": "A tool turned off here is off for every bot of this workspace. Each bot's own tool choices still apply on top.",
+  "connectApps.detail.appToolsNote": "A tool turned off here is off for every bot of this installation. Each bot's own tool choices still apply on top.",
   "connectApps.detail.command": "Command",
   "connectApps.detail.defaultAccount": "default",
   "connectApps.detail.details": "Details",

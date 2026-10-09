@@ -11,6 +11,10 @@ import { describe, expect, it } from "vitest";
 const here = dirname(fileURLToPath(import.meta.url));
 const MARK_FILES = readdirSync(here).filter((name) => /Mark\.tsx$|^ProviderIcons\.tsx$/.test(name));
 
+// PulsatrixMark draws a white owl for dark rails and a navy one for light rails, and the skin tokens show exactly
+// one of them (see its header), so its white is never painted on a light skin.
+const ON_DARK_ONLY = new Map([["PulsatrixMark.tsx", new Set(["FFFFFF"])]]);
+
 describe("provider marks", () => {
   it("paints no mark in a colour a light skin cannot show", () => {
     expect(MARK_FILES.length).toBeGreaterThan(1);
@@ -19,6 +23,7 @@ describe("provider marks", () => {
       // any literal from #dddddd upward, in a fill/text utility or an attribute
       const tooLight = [...source.matchAll(/#([a-fA-F0-9]{3}|[a-fA-F0-9]{6})\b/g)]
         .map(([, hex]) => hex.length === 3 ? [...hex].map((c) => c + c).join("") : hex)
+        .filter((hex) => !ON_DARK_ONLY.get(file)?.has(hex.toUpperCase()))
         .filter((hex) => {
           const [r, g, b] = [0, 2, 4].map((i) => parseInt(hex.slice(i, i + 2), 16));
           return Math.min(r, g, b) >= 0xdd;

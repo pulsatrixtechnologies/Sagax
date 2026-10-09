@@ -124,7 +124,7 @@ describe("threads a bot opened", () => {
     const waiting = render({ threadId: "qa", title: "QA PR 245", openedBy, activity: "waiting-on-you", unread: true });
     expect(waiting).toContain('title="QA PR 245 · Waiting · Unread"');
     expect(waiting).toContain(">Waiting</span>");
-    expect(waiting).toContain('aria-label="Unread"');
+    expect(waiting).toMatch(/sr-only[^>]*>Unread</); // bold title plus a screen-reader label, no dot (478bd6216)
     expect(waiting).toContain("opened by Scout");
     // and it stays on screen past the six recent rows, exactly like a thread the person opened
     const rows = Array.from({ length: 9 }, (_, index) => ({ threadId: String(index), title: `Thread ${index}` }));
@@ -187,7 +187,7 @@ describe("threads a bot opened", () => {
     const waiting = render({ threadId: "qa", title: "QA PR 245", openedBy, activity: "waiting-on-you", unread: true });
     expect(waiting).toContain('title="QA PR 245 · Waiting · Unread"');
     expect(waiting).toContain(">Waiting</span>");
-    expect(waiting).toContain('aria-label="Unread"');
+    expect(waiting).toMatch(/sr-only[^>]*>Unread</); // bold title plus a screen-reader label, no dot (478bd6216)
     expect(waiting).toContain("opened by Scout");
     // and it stays on screen past the six recent rows, exactly like a thread the person opened
     const rows = Array.from({ length: 9 }, (_, index) => ({ threadId: String(index), title: `Thread ${index}` }));
