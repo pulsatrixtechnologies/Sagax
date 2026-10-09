@@ -453,4 +453,56 @@ posixOnly("Perspicax console: the Sagax admin routes", () => {
     expect(audit.map((row) => row.action)).toEqual(expect.arrayContaining(["routine.resume", "routine.run_now", "routine.pause"]));
     expect(audit.find((row) => row.action === "routine.run_now")).toMatchObject({ actor: { via: "console", principalId: ids.alice } });
   }, 60_000);
+
+  it("C5: connections with a test, logs, incidents, settings", async () => {
+    const connections = await admin("GET", "connections", ALICE);
+    expect(connections.status, connections.text).toBe(200);
+    expect(connections.body.engines.find((engine: { id: string }) => engine.id === "claude")).toMatchObject({ installed: true, orgKey: true, people: expect.any(Number) });
+    expect(connections.body.people.map((entry: any) => entry.person.name)).toEqual(expect.arrayContaining(["Alice", "Bob", "Mona", "Zoe"]));
+    expect(connections.body.composio).toEqual({ configured: false, apps: [] });
+    expect(connections.body).toMatchObject({ mcpServers: [], marketplaces: [], skills: [] });
+    expect(connections.text).not.toContain("sk-ant-");
+    expect((await admin("GET", "connections", MONA)).body.code).toBe("forbidden_role");
+
+    const test = await admin("POST", "connections/test", ALICE, { kind: "engine", id: "claude" });
+    expect(test.status, test.text).toBe(200);
+    expect(test.body).toEqual({ ok: true, latencyMs: expect.any(Number), reason: null, label: null });
+    expect((await admin("POST", "connections/test", ALICE, { kind: "engine", id: "ghost" })).body).toMatchObject({ ok: false, reason: "engine_not_installed" });
+    expect((await admin("POST", "connections/test", ALICE, { kind: "composio", id: "any" })).body).toMatchObject({ ok: false, reason: "not_configured" });
+
+    const logs = await admin("GET", "logs?limit=500", ALICE);
+    expect(logs.status, logs.text).toBe(200);
+    expect(logs.body.lines.length).toBeGreaterThan(0);
+    expect(logs.body.lines[0]).toEqual({ seq: expect.any(Number), at: expect.any(Number), level: expect.any(String), area: expect.anything(), message: expect.any(String) });
+    expect(logs.text).not.toContain(ORG_KEY);
+    expect(logs.text).not.toContain(idp.linkToken);
+    expect((await admin("GET", "logs?level=error", ALICE)).body.lines.every((line: { level: string }) => line.level === "error")).toBe(true);
+    expect((await admin("GET", "logs", MONA)).body.code).toBe("forbidden_role");
+
+    const incidents = await admin("GET", "incidents", ALICE, undefined, french);
+    expect(incidents.status, incidents.text).toBe(200);
+    expect(incidents.body.items.find((item: any) => item.bot.id === bots.brittle!.id)).toMatchObject({ kind: "failed", reason: "rate_limited", label: "Le fournisseur limite le débit", threadId: bots.brittle!.threadId });
+
+    const settings = await admin("GET", "settings", ALICE);
+    expect(settings.status, settings.text).toBe(200);
+    expect(settings.body).toMatchObject({
+      org: { allowFullAccess: true, orgKeyConfigured: true },
+      policies: { allowedMarketplaces: null, allowedEngines: null },
+      backup: { enabled: true, schedule: "daily 03:00 UTC", ok: true },
+    });
+    const saved = await admin("POST", "settings", ALICE, { allowFullAccess: false, allowedEngines: ["claude", "hold"], pluginMarketplaces: { mode: "list", allow: ["acme/plugins"] }, defaults: { approvalMode: "ask" } });
+    expect(saved.status, saved.text).toBe(200);
+    expect(saved.body.settings).toMatchObject({
+      org: { allowFullAccess: false },
+      policies: { allowedEngines: ["claude", "hold"], allowedMarketplaces: ["acme/plugins"], defaults: { approvalMode: "ask" } },
+    });
+    // the engine policy holds for the console's model change
+    expect((await admin("POST", `bots/${bots.atlas!.id}/model`, ALICE, { engineInstanceId: "broken", model: null })).body.code).toBe("engine_not_allowed");
+    expect((await admin("POST", "settings", ALICE, { allowedEngines: ["ghost"] })).body.code).toBe("engine_not_installed");
+    expect((await admin("POST", "settings", ALICE, { nope: true })).body.code).toBe("bad_request");
+    const reset = await admin("POST", "settings", ALICE, { allowFullAccess: true, allowedEngines: null, pluginMarketplaces: { mode: "any" } });
+    expect(reset.body.settings.policies).toMatchObject({ allowedEngines: null, allowedMarketplaces: null });
+    const audit = (await admin("GET", "audit?category=org&limit=50", ALICE)).body.rows as Array<any>;
+    expect(audit.filter((row) => row.action === "org.settings" && row.actor.via === "console").map((row) => row.changed[0])).toEqual(expect.arrayContaining(["allowFullAccess", "allowedEngines", "pluginMarketplaces", "defaults"]));
+  }, 60_000);
 });

@@ -7,6 +7,8 @@ import "../electron/legacy-env-boot.mjs";
 import { ENVIRONMENT_PATHS, HEALTH_IDENTITY } from "../electron/legacy-names.mjs";
 // Then the upstream/analytics network block (network-guard.ts).
 import "./network-guard.ts";
+// The console's server log tail captures from here on (server-log-ring.ts).
+import { serverLog } from "./server-log-capture.ts";
 import { groupOwnerId, groupPatchOwnerRefusal, mayDeleteGroup, ownsGroup, type GroupActor } from "./group-ownership.ts";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
@@ -731,7 +733,7 @@ import { createMarketplaceRoutes } from "./routes/marketplaces.ts";
 import { PluginMarketplaces, marketplaceServerName } from "./plugin-marketplaces.ts";
 import { createAccountRoutes } from "./routes/account.ts";
 import { createRegistrySearch } from "./plugin-registry.ts";
-import { BotPluginError, BotPlugins, marketplacePolicySchema, normalizePolicyEntry, type MarketplacePolicy } from "./bot-plugins.ts";
+import { BotPluginError, BotPlugins, marketplaceAllowed, marketplacePolicySchema, normalizePolicyEntry, parseGitSource, type MarketplacePolicy } from "./bot-plugins.ts";
 import { claudePluginDirs, pluginTurnFiles, pluginTurnPrompt } from "./plugin-turn.ts";
 import { createBotPluginRoutes } from "./routes/bot-plugins.ts";
 import { GithubConnect, githubAuthorizedFetch, githubGitEnvironment, githubSandboxArgv } from "./github-connect.ts";
@@ -792,6 +794,7 @@ import { botsRoutes, type BotsDeps } from "./org-admin-bots.ts";
 import { ConsoleRefusal } from "./org-admin-console.ts";
 import { routineScheduleLabel } from "./org-admin-schedule.ts";
 import { routinesRoutes, type RoutinesDeps } from "./org-admin-routines.ts";
+import { opsRoutes, type ConnectionsView, type OpsDeps, type TestResult } from "./org-admin-ops.ts";
 import { createOrgImportRoute } from "./org-import-routes.ts";
 import { readSandboxdKey } from "./sandboxd-auth.ts";
 import { sandboxdClient } from "./user-sandbox-client.ts";
@@ -22742,44 +22745,14 @@ if (IDENTITY.kind === "perspicax") {
     settings: orgSettings,
     // Slice 8: shorten, extend (at most 90 days from when it opened) or
     // close the window to attach people from before Perspicax.
-    saveInterimAttachDays: (days, auth) => {
-      const before = cfg.organization?.interimAttach;
-      const next = windowWithDays(before, days, Date.now());
-      saveConfig({ organization: { ...cfg.organization, interimAttach: next } });
-      cfg.organization = { ...cfg.organization, interimAttach: next };
-      orgAudit({
-        category: "org", action: "org.settings", target: { kind: "organization" }, changed: ["interimAttachDays"],
-        before: { interimAttachDays: before?.days ?? null }, after: { interimAttachDays: days },
-        actor: orgAuditActor(auth),
-      });
-    },
+    saveInterimAttachDays: (days, auth) => saveOrgInterimAttachDays(days, orgAuditActor(auth)),
     // Allow or refuse Full access for every bot of the organization
     // (org-full-access.ts). Turning it off makes stored Full run as Ask and
     // refuses new turns asking Full; nothing is rewritten.
-    saveAllowFullAccess: (allowed, auth) => {
-      const before = orgFullAccessPolicy();
-      saveConfig({ organization: { ...cfg.organization, allowFullAccess: allowed } });
-      cfg.organization = { ...cfg.organization, allowFullAccess: allowed };
-      orgAudit({
-        category: "org", action: "org.settings", target: { kind: "organization" }, changed: ["allowFullAccess"],
-        before: { allowFullAccess: before }, after: { allowFullAccess: allowed },
-        actor: orgAuditActor(auth),
-      });
-    },
+    saveAllowFullAccess: (allowed, auth) => saveOrgAllowFullAccess(allowed, orgAuditActor(auth)),
     // Where bots' plugins may come from (server/bot-plugins.ts): any
     // marketplace, or the admin's list of owner/repo, owner/* or URLs.
-    savePluginMarketplaces: (raw, auth) => {
-      const parsed = marketplacePolicySchema.safeParse(raw);
-      if (!parsed.success) throw new Error("Send { mode: \"any\" } or { mode: \"list\", allow: [\"owner/repo\", \"owner/*\", \"https://...\"] }.");
-      const next: MarketplacePolicy = parsed.data.mode === "any" ? { mode: "any" } : { mode: "list", allow: [...new Set(parsed.data.allow.map(normalizePolicyEntry))] };
-      const before = pluginMarketplacePolicy() ?? { mode: "any" };
-      saveConfig({ organization: { ...cfg.organization, pluginMarketplaces: next } });
-      cfg.organization = { ...cfg.organization, pluginMarketplaces: next };
-      orgAudit({
-        category: "org", action: "org.settings", target: { kind: "organization" }, changed: ["pluginMarketplaces"],
-        before: { pluginMarketplaces: before }, after: { pluginMarketplaces: next }, actor: orgAuditActor(auth),
-      });
-    },
+    savePluginMarketplaces: (raw, auth) => saveOrgPluginMarketplaces(raw, orgAuditActor(auth)),
     saveGithubClientId: (clientId, auth) => {
       const before = cfg.organization?.githubClientId ?? null;
       const organization = { ...cfg.organization };
@@ -23854,10 +23827,239 @@ const orgRoutinesDeps: RoutinesDeps = {
   },
 };
 
+/** A reachability check of an address an admin configured (an MCP server,
+ * a marketplace): any HTTP answer below 500 means it is up. No credential
+ * is sent; redirects are not followed. */
+async function reachable(url: string): Promise<TestResult> {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return { ok: false, reason: "bad_address", label: "The address is not a URL." };
+  }
+  if (parsed.protocol !== "https:" && parsed.protocol !== "http:") return { ok: false, reason: "bad_address", label: "Only http and https addresses can be tested." };
+  try {
+    const res = await fetch(parsed, { method: "GET", redirect: "manual", signal: AbortSignal.timeout(8_000) });
+    await res.body?.cancel().catch(() => {});
+    return res.status < 500 ? { ok: true, reason: null, label: null } : { ok: false, reason: "http_error", label: `The server answered ${res.status}.` };
+  } catch (error) {
+    return { ok: false, reason: "unreachable", label: redactSecretsInText(error instanceof Error ? (error.cause instanceof Error ? error.cause.message : error.message) : String(error)).slice(0, 300) };
+  }
+}
+
+/** The organization's MCP servers (config.json), as names and transports. */
+function orgMcpServers(): Array<{ name: string; transport: "remote" | "stdio"; url: string | null; enabled: boolean }> {
+  return Object.entries(cfg.mcpServers ?? {}).map(([name, raw]) => {
+    const value = raw && typeof raw === "object" ? raw as Record<string, unknown> : {};
+    const url = typeof value.url === "string" ? value.url : null;
+    return { name, transport: url ? "remote" as const : "stdio" as const, url, enabled: value.disabled !== true && value.enabled !== false };
+  }).sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/** The console's Connections, Logs, Incidents and Settings (server/org-admin-ops.ts). */
+const orgOpsDeps: OpsDeps = {
+  connections: async (): Promise<ConnectionsView> => {
+    const people = orgPeopleDeps.people().filter((person) => !person.perspicaxDisabled && !person.consoleDisabled);
+    const engines = registry.entries().map((entry) => {
+      const driver = entry.shadow?.driverKind ?? entry.live?.driverKind ?? "";
+      return {
+        id: entry.instanceId,
+        name: engineDisplayName(entry.live ?? entry.shadow),
+        installed: engineInstalled(entry.instanceId),
+        version: engineProbes.get(entry.instanceId)?.version ?? null,
+        orgKey: driverKeyBacked(cfg, driver, entry.instanceId),
+        people: people.filter((person) => person.engines.some((engine) => engine.id === entry.instanceId && engine.via !== "none")).length,
+      };
+    });
+    const mcpServers: ConnectionsView["mcpServers"] = orgMcpServers().map((server) => ({
+      id: server.name, name: server.name, scope: "org" as const, owner: null, transport: server.transport, state: server.enabled ? "enabled" : "disabled",
+    }));
+    for (const person of people) {
+      for (const [name, server] of Object.entries(personConnections.servers(person.principalId))) {
+        mcpServers.push({ id: name, name, scope: "person", owner: adminPerson(person.principalId), transport: server.kind === "stdio" ? "stdio" : "remote", state: server.enabled ? "enabled" : "disabled" });
+      }
+    }
+    const configured = composio.configured(cfg);
+    let slugs: readonly string[] = [];
+    if (configured) {
+      try {
+        slugs = await Promise.race([composio.connectedServiceSlugs(cfg), new Promise<readonly string[]>((resolve) => setTimeout(() => resolve([]), 5_000).unref())]);
+      } catch {
+        slugs = [];
+      }
+    }
+    const policy = pluginMarketplacePolicy();
+    const library = skillsLibraryEnabled(cfg) ? listLibrarySkills() : [];
+    return {
+      engines,
+      people: people.map((person) => ({
+        person: adminPerson(person.principalId),
+        engines: person.engines.map((engine) => ({ id: engine.id, via: engine.via, ok: null, checkedAt: null })),
+        mcpServers: Object.keys(personConnections.servers(person.principalId)).length,
+        composioApps: 0,
+      })),
+      mcpServers,
+      composio: {
+        configured,
+        apps: slugs.map((slug) => ({
+          slug, name: slug,
+          people: new Set(store.bots.filter((bot) => bot.connectorTools && Object.hasOwn(bot.connectorTools, slug)).map((bot) => effectiveBotOwner(bot))).size,
+        })),
+      },
+      marketplaces: pluginMarketplaces.list().map((market) => {
+        let allowed = true;
+        try {
+          allowed = marketplaceAllowed(policy, parseGitSource(market.source, market.ref));
+        } catch {
+          allowed = false;
+        }
+        return { id: market.name, name: market.name, url: market.source, allowed, plugins: market.plugins.length };
+      }),
+      skills: library.map((skill) => ({
+        id: skill.name, name: skill.name, source: skill.source || null, version: skill.sha256 ? skill.sha256.slice(0, 12) : null,
+        bots: store.bots.filter((bot) => bot.assignedSkills?.includes(skill.name)).length,
+      })),
+    };
+  },
+  test: async (kind, id, principalId) => {
+    if (kind === "engine") {
+      const live = registry.get(id);
+      if (!live) return { ok: false, reason: "engine_not_installed", label: `No engine ${id} on this server.` };
+      const snapshot = await live.snapshot();
+      if (snapshot.state !== "available") return { ok: false, reason: "engine_unavailable", label: redactSecretsInText(snapshot.reason ?? "The engine is not available.").slice(0, 300) };
+      if (principalId) {
+        const access = personEngineAccess(principalId).find((engine) => engine.id === id);
+        if (!access || access.via === "none") return { ok: false, reason: "no_access", label: "This person has no access to this engine (no subscription, no key, no organization key)." };
+      } else if (snapshot.authenticated === false && !driverKeyBacked(cfg, live.driverKind, id)) {
+        return { ok: false, reason: "auth", label: "The engine is installed but not signed in, and the organization has no key for it." };
+      }
+      return { ok: true, reason: null, label: null };
+    }
+    if (kind === "mcp") {
+      const server = principalId
+        ? (() => { const own = personConnections.servers(principalId)[id]; return own ? { url: own.kind === "stdio" ? null : own.url } : null; })()
+        : orgMcpServers().find((candidate) => candidate.name === id) ?? null;
+      if (!server) return { ok: false, reason: "not_found", label: "No MCP server with that name." };
+      return server.url ? reachable(server.url) : null;
+    }
+    if (kind === "marketplace") {
+      const market = pluginMarketplaces.list().find((candidate) => candidate.name === id);
+      if (!market) return { ok: false, reason: "not_found", label: "No marketplace with that name." };
+      const source = market.source.trim();
+      return reachable(/^[\w.-]+\/[\w.-]+$/.test(source) ? `https://github.com/${source}` : source);
+    }
+    if (!composio.configured(cfg)) return { ok: false, reason: "not_configured", label: "Connected apps (Composio) are not set up on this server." };
+    await composio.connectedServiceSlugs(cfg);
+    return { ok: true, reason: null, label: null };
+  },
+  logs: (input) => serverLog.read(input),
+  problems: (from) => readProblems(DATA_DIR, { from }),
+  settings: () => {
+    const selection = cfg.newBotDefaults?.profile.modelSelection ?? cfg.defaultModelSelection;
+    const policy = pluginMarketplacePolicy();
+    const backup = readBackupStatus(process.env.SAGAX_BACKUP_STATUS_FILE?.trim() || join(DATA_DIR, "backup-status.json"));
+    return {
+      org: orgSettings(),
+      policies: {
+        allowedMarketplaces: policy?.mode === "list" ? [...policy.allow] : null,
+        allowedEngines: cfg.organization?.allowedEngines ? [...cfg.organization.allowedEngines] : null,
+        defaults: { engine: selection?.instanceId ?? null, model: selection?.model ?? null, approvalMode: cfg.newBotDefaults?.profile.approvalMode ?? null },
+      },
+      backup,
+    };
+  },
+  saveSettings: (changes, adminPrincipalId) => {
+    const actor: AdminActor = { kind: "person", principalId: adminPrincipalId, via: "console" };
+    if (changes.allowedEngines !== undefined) {
+      const unknown = (changes.allowedEngines ?? []).find((id) => !registry.entries().some((entry) => entry.instanceId === id));
+      if (unknown) throw new ConsoleRefusal(400, "engine_not_installed", `No engine ${unknown} on this server.`);
+    }
+    if (changes.defaults && (changes.defaults.engine !== undefined || changes.defaults.model !== undefined)) {
+      const current = cfg.newBotDefaults?.profile.modelSelection ?? cfg.defaultModelSelection;
+      const instanceId = changes.defaults.engine ?? current?.instanceId;
+      const model = changes.defaults.model ?? (instanceId === current?.instanceId ? current?.model : registry.get(instanceId ?? "")?.models.default);
+      if (!instanceId || !model) throw new ConsoleRefusal(400, "bad_request", "Name the default engine and model.");
+      const checked = checkedModelSelection({ instanceId, model }, undefined, true);
+      if (!checked.ok) throw new ConsoleRefusal(checked.status, "bad_request", checked.error);
+    }
+    try {
+      if (changes.pluginMarketplaces) saveOrgPluginMarketplaces(changes.pluginMarketplaces, actor);
+    } catch (error) {
+      throw new ConsoleRefusal(400, "invalid_policy", error instanceof Error ? error.message : "That marketplace list is not valid.");
+    }
+    if (changes.allowFullAccess !== undefined) saveOrgAllowFullAccess(changes.allowFullAccess, actor);
+    if (changes.interimAttachDays !== undefined) saveOrgInterimAttachDays(changes.interimAttachDays, actor);
+    if (changes.allowedEngines !== undefined) {
+      const before = cfg.organization?.allowedEngines ?? null;
+      const organization = { ...cfg.organization };
+      if (changes.allowedEngines) organization.allowedEngines = changes.allowedEngines;
+      else delete organization.allowedEngines;
+      saveConfig({ organization });
+      cfg.organization = organization;
+      orgAudit({ category: "org", action: "org.settings", target: { kind: "organization" }, changed: ["allowedEngines"], before: { allowedEngines: before }, after: { allowedEngines: changes.allowedEngines }, actor });
+    }
+    if (changes.defaults) {
+      const current = cfg.newBotDefaults?.profile.modelSelection ?? cfg.defaultModelSelection;
+      const instanceId = changes.defaults.engine ?? current?.instanceId;
+      const model = changes.defaults.model ?? (instanceId === current?.instanceId ? current?.model : registry.get(instanceId ?? "")?.models.default);
+      const profile = { ...cfg.newBotDefaults?.profile } as Record<string, unknown>;
+      if (instanceId && model && (changes.defaults.engine !== undefined || changes.defaults.model !== undefined)) profile.modelSelection = { instanceId, model };
+      if (changes.defaults.approvalMode !== undefined) {
+        if (changes.defaults.approvalMode) profile.approvalMode = changes.defaults.approvalMode;
+        else delete profile.approvalMode;
+      }
+      const next = newBotDefaultsSchema.parse({ ...cfg.newBotDefaults, profile });
+      const before = { engine: current?.instanceId ?? null, model: current?.model ?? null, approvalMode: cfg.newBotDefaults?.profile.approvalMode ?? null };
+      saveConfig({ newBotDefaults: next });
+      cfg.newBotDefaults = next;
+      const after = next.profile.modelSelection;
+      orgAudit({
+        category: "org", action: "org.settings", target: { kind: "organization" }, changed: ["defaults"], before,
+        after: { engine: after?.instanceId ?? null, model: after?.model ?? null, approvalMode: next.profile.approvalMode ?? null }, actor,
+      });
+    }
+  },
+  now: Date.now,
+};
+
+/** Slice 8: shorten, extend (at most 90 days from when it opened) or close
+ * the window to attach people from before Perspicax. */
+function saveOrgInterimAttachDays(days: number, actor: AdminActor): void {
+  const before = cfg.organization?.interimAttach;
+  const next = windowWithDays(before, days, Date.now());
+  saveConfig({ organization: { ...cfg.organization, interimAttach: next } });
+  cfg.organization = { ...cfg.organization, interimAttach: next };
+  orgAudit({
+    category: "org", action: "org.settings", target: { kind: "organization" }, changed: ["interimAttachDays"],
+    before: { interimAttachDays: before?.days ?? null }, after: { interimAttachDays: days }, actor,
+  });
+}
+function saveOrgAllowFullAccess(allowed: boolean, actor: AdminActor): void {
+  const before = orgFullAccessPolicy();
+  saveConfig({ organization: { ...cfg.organization, allowFullAccess: allowed } });
+  cfg.organization = { ...cfg.organization, allowFullAccess: allowed };
+  orgAudit({
+    category: "org", action: "org.settings", target: { kind: "organization" }, changed: ["allowFullAccess"],
+    before: { allowFullAccess: before }, after: { allowFullAccess: allowed }, actor,
+  });
+}
+function saveOrgPluginMarketplaces(raw: unknown, actor: AdminActor): void {
+  const parsed = marketplacePolicySchema.safeParse(raw);
+  if (!parsed.success) throw new Error("Send { mode: \"any\" } or { mode: \"list\", allow: [\"owner/repo\", \"owner/*\", \"https://...\"] }.");
+  const next: MarketplacePolicy = parsed.data.mode === "any" ? { mode: "any" } : { mode: "list", allow: [...new Set(parsed.data.allow.map(normalizePolicyEntry))] };
+  const before = pluginMarketplacePolicy() ?? { mode: "any" };
+  saveConfig({ organization: { ...cfg.organization, pluginMarketplaces: next } });
+  cfg.organization = { ...cfg.organization, pluginMarketplaces: next };
+  orgAudit({
+    category: "org", action: "org.settings", target: { kind: "organization" }, changed: ["pluginMarketplaces"],
+    before: { pluginMarketplaces: before }, after: { pluginMarketplaces: next }, actor,
+  });
+}
+
 /** The organization's engine policy (Settings, Policies): every engine
  * until a list is set. */
 function consoleEngineAllowed(instanceId: string): boolean {
-  const allowed = (cfg as { orgPolicies?: { allowedEngines?: string[] | null } }).orgPolicies?.allowedEngines;
+  const allowed = cfg.organization?.allowedEngines;
   return !Array.isArray(allowed) || allowed.includes(instanceId);
 }
 
@@ -23956,6 +24158,7 @@ const orgAdmin = createOrgAdminRoutes({
     ...peopleRoutes(orgPeopleDeps),
     ...botsRoutes(orgBotsDeps),
     ...routinesRoutes(orgRoutinesDeps),
+    ...opsRoutes(orgOpsDeps),
   ],
   // The console's file browser (Perspicax 2026-10-08, slice 1: read only).
   files: {

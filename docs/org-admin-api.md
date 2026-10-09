@@ -466,3 +466,165 @@ From the decision log: the cards a person answered (in Sagax or from the
 console), newest first. Sagax records no expiry decision: `expired` is never
 answered. `by` names the person when Sagax knows them, else the device
 label.
+
+## Connections
+
+| Method and path | Role | What |
+|---|---|---|
+| `GET connections` | admin | engines, people's connections, MCP servers, Composio, marketplaces, skills library |
+| `POST connections/test` | admin | test one line |
+
+### `GET connections`
+
+```json
+{
+  "engines": [{ "id": "claude", "name": "Claude Code", "installed": true, "version": "2.1.0", "orgKey": true, "people": 7 }],
+  "people": [{
+    "person": { "principalId": "pr_7c1e...", "sub": "01J9...", "name": "Bob" },
+    "engines": [{ "id": "claude", "via": "subscription", "ok": null, "checkedAt": null }],
+    "mcpServers": 1, "composioApps": 0
+  }],
+  "mcpServers": [
+    { "id": "docs", "name": "docs", "scope": "org", "owner": null, "transport": "remote", "state": "enabled" },
+    { "id": "github", "name": "github", "scope": "person", "owner": { "principalId": "pr_7c1e...", "sub": "01J9...", "name": "Bob" }, "transport": "remote", "state": "enabled" }
+  ],
+  "composio": { "configured": true, "apps": [{ "slug": "gmail", "name": "gmail", "people": 3 }] },
+  "marketplaces": [{ "id": "acme", "name": "acme", "url": "acme/plugins", "allowed": true, "plugins": 12 }],
+  "skills": [{ "id": "digest", "name": "digest", "source": "https://github.com/acme/skills", "version": "3f2a9c1b7d4e", "bots": 2 }]
+}
+```
+
+- `engines[].people`: active people whose own turns can run on the engine
+  (subscription, key or organization key). `orgKey` says whether the
+  organization's key is set, never the key.
+- `people[].engines[].ok` and `checkedAt` stay null: Sagax does not check a
+  person's engine in the background; `POST connections/test` with
+  `principalId` does it on demand.
+- `composio.apps`: the workspace's connected apps (read from Composio, at
+  most 5 s, empty on a timeout); `people` counts the owners of bots granted
+  the app. `composioApps` per person is 0: connected apps belong to the
+  workspace in Sagax.
+- `skills`: the organization's skills library (empty while the library is
+  off); `version` is the first 12 hex of the skill's SHA-256.
+
+### `POST connections/test`
+
+```json
+{ "kind": "engine", "id": "claude", "principalId": "pr_7c1e..." }
+```
+
+Answers `{ok, latencyMs, reason, label}`, for example
+`{"ok": false, "latencyMs": 12, "reason": "no_access", "label": "This person has no access to this engine (...)"}`.
+
+- `engine`: the engine answers its probe (and, with `principalId`, that
+  person can run on it).
+- `mcp`: a remote MCP server (the organization's, or the person's with
+  `principalId`) answers over HTTP with a status below 500. No credential is
+  sent. A server started by command (stdio) answers `501 not_implemented`
+  with its `reason`: it runs in its person's environment and cannot be
+  tested from here yet.
+- `marketplace`: its address (or `https://github.com/<owner/repo>`) answers.
+- `composio`: Composio answers with the connected apps.
+
+Each test has 10 s. Audited `connections.test`.
+
+## Usage and cost
+
+`GET usage` (above) carries `engine` on each row; the console groups by
+engine, person, bot or day and exports CSV from the rows it holds.
+
+## Logs
+
+| Method and path | Role | What |
+|---|---|---|
+| `GET logs?level&limit&before` | admin | the server log tail |
+| `GET incidents?kind&q&limit&cursor` | admin | failed, stalled and unstartable runs, failed routines |
+| `GET audit` | admin | the admin activity log (above) |
+
+### `GET logs`
+
+`level` is `info`, `warn` or `error` (that level and above), `limit` 1 to 500
+(default 200), `before` the `seq` of a line (the `next` of the last page).
+
+```json
+{
+  "lines": [{ "seq": 1841, "at": 1791500000000, "level": "error", "area": "omb-turn", "message": "bot=5e38... refused: no_access (claude)" }],
+  "next": 1841
+}
+```
+
+The last 2,000 lines this process wrote to its console, kept in memory (a
+restart starts empty), each at most 2,000 characters, secrets redacted when
+captured (`redactSecretsInText`). The container's log driver keeps the
+whole log.
+
+### `GET incidents`
+
+`kind` is `failed`, `stalled`, `could-not-start` or `routine-failed`; the
+last 90 days, newest first.
+
+```json
+{
+  "items": [{
+    "id": "6f9b...", "at": 1791500000000, "kind": "failed", "bot": { "id": "5e38...", "name": "Atlas" },
+    "threadId": "a5fe...", "title": "Weekly digest", "reason": "rate_limited", "label": "The provider is rate limiting",
+    "detail": "429 Too Many Requests"
+  }],
+  "next": null
+}
+```
+
+From the problem log (`<data>/problems/`, 180 days): every incident Sagax
+reports to a Primary Bot, written before its delivery rules. `detail` is the
+cause the person reads in the thread (redacted, at most 300 characters),
+never a message; a routine failure carries `routineId`.
+
+## Settings
+
+| Method and path | Role | What |
+|---|---|---|
+| `GET settings` | admin | organization settings, policies, backup |
+| `POST settings` | admin | change policies |
+
+### `GET settings`
+
+```json
+{
+  "org": { "orgKeyConfigured": true, "allowFullAccess": true, "pluginMarketplaces": { "mode": "any" }, "github": { "clientId": null, "fromEnvironment": false }, "interimAttach": { "until": null, "people": 0 } },
+  "policies": {
+    "allowedMarketplaces": null,
+    "allowedEngines": ["claude", "codex"],
+    "defaults": { "engine": "claude", "model": "claude-opus-4-1", "approvalMode": "ask" }
+  },
+  "backup": { "enabled": true, "schedule": "daily 03:00 UTC", "lastAt": 1791472000000, "ok": true }
+}
+```
+
+`org` is what `GET /api/org` answers as `settings` (no token). `null` in a
+policy list means any. `defaults` are the New bot defaults (engine, model,
+approval level).
+
+### `POST settings`
+
+```json
+{ "allowFullAccess": false, "pluginMarketplaces": { "mode": "list", "allow": ["acme/plugins", "acme/*"] }, "allowedEngines": ["claude"], "defaults": { "engine": "claude", "model": "claude-opus-4-1", "approvalMode": "ask" }, "interimAttachDays": 0 }
+```
+
+Any subset. Answers `{settings}` (the GET shape). Refusals: 400
+`bad_request` (an unknown field or value), 400 `engine_not_installed` (an
+engine in `allowedEngines` this server does not have), 400 `invalid_policy`
+(a marketplace entry). Each changed setting writes its own `org.settings`
+row with its before and after.
+
+`allowedEngines` is enforced by the console's model changes (`POST
+bots/{id}/model`, bulk `model`); Sagax's own model picker does not read it
+yet.
+
+## Not offered yet
+
+| Route | Why |
+|---|---|
+| `POST connections/test` for a stdio MCP server | runs in its person's environment: `501 not_implemented` |
+| `people[].engines[].ok` in `GET connections` | no background check: null, test on demand |
+| `presence.idle` | Sagax knows online, away and offline only: always 0 |
+| `approvals/history` `decision: "expired"` | Sagax records no expiry decision |
