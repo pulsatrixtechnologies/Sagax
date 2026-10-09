@@ -1,5 +1,5 @@
 // "What's new" after an update. Once per version, never on a fresh install
-// and never in a dev build. About and Help → Release notes open it again.
+// and never in a dev build. About > Release notes opens the browser again.
 import { useEffect, useMemo, useRef, useState } from "react";
 import { appVersion } from "@/lib/app-links";
 import { bundledNotesFor, bundledNotesSince, bundledReleaseCatalog, bundledVersions } from "@/lib/bundled-release-notes";
@@ -78,7 +78,6 @@ export function ReleaseNotesPrompt() {
   }, [state.config, ready, capabilities.host.packaged]);
 
   useEffect(() => subscribeReleaseNotes((next) => openWith(next)), []);
-  useEffect(() => window.ogb?.onOpenReleaseNotes?.(() => openWith("current")), []);
 
   useEffect(() => {
     if (!open) return;

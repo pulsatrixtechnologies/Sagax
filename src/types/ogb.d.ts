@@ -319,7 +319,6 @@ const __SAGAX_DEFAULT_SERVER__: string;
        * openmausbot://cloud link (Settings → OMB Cloud, opened by the link). */
       onOpenAppSettings?(cb: (section?: "organization" | "cloud" | "cloud-settings") => void): () => void;
       /** Help → Release notes. Absent in the browser and on a remote page. */
-      onOpenReleaseNotes?(cb: () => void): () => void;
       /** Updates the native Dock/taskbar unread indicator. */
       setUnreadCount?(count: number): void;
       /** A nudge here: bring the main window to the very front (restore,
