@@ -33,7 +33,7 @@ describe("mascot drop shadow", () => {
   });
 
   it("the shadow reaches every character root", () => {
-    expect(css).toMatch(/:is\(\.shape-mascot, \[data-owl\], \.bunbu-mascot, \.shiba-mascot, \.trombi-avatar\)\s*\{\s*filter:\s*var\(--mascot-filter, none\)/);
+    expect(css).toMatch(/:is\(\.shape-mascot, \[data-owl\], \.bunbu-mascot, \.shiba-mascot, \.grump-mascot, \.trombi-avatar\)\s*\{\s*filter:\s*var\(--mascot-filter, none\)/);
   });
 });
 

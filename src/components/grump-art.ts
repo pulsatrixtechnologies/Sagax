@@ -557,9 +557,9 @@ export function grumpTailOps(d: string, ow: number): GrumpOp[] {
   ];
 }
 
-/** Where a standing leg's knee (or hock) and paw are for a hip angle (+ forward) and a bend at the joint (degrees, + curls the paw back). */
-export function legJoints(leg: GrumpLeg, hip: number, bend: number): { hip: Point; knee: Point; paw: Point } {
-  const [hx, hy] = GRUMP_HIPS[leg];
+/** Where a standing leg's knee (or hock) and paw are for a hip angle (+ forward) and a bend at the joint (degrees, + folds the paw), from its hip (moved with the body when the torso tilts or crouches). */
+export function legJoints(leg: GrumpLeg, hip: number, bend: number, hipAt: Point = GRUMP_HIPS[leg]): { hip: Point; knee: Point; paw: Point } {
+  const [hx, hy] = hipAt;
   const a = (hip * Math.PI) / 180;
   const knee: Point = [hx + Math.sin(a) * GRUMP_LEG.upper, hy + Math.cos(a) * GRUMP_LEG.upper];
   // a front leg's wrist folds the paw back; a hind leg's hock folds it forward
@@ -570,9 +570,9 @@ export function legJoints(leg: GrumpLeg, hip: number, bend: number): { hip: Poin
 }
 
 /** One standing leg: hip, joint, paw; the far legs in the shade tone, a white sock at the paw. */
-export function grumpLegOps(leg: GrumpLeg, hip: number, bend: number, ow: number): GrumpOp[] {
+export function grumpLegOps(leg: GrumpLeg, hip: number, bend: number, ow: number, hipAt?: Point): GrumpOp[] {
   const far = leg.endsWith("Far");
-  const j = legJoints(leg, hip, bend);
+  const j = legJoints(leg, hip, bend, hipAt);
   const d = `M${fmt(j.hip[0])} ${fmt(j.hip[1])}L${fmt(j.knee[0])} ${fmt(j.knee[1])}L${fmt(j.paw[0])} ${fmt(j.paw[1])}`;
   const paw = ellipsePath(j.paw[0] + 1, j.paw[1] + 0.4, 4.2, 2.6);
   return [

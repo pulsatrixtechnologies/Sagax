@@ -14,7 +14,7 @@
 // by keeping it in the list.
 import type { AchievementDefinition } from "./achievements.ts";
 
-const skin = (character: "owl" | "shape" | "trombi" | "bunbu" | "shiba", id: string) => ({ kind: "skin", character, skin: id }) as const;
+const skin = (character: "owl" | "shape" | "trombi" | "bunbu" | "shiba" | "grump", id: string) => ({ kind: "skin", character, skin: id }) as const;
 const title = (id: string, en: string, fr: string) => ({ kind: "title", id, name: { en, fr } }) as const;
 
 export const ACHIEVEMENTS: readonly AchievementDefinition[] = [
@@ -57,7 +57,7 @@ export const ACHIEVEMENTS: readonly AchievementDefinition[] = [
     icon: "Palette",
     points: 10,
     rule: { kind: "count", event: "bot.customized", target: 1 },
-    rewards: [skin("owl", "gold"), skin("shiba", "gold")],
+    rewards: [skin("owl", "gold"), skin("shiba", "gold"), skin("grump", "gold")],
   },
   {
     id: "right-hand",
@@ -67,7 +67,7 @@ export const ACHIEVEMENTS: readonly AchievementDefinition[] = [
     icon: "Crown",
     points: 20,
     rule: { kind: "count", event: "bot.primary", target: 1 },
-    rewards: [skin("owl", "frost"), skin("shiba", "neon")],
+    rewards: [skin("owl", "frost"), skin("shiba", "neon"), skin("grump", "neon")],
   },
   {
     id: "dressing-room",
@@ -109,7 +109,7 @@ export const ACHIEVEMENTS: readonly AchievementDefinition[] = [
     icon: "Repeat",
     points: 20,
     rule: { kind: "count", event: "routine.created", target: 5 },
-    rewards: [title("automator", "Automator", "Automatiseur"), skin("shiba", "chrome")],
+    rewards: [title("automator", "Automator", "Automatiseur"), skin("shiba", "chrome"), skin("grump", "chrome")],
   },
   {
     id: "clockwork",
@@ -119,7 +119,7 @@ export const ACHIEVEMENTS: readonly AchievementDefinition[] = [
     icon: "Timer",
     points: 50,
     rule: { kind: "days", event: "routine.ran", target: 7 },
-    rewards: [skin("owl", "chrome"), skin("shiba", "molten")],
+    rewards: [skin("owl", "chrome"), skin("shiba", "molten"), skin("grump", "molten")],
   },
   {
     id: "well-oiled",
@@ -281,7 +281,7 @@ export const ACHIEVEMENTS: readonly AchievementDefinition[] = [
     icon: "Zap",
     points: 50,
     rule: { kind: "all", events: ["fullaccess.granted", "fullaccess.revoked"] },
-    rewards: [skin("owl", "holo"), skin("shiba", "holo")],
+    rewards: [skin("owl", "holo"), skin("shiba", "holo"), skin("grump", "holo")],
   },
   {
     id: "palette",
@@ -397,7 +397,7 @@ export const ACHIEVEMENTS: readonly AchievementDefinition[] = [
     icon: "Flame",
     points: 10,
     rule: { kind: "streak", target: 3 },
-    rewards: [title("regular", "Regular", "Habitué"), skin("shiba", "retro98")],
+    rewards: [title("regular", "Regular", "Habitué"), skin("shiba", "retro98"), skin("grump", "retro98")],
   },
   {
     id: "week-streak",
@@ -449,7 +449,7 @@ export const ACHIEVEMENTS: readonly AchievementDefinition[] = [
     icon: "Award",
     points: 20,
     rule: { kind: "points", target: 300 },
-    rewards: [title("silver", "Silver Operator", "Opérateur argent"), skin("shiba", "glitch")],
+    rewards: [title("silver", "Silver Operator", "Opérateur argent"), skin("shiba", "glitch"), skin("grump", "glitch")],
   },
   {
     id: "gold-tier",
@@ -507,7 +507,7 @@ export const ACHIEVEMENTS: readonly AchievementDefinition[] = [
     hidden: true,
     hint: { en: "Owls are at their best after midnight.", fr: "Les hiboux sont à leur meilleur après minuit." },
     rule: { kind: "count", event: "mascot.midnight", target: 1 },
-    rewards: [skin("owl", "spirit")],
+    rewards: [skin("owl", "spirit"), skin("grump", "void")],
   },
   {
     id: "good-bot",
@@ -541,7 +541,7 @@ export const ACHIEVEMENTS: readonly AchievementDefinition[] = [
     icon: "Monitor",
     points: 10,
     rule: { kind: "count", event: "mascot.floated", target: 1 },
-    rewards: [title("buddy", "Desk Buddy", "Copain de bureau"), { kind: "character", character: "shiba" }],
+    rewards: [title("buddy", "Desk Buddy", "Copain de bureau"), { kind: "character", character: "shiba" }, { kind: "character", character: "grump" }],
   },
   {
     id: "trophy-case",
