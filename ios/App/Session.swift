@@ -1008,6 +1008,10 @@ final class Session: ObservableObject {
                     if case let .orgApprovals(approvals) = frame.frame {
                         OrgApprovalsCenter.shared.apply(approvals)
                     }
+                    // Seen by (#270): a participant's read position moved
+                    if case let .threadRead(read) = frame.frame {
+                        ReadReceiptsCenter.shared.apply(read, session: self)
+                    }
                     // the person's sidebar, saved on any of their devices
                     if case let .preferences(record) = frame.frame {
                         SidebarPrefsModel.shared.receive(self, record)

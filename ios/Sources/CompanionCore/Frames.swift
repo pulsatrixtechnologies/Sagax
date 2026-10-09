@@ -72,6 +72,8 @@ public enum Frame: Sendable {
     /// their devices (organization server; their own streams only), so a
     /// section deleted on the desktop leaves the phone within seconds.
     case preferences(UserPreferences)
+    /// `thread.read` (#270): a participant's read position moved, or reset.
+    case threadRead(ThreadReadFrame)
     case unknown(kind: String)
 }
 
@@ -81,6 +83,7 @@ extension Frame: Decodable {
         case bot, botId, group, groupId, notification, png, mime, state, event, queues
         case audience, fromId, fromName, at, open, principalId, label, people, count, added
         case preferences, updatedAt
+        case participantId, read, reset
     }
 
     public init(from decoder: Decoder) throws {
@@ -173,6 +176,17 @@ extension Frame: Decodable {
                 return
             }
             self = .preferences(UserPreferences(stored: true, preferences: values, updatedAt: try? container.decodeIfPresent(Double.self, forKey: .updatedAt)))
+        case "thread.read":
+            guard let threadId = try? container.decode(String.self, forKey: .threadId) else {
+                self = .unknown(kind: kind)
+                return
+            }
+            self = .threadRead(ThreadReadFrame(
+                threadId: threadId,
+                participantId: try? container.decodeIfPresent(String.self, forKey: .participantId),
+                read: try? container.decodeIfPresent(ThreadReadPosition.self, forKey: .read),
+                reset: (try? container.decodeIfPresent(Bool.self, forKey: .reset)) ?? false
+            ))
         case "runtime":
             self = .runtime(try container.decode(RuntimeEvent.self, forKey: .event))
         default:
