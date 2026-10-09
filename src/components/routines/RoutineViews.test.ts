@@ -131,6 +131,14 @@ describe("central routine logs", () => {
     expect(onStatusChange).toHaveBeenCalledExactlyOnceWith("problems");
   });
 
+  it("offers Clear logs next to the filters only when a clear handler is given, and asks before clearing", () => {
+    expect(logs()).not.toContain("Clear logs");
+    const markup = logs({ onClearLogs: vi.fn() });
+    expect(markup).toContain(">Clear logs</button>");
+    expect(markup).not.toContain("Clear run logs?");
+    expect(logs({ runs: [], onClearLogs: vi.fn() })).toMatch(/<button[^>]*disabled=""[^>]*>Clear logs<\/button>/);
+  });
+
   it("lands on only the requested routine's history", () => {
     const markup = logs({ routineId: "brief", runs: [run, { ...run, id: "other", routineId: "other", routineName: "Private other routine" }] });
     expect(markup).toContain("Open Morning brief run: Completed");

@@ -2752,6 +2752,44 @@ describe("RoutineManager", () => {
     expect(h.manager.markAllSeen()).toMatchObject([{ routineName: routine.name, seenAt: stampAt }]);
   });
 
+  it("clears only the saved runs the caller may see and never one in progress", async () => {
+    const h = harness();
+    const mk = (name: string, botId: string, at: number) => h.manager.create({
+      name, prompt: "Do it", botId, schedule: { type: "once", at },
+    });
+    const mine = mk("My finished", "maus-1", new Date(2026, 7, 17, 8, 1).getTime());
+    const theirs = mk("Their finished", "maus-2", new Date(2026, 7, 17, 8, 2).getTime());
+    const live = mk("My running", "maus-3", new Date(2026, 7, 17, 8, 3).getTime());
+    h.setNow(mine.nextRunAt!);
+    await h.manager.tick();
+    h.manager.handleRuntimeEvent({
+      eventId: "mine", provider: "fake", threadId: "thread-1",
+      createdAt: new Date().toISOString(), type: "turn.completed", ok: true,
+    });
+    h.setNow(theirs.nextRunAt!);
+    await h.manager.tick();
+    h.manager.handleRuntimeEvent({
+      eventId: "theirs", provider: "fake", threadId: "thread-2",
+      createdAt: new Date().toISOString(), type: "turn.completed", ok: true,
+    });
+    h.setNow(live.nextRunAt!);
+    await h.manager.tick();
+    const byName = () => new Map(h.manager.listRuns().map((run) => [run.routineName, run]));
+    expect(byName().get("My running")!.status).not.toBe("completed");
+
+    // the owner sees their own bots only, and the running run is spared
+    const removed = h.manager.clearRuns((run) => run.botId !== "maus-2");
+    expect(removed).toHaveLength(1);
+    const left = byName();
+    expect(left.has("My finished")).toBe(false);
+    expect(left.has("Their finished")).toBe(true);
+    expect(left.has("My running")).toBe(true);
+    expect(new RoutineManager(h.options).listRuns().map((run) => run.routineName).sort()).toEqual(["My running", "Their finished"]);
+    expect(h.manager.clearRuns(() => true)).toHaveLength(1);
+    expect([...byName().keys()]).toEqual(["My running"]);
+    expect(h.manager.clearRuns(() => true)).toEqual([]);
+  });
+
   it("keeps recurring history while advancing the definition", async () => {
     const h = harness();
     const routine = h.manager.create({

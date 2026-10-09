@@ -496,6 +496,7 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   { methods: ["POST"], path: /^\/api\/routines\/[\w-]+\/run$/ },
   { methods: ["POST"], path: /^\/api\/routine-runs\/[\w-]+\/(?:cancel|seen)$/ },
   { methods: ["POST"], path: /^\/api\/routine-runs\/seen-all$/ },
+  { methods: ["DELETE"], path: /^\/api\/routine-runs$/ },
   // webhook list is secret-free; creating or rotating one is not
   { methods: ["GET"], path: /^\/api\/webhooks$/ },
   // configured-or-not booleans; the handler strips the few identifying fields for clients

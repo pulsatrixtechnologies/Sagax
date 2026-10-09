@@ -235,7 +235,6 @@ export function profileMenuItems(input: {
   releaseNotesLabel: string;
   teamMapActive: boolean;
   automationsActive: boolean;
-  routineAttention: boolean;
   shortcutsTrailing?: ReactNode;
   updateItem: SidebarMenuItem | null;
   handlers: ProfileMenuHandlers;
@@ -254,7 +253,6 @@ export function profileMenuItems(input: {
       label: input.automationsLabel,
       icon: <CalendarDays size={18} />,
       active: input.automationsActive,
-      attention: input.routineAttention,
       onSelect: input.handlers.onAutomations,
     },
     {
@@ -348,7 +346,6 @@ export function SidebarProfileMenu({ avatarOnly = false, places = [] }: {
     releaseNotesLabel: t("releaseNotes.menu"),
     teamMapActive: state.activeView === "team-map",
     automationsActive: state.activeView === "routines",
-    routineAttention,
     shortcutsTrailing: <ShortcutHint id="shortcuts-cheat-sheet" />,
     updateItem: update?.item ?? null,
     handlers: {
@@ -481,7 +478,6 @@ export function SidebarProfileMenu({ avatarOnly = false, places = [] }: {
       >
         <CalendarClock size={18} strokeWidth={2.2} aria-hidden="true" />
         <span>{activeRoutines}</span>
-        {routineAttention && <span data-testid="routines-attention-dot" aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-accent-text" />}
       </button>
     </div>
   ) : null;

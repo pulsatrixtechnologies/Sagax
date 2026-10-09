@@ -159,7 +159,7 @@ describe("sidebar footer row", () => {
     expect(html).toContain('data-testid="footer-attention"');
   });
 
-  it("shows a tiny accent dot, never red, on the routines count when an automation failed, and clears it once seen", () => {
+  it("keeps the routines count and icon without any dot when an automation failed, and clears the failed label once seen", () => {
     fixture.state = {
       config: { profile: { name: "Jean-Christophe Proulx", email: "jc@example.com" } } as AppState["config"],
       bots: [{ id: "b1" }] as AppState["bots"],
@@ -169,7 +169,7 @@ describe("sidebar footer row", () => {
     const failed = renderToStaticMarkup(createElement(SidebarProfileMenu, {}));
     expect(failed).not.toContain('data-testid="footer-attention"');
     expect(failed).toContain("data-attention");
-    expect(failed).toContain('data-testid="routines-attention-dot"');
+    expect(failed).not.toContain("routines-attention-dot");
     expect(failed).not.toContain("text-danger");
     expect(failed).toContain('aria-label="1 active routine. A run failed: open Automations"');
     fixture.state = {

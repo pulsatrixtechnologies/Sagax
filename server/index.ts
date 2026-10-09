@@ -11017,6 +11017,14 @@ function auditRoutineRunNow(auth: RequestAuth, routine: Routine, run: RoutineRun
     actor: IDENTITY.kind === "perspicax" ? orgAuditActor(auth) : decisionActorFor(auth),
   });
 }
+/** Saved run logs cleared by hand, in the admin activity log with who did it. */
+function auditRoutineRunsCleared(auth: RequestAuth, count: number): void {
+  appendAdminAction(DATA_DIR, {
+    category: "bot", action: "routine.runs_cleared", target: { kind: "routine", id: "*", name: "Run logs" },
+    after: { count },
+    actor: IDENTITY.kind === "perspicax" ? orgAuditActor(auth) : decisionActorFor(auth),
+  });
+}
 /** The speaker of a routine run's turns. */
 function routineRunSpeaker(run: { runAs?: string; botId: string }): TurnSpeaker {
   const principalId = effectiveRunAs(run);
@@ -28074,6 +28082,13 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
     }
     if (path === "/api/routine-runs/seen-all" && method === "POST") {
       return json(res, 200, { runs: routines!.markAllSeen() });
+    }
+    // Clear logs: every saved run the caller may see (the list's own rule),
+    // never one in progress. Others' runs stay.
+    if (path === "/api/routine-runs" && method === "DELETE") {
+      const removed = routines!.clearRuns((run) => routineVisible(run, visible) && (!viewerId || routineSeenBy(run, viewerId)));
+      if (removed.length) auditRoutineRunsCleared(auth, removed.length);
+      return json(res, 200, { ok: true, removed });
     }
     const runMatch = path.match(/^\/api\/routine-runs\/([\w-]+)\/(cancel|seen)$/);
     if (runMatch && method === "POST") {
