@@ -33,9 +33,43 @@ final class AttentionCenter {
     static let shared = AttentionCenter()
     var viewingThreadId: String?
     private var player: AVAudioPlayer?
+    /// Nudges already played, from the stream or a push (NudgeFrame.dedupKey).
+    private var playedNudges: [String] = []
+
+    /// Returns false when this nudge already rang.
+    private func firstTime(_ key: String?) -> Bool {
+        guard let key else { return true }
+        if playedNudges.contains(key) { return false }
+        playedNudges.append(key)
+        if playedNudges.count > 32 { playedNudges.removeFirst() }
+        return true
+    }
+
+    /// An APNs push that arrived while the app is in front.
+    func presentation(for push: PushPayload) -> UNNotificationPresentationOptions {
+        let sound: UNNotificationPresentationOptions = NotificationSounds.isEnabled ? [.sound] : []
+        switch push.kind {
+        case .nudge:
+            // the stream already shook and rang for it: nothing more
+            guard firstTime(push.nudgeKey) else { return [] }
+            let settings = AttentionPrefs.settings
+            var rang = false
+            if settings.nudgeSound { rang = playWizz() }
+            if settings.nudgeHaptic { buzz() }
+            let looking = viewingThreadId != nil && viewingThreadId == push.threadId
+            if looking { return [] }
+            let shown: UNNotificationPresentationOptions = [.banner, .list]
+            return rang ? shown : shown.union(sound)
+        default:
+            if let thread = push.threadId, thread == viewingThreadId { return [] }
+            let shown: UNNotificationPresentationOptions = [.banner, .list, .badge]
+            return shown.union(sound)
+        }
+    }
 
     /// A `nudge` frame addressed to this person.
     func receive(_ nudge: NudgeFrame) {
+        guard firstTime(nudge.dedupKey) else { return }
         let decision = NudgeAttention.decide(
             nudge, now: Date().timeIntervalSince1970 * 1000,
             appActive: UIApplication.shared.applicationState == .active,
@@ -86,7 +120,8 @@ extension NotificationCoordinator {
             content.threadIdentifier = open.threadId
             content.userInfo = ["threadId": open.threadId, "botId": open.groupId, "kind": "nudge"]
         }
-        let identifier = "sagax.nudge.\(nudge.fromId).\(Int64(nudge.at ?? Date().timeIntervalSince1970 * 1000))"
+        // the APNs push for the same nudge (apns-collapse-id) replaces it
+        let identifier = PushCollapse.identifier(threadId: nudge.open?.threadId, kind: "nudge")
         UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: identifier, content: content, trigger: nil))
     }
 }
@@ -107,7 +142,11 @@ struct NotificationsSettingsView: View {
                     subtitle: "Play a sound when an agent finishes or needs you.",
                     accessory: .toggle(Binding(get: { sounds }, set: { value in
                         sounds = value
-                        Task { await NotificationSounds.set(value, session: session) }
+                        Task {
+                            await NotificationSounds.set(value, session: session)
+                            // the server applies this phone's switches to its pushes
+                            await PushRegistrar.shared.sync()
+                        }
                     })),
                     identifier: "settings-notification-sounds"
                 )
@@ -117,6 +156,7 @@ struct NotificationsSettingsView: View {
                     accessory: .toggle(Binding(get: { badge }, set: { value in
                         badge = value
                         NotificationCoordinator.shared.setBadge(session.state.unreadCount)
+                        Task { await PushRegistrar.shared.sync() }
                     })),
                     identifier: "settings-notification-badge"
                 )
@@ -126,7 +166,10 @@ struct NotificationsSettingsView: View {
                 SettingsRow(
                     title: "Nudge sound",
                     subtitle: "Play the nudge sound when someone nudges you.",
-                    accessory: .toggle($nudgeSound),
+                    accessory: .toggle(Binding(get: { nudgeSound }, set: { value in
+                        nudgeSound = value
+                        Task { await PushRegistrar.shared.sync() }
+                    })),
                     identifier: "settings-nudge-sound"
                 )
                 CardHairline(leadingInset: SettingsMetrics.rowInset)

@@ -276,6 +276,36 @@ struct UnpairedView: View {
 /// own Settings item, so the item is replaced here and opens the desktop
 /// shell's Settings modal (I5); the phone has no menu bar.
 final class SagaxAppDelegate: UIResponder, UIApplicationDelegate {
+    // APNs (PushRegistrar.swift, docs/ios-push.md): a token every launch,
+    // handed to the server the app is signed in to.
+    func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
+        _ = NotificationCoordinator.shared
+        Task { @MainActor in PushRegistrar.shared.start() }
+        return true
+    }
+
+    func application(_ application: UIApplication, didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data) {
+        Task { @MainActor in PushRegistrar.shared.didRegister(tokenData: deviceToken) }
+    }
+
+    func application(_ application: UIApplication, didFailToRegisterForRemoteNotificationsWithError error: Error) {
+        Task { @MainActor in PushRegistrar.shared.didFail(error) }
+    }
+
+    /// A push woke the app in the background (`content-available`): count
+    /// the unread again for the icon badge.
+    func application(
+        _ application: UIApplication,
+        didReceiveRemoteNotification userInfo: [AnyHashable: Any],
+        fetchCompletionHandler completionHandler: @escaping (UIBackgroundFetchResult) -> Void
+    ) {
+        guard PushPayload(userInfo: userInfo) != nil else { return completionHandler(.noData) }
+        Task { @MainActor in
+            let refreshed = await PushRegistrar.shared.backgroundRefresh?() ?? false
+            completionHandler(refreshed ? .newData : .noData)
+        }
+    }
+
     override func buildMenu(with builder: UIMenuBuilder) {
         super.buildMenu(with: builder)
         guard builder.system == .main else { return }
