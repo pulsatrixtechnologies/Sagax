@@ -32,6 +32,7 @@ import { SharePresetDialog } from "./SharePresetDialog";
 import { servedPage } from "@/lib/desktop";
 import { viewerBotsReadOnly, viewerCanCreateBots, viewerIsOrgMember } from "@/lib/viewer";
 import { botsReadOnlyText } from "@/lib/permissions";
+import { templatesEntryActions } from "@/lib/templates-entry";
 
 const SECTIONS = ["Identity", "Soul", "Skills", "Memory", "Routines", "Access", "Model", "Permissions", "Voice & alerts"] as const;
 type Section = typeof SECTIONS[number];
@@ -327,8 +328,12 @@ function DraftSection({ active, draft, defaultsMode }: { active: Section; draft:
 
 /** Starting role: presets from the organization and imported files first,
  * then the built-in roles. A preset fills name, look and instructions (all
- * still editable); its skills and notes are added when the bot is created. */
-function StartingRole({ draft, defaultsMode }: { draft: BotCreationDraft; defaultsMode: boolean }) {
+ * still editable); its skills and notes are added when the bot is created.
+ * "Browse templates" closes New bot and opens Browse Bots on Templates, the
+ * one place where every template lives (described, with the apps it uses).
+ * Exported for tests. */
+export function StartingRole({ draft, defaultsMode }: { draft: BotCreationDraft; defaultsMode: boolean }) {
+  const { dispatch } = useStore();
   const [presets, setPresets] = useState<BotPreset[]>([]);
   const [loads, setLoads] = useState(0);
   const [error, setError] = useState("");
@@ -381,6 +386,10 @@ function StartingRole({ draft, defaultsMode }: { draft: BotCreationDraft; defaul
   };
   const roles = BOT_ROLES.map(role => <option key={role.id} value={role.id}>{role.title}</option>);
   return <div>
+    {!defaultsMode && <div className="mb-1 flex justify-end">
+      <button type="button" data-new-bot-browse-templates="" onClick={() => { for (const action of templatesEntryActions("newBot")) dispatch(action); }}
+        className="rounded-md px-2 py-0.5 text-[12px] text-ink-secondary hover:bg-control hover:text-ink">{t("newBot.browseTemplates")}</button>
+    </div>}
     <label className="block text-[13px] text-ink-secondary">{t("newBot.startingRole")}
       <select className={cn(inputCls, "mt-1.5")} value={draft.preset ? `preset:${draft.preset.id}` : ""} onChange={event => void choose(event.target.value)}>
         <option value="">{t("newBot.customSettings")}</option>

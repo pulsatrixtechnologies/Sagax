@@ -808,7 +808,7 @@ export interface ConfigStatus {
   /** UI language override; "" (or absent) follows the system language. */
   language?: string;
   /** Opt-in flags. Absent means off. */
-  features?: { skillAuthoring: boolean; showToolCalls?: boolean; browser?: boolean; sharedComputers?: boolean; claudeUserMcp?: boolean; llmThreadTitles?: boolean; routinesInConversation?: boolean; templates?: boolean; connectedApps?: boolean; vpsComputer?: boolean; boatComputer?: boolean; decisionModel?: boolean; skillsLibrary?: boolean };
+  features?: { skillAuthoring: boolean; showToolCalls?: boolean; browser?: boolean; sharedComputers?: boolean; claudeUserMcp?: boolean; llmThreadTitles?: boolean; routinesInConversation?: boolean; connectedApps?: boolean; vpsComputer?: boolean; boatComputer?: boolean; decisionModel?: boolean; skillsLibrary?: boolean };
   /** First-run progress: whether the welcome tour was finished and which
    * one-time hints were dismissed. Server-owned so it follows the workspace. */
   onboarding?: OnboardingStatus;
@@ -1131,6 +1131,11 @@ export interface AppState {
    * context menu in the bot panel. Use dispatch(openBotCatalog()) and
    * dispatch(closeBotCatalog()). */
   botCatalogOpen: boolean;
+  /** Where the catalogue opens: its Templates section (the old Templates
+   * library's entry points, an install link carrying a team's address), or
+   * null for the home view. A new object on every request, so an open
+   * catalogue follows a later one. */
+  botCatalogTarget: BotCatalogTarget | null;
   /** The persona editor (src/components/persona/PersonaEditorModal.tsx): one
    * bot's whole profile in a modal shaped like Achievements, opened from the
    * mascot's menu in the bot panel. Null when closed. */
@@ -1468,7 +1473,7 @@ export type Action =
   | { type: "focusMessageConsumed"; nonce: number }
   | { type: "toggleAppSettings"; open?: boolean; section?: AppSettingsSection; subPage?: string; phonePairing?: boolean }
   | { type: "toggleAchievements"; open?: boolean }
-  | { type: "openBotCatalog" }
+  | { type: "openBotCatalog"; section?: "templates"; installUrl?: string }
   | { type: "closeBotCatalog" }
   | { type: "openPersonaEditor"; botId: string; section?: BotSettingsSection }
   | { type: "personaEditorSection"; section: BotSettingsSection }
@@ -1724,9 +1729,18 @@ function clearThreadReturnIfHome(state: AppState): AppState {
   return owner?.threadId === back.threadId ? { ...state, threadReturn: null } : state;
 }
 
-/** Open the organisation bot catalogue ("Browse Bots"). */
-export function openBotCatalog(): Action {
-  return { type: "openBotCatalog" };
+/** Where Browse Bots opens when it is not its home view. */
+export interface BotCatalogTarget {
+  section: "templates";
+  /** An install link (openmaus://, a team's address): previewed in Import. */
+  installUrl?: string;
+}
+
+/** Open the organisation bot catalogue ("Browse Bots"), on its home view or
+ * on its Templates section. */
+export function openBotCatalog(target?: BotCatalogTarget): Action {
+  if (!target) return { type: "openBotCatalog" };
+  return { type: "openBotCatalog", section: target.section, ...(target.installUrl ? { installUrl: target.installUrl } : {}) };
 }
 
 /** Close the organisation bot catalogue. */
@@ -2449,9 +2463,12 @@ export function reducer(state: AppState, action: Action): AppState {
       };
     }
     case "openBotCatalog":
-      return state.botCatalogOpen ? state : { ...state, botCatalogOpen: true };
+      if (action.section) {
+        return { ...state, botCatalogOpen: true, botCatalogTarget: { section: action.section, ...(action.installUrl ? { installUrl: action.installUrl } : {}) } };
+      }
+      return state.botCatalogOpen ? state : { ...state, botCatalogOpen: true, botCatalogTarget: null };
     case "closeBotCatalog":
-      return state.botCatalogOpen ? { ...state, botCatalogOpen: false } : state;
+      return state.botCatalogOpen ? { ...state, botCatalogOpen: false, botCatalogTarget: null } : state;
     case "openPersonaEditor":
       if (!state.bots.some((bot) => bot.id === action.botId)) return state;
       return {
@@ -2844,6 +2861,7 @@ export const initialState: AppState = {
   appSettingsSection: "general",
   achievementsOpen: false,
   botCatalogOpen: false,
+  botCatalogTarget: null,
   personaEditor: null,
   appSettingsSubPage: null,
   appSettingsPhonePairing: 0,

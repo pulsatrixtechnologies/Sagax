@@ -2,7 +2,9 @@
 // whom, the description and the actions; then a left column of tabs
 // (Instructions, Memories, Skills, Routines, Integrations) and the chosen
 // one on the right, the instructions first. Read only: editing happens in
-// the bot's own panel.
+// the bot's own panel. A template also shows the apps it uses as chips and
+// its small print; a team template (community or organization package)
+// shows the import preview instead of the tabs.
 import type { ReactNode } from "react";
 import { ChevronLeft } from "lucide-react";
 
@@ -106,10 +108,25 @@ export interface BotCatalogDetailViewProps {
   actions: ReactNode;
   /** Under the actions: the publish form, feedback. */
   below?: ReactNode;
+  /** In place of the tabs: a team template's import preview. */
+  preview?: ReactNode;
 }
 
-export function BotCatalogDetailView({ item, content, loading, tab, onTab, onBack, creatorAvatar, actions, below }: BotCatalogDetailViewProps) {
+/** The apps a template uses, as chips. */
+export function TemplateAppChips({ apps }: { apps: readonly string[] }) {
+  if (!apps.length) return null;
+  return (
+    <span className="flex flex-wrap items-center gap-1" data-catalog-apps="">
+      {apps.map((app) => (
+        <span key={app} data-catalog-app={app} className="rounded-full border border-hairline-weak px-1.5 py-px text-[10.5px] leading-[15px] text-ink-secondary">{app}</span>
+      ))}
+    </span>
+  );
+}
+
+export function BotCatalogDetailView({ item, content, loading, tab, onTab, onBack, creatorAvatar, actions, below, preview }: BotCatalogDetailViewProps) {
   const name = itemName(item);
+  const template = item.kind === "template" ? item.template : null;
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-y-auto" data-bot-catalog-detail={item.key}>
       <div className="shrink-0 px-6 pr-14 pt-5 sm:px-8">
@@ -121,10 +138,24 @@ export function BotCatalogDetailView({ item, content, loading, tab, onTab, onBac
           <h2 id="bot-catalog-title" className="mt-3 text-[22px] font-semibold leading-7 tracking-[-0.01em]" style={{ color: nameColor(itemLook(item)) }}>{name}</h2>
           <p className="mt-0.5 text-[13px] text-ink-tertiary">{t("botCatalog.byDetail", { name: itemCreator(item) })}</p>
           {itemDescription(item) && <p className="mt-2 max-w-[520px] text-[13.5px] leading-[20px] text-ink-secondary">{itemDescription(item)}</p>}
+          {template && template.apps.length > 0 && (
+            <div className="mt-2 flex flex-col items-center gap-1">
+              <span className="text-[11.5px] text-ink-tertiary">{t("botCatalog.template.uses")}</span>
+              <TemplateAppChips apps={template.apps} />
+            </div>
+          )}
+          {template && template.notes.length > 0 && (
+            <ul className="mt-2 flex flex-col items-center gap-0.5 text-[11.5px] text-ink-tertiary" data-catalog-notes="">
+              {template.notes.map((note) => <li key={note}>{note}</li>)}
+            </ul>
+          )}
           <div className="mt-4 flex flex-wrap items-center justify-center gap-2" data-catalog-actions="">{actions}</div>
           {below}
         </div>
       </div>
+      {preview !== undefined ? (
+        <div className="mx-6 mb-6 mt-6 border-t border-hairline-weak pt-5 text-left sm:mx-8" data-catalog-preview="">{preview}</div>
+      ) : (<>
       <div className="mx-6 mb-6 mt-6 flex min-h-[260px] flex-col gap-4 border-t border-hairline-weak pt-5 sm:mx-8 sm:flex-row">
         <div role="tablist" aria-label={t("botCatalog.tabsAria")} aria-orientation="vertical" className="flex shrink-0 flex-col gap-0.5 sm:w-[210px]">
           {CATALOG_TABS.map((id) => {
@@ -155,6 +186,7 @@ export function BotCatalogDetailView({ item, content, loading, tab, onTab, onBac
         </div>
       </div>
       <p className="mx-6 mb-6 -mt-3 text-[11.5px] text-ink-tertiary sm:mx-8">{t("botCatalog.readOnlyNote")}</p>
+      </>)}
     </div>
   );
 }

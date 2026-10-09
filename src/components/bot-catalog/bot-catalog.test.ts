@@ -4,10 +4,10 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 
-const fixture = vi.hoisted(() => ({ dispatch: vi.fn() }));
+const fixture = vi.hoisted(() => ({ dispatch: vi.fn(), target: null as null | { section: "templates"; installUrl?: string } }));
 vi.mock("@/state/store", async (importOriginal) => {
   const original = await importOriginal<typeof import("@/state/store")>();
-  return { ...original, useStore: () => ({ state: { ...original.initialState, botCatalogOpen: true }, dispatch: fixture.dispatch }) };
+  return { ...original, useStore: () => ({ state: { ...original.initialState, botCatalogOpen: true, botCatalogTarget: fixture.target }, dispatch: fixture.dispatch }) };
 });
 
 import {
@@ -16,7 +16,9 @@ import {
   catalogSections,
   catalogTemplates,
   matchesCatalogQuery,
+  templateApps,
   type BotCatalogEntry,
+  type CommunityTemplate,
   type CatalogActionContext,
   type CatalogItem,
 } from "@/lib/bot-catalog";
@@ -24,7 +26,9 @@ import { BOT_ROLES } from "@/lib/bot-roles";
 import { orgSectionMenuItems } from "../OrgSectionMenu";
 import { BotCatalogView, SECTION_PREVIEW, type BotCatalogViewProps } from "./BotCatalogView";
 import { BotCatalogDetailView, templateDetail } from "./BotCatalogDetailView";
-import { BotCatalogModal } from "./BotCatalogModal";
+import { BotCatalogModal, teamImportedText } from "./BotCatalogModal";
+import { CATEGORY_MODAL } from "../category-modal";
+import type { OrgLibraryPackage } from "@/lib/org-library";
 
 const ME = "pr_00000000-0000-4000-8000-00000000000a";
 const BEN = "pr_00000000-0000-4000-8000-00000000000b";
@@ -104,9 +108,9 @@ describe("catalogue actions", () => {
     expect(catalogActions(bot(entry("Hidden", { source: "shared", owner: ben })), member)).toEqual(["addToSidebar", "open", "import"]);
   });
 
-  it("import an organization bot or a template, unless the viewer may not create bots", () => {
+  it("import an organization bot or use a template, unless the viewer may not create bots", () => {
     expect(catalogActions(bot(entries[4]!), member)).toEqual(["import"]);
-    expect(catalogActions({ kind: "template", key: "role:coder", template: templates[3]! }, member)).toEqual(["import"]);
+    expect(catalogActions({ kind: "template", key: "role:coder", template: templates[3]! }, member)).toEqual(["useTemplate"]);
     expect(catalogActions(bot(entries[4]!), { ...member, canCreate: false })).toEqual([]);
   });
 
@@ -230,5 +234,112 @@ describe("the modal", () => {
 
   it("is in the sidebar section menu, after New section", () => {
     expect(orgSectionMenuItems({ named: false, canMoveUp: false, canMoveDown: false, anyExpanded: true, browseBots: true })).toEqual(["onNew", "onBrowseBots", "onCollapseAll"]);
+  });
+});
+
+// The Templates library's content, now in Browse Bots > Templates.
+const sales: CommunityTemplate = {
+  slug: "sales-desk", name: "Sales desk", summary: "Qualifies leads and drafts outreach.", category: "Sales",
+  outcome: "A pipeline that writes its own follow-ups", setupMinutes: 10, members: 3, skills: ["lead-scoring"], requires: { apps: ["HubSpot", "Gmail"] },
+};
+const field: CommunityTemplate = {
+  slug: "field-ops", name: "Field ops", summary: "Schedules crews.", category: "Field service", members: 2, skills: [], requires: { apps: ["gmail", "Google Calendar"] },
+};
+function pkg(patch: Partial<OrgLibraryPackage> = {}): OrgLibraryPackage {
+  return {
+    packageId: "22222222-2222-4222-8222-222222222222", ref: "acme/support", name: "Support desk", tagline: "Answers tickets.", kind: "team",
+    publisher: { organizationId: "o", name: "Acme Partners", self: false }, mode: "available",
+    release: { version: "1.0.0", sha256: "a".repeat(64), sizeBytes: 10, formatVersion: 2, publishedAt: 0, notes: "" },
+    contents: { bots: 2, skills: 1, presets: 0, rooms: 1, routines: 0, connections: 0, botNames: ["A", "B"] },
+    scanFindings: 0, blob: "ready", installed: null, ...patch,
+  };
+}
+const rich = catalogTemplates([], BOT_ROLES, { community: [sales, field], orgPackages: [pkg()] });
+const template = (id: string): CatalogItem => ({ kind: "template", key: id, template: rich.find((entry) => entry.id === id)! });
+
+describe("the Templates section (the old Templates library)", () => {
+  it("lists the organization's packages, the community teams and the built-in roles, with descriptions and the apps they use", () => {
+    expect(rich.map((entry) => entry.id)).toEqual([
+      "package:22222222-2222-4222-8222-222222222222", "community:sales-desk", "community:field-ops", ...BOT_ROLES.map((role) => `role:${role.id}`),
+    ]);
+    const desk = rich[1]!;
+    expect(desk).toMatchObject({ source: "community", description: "A pipeline that writes its own follow-ups", category: "sales", apps: ["HubSpot", "Gmail"], members: 3, creator: "Community" });
+    expect(desk.notes).toEqual(["Bots: 3", "About 10 min to set up"]);
+    expect(rich[2]!.category).toBe("Field service");
+    expect(rich[0]).toMatchObject({ source: "organization", description: "Answers tickets.", creator: "Acme Partners", members: 2 });
+    expect(rich[0]!.notes[0]).toBe("Bots: 2 · Skills: 1 · Group chats: 1");
+  });
+
+  it("filters templates by an app they use, case ignored, and searches descriptions and apps", () => {
+    expect(templateApps(rich)).toEqual(["Gmail", "Google Calendar", "HubSpot"]);
+    const byApp = catalogSections({ organization: false, entries: [] }, rich, { ...filter, app: "GMAIL" });
+    expect(ids(byApp.find((section) => section.id === "templates")!.items)).toEqual(["community:sales-desk", "community:field-ops"]);
+    const hub = catalogSections({ organization: false, entries: [] }, rich, { ...filter, app: "HubSpot" });
+    expect(ids(hub.find((section) => section.id === "templates")!.items)).toEqual(["community:sales-desk"]);
+    expect(matchesCatalogQuery(template("community:sales-desk"), "follow-ups")).toBe(true);
+    expect(matchesCatalogQuery(template("community:field-ops"), "calendar")).toBe(true);
+  });
+
+  it("offers Use this template on every template that can be added, and nothing to a viewer who may not create bots", () => {
+    const member: CatalogActionContext = { organization: true, admin: false, canCreate: true, inSidebar: () => true };
+    expect(catalogActions(template("community:sales-desk"), member)).toEqual(["useTemplate"]);
+    expect(catalogActions(template("role:coder"), member)).toEqual(["useTemplate"]);
+    expect(catalogActions(template("package:22222222-2222-4222-8222-222222222222"), member)).toEqual(["useTemplate"]);
+    const added = catalogTemplates([], [], { orgPackages: [pkg({ installed: { installId: "b".repeat(32), release: "1.0.0", status: "installed" } })] })[0]!;
+    expect(catalogActions({ kind: "template", key: added.id, template: added }, member)).toEqual([]);
+    expect(catalogActions(template("community:sales-desk"), { ...member, canCreate: false })).toEqual([]);
+  });
+
+  it("shows the apps on the rows, the tools and the app chips in its own view", () => {
+    const sections = catalogSections({ organization: false, entries: [] }, rich, filter);
+    const home = view({ organization: false, sections, onTemplateTool: () => {}, templateApps: templateApps(rich) });
+    expect(home).toContain('data-catalog-app="HubSpot"');
+    for (const tool of ["Import", "From a folder", "Share a team"]) expect(home).toContain(`>${tool}</button>`);
+    expect(home).toContain('data-catalog-view-all="templates"');
+    expect(home).not.toContain("data-catalog-app-chips");
+    const own = view({ organization: false, sections, expanded: "templates", onTemplateTool: () => {}, templateApps: templateApps(rich), templateApp: "Gmail", repositoryUrl: "https://github.com/pulsatrixtechnologies/sagax" });
+    expect(own).toContain("data-catalog-app-chips");
+    expect(own).toMatch(/aria-pressed="true"[^>]*data-catalog-app-chip="Gmail"/);
+    expect(own).toContain(">Any app</button>");
+    expect(own).toContain("Community repo");
+    expect(view({ organization: false, sections })).not.toContain("data-catalog-template-tools");
+  });
+
+  it("shows a template's apps and small print in its detail, and a team's preview in place of the tabs", () => {
+    const desk = template("community:sales-desk") as Extract<CatalogItem, { kind: "template" }>;
+    const html = renderToStaticMarkup(createElement(BotCatalogDetailView, {
+      item: desk, content: templateDetail(desk), tab: "soul", onTab: () => {}, onBack: () => {}, actions: null,
+      preview: createElement("p", { "data-test-preview": "" }, "3 bots join"),
+    }));
+    expect(html).toContain("A pipeline that writes its own follow-ups");
+    expect(html).toContain('data-catalog-app="Gmail"');
+    expect(html).toContain("About 10 min to set up");
+    expect(html).toContain("3 bots join");
+    expect(html).not.toContain('role="tablist"');
+  });
+
+  it("says what an import added", () => {
+    expect(teamImportedText({ name: "Sales desk", members: 3, connections: 1 })).toBe("3 bots added · existing bots and chats kept · Connections to finish in Plugins → MCP servers: 1");
+    expect(teamImportedText({ name: "Presets", members: 0, presets: 2 })).toBe("Preset bots added to New bot: 2");
+  });
+});
+
+describe("the modal shell", () => {
+  it("is the shared category modal shell, as Achievements and the persona editor", () => {
+    fixture.target = null;
+    const html = renderToStaticMarkup(createElement(BotCatalogModal));
+    for (const classes of [CATEGORY_MODAL.backdrop, CATEGORY_MODAL.frame, CATEGORY_MODAL.content, CATEGORY_MODAL.close]) {
+      expect(html).toContain(`class="${classes}"`);
+    }
+    expect(html).toContain(`class="${CATEGORY_MODAL.title}"`);
+  });
+
+  it("opens on its Templates section for the old library's entry points", () => {
+    fixture.target = { section: "templates" };
+    const html = renderToStaticMarkup(createElement(BotCatalogModal));
+    expect(html).toMatch(/<h2 id="bot-catalog-title"[^>]*>Templates<\/h2>/);
+    expect(html).toContain('data-catalog-section="templates"');
+    expect(html).not.toContain('data-catalog-section="mine"');
+    fixture.target = null;
   });
 });
