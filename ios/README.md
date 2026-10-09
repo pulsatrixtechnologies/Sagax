@@ -113,7 +113,7 @@ ios/
     Session.swift                connection, lifecycle, actions
     Discovery.swift              NWBrowser for _openmausbot._tcp
     Keychain.swift               the device token
-    Mascots/                     the Sagax characters (owl, shapes, Trombi, Bunbu), the picture crop,
+    Mascots/                     the Sagax characters (owl, shapes, Trombi, Bunbu, Ogre), the picture crop,
                                  group faces, and a DEBUG gallery (-mascotGallery owl|shape|trombi|group)
     PairingView.swift            QR handoff, discovery, address and code fallback
     Onboarding/                  welcome (three ways in), organization sign-in, shared page chrome
@@ -240,7 +240,10 @@ the host computer remain unreachable through the companion.
   desktop's own still frames (`ShapeStillArt.swift`, generated from
   `shape-engine.ts` by `src/components/ios-mascot-export.test.ts`, which also
   writes the fixture `MascotLookFixtureTests` reads), clay on Plain, eyes cut
-  out; Bunbu is `BunbuMascotView`; every colour of `shared/mascot-colors.ts`
+  out; Bunbu is `BunbuMascotView`; Ogre is `OgreMascotView`, the desktop's
+  own draw operations (`OgreStillArt.swift`, generated from `ogre-art.ts` by
+  the same test) painted by `OgreArt` (the palette ported, checked against
+  the desktop's for every bot colour); every colour of `shared/mascot-colors.ts`
   (Clay palette included) has its value. Where a premium skin's extra layers
   are not on the phone, its base finish shows and `MascotSubstitution` logs
   it once (category `mascot`). After a desktop change to the looks, run
