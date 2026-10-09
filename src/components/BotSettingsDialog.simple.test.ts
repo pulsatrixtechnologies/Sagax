@@ -31,15 +31,16 @@ const bot = { id: "bot-1", name: "Maily", title: "", description: "", messages: 
 afterEach(() => vi.unstubAllGlobals());
 
 describe("bot panel in Simple mode", () => {
-  it("hides the computer tab and a deep link into Access", () => {
+  it("hides the computer tab and shows no More tab", () => {
     vi.stubGlobal("window", { ogb: { platform: "darwin" } });
     const html = renderToStaticMarkup(createElement(DesktopCapabilitiesProvider, null, createElement(BotSettingsDialog, { bot })));
     const tabs = [...html.matchAll(/data-panel-tab="(\w+)"/g)].map((match) => match[1]);
-    expect(tabs).toEqual(["details", "library", "more"]);
+    expect(tabs).toEqual(["details", "library"]);
     expect(html).not.toContain('data-panel-tab="computer"');
-    expect(html).toContain(">Overview</h3>");
-    expect(html).not.toContain(">Access</h3>");
+    expect(html).not.toContain('data-panel-tab="more"');
     expect(html).not.toContain('data-bot-settings-section="access"');
+    // Simple still offers the persona editor, which hides the same sections
+    expect(html).toContain('data-edit-persona=""');
     // the mascot's menu is offered from the header's "..." button too
     expect(html).toContain('data-mascot-menu-button=""');
   });

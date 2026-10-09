@@ -41,6 +41,14 @@ describe("bot settings caption inset", () => {
 });
 
 describe("bot panel header and tabs", () => {
+  it("offers one Edit persona button after the tab bar, outside the tab list", () => {
+    vi.stubGlobal("window", { ogb: { platform: "darwin" } });
+    const html = renderToStaticMarkup(createElement(DesktopCapabilitiesProvider, null, createElement(BotSettingsDialog, { bot })));
+    expect(html.match(/data-edit-persona=""/g)).toHaveLength(1);
+    expect(html).toContain("Edit persona");
+    expect(html.indexOf('data-edit-persona=""')).toBeGreaterThan(html.indexOf('role="tablist"'));
+  });
+
   const panel = () => {
     vi.stubGlobal("window", { ogb: { platform: "darwin" } });
     return renderToStaticMarkup(createElement(DesktopCapabilitiesProvider, null, createElement(BotSettingsDialog, { bot })));
@@ -65,10 +73,11 @@ describe("bot panel header and tabs", () => {
     expect(html).not.toContain('id="bot-instructions-bot-1"');
   });
 
-  it("shows Details, Library, Computer and More, with Routines on Details and no empty Coding or Activity", () => {
+  it("shows Details, Library and Computer, with Routines on Details and no empty Coding or Activity", () => {
     const html = panel();
     const tabs = [...html.matchAll(/data-panel-tab="(\w+)"/g)].map((match) => match[1]);
-    expect(tabs).toEqual(["details", "library", "computer", "more"]);
+    expect(tabs).toEqual(["details", "library", "computer"]);
+    expect(html).not.toContain("Search settings");
     expect(html.indexOf('data-bot-settings-section="routines"')).toBeGreaterThan(-1);
     // nothing running and no code work yet: neither section is drawn
     expect(html).not.toContain('data-bot-settings-section="coding"');

@@ -2192,7 +2192,7 @@
   "place.fromBot": "依照此机器人的“运行位置”设置",
   "place.live": "目前使用中",
   "place.busy": "请等目前回合完成",
-  "place.offHint": "此机器人的“运行位置”已关闭。请在“更多”里的“电脑”中更改。",
+  "place.offHint": "此机器人的“运行位置”已关闭。请在“Edit persona”里的“访问”中更改。",
   "place.followBot": "依照此机器人的设置",
   "place.followBotDetail": "目前为 {place}",
   "place.unavailable": "此机器人的模型或设置不支持",

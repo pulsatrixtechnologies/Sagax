@@ -2203,7 +2203,7 @@
   "place.fromBot": "依照此機器人的「執行位置」設定",
   "place.live": "目前使用中",
   "place.busy": "請等目前回合完成",
-  "place.offHint": "此機器人的「執行位置」已關閉。請在「更多」裡的「電腦」中更改。",
+  "place.offHint": "此機器人的「執行位置」已關閉。請在「Edit persona」裡的「存取」中更改。",
   "place.followBot": "依照此機器人的設定",
   "place.followBotDetail": "目前為 {place}",
   "place.unavailable": "此機器人的模型或設定不支援",
