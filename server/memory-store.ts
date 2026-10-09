@@ -23,6 +23,7 @@ import { dirname, join, sep } from "node:path";
 import { writeFileAtomic } from "./atomic.ts";
 import { redactSecretsInText } from "./redact.ts";
 import {
+  DOCS_DIR,
   MEMORY_FILE_MAX_BYTES,
   MEMORY_MAX_BYTES,
   MEMORY_MAX_LINES,
@@ -32,8 +33,12 @@ import {
 } from "./workspace.ts";
 
 export const MEMORY_INDEX = "MEMORY.md";
+/** RULES.md and docs/<name>.md (server/workspace-files.ts) go through this
+ * store too, so the editor, the journal and its revert treat them exactly
+ * like memory files: same containment, scrub, modes and conflict check. */
+export const RULES_PATH = "RULES.md";
 
-export type MemoryDocKind = "index" | "topic" | "log";
+export type MemoryDocKind = "index" | "topic" | "log" | "rules" | "doc";
 
 export interface MemoryDocRef {
   /** The workspace-relative path as the API spells it. */
@@ -68,7 +73,7 @@ export class MemoryStoreError extends Error {
 const BOT_ID = /^[\w-]{1,128}$/;
 
 function pathError(path: string): MemoryStoreError {
-  return new MemoryStoreError("path", 400, `not a memory file: ${JSON.stringify(path)} — use MEMORY.md, memory/<topic>.md or memory/log/<day>.md`);
+  return new MemoryStoreError("path", 400, `not a memory file: ${JSON.stringify(path)}; use MEMORY.md, memory/<topic>.md, memory/log/<day>.md, RULES.md or docs/<name>.md`);
 }
 
 /** Only three shapes exist: the index, one topic file directly under
@@ -80,7 +85,11 @@ function pathError(path: string): MemoryStoreError {
 export function parseMemoryPath(path: string): MemoryDocRef {
   if (typeof path !== "string" || !path) throw pathError(path);
   if (path === MEMORY_INDEX) return { path, kind: "index", name: MEMORY_INDEX };
+  if (path === RULES_PATH) return { path, kind: "rules", name: RULES_PATH };
   const parts = path.split("/");
+  if (parts.length === 2 && parts[0] === DOCS_DIR && isMemoryTopicName(parts[1])) {
+    return { path, kind: "doc", name: parts[1] };
+  }
   if (parts.length === 2 && parts[0] === "memory" && isMemoryTopicName(parts[1])) {
     return { path, kind: "topic", name: parts[1] };
   }
@@ -96,6 +105,8 @@ function assertBotId(botId: string): void {
 
 function relativeSegments(ref: MemoryDocRef): string[] {
   if (ref.kind === "index") return [MEMORY_INDEX];
+  if (ref.kind === "rules") return [RULES_PATH];
+  if (ref.kind === "doc") return [DOCS_DIR, ref.name];
   if (ref.kind === "topic") return ["memory", ref.name];
   return ["memory", "log", ref.name];
 }
@@ -243,6 +254,20 @@ export function memoryOverview(botId: string): MemoryOverview {
   };
 }
 
+/** RULES.md and docs/ files present on disk, as store paths: what the
+ * journal's turn boundary watches beside the memory files. */
+export function workspaceDocPaths(botId: string): string[] {
+  assertBotId(botId);
+  const root = workspaceDir(botId);
+  const paths: string[] = [];
+  try {
+    if (lstatSync(join(root, RULES_PATH)).isFile()) paths.push(RULES_PATH);
+  } catch {
+    // no rules file: nothing to watch
+  }
+  return [...paths, ...listMarkdown(join(root, DOCS_DIR), DOCS_DIR).map((file) => file.path)];
+}
+
 export interface MemoryDoc {
   path: string;
   text: string;
@@ -286,6 +311,7 @@ export function writeMemoryDoc(
   const ref = parseMemoryPath(path);
   ensureWorkspace(botId);
   if (ref.kind === "log") mkdirSync(join(workspaceDir(botId), "memory", "log"), { recursive: true, mode: 0o700 });
+  if (ref.kind === "doc") mkdirSync(join(workspaceDir(botId), DOCS_DIR), { recursive: true, mode: 0o700 });
   const absolute = resolveMemoryPath(botId, path);
   const after = redactSecretsInText(text);
   const bytes = Buffer.byteLength(after, "utf8");

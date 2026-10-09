@@ -767,3 +767,19 @@ export function parseAudioRange(header: string | undefined, size: number): Audio
   if (end < start) return { kind: "none" };
   return { kind: "range", start, end: Math.min(end, size - 1) };
 }
+
+/** A file a bot package brings back (server/bot-zip.ts): stored under a new
+ * UUID name with the extension its mime maps to, never the archive's own
+ * name, within the same per-kind size caps as an upload. */
+export function saveImportedAttachment(bytes: Buffer, mime: string): SavedAttachment {
+  const normalized = normalizedMime(mime) ?? "";
+  const ext = extensionForMime(normalized) ?? extensionForFileMime(normalized);
+  if (!ext) throw statusError(400, "unsupported attachment type");
+  if (bytes.byteLength === 0) throw statusError(400, "empty attachment");
+  if (bytes.byteLength > maxBytesForFileMime(normalized)) throw statusError(413, "attachment is larger than the limit");
+  ensureAttachmentsDir();
+  const path = join(ATTACHMENTS_DIR, `${randomUUID()}${ext}`);
+  writeFileSync(path, bytes, { mode: 0o600, flag: "wx" });
+  invalidateAttachmentAccounting();
+  return { path, mime: normalized, bytes: bytes.byteLength };
+}

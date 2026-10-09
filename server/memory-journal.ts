@@ -30,6 +30,7 @@ import {
   hashMemoryText,
   memoryOverview,
   readMemoryDoc,
+  workspaceDocPaths,
   writeMemoryDoc,
 } from "./memory-store.ts";
 import { redactSecretsInText } from "./redact.ts";
@@ -424,7 +425,8 @@ const turnBots = new Map<string, Set<string>>();
 function currentDocs(botId: string): Map<string, string> {
   const docs = new Map<string, string>();
   const overview = memoryOverview(botId);
-  for (const path of [MEMORY_INDEX, ...overview.topics.map((t) => t.path), ...overview.logs.map((l) => l.path)]) {
+  // RULES.md and docs/ are journaled like memory (server/workspace-files.ts)
+  for (const path of [MEMORY_INDEX, ...overview.topics.map((t) => t.path), ...overview.logs.map((l) => l.path), ...workspaceDocPaths(botId)]) {
     const doc = readMemoryDoc(botId, path);
     if (doc.exists) docs.set(path, doc.text);
   }

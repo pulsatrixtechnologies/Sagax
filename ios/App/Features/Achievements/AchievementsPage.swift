@@ -282,6 +282,9 @@ struct AchievementCard: View {
 
     private var unlocked: Bool { state?.unlocked == true }
     private var secret: Bool { definition.hidden && !unlocked }
+    /// The Mastery tier: its bar shows from 0 (the bar is the point), and it says how many looks it unlocks.
+    private var mastery: Bool { definition.category == .mastery }
+    private var looks: Int { definition.rewards.filter { if case .title = $0 { return false } else if case .appIcon = $0 { return false } else { return true } }.count }
 
     var body: some View {
         let tint = AchievementWording.color(definition.rarity)
@@ -306,7 +309,7 @@ struct AchievementCard: View {
                     .font(Theme.Font.label)
                     .foregroundStyle(Theme.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
-                if let state, state.showsProgress {
+                if let state, state.showsProgress || (mastery && !secret && !state.unlocked && state.target > 0) {
                     HStack(spacing: 6) {
                         ProgressView(value: Double(state.current), total: Double(max(state.target, 1))).tint(tint)
                         Text(verbatim: "\(state.current)/\(state.target)")
@@ -325,6 +328,13 @@ struct AchievementCard: View {
                 }
                 .font(Theme.Font.label)
                 .foregroundStyle(Theme.textTertiary)
+                // what a Mastery achievement keeps locked until it unlocks (the look editor shows the same lock)
+                if mastery, !secret, looks > 0 {
+                    Label(unlocked ? String(localized: "Unlocked \(looks) looks") : String(localized: "Locked: \(looks) looks to unlock"), systemImage: unlocked ? "lock.open.fill" : "lock.fill")
+                        .font(Theme.Font.label)
+                        .foregroundStyle(unlocked ? tint : Theme.textTertiary)
+                        .accessibilityIdentifier("achievement.\(definition.id).looks")
+                }
             }
         }
         .padding(12)

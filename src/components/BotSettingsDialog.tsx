@@ -2,12 +2,12 @@
 // same shell pattern as InspectorPanel. Every section lives under
 // bot-settings/; their bodies and reads (overview, system-prompt, history)
 // are useBotSectionContent, shared with the persona editor. This dialog owns
-// which tab and which accordion row is expanded.
+// which tab is up; every section but Details opens in the persona editor.
 import { useCallback, useEffect, useRef, useState } from "react";
 import { DockedPanelResizeHandle, useDockedPanelWidth } from "./DockedPanelResize";
-import { Bug, ChevronDown, ChevronLeft, MoreHorizontal, PanelRight, Search } from "lucide-react";
+import { Bug, MoreHorizontal, PanelRight, Pencil } from "lucide-react";
 
-import { openBotCatalog, useStore, visibleMessages, type Bot } from "@/state/store";
+import { useStore, visibleMessages, type Bot } from "@/state/store";
 import { requestPrimaryBot } from "@/lib/bot-quick-actions";
 import { BotContextMenu, type MenuState } from "./Sidebar";
 import { CIRCLE_BUTTON } from "@/lib/circle-button";
@@ -15,13 +15,11 @@ import { reportAchievement } from "@/lib/achievements";
 import { ExportTranscriptMenu } from "./ExportTranscriptMenu";
 import { cn } from "@/lib/cn";
 import { useAdvancedMode } from "@/lib/interface-mode";
-import { simpleHidesBotSection, simpleHidesPanelTab } from "@/lib/interface-visibility";
+import { simpleHidesPanelTab } from "@/lib/interface-visibility";
 import { useShowInspectorButton } from "@/lib/inspector-preferences";
-import { BOT_SECTIONS } from "./bot-settings/sections";
 import { LibraryTab } from "./bot-settings/LibraryTab";
-import { MemorySection } from "./bot-settings/MemorySection";
 import { RoutinesSection } from "./bot-settings/RoutinesSection";
-import { isMoreSection, PANEL_TABS, tabForSection, type PanelTab } from "./bot-settings/panel-tabs";
+import { PANEL_TABS, type PanelTab } from "./bot-settings/panel-tabs";
 import { ActivitySection } from "./bot-settings/ActivitySection";
 import { InlineEditableText } from "./bot-settings/InlineEditableText";
 import { PackageProvenance } from "./bot-settings/PackageProvenance";
@@ -32,15 +30,8 @@ import { useCaptionChrome, useMacInsetChrome } from "./DesktopCapabilities";
 import { t } from "@/lib/i18n";
 import { canEditBotField } from "@/lib/bot-capabilities";
 import { viewerBotsReadOnly } from "@/lib/viewer";
-import { botSectionLock, useBotSectionAvailability, useBotSectionContent } from "./bot-settings/useBotSectionContent";
+import { useBotSectionAvailability, useBotSectionContent } from "./bot-settings/useBotSectionContent";
 import { botsReadOnlyText } from "@/lib/permissions";
-
-const sectionLabel = (entry: (typeof BOT_SECTIONS)[number]) => (entry.labelKey ? t(entry.labelKey) : entry.label);
-
-function sectionMatches(entry: (typeof BOT_SECTIONS)[number], query: string): boolean {
-  if (!query) return true;
-  return [entry.label, sectionLabel(entry), ...entry.keywords].some((part) => part.toLowerCase().includes(query));
-}
 
 export function BotSettingsDialog({ bot, onOpenVmWorkspace }: {
   bot: Bot;
@@ -55,17 +46,13 @@ export function BotSettingsDialog({ bot, onOpenVmWorkspace }: {
   const { macInset, browser } = useMacInsetChrome();
   const section = state.botSettingsSection;
   const dialogRef = useRef<HTMLElement | null>(null);
-  const [query, setQuery] = useState("");
   // Keep expansion in the store too: header deep links can arrive while
   // this panel is already mounted, including after collapsing the same row.
   const collapsed = !state.botSettingsExpandAccordion;
-  // A deep link to a section lands on the tab that holds it.
-  const [pickedTab, setPickedTab] = useState<Exclude<PanelTab, "computer">>(
-    collapsed ? "details" : tabForSection(state.botSettingsSection),
-  );
+  // Every deep link that reaches the panel (Details, Routines) lands on Details.
+  const [pickedTab, setPickedTab] = useState<Exclude<PanelTab, "computer">>("details");
   useEffect(() => {
-    if (collapsed) return;
-    setPickedTab(tabForSection(section));
+    if (!collapsed) setPickedTab("details");
   }, [collapsed, section]);
   // The Computer tab is the store's computer view, so every existing
   // "open the computer" link still lands on it.
@@ -92,7 +79,7 @@ export function BotSettingsDialog({ bot, onOpenVmWorkspace }: {
   };
   const dockedPanel = useDockedPanelWidth();
   // The mascot's menu (right click on it, or the "..." button): Edit
-  // persona, Rename the bot, Put on the desktop, Make primary bot, Browse Bots.
+  // persona, Rename the bot, Put on the desktop, Make primary bot.
   const [mascotMenu, setMascotMenu] = useState<MenuState | null>(null);
   const [renameRequest, setRenameRequest] = useState(0);
   const closeMascotMenu = useCallback(() => setMascotMenu(null), []);
@@ -101,38 +88,22 @@ export function BotSettingsDialog({ bot, onOpenVmWorkspace }: {
       .then((primary) => dispatch({ type: "botPatched", bot: primary }))
       .catch((cause: unknown) => dispatch({ type: "error", message: cause instanceof Error ? cause.message : String(cause) }));
   };
-  const q = query.trim().toLowerCase();
-  const { available, slackUrl } = useBotSectionAvailability(bot.id);
-  const sections = BOT_SECTIONS
-    .filter((entry) => isMoreSection(entry.id))
-    .filter((entry) => available(entry.id))
-    // An organization member never sees a section whose fields the server
-    // refuses here (the persona editor shows it locked, with the reason).
-    .filter((entry) => botSectionLock(state.config, bot, entry.id) === null)
-    .filter((entry) => advanced || !simpleHidesBotSection(entry.id));
-  const visibleSections = sections.filter((entry) => sectionMatches(entry, q));
-  // A deep link into a section Simple hides shows Overview instead. The
-  // hidden section's saved values stay.
-  const shownSection = !advanced && simpleHidesBotSection(section) ? "overview" : section;
-  const { renderSectionBody, dialogs, derived } = useBotSectionContent(bot, {
+  const { slackUrl } = useBotSectionAvailability(bot.id);
+  const { dialogs, derived } = useBotSectionContent(bot, {
     section,
     expanded: !collapsed,
-    onOpenSection: (target) => {
-      if (!advanced && simpleHidesBotSection(target)) return;
-      dispatch({ type: "toggleSettings", open: true, section: target });
-    },
+    // Sections other than Details open in the persona editor (store).
+    onOpenSection: (target) => dispatch({ type: "toggleSettings", open: true, section: target }),
     returnFocusRef: dialogRef,
     slackUrl,
   });
 
   useEffect(() => {
-    // Search narrows the collapsed row list. Choosing a row (or following
-    // an external deep link) clears that filter so it cannot hide the body.
+    // A deep link to Routines scrolls to its row.
     if (collapsed) return;
-    if (q) { setQuery(""); return; }
     dialogRef.current?.querySelector(`[data-bot-settings-section="${section}"]`)
       ?.scrollIntoView({ block: "nearest" });
-  }, [collapsed, section, q]);
+  }, [collapsed, section]);
 
   useEffect(() => {
     const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
@@ -181,16 +152,7 @@ export function BotSettingsDialog({ bot, onOpenVmWorkspace }: {
         {/* Top bar: only the controls, the way Grok Bot's panel opens. On
             Windows it drops below the caption buttons (padClass). */}
         <div className={cn("content-topbar relative flex h-12 shrink-0 items-center justify-between px-3", padClass)}>
-          {tab === "more" && !collapsed ? (
-            <button
-              type="button"
-              onClick={() => dispatch({ type: "toggleSettings", open: true })}
-              aria-label="Back"
-              className={CIRCLE_BUTTON}
-            >
-              <ChevronLeft size={18} strokeWidth={1.75} />
-            </button>
-          ) : <span />}
+          <span />
           <div className="flex items-center gap-2">
             <button
               type="button"
@@ -203,7 +165,9 @@ export function BotSettingsDialog({ bot, onOpenVmWorkspace }: {
                 const box = event.currentTarget.getBoundingClientRect();
                 setMascotMenu((open) => (open ? null : { botId: bot.id, x: box.left, y: box.bottom + 4 }));
               }}
-              className={CIRCLE_BUTTON}
+              // The header's own round control, as Export and Close beside
+              // it (ExportTranscriptMenu: the same hover tone while open).
+              className={cn(CIRCLE_BUTTON, mascotMenu !== null && "bg-elevated-hover")}
             >
               <MoreHorizontal size={18} strokeWidth={1.75} />
             </button>
@@ -300,6 +264,15 @@ export function BotSettingsDialog({ bot, onOpenVmWorkspace }: {
                 </button>
               ))}
             </div>
+            <button
+              type="button"
+              data-edit-persona=""
+              onClick={() => dispatch({ type: "openPersonaEditor", botId: bot.id, section: "overview" })}
+              className="mt-3 flex items-center gap-1.5 rounded-lg border border-hairline-weak bg-elevated px-3 py-1.5 text-[13px] text-ink transition-colors hover:bg-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
+            >
+              <Pencil size={13} aria-hidden="true" className="text-ink-secondary" />
+              {t("botPanel.editPersona")}
+            </button>
           </div>
 
           {tab === "details" && (
@@ -320,65 +293,6 @@ export function BotSettingsDialog({ bot, onOpenVmWorkspace }: {
             </div>
           )}
 
-          {tab === "more" && (
-            <>
-              {collapsed && <div className="mx-4 mb-3 flex shrink-0 items-center gap-2 rounded-lg border border-hairline-weak bg-elevated px-2.5 py-1.5">
-                <Search size={14} className="shrink-0 text-ink-secondary" />
-                <input
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key !== "Escape") return;
-                    e.stopPropagation();
-                    if (query) setQuery("");
-                    else closePanel();
-                  }}
-                  placeholder="Search"
-                  aria-label="Search settings"
-                  className="w-full bg-transparent text-[13px] text-ink placeholder:text-ink-secondary focus:outline-none"
-                />
-              </div>}
-              {collapsed && (
-                <div className="mx-4 mb-6 overflow-hidden rounded-xl border border-hairline-weak">
-                  {visibleSections.map((entry) => {
-                    const Icon = entry.icon;
-                    return (
-                      <button
-                        key={entry.id}
-                        type="button"
-                        data-bot-settings-section={entry.id}
-                        onClick={() => dispatch({ type: "toggleSettings", open: true, section: entry.id })}
-                        className="flex w-full items-center gap-2.5 border-b border-hairline-weak px-3 py-2.5 text-left text-[13px] text-ink last:border-b-0 hover:bg-hover"
-                      >
-                        <Icon size={15} className="shrink-0 text-ink-secondary" />
-                        <span className="min-w-0 flex-1 truncate">{sectionLabel(entry)}</span>
-                        <ChevronDown size={14} className="-rotate-90 text-ink-secondary" />
-                      </button>
-                    );
-                  })}
-                  {q && visibleSections.length === 0 && (
-                    <div className="px-3 py-3 text-[12.5px] leading-relaxed text-ink-secondary">
-                      Nothing matches “{query.trim()}”
-                    </div>
-                  )}
-                </div>
-              )}
-              {!collapsed && (
-                <div className="px-4 pb-6">
-                  <h3 className="mb-3 text-[14px] font-medium text-ink">
-                    {sectionLabel(sections.find((entry) => entry.id === shownSection) ?? sections[0]!)}
-                  </h3>
-                  {shownSection !== "memory" && renderSectionBody(shownSection)}
-                </div>
-              )}
-            </>
-          )}
-          {/* Memory stays mounted so an unsaved draft survives tab and
-              section changes; it shows only while it is the open section.
-              A member cannot save it, so it is not mounted and does not fetch. */}
-          {canEditBotField(state.config, bot, "memoryEnabled") && <div hidden={!(tab === "more" && !collapsed && shownSection === "memory")} className="px-4 pb-6">
-            <MemorySection bot={bot} active={tab === "more" && !collapsed && shownSection === "memory"} onToggle={(enabled) => derived.patch({ memoryEnabled: enabled })} />
-          </div>}
         </div>
       </aside>
       {dialogs}
@@ -389,7 +303,6 @@ export function BotSettingsDialog({ bot, onOpenVmWorkspace }: {
         onEditPersona={(target) => dispatch({ type: "openPersonaEditor", botId: target.id })}
         onRename={() => setRenameRequest((count) => count + 1)}
         onMakePrimary={makePrimary}
-        onBrowseBots={() => dispatch(openBotCatalog())}
       />
     </>
   );

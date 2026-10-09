@@ -12,7 +12,7 @@ import { teamImportPreview } from "@/lib/team-import";
 import type { ShareResponse } from "@/lib/team-share";
 import { presetShareBody, SharePresetContents, type PresetShareResponse } from "./SharePresetDialog";
 import { ShareTeamContents } from "./ShareTeamDialog";
-import { TeamImportDetails } from "./TeamLibraryPanel";
+import { TeamImportDetails } from "./bot-catalog/TeamImportDetails";
 import { packageSummary, parsePackageDocument } from "../../shared/package-format";
 
 const fixture = (name: string) => JSON.parse(readFileSync(join(import.meta.dirname, "..", "..", "shared", "package-fixtures", name), "utf8"));

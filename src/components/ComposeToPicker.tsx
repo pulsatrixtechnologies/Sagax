@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Check, Command, LayoutGrid, Plus, Users, X } from "lucide-react";
+import { Check, Command, Plus, Users, X } from "lucide-react";
 import { track } from "@/lib/analytics";
 import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
 import { isMacPlatform } from "@/lib/keyboard-shortcuts";
 import { viewerActorId, viewerBotsReadOnly, viewerCanCreateBots } from "@/lib/viewer";
 import { isViewersPrimaryBot } from "@/lib/primary-bot";
-import { openBotCatalog, useStore, type Bot } from "@/state/store";
+import { useStore, type Bot } from "@/state/store";
 import { useOrgPeople, type OrgDirectoryPerson } from "@/lib/perspicax-org";
 import { personAvatarSrc } from "@/lib/profile-management";
 import { BotAvatar } from "./Avatar";
@@ -19,7 +19,7 @@ import { PersonLabelTag } from "./LabelTag";
 import { botsReadOnlyText } from "@/lib/permissions";
 
 type ComposeMode = "browse" | "group";
-type ComposeRow = { kind: "create-bot" } | { kind: "create-group" } | { kind: "browse-bots" } | { kind: "bot"; bot: Bot } | { kind: "person"; person: OrgDirectoryPerson };
+type ComposeRow = { kind: "create-bot" } | { kind: "create-group" } | { kind: "bot"; bot: Bot } | { kind: "person"; person: OrgDirectoryPerson };
 
 function isExternalBot(bot: Bot, viewer: string): boolean {
   const owner = bot.ownerUserId?.trim().toLowerCase();
@@ -42,7 +42,6 @@ export function composePeople(people: Iterable<OrgDirectoryPerson>, viewer: stri
 
 /** Rows under the To: field. Group mode keeps the confirm row, then the
  * bots. "New bot" is offered only when the server lets this viewer create one.
- * Browse Bots (the catalogue modal) follows the two create rows.
  * On an organization server the people follow the bots (browse mode only):
  * choosing one opens the direct conversation with them. */
 export function composeRows(mode: ComposeMode, bots: Bot[], canCreateBots = true, people: OrgDirectoryPerson[] = []): ComposeRow[] {
@@ -51,7 +50,6 @@ export function composeRows(mode: ComposeMode, bots: Bot[], canCreateBots = true
   return [
     ...(canCreateBots ? [{ kind: "create-bot" } as const] : []),
     { kind: "create-group" },
-    { kind: "browse-bots" },
     ...botRows,
     ...people.map((person): ComposeRow => ({ kind: "person", person })),
   ];
@@ -129,11 +127,6 @@ export function ComposeToPicker({ onClose }: { onClose: () => void }) {
       if (!picked.size) return;
       dispatch({ type: "createGroup", memberIds: [...picked] });
       track("room_created", { members: picked.size, context: false });
-      onCloseRef.current();
-      return;
-    }
-    if (row.kind === "browse-bots") {
-      dispatch(openBotCatalog());
       onCloseRef.current();
       return;
     }
@@ -312,29 +305,6 @@ export function ComposeToPicker({ onClose }: { onClose: () => void }) {
                 >
                   <Users size={16} className="shrink-0 text-ink-secondary" />
                   <span className="flex-1 truncate">{groupLabel}</span>
-                  {shortcut && <KeyHint n={shortcut} />}
-                </button>
-              );
-            }
-            if (row.kind === "browse-bots") {
-              return (
-                <button
-                  key="browse-bots"
-                  id={`compose-row-${index}`}
-                  ref={selected ? activeRef : undefined}
-                  type="button"
-                  role="option"
-                  aria-selected={selected}
-                  data-compose-action="browse-bots"
-                  onMouseEnter={() => setCursor(index)}
-                  onClick={() => activate(row)}
-                  className={cn(
-                    "flex w-full items-center gap-3 px-3 py-2 text-left text-[14px] text-ink",
-                    selected ? "bg-raised/80" : "hover:bg-raised/60",
-                  )}
-                >
-                  <LayoutGrid size={16} className="shrink-0 text-ink-secondary" />
-                  <span className="flex-1 truncate">{t("compose.browseBots")}</span>
                   {shortcut && <KeyHint n={shortcut} />}
                 </button>
               );

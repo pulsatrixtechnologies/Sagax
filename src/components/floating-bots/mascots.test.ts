@@ -63,13 +63,13 @@ describe("a bot's character and its look", () => {
     expect(botMascotLook(undefined)).toEqual({ character: "owl" });
     expect(botMascotLook({ character: "shape", shape: "rocket" })).toEqual({ character: "owl" });
     expect(botMascotLook({ character: "trombi", skins: { trombi: "gold" } })).toEqual({ character: "trombi", skins: { trombi: "gold" } });
-    expect(completeMascotLook({ character: "shape" })).toEqual({ character: "shape", style: "2d", shape: "circle", skins: { shape: "plain", trombi: "classic", bunbu: "plain" } });
+    expect(completeMascotLook({ character: "shape" })).toEqual({ character: "shape", style: "2d", shape: "circle", skins: { shape: "plain", trombi: "classic", bunbu: "plain", shiba: "plain" } });
   });
 
   it("keeps each character's own skin when switching and back", () => {
     const look = completeMascotLook({ character: "shape", skins: { shape: "neon", trombi: "retro98" } });
     const trombi = { ...look, character: "trombi" as const };
-    expect(completeMascotLook({ ...trombi, character: "shape" }).skins).toEqual({ shape: "neon", trombi: "retro98", bunbu: "plain" });
+    expect(completeMascotLook({ ...trombi, character: "shape" }).skins).toEqual({ shape: "neon", trombi: "retro98", bunbu: "plain", shiba: "plain" });
   });
 
   it("draws every shape, with every skin, with two eyes cut through the body", () => {
@@ -145,7 +145,7 @@ describe("a bot's character and its look", () => {
 
 describe("the mascot registry", () => {
   it("lists each character once, with a renderer, a thumbnail and its capabilities", () => {
-    expect(MASCOTS.map((entry) => entry.id)).toEqual(["owl", "shape", "trombi", "bunbu"]);
+    expect(MASCOTS.map((entry) => entry.id)).toEqual(["owl", "shape", "trombi", "bunbu", "shiba"]);
     for (const entry of MASCOTS) {
       expect(typeof entry.Render).toBe("function");
       expect(typeof entry.Thumb).toBe("function");
@@ -201,7 +201,9 @@ describe("the avatar popover's Bot tab", () => {
     const locked = render(undefined);
     expect(locked).toContain('data-character-option="owl"');
     for (const id of ["shape", "trombi", "bunbu"]) expect(locked).not.toContain(`data-character-option="${id}"`);
-    expect(locked).not.toContain("data-locked");
+    // a Mastery character (Shiba) stays in the row, locked, with its achievement; nothing else shows locked
+    expect(locked).toContain('data-character-option="shiba"');
+    expect(locked.match(/data-locked/g) ?? []).toHaveLength(1);
     expect(locked).not.toContain('data-tab="epic"');
     expect(locked).toContain('data-mascot-skin-option="none"');
     // the skin this bot already wears stays visible

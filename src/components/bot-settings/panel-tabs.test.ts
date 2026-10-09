@@ -2,35 +2,25 @@ import { describe, expect, it } from "vitest";
 
 import en from "@/locales/en.json";
 import fr from "@/locales/fr.json";
-import { BOT_SECTIONS } from "./sections";
-import { isMoreSection, PANEL_TABS, tabForSection } from "./panel-tabs";
+import { PANEL_TABS } from "./panel-tabs";
 
 describe("bot panel tabs", () => {
-  it("run Details, Library, Computer, More in that order", () => {
-    expect(PANEL_TABS).toEqual(["details", "library", "computer", "more"]);
+  it("run Details, Library, Computer in that order, with no More tab", () => {
+    expect(PANEL_TABS).toEqual(["details", "library", "computer"]);
   });
 
-  it("are labelled in English and French, with no Routines tab", () => {
+  it("are labelled in English and French, with no Routines or More tab", () => {
     const labels = (catalog: Record<string, string>) => PANEL_TABS.map((id) => catalog[`botPanel.tab.${id}`]);
-    expect(labels(en)).toEqual(["Details", "Library", "Computer", "More"]);
-    expect(labels(fr)).toEqual(["Détails", "Bibliothèque", "Ordinateur", "Plus"]);
-    expect(en).not.toHaveProperty("botPanel.tab.routines");
-    expect(fr).not.toHaveProperty("botPanel.tab.routines");
+    expect(labels(en)).toEqual(["Details", "Library", "Computer"]);
+    expect(labels(fr)).toEqual(["Détails", "Bibliothèque", "Ordinateur"]);
+    for (const catalog of [en, fr]) {
+      expect(catalog).not.toHaveProperty("botPanel.tab.routines");
+      expect(catalog).not.toHaveProperty("botPanel.tab.more");
+    }
   });
 
-  it("land a deep link on the tab that holds the section", () => {
-    // Name and label are edited at the panel's top.
-    expect(tabForSection("details")).toBe("details");
-    // Routines are a section of Details.
-    expect(tabForSection("routines")).toBe("details");
-    expect(tabForSection("memory")).toBe("more");
-    expect(tabForSection("overview")).toBe("more");
-    expect(tabForSection("worksOn")).toBe("more");
-  });
-
-  it("keeps Routines out of the More list, and every other section in it", () => {
-    const more = BOT_SECTIONS.filter((entry) => isMoreSection(entry.id)).map((entry) => entry.id);
-    expect(more).toEqual(BOT_SECTIONS.map((entry) => entry.id).filter((id) => id !== "routines"));
-    expect(BOT_SECTIONS.some((entry) => entry.id === "details")).toBe(false);
+  it("labels the persona entry", () => {
+    expect(en["botPanel.editPersona"]).toBe("Edit persona");
+    expect(fr["botPanel.editPersona"]).toBe("Modifier la persona");
   });
 });

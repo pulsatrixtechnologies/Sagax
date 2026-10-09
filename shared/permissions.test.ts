@@ -53,6 +53,19 @@ describe("the permission catalogue", () => {
     }
   });
 
+  it("has the routine scope keys: read side off by default, never admin-only, an older list without them still reads", () => {
+    for (const key of ["routines.viewTeam", "routines.viewAll", "routines.runNowAny", "routines.runAsAnyone"] as const) {
+      expect(isPermissionKey(key), key).toBe(true);
+      expect(PERMISSIONS.find((entry) => entry.key === key)).toMatchObject({ group: "routines", memberDefault: false, adminOnly: false });
+    }
+    expect(PERMISSIONS.filter((entry) => entry.group === "routines").map((entry) => entry.key)).toEqual(["routines.runAsAnyone", "routines.runNowAny", "routines.viewTeam", "routines.viewAll"]);
+    expect(can({ admin: true, permissions: [] }, "routines.viewAll")).toBe(true);
+    expect(can({ admin: false, permissions: [] }, "routines.viewTeam")).toBe(false);
+    expect(can({ admin: false, permissions: ["routines.viewTeam"] }, "routines.viewAll")).toBe(false);
+    // A newer Perspicax may send a key this build does not know: ignored.
+    expect(normalizePermissions(["routines.viewTeam", "routines.viewEverything"])).toEqual({ granted: ["routines.viewTeam"], unknown: ["routines.viewEverything"], ignored: [] });
+  });
+
   it("is what the console reads", () => {
     const catalogue = permissionCatalogue();
     expect(catalogue.version).toBe(1);

@@ -815,6 +815,12 @@ describe("notification routing", () => {
     ]);
   });
 
+  it("opens a person's room by its group id when the thread is not in its task list", () => {
+    const dispatch = vi.fn();
+    openNotificationTarget(dispatch, { botId: "", threadId: "person-thread-2", groupId: "room-1" }, { bots, groups });
+    expect(dispatch.mock.calls.map(([action]) => action)).toEqual([{ type: "select", id: "room-1" }]);
+  });
+
   it("lands on a plain bot select for a thread it cannot place, not an error", () => {
     const dispatch = vi.fn();
 
@@ -921,6 +927,11 @@ describe("notification routing", () => {
 });
 
 describe("config status frames", () => {
+  it("carries the organization's allowed model providers, so an open picker follows a change at once", () => {
+    expect(configStatusFromFrame({ allowedEngines: ["claude"] } as ConfigStatusFrame).allowedEngines).toEqual(["claude"]);
+    expect(configStatusFromFrame({ allowedEngines: null } as ConfigStatusFrame).allowedEngines).toBeNull();
+  });
+
   it("keeps each provider's own key flag through a live config update", () => {
     const status = configStatusFromFrame({
       openai: { configured: true },
@@ -2076,12 +2087,12 @@ describe("bot settings section", () => {
   });
 
   it("reopens the same section after a collapse without remounting settings", () => {
-    const opened = reducer(initialState, { type: "toggleSettings", open: true, section: "usage" });
+    const opened = reducer(initialState, { type: "toggleSettings", open: true, section: "routines" });
     const collapsed = reducer(opened, { type: "toggleSettings", open: true });
     expect(collapsed.settingsOpen).toBe(true);
     expect(collapsed.botSettingsExpandAccordion).toBe(false);
-    const reopened = reducer(collapsed, { type: "toggleSettings", open: true, section: "usage" });
-    expect(reopened.botSettingsSection).toBe("usage");
+    const reopened = reducer(collapsed, { type: "toggleSettings", open: true, section: "routines" });
+    expect(reopened.botSettingsSection).toBe("routines");
     expect(reopened.botSettingsExpandAccordion).toBe(true);
   });
 
@@ -2089,19 +2100,19 @@ describe("bot settings section", () => {
     const state = reducer(initialState, {
       type: "toggleSettings",
       open: true,
-      section: "soul",
+      section: "routines",
     });
     expect(state.botSettingsExpandAccordion).toBe(true);
     const next = reducer(state, {
       type: "toggleSettings",
       open: true,
     });
-    expect(next.botSettingsSection).toBe("soul");
+    expect(next.botSettingsSection).toBe("routines");
     // Bare reopen (mascot) must not auto-expand a leftover section.
     expect(next.botSettingsExpandAccordion).toBe(false);
   });
 
-  it.each(["details", "model"] as const)("opens a bot's %s settings without leaving the team map or reading its conversations", (section) => {
+  it.each(["details", "routines"] as const)("opens a bot's %s settings without leaving the team map or reading its conversations", (section) => {
     const state = {
       ...initialState,
       activeView: "team-map" as const,
@@ -2127,7 +2138,7 @@ describe("bot settings section", () => {
       selectedId: bot.id,
       bots: [bot, other],
       settingsOpen: true,
-      botSettingsSection: "soul" as const,
+      botSettingsSection: "routines" as const,
       botSettingsExpandAccordion: true,
     };
     const next = reducer(state, { type: "toggleSettings", botId: other.id });
@@ -2137,9 +2148,9 @@ describe("bot settings section", () => {
     expect(next.botSettingsSection).toBe("overview");
     expect(next.botSettingsExpandAccordion).toBe(false);
 
-    const model = reducer(next, { type: "toggleSettings", botId: bot.id, section: "model" });
+    const model = reducer(next, { type: "toggleSettings", botId: bot.id, section: "routines" });
     expect(model.settingsOpen).toBe(true);
-    expect(model.botSettingsSection).toBe("model");
+    expect(model.botSettingsSection).toBe("routines");
     expect(model.botSettingsExpandAccordion).toBe(true);
     expect(reducer(model, { type: "toggleSettings", botId: bot.id }).settingsOpen).toBe(true);
     expect(reducer(model, { type: "toggleSettings", botId: bot.id, open: false }).settingsOpen).toBe(false);
@@ -2195,20 +2206,20 @@ describe("bot settings section", () => {
     });
     expect(state.selectedId).toBe("bot-a");
 
-    // Open settings with section "soul"
+    // Open settings with section "routines"
     state = reducer(state, {
       type: "toggleSettings",
       open: true,
-      section: "soul",
+      section: "routines",
     });
-    expect(state.botSettingsSection).toBe("soul");
+    expect(state.botSettingsSection).toBe("routines");
 
-    // Re-select bot A (same bot) → section should stay "soul"
+    // Re-select bot A (same bot) → section should stay "routines"
     state = reducer(state, {
       type: "select",
       id: "bot-a",
     });
-    expect(state.botSettingsSection).toBe("soul");
+    expect(state.botSettingsSection).toBe("routines");
 
     // Add bot B (becomes selected)
     state = reducer(state, {

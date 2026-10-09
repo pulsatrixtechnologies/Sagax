@@ -57,6 +57,8 @@ export const USER_PREFERENCE_KEYS = [
   "sagax.readReceipts.v1",
   // privacy: "Show when I am online" ("0" hides; shared/presence.ts)
   "sagax.presenceVisible.v1",
+  // the Automations page's scope and filters, per person (src/lib/routine-scope-prefs.ts)
+  "sagax.routineScope.v1",
 ] as const;
 
 export type UserPreferenceKey = (typeof USER_PREFERENCE_KEYS)[number];

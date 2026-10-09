@@ -88,7 +88,11 @@ describe("provider login ownership", () => {
     await sessions.start(instance, "owner");
     await sessions.complete("codex", "owner", "random-flow", "callback");
     expect(instance.completeAuthentication).toHaveBeenCalledWith("random-flow", "callback");
-    await expect(sessions.status("codex", "owner", "random-flow")).rejects.toMatchObject({ status: 404 });
+    // The outcome stays readable by its owner right after the code is sent
+    // (the sign-in card asks for it), and nobody else waits for the slot.
+    await expect(sessions.status("codex", "owner", "random-flow")).resolves.toMatchObject({ flowId: "random-flow" });
+    await expect(sessions.status("codex", "other", "random-flow")).rejects.toMatchObject({ status: 404 });
+    await expect(sessions.start(instance, "other")).resolves.toMatchObject({ phase: "waiting" });
   });
 
   it("keeps the original flow recoverable when same-owner resume fails", async () => {

@@ -1,11 +1,15 @@
 // Browse Bots (src/components/bot-catalog/): the catalogue's model. The
 // server lists the viewer's bots, the ones shared with them and the ones
 // published to the organisation (GET /api/bot-catalog); the templates are
-// the built-in roles and the presets of New bot. Pure helpers, for tests.
+// what the old Templates library and New bot offered: the organization
+// library's packages (GET /api/org-library), New bot's presets (an admin
+// read), the community team templates (GET /api/team-library/catalog) and
+// the built-in roles. Pure helpers, for tests.
 import type { LocaleKey } from "@/locales";
 import { t } from "@/lib/i18n";
 import { BOT_ROLES, type BotRole } from "@/lib/bot-roles";
 import type { BotPreset } from "@/lib/bot-presets";
+import { orgCardAction, orgCardNotes, orgContentsLine, orgModeBadge, type OrgLibraryPackage } from "@/lib/org-library";
 import {
   DEFAULT_BOT_CATALOG_CATEGORIES,
   isDefaultCatalogCategory,
@@ -17,10 +21,36 @@ import { MASCOT_COLOR_NAMES, type MascotColorName } from "../../shared/mascot-co
 
 export type { BotCatalogDetail, BotCatalogEntry, BotCatalogResponse } from "../../shared/bot-catalog";
 
-/** A template: a built-in role or a preset of New bot. */
+/** A community team template (GET /api/team-library/catalog, one entry;
+ * server/team-library.ts TeamCatalogEntry). */
+export interface CommunityTemplate {
+  slug: string;
+  name: string;
+  summary: string;
+  category: string;
+  outcome?: string;
+  setupMinutes?: number;
+  featured?: boolean;
+  members: number;
+  skills: string[];
+  requires: { apps: string[] };
+}
+
+/** GET /api/team-library/catalog (only what the catalogue reads). */
+export interface CommunityCatalog {
+  repositoryUrl: string;
+  teams: CommunityTemplate[];
+}
+
+/** Where a template comes from. */
+export type CatalogTemplateSource = "organization" | "preset" | "community" | "role";
+
+/** A template: an organization package, a preset of New bot, a community
+ * team or a built-in role. */
 export interface CatalogTemplate {
-  /** `role:<id>` or `preset:<id>` */
+  /** `package:<id>`, `preset:<id>`, `community:<slug>` or `role:<id>` */
   id: string;
+  source: CatalogTemplateSource;
   name: string;
   title: string;
   description: string;
@@ -30,8 +60,16 @@ export interface CatalogTemplate {
   category: string | null;
   soul: string;
   skills: Array<{ name: string; description: string }>;
+  /** The apps it uses (a community team's requirements), as chips. */
+  apps: string[];
+  /** A team: how many bots it adds. */
+  members?: number;
+  /** The small print: contents, a recommendation, a withdrawal, a newer release. */
+  notes: string[];
   role?: BotRole;
   preset?: BotPreset;
+  community?: CommunityTemplate;
+  orgPackage?: OrgLibraryPackage;
 }
 
 export type CatalogItem =
@@ -61,10 +99,62 @@ function roleColor(index: number): MascotColorName {
   return palette[index % palette.length] ?? MASCOT_COLOR_NAMES[0];
 }
 
-/** Built-in roles, then New bot's presets (organisation and imported). */
-export function catalogTemplates(presets: readonly BotPreset[], roles: readonly BotRole[] = BOT_ROLES): CatalogTemplate[] {
+/** A community category ("Engineering", "sales") as a default chip when it
+ * is one, else its own text. */
+function communityCategory(category: string): string | null {
+  const text = category.trim();
+  if (!text) return null;
+  const lower = text.toLowerCase();
+  return isDefaultCatalogCategory(lower) ? lower : text;
+}
+
+/** What the catalogue adds besides the presets and the built-in roles. */
+export interface CatalogTemplateSources {
+  community?: readonly CommunityTemplate[];
+  orgPackages?: readonly OrgLibraryPackage[];
+}
+
+/** The organization's packages, New bot's presets (organisation and
+ * imported; an admin read), the community teams, then the built-in roles. */
+export function catalogTemplates(presets: readonly BotPreset[], roles: readonly BotRole[] = BOT_ROLES, sources: CatalogTemplateSources = {}): CatalogTemplate[] {
+  const fromPackages = (sources.orgPackages ?? []).map((entry, index): CatalogTemplate => ({
+    id: `package:${entry.packageId}`,
+    source: "organization",
+    name: entry.name,
+    title: "",
+    description: entry.tagline,
+    look: { color: roleColor(index + 2) },
+    creator: entry.publisher.name,
+    category: null,
+    soul: "",
+    skills: [],
+    apps: [],
+    members: entry.contents.bots,
+    notes: [orgContentsLine(entry.contents), orgModeBadge(entry) ?? "", ...orgCardNotes(entry)].filter(Boolean),
+    orgPackage: entry,
+  }));
+  const fromCommunity = (sources.community ?? []).map((entry, index): CatalogTemplate => ({
+    id: `community:${entry.slug}`,
+    source: "community",
+    name: entry.name,
+    title: entry.category,
+    description: entry.outcome ?? entry.summary,
+    look: { color: roleColor(index + 1) },
+    creator: t("botCatalog.creator.community"),
+    category: communityCategory(entry.category),
+    soul: entry.summary,
+    skills: entry.skills.map((name) => ({ name, description: "" })),
+    apps: [...entry.requires.apps],
+    members: entry.members,
+    notes: [
+      t("botCatalog.template.members", { count: entry.members }),
+      ...(entry.setupMinutes ? [t("botCatalog.template.setup", { minutes: entry.setupMinutes })] : []),
+    ],
+    community: entry,
+  }));
   const fromPresets = presets.map((preset): CatalogTemplate => ({
     id: `preset:${preset.id}`,
+    source: "preset",
     name: preset.bot.name ?? preset.name,
     title: preset.bot.title ?? "",
     description: preset.bot.description ?? preset.description ?? "",
@@ -76,10 +166,13 @@ export function catalogTemplates(presets: readonly BotPreset[], roles: readonly 
     category: null,
     soul: preset.bot.soul ?? "",
     skills: preset.skills,
+    apps: [],
+    notes: [],
     preset,
   }));
   const builtIn = roles.map((role, index): CatalogTemplate => ({
     id: `role:${role.id}`,
+    source: "role",
     name: role.name,
     title: role.title,
     description: role.description,
@@ -88,9 +181,27 @@ export function catalogTemplates(presets: readonly BotPreset[], roles: readonly 
     category: ROLE_CATEGORY[role.id] ?? null,
     soul: role.soul,
     skills: [],
+    apps: [],
+    notes: [],
     role,
   }));
-  return [...fromPresets, ...builtIn];
+  return [...fromPackages, ...fromPresets, ...fromCommunity, ...builtIn];
+}
+
+/** The apps the templates use, for the Templates section's app chips. */
+export function templateApps(templates: readonly CatalogTemplate[]): string[] {
+  const apps = new Map<string, string>();
+  for (const template of templates) for (const app of template.apps) {
+    const key = app.toLowerCase();
+    if (!apps.has(key)) apps.set(key, app);
+  }
+  return [...apps.values()].sort((a, b) => a.localeCompare(b));
+}
+
+/** Whether a template uses this app (case ignored). */
+export function templateUsesApp(template: CatalogTemplate, app: string): boolean {
+  const needle = app.toLowerCase();
+  return template.apps.some((candidate) => candidate.toLowerCase() === needle);
 }
 
 const CATEGORY_KEY: Record<string, LocaleKey> = {
@@ -137,19 +248,26 @@ export function catalogCategories(items: readonly CatalogItem[]): string[] {
   return ["all", ...DEFAULT_BOT_CATALOG_CATEGORIES, ...[...custom].sort((a, b) => a.localeCompare(b))];
 }
 
-/** Search by bot name, role or creator; case and accents ignored. */
+/** Search by bot name, role or creator (a template also by its
+ * description, skills and apps, as the Templates library searched); case
+ * and accents ignored. */
 export function matchesCatalogQuery(item: CatalogItem, query: string): boolean {
   const fold = (value: string) => value.normalize("NFD").replace(/\p{Diacritic}/gu, "").toLowerCase();
   const needle = fold(query.trim());
   if (!needle) return true;
   const title = item.kind === "bot" ? item.entry.title : item.template.title;
-  return fold(`${itemName(item)} ${title} ${itemCreator(item)}`).includes(needle);
+  const extra = item.kind === "template"
+    ? ` ${item.template.description} ${item.template.skills.map((skill) => skill.name).join(" ")} ${item.template.apps.join(" ")}`
+    : "";
+  return fold(`${itemName(item)} ${title} ${itemCreator(item)}${extra}`).includes(needle);
 }
 
 export interface CatalogFilter {
   category: string;
   query: string;
   showArchived: boolean;
+  /** The Templates section's app chip: only templates that use this app. */
+  app?: string | null;
 }
 
 /** The sections of the home view, in order: Featured, Shared with me, My
@@ -167,7 +285,13 @@ export function catalogSections(data: Pick<BotCatalogResponse, "organization" | 
   }
   sections.push({ id: "mine", items: data.entries.filter((entry) => entry.source === "mine" && (filter.showArchived || !entry.archived)).map(bot).filter(keep) });
   if (data.organization) sections.push({ id: "organization", items: data.entries.filter(published).map(bot).filter(keep) });
-  sections.push({ id: "templates", items: templates.map((template): CatalogItem => ({ kind: "template", key: template.id, template })).filter(keep) });
+  sections.push({
+    id: "templates",
+    items: templates
+      .filter((template) => !filter.app || templateUsesApp(template, filter.app))
+      .map((template): CatalogItem => ({ kind: "template", key: template.id, template }))
+      .filter(keep),
+  });
   return sections;
 }
 
@@ -184,6 +308,7 @@ export type CatalogAction =
   | "addToSidebar"
   | "removeFromSidebar"
   | "import"
+  | "useTemplate"
   | "publish"
   | "unpublish"
   | "feature"
@@ -200,11 +325,16 @@ export interface CatalogActionContext {
 }
 
 /** What the viewer may do with an item, the primary action first. Shared:
- * show or hide it in the sidebar, then open and copy it. Organisation and
- * templates: Import Bot. Their own: Open, then publish or withdraw. An
- * admin also features and withdraws any published bot. */
+ * show or hide it in the sidebar, then open and copy it. Organisation:
+ * Import Bot. Templates: Use this template (an organization package only
+ * while it can still be added). Their own: Open, then publish or withdraw.
+ * An admin also features and withdraws any published bot. */
 export function catalogActions(item: CatalogItem, ctx: CatalogActionContext): CatalogAction[] {
-  if (item.kind === "template") return ctx.canCreate ? ["import"] : [];
+  if (item.kind === "template") {
+    if (!ctx.canCreate) return [];
+    const pkg = item.template.orgPackage;
+    return !pkg || orgCardAction(pkg) === "add" ? ["useTemplate"] : [];
+  }
   const { entry } = item;
   const out: CatalogAction[] = [];
   const published = entry.catalog?.published === true;
@@ -230,6 +360,7 @@ export const ACTION_LABEL: Record<CatalogAction, LocaleKey> = {
   addToSidebar: "botCatalog.action.addToSidebar",
   removeFromSidebar: "botCatalog.action.removeFromSidebar",
   import: "botCatalog.action.import",
+  useTemplate: "botCatalog.action.useTemplate",
   publish: "botCatalog.action.publish",
   unpublish: "botCatalog.action.unpublish",
   feature: "botCatalog.action.feature",
@@ -239,6 +370,7 @@ export const ACTION_LABEL: Record<CatalogAction, LocaleKey> = {
 /** The card's button: Add for what joins the viewer's bots or sidebar. */
 export function cardActionLabel(action: CatalogAction): string {
   if (action === "import" || action === "addToSidebar") return t("botCatalog.action.add");
+  if (action === "useTemplate") return t("botCatalog.action.use");
   if (action === "removeFromSidebar") return t("botCatalog.action.remove");
   return t(ACTION_LABEL[action]);
 }

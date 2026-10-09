@@ -39,6 +39,8 @@ import { continuesRun, personDisplayName, personInitials, roomAuthor, runCorners
 import { botIdOfParticipant, messageParticipant, seenRows, type ThreadReads } from "@/lib/read-receipts";
 import { useReportRead, useThreadReads } from "@/lib/read-receipts-feed";
 import { SeenByRow, SEEN_AVATAR_SIZE, type SeenFace } from "./SeenBy";
+import { ReactButton, ReactionChips, ReactionPicker } from "./Reactions";
+import { myReactions, reactionSelfIds, useToggleReaction } from "@/lib/reactions";
 import type { OrgDirectoryPerson } from "@/lib/perspicax-org";
 import { StatusActivityRow } from "@/components/StatusActivityRow";
 import { mausInk, normalizeState } from "@/lib/mascot";
@@ -56,7 +58,7 @@ import { Composer } from "./Composer";
 import { ChatErrorBanner } from "./ChatErrorBanner";
 import { ChatFindBar } from "./ChatFindBar";
 import { ConversationTurnLimit } from "./ConversationTurnLimit";
-import { GroupTaskPicker, ThreadReturnLink } from "./TaskPicker";
+import { GroupTaskPicker, PersonThreadPicker, ThreadReturnLink } from "./TaskPicker";
 import { ExportTranscriptMenu } from "./ExportTranscriptMenu";
 import { ReplyQuote } from "./ReplyQuote";
 import { ConnectorCard } from "./ConnectorCard";
@@ -229,6 +231,7 @@ function RoomTextMessage({
   joinsAbove,
   joinsBelow,
   onReply,
+  reactionSelf,
 }: {
   group: Group;
   message: Message;
@@ -242,9 +245,17 @@ function RoomTextMessage({
   joinsAbove: boolean;
   joinsBelow: boolean;
   onReply: (message: Message) => void;
+  /** Who "I" am on a reaction chip (src/lib/reactions.ts). */
+  reactionSelf: readonly string[];
 }) {
   const { state, dispatch } = useStore();
   const user = m.role === "user";
+  // Emoji reactions (src/components/Reactions.tsx): the smiley in the tray
+  // opens the picker above the row; the chips sit under the bubble.
+  const [picking, setPicking] = useState(false);
+  const toggleReactionOn = useToggleReaction(group.threadId, dispatch);
+  const reactable = !m.id.startsWith("optimistic-");
+  const reactButton = reactable ? <ReactButton open={picking} onToggle={() => setPicking((open) => !open)} className={messageActionClass} /> : null;
   const cited = user && m.text ? splitTranscriptCitations(m.text) : null;
   const attachments = user && m.text ? splitTranscriptAttachments(cited?.display ?? m.text) : null;
   const display = attachments?.display ?? m.text ?? "";
@@ -265,9 +276,18 @@ function RoomTextMessage({
       data-author={mine ? "self" : user ? "person" : "bot"}
       className={cn("group flex w-full flex-col", mine ? "items-end" : "items-start", joinsAbove && "-mt-2")}
     >
-      <div className={cn("flex w-full items-end gap-1.5", mine ? "justify-end" : "justify-start")}>
+      <div className={cn("relative flex w-full items-end gap-1.5", mine ? "justify-end" : "justify-start")}>
+        {picking && (
+          <ReactionPicker
+            align={mine ? "end" : "start"}
+            mine={myReactions(m.reactions, reactionSelf)}
+            onPick={(emoji) => toggleReactionOn(m.id, emoji)}
+            onClose={() => setPicking(false)}
+          />
+        )}
         {mine && (
-          <MessageActions side="user">
+          <MessageActions side="user" forceOpen={picking}>
+            {reactButton}
             {Boolean(display.trim()) && <CopyButton text={display} className="opacity-100" />}
             <button
               type="button"
@@ -367,7 +387,8 @@ function RoomTextMessage({
           )}
         </div>
         {!mine && user && (
-          <MessageActions side="bot">
+          <MessageActions side="bot" forceOpen={picking}>
+            {reactButton}
             {Boolean(display.trim()) && <CopyButton text={display} className="opacity-100" />}
             <button
               type="button"
@@ -382,7 +403,8 @@ function RoomTextMessage({
           </MessageActions>
         )}
         {!user && (
-          <MessageActions side="bot" forceOpen={viewRaw || speaking}>
+          <MessageActions side="bot" forceOpen={viewRaw || speaking || picking}>
+            {reactButton}
             {botText && <CopyButton text={botText} className="opacity-100" />}
             {botText && <RawToggleAction active={viewRaw} onToggle={() => setViewRaw((raw) => !raw)} className="opacity-100" />}
             {botText && (
@@ -404,6 +426,7 @@ function RoomTextMessage({
           {formatTime(m.at)}
         </span>
       </div>
+      <ReactionChips reactions={m.reactions} selfIds={reactionSelf} bots={members} end={mine} onToggle={(emoji) => toggleReactionOn(m.id, emoji)} />
       {!user && m.routedBy && <RoutedByLine routedBy={m.routedBy} />}
     </div>
   );
@@ -438,6 +461,8 @@ export const Transcript = memo(function Transcript({
   reader?: string | null;
 }) {
   const { state, dispatch } = useStore();
+  const reactionSelfKey = reactionSelfIds(state.config, reader).join("\n");
+  const reactionSelf = useMemo(() => reactionSelfKey.split("\n").filter(Boolean), [reactionSelfKey]);
   const showToolCalls = showToolCallsEnabled(state.config);
   const owners = useMemo(() => ({ bots: state.bots, groups: state.groups }), [state.bots, state.groups]);
   const memberOf = (id?: string) => members.find((b) => b.id === id);
@@ -702,6 +727,7 @@ export const Transcript = memo(function Transcript({
               joinsAbove={joinsAbove}
               joinsBelow={joinsBelow}
               onReply={onReply}
+              reactionSelf={reactionSelf}
             />
           ) : null;
         if (!row) return null;
@@ -1202,6 +1228,7 @@ export function GroupView({ group: stored }: { group: Group }) {
             isGroup
           />}
           {!group.dm && <GroupTaskPicker group={group} />}
+          {stored.peopleDm && <PersonThreadPicker group={stored} />}
           {group.dm && memberMauses}
           {!group.dm && !panelOpen && <button
             type="button"
@@ -1424,7 +1451,7 @@ export function GroupView({ group: stored }: { group: Group }) {
         key={group.threadId}
         group={group}
         members={members}
-        nudgePeer={peer}
+        nudgePeer={peer ? { ...peer, threadId: stored.threadId } : peer}
         nudgeGroup={roomNudge}
         replyTo={replyTo}
         onClearReply={clearReply}

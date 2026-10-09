@@ -1,21 +1,33 @@
-// Browse Bots: the organisation bot catalogue, in its own full-height modal
-// (the Achievements shell: the close button top right, Escape steps back
-// then closes, focus stays inside). Opened by the store's openBotCatalog()
-// from the mascot menu, the To: picker and the sidebar section menu.
+// Browse Bots: the organisation bot catalogue, on the shared category modal
+// shell (src/components/category-modal.ts, as Achievements and the persona
+// editor: same backdrop, frame, close button, title and keyboard; Escape
+// steps back, then closes). Opened by the store's openBotCatalog() from the
+// mascot menu, the To: picker and the sidebar section menu, and on its
+// Templates section by every way that used to open the Templates library
+// (src/lib/templates-entry.ts).
 //
 // Sources: GET /api/bot-catalog (mine, shared with me, published to the
-// organisation; server/routes/bot-catalog.ts) and the templates (built-in
-// roles, and New bot's presets when the server lets this viewer read them).
-// Actions: show or hide a shared bot in the sidebar (src/lib/sidebar-hidden.ts),
-// Import Bot (a copy for the viewer: POST /api/bot-catalog/:id/import, or a
-// template through New bot's own creation), Open, and publish, withdraw or
-// feature through PUT /api/bot-catalog/:id/listing.
+// organisation; server/routes/bot-catalog.ts) and the templates: the
+// organization library's packages (GET /api/org-library), New bot's presets
+// (an admin read), the community teams (GET /api/team-library/catalog) and
+// the built-in roles. Actions: show or hide a shared bot in the sidebar
+// (src/lib/sidebar-hidden.ts), Import Bot (POST /api/bot-catalog/:id/import),
+// Use this template (a role or a preset through New bot's own creation, a
+// community team through its preview and POST /api/teams/import, an
+// organization package through POST /api/org-library/add), Open, and
+// publish, withdraw or feature through PUT /api/bot-catalog/:id/listing.
+// Templates' tools (Import, From a folder, Share a team) are TemplateTools.
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { X } from "lucide-react";
+import { Check, ChevronLeft, X } from "lucide-react";
 
 import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
-import { api, closeBotCatalog, useStore } from "@/state/store";
+import { track } from "@/lib/analytics";
+import { orgCardAction, orgPackagePreview, type OrgLibraryListing, type OrgLibraryPackage } from "@/lib/org-library";
+import { teamImportPreview, type PendingTeamImport } from "@/lib/team-import";
+import type { Routine } from "@/lib/routines";
+import type { PackageDocument } from "../../../shared/package-format";
+import { api, closeBotCatalog, useStore, type Bot, type Group } from "@/state/store";
 import { useOrgPeople } from "@/lib/perspicax-org";
 import { personAvatarSrc } from "@/lib/profile-management";
 import { useShowThreads } from "@/lib/thread-preferences";
@@ -31,6 +43,8 @@ import {
   catalogSections,
   catalogTemplates,
   itemName,
+  templateApps,
+  type CommunityCatalog,
   type BotCatalogDetail,
   type BotCatalogResponse,
   type CatalogAction,
@@ -42,8 +56,25 @@ import { DEFAULT_BOT_CATALOG_CATEGORIES, type BotCatalogListing } from "../../..
 import { useRetroSkin } from "../RetroChromeHost";
 import { shortcutLabel } from "../ShortcutHint";
 import { openBotConversationActions } from "../thread-home";
+import { CATEGORY_MODAL, useCategoryModalKeyboard } from "../category-modal";
 import { BotCatalogView } from "./BotCatalogView";
 import { BotCatalogDetailView, templateDetail, type CatalogDetailContent, type CatalogTab } from "./BotCatalogDetailView";
+import { TeamImportDetails, type TeamImportResult } from "./TeamImportDetails";
+import { openExternal, TeamImportPreview, TemplateTools, type TemplateTool } from "./TemplateTools";
+
+/** The feedback line after a team, a backup or a package was added. */
+export function teamImportedText(result: TeamImportResult): string {
+  return (result.members === 0 && result.presets
+    ? t("sidebar.presetsImported", { count: result.presets })
+    : result.members === 1
+    ? t("sidebar.teamImportedOne")
+    : t("sidebar.teamImportedMany", { count: result.members })) +
+    (result.connections ? ` · ${t("sidebar.connectionsToFinish", { count: result.connections })}` : "");
+}
+
+/** A template that is a team (a community one or an organization package):
+ * its detail shows the import preview. */
+type TeamPreview = { pending: PendingTeamImport | null; loading: boolean; error: string };
 
 type Feedback = { error: boolean; text: string } | null;
 
@@ -108,7 +139,8 @@ export function BotCatalogModal() {
   const [reload, setReload] = useState(0);
   const [category, setCategory] = useState("all");
   const [query, setQuery] = useState("");
-  const [expanded, setExpanded] = useState<CatalogSectionId | null>(null);
+  // Opened on Templates: the section alone from the first frame.
+  const [expanded, setExpanded] = useState<CatalogSectionId | null>(state.botCatalogTarget ? "templates" : null);
   const [showArchived, setShowArchived] = useState(false);
   const [selected, setSelected] = useState<CatalogItem | null>(null);
   const [detail, setDetail] = useState<CatalogDetailContent | null>(null);
@@ -117,8 +149,32 @@ export function BotCatalogModal() {
   const [publishing, setPublishing] = useState(false);
   const [pending, setPending] = useState(false);
   const [feedback, setFeedback] = useState<Feedback>(null);
+  const [community, setCommunity] = useState<CommunityCatalog | null>(null);
+  const [orgListing, setOrgListing] = useState<OrgLibraryListing | null>(null);
+  const [templateApp, setTemplateApp] = useState<string | null>(null);
+  const [tool, setTool] = useState<TemplateTool | null>(state.botCatalogTarget?.installUrl ? "import" : null);
+  const [installUrl, setInstallUrl] = useState<string | undefined>(state.botCatalogTarget?.installUrl);
+  const [teamPreview, setTeamPreview] = useState<TeamPreview | null>(null);
+  const toolsBack = useRef<(() => boolean) | null>(null);
+  // The old library was a desktop feature: files, folders and the team
+  // sources stay off on a remote client (it keeps My Bots and the roles).
+  const remoteClient = typeof window !== "undefined" && window.ogb?.remoteClient?.active === true;
 
   const close = useCallback(() => dispatch(closeBotCatalog()), [dispatch]);
+
+  // Opened on Templates (the old library's entry points, an install link):
+  // the Templates section alone, and Import with the link when there is one.
+  const target = state.botCatalogTarget;
+  useEffect(() => {
+    if (!target) return;
+    setSelected(null);
+    setFeedback(null);
+    setExpanded("templates");
+    if (target.installUrl && !remoteClient) {
+      setInstallUrl(target.installUrl);
+      setTool("import");
+    } else setTool(null);
+  }, [target, remoteClient]);
 
   useEffect(() => {
     let alive = true;
@@ -128,6 +184,26 @@ export function BotCatalogModal() {
       .catch(() => { if (alive) setLoadFailed(true); });
     return () => { alive = false; };
   }, [reload]);
+
+  // The community teams and the organization's packages: no source is the
+  // same as an empty one (offline, no organization, a remote client).
+  useEffect(() => {
+    if (remoteClient) return;
+    let alive = true;
+    api<CommunityCatalog>("/api/team-library/catalog")
+      .then((result) => { if (alive) setCommunity(result); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, [remoteClient]);
+
+  useEffect(() => {
+    if (remoteClient) return;
+    let alive = true;
+    api<OrgLibraryListing>("/api/org-library")
+      .then((result) => { if (alive) setOrgListing(result); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, [remoteClient, reload]);
 
   useEffect(() => {
     let alive = true;
@@ -143,9 +219,21 @@ export function BotCatalogModal() {
     if (!selected) return;
     setTab("soul");
     setPublishing(false);
+    setTeamPreview(null);
     if (selected.kind === "template") {
       setDetail(templateDetail(selected));
-      return;
+      const { community: team, orgPackage } = selected.template;
+      if (!team && !(orgPackage && orgPackage.blob === "ready")) return;
+      // A team template previews what it adds, as the library's Load did.
+      let alive = true;
+      setTeamPreview({ pending: null, loading: true, error: "" });
+      const load = team
+        ? api(`/api/team-library/teams/${encodeURIComponent(team.slug)}`).then((manifest) => teamImportPreview(manifest))
+        : api<{ document: PackageDocument }>(`/api/org-library/packages/${orgPackage!.packageId}`).then((result) => orgPackagePreview(result.document));
+      load
+        .then((next) => { if (alive) setTeamPreview({ pending: next, loading: false, error: "" }); })
+        .catch((error) => { if (alive) setTeamPreview({ pending: null, loading: false, error: error instanceof Error ? error.message : String(error) }); });
+      return () => { alive = false; };
     }
     let alive = true;
     setDetail(null);
@@ -167,10 +255,14 @@ export function BotCatalogModal() {
   const organization = data?.organization ?? false;
   const admin = data?.viewer.admin ?? false;
   const canCreate = data ? data.viewer.canCreate : viewerCanCreateBots(state.config) && !viewerBotsReadOnly(state.config);
-  const templates = useMemo(() => catalogTemplates(presets), [presets]);
+  const templates = useMemo(
+    () => catalogTemplates(presets, undefined, { community: community?.teams ?? [], orgPackages: orgListing?.organization ? orgListing.packages : [] }),
+    [presets, community, orgListing],
+  );
+  const apps = useMemo(() => templateApps(templates), [templates]);
   const sections = useMemo(
-    () => catalogSections(data ?? { organization: false, entries: [] }, templates, { category, query, showArchived }),
-    [data, templates, category, query, showArchived],
+    () => catalogSections(data ?? { organization: false, entries: [] }, templates, { category, query, showArchived, app: templateApp }),
+    [data, templates, category, query, showArchived, templateApp],
   );
   const categories = useMemo(() => catalogCategories(sections.flatMap((section) => section.items)), [sections]);
   const hidden = useMemo(() => hiddenKeySet(hiddenPrefs), [hiddenPrefs]);
@@ -179,42 +271,18 @@ export function BotCatalogModal() {
 
   const back = useCallback(() => {
     if (selected) { setSelected(null); setFeedback(null); return true; }
-    if (expanded) { setExpanded(null); return true; }
+    if (tool) {
+      if (toolsBack.current?.()) return true;
+      setTool(null); setInstallUrl(undefined); return true;
+    }
+    if (expanded) { setExpanded(null); setTemplateApp(null); return true; }
     return false;
-  }, [selected, expanded]);
+  }, [selected, tool, expanded]);
 
-  // Same keyboard as Settings and Achievements: focus moves in, Escape
-  // steps back then closes, Tab stays in the dialog, focus returns on close.
-  const backRef = useRef(back);
-  backRef.current = back;
-  useEffect(() => {
-    const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    const dialog = dialogRef.current;
-    dialog?.querySelector<HTMLElement>("[data-catalog-search]")?.focus();
-    const onKey = (event: KeyboardEvent) => {
-      if (event.defaultPrevented) return;
-      if (event.key === "Escape") {
-        event.preventDefault();
-        if (!backRef.current()) dispatch(closeBotCatalog());
-        return;
-      }
-      if (event.key !== "Tab" || !dialog) return;
-      const focusable = Array.from(dialog.querySelectorAll<HTMLElement>(
-        'button:not([disabled]), a[href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
-      )).filter((element) => element.checkVisibility());
-      if (focusable.length === 0) { event.preventDefault(); dialog.focus(); return; }
-      const first = focusable[0];
-      const last = focusable[focusable.length - 1];
-      const active = document.activeElement;
-      if (event.shiftKey && (active === first || !dialog.contains(active))) { event.preventDefault(); last.focus(); }
-      else if (!event.shiftKey && active === last) { event.preventDefault(); first.focus(); }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => {
-      window.removeEventListener("keydown", onKey);
-      previousFocus?.focus();
-    };
-  }, [dispatch]);
+  // The shared keyboard (Settings, Achievements, the persona editor): focus
+  // moves in, Tab stays in the dialog, focus returns on close; Escape steps
+  // back here first, then closes.
+  useCategoryModalKeyboard(dialogRef, "[data-catalog-search]", () => { if (!back()) close(); });
 
   const fail = (error: unknown) => {
     const body = (error as { body?: { message?: unknown } })?.body;
@@ -237,10 +305,54 @@ export function BotCatalogModal() {
     }
   };
 
+  /** A team, a backup or a package was added (a preview, a tool). */
+  const teamImported = (result: TeamImportResult) => {
+    setSelected(null);
+    setTool(null);
+    setInstallUrl(undefined);
+    setFeedback({ error: false, text: teamImportedText(result) });
+    setReload((value) => value + 1);
+  };
+
+  /** An organization package: one click adds it, no confirmation (as the
+   * library's From {Organization} shelf did). */
+  const addOrgPackage = async (entry: OrgLibraryPackage) => {
+    setPending(true);
+    setFeedback(null);
+    try {
+      // SAFETY: this endpoint is owned by the app and returns the added records.
+      const response = (await api("/api/org-library/add", {
+        method: "POST",
+        body: JSON.stringify({ packageId: entry.packageId }),
+      })) as { alreadyAdded: boolean; bots?: Bot[]; groups?: Group[]; routines?: Routine[]; connections?: unknown[] };
+      for (const bot of response.bots ?? []) dispatch({ type: "botAdded", bot });
+      for (const group of response.groups ?? []) dispatch({ type: "groupPatched", group });
+      for (const routine of response.routines ?? []) dispatch({ type: "routinePatched", routine });
+      track("team_imported", { members: response.bots?.length ?? 0, source: "organization", mode: "add", format: "package" });
+      const first = response.bots?.find((bot) => !bot.hidden);
+      if (first) {
+        dispatch({ type: "select", id: first.id });
+        teamImported({ name: entry.name, members: response.bots!.length, ...(response.connections?.length ? { connections: response.connections.length } : {}) });
+        return;
+      }
+      setSelected(null);
+      if (!response.alreadyAdded) setFeedback({ error: false, text: t("orgLibrary.addedSkills", { name: entry.name }) });
+      setReload((value) => value + 1);
+    } catch (error) {
+      fail(error);
+      setReload((value) => value + 1);
+    } finally {
+      setPending(false);
+    }
+  };
+
   const importItem = async (item: CatalogItem) => {
     const name = itemName(item);
     const done = () => { setFeedback({ error: false, text: t("botCatalog.feedback.imported", { name }) }); setReload((value) => value + 1); };
     setFeedback(null);
+    if (item.kind === "template" && item.template.orgPackage) { await addOrgPackage(item.template.orgPackage); return; }
+    // A community team previews what it adds first: its detail view.
+    if (item.kind === "template" && item.template.community) { setSelected(item); return; }
     if (item.kind === "template" && item.template.role) {
       dispatch({ type: "newBot", role: item.template.role, preserveSelection: true, onCreated: done, onError: (message) => setFeedback({ error: true, text: message }) });
       return;
@@ -269,7 +381,7 @@ export function BotCatalogModal() {
   };
 
   const run = (item: CatalogItem, action: CatalogAction) => {
-    if (action === "import") { void importItem(item); return; }
+    if (action === "import" || action === "useTemplate") { void importItem(item); return; }
     if (item.kind !== "bot") return;
     const { entry } = item;
     if (action === "open") {
@@ -302,6 +414,8 @@ export function BotCatalogModal() {
   };
 
   const renderCardAction = (item: CatalogItem): ReactNode => {
+    const pkg = item.kind === "template" ? item.template.orgPackage : undefined;
+    if (pkg && orgCardAction(pkg) !== "add") return <OrgPackageState entry={pkg} />;
     const primary = catalogActions(item, ctx)[0];
     if (!primary || primary === "publish" || primary === "unpublish" || primary === "feature" || primary === "unfeature") return null;
     if (primary === "open" && item.kind === "bot" && !state.bots.some((bot) => bot.id === item.entry.id)) return null;
@@ -321,7 +435,10 @@ export function BotCatalogModal() {
     );
   };
 
-  const renderDetailActions = (item: CatalogItem): ReactNode => catalogActions(item, ctx).map((action, index) => (
+  // A community team's Add is in its preview, under what it adds.
+  const renderDetailActions = (item: CatalogItem): ReactNode => item.kind === "template" && item.template.community ? null
+    : item.kind === "template" && item.template.orgPackage && orgCardAction(item.template.orgPackage) !== "add" ? <OrgPackageState entry={item.template.orgPackage} />
+    : catalogActions(item, ctx).map((action, index) => (
     <button
       key={action}
       type="button"
@@ -353,8 +470,21 @@ export function BotCatalogModal() {
     </>
   );
 
+  const templatePreview = (item: CatalogItem): ReactNode | undefined => {
+    if (item.kind !== "template" || !teamPreview) return undefined;
+    if (teamPreview.loading) return <p className="text-[13px] text-ink-secondary" role="status">{t("botCatalog.loading")}</p>;
+    if (!teamPreview.pending) return <p role="alert" className="rounded-lg bg-danger/10 px-3 py-2 text-[12.5px] text-danger">{teamPreview.error || t("botCatalog.loadError")}</p>;
+    if (item.template.orgPackage) {
+      return <TeamImportDetails pending={teamPreview.pending} importedNames={teamPreview.pending.members.map((member) => member.name)} org />;
+    }
+    if (!canCreate) return <TeamImportDetails pending={teamPreview.pending} importedNames={teamPreview.pending.members.map((member) => member.name)} />;
+    return <TeamImportPreview pending={teamPreview.pending} source="library" onImported={teamImported} />;
+  };
+
+  const templateToolsOn = !remoteClient && canCreate;
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-3 sm:p-6" onMouseDown={(event) => event.target === event.currentTarget && close()}>
+    <div className={CATEGORY_MODAL.backdrop} onMouseDown={(event) => event.target === event.currentTarget && close()}>
       <div
         ref={dialogRef}
         role="dialog"
@@ -362,68 +492,99 @@ export function BotCatalogModal() {
         aria-labelledby="bot-catalog-title"
         tabIndex={-1}
         data-bot-catalog-modal=""
-        className="relative flex h-[calc(100dvh-48px)] w-[min(1040px,calc(100vw-24px))] flex-col overflow-hidden rounded-[14px] border border-border bg-app outline-none sm:h-[calc(100dvh-64px)]"
+        className={CATEGORY_MODAL.frame}
       >
-        <button
-          type="button"
-          onClick={close}
-          aria-label={t("common.close")}
-          title={`${t("common.close")} (${shortcutLabel("close-panel")})`}
-          className="absolute right-2.5 top-2.5 z-10 flex size-8 items-center justify-center rounded-full text-ink-tertiary hover:bg-ink/10 hover:text-ink-secondary"
-        >
-          <X size={18} />
-        </button>
-        {selected ? (
-          <BotCatalogDetailView
-            item={selected}
-            content={detail}
-            loading={detailLoading}
-            tab={tab}
-            onTab={setTab}
-            onBack={() => { setSelected(null); setFeedback(null); }}
-            creatorAvatar={creatorAvatar(selected)}
-            actions={renderDetailActions(selected)}
-            below={
-              <>
-                {publishing && selected.kind === "bot" && (
-                  <PublishForm
-                    initial={selected.entry.catalog?.category ? catalogCategoryLabel(selected.entry.catalog.category) : ""}
-                    pending={pending}
-                    onCancel={() => setPublishing(false)}
-                    onPublish={(value) => void setListing(selected, { published: true, ...(value.trim() ? { category: categoryFromInput(value) } : {}) }, t("botCatalog.feedback.published"))}
-                  />
-                )}
-                <FeedbackLine feedback={feedback} />
-              </>
-            }
-          />
-        ) : (
-          <BotCatalogView
-            organization={organization}
-            categories={categories}
-            category={category}
-            onCategory={(value) => { setCategory(value); setExpanded(null); }}
-            query={query}
-            onQuery={setQuery}
-            sections={sections}
-            expanded={expanded}
-            onExpand={setExpanded}
-            showArchived={showArchived}
-            onShowArchived={setShowArchived}
-            hasArchived={Boolean(data?.entries.some((entry) => entry.source === "mine" && entry.archived))}
-            creatorAvatar={creatorAvatar}
-            onOpen={(item) => { setFeedback(null); setSelected(item); }}
-            renderAction={renderCardAction}
-            notice={notice}
-            loading={!data && !loadFailed}
-          />
-        )}
-        {retroSkin && (
-          <div className="r98-dialog-footer">
-            <button type="button" className="r98-dialog-ok" onClick={close}>{t("retro.button.ok")}</button>
-          </div>
-        )}
+        <div className={CATEGORY_MODAL.content}>
+          <button
+            type="button"
+            onClick={close}
+            aria-label={t("common.close")}
+            title={`${t("common.close")} (${shortcutLabel("close-panel")})`}
+            className={CATEGORY_MODAL.close}
+          >
+            <X size={18} />
+          </button>
+          {selected ? (
+            <BotCatalogDetailView
+              item={selected}
+              content={detail}
+              loading={detailLoading}
+              tab={tab}
+              onTab={setTab}
+              onBack={() => { setSelected(null); setFeedback(null); }}
+              creatorAvatar={creatorAvatar(selected)}
+              actions={renderDetailActions(selected)}
+              preview={templatePreview(selected)}
+              below={
+                <>
+                  {publishing && selected.kind === "bot" && (
+                    <PublishForm
+                      initial={selected.entry.catalog?.category ? catalogCategoryLabel(selected.entry.catalog.category) : ""}
+                      pending={pending}
+                      onCancel={() => setPublishing(false)}
+                      onPublish={(value) => void setListing(selected, { published: true, ...(value.trim() ? { category: categoryFromInput(value) } : {}) }, t("botCatalog.feedback.published"))}
+                    />
+                  )}
+                  <FeedbackLine feedback={feedback} />
+                </>
+              }
+            />
+          ) : tool && templateToolsOn ? (
+            <div className="flex min-h-0 flex-1 flex-col" data-catalog-tools="">
+              <header className={CATEGORY_MODAL.titleBar}>
+                <button type="button" onClick={() => { if (!toolsBack.current?.()) { setTool(null); setInstallUrl(undefined); } }} className="-ml-1.5 mb-1 flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[12.5px] text-ink-secondary hover:bg-hover hover:text-ink" data-catalog-back="">
+                  <ChevronLeft size={14} aria-hidden="true" />{t("botCatalog.back")}
+                </button>
+                <h2 id="bot-catalog-title" className={CATEGORY_MODAL.title}>{t("botCatalog.section.templates")}</h2>
+              </header>
+              <TemplateTools tool={tool} onTool={setTool} installUrl={installUrl} onImported={teamImported} backRef={toolsBack} />
+            </div>
+          ) : (
+            <BotCatalogView
+              organization={organization}
+              categories={categories}
+              category={category}
+              onCategory={(value) => { setCategory(value); setExpanded((current) => current === "templates" ? current : null); }}
+              query={query}
+              onQuery={setQuery}
+              sections={sections}
+              expanded={expanded}
+              onExpand={(value) => { setExpanded(value); if (value !== "templates") setTemplateApp(null); }}
+              showArchived={showArchived}
+              onShowArchived={setShowArchived}
+              hasArchived={Boolean(data?.entries.some((entry) => entry.source === "mine" && entry.archived))}
+              creatorAvatar={creatorAvatar}
+              onOpen={(item) => { setFeedback(null); setSelected(item); }}
+              renderAction={renderCardAction}
+              notice={notice}
+              loading={!data && !loadFailed}
+              onTemplateTool={templateToolsOn ? (next) => { setFeedback(null); setInstallUrl(undefined); setTool(next); } : undefined}
+              templateApps={apps}
+              templateApp={templateApp}
+              onTemplateApp={setTemplateApp}
+              repositoryUrl={community?.repositoryUrl}
+              onOpenRepository={(url) => void openExternal(url)}
+            />
+          )}
+          {retroSkin && (
+            <div className="r98-dialog-footer">
+              <button type="button" className="r98-dialog-ok" onClick={close}>{t("retro.button.ok")}</button>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
+}
+
+/** An organization package that cannot be added now: added, needs a newer
+ * Sagax, still downloading, or no release yet. */
+function OrgPackageState({ entry }: { entry: OrgLibraryPackage }) {
+  const state = orgCardAction(entry);
+  if (state === "add") return null;
+  if (state === "added") {
+    return <span className="flex shrink-0 items-center gap-1 rounded-full bg-raised px-3 py-1.5 text-[12px] text-ink-secondary" data-catalog-package-state="added"><Check size={13} className="text-success" />{t("orgLibrary.added")}</span>;
+  }
+  const key = state === "updateApp" ? "orgLibrary.updateApp" : state === "notReady" ? "orgLibrary.notReady" : "orgLibrary.noRelease";
+  return <span className="max-w-[140px] shrink-0 text-right text-[11.5px] text-ink-secondary" data-catalog-package-state={state}>{t(key)}</span>;
 }

@@ -213,8 +213,8 @@ describe("achievements modal", () => {
     expect(html).toContain("h-[min(700px,calc(100dvh-96px))] w-[min(900px,calc(100vw-40px))]");
     expect(html).toContain("w-[198px]");
     expect(html).toContain('aria-label="Close"');
-    const labels = ["All", "Getting started", "Productivity", "Power user", "Voice", "Together", "Streaks", "Mastery", "Secrets"];
-    expect(ACHIEVEMENTS_MODAL_CATEGORIES).toEqual(["all", "onboarding", "productivity", "power", "voice", "collaboration", "streaks", "mastery", "secrets"]);
+    const labels = ["All", "Getting started", "Productivity", "Power user", "Voice", "Together", "Streaks", "Mastery", "Tiers", "Secrets"];
+    expect(ACHIEVEMENTS_MODAL_CATEGORIES).toEqual(["all", "onboarding", "productivity", "power", "voice", "collaboration", "streaks", "mastery", "tiers", "secrets"]);
     const nav = html.slice(html.indexOf("data-achievements-nav"), html.indexOf("</nav>"));
     let at = 0;
     for (const label of labels) {
@@ -243,6 +243,54 @@ describe("achievements modal", () => {
     expect(fr).toContain(">Succès</div>");
     expect(fr).toContain(">Premiers pas</span>");
     expect(fr).toContain(">Débloqués récemment</h3>");
+  });
+
+  it("shows the Mastery category with its progress bars, what each unlocks, and its secrets masked", () => {
+    const mastery = ACHIEVEMENTS.filter((item) => item.category === "mastery");
+    expect(mastery).toHaveLength(24);
+    const items = ACHIEVEMENTS.map((item) => ({
+      id: item.id,
+      current: item.id === "hands-off" ? 4 : 0,
+      target: item.rule.kind === "mastery" || item.rule.kind === "category" ? item.rule.target : 1,
+      ...(item.id === "polyglot" ? { unlockedAt: 1 } : {}),
+    }));
+    resetAchievementsForTests({ status: "ready", snapshot: snapshot({ items, recent: [] }) });
+    const html = renderToStaticMarkup(createElement(AchievementsModal, { initialCategory: "mastery" }));
+    expect(html).toMatch(/data-achievement-category="mastery" aria-current="page"/);
+    expect(html).toContain(">Mastery</h2>");
+    // only the Mastery cards, each marked as one
+    expect(html).not.toContain('data-achievement="hello-bot"');
+    expect(html.match(/data-mastery=""/g)).toHaveLength(24);
+    // a progress bar on every visible locked card, 0 included, with its numbers
+    const handsOff = html.slice(html.indexOf('data-achievement="hands-off"'), html.indexOf("</li>", html.indexOf('data-achievement="hands-off"')));
+    expect(handsOff).toContain('role="progressbar"');
+    expect(handsOff).toContain(">4/10</span>");
+    expect(handsOff).toContain(">Hands Off<");
+    const quiet = html.slice(html.indexOf('data-achievement="quiet-nights"'), html.indexOf("</li>", html.indexOf('data-achievement="quiet-nights"')));
+    expect(quiet).toContain(">0/30</span>");
+    // what it unlocks: the looks, greyed while locked, plain once unlocked
+    expect(handsOff).toContain('data-mastery-preview="hands-off"');
+    expect(handsOff).toContain(">Unlocks</span>");
+    expect(handsOff).toMatch(/class="mastery-look[^"]*" data-locked=""/);
+    const polyglot = html.slice(html.indexOf('data-achievement="polyglot"'), html.indexOf("</li>", html.indexOf('data-achievement="polyglot"')));
+    expect(html).toContain('data-unlocked="" data-achievement="polyglot"');
+    expect(polyglot).not.toContain('data-locked=""');
+    expect(polyglot).not.toContain('role="progressbar"');
+    // the hardest gives every Mastery character two premium skins: five shown, then "+N more"
+    const master = html.slice(html.indexOf('data-achievement="sagax-master"'), html.indexOf("</li>", html.indexOf('data-achievement="sagax-master"')));
+    expect(master).toContain(">+3 more</span>");
+    // a secret Mastery achievement keeps its name and its rewards hidden
+    const secret = html.slice(html.indexOf('data-achievement="not-so-fast"'), html.indexOf("</li>", html.indexOf('data-achievement="not-so-fast"')));
+    expect(secret).toContain("data-secret");
+    expect(secret).not.toContain("Not So Fast");
+    expect(secret).not.toContain("data-mastery-preview");
+    // in French
+    setLocale("fr");
+    const fr = renderToStaticMarkup(createElement(AchievementsModal, { initialCategory: "mastery" }));
+    expect(fr).toContain(">Maîtrise</h2>");
+    expect(fr).toContain(">Déléguer sans surveiller<");
+    expect(fr).toContain(">Paliers</span>");
+    expect(fr).toContain(">Débloque</span>");
   });
 
   it("counts unlocked and total per category", () => {

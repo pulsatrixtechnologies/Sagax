@@ -1,4 +1,4 @@
-// About and the Help menu both open the same dialog. A tiny bus keeps that
+// About opens the same dialog. A tiny bus keeps that
 // call out of the store and out of prop drilling.
 
 /** "current" is the running version alone; "browse" adds the version picker. */

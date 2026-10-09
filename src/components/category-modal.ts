@@ -1,7 +1,7 @@
-// The category modal shell shared by Achievements and the persona editor:
-// a left column of categories, a content pane, the close button top right,
-// the Settings size. One set of classes and one keyboard so both modals
-// look and behave the same.
+// The category modal shell shared by Achievements, the persona editor and
+// Browse Bots: a left column of categories (Browse Bots has none), a content
+// pane, the close button top right, the Settings size. One set of classes
+// and one keyboard so the modals look and behave the same.
 import { useEffect, useRef, type RefObject } from "react";
 
 import { cn } from "@/lib/cn";
@@ -17,6 +17,11 @@ export const CATEGORY_MODAL = {
   mobileSelect: "w-full min-w-0 rounded-lg border border-border bg-ink/[0.03] px-2.5 py-1.5 text-[13px] leading-[18px] text-ink focus:border-border-strong focus:outline-none",
   pane: "flex flex-1 flex-col overflow-y-auto",
   heading: "hidden px-8 pb-1 pt-6 text-[17px] font-semibold leading-6 tracking-[-0.008em] text-ink sm:block",
+  /** A pane's own title bar when there is no category select on a phone
+   * (Browse Bots): the heading's type, shown at every width, clear of the
+   * close button. */
+  titleBar: "shrink-0 px-4 pb-3 pr-12 pt-6 sm:px-8",
+  title: "text-[17px] font-semibold leading-6 tracking-[-0.008em] text-ink",
   body: "px-4 pb-6 pt-4 sm:px-8",
 } as const;
 

@@ -49,6 +49,9 @@ import { pathForFile } from "@/components/ComposerAttachments";
 import { CalendarSidebar } from "@/components/routines/CalendarSidebar";
 import { RoutineList } from "@/components/routines/RoutineList";
 import { RoutineLogs } from "@/components/routines/RoutineLogs";
+import { RoutineOwnerBadge, RoutineScopeBar } from "@/components/routines/RoutineScopeBar";
+import { useRoutineScope } from "@/lib/use-routine-scope";
+import { useAdvancedMode } from "@/lib/interface-mode";
 import { ResultsDestination } from "@/components/routines/ResultsDestination";
 import { RunAsField, useRunAsOptions } from "@/components/routines/RunAsField";
 import { canRunRoutineNow, routineRunInFlight } from "@/components/routines/RunNowButton";
@@ -88,6 +91,7 @@ import {
 } from "@/lib/routine-calendar";
 import { DAY_NAMES, durationLabel, intervalLabel, niceDate, niceTime, scheduleLabel } from "@/lib/schedule-label";
 import { Switch } from "./SettingsPrimitives";
+import { MarkdownEditor } from "./markdown/MarkdownEditor";
 import {
   isRoutineProblemRun,
   type Routine,
@@ -924,7 +928,7 @@ function EventEditor({
           </div>}
           <div className="flex items-start gap-4">
             <FileText size={18} className="mt-2.5 shrink-0 text-ink-secondary" />
-            <textarea value={description} onChange={(event) => setDescription(event.target.value)} rows={5} placeholder={isRoomGoal ? "What should the team accomplish?" : kind === "routine" ? "Add instructions for the bot" : "Add description or agenda"} className="min-w-0 flex-1 resize-y rounded-lg border border-border bg-ink/[0.03] px-2.5 py-1.5 text-[13px] leading-[18px] text-ink outline-none placeholder:text-ink-secondary focus:border-border-strong" />
+            <MarkdownEditor value={description} onChange={setDescription} minHeight={120} dataField="routine-instructions" className="min-w-0 flex-1" ariaLabel={isRoomGoal ? "What should the team accomplish?" : kind === "routine" ? "Add instructions for the bot" : "Add description or agenda"} placeholder={isRoomGoal ? "What should the team accomplish?" : kind === "routine" ? "Add instructions for the bot" : "Add description or agenda"} />
           </div>
           {kind === "routine" && !isRoomGoal && recurrence !== "none" && (
             <label className="ml-8 flex items-start gap-3 rounded-xl border border-hairline/40 bg-inset/40 px-3.5 py-3">
@@ -990,7 +994,8 @@ function EventEditor({
   );
 }
 
-function QuickComposer({
+/** Exported for tests. */
+export function QuickComposer({
   seed,
   bots,
   routinesOnly = false,
@@ -1125,7 +1130,7 @@ function QuickComposer({
         </div>
         <div className="flex items-start gap-3">
           <FileText size={16} className="mt-2.5 shrink-0 text-ink-secondary" />
-          <textarea value={description} onChange={(event) => setDescription(event.target.value)} rows={3} placeholder={kind === "routine" ? "What should the bot do?" : "Add a description (optional)"} className="min-w-0 flex-1 resize-none rounded-lg border border-border bg-ink/[0.03] px-2.5 py-1.5 text-[13px] leading-[18px] text-ink outline-none placeholder:text-ink-secondary focus:border-border-strong" />
+          <MarkdownEditor value={description} onChange={setDescription} minHeight={72} maxHeight={220} showCount={false} dataField="routine-instructions-quick" className="min-w-0 flex-1" ariaLabel={kind === "routine" ? "What should the bot do?" : "Add a description (optional)"} placeholder={kind === "routine" ? "What should the bot do?" : "Add a description (optional)"} />
         </div>
         {kind === "routine" && <ResultsDestination bot={bots.find((bot) => bot.id === botIds[0])} value={resultsThreadId} onChange={(threadId) => setResultsThreadId(threadId ?? null)} />}
         {error && <div className="rounded-lg bg-danger/10 px-3 py-2 text-[11.5px] text-danger">{error}</div>}
@@ -1167,11 +1172,16 @@ function CalendarEventCard({
   const primary = ownerBots[0];
   const name = isCall ? item.call.name : run?.routineName ?? routine?.name ?? "Routine";
   const color = isCall ? "#6d7cff" : primary ? (mausInk(primary.color) ?? "#666") : "#666";
+  // Someone else's routine (a wider scope): its owner, and no drag unless
+  // the server says this person may edit it.
+  const { state: cardState } = useStore();
+  const viewerId = cardState.config?.viewer?.principalId?.toLowerCase();
+  const otherOwner = routine?.owner && routine.owner.id && routine.owner.id.toLowerCase() !== viewerId ? routine.owner : null;
   const [previewDuration, setPreviewDuration] = useState(item.durationMinutes);
   useEffect(() => setPreviewDuration(item.durationMinutes), [item.durationMinutes]);
   const status = run?.status;
   const statusLabel = run ? routineRunLabel(run) : undefined;
-  const canMove = isCall || Boolean(routine && !run && routine.schedule.type !== "cron");
+  const canMove = isCall || Boolean(routine && !run && routine.schedule.type !== "cron" && routine.canEdit !== false);
   const schedule = isCall ? item.call.schedule : routine?.schedule;
   const recurring = Boolean(schedule && schedule.type !== "once");
   const intervalCadence = schedule?.type === "interval" ? intervalLabel(schedule.everyMinutes) : null;
@@ -1226,7 +1236,8 @@ function CalendarEventCard({
         {previewDuration >= 30 && (isCall ? <Video size={compact ? 11 : 13} className="mt-0.5 shrink-0" /> : primary ? <BotAvatar bot={primary} state={status ? statusState(status) : "idle"} size={compact ? 22 : 26} animated={status === "running" || status === "waiting"} /> : null)}
         <div className="min-w-0 flex-1">
           <div className={cn("truncate text-[11px] font-semibold", previewDuration < 30 ? "leading-none" : "leading-tight")}>{name}</div>
-          {previewDuration >= 30 && <div className="mt-0.5 truncate text-[9.5px] text-white/75">{niceTime(item.at)} · {intervalCadence ?? (isCall ? `${ownerBots.length} bot${ownerBots.length === 1 ? "" : "s"}` : isRoomGoal ? `Team goal · ${room?.name ?? "Group"}${statusLabel ? ` · ${statusLabel}` : ""}` : statusLabel ?? primary?.name)}</div>}
+          {previewDuration >= 30 && <div className="mt-0.5 truncate text-[9.5px] text-white/75">{niceTime(item.at)} · {intervalCadence ?? (isCall ? `${ownerBots.length} bot${ownerBots.length === 1 ? "" : "s"}` : isRoomGoal ? `Team goal · ${room?.name ?? "Group"}${statusLabel ? ` · ${statusLabel}` : ""}` : statusLabel ?? primary?.name ?? routine?.bot?.name)}</div>}
+          {previewDuration >= 45 && otherOwner && <RoutineOwnerBadge owner={otherOwner} size={12} className="mt-0.5 max-w-full text-[9.5px] text-white/80" />}
         </div>
         {previewDuration >= 30 && ownerBots.length > 1 && <span className="rounded bg-black/20 px-1 py-0.5 text-[8px]">+{ownerBots.length - 1}</span>}
       </div>
@@ -1393,6 +1404,11 @@ export function EventDetails({
   const botIds = call?.botIds ?? [run?.botId ?? routine?.botId ?? ""];
   const invited = botIds.flatMap((id) => bots.find((bot) => bot.id === id) ?? []);
   const primary = invited[0];
+  // A routine seen through a wider scope (2026-10-09): its bot may not be
+  // one of this person's, and only what the server allows can be changed.
+  const viewerPrincipal = state.config?.viewer?.principalId?.toLowerCase();
+  const otherOwner = routine?.owner && routine.owner.id && routine.owner.id.toLowerCase() !== viewerPrincipal ? routine.owner : null;
+  const editable = !routine || routine.canEdit !== false;
   const executionOwner = isRoomGoal ? goalGroup : primary;
   const canOpenExecution = Boolean(executionThreadId && (executionOwner?.threadId === executionThreadId || executionOwner?.tasks?.some((task) => task.threadId === executionThreadId)));
   // A run snapshots where it reported (older runs: the chat that made the
@@ -1516,9 +1532,11 @@ export function EventDetails({
               <div className="text-[11px] font-medium uppercase tracking-wider text-ink-secondary">{isCall ? "Bots invited" : isRoomGoal ? "Lead coordinator" : "Assigned bot"}</div>
               <div className="mt-2 flex flex-wrap gap-2">
                 {invited.map((bot) => <div key={bot.id} className="flex items-center gap-2 rounded-full border border-hairline/50 bg-inset py-1 pl-1 pr-2.5"><BotAvatar bot={bot} state="idle" size={26} animated={false} /><span className="text-[11.5px] text-ink">{bot.name}</span></div>)}
+                {invited.length === 0 && routine?.bot?.name && <div className="rounded-full border border-hairline/50 bg-inset px-2.5 py-1 text-[11.5px] text-ink">{routine.bot.name}</div>}
               </div>
             </div>
           </div>
+          {otherOwner && <div data-event-details-owner className="flex items-start gap-3"><UserRound size={17} className="mt-1 shrink-0 text-ink-secondary" /><div className="min-w-0 flex-1"><div className="text-[11px] font-medium uppercase tracking-wider text-ink-secondary">{t("routines.scope.owner")}</div><RoutineOwnerBadge owner={otherOwner} size={18} className="mt-1 text-[12.5px] text-ink" />{(!editable || routine?.redacted) && <div className="mt-1 text-[11.5px] text-ink-secondary">{routine?.redacted ? t("routines.scope.redacted") : t("routines.scope.readOnly")}</div>}</div></div>}
           {routine?.runAs && <div data-event-details-run-as className="flex items-start gap-3"><UserRound size={17} className="mt-1 shrink-0 text-ink-secondary" /><div className="min-w-0 flex-1"><div className="text-[11px] font-medium uppercase tracking-wider text-ink-secondary">{t("routines.runAsField.label")}</div><div className="mt-1 truncate text-[12.5px] text-ink">{routine.runAs.name || routine.runAs.principalId}</div></div></div>}
           {isRoomGoal && (
             <div className="flex items-start gap-3">
@@ -1548,11 +1566,11 @@ export function EventDetails({
           {canOpenExecution && <button onClick={openRunTask} className="flex items-center gap-1.5 rounded-lg px-3 py-2 text-[12px] text-ink-secondary hover:bg-raised hover:text-ink"><ExternalLink size={13} />{isRoomGoal ? "Open group thread" : "Open thread"}</button>}
           {canOpenResults && resultsThreadId && <button type="button" onClick={() => { openNotificationTarget(dispatch, { botId: botIds[0], threadId: resultsThreadId }, state); onClose(); }} className="flex items-center gap-1.5 rounded-lg px-3 py-2 text-[12px] text-ink-secondary hover:bg-raised hover:text-ink"><ExternalLink size={13} />{t("routines.results.open")}</button>}
           {routine && <button type="button" onClick={() => { dispatch({ type: "showRoutines", section: "logs", routineId: routine.id, botId: routine.botId }); onClose(); }} className="flex items-center gap-1.5 rounded-lg px-3 py-2 text-[12px] text-ink-secondary hover:bg-raised hover:text-ink"><FileText size={13} />{t("routines.logs")}</button>}
-          {run && ["queued", "running", "waiting"].includes(run.status) && <button onClick={() => void invoke(`/api/routine-runs/${run.id}/cancel`)} disabled={working} className="flex items-center gap-1.5 rounded-lg px-3 py-2 text-[12px] text-ink-secondary hover:bg-raised hover:text-ink disabled:opacity-40"><X size={13} />Cancel run</button>}
+          {run && editable && ["queued", "running", "waiting"].includes(run.status) && <button onClick={() => void invoke(`/api/routine-runs/${run.id}/cancel`)} disabled={working} className="flex items-center gap-1.5 rounded-lg px-3 py-2 text-[12px] text-ink-secondary hover:bg-raised hover:text-ink disabled:opacity-40"><X size={13} />Cancel run</button>}
           <div className="ml-auto flex items-center gap-1">
-            {(routine || call) && <button onClick={onEdit} className="rounded-lg px-3 py-2 text-[12px] text-ink-secondary hover:bg-raised hover:text-ink">Edit</button>}
-            {routine && <button disabled={working} onClick={() => void invoke(`/api/routines/${routine.id}`, "PATCH", { enabled: !routine.enabled })} className="rounded-lg p-2 text-ink-secondary hover:bg-raised hover:text-ink disabled:opacity-40" title={routine.enabled ? "Pause routine" : "Resume routine"}>{routine.enabled ? <Pause size={15} /> : <Play size={15} />}</button>}
-            {(routine || call) && <button onClick={() => void deleteEvent()} className="rounded-lg p-2 text-ink-secondary hover:bg-danger/10 hover:text-danger" title="Delete"><Trash2 size={15} /></button>}
+            {(routine || call) && editable && <button onClick={onEdit} className="rounded-lg px-3 py-2 text-[12px] text-ink-secondary hover:bg-raised hover:text-ink">Edit</button>}
+            {routine && editable && <button disabled={working} onClick={() => void invoke(`/api/routines/${routine.id}`, "PATCH", { enabled: !routine.enabled })} className="rounded-lg p-2 text-ink-secondary hover:bg-raised hover:text-ink disabled:opacity-40" title={routine.enabled ? "Pause routine" : "Resume routine"}>{routine.enabled ? <Pause size={15} /> : <Play size={15} />}</button>}
+            {(routine || call) && editable && <button onClick={() => void deleteEvent()} className="rounded-lg p-2 text-ink-secondary hover:bg-danger/10 hover:text-danger" title="Delete"><Trash2 size={15} /></button>}
           </div>
         </div>
       </div>
@@ -1635,6 +1653,9 @@ export function RoutineEditor({
 export function RoutinesPage({ onBack: _onBack, onOpenRoom, embedded = false, fill = false }: { onBack: () => void; onOpenRoom: (id: string) => void; embedded?: boolean; fill?: boolean }) {
   const { state, dispatch } = useStore();
   const { capabilities } = useDesktopCapabilities();
+  const advanced = useAdvancedMode();
+  // Mine, My teams or Everyone and the filters (src/lib/use-routine-scope.ts).
+  const scoped = useRoutineScope({ config: state.config, routines: state.routines, runs: state.routineRuns });
   const routinesOnly = window.ogb?.remoteClient?.active === true;
   const newMenuRef = useRef<HTMLDetailsElement>(null);
   const navMenuRef = useRef<HTMLDetailsElement>(null);
@@ -1642,7 +1663,11 @@ export function RoutinesPage({ onBack: _onBack, onOpenRoom, embedded = false, fi
   const [scheduleView, setScheduleView] = useState<"calendar" | "list">(state.routinesFocus?.view ?? "calendar");
   const [viewDays, setViewDays] = useState<1 | 3 | 7>(7);
   const [anchor, setAnchor] = useState(() => startOfDay(Date.now()));
-  const [botFilter, setBotFilter] = useState(state.routinesFocus?.botId ?? "all");
+  const [botFilter, setBotFilterState] = useState(state.routinesFocus?.botId ?? scoped.prefs.botId ?? "all");
+  const setBotFilter = (botId: string) => {
+    setBotFilterState(botId);
+    scoped.setPrefs({ ...scoped.prefs, botId: botId === "all" ? undefined : botId });
+  };
   const [routineFilter, setRoutineFilter] = useState<string | undefined>(state.routinesFocus?.routineId);
   const [statusFilter, setStatusFilter] = useState<RoutineRunStatusFilter>(state.routinesFocus?.runStatus ?? "all");
   const [calls, setCalls] = useState<CalendarCall[]>([]);
@@ -1661,10 +1686,15 @@ export function RoutinesPage({ onBack: _onBack, onOpenRoom, embedded = false, fi
     const focus = state.routinesFocus;
     setSection(focus?.section === "logs" ? "logs" : "calendar");
     setScheduleView(focus?.view ?? "calendar");
-    setBotFilter(focus?.botId ?? "all");
+    setBotFilterState(focus?.botId ?? scoped.prefs.botId ?? "all");
     setRoutineFilter(focus?.routineId);
     setStatusFilter(focus?.runStatus ?? "all");
   }, [state.routinesFocus]);
+  const scopedRoutines = scoped.routines;
+  const scopedRuns = scoped.runs;
+  // The bots the "All bots" select lists: the person's own, or the bots of
+  // the routines in a wider scope.
+  const botChoices = scoped.scope === "mine" ? visibleBots.map((bot) => ({ id: bot.id, name: bot.name })) : scoped.facets.botChoices;
 
   const loadCalls = useCallback(async () => {
     try {
@@ -1688,32 +1718,48 @@ export function RoutinesPage({ onBack: _onBack, onOpenRoom, embedded = false, fi
   }, []);
 
   const items = useMemo<CalendarEventItem[]>(() => {
-    const routineItems = projectedRoutineItems(state.routines, state.routineRuns, rangeStart, rangeEnd).map((item) => ({ ...item, kind: "routine" as const }));
+    const routineItems = projectedRoutineItems(scopedRoutines, scopedRuns, rangeStart, rangeEnd).map((item) => ({ ...item, kind: "routine" as const }));
     const callItems = projectCalls(calls, rangeStart, rangeEnd).map((item) => ({ ...item, kind: "call" as const }));
     return [...routineItems, ...callItems]
       .filter((item) => botFilter === "all" || (item.kind === "call" ? item.call.botIds.includes(botFilter) : (item.routine?.botId ?? item.run?.botId) === botFilter))
       .sort((left, right) => left.at - right.at);
-  }, [state.routines, state.routineRuns, calls, rangeStart, rangeEnd, botFilter]);
+  }, [scopedRoutines, scopedRuns, calls, rangeStart, rangeEnd, botFilter]);
 
   const liveSelected = selected?.kind === "call"
     ? (() => { const call = calls.find((candidate) => candidate.id === selected.call.id); return call ? { ...selected, call } : null; })()
     : selected?.kind === "routine"
       ? {
           ...selected,
-          routine: selected.routine ? state.routines.find((routine) => routine.id === selected.routine?.id) ?? null : null,
-          run: selected.run ? state.routineRuns.find((run) => run.id === selected.run?.id) ?? selected.run : null,
+          routine: selected.routine ? scopedRoutines.find((routine) => routine.id === selected.routine?.id) ?? null : null,
+          run: selected.run ? scopedRuns.find((run) => run.id === selected.run?.id) ?? selected.run : null,
         }
       : null;
-  const paused = state.routines.filter((routine) => !routine.enabled && (routine.schedule.type !== "once" || routine.schedule.at > Date.now()));
-  const running = state.routineRuns.filter((run) => ["queued", "running", "waiting"].includes(run.status)).length;
-  const unseenFailures = state.routineRuns.filter((run) => isRoutineProblemRun(run) && !run.seenAt).length;
-  const filteredRoutines = state.routines.filter((routine) => botFilter === "all" || routine.botId === botFilter);
-  const filteredRuns = state.routineRuns.filter((run) => botFilter === "all" || run.botId === botFilter);
+  // The pills count within the scope; the sidebar's own count stays the
+  // person's (the store).
+  const paused = scopedRoutines.filter((routine) => !routine.enabled && (routine.schedule.type !== "once" || routine.schedule.at > Date.now()));
+  const running = scopedRuns.filter((run) => ["queued", "running", "waiting"].includes(run.status)).length;
+  const unseenFailures = scopedRuns.filter((run) => isRoutineProblemRun(run) && !run.seenAt).length;
+  const filteredRoutines = scopedRoutines.filter((routine) => botFilter === "all" || routine.botId === botFilter);
+  const filteredRuns = scopedRuns.filter((run) => botFilter === "all" || run.botId === botFilter);
+  const routineOwnerOf = (run: RoutineRun) => scopedRoutines.find((routine) => routine.id === run.routineId);
+  const clearLogs = () => {
+    // Mine without filters: the store's own Clear logs, as before.
+    if (scoped.live && botFilter === "all" && !scoped.prefs.status) {
+      dispatch({ type: "clearRoutineRuns" });
+      return;
+    }
+    api(`/api/routine-runs?${scoped.clearSearch(botFilter === "all" ? undefined : botFilter)}`, { method: "DELETE" })
+      .then(({ removed }) => {
+        dispatch({ type: "routineRunsRemoved", ids: Array.isArray(removed) ? removed : [] });
+        void scoped.reload();
+      })
+      .catch((cause) => setError(cause instanceof Error ? cause.message : String(cause)));
+  };
   const openRoutine = (routine: Routine) => setSelected({ kind: "routine", id: routine.id, at: routine.nextRunAt ?? (routine.schedule.type === "once" ? routine.schedule.at : routine.schedule.type === "interval" ? routine.schedule.anchorAt : routine.schedule.type === "cron" ? nextHour() : atLocalTime(Date.now(), routine.schedule.time)), durationMinutes: routine.durationMinutes, routine, run: null });
   const openLogs = (routine: Routine) => { setRoutineFilter(routine.id); setSection("logs"); };
   const openRun = (run: RoutineRun) => {
-    setSelected({ kind: "routine", id: run.id, at: run.scheduledFor, durationMinutes: run.durationMinutes ?? 30, routine: state.routines.find((routine) => routine.id === run.routineId) ?? null, run });
-    if (["failed", "missed"].includes(run.status) && !run.seenAt) dispatch({ type: "markRoutineRunSeen", runId: run.id });
+    setSelected({ kind: "routine", id: run.id, at: run.scheduledFor, durationMinutes: run.durationMinutes ?? 30, routine: scopedRoutines.find((routine) => routine.id === run.routineId) ?? null, run });
+    if (["failed", "missed"].includes(run.status) && !run.seenAt && !run.redacted) dispatch({ type: "markRoutineRunSeen", runId: run.id });
   };
   const macInset = capabilities.windowChrome === "mac-inset";
   // Pulsatrix Light's navy top band mirrors the sidebar's own macOS-inset
@@ -1759,8 +1805,8 @@ export function RoutinesPage({ onBack: _onBack, onOpenRoom, embedded = false, fi
     if (nextAt === dragged.at) return;
     try {
       if (dragged.kind === "routine") {
-        const routine = state.routines.find((candidate) => candidate.id === dragged.id);
-        if (!routine) return;
+        const routine = scopedRoutines.find((candidate) => candidate.id === dragged.id);
+        if (!routine || routine.canEdit === false) return;
         if (routine.schedule.type === "cron") throw new Error("Open this routine to edit its repeating schedule and time zone.");
         if (routine.schedule.type !== "once" && !window.confirm("Move this entire recurring series?")) return;
         const response = await api(`/api/routines/${routine.id}`, { method: "PATCH", body: JSON.stringify({ schedule: scheduleAt(routine.schedule, dragged.at, nextAt) }) });
@@ -1841,6 +1887,10 @@ export function RoutinesPage({ onBack: _onBack, onOpenRoom, embedded = false, fi
           </div>
           {section === "webhooks" && <div className="ml-auto flex items-center gap-2" style={windowNoDragStyle}>{automationActions}</div>}
         </div>
+        {section !== "webhooks" && scoped.available && <div className="mt-2" style={windowNoDragStyle}>
+          <RoutineScopeBar prefs={scoped.prefs} allowed={scoped.allowed} teams={scoped.facets.teams} owners={scoped.facets.owners} advanced={advanced} onChange={(next) => { scoped.setPrefs(next); setRoutineFilter(undefined); }} />
+          {scoped.error && <p role="alert" className="mt-1 text-[11.5px] text-danger">{t("routines.scope.loadError")}</p>}
+        </div>}
         {section !== "webhooks" && <div className="mt-2 flex flex-wrap items-center gap-2" style={windowNoDragStyle}>
           {section === "calendar" && <div className="flex items-center rounded-lg border border-hairline/50 bg-panel p-0.5" aria-label="Schedule view">
             <button type="button" aria-pressed={scheduleView === "list"} onClick={() => setScheduleView("list")} className={cn("flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[12px]", scheduleView === "list" ? "bg-raised text-ink" : "text-ink-secondary hover:text-ink")}><List size={13} />List</button>
@@ -1856,7 +1906,7 @@ export function RoutinesPage({ onBack: _onBack, onOpenRoom, embedded = false, fi
             {running > 0 && <span className="hidden items-center gap-1.5 rounded-full bg-accent/10 px-2.5 py-1.5 text-[10.5px] text-accent sm:flex"><Loader2 size={11} className="animate-spin" />{running} active</span>}
             {unseenFailures > 0 && <button type="button" onClick={() => dispatch({ type: "showRoutines", section: "logs", runStatus: "problems" })} className="hidden items-center gap-1.5 rounded-full bg-danger/10 px-2.5 py-1.5 text-[10.5px] text-danger sm:flex" title="Open problem run logs" aria-label="Open problem run logs"><CircleAlert size={11} />{unseenFailures}</button>}
             {paused.length > 0 && <button onClick={() => setPausedOpen(true)} aria-label="View paused routines" className="hidden items-center gap-1.5 rounded-full border border-hairline/50 px-2.5 py-1.5 text-[10.5px] text-ink-secondary hover:bg-raised sm:flex"><Pause size={11} />{paused.length}</button>}
-            <select aria-label="Filter schedule by bot" value={botFilter} onChange={(event) => { setBotFilter(event.target.value); setRoutineFilter(undefined); }} className="max-w-[180px] rounded-lg border border-border bg-ink/[0.03] px-2.5 py-1.5 text-[13px] leading-[18px] text-ink outline-none focus:border-border-strong"><option value="all">All bots</option>{visibleBots.map((bot) => <option key={bot.id} value={bot.id}>{bot.name}</option>)}</select>
+            <select aria-label="Filter schedule by bot" value={botFilter} onChange={(event) => { setBotFilter(event.target.value); setRoutineFilter(undefined); }} className="max-w-[180px] rounded-lg border border-border bg-ink/[0.03] px-2.5 py-1.5 text-[13px] leading-[18px] text-ink outline-none focus:border-border-strong"><option value="all">All bots</option>{botChoices.map((bot) => <option key={bot.id} value={bot.id}>{bot.name}</option>)}</select>
             {section === "calendar" && scheduleView === "calendar" && <select aria-label="Schedule range" value={viewDays} onChange={(event) => setView(Number(event.target.value) as 1 | 3 | 7)} className="rounded-lg border border-border bg-ink/[0.03] px-2.5 py-1.5 text-[13px] leading-[18px] text-ink outline-none focus:border-border-strong"><option value={1}>Day</option><option value={3}>3 days</option><option value={7}>Week</option></select>}
             {automationActions}
           </div>
@@ -1873,16 +1923,16 @@ export function RoutinesPage({ onBack: _onBack, onOpenRoom, embedded = false, fi
       <RoutineWakeBar />
 
       {section === "webhooks" ? <WebhooksPanel bots={visibleBots} createRequest={webhookCreateRequest} onCreateHandled={handleWebhookCreateHandled} /> : section === "logs" ? (
-        <div className="min-h-0 flex-1 overflow-y-auto"><RoutineLogs runs={filteredRuns} bots={state.bots} loading={state.routinesLoadState === "loading" && filteredRuns.length === 0} error={state.routinesLoadState === "error"} routineId={routineFilter} status={statusFilter} onStatusChange={setStatusFilter} onClearRoutine={() => setRoutineFilter(undefined)} onClearLogs={() => dispatch({ type: "clearRoutineRuns" })} onOpen={openRun} /></div>
+        <div className="min-h-0 flex-1 overflow-y-auto"><RoutineLogs runs={filteredRuns} bots={state.bots} ownerOf={routineOwnerOf} viewerPrincipalId={state.config?.viewer?.principalId ?? null} loading={(scoped.live ? state.routinesLoadState === "loading" : scoped.loading) && filteredRuns.length === 0} error={scoped.live ? state.routinesLoadState === "error" : scoped.error} routineId={routineFilter} status={statusFilter} onStatusChange={setStatusFilter} onClearRoutine={() => setRoutineFilter(undefined)} onClearLogs={clearLogs} onOpen={openRun} /></div>
       ) : scheduleView === "list" ? (
         <div className="min-h-0 flex-1 overflow-y-auto"><div className="mx-auto w-full max-w-4xl space-y-5 p-4 sm:p-6">
           <div><h2 className="text-[17px] font-semibold text-ink">Routines</h2><p className="mt-1 text-[12px] text-ink-secondary">All schedules, including paused and finished routines.</p></div>
-          <RoutineList routines={filteredRoutines} viewerPrincipalId={state.config?.viewer?.principalId ?? null} runs={state.routineRuns} bots={state.bots} loading={state.routinesLoadState === "loading" && filteredRoutines.length === 0} error={state.routinesLoadState === "error"} onOpen={openRoutine} onLogs={openLogs} />
+          <RoutineList routines={filteredRoutines} viewerPrincipalId={state.config?.viewer?.principalId ?? null} runs={scopedRuns} bots={state.bots} loading={(scoped.live ? state.routinesLoadState === "loading" : scoped.loading) && filteredRoutines.length === 0} error={scoped.live ? state.routinesLoadState === "error" : scoped.error} onOpen={openRoutine} onLogs={openLogs} />
           {!routinesOnly && calls.some((call) => botFilter === "all" || call.botIds.includes(botFilter)) && <section className="space-y-2" aria-label="Scheduled calls"><h2 className="text-[15px] font-semibold text-ink">Scheduled calls</h2>{calls.filter((call) => botFilter === "all" || call.botIds.includes(botFilter)).map((call) => <button key={call.id} type="button" onClick={() => setSelected({ kind: "call", id: call.id, at: call.schedule.type === "once" ? call.schedule.at : atLocalTime(Date.now(), call.schedule.time), durationMinutes: call.durationMinutes, call })} className="flex w-full items-center gap-3 rounded-xl border border-hairline/40 bg-card p-4 text-left hover:bg-raised"><Video size={17} className="text-accent" /><span><span className="block text-[13px] font-medium text-ink">{call.name}</span><span className="mt-1 block text-[11.5px] text-ink-secondary">{scheduleLabel(call.schedule)}</span></span></button>)}</section>}
         </div></div>
       ) : (
         <div className="flex min-h-0 flex-1">
-          <CalendarGrid anchor={rangeStart} days={viewDays} items={items} bots={state.bots} groups={state.groups} onOpen={(item) => { setSelected(item); if (item.kind === "routine" && item.run && ["failed", "missed"].includes(item.run.status) && !item.run.seenAt) dispatch({ type: "markRoutineRunSeen", runId: item.run.id }); }} onCreate={openCreate} onMove={(item, at) => void moveEvent(item, at)} onResize={(item, duration) => void resizeEvent(item, duration)} />
+          <CalendarGrid anchor={rangeStart} days={viewDays} items={items} bots={state.bots} groups={state.groups} onOpen={(item) => { setSelected(item); if (item.kind === "routine" && item.run && ["failed", "missed"].includes(item.run.status) && !item.run.seenAt && !item.run.redacted) dispatch({ type: "markRoutineRunSeen", runId: item.run.id }); }} onCreate={openCreate} onMove={(item, at) => void moveEvent(item, at)} onResize={(item, duration) => void resizeEvent(item, duration)} />
           {botsOpen ? (
             <div className="hidden shrink-0 lg:block">
               <CalendarSidebar bots={visibleBots} anchor={anchor} onSelectDate={(at) => setAnchor(startOfDay(at))} onCollapse={() => setBotsOpen(false)} />

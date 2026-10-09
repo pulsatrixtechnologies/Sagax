@@ -272,7 +272,7 @@ app.whenReady().then(async () => {
       left: Math.round(rect.left), right: Math.round(rect.right), innerWidth, innerHeight, modal: panel.getAttribute('aria-modal'),
       focusInside: panel.contains(document.activeElement), paysWith: panel.querySelector('[data-pays-with]')?.dataset.paysWith ?? null,
       payerRows: panel.querySelectorAll('[data-payer]').length, connect: Boolean(panel.querySelector('[data-engine-connect-button], [data-engine-connected]')),
-      localHidden: Boolean(panel.querySelector('[data-model-local-hidden]')), localEntry: Boolean(panel.querySelector('[data-model-local-entry]')),
+      localEntry: Boolean(panel.querySelector('[data-model-local-entry]')), localGroup: Boolean(panel.querySelector('[data-model-local-group]')),
       providers: panel.querySelectorAll('[data-model-provider-column] [data-rail-provider]').length };
   })()`);
   win.show();
@@ -286,7 +286,7 @@ app.whenReady().then(async () => {
   check("the composer's model chip opens a model picker modal inside the window", picker.found && picker.modal === "true" && picker.height > 300 && picker.top >= 0 && picker.bottom <= picker.innerHeight && picker.left >= 0 && picker.right <= picker.innerWidth, JSON.stringify(picker));
   check("the modal takes focus", picker.focusInside === true);
   check("the modal shows one line on what pays and Connect or Disconnect, no payer chain (no server sign-in, even for an admin)", Boolean(picker.paysWith) && picker.connect && picker.payerRows === 0, JSON.stringify({ paysWith: picker.paysWith, connect: picker.connect, payerRows: picker.payerRows }));
-  check("no local model from the server's machine, with a note", picker.localHidden && !picker.localEntry);
+  check("no local model from the server's machine", !picker.localEntry && !picker.localGroup);
   await wait(300);
   await shoot("model-picker-server-1200.png");
   win.webContents.sendInputEvent({ type: "keyDown", keyCode: "Escape" });

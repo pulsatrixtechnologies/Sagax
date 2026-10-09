@@ -7,7 +7,7 @@ import { attentionSettings } from "./notification-preferences";
 
 export type NotifyFrame = Notification;
 
-export type NotificationTarget = Pick<NotifyFrame, "botId" | "threadId" | "routineRunId">;
+export type NotificationTarget = Pick<NotifyFrame, "botId" | "threadId" | "routineRunId"> & { groupId?: string };
 
 /** Ask while handling the settings click. Browsers may reject permission
  * requests that are triggered later by an incoming SSE frame. */
@@ -37,6 +37,19 @@ interface PendingClick {
 
 const pendingClicks = createNotificationTargets<PendingClick>();
 let clicksWired = false;
+/** Opens a target the shell sent back when the page no longer holds the
+ * notification id (the page reloaded while the banner waited). */
+let openByTarget: ((target: NotificationTarget) => void) | null = null;
+
+function targetFromShell(raw: unknown): NotificationTarget | null {
+  if (!raw || typeof raw !== "object") return null;
+  const value = raw as Record<string, unknown>;
+  const text = (key: string) => (typeof value[key] === "string" ? (value[key] as string) : "");
+  const target: NotificationTarget = { botId: text("botId"), threadId: text("threadId") };
+  if (text("groupId")) target.groupId = text("groupId");
+  if (text("routineRunId")) target.routineRunId = text("routineRunId");
+  return target.threadId || target.routineRunId || target.botId ? target : null;
+}
 
 /** The shell tells the page which of its notifications was clicked; the
  * page knows where that one goes. Wired once, on the first notification. */
@@ -45,7 +58,12 @@ function wireDesktopClicks(): void {
   const listen = window.ogb?.onNotificationClick;
   if (!listen) return;
   clicksWired = true;
-  listen((id) => pendingClicks.take(id)?.open());
+  listen((id, target) => {
+    const pending = pendingClicks.take(id);
+    if (pending) return pending.open();
+    const fallback = targetFromShell(target);
+    if (fallback) openByTarget?.(fallback);
+  });
 }
 
 function windowFocused(): boolean {
@@ -64,6 +82,8 @@ export function presentNotification(input: {
   body: string;
   attention: Omit<MessageAttention, "show">;
   open: () => void;
+  /** Where the click goes, handed to the shell and sent back with the click. */
+  target?: NotificationTarget;
   web?: NotificationOptions;
 }): boolean {
   if (typeof window !== "undefined" && window.ogb?.notify) {
@@ -76,6 +96,7 @@ export function presentNotification(input: {
       persistent: input.attention.persistent,
       bounce: input.attention.bounce,
       flash: input.attention.flash,
+      ...(input.target ? { target: input.target } : {}),
     });
     return true;
   }
@@ -115,11 +136,19 @@ export function showNotification(
   });
   if (!attention.show) return;
   const spend = frame.kind === "spend";
+  openByTarget = onOpen;
+  const target: NotificationTarget = {
+    botId: frame.botId,
+    threadId: frame.threadId,
+    ...(frame.groupId ? { groupId: frame.groupId } : {}),
+    ...(frame.routineRunId ? { routineRunId: frame.routineRunId } : {}),
+  };
   presentNotification({
+    target,
     title: frame.title,
     body: frame.body,
     attention,
-    open: () => onOpen({ botId: frame.botId, threadId: frame.threadId, ...(frame.routineRunId ? { routineRunId: frame.routineRunId } : {}) }),
+    open: () => onOpen(target),
     web: {
       ...buildNotificationOptions({ id: frame.botId, avatarUrl }),
       // its own stack, so a bot's next "finished" never replaces it

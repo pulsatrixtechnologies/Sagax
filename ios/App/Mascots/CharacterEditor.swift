@@ -213,6 +213,16 @@ struct CharacterEditor: View {
                     draft.look = next.stored
                 }
             }
+        case .shiba:
+            // a locked skin stays out (the server refuses it anyway: 403 look_locked); the worn one stays
+            let skins = ShibaSkin.allCases.filter { !skinLocked(.shiba, $0.rawValue, worn: wornDraft.complete.shibaSkin.rawValue) }
+            row(count: skins.count, pitch: metrics.skinPitch, height: metrics.skinRowHeight ?? metrics.pitch) { index in
+                thumbnail(look: edited { $0.shibaSkin = skins[index] }, skin: .none, size: metrics.skinCell, selected: draft.complete.shibaSkin == skins[index], label: Text(verbatim: skins[index].rawValue), tier: tierLabel(.shiba, skins[index].rawValue)) {
+                    var next = draft.complete
+                    next.shibaSkin = skins[index]
+                    draft.look = next.stored
+                }
+            }
         }
     }
 
@@ -378,6 +388,7 @@ struct CharacterEditor: View {
         case .shape: "Shape"
         case .trombi: "Trombi"
         case .bunbu: "Bunbu"
+        case .shiba: "Shiba"
         }
     }
 }

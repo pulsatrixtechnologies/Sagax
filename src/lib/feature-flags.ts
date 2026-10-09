@@ -55,10 +55,11 @@ export function connectedAppsEnabled(config: FeatureFlagConfig | null | undefine
   return config?.features?.connectedApps === true;
 }
 
-/** The sidebar's Templates entry (the team library). Experimental: off
- * until switched on in Settings > Experimental features; mirrors the
- * server's templatesEnabled. */
-export function templatesEnabled(config: FeatureFlagConfig | null | undefined): boolean {
+/** The sidebar's Browse Bots entry (the bot catalogue). Experimental: off
+ * until switched on in Settings > Experimental features. Stored under the
+ * server's long-standing `templates` feature key (server templatesEnabled),
+ * so no server change and an earlier choice carries over. */
+export function browseBotsEnabled(config: FeatureFlagConfig | null | undefined): boolean {
   return config?.features?.templates === true;
 }
 

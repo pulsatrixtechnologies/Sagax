@@ -91,6 +91,9 @@ function windowFocused(): boolean {
   }
 }
 
+/** Fired on the window when a fresh nudge reached this person (once per nudge). */
+export const NUDGE_RECEIVED_EVENT = "sagax:nudge-received";
+
 /** A nudge addressed to this person reached this computer (the server sends
  * the `nudge` frame to that person's streams only). Brings the window to
  * the very front and shakes it (the shell also bounces the Dock / flashes
@@ -110,6 +113,8 @@ export async function onNudgeReceived(
   const decision = nudgeAttention({ at: frame.at, now, windowFocused: focused, settings });
   if (!decision.fresh) return;
   if (!markPlayed(frame.id)) return;
+  // the desktop mascots react too (a Shiba barks): floating-bots/FloatingBots.tsx
+  if (typeof window !== "undefined" && typeof window.dispatchEvent === "function") window.dispatchEvent(new CustomEvent(NUDGE_RECEIVED_EVENT));
   shakeAndFront("received", decision.shake);
   const rang = decision.sound ? await playNudgeSound() : false;
   if (!decision.notify) return;
@@ -125,6 +130,7 @@ export async function onNudgeReceived(
       bounce: "critical",
       flash: true,
     },
+    ...(threadId ? { target: { botId: "", threadId } } : {}),
     open: () => {
       if (threadId) openConversation({ botId: "", threadId });
     },

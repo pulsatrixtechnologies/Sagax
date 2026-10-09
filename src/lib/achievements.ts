@@ -22,9 +22,11 @@ import {
   type AchievementUnlock,
   type ClientEvent,
   type Localized,
+  type RewardCharacter,
   type Unlocks,
 } from "../../shared/achievements";
-import type { MascotCharacter } from "../../shared/mascot-look";
+import { isMasteryCharacter, masteryCharacterName, masteryLock, masterySkinName, type MasteryName } from "../../shared/mascot-unlocks";
+import { en as englishStrings } from "@/locales";
 import { activeLocale, t } from "./i18n";
 import type { LocaleKey } from "@/locales";
 import { achievementToasts } from "./achievement-toasts";
@@ -147,7 +149,11 @@ export function receiveAchievementsFrame(frame: { unlocked?: unknown }): void {
   void loadAchievements();
 }
 
+/** Fired on the window when achievements unlock (the desktop mascots react: a Shiba turns in circles). */
+export const ACHIEVEMENT_UNLOCKED_EVENT = "sagax:achievement-unlocked";
+
 function announceUnlocks(unlocked: readonly AchievementUnlock[]): void {
+  if (typeof window !== "undefined" && typeof window.dispatchEvent === "function") window.dispatchEvent(new CustomEvent(ACHIEVEMENT_UNLOCKED_EVENT));
   if (state.snapshot?.settings.toasts === false) {
     achievementToasts.markSeen(unlocked.map((item) => item.id));
     return;
@@ -175,24 +181,39 @@ export async function saveAchievementSettings(patch: Omit<Partial<AchievementSet
 /* Words                                                              */
 /* ------------------------------------------------------------------ */
 
-export function localized(text: Localized): string {
-  return activeLocale().startsWith("fr") ? text.fr : text.en;
+export function localized(text: Localized | MasteryName): string {
+  const locale = activeLocale();
+  if (locale.startsWith("fr")) return text.fr;
+  if (locale.startsWith("pt") && text.ptBR) return text.ptBR;
+  return text.en;
 }
 
-const CHARACTER_KEY: Record<MascotCharacter, LocaleKey> = {
+// The characters this build names in its locales. A Mastery character
+// (shared/mascot-unlocks.ts) that has not landed yet is named by the registry;
+// once its branch adds `floatingBots.mascot.<id>`, that wins.
+const CHARACTER_KEY: Readonly<Record<string, LocaleKey>> = {
   owl: "floatingBots.mascot.owl",
   shape: "floatingBots.mascot.body",
   trombi: "floatingBots.mascot.trombi",
   bunbu: "floatingBots.mascot.bunbu",
+  shiba: "floatingBots.mascot.shiba",
 };
 
-export function characterName(character: MascotCharacter): string {
-  return t(CHARACTER_KEY[character]);
+/** The English pack carries every key this build knows. */
+function hasLocaleKey(key: string): boolean {
+  return Object.hasOwn(englishStrings, key);
 }
 
-export function skinName(character: MascotCharacter, skin: string): string {
+export function characterName(character: RewardCharacter): string {
+  const key = CHARACTER_KEY[character] ?? `floatingBots.mascot.${character}`;
+  if (hasLocaleKey(key)) return t(key as LocaleKey);
+  return isMasteryCharacter(character) ? localized(masteryCharacterName(character)) : character;
+}
+
+export function skinName(character: RewardCharacter, skin: string): string {
   const key = character === "owl" ? `mascot.skin.${skin === "none" ? "classic" : skin}` : `mascot.${character === "shape" ? "shapeSkin" : `${character}Skin`}.${skin}`;
-  return t(key as LocaleKey);
+  if (hasLocaleKey(key)) return t(key as LocaleKey);
+  return isMasteryCharacter(character) ? localized(masterySkinName(character, skin)) : skin;
 }
 
 /** "Skin unlocked: Galaxy (Owl)", "Character unlocked: Trombi", "Title unlocked: Rookie". */
@@ -215,6 +236,8 @@ export function rewardLabel(reward: AchievementReward): string {
 
 export interface LockInfo {
   locked: boolean;
+  /** A Mastery look: shown locked, with its achievement and progress, rather than hidden. */
+  mastery?: boolean;
   /** The achievement that unlocks it, when one does. */
   achievement?: AchievementDefinition;
   item?: AchievementItemState;
@@ -224,13 +247,27 @@ function itemState(id: string): AchievementItemState | undefined {
   return state.snapshot?.items.find((item) => item.id === id);
 }
 
-export function characterLock(unlocks: Unlocks, character: MascotCharacter): LockInfo {
+/** A Mastery look's lock (shared/mascot-unlocks.ts): the achievement, its progress, `mastery` set so the editor shows it locked instead of hiding it. */
+function masteryLockInfo(unlocks: Unlocks, character: RewardCharacter, skin?: string): LockInfo | null {
+  if (!isMasteryCharacter(character)) return null;
+  if (!unlocks.enforced) return { locked: false };
+  const lock = masteryLock(unlocks.keys, character, skin);
+  if (!lock.locked || !lock.achievement) return { locked: false };
+  const achievement = achievementById(lock.achievement);
+  return { locked: true, mastery: true, achievement, item: achievement ? itemState(achievement.id) : undefined };
+}
+
+export function characterLock(unlocks: Unlocks, character: RewardCharacter): LockInfo {
+  const mastery = masteryLockInfo(unlocks, character);
+  if (mastery) return mastery;
   if (characterUnlocked(unlocks, character)) return { locked: false };
   const achievement = achievementRewarding(`character:${character}`, ACHIEVEMENTS);
   return { locked: true, achievement, item: achievement ? itemState(achievement.id) : undefined };
 }
 
-export function skinLock(unlocks: Unlocks, character: MascotCharacter, skin: string): LockInfo {
+export function skinLock(unlocks: Unlocks, character: RewardCharacter, skin: string): LockInfo {
+  const mastery = masteryLockInfo(unlocks, character, skin);
+  if (mastery) return mastery;
   if (skinUnlocked(unlocks, character, skin)) return { locked: false };
   const achievement = achievementRewarding(`skin:${character}:${skin}`, ACHIEVEMENTS) ?? achievementRewarding(`character:${character}`, ACHIEVEMENTS);
   return { locked: true, achievement, item: achievement ? itemState(achievement.id) : undefined };
@@ -245,7 +282,7 @@ export function appIconLock(unlocks: Unlocks, id: string, art: { kind: string; s
     const achievement = achievementRewarding(`appIcon:${id}`, ACHIEVEMENTS);
     return { locked: true, achievement, item: achievement ? itemState(achievement.id) : undefined };
   }
-  if (art.kind === "owl" || art.kind === "shape" || art.kind === "trombi" || art.kind === "bunbu") {
+  if (art.kind === "owl" || art.kind === "shape" || art.kind === "trombi" || art.kind === "bunbu" || art.kind === "shiba") {
     return art.skin ? skinLock(unlocks, art.kind, art.skin) : characterLock(unlocks, art.kind);
   }
   return { locked: false };

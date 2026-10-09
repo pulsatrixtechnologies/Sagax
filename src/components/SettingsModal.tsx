@@ -4,11 +4,11 @@
 // machine your bots can borrow.
 import { useRetroSkin } from "./RetroChromeHost";
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
-import { FLOATING_LIVELINESS, floatingBotPrefs, HOTKEY_CHOICES, hotkeyLabel, setFloatingFlyAway, setFloatingHotkey, setFloatingLiveliness, subscribeFloatingBots, type FloatingLiveliness, type HotkeyChoice } from "@/lib/floating-bots";
+import { FLOATING_LIVELINESS, floatingBotPrefs, HOTKEY_CHOICES, hotkeyLabel, setFloatingBarkSound, setFloatingFlyAway, setFloatingHotkey, setFloatingLiveliness, subscribeFloatingBots, type FloatingLiveliness, type HotkeyChoice } from "@/lib/floating-bots";
 import { useCallSettings, writeCallSettings } from "@/lib/voice-mode/call-settings";
 import { Archive, Bell, Coins, FlaskConical, KeyRound, Mail, Monitor, Palette, ScrollText, Search, ShieldCheck, TabletSmartphone, Terminal, User, Users, X, Building2, Zap } from "lucide-react";
 import { api, useStore, type AppSettingsSection, type ConfigStatus } from "@/state/store";
-import { browserAvailable, builtInBrowserEnabled, boatComputerEnabled, connectedAppsEnabled, decisionModelEnabled, routinesInConversationEnabled, showToolCallsEnabled, skillAuthoringEnabled, templatesEnabled, vpsComputerEnabled } from "@/lib/feature-flags";
+import { browserAvailable, builtInBrowserEnabled, boatComputerEnabled, browseBotsEnabled, connectedAppsEnabled, decisionModelEnabled, routinesInConversationEnabled, showToolCallsEnabled, skillAuthoringEnabled, vpsComputerEnabled } from "@/lib/feature-flags";
 import { usePerspicaxOrg } from "@/lib/perspicax-org";
 import { localeChoices, type LocaleKey } from "@/locales";
 import { t } from "@/lib/i18n";
@@ -502,6 +502,20 @@ function FloatingFlyAwayRow() {
   );
 }
 
+/** Desktop mascots: Shiba barks out loud (off by default; the bark itself always shows). */
+function FloatingBarkSoundRow() {
+  const prefs = useSyncExternalStore(subscribeFloatingBots, floatingBotPrefs, floatingBotPrefs);
+  return (
+    <SettingRow title={t("settings.floatingBots.barkSound.title")} subtitle={t("settings.floatingBots.barkSound.subtitle")}>
+      <Switch
+        checked={prefs.barkSound}
+        aria-label={t("settings.floatingBots.barkSound.title")}
+        onClick={() => setFloatingBarkSound(!prefs.barkSound)}
+      />
+    </SettingRow>
+  );
+}
+
 /** Desktop mascots: how often they move and play on their own. */
 function FloatingLivelinessRow() {
   const prefs = useSyncExternalStore(subscribeFloatingBots, floatingBotPrefs, floatingBotPrefs);
@@ -776,7 +790,7 @@ function ExperimentalFeaturesRow() {
   const { state, dispatch } = useStore();
   const skillAuthoring = skillAuthoringEnabled(state.config);
   const browser = builtInBrowserEnabled(state.config);
-  const templates = templatesEnabled(state.config);
+  const browseBots = browseBotsEnabled(state.config);
   const connectedApps = connectedAppsEnabled(state.config);
   const decisionModel = decisionModelEnabled(state.config);
   const desktopBrowser = browserAvailable(state.config);
@@ -808,7 +822,7 @@ function ExperimentalFeaturesRow() {
       cardId="experimental.features"
       title={t("settings.experimental.title")}
       subtitle={t("settings.experimental.subtitle")}
-      summary={t("settings.card.countOn", { count: Number(skillAuthoring) + Number(browser) + Number(templates) + Number(connectedApps) + Number(decisionModel), total: 5 })}
+      summary={t("settings.card.countOn", { count: Number(skillAuthoring) + Number(browser) + Number(browseBots) + Number(connectedApps) + Number(decisionModel), total: 5 })}
     >
       <div className="flex items-center justify-between gap-4">
         <div className="min-w-0">
@@ -846,18 +860,18 @@ function ExperimentalFeaturesRow() {
           className="disabled:cursor-wait disabled:opacity-50"
         />
       </div>
-      <div className="mt-4 flex items-center justify-between gap-4 border-t border-hairline/30 pt-4" data-experimental-templates>
+      <div className="mt-4 flex items-center justify-between gap-4 border-t border-hairline/30 pt-4" data-experimental-browse-bots>
         <div className="min-w-0">
-          <div className="text-[14px] font-medium text-ink">{t("settings.experimental.templates")}</div>
+          <div className="text-[14px] font-medium text-ink">{t("settings.experimental.browseBots")}</div>
           <div className="mt-0.5 text-[12px] leading-relaxed text-ink-secondary">
-            {t("settings.experimental.templatesDetail")}
+            {t("settings.experimental.browseBotsDetail")}
           </div>
         </div>
         <Switch
-          checked={templates}
-          aria-label={t("settings.experimental.templatesAria")}
+          checked={browseBots}
+          aria-label={t("settings.experimental.browseBotsAria")}
           disabled={saving !== null}
-          onClick={() => void toggle("templates", !templates)}
+          onClick={() => void toggle("templates", !browseBots)}
           className="disabled:cursor-wait disabled:opacity-50"
         />
       </div>
@@ -1325,6 +1339,7 @@ export function SettingsModal() {
                   <SidebarHiddenSettings />
                   <FloatingFlyAwayRow />
                   <FloatingLivelinessRow />
+                  <FloatingBarkSoundRow />
                   <FloatingHotkeyRow />
                   <FloatingCaptionsRow />
                   {advanced && !remoteActive && editConfig && <ToolCallsRow />}

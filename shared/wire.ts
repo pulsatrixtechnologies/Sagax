@@ -18,6 +18,7 @@ import type { MascotBodyId } from "./mascot-bodies.ts";
 import type { MascotColorName } from "./mascot-colors.ts";
 import type { MascotSkinId } from "./mascot-skins.ts";
 import type { MascotLook } from "./mascot-look.ts";
+import type { MessageReaction } from "./reactions.ts";
 import type { BotCatalogListing } from "./bot-catalog.ts";
 import type { BotPublicProfile } from "./bot-public-profile.ts";
 import type { CredentialTargetId } from "./credential-request.ts";
@@ -585,6 +586,9 @@ export interface WireMessage {
   sender?: ResolvedSender;
   /** Provider turn that produced this message. */
   turnId?: string;
+  /** What the turn that wrote this bot reply ran on. Absent on replies from
+   * before it was recorded, and on rooms; no effort means the engine default. */
+  turnRun?: { instanceId: string; model: string; effort?: EffortLevel };
   /** Server-proven originating user message, including supported harness
    * continuations. Absent means external clients must not infer ownership. */
   requestMessageId?: string;
@@ -631,8 +635,10 @@ export interface WireMessage {
   /** Auto: the model this delivered work ran on, and why (the delegation
    * card and the worker's activity row). Clients that do not know it ignore it. */
   autoModel?: AutoModelRecord;
-  /** emoji reactions; by = "user" or a member botId. */
-  reactions?: Array<{ emoji: string; by: string }>;
+  /** Emoji reactions, one entry per emoji with who put it there
+   * (shared/reactions.ts). Older stores may still hold `{ emoji, by }`
+   * entries; read them through normalizeReactions. */
+  reactions?: MessageReaction[];
   /** comm chips: "Messaged @X", linking to the bot-bot channel. */
   /** `gone` is stamped at read time when the channel thread no longer exists. */
   comm?: { groupId: string; threadId?: string; withBotId: string; withName: string; withColor: string; gone?: boolean };
@@ -819,6 +825,24 @@ export interface GroupTask {
   /** The first message already drove a title attempt for this thread, so a
    * later one does not rename a room the person may have retitled. */
   titleFromFirstMessage?: true;
+  /** When this thread was archived. Absent = unarchived. Same contract as
+   * WireTask.archivedAt; a person conversation's threads use it. */
+  archivedAt?: number;
+  /** Same contract as WireTask.snoozedUntil: 0 = until new activity (the
+   * store clears it on the next message), a future epoch ms = until then. */
+  snoozedUntil?: number;
+  /** The folder (`WireGroup.projects`) this thread is filed under. */
+  projectId?: string;
+  /** A person conversation: this thread is unread for the viewer. Drawn
+   * per viewer from `unreadFor` (server/people-dms.ts peopleDmForViewer). */
+  unread?: boolean;
+  /** A person conversation: which of its two people have not read this
+   * thread yet (principal ids). Server-side; a client never gets it. */
+  unreadFor?: string[];
+  /** A person conversation: the thread that was the whole conversation
+   * before threads existed (titled "General" by the migration). Clients may
+   * show the title localized while it is still "General". */
+  general?: true;
 }
 
 /** A room as a client may see it: the record plus the computed working
@@ -831,6 +855,10 @@ export interface WireGroup {
   threadId: string;
   /** User-created channels have independent tasks, newest first. */
   tasks?: GroupTask[];
+  /** Folders that organize this conversation's threads (a person
+   * conversation's, shared by its two people), in sidebar order. Same shape
+   * as a bot's `projects`. */
+  projects?: BotProject[];
   name: string;
   memberIds: string[];
   /** People in this channel, beside the bots. Absent on a bot-to-bot dm. */

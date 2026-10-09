@@ -22,8 +22,8 @@ import { api, useStore } from "@/state/store";
 import { t } from "@/lib/i18n";
 import { managedConnectorUnavailableReason } from "../../shared/connector-availability";
 import { isWhopServer } from "@/lib/whop-integration";
-import { skillsLibraryEnabled, templatesEnabled } from "@/lib/feature-flags";
-import { requestTemplates } from "@/lib/open-templates";
+import { skillsLibraryEnabled } from "@/lib/feature-flags";
+import { templatesEntryActions } from "@/lib/templates-entry";
 import { usePerspicaxOrg } from "@/lib/perspicax-org";
 import { useOwnerOrAdmin } from "@/lib/use-owner-or-admin";
 import { viewerCan } from "@/lib/viewer";
@@ -157,12 +157,10 @@ export function PluginsPanel() {
 
   const close = useCallback(() => dispatch({ type: "togglePlugins", open: false }), [dispatch]);
   const skillsLibraryOn = skillsLibraryEnabled(state.config);
-  /** Bot templates: the Templates library when it is on, else the new bot
-   * dialog (where a bot starts from a template or from scratch). */
+  /** Bot templates: closes Connect apps and opens Browse Bots on its
+   * Templates section (the one place for templates). */
   const openBotTemplates = () => {
-    close();
-    if (templatesEnabled(state.config)) requestTemplates();
-    else dispatch({ type: "toggleNewBot", open: true });
+    for (const action of templatesEntryActions("connectApps")) dispatch(action);
   };
   const back = useCallback(() => setPage((current) => current.page === "detail" || current.page === "skill" ? { page: current.from } : { page: "main" }), []);
 

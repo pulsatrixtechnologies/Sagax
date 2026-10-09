@@ -59,7 +59,7 @@ GET /api/org/admin/capabilities
 ```json
 {
   "version": "0.4.15",
-  "api": 3,
+  "api": 4,
   "routes": ["GET audit", "GET bots", "GET capabilities", "GET overview", "GET usage"],
   "permissionsVersion": 1,
   "permissionGroups": [{ "id": "bots", "label": { "en": "Bots", "fr": "Bots" } }],
@@ -81,6 +81,11 @@ GET /api/org/admin/capabilities
       "adminOnly": true,
       "adminOnlyReason": { "en": "It runs programs on the server's own machine, outside anyone's space.", "fr": "..." }
     }
+  ],
+  "engines": [
+    { "id": "claude", "name": "Claude", "kind": "cloud", "installed": true, "auth": "oauth" },
+    { "id": "openai", "name": "OpenAI", "kind": "cloud", "installed": true, "auth": "apiKey" },
+    { "id": "ollama", "name": "Ollama", "kind": "local", "installed": true, "auth": "none" }
   ]
 }
 ```
@@ -88,7 +93,8 @@ GET /api/org/admin/capabilities
 `version` is the Sagax release people know (`package.json` `forkVersion`, or
 `SAGAX_RELEASE_VERSION`), not the base version the link sends. `api` is 1 for
 a server that predates this route (it answers `404 not_found`), 2 since
-the console routes and 3 since the permission catalogue (2026-10-09). A route
+the console routes, 3 since the permission catalogue and 4 since `engines`
+(both 2026-10-09). A route
 missing from `routes` is not offered by this server: the console says so
 instead of calling it.
 
@@ -100,9 +106,21 @@ description, whether a plain member holds it when Perspicax sends no list
 (`memberDefault`), and whether only an organization admin may hold it
 (`adminOnly`, with `adminOnlyReason`). Perspicax draws its permission matrix
 from these rows and sends back, in the directory, each person's effective
-keys (`permissions` on the person: the union over the profiles they hold,
-every key for an admin). Keys are stable; a server that predates the
+keys (`permissions` on the person: the union of the default permission
+set, the permission sets given to the person and those of their teams,
+every key for an admin; `sagax_permission_sets` names those sets for
+display, and a profile's `sagax_permissions` is null since Perspicax 0051). Keys are stable; a server that predates the
 catalogue answers without `permissions`.
+
+`engines` lists every engine (model provider) of this server, from the same
+catalogue as Sagax's model picker: `id` is the engine instance id that
+`allowedEngines` takes, `name` the name the picker shows, `kind` the group the
+picker's provider column puts it in (`local` for a custom engine such as a
+local model server, `cloud` for a subscription or API key engine),
+`installed` whether it runs on this server, and `auth` how a person gets
+access (`oauth`: a sign-in with the provider's account, `apiKey`: a key,
+`none`: nothing to sign in to). A server before api 4 answers without
+`engines`.
 
 ### `GET overview`
 
@@ -305,8 +323,8 @@ The body of the session route: `{"all": true}`, `{"kind": "mcp", "name"}`,
 | `POST bots/{id}/stop` | admin | stop every running turn, task and routine run |
 | `POST bots/{id}/delete` | admin | delete, with the bot's name as confirmation |
 | `POST bots/bulk` | admin | archive, restore, transfer or model on 1 to 100 bots |
-| `GET bots/{id}/package` | admin | the package document, secrets redacted |
-| `POST bots/import` | admin | a package becomes bots of a chosen owner |
+| `GET bots/{id}/package` | admin | the package document, secrets redacted; `?format=zip`: the whole bot as a zip |
+| `POST bots/import` | admin | a package or a bot zip becomes bots of a chosen owner |
 
 ### `GET bots/{id}`
 
@@ -413,8 +431,26 @@ cannot claim a publisher; skills, routines and connections arrive off).
 Answers `201 {bot, warnings}` (the first bot it made; every bot it made
 belongs to the owner). 400 `invalid_package`. Audited `bot.import`.
 
-"Copy to another server" is `GET bots/{id}/package` on one server and
-`POST bots/import` on the other.
+### The bot zip
+
+`GET bots/{id}/package?format=zip` streams the bot as `<bot-name>.sagaxbot.zip`
+(docs/bot-package.md): identity, instructions, memory, docs, skills,
+plugins, settings, routines and webhooks; `conversations=1` adds threads,
+messages and attachments, `sharing=1` the grants by email. At most 512 MB
+(else 413 `too_large`). Audited `bot.export` with `format: "zip"`.
+
+`POST bots/import` with the zip as the body (`content-type:
+application/zip`, at most 512 MB) imports it; the fields ride the query
+string: `ownerSub` or `ownerPrincipalId`, `name`, `conversations=1`,
+`sharing=1`, and `preview=1` for the preview without importing
+(`{ preview }`). Answers `201 {bot, warnings}`. The copy has a new id and a
+suffixed name when the name is taken; routines and webhooks are off, Full
+access arrives as Ask. An older package file works the same way. Audited
+`bot.import` with `format: "zip"`.
+
+"Copy to another server" is `GET bots/{id}/package?format=zip` on one
+server and `POST bots/import` with that file on the other (the package
+document without `format` still works).
 
 ## Routines
 
@@ -428,6 +464,19 @@ belongs to the owner). 400 `invalid_package`. Audited `bot.import`.
 
 A manager reaches a routine whose bot owner or whose runner is in their
 reach. No routine prompt, run output or message is ever answered.
+
+The Automations page of Sagax itself (2026-10-09) widens its own view with
+two permissions of the catalogue, independent of this console route:
+`routines.viewTeam` (the routines of the people in the caller's teams and of
+the bots shared with those teams) and `routines.viewAll` (every routine of
+the organization); an admin holds both, a member holds neither by default.
+They gate `GET /api/routines?scope=mine|team|all&teamId&botId&ownerId&status`
+and `DELETE /api/routine-runs?scope=...` on the Sagax server, not these
+console routes, whose `status`, `bot` and `owner` filters already match
+(`status` there is `enabled|paused|failing`, the Sagax page says
+`active|paused|failing`). A console that wants a team filter can filter its
+items by `owner.principalId` against the directory's teams; no new console
+parameter is needed.
 
 ### `GET routines`
 
@@ -663,9 +712,22 @@ engine in `allowedEngines` this server does not have), 400 `invalid_policy`
 (a marketplace entry). Each changed setting writes its own `org.settings`
 row with its before and after.
 
-`allowedEngines` is enforced by the console's model changes (`POST
-bots/{id}/model`, bulk `model`); Sagax's own model picker does not read it
-yet.
+`allowedEngines` (engine instance ids, `null` or an empty list for every
+engine) is enforced everywhere since 2026-10-09:
+
+- The console's model changes (`POST bots/{id}/model`, bulk `model`) answer
+  400 `engine_not_allowed`.
+- Sagax refuses a model on another engine (a bot or thread model change
+  answers 403) and a turn on one (409 `engine_not_allowed`); Auto never picks
+  one.
+- When the list changes (and at server start), a bot on an engine no longer
+  allowed moves to Auto, based on the New bot default when its engine is
+  allowed, else on the first allowed engine installed here; a thread's own
+  model on such an engine follows its bot again.
+- The list reaches every open Sagax app in its config (`allowedEngines`,
+  refreshed live): the model picker lists only these providers and their
+  models. A provider the person already connected but no longer allowed
+  shows once, disabled, as "Not allowed by your organization".
 
 ## Not offered yet
 

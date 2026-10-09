@@ -13,7 +13,6 @@ import {
   Folder,
   FolderMinus,
   FolderPlus,
-  Library,
   Loader2,
   MoreHorizontal,
   Pencil,
@@ -31,14 +30,14 @@ import {
   LayoutGrid,
   UserRoundPen,
 } from "lucide-react";
-import { api, openBotCatalog, useStore, formatTime, visibleMessages, currentTaskBot, type AppState, type Bot, type Group, type InstanceInfo, type Message } from "@/state/store";
+import { api, openBotCatalog, useStore, formatTime, visibleMessages, currentTaskBot, type AppState, type Bot, type BotProject, type ConfigStatus, type FolderOwnerKind, type Group, type GroupTaskUpdatePatch, type InstanceInfo, type Message } from "@/state/store";
 
 import { peerLine } from "@/lib/peer-message";
 import { viewerMayDeleteGroup, viewerOwnsGroup } from "@/lib/group-owner";
-import { viewerActorId } from "@/lib/viewer";
+import { otherAuthorName, viewerActorId } from "@/lib/viewer";
 import { showBotArchive, showBotDelete, showBotRename, showServerSectionMove } from "@/lib/bot-capabilities";
-import { connectedAppsEnabled, llmThreadTitlesEnabled, templatesEnabled } from "@/lib/feature-flags";
-import { OPEN_TEMPLATES_EVENT } from "@/lib/open-templates";
+import { browseBotsEnabled, connectedAppsEnabled, llmThreadTitlesEnabled } from "@/lib/feature-flags";
+import { templatesEntryActions } from "@/lib/templates-entry";
 import { useAdvancedMode } from "@/lib/interface-mode";
 
 import { BotAvatar, InitialsAvatar } from "./Avatar";
@@ -93,13 +92,13 @@ import { openCommandPalette } from "./CommandPalette";
 import { APP_NAME } from "@/lib/app-links";
 import { isBotFloating, subscribeFloatingBots, toggleFloatingBot } from "@/lib/floating-bots";
 import { isMacPlatform, SHORTCUT_GROUPS, shortcutKeysForPlatform } from "@/lib/keyboard-shortcuts";
-import { TeamLibraryPanel } from "./TeamLibraryPanel";
 import { ShareTeamDialog } from "./ShareTeamDialog";
 import { TeamDialog } from "./TeamDialog";
 import { RenameTitle } from "./RenameTitle";
 import { BotProjectDialog, FolderActions, FolderIcon, navigateThreadMenu } from "./BotProjects";
 import { draggedFolder, FOLDER_DRAG_TYPE, moveFolder, placeFolder } from "@/lib/folder-order";
-import { folderUnreadThreadIds, markFolderRead } from "@/lib/folder-read";
+import { folderUnreadThreadIds, markFolderRead, markGroupFolderRead } from "@/lib/folder-read";
+import { personPickerThreads } from "@/lib/person-threads";
 import { approvalModeFor } from "../../shared/approval-mode";
 import { liveActivityLabel } from "@/lib/live-activity";
 import { FullAccessWarning } from "./FullAccessWarning";
@@ -279,7 +278,13 @@ function openBotContextMenu(onMenu: (menu: MenuState) => void, botId: string, ev
   onMenu({ botId, x: event.clientX, y: event.clientY });
 }
 
-function groupPreview(group: Group, bots: Bot[], viewerId: string, instances: InstanceInfo[]): string {
+/** A room's or a person conversation's sidebar line. A person's message
+ * reads "You: ..." only when the viewer wrote it: someone else's message
+ * (the other person of a direct conversation, another person in a room)
+ * reads as theirs. Before 2026-10-09 every person's message read "You:",
+ * a received direct message included. */
+export function groupPreview(group: Group, bots: Bot[], config: ConfigStatus | null, instances: InstanceInfo[]): string {
+  const viewerId = viewerActorId(config);
   if (group.busyBotId) {
     return t("sidebar.preview.botWorking", {
       name: bots.find((b) => b.id === group.busyBotId)?.name ?? t("sidebar.preview.aBot"),
@@ -297,7 +302,13 @@ function groupPreview(group: Group, bots: Bot[], viewerId: string, instances: In
         ? sidebarConnectorPreview(last.connector, t)
         : (last.text ?? "");
   const readable = citationPreviewText(text);
-  if (last.role === "user") return t("sidebar.preview.you", { text: readable });
+  if (last.role === "user") {
+    // Someone else's words (src/lib/viewer.ts): a direct conversation's row
+    // already names them, a room's line says who.
+    const author = otherAuthorName(last, config);
+    if (author) return group.peopleDm ? readable : `${author}: ${readable}`;
+    return t("sidebar.preview.you", { text: readable });
+  }
   return last.from ? `${last.from.name}: ${readable}` : readable;
 }
 
@@ -361,9 +372,17 @@ export function GroupListItem({
     if (showThreads && selected && !wasSelected.current) setThreadsOpen(true);
     wasSelected.current = selected;
   }, [selected, showThreads, setThreadsOpen]);
+  // A conversation with a person lists its threads like a bot does: under
+  // the row only in the sidebar location (the chat header's thread button
+  // otherwise, never both), and once there is a list (a second thread or a
+  // folder) to open.
+  const threadsLocation = useThreadsLocationChoice();
+  const personInSidebar = Boolean(group.peopleDm) && showThreads && threadsLocation === "sidebar";
   // one thread is the room itself; the disclosure and the list only earn
   // their place once there is a second thread to show
-  const hasThreadList = showThreads && ((group.tasks?.length ?? 1) > 1 || Boolean(query));
+  const hasThreadList = group.peopleDm
+    ? personInSidebar && ((group.tasks?.length ?? 1) > 1 || (group.projects?.length ?? 0) > 0 || Boolean(query))
+    : showThreads && ((group.tasks?.length ?? 1) > 1 || Boolean(query));
   const expanded = !group.dm && threadsOpen && density !== "icons" && hasThreadList;
   // quiet rows keep the line only while the room reports work in progress
   const groupStatus = Boolean(group.busyBotId) || Boolean(group.working);
@@ -402,8 +421,9 @@ export function GroupListItem({
         density === "icons" ? "justify-center px-1 py-1.5" : density === "compact" ? "gap-2 py-1.5 pr-9" : "min-h-[54px] gap-2 py-2 pr-2",
         // Same inset as BotListItem so the group and its bots line up; a
         // room's disclosure chevron sits inside its thread-mode inset. A
-        // person's row has no chevron and never moves, like a bot row (#152).
-        density !== "icons" && (showThreads && !group.peopleDm ? "pl-6" : "pl-2"),
+        // person's row moves like a bot row (#152): only in the sidebar
+        // location, where its chevron sits.
+        density !== "icons" && ((group.peopleDm ? personInSidebar : showThreads) ? "pl-6" : "pl-2"),
         selected && !expanded ? "bg-sidebar-selected" : "hover:bg-sidebar-hover",
       )}
       title={density === "icons" ? rowName : undefined}
@@ -415,23 +435,22 @@ export function GroupListItem({
         : <StackedMauses members={members} density={density} viewerId={viewerActorId(state.config)} />}
       <div className={cn("min-w-0 flex-1", density === "icons" && "hidden")}>
         <div className="flex items-baseline justify-between gap-2">
-          <span className={cn("flex min-w-0 grow items-center gap-1.5 text-[14px] leading-5 text-sidebar-ink", selected && !expanded ? "font-semibold" : "font-medium")}>
+          <span className={cn("flex min-w-0 grow items-center gap-1.5 text-[14px] leading-5 text-sidebar-ink", (selected && !expanded) || group.unread ? "font-semibold" : "font-medium")}>
             <span className="min-w-0 truncate">{rowName}</span>
             {peer && !quiet && <PersonLabelTag principalId={peer.id} className="max-w-[46%] shrink" />}
           </span>
           {selected && last && !expanded && <span className="shrink-0 text-[12px] leading-4 text-sidebar-ink-secondary">{formatTime(last.at)}</span>}
-          {(expanded || (quiet && !groupStatus)) && group.unread && <span className="size-1.5 shrink-0 rounded-full bg-unread" aria-label={t("task.unreadMany")} />}
+          {group.unread && <span className="sr-only">{t("task.unreadMany")}</span>}
         </div>
         {previewShown && <div className="flex items-center justify-between gap-2">
-          <span className="truncate text-[13px] leading-[18px] text-sidebar-ink-secondary">{groupPreview(group, state.bots, viewerActorId(state.config), state.instances)}</span>
-          {group.unread && <span className="size-2 shrink-0 rounded-full bg-unread" />}
+          <span className={cn("truncate text-[13px] leading-[18px]", group.unread ? "text-sidebar-ink" : "text-sidebar-ink-secondary")}>{groupPreview(group, state.bots, state.config, state.instances)}</span>
         </div>}
       </div>
       {density === "icons" && group.unread && (
         <span className="absolute bottom-1.5 right-1.5 size-2 rounded-full border border-sidebar bg-unread" />
       )}
     </button>
-    {!group.dm && !group.peopleDm && density !== "icons" && hasThreadList && <button type="button" aria-label={t(expanded ? "task.collapseNamed" : "task.expandNamed", { name: group.name })} aria-expanded={expanded}
+    {!group.dm && density !== "icons" && hasThreadList && <button type="button" aria-label={t(expanded ? "task.collapseNamed" : "task.expandNamed", { name: rowName })} aria-expanded={expanded}
       onClick={() => setThreadsOpen((open) => !open)} className="absolute left-0.5 top-1/2 flex size-5 -translate-y-1/2 items-center justify-center rounded text-sidebar-ink-secondary outline-none hover:text-sidebar-ink focus-visible:ring-1 focus-visible:ring-accent/60">
       <ChevronRight aria-hidden="true" size={12} className={cn("transition-transform", expanded && "rotate-90")} />
     </button>}
@@ -439,7 +458,9 @@ export function GroupListItem({
       onClick={() => { setThreadsOpen(true); dispatch({ type: "newGroupTask", groupId: group.id }); }}
       className="pointer-events-none absolute right-1 top-1/2 flex size-7 -translate-y-1/2 items-center justify-center rounded text-sidebar-ink-secondary opacity-0 hover:bg-sidebar-hover hover:text-sidebar-ink disabled:opacity-40 group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100 max-md:pointer-events-auto max-md:opacity-70 touch:pointer-events-auto touch:opacity-70 touch:disabled:opacity-40"><Plus size={14} /></button>}
     </div>
-    {expanded && <GroupThreadList group={group} selected={selected} density={density} query={group.name.toLowerCase().includes(query.toLowerCase()) ? "" : query} />}
+    {expanded && (group.peopleDm
+      ? <PersonThreadList group={group} name={rowName} selected={selected} density={density} query={rowName.toLowerCase().includes(query.toLowerCase()) ? "" : query} />
+      : <GroupThreadList group={group} selected={selected} density={density} query={group.name.toLowerCase().includes(query.toLowerCase()) ? "" : query} />)}
     </>
   );
 }
@@ -1063,7 +1084,6 @@ export function BotContextMenu({
   onReplacePrimary,
   variant = "sidebar",
   onEditPersona,
-  onBrowseBots,
 }: {
   menu: MenuState | null;
   onClose: () => void;
@@ -1072,12 +1092,10 @@ export function BotContextMenu({
   onMoveToSection?: (botId: string) => void;
   onRename: (botId: string) => void;
   /** "mascot": the bot panel's mascot menu (Edit persona, Rename, Put on the
-   * desktop, Make primary bot, then Browse Bots). "sidebar": the row menu. */
+   * desktop, Make primary bot). "sidebar": the row menu. */
   variant?: "sidebar" | "mascot";
   /** Mascot menu: open the persona editor on this bot. */
   onEditPersona?: (bot: Bot) => void;
-  /** Mascot menu: open the organisation bot catalogue. */
-  onBrowseBots?: () => void;
   /** Make this bot the viewer's Primary Bot (one per person). */
   onMakePrimary?: (bot: Bot) => void;
   /** Open "Choose a primary Bot" to hand the role to another of their bots. */
@@ -1230,8 +1248,6 @@ export function BotContextMenu({
         hint: primary.allowed ? undefined : t(primary.reason),
         showHint: true,
       }),
-      divider("browse"),
-      item(<LayoutGrid size={16} className="text-ink" />, t("persona.menu.browse"), () => onBrowseBots?.(), { id: "browse-bots" }),
     ]);
   }
 
@@ -1383,21 +1399,43 @@ function useVisibleMessages(bot: Bot): Message[] {
   return useMemo(() => visibleMessages({ messages, activeLeafId }), [messages, activeLeafId]);
 }
 
-/** The thread tree under one bot row: project folders, then ungrouped rows.
- * Visibility folds old threads away. Pins stay, then the newest update.
- * Waiting and working stay visible as status, not as a sort key. */
-export function BotThreadList({ bot, selected, density = "comfortable", query = "", hidden = false, mine = false }: {
-  bot: Bot; selected: boolean; density?: SidebarDensity; query?: string; hidden?: boolean;
-  /** An organization server sends each person only their own threads with
-   * a bot: the list says so. */
-  mine?: boolean;
+/** One row of a thread tree: what SidebarThreadRow reads, plus the folder
+ * the thread is filed under. */
+type ThreadTreeTask = Parameters<typeof SidebarThreadRow>[0]["task"] & { projectId?: string; routineRunId?: string };
+type ThreadTreeActions = Omit<Parameters<typeof SidebarThreadRow>[0], "task" | "ownerId" | "current" | "compact" | "folders" | "activityLabel" | "now" | "locale">;
+
+/** The thread tree under one sidebar row: project folders, then ungrouped
+ * rows. Visibility folds old threads away. Pins stay, then the newest
+ * update. Waiting and working stay visible as status, not as a sort key.
+ * One tree for every owner of threads: a bot (BotThreadList) and a
+ * conversation with a person (PersonThreadList); the owner decides only
+ * where its actions go. */
+function ThreadTree({ ownerId, ownerName, owner, folderOwner, openThreadId, tasks, projects, selected, density, query, hidden, mine, actions, rowState, activeActivityLabel, onNew, onReorder, canMarkRead, markRead, children }: {
+  ownerId: string;
+  ownerName: string;
+  owner: FolderOwnerKind;
+  /** What the folder dialog edits (a bot, or the group). */
+  folderOwner: Parameters<typeof BotProjectDialog>[0]["bot"];
+  openThreadId: string;
+  tasks: ThreadTreeTask[];
+  projects: BotProject[];
+  selected: boolean;
+  density: SidebarDensity;
+  query: string;
+  hidden: boolean;
+  mine: boolean;
+  actions: ThreadTreeActions;
+  /** Live state a row shows beside the stored thread (a bot thread's turn). */
+  rowState?: (task: ThreadTreeTask) => Partial<ThreadTreeTask>;
+  activeActivityLabel?: string;
+  onNew: (projectId?: string) => void;
+  onReorder: (projectIds: string[], onSaved: () => void, onError: (message: string) => void) => void;
+  canMarkRead: (projectId: string) => boolean;
+  markRead: (projectId: string) => Promise<void>;
+  children?: React.ReactNode;
 }) {
-  const { state, dispatch } = useStore();
+  const { state } = useStore();
   const now = useRelativeNow();
-  const tasks = (bot.tasks ?? [{ threadId: bot.threadId, title: t("task.newShort"), createdAt: 0 }])
-    .filter((task) => !task.routineRunId)
-    .map((task) => ({ ...task, queued: Boolean(state.pendingQueued[task.threadId]?.length) }));
-  const projects = bot.projects ?? [];
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [editingProject, setEditingProject] = useState<string | null>(null);
   const [folderMenu, setFolderMenu] = useState<{ projectId: string; left: number; top: number } | null>(null);
@@ -1411,8 +1449,7 @@ export function BotThreadList({ bot, selected, density = "comfortable", query = 
   const draggingFolder = useRef<string | null>(null);
   const [showAll, setShowAll] = useState(false);
   const [creatingProject, setCreatingProject] = useState(false);
-  const [permissionRefresh, setPermissionRefresh] = useState<{ threadId: string; kind: "full" | "local-auto" } | null>(null);
-  const currentProjectId = tasks.find((task) => task.threadId === bot.threadId)?.projectId;
+  const currentProjectId = tasks.find((task) => task.threadId === openThreadId)?.projectId;
   useEffect(() => {
     if (selected && currentProjectId) setCollapsed((previous) => {
       if (!previous.has(currentProjectId)) return previous;
@@ -1423,7 +1460,7 @@ export function BotThreadList({ bot, selected, density = "comfortable", query = 
   }, [selected, currentProjectId]);
   useSnoozeExpiry(tasks);
   // Pin, then newest update. Search keeps the same order among matches.
-  const visibleTasks = orderedThreadList(visibleSidebarThreads(tasks, bot.threadId, query, projects, showAll));
+  const visibleTasks = orderedThreadList(visibleSidebarThreads(tasks, openThreadId, query, projects, showAll));
   // A folder rises with the thread of its that sits highest in that order.
   // An empty index sorts last. Saved order breaks ties, and still governs
   // move up and down.
@@ -1433,7 +1470,140 @@ export function BotThreadList({ bot, selected, density = "comfortable", query = 
     return index < 0 ? Number.POSITIVE_INFINITY : index;
   };
   const orderedProjects = query ? projects : [...projects].sort((a, b) => folderRank(a.id) - folderRank(b.id) || projects.indexOf(a) - projects.indexOf(b));
-  useRevealedThreadRow(state.revealThread, selected ? bot.threadId : null);
+  useRevealedThreadRow(state.revealThread, selected ? openThreadId : null);
+  const locale = activeLocale();
+  const renderThread = (task: ThreadTreeTask) => {
+    return <SidebarThreadRow key={task.threadId} task={{ ...task, ...rowState?.(task) }} ownerId={ownerId} current={selected && task.threadId === openThreadId} compact={density === "compact"} folders={projects} activityLabel={task.threadId === openThreadId ? activeActivityLabel : undefined}
+      now={stampClock(threadRecency(task), now)} locale={locale} {...actions} />;
+  };
+  const ungrouped = visibleTasks.filter((task) => !projects.some((project) => project.id === task.projectId));
+  const projectToEdit = projects.find((project) => project.id === editingProject);
+  const projectIds = projects.map((project) => project.id);
+  const saveOrder = (ids: string[], onSaved?: () => void) => {
+    if (reordering || ids.every((id, index) => id === projectIds[index])) return;
+    setReordering(true); setReorderError(null); setReorderStatus(t("folder.reordering"));
+    onReorder(ids,
+      () => { setReordering(false); setReorderStatus(t("folder.reordered")); onSaved?.(); },
+      (message) => { setReordering(false); setReorderStatus(""); setReorderError(message); });
+  };
+  const resetFolderDrag = () => { draggingFolder.current = null; setFolderDrop(null); };
+  const readFolder = async (projectId: string, onSaved: () => void) => {
+    if (markingRead) return;
+    setMarkingRead(true); setReadError(null); setReadStatus(t("folder.markingRead"));
+    try {
+      await markRead(projectId);
+      setReadStatus(t("folder.markedRead"));
+      onSaved();
+    } catch (error) {
+      setReadError(error instanceof Error ? error.message : String(error));
+      setReadStatus("");
+    } finally { setMarkingRead(false); }
+  };
+  return (
+    <div hidden={hidden} className="mb-2 space-y-0.5" role="group" aria-label={t("task.namedList", { name: ownerName })}
+      onDragOver={(event) => { if (event.dataTransfer.types.includes(FOLDER_DRAG_TYPE)) event.stopPropagation(); }}
+      onDrop={(event) => { if (event.dataTransfer.types.includes(FOLDER_DRAG_TYPE)) { event.preventDefault(); event.stopPropagation(); resetFolderDrag(); } }}>
+      {!hidden && <>
+      <div data-sidebar-thread-list-actions className="flex items-center gap-1 px-1 pb-0.5 pt-0.5">
+        <button type="button" onClick={() => onNew()} className="flex min-h-7 items-center gap-1 rounded-md px-2 text-[12px] text-sidebar-ink-secondary hover:bg-sidebar-hover hover:text-sidebar-ink focus-visible:ring-1 focus-visible:ring-accent/60"><Plus size={12} aria-hidden="true" />{t("task.newShort")}</button>
+        <button type="button" onClick={() => setCreatingProject(true)} className="flex min-h-7 items-center gap-1 rounded-md px-2 text-[12px] text-sidebar-ink-secondary hover:bg-sidebar-hover hover:text-sidebar-ink focus-visible:ring-1 focus-visible:ring-accent/60"><FolderPlus size={12} aria-hidden="true" />{t("folder.new")}</button>
+      </div>
+      {mine && <div data-sidebar-my-threads className="px-2 pt-1 text-[11px] font-medium text-sidebar-ink-secondary">{t("sidebar.threads.mine")}</div>}
+      {orderedProjects.map((project) => {
+        const index = projects.indexOf(project);
+        const projectTasks = tasks.filter((task) => task.projectId === project.id);
+        const visible = visibleTasks.filter((task) => task.projectId === project.id);
+        if (query && visible.length === 0 && !project.name.toLowerCase().includes(query.toLowerCase())) return null;
+        const open = Boolean(query) || !collapsed.has(project.id);
+        const waiting = projectTasks.some((task) => task.activity === "waiting-on-you");
+        const working = projectTasks.some((task) => task.busy);
+        return <div key={project.id} data-sidebar-project={project.id}>
+          <div data-sidebar-folder-row={project.id} draggable={!reordering}
+            onContextMenu={(event) => { event.preventDefault(); event.stopPropagation(); setFolderMenu({ projectId: project.id, left: event.clientX, top: event.clientY }); }}
+            onDragStart={(event) => {
+              event.stopPropagation();
+              event.dataTransfer.effectAllowed = "move";
+              event.dataTransfer.setData(FOLDER_DRAG_TYPE, JSON.stringify({ botId: ownerId, projectId: project.id }));
+              draggingFolder.current = project.id;
+            }}
+            onDragEnd={(event) => { event.stopPropagation(); resetFolderDrag(); }}
+            onDragOver={(event) => {
+              if (!event.dataTransfer.types.includes(FOLDER_DRAG_TYPE)) return;
+              event.stopPropagation();
+              if (!draggingFolder.current || reordering) { event.dataTransfer.dropEffect = "none"; return; }
+              event.preventDefault(); event.dataTransfer.dropEffect = "move";
+              const rect = event.currentTarget.getBoundingClientRect();
+              setFolderDrop({ id: project.id, place: event.clientY < rect.top + rect.height / 2 ? "before" : "after" });
+            }}
+            onDragLeave={(event) => { if (!(event.relatedTarget instanceof Node) || !event.currentTarget.contains(event.relatedTarget)) setFolderDrop(null); }}
+            onDrop={(event) => {
+              if (!event.dataTransfer.types.includes(FOLDER_DRAG_TYPE)) return;
+              event.preventDefault(); event.stopPropagation();
+              const from = draggedFolder(event.dataTransfer.getData(FOLDER_DRAG_TYPE), ownerId, projectIds);
+              const rect = event.currentTarget.getBoundingClientRect();
+              if (from) saveOrder(placeFolder(projectIds, from, project.id, event.clientY < rect.top + rect.height / 2 ? "before" : "after"));
+              resetFolderDrag();
+            }}
+            className={cn("group/folder flex items-center gap-0.5 rounded-md pl-0.5 text-sidebar-ink-secondary hover:bg-sidebar-hover",
+              folderDrop?.id === project.id && draggingFolder.current !== project.id && (folderDrop.place === "before" ? "shadow-[0_-2px_var(--color-accent)]" : "shadow-[0_2px_var(--color-accent)]"))}>
+            <button type="button" aria-expanded={open} onClick={() => setCollapsed((previous) => {
+              const next = new Set(previous);
+              if (next.has(project.id)) next.delete(project.id); else next.add(project.id);
+              return next;
+            })} className="flex size-6 shrink-0 items-center justify-center rounded outline-none hover:text-sidebar-ink focus-visible:ring-1 focus-visible:ring-accent/60" aria-label={t(open ? "task.collapseNamed" : "task.expandNamed", { name: project.name })}>
+              <ChevronRight aria-hidden="true" size={11} className={cn("shrink-0 transition-transform", open && "rotate-90")} />
+            </button>
+            <button type="button" aria-label={t("folder.iconNamed", { name: project.name })} title={t("folder.iconNamed", { name: project.name })} onClick={() => setEditingProject(project.id)} className="flex size-6 shrink-0 items-center justify-center rounded hover:bg-sidebar-hover"><FolderIcon emoji={project.emoji} size={14} /></button>
+            <button type="button" data-sidebar-folder-label={project.id} draggable={!reordering} aria-expanded={open} onClick={() => setCollapsed((previous) => {
+              const next = new Set(previous);
+              if (next.has(project.id)) next.delete(project.id); else next.add(project.id);
+              return next;
+            })} className="flex min-h-8 min-w-0 flex-1 cursor-grab select-none items-center gap-1.5 py-1 text-left text-[13px] font-semibold active:cursor-grabbing" title={project.name}>
+              <span className="truncate">{project.name}</span>
+              <span className="shrink-0 text-[10px] font-normal opacity-50">{projectTasks.length}</span>
+              {!open && (waiting ? <span className="text-[10px] text-warning">{t("task.waiting")}</span> : working ? <Loader2 size={10} className="shrink-0 animate-spin text-success" /> : projectTasks.some((task) => task.unread) ? <span className="size-1.5 shrink-0 rounded-full bg-unread" aria-label={t("task.unreadMany")} /> : null)}
+            </button>
+            <button type="button" title={t("task.newIn", { name: project.name })} aria-label={t("task.newIn", { name: project.name })} onClick={() => onNew(project.id)}
+              className="flex size-6 items-center justify-center rounded opacity-0 hover:bg-sidebar-hover hover:text-sidebar-ink focus-visible:opacity-100 group-hover/folder:opacity-100 max-md:opacity-70 touch:opacity-70"><Plus size={12} /></button>
+            <FolderActions project={project} canMoveUp={index > 0} canMoveDown={index < projects.length - 1} canMarkRead={canMarkRead(project.id)} saving={reordering || markingRead}
+              menu={folderMenu?.projectId === project.id ? folderMenu : null} onMenuChange={(menu) => setFolderMenu(menu ? { ...menu, projectId: project.id } : null)}
+              onEdit={() => setEditingProject(project.id)} onMove={(direction, onSaved) => saveOrder(moveFolder(projectIds, project.id, direction), onSaved)}
+              onMarkRead={(onSaved) => { void readFolder(project.id, onSaved); }} />
+          </div>
+          {open && <div role="group" aria-label={t("task.namedList", { name: project.name })}>
+            {visible.map(renderThread)}
+            {projectTasks.length === 0 && <p className="px-2.5 py-1 text-[11px] text-sidebar-ink-secondary/70">{t("task.empty")}</p>}
+          </div>}
+        </div>;
+      })}
+      {reorderError && <p role="alert" className="px-2.5 py-1 text-[12px] text-danger">{reorderError}</p>}
+      <span role="status" className="sr-only">{reorderStatus}</span>
+      {readError && <p role="alert" className="px-2.5 py-1 text-[12px] text-danger">{readError}</p>}
+      <span role="status" className="sr-only">{readStatus}</span>
+      {projects.length > 0 && ungrouped.length > 0 && <div className="pl-6 pr-3 pb-1 pt-2 text-[10.5px] text-sidebar-ink-secondary/70">{t("task.list")}</div>}
+      {ungrouped.map(renderThread)}
+      {!query && !showAll && tasks.length > visibleTasks.length && <button type="button" onClick={() => setShowAll(true)} className="pl-6 pr-3 py-1.5 text-[11px] text-sidebar-ink-secondary hover:text-sidebar-ink">{t("task.showAll", { count: tasks.length })}</button>}
+      {children}
+      {creatingProject && <BotProjectDialog bot={folderOwner} owner={owner} onClose={() => setCreatingProject(false)} />}
+      {projectToEdit && <BotProjectDialog bot={folderOwner} owner={owner} project={projectToEdit} onClose={() => setEditingProject(null)} />}
+      </>}
+    </div>
+  );
+}
+
+/** The thread tree under one bot row (Settings > Threads location > In the
+ * sidebar). */
+export function BotThreadList({ bot, selected, density = "comfortable", query = "", hidden = false, mine = false }: {
+  bot: Bot; selected: boolean; density?: SidebarDensity; query?: string; hidden?: boolean;
+  /** An organization server sends each person only their own threads with
+   * a bot: the list says so. */
+  mine?: boolean;
+}) {
+  const { state, dispatch } = useStore();
+  const tasks = (bot.tasks ?? [{ threadId: bot.threadId, title: t("task.newShort"), createdAt: 0 }])
+    .filter((task) => !task.routineRunId)
+    .map((task) => ({ ...task, queued: Boolean(state.pendingQueued[task.threadId]?.length) }));
+  const [permissionRefresh, setPermissionRefresh] = useState<{ threadId: string; kind: "full" | "local-auto" } | null>(null);
   // the same live verb the chat pane derives from the visible tail
   // ("Reading a file"), passed to the active thread's row while it works
   const activeActivityLabel = liveActivityLabel(visibleMessages(bot).at(-1));
@@ -1465,119 +1635,17 @@ export function BotThreadList({ bot, selected, density = "comfortable", query = 
       },
     };
   }, [botId, dispatch, generatedTitles]);
-  const locale = activeLocale();
-  const renderThread = (task: (typeof tasks)[number]) => {
+  const rowState = (task: ThreadTreeTask) => {
     const thread = currentTaskBot(bot, task.threadId);
-    return <SidebarThreadRow key={task.threadId} task={{ ...task, busy: thread.busy, activity: thread.activity, waitingForTeammates: thread.waitingForTeammates }} ownerId={bot.id} current={selected && task.threadId === bot.threadId} compact={density === "compact"} folders={projects} activityLabel={task.threadId === bot.threadId ? activeActivityLabel : undefined}
-      now={stampClock(threadRecency(task), now)} locale={locale} {...actions} />;
-  };
-  const ungrouped = visibleTasks.filter((task) => !projects.some((project) => project.id === task.projectId));
-  const projectToEdit = projects.find((project) => project.id === editingProject);
-  const projectIds = projects.map((project) => project.id);
-  const saveOrder = (ids: string[], onSaved?: () => void) => {
-    if (reordering || ids.every((id, index) => id === projectIds[index])) return;
-    setReordering(true); setReorderError(null); setReorderStatus(t("folder.reordering"));
-    dispatch({ type: "reorderProjects", botId: bot.id, projectIds: ids,
-      onSaved: () => { setReordering(false); setReorderStatus(t("folder.reordered")); onSaved?.(); },
-      onError: (message) => { setReordering(false); setReorderStatus(""); setReorderError(message); } });
-  };
-  const resetFolderDrag = () => { draggingFolder.current = null; setFolderDrop(null); };
-  const readFolder = async (projectId: string, onSaved: () => void) => {
-    if (markingRead) return;
-    setMarkingRead(true); setReadError(null); setReadStatus(t("folder.markingRead"));
-    try {
-      await markFolderRead(bot, projectId, api, (updated) => dispatch({ type: "botPatched", bot: updated }));
-      setReadStatus(t("folder.markedRead"));
-      onSaved();
-    } catch (error) {
-      setReadError(error instanceof Error ? error.message : String(error));
-      setReadStatus("");
-    } finally { setMarkingRead(false); }
+    return { busy: thread.busy, activity: thread.activity, waitingForTeammates: thread.waitingForTeammates };
   };
   return (
-    <div hidden={hidden} className="mb-2 space-y-0.5" role="group" aria-label={t("task.namedList", { name: bot.name })}
-      onDragOver={(event) => { if (event.dataTransfer.types.includes(FOLDER_DRAG_TYPE)) event.stopPropagation(); }}
-      onDrop={(event) => { if (event.dataTransfer.types.includes(FOLDER_DRAG_TYPE)) { event.preventDefault(); event.stopPropagation(); resetFolderDrag(); } }}>
-      {!hidden && <>
-      <div data-sidebar-thread-list-actions className="flex items-center gap-1 px-1 pb-0.5 pt-0.5">
-        <button type="button" onClick={() => dispatch({ type: "newTask", botId: bot.id })} className="flex min-h-7 items-center gap-1 rounded-md px-2 text-[12px] text-sidebar-ink-secondary hover:bg-sidebar-hover hover:text-sidebar-ink focus-visible:ring-1 focus-visible:ring-accent/60"><Plus size={12} aria-hidden="true" />{t("task.newShort")}</button>
-        <button type="button" onClick={() => setCreatingProject(true)} className="flex min-h-7 items-center gap-1 rounded-md px-2 text-[12px] text-sidebar-ink-secondary hover:bg-sidebar-hover hover:text-sidebar-ink focus-visible:ring-1 focus-visible:ring-accent/60"><FolderPlus size={12} aria-hidden="true" />{t("folder.new")}</button>
-      </div>
-      {mine && <div data-sidebar-my-threads className="px-2 pt-1 text-[11px] font-medium text-sidebar-ink-secondary">{t("sidebar.threads.mine")}</div>}
-      {orderedProjects.map((project) => {
-        const index = projects.indexOf(project);
-        const projectTasks = tasks.filter((task) => task.projectId === project.id);
-        const visible = visibleTasks.filter((task) => task.projectId === project.id);
-        if (query && visible.length === 0 && !project.name.toLowerCase().includes(query.toLowerCase())) return null;
-        const open = Boolean(query) || !collapsed.has(project.id);
-        const waiting = projectTasks.some((task) => task.activity === "waiting-on-you");
-        const working = projectTasks.some((task) => task.busy);
-        return <div key={project.id} data-sidebar-project={project.id}>
-          <div data-sidebar-folder-row={project.id} draggable={!reordering}
-            onContextMenu={(event) => { event.preventDefault(); event.stopPropagation(); setFolderMenu({ projectId: project.id, left: event.clientX, top: event.clientY }); }}
-            onDragStart={(event) => {
-              event.stopPropagation();
-              event.dataTransfer.effectAllowed = "move";
-              event.dataTransfer.setData(FOLDER_DRAG_TYPE, JSON.stringify({ botId: bot.id, projectId: project.id }));
-              draggingFolder.current = project.id;
-            }}
-            onDragEnd={(event) => { event.stopPropagation(); resetFolderDrag(); }}
-            onDragOver={(event) => {
-              if (!event.dataTransfer.types.includes(FOLDER_DRAG_TYPE)) return;
-              event.stopPropagation();
-              if (!draggingFolder.current || reordering) { event.dataTransfer.dropEffect = "none"; return; }
-              event.preventDefault(); event.dataTransfer.dropEffect = "move";
-              const rect = event.currentTarget.getBoundingClientRect();
-              setFolderDrop({ id: project.id, place: event.clientY < rect.top + rect.height / 2 ? "before" : "after" });
-            }}
-            onDragLeave={(event) => { if (!(event.relatedTarget instanceof Node) || !event.currentTarget.contains(event.relatedTarget)) setFolderDrop(null); }}
-            onDrop={(event) => {
-              if (!event.dataTransfer.types.includes(FOLDER_DRAG_TYPE)) return;
-              event.preventDefault(); event.stopPropagation();
-              const from = draggedFolder(event.dataTransfer.getData(FOLDER_DRAG_TYPE), bot.id, projectIds);
-              const rect = event.currentTarget.getBoundingClientRect();
-              if (from) saveOrder(placeFolder(projectIds, from, project.id, event.clientY < rect.top + rect.height / 2 ? "before" : "after"));
-              resetFolderDrag();
-            }}
-            className={cn("group/folder flex items-center gap-0.5 rounded-md pl-0.5 text-sidebar-ink-secondary hover:bg-sidebar-hover",
-              folderDrop?.id === project.id && draggingFolder.current !== project.id && (folderDrop.place === "before" ? "shadow-[0_-2px_var(--color-accent)]" : "shadow-[0_2px_var(--color-accent)]"))}>
-            <button type="button" aria-expanded={open} onClick={() => setCollapsed((previous) => {
-              const next = new Set(previous);
-              if (next.has(project.id)) next.delete(project.id); else next.add(project.id);
-              return next;
-            })} className="flex size-6 shrink-0 items-center justify-center rounded outline-none hover:text-sidebar-ink focus-visible:ring-1 focus-visible:ring-accent/60" aria-label={t(open ? "task.collapseNamed" : "task.expandNamed", { name: project.name })}>
-              <ChevronRight aria-hidden="true" size={11} className={cn("shrink-0 transition-transform", open && "rotate-90")} />
-            </button>
-            <button type="button" aria-label={t("folder.iconNamed", { name: project.name })} title={t("folder.iconNamed", { name: project.name })} onClick={() => setEditingProject(project.id)} className="flex size-6 shrink-0 items-center justify-center rounded hover:bg-sidebar-hover"><FolderIcon emoji={project.emoji} size={14} /></button>
-            <button type="button" data-sidebar-folder-label={project.id} draggable={!reordering} aria-expanded={open} onClick={() => setCollapsed((previous) => {
-              const next = new Set(previous);
-              if (next.has(project.id)) next.delete(project.id); else next.add(project.id);
-              return next;
-            })} className="flex min-h-8 min-w-0 flex-1 cursor-grab select-none items-center gap-1.5 py-1 text-left text-[13px] font-semibold active:cursor-grabbing" title={project.name}>
-              <span className="truncate">{project.name}</span>
-              <span className="shrink-0 text-[10px] font-normal opacity-50">{projectTasks.length}</span>
-              {!open && (waiting ? <span className="text-[10px] text-warning">{t("task.waiting")}</span> : working ? <Loader2 size={10} className="shrink-0 animate-spin text-success" /> : projectTasks.some((task) => task.unread) ? <span className="size-1.5 shrink-0 rounded-full bg-unread" aria-label={t("task.unreadMany")} /> : null)}
-            </button>
-            <button type="button" title={t("task.newIn", { name: project.name })} aria-label={t("task.newIn", { name: project.name })} onClick={() => dispatch({ type: "newTask", botId: bot.id, projectId: project.id })}
-              className="flex size-6 items-center justify-center rounded opacity-0 hover:bg-sidebar-hover hover:text-sidebar-ink focus-visible:opacity-100 group-hover/folder:opacity-100 max-md:opacity-70 touch:opacity-70"><Plus size={12} /></button>
-            <FolderActions project={project} canMoveUp={index > 0} canMoveDown={index < projects.length - 1} canMarkRead={folderUnreadThreadIds(bot, project.id).length > 0} saving={reordering || markingRead}
-              menu={folderMenu?.projectId === project.id ? folderMenu : null} onMenuChange={(menu) => setFolderMenu(menu ? { ...menu, projectId: project.id } : null)}
-              onEdit={() => setEditingProject(project.id)} onMove={(direction, onSaved) => saveOrder(moveFolder(projectIds, project.id, direction), onSaved)}
-              onMarkRead={(onSaved) => { void readFolder(project.id, onSaved); }} />
-          </div>
-          {open && <div role="group" aria-label={t("task.namedList", { name: project.name })}>
-            {visible.map(renderThread)}
-            {projectTasks.length === 0 && <p className="px-2.5 py-1 text-[11px] text-sidebar-ink-secondary/70">{t("task.empty")}</p>}
-          </div>}
-        </div>;
-      })}
-      {reorderError && <p role="alert" className="px-2.5 py-1 text-[12px] text-danger">{reorderError}</p>}
-      <span role="status" className="sr-only">{reorderStatus}</span>
-      {readError && <p role="alert" className="px-2.5 py-1 text-[12px] text-danger">{readError}</p>}
-      <span role="status" className="sr-only">{readStatus}</span>
-      {projects.length > 0 && ungrouped.length > 0 && <div className="pl-6 pr-3 pb-1 pt-2 text-[10.5px] text-sidebar-ink-secondary/70">{t("task.list")}</div>}
-      {ungrouped.map(renderThread)}
-      {!query && !showAll && tasks.length > visibleTasks.length && <button type="button" onClick={() => setShowAll(true)} className="pl-6 pr-3 py-1.5 text-[11px] text-sidebar-ink-secondary hover:text-sidebar-ink">{t("task.showAll", { count: tasks.length })}</button>}
+    <ThreadTree ownerId={bot.id} ownerName={bot.name} owner="bot" folderOwner={bot} openThreadId={bot.threadId} tasks={tasks} projects={bot.projects ?? []}
+      selected={selected} density={density} query={query} hidden={hidden} mine={mine} actions={actions} rowState={rowState} activeActivityLabel={activeActivityLabel}
+      onNew={(projectId) => dispatch({ type: "newTask", botId: bot.id, ...(projectId ? { projectId } : {}) })}
+      onReorder={(projectIds, onSaved, onError) => dispatch({ type: "reorderProjects", botId: bot.id, projectIds, onSaved, onError })}
+      canMarkRead={(projectId) => folderUnreadThreadIds(bot, projectId).length > 0}
+      markRead={(projectId) => markFolderRead(bot, projectId, api, (updated) => dispatch({ type: "botPatched", bot: updated }))}>
       <FullAccessWarning
         open={permissionRefresh?.kind === "full"}
         scope="thread"
@@ -1597,10 +1665,45 @@ export function BotThreadList({ bot, selected, density = "comfortable", query = 
           if (threadId) dispatch({ type: "refreshTaskPermissions", botId: bot.id, threadId, acknowledgeLocalAuto: true });
         }}
       />
-      {creatingProject && <BotProjectDialog bot={bot} onClose={() => setCreatingProject(false)} />}
-      {projectToEdit && <BotProjectDialog bot={bot} project={projectToEdit} onClose={() => setEditingProject(null)} />}
-      </>}
-    </div>
+    </ThreadTree>
+  );
+}
+
+/** The thread tree under a person's row: a conversation with a person has
+ * threads like a bot (server/people-dms.ts), with the same rows, menus and
+ * folders. No generated title (it would send the pair's words to a model)
+ * and no approval refresh (no bot). */
+export function PersonThreadList({ group, name, selected, density = "comfortable", query = "", hidden = false }: {
+  group: Group;
+  /** The person, as their row reads. */
+  name: string;
+  selected: boolean; density?: SidebarDensity; query?: string; hidden?: boolean;
+}) {
+  const { dispatch } = useStore();
+  const tasks = personPickerThreads(group);
+  const latest = useRef(group);
+  latest.current = group;
+  const groupId = group.id;
+  const actions = useMemo(() => {
+    type Row = { threadId: string };
+    const patch = (task: Row, change: GroupTaskUpdatePatch) => dispatch({ type: "updateGroupTask", groupId, threadId: task.threadId, patch: change });
+    return {
+      onSelect: (task: Row) => { if (task.threadId !== latest.current.threadId) dispatch({ type: "switchGroupTask", groupId, threadId: task.threadId }); else dispatch({ type: "select", id: groupId }); },
+      onRename: (task: Row, title: string) => dispatch({ type: "renameGroupTask", groupId, threadId: task.threadId, title }),
+      onDelete: (task: Row) => dispatch({ type: "deleteGroupTask", groupId, threadId: task.threadId }),
+      onMove: (task: Row, projectId: string | null) => patch(task, { projectId }),
+      onArchive: (task: Row, archivedAt: number | null) => patch(task, { archivedAt }),
+      onPin: (task: Row, pinned: boolean) => patch(task, { pinned }),
+      onSnooze: (task: Row, snoozedUntil: number | null) => patch(task, { snoozedUntil }),
+    };
+  }, [groupId, dispatch]);
+  return (
+    <ThreadTree ownerId={group.id} ownerName={name} owner="group" folderOwner={group} openThreadId={group.threadId} tasks={tasks} projects={group.projects ?? []}
+      selected={selected} density={density} query={query} hidden={hidden} mine={false} actions={actions}
+      onNew={(projectId) => dispatch({ type: "newGroupTask", groupId: group.id, ...(projectId ? { projectId } : {}) })}
+      onReorder={(projectIds, onSaved, onError) => dispatch({ type: "reorderProjects", botId: group.id, owner: "group", projectIds, onSaved, onError })}
+      canMarkRead={(projectId) => folderUnreadThreadIds(group, projectId).length > 0}
+      markRead={(projectId) => markGroupFolderRead(group, projectId, api, (updated) => dispatch({ type: "groupPatched", group: updated }))} />
   );
 }
 
@@ -1715,7 +1818,7 @@ export function BotListItem({
       </span>
       <div className={cn("min-w-0 flex-1", iconOnly && "hidden")}>
         <div className="flex items-baseline justify-between gap-2">
-          <span className={cn("flex min-w-0 grow items-center gap-1.5 text-[14px] leading-5 text-sidebar-ink", selected ? "font-semibold" : "font-medium")}>
+          <span className={cn("flex min-w-0 grow items-center gap-1.5 text-[14px] leading-5 text-sidebar-ink", selected || unread ? "font-semibold" : "font-medium")}>
             {bot.pinned && <Pin size={12} className="shrink-0 text-sidebar-ink-secondary" />}
             <RenameTitle
               key={iconOnly ? "icons" : "expanded"}
@@ -1746,7 +1849,7 @@ export function BotListItem({
               {formatTime(last.at)}
             </span>
           )}
-          {(expanded || (quiet && !statusLine)) && unread && <span className="size-1.5 shrink-0 rounded-full bg-unread" aria-label={t("task.unreadMany")} />}
+          {unread && <span className="sr-only">{t("task.unreadMany")}</span>}
         </div>
         {(!expanded || deleting) && (!quiet || statusLine) && <div className="flex items-center justify-between gap-2">
           {deleting ? (
@@ -1755,7 +1858,7 @@ export function BotListItem({
               {t("sidebar.bot.deletingRow")}
             </span>
           ) : (
-            <span className="flex min-h-[18px] min-w-0 items-center gap-1.5 truncate text-[13px] leading-[18px] text-sidebar-ink-secondary">
+            <span className={cn("flex min-h-[18px] min-w-0 items-center gap-1.5 truncate text-[13px] leading-[18px]", unread ? "text-sidebar-ink" : "text-sidebar-ink-secondary")}>
               {working ? (
                 // the same typing dots as the chat header; sized to the text's
                 // line box so the row does not jump when work starts or ends
@@ -1767,9 +1870,6 @@ export function BotListItem({
                 <span className="truncate">{waiting ? t("sidebar.preview.waiting") : teammateWait ? t("sidebar.preview.waitingOnTeammate") : queued ? t("task.queued") : preview(bot, visible, instances)}</span>
               )}
             </span>
-          )}
-          {unread && (
-            <span className="size-2 shrink-0 rounded-full bg-unread" aria-label={t("task.unreadMany")} />
           )}
         </div>}
       </div>
@@ -2172,7 +2272,6 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
   const showLogo = useShowSidebarLogo();
   const remoteClient = window.ogb?.remoteClient?.active === true;
   const { capabilities } = useDesktopCapabilities();
-  const importReturnRef = useRef<HTMLButtonElement>(null);
   const sidebarRef = useRef<HTMLElement>(null);
   const [confirm, setConfirm] = useState<{ kind: BotConfirmKind; bot: Bot } | null>(null);
   const cancelConfirm = useCallback(() => setConfirm(null), []);
@@ -2303,8 +2402,6 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
   const [roomSectionPicker, setRoomSectionPicker] = useState<{ groupId: string; x: number; y: number } | null>(null);
   const [deletingRoomId, setDeletingRoomId] = useState<string | null>(null);
   const deletingRoom = deletingRoomId ? state.groups.find((g) => g.id === deletingRoomId) : undefined;
-  const [teamLibraryOpen, setTeamLibraryOpen] = useState(false);
-  const [teamInstallUrl, setTeamInstallUrl] = useState<string | null>(null);
   const [archivedBotsOpen, setArchivedBotsOpen] = useState(false);
   const [teamFeedback, setTeamFeedback] = useState<{
     error: boolean;
@@ -2385,20 +2482,14 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
   }, [open, onClose, confirm, deletingRoom]);
 
 
-  // Connect apps > Bot templates
-  useEffect(() => {
-    const open = () => setTeamLibraryOpen(true);
-    window.addEventListener(OPEN_TEMPLATES_EVENT, open);
-    return () => window.removeEventListener(OPEN_TEMPLATES_EVENT, open);
-  }, []);
-
+  // An install link (openmaus://, a team's address) opens Browse Bots on
+  // its Templates section, where Import previews it before anything is added.
   useEffect(() => {
     if (remoteClient) return;
     return window.ogb?.onPackageInstall?.((url) => {
-      setTeamInstallUrl(url);
-      setTeamLibraryOpen(true);
+      for (const action of templatesEntryActions("installLink", url)) dispatch(action);
     });
-  }, [remoteClient]);
+  }, [remoteClient, dispatch]);
 
   useEffect(() => {
     if (!teamFeedback) return;
@@ -2641,9 +2732,9 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
   // same rule and order as the sidebar tree, so the bell can never
   // disagree with it.
   const pendingBotUndo = teamFeedback?.restoreBot;
-  // Connected apps and Templates stay in view above the account row when
-  // their experimental flags are on. Team map and Automations are in the
-  // account menu.
+  // Connected apps and Browse Bots (each when its experimental flag is on)
+  // stay in view above the account row. Team map and Automations are in the account
+  // menu.
   const places: SidebarPlace[] = [
     // Connected apps is experimental (Settings > Experimental features).
     ...(advanced && connectedAppsEnabled(state.config) ? [{
@@ -2653,12 +2744,13 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
       icon: Puzzle,
       onSelect: () => dispatch({ type: "togglePlugins", open: true }),
     }] : []),
-    // Experimental: hidden until Settings > Experimental features turns it on.
-    ...(!remoteClient && advanced && templatesEnabled(state.config) ? [{
-      key: "templates",
-      label: t("sidebar.teamLibrary"),
-      icon: Library,
-      onSelect: () => setTeamLibraryOpen(true),
+    // Browse Bots (the bot catalogue, on its home view): hidden until
+    // Settings > Experimental features turns it on.
+    ...(!remoteClient && advanced && browseBotsEnabled(state.config) ? [{
+      key: "browse-bots",
+      label: t("sidebar.browseBots"),
+      icon: LayoutGrid,
+      onSelect: () => dispatch(openBotCatalog()),
     }] : []),
   ];
   // Archived bots is housekeeping, not a place: it stays in the account menu.
@@ -2724,7 +2816,6 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
               <Search size={16} strokeWidth={1.75} aria-hidden="true" />
             </button>
             <button
-              ref={importReturnRef}
               type="button"
               onClick={() => onCompose?.()}
               aria-expanded={composeOpen}
@@ -2758,7 +2849,6 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
                   <Search size={16} strokeWidth={1.75} aria-hidden="true" />
                 </button>
                 <button
-                  ref={importReturnRef}
                   type="button"
                   onClick={() => onCompose?.()}
                   aria-expanded={composeOpen}
@@ -3043,7 +3133,6 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
             const anyExpanded = sectionIds.some((sid) => !collapsedSections.includes(sid));
             const actions: OrgSectionMenuActions = {
               onNew: () => { closeOrgMenu(); setSectionEdit({ mode: "new" }); },
-              onBrowseBots: () => { closeOrgMenu(); dispatch(openBotCatalog()); },
               onRename: () => { closeOrgMenu(); if (orgMenu.name) setSectionEdit({ mode: "rename", name: orgMenu.name }); },
               onMoveUp: () => { closeOrgMenu(); if (orgMenu.id) moveSidebarSection(orgMenu.id, -1); },
               onMoveDown: () => { closeOrgMenu(); if (orgMenu.id) moveSidebarSection(orgMenu.id, 1); },
@@ -3056,7 +3145,6 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
               canMoveUp: position > (generalOnTop ? 1 : 0) && layoutInteractive,
               canMoveDown: position >= (generalOnTop ? 1 : 0) && position < sectionIds.length - 1 && layoutInteractive,
               anyExpanded,
-              browseBots: true,
             });
             return <OrgSectionMenuItems items={items} actions={actions} />;
           })()}
@@ -3150,30 +3238,6 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
           bots={archivedBots}
           onClose={() => setArchivedBotsOpen(false)}
           onRestored={(message) => setTeamFeedback({ error: false, text: message })}
-        />
-      )}
-      {!remoteClient && teamLibraryOpen && (
-        <TeamLibraryPanel
-          returnFocusRef={importReturnRef}
-          initialUrl={teamInstallUrl ?? undefined}
-          onClose={() => {
-            setTeamLibraryOpen(false);
-            setTeamInstallUrl(null);
-          }}
-          onImported={(result) => {
-            setTeamLibraryOpen(false);
-            setTeamInstallUrl(null);
-            setTeamFeedback({
-              error: false,
-              text:
-                (result.members === 0 && result.presets
-                  ? t("sidebar.presetsImported", { count: result.presets })
-                  : result.members === 1
-                  ? t("sidebar.teamImportedOne")
-                  : t("sidebar.teamImportedMany", { count: result.members })) +
-                (result.connections ? ` · ${t("sidebar.connectionsToFinish", { count: result.connections })}` : ""),
-            });
-          }}
         />
       )}
       {teamFeedback &&

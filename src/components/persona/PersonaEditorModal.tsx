@@ -1,7 +1,7 @@
 // The persona editor: one bot's whole profile in a modal shaped like
 // Achievements (category-modal.ts: a left column of categories, one
 // scrolling pane, the close button top right). Each category shows the same
-// section the bot panel's More tab shows (useBotSectionContent), so both
+// section the bot panel used to show under More (useBotSectionContent), so both
 // save through the same paths. A section this viewer may not change stays
 // in the list and says why (botSectionLock); nothing is hidden for lack of a
 // permission. Opened from the mascot's menu in the bot panel (store action
@@ -20,28 +20,13 @@ import { shortcutLabel } from "../ShortcutHint";
 import { CATEGORY_MODAL, categoryNavItemClass, nextCategory, useCategoryModalKeyboard } from "../category-modal";
 import { BOT_SECTIONS } from "../bot-settings/sections";
 import { MemorySection } from "../bot-settings/MemorySection";
+import { RulesSection } from "../bot-settings/RulesSection";
+import { WorkspaceFilesSection } from "../bot-settings/WorkspaceFilesSection";
 import { botSectionLock, useBotSectionAvailability, useBotSectionContent } from "../bot-settings/useBotSectionContent";
+import { PERSONA_CATEGORIES, isPersonaCategory, type PersonaCategory } from "@/lib/persona-sections";
 import { PersonaOverview } from "./PersonaOverview";
 
-/** The categories, in the order the left column lists them. */
-export const PERSONA_CATEGORIES = [
-  "overview",
-  "soul",
-  "skills",
-  "memory",
-  "access",
-  "model",
-  "permissions",
-  "voice",
-  "perspicax",
-  "history",
-  "usage",
-] as const satisfies readonly BotSettingsSection[];
-export type PersonaCategory = (typeof PERSONA_CATEGORIES)[number];
-
-export function isPersonaCategory(id: BotSettingsSection): id is PersonaCategory {
-  return (PERSONA_CATEGORIES as readonly string[]).includes(id);
-}
+export { PERSONA_CATEGORIES, isPersonaCategory, type PersonaCategory };
 
 const ENTRY = new Map(BOT_SECTIONS.map((entry) => [entry.id, entry]));
 
@@ -166,7 +151,8 @@ function PersonaEditor({ bot, section, onClose }: { bot: Bot; section: BotSettin
         </div>
       );
     }
-    if (id === "memory") return null; // mounted below so an unsaved draft survives
+    // mounted below so an unsaved draft survives
+    if (id === "memory" || id === "rules" || id === "files") return null;
     if (id === "access") {
       const worksOn = (advanced || !simpleHidesBotSection("worksOn")) && lockOf("worksOn") === null;
       return (
@@ -293,6 +279,23 @@ function PersonaEditor({ bot, section, onClose }: { bot: Bot; section: BotSettin
               {memoryAllowed && lockOf("memory") === null && (
                 <div hidden={current !== "memory"}>
                   <MemorySection bot={bot} active={current === "memory"} onToggle={(enabled) => derived.patch({ memoryEnabled: enabled })} />
+                </div>
+              )}
+              {/* Rules and Files (the bot workspace, docs/bot-workspace.md)
+                  stay mounted the same way, for the same reason. */}
+              {lockOf("rules") === null && (
+                <div hidden={current !== "rules"}>
+                  <RulesSection bot={bot} active={current === "rules"} />
+                </div>
+              )}
+              {lockOf("files") === null && categories.includes("files") && (
+                <div hidden={current !== "files"}>
+                  <WorkspaceFilesSection
+                    bot={bot}
+                    active={current === "files"}
+                    memoryEditable={memoryAllowed && lockOf("memory") === null}
+                    onOpenSection={(target) => { if (isPersonaCategory(target)) choose(target); }}
+                  />
                 </div>
               )}
             </div>

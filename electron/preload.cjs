@@ -27,19 +27,6 @@ ipcRenderer.on("app:open-settings", (_event, section) => {
   for (const listener of appSettingsListeners) listener(fixedSection);
 });
 
-// Help → Release notes can arrive before React subscribes. Keep one pending
-// open and deliver it to the first real subscriber.
-let pendingReleaseNotes = false;
-const releaseNotesListeners = new Set();
-ipcRenderer.on("release-notes:open", () => {
-  if (!releaseNotesListeners.size) {
-    pendingReleaseNotes = true;
-    return;
-  }
-  pendingReleaseNotes = false;
-  for (const listener of releaseNotesListeners) listener();
-});
-
 // The bridge is built once, then exposed in full only to the local server's
 // UI. A remote server's page (Server menu) gets the safe subset: nothing that
 // captures this screen, touches this computer's files or logins, or runs
@@ -59,7 +46,7 @@ const REMOTE_SAFE = new Set(["platform", "getCapabilities", "onCapabilitiesChang
 // every one of these channels again (local-origin.cjs desktopUiOnly, and
 // sharingUiOnly for the server-mode server only). Nothing that reads this
 // computer's files, screen, logins or secrets is handed to the page.
-const BUNDLED_EXTRA = new Set(["floatingBots", "retroAssistant", "windowControls", "onOpenAppSettings", "onOpenReleaseNotes", "openExternal", "confirm", "updater", "serverMode", "computerSharing", "appIcon"]);
+const BUNDLED_EXTRA = new Set(["floatingBots", "retroAssistant", "windowControls", "onOpenAppSettings", "openExternal", "confirm", "updater", "serverMode", "computerSharing", "appIcon"]);
 let bundledPage = false;
 // main.mjs always answers this channel: a sendSync nobody answers would
 // block this page for good (a test harness must answer it too).
@@ -217,16 +204,6 @@ const bridge = {
     });
     return () => appSettingsListeners.delete(cb);
   },
-  /** Help → Release notes. Local shell and the bundled organization page. */
-  onOpenReleaseNotes: (cb) => {
-    releaseNotesListeners.add(cb);
-    queueMicrotask(() => {
-      if (!pendingReleaseNotes || !releaseNotesListeners.size) return;
-      pendingReleaseNotes = false;
-      for (const listener of releaseNotesListeners) listener();
-    });
-    return () => releaseNotesListeners.delete(cb);
-  },
   /** Absolute path of a dropped File — Electron 32 removed File.path, and
    * only the preload can ask. "" when the drag carried no file on disk. */
   getPathForFile: (file) => {
@@ -302,9 +279,10 @@ const bridge = {
    * page: text the page already shows, capped by main; main accepts it only
    * from the main window's top frame. */
   notify: (request) => ipcRenderer.send("desktop:notify", request),
-  /** The person clicked one of those notifications: its id. */
+  /** The person clicked one of those notifications: its id and the
+   * conversation it is about ({botId, threadId, groupId, routineRunId}). */
   onNotificationClick: (cb) => {
-    const listener = (_event, id) => { if (typeof id === "string") cb(id); };
+    const listener = (_event, id, target) => { if (typeof id === "string") cb(id, target && typeof target === "object" ? target : null); };
     ipcRenderer.on("desktop:notification-click", listener);
     return () => ipcRenderer.removeListener("desktop:notification-click", listener);
   },

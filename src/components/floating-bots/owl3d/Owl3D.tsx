@@ -110,6 +110,15 @@ export const OWL_CLIP_FOR: Record<ClipName, OwlClip> = {
   drag: "fly",
   flyOut: "takeoff",
   return: "glide",
+  // a dog's own clips (Shiba), should the owl ever play one
+  bark: "wave",
+  sniff: "peck",
+  wag: "dance",
+  earTwitch: "ruffle",
+  lieDown: "sleep",
+  turnCircles: "celebrate",
+  excited: "hop",
+  sit: "land",
 };
 
 /** Activities whose clip loops until the activity changes; the others play once and hold. */

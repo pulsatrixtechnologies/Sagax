@@ -1,12 +1,12 @@
 // The permission catalogue of an organization server (2026-10-09).
 //
 // Every "admin only" decision a person meets on a Sagax server linked to
-// Perspicax is one key here. Perspicax holds, per profile, which keys the
-// profile grants; a person's effective permissions are the union over the
-// profiles they hold, computed by Perspicax and sent in the directory
-// (`permissions` on each person). An organization admin holds every key.
-// Keys marked `adminOnly` are true security boundaries: no profile grants
-// them, whatever Perspicax sends.
+// Perspicax is one key here. Perspicax holds permission sets (roles), each
+// granting keys; a person's effective permissions are the union of the
+// default set, the sets given to them and the sets of their teams, computed
+// by Perspicax and sent in the directory (`permissions` on each person). An
+// organization admin holds every key. Keys marked `adminOnly` are true
+// security boundaries: no set grants them, whatever Perspicax sends.
 //
 // When Perspicax sends no list (an older Perspicax, a person missing from
 // the directory, the directory not read yet), a person holds the member
@@ -207,6 +207,25 @@ const definitions = [
     description: {
       en: "Use Run now on a routine they can see, even when they neither own its bot nor are the person it runs as.",
       fr: "Utiliser Lancer maintenant sur une routine qu'ils voient, même s'ils ne possèdent pas son bot et ne sont pas la personne qui l'exécute.",
+    },
+  },
+  // 2026-10-09 (JC): who sees the automation schedule beyond their own
+  // routines. Read side only: Run now, Edit and Runs as keep their own gates
+  // (routines.runNowAny, routines.runAsAnyone, the bot's `run` level).
+  {
+    key: "routines.viewTeam", group: "routines", memberDefault: false, adminOnly: false,
+    label: { en: "See their teams' routines", fr: "Voir les routines de leurs équipes" },
+    description: {
+      en: "See on the Automations page the routines of the people in their teams and of the bots shared with their teams, read-only unless they may run or edit them.",
+      fr: "Voir dans la page Automatisations les routines des personnes de leurs équipes et des bots partagés avec leurs équipes, en lecture seule sauf s'ils peuvent les lancer ou les modifier.",
+    },
+  },
+  {
+    key: "routines.viewAll", group: "routines", memberDefault: false, adminOnly: false,
+    label: { en: "See every routine of the organization", fr: "Voir toutes les routines de l'organisation" },
+    description: {
+      en: "See on the Automations page every routine of the server, with its owner, bot and status, and clear any run log. Instructions and run outputs of others' routines stay hidden.",
+      fr: "Voir dans la page Automatisations toutes les routines du serveur, avec leur propriétaire, leur bot et leur état, et effacer n'importe quel journal d'exécution. Les instructions et les résultats des routines des autres restent masqués.",
     },
   },
   {

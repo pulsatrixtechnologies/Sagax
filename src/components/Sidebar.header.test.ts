@@ -116,14 +116,16 @@ describe("sidebar header", () => {
     },
   );
 
-  it("hides Templates in the bottom menu until the experimental flag is on", () => {
+  it("hides Browse Bots in the bottom menu until its experimental flag is on", () => {
     fixture.density = "comfortable";
+    expect(render()).not.toContain(">Browse Bots</span>");
     expect(render()).not.toContain(">Templates</span>");
     fixture.templates = false;
-    expect(render()).not.toContain(">Templates</span>");
+    expect(render()).not.toContain(">Browse Bots</span>");
     fixture.templates = true;
     const html = render();
-    expect(html).toContain(">Templates</span>");
+    expect(html).toContain(">Browse Bots</span>");
+    expect(html).not.toContain(">Templates</span>");
     expect(html).not.toContain(">Connected apps</span>");
   });
 

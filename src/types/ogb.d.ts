@@ -319,7 +319,6 @@ const __SAGAX_DEFAULT_SERVER__: string;
        * openmausbot://cloud link (Settings → OMB Cloud, opened by the link). */
       onOpenAppSettings?(cb: (section?: "organization" | "cloud" | "cloud-settings") => void): () => void;
       /** Help → Release notes. Absent in the browser and on a remote page. */
-      onOpenReleaseNotes?(cb: () => void): () => void;
       /** Updates the native Dock/taskbar unread indicator. */
       setUnreadCount?(count: number): void;
       /** A nudge here: bring the main window to the very front (restore,
@@ -338,9 +337,10 @@ const __SAGAX_DEFAULT_SERVER__: string;
         persistent: boolean;
         bounce: "critical" | "informational" | null;
         flash: boolean;
+        target?: { botId?: string; threadId?: string; groupId?: string; routineRunId?: string };
       }): void;
       /** The id of a shell notification the person clicked. */
-      onNotificationClick?(cb: (id: string) => void): () => void;
+      onNotificationClick?(cb: (id: string, target?: { botId?: string; threadId?: string; groupId?: string; routineRunId?: string } | null) => void): () => void;
       /** Presence: the computer's idle state and seconds since the last
        * input (Electron powerMonitor). Null outside the main window. */
       systemIdle?(): Promise<{ state: "active" | "idle" | "locked" | "unknown"; idleSeconds: number } | null>;

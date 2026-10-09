@@ -237,6 +237,41 @@ posixOnly("an organization member's identity and bots", () => {
     expect((await api("PATCH", `/api/bots/${zaraBot}`, { as: "zara", body: { approvalMode: "auto" } })).status).toBe(403);
   });
 
+  // JC 2026-10-09: a member manages her own bot's Rules and Docs like its
+  // Soul (server/routes/bot-workspace.ts); MEMORY.md stays an admin's.
+  it("lets a member edit her own bot's rules and documents, and no one else's", async () => {
+    const rules = await api("PUT", `/api/bots/${zaraBot}/workspace/file`, { as: "zara", body: { path: "RULES.md", text: "# Rules\n\n- Never quote a price.\n" } });
+    expect(rules.status, rules.text).toBe(200);
+    const doc = await api("PUT", `/api/bots/${zaraBot}/workspace/file`, { as: "zara", body: { path: "docs/onboarding.md", text: "# Onboarding\n" } });
+    expect(doc.status, doc.text).toBe(200);
+    expect((await api("GET", `/api/bots/${zaraBot}/workspace/file?path=RULES.md`, { as: "zara" })).body.text).toContain("Never quote a price.");
+    const listing = await api("GET", `/api/bots/${zaraBot}/workspace`, { as: "zara" });
+    expect(listing.status, listing.text).toBe(200);
+    expect(listing.body.entries.map((entry: any) => entry.path)).toEqual(expect.arrayContaining(["RULES.md", "docs/onboarding.md"]));
+    const renamed = await api("POST", `/api/bots/${zaraBot}/workspace/docs/rename`, { as: "zara", body: { from: "docs/onboarding.md", to: "docs/clients.md" } });
+    expect(renamed.status, renamed.text).toBe(200);
+    expect((await api("DELETE", `/api/bots/${zaraBot}/workspace/file?path=docs/clients.md`, { as: "zara" })).status).toBe(200);
+    // only rules and documents: memory stays on the admin routes
+    expect((await api("PUT", `/api/bots/${zaraBot}/workspace/file`, { as: "zara", body: { path: "MEMORY.md", text: "x" } })).status).toBe(400);
+    expect((await api("PUT", `/api/bots/${zaraBot}/memory/file`, { as: "zara", body: { path: "RULES.md", text: "x" } })).status).toBe(403);
+    // another member is refused: 404 when she cannot see the bot (the
+    // server's visibility gate answers first), 403 when she can
+    for (const [method, path, body] of [
+      ["GET", `/api/bots/${zaraBot}/workspace`, undefined],
+      ["GET", `/api/bots/${zaraBot}/workspace/file?path=RULES.md`, undefined],
+      ["PUT", `/api/bots/${zaraBot}/workspace/file`, { path: "RULES.md", text: "# Hijacked\n" }],
+      ["DELETE", `/api/bots/${zaraBot}/workspace/file?path=RULES.md`, undefined],
+      ["GET", `/api/bots/${zaraBot}/workspace/download?path=RULES.md`, undefined],
+    ] as const) {
+      expect([403, 404], `${method} ${path}`).toContain((await api(method, path, { as: "max", body })).status);
+    }
+    const ops = await api("POST", "/api/bots", { body: { name: "Ops rules" } });
+    const zaraId = (await api("GET", "/api/config", { as: "zara" })).body.viewer.principalId;
+    expect((await api("POST", `/api/bots/${ops.body.bot.id}/direct-grants`, { body: { userId: zaraId } })).status).toBe(200);
+    expect((await api("PUT", `/api/bots/${ops.body.bot.id}/workspace/file`, { as: "zara", body: { path: "RULES.md", text: "# Hijacked\n" } })).status).toBe(403);
+    expect((await api("GET", `/api/bots/${zaraBot}/workspace/file?path=RULES.md`)).body.text).toContain("Never quote a price.");
+  });
+
   it("lets a member edit and delete only her own bots", async () => {
     const renamed = await api("PATCH", `/api/bots/${zaraBot}`, { as: "zara", body: { name: "Scout 2", soul: "Be very brief." } });
     expect(renamed.status, renamed.text).toBe(200);

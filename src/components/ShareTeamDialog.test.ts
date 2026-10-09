@@ -13,7 +13,7 @@ import { teamImportPreview } from "@/lib/team-import";
 import { ApiError } from "@/state/store";
 import { ShareSkillChoices, ShareTeamContents } from "./ShareTeamDialog";
 import { TeamMenuItems } from "./Sidebar";
-import { shareableTeamList, TeamImportDetails } from "./TeamLibraryPanel";
+import { shareableTeamList, TeamImportDetails } from "./bot-catalog/TeamImportDetails";
 import { packageSummary, parsePackageDocument } from "../../shared/package-format";
 
 const fixture = () => JSON.parse(readFileSync(join(import.meta.dirname, "..", "..", "shared", "package-fixtures", "full-team.v2.json"), "utf8"));

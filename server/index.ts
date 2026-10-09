@@ -235,7 +235,7 @@ import { EngineSelfCheck, readEngineManifest, runEngineSelfCheck, type EngineChe
 import { appendUsage, parseUsageRange, readUsage, flushUsageLedger, type UsageRow, type UsageTrigger } from "./usage-ledger.ts";
 import { loadPlanUsage, orgPlanAccounts, planAccountsFromInstances } from "./plan-usage.ts";
 import { GroupUsageReader } from "./group-thread-usage.ts";
-import { ledgerCost } from "./model-prices.ts";
+import { ledgerCost, listPriceFor } from "./model-prices.ts";
 import type { PriceList } from "./prices.ts";
 import type { RequestAuth } from "./request-auth.ts";
 import { BOT_FIELD_PERMISSIONS, can, permissionRefusal, type PermissionKey } from "../shared/permissions.ts";
@@ -263,6 +263,7 @@ import {
 import { RETRY_MAX_ATTEMPTS } from "./drivers/retry.ts";
 import { recoveryCapabilityError } from "./automatic-recovery.ts";
 import { ModelCatalogStore } from "./model-catalog/catalog.ts";
+import { turnRunFor, type TurnRun } from "./turn-run.ts";
 import { attachmentsInText, autoModelRecord, bareModelId, explainPick, familyOfModel, isModelRefusal, nextInChain, pickOrchestrationModel, pickWorkerModel, type AutoChainEntry, type AutoEngine, type AutoPick, type CatalogFacts } from "./model-auto.ts";
 import type { AutoModelRecord } from "../shared/auto-model.ts";
 import { decodeGeneratedImage } from "./generated-image.ts";
@@ -372,14 +373,15 @@ import type { ProviderInstance, RemoteMcpSpec } from "./contracts.ts";
 import { selectDefaultModelSelection, withNewBotEffort } from "./default-model-selection.ts";
 import { threadModelFallback, type ThreadEngine } from "./thread-model.ts";
 import { sameModelSelection } from "../shared/thread-model.ts";
+import { allowedFallbackSelection, engineAllowed } from "../shared/org-allowed-engines.ts";
 import { computerEngineMoveText, removedComputerInstanceIds, writeComputerEngineMoveLines } from "./computer-engine-removal.ts";
 import { cancelPeerApprovalsFor, cancelPeerApprovalsForThread, dismissStalePeerCards, peerApprovalFailure, requestPeerApproval, resolvePeerComms, type ApprovalBus } from "./peer-approval.ts";
 import { peerDeliveryReceipt, type PeerDeliveryReceipt } from "./peer-delivery.ts";
 import { READ_RECEIPTS_PREFERENCE, botParticipant, newestOf, personParticipant, readVisibleTo, readsVisibleTo, roomReceiptMember, sendsReadReceipts } from "./read-receipts.ts";
 import { peerProvenanceNote, withPeerProvenance } from "./peer-provenance.ts";
 import { decideRoomPost, emptyRoomPostBudget, type RoomPostAttempt, type RoomPostBudget } from "./room-post-budget.ts";
+import { parseFolderBody, parseFolderOrder, parseThreadOrganization } from "./thread-folders.ts";
 import {
-  isProjectEmoji,
   mentionedBots,
   parseConnectorTools,
   roomResponders,
@@ -421,6 +423,7 @@ import {
   memorySystemPrompt,
   memorySourceLabel,
   searchMemoryFiles,
+  searchDocFiles,
   SESSION_SEARCH_SYSTEM_PROMPT,
   TASK_WORKSPACES_DIR,
   workspaceDir,
@@ -479,6 +482,7 @@ import {
   composioSystemPrompt,
   customMcpPrompt,
   CREDENTIAL_PROMPT,
+  REACTION_PROMPT,
   mentionPrompt,
   THREADS_PROMPT,
   RICH_OUTPUT_PROMPT,
@@ -506,6 +510,7 @@ import { RepeatDetector, callKey } from "./repeat-detector.ts";
 import { redactSecretsInText } from "./redact.ts";
 import * as vps from "./vps-computer.ts";
 import { runAsOptions, runAsRefusal, type RunAsChooser, type RunAsPerson } from "./routine-run-as.ts";
+import { parseRoutineScopeQuery, routineRunClearable, routineScopeRefusal, scopedRoutineListing, type RoutineScopeCaller, type RoutineScopeDeps, type RoutineScopeFacts } from "./routine-scope.ts";
 import { RoutineManager, setRoutineTimeZone, type Routine, type RoutineAdmission, type RoutineRun, type RoutineRunOn, type RoutineRunTrigger, type RoutineSuspendReason } from "./routines.ts";
 import { RoutineConsents, routineRenewMs, type RoutineConsentEnd } from "./org-routine-consent.ts";
 import { CalendarCallManager, type CalendarCall } from "./calendar-calls.ts";
@@ -722,6 +727,7 @@ import type { BotHost } from "./turn-route.ts";
 import { signInListWithOpenInvites, type OrgRole } from "./org-directory.ts";
 import { createOwnerAvatarRoute, OwnerIdentityStore, parseOwnerIdentityMessage } from "./owner-identity.ts";
 import { configForViewer, personAvatarUrl, personDisplayName, sessionIsOperator, type ViewerIdentity } from "./viewer-identity.ts";
+import { botReactionActorId, normalizeReactions, reactionEmoji, reactionsBy, type ReactionActor } from "../shared/reactions.ts";
 // Keep these two last: a route module may import any server module, and
 // loading the table after everything above leaves module start-up order as is.
 import { json, onJsonBody, parsedBodyOf, readBody } from "./harness/http.ts";
@@ -729,6 +735,8 @@ import { PASS, ROUTES, dispatchRoutes } from "./routes/table.ts";
 import { createHostedSlackRoutes } from "./routes/hosted-slack.ts";
 import { createBotPresetRoutes } from "./routes/bot-presets.ts";
 import { createBotCatalogRoutes, memberImportReset } from "./routes/bot-catalog.ts";
+import { createBotZipRoutes } from "./routes/bot-zip.ts";
+import { BotZipError, closeInspected, importBotZip, inspectBotZip, planBotZip, previewBotZip, stageBotZipUpload, writeBotZip, type BotZipHost } from "./bot-zip.ts";
 import { MEMORY_INDEX, readMemoryDoc } from "./memory-store.ts";
 import { isExpired as memoryEntryExpired, parseMemoryEntries } from "./memory-entries.ts";
 import { createBotLibraryRoutes } from "./routes/bot-library.ts";
@@ -743,8 +751,10 @@ import { createRegistrySearch } from "./plugin-registry.ts";
 import { BotPluginError, BotPlugins, marketplaceAllowed, marketplacePolicySchema, normalizePolicyEntry, parseGitSource, type MarketplacePolicy } from "./bot-plugins.ts";
 import { claudePluginDirs, pluginTurnFiles, pluginTurnPrompt } from "./plugin-turn.ts";
 import { createBotPluginRoutes } from "./routes/bot-plugins.ts";
-import { GithubConnect, githubAuthorizedFetch, githubGitEnvironment, githubSandboxArgv } from "./github-connect.ts";
+import { GithubConnect, githubGitEnvironment, githubSandboxArgv } from "./github-connect.ts";
 import { OrgGithubTokens } from "./org-github-tokens.ts";
+import { MarketplaceTokens } from "./marketplace-tokens.ts";
+import { githubSkillFetch, type GithubCredential } from "./github-access.ts";
 import { parsePersonalMcpInput, personalAuthHeaders, personalMcpHostRefusal, personalMcpPrivateAllowed, PersonConnections, PersonConnectionsError, principalDir, type PersonalMcpServer } from "./person-connections.ts";
 import { createPersonConnectionRoutes } from "./routes/person-connections.ts";
 import { SandboxStdioRelay, StdioRelayError } from "./sandbox-stdio-mcp.ts";
@@ -762,14 +772,20 @@ import { createDesktopAppearanceRoutes } from "./routes/desktop-appearance.ts";
 import { createDesktopAppearanceStore } from "./desktop-appearance.ts";
 import { achievementFrameAllowed, achievementRequestEvents, achievementSendEvents, activityEvents, createAchievementStore, routineRunEvents, type AchievementEvent } from "./achievements.ts";
 import { createAchievementRoutes } from "./routes/achievements.ts";
+import { lockedLookChange, masteryDelegationFacts, masteryFrameFacts, masteryRequestFacts, masterySendFacts, threadCensus, type LookRefusal, type PersonFact } from "./achievements-mastery.ts";
 import { grandfatheredFromBots } from "../shared/achievements.ts";
 import { createBotMemoryRoutes } from "./routes/bot-memory.ts";
+import { createBotWorkspaceRoutes } from "./routes/bot-workspace.ts";
+import { docsIndexPrompt, readWorkspaceText, rulesSystemPrompt, WorkspacePathError } from "./workspace-files.ts";
+import { updateDoc, updateRules } from "./workspace-tools.ts";
+import { markWorkspaceUse, promptSectionPaths } from "./workspace-usage.ts";
 import { createBotActivityRoutes, type ActivityChildRef } from "./routes/bot-activity.ts";
 import { inGitRepository } from "./activity-coding.ts";
 import { repositoryInfo } from "./activity-code-work.ts";
 import { createGroupMemoryRoutes } from "./routes/group-memory.ts";
 import { createTtsProviderRoutes } from "./routes/tts-provider.ts";
 import { createPeopleDmRoutes } from "./routes/people-dms.ts";
+import { createGroupFolderRoutes } from "./routes/group-folders.ts";
 import { createNudgeRoutes } from "./routes/nudges.ts";
 import { createPersonLabelRoutes } from "./routes/person-labels.ts";
 import { createPresenceRoutes, presenceFrameAllowed, type PresenceViewer } from "./routes/presence.ts";
@@ -782,7 +798,7 @@ import { createPushDeviceRoutes } from "./routes/push-devices.ts";
 import { achievementById } from "../shared/achievements-catalog.ts";
 import { PRESENCE_SWEEP_MS, PRESENCE_VISIBLE_PREFERENCE, presenceHidden, publicPresence, type PresenceView } from "../shared/presence.ts";
 import { NudgeCooldown, nudgeFrameAllowed, recordNudgeLine } from "./nudge.ts";
-import { findPeopleDm, isPeopleDmParticipant, otherPerson, peopleDmForViewer, peopleDmPatchRefusal, peopleDmRouteRefusal, peopleDmUnreadPatch } from "./people-dms.ts";
+import { findPeopleDm, isPeopleDmParticipant, otherPerson, PEOPLE_DM_THREADS_HEADER, PeopleDmSelections, peopleDmForViewer, peopleDmPatchRefusal, peopleDmRouteRefusal, peopleDmThreadUnreadPatch, peopleDmUnreadPatch } from "./people-dms.ts";
 import { deleteGroupMemory, groupMemoryEnabled, groupMemorySystemPrompt, updateGroupMemory } from "./group-memory.ts";
 import type { OrgRecord } from "./org-record.ts";
 import { createOidcLoginRoutes, identityConfigFromEnv, identityDescriptor, INTERIM_SIGNIN_REFUSAL, isInterimSignInRoute, MANAGED_PROFILE_REFUSAL, oidcSessionFields, profileManagement, writesManagedProfile } from "./oidc-login.ts";
@@ -790,7 +806,7 @@ import { OidcRelyingParty } from "./oidc-rp.ts";
 import type { BotAttachment, BotFileRoot } from "./org-admin-files.ts";
 import { ADMIN_ACTIVITY_CATEGORIES } from "./admin-activity.ts";
 import { createOrgMemberRoutes, type MemberPerson, type MemberRequest } from "./org-member-routes.ts";
-import { createOrgAdminRoutes, type AccessKind, type AdminApproval, type AdminBot, type AdminBotReach, type AdminPerson, type ApprovalAnswer, type ApprovalType, type OrgAdminViewer } from "./org-admin-routes.ts";
+import { createOrgAdminRoutes, type AccessKind, type AdminApproval, type AdminEngine, type AdminBot, type AdminBotReach, type AdminPerson, type ApprovalAnswer, type ApprovalType, type OrgAdminViewer } from "./org-admin-routes.ts";
 import { RevocationQueue } from "./idp-revocations.ts";
 import { IDP_REFRESH_WAIT_MS, IDP_SWEEP_INTERVAL_MS, IdpGrantVault, IdpSessionManager, refreshAfterMs, resolveIdpVaultKey, settledWithin } from "./idp-session.ts";
 import { acceptOpenInvitesForEmail, createPublicInviteRoutes, createSoloOrgRoutes, inviteMailMessage, PUBLIC_INVITE_PATH, type OrgState } from "./org-routes.ts";
@@ -917,6 +933,8 @@ const ENVIRONMENT_ID = loadEnvironmentId(DATA_DIR);
 // in with Pulsatrix only (Perspicax owns accounts), so the list is empty
 // there and a legacy email session ends at its next request.
 const IDENTITY = identityConfigFromEnv();
+/** A model on an engine the organization's admin does not allow (allowedEngines). */
+const ORG_ENGINE_NOT_ALLOWED = "Your organization does not allow this model provider.";
 /** Organization server: Perspicax owns each signed-in person's name and email. */
 const PROFILE_MANAGEMENT = profileManagement(IDENTITY);
 // Every stream frame and request rechecks email sessions against this list,
@@ -1020,6 +1038,88 @@ function recordAchievements(person: string | null | undefined, events: readonly 
     /* achievements are a bonus: never fail the request that earned one */
   }
 }
+/** Mastery facts (server/achievements-mastery.ts) for their people. Never throws. */
+function recordMastery(facts: readonly PersonFact[]): void {
+  for (const item of facts) recordAchievements(item.person, [{ type: "mastery", fact: item.fact, ...(item.id ? { id: item.id } : {}) }]);
+}
+/** A model's list price per million tokens, input plus output, or null when unlisted. */
+function masteryPrice(model: string | undefined): number | null {
+  const price = model ? listPriceFor(model) : null;
+  return price ? price.inputPerMillion + price.outputPerMillion : null;
+}
+/** The model a thread's turn ran on: Auto's pick, else the thread's, else the bot's. */
+function masteryThreadModel(threadId: string): string | null {
+  const bot = store.botByThread(threadId);
+  if (!bot) return null;
+  return autoTurnsByThread.get(threadId)?.entry.model ?? store.taskByThread(bot.id, threadId)?.modelSelection?.model ?? bot.modelSelection?.model ?? null;
+}
+const masteryFrameLookups: Parameters<typeof masteryFrameFacts>[1] = {
+  threadPerson: (threadId) => achievementThreadPerson(threadId),
+  threadBot: (threadId) => store.botByThread(threadId)?.id ?? null,
+  threadModel: masteryThreadModel,
+  autoCheaper: (threadId) => {
+    const auto = autoTurnsByThread.get(threadId);
+    const bot = auto ? store.botByThread(threadId) : undefined;
+    if (!auto || !bot) return null;
+    const picked = masteryPrice(auto.entry.model);
+    const own = masteryPrice(bot.modelSelection?.model);
+    if (picked !== null && own !== null) return picked < own;
+    return store.taskByThread(bot.id, threadId)?.autoModel?.tier === "fast";
+  },
+  routine: (routineId, run) => {
+    const routine = routines?.listRoutines().find((candidate) => candidate.id === routineId);
+    const botId = typeof run.botId === "string" ? run.botId : routine?.botId;
+    const bot = botId ? store.bot(botId) : undefined;
+    const runAs = typeof run.runAs === "string" ? run.runAs : routine?.runAs;
+    return { person: runAs || (bot ? effectiveBotOwner(bot) : null) || null, ...(botId ? { botId } : {}), continuity: routine?.continuity === true };
+  },
+};
+/** Ten Hands' look at a person's conversations (the bots they own; every bot on a solo server). */
+function masteryCensus(person: string): ReturnType<typeof threadCensus> {
+  const bots = IDENTITY.kind === "perspicax" ? store.bots.filter((bot) => effectiveBotOwner(bot) === person) : store.bots;
+  const tasks = bots.flatMap((bot) => (bot.tasks ?? []).filter((task) => !task.ownerPrincipalId || task.ownerPrincipalId === person));
+  return threadCensus(tasks, new Set(bots.map((bot) => bot.threadId)), Date.now());
+}
+/**
+ * A Mastery look (shared/mascot-unlocks.ts) the person has not unlocked
+ * cannot be saved on a bot: 403 with the achievement that unlocks it. What
+ * the bot already wears stays. A person without a record (a service) is
+ * not checked, like the rest of achievements.
+ */
+function lockedLookRefusal(auth: RequestAuth, bot: BotRecord | null | undefined, nextLook: unknown): LookRefusal | null {
+  if (nextLook === undefined) return null;
+  const person = actorPrincipalId(auth);
+  if (!person) return null;
+  try {
+    return lockedLookChange(bot?.mascotLook, nextLook, new Set(achievementStore.snapshot(person).rewards));
+  } catch {
+    return null;
+  }
+}
+/** A bot's standing instructions saved by a person (Red Pen). */
+function recordPersonaSave(auth: RequestAuth, botId: string, before: { soul: string } | undefined, after: { soul: string }): void {
+  if (!before || before.soul === after.soul) return;
+  recordMastery([{ person: actorPrincipalId(auth), fact: { kind: "persona.saved", botId } }]);
+}
+// The nightly pass (shared/achievements-mastery.ts reconcileMastery): once
+// per person per local day, the measures that span days and Ten Hands' look
+// at their conversations, so a window that closed overnight counts.
+const masteryReconciledDay = new Map<string, string>();
+function masteryNightly(): void {
+  try {
+    for (const person of achievementStore.people()) {
+      const day = achievementStore.localDay(person);
+      if (masteryReconciledDay.get(person) === day) continue;
+      masteryReconciledDay.set(person, day);
+      const unlocked = achievementStore.reconcile(person, [{ kind: "threads.census", ...masteryCensus(person) }]);
+      if (unlocked.length) broadcast({ kind: "achievements", audience: person, unlocked });
+    }
+  } catch (error) {
+    console.warn(`achievements: the nightly pass failed (${error instanceof Error ? error.message : String(error)})`);
+  }
+}
+setTimeout(masteryNightly, 60_000).unref?.();
+setInterval(masteryNightly, 3_600_000).unref?.();
 /** The person a thread's work counts for: its owner, else the bot's owner. */
 function achievementThreadPerson(threadId: string): string | null {
   const bot = store.botByThread(threadId);
@@ -1067,6 +1167,13 @@ function observePushFrame(payload: Record<string, unknown>): void {
 }
 /** Server events read from live frames: a routine run that completed, a sub-agent, Auto picking a computer. */
 function observeAchievementFrame(payload: Record<string, unknown>): void {
+  if (payload.kind === "routine.run" || payload.kind === "runtime" || payload.kind === "message" || payload.kind === "message.patch") {
+    try {
+      recordMastery(masteryFrameFacts(payload, masteryFrameLookups));
+    } catch {
+      /* a bonus: never fail the frame */
+    }
+  }
   if (payload.kind === "routine.run" && payload.run && typeof payload.run === "object") {
     const run = payload.run as { id?: unknown; status?: unknown; routineId?: unknown };
     const events = routineRunEvents(run);
@@ -1353,6 +1460,79 @@ function messageSender(auth: RequestAuth): ResolvedSender | undefined {
   }
   const name = (auth.session.email ?? auth.session.label ?? "").trim();
   return name ? { name, id: actorKey(auth) } : undefined;
+}
+
+/** A person reacting to a message (shared/reactions.ts): their id as read
+ * receipts key it and the name the room shows. Null for a caller who is
+ * nobody in particular (a bot's own shell, an anonymous session). */
+function reactionPersonFor(auth: RequestAuth): ReactionActor | null {
+  const sender = messageSender(auth);
+  const id = personParticipant(actorPrincipalId(auth) || sender?.id || "");
+  if (!id) return null;
+  const local = auth.kind !== "session";
+  const name = sender?.name || (local ? cfg.profile?.name?.trim() : "") || personDisplayName(principals.byId(id)) || "";
+  return { id, kind: "person", name };
+}
+
+/** Who a stored `{ emoji, by: "user" }` reaction was: the operator of a
+ * personal server. An organization server cannot tell, and keeps "user". */
+function legacyReactionUser(): ReactionActor | undefined {
+  if (IDENTITY.kind === "perspicax") return undefined;
+  return { id: personParticipant(localPrincipalId()), kind: "person", name: cfg.profile?.name?.trim() || "" };
+}
+
+/** A reaction is a reader's mark like a read receipt: a read-only member
+ * of a shared room may leave one. */
+const REACTION_ROUTE = /^\/api\/threads\/[\w-]+\/messages\/[\w-]+\/reactions$/;
+
+/** Reactions one bot turn may add (react_to_message), across messages. */
+const MAX_BOT_REACTIONS_PER_TURN = 3;
+
+type BotReactionOutcome =
+  | { ok: true; messageId: string; emoji: string; changed: boolean; removed?: string[] }
+  | { ok: false; status: number; error: string; code: string };
+
+/** A bot's reaction from its turn (react_to_message, remove_reaction). The
+ * message is one of the turn's own thread: `messageId`, or when none is
+ * given the newest chat message someone else wrote (what the bot is
+ * answering). */
+function botReaction(input: { bot: { id: string; name: string }; threadId: string; messageId: string; emoji: unknown; remove: boolean; spent: number }): BotReactionOutcome {
+  const messages = store.messagesFor(input.threadId);
+  const soloBot = store.groupByThread(input.threadId) ? null : store.botByThread(input.threadId)?.id ?? null;
+  const authorBot = (message: Message) => message.role === "user" ? null : message.from?.botId ?? soloBot;
+  const target = input.messageId
+    ? messages.find((message) => message.id === input.messageId)
+    : messages.findLast((message) => message.kind === "text" && authorBot(message) !== input.bot.id && !message.id.startsWith("optimistic-"));
+  if (!target) {
+    return { ok: false, status: 404, code: "reaction_message", error: input.messageId
+      ? "No message with that id in this conversation. Omit message_id to react to the message you are answering."
+      : "There is no message here to react to." };
+  }
+  if (target.kind !== "text") return { ok: false, status: 400, code: "reaction_kind", error: "Only a chat message takes a reaction." };
+  if (authorBot(target) === input.bot.id) return { ok: false, status: 400, code: "reaction_own", error: "Never react to your own message." };
+  const actor: ReactionActor = { id: botReactionActorId(input.bot.id), kind: "bot", name: input.bot.name };
+  const current = normalizeReactions(target.reactions, legacyReactionUser());
+  const mine = reactionsBy(current, actor.id);
+  if (input.remove) {
+    const emoji = input.emoji === undefined || input.emoji === "" ? null : reactionEmoji(input.emoji);
+    if (input.emoji !== undefined && input.emoji !== "" && !emoji) return { ok: false, status: 400, code: "reaction_emoji", error: "emoji must be one emoji, or omitted to remove yours." };
+    const removing = emoji ? mine.filter((held) => held === emoji) : mine;
+    for (const held of removing) store.reactToMessage(input.threadId, target.id, held, actor, { mode: "remove", legacyUser: legacyReactionUser() });
+    return { ok: true, messageId: target.id, emoji: emoji ?? removing[0] ?? "", changed: removing.length > 0, removed: removing };
+  }
+  const emoji = reactionEmoji(input.emoji);
+  if (!emoji) return { ok: false, status: 400, code: "reaction_emoji", error: "emoji must be one emoji, such as 👍, ✅ or 👀." };
+  if (mine.includes(emoji)) return { ok: true, messageId: target.id, emoji, changed: false };
+  if (mine.length) {
+    return { ok: false, status: 409, code: "reaction_one", error: `You already reacted ${mine.join(" ")} to this message: one reaction per message. Use remove_reaction first only if it no longer fits.` };
+  }
+  if (input.spent >= MAX_BOT_REACTIONS_PER_TURN) {
+    return { ok: false, status: 429, code: "reaction_budget", error: `You already added ${MAX_BOT_REACTIONS_PER_TURN} reactions this turn. Reply in words instead.` };
+  }
+  const result = store.reactToMessage(input.threadId, target.id, emoji, actor, { mode: "add", legacyUser: legacyReactionUser() });
+  if (!result) return { ok: false, status: 404, code: "reaction_message", error: "That message is gone." };
+  if (result.full) return { ok: false, status: 409, code: "reaction_full", error: "This message has too many different reactions." };
+  return { ok: true, messageId: target.id, emoji, changed: result.changed };
 }
 
 /** Who a request's turn speaks for (slice 3 engine access): the signed-in
@@ -2137,6 +2317,8 @@ function autoRecallPrompt(bot: BotRecord, threadId: string, message: string, opt
       ...(opts.budget ? { budget: opts.budget } : {}),
     });
     if (recalled) console.log(`auto-recall: ${bot.name} (${bot.id}) got ${recalled.notes} note and ${recalled.conversations} conversation passage(s) in ${threadId}`);
+    // its memory recalled in this conversation (Total Recall, for whoever wrote that memory)
+    if (recalled?.notes) recordMastery([{ person: achievementThreadPerson(threadId) ?? "", fact: { kind: "memory.recalled", botId: bot.id, threadId } }]);
     return recalled?.text ?? "";
   } catch (err) {
     console.warn(`auto-recall failed for ${bot.id}: ${(err as Error).message}`);
@@ -2803,6 +2985,8 @@ type InternalCapability = {
   attachedFiles?: number;
   /** post_to_room calls this turn has made. */
   roomPosts?: number;
+  /** react_to_message calls this turn has made (MAX_BOT_REACTIONS_PER_TURN). */
+  reactions?: number;
   /** Group memory updates refused this turn (bot memory archives at the cap instead). */
   memoryRefusals?: number;
   /** Delegations this turn handed out: their ids may not be checked or
@@ -3073,7 +3257,7 @@ const createSidebarSectionSchema = z.object({
   name: z.string(),
   botIds: z.array(z.string().regex(/^[\w-]+$/)).max(MAX_WORKSPACE_BOTS).default([]),
 }).strict();
-const createGroupTaskRequestSchema = z.object({ title: z.string().optional() });
+const createGroupTaskRequestSchema = z.object({ title: z.string().optional(), projectId: z.string().regex(/^[\w-]+$/).optional() });
 const phoneSecretEnvelopeSchema = z.object({
   version: z.literal(PHONE_SECRET_PROTOCOL_VERSION),
   threadId: z.string().regex(/^[\w-]{1,128}$/),
@@ -4402,7 +4586,8 @@ async function defaultSelection(saved: ModelSelection | null = cfg.defaultModelS
   if (hostedModels) return hostedModels.select(saved ?? undefined);
   return selectDefaultModelSelection(await registry.describe(), saved ?? undefined, {
     company: (instanceId) => managedDesktop.owns(instanceId),
-    refusal: (instance) => policyModelRefusal(instance),
+    // a new bot starts on an engine the organization allows
+    refusal: (instance) => policyModelRefusal(instance) ?? orgEngineAllowRefusal(instance.instanceId),
   });
 }
 
@@ -4493,6 +4678,11 @@ function checkedModelSelection(
     model: value.model.trim(),
   };
   if (hostedModels && !hostedModels.allows(selection)) return { ok: false, status: 400, error: hostedModels.error() };
+  // The organization's allowed providers; the engine a bot already runs on
+  // stays writable (its effort) until the fallback moves it.
+  if ((!current || current.selection.instanceId !== selection.instanceId) && orgEngineAllowRefusal(selection.instanceId)) {
+    return { ok: false, status: 403, error: ORG_ENGINE_NOT_ALLOWED };
+  }
   // Auto (docs/plans/2026-10-08-auto-model.md): only true is stored.
   if (value.auto !== undefined && value.auto !== true && value.auto !== false) {
     return { ok: false, status: 400, error: "modelSelection.auto must be a boolean" };
@@ -4595,7 +4785,7 @@ function threadModelGivingWay(botId: string, threadId: string): ModelSelection |
   const own = store.taskByThread(botId, threadId)?.modelSelection;
   if (!bot || !own) return null;
   return threadModelFallback(own, bot.modelSelection, threadEngine, {
-    refusal: policyModelRefusal,
+    refusal: (instance) => policyModelRefusal(instance) ?? orgEngineAllowRefusal(instance.instanceId),
     ...(hostedModels ? { allows: (selection: ModelSelection) => hostedModels!.allows(selection) } : {}),
   }) ? own : null;
 }
@@ -5082,9 +5272,34 @@ function pluginMarketplacePolicy(): MarketplacePolicy | undefined {
   const parsed = marketplacePolicySchema.safeParse(cfg.organization?.pluginMarketplaces);
   return parsed.success ? parsed.data : undefined;
 }
+/** The organization's GitHub tokens (Settings > Organization > Plugins and
+ * GitHub, server/org-github-tokens.ts). */
+const orgGithubTokens = new OrgGithubTokens(DATA_DIR, vaultKeySource);
+/** A token per plugin marketplace of a bot (server/marketplace-tokens.ts). */
+const marketplaceTokens = new MarketplaceTokens(DATA_DIR, vaultKeySource);
+/** Who reads a private GitHub repository for `actor`: their own GitHub
+ * connection, then the organization's tokens (organization server). The
+ * marketplace's own token comes first (server/bot-plugins.ts). */
+function githubCredentialsFor(actor: string | null | undefined): GithubCredential[] {
+  const person = usablePersonGithub(actor)?.token;
+  const credentials: GithubCredential[] = person ? [{ token: person, via: "person" }] : [];
+  if (IDENTITY.kind === "perspicax" && !personIntegrationsOff(actor)) {
+    try {
+      for (const entry of orgGithubTokens.list()) {
+        const token = orgGithubTokens.tokenFor(entry.id);
+        if (token) credentials.push({ token, via: "organization", label: entry.label });
+      }
+    } catch {
+      // an unreadable token file leaves the person's own access
+    }
+  }
+  return credentials;
+}
 const botPlugins = new BotPlugins({
   dataDir: DATA_DIR,
   gitEnvironment: (actor) => githubGitEnvironment(usablePersonGithub(actor)?.token),
+  credentials: ({ actor }) => githubCredentialsFor(actor),
+  tokens: marketplaceTokens,
   policy: pluginMarketplacePolicy,
 });
 const stdioRelay = new SandboxStdioRelay({
@@ -5425,13 +5640,16 @@ function previewSystemPrompt(bot: BotRecord) {
     { id: "browser", label: "Browser", text: previewPlan.browser ? BUILT_IN_BROWSER_SYSTEM_PROMPT : "" },
     { id: "coordination", label: "Team", text: agentsMounted && coordination ? ` ${coordination}` : "" },
     { id: "credential", label: "Credentials", text: agentsMounted ? CREDENTIAL_PROMPT : "" },
+    { id: "reactions", label: "Reactions", text: agentsMounted ? REACTION_PROMPT : "" },
     { id: "routine", label: "Routines", text: agentsMounted ? ROUTINE_PROMPT : "" },
     { id: "profile", label: "Profile changes", text: agentsMounted ? PROFILE_PROMPT : "" },
     { id: "rich-output", label: "Rich output", text: RICH_OUTPUT_PROMPT },
     { id: "section-context", label: "Section context", text: sectionContextSystemPrompt(bot.section) },
     { id: "team-memory", label: "Team memory", text: teamMemory.systemPrompt(bot.section) + (agentsMounted ? TEAM_MEMORY_PROMPT : "") },
     teamAvailabilityPart(agentsMounted && coordination ? peers : []),
+    { id: "rules", label: "Rules (RULES.md)", text: rulesSystemPrompt(bot.id, { writes: agentsMounted }) },
     { id: "memory", label: "Memory", text: memorySystemPrompt(bot.id, { managedWrites: agentsMounted, fileTools: Boolean(privateWorkspace), enabled: bot.memoryEnabled !== false }) },
+    { id: "docs", label: "Documents index", text: docsIndexPrompt(bot.id, { tools: agentsMounted ? "agents" : privateWorkspace ? "files" : "none" }) },
     { id: "skills", label: "Skills index", text: privateWorkspace ? skillsSystemPrompt(bot.id, skillsLibraryEnabled(cfg) ? bot.assignedSkills : undefined) + pluginSkillsForTurn(bot, instance) : "" },
   ]);
   const totalBytes = built.sections.reduce((n, s) => n + s.bytes, 0);
@@ -6800,8 +7018,9 @@ activeCoordinationForThread = threadId => roomHandoffs.activeDirect(threadId);
 const groupUsageReader = new GroupUsageReader(DATA_DIR);
 try { groupUsageReader.refresh(); } catch { /* accounting must not block startup */ }
 function publicGroupState(record: GroupRecord): WireGroup {
-  // The organization library's part hashes stay server-side.
-  const { installedPackage: _installedPackage, ...group } = record;
+  // The organization library's part hashes and the person-thread migration
+  // marker stay server-side.
+  const { installedPackage: _installedPackage, personThreads: _personThreads, ...group } = record;
   let usage: WireGroup["usage"];
   try { usage = groupUsageReader.forThread(group.threadId); } catch { /* accounting must not block chat */ }
   // Organization server: who owns the group's settings (null: its admins).
@@ -7271,6 +7490,9 @@ store.onChange((change) => {
       sentThreads.delete(change.botId);
       try { commandAllowlist.clear(change.botId); }
       catch { console.error("[command-allowlist] Could not remove deleted bot's saved rules."); }
+      // Its plugins and the tokens saved for its marketplaces go with it.
+      try { botPlugins.forgetBot(change.botId); }
+      catch { console.error("[bot-plugins] Could not remove deleted bot's plugins."); }
       broadcast({ kind: "bot.deleted", botId: change.botId });
       break;
     case "group": {
@@ -8201,8 +8423,12 @@ function sseFrameFor(
   if (payload && viewerNotificationMuted(payload, client.viewerId)) return null;
   // A conversation between two people carries each person's own unread
   // state, and never who else has read it (server/people-dms.ts).
-  if (payload?.kind === "group" && payload.group && typeof payload.group === "object" && Array.isArray((payload.group as { unreadFor?: unknown }).unreadFor)) {
-    payload = { ...payload, group: peopleDmForViewer(payload.group as { peopleDm?: boolean; unread?: boolean; unreadFor?: string[] }, client.viewerId || client.approvalUserId || localPrincipalId()) };
+  // Its threads too, per thread. A frame always carries the default
+  // thread: a client that knows threads keeps the one it has open.
+  if (payload?.kind === "group" && payload.group && typeof payload.group === "object" &&
+    (Array.isArray((payload.group as { unreadFor?: unknown }).unreadFor) || (payload.group as { peopleDm?: unknown }).peopleDm === true)) {
+    const carried = payload.group as { peopleDm?: boolean; unread?: boolean; unreadFor?: string[]; tasks?: Array<{ threadId: string; unreadFor?: string[] }> };
+    payload = { ...payload, group: peopleDmForViewer(carried, client.viewerId || client.approvalUserId || localPrincipalId()) };
     const serialized = `id: ${STREAM_ID}:${seq}\ndata: ${JSON.stringify({ ...payload, seq })}\n\n`;
     frame = serialized;
     if (clientFrame !== null) clientFrame = serialized;
@@ -8523,6 +8749,8 @@ const lastReply = new Map<string, string>();
 /** the model each thread's provider session announced in session.started,
  * so a fallback notice can name the model Auto is unavailable for */
 const sessionModelByThread = new Map<string, string>();
+/** The model and effort of each thread's latest dispatched turn (server/turn-run.ts). */
+const turnRunByThread = new Map<string, TurnRun>();
 /** threads already told that the provider's reviewer never started */
 const nativeReviewNoticed = new Set<string>();
 /** a driver kind as the chat should name it: "claudeAgent" → "Claude" */
@@ -10109,7 +10337,8 @@ bus.subscribe((event: RuntimeEvent) => {
   };
 
   if (coordinatorVisibleText) {
-    pushMessage({ role: "bot", kind: "text", text: coordinatorVisibleText, turnId: completedTurnId });
+    const ran = bot ? turnRunByThread.get(event.threadId) : undefined;
+    pushMessage({ role: "bot", kind: "text", text: coordinatorVisibleText, turnId: completedTurnId, ...(ran ? { turnRun: ran } : {}) });
     lastReply.set(event.threadId, coordinatorVisibleText);
   }
   if (bot) handoffs.onEvent(event);
@@ -10132,7 +10361,8 @@ bus.subscribe((event: RuntimeEvent) => {
     case "item.completed":
       if (event.itemType === "assistant_text") {
         const text = event.text;
-        pushMessage({ role: "bot", kind: "text", text, turnId: event.turnId });
+        const ran = bot ? turnRunByThread.get(event.threadId) : undefined;
+        pushMessage({ role: "bot", kind: "text", text, turnId: event.turnId, ...(ran ? { turnRun: ran } : {}) });
         // kept so "finished" can say what it finished with, rather than
         // just that something ended
         lastReply.set(event.threadId, text);
@@ -11102,6 +11332,52 @@ function auditRoutineRunsCleared(auth: RequestAuth, count: number): void {
     actor: IDENTITY.kind === "perspicax" ? orgAuditActor(auth) : decisionActorFor(auth),
   });
 }
+/** The Automations page scope (server/routine-scope.ts, 2026-10-09): who
+ * the caller is for the scope rules. */
+function routineScopeCaller(auth: RequestAuth, viewerId: string | undefined): RoutineScopeCaller {
+  return {
+    admin: orgAdminCaller(auth),
+    viewTeam: callerCan(auth, "routines.viewTeam"),
+    viewAll: callerCan(auth, "routines.viewAll"),
+    teamIds: IDENTITY.kind === "perspicax" && viewerId ? principalTeams(viewerId).map((team) => team.id) : [],
+  };
+}
+/** A routine's or run's owner, run-as person, teams and bot, for the scope. */
+function routineScopeFacts(value: { botId: string; runAs?: string }): RoutineScopeFacts {
+  const bot = store.bot(value.botId);
+  const ownerId = bot ? effectiveBotOwner(bot) : "";
+  const runAsId = effectiveRunAs(value);
+  const teamIds = new Set<string>();
+  if (IDENTITY.kind === "perspicax") {
+    for (const principalId of [ownerId, runAsId]) {
+      if (principalId) for (const team of principalTeams(principalId)) teamIds.add(team.id);
+    }
+    if (bot) for (const grant of botGrants(bot)) if (grant.target.startsWith("team:")) teamIds.add(grant.target.slice("team:".length));
+  }
+  const owner = ownerId && isPrincipalId(ownerId) ? principals.byId(ownerId) : null;
+  const ownerAvatarUrl = personAvatarUrl(owner);
+  return {
+    ownerId,
+    ownerName: owner?.name || owner?.login || "",
+    ...(ownerAvatarUrl ? { ownerAvatarUrl } : {}),
+    ...(runAsId ? { runAsId } : {}),
+    teamIds: [...teamIds],
+    bot: { id: value.botId, name: bot?.name ?? "" },
+  };
+}
+/** The scope's view of one request: `mine` is the listing's own rule, and
+ * Run now and Edit answer what their routes would. */
+function routineScopeDeps(auth: RequestAuth, visible: VisibleSet, viewerId: string | undefined): RoutineScopeDeps<ReturnType<typeof routineOnWire>> {
+  const mine = (value: Routine | RoutineRun) => routineVisible(value, visible) && (!viewerId || routineSeenBy(value, viewerId));
+  return {
+    mine,
+    facts: routineScopeFacts,
+    canRun: (routine) => !routineNeedsRun(auth, routine.botId) && mayRunRoutineNow(auth, routine),
+    canEdit: (routine) => !routineNeedsRun(auth, routine.botId),
+    wire: routineOnWire,
+    teamName: (teamId) => orgTeams.name(teamId),
+  };
+}
 /** The speaker of a routine run's turns. */
 function routineRunSpeaker(run: { runAs?: string; botId: string }): TurnSpeaker {
   const principalId = effectiveRunAs(run);
@@ -11552,6 +11828,15 @@ function finalizeDelegationWatch(
       result: ok ? reply : failureName,
       ...(worker?.role === "worker" ? { workerModel: { engine: worker.engineLabel, model: worker.modelLabel, ...(worker.taskClass ? { taskClass: worker.taskClass } : {}) } } : {}),
     });
+    recordMastery(masteryDelegationFacts({
+      person: achievementThreadPerson(watched.sourceThreadId),
+      sourceThreadId: watched.sourceThreadId,
+      toBotId: watched.toBotId,
+      ok,
+      id: watched.taskId,
+      sourceModel: masteryThreadModel(watched.sourceThreadId),
+      workerModel: worker?.model ?? store.taskByThread(watched.toBotId, threadId)?.modelSelection?.model ?? target?.modelSelection?.model ?? null,
+    }));
   }
   if (watched.oneWay) {
     if (!ok && store.taskByThread(watched.toBotId, threadId)) {
@@ -12984,6 +13269,8 @@ async function startTurn(
   }
   const policyRefusal = policyModelRefusal(instance);
   if (policyRefusal) throw Object.assign(new Error(policyRefusal), { status: 409, code: "managed_policy" });
+  const orgRefusal = orgEngineAllowRefusal(instance.instanceId);
+  if (orgRefusal) throw Object.assign(new Error(orgRefusal), { status: 409, code: "engine_not_allowed" });
   const toolScope = toolScopeForTurn(bot.id);
   // On a Cloud home a guest's turn never gets a shell or reads outside its
   // own folder (docs/cloud-pro.md): an engine that cannot run it that way is
@@ -13059,6 +13346,9 @@ async function startTurn(
   const model = bot.modelSelection.model;
   const effort = bot.modelSelection.effort;
   const variant = bot.modelSelection.variant;
+  // What this turn runs on, kept for the bot text it writes (a quiet line
+  // under the reply shows it). A warm-up writes no reply.
+  if (!warmOnly) turnRunByThread.set(threadId, turnRunFor(bot.modelSelection));
   assertModelVariantSupported({ variant, effort }, instance.adapter.capabilities);
   // A selection can be persisted while its engine is offline. Re-check when
   // the engine returns so an old or unsupported value never reaches a CLI.
@@ -14110,7 +14400,7 @@ async function startTurn(
           // model mostly did not think to make.
           ? peerRosterSystemPrompt(sectionPeers, boundedCoordination)
           : "";
-      const credentialPrompt = integrations.agents ? CREDENTIAL_PROMPT + (boundedCoordination ? "" : THREADS_PROMPT) : "";
+      const credentialPrompt = integrations.agents ? CREDENTIAL_PROMPT + REACTION_PROMPT + (boundedCoordination ? "" : THREADS_PROMPT) : "";
       const routinePrompt = integrations.agents ? ROUTINE_PROMPT : "";
       const profilePrompt = integrations.agents ? PROFILE_PROMPT : "";
       const recallPrompt = integrations.agents && bot.memoryEnabled !== false ? SESSION_SEARCH_SYSTEM_PROMPT : "";
@@ -14258,7 +14548,11 @@ async function startTurn(
         // never redoes — or forgets — what another one already did
         // not on a call: a phone turn stays short (docs/voice-mode-xai.md, "Latency")
         { id: "recent", label: "Recent work", text: onCall ? "" : recentWorkPrompt(recentWorkFor(bot, threadId, { userName: botUserName(bot) })) },
+        // RULES.md: listed here, placed right after the soul by buildSystemPrompt
+        { id: "rules", label: "Rules (RULES.md)", text: rulesSystemPrompt(bot.id, { writes: Boolean(integrations.agents) }) },
         { id: "memory", label: "Memory", text: memorySystemPrompt(bot.id, { managedWrites: Boolean(integrations.agents), fileTools: worksInWorkspace, enabled: bot.memoryEnabled !== false }) },
+        // docs/: an index only, never the documents (server/workspace-files.ts)
+        { id: "docs", label: "Documents index", text: docsIndexPrompt(bot.id, { tools: integrations.agents ? "agents" : worksInWorkspace ? "files" : "none" }) },
         // liveBot was captured before awaited setup work; an assignment PUT
         // in that window must still reach this turn's prompt.
         { id: "skills", label: "Skills index", text: privateWorkspace ? skillsSystemPrompt(bot.id, skillsLibraryEnabled(cfg) ? (store.bot(bot.id)?.assignedSkills ?? bot.assignedSkills) : undefined) + pluginSkillsForTurn(bot, instance) : "" },
@@ -14270,6 +14564,8 @@ async function startTurn(
         { id: "voice-call", label: "Phone call", text: voiceCallText },
       ]);
       turnPromptBytes.set(threadId, { stable: Buffer.byteLength(prompt.stable), volatile: Buffer.byteLength(prompt.volatile) });
+      // the Files list's "last used": what this turn's prompt carried
+      markWorkspaceUse(bot.id, promptSectionPaths(prompt.sections));
       // Automatic recall rides in front of THIS turn's message, never in the
       // system prompt: the volatile half is re-sent whole whenever any part of
       // it changes, and recall changes nearly every turn.
@@ -16941,7 +17237,7 @@ async function runGroupMemberTurn(
     readyGroup.bulletin.trim() && `Room bulletin (shared instructions for everyone):\n${readyGroup.bulletin.trim()}`,
     `Reply as yourself, briefly and conversationally. To bring a teammate in, mention them like @Name — they'll see the conversation and respond.`,
     outsideRoom.length > 0 && roomPeerRosterSystemPrompt(outsideRoom),
-    integrations.agents && (CREDENTIAL_PROMPT + (orchestration && !orchestration.roomHandoffId ? THREADS_PROMPT : "")).trim(),
+    integrations.agents && (CREDENTIAL_PROMPT + REACTION_PROMPT + (orchestration && !orchestration.roomHandoffId ? THREADS_PROMPT : "")).trim(),
     integrations.agents && (!orchestration || orchestration.roomHandoffId) && "For actual Sagax teamwork, discover IDs with list_room_targets and use coordinate_bots for advice or work in this or another room. Do not substitute native coding helpers for these named bots. Consult only when needed to make a decision; no discussion step is mandatory. Give concrete responsibilities, exact accessible paths and acceptance checks. End your turn after assigning; busy teammates queue and results automatically resume you. When they return, finish the requested verification and give the user one final answer. Native helper names are not evidence that a Sagax teammate participated. Plain @mentions are only for conversational replies in this room.",
     integrations.agents && ROUTINE_PROMPT.trim(),
     integrations.agents && PROFILE_PROMPT.trim(),
@@ -17039,7 +17335,9 @@ async function runGroupMemberTurn(
     // byte-identical. The write guidance follows the tools actually
     // mounted, exactly as the 1:1 path decides it: memory_update is on the
     // agents server, so a room turn with it must be told to use it too.
+    { id: "rules", label: "Rules (RULES.md)", text: rulesSystemPrompt(bot.id, { writes: Boolean(integrations.agents) }) },
     { id: "memory", label: "Memory", text: roomMemory ? `\n${roomMemory.trim()}` : "" },
+    { id: "docs", label: "Documents index", text: docsIndexPrompt(bot.id, { tools: integrations.agents ? "agents" : workspace ? "files" : "none" }) },
     // The group's shared memory: every bot of the group reads it here; only
     // explicit group_memory_update writes reach it (server/group-memory.ts).
     { id: "group-memory", label: "Group memory", text: (() => {
@@ -17162,6 +17460,7 @@ async function runGroupMemberTurn(
     providerDispatched = true;
     if (roomConsumedId) noteBotRead(readyBot.id, threadId, [roomConsumedId]);
     turnPromptBytes.set(threadId, { stable: Buffer.byteLength(roomSystem.stable), volatile: Buffer.byteLength(roomSystem.volatile) });
+    markWorkspaceUse(bot.id, promptSectionPaths(roomSystem.sections));
     runningTurnEngines.set(threadId, instance);
     // notes only in a room: a private chat reaches a room through the
     // explicit, disclosed session_search, never automatically
@@ -19582,6 +19881,8 @@ function configStatus() {
     ...(IDENTITY.kind === "perspicax" ? {} : { signIn: { admins: cfg.signIn?.admins ?? [], members: cfg.signIn?.members ?? [] } }),
     // whether that list decides anything here, or the organisation's Admin does
     membership: workspaceMembership(),
+    // organization server: the model providers its admin allows (null: all)
+    ...(IDENTITY.kind === "perspicax" ? { allowedEngines: orgAllowedEngines() } : {}),
   };
 }
 
@@ -19964,6 +20265,7 @@ function autoEnginesFor(bot: BotRecord, speaker: TurnSpeaker, guestConfined = fa
   }
   for (const instance of registry.instances()) {
     if (!instance.enabled || providerInstancesChanging.has(instance.instanceId) || policyModelRefusal(instance)) continue;
+    if (orgEngineAllowRefusal(instance.instanceId)) continue;
     // A guest's turn on a Cloud home runs only on an engine that confines it.
     if (guestConfined && instance.adapter.capabilities.guestTurns !== "confined") continue;
     const own = instance.instanceId === base?.instanceId;
@@ -20569,6 +20871,22 @@ ROUTES.push(createBotMemoryRoutes({
     broadcast({ kind: "config", ...configStatus() });
   },
 }));
+// The persona editor's Files category: the workspace tree, downloads, and
+// document renames, RULES.md and docs/ saves (server/routes/bot-workspace.ts).
+// The Soul edit's gate: owner or admin.
+ROUTES.push(createBotWorkspaceRoutes({
+  bot: (id) => store.bot(id),
+  // the Soul edit's gate (PATCH /api/bots/:id): admin, owner or edit grant;
+  // never a person who may only use shared bots
+  mayEdit: (auth, botId) => {
+    const bot = store.bot(botId);
+    return Boolean(bot) && ownerOrAdminOf(auth, bot!) && !callerBotsReadOnly(auth);
+  },
+  ...(lendingMemory ? {
+    ownersWrite: <T,>(auth: RequestAuth, botId: string, write: () => T): T =>
+      cloudOwnerSession(auth) ? lendingMemory.trustedWrite(botId, write) : write(),
+  } : {}),
+}));
 // The usage ledger (JSON and CSV). Admin scope stays in server/request-auth.ts.
 ROUTES.push(createUsageRoutes({
   dataDir: DATA_DIR,
@@ -20765,7 +21083,7 @@ const pluginRegistry = createRegistrySearch();
 // servers (source: the marketplace) and library skills.
 const pluginMarketplaces = new PluginMarketplaces({
   dataDir: DATA_DIR,
-  gitEnvironment: (actor) => githubGitEnvironment(usablePersonGithub(actor)?.token),
+  gitEnvironment: (actor) => githubGitEnvironment(githubCredentialsFor(actor)[0]?.token),
   policy: pluginMarketplacePolicy,
 });
 ROUTES.push(createMarketplaceRoutes({
@@ -21088,7 +21406,22 @@ ROUTES.push(createPeopleDmRoutes<GroupRecord>({
   displayName: (principalId) => personDisplayName(principals.byId(principalId)) || "",
   groups: () => store.groups,
   create: ({ a, b, name }) => store.createGroup(name, [], false, undefined, { defaultResponder: { kind: "mentions" } }, [a, b], { peopleDm: true, createdBy: a }),
-  project: (group) => ({ ...publicGroupState(group), messages: store.messagesFor(group.threadId) }),
+  // Opening the conversation answers its default thread, as before threads,
+  // each person's own unread state and never the other's.
+  project: (group, auth) => peopleDmForViewer({ ...publicGroupState(group), messages: store.messagesFor(group.threadId) }, auth ? groupReaderId(auth) : undefined),
+}));
+// The folders of a person conversation's threads (server/routes/group-folders.ts).
+ROUTES.push(createGroupFolderRoutes({
+  group: (groupId) => store.group(groupId),
+  folder: (groupId, projectId) => store.groupProject(groupId, projectId),
+  create: (groupId, name, emoji) => store.createGroupProject(groupId, name, emoji),
+  patch: (groupId, projectId, patch) => store.patchGroupProject(groupId, projectId, patch),
+  reorder: (groupId, projectIds) => store.reorderGroupProjects(groupId, projectIds),
+  remove: (groupId, projectId) => store.deleteGroupProject(groupId, projectId) !== null,
+  project: (groupId, auth) => {
+    const group = store.group(groupId);
+    return group ? peopleDmProjection(group, groupReaderId(auth), true) : null;
+  },
 }));
 // One cooldown for every client of this process (server/nudge.ts).
 const nudges = new NudgeCooldown();
@@ -21151,10 +21484,11 @@ ROUTES.push(createNudgeRoutes({
       return group ? { id: group.id, threadId: group.threadId } : undefined;
     },
     append: (threadId, message) => { store.appendMessage(threadId, message); },
-    markUnread: (groupId, personId) => {
+    markUnread: (groupId, personId, threadId) => {
       const group = store.group(groupId);
-      store.patchGroup(groupId, group?.peopleDm && personId ? peopleDmUnreadPatch(group, personId, true) : { unread: true });
+      store.patchGroup(groupId, group?.peopleDm && personId ? peopleDmThreadUnreadPatch(group, personId, true, threadId) : { unread: true });
     },
+    hasThread: (groupId, threadId) => Boolean(store.groupTaskByThread(groupId, threadId)),
   }, line),
 }));
 // People's custom labels (server/routes/person-labels.ts): the directory's
@@ -21194,10 +21528,53 @@ ROUTES.push(createPersonLabelRoutes({
     });
   },
 }));
+// Which thread of a person conversation each of its two people has open
+// (server/people-dms.ts): theirs, in memory, like a bot's per-viewer thread.
+const peopleDmSelections = new PeopleDmSelections();
+/** The request comes from a client that knows a person conversation has
+ * threads. A client from before threads never says so, and keeps reading
+ * and writing the conversation's default thread. */
+function knowsPersonThreads(req: IncomingMessage): boolean {
+  return req.headers[PEOPLE_DM_THREADS_HEADER] === "1";
+}
+/** The thread one person has open in a person conversation: their own
+ * selection when their client knows threads and it still exists, else the
+ * conversation's default thread. */
+function peopleDmOpenThread(group: GroupRecord, personId: string | undefined, knows: boolean): string {
+  if (!group.peopleDm || !knows) return group.threadId;
+  const selected = peopleDmSelections.get(group.id, personId);
+  return selected && group.tasks?.some((task) => task.threadId === selected) ? selected : group.threadId;
+}
+/** A person conversation as one of its people sees it: their unread state,
+ * their open thread and, with `page`, that thread's newest messages. A
+ * client from before threads (`knows` false) gets the default thread alone,
+ * the one conversation it always had. */
+function peopleDmProjection(group: GroupRecord, personId: string | undefined, knows: boolean, page?: { limit: number | undefined; viewer: ApprovalViewer }) {
+  const open = peopleDmOpenThread(group, personId, knows);
+  const tasks = store.groupTasks(group.id);
+  const base = {
+    ...publicGroupState(group),
+    tasks: knows ? tasks : tasks.filter((task) => task.threadId === group.threadId),
+    ...(page ? messagePage(open, page.limit, null, page.viewer) : {}),
+  };
+  return peopleDmForViewer(base, personId, open);
+}
+/** The thread a request names in a person conversation (a message, a read,
+ * a nudge), or its default thread when it names none. A thread that is not
+ * one of its own is refused. */
+function peopleDmThreadOf(group: GroupRecord, raw: unknown): string {
+  if (raw === undefined || raw === null || raw === "") return group.threadId;
+  if (typeof raw !== "string" || !/^[\w-]+$/.test(raw) || !store.groupTaskByThread(group.id, raw)) {
+    throw Object.assign(new Error("threadId must be one of this conversation's threads"), { status: 400 });
+  }
+  return raw;
+}
+
 /** A person's message in a conversation between two people: it starts no
- * turn, marks the conversation unread and notifies the other person only. */
-function sendPeopleDmMessage(group: GroupRecord, auth: RequestAuth, text: string, rawSendId: unknown, rawReplyTo: unknown) {
-  const threadId = group.threadId;
+ * turn, marks that thread (and so the conversation) unread and notifies the
+ * other person only. No thread named: the default thread, as before threads. */
+function sendPeopleDmMessage(group: GroupRecord, auth: RequestAuth, text: string, rawSendId: unknown, rawReplyTo: unknown, rawThreadId?: unknown) {
+  const threadId = peopleDmThreadOf(group, rawThreadId);
   const sendId = parseSendId(typeof rawSendId === "string" ? rawSendId : undefined);
   const replyTo = resolveReplyTarget(threadId, rawReplyTo);
   if (sendId) {
@@ -21207,10 +21584,13 @@ function sendPeopleDmMessage(group: GroupRecord, auth: RequestAuth, text: string
   }
   const sender = messageSender(auth);
   const message = store.appendMessage(threadId, { role: "user", kind: "text", text, replyToId: replyTo?.id, sendId, sender });
+  // A new thread is named after its first message, like a bot's; "General"
+  // and a thread the person titled keep their name.
+  store.titleGroupTaskFromFirstMessage(group.id, text, threadId);
   const from = channelViewerId(auth);
   const to = from ? otherPerson(group, from) : undefined;
-  // unread for the recipient only: the sender reading it clears nothing
-  store.patchGroup(group.id, to ? peopleDmUnreadPatch(store.group(group.id) ?? group, to, true) : { unread: true });
+  // unread for the recipient only, on this thread: the sender reading it clears nothing
+  store.patchGroup(group.id, to ? peopleDmThreadUnreadPatch(store.group(group.id) ?? group, to, true, threadId) : { unread: true });
   if (to && sender) {
     const avatarUrl = personAvatarUrl(principals.byId(from!));
     broadcast({ kind: "notify", notification: {
@@ -22925,7 +23305,6 @@ if (IDENTITY.kind === "perspicax") {
     }),
     attach: ({ from, to, auth }) => attachInterimPerson(from, to, auth),
   }));
-  const orgGithubTokens = new OrgGithubTokens(DATA_DIR, vaultKeySource);
   ROUTES.push(createPerspicaxOrgRoutes({
     issuer,
     orgName: process.env.SAGAX_ORG_NAME?.trim().slice(0, 120) || "Pulsatrix",
@@ -23985,6 +24364,32 @@ const orgBotsDeps: BotsDeps = {
     const exported = singleBotPackage(bot, true);
     return { document: exported.document, filename: exported.filename, redacted: exported.redacted, skipped: exported.skipped };
   },
+  // The canonical bot zip (server/bot-zip.ts), for "Copy to another server".
+  exportZip: (botId, options) => {
+    const plan = planBotZip(botZipHost, botId, options);
+    return { filename: plan.filename, bytes: plan.bytes, write: (sink) => writeBotZip(plan, sink) };
+  },
+  importZip: async (request, input) => {
+    const file = join(DATA_DIR, "tmp", "bot-imports", `console-${randomUUID()}.upload`);
+    try {
+      await stageBotZipUpload(request, file);
+      const inspected = inspectBotZip(file);
+      try {
+        if (input.preview) return { preview: await previewBotZip(botZipHost, inspected, { asMember: false }, input.name) };
+        const result = await importBotZip(botZipHost, inspected, { ownerPrincipalId: input.ownerPrincipalId, asMember: false, conversations: input.conversations, sharing: input.sharing, ...(input.name ? { name: input.name } : {}) });
+        const bot = store.bot(result.botId);
+        if (bot) broadcast({ kind: "bot", bot: publicBot(bot) });
+        return { botId: result.botId, warnings: result.warnings };
+      } finally {
+        closeInspected(inspected);
+      }
+    } catch (error) {
+      if (error instanceof BotZipError) throw new ConsoleRefusal(error.status, error.code, error.message);
+      throw error;
+    } finally {
+      rmSync(file, { force: true });
+    }
+  },
   importPackage: async (document, input) => {
     const { bots, warnings } = await importPackageFor(document, input.ownerPrincipalId);
     const first = bots[0];
@@ -24090,6 +24495,103 @@ ROUTES.push(createBotCatalogRoutes({
       ...row,
       actor: IDENTITY.kind === "perspicax" ? orgAuditActor(auth) : decisionActorFor(auth),
     });
+  },
+}));
+
+/** A bot as one zip (server/bot-zip.ts, server/routes/bot-zip.ts): the
+ * persona editor's Export and Import, New bot, Browse Bots > Templates and
+ * the admin console all read and write this one format. */
+function mcpServerSummary(name: string): { transport?: string; url?: string; command?: string; valueNames: string[] } | undefined {
+  const raw = (cfg.mcpServers ?? {})[name];
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return undefined;
+  const spec = raw as Record<string, unknown>;
+  const names = (value: unknown) => value && typeof value === "object" && !Array.isArray(value) ? Object.keys(value).slice(0, 50) : [];
+  let url: string | undefined;
+  if (typeof spec.url === "string") {
+    try {
+      const parsed = new URL(spec.url);
+      url = `${parsed.origin}${parsed.pathname}`;
+    } catch { url = undefined; }
+  }
+  return {
+    ...(typeof spec.type === "string" ? { transport: spec.type.slice(0, 20) } : url ? { transport: "http" } : typeof spec.command === "string" ? { transport: "stdio" } : {}),
+    ...(url ? { url } : {}),
+    ...(typeof spec.command === "string" ? { command: spec.command.split(/[\\/]/).pop()!.slice(0, 200) } : {}),
+    valueNames: [...names(spec.headers), ...names(spec.env)],
+  };
+}
+const botZipHost: BotZipHost = {
+  store,
+  dataDir: DATA_DIR,
+  get appVersion() { return serverVersion(); },
+  get organization() { return IDENTITY.kind === "perspicax"; },
+  routines: () => routines,
+  webhooks: () => ({
+    list: () => webhooks.list(),
+    create: (input) => webhooks.create(input as Parameters<typeof webhooks.create>[0]),
+    remove: (id) => webhooks.remove(id),
+  }),
+  plugins: botPlugins,
+  marketplaceTokenSources: (botId) => marketplaceTokens.sourcesFor(botId),
+  emailOf: (principalId) => principals.byId(principalId)?.email ?? undefined,
+  principalByEmail: (email) => principals.byEmail(email)?.id ?? undefined,
+  mcpServer: mcpServerSummary,
+  engineUsable: (selection) => Boolean(registry.get(selection.instanceId)) && engineInstalled(selection.instanceId)
+    && consoleEngineAllowed(selection.instanceId) && (!hostedModels || hostedModels.allows(selection)),
+  defaultSelection: () => defaultSelection(),
+  sectionExists: (name) => store.sections.includes(name),
+  creationRefusal: () => store.bots.length >= MAX_WORKSPACE_BOTS ? `This workspace is limited to ${MAX_WORKSPACE_BOTS} bots.` : null,
+  browserProfileExists: (id) => id === "guest" || (cfg.browserProfiles ?? []).some((profile) => profile.id === id),
+  lookRefusal: (principalId, look) => {
+    if (!principalId) return null;
+    try {
+      return lockedLookChange(undefined, look, new Set(achievementStore.snapshot(principalId).rewards))?.error ?? null;
+    } catch {
+      return null;
+    }
+  },
+  cwdUsable: (path) => validateBotCwd(path).ok,
+  importLegacy: async (document, owner, name) => {
+    const { bots, warnings } = await importPackageFor(document, owner);
+    const first = bots[0];
+    if (!first) throw new ConsoleRefusal(400, "invalid_package", "The package has no bot.");
+    if (name) store.patchBot(first.id, { name });
+    return { botId: first.id, warnings };
+  },
+};
+ROUTES.push(createBotZipRoutes({
+  host: botZipHost,
+  stagingDir: join(DATA_DIR, "tmp", "bot-imports"),
+  mayExport: (auth, botId) => {
+    const bot = store.bot(botId);
+    if (!bot) return false;
+    const level = viewerBotLevel(auth, bot);
+    return level === "owner" || level === "manage" || orgAdminCaller(auth);
+  },
+  importer: (auth) => {
+    const principalId = creatingBotOwnerId(auth);
+    if (auth.kind === "session" && !principalId) return null;
+    return {
+      principalId: principalId || undefined,
+      key: principalId || "local",
+      canCreate: botCreationAllowed(auth) && !callerBotsReadOnly(auth),
+      asMember: IDENTITY.kind === "perspicax" && !orgAdminCaller(auth),
+    };
+  },
+  audit: (auth, row) => {
+    appendAdminAction(DATA_DIR, {
+      category: "bot",
+      ...row,
+      actor: IDENTITY.kind === "perspicax" ? orgAuditActor(auth) : decisionActorFor(auth),
+    });
+  },
+  imported: (botId) => {
+    const bot = store.bot(botId);
+    if (bot) broadcast({ kind: "bot", bot: publicBot(bot) });
+  },
+  wireBot: (botId) => {
+    const bot = store.bot(botId);
+    return bot ? publicBot(bot) : undefined;
   },
 }));
 
@@ -24290,6 +24792,9 @@ const orgOpsDeps: OpsDeps = {
       saveConfig({ organization });
       cfg.organization = organization;
       orgAudit({ category: "org", action: "org.settings", target: { kind: "organization" }, changed: ["allowedEngines"], before: { allowedEngines: before }, after: { allowedEngines: changes.allowedEngines }, actor });
+      applyOrgEngineAllowList();
+      // Every open picker lists the new set at once (config frame).
+      broadcast({ kind: "config", ...configStatus() });
     }
     if (changes.defaults) {
       const current = cfg.newBotDefaults?.profile.modelSelection ?? cfg.defaultModelSelection;
@@ -24352,8 +24857,65 @@ function saveOrgPluginMarketplaces(raw: unknown, actor: AdminActor): void {
 /** The organization's engine policy (Settings, Policies): every engine
  * until a list is set. */
 function consoleEngineAllowed(instanceId: string): boolean {
+  return engineAllowed(orgAllowedEngines(), instanceId);
+}
+/** Organization server: the engines its admin allows (Perspicax), null for
+ * every engine (shared/org-allowed-engines.ts). */
+function orgAllowedEngines(): string[] | null {
   const allowed = cfg.organization?.allowedEngines;
-  return !Array.isArray(allowed) || allowed.includes(instanceId);
+  return IDENTITY.kind === "perspicax" && Array.isArray(allowed) && allowed.length ? allowed : null;
+}
+/** Why a turn or a model choice may not use this engine here, if it may not. */
+function orgEngineAllowRefusal(instanceId: string): string | undefined {
+  return consoleEngineAllowed(instanceId) ? undefined : ORG_ENGINE_NOT_ALLOWED;
+}
+/** The engines as the console's Model providers card lists them (GET
+ * capabilities, api 4): the same access groups as the model picker's
+ * provider column (src/lib/engine-rail.ts splitEngineRail: a custom engine
+ * is Local, an API key or a subscription engine is Cloud). */
+function orgAdminEngines(): AdminEngine[] {
+  const configs = providerConfigs();
+  return registry.entries().map((entry) => {
+    const live = registry.get(entry.instanceId);
+    const access = configs[entry.instanceId]?.access ?? registry.access(entry.instanceId);
+    const auth: AdminEngine["auth"] = access === "api" ? "apiKey"
+      : access === "custom" ? "none"
+      : live?.startAuthentication ? "oauth" : "none";
+    return {
+      id: entry.instanceId,
+      name: live ? engineDisplayName(live) : entry.instanceId,
+      kind: access === "custom" ? "local" : "cloud",
+      installed: engineInstalled(entry.instanceId),
+      auth,
+    };
+  });
+}
+/** A bot whose engine left the organization's list falls back to Auto on an
+ * allowed engine (the New bot default when allowed, else the first allowed
+ * engine here), and a thread's own model on such an engine follows its bot
+ * again. At start and whenever the list changes. */
+function applyOrgEngineAllowList(): void {
+  const allowed = orgAllowedEngines();
+  if (!allowed) return;
+  const engines = registry.entries().map((entry) => ({
+    instanceId: entry.instanceId,
+    installed: engineInstalled(entry.instanceId),
+    defaultModel: registry.get(entry.instanceId)?.models.default ?? "",
+  }));
+  const preferred = cfg.newBotDefaults?.profile.modelSelection ?? cfg.defaultModelSelection;
+  for (const { id } of store.bots) {
+    const bot = store.bot(id);
+    if (!bot) continue;
+    const next = allowedFallbackSelection(bot.modelSelection, allowed, engines, preferred);
+    if (next) {
+      store.applyModelDefault(id, next);
+      console.log(`[org] bot=${id} engine ${bot.modelSelection.instanceId} is not allowed by the organization; now on Auto (${next.instanceId})`);
+    }
+    const stray = (store.bot(id)?.tasks ?? [])
+      .filter((task) => task.modelSelection && !engineAllowed(allowed, task.modelSelection.instanceId))
+      .map((task) => task.threadId);
+    if (stray.length) store.followBotModel(id, stray, (from, to) => hostedModels?.resetTask(from, to) ?? {});
+  }
 }
 
 /** What a manager's reach is checked against for one bot (the bots route
@@ -24444,6 +25006,7 @@ const orgAdmin = createOrgAdminRoutes({
   audit: (input) => readOrgAuditPage(DATA_DIR, input),
   auditCategories: ADMIN_ACTIVITY_CATEGORIES,
   version: releaseVersion,
+  engines: orgAdminEngines,
   recordAction: (principalId, entry) => appendAdminAction(DATA_DIR, { ...entry, actor: { kind: "person", principalId, via: "console" } }),
   // The console routes of 2026-10-08 (server/org-admin-console.ts).
   console: [
@@ -25060,7 +25623,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       if (subject && !subjectSeesChannel(subject, viewerId)) return json(res, 404, { error: notFoundFor(subject) });
       // Slice 4: a read-only member of a shared section reads its rooms and
       // changes nothing in them (settings, tasks, queue, interrupt, cards).
-      const room = IDENTITY.kind === "perspicax" && method !== "GET" && method !== "HEAD" && !/^\/api\/(?:groups|threads)\/[\w-]+\/read$/.test(path) ? roomOfSubject(subject) : null;
+      const room = IDENTITY.kind === "perspicax" && method !== "GET" && method !== "HEAD" && !/^\/api\/(?:groups|threads)\/[\w-]+\/read$/.test(path) && !REACTION_ROUTE.test(path) ? roomOfSubject(subject) : null;
       if (room && !groupPostAllowed(room, viewerId)) return json(res, 403, { error: "you may read this channel, not change it", code: "read_only" });
     }
     {
@@ -25093,12 +25656,25 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
     if (method !== "GET" && method !== "HEAD") {
       const achiever = actorPrincipalId(auth);
       if (achiever) {
-        res.once("finish", () => recordAchievements(achiever, achievementRequestEvents({ method, path, status: res.statusCode }, {
-          group: (id) => {
-            const group = store.group(id);
-            return group ? { peopleDm: group.peopleDm === true, humans: (group.humanIds?.length ?? 0) || 1, bots: group.memberIds?.length ?? 0 } : null;
-          },
-        })));
+        res.once("finish", () => {
+          recordAchievements(achiever, achievementRequestEvents({ method, path, status: res.statusCode }, {
+            group: (id) => {
+              const group = store.group(id);
+              return group ? { peopleDm: group.peopleDm === true, humans: (group.humanIds?.length ?? 0) || 1, bots: group.memberIds?.length ?? 0 } : null;
+            },
+          }));
+          try {
+            recordMastery(masteryRequestFacts({ method, path, status: res.statusCode }, achiever, {
+              catalogPublisher: (botId) => {
+                const catalog = store.bot(botId)?.catalog;
+                return catalog?.published ? catalog.publishedBy ?? null : null;
+              },
+              census: masteryCensus,
+            }));
+          } catch {
+            /* a bonus: never fail the request */
+          }
+        });
       }
     }
     if (await dispatchRoutes(ROUTES, { req, res, url, path, method, auth, json, readBody })) return;
@@ -25583,6 +26159,24 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         if (!result.ok) internalCapability.memoryRefusals = (internalCapability.memoryRefusals ?? 0) + 1;
         return json(res, result.ok ? 200 : result.code === "conflict" ? 409 : result.code === "over-budget" ? 413 : 400, result);
       }
+      // react_to_message and remove_reaction (shared/reactions.ts): a bot
+      // marks a message of the conversation its turn is in instead of
+      // replying. Never its own message, one reaction per message, a few per
+      // turn; recorded with the bot as the actor. No message is written.
+      if (method === "POST" && path === "/api/internal/reaction") {
+        const body = await readInternalBody();
+        requireActiveInternalCapability();
+        const outcome = botReaction({
+          bot: internalSender,
+          threadId: internalCapability.threadId,
+          messageId: typeof body.messageId === "string" ? body.messageId.trim() : "",
+          emoji: body.emoji,
+          remove: body.remove === true,
+          spent: internalCapability.reactions ?? 0,
+        });
+        if (outcome.ok && outcome.changed && !body.remove) internalCapability.reactions = (internalCapability.reactions ?? 0) + 1;
+        return json(res, outcome.ok ? 200 : outcome.status, outcome.ok ? outcome : { error: outcome.error, code: outcome.code });
+      }
       // Notes written from a room fewer people can see than this bot would
       // carry that room's words to everyone who can see the bot.
       if ((path === "/api/internal/memory" || path === "/api/internal/memory/log") && method === "POST") {
@@ -25612,6 +26206,47 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         const body = await readInternalBody();
         const result = ownersWrite(() => appendMemoryLog(internalSender.id, body.text, { source: memorySource() }));
         return json(res, result.ok ? 200 : 400, result);
+      }
+      // RULES.md and docs/ (server/workspace-files.ts): the bot's own
+      // workspace only. Writes take memory's gates (a Cloud home's owner
+      // only, never from a room fewer people can see) and its refusal cap,
+      // and are journaled like a memory edit; reads are confined to the
+      // workspace, traversal and links refused.
+      if ((path === "/api/internal/workspace/rules" || path === "/api/internal/workspace/docs") && method === "POST") {
+        if (CLOUD_HOME && cloudHomeLendingRefusal(cloudLendingTurn(internalCapability)) !== null) {
+          return json(res, 403, { error: "Rules and documents can only be changed from a conversation that only the owner of this Cloud has written in." });
+        }
+        const room = store.groupByThread(internalCapability.threadId);
+        if (room && !roomFeedsBot(room, internalSender)) {
+          return json(res, 403, { error: "This room is visible to fewer people than you are, so it can't change your rules or documents. Ask in a direct conversation." });
+        }
+        if ((internalCapability.memoryRefusals ?? 0) >= MAX_MEMORY_REFUSALS_PER_TURN) {
+          return json(res, 429, { error: `Workspace updates are closed for the rest of this turn: ${MAX_MEMORY_REFUSALS_PER_TURN} were refused. Do not retry.` });
+        }
+        const body = await readInternalBody();
+        const result = ownersWrite(() => path === "/api/internal/workspace/rules"
+          ? updateRules(internalSender.id, { action: body.action, text: body.text, oldText: body.oldText }, { threadId: internalCapability.threadId })
+          : updateDoc(internalSender.id, { action: body.action, path: body.path, text: body.text, oldText: body.oldText }, { threadId: internalCapability.threadId }));
+        if (!result.ok) internalCapability.memoryRefusals = (internalCapability.memoryRefusals ?? 0) + 1;
+        if (!result.ok) return json(res, result.code === "conflict" ? 409 : result.code === "over-budget" ? 413 : result.code === "missing" ? 404 : 400, result);
+        const { journal: _journal, ...reply } = result;
+        return json(res, 200, reply);
+      }
+      if (method === "GET" && path === "/api/internal/workspace/read") {
+        try {
+          const read = readWorkspaceText(internalSender.id, url.searchParams.get("path") ?? "", Number(url.searchParams.get("offset") ?? 0));
+          markWorkspaceUse(internalSender.id, [read.path]);
+          return json(res, 200, read);
+        } catch (error) {
+          if (error instanceof WorkspacePathError) return json(res, error.status, { error: error.message });
+          throw error;
+        }
+      }
+      if (method === "GET" && path === "/api/internal/workspace/search") {
+        const q = (url.searchParams.get("q") ?? "").trim();
+        if (!q) return json(res, 400, { error: "workspace_search needs a query." });
+        const limit = Math.min(20, Math.max(1, Number(url.searchParams.get("limit") ?? 8) || 8));
+        return json(res, 200, { hits: searchDocFiles(internalSender.id, q, limit) });
       }
       if (method === "POST" && path === "/api/internal/browser/mcp") {
         const body = await readInternalBody();
@@ -26537,6 +27172,8 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           source: learnSource(source),
         });
         if ("error" in staged) return json(res, 422, { error: staged.error });
+        // a skill written from a conversation (/learn) counts its uses for Skill Smith
+        if (staged.action === "create" && source === "conversation") recordMastery([{ person: achievementThreadPerson(fromThreadId) ?? "", fact: { kind: "skill.learned", skill: staged.name } }]);
         if (direct) {
           // What an update replaces, so Undo can put it back.
           const previousSkillMd = staged.action === "update" ? readSkillFile(from.id, staged.name) : null;
@@ -28315,18 +28952,26 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
     }
 
     // ── routines calendar ────────────────────────────────────────────────
+    // The Automations page scope (2026-10-09): `scope=mine|team|all` and
+    // `teamId`, `botId`, `ownerId`, `status` (server/routine-scope.ts). No
+    // scope is `mine`: what this listing always answered.
     if (path === "/api/routines" && method === "GET") {
       const fromParam = url.searchParams.get("from");
       const toParam = url.searchParams.get("to");
       const from = fromParam == null ? undefined : Number(fromParam);
       const to = toParam == null ? undefined : Number(toParam);
-      return json(res, 200, {
-        routines: routines!.listRoutines()
-          .filter((routine) => routineVisible(routine, visible) && (!viewerId || routineSeenBy(routine, viewerId)))
-          .map(routineOnWire),
-        runs: routines!.listRuns(from != null && Number.isFinite(from) ? from : undefined, to != null && Number.isFinite(to) ? to : undefined)
-          .filter((run) => routineVisible(run, visible) && (!viewerId || routineSeenBy(run, viewerId))),
-      });
+      const query = parseRoutineScopeQuery(url.searchParams);
+      if ("error" in query) return json(res, 400, query);
+      const caller = routineScopeCaller(auth, viewerId);
+      const refusal = routineScopeRefusal(caller, query.scope);
+      if (refusal) return json(res, 403, refusal);
+      return json(res, 200, scopedRoutineListing(
+        query,
+        caller,
+        routines!.listRoutines(),
+        routines!.listRuns(from != null && Number.isFinite(from) ? from : undefined, to != null && Number.isFinite(to) ? to : undefined),
+        routineScopeDeps(auth, visible, viewerId),
+      ));
     }
     // On a Cloud home a routine reports only where its writer may write: a
     // guest's into a conversation the guest started, never the owner's.
@@ -28455,9 +29100,16 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       return json(res, 200, { runs: routines!.markAllSeen() });
     }
     // Clear logs: every saved run the caller may see (the list's own rule),
-    // never one in progress. Others' runs stay.
+    // never one in progress. Others' runs stay, unless the caller asks
+    // `scope=all` with routines.viewAll (or is an admin); the page's filters
+    // (`botId`, `ownerId`, `teamId`, `status`) narrow it (server/routine-scope.ts).
     if (path === "/api/routine-runs" && method === "DELETE") {
-      const removed = routines!.clearRuns((run) => routineVisible(run, visible) && (!viewerId || routineSeenBy(run, viewerId)));
+      const query = parseRoutineScopeQuery(url.searchParams);
+      if ("error" in query) return json(res, 400, query);
+      const caller = routineScopeCaller(auth, viewerId);
+      const refusal = routineScopeRefusal(caller, query.scope);
+      if (refusal) return json(res, 403, refusal);
+      const removed = routines!.clearRuns(routineRunClearable(query, caller, routines!.listRoutines(), routineScopeDeps(auth, visible, viewerId)));
       if (removed.length) auditRoutineRunsCleared(auth, removed.length);
       return json(res, 200, { ok: true, removed });
     }
@@ -28761,7 +29413,11 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         botQueuedMessages: threadKeyedForViewer(visible.everything ? queued : Object.fromEntries(Object.entries(queued).filter(([threadId]) => visible.thread(threadId))), viewerId),
         sections: orgVisibleSections(visible.sections(store.sections), viewerId),
         groups: store.groups.filter((g) => visible.group(g.id) && groupVisible(g, viewerId)).map((g) => {
-          const room = peopleDmForViewer({ ...publicGroupState(g), ...messagePage(g.threadId, limit, null, viewerForApproval(auth)) }, groupReaderId(auth));
+          // A person conversation opens on the thread this person has open
+          // (a client that knows threads), else on its default thread.
+          const room = g.peopleDm
+            ? peopleDmProjection(g, groupReaderId(auth), knowsPersonThreads(req), { limit, viewer: viewerForApproval(auth) })
+            : peopleDmForViewer({ ...publicGroupState(g), ...messagePage(g.threadId, limit, null, viewerForApproval(auth)) }, groupReaderId(auth));
           return visible.everything ? room : memberGroup(room);
         }),
         computerControl: Object.fromEntries(
@@ -29341,7 +29997,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
     if (method === "GET" && path === "/api/groups") {
       return json(res, 200, {
         groups: store.groups.filter((g) => visible.group(g.id) && groupVisible(g, viewerId)).map((g) => {
-          const room = peopleDmForViewer(publicGroupState(g), groupReaderId(auth));
+          const room = g.peopleDm ? peopleDmProjection(g, groupReaderId(auth), knowsPersonThreads(req)) : peopleDmForViewer(publicGroupState(g), groupReaderId(auth));
           return visible.everything ? room : memberGroup(room);
         }),
       });
@@ -29774,6 +30430,19 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       }
       const request = createGroupTaskRequestSchema.safeParse(body);
       if (!request.success) return json(res, 400, { error: "title must be text" });
+      // A person conversation: a new thread is the pair's, opened by the
+      // person who made it; the default thread (what a client from before
+      // threads reads) does not move.
+      if (group.peopleDm) {
+        if (request.data.projectId !== undefined && !store.groupProject(group.id, request.data.projectId)) {
+          return json(res, 400, { error: "projectId must be one of this conversation's folders" });
+        }
+        const made = store.createGroupTask(group.id, request.data.title, false, request.data.projectId);
+        if (!made) return json(res, 500, { error: "couldn't create that thread" });
+        const person = groupReaderId(auth);
+        peopleDmSelections.set(group.id, person, made.threadId);
+        return json(res, 201, { group: peopleDmProjection(store.group(group.id)!, person, true, { limit: DEFAULT_PAGE, viewer: viewerForApproval(auth) }), task: made });
+      }
       const task = store.createGroupTask(group.id, request.data.title);
       if (!task) return json(res, 500, { error: "couldn't create that task" });
       // Who opened it decides who may answer its cards on a shared workspace.
@@ -29797,6 +30466,18 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       const requestedMessages = url.searchParams.get("messages");
       const switchLimit = pageSize(requestedMessages);
       if (switchLimit === null) return json(res, 400, { error: "messages must be a non-negative whole number" });
+      // A person conversation: switching opens the thread for the person
+      // switching only; the other person and the default thread stay.
+      if (group.peopleDm) {
+        if (!store.groupTaskByThread(group.id, m[2])) return json(res, 404, { error: "no such thread" });
+        const person = groupReaderId(auth);
+        // A client from before threads stays on the default thread: its
+        // live frames would name that one and its sends follow its own pick.
+        const knows = knowsPersonThreads(req);
+        if (knows) peopleDmSelections.set(group.id, person, m[2]);
+        const view = peopleDmProjection(group, person, knows, requestedMessages === "0" ? undefined : { limit: switchLimit, viewer: viewerForApproval(auth) });
+        return json(res, 200, { group: view });
+      }
       const switched = store.switchGroupTask(group.id, m[2]);
       if (!switched) return json(res, 404, { error: "no such channel task" });
       const switchedSettings = { ...publicGroupState(switched), tasks: store.groupTasks(switched.id) };
@@ -29819,14 +30500,21 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       if (!body || typeof body !== "object" || Array.isArray(body)) {
         return json(res, 400, { error: "body must be a JSON object" });
       }
-      const allowed = new Set(["title", "pinned", "turnTimeoutMinutes"]);
+      // Archive, snooze and folder are a bot thread's too (server/thread-folders.ts).
+      const allowed = new Set(["title", "pinned", "turnTimeoutMinutes", "archivedAt", "snoozedUntil", "projectId"]);
       if (Object.keys(body).some((key) => !allowed.has(key))) return json(res, 400, { error: "unsupported channel thread setting" });
+      // A person conversation has no turns, so no turn limit.
+      if (group.peopleDm && Object.prototype.hasOwnProperty.call(body, "turnTimeoutMinutes")) return json(res, 400, { error: "a conversation between two people has no turn limit", code: "people_dm" });
       const existing = store.groupTaskByThread(group.id, m[2]);
       if (!existing) return json(res, 404, { error: "no such channel task" });
+      const organization = parseThreadOrganization(body, (projectId) => Boolean(store.groupProject(group.id, projectId)));
+      if (!organization.ok) return json(res, 400, { error: organization.error });
+      const { pinned: _pinnedField, ...organizing } = organization.patch;
+      const filing = Object.keys(organizing).length > 0;
       const pinning = body.pinned !== undefined;
       const renaming = body.title !== undefined;
       const limiting = Object.prototype.hasOwnProperty.call(body, "turnTimeoutMinutes");
-      if (!pinning && !renaming && !limiting) return json(res, 400, { error: "unsupported channel thread setting" });
+      if (!pinning && !renaming && !limiting && !filing) return json(res, 400, { error: "unsupported channel thread setting" });
       if (pinning && typeof body.pinned !== "boolean") return json(res, 400, { error: "pinned must be a boolean" });
       if (renaming && typeof body.title !== "string") return json(res, 400, { error: "title must be a string" });
       const parsedLimit = limiting ? parseConversationTurnTimeout(body.turnTimeoutMinutes) : null;
@@ -29839,11 +30527,16 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       if (notYours) return json(res, 403, { error: notYours });
       // A longer limit applies to the next turn, so it can be saved while
       // this one is still running. A rename still waits.
-      const settingsOnly = !titleChange && (pinning || limiting);
+      const settingsOnly = !titleChange && (pinning || limiting || filing);
       if (channelTaskBlocked(group) && !settingsOnly) {
         return json(res, 409, { error: "this channel is working or waiting on you — finish that turn first" });
       }
       let task = existing;
+      if (filing) {
+        const filed = store.patchGroupTask(group.id, m[2], organizing);
+        if (!filed) return json(res, 404, { error: "no such channel task" });
+        task = filed;
+      }
       if (limiting && parsedLimit?.ok) {
         const limited = store.setGroupTaskTurnTimeout(group.id, m[2], parsedLimit.minutes);
         if (!limited) return json(res, 404, { error: "no such channel task" });
@@ -29882,6 +30575,10 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       clearTurnDigestState(m[2]);
       revokeInternalCapabilitiesForThread(m[2]);
       rejectDeletedThreadSkillStages(stagedSkillCleanups);
+      if (updated.peopleDm) {
+        peopleDmSelections.forgetThread(m[2]);
+        return json(res, 200, { group: peopleDmProjection(updated, groupReaderId(auth), true, { limit: DEFAULT_PAGE, viewer: viewerForApproval(auth) }) });
+      }
       return json(res, 200, { group: projectGroupTranscript(groupWithThread(updated), viewerForApproval(auth)) });
     }
 
@@ -29896,11 +30593,13 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         const reader = groupReaderId(auth);
         if (reader && body && typeof body === "object" && typeof (body as { unread?: unknown }).unread === "boolean") {
           const { unread, ...rest } = body as { unread: boolean };
-          let marked = store.patchGroup(existingGroup.id, peopleDmUnreadPatch(existingGroup, reader, unread));
+          // Marked read: every thread is read for them. Marked unread: the
+          // conversation is (its row's dot), as before threads.
+          let marked = store.patchGroup(existingGroup.id, unread ? peopleDmUnreadPatch(existingGroup, reader, true) : peopleDmThreadUnreadPatch(existingGroup, reader, false));
           if (marked && Object.keys(rest).length > 0) marked = updateChannel(existingGroup.id, rest);
           if (!marked) return json(res, 404, { error: "no such room" });
           broadcast({ kind: "group", group: publicGroupState(marked) });
-          return json(res, 200, { group: peopleDmForViewer(publicGroupState(marked), reader) });
+          return json(res, 200, { group: peopleDmProjection(marked, reader, knowsPersonThreads(req)) });
         }
       }
       // A bot-to-bot dm keeps its existing member refusal. Placement checks
@@ -29953,12 +30652,19 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       // never for the other one (server/people-dms.ts).
       const existing = store.group(m[1]);
       const reader = groupReaderId(auth);
-      const group = store.patchGroup(m[1], existing?.peopleDm && reader ? peopleDmUnreadPatch(existing, reader, false) : { unread: false });
+      // A person conversation: `{ threadId }` reads that thread for the
+      // reader; no thread (a client from before threads) reads them all.
+      const readBodyValue = existing?.peopleDm ? await readBody(req).catch(() => null) : null;
+      const readThread = existing?.peopleDm && readBodyValue && typeof readBodyValue === "object" && !Array.isArray(readBodyValue)
+        ? (readBodyValue as { threadId?: unknown }).threadId
+        : undefined;
+      const readThreadId = existing?.peopleDm && readThread !== undefined ? peopleDmThreadOf(existing, readThread) : undefined;
+      const group = store.patchGroup(m[1], existing?.peopleDm && reader ? peopleDmThreadUnreadPatch(existing, reader, false, readThreadId) : { unread: false });
       if (!group) return json(res, 404, { error: "no such room" });
       // somebody saw it: no push for this conversation (server/push/decide.ts)
-      pushHub.noteRead(reader ?? actorPrincipalId(auth), group.threadId);
+      pushHub.noteRead(reader ?? actorPrincipalId(auth), readThreadId ?? group.threadId);
       broadcast({ kind: "group", group: publicGroupState(group) });
-      return json(res, 200, { group: peopleDmForViewer(publicGroupState(group), reader) });
+      return json(res, 200, { group: group.peopleDm ? peopleDmProjection(group, reader, knowsPersonThreads(req)) : peopleDmForViewer(publicGroupState(group), reader) });
     }
     m = path.match(/^\/api\/groups\/([\w-]+)$/);
     if (m && method === "DELETE") {
@@ -30003,7 +30709,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       if (IDENTITY.kind === "perspicax" && !groupPostAllowed(group, channelViewerId(auth))) {
         return json(res, 403, { error: "you may read this channel, not post in it", code: "read_only" });
       }
-      if (group.peopleDm) return json(res, 202, sendPeopleDmMessage(group, auth, text, body.sendId, body.replyToId));
+      if (group.peopleDm) return json(res, 202, sendPeopleDmMessage(group, auth, text, body.sendId, body.replyToId, body.threadId));
       if (body.mode !== undefined && body.mode !== "chat" && body.mode !== "goal") {
         return json(res, 400, { error: "mode must be chat or goal" });
       }
@@ -30332,15 +31038,29 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       return json(res, 200, { ok: true });
     }
 
-    // emoji reactions — works on any thread (1:1 or room)
+    // Emoji reactions (shared/reactions.ts, docs/messages-reactions.md): the
+    // caller toggles their own on any text message of a thread they can
+    // read, a 1:1 with a bot, a room or a conversation between people. Who
+    // may reach the thread was decided above, as for reading it. The change
+    // is a message patch: live to everyone who sees the thread, quiet (no
+    // notification, no unread).
     m = path.match(/^\/api\/threads\/([\w-]+)\/messages\/([\w-]+)\/reactions$/);
     if (m && method === "POST") {
+      const [, threadId, messageId] = m;
+      if (!store.botByThread(threadId!) && !store.groupByThread(threadId!)) return json(res, 404, { error: "no such conversation" });
       const body = await readBody(req);
-      const emoji = String(body.emoji ?? "").slice(0, 8);
-      if (!emoji) return json(res, 400, { error: "emoji required" });
-      const patched = store.toggleReaction(m[1], m[2], emoji, typeof body.by === "string" ? body.by : "user");
-      if (!patched) return json(res, 404, { error: "no such message" });
-      return json(res, 200, { message: patched });
+      const emoji = reactionEmoji(body?.emoji);
+      if (!emoji) return json(res, 400, { error: "emoji must be one emoji", code: "reaction_emoji" });
+      const target = store.messagesFor(threadId!).find((message) => message.id === messageId);
+      if (!target) return json(res, 404, { error: "no such message" });
+      if (target.kind !== "text") return json(res, 400, { error: "only a chat message takes reactions", code: "reaction_kind" });
+      const actor = reactionPersonFor(auth);
+      if (!actor) return json(res, 403, { error: "only a person reacts here", code: "reaction_actor" });
+      const mode = body?.mode === "add" || body?.mode === "remove" ? body.mode : "toggle";
+      const result = store.reactToMessage(threadId!, messageId!, emoji, actor, { mode, legacyUser: legacyReactionUser() });
+      if (!result) return json(res, 404, { error: "no such message" });
+      if (result.full) return json(res, 409, { error: "this message has too many different reactions", code: "reaction_full" });
+      return json(res, 200, { message: result.message, added: result.added, reactions: normalizeReactions(result.message.reactions) });
     }
     if (path === "/api/sidebar-sections" && method === "GET") {
       return json(res, 200, { sections: store.sections });
@@ -30412,7 +31132,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       const checked = z.object({ source: z.string().min(1).max(2000) }).strict().safeParse(await readBody(req));
       if (!checked.success) return json(res, 400, { error: checked.error.message });
       const input = checked.data;
-      const fetched = await fetchSkillFromSource(input.source);
+      const fetched = await fetchSkillFromSource(input.source, githubSkillFetch(githubCredentialsFor(sessionPrincipal(auth))));
       if ("error" in fetched) return json(res, 422, { error: fetched.error });
       const skills = [];
       for (const skill of fetched.skills) {
@@ -30683,6 +31403,8 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         return json(res, 400, { error: "avatarUrl must reference an existing stored image" });
       }
       const existingBot = store.bot(m[1]);
+      const lookLocked = lockedLookRefusal(auth, existingBot, parsed.patch.mascotLook);
+      if (lookLocked) return json(res, 403, lookLocked);
       // On a Cloud home a bot's name, title, description and standing
       // instructions ride every one of the owner's turns (and a lent Mac):
       // only the owner's own devices change them. Anyone else keeps the
@@ -30701,6 +31423,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       const bot = store.patchBotProfile(m[1], parsed.patch);
       if (!bot) return json(res, 404, { error: "no such bot" });
       if (beforeProfile) recordProfileChange(bot.id, "user", "api", beforeProfile, profileSnapshot(bot));
+      recordPersonaSave(auth, bot.id, beforeProfile, profileSnapshot(bot));
       const visible = wireBot(bot);
       broadcast({ kind: "bot", bot: visible });
       return json(res, 200, { bot: visible });
@@ -30992,6 +31715,8 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       if (profile.patch.avatarUrl && !storedAvatarExists(profile.patch.avatarUrl)) {
         return json(res, 400, { error: "avatarUrl must reference an existing stored image" });
       }
+      const lookLocked = lockedLookRefusal(auth, existingBot, profile.patch.mascotLook);
+      if (lookLocked) return json(res, 403, lookLocked);
       const patch: Record<string, unknown> = {};
       Object.assign(patch, profile.patch);
       let section: string | undefined | null;
@@ -31507,6 +32232,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       if (beforeProfile) {
         const now = store.bot(bot.id)!;
         recordProfileChange(bot.id, "user", "api", beforeProfile, profileSnapshot(now));
+        recordPersonaSave(auth, bot.id, beforeProfile, profileSnapshot(now));
       }
       // A new audience changes who may see this bot's rooms and teams too:
       // re-announce them so every member's stream gains or withdraws them.
@@ -31622,7 +32348,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       const parsed = z.object({ source: z.string().min(1).max(2000) }).safeParse(await readBody(req));
       if (!parsed.success) return json(res, 400, { error: "source must be a GitHub or skills.sh URL, or owner/repo" });
       // A private repository reads with the person's own GitHub connection.
-      const fetched = await fetchSkillFromSource(parsed.data.source, githubAuthorizedFetch(usablePersonGithub(sessionPrincipal(auth))?.token));
+      const fetched = await fetchSkillFromSource(parsed.data.source, githubSkillFetch(githubCredentialsFor(sessionPrincipal(auth))));
       if ("error" in fetched) return json(res, 422, { error: fetched.error });
       const results = fetched.skills.map((skill) => installSkill(m![1]!, skill.source, skill.files));
       const installed = results.filter((entry): entry is Exclude<typeof entry, { error: string }> => !("error" in entry));
@@ -31907,6 +32633,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       const updated = store.setSoul(bot.id, parsed.patch.soul ?? "");
       if (!updated) return json(res, 404, { error: "no such bot" });
       recordProfileChange(bot.id, "file", "ui", beforeProfile, profileSnapshot(updated));
+      recordPersonaSave(auth, bot.id, beforeProfile, profileSnapshot(updated));
       const visible = wireBot(updated);
       broadcast({ kind: "bot", bot: visible });
       return json(res, 200, { bot: visible });
@@ -32340,6 +33067,8 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         },
       );
       recordAchievements(actorPrincipalId(auth), achievementSendEvents({ text, parallel: busyMode === "parallel", ...(voiceCall ? { voiceCall } : {}) }, achievementCallStarts, Date.now()));
+      // a correction into the running turn (steer, queued into it) counts for Prompter
+      recordMastery(masterySendFacts({ threadId, text, steered: busyMode === "steer" && (receipt as { queued?: unknown }).queued === true }, actorPrincipalId(auth)));
       return json(res, 202, receipt);
     }
 
@@ -32870,13 +33599,9 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
     if (m && method === "PATCH") {
       const bot = store.bot(m[1]);
       if (!bot) return json(res, 404, { error: "no such bot" });
-      const body = await readBody(req);
-      if (!body || typeof body !== "object" || Array.isArray(body) ||
-        Object.keys(body).some((key) => key !== "projectIds") ||
-        !Array.isArray(body.projectIds) || body.projectIds.some((id: unknown) => typeof id !== "string")) {
-        return json(res, 400, { error: "projectIds must be an array of folder IDs" });
-      }
-      const projects = store.reorderProjects(bot.id, body.projectIds);
+      const order = parseFolderOrder(await readBody(req));
+      if (!order.ok) return json(res, 400, { error: order.error });
+      const projects = store.reorderProjects(bot.id, order.projectIds);
       if (!projects) return json(res, 400, { error: "projectIds must include each of this bot's folders exactly once" });
       return json(res, 200, { projects, bot: projectBotTranscript(publicBot(bot), viewerForApproval(auth)) });
     }
@@ -32889,21 +33614,9 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         const updated = store.deleteProject(bot.id, m[2]!);
         return json(res, 200, { bot: projectBotTranscript(publicBot(updated!), viewerForApproval(auth)) });
       }
-      const body = await readBody(req);
-      if (!body || typeof body !== "object" || Array.isArray(body)) return json(res, 400, { error: "body must be a JSON object" });
-      if (Object.keys(body).some((key) => key !== "name" && key !== "emoji")) {
-        return json(res, 400, { error: "unsupported folder setting" });
-      }
-      if ((method === "POST" || body.name !== undefined) &&
-        (typeof body.name !== "string" || !body.name.trim() || body.name.trim().length > 80)) {
-        return json(res, 400, { error: "folder name must be between 1 and 80 characters" });
-      }
-      if (body.emoji !== undefined && body.emoji !== null && !isProjectEmoji(body.emoji)) {
-        return json(res, 400, { error: "folder emoji must be one emoji, or null to reset it" });
-      }
-      const patch: Parameters<typeof store.patchProject>[2] = {};
-      if (body.name !== undefined) patch.name = body.name.trim();
-      if (body.emoji !== undefined) patch.emoji = body.emoji;
+      const folder = parseFolderBody(await readBody(req), method === "POST");
+      if (!folder.ok) return json(res, 400, { error: folder.error });
+      const patch = folder.patch;
       const project = method === "POST"
         ? store.createProject(bot.id, patch.name!, patch.emoji)
         : store.patchProject(bot.id, m[2]!, patch);
@@ -33046,30 +33759,15 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         if (!task) return json(res, 404, { error: "no such task" });
         return json(res, 200, { task: wireTask(task, store.bot(profile.id)!.modelSelection), bot: publicBot(store.bot(profile.id)!) });
       }
-      const patch: Parameters<typeof store.patchTask>[2] = {};
+      // Archive, snooze, pin and folder: the same rules as a group thread
+      // (server/thread-folders.ts).
+      const organization = parseThreadOrganization(body, (projectId) => Boolean(store.project(current.id, projectId)), "projectId must belong to this bot, or null to ungroup the thread");
+      if (!organization.ok) return json(res, 400, { error: organization.error });
+      const patch: Parameters<typeof store.patchTask>[2] = { ...organization.patch };
       let orgFullGrant = false;
-      if (body.projectId !== undefined) {
-        if (body.projectId === null) patch.projectId = undefined;
-        else if (typeof body.projectId === "string" && store.project(current.id, body.projectId)) patch.projectId = body.projectId;
-        else return json(res, 400, { error: "projectId must belong to this bot, or null to ungroup the thread" });
-      }
       if (body.title !== undefined) {
         if (typeof body.title !== "string") return json(res, 400, { error: "title must be a string" });
         patch.title = body.title;
-      }
-      if (body.archivedAt !== undefined) {
-        if (body.archivedAt === null) patch.archivedAt = undefined;
-        else if (typeof body.archivedAt === "number" && Number.isFinite(body.archivedAt) && body.archivedAt >= 0) patch.archivedAt = body.archivedAt;
-        else return json(res, 400, { error: "archivedAt must be a timestamp, or null to unarchive" });
-      }
-      if (body.pinned !== undefined) {
-        if (typeof body.pinned !== "boolean") return json(res, 400, { error: "pinned must be a boolean" });
-        patch.pinned = body.pinned ? true : undefined;
-      }
-      if (body.snoozedUntil !== undefined) {
-        if (body.snoozedUntil === null) patch.snoozedUntil = undefined;
-        else if (typeof body.snoozedUntil === "number" && Number.isFinite(body.snoozedUntil) && body.snoozedUntil >= 0) patch.snoozedUntil = body.snoozedUntil;
-        else return json(res, 400, { error: "snoozedUntil must be a timestamp, 0 to snooze until activity, or null to wake now" });
       }
       if (body.surface !== undefined) {
         if (threadBusy(current.id, current.threadId)) return json(res, 409, { error: "Stop this thread before changing its computer destination." });
@@ -35635,6 +36333,13 @@ server.listen(PORT, "127.0.0.1", async () => {
     if (companyShutdown) return;
   }
   settleOrphanedParallelTasks();
+  // A bot left on an engine the organization no longer allows moves to Auto
+  // on an allowed one before any turn starts (engines read above).
+  try {
+    applyOrgEngineAllowList();
+  } catch (error) {
+    console.warn(`[org] applying the allowed model providers failed: ${error instanceof Error ? error.message : String(error)}`);
+  }
   // Startup work uses the same turn dispatcher and local tool endpoint as
   // ordinary chat. Start only once every registry is initialized and the
   // endpoint is listening; earlier dispatch can hit uninitialized bindings.

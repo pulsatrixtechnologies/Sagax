@@ -11,6 +11,7 @@ import { api } from "@/state/store";
 import { t } from "@/lib/i18n";
 import { composeSkillMd, isSkillName, parseSkillMd } from "../../../shared/skill-md";
 import type { SkillsLibrarySkillWire } from "../../../shared/wire";
+import { MarkdownEditor } from "../markdown/MarkdownEditor";
 import { PluginCard, PluginPageHeader } from "./PluginParts";
 
 export interface SkillPageProps {
@@ -169,18 +170,18 @@ export function SkillPage({ skill, readOnlyReason, onBack, onClose, onSaved, onD
               <span className="text-[12px] font-medium text-ink">{t("connectApps.skill.description")}</span>
               <textarea value={description} disabled={readOnly || !loaded} maxLength={1024} rows={2} onChange={(event) => setDescription(event.target.value)} className={`${fieldClass} resize-y`} data-skill-field="description" />
             </label>
-            <label className="flex flex-col gap-1">
-              <span className="text-[12px] font-medium text-ink">{t("connectApps.skill.instructions")}</span>
-              <textarea
+            <div className="flex flex-col gap-1" data-skill-field="instructions">
+              <span id="skill-instructions-label" className="text-[12px] font-medium text-ink">{t("connectApps.skill.instructions")}</span>
+              <MarkdownEditor
                 value={instructions}
-                disabled={readOnly || !loaded}
-                rows={12}
-                spellCheck={false}
-                onChange={(event) => setInstructions(event.target.value)}
-                className={`${fieldClass} resize-y font-mono text-[12px] leading-relaxed`}
-                data-skill-field="instructions"
+                disabled={!loaded}
+                readOnly={readOnly}
+                minHeight={260}
+                ariaLabelledBy="skill-instructions-label"
+                onChange={setInstructions}
+                dataField="skill-instructions"
               />
-            </label>
+            </div>
             {error && <p role="alert" className="rounded-lg bg-danger/10 px-3 py-2 text-[12px] text-danger">{error}</p>}
             {!readOnly && (
               <div className="flex items-center justify-end gap-2">

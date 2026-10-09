@@ -67,12 +67,15 @@ describe("Settings → Decision model", () => {
     expect(panel).toContain("A fast decision model that picks");
   });
 
-  it("hides the VPS and Boat switches and counts the five that remain", async () => {
+  it("hides the VPS and Boat switches and counts the five that remain, Browse Bots among them", async () => {
     fixture.section = "experimental";
     const off = await render();
     expect(off).toContain("1 of 5 on");
     expect(off).toContain('data-experimental-feature="decisionModel"');
     expect(off).toContain("Decision model");
+    expect(off).toContain("data-experimental-browse-bots");
+    expect(off).toContain("Browse Bots");
+    expect(off).not.toContain("Templates");
     expect(off).not.toContain("VPS Computer");
     expect(off).not.toContain("Boat Computer");
     expect(off).toContain('aria-checked="false"');

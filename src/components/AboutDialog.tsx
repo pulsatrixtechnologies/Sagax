@@ -8,7 +8,6 @@ import {
   APP_REPOSITORY,
   DOCS_URL,
   LICENSE_URL,
-  RELEASES_URL,
   appVersion,
   baseVersion,
   openExternalLink,
@@ -65,13 +64,12 @@ export function AboutDialog({ open, onClose }: { open: boolean; onClose: () => v
         <div className="mt-4 flex flex-wrap justify-center gap-x-4 gap-y-1.5 text-[13px]">
           <AboutLink href={APP_REPOSITORY} label="GitHub" />
           <AboutLink href={DOCS_URL} label="Docs" />
-          <AboutLink href={RELEASES_URL} label="Releases" />
           <AboutLink href={LICENSE_URL} label="License" />
           <button
             type="button"
             onClick={() => {
               onClose();
-              requestReleaseNotes();
+              requestReleaseNotes("browse");
             }}
             className="text-accent hover:underline"
           >

@@ -1,9 +1,11 @@
 // Browse Bots, the home pane: the title, the category chips, the search,
 // the Featured row, then one section per source (Shared with me, My Bots,
-// Organization, Templates) in two columns, each with View all. Purely
-// presentational: BotCatalogModal.tsx owns the data and the actions.
+// Organization, Templates) in two columns, each with View all. Templates
+// also carries the old Templates library's tools (Import, From a folder,
+// Share a team) and, in its own view, chips for the apps templates use.
+// Purely presentational: BotCatalogModal.tsx owns the data and the actions.
 import type { ReactNode } from "react";
-import { ChevronLeft, Search } from "lucide-react";
+import { ChevronLeft, ExternalLink, Search } from "lucide-react";
 
 import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
@@ -22,6 +24,9 @@ import { MASCOT_COLOR_HEX } from "../../../shared/mascot-colors";
 import type { BotCatalogLook } from "../../../shared/bot-catalog";
 import { BotAvatar } from "../Avatar";
 import { PersonAvatar } from "../MessageAuthor";
+import { CATEGORY_MODAL } from "../category-modal";
+import { TemplateAppChips } from "./BotCatalogDetailView";
+import { TEMPLATE_TOOLS, TEMPLATE_TOOL_LABEL, type TemplateTool } from "./TemplateTools";
 
 /** Rows a section shows on the home view before View all. */
 export const SECTION_PREVIEW = 6;
@@ -97,6 +102,7 @@ export function CatalogRow({ item, creatorAvatar, onOpen, action }: CatalogCardP
             <Badges item={item} />
           </span>
           <span className="block truncate text-[12px] leading-[18px] text-ink-secondary" title={itemDescription(item)}>{itemDescription(item)}</span>
+          {item.kind === "template" && item.template.apps.length > 0 && <span className="mt-0.5 block"><TemplateAppChips apps={item.template.apps} /></span>}
         </span>
       </button>
       {action}
@@ -143,6 +149,35 @@ export interface BotCatalogViewProps {
   /** A notice above the list (feedback, the read-only note, an error). */
   notice?: ReactNode;
   loading?: boolean;
+  /** Templates' tools (Import, From a folder, Share a team); absent: none
+   * (a remote client, a viewer who may not create bots). */
+  onTemplateTool?: (tool: TemplateTool) => void;
+  /** The apps templates use, chips in the Templates view. */
+  templateApps?: string[];
+  templateApp?: string | null;
+  onTemplateApp?: (app: string | null) => void;
+  /** The community templates' repository, linked from the Templates view. */
+  repositoryUrl?: string;
+  onOpenRepository?: (url: string) => void;
+}
+
+/** Templates' tools, beside the section's title. */
+function TemplateToolButtons({ onTool }: { onTool: (tool: TemplateTool) => void }) {
+  return (
+    <span className="flex flex-wrap items-center gap-1" data-catalog-template-tools="">
+      {TEMPLATE_TOOLS.map((tool) => (
+        <button
+          key={tool}
+          type="button"
+          data-catalog-template-tool={tool}
+          onClick={() => onTool(tool)}
+          className="rounded-full border border-border px-2.5 py-0.5 text-[12px] text-ink-secondary hover:bg-hover hover:text-ink"
+        >
+          {t(TEMPLATE_TOOL_LABEL[tool])}
+        </button>
+      ))}
+    </span>
+  );
 }
 
 export function BotCatalogView(props: BotCatalogViewProps) {
@@ -154,13 +189,13 @@ export function BotCatalogView(props: BotCatalogViewProps) {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col" data-bot-catalog-home="">
-      <header className="shrink-0 px-6 pb-3 pr-14 pt-6 sm:px-8">
+      <header className={CATEGORY_MODAL.titleBar}>
         {expanded ? (
           <button type="button" onClick={() => onExpand(null)} className="-ml-1.5 mb-1 flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[12.5px] text-ink-secondary hover:bg-hover hover:text-ink" data-catalog-back="">
             <ChevronLeft size={14} aria-hidden="true" />{t("botCatalog.back")}
           </button>
         ) : null}
-        <h2 id="bot-catalog-title" className="text-[24px] font-semibold leading-8 tracking-[-0.01em] text-ink">
+        <h2 id="bot-catalog-title" className={CATEGORY_MODAL.title}>
           {expanded ? t(SECTION_LABEL[expanded]) : t("botCatalog.title")}
         </h2>
         {!expanded && (
@@ -168,7 +203,7 @@ export function BotCatalogView(props: BotCatalogViewProps) {
         )}
       </header>
 
-      <div className="shrink-0 px-6 sm:px-8">
+      <div className="shrink-0 px-4 sm:px-8">
         <div className="flex flex-wrap items-center gap-1.5" role="toolbar" aria-label={t("botCatalog.categoriesAria")} data-catalog-chips="">
           {categories.map((chip) => (
             <button
@@ -197,11 +232,31 @@ export function BotCatalogView(props: BotCatalogViewProps) {
             className="min-w-0 flex-1 bg-transparent text-[13px] leading-[18px] text-ink placeholder:text-ink-secondary focus:outline-none"
           />
         </label>
+        {expanded === "templates" && props.templateApps && props.templateApps.length > 0 && (
+          <div className="mt-3 flex flex-wrap items-center gap-1.5" role="toolbar" aria-label={t("botCatalog.template.appsAria")} data-catalog-app-chips="">
+            <span className="mr-1 text-[12px] text-ink-tertiary">{t("botCatalog.template.uses")}</span>
+            {[null, ...props.templateApps].map((app) => (
+              <button
+                key={app ?? "any"}
+                type="button"
+                aria-pressed={(props.templateApp ?? null) === app}
+                data-catalog-app-chip={app ?? "any"}
+                onClick={() => props.onTemplateApp?.(app)}
+                className={cn(
+                  "h-6 rounded-full border px-2.5 text-[12px] transition-colors motion-reduce:transition-none",
+                  (props.templateApp ?? null) === app ? "border-transparent bg-accent text-accent-ink" : "border-border text-ink-secondary hover:bg-hover hover:text-ink",
+                )}
+              >
+                {app ?? t("botCatalog.template.anyApp")}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       {props.notice}
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-6 pb-7 pt-4 sm:px-8" data-catalog-list="">
+      <div className={cn(CATEGORY_MODAL.pane, "min-h-0 px-4 pb-7 pt-4 sm:px-8")} data-catalog-list="">
         {props.loading && (
           <p className="pb-3 text-[12.5px] text-ink-secondary" role="status" data-catalog-loading="">{t("botCatalog.loading")}</p>
         )}
@@ -225,13 +280,19 @@ export function BotCatalogView(props: BotCatalogViewProps) {
                   <div className="mb-1.5 flex items-center justify-between gap-3">
                     {!expanded && <h3 className="text-[13px] font-semibold text-ink">{t(SECTION_LABEL[section.id])}</h3>}
                     <div className="ml-auto flex items-center gap-3">
+                      {section.id === "templates" && props.onTemplateTool && <TemplateToolButtons onTool={props.onTemplateTool} />}
+                      {section.id === "templates" && expanded === "templates" && props.repositoryUrl && (
+                        <button type="button" onClick={() => props.onOpenRepository?.(props.repositoryUrl!)} data-catalog-repository="" className="flex items-center gap-1 text-[12px] text-ink-secondary hover:text-ink">
+                          {t("botCatalog.template.repository")}<ExternalLink size={11} aria-hidden="true" />
+                        </button>
+                      )}
                       {section.id === "mine" && props.hasArchived && (
                         <label className="flex items-center gap-1.5 text-[12px] text-ink-secondary">
                           <input type="checkbox" checked={props.showArchived} onChange={(event) => props.onShowArchived(event.target.checked)} data-catalog-show-archived="" />
                           {t("botCatalog.showArchived")}
                         </label>
                       )}
-                      {!expanded && section.items.length > SECTION_PREVIEW && (
+                      {!expanded && (section.items.length > SECTION_PREVIEW || (section.id === "templates" && section.items.length > 0 && (props.templateApps?.length ?? 0) > 0)) && (
                         <button type="button" onClick={() => onExpand(section.id)} data-catalog-view-all={section.id} className="text-[12px] text-ink-secondary hover:text-ink">
                           {t("botCatalog.viewAll")}
                         </button>

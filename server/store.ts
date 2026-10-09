@@ -18,6 +18,7 @@ import { peerAllowKey, type PeerAction } from "./peer-approval-key.ts";
 import { DATA_DIR, EVENTS_DIR, NATIVE_DIR, loadBrowserProfileIdAliases } from "./config.ts";
 import * as mdb from "./message-db.ts";
 import { forgetBotMemoryJournal, journalFile } from "./memory-journal.ts";
+import { forgetWorkspaceUsage } from "./workspace-usage.ts";
 import { runCommand, type Command } from "./commands.ts";
 import { workspaceDir } from "./workspace.ts";
 import type { Destination } from "./surface.ts";
@@ -36,6 +37,8 @@ import type { HandedState } from "./delta-context.ts";
 import type { AgentPart, PartPair, RoomPart } from "./package-parts.ts";
 import type { BotHost } from "./turn-route.ts";
 import { advancesPosition, type ReadMap, type ReadPosition } from "./read-receipts.ts";
+import { applyReaction, normalizeReactions, type ReactionActor, type ReactionMode } from "../shared/reactions.ts";
+import { migratePeopleDmToThreads, PEOPLE_DM_GENERAL_TITLE } from "./people-dms.ts";
 import type {
   BotActivity, GroupDefaultResponder, GroupTask as GroupTaskRecord, MausColor,
   ConnectorToolGrant, OptionCardData, TaskClosedBy, TaskOpenedBy, TaskUsage, WireBot, WireGroup,
@@ -66,9 +69,14 @@ export interface GroupPackageStamp {
 
 /** A room record excludes working state and ledger usage, both computed by
  * publicGroupState at projection time. */
-export type GroupRecord = Omit<WireGroup, "working" | "usage"> & { installedPackage?: GroupPackageStamp };
-/** The one private field is stripped; projection adds computed display fields. */
-export type GroupWirePrivateKeys = "installedPackage";
+export type GroupRecord = Omit<WireGroup, "working" | "usage"> & {
+  installedPackage?: GroupPackageStamp;
+  /** A person conversation went through the threads migration once
+   * (server/people-dms.ts migratePeopleDmToThreads). */
+  personThreads?: 1;
+};
+/** The private fields are stripped; projection adds computed display fields. */
+export type GroupWirePrivateKeys = "installedPackage" | "personThreads";
 export type GroupWireProjection = Omit<GroupRecord, GroupWirePrivateKeys> & Pick<WireGroup, "usage"> & { working: boolean };
 export type GroupWireProjectionIsExact = AssertExact<WireGroup, GroupWireProjection> & AssertSameKeys<WireGroup, GroupWireProjection>;
 export const groupWireProjectionIsExact: GroupWireProjectionIsExact = true;
@@ -922,6 +930,9 @@ export class Store {
         g.threadId = active.threadId;
         groupsMigrated = true;
       }
+      // A person conversation becomes threads once: what it was is its
+      // first thread, "General", and stays its default (server/people-dms.ts).
+      if (migratePeopleDmToThreads(g)) groupsMigrated = true;
       g.pinnedCwd = active.pinnedCwd;
       g.pinnedMessageId = active.pinnedMessageId;
     }
@@ -1100,6 +1111,13 @@ export class Store {
       if (!task) continue;
       const next = advance(task.updatedAt);
       if (task.updatedAt !== next) task.updatedAt = next;
+      // New activity is what an until-activity snooze waits for, as on a
+      // bot thread (setTaskActivity).
+      if (task.snoozedUntil === 0) {
+        delete task.snoozedUntil;
+        this.saveGroups();
+        this.emit({ type: "group", groupId: group.id });
+      }
     }
   }
 
@@ -1375,6 +1393,11 @@ export class Store {
     if (extra?.createdBy) group.createdBy = extra.createdBy;
     if (!dm) {
       group.tasks = [{ threadId, title: UNTITLED_TASK, createdAt, updatedAt: createdAt }];
+      // A person conversation starts on its "General" thread, already migrated.
+      if (extra?.peopleDm) {
+        group.tasks = [{ threadId, title: PEOPLE_DM_GENERAL_TITLE, createdAt, updatedAt: createdAt, general: true }];
+        group.personThreads = 1;
+      }
       // Rooms are usable from creation: there is no pending setup step.
       // Folder, responder and instructions are edited in the side panel.
       group.setupCompletedAt = createdAt;
@@ -1393,7 +1416,7 @@ export class Store {
     );
   }
 
-  patchGroup(id: string, patch: Partial<Pick<GroupRecord, "name" | "memberIds" | "humanIds" | "defaultResponder" | "bulletin" | "unread" | "pinned" | "busyBotId" | "cwd" | "pinnedMessageId" | "section" | "setupCompletedAt" | "setupSkippedAt" | "audienceFloor" | "installedPackage" | "createdBy" | "peopleDm" | "unreadFor" | "memoryEnabled" | "turnTimeoutMinutes">>): GroupRecord | null {
+  patchGroup(id: string, patch: Partial<Pick<GroupRecord, "name" | "memberIds" | "humanIds" | "defaultResponder" | "bulletin" | "unread" | "pinned" | "busyBotId" | "cwd" | "pinnedMessageId" | "section" | "setupCompletedAt" | "setupSkippedAt" | "audienceFloor" | "installedPackage" | "createdBy" | "peopleDm" | "unreadFor" | "memoryEnabled" | "turnTimeoutMinutes" | "tasks">>): GroupRecord | null {
     const group = this.group(id);
     if (!group) return null;
     if (Object.prototype.hasOwnProperty.call(patch, "humanIds")) {
@@ -1531,7 +1554,7 @@ export class Store {
     return group.tasks?.find((task) => task.threadId === threadId);
   }
 
-  createGroupTask(groupId: string, title?: string, activate = true): GroupTaskRecord | null {
+  createGroupTask(groupId: string, title?: string, activate = true, projectId?: string): GroupTaskRecord | null {
     const group = this.group(groupId);
     if (!group || group.dm) return null;
     const createdAt = Date.now();
@@ -1540,6 +1563,7 @@ export class Store {
       title: title?.trim().slice(0, 80) || UNTITLED_TASK,
       createdAt,
       updatedAt: createdAt,
+      ...(projectId && group.projects?.some((project) => project.id === projectId) ? { projectId } : {}),
     };
     group.tasks = [task, ...(group.tasks ?? [])];
     if (activate) {
@@ -1569,6 +1593,25 @@ export class Store {
     if (!task) return null;
     if (pinned) task.pinned = true;
     else delete task.pinned;
+    this.saveGroups();
+    this.emit({ type: "group", groupId });
+    return task;
+  }
+
+  /** A thread's organization state, the same fields a bot thread takes:
+   * archive, snooze, folder and pin. `undefined` clears a field. A folder
+   * must be one of this group's. */
+  patchGroupTask(groupId: string, threadId: string, patch: Partial<Pick<GroupTaskRecord, "archivedAt" | "snoozedUntil" | "projectId" | "pinned">>): GroupTaskRecord | null {
+    const group = this.group(groupId);
+    const task = this.groupTaskByThread(groupId, threadId);
+    if (!group || !task) return null;
+    if (patch.projectId !== undefined && !group.projects?.some((project) => project.id === patch.projectId)) return null;
+    for (const field of ["archivedAt", "snoozedUntil", "projectId", "pinned"] as const) {
+      if (!Object.prototype.hasOwnProperty.call(patch, field)) continue;
+      const value = patch[field];
+      if (value === undefined || (field === "pinned" && value !== true)) delete task[field];
+      else Object.assign(task, { [field]: value });
+    }
     this.saveGroups();
     this.emit({ type: "group", groupId });
     return task;
@@ -1654,14 +1697,25 @@ export class Store {
     return read;
   }
 
-  /** Toggle an emoji reaction on a message ("user" or a member botId). */
-  toggleReaction(threadId: string, messageId: string, emoji: string, by: string): Message | null {
+  /** One actor's emoji reaction on a message (shared/reactions.ts): toggle,
+   * add or remove. The stored list is normalized on the way (an older
+   * `{ emoji, by }` list is rewritten; `legacyUser` is who its "user" was).
+   * A change is a message patch, persisted and emitted like any other; a
+   * no-op writes nothing. Null when the message is not in this thread. */
+  reactToMessage(
+    threadId: string,
+    messageId: string,
+    emoji: string,
+    actor: ReactionActor,
+    options: { mode?: ReactionMode; legacyUser?: ReactionActor; now?: number } = {},
+  ): { message: Message; changed: boolean; added: boolean; full?: true } | null {
     const existing = this.messagesFor(threadId).find((m) => m.id === messageId);
     if (!existing) return null;
-    const reactions = existing.reactions ?? [];
-    const at = reactions.findIndex((r) => r.emoji === emoji && r.by === by);
-    const next = at >= 0 ? reactions.filter((_, i) => i !== at) : [...reactions, { emoji, by }];
-    return this.patchMessage(threadId, messageId, { reactions: next.length ? next : undefined });
+    const current = normalizeReactions(existing.reactions, options.legacyUser);
+    const result = applyReaction(current, emoji, actor, options.mode ?? "toggle", options.now ?? Date.now());
+    if (!result.changed) return { message: existing, changed: false, added: false, ...(result.full ? { full: true as const } : {}) };
+    const message = this.patchMessage(threadId, messageId, { reactions: result.reactions.length ? result.reactions : undefined });
+    return message ? { message, changed: true, added: result.added } : null;
   }
 
   private thread(threadId: string): ThreadState {
@@ -2165,6 +2219,8 @@ export class Store {
     } catch {}
     mdb.deleteBotMemoryFiles(id);
     forgetBotMemoryJournal(id);
+    // the Files list's usage record (server/workspace-usage.ts) is outside too
+    forgetWorkspaceUsage(id);
     // Generated task-workspaces are project files, not bot memory. Keep
     // them (and user-selected cwd folders) when deleting conversations.
     // Approval state deliberately lives outside the bot-writable workspace.
@@ -2832,58 +2888,113 @@ export class Store {
   }
 
   // ── tasks ─────────────────────────────────────────────────────────────
-  project(botId: string, projectId: string): BotProjectRecord | undefined {
-    return this.bot(botId)?.projects?.find((project) => project.id === projectId);
+  // ── folders: a bot's or a group's ───────────────────────────────────
+  // One implementation for both owners (a bot, or a group such as a person
+  // conversation); the owner only decides where it is saved and announced.
+  private folderOwner(owner: { botId: string } | { groupId: string }): {
+    record: { projects?: BotProjectRecord[]; tasks?: Array<{ projectId?: string }> };
+    commit: () => void;
+  } | null {
+    if ("botId" in owner) {
+      const bot = this.bot(owner.botId);
+      return bot ? { record: bot, commit: () => { this.saveBots(); this.emit({ type: "bot", botId: owner.botId }); } } : null;
+    }
+    const group = this.group(owner.groupId);
+    if (!group || group.dm) return null;
+    return { record: group, commit: () => { this.saveGroups(); this.emit({ type: "group", groupId: owner.groupId }); } };
   }
 
-  createProject(botId: string, name: string, emoji?: string | null): BotProjectRecord | null {
-    const bot = this.bot(botId);
-    if (!bot || !name.trim() || (emoji != null && !isProjectEmoji(emoji))) return null;
+  private ownerFolder(owner: { botId: string } | { groupId: string }, projectId: string): BotProjectRecord | undefined {
+    return this.folderOwner(owner)?.record.projects?.find((project) => project.id === projectId);
+  }
+
+  private createOwnerFolder(owner: { botId: string } | { groupId: string }, name: string, emoji?: string | null): BotProjectRecord | null {
+    const found = this.folderOwner(owner);
+    if (!found || !name.trim() || (emoji != null && !isProjectEmoji(emoji))) return null;
     const project: BotProjectRecord = {
       id: newId(), name: name.trim().slice(0, 80),
       ...(emoji == null ? {} : { emoji }),
     };
-    bot.projects = [...(bot.projects ?? []), project];
-    this.saveBots();
-    this.emit({ type: "bot", botId });
+    found.record.projects = [...(found.record.projects ?? []), project];
+    found.commit();
     return project;
   }
 
-  patchProject(botId: string, projectId: string, patch: { name?: string; emoji?: string | null }): BotProjectRecord | null {
-    const project = this.project(botId, projectId);
-    if (!project || (patch.name !== undefined && !patch.name.trim()) || (patch.emoji != null && !isProjectEmoji(patch.emoji))) return null;
+  private patchOwnerFolder(owner: { botId: string } | { groupId: string }, projectId: string, patch: { name?: string; emoji?: string | null }): BotProjectRecord | null {
+    const found = this.folderOwner(owner);
+    const project = this.ownerFolder(owner, projectId);
+    if (!found || !project || (patch.name !== undefined && !patch.name.trim()) || (patch.emoji != null && !isProjectEmoji(patch.emoji))) return null;
     if (patch.name !== undefined) project.name = patch.name.trim().slice(0, 80);
     if (patch.emoji === null) delete project.emoji;
     else if (patch.emoji !== undefined) project.emoji = patch.emoji;
-    this.saveBots();
-    this.emit({ type: "bot", botId });
+    found.commit();
     return project;
+  }
+
+  private reorderOwnerFolders(owner: { botId: string } | { groupId: string }, projectIds: string[]): BotProjectRecord[] | null {
+    const found = this.folderOwner(owner);
+    const projects = found?.record.projects ?? [];
+    if (!found || projectIds.length !== projects.length || new Set(projectIds).size !== projects.length) return null;
+    const byId = new Map(projects.map((project) => [project.id, project]));
+    if (projectIds.some((id) => !byId.has(id))) return null;
+    found.record.projects = projectIds.map((id) => byId.get(id)!);
+    found.commit();
+    return found.record.projects;
+  }
+
+  /** Removing an organizational label never removes its conversations. */
+  private deleteOwnerFolder(owner: { botId: string } | { groupId: string }, projectId: string): boolean {
+    const found = this.folderOwner(owner);
+    if (!found || !this.ownerFolder(owner, projectId)) return false;
+    found.record.projects = found.record.projects!.filter((project) => project.id !== projectId);
+    for (const task of found.record.tasks ?? []) {
+      if (task.projectId === projectId) delete task.projectId;
+    }
+    found.commit();
+    return true;
+  }
+
+  project(botId: string, projectId: string): BotProjectRecord | undefined {
+    return this.ownerFolder({ botId }, projectId);
+  }
+
+  createProject(botId: string, name: string, emoji?: string | null): BotProjectRecord | null {
+    return this.createOwnerFolder({ botId }, name, emoji);
+  }
+
+  patchProject(botId: string, projectId: string, patch: { name?: string; emoji?: string | null }): BotProjectRecord | null {
+    return this.patchOwnerFolder({ botId }, projectId, patch);
   }
 
   /** The stored array is the sidebar order; only a full owned permutation is valid. */
   reorderProjects(botId: string, projectIds: string[]): BotProjectRecord[] | null {
-    const bot = this.bot(botId);
-    const projects = bot?.projects ?? [];
-    if (!bot || projectIds.length !== projects.length || new Set(projectIds).size !== projects.length) return null;
-    const byId = new Map(projects.map((project) => [project.id, project]));
-    if (projectIds.some((id) => !byId.has(id))) return null;
-    bot.projects = projectIds.map((id) => byId.get(id)!);
-    this.saveBots();
-    this.emit({ type: "bot", botId });
-    return bot.projects;
+    return this.reorderOwnerFolders({ botId }, projectIds);
   }
 
   /** Removing an organizational label never removes its conversations. */
   deleteProject(botId: string, projectId: string): BotRecord | null {
-    const bot = this.bot(botId);
-    if (!bot || !this.project(botId, projectId)) return null;
-    bot.projects = bot.projects!.filter((project) => project.id !== projectId);
-    for (const task of bot.tasks ?? []) {
-      if (task.projectId === projectId) delete task.projectId;
-    }
-    this.saveBots();
-    this.emit({ type: "bot", botId });
-    return bot;
+    return this.deleteOwnerFolder({ botId }, projectId) ? this.bot(botId) ?? null : null;
+  }
+
+  /** A group's folders (a person conversation's): the same as a bot's. */
+  groupProject(groupId: string, projectId: string): BotProjectRecord | undefined {
+    return this.ownerFolder({ groupId }, projectId);
+  }
+
+  createGroupProject(groupId: string, name: string, emoji?: string | null): BotProjectRecord | null {
+    return this.createOwnerFolder({ groupId }, name, emoji);
+  }
+
+  patchGroupProject(groupId: string, projectId: string, patch: { name?: string; emoji?: string | null }): BotProjectRecord | null {
+    return this.patchOwnerFolder({ groupId }, projectId, patch);
+  }
+
+  reorderGroupProjects(groupId: string, projectIds: string[]): BotProjectRecord[] | null {
+    return this.reorderOwnerFolders({ groupId }, projectIds);
+  }
+
+  deleteGroupProject(groupId: string, projectId: string): GroupRecord | null {
+    return this.deleteOwnerFolder({ groupId }, projectId) ? this.group(groupId) ?? null : null;
   }
 
   /** The first thing the human asked in a thread — a task's natural name. */

@@ -6,6 +6,7 @@ import { routineWhenLabel } from "@/lib/routine-display";
 import type { Bot } from "@/state/store";
 import { PILL_INFO } from "@/lib/status-tones";
 import { Switch } from "../SettingsPrimitives";
+import { RoutineOwnerBadge } from "./RoutineScopeBar";
 
 const SUSPEND_REASON_KEYS = {
   person_out: "routines.suspendReason.person_out",
@@ -19,7 +20,7 @@ export function routineSuspendedText(reason: RoutineSuspendReason): string {
   return t("routines.suspended", { reason: t(SUSPEND_REASON_KEYS[reason]) });
 }
 
-export function RoutineList({ routines, loading, error, onOpen, onToggle, grouped = false }: {
+export function RoutineList({ routines, viewerPrincipalId, loading, error, onOpen, onToggle, grouped = false }: {
   routines: Routine[];
   /** Slice 6: the signed-in person on an organization server. */
   viewerPrincipalId?: string | null;
@@ -42,13 +43,18 @@ export function RoutineList({ routines, loading, error, onOpen, onToggle, groupe
       <div className={grouped ? "flex flex-col overflow-hidden rounded-xl border border-hairline-weak bg-card" : "flex flex-col gap-0.5"}>
         {sorted.map((routine) => {
           const when = routineWhenLabel(routine);
+          // Someone else's routine (a wider scope): its owner, read-only
+          // unless the server says this person may edit it.
+          const otherOwner = routine.owner?.id && routine.owner.id.toLowerCase() !== viewerPrincipalId?.toLowerCase() ? routine.owner : null;
+          const readOnly = routine.canEdit === false;
           return (
             <div key={routine.id} data-routine-row className={grouped ? "flex items-center gap-2.5 border-b border-hairline-weak px-3 py-2.5 last:border-b-0 hover:bg-hover" : "flex items-center gap-2.5 rounded-lg px-2 py-1.5 hover:bg-hover"}>
               <button type="button" onClick={() => onOpen(routine)} className="min-w-0 flex-1 text-left">
                 <span className="block truncate text-[13px] leading-[18px] text-ink">{routine.name}</span>
                 <span data-routine-when={when} title={when} className="line-clamp-2 text-[13px] leading-[18px] text-ink-secondary">{when}</span>
-                {(routine.runAs || routine.suspended) && (
+                {(routine.runAs || routine.suspended || otherOwner) && (
                   <span className="mt-0.5 flex flex-wrap gap-1.5">
+                    {otherOwner && <RoutineOwnerBadge owner={otherOwner} size={14} className="max-w-full rounded-md bg-inset px-1.5 text-[11.5px] leading-[18px] text-ink-secondary" />}
                     {routine.runAs && <span data-routine-run-as className="truncate rounded-md bg-inset px-1.5 text-[11.5px] leading-[18px] text-ink-secondary">{t("routines.runAs", { name: routine.runAs.name || routine.runAs.principalId })}</span>}
                     {routine.suspended && <span data-routine-suspended={routine.suspended.reason} className={`truncate rounded-md ${PILL_INFO} px-1.5 text-[11.5px] leading-[18px]`}>{routineSuspendedText(routine.suspended.reason)}</span>}
                   </span>
@@ -56,8 +62,10 @@ export function RoutineList({ routines, loading, error, onOpen, onToggle, groupe
               </button>
               <Switch
                 checked={routine.enabled}
+                disabled={readOnly}
+                title={readOnly ? t("routines.scope.readOnly") : undefined}
                 aria-label={routine.enabled ? t("botPanel.routines.pause") : t("botPanel.routines.resume")}
-                onClick={() => onToggle?.(routine)}
+                onClick={() => { if (!readOnly) onToggle?.(routine); }}
               />
             </div>
           );

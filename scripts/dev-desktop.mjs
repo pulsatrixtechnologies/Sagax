@@ -27,6 +27,11 @@ const legacyDevBundles = [path.join(devDir, "Pulsa Bot.app")];
 const stampFile = path.join(devDir, "stamp.json");
 const APP_NAME = "Sagax";
 const ICON_NAME = "PulsaBotIcon";
+// Electron's own bundle id is com.github.Electron: macOS then files dev
+// notifications under that identity, with no permission entry and Electron's
+// icon (UNErrorDomain 1 on show). A Sagax-owned dev id gets its own
+// permission prompt and the owl.
+const DEV_BUNDLE_ID = "com.openmausbot.app.dev";
 
 function run(command, args) {
   return execFileSync(command, args, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
@@ -69,7 +74,7 @@ function removeLegacyDevBundles() {
 
 function buildDevBundle(electronBundle) {
   removeLegacyDevBundles();
-  const stamp = JSON.stringify({ electron: electronBundle, electronMtime: statSync(electronBundle).mtimeMs, icon: newestMtime(iconSource) });
+  const stamp = JSON.stringify({ id: DEV_BUNDLE_ID, electron: electronBundle, electronMtime: statSync(electronBundle).mtimeMs, icon: newestMtime(iconSource) });
   if (existsSync(devBundle) && existsSync(stampFile) && readFileSync(stampFile, "utf8") === stamp) return;
 
   rmSync(devBundle, { recursive: true, force: true });
@@ -101,6 +106,7 @@ function buildDevBundle(electronBundle) {
     rmSync(out, { recursive: true, force: true });
   }
 
+  setPlistValue(infoPlist, "CFBundleIdentifier", DEV_BUNDLE_ID);
   setPlistValue(infoPlist, "CFBundleName", APP_NAME);
   setPlistValue(infoPlist, "CFBundleDisplayName", APP_NAME);
   setPlistValue(infoPlist, "CFBundleIconName", ICON_NAME);

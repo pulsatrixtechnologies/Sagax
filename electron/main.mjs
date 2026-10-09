@@ -2077,8 +2077,8 @@ const desktopAttention = createDesktopAttention({
   app,
   Notification,
   getWindow: () => mainWindow,
-  onClick: (id) => {
-    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send("desktop:notification-click", id);
+  onClick: (id, target) => {
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send("desktop:notification-click", id, target);
   },
 });
 
@@ -2385,9 +2385,6 @@ function refreshApplicationMenu() {
       onForget: (id) => void workspaceMenuAction(() => forgetEnvironment(id)),
       onOpenSettings: () => {
         if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send("app:open-settings");
-      },
-      onOpenReleaseNotes: () => {
-        if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send("release-notes:open");
       },
       serverModeId: serverModeEnvironment(environmentsState)?.id ?? null,
       onLeaveServerMode: () => void workspaceMenuAction(leaveServerMode),

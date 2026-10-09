@@ -27,4 +27,23 @@ describe("Persona editor state", () => {
     expect(reducer(opened, { type: "toggleAppSettings", open: true }).personaEditor).toBeNull();
     expect(reducer(opened, { type: "toggleAchievements", open: true }).personaEditor).toBeNull();
   });
+
+  it("reroutes a settings deep link that used to land on More to the persona editor", () => {
+    const open = (section: never) => reducer(withBot, { type: "toggleSettings", open: true, botId: "pepper", section });
+    expect(open("access" as never).personaEditor).toEqual({ botId: "pepper", section: "access" });
+    expect(open("voice" as never).personaEditor?.section).toBe("voice");
+    expect(open("soul" as never).personaEditor?.section).toBe("soul");
+    expect(open("worksOn" as never).personaEditor?.section).toBe("access");
+    expect(open("sharing" as never).personaEditor?.section).toBe("overview");
+    expect(open("access" as never).settingsOpen).toBe(true);
+  });
+
+  it("keeps Details and Routines links in the bot panel", () => {
+    for (const section of ["details", "routines"] as const) {
+      const next = reducer(withBot, { type: "toggleSettings", open: true, botId: "pepper", section });
+      expect(next.personaEditor).toBeNull();
+      expect(next.botSettingsSection).toBe(section);
+    }
+    expect(reducer(withBot, { type: "toggleSettings", open: true }).personaEditor).toBeNull();
+  });
 });

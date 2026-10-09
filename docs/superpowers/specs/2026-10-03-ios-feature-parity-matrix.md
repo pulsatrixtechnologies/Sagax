@@ -154,7 +154,7 @@ Copy, Select Text, Edit and retry; branch switcher :1495), `SelectableTextSheet.
 | MS7 | Branch switcher ‹ 2/3 › | ChatView:604 | POST /api/bots/:id/active-branch | Y | Y | Y | DONE | | = | A | none |
 | MS8 | Reply quote in the bubble, tap to jump | ReplyQuote.tsx | local | Y | n/a | n/a | MISSING (no `replyToId` decoded) | quote inside the bubble | = | A | none |
 | MS9 | Pin message, pinned banner | ChatView:433,577,1436 | PATCH tasks {pinnedMessageId} | **N** | Y | Y | MISSING | long-press > Pin; strip under the header (if JC lifts the RC rule, decision D2) | hover row (admin) | C | none |
-| MS10 | Reactions | store only (no 1:1 UI) | POST /api/threads/:t/messages/:m/reactions | n/a | Y | Y | P (emoji row in the menu) | | keep | P | none |
+| MS10 | Reactions on people's and bots' messages (2026-10-09): smiley in the hover bar, picker (8 quick + search), chips with count, mine highlighted, names in the tooltip | Reactions.tsx, MessageBar.tsx, GroupView tray | POST /api/threads/:t/messages/:m/reactions (toggle for the caller), live `message.patch` | Y | Y | Y | PARTIAL (emoji row in the long-press menu; chips count `actors`; mine only for an older `by: "user"`) | long-press > reaction row; chips under the bubble | keep | P | iPhone: highlight mine by the config viewer's principal, names on long-press of a chip |
 | MS11 | Find in thread (⌘F) | ChatFindBar.tsx | GET /api/search?threadId= | Y | Y | Y | PARTIAL (global SearchSheet only) | "+" > Find in conversation (find bar over the header) | `chat-find` | A | none |
 | MS12 | Export conversation | ExportTranscriptMenu.tsx | local | Y | n/a | n/a | DONE ("+" > Share transcript, GET /api/threads/:t/export) | | `chat-export-menu` | A | none |
 | MS13 | Day separators | ChatView DaySeparator | local | Y | n/a | n/a | DONE | | = | A | none |
@@ -169,7 +169,9 @@ Copy, Select Text, Edit and retry; branch switcher :1495), `SelectableTextSheet.
 | MS22 | Routine execution banner (Logs, back) | ChatView:1411 | local | Y | n/a | n/a | MISSING | caption under the header | = | A | none |
 | MS23 | Peer label on relayed lines | ChatView PeerLabel | local | Y | n/a | n/a | PARTIAL (rooms only) | small label above the bubble | = | A | none |
 | MS24 | Inspector (Run log, Events, Raw) | InspectorPanel.tsx | GET /api/threads/:t/events | **N** | N | admin | MISSING | none (admin: "..." > Inspector sheet) | `inspector` (admin) | C | none |
-| MS25 | Read receipts | none in the renderer (read state only) | POST .../read | n/a | Y | Y | N/A | | | | none |
+| MS25 | Read receipts | SeenBy.tsx, read-receipts-feed.ts | GET/POST /api/threads/:t/read, `thread.read` | n/a | Y | Y | N/A | | | | none |
+| MS26 | "Seen by" row with names (2026-10-09): label, up to 5 stacked avatars then +N, hover or focus shows "Name · time" | SeenBy.tsx (rooms, people, 1:1 with a bot) | GET /api/threads/:t/read (reader id and read time per thread) | n/a | Y | Y | MISSING | caption "Seen by" + faces under the last read line; long-press a face for the name and time | = | P | none |
+| MS27 | Bot reactions (2026-10-09): react_to_message / remove_reaction, shown like a person's with the bot's mascot in the tooltip | Reactions.tsx | agents tool, /api/internal/reaction | n/a | Y | Y | PARTIAL (chips count them, no mascot) | chip under the bubble | = | P | none |
 
 ## 4. Chat: threads (tasks) in a conversation
 
@@ -186,6 +188,7 @@ iPhone: `TaskManagerView.swift` (rename, pin, snooze, archive, bulk delete), `Bo
 | TH6 | Copy thread link | SidebarThreadRow.tsx:351 | local | Y | n/a | n/a | MISSING | thread long-press > Copy link (Core/DeepLink.swift) | thread row menu | A | none |
 | TH7 | Thread status (waiting, working, queued, unread, closed by) | SidebarThreadRow.tsx:261,339 | GET /api/bots | Y | Y | Y | DONE (BotThreadRow) | | = | A | none |
 | TH8 | Parallel task card with Stop | ParallelTaskCard.tsx, store:3349 | POST /api/bots/:id/parallel/:t/stop | Y | **N** | Y | MISSING (not decoded) | card in the transcript, Open and Stop | = | B | S1: sidecar allow parallel stop |
+| TH9 | Threads in a conversation with a person, like a bot's (2026-10-09): switch, new, rename, pin, archive, snooze, move to folder, delete, folders; the pair shares the list, each has their own open thread and unread per thread; migrated "General" thread | TaskPicker.tsx `PersonThreadPicker`, Sidebar.tsx `PersonThreadList`, lib/person-threads.ts | POST /api/groups/:id/tasks, POST/PATCH/DELETE /api/groups/:id/tasks/:t, POST/PATCH/DELETE /api/groups/:id/projects(/:f, /order), POST /api/groups/:id/messages and /read and /api/nudges with `threadId`; header `x-sagax-person-threads: 1` | Y (org) | N | org | MISSING (the phone shows people DMs as one conversation: RM22; until ported it reads and writes the default thread, as a 0.4.16 client) | DM header thread button and long-press menus as TH1 to TH6 | `chat-threads` on a person | C | iOS port, not in the desktop PR; sidecar allow the group task and project routes |
 
 ## 5. Chat: cards and rich content
 
@@ -370,6 +373,7 @@ iPhone: `TasksRoutinesView.swift` (Settings > Advanced > Threads & Routines: lis
 | AU17 | Webhooks: list, create, rotate, deliveries, test | WebhooksPanel.tsx | /api/webhooks* | N | N (explained) | GET Y, writes admin | PARTIAL ("Computer only" note) | none | hidden | H | none |
 | AU18 | Keep the computer awake for routines | RoutineWakeBar | bridge | N | n/a | n/a | N/A | | | H | none |
 | AU19 | Org routine delegation (act in my name) | settings/MyRoutineDelegation.tsx | /api/org/routine-delegation | Y (org) | N | org | MISSING | Settings > Organization > Routines act as me | settings | C | none |
+| AU20 | Scope Mine / My teams / Everyone, filters Team, Bot, Owner, Status; others' routines read-only with owner avatar (2026-10-09) | routines/RoutineScopeBar.tsx, lib/use-routine-scope.ts | GET /api/routines?scope=mine\|team\|all&teamId&botId&ownerId&status, DELETE /api/routine-runs?scope=... | Y (org) | Y | Y | MISSING (iOS lists `mine` only; the plain listing is unchanged) | Automations toolbar: segmented Mine / My teams / Everyone (disabled with the missing permission), Menu > Filter; owner line on each row; hide Edit, Pause, Delete when `canEdit` is false and Run now when `canRun` is false | = | A | none |
 
 ## 10. Plugins, MCP, connectors
 
@@ -515,6 +519,8 @@ rows and people, (b) Connect apps, (c) settings and approvals, (d) bot panel and
 | DC44 | Person panel resizes like the bot panel (#175) | layout | none | N/A (docked panels); the phone uses a sheet. | N/A | none |
 | DC45 | Hide Go to conversation chips whose conversation was deleted (#176) | ChatView chips | none | The phone decodes the server's `gone` stamp and drops "Open thread" for a thread that no longer exists. | iOS UI | d |
 | DC46 | Plan usage reads the person's own subscription on an org server (#177) | server | GET /api/usage | Server-side. | server | none |
+| DC47 | Mastery tier: 24 hard achievements unlock the Mastery characters and skins; locked looks show their achievement and progress (docs/achievements.md) | AchievementsPage Mastery cards, MascotLookEditor locks, shared/mascot-unlocks.ts | GET /api/me/achievements; PATCH /api/bots/:id(/profile) answers 403 `look_locked` with the achievement id | The achievements sheet lists Mastery (and Tiers) with the generated catalog, shows the progress bar from 0 and a "Locked: N looks to unlock" line on Mastery cards. The phone has no look editor for the Mastery characters yet: when it gets one, it reads the same registry keys (`mastery:<id>`, `character:<id>`, `skin:<character>:<skin>`) from `rewards`. | iOS strings | none |
+| DC48 | Shiba, a Mastery character: 13 skins, sixteen faces, dog moves on the desktop mascot (walk, wander and back, turn in circles, bark, sit, lie down, sniff, stretch, wag...) (feat/mascot-shiba) | shiba-art.ts, shiba-moves.ts, ShibaMascot.tsx, skin-fx/shiba-skins.tsx, floating-bots/mascots.tsx | PATCH {mascotLook: {character: "shiba", skins: {shiba}}} (403 `look_locked` while locked) | The phone decodes the look and every skin (legacy ids included) and draws Shiba from the generated `ShibaStillArt.swift` with `ShibaArt` palettes (fixture-checked), the bust under 48 pt; the editors list its skins behind the reward keys. Moves on the phone: idle breath, blink, tail wag and ear twitch while animated, and the walk cycle (gallery page only, nothing on the phone walks). The desktop-only moves (wander, turn in circles, bark, sit, lie down, sniff, stretch, the cue reactions, the bark sound) are N/A: they belong to the floating mascot (FM1). Premium skins show their palette and coat gradient without their effects (`MascotSubstitution`). | iOS UI | b |
 
 Not listed: releases and chores with no feature (#190 upstream sync, #192, #193, #195, #202,
 #205, #217, #223).
@@ -554,6 +560,7 @@ Plan D.5 (Perspicax master plan 2026-10-09). Four items; each row says what matc
 | P1-2 | A room's call | GroupCallView.tsx (desktop: full overlay) | JC's ask: the bot call's floating bar under the room's name, no full-screen screen. `CallBar(subject: .room)`: up to three overlapping member faces (focused one ringed and in front, "+N" for more), each with its own state face; the room's status ("Nova is speaking", "Bringing the group in"); Settings card (language, Advanced, hold) and Transcript card with the room's hint. Same engine and turn-taking as before. Differs from the desktop on purpose (the desktop still draws its overlay). UITest `testARoomCallTakesTurns` now checks the bar and the faces. | DONE (iOS presentation) |
 | P1-3 | Routine "Runs as" (organization server): the person a routine runs as, a dropdown for an admin or a team manager (people who cannot run the bot listed, not choosable, "(cannot run this bot's routines)"), a search past 8 people, "Will run once {name} signs in", the help line; the line alone for anyone else; nothing on a solo server | routines/RunAsField.tsx, RoutineCalendarPage.tsx, GET /api/routines/run-as-options, POST/PATCH /api/routines {runAs} | Editor section after the results thread, as on the desktop: a row with the person's initials and name that opens the list (search past 8, disabled rows with the reason, pending line, check on the chosen one), or the "Runs as {name}" line when the person cannot choose; options asked again when the bot, type or room changes; a choice that no longer stands falls back; the save sends `runAs` only when it differs from the routine's current person. Differs: initials only, no Perspicax picture (the phone does not fetch them yet). Tests: `RoutineRunAsTests`, UITest `testRunAsListsWhoMayRunTheRoutine` (org fixture). | DONE (initials, no picture) |
 | P1-4 | "Bot templates" beside the Connect apps search: closes Connect apps, opens the Templates library when Templates is on, else the new bot dialog | plugins/ConnectAppsView.tsx, PluginsPanel.tsx `openBotTemplates` | A "Bot templates" row heading the Connect apps list (the phone's search lives in the navigation bar, so the button cannot sit inside it): closes Connect apps (and Settings around it), then Templates (`features.templates` and an admin pairing, `BotTemplatesEntry`) or the new bot sheet. Differs: placement (list head, not beside the field); the iPad's desktop Plugins modal does not draw it yet. Tests: `BotTemplatesEntryTests`, UITest `testBotTemplatesBesideTheSearchOpensTheNewBotSheet`. | DONE (placement adapted) |
+| P1-5 | Browse Bots replaces the Templates library (2026-10-09, `feat/catalog-replaces-templates`): "Bot templates" in Connect apps, "Browse templates" in New bot, the sidebar's Templates place and install links open Browse Bots on its Templates section (organization packages, presets, community teams with their apps as chips and an app filter, built-in roles, then Import, From a folder and Share a team). Follow-up (`fix/browse-bots-swap-templates`): the swap is 1:1. The sidebar row is "Browse Bots" (catalogue icon, opens the catalogue's home view, hidden until Settings > Experimental features > Browse Bots is on, off by default, same `features.templates` key); Connect apps' row is "Browse Bots"; Browse Bots is gone from the composer To: menu, the mascot and "..." menus and the sidebar section menu. iOS mirrors this placement. | bot-catalog/BotCatalogModal.tsx, BotCatalogView.tsx, TemplateTools.tsx, src/lib/templates-entry.ts | Not done. iOS mirrors the placement above. iOS needs the catalogue (Browse Bots with its Templates section) to replace its "Bot templates" row of P1-4 (`BotTemplatesEntry`, which still opens Templates behind `features.templates` or the new bot sheet). Until then iOS keeps P1-4 as shipped. | TODO |
 
 ## Counts
 
@@ -746,3 +753,26 @@ another's save.
 
 Not verifiable from the tests: a real organization server with Perspicax sign-in (the route
 and frame tests use the server modules and a stub client).
+
+## 17. Markdown editor (2026-10-09, branch `feat/markdown-editor`)
+
+The desktop's markdown fields share one editor (`docs/markdown-editor.md`). iOS is not in this
+branch; the row records the gap.
+
+| ID | Desktop behaviour | Desktop path | iOS now | State |
+|---|---|---|---|---|
+| ME1 | Every markdown field (SOUL.md, MEMORY.md and topic files, a skill's instructions, routine, trigger and webhook instructions, group and team instructions, group memory, About me) edits in one CodeMirror editor: headings sized, bold, italic, code, quotes, tables and checked tasks styled as typed; Write, Preview (chat renderer) and, in Advanced, Side by side; toolbar with shortcuts (bold, italic, heading, lists, checklist, quote, code, link, table, divider, Format); list continuation, Tab and Shift+Tab in lists, auto-pairs, link and table paste; word and character count. Values and save paths unchanged | markdown/MarkdownEditor.tsx, markdown/MarkdownEditorCore.tsx, markdown/markdown-edits.ts | Plain text fields (`InstructionView` for the soul; memory and skills not on the phone yet, BA4, BA5) | MISSING (iOS follow-up: a formatting bar over the keyboard and a Preview toggle in `InstructionView`, reusing the same edit rules) |
+
+## 18. Bot workspace: Rules, Files, docs/ (2026-10-09, branch `feat/persona-rules-files-docs`)
+
+The persona editor gains Rules and Files (`docs/bot-workspace.md`). Server side every engine
+and every client gets the same prompt; iOS is not in this branch, the rows record the gap.
+RULES.md and docs/ go through the workspace routes, open to the bot's owner like the Soul
+(BA3), so they are tier A for an owner on the phone; memory files stay admin (BA5).
+
+| ID | Desktop behaviour | Desktop path | Routes | iOS now | State |
+|---|---|---|---|---|---|
+| WS1 | Rules: RULES.md in the markdown editor, starter template on first open, counter against 60 lines / 8 KB, the Perspicax inheritance note | bot-settings/RulesSection.tsx | GET/PUT /api/bots/:id/workspace/file?path=RULES.md | none | MISSING (Advanced > Rules, `InstructionView` pattern with a counter; owner or admin) |
+| WS2 | Files: the whole workspace with Every turn / On demand / Never loaded badges, budgets, created, modified, last used, Forgotten marker; Simple mode keeps the badges only | bot-settings/WorkspaceFilesSection.tsx, lib/workspace-files.ts | GET /api/bots/:id/workspace | none | MISSING (Advanced > Files list, read-only first) |
+| WS3 | Documents in docs/: create, upload a .md, rename, delete, edit in place; other files download | WorkspaceFilesSection.tsx | PUT/DELETE /api/bots/:id/workspace/file, POST /api/bots/:id/workspace/docs/rename, GET /api/bots/:id/workspace/download | none | MISSING (follow-up after WS2) |
+| WS4 | The bot's tools rules_update, docs_update, workspace_read, workspace_search; the Rules block after the soul and the docs index in every turn | server/workspace-files.ts, server/workspace-tools.ts | agents MCP | server side: a phone conversation gets them like any other | DONE (no iOS work) |
