@@ -158,7 +158,9 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 24
-          cache: pnpm
+          # No dependency cache in a release build: a cache entry written from
+          # the default branch scope could be poisoned and then restored into a
+          # job that signs or publishes (CodeQL actions/cache-poisoning).
       - run: pnpm install --frozen-lockfile
       - name: Clean generated output
         run: rm -rf dist dist-server dist-native release
@@ -332,7 +334,9 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 24
-          cache: pnpm
+          # No dependency cache in a release build: a cache entry written from
+          # the default branch scope could be poisoned and then restored into a
+          # job that signs or publishes (CodeQL actions/cache-poisoning).
       - run: pnpm install --frozen-lockfile
       - name: Clean generated output
         shell: bash
@@ -406,7 +410,9 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 24
-          cache: pnpm
+          # No dependency cache in a release build: a cache entry written from
+          # the default branch scope could be poisoned and then restored into a
+          # job that signs or publishes (CodeQL actions/cache-poisoning).
       - name: Install package validation and native smoke tools
         run: >-
           sudo apt-get update && sudo apt-get install -y
