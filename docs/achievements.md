@@ -76,7 +76,7 @@ imports no art, so it holds before the characters land and after.
 | `shiba` | `hands-off` | `second-wind` (cream, blacktan) | `common-thread` (red, sesame) | `quiet-nights` (white) | `pack-leader` | `ferryman` | `second-opinion` | `clean-slate` | `sagax-master` |
 | `grump` | `reviewer` | `prompter` | `red-pen` | `not-so-fast` | `justice-of-peace` | `ferryman` | `second-opinion` | `clean-slate` | `sagax-master` |
 | `ogre` | `conductor` | `ten-hands` | `plugged-in` | `swarm` | `full-house` | `ferryman` | `second-opinion` | `clean-slate` | `sagax-master` |
-| `frog` | `polyglot` | `thrifty` | `translator` | `skill-smith` | `total-recall` | `ferryman` | `second-opinion` | `clean-slate` | `sagax-master` |
+| `frog` | `polyglot` | `thrifty` (leaf, tree) | `translator` (poison, bullfrog) | `skill-smith` (ghost) | `total-recall` | `ferryman` | `second-opinion` | `clean-slate` | `sagax-master` |
 
 - The base skin (`plain`, or `classic`) comes with the character.
 - Named skins are spread over the three rungs in the order the character
