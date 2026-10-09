@@ -747,3 +747,12 @@ another's save.
 
 Not verifiable from the tests: a real organization server with Perspicax sign-in (the route
 and frame tests use the server modules and a stub client).
+
+## 17. Markdown editor (2026-10-09, branch `feat/markdown-editor`)
+
+The desktop's markdown fields share one editor (`docs/markdown-editor.md`). iOS is not in this
+branch; the row records the gap.
+
+| ID | Desktop behaviour | Desktop path | iOS now | State |
+|---|---|---|---|---|
+| ME1 | Every markdown field (SOUL.md, MEMORY.md and topic files, a skill's instructions, routine, trigger and webhook instructions, group and team instructions, group memory, About me) edits in one CodeMirror editor: headings sized, bold, italic, code, quotes, tables and checked tasks styled as typed; Write, Preview (chat renderer) and, in Advanced, Side by side; toolbar with shortcuts (bold, italic, heading, lists, checklist, quote, code, link, table, divider, Format); list continuation, Tab and Shift+Tab in lists, auto-pairs, link and table paste; word and character count. Values and save paths unchanged | markdown/MarkdownEditor.tsx, markdown/MarkdownEditorCore.tsx, markdown/markdown-edits.ts | Plain text fields (`InstructionView` for the soul; memory and skills not on the phone yet, BA4, BA5) | MISSING (iOS follow-up: a formatting bar over the keyboard and a Preview toggle in `InstructionView`, reusing the same edit rules) |
