@@ -145,6 +145,42 @@ final class ProfileUITests: XCTestCase {
         }
     }
 
+    /// A shape plays the fourteen Shapes moves from the mascot's long press
+    /// (the desktop editor's Moves), and its colour picker offers the Clay
+    /// palette (MS5): a Clay colour saves at once.
+    @MainActor
+    func testAShapePlaysItsMovesAndWearsAClayColour() throws {
+        let ara = try XCTUnwrap(try bot(named: "Ara"))
+        let id = try XCTUnwrap(ara["id"] as? String)
+        defer { _ = try? api("PATCH", "/api/bots/\(id)", ["color": "purple", "mascotLook": ["character": "owl"], "mascotSkin": "none"]) }
+        try api("PATCH", "/api/bots/\(id)", ["mascotLook": ["character": "shape", "shape": "cloud"]])
+        let app = launchProfile()
+
+        let mascot = element("profile-mascot", in: app)
+        mascot.press(forDuration: 1.2)
+        // a context menu keeps its items' names, not their identifiers
+        let menu = app.collectionViews.firstMatch
+        let orbit = menu.buttons["Orbit"]
+        XCTAssertTrue(orbit.waitForExistence(timeout: 10), "the Moves menu lists the Shapes moves")
+        for move in ["Thinking", "Wink", "Wide eyes", "Alert", "Notification", "Exclamation", "Sleep", "Egg", "Hexagon", "Play", "Swirl", "Burst", "Comet"] {
+            XCTAssertTrue(menu.buttons[move].exists, move)
+        }
+        orbit.tap()
+        // the menu folds away before the mascot takes a tap again
+        let gone = Date().addingTimeInterval(5)
+        while menu.exists, Date() < gone { RunLoop.current.run(until: Date().addingTimeInterval(0.2)) }
+        XCTAssertTrue(mascot.waitForExistence(timeout: 5))
+        mascot.tap()
+        XCTAssertTrue(element("character-reset", in: app).waitForExistence(timeout: 10))
+        let palettes = app.segmentedControls["character-color-palette"]
+        XCTAssertTrue(palettes.waitForExistence(timeout: 5), "a shape offers the Clay palette")
+        palettes.buttons["Clay"].tap()
+        let tomato = app.buttons["tomato"]
+        XCTAssertTrue(tomato.waitForExistence(timeout: 5))
+        tomato.tap()
+        try eventually("Ara wears Clay tomato on the server") { try bot(named: "Ara")?["color"] as? String == "tomato" }
+    }
+
     // MARK: Picture
 
     /// Generate runs the real route against the fixture's image provider
