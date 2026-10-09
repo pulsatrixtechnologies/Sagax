@@ -141,9 +141,41 @@ public enum MascotStyle: String, CaseIterable, Codable, Sendable {
     case threeD = "3d"
 }
 
-/// The original shapes, in the picker's order.
+/// The eight shapes, in the picker's order (the desktop's clean-room set of
+/// 2026-10-08, #187): Circle, Pebble, Squircle, Capsule, Triangle,
+/// Hexagon, Cloud, Droplet. The stored ids are the desktop's own
+/// (`MASCOT_SHAPES`: bean is the pebble, pick the triangle), so a look made
+/// on either side reads the same on the other.
 public enum MascotShape: String, CaseIterable, Codable, Sendable {
-    case circle, blob, squircle, pill, triangle, hexagon, cloud, drop
+    case circle
+    case blob = "bean"
+    case squircle, pill
+    case triangle = "pick"
+    case hexagon, cloud, drop
+
+    /// `LEGACY_SHAPES`: ids from earlier sets (and the phone's own old ids)
+    /// land on the nearest of the eight.
+    public static func stored(_ raw: String) -> MascotShape? {
+        if let shape = MascotShape(rawValue: raw) { return shape }
+        switch raw {
+        case "blob", "pebble": return .blob
+        case "triangle": return .triangle
+        case "capsule": return .pill
+        case "droplet": return .drop
+        case "sparkle": return .squircle
+        case "clover", "flower": return .cloud
+        case "house", "star": return .hexagon
+        default: return nil
+        }
+    }
+
+    public init(from decoder: Decoder) throws {
+        let raw = try decoder.singleValueContainer().decode(String.self)
+        guard let shape = Self.stored(raw) else {
+            throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath, debugDescription: "unknown shape \(raw)"))
+        }
+        self = shape
+    }
 }
 
 /// Skins for the original shapes; every one renders on every shape.
@@ -220,11 +252,15 @@ public struct MascotLook: Codable, Hashable, Sendable {
             if try container.decodeNil(forKey: Key("skins")) { throw Malformed() }
             let nested = try container.nestedContainer(keyedBy: Key.self, forKey: Key("skins"))
             guard nested.allKeys.allSatisfy({ $0.stringValue == "shape" || $0.stringValue == "trombi" }) else { throw Malformed() }
+            // A skin this build does not draw yet (the desktop's premium
+            // editions: gold, chrome, holo...) falls back to the plain finish
+            // instead of losing the whole look to the owl.
             func skin<T: Decodable>(_ type: T.Type, _ key: String) throws -> T? {
                 let k = Key(key)
                 guard nested.contains(k) else { return nil }
                 if try nested.decodeNil(forKey: k) { throw Malformed() }
-                return try nested.decode(T.self, forKey: k)
+                _ = try nested.decode(String.self, forKey: k)
+                return try? nested.decode(T.self, forKey: k)
             }
             skins = Skins(shape: try skin(ShapeSkin.self, "shape"), trombi: try skin(TrombiSkin.self, "trombi"))
         }

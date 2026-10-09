@@ -2198,7 +2198,9 @@ final class Session: ObservableObject {
     func updateModel(_ selection: ModelSelection, for bot: Bot) async -> Bot? {
         guard let client else { return nil }
         do {
-            let updated = try await client.updateModel(botId: bot.id, selection: selection, threadId: bot.threadId)
+            // Auto, on or off, is the bot's own choice (#153): saved as its default too
+            let autoChange = selection.auto == true || bot.modelSelection.auto == true
+            let updated = try await client.updateModel(botId: bot.id, selection: selection, threadId: bot.threadId, updateBotDefault: autoChange)
             guard !Task.isCancelled else { return nil }
             state.apply(.bot(updated))
             return updated

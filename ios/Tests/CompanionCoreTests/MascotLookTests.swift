@@ -25,7 +25,7 @@ final class MascotLookTests: XCTestCase {
 
     func testAbsentOrMalformedLookIsTheOwl() {
         XCTAssertEqual(look("null"), .owl)
-        XCTAssertEqual(look("{\"character\":\"shape\",\"shape\":\"star\"}"), .owl)
+        XCTAssertEqual(look("{\"character\":\"shape\",\"shape\":\"zigzag\"}"), .owl)
         XCTAssertEqual(look("{\"character\":\"robot\"}"), .owl)
         XCTAssertEqual(look("\"shape\""), .owl)
         XCTAssertEqual(look("42"), .owl)
@@ -76,10 +76,28 @@ final class MascotLookTests: XCTestCase {
 
     func testThePickerOrdersMatchTheDesktop() {
         XCTAssertEqual(MascotCharacter.allCases.map(\.rawValue), ["owl", "shape", "trombi"])
-        XCTAssertEqual(MascotShape.allCases.map(\.rawValue), ["circle", "blob", "squircle", "pill", "triangle", "hexagon", "cloud", "drop"])
+        // #187: the desktop's stored ids (MASCOT_SHAPES)
+        XCTAssertEqual(MascotShape.allCases.map(\.rawValue), ["circle", "bean", "squircle", "pill", "pick", "hexagon", "cloud", "drop"])
         XCTAssertEqual(ShapeSkin.allCases.map(\.rawValue), ["plain", "glossy", "outline", "neon", "pastel", "night"])
         XCTAssertEqual(TrombiSkin.allCases.map(\.rawValue), ["classic", "gold", "neon", "retro98"])
         XCTAssertEqual(MascotSkin.allCases.map(\.rawValue), ["none", "lightning", "gold", "neon", "inferno", "frost", "carbon"])
+    }
+
+    /// A look made on the desktop never falls back to the owl on the phone:
+    /// its shape ids, the legacy ones, and premium skins the phone does not
+    /// draw yet (plain finish).
+    func testDesktopShapeIdsLegacyIdsAndUnknownSkinsKeepTheLook() throws {
+        func look(_ json: String) throws -> MascotLook { try JSONDecoder().decode(MascotLook.self, from: Data(json.utf8)) }
+        XCTAssertEqual(try look(#"{"character":"shape","shape":"bean"}"#).shape, .blob)
+        XCTAssertEqual(try look(#"{"character":"shape","shape":"pick"}"#).shape, .triangle)
+        XCTAssertEqual(try look(#"{"character":"shape","shape":"blob"}"#).shape, .blob, "the phone's old id")
+        XCTAssertEqual(try look(#"{"character":"shape","shape":"star"}"#).shape, .hexagon, "a retired shape")
+        let gold = try look(#"{"character":"shape","shape":"cloud","skins":{"shape":"gold"}}"#)
+        XCTAssertEqual(gold.character, .shape)
+        XCTAssertEqual(gold.shape, .cloud)
+        XCTAssertNil(gold.skins?.shape)
+        let data = try JSONEncoder().encode(MascotLook(character: .shape, shape: .triangle))
+        XCTAssertTrue(String(decoding: data, as: UTF8.self).contains(#""pick""#))
     }
 
     // MARK: skin

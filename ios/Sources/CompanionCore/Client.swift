@@ -1240,7 +1240,9 @@ public struct CompanionClient: Sendable {
 
     /// A captured thread uses the task route, which cannot change siblings or
     /// the profile default. Omitting it retains the legacy narrow model API.
-    public func updateModel(botId: String, selection: ModelSelection, threadId: String? = nil) async throws -> Bot {
+    /// `updateBotDefault` also saves it as the bot's default (the desktop's
+    /// "Thread + bot default"), which Auto (#153) needs to reach the bot.
+    public func updateModel(botId: String, selection: ModelSelection, threadId: String? = nil, updateBotDefault: Bool = false) async throws -> Bot {
         guard Self.validRouteID(botId) else { throw APIError.badURL }
         if let threadId {
             guard Self.validRouteID(threadId) else { throw APIError.badURL }
@@ -1248,7 +1250,7 @@ public struct CompanionClient: Sendable {
             return try await send(
                 try makeRequest("PATCH", "/api/bots/\(botId)/tasks/\(threadId)", body: [
                     "modelSelection": model, "requireAvailableModel": true,
-                ]),
+                ].merging(updateBotDefault ? ["updateBotDefault": true] : [:]) { a, _ in a }),
                 as: BotResponse.self
             ).bot
         }

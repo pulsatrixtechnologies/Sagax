@@ -143,6 +143,28 @@ final class BotAdvancedUITests: XCTestCase {
 
     /// A disabled import is reviewed in full before it is switched on; then
     /// it is removed. The server says so each time.
+    /// #153: Auto heads the Model page; on, the server keeps `auto` on the
+    /// bot's selection; off pins the model again.
+    @MainActor
+    func testAutoModelIsSavedOnTheServer() throws {
+        try requirePanel()
+        let id = try araId()
+        func auto() throws -> Bool {
+            let bot = try bots().first { $0["id"] as? String == id }
+            let selections = [(bot?["modelSelection"] as? [String: Any])] + ((bot?["tasks"] as? [[String: Any]]) ?? []).map { $0["modelSelection"] as? [String: Any] }
+            return selections.contains { $0?["auto"] as? Bool == true }
+        }
+        let app = launchAdvanced()
+        open("panel-row.model", in: app)
+        let toggle = app.switches["model-auto"].firstMatch
+        XCTAssertTrue(toggle.waitForExistence(timeout: 15), app.debugDescription)
+        let was = try auto()
+        toggle.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.5)).tap()
+        try eventually("auto flipped on the server") { try auto() == !was }
+        toggle.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.5)).tap()
+        try eventually("auto back") { try auto() == was }
+    }
+
     @MainActor
     func testSkillIsReviewedEnabledThenRemoved() throws {
         try requirePanel()

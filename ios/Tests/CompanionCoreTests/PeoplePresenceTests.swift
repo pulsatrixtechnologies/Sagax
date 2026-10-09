@@ -188,3 +188,12 @@ final class AccountRowTests: XCTestCase {
         XCTAssertEqual(patch?["settings"]?["showTitle"], false)
     }
 }
+
+final class DeadThreadChipTests: XCTestCase {
+    func testAGoneThreadHasNoLiveReference() throws {
+        let gone = try JSONDecoder().decode(ThreadRef.self, from: Data(#"{"botId":"b","threadId":"t","title":"x","gone":true}"#.utf8))
+        XCTAssertNil(gone.live)
+        let alive = try JSONDecoder().decode(ThreadRef.self, from: Data(#"{"botId":"b","threadId":"t","title":"x"}"#.utf8))
+        XCTAssertEqual(alive.live?.threadId, "t")
+    }
+}

@@ -278,24 +278,16 @@ final class RichContentUITests: XCTestCase {
         attach("Pictures", app)
     }
 
-    // MARK: - CA16 paid with
+    // MARK: - #201: no Paid with
 
     @MainActor
-    func testTurnAccessLineInTheDigest() throws {
+    func testTheDigestNamesNoPayer() throws {
         let app = try launch()
         let chip = reveal(app, "digest-chip-rich-digest")
-        XCTAssertTrue(chip.label.contains("Paid with: Organization's key"), chip.label)
+        XCTAssertFalse(chip.label.contains("Paid with"), chip.label)
         chip.tap()
-        XCTAssertTrue(element(app, "digest-paid-with").waitForExistence(timeout: 5))
-        XCTAssertTrue(element(app, "digest-paid-with").label.contains("Organization's key"))
-    }
-
-    @MainActor
-    func testTurnAccessLineStaysWhenToolCallsAreHidden() throws {
-        let app = try launch(["-companion.prefs.activityDetail", "hidden"])
-        let line = reveal(app, "turn-access-rich-digest")
-        XCTAssertTrue(line.label.contains("Paid with: Organization's key"), line.label)
-        XCTAssertFalse(element(app, "digest-chip-rich-digest").exists)
+        XCTAssertTrue(app.navigationBars["What I did"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.staticTexts["Paid with"].exists)
     }
 
     // MARK: - ST4 run card

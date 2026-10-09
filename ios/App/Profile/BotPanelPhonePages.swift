@@ -62,6 +62,8 @@ struct BotModelSection: View {
     @State private var variant: String?
     @State private var saved: ModelSelection
     @State private var busy = false
+    /// Auto (#153): the best model per task, picked by the server.
+    @State private var auto: Bool
 
     init(bot: Bot) {
         self.bot = bot
@@ -71,6 +73,7 @@ struct BotModelSection: View {
         _effort = State(initialValue: selection.effort)
         _variant = State(initialValue: selection.variant)
         _saved = State(initialValue: selection)
+        _auto = State(initialValue: selection.auto == true)
     }
 
     private var current: Bot { session.state.bot(bot.id)?.projected(forThread: bot.threadId) ?? bot }
@@ -102,9 +105,11 @@ struct BotModelSection: View {
         return (instance?.capabilities?.effortLevels ?? []).filter { !$0.isEmpty && seen.insert($0).inserted }
     }
     private var draft: ModelSelection {
-        usesVariants
+        var next = usesVariants
             ? ModelSelection(instanceId: instanceID, model: modelID, variant: variant)
             : ModelSelection(instanceId: instanceID, model: modelID, effort: effort)
+        if auto { next.auto = true }
+        return next
     }
     private var canApply: Bool {
         guard loaded, current.busy != true, let instance, instance.snapshot.isAvailable else { return false }
@@ -115,12 +120,28 @@ struct BotModelSection: View {
     var body: some View {
         Section {
             if !session.canAdminister {
-                LabeledContent(String(localized: "Model"), value: saved.model.isEmpty ? String(localized: "Default") : saved.model)
+                let model = saved.model.isEmpty ? String(localized: "Default") : saved.model
+                LabeledContent(String(localized: "Model"), value: saved.auto == true ? String(localized: "Auto · \(model)") : model)
             } else if !loaded {
                 HStack { Text("Loading models"); Spacer(); ProgressView() }
             } else if instanceChoices.isEmpty {
                 Label("No model providers are available", systemImage: "exclamationmark.triangle").foregroundStyle(Theme.textSecondary)
             } else {
+                // #153: Auto first, as the desktop picker's first row
+                Toggle(isOn: Binding(get: { auto }, set: { on in
+                    auto = on
+                    apply()
+                })) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(String(localized: "Auto"))
+                        Text(String(localized: "The best model per task: the strongest one you can pay for its own turns, the right tier for the work it hands out."))
+                            .font(.footnote)
+                            .foregroundStyle(Theme.textSecondary)
+                    }
+                }
+                .tint(Theme.toggleOn)
+                .disabled(current.busy == true)
+                .accessibilityIdentifier("model-auto")
                 Picker("Provider", selection: $instanceID) {
                     if !instances.contains(where: { $0.instanceId == instanceID }) {
                         Text("Current provider (unavailable)").tag(instanceID).disabled(true)
@@ -136,6 +157,8 @@ struct BotModelSection: View {
                 .disabled(instance?.snapshot.isAvailable != true)
                 .onValueChange(of: modelID) { model in
                     variant = instanceID == saved.instanceId && model == saved.model ? saved.variant : nil
+                    // choosing a model pins it, as on the desktop
+                    if model != saved.model { auto = false }
                     apply()
                 }
                 if let variantOptions {

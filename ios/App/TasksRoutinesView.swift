@@ -457,7 +457,7 @@ private struct RoutineRow: View {
             }
             if !routine.enabled {
                 Image(systemName: canToggle ? "pause.circle.fill" : "checkmark.circle.fill")
-                    .foregroundStyle(canToggle ? Theme.warning : Theme.textSecondary)
+                    .foregroundStyle(canToggle ? Theme.accentText : Theme.textSecondary)
                     .accessibilityLabel(canToggle ? "Paused" : "Completed")
             }
         }
