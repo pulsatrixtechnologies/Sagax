@@ -1116,6 +1116,10 @@ export interface AppState {
   /** The achievements modal (src/components/achievements/AchievementsModal.tsx),
    * its own window beside Settings: one or the other is open, never both. */
   achievementsOpen: boolean;
+  /** The organisation bot catalogue ("Browse Bots"), opened from the mascot
+   * context menu in the bot panel. Use dispatch(openBotCatalog()) and
+   * dispatch(closeBotCatalog()). */
+  botCatalogOpen: boolean;
   /** A settings sub-page pushed inside the section (src/components/
    * SettingsSubPage.tsx), e.g. General > About me; null shows the section.
    * Any toggleAppSettings that names none (another section, closing) clears it. */
@@ -1449,6 +1453,8 @@ export type Action =
   | { type: "focusMessageConsumed"; nonce: number }
   | { type: "toggleAppSettings"; open?: boolean; section?: AppSettingsSection; subPage?: string; phonePairing?: boolean }
   | { type: "toggleAchievements"; open?: boolean }
+  | { type: "openBotCatalog" }
+  | { type: "closeBotCatalog" }
   | { type: "toggleShortcuts"; open?: boolean }
   | { type: "toggleWelcome"; open?: boolean }
   | { type: "toggleLaunch"; open?: boolean; mode?: "solo" | "server" }
@@ -1698,6 +1704,16 @@ function clearThreadReturnIfHome(state: AppState): AppState {
   const owner = state.bots.find((candidate) => candidate.id === back.ownerId)
     ?? state.groups.find((candidate) => candidate.id === back.ownerId);
   return owner?.threadId === back.threadId ? { ...state, threadReturn: null } : state;
+}
+
+/** Open the organisation bot catalogue ("Browse Bots"). */
+export function openBotCatalog(): Action {
+  return { type: "openBotCatalog" };
+}
+
+/** Close the organisation bot catalogue. */
+export function closeBotCatalog(): Action {
+  return { type: "closeBotCatalog" };
 }
 
 export function reducer(state: AppState, action: Action): AppState {
@@ -2403,6 +2419,10 @@ export function reducer(state: AppState, action: Action): AppState {
         ...(open ? { appSettingsOpen: false, appSettingsSubPage: null, settingsOpen: false, personPanelId: null, pluginsOpen: false, triggersOpen: false, newBotOpen: false, shortcutsOpen: false } : {}),
       };
     }
+    case "openBotCatalog":
+      return state.botCatalogOpen ? state : { ...state, botCatalogOpen: true };
+    case "closeBotCatalog":
+      return state.botCatalogOpen ? { ...state, botCatalogOpen: false } : state;
     case "toggleShortcuts": {
       const open = action.open ?? !state.shortcutsOpen;
       return {
@@ -2775,6 +2795,7 @@ export const initialState: AppState = {
   appSettingsOpen: false,
   appSettingsSection: "general",
   achievementsOpen: false,
+  botCatalogOpen: false,
   appSettingsSubPage: null,
   appSettingsPhonePairing: 0,
   shortcutsOpen: false,
