@@ -53,7 +53,7 @@ let attachments: BotAttachment[] = [];
 function assertion(sub: string, role: ConsoleAssertion["role"], teams: ConsoleAssertion["teams"] = []): string {
   const token = `tok${++jti}`;
   const now = Math.floor(Date.now() / 1000);
-  tokens.set(token, { iss: ISS, sub, jti: `jti-files-${String(jti).padStart(10, "0")}`, iat: now, exp: now + 60, serverId: "srv", role, teams });
+  tokens.set(token, { iss: ISS, sub, jti: `jti-files-${String(jti).padStart(10, "0")}`, iat: now, exp: now + 60, serverId: "srv", role, teams, actor: "console" });
   return token;
 }
 const admin = () => assertion("alice", "admin");

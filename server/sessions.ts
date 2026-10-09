@@ -729,6 +729,34 @@ export class SessionRegistry {
     return { token, session: publicSession(record) };
   }
 
+  /** A 60-second session for one person, opened by the member API
+   * (server/org-member-routes.ts) once it verified a Perspicax assertion
+   * naming them, so the request it performs meets every rule that person
+   * meets in Sagax. Like a bot-act copy: memory only, not listed, not
+   * renewed, no identity provider grant of its own. Null for scopes this
+   * registry refuses as personal. */
+  actAs(input: { principalId: string; scopes: Scope[]; label: string; userId?: string; idp?: SessionRecord["idp"] }): { token: string; session: PublicSession } | null {
+    const scopes = [...new Set(input.scopes)].filter((scope): scope is Scope => SCOPES.includes(scope));
+    if (!scopes.length || this.personal(scopes)) return null;
+    const now = this.now();
+    const token = `sgx_sess_${randomBytes(32).toString("base64url")}`;
+    const record: SessionRecord = {
+      id: randomUUID(),
+      tokenHash: sha256(token),
+      label: input.label.slice(0, 80),
+      scopes,
+      createdAt: now,
+      lastSeenAt: now,
+      expiresAt: now + BOT_ACT_SESSION_TTL_MS,
+      principalId: input.principalId,
+      ephemeral: true,
+    };
+    if (input.userId) record.userId = input.userId;
+    if (input.idp) record.idp = { iss: input.idp.iss, sub: input.idp.sub, ...(input.idp.role ? { role: input.idp.role } : {}) };
+    this.sessions.push(record);
+    return { token, session: publicSession(record) };
+  }
+
   /** Replace a session's scopes (a role change at the identity provider).
    * An empty list is refused; revoke instead. */
   setScopes(id: string, scopes: Scope[]): boolean {

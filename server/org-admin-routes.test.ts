@@ -72,7 +72,7 @@ let identity: "solo" | "perspicax" = "perspicax";
 function assertion(sub: string, role: ConsoleAssertion["role"], teams: ConsoleAssertion["teams"] = [], locale?: string): string {
   const token = `tok${++jti}`;
   const now = Math.floor(Date.now() / 1000);
-  tokens.set(token, { iss: ISS, sub, jti: `jti-${String(jti).padStart(16, "0")}`, iat: now, exp: now + 60, serverId: "srv", role, teams, ...(locale ? { locale } : {}) });
+  tokens.set(token, { iss: ISS, sub, jti: `jti-${String(jti).padStart(16, "0")}`, iat: now, exp: now + 60, serverId: "srv", role, teams, ...(locale ? { locale } : {}), actor: "console" });
   return token;
 }
 

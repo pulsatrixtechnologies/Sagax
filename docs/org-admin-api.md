@@ -12,8 +12,10 @@ module per area (`server/org-admin-*.ts`).
 - Answered before the session gate and before loopback trust. The only
   credential is a console assertion Perspicax signs per request
   (`Authorization: Bearer <assertion>`, `typ` `pulsabot-console+jwt`, at most
-  120 s, single use `jti`, `server_id` equal to the link's). A session cookie
-  is ignored here.
+  120 s, single use `jti`, `server_id` equal to the link's, `act.sub`
+  `console`). A session cookie is ignored here. An AI client's assertion
+  (`act.sub` `perspicax-mcp`) is refused here: it opens the member API only
+  (`docs/org-member-api.md`).
 - The role is the assertion's Perspicax role: `admin`, `manager` or
   `employee`. A manager reads only their reach: themselves plus the people of
   the teams they manage, and the bots those people own or that are shared

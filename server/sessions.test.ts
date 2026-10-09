@@ -317,6 +317,26 @@ describe("sessions", () => {
     dropped.close();
   });
 
+  it("opens a 60 s session for a person the member API acts for: not stored, listed or renewed", () => {
+    registry = new SessionRegistry({ file: file(), now: () => clock, emailScopes: () => ["client", "admin"] });
+    const issued = registry.issue({ label: "Phone", scopes: ["client"], principalId: "person-3" });
+    const before = readFileSync(file(), "utf8");
+    const opened = registry.actAs({ principalId: "person-3", scopes: ["client", "client"], label: "AI client (Perspicax)", idp: { iss: "https://px.test", sub: "01J9", role: "employee", grantRef: "g1" } });
+    expect(opened).not.toBeNull();
+    const authed = registry.authenticate(opened!.token);
+    expect(authed).toMatchObject({ principalId: "person-3", scopes: ["client"], ephemeral: true, label: "AI client (Perspicax)", idp: { iss: "https://px.test", sub: "01J9", role: "employee" } });
+    expect(authed?.idp?.grantRef).toBeUndefined();
+    expect(authed?.expiresAt).toBe(clock + BOT_ACT_SESSION_TTL_MS);
+    expect(readFileSync(file(), "utf8")).toBe(before);
+    expect(registry.list().map((session) => session.id)).toEqual([issued.session.id]);
+    expect(registry.forPrincipal("person-3").map((session) => session.id)).toEqual([issued.session.id]);
+    expect(registry.renew(opened!.session.id)).toBe(false);
+    expect(registry.actAs({ principalId: "person-3", scopes: [], label: "x" })).toBeNull();
+    expect(registry.revoke(opened!.session.id)).toBe(true);
+    expect(registry.authenticate(opened!.token)).toBeNull();
+    registry.close();
+  });
+
   it("strips cookieOnly so the copy can be presented as a bearer, and a reload drops it", () => {
     const opened = registry.openPairing({ browser: true, scopes: ["admin"], principalId: "person-2", owner: "owner@test" });
     const exchanged = registry.exchange({ code: opened.credential, browser: true, label: "Browser", source: "browser" });
