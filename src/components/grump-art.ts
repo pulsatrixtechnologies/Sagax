@@ -90,8 +90,8 @@ export const GRUMP_ART = {
   chest: "M36 76C34 84 35 91 39 99L61 99C65 91 66 84 64 76C58 79 42 79 36 76Z",
   paws: [pawPath(42.5, 95.6, 7.2, 3.8), pawPath(57.5, 95.6, 7.2, 3.8)] as const,
   /** Standing (facing right): a long body, the white chest and belly at the front. */
-  standBody: "M27 62C40 59.5 57 59.5 68 62.5C77 65 81.5 71.5 80.5 78.5C79.5 85.5 74 89.5 66 89.5L31 89.5C22 89.5 16 85 16 77.5C16 69.5 19.5 63.5 27 62Z",
-  standChest: "M61 70C69 67.5 80 71 81 78C81 85 76 89.5 68 89.5L46 89.5C53 85 55 74.5 61 70Z",
+  standBody: "M27 59C40 56.5 57 56.5 68 59.5C77 62 81.5 68.5 80.5 75.5C79.5 82.5 74 86.5 66 86.5L31 86.5C22 86.5 16 82 16 74.5C16 66.5 19.5 60.5 27 59Z",
+  standChest: "M61 67C69 64.5 80 68 81 75C81 82 76 86.5 68 86.5L46 86.5C53 82 55 71.5 61 67Z",
   /** Lying (the loaf, front view): low and wide, the paws tucked under, two toes showing. */
   lieBody: "M13 85C15 77 30 72.5 50 72.5C70 72.5 85 77 87 85C88.5 91 87 96 81 98.5L19 98.5C13 96 11.5 91 13 85Z",
   lieChest: "M35 75C32 82 33 91 37 99L63 99C67 91 68 82 65 75C59 78.5 41 78.5 35 75Z",
@@ -119,11 +119,11 @@ export const GRUMP_TAIL: Readonly<Record<GrumpStance, readonly Point[]>> = {
     [66, 94.6],
   ],
   stand: [
-    [19, 68],
-    [11.5, 64.5],
-    [6.8, 57.6],
-    [6.2, 49.6],
-    [9.4, 43.6],
+    [19, 65],
+    [11.5, 61.5],
+    [6.8, 54.6],
+    [6.2, 46.6],
+    [9.4, 40.6],
   ],
   lie: [
     [83, 92],
@@ -182,25 +182,27 @@ export const GRUMP_PIVOTS = {
   eyeR: [63, 47.5] as Point,
   mouth: [50, 64] as Point,
   /** The standing body's middle (the stretch rocks it about its back hips). */
-  hipsBack: [26, 84] as Point,
+  hipsBack: [26, 82] as Point,
 } as const;
 
 /** The standing body's hips (the legs hang from them), near and far side, facing right. */
 export const GRUMP_HIPS = {
-  frontNear: [65, 84] as Point,
-  frontFar: [70.5, 82] as Point,
-  backNear: [29, 84] as Point,
+  frontNear: [64, 82] as Point,
+  frontFar: [71, 82] as Point,
+  backNear: [30, 82] as Point,
   backFar: [23, 82] as Point,
 } as const;
 export type GrumpLeg = keyof typeof GRUMP_HIPS;
 export const GRUMP_LEGS = Object.keys(GRUMP_HIPS) as GrumpLeg[];
 /** A standing leg: two segments (to the knee or hock, then to the paw), box units, and its thickness. */
-export const GRUMP_LEG = { upper: 5.8, lower: 6.2, width: 7.2 } as const;
+export const GRUMP_LEG = { upper: 6.8, lower: 7.8, width: 7.2 } as const;
+/** The standing paws' middle on the ground (the legs reach it with a little slack). */
+export const GRUMP_GROUND = 96;
 
 /** Where the head sits on each body: offset (box units), scale and turn (degrees) about the neck. The sitting art is the reference. */
 export const GRUMP_STANCE_HEAD = {
   sit: { x: 0, y: 0, scale: 1, rot: 0 },
-  stand: { x: 19, y: 1, scale: 0.72, rot: 0 },
+  stand: { x: 19, y: -2, scale: 0.72, rot: 0 },
   lie: { x: 0, y: 13, scale: 0.92, rot: 0 },
   curl: { x: -7, y: 17, scale: 0.84, rot: -10 },
 } as const;
@@ -557,22 +559,44 @@ export function grumpTailOps(d: string, ow: number): GrumpOp[] {
   ];
 }
 
-/** Where a standing leg's knee (or hock) and paw are for a hip angle (+ forward) and a bend at the joint (degrees, + folds the paw), from its hip (moved with the body when the torso tilts or crouches). */
-export function legJoints(leg: GrumpLeg, hip: number, bend: number, hipAt: Point = GRUMP_HIPS[leg]): { hip: Point; knee: Point; paw: Point } {
+/**
+ * A standing leg by two-bone IK: the paw goes `x` box units ahead of its hip
+ * (+ forward) and `lift` above the ground; the joint bends the way a cat's
+ * does (a front leg's wrist forward, so the paw tucks back when it lifts; a
+ * hind leg's hock back). `hipAt` is the hip where the torso carries it now.
+ */
+export function legIK(leg: GrumpLeg, x: number, lift: number, hipAt: Point = GRUMP_HIPS[leg]): { hip: Point; knee: Point; paw: Point } {
+  const { upper: a, lower: b } = GRUMP_LEG;
   const [hx, hy] = hipAt;
-  const a = (hip * Math.PI) / 180;
-  const knee: Point = [hx + Math.sin(a) * GRUMP_LEG.upper, hy + Math.cos(a) * GRUMP_LEG.upper];
-  // a front leg's wrist folds the paw back; a hind leg's hock folds it forward
-  const front = leg.startsWith("front");
-  const b = a + ((front ? -bend : bend) * Math.PI) / 180;
-  const paw: Point = [knee[0] + Math.sin(b) * GRUMP_LEG.lower, knee[1] + Math.cos(b) * GRUMP_LEG.lower];
-  return { hip: [hx, hy], knee, paw };
+  let tx = GRUMP_HIPS[leg][0] + x;
+  let ty = GRUMP_GROUND - lift;
+  let dx = tx - hx;
+  let dy = ty - hy;
+  let d = Math.hypot(dx, dy) || 1e-6;
+  const max = a + b - 0.01;
+  const min = Math.abs(a - b) + 0.5;
+  if (d > max || d < min) {
+    // out of reach: the paw stops on the line toward its target
+    const k = (d > max ? max : min) / d;
+    dx *= k;
+    dy *= k;
+    tx = hx + dx;
+    ty = hy + dy;
+    d = d > max ? max : min;
+  }
+  const base = Math.atan2(dy, dx);
+  const bend = Math.acos(Math.max(-1, Math.min(1, (a * a + d * d - b * b) / (2 * a * d))));
+  // y is down: a front leg's joint turns toward +x (forward), a hind leg's toward -x
+  const side = leg.startsWith("front") ? -1 : 1;
+  const angle = base + side * bend;
+  const knee: Point = [hx + Math.cos(angle) * a, hy + Math.sin(angle) * a];
+  return { hip: [hx, hy], knee, paw: [tx, ty] };
 }
 
 /** One standing leg: hip, joint, paw; the far legs in the shade tone, a white sock at the paw. */
-export function grumpLegOps(leg: GrumpLeg, hip: number, bend: number, ow: number, hipAt?: Point): GrumpOp[] {
+export function grumpLegOps(leg: GrumpLeg, x: number, lift: number, ow: number, hipAt?: Point): GrumpOp[] {
   const far = leg.endsWith("Far");
-  const j = legJoints(leg, hip, bend, hipAt);
+  const j = legIK(leg, x, lift, hipAt);
   const d = `M${fmt(j.hip[0])} ${fmt(j.hip[1])}L${fmt(j.knee[0])} ${fmt(j.knee[1])}L${fmt(j.paw[0])} ${fmt(j.paw[1])}`;
   const paw = ellipsePath(j.paw[0] + 1, j.paw[1] + 0.4, 4.2, 2.6);
   return [
@@ -580,6 +604,27 @@ export function grumpLegOps(leg: GrumpLeg, hip: number, bend: number, ow: number
     { d, stroke: far ? "creamShade" : "cream", width: GRUMP_LEG.width, round: true },
     { d: paw, fill: far ? "muzzleShade" : "muzzle", stroke: "line", width: ow },
   ];
+}
+
+/** The sitting paws at rest, and the shoulders a lifted paw's foreleg hangs from (left, right). */
+export const GRUMP_PAWS = { l: [42.5, 95.6] as Point, r: [57.5, 95.6] as Point, shoulderL: [41, 82] as Point, shoulderR: [59, 82] as Point } as const;
+
+/**
+ * A sitting front paw moved by `dx`, `dy` (a groom, a knead, a wave): the
+ * paw itself and, once it leaves the ground, the foreleg from the shoulder.
+ */
+export function grumpPawOps(side: "l" | "r", dx: number, dy: number, ow: number): GrumpOp[] {
+  const [px, py] = GRUMP_PAWS[side];
+  const paw = GRUMP_ART.paws[side === "l" ? 0 : 1];
+  const moved = dx || dy ? movePath(paw, dx, dy) : paw;
+  const ops: GrumpOp[] = [];
+  if (dy < -2.5) {
+    const [sx, sy] = side === "l" ? GRUMP_PAWS.shoulderL : GRUMP_PAWS.shoulderR;
+    const arm = `M${fmt(sx)} ${fmt(sy)}L${fmt(px + dx)} ${fmt(py + dy)}`;
+    ops.push({ d: arm, stroke: "line", width: r2(GRUMP_LEG.width + 2 * ow), round: true }, { d: arm, stroke: "cream", width: GRUMP_LEG.width, round: true });
+  }
+  ops.push(...shaded(moved, "muzzle", "muzzleShade", -1, -1), outline(moved, ow));
+  return ops;
 }
 
 export interface GrumpPartsInput {
@@ -614,9 +659,10 @@ export interface GrumpParts {
 
 /** The order the groups are drawn in, per stance (the head group is the ears, the head and the face). */
 export const GRUMP_ORDER: Readonly<Record<GrumpStance, readonly ("tail" | "body" | "paws" | "legsFar" | "legsNear" | "head")[]>> = {
-  // the tail lies over the loaf and under the folded paws
-  sit: ["body", "tail", "paws", "head"],
-  stand: ["tail", "legsFar", "body", "legsNear", "head"],
+  // the tail lies over the loaf and under the folded paws; a paw lifted to groom passes over the face
+  sit: ["body", "tail", "head", "paws"],
+  // the legs hang behind the body, so only what shows below it moves: no hip caps over the belly
+  stand: ["tail", "legsFar", "legsNear", "body", "head"],
   lie: ["body", "tail", "paws", "head"],
   curl: ["body", "paws", "tail", "head"],
 };
@@ -629,7 +675,7 @@ function bodyOps(stance: GrumpStance, ow: number): { body: GrumpOp[]; paws: Grum
   if (stance === "stand") return { body: loaf(A.standBody, A.standChest, -2, -2.4), paws: [] };
   if (stance === "lie") return { body: loaf(A.lieBody, A.lieChest, -3, -1.4), paws: pawsOf(A.liePaws) };
   if (stance === "curl") return { body: loaf(A.curlBody, A.curlChest, -3, -2), paws: [] };
-  return { body: loaf(A.body, A.chest, -3, -1), paws: pawsOf(A.paws) };
+  return { body: loaf(A.body, A.chest, -3, -1), paws: [...grumpPawOps("l", 0, 0, ow), ...grumpPawOps("r", 0, 0, ow)] };
 }
 
 export function grumpParts(input: GrumpPartsInput): GrumpParts {

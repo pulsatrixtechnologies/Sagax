@@ -28,6 +28,8 @@ export interface IdleAction {
   lively?: boolean;
   /** A dog's own (Shiba): only for a character that is one. */
   dog?: boolean;
+  /** A cat's own (Grump): only for a character that is one. */
+  cat?: boolean;
 }
 
 const clip = (id: TimedClip, weight: number, cooldown: number, energy: 0 | 1 | 2, gentle = false): IdleAction => ({
@@ -78,6 +80,15 @@ export const IDLE_ACTIONS: readonly IdleAction[] = [
   { ...clip("lieDown", 1.5, 90_000, 0), dog: true },
   { ...clip("turnCircles", 1.5, 90_000, 2), dog: true },
   { ...clip("bark", 1, 120_000, 1), dog: true },
+  // a cat's own: the prowl (stalk low to a spot and loaf there) every few minutes, a groom, a tail
+  // flick, a slow blink, kneading, a stretch on the spot, a hop up onto a ledge, now and then a nap in a loaf
+  { id: "prowl", choice: { kind: "move", style: "walk", trip: true }, weight: 7, cooldown: 180_000, energy: 1, cat: true },
+  { ...clip("groom", 5, 25_000, 0, true), cat: true },
+  { ...clip("tailFlick", 4, 12_000, 0, true), cat: true },
+  { ...clip("slowBlink", 5, 15_000, 0, true), cat: true },
+  { ...clip("knead", 2, 60_000, 0, true), cat: true },
+  { ...clip("loaf", 1.5, 120_000, 0), cat: true },
+  { ...clip("ledge", 1, 120_000, 2), cat: true },
 ];
 
 export interface SchedulerMemory {
@@ -99,6 +110,8 @@ export interface SchedulerOptions {
   depth?: boolean;
   /** The character is a dog (Shiba): its own actions join the pool. */
   dog?: boolean;
+  /** The character is a cat (Grump): its own actions join the pool. */
+  cat?: boolean;
   random: () => number;
 }
 
@@ -124,6 +137,7 @@ export function idleWeights(memory: SchedulerMemory, now: number, options: Sched
       (action.rotates && !options.depth) ||
       (action.lively && options.liveliness === "calm") ||
       (action.dog && !options.dog) ||
+      (action.cat && !options.cat) ||
       (action.choice.kind === "move" && !options.canMove);
     return { action, weight: blocked ? 0 : weight };
   });

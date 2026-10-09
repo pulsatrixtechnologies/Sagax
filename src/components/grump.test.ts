@@ -22,7 +22,11 @@ import {
   grumpParts,
   grumpStillSvg,
   grumpViewBox,
-  legJoints,
+  GRUMP_GROUND,
+  GRUMP_HIPS,
+  GRUMP_LEG,
+  GRUMP_LEGS,
+  legIK,
   mirrorPath,
   rotatePath,
   tailPoints,
@@ -89,21 +93,31 @@ describe("Grump's art", () => {
     }
   });
 
-  it("stands its legs on the ground and folds them at the joint", () => {
-    for (const leg of ["frontNear", "backNear"] as const) {
-      const { paw } = legJoints(leg, 0, 0);
-      expect(paw[1]).toBeGreaterThan(94);
-      expect(paw[1]).toBeLessThan(98.5);
-      expect(legJoints(leg, 0, 50).paw[1]).toBeLessThan(paw[1]);
+  it("stands its legs on the ground and bends them the way a cat's bend", () => {
+    for (const leg of GRUMP_LEGS) {
+      const rest = legIK(leg, 0, 0);
+      expect(rest.paw[1]).toBeCloseTo(GRUMP_GROUND, 0);
+      // a lifted paw comes up, its segments keep their lengths
+      const up = legIK(leg, 2, 4);
+      expect(up.paw[1]).toBeCloseTo(GRUMP_GROUND - 4, 1);
+      expect(Math.hypot(up.knee[0] - up.hip[0], up.knee[1] - up.hip[1])).toBeCloseTo(GRUMP_LEG.upper, 4);
+      expect(Math.hypot(up.paw[0] - up.knee[0], up.paw[1] - up.knee[1])).toBeCloseTo(GRUMP_LEG.lower, 4);
     }
-    // a front paw folds back, a hind paw forward
-    expect(legJoints("frontNear", 0, 50).paw[0]).toBeLessThan(legJoints("frontNear", 0, 0).paw[0]);
-    expect(legJoints("backNear", 0, 50).paw[0]).toBeGreaterThan(legJoints("backNear", 0, 0).paw[0]);
+    // a front wrist bends forward, a hind hock backward
+    const front = legIK("frontNear", 0, 5);
+    const hind = legIK("backNear", 0, 5);
+    expect(front.knee[0]).toBeGreaterThan(front.hip[0]);
+    expect(hind.knee[0]).toBeLessThan(hind.hip[0]);
+    // a crouched body keeps the paws planted
+    const [hx, hy] = GRUMP_HIPS.frontNear;
+    expect(legIK("frontNear", 0, 0, [hx, hy + 3]).paw[1]).toBeCloseTo(GRUMP_GROUND, 1);
   });
 
   it("draws each stance with the head on top", () => {
-    for (const stance of GRUMP_STANCES) expect(GRUMP_ORDER[stance].at(-1)).toBe("head");
-    expect(GRUMP_ORDER.stand).toEqual(["tail", "legsFar", "body", "legsNear", "head"]);
+    for (const stance of ["stand", "lie", "curl"] as const) expect(GRUMP_ORDER[stance].at(-1)).toBe("head");
+    // sitting, a lifted paw passes over the face
+    expect(GRUMP_ORDER.sit).toEqual(["body", "tail", "head", "paws"]);
+    expect(GRUMP_ORDER.stand).toEqual(["tail", "legsFar", "legsNear", "body", "head"]);
   });
 
   it("crops to the bust under 48 px and leaves the tail out", () => {

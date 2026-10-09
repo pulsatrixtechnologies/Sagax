@@ -17,7 +17,7 @@ export type FloatingPose = "idle" | "think" | "speak" | "celebrate" | "alert" | 
  * person (a dog barks), an achievement (it turns in circles), its own snooze
  * (it lies down and sleeps before it hides).
  */
-export type FloatingCueKind = "nudge" | "achievement" | "snooze";
+export type FloatingCueKind = "nudge" | "achievement" | "snooze" | "refusal";
 export interface FloatingCue {
   kind: FloatingCueKind;
   /** When (ms); a new value is a new cue. */

@@ -119,6 +119,19 @@ export const OWL_CLIP_FOR: Record<ClipName, OwlClip> = {
   turnCircles: "celebrate",
   excited: "hop",
   sit: "land",
+  // a cat's own clips (Grump), should the owl ever see one
+  groom: "preen",
+  knead: "dance",
+  pounce: "hop",
+  ledge: "hop",
+  curl: "sleep",
+  hiss: "ruffle",
+  bonk: "hug",
+  tailFlick: "idle",
+  earsFlat: "sad",
+  slowBlink: "blink",
+  sitUp: "land",
+  loaf: "idle",
 };
 
 /** Activities whose clip loops until the activity changes; the others play once and hold. */
