@@ -178,6 +178,9 @@ public struct DesktopSkinTokens: Sendable {
     public var bubbleUser, bubbleUserInk: SkinColor
     public var success, danger, dangerInk, successInk, warning: SkinColor
     public var composer: SkinColor
+    /// `--color-unread` (#182): the skin's accent in a chromatic skin,
+    /// Pulsatrix blue in the grey ones, so the unread dot is never white.
+    public var unread: SkinColor
     public var dark: Bool
 }
 
@@ -341,7 +344,7 @@ public struct SkinPalette: Equatable, Sendable {
             placeholder: quiet, chevron: quiet, iconGrey: t.inkSecondary,
             addedText: t.inkSecondary, showMore: t.inkSecondary,
             accent: t.accent, accentText: t.accentText, accentInk: t.accentInk,
-            unreadDot: t.accentBorder, caret: t.focus, focus: t.focus,
+            unreadDot: t.unread, caret: t.focus, focus: t.focus,
             toggleOn: t.accent, toggleOff: t.control, toggleKnob: SkinColor(0xFFFFFF),
             destructive: t.danger, destructiveMenu: t.danger,
             danger: t.danger, dangerInk: t.dangerInk, success: t.success, successInk: t.successInk,
@@ -365,7 +368,14 @@ public struct SkinPalette: Equatable, Sendable {
 public enum DesktopSkins {
     public static func tokens(_ id: SkinID) -> DesktopSkinTokens? {
         guard let raw = table[id.rawValue] else { return nil }
-        func c(_ key: String) -> SkinColor { SkinColor(css: raw[key] ?? "#ff00ff") ?? SkinColor(0xFF00FF) }
+        func c(_ key: String) -> SkinColor {
+            var value = raw[key] ?? "#ff00ff"
+            // `var(--color-x)`: that block's own x
+            if value.hasPrefix("var(--color-"), value.hasSuffix(")") {
+                value = raw[String(value.dropFirst("var(--color-".count).dropLast())] ?? "#ff00ff"
+            }
+            return SkinColor(css: value) ?? SkinColor(0xFF00FF)
+        }
         return DesktopSkinTokens(
             app: c("app"), panel: c("panel"), raised: c("raised"), raisedHover: c("raised-hover"),
             card: c("card"), menu: c("menu"), inset: c("inset"), control: c("control"), hairline: c("hairline"),
@@ -375,6 +385,7 @@ public enum DesktopSkins {
             bubbleUser: c("bubble-user"), bubbleUserInk: c("bubble-user-ink"),
             success: c("success"), danger: c("danger"), dangerInk: c("danger-ink"),
             successInk: c("success-ink"), warning: c("warning"), composer: c("composer"),
+            unread: c("unread"),
             dark: raw["code-scheme"] == "dark"
         )
     }
@@ -384,96 +395,108 @@ public enum DesktopSkins {
         "code-scheme", "app", "panel", "raised", "raised-hover", "card", "menu", "inset", "control", "hairline",
         "ink", "ink-secondary", "ink-tertiary", "accent", "accent-border", "accent-text", "focus", "accent-ink",
         "bubble-user", "bubble-user-ink", "success", "danger", "danger-ink", "success-ink", "warning", "composer",
+        "unread",
     ]
 
     public static let table: [String: [String: String]] = [
         "pulsatrix": [
-            "code-scheme": "dark", "app": "#030b17", "panel": "#060f20", "raised": "#16233c", "raised-hover": "#1d2d4c",
-            "card": "#0d192c", "menu": "#0d1729", "inset": "#081427", "control": "#16233c", "hairline": "#223353",
-            "ink": "#eef2fb", "ink-secondary": "#9aa6c2", "ink-tertiary": "#8d99b5", "accent": "#3c76f4",
-            "accent-border": "#4f86f7", "accent-text": "#c8e4ff", "focus": "#4f86f7", "accent-ink": "#030b17",
-            "bubble-user": "#1e3358", "bubble-user-ink": "#eef2fb", "success": "#38d591", "danger": "#f2555f",
-            "danger-ink": "#030b17", "success-ink": "#072114", "warning": "#ff9800", "composer": "#16233c",
+            "code-scheme": "dark", "app": "#030b17", "panel": "#060f20", "raised": "#16233c",
+            "raised-hover": "#1d2d4c", "card": "#0d192c", "menu": "#0d1729", "inset": "#081225", "control": "#16233c",
+            "hairline": "#223353", "ink": "#eef2fb", "ink-secondary": "#9aa6c2", "ink-tertiary": "#8d99b5",
+            "accent": "#3c76f4", "accent-border": "#4f86f7", "accent-text": "#c8e4ff", "focus": "#4f86f7",
+            "accent-ink": "#030b17", "bubble-user": "#1e3358", "bubble-user-ink": "#eef2fb", "success": "#38d591",
+            "danger": "#f25a64", "danger-ink": "#030b17", "success-ink": "#072114", "warning": "#ff9800",
+            "composer": "#16233c", "unread": "var(--color-accent)",
         ],
         "pulsatrix-light": [
-            "code-scheme": "light", "app": "#eef2f8", "panel": "#f6f8fb", "raised": "#ffffff", "raised-hover": "#e6ebf4",
-            "card": "#ffffff", "menu": "#ffffff", "inset": "#dfe6f2", "control": "#bfcade", "hairline": "#b8c3d9",
-            "ink": "#0b1526", "ink-secondary": "#545e6e", "ink-tertiary": "#545e6e", "accent": "#2f62dd",
-            "accent-border": "#3c76f4", "accent-text": "#2652bd", "focus": "#2652bd", "accent-ink": "#f6f8fc",
-            "bubble-user": "#dceafe", "bubble-user-ink": "#0b1526", "success": "#0f5132", "danger": "#d92d3e",
-            "danger-ink": "#ffffff", "success-ink": "#ffffff", "warning": "#7d4d09", "composer": "#ffffff",
+            "code-scheme": "light", "app": "#eef2f8", "panel": "#f6f8fb", "raised": "#ffffff",
+            "raised-hover": "#e6ebf4", "card": "#ffffff", "menu": "#ffffff", "inset": "#dfe6f2", "control": "#bfcade",
+            "hairline": "#b8c3d9", "ink": "#0b1526", "ink-secondary": "#4f5868", "ink-tertiary": "#4f5868",
+            "accent": "#2f62dd", "accent-border": "#3c76f4", "accent-text": "#2652bd", "focus": "#2652bd",
+            "accent-ink": "#f6f8fc", "bubble-user": "#dceafe", "bubble-user-ink": "#0b1526", "success": "#0f5132",
+            "danger": "#c02936", "danger-ink": "#ffffff", "success-ink": "#ffffff", "warning": "#7d4d09",
+            "composer": "#ffffff", "unread": "var(--color-accent)",
         ],
         "midnight": [
-            "code-scheme": "dark", "app": "#070707", "panel": "#111111", "raised": "#2f2f2f", "raised-hover": "#3d3d3d",
-            "card": "#262626", "menu": "#262626", "inset": "#191919", "control": "#2f2f2f", "hairline": "#333333",
-            "ink": "#fcfcfc", "ink-secondary": "#fcfcfc99", "ink-tertiary": "#fcfcfc90", "accent": "#d6d6d6",
-            "accent-border": "#a3a3a3", "accent-text": "#e8e8e8", "focus": "#bdbdbd", "accent-ink": "#111111",
-            "bubble-user": "#5a5a5a", "bubble-user-ink": "#fcfcfc", "success": "#38d591", "danger": "#ff5667",
-            "danger-ink": "#ffffff", "success-ink": "#072114", "warning": "#ff9800", "composer": "#2f2f2f",
+            "code-scheme": "dark", "app": "#070707", "panel": "#111111", "raised": "#2f2f2f",
+            "raised-hover": "#3d3d3d", "card": "#262626", "menu": "#262626", "inset": "#191919", "control": "#2f2f2f",
+            "hairline": "#333333", "ink": "#fcfcfc", "ink-secondary": "#fcfcfc99", "ink-tertiary": "#fcfcfc90",
+            "accent": "#d6d6d6", "accent-border": "#a3a3a3", "accent-text": "#e8e8e8", "focus": "#bdbdbd",
+            "accent-ink": "#111111", "bubble-user": "#5a5a5a", "bubble-user-ink": "#fcfcfc", "success": "#38d591",
+            "danger": "#ff7280", "danger-ink": "#070707", "success-ink": "#072114", "warning": "#ff9800",
+            "composer": "#2f2f2f", "unread": "#3c76f4",
         ],
         "atelier": [
-            "code-scheme": "light", "app": "#f5f1eb", "panel": "#fbf8f2", "raised": "#ffffff", "raised-hover": "#f2e9dc",
-            "card": "#ffffff", "menu": "#ffffff", "inset": "#f5f1eb", "control": "#ece4d6", "hairline": "#c8bda8",
-            "ink": "#1a1a18", "ink-secondary": "#6b6559", "ink-tertiary": "#6d685c", "accent": "#a05f25",
-            "accent-border": "#b06a2c", "accent-text": "#96551f", "focus": "#96551f", "accent-ink": "#ffffff",
-            "bubble-user": "#f2e9dc", "bubble-user-ink": "#1a1a18", "success": "#3f6b47", "danger": "#a33a32",
-            "danger-ink": "#ffffff", "success-ink": "#ffffff", "warning": "#7a5f31", "composer": "#ffffff",
+            "code-scheme": "light", "app": "#f5f1eb", "panel": "#fbf8f2", "raised": "#ffffff",
+            "raised-hover": "#f2e9dc", "card": "#ffffff", "menu": "#ffffff", "inset": "#f5f1eb", "control": "#ece4d6",
+            "hairline": "#c8bda8", "ink": "#1a1a18", "ink-secondary": "#5c564d", "ink-tertiary": "#5c564d",
+            "accent": "#a05f25", "accent-border": "#b06a2c", "accent-text": "#96551f", "focus": "#96551f",
+            "accent-ink": "#ffffff", "bubble-user": "#f2e9dc", "bubble-user-ink": "#1a1a18", "success": "#3f6b47",
+            "danger": "#a33a32", "danger-ink": "#ffffff", "success-ink": "#ffffff", "warning": "#7a5f31",
+            "composer": "#ffffff", "unread": "var(--color-accent)",
         ],
         "foundry": [
-            "code-scheme": "dark", "app": "#100e0b", "panel": "#171410", "raised": "#262019", "raised-hover": "#322b21",
-            "card": "#1e1a14", "menu": "#1e1a14", "inset": "#0b0a08", "control": "#262019", "hairline": "#3d3529",
-            "ink": "#f4efe4", "ink-secondary": "#b0a696", "ink-tertiary": "#9c9384", "accent": "#d99a3e",
-            "accent-border": "#e8b25e", "accent-text": "#e0a44c", "focus": "#e0a44c", "accent-ink": "#1c150c",
-            "bubble-user": "#2a2318", "bubble-user-ink": "#f4efe4", "success": "#57b078", "danger": "#e0685e",
-            "danger-ink": "#1c0d0b", "success-ink": "#1c150c", "warning": "#dfa441", "composer": "#262019",
+            "code-scheme": "dark", "app": "#100e0b", "panel": "#171410", "raised": "#262019",
+            "raised-hover": "#322b21", "card": "#1e1a14", "menu": "#1e1a14", "inset": "#0b0a08", "control": "#262019",
+            "hairline": "#3d3529", "ink": "#f4efe4", "ink-secondary": "#b0a696", "ink-tertiary": "#a59c8f",
+            "accent": "#d99a3e", "accent-border": "#e8b25e", "accent-text": "#e0a44c", "focus": "#e0a44c",
+            "accent-ink": "#1c150c", "bubble-user": "#2a2318", "bubble-user-ink": "#f4efe4", "success": "#57b078",
+            "danger": "#e27168", "danger-ink": "#1c0d0b", "success-ink": "#1c150c", "warning": "#dfa441",
+            "composer": "#262019", "unread": "var(--color-accent)",
         ],
         "lagoon": [
-            "code-scheme": "light", "app": "#dfeceb", "panel": "#ecf4f3", "raised": "#ffffff", "raised-hover": "#cfe4e1",
-            "card": "#ffffff", "menu": "#ffffff", "inset": "#d5e8e5", "control": "#c3dcd9", "hairline": "#aebfbd",
-            "ink": "#14201f", "ink-secondary": "#4d5c5b", "ink-tertiary": "#566564", "accent": "#11736d",
-            "accent-border": "#14807a", "accent-text": "#0d5f5a", "focus": "#0d5f5a", "accent-ink": "#ffffff",
-            "bubble-user": "#cfe4e1", "bubble-user-ink": "#14201f", "success": "#2f6b4f", "danger": "#a8382f",
-            "danger-ink": "#ffffff", "success-ink": "#ffffff", "warning": "#7a5a2a", "composer": "#ffffff",
+            "code-scheme": "light", "app": "#dfeceb", "panel": "#ecf4f3", "raised": "#ffffff",
+            "raised-hover": "#cfe4e1", "card": "#ffffff", "menu": "#ffffff", "inset": "#d5e8e5", "control": "#c3dcd9",
+            "hairline": "#aebfbd", "ink": "#14201f", "ink-secondary": "#495655", "ink-tertiary": "#4b5655",
+            "accent": "#11736d", "accent-border": "#14807a", "accent-text": "#0d5f5a", "focus": "#0d5f5a",
+            "accent-ink": "#ffffff", "bubble-user": "#cfe4e1", "bubble-user-ink": "#14201f", "success": "#2f6b4f",
+            "danger": "#a8382f", "danger-ink": "#ffffff", "success-ink": "#ffffff", "warning": "#7a5a2a",
+            "composer": "#ffffff", "unread": "var(--color-accent)",
         ],
         "graphite": [
-            "code-scheme": "dark", "app": "#111214", "panel": "#181a1d", "raised": "#2a2d32", "raised-hover": "#353941",
-            "card": "#22252a", "menu": "#22252a", "inset": "#0d0e10", "control": "#2a2d32", "hairline": "#3b4048",
-            "ink": "#f2f4f7", "ink-secondary": "#b3b8c2", "ink-tertiary": "#9fa4ad", "accent": "#d0d4da",
-            "accent-border": "#9aa3ad", "accent-text": "#e4e7ec", "focus": "#b3b8c2", "accent-ink": "#111214",
-            "bubble-user": "#30343a", "bubble-user-ink": "#f2f4f7", "success": "#63b58a", "danger": "#dd6b73",
-            "danger-ink": "#1e0b0e", "success-ink": "#101a14", "warning": "#d3a150", "composer": "#2a2d32",
+            "code-scheme": "dark", "app": "#111214", "panel": "#181a1d", "raised": "#2a2d32",
+            "raised-hover": "#353941", "card": "#22252a", "menu": "#22252a", "inset": "#0d0e10", "control": "#2a2d32",
+            "hairline": "#3b4048", "ink": "#f2f4f7", "ink-secondary": "#b3b8c2", "ink-tertiary": "#9fa4ad",
+            "accent": "#d0d4da", "accent-border": "#9aa3ad", "accent-text": "#e4e7ec", "focus": "#b3b8c2",
+            "accent-ink": "#111214", "bubble-user": "#30343a", "bubble-user-ink": "#f2f4f7", "success": "#63b58a",
+            "danger": "#e3838b", "danger-ink": "#1e0b0e", "success-ink": "#101a14", "warning": "#d3a150",
+            "composer": "#2a2d32", "unread": "#3c76f4",
         ],
         "linen": [
-            "code-scheme": "light", "app": "#eceff3", "panel": "#f5f6f8", "raised": "#ffffff", "raised-hover": "#e1e6ed",
-            "card": "#ffffff", "menu": "#ffffff", "inset": "#e6e9ee", "control": "#d3d9e1", "hairline": "#b4bbc5",
-            "ink": "#1d2229", "ink-secondary": "#59616c", "ink-tertiary": "#5f6671", "accent": "#2a2a2a",
-            "accent-border": "#3a3a3a", "accent-text": "#2a2a2a", "focus": "#2a2a2a", "accent-ink": "#ffffff",
-            "bubble-user": "#e1e6ed", "bubble-user-ink": "#1d2229", "success": "#2f704f", "danger": "#a83d48",
-            "danger-ink": "#ffffff", "success-ink": "#ffffff", "warning": "#765b2b", "composer": "#ffffff",
+            "code-scheme": "light", "app": "#eceff3", "panel": "#f5f6f8", "raised": "#ffffff",
+            "raised-hover": "#e1e6ed", "card": "#ffffff", "menu": "#ffffff", "inset": "#e6e9ee", "control": "#d3d9e1",
+            "hairline": "#b4bbc5", "ink": "#1d2229", "ink-secondary": "#515863", "ink-tertiary": "#515863",
+            "accent": "#2a2a2a", "accent-border": "#3a3a3a", "accent-text": "#2a2a2a", "focus": "#2a2a2a",
+            "accent-ink": "#ffffff", "bubble-user": "#e1e6ed", "bubble-user-ink": "#1d2229", "success": "#2f704f",
+            "danger": "#a83d48", "danger-ink": "#ffffff", "success-ink": "#ffffff", "warning": "#765b2b",
+            "composer": "#ffffff", "unread": "#3c76f4",
         ],
         "dusk": [
-            "code-scheme": "dark", "app": "#121014", "panel": "#19161c", "raised": "#2b2630", "raised-hover": "#37303d",
-            "card": "#231f27", "menu": "#231f27", "inset": "#0d0b0f", "control": "#2b2630", "hairline": "#403847",
-            "ink": "#f4eff6", "ink-secondary": "#b9afbd", "ink-tertiary": "#a199a5", "accent": "#765683",
-            "accent-border": "#9670a3", "accent-text": "#c49bd2", "focus": "#c49bd2", "accent-ink": "#ffffff",
-            "bubble-user": "#332b38", "bubble-user-ink": "#f4eff6", "success": "#6fad83", "danger": "#db727a",
-            "danger-ink": "#210c10", "success-ink": "#101812", "warning": "#d0a35d", "composer": "#2b2630",
+            "code-scheme": "dark", "app": "#121014", "panel": "#19161c", "raised": "#2b2630",
+            "raised-hover": "#37303d", "card": "#231f27", "menu": "#231f27", "inset": "#0d0b0f", "control": "#2b2630",
+            "hairline": "#403847", "ink": "#f4eff6", "ink-secondary": "#b9afbd", "ink-tertiary": "#a49ca8",
+            "accent": "#9474a3", "accent-border": "#9670a3", "accent-text": "#c49bd2", "focus": "#c49bd2",
+            "accent-ink": "#121014", "bubble-user": "#332b38", "bubble-user-ink": "#f4eff6", "success": "#6fad83",
+            "danger": "#de7e86", "danger-ink": "#210c10", "success-ink": "#101812", "warning": "#d0a35d",
+            "composer": "#2b2630", "unread": "var(--color-accent)",
         ],
         "daylight": [
-            "code-scheme": "light", "app": "#fcfcfc", "panel": "#f7f7f7", "raised": "#e1e1e1", "raised-hover": "#d7d7d7",
-            "card": "#eeeeee", "menu": "#fcfcfc", "inset": "#e6e6e6", "control": "#dedede", "hairline": "#d0d0d0",
-            "ink": "#0d0d0d", "ink-secondary": "#575757", "ink-tertiary": "#5c5c5c", "accent": "#2a2a2a",
-            "accent-border": "#3a3a3a", "accent-text": "#2a2a2a", "focus": "#2a2a2a", "accent-ink": "#fcfcfc",
-            "bubble-user": "#070707", "bubble-user-ink": "#fcfcfc", "success": "#1f7a4d", "danger": "#c02b3a",
-            "danger-ink": "#ffffff", "success-ink": "#ffffff", "warning": "#8a5a00", "composer": "#fcfcfc",
+            "code-scheme": "light", "app": "#fcfcfc", "panel": "#f7f7f7", "raised": "#e1e1e1",
+            "raised-hover": "#d7d7d7", "card": "#eeeeee", "menu": "#fcfcfc", "inset": "#e6e6e6", "control": "#dedede",
+            "hairline": "#d0d0d0", "ink": "#0d0d0d", "ink-secondary": "#575757", "ink-tertiary": "#575757",
+            "accent": "#2a2a2a", "accent-border": "#3a3a3a", "accent-text": "#2a2a2a", "focus": "#2a2a2a",
+            "accent-ink": "#fcfcfc", "bubble-user": "#070707", "bubble-user-ink": "#fcfcfc", "success": "#1a6943",
+            "danger": "#af2834", "danger-ink": "#ffffff", "success-ink": "#ffffff", "warning": "#825400",
+            "composer": "#fcfcfc", "unread": "var(--color-accent)",
         ],
         "retro98": [
-            "code-scheme": "light", "app": "#ffffff", "panel": "#c0c0c0", "raised": "#c0c0c0", "raised-hover": "#b4b4b4",
-            "card": "#c0c0c0", "menu": "#c0c0c0", "inset": "#ffffff", "control": "#d4d0c8", "hairline": "#808080",
-            "ink": "#000000", "ink-secondary": "#3c3c3c", "ink-tertiary": "#3c3c3c", "accent": "#000080",
-            "accent-border": "#000080", "accent-text": "#000080", "focus": "#000000", "accent-ink": "#ffffff",
-            "bubble-user": "#ffffff", "bubble-user-ink": "#000000", "success": "#005000", "danger": "#a00000",
-            "danger-ink": "#ffffff", "success-ink": "#ffffff", "warning": "#5a4000", "composer": "#ffffff",
+            "code-scheme": "light", "app": "#ffffff", "panel": "#c0c0c0", "raised": "#c0c0c0",
+            "raised-hover": "#b4b4b4", "card": "#c0c0c0", "menu": "#c0c0c0", "inset": "#ffffff", "control": "#d4d0c8",
+            "hairline": "#808080", "ink": "#000000", "ink-secondary": "#3c3c3c", "ink-tertiary": "#3c3c3c",
+            "accent": "#000080", "accent-border": "#000080", "accent-text": "#000080", "focus": "#000000",
+            "accent-ink": "#ffffff", "bubble-user": "#ffffff", "bubble-user-ink": "#000000", "success": "#004c00",
+            "danger": "#820000", "danger-ink": "#ffffff", "success-ink": "#ffffff", "warning": "#543c00",
+            "composer": "#ffffff", "unread": "var(--color-accent)",
         ],
     ]
 }

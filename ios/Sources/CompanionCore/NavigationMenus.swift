@@ -75,7 +75,9 @@ public struct BotMenuPlan: Hashable, Sendable {
 // MARK: - Room row
 
 public enum RoomMenuItem: String, Hashable, Sendable, CaseIterable {
-    case viewProfile, rename, moveTo, copyConversationId, hide
+    /// `close`: a conversation with a person closes instead of hiding
+    /// (#219); it never goes to Hidden.
+    case viewProfile, rename, moveTo, copyConversationId, hide, close
     /// The phone's pinned row also holds groups; the desktop's room menu
     /// has no pin, so it comes after the desktop's entries.
     case pin, unpin
@@ -161,15 +163,14 @@ public enum PhoneSettingsSection: String, Hashable, Sendable, CaseIterable {
 // MARK: - Plans
 
 public enum NavigationMenus {
-    /// `BotContextMenu`: threads; Pin, Move to, Mark as Unread; Rename Bot,
-    /// Copy conversation ID; Hide from sidebar, Archive, Delete; then the
-    /// Primary Bot entry. "Put on the desktop" floats a window: desktop only.
+    /// `BotContextMenu`: Pin, Move to, Mark as Unread; Rename Bot, Copy
+    /// conversation ID; Hide from sidebar, Archive, Delete; then the Primary
+    /// Bot entry. "Put on the desktop" floats a window: desktop only. New
+    /// thread and New folder left the bot row on 2026-10-08 (#182): they
+    /// live in the thread list (the chat header's, or the sidebar tree's).
     public static func bot(_ bot: Bot, _ context: BotMenuContext) -> BotMenuPlan {
         let gate = context.gate
         var groups: [[BotMenuItem]] = []
-        if context.showThreads {
-            groups.append(gate.allows(.threadFolders) ? [.newThread, .newFolder] : [.newThread])
-        }
 
         var first: [BotMenuItem] = []
         // The Primary Bot heads the home on its own; it is never pinned.
@@ -211,8 +212,8 @@ public enum NavigationMenus {
     }
 
     /// `RoomContextMenu`: View profile, Rename, Move to team, Copy
-    /// conversation ID, Hide from sidebar, Delete; the phone's group pin
-    /// before Delete.
+    /// conversation ID, Hide from sidebar (Close for a conversation with a
+    /// person), Delete; the phone's group pin before Delete.
     public static func room(_ room: Room, _ context: RoomMenuContext) -> [[RoomMenuItem]] {
         let access = context.access
         let teamRoom = room.dm != true && room.peopleDm != true
@@ -221,7 +222,7 @@ public enum NavigationMenus {
         if access.editable, room.peopleDm != true { main.append(.rename) }
         if context.personalSections ? teamRoom : access.canMoveSection { main.append(.moveTo) }
         main.append(.copyConversationId)
-        main.append(.hide)
+        main.append(room.peopleDm == true ? .close : .hide)
         var groups = [main]
         if context.groupPinsSupported, context.gate.scope != .sidecar, room.dm != true {
             groups.append([room.pinned == true ? .unpin : .pin])

@@ -146,6 +146,31 @@ final class SidebarPrefsTests: XCTestCase {
         XCTAssertTrue(SidebarHidden.default.hiding(.group, room.id, at: 9_000).entriesToUnhide(state: state, viewerId: "me").isEmpty)
     }
 
+    func testAClosedPeopleConversationComesBackOnAMessageAndWhenSelectedAndIsNeverListed() throws {
+        // #219: a DM with a person closes; a new message always reopens it,
+        // whatever the people switch says, and it is never under Hidden
+        var state = try layoutState()
+        var dm = try XCTUnwrap(state.rooms.first)
+        dm.id = "dm"; dm.threadId = "t-dm"; dm.peopleDm = true; dm.humanIds = ["me", "pr_bob"]; dm.unread = true
+        state.rooms.append(dm)
+        state.messages[dm.threadId] = [message("m", at: 5_000)]
+        var hidden = SidebarHidden.default.hiding(.person, "PR_BOB", at: 1)
+        hidden.unhidePeople = false
+        XCTAssertEqual(hidden.entriesToUnhide(state: state, viewerId: "me"), ["person:pr_bob"])
+
+        var prefs = SidebarPrefs()
+        prefs.setHidden(hidden)
+        let layout = state.sidebarLayout(prefs: prefs, personal: nil, viewerId: "me")
+        XCTAssertFalse(layout.unsectionedChannels.contains { $0.id == "dm" }, "closed: off the home")
+        XCTAssertTrue(layout.hiddenRows.isEmpty, "never listed under Hidden")
+
+        XCTAssertEqual(hidden.reopening(dm, viewerId: "me")?.items, [])
+        XCTAssertNil(SidebarHidden.default.reopening(dm, viewerId: "me"), "not closed: nothing to reopen")
+        var group = dm
+        group.peopleDm = nil
+        XCTAssertNil(hidden.reopening(group, viewerId: "me"), "a group is hidden, not closed")
+    }
+
     // MARK: Order and folding
 
     func testOrderMoveAndMergeAsTheDesktop() {

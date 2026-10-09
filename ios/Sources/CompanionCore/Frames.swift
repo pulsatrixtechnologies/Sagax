@@ -56,7 +56,16 @@ public enum Frame: Sendable {
     case config
     case runtime(RuntimeEvent)
     /// The desktop shakes. The phone only needs a light haptic.
-    case nudge
+    /// A nudge addressed to this person (#164, #222): who, when, and the
+    /// conversation its line went to.
+    case nudge(NudgeFrame)
+    /// `person.label` (#172): a person's label changed; nil cleared it.
+    case personLabel(principalId: String, label: String?)
+    /// `presence.changed` (#167); `audience` marks the viewer's own row.
+    case presenceChanged(audience: String?, people: [PresenceRow])
+    /// `org.approvals` (#213): the count of commands waiting for an admin,
+    /// and the ones that just arrived. Reaches organization admins only.
+    case orgApprovals(OrgApprovalsFrame)
     case unknown(kind: String)
 }
 
@@ -64,6 +73,7 @@ extension Frame: Decodable {
     private enum CodingKeys: String, CodingKey {
         case kind, cursor, resumed, threadId, message, activeLeafId
         case bot, botId, group, groupId, notification, png, mime, state, event, queues
+        case audience, fromId, fromName, at, open, principalId, label, people, count, added
     }
 
     public init(from decoder: Decoder) throws {
@@ -129,7 +139,27 @@ extension Frame: Decodable {
         case "config":
             self = .config
         case "nudge":
-            self = .nudge
+            let open = try? container.decodeIfPresent(NudgeFrame.Conversation.self, forKey: .open)
+            self = .nudge(NudgeFrame(
+                fromId: (try? container.decodeIfPresent(String.self, forKey: .fromId)) ?? "",
+                fromName: (try? container.decodeIfPresent(String.self, forKey: .fromName)) ?? "",
+                at: try? container.decodeIfPresent(Double.self, forKey: .at),
+                open: open
+            ))
+        case "person.label":
+            guard let id = try? container.decode(String.self, forKey: .principalId) else {
+                self = .unknown(kind: kind)
+                return
+            }
+            self = .personLabel(principalId: id, label: try? container.decodeIfPresent(String.self, forKey: .label))
+        case "presence.changed":
+            let rows = (try? container.decodeIfPresent([Lossy<PresenceRow>].self, forKey: .people))?.compactMap(\.value) ?? []
+            self = .presenceChanged(audience: try? container.decodeIfPresent(String.self, forKey: .audience), people: rows)
+        case "org.approvals":
+            self = .orgApprovals(OrgApprovalsFrame(
+                count: (try? container.decodeIfPresent(Int.self, forKey: .count)) ?? 0,
+                added: (try? container.decodeIfPresent([Lossy<OrgApprovalsFrame.Arrival>].self, forKey: .added))?.compactMap(\.value) ?? []
+            ))
         case "runtime":
             self = .runtime(try container.decode(RuntimeEvent.self, forKey: .event))
         default:
@@ -181,5 +211,59 @@ public struct StreamFrame: Decodable, Sendable {
     public init(frame: Frame, seq: Int?) {
         self.frame = frame
         self.seq = seq
+    }
+}
+
+/// The `nudge` frame's body.
+public struct NudgeFrame: Hashable, Sendable {
+    public struct Conversation: Decodable, Hashable, Sendable {
+        public var groupId: String
+        public var threadId: String
+        public init(groupId: String, threadId: String) {
+            self.groupId = groupId
+            self.threadId = threadId
+        }
+    }
+
+    public var fromId: String
+    public var fromName: String
+    /// Milliseconds since 1970; nil from an older server.
+    public var at: Double?
+    public var open: Conversation?
+
+    public init(fromId: String = "", fromName: String = "", at: Double? = nil, open: Conversation? = nil) {
+        self.fromId = fromId
+        self.fromName = fromName
+        self.at = at
+        self.open = open
+    }
+
+    /// `NUDGE_FRESH_MS`: a replay older than this does nothing (its line is
+    /// already in the chat).
+    public static let freshMs: Double = 2 * 60_000
+
+    public func isFresh(now: Double) -> Bool {
+        guard let at else { return true }
+        return now - at <= Self.freshMs
+    }
+}
+
+/// The `org.approvals` frame's body.
+public struct OrgApprovalsFrame: Hashable, Sendable {
+    public struct Arrival: Decodable, Hashable, Sendable {
+        public var requestId: String
+        public var botName: String?
+        public var ownerName: String?
+        public var requestedBy: String?
+        public var tool: String?
+        public var summary: String?
+    }
+
+    public var count: Int
+    public var added: [Arrival]
+
+    public init(count: Int, added: [Arrival] = []) {
+        self.count = count
+        self.added = added
     }
 }

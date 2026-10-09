@@ -49,6 +49,8 @@ final class SidebarPrefsUITests: XCTestCase {
         if fresh { arguments += ["-companion.sidebarPrefs.parity-harness", "{}"] }
         if let environment { arguments += ["-parityEnvironment", environment] }
         app.launchArguments = arguments
+        // threads under each bot row (#210: the default is the chat header)
+        app.launchArguments += ["-omb-threads-location", "sidebar"]
         app.launch()
         XCTAssertTrue(app.buttons["home-plus"].waitForExistence(timeout: 30))
         return app

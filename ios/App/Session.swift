@@ -977,6 +977,12 @@ final class Session: ObservableObject {
                         continue
                     }
                     state.apply(frame)
+                    // people: presence and labels (#167, #172)
+                    PeopleDirectory.shared.apply(frame.frame)
+                    // a routine changed or ran: the account's routines badge
+                    if case let .unknown(kind) = frame.frame, kind.hasPrefix("routine") {
+                        Task { await AccountRowModel.shared.refresh(self) }
+                    }
                     if case .nudge = frame.frame {
                         Haptics.impact(.light)
                     }

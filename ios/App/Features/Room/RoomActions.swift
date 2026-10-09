@@ -132,6 +132,14 @@ struct RoomRowMenu: View {
             } label: {
                 Label(String(localized: "Hide from sidebar"), systemImage: "eye.slash")
             }
+        case .close:
+            // #219: a conversation with a person closes; it comes back when
+            // selected or on a new message, and is never under Hidden
+            Button {
+                SidebarPrefsModel.shared.hide(session, room: room)
+            } label: {
+                Label(String(localized: "Close"), systemImage: "xmark")
+            }
         case .pin, .unpin:
             Button {
                 Task { await session.setPinned(room, pinned: item == .pin) }

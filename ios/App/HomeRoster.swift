@@ -76,6 +76,8 @@ struct HomeAccountButton: View {
     @Environment(\.themePalette) var themePalette
     let select: (AccountMenuItem) -> Void
     @EnvironmentObject private var session: Session
+    @ObservedObject private var routines = AccountRowModel.shared
+    @ObservedObject private var people = PeopleDirectory.shared
 
     var body: some View {
         Menu {
@@ -98,6 +100,23 @@ struct HomeAccountButton: View {
         }
         .buttonStyle(.plain)
         .themeGlass(Circle())
+        // the person's own presence dot (#167)
+        .overlay(alignment: .bottomTrailing) {
+            if let id = session.account?.principalId, let entry = people.presence.entry(id) {
+                PresenceDot(entry: entry, size: 11)
+                    .offset(x: -2, y: -2)
+            }
+        }
+        // the desktop row's routines badge (#215): opens Automations
+        .overlay(alignment: .topTrailing) {
+            if routines.activeRoutines > 0 {
+                Button { select(.automations) } label: {
+                    AccountRoutinesBadge(count: routines.activeRoutines, attention: routines.routineAttention)
+                }
+                .buttonStyle(.plain)
+                .offset(x: 14, y: -4)
+            }
+        }
         .accessibilityLabel(Text("Account"))
         .accessibilityIdentifier("home-account")
         // "photo" once the person's own picture shows (UI tests wait on it).
@@ -136,7 +155,7 @@ struct HomePinnedCell: View {
                     BotMascotView(bot: bot, size: HomeMetrics.pinnedMascot, state: state, animated: state.showsActivity)
                 case let .room(room):
                     if let peer = people.peer(room, session: session) {
-                        PersonAvatar(initials: peer.initials, size: HomeMetrics.pinnedMascot)
+                        PersonAvatar(initials: peer.initials, size: HomeMetrics.pinnedMascot, presenceId: peer.id)
                     } else {
                         GroupMascotView(
                             members: room.memberIds.compactMap { session.state.bot($0) },
@@ -241,7 +260,7 @@ struct HomeChatRow: View {
                     BotMascotView(bot: bot, size: HomeMetrics.rowMascot, state: state, animated: state.showsActivity)
                 case let .room(room):
                     if let peer = people.peer(room, session: session) {
-                        PersonAvatar(initials: peer.initials, size: HomeMetrics.rowMascot)
+                        PersonAvatar(initials: peer.initials, size: HomeMetrics.rowMascot, presenceId: peer.id)
                     } else {
                         GroupMascotView(
                             members: room.memberIds.compactMap { session.state.bot($0) },
@@ -288,6 +307,11 @@ struct HomeChatRow: View {
             .layoutPriority(2)
             if !role.isEmpty {
                 RoleChip(text: role, font: .system(size: 11.65, weight: .medium), horizontalPadding: 6)
+                    .frame(maxWidth: HomeMetrics.chipMaxWidth, alignment: .leading)
+                    .layoutPriority(0)
+            } else if case let .room(room) = chat, let peer = people.peer(room, session: session) {
+                // #172: a person's label, as a bot's label tag
+                PersonLabelTag(personId: peer.id, font: .system(size: 11.65, weight: .medium), horizontalPadding: 6)
                     .frame(maxWidth: HomeMetrics.chipMaxWidth, alignment: .leading)
                     .layoutPriority(0)
             }

@@ -37,6 +37,10 @@ struct PersonSheetContent: View {
     @ObservedObject private var people = PeopleDirectory.shared
     @ObservedObject private var sidebarPrefs = SidebarPrefsModel.shared
     @Environment(\.openURL) private var openURL
+    @State private var card: PublicAchievementCard?
+    @State private var editingLabel = false
+    @State private var labelDraft = ""
+    @State private var labelError: String?
 
     private var model: PersonSheetModel {
         PersonSheetModel(
@@ -136,16 +140,34 @@ struct PersonSheetContent: View {
         .task(id: session.connection?.id) { await people.load(session) }
     }
 
+    /// PersonPanel.tsx's header (#219): the name, then their title and
+    /// points, then their label (editable by them, an admin or their team's
+    /// manager), the role line only for an admin or a disabled account, then
+    /// Message and Close conversation.
     private func header(_ model: PersonSheetModel) -> some View {
         VStack(spacing: 6) {
-            PersonAvatar(initials: model.initials, size: 88)
+            PersonAvatar(initials: model.initials, size: 88, presenceId: personId)
             Text(verbatim: model.name)
                 .font(.system(size: 17, weight: .medium))
                 .foregroundStyle(Theme.textPrimary)
                 .lineLimit(1)
                 .accessibilityIdentifier("person-name")
-            if let person = model.person {
-                Text(verbatim: roleLine(person))
+            if let entry = people.presence.entry(personId) {
+                Text(verbatim: PresenceDot.words(entry))
+                    .font(.footnote)
+                    .foregroundStyle(Theme.textSecondary)
+                    .accessibilityIdentifier("person-presence")
+            }
+            if let line = memberLine {
+                Text(verbatim: line)
+                    .font(.system(size: 13))
+                    .foregroundStyle(Theme.textPrimary)
+                    .lineLimit(1)
+                    .accessibilityIdentifier("person-member-line")
+            }
+            labelLine
+            if let person = model.person, let role = roleLine(person) {
+                Text(verbatim: role)
                     .font(.footnote)
                     .foregroundStyle(Theme.textSecondary)
                     .accessibilityIdentifier("person-role")
@@ -155,6 +177,7 @@ struct PersonSheetContent: View {
                     Button {
                         Task {
                             if let chat = await people.openConversation(with: person.principalId, session: session) {
+                                if case let .room(room) = chat { sidebarPrefs.reopenIfClosed(session, room: room) }
                                 openChat(chat)
                             }
                         }
@@ -166,30 +189,94 @@ struct PersonSheetContent: View {
                     .disabled(people.opening)
                     .accessibilityIdentifier("person-message")
                 }
-                if let room = model.directRoom {
-                    let key = SidebarHidden.groupKey(room, viewerId: session.roomViewer.actorId)
-                    let hidden = sidebarPrefs.prefs.hidden.keys.contains(key)
+                // #219: an open conversation closes; a closed one only
+                // offers Message
+                if let room = model.directRoom,
+                   !sidebarPrefs.prefs.hidden.keys.contains(SidebarHidden.groupKey(room, viewerId: session.roomViewer.actorId)) {
                     Button {
-                        if hidden { sidebarPrefs.show(session, [key]) } else { sidebarPrefs.hide(session, room: room) }
+                        sidebarPrefs.hide(session, room: room)
                     } label: {
-                        Label(
-                            hidden ? String(localized: "Show") : String(localized: "Hide from sidebar"),
-                            systemImage: hidden ? "eye" : "eye.slash"
-                        )
+                        Label(String(localized: "Close conversation"), systemImage: "xmark")
                     }
                     .buttonStyle(.bordered)
                     .tint(Theme.textPrimary)
-                    .accessibilityIdentifier(hidden ? "person-show" : "person-hide")
+                    .accessibilityIdentifier("person-close-conversation")
                 }
             }
             .padding(.top, 10)
         }
         .frame(maxWidth: .infinity)
+        .task(id: personId) {
+            card = nil
+            card = try? await session.settingsClient?.publicAchievementCard(principalId: personId)
+        }
     }
 
-    private func roleLine(_ person: OrgDirectoryPerson) -> String {
-        let role = person.role == "admin" ? String(localized: "Administrator") : String(localized: "Member")
-        return person.disabled == true ? "\(role) · \(String(localized: "Disabled"))" : role
+    /// Title, then points, as their public card carries them.
+    private var memberLine: String? {
+        guard let card else { return nil }
+        var parts: [String] = []
+        if let title = card.titleName { parts.append(title.resolved(AchievementLanguage.current ?? Locale.current.language.languageCode?.identifier)) }
+        if let points = card.points {
+            let formatter = NumberFormatter()
+            formatter.numberStyle = .decimal
+            parts.append(String(localized: "\(formatter.string(from: NSNumber(value: points)) ?? String(points)) points"))
+        }
+        return parts.isEmpty ? nil : parts.joined(separator: "  ·  ")
+    }
+
+    /// The label under the name, as under a bot's name in its panel.
+    @ViewBuilder
+    private var labelLine: some View {
+        let label = people.label(personId)
+        if people.canEditLabel(personId, session: session) {
+            Button {
+                labelDraft = label ?? ""
+                editingLabel = true
+            } label: {
+                Text(verbatim: label ?? String(localized: "Add a label"))
+                    .font(.system(size: 12.5))
+                    .foregroundStyle(Theme.textSecondary)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(Text(String(localized: "Edit the label")))
+            .accessibilityValue(Text(verbatim: label ?? ""))
+            .accessibilityIdentifier("person-label-edit")
+            .alert(String(localized: "Label"), isPresented: $editingLabel) {
+                TextField(String(localized: "Add a label"), text: $labelDraft)
+                Button(String(localized: "Cancel"), role: .cancel) {}
+                Button(String(localized: "Save")) {
+                    let text = labelDraft
+                    Task {
+                        if let problem = await people.saveLabel(personId, text, session: session) { labelError = problem }
+                    }
+                }
+            } message: {
+                Text(String(localized: "Shown beside the name, like a bot's label. 40 characters at most."))
+            }
+            .alert(String(localized: "Label"), isPresented: Binding(get: { labelError != nil }, set: { if !$0 { labelError = nil } })) {
+                Button(String(localized: "OK"), role: .cancel) {}
+            } message: {
+                Text(verbatim: labelError ?? "")
+            }
+        } else if let label {
+            Text(verbatim: label)
+                .font(.system(size: 12.5))
+                .foregroundStyle(Theme.textSecondary)
+                .accessibilityIdentifier("person-label")
+        }
+    }
+
+    /// "Member" is not shown (#219): only an admin or a disabled account.
+    private func roleLine(_ person: OrgDirectoryPerson) -> String? {
+        let admin = person.role == "admin"
+        let disabled = person.disabled == true
+        switch (admin, disabled) {
+        case (true, true): return "\(String(localized: "Administrator")) · \(String(localized: "Disabled"))"
+        case (true, false): return String(localized: "Administrator")
+        case (false, true): return String(localized: "Disabled")
+        case (false, false): return nil
+        }
     }
 
     private func field(_ label: String, _ value: String, dim: Bool = false) -> some View {

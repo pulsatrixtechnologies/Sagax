@@ -97,6 +97,8 @@ final class TranscriptPresentationUITests: XCTestCase {
         if focused { app.launchArguments.append("-chat-focus-preview") }
         if receipts { app.launchArguments.append("-chat-compaction-preview") }
         if update { app.launchArguments.append("-chat-update-preview") }
+        // threads under each bot row (#210: the default is the chat header)
+        app.launchArguments += ["-omb-threads-location", "sidebar"]
         app.launch()
         let threads = app.buttons["threads-toggle.preview-pepper"]
         XCTAssertTrue(threads.waitForExistence(timeout: 10))

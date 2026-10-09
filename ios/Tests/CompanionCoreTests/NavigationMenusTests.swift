@@ -39,7 +39,6 @@ final class NavigationMenusTests: XCTestCase {
     func testAnAdminSeesTheDesktopBotMenuInOrder() throws {
         let plan = NavigationMenus.bot(try bot("ara"), context(admin))
         XCTAssertEqual(plan.groups, [
-            [.newThread, .newFolder],
             [.pin, .moveTo, .markUnread],
             [.rename, .copyConversationId],
             [.hide, .archive, .delete],
@@ -49,19 +48,22 @@ final class NavigationMenusTests: XCTestCase {
         XCTAssertFalse(plan.items.contains(.unpin))
     }
 
-    func testThreadsOffDropsTheThreadEntriesAndAPinnedBotOffersUnpin() throws {
-        let plan = NavigationMenus.bot(try bot("ara", pinned: true), context(admin, threads: false))
-        XCTAssertEqual(plan.items.first, .unpin)
-        XCTAssertFalse(plan.items.contains(.newThread))
-        XCTAssertFalse(plan.items.contains(.newFolder))
+    func testABotRowNeverOffersNewThreadOrNewFolderAndAPinnedBotOffersUnpin() throws {
+        // #182: they live in the thread list, threads on or off
+        for threads in [true, false] {
+            let plan = NavigationMenus.bot(try bot("ara", pinned: true), context(admin, threads: threads))
+            XCTAssertEqual(plan.items.first, .unpin)
+            XCTAssertFalse(plan.items.contains(.newThread))
+            XCTAssertFalse(plan.items.contains(.newFolder))
+        }
     }
 
     func testTheSidecarHasNoArchiveAndAClientSessionNoFolderDeleteOrRename() throws {
         let sidecarPlan = NavigationMenus.bot(try bot("ara"), context(sidecar))
-        XCTAssertEqual(sidecarPlan.items, [.newThread, .newFolder, .pin, .moveTo, .markUnread, .rename, .copyConversationId, .hide, .delete, .makePrimary])
+        XCTAssertEqual(sidecarPlan.items, [.pin, .moveTo, .markUnread, .rename, .copyConversationId, .hide, .delete, .makePrimary])
 
         let clientPlan = NavigationMenus.bot(try bot("ara", owner: "pr_other"), context(client, move: false, viewer: "pr_me"))
-        XCTAssertEqual(clientPlan.items, [.newThread, .pin, .markUnread, .copyConversationId, .hide])
+        XCTAssertEqual(clientPlan.items, [.pin, .markUnread, .copyConversationId, .hide])
     }
 
     func testAnOrganizationMemberRenamesOnlyTheirOwnBot() throws {
@@ -116,6 +118,9 @@ final class NavigationMenusTests: XCTestCase {
         let dm = try room("dm", peopleDm: true)
         let groups = NavigationMenus.room(dm, roomContext(member, room: dm, personal: true, peer: true))
         XCTAssertEqual(groups.first?.first, .viewProfile)
+        // #219: a conversation with a person closes, it is never hidden
+        XCTAssertTrue(groups.flatMap { $0 }.contains(.close))
+        XCTAssertFalse(groups.flatMap { $0 }.contains(.hide))
         XCTAssertFalse(groups.flatMap { $0 }.contains(.rename))
         XCTAssertFalse(groups.flatMap { $0 }.contains(.moveTo))
     }

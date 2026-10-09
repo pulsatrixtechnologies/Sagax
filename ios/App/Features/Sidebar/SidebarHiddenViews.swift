@@ -86,6 +86,16 @@ struct SidebarAppearanceSettings: View {
                 identifier: "settings.showThreads"
             )
         }
+        // #210: one place at a time, this device only; off while threads are off
+        SettingsSectionLabel(text: "Threads location")
+        SettingsCard {
+            threadsLocationRow("In the chat header", .header)
+            CardHairline(leadingInset: SettingsMetrics.rowInset)
+            threadsLocationRow("In the sidebar", .sidebar)
+        }
+        .disabled(!prefs.showThreads)
+        .opacity(prefs.showThreads ? 1 : 0.45)
+        SettingsFooter(text: "Where threads and folders live: the chat header or under each bot in the list, never both. This device only.")
         SettingsSectionLabel(text: "Hidden from the sidebar")
         SettingsCard {
             if rows.isEmpty {
@@ -155,6 +165,18 @@ struct SidebarAppearanceSettings: View {
         }
         .buttonStyle(.plain)
         .accessibilityAddTraits(desktopDensity == value.rawValue ? .isSelected : [])
+    }
+
+    private func threadsLocationRow(_ title: LocalizedStringKey, _ value: ThreadsLocation) -> some View {
+        let chosen = prefs.threadsLocation == value
+        return Button {
+            Haptics.selection()
+            prefs.setThreadsLocation(value)
+        } label: {
+            SettingsRow(title: title, accessory: chosen ? .check : .none, identifier: "settings.threadsLocation.\(value.rawValue)")
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(chosen ? .isSelected : [])
     }
 
     private func kindLabel(_ kind: HiddenKind) -> LocalizedStringKey {

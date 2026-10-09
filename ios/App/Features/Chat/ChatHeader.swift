@@ -75,7 +75,10 @@ extension ChatView {
     /// Touch and hold the name: threads and the profile.
     @ViewBuilder
     var nameCapsuleMenu: some View {
-        if current.supportsTasks {
+        // A bot's threads live here while Threads location is the chat
+        // header (#143, #210); in sidebar mode they are under its home row
+        // and the header offers none. Rooms are unchanged.
+        if current.supportsTasks, !current.isBot || SidebarPrefsModel.shared.threadsPlacement.inHeader {
             Button { showingTasks = true } label: {
                 Label(String(localized: "Threads"), systemImage: "square.stack")
             }

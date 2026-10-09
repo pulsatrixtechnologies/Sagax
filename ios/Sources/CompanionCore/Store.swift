@@ -523,7 +523,7 @@ public struct CompanionState: Sendable {
 
         // Nothing to fold: config and provisioning state are not part of
         // this client's job yet.
-        case .computer, .config, .nudge, .unknown:
+        case .computer, .config, .nudge, .personLabel, .presenceChanged, .orgApprovals, .unknown:
             break
         }
     }

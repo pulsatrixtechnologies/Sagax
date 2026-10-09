@@ -12,6 +12,8 @@ final class GeneratedImageUITests: XCTestCase {
             "-companion.onboarding.notificationsSeen", "YES",
             // The compact list carries the threads toggle (the default is the standard home).
             "-companion.prefs.rosterDensity", "compact"]
+        // threads under each bot row (#210: the default is the chat header)
+        app.launchArguments += ["-omb-threads-location", "sidebar"]
         app.launch()
         let toggle = app.buttons["threads-toggle.preview-pepper"]
         XCTAssertTrue(toggle.waitForExistence(timeout: 10))

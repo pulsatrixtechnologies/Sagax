@@ -165,7 +165,7 @@ struct ChatListView: View {
             // its own host: alerts chained on one view after the thread
             // presenter's would never show
             .background { Color.clear.sidebarSectionActionsPresenter(sectionActions) }
-            .environment(\.sidebarShowsThreads, sidebarPrefs.showThreads)
+            .environment(\.sidebarShowsThreads, sidebarPrefs.threadsPlacement.inSidebar)
             // a new message brings a hidden entry back; a first roster seeds
             // the person's own sections (organization server)
             .onValueChange(of: rosterSignature) { _ in
@@ -609,7 +609,7 @@ struct ChatListView: View {
                 .buttonStyle(.plain)
                 .contextMenu { chatMenu(summary.chat) }
                 .accessibilityIdentifier("chat-row.\(summary.chat.id)")
-                if case let .bot(bot) = summary.chat, sidebarPrefs.showThreads {
+                if case let .bot(bot) = summary.chat, sidebarPrefs.threadsPlacement.inSidebar {
                     BotThreadTree(
                         botID: bot.id, query: $query,
                         expanded: expandedBinding(bot.id),
@@ -1252,6 +1252,7 @@ extension ChatListView {
             await session.loadAccount()
             await sidebarPrefs.load(session)
             await people.load(session)
+            await AccountRowModel.shared.refresh(session)
             features = await session.configStatus()?.features
             await botActions.load(session)
         }
@@ -1313,6 +1314,7 @@ extension ChatListView {
             .refreshable {
                 await session.refresh()
                 await sidebarPrefs.load(session)
+                await AccountRowModel.shared.refresh(session)
             }
             .accessibilityIdentifier("roster-list")
             .topScrollEdgeFade(height: HomeMetrics.headerTop + HomeMetrics.headerHeight + 8)
@@ -1499,7 +1501,7 @@ extension ChatListView {
         switch chat {
         case let .bot(bot):
             let row = CompactBotRow(bot: bot, hasPendingCard: waiting, queuedThreadIds: queued, creatingThread: creatingThreads.contains(bot.id))
-            return HomeRowStatus(waiting: row.showsWaiting, working: row.showsSpinner, threadCount: sidebarPrefs.showThreads ? row.threadCount : 0, unread: row.showsUnreadDot)
+            return HomeRowStatus(waiting: row.showsWaiting, working: row.showsSpinner, threadCount: sidebarPrefs.threadsPlacement.inSidebar ? row.threadCount : 0, unread: row.showsUnreadDot)
         case let .room(room):
             let busy = room.busyBotId != nil
             return HomeRowStatus(waiting: waiting, working: busy, threadCount: 0, unread: room.unread && !busy)

@@ -240,9 +240,9 @@ final class RoutinesUITests: XCTestCase {
         element("routines-menu", in: app).tap()
         app.buttons["Filter by bot"].firstMatch.tap()
         // the submenu opens over the Automations sheet
-        let aurora = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "Aurora")).firstMatch
-        XCTAssertTrue(aurora.waitForExistence(timeout: 5), "Aurora in the bot filter")
-        aurora.tap()
+        let auroraItem = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "Aurora")).firstMatch
+        XCTAssertTrue(auroraItem.waitForExistence(timeout: 5), "Aurora in the bot filter")
+        auroraItem.tap()
         XCTAssertTrue(element("routines-row.\(lab)", in: app).waitForExistence(timeout: 5))
         XCTAssertFalse(element("routines-row.Scan skills populaires mensuel", in: app).exists)
     }
