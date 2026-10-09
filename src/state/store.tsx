@@ -1061,6 +1061,7 @@ export interface InstanceInfo {
 
 export type AppSettingsSection =
   | "general"
+  | "memory"
   | "privacy"
   | "notifications"
   | "organization"

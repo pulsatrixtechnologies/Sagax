@@ -90,6 +90,31 @@ and `server/routes/group-folders.ts`. Keep these rules, covered by
 - The picker follows Threads location like a bot's: header or sidebar, never
   both.
 
+## Organization memory cache (Settings > Memory)
+
+Settings > Memory (`src/components/OrgMemorySettings.tsx`,
+`src/lib/org-memory.ts`) keeps the organization memory of Perspicax on this
+computer for Obsidian (Perspicax lot A.4, its `docs/memory.md` "Obsidian and
+git sync"). The work is Electron main's (`electron/org-memory-cache.mjs`,
+IPC `org-memory:*` behind `desktopUiOnly`, preload `orgMemory`, also handed
+to a bundled organization page): one git clone per tier under
+`<userData>/org-memory/vault`, never in iCloud Drive, OneDrive or another
+cloud folder (refused), Time Machine excluded with the sticky
+`com.apple.metadata:com_apple_backup_excludeItem` attribute; the memory sync
+token kept by safeStorage (`token.bin`), given to git only as an
+`Authorization` header through `GIT_CONFIG_COUNT` variables (never a command
+line, never `.git/config`, never logged); generated files (`MEMORY.md`,
+`.gitignore`, `_pending/`, `directory/`) restored before a commit; the
+pending review items shown; a recommended `.obsidian` (Sync and Publish off,
+no community plugin) and an `obsidian://open` button. The cache is erased on
+`organization:disconnect`, when Perspicax answers 401 to the token (access
+ended), and from the button. Tests: `electron/org-memory-cache.node-test.mjs`
+(real git on bare repositories, the whole lifecycle), `src/lib/org-memory.test.ts`,
+`src/components/OrgMemorySettings.test.ts`. Not done yet: the token minted
+automatically for the signed-in person (today pasted from the Perspicax
+console page `/console/memory/sync`), a file watcher (the sync runs from the
+button).
+
 ## Mail settings
 
 Settings > Email (`src/components/MailSettings.tsx`, `server/mail-routes.ts`,

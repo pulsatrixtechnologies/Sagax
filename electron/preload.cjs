@@ -46,7 +46,7 @@ const REMOTE_SAFE = new Set(["platform", "getCapabilities", "onCapabilitiesChang
 // every one of these channels again (local-origin.cjs desktopUiOnly, and
 // sharingUiOnly for the server-mode server only). Nothing that reads this
 // computer's files, screen, logins or secrets is handed to the page.
-const BUNDLED_EXTRA = new Set(["floatingBots", "retroAssistant", "windowControls", "onOpenAppSettings", "openExternal", "confirm", "updater", "serverMode", "computerSharing", "appIcon"]);
+const BUNDLED_EXTRA = new Set(["floatingBots", "retroAssistant", "windowControls", "onOpenAppSettings", "openExternal", "confirm", "updater", "serverMode", "computerSharing", "appIcon", "orgMemory"]);
 let bundledPage = false;
 // main.mjs always answers this channel: a sendSync nobody answers would
 // block this page for good (a test harness must answer it too).
@@ -426,6 +426,16 @@ const bridge = {
       return () => ipcRenderer.removeListener("company-backups:state-changed", handler);
     },
   } : undefined,
+  /** Settings > Memory: the organization memory cached for Obsidian
+   * (electron/org-memory-cache.mjs). The token goes in once, never back. */
+  orgMemory: {
+    state: () => ipcRenderer.invoke("org-memory:state"),
+    connect: input => ipcRenderer.invoke("org-memory:connect", { server: String(input?.server ?? ""), token: String(input?.token ?? "") }),
+    sync: () => ipcRenderer.invoke("org-memory:sync"),
+    erase: () => ipcRenderer.invoke("org-memory:erase"),
+    writeObsidianConfig: () => ipcRenderer.invoke("org-memory:obsidian-config"),
+    openInObsidian: () => ipcRenderer.invoke("org-memory:open-obsidian"),
+  },
   computerSharing: {
     state: id => ipcRenderer.invoke("sharing:state", id),
     chooseFolder: () => ipcRenderer.invoke("sharing:folder"),

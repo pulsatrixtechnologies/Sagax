@@ -6,7 +6,7 @@ import { useRetroSkin } from "./RetroChromeHost";
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { FLOATING_LIVELINESS, floatingBotPrefs, HOTKEY_CHOICES, hotkeyLabel, setFloatingBarkSound, setFloatingFlyAway, setFloatingHotkey, setFloatingLiveliness, subscribeFloatingBots, type FloatingLiveliness, type HotkeyChoice } from "@/lib/floating-bots";
 import { useCallSettings, writeCallSettings } from "@/lib/voice-mode/call-settings";
-import { Archive, Bell, Coins, FlaskConical, KeyRound, Mail, Monitor, Palette, ScrollText, Search, ShieldCheck, TabletSmartphone, Terminal, User, Users, X, Building2, Zap } from "lucide-react";
+import { Archive, Bell, BookOpen, Coins, FlaskConical, KeyRound, Mail, Monitor, Palette, ScrollText, Search, ShieldCheck, TabletSmartphone, Terminal, User, Users, X, Building2, Zap } from "lucide-react";
 import { api, useStore, type AppSettingsSection, type ConfigStatus } from "@/state/store";
 import { browserAvailable, builtInBrowserEnabled, boatComputerEnabled, browseBotsEnabled, connectedAppsEnabled, decisionModelEnabled, routinesInConversationEnabled, showToolCallsEnabled, skillAuthoringEnabled, vpsComputerEnabled } from "@/lib/feature-flags";
 import { usePerspicaxOrg } from "@/lib/perspicax-org";
@@ -39,6 +39,7 @@ import { ThisComputerSettings } from "./DesktopWorkspaceSwitcher";
 import { OrganizationSettings } from "./OrganizationSettings";
 import { Card, SettingRow, Switch, requestSettingsCard, cardCount } from "./SettingsPrimitives";
 import { PrivacySettings } from "./PrivacySettings";
+import { OrgMemorySettings } from "./OrgMemorySettings";
 import { NotificationSettings } from "./NotificationSettings";
 import { BrowserUnavailableNote, SettingsText } from "./SettingsLink";
 
@@ -94,6 +95,7 @@ export const SECTIONS: Array<{
   { id: "organization", labelKey: "settings.section.organization", icon: Building2, keywords: ["company", "organization", "organisation", "sign in", "enroll", "managed", "models", "disconnect", "workspace", "cloud", "hosted", "vps", "server", "servers", "connect", "pair", "switch", "local"] },
   { id: "appearance", labelKey: "settings.section.appearance", icon: Palette, keywords: ["skin", "theme", "appearance", "advanced", "simple", "mode", "tools", "tool calls", "threads", "show threads", "hide threads", "sidebar", "hidden", "hide", "show", "density", "compact", "comfortable", "avatars", "display", "run", "this run", "run card", "commands", "mascot", "owl", "desktop", "fly", "floating", "app icon", "dock", "icon", "taskbar"] },
   { id: "notifications", labelKey: "settings.section.notifications", icon: Bell, keywords: ["notifications", "notification", "sound", "sounds", "mute", "silent", "chime", "alert", "alerts", "banner", "badge", "dock", "unread", "nudge", "wizz", "shake", "secousse", "son", "persistent", "stay"] },
+  { id: "memory", labelKey: "settings.section.memory", icon: BookOpen, keywords: ["memory", "obsidian", "vault", "sync", "git", "perspicax", "mémoire", "cache", "pending"] },
   { id: "privacy", labelKey: "settings.section.privacy", icon: ShieldCheck, keywords: ["privacy", "read receipts", "seen", "vu", "confidentialité", "accusés de lecture", "presence", "online", "away", "offline", "last seen", "status", "en ligne", "absent", "hors ligne", "privacidade"] },
   { id: "experimental", labelKey: "settings.section.experimental", icon: FlaskConical, keywords: ["early", "preview", "learn", "skill", "authoring", "browser", "profiles"] },
   { id: "connections", labelKey: "settings.section.connections", icon: KeyRound, keywords: ["keys", "api", "api key", "api keys", "connections", "composio", "box", "xai", "mistral", "vps", "router", "openrouter", "base url", "openai", "anthropic", "groq", "opencode", "provider"] },
@@ -156,6 +158,12 @@ export function memberHidesSection(id: AppSettingsSection, input: {
   if (id === "backups") return !input.manageBackups;
   if (id === "computer") return !input.manageComputers && !input.organization;
   return false;
+}
+
+/** Settings > Memory needs the desktop app's main process (the vault is a
+ * folder on this computer). */
+export function orgMemoryAvailable(): boolean {
+  return typeof window !== "undefined" && Boolean(window.ogb?.orgMemory);
 }
 
 export function sectionMatches(section: (typeof SECTIONS)[number], query: string): boolean {
@@ -1005,7 +1013,7 @@ export function SettingsModal() {
   // computer's phone flow, or the server's pairing code.
   const computerPairs = currentPhonePairingTarget(false) === "computer";
   const section: AppSettingsSection =
-    remoteActive && state.appSettingsSection !== "appearance" && state.appSettingsSection !== "organization" && state.appSettingsSection !== "notifications"
+    remoteActive && state.appSettingsSection !== "appearance" && state.appSettingsSection !== "organization" && state.appSettingsSection !== "notifications" && state.appSettingsSection !== "memory"
       ? "companion"
       : state.appSettingsSection;
   const dialogRef = useRef<HTMLDivElement>(null);
@@ -1033,7 +1041,9 @@ export function SettingsModal() {
     dispatch({ type: "toggleAppSettings", open: false, section: "general" });
     dispatch({ type: "toggleLaunch", open: true, mode: "server" });
   }, [soloDesktop, state.appSettingsSection, dispatch]);
-  const availableSections = SECTIONS.filter((entry) => !remoteActive || entry.id === "companion" || entry.id === "appearance" || entry.id === "organization" || entry.id === "privacy" || entry.id === "notifications")
+  const availableSections = SECTIONS.filter((entry) => !remoteActive || entry.id === "companion" || entry.id === "appearance" || entry.id === "organization" || entry.id === "privacy" || entry.id === "notifications" || entry.id === "memory")
+    // the organization memory's local cache is the desktop app's (main process)
+    .filter((entry) => entry.id !== "memory" || orgMemoryAvailable())
     // the desktop app in "No server" mode has no organization to show; it
     // joins one from General > Server, which brings this section back
     .filter((entry) => entry.id !== "organization" || !soloDesktop)
@@ -1483,6 +1493,7 @@ export function SettingsModal() {
             {section === "activity" && <ActivitySection />}
             {section === "workspaces" && <WorkspacesSection />}
             {section === "privacy" && <PrivacySettings />}
+            {section === "memory" && <OrgMemorySettings />}
             {section === "notifications" && <NotificationSettings />}
             </div>
           </div>
