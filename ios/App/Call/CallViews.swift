@@ -8,9 +8,10 @@
 //   out of the bar's bottom edge (height and opacity, the menus' 200 ms
 //   motion) that lies over the thread and folds back into the bar. There is
 //   no full-screen stage: hanging up leaves the plain header.
-// - GroupCallOverlay: a room's call (src/components/GroupCallView.tsx): every
-//   member's face in a row, the one speaking or working in focus, the room's
-//   name and state, what is being said, Interrupt and Hang up.
+// - A room's call (src/components/GroupCallView.tsx) uses the same bar under
+//   the room's name (JC, 2026-10-09: no full-screen call on iOS): the
+//   members' faces side by side in the avatar's seat, the one speaking or
+//   working in focus, and the room's state ("Nova is speaking").
 import CompanionCore
 import SwiftUI
 
@@ -122,11 +123,24 @@ private struct CallBarWidth: PreferenceKey {
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = max(value, nextValue()) }
 }
 
-/// A bot's voice call: the bar under the chat header and the card that
+/// Who the bar calls: one bot, or a room and its members.
+enum CallBarSubject {
+    case bot(Bot)
+    case room(Room, members: [Bot])
+
+    var name: String {
+        switch self {
+        case let .bot(bot): bot.name
+        case let .room(room, _): room.name
+        }
+    }
+}
+
+/// A call's voice bar: the bar under the chat header and the card that
 /// grows out of it. `panel` lives in the chat, so a tap on the thread can
 /// fold the card the way a click outside does on the desktop.
 struct CallBar: View {
-    let bot: Bot
+    let subject: CallBarSubject
     @ObservedObject var call: CallController
     @Binding var panel: CallBarPanel?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -139,7 +153,18 @@ struct CallBar: View {
     @State private var heldPanel: CallBarPanel?
 
     private var scale: CGFloat { CallBarMetrics.scale(rawScale) }
-    private var status: String { CallController.phaseLabel(call.state) }
+    private var status: String {
+        switch subject {
+        case .bot: CallController.phaseLabel(call.state)
+        case let .room(room, members):
+            CallController.roomPhaseLabel(
+                call.state,
+                speaking: call.speakingMemberId.flatMap { id in members.first { $0.id == id } },
+                working: room.busyBotId.flatMap { id in members.first { $0.id == id } },
+                push: call.callSettings.input == .push
+            )
+        }
+    }
     private var line: String {
         switch call.state.phase {
         case .hearing, .interrupted: call.heard
@@ -182,7 +207,7 @@ struct CallBar: View {
         .animation(motion, value: expanded)
         .animation(motion, value: cardHeight)
         .accessibilityElement(children: .contain)
-        .accessibilityLabel(Text(String(localized: "Voice call with \(bot.name)")))
+        .accessibilityLabel(Text(String(localized: "Voice call with \(subject.name)")))
         .accessibilityIdentifier("call-pill")
         .onAppear { call.loadVoices() }
         .onValueChange(of: panel) { next in
@@ -248,18 +273,28 @@ struct CallBar: View {
     private var avatar: some View {
         TimelineView(.periodic(from: call.startedAt, by: 1)) { context in
             let time = formatCallTime(context.date.timeIntervalSince(call.startedAt))
-            Button {
-                if call.state.botAudible { call.interrupt() }
-            } label: {
-                BotMascotView(bot: bot, size: CallBarMetrics.control * scale, state: call.state.mascot, animated: true)
-                    .frame(width: CallBarMetrics.control * scale, height: CallBarMetrics.control * scale)
-                    .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            switch subject {
+            case let .bot(bot):
+                Button {
+                    if call.state.botAudible { call.interrupt() }
+                } label: {
+                    BotMascotView(bot: bot, size: CallBarMetrics.control * scale, state: call.state.mascot, animated: true)
+                        .frame(width: CallBarMetrics.control * scale, height: CallBarMetrics.control * scale)
+                        .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(call.state.botAudible ? Text(String(localized: "Interrupt")) : Text(verbatim: subject.name))
+                // the desktop's tooltip: name · time · state
+                .accessibilityValue(Text(verbatim: "\(time) · \(status)"))
+                .accessibilityIdentifier("call-avatar")
+            case let .room(room, members):
+                // each face stays its own element (the member's name), so
+                // the faces are not one button: a tap interrupts the voice
+                CallRoomFaces(room: room, members: members, call: call, side: CallBarMetrics.control * scale)
+                    .onTapGesture { if call.state.botAudible { call.interrupt() } }
+                    .accessibilityAction(named: Text(String(localized: "Interrupt"))) { if call.state.botAudible { call.interrupt() } }
+                    .accessibilityValue(Text(verbatim: "\(time) · \(status)"))
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel(call.state.botAudible ? Text(String(localized: "Interrupt")) : Text(verbatim: bot.name))
-            // the desktop's tooltip: name · time · state
-            .accessibilityValue(Text(verbatim: "\(time) · \(status)"))
-            .accessibilityIdentifier("call-avatar")
         }
     }
 
@@ -408,7 +443,7 @@ struct CallBar: View {
                 holdButton.padding(.bottom, 4)
             }
         case .transcript:
-            CallTranscriptPanel(bot: bot, call: call, status: status, line: line)
+            CallTranscriptPanel(name: subject.name, room: { if case .room = subject { true } else { false } }(), call: call, status: status, line: line)
         }
     }
 
@@ -541,7 +576,8 @@ final class WaveHistory {
 /// The gear's card (VoiceModeSettingsPanel.tsx): Voice, Speed and Language,
 /// then an Advanced zone, folded by default and remembered with the call's
 /// settings, that holds the rest of this phone's call settings (microphone,
-/// end of turn, call sounds). The zone grows out of its row with the same
+/// end of turn, Only my voice with its enrollment, call sounds, the soft
+/// tone). The zone grows out of its row with the same
 /// height motion as the card, and its content never reflows.
 struct CallSettingsPanel: View {
     enum List { case voice, speed, language }
@@ -652,12 +688,95 @@ struct CallSettingsPanel: View {
                 .foregroundStyle(CallTheme.inkTertiary)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.bottom, 4)
+            onlyMyVoice
             Toggle(isOn: $call.callSettings.earcons) {
                 Text(String(localized: "Call sounds")).font(.system(size: 13 * scale)).foregroundStyle(CallTheme.inkSecondary)
             }
             .tint(Theme.toggleOn)
             .padding(.vertical, 6)
             .accessibilityIdentifier("call-earcons")
+            Toggle(isOn: $call.callSettings.thinkingCue) {
+                Text(String(localized: "Soft tone while a slow answer is coming")).font(.system(size: 13 * scale)).foregroundStyle(CallTheme.inkSecondary)
+            }
+            .tint(Theme.toggleOn)
+            .padding(.vertical, 6)
+            .accessibilityIdentifier("call-thinking-cue")
+        }
+    }
+
+    /// "Only my voice" (the desktop's switch and its enrollment row): on
+    /// without a recorded voice, the switch records one first.
+    @ViewBuilder
+    private var onlyMyVoice: some View {
+        let enrolled = call.enrollment == .enrolled
+        Toggle(isOn: Binding(
+            get: { call.callSettings.onlyMyVoice && enrolled },
+            set: { on in
+                if on && !enrolled { call.enroll() } else { call.callSettings.onlyMyVoice = on }
+            }
+        )) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(String(localized: "Only my voice")).font(.system(size: 13 * scale)).foregroundStyle(CallTheme.inkSecondary)
+                Text(String(localized: "Record a few seconds of your voice once: the call then ignores other voices (a TV, a colleague). Your voiceprint stays on this device."))
+                    .font(.system(size: 11.5 * scale))
+                    .foregroundStyle(CallTheme.inkTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .tint(Theme.toggleOn)
+        .padding(.vertical, 6)
+        .accessibilityIdentifier("call-only-my-voice")
+        enrollmentRow
+            .padding(.bottom, 6)
+    }
+
+    @ViewBuilder
+    private var enrollmentRow: some View {
+        switch call.enrollment {
+        case let .recording(share):
+            let percent = Int((share * 100).rounded())
+            VStack(alignment: .leading, spacing: 4) {
+                Text(String(localized: "Keep talking, read anything aloud (\(percent)%)"))
+                    .font(.system(size: 12.5 * scale))
+                    .foregroundStyle(CallTheme.ink)
+                    .accessibilityIdentifier("call-enrolling")
+                ProgressView(value: min(1, max(0, share)))
+                    .tint(CallTheme.accent)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        default:
+            VStack(alignment: .leading, spacing: 6) {
+                if call.enrollment == .enrolled {
+                    Text(String(localized: "Your voice is enrolled.")).font(.system(size: 12.5 * scale)).foregroundStyle(CallTheme.ink)
+                } else if call.enrollment == .failed {
+                    Text(String(localized: "Not enough speech was heard. Try again somewhere quieter."))
+                        .font(.system(size: 12.5 * scale))
+                        .foregroundStyle(CallTheme.warning)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                HStack(spacing: 8) {
+                    Button(call.enrollment == .enrolled ? String(localized: "Record again") : String(localized: "Record my voice")) {
+                        call.enroll()
+                    }
+                    .font(.system(size: 12.5 * scale))
+                    .foregroundStyle(CallTheme.ink)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 4)
+                    .background(CallTheme.raised, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("call-enroll")
+                    if call.enrollment == .enrolled {
+                        Button(String(localized: "Forget my voice")) { call.forgetVoice() }
+                            .font(.system(size: 12.5 * scale))
+                            .foregroundStyle(CallTheme.inkSecondary)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 4)
+                            .buttonStyle(.plain)
+                            .accessibilityIdentifier("call-forget-voice")
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 
@@ -778,7 +897,10 @@ struct CallSettingsPanel: View {
 // MARK: - Transcript
 
 struct CallTranscriptPanel: View {
-    let bot: Bot
+    /// the bot's or the room's name
+    let name: String
+    /// a room's call: the turn-taking hint under the lines
+    var room = false
     @ObservedObject var call: CallController
     let status: String
     let line: String
@@ -805,7 +927,7 @@ struct CallTranscriptPanel: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .firstTextBaseline) {
-                Text(bot.name).lineLimit(1)
+                Text(verbatim: name).lineLimit(1)
                 Spacer()
                 TimelineView(.periodic(from: call.startedAt, by: 1)) { context in
                     Text(verbatim: "\(formatCallTime(context.date.timeIntervalSince(call.startedAt))) · \(status)")
@@ -830,6 +952,14 @@ struct CallTranscriptPanel: View {
                             .accessibilityIdentifier("call-line-live")
                     }
                 }
+            }
+            if room {
+                Text(String(localized: "Say a member's name to direct the turn · Talk over a member to interrupt"))
+                    .font(.system(size: 11.5 * scale))
+                    .foregroundStyle(CallTheme.inkTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .accessibilityIdentifier("call-room-hint")
             }
         }
         .accessibilityElement(children: .contain)
@@ -887,168 +1017,76 @@ private struct UnevenBubble: Shape {
     }
 }
 
-// MARK: - A room's call (GroupCallView)
+// MARK: - A room's call (GroupCallView, in the bar)
 
-struct GroupCallOverlay: View {
+/// The members' faces in the bar's avatar seat: up to three, overlapping,
+/// the one speaking (or working) ringed and in front, "+N" for the rest.
+/// Each face wears what its member is doing (GroupCallView's member cards).
+struct CallRoomFaces: View {
     let room: Room
+    let members: [Bot]
     @ObservedObject var call: CallController
-    @EnvironmentObject private var session: Session
+    let side: CGFloat
 
-    private var members: [Bot] { room.memberIds.compactMap { session.state.bot($0) } }
-    private var workingMember: Bot? { room.busyBotId.flatMap { id in members.first { $0.id == id } } }
-    private var speakingMember: Bot? { call.speakingMemberId.flatMap { id in members.first { $0.id == id } } }
+    static let shown = 3
+    /// how far each next face sits from the last, a share of a face
+    static let step: CGFloat = 0.55
 
-    private var status: String {
-        let state = call.state
-        if state.phase == .held { return String(localized: "On hold") }
-        if state.muted { return String(localized: "Muted") }
-        switch state.phase {
-        case .connecting: return String(localized: "Connecting")
-        case .listening, .hearing, .interrupted:
-            return call.callSettings.input == .push ? String(localized: "Push to talk") : String(localized: "Listening")
-        case .speaking:
-            return String(localized: "\(speakingMember?.name ?? String(localized: "Group member")) is speaking")
-        default:
-            if let workingMember { return String(localized: "\(workingMember.name) is working") }
-            return String(localized: "Bringing the group in")
+    private var speakingId: String? { call.speakingMemberId }
+    private var workingId: String? { room.busyBotId }
+    private var focusId: String? { speakingId ?? workingId }
+
+    /// The faces drawn: the focused member always among them.
+    static func visible(_ members: [Bot], focus: String?) -> [Bot] {
+        var faces = Array(members.prefix(shown))
+        if let focus, !faces.contains(where: { $0.id == focus }), let member = members.first(where: { $0.id == focus }) {
+            faces[faces.count - 1] = member
         }
+        return faces
     }
-
-    private var working: Bool { [.thinking].contains(call.state.phase) }
 
     var body: some View {
-        ZStack(alignment: .topTrailing) {
-            Theme.bg.opacity(0.96).ignoresSafeArea()
-            VStack(spacing: 24) {
-                Spacer(minLength: 0)
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(alignment: .bottom, spacing: 12) {
-                        ForEach(members) { member in memberCard(member) }
-                    }
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 12)
-                    .frame(minWidth: UIScreen.main.bounds.width)
-                }
-                VStack(spacing: 6) {
-                    Text(room.name).font(.system(size: 20, weight: .medium)).foregroundStyle(CallTheme.ink)
-                    HStack(spacing: 8) {
-                        if working { ProgressView().controlSize(.small).tint(CallTheme.inkSecondary) }
-                        Text(status).font(.system(size: 13.5)).foregroundStyle(CallTheme.inkSecondary)
-                            .accessibilityIdentifier("call-status")
-                    }
-                }
-                caption
-                    .frame(minHeight: 56)
-                    .padding(.horizontal, 24)
-                if let note = call.note ?? call.notice {
-                    VStack(spacing: 8) {
-                        Text(note).font(.system(size: 12.5)).foregroundStyle(CallTheme.warning).multilineTextAlignment(.center)
-                        if call.note != nil {
-                            Button(String(localized: "Try microphone again")) { call.retry() }
-                                .font(.system(size: 12))
-                                .foregroundStyle(CallTheme.warning)
-                                .padding(.horizontal, 12)
-                                .padding(.vertical, 6)
-                                .overlay(Capsule().strokeBorder(CallTheme.warning.opacity(0.4)))
-                        }
-                    }
-                    .padding(.horizontal, 32)
-                }
-                HStack(spacing: 12) {
-                    if call.state.botAudible {
-                        Button(String(localized: "Interrupt")) { call.interrupt() }
-                            .font(.system(size: 13.5))
-                            .foregroundStyle(CallTheme.ink)
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 8)
-                            .overlay(Capsule().strokeBorder(CallTheme.hairline))
-                            .accessibilityIdentifier("call-interrupt")
-                    }
-                    Button { call.setMuted(!call.state.muted) } label: {
-                        Image(systemName: call.state.muted ? "mic.slash.fill" : "mic.fill")
-                            .font(.system(size: 15))
-                            .foregroundStyle(call.state.muted ? CallTheme.danger : CallTheme.ink)
-                            .frame(width: 40, height: 40)
-                            .background(CallTheme.raised, in: Circle())
-                    }
-                    .accessibilityLabel(call.state.muted ? Text(String(localized: "Unmute microphone")) : Text(String(localized: "Mute microphone")))
-                    .accessibilityIdentifier("call-mute")
-                    Button {
-                        Haptics.impact(.medium)
-                        call.end()
-                    } label: {
-                        Label(String(localized: "Hang up"), systemImage: "phone.down.fill")
-                            .font(.system(size: 14, weight: .medium))
-                            .foregroundStyle(Color.white)
-                            .padding(.horizontal, 20)
-                            .padding(.vertical, 10)
-                            .background(CallTheme.danger, in: Capsule())
-                    }
-                    .accessibilityIdentifier("call-end")
-                }
-                Text(String(localized: "Say a member's name to direct the turn · Talk over a member to interrupt"))
-                    .font(.system(size: 11.5))
-                    .foregroundStyle(CallTheme.inkTertiary)
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal, 32)
-                Spacer(minLength: 0)
+        let faces = Self.visible(members, focus: focusId)
+        let extra = members.count - faces.count
+        let width = side + CGFloat(max(0, faces.count - 1)) * side * Self.step
+        ZStack(alignment: .leading) {
+            ForEach(Array(faces.enumerated()), id: \.element.id) { index, member in
+                let focused = member.id == focusId
+                BotMascotView(bot: member, size: side, state: state(of: member), animated: true)
+                    .frame(width: side, height: side)
+                    .background(CallTheme.elevated, in: Circle())
+                    .overlay(Circle().stroke(focused ? CallTheme.accent : CallTheme.elevated, lineWidth: focused ? 2 : 1.5))
+                    .scaleEffect(focused ? 1 : 0.92)
+                    .opacity(focusId == nil || focused ? 1 : 0.8)
+                    .offset(x: CGFloat(index) * side * Self.step)
+                    .zIndex(focused ? 10 : Double(faces.count - index))
+                    .accessibilityElement()
+                    .accessibilityLabel(Text(verbatim: member.name))
+                    .accessibilityIdentifier(focused ? "call-member-focused" : "call-member")
             }
-            Button {
-                call.end()
-            } label: {
-                Image(systemName: "xmark")
-                    .font(.system(size: 16, weight: .medium))
-                    .foregroundStyle(CallTheme.inkSecondary)
-                    .frame(width: 44, height: 44)
+            if extra > 0 {
+                Text(verbatim: "+\(extra)")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(CallTheme.ink)
+                    .padding(.horizontal, 4)
+                    .padding(.vertical, 1)
+                    .background(CallTheme.raised, in: Capsule())
+                    .offset(x: width - 14, y: side / 2 - 8)
+                    .zIndex(20)
+                    .accessibilityHidden(true)
             }
-            .accessibilityLabel(Text(String(localized: "Hang up")))
-            .padding(.top, 8)
-            .padding(.trailing, 12)
         }
+        .frame(width: width, height: side, alignment: .leading)
+        .animation(.easeOut(duration: 0.2), value: focusId)
+        .contentShape(Rectangle())
         .accessibilityElement(children: .contain)
-        .accessibilityIdentifier("group-call")
+        .accessibilityIdentifier("call-room-faces")
     }
 
-    @ViewBuilder
-    private var caption: some View {
-        switch call.state.phase {
-        case .listening, .hearing, .interrupted:
-            if call.heard.isEmpty {
-                Text(String(localized: "Say a name, say \u{201C}everyone,\u{201D} or just talk to the group…"))
-                    .foregroundStyle(CallTheme.inkSecondary)
-            } else {
-                Text(call.heard).foregroundStyle(CallTheme.ink)
-            }
-        case .speaking:
-            Text(call.caption).foregroundStyle(CallTheme.ink)
-        default:
-            Text(workingMember == nil ? "" : String(localized: "You'll hear each response in turn."))
-                .foregroundStyle(CallTheme.inkSecondary)
-        }
-    }
-
-    private func memberCard(_ member: Bot) -> some View {
-        let focused = member.id == (speakingMember?.id ?? workingMember?.id)
-        let state: MausState = speakingMember?.id == member.id
-            ? .sending
-            : workingMember?.id == member.id ? .working
-            : [.listening, .hearing].contains(call.state.phase) ? .listening
-            : MausState.normalize(member.mascotExpression) ?? .happy
-        return VStack(spacing: 8) {
-            BotMascotView(bot: member, size: 94, state: state, animated: true)
-            Text(member.name)
-                .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(focused ? CallTheme.ink : CallTheme.inkSecondary)
-        }
-        .frame(width: 124)
-        .padding(.vertical, 12)
-        .padding(.horizontal, 2)
-        .background(focused ? CallTheme.raised.opacity(0.7) : .clear, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
-        .shadow(color: focused ? .black.opacity(0.3) : .clear, radius: 10, y: 4)
-        .scaleEffect(focused ? 1.05 : 1)
-        .opacity(focused ? 1 : 0.75)
-        .animation(.easeOut(duration: 0.2), value: focused)
-        .accessibilityElement(children: .combine)
-        .accessibilityIdentifier(focused ? "call-member-focused" : "call-member")
+    private func state(of member: Bot) -> MausState {
+        if speakingId == member.id { return .sending }
+        if workingId == member.id { return .working }
+        if [.listening, .hearing].contains(call.state.phase) { return .listening }
+        return MausState.normalize(member.mascotExpression) ?? .happy
     }
 }

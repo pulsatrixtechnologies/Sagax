@@ -222,8 +222,9 @@ final class CallAudioIO: @unchecked Sendable {
     }
 
     /// A short sine tone or two (earcons), beside the bot's voice.
-    func tone(_ earcon: CallEarcon, volume: Float = 0.08) {
+    func tone(_ earcon: CallEarcon, volume: Float? = nil) {
         guard running else { return }
+        let volume = volume ?? earcon.volume
         let rate = playFormat.sampleRate
         var samples: [Float] = []
         for note in earcon.notes {

@@ -96,7 +96,9 @@ public struct VoiceModeSettings: Codable, Equatable, Sendable {
     }
 }
 
-/// How this phone takes part in a call (the desktop's CallSettings).
+/// How this phone takes part in a call (the desktop's CallSettings,
+/// `src/lib/voice-mode/call-settings.ts`), kept on this phone under the
+/// desktop's key and field names.
 public struct CallSettings: Codable, Equatable, Sendable {
     public enum Input: String, Codable, Sendable { case auto, push }
     /// "auto": hands-free with barge-in; "push": hold the button to talk
@@ -108,12 +110,22 @@ public struct CallSettings: Codable, Equatable, Sendable {
     /// the settings card's Advanced zone is unfolded (closed by default,
     /// remembered with the call's settings, as on the desktop)
     public var advancedOpen: Bool
+    /// "Only my voice": accept turns from the enrolled voice only (needs an
+    /// enrollment, CallVoiceprint). On by default, as on the desktop; it
+    /// does nothing until a voice is enrolled.
+    public var onlyMyVoice: Bool
+    /// "Soft tone": a soft tone when the answer is slow to start (over
+    /// `LiveCallEngine.thinkingCueSeconds` after the person stopped), so the
+    /// silence is not a dead line
+    public var thinkingCue: Bool
 
-    public init(input: Input = .auto, earcons: Bool = true, pause: CallPause = .normal, advancedOpen: Bool = false) {
+    public init(input: Input = .auto, earcons: Bool = true, pause: CallPause = .normal, advancedOpen: Bool = false, onlyMyVoice: Bool = true, thinkingCue: Bool = true) {
         self.input = input
         self.earcons = earcons
         self.pause = pause
         self.advancedOpen = advancedOpen
+        self.onlyMyVoice = onlyMyVoice
+        self.thinkingCue = thinkingCue
     }
 
     public static let storageKey = "omb.voiceCall.v1"
@@ -126,12 +138,18 @@ public struct CallSettings: Codable, Equatable, Sendable {
             input: (record["input"] as? String) == "push" ? .push : .auto,
             earcons: record["earcons"] as? Bool ?? true,
             pause: (record["pause"] as? String).flatMap(CallPause.init(rawValue:)) ?? .normal,
-            advancedOpen: record["advancedOpen"] as? Bool ?? false
+            advancedOpen: record["advancedOpen"] as? Bool ?? false,
+            onlyMyVoice: record["onlyMyVoice"] as? Bool ?? true,
+            thinkingCue: record["thinkingCue"] as? Bool ?? true
         )
     }
 
     public var encoded: String {
-        let data = (try? JSONSerialization.data(withJSONObject: ["input": input.rawValue, "earcons": earcons, "pause": pause.rawValue, "advancedOpen": advancedOpen] as [String: Any], options: [.sortedKeys])) ?? Data()
+        let record: [String: Any] = [
+            "input": input.rawValue, "earcons": earcons, "pause": pause.rawValue, "advancedOpen": advancedOpen,
+            "onlyMyVoice": onlyMyVoice, "thinkingCue": thinkingCue,
+        ]
+        let data = (try? JSONSerialization.data(withJSONObject: record, options: [.sortedKeys])) ?? Data()
         return String(decoding: data, as: UTF8.self)
     }
 }

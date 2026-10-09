@@ -192,18 +192,90 @@ public final class LiveCallEngine {
     public static let continuationSeconds: TimeInterval = 1.5
     private static let prerollFrames = 10 // 320 ms before the first voiced frame
 
+    /// "Only my voice": the enrolled print (CallVoiceprint), nil when none.
+    public private(set) var voiceprint: CallVoiceprint?
+    /// the level the gate uses, learned from accepted turns
+    private var nearLevel: Float?
+    /// the current turn's voiced frames: level sum and count
+    private var turnLevel: (sum: Float, frames: Int) = (0, 0)
+    private var enrolling: (recorder: CallEnrollmentRecorder, progress: (Double) -> Void, done: CheckedContinuation<CallVoiceprint?, Never>)?
+
+    /// "Soft tone": how long after the person stopped a slow answer gets the
+    /// tone (the desktop's THINKING_CUE_MS, 1.2 s).
+    public var thinkingCueSeconds: TimeInterval = 1.2
+    private var cueTask: Task<Void, Never>?
+    private var cueTurn = 0
+
     public init(
         transcriber: CallTranscribing,
         player: CallSpeaking,
         settings: @escaping () -> CallSettings,
         speed: @escaping () -> Double = { 1 },
+        voiceprint: CallVoiceprint? = nil,
         now: @escaping () -> TimeInterval = { Date().timeIntervalSinceReferenceDate }
     ) {
         self.transcriber = transcriber
         self.player = player
         self.settings = settings
         self.speed = speed
+        self.voiceprint = voiceprint
+        self.nearLevel = voiceprint?.level
         self.now = now
+    }
+
+    // MARK: - Only my voice
+
+    /// "Only my voice" is in force: on, and a voice is enrolled.
+    public var verifying: Bool { settings().onlyMyVoice && voiceprint != nil }
+
+    public var enrolled: Bool { voiceprint != nil }
+
+    /// Record the person's voice for `seconds` of speech (within `timeout`)
+    /// and return its print, or nil when not enough speech was heard. The
+    /// call's turns pause while it records. `progress` gets 0...1.
+    public func enroll(seconds: Double = 6, timeout: TimeInterval = 25, progress: @escaping (Double) -> Void = { _ in }) async -> CallVoiceprint? {
+        cancelEnrollment()
+        // a turn being heard is dropped: what follows is the enrollment
+        if state.phase == .hearing || state.phase == .interrupted { dispatch(.speechCancel) }
+        transcriber.discard()
+        turns.reset()
+        pushing = false
+        let recorder = CallEnrollmentRecorder(seconds: seconds, startedAt: now(), timeout: timeout)
+        let print = await withCheckedContinuation { (done: CheckedContinuation<CallVoiceprint?, Never>) in
+            enrolling = (recorder, progress, done)
+            progress(0)
+            // the microphone may go quiet (muted, held): the time still runs out
+            Task { @MainActor [weak self] in
+                try? await Task.sleep(nanoseconds: UInt64(timeout * 1_000_000_000))
+                self?.finishEnrollment(force: true)
+            }
+        }
+        if let print {
+            voiceprint = print
+            nearLevel = print.level
+            progress(1)
+        }
+        return print
+    }
+
+    /// Stop an enrollment in progress (the call ended): nothing is kept.
+    public func cancelEnrollment() {
+        guard let enrolling else { return }
+        self.enrolling = nil
+        enrolling.done.resume(returning: nil)
+    }
+
+    /// "Forget my voice": the gate is off until the next enrollment.
+    public func forgetVoice() {
+        voiceprint = nil
+        nearLevel = nil
+        turns.nearLevel = nil
+    }
+
+    private func finishEnrollment(force: Bool) {
+        guard let enrolling, force || enrolling.recorder.done(now: now()) else { return }
+        self.enrolling = nil
+        enrolling.done.resume(returning: enrolling.recorder.voiceprint())
     }
 
     /// The words recognized so far in the person's turn: an unfinished
@@ -286,6 +358,7 @@ public final class LiveCallEngine {
     /// The player's first sample of a sentence is audible now.
     public func playerSentenceStarted(_ text: String) {
         guard !closed else { return }
+        disarmCue()
         events.caption(text)
         if !state.botAudible { dispatch(.botAudioStart) }
     }
@@ -308,6 +381,7 @@ public final class LiveCallEngine {
         guard settings().input == .push, !state.muted, state.phase != .held else { return }
         if down && !pushing {
             pushing = true
+            turnLevel = (0, 0)
             transcriber.begin(preroll: Array(preroll.suffix(3)))
             dispatch(.speechCandidate)
             dispatch(.speechStart)
@@ -324,20 +398,35 @@ public final class LiveCallEngine {
     public func frame(_ frame: [Float]) {
         guard !closed, !state.muted, state.phase != .held else { return }
         turns.setPause(settings().pause)
+        // "Only my voice": far-field sound never counts as speech
+        turns.nearLevel = verifying ? nearLevel : nil
         let level = CallAudio.rms(frame)
         let probability = vad.probability(level: level)
         let playback = player.level()
         let echo = guardEcho.update(micLevel: level, playbackLevel: playback)
         let botAudible = state.botAudible || playback > 0.004
 
+        if enrolling != nil {
+            enrolling?.recorder.push(level: level, probability: probability, botAudible: botAudible)
+            if let enrolling { enrolling.progress(enrolling.recorder.share) }
+            finishEnrollment(force: false)
+            return
+        }
+
         if settings().input == .push {
-            if pushing { transcriber.push(frame) }
+            if pushing {
+                transcriber.push(frame)
+                if probability > 0.5 { turnLevel = (turnLevel.sum + level, turnLevel.frames + 1) }
+            }
             keepPreroll(frame)
             return
         }
 
         guard let event = turns.feed(TurnFrame(probability: probability, level: level, botAudible: botAudible, echo: echo)) else {
-            if turns.active { transcriber.push(frame) } else { keepPreroll(frame) }
+            if turns.active {
+                transcriber.push(frame)
+                if probability > 0.5 { turnLevel = (turnLevel.sum + level, turnLevel.frames + 1) }
+            } else { keepPreroll(frame) }
             return
         }
         switch event {
@@ -345,6 +434,7 @@ public final class LiveCallEngine {
             keepPreroll(frame)
             transcriber.begin(preroll: preroll)
             preroll = []
+            turnLevel = (level, 1)
             dispatch(.speechCandidate)
         case .start:
             transcriber.push(frame)
@@ -420,6 +510,7 @@ public final class LiveCallEngine {
             lastCut = nil
             // a new answer starts: what it plays is measured from here
             player.resetLedger()
+            armCue()
             events.utterance(turn)
         case .finalizeSTT:
             Task { await self.finishTurn() }
@@ -440,6 +531,8 @@ public final class LiveCallEngine {
 
     private func release() {
         closed = true
+        disarmCue()
+        cancelEnrollment()
         transcriber.close()
         resolveWaiters(false)
         let player = self.player
@@ -460,6 +553,43 @@ public final class LiveCallEngine {
             dispatch(.utteranceRejected(.empty))
             return
         }
+        // "Only my voice": a voice well under the person's level is another one
+        if verifying, let print = voiceprint {
+            let voiced = turnLevel.frames > 0 ? turnLevel.sum / Float(turnLevel.frames) : 0
+            let seconds = Double(turnLevel.frames) * CallAudio.frameMs / 1000
+            var gate = print
+            gate.level = nearLevel ?? print.level
+            if !gate.accepts(turnLevel: voiced, seconds: seconds) {
+                continuing = false
+                events.rejected(.otherVoice)
+                dispatch(.utteranceRejected(.otherVoice))
+                return
+            }
+            if seconds >= CallVoiceprint.minVerifySeconds { nearLevel = CallVoiceprint.learn(gate.level, from: voiced) }
+        }
         dispatch(.utterance(text))
+    }
+
+    // MARK: - Soft tone
+
+    /// A slow answer gets a soft tone `thinkingCueSeconds` after the
+    /// person's last word, if nothing is audible by then (the desktop's armCue).
+    private func armCue() {
+        disarmCue()
+        guard settings().thinkingCue else { return }
+        cueTurn += 1
+        let turn = cueTurn
+        let wait = max(0, thinkingCueSeconds - (now() - (turnEndedAt == 0 ? now() : turnEndedAt)))
+        cueTask = Task { @MainActor [weak self] in
+            if wait > 0 { try? await Task.sleep(nanoseconds: UInt64(wait * 1_000_000_000)) }
+            guard let self, !Task.isCancelled, !self.closed, self.cueTurn == turn else { return }
+            guard self.settings().thinkingCue, self.state.phase == .thinking, !self.state.botAudible, !self.player.busy else { return }
+            self.player.tone(.thinking)
+        }
+    }
+
+    private func disarmCue() {
+        cueTask?.cancel()
+        cueTask = nil
     }
 }
