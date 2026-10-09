@@ -86,6 +86,8 @@ export function parseArgsLine(text: string): string[] {
 export interface MarketplaceListing {
   name: string;
   source: string;
+  /** A token is saved for it on this bot (never the token itself). */
+  hasToken?: boolean;
   description?: string;
   addedAt: number;
   updatedAt: number;
@@ -116,7 +118,15 @@ export interface BotPluginsView {
 
 const pluginsPath = (botId: string) => `/api/bots/${encodeURIComponent(botId)}/plugins`;
 export const loadBotPlugins = (botId: string) => api<BotPluginsView>(pluginsPath(botId));
-export const addMarketplace = (botId: string, source: string) => api<BotPluginsView>(`${pluginsPath(botId)}/marketplaces`, { method: "POST", body: JSON.stringify({ source }), timeoutMs: 180_000 });
+export const addMarketplace = (botId: string, source: string, token?: string) =>
+  api<BotPluginsView>(`${pluginsPath(botId)}/marketplaces`, { method: "POST", body: JSON.stringify({ source, ...(token ? { token } : {}) }), timeoutMs: 180_000 });
+export const setMarketplaceToken = (botId: string, name: string, token: string) =>
+  api<BotPluginsView>(`${pluginsPath(botId)}/marketplaces/${encodeURIComponent(name)}/token`, { method: "PUT", body: JSON.stringify({ token }) });
+export const removeMarketplaceToken = (botId: string, name: string) =>
+  api<BotPluginsView>(`${pluginsPath(botId)}/marketplaces/${encodeURIComponent(name)}/token`, { method: "DELETE" });
+
+/** Refusals of a private repository that a token (or a GitHub connection) fixes. */
+export const MARKETPLACE_ACCESS_CODES = new Set(["private_needs_token", "not_found_or_no_access", "bad_token", "forbidden", "sso_required", "repository_unreadable"]);
 export const updateMarketplace = (botId: string, name: string) => api<BotPluginsView>(`${pluginsPath(botId)}/marketplaces/${encodeURIComponent(name)}/update`, { method: "POST", timeoutMs: 180_000 });
 export const removeMarketplace = (botId: string, name: string) => api<BotPluginsView>(`${pluginsPath(botId)}/marketplaces/${encodeURIComponent(name)}`, { method: "DELETE" });
 export const installPlugin = (botId: string, marketplace: string, plugin: string) =>

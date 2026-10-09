@@ -1,6 +1,7 @@
 // Browse Bots > Templates, the tools that used to be tabs of the Templates
 // library: Import (a backup or team file, a GitHub link, an install link),
-// From a folder (the project scout) and Share a team. Each preview shows
+// Import from zip (one bot, whole: src/components/BotZipImport.tsx), From a
+// folder (the project scout) and Share a team. Each preview shows
 // everything an import adds before anything is added, then adds it the way
 // the library did (POST /api/teams/import?mode=add, or ?mode=project for a
 // scouted folder). TeamImportPreview is also the community template's
@@ -19,12 +20,14 @@ import { MAX_TEAM_BACKUP_BYTES } from "../../../shared/team-backup";
 import { takeImportName } from "../../../shared/import-name";
 import { Github } from "../brand-icons";
 import { ShareTeamDialog } from "../ShareTeamDialog";
+import { BotZipImportPanel } from "../BotZipImport";
 import { shareableTeamList, TEAM_GLYPHS, TeamGlyph, TeamImportDetails, type TeamImportResult } from "./TeamImportDetails";
 
-export type TemplateTool = "import" | "scout" | "share";
-export const TEMPLATE_TOOLS: readonly TemplateTool[] = ["import", "scout", "share"];
+export type TemplateTool = "import" | "zip" | "scout" | "share";
+export const TEMPLATE_TOOLS: readonly TemplateTool[] = ["import", "zip", "scout", "share"];
 export const TEMPLATE_TOOL_LABEL: Record<TemplateTool, LocaleKey> = {
   import: "botCatalog.tools.import",
+  zip: "botZip.importFromZip",
   scout: "botCatalog.tools.scout",
   share: "botCatalog.tools.share",
 };
@@ -359,6 +362,13 @@ export function TemplateTools({ tool, onTool, installUrl, onImported, backRef }:
             <TeamImportPreview pending={pending} source={source} onImported={onImported} />
           </>
         ) : null}
+
+        {!pending && tool === "zip" && (
+          <div data-template-tool-zip="">
+            <p className="mb-3 text-[13px] text-ink-secondary">{t("botZip.templatesHint")}</p>
+            <BotZipImportPanel onImported={(result) => onImported({ name: result.name, members: 1 })} />
+          </div>
+        )}
 
         {!pending && tool === "import" && (
           <div>

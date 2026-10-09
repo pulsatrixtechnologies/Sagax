@@ -735,6 +735,8 @@ import { PASS, ROUTES, dispatchRoutes } from "./routes/table.ts";
 import { createHostedSlackRoutes } from "./routes/hosted-slack.ts";
 import { createBotPresetRoutes } from "./routes/bot-presets.ts";
 import { createBotCatalogRoutes, memberImportReset } from "./routes/bot-catalog.ts";
+import { createBotZipRoutes } from "./routes/bot-zip.ts";
+import { BotZipError, closeInspected, importBotZip, inspectBotZip, planBotZip, previewBotZip, stageBotZipUpload, writeBotZip, type BotZipHost } from "./bot-zip.ts";
 import { MEMORY_INDEX, readMemoryDoc } from "./memory-store.ts";
 import { isExpired as memoryEntryExpired, parseMemoryEntries } from "./memory-entries.ts";
 import { createBotLibraryRoutes } from "./routes/bot-library.ts";
@@ -749,8 +751,10 @@ import { createRegistrySearch } from "./plugin-registry.ts";
 import { BotPluginError, BotPlugins, marketplaceAllowed, marketplacePolicySchema, normalizePolicyEntry, parseGitSource, type MarketplacePolicy } from "./bot-plugins.ts";
 import { claudePluginDirs, pluginTurnFiles, pluginTurnPrompt } from "./plugin-turn.ts";
 import { createBotPluginRoutes } from "./routes/bot-plugins.ts";
-import { GithubConnect, githubAuthorizedFetch, githubGitEnvironment, githubSandboxArgv } from "./github-connect.ts";
+import { GithubConnect, githubGitEnvironment, githubSandboxArgv } from "./github-connect.ts";
 import { OrgGithubTokens } from "./org-github-tokens.ts";
+import { MarketplaceTokens } from "./marketplace-tokens.ts";
+import { githubSkillFetch, type GithubCredential } from "./github-access.ts";
 import { parsePersonalMcpInput, personalAuthHeaders, personalMcpHostRefusal, personalMcpPrivateAllowed, PersonConnections, PersonConnectionsError, principalDir, type PersonalMcpServer } from "./person-connections.ts";
 import { createPersonConnectionRoutes } from "./routes/person-connections.ts";
 import { SandboxStdioRelay, StdioRelayError } from "./sandbox-stdio-mcp.ts";
@@ -5268,9 +5272,34 @@ function pluginMarketplacePolicy(): MarketplacePolicy | undefined {
   const parsed = marketplacePolicySchema.safeParse(cfg.organization?.pluginMarketplaces);
   return parsed.success ? parsed.data : undefined;
 }
+/** The organization's GitHub tokens (Settings > Organization > Plugins and
+ * GitHub, server/org-github-tokens.ts). */
+const orgGithubTokens = new OrgGithubTokens(DATA_DIR, vaultKeySource);
+/** A token per plugin marketplace of a bot (server/marketplace-tokens.ts). */
+const marketplaceTokens = new MarketplaceTokens(DATA_DIR, vaultKeySource);
+/** Who reads a private GitHub repository for `actor`: their own GitHub
+ * connection, then the organization's tokens (organization server). The
+ * marketplace's own token comes first (server/bot-plugins.ts). */
+function githubCredentialsFor(actor: string | null | undefined): GithubCredential[] {
+  const person = usablePersonGithub(actor)?.token;
+  const credentials: GithubCredential[] = person ? [{ token: person, via: "person" }] : [];
+  if (IDENTITY.kind === "perspicax" && !personIntegrationsOff(actor)) {
+    try {
+      for (const entry of orgGithubTokens.list()) {
+        const token = orgGithubTokens.tokenFor(entry.id);
+        if (token) credentials.push({ token, via: "organization", label: entry.label });
+      }
+    } catch {
+      // an unreadable token file leaves the person's own access
+    }
+  }
+  return credentials;
+}
 const botPlugins = new BotPlugins({
   dataDir: DATA_DIR,
   gitEnvironment: (actor) => githubGitEnvironment(usablePersonGithub(actor)?.token),
+  credentials: ({ actor }) => githubCredentialsFor(actor),
+  tokens: marketplaceTokens,
   policy: pluginMarketplacePolicy,
 });
 const stdioRelay = new SandboxStdioRelay({
@@ -7461,6 +7490,9 @@ store.onChange((change) => {
       sentThreads.delete(change.botId);
       try { commandAllowlist.clear(change.botId); }
       catch { console.error("[command-allowlist] Could not remove deleted bot's saved rules."); }
+      // Its plugins and the tokens saved for its marketplaces go with it.
+      try { botPlugins.forgetBot(change.botId); }
+      catch { console.error("[bot-plugins] Could not remove deleted bot's plugins."); }
       broadcast({ kind: "bot.deleted", botId: change.botId });
       break;
     case "group": {
@@ -21050,7 +21082,7 @@ const pluginRegistry = createRegistrySearch();
 // servers (source: the marketplace) and library skills.
 const pluginMarketplaces = new PluginMarketplaces({
   dataDir: DATA_DIR,
-  gitEnvironment: (actor) => githubGitEnvironment(usablePersonGithub(actor)?.token),
+  gitEnvironment: (actor) => githubGitEnvironment(githubCredentialsFor(actor)[0]?.token),
   policy: pluginMarketplacePolicy,
 });
 ROUTES.push(createMarketplaceRoutes({
@@ -23272,7 +23304,6 @@ if (IDENTITY.kind === "perspicax") {
     }),
     attach: ({ from, to, auth }) => attachInterimPerson(from, to, auth),
   }));
-  const orgGithubTokens = new OrgGithubTokens(DATA_DIR, vaultKeySource);
   ROUTES.push(createPerspicaxOrgRoutes({
     issuer,
     orgName: process.env.SAGAX_ORG_NAME?.trim().slice(0, 120) || "Pulsatrix",
@@ -24332,6 +24363,32 @@ const orgBotsDeps: BotsDeps = {
     const exported = singleBotPackage(bot, true);
     return { document: exported.document, filename: exported.filename, redacted: exported.redacted, skipped: exported.skipped };
   },
+  // The canonical bot zip (server/bot-zip.ts), for "Copy to another server".
+  exportZip: (botId, options) => {
+    const plan = planBotZip(botZipHost, botId, options);
+    return { filename: plan.filename, bytes: plan.bytes, write: (sink) => writeBotZip(plan, sink) };
+  },
+  importZip: async (request, input) => {
+    const file = join(DATA_DIR, "tmp", "bot-imports", `console-${randomUUID()}.upload`);
+    try {
+      await stageBotZipUpload(request, file);
+      const inspected = inspectBotZip(file);
+      try {
+        if (input.preview) return { preview: await previewBotZip(botZipHost, inspected, { asMember: false }, input.name) };
+        const result = await importBotZip(botZipHost, inspected, { ownerPrincipalId: input.ownerPrincipalId, asMember: false, conversations: input.conversations, sharing: input.sharing, ...(input.name ? { name: input.name } : {}) });
+        const bot = store.bot(result.botId);
+        if (bot) broadcast({ kind: "bot", bot: publicBot(bot) });
+        return { botId: result.botId, warnings: result.warnings };
+      } finally {
+        closeInspected(inspected);
+      }
+    } catch (error) {
+      if (error instanceof BotZipError) throw new ConsoleRefusal(error.status, error.code, error.message);
+      throw error;
+    } finally {
+      rmSync(file, { force: true });
+    }
+  },
   importPackage: async (document, input) => {
     const { bots, warnings } = await importPackageFor(document, input.ownerPrincipalId);
     const first = bots[0];
@@ -24437,6 +24494,103 @@ ROUTES.push(createBotCatalogRoutes({
       ...row,
       actor: IDENTITY.kind === "perspicax" ? orgAuditActor(auth) : decisionActorFor(auth),
     });
+  },
+}));
+
+/** A bot as one zip (server/bot-zip.ts, server/routes/bot-zip.ts): the
+ * persona editor's Export and Import, New bot, Browse Bots > Templates and
+ * the admin console all read and write this one format. */
+function mcpServerSummary(name: string): { transport?: string; url?: string; command?: string; valueNames: string[] } | undefined {
+  const raw = (cfg.mcpServers ?? {})[name];
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return undefined;
+  const spec = raw as Record<string, unknown>;
+  const names = (value: unknown) => value && typeof value === "object" && !Array.isArray(value) ? Object.keys(value).slice(0, 50) : [];
+  let url: string | undefined;
+  if (typeof spec.url === "string") {
+    try {
+      const parsed = new URL(spec.url);
+      url = `${parsed.origin}${parsed.pathname}`;
+    } catch { url = undefined; }
+  }
+  return {
+    ...(typeof spec.type === "string" ? { transport: spec.type.slice(0, 20) } : url ? { transport: "http" } : typeof spec.command === "string" ? { transport: "stdio" } : {}),
+    ...(url ? { url } : {}),
+    ...(typeof spec.command === "string" ? { command: spec.command.split(/[\\/]/).pop()!.slice(0, 200) } : {}),
+    valueNames: [...names(spec.headers), ...names(spec.env)],
+  };
+}
+const botZipHost: BotZipHost = {
+  store,
+  dataDir: DATA_DIR,
+  get appVersion() { return serverVersion(); },
+  get organization() { return IDENTITY.kind === "perspicax"; },
+  routines: () => routines,
+  webhooks: () => ({
+    list: () => webhooks.list(),
+    create: (input) => webhooks.create(input as Parameters<typeof webhooks.create>[0]),
+    remove: (id) => webhooks.remove(id),
+  }),
+  plugins: botPlugins,
+  marketplaceTokenSources: (botId) => marketplaceTokens.sourcesFor(botId),
+  emailOf: (principalId) => principals.byId(principalId)?.email ?? undefined,
+  principalByEmail: (email) => principals.byEmail(email)?.id ?? undefined,
+  mcpServer: mcpServerSummary,
+  engineUsable: (selection) => Boolean(registry.get(selection.instanceId)) && engineInstalled(selection.instanceId)
+    && consoleEngineAllowed(selection.instanceId) && (!hostedModels || hostedModels.allows(selection)),
+  defaultSelection: () => defaultSelection(),
+  sectionExists: (name) => store.sections.includes(name),
+  creationRefusal: () => store.bots.length >= MAX_WORKSPACE_BOTS ? `This workspace is limited to ${MAX_WORKSPACE_BOTS} bots.` : null,
+  browserProfileExists: (id) => id === "guest" || (cfg.browserProfiles ?? []).some((profile) => profile.id === id),
+  lookRefusal: (principalId, look) => {
+    if (!principalId) return null;
+    try {
+      return lockedLookChange(undefined, look, new Set(achievementStore.snapshot(principalId).rewards))?.error ?? null;
+    } catch {
+      return null;
+    }
+  },
+  cwdUsable: (path) => validateBotCwd(path).ok,
+  importLegacy: async (document, owner, name) => {
+    const { bots, warnings } = await importPackageFor(document, owner);
+    const first = bots[0];
+    if (!first) throw new ConsoleRefusal(400, "invalid_package", "The package has no bot.");
+    if (name) store.patchBot(first.id, { name });
+    return { botId: first.id, warnings };
+  },
+};
+ROUTES.push(createBotZipRoutes({
+  host: botZipHost,
+  stagingDir: join(DATA_DIR, "tmp", "bot-imports"),
+  mayExport: (auth, botId) => {
+    const bot = store.bot(botId);
+    if (!bot) return false;
+    const level = viewerBotLevel(auth, bot);
+    return level === "owner" || level === "manage" || orgAdminCaller(auth);
+  },
+  importer: (auth) => {
+    const principalId = creatingBotOwnerId(auth);
+    if (auth.kind === "session" && !principalId) return null;
+    return {
+      principalId: principalId || undefined,
+      key: principalId || "local",
+      canCreate: botCreationAllowed(auth) && !callerBotsReadOnly(auth),
+      asMember: IDENTITY.kind === "perspicax" && !orgAdminCaller(auth),
+    };
+  },
+  audit: (auth, row) => {
+    appendAdminAction(DATA_DIR, {
+      category: "bot",
+      ...row,
+      actor: IDENTITY.kind === "perspicax" ? orgAuditActor(auth) : decisionActorFor(auth),
+    });
+  },
+  imported: (botId) => {
+    const bot = store.bot(botId);
+    if (bot) broadcast({ kind: "bot", bot: publicBot(bot) });
+  },
+  wireBot: (botId) => {
+    const bot = store.bot(botId);
+    return bot ? publicBot(bot) : undefined;
   },
 }));
 
@@ -30977,7 +31131,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       const checked = z.object({ source: z.string().min(1).max(2000) }).strict().safeParse(await readBody(req));
       if (!checked.success) return json(res, 400, { error: checked.error.message });
       const input = checked.data;
-      const fetched = await fetchSkillFromSource(input.source);
+      const fetched = await fetchSkillFromSource(input.source, githubSkillFetch(githubCredentialsFor(sessionPrincipal(auth))));
       if ("error" in fetched) return json(res, 422, { error: fetched.error });
       const skills = [];
       for (const skill of fetched.skills) {
@@ -32193,7 +32347,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       const parsed = z.object({ source: z.string().min(1).max(2000) }).safeParse(await readBody(req));
       if (!parsed.success) return json(res, 400, { error: "source must be a GitHub or skills.sh URL, or owner/repo" });
       // A private repository reads with the person's own GitHub connection.
-      const fetched = await fetchSkillFromSource(parsed.data.source, githubAuthorizedFetch(usablePersonGithub(sessionPrincipal(auth))?.token));
+      const fetched = await fetchSkillFromSource(parsed.data.source, githubSkillFetch(githubCredentialsFor(sessionPrincipal(auth))));
       if ("error" in fetched) return json(res, 422, { error: fetched.error });
       const results = fetched.skills.map((skill) => installSkill(m![1]!, skill.source, skill.files));
       const installed = results.filter((entry): entry is Exclude<typeof entry, { error: string }> => !("error" in entry));
