@@ -4,8 +4,10 @@
 // remove it. One list for both install scopes: each marketplace becomes a
 // chip and a section of Connect apps, for everyone and for each bot.
 //
-// In the bot scope (`tokens`), each marketplace has a token field for that
-// bot (server/marketplace-tokens.ts, kept per bot and source): a private
+// With `tokens`, each marketplace has a token field (server/marketplace-
+// tokens.ts): in the bot scope for that bot (kept per bot and source), in
+// the "Everyone" scope for the whole installation (kept under `workspace`,
+// an admin only, so a private marketplace works for everyone). A private
 // repository is read with that token first, then the person's GitHub
 // connection, then the organization's GitHub tokens. When the git host
 // refuses an add or a refresh, the parent says so (`needsToken`) and the
@@ -27,8 +29,11 @@ export interface MarketplaceSummary {
   hasToken?: boolean;
 }
 
-/** This bot's token per marketplace (the bot scope only). */
+/** The token per marketplace: this bot's (bot scope) or everyone's (an
+ * admin in the "Everyone" scope). */
 export interface MarketplaceTokenControls {
+  /** whose token it is: the hint says so (default "bot") */
+  scope?: "bot" | "workspace";
   /** save (or replace) the token, then fetch the marketplace again */
   onSave: (name: string, token: string) => Promise<boolean>;
   onRemove: (name: string) => Promise<boolean>;
@@ -39,14 +44,14 @@ export function MarketplacesSection({ marketplaces, busy, error, onAdd, onRefres
   /** "add", or the name being refreshed or removed */
   busy: string | null;
   error: string | null;
-  /** `token`: tried first and kept for this bot (the bot scope only) */
+  /** `token`: tried first and kept for this bot or for everyone */
   onAdd: (source: string, ref: string, token?: string) => Promise<boolean>;
   onRefresh: (name: string) => void;
   onRemove: (name: string) => void;
   disabled?: boolean;
   /** removing from one bot takes its plugins with it: installs never block */
   removeKeepsInstalls?: boolean;
-  /** the bot scope: a token field per marketplace, kept for that bot */
+  /** a token field per marketplace, kept for that bot or for everyone */
   tokens?: MarketplaceTokenControls;
   /** the git host refused: "add" offers a token for the source being
    * added, a name opens that marketplace's token field */
@@ -63,6 +68,8 @@ export function MarketplacesSection({ marketplaces, busy, error, onAdd, onRefres
       setTokenFor(needsToken);
     }
   }, [tokens, needsToken]);
+  const forEveryone = tokens?.scope === "workspace";
+  const tokenHint = forEveryone ? t("plugins.tokenHintWorkspace") : t("plugins.tokenHint");
   const tokenForm = (label: string, id: string, onSubmit: (value: string) => void) => (
     <form className="flex flex-wrap items-center gap-2" data-marketplace-token-form={id} onSubmit={(event) => { event.preventDefault(); if (token.trim().length >= 8) onSubmit(token.trim()); }}>
       <input type="password" autoComplete="off" value={token} onChange={(event) => setToken(event.target.value)} placeholder={t("plugins.tokenPlaceholder")} aria-label={label}
@@ -109,7 +116,7 @@ export function MarketplacesSection({ marketplaces, busy, error, onAdd, onRefres
       </form>
       {tokens && tokenFor === "add" && source.trim() && (
         <div className="mt-2 flex flex-col gap-1.5 rounded-lg bg-inset px-3 py-2" data-marketplace-add-token="">
-          <p className="text-[12px] text-ink-secondary">{t("plugins.tokenOffer")}</p>
+          <p className="text-[12px] text-ink-secondary">{forEveryone ? t("plugins.tokenOfferWorkspace") : t("plugins.tokenOffer")}</p>
           {tokenForm(t("plugins.addWithToken"), "add", (value) => {
             void onAdd(source.trim(), ref.trim(), value).then((ok) => {
               if (ok) {
@@ -120,7 +127,7 @@ export function MarketplacesSection({ marketplaces, busy, error, onAdd, onRefres
               }
             });
           })}
-          <p className="text-[11.5px] text-ink-secondary">{t("plugins.tokenHint")}</p>
+          <p className="text-[11.5px] text-ink-secondary">{tokenHint}</p>
         </div>
       )}
       {error && <p role="alert" className="mt-2 rounded-lg bg-danger/10 px-3 py-2 text-[12px] text-danger">{error}</p>}
@@ -166,7 +173,7 @@ export function MarketplacesSection({ marketplaces, busy, error, onAdd, onRefres
                 </div>
                 {tokens && tokenFor === market.name && (
                   <div className="mt-2 flex flex-col gap-1.5 border-t border-hairline/60 pt-2" data-marketplace-token={market.name}>
-                    <p className="text-[11.5px] text-ink-secondary">{t("plugins.tokenHint")}</p>
+                    <p className="text-[11.5px] text-ink-secondary">{tokenHint}</p>
                     {tokenForm(market.hasToken ? t("plugins.tokenReplace") : t("plugins.tokenSave"), market.name, (value) => {
                       void tokens.onSave(market.name, value).then((ok) => {
                         if (ok) {

@@ -2957,6 +2957,8 @@
   "plugins.tokenRemove": "Retirer le jeton",
   "plugins.tokenOffer": "Connectez GitHub dans Connecter des apps (Personnel), ou ajoutez cette marketplace avec un jeton qui peut la lire.",
   "plugins.addWithToken": "Ajouter avec ce jeton",
+  "plugins.tokenHintWorkspace": "Gardé chiffré sur ce serveur pour cette marketplace, pour tout le monde. Seul un admin peut le changer. Jamais réaffiché.",
+  "plugins.tokenOfferWorkspace": "Connectez GitHub dans Connecter des apps (Personnel), ou ajoutez cette marketplace avec un jeton qui peut la lire, gardé pour tout le monde.",
   "presence.away": "Absent",
   "presence.hiddenSelf": "{state} (masqué pour les autres)",
   "presence.offline": "Hors ligne",

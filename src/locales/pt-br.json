@@ -1781,6 +1781,8 @@
   "plugins.tokenRemove": "Remover o token",
   "plugins.tokenOffer": "Conecte o GitHub em Conectar apps (Pessoal), ou adicione este marketplace com um token que possa lê-lo.",
   "plugins.addWithToken": "Adicionar com este token",
+  "plugins.tokenHintWorkspace": "Guardado criptografado neste servidor para este marketplace, para todos. Só um admin pode mudá-lo. Nunca mostrado de novo.",
+  "plugins.tokenOfferWorkspace": "Conecte o GitHub em Conectar apps (Pessoal), ou adicione este marketplace com um token que possa lê-lo, guardado para todos.",
   "presence.away": "Ausente",
   "presence.hiddenSelf": "{state} (oculto para os outros)",
   "presence.offline": "Offline",
