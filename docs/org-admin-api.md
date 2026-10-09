@@ -323,8 +323,8 @@ The body of the session route: `{"all": true}`, `{"kind": "mcp", "name"}`,
 | `POST bots/{id}/stop` | admin | stop every running turn, task and routine run |
 | `POST bots/{id}/delete` | admin | delete, with the bot's name as confirmation |
 | `POST bots/bulk` | admin | archive, restore, transfer or model on 1 to 100 bots |
-| `GET bots/{id}/package` | admin | the package document, secrets redacted |
-| `POST bots/import` | admin | a package becomes bots of a chosen owner |
+| `GET bots/{id}/package` | admin | the package document, secrets redacted; `?format=zip`: the whole bot as a zip |
+| `POST bots/import` | admin | a package or a bot zip becomes bots of a chosen owner |
 
 ### `GET bots/{id}`
 
@@ -431,8 +431,26 @@ cannot claim a publisher; skills, routines and connections arrive off).
 Answers `201 {bot, warnings}` (the first bot it made; every bot it made
 belongs to the owner). 400 `invalid_package`. Audited `bot.import`.
 
-"Copy to another server" is `GET bots/{id}/package` on one server and
-`POST bots/import` on the other.
+### The bot zip
+
+`GET bots/{id}/package?format=zip` streams the bot as `<bot-name>.sagaxbot.zip`
+(docs/bot-package.md): identity, instructions, memory, docs, skills,
+plugins, settings, routines and webhooks; `conversations=1` adds threads,
+messages and attachments, `sharing=1` the grants by email. At most 512 MB
+(else 413 `too_large`). Audited `bot.export` with `format: "zip"`.
+
+`POST bots/import` with the zip as the body (`content-type:
+application/zip`, at most 512 MB) imports it; the fields ride the query
+string: `ownerSub` or `ownerPrincipalId`, `name`, `conversations=1`,
+`sharing=1`, and `preview=1` for the preview without importing
+(`{ preview }`). Answers `201 {bot, warnings}`. The copy has a new id and a
+suffixed name when the name is taken; routines and webhooks are off, Full
+access arrives as Ask. An older package file works the same way. Audited
+`bot.import` with `format: "zip"`.
+
+"Copy to another server" is `GET bots/{id}/package?format=zip` on one
+server and `POST bots/import` with that file on the other (the package
+document without `format` still works).
 
 ## Routines
 

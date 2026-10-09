@@ -5,7 +5,7 @@ import { compileRoutes, ConsoleRefusal, matchRoutes } from "../org-admin-console
 import type { ConsoleRole } from "../org-admin-routes.ts";
 
 export interface FakeConsole {
-  call(method: "GET" | "POST", path: string, input?: { role?: ConsoleRole; principalId?: string; reach?: string[] | null; body?: unknown; locale?: "en" | "fr" }): Promise<{ status: number; body: any }>;
+  call(method: "GET" | "POST", path: string, input?: { role?: ConsoleRole; principalId?: string; reach?: string[] | null; body?: unknown; locale?: "en" | "fr"; request?: unknown }): Promise<{ status: number; body: any; raw?: Buffer }>;
   records: ConsoleAuditEntry[];
 }
 
@@ -27,6 +27,7 @@ export function fakeConsole(routes: ConsoleRoute[], now = () => Date.now()): Fak
         url,
         params: hit.params,
         body: input.body ?? null,
+        ...(input.request ? { request: input.request as ConsoleContext["request"] } : {}),
         reach,
         managedTeams: new Set(),
         inReach: (id) => !reach || (id ? reach.has(id) : false),
@@ -36,6 +37,11 @@ export function fakeConsole(routes: ConsoleRoute[], now = () => Date.now()): Fak
       };
       try {
         const answer = await hit.route.handle(ctx);
+        if (answer.stream) {
+          const chunks: Buffer[] = [];
+          await answer.stream(async (chunk) => { chunks.push(chunk); });
+          return { status: answer.status, body: answer.body as any, raw: Buffer.concat(chunks) };
+        }
         return { status: answer.status, body: answer.body as any };
       } catch (error) {
         // as server/org-admin-routes.ts answers a thrown refusal
