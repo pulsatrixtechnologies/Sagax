@@ -1,7 +1,21 @@
 // Shiba, the dog (direction C, "aplat net"): its drawing as data, its sixteen
 // faces, the coat for every bot color and the bust crop.
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
+import en from "@/locales/en.json";
+import fr from "@/locales/fr.json";
+import { APP_ICON_CHOICES } from "@/lib/app-icon-choices";
+import { BotAvatar, shibaExpressionFor } from "@/components/Avatar";
+import { ACHIEVEMENTS } from "../../shared/achievements-catalog";
+import { rewardKey, skinTier } from "../../shared/achievements";
 import { contrastRatio, MASCOT_COLOR_HEX } from "../../shared/mascot-colors";
+import { botMascotLook, CHARACTER_PAINT, completeMascotLook, LEGACY_SHIBA_SKINS, mascotLookSchema, SHIBA_DEFAULT_COLOR, SHIBA_SKIN_TIER, SHIBA_SKINS } from "../../shared/mascot-look";
+import { MASCOTS, mascotFor } from "./floating-bots/mascots";
+import { CHARACTER_LABEL, SHIBA_SKIN_LABEL } from "./floating-bots/MascotLookEditor";
+import { colorGroupsFor, skinTierTabs } from "./floating-bots/editor-tabs";
+import { ShibaMascot, shibaExpressionForMood } from "./ShibaMascot";
+import { shibaSkinId, shibaSkinPaint, vgaColor } from "./skin-fx/shiba-skins";
 import { SHAPE_EXPRESSIONS } from "./shape-engine";
 import {
   COAT_MIN_CONTRAST,
@@ -21,8 +35,11 @@ import {
   shibaParts,
   shibaStillSvg,
   shibaViewBox,
+  SHIBA_ROLES,
   type ShibaOp,
 } from "./shiba-art";
+
+const draw = (props: Partial<Parameters<typeof ShibaMascot>[0]> = {}) => renderToStaticMarkup(createElement(ShibaMascot, { color: "orange", ...props }));
 
 const ABSOLUTE = /^[MLCQZ0-9.\s-]+$/;
 const pathsOf = (ops: readonly ShibaOp[]) => ops.flatMap((op) => [op.d, ...(op.clip ? [op.clip] : [])]);
@@ -111,5 +128,116 @@ describe("Shiba's art", () => {
         if (op.stroke) expect(palette[op.stroke], op.stroke).toMatch(/^#[0-9a-fA-F]{6}$/);
       }
     }
+  });
+});
+
+describe("Shiba's look", () => {
+  it("is a character of its own, stored with the bot like the others", () => {
+    expect(botMascotLook({ character: "shiba", skins: { shiba: "sesame" } })).toEqual({ character: "shiba", skins: { shiba: "sesame" } });
+    expect(completeMascotLook({ character: "shiba" }).skins.shiba).toBe("plain");
+    expect(CHARACTER_PAINT.shiba).toEqual({ colors: true, skins: SHIBA_SKINS, wingMoves: false });
+    expect(MASCOT_COLOR_HEX[SHIBA_DEFAULT_COLOR as keyof typeof MASCOT_COLOR_HEX]).toBe("#E78531");
+    // each character keeps its own skin
+    const look = completeMascotLook({ character: "shiba", skins: { shiba: "holo", bunbu: "gold" } });
+    expect(completeMascotLook({ ...look, character: "bunbu" }).skins).toMatchObject({ bunbu: "gold", shiba: "holo" });
+  });
+
+  it("reads other names a stored skin may carry, and drops one it does not know without losing the character", () => {
+    for (const [old, current] of Object.entries(LEGACY_SHIBA_SKINS)) expect(botMascotLook({ character: "shiba", skins: { shiba: old } }).skins?.shiba, old).toBe(current);
+    expect(botMascotLook({ character: "shiba", skins: { shiba: "corgi" } })).toEqual({ character: "shiba" });
+    expect(mascotLookSchema.safeParse({ character: "shiba", skins: { shiba: "nope" } }).success).toBe(false);
+  });
+
+  it("is in the registry, the editor, the palettes (Clay included), the app icons and the achievements", () => {
+    expect(mascotFor({ character: "shiba" }).id).toBe("shiba");
+    expect(MASCOTS.find((entry) => entry.id === "shiba")?.capabilities.wings).toBe(false);
+    expect(CHARACTER_LABEL.shiba).toBe("floatingBots.mascot.shiba");
+    expect(colorGroupsFor("shiba", "orange")).toContain("clay");
+    expect(APP_ICON_CHOICES.some((choice) => choice.art.kind === "shiba")).toBe(true);
+    const rewarded = ACHIEVEMENTS.flatMap((item) => item.rewards.map(rewardKey));
+    expect(rewarded).toContain("character:shiba");
+    for (const skin of SHIBA_SKINS) if (skinTier("shiba", skin) !== "common") expect(rewarded, skin).toContain(`skin:shiba:${skin}`);
+  });
+
+  it("maps the app's states to its faces", () => {
+    expect(shibaExpressionFor("sleeping")).toBe("sleepy");
+    expect(shibaExpressionFor("searching")).toBe("curious");
+    expect(shibaExpressionFor("laughing")).toBe("laughing");
+    expect(shibaExpressionFor("celebrate")).toBe("excited");
+    expect(shibaExpressionFor(undefined)).toBe("neutral");
+    expect(shibaExpressionForMood("thinking")).toBe("curious");
+  });
+});
+
+describe("Shiba's skins", () => {
+  it("has thirteen skins over the four rarities: the breed's coats, then the premium editions", () => {
+    expect([...SHIBA_SKINS]).toEqual(["plain", "cream", "blacktan", "red", "sesame", "white", "retro98", "gold", "neon", "chrome", "glitch", "holo", "molten"]);
+    expect(Object.keys(SHIBA_SKIN_TIER)).toEqual([...SHIBA_SKINS]);
+    const counts = Object.fromEntries(skinTierTabs(SHIBA_SKINS, SHIBA_SKIN_TIER).map((tab) => [tab.tier, tab.count]));
+    expect(counts).toEqual({ common: 6, rare: 2, epic: 3, legendary: 2 });
+  });
+
+  it("names every skin in English and French", () => {
+    expect(Object.keys(SHIBA_SKIN_LABEL)).toEqual([...SHIBA_SKINS]);
+    for (const key of [...Object.values(SHIBA_SKIN_LABEL), CHARACTER_LABEL.shiba]) {
+      expect(en).toHaveProperty([key]);
+      expect(fr).toHaveProperty([key]);
+    }
+  });
+
+  it("paints every role of every skin, with its rarity and effect family", () => {
+    for (const skin of SHIBA_SKINS) {
+      const paint = shibaSkinPaint(skin, "#377FE6", "u");
+      for (const role of SHIBA_ROLES) expect(paint.palette[role], `${skin} ${role}`).toMatch(/^(#[0-9a-fA-F]{6}|url\(#u-[a-zA-Z]+\))$/);
+      expect(paint.tier).toBe(SHIBA_SKIN_TIER[skin]);
+      expect(paint.fx).toBeTruthy();
+    }
+    expect(shibaSkinPaint("retro98", "#E78531", "u").fx).toBe("retro");
+    expect(shibaSkinPaint("glitch", "#E78531", "u").bodyClass).toBe("fx-glitch-slice");
+    // the coats are the breed's own, whatever the bot's color
+    expect(shibaSkinPaint("red", "#377FE6", "u").palette.coat).toBe(shibaSkinPaint("red", "#009957", "u").palette.coat);
+    // black and tan keeps its tan points over the eyes
+    expect(shibaSkinPaint("blacktan", "#377FE6", "u").palette.brow).not.toBe(shibaSkinPaint("blacktan", "#377FE6", "u").palette.cream);
+    expect(vgaColor("#E78531")).toMatch(/^#[0-9a-f]{6}$/);
+    expect(shibaSkinId("unknown")).toBe("plain");
+  });
+
+  it("draws the premium treatments only in the full drawing", () => {
+    const full = draw({ skin: "holo", size: 96 });
+    expect(full).toContain("fx-foil-diag");
+    expect(full).toContain('data-fx="full"');
+    const still = draw({ skin: "holo", size: 24 });
+    expect(still).toContain('data-fx="static"');
+    expect(still).not.toMatch(/fx-foil|fx-sweep|fx-twinkle|<filter/);
+    expect(draw({ skin: "molten", size: 96 })).toContain("fx-crack");
+    expect(draw({ skin: "glitch", size: 96 })).toContain("fx-glitch-r");
+  });
+});
+
+describe("Shiba's drawing", () => {
+  it("renders every skin at every size without broken values", () => {
+    for (const skin of SHIBA_SKINS) {
+      for (const size of [16, 24, 32, 44, 96, 256]) {
+        const html = draw({ skin, size });
+        expect(html, `${skin}@${size}`).not.toMatch(/NaN|undefined|url\(#\)/);
+        expect(html).toContain(`data-shiba-skin="${skin}"`);
+        expect(html).toContain(`width:${size}px`);
+      }
+    }
+    expect(draw({ size: 32 })).toContain('viewBox="16 12 68 68"');
+    expect(draw({ size: 96 })).toContain('viewBox="0 0 100 100"');
+  });
+
+  it("keeps the defs of two Shibas on one page apart", () => {
+    const html = renderToStaticMarkup(createElement("div", null, createElement(ShibaMascot, { color: "orange", skin: "gold", size: 96 }), createElement(ShibaMascot, { color: "orange", skin: "gold", size: 96 })));
+    const ids = [...html.matchAll(/ id="([^"]+)"/g)].map((match) => match[1]);
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  it("is what a bot wearing it shows everywhere", () => {
+    const html = renderToStaticMarkup(createElement(BotAvatar, { bot: { color: "orange", mascotLook: { character: "shiba", skins: { shiba: "sesame" } } }, size: 40, state: "laughing" }));
+    expect(html).toContain('data-character="shiba"');
+    expect(html).toContain('data-shiba-skin="sesame"');
+    expect(html).toContain('data-expression="laughing"');
   });
 });

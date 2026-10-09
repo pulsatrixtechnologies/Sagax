@@ -39,10 +39,10 @@ export function colorTabs(groups: readonly MascotColorGroup[] = MASCOT_COLOR_GRO
   return MASCOT_COLOR_GROUPS.filter((group) => groups.includes(group)).map((group) => ({ group, colors: paletteSwatches(group) }));
 }
 
-/** The palettes a character offers: Clay only for Shapes, or for a bot that already wears a Clay color. */
+/** The palettes a character offers: Clay only for Shapes and Shiba, or for a bot that already wears a Clay color. */
 export function colorGroupsFor(character: string, color: string | null | undefined): MascotColorGroup[] {
   const own = mascotColorGroup(color);
-  return MASCOT_COLOR_GROUPS.filter((group) => group !== "clay" || character === "shape" || own === "clay");
+  return MASCOT_COLOR_GROUPS.filter((group) => group !== "clay" || character === "shape" || character === "shiba" || own === "clay");
 }
 
 /** The palette tab the picker opens on: the current color's own (an unknown color opens Vivid). */

@@ -4,7 +4,8 @@
     "owl",
     "shape",
     "trombi",
-    "bunbu"
+    "bunbu",
+    "shiba"
   ],
   "shapes": [
     "circle",
@@ -53,6 +54,21 @@
     "crystal",
     "holo",
     "galaxy",
+    "molten"
+  ],
+  "shibaSkins": [
+    "plain",
+    "cream",
+    "blacktan",
+    "red",
+    "sesame",
+    "white",
+    "retro98",
+    "gold",
+    "neon",
+    "chrome",
+    "glitch",
+    "holo",
     "molten"
   ],
   "owlSkins": [
@@ -247,6 +263,15 @@
       },
       "expected": {
         "character": "bunbu"
+      }
+    },
+    {
+      "name": "bare shiba",
+      "input": {
+        "character": "shiba"
+      },
+      "expected": {
+        "character": "shiba"
       }
     },
     {
@@ -2340,6 +2365,201 @@
       }
     },
     {
+      "name": "shiba plain",
+      "input": {
+        "character": "shiba",
+        "skins": {
+          "shiba": "plain"
+        }
+      },
+      "expected": {
+        "character": "shiba",
+        "skins": {
+          "shiba": "plain"
+        }
+      }
+    },
+    {
+      "name": "shiba cream",
+      "input": {
+        "character": "shiba",
+        "skins": {
+          "shiba": "cream"
+        }
+      },
+      "expected": {
+        "character": "shiba",
+        "skins": {
+          "shiba": "cream"
+        }
+      }
+    },
+    {
+      "name": "shiba blacktan",
+      "input": {
+        "character": "shiba",
+        "skins": {
+          "shiba": "blacktan"
+        }
+      },
+      "expected": {
+        "character": "shiba",
+        "skins": {
+          "shiba": "blacktan"
+        }
+      }
+    },
+    {
+      "name": "shiba red",
+      "input": {
+        "character": "shiba",
+        "skins": {
+          "shiba": "red"
+        }
+      },
+      "expected": {
+        "character": "shiba",
+        "skins": {
+          "shiba": "red"
+        }
+      }
+    },
+    {
+      "name": "shiba sesame",
+      "input": {
+        "character": "shiba",
+        "skins": {
+          "shiba": "sesame"
+        }
+      },
+      "expected": {
+        "character": "shiba",
+        "skins": {
+          "shiba": "sesame"
+        }
+      }
+    },
+    {
+      "name": "shiba white",
+      "input": {
+        "character": "shiba",
+        "skins": {
+          "shiba": "white"
+        }
+      },
+      "expected": {
+        "character": "shiba",
+        "skins": {
+          "shiba": "white"
+        }
+      }
+    },
+    {
+      "name": "shiba retro98",
+      "input": {
+        "character": "shiba",
+        "skins": {
+          "shiba": "retro98"
+        }
+      },
+      "expected": {
+        "character": "shiba",
+        "skins": {
+          "shiba": "retro98"
+        }
+      }
+    },
+    {
+      "name": "shiba gold",
+      "input": {
+        "character": "shiba",
+        "skins": {
+          "shiba": "gold"
+        }
+      },
+      "expected": {
+        "character": "shiba",
+        "skins": {
+          "shiba": "gold"
+        }
+      }
+    },
+    {
+      "name": "shiba neon",
+      "input": {
+        "character": "shiba",
+        "skins": {
+          "shiba": "neon"
+        }
+      },
+      "expected": {
+        "character": "shiba",
+        "skins": {
+          "shiba": "neon"
+        }
+      }
+    },
+    {
+      "name": "shiba chrome",
+      "input": {
+        "character": "shiba",
+        "skins": {
+          "shiba": "chrome"
+        }
+      },
+      "expected": {
+        "character": "shiba",
+        "skins": {
+          "shiba": "chrome"
+        }
+      }
+    },
+    {
+      "name": "shiba glitch",
+      "input": {
+        "character": "shiba",
+        "skins": {
+          "shiba": "glitch"
+        }
+      },
+      "expected": {
+        "character": "shiba",
+        "skins": {
+          "shiba": "glitch"
+        }
+      }
+    },
+    {
+      "name": "shiba holo",
+      "input": {
+        "character": "shiba",
+        "skins": {
+          "shiba": "holo"
+        }
+      },
+      "expected": {
+        "character": "shiba",
+        "skins": {
+          "shiba": "holo"
+        }
+      }
+    },
+    {
+      "name": "shiba molten",
+      "input": {
+        "character": "shiba",
+        "skins": {
+          "shiba": "molten"
+        }
+      },
+      "expected": {
+        "character": "shiba",
+        "skins": {
+          "shiba": "molten"
+        }
+      }
+    },
+    {
       "name": "editor owl",
       "input": {
         "character": "owl",
@@ -2348,7 +2568,8 @@
         "skins": {
           "shape": "galaxy",
           "trombi": "holo",
-          "bunbu": "velvet"
+          "bunbu": "velvet",
+          "shiba": "sesame"
         }
       },
       "expected": {
@@ -2358,7 +2579,8 @@
         "skins": {
           "shape": "galaxy",
           "trombi": "holo",
-          "bunbu": "velvet"
+          "bunbu": "velvet",
+          "shiba": "sesame"
         }
       }
     },
@@ -2371,7 +2593,8 @@
         "skins": {
           "shape": "plain",
           "trombi": "classic",
-          "bunbu": "plain"
+          "bunbu": "plain",
+          "shiba": "plain"
         }
       },
       "expected": {
@@ -2381,7 +2604,8 @@
         "skins": {
           "shape": "plain",
           "trombi": "classic",
-          "bunbu": "plain"
+          "bunbu": "plain",
+          "shiba": "plain"
         }
       }
     },
@@ -2394,7 +2618,8 @@
         "skins": {
           "shape": "galaxy",
           "trombi": "holo",
-          "bunbu": "velvet"
+          "bunbu": "velvet",
+          "shiba": "sesame"
         }
       },
       "expected": {
@@ -2404,7 +2629,8 @@
         "skins": {
           "shape": "galaxy",
           "trombi": "holo",
-          "bunbu": "velvet"
+          "bunbu": "velvet",
+          "shiba": "sesame"
         }
       }
     },
@@ -2417,7 +2643,8 @@
         "skins": {
           "shape": "plain",
           "trombi": "classic",
-          "bunbu": "plain"
+          "bunbu": "plain",
+          "shiba": "plain"
         }
       },
       "expected": {
@@ -2427,7 +2654,8 @@
         "skins": {
           "shape": "plain",
           "trombi": "classic",
-          "bunbu": "plain"
+          "bunbu": "plain",
+          "shiba": "plain"
         }
       }
     },
@@ -2440,7 +2668,8 @@
         "skins": {
           "shape": "galaxy",
           "trombi": "holo",
-          "bunbu": "velvet"
+          "bunbu": "velvet",
+          "shiba": "sesame"
         }
       },
       "expected": {
@@ -2450,7 +2679,8 @@
         "skins": {
           "shape": "galaxy",
           "trombi": "holo",
-          "bunbu": "velvet"
+          "bunbu": "velvet",
+          "shiba": "sesame"
         }
       }
     },
@@ -2463,7 +2693,8 @@
         "skins": {
           "shape": "plain",
           "trombi": "classic",
-          "bunbu": "plain"
+          "bunbu": "plain",
+          "shiba": "plain"
         }
       },
       "expected": {
@@ -2473,7 +2704,8 @@
         "skins": {
           "shape": "plain",
           "trombi": "classic",
-          "bunbu": "plain"
+          "bunbu": "plain",
+          "shiba": "plain"
         }
       }
     },
@@ -2486,7 +2718,8 @@
         "skins": {
           "shape": "galaxy",
           "trombi": "holo",
-          "bunbu": "velvet"
+          "bunbu": "velvet",
+          "shiba": "sesame"
         }
       },
       "expected": {
@@ -2496,7 +2729,8 @@
         "skins": {
           "shape": "galaxy",
           "trombi": "holo",
-          "bunbu": "velvet"
+          "bunbu": "velvet",
+          "shiba": "sesame"
         }
       }
     },
@@ -2509,7 +2743,8 @@
         "skins": {
           "shape": "plain",
           "trombi": "classic",
-          "bunbu": "plain"
+          "bunbu": "plain",
+          "shiba": "plain"
         }
       },
       "expected": {
@@ -2519,7 +2754,58 @@
         "skins": {
           "shape": "plain",
           "trombi": "classic",
-          "bunbu": "plain"
+          "bunbu": "plain",
+          "shiba": "plain"
+        }
+      }
+    },
+    {
+      "name": "editor shiba",
+      "input": {
+        "character": "shiba",
+        "style": "2d",
+        "shape": "cloud",
+        "skins": {
+          "shape": "galaxy",
+          "trombi": "holo",
+          "bunbu": "velvet",
+          "shiba": "sesame"
+        }
+      },
+      "expected": {
+        "character": "shiba",
+        "style": "2d",
+        "shape": "cloud",
+        "skins": {
+          "shape": "galaxy",
+          "trombi": "holo",
+          "bunbu": "velvet",
+          "shiba": "sesame"
+        }
+      }
+    },
+    {
+      "name": "editor default shiba",
+      "input": {
+        "character": "shiba",
+        "style": "2d",
+        "shape": "circle",
+        "skins": {
+          "shape": "plain",
+          "trombi": "classic",
+          "bunbu": "plain",
+          "shiba": "plain"
+        }
+      },
+      "expected": {
+        "character": "shiba",
+        "style": "2d",
+        "shape": "circle",
+        "skins": {
+          "shape": "plain",
+          "trombi": "classic",
+          "bunbu": "plain",
+          "shiba": "plain"
         }
       }
     },
@@ -3059,6 +3345,216 @@
       }
     },
     {
+      "name": "legacy shiba skin black-and-tan",
+      "input": {
+        "character": "shiba",
+        "skins": {
+          "shiba": "black-and-tan"
+        }
+      },
+      "expected": {
+        "character": "shiba",
+        "skins": {
+          "shiba": "blacktan"
+        }
+      }
+    },
+    {
+      "name": "legacy shiba skin black_tan",
+      "input": {
+        "character": "shiba",
+        "skins": {
+          "shiba": "black_tan"
+        }
+      },
+      "expected": {
+        "character": "shiba",
+        "skins": {
+          "shiba": "blacktan"
+        }
+      }
+    },
+    {
+      "name": "legacy shiba skin kuro",
+      "input": {
+        "character": "shiba",
+        "skins": {
+          "shiba": "kuro"
+        }
+      },
+      "expected": {
+        "character": "shiba",
+        "skins": {
+          "shiba": "blacktan"
+        }
+      }
+    },
+    {
+      "name": "legacy shiba skin aka",
+      "input": {
+        "character": "shiba",
+        "skins": {
+          "shiba": "aka"
+        }
+      },
+      "expected": {
+        "character": "shiba",
+        "skins": {
+          "shiba": "red"
+        }
+      }
+    },
+    {
+      "name": "legacy shiba skin goma",
+      "input": {
+        "character": "shiba",
+        "skins": {
+          "shiba": "goma"
+        }
+      },
+      "expected": {
+        "character": "shiba",
+        "skins": {
+          "shiba": "sesame"
+        }
+      }
+    },
+    {
+      "name": "legacy shiba skin shiro",
+      "input": {
+        "character": "shiba",
+        "skins": {
+          "shiba": "shiro"
+        }
+      },
+      "expected": {
+        "character": "shiba",
+        "skins": {
+          "shiba": "white"
+        }
+      }
+    },
+    {
+      "name": "legacy shiba skin retro",
+      "input": {
+        "character": "shiba",
+        "skins": {
+          "shiba": "retro"
+        }
+      },
+      "expected": {
+        "character": "shiba",
+        "skins": {
+          "shiba": "retro98"
+        }
+      }
+    },
+    {
+      "name": "legacy shiba skin win98",
+      "input": {
+        "character": "shiba",
+        "skins": {
+          "shiba": "win98"
+        }
+      },
+      "expected": {
+        "character": "shiba",
+        "skins": {
+          "shiba": "retro98"
+        }
+      }
+    },
+    {
+      "name": "legacy shiba skin royal",
+      "input": {
+        "character": "shiba",
+        "skins": {
+          "shiba": "royal"
+        }
+      },
+      "expected": {
+        "character": "shiba",
+        "skins": {
+          "shiba": "gold"
+        }
+      }
+    },
+    {
+      "name": "legacy shiba skin metal",
+      "input": {
+        "character": "shiba",
+        "skins": {
+          "shiba": "metal"
+        }
+      },
+      "expected": {
+        "character": "shiba",
+        "skins": {
+          "shiba": "chrome"
+        }
+      }
+    },
+    {
+      "name": "legacy shiba skin cyber",
+      "input": {
+        "character": "shiba",
+        "skins": {
+          "shiba": "cyber"
+        }
+      },
+      "expected": {
+        "character": "shiba",
+        "skins": {
+          "shiba": "glitch"
+        }
+      }
+    },
+    {
+      "name": "legacy shiba skin iridescent",
+      "input": {
+        "character": "shiba",
+        "skins": {
+          "shiba": "iridescent"
+        }
+      },
+      "expected": {
+        "character": "shiba",
+        "skins": {
+          "shiba": "holo"
+        }
+      }
+    },
+    {
+      "name": "legacy shiba skin holographic",
+      "input": {
+        "character": "shiba",
+        "skins": {
+          "shiba": "holographic"
+        }
+      },
+      "expected": {
+        "character": "shiba",
+        "skins": {
+          "shiba": "holo"
+        }
+      }
+    },
+    {
+      "name": "legacy shiba skin lava",
+      "input": {
+        "character": "shiba",
+        "skins": {
+          "shiba": "lava"
+        }
+      },
+      "expected": {
+        "character": "shiba",
+        "skins": {
+          "shiba": "molten"
+        }
+      }
+    },
+    {
       "name": "unknown shape skin",
       "input": {
         "character": "shape",
@@ -3085,6 +3581,22 @@
         "character": "bunbu",
         "skins": {
           "shape": "gold"
+        }
+      }
+    },
+    {
+      "name": "unknown shiba skin",
+      "input": {
+        "character": "shiba",
+        "skins": {
+          "shiba": "plasma",
+          "bunbu": "gold"
+        }
+      },
+      "expected": {
+        "character": "shiba",
+        "skins": {
+          "bunbu": "gold"
         }
       }
     },
