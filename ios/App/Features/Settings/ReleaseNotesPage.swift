@@ -2,6 +2,9 @@
 // opens the What's new notes with a version picker (newest first, this
 // app's version marked "(current)") and "Changes since my last version".
 // Read offline from docs/releases/*.md, bundled in the app as "releases".
+// The large layout shows the same notes in its own dialog
+// (`DesktopReleaseNotesModal`); both keep the desktop's seen record
+// (`ReleaseNotesStore`).
 import CompanionCore
 import SwiftUI
 
@@ -11,16 +14,9 @@ struct ReleaseNotesPage: View {
     @State private var version = ""
     @State private var since = false
 
-    static let seenKey = "companion.releaseNotes.seen"
+    private var catalog: [String: String] { ReleaseNotesStore.catalog }
 
-    private var catalog: [String: String] {
-        guard let folder = Bundle.main.url(forResource: "releases", withExtension: nil) else { return [:] }
-        return ReleaseNotes.catalog(in: folder)
-    }
-
-    private var current: String {
-        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? ""
-    }
+    private var current: String { ReleaseNotesStore.current }
 
     private var language: String {
         locale.language.languageCode?.identifier ?? "en"
@@ -29,7 +25,7 @@ struct ReleaseNotesPage: View {
     var body: some View {
         let catalog = self.catalog
         let versions = ReleaseNotes.versions(catalog)
-        let previous = UserDefaults.standard.string(forKey: Self.seenKey)
+        let previous = ReleaseNotesStore.lastVersion
         ThemedList {
             Section {
                 Picker(String(localized: "Version"), selection: $version) {
@@ -60,7 +56,7 @@ struct ReleaseNotesPage: View {
         .navigationBarTitleDisplayMode(.inline)
         .onAppear {
             if version.isEmpty { version = catalog[current] != nil ? current : (versions.first ?? "") }
-            UserDefaults.standard.set(current, forKey: Self.seenKey)
+            ReleaseNotesStore.markSeen()
         }
     }
 }

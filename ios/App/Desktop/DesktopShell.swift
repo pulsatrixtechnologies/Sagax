@@ -72,6 +72,11 @@ enum DesktopShellRules {
 final class DesktopShellModel: ObservableObject {
     enum Modal: String, Identifiable {
         case settings, search, newBot, newGroup, teamMap, automations, plugins, templates, about, shortcuts, achievements
+        /// The release notes dialog: browsing (the account menu) or What's new after an update.
+        case releaseNotes, whatsNew
+
+        /// Drawn in the shell as the desktop's modals, not as sheets.
+        var inShell: Bool { [.settings, .plugins, .shortcuts, .releaseNotes, .whatsNew].contains(self) }
         var id: String { rawValue }
     }
 
@@ -312,6 +317,10 @@ struct DesktopShell: View {
             model.menu = nil
             model.modal = .settings
         }
+        .onAppear {
+            // What's new, once after an update (`ReleaseNotesPrompt`)
+            if ReleaseNotesStore.whatsNewOnLaunch(), model.modal == nil { model.modal = .whatsNew }
+        }
     }
 
     private func columns(width: CGFloat, theme: DesktopTheme) -> some View {
@@ -364,6 +373,9 @@ struct DesktopShell: View {
                     .transition(.opacity)
             } else if model.modal == .shortcuts {
                 AnyView(DesktopShortcutsModal(close: { model.modal = nil }))
+                    .transition(.opacity)
+            } else if model.modal == .releaseNotes || model.modal == .whatsNew {
+                AnyView(DesktopReleaseNotesModal(mode: model.modal == .whatsNew ? .current : .browse, close: { model.modal = nil }))
                     .transition(.opacity)
             }
         }
@@ -590,7 +602,7 @@ private struct DesktopShellPresenter: ViewModifier {
     /// the other surfaces are still sheets.
     private var sheetModal: Binding<DesktopShellModel.Modal?> {
         Binding(
-            get: { model.modal.flatMap { $0 == .settings || $0 == .plugins || $0 == .shortcuts ? nil : $0 } },
+            get: { model.modal.flatMap { $0.inShell ? nil : $0 } },
             set: { model.modal = $0 }
         )
     }
@@ -635,7 +647,7 @@ private struct DesktopShellPresenter: ViewModifier {
             DesktopTemplatesSheet { model.modal = nil }
         case .about:
             NavigationStack { AboutPage() }
-        case .shortcuts:
+        case .shortcuts, .releaseNotes, .whatsNew:
             EmptyView()
         case .achievements:
             NavigationStack {
