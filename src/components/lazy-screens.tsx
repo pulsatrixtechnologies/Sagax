@@ -90,6 +90,7 @@ function ScreenUnavailable() {
 }
 
 export const AchievementsModal = lazyScreen("AchievementsModal", async () => (await import("./achievements/AchievementsModal")).AchievementsModal);
+export const BotCatalogModal = lazyScreen("BotCatalogModal", async () => (await import("./bot-catalog/BotCatalogModal")).BotCatalogModal);
 export const ActivityPanel = lazyScreen("ActivityPanel", async () => (await import("./ActivityPanel")).ActivityPanel);
 export const BotSettingsDialog = lazyScreen("BotSettingsDialog", async () => (await import("./BotSettingsDialog")).BotSettingsDialog);
 export const ComputerPanel = lazyScreen("ComputerPanel", async () => (await import("./ComputerPanel")).ComputerPanel);
@@ -106,7 +107,7 @@ export const TeamMapPage = lazyScreen("TeamMapPage", async () => (await import("
 export const TriggersPanel = lazyScreen("TriggersPanel", async () => (await import("./TriggersPanel")).TriggersPanel);
 
 const SCREENS = [
-  AchievementsModal, ActivityPanel, BotSettingsDialog, ComputerPanel, InspectorPanel, KeyboardShortcutsModal, LocalVmWorkspace, NewBotDialog,
+  AchievementsModal, ActivityPanel, BotCatalogModal, BotSettingsDialog, ComputerPanel, InspectorPanel, KeyboardShortcutsModal, LocalVmWorkspace, NewBotDialog,
   PersonaEditorModal, RemoteAgentSettingsPanel, RemoteDesktopPanel, RoutinesPage, SettingsModal, TeamMapPage, TriggersPanel,
 ];
 

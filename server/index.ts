@@ -724,6 +724,9 @@ import { json, onJsonBody, parsedBodyOf, readBody } from "./harness/http.ts";
 import { PASS, ROUTES, dispatchRoutes } from "./routes/table.ts";
 import { createHostedSlackRoutes } from "./routes/hosted-slack.ts";
 import { createBotPresetRoutes } from "./routes/bot-presets.ts";
+import { createBotCatalogRoutes, memberImportReset } from "./routes/bot-catalog.ts";
+import { MEMORY_INDEX, readMemoryDoc } from "./memory-store.ts";
+import { isExpired as memoryEntryExpired, parseMemoryEntries } from "./memory-entries.ts";
 import { createBotLibraryRoutes } from "./routes/bot-library.ts";
 import { createBotSettingsRoutes } from "./routes/bot-settings.ts";
 import { createAutoReviewRuleRoutes } from "./routes/auto-review-rules.ts";
@@ -23809,6 +23812,105 @@ const orgBotsDeps: BotsDeps = {
     return { botId: first.id, warnings };
   },
 };
+
+/** The organisation bot catalogue, Browse Bots (server/routes/bot-catalog.ts).
+ * Import reuses the console's clone, for the viewer. */
+const CATALOG_MEMORY_MAX = 200;
+ROUTES.push(createBotCatalogRoutes({
+  organization: () => IDENTITY.kind === "perspicax",
+  bots: () => store.bots.map((bot) => ({
+    id: bot.id,
+    name: bot.name,
+    title: bot.title ?? "",
+    description: bot.description ?? "",
+    look: {
+      color: bot.color,
+      ...(bot.mascotExpression !== undefined ? { mascotExpression: bot.mascotExpression } : {}),
+      ...(bot.mascotBody !== undefined ? { mascotBody: bot.mascotBody } : {}),
+      ...(bot.mascotSkin !== undefined ? { mascotSkin: bot.mascotSkin } : {}),
+      ...(bot.mascotLook !== undefined ? { mascotLook: bot.mascotLook } : {}),
+      avatarUrl: bot.avatarUrl ?? null,
+      ...(bot.avatarCrop ? { avatarCrop: bot.avatarCrop } : {}),
+    },
+    ownerPrincipalId: effectiveBotOwner(bot),
+    archived: bot.hidden === true,
+    primary: bot.chiefOfStaff === true,
+    ...(bot.catalog?.published ? { catalog: bot.catalog } : {}),
+  })),
+  viewer: (auth) => {
+    const principalId = actorPrincipalId(auth);
+    if (!principalId) return null;
+    return { principalId, admin: orgAdminCaller(auth), canCreate: botCreationAllowed(auth), botsReadOnly: callerBotsReadOnly(auth) };
+  },
+  level: (auth, botId) => {
+    const bot = store.bot(botId);
+    if (!bot) return null;
+    // The operator at this computer holds every bot; the catalogue still
+    // calls "mine" only the bots they own on an organization server.
+    if (IDENTITY.kind === "perspicax" && !authzViewerFor(auth)) return effectiveBotOwner(bot) === actorPrincipalId(auth) ? "owner" : null;
+    return viewerBotLevel(auth, bot);
+  },
+  personName: (principalId) => adminPerson(principalId).name,
+  detail: (botId, options) => {
+    const bot = store.bot(botId);
+    if (!bot) return null;
+    let memories: string[] | null = null;
+    if (options.memories) {
+      memories = [];
+      if (bot.memoryEnabled !== false) {
+        const today = new Date().toISOString().slice(0, 10);
+        try {
+          memories = parseMemoryEntries(readMemoryDoc(bot.id, MEMORY_INDEX).text)
+            .filter((entry) => !entry.struck && !memoryEntryExpired(entry, today) && entry.body)
+            .map((entry) => entry.body)
+            .slice(0, CATALOG_MEMORY_MAX);
+        } catch {
+          memories = [];
+        }
+      }
+    }
+    return {
+      soul: bot.soul ?? "",
+      memories,
+      skills: listBotSkills(bot).filter((skill) => skill.enabled).map((skill) => ({ name: skill.name, description: skill.description ?? "" })),
+      routines: (routines?.listRoutines() ?? []).filter((routine) => routine.botId === bot.id)
+        .map((routine) => ({ name: routine.name, schedule: routineScheduleLabel(routine.schedule), enabled: routine.enabled })),
+      integrations: [
+        ...(bot.mcpServers ?? []).map((name) => ({ name, kind: "mcp" as const })),
+        ...Object.keys(bot.connectorTools ?? {}).map((name) => ({ name, kind: "app" as const })),
+        ...(bot.browser ? [{ name: "browser", kind: "browser" as const }] : []),
+      ],
+    };
+  },
+  setListing: (botId, listing) => {
+    const bot = store.bot(botId);
+    if (!bot) return;
+    store.patchBot(botId, { catalog: listing ?? undefined });
+    const current = store.bot(botId);
+    if (current) broadcast({ kind: "bot", bot: publicBot(current) });
+  },
+  clone: async (botId, input) => {
+    const id = await orgBotsDeps.clone(botId, { ownerPrincipalId: input.ownerPrincipalId, ...(input.name ? { name: input.name } : {}) });
+    const source = store.bot(botId);
+    // The Perspicax profile list travels with the copy; a member's copy
+    // also goes back to a member's defaults for where it runs and what it
+    // reaches on the host (an admin's keeps the source's settings).
+    store.patchBot(id, {
+      ...(source?.perspicax ? { perspicax: structuredClone(source.perspicax) } : {}),
+      ...(input.asMember ? memberImportReset() : {}),
+    });
+    const current = store.bot(id);
+    if (current) broadcast({ kind: "bot", bot: publicBot(current) });
+    return id;
+  },
+  audit: (auth, row) => {
+    appendAdminAction(DATA_DIR, {
+      category: "bot",
+      ...row,
+      actor: IDENTITY.kind === "perspicax" ? orgAuditActor(auth) : decisionActorFor(auth),
+    });
+  },
+}));
 
 /** The console's Routines and Approvals (server/org-admin-routines.ts). */
 const orgRoutinesDeps: RoutinesDeps = {

@@ -577,6 +577,12 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   { methods: ["GET"], path: /^\/api\/bots\/[\w-]+\/harness-commands$/ },
   // Slice 6: the caller's own routine delegation (allow, status, revoke).
   { methods: ["GET"], path: /^\/api\/org\/routine-delegation$/, feature: "orgDirectory" },
+  // Browse Bots (server/routes/bot-catalog.ts): the viewer's own, shared and
+  // published bots, read only; publishing (owner or organization admin,
+  // featuring admin only) and importing a copy are checked in the handler.
+  { methods: ["GET"], path: /^\/api\/bot-catalog(?:\/[\w-]+)?$/ },
+  { methods: ["PUT"], path: /^\/api\/bot-catalog\/[\w-]+\/listing$/ },
+  { methods: ["POST"], path: /^\/api\/bot-catalog\/[\w-]+\/import$/ },
   // Slice 8: a person copies their own bots from a solo Sagax (the handler
   // checks the session, the caller's right to create bots and the copy).
   { methods: ["POST"], path: /^\/api\/org\/import$/, feature: "orgDirectory" },

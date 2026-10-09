@@ -16,7 +16,7 @@ import { PersonPanel } from "@/components/PersonPanel";
 import { ComposeToPicker } from "@/components/ComposeToPicker";
 import { PluginsPanel, preloadConnectedApps } from "@/components/PluginsPanel";
 import {
-  AchievementsModal, ActivityPanel, BotSettingsDialog, InspectorPanel, KeyboardShortcutsModal, LocalVmWorkspace, NewBotDialog,
+  AchievementsModal, ActivityPanel, BotCatalogModal, BotSettingsDialog, InspectorPanel, KeyboardShortcutsModal, LocalVmWorkspace, NewBotDialog,
   PersonaEditorModal, preloadScreens, RemoteAgentSettingsPanel, RemoteDesktopPanel, RoutinesPage, SettingsModal, TeamMapPage, TriggersPanel,
 } from "@/components/lazy-screens";
 import { useServerMode } from "@/components/ServerModeSettings";
@@ -435,6 +435,7 @@ function Shell() {
       {state.appSettingsOpen && <SettingsModal />}
       {state.achievementsOpen && <AchievementsModal />}
       {!remoteClient && state.personaEditor && <PersonaEditorModal />}
+      {state.botCatalogOpen && <BotCatalogModal />}
       {state.pluginsOpen && <PluginsPanel />}
       {state.triggersOpen && <TriggersPanel />}
       {state.newBotOpen && <NewBotDialog />}

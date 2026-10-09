@@ -31,7 +31,7 @@ import {
   LayoutGrid,
   UserRoundPen,
 } from "lucide-react";
-import { api, useStore, formatTime, visibleMessages, currentTaskBot, type AppState, type Bot, type Group, type InstanceInfo, type Message } from "@/state/store";
+import { api, openBotCatalog, useStore, formatTime, visibleMessages, currentTaskBot, type AppState, type Bot, type Group, type InstanceInfo, type Message } from "@/state/store";
 
 import { peerLine } from "@/lib/peer-message";
 import { viewerMayDeleteGroup, viewerOwnsGroup } from "@/lib/group-owner";
@@ -3031,6 +3031,7 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
             const anyExpanded = sectionIds.some((sid) => !collapsedSections.includes(sid));
             const actions: OrgSectionMenuActions = {
               onNew: () => { closeOrgMenu(); setSectionEdit({ mode: "new" }); },
+              onBrowseBots: () => { closeOrgMenu(); dispatch(openBotCatalog()); },
               onRename: () => { closeOrgMenu(); if (orgMenu.name) setSectionEdit({ mode: "rename", name: orgMenu.name }); },
               onMoveUp: () => { closeOrgMenu(); if (orgMenu.id) moveSidebarSection(orgMenu.id, -1); },
               onMoveDown: () => { closeOrgMenu(); if (orgMenu.id) moveSidebarSection(orgMenu.id, 1); },
@@ -3043,6 +3044,7 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
               canMoveUp: position > (generalOnTop ? 1 : 0) && layoutInteractive,
               canMoveDown: position >= (generalOnTop ? 1 : 0) && position < sectionIds.length - 1 && layoutInteractive,
               anyExpanded,
+              browseBots: true,
             });
             return <OrgSectionMenuItems items={items} actions={actions} />;
           })()}
