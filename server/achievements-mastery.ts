@@ -5,6 +5,7 @@
 // for their person. Nothing here reads the store or the clock.
 import type { MasteryFact } from "../shared/achievements-mastery.ts";
 import { looksFrench } from "../shared/achievements-mastery.ts";
+import { isMasteryCharacter, masteryLock } from "../shared/mascot-unlocks.ts";
 
 /** A fact for one person; `id` makes it count once. */
 export interface PersonFact {
@@ -247,4 +248,55 @@ export function masteryDelegationFacts(input: { person: string | null; sourceThr
     id: `delegation:${input.id}`,
     fact: { kind: "delegation.done", threadId: input.sourceThreadId, toBotId: input.toBotId, ok: input.ok, crossModel: Boolean(from && to && from !== to) },
   }];
+}
+
+/* ------------------------------------------------------------------ */
+/* A locked look cannot be saved                                       */
+/* ------------------------------------------------------------------ */
+
+export interface LookRefusal {
+  error: string;
+  code: "look_locked";
+  /** The achievement that unlocks it. */
+  achievement: string;
+  character: string;
+  skin?: string;
+}
+
+function lookFields(value: unknown): { character?: string; skins: Record<string, string> } {
+  if (!value || typeof value !== "object") return { skins: {} };
+  const look = value as { character?: unknown; skins?: unknown };
+  const skins: Record<string, string> = {};
+  if (look.skins && typeof look.skins === "object") for (const [character, skin] of Object.entries(look.skins as Record<string, unknown>)) if (typeof skin === "string") skins[character] = skin;
+  return { ...(typeof look.character === "string" ? { character: look.character } : {}), skins };
+}
+
+/**
+ * Does saving `next` on a bot that wears `previous` put on a Mastery look
+ * (shared/mascot-unlocks.ts) its person has not unlocked? What the bot
+ * already wears stays allowed (never taken back); only a change is checked.
+ * `keys` are the person's reward keys (the snapshot's `rewards`).
+ */
+export function lockedLookChange(previous: unknown, next: unknown, keys: ReadonlySet<string>): LookRefusal | null {
+  if (next === undefined || next === null) return null;
+  const before = lookFields(previous);
+  const after = lookFields(next);
+  const refuse = (achievement: string, character: string, skin?: string): LookRefusal => ({
+    error: `This look is locked until the achievement "${achievement}" is unlocked.`,
+    code: "look_locked",
+    achievement,
+    character,
+    ...(skin ? { skin } : {}),
+  });
+  if (after.character && after.character !== before.character) {
+    const lock = masteryLock(keys, after.character);
+    if (lock.locked && lock.achievement) return refuse(lock.achievement, after.character);
+  }
+  for (const [character, skin] of Object.entries(after.skins)) {
+    if (!isMasteryCharacter(character) || before.skins[character] === skin) continue;
+    // the skin alone (its character's own lock is the check above, when it is worn)
+    const lock = masteryLock(new Set([...keys, `character:${character}`]), character, skin);
+    if (lock.locked && lock.achievement) return refuse(lock.achievement, character, skin);
+  }
+  return null;
 }

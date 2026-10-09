@@ -8,6 +8,7 @@ import { describe, expect, it } from "vitest";
 import { createAchievementStore } from "./achievements.ts";
 import {
   integrationOfTool,
+  lockedLookChange,
   masteryDelegationFacts,
   masteryFrameFacts,
   masteryRequestFacts,
@@ -202,5 +203,32 @@ describe("Mastery in the store", () => {
     expect(ruleStatus(master, progress([...others, ...mastery.slice(0, 19)]), ACHIEVEMENTS)).toEqual({ current: 19, target: 20, done: false });
     expect(ruleStatus(master, progress(mastery.slice(0, 20)), ACHIEVEMENTS).done).toBe(true);
     expect(newlyEarned(progress(mastery.slice(0, 20)), ACHIEVEMENTS)).toContain("sagax-master");
+  });
+});
+
+describe("a locked look cannot be saved", () => {
+  const none = new Set<string>();
+  const shiba = new Set(["character:shiba", masteryKey("hands-off")]);
+
+  it("refuses a Mastery character not unlocked, naming the achievement", () => {
+    expect(lockedLookChange({ character: "owl" }, { character: "shiba" }, none)).toEqual({
+      error: 'This look is locked until the achievement "hands-off" is unlocked.',
+      code: "look_locked",
+      achievement: "hands-off",
+      character: "shiba",
+    });
+    expect(lockedLookChange({ character: "owl" }, { character: "shiba" }, shiba)).toBeNull();
+  });
+
+  it("refuses a locked skin, even on a character not worn, and allows the base skin", () => {
+    expect(lockedLookChange({ character: "shiba" }, { character: "shiba", skins: { shiba: "white" } }, shiba)).toMatchObject({ achievement: "quiet-nights", skin: "white" });
+    expect(lockedLookChange({ character: "owl" }, { character: "owl", skins: { frog: "holo" } }, none)).toMatchObject({ achievement: "sagax-master", character: "frog", skin: "holo" });
+    expect(lockedLookChange({ character: "shiba" }, { character: "shiba", skins: { shiba: "plain", shape: "gold" } }, shiba)).toBeNull();
+  });
+
+  it("never takes back what a bot already wears, and leaves the older characters to their own locks", () => {
+    expect(lockedLookChange({ character: "shiba", skins: { shiba: "white" } }, { character: "shiba", skins: { shiba: "white" } }, none)).toBeNull();
+    expect(lockedLookChange({ character: "owl" }, { character: "trombi", skins: { trombi: "holo" } }, none)).toBeNull();
+    expect(lockedLookChange({ character: "owl" }, undefined, none)).toBeNull();
   });
 });

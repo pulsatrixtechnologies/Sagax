@@ -763,7 +763,7 @@ import { createDesktopAppearanceRoutes } from "./routes/desktop-appearance.ts";
 import { createDesktopAppearanceStore } from "./desktop-appearance.ts";
 import { achievementFrameAllowed, achievementRequestEvents, achievementSendEvents, activityEvents, createAchievementStore, routineRunEvents, type AchievementEvent } from "./achievements.ts";
 import { createAchievementRoutes } from "./routes/achievements.ts";
-import { masteryDelegationFacts, masteryFrameFacts, masteryRequestFacts, masterySendFacts, threadCensus, type PersonFact } from "./achievements-mastery.ts";
+import { lockedLookChange, masteryDelegationFacts, masteryFrameFacts, masteryRequestFacts, masterySendFacts, threadCensus, type LookRefusal, type PersonFact } from "./achievements-mastery.ts";
 import { grandfatheredFromBots } from "../shared/achievements.ts";
 import { createBotMemoryRoutes } from "./routes/bot-memory.ts";
 import { createBotActivityRoutes, type ActivityChildRef } from "./routes/bot-activity.ts";
@@ -1063,6 +1063,22 @@ function masteryCensus(person: string): ReturnType<typeof threadCensus> {
   const bots = IDENTITY.kind === "perspicax" ? store.bots.filter((bot) => effectiveBotOwner(bot) === person) : store.bots;
   const tasks = bots.flatMap((bot) => (bot.tasks ?? []).filter((task) => !task.ownerPrincipalId || task.ownerPrincipalId === person));
   return threadCensus(tasks, new Set(bots.map((bot) => bot.threadId)), Date.now());
+}
+/**
+ * A Mastery look (shared/mascot-unlocks.ts) the person has not unlocked
+ * cannot be saved on a bot: 403 with the achievement that unlocks it. What
+ * the bot already wears stays. A person without a record (a service) is
+ * not checked, like the rest of achievements.
+ */
+function lockedLookRefusal(auth: RequestAuth, bot: BotRecord | null | undefined, nextLook: unknown): LookRefusal | null {
+  if (nextLook === undefined) return null;
+  const person = actorPrincipalId(auth);
+  if (!person) return null;
+  try {
+    return lockedLookChange(bot?.mascotLook, nextLook, new Set(achievementStore.snapshot(person).rewards));
+  } catch {
+    return null;
+  }
 }
 /** A bot's standing instructions saved by a person (Red Pen). */
 function recordPersonaSave(auth: RequestAuth, botId: string, before: { soul: string } | undefined, after: { soul: string }): void {
@@ -30790,6 +30806,8 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         return json(res, 400, { error: "avatarUrl must reference an existing stored image" });
       }
       const existingBot = store.bot(m[1]);
+      const lookLocked = lockedLookRefusal(auth, existingBot, parsed.patch.mascotLook);
+      if (lookLocked) return json(res, 403, lookLocked);
       // On a Cloud home a bot's name, title, description and standing
       // instructions ride every one of the owner's turns (and a lent Mac):
       // only the owner's own devices change them. Anyone else keeps the
@@ -31100,6 +31118,8 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       if (profile.patch.avatarUrl && !storedAvatarExists(profile.patch.avatarUrl)) {
         return json(res, 400, { error: "avatarUrl must reference an existing stored image" });
       }
+      const lookLocked = lockedLookRefusal(auth, existingBot, profile.patch.mascotLook);
+      if (lookLocked) return json(res, 403, lookLocked);
       const patch: Record<string, unknown> = {};
       Object.assign(patch, profile.patch);
       let section: string | undefined | null;
