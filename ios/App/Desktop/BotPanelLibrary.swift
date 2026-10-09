@@ -2,7 +2,10 @@
 // the bot's files, its skills and its Claude Code plugins, one at a time
 // (Files | Skills | Plugins: 12.5 pt tabs, px 8, py 4, radius 6, the chosen
 // one `elevated-hover`), 16 pt in, 8 pt from the panel tabs, 12 pt gaps.
-// Plugins (`BotPluginsCard.tsx`) needs a server pairing: the companion
+// On the web the bot's plugins moved to Connect apps, scope "For <bot>"
+// (`PluginsPanel.tsx`, `plugins/BotPluginCard.tsx`,
+// `plugins/MarketplacesSection.tsx`); the web Library is Files | Skills with
+// a link there. The Plugins view here mirrors that scope and needs a server pairing: the companion
 // sidecar does not list `/api/bots/:id/plugins`, so a sidecar pairing shows
 // Files and Skills only (`SurfaceFeature.botPlugins`).
 //
@@ -143,7 +146,9 @@ final class BotPluginsModel: ObservableObject {
     }
 }
 
-/// Library > Plugins (`BotPluginsCard.tsx`): the intro, the notices, the
+/// A bot's plugins, as Connect apps shows them "For <bot>" on the web
+/// (`PluginsPanel.tsx`, `plugins/BotPluginCard.tsx`,
+/// `plugins/MarketplacesSection.tsx`): the intro, the notices, the
 /// installed list (switch, Uninstall), then each marketplace with its
 /// plugins (Install / Update) and the Add a marketplace field.
 struct BotPanelPlugins: View {

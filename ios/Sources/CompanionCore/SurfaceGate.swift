@@ -136,7 +136,8 @@ public enum SurfaceFeature: String, CaseIterable, Hashable, Sendable {
     case botSlack
     /// Skills an organization package offers (BA4, OrgSkillsCard): admin.
     case orgSkillsLibrary
-    /// Library > Plugins, a bot's Claude Code plugins (`BotPluginsCard.tsx`):
+    /// A bot's Claude Code plugins (Connect apps "For <bot>" on the web,
+    /// `PluginsPanel.tsx`, `plugins/BotPluginCard.tsx`):
     /// `/api/bots/:id/plugins` is a server route (admin, or a client on an
     /// organization server: `orgDirectory` in request-auth.ts); the sidecar
     /// does not list it.
