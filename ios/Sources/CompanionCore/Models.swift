@@ -1790,6 +1790,10 @@ public struct RoutineInput: Encodable, Sendable {
     /// The editor wrote the whole schedule, the interval's days, window and
     /// end date included: an absent one is cleared (null), not kept.
     public var completeSchedule: Bool
+    /// Organization server: the person the routine runs as (a principal
+    /// id, RunAsField); nil leaves it to the server (the routine's current
+    /// person, else the caller).
+    public var runAs: String? = nil
 
     public init(
         name: String, prompt: String, botId: String, runOn: String = "maus",

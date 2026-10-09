@@ -358,6 +358,40 @@ final class RoutinesUITests: XCTestCase {
     // MARK: Results thread (AU15)
 
     /// A run's detail opens its results thread (Aurora's conversation).
+    /// "Runs as" (the desktop's RunAsField, organization server): the
+    /// editor shows the person the routine runs as; the list names who may
+    /// run it and lists the others, not choosable, with the reason.
+    @MainActor
+    func testRunAsListsWhoMayRunTheRoutine() throws {
+        let routine = try XCTUnwrap(try routine(named: lab))
+        let botId = try XCTUnwrap(routine["botId"] as? String)
+        let id = try XCTUnwrap(routine["id"] as? String)
+        let options = try api("GET", "/api/routines/run-as-options?botId=\(botId)&target=bot&routineId=\(id)")
+        guard options["canChoose"] as? Bool == true, let people = options["people"] as? [[String: Any]] else {
+            throw XCTSkip("an organization fixture (PARITY_ORG=1 PARITY_ORG_PHONE=1) chooses who a routine runs as")
+        }
+        let app = openRoutines()
+        openEditor(lab, in: app)
+        let field = element("routine-editor-run-as", in: app)
+        scrollTo(field, in: app)
+        XCTAssertTrue(field.waitForExistence(timeout: 10), "Runs as in the editor")
+        let current = (options["current"] as? [String: Any])?["name"] as? String ?? ""
+        XCTAssertTrue(field.label.contains(current), "the routine's current person")
+        ParityShots.save("Routine editor Runs as", app)
+        field.tap()
+        for person in people {
+            let id = try XCTUnwrap(person["principalId"] as? String)
+            let row = element("routine-run-as.\(id)", in: app)
+            XCTAssertTrue(row.waitForExistence(timeout: 5), "\(person["name"] ?? id) listed")
+            XCTAssertEqual(row.isEnabled, person["selectable"] as? Bool ?? false, "only who may run it can be chosen")
+        }
+        ParityShots.save("Routine Runs as picker", app)
+        let attachment = XCTAttachment(screenshot: app.screenshot())
+        attachment.name = "Runs as picker"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+    }
+
     @MainActor
     func testRunOpensTheResultsThread() throws {
         let results = try XCTUnwrap(try routine(named: lab)?["resultsThreadId"] as? String)

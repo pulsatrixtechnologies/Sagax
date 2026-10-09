@@ -43,6 +43,7 @@ public enum RoutinePatch {
         case .newThread: body["resultsThreadId"] = NSNull()
         case let .thread(id): if id != original.resultsThreadId { body["resultsThreadId"] = id }
         }
+        if let runAs = input.runAs, !runAs.isEmpty, runAs != original.runAs?.principalId { body["runAs"] = runAs }
         return body
     }
 
@@ -67,6 +68,7 @@ public enum RoutinePatch {
         case .newThread: body["resultsThreadId"] = NSNull()
         case let .thread(id): body["resultsThreadId"] = id
         }
+        if let runAs = input.runAs, !runAs.isEmpty { body["runAs"] = runAs }
         return body
     }
 
