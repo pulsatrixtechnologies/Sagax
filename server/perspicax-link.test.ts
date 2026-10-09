@@ -325,6 +325,22 @@ describe("PerspicaxDirectory, slice 4: teams and owner keys", () => {
     expect(h.sync.permissionsOf("NOBODY")).toBeNull();
   });
 
+  it("tolerates the permission sets of Perspicax 0051: sagax_permission_sets per person, sagax_permissions null per profile", async () => {
+    const h = harness({
+      ...withTeams([
+        person("ALICE", { permissions: ["bots.create"], sagax_permission_sets: ["Membre", "Facturation"] } as Partial<Directory["people"][number]>),
+        person("BOB", { sagax_permission_sets: "bogus" } as Partial<Directory["people"][number]>),
+      ], []),
+      profiles: [{ id: "P1", slug: "dispatch", name: "Dispatch", description: "", sagax_permissions: null }],
+    });
+    expect(await h.sync.refresh()).toMatchObject({ state: "ok" });
+    // the person's keys still come from permissions; the set names are display only
+    expect(h.sync.permissionsOf("ALICE")).toEqual(["bots.create"]);
+    expect(h.sync.permissionsOf("BOB")).toBeNull();
+    expect(h.sync.profileCatalog().map((p) => p.id)).toEqual(["P1"]);
+    expect(h.sync.profilePermissions("P1")).toBeNull();
+  });
+
   it("reads sagax_integrations per person: off only when said, manage otherwise (Perspicax 0046)", async () => {
     const h = harness(withTeams([
       person("ALICE", { sagax_integrations: "off" }),
