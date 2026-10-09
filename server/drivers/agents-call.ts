@@ -588,6 +588,23 @@ export async function callTool(name: string, args: Json, context: ToolCallContex
       text: `Posted in ${r.roomName ?? "the room"}${r.attachedVoiceNote ? " with the voice note attached" : ""}. Nobody's turn was started, so expect no reply — tell the user it is posted.`,
     };
   }
+  if (name === "react_to_message" || name === "remove_reaction") {
+    const remove = name === "remove_reaction";
+    const messageId = String(args.message_id ?? args.messageId ?? "").trim();
+    const emoji = typeof args.emoji === "string" ? args.emoji.trim() : "";
+    if (!remove && !emoji) return { text: "react_to_message needs emoji: one emoji such as 👍, ✅ or 👀.", isError: true };
+    const r = await api("/api/internal/reaction", {
+      method: "POST",
+      body: JSON.stringify({ fromBotId: BOT_ID, fromThreadId: THREAD_ID, ...(messageId ? { messageId } : {}), ...(emoji ? { emoji } : {}), remove }),
+    });
+    if (r.error) return { text: String(r.error), isError: true };
+    if (remove) {
+      return { text: r.changed ? `Removed your ${Array.isArray(r.removed) ? r.removed.join(" ") : "reaction"}.` : "You had no reaction there; nothing changed." };
+    }
+    return { text: r.changed
+      ? `Reacted ${String(r.emoji)}. Nothing else was posted: if the reaction says it all, end your turn without text.`
+      : `You had already reacted ${String(r.emoji)}; nothing changed.` };
+  }
   if (name === "ask_bot") {
     const toBotId = String(args.bot_id ?? "").trim();
     const message = String(args.message ?? "").trim();

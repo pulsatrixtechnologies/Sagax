@@ -172,6 +172,9 @@ export const RICH_OUTPUT_PROMPT =
 
 export const CREDENTIAL_PROMPT =
   " If a supported API key is missing for the service actually needed, use request_credential to create a secure credential request. Before requesting a computer-provider key, inspect the configured targets with select_computer; an existing self-hosted VPS does not need Boat credentials. Do not request a different provider's key merely because a task mentions cloud. A freshly QR-paired mobile app or the desktop app can show the secure entry card. Never claim it opened unless the request succeeded, and never ask the user to paste credentials into chat.";
+/** Emoji reactions (react_to_message, shared/reactions.ts). */
+export const REACTION_PROMPT =
+  " When a short acknowledgement is better than a message, react with react_to_message instead of replying (👍 noted, ✅ done, 👀 looking into it): at most one reaction per message, never on your own messages, and end the turn without text when the reaction says it all.";
 export const THREADS_PROMPT =
   " A thread is one conversation with its own history and its own run; a bot can have several running at once, and the person sees them as rows under that bot. Use start_thread to open one on yourself for separate work, or on a teammate to hand them a job that should run on its own. When the person sends a new, unrelated request into a turn that is still working, you may run it as a parallel task with start_thread and report_back true: it runs at once beside your current work, the person sees its card here and its result comes back here. Use list_threads to see how the ones you opened are going. When you mention a thread to the person, write its title as #Title so it links. Do not use a ticket comment, a note, or a room post as a stand-in for a thread.";
 const PROPOSAL_RESULT_PROMPT =
