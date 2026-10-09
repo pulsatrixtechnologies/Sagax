@@ -119,6 +119,34 @@ export class UserSandboxManager {
     }
   }
 
+  /** The console's Overview (2026-10-08): how many of these people's
+   * environments are running, and the provisioner's limit. Eight status
+   * calls at a time, each bounded by `timeoutMs`; one that fails or times
+   * out counts as not running. */
+  async overview(principalIds: readonly string[], timeoutMs = 3_000): Promise<{ running: number; limit: number | null }> {
+    const info = await this.provisionerInfo();
+    const queue = [...new Set(principalIds)];
+    let running = 0;
+    const worker = async () => {
+      for (let id = queue.shift(); id !== undefined; id = queue.shift()) {
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        try {
+          const status = await Promise.race([
+            this.options.client.status(this.keyFor(id)),
+            new Promise<null>((resolve) => { timer = setTimeout(() => resolve(null), timeoutMs); }),
+          ]);
+          if (status?.state === "running") running += 1;
+        } catch {
+          /* unreachable: not running as far as the console can tell */
+        } finally {
+          if (timer) clearTimeout(timer);
+        }
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(8, queue.length) }, worker));
+    return { running, limit: info?.maxRunning ?? null };
+  }
+
   private refuseIfOut(principalId: string): void {
     if (this.pending.has(principalId)) {
       throw new UserSandboxUnavailable("This person was signed out by Perspicax; their server environment is closed.", "person_out");

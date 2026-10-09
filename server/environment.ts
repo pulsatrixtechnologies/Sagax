@@ -125,6 +125,23 @@ export function serverVersion(): string {
   return "unknown";
 }
 
+/** The Sagax release people know (package.json `forkVersion`, 0.4.x), not
+ * the base `version` the link sends (2026-10-08, console audit 6.3). An
+ * image may set SAGAX_RELEASE_VERSION; else the package's forkVersion; else
+ * serverVersion(). */
+export function releaseVersion(): string {
+  const fromEnv = process.env.SAGAX_RELEASE_VERSION?.trim();
+  if (fromEnv) return fromEnv.slice(0, 64);
+  try {
+    const pkg: unknown = JSON.parse(readFileSync(join(SERVER_ROOT, "..", "package.json"), "utf8"));
+    const version = Reflect.get(Object(pkg), "forkVersion");
+    if (typeof version === "string" && version) return version;
+  } catch {
+    /* no package.json next to the bundle */
+  }
+  return serverVersion();
+}
+
 /** This server's display name: SAGAX_ENVIRONMENT_LABEL, else the
  * organization's name (SAGAX_ORG_NAME), else the host of its public address
  * (SAGAX_PUBLIC_URL), else the machine's host name. A container's host name is
