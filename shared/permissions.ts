@@ -1,12 +1,12 @@
 // The permission catalogue of an organization server (2026-10-09).
 //
 // Every "admin only" decision a person meets on a Sagax server linked to
-// Perspicax is one key here. Perspicax holds, per profile, which keys the
-// profile grants; a person's effective permissions are the union over the
-// profiles they hold, computed by Perspicax and sent in the directory
-// (`permissions` on each person). An organization admin holds every key.
-// Keys marked `adminOnly` are true security boundaries: no profile grants
-// them, whatever Perspicax sends.
+// Perspicax is one key here. Perspicax holds permission sets (roles), each
+// granting keys; a person's effective permissions are the union of the
+// default set, the sets given to them and the sets of their teams, computed
+// by Perspicax and sent in the directory (`permissions` on each person). An
+// organization admin holds every key. Keys marked `adminOnly` are true
+// security boundaries: no set grants them, whatever Perspicax sends.
 //
 // When Perspicax sends no list (an older Perspicax, a person missing from
 // the directory, the directory not read yet), a person holds the member

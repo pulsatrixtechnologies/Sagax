@@ -100,8 +100,10 @@ description, whether a plain member holds it when Perspicax sends no list
 (`memberDefault`), and whether only an organization admin may hold it
 (`adminOnly`, with `adminOnlyReason`). Perspicax draws its permission matrix
 from these rows and sends back, in the directory, each person's effective
-keys (`permissions` on the person: the union over the profiles they hold,
-every key for an admin). Keys are stable; a server that predates the
+keys (`permissions` on the person: the union of the default permission
+set, the permission sets given to the person and those of their teams,
+every key for an admin; `sagax_permission_sets` names those sets for
+display, and a profile's `sagax_permissions` is null since Perspicax 0051). Keys are stable; a server that predates the
 catalogue answers without `permissions`.
 
 ### `GET overview`
