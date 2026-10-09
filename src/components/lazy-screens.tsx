@@ -97,6 +97,7 @@ export const InspectorPanel = lazyScreen("InspectorPanel", async () => (await im
 export const KeyboardShortcutsModal = lazyScreen("KeyboardShortcutsModal", async () => (await import("./KeyboardShortcutsModal")).KeyboardShortcutsModal);
 export const LocalVmWorkspace = lazyScreen("LocalVmWorkspace", async () => (await import("./LocalVmWorkspace")).LocalVmWorkspace);
 export const NewBotDialog = lazyScreen("NewBotDialog", async () => (await import("./NewBotDialog")).NewBotDialog);
+export const PersonaEditorModal = lazyScreen("PersonaEditorModal", async () => (await import("./persona/PersonaEditorModal")).PersonaEditorModal);
 export const RemoteAgentSettingsPanel = lazyScreen("RemoteAgentSettingsPanel", async () => (await import("./RemoteAgentSettingsPanel")).RemoteAgentSettingsPanel);
 export const RemoteDesktopPanel = lazyScreen("RemoteDesktopPanel", async () => (await import("./remote-desktop-panel")).RemoteDesktopPanel);
 export const RoutinesPage = lazyScreen("RoutinesPage", async () => (await import("./RoutinesPage")).RoutinesPage);
@@ -106,7 +107,7 @@ export const TriggersPanel = lazyScreen("TriggersPanel", async () => (await impo
 
 const SCREENS = [
   AchievementsModal, ActivityPanel, BotSettingsDialog, ComputerPanel, InspectorPanel, KeyboardShortcutsModal, LocalVmWorkspace, NewBotDialog,
-  RemoteAgentSettingsPanel, RemoteDesktopPanel, RoutinesPage, SettingsModal, TeamMapPage, TriggersPanel,
+  PersonaEditorModal, RemoteAgentSettingsPanel, RemoteDesktopPanel, RoutinesPage, SettingsModal, TeamMapPage, TriggersPanel,
 ];
 
 // A window opened onto Settings (?desktop-settings=…: the desktop app's

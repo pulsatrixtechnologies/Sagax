@@ -40,5 +40,7 @@ describe("bot panel in Simple mode", () => {
     expect(html).toContain(">Overview</h3>");
     expect(html).not.toContain(">Access</h3>");
     expect(html).not.toContain('data-bot-settings-section="access"');
+    // the mascot's menu is offered from the header's "..." button too
+    expect(html).toContain('data-mascot-menu-button=""');
   });
 });

@@ -1,56 +1,38 @@
 // Per-bot settings as a right sidebar with fold-out (accordion) categories —
 // same shell pattern as InspectorPanel. Every section lives under
-// bot-settings/; this dialog owns only the fetches (overview, system-prompt,
-// history) and which accordion row is expanded.
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+// bot-settings/; their bodies and reads (overview, system-prompt, history)
+// are useBotSectionContent, shared with the persona editor. This dialog owns
+// which tab and which accordion row is expanded.
+import { useCallback, useEffect, useRef, useState } from "react";
 import { DockedPanelResizeHandle, useDockedPanelWidth } from "./DockedPanelResize";
-import { Bug, ChevronDown, ChevronLeft, PanelRight, Search } from "lucide-react";
+import { Bug, ChevronDown, ChevronLeft, MoreHorizontal, PanelRight, Search } from "lucide-react";
 
-import { api, useStore, visibleMessages, type Bot } from "@/state/store";
+import { openBotCatalog, useStore, visibleMessages, type Bot } from "@/state/store";
+import { requestPrimaryBot } from "@/lib/bot-quick-actions";
+import { BotContextMenu, type MenuState } from "./Sidebar";
 import { CIRCLE_BUTTON } from "@/lib/circle-button";
 import { reportAchievement } from "@/lib/achievements";
 import { ExportTranscriptMenu } from "./ExportTranscriptMenu";
-import type { BotOverview } from "@/lib/bot-overview-types";
 import { cn } from "@/lib/cn";
 import { useAdvancedMode } from "@/lib/interface-mode";
 import { simpleHidesBotSection, simpleHidesPanelTab } from "@/lib/interface-visibility";
 import { useShowInspectorButton } from "@/lib/inspector-preferences";
-import { ConfirmDialog } from "./ConfirmDialog";
 import { BOT_SECTIONS } from "./bot-settings/sections";
-import { useBotSettingsDerived } from "./bot-settings/useBotSettingsDerived";
-import { OverviewSection } from "./bot-settings/OverviewSection";
-import { SlackSection } from "./bot-settings/SlackSection";
-import { useSlackManagementUrl } from "./bot-settings/useSlackManagement";
-import { SoulSection } from "./bot-settings/SoulSection";
-import { SkillsSection } from "./bot-settings/SkillsSection";
 import { LibraryTab } from "./bot-settings/LibraryTab";
 import { MemorySection } from "./bot-settings/MemorySection";
 import { RoutinesSection } from "./bot-settings/RoutinesSection";
-import { AccessSection } from "./bot-settings/AccessSection";
-import { ModelSection } from "./bot-settings/ModelSection";
-import { PermissionsSection } from "./bot-settings/PermissionsSection";
-import { VoiceSection } from "./bot-settings/VoiceSection";
-import { HistorySection, type HistoryRow } from "./bot-settings/HistorySection";
-import { UsageSection } from "./bot-settings/UsageSection";
-import { VisibilitySection } from "./bot-settings/VisibilitySection";
-import { SharingSection } from "./bot-settings/SharingSection";
-import { PerspicaxSection } from "./bot-settings/PerspicaxSection";
-import { usePerspicaxOrg } from "@/lib/perspicax-org";
 import { isMoreSection, PANEL_TABS, tabForSection, type PanelTab } from "./bot-settings/panel-tabs";
 import { ActivitySection } from "./bot-settings/ActivitySection";
 import { InlineEditableText } from "./bot-settings/InlineEditableText";
 import { PackageProvenance } from "./bot-settings/PackageProvenance";
 import { BOT_PROFILE_LIMITS } from "../../shared/bot-profile";
 import { ComputerPanel } from "./ComputerPanel";
-import { WorksOnSetting } from "./computer/WorksOnSetting";
 import { BotProfileAvatarCard } from "./BotProfileAvatarCard";
 import { useCaptionChrome, useMacInsetChrome } from "./DesktopCapabilities";
 import { t } from "@/lib/i18n";
-import { useOwnerOrAdmin } from "@/lib/use-owner-or-admin";
-import type { PromptPreviewData } from "./bot-settings/PromptPreview";
-import { servedPage } from "@/lib/desktop";
-import { canEditBotField, canStepPrimary } from "@/lib/bot-capabilities";
-import { viewerBotsReadOnly, viewerIsOrgMember } from "@/lib/viewer";
+import { canEditBotField } from "@/lib/bot-capabilities";
+import { viewerBotsReadOnly } from "@/lib/viewer";
+import { botSectionLock, useBotSectionAvailability, useBotSectionContent } from "./bot-settings/useBotSectionContent";
 
 const sectionLabel = (entry: (typeof BOT_SECTIONS)[number]) => (entry.labelKey ? t(entry.labelKey) : entry.label);
 
@@ -67,11 +49,10 @@ export function BotSettingsDialog({ bot, onOpenVmWorkspace }: {
 }) {
   const showInspector = useShowInspectorButton();
   const advanced = useAdvancedMode();
-  const { state, dispatch, flushBotPatches } = useStore();
+  const { state, dispatch } = useStore();
   const { padClass } = useCaptionChrome();
   const { macInset, browser } = useMacInsetChrome();
   const section = state.botSettingsSection;
-  const derived = useBotSettingsDerived(bot);
   const dialogRef = useRef<HTMLElement | null>(null);
   const [query, setQuery] = useState("");
   // Keep expansion in the store too: header deep links can arrive while
@@ -109,172 +90,39 @@ export function BotSettingsDialog({ bot, onOpenVmWorkspace }: {
     dispatch({ type: "toggleComputer", open: false });
   };
   const dockedPanel = useDockedPanelWidth();
+  // The mascot's menu (right click on it, or the "..." button): Edit
+  // persona, Rename the bot, Put on the desktop, Make primary bot, Browse Bots.
+  const [mascotMenu, setMascotMenu] = useState<MenuState | null>(null);
+  const [renameRequest, setRenameRequest] = useState(0);
+  const closeMascotMenu = useCallback(() => setMascotMenu(null), []);
+  const makePrimary = (target: Bot) => {
+    void requestPrimaryBot(target.id)
+      .then((primary) => dispatch({ type: "botPatched", bot: primary }))
+      .catch((cause: unknown) => dispatch({ type: "error", message: cause instanceof Error ? cause.message : String(cause) }));
+  };
   const q = query.trim().toLowerCase();
-  // Slack is offered only where the server has an Admin page to link to
-  // (a hosted organisation workspace); otherwise its row does not exist.
-  const slackUrl = useSlackManagementUrl(bot.id);
-  // Who can see a bot matters only where several people sign in: a browser
-  // on a served workspace, and there only to an admin.
-  const ownerOrAdmin = useOwnerOrAdmin();
-  // A server signed in with Perspicax shares a bot person by person
-  // (SharingSection); the audience setting does not apply there.
-  const perspicaxOrg = usePerspicaxOrg();
+  const { available, slackUrl } = useBotSectionAvailability(bot.id);
   const sections = BOT_SECTIONS
     .filter((entry) => isMoreSection(entry.id))
-    .filter((entry) => entry.id !== "slack" || slackUrl !== null)
-    .filter((entry) => entry.id !== "visibility" || (servedPage() && ownerOrAdmin === true && perspicaxOrg === null))
-    .filter((entry) => entry.id !== "sharing" || perspicaxOrg !== null)
-    .filter((entry) => entry.id !== "perspicax" || perspicaxOrg !== null)
-    // An organization member never sees a section whose fields the server refuses.
-    .filter((entry) => entry.id !== "access" || canEditBotField(state.config, bot, "computer") || canEditBotField(state.config, bot, "cwd"))
-    .filter((entry) => entry.id !== "worksOn" || canEditBotField(state.config, bot, "computer"))
-    .filter((entry) => entry.id !== "memory" || canEditBotField(state.config, bot, "memoryEnabled"))
-    .filter((entry) => entry.id !== "soul" || canEditBotField(state.config, bot, "soul"))
-    .filter((entry) => entry.id !== "history" || !viewerIsOrgMember(state.config))
-    .filter((entry) => entry.id !== "permissions" || canStepPrimary(state.config, bot) || canEditBotField(state.config, bot, "approvalMode"))
+    .filter((entry) => available(entry.id))
+    // An organization member never sees a section whose fields the server
+    // refuses here (the persona editor shows it locked, with the reason).
+    .filter((entry) => botSectionLock(state.config, bot, entry.id) === null)
     .filter((entry) => advanced || !simpleHidesBotSection(entry.id));
   const visibleSections = sections.filter((entry) => sectionMatches(entry, q));
   // A deep link into a section Simple hides shows Overview instead. The
   // hidden section's saved values stay.
   const shownSection = !advanced && simpleHidesBotSection(section) ? "overview" : section;
-
-  const [overview, setOverview] = useState<BotOverview | null>(null);
-  const [overviewError, setOverviewError] = useState(false);
-  const [prompt, setPrompt] = useState<PromptPreviewData | null>(null);
-  const [promptError, setPromptError] = useState(false);
-  const [historyRows, setHistoryRows] = useState<HistoryRow[] | null>(null);
-  const [historyError, setHistoryError] = useState(false);
-  const [historyRevision, setHistoryRevision] = useState<string | null>(null);
-  const historyRequest = useRef(0);
-  const [rollingBack, setRollingBack] = useState(false);
-  const [rollbackTarget, setRollbackTarget] = useState<{ id: string; expectedRevision: string } | null>(null);
-
-  // The bot-record fields the server-built overview and system-prompt
-  // preview actually read (OverviewFacts.bot plus the prompt's persona
-  // inputs). A streamed message or unread flag replaces the bot object but
-  // must not refetch an unchanged overview.
-  const factsSignature = useMemo(
-    () =>
-      JSON.stringify([
-        bot.name,
-        bot.title,
-        bot.description,
-        bot.soul,
-        bot.computer,
-        bot.cloudBackend,
-        bot.cwd,
-        bot.autoApprove,
-        bot.approvePeerComms,
-        bot.peers,
-        bot.section,
-        bot.composio,
-        bot.browser,
-        bot.mcpServers,
-        bot.chiefOfStaff,
-        bot.managedSections,
-        bot.modelSelection,
-      ]),
-    [
-      bot.name,
-      bot.title,
-      bot.description,
-      bot.soul,
-      bot.computer,
-      bot.cloudBackend,
-      bot.cwd,
-      bot.autoApprove,
-      bot.approvePeerComms,
-      bot.peers,
-      bot.section,
-      bot.composio,
-      bot.browser,
-      bot.mcpServers,
-      bot.chiefOfStaff,
-      bot.managedSections,
-      bot.modelSelection,
-    ],
-  );
-
-  // Fetch on entry: skills and memory are files, not bot-record fields, so
-  // returning from either editor must reload their overview/prompt too.
-  // Await the existing write queue instead of racing a second debounce.
-  useEffect(() => {
-    if (section !== "overview") return;
-    let cancelled = false;
-    const fetchOverviewAndPrompt = async () => {
-      await flushBotPatches(bot.id);
-      if (cancelled) return;
-      void api(`/api/bots/${bot.id}/overview`)
-        .then((data: BotOverview) => {
-          if (cancelled) return;
-          setOverview(data);
-          setOverviewError(false);
-        })
-        .catch(() => {
-          if (!cancelled) setOverviewError(true);
-        });
-      void api(`/api/bots/${bot.id}/system-prompt`)
-        .then((data: PromptPreviewData) => {
-          if (cancelled) return;
-          setPrompt(data);
-          setPromptError(false);
-        })
-        .catch(() => {
-          if (!cancelled) setPromptError(true);
-        });
-    };
-
-    void fetchOverviewAndPrompt();
-    return () => {
-      cancelled = true;
-    };
-  }, [bot.id, section, factsSignature, state.routines, state.webhooks, flushBotPatches]);
-
-  // Read the file-backed history only when its section is opened. A newer
-  // load (or leaving History) invalidates older rows, revision, and errors.
-  const loadHistory = useCallback(() => {
-    const request = ++historyRequest.current;
-    setHistoryError(false);
-    return flushBotPatches(bot.id)
-      .then(() => api(`/api/bots/${bot.id}/history?limit=100`))
-      .then((data: { rows: HistoryRow[]; revision: string }) => {
-        if (request !== historyRequest.current) return;
-        setHistoryRows(data.rows);
-        setHistoryRevision(data.revision);
-      })
-      .catch(() => {
-        if (request === historyRequest.current) setHistoryError(true);
-      });
-  }, [bot.id, flushBotPatches]);
-
-  const historyAllowed = !viewerIsOrgMember(state.config);
-  useEffect(() => {
-    if (!historyAllowed || section !== "history") return;
-    void loadHistory();
-    return () => { historyRequest.current++; };
-  }, [section, loadHistory, historyAllowed]);
-
-  // A rollback failure (the row's soul text no longer round-trips the
-  // server's validation, say) still reloads history so the list matches
-  // the server's actual state, but also surfaces the server's message
-  // through the app's error toast — mirrors SoulField's Apply/Discard.
-  const rollbackHistory = async (target: { id: string; expectedRevision: string }) => {
-    if (rollingBack) return;
-    setRollbackTarget(null);
-    setRollingBack(true);
-    try {
-      await flushBotPatches(bot.id);
-      await api(`/api/bots/${bot.id}/history/rollback`, {
-        method: "POST",
-        body: JSON.stringify(target),
-      });
-    } catch (e: unknown) {
-        dispatch({ type: "error", message: e instanceof Error ? e.message : "Couldn't undo that change." });
-    } finally {
-      await loadHistory();
-      setRollingBack(false);
-    }
-  };
+  const { renderSectionBody, dialogs, derived } = useBotSectionContent(bot, {
+    section,
+    expanded: !collapsed,
+    onOpenSection: (target) => {
+      if (!advanced && simpleHidesBotSection(target)) return;
+      dispatch({ type: "toggleSettings", open: true, section: target });
+    },
+    returnFocusRef: dialogRef,
+    slackUrl,
+  });
 
   useEffect(() => {
     // Search narrows the collapsed row list. Choosing a row (or following
@@ -317,85 +165,6 @@ export function BotSettingsDialog({ bot, onOpenVmWorkspace }: {
     };
   }, [dispatch]);
 
-  const renderSectionBody = (id: (typeof BOT_SECTIONS)[number]["id"]) => {
-    switch (id) {
-      case "overview":
-        return overview === null && overviewError ? (
-          <div className="rounded-xl bg-card p-4 text-[13px] text-ink-secondary">Couldn’t load the overview.</div>
-        ) : (
-          // Data wins over a transient refetch failure: once an overview has
-          // loaded once, a later failed refetch (routines/webhooks/bot-record
-          // changed, the request errored) keeps showing it rather than
-          // replacing a fully populated card with an error block — the same
-          // precedence PromptPreview already gives its own data vs. error.
-          <OverviewSection
-            overview={overview}
-            refreshError={overview !== null && overviewError}
-            prompt={prompt}
-            promptError={promptError}
-            onOpen={(target) => {
-              if (!advanced && simpleHidesBotSection(target)) return;
-              dispatch({ type: "toggleSettings", open: true, section: target });
-            }}
-          />
-        );
-      case "soul":
-        if (!canEditBotField(state.config, bot, "soul")) return null;
-        return <SoulSection bot={bot} patch={derived.patch} />;
-      case "slack":
-        return slackUrl ? <SlackSection managementUrl={slackUrl} /> : null;
-      case "skills":
-        return <SkillsSection bot={bot} />;
-      case "memory":
-        // Memory has an explicit Save button; preserve its unsaved draft
-        // while the user consults another section. It fetches when it
-        // becomes the active section. Mounted below while the viewer may
-        // change it; visibility toggled via hidden on the wrapper.
-        if (!canEditBotField(state.config, bot, "memoryEnabled")) return null;
-        return <MemorySection bot={bot} active={!collapsed && section === "memory"} onToggle={(enabled) => derived.patch({ memoryEnabled: enabled })} />;
-      case "routines":
-        return <RoutinesSection bot={bot} routines={derived.botRoutines} runs={state.routineRuns} />;
-      case "access":
-        return <AccessSection bot={bot} derived={derived} />;
-      case "worksOn":
-        return <WorksOnSetting bot={bot} />;
-      case "model":
-        return <ModelSection bot={bot} />;
-      case "permissions":
-        return <PermissionsSection bot={bot} derived={derived} />;
-      case "voice":
-        return <VoiceSection bot={bot} derived={derived} />;
-      case "visibility":
-        return <VisibilitySection bot={bot} />;
-      case "sharing":
-        return <SharingSection bot={bot} />;
-      case "perspicax":
-        return <PerspicaxSection bot={bot} />;
-      case "history":
-        if (!historyAllowed) return null;
-        return historyRows === null && historyError ? (
-          <div className="rounded-xl bg-card p-4 text-[13px] text-ink-secondary">Couldn’t load history.</div>
-        ) : (
-          // Same precedence as the Overview: rows already on screen
-          // survive a failed reload (after an undo, say) with a quiet
-          // note rather than being replaced by an error block.
-          <HistorySection
-            bot={bot}
-            rows={historyRows}
-            refreshError={historyRows !== null && historyError}
-            onRollback={(id) => {
-              if (historyRevision) setRollbackTarget({ id, expectedRevision: historyRevision });
-            }}
-            rollingBack={rollingBack || !historyRevision}
-          />
-        );
-      case "usage":
-        return <UsageSection bot={bot} />;
-      default:
-        return null;
-    }
-  };
-
   return (
     <>
       <aside
@@ -422,6 +191,21 @@ export function BotSettingsDialog({ bot, onOpenVmWorkspace }: {
             </button>
           ) : <span />}
           <div className="flex items-center gap-2">
+            <button
+              type="button"
+              data-mascot-menu-button=""
+              aria-label={t("persona.menu.open")}
+              title={t("persona.menu.open")}
+              aria-haspopup="menu"
+              aria-expanded={mascotMenu !== null}
+              onClick={(event) => {
+                const box = event.currentTarget.getBoundingClientRect();
+                setMascotMenu((open) => (open ? null : { botId: bot.id, x: box.left, y: box.bottom + 4 }));
+              }}
+              className={CIRCLE_BUTTON}
+            >
+              <MoreHorizontal size={18} strokeWidth={1.75} />
+            </button>
             <ExportTranscriptMenu title={bot.name} messages={visibleMessages(bot)} botName={bot.name} />
             {showInspector && advanced && <button
               type="button"
@@ -450,7 +234,16 @@ export function BotSettingsDialog({ bot, onOpenVmWorkspace }: {
           )}
           {/* Who this is, then the tabs */}
           <div className="flex shrink-0 flex-col items-center px-4 pb-3">
-            <BotProfileAvatarCard bot={bot} activeState={derived.activeState} mascotMotion={derived.mascotMotion} onPatch={derived.patch} />
+            <BotProfileAvatarCard
+              bot={bot}
+              activeState={derived.activeState}
+              mascotMotion={derived.mascotMotion}
+              onPatch={derived.patch}
+              onContextMenu={(event) => {
+                event.preventDefault();
+                setMascotMenu({ botId: bot.id, x: event.clientX, y: event.clientY });
+              }}
+            />
             {/* Name and label are edited where they show; the name stays
                 centered on its own line. The description is not shown here. */}
             <div className="mt-2 flex max-w-full items-center justify-center">
@@ -461,6 +254,7 @@ export function BotSettingsDialog({ bot, onOpenVmWorkspace }: {
                 maxLength={BOT_PROFILE_LIMITS.name}
                 ariaLabel={t("botPanel.name.edit")}
                 onSave={canEditBotField(state.config, bot, "name") ? (name) => derived.patch({ name }) : undefined}
+                editRequest={renameRequest}
                 className="text-[17px] font-medium leading-6 text-ink"
               />
             </div>
@@ -586,15 +380,15 @@ export function BotSettingsDialog({ bot, onOpenVmWorkspace }: {
           </div>}
         </div>
       </aside>
-      <ConfirmDialog
-        open={rollbackTarget !== null}
-        title="Restore previous instructions?"
-        body="Replaces current SOUL with the version before this change. Current version stays in History."
-        confirmLabel="Restore instructions"
-        tone="neutral"
-        returnFocusRef={dialogRef}
-        onCancel={() => setRollbackTarget(null)}
-        onConfirm={() => { if (rollbackTarget) void rollbackHistory(rollbackTarget); }}
+      {dialogs}
+      <BotContextMenu
+        variant="mascot"
+        menu={mascotMenu}
+        onClose={closeMascotMenu}
+        onEditPersona={(target) => dispatch({ type: "openPersonaEditor", botId: target.id })}
+        onRename={() => setRenameRequest((count) => count + 1)}
+        onMakePrimary={makePrimary}
+        onBrowseBots={() => dispatch(openBotCatalog())}
       />
     </>
   );

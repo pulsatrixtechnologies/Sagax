@@ -28,6 +28,8 @@ import {
   Users,
   X,
   PictureInPicture2,
+  LayoutGrid,
+  UserRoundPen,
 } from "lucide-react";
 import { api, useStore, formatTime, visibleMessages, currentTaskBot, type AppState, type Bot, type Group, type InstanceInfo, type Message } from "@/state/store";
 
@@ -51,6 +53,7 @@ import { activityPreview, botEngine } from "@/lib/failed-turn";
 import { activeLocale, t } from "@/lib/i18n";
 import { copyText } from "@/lib/copy-text";
 import { isViewersPrimaryBot, viewerOwnsBot } from "@/lib/primary-bot";
+import { primaryBotOffer, requestPrimaryBot } from "@/lib/bot-quick-actions";
 import { PrimaryBotPicker } from "./PrimaryBotPicker";
 import { useOrgPeople, usePerspicaxOrg } from "@/lib/perspicax-org";
 import { peopleDmPeer } from "@/lib/people-dm";
@@ -262,7 +265,7 @@ function preview(bot: Bot, visible: Message[], instances: InstanceInfo[]): strin
   return citationPreviewText(last.text ?? "");
 }
 
-interface MenuState {
+export interface MenuState {
   botId: string;
   x: number;
   y: number;
@@ -1056,13 +1059,23 @@ export function BotContextMenu({
   onRename,
   onMakePrimary,
   onReplacePrimary,
+  variant = "sidebar",
+  onEditPersona,
+  onBrowseBots,
 }: {
   menu: MenuState | null;
   onClose: () => void;
-  onArchive: (bot: Bot) => void;
-  onDelete: (bot: Bot) => void;
-  onMoveToSection: (botId: string) => void;
+  onArchive?: (bot: Bot) => void;
+  onDelete?: (bot: Bot) => void;
+  onMoveToSection?: (botId: string) => void;
   onRename: (botId: string) => void;
+  /** "mascot": the bot panel's mascot menu (Edit persona, Rename, Put on the
+   * desktop, Make primary bot, then Browse Bots). "sidebar": the row menu. */
+  variant?: "sidebar" | "mascot";
+  /** Mascot menu: open the persona editor on this bot. */
+  onEditPersona?: (bot: Bot) => void;
+  /** Mascot menu: open the organisation bot catalogue. */
+  onBrowseBots?: () => void;
   /** Make this bot the viewer's Primary Bot (one per person). */
   onMakePrimary?: (bot: Bot) => void;
   /** Open "Choose a primary Bot" to hand the role to another of their bots. */
@@ -1132,12 +1145,13 @@ export function BotContextMenu({
     icon: React.ReactNode,
     label: string,
     onClick?: () => void,
-    opts?: { danger?: boolean; disabled?: boolean; hint?: string },
+    opts?: { danger?: boolean; disabled?: boolean; hint?: string; id?: string; showHint?: boolean },
   ) => (
     <button
       key={label}
       type="button"
       role="menuitem"
+      data-menu-item={opts?.id}
       disabled={opts?.disabled}
       onClick={() => {
         onClick?.();
@@ -1151,7 +1165,12 @@ export function BotContextMenu({
       )}
     >
       {icon}
-      {label}
+      {opts?.showHint && opts.hint ? (
+        <span className="flex min-w-0 flex-col">
+          <span>{label}</span>
+          <span data-menu-item-reason="" className="text-[11.5px] leading-4 text-ink-secondary">{opts.hint}</span>
+        </span>
+      ) : label}
     </button>
   );
   const divider = (key: string) => <div key={key} className="mx-2 my-1 h-[0.5px] bg-border" />;
@@ -1171,6 +1190,49 @@ export function BotContextMenu({
       ? onMakePrimary && item(<Star size={16} className="text-ink" />, t("sidebar.bot.makePrimary"), () => onMakePrimary(bot))
       : null;
 
+  const menuFrame = (children: React.ReactNode) => createPortal(
+    <div
+      ref={menuRef}
+      data-bot-menu
+      data-sidebar
+      data-bot-menu-variant={variant}
+      role="menu"
+      aria-label={t("sidebar.bot.actions", { name: bot.name })}
+      onKeyDown={navigateThreadMenu}
+      style={{ top: shown.y, left: shown.x }}
+      className={cn("fixed z-[60] max-h-[calc(100dvh-16px)] w-[248px] min-w-[200px] max-w-[calc(100vw-16px)] overflow-y-auto overscroll-contain rounded-xl border-[0.5px] border-border popover-surface bg-elevated p-1.5 flex flex-col gap-0.5 text-[13px] leading-[18px]", motion.className)} {...motion.exitProps}
+    >
+      {children}
+    </div>,
+    document.body,
+  );
+  if (variant === "mascot") {
+    const primary = primaryBotOffer(state.config, bot);
+    return menuFrame([
+      item(<UserRoundPen size={16} className="text-ink" />, t("persona.edit"), () => onEditPersona?.(bot), { id: "edit-persona" }),
+      item(<Pencil size={16} className="text-ink" />, t("persona.menu.rename"), () => onRename(bot.id), {
+        id: "rename",
+        disabled: !canRename,
+        hint: canRename ? undefined : t("persona.locked.owner"),
+        showHint: true,
+      }),
+      item(
+        <PictureInPicture2 size={16} className="text-ink" />,
+        floating ? t("floatingBots.menu.unfloat") : t("floatingBots.menu.float"),
+        () => toggleFloatingBot(bot.id),
+        { id: floating ? "remove-from-desktop" : "put-on-desktop" },
+      ),
+      item(<Star size={16} className="text-ink" />, t("sidebar.bot.makePrimary"), () => onMakePrimary?.(bot), {
+        id: "make-primary",
+        disabled: !primary.allowed || !onMakePrimary,
+        hint: primary.allowed ? undefined : t(primary.reason),
+        showHint: true,
+      }),
+      divider("browse"),
+      item(<LayoutGrid size={16} className="text-ink" />, t("persona.menu.browse"), () => onBrowseBots?.(), { id: "browse-bots" }),
+    ]);
+  }
+
   return createPortal(
     <div
       ref={menuRef}
@@ -1187,7 +1249,7 @@ export function BotContextMenu({
       {remoteClient ? [
         ...(canMoveSection ? [item(<FolderPlus size={16} className="text-ink" />, t("sidebar.bot.moveToSection"), () => {
           onClose();
-          onMoveToSection(bot.id);
+          onMoveToSection?.(bot.id);
         })] : []),
         item(<Pencil size={16} className="text-ink" />, t("sidebar.bot.editProfile"), () => {
           dispatch({ type: "select", id: bot.id });
@@ -1233,7 +1295,7 @@ export function BotContextMenu({
         ...(canArchive ? [item(
           <Archive size={16} className="text-ink" />,
           t("sidebar.bot.archive"),
-          () => onArchive(bot),
+          () => onArchive?.(bot),
           {
             disabled: archiveBlocked,
             hint: archiveHint,
@@ -1244,7 +1306,7 @@ export function BotContextMenu({
           deleting={deleting}
           onClick={() => {
             onClose();
-            onDelete(bot);
+            onDelete?.(bot);
           }}
         />] : []),
       ]}
@@ -2369,10 +2431,10 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
   const makePrimaryBot = async (botId: string, fromPicker = false) => {
     if (fromPicker) setPrimaryPicker((open) => (open ? { ...open, pending: true, error: null } : open));
     try {
-      const response = await api<{ bot: Bot }>(`/api/bots/${botId}/primary`, { method: "POST" });
-      dispatch({ type: "botPatched", bot: response.bot });
+      const primary = await requestPrimaryBot(botId);
+      dispatch({ type: "botPatched", bot: primary });
       setPrimaryPicker(null);
-      setTeamFeedback({ error: false, text: t("primaryBot.made", { name: response.bot.name }) });
+      setTeamFeedback({ error: false, text: t("primaryBot.made", { name: primary.name }) });
     } catch (cause) {
       const text = cause instanceof Error ? cause.message : String(cause);
       if (fromPicker) setPrimaryPicker((open) => (open ? { ...open, pending: false, error: text } : open));

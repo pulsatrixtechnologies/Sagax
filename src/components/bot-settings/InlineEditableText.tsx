@@ -27,6 +27,7 @@ export function InlineEditableText({
   className,
   inputClassName,
   muted = false,
+  editRequest = 0,
 }: {
   value: string;
   /** Absent: shown read-only. */
@@ -41,8 +42,13 @@ export function InlineEditableText({
   className?: string;
   inputClassName?: string;
   muted?: boolean;
+  /** Counts up each time something else asks for the field (the mascot
+   * menu's Rename the bot): each new value opens it. */
+  editRequest?: number;
 }) {
   const [editing, setEditing] = useState(false);
+  const editable = onSave !== undefined;
+  useEffect(() => { if (editRequest > 0 && editable) setEditing(true); }, [editRequest, editable]);
   const [draft, setDraft] = useState(value);
   const inputRef = useRef<HTMLInputElement | null>(null);
   useEffect(() => { if (!editing) setDraft(value); }, [value, editing]);
