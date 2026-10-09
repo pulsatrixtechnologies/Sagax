@@ -189,6 +189,8 @@ export interface FloatingBotPrefs {
   hotkey: boolean;
   /** Which keys (an Electron accelerator from HOTKEY_CHOICES). */
   hotkeyKeys: HotkeyChoice;
+  /** Shiba barks out loud (src/lib/shiba-bark.ts): off by default. */
+  barkSound: boolean;
 }
 
 const PREFS_KEY = "omb.floatingBots.prefs.v1";
@@ -200,10 +202,10 @@ export function readFloatingBotPrefs(storage: FloatingStorage | undefined = defa
   } catch {
     raw = null;
   }
-  const value = raw && typeof raw === "object" ? (raw as { flyAway?: unknown; liveliness?: unknown; hotkey?: unknown; hotkeyKeys?: unknown }) : {};
+  const value = raw && typeof raw === "object" ? (raw as { flyAway?: unknown; liveliness?: unknown; hotkey?: unknown; hotkeyKeys?: unknown; barkSound?: unknown }) : {};
   const liveliness = FLOATING_LIVELINESS.includes(value.liveliness as FloatingLiveliness) ? (value.liveliness as FloatingLiveliness) : "normal";
   const hotkeyKeys = (HOTKEY_CHOICES as readonly string[]).includes(value.hotkeyKeys as string) ? (value.hotkeyKeys as HotkeyChoice) : DEFAULT_HOTKEY;
-  return { flyAway: value.flyAway !== false, liveliness, hotkey: value.hotkey !== false, hotkeyKeys };
+  return { flyAway: value.flyAway !== false, liveliness, hotkey: value.hotkey !== false, hotkeyKeys, barkSound: value.barkSound === true };
 }
 
 let prefs: FloatingBotPrefs | null = null;
@@ -223,6 +225,12 @@ export function setFloatingFlyAway(on: boolean, storage: FloatingStorage | undef
 export function setFloatingLiveliness(level: FloatingLiveliness, storage: FloatingStorage | undefined = defaultStorage()): void {
   if (!FLOATING_LIVELINESS.includes(level) || floatingBotPrefs().liveliness === level) return;
   savePrefs({ ...floatingBotPrefs(), liveliness: level }, storage);
+}
+
+/** Settings > Appearance: Shiba's bark out loud, on or off. */
+export function setFloatingBarkSound(on: boolean, storage: FloatingStorage | undefined = defaultStorage()): void {
+  if (floatingBotPrefs().barkSound === on) return;
+  savePrefs({ ...floatingBotPrefs(), barkSound: on }, storage);
 }
 
 /** Settings > Appearance: the call hotkey on or off, and its keys. */

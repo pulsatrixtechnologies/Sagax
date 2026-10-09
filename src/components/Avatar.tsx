@@ -24,6 +24,8 @@ import { ShapeMascot, type ShapeMood } from "./ShapeMascot";
 import type { TrombiPose } from "./retro-assistant/Trombi";
 import { SkinnedTrombi } from "./skin-fx/SkinnedTrombi";
 import { BunbuMascot, type BunbuMood } from "./BunbuMascot";
+import { ShibaMascot } from "./ShibaMascot";
+import type { ShibaExpression } from "./shiba-art";
 import type { FxMoveRequest } from "./skin-fx/skin-fx";
 
 /** Kept for API compatibility (the preview page reads them); the owl ignores both. */
@@ -226,14 +228,67 @@ export function bunbuMoodFor(state: MausState | undefined): BunbuMood {
   return shapeMoodFor(state);
 }
 
+/** Shiba's face for the app's mascot states: most states name one of its sixteen faces. */
+export function shibaExpressionFor(state: MausState | undefined): ShibaExpression {
+  switch (state) {
+    case "sleeping":
+    case "drowsy":
+    case "powering-down":
+      return "sleepy";
+    case "thinking":
+    case "searching":
+    case "loading":
+    case "curious":
+      return "curious";
+    case "listening":
+    case "dictating":
+    case "waking":
+    case "working":
+    case "progress":
+    case "orbit":
+    case "radar":
+    case "writing":
+    case "uploading":
+    case "sending":
+    case "receiving":
+    case "humming":
+      return "attentive";
+    case "excited":
+    case "celebrate":
+    case "playful":
+    case "bouncing":
+      return "excited";
+    case "surprised":
+    case "alerting":
+    case "notifying":
+      return "surprised";
+    case "happy":
+    case "suspicious":
+    case "angry":
+    case "confused":
+    case "bored":
+    case "proud":
+    case "shy":
+    case "sad":
+    case "laughing":
+    case "scared":
+      return state;
+    default:
+      return "neutral";
+  }
+}
+
 /**
- * The bot's character, when it is not the owl: one of the shapes, Trombi or Bunbu, in the bot's look. Every bot avatar in the app comes through
+ * The bot's character, when it is not the owl: one of the shapes, Trombi, Bunbu or Shiba, in the bot's look. Every bot avatar in the app comes through
  * BotAvatar, so this is where a character change shows everywhere.
  */
 function CharacterAvatar({ look, color, size, state, animated = true, label, move }: { look: MascotLook; color: MausColor; size: number; state?: MausState; animated?: boolean; label?: string | null; move?: FxMoveRequest | null }) {
   const full = completeMascotLook(look);
   if (full.character === "shape") {
     return <ShapeMascot shape={full.shape} skin={full.skins.shape} color={color} size={size} mood={shapeMoodFor(state)} animated={animated} move={move} moveBody label={label ?? null} />;
+  }
+  if (full.character === "shiba") {
+    return <ShibaMascot skin={full.skins.shiba} color={color} size={size} mood={bunbuMoodFor(state)} expression={shibaExpressionFor(state)} animated={animated} move={move} moveBody label={label ?? null} />;
   }
   if (full.character === "bunbu") {
     return <BunbuMascot skin={full.skins.bunbu} color={color} size={size} mood={bunbuMoodFor(state)} animated={animated} move={move} moveBody label={label ?? null} />;

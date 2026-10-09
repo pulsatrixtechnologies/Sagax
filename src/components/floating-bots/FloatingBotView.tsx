@@ -23,7 +23,7 @@ import {
 } from "./behavior";
 import { clickGesture, eventsForClick, newStroke, strokeLeave, strokeStep } from "./gestures";
 import type { FloatingPilot } from "./pilot";
-import { mascotFor } from "./mascots";
+import { cueClipFor, mascotFor } from "./mascots";
 import { Balloon, BALLOON_MAX_W, readBalloonPlace, splitOffset, type BalloonSide } from "./Balloon";
 import { completeMascotLook } from "../../../shared/mascot-look";
 import { mascotStage } from "./fit";
@@ -349,10 +349,13 @@ export function FloatingBotView({ snapshot: given, onEvent, mover, interactive, 
   const call = snapshot.call ?? null;
   const chatOpen = Boolean(snapshot.balloon) || Boolean(call);
   const task = mascotTaskFor(snapshot.task, chatOpen);
+  // a dog (Shiba) has its own idle life, and sits and waits while its bot waits for an approval
+  const dog = snapshot.mascot?.character === "shiba";
   const mascotOptions = () => ({
     reduced,
     flyAway: snapshot.flyAway,
-    canMove: Boolean(pilot) && !chatOpen,
+    canMove: Boolean(pilot) && !chatOpen && !(dog && task === "waiting"),
+    dog,
     random: Math.random,
     liveliness: snapshot.liveliness ?? "normal",
     mood: snapshot.mood,
@@ -415,6 +418,25 @@ export function FloatingBotView({ snapshot: given, onEvent, mover, interactive, 
     if (move && isMoveClip(move.clip)) dispatchRef.current({ type: "move", now: now(), clip: move.clip });
   }, [lookKey]);
   useEffect(() => onMove?.(playMove), [onMove, playMove]);
+
+  // what just happened to the person, and a reply that lands: the character's own reaction, if it has one
+  const character = snapshot.mascot?.character ?? "owl";
+  const cueAt = snapshot.cue?.at ?? 0;
+  const cueKind = snapshot.cue?.kind ?? null;
+  const seenCue = useRef(cueAt);
+  useEffect(() => {
+    if (!cueAt || cueAt === seenCue.current || !cueKind) return;
+    seenCue.current = cueAt;
+    const clip = cueClipFor(character, cueKind);
+    if (clip) dispatchRef.current({ type: "move", now: now(), clip });
+  }, [cueAt, cueKind, character]);
+  const seenSparkle = useRef(snapshot.sparkle);
+  useEffect(() => {
+    if (snapshot.sparkle === seenSparkle.current) return;
+    seenSparkle.current = snapshot.sparkle;
+    const clip = cueClipFor(character, "message");
+    if (clip) dispatchRef.current({ type: "move", now: now(), clip });
+  }, [snapshot.sparkle, character]);
   /** A choice in the menu: a move plays here; anything else is the brain's. */
   const chooseMenu = (id: string) => {
     setMenuOpen(false);

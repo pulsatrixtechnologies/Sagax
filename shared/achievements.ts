@@ -10,7 +10,7 @@
 //
 // Unlocking is idempotent: an achievement unlocks once, its rewards stay. The
 // rewards are what the mascot editor and the app icon picker unlock: a
-// character (Trombi, Bunbu), a skin of a character, an app icon, or a title.
+// character (Trombi, Bunbu, Shiba), a skin of a character, an app icon, or a title.
 import { botMascotSkin, MASCOT_SKIN_IDS, OWL_SKIN_TIER, type MascotSkinId } from "./mascot-skins.ts";
 import {
   BUNBU_SKIN_TIER,

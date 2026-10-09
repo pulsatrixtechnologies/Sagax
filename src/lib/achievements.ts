@@ -149,7 +149,11 @@ export function receiveAchievementsFrame(frame: { unlocked?: unknown }): void {
   void loadAchievements();
 }
 
+/** Fired on the window when achievements unlock (the desktop mascots react: a Shiba turns in circles). */
+export const ACHIEVEMENT_UNLOCKED_EVENT = "sagax:achievement-unlocked";
+
 function announceUnlocks(unlocked: readonly AchievementUnlock[]): void {
+  if (typeof window !== "undefined" && typeof window.dispatchEvent === "function") window.dispatchEvent(new CustomEvent(ACHIEVEMENT_UNLOCKED_EVENT));
   if (state.snapshot?.settings.toasts === false) {
     achievementToasts.markSeen(unlocked.map((item) => item.id));
     return;
@@ -192,6 +196,7 @@ const CHARACTER_KEY: Readonly<Record<string, LocaleKey>> = {
   shape: "floatingBots.mascot.body",
   trombi: "floatingBots.mascot.trombi",
   bunbu: "floatingBots.mascot.bunbu",
+  shiba: "floatingBots.mascot.shiba",
 };
 
 /** The English pack carries every key this build knows. */
@@ -277,7 +282,7 @@ export function appIconLock(unlocks: Unlocks, id: string, art: { kind: string; s
     const achievement = achievementRewarding(`appIcon:${id}`, ACHIEVEMENTS);
     return { locked: true, achievement, item: achievement ? itemState(achievement.id) : undefined };
   }
-  if (art.kind === "owl" || art.kind === "shape" || art.kind === "trombi" || art.kind === "bunbu") {
+  if (art.kind === "owl" || art.kind === "shape" || art.kind === "trombi" || art.kind === "bunbu" || art.kind === "shiba") {
     return art.skin ? skinLock(unlocks, art.kind, art.skin) : characterLock(unlocks, art.kind);
   }
   return { locked: false };

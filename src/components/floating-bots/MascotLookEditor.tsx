@@ -2,7 +2,7 @@
 // stored with the bot (bot.mascotLook, bot.color, bot.mascotSkin), so the
 // change shows everywhere the bot appears and on its desktop mascot.
 //
-//   Character: Owl, Shapes, Trombi, Bunbu (the registry, mascots.tsx), full width:
+//   Character: Owl, Shapes, Trombi, Bunbu, Shiba (the registry, mascots.tsx), full width:
 //   the bot's avatar above the popover (the bot panel's header) is the
 //   preview, and plays the moves and the equip animation. Then that
 //   character's own options:
@@ -10,6 +10,7 @@
 //     Shapes: shape (8), color (with the Clay palette), shape skin (Clay first)
 //     Trombi: Trombi skin
 //     Bunbu: color, Bunbu skin
+//     Shiba: color, Shiba skin (the breed's coats, then premium editions)
 //   Colors show one palette at a time (Vivid, Pastel, Deep, Neon, Neutral),
 //   skins one rarity at a time (Common, Rare, Epic, Legendary), each tab
 //   opening on the current choice (editor-tabs.ts). Skin cards preview the
@@ -31,10 +32,11 @@ import { MAUS_COLORS, swatchStyle, type MausColor, type MausMotion } from "@/lib
 import { MausAvatar } from "@/components/Avatar";
 import { MASCOT_SKIN_IDS, OWL_SKIN_TIER, botMascotSkin, type MascotSkinId } from "../../../shared/mascot-skins";
 import type { MascotColorGroup } from "../../../shared/mascot-colors";
-import { BUNBU_SKIN_TIER, BUNBU_SKINS, completeMascotLook, SHAPE_SKIN_TIER, SHAPE_SKINS, TROMBI_SKIN_TIER, TROMBI_SKINS, type MascotCharacter, type MascotLook, type MascotShape, type ShapeSkin, type SkinTier } from "../../../shared/mascot-look";
+import { BUNBU_SKIN_TIER, BUNBU_SKINS, completeMascotLook, SHIBA_SKIN_TIER, SHIBA_SKINS, SHAPE_SKIN_TIER, SHAPE_SKINS, TROMBI_SKIN_TIER, TROMBI_SKINS, type MascotCharacter, type MascotLook, type MascotShape, type ShapeSkin, type SkinTier } from "../../../shared/mascot-look";
 import { ShapeMascot } from "@/components/ShapeMascot";
 import { SkinnedTrombi } from "@/components/skin-fx/SkinnedTrombi";
 import { BunbuMascot } from "@/components/BunbuMascot";
+import { ShibaMascot } from "@/components/ShibaMascot";
 import "@/components/skin-fx/skin-fx.css";
 import { colorGroupsFor, colorTabFor, colorTabs, nextTab, skinTabFor, skinTierTabs } from "./editor-tabs";
 import { MASCOTS, SHAPE_CHOICES } from "./mascots";
@@ -61,6 +63,7 @@ export const CHARACTER_LABEL = {
   shape: "floatingBots.mascot.body",
   trombi: "floatingBots.mascot.trombi",
   bunbu: "floatingBots.mascot.bunbu",
+  shiba: "floatingBots.mascot.shiba",
 } satisfies Record<MascotCharacter, LocaleKey>;
 
 export const SHAPE_LABEL = {
@@ -117,6 +120,22 @@ export const BUNBU_SKIN_LABEL = {
   galaxy: "mascot.bunbuSkin.galaxy",
   molten: "mascot.bunbuSkin.molten",
 } satisfies Record<(typeof BUNBU_SKINS)[number], LocaleKey>;
+
+export const SHIBA_SKIN_LABEL = {
+  plain: "mascot.shibaSkin.plain",
+  cream: "mascot.shibaSkin.cream",
+  blacktan: "mascot.shibaSkin.blacktan",
+  red: "mascot.shibaSkin.red",
+  sesame: "mascot.shibaSkin.sesame",
+  white: "mascot.shibaSkin.white",
+  retro98: "mascot.shibaSkin.retro98",
+  gold: "mascot.shibaSkin.gold",
+  neon: "mascot.shibaSkin.neon",
+  chrome: "mascot.shibaSkin.chrome",
+  glitch: "mascot.shibaSkin.glitch",
+  holo: "mascot.shibaSkin.holo",
+  molten: "mascot.shibaSkin.molten",
+} satisfies Record<(typeof SHIBA_SKINS)[number], LocaleKey>;
 
 export const SKIN_TIER_LABEL = {
   common: "mascot.tier.common",
@@ -516,6 +535,25 @@ export default function MascotLookEditor({ bot, disabled, onPatch: savePatch, on
             onSelect={(skin) => setLook({ skins: { ...look.skins, bunbu: skin } })}
             lockOf={(skin) => skinLock(unlocks, "bunbu", skin)}
             preview={(skin) => <BunbuMascot skin={skin} color={bot.color} size={38} detail="full" label={null} />}
+          />
+        </div>
+      )}
+
+      {look.character === "shiba" && (
+        <div data-character-options="shiba">
+          {colors}
+          <SkinPicker
+            key="shiba"
+            skins={SHIBA_SKINS}
+            tierOf={SHIBA_SKIN_TIER}
+            selected={look.skins.shiba}
+            labelOf={(skin) => t(SHIBA_SKIN_LABEL[skin])}
+            idPrefix="shiba-skin"
+            dataKey="data-shiba-skin-option"
+            disabled={disabled}
+            onSelect={(skin) => setLook({ skins: { ...look.skins, shiba: skin } })}
+            lockOf={(skin) => skinLock(unlocks, "shiba", skin)}
+            preview={(skin) => <ShibaMascot skin={skin} color={bot.color} size={38} detail="full" label={null} />}
           />
         </div>
       )}

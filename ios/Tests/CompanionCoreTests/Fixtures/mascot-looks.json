@@ -4,7 +4,8 @@
     "owl",
     "shape",
     "trombi",
-    "bunbu"
+    "bunbu",
+    "shiba"
   ],
   "shapes": [
     "circle",
@@ -53,6 +54,21 @@
     "crystal",
     "holo",
     "galaxy",
+    "molten"
+  ],
+  "shibaSkins": [
+    "plain",
+    "cream",
+    "blacktan",
+    "red",
+    "sesame",
+    "white",
+    "retro98",
+    "gold",
+    "neon",
+    "chrome",
+    "glitch",
+    "holo",
     "molten"
   ],
   "owlSkins": [
@@ -247,6 +263,15 @@
       },
       "expected": {
         "character": "bunbu"
+      }
+    },
+    {
+      "name": "bare shiba",
+      "input": {
+        "character": "shiba"
+      },
+      "expected": {
+        "character": "shiba"
       }
     },
     {
@@ -2340,6 +2365,201 @@
       }
     },
     {
+      "name": "shiba plain",
+      "input": {
+        "character": "shiba",
+        "skins": {
+          "shiba": "plain"
+        }
+      },
+      "expected": {
+        "character": "shiba",
+        "skins": {
+          "shiba": "plain"
+        }
+      }
+    },
+    {
+      "name": "shiba cream",
+      "input": {
+        "character": "shiba",
+        "skins": {
+          "shiba": "cream"
+        }
+      },
+      "expected": {
+        "character": "shiba",
+        "skins": {
+          "shiba": "cream"
+        }
+      }
+    },
+    {
+      "name": "shiba blacktan",
+      "input": {
+        "character": "shiba",
+        "skins": {
+          "shiba": "blacktan"
+        }
+      },
+      "expected": {
+        "character": "shiba",
+        "skins": {
+          "shiba": "blacktan"
+        }
+      }
+    },
+    {
+      "name": "shiba red",
+      "input": {
+        "character": "shiba",
+        "skins": {
+          "shiba": "red"
+        }
+      },
+      "expected": {
+        "character": "shiba",
+        "skins": {
+          "shiba": "red"
+        }
+      }
+    },
+    {
+      "name": "shiba sesame",
+      "input": {
+        "character": "shiba",
+        "skins": {
+          "shiba": "sesame"
+        }
+      },
+      "expected": {
+        "character": "shiba",
+        "skins": {
+          "shiba": "sesame"
+        }
+      }
+    },
+    {
+      "name": "shiba white",
+      "input": {
+        "character": "shiba",
+        "skins": {
+          "shiba": "white"
+        }
+      },
+      "expected": {
+        "character": "shiba",
+        "skins": {
+          "shiba": "white"
+        }
+      }
+    },
+    {
+      "name": "shiba retro98",
+      "input": {
+        "character": "shiba",
+        "skins": {
+          "shiba": "retro98"
+        }
+      },
+      "expected": {
+        "character": "shiba",
+        "skins": {
+          "shiba": "retro98"
+        }
+      }
+    },
+    {
+      "name": "shiba gold",
+      "input": {
+        "character": "shiba",
+        "skins": {
+          "shiba": "gold"
+        }
+      },
+      "expected": {
+        "character": "shiba",
+        "skins": {
+          "shiba": "gold"
+        }
+      }
+    },
+    {
+      "name": "shiba neon",
+      "input": {
+        "character": "shiba",
+        "skins": {
+          "shiba": "neon"
+        }
+      },
+      "expected": {
+        "character": "shiba",
+        "skins": {
+          "shiba": "neon"
+        }
+      }
+    },
+    {
+      "name": "shiba chrome",
+      "input": {
+        "character": "shiba",
+        "skins": {
+          "shiba": "chrome"
+        }
+      },
+      "expected": {
+        "character": "shiba",
+        "skins": {
+          "shiba": "chrome"
+        }
+      }
+    },
+    {
+      "name": "shiba glitch",
+      "input": {
+        "character": "shiba",
+        "skins": {
+          "shiba": "glitch"
+        }
+      },
+      "expected": {
+        "character": "shiba",
+        "skins": {
+          "shiba": "glitch"
+        }
+      }
+    },
+    {
+      "name": "shiba holo",
+      "input": {
+        "character": "shiba",
+        "skins": {
+          "shiba": "holo"
+        }
+      },
+      "expected": {
+        "character": "shiba",
+        "skins": {
+          "shiba": "holo"
+        }
+      }
+    },
+    {
+      "name": "shiba molten",
+      "input": {
+        "character": "shiba",
+        "skins": {
+          "shiba": "molten"
+        }
+      },
+      "expected": {
+        "character": "shiba",
+        "skins": {
+          "shiba": "molten"
+        }
+      }
+    },
+    {
       "name": "editor owl",
       "input": {
         "character": "owl",
@@ -2348,7 +2568,8 @@
         "skins": {
           "shape": "galaxy",
           "trombi": "holo",
-          "bunbu": "velvet"
+          "bunbu": "velvet",
+          "shiba": "sesame"
         }
       },
       "expected": {
@@ -2358,7 +2579,8 @@
         "skins": {
           "shape": "galaxy",
           "trombi": "holo",
-          "bunbu": "velvet"
+          "bunbu": "velvet",
+          "shiba": "sesame"
         }
       }
     },
@@ -2371,7 +2593,8 @@
         "skins": {
           "shape": "plain",
           "trombi": "classic",
-          "bunbu": "plain"
+          "bunbu": "plain",
+          "shiba": "plain"
         }
       },
       "expected": {
@@ -2381,7 +2604,8 @@
         "skins": {
           "shape": "plain",
           "trombi": "classic",
-          "bunbu": "plain"
+          "bunbu": "plain",
+          "shiba": "plain"
         }
       }
     },
@@ -2394,7 +2618,8 @@
         "skins": {
           "shape": "galaxy",
           "trombi": "holo",
-          "bunbu": "velvet"
+          "bunbu": "velvet",
+          "shiba": "sesame"
         }
       },
       "expected": {
@@ -2404,7 +2629,8 @@
         "skins": {
           "shape": "galaxy",
           "trombi": "holo",
-          "bunbu": "velvet"
+          "bunbu": "velvet",
+          "shiba": "sesame"
         }
       }
     },
@@ -2417,7 +2643,8 @@
         "skins": {
           "shape": "plain",
           "trombi": "classic",
-          "bunbu": "plain"
+          "bunbu": "plain",
+          "shiba": "plain"
         }
       },
       "expected": {
@@ -2427,7 +2654,8 @@
         "skins": {
           "shape": "plain",
           "trombi": "classic",
-          "bunbu": "plain"
+          "bunbu": "plain",
+          "shiba": "plain"
         }
       }
     },
@@ -2440,7 +2668,8 @@
         "skins": {
           "shape": "galaxy",
           "trombi": "holo",
-          "bunbu": "velvet"
+          "bunbu": "velvet",
+          "shiba": "sesame"
         }
       },
       "expected": {
@@ -2450,7 +2679,8 @@
         "skins": {
           "shape": "galaxy",
           "trombi": "holo",
-          "bunbu": "velvet"
+          "bunbu": "velvet",
+          "shiba": "sesame"
         }
       }
     },
@@ -2463,7 +2693,8 @@
         "skins": {
           "shape": "plain",
           "trombi": "classic",
-          "bunbu": "plain"
+          "bunbu": "plain",
+          "shiba": "plain"
         }
       },
       "expected": {
@@ -2473,7 +2704,8 @@
         "skins": {
           "shape": "plain",
           "trombi": "classic",
-          "bunbu": "plain"
+          "bunbu": "plain",
+          "shiba": "plain"
         }
       }
     },
@@ -2486,7 +2718,8 @@
         "skins": {
           "shape": "galaxy",
           "trombi": "holo",
-          "bunbu": "velvet"
+          "bunbu": "velvet",
+          "shiba": "sesame"
         }
       },
       "expected": {
@@ -2496,7 +2729,8 @@
         "skins": {
           "shape": "galaxy",
           "trombi": "holo",
-          "bunbu": "velvet"
+          "bunbu": "velvet",
+          "shiba": "sesame"
         }
       }
     },
@@ -2509,7 +2743,8 @@
         "skins": {
           "shape": "plain",
           "trombi": "classic",
-          "bunbu": "plain"
+          "bunbu": "plain",
+          "shiba": "plain"
         }
       },
       "expected": {
@@ -2519,7 +2754,58 @@
         "skins": {
           "shape": "plain",
           "trombi": "classic",
-          "bunbu": "plain"
+          "bunbu": "plain",
+          "shiba": "plain"
+        }
+      }
+    },
+    {
+      "name": "editor shiba",
+      "input": {
+        "character": "shiba",
+        "style": "2d",
+        "shape": "cloud",
+        "skins": {
+          "shape": "galaxy",
+          "trombi": "holo",
+          "bunbu": "velvet",
+          "shiba": "sesame"
+        }
+      },
+      "expected": {
+        "character": "shiba",
+        "style": "2d",
+        "shape": "cloud",
+        "skins": {
+          "shape": "galaxy",
+          "trombi": "holo",
+          "bunbu": "velvet",
+          "shiba": "sesame"
+        }
+      }
+    },
+    {
+      "name": "editor default shiba",
+      "input": {
+        "character": "shiba",
+        "style": "2d",
+        "shape": "circle",
+        "skins": {
+          "shape": "plain",
+          "trombi": "classic",
+          "bunbu": "plain",
+          "shiba": "plain"
+        }
+      },
+      "expected": {
+        "character": "shiba",
+        "style": "2d",
+        "shape": "circle",
+        "skins": {
+          "shape": "plain",
+          "trombi": "classic",
+          "bunbu": "plain",
+          "shiba": "plain"
         }
       }
     },
@@ -3059,6 +3345,216 @@
       }
     },
     {
+      "name": "legacy shiba skin black-and-tan",
+      "input": {
+        "character": "shiba",
+        "skins": {
+          "shiba": "black-and-tan"
+        }
+      },
+      "expected": {
+        "character": "shiba",
+        "skins": {
+          "shiba": "blacktan"
+        }
+      }
+    },
+    {
+      "name": "legacy shiba skin black_tan",
+      "input": {
+        "character": "shiba",
+        "skins": {
+          "shiba": "black_tan"
+        }
+      },
+      "expected": {
+        "character": "shiba",
+        "skins": {
+          "shiba": "blacktan"
+        }
+      }
+    },
+    {
+      "name": "legacy shiba skin kuro",
+      "input": {
+        "character": "shiba",
+        "skins": {
+          "shiba": "kuro"
+        }
+      },
+      "expected": {
+        "character": "shiba",
+        "skins": {
+          "shiba": "blacktan"
+        }
+      }
+    },
+    {
+      "name": "legacy shiba skin aka",
+      "input": {
+        "character": "shiba",
+        "skins": {
+          "shiba": "aka"
+        }
+      },
+      "expected": {
+        "character": "shiba",
+        "skins": {
+          "shiba": "red"
+        }
+      }
+    },
+    {
+      "name": "legacy shiba skin goma",
+      "input": {
+        "character": "shiba",
+        "skins": {
+          "shiba": "goma"
+        }
+      },
+      "expected": {
+        "character": "shiba",
+        "skins": {
+          "shiba": "sesame"
+        }
+      }
+    },
+    {
+      "name": "legacy shiba skin shiro",
+      "input": {
+        "character": "shiba",
+        "skins": {
+          "shiba": "shiro"
+        }
+      },
+      "expected": {
+        "character": "shiba",
+        "skins": {
+          "shiba": "white"
+        }
+      }
+    },
+    {
+      "name": "legacy shiba skin retro",
+      "input": {
+        "character": "shiba",
+        "skins": {
+          "shiba": "retro"
+        }
+      },
+      "expected": {
+        "character": "shiba",
+        "skins": {
+          "shiba": "retro98"
+        }
+      }
+    },
+    {
+      "name": "legacy shiba skin win98",
+      "input": {
+        "character": "shiba",
+        "skins": {
+          "shiba": "win98"
+        }
+      },
+      "expected": {
+        "character": "shiba",
+        "skins": {
+          "shiba": "retro98"
+        }
+      }
+    },
+    {
+      "name": "legacy shiba skin royal",
+      "input": {
+        "character": "shiba",
+        "skins": {
+          "shiba": "royal"
+        }
+      },
+      "expected": {
+        "character": "shiba",
+        "skins": {
+          "shiba": "gold"
+        }
+      }
+    },
+    {
+      "name": "legacy shiba skin metal",
+      "input": {
+        "character": "shiba",
+        "skins": {
+          "shiba": "metal"
+        }
+      },
+      "expected": {
+        "character": "shiba",
+        "skins": {
+          "shiba": "chrome"
+        }
+      }
+    },
+    {
+      "name": "legacy shiba skin cyber",
+      "input": {
+        "character": "shiba",
+        "skins": {
+          "shiba": "cyber"
+        }
+      },
+      "expected": {
+        "character": "shiba",
+        "skins": {
+          "shiba": "glitch"
+        }
+      }
+    },
+    {
+      "name": "legacy shiba skin iridescent",
+      "input": {
+        "character": "shiba",
+        "skins": {
+          "shiba": "iridescent"
+        }
+      },
+      "expected": {
+        "character": "shiba",
+        "skins": {
+          "shiba": "holo"
+        }
+      }
+    },
+    {
+      "name": "legacy shiba skin holographic",
+      "input": {
+        "character": "shiba",
+        "skins": {
+          "shiba": "holographic"
+        }
+      },
+      "expected": {
+        "character": "shiba",
+        "skins": {
+          "shiba": "holo"
+        }
+      }
+    },
+    {
+      "name": "legacy shiba skin lava",
+      "input": {
+        "character": "shiba",
+        "skins": {
+          "shiba": "lava"
+        }
+      },
+      "expected": {
+        "character": "shiba",
+        "skins": {
+          "shiba": "molten"
+        }
+      }
+    },
+    {
       "name": "unknown shape skin",
       "input": {
         "character": "shape",
@@ -3085,6 +3581,22 @@
         "character": "bunbu",
         "skins": {
           "shape": "gold"
+        }
+      }
+    },
+    {
+      "name": "unknown shiba skin",
+      "input": {
+        "character": "shiba",
+        "skins": {
+          "shiba": "plasma",
+          "bunbu": "gold"
+        }
+      },
+      "expected": {
+        "character": "shiba",
+        "skins": {
+          "bunbu": "gold"
         }
       }
     },
@@ -3322,6 +3834,1880 @@
     {
       "input": null,
       "expected": "none"
+    }
+  ],
+  "shibaPalettes": [
+    {
+      "skin": "plain",
+      "color": "orange",
+      "palette": {
+        "coat": "#E78531",
+        "shade": "#C8712A",
+        "line": "#5B3113",
+        "cream": "#FEEDD7",
+        "creamShade": "#EFCCA7",
+        "earIn": "#FEEDD7",
+        "brow": "#FEEDD7",
+        "lid": "#E78531",
+        "ink": "#2B1A12",
+        "pupil": "#2B1A12",
+        "white": "#FFFFFF",
+        "spec": "#FFFFFF",
+        "mouth": "#4A1F1A",
+        "tongue": "#F07F86",
+        "tongueLine": "#C9545E",
+        "blush": "#F39A8C",
+        "sweat": "#9CD3F5",
+        "nose": "#2B1A12"
+      }
+    },
+    {
+      "skin": "plain",
+      "color": "blue",
+      "palette": {
+        "coat": "#377FE6",
+        "shade": "#3F6CB7",
+        "line": "#2D3042",
+        "cream": "#F3EDE2",
+        "creamShade": "#D6CCC0",
+        "earIn": "#F3EDE2",
+        "brow": "#F3EDE2",
+        "lid": "#377FE6",
+        "ink": "#2B1A12",
+        "pupil": "#2B1A12",
+        "white": "#FFFFFF",
+        "spec": "#FFFFFF",
+        "mouth": "#4A1F1A",
+        "tongue": "#F07F86",
+        "tongueLine": "#C9545E",
+        "blush": "#F39A8C",
+        "sweat": "#9CD3F5",
+        "nose": "#2B1A12"
+      }
+    },
+    {
+      "skin": "plain",
+      "color": "white",
+      "palette": {
+        "coat": "#C3C3C3",
+        "shade": "#ACA19C",
+        "line": "#524239",
+        "cream": "#FBF1E0",
+        "creamShade": "#EAD5BB",
+        "earIn": "#FBF1E0",
+        "brow": "#FBF1E0",
+        "lid": "#C3C3C3",
+        "ink": "#2B1A12",
+        "pupil": "#2B1A12",
+        "white": "#FFFFFF",
+        "spec": "#FFFFFF",
+        "mouth": "#4A1F1A",
+        "tongue": "#F07F86",
+        "tongueLine": "#C9545E",
+        "blush": "#F39A8C",
+        "sweat": "#9CD3F5",
+        "nose": "#2B1A12"
+      }
+    },
+    {
+      "skin": "plain",
+      "color": "butter",
+      "palette": {
+        "coat": "#D4BE7A",
+        "shade": "#B99D63",
+        "line": "#564026",
+        "cream": "#FCF1DC",
+        "creamShade": "#ECD4B1",
+        "earIn": "#FCF1DC",
+        "brow": "#FCF1DC",
+        "lid": "#D4BE7A",
+        "ink": "#2B1A12",
+        "pupil": "#2B1A12",
+        "white": "#FFFFFF",
+        "spec": "#FFFFFF",
+        "mouth": "#4A1F1A",
+        "tongue": "#F07F86",
+        "tongueLine": "#C9545E",
+        "blush": "#F39A8C",
+        "sweat": "#9CD3F5",
+        "nose": "#2B1A12"
+      }
+    },
+    {
+      "skin": "plain",
+      "color": "black",
+      "palette": {
+        "coat": "#1D1E22",
+        "shade": "#2A211E",
+        "line": "#27170F",
+        "cream": "#F1E7D6",
+        "creamShade": "#D2BEA5",
+        "earIn": "#F1E7D6",
+        "brow": "#F1E7D6",
+        "lid": "#1D1E22",
+        "ink": "#2B1A12",
+        "pupil": "#2B1A12",
+        "white": "#FFFFFF",
+        "spec": "#FFFFFF",
+        "mouth": "#4A1F1A",
+        "tongue": "#F07F86",
+        "tongueLine": "#C9545E",
+        "blush": "#F39A8C",
+        "sweat": "#9CD3F5",
+        "nose": "#2B1A12"
+      }
+    },
+    {
+      "skin": "plain",
+      "color": "mint",
+      "palette": {
+        "coat": "#92D4B2",
+        "shade": "#86AF8E",
+        "line": "#454634",
+        "cream": "#F8F2DF",
+        "creamShade": "#E3D7B9",
+        "earIn": "#F8F2DF",
+        "brow": "#F8F2DF",
+        "lid": "#92D4B2",
+        "ink": "#2B1A12",
+        "pupil": "#2B1A12",
+        "white": "#FFFFFF",
+        "spec": "#FFFFFF",
+        "mouth": "#4A1F1A",
+        "tongue": "#F07F86",
+        "tongueLine": "#C9545E",
+        "blush": "#F39A8C",
+        "sweat": "#9CD3F5",
+        "nose": "#2B1A12"
+      }
+    },
+    {
+      "skin": "cream",
+      "color": "orange",
+      "palette": {
+        "coat": "#E2BC86",
+        "shade": "#C49C6C",
+        "line": "#5A4029",
+        "cream": "#FFF9EF",
+        "creamShade": "#EED4B3",
+        "earIn": "#FFF9EF",
+        "brow": "#FFF9EF",
+        "lid": "#E2BC86",
+        "ink": "#2B1A12",
+        "pupil": "#2B1A12",
+        "white": "#FFFFFF",
+        "spec": "#FFFFFF",
+        "mouth": "#4A1F1A",
+        "tongue": "#F07F86",
+        "tongueLine": "#C9545E",
+        "blush": "#F39A8C",
+        "sweat": "#9CD3F5",
+        "nose": "#2B1A12"
+      }
+    },
+    {
+      "skin": "cream",
+      "color": "blue",
+      "palette": {
+        "coat": "#E2BC86",
+        "shade": "#C49C6C",
+        "line": "#5A4029",
+        "cream": "#FFF9EF",
+        "creamShade": "#EED4B3",
+        "earIn": "#FFF9EF",
+        "brow": "#FFF9EF",
+        "lid": "#E2BC86",
+        "ink": "#2B1A12",
+        "pupil": "#2B1A12",
+        "white": "#FFFFFF",
+        "spec": "#FFFFFF",
+        "mouth": "#4A1F1A",
+        "tongue": "#F07F86",
+        "tongueLine": "#C9545E",
+        "blush": "#F39A8C",
+        "sweat": "#9CD3F5",
+        "nose": "#2B1A12"
+      }
+    },
+    {
+      "skin": "cream",
+      "color": "white",
+      "palette": {
+        "coat": "#E2BC86",
+        "shade": "#C49C6C",
+        "line": "#5A4029",
+        "cream": "#FFF9EF",
+        "creamShade": "#EED4B3",
+        "earIn": "#FFF9EF",
+        "brow": "#FFF9EF",
+        "lid": "#E2BC86",
+        "ink": "#2B1A12",
+        "pupil": "#2B1A12",
+        "white": "#FFFFFF",
+        "spec": "#FFFFFF",
+        "mouth": "#4A1F1A",
+        "tongue": "#F07F86",
+        "tongueLine": "#C9545E",
+        "blush": "#F39A8C",
+        "sweat": "#9CD3F5",
+        "nose": "#2B1A12"
+      }
+    },
+    {
+      "skin": "cream",
+      "color": "butter",
+      "palette": {
+        "coat": "#E2BC86",
+        "shade": "#C49C6C",
+        "line": "#5A4029",
+        "cream": "#FFF9EF",
+        "creamShade": "#EED4B3",
+        "earIn": "#FFF9EF",
+        "brow": "#FFF9EF",
+        "lid": "#E2BC86",
+        "ink": "#2B1A12",
+        "pupil": "#2B1A12",
+        "white": "#FFFFFF",
+        "spec": "#FFFFFF",
+        "mouth": "#4A1F1A",
+        "tongue": "#F07F86",
+        "tongueLine": "#C9545E",
+        "blush": "#F39A8C",
+        "sweat": "#9CD3F5",
+        "nose": "#2B1A12"
+      }
+    },
+    {
+      "skin": "cream",
+      "color": "black",
+      "palette": {
+        "coat": "#E2BC86",
+        "shade": "#C49C6C",
+        "line": "#5A4029",
+        "cream": "#FFF9EF",
+        "creamShade": "#EED4B3",
+        "earIn": "#FFF9EF",
+        "brow": "#FFF9EF",
+        "lid": "#E2BC86",
+        "ink": "#2B1A12",
+        "pupil": "#2B1A12",
+        "white": "#FFFFFF",
+        "spec": "#FFFFFF",
+        "mouth": "#4A1F1A",
+        "tongue": "#F07F86",
+        "tongueLine": "#C9545E",
+        "blush": "#F39A8C",
+        "sweat": "#9CD3F5",
+        "nose": "#2B1A12"
+      }
+    },
+    {
+      "skin": "cream",
+      "color": "mint",
+      "palette": {
+        "coat": "#E2BC86",
+        "shade": "#C49C6C",
+        "line": "#5A4029",
+        "cream": "#FFF9EF",
+        "creamShade": "#EED4B3",
+        "earIn": "#FFF9EF",
+        "brow": "#FFF9EF",
+        "lid": "#E2BC86",
+        "ink": "#2B1A12",
+        "pupil": "#2B1A12",
+        "white": "#FFFFFF",
+        "spec": "#FFFFFF",
+        "mouth": "#4A1F1A",
+        "tongue": "#F07F86",
+        "tongueLine": "#C9545E",
+        "blush": "#F39A8C",
+        "sweat": "#9CD3F5",
+        "nose": "#2B1A12"
+      }
+    },
+    {
+      "skin": "blacktan",
+      "color": "orange",
+      "palette": {
+        "coat": "#2B2420",
+        "shade": "#171210",
+        "line": "#0D0907",
+        "cream": "#F7E9D6",
+        "creamShade": "#E3CDB0",
+        "earIn": "#E9B98A",
+        "brow": "#D98B47",
+        "lid": "#2B2420",
+        "ink": "#2B1A12",
+        "pupil": "#2B1A12",
+        "white": "#FFFFFF",
+        "spec": "#FFFFFF",
+        "mouth": "#4A1F1A",
+        "tongue": "#F07F86",
+        "tongueLine": "#C9545E",
+        "blush": "#F39A8C",
+        "sweat": "#9CD3F5",
+        "nose": "#2B1A12"
+      }
+    },
+    {
+      "skin": "blacktan",
+      "color": "blue",
+      "palette": {
+        "coat": "#2B2420",
+        "shade": "#171210",
+        "line": "#0D0907",
+        "cream": "#F7E9D6",
+        "creamShade": "#E3CDB0",
+        "earIn": "#E9B98A",
+        "brow": "#D98B47",
+        "lid": "#2B2420",
+        "ink": "#2B1A12",
+        "pupil": "#2B1A12",
+        "white": "#FFFFFF",
+        "spec": "#FFFFFF",
+        "mouth": "#4A1F1A",
+        "tongue": "#F07F86",
+        "tongueLine": "#C9545E",
+        "blush": "#F39A8C",
+        "sweat": "#9CD3F5",
+        "nose": "#2B1A12"
+      }
+    },
+    {
+      "skin": "blacktan",
+      "color": "white",
+      "palette": {
+        "coat": "#2B2420",
+        "shade": "#171210",
+        "line": "#0D0907",
+        "cream": "#F7E9D6",
+        "creamShade": "#E3CDB0",
+        "earIn": "#E9B98A",
+        "brow": "#D98B47",
+        "lid": "#2B2420",
+        "ink": "#2B1A12",
+        "pupil": "#2B1A12",
+        "white": "#FFFFFF",
+        "spec": "#FFFFFF",
+        "mouth": "#4A1F1A",
+        "tongue": "#F07F86",
+        "tongueLine": "#C9545E",
+        "blush": "#F39A8C",
+        "sweat": "#9CD3F5",
+        "nose": "#2B1A12"
+      }
+    },
+    {
+      "skin": "blacktan",
+      "color": "butter",
+      "palette": {
+        "coat": "#2B2420",
+        "shade": "#171210",
+        "line": "#0D0907",
+        "cream": "#F7E9D6",
+        "creamShade": "#E3CDB0",
+        "earIn": "#E9B98A",
+        "brow": "#D98B47",
+        "lid": "#2B2420",
+        "ink": "#2B1A12",
+        "pupil": "#2B1A12",
+        "white": "#FFFFFF",
+        "spec": "#FFFFFF",
+        "mouth": "#4A1F1A",
+        "tongue": "#F07F86",
+        "tongueLine": "#C9545E",
+        "blush": "#F39A8C",
+        "sweat": "#9CD3F5",
+        "nose": "#2B1A12"
+      }
+    },
+    {
+      "skin": "blacktan",
+      "color": "black",
+      "palette": {
+        "coat": "#2B2420",
+        "shade": "#171210",
+        "line": "#0D0907",
+        "cream": "#F7E9D6",
+        "creamShade": "#E3CDB0",
+        "earIn": "#E9B98A",
+        "brow": "#D98B47",
+        "lid": "#2B2420",
+        "ink": "#2B1A12",
+        "pupil": "#2B1A12",
+        "white": "#FFFFFF",
+        "spec": "#FFFFFF",
+        "mouth": "#4A1F1A",
+        "tongue": "#F07F86",
+        "tongueLine": "#C9545E",
+        "blush": "#F39A8C",
+        "sweat": "#9CD3F5",
+        "nose": "#2B1A12"
+      }
+    },
+    {
+      "skin": "blacktan",
+      "color": "mint",
+      "palette": {
+        "coat": "#2B2420",
+        "shade": "#171210",
+        "line": "#0D0907",
+        "cream": "#F7E9D6",
+        "creamShade": "#E3CDB0",
+        "earIn": "#E9B98A",
+        "brow": "#D98B47",
+        "lid": "#2B2420",
+        "ink": "#2B1A12",
+        "pupil": "#2B1A12",
+        "white": "#FFFFFF",
+        "spec": "#FFFFFF",
+        "mouth": "#4A1F1A",
+        "tongue": "#F07F86",
+        "tongueLine": "#C9545E",
+        "blush": "#F39A8C",
+        "sweat": "#9CD3F5",
+        "nose": "#2B1A12"
+      }
+    },
+    {
+      "skin": "red",
+      "color": "orange",
+      "palette": {
+        "coat": "#D2692A",
+        "shade": "#B85B24",
+        "line": "#562A11",
+        "cream": "#FCECD7",
+        "creamShade": "#ECC8A6",
+        "earIn": "#FCECD7",
+        "brow": "#FCECD7",
+        "lid": "#D2692A",
+        "ink": "#2B1A12",
+        "pupil": "#2B1A12",
+        "white": "#FFFFFF",
+        "spec": "#FFFFFF",
+        "mouth": "#4A1F1A",
+        "tongue": "#F07F86",
+        "tongueLine": "#C9545E",
+        "blush": "#F39A8C",
+        "sweat": "#9CD3F5",
+        "nose": "#2B1A12"
+      }
+    },
+    {
+      "skin": "red",
+      "color": "blue",
+      "palette": {
+        "coat": "#D2692A",
+        "shade": "#B85B24",
+        "line": "#562A11",
+        "cream": "#FCECD7",
+        "creamShade": "#ECC8A6",
+        "earIn": "#FCECD7",
+        "brow": "#FCECD7",
+        "lid": "#D2692A",
+        "ink": "#2B1A12",
+        "pupil": "#2B1A12",
+        "white": "#FFFFFF",
+        "spec": "#FFFFFF",
+        "mouth": "#4A1F1A",
+        "tongue": "#F07F86",
+        "tongueLine": "#C9545E",
+        "blush": "#F39A8C",
+        "sweat": "#9CD3F5",
+        "nose": "#2B1A12"
+      }
+    },
+    {
+      "skin": "red",
+      "color": "white",
+      "palette": {
+        "coat": "#D2692A",
+        "shade": "#B85B24",
+        "line": "#562A11",
+        "cream": "#FCECD7",
+        "creamShade": "#ECC8A6",
+        "earIn": "#FCECD7",
+        "brow": "#FCECD7",
+        "lid": "#D2692A",
+        "ink": "#2B1A12",
+        "pupil": "#2B1A12",
+        "white": "#FFFFFF",
+        "spec": "#FFFFFF",
+        "mouth": "#4A1F1A",
+        "tongue": "#F07F86",
+        "tongueLine": "#C9545E",
+        "blush": "#F39A8C",
+        "sweat": "#9CD3F5",
+        "nose": "#2B1A12"
+      }
+    },
+    {
+      "skin": "red",
+      "color": "butter",
+      "palette": {
+        "coat": "#D2692A",
+        "shade": "#B85B24",
+        "line": "#562A11",
+        "cream": "#FCECD7",
+        "creamShade": "#ECC8A6",
+        "earIn": "#FCECD7",
+        "brow": "#FCECD7",
+        "lid": "#D2692A",
+        "ink": "#2B1A12",
+        "pupil": "#2B1A12",
+        "white": "#FFFFFF",
+        "spec": "#FFFFFF",
+        "mouth": "#4A1F1A",
+        "tongue": "#F07F86",
+        "tongueLine": "#C9545E",
+        "blush": "#F39A8C",
+        "sweat": "#9CD3F5",
+        "nose": "#2B1A12"
+      }
+    },
+    {
+      "skin": "red",
+      "color": "black",
+      "palette": {
+        "coat": "#D2692A",
+        "shade": "#B85B24",
+        "line": "#562A11",
+        "cream": "#FCECD7",
+        "creamShade": "#ECC8A6",
+        "earIn": "#FCECD7",
+        "brow": "#FCECD7",
+        "lid": "#D2692A",
+        "ink": "#2B1A12",
+        "pupil": "#2B1A12",
+        "white": "#FFFFFF",
+        "spec": "#FFFFFF",
+        "mouth": "#4A1F1A",
+        "tongue": "#F07F86",
+        "tongueLine": "#C9545E",
+        "blush": "#F39A8C",
+        "sweat": "#9CD3F5",
+        "nose": "#2B1A12"
+      }
+    },
+    {
+      "skin": "red",
+      "color": "mint",
+      "palette": {
+        "coat": "#D2692A",
+        "shade": "#B85B24",
+        "line": "#562A11",
+        "cream": "#FCECD7",
+        "creamShade": "#ECC8A6",
+        "earIn": "#FCECD7",
+        "brow": "#FCECD7",
+        "lid": "#D2692A",
+        "ink": "#2B1A12",
+        "pupil": "#2B1A12",
+        "white": "#FFFFFF",
+        "spec": "#FFFFFF",
+        "mouth": "#4A1F1A",
+        "tongue": "#F07F86",
+        "tongueLine": "#C9545E",
+        "blush": "#F39A8C",
+        "sweat": "#9CD3F5",
+        "nose": "#2B1A12"
+      }
+    },
+    {
+      "skin": "sesame",
+      "color": "orange",
+      "palette": {
+        "coat": "gradient",
+        "shade": "#6E4224",
+        "line": "#2A160B",
+        "cream": "#FCEDD8",
+        "creamShade": "#EBCBA8",
+        "earIn": "#FCEDD8",
+        "brow": "#FCEDD8",
+        "lid": "#7A4A2A",
+        "ink": "#2B1A12",
+        "pupil": "#2B1A12",
+        "white": "#FFFFFF",
+        "spec": "#FFFFFF",
+        "mouth": "#4A1F1A",
+        "tongue": "#F07F86",
+        "tongueLine": "#C9545E",
+        "blush": "#F39A8C",
+        "sweat": "#9CD3F5",
+        "nose": "#2B1A12"
+      }
+    },
+    {
+      "skin": "sesame",
+      "color": "blue",
+      "palette": {
+        "coat": "gradient",
+        "shade": "#6E4224",
+        "line": "#2A160B",
+        "cream": "#FCEDD8",
+        "creamShade": "#EBCBA8",
+        "earIn": "#FCEDD8",
+        "brow": "#FCEDD8",
+        "lid": "#7A4A2A",
+        "ink": "#2B1A12",
+        "pupil": "#2B1A12",
+        "white": "#FFFFFF",
+        "spec": "#FFFFFF",
+        "mouth": "#4A1F1A",
+        "tongue": "#F07F86",
+        "tongueLine": "#C9545E",
+        "blush": "#F39A8C",
+        "sweat": "#9CD3F5",
+        "nose": "#2B1A12"
+      }
+    },
+    {
+      "skin": "sesame",
+      "color": "white",
+      "palette": {
+        "coat": "gradient",
+        "shade": "#6E4224",
+        "line": "#2A160B",
+        "cream": "#FCEDD8",
+        "creamShade": "#EBCBA8",
+        "earIn": "#FCEDD8",
+        "brow": "#FCEDD8",
+        "lid": "#7A4A2A",
+        "ink": "#2B1A12",
+        "pupil": "#2B1A12",
+        "white": "#FFFFFF",
+        "spec": "#FFFFFF",
+        "mouth": "#4A1F1A",
+        "tongue": "#F07F86",
+        "tongueLine": "#C9545E",
+        "blush": "#F39A8C",
+        "sweat": "#9CD3F5",
+        "nose": "#2B1A12"
+      }
+    },
+    {
+      "skin": "sesame",
+      "color": "butter",
+      "palette": {
+        "coat": "gradient",
+        "shade": "#6E4224",
+        "line": "#2A160B",
+        "cream": "#FCEDD8",
+        "creamShade": "#EBCBA8",
+        "earIn": "#FCEDD8",
+        "brow": "#FCEDD8",
+        "lid": "#7A4A2A",
+        "ink": "#2B1A12",
+        "pupil": "#2B1A12",
+        "white": "#FFFFFF",
+        "spec": "#FFFFFF",
+        "mouth": "#4A1F1A",
+        "tongue": "#F07F86",
+        "tongueLine": "#C9545E",
+        "blush": "#F39A8C",
+        "sweat": "#9CD3F5",
+        "nose": "#2B1A12"
+      }
+    },
+    {
+      "skin": "sesame",
+      "color": "black",
+      "palette": {
+        "coat": "gradient",
+        "shade": "#6E4224",
+        "line": "#2A160B",
+        "cream": "#FCEDD8",
+        "creamShade": "#EBCBA8",
+        "earIn": "#FCEDD8",
+        "brow": "#FCEDD8",
+        "lid": "#7A4A2A",
+        "ink": "#2B1A12",
+        "pupil": "#2B1A12",
+        "white": "#FFFFFF",
+        "spec": "#FFFFFF",
+        "mouth": "#4A1F1A",
+        "tongue": "#F07F86",
+        "tongueLine": "#C9545E",
+        "blush": "#F39A8C",
+        "sweat": "#9CD3F5",
+        "nose": "#2B1A12"
+      }
+    },
+    {
+      "skin": "sesame",
+      "color": "mint",
+      "palette": {
+        "coat": "gradient",
+        "shade": "#6E4224",
+        "line": "#2A160B",
+        "cream": "#FCEDD8",
+        "creamShade": "#EBCBA8",
+        "earIn": "#FCEDD8",
+        "brow": "#FCEDD8",
+        "lid": "#7A4A2A",
+        "ink": "#2B1A12",
+        "pupil": "#2B1A12",
+        "white": "#FFFFFF",
+        "spec": "#FFFFFF",
+        "mouth": "#4A1F1A",
+        "tongue": "#F07F86",
+        "tongueLine": "#C9545E",
+        "blush": "#F39A8C",
+        "sweat": "#9CD3F5",
+        "nose": "#2B1A12"
+      }
+    },
+    {
+      "skin": "white",
+      "color": "orange",
+      "palette": {
+        "coat": "#F4EEE4",
+        "shade": "#DCCFBE",
+        "line": "#7D6A58",
+        "cream": "#FFFFFF",
+        "creamShade": "#EEE6DA",
+        "earIn": "#FBE9E2",
+        "brow": "#FFFFFF",
+        "lid": "#EDE4D6",
+        "ink": "#2B1A12",
+        "pupil": "#2B1A12",
+        "white": "#FFFFFF",
+        "spec": "#FFFFFF",
+        "mouth": "#4A1F1A",
+        "tongue": "#F07F86",
+        "tongueLine": "#C9545E",
+        "blush": "#F39A8C",
+        "sweat": "#9CD3F5",
+        "nose": "#2B1A12"
+      }
+    },
+    {
+      "skin": "white",
+      "color": "blue",
+      "palette": {
+        "coat": "#F4EEE4",
+        "shade": "#DCCFBE",
+        "line": "#7D6A58",
+        "cream": "#FFFFFF",
+        "creamShade": "#EEE6DA",
+        "earIn": "#FBE9E2",
+        "brow": "#FFFFFF",
+        "lid": "#EDE4D6",
+        "ink": "#2B1A12",
+        "pupil": "#2B1A12",
+        "white": "#FFFFFF",
+        "spec": "#FFFFFF",
+        "mouth": "#4A1F1A",
+        "tongue": "#F07F86",
+        "tongueLine": "#C9545E",
+        "blush": "#F39A8C",
+        "sweat": "#9CD3F5",
+        "nose": "#2B1A12"
+      }
+    },
+    {
+      "skin": "white",
+      "color": "white",
+      "palette": {
+        "coat": "#F4EEE4",
+        "shade": "#DCCFBE",
+        "line": "#7D6A58",
+        "cream": "#FFFFFF",
+        "creamShade": "#EEE6DA",
+        "earIn": "#FBE9E2",
+        "brow": "#FFFFFF",
+        "lid": "#EDE4D6",
+        "ink": "#2B1A12",
+        "pupil": "#2B1A12",
+        "white": "#FFFFFF",
+        "spec": "#FFFFFF",
+        "mouth": "#4A1F1A",
+        "tongue": "#F07F86",
+        "tongueLine": "#C9545E",
+        "blush": "#F39A8C",
+        "sweat": "#9CD3F5",
+        "nose": "#2B1A12"
+      }
+    },
+    {
+      "skin": "white",
+      "color": "butter",
+      "palette": {
+        "coat": "#F4EEE4",
+        "shade": "#DCCFBE",
+        "line": "#7D6A58",
+        "cream": "#FFFFFF",
+        "creamShade": "#EEE6DA",
+        "earIn": "#FBE9E2",
+        "brow": "#FFFFFF",
+        "lid": "#EDE4D6",
+        "ink": "#2B1A12",
+        "pupil": "#2B1A12",
+        "white": "#FFFFFF",
+        "spec": "#FFFFFF",
+        "mouth": "#4A1F1A",
+        "tongue": "#F07F86",
+        "tongueLine": "#C9545E",
+        "blush": "#F39A8C",
+        "sweat": "#9CD3F5",
+        "nose": "#2B1A12"
+      }
+    },
+    {
+      "skin": "white",
+      "color": "black",
+      "palette": {
+        "coat": "#F4EEE4",
+        "shade": "#DCCFBE",
+        "line": "#7D6A58",
+        "cream": "#FFFFFF",
+        "creamShade": "#EEE6DA",
+        "earIn": "#FBE9E2",
+        "brow": "#FFFFFF",
+        "lid": "#EDE4D6",
+        "ink": "#2B1A12",
+        "pupil": "#2B1A12",
+        "white": "#FFFFFF",
+        "spec": "#FFFFFF",
+        "mouth": "#4A1F1A",
+        "tongue": "#F07F86",
+        "tongueLine": "#C9545E",
+        "blush": "#F39A8C",
+        "sweat": "#9CD3F5",
+        "nose": "#2B1A12"
+      }
+    },
+    {
+      "skin": "white",
+      "color": "mint",
+      "palette": {
+        "coat": "#F4EEE4",
+        "shade": "#DCCFBE",
+        "line": "#7D6A58",
+        "cream": "#FFFFFF",
+        "creamShade": "#EEE6DA",
+        "earIn": "#FBE9E2",
+        "brow": "#FFFFFF",
+        "lid": "#EDE4D6",
+        "ink": "#2B1A12",
+        "pupil": "#2B1A12",
+        "white": "#FFFFFF",
+        "spec": "#FFFFFF",
+        "mouth": "#4A1F1A",
+        "tongue": "#F07F86",
+        "tongueLine": "#C9545E",
+        "blush": "#F39A8C",
+        "sweat": "#9CD3F5",
+        "nose": "#2B1A12"
+      }
+    },
+    {
+      "skin": "retro98",
+      "color": "orange",
+      "palette": {
+        "coat": "#FFAA55",
+        "shade": "gradient",
+        "line": "#000000",
+        "cream": "#FFFFFF",
+        "creamShade": "gradient",
+        "earIn": "#FFFFFF",
+        "brow": "#FFFFFF",
+        "lid": "#FFAA55",
+        "ink": "#000000",
+        "pupil": "#000000",
+        "white": "#FFFFFF",
+        "spec": "#FFFFFF",
+        "mouth": "#800000",
+        "tongue": "#FF00FF",
+        "tongueLine": "#800080",
+        "blush": "#FF00FF",
+        "sweat": "#00FFFF",
+        "nose": "#000000"
+      }
+    },
+    {
+      "skin": "retro98",
+      "color": "blue",
+      "palette": {
+        "coat": "#5555FF",
+        "shade": "gradient",
+        "line": "#000000",
+        "cream": "#FFFFFF",
+        "creamShade": "gradient",
+        "earIn": "#FFFFFF",
+        "brow": "#FFFFFF",
+        "lid": "#5555FF",
+        "ink": "#000000",
+        "pupil": "#000000",
+        "white": "#FFFFFF",
+        "spec": "#FFFFFF",
+        "mouth": "#800000",
+        "tongue": "#FF00FF",
+        "tongueLine": "#800080",
+        "blush": "#FF00FF",
+        "sweat": "#00FFFF",
+        "nose": "#000000"
+      }
+    },
+    {
+      "skin": "retro98",
+      "color": "white",
+      "palette": {
+        "coat": "#AAAAAA",
+        "shade": "gradient",
+        "line": "#000000",
+        "cream": "#FFFFFF",
+        "creamShade": "gradient",
+        "earIn": "#FFFFFF",
+        "brow": "#FFFFFF",
+        "lid": "#AAAAAA",
+        "ink": "#000000",
+        "pupil": "#000000",
+        "white": "#FFFFFF",
+        "spec": "#FFFFFF",
+        "mouth": "#800000",
+        "tongue": "#FF00FF",
+        "tongueLine": "#800080",
+        "blush": "#FF00FF",
+        "sweat": "#00FFFF",
+        "nose": "#000000"
+      }
+    },
+    {
+      "skin": "retro98",
+      "color": "butter",
+      "palette": {
+        "coat": "#FFFFAA",
+        "shade": "gradient",
+        "line": "#000000",
+        "cream": "#FFFFFF",
+        "creamShade": "gradient",
+        "earIn": "#FFFFFF",
+        "brow": "#FFFFFF",
+        "lid": "#FFFFAA",
+        "ink": "#000000",
+        "pupil": "#000000",
+        "white": "#FFFFFF",
+        "spec": "#FFFFFF",
+        "mouth": "#800000",
+        "tongue": "#FF00FF",
+        "tongueLine": "#800080",
+        "blush": "#FF00FF",
+        "sweat": "#00FFFF",
+        "nose": "#000000"
+      }
+    },
+    {
+      "skin": "retro98",
+      "color": "black",
+      "palette": {
+        "coat": "#555555",
+        "shade": "gradient",
+        "line": "#000000",
+        "cream": "#FFFFFF",
+        "creamShade": "gradient",
+        "earIn": "#FFFFFF",
+        "brow": "#FFFFFF",
+        "lid": "#555555",
+        "ink": "#000000",
+        "pupil": "#000000",
+        "white": "#FFFFFF",
+        "spec": "#FFFFFF",
+        "mouth": "#800000",
+        "tongue": "#FF00FF",
+        "tongueLine": "#800080",
+        "blush": "#FF00FF",
+        "sweat": "#00FFFF",
+        "nose": "#000000"
+      }
+    },
+    {
+      "skin": "retro98",
+      "color": "mint",
+      "palette": {
+        "coat": "#AAFFAA",
+        "shade": "gradient",
+        "line": "#000000",
+        "cream": "#FFFFFF",
+        "creamShade": "gradient",
+        "earIn": "#FFFFFF",
+        "brow": "#FFFFFF",
+        "lid": "#AAFFAA",
+        "ink": "#000000",
+        "pupil": "#000000",
+        "white": "#FFFFFF",
+        "spec": "#FFFFFF",
+        "mouth": "#800000",
+        "tongue": "#FF00FF",
+        "tongueLine": "#800080",
+        "blush": "#FF00FF",
+        "sweat": "#00FFFF",
+        "nose": "#000000"
+      }
+    },
+    {
+      "skin": "gold",
+      "color": "orange",
+      "palette": {
+        "coat": "gradient",
+        "shade": "#8A5A0C",
+        "line": "#5A3A06",
+        "cream": "#FFF1C4",
+        "creamShade": "#E9CF8A",
+        "earIn": "#FFE9A8",
+        "brow": "#FFF1C4",
+        "lid": "#D9A333",
+        "ink": "#3A2404",
+        "pupil": "#3A2404",
+        "white": "#FFFFFF",
+        "spec": "#FFFFFF",
+        "mouth": "#4A1F1A",
+        "tongue": "#F07F86",
+        "tongueLine": "#C9545E",
+        "blush": "#F39A8C",
+        "sweat": "#9CD3F5",
+        "nose": "#2B1A12"
+      }
+    },
+    {
+      "skin": "gold",
+      "color": "blue",
+      "palette": {
+        "coat": "gradient",
+        "shade": "#8A5A0C",
+        "line": "#5A3A06",
+        "cream": "#FFF1C4",
+        "creamShade": "#E9CF8A",
+        "earIn": "#FFE9A8",
+        "brow": "#FFF1C4",
+        "lid": "#D9A333",
+        "ink": "#3A2404",
+        "pupil": "#3A2404",
+        "white": "#FFFFFF",
+        "spec": "#FFFFFF",
+        "mouth": "#4A1F1A",
+        "tongue": "#F07F86",
+        "tongueLine": "#C9545E",
+        "blush": "#F39A8C",
+        "sweat": "#9CD3F5",
+        "nose": "#2B1A12"
+      }
+    },
+    {
+      "skin": "gold",
+      "color": "white",
+      "palette": {
+        "coat": "gradient",
+        "shade": "#8A5A0C",
+        "line": "#5A3A06",
+        "cream": "#FFF1C4",
+        "creamShade": "#E9CF8A",
+        "earIn": "#FFE9A8",
+        "brow": "#FFF1C4",
+        "lid": "#D9A333",
+        "ink": "#3A2404",
+        "pupil": "#3A2404",
+        "white": "#FFFFFF",
+        "spec": "#FFFFFF",
+        "mouth": "#4A1F1A",
+        "tongue": "#F07F86",
+        "tongueLine": "#C9545E",
+        "blush": "#F39A8C",
+        "sweat": "#9CD3F5",
+        "nose": "#2B1A12"
+      }
+    },
+    {
+      "skin": "gold",
+      "color": "butter",
+      "palette": {
+        "coat": "gradient",
+        "shade": "#8A5A0C",
+        "line": "#5A3A06",
+        "cream": "#FFF1C4",
+        "creamShade": "#E9CF8A",
+        "earIn": "#FFE9A8",
+        "brow": "#FFF1C4",
+        "lid": "#D9A333",
+        "ink": "#3A2404",
+        "pupil": "#3A2404",
+        "white": "#FFFFFF",
+        "spec": "#FFFFFF",
+        "mouth": "#4A1F1A",
+        "tongue": "#F07F86",
+        "tongueLine": "#C9545E",
+        "blush": "#F39A8C",
+        "sweat": "#9CD3F5",
+        "nose": "#2B1A12"
+      }
+    },
+    {
+      "skin": "gold",
+      "color": "black",
+      "palette": {
+        "coat": "gradient",
+        "shade": "#8A5A0C",
+        "line": "#5A3A06",
+        "cream": "#FFF1C4",
+        "creamShade": "#E9CF8A",
+        "earIn": "#FFE9A8",
+        "brow": "#FFF1C4",
+        "lid": "#D9A333",
+        "ink": "#3A2404",
+        "pupil": "#3A2404",
+        "white": "#FFFFFF",
+        "spec": "#FFFFFF",
+        "mouth": "#4A1F1A",
+        "tongue": "#F07F86",
+        "tongueLine": "#C9545E",
+        "blush": "#F39A8C",
+        "sweat": "#9CD3F5",
+        "nose": "#2B1A12"
+      }
+    },
+    {
+      "skin": "gold",
+      "color": "mint",
+      "palette": {
+        "coat": "gradient",
+        "shade": "#8A5A0C",
+        "line": "#5A3A06",
+        "cream": "#FFF1C4",
+        "creamShade": "#E9CF8A",
+        "earIn": "#FFE9A8",
+        "brow": "#FFF1C4",
+        "lid": "#D9A333",
+        "ink": "#3A2404",
+        "pupil": "#3A2404",
+        "white": "#FFFFFF",
+        "spec": "#FFFFFF",
+        "mouth": "#4A1F1A",
+        "tongue": "#F07F86",
+        "tongueLine": "#C9545E",
+        "blush": "#F39A8C",
+        "sweat": "#9CD3F5",
+        "nose": "#2B1A12"
+      }
+    },
+    {
+      "skin": "neon",
+      "color": "orange",
+      "palette": {
+        "coat": "#0D0F15",
+        "shade": "#07080C",
+        "line": "#EC9D5A",
+        "cream": "#39271B",
+        "creamShade": "#271D18",
+        "earIn": "#643E20",
+        "brow": "#F2BC8E",
+        "lid": "#0D0F15",
+        "ink": "#F2BC8E",
+        "pupil": "#0D0F15",
+        "white": "#EAFCFF",
+        "spec": "#FFFFFF",
+        "mouth": "#07080C",
+        "tongue": "#F07F86",
+        "tongueLine": "#C9545E",
+        "blush": "#F39A8C",
+        "sweat": "#9CD3F5",
+        "nose": "#F2BC8E"
+      }
+    },
+    {
+      "skin": "neon",
+      "color": "blue",
+      "palette": {
+        "coat": "#0D0F15",
+        "shade": "#07080C",
+        "line": "#5F99EB",
+        "cream": "#15253F",
+        "creamShade": "#121C2E",
+        "earIn": "#1E3C69",
+        "brow": "#91B9F1",
+        "lid": "#0D0F15",
+        "ink": "#91B9F1",
+        "pupil": "#0D0F15",
+        "white": "#EAFCFF",
+        "spec": "#FFFFFF",
+        "mouth": "#07080C",
+        "tongue": "#F07F86",
+        "tongueLine": "#C9545E",
+        "blush": "#F39A8C",
+        "sweat": "#9CD3F5",
+        "nose": "#91B9F1"
+      }
+    },
+    {
+      "skin": "neon",
+      "color": "white",
+      "palette": {
+        "coat": "#0D0F15",
+        "shade": "#07080C",
+        "line": "#F6F6F6",
+        "cream": "#3B3D42",
+        "creamShade": "#292A30",
+        "earIn": "#696B6E",
+        "brow": "#F9F9F9",
+        "lid": "#0D0F15",
+        "ink": "#F9F9F9",
+        "pupil": "#0D0F15",
+        "white": "#EAFCFF",
+        "spec": "#FFFFFF",
+        "mouth": "#07080C",
+        "tongue": "#F07F86",
+        "tongueLine": "#C9545E",
+        "blush": "#F39A8C",
+        "sweat": "#9CD3F5",
+        "nose": "#F9F9F9"
+      }
+    },
+    {
+      "skin": "neon",
+      "color": "butter",
+      "palette": {
+        "coat": "#0D0F15",
+        "shade": "#07080C",
+        "line": "#F4E0A2",
+        "cream": "#3B372D",
+        "creamShade": "#282723",
+        "earIn": "#685F44",
+        "brow": "#F7EABF",
+        "lid": "#0D0F15",
+        "ink": "#F7EABF",
+        "pupil": "#0D0F15",
+        "white": "#EAFCFF",
+        "spec": "#FFFFFF",
+        "mouth": "#07080C",
+        "tongue": "#F07F86",
+        "tongueLine": "#C9545E",
+        "blush": "#F39A8C",
+        "sweat": "#9CD3F5",
+        "nose": "#F7EABF"
+      }
+    },
+    {
+      "skin": "neon",
+      "color": "black",
+      "palette": {
+        "coat": "#0D0F15",
+        "shade": "#07080C",
+        "line": "#4A4B4E",
+        "cream": "#101218",
+        "creamShade": "#0F1117",
+        "earIn": "#13151A",
+        "brow": "#838385",
+        "lid": "#0D0F15",
+        "ink": "#838385",
+        "pupil": "#0D0F15",
+        "white": "#EAFCFF",
+        "spec": "#FFFFFF",
+        "mouth": "#07080C",
+        "tongue": "#F07F86",
+        "tongueLine": "#C9545E",
+        "blush": "#F39A8C",
+        "sweat": "#9CD3F5",
+        "nose": "#838385"
+      }
+    },
+    {
+      "skin": "neon",
+      "color": "mint",
+      "palette": {
+        "coat": "#0D0F15",
+        "shade": "#07080C",
+        "line": "#ADE4C7",
+        "cream": "#293836",
+        "creamShade": "#1E2829",
+        "earIn": "#456157",
+        "brow": "#C6ECD9",
+        "lid": "#0D0F15",
+        "ink": "#C6ECD9",
+        "pupil": "#0D0F15",
+        "white": "#EAFCFF",
+        "spec": "#FFFFFF",
+        "mouth": "#07080C",
+        "tongue": "#F07F86",
+        "tongueLine": "#C9545E",
+        "blush": "#F39A8C",
+        "sweat": "#9CD3F5",
+        "nose": "#C6ECD9"
+      }
+    },
+    {
+      "skin": "chrome",
+      "color": "orange",
+      "palette": {
+        "coat": "gradient",
+        "shade": "#4B5561",
+        "line": "#1F262D",
+        "cream": "#EEF2F6",
+        "creamShade": "#C9D2DB",
+        "earIn": "#DFE5EB",
+        "brow": "#EEF2F6",
+        "lid": "#8C98A6",
+        "ink": "#10151B",
+        "pupil": "#10151B",
+        "white": "#FFFFFF",
+        "spec": "#FFFFFF",
+        "mouth": "#4A1F1A",
+        "tongue": "#F07F86",
+        "tongueLine": "#C9545E",
+        "blush": "#F39A8C",
+        "sweat": "#9CD3F5",
+        "nose": "#2B1A12"
+      }
+    },
+    {
+      "skin": "chrome",
+      "color": "blue",
+      "palette": {
+        "coat": "gradient",
+        "shade": "#4B5561",
+        "line": "#1F262D",
+        "cream": "#EEF2F6",
+        "creamShade": "#C9D2DB",
+        "earIn": "#DFE5EB",
+        "brow": "#EEF2F6",
+        "lid": "#8C98A6",
+        "ink": "#10151B",
+        "pupil": "#10151B",
+        "white": "#FFFFFF",
+        "spec": "#FFFFFF",
+        "mouth": "#4A1F1A",
+        "tongue": "#F07F86",
+        "tongueLine": "#C9545E",
+        "blush": "#F39A8C",
+        "sweat": "#9CD3F5",
+        "nose": "#2B1A12"
+      }
+    },
+    {
+      "skin": "chrome",
+      "color": "white",
+      "palette": {
+        "coat": "gradient",
+        "shade": "#4B5561",
+        "line": "#1F262D",
+        "cream": "#EEF2F6",
+        "creamShade": "#C9D2DB",
+        "earIn": "#DFE5EB",
+        "brow": "#EEF2F6",
+        "lid": "#8C98A6",
+        "ink": "#10151B",
+        "pupil": "#10151B",
+        "white": "#FFFFFF",
+        "spec": "#FFFFFF",
+        "mouth": "#4A1F1A",
+        "tongue": "#F07F86",
+        "tongueLine": "#C9545E",
+        "blush": "#F39A8C",
+        "sweat": "#9CD3F5",
+        "nose": "#2B1A12"
+      }
+    },
+    {
+      "skin": "chrome",
+      "color": "butter",
+      "palette": {
+        "coat": "gradient",
+        "shade": "#4B5561",
+        "line": "#1F262D",
+        "cream": "#EEF2F6",
+        "creamShade": "#C9D2DB",
+        "earIn": "#DFE5EB",
+        "brow": "#EEF2F6",
+        "lid": "#8C98A6",
+        "ink": "#10151B",
+        "pupil": "#10151B",
+        "white": "#FFFFFF",
+        "spec": "#FFFFFF",
+        "mouth": "#4A1F1A",
+        "tongue": "#F07F86",
+        "tongueLine": "#C9545E",
+        "blush": "#F39A8C",
+        "sweat": "#9CD3F5",
+        "nose": "#2B1A12"
+      }
+    },
+    {
+      "skin": "chrome",
+      "color": "black",
+      "palette": {
+        "coat": "gradient",
+        "shade": "#4B5561",
+        "line": "#1F262D",
+        "cream": "#EEF2F6",
+        "creamShade": "#C9D2DB",
+        "earIn": "#DFE5EB",
+        "brow": "#EEF2F6",
+        "lid": "#8C98A6",
+        "ink": "#10151B",
+        "pupil": "#10151B",
+        "white": "#FFFFFF",
+        "spec": "#FFFFFF",
+        "mouth": "#4A1F1A",
+        "tongue": "#F07F86",
+        "tongueLine": "#C9545E",
+        "blush": "#F39A8C",
+        "sweat": "#9CD3F5",
+        "nose": "#2B1A12"
+      }
+    },
+    {
+      "skin": "chrome",
+      "color": "mint",
+      "palette": {
+        "coat": "gradient",
+        "shade": "#4B5561",
+        "line": "#1F262D",
+        "cream": "#EEF2F6",
+        "creamShade": "#C9D2DB",
+        "earIn": "#DFE5EB",
+        "brow": "#EEF2F6",
+        "lid": "#8C98A6",
+        "ink": "#10151B",
+        "pupil": "#10151B",
+        "white": "#FFFFFF",
+        "spec": "#FFFFFF",
+        "mouth": "#4A1F1A",
+        "tongue": "#F07F86",
+        "tongueLine": "#C9545E",
+        "blush": "#F39A8C",
+        "sweat": "#9CD3F5",
+        "nose": "#2B1A12"
+      }
+    },
+    {
+      "skin": "glitch",
+      "color": "orange",
+      "palette": {
+        "coat": "#2A3348",
+        "shade": "#11151F",
+        "line": "#0B0F1A",
+        "cream": "#CDEEDD",
+        "creamShade": "#9FC9B4",
+        "earIn": "#FF2BD6",
+        "brow": "#22E6FF",
+        "lid": "#2A3348",
+        "ink": "#0B0F1A",
+        "pupil": "#0B0F1A",
+        "white": "#FFFFFF",
+        "spec": "#FFFFFF",
+        "mouth": "#0B0F1A",
+        "tongue": "#FF2BD6",
+        "tongueLine": "#C9545E",
+        "blush": "#F39A8C",
+        "sweat": "#9CD3F5",
+        "nose": "#0B0F1A"
+      }
+    },
+    {
+      "skin": "glitch",
+      "color": "blue",
+      "palette": {
+        "coat": "#2A3348",
+        "shade": "#11151F",
+        "line": "#0B0F1A",
+        "cream": "#CDEEDD",
+        "creamShade": "#9FC9B4",
+        "earIn": "#FF2BD6",
+        "brow": "#22E6FF",
+        "lid": "#2A3348",
+        "ink": "#0B0F1A",
+        "pupil": "#0B0F1A",
+        "white": "#FFFFFF",
+        "spec": "#FFFFFF",
+        "mouth": "#0B0F1A",
+        "tongue": "#FF2BD6",
+        "tongueLine": "#C9545E",
+        "blush": "#F39A8C",
+        "sweat": "#9CD3F5",
+        "nose": "#0B0F1A"
+      }
+    },
+    {
+      "skin": "glitch",
+      "color": "white",
+      "palette": {
+        "coat": "#2A3348",
+        "shade": "#11151F",
+        "line": "#0B0F1A",
+        "cream": "#CDEEDD",
+        "creamShade": "#9FC9B4",
+        "earIn": "#FF2BD6",
+        "brow": "#22E6FF",
+        "lid": "#2A3348",
+        "ink": "#0B0F1A",
+        "pupil": "#0B0F1A",
+        "white": "#FFFFFF",
+        "spec": "#FFFFFF",
+        "mouth": "#0B0F1A",
+        "tongue": "#FF2BD6",
+        "tongueLine": "#C9545E",
+        "blush": "#F39A8C",
+        "sweat": "#9CD3F5",
+        "nose": "#0B0F1A"
+      }
+    },
+    {
+      "skin": "glitch",
+      "color": "butter",
+      "palette": {
+        "coat": "#2A3348",
+        "shade": "#11151F",
+        "line": "#0B0F1A",
+        "cream": "#CDEEDD",
+        "creamShade": "#9FC9B4",
+        "earIn": "#FF2BD6",
+        "brow": "#22E6FF",
+        "lid": "#2A3348",
+        "ink": "#0B0F1A",
+        "pupil": "#0B0F1A",
+        "white": "#FFFFFF",
+        "spec": "#FFFFFF",
+        "mouth": "#0B0F1A",
+        "tongue": "#FF2BD6",
+        "tongueLine": "#C9545E",
+        "blush": "#F39A8C",
+        "sweat": "#9CD3F5",
+        "nose": "#0B0F1A"
+      }
+    },
+    {
+      "skin": "glitch",
+      "color": "black",
+      "palette": {
+        "coat": "#2A3348",
+        "shade": "#11151F",
+        "line": "#0B0F1A",
+        "cream": "#CDEEDD",
+        "creamShade": "#9FC9B4",
+        "earIn": "#FF2BD6",
+        "brow": "#22E6FF",
+        "lid": "#2A3348",
+        "ink": "#0B0F1A",
+        "pupil": "#0B0F1A",
+        "white": "#FFFFFF",
+        "spec": "#FFFFFF",
+        "mouth": "#0B0F1A",
+        "tongue": "#FF2BD6",
+        "tongueLine": "#C9545E",
+        "blush": "#F39A8C",
+        "sweat": "#9CD3F5",
+        "nose": "#0B0F1A"
+      }
+    },
+    {
+      "skin": "glitch",
+      "color": "mint",
+      "palette": {
+        "coat": "#2A3348",
+        "shade": "#11151F",
+        "line": "#0B0F1A",
+        "cream": "#CDEEDD",
+        "creamShade": "#9FC9B4",
+        "earIn": "#FF2BD6",
+        "brow": "#22E6FF",
+        "lid": "#2A3348",
+        "ink": "#0B0F1A",
+        "pupil": "#0B0F1A",
+        "white": "#FFFFFF",
+        "spec": "#FFFFFF",
+        "mouth": "#0B0F1A",
+        "tongue": "#FF2BD6",
+        "tongueLine": "#C9545E",
+        "blush": "#F39A8C",
+        "sweat": "#9CD3F5",
+        "nose": "#0B0F1A"
+      }
+    },
+    {
+      "skin": "holo",
+      "color": "orange",
+      "palette": {
+        "coat": "gradient",
+        "shade": "#C9BFF0",
+        "line": "#6B5FA8",
+        "cream": "#FFFFFF",
+        "creamShade": "#ECE6FF",
+        "earIn": "#FFD6F4",
+        "brow": "#FFFFFF",
+        "lid": "#E3E9FF",
+        "ink": "#2A2140",
+        "pupil": "#2A2140",
+        "white": "#FFFFFF",
+        "spec": "#FFFFFF",
+        "mouth": "#4A1F1A",
+        "tongue": "#F07F86",
+        "tongueLine": "#C9545E",
+        "blush": "#F39A8C",
+        "sweat": "#9CD3F5",
+        "nose": "#2B1A12"
+      }
+    },
+    {
+      "skin": "holo",
+      "color": "blue",
+      "palette": {
+        "coat": "gradient",
+        "shade": "#C9BFF0",
+        "line": "#6B5FA8",
+        "cream": "#FFFFFF",
+        "creamShade": "#ECE6FF",
+        "earIn": "#FFD6F4",
+        "brow": "#FFFFFF",
+        "lid": "#E3E9FF",
+        "ink": "#2A2140",
+        "pupil": "#2A2140",
+        "white": "#FFFFFF",
+        "spec": "#FFFFFF",
+        "mouth": "#4A1F1A",
+        "tongue": "#F07F86",
+        "tongueLine": "#C9545E",
+        "blush": "#F39A8C",
+        "sweat": "#9CD3F5",
+        "nose": "#2B1A12"
+      }
+    },
+    {
+      "skin": "holo",
+      "color": "white",
+      "palette": {
+        "coat": "gradient",
+        "shade": "#C9BFF0",
+        "line": "#6B5FA8",
+        "cream": "#FFFFFF",
+        "creamShade": "#ECE6FF",
+        "earIn": "#FFD6F4",
+        "brow": "#FFFFFF",
+        "lid": "#E3E9FF",
+        "ink": "#2A2140",
+        "pupil": "#2A2140",
+        "white": "#FFFFFF",
+        "spec": "#FFFFFF",
+        "mouth": "#4A1F1A",
+        "tongue": "#F07F86",
+        "tongueLine": "#C9545E",
+        "blush": "#F39A8C",
+        "sweat": "#9CD3F5",
+        "nose": "#2B1A12"
+      }
+    },
+    {
+      "skin": "holo",
+      "color": "butter",
+      "palette": {
+        "coat": "gradient",
+        "shade": "#C9BFF0",
+        "line": "#6B5FA8",
+        "cream": "#FFFFFF",
+        "creamShade": "#ECE6FF",
+        "earIn": "#FFD6F4",
+        "brow": "#FFFFFF",
+        "lid": "#E3E9FF",
+        "ink": "#2A2140",
+        "pupil": "#2A2140",
+        "white": "#FFFFFF",
+        "spec": "#FFFFFF",
+        "mouth": "#4A1F1A",
+        "tongue": "#F07F86",
+        "tongueLine": "#C9545E",
+        "blush": "#F39A8C",
+        "sweat": "#9CD3F5",
+        "nose": "#2B1A12"
+      }
+    },
+    {
+      "skin": "holo",
+      "color": "black",
+      "palette": {
+        "coat": "gradient",
+        "shade": "#C9BFF0",
+        "line": "#6B5FA8",
+        "cream": "#FFFFFF",
+        "creamShade": "#ECE6FF",
+        "earIn": "#FFD6F4",
+        "brow": "#FFFFFF",
+        "lid": "#E3E9FF",
+        "ink": "#2A2140",
+        "pupil": "#2A2140",
+        "white": "#FFFFFF",
+        "spec": "#FFFFFF",
+        "mouth": "#4A1F1A",
+        "tongue": "#F07F86",
+        "tongueLine": "#C9545E",
+        "blush": "#F39A8C",
+        "sweat": "#9CD3F5",
+        "nose": "#2B1A12"
+      }
+    },
+    {
+      "skin": "holo",
+      "color": "mint",
+      "palette": {
+        "coat": "gradient",
+        "shade": "#C9BFF0",
+        "line": "#6B5FA8",
+        "cream": "#FFFFFF",
+        "creamShade": "#ECE6FF",
+        "earIn": "#FFD6F4",
+        "brow": "#FFFFFF",
+        "lid": "#E3E9FF",
+        "ink": "#2A2140",
+        "pupil": "#2A2140",
+        "white": "#FFFFFF",
+        "spec": "#FFFFFF",
+        "mouth": "#4A1F1A",
+        "tongue": "#F07F86",
+        "tongueLine": "#C9545E",
+        "blush": "#F39A8C",
+        "sweat": "#9CD3F5",
+        "nose": "#2B1A12"
+      }
+    },
+    {
+      "skin": "molten",
+      "color": "orange",
+      "palette": {
+        "coat": "gradient",
+        "shade": "#170806",
+        "line": "#FF6A1A",
+        "cream": "#6B2F17",
+        "creamShade": "#4A1E0E",
+        "earIn": "#FF8A2A",
+        "brow": "#FFD36B",
+        "lid": "#2A120C",
+        "ink": "#FFD36B",
+        "pupil": "#170806",
+        "white": "#FFF3C4",
+        "spec": "#FFFFFF",
+        "mouth": "#170806",
+        "tongue": "#F07F86",
+        "tongueLine": "#C9545E",
+        "blush": "#F39A8C",
+        "sweat": "#9CD3F5",
+        "nose": "#170806"
+      }
+    },
+    {
+      "skin": "molten",
+      "color": "blue",
+      "palette": {
+        "coat": "gradient",
+        "shade": "#170806",
+        "line": "#FF6A1A",
+        "cream": "#6B2F17",
+        "creamShade": "#4A1E0E",
+        "earIn": "#FF8A2A",
+        "brow": "#FFD36B",
+        "lid": "#2A120C",
+        "ink": "#FFD36B",
+        "pupil": "#170806",
+        "white": "#FFF3C4",
+        "spec": "#FFFFFF",
+        "mouth": "#170806",
+        "tongue": "#F07F86",
+        "tongueLine": "#C9545E",
+        "blush": "#F39A8C",
+        "sweat": "#9CD3F5",
+        "nose": "#170806"
+      }
+    },
+    {
+      "skin": "molten",
+      "color": "white",
+      "palette": {
+        "coat": "gradient",
+        "shade": "#170806",
+        "line": "#FF6A1A",
+        "cream": "#6B2F17",
+        "creamShade": "#4A1E0E",
+        "earIn": "#FF8A2A",
+        "brow": "#FFD36B",
+        "lid": "#2A120C",
+        "ink": "#FFD36B",
+        "pupil": "#170806",
+        "white": "#FFF3C4",
+        "spec": "#FFFFFF",
+        "mouth": "#170806",
+        "tongue": "#F07F86",
+        "tongueLine": "#C9545E",
+        "blush": "#F39A8C",
+        "sweat": "#9CD3F5",
+        "nose": "#170806"
+      }
+    },
+    {
+      "skin": "molten",
+      "color": "butter",
+      "palette": {
+        "coat": "gradient",
+        "shade": "#170806",
+        "line": "#FF6A1A",
+        "cream": "#6B2F17",
+        "creamShade": "#4A1E0E",
+        "earIn": "#FF8A2A",
+        "brow": "#FFD36B",
+        "lid": "#2A120C",
+        "ink": "#FFD36B",
+        "pupil": "#170806",
+        "white": "#FFF3C4",
+        "spec": "#FFFFFF",
+        "mouth": "#170806",
+        "tongue": "#F07F86",
+        "tongueLine": "#C9545E",
+        "blush": "#F39A8C",
+        "sweat": "#9CD3F5",
+        "nose": "#170806"
+      }
+    },
+    {
+      "skin": "molten",
+      "color": "black",
+      "palette": {
+        "coat": "gradient",
+        "shade": "#170806",
+        "line": "#FF6A1A",
+        "cream": "#6B2F17",
+        "creamShade": "#4A1E0E",
+        "earIn": "#FF8A2A",
+        "brow": "#FFD36B",
+        "lid": "#2A120C",
+        "ink": "#FFD36B",
+        "pupil": "#170806",
+        "white": "#FFF3C4",
+        "spec": "#FFFFFF",
+        "mouth": "#170806",
+        "tongue": "#F07F86",
+        "tongueLine": "#C9545E",
+        "blush": "#F39A8C",
+        "sweat": "#9CD3F5",
+        "nose": "#170806"
+      }
+    },
+    {
+      "skin": "molten",
+      "color": "mint",
+      "palette": {
+        "coat": "gradient",
+        "shade": "#170806",
+        "line": "#FF6A1A",
+        "cream": "#6B2F17",
+        "creamShade": "#4A1E0E",
+        "earIn": "#FF8A2A",
+        "brow": "#FFD36B",
+        "lid": "#2A120C",
+        "ink": "#FFD36B",
+        "pupil": "#170806",
+        "white": "#FFF3C4",
+        "spec": "#FFFFFF",
+        "mouth": "#170806",
+        "tongue": "#F07F86",
+        "tongueLine": "#C9545E",
+        "blush": "#F39A8C",
+        "sweat": "#9CD3F5",
+        "nose": "#170806"
+      }
     }
   ]
 }
