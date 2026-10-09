@@ -56004,6 +56004,146 @@
           }
         }
       }
+    },
+    "Soft tone while a slow answer is coming": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tonalité douce quand une réponse tarde"
+          }
+        }
+      }
+    },
+    "Only my voice": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Seulement ma voix"
+          }
+        }
+      }
+    },
+    "Record a few seconds of your voice once: the call then ignores other voices (a TV, a colleague). Your voiceprint stays on this device.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enregistrez quelques secondes de votre voix une fois : l'appel ignore ensuite les autres voix (une télé, un collègue). Votre empreinte vocale reste sur cet appareil."
+          }
+        }
+      }
+    },
+    "Keep talking, read anything aloud (%lld%%)": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Continuez de parler, lisez n'importe quoi à voix haute (%lld %%)"
+          }
+        }
+      }
+    },
+    "Your voice is enrolled.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Votre voix est enregistrée."
+          }
+        }
+      }
+    },
+    "Not enough speech was heard. Try again somewhere quieter.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pas assez de parole entendue. Réessayez dans un endroit plus calme."
+          }
+        }
+      }
+    },
+    "Record again": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enregistrer de nouveau"
+          }
+        }
+      }
+    },
+    "Record my voice": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enregistrer ma voix"
+          }
+        }
+      }
+    },
+    "Forget my voice": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Oublier ma voix"
+          }
+        }
+      }
+    },
+    "Will run once %@ signs in": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "S'exécutera quand %@ se connectera"
+          }
+        }
+      }
+    },
+    "The routine acts with this person's access and their rights on the bot. Every change is recorded in the admin activity log.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La routine agit avec les accès de cette personne et ses droits sur le bot. Chaque changement est inscrit au journal d'activité des administrateurs."
+          }
+        }
+      }
+    },
+    "No one matches": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Personne ne correspond"
+          }
+        }
+      }
+    },
+    "Cannot run this bot's routines": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ne peut pas exécuter les routines de ce bot"
+          }
+        }
+      }
+    },
+    "Bot templates": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Modèles de bots"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

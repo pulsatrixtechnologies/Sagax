@@ -215,10 +215,23 @@ struct ConnectAppsPage: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.settingsPop) private var settingsPop
     @Environment(\.scenePhase) private var scenePhase
+    /// Settings > Experimental: whether Templates is on (Bot templates' target).
+    @State private var features: ServerFeatures?
+
+    /// "Bot templates" beside the search: where it leads, nil for no button.
+    private var botTemplates: BotTemplatesDestination? {
+        BotTemplatesEntry.destination(gate: session.surfaceGate, features: features)
+    }
 
     var body: some View {
         NavigationStack(path: $path) {
-            ConnectAppsMain(model: model) { path.append($0) }
+            ConnectAppsMain(model: model, botTemplates: botTemplates.map { destination in
+                {
+                    // Connect apps closes, then Templates (or the new bot sheet) opens
+                    if let settingsPop { settingsPop() } else { dismiss() }
+                    NotificationCenter.default.post(name: .sagaxOpenBotTemplates, object: destination.rawValue)
+                }
+            }) { path.append($0) }
                 .navigationTitle(String(localized: "Connect apps"))
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
@@ -239,6 +252,7 @@ struct ConnectAppsPage: View {
         }
         .tint(Theme.textPrimary)
         .task { await model.load(session) }
+        .task { features = await session.configStatus()?.features }
         // back from an authorization page in the browser
         .onValueChange(of: scenePhase) { phase in
             if phase == .active { Task { await model.load(session) } }
@@ -378,6 +392,8 @@ struct ConnectAppsMain: View {
     @Environment(\.themePalette) var themePalette
     @EnvironmentObject private var session: Session
     @ObservedObject var model: ConnectAppsModel
+    /// "Bot templates" (nil: no button), on the search's row of controls
+    var botTemplates: (() -> Void)? = nil
     let push: (ConnectAppsRoute) -> Void
     @State private var expanded: Set<ConnectApps.SectionID> = []
     @State private var aliasFor: ConnectAppItem?
@@ -388,6 +404,25 @@ struct ConnectAppsMain: View {
             Section {
                 connectedLink
                 chips
+                if let botTemplates {
+                    // the desktop's button beside the search field: the
+                    // phone's search sits in the bar, so it heads the list
+                    Button(action: botTemplates) {
+                        HStack(spacing: 8) {
+                            Image(systemName: "square.grid.2x2")
+                                .foregroundStyle(Theme.textSecondary)
+                            Text(String(localized: "Bot templates"))
+                                .foregroundStyle(Theme.textPrimary)
+                            Spacer(minLength: 8)
+                            Image(systemName: "arrow.up.forward")
+                                .font(.footnote)
+                                .foregroundStyle(Theme.textSecondary)
+                        }
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("connect-apps-bot-templates")
+                }
             }
             if model.loading && model.items.isEmpty {
                 Section { HStack { Spacer(); ProgressView(); Spacer() } }
@@ -1015,4 +1050,10 @@ struct LibrarySkillPage: View {
             }
         }
     }
+}
+
+extension Notification.Name {
+    /// Connect apps' "Bot templates": the home opens Templates or the new
+    /// bot sheet (`object`: a BotTemplatesDestination raw value).
+    static let sagaxOpenBotTemplates = Notification.Name("sagax.openBotTemplates")
 }

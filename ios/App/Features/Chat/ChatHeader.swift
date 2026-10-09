@@ -163,29 +163,28 @@ extension ChatView {
     }
 
     var callPillShown: Bool {
-        if case .bot = current { return call.isOnCall(current) }
-        return false
+        call.isOnCall(current)
     }
 
-    /// A bot's voice call: the floating bar under the name, as on the
-    /// desktop. It takes only its own row; the conversation stays on screen
-    /// and its card (settings, transcript) lies over the thread.
+    /// Who the bar calls: the bot, or the room with its members.
+    private var callSubject: CallBarSubject {
+        switch current {
+        case let .bot(bot): .bot(bot)
+        case let .room(room): .room(room, members: room.memberIds.compactMap { session.state.bot($0) })
+        }
+    }
+
+    /// A call, with a bot or a room: the floating bar under the name, as on
+    /// the desktop's bot call. It takes only its own row; the conversation
+    /// stays on screen and its card (settings, transcript) lies over the thread.
     @ViewBuilder
     var callBar: some View {
-        if callPillShown, case let .bot(bot) = current {
-            CallBar(bot: bot, call: call, panel: $callPanel)
+        if callPillShown {
+            CallBar(subject: callSubject, call: call, panel: $callPanel)
                 .padding(.horizontal, CallBarMetrics.gutter)
                 .padding(.top, Self.topBarHeight + (pinnedPreview == nil ? 0 : Self.pinnedBannerHeight) + CallBarMetrics.top)
                 .frame(maxWidth: .infinity)
                 .transition(.opacity.combined(with: .scale(scale: 0.96, anchor: .top)))
-        }
-    }
-
-    @ViewBuilder
-    var groupCall: some View {
-        if case let .room(room) = current, call.isOnCall(current) {
-            GroupCallOverlay(room: room, call: call)
-                .transition(.opacity)
         }
     }
 

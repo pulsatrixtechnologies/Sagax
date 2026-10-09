@@ -47,6 +47,10 @@ struct RoutineEditorView: View {
     @State private var choosingFile = false
     @State private var advancedExpanded: Bool
     @State private var saving = false
+    /// Organization server: whom the routine may run as (RunAsField), and
+    /// the person chosen here (nil: the routine's current person).
+    @State private var runAsOptions: RoutineRunAsOptions?
+    @State private var runAs: String?
 
     /// `presetBotId`: a new routine made from a bot's profile starts on that bot.
     /// `seed`: a new routine from the Automations calendar ("More options"
@@ -84,6 +88,7 @@ struct RoutineEditorView: View {
                 if advanced { typeSection }
                 workSection
                 if advanced && !isTeamGoal { resultsSection }
+                if RoutineRunAsField.shown(runAsOptions) { runAsSection }
                 runOnSection
                 scheduleSection
                 advancedSection
@@ -110,6 +115,64 @@ struct RoutineEditorView: View {
             .task {
                 runAvailability = await session.loadRoutineRunAvailability()
                 availabilityLoaded = true
+            }
+            // asked again when the bot, the routine type or the room changes
+            .task(id: "\(botId)|\(target)|\(groupId)") { await loadRunAsOptions() }
+        }
+    }
+
+    // MARK: Runs as (organization server)
+
+    private func loadRunAsOptions() async {
+        guard !botId.isEmpty, let client = session.callClient else { runAsOptions = nil; return }
+        let options = try? await client.routineRunAsOptions(
+            botId: botId,
+            routineId: routine?.id,
+            target: target,
+            groupId: isTeamGoal && !groupId.isEmpty ? groupId : nil
+        )
+        guard !Task.isCancelled else { return }
+        runAsOptions = options
+        // a person who cannot run the newly chosen bot is no longer the choice
+        runAs = RoutineRunAsField.keep(runAs, in: options)
+    }
+
+    @ViewBuilder
+    private var runAsSection: some View {
+        if let options = runAsOptions {
+            let chosen = RoutineRunAsField.chosen(options, selected: runAs)
+            let name = chosen.map(RoutineRunAsField.name) ?? ""
+            Section {
+                if options.canChoose {
+                    NavigationLink {
+                        RoutineRunAsPicker(options: options, selected: $runAs)
+                    } label: {
+                        HStack(spacing: 10) {
+                            PersonAvatar(initials: People.initials(name.isEmpty ? "?" : name), size: 24)
+                            Text("Runs as")
+                            Spacer(minLength: 8)
+                            Text(verbatim: name).foregroundStyle(Theme.textSecondary).lineLimit(1)
+                        }
+                    }
+                    .accessibilityIdentifier("routine-editor-run-as")
+                } else {
+                    HStack(spacing: 10) {
+                        PersonAvatar(initials: People.initials(name.isEmpty ? "?" : name), size: 24)
+                        Text(String(localized: "Runs as \(name)")).lineLimit(1)
+                    }
+                    .accessibilityElement(children: .combine)
+                    .accessibilityIdentifier("routine-editor-run-as-line")
+                }
+                if chosen?.pending == true {
+                    Text(String(localized: "Will run once \(name) signs in"))
+                        .font(.footnote)
+                        .foregroundStyle(Theme.textSecondary)
+                        .accessibilityIdentifier("routine-editor-run-as-pending")
+                }
+            } footer: {
+                if options.canChoose {
+                    Text("The routine acts with this person's access and their rights on the bot. Every change is recorded in the admin activity log.")
+                }
             }
         }
     }
@@ -454,7 +517,7 @@ struct RoutineEditorView: View {
         let schedule: RoutineSchedule
         do { schedule = try form.schedule(savedAt: Date()) }
         catch { session.actionError = error.localizedDescription; return }
-        let input = RoutineInput(
+        var input = RoutineInput(
             name: String(name.trimmingCharacters(in: .whitespacesAndNewlines).prefix(80)),
             prompt: String(prompt.trimmingCharacters(in: .whitespacesAndNewlines).prefix(20_000)),
             botId: botId,
@@ -469,6 +532,7 @@ struct RoutineEditorView: View {
             results: advanced && !isTeamGoal ? results : .keep,
             completeSchedule: true
         )
+        input.runAs = RoutineRunAsField.toSend(runAs, options: runAsOptions)
         if await session.saveRoutine(input, original: routine) != nil {
             await onSaved()
             dismiss()
@@ -697,6 +761,69 @@ enum RoutineEditorWording {
         case CronExpression.Failure.invalidZone.errorDescription: return String(localized: "Choose a valid IANA timezone such as America/New_York, Asia/Kolkata, or UTC")
         case CronExpression.Failure.noFutureRuns.errorDescription: return String(localized: "This cron expression has no future runs. Choose dates that exist.")
         default: return message
+        }
+    }
+}
+
+// MARK: - Runs as
+
+/// The people a routine may run as (the desktop's RunAsField dropdown): a
+/// search field past eight people, the people who cannot run this bot's
+/// routines listed but not choosable, a check on the chosen one.
+struct RoutineRunAsPicker: View {
+    @Environment(\.themePalette) var themePalette
+    @Environment(\.dismiss) private var dismiss
+    let options: RoutineRunAsOptions
+    @Binding var selected: String?
+    @State private var query = ""
+
+    private var current: String? { selected ?? options.current?.principalId }
+
+    var body: some View {
+        let rows = RoutineRunAsField.rows(options, selected: current, query: query)
+        let list = ThemedForm {
+            Section {
+                if rows.isEmpty {
+                    Text("No one matches").foregroundStyle(Theme.textSecondary)
+                }
+                ForEach(rows) { person in
+                    Button {
+                        selected = person.principalId
+                        dismiss()
+                    } label: {
+                        HStack(spacing: 10) {
+                            PersonAvatar(initials: People.initials(RoutineRunAsField.name(person)), size: 28)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(verbatim: RoutineRunAsField.name(person))
+                                    .foregroundStyle(person.selectable ? Theme.textPrimary : Theme.textTertiary)
+                                if !person.selectable {
+                                    Text("Cannot run this bot's routines").font(.footnote).foregroundStyle(Theme.textTertiary)
+                                } else if person.pending == true {
+                                    Text("Will run once \(RoutineRunAsField.name(person)) signs in").font(.footnote).foregroundStyle(Theme.textSecondary)
+                                }
+                            }
+                            Spacer(minLength: 8)
+                            if person.principalId == current {
+                                Image(systemName: "checkmark").foregroundStyle(Theme.accentText)
+                            }
+                        }
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(!person.selectable)
+                    .accessibilityAddTraits(person.principalId == current ? .isSelected : [])
+                    .accessibilityIdentifier("routine-run-as.\(person.principalId)")
+                }
+            } footer: {
+                Text("The routine acts with this person's access and their rights on the bot. Every change is recorded in the admin activity log.")
+            }
+        }
+        .navigationTitle(Text("Runs as"))
+        .navigationBarTitleDisplayMode(.inline)
+        if options.people.count > RoutineRunAsField.searchAfter {
+            list.searchable(text: $query, prompt: Text("Search people"))
+        } else {
+            list
         }
     }
 }

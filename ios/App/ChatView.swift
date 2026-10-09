@@ -675,7 +675,6 @@ struct ChatView: View {
         .ignoresSafeArea(.container, edges: .bottom)
         .background(chatBackground)
         .overlay(alignment: .bottom) { plusSheet }
-        .overlay { groupCall }
         .onValueChange(of: callPillShown) { shown in
             if !shown { callPanel = nil }
         }

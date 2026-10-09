@@ -386,8 +386,14 @@ final class CallUITests: XCTestCase {
         let (app, _) = try launch(screen: "01-home", audio: "room", plan: "listening")
         open(room, in: app)
         app.buttons["composer-voice"].tap()
-        XCTAssertTrue(app.descendants(matching: .any)["group-call"].waitForExistence(timeout: 15), "the room's call screen")
+        // the bot call's bar under the room's name, never a full-screen stage
+        XCTAssertTrue(app.descendants(matching: .any)["call-pill"].waitForExistence(timeout: 15), "the call bar under the room's name")
+        XCTAssertFalse(app.descendants(matching: .any)["group-call"].exists, "no full-screen call")
+        XCTAssertTrue(app.descendants(matching: .any)["call-room-faces"].exists, "the members' faces in the bar")
+        XCTAssertGreaterThanOrEqual(app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH 'call-member'")).count, 3, "every member's face")
         wait(15, "connected") { !["", "connecting"].contains(label(app, "call-debug-phase")) }
+        assertBarUnderHeader(app)
+        XCTAssertTrue(app.buttons["composer-voice"].exists || app.buttons["composer-end-call"].exists, "the conversation stays under the bar")
         attach("Room call", app)
 
         wait(60, "three members answer") {
@@ -401,8 +407,54 @@ final class CallUITests: XCTestCase {
         }
         attach("Members taking turns", app)
 
+        // the transcript card under the bar, with the room's hint
+        app.buttons["call-transcript-toggle"].tap()
+        XCTAssertTrue(app.descendants(matching: .any)["call-room-hint"].waitForExistence(timeout: 5), "how to direct a turn")
+        attach("Room call transcript", app)
+        app.buttons["call-transcript-toggle"].tap()
+
         app.buttons["call-end"].tap()
-        XCTAssertFalse(app.descendants(matching: .any)["group-call"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.descendants(matching: .any)["call-pill"].waitForNonExistence(timeout: 10), "hang up leaves the plain header")
+    }
+
+    /// The Advanced card's rows the desktop has (matrix CB11): Only my
+    /// voice with its enrollment row, Call sounds and the soft tone, each a
+    /// switch; Record my voice listens to the call's microphone.
+    @MainActor
+    func testTheAdvancedCardHasOnlyMyVoiceAndTheSoftTone() throws {
+        guard UIDevice.current.userInterfaceIdiom == .phone else { throw XCTSkip("the phone's layout") }
+        let session = try fixtureSession()
+        let name = Self.unique("Vocal")
+        _ = try makeBot(session, name)
+        let (app, _) = try launch(screen: "01-home", audio: "bot", plan: "listening")
+        open(name, in: app)
+        app.buttons["composer-voice"].tap()
+        XCTAssertTrue(app.descendants(matching: .any)["call-pill"].waitForExistence(timeout: 15))
+        wait(15, "connected") { !["", "connecting"].contains(label(app, "call-debug-phase")) }
+        app.buttons["call-settings"].tap()
+        let advanced = app.buttons["call-advanced"]
+        XCTAssertTrue(advanced.waitForExistence(timeout: 5))
+        advanced.tap()
+        let onlyMine = app.switches["call-only-my-voice"]
+        XCTAssertTrue(onlyMine.waitForExistence(timeout: 5), "Only my voice")
+        XCTAssertEqual(onlyMine.value as? String, "0", "off until a voice is enrolled")
+        XCTAssertTrue(app.buttons["call-enroll"].exists, "Record my voice")
+        let soft = app.switches["call-thinking-cue"]
+        for _ in 0..<4 where !(soft.exists && soft.isHittable) { app.descendants(matching: .any)["call-card"].swipeUp() }
+        XCTAssertTrue(soft.exists, "Soft tone")
+        XCTAssertEqual(soft.value as? String, "1", "on by default, as on the desktop")
+        XCTAssertTrue(app.switches["call-earcons"].exists)
+        attach("Call Advanced, Only my voice", app)
+
+        for _ in 0..<4 where !app.buttons["call-enroll"].isHittable { app.descendants(matching: .any)["call-card"].swipeDown() }
+        app.buttons["call-enroll"].tap()
+        let recording = app.descendants(matching: .any)["call-enrolling"]
+        let settled = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'Your voice is enrolled' OR label BEGINSWITH 'Not enough speech'")).firstMatch
+        XCTAssertTrue(recording.waitForExistence(timeout: 5) || settled.exists, "the enrollment listens")
+        attach("Call Advanced, recording my voice", app)
+        XCTAssertTrue(settled.waitForExistence(timeout: 40), "the enrollment ends, enrolled or not enough speech")
+        attach("Call Advanced, enrollment done", app)
+        app.buttons["call-end"].tap()
     }
 
     /// The bar's controls in the desktop's order: face, Settings,
@@ -424,6 +476,7 @@ final class CallUITests: XCTestCase {
 
     @MainActor
     private func attach(_ name: String, _ app: XCUIApplication) {
+        ParityShots.save(name, app)
         let attachment = XCTAttachment(screenshot: app.screenshot())
         attachment.name = name
         attachment.lifetime = .keepAlways

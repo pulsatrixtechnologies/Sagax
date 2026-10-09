@@ -71,6 +71,9 @@ final class CallController: ObservableObject {
         didSet { UserDefaults.standard.set(callSettings.encoded, forKey: CallSettings.storageKey) }
     }
 
+    /// "Only my voice": where the enrollment stands on this phone.
+    @Published private(set) var enrollment: CallEnrollment = CallVoiceprint.read() == nil ? .none : .enrolled
+
     private(set) var threadId = ""
     private weak var session: Session?
     private var engine: LiveCallEngine?
@@ -225,7 +228,8 @@ final class CallController: ObservableObject {
             transcriber: recognizer,
             player: player,
             settings: { [weak self] in self?.callSettings ?? .default },
-            speed: { [weak self] in self?.voiceSettings.speed ?? 1 }
+            speed: { [weak self] in self?.voiceSettings.speed ?? 1 },
+            voiceprint: CallVoiceprint.read()
         )
         wire(engine)
         player.onSentenceStart = { [weak self, weak engine] text, speaker in
@@ -356,6 +360,7 @@ final class CallController: ObservableObject {
         callEnd?()
         callEnd = nil
         engine?.end()
+        if case .recording = enrollment { enrollment = CallVoiceprint.read() == nil ? .none : .enrolled }
         if !fromSystem { callKit?.end() }
         callKit = nil
         stateSink = nil
@@ -403,6 +408,38 @@ final class CallController: ObservableObject {
 
     /// The avatar while the bot speaks: it stops talking.
     func interrupt() { engine?.interrupt() }
+
+    /// "Record my voice": a few seconds of the person's speech on this call
+    /// become the print "Only my voice" checks turns against. It stays on
+    /// this phone. Turning the switch on without a print starts this too.
+    func enroll() {
+        guard let engine, active else { return }
+        if case .recording = enrollment { return }
+        enrollment = .recording(share: 0)
+        Task { @MainActor [weak self, weak engine] in
+            guard let engine else { return }
+            let print = await engine.enroll { share in
+                guard let self, case .recording = self.enrollment else { return }
+                self.enrollment = .recording(share: share)
+            }
+            // the call ended while recording: end() already settled it
+            guard let self, case .recording = self.enrollment else { return }
+            if let print {
+                print.save()
+                self.enrollment = .enrolled
+                self.callSettings.onlyMyVoice = true
+            } else {
+                self.enrollment = CallVoiceprint.read() == nil ? .failed : .enrolled
+            }
+        }
+    }
+
+    /// "Forget my voice": the print is deleted from this phone.
+    func forgetVoice() {
+        engine?.forgetVoice()
+        CallVoiceprint.forget()
+        enrollment = .none
+    }
 
     func pushToTalk(_ down: Bool) { engine?.pushToTalk(down) }
 
@@ -713,6 +750,22 @@ final class CallController: ObservableObject {
             if refusal?.admin == true { lines.append(String(localized: "As an administrator, you can also add the organization's xAI key in Settings > Connections on the computer.")) }
         }
         return Unavailable(title: String(localized: "Voice mode unavailable"), lines: lines, keysUrl: refusal?.keysUrl.flatMap(URL.init(string:)))
+    }
+
+    /// What the bar says for a room's call (GroupCallView's status line).
+    static func roomPhaseLabel(_ state: CallState, speaking: Bot?, working: Bot?, push: Bool) -> String {
+        if state.phase == .held { return String(localized: "On hold") }
+        if state.muted { return String(localized: "Muted") }
+        switch state.phase {
+        case .connecting: return String(localized: "Connecting")
+        case .listening, .hearing, .interrupted:
+            return push ? String(localized: "Push to talk") : String(localized: "Listening")
+        case .speaking:
+            return String(localized: "\(speaking?.name ?? String(localized: "Group member")) is speaking")
+        default:
+            if let working { return String(localized: "\(working.name) is working") }
+            return String(localized: "Bringing the group in")
+        }
     }
 
     /// What the bar says for each state of the call (desktop phaseLabel).

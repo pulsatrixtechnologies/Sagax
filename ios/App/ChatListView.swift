@@ -135,6 +135,21 @@ struct ChatListView: View {
                 DesktopTemplatesSheet { showingTemplates = false }
                     .environmentObject(session)
             }
+            // Connect apps' "Bot templates": Connect apps (and Settings around
+            // it) closes, then Templates or the new bot sheet opens
+            .onReceive(NotificationCenter.default.publisher(for: .sagaxOpenBotTemplates)) { note in
+                let destination = (note.object as? String).flatMap(BotTemplatesDestination.init(rawValue:)) ?? .newBot
+                showingConnectedApps = false
+                showingSettings = false
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) {
+                    switch destination {
+                    case .templates: showingTemplates = true
+                    case .newBot:
+                        createBotSection = nil
+                        showingCreateBot = true
+                    }
+                }
+            }
             .sheet(item: $accountSheet) { sheet in
                 HomeAccountSheetView(sheet: sheet)
                     .environmentObject(session)

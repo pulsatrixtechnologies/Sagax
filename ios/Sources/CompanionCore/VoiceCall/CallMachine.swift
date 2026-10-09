@@ -37,6 +37,9 @@ public enum CallRejection: String, Sendable, Equatable {
 
 public enum CallEarcon: String, Sendable, Equatable, CaseIterable {
     case connected, interrupted, rejected, hold, resume, ended
+    /// "Soft tone": two soft low notes, the bot is on a slow answer
+    /// (desktop `THINKING_CUE` in call.ts). Its own switch, not Call sounds.
+    case thinking
 
     /// The tones of each sound (desktop `EARCONS` in call.ts).
     public var notes: [(hz: Double, ms: Double)] {
@@ -47,7 +50,14 @@ public enum CallEarcon: String, Sendable, Equatable, CaseIterable {
         case .hold: [(440, 120), (440, 120)]
         case .resume: [(880, 100)]
         case .ended: [(880, 90), (660, 90), (440, 160)]
+        case .thinking: [(392, 110), (523, 150)]
         }
+    }
+
+    /// How loud the tone plays: the call sounds at 0.08, the soft tone at
+    /// the desktop's ratio (0.035 against its 0.06).
+    public var volume: Float {
+        self == .thinking ? 0.08 * 0.035 / 0.06 : 0.08
     }
 }
 
