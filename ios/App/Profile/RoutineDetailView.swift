@@ -129,6 +129,17 @@ struct RoutineDetailView: View {
                         .padding(.trailing, 18.7)
                         .accessibilityIdentifier("routine-next-run")
                 }
+                // #149: routines act in their owner's name, no consent
+                if let runAs = routine.runAs {
+                    ProfileDivider(leading: Theme.Profile.textInset)
+                    ProfileRow(title: Text("Runs as"), height: Theme.Profile.row) {
+                        Text(verbatim: runAs.name.isEmpty ? runAs.principalId : runAs.name)
+                            .font(Theme.Font.body)
+                            .foregroundStyle(Theme.parity(Color(hex: 0x9C9BA0), Theme.textSecondary))
+                            .padding(.trailing, 18.7)
+                            .accessibilityIdentifier("routine-run-as")
+                    }
+                }
                 
             }
 

@@ -96,6 +96,9 @@ struct RoomInfoView: View {
         ThemedList {
             RoomResponderSection(room: room, jevOn: jevOn)
                 .disabled(!access.editable)
+            // #216: the turn limit lives here, not in the chat header
+            RoomTurnLimitSection(room: room)
+                .disabled(!access.editable)
             if session.surfaceGate.scope == .serverAdmin {
                 RoomFolderSection(room: room, editable: access.editable)
             }
@@ -338,6 +341,55 @@ struct RoomFolderSection: View {
         Task {
             if await session.setRoomFolder(room, cwd: value) { draft = nil }
             saving = false
+        }
+    }
+}
+
+/// The room's turn limit (#216, ConversationTurnLimit.tsx): left the chat
+/// header for the room settings' Advanced tab. Default (the server's), 30,
+/// 60 or 120 minutes, and a value set elsewhere stays listed.
+struct RoomTurnLimitSection: View {
+    let room: Room
+    @EnvironmentObject private var session: Session
+    @State private var globalMinutes = 5
+    @State private var saved: Int?
+
+    static let presets = [30, 60, 120]
+
+    private var current: Int? {
+        if room.dm == true { return room.turnTimeoutMinutes }
+        return room.tasks?.first { $0.threadId == room.threadId }?.turnTimeoutMinutes
+    }
+
+    var body: some View {
+        let value = saved ?? current
+        let options = Self.presets + (value.map { Self.presets.contains($0) ? [] : [$0] } ?? [])
+        Section {
+            Picker(String(localized: "Turn limit"), selection: Binding<Int>(
+                get: { value ?? 0 },
+                set: { minutes in
+                    let next = minutes == 0 ? nil : minutes
+                    saved = next
+                    Task {
+                        do { try await session.settingsClient?.setRoomTurnLimit(room: room, minutes: next) }
+                        catch { session.actionError = error.localizedDescription }
+                    }
+                }
+            )) {
+                Text(String(localized: "Default (\(globalMinutes) min)")).tag(0)
+                ForEach(options, id: \.self) { minutes in
+                    Text(String(localized: "\(minutes) min")).tag(minutes)
+                }
+            }
+            .pickerStyle(.menu)
+            .accessibilityIdentifier("room-turn-limit")
+        } header: {
+            Text(String(localized: "Turn limit"))
+        } footer: {
+            Text(String(localized: "How long a bot may keep working in this conversation before the turn stops. Default uses the group turn limit in Settings. A new choice applies to the next turn."))
+        }
+        .task {
+            if let minutes = try? await session.settingsClient?.desktopSettingsConfig().rooms?.turnTimeoutMinutes { globalMinutes = minutes }
         }
     }
 }

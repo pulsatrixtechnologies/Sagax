@@ -46,6 +46,7 @@ struct SettingsSearchResults: View {
             switch destination {
             case .organization: return sections.contains(.organization)
             case .achievements: return sections.contains(.achievements)
+            case .privacy: return sections.contains(.privacy)
             case .experimental: return sections.contains(.experimental)
             case .plugins, .botComputer, .usage, .rules, .timeZone: return connected
             default: return true
@@ -59,6 +60,8 @@ struct SettingsSearchResults: View {
         case .organization: String(localized: "Organization")
         case .appearance: String(localized: "Appearance")
         case .achievements: String(localized: "Achievements")
+        case .notifications: String(localized: "Notifications")
+        case .privacy: String(localized: "Privacy")
         case .experimental: String(localized: "Experimental")
         case .plugins: String(localized: "Connect apps")
         case .account: String(localized: "Account")
@@ -80,6 +83,8 @@ struct SettingsSearchResults: View {
         case .organization: "building.2"
         case .appearance: "paintpalette"
         case .achievements: "trophy"
+        case .notifications: "bell"
+        case .privacy: "hand.raised"
         case .experimental: "flask"
         case .plugins: "puzzlepiece.extension"
         case .account: "person.crop.circle"

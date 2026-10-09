@@ -1,4 +1,5 @@
-// Settings > Achievements (matrix ST9), as the desktop's AchievementsPage.tsx:
+// Achievements, their own window from the account menu (#220; matrix DC20,
+// ST9), as the desktop's AchievementsModal and AchievementsPage.tsx:
 // the points, level and its bar, unlocked count and streak, the Title
 // picker, the recent unlocks, the category tabs with a Show filter, one card
 // per achievement (secrets stay hidden until unlocked), and the four
@@ -15,6 +16,7 @@ struct AchievementsPage: View {
     @ObservedObject private var store = AchievementStore.shared
     @State private var category: AchievementCategory?
     @State private var filter: AchievementFilter = .all
+    @State private var query = ""
 
     private var language: String? { AchievementLanguage.current ?? locale.language.languageCode?.identifier }
 
@@ -45,18 +47,77 @@ struct AchievementsPage: View {
         }
     }
 
+    /// The desktop's modal (#220) at phone width: the category select with
+    /// unlocked over total, the header card, recent unlocks on All, search
+    /// and the Show filter, the cards, then the switches at the bottom.
     @ViewBuilder
     private func content(_ snapshot: AchievementSnapshot) -> some View {
+        categorySelect(snapshot)
         header(snapshot)
-        if !snapshot.recent.isEmpty {
+        if category == nil, !snapshot.recent.isEmpty {
             SettingsSectionLabel(text: "Recent unlocks")
             recent(snapshot)
         }
-        SettingsSectionLabel(text: "Categories")
-        tabs
+        searchRow
         cards(snapshot)
         SettingsSectionLabel(text: "Settings")
         switches(snapshot)
+    }
+
+    private func categorySelect(_ snapshot: AchievementSnapshot) -> some View {
+        let options: [AchievementCategory?] = [nil] + AchievementCategory.allCases.map(Optional.some)
+        func label(_ item: AchievementCategory?) -> Text {
+            let count = snapshot.categoryCount(item)
+            return Text(AchievementWording.categoryLabel(item)) + Text(verbatim: "  \(count.unlocked)/\(count.total)")
+        }
+        return SettingsCard {
+            HStack {
+                Text("Category").font(Theme.Font.rowTitle).foregroundStyle(Theme.textPrimary)
+                Spacer()
+                Picker(selection: $category) {
+                    ForEach(options, id: \.self) { item in label(item).tag(item) }
+                } label: { Text("Category") }
+                .tint(Theme.textSecondary)
+                .accessibilityIdentifier("achievements-category")
+            }
+            .padding(.leading, SettingsMetrics.rowInset)
+            .padding(.trailing, 8)
+            .frame(minHeight: 44)
+        }
+        .padding(.bottom, 10)
+    }
+
+    private var searchRow: some View {
+        HStack(spacing: 8) {
+            HStack(spacing: 6) {
+                Image(systemName: "magnifyingglass").foregroundStyle(Theme.textTertiary)
+                TextField(String(localized: "Search achievements"), text: $query)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .accessibilityIdentifier("achievements-search")
+            }
+            .font(Theme.Font.body)
+            .padding(.horizontal, 12)
+            .frame(height: 36)
+            .background(Theme.card, in: Capsule())
+            Menu {
+                Picker(selection: $filter) {
+                    ForEach(AchievementFilter.allCases, id: \.self) { Text(AchievementWording.filterLabel($0)).tag($0) }
+                } label: { Text("Show") }
+            } label: {
+                HStack(spacing: 3) {
+                    Text(AchievementWording.filterLabel(filter))
+                    Image(systemName: "chevron.up.chevron.down").font(.system(size: 9, weight: .semibold))
+                }
+                .font(Theme.Font.labelMedium)
+                .foregroundStyle(Theme.textSecondary)
+            }
+            .accessibilityLabel(Text("Show"))
+            .accessibilityIdentifier("achievements-filter")
+        }
+        .padding(.horizontal, SettingsMetrics.cardMargin)
+        .padding(.top, 14)
+        .padding(.bottom, 10)
     }
 
     // MARK: Header
@@ -163,51 +224,9 @@ struct AchievementsPage: View {
 
     // MARK: Tabs and cards
 
-    private var tabs: some View {
-        HStack(spacing: 8) {
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 6) {
-                    ForEach([nil] + AchievementCategory.allCases.map(Optional.some), id: \.self) { item in
-                        Button {
-                            Haptics.selection()
-                            category = item
-                        } label: {
-                            Text(AchievementWording.categoryLabel(item))
-                                .font(Theme.Font.labelMedium)
-                                .foregroundStyle(category == item ? Theme.primaryInk : Theme.textPrimary)
-                                .padding(.horizontal, 11)
-                                .padding(.vertical, 7)
-                                .background(category == item ? Theme.primaryFill : Theme.card, in: Capsule())
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityAddTraits(category == item ? .isSelected : [])
-                        .accessibilityIdentifier("achievements-tab.\(item?.rawValue ?? "all")")
-                    }
-                }
-                .padding(.leading, SettingsMetrics.cardMargin)
-            }
-            Menu {
-                Picker(selection: $filter) {
-                    ForEach(AchievementFilter.allCases, id: \.self) { Text(AchievementWording.filterLabel($0)).tag($0) }
-                } label: { Text("Show") }
-            } label: {
-                HStack(spacing: 3) {
-                    Text(AchievementWording.filterLabel(filter))
-                    Image(systemName: "chevron.up.chevron.down").font(.system(size: 9, weight: .semibold))
-                }
-                .font(Theme.Font.labelMedium)
-                .foregroundStyle(Theme.textSecondary)
-            }
-            .accessibilityLabel(Text("Show"))
-            .accessibilityIdentifier("achievements-filter")
-            .padding(.trailing, SettingsMetrics.cardMargin + 4)
-        }
-        .padding(.bottom, 10)
-    }
-
     private func cards(_ snapshot: AchievementSnapshot) -> some View {
         LazyVGrid(columns: [GridItem(.adaptive(minimum: 300), spacing: 10)], spacing: 10) {
-            ForEach(snapshot.cards(category: category, filter: filter)) { definition in
+            ForEach(snapshot.cards(category: category, filter: filter, query: query, language: language)) { definition in
                 AchievementCard(definition: definition, state: snapshot.state(definition.id), language: language)
             }
         }
@@ -222,6 +241,11 @@ struct AchievementsPage: View {
             SettingsRow(title: "Show my points in the sidebar", subtitle: "The trophy line under your name.",
                         accessory: .toggle(binding(settings.showPoints) { AchievementSettingsPatch(showPoints: $0) }),
                         identifier: "achievements-show-points")
+            CardHairline(leadingInset: SettingsMetrics.rowInset)
+            // #194: the chosen title under your name, yours only
+            SettingsRow(title: "Show my title", subtitle: "Your chosen title under your name.",
+                        accessory: .toggle(binding(settings.showTitle) { AchievementSettingsPatch(showTitle: $0) }),
+                        identifier: "achievements-show-title")
             CardHairline(leadingInset: SettingsMetrics.rowInset)
             SettingsRow(title: "Unlock banners", subtitle: "A short banner when you unlock something. Its sound follows Notification sounds.",
                         accessory: .toggle(binding(settings.toasts) { AchievementSettingsPatch(toasts: $0) }),

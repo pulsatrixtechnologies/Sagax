@@ -189,6 +189,45 @@ final class AccountRowTests: XCTestCase {
     }
 }
 
+final class AttentionTests: XCTestCase {
+    private let nudge = NudgeFrame(fromId: "pr_bob", fromName: "Bob", at: 1_000_000, open: .init(groupId: "g1", threadId: "t1"))
+
+    func testAFreshNudgeRingsBuzzesAndNotifiesUnlessThatConversationIsOpen() {
+        let away = NudgeAttention.decide(nudge, now: 1_000_500, appActive: false, viewingThreadId: nil, settings: .default)
+        XCTAssertEqual(away, NudgeAttention(fresh: true, sound: true, haptic: false, notify: true), "in the background: no haptic, a notification")
+        let elsewhere = NudgeAttention.decide(nudge, now: 1_000_500, appActive: true, viewingThreadId: "t9", settings: .default)
+        XCTAssertEqual(elsewhere, NudgeAttention(fresh: true, sound: true, haptic: true, notify: true))
+        let looking = NudgeAttention.decide(nudge, now: 1_000_500, appActive: true, viewingThreadId: "t1", settings: .default)
+        XCTAssertFalse(looking.notify)
+        XCTAssertTrue(looking.haptic)
+    }
+
+    func testAStaleReplayDoesNothingAndSwitchesAreRespected() {
+        XCTAssertFalse(NudgeAttention.decide(nudge, now: 1_000_000 + 121_000, appActive: true, viewingThreadId: nil, settings: .default).fresh)
+        let quiet = NudgeAttention.decide(nudge, now: 1_000_100, appActive: true, viewingThreadId: nil,
+                                          settings: AttentionSettings(nudgeSound: false, nudgeHaptic: false))
+        XCTAssertFalse(quiet.sound)
+        XCTAssertFalse(quiet.haptic)
+        XCTAssertEqual(Attention.badge(4, settings: .default), 4)
+        XCTAssertEqual(Attention.badge(4, settings: AttentionSettings(badge: false)), 0)
+    }
+}
+
+final class ReleaseNotesTests: XCTestCase {
+    func testTheLanguagePartVersionsAndSince() throws {
+        let note = "Bonjour.\n\n## Nouveautés\n\n* Un\n\n## English\n\n* One"
+        XCTAssertEqual(ReleaseNotes.section(note, language: "fr"), "Bonjour.\n\n## Nouveautés\n\n* Un")
+        XCTAssertEqual(ReleaseNotes.section(note, language: "pt-BR"), "* One")
+        XCTAssertEqual(ReleaseNotes.section("Only one part", language: "en"), "Only one part")
+        let catalog = ["0.4.9": "a", "0.4.10": "b", "0.4.2": "c", "0.4.14": "d"]
+        XCTAssertEqual(ReleaseNotes.versions(catalog), ["0.4.14", "0.4.10", "0.4.9", "0.4.2"])
+        XCTAssertEqual(ReleaseNotes.since("0.4.9", current: "0.4.14", catalog: catalog), ["0.4.14", "0.4.10"])
+        XCTAssertEqual(ReleaseNotes.since("0.4.14", current: "0.4.14", catalog: catalog), [])
+        // the repository's own notes, when they sit next to this package
+        let folder = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent("docs/releases")
+        let real = ReleaseNotes.catalog(in: folder)
+        if !real.isEmpty { XCTAssertTrue(real["0.4.14"]?.contains("## English") == true) }
 final class DeadThreadChipTests: XCTestCase {
     func testAGoneThreadHasNoLiveReference() throws {
         let gone = try JSONDecoder().decode(ThreadRef.self, from: Data(#"{"botId":"b","threadId":"t","title":"x","gone":true}"#.utf8))

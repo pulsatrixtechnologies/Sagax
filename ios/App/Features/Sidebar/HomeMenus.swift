@@ -350,6 +350,7 @@ struct HomeAccountMenuItems: View {
         case .teamMap: String(localized: "Team map")
         case .automations: String(localized: "Automations")
         case .achievements: String(localized: "Achievements")
+        case .releaseNotes: String(localized: "Release notes")
         case .about: String(localized: "About")
         case .help: String(localized: "Help Center")
         }
@@ -362,6 +363,7 @@ struct HomeAccountMenuItems: View {
         case .teamMap: "point.3.connected.trianglepath.dotted"
         case .automations: "calendar"
         case .achievements: "trophy"
+        case .releaseNotes: "scroll"
         case .about: "info.circle"
         case .help: "questionmark.circle"
         }
@@ -370,7 +372,7 @@ struct HomeAccountMenuItems: View {
 
 /// What the account menu opens besides Settings, each in its own sheet.
 enum HomeAccountSheet: String, Identifiable {
-    case archivedBots, achievements, about
+    case archivedBots, achievements, releaseNotes, about
     var id: String { rawValue }
 }
 
@@ -384,6 +386,7 @@ struct HomeAccountSheetView: View {
                 switch sheet {
                 case .archivedBots: AnyView(ArchivedBotsView())
                 case .achievements: AnyView(AchievementsPage())
+                case .releaseNotes: AnyView(ReleaseNotesPage())
                 case .about: AnyView(AboutPage())
                 }
             }

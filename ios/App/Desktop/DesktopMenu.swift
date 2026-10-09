@@ -577,7 +577,7 @@ struct DesktopSidebarMenus {
                 out.append(DesktopMenuEntry(id: "automations", title: String(localized: "Automations"), icon: .calendarDays, kind: .action {
                     model.show(.automations)
                 }))
-            case .archivedBots, .settings, .achievements, .about, .help:
+            case .archivedBots, .settings, .achievements, .releaseNotes, .about, .help:
                 break
             }
         }

@@ -137,7 +137,7 @@ public struct SectionMenuContext: Hashable, Sendable {
 // MARK: - Account, New, places, Settings
 
 public enum AccountMenuItem: String, Hashable, Sendable, CaseIterable {
-    case archivedBots, settings, teamMap, automations, achievements, about, help
+    case archivedBots, settings, teamMap, automations, achievements, releaseNotes, about, help
 }
 
 public enum NewMenuItem: Hashable, Sendable {
@@ -157,7 +157,7 @@ public enum HomePlace: String, Hashable, Sendable, CaseIterable {
 /// The phone's Settings list, in the desktop's nav order. "Pair devices"
 /// is the account card that heads the list (switch, add, sign out).
 public enum PhoneSettingsSection: String, Hashable, Sendable, CaseIterable {
-    case general, organization, appearance, achievements, experimental, plugins, pairDevices, computer, usage
+    case general, organization, appearance, notifications, privacy, achievements, experimental, plugins, pairDevices, computer, usage
 }
 
 // MARK: - Plans
@@ -272,7 +272,8 @@ public enum NavigationMenus {
         var main: [AccountMenuItem] = [.settings] + accountShortcuts(gate: gate, connected: connected)
         if gate.allows(.achievements), achievementsReady { main.append(.achievements) }
         groups.append(main)
-        groups.append([.about, .help])
+        // Release notes (#184) opens the account menu's last group
+        groups.append([.releaseNotes, .about, .help])
         return groups
     }
 
@@ -323,7 +324,12 @@ public enum NavigationMenus {
         var sections: [PhoneSettingsSection] = [.general]
         if gate.allows(.organizationSettings) { sections.append(.organization) }
         sections.append(.appearance)
-        if connected, gate.allows(.achievements), achievementsAvailable { sections.append(.achievements) }
+        // Notifications (#222); Privacy with "Show when I am online" (#167)
+        // on an organization server. Achievements left Settings for their
+        // own window from the account menu (#220).
+        sections.append(.notifications)
+        if connected, gate.organization { sections.append(.privacy) }
+        _ = achievementsAvailable
         if connected, gate.allows(.experimentalSettings) { sections.append(.experimental) }
         if connected { sections.append(.plugins) }
         sections.append(.pairDevices)
