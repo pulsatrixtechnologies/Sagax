@@ -3,7 +3,7 @@
 // the desktop and as a thumbnail). Adding a character is adding an entry.
 // The same behavior state machine (behavior.ts) drives them all; each
 // renderer maps the clips it can show and degrades gracefully: the shapes,
-// Trombi, Bunbu and Shiba have no wings, so a flight is a bouncing hop across. The
+// Trombi, Bunbu, Shiba and Frog have no wings, so a flight is a bouncing hop across. The
 // character and its look come from the bot (bot.mascotLook); the desktop
 // draws a skin's full effects, and its move effects with each move.
 import { useEffect, useId, useRef, type ComponentType } from "react";
@@ -22,6 +22,7 @@ import { ShibaMascot } from "@/components/ShibaMascot";
 import { SHIBA_MOVE_TIMING, shibaMoveFor, type ShibaMove } from "@/components/shiba-moves";
 import { playShibaBark } from "@/lib/shiba-bark";
 import { readFloatingBotPrefs } from "@/lib/floating-bots";
+import { FrogMascot } from "@/components/FrogMascot";
 import { fxMoveFor, useEquipBurst, useMoveBurst, useReducedMotion, type FxMoveRequest } from "@/components/skin-fx/skin-fx";
 import { completeMascotLook, MASCOT_SHAPES, type MascotCharacter, type MascotLook, type MascotShape } from "../../../shared/mascot-look";
 import { createFrameSmoother, type MascotActivity, type MascotFrame } from "./behavior";
@@ -407,6 +408,21 @@ function ShibaThumb({ color, look, size }: MascotThumbProps) {
   return <ShibaMascot skin={look.skins.shiba} color={color} size={size} animated={false} label={null} />;
 }
 
+/* --------------------------------------------------------------- Frog */
+
+function FrogRender({ color, look, size, activity, pose, frame, fps, onHitTest }: MascotRenderProps) {
+  const move = useClipFx(activity);
+  return (
+    <Motion25D size={size} frame={frame} fps={fps} onHitTest={onHitTest}>
+      <FrogMascot skin={look.skins.frog} color={color} size={size * 0.9} mood={bunbuMoodFor(activity, pose)} expression={shapeExpressionForClip(activity)} detail="full" move={move} label={null} />
+    </Motion25D>
+  );
+}
+
+function FrogThumb({ color, look, size }: MascotThumbProps) {
+  return <FrogMascot skin={look.skins.frog} color={color} size={size} animated={false} label={null} />;
+}
+
 /* ----------------------------------------------------------- registry */
 
 export const MASCOTS: readonly MascotDefinition[] = [
@@ -431,6 +447,7 @@ export const MASCOTS: readonly MascotDefinition[] = [
     Render: ShibaRender,
     Thumb: ShibaThumb,
   },
+  { id: "frog", capabilities: { walk: true, fly: false, wings: false, blink: true, turn: true, flip: true }, paint: { colors: true, skins: true }, moves: ["wave", "dance", "jump", "hop", "love"], Render: FrogRender, Thumb: FrogThumb },
 ];
 
 export function mascotFor(look: Pick<MascotLook, "character"> | undefined): MascotDefinition {

@@ -189,6 +189,7 @@ const CHARACTER_KEY: Record<MascotCharacter, LocaleKey> = {
   trombi: "floatingBots.mascot.trombi",
   bunbu: "floatingBots.mascot.bunbu",
   shiba: "floatingBots.mascot.shiba",
+  frog: "floatingBots.mascot.frog",
 };
 
 export function characterName(character: MascotCharacter): string {
@@ -250,7 +251,7 @@ export function appIconLock(unlocks: Unlocks, id: string, art: { kind: string; s
     const achievement = achievementRewarding(`appIcon:${id}`, ACHIEVEMENTS);
     return { locked: true, achievement, item: achievement ? itemState(achievement.id) : undefined };
   }
-  if (art.kind === "owl" || art.kind === "shape" || art.kind === "trombi" || art.kind === "bunbu" || art.kind === "shiba") {
+  if (art.kind === "owl" || art.kind === "shape" || art.kind === "trombi" || art.kind === "bunbu" || art.kind === "shiba" || art.kind === "frog") {
     return art.skin ? skinLock(unlocks, art.kind, art.skin) : characterLock(unlocks, art.kind);
   }
   return { locked: false };

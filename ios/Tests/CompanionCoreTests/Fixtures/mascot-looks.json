@@ -5,7 +5,8 @@
     "shape",
     "trombi",
     "bunbu",
-    "shiba"
+    "shiba",
+    "frog"
   ],
   "shapes": [
     "circle",
@@ -63,6 +64,21 @@
     "red",
     "sesame",
     "white",
+    "retro98",
+    "gold",
+    "neon",
+    "chrome",
+    "glitch",
+    "holo",
+    "molten"
+  ],
+  "frogSkins": [
+    "plain",
+    "leaf",
+    "tree",
+    "poison",
+    "bullfrog",
+    "ghost",
     "retro98",
     "gold",
     "neon",
@@ -272,6 +288,15 @@
       },
       "expected": {
         "character": "shiba"
+      }
+    },
+    {
+      "name": "bare frog",
+      "input": {
+        "character": "frog"
+      },
+      "expected": {
+        "character": "frog"
       }
     },
     {
@@ -2560,6 +2585,201 @@
       }
     },
     {
+      "name": "frog plain",
+      "input": {
+        "character": "frog",
+        "skins": {
+          "frog": "plain"
+        }
+      },
+      "expected": {
+        "character": "frog",
+        "skins": {
+          "frog": "plain"
+        }
+      }
+    },
+    {
+      "name": "frog leaf",
+      "input": {
+        "character": "frog",
+        "skins": {
+          "frog": "leaf"
+        }
+      },
+      "expected": {
+        "character": "frog",
+        "skins": {
+          "frog": "leaf"
+        }
+      }
+    },
+    {
+      "name": "frog tree",
+      "input": {
+        "character": "frog",
+        "skins": {
+          "frog": "tree"
+        }
+      },
+      "expected": {
+        "character": "frog",
+        "skins": {
+          "frog": "tree"
+        }
+      }
+    },
+    {
+      "name": "frog poison",
+      "input": {
+        "character": "frog",
+        "skins": {
+          "frog": "poison"
+        }
+      },
+      "expected": {
+        "character": "frog",
+        "skins": {
+          "frog": "poison"
+        }
+      }
+    },
+    {
+      "name": "frog bullfrog",
+      "input": {
+        "character": "frog",
+        "skins": {
+          "frog": "bullfrog"
+        }
+      },
+      "expected": {
+        "character": "frog",
+        "skins": {
+          "frog": "bullfrog"
+        }
+      }
+    },
+    {
+      "name": "frog ghost",
+      "input": {
+        "character": "frog",
+        "skins": {
+          "frog": "ghost"
+        }
+      },
+      "expected": {
+        "character": "frog",
+        "skins": {
+          "frog": "ghost"
+        }
+      }
+    },
+    {
+      "name": "frog retro98",
+      "input": {
+        "character": "frog",
+        "skins": {
+          "frog": "retro98"
+        }
+      },
+      "expected": {
+        "character": "frog",
+        "skins": {
+          "frog": "retro98"
+        }
+      }
+    },
+    {
+      "name": "frog gold",
+      "input": {
+        "character": "frog",
+        "skins": {
+          "frog": "gold"
+        }
+      },
+      "expected": {
+        "character": "frog",
+        "skins": {
+          "frog": "gold"
+        }
+      }
+    },
+    {
+      "name": "frog neon",
+      "input": {
+        "character": "frog",
+        "skins": {
+          "frog": "neon"
+        }
+      },
+      "expected": {
+        "character": "frog",
+        "skins": {
+          "frog": "neon"
+        }
+      }
+    },
+    {
+      "name": "frog chrome",
+      "input": {
+        "character": "frog",
+        "skins": {
+          "frog": "chrome"
+        }
+      },
+      "expected": {
+        "character": "frog",
+        "skins": {
+          "frog": "chrome"
+        }
+      }
+    },
+    {
+      "name": "frog glitch",
+      "input": {
+        "character": "frog",
+        "skins": {
+          "frog": "glitch"
+        }
+      },
+      "expected": {
+        "character": "frog",
+        "skins": {
+          "frog": "glitch"
+        }
+      }
+    },
+    {
+      "name": "frog holo",
+      "input": {
+        "character": "frog",
+        "skins": {
+          "frog": "holo"
+        }
+      },
+      "expected": {
+        "character": "frog",
+        "skins": {
+          "frog": "holo"
+        }
+      }
+    },
+    {
+      "name": "frog molten",
+      "input": {
+        "character": "frog",
+        "skins": {
+          "frog": "molten"
+        }
+      },
+      "expected": {
+        "character": "frog",
+        "skins": {
+          "frog": "molten"
+        }
+      }
+    },
+    {
       "name": "editor owl",
       "input": {
         "character": "owl",
@@ -2569,7 +2789,8 @@
           "shape": "galaxy",
           "trombi": "holo",
           "bunbu": "velvet",
-          "shiba": "sesame"
+          "shiba": "sesame",
+          "frog": "poison"
         }
       },
       "expected": {
@@ -2580,7 +2801,8 @@
           "shape": "galaxy",
           "trombi": "holo",
           "bunbu": "velvet",
-          "shiba": "sesame"
+          "shiba": "sesame",
+          "frog": "poison"
         }
       }
     },
@@ -2594,7 +2816,8 @@
           "shape": "plain",
           "trombi": "classic",
           "bunbu": "plain",
-          "shiba": "plain"
+          "shiba": "plain",
+          "frog": "plain"
         }
       },
       "expected": {
@@ -2605,7 +2828,8 @@
           "shape": "plain",
           "trombi": "classic",
           "bunbu": "plain",
-          "shiba": "plain"
+          "shiba": "plain",
+          "frog": "plain"
         }
       }
     },
@@ -2619,7 +2843,8 @@
           "shape": "galaxy",
           "trombi": "holo",
           "bunbu": "velvet",
-          "shiba": "sesame"
+          "shiba": "sesame",
+          "frog": "poison"
         }
       },
       "expected": {
@@ -2630,7 +2855,8 @@
           "shape": "galaxy",
           "trombi": "holo",
           "bunbu": "velvet",
-          "shiba": "sesame"
+          "shiba": "sesame",
+          "frog": "poison"
         }
       }
     },
@@ -2644,7 +2870,8 @@
           "shape": "plain",
           "trombi": "classic",
           "bunbu": "plain",
-          "shiba": "plain"
+          "shiba": "plain",
+          "frog": "plain"
         }
       },
       "expected": {
@@ -2655,7 +2882,8 @@
           "shape": "plain",
           "trombi": "classic",
           "bunbu": "plain",
-          "shiba": "plain"
+          "shiba": "plain",
+          "frog": "plain"
         }
       }
     },
@@ -2669,7 +2897,8 @@
           "shape": "galaxy",
           "trombi": "holo",
           "bunbu": "velvet",
-          "shiba": "sesame"
+          "shiba": "sesame",
+          "frog": "poison"
         }
       },
       "expected": {
@@ -2680,7 +2909,8 @@
           "shape": "galaxy",
           "trombi": "holo",
           "bunbu": "velvet",
-          "shiba": "sesame"
+          "shiba": "sesame",
+          "frog": "poison"
         }
       }
     },
@@ -2694,7 +2924,8 @@
           "shape": "plain",
           "trombi": "classic",
           "bunbu": "plain",
-          "shiba": "plain"
+          "shiba": "plain",
+          "frog": "plain"
         }
       },
       "expected": {
@@ -2705,7 +2936,8 @@
           "shape": "plain",
           "trombi": "classic",
           "bunbu": "plain",
-          "shiba": "plain"
+          "shiba": "plain",
+          "frog": "plain"
         }
       }
     },
@@ -2719,7 +2951,8 @@
           "shape": "galaxy",
           "trombi": "holo",
           "bunbu": "velvet",
-          "shiba": "sesame"
+          "shiba": "sesame",
+          "frog": "poison"
         }
       },
       "expected": {
@@ -2730,7 +2963,8 @@
           "shape": "galaxy",
           "trombi": "holo",
           "bunbu": "velvet",
-          "shiba": "sesame"
+          "shiba": "sesame",
+          "frog": "poison"
         }
       }
     },
@@ -2744,7 +2978,8 @@
           "shape": "plain",
           "trombi": "classic",
           "bunbu": "plain",
-          "shiba": "plain"
+          "shiba": "plain",
+          "frog": "plain"
         }
       },
       "expected": {
@@ -2755,7 +2990,8 @@
           "shape": "plain",
           "trombi": "classic",
           "bunbu": "plain",
-          "shiba": "plain"
+          "shiba": "plain",
+          "frog": "plain"
         }
       }
     },
@@ -2769,7 +3005,8 @@
           "shape": "galaxy",
           "trombi": "holo",
           "bunbu": "velvet",
-          "shiba": "sesame"
+          "shiba": "sesame",
+          "frog": "poison"
         }
       },
       "expected": {
@@ -2780,7 +3017,8 @@
           "shape": "galaxy",
           "trombi": "holo",
           "bunbu": "velvet",
-          "shiba": "sesame"
+          "shiba": "sesame",
+          "frog": "poison"
         }
       }
     },
@@ -2794,7 +3032,8 @@
           "shape": "plain",
           "trombi": "classic",
           "bunbu": "plain",
-          "shiba": "plain"
+          "shiba": "plain",
+          "frog": "plain"
         }
       },
       "expected": {
@@ -2805,7 +3044,62 @@
           "shape": "plain",
           "trombi": "classic",
           "bunbu": "plain",
-          "shiba": "plain"
+          "shiba": "plain",
+          "frog": "plain"
+        }
+      }
+    },
+    {
+      "name": "editor frog",
+      "input": {
+        "character": "frog",
+        "style": "2d",
+        "shape": "cloud",
+        "skins": {
+          "shape": "galaxy",
+          "trombi": "holo",
+          "bunbu": "velvet",
+          "shiba": "sesame",
+          "frog": "poison"
+        }
+      },
+      "expected": {
+        "character": "frog",
+        "style": "2d",
+        "shape": "cloud",
+        "skins": {
+          "shape": "galaxy",
+          "trombi": "holo",
+          "bunbu": "velvet",
+          "shiba": "sesame",
+          "frog": "poison"
+        }
+      }
+    },
+    {
+      "name": "editor default frog",
+      "input": {
+        "character": "frog",
+        "style": "2d",
+        "shape": "circle",
+        "skins": {
+          "shape": "plain",
+          "trombi": "classic",
+          "bunbu": "plain",
+          "shiba": "plain",
+          "frog": "plain"
+        }
+      },
+      "expected": {
+        "character": "frog",
+        "style": "2d",
+        "shape": "circle",
+        "skins": {
+          "shape": "plain",
+          "trombi": "classic",
+          "bunbu": "plain",
+          "shiba": "plain",
+          "frog": "plain"
         }
       }
     },
@@ -3555,6 +3849,276 @@
       }
     },
     {
+      "name": "legacy frog skin green",
+      "input": {
+        "character": "frog",
+        "skins": {
+          "frog": "green"
+        }
+      },
+      "expected": {
+        "character": "frog",
+        "skins": {
+          "frog": "leaf"
+        }
+      }
+    },
+    {
+      "name": "legacy frog skin tree-frog",
+      "input": {
+        "character": "frog",
+        "skins": {
+          "frog": "tree-frog"
+        }
+      },
+      "expected": {
+        "character": "frog",
+        "skins": {
+          "frog": "tree"
+        }
+      }
+    },
+    {
+      "name": "legacy frog skin treefrog",
+      "input": {
+        "character": "frog",
+        "skins": {
+          "frog": "treefrog"
+        }
+      },
+      "expected": {
+        "character": "frog",
+        "skins": {
+          "frog": "tree"
+        }
+      }
+    },
+    {
+      "name": "legacy frog skin red-eyed",
+      "input": {
+        "character": "frog",
+        "skins": {
+          "frog": "red-eyed"
+        }
+      },
+      "expected": {
+        "character": "frog",
+        "skins": {
+          "frog": "tree"
+        }
+      }
+    },
+    {
+      "name": "legacy frog skin dart",
+      "input": {
+        "character": "frog",
+        "skins": {
+          "frog": "dart"
+        }
+      },
+      "expected": {
+        "character": "frog",
+        "skins": {
+          "frog": "poison"
+        }
+      }
+    },
+    {
+      "name": "legacy frog skin poison-dart",
+      "input": {
+        "character": "frog",
+        "skins": {
+          "frog": "poison-dart"
+        }
+      },
+      "expected": {
+        "character": "frog",
+        "skins": {
+          "frog": "poison"
+        }
+      }
+    },
+    {
+      "name": "legacy frog skin bull",
+      "input": {
+        "character": "frog",
+        "skins": {
+          "frog": "bull"
+        }
+      },
+      "expected": {
+        "character": "frog",
+        "skins": {
+          "frog": "bullfrog"
+        }
+      }
+    },
+    {
+      "name": "legacy frog skin glass",
+      "input": {
+        "character": "frog",
+        "skins": {
+          "frog": "glass"
+        }
+      },
+      "expected": {
+        "character": "frog",
+        "skins": {
+          "frog": "ghost"
+        }
+      }
+    },
+    {
+      "name": "legacy frog skin glass-frog",
+      "input": {
+        "character": "frog",
+        "skins": {
+          "frog": "glass-frog"
+        }
+      },
+      "expected": {
+        "character": "frog",
+        "skins": {
+          "frog": "ghost"
+        }
+      }
+    },
+    {
+      "name": "legacy frog skin golden",
+      "input": {
+        "character": "frog",
+        "skins": {
+          "frog": "golden"
+        }
+      },
+      "expected": {
+        "character": "frog",
+        "skins": {
+          "frog": "gold"
+        }
+      }
+    },
+    {
+      "name": "legacy frog skin retro",
+      "input": {
+        "character": "frog",
+        "skins": {
+          "frog": "retro"
+        }
+      },
+      "expected": {
+        "character": "frog",
+        "skins": {
+          "frog": "retro98"
+        }
+      }
+    },
+    {
+      "name": "legacy frog skin win98",
+      "input": {
+        "character": "frog",
+        "skins": {
+          "frog": "win98"
+        }
+      },
+      "expected": {
+        "character": "frog",
+        "skins": {
+          "frog": "retro98"
+        }
+      }
+    },
+    {
+      "name": "legacy frog skin royal",
+      "input": {
+        "character": "frog",
+        "skins": {
+          "frog": "royal"
+        }
+      },
+      "expected": {
+        "character": "frog",
+        "skins": {
+          "frog": "gold"
+        }
+      }
+    },
+    {
+      "name": "legacy frog skin metal",
+      "input": {
+        "character": "frog",
+        "skins": {
+          "frog": "metal"
+        }
+      },
+      "expected": {
+        "character": "frog",
+        "skins": {
+          "frog": "chrome"
+        }
+      }
+    },
+    {
+      "name": "legacy frog skin cyber",
+      "input": {
+        "character": "frog",
+        "skins": {
+          "frog": "cyber"
+        }
+      },
+      "expected": {
+        "character": "frog",
+        "skins": {
+          "frog": "glitch"
+        }
+      }
+    },
+    {
+      "name": "legacy frog skin iridescent",
+      "input": {
+        "character": "frog",
+        "skins": {
+          "frog": "iridescent"
+        }
+      },
+      "expected": {
+        "character": "frog",
+        "skins": {
+          "frog": "holo"
+        }
+      }
+    },
+    {
+      "name": "legacy frog skin holographic",
+      "input": {
+        "character": "frog",
+        "skins": {
+          "frog": "holographic"
+        }
+      },
+      "expected": {
+        "character": "frog",
+        "skins": {
+          "frog": "holo"
+        }
+      }
+    },
+    {
+      "name": "legacy frog skin lava",
+      "input": {
+        "character": "frog",
+        "skins": {
+          "frog": "lava"
+        }
+      },
+      "expected": {
+        "character": "frog",
+        "skins": {
+          "frog": "molten"
+        }
+      }
+    },
+    {
       "name": "unknown shape skin",
       "input": {
         "character": "shape",
@@ -3597,6 +4161,22 @@
         "character": "shiba",
         "skins": {
           "bunbu": "gold"
+        }
+      }
+    },
+    {
+      "name": "unknown frog skin",
+      "input": {
+        "character": "frog",
+        "skins": {
+          "frog": "plasma",
+          "shiba": "red"
+        }
+      },
+      "expected": {
+        "character": "frog",
+        "skins": {
+          "shiba": "red"
         }
       }
     },

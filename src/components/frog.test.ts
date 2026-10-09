@@ -1,8 +1,22 @@
 // Frog, the smug sad frog (direction C, "aplat net"): its drawing as data,
 // its sixteen faces carried by the lids and the lips, the skin for every bot
 // color and the bust crop.
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
+import en from "@/locales/en.json";
+import fr from "@/locales/fr.json";
+import { APP_ICON_CHOICES } from "@/lib/app-icon-choices";
+import { BotAvatar, frogExpressionFor } from "@/components/Avatar";
+import { ACHIEVEMENTS } from "../../shared/achievements-catalog";
+import { rewardKey, skinTier } from "../../shared/achievements";
 import { contrastRatio, MASCOT_COLOR_HEX } from "../../shared/mascot-colors";
+import { botMascotLook, CHARACTER_PAINT, completeMascotLook, FROG_DEFAULT_COLOR, FROG_SKIN_TIER, FROG_SKINS, LEGACY_FROG_SKINS, mascotLookSchema } from "../../shared/mascot-look";
+import { MASCOTS, mascotFor } from "./floating-bots/mascots";
+import { CHARACTER_LABEL, FROG_SKIN_LABEL } from "./floating-bots/MascotLookEditor";
+import { colorGroupsFor, skinTierTabs } from "./floating-bots/editor-tabs";
+import { FrogMascot, frogExpressionForMood } from "./FrogMascot";
+import { frogSkinId, frogSkinPaint } from "./skin-fx/frog-skins";
 import { SHAPE_EXPRESSIONS } from "./shape-engine";
 import {
   FROG_ART,
@@ -32,6 +46,8 @@ import {
   toHsl,
   type FrogOp,
 } from "./frog-art";
+
+const draw = (props: Partial<Parameters<typeof FrogMascot>[0]> = {}) => renderToStaticMarkup(createElement(FrogMascot, { color: "green", ...props }));
 
 const ABSOLUTE = /^[MLCQZ0-9.\s-]+$/;
 const pathsOf = (ops: readonly FrogOp[]) => ops.flatMap((op) => [op.d, ...(op.clip ? [op.clip] : [])]);
@@ -131,5 +147,127 @@ describe("Frog's art", () => {
       if (op.stroke) expect(palette[op.stroke], op.stroke).toMatch(/^#[0-9a-fA-F]{6}$/);
     }
     expect(FROG_ART.eye.r).toBe(8.4);
+  });
+});
+
+describe("Frog's look", () => {
+  it("is a character of its own, stored with the bot like the others", () => {
+    expect(botMascotLook({ character: "frog", skins: { frog: "poison" } })).toEqual({ character: "frog", skins: { frog: "poison" } });
+    expect(completeMascotLook({ character: "frog" }).skins.frog).toBe("plain");
+    expect(CHARACTER_PAINT.frog).toEqual({ colors: true, skins: FROG_SKINS, wingMoves: false });
+    expect(MASCOT_COLOR_HEX[FROG_DEFAULT_COLOR as keyof typeof MASCOT_COLOR_HEX]).toBeDefined();
+    // each character keeps its own skin
+    const look = completeMascotLook({ character: "frog", skins: { frog: "tree", shiba: "red" } });
+    expect(completeMascotLook({ ...look, character: "shiba" }).skins).toMatchObject({ shiba: "red", frog: "tree" });
+  });
+
+  it("reads other names a stored skin may carry, and drops one it does not know without losing the character", () => {
+    for (const [old, current] of Object.entries(LEGACY_FROG_SKINS)) expect(botMascotLook({ character: "frog", skins: { frog: old } }).skins?.frog, old).toBe(current);
+    expect(botMascotLook({ character: "frog", skins: { frog: "toad" } })).toEqual({ character: "frog" });
+    expect(mascotLookSchema.safeParse({ character: "frog", skins: { frog: "nope" } }).success).toBe(false);
+  });
+
+  it("is in the registry, the editor, the palettes (Clay included), the app icons and the achievements", () => {
+    expect(mascotFor({ character: "frog" }).id).toBe("frog");
+    expect(MASCOTS.find((entry) => entry.id === "frog")?.capabilities.wings).toBe(false);
+    expect(CHARACTER_LABEL.frog).toBe("floatingBots.mascot.frog");
+    expect(colorGroupsFor("frog", "green")).toContain("clay");
+    expect(APP_ICON_CHOICES.some((choice) => choice.art.kind === "frog")).toBe(true);
+    const rewarded = ACHIEVEMENTS.flatMap((item) => item.rewards.map(rewardKey));
+    expect(rewarded).toContain("character:frog");
+    // the same unlock rules as Shiba's: each premium Frog skin comes with the Shiba skin of the same name
+    for (const skin of FROG_SKINS) {
+      if (skinTier("frog", skin) === "common") continue;
+      expect(rewarded, skin).toContain(`skin:frog:${skin}`);
+      const with_ = ACHIEVEMENTS.find((item) => item.rewards.map(rewardKey).includes(`skin:frog:${skin}`));
+      expect(with_?.rewards.map(rewardKey), skin).toContain(`skin:shiba:${skin}`);
+    }
+  });
+
+  it("maps the app's states to its faces", () => {
+    expect(frogExpressionFor("sleeping")).toBe("sleepy");
+    expect(frogExpressionFor("searching")).toBe("curious");
+    expect(frogExpressionFor("laughing")).toBe("laughing");
+    expect(frogExpressionFor("celebrate")).toBe("excited");
+    expect(frogExpressionFor(undefined)).toBe("neutral");
+    expect(frogExpressionForMood("thinking")).toBe("curious");
+  });
+});
+
+describe("Frog's skins", () => {
+  it("has thirteen skins over the four rarities: real frogs, then the premium editions", () => {
+    expect([...FROG_SKINS]).toEqual(["plain", "leaf", "tree", "poison", "bullfrog", "ghost", "retro98", "gold", "neon", "chrome", "glitch", "holo", "molten"]);
+    expect(Object.keys(FROG_SKIN_TIER)).toEqual([...FROG_SKINS]);
+    const counts = Object.fromEntries(skinTierTabs(FROG_SKINS, FROG_SKIN_TIER).map((tab) => [tab.tier, tab.count]));
+    expect(counts).toEqual({ common: 6, rare: 2, epic: 3, legendary: 2 });
+  });
+
+  it("names every skin in English and French", () => {
+    expect(Object.keys(FROG_SKIN_LABEL)).toEqual([...FROG_SKINS]);
+    for (const key of [...Object.values(FROG_SKIN_LABEL), CHARACTER_LABEL.frog]) {
+      expect(en).toHaveProperty([key]);
+      expect(fr).toHaveProperty([key]);
+    }
+  });
+
+  it("paints every role of every skin, with its rarity and effect family", () => {
+    for (const skin of FROG_SKINS) {
+      const paint = frogSkinPaint(skin, "#377FE6", "u");
+      for (const role of FROG_ROLES) expect(paint.palette[role], `${skin} ${role}`).toMatch(/^(#[0-9a-fA-F]{6}|url\(#u-[a-zA-Z]+\))$/);
+      expect(paint.tier).toBe(FROG_SKIN_TIER[skin]);
+      expect(paint.fx).toBeTruthy();
+    }
+    expect(frogSkinPaint("retro98", "#E78531", "u").fx).toBe("retro");
+    expect(frogSkinPaint("glitch", "#E78531", "u").bodyClass).toBe("fx-glitch-slice");
+    // the real frogs are their own colors, whatever the bot's
+    for (const skin of ["leaf", "tree", "poison", "bullfrog", "ghost"] as const) expect(frogSkinPaint(skin, "#377FE6", "u").palette.skin, skin).toBe(frogSkinPaint(skin, "#009957", "u").palette.skin);
+    // the tree frog: red eyes, orange toes; the poison frog: spotted; the glass frog: see-through
+    const tree = frogSkinPaint("tree", "#377FE6", "u").palette;
+    expect(tree.white).toBe("#E5231B");
+    expect(tree.toe).toBe("#FF8A1F");
+    expect(frogSkinPaint("poison", "#377FE6", "u").palette.skin).toBe("url(#u-spots)");
+    expect(frogSkinPaint("ghost", "#377FE6", "u").palette.skin).toBe("url(#u-glass)");
+    // plain follows the bot's color
+    expect(frogSkinPaint("plain", "#377FE6", "u").palette.skin).not.toBe(frogSkinPaint("plain", "#E78531", "u").palette.skin);
+    expect(frogSkinId("unknown")).toBe("plain");
+  });
+
+  it("draws the premium treatments only in the full drawing", () => {
+    const full = draw({ skin: "holo", size: 96 });
+    expect(full).toContain("fx-foil-diag");
+    expect(full).toContain('data-fx="full"');
+    const still = draw({ skin: "holo", size: 24 });
+    expect(still).toContain('data-fx="static"');
+    expect(still).not.toMatch(/fx-foil|fx-sweep|fx-twinkle|<filter/);
+    expect(draw({ skin: "molten", size: 96 })).toContain("fx-crack");
+    expect(draw({ skin: "glitch", size: 96 })).toContain("fx-glitch-r");
+  });
+});
+
+describe("Frog's drawing", () => {
+  it("renders every skin at every size without broken values", () => {
+    for (const skin of FROG_SKINS) {
+      for (const size of [16, 24, 32, 44, 96, 256]) {
+        const html = draw({ skin, size });
+        expect(html, `${skin}@${size}`).not.toMatch(/NaN|undefined|url\(#\)/);
+        expect(html).toContain(`data-frog-skin="${skin}"`);
+        expect(html).toContain(`width:${size}px`);
+      }
+    }
+    expect(draw({ size: 32 })).toContain('viewBox="11 14 78 78"');
+    expect(draw({ size: 96 })).toContain('viewBox="0 0 100 100"');
+  });
+
+  it("keeps the defs of two Frogs on one page apart", () => {
+    const html = renderToStaticMarkup(createElement("div", null, createElement(FrogMascot, { color: "green", skin: "poison", size: 96 }), createElement(FrogMascot, { color: "green", skin: "poison", size: 96 })));
+    const ids = [...html.matchAll(/ id="([^"]+)"/g)].map((match) => match[1]);
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  it("is what a bot wearing it shows everywhere", () => {
+    const html = renderToStaticMarkup(createElement(BotAvatar, { bot: { color: "green", mascotLook: { character: "frog", skins: { frog: "tree" } } }, size: 40, state: "laughing" }));
+    expect(html).toContain('data-character="frog"');
+    expect(html).toContain('data-frog-skin="tree"');
+    expect(html).toContain('data-expression="laughing"');
   });
 });

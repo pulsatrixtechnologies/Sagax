@@ -15,13 +15,17 @@
  * - shiba: Shiba, the dog (flat two tones and a shade, one outline), in the
  *   bot's color or a coat of its own, with a Shiba skin. It walks, wanders,
  *   turns in circles and barks on the desktop (shiba-moves.ts).
+ * - frog: Frog, the smug sad frog (same flat style: heavy lids, wide flat
+ *   lips), its skin taking a tint of the bot's color, with a Frog skin. It
+ *   hops, puffs its throat, catches flies and naps on a lily pad on the
+ *   desktop (frog-moves.ts).
  *
  * Each character keeps its own skin, so switching character and back finds
  * the choice made before. Absent means the owl, as every bot had before.
  */
 import { z } from "zod";
 
-export const MASCOT_CHARACTERS = ["owl", "shape", "trombi", "bunbu", "shiba"] as const;
+export const MASCOT_CHARACTERS = ["owl", "shape", "trombi", "bunbu", "shiba", "frog"] as const;
 export type MascotCharacter = (typeof MASCOT_CHARACTERS)[number];
 
 /**
@@ -78,6 +82,15 @@ export type BunbuSkin = (typeof BUNBU_SKINS)[number];
 export const SHIBA_SKINS = ["plain", "cream", "blacktan", "red", "sesame", "white", "retro98", "gold", "neon", "chrome", "glitch", "holo", "molten"] as const;
 export type ShibaSkin = (typeof SHIBA_SKINS)[number];
 
+/**
+ * Skins for Frog, by rarity: the bot's color (Plain) and loud real frogs
+ * (Leaf, Tree the red-eyed tree frog, Poison the blue dart frog, Bullfrog,
+ * Ghost the see-through glass frog), then the premium editions with the
+ * Trombi, Shapes and Shiba treatments (src/components/skin-fx/frog-skins.tsx).
+ */
+export const FROG_SKINS = ["plain", "leaf", "tree", "poison", "bullfrog", "ghost", "retro98", "gold", "neon", "chrome", "glitch", "holo", "molten"] as const;
+export type FrogSkin = (typeof FROG_SKINS)[number];
+
 /** How rare a skin is: the picker's label and card. */
 export type SkinTier = "common" | "rare" | "epic" | "legendary";
 
@@ -130,6 +143,22 @@ export const SHIBA_SKIN_TIER: Readonly<Record<ShibaSkin, SkinTier>> = {
   red: "common",
   sesame: "common",
   white: "common",
+  retro98: "rare",
+  gold: "rare",
+  neon: "epic",
+  chrome: "epic",
+  glitch: "epic",
+  holo: "legendary",
+  molten: "legendary",
+};
+
+export const FROG_SKIN_TIER: Readonly<Record<FrogSkin, SkinTier>> = {
+  plain: "common",
+  leaf: "common",
+  tree: "common",
+  poison: "common",
+  bullfrog: "common",
+  ghost: "common",
   retro98: "rare",
   gold: "rare",
   neon: "epic",
@@ -194,6 +223,27 @@ export const LEGACY_SHIBA_SKINS: Readonly<Record<string, ShibaSkin>> = {
   lava: "molten",
 };
 
+export const LEGACY_FROG_SKINS: Readonly<Record<string, FrogSkin>> = {
+  green: "leaf",
+  "tree-frog": "tree",
+  treefrog: "tree",
+  "red-eyed": "tree",
+  dart: "poison",
+  "poison-dart": "poison",
+  bull: "bullfrog",
+  glass: "ghost",
+  "glass-frog": "ghost",
+  golden: "gold",
+  retro: "retro98",
+  win98: "retro98",
+  royal: "gold",
+  metal: "chrome",
+  cyber: "glitch",
+  iridescent: "holo",
+  holographic: "holo",
+  lava: "molten",
+};
+
 const legacy = (table: Readonly<Record<string, string>>) => (value: unknown) => (typeof value === "string" && Object.hasOwn(table, value) ? table[value] : value);
 
 export const mascotLookSchema = z
@@ -207,6 +257,7 @@ export const mascotLookSchema = z
         trombi: z.preprocess(legacy(LEGACY_TROMBI_SKINS), z.enum(TROMBI_SKINS)).optional(),
         bunbu: z.preprocess(legacy(LEGACY_BUNBU_SKINS), z.enum(BUNBU_SKINS)).optional(),
         shiba: z.preprocess(legacy(LEGACY_SHIBA_SKINS), z.enum(SHIBA_SKINS)).optional(),
+        frog: z.preprocess(legacy(LEGACY_FROG_SKINS), z.enum(FROG_SKINS)).optional(),
       })
       .strict()
       .optional(),
@@ -229,27 +280,29 @@ export function botMascotLook(value: unknown): MascotLook {
   const { skins, ...rest } = value as { skins?: unknown };
   const known: Record<string, string> = {};
   if (skins && typeof skins === "object") {
-    const { shape, trombi, bunbu, shiba } = skins as { shape?: unknown; trombi?: unknown; bunbu?: unknown; shiba?: unknown };
+    const { shape, trombi, bunbu, shiba, frog } = skins as { shape?: unknown; trombi?: unknown; bunbu?: unknown; shiba?: unknown; frog?: unknown };
     const shapeSkin = legacy(LEGACY_SHAPE_SKINS)(shape);
     const trombiSkin = legacy(LEGACY_TROMBI_SKINS)(trombi);
     const bunbuSkin = legacy(LEGACY_BUNBU_SKINS)(bunbu);
     const shibaSkin = legacy(LEGACY_SHIBA_SKINS)(shiba);
+    const frogSkin = legacy(LEGACY_FROG_SKINS)(frog);
     if ((SHAPE_SKINS as readonly unknown[]).includes(shapeSkin)) known.shape = shapeSkin as string;
     if ((TROMBI_SKINS as readonly unknown[]).includes(trombiSkin)) known.trombi = trombiSkin as string;
     if ((BUNBU_SKINS as readonly unknown[]).includes(bunbuSkin)) known.bunbu = bunbuSkin as string;
     if ((SHIBA_SKINS as readonly unknown[]).includes(shibaSkin)) known.shiba = shibaSkin as string;
+    if ((FROG_SKINS as readonly unknown[]).includes(frogSkin)) known.frog = frogSkin as string;
   }
   return mascotLookSchema.safeParse(Object.keys(known).length ? { ...rest, skins: known } : rest).data ?? DEFAULT_MASCOT_LOOK;
 }
 
 /** The look with every choice filled in. */
-export function completeMascotLook(value: unknown): Required<Omit<MascotLook, "skins">> & { skins: { shape: ShapeSkin; trombi: TrombiSkin; bunbu: BunbuSkin; shiba: ShibaSkin } } {
+export function completeMascotLook(value: unknown): Required<Omit<MascotLook, "skins">> & { skins: { shape: ShapeSkin; trombi: TrombiSkin; bunbu: BunbuSkin; shiba: ShibaSkin; frog: FrogSkin } } {
   const look = botMascotLook(value);
   return {
     character: look.character,
     style: look.style ?? "2d",
     shape: look.shape ?? "circle",
-    skins: { shape: look.skins?.shape ?? "plain", trombi: look.skins?.trombi ?? "classic", bunbu: look.skins?.bunbu ?? "plain", shiba: look.skins?.shiba ?? "plain" },
+    skins: { shape: look.skins?.shape ?? "plain", trombi: look.skins?.trombi ?? "classic", bunbu: look.skins?.bunbu ?? "plain", shiba: look.skins?.shiba ?? "plain", frog: look.skins?.frog ?? "plain" },
   };
 }
 
@@ -260,6 +313,7 @@ export const CHARACTER_PAINT: Readonly<Record<MascotCharacter, { colors: boolean
   trombi: { colors: false, skins: TROMBI_SKINS, wingMoves: false },
   bunbu: { colors: true, skins: BUNBU_SKINS, wingMoves: false },
   shiba: { colors: true, skins: SHIBA_SKINS, wingMoves: false },
+  frog: { colors: true, skins: FROG_SKINS, wingMoves: false },
 };
 
 /** The color Bunbu shows where no bot gives one (the app icon, the gallery): mint, our own. */
@@ -267,3 +321,6 @@ export const BUNBU_DEFAULT_COLOR = "mint";
 
 /** The color Shiba shows where no bot gives one (the app icon, the gallery): the breed's own orange. */
 export const SHIBA_DEFAULT_COLOR = "orange";
+
+/** The color Frog shows where no bot gives one (the app icon, the gallery): green, so the skin is the approved frog green. */
+export const FROG_DEFAULT_COLOR = "green";

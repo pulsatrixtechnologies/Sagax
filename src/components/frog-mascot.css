@@ -1,0 +1,51 @@
+/* Frog (FrogMascot.tsx): the CSS idle of the app's avatars, a slow breath,
+   the throat fluttering with it, a lazy blink one eye then the other, and the
+   lips moving while it speaks. Every part turns about its own point in the
+   0..100 box (inline transform-origin, view-box units). The desktop mascot
+   and a move drive the same groups from the rig (frog-moves.ts) instead, and
+   drop these loops (.frog-rig). Reduced motion keeps it still. */
+
+.frog-mascot :is(.frog-whole, .frog-head, .frog-eye, .frog-mouth, .frog-throat) {
+  transform-box: view-box;
+}
+
+.frog-live:not(.frog-rig) .frog-whole { animation: frog-breathe 3.4s ease-in-out infinite; }
+.frog-live:not(.frog-rig) .frog-throat { animation: frog-throat 3.4s ease-in-out infinite; }
+.frog-live:not(.frog-rig) .frog-eye-l { animation: frog-blink 5.2s ease-in-out infinite; }
+.frog-live:not(.frog-rig) .frog-eye-r { animation: frog-blink 5.2s ease-in-out 0.22s infinite; }
+.frog-live:not(.frog-rig).frog-mood-speaking .frog-mouth { animation: frog-talk 0.4s ease-in-out infinite alternate; }
+.frog-live:not(.frog-rig).frog-mood-listening .frog-head { transform: rotate(-6deg); transition: transform 0.4s ease-out; }
+.frog-live:not(.frog-rig).frog-mood-thinking .frog-throat { animation: frog-puff 2.6s ease-in-out infinite; }
+.frog-live:not(.frog-rig).frog-mood-sleeping .frog-eye { animation: none; }
+.frog-live:not(.frog-rig).frog-mood-sleeping .frog-whole { animation-duration: 4.6s; }
+.frog-live:not(.frog-rig).frog-mood-sleeping .frog-throat { animation-duration: 4.6s; }
+
+@keyframes frog-breathe {
+  0%, 100% { transform: scale(1, 1); }
+  50% { transform: scale(1.012, 0.988); }
+}
+@keyframes frog-throat {
+  0%, 100% { transform: scale(0); }
+  50% { transform: scale(0.42); }
+}
+@keyframes frog-puff {
+  0%, 100% { transform: scale(0); }
+  28%, 52% { transform: scale(1); }
+  40% { transform: scale(0.86); }
+  82% { transform: scale(0.12); }
+}
+@keyframes frog-blink {
+  0%, 92%, 100% { transform: scaleY(1); }
+  95% { transform: scaleY(0.08); }
+}
+@keyframes frog-talk {
+  from { transform: scaleY(0.82); }
+  to { transform: scaleY(1.1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .frog-mascot :is(.frog-whole, .frog-head, .frog-eye, .frog-mouth, .frog-throat) {
+    animation: none !important;
+    transition: none !important;
+  }
+}

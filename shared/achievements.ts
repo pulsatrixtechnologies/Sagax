@@ -10,11 +10,13 @@
 //
 // Unlocking is idempotent: an achievement unlocks once, its rewards stay. The
 // rewards are what the mascot editor and the app icon picker unlock: a
-// character (Trombi, Bunbu, Shiba), a skin of a character, an app icon, or a title.
+// character (Trombi, Bunbu, Shiba, Frog), a skin of a character, an app icon, or a title.
 import { botMascotSkin, MASCOT_SKIN_IDS, OWL_SKIN_TIER, type MascotSkinId } from "./mascot-skins.ts";
 import {
   BUNBU_SKIN_TIER,
   BUNBU_SKINS,
+  FROG_SKIN_TIER,
+  FROG_SKINS,
   SHAPE_SKIN_TIER,
   SHAPE_SKINS,
   SHIBA_SKIN_TIER,
@@ -138,7 +140,7 @@ export type AchievementRule =
   | { kind: "completion" };
 
 export type AchievementReward =
-  | { kind: "character"; character: Extract<MascotCharacter, "shape" | "trombi" | "bunbu" | "shiba"> }
+  | { kind: "character"; character: Extract<MascotCharacter, "shape" | "trombi" | "bunbu" | "shiba" | "frog"> }
   | { kind: "skin"; character: MascotCharacter; skin: string }
   | { kind: "appIcon"; id: string }
   | { kind: "title"; id: string; name: Localized };
@@ -407,6 +409,8 @@ export function skinTier(character: MascotCharacter, skin: string): SkinTier {
       return (BUNBU_SKIN_TIER as Record<string, SkinTier>)[skin] ?? "common";
     case "shiba":
       return (SHIBA_SKIN_TIER as Record<string, SkinTier>)[skin] ?? "common";
+    case "frog":
+      return (FROG_SKIN_TIER as Record<string, SkinTier>)[skin] ?? "common";
   }
 }
 
@@ -422,6 +426,8 @@ export function skinsOf(character: MascotCharacter): readonly string[] {
       return BUNBU_SKINS;
     case "shiba":
       return SHIBA_SKINS;
+    case "frog":
+      return FROG_SKINS;
   }
 }
 
@@ -487,7 +493,7 @@ export function grandfatheredFromBots(bots: ReadonlyArray<{ mascotLook?: unknown
     if (look.character !== "owl") keys.add(`character:${look.character}`);
     const owlSkin: MascotSkinId = botMascotSkin(bot.mascotSkin);
     if (OWL_SKIN_TIER[owlSkin] !== "common") keys.add(`skin:owl:${owlSkin}`);
-    for (const character of ["shape", "trombi", "bunbu", "shiba"] as const) {
+    for (const character of ["shape", "trombi", "bunbu", "shiba", "frog"] as const) {
       // The editor saves every character's skin on any change (filled with
       // the Common default), so only a skin above Common says it was chosen:
       // then that skin, and its character, were in use.

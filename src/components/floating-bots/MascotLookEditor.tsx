@@ -2,7 +2,7 @@
 // stored with the bot (bot.mascotLook, bot.color, bot.mascotSkin), so the
 // change shows everywhere the bot appears and on its desktop mascot.
 //
-//   Character: Owl, Shapes, Trombi, Bunbu, Shiba (the registry, mascots.tsx), full width:
+//   Character: Owl, Shapes, Trombi, Bunbu, Shiba, Frog (the registry, mascots.tsx), full width:
 //   the bot's avatar above the popover (the bot panel's header) is the
 //   preview, and plays the moves and the equip animation. Then that
 //   character's own options:
@@ -11,6 +11,7 @@
 //     Trombi: Trombi skin
 //     Bunbu: color, Bunbu skin
 //     Shiba: color, Shiba skin (the breed's coats, then premium editions)
+//     Frog: color (a tint of the skin), Frog skin (real frogs, then premium editions)
 //   Colors show one palette at a time (Vivid, Pastel, Deep, Neon, Neutral),
 //   skins one rarity at a time (Common, Rare, Epic, Legendary), each tab
 //   opening on the current choice (editor-tabs.ts). Skin cards preview the
@@ -31,11 +32,12 @@ import { MAUS_COLORS, swatchStyle, type MausColor, type MausMotion } from "@/lib
 import { MausAvatar } from "@/components/Avatar";
 import { MASCOT_SKIN_IDS, OWL_SKIN_TIER, botMascotSkin, type MascotSkinId } from "../../../shared/mascot-skins";
 import type { MascotColorGroup } from "../../../shared/mascot-colors";
-import { BUNBU_SKIN_TIER, BUNBU_SKINS, completeMascotLook, SHIBA_SKIN_TIER, SHIBA_SKINS, SHAPE_SKIN_TIER, SHAPE_SKINS, TROMBI_SKIN_TIER, TROMBI_SKINS, type MascotCharacter, type MascotLook, type MascotShape, type ShapeSkin, type SkinTier } from "../../../shared/mascot-look";
+import { BUNBU_SKIN_TIER, BUNBU_SKINS, completeMascotLook, FROG_SKIN_TIER, FROG_SKINS, SHIBA_SKIN_TIER, SHIBA_SKINS, SHAPE_SKIN_TIER, SHAPE_SKINS, TROMBI_SKIN_TIER, TROMBI_SKINS, type MascotCharacter, type MascotLook, type MascotShape, type ShapeSkin, type SkinTier } from "../../../shared/mascot-look";
 import { ShapeMascot } from "@/components/ShapeMascot";
 import { SkinnedTrombi } from "@/components/skin-fx/SkinnedTrombi";
 import { BunbuMascot } from "@/components/BunbuMascot";
 import { ShibaMascot } from "@/components/ShibaMascot";
+import { FrogMascot } from "@/components/FrogMascot";
 import "@/components/skin-fx/skin-fx.css";
 import { colorGroupsFor, colorTabFor, colorTabs, nextTab, skinTabFor, skinTierTabs } from "./editor-tabs";
 import { MASCOTS, SHAPE_CHOICES } from "./mascots";
@@ -63,6 +65,7 @@ export const CHARACTER_LABEL = {
   trombi: "floatingBots.mascot.trombi",
   bunbu: "floatingBots.mascot.bunbu",
   shiba: "floatingBots.mascot.shiba",
+  frog: "floatingBots.mascot.frog",
 } satisfies Record<MascotCharacter, LocaleKey>;
 
 export const SHAPE_LABEL = {
@@ -135,6 +138,22 @@ export const SHIBA_SKIN_LABEL = {
   holo: "mascot.shibaSkin.holo",
   molten: "mascot.shibaSkin.molten",
 } satisfies Record<(typeof SHIBA_SKINS)[number], LocaleKey>;
+
+export const FROG_SKIN_LABEL = {
+  plain: "mascot.frogSkin.plain",
+  leaf: "mascot.frogSkin.leaf",
+  tree: "mascot.frogSkin.tree",
+  poison: "mascot.frogSkin.poison",
+  bullfrog: "mascot.frogSkin.bullfrog",
+  ghost: "mascot.frogSkin.ghost",
+  retro98: "mascot.frogSkin.retro98",
+  gold: "mascot.frogSkin.gold",
+  neon: "mascot.frogSkin.neon",
+  chrome: "mascot.frogSkin.chrome",
+  glitch: "mascot.frogSkin.glitch",
+  holo: "mascot.frogSkin.holo",
+  molten: "mascot.frogSkin.molten",
+} satisfies Record<(typeof FROG_SKINS)[number], LocaleKey>;
 
 export const SKIN_TIER_LABEL = {
   common: "mascot.tier.common",
@@ -517,6 +536,25 @@ export default function MascotLookEditor({ bot, disabled, onPatch: savePatch, on
             onSelect={(skin) => setLook({ skins: { ...look.skins, shiba: skin } })}
             lockOf={(skin) => skinLock(unlocks, "shiba", skin)}
             preview={(skin) => <ShibaMascot skin={skin} color={bot.color} size={38} detail="full" label={null} />}
+          />
+        </div>
+      )}
+
+      {look.character === "frog" && (
+        <div data-character-options="frog">
+          {colors}
+          <SkinPicker
+            key="frog"
+            skins={FROG_SKINS}
+            tierOf={FROG_SKIN_TIER}
+            selected={look.skins.frog}
+            labelOf={(skin) => t(FROG_SKIN_LABEL[skin])}
+            idPrefix="frog-skin"
+            dataKey="data-frog-skin-option"
+            disabled={disabled}
+            onSelect={(skin) => setLook({ skins: { ...look.skins, frog: skin } })}
+            lockOf={(skin) => skinLock(unlocks, "frog", skin)}
+            preview={(skin) => <FrogMascot skin={skin} color={bot.color} size={38} detail="full" label={null} />}
           />
         </div>
       )}

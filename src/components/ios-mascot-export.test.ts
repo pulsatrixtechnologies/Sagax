@@ -18,7 +18,9 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   BUNBU_SKINS,
+  FROG_SKINS,
   LEGACY_BUNBU_SKINS,
+  LEGACY_FROG_SKINS,
   LEGACY_SHAPE_SKINS,
   LEGACY_SHAPES,
   LEGACY_SHIBA_SKINS,
@@ -66,9 +68,10 @@ function lookCases(): Case[] {
   for (const skin of TROMBI_SKINS) add(`trombi ${skin}`, { character: "trombi", skins: { trombi: skin } });
   for (const skin of BUNBU_SKINS) add(`bunbu ${skin}`, { character: "bunbu", skins: { bunbu: skin } });
   for (const skin of SHIBA_SKINS) add(`shiba ${skin}`, { character: "shiba", skins: { shiba: skin } });
+  for (const skin of FROG_SKINS) add(`frog ${skin}`, { character: "frog", skins: { frog: skin } });
   // the desktop editor saves every choice made (completeMascotLook), every character's skin at once
   for (const character of MASCOT_CHARACTERS) {
-    add(`editor ${character}`, completeMascotLook({ character, shape: "cloud", skins: { shape: "galaxy", trombi: "holo", bunbu: "velvet", shiba: "sesame" } }));
+    add(`editor ${character}`, completeMascotLook({ character, shape: "cloud", skins: { shape: "galaxy", trombi: "holo", bunbu: "velvet", shiba: "sesame", frog: "poison" } }));
     add(`editor default ${character}`, completeMascotLook({ character }));
   }
   for (const [legacy] of Object.entries(LEGACY_SHAPES)) add(`legacy shape ${legacy}`, { character: "shape", shape: legacy });
@@ -76,10 +79,12 @@ function lookCases(): Case[] {
   for (const [legacy] of Object.entries(LEGACY_TROMBI_SKINS)) add(`legacy trombi skin ${legacy}`, { character: "trombi", skins: { trombi: legacy } });
   for (const [legacy] of Object.entries(LEGACY_BUNBU_SKINS)) add(`legacy bunbu skin ${legacy}`, { character: "bunbu", skins: { bunbu: legacy } });
   for (const [legacy] of Object.entries(LEGACY_SHIBA_SKINS)) add(`legacy shiba skin ${legacy}`, { character: "shiba", skins: { shiba: legacy } });
+  for (const [legacy] of Object.entries(LEGACY_FROG_SKINS)) add(`legacy frog skin ${legacy}`, { character: "frog", skins: { frog: legacy } });
   // a newer build's skin is dropped, never the character
   add("unknown shape skin", { character: "shape", shape: "pill", skins: { shape: "plasma" } });
   add("unknown bunbu skin", { character: "bunbu", skins: { bunbu: "plasma", shape: "gold" } });
   add("unknown shiba skin", { character: "shiba", skins: { shiba: "plasma", bunbu: "gold" } });
+  add("unknown frog skin", { character: "frog", skins: { frog: "plasma", shiba: "red" } });
   add("unknown skins key", { character: "trombi", skins: { trombi: "gold", dragon: "red" } });
   add("null skins", { character: "bunbu", skins: null });
   add("null skin value", { character: "shape", shape: "drop", skins: { shape: null } });
@@ -104,6 +109,7 @@ function fixture() {
     trombiSkins: TROMBI_SKINS,
     bunbuSkins: BUNBU_SKINS,
     shibaSkins: SHIBA_SKINS,
+    frogSkins: FROG_SKINS,
     owlSkins: MASCOT_SKIN_IDS,
     colorGroups: Object.fromEntries(MASCOT_COLOR_GROUPS.map((group) => [group, Object.keys(MASCOT_COLOR_PALETTES[group])])),
     colors: MASCOT_COLOR_HEX,
