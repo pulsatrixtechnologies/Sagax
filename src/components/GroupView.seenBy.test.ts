@@ -69,7 +69,8 @@ describe("Transcript: seen by", () => {
     const markup = render({ "bot:cryptic": { messageId: "mine", at: 1_100 } });
     const mine = rowAfter(markup, "mine");
     expect(mine).toMatch(/data-testid="seen-by" class="[^"]*justify-end/);
-    expect(mine).toMatch(/title="Seen by Cryptic at [^"]+"/);
+    expect(mine).toMatch(/aria-label="Seen by Cryptic at [^"]+"/);
+    expect(mine).toMatch(/data-seen-by="bot:cryptic" role="img" tabindex="0" aria-label="Cryptic · [^"]+"/);
   });
 
   it("draws nothing without positions", () => {

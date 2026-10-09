@@ -6038,5 +6038,7 @@
   "workspaces.upgraded": "Every running installation restarted on the new release.",
   "workspaces.users": "Users",
   "workspaces.usersTitle": "Who may sign in to {slug}",
-  "workspaces.working": "Working…"
+  "workspaces.working": "Working…",
+  "seen.label": "Seen by",
+  "seen.face": "{name} · {time}"
 }

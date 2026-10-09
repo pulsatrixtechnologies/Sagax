@@ -2364,5 +2364,7 @@
   "voiceMode.call.fasterEndOfTurn": "Fim de turno mais rápido",
   "voiceMode.call.fasterEndOfTurnHelp": "Sua entonação, analisada neste computador, pode encerrar um turno mais cedo quando sua frase parece terminada. Não é usado com Patient.",
   "voiceMode.call.streamingVoice": "Voz contínua",
-  "voiceMode.call.streamingVoiceHelp": "A resposta começa a falar desde as primeiras palavras, por uma única conexão durante a chamada. Se essa conexão falhar, a chamada volta sozinha a uma solicitação por frase."
+  "voiceMode.call.streamingVoiceHelp": "A resposta começa a falar desde as primeiras palavras, por uma única conexão durante a chamada. Se essa conexão falhar, a chamada volta sozinha a uma solicitação por frase.",
+  "seen.label": "Visto por",
+  "seen.face": "{name} · {time}"
 }
