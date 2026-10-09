@@ -371,6 +371,7 @@ iPhone: `TasksRoutinesView.swift` (Settings > Advanced > Threads & Routines: lis
 | AU17 | Webhooks: list, create, rotate, deliveries, test | WebhooksPanel.tsx | /api/webhooks* | N | N (explained) | GET Y, writes admin | PARTIAL ("Computer only" note) | none | hidden | H | none |
 | AU18 | Keep the computer awake for routines | RoutineWakeBar | bridge | N | n/a | n/a | N/A | | | H | none |
 | AU19 | Org routine delegation (act in my name) | settings/MyRoutineDelegation.tsx | /api/org/routine-delegation | Y (org) | N | org | MISSING | Settings > Organization > Routines act as me | settings | C | none |
+| AU20 | Scope Mine / My teams / Everyone, filters Team, Bot, Owner, Status; others' routines read-only with owner avatar (2026-10-09) | routines/RoutineScopeBar.tsx, lib/use-routine-scope.ts | GET /api/routines?scope=mine\|team\|all&teamId&botId&ownerId&status, DELETE /api/routine-runs?scope=... | Y (org) | Y | Y | MISSING (iOS lists `mine` only; the plain listing is unchanged) | Automations toolbar: segmented Mine / My teams / Everyone (disabled with the missing permission), Menu > Filter; owner line on each row; hide Edit, Pause, Delete when `canEdit` is false and Run now when `canRun` is false | = | A | none |
 
 ## 10. Plugins, MCP, connectors
 
