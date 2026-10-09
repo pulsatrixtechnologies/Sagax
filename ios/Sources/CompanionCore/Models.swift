@@ -450,6 +450,9 @@ public struct BotProject: Codable, Hashable, Identifiable, Sendable {
 
 public struct BotTask: Codable, Hashable, Sendable {
     public var threadId: String
+    /// A room thread's own turn limit, minutes (#216); nil follows the
+    /// server's default.
+    public var turnTimeoutMinutes: Int? = nil
     public var title: String
     public var createdAt: Double
     public var modelSelection: ModelSelection?
@@ -952,6 +955,9 @@ public struct Room: Codable, Hashable, Identifiable, Sendable {
     /// The folder the room pinned on its first turn; once set, the working
     /// folder no longer changes for that thread.
     public var pinnedCwd: String? = nil
+    /// A direct conversation's own turn limit, minutes (#216); nil follows
+    /// the server's default.
+    public var turnTimeoutMinutes: Int? = nil
 }
 
 // MARK: - Responses

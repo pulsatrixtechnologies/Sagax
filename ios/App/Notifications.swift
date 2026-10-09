@@ -48,8 +48,9 @@ final class NotificationCoordinator: NSObject, UNUserNotificationCenterDelegate 
         center.add(UNNotificationRequest(identifier: identifier, content: content, trigger: nil))
     }
 
+    /// Settings > Notifications > Unread count on the app icon (#222).
     func setBadge(_ count: Int) {
-        center.setBadgeCount(max(0, count))
+        center.setBadgeCount(Attention.badge(count, settings: AttentionPrefs.settings))
     }
 
     func userNotificationCenter(

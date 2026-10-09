@@ -448,6 +448,13 @@ private struct RoutineRow: View {
                     + Text(verbatim: " · \(RoutineWording.schedule(routine.schedule)) · ")
                     + Text(LocalizedStringKey(routine.isTeamGoal ? "Team goal" : routine.runLocation.label)))
                     .font(.caption).foregroundStyle(Theme.textSecondary).lineLimit(2)
+                // #149: an organization routine acts in its owner's name
+                if let runAs = routine.runAs {
+                    Text(String(localized: "Runs as \(runAs.name.isEmpty ? runAs.principalId : runAs.name)"))
+                        .font(.caption2)
+                        .foregroundStyle(Theme.textSecondary)
+                        .accessibilityIdentifier("routines-row-run-as.\(routine.name)")
+                }
             }
             Spacer()
             if unseenFailure {

@@ -743,6 +743,7 @@ struct ChatListView: View {
         case .automations: showingAutomations = true
         case .archivedBots: accountSheet = .archivedBots
         case .achievements: accountSheet = .achievements
+        case .releaseNotes: accountSheet = .releaseNotes
         case .about: accountSheet = .about
         case .help: UIApplication.shared.open(SettingsLinks.helpCenter(french: false))
         }

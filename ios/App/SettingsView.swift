@@ -13,7 +13,7 @@ import MessageUI
 
 /// The sheet's pages.
 enum SettingsRoute: Hashable {
-    case account, usage, plugins, rules, timeZone, botComputer, appearance, language, haptics, general, experimental
+    case account, usage, plugins, rules, timeZone, botComputer, appearance, language, haptics, general, experimental, notifications, privacy
 }
 
 struct SettingsView: View {
@@ -187,6 +187,10 @@ private struct SettingsRootPage: View {
             SettingsRow(title: "Appearance", systemImage: "paintpalette", accessory: .valueChevron(appearanceValue), height: 44.33, identifier: "settings-appearance") { navigator.push(.appearance) }
         case .achievements:
             SettingsRow(title: "Achievements", systemImage: "trophy", accessory: .chevron, height: 44.33, identifier: "settings-achievements") { navigator.sheet = .achievements }
+        case .notifications:
+            SettingsRow(title: "Notifications", systemImage: "bell", accessory: .chevron, height: 44.33, identifier: "settings-notifications") { navigator.push(.notifications) }
+        case .privacy:
+            SettingsRow(title: "Privacy", systemImage: "hand.raised", accessory: .chevron, height: 44.33, identifier: "settings-privacy") { navigator.push(.privacy) }
         case .experimental:
             SettingsRow(title: "Experimental", systemImage: "flask", accessory: .chevron, height: 44.33, identifier: "settings-experimental") { navigator.push(.experimental) }
         case .plugins:
@@ -233,6 +237,8 @@ private struct SettingsRootPage: View {
         case .organization: navigator.sheet = .organization
         case .appearance: navigator.push(.appearance)
         case .achievements: navigator.sheet = .achievements
+        case .notifications: navigator.push(.notifications)
+        case .privacy: navigator.push(.privacy)
         case .experimental: navigator.push(.experimental)
         case .plugins: navigator.push(.plugins)
         case .account: navigator.push(.account)
@@ -270,6 +276,8 @@ struct SettingsRouteView: View {
         case .haptics: HapticsSettingsView()
         case .general: GeneralSettingsView()
         case .experimental: ExperimentalSettingsView()
+        case .notifications: NotificationsSettingsView()
+        case .privacy: PrivacySettingsView()
         }
     }
 }
@@ -353,7 +361,7 @@ struct HapticsSettingsView: View {
                 SettingsRow(title: "Off", accessory: haptics ? .none : .check, identifier: "haptics.off") { haptics = false }
             }
             SettingsFooter(text: "Small taps when you press buttons, switch options and send.")
-            NotificationSoundsCard()
+            // Notification sounds moved to Settings > Notifications (#222)
         }
     }
 }
