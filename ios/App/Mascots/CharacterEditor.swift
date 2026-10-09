@@ -204,6 +204,15 @@ struct CharacterEditor: View {
                     draft.look = next.stored
                 }
             }
+        case .bunbu:
+            let skins = BunbuSkin.allCases.filter { !skinLocked(.bunbu, $0.rawValue, worn: wornDraft.complete.bunbuSkin.rawValue) }
+            row(count: skins.count, pitch: metrics.skinPitch, height: metrics.skinRowHeight ?? metrics.pitch) { index in
+                thumbnail(look: edited { $0.bunbuSkin = skins[index] }, skin: .none, size: metrics.skinCell, selected: draft.complete.bunbuSkin == skins[index], label: Text(verbatim: skins[index].rawValue), tier: tierLabel(.bunbu, skins[index].rawValue)) {
+                    var next = draft.complete
+                    next.bunbuSkin = skins[index]
+                    draft.look = next.stored
+                }
+            }
         }
     }
 
@@ -368,6 +377,7 @@ struct CharacterEditor: View {
         case .owl: "Owl"
         case .shape: "Shape"
         case .trombi: "Trombi"
+        case .bunbu: "Bunbu"
         }
     }
 }

@@ -1,19 +1,24 @@
 // A bot's character and its look, as the desktop stores them with the bot:
-// `shared/mascot-look.ts` (owl, shape or Trombi, with each one's skin),
-// `shared/mascot-skins.ts` (the owl's special editions), the twelve colours of
-// `src/lib/mascot.ts` and the picture framing of `shared/bot-avatar.ts`.
+// `shared/mascot-look.ts` (owl, shape, Trombi or Bunbu, with each one's
+// skin), `shared/mascot-skins.ts` (the owl's special editions), the colours
+// of `shared/mascot-colors.ts` (the Clay palette included) and the picture
+// framing of `shared/bot-avatar.ts`.
 //
-// Everything here is cosmetic, so nothing here ever fails a decode: a value
-// this build does not understand falls back to what the desktop falls back
-// to (the owl, no skin, the centred picture), and the bot still loads.
+// Every id the desktop can store decodes here (the fixture test reads them
+// from the desktop's own lists: MascotLookFixtureTests). Everything is
+// cosmetic, so nothing here ever fails a decode: a value this build does not
+// understand falls back to what the desktop falls back to (the owl for an
+// unknown character, the default skin for an unknown skin, the centred
+// picture), and the bot still loads. Where the phone has no art for a known
+// look yet it draws the closest one and says so (`MascotSubstitution`).
 import CoreGraphics
 import Foundation
 
 // MARK: - Colours
 
-/// The twelve Sagax bot colours, `MAUS_COLORS` in `src/lib/mascot.ts`.
+/// The Sagax bot colours, `MASCOT_COLOR_HEX` in `shared/mascot-colors.ts`.
 public enum MausColors {
-    /// In the picker's order.
+    /// The original twelve, in the picker's order.
     public static let names = ["green", "blue", "red", "orange", "purple", "cyan", "pink", "yellow", "teal", "coral", "white", "black"]
 
     public static let hex: [String: String] = [
@@ -71,7 +76,23 @@ public enum MausColors {
         "bronze": "#A86F38",
         "copper": "#C2643A",
         "brass": "#C7A13D",
+        // The Clay palette (the Shapes colours of 2026-10-08); brown, of the
+        // neutral palette, is its twelfth swatch.
+        "ink": "#0A0A0C",
+        "tomato": "#E8483F",
+        "tangerine": "#F08A24",
+        "honey": "#F0B429",
+        "jade": "#3ECF8E",
+        "turquoise": "#2FBFA0",
+        "cobalt": "#3B93F0",
+        "violet": "#8B5CF6",
+        "rose": "#E152B0",
+        "ash": "#A3A3A3",
+        "cream": "#F1EFE9",
     ]
+
+    /// The Clay palette's swatch row (`paletteSwatches("clay")`).
+    public static let clay = ["ink", "brown", "tomato", "tangerine", "honey", "jade", "turquoise", "cobalt", "violet", "rose", "ash", "cream"]
 
     /// `MAUS_INK`: black has no light of its own on a dark surface, so as text
     /// or a tint it reads as a cool slate.
@@ -133,7 +154,7 @@ public struct RGB: Equatable, Sendable {
 // MARK: - Character
 
 public enum MascotCharacter: String, CaseIterable, Codable, Sendable {
-    case owl, shape, trombi
+    case owl, shape, trombi, bunbu
 }
 
 public enum MascotStyle: String, CaseIterable, Codable, Sendable {
@@ -178,29 +199,71 @@ public enum MascotShape: String, CaseIterable, Codable, Sendable {
     }
 }
 
-/// Skins for the original shapes; every one renders on every shape.
+/// Skins for the shapes (`SHAPE_SKINS`); every one renders on every shape.
+/// Plain is the clay finish. The first four are the everyday finishes, the
+/// rest premium editions.
 public enum ShapeSkin: String, CaseIterable, Codable, Sendable {
-    case plain, glossy, outline, neon, pastel, night
+    case plain, pastel, glossy, night, outline, gold, neon, chrome, crystal, circuit, holo, molten, galaxy
+
+    /// `LEGACY_SHAPE_SKINS`.
+    static let legacy: [String: ShapeSkin] = [
+        "ink": .outline, "royal": .gold, "metal": .chrome, "liquid-metal": .chrome, "glass": .crystal,
+        "cyber": .circuit, "iridescent": .holo, "holographic": .holo, "lava": .molten, "nebula": .galaxy,
+    ]
+
+    /// A stored id, current or legacy; nil for one this build does not know.
+    public static func stored(_ raw: String) -> ShapeSkin? { ShapeSkin(rawValue: raw) ?? legacy[raw] }
+
 }
 
-/// Skins for Trombi.
+/// Skins for Trombi (`TROMBI_SKINS`).
 public enum TrombiSkin: String, CaseIterable, Codable, Sendable {
-    case classic, gold, neon, retro98
+    case classic, retro98, gold, neon, chrome, glitch, holo, molten
+
+    /// `LEGACY_TROMBI_SKINS`.
+    static let legacy: [String: TrombiSkin] = [
+        "retro": .retro98, "win98": .retro98, "royal": .gold, "metal": .chrome, "cyber": .glitch,
+        "iridescent": .holo, "holographic": .holo, "lava": .molten,
+    ]
+
+    public static func stored(_ raw: String) -> TrombiSkin? { TrombiSkin(rawValue: raw) ?? legacy[raw] }
+
+}
+
+/// Skins for Bunbu (`BUNBU_SKINS`), by rarity.
+public enum BunbuSkin: String, CaseIterable, Codable, Sendable {
+    case plain, pastel, night, plush, velvet, gold, neon, chrome, crystal, holo, galaxy, molten
+
+    /// `LEGACY_BUNBU_SKINS`.
+    static let legacy: [String: BunbuSkin] = [
+        "fur": .plush, "fuzzy": .plush, "royal": .gold, "metal": .chrome, "glass": .crystal,
+        "iridescent": .holo, "holographic": .holo, "nebula": .galaxy, "lava": .molten,
+    ]
+
+    public static func stored(_ raw: String) -> BunbuSkin? { BunbuSkin(rawValue: raw) ?? legacy[raw] }
+
 }
 
 /// `mascotLook`: which character stands for the bot, and that character's
-/// own look. Absent or malformed means the owl, exactly as
-/// `botMascotLook` reads it: the desktop's schema is strict, so one unknown
-/// value or key anywhere throws the whole look away rather than half-keeping it.
+/// own look, read exactly as `botMascotLook` reads it. The desktop's schema
+/// is strict: an unknown character, an unknown top-level key, or a
+/// malformed style or shape throws the whole look away (the owl). A skin
+/// is never worth the character: an unknown skin value, a skin of a newer
+/// character, or a `skins` that is not an object is dropped and the
+/// character keeps its default skin.
 public struct MascotLook: Codable, Hashable, Sendable {
     public struct Skins: Codable, Hashable, Sendable {
         public var shape: ShapeSkin?
         public var trombi: TrombiSkin?
+        public var bunbu: BunbuSkin?
 
-        public init(shape: ShapeSkin? = nil, trombi: TrombiSkin? = nil) {
+        public init(shape: ShapeSkin? = nil, trombi: TrombiSkin? = nil, bunbu: BunbuSkin? = nil) {
             self.shape = shape
             self.trombi = trombi
+            self.bunbu = bunbu
         }
+
+        var isEmpty: Bool { shape == nil && trombi == nil && bunbu == nil }
     }
 
     public var character: MascotCharacter
@@ -232,8 +295,6 @@ public struct MascotLook: Codable, Hashable, Sendable {
 
     private struct Malformed: Error {}
 
-    /// zod's `.strict()`: the known keys only, each of the right type; an
-    /// explicit null is not "absent" to zod either.
     private static func strict(_ decoder: Decoder) throws -> MascotLook {
         let container = try decoder.container(keyedBy: Key.self)
         let allowed: Set<String> = ["character", "style", "shape", "skins"]
@@ -248,21 +309,14 @@ public struct MascotLook: Codable, Hashable, Sendable {
         let style = try optional(MascotStyle.self, "style")
         let shape = try optional(MascotShape.self, "shape")
         var skins: Skins?
-        if container.contains(Key("skins")) {
-            if try container.decodeNil(forKey: Key("skins")) { throw Malformed() }
-            let nested = try container.nestedContainer(keyedBy: Key.self, forKey: Key("skins"))
-            guard nested.allKeys.allSatisfy({ $0.stringValue == "shape" || $0.stringValue == "trombi" }) else { throw Malformed() }
-            // A skin this build does not draw yet (the desktop's premium
-            // editions: gold, chrome, holo...) falls back to the plain finish
-            // instead of losing the whole look to the owl.
-            func skin<T: Decodable>(_ type: T.Type, _ key: String) throws -> T? {
-                let k = Key(key)
-                guard nested.contains(k) else { return nil }
-                if try nested.decodeNil(forKey: k) { throw Malformed() }
-                _ = try nested.decode(String.self, forKey: k)
-                return try? nested.decode(T.self, forKey: k)
-            }
-            skins = Skins(shape: try skin(ShapeSkin.self, "shape"), trombi: try skin(TrombiSkin.self, "trombi"))
+        if let nested = try? container.nestedContainer(keyedBy: Key.self, forKey: Key("skins")) {
+            func raw(_ key: String) -> String? { try? nested.decode(String.self, forKey: Key(key)) }
+            let read = Skins(
+                shape: raw("shape").flatMap(ShapeSkin.stored),
+                trombi: raw("trombi").flatMap(TrombiSkin.stored),
+                bunbu: raw("bunbu").flatMap(BunbuSkin.stored)
+            )
+            skins = read.isEmpty ? nil : read
         }
         return MascotLook(character: character, style: style, shape: shape, skins: skins)
     }
@@ -272,10 +326,11 @@ public struct MascotLook: Codable, Hashable, Sendable {
         try container.encode(character, forKey: Key("character"))
         try container.encodeIfPresent(style, forKey: Key("style"))
         try container.encodeIfPresent(shape, forKey: Key("shape"))
-        if let skins, skins.shape != nil || skins.trombi != nil {
+        if let skins, !skins.isEmpty {
             var nested = container.nestedContainer(keyedBy: Key.self, forKey: Key("skins"))
             try nested.encodeIfPresent(skins.shape, forKey: Key("shape"))
             try nested.encodeIfPresent(skins.trombi, forKey: Key("trombi"))
+            try nested.encodeIfPresent(skins.bunbu, forKey: Key("bunbu"))
         }
     }
 
@@ -286,7 +341,8 @@ public struct MascotLook: Codable, Hashable, Sendable {
             style: style ?? .flat,
             shape: shape ?? .circle,
             shapeSkin: skins?.shape ?? .plain,
-            trombiSkin: skins?.trombi ?? .classic
+            trombiSkin: skins?.trombi ?? .classic,
+            bunbuSkin: skins?.bunbu ?? .plain
         )
     }
 }
@@ -298,31 +354,48 @@ public struct CompleteMascotLook: Hashable, Sendable {
     public var shape: MascotShape
     public var shapeSkin: ShapeSkin
     public var trombiSkin: TrombiSkin
+    public var bunbuSkin: BunbuSkin
 
-    public init(character: MascotCharacter, style: MascotStyle = .flat, shape: MascotShape = .circle, shapeSkin: ShapeSkin = .plain, trombiSkin: TrombiSkin = .classic) {
+    public init(character: MascotCharacter, style: MascotStyle = .flat, shape: MascotShape = .circle, shapeSkin: ShapeSkin = .plain, trombiSkin: TrombiSkin = .classic, bunbuSkin: BunbuSkin = .plain) {
         self.character = character
         self.style = style
         self.shape = shape
         self.shapeSkin = shapeSkin
         self.trombiSkin = trombiSkin
+        self.bunbuSkin = bunbuSkin
     }
 
-    /// Back to a stored look, every choice explicit (what the editor saves).
+    /// Back to a stored look, every choice explicit (what the editor saves,
+    /// as the desktop's editor does: all three skins).
     public var stored: MascotLook {
-        MascotLook(character: character, style: style, shape: shape, skins: .init(shape: shapeSkin, trombi: trombiSkin))
+        MascotLook(character: character, style: style, shape: shape, skins: .init(shape: shapeSkin, trombi: trombiSkin, bunbu: bunbuSkin))
     }
+
+    /// The colour a character wears where the bot gives none it can use:
+    /// Bunbu's mint (`BUNBU_DEFAULT_COLOR`), green for the others.
+    public var fallbackColor: String { character == .bunbu ? "mint" : "green" }
 }
 
 // MARK: - Owl skins
 
-/// `mascotSkin`: the owl's special editions. Missing, legacy or junk values
-/// (a number, an object, the wrong case) all wear `none`.
+/// `mascotSkin`: the owl's special editions (`MASCOT_SKIN_IDS`), in the
+/// picker's order. Legacy names read as the current id (`LEGACY_OWL_SKINS`);
+/// missing or junk values (a number, an object, the wrong case) wear `none`,
+/// as `botMascotSkin` reads them.
 public enum MascotSkin: String, CaseIterable, Codable, Sendable {
-    case none, lightning, gold, neon, inferno, frost, carbon
+    case none, snowy, barn, carbon, gold, frost, neon, lightning, chrome, inferno, holo, galaxy, spirit
+
+    /// `LEGACY_OWL_SKINS`.
+    static let legacy: [String: MascotSkin] = [
+        "classic": .none, "plain": .none, "snow": .snowy, "royal": .gold, "ice": .frost,
+        "electric": .lightning, "metal": .chrome, "liquid-metal": .chrome, "molten": .inferno,
+        "lava": .inferno, "fire": .inferno, "holographic": .holo, "iridescent": .holo,
+        "nebula": .galaxy, "ghost": .spirit, "ethereal": .spirit,
+    ]
 
     public init(from decoder: Decoder) throws {
         let raw = try? decoder.singleValueContainer().decode(String.self)
-        self = raw.flatMap(Self.init(rawValue:)) ?? .none
+        self = Self.resolve(raw)
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -332,8 +405,10 @@ public enum MascotSkin: String, CaseIterable, Codable, Sendable {
 
     /// `botMascotSkin`.
     public static func resolve(_ raw: String?) -> MascotSkin {
-        raw.flatMap(Self.init(rawValue:)) ?? .none
+        guard let raw else { return .none }
+        return MascotSkin(rawValue: raw) ?? legacy[raw] ?? .none
     }
+
 }
 
 // MARK: - Picture framing

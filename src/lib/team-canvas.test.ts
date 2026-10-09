@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { fitTeams, layoutTeams, orderBots, parseBotOrders, parsePositions, reorderBot, teamSize, zoomAt, type Tile } from "./team-canvas";
+import { fitTeams, layoutTeams, loadTeamCanvasLayout, orderBots, parseBotOrders, parsePositions, reorderBot, teamSize, zoomAt, type Tile } from "./team-canvas";
 import type { TeamMapSection } from "./team-map";
 
 function section(key: string, chiefs = 0, members = 0): TeamMapSection {
@@ -115,5 +115,32 @@ describe("personal bot arrangement", () => {
     expect(Object.hasOwn(orders, "__proto__")).toBe(true);
     expect(orders["__proto__"]).toEqual(["C"]);
     expect(parseBotOrders(JSON.stringify(orders))).toEqual(orders);
+  });
+});
+
+describe("where the map's layout lives", () => {
+  const storage = (initial: Record<string, string>) => {
+    const values = new Map(Object.entries(initial));
+    return { values, getItem: (key: string) => values.get(key) ?? null, setItem: (key: string, value: string) => void values.set(key, value) };
+  };
+
+  it("a solo server keeps it in this browser, per workspace", () => {
+    const local = storage({ "omb-team-canvas:env1": JSON.stringify({ a: { x: 1, y: 2 } }), "omb-team-canvas:env1:bot-order": JSON.stringify({ a: ["b1"] }) });
+    const layout = loadTeamCanvasLayout(local, "env1", false);
+    expect(layout.keys).toEqual({ positions: "omb-team-canvas:env1", botOrder: "omb-team-canvas:env1:bot-order" });
+    expect(layout.positions).toEqual({ a: { x: 1, y: 2 } });
+    expect(layout.botOrders).toEqual({ a: ["b1"] });
+    expect(local.values.has("sagax.teamCanvasPositions.v1")).toBe(false);
+  });
+
+  it("an organization server keeps it in the person's synced keys, moving this browser's copy there once", () => {
+    const local = storage({ "omb-team-canvas:env1": JSON.stringify({ a: { x: 1, y: 2 } }), "omb-team-canvas:env1:bot-order": JSON.stringify({ a: ["b1"] }) });
+    const layout = loadTeamCanvasLayout(local, "env1", true);
+    expect(layout.keys).toEqual({ positions: "sagax.teamCanvasPositions.v1", botOrder: "sagax.teamCanvasBotOrder.v1" });
+    expect(layout.positions).toEqual({ a: { x: 1, y: 2 } });
+    expect(local.values.get("sagax.teamCanvasBotOrder.v1")).toBe(JSON.stringify({ a: ["b1"] }));
+    // what the person's other device saved wins over this browser's old copy
+    local.values.set("sagax.teamCanvasBotOrder.v1", JSON.stringify({ a: ["b2", "b1"] }));
+    expect(loadTeamCanvasLayout(local, "env1", true).botOrders).toEqual({ a: ["b2", "b1"] });
   });
 });

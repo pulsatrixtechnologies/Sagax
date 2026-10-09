@@ -4,11 +4,15 @@
 // It does what src/lib/user-preferences-sync.ts does for the desktop page:
 // on an organization server the person's record (GET /api/me/preferences)
 // wins when it is read, the first time it is empty this phone offers what it
-// had, and every change is saved back at once (a save rewrites only the keys
-// it changed: `CompanionClient.saveSidebarPreferences`). Anywhere else the
-// route answers 404 and the values stay on this phone, per pairing, as they
-// stay in one browser's localStorage. A save that fails is retried at the
-// next read, the local value winning for those keys.
+// had (the migration of the local copy), and every change is saved back at
+// once (PATCH of only the keys it changed:
+// `CompanionClient.saveSidebarPreferences`). A save on any of the person's
+// devices comes back to every one as a `preferences` frame on the live
+// stream (`receive`), so a section deleted on the desktop leaves the phone
+// within seconds and the other way round. Anywhere else the route answers
+// 404 and the values stay on this phone, per pairing, as they stay in one
+// browser's localStorage. A save that fails is retried at the next read,
+// the local value winning for those keys.
 import CompanionCore
 import SwiftUI
 
@@ -103,9 +107,7 @@ final class SidebarPrefsModel: ObservableObject {
         }
         synced = true
         if record.stored {
-            var values = SidebarPrefs(values: record.preferences).values
-            for key in pending { values[key] = prefs.values[key] }
-            prefs = SidebarPrefs(values: values)
+            prefs = prefs.receiving(record.preferences, pending: pending)
         } else {
             // the first time: what this phone already had
             pending.formUnion(prefs.values.keys)
@@ -113,6 +115,16 @@ final class SidebarPrefsModel: ObservableObject {
         persist()
         seedIfNeeded(session)
         await push(session)
+    }
+
+    /// The person's record as another device (or this one) just saved it:
+    /// the `preferences` frame of the live stream.
+    func receive(_ session: Session, _ record: UserPreferences) {
+        guard synced, session.connection?.id == connectionID else { return }
+        let next = prefs.receiving(record.preferences, pending: pending)
+        guard next != prefs else { return }
+        prefs = next
+        persist()
     }
 
     // MARK: Writes
@@ -275,6 +287,17 @@ final class SidebarPrefsModel: ObservableObject {
 
     func setShowThreads(_ session: Session, _ on: Bool) {
         update(session) { $0.setShowThreads(on) }
+    }
+
+    // MARK: Team map
+
+    /// The Team map's bot order follows the person on an organization
+    /// server (TeamCanvas.tsx keeps it in the same record); elsewhere it
+    /// stays on this phone (TeamMapModel).
+    var teamBotOrders: [String: [String]]? { synced ? prefs.teamBotOrders : nil }
+
+    func setTeamBotOrders(_ session: Session, _ orders: [String: [String]]) {
+        update(session) { $0.setTeamBotOrders(orders) }
     }
 }
 

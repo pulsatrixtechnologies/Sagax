@@ -992,6 +992,10 @@ final class Session: ObservableObject {
                     if case let .orgApprovals(approvals) = frame.frame {
                         OrgApprovalsCenter.shared.apply(approvals)
                     }
+                    // the person's sidebar, saved on any of their devices
+                    if case let .preferences(record) = frame.frame {
+                        SidebarPrefsModel.shared.receive(self, record)
+                    }
                     if case let .notify(notification) = frame.frame {
                         NotificationCoordinator.shared.deliver(notification, sequence: frame.seq)
                     }

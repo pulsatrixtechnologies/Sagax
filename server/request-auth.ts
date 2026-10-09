@@ -309,7 +309,7 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   // own session
   { methods: ["GET"], path: /^\/api\/auth\/session$/ },
   // own preferences (organization server; the handler answers the session's person only)
-  { methods: ["GET", "PUT"], path: /^\/api\/me\/preferences$/ },
+  { methods: ["GET", "PUT", "PATCH"], path: /^\/api\/me\/preferences$/ },
   // own model, effort and notification choices for a bot this person does not own
   { methods: ["GET"], path: /^\/api\/me\/bot-overrides$/ },
   { methods: ["PUT"], path: /^\/api\/me\/bot-overrides\/[\w-]+$/ },

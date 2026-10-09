@@ -1,8 +1,12 @@
 // The Team map's state (matrix TM1, TM2; TeamMapPage.tsx): the handoffs
 // snapshot, asked every three seconds while the page is on screen, the
-// person's own order of each team's bots (kept on this phone per
-// workspace, as the desktop keeps it in its browser), and the move to
-// another team behind its confirmation.
+// person's own order of each team's bots, and the move to another team
+// behind its confirmation. On an organization server the order is the
+// person's record on the server (`sagax.teamCanvasBotOrder.v1`, the key
+// TeamCanvas.tsx keeps it under there), so it is the same on every device;
+// on a personal computer it stays on this phone per workspace, as the
+// desktop keeps it in its browser. The first time the server holds none,
+// this phone's own order is offered.
 import CompanionCore
 import SwiftUI
 import UIKit
@@ -30,6 +34,8 @@ final class TeamMapModel: ObservableObject {
     }
 
     private var workspace: String?
+    /// The pairing bound last, for saving the order to the person's record.
+    private weak var session: Session?
     private let defaults: UserDefaults
 
     init(defaults: UserDefaults = .standard) {
@@ -39,10 +45,22 @@ final class TeamMapModel: ObservableObject {
     /// The saved order for this pairing's workspace.
     func bind(_ session: Session) {
         guard let connection = session.connection else { return }
+        self.session = session
         let key = connection.serverEnvironmentId ?? connection.id
-        guard key != workspace else { return }
-        workspace = key
-        orders = TeamMap.parseOrders(defaults.string(forKey: TeamMap.ordersKey(workspace: key)))
+        if key != workspace {
+            workspace = key
+            orders = TeamMap.parseOrders(defaults.string(forKey: TeamMap.ordersKey(workspace: key)))
+        }
+        // the person's own order on an organization server; this phone's
+        // order is offered once while the server holds none
+        let prefs = SidebarPrefsModel.shared
+        if let synced = prefs.teamBotOrders {
+            if prefs.prefs.values[SidebarPrefKey.teamBotOrder] == nil, !orders.isEmpty {
+                prefs.setTeamBotOrders(session, orders)
+            } else if synced != orders {
+                orders = synced
+            }
+        }
     }
 
     func refresh(_ session: Session) async {
@@ -60,6 +78,7 @@ final class TeamMapModel: ObservableObject {
     func poll(_ session: Session) async {
         bind(session)
         while !Task.isCancelled {
+            bind(session)
             await refresh(session)
             try? await Task.sleep(nanoseconds: 3_000_000_000)
         }
@@ -79,7 +98,9 @@ final class TeamMapModel: ObservableObject {
         guard let next = TeamMap.arrange(bot, by: delta, in: sections, orders: orders) else { return }
         let key = TeamMap.teamKey(of: bot)
         orders[key] = next
-        if let workspace {
+        if SidebarPrefsModel.shared.teamBotOrders != nil, let session {
+            SidebarPrefsModel.shared.setTeamBotOrders(session, orders)
+        } else if let workspace {
             defaults.set(TeamMap.encodeOrders(orders), forKey: TeamMap.ordersKey(workspace: workspace))
         }
         let team = key.isEmpty ? String(localized: "Unassigned") : key

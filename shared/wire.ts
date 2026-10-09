@@ -978,6 +978,9 @@ export type ServerFrame =
   | { kind: "bot.deleted"; botId: string }
   /** A person's own unlocks (server/achievements.ts), to their streams only. */
   | { kind: "achievements"; audience: string; unlocked: Array<{ id: string; points: number; unlockedAt: number }> }
+  /** A person's preferences after a save on any of their devices
+   * (server/user-preferences.ts), to that person's streams only. */
+  | { kind: "preferences"; audience: string; preferences: Record<string, string>; updatedAt: number | null }
   /** A screen or button for one person's open desktop app. iOS and Android ignore this kind. */
   | { kind: "bot-act"; audience: string; action: string; input?: Record<string, unknown> }
   /** Shake this person's desktop window. Their streams only (server/nudge.ts). */

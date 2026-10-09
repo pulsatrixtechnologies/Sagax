@@ -4,7 +4,7 @@ import { mkdtempSync, readFileSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { createUserPreferenceStore } from "./user-preferences.ts";
+import { createUserPreferenceStore, preferencesFrameAllowed } from "./user-preferences.ts";
 import { createUserPreferenceRoutes, USER_PREFERENCES_PATH } from "./routes/user-preferences.ts";
 import { PASS } from "./routes/table.ts";
 import { CLIENT_ALLOW } from "./request-auth.ts";
@@ -71,7 +71,64 @@ describe("GET and PUT /api/me/preferences", () => {
 
   it("is a member's own route (client scope)", () => {
     const rule = CLIENT_ALLOW.find((entry) => entry.path.test(USER_PREFERENCES_PATH));
-    expect(rule?.methods).toEqual(["GET", "PUT"]);
+    expect(rule?.methods).toEqual(["GET", "PUT", "PATCH"]);
     expect(rule?.feature).toBeUndefined();
+  });
+});
+
+describe("PATCH /api/me/preferences", () => {
+  const session = (principalId?: string) => ({ kind: "session", scopes: ["client"], session: { id: "s1", principalId } });
+  const SECTIONS = "sagax.sidebarSections.v1";
+  const two = JSON.stringify({ sections: [{ name: "Ventes", items: ["bot:b1"] }, { name: "Support", items: [] }] });
+  const one = JSON.stringify({ sections: [{ name: "Ventes", items: ["bot:b1"] }] });
+
+  it("changes only the keys it names: a device saving one key never undoes another's", async () => {
+    let clock = 1000;
+    const store = createUserPreferenceStore(mkdtempSync(join(tmpdir(), "omb-prefs-")), () => clock++);
+    const org = createUserPreferenceRoutes({ store, organization: () => true });
+    await call(org, { method: "PUT", auth: session(ADA), body: { preferences: { "omb-skin": "paper", [SECTIONS]: two, "openmausbot.sidebarCollapsedSections.v1": "[\"general\"]" } } });
+    // the phone deletes a section
+    const phone = await call(org, { method: "PATCH", auth: session(ADA), body: { set: { [SECTIONS]: one } } });
+    expect(phone).toMatchObject({ status: 200, body: { stored: true, preferences: { "omb-skin": "paper", [SECTIONS]: one } } });
+    // the desktop folds nothing any more and changes its skin, without its old copy of the sections
+    const desktop = await call(org, { method: "PATCH", auth: session(ADA), body: { set: { "omb-skin": "midnight" }, remove: ["openmausbot.sidebarCollapsedSections.v1"] } });
+    expect((desktop as { body: { preferences: Record<string, string> } }).body.preferences).toEqual({ "omb-skin": "midnight", [SECTIONS]: one });
+    expect(store.get(ADA).preferences[SECTIONS]).toBe(one);
+  });
+
+  it("ignores unknown keys, non-string values and oversized values; keeps others' records apart", async () => {
+    const store = createUserPreferenceStore(mkdtempSync(join(tmpdir(), "omb-prefs-")));
+    const org = createUserPreferenceRoutes({ store, organization: () => true });
+    await call(org, { method: "PATCH", auth: session(ADA), body: { set: { "omb-skin": "paper", "omb-drafts": "x", "omb-font": 3, "omb-language": "x".repeat(9000) }, remove: ["omb-webhook-credentials", 4] } });
+    expect(store.get(ADA).preferences).toEqual({ "omb-skin": "paper" });
+    expect(store.get(BOB).stored).toBe(false);
+    // an empty patch is a save of the same record
+    expect(await call(org, { method: "PATCH", auth: session(ADA), body: {} })).toMatchObject({ status: 200, body: { preferences: { "omb-skin": "paper" } } });
+  });
+
+  it("has the gates and errors of GET and PUT", async () => {
+    const store = createUserPreferenceStore(mkdtempSync(join(tmpdir(), "omb-prefs-")));
+    const org = createUserPreferenceRoutes({ store, organization: () => true });
+    const solo = createUserPreferenceRoutes({ store, organization: () => false });
+    expect(await call(solo, { method: "PATCH", auth: session(ADA), body: { set: {} } })).toMatchObject({ status: 404 });
+    expect(await call(org, { method: "PATCH", auth: session(undefined), body: { set: {} } })).toMatchObject({ status: 404 });
+    expect(await call(org, { method: "PATCH", auth: session(ADA), type: "text/plain", body: { set: {} } })).toMatchObject({ status: 415 });
+    expect(await call(org, { method: "PATCH", auth: session(ADA), body: ["x"] })).toMatchObject({ status: 400 });
+    expect(await call(org, { method: "PATCH", auth: session(ADA), body: { set: ["x"] } })).toMatchObject({ status: 400 });
+    expect(await call(org, { method: "PATCH", auth: session(ADA), body: { set: null } })).toMatchObject({ status: 400 });
+    expect(await call(org, { method: "PATCH", auth: session(ADA), body: { remove: "omb-skin" } })).toMatchObject({ status: 400 });
+    expect(store.get(ADA).stored).toBe(false);
+  });
+});
+
+describe("the preferences frame", () => {
+  it("reaches the person's own streams only", () => {
+    const frame = { kind: "preferences", audience: ADA, preferences: {}, updatedAt: 1 };
+    expect(preferencesFrameAllowed(frame, ADA)).toBe(true);
+    expect(preferencesFrameAllowed(frame, BOB)).toBe(false);
+    expect(preferencesFrameAllowed(frame, undefined)).toBe(false);
+    expect(preferencesFrameAllowed({ kind: "preferences" }, ADA)).toBe(false);
+    // every other frame is someone else's business
+    expect(preferencesFrameAllowed({ kind: "bot" }, BOB)).toBe(true);
   });
 });

@@ -108,6 +108,8 @@ import { orderedThreadList, SidebarThreadRow, stampClock, threadRecency, useRela
 import {
   loadCollapsedSections,
   loadSectionOrder,
+  SIDEBAR_COLLAPSED_SECTIONS_KEY,
+  SIDEBAR_SECTION_ORDER_KEY,
   saveCollapsedSections,
   saveSectionOrder,
   toggleCollapsedSection,
@@ -2351,6 +2353,16 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
   const quietRows = density === "compact";
   const [collapsedSections, setCollapsedSections] = useState<string[]>(() => loadCollapsedSections());
   const [sectionOrder, setSectionOrder] = useState<string[]>(() => loadSectionOrder());
+  // Folds and order follow the person (shared/user-preferences.ts): another
+  // device's change arrives as a storage event for its key and shows here.
+  useEffect(() => {
+    const onStorage = (event: StorageEvent) => {
+      if (event.key === null || event.key === SIDEBAR_COLLAPSED_SECTIONS_KEY) setCollapsedSections(loadCollapsedSections());
+      if (event.key === null || event.key === SIDEBAR_SECTION_ORDER_KEY) setSectionOrder(loadSectionOrder());
+    };
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
+  }, []);
   const [draggingSectionId, setDraggingSectionId] = useState<string | null>(null);
   const [dropTarget, setDropTarget] = useState<{ id: string; place: SectionDropPlace } | null>(null);
   const [reorderAnnouncement, setReorderAnnouncement] = useState("");

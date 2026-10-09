@@ -33,7 +33,23 @@ final class MascotLookTests: XCTestCase {
         // strict, like zod: an unknown key or an explicit null throws it all away
         XCTAssertEqual(look("{\"character\":\"shape\",\"extra\":1}"), .owl)
         XCTAssertEqual(look("{\"character\":\"shape\",\"shape\":null}"), .owl)
-        XCTAssertEqual(look("{\"character\":\"trombi\",\"skins\":{\"trombi\":\"gold\",\"owl\":\"x\"}}"), .owl)
+    }
+
+    /// The bug JC saw (2026-10-09): the desktop's editor saves all three
+    /// skins (`completeMascotLook`), so every look edited there carries
+    /// `skins.bunbu`; the phone refused that key and drew the owl. A skin
+    /// never costs the character (`botMascotLook` drops it and keeps the rest).
+    func testASkinOfAnotherCharacterNeverTurnsTheLookIntoTheOwl() {
+        XCTAssertEqual(
+            look("{\"character\":\"trombi\",\"skins\":{\"trombi\":\"gold\",\"owl\":\"x\"}}"),
+            MascotLook(character: .trombi, skins: .init(trombi: .gold))
+        )
+        let edited = look(#"{"character":"shape","style":"2d","shape":"cloud","skins":{"shape":"plain","trombi":"classic","bunbu":"plain"}}"#)
+        XCTAssertEqual(edited.character, .shape)
+        XCTAssertEqual(edited.shape, .cloud)
+        XCTAssertEqual(edited.skins?.bunbu, .plain)
+        XCTAssertEqual(look(#"{"character":"bunbu","skins":null}"#), MascotLook(character: .bunbu))
+        XCTAssertEqual(look(#"{"character":"bunbu","skins":{"bunbu":"fur"}}"#).skins?.bunbu, .plush, "a legacy id")
     }
 
     func testKeepsAValidLookAsItIs() {
@@ -51,7 +67,7 @@ final class MascotLookTests: XCTestCase {
     func testCompleteFillsEveryChoice() {
         XCTAssertEqual(
             MascotLook(character: .shape).complete,
-            CompleteMascotLook(character: .shape, style: .flat, shape: .circle, shapeSkin: .plain, trombiSkin: .classic)
+            CompleteMascotLook(character: .shape, style: .flat, shape: .circle, shapeSkin: .plain, trombiSkin: .classic, bunbuSkin: .plain)
         )
     }
 
@@ -75,17 +91,17 @@ final class MascotLookTests: XCTestCase {
     }
 
     func testThePickerOrdersMatchTheDesktop() {
-        XCTAssertEqual(MascotCharacter.allCases.map(\.rawValue), ["owl", "shape", "trombi"])
+        XCTAssertEqual(MascotCharacter.allCases.map(\.rawValue), ["owl", "shape", "trombi", "bunbu"])
         // #187: the desktop's stored ids (MASCOT_SHAPES)
         XCTAssertEqual(MascotShape.allCases.map(\.rawValue), ["circle", "bean", "squircle", "pill", "pick", "hexagon", "cloud", "drop"])
-        XCTAssertEqual(ShapeSkin.allCases.map(\.rawValue), ["plain", "glossy", "outline", "neon", "pastel", "night"])
-        XCTAssertEqual(TrombiSkin.allCases.map(\.rawValue), ["classic", "gold", "neon", "retro98"])
-        XCTAssertEqual(MascotSkin.allCases.map(\.rawValue), ["none", "lightning", "gold", "neon", "inferno", "frost", "carbon"])
+        // the rest of the lists are checked against the desktop's own in MascotLookFixtureTests
+        XCTAssertEqual(ShapeSkin.allCases.first, .plain)
+        XCTAssertEqual(TrombiSkin.allCases.first, .classic)
+        XCTAssertEqual(BunbuSkin.allCases.first, .plain)
     }
 
     /// A look made on the desktop never falls back to the owl on the phone:
-    /// its shape ids, the legacy ones, and premium skins the phone does not
-    /// draw yet (plain finish).
+    /// its shape ids, the legacy ones, and the premium skins.
     func testDesktopShapeIdsLegacyIdsAndUnknownSkinsKeepTheLook() throws {
         func look(_ json: String) throws -> MascotLook { try JSONDecoder().decode(MascotLook.self, from: Data(json.utf8)) }
         XCTAssertEqual(try look(#"{"character":"shape","shape":"bean"}"#).shape, .blob)
@@ -95,7 +111,8 @@ final class MascotLookTests: XCTestCase {
         let gold = try look(#"{"character":"shape","shape":"cloud","skins":{"shape":"gold"}}"#)
         XCTAssertEqual(gold.character, .shape)
         XCTAssertEqual(gold.shape, .cloud)
-        XCTAssertNil(gold.skins?.shape)
+        XCTAssertEqual(gold.skins?.shape, .gold)
+        XCTAssertNil(try look(#"{"character":"shape","shape":"cloud","skins":{"shape":"plasma"}}"#).skins?.shape, "a newer build's skin")
         let data = try JSONEncoder().encode(MascotLook(character: .shape, shape: .triangle))
         XCTAssertTrue(String(decoding: data, as: UTF8.self).contains(#""pick""#))
     }
@@ -181,8 +198,9 @@ final class MascotLookTests: XCTestCase {
             "teal": "#01A492", "coral": "#E5634E", "white": "#F4F4F4", "black": "#1D1E22",
         ]
         for (name, hex) in expected { XCTAssertEqual(MausColors.hex[name], hex, name) }
-        // Every colour of the palettes in shared/mascot-colors.ts decodes too.
-        XCTAssertEqual(MausColors.hex.count, 52)
+        // Every colour of the palettes in shared/mascot-colors.ts decodes too,
+        // the Clay palette included (MascotLookFixtureTests checks each value).
+        XCTAssertEqual(MausColors.hex.count, 63)
         XCTAssertEqual(MausColors.hex["navy"], "#1E3A70")
         XCTAssertEqual(MausColors.hex["mint"], "#98DDB9")
         XCTAssertEqual(MausColors.ink["black"], "#8B93A3")
@@ -262,15 +280,15 @@ final class MascotLookTests: XCTestCase {
     }
 
     func testShapeSkinPaintMatchesTheDesktop() {
-        // shapeSkinPaint("neon", "#377FE6") on the desktop
+        // shapeSkinPaint("neon", "#377FE6") on the desktop (shapeSkinBase, #187)
         let neon = ShapeArt.paint(.neon, hex: "#377FE6")
-        XCTAssertEqual(neon.fill, "#14161C")
-        XCTAssertEqual(neon.stroke, "#5592EA")
-        XCTAssertEqual(neon.eyes, "#7DACEF")
+        XCTAssertEqual(neon.fill, "#0D0F15")
+        XCTAssertEqual(neon.stroke, "#5F99EB")
+        XCTAssertEqual(neon.eyes, "#91B9F1")
         XCTAssertEqual(neon.glow, "#4B8CE9")
-        XCTAssertEqual(neon.strokeWidth, 4)
+        XCTAssertEqual(neon.strokeWidth, 3.6)
         XCTAssertEqual(ShapeArt.paint(.glossy, hex: "#377FE6").shine, true)
-        XCTAssertEqual(ShapeArt.paint(.outline, hex: "#377FE6").strokeWidth, 6)
+        XCTAssertEqual(ShapeArt.paint(.outline, hex: "#377FE6").strokeWidth, 4.4)
         XCTAssertEqual(ShapeArt.paint(.night, hex: "#377FE6").eyes, "#F6F1E8")
     }
 

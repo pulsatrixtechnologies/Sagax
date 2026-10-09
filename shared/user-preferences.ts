@@ -37,6 +37,10 @@ export const USER_PREFERENCE_KEYS = [
   "sagax.sidebarHidden.v1",
   // the person's own sidebar sections (src/lib/personal-sections.ts)
   "sagax.sidebarSections.v1",
+  // the Team map's layout: team positions and the personal card order
+  // (src/lib/team-canvas.ts; solo servers keep it per workspace instead)
+  "sagax.teamCanvasPositions.v1",
+  "sagax.teamCanvasBotOrder.v1",
   // privacy
   "omb-analytics-opt-out",
   // Simple or Advanced (src/lib/interface-mode.ts). "simple" | "advanced".

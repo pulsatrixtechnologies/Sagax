@@ -491,6 +491,27 @@ public enum OwlSkins {
             p.grey = "#86B8D8"; p.greyDark = "#4E7C9C"; p.iris = "#C8F3FF"; p.pupil = "#0B2536"
         case .carbon:
             p.plumage = "#2A2C31"; p.wingNear = "#1A1B1F"; p.socket = "#0A0A0C"; p.greyDark = "#4A4C53"; p.iris = "#F8CA48"
+        case .snowy:
+            // the snowy owl: white plumage barred with dark flecks, a yellow eye
+            p.plumage = "#E8E6E0"; p.wingNear = "#C9C5BC"; p.socket = "#3A3836"; p.cream = "#FFFFFF"
+            p.grey = "#3E3C42"; p.greyDark = "#57544F"; p.iris = "#F8CA48"
+        case .barn:
+            // the barn owl: golden buff back, the pale heart face, a warm eye
+            p.plumage = "#C9985A"; p.wingNear = "#A8783D"; p.socket = "#3B2A1A"; p.cream = "#FBF3E6"
+            p.grey = "#7A6450"; p.greyDark = "#CDB79E"; p.iris = "#F2B33D"
+        case .chrome:
+            p.plumage = "#9AA6B4"; p.wingNear = "#6E7A88"; p.socket = "#1F262D"; p.cream = "#EEF3F8"
+            p.grey = "#D6DEE8"; p.greyDark = "#4A5562"; p.iris = "#BFE9FF"; p.pupil = "#0D1319"
+        case .holo:
+            p.plumage = "#E3E0F6"; p.wingNear = "#C6BEEC"; p.socket = "#2A2140"; p.cream = "#FFFFFF"
+            p.grey = "#B9A7F0"; p.greyDark = "#6B5E9A"; p.iris = "#9BF6FF"; p.pupil = "#1B1430"
+        case .galaxy:
+            p.plumage = "#1A1140"; p.wingNear = "#110B2C"; p.socket = "#07041A"; p.cream = "#E6E0FF"
+            p.grey = "#C9B8FF"; p.greyDark = "#4A3D85"; p.iris = "#FFE27A"; p.pupil = "#140A2E"
+        case .spirit:
+            // a friendly ghost: pale, cool and translucent-looking, never menacing
+            p.plumage = "#A9DCEB"; p.wingNear = "#82C4D9"; p.socket = "#1D3F52"; p.cream = "#F2FBFF"
+            p.grey = "#E3F6FB"; p.greyDark = "#6FA3B5"; p.iris = "#E8FFFF"; p.pupil = "#0B2A38"
         }
         return p
     }
@@ -513,6 +534,18 @@ public enum OwlSkins {
             return OwlSkinLook(aura: ("#7DD3FC", 0.5), eyeGlow: "#E0F7FF", rim: RGBA(r: 186, g: 236, b: 255, a: 0.75))
         case .carbon:
             return OwlSkinLook(aura: nil, eyeGlow: nil, rim: RGBA(r: 200, g: 210, b: 225, a: 0.4))
+        case .snowy:
+            return OwlSkinLook(aura: nil, eyeGlow: nil, rim: RGBA(r: 150, g: 160, b: 175, a: 0.45))
+        case .barn:
+            return OwlSkinLook(aura: nil, eyeGlow: nil, rim: RGBA(r: 255, g: 236, b: 200, a: 0.5))
+        case .chrome:
+            return OwlSkinLook(aura: ("#CFE3FF", 0.3), eyeGlow: nil, rim: RGBA(r: 235, g: 242, b: 250, a: 0.75))
+        case .holo:
+            return OwlSkinLook(aura: ("#F5A8FF", 0.4), eyeGlow: "#9BF6FF", rim: RGBA(r: 255, g: 255, b: 255, a: 0.8))
+        case .galaxy:
+            return OwlSkinLook(aura: ("#8B6CFF", 0.5), eyeGlow: "#FFE27A", rim: RGBA(r: 185, g: 164, b: 255, a: 0.7))
+        case .spirit:
+            return OwlSkinLook(aura: ("#7FF0FF", 0.45), eyeGlow: "#C8FFFF", rim: RGBA(r: 200, g: 250, b: 255, a: 0.8))
         }
     }
 

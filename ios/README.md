@@ -113,7 +113,7 @@ ios/
     Session.swift                connection, lifecycle, actions
     Discovery.swift              NWBrowser for _openmausbot._tcp
     Keychain.swift               the device token
-    Mascots/                     the Sagax characters (owl, shapes, Trombi), the picture crop,
+    Mascots/                     the Sagax characters (owl, shapes, Trombi, Bunbu), the picture crop,
                                  group faces, and a DEBUG gallery (-mascotGallery owl|shape|trombi|group)
     PairingView.swift            QR handoff, discovery, address and code fallback
     Onboarding/                  welcome (three ways in), organization sign-in, shared page chrome
@@ -230,15 +230,21 @@ the host computer remain unreachable through the companion.
 - **No optimistic state.** Actions call the harness and let the event stream
   deliver the result. A phone that draws its own version of what just happened
   is a phone that disagrees with the laptop.
-- **Bunbu is desktop-only for now (known gap).** The desktop's fourth
-  character (`bunbu`, `shared/mascot-look.ts`, drawn by `src/components/BunbuMascot.tsx`
-  from the SVG parts in `src/components/bunbu-art.ts`) is not ported to
-  `CompanionCore` yet: `MascotLook` decodes an unknown character as the owl,
-  so a Bunbu bot shows as the owl in the bot's color on the phone, and the
-  phone's character editor does not offer it. Saving a look from the phone's
-  editor replaces the Bunbu look. Porting it means a `bunbu` case, a
-  `BunbuSkin` enum (twelve ids, same rarities), the parts as `SVGPath`s and a
-  `BunbuMascotView`; the art is plain paths, so it ports like the shapes did.
+- **Every desktop look decodes, and a known character is drawn as itself.**
+  `MascotLook` reads a stored look exactly as `botMascotLook` does: owl,
+  shape, Trombi and Bunbu, every skin id of `shared/mascot-look.ts` and
+  `shared/mascot-skins.ts` with the legacy ids, and a `skins` key of another
+  character is dropped, never the look (the desktop's editor saves all three
+  skins). Only an unknown character, an unknown top-level key or a malformed
+  style or shape is the owl, as on the desktop. The Shapes are the
+  desktop's own still frames (`ShapeStillArt.swift`, generated from
+  `shape-engine.ts` by `src/components/ios-mascot-export.test.ts`, which also
+  writes the fixture `MascotLookFixtureTests` reads), clay on Plain, eyes cut
+  out; Bunbu is `BunbuMascotView`; every colour of `shared/mascot-colors.ts`
+  (Clay palette included) has its value. Where a premium skin's extra layers
+  are not on the phone, its base finish shows and `MascotSubstitution` logs
+  it once (category `mascot`). After a desktop change to the looks, run
+  `UPDATE_IOS_MASCOT=1 pnpm vitest run src/components/ios-mascot-export.test.ts`.
 - **Messaging-app shape, not settings-list shape.** Mascot faces at roster size,
   the bot's role beside its name (quiet text in compact, a chip in
   comfortable), timestamps that say "Yesterday"

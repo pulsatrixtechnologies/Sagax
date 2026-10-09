@@ -754,7 +754,7 @@ import { diskSpace, folderBytes } from "./disk-usage.ts";
 import { autoReviewThreadMode, createBotSettingsStore, hostTimeZone } from "./bot-settings.ts";
 import { createComputerInputRoutes, createVmScreenshotRoute } from "./routes/computer-input.ts";
 import { createUserPreferenceRoutes } from "./routes/user-preferences.ts";
-import { createUserPreferenceStore } from "./user-preferences.ts";
+import { createUserPreferenceStore, preferencesFrameAllowed, type PersonPreferences } from "./user-preferences.ts";
 import { createViewerBotOverrideRoutes } from "./routes/viewer-bot-overrides.ts";
 import { createViewerBotOverrideStore } from "./viewer-bot-overrides.ts";
 import { applyViewerModelOverride, crossOwnerSettingsRefusal, sharedBotForViewer, viewerWantsBotNotification } from "../shared/viewer-bot-overrides.ts";
@@ -8144,6 +8144,8 @@ function sseFrameFor(
   if (payload?.kind === "org.approvals" && !orgAdminStream(client)) return null;
   // a person's unlocks reach that person's streams only
   if (payload?.kind === "achievements" && !achievementFrameAllowed(payload, client.viewerId, localPrincipalId())) return null;
+  // a person's preferences reach that person's own devices only
+  if (payload?.kind === "preferences" && !preferencesFrameAllowed(payload, client.viewerId)) return null;
   if ((payload?.kind === "nudge" || payload?.kind === "nudge.sent") && !nudgeFrameAllowed(payload, client.viewerId, localPrincipalId())) return null;
   if (payload?.kind === "presence.changed" && !presenceFrameAllowed(payload, client)) return null;
   // A read position in a conversation between two people follows both
@@ -20425,22 +20427,29 @@ ROUTES.push(createTtsProviderRoutes({
 // settings follow them across devices (shared/user-preferences.ts).
 // A person who turns read receipts on or off changes what both sides of
 // their conversations with people see: those clients fetch positions again.
+// Every save also reaches the person's other devices at once (a
+// `preferences` frame, to that person's own streams only:
+// preferencesFrameAllowed), so a section deleted on the phone leaves the
+// desktop within seconds instead of at its next start.
+function savePersonPreferences(principalId: string, write: () => PersonPreferences): PersonPreferences {
+  const before = personSendsReadReceipts(principalId);
+  const saved = write();
+  // "Show when I am online" travels with the preferences: tell the others at once.
+  presence.refresh(principalId);
+  if (personSendsReadReceipts(principalId) !== before) {
+    for (const group of store.groups) {
+      if (group.peopleDm && isPeopleDmParticipant(group, principalId)) broadcast({ kind: "thread.read", threadId: group.threadId, reset: true });
+    }
+  }
+  broadcast({ kind: "preferences", audience: principalId, preferences: saved.preferences, updatedAt: saved.updatedAt });
+  return saved;
+}
 ROUTES.push(createUserPreferenceRoutes({
   store: {
     get: (principalId) => userPreferenceStore.get(principalId),
     remove: (principalId) => userPreferenceStore.remove(principalId),
-    put: (principalId, input) => {
-      const before = personSendsReadReceipts(principalId);
-      const saved = userPreferenceStore.put(principalId, input);
-      // "Show when I am online" travels with the preferences: tell the others at once.
-      presence.refresh(principalId);
-      if (personSendsReadReceipts(principalId) !== before) {
-        for (const group of store.groups) {
-          if (group.peopleDm && isPeopleDmParticipant(group, principalId)) broadcast({ kind: "thread.read", threadId: group.threadId, reset: true });
-        }
-      }
-      return saved;
-    },
+    put: (principalId, input) => savePersonPreferences(principalId, () => userPreferenceStore.put(principalId, input)),
+    merge: (principalId, set, remove) => savePersonPreferences(principalId, () => userPreferenceStore.merge(principalId, set, remove)),
   },
   organization: () => IDENTITY.kind === "perspicax",
 }));

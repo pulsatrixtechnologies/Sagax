@@ -66,6 +66,10 @@ public enum Frame: Sendable {
     /// `org.approvals` (#213): the count of commands waiting for an admin,
     /// and the ones that just arrived. Reaches organization admins only.
     case orgApprovals(OrgApprovalsFrame)
+    /// `preferences`: the person's whole record after a save on any of
+    /// their devices (organization server; their own streams only), so a
+    /// section deleted on the desktop leaves the phone within seconds.
+    case preferences(UserPreferences)
     case unknown(kind: String)
 }
 
@@ -74,6 +78,7 @@ extension Frame: Decodable {
         case kind, cursor, resumed, threadId, message, activeLeafId
         case bot, botId, group, groupId, notification, png, mime, state, event, queues
         case audience, fromId, fromName, at, open, principalId, label, people, count, added
+        case preferences, updatedAt
     }
 
     public init(from decoder: Decoder) throws {
@@ -160,6 +165,12 @@ extension Frame: Decodable {
                 count: (try? container.decodeIfPresent(Int.self, forKey: .count)) ?? 0,
                 added: (try? container.decodeIfPresent([Lossy<OrgApprovalsFrame.Arrival>].self, forKey: .added))?.compactMap(\.value) ?? []
             ))
+        case "preferences":
+            guard let values = try? container.decode([String: String].self, forKey: .preferences) else {
+                self = .unknown(kind: kind)
+                return
+            }
+            self = .preferences(UserPreferences(stored: true, preferences: values, updatedAt: try? container.decodeIfPresent(Double.self, forKey: .updatedAt)))
         case "runtime":
             self = .runtime(try container.decode(RuntimeEvent.self, forKey: .event))
         default:
