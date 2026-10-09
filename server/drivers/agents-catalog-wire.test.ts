@@ -157,8 +157,8 @@ const BUDGET_BASELINE: Record<string, number> = {
   "room+own-thread+skills+voice+non-chief": 48255,
   "room+own-thread+skills+shared+non-chief": 49259,
   "room+own-thread+skills+shared+voice+non-chief": 50000,
-  "external": 4349,
-  "external+everything": 4349,
+  "external": 3030,
+  "external+everything": 3030,
 };
 
 const RPC_PREFIX = '{"jsonrpc":"2.0","id":1,"result":';
