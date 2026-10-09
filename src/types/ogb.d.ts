@@ -288,6 +288,9 @@ const __SAGAX_DEFAULT_SERVER__: string;
       /** Recolor the native window chrome for a skin; absent on older builds. */
       applySkin?(skin: string): Promise<boolean>;
       /** Settings > Appearance > App icon (electron/app-icon.mjs). */
+      /** Settings > Memory: the organization memory cached for Obsidian
+       * (electron/org-memory-cache.mjs). */
+      orgMemory?: import("../lib/org-memory").OrgMemoryBridge;
       appIcon?: {
         get(): Promise<{ platform: string; id: string | null; updatedAt: number | null }>;
         set(request: { id: string; images: Array<{ size: number; png: string }> }): Promise<{ platform: string; id: string | null; updatedAt: number | null }>;

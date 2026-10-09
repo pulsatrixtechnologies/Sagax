@@ -3,6 +3,7 @@ import "./legacy-env-boot.mjs";
 import { app, autoUpdater as nativeAutoUpdater, BrowserWindow, Notification, Tray, WebContentsView, clipboard, desktopCapturer, dialog, globalShortcut, ipcMain, Menu, nativeImage, net, powerMonitor, powerSaveBlocker, safeStorage, screen, session, shell, systemPreferences, utilityProcess } from "electron";
 import { createRequire } from "node:module";
 import { randomBytes, randomUUID } from "node:crypto";
+import { execFile as execFileCallback } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -101,6 +102,7 @@ import { defaultDataDir, fetchEnvironmentDescriptor, URL_SCHEMES } from "./legac
 import { createManagedDesktopClient, createManagedDesktopRelay, createManagedDesktopStore } from "./managed-desktop.mjs";
 import { createOrgLibrary } from "./org-library.mjs";
 import { createCompanyBackups } from "./company-backups.mjs";
+import { createOrgMemoryCache } from "./org-memory-cache.mjs";
 import { createCompanyBackupSchedule } from "./company-backup-schedule.mjs";
 import { keepUserDataInPlace, RUNTIME_NAME } from "./user-data-location.mjs";
 import { migrateSafeStorageKeychain } from "./keychain-migration.mjs";
@@ -3244,6 +3246,43 @@ ipcMain.handle("desktop:save-file", localOnly("desktop:save-file", async (event,
   });
 }));
 
+// Settings > Memory: the local cache of the organization memory for
+// Obsidian (org-memory-cache.mjs). The page sends the Perspicax address and
+// a memory sync token once; the token is kept by safeStorage and never
+// handed back. Nothing here reads or opens a path the page names.
+let orgMemoryCacheInstance = null;
+function runQuiet(cmd, args, { cwd, env } = {}) {
+  return new Promise((resolve) => {
+    execFileCallback(cmd, args, { cwd, env: { ...process.env, ...env }, windowsHide: true, maxBuffer: 16 * 1024 * 1024 }, (error, stdout, stderr) => {
+      resolve({ code: error ? (typeof error.code === "number" ? error.code : 1) : 0, stdout: String(stdout ?? ""), stderr: String(stderr ?? "") });
+    });
+  });
+}
+const orgMemoryCache = () => (orgMemoryCacheInstance ??= createOrgMemoryCache({
+  userData: app.getPath("userData"),
+  run: runQuiet,
+  fetch: (url, init) => net.fetch(url, init),
+  encrypt: (text) => safeStorage.encryptString(text),
+  decrypt: (data) => safeStorage.decryptString(data),
+}));
+ipcMain.handle("org-memory:state", desktopUiOnly("org-memory:state", () => orgMemoryCache().state()));
+ipcMain.handle("org-memory:connect", desktopUiOnly("org-memory:connect", (_event, input) => orgMemoryCache().connect({
+  server: typeof input?.server === "string" ? input.server : "",
+  token: typeof input?.token === "string" ? input.token : "",
+})));
+ipcMain.handle("org-memory:sync", desktopUiOnly("org-memory:sync", () => orgMemoryCache().sync()));
+ipcMain.handle("org-memory:erase", desktopUiOnly("org-memory:erase", () => orgMemoryCache().erase()));
+ipcMain.handle("org-memory:obsidian-config", desktopUiOnly("org-memory:obsidian-config", () => {
+  orgMemoryCache().writeObsidianConfig();
+  return orgMemoryCache().state();
+}));
+ipcMain.handle("org-memory:open-obsidian", desktopUiOnly("org-memory:open-obsidian", async () => {
+  const state = orgMemoryCache().state();
+  if (!state.cloned) throw new Error("Sync the memory first");
+  await shell.openExternal(state.obsidianUrl);
+  return true;
+}));
+
 // Settings > Appearance > App icon. The page draws every icon through the
 // system template and sends PNGs; nothing here reads a file the page names.
 ipcMain.handle("app-icon:get", desktopUiOnly("app-icon:get", () => {
@@ -3607,6 +3646,8 @@ ipcMain.handle("organization:reopen", localWorkspaceOnly("organization:reopen", 
 ipcMain.handle("organization:cancel", localWorkspaceOnly("organization:cancel", () => ensureManagedDesktop().cancelEnrollment()));
 ipcMain.handle("organization:refresh", localWorkspaceOnly("organization:refresh", () => ensureManagedDesktop().refresh()));
 ipcMain.handle("organization:disconnect", localWorkspaceOnly("organization:disconnect", () => {
+  // Signing out of the organization takes the memory cache with it.
+  void orgMemoryCache().erase().catch(() => {});
   companyBackupConfigurationRevision++;
   companyBackupController?.abort(); preparedCompanyRestore = null;
   const client = ensureManagedDesktop();
