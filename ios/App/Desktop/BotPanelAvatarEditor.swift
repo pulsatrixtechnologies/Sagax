@@ -245,6 +245,20 @@ struct BotAvatarEditor: View {
                     }
                 }
             }
+        case .grump:
+            let skins = GrumpSkin.allCases.filter { !unlocks.skinLocked(.grump, skin: $0.rawValue, current: worn.complete.grumpSkin.rawValue) }
+            LazyVGrid(columns: columns, spacing: 4) {
+                ForEach(skins, id: \.self) { skin in
+                    cell(look: edited { $0.grumpSkin = skin }, skin: .none, name: skinName(skin.rawValue), selected: draft.complete.grumpSkin == skin, height: 60,
+                         locked: false) {
+                        var next = draft
+                        var look = next.complete
+                        look.grumpSkin = skin
+                        next.look = look.stored
+                        save(next)
+                    }
+                }
+            }
         }
     }
 
@@ -445,6 +459,7 @@ struct BotAvatarEditor: View {
         case .shape: String(localized: "Original shapes")
         case .trombi: String(localized: "Trombi")
         case .bunbu: String(localized: "Bunbu")
+        case .grump: String(localized: "Grump")
         }
     }
 

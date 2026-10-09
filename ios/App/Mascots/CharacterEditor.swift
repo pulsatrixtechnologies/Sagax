@@ -213,6 +213,15 @@ struct CharacterEditor: View {
                     draft.look = next.stored
                 }
             }
+        case .grump:
+            let skins = GrumpSkin.allCases.filter { !skinLocked(.grump, $0.rawValue, worn: wornDraft.complete.grumpSkin.rawValue) }
+            row(count: skins.count, pitch: metrics.skinPitch, height: metrics.skinRowHeight ?? metrics.pitch) { index in
+                thumbnail(look: edited { $0.grumpSkin = skins[index] }, skin: .none, size: metrics.skinCell, selected: draft.complete.grumpSkin == skins[index], label: Text(verbatim: skins[index].rawValue), tier: tierLabel(.grump, skins[index].rawValue)) {
+                    var next = draft.complete
+                    next.grumpSkin = skins[index]
+                    draft.look = next.stored
+                }
+            }
         }
     }
 
@@ -378,6 +387,7 @@ struct CharacterEditor: View {
         case .shape: "Shape"
         case .trombi: "Trombi"
         case .bunbu: "Bunbu"
+        case .grump: "Grump"
         }
     }
 }

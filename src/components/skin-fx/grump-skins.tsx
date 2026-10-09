@@ -250,3 +250,33 @@ export function grumpSkinLayers(skin: GrumpSkin, d: string, hex: string, uid: st
       return null;
   }
 }
+
+/** What each gradient or pattern of a skin reads as in one flat color (the phone draws flat, iOS GrumpArt). */
+const FLAT: Readonly<Record<string, string>> = {
+  calico: "#E08A3A",
+  tabby: "#8E6B49",
+  tabbyFur: "#CFAE84",
+  gold: "#d9a333",
+  chrome: "#c9d2db",
+  pearl: "#e3e9ff",
+  iris: "#7df4ff",
+  rock: "#3d1d14",
+  ditherFur: "#c0c0c0",
+};
+
+/**
+ * A skin's palette with every gradient and pattern flattened to one color
+ * (Retro 98's dithered shade is its coat half way to black): the phone's
+ * copy (ios-mascot-export.test.ts writes it for GrumpArt.swift).
+ */
+export function grumpFlatPalette(skin: GrumpSkin | string, hex: string): GrumpPalette {
+  const known = grumpSkinId(skin);
+  const { palette } = grumpSkinPaint(known, hex, "flat");
+  const out = { ...palette };
+  for (const role of Object.keys(out) as (keyof GrumpPalette)[]) {
+    const match = /^url\(#flat-([A-Za-z]+)\)$/.exec(out[role]);
+    if (!match) continue;
+    out[role] = match[1] === "dither" ? mix(vgaColor(hex), "#000000", 0.5) : (FLAT[match[1]] ?? "#808080");
+  }
+  return out;
+}

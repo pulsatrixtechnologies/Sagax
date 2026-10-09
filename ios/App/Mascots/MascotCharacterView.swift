@@ -32,6 +32,8 @@ struct MascotCharacterView: View {
             TrombiMascotView(skin: look.trombiSkin, size: size, pose: state.trombiPose, animated: animated)
         case .bunbu:
             BunbuMascotView(skin: look.bunbuSkin, color: color, size: size, mood: BunbuMood(state: state), animated: animated)
+        case .grump:
+            GrumpMascotView(skin: look.grumpSkin, color: color, size: size, expression: GrumpFace.expression(for: state), animated: animated)
         }
     }
 }

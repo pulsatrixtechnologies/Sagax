@@ -27,13 +27,20 @@ const skinKey = (character, skin) => character === "owl"
   ? `mascot.skin.${skin === "none" ? "classic" : skin}`
   : `mascot.${character === "shape" ? "shapeSkin" : `${character}Skin`}.${skin}`;
 const has = (key) => LOCALES.en[key] !== undefined;
+// a Mastery character's locale keys win once its branch lands; a language they
+// do not cover yet keeps the registry's name
+const withRegistry = (key, registry) => {
+  if (!has(key)) return registry;
+  const text = pick(key);
+  return { ...text, ptBR: LOCALES.ptBR[key] ?? registry.ptBR ?? text.ptBR };
+};
 const characterText = (character) => {
   const key = CHARACTER_KEY[character] ?? `floatingBots.mascot.${character}`;
-  return !has(key) && isMasteryCharacter(character) ? masteryCharacterName(character) : pick(key);
+  return isMasteryCharacter(character) ? withRegistry(key, masteryCharacterName(character)) : pick(key);
 };
 const skinText = (character, skin) => {
   const key = skinKey(character, skin);
-  return !has(key) && isMasteryCharacter(character) ? masterySkinName(character, skin) : pick(key);
+  return isMasteryCharacter(character) ? withRegistry(key, masterySkinName(character, skin)) : pick(key);
 };
 const pick = (key) => {
   const en = LOCALES.en[key];

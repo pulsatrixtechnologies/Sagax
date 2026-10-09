@@ -154,7 +154,7 @@ public struct RGB: Equatable, Sendable {
 // MARK: - Character
 
 public enum MascotCharacter: String, CaseIterable, Codable, Sendable {
-    case owl, shape, trombi, bunbu
+    case owl, shape, trombi, bunbu, grump
 }
 
 public enum MascotStyle: String, CaseIterable, Codable, Sendable {
@@ -244,6 +244,22 @@ public enum BunbuSkin: String, CaseIterable, Codable, Sendable {
 
 }
 
+/// Skins for Grump (`GRUMP_SKINS`), by rarity: the cat coats, then the premium set.
+public enum GrumpSkin: String, CaseIterable, Codable, Sendable {
+    case plain, tuxedo, calico, tabby, siamese, retro98, gold, void, neon, chrome, glitch, holo, molten
+
+    /// `LEGACY_GRUMP_SKINS`.
+    static let legacy: [String: GrumpSkin] = [
+        "tux": .tuxedo, "black-and-white": .tuxedo, "tortie": .calico, "tortoiseshell": .calico, "tiger": .tabby,
+        "mackerel": .tabby, "colorpoint": .siamese, "colourpoint": .siamese, "seal-point": .siamese, "black": .void,
+        "shadow": .void, "retro": .retro98, "win98": .retro98, "royal": .gold, "metal": .chrome, "cyber": .glitch,
+        "iridescent": .holo, "holographic": .holo, "lava": .molten,
+    ]
+
+    public static func stored(_ raw: String) -> GrumpSkin? { GrumpSkin(rawValue: raw) ?? legacy[raw] }
+
+}
+
 /// `mascotLook`: which character stands for the bot, and that character's
 /// own look, read exactly as `botMascotLook` reads it. The desktop's schema
 /// is strict: an unknown character, an unknown top-level key, or a
@@ -256,14 +272,16 @@ public struct MascotLook: Codable, Hashable, Sendable {
         public var shape: ShapeSkin?
         public var trombi: TrombiSkin?
         public var bunbu: BunbuSkin?
+        public var grump: GrumpSkin?
 
-        public init(shape: ShapeSkin? = nil, trombi: TrombiSkin? = nil, bunbu: BunbuSkin? = nil) {
+        public init(shape: ShapeSkin? = nil, trombi: TrombiSkin? = nil, bunbu: BunbuSkin? = nil, grump: GrumpSkin? = nil) {
             self.shape = shape
             self.trombi = trombi
             self.bunbu = bunbu
+            self.grump = grump
         }
 
-        var isEmpty: Bool { shape == nil && trombi == nil && bunbu == nil }
+        var isEmpty: Bool { shape == nil && trombi == nil && bunbu == nil && grump == nil }
     }
 
     public var character: MascotCharacter
@@ -314,7 +332,8 @@ public struct MascotLook: Codable, Hashable, Sendable {
             let read = Skins(
                 shape: raw("shape").flatMap(ShapeSkin.stored),
                 trombi: raw("trombi").flatMap(TrombiSkin.stored),
-                bunbu: raw("bunbu").flatMap(BunbuSkin.stored)
+                bunbu: raw("bunbu").flatMap(BunbuSkin.stored),
+                grump: raw("grump").flatMap(GrumpSkin.stored)
             )
             skins = read.isEmpty ? nil : read
         }
@@ -331,6 +350,7 @@ public struct MascotLook: Codable, Hashable, Sendable {
             try nested.encodeIfPresent(skins.shape, forKey: Key("shape"))
             try nested.encodeIfPresent(skins.trombi, forKey: Key("trombi"))
             try nested.encodeIfPresent(skins.bunbu, forKey: Key("bunbu"))
+            try nested.encodeIfPresent(skins.grump, forKey: Key("grump"))
         }
     }
 
@@ -342,7 +362,8 @@ public struct MascotLook: Codable, Hashable, Sendable {
             shape: shape ?? .circle,
             shapeSkin: skins?.shape ?? .plain,
             trombiSkin: skins?.trombi ?? .classic,
-            bunbuSkin: skins?.bunbu ?? .plain
+            bunbuSkin: skins?.bunbu ?? .plain,
+            grumpSkin: skins?.grump ?? .plain
         )
     }
 }
@@ -355,25 +376,27 @@ public struct CompleteMascotLook: Hashable, Sendable {
     public var shapeSkin: ShapeSkin
     public var trombiSkin: TrombiSkin
     public var bunbuSkin: BunbuSkin
+    public var grumpSkin: GrumpSkin
 
-    public init(character: MascotCharacter, style: MascotStyle = .flat, shape: MascotShape = .circle, shapeSkin: ShapeSkin = .plain, trombiSkin: TrombiSkin = .classic, bunbuSkin: BunbuSkin = .plain) {
+    public init(character: MascotCharacter, style: MascotStyle = .flat, shape: MascotShape = .circle, shapeSkin: ShapeSkin = .plain, trombiSkin: TrombiSkin = .classic, bunbuSkin: BunbuSkin = .plain, grumpSkin: GrumpSkin = .plain) {
         self.character = character
         self.style = style
         self.shape = shape
         self.shapeSkin = shapeSkin
         self.trombiSkin = trombiSkin
         self.bunbuSkin = bunbuSkin
+        self.grumpSkin = grumpSkin
     }
 
     /// Back to a stored look, every choice explicit (what the editor saves,
     /// as the desktop's editor does: all three skins).
     public var stored: MascotLook {
-        MascotLook(character: character, style: style, shape: shape, skins: .init(shape: shapeSkin, trombi: trombiSkin, bunbu: bunbuSkin))
+        MascotLook(character: character, style: style, shape: shape, skins: .init(shape: shapeSkin, trombi: trombiSkin, bunbu: bunbuSkin, grump: grumpSkin))
     }
 
     /// The colour a character wears where the bot gives none it can use:
     /// Bunbu's mint (`BUNBU_DEFAULT_COLOR`), green for the others.
-    public var fallbackColor: String { character == .bunbu ? "mint" : "green" }
+    public var fallbackColor: String { character == .bunbu ? "mint" : character == .grump ? "brown" : "green" }
 }
 
 // MARK: - Owl skins

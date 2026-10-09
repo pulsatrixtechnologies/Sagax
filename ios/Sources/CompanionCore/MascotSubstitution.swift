@@ -42,8 +42,14 @@ public enum MascotSubstitution {
         case .bunbu:
             guard bunbuBaseOnly.contains(look.bunbuSkin) else { return [] }
             return [Entry(character: .bunbu, wanted: "Bunbu skin \(look.bunbuSkin.rawValue)", drawn: "its base finish")]
+        case .grump:
+            guard grumpFlat.contains(look.grumpSkin) else { return [] }
+            return [Entry(character: .grump, wanted: "Grump skin \(look.grumpSkin.rawValue)", drawn: "its palette, flat, without its effects")]
         }
     }
+
+    /// Grump's skins whose gradients, patterns and effects the phone draws as a flat palette.
+    static let grumpFlat: Set<GrumpSkin> = [.calico, .tabby, .retro98, .gold, .void, .neon, .chrome, .glitch, .holo, .molten]
 
     private static let logger = Logger(subsystem: "ca.pulsatrix.sagax", category: "mascot")
     private static let lock = NSLock()
