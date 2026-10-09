@@ -3,7 +3,7 @@
 //   PD-1  alice opens a direct conversation with bob from the directory: only
 //         the two read, list, stream, search and write it; an admin, another
 //         member and the loopback operator get nothing; it stays people-only
-//         (no bot, no task, no rename, no memory) and opening it again
+//         (no bot, no rename, no memory; threads are PT-1) and opening it again
 //         answers the same one; bob is notified, alice is not
 //   PD-2  a service account and oneself are not someone to write to
 //   GM-1  a group's memory: its owner edits it, a member reads it only, a
@@ -233,7 +233,8 @@ posixOnly("Perspicax organization: direct conversations between people, group me
     expect((await api("PATCH", `/api/groups/${dm.id}`, alice, { humanIds: [ids.alice, ids.bob, ids.carol] })).status).toBe(400);
     expect((await api("PATCH", `/api/groups/${dm.id}`, alice, { memberIds: ["anything"] })).status).toBe(400);
     expect((await api("PATCH", `/api/groups/${dm.id}`, bob, { unread: false })).status).toBe(200);
-    expect((await api("POST", `/api/groups/${dm.id}/tasks`, alice, {})).status).toBe(400);
+    // threads like a bot's (server/people-threads.e2e.test.ts)
+    expect((await api("POST", `/api/groups/${dm.id}/tasks`, alice, {})).status).toBe(201);
     expect((await api("DELETE", `/api/groups/${dm.id}`, alice)).status).toBe(400);
     expect((await api("GET", `/api/groups/${dm.id}/memory`, alice)).status).toBe(404);
   }, 120_000);

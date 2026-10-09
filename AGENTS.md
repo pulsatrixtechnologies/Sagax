@@ -68,6 +68,28 @@ A webhook triggers a MAUS task from outside (`server/webhooks.ts`,
 - No HMAC or signature scheme exists in Sagax webhooks; if one is added it
   comes on top of the bearer, never instead of it.
 
+## Conversations with a person have threads like a bot (2026-10-09)
+
+A direct conversation between two people (`peopleDm`, server/people-dms.ts)
+has threads and folders exactly like a bot's, through the room thread routes
+and `server/routes/group-folders.ts`. Keep these rules, covered by
+`server/people-threads.e2e.test.ts` and `server/people-dm-threads-store.test.ts`:
+
+- The pair shares the thread list, titles, pins, folders, archive and snooze.
+  The open thread and unread are each person's own (`PeopleDmSelections`,
+  `unreadFor` per thread, stripped by `peopleDmForViewer`).
+- Only the two people reach them; an admin gets 404 like anyone else. No
+  generated title (no model ever reads the pair's words), no turn limit.
+- The stored `threadId` is the default thread ("General" after the one-time
+  migration, `personThreads: 1`). Only a request with the
+  `x-sagax-person-threads: 1` header is answered with the person's own open
+  thread; a live frame always names the default thread and a client that
+  knows threads keeps its own (src/state/store.tsx `personThreadKept`). A
+  client from before threads keeps working on the default thread, the only
+  one it is shown.
+- The picker follows Threads location like a bot's: header or sidebar, never
+  both.
+
 ## Mail settings
 
 Settings > Email (`src/components/MailSettings.tsx`, `server/mail-routes.ts`,
