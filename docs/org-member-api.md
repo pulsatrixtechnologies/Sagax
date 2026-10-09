@@ -45,7 +45,7 @@ Code: `server/org-member-routes.ts`, wired in `server/index.ts`
 | `clients.botsRead` | on | list their bots, read their conversations |
 | `clients.botsMessage` | on | send a message and wait for the answer |
 | `clients.routinesRun` | off | run a routine now, read a run |
-| `clients.approvalsAnswer` | off | allow or deny a card |
+| `clients.approvalsAnswer` | off (the bot's owner holds it for their own bots) | allow or deny a card |
 | `clients.peopleNudge` | off | nudge a person |
 
 Keys have two segments (`group.name`): Perspicax refuses a catalogue with
@@ -63,7 +63,8 @@ any other shape, so the plan's `clients.bots.read` is written
 | `GET threads/{id}/stream?anchor&wait` | `clients.botsRead` | watch a running turn, streamed (lot C.3) |
 | `POST routines/{id}/run` | `clients.routinesRun` | run now |
 | `GET routines/runs/{id}` | `clients.routinesRun` | one run |
-| `POST approvals/{id}` | `clients.approvalsAnswer` | allow or deny |
+| `GET approvals/{id}?threadId` | `clients.botsRead` | may the person answer this card (lot C.3) |
+| `POST approvals/{id}` | `clients.approvalsAnswer`, or owning the bot | allow or deny |
 | `POST people/{id}/nudge` | `clients.peopleNudge` | nudge |
 
 ### `GET capabilities`
@@ -203,7 +204,31 @@ bot's owner, the person it runs as, an admin, or `routines.runNowAny`): its
 refusal names `routines.runNowAny`. The run read adds `attention`, `error`
 and `output` (at most 32,000 characters) for a run the person can see.
 
+### `GET approvals/{id}?threadId=`
+
+Whether the person may answer the card through this API, before anyone asks
+them (Perspicax checks it before an elicitation):
+
+```json
+{ "id": "req_4", "threadId": "a5fe...", "open": true, "canAnswer": false,
+  "reason": "Your profile does not include answering approvals of bots that are not yours.",
+  "permission": "clients.approvalsAnswer",
+  "whoCanApprove": { "kind": "owner", "principalId": "pr_7c1e...", "name": "Bob", "sentence": "The bot's owner, Bob." } }
+```
+
+`canAnswer` holds both gates: the permission (below) and Sagax's own rule (a
+server command of a member's bot is an organization admin's, `kind: admin`;
+any other card is its bot owner's, `kind: owner`). An answered card is
+`open: false, canAnswer: false`; a card the thread does not hold is `404`;
+a thread the person cannot read is Sagax's own refusal.
+
 ### `POST approvals/{id}`
+
+`clients.approvalsAnswer` is derived per card, nothing stored: the owner of
+the bot that raised the card holds it for the cards of their own bots; anyone
+else needs it from a permission set (an admin holds every key). Without it:
+`403 forbidden_permission`, `permission: clients.approvalsAnswer`.
+
 
 `{"threadId": "a5fe...", "decision": "allow"}` or `"deny"`; `{id}` is the
 card's request id (`approvals[].id`). Answers `{answered: true, decision}`.

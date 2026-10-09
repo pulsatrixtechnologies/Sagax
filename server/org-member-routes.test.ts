@@ -20,6 +20,7 @@ let respond: (request: MemberRequest) => { status: number; body: unknown } = () 
 let status: () => ThreadStatus | null = () => "idle";
 let live: () => string | null = () => null;
 let noted: Array<{ principalId: string; threadId: string; requestId: string }> = [];
+let cards = new Map<string, { open: boolean; ownerPrincipalId: string | null; ownerName: string | null; adminOnly: boolean }>();
 let clock = 1_000_000;
 
 function token(sub: string, role: ConsoleAssertion["role"] = "employee", actor: ConsoleAssertion["actor"] = "perspicax-mcp"): string {
@@ -55,6 +56,10 @@ const deps: OrgMemberRouteDeps = {
   threadLink: (threadId, botId) => `${ORIGIN}/#thread=${threadId}${botId ? `&bot=${botId}` : ""}`,
   botOfThread: (threadId) => (threadId === "t1" ? "b1" : null),
   noteAnsweredVia: (person, threadId, requestId) => noted.push({ principalId: person.principalId, threadId, requestId }),
+  approvalAnswerer: (threadId, requestId) => {
+    const card = cards.get(`${threadId}/${requestId}`);
+    return card ? { found: true, ...card } : null;
+  },
   version: () => "0.4.16",
   now: () => clock,
   sleep: async (ms) => {
@@ -88,6 +93,7 @@ beforeEach(() => {
   status = () => "idle";
   live = () => null;
   noted = [];
+  cards = new Map();
   respond = () => ({ status: 404, body: { error: "no" } });
 });
 
@@ -395,5 +401,58 @@ describe("the streamed turn (lot C.3)", () => {
     expect(summary.text).toBeNull();
     expect(summary.cost).toEqual({ inputTokens: 11, outputTokens: 7, costUsd: 0.5, turns: 2 });
     expect(summary.approvals.map((a) => [a.id, a.decision, a.by])).toEqual([["r1", "deny", "Ann"], ["r2", "expired", null], ["r3", "answered", "this computer"]]);
+  });
+});
+
+describe("who may answer a card (lot C.3)", () => {
+  const ok = () => ({ status: 200, body: { ok: true, messages: [] } });
+
+  it("the bot's owner answers the cards of their own bots without clients.approvalsAnswer", async () => {
+    cards.set("t1/req_1", { open: true, ownerPrincipalId: "pr_bob", ownerName: "Bob", adminOnly: false });
+    respond = ok;
+    const check = await call("GET", "approvals/req_1?threadId=t1", token("bob"));
+    expect(check.body).toEqual({ id: "req_1", threadId: "t1", open: true, canAnswer: true, whoCanApprove: { kind: "owner", principalId: "pr_bob", name: "Bob", sentence: "The bot's owner, Bob." } });
+    const answered = await call("POST", "approvals/req_1", token("bob"), { threadId: "t1", decision: "allow" });
+    expect(answered.status, JSON.stringify(answered.body)).toBe(200);
+    expect(performed.at(-1)!.request).toEqual({ method: "POST", path: "/api/threads/t1/respond", body: { requestId: "req_1", behavior: "allow" } });
+  });
+
+  it("a member cannot answer on a bot they do not own; the permission alone does not beat Sagax's owner rule", async () => {
+    cards.set("t2/req_2", { open: true, ownerPrincipalId: "pr_ann", ownerName: "Ann", adminOnly: false });
+    respond = ok;
+    const check = await call("GET", "approvals/req_2?threadId=t2", token("bob"));
+    expect(check.body).toMatchObject({ canAnswer: false, permission: "clients.approvalsAnswer", whoCanApprove: { kind: "owner", principalId: "pr_ann", name: "Ann" } });
+    const before = performed.length;
+    const refused = await call("POST", "approvals/req_2", token("bob"), { threadId: "t2", decision: "allow" });
+    expect(refused.status).toBe(403);
+    expect(refused.body).toMatchObject({ code: "forbidden_permission", permission: "clients.approvalsAnswer" });
+    expect(performed.length).toBe(before);
+    expect(noted).toEqual([]);
+    // Granted by an admin: the gate lets them through, the check still names
+    // Sagax's own rule (the owner answers).
+    people.get("bob")!.permissions.push("clients.approvalsAnswer");
+    const granted = await call("GET", "approvals/req_2?threadId=t2", token("bob"));
+    expect(granted.body).toMatchObject({ canAnswer: false, reason: "Only the bot owner can answer this approval." });
+    expect(granted.body.permission).toBeUndefined();
+  });
+
+  it("an admin answers a server command of a member's bot; the member owner cannot", async () => {
+    cards.set("t3/req_3", { open: true, ownerPrincipalId: "pr_bob", ownerName: "Bob", adminOnly: true });
+    respond = ok;
+    const admin = await call("GET", "approvals/req_3?threadId=t3", token("ann", "admin"));
+    expect(admin.body).toMatchObject({ canAnswer: true, whoCanApprove: { kind: "admin" } });
+    expect((await call("POST", "approvals/req_3", token("ann", "admin"), { threadId: "t3", decision: "deny" })).status).toBe(200);
+    const owner = await call("GET", "approvals/req_3?threadId=t3", token("bob"));
+    expect(owner.body).toMatchObject({ canAnswer: false, reason: "Only an organization admin can approve this command.", whoCanApprove: { kind: "admin", sentence: expect.stringContaining("organization admin") } });
+  });
+
+  it("an answered card, an unknown card or an unreadable thread is said so", async () => {
+    cards.set("t1/req_9", { open: false, ownerPrincipalId: "pr_bob", ownerName: "Bob", adminOnly: false });
+    respond = ok;
+    expect((await call("GET", "approvals/req_9?threadId=t1", token("bob"))).body).toMatchObject({ open: false, canAnswer: false });
+    expect((await call("GET", "approvals/nope?threadId=t1", token("bob"))).status).toBe(404);
+    expect((await call("GET", "approvals/req_9", token("bob"))).status).toBe(400);
+    respond = () => ({ status: 404, body: { error: "no such conversation" } });
+    expect((await call("GET", "approvals/req_9?threadId=t1", token("bob"))).body).toMatchObject({ code: "not_found", message: "no such conversation" });
   });
 });

@@ -25313,6 +25313,20 @@ const orgMember = createOrgMemberRoutes({
     return `${origin}/#thread=${encodeURIComponent(threadId)}${bot ? `&bot=${encodeURIComponent(bot)}` : ""}`;
   },
   botOfThread: (threadId) => store.botByThread(threadId)?.id ?? null,
+  approvalAnswerer: (threadId, requestId) => {
+    const message = store.messagesFor(threadId).find((row) => row.card?.requestId === requestId);
+    if (!message?.card) return null;
+    const card = message.card;
+    const bot = botForApproval(threadId, message);
+    const ownerId = bot ? approvalOwnerId(bot) : null;
+    return {
+      found: true,
+      open: !card.answered && !card.dismissed && !card.expired,
+      ownerPrincipalId: ownerId,
+      ownerName: ownerId ? adminPerson(ownerId).name : null,
+      adminOnly: IDENTITY.kind === "perspicax" && card.adminApproval === true,
+    };
+  },
   noteAnsweredVia: (person, threadId, requestId) => {
     const message = store.messagesFor(threadId).find((candidate) => candidate.card?.requestId === requestId);
     const card = message?.card;

@@ -8,6 +8,7 @@
 //   GET  /api/org/member/threads/{id}          messages since a cursor
 //   POST /api/org/member/routines/{id}/run     run a routine now
 //   GET  /api/org/member/routines/runs/{id}    one run
+//   GET  /api/org/member/approvals/{id}        may the person answer it
 //   POST /api/org/member/approvals/{id}        allow or deny a card
 //   POST /api/org/member/people/{id}/nudge     nudge a person
 //   GET  /api/org/member/threads/{id}/stream   watch a running turn (NDJSON)
@@ -119,6 +120,9 @@ export interface OrgMemberRouteDeps {
   /** A card the person answered through this API: mark its recorded
    * answerer `via: "ai-client"` (the name is the person's). */
   noteAnsweredVia?(person: MemberPerson, threadId: string, requestId: string): void;
+  /** Who may answer a card (lot C.3): null when the thread has no such
+   * card. */
+  approvalAnswerer?(threadId: string, requestId: string): ApprovalAnswerer | null;
   /** The bot whose thread this is, or null (a room, or gone). */
   botOfThread?(threadId: string): string | null;
   /** One admin activity row, category `client`, actor the person. */
@@ -131,6 +135,26 @@ export interface OrgMemberRouteDeps {
 interface Answer {
   status: number;
   body: unknown;
+}
+
+/** A card and who may answer it, as Sagax records it. */
+export interface ApprovalAnswerer {
+  found: boolean;
+  /** Not answered, dismissed or expired. */
+  open: boolean;
+  /** The owner of the bot that raised it, or null (no live bot). */
+  ownerPrincipalId: string | null;
+  ownerName: string | null;
+  /** A server command of a member's bot: an organization admin's. */
+  adminOnly: boolean;
+}
+
+/** Who can approve a card, for a client that cannot. */
+export interface WhoCanApprove {
+  kind: "owner" | "admin";
+  principalId: string | null;
+  name: string | null;
+  sentence: string;
 }
 
 /** One event of a streamed answer (one NDJSON line). */
@@ -424,6 +448,30 @@ function memberRoutes(deps: OrgMemberRouteDeps): MemberRoute[] {
   };
   const isRead = (value: ThreadRead | Answer): value is ThreadRead => "messages" in value;
 
+  /** Lot C.3: the answer permission for one card. The bot's owner holds it
+   * for the cards of their own bots (derived here, nothing stored); anyone
+   * else needs clients.approvalsAnswer; an admin holds every key. */
+  const holdsAnswerPermission = (person: MemberPerson, info: ApprovalAnswerer | null): boolean =>
+    person.admin
+    || Boolean(info?.ownerPrincipalId && info.ownerPrincipalId === person.principalId)
+    || can(deps.permissions(person.principalId), "clients.approvalsAnswer");
+
+  /** Whether the person may answer this card through this API, with Sagax's
+   * own rule on top of the permission: a server command of a member's bot is
+   * an organization admin's, any other card its bot owner's. */
+  const answerCheck = (person: MemberPerson, info: ApprovalAnswerer): { canAnswer: boolean; reason: string | null; permission: string | null; whoCanApprove: WhoCanApprove } => {
+    const whoCanApprove: WhoCanApprove = info.adminOnly
+      ? { kind: "admin", principalId: null, name: null, sentence: "An organization admin (this command would run on the server)." }
+      : { kind: "owner", principalId: info.ownerPrincipalId, name: info.ownerName, sentence: info.ownerName ? `The bot's owner, ${info.ownerName}.` : "The bot's owner." };
+    if (!info.open) return { canAnswer: false, reason: "This approval is no longer open.", permission: null, whoCanApprove };
+    if (!holdsAnswerPermission(person, info)) {
+      return { canAnswer: false, reason: "Your profile does not include answering approvals of bots that are not yours.", permission: "clients.approvalsAnswer", whoCanApprove };
+    }
+    const byRule = info.adminOnly ? person.admin : !info.ownerPrincipalId || info.ownerPrincipalId === person.principalId;
+    if (!byRule) return { canAnswer: false, reason: info.adminOnly ? "Only an organization admin can approve this command." : "Only the bot owner can answer this approval.", permission: null, whoCanApprove };
+    return { canAnswer: true, reason: null, permission: null, whoCanApprove };
+  };
+
   /** The raw page of a thread as the person reads it, or a refusal. */
   const rawPage = async (person: MemberPerson, threadId: string): Promise<{ raw: unknown } | Answer> => {
     const reply = await deps.perform(person, { method: "GET", path: `/api/threads/${encodeURIComponent(threadId)}/messages`, query: { limit: String(MEMBER_THREAD_LIMIT_MAX) } });
@@ -685,13 +733,42 @@ function memberRoutes(deps: OrgMemberRouteDeps): MemberRoute[] {
       },
     },
     {
-      method: "POST", path: "approvals/{id}", permission: "clients.approvalsAnswer",
+      method: "GET", path: "approvals/{id}", permission: "clients.botsRead",
+      async handle({ person, params, url }) {
+        const threadId = url.searchParams.get("threadId") ?? "";
+        if (!THREAD_ID.test(threadId)) return fail(400, "bad_request", "threadId is a thread id.");
+        // The person must reach the thread: Sagax's own read decides.
+        const read = await readThread(person, threadId, null, 1);
+        if (!isRead(read)) return read;
+        const info = deps.approvalAnswerer?.(threadId, params.id!) ?? null;
+        if (!info?.found) return fail(404, "not_found", "No such approval in this conversation.");
+        const check = answerCheck(person, info);
+        return answer({
+          id: params.id!,
+          threadId,
+          open: info.open,
+          canAnswer: check.canAnswer,
+          ...(check.reason ? { reason: check.reason } : {}),
+          ...(check.permission ? { permission: check.permission } : {}),
+          whoCanApprove: check.whoCanApprove,
+        });
+      },
+    },
+    {
+      // No route-level permission: the bot's owner answers the cards of their
+      // own bots by default; anyone else needs clients.approvalsAnswer
+      // (decided per card below). An admin holds every key.
+      method: "POST", path: "approvals/{id}",
       async handle({ person, params, body }) {
         const input = objectOf(body);
         const decision = input?.decision;
         const threadId = input?.threadId;
         if (!input || Object.keys(input).some((key) => key !== "decision" && key !== "threadId") || (decision !== "allow" && decision !== "deny") || typeof threadId !== "string" || !THREAD_ID.test(threadId)) {
           return fail(400, "bad_request", "Send { \"threadId\": \"...\", \"decision\": \"allow\" } or \"deny\".");
+        }
+        const info = deps.approvalAnswerer?.(threadId, params.id!) ?? null;
+        if (!holdsAnswerPermission(person, info)) {
+          return fail(403, "forbidden_permission", `Your profile does not include ${permissionLabel("clients.approvalsAnswer", "en")}, and this bot is not yours. Ask an admin to add it in Perspicax.`, { permission: "clients.approvalsAnswer" });
         }
         const reply = await deps.perform(person, { method: "POST", path: `/api/threads/${encodeURIComponent(threadId)}/respond`, body: { requestId: params.id!, behavior: decision } });
         if (!okStatus(reply)) return passThrough(reply, "This card cannot be answered.");

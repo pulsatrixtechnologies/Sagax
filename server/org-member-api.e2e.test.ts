@@ -306,6 +306,12 @@ posixOnly("Perspicax AI clients: the Sagax member API", () => {
     const threadId = final.threadId as string;
     const messageId = final.messageId as string;
 
+    // Who may answer it: Alice owns Vega; Bob does not even reach the thread.
+    const check = await member("GET", `approvals/${cardId}?threadId=${threadId}`, ALICE);
+    expect(check.body, check.text).toMatchObject({ canAnswer: true, whoCanApprove: { kind: "owner", principalId: ids.alice, name: "Alice" } });
+    expect((await member("GET", `approvals/${cardId}?threadId=${threadId}`, BOB)).status).toBeGreaterThanOrEqual(403);
+    const bobAnswer = await member("POST", `approvals/${cardId}`, BOB, { threadId, decision: "allow" });
+    expect(bobAnswer.body).toMatchObject({ code: "forbidden_permission", permission: "clients.approvalsAnswer" });
     const answered = await member("POST", `approvals/${cardId}`, ALICE, { threadId, decision: "allow" });
     expect(answered.status, answered.text).toBe(200);
     const card = await waitFor(async () => {

@@ -11667,6 +11667,7 @@
       "approval.position": "f144dcc35b2082337fd3e692aee8402f09f9f3f85b153060b140114716e46c48",
       "approval.someone": "864c855e3d64399dc06fa30ebb75526c2c2e73db7216b16a3d4cf03e8a52ec3b",
       "approval.status.allowed": "1bb201d188352e9b4633f85e4fb8a31ea93fd14dec702443fd3e2713d657fd2d",
+      "approval.status.byAiClient": "55eaaf33cca8ed752f1b74714a820442ac55d857390c6c26d5467af7aaf43d76",
       "approval.status.cancelled": "d353a99eb4556847ceeb3c306ac886cf6b4fa13043eb1864b9aeb0607fd5f2cc",
       "approval.status.denied": "da404deb110f7cc92a5b2c85c8e8ab103bd48837cf300f8387d13d54f3adea65",
       "approval.status.profileUpdated": "9c5551e87cb7333f840eb24117e128ca871dbd0ffdcd12a4a5f13f7ee209db6c",
