@@ -53,8 +53,23 @@ export const ORG_ADMIN_MAX_APPROVALS = 200;
 const MAX_BODY_BYTES = 16 * 1024;
 /** The version of this API `GET capabilities` reports: 1 was the nine first
  * routes, 2 the console routes of 2026-10-08, 3 the permission catalogue
- * of 2026-10-09 (`permissions`, `permissionGroups`, `permissionsVersion`). */
-export const ORG_ADMIN_API_VERSION = 3;
+ * of 2026-10-09 (`permissions`, `permissionGroups`, `permissionsVersion`),
+ * 4 the engine list of the same day (`engines`). */
+export const ORG_ADMIN_API_VERSION = 4;
+
+/** One engine (model provider) of this server, as `GET capabilities` lists
+ * it: grouped Cloud or Local as the model picker's provider column groups it
+ * (src/lib/engine-rail.ts splitEngineRail), and how a person gets access. */
+export interface AdminEngine {
+  /** The engine instance id (`allowedEngines` takes these). */
+  id: string;
+  name: string;
+  kind: "cloud" | "local";
+  installed: boolean;
+  /** `oauth`: a sign-in with the provider's account; `apiKey`: a key;
+   * `none`: nothing to sign in to (a local server). */
+  auth: "oauth" | "apiKey" | "none";
+}
 /** The built-in routes, as `GET capabilities` names them. */
 const BUILT_IN_ROUTES: Array<Pick<ConsoleRoute, "method" | "path">> = [
   { method: "GET", path: "capabilities" },
@@ -172,6 +187,8 @@ export interface OrgAdminRouteDeps {
   auditCategories?: readonly string[];
   /** The release people know (package.json forkVersion). */
   version?: () => string;
+  /** The engines of this server, for the console's Model providers card. */
+  engines?: () => AdminEngine[];
   /** The console routes of 2026-10-08 (server/org-admin-console.ts). */
   console?: readonly ConsoleRoute[];
   /** One admin activity row for a console write, actor the console person. */
@@ -530,6 +547,9 @@ export function createOrgAdminRoutes(deps: OrgAdminRouteDeps): (req: IncomingMes
         permissionsVersion: catalogue.version,
         permissionGroups: catalogue.groups,
         permissions: catalogue.permissions,
+        // 2026-10-09 (api 4): the engines, so the console groups Cloud and
+        // Local from the server instead of guessing from an id.
+        ...(deps.engines ? { engines: deps.engines() } : {}),
       });
       return true;
     }

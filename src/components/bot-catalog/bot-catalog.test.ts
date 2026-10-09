@@ -232,8 +232,8 @@ describe("the modal", () => {
     expect(html).toContain("Loading the catalog");
   });
 
-  it("is in the sidebar section menu, after New section", () => {
-    expect(orgSectionMenuItems({ named: false, canMoveUp: false, canMoveDown: false, anyExpanded: true, browseBots: true })).toEqual(["onNew", "onBrowseBots", "onCollapseAll"]);
+  it("is not in the sidebar section menu", () => {
+    expect(orgSectionMenuItems({ named: false, canMoveUp: false, canMoveDown: false, anyExpanded: true })).toEqual(["onNew", "onCollapseAll"]);
   });
 });
 

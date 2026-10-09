@@ -49,6 +49,7 @@ enum AchievementWording {
         case .collaboration?: "Together"
         case .streaks?: "Streaks"
         case .mastery?: "Mastery"
+        case .tiers?: "Tiers"
         case .secrets?: "Secrets"
         }
     }
@@ -78,6 +79,14 @@ enum AchievementWording {
         "Network": "point.3.connected.trianglepath.dotted", "Palette": "paintpalette.fill", "Paperclip": "paperclip",
         "Phone": "phone.fill", "PhoneCall": "phone.arrow.up.right.fill", "PhoneForwarded": "phone.arrow.right.fill",
         "Repeat": "repeat", "Rocket": "paperplane.fill", "Scale": "scalemass.fill", "Search": "magnifyingglass",
+        // the Mastery tier
+        "BookOpenCheck": "book.closed.fill", "Boxes": "shippingbox.fill", "BrainCircuit": "brain.head.profile", "Dog": "dog.fill",
+        "Eraser": "eraser.fill", "FolderTree": "folder.fill.badge.gearshape", "GitCompare": "arrow.left.arrow.right", "Gavel": "hammer.fill",
+        "GraduationCap": "graduationcap.fill", "Languages": "character.bubble.fill", "LifeBuoy": "lifepreserver.fill",
+        "MessageSquareWarning": "exclamationmark.bubble.fill", "MoonStar": "moon.stars.fill", "OctagonPause": "pause.octagon.fill",
+        "Orbit": "circle.hexagongrid.fill", "PenLine": "pencil.line", "PiggyBank": "banknote.fill", "PlugZap": "powerplug.fill",
+        "Repeat2": "repeat.circle.fill", "Ship": "ferry.fill", "ThumbsDown": "hand.thumbsdown.fill", "Waypoints": "point.topleft.down.to.point.bottomright.curvepath.fill",
+        "Workflow": "flowchart.fill",
         "Send": "paperplane", "Share2": "square.and.arrow.up", "ShieldCheck": "checkmark.shield.fill", "Shirt": "tshirt.fill",
         "Slash": "slash.circle", "Split": "arrow.triangle.branch", "SquareTerminal": "terminal.fill", "Timer": "timer",
         "Trophy": "trophy.fill", "Users": "person.3.fill", "UsersRound": "person.2.fill", "Zap": "bolt.fill",

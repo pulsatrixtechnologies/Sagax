@@ -118,6 +118,8 @@ export function MyEngineAccess({ engine, label, onChanged = () => { void reloadM
     try {
       await post("complete", { flowId: login.flowId, code: code.trim() });
       setCode("");
+      // The code is in: reload now rather than wait for the next poll.
+      onChanged();
     } catch (cause) {
       setError(signInError(cause));
     } finally {

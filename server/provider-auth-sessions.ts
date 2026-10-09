@@ -81,7 +81,12 @@ export class ProviderAuthSessions {
     flow.busy = true;
     try {
       await flow.instance.completeAuthentication(flowId, callbackUrl);
-      if (this.flows.get(instanceId) === flow) this.flows.delete(instanceId);
+      // Keep the finished flow for its owner, as status() does for a terminal
+      // phase: the browser asks for the outcome right after this call, and a
+      // deleted flow answered 404 there, which the sign-in card read as a
+      // failure (the person had to click Connect a second time). The slot
+      // is released so anyone may start again at once.
+      flow.expiresAt = 0;
     } finally { flow.busy = false; }
   }
 

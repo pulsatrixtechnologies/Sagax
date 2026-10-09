@@ -311,3 +311,10 @@
   .achievement-toast[data-leaving] { opacity: 0; }
 }
 [data-app-icon][data-locked] img { filter: grayscale(0.85) brightness(0.8); opacity: 0.55; }
+
+/* Mastery: the looks an achievement unlocks, greyed until it does */
+.mastery-look[data-locked] { filter: grayscale(1); opacity: 0.55; }
+.mastery-placeholder {
+  color: rgb(255 255 255 / 0.85);
+  background: radial-gradient(circle at 35% 30%, #9aa3ad, #4b5563 75%);
+}

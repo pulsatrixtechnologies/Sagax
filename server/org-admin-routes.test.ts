@@ -118,6 +118,11 @@ beforeAll(async () => {
     },
     auditCategories: ["rights", "bot", "people"],
     version: () => "0.4.14",
+    engines: () => [
+      { id: "claude", name: "Claude", kind: "cloud", installed: true, auth: "oauth" },
+      { id: "openai", name: "OpenAI", kind: "cloud", installed: true, auth: "apiKey" },
+      { id: "ollama", name: "Ollama", kind: "local", installed: false, auth: "none" },
+    ],
     recordAction: (principalId, entry) => recorded.push({ principalId, entry }),
     console: [
       { method: "GET", path: "echo/{id}", min: "manager", handle: (ctx) => ok({ id: ctx.params.id, q: ctx.url.searchParams.get("q"), locale: ctx.locale, admin: ctx.reach === null }) },
@@ -293,7 +298,13 @@ describe("org admin API: the console routes (2026-10-08)", () => {
   const T_MANAGER = [{ id: "T", name: "T", manager: true }];
   it("capabilities: any role, the release version and every route", async () => {
     const got = await call("/api/org/admin/capabilities", assertion("bob", "employee"));
-    expect(got).toMatchObject({ status: 200, body: { version: "0.4.14", api: 3 } });
+    expect(got).toMatchObject({ status: 200, body: { version: "0.4.14", api: 4 } });
+    // api 4: the engines, grouped Cloud and Local by the server
+    expect(got.body.engines).toEqual([
+      { id: "claude", name: "Claude", kind: "cloud", installed: true, auth: "oauth" },
+      { id: "openai", name: "OpenAI", kind: "cloud", installed: true, auth: "apiKey" },
+      { id: "ollama", name: "Ollama", kind: "local", installed: false, auth: "none" },
+    ]);
     expect(got.body.routes).toEqual(expect.arrayContaining(["GET bots", "GET capabilities", "GET echo/{id}", "POST echo/{id}", "POST approvals/{thread}/{request}", "GET files/{bot}/read"]));
     // 2026-10-09: the permission catalogue the Perspicax console draws from
     expect(got.body.permissionsVersion).toBe(1);

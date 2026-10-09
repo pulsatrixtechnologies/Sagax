@@ -116,15 +116,16 @@ describe("sidebar header", () => {
     },
   );
 
-  it("shows Templates in the bottom menu with no experimental switch (it opens Browse Bots on Templates)", () => {
+  it("hides Browse Bots in the bottom menu until its experimental flag is on", () => {
     fixture.density = "comfortable";
-    expect(render()).toContain(">Templates</span>");
-    // An older server's features.templates no longer hides or shows it.
+    expect(render()).not.toContain(">Browse Bots</span>");
+    expect(render()).not.toContain(">Templates</span>");
     fixture.templates = false;
-    expect(render()).toContain(">Templates</span>");
+    expect(render()).not.toContain(">Browse Bots</span>");
     fixture.templates = true;
     const html = render();
-    expect(html).toContain(">Templates</span>");
+    expect(html).toContain(">Browse Bots</span>");
+    expect(html).not.toContain(">Templates</span>");
     expect(html).not.toContain(">Connected apps</span>");
   });
 

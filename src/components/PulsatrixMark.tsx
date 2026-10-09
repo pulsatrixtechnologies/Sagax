@@ -5,17 +5,18 @@
 // strokes on light ones.
 //
 // Which ground the sidebar is depends on the skin: the navy and dark rails
-// take the dark file, the light rails the light one. Both images are in the
+// take the white owl, the light rails the navy one. Both owls are in the
 // markup and the skin tokens --sidebar-mark-on-dark / --sidebar-mark-on-light
 // show exactly one of them, so the mark follows a skin change without any
-// script. `ground` pins one file for a surface whose ground never changes
+// script. `ground` pins one colour for a surface whose ground never changes
 // (the Hibou 98 title bar is always navy).
 import { cn } from "@/lib/cn";
+import { PulsatrixOwlMark } from "./PulsatrixOwlMark";
 
-export const MARK_ON_DARK = "/pulsatrix-owl-mark-dark.png";
-export const MARK_ON_LIGHT = "/pulsatrix-owl-mark-light.png";
-/** the mark is wider than tall (489 x 381) */
-const ASPECT = 381 / 489;
+/** the official vector owl is 28 x 25 (public/brand/pulsatrix-owl-mark-color.svg) */
+const ASPECT = 25 / 28;
+const WHITE = "#FFFFFF";
+const NAVY = "#03153C";
 
 export function PulsatrixMark({
   size = 22,
@@ -24,26 +25,24 @@ export function PulsatrixMark({
 }: {
   size?: number;
   className?: string;
-  /** pin the dark-ground or light-ground file instead of following the skin */
+  /** pin the dark-ground or light-ground colour instead of following the skin */
   ground?: "dark" | "light";
 }) {
-  const img = (src: string, which: "dark" | "light", followSkin: boolean) => (
-    <img
-      src={src}
-      alt=""
-      width={size}
-      height={Math.round(size * ASPECT)}
-      draggable={false}
+  const mark = (which: "dark" | "light", followSkin: boolean) => (
+    <span
+      aria-hidden="true"
       data-pulsatrix-mark={which}
-      className={cn("shrink-0 object-contain", followSkin && `pulsatrix-mark-on-${which}`, className)}
-      style={{ width: size, height: Math.round(size * ASPECT) }}
-    />
+      className={cn("shrink-0", followSkin && `pulsatrix-mark-on-${which}`, className)}
+      style={{ color: which === "dark" ? WHITE : NAVY, lineHeight: 0 }}
+    >
+      <PulsatrixOwlMark width={size} height={Math.round(size * ASPECT)} />
+    </span>
   );
-  if (ground) return img(ground === "dark" ? MARK_ON_DARK : MARK_ON_LIGHT, ground, false);
+  if (ground) return mark(ground, false);
   return (
     <span aria-hidden="true" className="inline-flex shrink-0">
-      {img(MARK_ON_DARK, "dark", true)}
-      {img(MARK_ON_LIGHT, "light", true)}
+      {mark("dark", true)}
+      {mark("light", true)}
     </span>
   );
 }

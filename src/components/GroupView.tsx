@@ -56,7 +56,7 @@ import { Composer } from "./Composer";
 import { ChatErrorBanner } from "./ChatErrorBanner";
 import { ChatFindBar } from "./ChatFindBar";
 import { ConversationTurnLimit } from "./ConversationTurnLimit";
-import { GroupTaskPicker, ThreadReturnLink } from "./TaskPicker";
+import { GroupTaskPicker, PersonThreadPicker, ThreadReturnLink } from "./TaskPicker";
 import { ExportTranscriptMenu } from "./ExportTranscriptMenu";
 import { ReplyQuote } from "./ReplyQuote";
 import { ConnectorCard } from "./ConnectorCard";
@@ -1202,6 +1202,7 @@ export function GroupView({ group: stored }: { group: Group }) {
             isGroup
           />}
           {!group.dm && <GroupTaskPicker group={group} />}
+          {stored.peopleDm && <PersonThreadPicker group={stored} />}
           {group.dm && memberMauses}
           {!group.dm && !panelOpen && <button
             type="button"
@@ -1424,7 +1425,7 @@ export function GroupView({ group: stored }: { group: Group }) {
         key={group.threadId}
         group={group}
         members={members}
-        nudgePeer={peer}
+        nudgePeer={peer ? { ...peer, threadId: stored.threadId } : peer}
         nudgeGroup={roomNudge}
         replyTo={replyTo}
         onClearReply={clearReply}

@@ -1,7 +1,7 @@
 import { t } from "./i18n";
 
 export interface FeatureFlagConfig {
-  features?: { skillAuthoring?: boolean; showToolCalls?: boolean; browser?: boolean; sharedComputers?: boolean; claudeUserMcp?: boolean; routinesInConversation?: boolean; llmThreadTitles?: boolean; connectedApps?: boolean; vpsComputer?: boolean; boatComputer?: boolean; decisionModel?: boolean; skillsLibrary?: boolean };
+  features?: { skillAuthoring?: boolean; showToolCalls?: boolean; browser?: boolean; sharedComputers?: boolean; claudeUserMcp?: boolean; routinesInConversation?: boolean; llmThreadTitles?: boolean; connectedApps?: boolean; templates?: boolean; vpsComputer?: boolean; boatComputer?: boolean; decisionModel?: boolean; skillsLibrary?: boolean };
   browserEngine?: { kind: "engine" | "unavailable"; reason?: string; installable?: boolean; installing?: boolean; installError?: string };
 }
 
@@ -53,6 +53,14 @@ export function routinesInConversationEnabled(config: FeatureFlagConfig | null |
  * Settings > Model providers. */
 export function connectedAppsEnabled(config: FeatureFlagConfig | null | undefined): boolean {
   return config?.features?.connectedApps === true;
+}
+
+/** The sidebar's Browse Bots entry (the bot catalogue). Experimental: off
+ * until switched on in Settings > Experimental features. Stored under the
+ * server's long-standing `templates` feature key (server templatesEnabled),
+ * so no server change and an earlier choice carries over. */
+export function browseBotsEnabled(config: FeatureFlagConfig | null | undefined): boolean {
+  return config?.features?.templates === true;
 }
 
 /** VPS Computer: a bot's computer on the person's own SSH-reachable VPS

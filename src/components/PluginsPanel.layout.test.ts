@@ -36,7 +36,7 @@ describe("Plugins panel views", () => {
     // Slack, the glitcho server and one Claude connector
     expect(html).toContain("3 connected");
     expect(html).toContain('placeholder="Search across apps and skills"');
-    expect(html).toMatch(/data-plugins-bot-templates[^>]*>Bot templates<svg/);
+    expect(html).toMatch(/data-plugins-bot-templates[^>]*>Browse Bots<svg/);
     // the reference's chips, in its order; types are not chips
     const chips = [...html.matchAll(/aria-pressed="(?:true|false)"[^>]*>([^<]+)</g)].map((match) => match[1]);
     expect(chips).toEqual(["All", "Password managers", "Productivity", "Communication", "Design", "Code"]);

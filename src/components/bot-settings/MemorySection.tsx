@@ -43,6 +43,7 @@ import {
 } from "@/lib/memory";
 import { ApiError, useStore, type Bot } from "@/state/store";
 import { Switch, SwitchRow } from "../SettingsPrimitives";
+import { MarkdownEditor } from "../markdown/MarkdownEditor";
 import { inputCls } from "./field";
 
 const buttonCls = "rounded-lg bg-control px-3 py-1.5 text-[13px] text-ink hover:bg-raised-hover disabled:opacity-50";
@@ -122,8 +123,9 @@ export function MemoryEditorDialog({
     if (typeof window === "undefined") return;
     const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     const root = dialogRef.current;
-    const area = root?.querySelector("textarea");
-    if (area instanceof HTMLTextAreaElement && !area.readOnly) area.focus();
+    // the markdown editor's text area (or its textarea stand-in)
+    const area = root?.querySelector<HTMLElement>('textarea, [contenteditable="true"]');
+    if (area && !(area instanceof HTMLTextAreaElement && area.readOnly)) area.focus();
     else root?.focus();
 
     const onKey = (event: KeyboardEvent) => {
@@ -135,7 +137,7 @@ export function MemoryEditorDialog({
       }
       if (event.key !== "Tab" || !root) return;
       const focusable = [...root.querySelectorAll<HTMLElement>(
-        'button:not([disabled]), textarea:not([disabled]), input:not([disabled]), [href], [tabindex]:not([tabindex="-1"])',
+        'button:not([disabled]), textarea:not([disabled]), input:not([disabled]), [href], [contenteditable="true"], [tabindex]:not([tabindex="-1"])',
       )];
       if (focusable.length === 0) {
         event.preventDefault();
@@ -196,13 +198,17 @@ export function MemoryEditorDialog({
           {conflict && (
             <ConflictNotice botName={botName} busy={saving} onReload={onReload} onOverwrite={onOverwrite} />
           )}
-          <textarea
-            className={cn(inputCls, "min-h-[320px] flex-1 resize-y font-mono text-[13px] leading-relaxed", conflict && "mt-2")}
+          <MarkdownEditor
+            className={cn("min-h-[320px] flex-1", conflict && "mt-2")}
+            minHeight={300}
+            maxHeight="none"
+            dataField="memory"
             value={editing.text}
             readOnly={editing.readOnly}
+            autoFocus={!editing.readOnly}
             placeholder={editing.path === MEMORY_INDEX ? t("botPanel.memory.indexPlaceholder") : t("botPanel.memory.write")}
-            aria-label={editing.path === MEMORY_INDEX ? t("botPanel.memory.aria") : t("botPanel.memory.fileAria", { path: editing.path })}
-            onChange={(event) => onChange(event.target.value)}
+            ariaLabel={editing.path === MEMORY_INDEX ? t("botPanel.memory.aria") : t("botPanel.memory.fileAria", { path: editing.path })}
+            onChange={onChange}
           />
           {savedDraft !== null && (
             <div className="mt-3">
