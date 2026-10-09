@@ -1,11 +1,12 @@
 // The persona editor's Overview header: the mascot (its editor on click),
 // name, label and short description edited in place, a summary of the
 // engine, model, owner and sharing, and the quick actions (Rename, Put on
-// the desktop, Make primary bot, Archive). Every write goes through the
-// existing paths: the bot patch queue, the floating-bots store, POST
-// /api/bots/:id/primary and PATCH hidden.
+// the desktop, Make primary bot, Export as zip, Archive). Every write goes
+// through the existing paths: the bot patch queue, the floating-bots store,
+// POST /api/bots/:id/primary and PATCH hidden; the zip is a download of
+// GET /api/bots/:id/export.zip (src/lib/bot-zip.ts).
 import { useState, useSyncExternalStore, type ReactNode } from "react";
-import { Archive, Pencil, PictureInPicture2, Star } from "lucide-react";
+import { Archive, FileArchive, Pencil, PictureInPicture2, Star } from "lucide-react";
 
 import { useStore, type Bot } from "@/state/store";
 import { t } from "@/lib/i18n";
@@ -14,6 +15,8 @@ import { canEditBotField, showBotArchive, showBotRename } from "@/lib/bot-capabi
 import { archiveBlockReason, primaryBotOffer, requestBotHidden, requestPrimaryBot } from "@/lib/bot-quick-actions";
 import { isViewersPrimaryBot, viewerOwnsBot } from "@/lib/primary-bot";
 import { viewerActorId } from "@/lib/viewer";
+import { downloadBotZip, showBotZipExport } from "@/lib/bot-zip";
+import { Switch } from "../SettingsPrimitives";
 import { botEngine } from "@/lib/failed-turn";
 import { isBotFloating, subscribeFloatingBots, toggleFloatingBot } from "@/lib/floating-bots";
 import { useOrgPeople } from "@/lib/perspicax-org";
@@ -88,6 +91,10 @@ export function PersonaOverview({ bot, derived, onClose }: {
   const { state, dispatch } = useStore();
   const [renameRequest, setRenameRequest] = useState(0);
   const [confirmArchive, setConfirmArchive] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [withConversations, setWithConversations] = useState(false);
+  const [withSharing, setWithSharing] = useState(false);
+  const [exported, setExported] = useState(false);
   const [busy, setBusy] = useState(false);
   const floating = useSyncExternalStore(subscribeFloatingBots, () => isBotFloating(bot.id), () => false);
   const people = useOrgPeople();
@@ -99,6 +106,8 @@ export function PersonaOverview({ bot, derived, onClose }: {
   const isPrimary = isViewersPrimaryBot(bot, viewerId);
   const archiveAllowed = showBotArchive(state.config);
   const archiveBlocked = archiveBlockReason(state.bots, bot);
+  const exportAllowed = showBotZipExport(state.config, bot);
+  const shared = (bot.grants?.length ?? 0) > 0 || bot.visibility !== undefined;
   const owner = viewerOwnsBot(bot, viewerId)
     ? t("persona.overview.ownerYou")
     : (() => {
@@ -212,6 +221,14 @@ export function PersonaOverview({ bot, derived, onClose }: {
             disabled={!primary.allowed || busy}
             reason={primary.allowed ? undefined : t(primary.reason)}
           />
+          {exportAllowed && !exporting && (
+            <ActionButton
+              id="export-zip"
+              icon={<FileArchive size={14} />}
+              label={t("botZip.export")}
+              onClick={() => { setExporting(true); setExported(false); setConfirmArchive(false); }}
+            />
+          )}
           {archiveAllowed && !confirmArchive && (
             <ActionButton
               id="archive"
@@ -223,6 +240,32 @@ export function PersonaOverview({ bot, derived, onClose }: {
             />
           )}
         </div>
+        {/* Export asks what to include here, in the pane. */}
+        {exporting && (
+          <div role="group" data-persona-export-zip="" className="mt-3 flex flex-col gap-2 rounded-xl bg-hover p-3 text-[13px] text-ink">
+            <span className="text-ink-secondary">{t("botZip.exportBody", { name: bot.name })}</span>
+            <label className="flex items-center justify-between gap-3">
+              <span className="min-w-0"><span className="block">{t("botZip.includeConversations")}</span><span className="block text-[12px] text-ink-secondary">{t("botZip.includeConversationsHint")}</span></span>
+              <Switch checked={withConversations} onClick={() => setWithConversations((value) => !value)} aria-label={t("botZip.includeConversations")} data-persona-export-conversations="" />
+            </label>
+            {shared && (
+              <label className="flex items-center justify-between gap-3">
+                <span>{t("botZip.includeSharing")}</span>
+                <Switch checked={withSharing} onClick={() => setWithSharing((value) => !value)} aria-label={t("botZip.includeSharing")} data-persona-export-sharing="" />
+              </label>
+            )}
+            {exported && <span role="status" className="text-[12px] text-ink-secondary">{t("botZip.exportStarted")}</span>}
+            <div className="flex justify-end gap-2">
+              <button type="button" onClick={() => setExporting(false)} className="rounded-lg px-3 py-1.5 text-ink-secondary hover:bg-control hover:text-ink">
+                {exported ? t("common.close") : t("common.cancel")}
+              </button>
+              <button type="button" data-persona-export-download="" onClick={() => { downloadBotZip(bot.id, { conversations: withConversations, sharing: shared && withSharing }); setExported(true); }}
+                className="rounded-lg bg-control px-3 py-1.5 text-ink hover:bg-raised-hover">
+                {t("botZip.download")}
+              </button>
+            </div>
+          </div>
+        )}
         {/* Archive asks here, in the pane: no dialog over the modal. */}
         {confirmArchive && (
           <div role="group" data-persona-archive-confirm="" className="mt-3 flex flex-wrap items-center gap-2 rounded-xl bg-hover p-3 text-[13px] text-ink">

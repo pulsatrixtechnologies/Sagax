@@ -554,6 +554,7 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   { methods: ["POST"], path: /^\/api\/bots\/[\w-]+\/skill-template$/, feature: "orgDirectory" },
   { methods: ["GET"], path: /^\/api\/bots\/[\w-]+\/plugins$/, feature: "orgDirectory" },
   { methods: ["POST", "DELETE"], path: /^\/api\/bots\/[\w-]+\/plugins\/marketplaces(?:\/[A-Za-z0-9][A-Za-z0-9._-]{0,63}(?:\/update)?)?$/, feature: "orgDirectory" },
+  { methods: ["PUT", "DELETE"], path: /^\/api\/bots\/[\w-]+\/plugins\/marketplaces\/[A-Za-z0-9][A-Za-z0-9._-]{0,63}\/token$/, feature: "orgDirectory" },
   { methods: ["POST"], path: /^\/api\/bots\/[\w-]+\/plugins\/install$/, feature: "orgDirectory" },
   { methods: ["PATCH", "DELETE"], path: /^\/api\/bots\/[\w-]+\/plugins\/[A-Za-z0-9][A-Za-z0-9._-]{0,63}(?:@|%40)[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/, feature: "orgDirectory" },
   // Slice 5: the Perspicax MCP profiles a bot mounts. server/bot-perspicax.ts
@@ -602,6 +603,11 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   { methods: ["GET"], path: /^\/api\/bot-catalog(?:\/[\w-]+)?$/ },
   { methods: ["PUT"], path: /^\/api\/bot-catalog\/[\w-]+\/listing$/ },
   { methods: ["POST"], path: /^\/api\/bot-catalog\/[\w-]+\/import$/ },
+  // A bot as one zip (server/routes/bot-zip.ts): export needs owner or
+  // manage, import the right to create bots; both checked in the handler.
+  { methods: ["GET"], path: /^\/api\/bots\/[\w-]+\/export\.zip$/ },
+  { methods: ["POST"], path: /^\/api\/bots\/import\/(?:upload|[0-9a-f-]{36}(?:\/preview)?)$/ },
+  { methods: ["DELETE"], path: /^\/api\/bots\/import\/[0-9a-f-]{36}$/ },
   // Slice 8: a person copies their own bots from a solo Sagax (the handler
   // checks the session, the caller's right to create bots and the copy).
   { methods: ["POST"], path: /^\/api\/org\/import$/, feature: "orgDirectory" },

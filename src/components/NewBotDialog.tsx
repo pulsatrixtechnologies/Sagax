@@ -34,6 +34,8 @@ import { servedPage } from "@/lib/desktop";
 import { viewerBotsReadOnly, viewerCanCreateBots, viewerIsOrgMember } from "@/lib/viewer";
 import { botsReadOnlyText } from "@/lib/permissions";
 import { templatesEntryActions } from "@/lib/templates-entry";
+import { showBotZipImport } from "@/lib/bot-zip";
+import { BotZipImportDialog } from "./BotZipImport";
 
 const SECTIONS = ["Identity", "Soul", "Skills", "Memory", "Routines", "Access", "Model", "Permissions", "Voice & alerts"] as const;
 type Section = typeof SECTIONS[number];
@@ -284,7 +286,7 @@ export function LocalNewBotDialog({ defaultsMode = false, onClose, section, onCr
           {!ready && !error && <div role="status" className="flex items-center gap-2 text-[13px] text-ink-secondary"><Loader2 size={16} className="animate-spin" />{t("newBot.loading")}</div>}
           {ready && <fieldset disabled={saving} className="min-w-0">
             <BotEditorStore value={scopedStore}><BotEditorContext.Provider value={{ request: draft.request, draft: true, uploadAvatar: draft.uploadAvatar }}>
-              <DraftSection active={active} draft={draft} defaultsMode={defaultsMode} />
+              <DraftSection active={active} draft={draft} defaultsMode={defaultsMode} onImported={() => closeRef.current()} />
             </BotEditorContext.Provider></BotEditorStore>
           </fieldset>}
         </div>
@@ -303,12 +305,12 @@ export function LocalNewBotDialog({ defaultsMode = false, onClose, section, onCr
   </div>;
 }
 
-function DraftSection({ active, draft, defaultsMode }: { active: Section; draft: BotCreationDraft; defaultsMode: boolean }) {
+function DraftSection({ active, draft, defaultsMode, onImported }: { active: Section; draft: BotCreationDraft; defaultsMode: boolean; onImported?: () => void }) {
   const bot = draft.bot;
   const { state } = useStore();
   const derived = useBotSettingsDerived(bot);
   if (active === "Identity") return <div className="space-y-4">
-    <StartingRole draft={draft} defaultsMode={defaultsMode} />
+    <StartingRole draft={draft} defaultsMode={defaultsMode} onImported={onImported} />
     <IdentitySection bot={bot} patch={derived.patch} activeState={derived.activeState} mascotMotion={null}
       namePlaceholder={defaultsMode ? t("newBot.randomName") : undefined} />
     {!viewerIsOrgMember(state.config) && <label className="block text-[13px] text-ink-secondary">Team
@@ -332,9 +334,11 @@ function DraftSection({ active, draft, defaultsMode }: { active: Section; draft:
  * still editable); its skills and notes are added when the bot is created.
  * "Browse templates" closes New bot and opens Browse Bots on Templates, the
  * one place where every template lives (described, with the apps it uses).
- * Exported for tests. */
-export function StartingRole({ draft, defaultsMode }: { draft: BotCreationDraft; defaultsMode: boolean }) {
-  const { dispatch } = useStore();
+ * "Import from zip" makes the bot from its `.sagaxbot.zip` instead, then
+ * New bot closes on the imported bot. Exported for tests. */
+export function StartingRole({ draft, defaultsMode, onImported }: { draft: BotCreationDraft; defaultsMode: boolean; onImported?: () => void }) {
+  const { state, dispatch } = useStore();
+  const [zipOpen, setZipOpen] = useState(false);
   const [presets, setPresets] = useState<BotPreset[]>([]);
   const [loads, setLoads] = useState(0);
   const [error, setError] = useState("");
@@ -387,10 +391,13 @@ export function StartingRole({ draft, defaultsMode }: { draft: BotCreationDraft;
   };
   const roles = BOT_ROLES.map(role => <option key={role.id} value={role.id}>{role.title}</option>);
   return <div>
-    {!defaultsMode && <div className="mb-1 flex justify-end">
+    {!defaultsMode && <div className="mb-1 flex justify-end gap-1">
+      {showBotZipImport(state.config) && <button type="button" data-new-bot-import-zip="" onClick={() => setZipOpen(true)}
+        className="rounded-md px-2 py-0.5 text-[12px] text-ink-secondary hover:bg-control hover:text-ink">{t("botZip.importFromZip")}</button>}
       <button type="button" data-new-bot-browse-templates="" onClick={() => { for (const action of templatesEntryActions("newBot")) dispatch(action); }}
         className="rounded-md px-2 py-0.5 text-[12px] text-ink-secondary hover:bg-control hover:text-ink">{t("newBot.browseTemplates")}</button>
     </div>}
+    {zipOpen && <BotZipImportDialog onClose={() => setZipOpen(false)} onImported={() => onImported?.()} />}
     <label className="block text-[13px] text-ink-secondary">{t("newBot.startingRole")}
       <select className={cn(inputCls, "mt-1.5")} value={draft.preset ? `preset:${draft.preset.id}` : ""} onChange={event => void choose(event.target.value)}>
         <option value="">{t("newBot.customSettings")}</option>

@@ -327,7 +327,22 @@ function refuse(res: ServerResponse, status: number, code: string, message: stri
   send(res, status, { code, message, reason: message, error: message });
 }
 
-function answer(res: ServerResponse, reply: ConsoleAnswer): void {
+async function answer(res: ServerResponse, reply: ConsoleAnswer): Promise<void> {
+  if (reply.stream) {
+    res.writeHead(reply.status, { "x-sagax-admin-api": "1", "cache-control": "no-store", ...reply.headers });
+    try {
+      await reply.stream((chunk) => new Promise<void>((resolve, reject) => {
+        if (res.destroyed) { reject(new Error("The download was cancelled.")); return; }
+        if (res.write(chunk)) resolve();
+        else res.once("drain", resolve);
+      }));
+      res.end();
+    } catch (error) {
+      console.warn(`[org-admin] download stopped: ${error instanceof Error ? error.message : String(error)}`);
+      res.destroy();
+    }
+    return;
+  }
   if (reply.raw !== undefined) {
     res.writeHead(reply.status, { "x-sagax-admin-api": "1", "cache-control": "no-store", ...reply.headers });
     res.end(reply.raw);
@@ -485,7 +500,14 @@ export function createOrgAdminRoutes(deps: OrgAdminRouteDeps): (req: IncomingMes
         return true;
       }
       let body: unknown = null;
-      if (method === "POST") {
+      const rawUpload = method === "POST" && hit.route.rawBody !== undefined && !/^application\/json\b/i.test(String(req.headers["content-type"] ?? ""));
+      if (rawUpload) {
+        const declared = Number(req.headers["content-length"] ?? 0);
+        if (Number.isFinite(declared) && declared > hit.route.rawBody!) {
+          refuse(res, 413, "too_large", `The body is larger than ${hit.route.rawBody} bytes.`);
+          return true;
+        }
+      } else if (method === "POST") {
         const declared = Number(req.headers["content-length"] ?? 0);
         const max = hit.route.maxBody ?? MAX_BODY_BYTES;
         if (Number.isFinite(declared) && declared > max) {
@@ -506,6 +528,7 @@ export function createOrgAdminRoutes(deps: OrgAdminRouteDeps): (req: IncomingMes
         url,
         params: hit.params,
         body,
+        ...(rawUpload ? { request: req } : {}),
         reach,
         managedTeams,
         inReach: (principalId) => !reach || (principalId ? reach.has(principalId) : false),
@@ -514,7 +537,7 @@ export function createOrgAdminRoutes(deps: OrgAdminRouteDeps): (req: IncomingMes
         now,
       };
       try {
-        answer(res, await hit.route.handle(ctx));
+        await answer(res, await hit.route.handle(ctx));
       } catch (error) {
         const status = typeof (error as { status?: unknown })?.status === "number" ? (error as { status: number }).status : 500;
         const message = status < 500 && error instanceof Error ? error.message.slice(0, 300) : "The server could not do this; its log has the details.";
@@ -565,7 +588,7 @@ export function createOrgAdminRoutes(deps: OrgAdminRouteDeps): (req: IncomingMes
       const status = enumParam(params, "status", ["active", "archived"] as const);
       if (isAnswer(page) || isAnswer(status)) {
         const reply = isAnswer(page) ? page : status as ConsoleAnswer;
-        answer(res, reply);
+        void answer(res, reply);
         return true;
       }
       const engine = params.get("engine") || null;

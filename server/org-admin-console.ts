@@ -39,6 +39,8 @@ export interface ConsoleContext {
   params: Record<string, string>;
   /** The JSON body of a POST: null when empty, undefined when unreadable. */
   body: unknown;
+  /** A route with `rawBody`: the request whose body is a file, unread. */
+  request?: import("node:http").IncomingMessage;
   /** Principals a manager reaches; null for an admin (everyone). */
   reach: Set<string> | null;
   managedTeams: Set<string>;
@@ -56,6 +58,8 @@ export interface ConsoleAnswer {
   headers?: Record<string, string>;
   /** A raw body instead of JSON. */
   raw?: Buffer | string;
+  /** A streamed body (a bot zip): written chunk by chunk after the head. */
+  stream?: (write: (chunk: Buffer) => Promise<void>) => Promise<void>;
 }
 
 export interface ConsoleRoute {
@@ -65,6 +69,9 @@ export interface ConsoleRoute {
   min: ConsoleRole;
   /** Largest POST body read, in bytes (default 16 KiB). */
   maxBody?: number;
+  /** A POST that is not JSON (a file upload) reaches the handler unread as
+   * `ctx.request`, within this many bytes. */
+  rawBody?: number;
   handle(ctx: ConsoleContext): ConsoleAnswer | Promise<ConsoleAnswer>;
 }
 

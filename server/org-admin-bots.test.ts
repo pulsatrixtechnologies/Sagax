@@ -46,6 +46,12 @@ function setup() {
     notifyOwner: (id, action) => { calls.push(`notify:${action}:${id}`); },
     exportPackage: (id) => ({ document: { format: "package", version: 2, bot: id, secret: "[redacted]" }, filename: `${id} pkg.json`, redacted: ["x"], skipped: [] }),
     importPackage: async (_doc, input) => { add("imported", input.ownerPrincipalId, { name: input.name ?? "IMPORTED" }); return { botId: "imported", warnings: ["agents[x].skills: too_large"] }; },
+    exportZip: (id, options) => ({ filename: `${id}.sagaxbot.zip`, bytes: id === "huge" ? 600 * 1024 * 1024 : 4, write: async (sink) => { await sink(Buffer.from(`PK${options.conversations ? "c" : ""}`)); return { bytes: 3, redacted: 2 }; } }),
+    importZip: async (_request, input) => {
+      if (input.preview) return { preview: { kind: "zip", name: "A", importName: input.name ?? "A 2", includes: {}, hasConversations: false, hasSharing: false, created: [], skipped: [], needsAction: [] } };
+      add("zipped", input.ownerPrincipalId, { name: input.name ?? "ZIPPED" });
+      return { botId: "zipped", warnings: [] };
+    },
   };
   return { bots, calls, console: fakeConsole(botsRoutes(deps)) };
 }
@@ -140,5 +146,20 @@ describe("bots", () => {
     expect((await console.call("POST", "bots/import", { principalId: "pr_alice", body: { package: { format: "package" } } })).body.bot.owner.principalId).toBe("pr_alice");
     expect((await console.call("POST", "bots/import", { body: { package: "text" } })).status).toBe(400);
     expect((await console.call("POST", "bots/import", { body: { package: {}, ownerSub: "nobody" } })).body.code).toBe("owner_not_found");
+  });
+
+  it("the bot zip: download and upload through the same routes", async () => {
+    const { console } = setup();
+    const zip = await console.call("GET", "bots/a/package?format=zip&conversations=1");
+    expect(zip.status).toBe(200);
+    expect(zip.raw?.toString()).toBe("PKc");
+    expect(console.records.at(-1)).toMatchObject({ action: "bot.export", after: { format: "zip", redacted: 2, conversations: true } });
+    expect((await console.call("GET", "bots/a/package?format=tar")).status).toBe(400);
+    const preview = await console.call("POST", "bots/import?preview=1&ownerSub=bob-sub&name=Copy", { request: {} });
+    expect(preview).toMatchObject({ status: 200, body: { preview: { importName: "Copy" } } });
+    const imported = await console.call("POST", "bots/import?ownerSub=bob-sub&name=Copy", { request: {} });
+    expect(imported).toMatchObject({ status: 201, body: { bot: { id: "zipped", name: "Copy", owner: { principalId: "pr_bob" } } } });
+    expect(console.records.at(-1)).toMatchObject({ action: "bot.import", after: { format: "zip", ownerPrincipalId: "pr_bob" } });
+    expect((await console.call("POST", "bots/import?ownerSub=nobody", { request: {} })).body.code).toBe("owner_not_found");
   });
 });
