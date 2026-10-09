@@ -33,6 +33,14 @@ export function isRoutineScopeStatus(value: unknown): value is RoutineScopeStatu
   return typeof value === "string" && (ROUTINE_SCOPE_STATUSES as readonly string[]).includes(value);
 }
 
+/** Active (on and not paused by the server) or paused, and failing when
+ * its latest runs failed. */
+export function routineScopeStatuses(routine: { enabled: boolean; suspended?: unknown; failureStreak?: number }): RoutineScopeStatus[] {
+  const statuses: RoutineScopeStatus[] = [routine.enabled && !routine.suspended ? "active" : "paused"];
+  if ((routine.failureStreak ?? 0) > 0) statuses.push("failing");
+  return statuses;
+}
+
 /** The filters of GET /api/routines and DELETE /api/routine-runs. */
 export interface RoutineScopeQuery {
   scope: RoutineScope;

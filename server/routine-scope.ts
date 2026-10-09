@@ -25,11 +25,11 @@ import {
   isRoutineScope,
   isRoutineScopeStatus,
   ROUTINE_SCOPE_PERMISSION,
+  routineScopeStatuses,
   type RoutineScope,
   type RoutineScopeChoice,
   type RoutineScopeInfo,
   type RoutineScopeQuery,
-  type RoutineScopeStatus,
 } from "../shared/routine-scope.ts";
 import type { Routine, RoutineRun } from "./routines.ts";
 
@@ -118,11 +118,8 @@ export function inRoutineScope(scope: RoutineScope, caller: RoutineScopeCaller, 
   return false;
 }
 
-export function routineScopeStatus(routine: Pick<Routine, "enabled" | "suspended" | "failureStreak">): RoutineScopeStatus[] {
-  const statuses: RoutineScopeStatus[] = [routine.enabled && !routine.suspended ? "active" : "paused"];
-  if ((routine.failureStreak ?? 0) > 0) statuses.push("failing");
-  return statuses;
-}
+/** Active or paused, and failing (shared/routine-scope.ts). */
+export const routineScopeStatus = routineScopeStatuses;
 
 function matchesFacts(query: RoutineScopeQuery, botId: string, facts: RoutineScopeFacts): boolean {
   if (query.botId && botId !== query.botId) return false;
