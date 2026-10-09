@@ -26,6 +26,8 @@ public enum MascotSubstitution {
     static let trombiTinted: Set<TrombiSkin> = [.chrome, .glitch, .holo, .molten]
     /// Bunbu skins whose premium layers the phone does not draw.
     static let bunbuBaseOnly: Set<BunbuSkin> = [.velvet, .gold, .neon, .chrome, .crystal, .holo, .galaxy, .molten]
+    /// Ogre skins whose premium layers (auras, foils, scan lines, the plates' sweep) the phone does not draw.
+    static let ogreBaseOnly: Set<OgreSkin> = [.lava, .armor, .retro98, .gold, .neon, .chrome, .glitch, .holo, .molten]
 
     /// The substitutions drawing this look on the phone makes (none for most).
     public static func entries(for look: CompleteMascotLook, owlSkin: MascotSkin = .none) -> [Entry] {
@@ -48,6 +50,9 @@ public enum MascotSubstitution {
         case .grump:
             guard grumpFlat.contains(look.grumpSkin) else { return [] }
             return [Entry(character: .grump, wanted: "Grump skin \(look.grumpSkin.rawValue)", drawn: "its palette, flat, without its effects")]
+        case .ogre:
+            guard ogreBaseOnly.contains(look.ogreSkin) else { return [] }
+            return [Entry(character: .ogre, wanted: "Ogre skin \(look.ogreSkin.rawValue)", drawn: "its colours and marks, without its effects")]
         }
     }
 

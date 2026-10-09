@@ -7,6 +7,7 @@ import type { ComponentType } from "react";
 import { MASTERY_UNLOCKS, type MasteryCharacter } from "../../../shared/mascot-unlocks";
 import { ShibaMascot } from "@/components/ShibaMascot";
 import { GrumpMascot } from "@/components/GrumpMascot";
+import { OgreMascot } from "@/components/OgreMascot";
 
 export interface MasteryArtProps {
   skin: string;
@@ -18,6 +19,7 @@ export interface MasteryArtProps {
 export const MASTERY_ART: Partial<Record<MasteryCharacter, ComponentType<MasteryArtProps>>> = {
   shiba: ({ skin, size, animated }) => <ShibaMascot skin={skin} color="orange" size={size} animated={animated} detail="full" label={null} />,
   grump: GrumpRewardArt,
+  ogre: ({ skin, size, animated }) => <OgreMascot skin={skin} color="green" size={size} animated={animated} detail="full" label={null} />,
 };
 
 /** Grump in a reward's skin, his own warm brown points. */

@@ -3,10 +3,10 @@
 // the desktop and as a thumbnail). Adding a character is adding an entry.
 // The same behavior state machine (behavior.ts) drives them all; each
 // renderer maps the clips it can show and degrades gracefully: the shapes,
-// Trombi, Bunbu, Shiba and Grump have no wings, so a flight is a bouncing hop across. The
+// Trombi, Bunbu, Shiba, Grump and Ogre have no wings, so a flight is a bouncing hop across. The
 // character and its look come from the bot (bot.mascotLook); the desktop
 // draws a skin's full effects, and its move effects with each move.
-import { useEffect, useId, useRef, type ComponentType } from "react";
+import { useCallback, useEffect, useId, useRef, type ComponentType } from "react";
 import { MAUS_COLORS } from "@/lib/mascot";
 import type { LocaleKey } from "@/locales";
 import { owlSkinId } from "@/lib/owl/owl-skins";
@@ -24,6 +24,8 @@ import { playShibaBark } from "@/lib/shiba-bark";
 import { readFloatingBotPrefs } from "@/lib/floating-bots";
 import { GrumpMascot } from "@/components/GrumpMascot";
 import { GRUMP_MOVE_TIMING, grumpMoveFor, type GrumpMove } from "@/components/grump-moves";
+import { OgreMascot } from "@/components/OgreMascot";
+import { OGRE_MENU_CLIPS, ogreDesktopAction, ogreDesktopShot } from "@/components/ogre-moves";
 import { fxMoveFor, useEquipBurst, useMoveBurst, useReducedMotion, type FxMoveRequest } from "@/components/skin-fx/skin-fx";
 import { completeMascotLook, MASCOT_SHAPES, type MascotCharacter, type MascotLook, type MascotShape } from "../../../shared/mascot-look";
 import { createFrameSmoother, type MascotActivity, type MascotFrame } from "./behavior";
@@ -366,6 +368,12 @@ export function cueClipFor(character: MascotCharacter, cue: "nudge" | "achieveme
   // a cat: a head bonk for a nudge, kneading for an achievement, a pounce on a new message, curled up asleep
   // before a snooze, a hiss at a refusal, ears flat on an error
   if (character === "grump") return GRUMP_CUES[cue];
+  // Ogre wiggles its trumpets at a nudge, stomps in a circle for an achievement, chomps a message and naps on
+  // its log when snoozed; like Shiba, it keeps its own life on a refusal or an error
+  if (character === "ogre") {
+    if (cue === "refusal" || cue === "error") return null;
+    return cue === "nudge" ? "petted" : cue === "achievement" ? "dance" : cue === "snooze" ? "yawn" : "peck";
+  }
   if (character !== "shiba") return null;
   if (cue === "refusal" || cue === "error") return null;
   return cue === "nudge" ? "bark" : cue === "achievement" ? "turnCircles" : cue === "snooze" ? "lieDown" : "excited";
@@ -489,6 +497,53 @@ function GrumpThumb({ color, look, size }: MascotThumbProps) {
   return <GrumpMascot skin={look.skins.grump} color={color} size={size} animated={false} label={null} />;
 }
 
+/* --------------------------------------------------------------- Ogre */
+
+/** Ogre's one-shot for a change of clip (ogre-moves.ts ogreDesktopShot), as a move request. */
+function useOgreShot(activity: MascotActivity): FxMoveRequest | null {
+  const last = useRef<{ activity: string; request: FxMoveRequest | null }>({ activity: "idle", request: null });
+  if (last.current.activity !== activity) {
+    const move = ogreDesktopShot(activity, last.current);
+    last.current = { activity, request: move ? { clip: move, key: Date.now() } : null };
+  }
+  return last.current.request;
+}
+
+/**
+ * Ogre on the desktop: its rig plays the held activity (the heavy walk, the
+ * nap, arms crossed...) and the one-shots (a flex for a task done, a roar for
+ * one refused, a chomp when a reply arrives, a stomp, a belly laugh); each
+ * heavy step and stomp shakes the ground a little (the drawing jolts by a
+ * pixel or two). The frames only turn it and shift it sideways, as for
+ * Shiba (shibaMotionTransform): the rig does the hops and the leans.
+ */
+function OgreRender({ color, look, size, activity, pose, frame, fps, onHitTest }: MascotRenderProps) {
+  const fx = useClipFx(activity);
+  const shot = useOgreShot(activity);
+  const ground = useRef<HTMLSpanElement>(null);
+  const jolt = useRef(1);
+  const onShake = useCallback(
+    (amount: number) => {
+      const node = ground.current;
+      if (!node) return;
+      jolt.current = -jolt.current;
+      node.style.transform = amount > 0.02 ? `translate(${(jolt.current * amount * size * 0.006).toFixed(2)}px, ${(amount * size * 0.012).toFixed(2)}px)` : "";
+    },
+    [size],
+  );
+  return (
+    <Motion25D size={size} frame={frame} fps={fps} onHitTest={onHitTest} transform={shibaMotionTransform}>
+      <span ref={ground} style={{ display: "grid", placeItems: "end center" }}>
+        <OgreMascot skin={look.skins.ogre} color={color} size={size * 0.9} mood={bunbuMoodFor(activity, pose)} expression={shapeExpressionForClip(activity)} detail="full" move={shot ?? fx} moveBody action={ogreDesktopAction(activity, pose)} onShake={onShake} label={null} />
+      </span>
+    </Motion25D>
+  );
+}
+
+function OgreThumb({ color, look, size }: MascotThumbProps) {
+  return <OgreMascot skin={look.skins.ogre} color={color} size={size} animated={false} label={null} />;
+}
+
 /* ----------------------------------------------------------- registry */
 
 export const MASCOTS: readonly MascotDefinition[] = [
@@ -521,6 +576,24 @@ export const MASCOTS: readonly MascotDefinition[] = [
     moveLabels: GRUMP_MOVE_LABELS,
     Render: GrumpRender,
     Thumb: GrumpThumb,
+  },
+  {
+    id: "ogre",
+    capabilities: { walk: true, fly: false, wings: false, blink: true, turn: true, flip: true },
+    paint: { colors: true, skins: true },
+    moves: OGRE_MENU_CLIPS,
+    moveLabels: {
+      love: "floatingBots.move.ogre.laugh",
+      angry: "floatingBots.move.ogre.roar",
+      wingStretch: "floatingBots.move.ogre.flex",
+      dance: "floatingBots.move.ogre.stomp",
+      peck: "floatingBots.move.ogre.chomp",
+      petted: "floatingBots.move.ogre.earWiggle",
+      think: "floatingBots.move.ogre.scratch",
+      stretch: "floatingBots.move.ogre.stretch",
+    },
+    Render: OgreRender,
+    Thumb: OgreThumb,
   },
 ];
 

@@ -27,6 +27,7 @@ import { BunbuMascot, type BunbuMood } from "./BunbuMascot";
 import { ShibaMascot } from "./ShibaMascot";
 import type { ShibaExpression } from "./shiba-art";
 import { GrumpMascot } from "./GrumpMascot";
+import { OgreMascot } from "./OgreMascot";
 import type { FxMoveRequest } from "./skin-fx/skin-fx";
 
 /** Kept for API compatibility (the preview page reads them); the owl ignores both. */
@@ -279,8 +280,11 @@ export function shibaExpressionFor(state: MausState | undefined): ShibaExpressio
   }
 }
 
+/** Ogre's face for the app's mascot states: the same sixteen ids as Shiba's, so the same choice. */
+export const ogreExpressionFor = shibaExpressionFor;
+
 /**
- * The bot's character, when it is not the owl: one of the shapes, Trombi, Bunbu, Shiba or Grump, in the bot's look. Every bot avatar in the app comes through
+ * The bot's character, when it is not the owl: one of the shapes, Trombi, Bunbu, Shiba, Grump or Ogre, in the bot's look. Every bot avatar in the app comes through
  * BotAvatar, so this is where a character change shows everywhere.
  */
 function CharacterAvatar({ look, color, size, state, animated = true, label, move }: { look: MascotLook; color: MausColor; size: number; state?: MausState; animated?: boolean; label?: string | null; move?: FxMoveRequest | null }) {
@@ -294,6 +298,9 @@ function CharacterAvatar({ look, color, size, state, animated = true, label, mov
   if (full.character === "grump") {
     // Grump's sixteen faces carry the Shapes ids, so the Shiba's state map serves both
     return <GrumpMascot skin={full.skins.grump} color={color} size={size} mood={bunbuMoodFor(state)} expression={shibaExpressionFor(state)} animated={animated} move={move} moveBody label={label ?? null} />;
+  }
+  if (full.character === "ogre") {
+    return <OgreMascot skin={full.skins.ogre} color={color} size={size} mood={bunbuMoodFor(state)} expression={ogreExpressionFor(state)} animated={animated} move={move} moveBody label={label ?? null} />;
   }
   if (full.character === "bunbu") {
     return <BunbuMascot skin={full.skins.bunbu} color={color} size={size} mood={bunbuMoodFor(state)} animated={animated} move={move} moveBody label={label ?? null} />;

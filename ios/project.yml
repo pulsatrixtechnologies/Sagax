@@ -268,6 +268,7 @@ targets:
       - path: App/Mascots/BunbuMascotView.swift
       - path: App/Mascots/ShibaMascotView.swift
       - path: App/Mascots/GrumpMascotView.swift
+      - path: App/Mascots/OgreMascotView.swift
       # MascotState resolves the face for the post-answer refresh a widget
       # performs; it is self-contained above Core, so it rides along.
       - path: App/MascotState.swift

@@ -64,13 +64,13 @@ describe("a bot's character and its look", () => {
     expect(botMascotLook(undefined)).toEqual({ character: "owl" });
     expect(botMascotLook({ character: "shape", shape: "rocket" })).toEqual({ character: "owl" });
     expect(botMascotLook({ character: "trombi", skins: { trombi: "gold" } })).toEqual({ character: "trombi", skins: { trombi: "gold" } });
-    expect(completeMascotLook({ character: "shape" })).toEqual({ character: "shape", style: "2d", shape: "circle", skins: { shape: "plain", trombi: "classic", bunbu: "plain", shiba: "plain", grump: "plain" } });
+    expect(completeMascotLook({ character: "shape" })).toEqual({ character: "shape", style: "2d", shape: "circle", skins: { shape: "plain", trombi: "classic", bunbu: "plain", shiba: "plain", grump: "plain", ogre: "plain" } });
   });
 
   it("keeps each character's own skin when switching and back", () => {
     const look = completeMascotLook({ character: "shape", skins: { shape: "neon", trombi: "retro98" } });
     const trombi = { ...look, character: "trombi" as const };
-    expect(completeMascotLook({ ...trombi, character: "shape" }).skins).toEqual({ shape: "neon", trombi: "retro98", bunbu: "plain", shiba: "plain", grump: "plain" });
+    expect(completeMascotLook({ ...trombi, character: "shape" }).skins).toEqual({ shape: "neon", trombi: "retro98", bunbu: "plain", shiba: "plain", grump: "plain", ogre: "plain" });
   });
 
   it("draws every shape, with every skin, with two eyes cut through the body", () => {
@@ -146,7 +146,7 @@ describe("a bot's character and its look", () => {
 
 describe("the mascot registry", () => {
   it("lists each character once, with a renderer, a thumbnail and its capabilities", () => {
-    expect(MASCOTS.map((entry) => entry.id)).toEqual(["owl", "shape", "trombi", "bunbu", "shiba", "grump"]);
+    expect(MASCOTS.map((entry) => entry.id)).toEqual(["owl", "shape", "trombi", "bunbu", "shiba", "grump", "ogre"]);
     for (const entry of MASCOTS) {
       expect(typeof entry.Render).toBe("function");
       expect(typeof entry.Thumb).toBe("function");
@@ -202,8 +202,9 @@ describe("the avatar popover's Bot tab", () => {
     const locked = render(undefined);
     expect(locked).toContain('data-character-option="owl"');
     for (const id of ["shape", "trombi", "bunbu"]) expect(locked).not.toContain(`data-character-option="${id}"`);
-    // the Mastery characters drawn by this build (Shiba, Grump) stay in the row, locked, with their achievement; nothing else shows locked
-    for (const id of ["shiba", "grump"]) expect(locked).toContain(`data-character-option="${id}"`);
+    // the Mastery characters drawn by this build (Shiba, Grump, Ogre) stay in the row, locked, with their achievement; nothing else shows locked
+    for (const id of ["shiba", "grump", "ogre"]) expect(locked).toContain(`data-character-option="${id}"`);
+    expect(locked).toMatch(/data-character-option="ogre" data-locked="" data-unlock-achievement="conductor"/);
     const lockedOptions = [...locked.matchAll(/data-character-option="([a-z]+)" data-locked=""/g)].map((match) => match[1]);
     expect(lockedOptions.every((id) => isMasteryCharacter(id)), lockedOptions.join()).toBe(true);
     expect(locked.match(/data-locked/g)?.length ?? 0).toBe(lockedOptions.length);

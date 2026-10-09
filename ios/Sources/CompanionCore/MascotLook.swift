@@ -154,7 +154,7 @@ public struct RGB: Equatable, Sendable {
 // MARK: - Character
 
 public enum MascotCharacter: String, CaseIterable, Codable, Sendable {
-    case owl, shape, trombi, bunbu, shiba, grump
+    case owl, shape, trombi, bunbu, shiba, grump, ogre
 }
 
 public enum MascotStyle: String, CaseIterable, Codable, Sendable {
@@ -275,6 +275,22 @@ public enum GrumpSkin: String, CaseIterable, Codable, Sendable {
 
 }
 
+/// Skins for Ogre (`OGRE_SKINS`), by rarity: the bot's colour, the ogre's
+/// own hides, Lava and Armor, then the premium editions.
+public enum OgreSkin: String, CaseIterable, Codable, Sendable {
+    case plain, swamp, moss, stone, lava, armor, retro98, gold, neon, chrome, glitch, holo, molten
+
+    /// `LEGACY_OGRE_SKINS`.
+    static let legacy: [String: OgreSkin] = [
+        "bog": .swamp, "marsh": .swamp, "forest": .moss, "granite": .stone, "rock": .stone, "grey": .stone, "gray": .stone,
+        "magma": .lava, "basalt": .lava, "iron": .armor, "steel": .armor, "plate": .armor, "knight": .armor,
+        "retro": .retro98, "win98": .retro98, "royal": .gold, "metal": .chrome, "cyber": .glitch, "iridescent": .holo, "holographic": .holo,
+    ]
+
+    public static func stored(_ raw: String) -> OgreSkin? { OgreSkin(rawValue: raw) ?? legacy[raw] }
+
+}
+
 /// `mascotLook`: which character stands for the bot, and that character's
 /// own look, read exactly as `botMascotLook` reads it. The desktop's schema
 /// is strict: an unknown character, an unknown top-level key, or a
@@ -289,16 +305,18 @@ public struct MascotLook: Codable, Hashable, Sendable {
         public var bunbu: BunbuSkin?
         public var shiba: ShibaSkin?
         public var grump: GrumpSkin?
+        public var ogre: OgreSkin?
 
-        public init(shape: ShapeSkin? = nil, trombi: TrombiSkin? = nil, bunbu: BunbuSkin? = nil, shiba: ShibaSkin? = nil, grump: GrumpSkin? = nil) {
+        public init(shape: ShapeSkin? = nil, trombi: TrombiSkin? = nil, bunbu: BunbuSkin? = nil, shiba: ShibaSkin? = nil, grump: GrumpSkin? = nil, ogre: OgreSkin? = nil) {
             self.shape = shape
             self.trombi = trombi
             self.bunbu = bunbu
             self.shiba = shiba
             self.grump = grump
+            self.ogre = ogre
         }
 
-        var isEmpty: Bool { shape == nil && trombi == nil && bunbu == nil && shiba == nil && grump == nil }
+        var isEmpty: Bool { shape == nil && trombi == nil && bunbu == nil && shiba == nil && grump == nil && ogre == nil }
     }
 
     public var character: MascotCharacter
@@ -351,7 +369,8 @@ public struct MascotLook: Codable, Hashable, Sendable {
                 trombi: raw("trombi").flatMap(TrombiSkin.stored),
                 bunbu: raw("bunbu").flatMap(BunbuSkin.stored),
                 shiba: raw("shiba").flatMap(ShibaSkin.stored),
-                grump: raw("grump").flatMap(GrumpSkin.stored)
+                grump: raw("grump").flatMap(GrumpSkin.stored),
+                ogre: raw("ogre").flatMap(OgreSkin.stored)
             )
             skins = read.isEmpty ? nil : read
         }
@@ -370,6 +389,7 @@ public struct MascotLook: Codable, Hashable, Sendable {
             try nested.encodeIfPresent(skins.bunbu, forKey: Key("bunbu"))
             try nested.encodeIfPresent(skins.shiba, forKey: Key("shiba"))
             try nested.encodeIfPresent(skins.grump, forKey: Key("grump"))
+            try nested.encodeIfPresent(skins.ogre, forKey: Key("ogre"))
         }
     }
 
@@ -383,7 +403,8 @@ public struct MascotLook: Codable, Hashable, Sendable {
             trombiSkin: skins?.trombi ?? .classic,
             bunbuSkin: skins?.bunbu ?? .plain,
             shibaSkin: skins?.shiba ?? .plain,
-            grumpSkin: skins?.grump ?? .plain
+            grumpSkin: skins?.grump ?? .plain,
+            ogreSkin: skins?.ogre ?? .plain
         )
     }
 }
@@ -398,8 +419,9 @@ public struct CompleteMascotLook: Hashable, Sendable {
     public var bunbuSkin: BunbuSkin
     public var shibaSkin: ShibaSkin
     public var grumpSkin: GrumpSkin
+    public var ogreSkin: OgreSkin
 
-    public init(character: MascotCharacter, style: MascotStyle = .flat, shape: MascotShape = .circle, shapeSkin: ShapeSkin = .plain, trombiSkin: TrombiSkin = .classic, bunbuSkin: BunbuSkin = .plain, shibaSkin: ShibaSkin = .plain, grumpSkin: GrumpSkin = .plain) {
+    public init(character: MascotCharacter, style: MascotStyle = .flat, shape: MascotShape = .circle, shapeSkin: ShapeSkin = .plain, trombiSkin: TrombiSkin = .classic, bunbuSkin: BunbuSkin = .plain, shibaSkin: ShibaSkin = .plain, grumpSkin: GrumpSkin = .plain, ogreSkin: OgreSkin = .plain) {
         self.character = character
         self.style = style
         self.shape = shape
@@ -408,17 +430,19 @@ public struct CompleteMascotLook: Hashable, Sendable {
         self.bunbuSkin = bunbuSkin
         self.shibaSkin = shibaSkin
         self.grumpSkin = grumpSkin
+        self.ogreSkin = ogreSkin
     }
 
     /// Back to a stored look, every choice explicit (what the editor saves,
     /// as the desktop's editor does: every character's skin).
     public var stored: MascotLook {
-        MascotLook(character: character, style: style, shape: shape, skins: .init(shape: shapeSkin, trombi: trombiSkin, bunbu: bunbuSkin, shiba: shibaSkin, grump: grumpSkin))
+        MascotLook(character: character, style: style, shape: shape, skins: .init(shape: shapeSkin, trombi: trombiSkin, bunbu: bunbuSkin, shiba: shibaSkin, grump: grumpSkin, ogre: ogreSkin))
     }
 
     /// The colour a character wears where the bot gives none it can use:
     /// Bunbu's mint (`BUNBU_DEFAULT_COLOR`), Shiba's orange
-    /// (`SHIBA_DEFAULT_COLOR`), Grump's brown, green for the others.
+    /// (`SHIBA_DEFAULT_COLOR`), Grump's brown, green for the others
+    /// (Ogre's `OGRE_DEFAULT_COLOR` too).
     public var fallbackColor: String { character == .bunbu ? "mint" : character == .shiba ? "orange" : character == .grump ? "brown" : "green" }
 }
 

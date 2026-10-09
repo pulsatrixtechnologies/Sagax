@@ -47,6 +47,8 @@ function stageBot(art: AppIconArt, bots: readonly (BotLike & { id: string })[]):
       return { name: "Shiba", color: art.color, mascotLook: { character: "shiba", skins: { shiba: art.skin } } };
     case "grump":
       return { name: "Grump", color: art.color, mascotLook: { character: "grump", skins: { grump: art.skin } } };
+    case "ogre":
+      return { name: "Ogre", color: art.color, mascotLook: { character: "ogre", skins: { ogre: art.skin } } };
     case "primary":
       return bots.find((bot) => bot.id === art.botId) ?? null;
     default:

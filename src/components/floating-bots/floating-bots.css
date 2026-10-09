@@ -775,6 +775,7 @@ html[data-floating-bot] #root {
 .fb-root .fb-fx[data-character="bunbu"] { --hy: 40%; }
 .fb-root .fb-fx[data-character="shiba"] { --hy: 40%; }
 .fb-root .fb-fx[data-character="grump"] { --hy: 42%; }
+.fb-root .fb-fx[data-character="ogre"] { --hy: 22%; }
 .fb-root .fb-fx .fb-emote {
   top: calc(var(--hy) - 22%);
   right: auto;

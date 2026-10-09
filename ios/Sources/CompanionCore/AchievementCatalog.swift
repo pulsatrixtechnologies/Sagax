@@ -369,21 +369,21 @@ public extension AchievementDefinition {
             name: AchievementText(en: "Ten Hands", fr: "Dix mains", ptBR: "Dez mãos"),
             description: AchievementText(en: "10 open conversations in 5 folders, and none left untouched for 30 days.", fr: "10 conversations ouvertes dans 5 dossiers, et aucune laissée sans activité depuis 30 jours.", ptBR: "10 conversas abertas em 5 pastas, e nenhuma parada há 30 dias."),
             hint: nil,
-            rewards: [.title(id: "ten-hands", name: AchievementText(en: "Ten Hands", fr: "Dix mains", ptBR: "Dez mãos"))]
+            rewards: [.skin(character: "ogre", skin: "swamp", name: AchievementText(en: "Swamp", fr: "Marais", ptBR: "Pântano"), characterName: AchievementText(en: "Ogre", fr: "Ogre", ptBR: "Ogro")), .skin(character: "ogre", skin: "moss", name: AchievementText(en: "Moss", fr: "Mousse", ptBR: "Musgo"), characterName: AchievementText(en: "Ogre", fr: "Ogre", ptBR: "Ogro")), .title(id: "ten-hands", name: AchievementText(en: "Ten Hands", fr: "Dix mains", ptBR: "Dez mãos"))]
         ),
         AchievementDefinition(
             id: "plugged-in", category: .mastery, icon: "PlugZap", points: 150, hidden: false,
             name: AchievementText(en: "Plugged In", fr: "Branché", ptBR: "Conectado"),
             description: AchievementText(en: "Your bots use tools from 3 different integrations within one week.", fr: "Vos robots utilisent les outils de 3 intégrations différentes en une semaine.", ptBR: "Seus robôs usam ferramentas de 3 integrações diferentes em uma semana."),
             hint: nil,
-            rewards: [.title(id: "plugged-in", name: AchievementText(en: "Plugged In", fr: "Branché", ptBR: "Conectado"))]
+            rewards: [.skin(character: "ogre", skin: "stone", name: AchievementText(en: "Stone", fr: "Pierre", ptBR: "Pedra"), characterName: AchievementText(en: "Ogre", fr: "Ogre", ptBR: "Ogro")), .skin(character: "ogre", skin: "lava", name: AchievementText(en: "Lava", fr: "Lave", ptBR: "Lava"), characterName: AchievementText(en: "Ogre", fr: "Ogre", ptBR: "Ogro")), .title(id: "plugged-in", name: AchievementText(en: "Plugged In", fr: "Branché", ptBR: "Conectado"))]
         ),
         AchievementDefinition(
             id: "swarm", category: .mastery, icon: "Boxes", points: 150, hidden: false,
             name: AchievementText(en: "Swarm", fr: "Essaim", ptBR: "Enxame"),
             description: AchievementText(en: "One turn puts 3 sub-agents to work and completes.", fr: "Un seul tour met 3 sous-agents au travail et se termine bien.", ptBR: "Um único turno põe 3 subagentes para trabalhar e conclui."),
             hint: nil,
-            rewards: [.title(id: "swarm", name: AchievementText(en: "Swarm", fr: "Essaim", ptBR: "Enxame"))]
+            rewards: [.skin(character: "ogre", skin: "armor", name: AchievementText(en: "Armor", fr: "Armure", ptBR: "Armadura"), characterName: AchievementText(en: "Ogre", fr: "Ogre", ptBR: "Ogro")), .title(id: "swarm", name: AchievementText(en: "Swarm", fr: "Essaim", ptBR: "Enxame"))]
         ),
         AchievementDefinition(
             id: "full-house", category: .mastery, icon: "Orbit", points: 200, hidden: false,

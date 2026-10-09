@@ -26,6 +26,7 @@ final class MascotLookFixtureTests: XCTestCase {
         var bunbuSkins: [String]
         var shibaSkins: [String]
         var grumpSkins: [String]
+        var ogreSkins: [String]
         var owlSkins: [String]
         var colorGroups: [String: [String]]
         var colors: [String: String]
@@ -100,6 +101,7 @@ final class MascotLookFixtureTests: XCTestCase {
         XCTAssertEqual(BunbuSkin.allCases.map(\.rawValue), f.bunbuSkins)
         XCTAssertEqual(ShibaSkin.allCases.map(\.rawValue), f.shibaSkins)
         XCTAssertEqual(GrumpSkin.allCases.map(\.rawValue), f.grumpSkins)
+        XCTAssertEqual(OgreSkin.allCases.map(\.rawValue), f.ogreSkins)
         XCTAssertEqual(MascotSkin.allCases.map(\.rawValue), f.owlSkins)
     }
 

@@ -1,10 +1,10 @@
 // The icons Settings > Appearance > App icon offers: the Sagax owl, the
-// owl in its skins, a shape, Trombi, Bunbu, Shiba, Grump, the person's Primary Bot, or a picture
+// owl in its skins, a shape, Trombi, Bunbu, Shiba, Grump, Ogre, the person's Primary Bot, or a picture
 // they upload. Pure data: the picker (src/components/settings/AppIconPicker)
 // draws each character with the app's own components and paints the result
 // through the system template (shared/app-icon-template.ts).
 import type { MascotSkinId } from "../../shared/mascot-skins";
-import type { BunbuSkin, GrumpSkin, MascotShape, ShapeSkin, ShibaSkin, TrombiSkin } from "../../shared/mascot-look";
+import type { BunbuSkin, GrumpSkin, MascotShape, OgreSkin, ShapeSkin, ShibaSkin, TrombiSkin } from "../../shared/mascot-look";
 import type { MascotColorName } from "../../shared/mascot-colors";
 import type { LocaleKey } from "@/locales";
 import type { AppIconGlyph } from "./app-icon-glyphs";
@@ -18,6 +18,7 @@ export type AppIconArt =
   | { kind: "bunbu"; skin: BunbuSkin; color: MascotColorName }
   | { kind: "shiba"; skin: ShibaSkin; color: MascotColorName }
   | { kind: "grump"; skin: GrumpSkin; color: MascotColorName }
+  | { kind: "ogre"; skin: OgreSkin; color: MascotColorName }
   | { kind: "glyph"; glyph: AppIconGlyph }
   | { kind: "primary"; botId: string }
   | { kind: "upload" };
@@ -71,6 +72,7 @@ export const APP_ICON_CHOICES: readonly AppIconChoice[] = [
   { id: "bunbu:holo", labelKey: "mascot.bunbuSkin.holo", background: ["#2A2250", "#0E0A22"], art: { kind: "bunbu", skin: "holo", color: "mint" }, fit: "contain" },
   { id: "shiba:plain", labelKey: "floatingBots.mascot.shiba", background: ["#FFF3E2", "#F5D2AE"], art: { kind: "shiba", skin: "plain", color: "orange" }, fit: "contain" },
   { id: "grump:plain", labelKey: "floatingBots.mascot.grump", background: ["#F6EEDF", "#D9C6A8"], art: { kind: "grump", skin: "plain", color: "brown" }, fit: "contain" },
+  { id: "ogre:plain", labelKey: "floatingBots.mascot.ogre", background: ["#F3EBD2", "#C9D79A"], art: { kind: "ogre", skin: "plain", color: "green" }, fit: "contain" },
 ];
 
 /** The Primary Bot's look, when the person has one. */

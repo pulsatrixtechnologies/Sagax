@@ -104,7 +104,13 @@ export const MASTERY_UNLOCKS: Readonly<Record<MasteryCharacter, MasteryCharacter
     unlock: "conductor",
     namedRungs: ["ten-hands", "plugged-in", "swarm"],
     premiumRung: "full-house",
-    namedSkins: [],
+    namedSkins: [
+      { id: "swamp", name: { en: "Swamp", fr: "Marais", ptBR: "Pântano" } },
+      { id: "moss", name: { en: "Moss", fr: "Mousse", ptBR: "Musgo" } },
+      { id: "stone", name: { en: "Stone", fr: "Pierre", ptBR: "Pedra" } },
+      { id: "lava", name: { en: "Lava", fr: "Lave", ptBR: "Lava" } },
+      { id: "armor", name: { en: "Armor", fr: "Armure", ptBR: "Armadura" } },
+    ],
   },
   // Frog: know your models and your knowledge (providers, Auto, skills, memory).
   frog: {
