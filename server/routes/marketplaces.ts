@@ -6,6 +6,7 @@
 //   POST   /api/marketplaces/:name/refresh
 //   DELETE /api/marketplaces/:name                         (no plugin installed)
 //   POST   /api/marketplaces/:name/plugins/:plugin         install: MCP servers + skills
+//   POST   /api/marketplaces/:name/plugins/:plugin/update  update them in place
 //   DELETE /api/marketplaces/:name/plugins/:plugin         uninstall them
 //
 // Same scope as /api/mcp/servers: admin (never in CLIENT_ALLOW), so on an
@@ -24,11 +25,18 @@ export interface MarketplaceRouteDeps {
   install: (marketplace: string, plugin: string, request: { req: IncomingMessage; auth: RequestAuth }) =>
     Promise<{ status: number; body: Record<string, unknown> }>;
   uninstall: (marketplace: string, plugin: string) => Promise<{ status: number; body: Record<string, unknown> }>;
+  /** Update an installed plugin in place: its servers keep their names,
+   * switches and bot selections, its skills their review state. */
+  update: (marketplace: string, plugin: string, request: { req: IncomingMessage; auth: RequestAuth }) =>
+    Promise<{ status: number; body: Record<string, unknown> }>;
+  /** One admin activity row for a plugin updated (written on success). */
+  audit: (auth: RequestAuth, row: { action: string; target: { kind: string; id: string; name: string }; before?: Record<string, unknown>; after?: Record<string, unknown> }) => void;
 }
 
 const NAME = "[A-Za-z0-9][A-Za-z0-9._-]{0,63}";
 const MARKET = new RegExp(`^/api/marketplaces/(${NAME})(?:/(refresh))?$`);
 const PLUGIN = new RegExp(`^/api/marketplaces/(${NAME})/plugins/(${NAME})$`);
+const UPDATE = new RegExp(`^/api/marketplaces/(${NAME})/plugins/(${NAME})/update$`);
 
 export function createMarketplaceRoutes(deps: MarketplaceRouteDeps): RouteHandler {
   return async ({ req, res, path, method, auth, json, readBody }) => {
@@ -55,6 +63,28 @@ export function createMarketplaceRoutes(deps: MarketplaceRouteDeps): RouteHandle
         if (!source || source.length > 500) return json(res, 400, { error: "Enter owner/repo, an https git address or the address of a marketplace.json." });
         const added: MarketplaceView = await deps.store.add({ source, ...(ref ? { ref } : {}) }, deps.actor(auth));
         return json(res, 201, { marketplace: added, marketplaces: deps.store.list() });
+      }
+      const update = UPDATE.exec(path);
+      if (update) {
+        if (method !== "POST") return json(res, 405, { error: "POST" });
+        const [, marketplace, name] = update;
+        const before = deps.store.installed().find((entry) => entry.key === `${name}@${marketplace}`);
+        if (!before) return json(res, 404, { error: "That plugin is not installed.", code: "not_installed" });
+        const done = await deps.update(marketplace!, name!, { req, auth });
+        if (done.status < 400) {
+          const after = deps.store.installed().find((entry) => entry.key === `${name}@${marketplace}`);
+          const revisionOf = (entry: typeof before | undefined) => ({
+            ...(entry?.version ? { version: entry.version } : {}),
+            ...(entry?.revision ? { revision: entry.revision.slice(0, 80) } : {}),
+          });
+          deps.audit(auth, {
+            action: "plugin.update",
+            target: { kind: "plugin", id: `${name}@${marketplace}`, name: name! },
+            before: { ...revisionOf(before), servers: before.servers, skills: before.skills },
+            after: { ...revisionOf(after), servers: after?.servers ?? [], skills: after?.skills ?? [] },
+          });
+        }
+        return json(res, done.status, { ...done.body, marketplaces: deps.store.list() });
       }
       const plugin = PLUGIN.exec(path);
       if (plugin) {

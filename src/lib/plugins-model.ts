@@ -38,6 +38,10 @@ export interface PluginItem {
   parent?: string;
   /** a marketplace plugin's version */
   version?: string;
+  /** an installed marketplace plugin the marketplace has a newer version of */
+  updateAvailable?: boolean;
+  /** the version installed, when the marketplace offers another */
+  installedVersion?: string;
   /** in the reviewed catalog: shown under Recommended for you */
   recommended?: boolean;
   /** the rows of other sources folded into this one (same app) */
@@ -108,7 +112,10 @@ interface FeaturedListing {
 interface SkillListing { name: string; description: string; source: string; enabled: boolean }
 interface MarketplaceListing {
   name: string;
-  plugins: Array<{ name: string; description?: string; version?: string; category?: string; installed: boolean; servers: string[]; skills: string[] }>;
+  plugins: Array<{
+    name: string; description?: string; version?: string; category?: string; installed: boolean; servers: string[]; skills: string[];
+    installedVersion?: string; updateAvailable?: boolean;
+  }>;
 }
 
 export interface PluginSources {
@@ -268,6 +275,8 @@ export function buildPluginItems(sources: PluginSources): PluginItem[] {
         action: plugin.installed ? null : "add",
         source: market.name,
         ...(plugin.version ? { version: plugin.version } : {}),
+        ...(plugin.installed && plugin.updateAvailable ? { updateAvailable: true } : {}),
+        ...(plugin.installed && plugin.installedVersion ? { installedVersion: plugin.installedVersion } : {}),
       });
     }
   }

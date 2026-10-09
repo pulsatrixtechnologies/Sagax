@@ -49,6 +49,7 @@ export type BotPatch = Partial<
     | "composio"
     | "browser"
     | "mcpServers"
+    | "mcpAccounts"
     | "modelSelection"
   >
 > & {

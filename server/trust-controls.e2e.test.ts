@@ -343,6 +343,34 @@ it("preserves accounts referenced by a fallback chain before delete or credentia
   expect((await api("DELETE", `/api/instances/${instanceId}`)).status).toBe(200);
 });
 
+it("refuses a tool turned off for the workspace, with the bot's grants still on top", async () => {
+  expect((await api("PUT", "/api/connectors/gmail/tools", { disabledTools: ["GMAIL_FETCH_EMAILS"] }, member)).status).toBeOneOf([403, 404]);
+  expect((await api("PUT", "/api/connectors/gmail/tools", { disabledTools: ["SLACK_SEND_MESSAGE"] })).status).toBe(400);
+  const saved = await api("PUT", "/api/connectors/gmail/tools", { disabledTools: ["GMAIL_FETCH_EMAILS"] });
+  expect(saved.status, JSON.stringify(saved.body)).toBe(200);
+  expect(saved.body.disabledTools).toEqual({ gmail: ["GMAIL_FETCH_EMAILS"] });
+  expect((await api("GET", "/api/connectors/tools")).body.disabledTools).toEqual({ gmail: ["GMAIL_FETCH_EMAILS"] });
+
+  const b = await bot("Workspace tool switch");
+  const token = await mint(b.id, b.threadId);
+  const before = relayed.length;
+  const off = await relay(token, "GMAIL_FETCH_EMAILS");
+  expect(off.body.result.isError).toBe(true);
+  expect(off.body.result.content[0].text).toContain("turned off for this workspace");
+  const viaExecutor = await relay(token, "COMPOSIO_MULTI_EXECUTE_TOOL", { tools: [{ tool_slug: "GMAIL_FETCH_EMAILS", arguments: {} }] });
+  expect(viaExecutor.body.result.isError).toBe(true);
+  expect(relayed).toHaveLength(before);
+  expect((await relay(token, "GMAIL_LIST_LABELS")).body.result.isError).not.toBe(true);
+  expect(relayed).toHaveLength(before + 1);
+
+  // On for the workspace is not enough: a bot whose grants leave it out is still refused.
+  expect((await api("PUT", "/api/connectors/gmail/tools", { disabledTools: [] })).body.disabledTools).toEqual({});
+  expect((await api("PATCH", `/api/bots/${b.id}`, { connectorTools: { gmail: { tools: ["GMAIL_LIST_LABELS"] } } })).status).toBe(200);
+  const ungranted = await relay(token, "GMAIL_FETCH_EMAILS");
+  expect(ungranted.body.result.content[0].text).toContain("not granted to this bot");
+  expect(relayed).toHaveLength(before + 1);
+});
+
 it("does not relay if the allowance cannot be durably written", async () => {
   const b = await bot("Failed allowance");
   await api("PATCH", `/api/bots/${b.id}`, { outbound: { policy: "allow", dailyCap: 1 } });

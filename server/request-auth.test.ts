@@ -410,6 +410,7 @@ describe("resolveRequestAuth", () => {
     expect(routePermission("GET", "/api/admin-activity.csv", org)).toBe("people.activityLog");
     expect(routePermission("POST", "/api/marketplaces", org)).toBe("apps.marketplaces");
     expect(routePermission("POST", "/api/marketplaces/acme/plugins/tool", org)).toBe("apps.marketplaces");
+    expect(routePermission("POST", "/api/marketplaces/acme/plugins/tool/update", org)).toBe("apps.marketplaces");
     expect(routePermission("PUT", "/api/skills-library/my-skill", org)).toBe("skills.library");
     expect(routePermission("POST", "/api/instances/claude-accounts", org)).toBe("engines.manage");
     expect(routePermission("POST", "/api/instances/claude/leftover-files/remove", org)).toBeNull();
