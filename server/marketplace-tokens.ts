@@ -1,6 +1,8 @@
-// A token per plugin marketplace of a bot (Library > Plugins): how a bot
-// reads a private repository when nobody's GitHub connection can, and how
-// it reads one on another git host (GitLab, Gitea, a company server).
+// A token per bot and plugin marketplace (Connect apps, "For this bot",
+// Manage > Marketplaces): how a bot reads a private repository when nobody's
+// GitHub connection can, and how it reads one on another git host (GitLab,
+// Gitea, a company server). The marketplace itself is in the installation's
+// one list (server/plugin-marketplaces.ts); its token stays per bot.
 //
 // Stored like MCP header values and the organization's GitHub tokens: one
 // AES-256-GCM file under the data directory (marketplace-tokens.enc),
@@ -8,6 +10,11 @@
 // never in a bot zip (only `needsToken`), never in a listing (`hasToken`),
 // never in a log. Keyed by bot and marketplace source (owner/repo or the
 // https address), so it survives an Update and goes with Remove.
+//
+// The "Everyone" scope of Connect apps keeps one token per marketplace for
+// the whole installation under the key `workspace` (WORKSPACE_TOKEN_KEY):
+// set by an admin only, audited, never shown back. It reads the marketplace
+// for everyone; a bot's own token still comes first in its scope.
 import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
 import { mkdirSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
@@ -21,6 +28,9 @@ const AAD = Buffer.from("sagax marketplace-tokens v1");
 const TOKEN = /^[\x21-\x7e]{8,4096}$/;
 const BOT_ID = /^[\w-]{1,80}$/;
 const MAX_TOKENS = 500;
+/** The key of the installation's own tokens ("Everyone" in Connect apps),
+ * in place of a bot id. */
+export const WORKSPACE_TOKEN_KEY = "workspace";
 
 const entrySchema = z.object({
   bot: z.string().regex(BOT_ID),
@@ -93,6 +103,7 @@ export class MarketplaceTokens {
   }
 
   forgetBot(botId: string): void {
+    if (botId === WORKSPACE_TOKEN_KEY) return;
     const entries = this.read();
     const next = entries.filter((entry) => entry.bot !== botId);
     if (next.length !== entries.length) this.write(next);

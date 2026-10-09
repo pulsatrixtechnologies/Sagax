@@ -3,7 +3,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { BotPlugins, BotPluginError, type GitRunner } from "./bot-plugins.ts";
+import { BotPluginError, type GitRunner } from "./bot-plugins.ts";
+import { botPluginsWithMarketplaces } from "./testing/plugin-stores.ts";
 import { claudePluginDirs, pluginTurnFiles, pluginTurnPrompt } from "./plugin-turn.ts";
 
 const dirs: string[] = [];
@@ -45,7 +46,7 @@ function fakeGit(repos: Record<string, string>): GitRunner {
 
 describe("plugin skills and commands on a turn", () => {
   it("gives a non-Claude engine the enabled paths, and Claude the folders", async () => {
-    const plugins = new BotPlugins({
+    const plugins = botPluginsWithMarketplaces({
       dataDir: temp(), git: fakeGit({ "https://github.com/acme/tools.git": marketplaceRepo() }), gitEnvironment: () => ({}), policy: () => undefined,
     });
     await plugins.addMarketplace("bot-1", { source: "acme/tools" }, undefined);

@@ -21,19 +21,12 @@ struct RoomInstructionsView: View {
         ThemedList {
             Section {
                 if editable {
-                    TextEditor(text: Binding(get: { draft ?? bulletin }, set: { draft = $0 }))
-                        .frame(minHeight: 220)
-                        .scrollContentBackground(.hidden)
-                        .overlay(alignment: .topLeading) {
-                            if (draft ?? bulletin).isEmpty {
-                                Text(String(localized: "Goals, tone, ownership, constraints…"))
-                                    .foregroundStyle(Theme.placeholder)
-                                    .padding(.top, 8)
-                                    .padding(.leading, 5)
-                                    .allowsHitTesting(false)
-                            }
-                        }
-                        .accessibilityIdentifier("room-instructions-editor")
+                    // the markdown editor (desktop GroupPanel, #258)
+                    MarkdownEditor(
+                        text: Binding(get: { draft ?? bulletin }, set: { draft = $0 }),
+                        placeholder: String(localized: "Goals, tone, ownership, constraints…"), minHeight: 220,
+                        accessibilityLabel: String(localized: "Group instructions"), identifier: "room-instructions-editor"
+                    )
                 } else if bulletin.isEmpty {
                     Text(String(localized: "No group instructions yet."))
                         .foregroundStyle(Theme.textSecondary)
@@ -136,22 +129,11 @@ struct RoomMemoryView: View {
             }
             Section {
                 if view.canEdit {
-                    TextEditor(text: $draft)
-                        .font(.system(size: 13, design: .monospaced))
-                        .frame(minHeight: 240)
-                        .scrollContentBackground(.hidden)
-                        .overlay(alignment: .topLeading) {
-                            if draft.isEmpty {
-                                Text(String(localized: "- A fact the whole group should keep"))
-                                    .font(.system(size: 13, design: .monospaced))
-                                    .foregroundStyle(Theme.placeholder)
-                                    .padding(.top, 8)
-                                    .padding(.leading, 5)
-                                    .allowsHitTesting(false)
-                            }
-                        }
-                        .accessibilityLabel(Text(String(localized: "Group memory")))
-                        .accessibilityIdentifier("room-memory-editor")
+                    // the markdown editor (desktop GroupMemoryTab, #258)
+                    MarkdownEditor(
+                        text: $draft, placeholder: String(localized: "- A fact the whole group should keep"), minHeight: 240, monospaced: true,
+                        accessibilityLabel: String(localized: "Group memory"), identifier: "room-memory-editor"
+                    )
                 } else {
                     Text(view.text.isEmpty ? String(localized: "Nothing yet.") : view.text)
                         .font(.system(size: 13, design: .monospaced))

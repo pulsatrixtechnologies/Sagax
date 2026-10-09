@@ -187,7 +187,7 @@ export interface MovePose {
   ribbons?: RibbonDraw[];
 }
 
-const ORBIT_RINGS: RingSpec[] = Array.from({ length: 6 }, (_, i) => ({
+export const ORBIT_RINGS: RingSpec[] = Array.from({ length: 6 }, (_, i) => ({
   a: 1.24 + (i % 3) * 0.07,
   tiltX: 64 + i * 7,
   tiltZ: -70 + i * 31,
@@ -199,7 +199,7 @@ const ORBIT_RINGS: RingSpec[] = Array.from({ length: 6 }, (_, i) => ({
   width: 0.05 + (i % 3) * 0.015,
 }));
 
-const SWIRL_RINGS: RingSpec[] = [
+export const SWIRL_RINGS: RingSpec[] = [
   { a: 1.36, tiltX: 74, tiltZ: -8, speed: 0.55, phase: 0, sweep: 0.86, hue: 20, hueSpan: 70, width: 0.06 },
   { a: 1.22, tiltX: 66, tiltZ: 62, speed: 0.7, phase: 0.33, sweep: 0.8, hue: 120, hueSpan: 70, width: 0.055 },
   { a: 1.3, tiltX: 70, tiltZ: -58, speed: 0.62, phase: 0.66, sweep: 0.8, hue: 210, hueSpan: 70, width: 0.05 },

@@ -19,6 +19,7 @@ type OwnedGroup = {
   cwd?: string;
   defaultResponder?: unknown;
   memberIds?: readonly string[];
+  mentionAll?: boolean;
 };
 
 const norm = (value: string) => value.trim().toLowerCase();
@@ -50,7 +51,7 @@ export function ownsGroup(group: Pick<OwnedGroup, "createdBy" | "humanIds">, act
 }
 
 /** The fields only the owner may change. */
-export const OWNER_ONLY_GROUP_FIELDS = ["name", "bulletin", "cwd", "defaultResponder", "memberIds", "humanIds"] as const;
+export const OWNER_ONLY_GROUP_FIELDS = ["name", "bulletin", "cwd", "defaultResponder", "memberIds", "humanIds", "mentionAll"] as const;
 
 const same = (a: unknown, b: unknown) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
 
@@ -60,6 +61,7 @@ function changes(group: OwnedGroup, field: (typeof OWNER_ONLY_GROUP_FIELDS)[numb
     case "bulletin": return value !== (group.bulletin ?? "");
     case "cwd": return (typeof value === "string" ? value.trim() || null : value ?? null) !== (group.cwd ?? null);
     case "defaultResponder": return !same(value, group.defaultResponder);
+    case "mentionAll": return (value === true) !== (group.mentionAll === true);
     case "memberIds": return !same(value, group.memberIds ?? []);
     case "humanIds": {
       if (!Array.isArray(value)) return true;

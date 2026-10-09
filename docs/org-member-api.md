@@ -45,7 +45,7 @@ Code: `server/org-member-routes.ts`, wired in `server/index.ts`
 | `clients.botsRead` | on | list their bots, read their conversations |
 | `clients.botsMessage` | on | send a message and wait for the answer |
 | `clients.routinesRun` | off | run a routine now, read a run |
-| `clients.approvalsAnswer` | off | allow or deny a card |
+| `clients.approvalsAnswer` | off (the bot's owner holds it for their own bots) | allow or deny a card |
 | `clients.peopleNudge` | off | nudge a person |
 
 Keys have two segments (`group.name`): Perspicax refuses a catalogue with
@@ -60,9 +60,11 @@ any other shape, so the plan's `clients.bots.read` is written
 | `GET bots` | `clients.botsRead` | the bots the person can see, with status |
 | `POST bots/{id}/messages` | `clients.botsMessage` | send, optionally wait up to 120 s |
 | `GET threads/{id}?since&limit` | `clients.botsRead` | messages since a cursor, steps, pending cards |
+| `GET threads/{id}/stream?anchor&wait` | `clients.botsRead` | watch a running turn, streamed (lot C.3) |
 | `POST routines/{id}/run` | `clients.routinesRun` | run now |
 | `GET routines/runs/{id}` | `clients.routinesRun` | one run |
-| `POST approvals/{id}` | `clients.approvalsAnswer` | allow or deny |
+| `GET approvals/{id}?threadId` | `clients.botsRead` | may the person answer this card (lot C.3) |
+| `POST approvals/{id}` | `clients.approvalsAnswer`, or owning the bot | allow or deny |
 | `POST people/{id}/nudge` | `clients.peopleNudge` | nudge |
 
 ### `GET capabilities`
@@ -107,6 +109,7 @@ any other shape, so the plan's `clients.bots.read` is written
   has answered, a card waits, or the time is up.
 - `sendId`: 8 to 80 of `[A-Za-z0-9_-]`; a retry with the same id is the same
   message.
+- `stream`: `true` answers NDJSON instead (see "The streamed turn").
 
 ```json
 {
@@ -120,7 +123,8 @@ any other shape, so the plan's `clients.bots.read` is written
 `pending: true` (with `status` `working` or `waiting`) when the bot did not
 finish within `wait`, or a card waits: read the thread later with
 `GET threads/{threadId}?since={cursor}`. `reply` is every bot text after the
-message, joined, at most 32,000 characters.
+message, joined, at most 32,000 characters. Every answer also carries
+`summary` (see "The turn summary"), null when the message has no thread.
 
 ### `GET threads/{id}`
 
@@ -143,6 +147,55 @@ message, joined, at most 32,000 characters.
 - `approvals`: the cards of this conversation still open.
 - `gap: true` when the cursor is no longer in the newest 200 messages.
 
+### The streamed turn (lot C.3)
+
+`POST bots/{id}/messages` with `"stream": true`, and
+`GET threads/{id}/stream?anchor={messageId}&wait={1..120, default 30}`
+(watch a turn already running, typically after an approval), answer
+`200` with `Content-Type: application/x-ndjson`: one JSON object per line,
+each with `event`. A refusal before the stream begins (permission, a thread
+the person cannot read, a bad body) is the usual JSON refusal.
+
+| `event` | Fields | When |
+|---|---|---|
+| `started` | `botId`, `threadId`, `messageId` | first line |
+| `progress` | `status` (`working`, `waiting`, `idle`), `steps` (`count`, `recent` names and outcomes after the anchor), `partial` (the words being written now, at most 600 characters, the newest kept, or null), `elapsedMs` | at most every 2 s, only when something moved, and at least every 10 s |
+| `approval` | `approval` (`id`, `threadId`, `title`, `subtitle`, `tool`, `options`) | a card waits; the stream then ends |
+| `final` | the body of a non-streamed send (`status`, `pending`, `reply`, `approvals`, `cursor`, `summary`) | last line |
+| `error` | `code`, `message` | the work failed after the stream began (last line) |
+
+The stream ends at the first card on purpose: the client asks its person
+(Perspicax: an MCP elicitation), answers with `POST approvals/{id}`, then
+opens `GET threads/{id}/stream?anchor={messageId}` to follow the rest of the
+turn. A waiting flag without an open card (a card just answered) does not
+end a watch. A client that closes the connection stops the watch.
+
+`partial` comes from the runtime's assistant text deltas
+(`server/member-live-text.ts`, memory only, reasoning never kept). Tool
+inputs and outputs never appear, only the tool's name and outcome.
+
+### The turn summary
+
+```json
+{
+  "text": "Build cleaned.",
+  "toolCalls": [{ "tool": "Read", "ok": true }, { "tool": "Bash", "ok": true }],
+  "toolCallCount": 2,
+  "files": ["build/clean.log"],
+  "cost": { "inputTokens": 1200, "outputTokens": 300, "costUsd": 0.0123, "turns": 1 },
+  "approvals": [{ "id": "req_1", "tool": "Bash", "title": "Run Bash?", "decision": "allow", "by": "Alice", "via": "ai-client" }],
+  "threadUrl": "https://sagax.example/#thread=a5fe...&bot=5e38..."
+}
+```
+
+Everything after the anchor (the person's message): the bot's reply, the
+tool calls (the last 50 named, `toolCallCount` all of them), the files the
+successful calls wrote and the turn digests list as added or changed (at
+most 50), the usage of the finished turns (`cost` null until a turn reported
+one, `costUsd` null when the engine reports no price), every card with its
+outcome (`allow`, `deny`, `answered`, `pending`, `dismissed`, `expired`) and
+who answered it, and the link that opens the thread in Sagax.
+
 ### `POST routines/{id}/run`, `GET routines/runs/{id}`
 
 Run now answers `201 {run: {id, routineId, routineName, botId, status,
@@ -151,12 +204,39 @@ bot's owner, the person it runs as, an admin, or `routines.runNowAny`): its
 refusal names `routines.runNowAny`. The run read adds `attention`, `error`
 and `output` (at most 32,000 characters) for a run the person can see.
 
+### `GET approvals/{id}?threadId=`
+
+Whether the person may answer the card through this API, before anyone asks
+them (Perspicax checks it before an elicitation):
+
+```json
+{ "id": "req_4", "threadId": "a5fe...", "open": true, "canAnswer": false,
+  "reason": "Your profile does not include answering approvals of bots that are not yours.",
+  "permission": "clients.approvalsAnswer",
+  "whoCanApprove": { "kind": "owner", "principalId": "pr_7c1e...", "name": "Bob", "sentence": "The bot's owner, Bob." } }
+```
+
+`canAnswer` holds both gates: the permission (below) and Sagax's own rule (a
+server command of a member's bot is an organization admin's, `kind: admin`;
+any other card is its bot owner's, `kind: owner`). An answered card is
+`open: false, canAnswer: false`; a card the thread does not hold is `404`;
+a thread the person cannot read is Sagax's own refusal.
+
 ### `POST approvals/{id}`
+
+`clients.approvalsAnswer` is derived per card, nothing stored: the owner of
+the bot that raised the card holds it for the cards of their own bots; anyone
+else needs it from a permission set (an admin holds every key). Without it:
+`403 forbidden_permission`, `permission: clients.approvalsAnswer`.
+
 
 `{"threadId": "a5fe...", "decision": "allow"}` or `"deny"`; `{id}` is the
 card's request id (`approvals[].id`). Answers `{answered: true, decision}`.
 Who may answer is Sagax's rule (the bot's owner, an admin for a server
-command).
+command). The card records its answerer as the person, by the name the
+organization knows them by, with `via: "ai-client"` (the app shows "from an
+AI client" beside the outcome), and the admin activity log keeps one
+`client.approval` row naming the person and `via: perspicax-mcp`.
 
 ### `POST people/{id}/nudge`
 

@@ -364,11 +364,12 @@ struct DesktopPdfCard: View {
 // MARK: - Cards
 
 /// ApprovalCard.tsx: what a permission ask asks, in the transcript (it is
-/// answered in the dock). Card fill, accent ring at 40 % while pending
+/// answered in the dock). The chat mounts this only while the ask is open.
+/// Card fill, accent ring at 40 % while pending
 /// (hairline at 30 % and 80 % opacity once settled), radius 16, 16 x 12 in,
 /// at most 840: the heading (avatar, "Ara wants to run a command", the
 /// risk chip), the command on an inset block, then the waiting line or the
-/// outcome; a settled tool ask keeps its technical details.
+/// outcome; a settled tool ask keeps its technical details if mounted.
 struct DesktopPermissionCard: View {
     @EnvironmentObject private var session: Session
     let chat: Chat

@@ -1,18 +1,17 @@
 // iPad I3: the model picker (ModelPicker.tsx), opened by the composer's
 // model chip: a centred 880 x 640 dialog over a 50 % scrim. On the left the
 // engine rail (Cloud: each engine with its state; API keys), on the right
-// the engine's name and version, where the change applies (only this
-// thread, or the thread and the bot's default), a search, the suggested
-// models (current, default, then the catalogue, five) or all of them, and
-// a footer to the providers. Picking writes through the routes the profile
-// already uses (`updateModel` on the task, then the bot default).
+// the engine's name and version, a search, the suggested models (current,
+// default, then the catalogue, five) or all of them under Cloud and Local,
+// and a footer to the providers. One mode (#261): a pick runs this thread
+// and becomes the bot's model in one request (`ModelPickerRules`); "Use
+// <bot>'s model" puts the thread back on the bot's. An organization lists
+// only the providers its admin allows.
 import SwiftUI
 import UIKit
 import CompanionCore
 
 struct DesktopModelPicker: View {
-    enum Scope { case thread, bot }
-
     @Environment(\.desktopTheme) private var theme
     @EnvironmentObject private var session: Session
     let bot: Bot
@@ -21,7 +20,8 @@ struct DesktopModelPicker: View {
 
     @State private var instances: [Instance] = []
     @State private var railId: String?
-    @State private var scope: Scope = .thread
+    /// Organization server: the providers its admin allows (#261).
+    @State private var allowedEngines: [String]?
     @State private var query = ""
     @State private var showAll = false
     @State private var saving = false
@@ -33,7 +33,19 @@ struct DesktopModelPicker: View {
     private var selection: ModelSelection { bot.currentTaskModelSelection }
     /// engine-rail.ts `configuredModelInstances`: what someone can use or
     /// finish setting up; the full catalogue stays in Settings.
-    private var pickerInstances: [Instance] { DesktopEngineRail.configured(instances, selected: selection.instanceId) }
+    private var pickerInstances: [Instance] {
+        ModelPickerRules.listed(
+            DesktopEngineRail.configured(instances, selected: selection.instanceId),
+            allowed: allowedEngines, organization: organization, selectedId: selection.instanceId
+        )
+    }
+    private var organization: Bool { session.surfaceGate.allows(.people) }
+    private func notAllowed(_ instance: Instance) -> Bool {
+        organization && !ModelPickerRules.engineAllowed(allowedEngines, instance.instanceId)
+    }
+    private var profile: Bot { session.state.bot(bot.id) ?? bot }
+    /// The open thread follows the bot's model (nil: an older server).
+    private var follows: Bool? { profile.tasks?.first { $0.threadId == bot.threadId }?.followsBotModel }
     private var rail: Instance? {
         pickerInstances.first { $0.instanceId == (railId ?? selection.instanceId) } ?? pickerInstances.first
     }
@@ -49,7 +61,10 @@ struct DesktopModelPicker: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
-        .task { instances = await DesktopModelCatalog.shared.instances(session) }
+        .task {
+            instances = await DesktopModelCatalog.shared.instances(session)
+            allowedEngines = await session.configStatus()?.allowedEngines
+        }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("desktop-model-picker")
     }
@@ -238,26 +253,19 @@ struct DesktopModelPicker: View {
                 }
                 .padding(.trailing, 40)
 
-                Text("Apply model changes to")
-                    .font(theme.font(12.5, .medium))
-                    .foregroundStyle(theme.ink)
+                // one mode (#261): no "Only this thread" any more
+                Text("This thread and the bot's model. Groups and new threads use the bot's model; a thread on its own model keeps it.")
+                    .font(theme.font(11))
+                    .foregroundStyle(theme.inkSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
                     .padding(.top, 20)
-                HStack(spacing: 4) {
-                    scopeButton("Only this thread", .thread)
-                    scopeButton("Thread + bot default", .bot)
+                if follows != nil { followBotRow.padding(.top, 10) }
+                if notAllowed(rail) {
+                    Text("Not allowed by your organization")
+                        .font(theme.font(11.5, .medium))
+                        .foregroundStyle(theme.warning)
+                        .padding(.top, 8)
                 }
-                .padding(.top, 6)
-                Group {
-                    if scope == .bot {
-                        Text("This thread, groups, and new threads. Other existing threads keep their model.")
-                    } else {
-                        Text("Other threads and groups keep their model.")
-                    }
-                }
-                .font(theme.font(11))
-                .foregroundStyle(theme.inkSecondary)
-                .frame(minHeight: 16.5)
-                .padding(.top, 4)
 
                 Text("Model")
                     .font(theme.font(12.5, .medium))
@@ -294,71 +302,65 @@ struct DesktopModelPicker: View {
         }
     }
 
-    private func scopeButton(_ title: LocalizedStringKey, _ value: Scope) -> some View {
-        Button { scope = value } label: {
-            Text(title)
-                .font(theme.font(12))
-                .foregroundStyle(scope == value ? theme.ink : theme.inkSecondary)
+    /// "Use <bot>'s model": the thread back on the bot's model, checked
+    /// while it follows it (`FollowBotModelRow`).
+    private var followBotRow: some View {
+        let own = ModelPickerRules.threadsOnOwnModel(botModel: profile.modelSelection, tasks: profile.tasks ?? [])
+        return VStack(alignment: .leading, spacing: 4) {
+            Button {
+                guard follows == false else { return }
+                saving = true
+                Task {
+                    _ = await session.updateModel(profile.modelSelection, for: bot, updateBotDefault: false)
+                    saving = false
+                    close()
+                }
+            } label: {
+                HStack(spacing: 8) {
+                    Text("Use \(profile.name)'s model")
+                        .font(theme.font(12.5, .medium))
+                        .foregroundStyle(theme.ink)
+                    Text(verbatim: profile.modelSelection.model)
+                        .font(theme.font(11))
+                        .foregroundStyle(theme.inkSecondary)
+                    Spacer(minLength: 8)
+                    if follows == true {
+                        Image(systemName: "checkmark").font(.system(size: 12, weight: .semibold)).foregroundStyle(theme.accent)
+                    }
+                }
                 .padding(.horizontal, 10)
-                .frame(height: 32)
-                .background(scope == value ? theme.control : .clear, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(theme.hairline.opacity(0.4), lineWidth: 1))
+                .frame(height: 34)
+                .background(follows == true ? theme.raised : .clear, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .disabled(saving || bot.busy == true)
+            .accessibilityIdentifier("desktop-model-follow-bot")
+            if own > 0 {
+                Text(own == 1 ? String(localized: "1 thread uses its own model.") : String(localized: "\(own) threads use their own model."))
+                    .font(theme.font(11))
+                    .foregroundStyle(theme.inkSecondary)
+                    .padding(.horizontal, 10)
+            }
         }
-        .buttonStyle(.plain)
-        .hoverEffect(.highlight)
     }
 
     @ViewBuilder
     private func models(_ rail: Instance) -> some View {
         let current = selection.instanceId == rail.instanceId ? (selection.model.isEmpty ? rail.models.default : selection.model) : nil
-        let options = rail.models.options
-        let shown = !query.isEmpty ? ModelSuggestions.filter(options, query: query)
-            : showAll ? options : ModelSuggestions.suggested(options, defaultId: rail.models.default, currentId: current)
+        let groups = ModelPickerRules.groups(rail.models.options, organization: organization)
+        let cloud = groups.cloud
+        let shown = !query.isEmpty ? ModelSuggestions.filter(cloud, query: query)
+            : showAll ? cloud : ModelSuggestions.suggested(cloud, defaultId: rail.models.default, currentId: current)
+        let local = query.isEmpty ? groups.local : ModelSuggestions.filter(groups.local, query: query)
         VStack(alignment: .leading, spacing: 0) {
-            Text(query.isEmpty && !showAll ? "Suggested" : "Models")
-                .textCase(.uppercase)
-                .font(theme.font(10, .medium))
-                .tracking(0.8)
-                .foregroundStyle(theme.inkSecondary)
-                .padding(.horizontal, 8)
-                .padding(.top, 2)
-                .frame(height: 21, alignment: .top)
-            ForEach(shown) { option in
-                Button { pick(rail, option) } label: {
-                    HStack(spacing: 8) {
-                        Text(verbatim: option.label)
-                            .font(theme.font(13))
-                            .foregroundStyle(theme.ink)
-                            .lineLimit(1)
-                        if option.id == rail.models.default {
-                            Text("Default")
-                                .font(theme.font(10))
-                                .foregroundStyle(theme.inkSecondary)
-                                .padding(.horizontal, 6)
-                                .padding(.vertical, 1)
-                                .background(theme.inset, in: RoundedRectangle(cornerRadius: 4))
-                        }
-                        Spacer(minLength: 8)
-                        if option.id == current {
-                            Image(systemName: "checkmark")
-                                .font(.system(size: 12, weight: .semibold))
-                                .foregroundStyle(theme.accent)
-                        }
-                    }
-                    .padding(.horizontal, 10)
-                    .frame(height: 35.5)
-                    .background(option.id == current ? theme.raised : .clear, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .hoverEffect(.highlight)
-                .disabled(saving || bot.busy == true)
-                .accessibilityIdentifier("desktop-model-\(option.id)")
-            }
-            if query.isEmpty, !showAll, options.count > shown.count {
+            // the dropdown's two headings (#261)
+            groupHeading(query.isEmpty && !showAll ? "Suggested" : "Cloud")
+            ForEach(shown) { option in modelRow(rail, option, current: current) }
+            if query.isEmpty, !showAll, cloud.count > shown.count {
                 Button { showAll = true } label: {
                     HStack {
-                        Text("Show all \(options.count) models")
+                        Text("Show all \(cloud.count) models")
                         Spacer()
                         Image(systemName: "chevron.down").font(.system(size: 11))
                     }
@@ -372,7 +374,66 @@ struct DesktopModelPicker: View {
                 .buttonStyle(.plain)
                 .padding(.top, 4)
             }
+            if !local.isEmpty {
+                groupHeading("Local").padding(.top, 10)
+                ForEach(local) { option in modelRow(rail, option, current: current) }
+            }
         }
+    }
+
+    private func groupHeading(_ title: LocalizedStringKey) -> some View {
+        Text(title)
+            .textCase(.uppercase)
+            .font(theme.font(10, .medium))
+            .tracking(0.8)
+            .foregroundStyle(theme.inkSecondary)
+            .padding(.horizontal, 8)
+            .padding(.top, 2)
+            .frame(height: 21, alignment: .top)
+    }
+
+    private func modelRow(_ rail: Instance, _ option: ModelOption, current: String?) -> some View {
+        Button { pick(rail, option) } label: {
+            HStack(spacing: 8) {
+                Text(verbatim: option.label)
+                    .font(theme.font(13))
+                    .foregroundStyle(theme.ink)
+                    .lineLimit(1)
+                if option.id == rail.models.default {
+                    Text("Default")
+                        .font(theme.font(10))
+                        .foregroundStyle(theme.inkSecondary)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 1)
+                        .background(theme.inset, in: RoundedRectangle(cornerRadius: 4))
+                }
+                if option.loaded == true {
+                    Text("Loaded")
+                        .font(theme.font(10))
+                        .foregroundStyle(theme.inkSecondary)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 1)
+                        .background(theme.inset, in: RoundedRectangle(cornerRadius: 4))
+                }
+                if follows != nil, profile.modelSelection.instanceId == rail.instanceId, profile.modelSelection.model == option.id {
+                    Text("(bot's model)").font(theme.font(10.5)).foregroundStyle(theme.inkSecondary)
+                }
+                Spacer(minLength: 8)
+                if option.id == current {
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(theme.accent)
+                }
+            }
+            .padding(.horizontal, 10)
+            .frame(height: 35.5)
+            .background(option.id == current ? theme.raised : .clear, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .hoverEffect(.highlight)
+        .disabled(saving || bot.busy == true || notAllowed(rail))
+        .accessibilityIdentifier("desktop-model-\(option.id)")
     }
 
     /// The engine's update notice (EngineSetup's update card): what the
@@ -520,27 +581,16 @@ struct DesktopModelPicker: View {
         .overlay(alignment: .top) { Rectangle().fill(theme.hairline.opacity(0.4)).frame(height: 1) }
     }
 
+    /// One mode (#261): this thread and the bot's model in one request;
+    /// the effort stays on the same engine, a variant on the same model.
     private func pick(_ rail: Instance, _ option: ModelOption) {
-        let next = ModelSelection(instanceId: rail.instanceId, model: option.id, effort: selection.effort)
+        guard !notAllowed(rail) else { return }
+        let next = ModelPickerRules.selectionForPick(selection, instance: rail, model: option.id)
         saving = true
         Task {
-            if await session.updateModel(next, for: bot) != nil, scope == .bot {
-                await session.updateModelDefault(next, for: bot)
-            }
+            _ = await session.updateModel(next, for: bot, updateBotDefault: true)
             saving = false
             close()
-        }
-    }
-}
-
-extension Session {
-    /// "Thread + bot default": the bot's own default too (the profile route).
-    func updateModelDefault(_ selection: ModelSelection, for bot: Bot) async {
-        guard let client = profileClient else { return }
-        do {
-            applyProfileBot(try await client.updateModel(botId: bot.id, selection: selection))
-        } catch {
-            if !Task.isCancelled { actionError = error.localizedDescription }
         }
     }
 }

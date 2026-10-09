@@ -6,7 +6,10 @@
 //   1. Character: Owl, Shape, Trombi, in the bot's colour.
 //   2. Shape (Shape only): the 8 shapes as 2x4.
 //   3. Skin: owl 7, shape 6, Trombi 4.
-//   4. Colour: the 12 Sagax colours as 6+6 (hidden for Trombi).
+//   4. Colour: the 12 Sagax colours as 6+6 (hidden for Trombi); where the
+//      desktop offers the Clay palette (Shapes, Shiba, Grump, Ogre, Frog, or
+//      a bot already in a Clay colour), a Classic | Clay switch shows its
+//      twelve swatches in the same 6+6 rows (`colorGroupsFor`, MS5).
 //   5. Photo (optional): upload or remove a picture.
 //   6. Reset to default (optional): the owl, green, no skin, no picture.
 //
@@ -111,6 +114,8 @@ struct CharacterEditor: View {
     var unlocks: MascotUnlocks = .nothingLocked
 
     @State private var photoItem: PhotosPickerItem?
+    /// The colour row picked by hand; nil follows the colour worn.
+    @State private var colourRow: MausColors.PickerRow?
 
     private static let ringGap: CGFloat = 2.7
     private static let ringWidth: CGFloat = 2
@@ -254,9 +259,25 @@ struct CharacterEditor: View {
         }
     }
 
+    private var offersClay: Bool { MausColors.offersClay(draft.character, color: draft.color) }
+
+    private var shownRow: MausColors.PickerRow {
+        guard offersClay else { return .classic }
+        return colourRow ?? MausColors.pickerRow(for: draft.color, character: draft.character)
+    }
+
     private var colourRows: some View {
-        let names = MausColors.names
+        let names = shownRow.swatches
         return VStack(spacing: metrics.swatchRowPitch - metrics.swatch) {
+            if offersClay {
+                Picker(String(localized: "Palettes"), selection: Binding(get: { shownRow }, set: { colourRow = $0 })) {
+                    Text(String(localized: "Classic")).tag(MausColors.PickerRow.classic)
+                    Text(String(localized: "Clay")).tag(MausColors.PickerRow.clay)
+                }
+                .pickerStyle(.segmented)
+                .frame(maxWidth: 220)
+                .accessibilityIdentifier("character-color-palette")
+            }
             ForEach(0..<2, id: \.self) { line in
                 HStack(spacing: metrics.swatchPitch - metrics.swatch) {
                     ForEach(0..<6, id: \.self) { index in
@@ -267,6 +288,7 @@ struct CharacterEditor: View {
                 .offset(x: line == 0 ? -metrics.swatchPitch / 4 : metrics.swatchPitch / 4)
             }
         }
+        .onValueChange(of: draft.character) { _ in colourRow = nil }
     }
 
     private func swatch(_ name: String) -> some View {

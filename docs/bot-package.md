@@ -72,8 +72,11 @@ Rules, none optional:
   working folder), as the Browse Bots member clone does.
 - Skills land with the manifest, switched off, then the ones that were on
   are turned on again only when their `SKILL.md` matches the reviewed hash.
-- Marketplaces come back with their catalogue and installed plugins;
-  Update fetches them again, with a token added in Library > Plugins when
+- Marketplaces come back with their catalogue and installed plugins: each
+  joins the installation's one marketplace list (the same source is reused,
+  a name taken by another source gets a suffix, one the organization does
+  not allow is left out with its plugins). Update fetches them again, with
+  a token added in Connect apps for that bot (Manage > Marketplaces) when
   the manifest says `needsToken`.
 - An engine this server does not have (or the organization does not
   allow) falls back to the default model; a working folder or browser
@@ -121,10 +124,12 @@ the cause (`code`) and the fix (`fix`):
 
 The token of a marketplace is stored like MCP header values: AES-256-GCM in
 `marketplace-tokens.enc` with the vault key, per bot and marketplace, never
-shown again, never in a zip. `PUT` and `DELETE
-/api/bots/:id/plugins/marketplaces/:name/token` set and remove it; a
-removed marketplace or a deleted bot takes it along. The same field reads a
-marketplace on another git host (GitLab, Gitea).
+shown again, never in a zip. The field is in Connect apps > Manage >
+Advanced > Marketplaces with "For <bot>" chosen (the marketplace itself is
+in the installation's one list; its token stays that bot's). `PUT` and
+`DELETE /api/bots/:id/plugins/marketplaces/:name/token` set and remove it;
+removing the marketplace from that bot or deleting the bot takes it along.
+The same field reads a marketplace on another git host (GitLab, Gitea).
 
 A bot's own plugins reach its turns: Claude loads each enabled plugin with
 `--plugin-dir` (skills, commands, agents); every other workspace engine

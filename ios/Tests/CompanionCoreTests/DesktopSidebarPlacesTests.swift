@@ -24,8 +24,11 @@ final class DesktopSidebarPlacesTests: XCTestCase {
         let features = ServerFeatures(connectedApps: true, templates: true)
         let client = SurfaceGate(scope: .serverClient)
         let places = DesktopSidebarPlaces.visible(connected: true, gate: client, features: features)
-        XCTAssertFalse(places.contains(.templates), "Templates is an administrator's")
-        XCTAssertEqual(places, [])
+        // Browse Bots (the place that replaced Templates) is a member's too;
+        // Connected apps stays an administrator's
+        XCTAssertEqual(places, [.templates])
+        let sidecar = DesktopSidebarPlaces.visible(connected: true, gate: SurfaceGate(scope: .sidecar), features: features)
+        XCTAssertFalse(sidecar.contains(.templates), "the remote client hides Browse Bots")
         XCTAssertEqual(DesktopSidebarPlaces.visible(connected: false, gate: SurfaceGate(scope: .serverAdmin), features: features), [])
     }
 

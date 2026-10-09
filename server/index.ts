@@ -750,7 +750,7 @@ import { createMarketplaceRoutes } from "./routes/marketplaces.ts";
 import { PluginMarketplaces, marketplaceServerName, planServerUpdate, updatedServerEntry } from "./plugin-marketplaces.ts";
 import { createAccountRoutes } from "./routes/account.ts";
 import { createRegistrySearch } from "./plugin-registry.ts";
-import { BotPluginError, BotPlugins, marketplaceAllowed, marketplacePolicySchema, normalizePolicyEntry, parseGitSource, type MarketplacePolicy } from "./bot-plugins.ts";
+import { BotPluginError, BotPlugins, marketplaceAllowed, migrateBotMarketplaces, marketplacePolicySchema, normalizePolicyEntry, parseGitSource, type MarketplacePolicy } from "./bot-plugins.ts";
 import { claudePluginDirs, pluginTurnFiles, pluginTurnPrompt } from "./plugin-turn.ts";
 import { createBotPluginRoutes } from "./routes/bot-plugins.ts";
 import { GithubConnect, githubGitEnvironment, githubSandboxArgv } from "./github-connect.ts";
@@ -760,6 +760,8 @@ import { githubSkillFetch, type GithubCredential } from "./github-access.ts";
 import { parsePersonalMcpInput, personalAuthHeaders, personalMcpHostRefusal, personalMcpPrivateAllowed, PersonConnections, PersonConnectionsError, principalDir, type PersonalMcpServer } from "./person-connections.ts";
 import { createPersonConnectionRoutes } from "./routes/person-connections.ts";
 import { SandboxStdioRelay, StdioRelayError } from "./sandbox-stdio-mcp.ts";
+import { testStdioMcpCommand, testStdioMcpStream } from "./mcp-stdio-test.ts";
+import { roomMentionNotification, roomMentionReadPatch } from "./room-mentions.ts";
 import { PERSONAL_STDIO_TOOL_SERVER } from "./user-sandbox-proxy.ts";
 import { PLUGIN_CATALOG } from "../shared/plugin-catalog.ts";
 import { diskSpace, folderBytes } from "./disk-usage.ts";
@@ -808,6 +810,7 @@ import { OidcRelyingParty } from "./oidc-rp.ts";
 import type { BotAttachment, BotFileRoot } from "./org-admin-files.ts";
 import { ADMIN_ACTIVITY_CATEGORIES } from "./admin-activity.ts";
 import { createOrgMemberRoutes, type MemberPerson, type MemberRequest } from "./org-member-routes.ts";
+import { MemberLiveText } from "./member-live-text.ts";
 import { createOrgAdminRoutes, type AccessKind, type AdminApproval, type AdminEngine, type AdminBot, type AdminBotReach, type AdminPerson, type ApprovalAnswer, type ApprovalType, type OrgAdminViewer } from "./org-admin-routes.ts";
 import { RevocationQueue } from "./idp-revocations.ts";
 import { IDP_REFRESH_WAIT_MS, IDP_SWEEP_INTERVAL_MS, IdpGrantVault, IdpSessionManager, refreshAfterMs, resolveIdpVaultKey, settledWithin } from "./idp-session.ts";
@@ -5277,11 +5280,11 @@ function pluginMarketplacePolicy(): MarketplacePolicy | undefined {
 /** The organization's GitHub tokens (Settings > Organization > Plugins and
  * GitHub, server/org-github-tokens.ts). */
 const orgGithubTokens = new OrgGithubTokens(DATA_DIR, vaultKeySource);
-/** A token per plugin marketplace of a bot (server/marketplace-tokens.ts). */
+/** A token per bot and plugin marketplace (server/marketplace-tokens.ts). */
 const marketplaceTokens = new MarketplaceTokens(DATA_DIR, vaultKeySource);
 /** Who reads a private GitHub repository for `actor`: their own GitHub
  * connection, then the organization's tokens (organization server). The
- * marketplace's own token comes first (server/bot-plugins.ts). */
+ * bot's token for the marketplace comes first (server/bot-plugins.ts). */
 function githubCredentialsFor(actor: string | null | undefined): GithubCredential[] {
   const person = usablePersonGithub(actor)?.token;
   const credentials: GithubCredential[] = person ? [{ token: person, via: "person" }] : [];
@@ -5297,13 +5300,33 @@ function githubCredentialsFor(actor: string | null | undefined): GithubCredentia
   }
   return credentials;
 }
+// The installation's one marketplace list (server/plugin-marketplaces.ts):
+// Connect apps installs a plugin from it for everyone (MCP servers and
+// skills) or for one bot (the whole plugin, server/bot-plugins.ts). Added
+// for everyone, it reads with the installation's token for it (an admin's,
+// Connect apps > Everyone), then the person's GitHub connection, then the
+// organization's GitHub tokens; added or fetched again from a bot, with that
+// bot's token for it first (BotPlugins.cloneEnvironment).
+const pluginMarketplaces = new PluginMarketplaces({
+  dataDir: DATA_DIR,
+  gitEnvironment: (actor) => githubGitEnvironment(githubCredentialsFor(actor)[0]?.token),
+  policy: pluginMarketplacePolicy,
+  inUse: (name) => botPlugins.botsUsing(name),
+});
 const botPlugins = new BotPlugins({
   dataDir: DATA_DIR,
+  marketplaces: pluginMarketplaces,
   gitEnvironment: (actor) => githubGitEnvironment(usablePersonGithub(actor)?.token),
   credentials: ({ actor }) => githubCredentialsFor(actor),
   tokens: marketplaceTokens,
   policy: pluginMarketplacePolicy,
 });
+{
+  const migrated = migrateBotMarketplaces(DATA_DIR, pluginMarketplaces);
+  if (migrated.bots || migrated.failed.length) {
+    console.log(`[plugins] one marketplace list: ${migrated.bots} bot(s), ${migrated.marketplaces} marketplace(s), ${migrated.plugins} plugin(s) kept${migrated.renamed.length ? `, renamed ${migrated.renamed.join(", ")}` : ""}${migrated.failed.length ? `, failed for ${migrated.failed.join(", ")}` : ""}`);
+  }
+}
 const stdioRelay = new SandboxStdioRelay({
   open: (principalId, spec) => {
     if (!userSandbox) throw new StdioRelayError("This server has no server environments.", "unavailable");
@@ -5488,6 +5511,7 @@ ROUTES.push(createBotPluginRoutes<BotRecord>({
   },
   actor: (auth) => sessionPrincipal(auth) ?? undefined,
   managedByAdmin: integrationsLocked,
+  mayManageMarketplaces: (auth) => mayManageMarketplaces(auth),
   policy: pluginMarketplacePolicy,
   engineLoadsPlugins: botLoadsPlugins,
   changed: (bot, action, detail, auth) => {
@@ -6505,6 +6529,12 @@ function updateChannel(groupId: string, value: unknown): GroupRecord {
   if (body.pinned !== undefined) {
     if (typeof body.pinned !== "boolean") throw Object.assign(new Error("pinned must be true or false"), { status: 400 });
     patch.pinned = body.pinned || undefined;
+  }
+  // Whether @all tags every person in the room (server/room-mentions.ts).
+  if (body.mentionAll !== undefined) {
+    if (existing.dm || existing.peopleDm) throw Object.assign(new Error("only a room can let @all notify its people"), { status: 400 });
+    if (typeof body.mentionAll !== "boolean") throw Object.assign(new Error("mentionAll must be true or false"), { status: 400 });
+    patch.mentionAll = body.mentionAll || undefined;
   }
   if (body.memberIds !== undefined) {
     // A DM is the pair it was opened for; only real rooms have a roster.
@@ -21102,13 +21132,12 @@ ROUTES.push(createComputerStatusRoutes({
 // Registry, what is installed, and adding one with its sign-in.
 const pluginRegistry = createRegistrySearch();
 // Plugins > Manage > Marketplaces (server/routes/marketplaces.ts): plugin
-// marketplaces of the whole installation; Add maps a plugin onto MCP
-// servers (source: the marketplace) and library skills.
-const pluginMarketplaces = new PluginMarketplaces({
-  dataDir: DATA_DIR,
-  gitEnvironment: (actor) => githubGitEnvironment(githubCredentialsFor(actor)[0]?.token),
-  policy: pluginMarketplacePolicy,
-});
+// marketplaces of the whole installation (`pluginMarketplaces`, built with
+// the bots' plugins above); Add maps a plugin onto MCP servers (source: the
+// marketplace) and library skills.
+function mayManageMarketplaces(auth: RequestAuth): boolean {
+  return computerOwner(auth) || (IDENTITY.kind === "perspicax" && callerCan(auth, "apps.marketplaces"));
+}
 /** Add a plugin's servers to `current` (written by the caller) under free
  * names; returns the plugin's name of each to the name it got. */
 function addMarketplaceServers(
@@ -21171,7 +21200,10 @@ function updatedMarketplaceServer(name: string, existing: StoredMcpServer, entry
 }
 ROUTES.push(createMarketplaceRoutes({
   store: pluginMarketplaces,
-  mayManage: (auth) => computerOwner(auth) || (IDENTITY.kind === "perspicax" && callerCan(auth, "apps.marketplaces")),
+  mayManage: mayManageMarketplaces,
+  // the installation's token per marketplace (Everyone scope): an admin's
+  workspace: botPlugins,
+  mayManageTokens: (auth) => (IDENTITY.kind === "perspicax" ? orgAdminCaller(auth) : computerOwner(auth)),
   actor: (auth) => sessionPrincipal(auth) ?? undefined,
   install: async (marketplace, plugin, { auth }) => {
     if (pluginMarketplaces.installed().some((entry) => entry.key === `${plugin}@${marketplace}`)) {
@@ -21728,6 +21760,28 @@ function sendPeopleDmMessage(group: GroupRecord, auth: RequestAuth, text: string
     } satisfies Notification });
   }
   return { ok: true as const, threadId, message };
+}
+/** A person's room message that tags people with @ (or @all, when the room
+ * allows it) notifies them like a direct message (server/room-mentions.ts),
+ * and the room is unread for them until they read it, whoever else does. */
+function notifyRoomMentions(groupId: string, threadId: string, text: string, auth: RequestAuth): void {
+  const room = store.group(groupId);
+  const from = groupReaderId(auth);
+  if (!room || room.peopleDm || room.dm || !from || !(room.humanIds ?? []).length) return;
+  // The operator at this computer has no session: their profile name.
+  const name = messageSender(auth)?.name || (auth.kind !== "session" ? cfg.profile?.name?.trim() : "") || personDisplayName(principals.byId(from));
+  if (!name) return;
+  const people = (room.humanIds ?? []).map((id) => {
+    const person = principals.byId(id);
+    return { id, names: [personDisplayName(person), person?.name ?? "", person?.login ?? ""] };
+  });
+  const avatarUrl = personAvatarUrl(principals.byId(from));
+  const notification = roomMentionNotification({ room, threadId, text, sender: { principalId: from, name, ...(avatarUrl ? { avatarUrl } : {}) }, people });
+  if (!notification?.audience?.length) return;
+  const unreadFor = [...new Set([...(room.unreadFor ?? []), ...notification.audience])].sort();
+  const updated = store.patchGroup(room.id, { unreadFor });
+  if (updated) broadcast({ kind: "group", group: publicGroupState(updated) });
+  broadcast({ kind: "notify", notification });
 }
 /** The owner of a group, as server/group-ownership.ts decides on an
  * organization server (its creator, else its first person, else its
@@ -24860,11 +24914,21 @@ const orgOpsDeps: OpsDeps = {
       return { ok: true, reason: null, label: null };
     }
     if (kind === "mcp") {
-      const server = principalId
-        ? (() => { const own = personConnections.servers(principalId)[id]; return own ? { url: own.kind === "stdio" ? null : own.url } : null; })()
-        : orgMcpServers().find((candidate) => candidate.name === id) ?? null;
+      if (principalId) {
+        const own = personConnections.servers(principalId)[id];
+        if (!own) return { ok: false, reason: "not_found", label: "No MCP server with that name." };
+        if (own.kind !== "stdio") return reachable(own.url);
+        // A person's command runs in their server environment, never here.
+        if (!userSandbox) return { ok: false, reason: "no_environment", label: "This server has no server environments: a person's command cannot be started to test it." };
+        const sandbox = userSandbox;
+        return testStdioMcpStream(() => sandbox.stdioStream(principalId, { argv: [own.command, ...own.args], env: own.env }), own);
+      }
+      const server = orgMcpServers().find((candidate) => candidate.name === id);
       if (!server) return { ok: false, reason: "not_found", label: "No MCP server with that name." };
-      return server.url ? reachable(server.url) : null;
+      if (server.url) return reachable(server.url);
+      const parsed = parseStoredMcpServer(id, cfg.mcpServers?.[id]);
+      if (!parsed.ok || isRemoteMcpServer(parsed.server)) return { ok: false, reason: "invalid", label: "This server's saved settings are not valid." };
+      return testStdioMcpCommand(parsed.server);
     }
     if (kind === "marketplace") {
       const market = pluginMarketplaces.list().find((candidate) => candidate.name === id);
@@ -25170,6 +25234,13 @@ const orgAdmin = createOrgAdminRoutes({
     },
   },
 });
+/** Lot C.3: the words each bot is writing now, for the member API's
+ * streamed turn (server/member-live-text.ts). */
+const memberLiveText = new MemberLiveText();
+bus.subscribe((event: RuntimeEvent) => {
+  if (shouldIgnoreProviderEvent(event)) return;
+  memberLiveText.observe(event);
+});
 /** 2026-10-09 (lot C.1): the member API (server/org-member-routes.ts), for
  * an AI client attached to Perspicax acting for one person. Each route is
  * performed as that person through a 60 s session of theirs. */
@@ -25237,6 +25308,37 @@ const orgMember = createOrgMemberRoutes({
     const id = ref.trim().toLowerCase();
     if (isPrincipalId(id) && principals.byId(id)) return id;
     return IDENTITY.kind === "perspicax" ? principals.bySubject(IDENTITY.issuer, ref.trim())?.id ?? null : null;
+  },
+  // Lot C.3: the streamed turn and the approvals answered from an AI client.
+  liveText: (threadId) => (store.botByThread(threadId) ? memberLiveText.partial(threadId) : null),
+  threadLink: (threadId, botId) => {
+    if (IDENTITY.kind !== "perspicax") return null;
+    const origin = IDENTITY.publicOrigin.replace(/\/+$/, "");
+    const bot = botId ?? store.botByThread(threadId)?.id ?? null;
+    return `${origin}/#thread=${encodeURIComponent(threadId)}${bot ? `&bot=${encodeURIComponent(bot)}` : ""}`;
+  },
+  botOfThread: (threadId) => store.botByThread(threadId)?.id ?? null,
+  approvalAnswerer: (threadId, requestId) => {
+    const message = store.messagesFor(threadId).find((row) => row.card?.requestId === requestId);
+    if (!message?.card) return null;
+    const card = message.card;
+    const bot = botForApproval(threadId, message);
+    const ownerId = bot ? approvalOwnerId(bot) : null;
+    return {
+      found: true,
+      open: !card.answered && !card.dismissed && !card.expired,
+      ownerPrincipalId: ownerId,
+      ownerName: ownerId ? adminPerson(ownerId).name : null,
+      adminOnly: IDENTITY.kind === "perspicax" && card.adminApproval === true,
+    };
+  },
+  noteAnsweredVia: (person, threadId, requestId) => {
+    const message = store.messagesFor(threadId).find((candidate) => candidate.card?.requestId === requestId);
+    const card = message?.card;
+    if (!message || !card || (!card.answered && !card.dismissed) || card.answered === "unavailable") return;
+    const named = card.answeredBy?.kind === "session" ? card.answeredBy : { kind: "session" as const, name: person.name || "Signed-in user" };
+    if (named.via === "ai-client") return;
+    store.patchMessage(threadId, message.id, { card: { ...card, answeredBy: { ...named, via: "ai-client" } } });
   },
   record: (person, entry) => appendAdminAction(DATA_DIR, {
     category: "client",
@@ -30776,7 +30878,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         // The owner of an organization group also picks its default responder,
         // and its working folder with folders.roomWorkingFolder (2026-10-09).
         const folder = ownerRule && IDENTITY.kind === "perspicax" && callerCan(auth, "folders.roomWorkingFolder");
-        const field = clientGroupPatchViolation(body, ownerRule ? ["defaultResponder", ...(folder ? ["cwd"] : [])] : []);
+        const field = clientGroupPatchViolation(body, ownerRule ? ["defaultResponder", "mentionAll", ...(folder ? ["cwd"] : [])] : []);
         if (field === "cwd" && ownerRule && IDENTITY.kind === "perspicax") return json(res, 403, { ...permissionRefusal("folders.roomWorkingFolder"), field });
         if (field) return json(res, 403, { error: `forbidden: this session may rename or mark a room, not change "${field}" (needs the admin scope)` });
       }
@@ -30793,9 +30895,15 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         const notYours = cloudThreadRefusal(auth, renamed.threadId);
         if (notYours) return json(res, 403, { error: notYours });
       }
-      const group = updateChannel(m[1], body);
+      let group = updateChannel(m[1], body);
       if (movesSection) recordRoomMove(group.id, fromSection, sectionKey(group.section));
-      return json(res, 200, { group: publicGroupState(group) });
+      // A room marked read by a person reads their @ tag too (server/room-mentions.ts).
+      const reader = groupReaderId(auth);
+      if ((body as { unread?: unknown } | null)?.unread === false) {
+        const mentionRead = roomMentionReadPatch(group, reader);
+        if ("unreadFor" in mentionRead) group = store.patchGroup(group.id, mentionRead) ?? group;
+      }
+      return json(res, 200, { group: peopleDmForViewer(publicGroupState(group), reader) });
     }
     m = path.match(/^\/api\/groups\/([\w-]+)\/read$/);
     if (m && method === "POST") {
@@ -30810,7 +30918,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         ? (readBodyValue as { threadId?: unknown }).threadId
         : undefined;
       const readThreadId = existing?.peopleDm && readThread !== undefined ? peopleDmThreadOf(existing, readThread) : undefined;
-      const group = store.patchGroup(m[1], existing?.peopleDm && reader ? peopleDmThreadUnreadPatch(existing, reader, false, readThreadId) : { unread: false });
+      const group = store.patchGroup(m[1], existing?.peopleDm && reader ? peopleDmThreadUnreadPatch(existing, reader, false, readThreadId) : { unread: false, ...roomMentionReadPatch(existing, reader) });
       if (!group) return json(res, 404, { error: "no such room" });
       // somebody saw it: no push for this conversation (server/push/decide.ts)
       pushHub.noteRead(reader ?? actorPrincipalId(auth), readThreadId ?? group.threadId);
@@ -30955,9 +31063,11 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
               sender: messageSender(auth),
               trigger,
             });
+            notifyRoomMentions(current.id, threadId, text, auth);
             return { ok: true as const, queued: true as const, queueId: queued.id, threadId };
           }
           const message = startGroupTurn(current.id, text, replyTo, sendId, channelMode, undefined, { via, sender: messageSender(auth), trigger, commandRoute: engineCommandRoute });
+          notifyRoomMentions(current.id, threadId, text, auth);
           return { ok: true as const, threadId, message };
         },
       );

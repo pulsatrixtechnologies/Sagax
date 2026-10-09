@@ -772,6 +772,32 @@ describe("the organization's allowed model providers", () => {
     expect(fixture.dispatch).not.toHaveBeenCalled();
   });
 
+  it("lists only the allowed providers under Cloud and Local, in the composer and in the bot's default picker", () => {
+    const local = (instanceId: string, displayName: string): InstanceInfo => ({
+      instanceId, driverKind: "openaiCompat", displayName, access: "custom",
+      snapshot: { state: "available", authenticated: true },
+      models: { default: `${instanceId}::qwen3`, options: [{ id: `${instanceId}::qwen3`, label: "qwen3", custom: true, local: true }] },
+      capabilities: { withholdsHostTools: true },
+    });
+    fixture.org = orgFixture;
+    fixture.myEngines = [mine("claude", "claudeAgent", false), mine("codex", "codex", false), mine("grok", "grokAgent", false)];
+    fixture.config = { allowedEngines: ["claude", "ollama"] };
+    fixture.instances = [signedIn(), codex, grok, local("ollama", "Ollama"), local("lmstudio", "LM Studio")];
+    for (const contained of [false, true]) {
+      fixture.values = [];
+      const column = rail(open(bot("claude", "claude-opus-5-5"), { contained }))!.props as Parameters<typeof ModelEngineRail>[0];
+      expect(column.instances.map((instance) => instance.instanceId)).toEqual(["claude", "ollama"]);
+      const html = renderToStaticMarkup(createElement(ModelEngineRail, { ...column, wide: true }));
+      const cloud = html.indexOf(">Cloud<");
+      const localGroup = html.indexOf(">Local<");
+      expect(cloud).toBeGreaterThanOrEqual(0);
+      expect(localGroup).toBeGreaterThan(cloud);
+      expect(html.slice(cloud, localGroup)).toContain('data-rail-provider="claude"');
+      expect(html.slice(localGroup)).toContain('data-rail-provider="ollama"');
+      for (const hidden of ["codex", "openai", "grok", "lmstudio"]) expect(html).not.toContain(`data-rail-provider="${hidden}"`);
+    }
+  });
+
   it("drops a provider that is not allowed and not connected, even the bot's current one", () => {
     fixture.org = orgFixture;
     fixture.myEngines = [mine("claude", "claudeAgent", false), mine("codex", "codex", false)];

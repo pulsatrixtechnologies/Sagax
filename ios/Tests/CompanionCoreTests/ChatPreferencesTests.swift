@@ -298,4 +298,27 @@ final class ChatPreferencesTests: XCTestCase {
         quiet.text = "[digest] · no tool calls · reply: Hi there."
         XCTAssertEqual(transcriptRows([text("a"), quiet], detail: .full).map(\.id), ["a"])
     }
+
+    func testASettledPermissionLeavesTheTranscriptAndAnOpenOneStays() throws {
+        func permission(_ id: String, extra: String = "") throws -> Message {
+            let json = """
+            {"id":"\(id)","role":"bot","kind":"options","at":2,"card":{"title":"Approval needed","subtitle":"ls","options":["Allow","Deny"],"requestId":"r-\(id)","tool":"Bash"\(extra)}}
+            """
+            return try JSONDecoder().decode(Message.self, from: Data(json.utf8))
+        }
+        let open = try permission("open")
+        let allowed = try permission("allowed", extra: ",\"answered\":\"allow\"")
+        let denied = try permission("denied", extra: ",\"answered\":\"deny\"")
+        let expired = try permission("expired", extra: ",\"expired\":true")
+        let question = try JSONDecoder().decode(Message.self, from: Data("""
+        {"id":"question","role":"bot","kind":"options","at":3,"card":{"title":"Which one?","subtitle":"Pick","options":["A"],"requestId":"q"}}
+        """.utf8))
+        XCTAssertFalse(settledPermissionLeavesChat(open))
+        XCTAssertTrue(settledPermissionLeavesChat(allowed))
+        XCTAssertFalse(settledPermissionLeavesChat(question))
+        XCTAssertEqual(
+            transcriptRows([text("hi"), open, allowed, denied, expired, question], detail: .full).map(\.id),
+            ["hi", "open", "question"]
+        )
+    }
 }

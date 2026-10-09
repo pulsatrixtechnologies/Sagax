@@ -10,7 +10,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { DATA_DIR } from "./config.ts";
 import { Store, type BotRecord } from "./store.ts";
 import { RoutineManager } from "./routines.ts";
-import { BotPlugins } from "./bot-plugins.ts";
+import { botPluginsWithMarketplaces } from "./testing/plugin-stores.ts";
 import { BOT_FIELD_POLICY, BotZipError, importBotZip, inspectBotZip, planBotZip, previewBotZip, writeBotZip, type BotZipHost } from "./bot-zip.ts";
 import { installSkill, listSkills, setSkillEnabled } from "./skills.ts";
 import { appendMemoryArchive, readMemoryFile, readMemoryLog, readMemoryTopic, workspaceDir, writeMemoryFile, writeMemoryLog, writeMemoryTopic } from "./workspace.ts";
@@ -55,7 +55,7 @@ function fixture(options: { organization?: boolean } = {}) {
     createTask: (id, title) => store.createTask(id, title),
     startTurn: async () => { throw new Error("Import must never run a bot"); },
   });
-  const plugins = new BotPlugins({ dataDir: DATA_DIR, gitEnvironment: () => ({}), policy: () => undefined });
+  const plugins = botPluginsWithMarketplaces({ dataDir: DATA_DIR, gitEnvironment: () => ({}), policy: () => undefined });
   const webhooks = fakeWebhooks();
   const people = new Map([["pr_00000000-0000-4000-8000-000000000001", "ana@example.com"], ["pr_00000000-0000-4000-8000-000000000002", "bob@example.com"]]);
   const host: BotZipHost = {

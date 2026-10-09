@@ -146,6 +146,7 @@ describe("paste", () => {
 
   it("pads short rows and escapes pipes", () => {
     expect(tableFromTsv("a\tb\tc\nx|y\t1")).toBe("| a | b | c |\n| --- | --- | --- |\n| x\\|y | 1 |  |");
+    expect(tableFromTsv("a\tb\nC:\\dir\\\tx\\|y")).toBe("| a | b |\n| --- | --- |\n| C:\\\\dir\\\\ | x\\\\\\|y |");
   });
 
   it("ignores text that is not a table", () => {

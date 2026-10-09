@@ -13,6 +13,8 @@
 //                            docs/, skills/ and every other file of the desk
 //   skills.json              each skill's provenance, hash and enabled state
 //   plugins/state.json       marketplaces and installed plugins, with flags
+//                            (the per-bot format: the marketplaces of the one
+//                            list this bot uses or keeps a token for)
 //   plugins/marketplaces/<name>/marketplace.json
 //   plugins/files/<marketplace>/<plugin>/**   the installed (sanitized) copies
 //   routines.json, webhooks.json   owned by the bot, secrets never included
@@ -395,7 +397,8 @@ export function planBotZip(host: BotZipHost, botId: string, options: BotZipExpor
   const marketplaces: BotZipManifest["marketplaces"] = [];
   for (const [name, market] of Object.entries(pluginState.marketplaces)) {
     marketplaces.push({ name, source: market.source, ...(market.ref ? { ref: market.ref } : {}), needsToken: tokenSources.has(market.source) });
-    const manifest = join(pluginRoot, "marketplaces", name, ".claude-plugin", "marketplace.json");
+    // the marketplace's catalogue in the installation's one list
+    const manifest = join(host.plugins.marketplaceFolder(name), ".claude-plugin", "marketplace.json");
     try {
       const size = statSync(manifest).size;
       if (size <= 1_048_576) addFile(`plugins/marketplaces/${name}/marketplace.json`, manifest, size);
@@ -656,7 +659,7 @@ export async function previewBotZip(host: BotZipHost, inspected: InspectedBotZip
   }
   if (includes.plugins) created.push(line("plugins", `${includes.plugins} plugin(s)`, "plugins", { count: includes.plugins }));
   for (const market of manifest.marketplaces) {
-    if (market.needsToken) needsAction.push(line("marketplace", `${market.name} (${market.source}) was read with a token: add one in Library > Plugins, then Update.`, "marketplaceToken", { name: market.name, source: market.source }));
+    if (market.needsToken) needsAction.push(line("marketplace", `${market.name} (${market.source}) was read with a token: add one in Connect apps for this bot (Manage > Marketplaces), then Update.`, "marketplaceToken", { name: market.name, source: market.source }));
   }
   if (manifest.marketplaces.length) created.push(line("marketplaces", manifest.marketplaces.map((market) => market.name).join(", "), "marketplaces", { names: manifest.marketplaces.map((market) => market.name).join(", ") }));
   const selection = settings.modelSelection as ModelSelection | undefined;

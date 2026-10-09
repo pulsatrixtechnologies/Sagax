@@ -1,14 +1,12 @@
-// Connect apps > Manage > Your connections (organization server) and the
-// bot panel's Library > Plugins: what each state draws, in English and in
-// French.
+// Connect apps > Manage > Your connections (organization server): what each
+// state draws, in English and in French. A bot's plugins: see
+// src/components/plugins/BotPluginCard.test.ts.
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { setLocale } from "@/lib/i18n";
-import { parseArgsLine, parseEnvLines, suggestServerName, type BotPluginsView, type MyConnections } from "@/lib/my-connections";
-import { BotPluginsCard } from "../bot-settings/BotPluginsCard";
-import { LIBRARY_VIEWS } from "../bot-settings/LibraryTab";
+import { parseArgsLine, parseEnvLines, suggestServerName, type MyConnections } from "@/lib/my-connections";
 import { SECTIONS, organizationHidesSection } from "../SettingsModal";
 import { MyConnectionsSettings } from "./MyConnectionsSettings";
 
@@ -91,43 +89,3 @@ describe("Mes connexions", () => {
   });
 });
 
-describe("Library > Plugins", () => {
-  const view: BotPluginsView = {
-    marketplaces: [{ name: "acme-tools", source: "acme/tools", addedAt: 1, updatedAt: 1, plugins: [{ name: "reviewer", description: "Reviews code", installed: true, external: false }, { name: "linter", installed: false, external: false }] }],
-    plugins: [{ key: "reviewer@acme-tools", name: "reviewer", marketplace: "acme-tools", enabled: true, removed: ["hooks"], declaredMcpServers: ["db"] }],
-    policy: { mode: "any" },
-    engine: { loadsPlugins: true },
-    canChange: true,
-  };
-
-  it("has Files, Skills and Plugins", () => {
-    expect(LIBRARY_VIEWS).toEqual(["files", "skills", "plugins"]);
-  });
-
-  it("lets the owner add a marketplace and install, and says what was left out", () => {
-    const html = renderToStaticMarkup(createElement(BotPluginsCard, { bot: { id: "b1" }, initial: view }));
-    expect(html).toContain('data-plugin="reviewer@acme-tools"');
-    expect(html).toContain("Left out: hooks");
-    expect(html).toContain("Declares MCP servers db");
-    expect(html).toContain("Add a marketplace");
-    expect(html).toContain(">Install<");
-  });
-
-  it("is read-only for a person who only uses the bot, and says Sagax installs plugins for every engine", () => {
-    const html = renderToStaticMarkup(createElement(BotPluginsCard, { bot: { id: "b1" }, initial: { ...view, canChange: false, engine: { loadsPlugins: false }, policy: { mode: "list", allow: ["acme/*"] } } }));
-    expect(html).toContain("Only the bot&#x27;s owner, or someone who manages it");
-    expect(html).toContain("Sagax installs the plugin and its skills and commands are there for every engine.");
-    expect(html).toContain("Your organization allows: acme/*");
-    expect(html).not.toContain("Add a marketplace");
-    expect(html).not.toContain(">Install<");
-  });
-
-  it("says an admin manages the plugins (Perspicax sagax_integrations off), with no change offered", () => {
-    const html = renderToStaticMarkup(createElement(BotPluginsCard, { bot: { id: "b1" }, initial: { ...view, canChange: false, managedByAdmin: true } }));
-    expect(html).toContain("Your administrator manages plugins and MCP servers.");
-    expect(html).not.toContain("Only the bot&#x27;s owner");
-    expect(html).toContain('data-plugin="reviewer@acme-tools"');
-    expect(html).not.toContain("Add a marketplace");
-    expect(html).not.toContain(">Uninstall<");
-  });
-});

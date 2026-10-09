@@ -562,26 +562,18 @@ struct BotMemoryEditor: View {
                             .foregroundStyle(Theme.textPrimary)
                             .textSelection(.enabled)
                     } else {
-                        TextEditor(text: Binding(get: { model.editing?.text ?? "" }, set: { model.edit($0) }))
-                            .font(.system(size: 12.5, design: .monospaced))
-                            .frame(minHeight: 260)
-                            .scrollContentBackground(.hidden)
-                            .overlay(alignment: .topLeading) {
-                                if editing.text.isEmpty {
-                                    Text(editing.path == MemoryRules.index
-                                         ? String(localized: "Nothing remembered yet. The bot writes durable notes here — or add your own.")
-                                         : String(localized: "Write the note here."))
-                                        .font(.system(size: 12.5, design: .monospaced))
-                                        .foregroundStyle(Theme.placeholder)
-                                        .padding(.top, 8)
-                                        .padding(.leading, 5)
-                                        .allowsHitTesting(false)
-                                }
-                            }
-                            .accessibilityLabel(Text(editing.path == MemoryRules.index
-                                                     ? String(localized: "Bot memory")
-                                                     : String(localized: "Memory file \(editing.path)")))
-                            .accessibilityIdentifier("memory-editor")
+                        // the markdown editor (desktop MemoryEditorDialog, #258)
+                        MarkdownEditor(
+                            text: Binding(get: { model.editing?.text ?? "" }, set: { model.edit($0) }),
+                            placeholder: editing.path == MemoryRules.index
+                                ? String(localized: "Nothing remembered yet. The bot writes durable notes here — or add your own.")
+                                : String(localized: "Write the note here."),
+                            minHeight: 260, monospaced: true,
+                            accessibilityLabel: editing.path == MemoryRules.index
+                                ? String(localized: "Bot memory")
+                                : String(localized: "Memory file \(editing.path)"),
+                            identifier: "memory-editor"
+                        )
                     }
                 } footer: {
                     if editing.readOnly {

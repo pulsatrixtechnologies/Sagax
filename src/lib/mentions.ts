@@ -19,7 +19,11 @@ export function mentionChoicesForQuery<T extends { name: string }>(pool: readonl
  * many bots that tag reaches. Filtering stays on the name alone. */
 export type MentionRowDetail =
   | { kind: "bot"; title: string }
-  | { kind: "everyone"; count: number };
+  | { kind: "everyone"; count: number }
+  /** A person in the room: tagging them notifies them. */
+  | { kind: "person" }
+  /** @all, in a room that lets it notify every person in it. */
+  | { kind: "all"; count: number };
 
 export function mentionRowDescription(detail: MentionRowDetail): string {
   switch (detail.kind) {
@@ -29,6 +33,12 @@ export function mentionRowDescription(detail: MentionRowDetail): string {
       return detail.count === 1
         ? t("composer.mention.everyoneOne")
         : t("composer.mention.everyoneMany", { count: detail.count });
+    case "person":
+      return t("composer.mention.personDetail");
+    case "all":
+      return detail.count === 1
+        ? t("composer.mention.allOne")
+        : t("composer.mention.allMany", { count: detail.count });
     default: {
       const unreachable: never = detail;
       return unreachable;

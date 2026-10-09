@@ -91,9 +91,9 @@ public enum Chat: Identifiable, Hashable, Codable, Sendable {
         case .bot: return true
         // \`tasks == nil\` means an older paired desktop. Hide the affordance
         // instead of sending it a route it does not know yet.
-        // A conversation between two people is one thread, like a
-        // bot-to-bot room (GroupView.tsx treats it as `dm`).
-        case let .room(room): return room.dm != true && room.peopleDm != true && room.tasks != nil
+        // A conversation between two people has threads like a bot (#262);
+        // a bot-to-bot room stays one thread.
+        case let .room(room): return room.dm != true && room.tasks != nil
         }
     }
 

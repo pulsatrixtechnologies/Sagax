@@ -63,4 +63,12 @@ describe("viewer", () => {
     expect(otherAuthorName({ role: "bot" }, member)).toBeNull();
     expect(otherAuthorName(fromZara, null)).toBeNull();
   });
+
+  it("the line this app is still sending is the viewer's own, even for a member", () => {
+    const sending = { id: "optimistic-s1", role: "user" as const };
+    expect(otherAuthorName(sending, member)).toBeNull();
+    expect(otherAuthorName(sending, operator)).toBeNull();
+    // a stored line without a sender is still the operator's for a member
+    expect(otherAuthorName({ id: "m1", role: "user" as const }, member)).toBe("JC");
+  });
 });

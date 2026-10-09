@@ -18,6 +18,8 @@ struct MessageRow: View {
     @State private var showingEdit = false
     /// The text being selected, and the sheet's presentation in one value.
     @State private var selecting: SelectableText?
+    /// "Add reaction" from the message menu (#270).
+    @State private var addingReaction = false
     /// A digest chip's parts, and its sheet's presentation.
     @State private var digest: DigestSummary?
     /// View Source: this bot reply drawn as its markdown source.
@@ -63,20 +65,10 @@ struct MessageRow: View {
                     .foregroundStyle(Theme.textSecondary)
             }
 
-            if let reactions = message.reactions, !reactions.isEmpty {
-                HStack(spacing: 6) {
-                    ForEach(reactionGroups(reactions), id: \.emoji) { group in
-                        Button("\(group.emoji) \(group.count)") {
-                            Haptics.selection()
-                            Task { await session.react(to: message, in: chat.threadId, emoji: group.emoji) }
-                        }
-                        .font(.system(size: 13))
-                        .buttonStyle(.bordered)
-                        .buttonBorderShape(.capsule)
-                        .tint(group.mine ? Theme.accent : Theme.textSecondary)
-                    }
-                }
-            }
+            // #270: chips in landing order, who reacted on a long press
+            ReactionChipsRow(message: message, chat: chat)
+            // #270: Seen by (faces in a room, "Seen" with a bot)
+            SeenByRow(message: message, chat: chat)
 
             if versions.count > 1, let index = versions.firstIndex(where: { $0.id == message.id }),
                case let .bot(bot) = chat {
@@ -109,10 +101,21 @@ struct MessageRow: View {
                 editDisabled: session.state.pendingEdits[chat.threadId] != nil,
                 actions: actionSet,
                 selectText: { selecting = SelectableText(text: $0) },
+                addReaction: { addingReaction = true },
                 edit: {
                     editingText = message.text ?? ""
                     showingEdit = true
                 }
+            )
+        }
+        .sheet(isPresented: $addingReaction) {
+            AddReactionSheet(
+                mine: Set(ReactionRules.chips(message.reactions ?? [], selfIds: ReactionChipsRow.selfIds(session, threadId: chat.threadId)).filter(\.mine).map(\.emoji)),
+                pick: { emoji in
+                    addingReaction = false
+                    Task { await session.react(to: message, in: chat.threadId, emoji: emoji) }
+                },
+                close: { addingReaction = false }
             )
         }
         .alert("Edit and retry", isPresented: $showingEdit) {
@@ -313,13 +316,5 @@ struct MessageRow: View {
     private func routineRunOpener(_ card: RoutineRunCard) -> (() -> Void)? {
         guard let openThread, let ref = session.state.routineExecutionRef(for: card) else { return nil }
         return { openThread(ref) }
-    }
-
-    private func reactionGroups(_ reactions: [Reaction]) -> [(emoji: String, count: Int, mine: Bool)] {
-        // One entry per emoji with its actors (current servers), or one per
-        // person (older ones): both sum to the chip's count.
-        Dictionary(grouping: reactions, by: \.emoji)
-            .map { (emoji: $0.key, count: $0.value.reduce(0) { $0 + $1.count }, mine: $0.value.contains { $0.includes(nil) }) }
-            .sorted { $0.emoji < $1.emoji }
     }
 }

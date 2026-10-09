@@ -445,8 +445,10 @@ export type CardAnswerer = (
   | { kind: "loopback" }
   | { kind: "worker" }
 ) & {
-  /** "call": decided by voice on a Live call, not tapped. */
-  via?: "call";
+  /** "call": decided by voice on a Live call, not tapped. "ai-client": answered
+   * from an AI client attached to Perspicax (Claude Code, claude.ai), through
+   * the member API, by the person named (lot C.3). */
+  via?: "call" | "ai-client";
 };
 
 export interface WireAccessCard {
@@ -889,9 +891,14 @@ export interface WireGroup {
   peopleDm?: boolean;
   /** A conversation between two people: which of the two have not read it
    * yet (principal ids). Each person's own `unread` is drawn from it, so
-   * the sender reading it never clears it for the recipient. Server-side;
-   * a client never gets it (server/people-dms.ts peopleDmForViewer). */
+   * the sender reading it never clears it for the recipient. A room: the
+   * people tagged with @ who have not read it yet (server/room-mentions.ts).
+   * Server-side; a client never gets it (server/people-dms.ts
+   * peopleDmForViewer). */
   unreadFor?: string[];
+  /** A room: @all tags every person in it (a notification each). Absent:
+   * off, @all tags nobody. Its owner's setting. */
+  mentionAll?: boolean;
   /** The group's shared memory (server/group-memory.ts); absent = on. */
   memoryEnabled?: boolean;
   /** transient: the member currently running a turn. */

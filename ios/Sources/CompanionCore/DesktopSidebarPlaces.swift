@@ -31,7 +31,8 @@ public enum DesktopSidebarPlaces {
         guard connected else { return [] }
         var out: [DesktopSidebarPlace] = []
         if connectedAppsOn, gate.allows(.connectedApps) { out.append(.connectedApps) }
-        if templatesOn, gate.allows(.templates) { out.append(.templates) }
+        // Browse Bots took the Templates place (#253, #259), same switch
+        if templatesOn, gate.allows(.browseBots) { out.append(.templates) }
         return out
     }
 

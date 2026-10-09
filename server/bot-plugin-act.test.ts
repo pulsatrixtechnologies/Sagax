@@ -10,7 +10,8 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import type { TurnFacts } from "../shared/bot-act.ts";
 import { createBotActService } from "./bot-act.ts";
-import { BotPlugins, BotPluginError, type GitRunner } from "./bot-plugins.ts";
+import { BotPluginError, type GitRunner } from "./bot-plugins.ts";
+import { botPluginsWithMarketplaces } from "./testing/plugin-stores.ts";
 import { json, readBody } from "./harness/http.ts";
 import type { RequestAuth } from "./request-auth.ts";
 import { createBotPluginRoutes } from "./routes/bot-plugins.ts";
@@ -64,7 +65,7 @@ function facts(person: string): TurnFacts {
 }
 
 async function boot() {
-  const plugins = new BotPlugins({
+  const plugins = botPluginsWithMarketplaces({
     dataDir: temp(), git: fakeGit({ "https://github.com/acme/tools.git": marketplaceRepo() }), gitEnvironment: () => ({}), policy: () => undefined,
   });
   await plugins.addMarketplace("scout", { source: "acme/tools" }, "pr_owner");

@@ -616,9 +616,15 @@ Answers `{ok, latencyMs, reason, label}`, for example
   person can run on it).
 - `mcp`: a remote MCP server (the organization's, or the person's with
   `principalId`) answers over HTTP with a status below 500. No credential is
-  sent. A server started by command (stdio) answers `501 not_implemented`
-  with its `reason`: it runs in its person's environment and cannot be
-  tested from here yet.
+  sent. A server started by command (stdio) is started with its configured
+  arguments and variables (the organization's on this host, a person's in
+  their server environment), must answer the MCP `initialize` handshake and
+  `tools/list` within 8 s, and is stopped after. Success:
+  `{"ok": true, "reason": null, "label": "The server answered with 12 tools."}`.
+  A failure names its cause in `reason`: `spawn_failed`, `exited` (the label
+  carries the exit code), `handshake_refused`, `tools_refused`, `protocol`,
+  `timeout`, `environment_refused` or `no_environment`. No variable value,
+  argument or stderr line is ever in the answer or the log.
 - `marketplace`: its address (or `https://github.com/<owner/repo>`) answers.
 - `composio`: Composio answers with the connected apps.
 
@@ -733,7 +739,6 @@ engine) is enforced everywhere since 2026-10-09:
 
 | Route | Why |
 |---|---|
-| `POST connections/test` for a stdio MCP server | runs in its person's environment: `501 not_implemented` |
 | `people[].engines[].ok` in `GET connections` | no background check: null, test on demand |
 | `presence.idle` | Sagax knows online, away and offline only: always 0 |
 | `approvals/history` `decision: "expired"` | Sagax records no expiry decision |

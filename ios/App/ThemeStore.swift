@@ -244,6 +244,7 @@ struct ThemeRoot: ViewModifier {
             && DesktopTheme.of(palette.id).face == .geist && DesktopFonts.available
         return content
             .environment(\.themePalette, palette)
+            .environment(\.mascotShadow, palette.mascotShadow)
             .modifier(ThemeTint(palette: palette))
             .background(palette.desktop.color.ignoresSafeArea())
             .overlay(alignment: .top) { if palette.bevelled { RetroDesktopStrip() } }
@@ -291,6 +292,7 @@ struct ThemeOverlayRoot: ViewModifier {
         let palette = store.palette(deviceDark: scheme == .dark)
         return content
             .environment(\.themePalette, palette)
+            .environment(\.mascotShadow, palette.mascotShadow)
             .modifier(ThemeTint(palette: palette))
             .preferredColorScheme(store.pinnedScheme)
     }

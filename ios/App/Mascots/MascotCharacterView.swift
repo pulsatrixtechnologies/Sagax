@@ -15,11 +15,13 @@ struct MascotCharacterView: View {
     var size: CGFloat = 44
     var state: MausState = .idle
     var animated = false
-    /// Wing moves and beats for the owl (profile preview).
+    /// Wing moves and beats for the owl, the Shapes moves for a shape (profile preview).
     var owlHandle: OwlMascotHandle?
 
     var body: some View {
-        character.onAppear { MascotSubstitution.report(look, owlSkin: skin) }
+        character
+            .modifier(MascotDropShadow())
+            .onAppear { MascotSubstitution.report(look, owlSkin: skin) }
     }
 
     @ViewBuilder private var character: some View {
@@ -27,7 +29,7 @@ struct MascotCharacterView: View {
         case .owl:
             OwlMascotView(color: color, skin: skin, size: size, state: state.owlState, animated: animated, handle: owlHandle)
         case .shape:
-            ShapeMascotView(shape: look.shape, skin: look.shapeSkin, color: color, size: size, mood: state.shapeMood, animated: animated)
+            ShapeMascotView(shape: look.shape, skin: look.shapeSkin, color: color, size: size, mood: state.shapeMood, animated: animated, handle: owlHandle)
         case .trombi:
             TrombiMascotView(skin: look.trombiSkin, size: size, pose: state.trombiPose, animated: animated)
         case .bunbu:
@@ -141,5 +143,48 @@ struct MascotStill: View {
             }
         }
         .frame(width: size, height: size)
+    }
+}
+
+// MARK: - Shadow on light skins
+
+private struct MascotShadowKey: EnvironmentKey {
+    static let defaultValue: MascotShadowTone? = nil
+}
+
+extension EnvironmentValues {
+    /// The skin's mascot drop shadow (`--mascot-filter`), nil on a dark skin.
+    /// ThemeRoot sets it from the skin; the widgets draw without it.
+    var mascotShadow: MascotShadowTone? {
+        get { self[MascotShadowKey.self] }
+        set { self[MascotShadowKey.self] = newValue }
+    }
+}
+
+/// The desktop's `--mascot-filter` on every character (#186, #204): on a
+/// light skin, three drop shadows that follow the silhouette (0 0 1px and
+/// 0 1px 2px in the skin's shadow colour, 0 3px 8px in its wide one), so a
+/// white mascot reads on a light surface with no disc behind it. Each layer
+/// shadows what the ones before drew, as a CSS filter list does; a CSS blur
+/// of b pt is a Gaussian of b / 2, SwiftUI's shadow radius.
+struct MascotDropShadow: ViewModifier {
+    @Environment(\.mascotShadow) private var tone
+
+    func body(content: Content) -> some View {
+        if let tone {
+            let layers = MascotShadowTone.layers
+            content
+                .compositingGroup()
+                .shadow(color: Self.color(tone, layers[0].wide), radius: layers[0].blur / 2, x: 0, y: layers[0].y)
+                .shadow(color: Self.color(tone, layers[1].wide), radius: layers[1].blur / 2, x: 0, y: layers[1].y)
+                .shadow(color: Self.color(tone, layers[2].wide), radius: layers[2].blur / 2, x: 0, y: layers[2].y)
+        } else {
+            content
+        }
+    }
+
+    private static func color(_ tone: MascotShadowTone, _ wide: Bool) -> Color {
+        let c = wide ? tone.wide : tone.color
+        return Color(.sRGB, red: c.red, green: c.green, blue: c.blue, opacity: c.alpha)
     }
 }

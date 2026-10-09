@@ -1008,6 +1008,10 @@ final class Session: ObservableObject {
                     if case let .orgApprovals(approvals) = frame.frame {
                         OrgApprovalsCenter.shared.apply(approvals)
                     }
+                    // Seen by (#270): a participant's read position moved
+                    if case let .threadRead(read) = frame.frame {
+                        ReadReceiptsCenter.shared.apply(read, session: self)
+                    }
                     // the person's sidebar, saved on any of their devices
                     if case let .preferences(record) = frame.frame {
                         SidebarPrefsModel.shared.receive(self, record)
@@ -1187,7 +1191,9 @@ final class Session: ObservableObject {
         await perform {
             switch chat {
             case let .bot(bot): receipt = try await $0.send(text: text, toBot: bot.id, threadId: bot.threadId)
-            case let .room(room): receipt = try await $0.send(text: text, toRoom: room.id)
+            case let .room(room):
+                // a person's conversation sends to the thread open here (#262)
+                receipt = try await $0.send(text: text, toRoom: room.id, threadId: room.peopleDm == true ? room.threadId : nil)
             }
         }
         // The receipt describes a queue on the computer this request went
@@ -1980,7 +1986,13 @@ final class Session: ObservableObject {
         await perform(quietly: true) {
             switch chat {
             case let .bot(bot): try await $0.markRead(botId: bot.id, threadId: bot.threadId)
-            case let .room(room): try await $0.markRead(roomId: room.id)
+            case let .room(room):
+                // a person's conversation reads its open thread only (#262)
+                if let threadId = PersonThreads.readTarget(room) {
+                    try await $0.markRead(roomId: room.id, threadId: threadId)
+                } else {
+                    try await $0.markRead(roomId: room.id)
+                }
             }
         }
     }
@@ -2221,12 +2233,15 @@ final class Session: ObservableObject {
         }
     }
 
-    func updateModel(_ selection: ModelSelection, for bot: Bot) async -> Bot? {
+    /// `updateBotDefault`: the picker's one mode (#261) sends true (the
+    /// thread and the bot's model), "Use <bot>'s model" false; nil keeps the
+    /// older rule (only an Auto change reaches the bot).
+    func updateModel(_ selection: ModelSelection, for bot: Bot, updateBotDefault: Bool? = nil) async -> Bot? {
         guard let client else { return nil }
         do {
             // Auto, on or off, is the bot's own choice (#153): saved as its default too
             let autoChange = selection.auto == true || bot.modelSelection.auto == true
-            let updated = try await client.updateModel(botId: bot.id, selection: selection, threadId: bot.threadId, updateBotDefault: autoChange)
+            let updated = try await client.updateModel(botId: bot.id, selection: selection, threadId: bot.threadId, updateBotDefault: updateBotDefault ?? autoChange)
             guard !Task.isCancelled else { return nil }
             state.apply(.bot(updated))
             return updated
