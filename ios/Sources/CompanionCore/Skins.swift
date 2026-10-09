@@ -663,3 +663,41 @@ public enum SharedThemeKeys {
         defaults.set(selection.fontChoice().rawValue, forKey: Self.font)
     }
 }
+
+// MARK: - Mascot shadow
+
+/// The drop shadow a character wears on a light skin, so a white mascot
+/// reads on a light surface (#186, #204): `--mascot-shadow-color` and
+/// `--mascot-shadow-wide` in src/styles.css, drawn as the desktop's
+/// `--mascot-filter` (three drop shadows following the silhouette). Dark
+/// skins, and the phone's own Black and Dim, take none.
+public struct MascotShadowTone: Equatable, Sendable {
+    /// The tight shadow (0 0 1px, then 0 1px 2px).
+    public var color: SkinColor
+    /// The wide one under it (0 3px 8px).
+    public var wide: SkinColor
+
+    /// The three layers of `--mascot-filter`: offset y, blur (CSS px), and which tone.
+    public static let layers: [(y: Double, blur: Double, wide: Bool)] = [(0, 1, false), (1, 2, false), (3, 8, true)]
+
+    public static func of(_ id: SkinID) -> MascotShadowTone? {
+        func rgba(_ r: UInt32, _ g: UInt32, _ b: UInt32) -> MascotShadowTone {
+            let hex = r << 16 | g << 8 | b
+            return MascotShadowTone(color: SkinColor(hex, alpha: 0.35), wide: SkinColor(hex, alpha: 0.18))
+        }
+        switch id {
+        case .pulsatrixLight: return rgba(20, 24, 40)
+        case .atelier: return rgba(40, 30, 16)
+        case .lagoon: return rgba(12, 36, 34)
+        case .linen: return rgba(20, 24, 36)
+        case .daylight: return rgba(20, 20, 20)
+        case .retro98: return rgba(0, 0, 0)
+        case .black, .dim, .pulsatrix, .midnight, .foundry, .graphite, .dusk: return nil
+        }
+    }
+}
+
+public extension SkinPalette {
+    /// The mascot's drop shadow on this skin; nil on a dark one.
+    var mascotShadow: MascotShadowTone? { MascotShadowTone.of(id) }
+}
