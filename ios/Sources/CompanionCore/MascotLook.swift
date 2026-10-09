@@ -94,6 +94,29 @@ public enum MausColors {
     /// The Clay palette's swatch row (`paletteSwatches("clay")`).
     public static let clay = ["ink", "brown", "tomato", "tangerine", "honey", "jade", "turquoise", "cobalt", "violet", "rose", "ash", "cream"]
 
+    /// The picker's colour rows on the phone: the original twelve, and the
+    /// Clay palette where the desktop offers it (`colorGroupsFor` in
+    /// floating-bots/editor-tabs.ts).
+    public enum PickerRow: String, CaseIterable, Sendable {
+        case classic, clay
+
+        public var swatches: [String] { self == .clay ? MausColors.clay : MausColors.names }
+    }
+
+    /// Clay is offered for Shapes, Shiba, Grump, Ogre and Frog, or to a bot
+    /// that already wears one of its colours (`colorGroupsFor`).
+    public static func offersClay(_ character: MascotCharacter, color: String) -> Bool {
+        switch character {
+        case .shape, .shiba, .grump, .ogre, .frog: return true
+        case .owl, .trombi, .bunbu: return clay.contains(color) && color != "brown"
+        }
+    }
+
+    /// The row the picker opens on: the current colour's (`colorTabFor`).
+    public static func pickerRow(for color: String, character: MascotCharacter) -> PickerRow {
+        offersClay(character, color: color) && clay.contains(color) && !names.contains(color) ? .clay : .classic
+    }
+
     /// `MAUS_INK`: black has no light of its own on a dark surface, so as text
     /// or a tint it reads as a cool slate.
     public static let ink: [String: String] = hex.merging(["black": "#8B93A3"]) { _, new in new }

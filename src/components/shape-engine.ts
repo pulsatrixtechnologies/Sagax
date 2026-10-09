@@ -40,7 +40,7 @@ export const HOVER = { yaw: 16, pitch: 13, turn: 0.85 } as const;
 /** The imaginary head's own turn and tilt, degrees: the resting gaze looks back at the viewer through it. */
 export const HEAD = { yaw: 28, pitch: 29 } as const;
 /** The resting face sits a little below the head's middle (degrees of pitch), so the eyes rest about mid-body. */
-const FACE_DROP = -7;
+export const FACE_DROP = -7;
 
 
 /* --------------------------------------------------------- expressions */

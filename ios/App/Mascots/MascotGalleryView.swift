@@ -27,6 +27,7 @@ struct MascotGalleryView: View {
                     .foregroundStyle(.white)
                 switch page {
                 case "shape": shapes
+                case "shape-moves": ShapeMovesGallery()
                 case "trombi": trombis
                 case "shiba": shibas
                 case "frog": frogs
@@ -215,6 +216,43 @@ struct MascotGalleryView: View {
         }
     }
 }
+/// `-mascotGallery shape-moves`: the sixteen faces live, then the fourteen
+/// moves, each replaying every four seconds (the desktop's Moves menu).
+private struct ShapeMovesGallery: View {
+    @State private var handles = ShapeMove.allCases.map { _ in OwlMascotHandle() }
+    private let timer = Timer.publish(every: 4, on: .main, in: .common).autoconnect()
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            LazyVGrid(columns: Array(repeating: GridItem(.fixed(78), spacing: 6), count: 4), alignment: .leading, spacing: 4) {
+                ForEach(ShapeExpression.allCases, id: \.self) { face in
+                    VStack(spacing: 0) {
+                        ShapeMascotView(shape: .squircle, color: "cobalt", size: 46, expression: face, animated: true)
+                            .frame(width: 60, height: 52)
+                        Text(verbatim: face.rawValue).font(.system(size: 9)).foregroundStyle(.white.opacity(0.6))
+                    }
+                }
+            }
+            LazyVGrid(columns: Array(repeating: GridItem(.fixed(78), spacing: 6), count: 4), alignment: .leading, spacing: 4) {
+                ForEach(Array(ShapeMove.allCases.enumerated()), id: \.offset) { index, move in
+                    VStack(spacing: 0) {
+                        ShapeMascotView(shape: MascotShape.allCases[index % MascotShape.allCases.count], color: ["tomato", "jade", "violet", "honey"][index % 4],
+                                        size: 46, animated: true, handle: handles[index])
+                            .frame(width: 70, height: 62)
+                        Text(verbatim: move.rawValue).font(.system(size: 9)).foregroundStyle(.white.opacity(0.6))
+                    }
+                }
+            }
+        }
+        .onAppear { play() }
+        .onReceive(timer) { _ in play() }
+    }
+
+    private func play() {
+        for (index, move) in ShapeMove.allCases.enumerated() { handles[index].shape(move) }
+    }
+}
+
 /// The app's root, or the gallery when launched with `-mascotGallery`.
 struct MascotGalleryGate<Content: View>: View {
     @Environment(\.themePalette) var themePalette

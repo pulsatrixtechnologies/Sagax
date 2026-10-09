@@ -284,10 +284,12 @@ struct BotPanelNoticesView: View {
 // MARK: - Moves
 
 /// The character's moves (MascotLookEditor.tsx Moves), as menu items for a
-/// long press on the mascot.
+/// long press on the mascot: the owl's wing moves, or the fourteen Shapes
+/// moves (shape-moves.ts, in the editor's order and with its names).
 struct CharacterMovesMenu: View {
     let look: CompleteMascotLook
     let onMove: (OwlWingMove) -> Void
+    var onShapeMove: ((ShapeMove) -> Void)?
 
     var body: some View {
         if look.character == .owl {
@@ -297,6 +299,33 @@ struct CharacterMovesMenu: View {
                         .accessibilityIdentifier("character-move.\(move.rawValue)")
                 }
             }
+        } else if look.character == .shape, let onShapeMove {
+            Section(String(localized: "Moves")) {
+                ForEach(ShapeMove.allCases, id: \.self) { move in
+                    Button(Self.name(move)) { onShapeMove(move) }
+                        .accessibilityIdentifier("character-move.\(move.rawValue)")
+                }
+            }
+        }
+    }
+
+    /// `SHAPE_MOVE_LABEL` (floating-bots/moves.ts).
+    static func name(_ move: ShapeMove) -> String {
+        switch move {
+        case .thinking: String(localized: "Thinking")
+        case .wink: String(localized: "Wink")
+        case .wide: String(localized: "Wide eyes")
+        case .alert: String(localized: "Alert")
+        case .notify: String(localized: "Notification")
+        case .exclaim: String(localized: "Exclamation")
+        case .sleep: String(localized: "Sleep")
+        case .egg: String(localized: "Egg")
+        case .hexagon: String(localized: "Hexagon")
+        case .play: String(localized: "Play")
+        case .orbit: String(localized: "Orbit")
+        case .swirl: String(localized: "Swirl")
+        case .burst: String(localized: "Burst")
+        case .comet: String(localized: "Comet")
         }
     }
 

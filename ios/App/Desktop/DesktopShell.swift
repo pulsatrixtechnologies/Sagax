@@ -87,6 +87,8 @@ final class DesktopShellModel: ObservableObject {
     @Published var avatarEditorOpen = false
     /// A move the editor asks the panel's owl to play.
     @Published var avatarMove: OwlWingMove?
+    /// A Shapes move the editor asks the panel's shape to play.
+    @Published var avatarShapeMove: ShapeMove?
     /// Bumped by the panel's Inspector button; the chat column opens it.
     @Published var inspectorRequest = 0
     /// The bot panel's width, 320 to 720 (`omb-settings-panel-width`).
