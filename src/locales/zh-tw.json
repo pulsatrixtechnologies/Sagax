@@ -1962,7 +1962,6 @@
   "sidebar.archived.deleteAria": "刪除 {name}",
   "sidebar.archived.deleteAll": "全部刪除",
   "sidebar.archived.deleteAllTitle": "要刪除所有已封存的機器人嗎？",
-  "sidebar.teamLibrary": "範本",
   "chat.peer.asked": "透過 ask_bot 提問",
   "chat.peer.delegated": "已委派任務",
   "chat.peer.openedThread": "已開啟此對話",

@@ -2010,10 +2010,13 @@ its structural `src/styles/retro98.css`) and Meadow. Each skin is one mode
 Team map and Automations open from the account row at the foot of the
 sidebar (`SidebarProfileMenu`), in that order, with a hairline under the
 pair. Archived bots, when there are any, sit above the pair. Connected
-apps (when its experimental flag is on) and Templates stay rows above that
-row (`SidebarPlaces`). Templates opens Browse Bots on its Templates section:
-the old Templates library and its Settings switch are gone, and every way
-into templates goes through `src/lib/templates-entry.ts`. Your phone and Help Center are not in the menu.
+apps and Browse Bots (each when its experimental flag is on; Browse Bots is
+off by default and stored under the server's `features.templates` key) stay
+rows above that row (`SidebarPlaces`). Browse Bots opens the catalogue on its
+home view. The old Templates library is gone; New bot's "Browse templates",
+Connect apps' "Browse Bots" row and install links open the catalogue on its
+Templates section through `src/lib/templates-entry.ts`. Browse Bots is not in
+the composer To: menu, the mascot menu or the sidebar section menu. Your phone and Help Center are not in the menu.
 The phone stays in Settings and on the collapsed rail. Docs stay on About.
 The row is the avatar and the name, and under the name a quiet line with the
 routines icon (`CalendarClock`, as in the bot panel's Routines section) and

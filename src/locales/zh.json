@@ -1465,7 +1465,6 @@
   "sidebar.archived.deleteAria": "删除 {name}",
   "sidebar.archived.deleteAll": "全部删除",
   "sidebar.archived.deleteAllTitle": "要删除所有已封存的机器人吗？",
-  "sidebar.teamLibrary": "范本",
   "inspector.views": "查看器查看模式",
   "inspector.run.title": "运行记录",
   "inspector.run.hint": "这段对话的已记录活动。指令可能经过缩短；“事件”与“原始”包含所记录的技术细节。",

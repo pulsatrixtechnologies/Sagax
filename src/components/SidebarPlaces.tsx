@@ -1,6 +1,5 @@
 // Rows at the foot of the sidebar, above the account row. Connected apps
-// (when its experimental flag is on) and Templates (Browse Bots on its
-// Templates section) land here. Team map
+// and Browse Bots (each when its experimental flag is on) land here. Team map
 // and Automations are in the account menu (SidebarProfileMenu). A failed
 // automation dots that row while the menu is closed.
 //
