@@ -92,6 +92,13 @@ extension ChatView {
                 } label: {
                     Label(String(localized: "New thread"), systemImage: "plus.square.on.square")
                 }
+            } else if case let .room(room) = current, room.peopleDm == true {
+                // a person's conversation starts threads like a bot (#262)
+                Button {
+                    Task { _ = await session.createTask(for: room, title: nil) }
+                } label: {
+                    Label(String(localized: "New thread"), systemImage: "plus.square.on.square")
+                }
             }
         }
         if case let .room(room) = current, room.peopleDm == true {

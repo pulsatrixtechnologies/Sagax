@@ -1187,7 +1187,9 @@ final class Session: ObservableObject {
         await perform {
             switch chat {
             case let .bot(bot): receipt = try await $0.send(text: text, toBot: bot.id, threadId: bot.threadId)
-            case let .room(room): receipt = try await $0.send(text: text, toRoom: room.id)
+            case let .room(room):
+                // a person's conversation sends to the thread open here (#262)
+                receipt = try await $0.send(text: text, toRoom: room.id, threadId: room.peopleDm == true ? room.threadId : nil)
             }
         }
         // The receipt describes a queue on the computer this request went
@@ -1980,7 +1982,13 @@ final class Session: ObservableObject {
         await perform(quietly: true) {
             switch chat {
             case let .bot(bot): try await $0.markRead(botId: bot.id, threadId: bot.threadId)
-            case let .room(room): try await $0.markRead(roomId: room.id)
+            case let .room(room):
+                // a person's conversation reads its open thread only (#262)
+                if let threadId = PersonThreads.readTarget(room) {
+                    try await $0.markRead(roomId: room.id, threadId: threadId)
+                } else {
+                    try await $0.markRead(roomId: room.id)
+                }
             }
         }
     }

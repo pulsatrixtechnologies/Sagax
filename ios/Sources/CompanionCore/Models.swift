@@ -1925,8 +1925,11 @@ public struct NotificationTarget: Equatable, Sendable {
         self.threadId = threadId
     }
 
+    /// A message from a person, or a tag in a room, has no bot: the
+    /// conversation's id names the owner then (#262, #274).
     public init?(payload: [String: String]) {
-        self.init(botId: payload["botId"], threadId: payload["threadId"])
+        let botId = payload["botId"].flatMap { $0.isEmpty ? nil : $0 }
+        self.init(botId: botId ?? payload["groupId"], threadId: payload["threadId"])
     }
 
     public func requiresTaskSwitch(activeThreadId: String) -> Bool {

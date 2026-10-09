@@ -97,9 +97,11 @@ final class ThreadActions: ObservableObject {
         // The phone keeps its own rule beside the desktop's: never the last
         // thread, and a room's only while nothing answers there.
         let canDelete = threads.count > 1 && (live.isBot || !live.busy)
+        var personThreads = false
+        if case let .room(room) = live { personThreads = room.peopleDm == true }
         return ThreadMenuPlan(
             task: task, ownerIsBot: live.isBot, folders: folders,
-            generatedTitles: generatedTitles, canDelete: canDelete
+            generatedTitles: generatedTitles, canDelete: canDelete, personThreads: personThreads
         )
     }
 
@@ -160,6 +162,12 @@ final class ThreadActions: ObservableObject {
             return await session.snoozeTask(task, for: bot, snoozedUntil: until)
         case let (.stopSnoozing, .bot(bot)):
             return await session.snoozeTask(task, for: bot, snoozedUntil: nil)
+        case let (.archive(archive), .room(room)):
+            return await session.setPersonThreadArchived(task, in: room, archived: archive)
+        case let (.snooze(until), .room(room)):
+            return await session.snoozePersonThread(task, in: room, until: until)
+        case let (.stopSnoozing, .room(room)):
+            return await session.snoozePersonThread(task, in: room, until: nil)
         default:
             return false
         }

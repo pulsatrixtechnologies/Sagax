@@ -16,11 +16,14 @@ public struct MentionChoice: Hashable, Identifiable, Sendable {
     public var name: String
     /// The bot's colour, for its chip; nil for @everyone.
     public var color: String?
+    /// A person of the room: tagging them notifies them (#274).
+    public var isPerson = false
 
-    public init(id: String, name: String, color: String? = nil) {
+    public init(id: String, name: String, color: String? = nil, isPerson: Bool = false) {
         self.id = id
         self.name = name
         self.color = color
+        self.isPerson = isPerson
     }
 
     public var isEveryone: Bool { id == Self.everyoneId }
@@ -53,7 +56,9 @@ public struct MentionQuery: Hashable, Sendable {
 public enum MentionSuggestions {
     /// The pool the desktop offers: in a room, @everyone (not in a DM) and
     /// its members; in a one-to-one chat, every other visible bot.
-    public static func pool(for chat: Chat, bots: [Bot]) -> [MentionChoice] {
+    /// `people` are the room's other people (their directory names): a
+    /// tag notifies them like a direct message (#274).
+    public static func pool(for chat: Chat, bots: [Bot], people: [MentionChoice] = []) -> [MentionChoice] {
         switch chat {
         case let .bot(current):
             return bots
@@ -62,7 +67,8 @@ public enum MentionSuggestions {
         case let .room(room):
             let members = room.memberIds.compactMap { id in bots.first { $0.id == id } }
                 .map { MentionChoice(id: $0.id, name: $0.name, color: $0.color) }
-            return (room.dm == true ? [] : [MentionChoice(id: MentionChoice.everyoneId, name: "everyone")]) + members
+            let tagged = room.dm == true || room.peopleDm == true ? [] : people.map { MentionChoice(id: $0.id, name: $0.name, isPerson: true) }
+            return (room.dm == true ? [] : [MentionChoice(id: MentionChoice.everyoneId, name: "everyone")]) + members + tagged
         }
     }
 

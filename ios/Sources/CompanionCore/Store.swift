@@ -470,6 +470,8 @@ public struct CompanionState: Sendable {
             if let index = rooms.firstIndex(where: { $0.id == room.id }) {
                 var merged = room
                 let previous = rooms[index]
+                // a person's conversation keeps the thread open here (#262)
+                merged.threadId = PersonThreads.keptThreadId(previous: previous, incoming: room)
                 // Ordinary room frames are metadata-only and preserve the
                 // active transcript. A task switch includes messages and is
                 // authoritative, just like a bot task switch.

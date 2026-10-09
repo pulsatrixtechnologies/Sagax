@@ -16,6 +16,8 @@ public struct NotificationFrame: Codable, Hashable, Sendable {
     public var threadId: String
     public var title: String
     public var body: String
+    /// A person's message or a tag in a room: the conversation (#262, #274).
+    public var groupId: String? = nil
 
     /// A bot blocked on you, as opposed to one reporting in.
     public var isBlocking: Bool { kind == "approval" || kind == "question" }

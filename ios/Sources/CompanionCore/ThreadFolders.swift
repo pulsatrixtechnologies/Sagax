@@ -157,6 +157,7 @@ public struct ThreadMenuPlan: Equatable, Sendable {
         folders: [BotProject],
         generatedTitles: Bool,
         canDelete: Bool,
+        personThreads: Bool = false,
         now: Date = Date()
     ) {
         var items: [ThreadMenuItem] = [.copyLink, .rename]
@@ -165,7 +166,8 @@ public struct ThreadMenuPlan: Equatable, Sendable {
             if !folders.isEmpty { items.append(.moveToFolder) }
         }
         items.append(.pin)
-        if ownerIsBot {
+        // a person's conversation archives and snoozes like a bot (#262)
+        if ownerIsBot || personThreads {
             items.append(.archive)
             items.append(.snooze)
             if task.isSnoozed(now: now) { items.append(.stopSnoozing) }
