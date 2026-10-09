@@ -52,6 +52,16 @@ const principalSchema = z.object({
    * the next successful sign-in or refresh. While set, no session of theirs
    * is served. */
   disabledAt: z.number().optional(),
+  /** 2026-10-08: an organization admin turned this person off in this Sagax
+   * server from the Perspicax console (People, Disable). Independent of
+   * `disabledAt` (Perspicax's word): a sign-in does not clear it, only the
+   * console's Enable does. While set, no session of theirs is served and
+   * their routines do not run. */
+  consoleDisabled: z.object({
+    at: z.number(),
+    by: z.string().max(256),
+    reason: z.string().max(500).optional(),
+  }).optional().catch(undefined),
   /** Slice 8: an interim person (from before Perspicax) an organization
    * admin attached to a Perspicax person. Kept for history labels; never
    * listed, chosen or signed in again. */
@@ -439,6 +449,17 @@ export class PrincipalRegistry {
     delete found.disabledAt;
     this.persist();
     this.disabledChanged(found, false);
+    return { ...found };
+  }
+
+  /** 2026-10-08: the console's Disable (a value) or Enable (null). Null
+   * for an unknown id. */
+  setConsoleDisabled(id: string, value: { at: number; by: string; reason?: string } | null): Principal | null {
+    const found = this.principals.find((p) => p.id === id);
+    if (!found) return null;
+    if (value) found.consoleDisabled = { at: value.at, by: value.by, ...(value.reason ? { reason: value.reason.slice(0, 500) } : {}) };
+    else delete found.consoleDisabled;
+    this.persist();
     return { ...found };
   }
 

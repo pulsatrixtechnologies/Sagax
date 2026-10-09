@@ -786,7 +786,8 @@ import { orgFullAccessAllowed, orgFullAccessGrantRefusal, orgFullAccessHolds, OR
 import { createInterimAttachRoutes, INTERIM_WINDOW_DAYS, interimWindowUntil, windowWithDays } from "./interim-attach-routes.ts";
 import { createLinkedSubjectsRoute, createOrgExportRoute } from "./org-export.ts";
 import { createOrgBotForceRoutes } from "./org-bot-force.ts";
-import { createOrgPersonConnectionRoutes } from "./org-person-connections.ts";
+import { createOrgPersonConnectionRoutes, orgConnectionListing, revokeOrgConnections, type OrgPersonConnectionsDeps } from "./org-person-connections.ts";
+import { peopleRoutes, type EngineVia, type PeopleDeps } from "./org-admin-people.ts";
 import { createOrgImportRoute } from "./org-import-routes.ts";
 import { readSandboxdKey } from "./sandboxd-auth.ts";
 import { sandboxdClient } from "./user-sandbox-client.ts";
@@ -10831,6 +10832,7 @@ async function routineAdmission(run: RoutineRun, _routine: Routine | undefined):
   }
   const name = person.name || person.login || "its person";
   if (person.disabledAt !== undefined) return { ok: false, error: "The person this routine runs as was signed out by Perspicax", suspend: "person_out" };
+  if (person.consoleDisabled) return { ok: false, error: "The person this routine runs as is disabled on this server by an administrator" };
   if (!principalMayRunRoutine(principalId, run)) return { ok: false, error: `${name} can no longer run this bot's routines`, suspend: "no_right" };
   if (!routineConsents) return { ok: false, error: "Perspicax is unreachable; this run is skipped" };
   const prepared = await routineConsents.prepare(principalId);
@@ -21479,7 +21481,7 @@ function authzViewerFromId(viewerId: string | undefined): AuthzViewer | undefine
     principalId: viewerId,
     orgAdmin: person?.local === true || person?.orgRole === "admin",
     teams: IDENTITY.kind === "perspicax" ? person?.teams ?? [] : [],
-    disabled: person?.disabledAt !== undefined && person?.disabledAt !== null,
+    disabled: (person?.disabledAt !== undefined && person?.disabledAt !== null) || Boolean(person?.consoleDisabled),
     ...(personBotsReadOnly(viewerId) ? { botsReadOnly: true } : {}),
   };
 }
@@ -22583,7 +22585,7 @@ ROUTES.push(createOrgBotForceRoutes({
   },
 }));
 // An organization admin lists and revokes one person's own connections.
-ROUTES.push(createOrgPersonConnectionRoutes({
+const orgPersonConnectionDeps: OrgPersonConnectionsDeps = {
   organization: IDENTITY.kind === "perspicax",
   isAdmin: orgAdminCaller,
   person: (id) => {
@@ -22629,7 +22631,8 @@ ROUTES.push(createOrgPersonConnectionRoutes({
     category: "people", action: "connections.revoke", target: { kind: "person", id: principalId },
     after: { removed }, actor: orgAuditActor(auth),
   }),
-}));
+};
+ROUTES.push(createOrgPersonConnectionRoutes(orgPersonConnectionDeps));
 if (ownerIdentity) {
   // A personal computer: its owner's organization avatar, when the signed-in
   // desktop handed it over, at the route an organization server uses.
@@ -22642,7 +22645,7 @@ function presenceViewer(auth: RequestAuth): PresenceViewer {
   const id = auth.kind === "session" ? auth.session.principalId?.trim() : undefined;
   if (IDENTITY.kind !== "perspicax" || auth.kind !== "session" || !id) return { ok: false, code: "session_required" };
   const principal = principals.byId(id);
-  if (!principal?.subject || principal.subject.iss !== IDENTITY.issuer || principal.disabledAt != null || principal.mergedInto) {
+  if (!principal?.subject || principal.subject.iss !== IDENTITY.issuer || principal.disabledAt != null || principal.consoleDisabled || principal.mergedInto) {
     return { ok: false, code: "other_organization" };
   }
   // Before the first directory sync the issuer is the only word there is.
@@ -23541,6 +23544,95 @@ const orgOverviewDeps = {
   backup: () => readBackupStatus(process.env.SAGAX_BACKUP_STATUS_FILE?.trim() || join(DATA_DIR, "backup-status.json")),
 };
 
+/** What a person's own turns run with on each engine (the order of
+ * engine-credentials.ts), as /api/me/engines words it. */
+function personEngineAccess(principalId: string): Array<{ id: string; via: EngineVia; signedIn: boolean; key: boolean }> {
+  const person = principals.byId(principalId);
+  const sub = IDENTITY.kind === "perspicax" && person?.subject?.iss === IDENTITY.issuer ? person.subject.sub : undefined;
+  const held = sub ? perspicaxDirectory?.providerKeys(sub) ?? [] : [];
+  return registry.entries().map((entry) => {
+    const driver = entry.shadow?.driverKind ?? entry.live?.driverKind ?? "";
+    const signedIn = Boolean(engineLogins && isLoginDriver(driver) && engineLogins.signedIn(principalId, driver));
+    const key = providersOfDriver(driver).some((provider) => held.includes(provider));
+    const orgKey = driverKeyBacked(cfg, driver, entry.instanceId);
+    const off = !engineInstalled(entry.instanceId) || person?.disabledAt !== undefined || Boolean(person?.consoleDisabled);
+    const via: EngineVia = off ? "none" : signedIn ? "subscription" : key ? "key" : orgKey ? "org-key" : "none";
+    return { id: entry.instanceId, via, signedIn, key };
+  });
+}
+
+/** The console's People (server/org-admin-people.ts). */
+const orgPeopleDeps: PeopleDeps = {
+  people: () => {
+    if (IDENTITY.kind !== "perspicax" || !perspicaxDirectory) return [];
+    return orgDirectoryEntries(IDENTITY.issuer, perspicaxDirectory.people(), (iss, sub) => principals.bySubject(iss, sub))
+      .filter((entry) => !entry.service)
+      .map((entry) => {
+        const person = principals.byId(entry.principalId);
+        const view = publicPresence(presence.view(entry.principalId), presenceHiddenFor(entry.principalId));
+        return {
+          principalId: entry.principalId,
+          sub: person?.subject?.sub ?? null,
+          name: entry.name,
+          role: entry.role,
+          perspicaxDisabled: entry.disabled || person?.disabledAt !== undefined,
+          consoleDisabled: person?.consoleDisabled ?? null,
+          presence: { state: view.state, lastSeenAt: view.lastSeenAt },
+          engines: personEngineAccess(entry.principalId).map(({ id, via }) => ({ id, via })),
+        };
+      });
+  },
+  person: adminPerson,
+  bots: () => orgAdminBots(),
+  routines: () => (routines?.listRoutines() ?? []).map((routine) => ({ id: routine.id, name: routine.name, botId: routine.botId, runAs: effectiveRunAs(routine) ?? null })),
+  usageRows: (range) => readUsage(DATA_DIR, range),
+  shared: (principalId) => {
+    const teams = new Set((principals.byId(principalId)?.teams ?? []).map((team) => team.id));
+    return store.bots.flatMap((bot): Array<{ botId: string; botName: string; level: string; via: "user" | "team" | "section" }> => {
+      const facts = botFacts(bot);
+      if (facts.ownerPrincipalId === principalId) return [];
+      const direct = facts.grants.find((grant) => grant.target === `user:${principalId}`);
+      if (direct) return [{ botId: bot.id, botName: bot.name, level: direct.level, via: "user" as const }];
+      const team = facts.grants.find((grant) => grant.target.startsWith("team:") && teams.has(grant.target.slice(5)));
+      if (team) return [{ botId: bot.id, botName: bot.name, level: team.level, via: "team" as const }];
+      const sectionName = sectionKey(bot.section);
+      const record = sectionName && sectionChannels ? sectionChannels.byName(sectionName) : undefined;
+      const member = record?.members.find((entry) => entry.target === `user:${principalId}` || (entry.target.startsWith("team:") && teams.has(entry.target.slice(5))));
+      return record && member ? [{ botId: bot.id, botName: bot.name, level: record.defaultLevel, via: "section" as const }] : [];
+    });
+  },
+  connections: (principalId) => {
+    const paused = personIntegrationsOff(principalId);
+    return {
+      engines: personEngineAccess(principalId),
+      mcpServers: Object.entries(personConnections.servers(principalId)).sort(([a], [b]) => a.localeCompare(b)).map(([name, server]) => ({
+        id: name, name, transport: server.kind === "stdio" ? "stdio" as const : "remote" as const,
+        state: paused ? "paused" as const : server.enabled ? "enabled" as const : "disabled" as const,
+      })),
+      // Connected apps (Composio) belong to the workspace, not to a person.
+      composioApps: [],
+    };
+  },
+  setDisabled: (principalId, value) => {
+    principals.setConsoleDisabled(principalId, value);
+    if (value) {
+      for (const sessionId of sessions.revokeWhere((session) => session.principalId === principalId)) engineLogins?.revokeOwner(sessionId);
+      audienceChanged();
+    }
+  },
+  resetAccess: async (principalId, scope) => {
+    const engineLoginsCleared = scope === "sessions" ? 0 : engineLogins?.clearAll(principalId) ?? 0;
+    const revoked = scope === "engine-logins" ? [] : sessions.revokeWhere((session) => session.principalId === principalId);
+    for (const sessionId of revoked) engineLogins?.revokeOwner(sessionId);
+    return { engineLogins: engineLoginsCleared, sessions: revoked.length };
+  },
+  revokeConnections: (principalId, body) => revokeOrgConnections(orgPersonConnectionDeps, principalId, body),
+  connectionListing: (principalId) => orgConnectionListing({
+    principalId, paused: personIntegrationsOff(principalId), github: githubConnect.status(principalId, personGithub(principalId)),
+    servers: personConnections.servers(principalId), lastUsed: (name) => stdioRelay.lastUsed(principalId, name), plugins: orgPersonConnectionDeps.plugins(principalId),
+  }),
+};
+
 /** What a manager's reach is checked against for one bot (the bots route
  * and the files routes of the console's admin API). */
 function orgBotReach(bot: BotRecord): AdminBotReach {
@@ -23615,7 +23707,7 @@ const orgAdmin = createOrgAdminRoutes({
   },
   principalFor: (iss, sub) => {
     const person = principals.bySubject(iss, sub);
-    return person ? { id: person.id, name: adminPerson(person.id).name, disabled: person.disabledAt !== undefined } : null;
+    return person ? { id: person.id, name: adminPerson(person.id).name, disabled: person.disabledAt !== undefined || Boolean(person.consoleDisabled) } : null;
   },
   person: adminPerson,
   teamPeople: (teamIds) => {
@@ -23633,6 +23725,7 @@ const orgAdmin = createOrgAdminRoutes({
   // The console routes of 2026-10-08 (server/org-admin-console.ts).
   console: [
     ...overviewRoutes(orgOverviewDeps),
+    ...peopleRoutes(orgPeopleDeps),
   ],
   // The console's file browser (Perspicax 2026-10-08, slice 1: read only).
   files: {
@@ -24064,9 +24157,9 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       };
       const disabled = () => {
         const person = auth.session.principalId ? principals.byId(auth.session.principalId) : null;
-        return person?.disabledAt !== undefined;
+        return person?.disabledAt !== undefined || Boolean(person?.consoleDisabled);
       };
-      if (disabled()) return endSession(401, "principal_disabled", "Your account is disabled in Pulsatrix. Ask an administrator.");
+      if (disabled()) return endSession(401, "principal_disabled", "Your account is disabled in Pulsatrix or on this Sagax server. Ask an administrator.");
       // What the gate checked the route against, before any refresh.
       const gated = [...auth.scopes];
       await settledWithin(idpSessions.touch(auth.session), IDP_REFRESH_WAIT_MS);

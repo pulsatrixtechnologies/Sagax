@@ -136,6 +136,7 @@ async function start() {
 posixOnly("Perspicax console: the Sagax admin routes", () => {
   let alice: Auth;
   let bob: Auth;
+  let zoe: Auth;
   const ids: Record<string, string> = {};
   const bots: Record<string, { id: string; threadId: string }> = {};
   let routineId = "";
@@ -173,7 +174,7 @@ posixOnly("Perspicax console: the Sagax admin routes", () => {
     for (const person of people) ids[person.login] = person.principalId;
     bob = await signIn(BOB);
     await signIn(MONA);
-    await signIn(ZOE);
+    zoe = await signIn(ZOE);
     bots.atlas = await createBot(alice, "Atlas", "claude");
     bots.beacon = await createBot(bob, "Beacon", "hold");
     const routine = await api("POST", "/api/routines", alice, { name: "Daily digest", botId: bots.atlas.id, prompt: "Write the digest.", enabled: false,
@@ -262,4 +263,60 @@ posixOnly("Perspicax console: the Sagax admin routes", () => {
     expect(audit.status, audit.text).toBe(200);
     expect((audit.body.rows as Array<any>).every((row) => row.category === "rights" && row.target?.id === bots.atlas!.id)).toBe(true);
   });
+
+  it("C2: people, a person's page, disable and enable, reset access, revoke connections", async () => {
+    const list = await admin("GET", "people", ALICE);
+    expect(list.status, list.text).toBe(200);
+    expect(list.body.items.map((row: { name: string }) => row.name)).toEqual(["Alice", "Bob", "Mona", "Zoe"]);
+    expect(list.body.items.find((row: any) => row.name === "Bob")).toMatchObject({ principalId: ids.bob, sub: BOB.sub, role: "member", disabled: false, bots: 1 });
+    expect(list.body.items.find((row: any) => row.name === "Alice")).toMatchObject({ role: "admin", turns30d: expect.any(Number) });
+    expect((await admin("GET", "people?role=admin", ALICE)).body.items.map((row: { name: string }) => row.name)).toEqual(["Alice"]);
+    // Mona manages T (Bob): herself and Bob, never Alice or Zoe
+    expect((await admin("GET", "people", MONA)).body.items.map((row: { name: string }) => row.name)).toEqual(["Bob", "Mona"]);
+    expect((await admin("GET", `people/${ids.alice}`, MONA)).status).toBe(404);
+    expect((await admin("GET", "people", ZOE)).body.code).toBe("forbidden_role");
+
+    const page = await admin("GET", `people/${ids.bob}`, ALICE);
+    expect(page.status, page.text).toBe(200);
+    expect(page.body).toMatchObject({ name: "Bob", bots: [{ id: bots.beacon!.id }], connections: { engines: expect.any(Array), mcpServers: [], composioApps: [] }, routinesAsRunner: [] });
+    expect((await admin("GET", `people/${ids.alice}`, ALICE)).body.routinesAsRunner).toEqual([{ id: routineId, name: "Daily digest", botId: bots.atlas!.id }]);
+
+    // Disable: Mona cannot; Alice cannot disable herself; Zoe's session ends
+    expect((await admin("POST", `people/${ids.zoe}/disable`, MONA, { disabled: true })).body.code).toBe("forbidden_role");
+    expect((await admin("POST", `people/${ids.alice}/disable`, ALICE, { disabled: true })).body.code).toBe("self");
+    expect((await api("GET", "/api/bots", zoe)).status).toBe(200);
+    const off = await admin("POST", `people/${ids.zoe}/disable`, ALICE, { disabled: true, reason: "Contract ended" });
+    expect(off.status, off.text).toBe(200);
+    expect(off.body.person).toMatchObject({ principalId: ids.zoe, disabled: true, disabledBy: "sagax" });
+    expect((await api("GET", "/api/bots", zoe)).status).toBe(401);
+    const again = await signIn(ZOE);
+    expect((await api("GET", "/api/bots", again)).status).toBe(401);
+    expect((await admin("GET", "capabilities", ZOE)).body.code).toBe("person_disabled");
+    const on = await admin("POST", `people/${ids.zoe}/disable`, ALICE, { disabled: false });
+    expect(on.body.person).toMatchObject({ disabled: false, disabledBy: null });
+    zoe = await signIn(ZOE);
+    expect((await api("GET", "/api/bots", zoe)).status).toBe(200);
+
+    // Reset access: Zoe's sessions end
+    const reset = await admin("POST", `people/${ids.zoe}/reset-access`, ALICE, { scope: "sessions" });
+    expect(reset.status, reset.text).toBe(200);
+    expect(reset.body.cleared).toMatchObject({ engineLogins: 0, sessions: expect.any(Number) });
+    expect(reset.body.cleared.sessions).toBeGreaterThanOrEqual(1);
+    expect((await api("GET", "/api/bots", zoe)).status).toBe(401);
+    zoe = await signIn(ZOE);
+    expect((await admin("POST", `people/${ids.zoe}/reset-access`, ALICE, { scope: "keys" })).body.code).toBe("bad_request");
+
+    // Revoke: nothing to remove; a bad body is refused
+    const revoked = await admin("POST", `people/${ids.bob}/connections/revoke`, ALICE, { all: true });
+    expect(revoked.status, revoked.text).toBe(200);
+    expect(revoked.body).toMatchObject({ removed: [], connections: { principalId: ids.bob, connections: [] } });
+    expect((await admin("POST", `people/${ids.bob}/connections/revoke`, ALICE, { kind: "nope" })).body.code).toBe("bad_request");
+
+    const audit = await waitFor(async () => {
+      const rows = (await admin("GET", `audit?category=people&target=${ids.zoe}`, ALICE)).body.rows as Array<any> | undefined;
+      return rows && rows.some((row) => row.action === "person.reset_access") ? rows : null;
+    });
+    expect(audit.map((row) => row.action)).toEqual(expect.arrayContaining(["person.console_disable", "person.console_enable", "person.reset_access"]));
+    expect(audit.find((row) => row.action === "person.console_disable")).toMatchObject({ actor: { kind: "person", principalId: ids.alice, via: "console" }, after: { disabled: true, reason: "Contract ended" } });
+  }, 60_000);
 });
