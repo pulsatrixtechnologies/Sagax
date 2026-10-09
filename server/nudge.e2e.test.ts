@@ -3,9 +3,12 @@
 //
 //   NU-1  alice (the owner, admin) nudges bob: bob's stream hears the nudge
 //         frame addressed to him with the conversation they share; alice's
-//         own stream and carol's do not
-//   NU-2  bob (a member) nudges alice: alice's stream hears it, bob's not
-//   NU-3  a group nudge reaches the other people of the room, never the sender
+//         own stream hears only the `nudge.sent` echo with the same id;
+//         carol's hears nothing
+//   NU-2  bob (a member) nudges alice: alice's stream hears it, bob's gets
+//         the echo
+//   NU-3  a group nudge reaches the other people of the room; the sender
+//         gets the echo only
 //   NU-4  a direct message is unread for the recipient only: the sender
 //         reading the conversation does not clear it for them, and the
 //         recipient reading it clears it
@@ -123,7 +126,7 @@ async function start() {
 
 const CAROL: FakeOidcUser = { sub: "01J9PTCAROL0000000000000C", email: "carol@example.test", name: "Carol", preferred_username: "carol", role: "employee" };
 
-posixOnly("Perspicax organization: a nudge reaches the person nudged", () => {
+posixOnly("Perspicax organization: a nudge reaches the person nudged, and the sender's own windows", () => {
   let alice: Auth;
   let ids: Record<"alice" | "bob" | "carol", string>;
 
@@ -164,7 +167,11 @@ posixOnly("Perspicax organization: a nudge reaches the person nudged", () => {
   const nudgeFrames = (stream: { text: () => string }) => stream.text().split("\n")
     .filter((line) => line.startsWith("data: "))
     .map((line) => { try { return JSON.parse(line.slice(6)); } catch { return null; } })
-    .filter((frame) => frame?.kind === "nudge") as Array<{ audience: string; fromId: string; fromName: string; at: number; open?: { groupId: string; threadId: string } }>;
+    .filter((frame) => frame?.kind === "nudge") as Array<{ audience: string; id: string; fromId: string; fromName: string; at: number; open?: { groupId: string; threadId: string } }>;
+  const sentFrames = (stream: { text: () => string }) => stream.text().split("\n")
+    .filter((line) => line.startsWith("data: "))
+    .map((line) => { try { return JSON.parse(line.slice(6)); } catch { return null; } })
+    .filter((frame) => frame?.kind === "nudge.sent") as Array<{ audience: string; id: string; toId: string; toName: string; at: number; open?: { groupId: string; threadId: string } }>;
 
   it("NU-1: the owner nudges a member: the member's stream hears it, the sender's and a third person's do not", async () => {
     const bob = await signIn(BOB);
@@ -181,9 +188,16 @@ posixOnly("Perspicax organization: a nudge reaches the person nudged", () => {
     const dm = (Array.isArray(dms) ? dms : (dms as any).groups ?? []).find((group: any) => group.peopleDm && group.humanIds?.includes(ids.alice));
     expect(dm, JSON.stringify(dms).slice(0, 500)).toBeTruthy();
     expect(heard.open).toEqual({ groupId: dm.id, threadId: dm.threadId });
+    expect(heard.id).toBe(sent.body.id);
+    // the sender's own stream: the echo, same id, never the receiver's frame
+    const echo = await waitFor(async () => sentFrames(aliceStream)[0]);
+    expect(echo).toMatchObject({ audience: ids.alice, id: sent.body.id, toId: ids.bob, at: sent.body.at });
+    expect(echo.open).toEqual({ groupId: dm.id, threadId: dm.threadId });
     await sleep(300);
     expect(nudgeFrames(aliceStream)).toEqual([]);
     expect(nudgeFrames(carolStream)).toEqual([]);
+    expect(sentFrames(bobStream)).toEqual([]);
+    expect(sentFrames(carolStream)).toEqual([]);
     aliceStream.close();
     bobStream.close();
     carolStream.close();
@@ -198,8 +212,10 @@ posixOnly("Perspicax organization: a nudge reaches the person nudged", () => {
     const heard = await waitFor(async () => nudgeFrames(aliceStream)[0]);
     expect(heard).toMatchObject({ audience: ids.alice, fromId: ids.bob, fromName: "Bob" });
     expect(heard.open?.groupId).toBeTruthy();
+    expect(await waitFor(async () => sentFrames(bobStream)[0])).toMatchObject({ audience: ids.bob, id: sent.body.id, toId: ids.alice });
     await sleep(300);
     expect(nudgeFrames(bobStream)).toEqual([]);
+    expect(sentFrames(aliceStream)).toEqual([]);
     aliceStream.close();
     bobStream.close();
   }, 60_000);
@@ -224,8 +240,11 @@ posixOnly("Perspicax organization: a nudge reaches the person nudged", () => {
     const toBob = await waitFor(async () => nudgeFrames(bobStream)[0]);
     expect(toAlice).toMatchObject({ audience: ids.alice, fromId: ids.carol, open: { groupId } });
     expect(toBob).toMatchObject({ audience: ids.bob, fromId: ids.carol, open: { groupId } });
+    expect(await waitFor(async () => sentFrames(carolStream)[0])).toMatchObject({ audience: ids.carol, id: sent.body.id, toId: groupId });
     await sleep(300);
     expect(nudgeFrames(carolStream)).toEqual([]);
+    expect(sentFrames(aliceStream)).toEqual([]);
+    expect(sentFrames(bobStream)).toEqual([]);
     aliceStream.close();
     bobStream.close();
     carolStream.close();

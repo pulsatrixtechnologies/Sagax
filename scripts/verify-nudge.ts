@@ -2,8 +2,9 @@
 // server, as the desktop runs it in server mode: bob's window draws this
 // app's bundled UI on the server's origin with his session; alice nudges him
 // from another client. Bob's window must hear the nudge frame, play the
-// nudge sound with no click in the page first, ask the shell to shake, and
-// alice's own client must not shake. Then a direct message from alice while
+// nudge sound with no click in the page first, ask the shell to shake and
+// come to the front; when bob sends a nudge, his own window shakes and
+// rings too (the server's echo). Then a direct message from alice while
 // bob's window is in the background raises a notification that stays, and
 // the dock badge counts it. Isolated: temporary home, Electron profile and
 // free ports.

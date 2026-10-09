@@ -50,15 +50,16 @@ export function nudgeCooldownError(retryAfterMs: number): string {
   return `Wait ${seconds} seconds before nudging them again.`;
 }
 
-/** A nudge frame reaches that person's streams only. A stream with no
- * viewer id is the operator at this computer (loopback, or their admin
+/** A nudge frame (`nudge` for the person nudged, `nudge.sent` for the
+ * sender's own windows) reaches that person's streams only. A stream with
+ * no viewer id is the operator at this computer (loopback, or their admin
  * session), so it hears a nudge addressed to them and nobody else. */
 export function nudgeFrameAllowed(
   payload: { kind?: unknown; audience?: unknown },
   viewerId: string | undefined,
   localPersonId: string,
 ): boolean {
-  if (payload.kind !== "nudge") return true;
+  if (payload.kind !== "nudge" && payload.kind !== "nudge.sent") return true;
   if (typeof payload.audience !== "string") return false;
   const audience = payload.audience.trim().toLowerCase();
   if (!audience) return false;

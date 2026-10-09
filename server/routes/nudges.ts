@@ -2,11 +2,17 @@
 // the conversation those two share.
 // POST /api/nudges { groupId } shakes the other people of that group chat
 // and leaves one line in the group. Exactly one of the two fields.
+// An accepted nudge answers { ok, id, at } and also sends the sender's own
+// streams a `nudge.sent` frame with the same id: every window of the sender
+// shakes and rings too, and the window that clicked skips the echo of the
+// nudge it already played.
 // Organization servers only. The signed-in person must be an active person
 // who can post in that chat. A service account, the sender, and a person
 // who is out are not shaken. The 5 minute cooldown is this process's map
 // (server/nudge.ts). A refusal does not write the line and does not start
 // the clock when the chat has no one else to shake.
+import { randomUUID } from "node:crypto";
+
 import { z } from "zod";
 
 import { groupNudgeKey, groupNudgeTargets, nudgeCooldownError, type NudgeConversation, type NudgeCooldown, type NudgeDirectoryPerson } from "../nudge.ts";
@@ -38,7 +44,11 @@ export interface NudgeRouteDeps {
   cooldown: NudgeCooldown;
   /** `open` is the conversation the line was written in, so the person
    * nudged can open it from the notification. */
-  deliver(frame: { audience: string; fromId: string; fromName: string; at: number; open?: NudgeConversation }): void;
+  deliver(frame: { audience: string; id: string; fromId: string; fromName: string; at: number; open?: NudgeConversation }): void;
+  /** The sender's own streams: the nudge they just sent (`nudge.sent`). */
+  echo?(frame: { audience: string; id: string; toId: string; toName: string; at: number; open?: NudgeConversation }): void;
+  /** The nudge's id, shared by the frames and the answer. */
+  newId?(): string;
   /** Persist the accepted nudge. Not called when the nudge is refused.
    * `groupId` writes the line on that group chat. Returns the conversation
    * the line went to, when there is one. */
@@ -58,6 +68,7 @@ export function createNudgeRoutes(deps: NudgeRouteDeps): RouteHandler {
     const parsed = bodySchema.safeParse(await readBody(req));
     if (!parsed.success) return json(res, 400, { error: "send { principalId } or { groupId }" });
     const at = deps.now();
+    const id = deps.newId?.() ?? randomUUID();
     const fromName = deps.displayName(self).trim() || "Someone";
     if ("groupId" in parsed.data) {
       const found = deps.group(parsed.data.groupId, self);
@@ -89,8 +100,9 @@ export function createNudgeRoutes(deps: NudgeRouteDeps): RouteHandler {
       }
       const toName = found.room.name.trim() || found.room.id;
       const open = deps.record({ fromId: self, fromName, toId: found.room.id, toName, at, groupId: found.room.id }) || undefined;
-      for (const person of targets) deps.deliver({ audience: person.id, fromId: self, fromName, at, ...(open ? { open } : {}) });
-      return json(res, 200, { ok: true });
+      for (const person of targets) deps.deliver({ audience: person.id, id, fromId: self, fromName, at, ...(open ? { open } : {}) });
+      deps.echo?.({ audience: self, id, toId: found.room.id, toName, at, ...(open ? { open } : {}) });
+      return json(res, 200, { ok: true, id, at });
     }
     const target = deps.person(parsed.data.principalId);
     if (!target.ok) {
@@ -111,7 +123,8 @@ export function createNudgeRoutes(deps: NudgeRouteDeps): RouteHandler {
     }
     const toName = target.name.trim() || target.id;
     const open = deps.record({ fromId: self, fromName, toId: target.id, toName, at }) || undefined;
-    deps.deliver({ audience: target.id, fromId: self, fromName, at, ...(open ? { open } : {}) });
-    return json(res, 200, { ok: true });
+    deps.deliver({ audience: target.id, id, fromId: self, fromName, at, ...(open ? { open } : {}) });
+    deps.echo?.({ audience: self, id, toId: target.id, toName, at, ...(open ? { open } : {}) });
+    return json(res, 200, { ok: true, id, at });
   };
 }

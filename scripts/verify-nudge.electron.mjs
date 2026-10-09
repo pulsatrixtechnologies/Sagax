@@ -132,14 +132,13 @@ app.whenReady().then(async () => {
   const moves = [];
   const realSetBounds = win.setBounds.bind(win);
   win.setBounds = (bounds) => { moves.push(bounds.x); realSetBounds(bounds); };
-  const nudger = createWindowNudger(undefined, () => app.focus({ steal: true }));
+  const nudger = createWindowNudger(undefined, () => app.focus({ steal: true }), process.platform);
   const nudges = [];
   ipcMain.on("desktop:nudge", (event, options) => {
     if (event.sender !== win.webContents) return;
     nudges.push(options);
-    attention.requestAttention({ bounce: "critical", flash: true });
-    if (options?.shake === false) return;
-    nudger.nudge(win);
+    if (options?.role !== "sent") attention.requestAttention({ bounce: "critical", flash: true });
+    nudger.nudge(win, { shake: options?.shake !== false });
   });
   ipcMain.on("desktop:notify", (event, request) => {
     if (event.sender !== win.webContents) return;
@@ -181,12 +180,17 @@ app.whenReady().then(async () => {
   check("bob's window really moved (the wizz) and came back to where it was", moves.length > 5 && moves.at(-1) === moves[0] - 6, `${moves.length} moves`);
   const played = await until("the nudge sound", async () => (await plays()).find((entry) => entry.result !== "pending") ?? null, 8000).catch(() => null);
   check("bob's window played the nudge sound with no click in the page first", played?.result === "playing" && played.src.endsWith("/nudge.mp3"), JSON.stringify(played));
+  check("bob's window came to the front and is a normal window again after the shake", win.isVisible() && !win.isMinimized() && !win.isAlwaysOnTop(), `visible ${win.isVisible()}, top ${win.isAlwaysOnTop()}`);
 
-  // 2. Bob nudges carol from his own page: his own window never shakes or rings.
+  // 2. Bob nudges carol (here a raw POST, so it is the server's echo that
+  // reaches his window, as on his other computers): his own window shakes
+  // and rings too, without a Dock bounce.
   const before = { nudges: nudges.length, plays: (await plays()).length };
   const own = await win.webContents.executeJavaScript(`fetch("/api/nudges", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ principalId: ${JSON.stringify(process.env.VERIFY_CAROL_ID)} }) }).then(r => r.status)`);
+  await until("the sender's own shake", async () => nudges.length > before.nudges, 8000).catch(() => null);
   await wait(1500);
-  check("the sender's own window neither shakes nor rings", own === 200 && nudges.length === before.nudges && (await plays()).length === before.plays, `HTTP ${own}`);
+  const ownShake = nudges.slice(before.nudges);
+  check("the sender's own window shakes and rings too", own === 200 && ownShake.length === 1 && ownShake[0]?.role === "sent" && ownShake[0]?.shake === true && (await plays()).length === before.plays + 1, `HTTP ${own}, ${JSON.stringify(ownShake)}`);
 
   // 3. Bob minimizes the window; a proxy closes the event stream meanwhile.
   win.minimize();
@@ -199,6 +203,12 @@ app.whenReady().then(async () => {
   const again = await asCarol("/api/nudges", { principalId: bobId });
   const heardAgain = await until("the next nudge", async () => nudges.length > nudgesBefore, 15000).catch(() => false);
   check("a minimized window whose stream a proxy closed still hears the next nudge (the reported bug)", again.status === 200 && Boolean(heardAgain), `visibility ${visibility}, dropped ${dropped}, streams now ${liveStreams.size}`);
+  await wait(300);
+  check("the nudge brings the minimized window back", !win.isMinimized() && win.isVisible());
+  // the next steps start from a minimized window again
+  await wait(1500);
+  win.minimize();
+  await wait(500);
   const nudgeNote = await until("the nudge notification", async () => nudgeNotes().length > notesBefore ? nudgeNotes().at(-1) : null, 8000).catch(() => null);
   check("the nudge leaves a notification that stays until dismissed", Boolean(nudgeNote) && nudgeNote.options.timeoutType === "never" && /Carol/.test(nudgeNote.options.title), JSON.stringify(nudgeNote?.options ?? null));
 

@@ -978,7 +978,11 @@ export type ServerFrame =
   /** A screen or button for one person's open desktop app. iOS and Android ignore this kind. */
   | { kind: "bot-act"; audience: string; action: string; input?: Record<string, unknown> }
   /** Shake this person's desktop window. Their streams only (server/nudge.ts). */
-  | { kind: "nudge"; audience: string; fromId: string; fromName: string; at: number; open?: { groupId: string; threadId: string } }
+  | { kind: "nudge"; audience: string; id?: string; fromId: string; fromName: string; at: number; open?: { groupId: string; threadId: string } }
+  /** The nudge this person just sent, to their own streams only, so each of
+   * their windows shakes and rings too. `id` matches the POST answer: the
+   * window that clicked has already played it. */
+  | { kind: "nudge.sent"; audience: string; id: string; toId: string; toName: string; at: number; open?: { groupId: string; threadId: string } }
   /** A person's custom label changed (server/routes/person-labels.ts); null
    * cleared it. Every stream. */
   | { kind: "person.label"; principalId: string; label: string | null }

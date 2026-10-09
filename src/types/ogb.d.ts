@@ -322,10 +322,13 @@ const __SAGAX_DEFAULT_SERVER__: string;
       onOpenReleaseNotes?(cb: () => void): () => void;
       /** Updates the native Dock/taskbar unread indicator. */
       setUnreadCount?(count: number): void;
-      /** A nudge was received here: bounce the Dock / flash the taskbar,
-       * then focus the main window and shake it once (unless `shake` is
-       * false). The shell ignores a second shake while one is running. */
-      nudgeWindow?(options?: { shake?: boolean }): void;
+      /** A nudge here: bring the main window to the very front (restore,
+       * show, top most for a moment, focus taken from the other app) and
+       * shake it once unless `shake` is false. `role: "received"` (the
+       * default) also bounces the Dock / flashes the taskbar; `"sent"` is
+       * the sender's own window. The shell ignores a second call while a
+       * shake is running. */
+      nudgeWindow?(options?: { shake?: boolean; role?: "received" | "sent" }): void;
       /** A native notification shown by the shell (src/lib/attention.ts). */
       notify?(request: {
         id: string;

@@ -46,6 +46,14 @@ describe("nudge cooldown", () => {
     expect(nudgeFrameAllowed(frame, undefined, "pr_local")).toBe(false);
     expect(nudgeFrameAllowed({ kind: "message" }, "pr_alice", "pr_local")).toBe(true);
   });
+
+  it("delivers the sender's echo only to the sender", () => {
+    const frame = { kind: "nudge.sent", audience: "pr_alice" };
+    expect(nudgeFrameAllowed(frame, "pr_alice", "pr_local")).toBe(true);
+    expect(nudgeFrameAllowed(frame, "pr_bob", "pr_local")).toBe(false);
+    expect(nudgeFrameAllowed(frame, undefined, "pr_alice")).toBe(true);
+    expect(nudgeFrameAllowed({ kind: "nudge.sent" }, "pr_alice", "pr_local")).toBe(false);
+  });
 });
 
 describe("nudge transcript line", () => {
