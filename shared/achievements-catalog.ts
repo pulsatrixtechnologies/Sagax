@@ -22,7 +22,7 @@ import type { AchievementDefinition, AchievementReward } from "./achievements.ts
 import type { MasteryMetric } from "./achievements-mastery.ts";
 import { masteryRewards } from "./mascot-unlocks.ts";
 
-const skin = (character: "owl" | "shape" | "trombi" | "bunbu" | "shiba", id: string) => ({ kind: "skin", character, skin: id }) as const;
+const skin = (character: "owl" | "shape" | "trombi" | "bunbu", id: string) => ({ kind: "skin", character, skin: id }) as const;
 const title = (id: string, en: string, fr: string) => ({ kind: "title", id, name: { en, fr } }) as const;
 const mastery = (id: string, metric: MasteryMetric, target: number) => ({
   id,
@@ -71,7 +71,7 @@ const CATALOG: readonly AchievementDefinition[] = [
     icon: "Palette",
     points: 10,
     rule: { kind: "count", event: "bot.customized", target: 1 },
-    rewards: [skin("owl", "gold"), skin("shiba", "gold")],
+    rewards: [skin("owl", "gold")],
   },
   {
     id: "right-hand",
@@ -81,7 +81,7 @@ const CATALOG: readonly AchievementDefinition[] = [
     icon: "Crown",
     points: 20,
     rule: { kind: "count", event: "bot.primary", target: 1 },
-    rewards: [skin("owl", "frost"), skin("shiba", "neon")],
+    rewards: [skin("owl", "frost")],
   },
   {
     id: "dressing-room",
@@ -123,7 +123,7 @@ const CATALOG: readonly AchievementDefinition[] = [
     icon: "Repeat",
     points: 20,
     rule: { kind: "count", event: "routine.created", target: 5 },
-    rewards: [title("automator", "Automator", "Automatiseur"), skin("shiba", "chrome")],
+    rewards: [title("automator", "Automator", "Automatiseur")],
   },
   {
     id: "clockwork",
@@ -133,7 +133,7 @@ const CATALOG: readonly AchievementDefinition[] = [
     icon: "Timer",
     points: 50,
     rule: { kind: "days", event: "routine.ran", target: 7 },
-    rewards: [skin("owl", "chrome"), skin("shiba", "molten")],
+    rewards: [skin("owl", "chrome")],
   },
   {
     id: "well-oiled",
@@ -295,7 +295,7 @@ const CATALOG: readonly AchievementDefinition[] = [
     icon: "Zap",
     points: 50,
     rule: { kind: "all", events: ["fullaccess.granted", "fullaccess.revoked"] },
-    rewards: [skin("owl", "holo"), skin("shiba", "holo")],
+    rewards: [skin("owl", "holo")],
   },
   {
     id: "palette",
@@ -411,7 +411,7 @@ const CATALOG: readonly AchievementDefinition[] = [
     icon: "Flame",
     points: 10,
     rule: { kind: "streak", target: 3 },
-    rewards: [title("regular", "Regular", "Habitué"), skin("shiba", "retro98")],
+    rewards: [title("regular", "Regular", "Habitué")],
   },
   {
     id: "week-streak",
@@ -749,7 +749,7 @@ const CATALOG: readonly AchievementDefinition[] = [
     icon: "Award",
     points: 20,
     rule: { kind: "points", target: 300 },
-    rewards: [title("silver", "Silver Operator", "Opérateur argent"), skin("shiba", "glitch")],
+    rewards: [title("silver", "Silver Operator", "Opérateur argent")],
   },
   {
     id: "gold-tier",
@@ -841,7 +841,7 @@ const CATALOG: readonly AchievementDefinition[] = [
     icon: "Monitor",
     points: 10,
     rule: { kind: "count", event: "mascot.floated", target: 1 },
-    rewards: [title("buddy", "Desk Buddy", "Copain de bureau"), { kind: "character", character: "shiba" }],
+    rewards: [title("buddy", "Desk Buddy", "Copain de bureau")],
   },
   {
     id: "trophy-case",
