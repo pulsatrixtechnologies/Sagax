@@ -192,3 +192,7 @@ notarize with the local keychain profile (`xcrun notarytool submit …
 to both repositories, publish and verify the canonical release before the
 legacy mirror, and always verify the published bytes against the published feed
 by downloading them back.
+
+## iOS version follows the desktop version
+
+The iOS app's `MARKETING_VERSION` (three places in `ios/project.yml`) is bumped to the same number as `forkVersion` in every release branch, with `CURRENT_PROJECT_VERSION` incremented for the next TestFlight upload. The two apps never show different version numbers. Rule set on 2026-10-09; first applied in 0.4.16.
