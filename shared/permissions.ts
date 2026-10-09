@@ -433,6 +433,7 @@ export const BOT_FIELD_PERMISSIONS: Readonly<Record<string, PermissionKey>> = {
   browserProfile: "bots.computer",
   toolScope: "bots.tools",
   mcpServers: "bots.tools",
+  mcpAccounts: "bots.tools",
   composio: "bots.tools",
   connectorTools: "bots.tools",
   connectorScopes: "bots.tools",

@@ -34,6 +34,16 @@ interface RemoteMcpListing {
   authClient?: "dynamic" | "manual" | "needed";
   authIssuer?: string;
   authPending?: boolean;
+  /** every saved sign-in, the default account first */
+  accounts?: McpAccountListing[];
+}
+export interface McpAccountListing {
+  /** "default", or the server's id for an account added after it */
+  id: string;
+  label?: string;
+  auth: McpAuthState;
+  authError?: string;
+  authPending?: boolean;
 }
 export type McpAuthState = "none" | "required" | "connected" | "expired" | "error";
 /** managedBy: the enrolled organisation has not approved this server, so it
@@ -320,7 +330,7 @@ export function useMcpServers() {
   }, []);
 
   /** Poll one server's sign-in state until it connects, fails or times out. */
-  const waitForSignIn = useCallback((name: string) => {
+  const waitForSignIn = useCallback((name: string, account?: string) => {
     const existing = waiters.current.get(name);
     if (existing) clearInterval(existing.timer);
     setWaiting((current) => ({ ...current, [name]: true }));
@@ -334,7 +344,7 @@ export function useMcpServers() {
           return;
         }
         try {
-          const status = await api(`/api/mcp/servers/${encodeURIComponent(name)}/oauth/status`);
+          const status = await api(`/api/mcp/servers/${encodeURIComponent(name)}/oauth/status${account ? `?account=${encodeURIComponent(account)}` : ""}`);
           if (status.auth === "connected") {
             stopWaiting(name);
             if (enableAfterSignIn.current.has(name)) {
@@ -370,7 +380,9 @@ export function useMcpServers() {
     return () => channel.close();
   }, [reloadQuietly]);
 
-  const signIn = async (server: McpServerListing) => {
+  /** Sign in to a server: its default account, one saved account again
+   * (`account.id`), or another account to add (`account.label`). */
+  const signIn = async (server: McpServerListing, account?: { id?: string; label?: string }) => {
     const name = server.name;
     const client = clientDraft[name];
     setBusy(`oauth:${name}`);
@@ -383,9 +395,11 @@ export function useMcpServers() {
     try {
       const result = await api(`/api/mcp/servers/${encodeURIComponent(name)}/oauth/start`, {
         method: "POST",
-        body: JSON.stringify(client?.clientId.trim()
-          ? { clientId: client.clientId.trim(), ...(client.clientSecret.trim() ? { clientSecret: client.clientSecret.trim() } : {}) }
-          : {}),
+        body: JSON.stringify({
+          ...(client?.clientId.trim() ? { clientId: client.clientId.trim(), ...(client.clientSecret.trim() ? { clientSecret: client.clientSecret.trim() } : {}) } : {}),
+          ...(account?.id ? { account: account.id } : {}),
+          ...(account?.label ? { newAccount: { label: account.label } } : {}),
+        }),
       });
       if (typeof result.authorizationUrl !== "string") throw new Error(t("mcp.oauth.error"));
       if (!(await openSignInPage(result.authorizationUrl))) {
@@ -398,7 +412,7 @@ export function useMcpServers() {
         delete next[name];
         return next;
       });
-      waitForSignIn(name);
+      waitForSignIn(name, typeof result.account === "string" ? result.account : account?.id);
     } catch (cause) {
       const detail = cause as Error & { body?: { code?: unknown; redirectUri?: unknown } };
       if (detail.body?.code === "client_required" && typeof detail.body.redirectUri === "string") {
@@ -413,24 +427,28 @@ export function useMcpServers() {
     }
   };
 
-  const signOut = async (server: McpServerListing) => {
+  /** Sign out of the default account, or remove another saved one. */
+  const signOut = async (server: McpServerListing, account?: string) => {
     const name = server.name;
+    const other = account !== undefined && account !== "default";
     setBusy(`oauth:${name}`);
     stopWaiting(name);
     loadGeneration.current += 1;
-    setProbe((current) => {
-      const next = { ...current };
-      delete next[name];
-      return next;
-    });
+    if (!other) {
+      setProbe((current) => {
+        const next = { ...current };
+        delete next[name];
+        return next;
+      });
+    }
     try {
       // Whop goes off with its sign-in: it is on only while connected.
-      if (isRemoteMcpListing(server) && isWhopServer(server) && server.enabled) {
+      if (!other && isRemoteMcpListing(server) && isWhopServer(server) && server.enabled) {
         const paused = await api(`/api/mcp/servers/${name}`, { method: "PATCH", body: JSON.stringify({ enabled: false }) });
         setServers(paused.servers ?? []);
         updateMcpServers(paused.servers ?? []);
       }
-      const result = await api(`/api/mcp/servers/${encodeURIComponent(name)}/oauth/disconnect`, { method: "POST", body: "{}" });
+      const result = await api(`/api/mcp/servers/${encodeURIComponent(name)}/oauth/disconnect`, { method: "POST", body: JSON.stringify(other ? { account } : {}) });
       setServers(result.servers ?? []);
       updateMcpServers(result.servers ?? []);
       setNotice({ key: "mcp.oauth.disconnected", params: { name } });

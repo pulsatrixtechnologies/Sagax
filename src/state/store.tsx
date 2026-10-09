@@ -587,6 +587,9 @@ export interface Bot {
   /** Which app-wide MCP servers (Plugins → MCP servers) this bot mounts, by
    * name. Absent = every enabled server; [] = none (null clears over PATCH). */
   mcpServers?: string[] | null;
+  /** The account each MCP server signs in with for this bot (absent: the
+   * server's default account; null clears over PATCH). */
+  mcpAccounts?: Record<string, string> | null;
   /** Named browser profile id (config.browserProfiles); absent/null = the
    * bot's own session (null is how a clear travels over PATCH). */
   browserProfile?: string | null;

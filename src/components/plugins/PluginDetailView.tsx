@@ -1,7 +1,7 @@
 // Plugins > one plugin: its accounts, its tools (each with a switch for an
 // MCP server: off means no bot sees it) and where it comes from.
 import { useEffect, useState, type ReactNode } from "react";
-import { CheckCircle2, ChevronDown, ChevronRight, FlaskConical, KeyRound, Loader2, LogOut, Pencil, Plus, Trash2 } from "lucide-react";
+import { CheckCircle2, ChevronDown, ChevronRight, FlaskConical, KeyRound, Loader2, LogOut, Pencil, Plus, RefreshCw, Trash2 } from "lucide-react";
 
 import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
@@ -21,6 +21,8 @@ export interface DetailAccount {
   status: "connected" | "needs_auth" | "pending" | "off";
   /** a short word under the name: the account id, the sign-in provider */
   detail?: string;
+  /** a button beside the state, such as Sign in again */
+  action?: ReactNode;
   onRemove?: () => void;
   removeLabel?: string;
 }
@@ -33,6 +35,9 @@ export interface PluginDetailProps {
   onClose: () => void;
   busy: boolean;
   onUninstall?: () => void;
+  /** a marketplace plugin the marketplace has a newer version of */
+  onUpdate?: () => void;
+  updating?: boolean;
   /** Edit and Test for an MCP server */
   onEdit?: () => void;
   onTest?: () => void;
@@ -58,7 +63,7 @@ export interface PluginDetailProps {
 }
 
 export function PluginDetailView(props: PluginDetailProps) {
-  const { item, subtitle, onBack, onClose, busy, onUninstall, onEdit, onTest, testing, enabled, accounts, accountAction, accountExtra, tools, details, children } = props;
+  const { item, subtitle, onBack, onClose, busy, onUninstall, onUpdate, updating, onEdit, onTest, testing, enabled, accounts, accountAction, accountExtra, tools, details, children } = props;
   const [toolsOpen, setToolsOpen] = useState(false);
   const toolList = tools?.list ?? null;
   const enabledCount = toolList?.filter((tool) => tool.enabled).length ?? 0;
@@ -79,6 +84,11 @@ export function PluginDetailView(props: PluginDetailProps) {
             <div className="truncate font-mono text-[11.5px] text-ink-secondary" title={subtitle}>{subtitle}</div>
           </div>
           <div className="ml-auto flex flex-wrap items-center gap-1.5">
+            {onUpdate && (
+              <button type="button" disabled={busy} onClick={onUpdate} className="ui-button ui-button-primary flex items-center gap-1.5 text-[12px] disabled:opacity-40" data-plugin-update>
+                {updating ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />} {t("connectApps.plugin.update")}
+              </button>
+            )}
             {onTest && (
               <button type="button" disabled={busy} onClick={onTest} className="ui-button flex items-center gap-1.5 text-[12px] disabled:opacity-40">
                 {testing ? <Loader2 size={13} className="animate-spin" /> : <FlaskConical size={13} />} {t("mcp.test")}
@@ -109,6 +119,7 @@ export function PluginDetailView(props: PluginDetailProps) {
                     {account.detail && <div className="truncate text-[11px] text-ink-secondary">{account.detail}</div>}
                   </div>
                   <PluginStatusLabel status={account.status} />
+                  {account.action}
                   {account.onRemove && (
                     <button type="button" disabled={busy} onClick={account.onRemove} aria-label={account.removeLabel} title={account.removeLabel}
                       className="rounded-md p-1.5 text-ink-secondary hover:bg-danger/10 hover:text-danger disabled:opacity-40">

@@ -277,11 +277,12 @@ import {
   parseMcpServerMutation,
   parseMcpServersImport,
   parseStoredMcpServer,
+  type StoredMcpServer,
   type StoredRemoteMcpServer,
 } from "./mcp-registry.ts";
 import { withDisabledTools } from "./mcp-tool-filter.ts";
 import { probeMcpServer } from "./mcp-probe.ts";
-import { callbackPage, McpOAuthError, McpOAuthManager, McpOAuthVault, phoneOAuthReturns, phoneReturnLocation, resolveVaultKey, type VaultKeySource } from "./mcp-oauth.ts";
+import { callbackPage, DEFAULT_MCP_ACCOUNT, isMcpAccountId, McpOAuthError, McpOAuthManager, McpOAuthVault, parseMcpAccountChoices, phoneOAuthReturns, phoneReturnLocation, resolveVaultKey, type VaultKeySource } from "./mcp-oauth.ts";
 import {
   GROUP_GOAL_MAX_TURNS,
   groupGoalAssignmentKey,
@@ -739,7 +740,7 @@ import { createAutoReviewRuleRoutes } from "./routes/auto-review-rules.ts";
 import { createComputerStatusRoutes, diskStateForFree } from "./routes/computer-status.ts";
 import { createPluginRoutes, pluginServerName, type InstalledPlugin } from "./routes/plugins.ts";
 import { createMarketplaceRoutes } from "./routes/marketplaces.ts";
-import { PluginMarketplaces, marketplaceServerName } from "./plugin-marketplaces.ts";
+import { PluginMarketplaces, marketplaceServerName, planServerUpdate, updatedServerEntry } from "./plugin-marketplaces.ts";
 import { createAccountRoutes } from "./routes/account.ts";
 import { createRegistrySearch } from "./plugin-registry.ts";
 import { BotPluginError, BotPlugins, marketplaceAllowed, marketplacePolicySchema, normalizePolicyEntry, parseGitSource, type MarketplacePolicy } from "./bot-plugins.ts";
@@ -19743,7 +19744,15 @@ function mcpServerResponse() {
   const remote = remoteMcpServers();
   const servers = listMcpServers(cfg.mcpServers).map(server => {
     const auth = "url" in server && remote[server.name] ? mcpOAuth.status(server.name, remote[server.name]) : undefined;
-    const listed = auth ? { ...server, ...auth, ...(auth.auth === "required" && mcpOAuth.pendingFor(server.name) ? { authPending: true } : {}) } : server;
+    const accounts = auth ? mcpOAuth.accounts(server.name, remote[server.name]!) : [];
+    const listed = auth ? {
+      ...server, ...auth,
+      ...(auth.auth === "required" && mcpOAuth.pendingFor(server.name, DEFAULT_MCP_ACCOUNT) ? { authPending: true } : {}),
+      // the default account first; the listing reads its state above
+      ...(accounts.length ? { accounts: accounts.map((account) => ({
+        ...account, ...(mcpOAuth.pendingFor(server.name, account.id) ? { authPending: true } : {}),
+      })) } : {}),
+    } : server;
     return managedPolicy.mcpAllowed(server.name, "url" in server ? server.url : undefined) ? listed : { ...listed, managedBy: policy!.organizationName };
   });
   return { servers, ...(policy && !policy.mcp.allowCustom ? { managed: { organizationName: policy.organizationName, allowlist: policy.mcp.allowlist } } : {}) };
@@ -19769,7 +19778,7 @@ function mcpServerBody(body: unknown): Record<string, unknown> {
 /** Configured MCP servers that may reach this bot's engine. While enrolled,
  * the organisation's allow-list filters them; config.json is never changed. */
 function engineMcpServers(bot: BotRecord, threadId?: string) {
-  const servers = mcpOAuth.withAuthHeaders(managedPolicy.filterMcp(withoutHostCommands(customMcpServers(cfg, bot.mcpServers))));
+  const servers = mcpOAuth.withAuthHeaders(managedPolicy.filterMcp(withoutHostCommands(customMcpServers(cfg, bot.mcpServers))), (name) => bot.mcpAccounts?.[name]);
   // A turn mounts a server with tools switched off through the gate
   // (server/mcp-tool-filter.ts); listings only need the names.
   return threadId === undefined ? servers : withDisabledTools(servers, mcpDisabledTools(cfg), threadId);
@@ -19787,7 +19796,7 @@ const ORG_HOST_COMMAND_REFUSAL = "On an organization server a command would run 
 /** Refresh the OAuth tokens a turn is about to hand its engine. A failure
  * only marks that server expired; the turn still starts without it signed in. */
 async function refreshMcpOAuth(bot: BotRecord): Promise<void> {
-  await mcpOAuth.refreshDue(managedPolicy.filterMcp(customMcpServers(cfg, bot.mcpServers))).catch(() => undefined);
+  await mcpOAuth.refreshDue(managedPolicy.filterMcp(customMcpServers(cfg, bot.mcpServers)), undefined, (name) => bot.mcpAccounts?.[name]).catch(() => undefined);
 }
 
 /** Every configured remote server, parsed, keyed by name. */
@@ -19819,6 +19828,11 @@ const mcpOAuthStartSchema = z.object({
   // the public origin the phone reached this computer on.
   returnTo: z.string().max(512).optional(),
   callbackOrigin: z.string().max(512).optional(),
+  // Sign in again to one saved account, or add another one with its name.
+  account: z.string().refine(isMcpAccountId, "Unknown account.").optional(),
+  newAccount: z.object({
+    label: z.string().trim().min(1).max(60).regex(/^[^\r\n]+$/, "An account name is one line."),
+  }).strict().optional(),
 }).strict();
 
 /** The origin a companion-relayed sign-in may return through: https, or
@@ -19841,7 +19855,12 @@ async function startMcpSignIn(req: IncomingMessage, auth: RequestAuth, name: str
   Promise<{ status: number; body: Record<string, unknown> }> {
   const input = mcpOAuthStartSchema.safeParse(body ?? {});
   if (!input.success) return { status: 400, body: { error: input.error.issues[0]?.message ?? "Invalid sign-in request." } };
-  const { returnTo, callbackOrigin, ...client } = input.data;
+  const { returnTo, callbackOrigin, account: chosen, newAccount, ...client } = input.data;
+  if (chosen && newAccount) return { status: 400, body: { error: "Name an account or add one, not both." } };
+  if (chosen && chosen !== DEFAULT_MCP_ACCOUNT && !manager.vault.accounts(name).includes(chosen)) {
+    return { status: 404, body: { error: "That account is not saved for this server.", code: "account_not_found" } };
+  }
+  const account = newAccount ? `acct-${randomBytes(5).toString("hex")}` : chosen;
   if (returnTo !== undefined && !phoneOAuthReturns().includes(returnTo)) {
     return { status: 400, body: { error: "returnTo is not an app address this server returns to.", code: "return_not_allowed" } };
   }
@@ -19855,8 +19874,11 @@ async function startMcpSignIn(req: IncomingMessage, auth: RequestAuth, name: str
     return { status: 409, body: { error: "Send the address the phone reaches this computer on (callbackOrigin).", code: "callback_unreachable" } };
   }
   try {
-    const started = await manager.start(name, server, { redirectUri, ...client, ...(returnTo ? { returnTo } : {}) }, AbortSignal.timeout(15_000));
-    return { status: 200, body: { ...started, redirectUri } };
+    const started = await manager.start(name, server, {
+      redirectUri, ...client, ...(returnTo ? { returnTo } : {}),
+      ...(account ? { account } : {}), ...(newAccount ? { label: newAccount.label } : {}),
+    }, AbortSignal.timeout(15_000));
+    return { status: 200, body: { ...started, redirectUri, ...(account ? { account } : {}) } };
   } catch (error) {
     if (error instanceof McpOAuthError) {
       return { status: 400, body: { error: error.message, ...(error.code ? { code: error.code } : {}), ...(error.code === "client_required" ? { redirectUri } : {}) } };
@@ -20896,6 +20918,66 @@ const pluginMarketplaces = new PluginMarketplaces({
   gitEnvironment: (actor) => githubGitEnvironment(usablePersonGithub(actor)?.token),
   policy: pluginMarketplacePolicy,
 });
+/** Add a plugin's servers to `current` (written by the caller) under free
+ * names; returns the plugin's name of each to the name it got. */
+function addMarketplaceServers(
+  current: Record<string, unknown>,
+  servers: ReadonlyArray<{ name: string; entry: Record<string, unknown> }>,
+  marketplace: string,
+  plugin: string,
+  skipped: string[],
+): Record<string, string> {
+  const added: Record<string, string> = {};
+  const taken = new Set(Object.keys(current));
+  for (const server of servers) {
+    const name = marketplaceServerName(server.name, plugin, taken);
+    if (Object.keys(current).length >= MAX_MCP_SERVERS) {
+      skipped.push(`MCP server ${server.name} (at most ${MAX_MCP_SERVERS} servers)`);
+      continue;
+    }
+    const remote = "url" in server.entry;
+    if (IDENTITY.kind === "perspicax" && !remote) {
+      skipped.push(`MCP server ${server.name} (a command would run on the Sagax server)`);
+      continue;
+    }
+    // A remote server is on at once (one that needs a sign-in is never
+    // mounted before it); a command stays off until it was tested.
+    const parsed = parseMcpServerMutation(name, { ...server.entry, source: marketplace });
+    if (!parsed.ok) {
+      skipped.push(`MCP server ${server.name} (${parsed.error})`);
+      continue;
+    }
+    parsed.server.enabled = remote;
+    const refusal = mcpPolicyRefusal(name, parsed.server);
+    if (refusal) {
+      skipped.push(`MCP server ${server.name} (${refusal})`);
+      continue;
+    }
+    current[name] = parsed.server;
+    taken.add(name);
+    added[server.name] = name;
+  }
+  return added;
+}
+/** A server a plugin update keeps, rewritten from its new entry; null keeps
+ * the stored one as it is (the new one was refused, and why is in `skipped`). */
+function updatedMarketplaceServer(name: string, existing: StoredMcpServer, entry: Record<string, unknown>, marketplace: string, skipped: string[]): StoredMcpServer | null {
+  const parsed = parseMcpServerMutation(name, updatedServerEntry(existing, entry, marketplace), existing);
+  if (!parsed.ok) {
+    skipped.push(`MCP server ${name} (${parsed.error})`);
+    return null;
+  }
+  if (IDENTITY.kind === "perspicax" && !("url" in parsed.server)) {
+    skipped.push(`MCP server ${name} (a command would run on the Sagax server)`);
+    return null;
+  }
+  const refusal = mcpPolicyRefusal(name, parsed.server);
+  if (refusal) {
+    skipped.push(`MCP server ${name} (${refusal})`);
+    return null;
+  }
+  return parsed.server;
+}
 ROUTES.push(createMarketplaceRoutes({
   store: pluginMarketplaces,
   mayManage: (auth) => computerOwner(auth) || (IDENTITY.kind === "perspicax" && callerCan(auth, "apps.marketplaces")),
@@ -20904,50 +20986,23 @@ ROUTES.push(createMarketplaceRoutes({
     if (pluginMarketplaces.installed().some((entry) => entry.key === `${plugin}@${marketplace}`)) {
       return { status: 409, body: { error: "This plugin is already installed. Uninstall it first to install it again.", code: "already_installed" } };
     }
-    const { plan, version } = await pluginMarketplaces.prepare(marketplace, plugin, sessionPrincipal(auth) ?? undefined);
-    const addedServers: string[] = [];
+    const { plan, version, revision } = await pluginMarketplaces.prepare(marketplace, plugin, sessionPrincipal(auth) ?? undefined);
     const skipped = [...plan.skipped];
+    if (plan.servers.length && mcpConfigBusy) return { status: 409, body: { error: "MCP servers are already being updated." } };
+    const serverNames: Record<string, string> = {};
     if (plan.servers.length) {
-      if (mcpConfigBusy) return { status: 409, body: { error: "MCP servers are already being updated." } };
       mcpConfigBusy = true;
       try {
         const current = { ...cfg.mcpServers };
-        const taken = new Set(Object.keys(current));
-        for (const server of plan.servers) {
-          const name = marketplaceServerName(server.name, plugin, taken);
-          if (Object.keys(current).length >= MAX_MCP_SERVERS) {
-            skipped.push(`MCP server ${server.name} (at most ${MAX_MCP_SERVERS} servers)`);
-            continue;
-          }
-          const remote = "url" in server.entry;
-          if (IDENTITY.kind === "perspicax" && !remote) {
-            skipped.push(`MCP server ${server.name} (a command would run on the Sagax server)`);
-            continue;
-          }
-          // A remote server is on at once (one that needs a sign-in is never
-          // mounted before it); a command stays off until it was tested.
-          const parsed = parseMcpServerMutation(name, { ...server.entry, source: marketplace });
-          if (!parsed.ok) {
-            skipped.push(`MCP server ${server.name} (${parsed.error})`);
-            continue;
-          }
-          parsed.server.enabled = remote;
-          const refusal = mcpPolicyRefusal(name, parsed.server);
-          if (refusal) {
-            skipped.push(`MCP server ${server.name} (${refusal})`);
-            continue;
-          }
-          current[name] = parsed.server;
-          taken.add(name);
-          addedServers.push(name);
-        }
-        if (addedServers.length) persistMcpServers(current);
+        Object.assign(serverNames, addMarketplaceServers(current, plan.servers, marketplace, plugin, skipped));
+        if (Object.keys(serverNames).length) persistMcpServers(current);
       } finally {
         mcpConfigBusy = false;
       }
-      for (const name of addedServers) await mcpOAuth.forget(name).catch(() => undefined);
-      if (addedServers.length) await probeMcpOAuth(addedServers);
     }
+    const addedServers = Object.values(serverNames);
+    for (const name of addedServers) await mcpOAuth.forget(name).catch(() => undefined);
+    if (addedServers.length) await probeMcpOAuth(addedServers);
     const addedSkills: string[] = [];
     for (const skill of plan.skills) {
       const installed = installLibrarySkill({
@@ -20957,9 +21012,82 @@ ROUTES.push(createMarketplaceRoutes({
       if ("error" in installed) skipped.push(`skill ${skill.name} (${installed.error})`);
       else addedSkills.push(skill.name);
     }
-    const record = pluginMarketplaces.recordInstall(marketplace, plugin, { ...(version ? { version } : {}), servers: addedServers, skills: addedSkills });
+    const record = pluginMarketplaces.recordInstall(marketplace, plugin, {
+      ...(version ? { version } : {}), ...(revision ? { revision } : {}), servers: addedServers, serverNames, skills: addedSkills,
+    });
     return { status: 200, body: { plugin: record, skipped, servers: mcpServerResponse().servers } };
   },
+  update: async (marketplace, plugin, { auth }) => {
+    const installed = pluginMarketplaces.installed().find((entry) => entry.key === `${plugin}@${marketplace}`);
+    if (!installed) return { status: 404, body: { error: "That plugin is not installed.", code: "not_installed" } };
+    if (mcpConfigBusy) return { status: 409, body: { error: "MCP servers are already being updated." } };
+    const { plan, version, revision } = await pluginMarketplaces.prepare(marketplace, plugin, sessionPrincipal(auth) ?? undefined);
+    const skipped = [...plan.skipped];
+    const changes = planServerUpdate(plan, installed);
+    const serverNames: Record<string, string> = {};
+    const forget: string[] = [];
+    const added: string[] = [];
+    if (mcpConfigBusy) return { status: 409, body: { error: "MCP servers are already being updated." } };
+    mcpConfigBusy = true;
+    try {
+      const current = { ...cfg.mcpServers };
+      const fresh: Array<{ name: string; entry: Record<string, unknown> }> = [...changes.add];
+      for (const server of changes.keep) {
+        const existing = current[server.stored] === undefined ? null : parseStoredMcpServer(server.stored, current[server.stored]);
+        // Removed or replaced by hand since: added again like a new server.
+        if (!existing?.ok || existing.server.source !== marketplace) {
+          fresh.push({ name: server.name, entry: server.entry });
+          continue;
+        }
+        const kept = updatedMarketplaceServer(server.stored, existing.server, server.entry, marketplace, skipped);
+        if (!kept) {
+          serverNames[server.name] = server.stored;
+          continue;
+        }
+        if ("url" in kept && "url" in existing.server && kept.url !== existing.server.url) forget.push(server.stored);
+        current[server.stored] = kept;
+        serverNames[server.name] = server.stored;
+      }
+      for (const name of changes.remove) {
+        const parsed = current[name] === undefined ? null : parseStoredMcpServer(name, current[name]);
+        if (parsed?.ok && parsed.server.source === marketplace) {
+          delete current[name];
+          forget.push(name);
+        }
+      }
+      const addedNames = addMarketplaceServers(current, fresh, marketplace, plugin, skipped);
+      Object.assign(serverNames, addedNames);
+      added.push(...Object.values(addedNames));
+      persistMcpServers(current);
+    } finally {
+      mcpConfigBusy = false;
+    }
+    for (const name of [...forget, ...added]) await mcpOAuth.forget(name).catch(() => undefined);
+    if (added.length) await probeMcpOAuth(added);
+    const skills: string[] = [];
+    const library = readSkillLibraryIndex();
+    for (const skill of plan.skills) {
+      const warnings = scanSkillText(skill.text);
+      const existing = library[skill.name];
+      const result = existing && existing.source === marketplace && installed.skills.includes(skill.name)
+        // The text changes in place; whether it is on stays the person's.
+        ? updateLibrarySkill(skill.name, { text: skill.text, warnings })
+        : installLibrarySkill({ name: skill.name, instructions: skill.text, source: marketplace, warnings, reviewState: "disabled" });
+      if ("error" in result) skipped.push(`skill ${skill.name} (${result.error})`);
+      else skills.push(skill.name);
+    }
+    for (const name of installed.skills) {
+      if (!plan.skills.some((skill) => skill.name === name)) removeLibrarySkillFrom(name, marketplace);
+    }
+    const record = pluginMarketplaces.recordUpdate(marketplace, plugin, {
+      ...(version ? { version } : {}), ...(revision ? { revision } : {}),
+      servers: Object.values(serverNames), serverNames, skills,
+    });
+    return { status: 200, body: { plugin: record, skipped, servers: mcpServerResponse().servers } };
+  },
+  audit: (auth, row) => appendAdminAction(DATA_DIR, {
+    category: "mcp", ...row, actor: IDENTITY.kind === "perspicax" ? orgAuditActor(auth) : decisionActorFor(auth),
+  }),
   uninstall: async (marketplace, plugin) => {
     const record = pluginMarketplaces.recordUninstall(marketplace, plugin);
     if (record.servers.length) {
@@ -31463,6 +31591,13 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         }
         patch.mcpServers = requestedMcpServers;
       }
+      // Which saved account each server signs in with for this bot; read at
+      // each turn's start, so a running turn keeps the one it began with.
+      if (body.mcpAccounts !== undefined) {
+        const parsed = parseMcpAccountChoices(body.mcpAccounts);
+        if (!parsed.ok) return json(res, 400, { error: parsed.error });
+        patch.mcpAccounts = parsed.choices;
+      }
       if (body.memoryUpkeep !== undefined) {
         if (typeof body.memoryUpkeep !== "boolean") return json(res, 400, { error: "memoryUpkeep must be true or false" });
         patch.memoryUpkeep = body.memoryUpkeep;
@@ -34504,7 +34639,12 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       if (!server) return json(res, 404, { error: "Remote MCP server not found." });
       res.setHeader("cache-control", "no-store");
       if (action === "status") {
-        return json(res, 200, { ...(mcpOAuth.status(name, server) ?? { auth: "none" }), pending: mcpOAuth.pendingFor(name) });
+        const asked = url.searchParams.get("account");
+        const account = isMcpAccountId(asked) ? asked : DEFAULT_MCP_ACCOUNT;
+        return json(res, 200, {
+          ...(mcpOAuth.status(name, server, account) ?? { auth: account === DEFAULT_MCP_ACCOUNT ? "none" : "required" }),
+          pending: mcpOAuth.pendingFor(name, asked === null ? undefined : account),
+        });
       }
       const body = await readBody(req);
       if (action === "probe") {
@@ -34513,7 +34653,19 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         return json(res, 200, mcpServerResponse());
       }
       if (action === "disconnect") {
-        await mcpOAuth.disconnect(name, server).catch(() => undefined);
+        const asked = body && typeof body === "object" ? (body as Record<string, unknown>).account : undefined;
+        if (asked !== undefined && !isMcpAccountId(asked)) return json(res, 400, { error: "Unknown account." });
+        await mcpOAuth.disconnect(name, server, undefined, asked ?? DEFAULT_MCP_ACCOUNT).catch(() => undefined);
+        // A removed account is gone for the bots that used it: they go back
+        // to the default one rather than mounting the server signed out.
+        if (asked !== undefined && asked !== DEFAULT_MCP_ACCOUNT && !mcpOAuth.vault.accounts(name).includes(asked)) {
+          for (const bot of store.bots) {
+            if (bot.mcpAccounts?.[name] !== asked) continue;
+            const { [name]: _removed, ...rest } = bot.mcpAccounts;
+            const updated = store.patchBot(bot.id, { mcpAccounts: Object.keys(rest).length ? rest : undefined });
+            if (updated) broadcast({ kind: "bot", bot: wireBot(updated) });
+          }
+        }
         return json(res, 200, mcpServerResponse());
       }
       if (!managedPolicy.mcpAllowed(name, server.url)) {

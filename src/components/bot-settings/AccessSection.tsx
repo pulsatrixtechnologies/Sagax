@@ -15,7 +15,7 @@ import { cn } from "@/lib/cn";
 import { usePerspicaxOrg } from "@/lib/perspicax-org";
 import { t } from "@/lib/i18n";
 import type { LocaleKey } from "@/locales";
-import { mcpServersForBot, useMcpServers } from "@/lib/mcp-servers";
+import { mcpAccountFor, mcpServersForBot, useMcpServers, withMcpAccount } from "@/lib/mcp-servers";
 import { cloudComputersOffered } from "@/lib/place";
 import { shortPath } from "@/lib/short-path";
 import { useDesktopCapabilities } from "../DesktopCapabilities";
@@ -140,7 +140,10 @@ function ManageInConnectApps({ surface }: { surface: "apps" | "mcp" }) {
   );
 }
 
-function McpServersCard({ bot, patch }: { bot: Bot; patch: (patch: { mcpServers: string[] | null }) => void }) {
+function McpServersCard({ bot, patch }: {
+  bot: Bot;
+  patch: (patch: { mcpServers: string[] | null } | { mcpAccounts: Record<string, string> | null }) => void;
+}) {
   const { servers, error, refresh } = useMcpServers();
   const mounted = new Set((servers ? mcpServersForBot(servers, bot.mcpServers) : []).map((server) => server.name));
   const usesAll = bot.mcpServers == null;
@@ -179,6 +182,23 @@ function McpServersCard({ bot, patch }: { bot: Bot; patch: (patch: { mcpServers:
                 <div className="truncate font-mono text-[12.5px] text-ink">{server.name}</div>
                 {!server.enabled && <div className="text-[11.5px] text-ink-secondary">{t("botAccess.mcpDisabled")}</div>}
               </div>
+              {server.accounts && mounted.has(server.name) && (
+                <select
+                  value={mcpAccountFor(server, bot.mcpAccounts)}
+                  disabled={!!error}
+                  onChange={(event) => patch({ mcpAccounts: withMcpAccount(bot.mcpAccounts, server.name, event.target.value) })}
+                  aria-label={t("botAccess.mcpAccountAria", { name: server.name })}
+                  data-mcp-account={server.name}
+                  className="max-w-[45%] shrink truncate rounded-lg border border-hairline/40 bg-inset px-2 py-1 text-[12px] text-ink disabled:opacity-50"
+                >
+                  {server.accounts.map((account) => (
+                    <option key={account.id} value={account.id}>
+                      {(account.id === "default" ? t("botAccess.mcpAccountFirst") : account.label ?? account.id)
+                        + (account.connected ? "" : ` (${t("mcp.accounts.notSignedIn")})`)}
+                    </option>
+                  ))}
+                </select>
+              )}
               <Switch
                 checked={mounted.has(server.name)}
                 disabled={!server.enabled || !!bot.busy || error}

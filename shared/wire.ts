@@ -384,6 +384,9 @@ export interface WireBot {
   memoryUpkeep?: boolean;
   /** Which of the app-wide MCP servers this bot mounts, by name. */
   mcpServers?: string[];
+  /** The saved account each MCP server signs in with for this bot, by
+   * server name; a server it does not name uses its default account. */
+  mcpAccounts?: Record<string, string>;
   /** Owner-selected original tool identities. An empty allowlist permits none. */
   toolScope?: ToolScope;
   /** Id of a named browser profile; absent = the bot's own private session. */

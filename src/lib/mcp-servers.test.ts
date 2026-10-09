@@ -8,7 +8,7 @@ vi.mock("react", async (importOriginal) => ({
   useSyncExternalStore: (_subscribe: unknown, snapshot: () => unknown) => snapshot(),
 }));
 
-import { mcpServersForBot } from "./mcp-servers";
+import { mcpAccountFor, mcpServersForBot, withMcpAccount } from "./mcp-servers";
 
 describe("mcpServersForBot", () => {
   const all = [
@@ -83,5 +83,25 @@ describe("shared MCP inventory", () => {
     fixture.api.mockResolvedValueOnce({ servers: [changed] });
     await loadMcpServers();
     expect(useMcpServers()).toMatchObject({ servers: [changed], error: false });
+  });
+});
+
+describe("a bot's account on an MCP server", () => {
+  const server = { name: "linear", enabled: true, accounts: [
+    { id: "default", connected: true },
+    { id: "acct-abc123", label: "Work", connected: true },
+  ] };
+
+  it("keeps a choice only while the account is saved", () => {
+    expect(mcpAccountFor(server, { linear: "acct-abc123" })).toBe("acct-abc123");
+    expect(mcpAccountFor(server, { linear: "acct-gone99" })).toBe("default");
+    expect(mcpAccountFor(server, null)).toBe("default");
+    expect(mcpAccountFor({ name: "linear", enabled: true }, { linear: "acct-abc123" })).toBe("default");
+  });
+
+  it("stores no entry for the default account", () => {
+    expect(withMcpAccount(null, "linear", "acct-abc123")).toEqual({ linear: "acct-abc123" });
+    expect(withMcpAccount({ linear: "acct-abc123" }, "linear", "default")).toBeNull();
+    expect(withMcpAccount({ linear: "acct-abc123", notes: "acct-def456" }, "linear", "default")).toEqual({ notes: "acct-def456" });
   });
 });
