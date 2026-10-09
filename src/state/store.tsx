@@ -1116,6 +1116,14 @@ export interface AppState {
   /** The achievements modal (src/components/achievements/AchievementsModal.tsx),
    * its own window beside Settings: one or the other is open, never both. */
   achievementsOpen: boolean;
+  /** The organisation bot catalogue ("Browse Bots"), opened from the mascot
+   * context menu in the bot panel. Use dispatch(openBotCatalog()) and
+   * dispatch(closeBotCatalog()). */
+  botCatalogOpen: boolean;
+  /** The persona editor (src/components/persona/PersonaEditorModal.tsx): one
+   * bot's whole profile in a modal shaped like Achievements, opened from the
+   * mascot's menu in the bot panel. Null when closed. */
+  personaEditor: { botId: string; section: BotSettingsSection } | null;
   /** A settings sub-page pushed inside the section (src/components/
    * SettingsSubPage.tsx), e.g. General > About me; null shows the section.
    * Any toggleAppSettings that names none (another section, closing) clears it. */
@@ -1449,6 +1457,11 @@ export type Action =
   | { type: "focusMessageConsumed"; nonce: number }
   | { type: "toggleAppSettings"; open?: boolean; section?: AppSettingsSection; subPage?: string; phonePairing?: boolean }
   | { type: "toggleAchievements"; open?: boolean }
+  | { type: "openBotCatalog" }
+  | { type: "closeBotCatalog" }
+  | { type: "openPersonaEditor"; botId: string; section?: BotSettingsSection }
+  | { type: "personaEditorSection"; section: BotSettingsSection }
+  | { type: "closePersonaEditor" }
   | { type: "toggleShortcuts"; open?: boolean }
   | { type: "toggleWelcome"; open?: boolean }
   | { type: "toggleLaunch"; open?: boolean; mode?: "solo" | "server" }
@@ -1698,6 +1711,16 @@ function clearThreadReturnIfHome(state: AppState): AppState {
   const owner = state.bots.find((candidate) => candidate.id === back.ownerId)
     ?? state.groups.find((candidate) => candidate.id === back.ownerId);
   return owner?.threadId === back.threadId ? { ...state, threadReturn: null } : state;
+}
+
+/** Open the organisation bot catalogue ("Browse Bots"). */
+export function openBotCatalog(): Action {
+  return { type: "openBotCatalog" };
+}
+
+/** Close the organisation bot catalogue. */
+export function closeBotCatalog(): Action {
+  return { type: "closeBotCatalog" };
 }
 
 export function reducer(state: AppState, action: Action): AppState {
@@ -2393,6 +2416,7 @@ export function reducer(state: AppState, action: Action): AppState {
         pluginsOpen: open ? false : state.pluginsOpen,
         triggersOpen: open ? false : state.triggersOpen,
         achievementsOpen: open ? false : state.achievementsOpen,
+        personaEditor: open ? null : state.personaEditor,
       };
     }
     case "toggleAchievements": {
@@ -2400,9 +2424,32 @@ export function reducer(state: AppState, action: Action): AppState {
       return {
         ...state,
         achievementsOpen: open,
-        ...(open ? { appSettingsOpen: false, appSettingsSubPage: null, settingsOpen: false, personPanelId: null, pluginsOpen: false, triggersOpen: false, newBotOpen: false, shortcutsOpen: false } : {}),
+        ...(open ? { appSettingsOpen: false, appSettingsSubPage: null, settingsOpen: false, personPanelId: null, pluginsOpen: false, triggersOpen: false, newBotOpen: false, shortcutsOpen: false, personaEditor: null } : {}),
       };
     }
+    case "openBotCatalog":
+      return state.botCatalogOpen ? state : { ...state, botCatalogOpen: true };
+    case "closeBotCatalog":
+      return state.botCatalogOpen ? { ...state, botCatalogOpen: false } : state;
+    case "openPersonaEditor":
+      if (!state.bots.some((bot) => bot.id === action.botId)) return state;
+      return {
+        ...state,
+        personaEditor: { botId: action.botId, section: action.section ?? "overview" },
+        appSettingsOpen: false,
+        appSettingsSubPage: null,
+        achievementsOpen: false,
+        pluginsOpen: false,
+        triggersOpen: false,
+        newBotOpen: false,
+        shortcutsOpen: false,
+      };
+    case "personaEditorSection":
+      return state.personaEditor && state.personaEditor.section !== action.section
+        ? { ...state, personaEditor: { ...state.personaEditor, section: action.section } }
+        : state;
+    case "closePersonaEditor":
+      return state.personaEditor ? { ...state, personaEditor: null } : state;
     case "toggleShortcuts": {
       const open = action.open ?? !state.shortcutsOpen;
       return {
@@ -2775,6 +2822,8 @@ export const initialState: AppState = {
   appSettingsOpen: false,
   appSettingsSection: "general",
   achievementsOpen: false,
+  botCatalogOpen: false,
+  personaEditor: null,
   appSettingsSubPage: null,
   appSettingsPhonePairing: 0,
   shortcutsOpen: false,

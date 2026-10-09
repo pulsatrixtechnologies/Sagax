@@ -174,11 +174,14 @@ export function BotProfileAvatarCard({
   activeState,
   mascotMotion,
   onPatch,
+  onContextMenu,
 }: {
   bot: Bot;
   activeState: MausState;
   mascotMotion: { kind: Exclude<MausMotion, "none">; nonce: number } | null;
   onPatch: (patch: AvatarPatch) => void;
+  /** A right click on the mascot (the bot panel opens its bot menu). */
+  onContextMenu?: (event: React.MouseEvent<HTMLButtonElement>) => void;
 }) {
   const { dispatch, flushBotPatches } = useStore();
   const { request: api, uploadAvatar } = useBotEditor();
@@ -374,6 +377,7 @@ export function BotProfileAvatarCard({
           aria-label={t("botPanel.avatar.edit")}
           aria-expanded={editorOpen}
           onClick={() => setEditorOpen((open) => !open)}
+          onContextMenu={onContextMenu}
           className="rounded-full outline-none focus-visible:ring-2 focus-visible:ring-accent"
         >
           <BotAvatar
