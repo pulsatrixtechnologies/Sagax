@@ -75,7 +75,7 @@ export function createPersonLabelRoutes(deps: PersonLabelRouteDeps): RouteHandle
     const target = deps.person(match[1]!.toLowerCase());
     if (!target) return json(res, 404, { error: "No such person.", code: "unknown_person" });
     const right = personLabelRight(deps.caller(auth), target);
-    if (!right) return json(res, 403, { error: "Only this person, an organization admin or their team manager can change this label.", code: "person_label_forbidden" });
+    if (!right) return json(res, 403, { error: "Only this person, an organization admin or their team manager can change this label.", code: "person_label_forbidden", permission: "people.labelAnyone" });
     const body = await readBody(req).catch(() => undefined);
     if (!body || typeof body !== "object" || Array.isArray(body) || !Object.hasOwn(body, "label") || Object.keys(body).length !== 1) {
       return json(res, 400, { error: "send { label: string | null }", code: "label_type" });

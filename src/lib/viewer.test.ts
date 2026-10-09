@@ -1,11 +1,24 @@
 import { describe, expect, it } from "vitest";
 
 import type { ConfigStatus } from "@/state/store";
-import { canEditConfig, canManageBackups, canManageComputers, canViewUsage, otherAuthorName, viewerActorId, viewerBotsReadOnly, viewerCanCreateBots, viewerIsOrgMember } from "./viewer";
+import { canEditConfig, canManageBackups, canManageComputers, canViewUsage, otherAuthorName, viewerActorId, viewerBotsReadOnly, viewerCan, viewerCanCreateBots, viewerIsOrgMember } from "./viewer";
 
 const ZARA = "pr_00000000-0000-4000-8000-000000000002";
 const member = { viewer: { operator: false, principalId: ZARA, email: "zara@example.test", name: "zara", role: "member", canCreateBots: true, operatorName: "JC" } } as ConfigStatus;
 const operator = { viewer: { operator: true, principalId: "pr_local", email: "jc@gox.ca", name: "JC", role: "owner", canCreateBots: true } } as ConfigStatus;
+
+describe("viewerCan (2026-10-09)", () => {
+  it("reads the server's list, else the member defaults for a member, else everything", () => {
+    expect(viewerCan({ viewer: { ...member.viewer!, permissions: ["usage.view"] } } as ConfigStatus, "usage.view")).toBe(true);
+    expect(viewerCan({ viewer: { ...member.viewer!, permissions: ["usage.view", "host.shell"] } } as ConfigStatus, "host.shell")).toBe(false);
+    expect(viewerCan({ viewer: { ...member.viewer!, permissions: [] as string[] } } as ConfigStatus, "bots.create")).toBe(false);
+    // an older server sends no list: a member holds the defaults
+    expect(viewerCan(member, "bots.create")).toBe(true);
+    expect(viewerCan(member, "usage.view")).toBe(false);
+    expect(viewerCan(operator, "host.shell")).toBe(true);
+    expect(viewerCan(null, "engines.manage")).toBe(true);
+  });
+});
 
 describe("viewer", () => {
   it("uses the server's principal, else the profile email, else local-owner", () => {

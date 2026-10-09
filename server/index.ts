@@ -238,6 +238,9 @@ import { GroupUsageReader } from "./group-thread-usage.ts";
 import { ledgerCost } from "./model-prices.ts";
 import type { PriceList } from "./prices.ts";
 import type { RequestAuth } from "./request-auth.ts";
+import { BOT_FIELD_PERMISSIONS, can, permissionRefusal, type PermissionKey } from "../shared/permissions.ts";
+import { isMemberBotField } from "../shared/viewer-capabilities.ts";
+import { effectivePermissions, permissionList, type EffectivePermissions } from "./org-permissions.ts";
 import { allowedProviderTestUrl, checkProviderKey, PROVIDER_KEY_KINDS, providerBaseUrl, type ProviderKeyKind } from "./provider-key-check.ts";
 import { forgetKey, noteKeyAccepted, noteKeyRejected, onKeyRejectionChange } from "./key-rejections.ts";
 import { assertWithinBudget, noteSpend, spendAlertText, spendState, takeSpendAlert } from "./spend.ts";
@@ -642,6 +645,7 @@ import {
   requestOrigin,
   requestSource,
   requiredScope,
+  routePermission,
   resolveLoopbackTrust,
   resolveRequestAuth,
   parseCookies,
@@ -10936,7 +10940,8 @@ function runAsChooserFor(auth: RequestAuth): RunAsChooser | null {
   const person = principals.byId(principalId);
   return {
     principalId,
-    admin: orgAdminCaller(auth),
+    // 2026-10-09: routines.runAsAnyone reaches every person, as an admin does.
+    admin: orgAdminCaller(auth) || callerCan(auth, "routines.runAsAnyone"),
     managedTeamIds: (person?.teams ?? []).filter((team) => team.manager).map((team) => team.id),
     manager: person?.perspicaxRole === "manager",
   };
@@ -10958,7 +10963,7 @@ function runAsPeople(): RunAsPerson[] {
  * principal id): nothing when none was sent, or when the unchanged person
  * was sent by someone who could not choose them (D5 then applies), else the
  * person or a refusal. */
-function routineRunAsChoice(auth: RequestAuth, body: unknown, existing?: Routine): { runAs?: string } | { refusal: { status: number; error: string; code: string } } {
+function routineRunAsChoice(auth: RequestAuth, body: unknown, existing?: Routine): { runAs?: string } | { refusal: { status: number; error: string; code: string; permission?: PermissionKey } } {
   const raw = body && typeof body === "object" ? (body as { runAs?: unknown }).runAs : undefined;
   if (raw === undefined || raw === null || raw === "") return {};
   if (typeof raw !== "string" || raw.length > 64) return { refusal: { status: 400, error: "runAs must be a person's principal id", code: "run_as_invalid" } };
@@ -11002,7 +11007,7 @@ function auditRoutineRunAs(auth: RequestAuth, routine: Routine, before: string |
  * and the loopback keep the bot-level rule (`run`). */
 function mayRunRoutineNow(auth: RequestAuth, routine: Routine): boolean {
   if (IDENTITY.kind !== "perspicax" || auth.kind !== "session") return true;
-  if (orgAdminCaller(auth)) return true;
+  if (orgAdminCaller(auth) || callerCan(auth, "routines.runNowAny")) return true;
   const principalId = auth.session.principalId?.trim();
   if (!principalId) return false;
   const bot = store.bot(routine.botId);
@@ -20688,7 +20693,7 @@ const pluginMarketplaces = new PluginMarketplaces({
 });
 ROUTES.push(createMarketplaceRoutes({
   store: pluginMarketplaces,
-  mayManage: (auth) => computerOwner(auth),
+  mayManage: (auth) => computerOwner(auth) || (IDENTITY.kind === "perspicax" && callerCan(auth, "apps.marketplaces")),
   actor: (auth) => sessionPrincipal(auth) ?? undefined,
   install: async (marketplace, plugin, { auth }) => {
     if (pluginMarketplaces.installed().some((entry) => entry.key === `${plugin}@${marketplace}`)) {
@@ -20807,7 +20812,7 @@ ROUTES.push(createPluginRoutes({
   },
   // an admin, or this computer's own person (a client session bound to the
   // operator on a personal server: iOS parity S2)
-  mayInstall: (auth) => computerOwner(auth),
+  mayInstall: (auth) => computerOwner(auth) || (IDENTITY.kind === "perspicax" && callerCan(auth, "apps.serverPlugins")),
   install: async (listing, { req, auth, returnTo, callbackOrigin }) => {
     const current = cfg.mcpServers ?? {};
     const existing = listMcpServers(current).find((server) => "url" in server && server.url === listing.url);
@@ -21082,7 +21087,8 @@ ROUTES.push(createPersonLabelRoutes({
   caller: (auth) => {
     const principalId = auth.kind === "session" ? auth.session.principalId?.trim().toLowerCase() || null
       : auth.kind === "loopback" && auth.trust !== "service" ? localPrincipalId() : null;
-    const admin = IDENTITY.kind === "perspicax" ? orgAdminCaller(auth)
+    // 2026-10-09: people.labelAnyone lets a person change anyone's label.
+    const admin = IDENTITY.kind === "perspicax" ? orgAdminCaller(auth) || callerCan(auth, "people.labelAnyone")
       : auth.kind === "loopback" ? auth.trust !== "service" : auth.scopes.includes("admin");
     const person = IDENTITY.kind === "perspicax" && principalId ? principals.byId(principalId) : null;
     return { principalId, admin, managedTeamIds: (person?.teams ?? []).filter((team) => team.manager).map((team) => team.id) };
@@ -21409,6 +21415,12 @@ function sessionPrincipal(auth: RequestAuth): string | null {
 /** Organization server: why this request may not turn Full on for a bot,
  * or null. The caller must be the bot's owner, signed in. */
 function orgFullAccessRefusalFor(auth: RequestAuth, bot: BotRecord, confirmed: boolean) {
+  // 2026-10-09: a member's profile must include bots.fullAccess (an admin
+  // still meets the owner rule below, as before).
+  if (auth.kind === "session" && !orgAdminCaller(auth) && !callerCan(auth, "bots.fullAccess")) {
+    const refusal = permissionRefusal("bots.fullAccess");
+    return { status: 403 as const, error: refusal.message, code: "permission_missing" as const, permission: refusal.permission };
+  }
   return orgFullAccessGrantRefusal({
     policyAllowed: orgFullAccessPolicy(),
     callerPrincipalId: sessionPrincipal(auth),
@@ -21968,8 +21980,55 @@ function personBotsReadOnly(principalId: string | undefined | null): boolean {
   if (IDENTITY.kind !== "perspicax" || !principalId || !isPrincipalId(principalId)) return false;
   const person = principals.byId(principalId);
   if (!person || person.local === true || person.orgRole === "admin") return false;
-  const sub = person.subject?.iss === IDENTITY.issuer ? person.subject.sub : undefined;
+  // 2026-10-09: a profile without bots.create reads the same way.
+  return !principalPermissions(principalId).permissions.has("bots.create");
+}
+/** The person sheet alone (`sagax_bots: use`), before the permissions. */
+function personSheetBotsUseOnly(principalId: string): boolean {
+  if (IDENTITY.kind !== "perspicax") return false;
+  const person = principals.byId(principalId);
+  const sub = person?.subject && person.subject.iss === IDENTITY.issuer ? person.subject.sub : undefined;
   return Boolean(sub) && perspicaxDirectory?.botRights(sub!) === "use";
+}
+/** 2026-10-09: a person's effective permissions (server/org-permissions.ts):
+ * an organization admin holds every key; anyone else the list Perspicax
+ * sent (the union over their profiles), else the member defaults, narrowed
+ * by their person sheet. `sessionAdmin: false` keeps an admin's chat-only
+ * device to the member defaults. */
+function principalPermissions(principalId: string | undefined | null, options: { sessionAdmin?: boolean } = {}): EffectivePermissions {
+  const person = principalId && isPrincipalId(principalId) ? principals.byId(principalId) : undefined;
+  const admin = Boolean(person && (person.local === true || person.orgRole === "admin"));
+  if (admin && options.sessionAdmin !== false) return effectivePermissions({ admin: true, fromDirectory: null });
+  if (IDENTITY.kind !== "perspicax" || !person || admin) return effectivePermissions({ admin: false, fromDirectory: null });
+  const sub = person.subject?.iss === IDENTITY.issuer ? person.subject.sub : undefined;
+  return effectivePermissions({
+    admin: false,
+    fromDirectory: sub ? perspicaxDirectory?.permissionsOf(sub) ?? null : null,
+    botsUseOnly: personSheetBotsUseOnly(person.id),
+    integrationsOff: personIntegrationsOff(person.id),
+  });
+}
+/** The permissions of a request's caller; undefined is the operator at
+ * this computer (everything). A local service holds nothing. On a solo
+ * server an admin session holds everything and anyone else the defaults. */
+function callerPermissions(auth: RequestAuth): EffectivePermissions | undefined {
+  if (auth.kind === "loopback") return auth.trust === "service" ? effectivePermissions({ admin: false, fromDirectory: [] }) : undefined;
+  if (orgAdminCaller(auth)) return effectivePermissions({ admin: true, fromDirectory: null });
+  if (IDENTITY.kind !== "perspicax") return effectivePermissions({ admin: auth.scopes.includes("admin"), fromDirectory: null });
+  return principalPermissions(auth.session.principalId, { sessionAdmin: false });
+}
+/** For the request gate (request-auth.ts PERMISSION_ROUTES): whether a
+ * session without admin scope holds a permission. Organization servers
+ * only; an admin's chat-only device holds the member defaults. */
+function sessionPermits(session: SessionRecord, permission: PermissionKey): boolean {
+  if (IDENTITY.kind !== "perspicax" || !session.principalId) return false;
+  const person = principals.byId(session.principalId);
+  if (!person || person.disabledAt !== undefined || person.consoleDisabled) return false;
+  return can(principalPermissions(session.principalId, { sessionAdmin: false }), permission);
+}
+/** The one gate (shared/permissions.ts `can`). */
+function callerCan(auth: RequestAuth, key: PermissionKey): boolean {
+  return can(callerPermissions(auth), key);
 }
 /** The signed-in person may use shared bots only. Loopback and an
  * organization admin are never narrowed. */
@@ -21983,6 +22042,27 @@ function ownerBotsReadOnly(bot: { ownerUserId?: unknown }): boolean {
 }
 /** The refusal a read-only person gets on anything that creates or changes a bot. */
 const BOTS_READ_ONLY = { error: "org_bots_read_only", message: "Your administrator lets you use shared bots only." } as const;
+/** BOTS_READ_ONLY when the person sheet says `use`; the missing
+ * permission when it is a profile without bots.create. */
+function botsReadOnlyRefusal(principalId: string | undefined | null): Record<string, unknown> {
+  return principalId && isPrincipalId(principalId) && personSheetBotsUseOnly(principalId)
+    ? { ...BOTS_READ_ONLY }
+    : permissionRefusal("bots.create");
+}
+/** 2026-10-09: the first field a member may not set on a bot they own, and
+ * the permission that would let them (none: it stays an admin's). A field
+ * of MEMBER_BOT_FIELDS needs nothing more; BOT_FIELD_PERMISSIONS maps the
+ * others. Null when every field is allowed. */
+function memberBotFieldRefusal(auth: RequestAuth, body: unknown): { field: string; permission?: PermissionKey } | null {
+  if (!body || typeof body !== "object" || Array.isArray(body)) return { field: "body" };
+  for (const field of Object.keys(body)) {
+    if (isMemberBotField(field)) continue;
+    const permission = BOT_FIELD_PERMISSIONS[field];
+    if (!permission) return { field };
+    if (IDENTITY.kind !== "perspicax" || !callerCan(auth, permission)) return { field, permission: IDENTITY.kind === "perspicax" ? permission : undefined };
+  }
+  return null;
+}
 /** Organization server: a Perspicax admin manages this person's plugins,
  * skills and MCP servers (`sagax_integrations: off` in the directory,
  * Perspicax migration 0046; server/person-integrations.ts). Never an
@@ -21999,7 +22079,15 @@ function personIntegrationsOff(principalId: string | undefined | null): boolean 
  * An organization admin session is never narrowed. */
 function integrationsLocked(auth: RequestAuth): boolean {
   if (auth.kind !== "session" || orgAdminCaller(auth)) return false;
-  return personIntegrationsOff(auth.session.principalId);
+  if (personIntegrationsOff(auth.session.principalId)) return true;
+  return IDENTITY.kind === "perspicax" && !callerCan(auth, "apps.ownIntegrations");
+}
+/** The refusal integrationsLocked answers: the person sheet's words, or
+ * the missing permission. */
+function integrationsRefusal(auth: RequestAuth): Record<string, unknown> {
+  return auth.kind === "session" && !personIntegrationsOff(auth.session.principalId)
+    ? { ...INTEGRATIONS_ADMIN_ONLY, ...permissionRefusal("apps.ownIntegrations") }
+    : { ...INTEGRATIONS_ADMIN_ONLY };
 }
 /** A chat-scoped session acting on a bot it owns (and may still create
  * bots): the only non-admin case that edits or deletes a bot. */
@@ -22069,11 +22157,13 @@ function viewerIdentity(auth: RequestAuth): ViewerIdentity | null {
   const role = channelActorRole(auth);
   const canCreateBots = botCreationAllowed(auth);
   const managed = profileManagedFor(auth) ? PROFILE_MANAGEMENT! : {};
-  const capabilities = capabilitiesForAuth(auth, { orgPairing: IDENTITY.kind === "perspicax" });
+  const effective = IDENTITY.kind === "perspicax" ? callerPermissions(auth) ?? effectivePermissions({ admin: true, fromDirectory: null }) : null;
+  const capabilities = capabilitiesForAuth(auth, { orgPairing: IDENTITY.kind === "perspicax", viewUsage: effective ? can(effective, "usage.view") : false });
+  const permissionFields = effective ? { permissions: permissionList(effective), permissionsSource: effective.source } : {};
   if (viewerIsOperator(auth)) {
     return {
       operator: true, principalId: localPrincipalId(), email: cfg.profile?.email?.trim() ?? "",
-      name: cfg.profile?.name?.trim() ?? "", role, canCreateBots, capabilities, ...managed,
+      name: cfg.profile?.name?.trim() ?? "", role, canCreateBots, capabilities, ...permissionFields, ...managed,
     };
   }
   const session = (auth as Extract<RequestAuth, { kind: "session" }>).session;
@@ -22084,8 +22174,8 @@ function viewerIdentity(auth: RequestAuth): ViewerIdentity | null {
   return {
     // the name Perspicax sent (refreshed on each sign-in and directory
     // sync), else the address, else the login
-    operator: false, principalId, email, name: personDisplayName({ ...person, email }), role, canCreateBots, capabilities,
-    ...(personBotsReadOnly(principalId) ? { botsReadOnly: true as const } : {}),
+    operator: false, principalId, email, name: personDisplayName({ ...person, email }), role, canCreateBots, capabilities, ...permissionFields,
+    ...(personBotsReadOnly(principalId) ? { botsReadOnly: true as const, ...(principalId && !personSheetBotsUseOnly(principalId) ? { botsReadOnlyReason: "permission" as const } : {}) } : {}),
     ...(personIntegrationsOff(principalId) ? { integrationsManagedByAdmin: true as const } : {}),
     operatorName: cfg.profile?.name?.trim() || "",
     ...managed,
@@ -22226,6 +22316,7 @@ if (IDENTITY.kind === "perspicax") {
     facts: (id) => botFacts(store.bot(id)!),
     viewer: authzViewerFor,
     teamsOf: principalTeams,
+    shareRefusal: (auth) => (callerCan(auth, "sharing.grants") ? null : permissionRefusal("sharing.grants")),
     resolvePerson: resolveOrgGrantee,
     teamKnown: (id) => orgTeams.has(id) || principals.membersOfTeam(id).length > 0,
     describe: describeGrantTarget,
@@ -22486,6 +22577,7 @@ ROUTES.push(createDirectGrantRoutes({
   },
   actorId: channelActorId,
   botsReadOnly: (actorId) => personBotsReadOnly(actorId),
+  shareRefusal: (auth) => (IDENTITY.kind !== "perspicax" || callerCan(auth, "sharing.grants") ? null : permissionRefusal("sharing.grants")),
   // Called only once the actor owns the bot: resolving an email may create
   // its principal. Anything that is not a principal id or an account email
   // is refused.
@@ -23556,6 +23648,10 @@ function personEngineAccess(principalId: string): Array<{ id: string; via: Engin
 
 /** The console's People (server/org-admin-people.ts). */
 const orgPeopleDeps: PeopleDeps = {
+  permissions: (principalId) => {
+    const effective = principalPermissions(principalId);
+    return { source: effective.source, effective: permissionList(effective), narrowedBy: [...effective.narrowedBy] };
+  },
   people: () => {
     if (IDENTITY.kind !== "perspicax" || !perspicaxDirectory) return [];
     return orgDirectoryEntries(IDENTITY.issuer, perspicaxDirectory.people(), (iss, sub) => principals.bySubject(iss, sub))
@@ -23840,7 +23936,7 @@ ROUTES.push(createBotCatalogRoutes({
   viewer: (auth) => {
     const principalId = actorPrincipalId(auth);
     if (!principalId) return null;
-    return { principalId, admin: orgAdminCaller(auth), canCreate: botCreationAllowed(auth), botsReadOnly: callerBotsReadOnly(auth) };
+    return { principalId, admin: orgAdminCaller(auth), canCreate: botCreationAllowed(auth), botsReadOnly: callerBotsReadOnly(auth), feature: callerCan(auth, "bots.catalogFeature") };
   },
   level: (auth, botId) => {
     const bot = store.bot(botId);
@@ -24655,6 +24751,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       features: { sharedComputers: lendingEnabled(), orgPairing: IDENTITY.kind === "perspicax", orgDirectory: IDENTITY.kind === "perspicax", serverCatalogue: IDENTITY.kind !== "perspicax" },
       loopbackTrust: LOOPBACK.trust,
       cliOwnerToken,
+      permits: sessionPermits,
     });
     // The browser's cookie carries the term it was set with, and the
     // session's term slides on use (sessions.ts `renew`), so re-issue the
@@ -24686,7 +24783,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
     if (IDENTITY.kind === "perspicax" && path === "/api/org/import" && gate.auth?.kind !== "session") {
       return json(res, 401, { error: "Sign in with Pulsatrix to copy bots into this organization.", code: "session_required" });
     }
-    if (!gate.auth) return json(res, gate.status, { error: gate.error });
+    if (!gate.auth) return json(res, gate.status, gate.permission ? permissionRefusal(gate.permission) : { error: gate.error });
     const auth = gate.auth;
     // Organization server: a person the provider signalled out is not
     // served, and a session whose grant the provider stopped refreshing ends
@@ -24729,8 +24826,14 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       auth.scopes = scopes;
       if (current.idp) auth.session.idp = current.idp;
       if (narrowed) {
-        const needed = requiredScope(method, path, { sharedComputers: sharedComputersEnabled(cfg), orgPairing: IDENTITY.kind === "perspicax", orgDirectory: IDENTITY.kind === "perspicax", serverCatalogue: IDENTITY.kind !== "perspicax" });
-        if (!scopes.includes(needed)) return json(res, 403, { error: `forbidden: this session lacks the ${needed} scope` });
+        const features = { sharedComputers: sharedComputersEnabled(cfg), orgPairing: IDENTITY.kind === "perspicax", orgDirectory: IDENTITY.kind === "perspicax", serverCatalogue: IDENTITY.kind !== "perspicax" };
+        const needed = requiredScope(method, path, features);
+        if (!scopes.includes(needed)) {
+          // 2026-10-09: a route a permission opens (PERMISSION_ROUTES).
+          const permission = needed === "admin" && scopes.includes("client") ? routePermission(method, path, features) : null;
+          if (!permission) return json(res, 403, { error: `forbidden: this session lacks the ${needed} scope` });
+          if (!sessionPermits(auth.session, permission)) return json(res, 403, permissionRefusal(permission));
+        }
       }
     }
     if (HOSTED_WORKSPACE && auth.kind === "session") {
@@ -28074,7 +28177,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       const notYours = routineResultsRefusal(body);
       if (notYours) return json(res, 403, { error: notYours });
       const runAsChoice = routineRunAsChoice(auth, body);
-      if ("refusal" in runAsChoice) return json(res, runAsChoice.refusal.status, { error: runAsChoice.refusal.error, code: runAsChoice.refusal.code });
+      if ("refusal" in runAsChoice) return json(res, runAsChoice.refusal.status, { error: runAsChoice.refusal.error, code: runAsChoice.refusal.code, ...(runAsChoice.refusal.permission ? { permission: runAsChoice.refusal.permission } : {}) });
       const writer = auth.kind === "session" ? actorKey(auth) : CLOUD_NOBODY_KEY;
       const routine = withRoutineWriter(writer, () => routines!.create(body, undefined, { ...routineActor(auth), ...runAsChoice }));
       auditRoutineRunAs(auth, routine, routineActor(auth)?.actorPrincipalId);
@@ -28095,7 +28198,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       // Run now (JC, 2026-10-08): the bot's owner, the person it runs as or
       // an admin; one run of a routine in flight at a time.
       const target = routines!.listRoutines().find((candidate) => candidate.id === routineMatch![1]);
-      if (target && !mayRunRoutineNow(auth, target)) return json(res, 403, { error: "Only the bot's owner, the person this routine runs as or an admin can run it now.", code: "run_now_not_allowed" });
+      if (target && !mayRunRoutineNow(auth, target)) return json(res, 403, { error: "Only the bot's owner, the person this routine runs as or an admin can run it now.", code: "run_now_not_allowed", permission: "routines.runNowAny" });
       if (target && routineRunInFlight(target.id)) return json(res, 409, { error: "A run of this routine is already in progress.", code: "run_in_flight" });
       const run = routines!.runNow(routineMatch[1]);
       if (run && target) auditRoutineRunNow(auth, target, run);
@@ -28144,7 +28247,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       if (notYours) return json(res, 403, { error: notYours });
       const existingRoutine = routines!.listRoutines().find((candidate) => candidate.id === routineMatch![1]);
       const runAsChoice = routineRunAsChoice(auth, body, existingRoutine);
-      if ("refusal" in runAsChoice) return json(res, runAsChoice.refusal.status, { error: runAsChoice.refusal.error, code: runAsChoice.refusal.code });
+      if ("refusal" in runAsChoice) return json(res, runAsChoice.refusal.status, { error: runAsChoice.refusal.error, code: runAsChoice.refusal.code, ...(runAsChoice.refusal.permission ? { permission: runAsChoice.refusal.permission } : {}) });
       const runAsBefore = existingRoutine ? effectiveRunAs(existingRoutine) : undefined;
       const before = cloudRoutineAuthors ? routines!.listRoutines().find((candidate) => candidate.id === routineMatch![1]) : undefined;
       const wasOwners = Boolean(before && cloudRoutineAuthors?.authored(before.id, before));
@@ -29655,8 +29758,11 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       if (humans) return json(res, humans.startsWith("unknown team") ? 400 : 403, { error: humans });
       // A paired phone's companion edits a room like a member session does.
       if ((auth.kind === "session" && !auth.scopes.includes("admin")) || companionRequest(req, auth)) {
-        // The owner of an organization group also picks its default responder.
-        const field = clientGroupPatchViolation(body, ownerRule ? ["defaultResponder"] : []);
+        // The owner of an organization group also picks its default responder,
+        // and its working folder with folders.roomWorkingFolder (2026-10-09).
+        const folder = ownerRule && IDENTITY.kind === "perspicax" && callerCan(auth, "folders.roomWorkingFolder");
+        const field = clientGroupPatchViolation(body, ownerRule ? ["defaultResponder", ...(folder ? ["cwd"] : [])] : []);
+        if (field === "cwd" && ownerRule && IDENTITY.kind === "perspicax") return json(res, 403, { ...permissionRefusal("folders.roomWorkingFolder"), field });
         if (field) return json(res, 403, { error: `forbidden: this session may rename or mark a room, not change "${field}" (needs the admin scope)` });
       }
       const movesSection = existingGroup && body && typeof body === "object" && !Array.isArray(body) && "section" in body;
@@ -30181,7 +30287,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       // fields memberBotFieldViolation allows, and it is theirs.
       const memberCreate = auth.kind === "session" && !auth.scopes.includes("admin");
       if (memberCreate && !botCreationAllowed(auth)) {
-        if (personBotsReadOnly(auth.session.principalId)) return json(res, 403, BOTS_READ_ONLY);
+        if (personBotsReadOnly(auth.session.principalId)) return json(res, 403, botsReadOnlyRefusal(auth.session.principalId));
         return json(res, 403, { error: "forbidden: only a member of the organization can create bots" });
       }
       const template = memberCreate
@@ -30189,9 +30295,15 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         : resolveBotCreationDefaults(cfg.newBotDefaults, body);
       const settings = template.profile;
       if (memberCreate) {
-        const field = memberBotFieldViolation(settings) ??
-          (["preset", "visibility", "section", "cwd"].find((key) => body[key] !== undefined) ?? null);
-        if (field) return json(res, 403, { error: `forbidden: a member's new bot may set its name, look, instructions and model, not "${field}"` });
+        // 2026-10-09: a field beyond MEMBER_BOT_FIELDS needs its permission
+        // (BOT_FIELD_PERMISSIONS); a preset stays an admin's.
+        const extra = ["visibility", "section", "cwd"].filter((key) => body[key] !== undefined);
+        const refused = memberBotFieldRefusal(auth, { ...settings, ...Object.fromEntries(extra.map((key) => [key, body[key]])) }) ??
+          (body.preset !== undefined ? { field: "preset" } : null);
+        if (refused) {
+          if (refused.permission) return json(res, 403, { ...permissionRefusal(refused.permission), field: refused.field });
+          return json(res, 403, { error: `forbidden: a member's new bot may set its name, look, instructions and model, not "${refused.field}"` });
+        }
       }
       // A preset (presets.ts) supplies content: playbooks, skills and
       // starter notes. Name, look and instructions stay the request's own.
@@ -30612,7 +30724,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         // returns before the member field check, so the cap is applied here.
         if (callerBotsReadOnly(auth)) return json(res, 403, BOTS_READ_ONLY);
         const refusal = orgFullAccessRefusalFor(auth, target, body.confirmFullAccess === true);
-        if (refusal) return json(res, refusal.status, { error: refusal.error, code: refusal.code });
+        if (refusal) return json(res, refusal.status, { error: refusal.error, code: refusal.code, ...("permission" in refusal ? permissionRefusal(refusal.permission) : {}) });
         if (target.busy) return json(res, 409, { error: "stop this bot's turn before changing its approval level" });
         if (target.approvalGrant) return json(res, 409, { error: "the bot's approval mode is still being confirmed" });
         if (!supportsApprovalMode(target.modelSelection, "full")) return json(res, 400, { error: "This provider does not support Full access" });
@@ -30641,7 +30753,13 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         // member (MEMBER_BOT_FIELDS); never the approval level or anything
         // that decides where or how far the bot runs.
         const editor = !own && Boolean(target) && IDENTITY.kind === "perspicax" && atLeast(viewerBotLevel(auth, target!), "edit");
-        const field = own || editor ? memberBotFieldViolation(body) : clientBotPatchViolation(body);
+        // 2026-10-09: the owner sets more with the permissions of their
+        // profiles (BOT_FIELD_PERMISSIONS); an editor stays at MEMBER_BOT_FIELDS.
+        if (own) {
+          const refused = memberBotFieldRefusal(auth, body);
+          if (refused?.permission) return json(res, 403, { ...permissionRefusal(refused.permission), field: refused.field });
+        }
+        const field = own ? memberBotFieldRefusal(auth, body)?.field ?? null : editor ? memberBotFieldViolation(body) : clientBotPatchViolation(body);
         if (field) {
           return json(res, 403, {
             error: own || editor
@@ -31286,7 +31404,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       if (level === null && !orgAdminCaller(auth)) return { status: 404, body: { error: "no such bot" } };
       if (change && level !== "owner" && level !== "manage" && !orgAdminCaller(auth)) return { status: 403, body: { error: "Only the bot's owner, or someone who manages it, can change its skills.", code: "skills_owner_only" } };
       // Perspicax `sagax_integrations: off`: an admin manages their skills.
-      if (change && integrationsLocked(auth)) return { status: 403, body: { ...INTEGRATIONS_ADMIN_ONLY } };
+      if (change && integrationsLocked(auth)) return { status: 403, body: integrationsRefusal(auth) };
       return null;
     };
     {
@@ -31432,7 +31550,9 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
     // plugin brought is changed where it came from.
     if (m && (method === "PUT" || method === "DELETE")) {
       if (!skillsLibraryEnabled(cfg)) return json(res, 404, { error: "skills library is not enabled" });
-      if (!computerOwner(auth)) return json(res, 403, { error: "forbidden: only this computer's owner or an admin can change the skills library" });
+      if (!computerOwner(auth) && !(IDENTITY.kind === "perspicax" && callerCan(auth, "skills.library"))) {
+        return json(res, 403, IDENTITY.kind === "perspicax" ? permissionRefusal("skills.library") : { error: "forbidden: only this computer's owner or an admin can change the skills library" });
+      }
       const name = m[1]!;
       const plugin = pluginMarketplaces.installed().find((entry) => entry.skills.includes(name) && readSkillLibraryIndex()[name]?.source === entry.marketplace);
       if (plugin) {
@@ -32817,7 +32937,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           // is enough to reach this handler, so the read-only cap is here.
           if (callerBotsReadOnly(auth)) return json(res, 403, BOTS_READ_ONLY);
           const refusal = orgFullAccessRefusalFor(auth, current, body.confirmFullAccess === true);
-          if (refusal) return json(res, refusal.status, { error: refusal.error, code: refusal.code });
+          if (refusal) return json(res, refusal.status, { error: refusal.error, code: refusal.code, ...("permission" in refusal ? permissionRefusal(refusal.permission) : {}) });
           orgFullGrant = true;
         }
         if (!orgFullGrant && (mode === "full" || mode === "custom") && memberOwnedInOrg(current)) return json(res, 409, MEMBER_BOT_FULL_ACCESS);
@@ -33594,6 +33714,9 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       resetPathCache();
       const instances = await instancesForViewer(auth.kind === "session" ? auth.session.principalId?.trim().toLowerCase() || null : null);
       if (auth.scopes.includes("admin")) return json(res, 200, { instances });
+      // 2026-10-09: a person whose profile manages the engines reads them
+      // as an admin does (they install, sign in and update them).
+      if (IDENTITY.kind === "perspicax" && callerCan(auth, "engines.manage")) return json(res, 200, { instances });
       // An organization member's copy (memberInstanceView); elsewhere a client
       // session (a paired phone or tablet) reads the catalogue its model
       // picker needs, not how the host is set up (clientInstanceView).
@@ -33823,6 +33946,11 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       const parsed = instanceSettingsSchema.safeParse(await readBody(req, 16384));
       if (!parsed.success) return json(res, 400, { error: "Supply a valid CLI path, account name, configuration directory or boolean tools setting." });
       const body = parsed.data;
+      // 2026-10-09: engines.manage opens this route to a person; an
+      // engine's program and its configuration folder stay host.shell.
+      if (!auth.scopes.includes("admin") && (body.cli !== undefined || body.configDir !== undefined)) {
+        return json(res, 403, { ...permissionRefusal("host.shell"), field: body.cli !== undefined ? "cli" : "configDir" });
+      }
       const cliRefusal = body.cli?.trim() ? cliCommandRefusal(body.cli) : null;
       if (cliRefusal) return json(res, 400, { error: cliRefusal });
       const instanceId = instancePatch[1];

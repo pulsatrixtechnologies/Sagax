@@ -55,6 +55,9 @@ export interface CatalogViewer {
   canCreate: boolean;
   /** A Perspicax admin lets this person use shared bots only. */
   botsReadOnly: boolean;
+  /** 2026-10-09: features bots in the catalogue (an admin, or a profile
+   * with bots.catalogFeature). Absent: admins only. */
+  feature?: boolean;
 }
 
 export interface CatalogAuditRow {
@@ -184,8 +187,8 @@ export function createBotCatalogRoutes(deps: BotCatalogRouteDeps): RouteHandler 
       }
       if (level !== "owner" && !viewer.admin) return json(res, 403, { error: "catalog_owner_only", message: "Only the bot's owner or an organization admin can publish it." });
       const before = bot.catalog?.published ? bot.catalog : null;
-      if (body.featured !== undefined && body.featured !== (before?.featured === true) && !viewer.admin) {
-        return json(res, 403, { error: "catalog_feature_admin", message: "Only an organization admin can feature a bot." });
+      if (body.featured !== undefined && body.featured !== (before?.featured === true) && !viewer.admin && viewer.feature !== true) {
+        return json(res, 403, { error: "catalog_feature_admin", message: "Only an organization admin can feature a bot.", permission: "bots.catalogFeature" });
       }
       if (body.published && bot.archived) return json(res, 409, { error: "archived", message: "Restore this bot before publishing it." });
       if (!body.published) {

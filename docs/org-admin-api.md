@@ -39,7 +39,7 @@ module per area (`server/org-admin-*.ts`).
 
 | Method and path | Role | What |
 |---|---|---|
-| `GET capabilities` | employee | the release and every route this server serves |
+| `GET capabilities` | employee | the release, every route this server serves and the permission catalogue |
 | `GET overview` | manager | health, engines, sandboxes, presence, turns, routines, errors, latency, host, deploy, backup |
 | `GET bots` | manager | every bot in reach; paged and filtered when asked |
 | `GET usage?from&to` | manager | usage per day, bot, speaker and engine |
@@ -56,17 +56,51 @@ GET /api/org/admin/capabilities
 
 ```json
 {
-  "version": "0.4.14",
-  "api": 2,
-  "routes": ["GET audit", "GET bots", "GET capabilities", "GET overview", "GET usage"]
+  "version": "0.4.15",
+  "api": 3,
+  "routes": ["GET audit", "GET bots", "GET capabilities", "GET overview", "GET usage"],
+  "permissionsVersion": 1,
+  "permissionGroups": [{ "id": "bots", "label": { "en": "Bots", "fr": "Bots" } }],
+  "permissions": [
+    {
+      "key": "bots.create",
+      "group": "bots",
+      "label": { "en": "Create and own bots", "fr": "Créer et posséder des bots" },
+      "description": { "en": "Create bots, bring them from a solo Sagax, ...", "fr": "..." },
+      "memberDefault": true,
+      "adminOnly": false
+    },
+    {
+      "key": "host.shell",
+      "group": "host",
+      "label": { "en": "Run commands on the server", "fr": "Exécuter des commandes sur le serveur" },
+      "description": { "en": "...", "fr": "..." },
+      "memberDefault": false,
+      "adminOnly": true,
+      "adminOnlyReason": { "en": "It runs programs on the server's own machine, outside anyone's space.", "fr": "..." }
+    }
+  ]
 }
 ```
 
 `version` is the Sagax release people know (`package.json` `forkVersion`, or
 `SAGAX_RELEASE_VERSION`), not the base version the link sends. `api` is 1 for
-a server that predates this route (it answers `404 not_found`) and 2 since
-the console routes. A route missing from `routes` is not offered by this
-server: the console says so instead of calling it.
+a server that predates this route (it answers `404 not_found`), 2 since
+the console routes and 3 since the permission catalogue (2026-10-09). A route
+missing from `routes` is not offered by this server: the console says so
+instead of calling it.
+
+`permissions` is the permission catalogue of this server
+(`shared/permissions.ts`, spec
+`docs/superpowers/specs/2026-10-09-sagax-permission-matrix.md`): one row per
+key, in catalogue order, with its group, English and French label and
+description, whether a plain member holds it when Perspicax sends no list
+(`memberDefault`), and whether only an organization admin may hold it
+(`adminOnly`, with `adminOnlyReason`). Perspicax draws its permission matrix
+from these rows and sends back, in the directory, each person's effective
+keys (`permissions` on the person: the union over the profiles they hold,
+every key for an admin). Keys are stable; a server that predates the
+catalogue answers without `permissions`.
 
 ### `GET overview`
 
@@ -205,9 +239,20 @@ The row above, plus:
     "mcpServers": [{ "id": "github", "name": "github", "transport": "remote", "state": "enabled" }],
     "composioApps": []
   },
-  "routinesAsRunner": [{ "id": "r_1", "name": "Daily digest", "botId": "5e38..." }]
+  "routinesAsRunner": [{ "id": "r_1", "name": "Daily digest", "botId": "5e38..." }],
+  "permissions": {
+    "source": "perspicax",
+    "effective": ["bots.create", "bots.fullAccess", "sharing.grants", "apps.ownIntegrations", "usage.view"],
+    "narrowedBy": []
+  }
 }
 ```
+
+`permissions` (2026-10-09) is what this server enforces for the person:
+`source` is `admin` (every key), `perspicax` (the list the directory sent,
+unknown and admin-only keys dropped) or `defaults` (Perspicax sent none: the
+member defaults). `narrowedBy` names the person sheet settings applied on top
+(`sagax_bots` when it says use only, `sagax_integrations` when off).
 
 Connected apps (Composio) belong to the workspace in Sagax, not to a person:
 `composioApps` is always empty. `mcpServers[].state` is `paused` while

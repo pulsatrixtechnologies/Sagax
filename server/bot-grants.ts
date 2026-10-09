@@ -58,6 +58,9 @@ export interface BotGrantRouteDeps {
   onChanged(botId: string): void;
   /** Slice 7: one audit row per change that was saved (category rights). */
   audit?(auth: RequestAuth, row: GrantAuditRow): void;
+  /** 2026-10-09: the refusal for a caller whose profile lacks
+   * sharing.grants (null: allowed). Checked before any write. */
+  shareRefusal?(auth: RequestAuth): Record<string, unknown> | null;
   now?: () => number;
 }
 
@@ -119,7 +122,14 @@ export function createBotGrantRoutes(deps: BotGrantRouteDeps): RouteHandler {
         return reply(403, { error: "you may not administer this bot's sharing", code: "not_allowed" });
       }
       res.setHeader("cache-control", "no-store");
-      return reply(200, { grants: wireGrants(shown ?? [], deps.describe), administer });
+      // 2026-10-09: a caller whose profile lacks sharing.grants reads the
+      // grants without the editor (administer null).
+      return reply(200, { grants: wireGrants(shown ?? [], deps.describe), administer: deps.shareRefusal?.(auth) ? null : administer });
+    }
+
+    if ((all && method === "PUT") || (one && method === "DELETE")) {
+      const refused = deps.shareRefusal?.(auth);
+      if (refused) return reply(403, refused);
     }
 
     if (all && method === "PUT") {

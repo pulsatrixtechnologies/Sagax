@@ -21,6 +21,7 @@
 // (org-admin-files.ts, JC 2026-10-08: "access to all features of every bot,
 // view their files"): a bot's files, for managers in reach and admins, each
 // read and download written to the admin activity log.
+import { permissionCatalogue } from "../shared/permissions.ts";
 import type { IncomingMessage, ServerResponse } from "node:http";
 
 import { aggregateOrgUsage, ORG_USAGE_MAX_ROWS, parseOrgUsageRange, type OrgUsageAggregate, type UsageRow } from "./usage-ledger.ts";
@@ -51,8 +52,9 @@ export const ORG_ADMIN_MAX_BOTS = 2_000;
 export const ORG_ADMIN_MAX_APPROVALS = 200;
 const MAX_BODY_BYTES = 16 * 1024;
 /** The version of this API `GET capabilities` reports: 1 was the nine first
- * routes, 2 the console routes of 2026-10-08. */
-export const ORG_ADMIN_API_VERSION = 2;
+ * routes, 2 the console routes of 2026-10-08, 3 the permission catalogue
+ * of 2026-10-09 (`permissions`, `permissionGroups`, `permissionsVersion`). */
+export const ORG_ADMIN_API_VERSION = 3;
 /** The built-in routes, as `GET capabilities` names them. */
 const BUILT_IN_ROUTES: Array<Pick<ConsoleRoute, "method" | "path">> = [
   { method: "GET", path: "capabilities" },
@@ -519,7 +521,16 @@ export function createOrgAdminRoutes(deps: OrgAdminRouteDeps): (req: IncomingMes
     const inReach = (principalId: string | null | undefined) => !reach || (principalId ? reach.has(principalId) : false);
 
     if (route.name === "capabilities") {
-      send(res, 200, { version: deps.version?.() ?? "unknown", api: ORG_ADMIN_API_VERSION, routes: capabilities });
+      const catalogue = permissionCatalogue();
+      send(res, 200, {
+        version: deps.version?.() ?? "unknown",
+        api: ORG_ADMIN_API_VERSION,
+        routes: capabilities,
+        // 2026-10-09: the permission catalogue Perspicax draws its matrix from.
+        permissionsVersion: catalogue.version,
+        permissionGroups: catalogue.groups,
+        permissions: catalogue.permissions,
+      });
       return true;
     }
     if (route.name === "bots") {

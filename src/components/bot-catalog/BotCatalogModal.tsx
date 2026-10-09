@@ -19,7 +19,8 @@ import { api, closeBotCatalog, useStore } from "@/state/store";
 import { useOrgPeople } from "@/lib/perspicax-org";
 import { personAvatarSrc } from "@/lib/profile-management";
 import { useShowThreads } from "@/lib/thread-preferences";
-import { viewerBotsReadOnly, viewerCanCreateBots } from "@/lib/viewer";
+import { viewerBotsReadOnly, viewerCan, viewerCanCreateBots } from "@/lib/viewer";
+import { botsReadOnlyText } from "@/lib/permissions";
 import { hiddenKey, hiddenKeySet, hideFromSidebar, showInSidebar, useSidebarHidden } from "@/lib/sidebar-hidden";
 import type { BotPreset } from "@/lib/bot-presets";
 import {
@@ -173,7 +174,7 @@ export function BotCatalogModal() {
   );
   const categories = useMemo(() => catalogCategories(sections.flatMap((section) => section.items)), [sections]);
   const hidden = useMemo(() => hiddenKeySet(hiddenPrefs), [hiddenPrefs]);
-  const ctx = { organization, admin, canCreate, inSidebar: (botId: string) => !hidden.has(hiddenKey("bot", botId)) };
+  const ctx = { organization, admin, canCreate, feature: viewerCan(state.config, "bots.catalogFeature"), inSidebar: (botId: string) => !hidden.has(hiddenKey("bot", botId)) };
   const creatorAvatar = (item: CatalogItem) => item.kind === "bot" ? personAvatarSrc(people.get(item.entry.owner.principalId)?.avatarUrl) : undefined;
 
   const back = useCallback(() => {
@@ -346,7 +347,7 @@ export function BotCatalogModal() {
         </p>
       )}
       {!canCreate && data && organization && viewerBotsReadOnly(state.config) && (
-        <p role="note" className="mx-6 mt-3 text-[12.5px] text-ink-secondary sm:mx-8">{t("bots.readOnly.notice")}</p>
+        <p role="note" className="mx-6 mt-3 text-[12.5px] text-ink-secondary sm:mx-8">{botsReadOnlyText(state.config)}</p>
       )}
       <FeedbackLine feedback={feedback} />
     </>

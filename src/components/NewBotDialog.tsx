@@ -31,6 +31,7 @@ import { LocalComputerAutoWarning } from "./LocalComputerAutoWarning";
 import { SharePresetDialog } from "./SharePresetDialog";
 import { servedPage } from "@/lib/desktop";
 import { viewerBotsReadOnly, viewerCanCreateBots, viewerIsOrgMember } from "@/lib/viewer";
+import { botsReadOnlyText } from "@/lib/permissions";
 
 const SECTIONS = ["Identity", "Soul", "Skills", "Memory", "Routines", "Access", "Model", "Permissions", "Voice & alerts"] as const;
 type Section = typeof SECTIONS[number];
@@ -93,6 +94,7 @@ export function CompanionNewBotDialog({ onClose, onCreated, section, preserveSel
 /** Shown instead of New bot to a person who may only use the bots shared
  * with them (Perspicax `sagax_bots: use`): never an empty creation form. */
 export function BotsReadOnlyDialog({ onClose }: { onClose: () => void }) {
+  const { state } = useStore();
   const closeRef = useRef(onClose);
   closeRef.current = onClose;
   useEffect(() => {
@@ -107,7 +109,7 @@ export function BotsReadOnlyDialog({ onClose }: { onClose: () => void }) {
     onMouseDown={event => { if (event.target === event.currentTarget) onClose(); }}>
     <div role="dialog" aria-modal="true" aria-label={t("sidebar.newBot")} tabIndex={-1}
       className="w-full max-w-sm rounded-[14px] border border-border bg-elevated p-5 text-ink">
-      <p role="note" data-bots-read-only className="mb-4 text-[13px] leading-[18px] text-ink-secondary">{t("bots.readOnly.notice")}</p>
+      <p role="note" data-bots-read-only className="mb-4 text-[13px] leading-[18px] text-ink-secondary">{botsReadOnlyText(state.config)}</p>
       <div className="flex justify-end">
         <button type="button" autoFocus onClick={onClose} className="ui-button">{t("common.close")}</button>
       </div>
@@ -458,7 +460,7 @@ export function DefaultBotSettings() {
   // a companion) cannot read or change the host's defaults: no row.
   if (viewerBotsReadOnly(state.config)) {
     return <div className="flex items-center justify-between gap-4 px-3.5 py-2.5"><DefaultsTitle summary={summary} />
-      <p role="note" data-bots-read-only className="text-right text-[12.5px] leading-snug text-ink-secondary">{t("bots.readOnly.notice")}</p>
+      <p role="note" data-bots-read-only className="text-right text-[12.5px] leading-snug text-ink-secondary">{botsReadOnlyText(state.config)}</p>
     </div>;
   }
   const guest = state.config?.viewer?.operator === false || (typeof window !== "undefined" && window.ogb?.remoteClient?.active === true);

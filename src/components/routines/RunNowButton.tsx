@@ -19,6 +19,8 @@ const IN_FLIGHT = new Set(["queued", "running", "waiting"]);
 export function canRunRoutineNow(config: Pick<ConfigStatus, "viewer"> | null | undefined, routine: Pick<Routine, "runAs">, bot: Pick<Bot, "ownerUserId"> | undefined): boolean {
   const viewer = config?.viewer;
   if (!viewer?.principalId || viewer.operator || viewer.role === "owner" || viewer.role === "admin") return true;
+  // 2026-10-09: a profile with routines.runNowAny runs any routine they see.
+  if (Array.isArray(viewer.permissions) && viewer.permissions.includes("routines.runNowAny")) return true;
   const me = viewer.principalId.toLowerCase();
   return me === bot?.ownerUserId?.toLowerCase() || me === routine.runAs?.principalId.toLowerCase();
 }

@@ -33,6 +33,7 @@ import { t } from "@/lib/i18n";
 import { canEditBotField } from "@/lib/bot-capabilities";
 import { viewerBotsReadOnly } from "@/lib/viewer";
 import { botSectionLock, useBotSectionAvailability, useBotSectionContent } from "./bot-settings/useBotSectionContent";
+import { botsReadOnlyText } from "@/lib/permissions";
 
 const sectionLabel = (entry: (typeof BOT_SECTIONS)[number]) => (entry.labelKey ? t(entry.labelKey) : entry.label);
 
@@ -230,7 +231,7 @@ export function BotSettingsDialog({ bot, onOpenVmWorkspace }: {
 
         <div className="content-card-body flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden [&>*]:shrink-0">
           {viewerBotsReadOnly(state.config) && (
-            <p role="note" data-bots-read-only className="mx-4 mb-2 rounded-lg bg-raised/60 px-3 py-2 text-center text-[12.5px] leading-snug text-ink-secondary">{t("bots.readOnly.notice")}</p>
+            <p role="note" data-bots-read-only className="mx-4 mb-2 rounded-lg bg-raised/60 px-3 py-2 text-center text-[12.5px] leading-snug text-ink-secondary">{botsReadOnlyText(state.config)}</p>
           )}
           {/* Who this is, then the tabs */}
           <div className="flex shrink-0 flex-col items-center px-4 pb-3">

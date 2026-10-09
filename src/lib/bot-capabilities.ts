@@ -9,7 +9,8 @@
 // control the server refuses.
 import type { ConfigStatus } from "@/state/store";
 import { isClientBotPatchField, isMemberBotField } from "../../shared/viewer-capabilities";
-import { viewerBotsReadOnly, viewerIsOrgMember } from "./viewer";
+import { viewerBotsReadOnly, viewerCan, viewerIsOrgMember } from "./viewer";
+import { BOT_FIELD_PERMISSIONS } from "../../shared/permissions";
 
 export function viewerOwnsBot(
   config: ConfigStatus | null | undefined,
@@ -33,7 +34,12 @@ export function canEditBotField(
 ): boolean {
   if (viewerBotsReadOnly(config)) return false;
   if (!viewerIsOrgMember(config)) return true;
-  if (options?.draft || viewerOwnsBot(config, bot)) return isMemberBotField(field);
+  if (options?.draft || viewerOwnsBot(config, bot)) {
+    if (isMemberBotField(field)) return true;
+    // 2026-10-09: a field their profile's permissions open (shared/permissions.ts).
+    const permission = BOT_FIELD_PERMISSIONS[field];
+    return permission !== undefined && viewerCan(config, permission);
+  }
   return isClientBotPatchField(field);
 }
 

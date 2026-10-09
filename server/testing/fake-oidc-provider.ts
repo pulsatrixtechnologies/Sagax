@@ -69,6 +69,9 @@ export interface FakeDirectoryPerson {
   /** Perspicax migration 0046: "off" when an admin manages this person's
    * plugins, skills and MCP servers; absent from an older Perspicax. */
   sagax_integrations?: "manage" | "off";
+  /** 2026-10-09: the person's effective Sagax permissions, as Perspicax
+   * computes them; absent from an older Perspicax. */
+  permissions?: string[] | null;
   /** Slice 6: set to leave the field out (an older Perspicax); else the
    * provider reports the live delegation family of this person. */
   omitRoutineDelegation?: boolean;

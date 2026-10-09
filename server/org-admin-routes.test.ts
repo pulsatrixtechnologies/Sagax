@@ -293,8 +293,15 @@ describe("org admin API: the console routes (2026-10-08)", () => {
   const T_MANAGER = [{ id: "T", name: "T", manager: true }];
   it("capabilities: any role, the release version and every route", async () => {
     const got = await call("/api/org/admin/capabilities", assertion("bob", "employee"));
-    expect(got).toMatchObject({ status: 200, body: { version: "0.4.14", api: 2 } });
+    expect(got).toMatchObject({ status: 200, body: { version: "0.4.14", api: 3 } });
     expect(got.body.routes).toEqual(expect.arrayContaining(["GET bots", "GET capabilities", "GET echo/{id}", "POST echo/{id}", "POST approvals/{thread}/{request}", "GET files/{bot}/read"]));
+    // 2026-10-09: the permission catalogue the Perspicax console draws from
+    expect(got.body.permissionsVersion).toBe(1);
+    expect(got.body.permissionGroups.map((group: { id: string }) => group.id)).toContain("bots");
+    const keys = got.body.permissions.map((row: { key: string }) => row.key);
+    expect(keys).toEqual(expect.arrayContaining(["bots.create", "usage.view", "host.shell"]));
+    expect(got.body.permissions.find((row: { key: string }) => row.key === "host.shell")).toMatchObject({ adminOnly: true, memberDefault: false, adminOnlyReason: { en: expect.any(String), fr: expect.any(String) } });
+    expect(got.body.permissions.find((row: { key: string }) => row.key === "bots.create")).toMatchObject({ adminOnly: false, memberDefault: true, label: { en: "Create and own bots" } });
   });
 
   it("dispatches by template, method and role; the body, the locale and the audit row reach the handler", async () => {

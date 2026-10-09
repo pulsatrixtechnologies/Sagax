@@ -110,7 +110,13 @@ export function runAsOptions(input: RunAsOptionsInput): { canChoose: boolean; pe
   return { canChoose: true, people };
 }
 
-export type RunAsRefusal = { status: 400 | 403; error: string; code: "run_as_not_allowed" | "run_as_not_person" | "run_as_out_of_scope" | "run_as_no_right" };
+export type RunAsRefusal = {
+  status: 400 | 403;
+  error: string;
+  code: "run_as_not_allowed" | "run_as_not_person" | "run_as_out_of_scope" | "run_as_no_right";
+  /** 2026-10-09: the permission that would let the chooser pick anyone. */
+  permission?: "routines.runAsAnyone";
+};
 
 /** Whether `chooser` may make the routine run as `principalId` (null: yes).
  * The chooser's own right to run the bot is checked by the route before. */
@@ -124,13 +130,13 @@ export function runAsRefusal(input: {
 }): RunAsRefusal | null {
   if (same(input.principalId, input.chooser.principalId)) return null;
   if (runAsScope(input.chooser) === "self") {
-    return { status: 403, error: "Only an organization admin or a team manager can choose who a routine runs as.", code: "run_as_not_allowed" };
+    return { status: 403, error: "Only an organization admin or a team manager can choose who a routine runs as.", code: "run_as_not_allowed", permission: "routines.runAsAnyone" };
   }
   if (!input.person || !runAsListable(input.person)) {
     return { status: 400, error: "A routine can only run as an active person of the organization.", code: "run_as_not_person" };
   }
   if (!runAsInScope(input.chooser, input.person, input.botOwnerId)) {
-    return { status: 403, error: "You can only choose a person of the teams you manage.", code: "run_as_out_of_scope" };
+    return { status: 403, error: "You can only choose a person of the teams you manage.", code: "run_as_out_of_scope", permission: "routines.runAsAnyone" };
   }
   if (!input.mayRun(input.principalId)) {
     return { status: 403, error: `${input.person.name || "This person"} cannot run this bot's routines. Share the bot with them at Run routines or above first.`, code: "run_as_no_right" };

@@ -3,6 +3,7 @@
 // then falls back to what the app did before.
 import type { ConfigStatus, Message } from "@/state/store";
 import type { ViewerCapabilities } from "../../shared/viewer-capabilities";
+import { can, MEMBER_DEFAULT_PERMISSIONS, type PermissionKey } from "../../shared/permissions";
 
 /** The id your bots and channel seats carry: your principal when the server
  * names one, else the profile email, else "local-owner" (older servers). */
@@ -34,6 +35,18 @@ export function viewerIntegrationsManagedByAdmin(config: ConfigStatus | null | u
  * the server's engines without its own account or install details. */
 export function viewerIsOrgMember(config: ConfigStatus | null | undefined): boolean {
   return config?.viewer?.role === "member";
+}
+
+/** Organization server (2026-10-09): whether the viewer's profile includes
+ * a permission (shared/permissions.ts). The server's list when it sends
+ * one; else everyone but a named member may (an owner, an admin, the
+ * operator, a solo server), and a member holds the member defaults. */
+export function viewerCan(config: ConfigStatus | null | undefined, key: PermissionKey): boolean {
+  const viewer = config?.viewer;
+  if (!viewer || viewer.operator || viewer.role === "owner" || viewer.role === "admin") return true;
+  if (Array.isArray(viewer.permissions)) return can({ admin: false, permissions: viewer.permissions }, key);
+  if (viewer.role !== "member") return true;
+  return can({ admin: false, permissions: MEMBER_DEFAULT_PERMISSIONS }, key);
 }
 
 /** A capability the server sent, or the safe fallback: a named member may

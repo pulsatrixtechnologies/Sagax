@@ -60,6 +60,19 @@ export interface PeopleDeps {
   revokeConnections(principalId: string, body: unknown): Promise<{ status: number; body: Record<string, unknown>; removed: RemovedConnection[] }>;
   /** The listing the session route answers, after a revoke. */
   connectionListing(principalId: string): unknown;
+  /** 2026-10-09: the person's effective permissions (server/org-permissions.ts). */
+  permissions?(principalId: string): PersonPermissions;
+}
+
+/** What GET people/{principal} says of a person's permissions. */
+export interface PersonPermissions {
+  /** admin (every key), perspicax (the union over their profiles) or
+   * defaults (Perspicax sent no list: the member defaults). */
+  source: "admin" | "perspicax" | "defaults";
+  /** The keys they hold, in catalogue order. */
+  effective: string[];
+  /** Person sheet narrowings applied on top. */
+  narrowedBy: string[];
 }
 
 export interface PersonRow {
@@ -166,6 +179,7 @@ export function peopleRoutes(deps: PeopleDeps): ConsoleRoute[] {
           shared: deps.shared(principalId),
           connections: deps.connections(principalId),
           routinesAsRunner: deps.routines().filter((routine) => routine.runAs === principalId).map(({ id, name, botId }) => ({ id, name, botId })),
+          ...(deps.permissions ? { permissions: deps.permissions(principalId) } : {}),
         });
       },
     },

@@ -212,7 +212,8 @@ posixOnly("Perspicax console: the Sagax admin routes", () => {
     expect(caps.status, caps.text).toBe(200);
     expect(caps.headers.get("x-sagax-admin-api")).toBe("1");
     const pkg = JSON.parse(readFileSync(join(SERVER_DIR, "..", "package.json"), "utf8")) as { forkVersion: string };
-    expect(caps.body).toMatchObject({ version: pkg.forkVersion, api: 2 });
+    expect(caps.body).toMatchObject({ version: pkg.forkVersion, api: 3, permissionsVersion: 1 });
+    expect(caps.body.permissions.length).toBeGreaterThan(20);
     expect(caps.body.routes).toEqual(expect.arrayContaining(["GET capabilities", "GET overview", "GET bots", "GET usage", "GET audit"]));
 
     expect((await admin("GET", "overview", ZOE)).body.code).toBe("forbidden_role");
@@ -280,6 +281,10 @@ posixOnly("Perspicax console: the Sagax admin routes", () => {
     expect(page.status, page.text).toBe(200);
     expect(page.body).toMatchObject({ name: "Bob", bots: [{ id: bots.beacon!.id }], connections: { engines: expect.any(Array), mcpServers: [], composioApps: [] }, routinesAsRunner: [] });
     expect((await admin("GET", `people/${ids.alice}`, ALICE)).body.routinesAsRunner).toEqual([{ id: routineId, name: "Daily digest", botId: bots.atlas!.id }]);
+    // 2026-10-09: a person's effective permissions (no list from this fake
+    // Perspicax: the member defaults); an admin holds every key
+    expect(page.body.permissions).toMatchObject({ source: "defaults", effective: expect.arrayContaining(["bots.create", "sharing.grants"]), narrowedBy: [] });
+    expect((await admin("GET", `people/${ids.alice}`, ALICE)).body.permissions).toMatchObject({ source: "admin", effective: expect.arrayContaining(["host.shell"]) });
 
     // Disable: Mona cannot; Alice cannot disable herself; Zoe's session ends
     expect((await admin("POST", `people/${ids.zoe}/disable`, MONA, { disabled: true })).body.code).toBe("forbidden_role");

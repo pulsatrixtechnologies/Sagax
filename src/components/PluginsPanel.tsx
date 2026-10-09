@@ -26,6 +26,8 @@ import { skillsLibraryEnabled, templatesEnabled } from "@/lib/feature-flags";
 import { requestTemplates } from "@/lib/open-templates";
 import { usePerspicaxOrg } from "@/lib/perspicax-org";
 import { useOwnerOrAdmin } from "@/lib/use-owner-or-admin";
+import { viewerCan } from "@/lib/viewer";
+import { permissionMissingText } from "@/lib/permissions";
 import type { SkillsLibrarySkillWire } from "../../shared/wire";
 import { WHOP_KEY, buildPluginItems, marketplacePluginKey, type PluginFilter, type PluginItem, type PluginTypeFilter } from "@/lib/plugins-model";
 import {
@@ -121,6 +123,8 @@ export function PluginsPanel() {
   const [type, setType] = useState<PluginTypeFilter>(state.pluginsSurface === "mcp" ? "mcp" : "any");
   const claudeConnectors = useClaudeConnectorCount();
   const ownerOrAdmin = useOwnerOrAdmin();
+  // 2026-10-09: a profile with skills.library changes the library too.
+  const libraryEditor = ownerOrAdmin === true || (ownerOrAdmin === false && viewerCan(state.config, "skills.library"));
   const serverMode = useServerMode();
   const perspicaxOrg = usePerspicaxOrg();
   const organization = Boolean(serverMode?.active) || perspicaxOrg !== null;
@@ -413,7 +417,7 @@ export function PluginsPanel() {
   const skillsOn = skills !== null && skillsLibraryOn;
   const pageSkill = page.page === "skill" && page.name ? skills?.find((entry) => entry.name === page.name) : undefined;
   const skillReadOnly = (skill: SkillsLibrarySkillWire): string | undefined => {
-    if (ownerOrAdmin === false) return t("connectApps.skill.readOnlyOwner");
+    if (ownerOrAdmin === false && !libraryEditor) return perspicaxOrg !== null ? permissionMissingText("skills.library") : t("connectApps.skill.readOnlyOwner");
     if (skill.version) return t("connectApps.skill.readOnlyOrganization");
     const plugin = marketplaces?.find((market) => market.name === skill.source)?.plugins.find((entry) => entry.installed && entry.skills.includes(skill.name));
     if (plugin) return t("connectApps.skill.readOnlyPlugin", { plugin: plugin.name });
@@ -448,7 +452,7 @@ export function PluginsPanel() {
         onBack={back}
         onClose={close}
         onOpenItem={openItem}
-        onNewSkill={skillsOn && ownerOrAdmin !== false ? () => setPage({ page: "skill", from: "manage" }) : undefined}
+        onNewSkill={skillsOn && (ownerOrAdmin !== false || libraryEditor) ? () => setPage({ page: "skill", from: "manage" }) : undefined}
         personal={organization ? (
           <section className="mt-6" data-plugins-personal>
             <h3 className="mb-2 text-[13px] font-semibold text-ink">{t("connectApps.manage.personal")}</h3>

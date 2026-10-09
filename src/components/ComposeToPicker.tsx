@@ -16,6 +16,7 @@ import { useCaptionChrome } from "./DesktopCapabilities";
 import { useShowThreads } from "@/lib/thread-preferences";
 import { openBotConversationActions } from "./thread-home";
 import { PersonLabelTag } from "./LabelTag";
+import { botsReadOnlyText } from "@/lib/permissions";
 
 type ComposeMode = "browse" | "group";
 type ComposeRow = { kind: "create-bot" } | { kind: "create-group" } | { kind: "browse-bots" } | { kind: "bot"; bot: Bot } | { kind: "person"; person: OrgDirectoryPerson };
@@ -261,7 +262,7 @@ export function ComposeToPicker({ onClose }: { onClose: () => void }) {
           className="pointer-events-auto absolute left-3 top-2 z-10 max-h-[min(440px,70vh)] w-[min(440px,calc(100%-1.5rem))] overflow-y-auto rounded-xl border border-hairline/50 bg-menu py-1.5 shadow-2xl shadow-black/50"
         >
           {botsReadOnly && (
-            <p role="note" data-bots-read-only className="px-3 py-2 text-[12.5px] leading-snug text-ink-secondary">{t("bots.readOnly.notice")}</p>
+            <p role="note" data-bots-read-only className="px-3 py-2 text-[12.5px] leading-snug text-ink-secondary">{botsReadOnlyText(state.config)}</p>
           )}
           {rows.map((row, index) => {
             const shortcut = index < 9 ? index + 1 : undefined;
