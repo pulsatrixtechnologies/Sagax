@@ -114,7 +114,7 @@ describe("thread control placement", () => {
     expect(markup).toContain("https://chatgpt.com/settings/usage");
     expect(markup).not.toContain(">Retry<");
   });
-  it("opens a signed-out engine's failed turn with one sentence and the sign-in, the CLI's words under Details", () => {
+  it("opens a signed-out engine's failed turn with only the sign-in card", () => {
     const claude = {
       instanceId: "claude", driverKind: "claudeAgent", displayName: "Claude",
       snapshot: { state: "available", authenticated: false },
@@ -123,11 +123,16 @@ describe("thread control placement", () => {
       models: { default: "sonnet", options: [] },
     } as InstanceInfo;
     const markup = renderToStaticMarkup(createElement(FailedTurnRow, { tool: { name: "error: Not logged in · Please run /login", ok: false, setup: true }, engine: claude, onRetry: () => {} }));
-    expect(markup).toContain(">Claude isn&#x27;t signed in yet. Sign in below, then send your message again.</span>");
+    expect(markup).not.toContain("isn&#x27;t signed in yet");
     // the minimal engine card (#160): one Connect button
     expect(markup).toContain("Connect Claude</button>");
-    expect(markup).toMatch(/<summary[^>]*>Details<\/summary><p[^>]*>Not logged in · Please run \/login<\/p>/);
+    expect(markup).not.toContain("<details");
+    expect(markup).not.toContain("Not logged in");
     expect(markup).not.toContain(">Retry<");
+    // a generic failure keeps the row
+    const generic = renderToStaticMarkup(createElement(FailedTurnRow, { tool: { name: "error: Network timeout", ok: false }, engine: claude, onRetry: () => {} }));
+    expect(generic).toContain("Network timeout");
+    expect(generic).toContain(">Retry<");
     // an update offer is not a sign-in: the row keeps the engine's words,
     // on a company-managed Claude too (chat cannot update it, so no offer
     // shows, but the row is still about the update, as the list says)
