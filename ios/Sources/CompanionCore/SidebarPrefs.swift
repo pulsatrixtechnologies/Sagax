@@ -339,7 +339,9 @@ public struct SidebarHidden: Hashable, Sendable {
     public func entriesToUnhide(state: CompanionState, viewerId: String) -> [String] {
         var out: [String] = []
         for item in items {
-            let on = item.kind == .bot ? unhideBots : unhidePeople
+            // a closed conversation with a person always comes back on a new
+            // message; the people switch now governs rooms only (#219)
+            let on = item.kind == .bot ? unhideBots : (item.kind == .person ? true : unhidePeople)
             guard on else { continue }
             let newest: Double?
             switch item.kind {
@@ -363,6 +365,16 @@ public struct SidebarHidden: Hashable, Sendable {
             if let newest, newest > item.at { out.append(item.key) }
         }
         return out
+    }
+
+    /// Selecting a closed conversation with a person reopens it (#219,
+    /// `closedDmToReopen`): the value without its entry, or nil when it was
+    /// not closed.
+    public func reopening(_ room: Room, viewerId: String) -> SidebarHidden? {
+        guard room.peopleDm == true else { return nil }
+        let key = Self.groupKey(room, viewerId: viewerId)
+        guard keys.contains(key) else { return nil }
+        return showing([key])
     }
 
     /// A direct conversation with a person is hidden as that person (it
@@ -652,9 +664,9 @@ extension CompanionState {
                     rows.append(SidebarHiddenRow(key: item.key, kind: .group, id: item.id, name: room.name))
                 }
             case .person:
-                if let room = rooms.first(where: { $0.peopleDm == true && SidebarHidden.groupKey($0, viewerId: viewerId) == item.key }) {
-                    rows.append(SidebarHiddenRow(key: item.key, kind: .person, id: item.id, name: room.name.isEmpty ? item.id : room.name))
-                }
+                // a closed conversation with a person is not hidden: it is
+                // never listed under Hidden (#219)
+                continue
             }
         }
         rows.sort { $0.name.localizedCompare($1.name) == .orderedAscending }

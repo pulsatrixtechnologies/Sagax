@@ -28,12 +28,32 @@ enum DesktopSidebarDensity: String, CaseIterable, Identifiable {
 /// What every sidebar view reads the same way.
 @MainActor
 enum DesktopSidebarState {
-    /// Settings > Appearance > Show threads, or the parity surface's preset.
+    /// The thread tree under each bot row: Settings > Appearance > Show
+    /// threads with Threads location "In the sidebar" (#210), or the parity
+    /// surface's preset.
     static func showThreads(model: DesktopShellModel, prefs: SidebarPrefsModel) -> Bool {
         #if DEBUG
         if let preset = model.parityShowThreads { return preset }
         #endif
+        return prefs.threadsPlacement.inSidebar
+    }
+
+    /// Settings > Appearance > Show threads alone (the compose picker's New
+    /// thread, wherever the threads live).
+    static func threadsOn(model: DesktopShellModel, prefs: SidebarPrefsModel) -> Bool {
+        #if DEBUG
+        if let preset = model.parityShowThreads { return preset }
+        #endif
         return prefs.showThreads
+    }
+
+    /// The chat header's thread picker: threads on, location "In the chat
+    /// header" (the default). Never both with the sidebar tree.
+    static func headerThreads(model: DesktopShellModel, prefs: SidebarPrefsModel) -> Bool {
+        #if DEBUG
+        if let preset = model.parityShowThreads { return preset }
+        #endif
+        return prefs.threadsPlacement.inHeader
     }
 }
 

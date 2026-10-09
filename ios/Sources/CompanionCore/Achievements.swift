@@ -97,6 +97,8 @@ public struct AchievementDefinition: Identifiable, Hashable, Sendable {
 
 public struct AchievementSettings: Codable, Hashable, Sendable {
     public var showPoints: Bool
+    /// "Show my title" (#194): the chosen title under the person's name.
+    public var showTitle: Bool = true
     public var toasts: Bool
     public var native: Bool
     public var `public`: Bool
@@ -115,6 +117,7 @@ public struct AchievementSettings: Codable, Hashable, Sendable {
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         showPoints = (try? c.decodeIfPresent(Bool.self, forKey: .showPoints)) ?? true
+        showTitle = (try? c.decodeIfPresent(Bool.self, forKey: .showTitle)) ?? true
         toasts = (try? c.decodeIfPresent(Bool.self, forKey: .toasts)) ?? true
         native = (try? c.decodeIfPresent(Bool.self, forKey: .native)) ?? false
         `public` = (try? c.decodeIfPresent(Bool.self, forKey: .public)) ?? false
@@ -281,6 +284,7 @@ public struct AchievementEventsResult: Decodable, Hashable, Sendable {
 /// fields set are sent; `clearTitle` sends `title: null` ("No title").
 public struct AchievementSettingsPatch: Encodable, Hashable, Sendable {
     public var showPoints: Bool?
+    public var showTitle: Bool?
     public var toasts: Bool?
     public var native: Bool?
     public var `public`: Bool?
@@ -288,8 +292,9 @@ public struct AchievementSettingsPatch: Encodable, Hashable, Sendable {
     public var clearTitle = false
     public var tzOffset: Int?
 
-    public init(showPoints: Bool? = nil, toasts: Bool? = nil, native: Bool? = nil, public: Bool? = nil, title: String? = nil, clearTitle: Bool = false, tzOffset: Int? = nil) {
+    public init(showPoints: Bool? = nil, showTitle: Bool? = nil, toasts: Bool? = nil, native: Bool? = nil, public: Bool? = nil, title: String? = nil, clearTitle: Bool = false, tzOffset: Int? = nil) {
         self.showPoints = showPoints
+        self.showTitle = showTitle
         self.toasts = toasts
         self.native = native
         self.public = `public`
@@ -299,12 +304,13 @@ public struct AchievementSettingsPatch: Encodable, Hashable, Sendable {
     }
 
     private enum Keys: String, CodingKey { case settings }
-    private enum Fields: String, CodingKey { case showPoints, toasts, native, `public`, title, tzOffset }
+    private enum Fields: String, CodingKey { case showPoints, showTitle, toasts, native, `public`, title, tzOffset }
 
     public func encode(to encoder: Encoder) throws {
         var outer = encoder.container(keyedBy: Keys.self)
         var c = outer.nestedContainer(keyedBy: Fields.self, forKey: .settings)
         try c.encodeIfPresent(showPoints, forKey: .showPoints)
+        try c.encodeIfPresent(showTitle, forKey: .showTitle)
         try c.encodeIfPresent(toasts, forKey: .toasts)
         try c.encodeIfPresent(native, forKey: .native)
         try c.encodeIfPresent(`public`, forKey: .public)
@@ -316,6 +322,7 @@ public struct AchievementSettingsPatch: Encodable, Hashable, Sendable {
     public func applied(to settings: AchievementSettings) -> AchievementSettings {
         var next = settings
         if let showPoints { next.showPoints = showPoints }
+        if let showTitle { next.showTitle = showTitle }
         if let toasts { next.toasts = toasts }
         if let native { next.native = native }
         if let value = `public` { next.public = value }

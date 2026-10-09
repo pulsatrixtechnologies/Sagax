@@ -13,6 +13,8 @@ final class ThreadNavigationUITests: XCTestCase {
         recordScreenshot("Bot reopened after choosing iCloud", in: app)
         assertThread("Triage iCloud", in: app)
         app.terminate()
+        // threads under each bot row (#210: the default is the chat header)
+        app.launchArguments += ["-omb-threads-location", "sidebar"]
         app.launch()
         XCTAssertTrue(app.buttons["threads-toggle.preview-pepper"].waitForExistence(timeout: 10))
         app.buttons.containing(.staticText, identifier: "Pepper").firstMatch.tap()
@@ -22,8 +24,11 @@ final class ThreadNavigationUITests: XCTestCase {
 
     @MainActor
     func testTopBarOpensThreadsWithIslandIntroEnabledAndSwitches() {
-        let app = launchPreview(islandIntro: "always")
-        openGmail(in: app)
+        // #210: the name capsule carries Threads while Threads location is
+        // the chat header (nothing is listed under the bot row then)
+        let app = launchPreview(islandIntro: "always", location: "header")
+        XCTAssertFalse(app.buttons["threads-toggle.preview-pepper"].exists)
+        app.buttons.containing(.staticText, identifier: "Pepper").firstMatch.tap()
 
         // Touch and hold the name capsule: its menu carries Threads. The
         // chat header settles late on a loaded CI runner. 5s timed out here
@@ -330,7 +335,7 @@ final class ThreadNavigationUITests: XCTestCase {
     /// earlier run saved; otherwise that density for this launch only.
     @MainActor
     private func launchPreview(
-        extraArguments: [String] = [], islandIntro: String = "never", density: String? = nil
+        extraArguments: [String] = [], islandIntro: String = "never", density: String? = nil, location: String = "sidebar"
     ) -> XCUIApplication {
         continueAfterFailure = false
         let app = XCUIApplication()
@@ -347,6 +352,8 @@ final class ThreadNavigationUITests: XCTestCase {
             "-companion.onboarding.welcomeSeen", "YES",
             "-companion.onboarding.notificationsSeen", "YES"
         ] + densityArguments + extraArguments
+        // threads under each bot row (#210: the default is the chat header)
+        app.launchArguments += ["-omb-threads-location", location]
         app.launch()
         // Simulator installation can restore an unpaired, prewarmed scene
         // without the preview arguments once. Restart only that wrong route;
@@ -355,7 +362,11 @@ final class ThreadNavigationUITests: XCTestCase {
             app.terminate()
             app.launch()
         }
-        XCTAssertTrue(app.buttons["threads-toggle.preview-pepper"].waitForExistence(timeout: 10))
+        if location == "sidebar" {
+            XCTAssertTrue(app.buttons["threads-toggle.preview-pepper"].waitForExistence(timeout: 10))
+        } else {
+            XCTAssertTrue(app.buttons.containing(.staticText, identifier: "Pepper").firstMatch.waitForExistence(timeout: 10))
+        }
         return app
     }
 

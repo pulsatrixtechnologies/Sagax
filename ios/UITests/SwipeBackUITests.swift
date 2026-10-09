@@ -107,11 +107,15 @@ final class SwipeBackUITests: XCTestCase {
             // its "› 3".
             "-companion.prefs.rosterDensity", "compact"
         ]
+        // threads under each bot row (#210: the default is the chat header)
+        app.launchArguments += ["-omb-threads-location", "sidebar"]
         app.launch()
         // Simulator installation can restore an unpaired, prewarmed scene
         // without the preview arguments once. Restart only that wrong route.
         if app.buttons["Connect computer"].exists {
             app.terminate()
+            // threads under each bot row (#210: the default is the chat header)
+            app.launchArguments += ["-omb-threads-location", "sidebar"]
             app.launch()
         }
         XCTAssertTrue(app.buttons["threads-toggle.preview-pepper"].waitForExistence(timeout: 10))

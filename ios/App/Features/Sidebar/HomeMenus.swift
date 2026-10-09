@@ -316,6 +316,7 @@ struct HomeAccountMenuItems: View {
     let select: (AccountMenuItem) -> Void
     @EnvironmentObject private var session: Session
     @ObservedObject private var achievements = AchievementStore.shared
+    @ObservedObject private var routines = AccountRowModel.shared
 
     var body: some View {
         let groups = NavigationMenus.account(
@@ -324,11 +325,18 @@ struct HomeAccountMenuItems: View {
             achievementsReady: session.connection != nil && achievements.status != .unavailable,
             connected: session.connection != nil
         )
+        // the desktop row's name, title and points (#194)
+        Section { } header: { AccountMenuHeader() }
         ForEach(Array(groups.enumerated()), id: \.offset) { index, group in
             if index > 0 { Divider() }
             ForEach(group, id: \.self) { item in
                 Button { select(item) } label: {
-                    Label(Self.title(item), systemImage: Self.symbol(item))
+                    if item == .automations, routines.activeRoutines > 0 {
+                        // the routines badge's count, where the menu opens them
+                        Label(Self.title(item) + " (\(routines.activeRoutines))", systemImage: Self.symbol(item))
+                    } else {
+                        Label(Self.title(item), systemImage: Self.symbol(item))
+                    }
                 }
                 .accessibilityIdentifier("account-menu.\(item.rawValue)")
             }

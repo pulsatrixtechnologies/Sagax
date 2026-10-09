@@ -28,10 +28,11 @@ struct MessagePersonSheet: View {
                         } label: {
                             HStack(spacing: 12) {
                                 let label = People.label(person, fallback: person.principalId)
-                                PersonAvatar(initials: People.initials(label), size: 28)
+                                PersonAvatar(initials: People.initials(label), size: 28, presenceId: person.principalId)
                                 Text(verbatim: label)
                                     .foregroundStyle(Theme.textPrimary)
                                     .lineLimit(1)
+                                PersonLabelTag(personId: person.principalId)
                                 Spacer(minLength: 8)
                                 Text(String(localized: "Direct message"))
                                     .font(.footnote)

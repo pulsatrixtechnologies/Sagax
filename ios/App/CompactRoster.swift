@@ -498,7 +498,7 @@ struct CompactRoomRow: View {
             UnreadDot(visible: room.unread && !busy, color: "blue")
             Group {
                 if let peer = PeopleDirectory.shared.peer(room, session: session) {
-                    PersonAvatar(initials: peer.initials, size: face)
+                    PersonAvatar(initials: peer.initials, size: face, presenceId: peer.id)
                 } else {
                     RoomFaces(members: room.memberIds.compactMap { session.state.bot($0) }, size: face)
                 }
@@ -514,6 +514,7 @@ struct CompactRoomRow: View {
                 color: "blue",
                 stampFont: typeSize.isAccessibilitySize ? CompactRosterMetrics.stackedDetail : .subheadline
             )
+            let personId = PeopleDirectory.shared.peer(room, session: session)?.id
             if typeSize.isAccessibilitySize {
                 // as on a bot's row: the whole width for the name, and the
                 // time a size smaller beneath it
@@ -521,11 +522,15 @@ struct CompactRoomRow: View {
                     name
                         .lineLimit(3)
                         .fixedSize(horizontal: false, vertical: true)
+                    PersonLabelTag(personId: personId)
                     status
                 }
                 Spacer(minLength: 0)
             } else {
                 name.lineLimit(1)
+                // #172: a person's label, drawn as a bot's label tag
+                PersonLabelTag(personId: personId)
+                    .padding(.leading, 6)
                 Spacer(minLength: 8)
                 status
             }

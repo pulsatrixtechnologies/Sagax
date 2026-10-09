@@ -298,7 +298,6 @@ struct DesktopSidebarMenus {
     let prefs: SidebarPrefsModel
 
     private var gate: SurfaceGate { session.surfaceGate }
-    private var showThreads: Bool { DesktopSidebarState.showThreads(model: model, prefs: prefs) }
 
     func entries(for kind: DesktopMenuRequest.Kind) -> ([DesktopMenuEntry], DesktopMenuStyle) {
         switch kind {
@@ -321,23 +320,8 @@ struct DesktopSidebarMenus {
 
     func bot(_ bot: Bot) -> [DesktopMenuEntry] {
         var out: [DesktopMenuEntry] = []
-        if showThreads {
-            out.append(DesktopMenuEntry(id: "new-thread", title: String(localized: "New thread"), icon: .plus, kind: .action {
-                Task {
-                    if let created = await session.createRosterThread(for: bot) {
-                        model.openThreadLists.insert(bot.id)
-                        model.open(.bot(created))
-                    }
-                }
-            }))
-            if gate.allows(.threadFolders) {
-                out.append(DesktopMenuEntry(id: "new-folder", title: String(localized: "New folder"), icon: .folderPlus, kind: .action {
-                    model.openThreadLists.insert(bot.id)
-                    model.threadActions.newFolder(for: bot)
-                }))
-            }
-            out.append(.divider("threads"))
-        }
+        // New thread and New folder left the bot row (#182): they live in
+        // the thread list, the chat header's or the sidebar tree's.
         // "Put on the desktop" floats a bot in its own window: none on iPad.
         let copyId = DesktopMenuEntry(id: "copy-id", title: String(localized: "Copy conversation ID"), icon: .clipboardCopy, kind: .action {
             model.threadActions.copyConversationId(bot)
@@ -491,9 +475,16 @@ struct DesktopSidebarMenus {
         out.append(DesktopMenuEntry(id: "copy-id", title: String(localized: "Copy conversation ID"), icon: .clipboardCopy, kind: .action {
             actions.copyConversationId(room)
         }))
-        out.append(DesktopMenuEntry(id: "hide", title: String(localized: "Hide from sidebar"), icon: .eyeOff, kind: .action {
-            prefs.hide(session, room: room)
-        }))
+        if room.peopleDm == true {
+            // #219: a conversation with a person closes, never hides
+            out.append(DesktopMenuEntry(id: "close", title: String(localized: "Close"), icon: .x, kind: .action {
+                prefs.hide(session, room: room)
+            }))
+        } else {
+            out.append(DesktopMenuEntry(id: "hide", title: String(localized: "Hide from sidebar"), icon: .eyeOff, kind: .action {
+                prefs.hide(session, room: room)
+            }))
+        }
         if access.canDelete {
             out.append(.divider("delete"))
             out.append(DesktopMenuEntry(id: "delete", title: String(localized: "Delete group chat"), icon: .trash, danger: true, kind: .action {

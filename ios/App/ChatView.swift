@@ -302,6 +302,8 @@ struct ChatView: View {
             if selectedThreadWasRemoved { dismiss(); return }
             let openedChat = current
             session.threadSelection.rememberThread(openedChat, connectionID: session.connection?.id)
+            // #219: selecting a closed conversation with a person reopens it
+            if case let .room(room) = openedChat { SidebarPrefsModel.shared.reopenIfClosed(session, room: room) }
             await session.loadThreadIfNeeded(openedChat.threadId)
             // opening a chat is what marks it read, exactly as on the desktop
             if openedChat.unread { await session.markRead(openedChat) }

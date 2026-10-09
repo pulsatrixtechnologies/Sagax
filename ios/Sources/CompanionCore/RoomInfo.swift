@@ -332,12 +332,15 @@ public struct OrgDirectoryPerson: Codable, Hashable, Sendable, Identifiable {
     /// Admins only: this person's page in the Perspicax console.
     public var manageUrl: String?
     public var teams: [TeamSeat]?
+    /// Their custom label (#172), as the directory carries it.
+    public var label: String?
 
     public var id: String { principalId }
 
     public init(
         principalId: String, name: String = "", login: String = "", email: String? = nil, disabled: Bool? = nil,
-        role: String? = nil, avatarUrl: String? = nil, service: Bool? = nil, manageUrl: String? = nil, teams: [TeamSeat]? = nil
+        role: String? = nil, avatarUrl: String? = nil, service: Bool? = nil, manageUrl: String? = nil, teams: [TeamSeat]? = nil,
+        label: String? = nil
     ) {
         self.principalId = principalId
         self.name = name
@@ -349,9 +352,10 @@ public struct OrgDirectoryPerson: Codable, Hashable, Sendable, Identifiable {
         self.service = service
         self.manageUrl = manageUrl
         self.teams = teams
+        self.label = label
     }
 
-    private enum CodingKeys: String, CodingKey { case principalId, name, login, email, disabled, role, avatarUrl, service, manageUrl, teams }
+    private enum CodingKeys: String, CodingKey { case principalId, name, login, email, disabled, role, avatarUrl, service, manageUrl, teams, label }
 
     public init(from decoder: Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
@@ -365,6 +369,7 @@ public struct OrgDirectoryPerson: Codable, Hashable, Sendable, Identifiable {
         service = try? values.decodeIfPresent(Bool.self, forKey: .service)
         manageUrl = try? values.decodeIfPresent(String.self, forKey: .manageUrl)
         teams = (try? values.decodeIfPresent([Lossy<TeamSeat>].self, forKey: .teams))?.compactMap(\.value)
+        label = try? values.decodeIfPresent(String.self, forKey: .label)
     }
 }
 
@@ -379,20 +384,46 @@ public struct OrgDirectoryTeam: Codable, Hashable, Sendable, Identifiable {
 }
 
 public struct OrgDirectory: Decodable, Hashable, Sendable {
+    /// Who asks (`viewer` of the directory answer): their role and the teams
+    /// they manage, for the label rights (#172).
+    public struct Viewer: Decodable, Hashable, Sendable {
+        public var principalId: String?
+        public var orgRole: String?
+        public var managedTeamIds: [String]
+
+        public init(principalId: String? = nil, orgRole: String? = nil, managedTeamIds: [String] = []) {
+            self.principalId = principalId
+            self.orgRole = orgRole
+            self.managedTeamIds = managedTeamIds
+        }
+
+        private enum CodingKeys: String, CodingKey { case principalId, orgRole, managedTeamIds }
+
+        public init(from decoder: Decoder) throws {
+            let values = try decoder.container(keyedBy: CodingKeys.self)
+            principalId = try? values.decodeIfPresent(String.self, forKey: .principalId)
+            orgRole = try? values.decodeIfPresent(String.self, forKey: .orgRole)
+            managedTeamIds = (try? values.decodeIfPresent([String].self, forKey: .managedTeamIds)) ?? []
+        }
+    }
+
     public var people: [OrgDirectoryPerson]
     public var teams: [OrgDirectoryTeam]
+    public var viewer: Viewer?
 
-    private enum CodingKeys: String, CodingKey { case people, teams }
+    private enum CodingKeys: String, CodingKey { case people, teams, viewer }
 
-    public init(people: [OrgDirectoryPerson], teams: [OrgDirectoryTeam] = []) {
+    public init(people: [OrgDirectoryPerson], teams: [OrgDirectoryTeam] = [], viewer: Viewer? = nil) {
         self.people = people
         self.teams = teams
+        self.viewer = viewer
     }
 
     public init(from decoder: Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
         people = (try? values.decodeIfPresent([Lossy<OrgDirectoryPerson>].self, forKey: .people))?.compactMap(\.value) ?? []
         teams = (try? values.decodeIfPresent([Lossy<OrgDirectoryTeam>].self, forKey: .teams))?.compactMap(\.value) ?? []
+        viewer = try? values.decodeIfPresent(Viewer.self, forKey: .viewer)
     }
 
     /// `groupPeopleCandidates`: active people not yet in the room, matching

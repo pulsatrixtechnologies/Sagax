@@ -248,18 +248,21 @@ final class TeamMapPeopleUITests: XCTestCase {
         let name = app.staticTexts["person-name"]
         XCTAssertTrue(name.waitForExistence(timeout: 10))
         XCTAssertEqual(name.label, "Sam Rivera")
-        XCTAssertTrue(app.staticTexts["person-role"].label.hasPrefix("Member"))
+        // #219: a plain member shows no role line
+        XCTAssertFalse(app.staticTexts["person-role"].exists)
         let teams = app.descendants(matching: .any).matching(identifier: "person-teams").firstMatch
         XCTAssertTrue(teams.label.contains("Service Desk (manager)"), "teams: \(teams.label)")
-        // already talking: Hide from sidebar is offered for this conversation
-        let hide = app.buttons["person-hide"]
-        XCTAssertTrue(hide.exists)
-        hide.tap()
-        try eventually("the person is hidden in the synced preferences") { try hiddenPeople().contains(sam.lowercased()) }
-        let show = app.buttons["person-show"]
-        XCTAssertTrue(show.waitForExistence(timeout: 5))
-        show.tap()
-        try eventually("the person is shown again") { try !hiddenPeople().contains(sam.lowercased()) }
+        // already talking: the conversation closes (never hidden, #219)
+        let close = app.buttons["person-close-conversation"]
+        XCTAssertTrue(close.exists)
+        close.tap()
+        try eventually("the conversation is closed in the synced preferences") { try hiddenPeople().contains(sam.lowercased()) }
+        XCTAssertTrue(waitForDisappearance(close))
+        // Message reopens it
+        let message = app.buttons["person-message"]
+        XCTAssertTrue(message.waitForExistence(timeout: 5))
+        message.tap()
+        try eventually("the conversation is open again") { try !hiddenPeople().contains(sam.lowercased()) }
     }
 
     @MainActor
@@ -298,5 +301,10 @@ final class TeamMapPeopleUITests: XCTestCase {
             let page = (try api("GET", "/api/threads/\(threadId)/messages?limit=50") as? [String: Any])?["messages"] as? [[String: Any]] ?? []
             return page.contains { ($0["text"] as? String)?.contains("Hi from the phone") == true }
         }
+    }
+
+    private func waitForDisappearance(_ element: XCUIElement, timeout: TimeInterval = 8) -> Bool {
+        let gone = expectation(for: NSPredicate(format: "exists == false"), evaluatedWith: element)
+        return XCTWaiter().wait(for: [gone], timeout: timeout) == .completed
     }
 }

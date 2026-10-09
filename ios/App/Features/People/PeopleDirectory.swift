@@ -5,6 +5,7 @@
 // other pairing the directory stays empty and nothing here is drawn.
 import CompanionCore
 import SwiftUI
+import UIKit
 
 @MainActor
 final class PeopleDirectory: ObservableObject {
@@ -18,21 +19,111 @@ final class PeopleDirectory: ObservableObject {
     /// The person whose sheet is open, wherever it was asked for.
     @Published var sheetPersonId: String?
     @Published var opening = false
+    /// Who is online, away or offline (#167); empty off an organization server.
+    @Published private(set) var presence = PresenceBook()
+    /// People's labels (#172), live through `person.label` frames.
+    @Published private(set) var labels = PersonLabelBook()
     private var loadedFor: String?
+    private var heartbeat: Task<Void, Never>?
+    private let pageId = PresenceHeartbeat.newPageId()
 
     /// `loadOrgPeople`: once per pairing; `force` asks again.
     func load(_ session: Session, force: Bool = false) async {
         guard session.surfaceGate.allows(.people), let connection = session.connection else {
             directory = nil
             loadedFor = nil
+            presence.reset()
+            labels = PersonLabelBook()
+            heartbeat?.cancel()
+            heartbeat = nil
             return
         }
         guard force || loadedFor != connection.id || directory == nil else { return }
         loadedFor = connection.id
-        directory = await session.orgDirectory()
+        let loaded = await session.orgDirectory()
+        directory = loaded
+        var book = PersonLabelBook()
+        for person in loaded.people where person.label != nil { book.set(person.principalId, person.label) }
         if let client = session.settingsClient {
             viewerIsAdmin = (try? await client.organization())?.isAdmin ?? false
+            if let fetched = try? await client.personLabels() {
+                book = PersonLabelBook(fetched)
+            }
+            if let rows = try? await client.presence() {
+                presence.applyList(rows)
+                startHeartbeat(client)
+            } else {
+                presence.reset()
+            }
         }
+        labels = book
+    }
+
+    /// `POST /api/presence/heartbeat` about every minute while the app is in
+    /// front: an open phone counts as online, not away after five minutes.
+    private func startHeartbeat(_ client: CompanionClient) {
+        heartbeat?.cancel()
+        let page = pageId
+        heartbeat = Task { [weak self] in
+            while !Task.isCancelled {
+                if UIApplication.shared.applicationState == .active {
+                    if let own = try? await client.presenceHeartbeat(PresenceHeartbeat(pageId: page, idleMs: 0)) {
+                        self?.presence.applyFrame(audience: own.principalId, rows: [own])
+                    }
+                }
+                try? await Task.sleep(nanoseconds: UInt64(PresenceHeartbeat.interval * 1_000_000_000))
+            }
+        }
+    }
+
+    /// The live frames that concern people.
+    func apply(_ frame: Frame) {
+        switch frame {
+        case let .presenceChanged(audience, rows):
+            presence.applyFrame(audience: audience, rows: rows)
+        case let .personLabel(principalId, label):
+            labels.set(principalId, label)
+        default:
+            break
+        }
+    }
+
+    /// A person's label: the live value, else what the directory carried.
+    func label(_ principalId: String?) -> String? {
+        labels.label(principalId) ?? principalId.flatMap { directory?.person($0)?.label }.flatMap { $0.isEmpty ? nil : $0 }
+    }
+
+    /// `canEditPersonLabel`: the person, an admin, a manager of their team.
+    func canEditLabel(_ personId: String, session: Session) -> Bool {
+        PersonLabel.canEdit(
+            personId: personId,
+            viewerId: session.roomViewer.actorId,
+            viewerAdmin: viewerIsAdmin || directory?.viewer?.orgRole == "admin",
+            managedTeamIds: directory?.viewer?.managedTeamIds ?? [],
+            personTeamIds: (directory?.person(personId)?.teams ?? []).map(\.id)
+        )
+    }
+
+    /// `PUT /api/people/<id>/label`. Nil when saved, else the sentence to show.
+    func saveLabel(_ personId: String, _ text: String, session: Session) async -> String? {
+        let normalized: String?
+        switch PersonLabel.normalize(text) {
+        case let .success(value): normalized = value
+        case .failure: return String(localized: "The label could not be saved.")
+        }
+        guard let client = session.settingsClient else { return String(localized: "The label could not be saved.") }
+        do {
+            let stored = try await client.setPersonLabel(principalId: personId, label: normalized)
+            labels.set(personId, stored)
+            return nil
+        } catch {
+            return String(localized: "The label could not be saved.")
+        }
+    }
+
+    /// The presence of the other person of a people-only conversation.
+    func presence(of room: Room, session: Session) -> PresenceEntry? {
+        peer(room, session: session).flatMap { presence.entry($0.id) }
     }
 
     /// A people-only conversation as the viewer reads it: the other person.
@@ -80,6 +171,9 @@ struct PersonAvatar: View {
     @Environment(\.themePalette) var themePalette
     let initials: String
     var size: CGFloat = 28
+    /// Draws the person's presence dot (#167) at the bottom right.
+    var presenceId: String?
+    @ObservedObject private var people = PeopleDirectory.shared
 
     var body: some View {
         Text(verbatim: initials)
@@ -87,7 +181,77 @@ struct PersonAvatar: View {
             .foregroundStyle(Theme.textPrimary)
             .frame(width: size, height: size)
             .background(Theme.inset, in: Circle())
+            .overlay(alignment: .bottomTrailing) {
+                if let entry = people.presence.entry(presenceId) {
+                    PresenceDot(entry: entry, size: max(8, size * 0.26))
+                }
+            }
             .accessibilityHidden(true)
+    }
+}
+
+/// The presence dot (`PresenceDot`, #167): green online, amber away, grey
+/// offline, ringed in the surface so it reads on any avatar.
+struct PresenceDot: View {
+    @Environment(\.themePalette) var themePalette
+    let entry: PresenceEntry
+    var size: CGFloat = 10
+
+    var body: some View {
+        Circle()
+            .fill(Self.color(entry.state))
+            .frame(width: size, height: size)
+            .overlay(Circle().strokeBorder(Theme.bg, lineWidth: max(1.5, size * 0.18)))
+            .accessibilityElement()
+            .accessibilityLabel(Text(Self.words(entry)))
+            .accessibilityIdentifier("presence.\(entry.state.rawValue)")
+    }
+
+    static func color(_ state: PresenceState) -> Color {
+        switch state {
+        case .online: Color(hex: 0x34C759)
+        case .away: Color(hex: 0xF5A524)
+        case .offline: Color(hex: 0x8E8E93)
+        }
+    }
+
+    /// `presenceLabel`: "Online", "Away", "Offline, last seen 2 h ago",
+    /// with "(hidden from others)" on one's own hidden dot.
+    static func words(_ entry: PresenceEntry, now: Date = Date()) -> String {
+        let state: String
+        switch entry.state {
+        case .online: state = String(localized: "Online")
+        case .away: state = String(localized: "Away")
+        case .offline:
+            if let at = entry.lastSeenAt {
+                let when: String
+                switch PresenceLastSeen.ago(at, now: now.timeIntervalSince1970 * 1000) {
+                case .justNow: when = String(localized: "just now")
+                case let .minutes(count): when = String(localized: "\(count) min ago")
+                case let .hours(count): when = String(localized: "\(count) h ago")
+                case let .days(count): when = String(localized: "\(count) d ago")
+                }
+                state = String(localized: "Offline, last seen \(when)")
+            } else {
+                state = String(localized: "Offline")
+            }
+        }
+        return entry.hidden ? String(localized: "\(state) (hidden from others)") : state
+    }
+}
+
+/// A person's label (#172), drawn as a bot's label tag.
+struct PersonLabelTag: View {
+    let personId: String?
+    var font: Font = Theme.Font.roleChip
+    var horizontalPadding: CGFloat = 6.7
+    @ObservedObject private var people = PeopleDirectory.shared
+
+    var body: some View {
+        if let label = people.label(personId) {
+            RoleChip(text: label, font: font, horizontalPadding: horizontalPadding)
+                .accessibilityIdentifier("person-label")
+        }
     }
 }
 

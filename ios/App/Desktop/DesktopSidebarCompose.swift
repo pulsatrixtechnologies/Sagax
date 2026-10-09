@@ -224,7 +224,7 @@ struct DesktopComposePicker: View {
         let member = picked.contains(bot.id)
         let hint: LocalizedStringKey = mode == .group
             ? (member ? "Remove" : "Add")
-            : (DesktopSidebarState.showThreads(model: model, prefs: prefs) ? "New thread" : "Open chat")
+            : (DesktopSidebarState.threadsOn(model: model, prefs: prefs) ? "New thread" : "Open chat")
         return Button(action: action) {
             HStack(spacing: 12) {
                 ChatAvatarView(chat: .bot(bot), size: 28, state: .idle, background: theme.menu)
@@ -304,7 +304,7 @@ struct DesktopComposePicker: View {
                 return
             }
             model.menu = nil
-            if DesktopSidebarState.showThreads(model: model, prefs: prefs) {
+            if DesktopSidebarState.threadsOn(model: model, prefs: prefs) {
                 Task {
                     if let created = await session.createRosterThread(for: bot) {
                         model.openThreadLists.insert(bot.id)

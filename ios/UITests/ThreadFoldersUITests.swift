@@ -43,6 +43,8 @@ final class ThreadFoldersUITests: XCTestCase {
         ]
         if let environment { arguments += ["-parityEnvironment", environment] }
         app.launchArguments = arguments
+        // threads under each bot row (#210: the default is the chat header)
+        app.launchArguments += ["-omb-threads-location", "sidebar"]
         app.launch()
         return app
     }

@@ -24,6 +24,31 @@ final class RosterDensityUITests: XCTestCase {
         recordScreenshot("Compact roster by default", in: app)
     }
 
+    /// #143, #210: with Threads location "In the chat header" (the default)
+    /// nothing is listed under a bot row; the chat header reaches the
+    /// threads. Settings > Appearance offers both places.
+    @MainActor
+    func testHeaderLocationListsNoThreadsUnderBotRows() {
+        let app = launchRoster(density: "comfortable", location: "header")
+        XCTAssertTrue(app.buttons["chat-row.roster-pepper"].waitForExistence(timeout: 10) || app.buttons.containing(.staticText, identifier: "Pepper").firstMatch.waitForExistence(timeout: 10))
+        XCTAssertFalse(app.buttons["threads-toggle.roster-pepper"].exists)
+        XCTAssertFalse(app.buttons["thread.roster-pepper-gmail"].exists)
+        recordScreenshot("Threads in the chat header: nothing under a bot row", in: app)
+
+        app.buttons["home-account"].tap()
+        let settings = app.buttons["account-menu.settings"]
+        XCTAssertTrue(settings.waitForExistence(timeout: 5))
+        settings.tap()
+        let appearance = app.descendants(matching: .any)["settings-appearance"].firstMatch
+        XCTAssertTrue(appearance.waitForExistence(timeout: 10))
+        appearance.tap()
+        let header = app.descendants(matching: .any)["settings.threadsLocation.header"].firstMatch
+        for _ in 0..<12 where !header.exists || !header.isHittable { app.swipeUp() }
+        XCTAssertTrue(header.exists)
+        XCTAssertTrue(app.descendants(matching: .any)["settings.threadsLocation.sidebar"].firstMatch.exists)
+        recordScreenshot("Settings > Appearance > Threads location", in: app)
+    }
+
     @MainActor
     func testSingleThreadBotHasNoThreadsRowAndStillStartsAThread() {
         let app = launchRoster(density: nil)
@@ -34,18 +59,17 @@ final class RosterDensityUITests: XCTestCase {
         XCTAssertFalse(app.buttons["thread.roster-atlas-plan"].exists)
 
         atlas.press(forDuration: 1.2)
-        let newThread = app.buttons["New thread"]
-        XCTAssertTrue(newThread.waitForExistence(timeout: 5))
-        // the desktop's bot menu: no Threads entry, Hide from sidebar below
+        // the desktop's bot menu (#182): no New thread or New folder on the
+        // row, no Threads entry, Hide from sidebar below
+        XCTAssertTrue(app.buttons["Hide from sidebar"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["New thread"].exists)
+        XCTAssertFalse(app.buttons["New folder"].exists)
         XCTAssertFalse(app.buttons["Manage threads"].exists)
-        XCTAssertTrue(app.buttons["Hide from sidebar"].exists)
-        recordScreenshot("Long press offers a new thread", in: app)
-        // The preview has no client, so creating fails offline — visibly.
-        newThread.tap()
-        let alert = app.alerts["Something went wrong"]
-        XCTAssertTrue(alert.waitForExistence(timeout: 5))
-        XCTAssertTrue(alert.staticTexts["Couldn't create a thread. Check the connection and try again."].exists)
-        alert.buttons["OK"].tap()
+        recordScreenshot("Long press offers no new thread", in: app)
+        // close the menu without choosing: start over
+        app.terminate()
+        app.launch()
+        XCTAssertTrue(atlas.waitForExistence(timeout: 10))
 
         // The row itself opens the bot's one thread.
         atlas.tap()
@@ -117,6 +141,8 @@ final class RosterDensityUITests: XCTestCase {
             let reset = XCUIApplication()
             reset.terminate()
             reset.launchArguments = Self.baseArguments + ["-reset-list-density"]
+            // threads under each bot row (#210: the default is the chat header)
+            reset.launchArguments += ["-omb-threads-location", "sidebar"]
             reset.launch()
             reset.terminate()
         }
@@ -134,6 +160,8 @@ final class RosterDensityUITests: XCTestCase {
         // Kept on this device across launches.
         app.terminate()
         app.launchArguments = Self.baseArguments
+        // threads under each bot row (#210: the default is the chat header)
+        app.launchArguments += ["-omb-threads-location", "sidebar"]
         app.launch()
         XCTAssertTrue(app.buttons["threads-toggle.roster-atlas"].waitForExistence(timeout: 10))
 
@@ -200,7 +228,7 @@ final class RosterDensityUITests: XCTestCase {
     /// (HomeUITests), and these tests cover the compact and comfortable lists.
     /// `saved` stores the density instead of pinning it for the launch.
     @MainActor
-    private func launchRoster(density: String?, saved: Bool = false) -> XCUIApplication {
+    private func launchRoster(density: String?, saved: Bool = false, location: String = "sidebar") -> XCUIApplication {
         continueAfterFailure = false
         let app = XCUIApplication()
         app.terminate()
@@ -208,6 +236,8 @@ final class RosterDensityUITests: XCTestCase {
             // Pinned for this launch only; the switching test instead saves
             // it, as a choice made in Settings, so Settings can change it.
             + [saved ? "-set-list-density" : "-companion.prefs.rosterDensity", density ?? "compact"]
+        // threads under each bot row (#210: the default is the chat header)
+        app.launchArguments += ["-omb-threads-location", location]
         app.launch()
         if app.buttons["Connect computer"].exists {
             app.terminate()

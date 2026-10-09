@@ -118,18 +118,23 @@ extension ChatView {
             ) { openFind() })
         }
         if case let .bot(bot) = current {
-            out.append(PlusAction(
-                id: "task", systemImage: "plus.square.on.square", title: "New thread",
-                subtitle: "Start a fresh thread with \(bot.name)"
-            ) { Task {
-                if let created = await session.createTask(for: bot, title: nil) {
-                    selectedThreadId = created.threadId
-                }
-            } })
-            out.append(PlusAction(
-                id: "tasks", systemImage: "square.stack", title: "Threads",
-                subtitle: "Switch, rename or remove one"
-            ) { showingTasks = true })
+            // the phone's "+" door keeps the thread entries while threads are
+            // on, wherever they are listed (the header's name menu follows
+            // Threads location, #210)
+            if SidebarPrefsModel.shared.showThreads {
+                out.append(PlusAction(
+                    id: "task", systemImage: "plus.square.on.square", title: "New thread",
+                    subtitle: "Start a fresh thread with \(bot.name)"
+                ) { Task {
+                    if let created = await session.createTask(for: bot, title: nil) {
+                        selectedThreadId = created.threadId
+                    }
+                } })
+                out.append(PlusAction(
+                    id: "tasks", systemImage: "square.stack", title: "Threads",
+                    subtitle: "Switch, rename or remove one"
+                ) { showingTasks = true })
+            }
             out.append(PlusAction(
                 id: "settings", systemImage: "gearshape", title: "Bot settings",
                 subtitle: "Model, profile, voice and notifications"

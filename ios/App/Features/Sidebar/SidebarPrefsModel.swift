@@ -38,6 +38,18 @@ final class SidebarPrefsModel: ObservableObject {
     /// showing them, as it always did.
     var showThreads: Bool { prefs.showThreads ?? true }
 
+    /// Settings > Appearance > Threads location (#210): per device, never
+    /// synced, the desktop's own key.
+    @Published private(set) var threadsLocation = ThreadsLocation.parse(UserDefaults.standard.string(forKey: ThreadsLocation.storageKey))
+
+    /// Where a bot's threads show: under its row, or in the chat header.
+    var threadsPlacement: ThreadsPlacement { ThreadsPlacement(showThreads: showThreads, location: threadsLocation) }
+
+    func setThreadsLocation(_ location: ThreadsLocation) {
+        threadsLocation = location
+        UserDefaults.standard.set(location.rawValue, forKey: ThreadsLocation.storageKey)
+    }
+
     /// The person's own sections on an organization server, nil elsewhere.
     var personal: PersonalSections? { synced ? (prefs.personalSections ?? .empty) : nil }
 
@@ -247,6 +259,12 @@ final class SidebarPrefsModel: ObservableObject {
         }
     }
 
+    /// Opening a closed conversation with a person reopens it (#219).
+    func reopenIfClosed(_ session: Session, room: Room) {
+        guard let next = prefs.hidden.reopening(room, viewerId: viewerID(session)) else { return }
+        update(session) { $0.setHidden(next) }
+    }
+
     /// A new message brings a hidden entry back, per the person's setting.
     func unhideNewMessages(_ session: Session) {
         let hidden = prefs.hidden
@@ -299,8 +317,8 @@ private struct SidebarShowsThreadsKey: EnvironmentKey {
 }
 
 extension EnvironmentValues {
-    /// Settings > Appearance > Threads: off hides the thread lists and the
-    /// thread controls of every bot row.
+    /// The thread lists and thread controls under every bot row: Settings >
+    /// Appearance > Threads on, with Threads location "In the sidebar".
     var sidebarShowsThreads: Bool {
         get { self[SidebarShowsThreadsKey.self] }
         set { self[SidebarShowsThreadsKey.self] = newValue }

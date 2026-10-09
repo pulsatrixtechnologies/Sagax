@@ -38,6 +38,8 @@ final class HomeMenusUITests: XCTestCase {
         let app = XCUIApplication()
         app.terminate()
         app.launchArguments = arguments
+        // threads under each bot row (#210: the default is the chat header)
+        app.launchArguments += ["-omb-threads-location", "sidebar"]
         app.launch()
         XCTAssertTrue(app.buttons["home-plus"].waitForExistence(timeout: 20))
         return app
@@ -112,10 +114,10 @@ final class HomeMenusUITests: XCTestCase {
         aurora.press(forDuration: 1.2)
         // a press that lands while the list still settles opens nothing
         if !item("Copy conversation ID", in: app).waitForExistence(timeout: 5) { aurora.press(forDuration: 1.5) }
-        // New thread leads while Settings > Appearance > Threads is on (an
-        // earlier test may have turned it off on this simulator)
-        let threads = item("New thread", in: app).exists ? ["New thread"] : []
-        let expected = threads + ["Pin", "Move to", "Mark as Unread", "Rename Bot", "Copy conversation ID", "Hide from sidebar", "Archive", "Delete"]
+        // #182: no New thread or New folder on a bot row
+        XCTAssertFalse(item("New thread", in: app).exists)
+        XCTAssertFalse(item("New folder", in: app).exists)
+        let expected = ["Pin", "Move to", "Mark as Unread", "Rename Bot", "Copy conversation ID", "Hide from sidebar", "Archive", "Delete"]
         var lastY = -CGFloat.greatestFiniteMagnitude
         for label in expected {
             let entry = item(label, in: app)

@@ -45,6 +45,8 @@ final class ComposerReturnUITests: XCTestCase {
             // install default is the standard home (HomeUITests).
             "-companion.prefs.rosterDensity", "compact"
         ]
+        // threads under each bot row (#210: the default is the chat header)
+        app.launchArguments += ["-omb-threads-location", "sidebar"]
         app.launch()
         // The first launch after an install can restore a prewarmed scene
         // without the preview arguments (an empty, unpaired home: "Connect
@@ -53,6 +55,8 @@ final class ComposerReturnUITests: XCTestCase {
         let pepper = app.buttons["threads-toggle.preview-pepper"]
         if !pepper.waitForExistence(timeout: 10) {
             app.terminate()
+            // threads under each bot row (#210: the default is the chat header)
+            app.launchArguments += ["-omb-threads-location", "sidebar"]
             app.launch()
         }
         XCTAssertTrue(pepper.waitForExistence(timeout: 10))

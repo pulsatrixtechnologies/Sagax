@@ -351,7 +351,7 @@ struct DesktopChatHeader: View {
                             if exportOpen { exportMenu }
                         }
                         .zIndex(1)
-                    if case let .bot(bot) = chat, DesktopSidebarState.showThreads(model: model, prefs: prefs) {
+                    if case let .bot(bot) = chat, DesktopSidebarState.headerThreads(model: model, prefs: prefs) {
                         DesktopThreadPickerButton(bot: bot, open: $threadsOpen)
                     }
                     if chat.isBot {

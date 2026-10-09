@@ -14,11 +14,12 @@ struct RoomPersonLabel: View {
 
     var body: some View {
         let face = HStack(spacing: 6) {
-            PersonAvatar(initials: initials, size: 20)
+            PersonAvatar(initials: initials, size: 20, presenceId: personId)
             Text(verbatim: name)
                 .font(.system(size: 12, weight: .medium))
                 .foregroundStyle(Theme.textSecondary)
                 .lineLimit(1)
+            PersonLabelTag(personId: personId, font: .system(size: 10.5, weight: .medium), horizontalPadding: 5)
         }
         Group {
             if let personId {
