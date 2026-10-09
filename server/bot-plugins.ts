@@ -151,7 +151,7 @@ const stateSchema = z.object({
   plugins: z.record(z.string(), pluginRecord),
 }).strict();
 
-type PluginState = z.infer<typeof stateSchema>;
+export type PluginState = z.infer<typeof stateSchema>;
 export type MarketplaceRecord = z.infer<typeof marketplaceRecord>;
 export type InstalledBotPlugin = z.infer<typeof pluginRecord> & { key: string };
 
@@ -574,6 +574,35 @@ export class BotPlugins {
       .filter((plugin) => plugin.enabled)
       .map((plugin) => this.pluginDir(botId, plugin.marketplace, plugin.name))
       .filter((dir) => existsSync(dir));
+  }
+
+  /** The bot's own plugin folder (state.json, marketplaces/, plugins/). */
+  folder(botId: string): string {
+    return this.root(botId);
+  }
+
+  /** The stored state, for the bot package (server/bot-zip.ts). */
+  stateFor(botId: string): PluginState {
+    return structuredClone(this.read(botId));
+  }
+
+  /** Restore a bot package's state on a new bot whose plugin files are
+   * already in place. A plugin whose folder is missing is dropped; a
+   * marketplace keeps its record (Update fetches it again). */
+  restoreState(botId: string, value: unknown): { marketplaces: string[]; plugins: string[] } {
+    const parsed = stateSchema.safeParse(value);
+    if (!parsed.success) return { marketplaces: [], plugins: [] };
+    const state: PluginState = { version: 1, marketplaces: {}, plugins: {} };
+    for (const [name, record] of Object.entries(parsed.data.marketplaces).slice(0, MAX_MARKETPLACES)) {
+      if (NAME.test(name)) state.marketplaces[name] = record;
+    }
+    for (const [key, record] of Object.entries(parsed.data.plugins).slice(0, MAX_PLUGINS)) {
+      if (!NAME.test(record.name) || !NAME.test(record.marketplace) || key !== `${record.name}@${record.marketplace}`) continue;
+      if (!state.marketplaces[record.marketplace] || !existsSync(this.pluginDir(botId, record.marketplace, record.name))) continue;
+      state.plugins[key] = record;
+    }
+    this.write(botId, state);
+    return { marketplaces: Object.keys(state.marketplaces).sort(), plugins: Object.keys(state.plugins).sort() };
   }
 
   /** Forget everything of a deleted bot. */
