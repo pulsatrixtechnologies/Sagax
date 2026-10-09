@@ -22,7 +22,7 @@ describe("composerPlaceholder", () => {
   });
 
   it("keeps the other states", () => {
-    expect(composerPlaceholder(base)).toBe("Message Cryptic");
+    expect(composerPlaceholder(base)).toBe("Write a message…");
     expect(composerPlaceholder({ ...base, groupName: "Launch", groupHint: () => "@ a member" })).toBe(t("composer.placeholder.group", { name: "Launch", hint: "@ a member" }));
     expect(composerPlaceholder({ ...base, groupName: "Launch", goalMode: true })).toBe(t("composer.placeholder.goal", { name: "Launch" }));
     expect(composerPlaceholder({ ...base, approval: true, busy: true })).toBe(t("composer.placeholder.approval"));

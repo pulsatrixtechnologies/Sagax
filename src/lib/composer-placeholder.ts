@@ -14,8 +14,8 @@ export interface ComposerPlaceholderInput {
   botName: string;
 }
 
-/** What the empty composer says. While the bot works it says the same plain
- * thing as ever: how Enter behaves then is shown by the chip or sheet that
+/** What the empty composer says. A 1:1 chat always says the same plain
+ * thing, idle or working (JC, 2026-10-09): how Enter behaves then is shown by the chip or sheet that
  * appears on send, not by a long line in the placeholder. */
 export function composerPlaceholder(input: ComposerPlaceholderInput): string {
   if (input.approval) return t("composer.placeholder.approval");
@@ -27,5 +27,5 @@ export function composerPlaceholder(input: ComposerPlaceholderInput): string {
       ? t("composer.placeholder.goal", { name: input.groupName })
       : t("composer.placeholder.group", { name: input.groupName, hint: input.groupHint?.() ?? "" });
   }
-  return t("composer.placeholder.bot", { name: input.botName });
+  return t("composer.placeholder.write");
 }
