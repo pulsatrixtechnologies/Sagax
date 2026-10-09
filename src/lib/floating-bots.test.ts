@@ -148,31 +148,31 @@ describe("floating bots: the per-device list", () => {
 describe("floating bots: the fly-away setting", () => {
   it("is on by default and survives a reload once switched off", () => {
     const storage = memoryStorage();
-    expect(readFloatingBotPrefs(storage)).toEqual({ flyAway: true, liveliness: "normal", hotkey: true, hotkeyKeys: "Control+Alt+Space" });
+    expect(readFloatingBotPrefs(storage)).toEqual({ flyAway: true, liveliness: "normal", hotkey: true, hotkeyKeys: "Control+Alt+Space", barkSound: false });
     let changes = 0;
     subscribeFloatingBots(() => (changes += 1));
     setFloatingFlyAway(false, storage);
     setFloatingFlyAway(false, storage);
     expect(floatingBotPrefs().flyAway).toBe(false);
     expect(changes).toBe(1);
-    expect(readFloatingBotPrefs(storage)).toEqual({ flyAway: false, liveliness: "normal", hotkey: true, hotkeyKeys: "Control+Alt+Space" });
+    expect(readFloatingBotPrefs(storage)).toEqual({ flyAway: false, liveliness: "normal", hotkey: true, hotkeyKeys: "Control+Alt+Space", barkSound: false });
     setFloatingFlyAway(true, storage);
-    expect(readFloatingBotPrefs(storage)).toEqual({ flyAway: true, liveliness: "normal", hotkey: true, hotkeyKeys: "Control+Alt+Space" });
+    expect(readFloatingBotPrefs(storage)).toEqual({ flyAway: true, liveliness: "normal", hotkey: true, hotkeyKeys: "Control+Alt+Space", barkSound: false });
   });
 
   it("reads a broken or missing record as the default", () => {
     const storage = memoryStorage();
     storage.setItem("omb.floatingBots.prefs.v1", "{nope");
-    expect(readFloatingBotPrefs(storage)).toEqual({ flyAway: true, liveliness: "normal", hotkey: true, hotkeyKeys: "Control+Alt+Space" });
+    expect(readFloatingBotPrefs(storage)).toEqual({ flyAway: true, liveliness: "normal", hotkey: true, hotkeyKeys: "Control+Alt+Space", barkSound: false });
     storage.setItem("omb.floatingBots.prefs.v1", JSON.stringify({ flyAway: "no" }));
-    expect(readFloatingBotPrefs(storage)).toEqual({ flyAway: true, liveliness: "normal", hotkey: true, hotkeyKeys: "Control+Alt+Space" });
-    expect(readFloatingBotPrefs(undefined)).toEqual({ flyAway: true, liveliness: "normal", hotkey: true, hotkeyKeys: "Control+Alt+Space" });
+    expect(readFloatingBotPrefs(storage)).toEqual({ flyAway: true, liveliness: "normal", hotkey: true, hotkeyKeys: "Control+Alt+Space", barkSound: false });
+    expect(readFloatingBotPrefs(undefined)).toEqual({ flyAway: true, liveliness: "normal", hotkey: true, hotkeyKeys: "Control+Alt+Space", barkSound: false });
   });
 
   it("keeps an activity level, cycled by the menu, and ignores an unknown one", () => {
     const storage = memoryStorage();
     setFloatingLiveliness("lively", storage);
-    expect(readFloatingBotPrefs(storage)).toEqual({ flyAway: true, liveliness: "lively", hotkey: true, hotkeyKeys: "Control+Alt+Space" });
+    expect(readFloatingBotPrefs(storage)).toEqual({ flyAway: true, liveliness: "lively", hotkey: true, hotkeyKeys: "Control+Alt+Space", barkSound: false });
     setFloatingLiveliness("wild" as never, storage);
     expect(readFloatingBotPrefs(storage).liveliness).toBe("lively");
     expect(nextLiveliness("calm")).toBe("normal");
@@ -182,13 +182,13 @@ describe("floating bots: the fly-away setting", () => {
   it("keeps the call hotkey on by default, its keys among the choices", () => {
     const storage = memoryStorage();
     setFloatingHotkey({ on: false }, storage);
-    expect(readFloatingBotPrefs(storage)).toMatchObject({ hotkey: false, hotkeyKeys: "Control+Alt+Space" });
+    expect(readFloatingBotPrefs(storage)).toMatchObject({ hotkey: false, hotkeyKeys: "Control+Alt+Space", barkSound: false });
     setFloatingHotkey({ on: true, keys: "Alt+Shift+Space" }, storage);
     expect(readFloatingBotPrefs(storage)).toMatchObject({ hotkey: true, hotkeyKeys: "Alt+Shift+Space" });
     setFloatingHotkey({ keys: "Command+Q" as never }, storage);
     expect(readFloatingBotPrefs(storage).hotkeyKeys).toBe("Alt+Shift+Space");
     storage.setItem("omb.floatingBots.prefs.v1", JSON.stringify({ hotkeyKeys: "F1" }));
-    expect(readFloatingBotPrefs(storage)).toMatchObject({ hotkey: true, hotkeyKeys: "Control+Alt+Space" });
+    expect(readFloatingBotPrefs(storage)).toMatchObject({ hotkey: true, hotkeyKeys: "Control+Alt+Space", barkSound: false });
     expect(HOTKEY_CHOICES).toContain(DEFAULT_HOTKEY);
   });
 

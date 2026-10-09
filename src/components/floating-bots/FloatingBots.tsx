@@ -7,7 +7,8 @@
 // here, through the store, exactly as if the message had been typed in the
 // app: the floating windows never hold a session.
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
-import { reportAchievement } from "@/lib/achievements";
+import { ACHIEVEMENT_UNLOCKED_EVENT, reportAchievement } from "@/lib/achievements";
+import { NUDGE_RECEIVED_EVENT } from "@/lib/desktop-nudge";
 import { api, openThread, useStore, useStreaming, type Bot } from "@/state/store";
 import { loadBotActivity, type BotActivityList } from "@/lib/bot-activity";
 import { pendingApprovals } from "@/components/PendingApproval";
@@ -15,6 +16,7 @@ import { activeLocale, t } from "@/lib/i18n";
 import { brand } from "@/lib/brand";
 import { useRetroSkin } from "@/components/RetroChromeHost";
 import { botAvatarProfile } from "../../../shared/bot-avatar";
+import { completeMascotLook } from "../../../shared/mascot-look";
 import {
   floatingBotPrefs,
   floatingBots,
@@ -48,7 +50,7 @@ import { FloatingBotView, MASCOT_SIZE, type FloatingMover } from "./FloatingBotV
 import { floatingContext } from "./context";
 import { useAppTheme } from "./theme";
 import { moodNow, raiseMood, readMoods, writeMoods, type MoodGain, type MoodRecord } from "./mood";
-import { isFloatingEvent, type FloatingAvatar, type FloatingBotsBridge, type FloatingCallLevels, type FloatingEvent, type FloatingSnapshot } from "./protocol";
+import { isFloatingEvent, type FloatingAvatar, type FloatingBotsBridge, type FloatingCallLevels, type FloatingCue, type FloatingEvent, type FloatingSnapshot } from "./protocol";
 import { currentCall, endCall, startCall, useOnCall } from "@/lib/call";
 import { speaker } from "@/lib/tts";
 import { fetchVoiceModeVoices, useVoiceModeAvailable } from "@/lib/voice-mode/api";
@@ -60,6 +62,7 @@ import { callLevels, callPose, mascotCallSnapshot, NO_PANEL, runMascotCallEvent,
 import { hotkeyAction, hotkeyBot, hotkeyConfig, type HotkeyKind } from "./hotkey";
 import { buildTray, type TrayApproval, type TrayTarget } from "./tray";
 import { characterMoves, isMoveClip } from "./moves";
+import { cueClipFor, SNOOZE_NAP_MS } from "./mascots";
 import { COMPOSER_ATTACH_EVENT } from "@/components/Composer";
 import { COMPOSER_MODEL_EVENT, composerModelLabel } from "@/components/ModelPicker";
 
@@ -204,6 +207,8 @@ export function FloatingBots() {
   // the desktop balloon wears the app's skin and accent, and follows a change at once
   const theme = useAppTheme();
   const reduced = useReducedMotion();
+  const reducedRef = useRef(reduced);
+  reducedRef.current = reduced;
   const bridge = useMemo(desktopBridge, []);
   const [sessions, setSessions] = useState<Record<string, FloatingSession>>({});
   const stateRef = useRef(state);
@@ -224,6 +229,19 @@ export function FloatingBots() {
   callPanelRef.current = callPanel;
   // a new call (or none) starts with a closed settings card
   useEffect(() => setCallPanel(NO_PANEL), [live?.call]);
+
+  // a nudge or an achievement reaches every mascot shown (a Shiba barks, or turns in circles)
+  const [cue, setCue] = useState<(FloatingCue & { botId?: string }) | null>(null);
+  useEffect(() => {
+    const nudge = () => setCue({ kind: "nudge", at: Date.now() });
+    const achievement = () => setCue({ kind: "achievement", at: Date.now() });
+    window.addEventListener(NUDGE_RECEIVED_EVENT, nudge);
+    window.addEventListener(ACHIEVEMENT_UNLOCKED_EVENT, achievement);
+    return () => {
+      window.removeEventListener(NUDGE_RECEIVED_EVENT, nudge);
+      window.removeEventListener(ACHIEVEMENT_UNLOCKED_EVENT, achievement);
+    };
+  }, []);
 
   // "Hide for 1 hour": a hidden mascot is left out until its time, then comes back by itself
   const [now, setNow] = useState(() => Date.now());
@@ -494,8 +512,16 @@ export function FloatingBots() {
         else if (event.id === "balloon") patch(botId, { open: !session.open });
         else if (event.id === "dock") unfloatBot(botId);
         else if (event.id === "snooze") {
-          setNow(Date.now());
-          snoozeFloatingBot(botId, Date.now() + SNOOZE_MS);
+          const hide = () => {
+            setNow(Date.now());
+            snoozeFloatingBot(botId, Date.now() + SNOOZE_MS);
+          };
+          // a Shiba lies down and falls asleep first, then goes
+          const naps = cueClipFor(completeMascotLook(bot.mascotLook).character, "snooze") !== null && !reducedRef.current;
+          if (naps) {
+            setCue({ kind: "snooze", at: Date.now(), botId });
+            setTimeout(hide, SNOOZE_NAP_MS);
+          } else hide();
         } else if (event.id === "settings") dispatch({ type: "toggleAppSettings", open: true, section: "appearance" });
         else if (event.id.startsWith("switch:")) switchMascot(botId, event.id.slice("switch:".length));
         // the balloon's clip and model chip: the app comes forward (main focused it) on this thread, and its own composer does the rest
@@ -599,6 +625,7 @@ export function FloatingBots() {
         flyAway: prefs.flyAway,
         liveliness: prefs.liveliness,
         mascot: bot.mascotLook ?? undefined,
+        cue: cue && (!cue.botId || cue.botId === bot.id) ? { kind: cue.kind, at: cue.at } : null,
         context: floatingContext(bot.tasks?.find((task) => task.threadId === (session.threadId ?? bot.threadId))?.usage),
         model: { label: composerModelLabel(state.instances, bot.modelSelection), title: t("floatingBots.modelChip") },
         menu: {
