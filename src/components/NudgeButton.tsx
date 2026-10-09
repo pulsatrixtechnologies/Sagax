@@ -10,6 +10,7 @@ import { BellRing } from "lucide-react";
 
 import { t } from "@/lib/i18n";
 import { cn } from "@/lib/cn";
+import { onNudgeSent } from "@/lib/desktop-nudge";
 import { nudgeWaitLabel } from "@/lib/nudge-wait";
 import { ApiError, api } from "@/state/store";
 
@@ -57,6 +58,8 @@ export function NudgeButton({ principalId, groupId, name }: { principalId?: stri
         setHint(null);
         const body = principalId ? { principalId } : { groupId };
         void api("/api/nudges", { method: "POST", body: JSON.stringify(body) })
+          // the sender's own window shakes and rings at once
+          .then((sent) => { void onNudgeSent(sent); })
           .catch((error: unknown) => {
             if (error instanceof ApiError && error.status === 429) {
               const ms = error.body?.retryAfterMs;

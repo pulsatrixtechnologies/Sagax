@@ -8137,7 +8137,7 @@ function sseFrameFor(
   if (payload?.kind === "org.approvals" && !orgAdminStream(client)) return null;
   // a person's unlocks reach that person's streams only
   if (payload?.kind === "achievements" && !achievementFrameAllowed(payload, client.viewerId, localPrincipalId())) return null;
-  if (payload?.kind === "nudge" && !nudgeFrameAllowed(payload, client.viewerId, localPrincipalId())) return null;
+  if ((payload?.kind === "nudge" || payload?.kind === "nudge.sent") && !nudgeFrameAllowed(payload, client.viewerId, localPrincipalId())) return null;
   if (payload?.kind === "presence.changed" && !presenceFrameAllowed(payload, client)) return null;
   // A read position in a conversation between two people follows both
   // people's "Send read receipts" choice (server/read-receipts.ts).
@@ -21041,6 +21041,8 @@ ROUTES.push(createNudgeRoutes({
   now: () => Date.now(),
   cooldown: nudges,
   deliver: (frame) => broadcast({ kind: "nudge", ...frame }),
+  // The sender's own windows shake and ring too (a kind older apps ignore).
+  echo: (frame) => broadcast({ kind: "nudge.sent", ...frame }),
   record: (line) => recordNudgeLine({
     find: (a, b) => {
       const group = findPeopleDm(store.groups, a, b);

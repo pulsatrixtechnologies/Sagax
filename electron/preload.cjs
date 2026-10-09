@@ -288,11 +288,15 @@ const bridge = {
   },
   /** Mirrors durable unread state into the native Dock/taskbar badge. */
   setUnreadCount: (count) => ipcRenderer.send("desktop:unread-count", count),
-  /** Ask the shell to focus this app's main window and shake it once.
-   * Safe on an organization page: it moves no files and reads no secret.
-   * Main accepts it only from the main window, and ignores a repeat while
-   * the shake is still running. */
-  nudgeWindow: (options) => ipcRenderer.send("desktop:nudge", { shake: !(options && options.shake === false) }),
+  /** Ask the shell to bring this app's main window to the very front and
+   * shake it once. `role` "sent" is the sender's own window (no Dock
+   * bounce); anything else is a nudge received. Safe on an organization
+   * page: it moves no files and reads no secret. Main accepts it only from
+   * the main window, and ignores a repeat while the shake is still running. */
+  nudgeWindow: (options) => ipcRenderer.send("desktop:nudge", {
+    shake: !(options && options.shake === false),
+    role: options && options.role === "sent" ? "sent" : "received",
+  }),
   /** A native notification shown by the shell (it can stay until it is
    * dismissed, bounce the Dock, flash the taskbar). Safe on an organization
    * page: text the page already shows, capped by main; main accepts it only

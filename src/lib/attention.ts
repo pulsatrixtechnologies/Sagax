@@ -55,8 +55,9 @@ export interface NudgeAttention {
   notify: boolean;
 }
 
-/** A nudge addressed to this person. Only the person nudged ever gets
- * here: the sender's own window neither rings nor shakes. */
+/** A nudge addressed to this person, or one this person just sent (the
+ * caller passes `windowFocused: true` then: no notification for one's own
+ * nudge). Both windows shake and ring. */
 export function nudgeAttention(input: {
   at: number;
   now: number;

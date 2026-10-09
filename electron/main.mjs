@@ -2034,10 +2034,12 @@ ipcMain.on("desktop:unread-count", (event, value) => {
 });
 
 // A nudge between the two people in a chat: bring this desktop's main
-// window to the front and shake it. The sender and the recipient each ask
-// from their own app. Floating windows stay where they are. A subframe
+// window to the very front and shake it. The sender and the recipient each
+// ask from their own app. Floating windows stay where they are. A subframe
 // cannot ask, and a second call during the shake does not focus again
-// (electron/window-nudge.mjs).
+// (electron/window-nudge.mjs). macOS: the app takes the focus from the app
+// in front (steal). Windows: the window is top most for the shake, which
+// gets past the foreground lock that refuses a plain focus.
 const windowNudger = createWindowNudger(undefined, () => {
   if (process.platform === "darwin") {
     app.show();
@@ -2045,7 +2047,7 @@ const windowNudger = createWindowNudger(undefined, () => {
   } else {
     app.focus();
   }
-});
+}, process.platform);
 // Presence (shared/presence.ts): whether the person is at this computer.
 // The main window only, its top frame only; the answer is a state and a
 // number of seconds, so an organization server's page may ask too.
@@ -2080,15 +2082,16 @@ const desktopAttention = createDesktopAttention({
   },
 });
 
-// A nudge RECEIVED on this computer (the page never asks for the sender):
-// bounce the Dock icon until the person looks (macOS), flash the taskbar
-// button (Windows, Linux), then bring the window forward and shake it,
-// unless this computer turned the shake off.
+// A nudge on this computer, received or sent: bring the window to the very
+// front and shake it (the shake follows this computer's switch; the window
+// comes forward either way). A nudge RECEIVED also bounces the Dock icon
+// until the person looks (macOS) and flashes the taskbar button (Windows,
+// Linux); the sender's own window does not.
 ipcMain.on("desktop:nudge", (event, options) => {
   if (!fromMainWindowTop(event)) return;
-  desktopAttention.requestAttention({ bounce: "critical", flash: true });
-  if (options && typeof options === "object" && options.shake === false) return;
-  windowNudger.nudge(mainWindow);
+  const asked = options && typeof options === "object" ? options : {};
+  if (asked.role !== "sent") desktopAttention.requestAttention({ bounce: "critical", flash: true });
+  windowNudger.nudge(mainWindow, { shake: asked.shake !== false });
 });
 
 // A notification the page decided on (src/lib/attention.ts): shown by the
