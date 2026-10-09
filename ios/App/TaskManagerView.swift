@@ -282,12 +282,15 @@ struct TaskManagerView: View {
                     }
                 }
             }
-        case .room:
+        case let .room(room):
+            // a person's conversation folds its archived threads like a bot (#262)
+            let shown = room.peopleDm == true ? matchingRoomTasks.filter { !$0.isArchived } : matchingRoomTasks
+            let archived = room.peopleDm == true ? matchingRoomTasks.filter(\.isArchived) : []
             Section {
-                if matchingRoomTasks.isEmpty {
+                if shown.isEmpty && archived.isEmpty {
                     emptySearch
                 } else {
-                    ForEach(matchingRoomTasks, id: \.threadId) { task in
+                    ForEach(shown, id: \.threadId) { task in
                         threadButton(task)
                     }
                 }
@@ -296,6 +299,13 @@ struct TaskManagerView: View {
             } footer: {
                 if current.busy {
                     Text("You can switch or create a group thread when the current reply finishes.")
+                }
+            }
+            if !archived.isEmpty {
+                Section {
+                    ForEach(archived, id: \.threadId) { task in threadButton(task) }
+                } header: {
+                    Text("Archived (\(archived.count))")
                 }
             }
         }

@@ -109,7 +109,8 @@ final class BotTemplatesEntryTests: XCTestCase {
         on.templates = true
         XCTAssertEqual(BotTemplatesEntry.destination(gate: admin, features: on), .templates)
         XCTAssertEqual(BotTemplatesEntry.destination(gate: admin, features: ServerFeatures()), .newBot, "Templates off: the new bot sheet")
-        XCTAssertEqual(BotTemplatesEntry.destination(gate: client, features: on), .newBot, "a pairing that may not browse Templates")
+        XCTAssertEqual(BotTemplatesEntry.destination(gate: client, features: on), .templates, "Browse Bots is a member's too")
+        XCTAssertEqual(BotTemplatesEntry.destination(gate: SurfaceGate(scope: .sidecar), features: on), .newBot, "the sidecar has no catalogue")
         XCTAssertEqual(BotTemplatesEntry.destination(gate: admin, features: nil), .newBot)
     }
 }

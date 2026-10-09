@@ -461,7 +461,7 @@ struct ArchivedBotsView: View {
 // MARK: - Places
 
 /// Experimental places at the foot of the home list: Connected apps and
-/// Templates while Settings > Experimental turns them on. Team map and
+/// Browse Bots (the desktop's Templates place) while Settings > Experimental turns them on. Team map and
 /// Automations open from the account menu.
 struct HomePlacesSection: View {
     @Environment(\.themePalette) var themePalette
@@ -508,7 +508,7 @@ struct HomePlacesSection: View {
         case .teamMap: String(localized: "Team map")
         case .automations: String(localized: "Automations")
         case .connectedApps: String(localized: "Connected apps")
-        case .templates: String(localized: "Templates")
+        case .templates: String(localized: "Browse Bots")
         }
     }
 
@@ -517,7 +517,7 @@ struct HomePlacesSection: View {
         case .teamMap: "point.3.connected.trianglepath.dotted"
         case .automations: "calendar"
         case .connectedApps: "puzzlepiece.extension"
-        case .templates: "books.vertical"
+        case .templates: "square.grid.2x2"
         }
     }
 }

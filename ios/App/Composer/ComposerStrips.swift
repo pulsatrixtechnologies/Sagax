@@ -60,6 +60,10 @@ struct SuggestionStrip: View {
                     Image(systemName: "person.2.fill")
                         .font(.system(size: 10, weight: .semibold))
                         .foregroundStyle(Theme.textSecondary)
+                } else if choice.isPerson {
+                    Image(systemName: "person.fill")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(Theme.textSecondary)
                 } else {
                     Circle()
                         .fill(MausPalette.color(choice.color ?? ""))
@@ -68,7 +72,7 @@ struct SuggestionStrip: View {
                 Text(verbatim: "@\(choice.name)")
                     .font(.system(size: 13, weight: .medium))
                     .foregroundStyle(Theme.textPrimary)
-                Text(choice.isEveryone ? "Group chat" : "Agent")
+                Text(choice.isEveryone ? "Group chat" : choice.isPerson ? "Person · Gets a notification" : "Agent")
                     .font(.system(size: 11))
                     .foregroundStyle(Theme.textSecondary)
             case let .thread(thread, showsBot):

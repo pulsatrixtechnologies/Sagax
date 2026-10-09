@@ -74,9 +74,11 @@ struct AutomationsQuickCreateSheet: View {
                         }
                         .accessibilityIdentifier("automations-quick-bot")
                     }
-                    TextField(String(localized: "What should the bot do?"), text: $prompt, axis: .vertical)
-                        .lineLimit(3...8)
-                        .accessibilityIdentifier("automations-quick-prompt")
+                    // the markdown editor (desktop QuickComposer, #258)
+                    MarkdownEditor(
+                        text: $prompt, placeholder: String(localized: "What should the bot do?"), minHeight: 100, showsCount: false,
+                        accessibilityLabel: String(localized: "What should the bot do?"), identifier: "automations-quick-prompt"
+                    )
                 }
                 Section {
                     Button(String(localized: "More options")) {

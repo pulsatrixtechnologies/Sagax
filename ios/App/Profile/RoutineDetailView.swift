@@ -364,18 +364,20 @@ struct InstructionView: View {
         } content: {
             if editing {
                 ProfileCard(margin: Theme.Profile.routineMargin) {
-                    TextEditor(text: $draft)
-                        .font(Theme.Font.body)
-                        .foregroundStyle(Theme.textPrimary)
-                        .scrollContentBackground(.hidden)
-                        .focused($focused)
-                        .frame(minHeight: 320)
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 10)
-                        .accessibilityIdentifier("instructions-editor")
+                    // the markdown editor (desktop SoulField, #258)
+                    MarkdownEditor(
+                        text: $draft, minHeight: 320,
+                        accessibilityLabel: String(localized: "Instructions"), identifier: "instructions-editor"
+                    )
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 10)
                 }
             } else if let soul {
                 TextCardBody(text: soul.isEmpty ? String(localized: "No instructions yet.") : soul)
+                // RULES.md and docs/ beside the soul (#269)
+                BotWorkspaceShortcuts(bot: bot)
+                    .padding(.horizontal, Theme.Profile.routineMargin)
+                    .padding(.top, 12)
             } else if let problem {
                 TextCardBody(text: problem)
             } else {

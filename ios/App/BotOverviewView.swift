@@ -103,6 +103,9 @@ struct BotOverviewView: View {
                     PromptPreviewSection(bot: bot)
                         .listRowBackground(Theme.parity(Color(uiColor: .secondarySystemGroupedBackground), Theme.card))
                 }
+                // the persona Overview's "Export as zip" (#271)
+                BotZipExportSection(bot: bot)
+                    .listRowBackground(Theme.parity(Color(uiColor: .secondarySystemGroupedBackground), Theme.card))
             } else if failed {
                 Section {
                     EmptyStateView("Couldn't load", systemImage: "wifi.exclamationmark")
