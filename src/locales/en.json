@@ -5383,6 +5383,7 @@
   "task.newBusy": "Let this turn finish first",
   "task.newIn": "New thread in {name}",
   "task.newShort": "New thread",
+  "task.general": "General",
   "task.noMatch": "Nothing matches “{query}”",
   "task.openedBy": "opened by {name}",
   "task.otherActivity": "Other activity ({count})",

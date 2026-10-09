@@ -3722,6 +3722,7 @@
   "task.new": "Nouveau fil : une nouvelle conversation",
   "task.newBusy": "Laissez ce tour se terminer d'abord",
   "task.newShort": "Nouveau fil",
+  "task.general": "Général",
   "task.noMatch": "Rien ne correspond à « {query} »",
   "task.otherActivity": "Autre activité ({count})",
   "task.queued": "En file d'attente",

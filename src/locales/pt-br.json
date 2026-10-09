@@ -2136,6 +2136,7 @@
   "task.new": "Nova conversa — um novo contexto",
   "task.newBusy": "Deixe este turno terminar primeiro",
   "task.newShort": "Nova conversa",
+  "task.general": "Geral",
   "task.noMatch": "Nada corresponde a “{query}”",
   "task.otherActivity": "Outra atividade ({count})",
   "task.queued": "Na fila",

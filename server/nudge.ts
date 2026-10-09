@@ -132,6 +132,9 @@ export interface NudgeTranscriptLine {
   at: number;
   /** Set when the line belongs to this group chat, not a direct conversation. */
   groupId?: string;
+  /** A direct nudge: the thread of the pair's conversation the sender has
+   * open. Ignored when it is not one of that conversation's threads. */
+  threadId?: string;
 }
 
 export interface NudgeLineStore {
@@ -145,8 +148,11 @@ export interface NudgeLineStore {
     at: number;
     nudge: { fromId: string; fromName: string; toId: string; toName: string; groupId?: string };
   }): void;
-  /** `personId`: a direct nudge is unread for the person nudged only. */
-  markUnread(groupId: string, personId?: string): void;
+  /** `personId`: a direct nudge is unread for the person nudged only, on
+   * `threadId` when given. */
+  markUnread(groupId: string, personId?: string, threadId?: string): void;
+  /** Whether `threadId` is one of this conversation's threads. */
+  hasThread?(groupId: string, threadId: string): boolean;
 }
 
 /** The conversation a nudge line was written in: the frame carries it so
@@ -183,7 +189,8 @@ export function recordNudgeLine(store: NudgeLineStore, line: NudgeTranscriptLine
     b: line.toId,
     name: `${line.fromName}, ${line.toName}`,
   });
-  store.append(group.threadId, { role: "bot", kind: "nudge", at: line.at, nudge: note });
-  store.markUnread(group.id, line.toId);
-  return { groupId: group.id, threadId: group.threadId };
+  const threadId = line.threadId && store.hasThread?.(group.id, line.threadId) ? line.threadId : group.threadId;
+  store.append(threadId, { role: "bot", kind: "nudge", at: line.at, nudge: note });
+  store.markUnread(group.id, line.toId, threadId);
+  return { groupId: group.id, threadId };
 }

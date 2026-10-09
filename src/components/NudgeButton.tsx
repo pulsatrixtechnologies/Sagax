@@ -14,7 +14,9 @@ import { onNudgeSent } from "@/lib/desktop-nudge";
 import { nudgeWaitLabel } from "@/lib/nudge-wait";
 import { ApiError, api } from "@/state/store";
 
-export function NudgeButton({ principalId, groupId, name }: { principalId?: string; groupId?: string; name: string }) {
+/** `threadId`: a person conversation's thread the line goes to (the one on
+ * screen), so a nudge behaves per thread like a message. */
+export function NudgeButton({ principalId, groupId, name, threadId }: { principalId?: string; groupId?: string; name: string; threadId?: string }) {
   const token = (principalId || groupId || "").trim();
   const [wait, setWait] = useState<string | null>(null);
   const [hint, setHint] = useState<string | null>(null);
@@ -56,7 +58,7 @@ export function NudgeButton({ principalId, groupId, name }: { principalId?: stri
         if (busy || cooling || !token) return;
         setBusy(true);
         setHint(null);
-        const body = principalId ? { principalId } : { groupId };
+        const body = principalId ? { principalId, ...(threadId ? { threadId } : {}) } : { groupId };
         void api("/api/nudges", { method: "POST", body: JSON.stringify(body) })
           // the sender's own window shakes and rings at once
           .then((sent) => { void onNudgeSent(sent); })

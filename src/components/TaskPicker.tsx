@@ -5,13 +5,14 @@
 // own transcript and its own provider session — so sensitive work, a
 // long job and a quick question can sit side by side under one agent.
 import { copyText } from "@/lib/copy-text";
-import { Fragment, useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState, type ReactNode } from "react";
 import { Archive, ArchiveRestore, BellOff, Check, ChevronLeft, Clock, FolderInput, Link2, Loader2, MessagesSquare, MoreHorizontal, Pencil, Pin, PinOff, Plus, RefreshCw, Search, Trash2 } from "lucide-react";
-import { api, currentTaskBot, useStore, type Bot, type BotProject, type Group, type Task } from "@/state/store";
+import { api, currentTaskBot, useStore, type Bot, type BotProject, type Group, type GroupTaskUpdatePatch, type Task } from "@/state/store";
 import { approvalModeFor } from "../../shared/approval-mode";
 import { llmThreadTitlesEnabled } from "@/lib/feature-flags";
 import { moveFolder } from "@/lib/folder-order";
-import { folderUnreadThreadIds, markFolderRead } from "@/lib/folder-read";
+import { folderUnreadThreadIds, markFolderRead, markGroupFolderRead } from "@/lib/folder-read";
+import { personPickerThreads } from "@/lib/person-threads";
 import { threadRefUrl } from "@/lib/thread-refs";
 import { FullAccessWarning } from "./FullAccessWarning";
 import { LocalComputerAutoWarning } from "./LocalComputerAutoWarning";
@@ -153,7 +154,8 @@ function ConversationTaskPicker({
   threadId,
   tasks,
   busy,
-  bot,
+  folders,
+  newButton,
   onNew,
   onSwitch,
   onRename,
@@ -167,7 +169,12 @@ function ConversationTaskPicker({
   threadId: string;
   tasks: PickerTask[];
   busy: boolean;
-  bot?: Bot;
+  /** The owner's folders (a bot's, or a conversation with a person's): the
+   * list groups by them and a row can move between them. Absent: no folders. */
+  folders?: BotProject[];
+  /** The owner's own New thread control (it opens in the current folder);
+   * absent: a plain New thread row that calls onNew. */
+  newButton?: (close: () => void) => ReactNode;
   onNew: () => void;
   onSwitch: (threadId: string) => void;
   onRename: (threadId: string, title: string) => void;
@@ -299,7 +306,7 @@ function ConversationTaskPicker({
           detail: usageDetail(u),
         })
       : t("task.switch");
-  const grouped = bot ? groupThreadTasks(tasks, bot.projects ?? [], query) : null;
+  const grouped = folders ? groupThreadTasks(tasks, folders, query) : null;
   // Only this conversation's own threads: no other bot's or room's thread
   // ever rides in here (JC, 2026-10-08). The sidebar's Active Threads panel
   // is the cross-bot view.
@@ -366,7 +373,7 @@ function ConversationTaskPicker({
               const heading = grouped?.find((group) => group.tasks[0]?.threadId === task.threadId)?.project;
               return (
                 <Fragment key={task.threadId}>
-                {bot?.projects?.length && heading ? <div data-picker-folder={heading.id || undefined} className={cn("group/folder flex items-center gap-1.5 px-3 pb-1 pt-2 text-[11px] font-medium text-popover-ink-secondary", index > 0 && "border-t border-popover-hairline")}>{heading.id && <FolderIcon emoji={heading.emoji} size={12} />}<span className="min-w-0 flex-1 truncate">{heading.name}</span>
+                {folders?.length && heading ? <div data-picker-folder={heading.id || undefined} className={cn("group/folder flex items-center gap-1.5 px-3 pb-1 pt-2 text-[11px] font-medium text-popover-ink-secondary", index > 0 && "border-t border-popover-hairline")}>{heading.id && <FolderIcon emoji={heading.emoji} size={12} />}<span className="min-w-0 flex-1 truncate">{heading.name}</span>
                   {heading.id && folderActions && <FolderActions project={heading} canMoveUp={folderActions.canMove(heading.id, -1)} canMoveDown={folderActions.canMove(heading.id, 1)}
                     canMarkRead={folderActions.canMarkRead(heading.id)} saving={folderActions.saving}
                     menu={folderMenu?.projectId === heading.id ? folderMenu : null}
@@ -455,13 +462,13 @@ function ConversationTaskPicker({
                       <Pencil size={13} />
                     </button>
                   )}
-                  {bot && onMove && (bot.projects?.length ?? 0) > 0 && <label title={t("folder.move")} className="relative rounded p-1 text-popover-ink-secondary opacity-0 hover:bg-popover-hover hover:text-popover-ink focus-within:opacity-100 group-hover:opacity-100 touch:opacity-70">
+                  {folders && onMove && folders.length > 0 && <label title={t("folder.move")} className="relative rounded p-1 text-popover-ink-secondary opacity-0 hover:bg-popover-hover hover:text-popover-ink focus-within:opacity-100 group-hover:opacity-100 touch:opacity-70">
                     <FolderInput size={13} />
-                    <select aria-label={t("folder.moveNamed", { title: task.title })} value={bot.projects?.some((project) => project.id === task.projectId) ? task.projectId : ""}
+                    <select aria-label={t("folder.moveNamed", { title: task.title })} value={folders.some((project) => project.id === task.projectId) ? task.projectId : ""}
                       onFocus={clearDismiss} onChange={(event) => { clearDismiss(); onMove(task.threadId, event.target.value || null); }}
                       className="absolute inset-0 w-full cursor-pointer opacity-0">
                       <option value="">{t("folder.none")}</option>
-                      {bot.projects?.map((project) => <option key={project.id} value={project.id}>{project.emoji ? `${project.emoji} ` : ""}{project.name}</option>)}
+                      {folders.map((project) => <option key={project.id} value={project.id}>{project.emoji ? `${project.emoji} ` : ""}{project.name}</option>)}
                     </select>
                   </label>}
                   {threadActions && renaming !== task.threadId && (
@@ -499,7 +506,7 @@ function ConversationTaskPicker({
               );
             })}
           </div>
-          {bot ? <NewThreadButton bot={bot} onCreated={closeMenu} className="mt-1 w-full rounded-none border-t border-popover-hairline" /> : <button
+          {newButton ? newButton(closeMenu) : <button
             type="button"
             onClick={() => {
               onNew();
@@ -674,7 +681,8 @@ export function TaskPicker({ bot, initialOpen = false }: { bot: Bot; initialOpen
       threadId={bot.threadId}
       tasks={botPickerThreads(bot)}
       busy={false}
-      bot={bot}
+      folders={bot.projects ?? []}
+      newButton={(close) => <NewThreadButton bot={bot} onCreated={close} className="mt-1 w-full rounded-none border-t border-popover-hairline" />}
       onNew={() => dispatch({ type: "newTask", botId: bot.id })}
       onSwitch={(threadId) => dispatch({ type: "switchTask", botId: bot.id, threadId })}
       onRename={(threadId, title) => dispatch({ type: "renameTask", botId: bot.id, threadId, title })}
@@ -731,5 +739,77 @@ export function GroupTaskPicker({ group }: { group: Group }) {
         dispatch({ type: "pinGroupTask", groupId: group.id, threadId, pinned, title });
       }}
     />
+  );
+}
+
+/** A conversation with a person has threads like a bot (server/people-dms.ts):
+ * the same picker, menus and folders, in the chat header while Settings >
+ * Appearance puts threads there; in the sidebar location the list sits
+ * under the person's row instead, never both. No generated title (that
+ * would send the pair's words to a model) and no approval refresh (there is
+ * no bot). */
+export function PersonThreadPicker({ group, initialOpen = false }: { group: Group; initialOpen?: boolean }) {
+  const { dispatch } = useStore();
+  const threadsOn = useShowThreads();
+  const location = useThreadsLocationChoice();
+  const [editingProject, setEditingProject] = useState<string | null>(null);
+  const [folderSaving, setFolderSaving] = useState(false);
+  const [folderError, setFolderError] = useState<string | null>(null);
+  if (!group.peopleDm || !threadsOn || location !== "header") return null;
+  const projects = group.projects ?? [];
+  const projectIds = projects.map((project) => project.id);
+  const update = (threadId: string, patch: GroupTaskUpdatePatch) => dispatch({ type: "updateGroupTask", groupId: group.id, threadId, patch });
+  const threadActions: PickerThreadActions = {
+    onCopyLink: (threadId) => { void copyText(threadRefUrl({ botId: group.id, threadId })); },
+    onArchive: (threadId, archivedAt) => update(threadId, { archivedAt }),
+    onSnooze: (threadId, snoozedUntil) => update(threadId, { snoozedUntil }),
+  };
+  const folderActions: PickerFolderActions = {
+    saving: folderSaving,
+    canMove: (projectId, direction) => {
+      const index = projectIds.indexOf(projectId);
+      return index >= 0 && index + direction >= 0 && index + direction < projectIds.length;
+    },
+    canMarkRead: (projectId) => folderUnreadThreadIds(group, projectId).length > 0,
+    onEdit: (projectId) => setEditingProject(projectId),
+    onMove: (projectId, direction, onSaved) => {
+      const ids = moveFolder(projectIds, projectId, direction);
+      if (folderSaving || ids.every((id, index) => id === projectIds[index])) return;
+      setFolderSaving(true); setFolderError(null);
+      dispatch({ type: "reorderProjects", botId: group.id, owner: "group", projectIds: ids,
+        onSaved: () => { setFolderSaving(false); onSaved(); },
+        onError: (message) => { setFolderSaving(false); setFolderError(message); } });
+    },
+    onMarkRead: (projectId, onSaved) => {
+      if (folderSaving) return;
+      setFolderSaving(true); setFolderError(null);
+      markGroupFolderRead(group, projectId, api, (updated) => dispatch({ type: "groupPatched", group: updated }))
+        .then(() => onSaved())
+        .catch((error: unknown) => setFolderError(error instanceof Error ? error.message : String(error)))
+        .finally(() => setFolderSaving(false));
+    },
+  };
+  const projectToEdit = projects.find((project) => project.id === editingProject);
+  return (
+    <>
+    <ConversationTaskPicker
+      threadId={group.threadId}
+      tasks={personPickerThreads(group)}
+      busy={false}
+      folders={projects}
+      newButton={(close) => <NewThreadButton bot={group} owner="group" onCreated={close} className="mt-1 w-full rounded-none border-t border-popover-hairline" />}
+      onNew={() => dispatch({ type: "newGroupTask", groupId: group.id })}
+      onSwitch={(threadId) => dispatch({ type: "switchGroupTask", groupId: group.id, threadId })}
+      onRename={(threadId, title) => dispatch({ type: "renameGroupTask", groupId: group.id, threadId, title })}
+      onDelete={(threadId) => dispatch({ type: "deleteGroupTask", groupId: group.id, threadId })}
+      onMove={(threadId, projectId) => update(threadId, { projectId })}
+      onPin={(threadId, pinned) => update(threadId, { pinned })}
+      threadActions={threadActions}
+      folderActions={projects.length ? folderActions : undefined}
+      initialOpen={initialOpen}
+    />
+    {folderError && <p role="alert" data-thread-overlay className="fixed bottom-4 right-4 z-50 max-w-[320px] rounded-lg border border-hairline/50 bg-card px-3 py-2 text-[12px] text-danger shadow-xl" onClick={() => setFolderError(null)}>{folderError}</p>}
+    {projectToEdit && <BotProjectDialog bot={group} owner="group" project={projectToEdit} onClose={() => setEditingProject(null)} />}
+    </>
   );
 }

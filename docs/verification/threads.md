@@ -134,10 +134,50 @@ here concern ownership, state and navigation, not real-provider behavior.
 The seed/setup path uses the same HTTP and control commands as the API tests.
 This renderer fixture does not test a native mobile device or real computer use.
 
+## Threads in a conversation with a person (2026-10-09)
+
+A conversation between two people (organization server, `peopleDm`) has
+threads like a bot: the same picker in the chat header or the same tree under
+the person's row, by Settings > Appearance > Threads location (never both),
+the same row menu (rename, pin, copy link, archive, snooze, move to folder,
+delete), the same folders (new, icon, rename, order, mark read, delete keeping
+the threads) and the same keyboard handling. Two things a bot thread has are
+left out on purpose: Regenerate title (it would send the pair's words to a
+model) and Refresh permissions (there is no bot).
+
+Rules (server/people-dms.ts, covered by `server/people-threads.e2e.test.ts`):
+
+- A thread belongs to the pair. Both see the same list, titles, pins,
+  folders, archive and snooze. Which thread each one has open is their own
+  (kept in server memory like a bot's per-viewer thread), and so is unread,
+  per thread (`unreadFor` on the thread, never sent to a client).
+- Only the two people reach the threads and folders: another member, an
+  organization admin and the operator at the server's console get 404, as
+  for the conversation itself. The admin API is unchanged.
+- The routes are the room thread routes (`/api/groups/:id/tasks...`) and
+  `/api/groups/:id/projects...` (server/routes/group-folders.ts); a message,
+  a read and a nudge take an optional `threadId`.
+- Migration: on first start, each conversation becomes its first thread,
+  titled "General" (`general: true`, shown localized until renamed), with the
+  same thread id, so no message moves. Its stored `threadId` stays that
+  default thread. A client from before threads (0.4.16) sends no
+  `x-sagax-person-threads` header and keeps reading and writing that one
+  conversation; reading it there reads every thread.
+- The sidebar line of a person conversation says "You:" only for the
+  viewer's own message (it used to on a received one too).
+
+To check by hand on an organization fixture: sign in as two people in two
+windows, open a direct conversation, create a thread from each side, send in
+one, and confirm the other sees the same list, an unread dot on that thread
+only, and keeps its own open thread. Switch Threads location to In the sidebar
+and confirm the picker leaves the header and the tree appears under the
+person's row once there is a second thread or a folder.
+
 ## Permanent regression checks
 
 ```sh
 pnpm exec vitest run server/independent-threads-api.test.ts server/paired-thread-targets-api.test.ts server/direct-screen-settlement-api.test.ts server/bot-projects-api.test.ts server/thread-capacity-api.test.ts src/components/BotThreads.test.ts src/components/BotProjects.test.ts src/components/ThreadConcurrencySettings.test.ts src/components/ComposerQueuedMessages.test.ts src/lib/folder-order.test.ts src/state/store.test.ts
+pnpm exec vitest run server/people-threads.e2e.test.ts server/people-dm-threads-store.test.ts server/people-dms.test.ts server/thread-folders.test.ts src/components/PersonThreads.test.ts src/state/person-threads.test.ts
 ```
 
 These cover thread-pinned tools and permissions, stale legacy phone requests,
