@@ -1,6 +1,6 @@
 // DEBUG only: every character, skin and a few colours at the reference's
 // frame sizes (24, 42, 85 pt), for comparing the phone's renders with the
-// desktop's. Launch with `-mascotGallery owl|shape|trombi|group`; the same
+// desktop's. Launch with `-mascotGallery owl|shape|trombi|shiba|group`; the same
 // pages are rendered from the desktop components by
 // `ios/parity/mascot-gallery.render.ts`, with the same layout.
 import SwiftUI
@@ -28,6 +28,7 @@ struct MascotGalleryView: View {
                 switch page {
                 case "shape": shapes
                 case "trombi": trombis
+                case "shiba": shibas
                 case "group": groups
                 default: owls
                 }
@@ -115,6 +116,30 @@ struct MascotGalleryView: View {
                 character(look, "green", .none, 85, .working)
                 character(look, "green", .none, 85, .happy)
                 character(look, "green", .none, 85, .sleeping)
+            }
+        }
+    }
+
+    private var shibas: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            ForEach(ShibaSkin.allCases, id: \.self) { skin in
+                row(skin.rawValue) {
+                    let look = CompleteMascotLook(character: .shiba, shibaSkin: skin)
+                    character(look, "orange", .none, 24)
+                    character(look, "orange", .none, 42)
+                    character(look, "blue", .none, 42)
+                    character(look, "orange", .none, 85)
+                }
+            }
+            row("faces: thinking, happy, laughing, sad, sleeping") {
+                let look = CompleteMascotLook(character: .shiba)
+                ForEach([MausState.thinking, .happy, .laughing, .sad, .sleeping], id: \.rawValue) { state in
+                    character(look, "orange", .none, 60, state)
+                }
+            }
+            row("idle and walk, animated") {
+                ShibaMascotView(color: "orange", size: 85, animated: true)
+                ShibaMascotView(color: "orange", size: 85, animated: true, walking: true)
             }
         }
     }

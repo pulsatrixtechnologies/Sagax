@@ -24,11 +24,18 @@ final class MascotLookFixtureTests: XCTestCase {
         var shapeSkins: [String]
         var trombiSkins: [String]
         var bunbuSkins: [String]
+        var shibaSkins: [String]
         var owlSkins: [String]
         var colorGroups: [String: [String]]
         var colors: [String: String]
         var looks: [Case]
         var owlSkinCases: [SkinCase]
+        var shibaPalettes: [ShibaPaletteCase]
+    }
+    struct ShibaPaletteCase: Decodable {
+        var skin: String
+        var color: String
+        var palette: [String: String]
     }
 
     /// Any JSON value, kept as its serialized form.
@@ -90,6 +97,7 @@ final class MascotLookFixtureTests: XCTestCase {
         XCTAssertEqual(ShapeSkin.allCases.map(\.rawValue), f.shapeSkins)
         XCTAssertEqual(TrombiSkin.allCases.map(\.rawValue), f.trombiSkins)
         XCTAssertEqual(BunbuSkin.allCases.map(\.rawValue), f.bunbuSkins)
+        XCTAssertEqual(ShibaSkin.allCases.map(\.rawValue), f.shibaSkins)
         XCTAssertEqual(MascotSkin.allCases.map(\.rawValue), f.owlSkins)
     }
 
@@ -176,5 +184,46 @@ final class MascotLookFixtureTests: XCTestCase {
         XCTAssertEqual(ShapeArt.paint(.plain, hex: "#F1EFE9").eyes, MascotInk.dark)
         XCTAssertEqual(BunbuArt.paint(.velvet, hex: green).eyes, "#FDF3FF")
         XCTAssertEqual(ShapeArt.clayStops(green).map(\.offset), [0, 0.3, 0.7, 1])
+    }
+
+    /// Shiba's palette for every skin is the desktop's (`shibaSkinPaint`): every
+    /// solid role the same colour, a gradient where the desktop has one.
+    func testShibaPalettesMatchTheDesktop() throws {
+        let f = try fixture()
+        XCTAssertEqual(f.shibaPalettes.count, ShibaSkin.allCases.count * 6)
+        for c in f.shibaPalettes {
+            let skin = try XCTUnwrap(ShibaSkin(rawValue: c.skin))
+            let hex = try XCTUnwrap(MausColors.hex(for: c.color))
+            let paint = ShibaArt.paint(skin, hex: hex)
+            for role in ShibaRole.allCases {
+                let expected = try XCTUnwrap(c.palette[role.rawValue], role.rawValue)
+                let got = try XCTUnwrap(paint[role], "\(c.skin) \(role)")
+                if expected == "gradient" { continue }
+                XCTAssertEqual(got.solidColor, expected, "\(c.skin) on \(c.color): \(role.rawValue)")
+            }
+        }
+    }
+
+    /// Every face Shiba wears is drawn from the desktop's layers.
+    func testShibaStillArtCoversEveryFace() {
+        for expression in ShibaExpression.allCases {
+            XCTAssertFalse(ShibaStillArt.eyeL[expression]?.isEmpty ?? true, expression.rawValue)
+            XCTAssertFalse(ShibaStillArt.eyeR[expression]?.isEmpty ?? true, expression.rawValue)
+            XCTAssertEqual(ShibaStillArt.brows[expression]?.count, 2, expression.rawValue)
+            XCTAssertGreaterThanOrEqual(ShibaStillArt.mouth[expression]?.count ?? 0, 2, expression.rawValue)
+        }
+        for stance in ShibaStance.allCases { XCTAssertFalse(ShibaStillArt.body[stance]?.isEmpty ?? true, stance.rawValue) }
+        XCTAssertEqual(ShibaStillArt.legs.count, 4)
+        XCTAssertEqual(ShibaStillArt.walk.count, 16)
+        XCTAssertEqual(ShibaStillArt.walkCycle, 0.64)
+        XCTAssertEqual(ShibaExpression.forState("sleeping"), .sleepy)
+        XCTAssertEqual(ShibaExpression.forState("laughing"), .laughing)
+        XCTAssertEqual(ShibaExpression.forState(nil), .neutral)
+        XCTAssertEqual(ShibaArt.outline(size: 240), 1.9, accuracy: 1e-9)
+        XCTAssertEqual(ShibaArt.outline(size: 32) * 32 / 68, 1.6, accuracy: 1e-6)
+        XCTAssertEqual(CompleteMascotLook(character: .shiba).fallbackColor, "orange")
+        XCTAssertEqual(MascotUnlocks.tier(.shiba, skin: "plain"), .common)
+        XCTAssertEqual(MascotUnlocks.tier(.shiba, skin: "cream"), .rare)
+        XCTAssertEqual(MascotUnlocks.tier(.shiba, skin: "molten"), .legendary)
     }
 }
