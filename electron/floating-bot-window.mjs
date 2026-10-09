@@ -214,7 +214,7 @@ const SHAPE_SKINS = new Set(["plain", "pastel", "glossy", "night", "outline", "g
 const TROMBI_SKINS = new Set(["classic", "retro98", "gold", "neon", "chrome", "glitch", "holo", "molten"]);
 const BUNBU_SKINS = new Set(["plain", "pastel", "night", "plush", "velvet", "gold", "neon", "chrome", "crystal", "holo", "galaxy", "molten"]);
 const SHIBA_SKINS = new Set(["plain", "cream", "blacktan", "red", "sesame", "white", "retro98", "gold", "neon", "chrome", "glitch", "holo", "molten"]);
-const GRUMP_SKINS = new Set(["plain", "tuxedo", "calico", "tabby", "siamese", "retro98", "gold", "void", "neon", "chrome", "glitch", "holo", "molten"]);
+const GRUMP_SKINS = new Set(["plain", "tuxedo", "calico", "tabby", "siamese", "void", "retro98", "gold", "neon", "chrome", "glitch", "holo", "molten"]);
 /** Other names a stored skin may carry (shared/mascot-look.ts LEGACY_SHAPE_SKINS, LEGACY_TROMBI_SKINS, LEGACY_BUNBU_SKINS, LEGACY_SHIBA_SKINS, LEGACY_GRUMP_SKINS). */
 const LEGACY_SHAPE_SKINS = { ink: "outline", royal: "gold", metal: "chrome", "liquid-metal": "chrome", glass: "crystal", cyber: "circuit", iridescent: "holo", holographic: "holo", lava: "molten", nebula: "galaxy" };
 const LEGACY_TROMBI_SKINS = { retro: "retro98", win98: "retro98", royal: "gold", metal: "chrome", cyber: "glitch", iridescent: "holo", holographic: "holo", lava: "molten" };

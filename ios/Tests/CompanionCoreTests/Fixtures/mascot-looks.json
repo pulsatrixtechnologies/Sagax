@@ -78,9 +78,9 @@
     "calico",
     "tabby",
     "siamese",
+    "void",
     "retro98",
     "gold",
-    "void",
     "neon",
     "chrome",
     "glitch",
@@ -2660,6 +2660,21 @@
       }
     },
     {
+      "name": "grump void",
+      "input": {
+        "character": "grump",
+        "skins": {
+          "grump": "void"
+        }
+      },
+      "expected": {
+        "character": "grump",
+        "skins": {
+          "grump": "void"
+        }
+      }
+    },
+    {
       "name": "grump retro98",
       "input": {
         "character": "grump",
@@ -2686,21 +2701,6 @@
         "character": "grump",
         "skins": {
           "grump": "gold"
-        }
-      }
-    },
-    {
-      "name": "grump void",
-      "input": {
-        "character": "grump",
-        "skins": {
-          "grump": "void"
-        }
-      },
-      "expected": {
-        "character": "grump",
-        "skins": {
-          "grump": "void"
         }
       }
     },

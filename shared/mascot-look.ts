@@ -83,12 +83,13 @@ export const SHIBA_SKINS = ["plain", "cream", "blacktan", "red", "sesame", "whit
 export type ShibaSkin = (typeof SHIBA_SKINS)[number];
 
 /**
- * Skins for Grump, by rarity: the bot's color on the points (Plain) and the
- * cat coats (Tuxedo, Calico, Tabby, Siamese), then premium editions with the
- * Trombi, Shapes and Shiba treatments, Void's lit eyes among them
+ * Skins for Grump, by rarity: the bot's color on the points (Plain), the cat
+ * coats (Tuxedo, Calico, Tabby, Siamese, Void with its lit eyes), each on a
+ * Mastery rung, then premium editions with the Trombi, Shapes and Shiba
+ * treatments
  * (src/components/skin-fx/grump-skins.tsx).
  */
-export const GRUMP_SKINS = ["plain", "tuxedo", "calico", "tabby", "siamese", "retro98", "gold", "void", "neon", "chrome", "glitch", "holo", "molten"] as const;
+export const GRUMP_SKINS = ["plain", "tuxedo", "calico", "tabby", "siamese", "void", "retro98", "gold", "neon", "chrome", "glitch", "holo", "molten"] as const;
 export type GrumpSkin = (typeof GRUMP_SKINS)[number];
 
 /** How rare a skin is: the picker's label and card. */
@@ -154,13 +155,14 @@ export const SHIBA_SKIN_TIER: Readonly<Record<ShibaSkin, SkinTier>> = {
 
 export const GRUMP_SKIN_TIER: Readonly<Record<GrumpSkin, SkinTier>> = {
   plain: "common",
-  tuxedo: "common",
-  calico: "common",
-  tabby: "common",
-  siamese: "common",
+  // the cat coats each cost a Mastery rung (shared/mascot-unlocks.ts): Rare, like the registry says
+  tuxedo: "rare",
+  calico: "rare",
+  tabby: "rare",
+  siamese: "rare",
+  void: "rare",
   retro98: "rare",
   gold: "rare",
-  void: "epic",
   neon: "epic",
   chrome: "epic",
   glitch: "epic",

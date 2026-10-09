@@ -1,14 +1,14 @@
 // How each Grump skin paints the cat (GrumpMascot.tsx). Grump is drawn flat
 // (grump-art.ts: cream fur, dark point markings, a white muzzle, one shade
 // tone, one outline), so a skin is first a palette: every paint role of the
-// drawing gets a color or a gradient. The everyday skins are the bot's color
-// (Plain) and the cat coats (Tuxedo, black with a white bib and green eyes;
-// Calico, the face split orange and black over white fur; Tabby, striped all
-// over; Siamese, seal points on pale fur and deep blue eyes). Then the
+// drawing gets a color or a gradient. Plain is the bot's color on the
+// points; the cat coats each cost a Mastery rung (Tuxedo, black with a white
+// bib and green eyes; Calico, the face split orange and black over white
+// fur; Tabby, striped all over; Siamese, seal points on pale fur and deep
+// blue eyes; Void, all black with eyes glowing in the bot's color). Then the
 // premium editions, consistent with the Trombi, Shapes and Shiba sets:
-// Retro 98 and Gold (rare); Void (all black, eyes glowing in the bot's
-// color), Neon, Chrome and Glitch (epic); Holographic and Molten
-// (legendary), with the treatment the Shapes skins get on the head and the
+// Retro 98 and Gold (rare), Neon, Chrome and Glitch (epic), Holographic and
+// Molten (legendary), with the treatment the Shapes skins get on the head and the
 // body (gradients, edges, auras, particles). Same contract as the Shiba:
 // `full` adds the filters and the moving parts; still keeps the look with no
 // filter and nothing moving. Keyframes are in skin-fx.css.

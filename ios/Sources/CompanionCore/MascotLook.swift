@@ -246,7 +246,7 @@ public enum BunbuSkin: String, CaseIterable, Codable, Sendable {
 
 /// Skins for Grump (`GRUMP_SKINS`), by rarity: the cat coats, then the premium set.
 public enum GrumpSkin: String, CaseIterable, Codable, Sendable {
-    case plain, tuxedo, calico, tabby, siamese, retro98, gold, void, neon, chrome, glitch, holo, molten
+    case plain, tuxedo, calico, tabby, siamese, void, retro98, gold, neon, chrome, glitch, holo, molten
 
     /// `LEGACY_GRUMP_SKINS`.
     static let legacy: [String: GrumpSkin] = [
