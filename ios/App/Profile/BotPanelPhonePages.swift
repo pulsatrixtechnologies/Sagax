@@ -49,12 +49,16 @@ struct BotOverviewPage: View {
 
 /// Model (`ModelSection.tsx`): provider, model, variant or effort. The
 /// provider list is an admin's; other pairings read the current model.
+/// One mode (#261): a change runs the open thread and becomes the bot's
+/// model; models under Cloud and Local; an organization lists only the
+/// providers its admin allows.
 struct BotModelSection: View {
     @Environment(\.themePalette) var themePalette
     let bot: Bot
     @EnvironmentObject private var session: Session
 
     @State private var instances: [Instance] = []
+    @State private var allowedEngines: [String]?
     @State private var loaded = false
     @State private var instanceID: String
     @State private var modelID: String
@@ -78,7 +82,13 @@ struct BotModelSection: View {
 
     private var current: Bot { session.state.bot(bot.id)?.projected(forThread: bot.threadId) ?? bot }
     private var instance: Instance? { instances.first { $0.instanceId == instanceID } }
-    private var available: [Instance] { instances.filter(\.snapshot.isAvailable) }
+    private var organization: Bool { session.surfaceGate.allows(.people) }
+    private var available: [Instance] {
+        instances.filter { $0.snapshot.isAvailable && (!organization || ModelPickerRules.engineAllowed(allowedEngines, $0.instanceId)) }
+    }
+    /// The open thread follows the bot's model (nil: an older server).
+    private var follows: Bool? { current.tasks?.first { $0.threadId == bot.threadId }?.followsBotModel }
+    private var profile: Bot { session.state.bot(bot.id) ?? bot }
     private var instanceChoices: [Instance] {
         guard let saved = instances.first(where: { $0.instanceId == self.saved.instanceId }), !saved.snapshot.isAvailable else { return available }
         return [saved] + available
@@ -152,7 +162,20 @@ struct BotModelSection: View {
                 }
                 .onValueChange(of: instanceID) { selectDefaults(for: $0) }
                 Picker("Model", selection: $modelID) {
-                    ForEach(modelChoices, id: \.id) { option in Text(option.label).tag(option.id) }
+                    // the dropdown's two headings (#261)
+                    let local = Set(instance.map { ModelPickerRules.groups($0.models.options, organization: organization).local.map(\.id) } ?? [])
+                    let cloud = modelChoices.filter { !local.contains($0.id) }
+                    let mine = modelChoices.filter { local.contains($0.id) }
+                    if mine.isEmpty {
+                        ForEach(cloud, id: \.id) { option in Text(option.label).tag(option.id) }
+                    } else {
+                        Section(String(localized: "Cloud")) {
+                            ForEach(cloud, id: \.id) { option in Text(option.label).tag(option.id) }
+                        }
+                        Section(String(localized: "Local")) {
+                            ForEach(mine, id: \.id) { option in Text(option.label).tag(option.id) }
+                        }
+                    }
                 }
                 .disabled(instance?.snapshot.isAvailable != true)
                 .onValueChange(of: modelID) { model in
@@ -172,17 +195,42 @@ struct BotModelSection: View {
                     }
                     .onValueChange(of: effort) { _ in apply() }
                 }
+                if follows == false {
+                    // "Use <bot>'s model": the thread back on the bot's (#261)
+                    Button(String(localized: "Use \(profile.name)'s model")) {
+                        busy = true
+                        Task {
+                            defer { busy = false }
+                            if let updated = await session.updateModel(profile.modelSelection, for: current, updateBotDefault: false) {
+                                saved = updated.projected(forThread: bot.threadId)?.currentTaskModelSelection ?? profile.modelSelection
+                                instanceID = saved.instanceId
+                                modelID = saved.model
+                                effort = saved.effort
+                                variant = saved.variant
+                            }
+                        }
+                    }
+                    .disabled(current.busy == true)
+                    .accessibilityIdentifier("model-follow-bot")
+                }
                 if current.busy == true {
                     Label("Stop this bot before changing its model.", systemImage: "hourglass")
                         .font(.footnote).foregroundStyle(Theme.textSecondary)
                 }
             }
         } footer: {
-            Text("For groups and new threads. Also updates the selected idle thread; other existing threads keep their model.")
+            let own = ModelPickerRules.threadsOnOwnModel(botModel: profile.modelSelection, tasks: profile.tasks ?? [])
+            VStack(alignment: .leading, spacing: 4) {
+                Text("This thread and the bot's model. Groups and new threads use the bot's model; a thread on its own model keeps it.")
+                if own > 0 {
+                    Text(own == 1 ? String(localized: "1 thread uses its own model.") : String(localized: "\(own) threads use their own model."))
+                }
+            }
         }
         .overlay { if busy { ProgressView() } }
         .task {
             instances = session.canAdminister ? await session.modelInstances() : []
+            allowedEngines = await session.configStatus()?.allowedEngines
             loaded = true
         }
     }
@@ -208,7 +256,8 @@ struct BotModelSection: View {
         busy = true
         Task {
             defer { busy = false }
-            if let updated = await session.updateModel(next, for: current) {
+            // one mode (#261): the thread and the bot's model in one request
+            if let updated = await session.updateModel(next, for: current, updateBotDefault: true) {
                 saved = updated.projected(forThread: bot.threadId)?.currentTaskModelSelection ?? next
             }
         }

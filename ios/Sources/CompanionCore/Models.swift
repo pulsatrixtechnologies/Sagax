@@ -522,6 +522,9 @@ public struct BotTask: Codable, Hashable, Sendable {
     /// Bot-only internal execution. Keep it addressable, but out of thread pickers.
     public var routineRunId: String?
     /// The person pinned this thread above the update-ordered list.
+    /// The thread runs its bot's model (true) or one of its own (false);
+    /// absent on an older server (#261).
+    public var followsBotModel: Bool? = nil
     public var pinned: Bool? = nil
     /// Newest message time. Absent on older computers; the list uses createdAt.
     public var updatedAt: Double? = nil
@@ -1229,6 +1232,10 @@ public struct ModelOption: Codable, Hashable, Identifiable, Sendable {
     public var variants: [ModelVariantOption]? = nil
     /// A model added by hand (a local server's), not the engine's catalogue.
     public var custom: Bool? = nil
+    /// A model on this machine (the picker's Local group, #261).
+    public var local: Bool? = nil
+    /// A local model already loaded: listed first.
+    public var loaded: Bool? = nil
 }
 
 /// One reasoning variant of a model (`shared/runtime-events.ts`).
@@ -1424,6 +1431,9 @@ public struct ConfigStatus: Codable, Sendable {
     public var browserEngine: BrowserEngineStatus? = nil
     /// An OMB Cloud home: no "this computer" and no Local VM.
     public var cloudHome: Bool? = nil
+    /// Organization server: the engines its admin allows in Perspicax
+    /// (#261); nil or empty means every engine.
+    public var allowedEngines: [String]? = nil
 
     /// `jevRoomRoutingOn`: an Auto room with Jev off answers like a lead room.
     public var jevRoomRoutingOn: Bool {
