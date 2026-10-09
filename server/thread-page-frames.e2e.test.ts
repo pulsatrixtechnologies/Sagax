@@ -200,11 +200,10 @@ describe("transcript pages on bot and room frames", () => {
 
   it("sends a room's page only when its open thread changes", async () => {
     const member = (await api("POST", "/api/bots", { name: "Room Member" })).body.bot;
-    const created = await api("POST", "/api/groups", { name: "Paging", memberIds: [member.id] });
+    // mentions only, so no member answers the posts below; a new room is ready at once (the setup step was removed, 7a3d9ab47)
+    const created = await api("POST", "/api/groups", { name: "Paging", memberIds: [member.id], setup: { defaultResponder: { kind: "mentions" }, bulletin: "" } });
     expect(created.status).toBe(201);
     const room = created.body.group;
-    // mentions only, so no member answers the posts below
-    expect((await api("PATCH", `/api/groups/${room.id}/setup`, { action: "complete", defaultResponder: { kind: "mentions" }, bulletin: "" })).status).toBe(200);
     for (let i = 0; i < LONG; i++) {
       expect((await api("POST", `/api/groups/${room.id}/messages`, { text: `message ${i}` })).status).toBe(202);
     }

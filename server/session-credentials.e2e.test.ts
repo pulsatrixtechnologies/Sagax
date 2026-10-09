@@ -51,6 +51,8 @@ async function fixture(test: (f: any) => Promise<void>, { thisComputer = false }
     const configPath = join(dataDir, "config.json");
     const config = JSON.parse(readFileSync(configPath, "utf8"));
     config.instances.claude.config.cli = claude;
+    // The built-in browser is opt-in (builtInBrowserEnabled): the desktop's welcome turns it on.
+    if (withBrowser) config.features = { ...config.features, browser: true };
     config.instances.opencodeGo = {
       driver: "opencodeGo", displayName: "ACP fixture",
       config: { cli: fileURLToPath(new URL("./testing/fake-acp-cli.ts", import.meta.url)) },

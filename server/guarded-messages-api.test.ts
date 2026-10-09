@@ -153,7 +153,7 @@ describe("guarded external messages through an isolated runtime", () => {
   it("does not steer an active normal turn or queue behind exhausted capacity", async () => {
     const bot = await newBot();
     expect((await api("PATCH", "/api/config", { threads: { maxConcurrentPerBot: 1 } })).status).toBe(200);
-    const sibling = await api("POST", `/api/bots/${bot.id}/tasks`, { title: "Guarded idle sibling" });
+    const sibling = await api("POST", `/api/bots/${bot.id}/tasks`, { title: "Guarded idle sibling", approvalMode: "ask" });
     expect(sibling.status).toBe(201);
     await control(["send", "--bot", bot.id, "--task", bot.activeTaskId, "--text", "NORMAL_TURN_OWNS_THE_THREAD"]);
     await launched(bot.activeTaskId);

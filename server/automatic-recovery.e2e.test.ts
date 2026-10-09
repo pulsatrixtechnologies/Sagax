@@ -156,28 +156,29 @@ it("recovers once on the same thread with its history and permissions, leaving t
   });
 }, 90_000);
 
-it("falls back to the configured backup when an Auto bot's fallback chain is spent", async () => {
+it("does not run the configured backup of an Auto bot when that backup's engine is signed out", async () => {
   // Claude reports signed out, so Auto cannot move the turn there itself:
-  // the chain is the bot's own engine only. The configured backup still runs.
+  // the chain is the bot's own engine only. Since a thread whose model can't
+  // run follows its bot (healThreadModel, #2401) a signed-out backup is not a
+  // place to run either: recovery is tried once, the thread gives way to the
+  // bot's model with a notice, and the turn fails on the engine's own error.
   await withRecoveryFixture({ claudeAuth: "out" }, async ({ api, control, calls, backupPrompts, evidence }) => {
     const { bot } = await control("new-bot", "--name", "Auto recovers");
     const threadId = bot.activeTaskId;
     await api("PATCH", `/api/bots/${bot.id}/tasks/${threadId}`, { modelSelection: { ...primary, auto: true }, updateBotDefault: true, approvalMode: "ask" });
     const text = "AUTO_CHAIN_SPENT_RECOVER_4K";
     await control("send", "--bot", bot.id, "--task", threadId, "--text", text);
-    expect((await control("wait", "--bot", bot.id, "--task", threadId, "--timeout", "30")).status).toBe("settled");
+    expect((await control("wait", "--bot", bot.id, "--task", threadId, "--timeout", "30")).status).toBe("failed");
     expect(calls().filter((call) => call.method === "initialize.error").length).toBeGreaterThanOrEqual(1);
-    expect(backupPrompts()).toHaveLength(1);
+    expect(backupPrompts()).toHaveLength(0);
     const messages = (await api("GET", `/api/threads/${threadId}/messages?limit=100`)).messages as any[];
     evidence.push({ messages });
     expect(messages.filter((message) => message.tool?.name?.startsWith("recovery:"))).toHaveLength(1);
-    expect(messages.findLast((message) => message.role === "bot" && message.kind === "text")).toMatchObject({
-      text: "hello from fake claude", turnSucceeded: true,
-    });
+    expect(messages.filter((message) => message.tool?.name?.startsWith("notice: This thread's model") && message.tool.name.includes("isn't available"))).toHaveLength(1);
+    expect(messages.findLast((message) => message.role === "bot" && message.kind === "activity")?.tool?.name).toMatch(/^error: /);
     const after = (await api("GET", "/api/bots")).bots.find((entry: any) => entry.id === bot.id);
-    // The bot keeps Auto; the thread that recovered is pinned to the backup, as for any bot.
+    // The bot keeps Auto; the thread follows it again.
     expect(after.modelSelection).toEqual({ ...primary, auto: true });
-    expect(after.tasks.find((task: any) => task.threadId === threadId).modelSelection).toEqual(backup);
   });
 }, 90_000);
 
@@ -215,7 +216,8 @@ it("recovers a coordinated specialist and returns its result to the Chief exactl
     expect(turns.filter((turn) => turn.botId === chief.id)).toHaveLength(2);
     expect(turns.filter((turn) => turn.botId === specialist.id)).toHaveLength(1);
     expect(turns.find((turn) => turn.botId === specialist.id)).toMatchObject({
-      threadId: child.threadId, model: backup.model, permissionMode: "default",
+      // the delegated thread starts at the specialist's own default: Approve for me (51647a630)
+      threadId: child.threadId, model: backup.model, permissionMode: "auto",
     });
     expect(calls().filter((call) => call.method === "initialize.error")).toHaveLength(1);
     expect(calls().some((call) => call.method === "session/prompt")).toBe(false);
@@ -232,7 +234,7 @@ it("recovers a coordinated specialist and returns its result to the Chief exactl
     expect(fleet.groups).toEqual([]);
     const after = fleet.bots.find((bot: any) => bot.id === specialist.id);
     expect(after.modelSelection).toEqual(primary);
-    expect(after.tasks.find((task: any) => task.threadId === child.threadId)).toMatchObject({ modelSelection: backup, approvalMode: "ask", busy: false });
+    expect(after.tasks.find((task: any) => task.threadId === child.threadId)).toMatchObject({ modelSelection: backup, approvalMode: "auto", busy: false });
     expect(after.tasks.find((task: any) => task.threadId === specialist.activeTaskId).modelSelection).toEqual(primary);
     expect(fleet.bots.find((bot: any) => bot.id === chief.id)).toMatchObject({ busy: false, waitingForTeammates: false });
     await control("messages", "--bot", chief.id, "--task", chief.activeTaskId, "--limit", "20");

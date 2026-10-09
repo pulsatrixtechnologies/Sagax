@@ -112,11 +112,14 @@ const decision = (requestId: string, kind: DecisionRow["decision"]) => waitFor(a
 });
 
 /** A bot owned by `owner` (a session), or by the operator at this computer. */
+// New bots start on Approve for me (51647a630); these cases are about who answers a card, so each bot is on Ask, where every tool asks.
 async function makeBot(name: string, owner: string | null = BOSS) {
   const as = owner ?? undefined;
   const created = await api("POST", "/api/bots", { name }, as);
   expect(created.status, JSON.stringify(created.body)).toBe(201);
-  const patched = await api("PATCH", `/api/bots/${created.body.bot.id}`, { modelSelection: { instanceId: "grok", model: "fake-model" } }, as);
+  const patched = await api("PATCH", `/api/bots/${created.body.bot.id}`, { modelSelection: { instanceId: "grok", model: "fake-model" }, approvalMode: "ask",
+    // Off: on a machine with a container runtime and a prepared image, Auto attaches a Local VM and a second turn waits for its desktop.
+    computer: "off" }, as);
   expect(patched.status).toBe(200);
   // Anyone else reaches a person's bot only once its owner shares it.
   for (const email of [BOSS, ADA, BOB].filter((email) => email !== owner)) {

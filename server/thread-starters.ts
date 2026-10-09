@@ -11,7 +11,9 @@ import { readFileSync } from "node:fs";
 
 import { writeFileAtomic } from "./atomic.ts";
 
-const KEY = /^p_[\w-]{22}$/;
+// A person is a hashed legacy key (p_...) or, since principals, a principal id (pr_<uuid>); a key that
+// fails this check was silently dropped, which left the thread naming nobody and open to any member.
+const KEY = /^(?:p_[\w-]{22}|pr_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/;
 const THREAD = /^[\w-]{1,128}$/;
 /** Oldest entries go first past this; a thread that old has long settled. */
 const MAX_ENTRIES = 50_000;

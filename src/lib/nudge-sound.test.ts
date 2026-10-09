@@ -55,7 +55,7 @@ afterEach(() => {
 describe("a received nudge", () => {
   it("rings once at a reduced volume, asks the shell to shake, and leaves a persistent notification when the window is behind", async () => {
     await onNudgeReceived(frame, vi.fn(), NOW);
-    expect(nudgeWindow).toHaveBeenCalledWith({ shake: true });
+    expect(nudgeWindow).toHaveBeenCalledWith({ shake: true, role: "received" });
     expect(instances).toHaveLength(1);
     expect(instances[0].src).toBe(NUDGE_SOUND_URL);
     expect(instances[0].volume).toBe(0.6);
@@ -95,7 +95,7 @@ describe("a received nudge", () => {
     prefs.nudgeSound = false;
     prefs.nudgeShake = false;
     await onNudgeReceived(frame, vi.fn(), NOW);
-    expect(nudgeWindow).toHaveBeenCalledWith({ shake: false });
+    expect(nudgeWindow).toHaveBeenCalledWith({ shake: false, role: "received" });
     expect(instances).toHaveLength(0);
     expect(notify.mock.calls[0][0]).toMatchObject({ sound: false });
   });

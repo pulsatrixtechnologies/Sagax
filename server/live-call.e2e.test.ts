@@ -51,9 +51,15 @@ posixOnly("Live call e2e", () => {
     const res = await fetch(`${base}/api/bots/${bot.id}`, {
       method: "PATCH",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ modelSelection: { instanceId, model } }),
+      // New bots start on Approve for me (51647a630); a guarded send needs the bot on Ask.
+      body: JSON.stringify({ modelSelection: { instanceId, model }, approvalMode: "ask" }),
     });
     expect(res.status).toBe(200);
+    // the opening thread keeps its own level, so it is set too
+    const task = await fetch(`${base}/api/bots/${bot.id}/tasks/${bot.threadId}`, {
+      method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ approvalMode: "ask" }),
+    });
+    expect(task.status).toBe(200);
     return bot;
   };
   const isBusy = async (botId: string): Promise<boolean> => {

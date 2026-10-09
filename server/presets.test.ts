@@ -219,9 +219,11 @@ describe("creating a bot from a preset", () => {
       installId: imported.installId, presetKey: "support" });
     // A preset never touches model, approval, computer or connected apps.
     expect(record.modelSelection).toEqual({ instanceId: "claude", model: "default-model" });
-    for (const field of ["approvalMode", "autoApprove", "computer", "cwd", "composio", "mcpServers", "browser"] as const) {
+    for (const field of ["computer", "cwd", "composio", "mcpServers", "browser"] as const) {
       expect(record).not.toHaveProperty(field);
     }
+    // Approval stays the new-bot default, Approve for me (51647a630); the file's "full" did not reach it.
+    expect(record).toMatchObject({ approvalMode: "auto", autoApprove: true });
   });
 
   it("adds an organization preset's skills switched on, under the organization's own source, stamped for updates", async () => {

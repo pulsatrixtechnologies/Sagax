@@ -29,7 +29,7 @@ export function withDisabledTools<T extends Record<string, McpServerSpec>>(
 ): Record<string, McpServerSpec> {
   const out: Record<string, McpServerSpec> = {};
   for (const [name, server] of Object.entries(servers)) {
-    const toolScope = disabledToolScope(name, disabled[name]);
+    const toolScope = disabledToolScope(name, Object.hasOwn(disabled, name) ? disabled[name] : undefined); // a server named "constructor" is not Object's
     if (!toolScope) {
       out[name] = server;
       continue;

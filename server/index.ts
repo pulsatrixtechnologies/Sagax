@@ -20587,7 +20587,8 @@ ROUTES.push(createThreadModelRoutes({
 }));
 // Undo on the one-line receipt of a change that applied without a person.
 ROUTES.push(createUndoRoutes({
-  refusal: (auth, threadId, requestId) => cardAnswerRefusal(auth, threadId, requestId, "allow"),
+  // Undo answers the card like "allow" does: owner-only first (approvalAnswerRefusal), then who may answer in this thread.
+  refusal: (auth, threadId, requestId) => approvalAnswerRefusal(auth, threadId, requestId) ?? cardAnswerRefusal(auth, threadId, requestId, "allow"),
   undo: (auth, res, threadId, requestId) => withDecisionActor(decisionActorFor(auth), () => undoAppliedChange(res, threadId, requestId)),
 }));
 // The bot profile's Links, Media and Files tabs and Share as Template

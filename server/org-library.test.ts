@@ -285,7 +285,8 @@ describe("adding from the shelf", () => {
       expect(Object.keys(bot.packageBase!).sort()).toEqual([...app.parts.AGENT_PARTS].sort());
       for (const value of Object.values(bot.packageBase!)) expect(value).toEqual({ r: expect.stringMatching(hex), w: expect.stringMatching(hex) });
       expect(bot.packageBase!.approval!.w).toBe(app.parts.partHash("ask"));
-      expect(bot).not.toHaveProperty("approvalMode");
+      // The release asked for Ask; the bot starts at the new-bot default, Approve for me (51647a630).
+      expect(bot).toMatchObject({ approvalMode: "auto", autoApprove: true });
     }
     // w(name) is what was written after the collision; r is the release's.
     expect(scout.packageBase!.name).toEqual({ r: app.parts.partHash("Scout"), w: app.parts.partHash("Scout 2") });

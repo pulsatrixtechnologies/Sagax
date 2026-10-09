@@ -27,6 +27,7 @@ const notActions: Array<{ file: string; snippet: string; why: string }> = [
   { file: "components/routines/CalendarSidebar.tsx", snippet: "text-[8.5px]", why: "'Drag' hint badge, not a control" },
   { file: "components/RoutineCalendarPage.tsx", snippet: "cursor-ns-resize", why: "mouse drag-resize handle for call events" },
   { file: "components/ComputerPanel.tsx", snippet: "opacity-80", why: "already visible at 80% without hover" },
+  { file: "components/NudgeButton.tsx", snippet: "bottom-[calc(100%+6px)]", why: "tooltip of an always-visible button (aria-describedby); the bell itself is the tap target, nudge #239" },
   { file: "components/bot-settings/ActivitySection.tsx", snippet: "group-focus-visible:opacity-100", why: "aria-hidden chevron hint; the whole heading button is the tap target" },
 ];
 

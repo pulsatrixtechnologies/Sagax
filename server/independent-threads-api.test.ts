@@ -315,6 +315,8 @@ describe("independent bot tasks through the isolated control surface", () => {
     const created = await tool("create_bot", { name: "Independent fixture", instance_id: "claude", model: models[0] });
     const botId = created.bot.id;
     const taskA = created.bot.activeTaskId;
+    // New bots start on Approve for me (51647a630); B below must start tighter than the level it is then raised to.
+    expect((await api("PATCH", `/api/bots/${botId}`, { approvalMode: "ask" })).status).toBe(200);
     expect((await api("PATCH", `/api/bots/${botId}/tasks/${taskA}`, { approvalMode: "ask" })).status).toBe(200);
     await control(["send", "--bot", botId, "--task", taskA, "--text", "ONLY_A"]);
     const launchedA = await dump(models[0]);
@@ -492,7 +494,7 @@ describe("independent bot tasks through the isolated control surface", () => {
     const created = await tool("create_bot", { name: "Computer lease fixture", instance_id: "claude", model: models[0] });
     const botId = created.bot.id;
     const taskA = created.bot.activeTaskId;
-    expect((await api("PATCH", `/api/bots/${botId}`, { computer: "local" })).status).toBe(200);
+    expect((await api("PATCH", `/api/bots/${botId}`, { computer: "local", approvalMode: "ask" })).status).toBe(200);
     await control(["send", "--bot", botId, "--task", taskA, "--text", "COMPUTER_A"]);
     const launchedA = await dump(models[0]);
     const second = await tool("create_task", { target_type: "bot", target_id: botId, title: "Computer sibling" });
@@ -529,7 +531,10 @@ describe("independent bot tasks through the isolated control surface", () => {
     expect((await api("PATCH", `/api/bots/${botId}`, { approvalMode: "auto" })).status).toBe(200);
     const hook = await api("POST", "/api/webhooks", { name: "Fixture event", prompt: "UNATTENDED_ONLY", botId, runOn: "maus" });
     expect(hook.status).toBe(201);
-    const delivered = await fetch(hook.body.credential.url, { method: "POST", body: "{}", headers: { "content-type": "application/json" } });
+    const delivered = await fetch(hook.body.credential.endpointUrl, {
+      // Deliveries carry the token as a bearer header, not in the URL (e6452be64).
+      method: "POST", body: "{}", headers: { "content-type": "application/json", authorization: `Bearer ${hook.body.credential.token}` },
+    });
     expect(delivered.status).toBe(202);
     const { runId } = await delivered.json() as { runId: string };
     let unattendedTask = "";

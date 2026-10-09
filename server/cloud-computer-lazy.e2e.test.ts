@@ -274,7 +274,6 @@ describe("a cloud computer starts only when the bot uses it", () => {
   it("a room message to a member on Cloud computer makes no relay call either", async () => {
     const bot = await cloudBot("Room member");
     const { group } = await apiOk("POST", "/api/groups", { name: "Lazy room", memberIds: [bot.id] });
-    await apiOk("PATCH", `/api/groups/${group.id}/setup`, { action: "skip" });
     const before = requests.length;
     rmSync(dumpFile, { force: true });
     rmSync(finishFile, { force: true });
@@ -383,8 +382,7 @@ describe("a cloud computer starts only when the bot uses it", () => {
     try {
       const bot = await cloudBot("Roomie", { modelSelection: { instanceId: "uses", model: "claude-sonnet-5" } });
       const { group } = await apiOk("POST", "/api/groups", { name: "Refused room", memberIds: [bot.id] });
-      await apiOk("PATCH", `/api/groups/${group.id}/setup`, { action: "skip" });
-      await apiOk("POST", `/api/groups/${group.id}/messages`, { text: "take a screenshot of your desktop" });
+        await apiOk("POST", `/api/groups/${group.id}/messages`, { text: "take a screenshot of your desktop" });
       await until(() => errorRows(group.threadId), rows => rows.length > 0, 30_000);
       await idle(bot.id);
       await new Promise(resolve => setTimeout(resolve, 500));

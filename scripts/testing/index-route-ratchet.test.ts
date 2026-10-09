@@ -9,7 +9,8 @@ const EXACT: Record<string, number> = {
   // Internal harness routes have no server/routes module yet; moving them out is the follow-up that lowers this.
   // Counted on Sagax's server/index.ts, which keeps its own routes (organization, Perspicax, MCP sign-in, read receipts #166) there,
   // plus the fork routes merged on main after the 2026-10-08 sync branch was cut (the PRs after #176, Auto model #153 among them).
-  'path === "/': 183,
+  // 184: DELETE /api/routine-runs ("Clear logs", #238) is the one route added since.
+  'path === "/': 184,
   "path.match(": 96,
   "path.startsWith(": 14,
   ".exec(path)": 23,

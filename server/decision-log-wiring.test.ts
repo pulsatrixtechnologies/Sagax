@@ -109,6 +109,10 @@ async function makePermissionBot(patch: Record<string, unknown>) {
     modelSelection: { instanceId: "grok", model: "fake-model" },
   });
   expect(patched.status).toBe(200);
+  // The opening thread keeps its own level, so an explicit level is set on it too.
+  if (typeof patch.approvalMode === "string") {
+    expect((await api("PATCH", `/api/bots/${bot.id}/tasks/${bot.threadId}`, { approvalMode: patch.approvalMode })).status).toBe(200);
+  }
   return patched.body.bot ?? bot;
 }
 
@@ -191,7 +195,7 @@ posixOnly("authorization decisions are logged", () => {
   it(
     "a card and the human's allow write two rows",
     async () => {
-      const bot = await makePermissionBot({ name: "Askme" });
+      const bot = await makePermissionBot({ name: "Askme", approvalMode: "ask" }) /* new bots start on Approve for me (51647a630) */;
       expect((await api("POST", `/api/bots/${bot.id}/messages`, { text: "run it" })).status).toBe(202);
 
       const card = await waitForBotCard(bot.id);
