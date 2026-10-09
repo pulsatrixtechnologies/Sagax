@@ -294,3 +294,37 @@ describe("propose_team_memory", () => {
     } }]);
   });
 });
+
+describe("react_to_message and remove_reaction", () => {
+  it("sends the turn's reaction to the harness and says no message was posted", async () => {
+    const calls: Array<{ path: string; body: unknown }> = [];
+    const client = {
+      api: async (path: string, init?: RequestInit) => {
+        calls.push({ path, body: JSON.parse(String(init?.body ?? "{}")) });
+        const body = calls.at(-1)!.body as { remove?: boolean };
+        return body.remove ? { ok: true, changed: true, removed: ["👀"] } : { ok: true, changed: true, emoji: "👍", messageId: "m1" };
+      },
+      apiResponse: async () => ({ ok: true, status: 200, body: {} }),
+    };
+    const reacted = await callTool("react_to_message", { emoji: " 👍 " }, context({ client }));
+    expect(reacted.isError).toBeFalsy();
+    expect(reacted.text).toContain("Reacted 👍");
+    expect(reacted.text).toContain("end your turn without text");
+    expect(calls[0]).toEqual({ path: "/api/internal/reaction", body: { fromBotId: "bot-voice", fromThreadId: "thread-voice", emoji: "👍", remove: false } });
+
+    const removed = await callTool("remove_reaction", { message_id: "m1" }, context({ client }));
+    expect(removed.text).toBe("Removed your 👀.");
+    expect(calls[1]!.body).toEqual({ fromBotId: "bot-voice", fromThreadId: "thread-voice", messageId: "m1", remove: true });
+  });
+
+  it("asks for an emoji before calling, and passes a refusal through as an error", async () => {
+    let called = false;
+    const missing = await callTool("react_to_message", {}, context({ client: { api: async () => { called = true; return {}; }, apiResponse: async () => ({ ok: true, status: 200, body: {} }) } }));
+    expect(missing.isError).toBe(true);
+    expect(called).toBe(false);
+    const refused = await callTool("react_to_message", { emoji: "✅" }, context({
+      client: { api: async () => ({ error: "Never react to your own message." }), apiResponse: async () => ({ ok: true, status: 200, body: {} }) },
+    }));
+    expect(refused).toEqual({ text: "Never react to your own message.", isError: true });
+  });
+});

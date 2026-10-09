@@ -316,8 +316,10 @@ struct MessageRow: View {
     }
 
     private func reactionGroups(_ reactions: [Reaction]) -> [(emoji: String, count: Int, mine: Bool)] {
+        // One entry per emoji with its actors (current servers), or one per
+        // person (older ones): both sum to the chip's count.
         Dictionary(grouping: reactions, by: \.emoji)
-            .map { (emoji: $0.key, count: $0.value.count, mine: $0.value.contains { $0.by == "user" }) }
+            .map { (emoji: $0.key, count: $0.value.reduce(0) { $0 + $1.count }, mine: $0.value.contains { $0.includes(nil) }) }
             .sorted { $0.emoji < $1.emoji }
     }
 }

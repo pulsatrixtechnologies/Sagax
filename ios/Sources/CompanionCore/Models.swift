@@ -228,9 +228,33 @@ public struct Sender: Codable, Hashable, Sendable {
     public var color: String
 }
 
+/// One person or bot behind a reaction (shared/reactions.ts).
+public struct ReactionActor: Codable, Hashable, Sendable {
+    public var id: String
+    /// "person" or "bot".
+    public var kind: String?
+    public var name: String?
+}
+
+/// One emoji on a message. Current servers send everyone who put it there in
+/// `actors`; older ones sent one entry per person with `by` ("user" or a
+/// bot id). Both decode.
 public struct Reaction: Codable, Hashable, Sendable {
     public var emoji: String
-    public var by: String
+    public var by: String?
+    public var actors: [ReactionActor]?
+    public var at: Double?
+
+    /// How many put this emoji there.
+    public var count: Int { actors.map { max($0.count, 1) } ?? 1 }
+
+    /// Whether `principalId` (or, on an older server, the desktop's "user")
+    /// is among them.
+    public func includes(_ principalId: String?) -> Bool {
+        if by == "user" { return true }
+        guard let principalId = principalId?.lowercased(), !principalId.isEmpty else { return false }
+        return actors?.contains { $0.id.lowercased() == principalId } ?? false
+    }
 }
 
 public struct CommChip: Codable, Hashable, Sendable {

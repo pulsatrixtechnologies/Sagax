@@ -154,7 +154,7 @@ Copy, Select Text, Edit and retry; branch switcher :1495), `SelectableTextSheet.
 | MS7 | Branch switcher ‹ 2/3 › | ChatView:604 | POST /api/bots/:id/active-branch | Y | Y | Y | DONE | | = | A | none |
 | MS8 | Reply quote in the bubble, tap to jump | ReplyQuote.tsx | local | Y | n/a | n/a | MISSING (no `replyToId` decoded) | quote inside the bubble | = | A | none |
 | MS9 | Pin message, pinned banner | ChatView:433,577,1436 | PATCH tasks {pinnedMessageId} | **N** | Y | Y | MISSING | long-press > Pin; strip under the header (if JC lifts the RC rule, decision D2) | hover row (admin) | C | none |
-| MS10 | Reactions | store only (no 1:1 UI) | POST /api/threads/:t/messages/:m/reactions | n/a | Y | Y | P (emoji row in the menu) | | keep | P | none |
+| MS10 | Reactions on people's and bots' messages (2026-10-09): smiley in the hover bar, picker (8 quick + search), chips with count, mine highlighted, names in the tooltip | Reactions.tsx, MessageBar.tsx, GroupView tray | POST /api/threads/:t/messages/:m/reactions (toggle for the caller), live `message.patch` | Y | Y | Y | PARTIAL (emoji row in the long-press menu; chips count `actors`; mine only for an older `by: "user"`) | long-press > reaction row; chips under the bubble | keep | P | iPhone: highlight mine by the config viewer's principal, names on long-press of a chip |
 | MS11 | Find in thread (⌘F) | ChatFindBar.tsx | GET /api/search?threadId= | Y | Y | Y | PARTIAL (global SearchSheet only) | "+" > Find in conversation (find bar over the header) | `chat-find` | A | none |
 | MS12 | Export conversation | ExportTranscriptMenu.tsx | local | Y | n/a | n/a | DONE ("+" > Share transcript, GET /api/threads/:t/export) | | `chat-export-menu` | A | none |
 | MS13 | Day separators | ChatView DaySeparator | local | Y | n/a | n/a | DONE | | = | A | none |
@@ -169,7 +169,9 @@ Copy, Select Text, Edit and retry; branch switcher :1495), `SelectableTextSheet.
 | MS22 | Routine execution banner (Logs, back) | ChatView:1411 | local | Y | n/a | n/a | MISSING | caption under the header | = | A | none |
 | MS23 | Peer label on relayed lines | ChatView PeerLabel | local | Y | n/a | n/a | PARTIAL (rooms only) | small label above the bubble | = | A | none |
 | MS24 | Inspector (Run log, Events, Raw) | InspectorPanel.tsx | GET /api/threads/:t/events | **N** | N | admin | MISSING | none (admin: "..." > Inspector sheet) | `inspector` (admin) | C | none |
-| MS25 | Read receipts | none in the renderer (read state only) | POST .../read | n/a | Y | Y | N/A | | | | none |
+| MS25 | Read receipts | SeenBy.tsx, read-receipts-feed.ts | GET/POST /api/threads/:t/read, `thread.read` | n/a | Y | Y | N/A | | | | none |
+| MS26 | "Seen by" row with names (2026-10-09): label, up to 5 stacked avatars then +N, hover or focus shows "Name · time" | SeenBy.tsx (rooms, people, 1:1 with a bot) | GET /api/threads/:t/read (reader id and read time per thread) | n/a | Y | Y | MISSING | caption "Seen by" + faces under the last read line; long-press a face for the name and time | = | P | none |
+| MS27 | Bot reactions (2026-10-09): react_to_message / remove_reaction, shown like a person's with the bot's mascot in the tooltip | Reactions.tsx | agents tool, /api/internal/reaction | n/a | Y | Y | PARTIAL (chips count them, no mascot) | chip under the bubble | = | P | none |
 
 ## 4. Chat: threads (tasks) in a conversation
 
