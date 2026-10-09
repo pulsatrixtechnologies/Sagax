@@ -15,13 +15,17 @@
  * - shiba: Shiba, the dog (flat two tones and a shade, one outline), in the
  *   bot's color or a coat of its own, with a Shiba skin. It walks, wanders,
  *   turns in circles and barks on the desktop (shiba-moves.ts).
+ * - grump: Grump, the grumpy cat (flat two tones and a shade, one outline),
+ *   point markings in the bot's color or a coat of its own, with a Grump
+ *   skin. It walks, stalks, loafs, grooms and hisses on the desktop
+ *   (grump-moves.ts).
  *
  * Each character keeps its own skin, so switching character and back finds
  * the choice made before. Absent means the owl, as every bot had before.
  */
 import { z } from "zod";
 
-export const MASCOT_CHARACTERS = ["owl", "shape", "trombi", "bunbu", "shiba"] as const;
+export const MASCOT_CHARACTERS = ["owl", "shape", "trombi", "bunbu", "shiba", "grump"] as const;
 export type MascotCharacter = (typeof MASCOT_CHARACTERS)[number];
 
 /**
@@ -80,6 +84,16 @@ export type BunbuSkin = (typeof BUNBU_SKINS)[number];
 export const SHIBA_SKINS = ["plain", "cream", "blacktan", "red", "sesame", "white", "retro98", "gold", "neon", "chrome", "glitch", "holo", "molten"] as const;
 export type ShibaSkin = (typeof SHIBA_SKINS)[number];
 
+/**
+ * Skins for Grump, by rarity: the bot's color on the points (Plain), the cat
+ * coats (Tuxedo, Calico, Tabby, Siamese, Void with its lit eyes), each on a
+ * Mastery rung, then premium editions with the Trombi, Shapes and Shiba
+ * treatments
+ * (src/components/skin-fx/grump-skins.tsx).
+ */
+export const GRUMP_SKINS = ["plain", "tuxedo", "calico", "tabby", "siamese", "void", "retro98", "gold", "neon", "chrome", "glitch", "holo", "molten"] as const;
+export type GrumpSkin = (typeof GRUMP_SKINS)[number];
+
 /** How rare a skin is: the picker's label and card. */
 export type SkinTier = "common" | "rare" | "epic" | "legendary";
 
@@ -132,6 +146,23 @@ export const SHIBA_SKIN_TIER: Readonly<Record<ShibaSkin, SkinTier>> = {
   red: "rare",
   sesame: "rare",
   white: "rare",
+  retro98: "rare",
+  gold: "rare",
+  neon: "epic",
+  chrome: "epic",
+  glitch: "epic",
+  holo: "legendary",
+  molten: "legendary",
+};
+
+export const GRUMP_SKIN_TIER: Readonly<Record<GrumpSkin, SkinTier>> = {
+  plain: "common",
+  // the cat coats each cost a Mastery rung (shared/mascot-unlocks.ts): Rare, like the registry says
+  tuxedo: "rare",
+  calico: "rare",
+  tabby: "rare",
+  siamese: "rare",
+  void: "rare",
   retro98: "rare",
   gold: "rare",
   neon: "epic",
@@ -196,6 +227,28 @@ export const LEGACY_SHIBA_SKINS: Readonly<Record<string, ShibaSkin>> = {
   lava: "molten",
 };
 
+export const LEGACY_GRUMP_SKINS: Readonly<Record<string, GrumpSkin>> = {
+  tux: "tuxedo",
+  "black-and-white": "tuxedo",
+  tortie: "calico",
+  tortoiseshell: "calico",
+  tiger: "tabby",
+  mackerel: "tabby",
+  colorpoint: "siamese",
+  colourpoint: "siamese",
+  "seal-point": "siamese",
+  black: "void",
+  shadow: "void",
+  retro: "retro98",
+  win98: "retro98",
+  royal: "gold",
+  metal: "chrome",
+  cyber: "glitch",
+  iridescent: "holo",
+  holographic: "holo",
+  lava: "molten",
+};
+
 const legacy = (table: Readonly<Record<string, string>>) => (value: unknown) => (typeof value === "string" && Object.hasOwn(table, value) ? table[value] : value);
 
 export const mascotLookSchema = z
@@ -209,6 +262,7 @@ export const mascotLookSchema = z
         trombi: z.preprocess(legacy(LEGACY_TROMBI_SKINS), z.enum(TROMBI_SKINS)).optional(),
         bunbu: z.preprocess(legacy(LEGACY_BUNBU_SKINS), z.enum(BUNBU_SKINS)).optional(),
         shiba: z.preprocess(legacy(LEGACY_SHIBA_SKINS), z.enum(SHIBA_SKINS)).optional(),
+        grump: z.preprocess(legacy(LEGACY_GRUMP_SKINS), z.enum(GRUMP_SKINS)).optional(),
       })
       .strict()
       .optional(),
@@ -231,27 +285,29 @@ export function botMascotLook(value: unknown): MascotLook {
   const { skins, ...rest } = value as { skins?: unknown };
   const known: Record<string, string> = {};
   if (skins && typeof skins === "object") {
-    const { shape, trombi, bunbu, shiba } = skins as { shape?: unknown; trombi?: unknown; bunbu?: unknown; shiba?: unknown };
+    const { shape, trombi, bunbu, shiba, grump } = skins as { shape?: unknown; trombi?: unknown; bunbu?: unknown; shiba?: unknown; grump?: unknown };
     const shapeSkin = legacy(LEGACY_SHAPE_SKINS)(shape);
     const trombiSkin = legacy(LEGACY_TROMBI_SKINS)(trombi);
     const bunbuSkin = legacy(LEGACY_BUNBU_SKINS)(bunbu);
     const shibaSkin = legacy(LEGACY_SHIBA_SKINS)(shiba);
+    const grumpSkin = legacy(LEGACY_GRUMP_SKINS)(grump);
     if ((SHAPE_SKINS as readonly unknown[]).includes(shapeSkin)) known.shape = shapeSkin as string;
     if ((TROMBI_SKINS as readonly unknown[]).includes(trombiSkin)) known.trombi = trombiSkin as string;
     if ((BUNBU_SKINS as readonly unknown[]).includes(bunbuSkin)) known.bunbu = bunbuSkin as string;
     if ((SHIBA_SKINS as readonly unknown[]).includes(shibaSkin)) known.shiba = shibaSkin as string;
+    if ((GRUMP_SKINS as readonly unknown[]).includes(grumpSkin)) known.grump = grumpSkin as string;
   }
   return mascotLookSchema.safeParse(Object.keys(known).length ? { ...rest, skins: known } : rest).data ?? DEFAULT_MASCOT_LOOK;
 }
 
 /** The look with every choice filled in. */
-export function completeMascotLook(value: unknown): Required<Omit<MascotLook, "skins">> & { skins: { shape: ShapeSkin; trombi: TrombiSkin; bunbu: BunbuSkin; shiba: ShibaSkin } } {
+export function completeMascotLook(value: unknown): Required<Omit<MascotLook, "skins">> & { skins: { shape: ShapeSkin; trombi: TrombiSkin; bunbu: BunbuSkin; shiba: ShibaSkin; grump: GrumpSkin } } {
   const look = botMascotLook(value);
   return {
     character: look.character,
     style: look.style ?? "2d",
     shape: look.shape ?? "circle",
-    skins: { shape: look.skins?.shape ?? "plain", trombi: look.skins?.trombi ?? "classic", bunbu: look.skins?.bunbu ?? "plain", shiba: look.skins?.shiba ?? "plain" },
+    skins: { shape: look.skins?.shape ?? "plain", trombi: look.skins?.trombi ?? "classic", bunbu: look.skins?.bunbu ?? "plain", shiba: look.skins?.shiba ?? "plain", grump: look.skins?.grump ?? "plain" },
   };
 }
 
@@ -262,6 +318,7 @@ export const CHARACTER_PAINT: Readonly<Record<MascotCharacter, { colors: boolean
   trombi: { colors: false, skins: TROMBI_SKINS, wingMoves: false },
   bunbu: { colors: true, skins: BUNBU_SKINS, wingMoves: false },
   shiba: { colors: true, skins: SHIBA_SKINS, wingMoves: false },
+  grump: { colors: true, skins: GRUMP_SKINS, wingMoves: false },
 };
 
 /** The color Bunbu shows where no bot gives one (the app icon, the gallery): mint, our own. */
@@ -269,3 +326,6 @@ export const BUNBU_DEFAULT_COLOR = "mint";
 
 /** The color Shiba shows where no bot gives one (the app icon, the gallery): the breed's own orange. */
 export const SHIBA_DEFAULT_COLOR = "orange";
+
+/** The color Grump shows where no bot gives one (the app icon, the gallery): a warm brown, the classic points. */
+export const GRUMP_DEFAULT_COLOR = "brown";

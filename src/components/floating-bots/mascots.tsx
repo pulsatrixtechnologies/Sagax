@@ -3,7 +3,7 @@
 // the desktop and as a thumbnail). Adding a character is adding an entry.
 // The same behavior state machine (behavior.ts) drives them all; each
 // renderer maps the clips it can show and degrades gracefully: the shapes,
-// Trombi, Bunbu and Shiba have no wings, so a flight is a bouncing hop across. The
+// Trombi, Bunbu, Shiba and Grump have no wings, so a flight is a bouncing hop across. The
 // character and its look come from the bot (bot.mascotLook); the desktop
 // draws a skin's full effects, and its move effects with each move.
 import { useEffect, useId, useRef, type ComponentType } from "react";
@@ -22,6 +22,8 @@ import { ShibaMascot } from "@/components/ShibaMascot";
 import { SHIBA_MOVE_TIMING, shibaMoveFor, type ShibaMove } from "@/components/shiba-moves";
 import { playShibaBark } from "@/lib/shiba-bark";
 import { readFloatingBotPrefs } from "@/lib/floating-bots";
+import { GrumpMascot } from "@/components/GrumpMascot";
+import { GRUMP_MOVE_TIMING, grumpMoveFor, type GrumpMove } from "@/components/grump-moves";
 import { fxMoveFor, useEquipBurst, useMoveBurst, useReducedMotion, type FxMoveRequest } from "@/components/skin-fx/skin-fx";
 import { completeMascotLook, MASCOT_SHAPES, type MascotCharacter, type MascotLook, type MascotShape } from "../../../shared/mascot-look";
 import { createFrameSmoother, type MascotActivity, type MascotFrame } from "./behavior";
@@ -37,6 +39,8 @@ export interface MascotRenderProps {
   /** The character's box, px. */
   size: number;
   activity: MascotActivity;
+  /** A cat stalking out on its prowl (a walk drawn low and slow). */
+  prowling?: boolean;
   pose: FloatingPose;
   frame: (now: number) => MascotFrame;
   fps: () => number;
@@ -358,8 +362,12 @@ function barkIfWanted() {
  * turns in circles for an achievement, gets excited when a message lands
  * and lies down to sleep when snoozed. The others keep their own life (null).
  */
-export function cueClipFor(character: MascotCharacter, cue: "nudge" | "achievement" | "message" | "snooze"): MascotActivity | null {
+export function cueClipFor(character: MascotCharacter, cue: "nudge" | "achievement" | "message" | "snooze" | "refusal" | "error"): MascotActivity | null {
+  // a cat: a head bonk for a nudge, kneading for an achievement, a pounce on a new message, curled up asleep
+  // before a snooze, a hiss at a refusal, ears flat on an error
+  if (character === "grump") return GRUMP_CUES[cue];
   if (character !== "shiba") return null;
+  if (cue === "refusal" || cue === "error") return null;
   return cue === "nudge" ? "bark" : cue === "achievement" ? "turnCircles" : cue === "snooze" ? "lieDown" : "excited";
 }
 
@@ -407,6 +415,80 @@ function ShibaThumb({ color, look, size }: MascotThumbProps) {
   return <ShibaMascot skin={look.skins.shiba} color={color} size={size} animated={false} label={null} />;
 }
 
+/* -------------------------------------------------------------- Grump */
+
+/** What a desktop event plays on Grump (cueClipFor). */
+export const GRUMP_CUES: Readonly<Record<"nudge" | "achievement" | "message" | "snooze" | "refusal" | "error", MascotActivity>> = {
+  nudge: "bonk",
+  achievement: "knead",
+  message: "pounce",
+  snooze: "curl",
+  refusal: "hiss",
+  error: "earsFlat",
+};
+
+/**
+ * Grump's moves in the avatar popover and the mascot's "Moves" menu: desktop
+ * clips its rig plays (the cat's own first, then the shared ones).
+ */
+export const GRUMP_MENU_MOVES = ["stretch", "groom", "knead", "pounce", "ledge", "hiss", "bonk", "slowBlink", "tailFlick", "yawn", "curl", "wave"] as const;
+export const GRUMP_MOVE_LABELS: Partial<Record<string, LocaleKey>> = {
+  stretch: "floatingBots.move.stretch",
+  groom: "floatingBots.move.groom",
+  knead: "floatingBots.move.knead",
+  pounce: "floatingBots.move.pounce",
+  ledge: "floatingBots.move.ledge",
+  hiss: "floatingBots.move.hiss",
+  bonk: "floatingBots.move.bonk",
+  slowBlink: "floatingBots.move.slowBlink",
+  tailFlick: "floatingBots.move.tailFlick",
+  curl: "floatingBots.move.curl",
+};
+
+/**
+ * What Grump keeps doing for a clip and the brain's pose: walking while the
+ * window walks (stalking, low and slow, on its prowl), loafing, curled up
+ * asleep, dangling (unimpressed) while dragged, working, talking while the
+ * reply streams, sitting up attentive while its bot waits or listens, else
+ * its idle life.
+ */
+export function grumpHeldFor(activity: MascotActivity, pose: FloatingPose, prowling = false): GrumpMove | null {
+  if (activity === "walk") return prowling ? "stalk" : "walk";
+  if (activity === "fly" || activity === "flyOut" || activity === "return") return "walk";
+  if (activity === "loaf") return "loaf";
+  if (activity === "sleep" || pose === "sleep") return "sleep";
+  if (activity === "drag") return "drag";
+  if (activity === "working" || pose === "think") return "work";
+  if (pose === "speak") return "talk";
+  if (pose === "alert") return "listen";
+  return null;
+}
+
+/** A new move request each time a clip Grump has a one-shot for starts (grump-moves.ts GRUMP_CLIP_MOVES). */
+function useGrumpClipMove(activity: MascotActivity): FxMoveRequest | null {
+  const last = useRef<{ activity: MascotActivity; request: FxMoveRequest | null }>({ activity: "idle", request: null });
+  if (last.current.activity !== activity) {
+    const move = grumpMoveFor(activity);
+    last.current = { activity, request: move && !GRUMP_MOVE_TIMING[move].loop ? { clip: activity, key: Date.now() } : null };
+  }
+  return last.current.request;
+}
+
+function GrumpRender({ color, look, size, activity, pose, prowling, frame, fps, onHitTest }: MascotRenderProps) {
+  const own = useGrumpClipMove(activity);
+  const fx = useClipFx(activity);
+  return (
+    // like the Shiba, the rig does the hops and leans: the frames only face it and shift it
+    <Motion25D size={size} frame={frame} fps={fps} onHitTest={onHitTest} transform={shibaMotionTransform}>
+      <GrumpMascot skin={look.skins.grump} color={color} size={size * 0.9} mood={bunbuMoodFor(activity, pose)} expression={shapeExpressionForClip(activity)} detail="full" move={own ?? fx} activity={grumpHeldFor(activity, pose, prowling)} rig label={null} />
+    </Motion25D>
+  );
+}
+
+function GrumpThumb({ color, look, size }: MascotThumbProps) {
+  return <GrumpMascot skin={look.skins.grump} color={color} size={size} animated={false} label={null} />;
+}
+
 /* ----------------------------------------------------------- registry */
 
 export const MASCOTS: readonly MascotDefinition[] = [
@@ -430,6 +512,15 @@ export const MASCOTS: readonly MascotDefinition[] = [
     moveLabels: SHIBA_MOVE_LABELS,
     Render: ShibaRender,
     Thumb: ShibaThumb,
+  },
+  {
+    id: "grump",
+    capabilities: { walk: true, fly: false, wings: false, blink: true, turn: true, flip: true },
+    paint: { colors: true, skins: true },
+    moves: GRUMP_MENU_MOVES,
+    moveLabels: GRUMP_MOVE_LABELS,
+    Render: GrumpRender,
+    Thumb: GrumpThumb,
   },
 ];
 

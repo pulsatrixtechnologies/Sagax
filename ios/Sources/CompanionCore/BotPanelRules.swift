@@ -240,6 +240,14 @@ public struct MascotUnlocks: Hashable, Sendable {
             case "holo", "molten": return .legendary
             default: return .rare
             }
+        case .grump:
+            // a Mastery character (shared/mascot-unlocks.ts masterySkinTier): its named coats cost a rung (Rare)
+            switch skin {
+            case "plain": return .common
+            case "neon", "chrome", "glitch": return .epic
+            case "holo", "molten": return .legendary
+            default: return .rare
+            }
         }
     }
 }

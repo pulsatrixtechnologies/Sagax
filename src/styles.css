@@ -2671,10 +2671,10 @@ button:disabled.bg-danger {
 }
 
 /* ── Mascot shadow ───────────────────────────────────────────────────────
-   Every character root (shape, owl, Bunbu, Shiba, Trombi) takes the skin's drop
+   Every character root (shape, owl, Bunbu, Shiba, Grump, Trombi) takes the skin's drop
    shadow, which is "none" on dark skins. It follows the silhouette, so a white
    character reads on a light surface without any disc or tile behind it. */
-:is(.shape-mascot, [data-owl], .bunbu-mascot, .shiba-mascot, .trombi-avatar) {
+:is(.shape-mascot, [data-owl], .bunbu-mascot, .shiba-mascot, .grump-mascot, .trombi-avatar) {
   filter: var(--mascot-filter, none);
 }
 

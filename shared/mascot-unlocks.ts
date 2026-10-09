@@ -90,7 +90,13 @@ export const MASTERY_UNLOCKS: Readonly<Record<MasteryCharacter, MasteryCharacter
     unlock: "reviewer",
     namedRungs: ["prompter", "red-pen", "not-so-fast"],
     premiumRung: "justice-of-peace",
-    namedSkins: [],
+    namedSkins: [
+      { id: "tuxedo", name: { en: "Tuxedo", fr: "Smoking", ptBR: "Smoking" } },
+      { id: "calico", name: { en: "Calico", fr: "Calico", ptBR: "Tricolor" } },
+      { id: "tabby", name: { en: "Tabby", fr: "Tigré", ptBR: "Tigrado" } },
+      { id: "siamese", name: { en: "Siamese", fr: "Siamois", ptBR: "Siamês" } },
+      { id: "void", name: { en: "Void", fr: "Néant", ptBR: "Vazio" } },
+    ],
   },
   // Ogre: carry the heavy work (rooms, sub-agents, integrations).
   ogre: {

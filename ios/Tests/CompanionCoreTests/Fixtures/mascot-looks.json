@@ -5,7 +5,8 @@
     "shape",
     "trombi",
     "bunbu",
-    "shiba"
+    "shiba",
+    "grump"
   ],
   "shapes": [
     "circle",
@@ -63,6 +64,21 @@
     "red",
     "sesame",
     "white",
+    "retro98",
+    "gold",
+    "neon",
+    "chrome",
+    "glitch",
+    "holo",
+    "molten"
+  ],
+  "grumpSkins": [
+    "plain",
+    "tuxedo",
+    "calico",
+    "tabby",
+    "siamese",
+    "void",
     "retro98",
     "gold",
     "neon",
@@ -272,6 +288,15 @@
       },
       "expected": {
         "character": "shiba"
+      }
+    },
+    {
+      "name": "bare grump",
+      "input": {
+        "character": "grump"
+      },
+      "expected": {
+        "character": "grump"
       }
     },
     {
@@ -2560,6 +2585,201 @@
       }
     },
     {
+      "name": "grump plain",
+      "input": {
+        "character": "grump",
+        "skins": {
+          "grump": "plain"
+        }
+      },
+      "expected": {
+        "character": "grump",
+        "skins": {
+          "grump": "plain"
+        }
+      }
+    },
+    {
+      "name": "grump tuxedo",
+      "input": {
+        "character": "grump",
+        "skins": {
+          "grump": "tuxedo"
+        }
+      },
+      "expected": {
+        "character": "grump",
+        "skins": {
+          "grump": "tuxedo"
+        }
+      }
+    },
+    {
+      "name": "grump calico",
+      "input": {
+        "character": "grump",
+        "skins": {
+          "grump": "calico"
+        }
+      },
+      "expected": {
+        "character": "grump",
+        "skins": {
+          "grump": "calico"
+        }
+      }
+    },
+    {
+      "name": "grump tabby",
+      "input": {
+        "character": "grump",
+        "skins": {
+          "grump": "tabby"
+        }
+      },
+      "expected": {
+        "character": "grump",
+        "skins": {
+          "grump": "tabby"
+        }
+      }
+    },
+    {
+      "name": "grump siamese",
+      "input": {
+        "character": "grump",
+        "skins": {
+          "grump": "siamese"
+        }
+      },
+      "expected": {
+        "character": "grump",
+        "skins": {
+          "grump": "siamese"
+        }
+      }
+    },
+    {
+      "name": "grump void",
+      "input": {
+        "character": "grump",
+        "skins": {
+          "grump": "void"
+        }
+      },
+      "expected": {
+        "character": "grump",
+        "skins": {
+          "grump": "void"
+        }
+      }
+    },
+    {
+      "name": "grump retro98",
+      "input": {
+        "character": "grump",
+        "skins": {
+          "grump": "retro98"
+        }
+      },
+      "expected": {
+        "character": "grump",
+        "skins": {
+          "grump": "retro98"
+        }
+      }
+    },
+    {
+      "name": "grump gold",
+      "input": {
+        "character": "grump",
+        "skins": {
+          "grump": "gold"
+        }
+      },
+      "expected": {
+        "character": "grump",
+        "skins": {
+          "grump": "gold"
+        }
+      }
+    },
+    {
+      "name": "grump neon",
+      "input": {
+        "character": "grump",
+        "skins": {
+          "grump": "neon"
+        }
+      },
+      "expected": {
+        "character": "grump",
+        "skins": {
+          "grump": "neon"
+        }
+      }
+    },
+    {
+      "name": "grump chrome",
+      "input": {
+        "character": "grump",
+        "skins": {
+          "grump": "chrome"
+        }
+      },
+      "expected": {
+        "character": "grump",
+        "skins": {
+          "grump": "chrome"
+        }
+      }
+    },
+    {
+      "name": "grump glitch",
+      "input": {
+        "character": "grump",
+        "skins": {
+          "grump": "glitch"
+        }
+      },
+      "expected": {
+        "character": "grump",
+        "skins": {
+          "grump": "glitch"
+        }
+      }
+    },
+    {
+      "name": "grump holo",
+      "input": {
+        "character": "grump",
+        "skins": {
+          "grump": "holo"
+        }
+      },
+      "expected": {
+        "character": "grump",
+        "skins": {
+          "grump": "holo"
+        }
+      }
+    },
+    {
+      "name": "grump molten",
+      "input": {
+        "character": "grump",
+        "skins": {
+          "grump": "molten"
+        }
+      },
+      "expected": {
+        "character": "grump",
+        "skins": {
+          "grump": "molten"
+        }
+      }
+    },
+    {
       "name": "editor owl",
       "input": {
         "character": "owl",
@@ -2569,7 +2789,8 @@
           "shape": "galaxy",
           "trombi": "holo",
           "bunbu": "velvet",
-          "shiba": "sesame"
+          "shiba": "sesame",
+          "grump": "calico"
         }
       },
       "expected": {
@@ -2580,7 +2801,8 @@
           "shape": "galaxy",
           "trombi": "holo",
           "bunbu": "velvet",
-          "shiba": "sesame"
+          "shiba": "sesame",
+          "grump": "calico"
         }
       }
     },
@@ -2594,7 +2816,8 @@
           "shape": "plain",
           "trombi": "classic",
           "bunbu": "plain",
-          "shiba": "plain"
+          "shiba": "plain",
+          "grump": "plain"
         }
       },
       "expected": {
@@ -2605,7 +2828,8 @@
           "shape": "plain",
           "trombi": "classic",
           "bunbu": "plain",
-          "shiba": "plain"
+          "shiba": "plain",
+          "grump": "plain"
         }
       }
     },
@@ -2619,7 +2843,8 @@
           "shape": "galaxy",
           "trombi": "holo",
           "bunbu": "velvet",
-          "shiba": "sesame"
+          "shiba": "sesame",
+          "grump": "calico"
         }
       },
       "expected": {
@@ -2630,7 +2855,8 @@
           "shape": "galaxy",
           "trombi": "holo",
           "bunbu": "velvet",
-          "shiba": "sesame"
+          "shiba": "sesame",
+          "grump": "calico"
         }
       }
     },
@@ -2644,7 +2870,8 @@
           "shape": "plain",
           "trombi": "classic",
           "bunbu": "plain",
-          "shiba": "plain"
+          "shiba": "plain",
+          "grump": "plain"
         }
       },
       "expected": {
@@ -2655,7 +2882,8 @@
           "shape": "plain",
           "trombi": "classic",
           "bunbu": "plain",
-          "shiba": "plain"
+          "shiba": "plain",
+          "grump": "plain"
         }
       }
     },
@@ -2669,7 +2897,8 @@
           "shape": "galaxy",
           "trombi": "holo",
           "bunbu": "velvet",
-          "shiba": "sesame"
+          "shiba": "sesame",
+          "grump": "calico"
         }
       },
       "expected": {
@@ -2680,7 +2909,8 @@
           "shape": "galaxy",
           "trombi": "holo",
           "bunbu": "velvet",
-          "shiba": "sesame"
+          "shiba": "sesame",
+          "grump": "calico"
         }
       }
     },
@@ -2694,7 +2924,8 @@
           "shape": "plain",
           "trombi": "classic",
           "bunbu": "plain",
-          "shiba": "plain"
+          "shiba": "plain",
+          "grump": "plain"
         }
       },
       "expected": {
@@ -2705,7 +2936,8 @@
           "shape": "plain",
           "trombi": "classic",
           "bunbu": "plain",
-          "shiba": "plain"
+          "shiba": "plain",
+          "grump": "plain"
         }
       }
     },
@@ -2719,7 +2951,8 @@
           "shape": "galaxy",
           "trombi": "holo",
           "bunbu": "velvet",
-          "shiba": "sesame"
+          "shiba": "sesame",
+          "grump": "calico"
         }
       },
       "expected": {
@@ -2730,7 +2963,8 @@
           "shape": "galaxy",
           "trombi": "holo",
           "bunbu": "velvet",
-          "shiba": "sesame"
+          "shiba": "sesame",
+          "grump": "calico"
         }
       }
     },
@@ -2744,7 +2978,8 @@
           "shape": "plain",
           "trombi": "classic",
           "bunbu": "plain",
-          "shiba": "plain"
+          "shiba": "plain",
+          "grump": "plain"
         }
       },
       "expected": {
@@ -2755,7 +2990,8 @@
           "shape": "plain",
           "trombi": "classic",
           "bunbu": "plain",
-          "shiba": "plain"
+          "shiba": "plain",
+          "grump": "plain"
         }
       }
     },
@@ -2769,7 +3005,8 @@
           "shape": "galaxy",
           "trombi": "holo",
           "bunbu": "velvet",
-          "shiba": "sesame"
+          "shiba": "sesame",
+          "grump": "calico"
         }
       },
       "expected": {
@@ -2780,7 +3017,8 @@
           "shape": "galaxy",
           "trombi": "holo",
           "bunbu": "velvet",
-          "shiba": "sesame"
+          "shiba": "sesame",
+          "grump": "calico"
         }
       }
     },
@@ -2794,7 +3032,8 @@
           "shape": "plain",
           "trombi": "classic",
           "bunbu": "plain",
-          "shiba": "plain"
+          "shiba": "plain",
+          "grump": "plain"
         }
       },
       "expected": {
@@ -2805,7 +3044,62 @@
           "shape": "plain",
           "trombi": "classic",
           "bunbu": "plain",
-          "shiba": "plain"
+          "shiba": "plain",
+          "grump": "plain"
+        }
+      }
+    },
+    {
+      "name": "editor grump",
+      "input": {
+        "character": "grump",
+        "style": "2d",
+        "shape": "cloud",
+        "skins": {
+          "shape": "galaxy",
+          "trombi": "holo",
+          "bunbu": "velvet",
+          "shiba": "sesame",
+          "grump": "calico"
+        }
+      },
+      "expected": {
+        "character": "grump",
+        "style": "2d",
+        "shape": "cloud",
+        "skins": {
+          "shape": "galaxy",
+          "trombi": "holo",
+          "bunbu": "velvet",
+          "shiba": "sesame",
+          "grump": "calico"
+        }
+      }
+    },
+    {
+      "name": "editor default grump",
+      "input": {
+        "character": "grump",
+        "style": "2d",
+        "shape": "circle",
+        "skins": {
+          "shape": "plain",
+          "trombi": "classic",
+          "bunbu": "plain",
+          "shiba": "plain",
+          "grump": "plain"
+        }
+      },
+      "expected": {
+        "character": "grump",
+        "style": "2d",
+        "shape": "circle",
+        "skins": {
+          "shape": "plain",
+          "trombi": "classic",
+          "bunbu": "plain",
+          "shiba": "plain",
+          "grump": "plain"
         }
       }
     },
@@ -3555,6 +3849,291 @@
       }
     },
     {
+      "name": "legacy grump skin tux",
+      "input": {
+        "character": "grump",
+        "skins": {
+          "grump": "tux"
+        }
+      },
+      "expected": {
+        "character": "grump",
+        "skins": {
+          "grump": "tuxedo"
+        }
+      }
+    },
+    {
+      "name": "legacy grump skin black-and-white",
+      "input": {
+        "character": "grump",
+        "skins": {
+          "grump": "black-and-white"
+        }
+      },
+      "expected": {
+        "character": "grump",
+        "skins": {
+          "grump": "tuxedo"
+        }
+      }
+    },
+    {
+      "name": "legacy grump skin tortie",
+      "input": {
+        "character": "grump",
+        "skins": {
+          "grump": "tortie"
+        }
+      },
+      "expected": {
+        "character": "grump",
+        "skins": {
+          "grump": "calico"
+        }
+      }
+    },
+    {
+      "name": "legacy grump skin tortoiseshell",
+      "input": {
+        "character": "grump",
+        "skins": {
+          "grump": "tortoiseshell"
+        }
+      },
+      "expected": {
+        "character": "grump",
+        "skins": {
+          "grump": "calico"
+        }
+      }
+    },
+    {
+      "name": "legacy grump skin tiger",
+      "input": {
+        "character": "grump",
+        "skins": {
+          "grump": "tiger"
+        }
+      },
+      "expected": {
+        "character": "grump",
+        "skins": {
+          "grump": "tabby"
+        }
+      }
+    },
+    {
+      "name": "legacy grump skin mackerel",
+      "input": {
+        "character": "grump",
+        "skins": {
+          "grump": "mackerel"
+        }
+      },
+      "expected": {
+        "character": "grump",
+        "skins": {
+          "grump": "tabby"
+        }
+      }
+    },
+    {
+      "name": "legacy grump skin colorpoint",
+      "input": {
+        "character": "grump",
+        "skins": {
+          "grump": "colorpoint"
+        }
+      },
+      "expected": {
+        "character": "grump",
+        "skins": {
+          "grump": "siamese"
+        }
+      }
+    },
+    {
+      "name": "legacy grump skin colourpoint",
+      "input": {
+        "character": "grump",
+        "skins": {
+          "grump": "colourpoint"
+        }
+      },
+      "expected": {
+        "character": "grump",
+        "skins": {
+          "grump": "siamese"
+        }
+      }
+    },
+    {
+      "name": "legacy grump skin seal-point",
+      "input": {
+        "character": "grump",
+        "skins": {
+          "grump": "seal-point"
+        }
+      },
+      "expected": {
+        "character": "grump",
+        "skins": {
+          "grump": "siamese"
+        }
+      }
+    },
+    {
+      "name": "legacy grump skin black",
+      "input": {
+        "character": "grump",
+        "skins": {
+          "grump": "black"
+        }
+      },
+      "expected": {
+        "character": "grump",
+        "skins": {
+          "grump": "void"
+        }
+      }
+    },
+    {
+      "name": "legacy grump skin shadow",
+      "input": {
+        "character": "grump",
+        "skins": {
+          "grump": "shadow"
+        }
+      },
+      "expected": {
+        "character": "grump",
+        "skins": {
+          "grump": "void"
+        }
+      }
+    },
+    {
+      "name": "legacy grump skin retro",
+      "input": {
+        "character": "grump",
+        "skins": {
+          "grump": "retro"
+        }
+      },
+      "expected": {
+        "character": "grump",
+        "skins": {
+          "grump": "retro98"
+        }
+      }
+    },
+    {
+      "name": "legacy grump skin win98",
+      "input": {
+        "character": "grump",
+        "skins": {
+          "grump": "win98"
+        }
+      },
+      "expected": {
+        "character": "grump",
+        "skins": {
+          "grump": "retro98"
+        }
+      }
+    },
+    {
+      "name": "legacy grump skin royal",
+      "input": {
+        "character": "grump",
+        "skins": {
+          "grump": "royal"
+        }
+      },
+      "expected": {
+        "character": "grump",
+        "skins": {
+          "grump": "gold"
+        }
+      }
+    },
+    {
+      "name": "legacy grump skin metal",
+      "input": {
+        "character": "grump",
+        "skins": {
+          "grump": "metal"
+        }
+      },
+      "expected": {
+        "character": "grump",
+        "skins": {
+          "grump": "chrome"
+        }
+      }
+    },
+    {
+      "name": "legacy grump skin cyber",
+      "input": {
+        "character": "grump",
+        "skins": {
+          "grump": "cyber"
+        }
+      },
+      "expected": {
+        "character": "grump",
+        "skins": {
+          "grump": "glitch"
+        }
+      }
+    },
+    {
+      "name": "legacy grump skin iridescent",
+      "input": {
+        "character": "grump",
+        "skins": {
+          "grump": "iridescent"
+        }
+      },
+      "expected": {
+        "character": "grump",
+        "skins": {
+          "grump": "holo"
+        }
+      }
+    },
+    {
+      "name": "legacy grump skin holographic",
+      "input": {
+        "character": "grump",
+        "skins": {
+          "grump": "holographic"
+        }
+      },
+      "expected": {
+        "character": "grump",
+        "skins": {
+          "grump": "holo"
+        }
+      }
+    },
+    {
+      "name": "legacy grump skin lava",
+      "input": {
+        "character": "grump",
+        "skins": {
+          "grump": "lava"
+        }
+      },
+      "expected": {
+        "character": "grump",
+        "skins": {
+          "grump": "molten"
+        }
+      }
+    },
+    {
       "name": "unknown shape skin",
       "input": {
         "character": "shape",
@@ -3597,6 +4176,22 @@
         "character": "shiba",
         "skins": {
           "bunbu": "gold"
+        }
+      }
+    },
+    {
+      "name": "unknown grump skin",
+      "input": {
+        "character": "grump",
+        "skins": {
+          "grump": "plasma",
+          "shiba": "gold"
+        }
+      },
+      "expected": {
+        "character": "grump",
+        "skins": {
+          "shiba": "gold"
         }
       }
     },

@@ -299,7 +299,7 @@ public extension AchievementDefinition {
             name: AchievementText(en: "Second Wind", fr: "Second souffle", ptBR: "Segundo fôlego"),
             description: AchievementText(en: "Twice, fix a routine that failed: change it, then see its next 3 runs complete.", fr: "Deux fois, réparez une routine qui a échoué : modifiez-la, puis voyez ses 3 exécutions suivantes réussir.", ptBR: "Duas vezes, conserte uma rotina que falhou: altere-a e veja as 3 execuções seguintes concluírem."),
             hint: nil,
-            rewards: [.skin(character: "shiba", skin: "cream", name: AchievementText(en: "Cream", fr: "Crème", ptBR: "Creme"), characterName: AchievementText(en: "Shiba", fr: "Shiba", ptBR: "Shiba")), .skin(character: "shiba", skin: "blacktan", name: AchievementText(en: "Black and Tan", fr: "Noir et feu", ptBR: "Preto e castanho"), characterName: AchievementText(en: "Shiba", fr: "Shiba", ptBR: "Shiba")), .title(id: "second-wind", name: AchievementText(en: "Second Wind", fr: "Second souffle", ptBR: "Segundo fôlego"))]
+            rewards: [.skin(character: "shiba", skin: "cream", name: AchievementText(en: "Cream", fr: "Crème", ptBR: "Creme"), characterName: AchievementText(en: "Shiba", fr: "Shiba", ptBR: "Shiba")), .skin(character: "shiba", skin: "blacktan", name: AchievementText(en: "Black and tan", fr: "Noir et feu", ptBR: "Preto e castanho"), characterName: AchievementText(en: "Shiba", fr: "Shiba", ptBR: "Shiba")), .title(id: "second-wind", name: AchievementText(en: "Second Wind", fr: "Second souffle", ptBR: "Segundo fôlego"))]
         ),
         AchievementDefinition(
             id: "common-thread", category: .mastery, icon: "Repeat2", points: 150, hidden: false,
@@ -334,21 +334,21 @@ public extension AchievementDefinition {
             name: AchievementText(en: "Prompter", fr: "Souffleur", ptBR: "Ponto"),
             description: AchievementText(en: "15 times, correct a bot while it works (a message into its running turn) and the turn completes.", fr: "15 fois, corrigez un robot pendant qu'il travaille (un message dans son tour en cours) et le tour se termine bien.", ptBR: "15 vezes, corrija um robô enquanto ele trabalha (uma mensagem no turno em andamento) e o turno conclui."),
             hint: nil,
-            rewards: [.title(id: "prompter", name: AchievementText(en: "Prompter", fr: "Souffleur", ptBR: "Ponto"))]
+            rewards: [.skin(character: "grump", skin: "tuxedo", name: AchievementText(en: "Tuxedo", fr: "Smoking", ptBR: "Smoking"), characterName: AchievementText(en: "Grump", fr: "Grognon", ptBR: "Rabugento")), .skin(character: "grump", skin: "calico", name: AchievementText(en: "Calico", fr: "Calico", ptBR: "Tricolor"), characterName: AchievementText(en: "Grump", fr: "Grognon", ptBR: "Rabugento")), .title(id: "prompter", name: AchievementText(en: "Prompter", fr: "Souffleur", ptBR: "Ponto"))]
         ),
         AchievementDefinition(
             id: "red-pen", category: .mastery, icon: "PenLine", points: 150, hidden: false,
             name: AchievementText(en: "Red Pen", fr: "Stylo rouge", ptBR: "Caneta vermelha"),
             description: AchievementText(en: "On 5 different days, revise a bot's standing instructions and see it complete 5 turns with them.", fr: "5 jours différents, révisez les instructions permanentes d'un robot et voyez-le compléter 5 tours avec elles.", ptBR: "Em 5 dias diferentes, revise as instruções permanentes de um robô e veja-o concluir 5 turnos com elas."),
             hint: nil,
-            rewards: [.title(id: "red-pen", name: AchievementText(en: "Red Pen", fr: "Stylo rouge", ptBR: "Caneta vermelha"))]
+            rewards: [.skin(character: "grump", skin: "tabby", name: AchievementText(en: "Tabby", fr: "Tigré", ptBR: "Tigrado"), characterName: AchievementText(en: "Grump", fr: "Grognon", ptBR: "Rabugento")), .skin(character: "grump", skin: "siamese", name: AchievementText(en: "Siamese", fr: "Siamois", ptBR: "Siamês"), characterName: AchievementText(en: "Grump", fr: "Grognon", ptBR: "Rabugento")), .title(id: "red-pen", name: AchievementText(en: "Red Pen", fr: "Stylo rouge", ptBR: "Caneta vermelha"))]
         ),
         AchievementDefinition(
             id: "not-so-fast", category: .mastery, icon: "OctagonPause", points: 150, hidden: true,
             name: AchievementText(en: "Not So Fast", fr: "Pas si vite", ptBR: "Calma lá"),
             description: AchievementText(en: "Stop a bot 10 times, and each time its next turn completes.", fr: "Arrêtez un robot 10 fois, et chaque fois son tour suivant se termine bien.", ptBR: "Pare um robô 10 vezes e, a cada vez, o turno seguinte conclui."),
             hint: AchievementText(en: "Sometimes the best move is the stop button, then a better ask.", fr: "Parfois, le meilleur coup est le bouton Arrêter, puis une meilleure demande.", ptBR: "Às vezes, o melhor lance é o botão Parar e depois um pedido melhor."),
-            rewards: [.title(id: "not-so-fast", name: AchievementText(en: "Not So Fast", fr: "Pas si vite", ptBR: "Calma lá"))]
+            rewards: [.skin(character: "grump", skin: "void", name: AchievementText(en: "Void", fr: "Néant", ptBR: "Vazio"), characterName: AchievementText(en: "Grump", fr: "Grognon", ptBR: "Rabugento")), .title(id: "not-so-fast", name: AchievementText(en: "Not So Fast", fr: "Pas si vite", ptBR: "Calma lá"))]
         ),
         AchievementDefinition(
             id: "justice-of-peace", category: .mastery, icon: "Gavel", points: 200, hidden: false,

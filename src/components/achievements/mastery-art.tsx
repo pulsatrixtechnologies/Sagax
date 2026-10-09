@@ -6,6 +6,7 @@
 import type { ComponentType } from "react";
 import { MASTERY_UNLOCKS, type MasteryCharacter } from "../../../shared/mascot-unlocks";
 import { ShibaMascot } from "@/components/ShibaMascot";
+import { GrumpMascot } from "@/components/GrumpMascot";
 
 export interface MasteryArtProps {
   skin: string;
@@ -16,7 +17,13 @@ export interface MasteryArtProps {
 /** Registered art per Mastery character (append only: `shiba: ShibaRewardArt,`). */
 export const MASTERY_ART: Partial<Record<MasteryCharacter, ComponentType<MasteryArtProps>>> = {
   shiba: ({ skin, size, animated }) => <ShibaMascot skin={skin} color="orange" size={size} animated={animated} detail="full" label={null} />,
+  grump: GrumpRewardArt,
 };
+
+/** Grump in a reward's skin, his own warm brown points. */
+function GrumpRewardArt({ skin, size, animated }: MasteryArtProps) {
+  return <GrumpMascot skin={skin} color="brown" size={size} animated={animated} detail={animated ? "full" : undefined} label={null} />;
+}
 
 /** The stand-in: the character's initial on a disc, greyed like a locked reward. */
 export function MasteryPlaceholder({ character, size }: { character: MasteryCharacter; size: number }) {

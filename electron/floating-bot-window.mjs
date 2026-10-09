@@ -206,7 +206,7 @@ const BALLOON_KINDS = new Set(["chat", "thinking", "approval", "error"]);
 const TASKS = new Set(["idle", "working", "waiting", "error"]);
 const LIVELINESS = new Set(["calm", "normal", "lively"]);
 const MAX_TOKENS = 1e9;
-const CHARACTERS = new Set(["owl", "shape", "trombi", "bunbu", "shiba"]);
+const CHARACTERS = new Set(["owl", "shape", "trombi", "bunbu", "shiba", "grump"]);
 const SHAPES = new Set(["circle", "bean", "squircle", "pill", "pick", "hexagon", "cloud", "drop"]);
 /** Shapes from earlier sets and the display names (shared/mascot-look.ts LEGACY_SHAPES). */
 const LEGACY_SHAPES = { blob: "bean", pebble: "bean", triangle: "pick", capsule: "pill", droplet: "drop", sparkle: "squircle", clover: "cloud", flower: "cloud", house: "hexagon", star: "hexagon" };
@@ -214,11 +214,13 @@ const SHAPE_SKINS = new Set(["plain", "pastel", "glossy", "night", "outline", "g
 const TROMBI_SKINS = new Set(["classic", "retro98", "gold", "neon", "chrome", "glitch", "holo", "molten"]);
 const BUNBU_SKINS = new Set(["plain", "pastel", "night", "plush", "velvet", "gold", "neon", "chrome", "crystal", "holo", "galaxy", "molten"]);
 const SHIBA_SKINS = new Set(["plain", "cream", "blacktan", "red", "sesame", "white", "retro98", "gold", "neon", "chrome", "glitch", "holo", "molten"]);
-/** Other names a stored skin may carry (shared/mascot-look.ts LEGACY_SHAPE_SKINS, LEGACY_TROMBI_SKINS, LEGACY_BUNBU_SKINS, LEGACY_SHIBA_SKINS). */
+const GRUMP_SKINS = new Set(["plain", "tuxedo", "calico", "tabby", "siamese", "void", "retro98", "gold", "neon", "chrome", "glitch", "holo", "molten"]);
+/** Other names a stored skin may carry (shared/mascot-look.ts LEGACY_SHAPE_SKINS, LEGACY_TROMBI_SKINS, LEGACY_BUNBU_SKINS, LEGACY_SHIBA_SKINS, LEGACY_GRUMP_SKINS). */
 const LEGACY_SHAPE_SKINS = { ink: "outline", royal: "gold", metal: "chrome", "liquid-metal": "chrome", glass: "crystal", cyber: "circuit", iridescent: "holo", holographic: "holo", lava: "molten", nebula: "galaxy" };
 const LEGACY_TROMBI_SKINS = { retro: "retro98", win98: "retro98", royal: "gold", metal: "chrome", cyber: "glitch", iridescent: "holo", holographic: "holo", lava: "molten" };
 const LEGACY_BUNBU_SKINS = { fur: "plush", fuzzy: "plush", royal: "gold", metal: "chrome", glass: "crystal", iridescent: "holo", holographic: "holo", nebula: "galaxy", lava: "molten" };
 const LEGACY_SHIBA_SKINS = { "black-and-tan": "blacktan", black_tan: "blacktan", kuro: "blacktan", aka: "red", goma: "sesame", shiro: "white", retro: "retro98", win98: "retro98", royal: "gold", metal: "chrome", cyber: "glitch", iridescent: "holo", holographic: "holo", lava: "molten" };
+const LEGACY_GRUMP_SKINS = { tux: "tuxedo", "black-and-white": "tuxedo", tortie: "calico", tortoiseshell: "calico", tiger: "tabby", mackerel: "tabby", colorpoint: "siamese", colourpoint: "siamese", "seal-point": "siamese", black: "void", shadow: "void", retro: "retro98", win98: "retro98", royal: "gold", metal: "chrome", cyber: "glitch", iridescent: "holo", holographic: "holo", lava: "molten" };
 /** The app's skins (src/lib/skins.ts SKIN_IDS): the balloon wears the one the app wears. */
 export const APP_SKINS = new Set(["pulsatrix", "pulsatrix-light", "midnight", "atelier", "foundry", "lagoon", "graphite", "linen", "dusk", "daylight", "retro98", "meadow"]);
 const ACCENT_RE = /^#[0-9a-fA-F]{6}$/;
@@ -239,6 +241,7 @@ export function mascotLook(value) {
     ...(TROMBI_SKINS.has(skinOf(skins.trombi, LEGACY_TROMBI_SKINS)) ? { trombi: skinOf(skins.trombi, LEGACY_TROMBI_SKINS) } : {}),
     ...(BUNBU_SKINS.has(skinOf(skins.bunbu, LEGACY_BUNBU_SKINS)) ? { bunbu: skinOf(skins.bunbu, LEGACY_BUNBU_SKINS) } : {}),
     ...(SHIBA_SKINS.has(skinOf(skins.shiba, LEGACY_SHIBA_SKINS)) ? { shiba: skinOf(skins.shiba, LEGACY_SHIBA_SKINS) } : {}),
+    ...(GRUMP_SKINS.has(skinOf(skins.grump, LEGACY_GRUMP_SKINS)) ? { grump: skinOf(skins.grump, LEGACY_GRUMP_SKINS) } : {}),
   };
   return {
     character: value.character,

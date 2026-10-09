@@ -34,6 +34,8 @@ struct MascotCharacterView: View {
             BunbuMascotView(skin: look.bunbuSkin, color: color, size: size, mood: BunbuMood(state: state), animated: animated)
         case .shiba:
             ShibaMascotView(skin: look.shibaSkin, color: color, size: size, expression: ShibaExpression.forState(state.rawValue), animated: animated)
+        case .grump:
+            GrumpMascotView(skin: look.grumpSkin, color: color, size: size, expression: GrumpFace.expression(for: state), animated: animated)
         }
     }
 }
