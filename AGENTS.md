@@ -1204,7 +1204,7 @@ Electron restart (no HMR); launch-test them before committing.
 - Main retries a page that fails to load, reloads a dead or silent one, keeps
   a state sent before its window exists, and logs the page's errors; the
   window falls back to the plain owl rather than drawing nothing.
-- The character (owl, Shapes, Trombi, Bunbu, Shiba) and its look live with the bot
+- The character (owl, Shapes, Trombi, Bunbu, Shiba, Frog) and its look live with the bot
   (`bot.mascotLook`, `shared/mascot-look.ts`, validated by the server), chosen
   in the avatar popover (`MascotLookEditor.tsx`) and drawn by `BotAvatar` for
   every bot avatar in the app; never draw a bot's mascot outside `BotAvatar`.
@@ -1238,6 +1238,17 @@ Electron restart (no HMR); launch-test them before committing.
   gradient. It is a Mastery character: its unlocks are in
   `shared/mascot-unlocks.ts` only. iOS draws it from the generated
   `ShibaStillArt.swift` (`ios-mascot-export.test.ts`).
+- Frog (the smug sad frog, direction C, approved with the Shiba) follows the
+  same contract (docs/mascots.md): art as data in `frog-art.ts` (the head's
+  outline carries the eye domes, the lids and the lips carry the sixteen
+  faces, the brow layer stays empty), the skin a 24 % tint of the bot color,
+  moves as keyframe tracks in `frog-moves.ts` laid over the idle life as
+  changes from rest by `FrogRig` (so the breath and the blinks never stop),
+  the legs, the haunches, the arms and the pond redrawn by the loop only when
+  their quantized value changes. Its CSS origins are scoped to
+  `:not(.frog-rig)` like the Shiba's. A Mastery character: its unlocks are in
+  `shared/mascot-unlocks.ts` only. iOS draws it from the generated
+  `FrogStillArt.swift`.
 - Shapes: clean-room, 2026-10-08. The Shapes character matches the look
   and behaviour JC measured on a public avatar studio, written entirely in
   our own code: no code, data table, path or asset of that site was copied

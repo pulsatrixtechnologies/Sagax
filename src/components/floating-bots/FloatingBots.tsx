@@ -475,6 +475,8 @@ export function FloatingBots() {
         openThread(dispatch, { botId: target.botId, threadId: target.threadId }, stateRef.current);
       } else if (target.kind === "approval" && (event.action === "allow" || event.action === "stop")) {
         dispatch({ type: "decideRequest", threadId: target.threadId, requestId: target.requestId, behavior: event.action === "allow" ? "allow" : "deny", message: event.action === "stop" ? "Denied by the user." : undefined });
+        // a refusal: the bot's mascot reacts (a Grump hisses)
+        if (event.action === "stop") setCue({ kind: "refusal", at: Date.now(), botId: target.botId });
       } else if (target.kind === "running" && event.action === "stop" && target.canStop && target.threadId) {
         dispatch({ type: "interrupt", botId: target.botId, threadId: target.threadId });
       }

@@ -197,6 +197,9 @@ const CHARACTER_KEY: Readonly<Record<string, LocaleKey>> = {
   trombi: "floatingBots.mascot.trombi",
   bunbu: "floatingBots.mascot.bunbu",
   shiba: "floatingBots.mascot.shiba",
+  grump: "floatingBots.mascot.grump",
+  ogre: "floatingBots.mascot.ogre",
+  frog: "floatingBots.mascot.frog",
 };
 
 /** The English pack carries every key this build knows. */
@@ -282,7 +285,7 @@ export function appIconLock(unlocks: Unlocks, id: string, art: { kind: string; s
     const achievement = achievementRewarding(`appIcon:${id}`, ACHIEVEMENTS);
     return { locked: true, achievement, item: achievement ? itemState(achievement.id) : undefined };
   }
-  if (art.kind === "owl" || art.kind === "shape" || art.kind === "trombi" || art.kind === "bunbu" || art.kind === "shiba") {
+  if (art.kind === "owl" || art.kind === "shape" || art.kind === "trombi" || art.kind === "bunbu" || art.kind === "shiba" || art.kind === "grump" || art.kind === "ogre" || art.kind === "frog") {
     return art.skin ? skinLock(unlocks, art.kind, art.skin) : characterLock(unlocks, art.kind);
   }
   return { locked: false };

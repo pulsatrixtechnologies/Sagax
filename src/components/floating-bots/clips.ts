@@ -128,6 +128,28 @@ export const CLIP_MS = {
   turnCircles: 2600,
   excited: 1400,
   sit: 600,
+  // a cat's own (Grump, grump-moves.ts); the others keep their idle life through them
+  groom: 3400,
+  knead: 2400,
+  pounce: 1700,
+  ledge: 2600,
+  curl: 2400,
+  hiss: 1400,
+  bonk: 1400,
+  tailFlick: 1200,
+  earsFlat: 1600,
+  slowBlink: 1800,
+  sitUp: 700,
+  loaf: 24000,
+  // a frog's own (Frog, frog-moves.ts FROG_TRACKS); the other characters keep their idle life through them
+  croak: 1500,
+  tongue: 1300,
+  smugNod: 1800,
+  legStretch: 1900,
+  shiver: 1400,
+  sideEye: 2400,
+  blinkOne: 1100,
+  longJump: 1400,
 } as const;
 
 export type TimedClip = keyof typeof CLIP_MS;

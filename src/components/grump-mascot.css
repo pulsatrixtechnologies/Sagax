@@ -1,0 +1,66 @@
+/* Grump (GrumpMascot.tsx): the CSS idle of the app's avatars, a slow
+   breath, a slow blink (a cat's), an ear twitch now and then and a flick of
+   the tail. Every part turns about its own point in the 0..100 box (inline
+   grump-art.ts GRUMP_PIVOTS, view-box units). The desktop mascot and a move
+   drive the drawing from the rig (grump-moves.ts) instead, with the pivots
+   in their transform attributes: the loops and these origins then stand
+   down (.grump-rig), since an origin would shift those transforms too.
+   Reduced motion keeps it still. */
+
+.grump-mascot :is(.grump-whole, .grump-tail, .grump-head, .grump-ear, .grump-eye, .grump-mouth, .grump-brows, .grump-paw) {
+  transform-box: view-box;
+}
+.grump-live:not(.grump-rig) .grump-whole { transform-origin: 50px 98.5px; }
+.grump-live:not(.grump-rig) .grump-tail { transform-origin: 85.5px 83.5px; }
+.grump-live:not(.grump-rig) [data-stance="lie"] .grump-tail { transform-origin: 83px 92px; }
+.grump-live:not(.grump-rig) .grump-head { transform-origin: 50px 76px; }
+.grump-live:not(.grump-rig) .grump-ear-l { transform-origin: 27px 38px; }
+.grump-live:not(.grump-rig) .grump-ear-r { transform-origin: 73px 38px; }
+.grump-live:not(.grump-rig) .grump-eye-l { transform-origin: 37px 47.5px; }
+.grump-live:not(.grump-rig) .grump-eye-r { transform-origin: 63px 47.5px; }
+.grump-live:not(.grump-rig) .grump-mouth { transform-origin: 50px 64px; }
+
+.grump-live:not(.grump-rig) .grump-whole { animation: grump-breathe 3.8s ease-in-out infinite; }
+.grump-live:not(.grump-rig) .grump-eye { animation: grump-blink 6.2s ease-in-out infinite; }
+.grump-live:not(.grump-rig) .grump-tail { animation: grump-flick 5.4s ease-in-out infinite; }
+.grump-live:not(.grump-rig) .grump-ear-l { animation: grump-twitch 8.6s ease-in-out infinite; }
+.grump-live:not(.grump-rig).grump-mood-happy .grump-eye { animation-duration: 3.2s; }
+.grump-live:not(.grump-rig).grump-mood-speaking .grump-mouth { animation: grump-talk 0.42s ease-in-out infinite alternate; }
+.grump-live:not(.grump-rig).grump-mood-listening .grump-head { transform: rotate(6deg); transition: transform 0.4s ease-out; }
+.grump-live:not(.grump-rig).grump-mood-sleeping .grump-eye { animation: none; }
+.grump-live:not(.grump-rig).grump-mood-sleeping .grump-whole { animation-duration: 5s; }
+.grump-live:not(.grump-rig).grump-mood-sleeping .grump-tail { animation: none; }
+
+@keyframes grump-breathe {
+  0%, 100% { transform: scale(1, 1); }
+  50% { transform: scale(1.012, 0.988); }
+}
+/* the slow blink: lids down over a third of a second, a beat shut, up again */
+@keyframes grump-blink {
+  0%, 90%, 100% { transform: scaleY(1); }
+  93%, 95% { transform: scaleY(0.12); }
+}
+@keyframes grump-flick {
+  0%, 70%, 100% { transform: rotate(0deg); }
+  74% { transform: rotate(-6deg); }
+  78% { transform: rotate(2deg); }
+  82% { transform: rotate(-3deg); }
+  86% { transform: rotate(0deg); }
+}
+@keyframes grump-twitch {
+  0%, 86%, 100% { transform: rotate(0deg); }
+  88% { transform: rotate(-14deg); }
+  90% { transform: rotate(3deg); }
+  92% { transform: rotate(-6deg); }
+}
+@keyframes grump-talk {
+  from { transform: scaleY(0.75); }
+  to { transform: scaleY(1.1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .grump-mascot :is(.grump-whole, .grump-tail, .grump-head, .grump-ear, .grump-eye, .grump-mouth, .grump-brows, .grump-paw) {
+    animation: none !important;
+    transition: none !important;
+  }
+}

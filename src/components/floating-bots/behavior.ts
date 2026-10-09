@@ -41,6 +41,9 @@ interface ClipRun {
   moveMs: number;
 }
 
+/** How much slower a cat's stalk is than its walk. */
+export const CAT_STALK_PACE = 1.8;
+
 export interface MascotState extends ClipRun {
   /** When a timed clip ends by itself; null while it lasts until something happens. */
   until: number | null;
@@ -72,7 +75,7 @@ export interface MascotState extends ClipRun {
    * A dog's round trip (Shiba's wander): out to a spot, a sniff, a turn, back
    * (`back` px). `settle`: just dropped somewhere new, it goes and sniffs it.
    */
-  trip: { phase: "settle" | "out" | "sniff" | "turn"; back: number } | null;
+  trip: { phase: "settle" | "out" | "sniff" | "turn" | "stalk"; back: number } | null;
 }
 
 export interface MascotOptions {
@@ -90,6 +93,10 @@ export interface MascotOptions {
   depth?: boolean;
   /** The character is a dog (Shiba): it wanders off and back, sniffs, wags, barks, and checks out a new spot when dropped. */
   dog?: boolean;
+  /** The character is a cat (Grump): every few minutes it stalks low to a spot within its room and loafs there; it grooms, kneads, flicks its tail. */
+  cat?: boolean;
+  /** The character is a frog (Frog): it hops about, leaps to a random spot, catches flies and croaks. */
+  frog?: boolean;
 }
 
 export type MascotInput =
@@ -233,6 +240,8 @@ function land(state: MascotState, now: number, options: MascotOptions): Step {
     return same(become(home, "land", now, options, { after, facing: 1 }));
   }
   if (state.activity === "fly") return same(become(state, "land", now, options));
+  // a cat that stalked to its spot settles into a loaf there (and stays)
+  if (state.activity === "walk" && state.trip?.phase === "stalk") return same(become(state, "loaf", now, options));
   // a dog out on its round trip stops to sniff the spot
   if (state.activity === "walk" && state.trip?.phase === "out") return same(become(state, "sniff", now, options, { trip: { ...state.trip, phase: "sniff" } }));
   if (state.activity === "walk") return same(rest(state, now, options));
@@ -244,7 +253,8 @@ function walkBy(state: MascotState, dx: number, now: number, options: MascotOpti
   const distance = Math.abs(dx);
   if (distance < 40) return same(become(state, "hop", now, options));
   const direction: 1 | -1 = dx > 0 ? 1 : -1;
-  const ms = moveDuration("walk", distance, 0);
+  // a stalking cat goes slow and low
+  const ms = Math.round(moveDuration("walk", distance, 0) * (trip?.phase === "stalk" ? CAT_STALK_PACE : 1));
   return {
     state: become(state, "walk", now, options, { facing: direction, moveMs: ms, until: now + ms + MASCOT_MS.flight, trip }),
     effects: [{ type: "wander", dx: direction * distance, ms, style: "walk", delay: 0 }],
@@ -257,6 +267,8 @@ function startTrip(state: MascotState, now: number, options: MascotOptions, reac
   if (direction === 0) return same(become(state, "hop", now, options));
   const room = state.room ? (direction === 1 ? state.room.right : state.room.left) : 240;
   const distance = Math.min(moveDistance("walk", room, options.random), reach ?? Infinity);
+  // a cat stalks out to a random spot within its room and loafs there: no way back
+  if (options.cat) return walkBy(state, direction * distance, now, options, { phase: "stalk", back: 0 });
   return walkBy(state, direction * distance, now, options, { phase: "out", back: -direction * distance });
 }
 
@@ -279,6 +291,8 @@ function idleAction(state: MascotState, now: number, options: MascotOptions): St
     canMove: options.canMove,
     depth: options.depth,
     dog: options.dog,
+    cat: options.cat,
+    frog: options.frog,
     random: options.random,
   });
   const gap = idleGapMs({ liveliness: liveliness(options), mood: moodOf(options), reduced: options.reduced, random: options.random });

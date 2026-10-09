@@ -144,6 +144,7 @@ export const BOT_FIELD_POLICY: { readonly [K in keyof BotRecord]-?: FieldPolicy 
   browser: "host",
   browserProfile: "host",
   mcpServers: "host",
+  mcpAccounts: "host",
   visibility: "sharing",
   grants: "sharing",
   directGrants: "sharing",

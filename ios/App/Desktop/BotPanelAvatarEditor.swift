@@ -260,6 +260,49 @@ struct BotAvatarEditor: View {
                     }
                 }
             }
+        case .grump:
+            let skins = GrumpSkin.allCases.filter { !unlocks.skinLocked(.grump, skin: $0.rawValue, current: worn.complete.grumpSkin.rawValue) }
+            LazyVGrid(columns: columns, spacing: 4) {
+                ForEach(skins, id: \.self) { skin in
+                    cell(look: edited { $0.grumpSkin = skin }, skin: .none, name: skinName(skin.rawValue), selected: draft.complete.grumpSkin == skin, height: 60,
+                         locked: false) {
+                        var next = draft
+                        var look = next.complete
+                        look.grumpSkin = skin
+                        next.look = look.stored
+                        save(next)
+                    }
+                }
+            }
+        case .ogre:
+            let skins = OgreSkin.allCases.filter { !unlocks.skinLocked(.ogre, skin: $0.rawValue, current: worn.complete.ogreSkin.rawValue) }
+            LazyVGrid(columns: columns, spacing: 4) {
+                ForEach(skins, id: \.self) { skin in
+                    cell(look: edited { $0.ogreSkin = skin }, skin: .none, name: skinName(skin.rawValue), selected: draft.complete.ogreSkin == skin, height: 60,
+                         locked: false) {
+                        var next = draft
+                        var look = next.complete
+                        look.ogreSkin = skin
+                        next.look = look.stored
+                        save(next)
+                    }
+                }
+            }
+        case .frog:
+            // only what this person unlocked (the server answers 403 look_locked otherwise); the worn skin stays
+            let skins = FrogSkin.allCases.filter { !unlocks.skinLocked(.frog, skin: $0.rawValue, current: worn.complete.frogSkin.rawValue) }
+            LazyVGrid(columns: columns, spacing: 4) {
+                ForEach(skins, id: \.self) { skin in
+                    cell(look: edited { $0.frogSkin = skin }, skin: .none, name: skinName(skin.rawValue), selected: draft.complete.frogSkin == skin, height: 60,
+                         locked: false) {
+                        var next = draft
+                        var look = next.complete
+                        look.frogSkin = skin
+                        next.look = look.stored
+                        save(next)
+                    }
+                }
+            }
         }
     }
 
@@ -461,6 +504,9 @@ struct BotAvatarEditor: View {
         case .trombi: String(localized: "Trombi")
         case .bunbu: String(localized: "Bunbu")
         case .shiba: String(localized: "Shiba")
+        case .grump: String(localized: "Grump")
+        case .ogre: String(localized: "Ogre")
+        case .frog: String(localized: "Frog")
         }
     }
 

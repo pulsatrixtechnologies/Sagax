@@ -79,11 +79,54 @@ const recordSchema = z.object({
   /** Set when a refresh was refused or a token stopped working. */
   expired: z.boolean().optional(),
   lastError: z.string().optional(),
+  /** The name the person gave an account other than the first. */
+  label: z.string().optional(),
 });
 export type McpOAuthRecord = z.infer<typeof recordSchema>;
 
-const vaultSchema = z.object({ version: z.literal(1), records: z.record(z.string(), recordSchema) });
+/** The account every server starts with; a single sign-in from before
+ * accounts existed is this one. */
+export const DEFAULT_MCP_ACCOUNT = "default";
+export const MAX_MCP_ACCOUNTS = 10;
+const ACCOUNT_ID = /^(?:default|acct-[a-z0-9]{6,16})$/;
+export const isMcpAccountId = (value: unknown): value is string => typeof value === "string" && ACCOUNT_ID.test(value);
+
+const SERVER_NAME = /^[a-z][a-z0-9_-]{0,31}$/;
+const MAX_ACCOUNT_CHOICES = 64;
+
+/** A bot's account per server, from a PATCH body: null clears it, a
+ * default choice is left out (absent means the default account). */
+export function parseMcpAccountChoices(value: unknown): { ok: true; choices: Record<string, string> | undefined } | { ok: false; error: string } {
+  if (value === null) return { ok: true, choices: undefined };
+  if (!value || typeof value !== "object" || Array.isArray(value)) return { ok: false, error: "mcpAccounts must map server names to accounts, or be null" };
+  const entries = Object.entries(value as Record<string, unknown>);
+  if (entries.length > MAX_ACCOUNT_CHOICES) return { ok: false, error: `Choose accounts for at most ${MAX_ACCOUNT_CHOICES} servers.` };
+  const choices: Record<string, string> = {};
+  for (const [name, account] of entries) {
+    if (!SERVER_NAME.test(name) || !isMcpAccountId(account)) return { ok: false, error: "mcpAccounts must map server names to accounts, or be null" };
+    if (account !== DEFAULT_MCP_ACCOUNT) choices[name] = account;
+  }
+  return { ok: true, choices: Object.keys(choices).length ? choices : undefined };
+}
+
+const legacyVaultSchema = z.object({ version: z.literal(1), records: z.record(z.string(), recordSchema) });
+const vaultSchema = z.object({
+  version: z.literal(2),
+  servers: z.record(z.string(), z.record(z.string().regex(ACCOUNT_ID), recordSchema)),
+});
 type VaultDocument = z.infer<typeof vaultSchema>;
+
+/** A vault written before accounts: each server's one sign-in becomes its
+ * default account. */
+function migrateVault(raw: unknown): VaultDocument | null {
+  const current = vaultSchema.safeParse(raw);
+  if (current.success) return current.data;
+  const legacy = legacyVaultSchema.safeParse(raw);
+  if (!legacy.success) return null;
+  const servers: VaultDocument["servers"] = {};
+  for (const [name, record] of Object.entries(legacy.data.records)) servers[name] = { [DEFAULT_MCP_ACCOUNT]: record };
+  return { version: 2, servers };
+}
 
 export type VaultKeySource =
   | { kind: "key"; key: Buffer }
@@ -142,7 +185,7 @@ export class McpOAuthVault {
       raw = readFileSync(this.file, "utf8");
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-        this.cached = { version: 1, records: {} };
+        this.cached = { version: 2, servers: {} };
         this.unreadable = null;
         return this.cached;
       }
@@ -158,10 +201,18 @@ export class McpOAuthVault {
       decipher.setAAD(Buffer.from("pulsa-bot mcp-oauth v1"));
       decipher.setAuthTag(Buffer.from(envelope.tag, "base64"));
       const plain = Buffer.concat([decipher.update(Buffer.from(envelope.data, "base64")), decipher.final()]).toString("utf8");
-      const parsed = vaultSchema.safeParse(JSON.parse(plain));
-      if (!parsed.success) throw new Error("schema");
-      this.cached = parsed.data;
+      const parsed = JSON.parse(plain) as { version?: unknown };
+      const document = migrateVault(parsed);
+      if (!document) throw new Error("schema");
+      this.cached = document;
       this.unreadable = null;
+      if (parsed.version !== 2) {
+        try {
+          this.persist(document);
+        } catch {
+          // read again as version 1 next launch; nothing is lost
+        }
+      }
       return this.cached;
     } catch {
       this.unreadable = "Saved MCP sign-ins could not be decrypted on this launch.";
@@ -174,21 +225,44 @@ export class McpOAuthVault {
     return this.unreadable;
   }
 
-  get(name: string): McpOAuthRecord | undefined {
-    const record = this.load()?.records[name];
+  get(name: string, account: string = DEFAULT_MCP_ACCOUNT): McpOAuthRecord | undefined {
+    const record = this.load()?.servers[name]?.[account];
     return record ? structuredClone(record) : undefined;
   }
 
+  /** Servers with at least one saved account. */
   names(): string[] {
-    return Object.keys(this.load()?.records ?? {});
+    return Object.keys(this.load()?.servers ?? {});
   }
 
-  set(name: string, record: McpOAuthRecord | undefined): void {
+  /** The accounts saved for a server, the default one first. */
+  accounts(name: string): string[] {
+    const ids = Object.keys(this.load()?.servers[name] ?? {});
+    return [...ids.filter((id) => id === DEFAULT_MCP_ACCOUNT), ...ids.filter((id) => id !== DEFAULT_MCP_ACCOUNT).sort()];
+  }
+
+  set(name: string, record: McpOAuthRecord | undefined, account: string = DEFAULT_MCP_ACCOUNT): void {
     const document = this.load();
     if (!document) throw new McpOAuthError(this.unreadable ?? "The sign-in store is unavailable.");
-    const next: VaultDocument = { version: 1, records: { ...document.records } };
-    if (record) next.records[name] = structuredClone(record);
-    else delete next.records[name];
+    const accounts = { ...document.servers[name] };
+    if (record) accounts[account] = structuredClone(record);
+    else delete accounts[account];
+    const servers = { ...document.servers, [name]: accounts };
+    if (Object.keys(accounts).length === 0) delete servers[name];
+    this.write({ version: 2, servers });
+  }
+
+  /** Forget every account of a server. */
+  drop(name: string): void {
+    const document = this.load();
+    if (!document) throw new McpOAuthError(this.unreadable ?? "The sign-in store is unavailable.");
+    if (!document.servers[name]) return;
+    const servers = { ...document.servers };
+    delete servers[name];
+    this.write({ version: 2, servers });
+  }
+
+  private write(next: VaultDocument): void {
     this.persist(next);
     this.cached = next;
   }
@@ -196,7 +270,7 @@ export class McpOAuthVault {
   private persist(document: VaultDocument): void {
     const source = this.keySource();
     if (source.kind === "unavailable") throw new McpOAuthError(source.reason);
-    if (Object.keys(document.records).length === 0) {
+    if (Object.keys(document.servers).length === 0) {
       rmSync(this.file, { force: true });
       return;
     }
@@ -369,6 +443,7 @@ export interface McpOAuthOptions {
 
 interface PendingFlow {
   name: string;
+  account: string;
   serverUrl: string;
   verifier: string;
   redirectUri: string;
@@ -378,9 +453,20 @@ interface PendingFlow {
   returnTo?: string;
 }
 
+/** `account` only for an account other than the default one. */
 export type CallbackResult =
-  | { ok: true; name: string; returnTo?: string }
-  | { ok: false; name?: string; error: string; returnTo?: string };
+  | { ok: true; name: string; account?: string; returnTo?: string }
+  | { ok: false; name?: string; account?: string; error: string; returnTo?: string };
+
+/** One saved sign-in of a server, as the listing shows it. */
+export interface McpAccountStatus extends McpAuthStatus {
+  id: string;
+  label?: string;
+}
+
+/** Which account each server uses for one turn (a bot's choice); a server
+ * it names nothing for uses the default account. */
+export type McpAccountChooser = (name: string) => string | undefined;
 
 /** The app return addresses a sign-in may end on: the phone's custom scheme
  * by default, plus any listed in SAGAX_PHONE_OAUTH_RETURNS (comma separated,
@@ -441,19 +527,20 @@ export class McpOAuthManager {
     return outer ? AbortSignal.any([outer, timeout]) : timeout;
   }
 
-  private record(name: string, server: RemoteMcpSpec): McpOAuthRecord | undefined {
-    const record = this.vault.get(name);
+  private record(name: string, server: RemoteMcpSpec, account: string = DEFAULT_MCP_ACCOUNT): McpOAuthRecord | undefined {
+    const record = this.vault.get(name, account);
     return record && record.serverUrl === server.url ? record : undefined;
   }
 
   // ── status ─────────────────────────────────────────────────────────────
 
   /** What the listing shows. Synchronous: it never touches the network. */
-  status(name: string, server: RemoteMcpSpec): McpAuthStatus | undefined {
+  status(name: string, server: RemoteMcpSpec, account: string = DEFAULT_MCP_ACCOUNT): McpAuthStatus | undefined {
     const unavailable = this.vault.unavailableReason();
-    const record = unavailable ? undefined : this.record(name, server);
+    const record = unavailable ? undefined : this.record(name, server, account);
     if (!record) {
       if (unavailable) return { auth: "error", authError: unavailable };
+      if (account !== DEFAULT_MCP_ACCOUNT) return undefined;
       const memo = this.memo.get(name);
       if (memo && memo.fingerprint === fingerprint(server) && this.now() - memo.at < (memo.status.auth === "none" ? PROBE_MEMO_TTL_MS : PROBE_ERROR_TTL_MS)) {
         return memo.status;
@@ -474,6 +561,17 @@ export class McpOAuthManager {
     }
     if (record.expired) return { ...base, auth: "expired" };
     return base;
+  }
+
+  /** Every account saved for this server (the default one first, even
+   * before its sign-in), with its state. */
+  accounts(name: string, server: RemoteMcpSpec): McpAccountStatus[] {
+    if (this.vault.unavailableReason()) return [];
+    return this.vault.accounts(name).flatMap((id): McpAccountStatus[] => {
+      const record = this.record(name, server, id);
+      const status = record ? this.status(name, server, id) : undefined;
+      return status ? [{ id, ...(record?.label ? { label: record.label } : {}), ...status }] : [];
+    });
   }
 
   /** Probe every listed remote server whose state is not known yet, in
@@ -569,18 +667,34 @@ export class McpOAuthManager {
   async start(
     name: string,
     server: RemoteMcpSpec,
-    input: { redirectUri: string; clientId?: string; clientSecret?: string; returnTo?: string },
+    input: { redirectUri: string; clientId?: string; clientSecret?: string; returnTo?: string; account?: string; label?: string },
     outer?: AbortSignal,
   ): Promise<{ authorizationUrl: string }> {
-    let record = this.record(name, server);
-    if (!record) {
+    const account = input.account ?? DEFAULT_MCP_ACCOUNT;
+    let base = this.record(name, server);
+    if (!base) {
       await this.probe(name, server, outer);
-      record = this.record(name, server);
+      base = this.record(name, server);
     }
-    if (!record) {
+    if (!base) {
       const status = this.status(name, server);
       if (status?.auth === "none") throw new McpOAuthError("This server does not ask for a sign-in.", "not_required");
       throw new McpOAuthError(status?.authError ?? "This server does not offer OAuth sign-in.", "not_supported");
+    }
+    let record = base;
+    if (account !== DEFAULT_MCP_ACCOUNT) {
+      const saved = this.record(name, server, account);
+      if (saved) {
+        record = input.label ? { ...saved, label: input.label } : saved;
+      } else {
+        if (this.vault.accounts(name).filter((id) => id !== account).length >= MAX_MCP_ACCOUNTS) {
+          throw new McpOAuthError(`A server keeps at most ${MAX_MCP_ACCOUNTS} accounts.`, "too_many_accounts");
+        }
+        // Another account at the same authorization server: its discovery
+        // and app, never the first account's tokens.
+        const { tokens: _tokens, expired: _expired, lastError: _lastError, label: _label, ...discovery } = base;
+        record = { ...discovery, ...(input.label ? { label: input.label } : {}) };
+      }
     }
     const signal = this.signal(outer);
     let client = record.client;
@@ -601,18 +715,18 @@ export class McpOAuthManager {
       }
       client = await this.register(record, input.redirectUri, signal);
     }
-    this.vault.set(name, { ...record, client, lastError: undefined });
+    this.vault.set(name, { ...record, client, lastError: undefined }, account);
 
     this.sweep();
     if (this.pending.size >= MAX_PENDING_FLOWS) {
       const oldest = [...this.pending.entries()].sort((a, b) => a[1].createdAt - b[1].createdAt)[0];
       if (oldest) this.pending.delete(oldest[0]);
     }
-    // One pending flow per server: a second click replaces the first.
-    for (const [key, flow] of this.pending) if (flow.name === name) this.pending.delete(key);
+    // One pending flow per account: a second click replaces the first.
+    for (const [key, flow] of this.pending) if (flow.name === name && flow.account === account) this.pending.delete(key);
     const state = base64url(randomBytes(32));
     const { verifier, challenge } = pkcePair();
-    this.pending.set(state, { name, serverUrl: server.url, verifier, redirectUri: client.redirectUri, createdAt: this.now(), ...(input.returnTo ? { returnTo: input.returnTo } : {}) });
+    this.pending.set(state, { name, account, serverUrl: server.url, verifier, redirectUri: client.redirectUri, createdAt: this.now(), ...(input.returnTo ? { returnTo: input.returnTo } : {}) });
 
     const url = new URL(record.authorizationEndpoint);
     url.searchParams.set("response_type", "code");
@@ -671,25 +785,27 @@ export class McpOAuthManager {
   }
 
   private async finish(flow: PendingFlow, query: URLSearchParams, outer?: AbortSignal): Promise<CallbackResult> {
-    const record = this.vault.get(flow.name);
+    const named = { name: flow.name, ...(flow.account !== DEFAULT_MCP_ACCOUNT ? { account: flow.account } : {}) };
+    const record = this.vault.get(flow.name, flow.account);
     if (!record || record.serverUrl !== flow.serverUrl || !record.client) {
-      return { ok: false, name: flow.name, error: "This MCP server changed while signing in. Start the sign-in again." };
+      return { ok: false, ...named, error: "This MCP server changed while signing in. Start the sign-in again." };
     }
+    const save = (next: McpOAuthRecord) => this.vault.set(flow.name, next, flow.account);
     const denied = query.get("error");
     if (denied) {
       const code = OAUTH_ERROR_CODE.test(denied) ? denied : "error";
       const error = code === "access_denied" ? "The sign-in was cancelled." : `The authorization server returned an error (${code}).`;
-      this.vault.set(flow.name, { ...record, lastError: error });
-      return { ok: false, name: flow.name, error };
+      save({ ...record, lastError: error });
+      return { ok: false, ...named, error };
     }
     const code = query.get("code");
-    if (!code) return { ok: false, name: flow.name, error: "The authorization server did not return a code." };
+    if (!code) return { ok: false, ...named, error: "The authorization server did not return a code." };
     // RFC 9207: when the server names itself, it must be the one we asked.
     const iss = query.get("iss");
     if (iss && iss.replace(/\/$/, "") !== record.issuer.replace(/\/$/, "")) {
       const error = "The sign-in came back from an unexpected authorization server.";
-      this.vault.set(flow.name, { ...record, lastError: error });
-      return { ok: false, name: flow.name, error };
+      save({ ...record, lastError: error });
+      return { ok: false, ...named, error };
     }
     try {
       const tokens = await this.tokenRequest(record, {
@@ -698,13 +814,13 @@ export class McpOAuthManager {
         redirect_uri: flow.redirectUri,
         code_verifier: flow.verifier,
       }, this.signal(outer));
-      this.vault.set(flow.name, { ...record, tokens, expired: false, lastError: undefined });
+      save({ ...record, tokens, expired: false, lastError: undefined });
       this.memo.delete(flow.name);
-      return { ok: true, name: flow.name };
+      return { ok: true, ...named };
     } catch (error) {
       const message = error instanceof McpOAuthError ? error.message : "The sign-in could not be completed.";
-      this.vault.set(flow.name, { ...record, lastError: message });
-      return { ok: false, name: flow.name, error: message };
+      save({ ...record, lastError: message });
+      return { ok: false, ...named, error: message };
     }
   }
 
@@ -715,10 +831,11 @@ export class McpOAuthManager {
     return Boolean(state) && this.pending.has(state);
   }
 
-  /** True while a flow for `name` is waiting for its redirect. */
-  pendingFor(name: string): boolean {
+  /** True while a flow for `name` (one account, or any) is waiting for
+   * its redirect. */
+  pendingFor(name: string, account?: string): boolean {
     this.sweep();
-    return [...this.pending.values()].some((flow) => flow.name === name);
+    return [...this.pending.values()].some((flow) => flow.name === name && (account === undefined || flow.account === account));
   }
 
   private sweep(): void {
@@ -775,22 +892,24 @@ export class McpOAuthManager {
 
   /** Refresh the access token when it expires soon (or `force`). Resolves
    * true when a usable token is in the vault afterwards. */
-  refresh(name: string, server: RemoteMcpSpec, force = false, outer?: AbortSignal): Promise<boolean> {
-    const inflight = this.refreshing.get(name);
+  refresh(name: string, server: RemoteMcpSpec, force = false, outer?: AbortSignal, account: string = DEFAULT_MCP_ACCOUNT): Promise<boolean> {
+    const key = `${name}\0${account}`;
+    const inflight = this.refreshing.get(key);
     if (inflight) return inflight;
     const work = (async () => {
-      const record = this.record(name, server);
+      const record = this.record(name, server, account);
       const tokens = record?.tokens;
       if (!record || !tokens || !record.client) return false;
+      const save = (next: McpOAuthRecord) => this.vault.set(name, next, account);
       const due = force || !tokens.access || (tokens.expiresAt !== undefined && tokens.expiresAt - this.now() < REFRESH_MARGIN_MS);
       if (!due) return !record.expired;
       if (!tokens.refresh) {
-        if (tokens.access) this.vault.set(name, { ...record, tokens: { ...tokens, access: undefined }, expired: true });
+        if (tokens.access) save({ ...record, tokens: { ...tokens, access: undefined }, expired: true });
         return false;
       }
       try {
         const next = await this.tokenRequest(record, { grant_type: "refresh_token", refresh_token: tokens.refresh }, this.signal(outer));
-        this.vault.set(name, { ...record, tokens: next, expired: false, lastError: undefined });
+        save({ ...record, tokens: next, expired: false, lastError: undefined });
         return true;
       } catch (error) {
         const code = error instanceof McpOAuthError ? error.code : undefined;
@@ -799,35 +918,39 @@ export class McpOAuthManager {
           return Boolean(tokens.access) && (tokens.expiresAt === undefined || tokens.expiresAt > this.now()) && !force;
         }
         // invalid_grant and friends: the grant is gone, a new sign-in is due
-        this.vault.set(name, { ...record, tokens: undefined, expired: true, lastError: "The sign-in expired. Sign in again." });
+        save({ ...record, tokens: undefined, expired: true, lastError: "The sign-in expired. Sign in again." });
         return false;
       }
-    })().finally(() => this.refreshing.delete(name));
-    this.refreshing.set(name, work);
+    })().finally(() => this.refreshing.delete(key));
+    this.refreshing.set(key, work);
     return work;
   }
 
-  /** Refresh every signed-in server in `servers` whose token is due.
-   * Failures only mark the server expired; the turn still starts. */
-  async refreshDue(servers: Record<string, McpServerSpec>, signal?: AbortSignal): Promise<void> {
+  /** Refresh every signed-in server in `servers` whose token is due, on the
+   * account `accountFor` names. Failures only mark the account expired;
+   * the turn still starts. */
+  async refreshDue(servers: Record<string, McpServerSpec>, signal?: AbortSignal, accountFor?: McpAccountChooser): Promise<void> {
     await Promise.all(Object.entries(servers).map(async ([name, server]) => {
       if (!("url" in server)) return;
-      if (!this.record(name, server)?.tokens) return;
-      await this.refresh(name, server, false, signal).catch(() => false);
+      const account = accountFor?.(name) ?? DEFAULT_MCP_ACCOUNT;
+      if (!this.record(name, server, account)?.tokens) return;
+      await this.refresh(name, server, false, signal, account).catch(() => false);
     }));
   }
 
   /** The servers with `Authorization: Bearer …` for every signed-in remote
    * server whose token is still valid. Any Authorization header the user
    * typed is replaced for those servers only. Pure: never touches the
-   * network, so it is safe on every path that lists mounts. */
-  withAuthHeaders<T extends Record<string, McpServerSpec>>(servers: T): T {
+   * network, so it is safe on every path that lists mounts. An account
+   * `accountFor` names that is not signed in sends no token: never the
+   * default account's in its place. */
+  withAuthHeaders<T extends Record<string, McpServerSpec>>(servers: T, accountFor?: McpAccountChooser): T {
     if (this.vault.unavailableReason()) return servers;
     const out: Record<string, McpServerSpec> = {};
     for (const [name, server] of Object.entries(servers)) {
       out[name] = server;
       if (!("url" in server)) continue;
-      const record = this.record(name, server);
+      const record = this.record(name, server, accountFor?.(name) ?? DEFAULT_MCP_ACCOUNT);
       const access = this.bearerFor(record);
       const expiresAt = record?.tokens?.expiresAt;
       if (!access || (expiresAt !== undefined && expiresAt <= this.now())) continue;
@@ -845,22 +968,24 @@ export class McpOAuthManager {
 
   /** Revoke what the server lets us revoke, then forget the tokens. The
    * discovery and a dynamic client stay, so signing in again is one click. */
-  async disconnect(name: string, server: RemoteMcpSpec, outer?: AbortSignal): Promise<void> {
-    const record = this.record(name, server);
+  async disconnect(name: string, server: RemoteMcpSpec, outer?: AbortSignal, account: string = DEFAULT_MCP_ACCOUNT): Promise<void> {
+    const record = this.record(name, server, account);
     if (!record) return;
-    for (const [key, flow] of this.pending) if (flow.name === name) this.pending.delete(key);
+    for (const [key, flow] of this.pending) if (flow.name === name && flow.account === account) this.pending.delete(key);
     await this.revoke(record, outer);
-    this.vault.set(name, { ...record, tokens: undefined, expired: false, lastError: undefined });
+    // Another account is removed whole; the default one keeps its place.
+    if (account !== DEFAULT_MCP_ACCOUNT) this.vault.set(name, undefined, account);
+    else this.vault.set(name, { ...record, tokens: undefined, expired: false, lastError: undefined });
   }
 
-  /** The server was removed or its address changed: forget everything. */
+  /** The server was removed or its address changed: forget every account. */
   async forget(name: string, outer?: AbortSignal): Promise<void> {
     this.memo.delete(name);
     for (const [key, flow] of this.pending) if (flow.name === name) this.pending.delete(key);
-    const record = this.vault.get(name);
-    if (!record) return;
-    await this.revoke(record, outer);
-    this.vault.set(name, undefined);
+    const records = this.vault.accounts(name).map((account) => this.vault.get(name, account)).filter((record) => record !== undefined);
+    if (!records.length) return;
+    for (const record of records) await this.revoke(record, outer);
+    this.vault.drop(name);
   }
 
   private async revoke(record: McpOAuthRecord, outer?: AbortSignal): Promise<void> {

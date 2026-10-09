@@ -90,7 +90,13 @@ export const MASTERY_UNLOCKS: Readonly<Record<MasteryCharacter, MasteryCharacter
     unlock: "reviewer",
     namedRungs: ["prompter", "red-pen", "not-so-fast"],
     premiumRung: "justice-of-peace",
-    namedSkins: [],
+    namedSkins: [
+      { id: "tuxedo", name: { en: "Tuxedo", fr: "Smoking", ptBR: "Smoking" } },
+      { id: "calico", name: { en: "Calico", fr: "Calico", ptBR: "Tricolor" } },
+      { id: "tabby", name: { en: "Tabby", fr: "Tigré", ptBR: "Tigrado" } },
+      { id: "siamese", name: { en: "Siamese", fr: "Siamois", ptBR: "Siamês" } },
+      { id: "void", name: { en: "Void", fr: "Néant", ptBR: "Vazio" } },
+    ],
   },
   // Ogre: carry the heavy work (rooms, sub-agents, integrations).
   ogre: {
@@ -98,7 +104,13 @@ export const MASTERY_UNLOCKS: Readonly<Record<MasteryCharacter, MasteryCharacter
     unlock: "conductor",
     namedRungs: ["ten-hands", "plugged-in", "swarm"],
     premiumRung: "full-house",
-    namedSkins: [],
+    namedSkins: [
+      { id: "swamp", name: { en: "Swamp", fr: "Marais", ptBR: "Pântano" } },
+      { id: "moss", name: { en: "Moss", fr: "Mousse", ptBR: "Musgo" } },
+      { id: "stone", name: { en: "Stone", fr: "Pierre", ptBR: "Pedra" } },
+      { id: "lava", name: { en: "Lava", fr: "Lave", ptBR: "Lava" } },
+      { id: "armor", name: { en: "Armor", fr: "Armure", ptBR: "Armadura" } },
+    ],
   },
   // Frog: know your models and your knowledge (providers, Auto, skills, memory).
   frog: {
@@ -106,7 +118,13 @@ export const MASTERY_UNLOCKS: Readonly<Record<MasteryCharacter, MasteryCharacter
     unlock: "polyglot",
     namedRungs: ["thrifty", "translator", "skill-smith"],
     premiumRung: "total-recall",
-    namedSkins: [],
+    namedSkins: [
+      { id: "leaf", name: { en: "Leaf", fr: "Feuille", ptBR: "Folha" } },
+      { id: "tree", name: { en: "Tree frog", fr: "Rainette", ptBR: "Perereca" } },
+      { id: "poison", name: { en: "Poison dart", fr: "Dendrobate", ptBR: "Sapo-flecha" } },
+      { id: "bullfrog", name: { en: "Bullfrog", fr: "Ouaouaron", ptBR: "Rã-touro" } },
+      { id: "ghost", name: { en: "Ghost", fr: "Fantôme", ptBR: "Fantasma" } },
+    ],
   },
 };
 
