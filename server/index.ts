@@ -724,6 +724,7 @@ import type { BotHost } from "./turn-route.ts";
 import { signInListWithOpenInvites, type OrgRole } from "./org-directory.ts";
 import { createOwnerAvatarRoute, OwnerIdentityStore, parseOwnerIdentityMessage } from "./owner-identity.ts";
 import { configForViewer, personAvatarUrl, personDisplayName, sessionIsOperator, type ViewerIdentity } from "./viewer-identity.ts";
+import { normalizeReactions, reactionEmoji, type ReactionActor } from "../shared/reactions.ts";
 // Keep these two last: a route module may import any server module, and
 // loading the table after everything above leaves module start-up order as is.
 import { json, onJsonBody, parsedBodyOf, readBody } from "./harness/http.ts";
@@ -1359,6 +1360,29 @@ function messageSender(auth: RequestAuth): ResolvedSender | undefined {
   const name = (auth.session.email ?? auth.session.label ?? "").trim();
   return name ? { name, id: actorKey(auth) } : undefined;
 }
+
+/** A person reacting to a message (shared/reactions.ts): their id as read
+ * receipts key it and the name the room shows. Null for a caller who is
+ * nobody in particular (a bot's own shell, an anonymous session). */
+function reactionPersonFor(auth: RequestAuth): ReactionActor | null {
+  const sender = messageSender(auth);
+  const id = personParticipant(actorPrincipalId(auth) || sender?.id || "");
+  if (!id) return null;
+  const local = auth.kind !== "session";
+  const name = sender?.name || (local ? cfg.profile?.name?.trim() : "") || personDisplayName(principals.byId(id)) || "";
+  return { id, kind: "person", name };
+}
+
+/** Who a stored `{ emoji, by: "user" }` reaction was: the operator of a
+ * personal server. An organization server cannot tell, and keeps "user". */
+function legacyReactionUser(): ReactionActor | undefined {
+  if (IDENTITY.kind === "perspicax") return undefined;
+  return { id: personParticipant(localPrincipalId()), kind: "person", name: cfg.profile?.name?.trim() || "" };
+}
+
+/** A reaction is a reader's mark like a read receipt: a read-only member
+ * of a shared room may leave one. */
+const REACTION_ROUTE = /^\/api\/threads\/[\w-]+\/messages\/[\w-]+\/reactions$/;
 
 /** Who a request's turn speaks for (slice 3 engine access): the signed-in
  * person, or the operator at this computer. A reduced-trust loopback caller
@@ -25210,7 +25234,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       if (subject && !subjectSeesChannel(subject, viewerId)) return json(res, 404, { error: notFoundFor(subject) });
       // Slice 4: a read-only member of a shared section reads its rooms and
       // changes nothing in them (settings, tasks, queue, interrupt, cards).
-      const room = IDENTITY.kind === "perspicax" && method !== "GET" && method !== "HEAD" && !/^\/api\/(?:groups|threads)\/[\w-]+\/read$/.test(path) ? roomOfSubject(subject) : null;
+      const room = IDENTITY.kind === "perspicax" && method !== "GET" && method !== "HEAD" && !/^\/api\/(?:groups|threads)\/[\w-]+\/read$/.test(path) && !REACTION_ROUTE.test(path) ? roomOfSubject(subject) : null;
       if (room && !groupPostAllowed(room, viewerId)) return json(res, 403, { error: "you may read this channel, not change it", code: "read_only" });
     }
     {
@@ -30536,15 +30560,29 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       return json(res, 200, { ok: true });
     }
 
-    // emoji reactions — works on any thread (1:1 or room)
+    // Emoji reactions (shared/reactions.ts, docs/messages-reactions.md): the
+    // caller toggles their own on any text message of a thread they can
+    // read, a 1:1 with a bot, a room or a conversation between people. Who
+    // may reach the thread was decided above, as for reading it. The change
+    // is a message patch: live to everyone who sees the thread, quiet (no
+    // notification, no unread).
     m = path.match(/^\/api\/threads\/([\w-]+)\/messages\/([\w-]+)\/reactions$/);
     if (m && method === "POST") {
+      const [, threadId, messageId] = m;
+      if (!store.botByThread(threadId!) && !store.groupByThread(threadId!)) return json(res, 404, { error: "no such conversation" });
       const body = await readBody(req);
-      const emoji = String(body.emoji ?? "").slice(0, 8);
-      if (!emoji) return json(res, 400, { error: "emoji required" });
-      const patched = store.toggleReaction(m[1], m[2], emoji, typeof body.by === "string" ? body.by : "user");
-      if (!patched) return json(res, 404, { error: "no such message" });
-      return json(res, 200, { message: patched });
+      const emoji = reactionEmoji(body?.emoji);
+      if (!emoji) return json(res, 400, { error: "emoji must be one emoji", code: "reaction_emoji" });
+      const target = store.messagesFor(threadId!).find((message) => message.id === messageId);
+      if (!target) return json(res, 404, { error: "no such message" });
+      if (target.kind !== "text") return json(res, 400, { error: "only a chat message takes reactions", code: "reaction_kind" });
+      const actor = reactionPersonFor(auth);
+      if (!actor) return json(res, 403, { error: "only a person reacts here", code: "reaction_actor" });
+      const mode = body?.mode === "add" || body?.mode === "remove" ? body.mode : "toggle";
+      const result = store.reactToMessage(threadId!, messageId!, emoji, actor, { mode, legacyUser: legacyReactionUser() });
+      if (!result) return json(res, 404, { error: "no such message" });
+      if (result.full) return json(res, 409, { error: "this message has too many different reactions", code: "reaction_full" });
+      return json(res, 200, { message: result.message, added: result.added, reactions: normalizeReactions(result.message.reactions) });
     }
     if (path === "/api/sidebar-sections" && method === "GET") {
       return json(res, 200, { sections: store.sections });
