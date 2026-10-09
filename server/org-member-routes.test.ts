@@ -6,7 +6,7 @@ import type { AddressInfo } from "node:net";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 import type { ConsoleAssertion } from "./oidc-rp.ts";
-import { createOrgMemberRoutes, readThreadPage, replyAfter, type MemberPerson, type MemberRequest, type OrgMemberRouteDeps, type ThreadStatus } from "./org-member-routes.ts";
+import { createOrgMemberRoutes, MEMBER_PROGRESS_MIN_MS, readThreadPage, replyAfter, summarizeTurn, type MemberPerson, type MemberRequest, type OrgMemberRouteDeps, type ThreadStatus } from "./org-member-routes.ts";
 
 const ISS = "https://perspicax.example";
 const ORIGIN = "https://sagax.example";
@@ -18,6 +18,8 @@ let performed: Array<{ person: MemberPerson; request: MemberRequest }> = [];
 let recorded: Array<{ person: MemberPerson; action: string; after?: Record<string, unknown> }> = [];
 let respond: (request: MemberRequest) => { status: number; body: unknown } = () => ({ status: 404, body: { error: "no" } });
 let status: () => ThreadStatus | null = () => "idle";
+let live: () => string | null = () => null;
+let noted: Array<{ principalId: string; threadId: string; requestId: string }> = [];
 let clock = 1_000_000;
 
 function token(sub: string, role: ConsoleAssertion["role"] = "employee", actor: ConsoleAssertion["actor"] = "perspicax-mcp"): string {
@@ -49,6 +51,10 @@ const deps: OrgMemberRouteDeps = {
   threadStatus: () => status(),
   resolvePerson: (ref) => [...people.entries()].find(([sub, p]) => sub === ref || p.principalId === ref)?.[1].principalId ?? null,
   record: (person, entry) => recorded.push({ person, action: entry.action, ...(entry.after ? { after: entry.after } : {}) }),
+  liveText: () => live(),
+  threadLink: (threadId, botId) => `${ORIGIN}/#thread=${threadId}${botId ? `&bot=${botId}` : ""}`,
+  botOfThread: (threadId) => (threadId === "t1" ? "b1" : null),
+  noteAnsweredVia: (person, threadId, requestId) => noted.push({ principalId: person.principalId, threadId, requestId }),
   version: () => "0.4.16",
   now: () => clock,
   sleep: async (ms) => {
@@ -80,6 +86,8 @@ beforeEach(() => {
   performed = [];
   recorded = [];
   status = () => "idle";
+  live = () => null;
+  noted = [];
   respond = () => ({ status: 404, body: { error: "no" } });
 });
 
@@ -266,5 +274,126 @@ describe("threads, approvals and nudges", () => {
     const got = await call("POST", "routines/r1/run", token("bob"), {});
     expect(got.status).toBe(403);
     expect(got.body).toMatchObject({ code: "forbidden_permission", permission: "routines.runNowAny", message: "Only the bot's owner can run it now." });
+  });
+});
+
+/** A streamed answer, split into its NDJSON events. */
+async function stream(method: string, path: string, bearer: string, body?: unknown) {
+  const res = await fetch(`${base}/api/org/member/${path}`, {
+    method,
+    headers: { authorization: `Bearer ${bearer}`, ...(body !== undefined ? { "content-type": "application/json" } : {}) },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  const text = await res.text();
+  return { status: res.status, headers: res.headers, text, events: res.headers.get("content-type")?.startsWith("application/x-ndjson") ? text.trim().split("\n").map((line) => JSON.parse(line) as any) : [] };
+}
+
+describe("the streamed turn (lot C.3)", () => {
+  const page = (...messages: Array<Record<string, unknown>>) => ({ status: 200, body: { messages } });
+  const card = (answered?: Record<string, unknown>) => ({ id: "c1", role: "bot", kind: "options", card: { title: "Run Bash?", subtitle: "rm -rf build", options: ["Allow", "Deny"], requestId: "req_1", tool: "Bash", ...answered } });
+
+  it("streams progress at most every 2 s with the steps and the words being written, then the approval, then a final waiting answer", async () => {
+    let looks = 0;
+    status = () => (looks++ < 30 ? "working" : "waiting");
+    live = () => `Looking at the build ${looks}`;
+    respond = (request) => request.method === "POST"
+      ? { status: 202, body: { ok: true, threadId: "t1", message: { id: "m1" } } }
+      : looks < 30
+        ? page({ id: "m1", role: "user", kind: "text", text: "clean the build", at: 2 }, { id: "s1", role: "bot", kind: "activity", tool: { name: "Read", ok: true, input: "private" } })
+        : page({ id: "m1", role: "user", kind: "text", text: "clean the build", at: 2 }, { id: "s1", role: "bot", kind: "activity", tool: { name: "Read", ok: true } }, card());
+    const got = await stream("POST", "bots/b1/messages", token("bob"), { text: "clean the build", wait: 60, stream: true });
+    expect(got.status).toBe(200);
+    expect(got.headers.get("x-sagax-member-api")).toBe("1");
+    const kinds = got.events.map((e) => e.event);
+    expect(kinds[0]).toBe("started");
+    expect(got.events[0]).toMatchObject({ botId: "b1", threadId: "t1", messageId: "m1" });
+    expect(kinds.slice(-2)).toEqual(["approval", "final"]);
+    const progress = got.events.filter((e) => e.event === "progress");
+    expect(progress.length).toBeGreaterThanOrEqual(3);
+    for (let i = 1; i < progress.length; i += 1) expect(progress[i].elapsedMs - progress[i - 1].elapsedMs).toBeGreaterThanOrEqual(MEMBER_PROGRESS_MIN_MS);
+    expect(progress[0]).toMatchObject({ status: "working", steps: { count: 1, recent: [{ tool: "Read", ok: true }] } });
+    expect(progress[0].partial).toMatch(/^Looking at the build/);
+    expect(got.text).not.toContain("private");
+    expect(got.events.at(-2).approval).toMatchObject({ id: "req_1", threadId: "t1", tool: "Bash", title: "Run Bash?", options: ["Allow", "Deny"] });
+    expect(got.events.at(-1)).toMatchObject({ status: "waiting", pending: true, threadId: "t1", summary: {
+      approvals: [{ id: "req_1", tool: "Bash", decision: "pending", by: null, via: null }],
+      threadUrl: `${ORIGIN}/#thread=t1&bot=b1`,
+    } });
+  });
+
+  it("an approval answered from the AI client is marked with its via; the watch then ends with the structured summary", async () => {
+    people.get("bob")!.permissions.push("clients.approvalsAnswer");
+    respond = () => ({ status: 200, body: { ok: true, outcome: "allowed-once" } });
+    expect((await call("POST", "approvals/req_1", token("bob"), { threadId: "t1", decision: "allow" })).body).toEqual({ answered: true, decision: "allow" });
+    expect(noted).toEqual([{ principalId: "pr_bob", threadId: "t1", requestId: "req_1" }]);
+    expect(recorded.at(-1)).toMatchObject({ action: "client.approval", after: { requestId: "req_1", decision: "allow" } });
+
+    let looks = 0;
+    // The waiting flag lags one look behind the answered card: keep watching.
+    status = () => (looks++ === 0 ? "waiting" : looks < 6 ? "working" : "idle");
+    respond = () => page(
+      { id: "m0", role: "bot", kind: "text", text: "before", at: 1 },
+      { id: "m1", role: "user", kind: "text", text: "clean the build", at: 2 },
+      { id: "s1", role: "bot", kind: "activity", tool: { name: "Read", ok: true } },
+      card({ answered: "allow", answeredBy: { kind: "session", name: "Bob", via: "ai-client" } }),
+      { id: "s2", role: "bot", kind: "activity", tool: { name: "Bash", ok: true, files: ["build/clean.log"] } },
+      { id: "s3", role: "bot", kind: "activity", tool: { name: "Write", ok: false, files: ["never.txt"] } },
+      { id: "m2", role: "bot", kind: "text", text: "Build cleaned.", at: 3 },
+      { id: "d1", role: "bot", kind: "digest", text: "", digest: { usage: { input: 1200, output: 300, costUsd: 0.0123 }, files: { added: ["build/clean.log", "notes.md"], changed: [], deleted: ["old.tmp"] } } },
+    );
+    const got = await stream("GET", "threads/t1/stream?anchor=m1&wait=60", token("bob"));
+    expect(got.status).toBe(200);
+    expect(got.events[0]).toMatchObject({ event: "started", botId: "b1", threadId: "t1", messageId: "m1" });
+    expect(got.events.some((e) => e.event === "approval")).toBe(false);
+    const final = got.events.at(-1);
+    expect(final).toMatchObject({ event: "final", status: "done", pending: false, reply: "Build cleaned.", approvals: [] });
+    expect(final.summary).toEqual({
+      text: "Build cleaned.",
+      toolCalls: [{ tool: "Read", ok: true }, { tool: "Bash", ok: true }, { tool: "Write", ok: false }],
+      toolCallCount: 3,
+      files: ["build/clean.log", "notes.md"],
+      cost: { inputTokens: 1200, outputTokens: 300, costUsd: 0.0123, turns: 1 },
+      approvals: [{ id: "req_1", tool: "Bash", title: "Run Bash?", decision: "allow", by: "Bob", via: "ai-client" }],
+      threadUrl: `${ORIGIN}/#thread=t1&bot=b1`,
+    });
+  });
+
+  it("a thread the person cannot read, a missing permission or a bad wait is refused as JSON, before any stream", async () => {
+    respond = () => ({ status: 404, body: { error: "no such conversation" } });
+    const unreadable = await stream("GET", "threads/t1/stream?wait=5", token("bob"));
+    expect(unreadable.status).toBe(404);
+    expect(JSON.parse(unreadable.text)).toMatchObject({ code: "not_found" });
+    expect((await call("GET", "threads/t1/stream?wait=0", token("bob"))).status).toBe(400);
+    expect((await call("GET", "threads/t1/stream?anchor=a/b", token("bob"))).status).toBe(400);
+    people.get("bob")!.permissions = ["clients.botsMessage"];
+    const refused = await call("GET", "threads/t1/stream", token("bob"));
+    expect(refused.body).toMatchObject({ code: "forbidden_permission", permission: "clients.botsRead" });
+    expect((await call("POST", "bots/b1/messages", token("bob"), { text: "x", stream: "yes" })).status).toBe(400);
+  });
+
+  it("a send without stream still answers JSON, now with the summary", async () => {
+    respond = (request) => request.method === "POST"
+      ? { status: 202, body: { ok: true, threadId: "t1", message: { id: "m1" } } }
+      : page({ id: "m1", role: "user", kind: "text", text: "hi", at: 2 }, { id: "m2", role: "bot", kind: "text", text: "Hello.", at: 3 });
+    const got = await call("POST", "bots/b1/messages", token("bob"), { text: "hi", wait: 10 });
+    expect(got.headers.get("content-type")).toContain("application/json");
+    expect(got.body).toMatchObject({ status: "done", reply: "Hello.", summary: { text: "Hello.", toolCallCount: 0, files: [], cost: null, approvals: [] } });
+  });
+
+  it("summarizes what followed the anchor only, with every card outcome", () => {
+    const summary = summarizeTurn({ messages: [
+      { id: "s0", role: "bot", kind: "activity", tool: { name: "Old", ok: true, files: ["old.txt"] } },
+      { id: "m1", role: "user", kind: "text", text: "go" },
+      { id: "c1", role: "bot", kind: "options", card: { title: "A", requestId: "r1", answered: "deny", answeredBy: { kind: "session", name: "Ann" } } },
+      { id: "c2", role: "bot", kind: "options", card: { title: "B", requestId: "r2", expired: true } },
+      { id: "c3", role: "bot", kind: "options", card: { title: "C", requestId: "r3", answered: "answer", answeredBy: { kind: "loopback" } } },
+      { id: "d1", role: "bot", kind: "digest", digest: { usage: { input: 10, output: 5 } } },
+      { id: "d2", role: "bot", kind: "digest", digest: { usage: { input: 1, output: 2, costUsd: 0.5 } } },
+    ] }, "m1", null);
+    expect(summary.toolCalls).toEqual([]);
+    expect(summary.files).toEqual([]);
+    expect(summary.text).toBeNull();
+    expect(summary.cost).toEqual({ inputTokens: 11, outputTokens: 7, costUsd: 0.5, turns: 2 });
+    expect(summary.approvals.map((a) => [a.id, a.decision, a.by])).toEqual([["r1", "deny", "Ann"], ["r2", "expired", null], ["r3", "answered", "this computer"]]);
   });
 });

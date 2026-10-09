@@ -14,8 +14,12 @@
 //   M3  permission refusals name the key; a bot out of reach stays out
 //   M4  an admin runs a routine, reads its run, nudges a person
 //   M5  the admin API still refuses an AI client's assertion; audit rows
+//   M6  lot C.3: a streamed send stops at a card, the AI client answers it
+//       (recorded `via: ai-client` with the person's name), the watch then
+//       ends with the structured summary
 import { spawn, type ChildProcess } from "node:child_process";
-import { chmodSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { connect, type Socket } from "node:net";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -40,6 +44,7 @@ let home: string;
 let gates: string;
 let log = "";
 let idp: FakeOidcProvider;
+const sockets: Socket[] = [];
 
 type Auth = { cookie?: string; bearer?: string };
 type Reply = { status: number; body: any; text: string; headers: Headers };
@@ -157,6 +162,7 @@ posixOnly("Perspicax AI clients: the Sagax member API", () => {
       instances: {
         claude: { driver: "claudeAgent", config: { cli: FAKE_CLAUDE, fullAuto: true } },
         slow: { driver: "claudeAgent", environment: { FAKE_CLAUDE_MODE: "slow", FAKE_CLAUDE_GATE_DIR: gates }, config: { cli: FAKE_CLAUDE, fullAuto: true } },
+        hold: { driver: "claudeAgent", environment: { FAKE_CLAUDE_MODE: "hang", FAKE_CLAUDE_DUMP: join(home, "hold-dump.json"), FAKE_CLAUDE_RELEASE: join(gates, "release") }, config: { cli: FAKE_CLAUDE, fullAuto: false } },
       },
     }));
     await start();
@@ -169,6 +175,7 @@ posixOnly("Perspicax AI clients: the Sagax member API", () => {
     bob = await signIn(BOB);
     bots.orion = await createBot(bob, "Orion", "slow");
     bots.atlas = await createBot(alice, "Atlas", "claude");
+    bots.vega = await createBot(alice, "Vega", "hold");
     const routine = await api("POST", "/api/routines", alice, { name: "Daily digest", botId: bots.atlas.id, prompt: "Write the digest.", enabled: false,
       schedule: { type: "interval", everyMinutes: 60, anchorAt: Date.now() + 86_400_000 } });
     expect(routine.status, routine.text).toBe(201);
@@ -176,6 +183,7 @@ posixOnly("Perspicax AI clients: the Sagax member API", () => {
   }, 120_000);
 
   afterAll(async () => {
+    for (const socket of sockets) socket.destroy();
     child?.kill("SIGTERM");
     if (child) await waitForExit(child);
     await idp?.close();
@@ -266,4 +274,58 @@ posixOnly("Perspicax AI clients: the Sagax member API", () => {
     expect(rows.find((row) => row.action === "client.message").actor).toMatchObject({ kind: "person", name: "Bob", via: "perspicax-mcp" });
     expect(JSON.stringify(rows)).not.toContain("open tickets");
   }, 60_000);
+
+  it("M6: a streamed send stops at a card; the AI client answers it as the person; the watch ends with the summary", async () => {
+    const events = (text: string) => text.trim().split("\n").map((line) => JSON.parse(line) as any);
+    const assertion = () => idp.consoleAssertion({ sub: ALICE.sub, aud: BASE, role: "admin", teams: [], claims: (c) => ({ ...c, act: { sub: "perspicax-mcp" } }) });
+    const streamed = fetch(`${BASE}/api/org/member/bots/${bots.vega!.id}/messages`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${assertion()}`, "content-type": "application/json" },
+      body: JSON.stringify({ text: "clean the build", wait: 60, stream: true }),
+    });
+    // The held turn asks to run a command, through the harness's broker.
+    const holdDump = join(home, "hold-dump.json");
+    await waitFor(async () => existsSync(holdDump), 20_000);
+    const socketPath = (JSON.parse(readFileSync(holdDump, "utf8")) as { mcpConfig: any }).mcpConfig.mcpServers.ogb.args.at(-1) as string;
+    const socket = connect(socketPath);
+    sockets.push(socket);
+    await new Promise<void>((resolve, reject) => { socket.once("connect", resolve); socket.once("error", reject); });
+    const cardId = "c6-bash-1";
+    socket.write(JSON.stringify({ t: "ask", id: cardId, kind: "permission", tool: "Bash", input: { command: "rm -rf build" } }) + "\n");
+
+    const res = await streamed;
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toContain("application/x-ndjson");
+    const first = events(await res.text());
+    expect(first[0]).toMatchObject({ event: "started", botId: bots.vega!.id });
+    expect(first.some((e) => e.event === "progress")).toBe(true);
+    const approval = first.find((e) => e.event === "approval");
+    expect(approval?.approval, JSON.stringify(first)).toMatchObject({ id: cardId, tool: "Bash" });
+    const final = first.at(-1);
+    expect(final).toMatchObject({ event: "final", status: "waiting", pending: true });
+    const threadId = final.threadId as string;
+    const messageId = final.messageId as string;
+
+    const answered = await member("POST", `approvals/${cardId}`, ALICE, { threadId, decision: "allow" });
+    expect(answered.status, answered.text).toBe(200);
+    const card = await waitFor(async () => {
+      const got = await api("GET", `/api/threads/${threadId}/messages?limit=100`, alice);
+      return (got.body.messages as Array<any> | undefined)?.find((m) => m.card?.requestId === cardId && m.card.answeredBy);
+    });
+    expect(card.card).toMatchObject({ answered: "allow", answeredBy: { kind: "session", name: "Alice", via: "ai-client" } });
+
+    writeFileSync(join(gates, "release"), "");
+    const watched = await fetch(`${BASE}/api/org/member/threads/${threadId}/stream?anchor=${messageId}&wait=30`, { headers: { authorization: `Bearer ${assertion()}` } });
+    expect(watched.status).toBe(200);
+    const second = events(await watched.text());
+    const done = second.at(-1);
+    expect(done, JSON.stringify(second)).toMatchObject({ event: "final", status: "done", pending: false, reply: "released" });
+    expect(done.summary).toMatchObject({
+      text: "released",
+      approvals: [{ id: cardId, tool: "Bash", decision: "allow", by: "Alice", via: "ai-client" }],
+      threadUrl: `${BASE}/#thread=${threadId}&bot=${bots.vega!.id}`,
+    });
+    const audit = await api("GET", "/api/org/admin/audit?category=client", { bearer: idp.consoleAssertion({ sub: ALICE.sub, aud: BASE, role: "admin" }) });
+    expect((audit.body.rows as Array<any>).find((row) => row.action === "client.approval")).toMatchObject({ actor: { kind: "person", name: "Alice", via: "perspicax-mcp" } });
+  }, 90_000);
 });

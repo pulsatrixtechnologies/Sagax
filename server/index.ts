@@ -810,6 +810,7 @@ import { OidcRelyingParty } from "./oidc-rp.ts";
 import type { BotAttachment, BotFileRoot } from "./org-admin-files.ts";
 import { ADMIN_ACTIVITY_CATEGORIES } from "./admin-activity.ts";
 import { createOrgMemberRoutes, type MemberPerson, type MemberRequest } from "./org-member-routes.ts";
+import { MemberLiveText } from "./member-live-text.ts";
 import { createOrgAdminRoutes, type AccessKind, type AdminApproval, type AdminEngine, type AdminBot, type AdminBotReach, type AdminPerson, type ApprovalAnswer, type ApprovalType, type OrgAdminViewer } from "./org-admin-routes.ts";
 import { RevocationQueue } from "./idp-revocations.ts";
 import { IDP_REFRESH_WAIT_MS, IDP_SWEEP_INTERVAL_MS, IdpGrantVault, IdpSessionManager, refreshAfterMs, resolveIdpVaultKey, settledWithin } from "./idp-session.ts";
@@ -25228,6 +25229,13 @@ const orgAdmin = createOrgAdminRoutes({
     },
   },
 });
+/** Lot C.3: the words each bot is writing now, for the member API's
+ * streamed turn (server/member-live-text.ts). */
+const memberLiveText = new MemberLiveText();
+bus.subscribe((event: RuntimeEvent) => {
+  if (shouldIgnoreProviderEvent(event)) return;
+  memberLiveText.observe(event);
+});
 /** 2026-10-09 (lot C.1): the member API (server/org-member-routes.ts), for
  * an AI client attached to Perspicax acting for one person. Each route is
  * performed as that person through a 60 s session of theirs. */
@@ -25295,6 +25303,23 @@ const orgMember = createOrgMemberRoutes({
     const id = ref.trim().toLowerCase();
     if (isPrincipalId(id) && principals.byId(id)) return id;
     return IDENTITY.kind === "perspicax" ? principals.bySubject(IDENTITY.issuer, ref.trim())?.id ?? null : null;
+  },
+  // Lot C.3: the streamed turn and the approvals answered from an AI client.
+  liveText: (threadId) => (store.botByThread(threadId) ? memberLiveText.partial(threadId) : null),
+  threadLink: (threadId, botId) => {
+    if (IDENTITY.kind !== "perspicax") return null;
+    const origin = IDENTITY.publicOrigin.replace(/\/+$/, "");
+    const bot = botId ?? store.botByThread(threadId)?.id ?? null;
+    return `${origin}/#thread=${encodeURIComponent(threadId)}${bot ? `&bot=${encodeURIComponent(bot)}` : ""}`;
+  },
+  botOfThread: (threadId) => store.botByThread(threadId)?.id ?? null,
+  noteAnsweredVia: (person, threadId, requestId) => {
+    const message = store.messagesFor(threadId).find((candidate) => candidate.card?.requestId === requestId);
+    const card = message?.card;
+    if (!message || !card || (!card.answered && !card.dismissed) || card.answered === "unavailable") return;
+    const named = card.answeredBy?.kind === "session" ? card.answeredBy : { kind: "session" as const, name: person.name || "Signed-in user" };
+    if (named.via === "ai-client") return;
+    store.patchMessage(threadId, message.id, { card: { ...card, answeredBy: { ...named, via: "ai-client" } } });
   },
   record: (person, entry) => appendAdminAction(DATA_DIR, {
     category: "client",

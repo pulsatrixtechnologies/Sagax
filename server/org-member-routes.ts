@@ -10,6 +10,15 @@
 //   GET  /api/org/member/routines/runs/{id}    one run
 //   POST /api/org/member/approvals/{id}        allow or deny a card
 //   POST /api/org/member/people/{id}/nudge     nudge a person
+//   GET  /api/org/member/threads/{id}/stream   watch a running turn (NDJSON)
+//
+// Lot C.3 (the subagent experience): `POST bots/{id}/messages` with
+// `stream: true`, and `GET threads/{id}/stream`, answer NDJSON: progress at
+// most every MEMBER_PROGRESS_MIN_MS (status, steps, the words being
+// written), one `approval` event when a card waits (the stream then ends, so
+// the client asks its person and answers through `POST approvals/{id}`),
+// and a `final` event with the structured summary of the turn (reply, tool
+// calls, files, cost, approvals and who answered them, the thread link).
 //
 // Answered before the session gate and before loopback trust, like the admin
 // API (server/org-admin-routes.ts): the only credential is an assertion
@@ -43,6 +52,14 @@ export const MEMBER_THREAD_LIMIT_DEFAULT = 50;
 export const MEMBER_WAIT_POLL_MS = 400;
 /** The longest reply text answered at once; the thread read has the rest. */
 export const MEMBER_REPLY_MAX = 32_000;
+/** The shortest gap between two progress events of a streamed turn. */
+export const MEMBER_PROGRESS_MIN_MS = 2_000;
+/** A progress event is sent at least this often, even when nothing moved. */
+export const MEMBER_HEARTBEAT_MS = 10_000;
+/** The most of the words being written a progress event carries. */
+export const MEMBER_PARTIAL_MAX = 600;
+/** The most tool calls and files a turn summary lists. */
+export const MEMBER_SUMMARY_LIST_MAX = 50;
 const MAX_BODY_BYTES = 64 * 1024;
 const MAX_TOKEN_CHARS = 8_192;
 const SEND_ID = /^[A-Za-z0-9_-]{8,80}$/;
@@ -94,6 +111,16 @@ export interface OrgMemberRouteDeps {
   threadStatus(threadId: string): ThreadStatus | null;
   /** A principal id from a principal id or a Perspicax user id. */
   resolvePerson(ref: string): string | null;
+  /** The words the bot is writing in this thread right now, or null
+   * (server/member-live-text.ts). */
+  liveText?(threadId: string): string | null;
+  /** The link that opens the thread in Sagax, or null. */
+  threadLink?(threadId: string, botId: string | null): string | null;
+  /** A card the person answered through this API: mark its recorded
+   * answerer `via: "ai-client"` (the name is the person's). */
+  noteAnsweredVia?(person: MemberPerson, threadId: string, requestId: string): void;
+  /** The bot whose thread this is, or null (a room, or gone). */
+  botOfThread?(threadId: string): string | null;
   /** One admin activity row, category `client`, actor the person. */
   record(person: MemberPerson, entry: { action: string; target: { kind: string; id?: string; name?: string }; after?: Record<string, unknown> }): void;
   version?(): string;
@@ -104,6 +131,14 @@ export interface OrgMemberRouteDeps {
 interface Answer {
   status: number;
   body: unknown;
+}
+
+/** One event of a streamed answer (one NDJSON line). */
+export type StreamEvent = Record<string, unknown> & { event: string };
+
+/** A streamed answer: `run` writes events and returns the final body. */
+interface StreamAnswer {
+  stream: (emit: (event: StreamEvent) => void, closed: () => boolean) => Promise<Record<string, unknown>>;
 }
 
 interface MemberContext {
@@ -118,7 +153,7 @@ interface MemberRoute {
   path: string;
   /** The permission the route needs; none for capabilities. */
   permission?: PermissionKey;
-  handle(ctx: MemberContext): Promise<Answer>;
+  handle(ctx: MemberContext): Promise<Answer | StreamAnswer>;
 }
 
 const answer = (body: unknown, status = 200): Answer => ({ status, body });
@@ -270,6 +305,106 @@ export function replyAfter(messages: readonly MemberMessage[], userMessageId: st
   return joined.length > MEMBER_REPLY_MAX ? `${joined.slice(0, MEMBER_REPLY_MAX)}\n[...]` : joined;
 }
 
+/** One approval of a turn, as the summary reports it. */
+export interface SummaryApproval {
+  id: string;
+  tool: string | null;
+  title: string;
+  /** allow or deny; `answered` for another answer (a question), else
+   * `pending`, `dismissed` or `expired`. */
+  decision: "allow" | "deny" | "answered" | "pending" | "dismissed" | "expired";
+  /** Who answered, as the organization knows them; null when nobody did. */
+  by: string | null;
+  /** `ai-client` when answered from an AI client, `call` by voice. */
+  via: string | null;
+}
+
+/** The structured summary of a turn an AI client reads at the end. */
+export interface TurnSummary {
+  text: string | null;
+  toolCalls: Array<{ tool: string; ok: boolean | null }>;
+  toolCallCount: number;
+  files: string[];
+  /** Summed over the turns after the person's message; null when no turn
+   * reported usage yet. `costUsd` is null when the engine reports none. */
+  cost: { inputTokens: number; outputTokens: number; costUsd: number | null; turns: number } | null;
+  approvals: SummaryApproval[];
+  threadUrl: string | null;
+}
+
+/** The summary of what followed `anchor` (the person's message) in a raw
+ * Sagax message page: the reply, the tool calls (name and outcome, never
+ * input or output), the files the calls wrote, the usage of the finished
+ * turns and every card with its outcome and answerer. */
+export function summarizeTurn(raw: unknown, anchor: string | null, threadUrl: string | null): TurnSummary {
+  const list = Array.isArray(objectOf(raw)?.messages) ? (objectOf(raw)!.messages as unknown[]) : [];
+  const all = list.map(objectOf).filter((m): m is Record<string, unknown> => Boolean(m) && typeof m!.id === "string");
+  const start = anchor ? all.findIndex((m) => m.id === anchor) : -1;
+  const after = start >= 0 ? all.slice(start + 1) : all;
+  const texts: MemberMessage[] = [];
+  const toolCalls: Array<{ tool: string; ok: boolean | null }> = [];
+  const files = new Set<string>();
+  const addFiles = (value: unknown) => {
+    if (!Array.isArray(value)) return;
+    for (const path of value) if (typeof path === "string" && path.trim() && files.size < MEMBER_SUMMARY_LIST_MAX) files.add(path.trim());
+  };
+  let usage: { inputTokens: number; outputTokens: number; costUsd: number | null; turns: number } | null = null;
+  const approvals: SummaryApproval[] = [];
+  for (const m of after) {
+    const kind = str(m.kind) ?? "text";
+    if (kind === "activity") {
+      const tool = objectOf(m.tool);
+      const ok = typeof tool?.ok === "boolean" ? tool.ok : null;
+      toolCalls.push({ tool: str(tool?.name) ?? "tool", ok });
+      if (ok !== false) addFiles(tool?.files);
+    } else if (kind === "digest") {
+      const digest = objectOf(m.digest);
+      const digestFiles = objectOf(digest?.files);
+      addFiles(digestFiles?.added);
+      addFiles(digestFiles?.changed);
+      const used = objectOf(digest?.usage);
+      if (used) {
+        const input = typeof used.input === "number" ? used.input : 0;
+        const output = typeof used.output === "number" ? used.output : 0;
+        const cost = typeof used.costUsd === "number" ? used.costUsd : null;
+        usage = usage ?? { inputTokens: 0, outputTokens: 0, costUsd: null, turns: 0 };
+        usage.inputTokens += input;
+        usage.outputTokens += output;
+        usage.turns += 1;
+        if (cost !== null) usage.costUsd = Math.round(((usage.costUsd ?? 0) + cost) * 1e6) / 1e6;
+      }
+    } else if ((kind === "text" || kind === "nudge" || kind === "access") && typeof m.text === "string" && (m.role === "user" || m.role === "bot")) {
+      texts.push({ id: m.id as string, role: m.role, kind, text: m.text, at: null, sender: null });
+    }
+    const card = objectOf(m.card);
+    const requestId = str(card?.requestId);
+    if (card && requestId) {
+      const answered = str(card.answered);
+      const by = objectOf(card.answeredBy);
+      approvals.push({
+        id: requestId,
+        tool: str(card.tool),
+        title: str(card.title) ?? "",
+        decision: answered === "allow" || answered === "deny" ? answered
+          : answered && answered !== "unavailable" ? "answered"
+          : card.expired === true || answered === "unavailable" ? "expired"
+          : card.dismissed === true ? "dismissed" : "pending",
+        by: by ? str(by.name) ?? (by.kind === "loopback" ? "this computer" : by.kind === "worker" ? "a local service" : null) : null,
+        via: by ? str(by.via) : null,
+      });
+    }
+  }
+  return {
+    text: replyAfter(texts, null),
+    toolCalls: toolCalls.slice(-MEMBER_SUMMARY_LIST_MAX),
+    toolCallCount: toolCalls.length,
+    files: [...files],
+    cost: usage,
+    approvals,
+    threadUrl,
+  };
+}
+
 function botStatus(bot: Record<string, unknown> | undefined, archived: boolean): "idle" | "working" | "waiting" | "archived" {
   if (archived) return "archived";
   if (!bot) return "idle";
@@ -288,6 +423,103 @@ function memberRoutes(deps: OrgMemberRouteDeps): MemberRoute[] {
     return readThreadPage(threadId, reply.body, since);
   };
   const isRead = (value: ThreadRead | Answer): value is ThreadRead => "messages" in value;
+
+  /** The raw page of a thread as the person reads it, or a refusal. */
+  const rawPage = async (person: MemberPerson, threadId: string): Promise<{ raw: unknown } | Answer> => {
+    const reply = await deps.perform(person, { method: "GET", path: `/api/threads/${encodeURIComponent(threadId)}/messages`, query: { limit: String(MEMBER_THREAD_LIMIT_MAX) } });
+    if (!okStatus(reply)) return passThrough(reply, "This conversation cannot be read.");
+    return { raw: reply.body };
+  };
+
+  /** Wait on a thread's turn: until the bot answered after `anchor`, a card
+   * waits, or `wait` seconds passed. With `emit` (a streamed answer), a
+   * progress event at most every MEMBER_PROGRESS_MIN_MS and at least every
+   * MEMBER_HEARTBEAT_MS, and one `approval` event per open card, which ends
+   * the wait. Returns the final body, with its summary. */
+  const watchTurn = async (input: {
+    person: MemberPerson;
+    botId: string | null;
+    threadId: string;
+    anchor: string | null;
+    wait: number;
+    emit?: (event: StreamEvent) => void;
+    closed?: () => boolean;
+  }): Promise<Record<string, unknown>> => {
+    const { person, botId, threadId, wait, emit, closed } = input;
+    const startedAt = now();
+    const deadline = startedAt + wait * 1000;
+    let status: ThreadStatus = deps.threadStatus(threadId) ?? "idle";
+    // A queued message has no id yet: its answer is whatever the bot says
+    // after the person's newest line.
+    // Done when the thread is idle and the bot answered after the message,
+    // or idle three looks in a row (a turn that failed or said nothing); a
+    // card stops the wait at once.
+    let idleLooks = 0;
+    let lastEmit = Number.NEGATIVE_INFINITY;
+    let lastKey = "";
+    const announced = new Set<string>();
+    const anchorOf = (read: ThreadRead) => input.anchor ?? read.messages.findLast((m) => m.role === "user")?.id ?? null;
+    while (wait > 0 && now() < deadline) {
+      if (closed?.()) break;
+      status = deps.threadStatus(threadId) ?? "idle";
+      if (status === "waiting") {
+        if (!emit) break;
+        const read = await readThread(person, threadId, null, MEMBER_THREAD_LIMIT_MAX);
+        if (!isRead(read)) break;
+        const fresh = read.approvals.filter((approval) => !announced.has(approval.id));
+        for (const approval of fresh) {
+          announced.add(approval.id);
+          emit({ event: "approval", approval });
+        }
+        // A card waits: the client asks its person. A waiting flag with no
+        // open card is a card just answered: keep watching.
+        if (read.approvals.length) break;
+      } else if (status === "idle") {
+        idleLooks += 1;
+        if (idleLooks >= 3) break;
+        const read = await readThread(person, threadId, null, MEMBER_THREAD_LIMIT_MAX);
+        if (!isRead(read)) break;
+        if (replyAfter(read.messages, anchorOf(read)) !== null) break;
+      } else {
+        idleLooks = 0;
+      }
+      if (emit && now() - lastEmit >= MEMBER_PROGRESS_MIN_MS) {
+        const read = await readThread(person, threadId, input.anchor, MEMBER_THREAD_LIMIT_MAX);
+        const steps = isRead(read) ? read.steps : { count: 0, recent: [] };
+        const live = deps.liveText?.(threadId) ?? null;
+        const partial = live ? (live.length > MEMBER_PARTIAL_MAX ? `[...]${live.slice(-MEMBER_PARTIAL_MAX)}` : live) : null;
+        const key = JSON.stringify([status, steps.count, partial]);
+        if (key !== lastKey || now() - lastEmit >= MEMBER_HEARTBEAT_MS) {
+          emit({ event: "progress", status, steps, partial, elapsedMs: now() - startedAt });
+          lastKey = key;
+          lastEmit = now();
+        }
+      }
+      await sleep(Math.min(MEMBER_WAIT_POLL_MS, Math.max(0, deadline - now())));
+    }
+    status = deps.threadStatus(threadId) ?? "idle";
+    const page = await rawPage(person, threadId);
+    if (!("raw" in page)) return { botId, threadId, messageId: input.anchor, status, pending: true, reply: null, approvals: [], cursor: null, summary: null };
+    const read = readThreadPage(threadId, page.raw, null);
+    const anchor = anchorOf(read);
+    const reply = status === "idle" ? replyAfter(read.messages, anchor) : null;
+    // Idle after a wait is done even without words (a failed turn says why
+    // in the thread); without a wait, only an answer is.
+    const done = status === "idle" && (reply !== null || wait > 0);
+    // A waiting flag with no open card is not waiting for anyone.
+    const shownStatus = done ? "done" : status === "waiting" && !read.approvals.length ? "working" : status;
+    return {
+      botId,
+      threadId,
+      messageId: input.anchor,
+      status: shownStatus,
+      pending: !done,
+      reply,
+      approvals: read.approvals,
+      cursor: read.cursor,
+      summary: summarizeTurn(page.raw, anchor, deps.threadLink?.(threadId, botId) ?? null),
+    };
+  };
 
   const routes: MemberRoute[] = [
     {
@@ -345,7 +577,7 @@ function memberRoutes(deps: OrgMemberRouteDeps): MemberRoute[] {
       async handle({ person, params, body }) {
         const input = objectOf(body);
         if (!input) return fail(400, "bad_request", "Send { \"text\": \"...\" }.");
-        const extra = Object.keys(input).filter((key) => !["text", "threadId", "newThread", "wait", "sendId"].includes(key));
+        const extra = Object.keys(input).filter((key) => !["text", "threadId", "newThread", "wait", "sendId", "stream"].includes(key));
         if (extra.length) return fail(400, "bad_request", `Unknown field: ${extra[0]}.`);
         const text = typeof input.text === "string" ? input.text.trim() : "";
         if (!text || text.length > MEMBER_TEXT_MAX) return fail(400, "bad_request", `text is 1 to ${MEMBER_TEXT_MAX} characters.`);
@@ -355,6 +587,7 @@ function memberRoutes(deps: OrgMemberRouteDeps): MemberRoute[] {
         const wait = input.wait === undefined ? 0 : input.wait;
         if (typeof wait !== "number" || !Number.isFinite(wait) || wait < 0 || wait > MEMBER_WAIT_MAX_SECONDS) return fail(400, "bad_request", `wait is 0 to ${MEMBER_WAIT_MAX_SECONDS} seconds.`);
         if (input.sendId !== undefined && (typeof input.sendId !== "string" || !SEND_ID.test(input.sendId))) return fail(400, "bad_request", "sendId is 8 to 80 letters, digits, _ or -.");
+        if (input.stream !== undefined && typeof input.stream !== "boolean") return fail(400, "bad_request", "stream is true or false.");
         const botId = params.id!;
         let threadId = input.threadId as string | undefined;
         if (input.newThread === true) {
@@ -373,48 +606,37 @@ function memberRoutes(deps: OrgMemberRouteDeps): MemberRoute[] {
         const finalThread = str(receipt.threadId) ?? threadId ?? null;
         const messageId = str(objectOf(receipt.message)?.id);
         deps.record(person, { action: "client.message", target: { kind: "bot", id: botId }, after: { threadId: finalThread, waited: wait > 0, ...(input.newThread ? { newThread: true } : {}) } });
-        if (!finalThread) return answer({ botId, threadId: null, messageId, status: "working", pending: true, reply: null, approvals: [], cursor: null });
-        const deadline = now() + wait * 1000;
-        let status: ThreadStatus = deps.threadStatus(finalThread) ?? "idle";
-        // A queued message has no id yet: its answer is whatever the bot
-        // says after the person's newest line.
-        // Done when the thread is idle and the bot answered after the
-        // message, or idle three looks in a row (a turn that failed or said
-        // nothing); a card stops the wait at once.
-        let idleLooks = 0;
-        while (wait > 0 && now() < deadline) {
-          status = deps.threadStatus(finalThread) ?? "idle";
-          if (status === "waiting") break;
-          if (status === "idle") {
-            idleLooks += 1;
-            if (idleLooks >= 3) break;
-            const read = await readThread(person, finalThread, null, MEMBER_THREAD_LIMIT_MAX);
-            if (!isRead(read)) break;
-            const anchor = messageId ?? read.messages.findLast((m) => m.role === "user")?.id ?? null;
-            if (replyAfter(read.messages, anchor) !== null) break;
-          } else {
-            idleLooks = 0;
-          }
-          await sleep(Math.min(MEMBER_WAIT_POLL_MS, Math.max(0, deadline - now())));
+        if (!finalThread) return answer({ botId, threadId: null, messageId, status: "working", pending: true, reply: null, approvals: [], cursor: null, summary: null });
+        if (input.stream === true) {
+          return {
+            stream: async (emit, closed) => {
+              emit({ event: "started", botId, threadId: finalThread, messageId });
+              return watchTurn({ person, botId, threadId: finalThread, anchor: messageId, wait, emit, closed });
+            },
+          };
         }
-        status = deps.threadStatus(finalThread) ?? "idle";
-        const read = await readThread(person, finalThread, null, MEMBER_THREAD_LIMIT_MAX);
-        if (!isRead(read)) return answer({ botId, threadId: finalThread, messageId, status, pending: true, reply: null, approvals: [], cursor: null });
-        const anchor = messageId ?? read.messages.findLast((m) => m.role === "user")?.id ?? null;
-        const reply = status === "idle" ? replyAfter(read.messages, anchor) : null;
-        // Idle after a wait is done even without words (a failed turn says
-        // why in the thread); without a wait, only an answer is.
-        const done = status === "idle" && (reply !== null || wait > 0);
-        return answer({
-          botId,
-          threadId: finalThread,
-          messageId,
-          status: done ? "done" : status,
-          pending: !done,
-          reply,
-          approvals: read.approvals,
-          cursor: read.cursor,
-        });
+        return answer(await watchTurn({ person, botId, threadId: finalThread, anchor: messageId, wait }));
+      },
+    },
+    {
+      method: "GET", path: "threads/{id}/stream", permission: "clients.botsRead",
+      async handle({ person, params, url }) {
+        const anchor = url.searchParams.get("anchor") || null;
+        if (anchor !== null && !THREAD_ID.test(anchor)) return fail(400, "bad_request", "anchor is a message id.");
+        const rawWait = url.searchParams.get("wait");
+        const wait = rawWait === null || rawWait === "" ? 30 : /^\d{1,3}$/.test(rawWait) ? Number(rawWait) : Number.NaN;
+        if (!Number.isInteger(wait) || wait < 1 || wait > MEMBER_WAIT_MAX_SECONDS) return fail(400, "bad_request", `wait is 1 to ${MEMBER_WAIT_MAX_SECONDS} seconds.`);
+        const threadId = params.id!;
+        // Read once before streaming: a thread the person cannot read is
+        // refused with Sagax's own answer, as JSON.
+        const first = await readThread(person, threadId, anchor, MEMBER_THREAD_LIMIT_MAX);
+        if (!isRead(first)) return first;
+        return {
+          stream: async (emit, closed) => {
+            emit({ event: "started", botId: deps.botOfThread?.(threadId) ?? null, threadId, messageId: anchor });
+            return watchTurn({ person, botId: deps.botOfThread?.(threadId) ?? null, threadId, anchor, wait, emit, closed });
+          },
+        };
       },
     },
     {
@@ -473,6 +695,7 @@ function memberRoutes(deps: OrgMemberRouteDeps): MemberRoute[] {
         }
         const reply = await deps.perform(person, { method: "POST", path: `/api/threads/${encodeURIComponent(threadId)}/respond`, body: { requestId: params.id!, behavior: decision } });
         if (!okStatus(reply)) return passThrough(reply, "This card cannot be answered.");
+        deps.noteAnsweredVia?.(person, threadId, params.id!);
         deps.record(person, { action: "client.approval", target: { kind: "thread", id: threadId }, after: { requestId: params.id!, decision } });
         return answer({ answered: true, decision });
       },
@@ -508,6 +731,39 @@ function wireRun(run: Record<string, unknown> | null | undefined, detail = false
     endedAt: typeof run.finishedAt === "number" ? run.finishedAt : null,
     ...(detail ? { attention: cut(run.attention, 500), error: cut(run.error, 500), output: cut(run.output, MEMBER_REPLY_MAX) } : {}),
   };
+}
+
+/** Write a streamed answer: NDJSON, one event per line, the last one
+ * `final` (or `error` when the work failed after the stream began). Stops
+ * early when the client goes away. */
+async function streamAnswer(res: ServerResponse, answer: StreamAnswer): Promise<void> {
+  let gone = false;
+  const onClose = () => {
+    gone = true;
+  };
+  // The response's close, not the request's: a request closes as soon as its
+  // body was read.
+  res.on("close", onClose);
+  res.writeHead(200, {
+    "content-type": "application/x-ndjson; charset=utf-8",
+    "x-sagax-member-api": "1",
+    "cache-control": "no-store",
+    "x-accel-buffering": "no",
+  });
+  const emit = (event: StreamEvent) => {
+    if (gone || res.writableEnded) return;
+    res.write(`${JSON.stringify(event)}\n`);
+  };
+  try {
+    const final = await answer.stream(emit, () => gone || res.writableEnded);
+    emit({ event: "final", ...final });
+  } catch (error) {
+    console.error(`[org-member] stream: ${error instanceof Error ? error.message : String(error)}`);
+    emit({ event: "error", code: "server_error", message: "The server could not finish this; its log has the details." });
+  } finally {
+    res.off("close", onClose);
+    if (!res.writableEnded) res.end();
+  }
 }
 
 /** The handler: true when the request was one of ours (answered). */
@@ -571,6 +827,10 @@ export function createOrgMemberRoutes(deps: OrgMemberRouteDeps): (req: IncomingM
     }
     try {
       const reply = await route.handle({ person, params: hit.params, url, body });
+      if ("stream" in reply) {
+        await streamAnswer(res, reply);
+        return true;
+      }
       send(res, reply.status, reply.body);
     } catch (error) {
       console.error(`[org-member] ${method} ${sub}: ${error instanceof Error ? error.message : String(error)}`);
