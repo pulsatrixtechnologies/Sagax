@@ -1,6 +1,7 @@
 // Loaded only by group-local-vm.e2e.test.ts via --import. Replace the container
 // boundary, preserving the real server, lease code, MCP config and fake driver.
 import { registerHooks } from 'node:module';
+import { jsLiteral } from '../../scripts/testing/js-literal.mjs';
 const state = process.env.SAGAX_TEST_VM_STATE;
 if (!state) throw new Error('An explicit isolated VM state file is required');
 const actual = new URL('../container-computer.ts?actual', import.meta.url).href;
@@ -12,10 +13,10 @@ registerHooks({
   },
   load(url, context, nextLoad) {
     if (url === mock) return { format: 'module', shortCircuit: true, source: `
-      export * from ${JSON.stringify(actual)};
-      import { SHARED_LOCAL_VM_TARGET } from ${JSON.stringify(actual)};
+      export * from ${jsLiteral(actual)};
+      import { SHARED_LOCAL_VM_TARGET } from ${jsLiteral(actual)};
       import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-      const file = ${JSON.stringify(state)};
+      const file = ${jsLiteral(state)};
       const read = () => JSON.parse(readFileSync(file, 'utf8'));
       export async function containerRuntimeStatus() { return { runtime: 'podman', daemonUp: true }; }
       export async function containerExec(target, command) {
@@ -58,21 +59,21 @@ registerHooks({
     const result = nextLoad(url, context);
     if (url.endsWith('/local-vm-idle.ts')) {
       return { ...result, source: `import { readFileSync as readVmIdle } from 'node:fs';\n` +
-        String(result.source).replaceAll('checkedIdleMs(idleMs)', `(JSON.parse(readVmIdle(${JSON.stringify(state)}, 'utf8')).idleMs ?? checkedIdleMs(idleMs))`) };
+        String(result.source).replaceAll('checkedIdleMs(idleMs)', `(JSON.parse(readVmIdle(${jsLiteral(state)}, 'utf8')).idleMs ?? checkedIdleMs(idleMs))`) };
     }
     if (url.endsWith('/local-vm-lease.ts')) {
       return { ...result, source: `import { readFileSync as readVmClock } from 'node:fs';\n` +
-        String(result.source).replaceAll('Date.now()', `(Date.now() + (JSON.parse(readVmClock(${JSON.stringify(state)}, 'utf8')).clockOffset || 0))`) };
+        String(result.source).replaceAll('Date.now()', `(Date.now() + (JSON.parse(readVmClock(${jsLiteral(state)}, 'utf8')).clockOffset || 0))`) };
     }
     if (url.endsWith('/drivers/claude.ts')) {
       return { ...result, source: `import { existsSync as existsVmRelease, readFileSync as readVmEvents, writeFileSync as writeVmEvent } from 'node:fs';\n` +
         String(result.source).replace('for (const l of Array.from(listeners)) l(event);',
-          `if (event.type === 'turn.completed') {\n        const fixture = JSON.parse(readVmEvents(${JSON.stringify(state)}, 'utf8'));\n        if (fixture.dropCompletion) return;\n        if (fixture.holdCompletion) { writeVmEvent(${JSON.stringify(state)} + '.completionheld', event.turnId ?? ''); const timer = setInterval(() => { if (!existsVmRelease(${JSON.stringify(state)} + '.releasecompletion')) return; clearInterval(timer); writeVmEvent(${JSON.stringify(state)} + '.latecompleted', event.turnId ?? ''); for (const l of Array.from(listeners)) l(event); }, 10); return; }\n      }\n      for (const l of Array.from(listeners)) l(event);`) };
+          `if (event.type === 'turn.completed') {\n        const fixture = JSON.parse(readVmEvents(${jsLiteral(state)}, 'utf8'));\n        if (fixture.dropCompletion) return;\n        if (fixture.holdCompletion) { writeVmEvent(${jsLiteral(state)} + '.completionheld', event.turnId ?? ''); const timer = setInterval(() => { if (!existsVmRelease(${jsLiteral(state)} + '.releasecompletion')) return; clearInterval(timer); writeVmEvent(${jsLiteral(state)} + '.latecompleted', event.turnId ?? ''); for (const l of Array.from(listeners)) l(event); }, 10); return; }\n      }\n      for (const l of Array.from(listeners)) l(event);`) };
     }
     if (url.endsWith('/turn-watchdog.ts')) {
       return { ...result, source: `import { readFileSync as readVmWatch } from 'node:fs';\n` +
         String(result.source).replace('this.opts = opts;', 'this.opts = { ...opts, checkMs: 30 };')
-          .replace('at - turn.lastEventAt < this.opts.stallMs', `at - turn.lastEventAt < (JSON.parse(readVmWatch(${JSON.stringify(state)}, 'utf8')).stall ? 0 : JSON.parse(readVmWatch(${JSON.stringify(state)}, 'utf8')).stallThread === turn.threadId ? 100 : this.opts.stallMs)`) };
+          .replace('at - turn.lastEventAt < this.opts.stallMs', `at - turn.lastEventAt < (JSON.parse(readVmWatch(${jsLiteral(state)}, 'utf8')).stall ? 0 : JSON.parse(readVmWatch(${jsLiteral(state)}, 'utf8')).stallThread === turn.threadId ? 100 : this.opts.stallMs)`) };
     }
     if (url.endsWith('/turn-dispatch-guard.ts')) {
       // wedgeClear parks a room turn inside waitForClear, the pre-id
@@ -83,12 +84,12 @@ registerHooks({
       // containerComputerStatus alone only proves readiness started.
       return { ...result, source: `import { readFileSync as readVmClear, writeFileSync as writeVmClear } from 'node:fs';\n` +
         String(result.source).replace('async waitForClear(threadId: string): Promise<void> {',
-          `async waitForClear(threadId: string): Promise<void> {\n      writeVmClear(${JSON.stringify(state)} + '.clearwait', '1');\n      while (JSON.parse(readVmClear(${JSON.stringify(state)}, 'utf8')).wedgeClear) await new Promise((resolve) => setTimeout(resolve, 20));`) };
+          `async waitForClear(threadId: string): Promise<void> {\n      writeVmClear(${jsLiteral(state)} + '.clearwait', '1');\n      while (JSON.parse(readVmClear(${jsLiteral(state)}, 'utf8')).wedgeClear) await new Promise((resolve) => setTimeout(resolve, 20));`) };
     }
     if (url.endsWith('/room-turn-timeout.ts')) {
       return { ...result, source: `import { readFileSync as readVmDeadline } from 'node:fs';\n` +
         String(result.source).replace('this.remainingMs = roomTurnTimeoutMs(minutes);',
-          `this.remainingMs = JSON.parse(readVmDeadline(${JSON.stringify(state)}, 'utf8')).timeout ? 5000 : roomTurnTimeoutMs(minutes);`) };
+          `this.remainingMs = JSON.parse(readVmDeadline(${jsLiteral(state)}, 'utf8')).timeout ? 5000 : roomTurnTimeoutMs(minutes);`) };
     }
     return result;
   },

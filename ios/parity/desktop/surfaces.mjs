@@ -17,6 +17,8 @@
 // Injected transcript messages (cards, markdown) exist only in the page's
 // store: nothing is written to the fixture server.
 
+import { jsLiteral } from "../../../scripts/testing/js-literal.mjs";
+
 export const SKIN_IDS = [
   "pulsatrix", "pulsatrix-light", "midnight", "atelier", "foundry", "lagoon",
   "graphite", "linen", "dusk", "daylight", "retro98",
@@ -35,13 +37,13 @@ export const PHASES = [
 
 // ── helpers ─────────────────────────────────────────────────────────────
 const lastMessageOf = (ctx, name) => ctx.store(`
-  const b = s.bots.find((x) => x.name === ${JSON.stringify(name)});
+  const b = s.bots.find((x) => x.name === ${jsLiteral(name)});
   const m = b.messages || [];
   return { threadId: b.threadId, botId: b.id, parentId: m.length ? m[m.length - 1].id : null, at: m.length ? m[m.length - 1].at : Date.now() };
 `);
 
 async function inject(ctx, name, messages) {
-  await ctx.waitFor(`(__parity.state().bots.find((b) => b.name === ${JSON.stringify(name)})?.messages || []).length > 0`, { timeoutMs: 15_000 });
+  await ctx.waitFor(`(__parity.state().bots.find((b) => b.name === ${jsLiteral(name)})?.messages || []).length > 0`, { timeoutMs: 15_000 });
   let { threadId, parentId, at } = await lastMessageOf(ctx, name);
   let i = 0;
   for (const message of messages) {
@@ -223,7 +225,7 @@ for (const section of ["overview", "slack", "soul", "skills", "memory", "access"
       await ctx.click('[data-panel-tab="more"]');
       await ctx.sleep(300);
       // these rows wait for the server's answer (the organization, the Slack link, the viewer)
-      if (where.org || where.served) await ctx.waitFor(`Boolean(document.querySelector('[data-bot-settings-section="${section}"]'))`, { timeoutMs: 8_000 }).catch(() => {});
+      if (where.org || where.served) await ctx.waitFor(`Boolean(document.querySelector(${jsLiteral(`[data-bot-settings-section="${section}"]`)}))`, { timeoutMs: 8_000 }).catch(() => {});
       if (!(await ctx.exists(`[data-bot-settings-section="${section}"]`))) return { skip: `section ${section} not listed for this bot` };
       await ctx.click(`[data-bot-settings-section="${section}"]`);
       await ctx.sleep(900);

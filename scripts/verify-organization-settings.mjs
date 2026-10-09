@@ -10,6 +10,7 @@ import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { jsLiteral } from "./testing/js-literal.mjs";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
 const flag = "--omb-organization-fixture";
@@ -116,7 +117,7 @@ if (process.versions.electron && process.argv.includes(flag)) {
     await client.start();
     win = await open(true);
     const evaluate = code => win.webContents.executeJavaScript(code);
-    const button = label => `[...document.querySelectorAll('button')].find(el => el.textContent.trim() === ${JSON.stringify(label)})`;
+    const button = label => `[...document.querySelectorAll('button')].find(el => el.textContent.trim() === ${jsLiteral(label)})`;
     const until = async (check, description) => {
       for (let attempt = 0; attempt < 350; attempt++) {
         if (await check()) return;
@@ -129,7 +130,7 @@ if (process.versions.electron && process.argv.includes(flag)) {
       await until(() => evaluate(`Boolean(${button(label)}) && !${button(label)}.disabled`), label);
       await evaluate(`${button(label)}.click()`);
     };
-    const fillAddress = async () => evaluate(`(() => { const el = document.querySelector('input[type=url]'); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(el, ${JSON.stringify(origin)}); el.dispatchEvent(new Event('input', { bubbles: true })); })()`);
+    const fillAddress = async () => evaluate(`(() => { const el = document.querySelector('input[type=url]'); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(el, ${jsLiteral(origin)}); el.dispatchEvent(new Event('input', { bubbles: true })); })()`);
     const openAdvanced = async () => evaluate(`document.querySelector('details summary').click()`);
     await until(() => evaluate(`Boolean(${button("Sign in with your organization")})`), "optional sign-in form");
     assert.equal(begins, 0); assert.equal(browserRequests.length, 0);

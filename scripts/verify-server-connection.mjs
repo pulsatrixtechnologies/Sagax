@@ -7,6 +7,7 @@ import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { jsLiteral } from "./testing/js-literal.mjs";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
 const fixtureFlag = "--omb-server-connection-fixture";
@@ -100,12 +101,12 @@ if (process.versions.electron && process.argv.includes(fixtureFlag)) {
       console.error(await evaluate("document.body.innerText"));
       throw new Error(`Timed out: ${description}`);
     };
-    const button = (label) => `[...document.querySelectorAll('button')].find(el => el.textContent.trim() === ${JSON.stringify(label)})`;
-    const input = (label) => `[...document.querySelectorAll('label')].find(el => el.textContent.trim() === ${JSON.stringify(label)})?.querySelector('input')`;
+    const button = (label) => `[...document.querySelectorAll('button')].find(el => el.textContent.trim() === ${jsLiteral(label)})`;
+    const input = (label) => `[...document.querySelectorAll('label')].find(el => el.textContent.trim() === ${jsLiteral(label)})?.querySelector('input')`;
     const fill = async (label, value) => {
-      await evaluate(`(() => { const el = ${input(label)}; if (!el) throw new Error('Missing input'); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(el, ${JSON.stringify(value)}); el.dispatchEvent(new Event('input', { bubbles: true })); })()`);
+      await evaluate(`(() => { const el = ${input(label)}; if (!el) throw new Error('Missing input'); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(el, ${jsLiteral(value)}); el.dispatchEvent(new Event('input', { bubbles: true })); })()`);
     };
-    const selectMode = (value) => evaluate(`(() => { const el = document.querySelector('select'); el.value = ${JSON.stringify(value)}; el.dispatchEvent(new Event('change', { bubbles: true })); })()`);
+    const selectMode = (value) => evaluate(`(() => { const el = document.querySelector('select'); el.value = ${jsLiteral(value)}; el.dispatchEvent(new Event('change', { bubbles: true })); })()`);
     const connect = button("Connect to server");
     await until(() => evaluate(`Boolean(${connect})`), "server form rendered");
     assert.equal(await evaluate(`${connect}.disabled`), true);

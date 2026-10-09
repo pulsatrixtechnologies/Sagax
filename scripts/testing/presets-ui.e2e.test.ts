@@ -8,6 +8,7 @@ import { waitForExit } from "../../server/testing/cleanup.ts";
 import { runControlOmb } from "../control-omb.ts";
 import { request } from "../mcp-server.ts";
 import { UI_TOOLS_DIR } from "./control-omb-ui.ts";
+import { jsLiteral } from "./js-literal.mjs";
 
 const ROOT = fileURLToPath(new URL("../..", import.meta.url));
 const binary = resolveAgentBrowserBinary({ dataDir: UI_TOOLS_DIR, env: process.env });
@@ -132,7 +133,7 @@ describe("Preset bots in the real renderer", () => {
         .toBe("From Acme Partners | Imported presets | Built-in roles");
       // Native select popups do not take routed keys reliably in headless
       // Chrome; the real select's change handler runs without the OS popup.
-      await evaluate(`(() => { const select = [...document.querySelectorAll('[role=dialog] select')].find(item => item.querySelector('optgroup')); select.value = ${JSON.stringify(value)}; select.dispatchEvent(new Event('change', { bubbles: true })); return true; })()`);
+      await evaluate(`(() => { const select = [...document.querySelectorAll('[role=dialog] select')].find(item => item.querySelector('optgroup')); select.value = ${jsLiteral(value)}; select.dispatchEvent(new Event('change', { bubbles: true })); return true; })()`);
       await expect.poll(snapshot, { timeout: 10_000 }).toContain(expected);
       await ui("screenshot", "--out", evidence(shot));
       await click("Create bot");

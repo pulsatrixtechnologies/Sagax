@@ -8,6 +8,7 @@ import { waitForExit } from "../../server/testing/cleanup.ts";
 import { runControlOmb } from "../control-omb.ts";
 import { UI_TOOLS_DIR } from "./control-omb-ui.ts";
 import { fixtureApi } from "./preview-fixture.ts";
+import { jsLiteral } from "./js-literal.mjs";
 
 const ROOT = fileURLToPath(new URL("../..", import.meta.url));
 const binary = resolveAgentBrowserBinary({ dataDir: UI_TOOLS_DIR, env: process.env });
@@ -64,9 +65,9 @@ type BotRecord = {
     const identity = (bot: BotRecord) => ({ id: bot.id, name: bot.name, title: bot.title, threadId: bot.threadId,
       modelSelection: bot.modelSelection, tasks: bot.tasks.map(task => ({ threadId: task.threadId, title: task.title, modelSelection: task.modelSelection })) });
     const teamSelector = (name: string) => `[data-team-key=${JSON.stringify(name)}]`;
-    const cardOrder = (name: string) => evaluate(`[...document.querySelectorAll(${JSON.stringify(`${teamSelector(name)} [data-bot-id]`)})].map(card => card.dataset.botId)`);
+    const cardOrder = (name: string) => evaluate(`[...document.querySelectorAll(${jsLiteral(`${teamSelector(name)} [data-bot-id]`)})].map(card => card.dataset.botId)`);
     const manage = (name: string) => evaluate(`(() => {
-      const summary = document.querySelector(${JSON.stringify(`${teamSelector(name)} summary`)});
+      const summary = document.querySelector(${jsLiteral(`${teamSelector(name)} summary`)});
       if (!summary) throw new Error('Missing team controls');
       if (!summary.parentElement.open) summary.click();
       return summary.parentElement.open;
@@ -78,7 +79,7 @@ type BotRecord = {
       await expect.poll(() => evaluate("Boolean(document.querySelector('[data-team-canvas]'))"), { timeout: 10_000 }).toBe(true);
     };
     const teamPosition = (name: string) => evaluate(`(() => {
-      const team = document.querySelector(${JSON.stringify(teamSelector(name))});
+      const team = document.querySelector(${jsLiteral(teamSelector(name))});
       return { x: parseFloat(team.style.left), y: parseFloat(team.style.top) };
     })()`);
     const view = () => evaluate(`(() => {
@@ -89,13 +90,13 @@ type BotRecord = {
       return { x: matrix.m41, y: matrix.m42, scale: matrix.m11 };
     })()`);
     const drag = (selector: string, delta: { x: number; y: number }, destination?: string, cancel = false) => evaluate(`(async () => {
-      const source = document.querySelector(${JSON.stringify(selector)});
+      const source = document.querySelector(${jsLiteral(selector)});
       const canvas = document.querySelector('[data-team-canvas]');
       if (!source || !canvas) throw new Error('Missing drag surface');
       const rect = source.getBoundingClientRect();
       const from = source === canvas ? { x: rect.left + 8, y: rect.top + 8 }
         : { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
-      const target = ${JSON.stringify(destination ?? null)};
+      const target = ${jsLiteral(destination ?? null)};
       const targetRect = target ? document.querySelector(target)?.getBoundingClientRect() : null;
       if (target && !targetRect) throw new Error('Missing drop target');
       const to = targetRect ? { x: targetRect.left + targetRect.width / 2 + ${delta.x}, y: targetRect.top + targetRect.height / 2 + ${delta.y} }
@@ -177,7 +178,7 @@ type BotRecord = {
     receipts.unconfiguredComputerCreation = "Explicit Add entry shows cost disclosure and keeps Create cloud computer disabled without credentials.";
 
     await evaluate(`(() => {
-      const card = document.querySelector(${JSON.stringify(`[data-bot-id=${JSON.stringify(ben.id)}]`)});
+      const card = document.querySelector(${jsLiteral(`[data-bot-id=${JSON.stringify(ben.id)}]`)});
       const rect = card.getBoundingClientRect();
       const options = { bubbles: true, pointerId: 9, pointerType: 'mouse', isPrimary: true, button: 0, buttons: 1,
         clientX: rect.left + rect.width / 2, clientY: rect.top + rect.height / 2 };
@@ -209,7 +210,7 @@ type BotRecord = {
     await click("Save");
     await expect.poll(async () => (await bots()).filter(bot => bot.section === "Delivery").map(bot => bot.id).sort())
       .toEqual([ben.id, dana.id].sort());
-    await expect.poll(() => evaluate(`document.querySelectorAll(${JSON.stringify(`${teamSelector("Delivery")} [data-bot-id]`)}).length`)).toBe(2);
+    await expect.poll(() => evaluate(`document.querySelectorAll(${jsLiteral(`${teamSelector("Delivery")} [data-bot-id]`)}).length`)).toBe(2);
     expect(await messages(ben.id)).toEqual(transcript);
     for (const before of beforeBots) expect(identity(await savedBot(before.id))).toEqual(identity(before));
     await manage("Engineering");
@@ -226,7 +227,7 @@ type BotRecord = {
 
     // General has an empty persisted section key. Its menu, picker and Save
     // are keyboard accessible, and closing the dialog restores its summary.
-    await evaluate(`document.querySelector(${JSON.stringify(`${teamSelector("")} summary`)}).focus(); true`);
+    await evaluate(`document.querySelector(${jsLiteral(`${teamSelector("")} summary`)}).focus(); true`);
     await ui("press", "--keys", "Enter");
     await tabTo("Move bots to General");
     await ui("press", "--keys", "Enter");
@@ -262,7 +263,7 @@ type BotRecord = {
     expect((await savedBot(ben.id)).section).toBe("Delivery");
     await click("Move bot");
     await expect.poll(async () => (await savedBot(ben.id)).section).toBe("Research");
-    await expect.poll(() => evaluate(`Boolean(document.querySelector(${JSON.stringify(`${teamSelector("Research")} ${cardSelector}`)}))`)).toBe(true);
+    await expect.poll(() => evaluate(`Boolean(document.querySelector(${jsLiteral(`${teamSelector("Research")} ${cardSelector}`)}))`)).toBe(true);
     await click("Fit teams to view");
     receipts.dropIntoDelivery = await drag(cardSelector, { x: 0, y: 0 }, teamSelector("Delivery"));
     await expect.poll(snapshot).toContain('alertdialog "Move Ben to Delivery?"');
@@ -284,7 +285,7 @@ type BotRecord = {
     receipts.reorder = await drag(reorderSelector, { x: 0, y: 24 }, `[data-bot-id=${JSON.stringify(originalOrder[1])}]`);
     await expect.poll(() => cardOrder("Delivery")).toEqual(reordered);
     expect(await snapshot()).not.toContain('alertdialog "Move');
-    await evaluate(`document.querySelector(${JSON.stringify(reorderSelector)}).focus(); true`);
+    await evaluate(`document.querySelector(${jsLiteral(reorderSelector)}).focus(); true`);
     await ui("press", "--keys", "Alt+ArrowUp");
     await expect.poll(() => cardOrder("Delivery")).toEqual(originalOrder);
     await ui("press", "--keys", "Alt+ArrowDown");
@@ -348,7 +349,7 @@ type BotRecord = {
     await click("Fit teams to view");
     const screenshots: string[] = [];
     for (const skin of ["midnight", "daylight"]) {
-      await evaluate(`import('/src/lib/skins.ts').then(({ applySkin }) => { applySkin(${JSON.stringify(skin)}); return document.documentElement.dataset.skin; })`);
+      await evaluate(`import('/src/lib/skins.ts').then(({ applySkin }) => { applySkin(${jsLiteral(skin)}); return document.documentElement.dataset.skin; })`);
       await evaluate("document.fonts.ready.then(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve(true)))))");
       // Read the theme's target color without inheriting a card transition,
       // then wait for the real card to reach it before taking evidence.

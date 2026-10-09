@@ -12,6 +12,7 @@ import { launchVerificationServer, runControlOmb, verificationServerEnvironment 
 import { request } from "../scripts/mcp-server.ts";
 import { waitForExit } from "./testing/cleanup.ts";
 import { hostTimeout } from "./testing/host-timeout.ts";
+import { jsLiteral } from "../scripts/testing/js-literal.mjs";
 
 const count = (text: string, needle: string) => text.split(needle).length - 1;
 const jsonl = (path: string) => existsSync(path)
@@ -42,23 +43,23 @@ async function fixture(test: (f: any) => Promise<void>, options: { env?: NodeJS.
       writeFileSync(path, [
         "#!/usr/bin/env node",
         'import { appendFileSync, existsSync, readFileSync } from "node:fs";',
-        `Object.assign(process.env, ${JSON.stringify(env)});`,
+        `Object.assign(process.env, ${jsLiteral(env)});`,
         "const argv = process.argv.slice(2);",
         "const after = (flag) => { const i = argv.indexOf(flag); return i === -1 ? null : argv[i + 1] ?? null; };",
-        `const modes = existsSync(${JSON.stringify(modePath(name))}) ? Object.fromEntries(readFileSync(${JSON.stringify(modePath(name))}, "utf8").trim().split(",").map((part) => part.includes("=") ? part.split("=") : ["any", part])) : {};`,
+        `const modes = existsSync(${jsLiteral(modePath(name))}) ? Object.fromEntries(readFileSync(${jsLiteral(modePath(name))}, "utf8").trim().split(",").map((part) => part.includes("=") ? part.split("=") : ["any", part])) : {};`,
         'const mode = (after("--resume") ? modes.resume : modes.fresh) ?? modes.any;',
-        `if (mode) process.env[${JSON.stringify(name === "codex" ? "FAKE_CODEX_MODE" : "FAKE_CLAUDE_MODE")}] = mode;`,
+        `if (mode) process.env[${jsLiteral(name === "codex" ? "FAKE_CODEX_MODE" : "FAKE_CLAUDE_MODE")}] = mode;`,
         "let botId = null;",
         'try { for (const s of Object.values(JSON.parse(readFileSync(after("--mcp-config"), "utf8")).mcpServers ?? {})) botId = s?.env?.SAGAX_BOT_ID ?? botId; } catch {}',
-        `if (after("--resume") || after("--session-id")) appendFileSync(${JSON.stringify(launchesPath)}, JSON.stringify({ botId, pid: process.pid, resume: after("--resume"), sessionId: after("--session-id"), mode: process.env.FAKE_CLAUDE_MODE ?? "happy" }) + "\\n");`,
-        `else if (argv[0] === "app-server") appendFileSync(${JSON.stringify(codexLaunchesPath)}, JSON.stringify({ botId: process.env.SAGAX_BOT_ID ?? null }) + "\\n");`,
-        `if (botId) process.env.FAKE_CLAUDE_PROMPTS = ${JSON.stringify(join(dataDir, "consumed-"))} + botId + ".jsonl";`,
+        `if (after("--resume") || after("--session-id")) appendFileSync(${jsLiteral(launchesPath)}, JSON.stringify({ botId, pid: process.pid, resume: after("--resume"), sessionId: after("--session-id"), mode: process.env.FAKE_CLAUDE_MODE ?? "happy" }) + "\\n");`,
+        `else if (argv[0] === "app-server") appendFileSync(${jsLiteral(codexLaunchesPath)}, JSON.stringify({ botId: process.env.SAGAX_BOT_ID ?? null }) + "\\n");`,
+        `if (botId) process.env.FAKE_CLAUDE_PROMPTS = ${jsLiteral(join(dataDir, "consumed-"))} + botId + ".jsonl";`,
         // A mode reaches the next launch. A Claude process kept warm between
         // turns ends once it is idle after its mode changed, as a CLI that
         // exited between turns, so the next turn launches under the new mode.
         ...(name === "claude" ? [
           'if (after("--resume") || after("--session-id")) {',
-          `  const modeNow = () => existsSync(${JSON.stringify(modePath(name))}) ? readFileSync(${JSON.stringify(modePath(name))}, "utf8") : "";`,
+          `  const modeNow = () => existsSync(${jsLiteral(modePath(name))}) ? readFileSync(${jsLiteral(modePath(name))}, "utf8") : "";`,
           "  const launched = modeNow();",
           "  let idle = false;",
           "  const write = process.stdout.write.bind(process.stdout);",
@@ -74,8 +75,8 @@ async function fixture(test: (f: any) => Promise<void>, options: { env?: NodeJS.
         // A crashed fixture server must not leave a gated fake provider (or
         // its stdio MCP child) alive after its temporary home is removed.
         'process.stdin.on("end", () => process.exit(0));',
-        `if (after("--resume") && modes.holdresume) { while (!existsSync(${JSON.stringify(join(dataDir, "resume-hold.gate"))})) await new Promise((r) => setTimeout(r, 20)); }`,
-        `await import(${JSON.stringify(pathToFileURL(join(process.cwd(), "server", "testing", fake)).href)});`,
+        `if (after("--resume") && modes.holdresume) { while (!existsSync(${jsLiteral(join(dataDir, "resume-hold.gate"))})) await new Promise((r) => setTimeout(r, 20)); }`,
+        `await import(${jsLiteral(pathToFileURL(join(process.cwd(), "server", "testing", fake)).href)});`,
       ].join("\n"), { mode: 0o700 });
       return path;
     };
@@ -1027,11 +1028,11 @@ const holdingGit = (dataDir: string, hold: string, held: string) => {
     'import { existsSync, writeFileSync } from "node:fs";',
     'import { spawnSync } from "node:child_process";',
     "const args = process.argv.slice(2);",
-    `if (args[0] !== "--version" && existsSync(${JSON.stringify(hold)})) {`,
-    `  writeFileSync(${JSON.stringify(held)}, "held");`,
-    `  while (existsSync(${JSON.stringify(hold)})) await new Promise((r) => setTimeout(r, 20));`,
+    `if (args[0] !== "--version" && existsSync(${jsLiteral(hold)})) {`,
+    `  writeFileSync(${jsLiteral(held)}, "held");`,
+    `  while (existsSync(${jsLiteral(hold)})) await new Promise((r) => setTimeout(r, 20));`,
     "}",
-    `process.exit(spawnSync(${JSON.stringify(real)}, args, { stdio: "inherit" }).status ?? 1);`,
+    `process.exit(spawnSync(${jsLiteral(real)}, args, { stdio: "inherit" }).status ?? 1);`,
   ].join("\n"), { mode: 0o700 });
   return bin;
 };

@@ -47,6 +47,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { launchChrome, openPage } from "./cdp.mjs";
 import { SURFACES, SKIN_IDS, PHASES, NOT_CAPTURED } from "./surfaces.mjs";
+import { jsLiteral } from "../../../scripts/testing/js-literal.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(HERE, "..", "..", "..");
@@ -224,18 +225,18 @@ function context(page, viewport, fixture) {
     sleep,
     eval: (expr) => page.eval(expr),
     waitFor: (expr, opts) => page.waitFor(expr, opts),
-    dispatch: (action) => page.eval(`__parity.dispatch(${JSON.stringify(action)})`),
+    dispatch: (action) => page.eval(`__parity.dispatch(${jsLiteral(action)})`),
     /** Evaluate a function body with `s` (state) and `d` (dispatch) in scope. */
     store: (body) => page.eval(`(() => { const s = __parity.state(); const d = __parity.dispatch; ${body} })()`),
-    bot: (name) => page.eval(`(__parity.state().bots.find((b) => b.name === ${JSON.stringify(name)}) || null)`),
+    bot: (name) => page.eval(`(__parity.state().bots.find((b) => b.name === ${jsLiteral(name)}) || null)`),
     async selectBot(name) {
-      await page.waitFor(`__parity.state()?.bots?.some((b) => b.name === ${JSON.stringify(name)})`);
-      await page.eval(`(() => { const b = __parity.state().bots.find((x) => x.name === ${JSON.stringify(name)}); __parity.dispatch({ type: "select", id: b.id }); })()`);
+      await page.waitFor(`__parity.state()?.bots?.some((b) => b.name === ${jsLiteral(name)})`);
+      await page.eval(`(() => { const b = __parity.state().bots.find((x) => x.name === ${jsLiteral(name)}); __parity.dispatch({ type: "select", id: b.id }); })()`);
       await sleep(300);
     },
     async selectGroup(name) {
-      await page.waitFor(`__parity.state()?.groups?.some((g) => g.name === ${JSON.stringify(name)})`);
-      await page.eval(`(() => { const g = __parity.state().groups.find((x) => x.name === ${JSON.stringify(name)}); __parity.dispatch({ type: "select", id: g.id }); })()`);
+      await page.waitFor(`__parity.state()?.groups?.some((g) => g.name === ${jsLiteral(name)})`);
+      await page.eval(`(() => { const g = __parity.state().groups.find((x) => x.name === ${jsLiteral(name)}); __parity.dispatch({ type: "select", id: g.id }); })()`);
       await sleep(300);
     },
     async click(selector, { button = "left" } = {}) {
@@ -276,7 +277,7 @@ function context(page, viewport, fixture) {
       await sleep(200);
     },
     async scrollTo(selector, block = "center") {
-      await page.eval(`(() => { const el = ${selectorExpr(selector)}; if (!el) throw new Error("not found"); el.scrollIntoView({ block: ${JSON.stringify(block)} }); })()`);
+      await page.eval(`(() => { const el = ${selectorExpr(selector)}; if (!el) throw new Error("not found"); el.scrollIntoView({ block: ${jsLiteral(block)} }); })()`);
       await sleep(300);
     },
     exists: (selector) => page.eval(`Boolean(${selectorExpr(selector)})`),
@@ -288,13 +289,13 @@ function context(page, viewport, fixture) {
  * innermost visible element whose whitespace-collapsed text equals `text`
  * (a string) or matches it (a RegExp). */
 function selectorExpr(selector) {
-  if (typeof selector === "string") return `document.querySelector(${JSON.stringify(selector)})`;
+  if (typeof selector === "string") return `document.querySelector(${jsLiteral(selector)})`;
   const { text, tag = "button,a,[role=button],[role=tab],[role=menuitem],[role=menuitemradio],[role=option],li,label,span,div,h2,h3", within = "body", nth = 0 } = selector;
   const want = text instanceof RegExp ? text.toString() : JSON.stringify(text);
   return `(() => {
     const want = ${want};
-    const root = document.querySelector(${JSON.stringify(within)}) || document.body;
-    const all = [...root.querySelectorAll(${JSON.stringify(tag)})].filter((el) => {
+    const root = document.querySelector(${jsLiteral(within)}) || document.body;
+    const all = [...root.querySelectorAll(${jsLiteral(tag)})].filter((el) => {
       const t = (el.innerText || el.textContent || "").replace(/\\s+/g, " ").trim();
       const b = el.getBoundingClientRect();
       return (want instanceof RegExp ? want.test(t) : t === want) && b.width > 0 && b.height > 0;
@@ -318,7 +319,7 @@ async function loadApp(page, base, viewport, preset, fixture) {
   await page.send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-reduced-motion", value: "no-preference" }] });
   if (page.stubId) await page.send("Page.removeScriptToEvaluateOnNewDocument", { identifier: page.stubId });
   const { identifier } = await page.send("Page.addScriptToEvaluateOnNewDocument", {
-    source: `window.__PARITY_PRESET__ = ${JSON.stringify(preset)};\n${STUB}`,
+    source: `window.__PARITY_PRESET__ = ${jsLiteral(preset)};\n${STUB}`,
   });
   page.stubId = identifier;
   page.console.length = 0;
