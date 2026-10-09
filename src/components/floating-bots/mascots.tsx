@@ -19,6 +19,9 @@ import type { TrombiPose } from "@/components/retro-assistant/Trombi";
 import { SkinnedTrombi } from "@/components/skin-fx/SkinnedTrombi";
 import { BUNBU_EARFLOP_CLIP, BunbuMascot, type BunbuAction, type BunbuMood } from "@/components/BunbuMascot";
 import { ShibaMascot } from "@/components/ShibaMascot";
+import { SHIBA_MOVE_TIMING, shibaMoveFor, type ShibaMove } from "@/components/shiba-moves";
+import { playShibaBark } from "@/lib/shiba-bark";
+import { readFloatingBotPrefs } from "@/lib/floating-bots";
 import { fxMoveFor, useEquipBurst, useMoveBurst, useReducedMotion, type FxMoveRequest } from "@/components/skin-fx/skin-fx";
 import { completeMascotLook, MASCOT_SHAPES, type MascotCharacter, type MascotLook, type MascotShape } from "../../../shared/mascot-look";
 import { createFrameSmoother, type MascotActivity, type MascotFrame } from "./behavior";
@@ -93,8 +96,19 @@ export function motion25dTransform(frame: MascotFrame, size: number): string {
   );
 }
 
+/**
+ * Shiba's share of the frames: only which way it faces and a sideways shift.
+ * Its rig (shiba-moves.ts) does the rest (hops, leans, the walk), so a hop is
+ * never lifted twice.
+ */
+export function shibaMotionTransform(frame: MascotFrame, size: number): string {
+  const facing = flatTurn(frame.face);
+  const shift = ((frame.x ?? 0) + frame.sway * 0.6) * size * 0.32;
+  return `translate(${shift.toFixed(2)}px, 0px) scale(${facing.sx.toFixed(4)}, 1)`;
+}
+
 /** Moves a one-piece character with the mascot's frames, and hit-tests its painted pixels. */
-function Motion25D({ size, frame, fps, onHitTest, children }: Pick<MascotRenderProps, "size" | "frame" | "fps" | "onHitTest"> & { children: React.ReactNode }) {
+function Motion25D({ size, frame, fps, onHitTest, children, transform = motion25dTransform }: Pick<MascotRenderProps, "size" | "frame" | "fps" | "onHitTest"> & { children: React.ReactNode; transform?: (frame: MascotFrame, size: number) => string }) {
   const box = useRef<HTMLSpanElement>(null);
   const live = useRef({ frame, fps });
   live.current = { frame, fps };
@@ -107,7 +121,7 @@ function Motion25D({ size, frame, fps, onHitTest, children }: Pick<MascotRenderP
       if (document.hidden) return;
       if (now - last < 1000 / Math.max(1, Math.min(60, live.current.fps())) - 3) return;
       last = now;
-      if (box.current) box.current.style.transform = motion25dTransform(smooth(live.current.frame(now), now), size);
+      if (box.current) box.current.style.transform = transform(smooth(live.current.frame(now), now), size);
     };
     raf = requestAnimationFrame(tick);
     onHitTest((x, y) => {
@@ -317,11 +331,74 @@ function BunbuThumb({ color, look, size }: MascotThumbProps) {
 
 /* -------------------------------------------------------------- Shiba */
 
+/**
+ * Shiba's moves in the avatar popover and the mascot's "Moves" menu: desktop
+ * clips its rig plays (the dog's own first, then the shared ones).
+ */
+export const SHIBA_MENU_MOVES = ["bark", "turnCircles", "wag", "sniff", "tilt", "stretch", "lieDown", "ruffle", "wave", "excited"] as const;
+export const SHIBA_MOVE_LABELS: Partial<Record<string, LocaleKey>> = {
+  bark: "floatingBots.move.bark",
+  turnCircles: "floatingBots.move.turnCircles",
+  wag: "floatingBots.move.wag",
+  sniff: "floatingBots.move.sniff",
+  tilt: "floatingBots.move.headTilt",
+  stretch: "floatingBots.move.stretch",
+  lieDown: "floatingBots.move.lieDown",
+  ruffle: "floatingBots.move.shakeOff",
+  excited: "floatingBots.move.excited",
+};
+
+/** Each bark rings out loud only when the person turned the bark sound on (Settings > Appearance; off by default). */
+function barkIfWanted() {
+  if (readFloatingBotPrefs().barkSound) playShibaBark();
+}
+
+/**
+ * The move a desktop event plays on a character: Shiba barks at a nudge,
+ * turns in circles for an achievement, gets excited when a message lands
+ * and lies down to sleep when snoozed. The others keep their own life (null).
+ */
+export function cueClipFor(character: MascotCharacter, cue: "nudge" | "achievement" | "message" | "snooze"): MascotActivity | null {
+  if (character !== "shiba") return null;
+  return cue === "nudge" ? "bark" : cue === "achievement" ? "turnCircles" : cue === "snooze" ? "lieDown" : "excited";
+}
+
+/** How long a Shiba naps before its snooze hides it, ms. */
+export const SNOOZE_NAP_MS = 1600;
+
+/**
+ * What Shiba keeps doing for a clip and the brain's pose: walking while the
+ * window walks, running while it flies, asleep, dangling while dragged,
+ * working, talking while the reply streams, sitting up attentive while its
+ * bot waits for an approval (or hit an error), else its idle life.
+ */
+export function shibaHeldFor(activity: MascotActivity, pose: FloatingPose): ShibaMove | null {
+  if (activity === "walk") return "walk";
+  if (activity === "fly" || activity === "flyOut" || activity === "return") return "run";
+  if (activity === "sleep" || pose === "sleep") return "sleep";
+  if (activity === "drag") return "drag";
+  if (activity === "working" || pose === "think") return "work";
+  if (pose === "speak") return "talk";
+  if (pose === "alert") return "listen";
+  return null;
+}
+
+/** A new move request each time a clip Shiba has a move for starts (shiba-moves.ts SHIBA_CLIP_MOVES). */
+function useShibaClipMove(activity: MascotActivity): FxMoveRequest | null {
+  const last = useRef<{ activity: MascotActivity; request: FxMoveRequest | null }>({ activity: "idle", request: null });
+  if (last.current.activity !== activity) {
+    last.current = { activity, request: shibaMoveFor(activity) && !SHIBA_MOVE_TIMING[shibaMoveFor(activity)!].loop ? { clip: activity, key: Date.now() } : null };
+  }
+  return last.current.request;
+}
+
 function ShibaRender({ color, look, size, activity, pose, frame, fps, onHitTest }: MascotRenderProps) {
-  const move = useClipFx(activity);
+  const own = useShibaClipMove(activity);
+  const fx = useClipFx(activity);
+  const move = own ?? fx;
   return (
-    <Motion25D size={size} frame={frame} fps={fps} onHitTest={onHitTest}>
-      <ShibaMascot skin={look.skins.shiba} color={color} size={size * 0.9} mood={bunbuMoodFor(activity, pose)} expression={shapeExpressionForClip(activity)} detail="full" move={move} label={null} />
+    <Motion25D size={size} frame={frame} fps={fps} onHitTest={onHitTest} transform={shibaMotionTransform}>
+      <ShibaMascot skin={look.skins.shiba} color={color} size={size * 0.9} mood={bunbuMoodFor(activity, pose)} expression={shapeExpressionForClip(activity)} detail="full" move={move} activity={shibaHeldFor(activity, pose)} rig onBark={barkIfWanted} label={null} />
     </Motion25D>
   );
 }
@@ -345,7 +422,15 @@ export const MASCOTS: readonly MascotDefinition[] = [
     Render: BunbuRender,
     Thumb: BunbuThumb,
   },
-  { id: "shiba", capabilities: { walk: true, fly: false, wings: false, blink: true, turn: true, flip: true }, paint: { colors: true, skins: true }, moves: ["wave", "dance", "jump", "hop", "love"], Render: ShibaRender, Thumb: ShibaThumb },
+  {
+    id: "shiba",
+    capabilities: { walk: true, fly: false, wings: false, blink: true, turn: true, flip: true },
+    paint: { colors: true, skins: true },
+    moves: SHIBA_MENU_MOVES,
+    moveLabels: SHIBA_MOVE_LABELS,
+    Render: ShibaRender,
+    Thumb: ShibaThumb,
+  },
 ];
 
 export function mascotFor(look: Pick<MascotLook, "character"> | undefined): MascotDefinition {

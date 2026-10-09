@@ -4,7 +4,7 @@
 // machine your bots can borrow.
 import { useRetroSkin } from "./RetroChromeHost";
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
-import { FLOATING_LIVELINESS, floatingBotPrefs, HOTKEY_CHOICES, hotkeyLabel, setFloatingFlyAway, setFloatingHotkey, setFloatingLiveliness, subscribeFloatingBots, type FloatingLiveliness, type HotkeyChoice } from "@/lib/floating-bots";
+import { FLOATING_LIVELINESS, floatingBotPrefs, HOTKEY_CHOICES, hotkeyLabel, setFloatingBarkSound, setFloatingFlyAway, setFloatingHotkey, setFloatingLiveliness, subscribeFloatingBots, type FloatingLiveliness, type HotkeyChoice } from "@/lib/floating-bots";
 import { useCallSettings, writeCallSettings } from "@/lib/voice-mode/call-settings";
 import { Archive, Bell, Coins, FlaskConical, KeyRound, Mail, Monitor, Palette, ScrollText, Search, ShieldCheck, TabletSmartphone, Terminal, User, Users, X, Building2, Zap } from "lucide-react";
 import { api, useStore, type AppSettingsSection, type ConfigStatus } from "@/state/store";
@@ -497,6 +497,20 @@ function FloatingFlyAwayRow() {
         checked={prefs.flyAway}
         aria-label={t("settings.floatingBots.flyAway.title")}
         onClick={() => setFloatingFlyAway(!prefs.flyAway)}
+      />
+    </SettingRow>
+  );
+}
+
+/** Desktop mascots: Shiba barks out loud (off by default; the bark itself always shows). */
+function FloatingBarkSoundRow() {
+  const prefs = useSyncExternalStore(subscribeFloatingBots, floatingBotPrefs, floatingBotPrefs);
+  return (
+    <SettingRow title={t("settings.floatingBots.barkSound.title")} subtitle={t("settings.floatingBots.barkSound.subtitle")}>
+      <Switch
+        checked={prefs.barkSound}
+        aria-label={t("settings.floatingBots.barkSound.title")}
+        onClick={() => setFloatingBarkSound(!prefs.barkSound)}
       />
     </SettingRow>
   );
@@ -1309,6 +1323,7 @@ export function SettingsModal() {
                   <SidebarHiddenSettings />
                   <FloatingFlyAwayRow />
                   <FloatingLivelinessRow />
+                  <FloatingBarkSoundRow />
                   <FloatingHotkeyRow />
                   <FloatingCaptionsRow />
                   {advanced && !remoteActive && editConfig && <ToolCallsRow />}

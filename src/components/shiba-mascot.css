@@ -1,13 +1,23 @@
 /* Shiba (ShibaMascot.tsx): the CSS idle of the app's avatars, a slow breath,
    a blink, a lazy tail wag and an ear twitch now and then. Every part turns
-   about its own point in the 0..100 box (inline transform-origin, view-box
+   about its own point in the 0..100 box (shiba-art.ts SHIBA_PIVOTS, view-box
    units). The desktop mascot and a move drive the same groups from the rig
-   (shiba-moves.ts) instead, and drop these loops (.shiba-rig). Reduced
-   motion keeps it still. */
+   (shiba-moves.ts) instead, with the pivots in their transform attributes:
+   the loops and these origins then stand down (.shiba-rig), since an origin
+   would shift those transforms too. Reduced motion keeps it still. */
 
-.shiba-mascot :is(.shiba-whole, .shiba-tail, .shiba-head, .shiba-ear, .shiba-eye, .shiba-mouth, .shiba-brows, .shiba-leg) {
+.shiba-mascot :is(.shiba-whole, .shiba-tail, .shiba-head, .shiba-ear, .shiba-eye, .shiba-mouth, .shiba-brows, .shiba-leg, .shiba-paw) {
   transform-box: view-box;
 }
+.shiba-live:not(.shiba-rig) .shiba-whole { transform-origin: 50px 98.5px; }
+.shiba-live:not(.shiba-rig) .shiba-tail { transform-origin: 74px 91.5px; }
+.shiba-live:not(.shiba-rig) [data-stance="lie"] .shiba-tail { transform-origin: 80px 96.5px; }
+.shiba-live:not(.shiba-rig) .shiba-head { transform-origin: 50px 74px; }
+.shiba-live:not(.shiba-rig) .shiba-ear-l { transform-origin: 34px 36px; }
+.shiba-live:not(.shiba-rig) .shiba-ear-r { transform-origin: 66px 36px; }
+.shiba-live:not(.shiba-rig) .shiba-eye-l { transform-origin: 38.5px 46.5px; }
+.shiba-live:not(.shiba-rig) .shiba-eye-r { transform-origin: 61.5px 46.5px; }
+.shiba-live:not(.shiba-rig) .shiba-mouth { transform-origin: 50px 62px; }
 
 .shiba-live:not(.shiba-rig) .shiba-whole { animation: shiba-breathe 3.4s ease-in-out infinite; }
 .shiba-live:not(.shiba-rig) .shiba-eye { animation: shiba-blink 4.6s ease-in-out infinite; }

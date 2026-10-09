@@ -3,7 +3,7 @@
 // may stand. The main app page runs it for every floated bot and sends the
 // result to that bot's window (desktop) or draws it itself (browser, phone).
 import type { Bot, Message, Task } from "@/state/store";
-import type { FloatingAvatar, FloatingBalloon, FloatingMenuItem, FloatingPose, FloatingSnapshot, MascotTask } from "./protocol";
+import type { FloatingAvatar, FloatingBalloon, FloatingCue, FloatingMenuItem, FloatingPose, FloatingSnapshot, MascotTask } from "./protocol";
 import { moodLevel } from "./mood";
 import type { Liveliness } from "./behavior";
 import type { FloatingContext } from "./gauge";
@@ -245,6 +245,8 @@ export interface FloatingInput {
   alwaysOnTop: boolean | null;
   /** The mascot's mood, 0..1 (mood.ts); a new mascot when absent. */
   mood?: number;
+  /** The last nudge or achievement, for the mascot to react to. */
+  cue?: FloatingCue | null;
   /** The "Fly away during tasks" setting; on when absent. */
   flyAway?: boolean;
   /** The "Activity level" setting. */
@@ -330,6 +332,7 @@ export function buildFloatingSnapshot(input: FloatingInput): FloatingSnapshot {
     liveliness: input.liveliness ?? "normal",
     context: input.context ?? null,
     mascot: input.mascot ?? { character: "owl" },
+    cue: input.cue ?? null,
   };
 }
 

@@ -68,6 +68,11 @@ export interface MascotState extends ClipRun {
   lastGreet: number;
   /** Since when the pointer rests near the owl; null when it is away or moving. */
   stillSince: number | null;
+  /**
+   * A dog's round trip (Shiba's wander): out to a spot, a sniff, a turn, back
+   * (`back` px). `settle`: just dropped somewhere new, it goes and sniffs it.
+   */
+  trip: { phase: "settle" | "out" | "sniff" | "turn"; back: number } | null;
 }
 
 export interface MascotOptions {
@@ -83,6 +88,8 @@ export interface MascotOptions {
   mood?: number;
   /** The character has real depth (a 3D model): it may spin, flip and turn in place. A flat one only turns to walk the other way. */
   depth?: boolean;
+  /** The character is a dog (Shiba): it wanders off and back, sniffs, wags, barks, and checks out a new spot when dropped. */
+  dog?: boolean;
 }
 
 export type MascotInput =
@@ -160,6 +167,7 @@ export function newMascotState(now: number, task: MascotTask = "idle"): MascotSt
     lastStartle: -Infinity,
     lastGreet: -Infinity,
     stillSince: null,
+    trip: null,
   };
 }
 
@@ -169,7 +177,8 @@ const moodOf = (options: MascotOptions) => options.mood ?? 0.6;
 function become(state: MascotState, activity: MascotActivity, now: number, options: MascotOptions, extra: Partial<MascotState> = {}): MascotState {
   const until = isTimed(activity) ? now + CLIP_MS[activity] : null;
   const prev: ClipRun = { activity: state.activity, since: state.since, facing: state.facing, variant: state.variant, moveMs: state.moveMs };
-  return { ...state, prev, activity, since: now, until, after: null, variant: options.random(), moveMs: 0, ...extra };
+  // a round trip lasts only while each of its steps passes it on
+  return { ...state, prev, activity, since: now, until, after: null, variant: options.random(), moveMs: 0, trip: null, ...extra };
 }
 
 function rest(state: MascotState, now: number, options: MascotOptions): MascotState {
@@ -224,8 +233,41 @@ function land(state: MascotState, now: number, options: MascotOptions): Step {
     return same(become(home, "land", now, options, { after, facing: 1 }));
   }
   if (state.activity === "fly") return same(become(state, "land", now, options));
+  // a dog out on its round trip stops to sniff the spot
+  if (state.activity === "walk" && state.trip?.phase === "out") return same(become(state, "sniff", now, options, { trip: { ...state.trip, phase: "sniff" } }));
   if (state.activity === "walk") return same(rest(state, now, options));
   return same(state);
+}
+
+/** A walk of `dx` px (signed) along the desk, or a hop where there is no room. `trip` is passed on to the walk. */
+function walkBy(state: MascotState, dx: number, now: number, options: MascotOptions, trip: MascotState["trip"] = null): Step {
+  const distance = Math.abs(dx);
+  if (distance < 40) return same(become(state, "hop", now, options));
+  const direction: 1 | -1 = dx > 0 ? 1 : -1;
+  const ms = moveDuration("walk", distance, 0);
+  return {
+    state: become(state, "walk", now, options, { facing: direction, moveMs: ms, until: now + ms + MASCOT_MS.flight, trip }),
+    effects: [{ type: "wander", dx: direction * distance, ms, style: "walk", delay: 0 }],
+  };
+}
+
+/** A dog's round trip: out toward the roomier side (never into an edge), then sniff, turn and back. */
+function startTrip(state: MascotState, now: number, options: MascotOptions, reach?: number): Step {
+  const direction = chooseDirection(state.room, options.random);
+  if (direction === 0) return same(become(state, "hop", now, options));
+  const room = state.room ? (direction === 1 ? state.room.right : state.room.left) : 240;
+  const distance = Math.min(moveDistance("walk", room, options.random), reach ?? Infinity);
+  return walkBy(state, direction * distance, now, options, { phase: "out", back: -direction * distance });
+}
+
+/** The next step of a round trip when the one under way ends (null: no trip, or it is over). */
+function tripStep(state: MascotState, now: number, options: MascotOptions): Step | null {
+  const trip = state.trip;
+  if (!trip) return null;
+  if (trip.phase === "settle") return startTrip(state, now, options, 70);
+  if (trip.phase === "sniff") return same(become(state, "turn", now, options, { facing: state.facing === 1 ? -1 : 1, trip: { ...trip, phase: "turn" } }));
+  if (trip.phase === "turn") return walkBy(state, trip.back, now, options);
+  return null;
 }
 
 /** An idle mascot picks something small to do. */
@@ -236,6 +278,7 @@ function idleAction(state: MascotState, now: number, options: MascotOptions): St
     reduced: options.reduced,
     canMove: options.canMove,
     depth: options.depth,
+    dog: options.dog,
     random: options.random,
   });
   const gap = idleGapMs({ liveliness: liveliness(options), mood: moodOf(options), reduced: options.reduced, random: options.random });
@@ -247,6 +290,7 @@ function idleAction(state: MascotState, now: number, options: MascotOptions): St
     return same(become(remembered, "turn", now, options, { facing: state.facing === 1 ? -1 : 1 }));
   }
   const style = action.choice.style;
+  if (action.choice.trip) return startTrip(remembered, now, options);
   const direction = chooseDirection(state.room, options.random);
   if (direction === 0) return same(become(remembered, "hop", now, options));
   const room = state.room ? (direction === 1 ? state.room.right : state.room.left) : 240;
@@ -338,12 +382,16 @@ export function stepMascot(state: MascotState, input: MascotInput, options: Masc
         return { state: become({ ...state, lastInteraction: now }, "drag", now, options), effects };
       }
       if (state.activity !== "drag") return same(state);
-      return same(become({ ...state, lastInteraction: now }, "land", now, options));
+      // a dog dropped somewhere new goes and sniffs it out, then comes back to the spot
+      const settle = options.dog && options.canMove && !options.reduced ? { phase: "settle" as const, back: 0 } : null;
+      return same(become({ ...state, lastInteraction: now }, "land", now, options, { trip: settle }));
     }
     case "tick": {
       if (state.until !== null && now >= state.until) {
         // a flight or a move that never reported back ends anyway
         if (["flyOut", "return", "walk", "fly"].includes(state.activity)) return land(state, now, options);
+        const next = options.canMove ? tripStep(state, now, options) : null;
+        if (next) return next;
         if (state.after) return same(become(state, state.after, now, options));
         if (state.activity === "yawn") return same(become(state, "sleep", now, options));
         return same(rest(state, now, options));

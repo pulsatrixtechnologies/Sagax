@@ -430,6 +430,14 @@ export function sanitizeLevels(value) {
   return { bot: clampNumber(value.bot, 0, 1), mic: clampNumber(value.mic, 0, 1) };
 }
 
+const CUES = new Set(["nudge", "achievement", "snooze"]);
+
+/** The last nudge or achievement (src/components/floating-bots/protocol.ts FloatingCue): a known kind and a time, or nothing. */
+export function sanitizeCue(value) {
+  if (!value || typeof value !== "object" || !CUES.has(value.kind) || !isFiniteNumber(value.at) || value.at < 0) return null;
+  return { kind: value.kind, at: value.at };
+}
+
 /**
  * What the brain may tell a floating bot's window: who it is, how it looks, a
  * pose and, when talking, a balloon of short plain texts. Anything else is
@@ -473,6 +481,7 @@ export function sanitizeFloatingSnapshot(value) {
   const theme = appTheme(value.theme);
   if (theme) snapshot.theme = theme;
   snapshot.call = sanitizeCall(value.call);
+  snapshot.cue = sanitizeCue(value.cue);
   snapshot.tray = sanitizeTray(value.tray);
   const balloon = value.balloon;
   if (balloon && typeof balloon === "object" && BALLOON_KINDS.has(balloon.kind)) {
