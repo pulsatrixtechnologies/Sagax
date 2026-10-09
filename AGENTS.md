@@ -376,6 +376,16 @@ bots and threads to Approve for me once"):
   at that start stays Ask, threads included. Import and team backup still
   force Ask.
 
+## Settled approvals in the chat (2026-10-05)
+
+A permission ask stays in the chat only while it is still waiting. Once it
+is allowed, denied, dismissed or expired, `ChatView` and `GroupView` leave
+it out (`approvalCardStaysInChat`). The message stays stored. A question
+and a quiz are unchanged. The phone and iPad drop the same rows
+(`settledPermissionLeavesChat` in `transcriptRows`). Covered by
+`src/components/ApprovalCard.chat.test.ts` and
+`ios/Tests/CompanionCoreTests/ChatPreferencesTests.swift`.
+
 ## Profile on an organization server
 
 On an organization server (`SAGAX_IDENTITY=perspicax`) a signed-in person's
@@ -1486,7 +1496,12 @@ it. Keep these rules, each covered by `server/desktop-bridge*.test.ts`,
   environment, `extract_archive` on the desktop, `electron/archive-extract.mjs`;
   solo: next to the upload). No links, nothing outside the folder, bomb limits
   (5000 files, 512 MB, ratio 200, depth 24), an encrypted zip kept as is. The
-  message carries an `<attached-archive>` manifest. Tests:
+  message carries an `<attached-archive>` manifest. A small archive (at most
+  256 KB) also has its text files inlined there (`.txt`, `.md`, `.csv`,
+  `.tsv`, `.json`, 100 KB each, 256 KB together), read in memory on the
+  server, so the bot applies a profile with `propose_profile`,
+  `skill_manage`, `memory_update` and `propose_routine` and does not
+  download the zip or open a browser to read it. Tests:
   `electron/archive-extract.node-test.mjs`, `server/attachment-archives.test.ts`,
   `server/archive-attachments.e2e.test.ts`, `server/desktop-bridge.e2e.test.ts`.
 - The desktop never reads or writes the app's own data, its cookies or the

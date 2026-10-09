@@ -116,6 +116,15 @@ describe("one marketplace list, two scopes", () => {
     expect(refused).toContain("Remove the token");
     expect(refused).toContain("type=\"password\"");
   });
+
+  it("says the token is kept for everyone in the Everyone scope", () => {
+    const tokens = { scope: "workspace" as const, onSave: async () => true, onRemove: async () => true };
+    const html = renderToStaticMarkup(createElement(MarketplacesSection, { ...props, marketplaces: [{ ...market, hasToken: true }], tokens, needsToken: "acme-tools" }));
+    expect(html).toContain("data-marketplace-token-form=\"acme-tools\"");
+    expect(html).toContain("Token saved");
+    expect(html).toContain("for everyone. Only an admin can change it.");
+    expect(html).not.toContain("for this bot and this marketplace only");
+  });
 });
 
 describe("bot panel > Library", () => {

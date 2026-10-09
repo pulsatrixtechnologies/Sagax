@@ -13,7 +13,7 @@ public enum BotTemplatesDestination: String, Sendable, Equatable {
 
 public enum BotTemplatesEntry {
     public static func destination(gate: SurfaceGate, features: ServerFeatures?) -> BotTemplatesDestination? {
-        if features?.templates == true, gate.allows(.templates) { return .templates }
+        if features?.templates == true, gate.allows(.browseBots) { return .templates }
         if gate.allows(.createBot) { return .newBot }
         return nil
     }

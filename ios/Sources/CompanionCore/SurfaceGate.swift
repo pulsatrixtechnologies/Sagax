@@ -136,7 +136,8 @@ public enum SurfaceFeature: String, CaseIterable, Hashable, Sendable {
     case botSlack
     /// Skills an organization package offers (BA4, OrgSkillsCard): admin.
     case orgSkillsLibrary
-    /// Library > Plugins, a bot's Claude Code plugins (`BotPluginsCard.tsx`):
+    /// A bot's Claude Code plugins (Connect apps "For <bot>" on the web,
+    /// `PluginsPanel.tsx`, `plugins/BotPluginCard.tsx`):
     /// `/api/bots/:id/plugins` is a server route (admin, or a client on an
     /// organization server: `orgDirectory` in request-auth.ts); the sidecar
     /// does not list it.
@@ -266,6 +267,10 @@ public enum SurfaceFeature: String, CaseIterable, Hashable, Sendable {
     /// remote client hides it, a client session may not reach it; an admin
     /// session browses the catalog (`GET /api/team-library/catalog`).
     case templates
+    /// Browse Bots, the organisation bot catalogue (the desktop sidebar's
+    /// place that replaced Templates): `/api/bot-catalog` is in CLIENT_ALLOW
+    /// and the remote client hides it (no sidecar route).
+    case browseBots
 
     // Team map and people (WP15)
     /// The Team map, read-only (TM1): `GET /api/team-map` passes both gates
@@ -420,6 +425,8 @@ public struct SurfaceGate: Hashable, Sendable {
             return true
         case .templates:
             return scope == .serverAdmin
+        case .browseBots:
+            return scope != .sidecar
         case .teamMapMove:
             return scope == .serverAdmin
         case .people:

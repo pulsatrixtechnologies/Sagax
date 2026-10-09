@@ -49,7 +49,7 @@ import {
   updateMarketplace as updateBotMarketplace,
   type BotPluginsView,
 } from "@/lib/my-connections";
-import { botPluginState, botScopeMarketplaces, initialPluginScope, marketplaceRoute, pluginScopeBot, type PluginScope } from "@/lib/plugin-scope";
+import { botPluginState, botScopeMarketplaces, initialPluginScope, marketplaceRoute, pluginScopeBot, workspaceMarketplaceTokens, type PluginScope } from "@/lib/plugin-scope";
 import {
   ClaudeMcpSwitch,
   McpAuthLine,
@@ -93,7 +93,7 @@ interface MarketplaceListing {
   description?: string;
   /** bots with plugins from it (the workspace list only) */
   bots?: number;
-  /** the bot scope's bot has a token saved for it (never the token) */
+  /** a token is saved for it: the bot scope's bot, or everyone's (an admin's) in the workspace list; never the token */
   hasToken?: boolean;
   plugins: Array<{
     name: string; description?: string; version?: string; category?: string; installed: boolean; servers: string[]; skills: string[];
@@ -376,7 +376,7 @@ export function PluginsPanel() {
       await afterBotMarket(await addBotMarketplace(scopeBotId, source, { ...(ref ? { ref } : {}), ...(token ? { token } : {}) }));
       return;
     }
-    const result = await api("/api/marketplaces", { method: "POST", body: JSON.stringify({ source, ...(ref ? { ref } : {}) }) });
+    const result = await api("/api/marketplaces", { method: "POST", body: JSON.stringify({ source, ...(ref ? { ref } : {}), ...(token ? { token } : {}) }) });
     setMarketplaces(result.marketplaces ?? []);
     void loadBotView();
   });
@@ -406,8 +406,12 @@ export function PluginsPanel() {
     });
   };
   /** That bot's token for a marketplace (server/marketplace-tokens.ts):
-   * saved, then the marketplace is fetched again with it. */
+   * saved, then the marketplace is fetched again with it. In the Everyone
+   * scope, an admin keeps one token per marketplace for the whole
+   * installation (never shown back), so a private marketplace works for
+   * everyone. */
   const marketTokens = marketRoute === "bot" && scopeBotId ? {
+    scope: "bot" as const,
     onSave: (name: string, token: string) => marketAction(`refresh:${name}`, async () => {
       await setBotMarketplaceToken(scopeBotId, name, token);
       await afterBotMarket(await updateBotMarketplace(scopeBotId, name));
@@ -415,7 +419,11 @@ export function PluginsPanel() {
     onRemove: (name: string) => marketAction(`token:${name}`, async () => {
       await afterBotMarket(await removeBotMarketplaceToken(scopeBotId, name));
     }),
-  } : undefined;
+  } : marketRoute === "workspace" && ownerOrAdmin === true ? workspaceMarketplaceTokens<MarketplaceListing>({
+    api,
+    run: marketAction,
+    loaded: (list) => { setMarketplaces(list); void loadBotView(); },
+  }) : undefined;
   const marketSummaries = marketRoute === "bot" && botView
     ? botScopeMarketplaces(botView)
     : marketRoute === "workspace" ? marketplaces : null;

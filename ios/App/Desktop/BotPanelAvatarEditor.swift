@@ -47,6 +47,13 @@ struct BotAvatarEditor: View {
     @State private var working = false
     @State private var photo: PhotosPickerItem?
     @State private var config: ConfigStatus?
+    /// The colour row picked by hand; nil follows the colour worn.
+    @State private var colourRow: MausColors.PickerRow?
+
+    private var shownRow: MausColors.PickerRow {
+        guard MausColors.offersClay(draft.character, color: draft.color) else { return .classic }
+        return colourRow ?? MausColors.pickerRow(for: draft.color, character: draft.character)
+    }
 
     private var canGenerate: Bool { session.canAdminister && config?.imageGen?.configured == true }
 
@@ -162,9 +169,22 @@ struct BotAvatarEditor: View {
                 .padding(.top, 6)
             }
             if draft.character != .trombi {
-                label("Color").padding(.top, 12)
+                HStack(spacing: 8) {
+                    label("Color")
+                    Spacer(minLength: 0)
+                    if MausColors.offersClay(draft.character, color: draft.color) {
+                        // the desktop's palette tabs, narrowed to the phone's rows (MS5)
+                        HStack(spacing: 2) {
+                            ForEach(MausColors.PickerRow.allCases, id: \.self) { row in
+                                chip(row == .clay ? String(localized: "Clay") : String(localized: "Classic"), selected: shownRow == row) { colourRow = row }
+                                    .accessibilityIdentifier("avatar-palette.\(row.rawValue)")
+                            }
+                        }
+                    }
+                }
+                .padding(.top, 12)
                 HStack(spacing: 6) {
-                    ForEach(MausColors.names, id: \.self) { name in swatch(name) }
+                    ForEach(shownRow.swatches, id: \.self) { name in swatch(name) }
                 }
                 .padding(.top, 6)
             }
@@ -178,6 +198,21 @@ struct BotAvatarEditor: View {
                             model.avatarMove = nil
                             DispatchQueue.main.async { model.avatarMove = move }
                         }
+                        .accessibilityIdentifier("avatar-move.\(move.rawValue)")
+                    }
+                }
+                .padding(.top, 6)
+            }
+            if draft.character == .shape {
+                // the fourteen Shapes moves, played by the panel's shape (MascotLookEditor.tsx Moves)
+                label("Moves").padding(.top, 12)
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 92), spacing: 6)], alignment: .leading, spacing: 6) {
+                    ForEach(ShapeMove.allCases, id: \.self) { move in
+                        chip(CharacterMovesMenu.name(move), selected: false) {
+                            model.avatarShapeMove = nil
+                            DispatchQueue.main.async { model.avatarShapeMove = move }
+                        }
+                        .accessibilityLabel(Text("Play the \(CharacterMovesMenu.name(move)) move"))
                         .accessibilityIdentifier("avatar-move.\(move.rawValue)")
                     }
                 }

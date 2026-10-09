@@ -77,8 +77,10 @@ struct PhoneBotAvatarSheet: View {
                 onFramePhoto: { framing = true },
                 unlocks: session.surfaceGate.allows(.characterExtras) ? unlocks : .nothingLocked
             )
-            .frame(height: 252, alignment: .top)
-            .clipped()
+            // the owl's rows end where reference 03's divider is (252 pt); a
+            // shape adds its shape rows and the Clay switch, so the card
+            // grows instead of cutting the colours off
+            .frame(minHeight: 252, alignment: .top)
             .overlay { if generating { ProgressView().controlSize(.large) } }
             ProfileDivider(leading: Theme.Profile.textInset)
             Button {

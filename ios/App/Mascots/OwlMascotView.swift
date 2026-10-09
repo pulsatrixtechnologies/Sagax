@@ -29,6 +29,13 @@ final class OwlMascotHandle: ObservableObject {
     func blink() { send(.blink) }
     /// Open the wings for one move.
     func flourish(_ move: OwlWingMove) { send(.flourish(move)) }
+    /// One of the fourteen Shapes moves, for a shape on screen (the editor's
+    /// Moves); each call is a new request, as the desktop's `FxMoveRequest`.
+    @Published private(set) var shapeMove: ShapeMoveRequest?
+    func shape(_ move: ShapeMove) {
+        shapeMove = ShapeMoveRequest(move: move, key: (shapeMove?.key ?? 0) + 1)
+    }
+
     /// One of the app's one-shot motions (`MausMotion` names).
     func motion(_ name: String) {
         guard let beat = OwlBeat.forMotion(name) else { return }
@@ -46,6 +53,12 @@ final class OwlMascotHandle: ObservableObject {
         defer { pending.removeAll() }
         return pending
     }
+}
+
+/// A Shapes move asked for once (`FxMoveRequest`): a new key replays it.
+struct ShapeMoveRequest: Equatable {
+    let move: ShapeMove
+    let key: Int
 }
 
 struct OwlMascotView: View {

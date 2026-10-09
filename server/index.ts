@@ -810,6 +810,7 @@ import { OidcRelyingParty } from "./oidc-rp.ts";
 import type { BotAttachment, BotFileRoot } from "./org-admin-files.ts";
 import { ADMIN_ACTIVITY_CATEGORIES } from "./admin-activity.ts";
 import { createOrgMemberRoutes, type MemberPerson, type MemberRequest } from "./org-member-routes.ts";
+import { MemberLiveText } from "./member-live-text.ts";
 import { createOrgAdminRoutes, type AccessKind, type AdminApproval, type AdminEngine, type AdminBot, type AdminBotReach, type AdminPerson, type ApprovalAnswer, type ApprovalType, type OrgAdminViewer } from "./org-admin-routes.ts";
 import { RevocationQueue } from "./idp-revocations.ts";
 import { IDP_REFRESH_WAIT_MS, IDP_SWEEP_INTERVAL_MS, IdpGrantVault, IdpSessionManager, refreshAfterMs, resolveIdpVaultKey, settledWithin } from "./idp-session.ts";
@@ -5302,9 +5303,10 @@ function githubCredentialsFor(actor: string | null | undefined): GithubCredentia
 // The installation's one marketplace list (server/plugin-marketplaces.ts):
 // Connect apps installs a plugin from it for everyone (MCP servers and
 // skills) or for one bot (the whole plugin, server/bot-plugins.ts). Added
-// for everyone, it reads with the person's GitHub connection, then the
-// organization's first GitHub token; added or fetched again from a bot, with
-// that bot's token for it first (BotPlugins.cloneEnvironment).
+// for everyone, it reads with the installation's token for it (an admin's,
+// Connect apps > Everyone), then the person's GitHub connection, then the
+// organization's GitHub tokens; added or fetched again from a bot, with that
+// bot's token for it first (BotPlugins.cloneEnvironment).
 const pluginMarketplaces = new PluginMarketplaces({
   dataDir: DATA_DIR,
   gitEnvironment: (actor) => githubGitEnvironment(githubCredentialsFor(actor)[0]?.token),
@@ -21198,6 +21200,9 @@ function updatedMarketplaceServer(name: string, existing: StoredMcpServer, entry
 ROUTES.push(createMarketplaceRoutes({
   store: pluginMarketplaces,
   mayManage: mayManageMarketplaces,
+  // the installation's token per marketplace (Everyone scope): an admin's
+  workspace: botPlugins,
+  mayManageTokens: (auth) => (IDENTITY.kind === "perspicax" ? orgAdminCaller(auth) : computerOwner(auth)),
   actor: (auth) => sessionPrincipal(auth) ?? undefined,
   install: async (marketplace, plugin, { auth }) => {
     if (pluginMarketplaces.installed().some((entry) => entry.key === `${plugin}@${marketplace}`)) {
@@ -25228,6 +25233,13 @@ const orgAdmin = createOrgAdminRoutes({
     },
   },
 });
+/** Lot C.3: the words each bot is writing now, for the member API's
+ * streamed turn (server/member-live-text.ts). */
+const memberLiveText = new MemberLiveText();
+bus.subscribe((event: RuntimeEvent) => {
+  if (shouldIgnoreProviderEvent(event)) return;
+  memberLiveText.observe(event);
+});
 /** 2026-10-09 (lot C.1): the member API (server/org-member-routes.ts), for
  * an AI client attached to Perspicax acting for one person. Each route is
  * performed as that person through a 60 s session of theirs. */
@@ -25295,6 +25307,37 @@ const orgMember = createOrgMemberRoutes({
     const id = ref.trim().toLowerCase();
     if (isPrincipalId(id) && principals.byId(id)) return id;
     return IDENTITY.kind === "perspicax" ? principals.bySubject(IDENTITY.issuer, ref.trim())?.id ?? null : null;
+  },
+  // Lot C.3: the streamed turn and the approvals answered from an AI client.
+  liveText: (threadId) => (store.botByThread(threadId) ? memberLiveText.partial(threadId) : null),
+  threadLink: (threadId, botId) => {
+    if (IDENTITY.kind !== "perspicax") return null;
+    const origin = IDENTITY.publicOrigin.replace(/\/+$/, "");
+    const bot = botId ?? store.botByThread(threadId)?.id ?? null;
+    return `${origin}/#thread=${encodeURIComponent(threadId)}${bot ? `&bot=${encodeURIComponent(bot)}` : ""}`;
+  },
+  botOfThread: (threadId) => store.botByThread(threadId)?.id ?? null,
+  approvalAnswerer: (threadId, requestId) => {
+    const message = store.messagesFor(threadId).find((row) => row.card?.requestId === requestId);
+    if (!message?.card) return null;
+    const card = message.card;
+    const bot = botForApproval(threadId, message);
+    const ownerId = bot ? approvalOwnerId(bot) : null;
+    return {
+      found: true,
+      open: !card.answered && !card.dismissed && !card.expired,
+      ownerPrincipalId: ownerId,
+      ownerName: ownerId ? adminPerson(ownerId).name : null,
+      adminOnly: IDENTITY.kind === "perspicax" && card.adminApproval === true,
+    };
+  },
+  noteAnsweredVia: (person, threadId, requestId) => {
+    const message = store.messagesFor(threadId).find((candidate) => candidate.card?.requestId === requestId);
+    const card = message?.card;
+    if (!message || !card || (!card.answered && !card.dismissed) || card.answered === "unavailable") return;
+    const named = card.answeredBy?.kind === "session" ? card.answeredBy : { kind: "session" as const, name: person.name || "Signed-in user" };
+    if (named.via === "ai-client") return;
+    store.patchMessage(threadId, message.id, { card: { ...card, answeredBy: { ...named, via: "ai-client" } } });
   },
   record: (person, entry) => appendAdminAction(DATA_DIR, {
     category: "client",

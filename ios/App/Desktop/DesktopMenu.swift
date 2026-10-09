@@ -601,6 +601,10 @@ struct DesktopSidebarMenus {
                 model.modal = .shortcuts
             }),
             .divider("about"),
+            // Release notes above About, as the phone's account menu (DC21)
+            DesktopMenuEntry(id: "releaseNotes", title: String(localized: "Release notes"), icon: .fileText, kind: .action {
+                model.modal = .releaseNotes
+            }),
             DesktopMenuEntry(id: "about", title: String(localized: "About"), icon: .info, kind: .action {
                 model.modal = .about
             }),

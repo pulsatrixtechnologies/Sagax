@@ -227,9 +227,12 @@ struct RoutineEditorView: View {
                     ForEach(bots) { bot in Text(bot.name).tag(bot.id) }
                 }
             }
-            TextField(isTeamGoal ? "What should the team accomplish?" : "What should the agent do?", text: $prompt, axis: .vertical)
-                .lineLimit(4...10)
-                .accessibilityIdentifier("routine-editor-prompt")
+            // the markdown editor (desktop RoutineCalendarPage EventEditor, #258)
+            MarkdownEditor(
+                text: $prompt,
+                placeholder: isTeamGoal ? String(localized: "What should the team accomplish?") : String(localized: "What should the agent do?"),
+                minHeight: 140, accessibilityLabel: String(localized: "Instructions"), identifier: "routine-editor-prompt"
+            )
         }
     }
 

@@ -12,12 +12,14 @@ import { randomBytes } from "node:crypto";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { githubAccessFailure, githubSkillFetch, probeGithubRepo, type GithubCredential } from "./github-access.ts";
-import { BotPluginError, type GitRunner } from "./bot-plugins.ts";
+import { BotPluginError, BotPlugins, type GitRunner } from "./bot-plugins.ts";
 import { botPluginsWithMarketplaces } from "./testing/plugin-stores.ts";
-import { MarketplaceTokens } from "./marketplace-tokens.ts";
+import { MarketplaceTokens, WORKSPACE_TOKEN_KEY } from "./marketplace-tokens.ts";
 import { fetchSkillFromSource } from "./skill-fetch.ts";
 import { pluginTurnFiles, pluginTurnPrompt } from "./plugin-turn.ts";
 import { createBotPluginRoutes } from "./routes/bot-plugins.ts";
+import { createMarketplaceRoutes, type MarketplaceRouteDeps } from "./routes/marketplaces.ts";
+import { PluginMarketplaces } from "./plugin-marketplaces.ts";
 import { dispatchRoutes } from "./routes/table.ts";
 import { json, readBody } from "./harness/http.ts";
 import type { RequestAuth } from "./request-auth.ts";
@@ -217,6 +219,93 @@ describe("a bot's private marketplace", () => {
     expect(added.body.marketplaces[0]).toMatchObject({ name: "acme-private", hasToken: true });
     expect((await call("DELETE", "/marketplaces/acme-private/token")).body.marketplaces[0].hasToken).toBe(false);
     expect((await call("PUT", "/marketplaces/acme-private/token", { token: "good-token-123" })).body.marketplaces[0].hasToken).toBe(true);
+  });
+});
+
+describe("the installation's private marketplace (Connect apps, Everyone)", () => {
+  async function workspace() {
+    const github = await fakeGithub();
+    const dataDir = temp();
+    const repo = marketplaceRepo();
+    const runs: Array<{ args: string[]; env: Record<string, string> }> = [];
+    const git: GitRunner = async (args, run) => {
+      runs.push({ args, env: run.env });
+      const header = run.env.GIT_CONFIG_VALUE_0 ?? "";
+      const token = header.startsWith("AUTHORIZATION: basic ") ? Buffer.from(header.slice(21), "base64").toString().split(":")[1] : "";
+      if (token !== "good-token-123") throw new BotPluginError("The git host did not let Sagax read this repository.", "repository_unreadable", 422, "connect_or_token");
+      cpSync(repo, args[args.indexOf("--") + 2]!, { recursive: true });
+    };
+    const tokens = new MarketplaceTokens(dataDir, vaultKey());
+    const marketplaces = new PluginMarketplaces({ dataDir, git, gitEnvironment: () => ({}), policy: () => undefined, inUse: () => [] });
+    const store = new BotPlugins({
+      dataDir, git, marketplaces, gitEnvironment: () => ({}), tokens, policy: () => undefined, credentials: () => [],
+      probe: (repoName, credentials) => probeGithubRepo(repoName, credentials, { env: env(github.origin) }),
+    });
+    const audits: Array<Parameters<MarketplaceRouteDeps["audit"]>[1]> = [];
+    const ADMIN: RequestAuth = { kind: "loopback", scopes: ["admin", "client"] };
+    const MANAGER: RequestAuth = { kind: "loopback", trust: "service", scopes: ["admin", "client"] };
+    const routes = [createMarketplaceRoutes({
+      store: marketplaces, mayManage: () => true, actor: () => "pr_admin",
+      install: async () => ({ status: 200, body: {} }), uninstall: async () => ({ status: 200, body: {} }), update: async () => ({ status: 200, body: {} }),
+      audit: (_auth, row) => { audits.push(row); },
+      workspace: store,
+      mayManageTokens: (caller) => caller.kind === "loopback" && caller.trust !== "service",
+    })];
+    let caller: RequestAuth = ADMIN;
+    const server = createServer(async (req, res) => {
+      const url = new URL(req.url ?? "/", "http://127.0.0.1");
+      if (!await dispatchRoutes(routes, { req, res, url, path: url.pathname, method: req.method ?? "GET", auth: caller, json, readBody })) json(res, 404, {});
+    });
+    servers.push(server);
+    await new Promise<void>((ready) => server.listen(0, "127.0.0.1", ready));
+    const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}/api/marketplaces`;
+    const call = async (as: RequestAuth, method: string, path: string, body?: unknown) => {
+      caller = as;
+      const response = await fetch(`${base}${path}`, { method, headers: { "content-type": "application/json" }, ...(body ? { body: JSON.stringify(body) } : {}) });
+      return { status: response.status, body: await response.json() as Record<string, any> };
+    };
+    return { store, tokens, audits, runs, dataDir, call, ADMIN, MANAGER };
+  }
+
+  it("an admin adds it with a token kept for everyone, never sent back, and audited", async () => {
+    const { tokens, audits, runs, dataDir, call, ADMIN, MANAGER } = await workspace();
+    expect(await call(ADMIN, "POST", "", { source: "acme/private" })).toMatchObject({ status: 422, body: { code: "private_needs_token" } });
+    // a manager who is not an admin may not keep a token for everyone
+    expect(await call(MANAGER, "POST", "", { source: "acme/private", token: "good-token-123" })).toMatchObject({ status: 403, body: { code: "marketplace_token_admin_only" } });
+    expect(tokens.sourcesFor(WORKSPACE_TOKEN_KEY).size).toBe(0);
+    const added = await call(ADMIN, "POST", "", { source: "acme/private", token: "good-token-123" });
+    expect(added.status).toBe(201);
+    expect(JSON.stringify(added.body)).not.toContain("good-token-123");
+    expect(added.body.marketplace).toMatchObject({ name: "acme-private", hasToken: true });
+    expect(runs.at(-1)!.args.join(" ")).not.toContain("good-token-123");
+    expect(readFileSync(join(dataDir, "marketplace-tokens.enc"), "utf8")).not.toContain("good-token-123");
+    expect(tokens.get(WORKSPACE_TOKEN_KEY, "acme/private")).toBe("good-token-123");
+    expect(audits.at(-1)).toEqual({ action: "marketplace.token_set", target: { kind: "marketplace", id: "acme-private", name: "acme-private" }, after: { scope: "workspace", source: "acme/private" } });
+    expect(JSON.stringify(audits)).not.toContain("good-token-123");
+    // refresh reads with it; the listing says a token is kept, never which
+    expect((await call(MANAGER, "POST", "/acme-private/refresh")).body.marketplaces[0]).toMatchObject({ hasToken: true });
+    expect(await call(MANAGER, "DELETE", "/acme-private/token")).toMatchObject({ status: 403 });
+    expect(await call(ADMIN, "PUT", "/acme-private/token", { token: "two words" })).toMatchObject({ status: 400, body: { code: "invalid_token" } });
+    const removed = await call(ADMIN, "DELETE", "/acme-private/token");
+    expect(removed.body.marketplaces[0]).toMatchObject({ hasToken: false });
+    expect(audits.at(-1)).toMatchObject({ action: "marketplace.token_remove", before: { scope: "workspace" } });
+    expect(await call(ADMIN, "POST", "/acme-private/refresh")).toMatchObject({ status: 422, body: { code: "private_needs_token" } });
+    const put = await call(ADMIN, "PUT", "/acme-private/token", { token: "good-token-123" });
+    expect(put.body.marketplaces[0]).toMatchObject({ hasToken: true });
+    expect(JSON.stringify(put.body)).not.toContain("good-token-123");
+    // Remove takes the token with it
+    expect((await call(ADMIN, "DELETE", "/acme-private")).status).toBe(200);
+    expect(tokens.sourcesFor(WORKSPACE_TOKEN_KEY).size).toBe(0);
+  });
+
+  it("a bot without its own token reads the marketplace with everyone's, and keeps none of its own", async () => {
+    const { store, tokens, call, ADMIN } = await workspace();
+    await call(ADMIN, "POST", "", { source: "acme/private", token: "good-token-123" });
+    await store.updateMarketplace("bot-1", "acme-private", "pr_member");
+    expect(store.listMarketplaces("bot-1")[0]).toMatchObject({ name: "acme-private", hasToken: false });
+    expect(tokens.sourcesFor("bot-1").size).toBe(0);
+    store.forgetBot("bot-1");
+    expect(tokens.get(WORKSPACE_TOKEN_KEY, "acme/private")).toBe("good-token-123");
   });
 });
 

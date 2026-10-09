@@ -1,6 +1,7 @@
 import Foundation
 
-// The bot panel's Library > Plugins (`bot-settings/BotPluginsCard.tsx`,
+// A bot's Claude Code plugins, Connect apps "For <bot>" on the web
+// (`src/components/PluginsPanel.tsx`, `plugins/BotPluginCard.tsx`,
 // server/routes/bot-plugins.ts): Claude Code plugins on one bot. The owner,
 // or a person who manages the bot, adds a marketplace and installs its
 // plugins; everyone else reads the list (`canChange`). The companion
@@ -155,8 +156,9 @@ public extension CompanionClient {
 // BotPluginsListing. botPlugins and installBotPlugin are overloaded on
 // the return type so each screen keeps its decoder.
 
-// A bot's Claude Code plugins: the bot panel's Library > Plugins
-// (`src/components/bot-settings/BotPluginsCard.tsx`, `src/lib/my-connections.ts`,
+// A bot's Claude Code plugins: Connect apps "For <bot>" on the web
+// (`src/components/PluginsPanel.tsx`, `src/components/plugins/BotPluginCard.tsx`,
+// `src/lib/plugin-scope.ts`, `src/lib/my-connections.ts`,
 // server/routes/bot-plugins.ts). The owner (or a person who manages the bot)
 // adds a marketplace and installs its plugins; everyone else who uses the
 // bot reads the list. A server answers these routes; the companion sidecar

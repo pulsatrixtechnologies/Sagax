@@ -32,6 +32,8 @@ struct CreateBotSheet: View {
     @EnvironmentObject private var session: Session
     @State private var options: NewBotFormOptions
     @State private var showingOptions = false
+    /// "Import from zip" (#271).
+    @State private var importingZip = false
     @State private var presets: [BotPreset] = []
     /// The administrator lets this person use shared bots only (NB6).
     @State private var readOnly = false
@@ -77,6 +79,12 @@ struct CreateBotSheet: View {
         .task {
             readOnly = NewBotRules.readOnly(await session.configStatus())
             presets = await session.botPresets()
+        }
+        .sheet(isPresented: $importingZip) {
+            BotZipImportSheet(close: { importingZip = false }) { bot in
+                importingZip = false
+                if let bot { created(bot) } else { close() }
+            }
         }
         .sheet(isPresented: $showingOptions) {
             NewBotOptionsForm(
@@ -186,6 +194,19 @@ struct CreateBotSheet: View {
                             .padding(.bottom, 12)
                             .frame(minHeight: box.size.height, alignment: .top)
                         moreOptionsRow
+                        // New bot's "Import from zip" (#271)
+                        Button {
+                            nameFocused = false
+                            importingZip = true
+                        } label: {
+                            Label("Import from zip", systemImage: "doc.zipper")
+                                .font(Theme.Font.bodyMedium)
+                                .foregroundStyle(Theme.textSecondary)
+                                .frame(maxWidth: .infinity, minHeight: 36)
+                        }
+                        .buttonStyle(.plain)
+                        .padding(.bottom, 12)
+                        .accessibilityIdentifier("create-bot-import-zip")
                     }
                 }
                 .modifier(FlashScrollIndicators())
@@ -408,9 +429,12 @@ struct NewBotOptionsForm: View {
                 .listRowBackground(Theme.card)
 
                 Section("Instructions") {
-                    TextField("Instructions", text: limited(\.soul, NewBotRules.soulLimit), prompt: Text("How this bot should work"), axis: .vertical)
-                        .lineLimit(5...14)
-                        .accessibilityIdentifier("create-bot-instructions")
+                    // the markdown editor (desktop SoulField in New bot, #258)
+                    MarkdownEditor(
+                        text: limited(\.soul, NewBotRules.soulLimit), placeholder: String(localized: "How this bot should work"),
+                        minHeight: 160, maxLength: NewBotRules.soulLimit,
+                        accessibilityLabel: String(localized: "Instructions"), identifier: "create-bot-instructions"
+                    )
                 }
                 .listRowBackground(Theme.card)
             }

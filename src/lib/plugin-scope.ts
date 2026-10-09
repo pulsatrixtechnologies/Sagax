@@ -82,3 +82,28 @@ export function marketplaceRoute(input: { workspaceManager: boolean; scope: Plug
   if (input.workspaceManager) return "workspace";
   return input.botView?.canChange ? "bot" : null;
 }
+
+/** The installation's token per marketplace (Connect apps, "Everyone",
+ * an admin only; server/routes/marketplaces.ts): saved, then the
+ * marketplace is fetched again with it; or removed. The token goes to the
+ * server once and never comes back (`hasToken` only). */
+export function workspaceMarketplaceTokens<L>(deps: {
+  api: (path: string, init: { method: string; body?: string }) => Promise<{ marketplaces?: L[] }>;
+  /** the panel's busy and error handling (`marketAction`) */
+  run: (busy: string, work: () => Promise<unknown>) => Promise<boolean>;
+  loaded: (marketplaces: L[]) => void;
+}): { scope: "workspace"; onSave: (name: string, token: string) => Promise<boolean>; onRemove: (name: string) => Promise<boolean> } {
+  const at = (name: string) => `/api/marketplaces/${encodeURIComponent(name)}`;
+  return {
+    scope: "workspace",
+    onSave: (name, token) => deps.run(`refresh:${name}`, async () => {
+      await deps.api(`${at(name)}/token`, { method: "PUT", body: JSON.stringify({ token }) });
+      const result = await deps.api(`${at(name)}/refresh`, { method: "POST", body: "{}" });
+      deps.loaded(result.marketplaces ?? []);
+    }),
+    onRemove: (name) => deps.run(`token:${name}`, async () => {
+      const result = await deps.api(`${at(name)}/token`, { method: "DELETE" });
+      deps.loaded(result.marketplaces ?? []);
+    }),
+  };
+}

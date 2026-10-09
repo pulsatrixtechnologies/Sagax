@@ -445,8 +445,10 @@ export type CardAnswerer = (
   | { kind: "loopback" }
   | { kind: "worker" }
 ) & {
-  /** "call": decided by voice on a Live call, not tapped. */
-  via?: "call";
+  /** "call": decided by voice on a Live call, not tapped. "ai-client": answered
+   * from an AI client attached to Perspicax (Claude Code, claude.ai), through
+   * the member API, by the person named (lot C.3). */
+  via?: "call" | "ai-client";
 };
 
 export interface WireAccessCard {

@@ -365,7 +365,9 @@ export function linkFromPaste(selected: string, pasted: string): string | null {
 }
 
 function tableCell(value: string): string {
-  return value.trim().replace(/\|/g, "\\|");
+  // Backslashes first, so a cell ending in "\" cannot escape the pipe added
+  // after it and split the row.
+  return value.trim().replace(/\\/g, "\\\\").replace(/\|/g, "\\|");
 }
 
 /** Tab-separated text (a spreadsheet copy) becomes a markdown table, its

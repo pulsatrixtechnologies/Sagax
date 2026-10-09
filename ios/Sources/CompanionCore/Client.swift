@@ -636,6 +636,9 @@ public struct CompanionClient: Sendable {
         if let token {
             request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         }
+        // This client knows threads in a conversation between two people
+        // (PersonThreads.swift); the desktop's api() sends the same.
+        request.setValue("1", forHTTPHeaderField: PersonThreads.header)
         if let body {
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
             request.httpBody = try JSONSerialization.data(withJSONObject: body)
@@ -1470,8 +1473,10 @@ public struct CompanionClient: Sendable {
     }
 
     @discardableResult
-    public func send(text: String, toRoom groupId: String) async throws -> SendReceipt {
-        return try await sendForReceipt(try makeRequest("POST", "/api/groups/\(groupId)/messages", body: ["text": text]))
+    public func send(text: String, toRoom groupId: String, threadId: String? = nil) async throws -> SendReceipt {
+        var body = ["text": text]
+        if let threadId { body["threadId"] = threadId }
+        return try await sendForReceipt(try makeRequest("POST", "/api/groups/\(groupId)/messages", body: body))
     }
 
     /// Retry-safe send used by short-lived clients such as Share Extensions.

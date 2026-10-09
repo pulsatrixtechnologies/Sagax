@@ -88,7 +88,8 @@ private struct PhoneLibrarySkills: View {
     }
 }
 
-/// Library > Plugins (`BotPluginsCard.tsx`): the plugins on this bot, each
+/// A bot's plugins, as Connect apps shows them "For <bot>" on the web
+/// (`PluginsPanel.tsx`, `plugins/BotPluginCard.tsx`): the plugins on this bot, each
 /// switched on or off or removed, then the marketplaces it reads with their
 /// plugins to install, and a field to add one. A person who may not change
 /// them reads the list.

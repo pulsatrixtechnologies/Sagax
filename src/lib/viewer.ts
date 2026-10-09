@@ -83,15 +83,20 @@ export function canManageBackups(config: ConfigStatus | null | undefined): boole
 
 /** The name to show above a person's line, or null when the line is your
  * own. A line with a sender is theirs; a line without one was sent by the
- * operator at the server's computer. */
+ * operator at the server's computer, except the line this app is sending
+ * right now (`optimistic-` id, store.tsx optimisticUserMessage): it has no
+ * sender until the server's copy replaces it, and it is always yours. Before
+ * 2026-10-09 a member's own direct message read as the operator's there, so
+ * the sidebar dropped its "You:". */
 export function otherAuthorName(
-  message: Pick<Message, "role" | "sender">,
+  message: Pick<Message, "role" | "sender"> & { id?: string },
   config: ConfigStatus | null | undefined,
 ): string | null {
   if (message.role !== "user") return null;
   const viewer = config?.viewer;
   if (!viewer) return null;
   const sender = message.sender;
+  if (!sender && message.id?.startsWith("optimistic-")) return null;
   if (sender) {
     const id = sender.id?.trim().toLowerCase();
     if (id && viewer.principalId && id === viewer.principalId.toLowerCase()) return null;

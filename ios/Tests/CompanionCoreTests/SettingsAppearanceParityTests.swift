@@ -11,12 +11,14 @@ final class SettingsAppearanceParityTests: XCTestCase {
 
     func testTheCatalogMatchesTheDesktopOne() {
         let catalog = AchievementDefinition.catalog
-        XCTAssertEqual(catalog.count, 52)
+        // 52 from the first catalog, plus the 24 of the Mastery tier (docs/achievements.md, DC47)
+        XCTAssertEqual(catalog.count, 76)
         XCTAssertEqual(Set(catalog.map(\.id)).count, catalog.count, "ids are unique")
         XCTAssertEqual(AchievementDefinition.lookup("first-words")?.name.fr, "Premiers mots")
         XCTAssertEqual(AchievementDefinition.lookup("first-words")?.rewards.first?.key, "title:rookie")
         XCTAssertTrue(catalog.contains { $0.hidden && $0.hint != nil }, "secrets carry a hint")
-        XCTAssertTrue(catalog.allSatisfy { [5, 10, 20, 50, 100].contains($0.points) })
+        // ACHIEVEMENT_POINTS in shared/achievements.ts: the Mastery tier adds 150 to 300
+        XCTAssertTrue(catalog.allSatisfy { [5, 10, 20, 50, 100, 150, 200, 250, 300].contains($0.points) })
     }
 
     func testRarityAndLevelFollowTheSharedRules() {

@@ -36,10 +36,13 @@ struct MessageMenu: View {
     let editDisabled: Bool
     var actions = MessageActionSet()
     let selectText: (String) -> Void
+    /// "Add reaction": any emoji (#270).
+    var addReaction: (() -> Void)? = nil
     let edit: () -> Void
     @EnvironmentObject private var session: Session
 
-    static let reactionChoices = ["👍", "❤️", "😂", "🎉", "👀"]
+    /// The desktop's quick reactions (#270, `QUICK_REACTIONS`).
+    static let reactionChoices = ReactionRules.quick
 
     var body: some View {
         if canReact {
@@ -48,6 +51,9 @@ struct MessageMenu: View {
                     Haptics.selection()
                     Task { await session.react(to: message, in: chat.threadId, emoji: emoji) }
                 }
+            }
+            if let addReaction {
+                Button("Add reaction", systemImage: "face.smiling", action: addReaction)
             }
         }
         if !visibleText.isEmpty {

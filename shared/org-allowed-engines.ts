@@ -4,7 +4,9 @@
 // empty list means every engine, as before the setting existed. The server
 // refuses a model on another engine, moves a bot whose engine left the list
 // onto Auto on an allowed engine, and Auto never picks outside the list. The
-// model picker lists only these providers (src/components/ModelPicker.tsx).
+// model picker lists only these providers, under Cloud, API keys and Local,
+// in the composer and in the bot's default model alike (one component,
+// src/components/ModelPicker.tsx; ModelPicker.interaction.test.ts).
 import type { ModelSelection } from "./wire.ts";
 
 export type AllowedEngines = readonly string[] | null | undefined;

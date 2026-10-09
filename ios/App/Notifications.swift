@@ -39,6 +39,8 @@ final class NotificationCoordinator: NSObject, UNUserNotificationCenterDelegate 
             "threadId": notification.threadId,
             "botId": notification.botId,
             "kind": notification.kind,
+            // a person's message or a room tag names its conversation (#262, #274)
+            "groupId": notification.groupId ?? "",
         ]
         if notification.isBlocking { content.interruptionLevel = .timeSensitive }
 

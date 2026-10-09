@@ -276,6 +276,9 @@ private struct BotPanelIdentity: View {
         .onValueChange(of: model.avatarMove) { move in
             if let move { owlHandle.flourish(move) }
         }
+        .onValueChange(of: model.avatarShapeMove) { move in
+            if let move { owlHandle.shape(move) }
+        }
         .onValueChange(of: open) { field in editing = field != nil }
     }
 

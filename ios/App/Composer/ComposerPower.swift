@@ -130,7 +130,7 @@ extension ChatView {
         let mention = MentionQuery.at(draft)
         let thread = ThreadRefQuery.at(draft)
         if let mention, mention.start >= (thread?.start ?? -1) {
-            let pool = MentionSuggestions.pool(for: current, bots: session.state.bots)
+            let pool = MentionSuggestions.pool(for: current, bots: session.state.bots, people: PersonMentions.people(in: current, session: session))
             return MentionSuggestions.choices(pool, query: mention.query).map(SuggestionStrip.Item.mention)
         }
         if let thread {

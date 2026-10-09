@@ -428,11 +428,14 @@ private struct BotPanelSoul: View {
                 .frame(height: 19.5)
                 .padding(.top, 16)
             if soul != nil {
-                PanelTextArea(placeholder: "Standing instructions", text: $draft, mono: true)
-                    .frame(height: 220)
-                    .padding(.top, 6)
-                    .disabled(!canEdit)
-                    .accessibilityIdentifier("desktop-panel-soul")
+                // the markdown editor (desktop SoulField, #258)
+                MarkdownEditor(
+                    text: $draft, placeholder: String(localized: "Standing instructions"), minHeight: 220, monospaced: true,
+                    accessibilityLabel: String(localized: "Standing instructions (SOUL.md)"), identifier: "desktop-panel-soul"
+                )
+                .padding(.top, 6)
+                .disabled(!canEdit)
+                BotWorkspaceShortcuts(bot: bot).padding(.top, 8)
             } else if let problem {
                 PanelNotice(text: problem).padding(.top, 6)
             } else {
@@ -850,16 +853,17 @@ private struct BotPanelMemory: View {
                 .background(theme.warning.opacity(0.1), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
                 .padding(.top, 8)
             }
-            PanelTextArea(
-                placeholder: editing.path == MemoryRules.index
-                    ? "Nothing remembered yet. The bot writes durable notes here — or add your own."
-                    : "Write the note here.",
+            // the markdown editor (desktop MemoryEditorDialog, #258)
+            MarkdownEditor(
                 text: Binding(get: { memory.editing?.text ?? "" }, set: { memory.edit($0) }),
-                minHeight: 200, mono: true, lineHeight: 20.3125
+                placeholder: editing.path == MemoryRules.index
+                    ? String(localized: "Nothing remembered yet. The bot writes durable notes here — or add your own.")
+                    : String(localized: "Write the note here."),
+                minHeight: 200, monospaced: true,
+                accessibilityLabel: editing.path == MemoryRules.index ? String(localized: "Bot memory") : String(localized: "Memory file \(editing.path)")
             )
             .disabled(editing.readOnly || !canEdit)
             .padding(.top, 8)
-            .accessibilityLabel(Text(editing.path == MemoryRules.index ? "Bot memory" : "Memory file \(editing.path)"))
             if editing.readOnly {
                 Text("Daily logs are the bot's own record of what it did; they are not loaded into conversations and are read-only here.")
                     .panelText(12, 18).foregroundStyle(theme.inkSecondary).padding(.top, 8)
