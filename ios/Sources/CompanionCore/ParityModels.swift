@@ -325,6 +325,9 @@ struct ServerEnvironmentResetBody: Encodable {
 
 public struct MCPServerListing: Decodable, Hashable, Identifiable, Sendable {
     public var name: String
+    /// Where it came from: absent for one added by hand, else the marketplace
+    /// that installed it (#206).
+    public var source: String? = nil
     public var type: String?
     public var url: String?
     public var command: String?

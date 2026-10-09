@@ -190,7 +190,7 @@ private struct SettingsRootPage: View {
         case .experimental:
             SettingsRow(title: "Experimental", systemImage: "flask", accessory: .chevron, height: 44.33, identifier: "settings-experimental") { navigator.push(.experimental) }
         case .plugins:
-            SettingsRow(title: "Plugins", systemImage: "puzzlepiece.extension", accessory: .chevron, height: 44.33, identifier: "settings-plugins") { navigator.push(.plugins) }
+            SettingsRow(title: "Connect apps", systemImage: "puzzlepiece.extension", accessory: .chevron, height: 44.33, identifier: "settings-plugins") { navigator.push(.plugins) }
         case .pairDevices:
             SettingsRow(title: "Pair devices", systemImage: "iphone", accessory: .chevron, height: 44.33, identifier: "settings-account") { navigator.push(.account) }
         case .computer:
@@ -260,7 +260,8 @@ struct SettingsRouteView: View {
         switch route {
         case .account: AccountSettingsView(closeSheet: closeSheet)
         case .usage: UsageSettingsView()
-        case .plugins: PluginsView()
+        // Connect apps (#203, #218): the desktop panel's three views
+        case .plugins: ConnectAppsPage()
         case .rules: AutoReviewRulesView()
         case .timeZone: TimeZonePickerView()
         case .botComputer: BotComputerSettingsView()
