@@ -423,6 +423,7 @@ import {
   memorySystemPrompt,
   memorySourceLabel,
   searchMemoryFiles,
+  searchDocFiles,
   SESSION_SEARCH_SYSTEM_PROMPT,
   TASK_WORKSPACES_DIR,
   workspaceDir,
@@ -766,7 +767,9 @@ import { achievementFrameAllowed, achievementRequestEvents, achievementSendEvent
 import { createAchievementRoutes } from "./routes/achievements.ts";
 import { grandfatheredFromBots } from "../shared/achievements.ts";
 import { createBotMemoryRoutes } from "./routes/bot-memory.ts";
-import { rulesSystemPrompt } from "./workspace-files.ts";
+import { docsIndexPrompt, readWorkspaceText, rulesSystemPrompt, WorkspacePathError } from "./workspace-files.ts";
+import { updateDoc, updateRules } from "./workspace-tools.ts";
+import { markWorkspaceUse } from "./workspace-usage.ts";
 import { createBotActivityRoutes, type ActivityChildRef } from "./routes/bot-activity.ts";
 import { inGitRepository } from "./activity-coding.ts";
 import { repositoryInfo } from "./activity-code-work.ts";
@@ -5445,6 +5448,7 @@ function previewSystemPrompt(bot: BotRecord) {
     teamAvailabilityPart(agentsMounted && coordination ? peers : []),
     { id: "rules", label: "Rules (RULES.md)", text: rulesSystemPrompt(bot.id, { writes: agentsMounted }) },
     { id: "memory", label: "Memory", text: memorySystemPrompt(bot.id, { managedWrites: agentsMounted, fileTools: Boolean(privateWorkspace), enabled: bot.memoryEnabled !== false }) },
+    { id: "docs", label: "Documents index", text: docsIndexPrompt(bot.id, { tools: agentsMounted ? "agents" : privateWorkspace ? "files" : "none" }) },
     { id: "skills", label: "Skills index", text: privateWorkspace ? skillsSystemPrompt(bot.id, skillsLibraryEnabled(cfg) ? bot.assignedSkills : undefined) + pluginSkillsForTurn(bot, instance) : "" },
   ]);
   const totalBytes = built.sections.reduce((n, s) => n + s.bytes, 0);
@@ -14288,6 +14292,8 @@ async function startTurn(
         // RULES.md: listed here, placed right after the soul by buildSystemPrompt
         { id: "rules", label: "Rules (RULES.md)", text: rulesSystemPrompt(bot.id, { writes: Boolean(integrations.agents) }) },
         { id: "memory", label: "Memory", text: memorySystemPrompt(bot.id, { managedWrites: Boolean(integrations.agents), fileTools: worksInWorkspace, enabled: bot.memoryEnabled !== false }) },
+        // docs/: an index only, never the documents (server/workspace-files.ts)
+        { id: "docs", label: "Documents index", text: docsIndexPrompt(bot.id, { tools: integrations.agents ? "agents" : worksInWorkspace ? "files" : "none" }) },
         // liveBot was captured before awaited setup work; an assignment PUT
         // in that window must still reach this turn's prompt.
         { id: "skills", label: "Skills index", text: privateWorkspace ? skillsSystemPrompt(bot.id, skillsLibraryEnabled(cfg) ? (store.bot(bot.id)?.assignedSkills ?? bot.assignedSkills) : undefined) + pluginSkillsForTurn(bot, instance) : "" },
@@ -17070,6 +17076,7 @@ async function runGroupMemberTurn(
     // agents server, so a room turn with it must be told to use it too.
     { id: "rules", label: "Rules (RULES.md)", text: rulesSystemPrompt(bot.id, { writes: Boolean(integrations.agents) }) },
     { id: "memory", label: "Memory", text: roomMemory ? `\n${roomMemory.trim()}` : "" },
+    { id: "docs", label: "Documents index", text: docsIndexPrompt(bot.id, { tools: integrations.agents ? "agents" : workspace ? "files" : "none" }) },
     // The group's shared memory: every bot of the group reads it here; only
     // explicit group_memory_update writes reach it (server/group-memory.ts).
     { id: "group-memory", label: "Group memory", text: (() => {
@@ -25767,6 +25774,47 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         const body = await readInternalBody();
         const result = ownersWrite(() => appendMemoryLog(internalSender.id, body.text, { source: memorySource() }));
         return json(res, result.ok ? 200 : 400, result);
+      }
+      // RULES.md and docs/ (server/workspace-files.ts): the bot's own
+      // workspace only. Writes take memory's gates (a Cloud home's owner
+      // only, never from a room fewer people can see) and its refusal cap,
+      // and are journaled like a memory edit; reads are confined to the
+      // workspace, traversal and links refused.
+      if ((path === "/api/internal/workspace/rules" || path === "/api/internal/workspace/docs") && method === "POST") {
+        if (CLOUD_HOME && cloudHomeLendingRefusal(cloudLendingTurn(internalCapability)) !== null) {
+          return json(res, 403, { error: "Rules and documents can only be changed from a conversation that only the owner of this Cloud has written in." });
+        }
+        const room = store.groupByThread(internalCapability.threadId);
+        if (room && !roomFeedsBot(room, internalSender)) {
+          return json(res, 403, { error: "This room is visible to fewer people than you are, so it can't change your rules or documents. Ask in a direct conversation." });
+        }
+        if ((internalCapability.memoryRefusals ?? 0) >= MAX_MEMORY_REFUSALS_PER_TURN) {
+          return json(res, 429, { error: `Workspace updates are closed for the rest of this turn: ${MAX_MEMORY_REFUSALS_PER_TURN} were refused. Do not retry.` });
+        }
+        const body = await readInternalBody();
+        const result = ownersWrite(() => path === "/api/internal/workspace/rules"
+          ? updateRules(internalSender.id, { action: body.action, text: body.text, oldText: body.oldText }, { threadId: internalCapability.threadId })
+          : updateDoc(internalSender.id, { action: body.action, path: body.path, text: body.text, oldText: body.oldText }, { threadId: internalCapability.threadId }));
+        if (!result.ok) internalCapability.memoryRefusals = (internalCapability.memoryRefusals ?? 0) + 1;
+        if (!result.ok) return json(res, result.code === "conflict" ? 409 : result.code === "over-budget" ? 413 : result.code === "missing" ? 404 : 400, result);
+        const { journal: _journal, ...reply } = result;
+        return json(res, 200, reply);
+      }
+      if (method === "GET" && path === "/api/internal/workspace/read") {
+        try {
+          const read = readWorkspaceText(internalSender.id, url.searchParams.get("path") ?? "", Number(url.searchParams.get("offset") ?? 0));
+          markWorkspaceUse(internalSender.id, [read.path]);
+          return json(res, 200, read);
+        } catch (error) {
+          if (error instanceof WorkspacePathError) return json(res, error.status, { error: error.message });
+          throw error;
+        }
+      }
+      if (method === "GET" && path === "/api/internal/workspace/search") {
+        const q = (url.searchParams.get("q") ?? "").trim();
+        if (!q) return json(res, 400, { error: "workspace_search needs a query." });
+        const limit = Math.min(20, Math.max(1, Number(url.searchParams.get("limit") ?? 8) || 8));
+        return json(res, 200, { hits: searchDocFiles(internalSender.id, q, limit) });
       }
       if (method === "POST" && path === "/api/internal/browser/mcp") {
         const body = await readInternalBody();
