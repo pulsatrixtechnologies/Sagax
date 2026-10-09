@@ -296,6 +296,7 @@
   "approval.someone": "Someone",
   "approval.status.allowed": "Allowed",
   "approval.status.byVoice": "by voice",
+  "approval.status.byAiClient": "from an AI client",
   "approval.status.cancelled": "Cancelled",
   "approval.status.denied": "Denied",
   "approval.status.expired": "Expired. Ask for a fresh proposal",

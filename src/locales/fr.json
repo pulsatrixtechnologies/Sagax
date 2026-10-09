@@ -215,6 +215,7 @@
   "approval.status.skillUpdated": "Compétence mise à jour",
   "approval.status.waitingAnswer": "En attente de votre réponse ci-dessous",
   "approval.status.waitingConfirmation": "En attente de votre confirmation ci-dessous",
+  "approval.status.byAiClient": "depuis un client IA",
   "approval.stepper.next": "Demande suivante",
   "approval.stepper.previous": "Demande précédente",
   "approval.summary.dateRange": "{from} au {to}",

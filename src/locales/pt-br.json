@@ -59,6 +59,7 @@
   "approval.position": "{index} de {count}",
   "approval.someone": "Alguém",
   "approval.status.allowed": "Permitido",
+  "approval.status.byAiClient": "de um cliente de IA",
   "approval.status.cancelled": "Cancelado",
   "approval.status.denied": "Negado",
   "approval.status.profileUpdated": "Perfil atualizado",
