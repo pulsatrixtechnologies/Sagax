@@ -95,7 +95,9 @@ export function createDesktopAttention(deps) {
       body: request.body,
       silent: !request.sound,
       ...(request.persistent ? { timeoutType: "never", urgency: "critical" } : { timeoutType: "default", urgency: "normal" }),
-      ...(deps.icon ? { icon: deps.icon } : {}),
+      // macOS draws the notification's left icon from the app bundle and
+      // treats `icon` as a right-hand attachment, so it is never passed there.
+      ...(deps.icon && deps.platform !== "darwin" ? { icon: deps.icon } : {}),
     });
     // The click handler lives as long as the notification object does; keep
     // it until it is clicked or closed (a bounded number, oldest first).
