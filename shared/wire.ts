@@ -819,6 +819,24 @@ export interface GroupTask {
   /** The first message already drove a title attempt for this thread, so a
    * later one does not rename a room the person may have retitled. */
   titleFromFirstMessage?: true;
+  /** When this thread was archived. Absent = unarchived. Same contract as
+   * WireTask.archivedAt; a person conversation's threads use it. */
+  archivedAt?: number;
+  /** Same contract as WireTask.snoozedUntil: 0 = until new activity (the
+   * store clears it on the next message), a future epoch ms = until then. */
+  snoozedUntil?: number;
+  /** The folder (`WireGroup.projects`) this thread is filed under. */
+  projectId?: string;
+  /** A person conversation: this thread is unread for the viewer. Drawn
+   * per viewer from `unreadFor` (server/people-dms.ts peopleDmForViewer). */
+  unread?: boolean;
+  /** A person conversation: which of its two people have not read this
+   * thread yet (principal ids). Server-side; a client never gets it. */
+  unreadFor?: string[];
+  /** A person conversation: the thread that was the whole conversation
+   * before threads existed (titled "General" by the migration). Clients may
+   * show the title localized while it is still "General". */
+  general?: true;
 }
 
 /** A room as a client may see it: the record plus the computed working
@@ -831,6 +849,10 @@ export interface WireGroup {
   threadId: string;
   /** User-created channels have independent tasks, newest first. */
   tasks?: GroupTask[];
+  /** Folders that organize this conversation's threads (a person
+   * conversation's, shared by its two people), in sidebar order. Same shape
+   * as a bot's `projects`. */
+  projects?: BotProject[];
   name: string;
   memberIds: string[];
   /** People in this channel, beside the bots. Absent on a bot-to-bot dm. */
