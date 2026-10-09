@@ -255,7 +255,6 @@
   "sidebar.backup.downloaded": "Резервну копію завантажено · {members} ботів і текст розмов.",
   "sidebar.backup.notes": "{count} нотаток про видалених ботів/групи — перегляньте їх під час імпорту.",
   "sidebar.backup.private": "Тримайте цей файл у таємниці.",
-  "sidebar.teamLibrary": "Шаблони",
   "sidebar.teamImportedOne": "1 бота додано · наявні боти й чати збережено",
   "sidebar.teamImportedMany": "{count} ботів додано · наявні боти й чати збережено",
   "sidebar.nav.teamMap": "Мапа команди",

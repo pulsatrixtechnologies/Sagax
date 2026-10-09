@@ -1129,12 +1129,12 @@ export interface AppState {
   /** The achievements modal (src/components/achievements/AchievementsModal.tsx),
    * its own window beside Settings: one or the other is open, never both. */
   achievementsOpen: boolean;
-  /** The organisation bot catalogue ("Browse Bots"), opened from the mascot
-   * context menu in the bot panel. Use dispatch(openBotCatalog()) and
+  /** The organisation bot catalogue ("Browse Bots"), opened from the sidebar
+   * row (Settings > Experimental features), New bot and Connect apps. Use dispatch(openBotCatalog()) and
    * dispatch(closeBotCatalog()). */
   botCatalogOpen: boolean;
-  /** Where the catalogue opens: its Templates section (the old Templates
-   * library's entry points, an install link carrying a team's address), or
+  /** Where the catalogue opens: its Templates section (New bot, Connect apps,
+   * an install link carrying a team's address), or
    * null for the home view. A new object on every request, so an open
    * catalogue follows a later one. */
   botCatalogTarget: BotCatalogTarget | null;

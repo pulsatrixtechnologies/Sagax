@@ -13,7 +13,6 @@ import {
   Folder,
   FolderMinus,
   FolderPlus,
-  Library,
   Loader2,
   MoreHorizontal,
   Pencil,
@@ -37,7 +36,7 @@ import { peerLine } from "@/lib/peer-message";
 import { viewerMayDeleteGroup, viewerOwnsGroup } from "@/lib/group-owner";
 import { viewerActorId } from "@/lib/viewer";
 import { showBotArchive, showBotDelete, showBotRename, showServerSectionMove } from "@/lib/bot-capabilities";
-import { connectedAppsEnabled, llmThreadTitlesEnabled } from "@/lib/feature-flags";
+import { browseBotsEnabled, connectedAppsEnabled, llmThreadTitlesEnabled } from "@/lib/feature-flags";
 import { templatesEntryActions } from "@/lib/templates-entry";
 import { useAdvancedMode } from "@/lib/interface-mode";
 
@@ -1061,7 +1060,6 @@ export function BotContextMenu({
   onReplacePrimary,
   variant = "sidebar",
   onEditPersona,
-  onBrowseBots,
 }: {
   menu: MenuState | null;
   onClose: () => void;
@@ -1070,12 +1068,10 @@ export function BotContextMenu({
   onMoveToSection?: (botId: string) => void;
   onRename: (botId: string) => void;
   /** "mascot": the bot panel's mascot menu (Edit persona, Rename, Put on the
-   * desktop, Make primary bot, then Browse Bots). "sidebar": the row menu. */
+   * desktop, Make primary bot). "sidebar": the row menu. */
   variant?: "sidebar" | "mascot";
   /** Mascot menu: open the persona editor on this bot. */
   onEditPersona?: (bot: Bot) => void;
-  /** Mascot menu: open the organisation bot catalogue. */
-  onBrowseBots?: () => void;
   /** Make this bot the viewer's Primary Bot (one per person). */
   onMakePrimary?: (bot: Bot) => void;
   /** Open "Choose a primary Bot" to hand the role to another of their bots. */
@@ -1228,8 +1224,6 @@ export function BotContextMenu({
         hint: primary.allowed ? undefined : t(primary.reason),
         showHint: true,
       }),
-      divider("browse"),
-      item(<LayoutGrid size={16} className="text-ink" />, t("persona.menu.browse"), () => onBrowseBots?.(), { id: "browse-bots" }),
     ]);
   }
 
@@ -2378,7 +2372,7 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
 
 
   // An install link (openmaus://, a team's address) opens Browse Bots on
-  // Templates, where Import previews it before anything is added.
+  // its Templates section, where Import previews it before anything is added.
   useEffect(() => {
     if (remoteClient) return;
     return window.ogb?.onPackageInstall?.((url) => {
@@ -2627,8 +2621,8 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
   // same rule and order as the sidebar tree, so the bell can never
   // disagree with it.
   const pendingBotUndo = teamFeedback?.restoreBot;
-  // Connected apps (when its experimental flag is on) and Templates stay in
-  // view above the account row. Team map and Automations are in the account
+  // Connected apps and Browse Bots (each when its experimental flag is on)
+  // stay in view above the account row. Team map and Automations are in the account
   // menu.
   const places: SidebarPlace[] = [
     // Connected apps is experimental (Settings > Experimental features).
@@ -2639,13 +2633,13 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
       icon: Puzzle,
       onSelect: () => dispatch({ type: "togglePlugins", open: true }),
     }] : []),
-    // Templates: Browse Bots on its Templates section (no longer a library
-    // of its own, nor behind an experimental switch).
-    ...(!remoteClient && advanced ? [{
-      key: "templates",
-      label: t("sidebar.teamLibrary"),
-      icon: Library,
-      onSelect: () => { for (const action of templatesEntryActions("sidebar")) dispatch(action); },
+    // Browse Bots (the bot catalogue, on its home view): hidden until
+    // Settings > Experimental features turns it on.
+    ...(!remoteClient && advanced && browseBotsEnabled(state.config) ? [{
+      key: "browse-bots",
+      label: t("sidebar.browseBots"),
+      icon: LayoutGrid,
+      onSelect: () => dispatch(openBotCatalog()),
     }] : []),
   ];
   // Archived bots is housekeeping, not a place: it stays in the account menu.
@@ -3028,7 +3022,6 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
             const anyExpanded = sectionIds.some((sid) => !collapsedSections.includes(sid));
             const actions: OrgSectionMenuActions = {
               onNew: () => { closeOrgMenu(); setSectionEdit({ mode: "new" }); },
-              onBrowseBots: () => { closeOrgMenu(); dispatch(openBotCatalog()); },
               onRename: () => { closeOrgMenu(); if (orgMenu.name) setSectionEdit({ mode: "rename", name: orgMenu.name }); },
               onMoveUp: () => { closeOrgMenu(); if (orgMenu.id) moveSidebarSection(orgMenu.id, -1); },
               onMoveDown: () => { closeOrgMenu(); if (orgMenu.id) moveSidebarSection(orgMenu.id, 1); },
@@ -3041,7 +3034,6 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
               canMoveUp: position > (generalOnTop ? 1 : 0) && layoutInteractive,
               canMoveDown: position >= (generalOnTop ? 1 : 0) && position < sectionIds.length - 1 && layoutInteractive,
               anyExpanded,
-              browseBots: true,
             });
             return <OrgSectionMenuItems items={items} actions={actions} />;
           })()}
