@@ -63,10 +63,16 @@ describe("the job summary", () => {
     ].join("\n");
     const { markdown, annotations } = retrySummary(log, list);
     expect(markdown).toContain("### Flaky tests that needed a retry");
-    expect(markdown).toContain(`| \`${entry.file}\` > ${entry.test.replace(/\|/g, "\\|")} | 1 | passed on a retry | ${entry.owner} |`);
+    expect(markdown).toContain(`| \`${entry.file}\` > ${entry.test.replace(/\\/g, "\\\\").replace(/\|/g, "\\|")} | 1 | passed on a retry | ${entry.owner} |`);
     expect(markdown).toContain("| `server/x.test.ts` > a > b | 2 | failed every attempt | unlisted |");
     expect(annotations).toHaveLength(2);
-    expect(annotations[0]).toMatch(new RegExp(`^::warning file=${entry.file.replace(/[.]/g, "\\.")},title=Flaky test retried::`));
+    expect(annotations[0]!.startsWith(`::warning file=${entry.file},title=Flaky test retried::`)).toBe(true);
+  });
+
+  it("escapes a backslash before a pipe, so a test name cannot split its table row", () => {
+    const log = JSON.stringify({ file: "server/x.test.ts", test: "a \\| b", retries: 1, state: "pass", platform: "linux" });
+    const { markdown } = retrySummary(log, list);
+    expect(markdown).toContain("| `server/x.test.ts` > a \\\\\\| b | 1 |");
   });
 
   it("reports an unreadable list as a warning, apart from the retries", () => {

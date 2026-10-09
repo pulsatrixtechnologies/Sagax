@@ -25,6 +25,13 @@ describe("sanitizeReleaseMarkdown", () => {
     expect(cleaned).toContain("Hello");
   });
 
+  it("leaves no comment opener, even one reassembled from split pieces", () => {
+    for (const source of ["a <!<!---->-- b", "a <!<b>-- hidden --> b", "a <!-- never closed", "a <!--<!-- x -->--> b"]) {
+      expect(sanitizeReleaseMarkdown(source), source).not.toContain("<!--");
+    }
+    expect(sanitizeReleaseMarkdown("Fixed <!-- note --> the sync.")).toBe("Fixed  the sync.");
+  });
+
   it("keeps https links and strips javascript, data and bare autolinks", () => {
     const cleaned = sanitizeReleaseMarkdown(
       "[docs](https://example.com/notes) [bad](javascript:alert(1)) [data](data:text/html,hi) <javascript:alert(1)> <https://example.com/ok>",

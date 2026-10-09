@@ -158,6 +158,14 @@ describe("attachmentsInText", () => {
     expect(parsed.attachments).toEqual([{ kind: "image", name: "a.png", path: "/x/a.png" }, { kind: "file", name: "b.pdf", path: "/x/b.pdf" }]);
     expect(parsed.text).not.toContain("attached");
   });
+
+  it("scans an unterminated tag of many repeated characters in linear time", () => {
+    const hostile = `<attached-image name=${"=".repeat(50_000)}`;
+    const started = performance.now();
+    expect(attachmentsInText(hostile)).toEqual({ text: hostile, attachments: [] });
+    expect(performance.now() - started).toBeLessThan(1_000);
+    expect(attachmentsInText('<attached-file name="n.txt">').attachments).toEqual([{ kind: "file", name: "n.txt" }]);
+  });
 });
 
 describe("the tier table", () => {

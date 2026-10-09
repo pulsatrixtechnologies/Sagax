@@ -294,6 +294,7 @@ describe.skipIf(!enterpriseAdapterPresent)("hosted model policy in the full runt
     const configBefore = readFileSync(join(fixture!.info.dataDir, "config.json"), "utf8");
     for (const [method, path, body] of [
       ["PATCH", "/api/instances/claude", { cli: "fixture-forbidden-cli" }],
+      ["POST", "/api/cli-test", { cli: "/usr/local/bin/claude" }],
       ["POST", "/api/instances/claude/auth/start", {}],
       ["POST", "/api/instances/codex/auth/sign-out", {}],
       ["POST", "/api/instances/claude-accounts", { displayName: "Personal account" }],

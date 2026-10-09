@@ -36,7 +36,29 @@ const KEY_PREFIXES: RegExp[] = [
   /\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b/g, // jwt
 ];
 const BEARER = /(\bBearer\s+)([A-Za-z0-9._~+/=-]{12,})/g;
-const PEM_BLOCK = /(-----BEGIN [A-Z ]*PRIVATE KEY-----)([\s\S]*?)(-----END [A-Z ]*PRIVATE KEY-----)/g;
+const PEM_BEGIN = /-----BEGIN [A-Z ]*PRIVATE KEY-----/g;
+const PEM_END = /-----END [A-Z ]*PRIVATE KEY-----/g;
+
+/** Mask the body of every PEM private key block. Each BEGIN is paired with
+ * the first END after it by two forward scans, never one pattern that
+ * spans the body, so a text of many unclosed BEGIN lines stays linear. */
+function maskPemBlocks(text: string): string {
+  if (!text.includes("PRIVATE KEY-----")) return text;
+  let out = "";
+  let from = 0;
+  PEM_BEGIN.lastIndex = 0;
+  for (let begin = PEM_BEGIN.exec(text); begin; begin = PEM_BEGIN.exec(text)) {
+    const bodyStart = begin.index + begin[0].length;
+    PEM_END.lastIndex = bodyStart;
+    const end = PEM_END.exec(text);
+    // No END after this BEGIN: none after any later BEGIN either.
+    if (!end) break;
+    out += `${text.slice(from, begin.index)}${begin[0]}\n${mask(text.slice(bodyStart, end.index).trim())}\n${end[0]}`;
+    from = end.index + end[0].length;
+    PEM_BEGIN.lastIndex = from;
+  }
+  return out + text.slice(from);
+}
 /** key=value / key: value / key="value" where the key is secret-shaped.
  * The value must be a single token of some length; prose after a colon
  * ("password: leave blank…") has spaces and does not match. */
@@ -65,7 +87,7 @@ export function redactCutSecrets(text: string): string {
 export function redactSecretsInText(text: string): string {
   if (!text || text.length < 8) return text;
   let out = text;
-  out = out.replace(PEM_BLOCK, (_m, open: string, body: string, close: string) => `${open}\n${mask(body.trim())}\n${close}`);
+  out = maskPemBlocks(out);
   for (const re of KEY_PREFIXES) out = out.replace(re, (m) => mask(m));
   out = out.replace(BEARER, (_m, lead: string, tok: string) => `${lead}${mask(tok)}`);
   out = out.replace(KEY_VALUE, (_m, key: string, sep: string, quote: string, value: string) => `${key}${sep}${quote}${mask(value)}${quote}`);

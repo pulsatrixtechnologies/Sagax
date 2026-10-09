@@ -34,6 +34,10 @@ import { startFakeOidcProvider } from "../server/testing/fake-oidc-provider.ts";
 import { freePortBlock } from "../server/testing/ports.ts";
 import { sandboxdConfigFromEnv } from "../server/user-sandbox-spec.ts";
 
+// The echo is plain text, never HTML: the request path it repeats cannot
+// become markup in whatever reads it.
+const PLAIN_TEXT = { "content-type": "text/plain; charset=utf-8", "x-content-type-options": "nosniff" } as const;
+
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const electron = createRequire(import.meta.url)("electron") as unknown as string;
 const RESERVED = [18790, 5199, 8799];
@@ -49,7 +53,7 @@ const check = (name: string, ok: boolean, detail = "") => {
 
 // The "LAN" host: a server on this machine that only the desktop's resolver
 // knows as intranet.sagax.test (10.77.0.5 there, mapped to it below).
-const lan = createServer((req, res) => res.end(`lan says hi to ${req.url}`));
+const lan = createServer((req, res) => res.writeHead(200, PLAIN_TEXT).end(`lan says hi to ${req.url}`));
 await new Promise<void>((resolve) => lan.listen(0, "127.0.0.1", resolve));
 const lanPort = (lan.address() as AddressInfo).port;
 

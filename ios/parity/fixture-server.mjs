@@ -581,7 +581,12 @@ function startComputerDouble(upstreamPort) {
     req.on("end", () => { try { resolve(raw ? JSON.parse(raw) : {}); } catch { resolve(null); } });
   });
   const controlHeld = async (botId, req) => {
-    const r = await fetch(`http://127.0.0.1:${upstreamPort}/api/bots/${botId}/computer/control`, {
+    // The upstream is always this fixture's own loopback server; the bot id
+    // only fills one encoded path segment of it.
+    if (!/^[\w-]{1,128}$/.test(botId)) return { status: 400 };
+    const target = new URL(`http://127.0.0.1:${upstreamPort}`);
+    target.pathname = `/api/bots/${encodeURIComponent(botId)}/computer/control`;
+    const r = await fetch(target, {
       headers: req.headers.authorization ? { authorization: req.headers.authorization } : {},
     });
     if (!r.ok) return { status: r.status };

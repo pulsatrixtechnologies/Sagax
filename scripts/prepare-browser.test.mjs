@@ -25,7 +25,7 @@ describe("pinned desktop browser preparation", () => {
     for (const target of SUPPORTED_BROWSER_TARGETS) {
       const spec = browserBundleSpec(target);
       expect([spec.chrome.bytes, spec.chrome.sha256]).toEqual(pins[target]);
-      expect(spec.chrome.url).toMatch(/^https:\/\/storage.googleapis.com\/chrome-for-testing-public\/154\.0\.8037\.92\/[^/]+\/chrome-headless-shell-[^/]+\.zip$/);
+      expect(spec.chrome.url).toMatch(/^https:\/\/storage\.googleapis\.com\/chrome-for-testing-public\/154\.0\.8037\.92\/[^/]+\/chrome-headless-shell-[^/]+\.zip$/);
       const [platform, arch] = target.split("-");
       const engine = resolveAgentBrowserReleaseAsset(platform, arch);
       expect(spec.engine).toMatchObject({ bytes: engine.bytes, sha256: engine.sha256, asset: engine.asset });

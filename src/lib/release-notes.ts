@@ -155,12 +155,16 @@ const MD_LINK = /(!?)\[([^\]]*)\]\(((?:[^()]|\([^()]*\))*)\)/g;
  * so the dialog never fetches a remote URL.
  */
 export function sanitizeReleaseMarkdown(source: string): string {
-  let text = String(source).replaceAll("\u0000", "").replace(/<!--[\s\S]*?-->/g, "");
+  let text = String(source).replaceAll("\u0000", "");
   let previous = "";
   while (text !== previous) {
     previous = text;
-    text = text.replace(HTML_TAG, "");
+    // Comments too, in the same loop: removing a tag can join the pieces
+    // of one (`<!<b>--`), and removing a comment can join a tag.
+    text = text.replace(/<!--[\s\S]*?-->/g, "").replace(HTML_TAG, "");
   }
+  // An opener left without its end starts no comment in the text shown.
+  text = text.replaceAll("<!--", "");
   text = text.replace(MD_LINK, (_all, bang: string, label: string, raw: string) => {
     const url = raw.trim().replace(/^<|>$/g, "").replace(/\s+["'][^"']*["']\s*$/, "").trim();
     if (bang === "!") return label;

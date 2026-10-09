@@ -13,6 +13,10 @@ import { attachDesktopTunnel } from "./desktop-bridge-routes.ts";
 import { DesktopTunnels, egressEnvironment, egressRoute, encodeFrame, FrameReader, isLanAddress, startEgressProxy, type EgressAuditEntry, type EgressProxy } from "./desktop-egress.ts";
 import { openFakeTunnel } from "./testing/fake-desktop.ts";
 
+// The echo is plain text, never HTML: the request path it repeats cannot
+// become markup in whatever reads it.
+const PLAIN_TEXT = { "content-type": "text/plain; charset=utf-8", "x-content-type-options": "nosniff" } as const;
+
 const ADA = "pr_11111111-1111-4111-8111-111111111111";
 const BOB = "pr_22222222-2222-4222-8222-222222222222";
 const SECRET = "c".repeat(64);
@@ -32,7 +36,7 @@ const bobDesktop = randomUUID();
 const registration = (id: string) => ({ id, name: "desk", platform: "linux" as const, attachmentsDir: "/tmp/x", capabilities: { shell: true, files: true, fetch: true, browser: true, computer: false, localVm: false } });
 
 beforeAll(async () => {
-  upstream = createServer((req, res) => res.end(`intranet says hi to ${req.url}`));
+  upstream = createServer((req, res) => res.writeHead(200, PLAIN_TEXT).end(`intranet says hi to ${req.url}`));
   await new Promise<void>((resolve) => upstream.listen(0, "127.0.0.1", resolve));
   upstreamPort = (upstream.address() as AddressInfo).port;
   server = createServer((_req, res) => res.writeHead(404).end());

@@ -238,13 +238,13 @@ import { GroupUsageReader } from "./group-thread-usage.ts";
 import { ledgerCost } from "./model-prices.ts";
 import type { PriceList } from "./prices.ts";
 import type { RequestAuth } from "./request-auth.ts";
-import { checkProviderKey, PROVIDER_KEY_KINDS, providerBaseUrl, type ProviderKeyKind } from "./provider-key-check.ts";
+import { allowedProviderTestUrl, checkProviderKey, PROVIDER_KEY_KINDS, providerBaseUrl, type ProviderKeyKind } from "./provider-key-check.ts";
 import { forgetKey, noteKeyAccepted, noteKeyRejected, onKeyRejectionChange } from "./key-rejections.ts";
 import { assertWithinBudget, noteSpend, spendAlertText, spendState, takeSpendAlert } from "./spend.ts";
 import { fleetAvailable, fleetRequest, fleetSocketPath } from "./fleet-client.ts";
 import { entitled } from "./enterprise.ts";
 import { HOSTED_CONTRACT_HEADER, HOSTED_CONTRACT_METADATA, HOSTED_CONTRACT_VERSION } from "./hosted-contract.ts";
-import { describeSpawnFailure, execCli } from "./procs.ts";
+import { cliCommandRefusal, describeSpawnFailure, execCli } from "./procs.ts";
 import { blockedTarget, buildSpendNotification, deliverableNotification, quietForCall, summarize, type Notification } from "./notify.ts";
 import {
   isModelVariant,
@@ -33356,7 +33356,19 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       const key = typeof body?.key === "string" ? body.key.trim() : saved?.key?.trim() || "";
       if (!key) return json(res, 400, { error: "No key to test. Paste one or save one first." });
       if (key.length > 512) return json(res, 400, { error: "That does not look like an API key." });
-      const url = typeof body?.url === "string" && body.url.trim() ? body.url.trim() : (saved && "url" in saved ? saved.url : undefined);
+      const savedUrl = saved && "url" in saved ? saved.url : undefined;
+      // A URL in the request may only name a server this workspace already
+      // knows: the provider's default, its saved URL or an engine's URL.
+      let url = savedUrl;
+      if (typeof body?.url === "string" && body.url.trim()) {
+        const configured = [savedUrl, ...Object.values(instanceConfigs(cfg)).map((entry) => {
+          const value = (entry.config as { url?: unknown } | undefined)?.url;
+          return typeof value === "string" ? value : undefined;
+        })];
+        const allowed = allowedProviderTestUrl(kind, body.url, configured);
+        if (!allowed) return json(res, 400, { error: "url must be the provider's default address or a server configured on this workspace." });
+        url = allowed;
+      }
       res.setHeader("cache-control", "no-store");
       const verdict = await checkProviderKey({ provider: kind, key, url });
       // A Test is a real use the person chose: the engines on this key agree
@@ -33620,9 +33632,14 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       if (!String(req.headers["content-type"] ?? "").toLowerCase().startsWith("application/json")) {
         return json(res, 415, { error: "content-type must be application/json" });
       }
+      // A hosted server's engines are managed in Admin: nothing here to save,
+      // so nothing to probe on that machine either.
+      if (hostedModels) return json(res, 403, { error: HOSTED_PROVIDER_SETTINGS_ERROR });
       const body = await readBody(req);
       const cli = typeof body?.cli === "string" ? body.cli.trim() : "";
       if (!cli || /[\n\r]/.test(cli)) return json(res, 400, { error: "cli must be a non-empty path" });
+      const refusal = cliCommandRefusal(cli);
+      if (refusal) return json(res, 400, { error: refusal });
       const driver = typeof body?.driver === "string" ? BUILT_IN_DRIVERS.find((d) => d.driverKind === body.driver) : undefined;
       // Probe the exact configured wrapper plus --version. testCliBinary uses
       // a credential-redacted environment, so fixed wrapper arguments cannot
@@ -33687,6 +33704,8 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       const parsed = instanceSettingsSchema.safeParse(await readBody(req, 16384));
       if (!parsed.success) return json(res, 400, { error: "Supply a valid CLI path, account name, configuration directory or boolean tools setting." });
       const body = parsed.data;
+      const cliRefusal = body.cli?.trim() ? cliCommandRefusal(body.cli) : null;
+      if (cliRefusal) return json(res, 400, { error: cliRefusal });
       const instanceId = instancePatch[1];
       if (providerConfigBusy) return json(res, 409, { error: "provider settings are already being updated" });
       if (busyProviderSelections().some((selection) => selection.instanceId === instanceId)) {
@@ -33793,9 +33812,13 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
 
     const mcpTest = /^\/api\/mcp\/servers\/([a-z][a-z0-9_-]{0,31})\/test$/.exec(path);
     if (method === "POST" && mcpTest) {
-      const raw = cfg.mcpServers?.[mcpTest[1]];
-      if (raw === undefined) return json(res, 404, { error: "MCP server not found." });
-      const parsed = parseStoredMcpServer(mcpTest[1], raw);
+      // Only a configured server is ever probed: the name is looked up among
+      // the configured ones and everything after uses that entry, never the
+      // request text, so the address dialed is the one saved in Settings.
+      const name = Object.keys(cfg.mcpServers ?? {}).find((configured) => configured === mcpTest[1]);
+      const raw = name === undefined ? undefined : cfg.mcpServers?.[name];
+      if (name === undefined || raw === undefined) return json(res, 404, { error: "MCP server not found." });
+      const parsed = parseStoredMcpServer(name, raw);
       if (!parsed.ok) return json(res, 400, { error: parsed.error });
       if (mcpProbesInFlight >= MAX_CONCURRENT_MCP_PROBES) {
         return json(res, 429, { error: "Two MCP connection tests are already running." });
@@ -33807,7 +33830,6 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       res.once("close", disconnect);
       mcpProbesInFlight += 1;
       try {
-        const name = mcpTest[1];
         const server = parsed.server;
         if (!isRemoteMcpServer(server)) return json(res, 200, await probeMcpServer(server, undefined, controller.signal));
         await mcpOAuth.refresh(name, server, false, controller.signal).catch(() => false);

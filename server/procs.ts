@@ -18,12 +18,62 @@ import {
   type ExecFileOptions,
   type SpawnOptions,
 } from "node:child_process";
+import { existsSync } from "node:fs";
 import type { Readable, Writable } from "node:stream";
-import { join } from "node:path";
-import { resolveCliSpawn, type ResolvedSpawn } from "./env-path.ts";
+import { join, posix, win32 } from "node:path";
+import { resolveCliSpawn, splitCliString, type ResolvedSpawn } from "./env-path.ts";
 
 export function resolveCli(cli: string, args: string[] = [], env?: NodeJS.ProcessEnv): ResolvedSpawn {
   return resolveCliSpawn(cli, args, env);
+}
+
+/** The engine CLIs a bare command name may name: every built-in driver's
+ * default executable. Anything else is given by its absolute path. */
+export const KNOWN_ENGINE_CLIS: ReadonlySet<string> = new Set([
+  "claude", "codex", "grok", "kimi", "droid", "cursor-agent", "agy", "antigravity",
+  "gemini", "qwen", "hermes", "opencode", "pi",
+]);
+
+/** Programs that run whatever command or script text they are handed:
+ * never an engine, always a way to turn a settings field into a shell. */
+const COMMAND_RUNNERS: ReadonlySet<string> = new Set([
+  "sh", "bash", "zsh", "dash", "ksh", "mksh", "csh", "tcsh", "fish", "ash", "busybox",
+  "env", "sudo", "doas", "su", "xargs", "nohup", "timeout", "nice", "ionice", "stdbuf", "time", "watch",
+  "script", "exec", "eval", "open", "osascript", "launchctl", "at", "batch", "crontab",
+  "cmd", "powershell", "pwsh", "wsl", "wscript", "cscript", "mshta", "rundll32", "regsvr32", "runas", "start",
+]);
+
+/** Interpreters may run a script file, never code passed inline. */
+const INTERPRETER = /^(?:node|nodejs|deno|bun|python[0-9.]*|pypy[0-9.]*|perl[0-9.]*|ruby[0-9.]*|php[0-9.]*|lua[0-9.]*|rscript|tclsh[0-9.]*|wish[0-9.]*)$/;
+const INLINE_CODE_FLAG = /^(?:-[A-Za-z]*[ecprm]|-|--(?:eval|print|require|import|loader|experimental-loader|input-type|interactive|command)(?:=.*)?)$/;
+
+/**
+ * Why a CLI command from Settings may not be run, or null when it may.
+ * Never a shell: the command is split into an argument array (no expansion,
+ * no substitution) and its executable must be an absolute path to a program
+ * or one of the known engine CLI names. Shells and command runners are
+ * refused outright, and an interpreter only runs a script file, never code
+ * handed to it inline.
+ */
+export function cliCommandRefusal(cli: string, platform: NodeJS.Platform = process.platform): string | null {
+  const trimmed = cli.trim();
+  if (!trimmed || trimmed.length > 4096 || /\p{Cc}/u.test(trimmed)) return "Enter the path of the engine's executable.";
+  const path = platform === "win32" ? win32 : posix;
+  // An existing file whose path holds spaces is one word, as the spawn
+  // resolver reads it (env-path resolveCliSpawn).
+  const [head, ...fixed] = trimmed.includes(" ") && existsSync(trimmed) ? [trimmed] : splitCliString(trimmed);
+  if (!head) return "Enter the path of the engine's executable.";
+  const name = path.basename(head).toLowerCase().replace(/\.(?:exe|cmd|bat|com|ps1)$/, "");
+  if (!path.isAbsolute(head)) {
+    if (head !== path.basename(head) || !KNOWN_ENGINE_CLIS.has(name)) {
+      return `Use the full path of the executable (for example /usr/local/bin/${name || "agent"}); only ${[...KNOWN_ENGINE_CLIS].join(", ")} may be given by name.`;
+    }
+  }
+  if (COMMAND_RUNNERS.has(name)) return `${path.basename(head)} runs other commands; give the engine's own executable instead.`;
+  if (INTERPRETER.test(name) && fixed.some((arg) => INLINE_CODE_FLAG.test(arg))) {
+    return `${path.basename(head)} may run a script file here, not code passed on the command line.`;
+  }
+  return null;
 }
 
 /** Leave headroom below CreateProcess' 32,767 UTF-16 code-unit limit for

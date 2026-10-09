@@ -197,6 +197,18 @@ describe("redactSecretsInText", () => {
     expect(redactSecretsInText('curl -H "Authorization: Bearer abc.def-ghi_jkl123456789"')).toBe('curl -H "Authorization: Bearer «redacted 24 chars»"');
   });
 
+  it("masks two PEM blocks apart and stays linear on many unclosed BEGIN lines", () => {
+    const block = (body: string) => `-----BEGIN RSA PRIVATE KEY-----\n${body}\n-----END RSA PRIVATE KEY-----`;
+    const two = redactSecretsInText(`${block("Zmlyc3Qtc2VjcmV0LWJvZHk")}\nbetween\n${block("c2Vjb25kLXNlY3JldC1ib2R5")}`);
+    expect(two).not.toContain("Zmlyc3Qtc2VjcmV0");
+    expect(two).not.toContain("c2Vjb25kLXNlY3Jl");
+    expect(two).toContain("\nbetween\n");
+    const hostile = "-----BEGIN PRIVATE KEY-----a".repeat(20_000);
+    const started = performance.now();
+    expect(redactSecretsInText(hostile)).toBe(hostile);
+    expect(performance.now() - started).toBeLessThan(1_000);
+  });
+
   it("is byte-for-byte idempotent for PEM blocks", () => {
     const privateKeyBody = "c3VwZXItc2VjcmV0LXByaXZhdGUta2V5LWJ5dGVz";
     const pem = [

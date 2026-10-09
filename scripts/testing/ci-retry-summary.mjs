@@ -7,7 +7,8 @@ import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { findRetryEntry, loadRetryList } from "./ci-retry-list.mjs";
 
-const cell = (text) => String(text ?? "").replace(/\|/g, "\\|").replace(/\n/g, " ");
+// Backslashes first, so a `\|` in a test name cannot cancel the pipe escape.
+const cell = (text) => String(text ?? "").replace(/\\/g, "\\\\").replace(/\|/g, "\\|").replace(/\n/g, " ");
 const escapeData = (text) => String(text).replace(/%/g, "%25").replace(/\r/g, "%0D").replace(/\n/g, "%0A");
 const escapeProperty = (text) => escapeData(text).replace(/:/g, "%3A").replace(/,/g, "%2C");
 

@@ -16,6 +16,9 @@ import {
   type PlanResponse,
 } from "./plan-usage.ts";
 
+/** The host a faked request goes to, compared whole (never a substring of the URL). */
+const hostOf = (url: string) => new URL(url).hostname;
+
 const SECRET = "plan-usage-fixture-secret";
 const NOW = 1_800_000_000_000;
 
@@ -299,7 +302,7 @@ describe("plan usage fetcher", () => {
 
   it("turns a 401 into signed-out without throwing and still returns the other provider", async () => {
     const fetchImpl = vi.fn<PlanFetch>(async (url) => {
-      if (url.includes("anthropic.com")) return jsonResponse(SECRET, 401);
+      if (hostOf(url) === "api.anthropic.com") return jsonResponse(SECRET, 401);
       return jsonResponse({
         rate_limit: {
           primary_window: { used_percent: 10, limit_window_seconds: 18000, reset_at: 1_800_000_000 },
@@ -323,7 +326,7 @@ describe("plan usage fetcher", () => {
     ]);
     expect(report.providers[1]?.fiveHour.remainingPercent).toBe(90);
     expect(report.providers[1]?.weekly.remainingPercent).toBe(60);
-    const codexCall = fetchImpl.mock.calls.find((call) => call[0].includes("chatgpt.com"));
+    const codexCall = fetchImpl.mock.calls.find((call) => hostOf(call[0]) === "chatgpt.com");
     expect(codexCall?.[1].headers["ChatGPT-Account-Id"]).toBe("acct-1");
     expect(codexCall?.[1].headers.Authorization).toBe(`Bearer ${SECRET}`);
     expect(JSON.stringify(report)).not.toContain(SECRET);

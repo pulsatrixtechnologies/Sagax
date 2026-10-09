@@ -235,6 +235,25 @@ describe("failed authentication rate limit", () => {
 });
 
 describe("requests with a wrong secret", () => {
+  it("answers an unexpected failure with a generic line, never its internal message", async () => {
+    const original = manager.receive.bind(manager);
+    manager.receive = () => { throw new Error("EACCES: permission denied, open '/srv/sagax/data/webhooks.json'"); };
+    try {
+      const response = await fetch(`${ingress.baseUrl}/hooks/${endpointId}`, { method: "POST", headers: { ...bearer(), "content-type": "application/json" }, body: "{}" });
+      expect(response.status).toBe(500);
+      const text = await response.text();
+      expect(text).not.toContain("/srv/sagax");
+      expect(text).not.toContain("EACCES");
+      expect(JSON.parse(text)).toEqual({ error: "The webhook could not be accepted. Try again later." });
+    } finally {
+      manager.receive = original;
+    }
+    // A deliberate refusal keeps its own words.
+    const malformed = await fetch(`${ingress.baseUrl}/hooks/${endpointId}`, { method: "POST", headers: { ...bearer(), "content-type": "application/json" }, body: "{" });
+    expect(malformed.status).toBe(400);
+    expect(((await malformed.json()) as { error?: string }).error).not.toBe("The webhook could not be accepted. Try again later.");
+  });
+
   it("answers a malformed escape in the URL secret with 401, not 500", async () => {
     const response = await fetch(`${ingress.baseUrl}/hooks/${endpointId}/%E0%A4%A`, { method: "POST", body: "{}" });
     // a token in the path is never read (bearer header only), so this is a plain 401

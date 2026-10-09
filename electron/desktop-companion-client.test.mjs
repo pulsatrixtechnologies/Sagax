@@ -154,6 +154,11 @@ describe("desktop companion loopback relay", () => {
     expect(desktopCompanionProxyTarget(access.endpoint, "//evil.test/api/events").href).toBe(
       `${access.endpoint}/api/events`,
     );
+    // A dot segment that collapses into `//host` stays a path on the paired endpoint.
+    const sneaky = desktopCompanionProxyTarget(access.endpoint, "/.//evil.test/api/events?x=1");
+    expect(sneaky.origin).toBe(new URL(access.endpoint).origin);
+    expect(sneaky.pathname).toBe("//evil.test/api/events");
+    expect(sneaky.search).toBe("?x=1");
   });
 
   it("serves the UI only on loopback and never includes the bearer in the page", async () => {

@@ -4,7 +4,7 @@
 // fixture server (ios/parity/fixture-server.mjs).
 //
 //   node ios/parity/desktop/capture-desktop.mjs                 every viewport, every surface, every skin
-//   node ios/parity/desktop/capture-desktop.mjs --viewport 1366x1024 --only 'chat|panel'
+//   node ios/parity/desktop/capture-desktop.mjs --viewport 1366x1024 --only 'chat|panel'   (surfaces whose name contains a word)
 //   node ios/parity/desktop/capture-desktop.mjs --no-skins --no-dom
 //   node ios/parity/desktop/capture-desktop.mjs --list          print the surface ids and exit
 //   node ios/parity/desktop/capture-desktop.mjs --viewport 1376x1032,1032x1376   any WxH (M-series iPad Pro sizes)
@@ -47,6 +47,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { launchChrome, openPage } from "./cdp.mjs";
 import { SURFACES, SKIN_IDS, PHASES, NOT_CAPTURED } from "./surfaces.mjs";
+import { nameFilter } from "../../../scripts/testing/name-filter.mjs";
 import { jsLiteral } from "../../../scripts/testing/js-literal.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -80,7 +81,8 @@ if (flag("--list")) {
   process.exit(0);
 }
 const viewportFilter = opt("--viewport")?.split(",");
-const only = opt("--only") ? new RegExp(opt("--only")) : null;
+// Words, not a regular expression: names containing any `|`-separated word.
+const only = nameFilter(opt("--only"));
 const withSkins = !flag("--no-skins");
 const withDom = !flag("--no-dom");
 const keep = flag("--keep");
@@ -385,7 +387,7 @@ async function main() {
       const variants = surface.skins === "all" ? (withSkins ? SKIN_IDS : ["pulsatrix"]) : ["pulsatrix"];
       for (const skin of variants) {
         const name = skin === "pulsatrix" ? `${surface.nn}-${surface.id}` : `${surface.nn}-${surface.id}-skin-${skin}`;
-        if (only && !only.test(name)) continue;
+        if (only && !only(name)) continue;
         plan.push({ phase, surface, skin, name });
       }
     }

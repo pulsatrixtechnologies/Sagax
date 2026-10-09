@@ -228,8 +228,13 @@ function serveStatic(req, res, staticDir) {
 
 export function desktopCompanionProxyTarget(endpoint, requestUrl) {
   const incoming = new URL(requestUrl ?? "/", "http://loopback.invalid");
-  const target = new URL(`${incoming.pathname}${incoming.search}`, endpoint);
-  if (target.origin !== new URL(endpoint).origin) throw new Error("Invalid remote request target");
+  // The host always comes from the paired endpoint; the request only sets the
+  // path and query on a copy of it, so a `//host` path cannot name another host.
+  const origin = new URL(endpoint).origin;
+  const target = new URL(origin);
+  target.pathname = incoming.pathname;
+  target.search = incoming.search;
+  if (target.origin !== origin) throw new Error("Invalid remote request target");
   return target;
 }
 
