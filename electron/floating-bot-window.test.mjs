@@ -29,6 +29,7 @@ import {
   sanitizeFloatingSnapshot,
   sanitizePositions,
   mascotLook,
+  sanitizeCue,
   APP_SKINS,
   appTheme,
 } from "./floating-bot-window.mjs";
@@ -931,6 +932,14 @@ describe("the desktop window's mascot look", () => {
     for (const skin of BUNBU_SKINS) expect(mascotLook({ character: "bunbu", skins: { bunbu: skin } })).toEqual({ character: "bunbu", skins: { bunbu: skin } });
     for (const [old, current] of Object.entries(LEGACY_BUNBU_SKINS)) expect(mascotLook({ character: "bunbu", skins: { bunbu: old } }).skins.bunbu).toBe(current);
     expect(mascotLook({ character: "bunbu", skins: { bunbu: "junk" } })).toEqual({ character: "bunbu" });
+  });
+
+  it("passes a nudge, an achievement or a snooze cue on to the window, and nothing else", () => {
+    expect(sanitizeCue({ kind: "nudge", at: 12 })).toEqual({ kind: "nudge", at: 12 });
+    expect(sanitizeCue({ kind: "snooze", at: 1, botId: "x" })).toEqual({ kind: "snooze", at: 1 });
+    expect(sanitizeCue({ kind: "explode", at: 1 })).toBeNull();
+    expect(sanitizeCue({ kind: "nudge", at: Number.NaN })).toBeNull();
+    expect(sanitizeCue(null)).toBeNull();
   });
 
   it("knows Shiba and its thirteen skins, legacy names included, as the app does", () => {

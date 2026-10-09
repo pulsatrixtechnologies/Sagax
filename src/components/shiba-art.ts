@@ -122,6 +122,9 @@ export const SHIBA_PIVOTS = {
   eyeL: [38.5, 46.5] as Point,
   eyeR: [61.5, 46.5] as Point,
   mouth: [50, 62] as Point,
+  /** The front paws' middles, sitting and lying (the wave lifts the right one). */
+  pawL: [40, 95] as Point,
+  pawR: [60, 95] as Point,
 } as const;
 
 /** The standing body's hips (the legs hang from them), near and far side, facing right. */
@@ -159,7 +162,11 @@ export const SHIBA_SILHOUETTE = `${SHIBA_ART.earL} ${SHIBA_ART.earR} ${SHIBA_ART
 
 /* -------------------------------------------------------------- colors */
 
-/** What every part is painted with; a skin maps each role to a paint (shiba skins in skin-fx/shiba-skins.tsx). */
+/**
+ * What every part is painted with; a skin maps each role to a paint (shiba
+ * skins in skin-fx/shiba-skins.tsx). `coat` may be a gradient; `lid` is the
+ * coat as one solid color (the eyelids, and the strokes of the legs and tail).
+ */
 export const SHIBA_ROLES = ["coat", "shade", "line", "cream", "creamShade", "earIn", "brow", "lid", "ink", "pupil", "white", "spec", "mouth", "tongue", "tongueLine", "blush", "sweat", "nose"] as const;
 export type ShibaRole = (typeof SHIBA_ROLES)[number];
 export type ShibaPalette = Record<ShibaRole, string>;
@@ -438,7 +445,8 @@ export function legOps(leg: ShibaLeg, angle: number, lift: number, ow: number): 
   const paw = ellipsePath(fx + 1.2, fy + 0.6, 4.2, 2.8);
   return [
     { d, stroke: "line", width: r2(LEG.width + 2 * ow), round: true },
-    { d, stroke: far ? "shade" : "coat", width: LEG.width, round: true },
+    // strokes take the coat as one solid color (a gradient on a straight line has no box to spread over)
+    { d, stroke: far ? "shade" : "lid", width: LEG.width, round: true },
     { d: paw, fill: far ? "creamShade" : "cream", stroke: "line", width: ow },
   ];
 }
@@ -456,6 +464,9 @@ export interface ShibaPartsInput {
 export interface ShibaParts {
   tail: ShibaOp[];
   body: ShibaOp[];
+  /** The front paws, sitting or lying (none standing: the legs carry them): the wave lifts one. */
+  pawL: ShibaOp[];
+  pawR: ShibaOp[];
   earL: ShibaOp[];
   earR: ShibaOp[];
   head: ShibaOp[];
@@ -468,13 +479,13 @@ export interface ShibaParts {
 }
 
 /** The body, its tail and (sitting or lying) its paws, for a stance. */
-function bodyOps(stance: ShibaStance, ow: number, bust: boolean): { tail: ShibaOp[]; body: ShibaOp[] } {
+function bodyOps(stance: ShibaStance, ow: number, bust: boolean): { tail: ShibaOp[]; body: ShibaOp[]; pawL: ShibaOp[]; pawR: ShibaOp[] } {
   const A = SHIBA_ART;
   const tailOf = (d: string, cream: string | null): ShibaOp[] => {
     const tw = r2(6 + 2 * ow);
     const ops: ShibaOp[] = [
       { d, stroke: "line", width: tw, round: true },
-      { d, stroke: "coat", width: r2(tw - 3), round: true },
+      { d, stroke: "lid", width: r2(tw - 3), round: true },
     ];
     if (cream) ops.push({ d: cream, stroke: "cream", width: 2.2, round: true });
     return ops;
@@ -483,19 +494,24 @@ function bodyOps(stance: ShibaStance, ow: number, bust: boolean): { tail: ShibaO
     return {
       tail: tailOf(A.standTail, A.standTailCream),
       body: [...shaded(A.standBody, "coat", "shade", -2, -2.4), ...shaded(A.standChest, "cream", "creamShade", -1.5, -1.5).map((op) => ({ ...op, clip: A.standBody })), outline(A.standBody, ow)],
+      pawL: [],
+      pawR: [],
     };
   }
+  const paw = (d: string) => [...shaded(d, "cream", "creamShade", -1, -1), outline(d, ow)];
   if (stance === "lie") {
-    const paws = A.liePaws.flatMap((d) => [...shaded(d, "cream", "creamShade", -1, -1), outline(d, ow)]);
     return {
       tail: tailOf(A.lieTail, null),
-      body: [...shaded(A.lieBody, "coat", "shade", -3, -1.4), ...shaded(A.lieChest, "cream", "creamShade", -2, -1).map((op) => ({ ...op, clip: A.lieBody })), outline(A.lieBody, ow), ...paws],
+      body: [...shaded(A.lieBody, "coat", "shade", -3, -1.4), ...shaded(A.lieChest, "cream", "creamShade", -2, -1).map((op) => ({ ...op, clip: A.lieBody })), outline(A.lieBody, ow)],
+      pawL: paw(A.liePaws[0]),
+      pawR: paw(A.liePaws[1]),
     };
   }
-  const paws = A.paws.flatMap((d) => [...shaded(d, "cream", "creamShade", -1, -1), outline(d, ow)]);
   return {
     tail: bust ? [] : tailOf(A.tail, A.tailCream),
-    body: [...shaded(A.body, "coat", "shade", -3, -1), ...shaded(A.chest, "cream", "creamShade", -2, -1).map((op) => ({ ...op, clip: A.body })), outline(A.body, ow), ...paws],
+    body: [...shaded(A.body, "coat", "shade", -3, -1), ...shaded(A.chest, "cream", "creamShade", -2, -1).map((op) => ({ ...op, clip: A.body })), outline(A.body, ow)],
+    pawL: paw(A.paws[0]),
+    pawR: paw(A.paws[1]),
   };
 }
 
@@ -505,10 +521,12 @@ export function shibaParts(input: ShibaPartsInput): ShibaParts {
   const ow = shibaOutline(input.size);
   const face = SHIBA_FACES[input.expression] ?? SHIBA_FACES.neutral;
   const ear = (d: string, inner: string, dx: number): ShibaOp[] => [...shaded(d, "coat", "shade", dx, -1), { d: inner, fill: "earIn" }, outline(d, ow)];
-  const { tail, body } = bodyOps(input.stance ?? "sit", ow, bust);
+  const { tail, body, pawL, pawR } = bodyOps(input.stance ?? "sit", ow, bust);
   return {
     tail,
     body,
+    pawL,
+    pawR,
     earL: ear(A.earL, A.earInL, 1.5),
     earR: ear(A.earR, A.earInR, -1.5),
     head: [...shaded(A.head, "coat", "shade", -2.6, -3.4), ...shaded(A.mask, "cream", "creamShade", -1.8, -2.6).map((op) => ({ ...op, clip: A.head })), outline(A.head, ow)],
@@ -559,6 +577,6 @@ export function shibaStillSvg(options: { color: string; expression?: ShibaExpres
   const legs = (side: "Far" | "Near") => (stance === "stand" ? SHIBA_LEGS.filter((leg) => leg.endsWith(side)).map((leg) => draw(legOps(leg, 0, 0, ow), leg)).join("") : "");
   return (
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${shibaViewBox(options.size)}" width="${options.size}" height="${options.size}">` +
-    `${draw(parts.tail, "t")}${legs("Far")}${draw(parts.body, "b")}${legs("Near")}<g${headTransform}>${draw(parts.earL, "el")}${draw(parts.earR, "er")}${draw(parts.head, "h")}${face}</g></svg>`
+    `${draw(parts.tail, "t")}${legs("Far")}${draw(parts.body, "b")}${draw(parts.pawL, "pl")}${draw(parts.pawR, "pr")}${legs("Near")}<g${headTransform}>${draw(parts.earL, "el")}${draw(parts.earR, "er")}${draw(parts.head, "h")}${face}</g></svg>`
   );
 }
