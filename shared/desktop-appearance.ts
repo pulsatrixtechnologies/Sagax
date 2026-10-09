@@ -16,7 +16,7 @@ export const DESKTOP_APPEARANCE_PATH = "/api/me/appearance";
 
 export const APPEARANCE_SKIN_IDS = [
   "pulsatrix", "pulsatrix-light", "midnight", "atelier", "foundry", "lagoon",
-  "graphite", "linen", "dusk", "daylight", "retro98",
+  "graphite", "linen", "dusk", "daylight", "retro98", "meadow",
 ] as const;
 
 export const APPEARANCE_FONT_IDS = ["skin", "system", "inter", "poppins", "serif"] as const;
