@@ -92,7 +92,7 @@ describe("Claude Code section", () => {
     const catalog = readClaudeModelCatalog({ HOME: home });
     const custom = catalog.options.filter((option) => option.custom).map((option) => option.id);
 
-    // Custom rows are what the picker shows behind its local-model entry.
+    // Custom rows are what the picker adds to the engine's own models.
     expect(custom).toEqual([providerEnv.ANTHROPIC_MODEL]);
     // The per-tier and subagent model settings never reach a bot, neither in
     // the picker nor in the CLI's settings.
@@ -102,10 +102,10 @@ describe("Claude Code section", () => {
     const carried = Object.keys(readClaudeAuthSettings({ HOME: home }).env ?? {});
     expect(carried.filter((key) => /MODEL/u.test(key))).toEqual([]);
 
-    const label = EN["model.useLocal"];
-    expect(label).toBe("Use a local model");
+    const label = EN["model.rail.cloud"];
+    expect(label).toBe("Cloud");
     const text = section("### Claude Code");
-    expect(text).toContain(`If you also set \`ANTHROPIC_MODEL\` there, that model appears under **${label}** in the Claude model picker; pick it.`);
+    expect(text).toContain(`If you also set \`ANTHROPIC_MODEL\` there, that model appears under **${label}** in the Claude model picker's model list; pick it.`);
     expect(text).toContain("FireConnect's model list doesn't show up in Sagax, so add `ANTHROPIC_MODEL` yourself.");
     expect(text).toContain("`ANTHROPIC_DEFAULT_*_MODEL` and `CLAUDE_CODE_SUBAGENT_MODEL` aren't carried over.");
     // The old, wrong advice: ANTHROPIC_MODEL is carried over as a pick.

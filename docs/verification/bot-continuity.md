@@ -28,8 +28,10 @@ environments and MCP tokens are not retained. The renderer recipe checks both
 scope buttons in the real model picker, saves a screenshot, changes models,
 checks server persistence, and sends a message through the composer.
 
-The header starts at **Only this thread**; **Thread + bot default** explicitly
-includes group turns and future threads. The desktop model-switch recipe uses
+Before 2026-10-09 the header started at **Only this thread**, with **Thread +
+bot default** as the other scope; the picker now has one mode (a change runs
+the thread and becomes the bot's model, which group turns and future threads
+use). The desktop model-switch recipe uses
 the real picker and private approval channel against offline providers. It
 checks Cancel, the 390px confirmation layout, switching a Custom Codex thread
 to Claude with Ask in one confirmed operation, then updating a mismatched bot

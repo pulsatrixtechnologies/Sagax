@@ -18,11 +18,11 @@ switching and Stop can be exercised without a real provider or account.
 2. Send a message, then select Triage iCloud and send another. Both sidebar
    rows should show Working. Changing the selection must not move messages.
 3. Stop iCloud. Gmail must remain Working; its Stop control still targets Gmail.
-4. In an idle thread, change its model. Select a sibling and return; each
-   should retain its own choice. The model picker defaults to **This bot**:
-   it updates the visible thread plus the default for groups and new threads,
-   not existing siblings. Choose **Only this thread** for an independent
-   model/account/effort override. Approval controls remain thread-scoped.
+4. In an idle thread, change its model. The picker has one mode (2026-10-09):
+   the change runs the visible thread and becomes the bot's model, which
+   groups, new threads and the threads that follow the bot use. A sibling on
+   its own model keeps it; select it and return to check. Approval controls
+   remain thread-scoped.
 5. Rename a thread through its row menu. Remove the Email folder through its
    settings and confirm **Delete folder, keep threads**. Histories and model
    selections must remain, now directly beneath Pepper.
