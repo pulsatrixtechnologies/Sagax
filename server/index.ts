@@ -791,6 +791,7 @@ import { peopleRoutes, type EngineVia, type PeopleDeps } from "./org-admin-peopl
 import { botsRoutes, type BotsDeps } from "./org-admin-bots.ts";
 import { ConsoleRefusal } from "./org-admin-console.ts";
 import { routineScheduleLabel } from "./org-admin-schedule.ts";
+import { routinesRoutes, type RoutinesDeps } from "./org-admin-routines.ts";
 import { createOrgImportRoute } from "./org-import-routes.ts";
 import { readSandboxdKey } from "./sandboxd-auth.ts";
 import { sandboxdClient } from "./user-sandbox-client.ts";
@@ -7783,13 +7784,16 @@ function adminPerson(principalId: string): AdminPerson {
 /** Slice 7: the pending cards a console person may see: owner cards of the
  * bots they own (approvalOwnerId), and for an organization admin every
  * admin card. Never an owner card to an admin who does not own the bot. */
-function pendingApprovalsFor(viewer: { principalId: string; orgAdmin: boolean }): AdminApproval[] {
+function pendingApprovalsFor(viewer: { principalId: string; orgAdmin: boolean }, scope: "mine" | "org" = "mine"): AdminApproval[] {
   const origin = IDENTITY.kind === "perspicax" ? IDENTITY.publicOrigin.replace(/\/+$/, "") : "";
   const out: AdminApproval[] = [];
   for (const { bot, threadId, message, card } of pendingApprovalCards()) {
     const kind = card.adminApproval ? "admin" as const : "owner" as const;
     const ownerId = approvalOwnerId(bot);
-    if (kind === "admin" ? !viewer.orgAdmin : ownerId !== viewer.principalId) continue;
+    // "org" (the console's organization queue, admins only): every pending
+    // card, decidable only by whoever Sagax lets decide it.
+    const mayDecide = kind === "admin" ? viewer.orgAdmin : ownerId === viewer.principalId;
+    if (scope === "mine" && !mayDecide) continue;
     const type = approvalTypeOf(card);
     const requester = cardRequesterKey(threadId, card.requestId!);
     const summary = typeof card.subtitle === "string" && card.subtitle ? redactSecretsInText(card.subtitle).slice(0, 500) : undefined;
@@ -7805,11 +7809,11 @@ function pendingApprovalsFor(viewer: { principalId: string; orgAdmin: boolean })
       ...(requester && isPrincipalId(requester) && principals.byId(requester) ? { requestedBy: adminPerson(requester) } : {}),
       owner: adminPerson(ownerId),
       at: message.at,
-      decidable: type === "tool" && approvalHostOf(bot).kind === "fleet",
+      decidable: mayDecide && type === "tool" && approvalHostOf(bot).kind === "fleet",
       link: `${origin}/#thread=${encodeURIComponent(threadId)}&bot=${encodeURIComponent(bot.id)}`,
     });
   }
-  return out.sort((a, b) => a.at - b.at).slice(0, 200);
+  return out.sort((a, b) => a.at - b.at).slice(0, scope === "org" ? 2_000 : 200);
 }
 
 /** Slice 7: answer a plain tool card from the Perspicax console, once,
@@ -23823,6 +23827,33 @@ const orgBotsDeps: BotsDeps = {
   },
 };
 
+/** The console's Routines and Approvals (server/org-admin-routines.ts). */
+const orgRoutinesDeps: RoutinesDeps = {
+  routines: () => routines?.listRoutines() ?? [],
+  runs: (from) => routines?.listRuns(from) ?? [],
+  bot: (botId) => {
+    const bot = store.bot(botId);
+    return bot ? { id: bot.id, name: bot.name, ownerPrincipalId: effectiveBotOwner(bot) } : null;
+  },
+  runAs: (routine) => effectiveRunAs(routine) ?? null,
+  person: adminPerson,
+  scheduleLabel: (routine) => routineScheduleLabel(routine.schedule),
+  usageRows: (range) => readUsage(DATA_DIR, range),
+  inFlight: routineRunInFlight,
+  runNow: (routineId) => routines?.runNow(routineId) ?? null,
+  // No writer meta: an admin pausing a routine does not make it run as them.
+  setEnabled: (routineId, enabled) => routines?.update(routineId, { enabled }) ?? null,
+  orgApprovals: (viewer) => pendingApprovalsFor(viewer, "org"),
+  decisions: (range) => readDecisionRange(DATA_DIR, range),
+  decisionPerson: (actor) => {
+    if (!actor) return null;
+    if (actor.kind === "loopback") return { principalId: "", sub: null, name: "This computer" };
+    if (actor.kind === "worker") return { principalId: "", sub: null, name: "A local worker" };
+    if (actor.userId && isPrincipalId(actor.userId) && principals.byId(actor.userId)) return adminPerson(actor.userId);
+    return { principalId: "", sub: null, name: actor.label.includes("@") ? "Signed-in user" : actor.label };
+  },
+};
+
 /** The organization's engine policy (Settings, Policies): every engine
  * until a list is set. */
 function consoleEngineAllowed(instanceId: string): boolean {
@@ -23924,6 +23955,7 @@ const orgAdmin = createOrgAdminRoutes({
     ...overviewRoutes(orgOverviewDeps),
     ...peopleRoutes(orgPeopleDeps),
     ...botsRoutes(orgBotsDeps),
+    ...routinesRoutes(orgRoutinesDeps),
   ],
   // The console's file browser (Perspicax 2026-10-08, slice 1: read only).
   files: {

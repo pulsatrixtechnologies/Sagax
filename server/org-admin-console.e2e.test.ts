@@ -397,4 +397,60 @@ posixOnly("Perspicax console: the Sagax admin routes", () => {
     }
     expect(audit.find((row) => row.action === "bot.transfer")).toMatchObject({ actor: { via: "console", principalId: ids.alice }, after: { ownerPrincipalId: ids.bob } });
   }, 90_000);
+
+  it("C4: the organization's approval queue, a console decision in the history", async () => {
+    const queue = await admin("GET", "approvals?scope=org", ALICE);
+    expect(queue.status, queue.text).toBe(200);
+    const card = (queue.body.approvals as Array<any>).find((entry) => entry.requestId === cardId);
+    expect(card).toMatchObject({ botId: bots.beacon!.id, kind: "admin", tool: "Bash", decidable: true, owner: { principalId: ids.bob } });
+    expect((await admin("GET", "approvals?scope=org", MONA)).body.code).toBe("forbidden_role");
+    // Bob's own list never carries the admin card
+    expect(((await admin("GET", "approvals", BOB)).body.approvals as Array<any>).map((entry) => entry.requestId)).not.toContain(cardId);
+    const answered = await admin("POST", `approvals/${bots.beacon!.threadId}/${cardId}`, ALICE, { decision: "allow" });
+    expect(answered.status, answered.text).toBe(200);
+    const history = await waitFor(async () => {
+      const got = await admin("GET", "approvals/history", ALICE);
+      return (got.body.items as Array<any> | undefined)?.find((entry) => entry.requestId === cardId) ? got : null;
+    });
+    expect((history.body.items as Array<any>).find((entry) => entry.requestId === cardId)).toMatchObject({
+      botId: bots.beacon!.id, threadId: bots.beacon!.threadId, type: "tool", tool: "Bash", decision: "allow", by: { principalId: ids.alice, name: "Alice" }, at: expect.any(Number),
+    });
+    expect(((await admin("GET", "approvals?scope=org", ALICE)).body.approvals as Array<any>).map((entry) => entry.requestId)).not.toContain(cardId);
+    expect((await admin("GET", "approvals/history", MONA)).body.code).toBe("forbidden_role");
+  }, 30_000);
+
+  it("C4: routines across members, resume, run now, the run history", async () => {
+    // the package imported for Zoe in C3 brought its routine along, off
+    expect((await admin("GET", "routines", ALICE)).body.items).toHaveLength(2);
+    const list = await admin("GET", `routines?bot=${bots.atlas!.id}`, ALICE);
+    expect(list.status, list.text).toBe(200);
+    expect(list.body.items).toEqual([expect.objectContaining({
+      id: routineId, name: "Daily digest", botId: bots.atlas!.id, botName: "Atlas", owner: expect.objectContaining({ principalId: ids.alice }),
+      runAs: expect.objectContaining({ principalId: ids.alice }), schedule: "Every hour", enabled: false, nextRunAt: null, lastRun: null, failures7d: 0,
+    })]);
+    expect(list.text).not.toContain("Write the digest.");
+    expect((await admin("GET", "routines?status=paused", ALICE)).body.items).toHaveLength(2);
+    expect((await admin("GET", "routines", MONA)).body.items).toEqual([]);
+    expect((await admin("GET", `routines/${routineId}`, MONA)).status).toBe(404);
+    expect((await admin("POST", `routines/${routineId}/pause`, MONA, { paused: false })).status).toBe(404);
+
+    const resumed = await admin("POST", `routines/${routineId}/pause`, ALICE, { paused: false });
+    expect(resumed.status, resumed.text).toBe(200);
+    expect(resumed.body.routine).toMatchObject({ enabled: true, nextRunAt: expect.any(Number) });
+    const run = await admin("POST", `routines/${routineId}/run`, ALICE, {});
+    expect(run.status, run.text).toBe(200);
+    expect(run.body.run).toMatchObject({ id: expect.any(String), status: "running" });
+    const runs = await waitFor(async () => {
+      const got = await admin("GET", `routines/${routineId}/runs`, ALICE);
+      const items = got.body.items as Array<any> | undefined;
+      return items?.[0] && items[0].status !== "running" ? items : null;
+    }, 40_000);
+    expect(runs[0]).toMatchObject({ id: run.body.run.id, status: "ok", reason: null, threadId: expect.any(String), endedAt: expect.any(Number) });
+    expect((await admin("GET", `routines/${routineId}`, ALICE)).body.routine.lastRun).toMatchObject({ status: "ok" });
+    const paused = await admin("POST", `routines/${routineId}/pause`, ALICE, { paused: true });
+    expect(paused.body.routine.enabled).toBe(false);
+    const audit = (await admin("GET", `audit?category=bot&target=${routineId}`, ALICE)).body.rows as Array<any>;
+    expect(audit.map((row) => row.action)).toEqual(expect.arrayContaining(["routine.resume", "routine.run_now", "routine.pause"]));
+    expect(audit.find((row) => row.action === "routine.run_now")).toMatchObject({ actor: { via: "console", principalId: ids.alice } });
+  }, 60_000);
 });
