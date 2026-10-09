@@ -346,6 +346,11 @@ export function FailedTurnRow({ tool, engine, onRetry, botId, threadId }: {
 }) {
   if (tool.place && botId) return <PlaceFailedRow place={tool.place} botId={botId} threadId={threadId} onRetry={onRetry} />;
   const signedOut = signedOutEngine(tool, engine);
+  // A signed-out engine: its sign-in card is the whole answer, no error row or
+  // Details above it. Without a card to show, the row below stays.
+  if (signedOut && tool.setup && engine && !(engine.snapshot.state === "available" && engine.snapshot.authenticated !== false)) {
+    return <div className="flex justify-start"><EngineSetup instance={engine} className="text-ink-secondary" /></div>;
+  }
   return (
     <ErrorRow
       message={failedTurnCause(tool.name) ?? tool.name}

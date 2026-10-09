@@ -50,16 +50,25 @@ const room = (message: Message) => renderToStaticMarkup(createElement(RoomToolCh
 describe("a member's failed turn in a room", () => {
   const signedOut = failed("error: Not logged in · Please run /login", { setup: true });
 
-  it("says the engine is signed out and offers the sign-in, not the CLI's /login text", () => {
+  it("shows only the sign-in card for a signed-out engine: no error row, no Details", () => {
     const markup = room(signedOut);
-    expect(markup).toContain("Claude isn&#x27;t signed in yet. Sign in below, then send your message again.");
     expect(markup).toContain("Sign in to Claude");
+    expect(markup).not.toContain("isn&#x27;t signed in yet");
+    expect(markup).not.toContain("<details");
+    expect(markup).not.toContain("Not logged in");
     expect(markup).not.toContain('data-testid="tool-activity"');
-    expect(markup).not.toContain("truncate font-mono");
-    // the engine's own words stay one click away, never as the headline
-    const details = markup.indexOf("<details");
-    expect(details).toBeGreaterThan(-1);
-    expect(markup.indexOf("Not logged in")).toBeGreaterThan(details);
+  });
+
+  it("keeps the error row when the engine has no sign-in flow to show", () => {
+    const { install: _install, ...noFlow } = claude;
+    fixture.instances = [noFlow as InstanceInfo];
+    try {
+      const markup = room(signedOut);
+      expect(markup).not.toContain("Sign in to Claude");
+      expect(markup).toContain("Not logged in");
+    } finally {
+      fixture.instances = [claude];
+    }
   });
 
   it("is the very row a direct chat shows for the same failure", () => {
