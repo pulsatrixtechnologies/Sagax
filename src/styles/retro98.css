@@ -509,6 +509,7 @@
   flex-direction: row !important;
   align-self: flex-start !important;
 }
+[data-skin="retro98"] [data-retro-author] [data-message-time],
 [data-skin="retro98"] [data-retro-author] > div > span.self-end {
   display: none !important;
 }

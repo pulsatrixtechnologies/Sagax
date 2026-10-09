@@ -7,6 +7,7 @@ import { usePerspicaxOrg } from "@/lib/perspicax-org";
 import { cn } from "@/lib/cn";
 import { useMenuMotion } from "./MenuMotion";
 import { activeLocale, t } from "@/lib/i18n";
+import { composerPlaceholder } from "@/lib/composer-placeholder";
 import { consumeRetroCommand, retroSignal } from "@/lib/retro98";
 import { reportAchievement } from "@/lib/achievements";
 import { useOwnerOrAdmin } from "@/lib/use-owner-or-admin";
@@ -1264,32 +1265,16 @@ export function Composer({
           // already refuses while an attachment is pending.
           disabled={Boolean(approval) || locked}
           aria-busy={bot?.awaitingThreadSnapshot || undefined}
-          placeholder={
-            approval
-              ? t("composer.placeholder.approval")
-              : attachmentPending
-              ? t("composer.placeholder.attaching")
-              : recording
-              ? t("composer.placeholder.listening")
-              : offersBusyChoice && busySendPreference === "ask"
-                ? t("composer.placeholder.busyChoice", { name: busyName })
-              : busy && canSteer
-                ? pendingCount > 0
-                  ? t("composer.placeholder.steerQueued", { name: busyName })
-                  : t("composer.placeholder.steer", { name: busyName })
-              : busy
-                ? group
-                  ? t("composer.placeholder.queueGroup", { name: busyName })
-                  : t("composer.placeholder.queue", { name: busyName })
-                : group
-                  ? channelMode === "goal"
-                    ? t("composer.placeholder.goal", { name: group.name })
-                    : t("composer.placeholder.group", {
-                        name: group.name,
-                        hint: groupComposerHint(group, members ?? [], { jevOn: jevRoomRoutingOn(state.config) }),
-                      })
-                  : t("composer.placeholder.bot", { name: bot?.name ?? "" })
-          }
+          placeholder={composerPlaceholder({
+            approval: Boolean(approval),
+            attachmentPending,
+            recording,
+            busy,
+            groupName: group?.name,
+            goalMode: channelMode === "goal",
+            groupHint: () => groupComposerHint(group!, members ?? [], { jevOn: jevRoomRoutingOn(state.config) }),
+            botName: bot?.name ?? "",
+          })}
           aria-label={t("composer.placeholder.bot", { name: group ? group.name : (bot?.name ?? "") })}
             className="block max-h-[7.5rem] min-h-6 w-full resize-none overflow-y-auto bg-transparent chat-input-text px-1 py-1.5 placeholder:text-ink-secondary focus:outline-none"
           />

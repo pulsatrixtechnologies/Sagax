@@ -263,6 +263,7 @@ import {
 import { RETRY_MAX_ATTEMPTS } from "./drivers/retry.ts";
 import { recoveryCapabilityError } from "./automatic-recovery.ts";
 import { ModelCatalogStore } from "./model-catalog/catalog.ts";
+import { turnRunFor, type TurnRun } from "./turn-run.ts";
 import { attachmentsInText, autoModelRecord, bareModelId, explainPick, familyOfModel, isModelRefusal, nextInChain, pickOrchestrationModel, pickWorkerModel, type AutoChainEntry, type AutoEngine, type AutoPick, type CatalogFacts } from "./model-auto.ts";
 import type { AutoModelRecord } from "../shared/auto-model.ts";
 import { decodeGeneratedImage } from "./generated-image.ts";
@@ -8523,6 +8524,8 @@ const lastReply = new Map<string, string>();
 /** the model each thread's provider session announced in session.started,
  * so a fallback notice can name the model Auto is unavailable for */
 const sessionModelByThread = new Map<string, string>();
+/** The model and effort of each thread's latest dispatched turn (server/turn-run.ts). */
+const turnRunByThread = new Map<string, TurnRun>();
 /** threads already told that the provider's reviewer never started */
 const nativeReviewNoticed = new Set<string>();
 /** a driver kind as the chat should name it: "claudeAgent" → "Claude" */
@@ -10109,7 +10112,8 @@ bus.subscribe((event: RuntimeEvent) => {
   };
 
   if (coordinatorVisibleText) {
-    pushMessage({ role: "bot", kind: "text", text: coordinatorVisibleText, turnId: completedTurnId });
+    const ran = bot ? turnRunByThread.get(event.threadId) : undefined;
+    pushMessage({ role: "bot", kind: "text", text: coordinatorVisibleText, turnId: completedTurnId, ...(ran ? { turnRun: ran } : {}) });
     lastReply.set(event.threadId, coordinatorVisibleText);
   }
   if (bot) handoffs.onEvent(event);
@@ -10132,7 +10136,8 @@ bus.subscribe((event: RuntimeEvent) => {
     case "item.completed":
       if (event.itemType === "assistant_text") {
         const text = event.text;
-        pushMessage({ role: "bot", kind: "text", text, turnId: event.turnId });
+        const ran = bot ? turnRunByThread.get(event.threadId) : undefined;
+        pushMessage({ role: "bot", kind: "text", text, turnId: event.turnId, ...(ran ? { turnRun: ran } : {}) });
         // kept so "finished" can say what it finished with, rather than
         // just that something ended
         lastReply.set(event.threadId, text);
@@ -13059,6 +13064,9 @@ async function startTurn(
   const model = bot.modelSelection.model;
   const effort = bot.modelSelection.effort;
   const variant = bot.modelSelection.variant;
+  // What this turn runs on, kept for the bot text it writes (a quiet line
+  // under the reply shows it). A warm-up writes no reply.
+  if (!warmOnly) turnRunByThread.set(threadId, turnRunFor(bot.modelSelection));
   assertModelVariantSupported({ variant, effort }, instance.adapter.capabilities);
   // A selection can be persisted while its engine is offline. Re-check when
   // the engine returns so an old or unsupported value never reaches a CLI.
