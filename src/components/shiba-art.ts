@@ -160,7 +160,7 @@ export const SHIBA_SILHOUETTE = `${SHIBA_ART.earL} ${SHIBA_ART.earR} ${SHIBA_ART
 /* -------------------------------------------------------------- colors */
 
 /** What every part is painted with; a skin maps each role to a paint (shiba skins in skin-fx/shiba-skins.tsx). */
-export const SHIBA_ROLES = ["coat", "shade", "line", "cream", "creamShade", "earIn", "brow", "lid", "ink", "white", "spec", "mouth", "tongue", "tongueLine", "blush", "sweat", "nose"] as const;
+export const SHIBA_ROLES = ["coat", "shade", "line", "cream", "creamShade", "earIn", "brow", "lid", "ink", "pupil", "white", "spec", "mouth", "tongue", "tongueLine", "blush", "sweat", "nose"] as const;
 export type ShibaRole = (typeof SHIBA_ROLES)[number];
 export type ShibaPalette = Record<ShibaRole, string>;
 
@@ -193,6 +193,7 @@ export function shibaPalette(hex: string): ShibaPalette {
     brow: cream,
     lid: coat,
     ink: "#2B1A12",
+    pupil: "#2B1A12",
     white: "#ffffff",
     spec: "#ffffff",
     mouth: "#4A1F1A",
@@ -327,7 +328,7 @@ export function eyeOps(spec: EyeSpec, s: -1 | 1, ow: number): ShibaOp[] {
   const pr = spec.pupil;
   const ops: ShibaOp[] = [
     { d, fill: "white" },
-    { d: ellipsePath(px, py, pr, pr), fill: "ink", clip: d },
+    { d: ellipsePath(px, py, pr, pr), fill: "pupil", clip: d },
     { d: ellipsePath(px + pr * 0.35, py - pr * 0.4, pr * 0.34, pr * 0.34), fill: "spec", clip: d },
   ];
   if (spec.lid > 0) {

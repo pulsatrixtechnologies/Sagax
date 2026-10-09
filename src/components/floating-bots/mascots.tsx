@@ -2,8 +2,8 @@
 // desktop, one entry each (id, label, what it can animate, how it draws on
 // the desktop and as a thumbnail). Adding a character is adding an entry.
 // The same behavior state machine (behavior.ts) drives them all; each
-// renderer maps the clips it can show and degrades gracefully: the shapes
-// Trombi and Bunbu have no wings, so a flight is a bouncing hop across. The
+// renderer maps the clips it can show and degrades gracefully: the shapes,
+// Trombi, Bunbu and Shiba have no wings, so a flight is a bouncing hop across. The
 // character and its look come from the bot (bot.mascotLook); the desktop
 // draws a skin's full effects, and its move effects with each move.
 import { useEffect, useId, useRef, type ComponentType } from "react";
@@ -18,6 +18,7 @@ import { SHAPE_MOVES, type ShapeExpression, type ShapeMove } from "@/components/
 import type { TrombiPose } from "@/components/retro-assistant/Trombi";
 import { SkinnedTrombi } from "@/components/skin-fx/SkinnedTrombi";
 import { BUNBU_EARFLOP_CLIP, BunbuMascot, type BunbuAction, type BunbuMood } from "@/components/BunbuMascot";
+import { ShibaMascot } from "@/components/ShibaMascot";
 import { fxMoveFor, useEquipBurst, useMoveBurst, useReducedMotion, type FxMoveRequest } from "@/components/skin-fx/skin-fx";
 import { completeMascotLook, MASCOT_SHAPES, type MascotCharacter, type MascotLook, type MascotShape } from "../../../shared/mascot-look";
 import { createFrameSmoother, type MascotActivity, type MascotFrame } from "./behavior";
@@ -314,6 +315,21 @@ function BunbuThumb({ color, look, size }: MascotThumbProps) {
   return <BunbuMascot skin={look.skins.bunbu} color={color} size={size} animated={false} label={null} />;
 }
 
+/* -------------------------------------------------------------- Shiba */
+
+function ShibaRender({ color, look, size, activity, pose, frame, fps, onHitTest }: MascotRenderProps) {
+  const move = useClipFx(activity);
+  return (
+    <Motion25D size={size} frame={frame} fps={fps} onHitTest={onHitTest}>
+      <ShibaMascot skin={look.skins.shiba} color={color} size={size * 0.9} mood={bunbuMoodFor(activity, pose)} expression={shapeExpressionForClip(activity)} detail="full" move={move} label={null} />
+    </Motion25D>
+  );
+}
+
+function ShibaThumb({ color, look, size }: MascotThumbProps) {
+  return <ShibaMascot skin={look.skins.shiba} color={color} size={size} animated={false} label={null} />;
+}
+
 /* ----------------------------------------------------------- registry */
 
 export const MASCOTS: readonly MascotDefinition[] = [
@@ -329,6 +345,7 @@ export const MASCOTS: readonly MascotDefinition[] = [
     Render: BunbuRender,
     Thumb: BunbuThumb,
   },
+  { id: "shiba", capabilities: { walk: true, fly: false, wings: false, blink: true, turn: true, flip: true }, paint: { colors: true, skins: true }, moves: ["wave", "dance", "jump", "hop", "love"], Render: ShibaRender, Thumb: ShibaThumb },
 ];
 
 export function mascotFor(look: Pick<MascotLook, "character"> | undefined): MascotDefinition {

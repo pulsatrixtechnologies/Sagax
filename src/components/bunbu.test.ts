@@ -29,7 +29,7 @@ describe("Bunbu's look", () => {
 
   it("keeps each character's own skin when switching and back", () => {
     const look = completeMascotLook({ character: "bunbu", skins: { bunbu: "galaxy", shape: "gold" } });
-    expect(completeMascotLook({ ...look, character: "shape" }).skins).toEqual({ shape: "gold", trombi: "classic", bunbu: "galaxy" });
+    expect(completeMascotLook({ ...look, character: "shape" }).skins).toEqual({ shape: "gold", trombi: "classic", bunbu: "galaxy", shiba: "plain" });
   });
 
   it("reads other names a stored skin may carry, and drops one it does not know without losing the character", () => {
