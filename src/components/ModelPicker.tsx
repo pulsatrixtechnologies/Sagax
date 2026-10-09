@@ -10,7 +10,6 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
 import { createPortal } from "react-dom";
 import { Check, ChevronDown, ChevronLeft, ChevronRight, KeyRound, Loader2, Plus, RefreshCw, Search, X } from "lucide-react";
 import { useStore, type Bot, type InstanceInfo, type ModelSelection } from "@/state/store";
-import type { EffortLevel } from "../../shared/wire";
 import type { ModelVariantOption } from "../../shared/runtime-events";
 import { filterCustomModels, partitionCustomModels, suggestedModels } from "@/lib/custom-models";
 import { isDesktopModelId, localModelRows, localRowUnavailable, refreshLocalModelsOnOpen, runsLoopbackModels } from "@/lib/local-models";
@@ -35,6 +34,7 @@ import { autoChipLabel, autoReasonSentence } from "@/lib/auto-model";
 import { useAutoModelPreview } from "@/lib/auto-model-preview";
 import { threadsOnOwnModel } from "../../shared/thread-model";
 import { ThreadModelsLine } from "./ThreadModelsLine";
+import { effortLabel } from "@/lib/effort-label";
 
 type ModelOption = InstanceInfo["models"]["options"][number];
 const COMPACT_MODEL_COUNT = 5;
@@ -115,10 +115,7 @@ export function isDesktopLocalModel(id: string): boolean {
   return isDesktopModelId(id);
 }
 
-/** The others capitalize cleanly; "xhigh" would read "Xhigh". */
-export function effortLabel(level: EffortLevel): string {
-  return level === "xhigh" ? "X-High" : level[0].toUpperCase() + level.slice(1);
-}
+export { effortLabel };
 
 /** How hard the bot thinks, for the engine it currently runs on. Rendered
  * both in the picker's popover and in the settings dialog's Model section so

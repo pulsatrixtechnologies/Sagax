@@ -585,6 +585,9 @@ export interface WireMessage {
   sender?: ResolvedSender;
   /** Provider turn that produced this message. */
   turnId?: string;
+  /** What the turn that wrote this bot reply ran on. Absent on replies from
+   * before it was recorded, and on rooms; no effort means the engine default. */
+  turnRun?: { instanceId: string; model: string; effort?: EffortLevel };
   /** Server-proven originating user message, including supported harness
    * continuations. Absent means external clients must not infer ownership. */
   requestMessageId?: string;

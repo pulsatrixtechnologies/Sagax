@@ -4,7 +4,7 @@
 // row shows) renders none of them; a patched tool chip renders that chip
 // and nothing else. Counted through the leaf each row draws, which is not
 // memoized here, so it renders exactly when its row does.
-import { createElement } from "react";
+import { act, createElement } from "react";
 import { flushSync } from "react-dom";
 import { createRoot, type Root } from "react-dom/client";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
@@ -35,11 +35,15 @@ vi.mock("./ToolActivity", async (importOriginal) => ({
 // The real button, run inside a counting component: whatever it subscribes
 // to re-renders this component, so every render of it is counted.
 vi.mock("./SpeakButton", async (importOriginal) => {
-  const { SpeakButton } = await importOriginal<typeof import("./SpeakButton")>();
+  const { SpeakButton, SpeakMenuItem } = await importOriginal<typeof import("./SpeakButton")>();
   return {
     SpeakButton: (props: Parameters<typeof SpeakButton>[0]) => {
       renders.speak++;
       return SpeakButton(props);
+    },
+    SpeakMenuItem: (props: Parameters<typeof SpeakMenuItem>[0]) => {
+      renders.speak++;
+      return SpeakMenuItem(props);
     },
   };
 });
@@ -67,7 +71,7 @@ for (let turn = 0; turn < 3; turn++) {
     message(`m${at}`, messages.at(-1)?.id, { role: "user", text: `Question ${turn}` }),
     message(`m${at + 1}`, `m${at}`, { kind: "activity", tool: { name: `Read file ${turn}`, ok: turn < 2 ? true : undefined } }),
   );
-  if (turn < 2) messages.push(message(`m${at + 2}`, `m${at + 1}`, { text: `Answer ${turn}` }));
+  if (turn < 2) messages.push(message(`m${at + 2}`, `m${at + 1}`, { text: `Answer ${turn}`, ...(turn === 0 ? { turnRun: { instanceId: "test", model: "m", effort: "medium" as const } } : {}) }));
 }
 const running = messages.at(-1)!;
 
@@ -83,7 +87,7 @@ let state: AppState = {
   connected: true,
   selectedId: "pepper",
   bots: [profile("pepper", { messages, activeLeafId: running.id }), profile("scout")],
-  instances: [{ instanceId: "test", driverKind: "codex", displayName: "Test", snapshot: { state: "available" } } as InstanceInfo],
+  instances: [{ instanceId: "test", driverKind: "codex", displayName: "Test", snapshot: { state: "available" }, models: { options: [{ id: "m", label: "Model M" }] } } as unknown as InstanceInfo],
   config: { features: { showToolCalls: true } } as AppState["config"],
 };
 const dispatch = vi.fn();
@@ -93,6 +97,12 @@ async function draw() {
   const value = { state, dispatch, flushBotPatches: async () => null, refreshInstances: async () => {}, refreshModels: async () => {} };
   const children = createElement(ChatView, { bot: state.bots.find((bot) => bot.id === "pepper")! });
   flushSync(() => root.render(createElement(BotEditorStore, { value, children })));
+  await settle();
+}
+// Regenerate and read aloud live in each message's "…" menu, mounted while open.
+async function openMenus() {
+  const handles = document.querySelectorAll<HTMLButtonElement>('[data-message-bar] button[aria-haspopup="menu"]');
+  flushSync(() => handles.forEach((handle) => { if (handle.getAttribute("aria-expanded") !== "true") handle.click(); }));
   await settle();
 }
 async function rowRendersAfter(change: (current: AppState) => AppState) {
@@ -157,7 +167,9 @@ describe("chat transcript rows", () => {
   });
 
   it("offers Regenerate on the last answer only, and not during a turn", async () => {
-    const regenerate = () => [...document.querySelectorAll(`button[aria-label="${t("chat.regenerate")}"]`)]
+    await openMenus();
+    const regenerate = () => [...document.querySelectorAll(`[role="menuitem"]`)]
+      .filter((item) => item.textContent === t("chat.regenerate"))
       .map((button) => button.closest("[data-mid]")?.getAttribute("data-mid"));
     expect(regenerate()).toEqual(["m5"]);
     const busy = (value: boolean) => (current: AppState) => {
@@ -166,9 +178,48 @@ describe("chat transcript rows", () => {
       return reducer(current, { type: "botPatched", bot: { ...frame, busy: value, tasks } });
     };
     await rowRendersAfter(busy(true));
+    await openMenus();
     expect(regenerate()).toEqual([]);
     await rowRendersAfter(busy(false));
+    await openMenus();
     expect(regenerate()).toEqual(["m5"]);
+  });
+
+  it("shows the model and effort after the pointer rests 1.2 s on an answer, and never on the person's own message", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 9, 3, 23, 0));
+    try {
+      const rowOf = (id: string) => document.querySelector(`[data-mid="${id}"] [data-retro-role]`)!;
+      const hover = (id: string, type: "pointerover" | "pointerout") => {
+        rowOf(id).dispatchEvent(new PointerEvent(type, { bubbles: true, pointerType: "mouse", relatedTarget: document.body }));
+      };
+      const tick = (ms: number) => act(async () => { await vi.advanceTimersByTimeAsync(ms); });
+      // an answer that recorded its turn: model "m" labelled Model M, effort Medium
+      hover("m2", "pointerover");
+      await tick(1199);
+      expect(document.querySelector("[data-turn-run]")).toBeNull();
+      await tick(1);
+      const line = document.querySelector("[data-turn-run]")!;
+      expect(line.textContent).toBe("Model M · effort Medium");
+      expect(line.getAttribute("aria-hidden")).toBe("false");
+      expect(rowOf("m2").contains(line)).toBe(true);
+      hover("m2", "pointerout");
+      await tick(0);
+      expect(document.querySelector("[data-turn-run]")!.className).toContain("opacity-0");
+      await tick(200);
+      expect(document.querySelector("[data-turn-run]")).toBeNull();
+      // the person's own message, and an answer with no record: nothing
+      for (const id of ["m0", "m5"]) {
+        hover(id, "pointerover");
+        await tick(5000);
+        expect(document.querySelector("[data-turn-run]")).toBeNull();
+        hover(id, "pointerout");
+      }
+    } finally {
+      vi.useRealTimers();
+      vi.useFakeTimers({ toFake: ["Date"] });
+      vi.setSystemTime(new Date(2026, 9, 3, 23, 0));
+    }
   });
 
   // A paired Mac keeps its voice choice ("This Mac" or "Host voice") on the
@@ -181,9 +232,9 @@ describe("chat transcript rows", () => {
     vi.stubGlobal("localStorage", { getItem: (key: string) => kept.get(key) ?? null, setItem: (key: string, value: string) => kept.set(key, value) });
     vi.stubGlobal("speechSynthesis", { getVoices: () => [] });
     vi.stubGlobal("SpeechSynthesisUtterance", class {});
-    const speak = () => [...document.querySelectorAll<HTMLButtonElement>("button[aria-label]")]
-      .filter((button) => button.getAttribute("aria-label") === t("chat.speak.read") || button.getAttribute("aria-label") === t("chat.speak.needsKey"))
-      .map((button) => `${button.getAttribute("aria-label")}${button.disabled ? " (off)" : ""}`);
+    const speak = () => [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')]
+      .filter((item) => item.textContent === t("chat.speak.read") || item.textContent === t("chat.speak.needsKey"))
+      .map((item) => `${item.textContent}${item.disabled ? " (off)" : ""}`);
     const switchTo = async (provider: "host" | "system") => {
       await rowRendersAfter((current) => reducer(current, { type: "toggleSettings", open: true }));
       setRemoteVoiceProvider(provider);
@@ -191,9 +242,11 @@ describe("chat transcript rows", () => {
     };
     try {
       await switchTo("system");
+      await openMenus();
       expect(speak()).toEqual([t("chat.speak.read"), t("chat.speak.read")]);
       // no speech key on the host, so Host voice cannot read aloud
       await switchTo("host");
+      await openMenus();
       expect(speak()).toEqual([`${t("chat.speak.needsKey")} (off)`, `${t("chat.speak.needsKey")} (off)`]);
     } finally {
       // the stubbed globals go in afterAll

@@ -14,6 +14,8 @@ import {
   Copy,
   MessageSquareReply,
 
+  Code,
+  Eye,
   Pencil,
   Pin,
   PinOff,
@@ -22,7 +24,9 @@ import {
   X,
 } from "lucide-react";
 import { WorkingDots } from "@/components/WorkingIndicator";
-import { MessageActions, messageActionClass } from "@/components/MessageActions";
+import { MessageBar, MessageMenuItem } from "./MessageBar";
+import { TurnRunLine } from "./TurnRunLine";
+import { useHoverDwell } from "@/hooks/use-hover-dwell";
 import { useSpeech } from "@/lib/tts/useSpeech";
 import { localSystemVoiceActive } from "@/lib/local-voice";
 import { computerStartLine } from "@/lib/computer-start";
@@ -64,7 +68,7 @@ import { showWorkingDots } from "@/lib/turn-tail";
 import { liveActivityLabel } from "@/lib/live-activity";
 import { ChatMarkdown } from "./ChatMarkdown";
 import { VoiceNoteBubble, type VoiceNoteAttachment } from "./VoiceNoteBubble";
-import { RawMarkdownView, RawToggleAction } from "./RawMarkdownToggle";
+import { RawMarkdownView } from "./RawMarkdownToggle";
 import { ParallelResultLabel, ParallelTaskCard } from "./ParallelTaskCard";
 import { ThreadChip } from "./ThreadChip";
 import { withoutDeadThreadChips } from "@/lib/dead-thread-chips";
@@ -95,7 +99,7 @@ import { BotActivityPicker, TaskPicker, ThreadReturnLink, ThreadsOffReturnLink }
 import { ExportTranscriptMenu } from "./ExportTranscriptMenu";
 import { CitationSelectionToolbar, SentCitations } from "./CitationUI";
 
-import { SpeakButton } from "./SpeakButton";
+import { SpeakMenuItem } from "./SpeakButton";
 import { CallOverlay, VoiceCallDock } from "./CallView";
 import { effectivePlace, toolPlace, type EffectivePlace } from "@/lib/place";
 import { cn } from "@/lib/cn";
@@ -486,6 +490,8 @@ const Bubble = memo(function Bubble({
   const [viewRaw, setViewRaw] = useState(false);
   const speech = useSpeech();
   const speaking = speech.messageId === message.id && speech.status !== "idle";
+  // a quiet model/effort line once the pointer rests on a bot reply
+  const dwell = useHoverDwell(!user && !peer && Boolean(message.turnRun));
   const text = peer ? peer.body : (message.text ?? "");
   const wideBubble = useMemo(() => !user && Boolean(text) && prefersWideBubble(text), [user, text]);
   const attached = useMemo(() => splitMessageAttachments(message.attachments), [message.attachments]);
@@ -538,43 +544,30 @@ const Bubble = memo(function Bubble({
       data-retro-author={user ? viewerName || t("retro.chat.you") : peer?.name ?? botName}
       data-retro-time={formatTime(message.at)}
       data-retro-role={user ? "user" : "bot"}
+      {...dwell.handlers}
     >
       {peer && <PeerLabel peer={peer} autoModel={message.autoModel} />}
       {user && <OtherAuthorLabel message={message} />}
       <div className={cn("flex w-full items-center gap-1.5", user ? "justify-end" : "justify-start")}>
         {user && (
-          <MessageActions side="user">
+          <MessageBar
+            side="user"
+            time={formatTime(message.at)}
+            copy={visibleText.trim() ? <CopyButton text={visibleText} className="opacity-100" /> : undefined}
+          >
             {/* editing rewinds the thread, so it waits for the turn to end —
                 same rule as the version switcher below */}
             {message.kind === "text" && !webhookView && !hasAttachments && !busy && !message.id.startsWith("optimistic-") && (
-              <button
-                onClick={() => onStartEdit(message.id)}
-                aria-label={t("chat.editMessage")}
-                title={t("chat.editMessage")}
-                className={messageActionClass}
-              >
-                <Pencil size={14} />
-              </button>
+              <MessageMenuItem label={t("chat.editMessage")} icon={<Pencil size={14} />} onSelect={() => onStartEdit(message.id)} />
             )}
-            {Boolean(visibleText.trim()) && <CopyButton text={visibleText} className="opacity-100" />}
-            <button
-              type="button"
-              onClick={() => onReply(message)}
-              aria-label={t("chat.replyToMessage")}
-              title={t("chat.reply")}
-              className={messageActionClass}
-            >
-              <MessageSquareReply size={14} />
-            </button>
-            <button
-              onClick={togglePin}
-              aria-label={pinned ? t("chat.unpinMessage") : t("chat.pinMessage")}
-              title={pinned ? t("chat.unpinHint") : t("chat.pinHint")}
-              className={cn(messageActionClass, remoteClient && "hidden")}
-            >
-              {pinned ? <PinOff size={14} /> : <Pin size={14} />}
-            </button>
-          </MessageActions>
+            <MessageMenuItem label={t("chat.reply")} icon={<MessageSquareReply size={14} />} onSelect={() => onReply(message)} />
+            <MessageMenuItem
+              label={pinned ? t("chat.unpinMessage") : t("chat.pinMessage")}
+              icon={pinned ? <PinOff size={14} /> : <Pin size={14} />}
+              onSelect={togglePin}
+              hidden={remoteClient}
+            />
+          </MessageBar>
         )}
         <div
           data-chat-bubble
@@ -682,50 +675,37 @@ const Bubble = memo(function Bubble({
           )}
         </div>
         {!user && (
-          <MessageActions side="bot" forceOpen={viewRaw || speaking}>
-            {text && <CopyButton text={text} className="opacity-100" />}
-            {text && <RawToggleAction active={viewRaw} onToggle={() => setViewRaw((r) => !r)} className="opacity-100" />}
+          <MessageBar
+            side="bot"
+            time={formatTime(message.at)}
+            visible={viewRaw || speaking}
+            copy={text ? <CopyButton text={text} className="opacity-100" /> : undefined}
+          >
+            {text && (
+              <MessageMenuItem
+                label={t(viewRaw ? "chat.showRenderedMarkdown" : "chat.showRawMarkdown")}
+                icon={viewRaw ? <Eye size={14} /> : <Code size={14} />}
+                active={viewRaw}
+                onSelect={() => setViewRaw((r) => !r)}
+              />
+            )}
             {message.kind === "text" && text && !peer && (
-              <SpeakButton text={text} botId={botId} messageId={message.id} voiceId={voiceId} tts={tts} localVoice={localVoice} className="opacity-100" />
+              <SpeakMenuItem text={text} botId={botId} messageId={message.id} voiceId={voiceId} tts={tts} localVoice={localVoice} />
             )}
             {!busy && onRegenerate && (
-              <button
-                onClick={onRegenerate}
-                aria-label={t("chat.regenerate")}
-                title={t("chat.regenerate")}
-                className={messageActionClass}
-              >
-                <RefreshCw size={14} />
-              </button>
+              <MessageMenuItem label={t("chat.regenerate")} icon={<RefreshCw size={14} />} onSelect={onRegenerate} />
             )}
-            <button
-              type="button"
-              onClick={() => onReply(message)}
-              aria-label={t("chat.replyToMessage")}
-              title={t("chat.reply")}
-              className={messageActionClass}
-            >
-              <MessageSquareReply size={14} />
-            </button>
-            <button
-              onClick={togglePin}
-              aria-label={pinned ? t("chat.unpinMessage") : t("chat.pinMessage")}
-              title={pinned ? t("chat.unpinHint") : t("chat.pinHint")}
-              className={cn(messageActionClass, remoteClient && "hidden")}
-            >
-              {pinned ? <PinOff size={14} /> : <Pin size={14} />}
-            </button>
-          </MessageActions>
+            <MessageMenuItem label={t("chat.reply")} icon={<MessageSquareReply size={14} />} onSelect={() => onReply(message)} />
+            <MessageMenuItem
+              label={pinned ? t("chat.unpinMessage") : t("chat.pinMessage")}
+              icon={pinned ? <PinOff size={14} /> : <Pin size={14} />}
+              onSelect={togglePin}
+              hidden={remoteClient}
+            />
+          </MessageBar>
         )}
-        <span
-          className={cn(
-            "self-end pb-1 text-[11px] tabular-nums text-ink-tertiary opacity-0 transition-opacity group-hover:opacity-100",
-            user ? "order-first mr-2" : "ml-2",
-          )}
-        >
-          {formatTime(message.at)}
-        </span>
       </div>
+      {dwell.mounted && message.turnRun && <TurnRunLine run={message.turnRun} visible={dwell.shown} />}
       {forks.length > 1 && (
         <div className="mt-1 flex items-center gap-0.5 pr-1 text-[12px] text-ink-secondary">
           <button
