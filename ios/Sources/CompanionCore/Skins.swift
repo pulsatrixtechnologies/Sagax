@@ -349,7 +349,9 @@ public struct SkinPalette: Equatable, Sendable {
             destructive: t.danger, destructiveMenu: t.danger,
             danger: t.danger, dangerInk: t.dangerInk, success: t.success, successInk: t.successInk,
             warning: t.warning,
-            routineActive: t.success, routinePaused: t.danger, selectionRing: quiet,
+            // #188: on, paused and waiting read in the accent; green stays
+            // for a real success, red for an error
+            routineActive: t.accent, routinePaused: t.accentText, selectionRing: quiet,
             bubbleAssistant: t.card == t.app ? t.raised : t.card, bubbleAssistantText: t.ink,
             bubbleUser: t.bubbleUser, bubbleUserText: t.bubbleUserInk,
             chatTimestamp: quiet, bulletDot: quiet,

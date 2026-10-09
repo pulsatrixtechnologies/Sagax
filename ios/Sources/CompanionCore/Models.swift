@@ -187,6 +187,12 @@ public struct ThreadRef: Codable, Hashable, Sendable {
     public var botId: String
     public var threadId: String
     public var title: String
+    /// Stamped by the server when the target thread no longer exists
+    /// (#176): no "Open thread" for it.
+    public var gone: Bool? = nil
+
+    /// The reference while its thread still exists.
+    public var live: ThreadRef? { gone == true ? nil : self }
 
     public init(botId: String, threadId: String, title: String) {
         self.botId = botId
@@ -229,6 +235,8 @@ public struct Reaction: Codable, Hashable, Sendable {
 
 public struct CommChip: Codable, Hashable, Sendable {
     public var groupId: String
+    /// The channel thread no longer exists (#176).
+    public var gone: Bool? = nil
     public var withBotId: String
     public var withName: String
     public var withColor: String
@@ -414,6 +422,9 @@ public struct ModelSelection: Codable, Hashable, Sendable {
     /// instead of effort levels (`capabilities.modelVariants`). Omitted
     /// leaves the native session alone.
     public var variant: String? = nil
+    /// Auto (#153): the server picks the best model per task; `model` stays
+    /// the fallback. Choosing a model pins it again (absent).
+    public var auto: Bool? = nil
 
     public init(instanceId: String, model: String, effort: String? = nil, variant: String? = nil) {
         self.instanceId = instanceId

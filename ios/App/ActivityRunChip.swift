@@ -61,7 +61,7 @@ struct ActivityRunChip: View {
                 VStack(alignment: .leading, spacing: 4) {
                     ForEach(items, id: \.id) { item in
                         ActivityChip(
-                            tool: item.tool, threadRef: item.threadRef, openThread: openThread,
+                            tool: item.tool, threadRef: item.threadRef?.live, openThread: openThread,
                             outputIsProse: item.isTeammateReport
                         )
                     }

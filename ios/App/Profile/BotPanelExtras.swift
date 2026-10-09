@@ -250,8 +250,8 @@ struct PrimaryBotPicker: View {
 
 // MARK: - Read-only notice and proposal status
 
-/// "Your administrator lets you use shared bots only", and whether the
-/// Primary Bot can propose changes to this bot. Draws nothing otherwise.
+/// "Your administrator lets you use shared bots only". Draws nothing
+/// otherwise (the Primary Bot proposal hint left on 2026-10-08, #196).
 struct BotPanelNoticesView: View {
     @Environment(\.themePalette) var themePalette
     let bot: Bot
@@ -273,15 +273,7 @@ struct BotPanelNoticesView: View {
                     .padding(.horizontal, Theme.Profile.cardMargin)
                     .accessibilityIdentifier("profile-read-only")
             }
-            if BotPanelNotices.chiefCovers(bot, in: session.state.bots) {
-                Text("The Primary Bot can propose this; it arrives as a card you confirm.")
-                    .font(Theme.Profile.labelFont)
-                    .foregroundStyle(Theme.textTertiary)
-                    .multilineTextAlignment(.center)
-                    .frame(maxWidth: .infinity)
-                    .padding(.horizontal, Theme.Profile.cardMargin)
-                    .accessibilityIdentifier("profile-proposal-status")
-            }
+            // #196: no "The Primary Bot can propose this" hint
         }
         .task(id: bot.id) {
             readOnly = BotPanelNotices.botsReadOnly(await session.configStatus())

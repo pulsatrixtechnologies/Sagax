@@ -132,7 +132,7 @@ struct MessageRow: View {
             SelectableTextSheet(text: $0.text, citation: CitationTarget(chat: chat, message: message, add: citeIntoComposer))
         }
         .sheet(item: $digest) {
-            DigestSheet(summary: $0, paidWith: message.digest?.access.map { TurnAccessText.who($0, viewer: session.account?.principalId) })
+            DigestSheet(summary: $0)
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("message-\(message.id)")
@@ -218,7 +218,7 @@ struct MessageRow: View {
                 ParallelTaskCardView(chat: chat, message: message, ref: ref, openThread: openThread)
             } else {
                 ActivityChip(
-                    tool: message.tool, threadRef: message.threadRef, openThread: openThread,
+                    tool: message.tool, threadRef: message.threadRef?.live, openThread: openThread,
                     outputIsProse: message.isTeammateReport
                 )
             }
@@ -244,21 +244,14 @@ struct MessageRow: View {
             ScreenShot(threadId: chat.threadId, message: message)
         case .digest:
             // Not a bubble: a chip saying the turn did something, opening
-            // onto what. `transcriptRows` already dropped the ones with
-            // nothing to say, and all of them when activity is hidden,
-            // except a turn whose credentials an organization names (CA16):
-            // that line shows whatever the tool-call setting says.
+            // onto what. No "Paid with" any more (#201): who paid stays in
+            // the model picker.
             let summary = DigestSummary(text: message.text ?? "")
-            let paid = message.digest?.access.map { TurnAccessText.line($0, viewer: session.account?.principalId) }
             if !summary.isEmpty && activityDetail != ActivityDetail.hidden.rawValue {
-                ReceiptChip(icon: "checklist", label: paid.map { "\(summary.chipLabel) · \($0)" } ?? summary.chipLabel, hint: "Shows what this turn did") {
+                ReceiptChip(icon: "checklist", label: summary.chipLabel, hint: "Shows what this turn did") {
                     digest = summary
                 }
                 .accessibilityIdentifier("digest-chip-\(message.id)")
-            } else if let paid {
-                ReceiptChip(icon: "key", label: paid, hint: "")
-                    .disabled(true)
-                    .accessibilityIdentifier("turn-access-\(message.id)")
             }
         case .routineRun:
             if let card = message.routineRun {

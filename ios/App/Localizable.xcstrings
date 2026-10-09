@@ -55938,6 +55938,50 @@
           }
         }
       }
+    },
+    "Auto · %@": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Auto · %@"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Auto · %@"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Auto · %@"
+          }
+        }
+      }
+    },
+    "The best model per task: the strongest one you can pay for its own turns, the right tier for the work it hands out.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The best model per task: the strongest one you can pay for its own turns, the right tier for the work it hands out."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Le meilleur modèle pour chaque tâche : le plus puissant que vous pouvez payer pour ses propres tours, le bon palier pour le travail qu'il confie."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "O melhor modelo por tarefa: o mais forte que você pode pagar para os próprios turnos, o nível certo para o trabalho que ele delega."
+          }
+        }
+      }
     }
   },
   "version": "1.0"
