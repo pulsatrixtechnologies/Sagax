@@ -3,7 +3,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { BotPlugins, BotPluginError, insideRoot, marketplaceAllowed, normalizePolicyEntry, parseGitSource, readMarketplaceManifest, type GitRunner } from "./bot-plugins.ts";
+import { BotPluginError, insideRoot, marketplaceAllowed, migrateBotMarketplaces, normalizePolicyEntry, parseGitSource, readMarketplaceManifest, readPluginContents, type GitRunner } from "./bot-plugins.ts";
+import { PluginMarketplaces } from "./plugin-marketplaces.ts";
+import { botPluginsWithMarketplaces } from "./testing/plugin-stores.ts";
 
 const dirs: string[] = [];
 const temp = () => {
@@ -96,7 +98,7 @@ describe("BotPlugins", () => {
   it("adds a marketplace, installs a plugin without what would run on the host, and lists its folder", async () => {
     const repo = marketplaceRepo();
     const calls: Array<{ args: string[]; env: Record<string, string> }> = [];
-    const plugins = new BotPlugins({
+    const plugins = botPluginsWithMarketplaces({
       dataDir: temp(), git: fakeGit({ "https://github.com/acme/tools.git": repo }, calls),
       gitEnvironment: (actor): Record<string, string> => (actor ? { GIT_CONFIG_COUNT: "1", ACTOR: actor } : {}), policy: () => undefined,
     });
@@ -129,14 +131,14 @@ describe("BotPlugins", () => {
   });
 
   it("refuses a plugin path that leaves its marketplace", async () => {
-    const plugins = new BotPlugins({ dataDir: temp(), git: fakeGit({ "https://github.com/acme/tools.git": marketplaceRepo() }, []), gitEnvironment: () => ({}), policy: () => undefined });
+    const plugins = botPluginsWithMarketplaces({ dataDir: temp(), git: fakeGit({ "https://github.com/acme/tools.git": marketplaceRepo() }, []), gitEnvironment: () => ({}), policy: () => undefined });
     await plugins.addMarketplace("bot-1", { source: "acme/tools" }, undefined);
     await expect(plugins.install("bot-1", { marketplace: "acme-tools", plugin: "escape" }, undefined)).rejects.toMatchObject({ code: "invalid_plugin" });
   });
 
   it("applies the organization's marketplace list, including a plugin's own repository", async () => {
     const repo = marketplaceRepo();
-    const plugins = new BotPlugins({
+    const plugins = botPluginsWithMarketplaces({
       dataDir: temp(), git: fakeGit({ "https://github.com/acme/tools.git": repo }, []), gitEnvironment: () => ({}),
       policy: () => ({ mode: "list", allow: ["acme/*"] }),
     });
@@ -149,17 +151,75 @@ describe("BotPlugins", () => {
     const notMarket = temp();
     write(notMarket, "README.md", "hi");
     const repo = marketplaceRepo();
-    const plugins = new BotPlugins({
+    const plugins = botPluginsWithMarketplaces({
       dataDir: temp(), git: fakeGit({ "https://github.com/acme/readme.git": notMarket, "https://github.com/acme/tools.git": repo }, []),
       gitEnvironment: () => ({}), policy: () => undefined,
     });
     await expect(plugins.addMarketplace("bot-1", { source: "acme/readme" }, undefined)).rejects.toMatchObject({ code: "not_a_marketplace" });
     await plugins.addMarketplace("bot-1", { source: "acme/tools" }, undefined);
     await plugins.install("bot-1", { marketplace: "acme-tools", plugin: "reviewer" }, undefined);
-    await plugins.removeMarketplace("bot-1", "acme-tools");
+    expect(await plugins.removeMarketplace("bot-1", "acme-tools", { mayManage: true })).toEqual({ sharedRemoved: true });
     expect(plugins.listPlugins("bot-1")).toEqual([]);
     expect(plugins.listMarketplaces("bot-1")).toEqual([]);
     expect(plugins.pluginDirs("bot-1")).toEqual([]);
+  });
+
+  it("reads the one marketplace list: a marketplace added for everyone is there for every bot, installs stay per bot", async () => {
+    const dataDir = temp();
+    const git = fakeGit({ "https://github.com/acme/tools.git": marketplaceRepo() }, []);
+    const shared = new PluginMarketplaces({ dataDir, git, gitEnvironment: () => ({}), policy: () => undefined });
+    const plugins = botPluginsWithMarketplaces({ dataDir, git, gitEnvironment: () => ({}), policy: () => undefined });
+    await shared.add({ source: "acme/tools" }, "pr_admin");
+    for (const bot of ["bot-1", "bot-2"]) expect(plugins.listMarketplaces(bot).map((market) => market.name)).toEqual(["acme-tools"]);
+    await plugins.install("bot-1", { marketplace: "acme-tools", plugin: "reviewer" }, undefined);
+    expect(plugins.listMarketplaces("bot-1")[0]!.plugins.find((plugin) => plugin.name === "reviewer")).toMatchObject({
+      installed: true, contents: { agents: [], commands: ["review"], skills: ["review"] },
+    });
+    expect(plugins.listMarketplaces("bot-2")[0]!.plugins.find((plugin) => plugin.name === "reviewer")?.installed).toBe(false);
+    // the remote plugin's folder is read at install, not listed
+    expect(plugins.listMarketplaces("bot-1")[0]!.plugins.find((plugin) => plugin.name === "remote")?.contents).toBeUndefined();
+    expect(plugins.botsUsing("acme-tools")).toEqual(["bot-1"]);
+  });
+
+  it("keeps the marketplace for everyone unless the person may remove it and nothing else uses it", async () => {
+    const dataDir = temp();
+    const plugins = botPluginsWithMarketplaces({ dataDir, git: fakeGit({ "https://github.com/acme/tools.git": marketplaceRepo() }, []), gitEnvironment: () => ({}), policy: () => undefined });
+    await plugins.addMarketplace("bot-1", { source: "acme/tools" }, "pr_alice");
+    await plugins.install("bot-1", { marketplace: "acme-tools", plugin: "reviewer" }, "pr_alice");
+    await plugins.install("bot-2", { marketplace: "acme-tools", plugin: "reviewer" }, "pr_bob");
+    // Bob did not add it and does not manage marketplaces: only his bot's plugins go
+    expect(await plugins.removeMarketplace("bot-2", "acme-tools", { actor: "pr_bob" })).toEqual({ sharedRemoved: false });
+    expect(plugins.listPlugins("bot-2")).toEqual([]);
+    expect(plugins.listMarketplaces("bot-2").map((market) => market.name)).toEqual(["acme-tools"]);
+    // Alice added it: it leaves the list once no bot uses it any more
+    const shared = new PluginMarketplaces({ dataDir, gitEnvironment: () => ({}), policy: () => undefined, inUse: (name) => plugins.botsUsing(name) });
+    await plugins.install("bot-2", { marketplace: "acme-tools", plugin: "reviewer" }, "pr_bob");
+    await expect(shared.remove("acme-tools")).rejects.toMatchObject({ code: "in_use", status: 409 });
+    expect(shared.list()[0]!.bots).toBe(2);
+    expect(await plugins.removeMarketplace("bot-1", "acme-tools", { actor: "pr_alice" })).toEqual({ sharedRemoved: false });
+    expect(await plugins.removeMarketplace("bot-2", "acme-tools", { actor: "pr_bob" })).toEqual({ sharedRemoved: false });
+    expect(await plugins.removeMarketplace("bot-1", "acme-tools", { actor: "pr_alice" })).toEqual({ sharedRemoved: true });
+    expect(shared.list()).toEqual([]);
+  });
+
+  it("refuses a per-bot install from a marketplace added by its manifest address", async () => {
+    const dataDir = temp();
+    const manifest = JSON.stringify({ name: "hosted", plugins: [{ name: "a", source: "./a" }] });
+    const plugins = botPluginsWithMarketplaces({ dataDir, gitEnvironment: () => ({}), policy: () => undefined, fetchText: async () => manifest });
+    await plugins.addMarketplace("bot-1", { source: "https://example.com/.claude-plugin/marketplace.json" }, undefined);
+    await expect(plugins.install("bot-1", { marketplace: "hosted", plugin: "a" }, undefined)).rejects.toMatchObject({ code: "manifest_only", status: 422 });
+  });
+
+  it("reads a plugin's agents, commands and skills by name, without following links", () => {
+    const root = temp();
+    write(root, "agents/planner.md", "x");
+    write(root, "agents/notes.txt", "x");
+    write(root, "commands/ship.md", "x");
+    write(root, "skills/review/SKILL.md", "x");
+    mkdirSync(join(root, "skills/empty"), { recursive: true });
+    symlinkSync("/etc", join(root, "skills/outside"));
+    expect(readPluginContents(root)).toEqual({ agents: ["planner"], commands: ["ship"], skills: ["review"] });
+    expect(readPluginContents(join(root, "missing"))).toEqual({ agents: [], commands: [], skills: [] });
   });
 
   it("reads pluginRoot and remote sources from a manifest", () => {
@@ -170,5 +230,81 @@ describe("BotPlugins", () => {
       { name: "a", source: { kind: "path", path: "./plugins/a" } },
       { name: "b", source: { kind: "git", git: expect.objectContaining({ id: "https://gitlab.com/x/b.git" }) } },
     ]);
+  });
+});
+
+describe("migrateBotMarketplaces", () => {
+  /** A bot as an older build stored it: its own marketplaces and installs. */
+  function legacyBot(dataDir: string, botId: string, markets: Record<string, { source: string; repo: string }>, plugins: Array<{ name: string; marketplace: string; enabled?: boolean }>) {
+    const root = join(dataDir, "bot-plugins", botId);
+    const state = {
+      version: 1,
+      marketplaces: Object.fromEntries(Object.entries(markets).map(([name, market]) => {
+        cpSync(market.repo, join(root, "marketplaces", name), { recursive: true });
+        return [name, { source: market.source, url: `https://github.com/${market.source}.git`, addedAt: 1, addedBy: "pr_owner", updatedAt: 1 }];
+      })),
+      plugins: Object.fromEntries(plugins.map((plugin) => {
+        write(root, `plugins/${plugin.marketplace}/${plugin.name}/commands/go.md`, "Go");
+        return [`${plugin.name}@${plugin.marketplace}`, {
+          name: plugin.name, marketplace: plugin.marketplace, enabled: plugin.enabled ?? true, installedAt: 1, installedBy: "pr_owner", updatedAt: 1, removed: ["hooks"], declaredMcpServers: [],
+        }];
+      })),
+    };
+    write(root, "state.json", JSON.stringify(state));
+    return root;
+  }
+
+  it("moves every bot's marketplaces into the one list and keeps every install, once", () => {
+    const dataDir = temp();
+    const repo = marketplaceRepo();
+    const other = temp();
+    write(other, ".claude-plugin/marketplace.json", JSON.stringify({ name: "acme-tools", plugins: [{ name: "reviewer", source: "./r" }] }));
+    write(other, "r/commands/x.md", "x");
+    const shared = new PluginMarketplaces({ dataDir, gitEnvironment: () => ({}), policy: () => undefined });
+    legacyBot(dataDir, "bot-1", { "acme-tools": { source: "acme/tools", repo } }, [{ name: "reviewer", marketplace: "acme-tools" }]);
+    legacyBot(dataDir, "bot-2", { "acme-tools": { source: "acme/tools", repo } }, [{ name: "reviewer", marketplace: "acme-tools", enabled: false }]);
+    // same name, another repository: stored under another name, its install follows
+    const third = legacyBot(dataDir, "bot-3", { "acme-tools": { source: "evil/tools", repo: other } }, [{ name: "reviewer", marketplace: "acme-tools" }]);
+
+    const summary = migrateBotMarketplaces(dataDir, shared);
+    expect(summary).toMatchObject({ bots: 3, plugins: 3, failed: [], renamed: ["reviewer@acme-tools -> reviewer@acme-tools-2"] });
+    expect(shared.list().map((market) => [market.name, market.source])).toEqual([["acme-tools", "acme/tools"], ["acme-tools-2", "evil/tools"]]);
+    expect(shared.record("acme-tools")).toMatchObject({ addedBy: "pr_owner" });
+    expect(existsSync(join(shared.repoPath("acme-tools-2"), "r/commands/x.md"))).toBe(true);
+
+    const plugins = botPluginsWithMarketplaces({ dataDir, gitEnvironment: () => ({}), policy: () => undefined });
+    expect(plugins.listPlugins("bot-1").map((plugin) => [plugin.key, plugin.enabled])).toEqual([["reviewer@acme-tools", true]]);
+    expect(plugins.listPlugins("bot-2").map((plugin) => [plugin.key, plugin.enabled])).toEqual([["reviewer@acme-tools", false]]);
+    expect(plugins.listPlugins("bot-3").map((plugin) => plugin.key)).toEqual(["reviewer@acme-tools-2"]);
+    expect(plugins.pluginDirs("bot-1")).toHaveLength(1);
+    expect(plugins.pluginDirs("bot-3")).toEqual([join(third, "plugins/acme-tools-2/reviewer")]);
+    expect(existsSync(join(third, "plugins/acme-tools-2/reviewer/commands/go.md"))).toBe(true);
+    expect(existsSync(join(third, "marketplaces"))).toBe(false);
+    expect(JSON.parse(readFileSync(join(third, "state.json"), "utf8")).version).toBe(2);
+    // each bot reads the one list, with its own installs
+    expect(plugins.listMarketplaces("bot-3").map((market) => [market.name, market.plugins.find((plugin) => plugin.name === "reviewer")?.installed])).toEqual([["acme-tools", false], ["acme-tools-2", true]]);
+
+    // a second start changes nothing
+    expect(migrateBotMarketplaces(dataDir, shared)).toMatchObject({ bots: 0, plugins: 0 });
+    expect(shared.list()).toHaveLength(2);
+  });
+
+  it("reuses a marketplace the workspace already has from the same source", async () => {
+    const dataDir = temp();
+    const repo = marketplaceRepo();
+    const shared = new PluginMarketplaces({ dataDir, git: fakeGit({ "https://github.com/acme/tools.git": repo }, []), gitEnvironment: () => ({}), policy: () => undefined });
+    await shared.add({ source: "acme/tools" }, "pr_admin");
+    legacyBot(dataDir, "bot-1", { "acme-tools": { source: "acme/tools", repo } }, [{ name: "reviewer", marketplace: "acme-tools" }]);
+    expect(migrateBotMarketplaces(dataDir, shared)).toMatchObject({ bots: 1, renamed: [] });
+    expect(shared.list().map((market) => market.name)).toEqual(["acme-tools"]);
+    expect(shared.record("acme-tools")?.addedBy).toBe("pr_admin");
+  });
+
+  it("still counts a bot's installs before it is migrated", () => {
+    const dataDir = temp();
+    legacyBot(dataDir, "bot-1", { "acme-tools": { source: "acme/tools", repo: marketplaceRepo() } }, [{ name: "reviewer", marketplace: "acme-tools" }]);
+    const plugins = botPluginsWithMarketplaces({ dataDir, gitEnvironment: () => ({}), policy: () => undefined });
+    expect(plugins.listPlugins("bot-1").map((plugin) => plugin.key)).toEqual(["reviewer@acme-tools"]);
+    expect(plugins.pluginDirs("bot-1")).toHaveLength(1);
   });
 });

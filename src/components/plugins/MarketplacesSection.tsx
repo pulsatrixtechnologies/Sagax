@@ -1,7 +1,8 @@
 // Plugins > Manage > Marketplaces: add a Claude Code plugin marketplace by
 // GitHub repository (owner/repo, with an optional branch), by https git
 // address or by the address of its marketplace.json; fetch it again or
-// remove it. Each marketplace becomes a chip and a section of Connect apps.
+// remove it. One list for both install scopes: each marketplace becomes a
+// chip and a section of Connect apps, for everyone and for each bot.
 import { useState } from "react";
 import { Loader2, Plus, RefreshCw, Store, Trash2 } from "lucide-react";
 
@@ -13,9 +14,11 @@ export interface MarketplaceSummary {
   ref?: string;
   description?: string;
   plugins: Array<{ name: string; installed: boolean }>;
+  /** bots with a plugin of this marketplace installed */
+  bots?: number;
 }
 
-export function MarketplacesSection({ marketplaces, busy, error, onAdd, onRefresh, onRemove, disabled }: {
+export function MarketplacesSection({ marketplaces, busy, error, onAdd, onRefresh, onRemove, disabled, removeKeepsInstalls }: {
   marketplaces: MarketplaceSummary[] | null;
   /** "add", or the name being refreshed or removed */
   busy: string | null;
@@ -24,13 +27,15 @@ export function MarketplacesSection({ marketplaces, busy, error, onAdd, onRefres
   onRefresh: (name: string) => void;
   onRemove: (name: string) => void;
   disabled?: boolean;
+  /** removing from one bot takes its plugins with it: installs never block */
+  removeKeepsInstalls?: boolean;
 }) {
   const [source, setSource] = useState("");
   const [ref, setRef] = useState("");
   return (
     <section className="mt-6" data-plugins-marketplaces>
       <h3 className="mb-1 text-[13px] font-semibold text-ink">{t("connectApps.market.title")}</h3>
-      <p className="mb-2 text-[12px] leading-relaxed text-ink-secondary">{t("connectApps.market.intro")}</p>
+      <p className="mb-2 text-[12px] leading-relaxed text-ink-secondary">{t("connectApps.market.intro")} {t("connectApps.market.introScopes")}</p>
       <form
         className="flex flex-wrap items-center gap-2"
         onSubmit={(event) => {
@@ -69,6 +74,11 @@ export function MarketplacesSection({ marketplaces, busy, error, onAdd, onRefres
         <ul className="mt-3 divide-y divide-hairline/60 rounded-2xl border border-border bg-card">
           {marketplaces.map((market) => {
             const installed = market.plugins.filter((plugin) => plugin.installed).length;
+            const bots = market.bots ?? 0;
+            const blocked = removeKeepsInstalls ? null
+              : installed > 0 ? t("connectApps.market.removeBlocked")
+                : bots > 0 ? t("connectApps.market.removeBlockedBots", { count: bots })
+                  : null;
             return (
               <li key={market.name} data-marketplace={market.name} className="flex items-center gap-3 px-4 py-2.5">
                 <Store size={16} className="shrink-0 text-ink-secondary" aria-hidden="true" />
@@ -83,10 +93,11 @@ export function MarketplacesSection({ marketplaces, busy, error, onAdd, onRefres
                   aria-label={t("connectApps.market.refreshAria", { name: market.name })} title={t("connectApps.market.refreshAria", { name: market.name })}>
                   <RefreshCw size={14} className={busy === `refresh:${market.name}` ? "animate-spin" : undefined} />
                 </button>
-                <button type="button" disabled={disabled || busy !== null || installed > 0} onClick={() => onRemove(market.name)}
+                <button type="button" disabled={disabled || busy !== null || blocked !== null} onClick={() => onRemove(market.name)}
+                  data-marketplace-remove={market.name}
                   className="rounded-md p-1.5 text-ink-secondary hover:bg-danger/10 hover:text-danger disabled:opacity-40"
                   aria-label={t("connectApps.market.removeAria", { name: market.name })}
-                  title={installed > 0 ? t("connectApps.market.removeBlocked") : t("connectApps.market.removeAria", { name: market.name })}>
+                  title={blocked ?? t("connectApps.market.removeAria", { name: market.name })}>
                   <Trash2 size={14} />
                 </button>
               </li>

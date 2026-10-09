@@ -81,15 +81,23 @@ export function parseArgsLine(text: string): string[] {
   return out;
 }
 
-// ── a bot's plugins ──────────────────────────────────────────────────────
+// ── a bot's plugins (Connect apps, scope "For this bot") ─────────────────
 
+/** What a plugin brings to a bot, by name. */
+export interface PluginContents {
+  agents: string[];
+  commands: string[];
+  skills: string[];
+}
+
+/** A marketplace of the installation's one list, with this bot's installs. */
 export interface MarketplaceListing {
   name: string;
   source: string;
   description?: string;
   addedAt: number;
   updatedAt: number;
-  plugins: Array<{ name: string; description?: string; version?: string; category?: string; installed: boolean; external: boolean }>;
+  plugins: Array<{ name: string; description?: string; version?: string; category?: string; installed: boolean; external: boolean; contents?: PluginContents }>;
 }
 
 export interface InstalledPlugin {
@@ -112,11 +120,14 @@ export interface BotPluginsView {
   /** Perspicax `sagax_integrations: off`: an admin manages this person's
    * plugins (canChange is then false). */
   managedByAdmin?: boolean;
+  /** after a remove from this bot: the marketplace also left the one list */
+  sharedRemoved?: boolean;
 }
 
 const pluginsPath = (botId: string) => `/api/bots/${encodeURIComponent(botId)}/plugins`;
 export const loadBotPlugins = (botId: string) => api<BotPluginsView>(pluginsPath(botId));
-export const addMarketplace = (botId: string, source: string) => api<BotPluginsView>(`${pluginsPath(botId)}/marketplaces`, { method: "POST", body: JSON.stringify({ source }), timeoutMs: 180_000 });
+export const addMarketplace = (botId: string, source: string, ref?: string) =>
+  api<BotPluginsView>(`${pluginsPath(botId)}/marketplaces`, { method: "POST", body: JSON.stringify({ source, ...(ref ? { ref } : {}) }), timeoutMs: 180_000 });
 export const updateMarketplace = (botId: string, name: string) => api<BotPluginsView>(`${pluginsPath(botId)}/marketplaces/${encodeURIComponent(name)}/update`, { method: "POST", timeoutMs: 180_000 });
 export const removeMarketplace = (botId: string, name: string) => api<BotPluginsView>(`${pluginsPath(botId)}/marketplaces/${encodeURIComponent(name)}`, { method: "DELETE" });
 export const installPlugin = (botId: string, marketplace: string, plugin: string) =>

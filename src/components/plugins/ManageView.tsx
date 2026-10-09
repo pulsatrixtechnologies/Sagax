@@ -40,6 +40,10 @@ export interface ManageViewProps {
   advancedOpen?: boolean;
   /** the Providers tab: engine accounts and the connectors they bring */
   providers?: ReactNode;
+  /** the install scope (everyone, or one bot) above the installed cards */
+  scope?: ReactNode;
+  /** one bot's plugins: no private skills and no personal connections */
+  pluginsOnly?: boolean;
 }
 
 export type ManageTab = "plugins" | "providers";
@@ -57,7 +61,7 @@ function CardStatus({ item }: { item: PluginItem }) {
 
 export function ManageView(props: ManageViewProps) {
   const { items, countLabel, sourceLabel, onBack, onClose, onOpenItem, onAddManually, onPasteConfig, onNewSkill, addDisabled, addTitle, refreshing, onRefresh,
-    forms, children, personal, advancedOpen, providers } = props;
+    forms, children, personal, advancedOpen, providers, scope, pluginsOnly } = props;
   const [showAll, setShowAll] = useState(false);
   const [tab, setTab] = useState<ManageTab>("plugins");
   const installed = installedPlugins(items);
@@ -91,6 +95,7 @@ export function ManageView(props: ManageViewProps) {
         <div className="min-h-0 flex-1 overflow-y-auto px-6 pb-7 pt-4 sm:px-8" role="tabpanel" data-plugins-manage="providers">{providers}</div>
       ) : (
       <div className="min-h-0 flex-1 overflow-y-auto px-6 pb-7 pt-4 sm:px-8" data-plugins-manage>
+        {scope && <div className="mb-4">{scope}</div>}
         <section data-plugins-installed>
           <div className="mb-2 flex items-center justify-between gap-3">
             <h3 className="text-[13px] font-semibold text-ink">{t("connectApps.manage.installed")}</h3>
@@ -127,6 +132,7 @@ export function ManageView(props: ManageViewProps) {
           )}
         </section>
 
+        {!pluginsOnly && (
         <section className="mt-6" data-plugins-skills>
           <div className="mb-2 flex items-center justify-between gap-3">
             <h3 className="text-[13px] font-semibold text-ink">{t("connectApps.manage.skills")}</h3>
@@ -158,15 +164,17 @@ export function ManageView(props: ManageViewProps) {
             </ul>
           )}
         </section>
+        )}
 
-        {personal}
+        {!pluginsOnly && personal}
 
-        <details className="group mt-6 border-t border-hairline/60 pt-4" data-plugins-advanced open={advancedOpen || undefined}>
+        <details className="group mt-6 border-t border-hairline/60 pt-4" data-plugins-advanced open={advancedOpen || pluginsOnly || undefined}>
           <summary className="flex cursor-pointer list-none items-center justify-between text-[13px] font-semibold text-ink">
             <span>{t("connectApps.manage.advanced")}</span>
             <ChevronDown size={15} className="text-ink-secondary transition-transform group-open:rotate-180" aria-hidden="true" />
           </summary>
           <div className="mt-3">
+            {!pluginsOnly && (
             <div className="flex flex-wrap items-center gap-2">
               <button type="button" onClick={onAddManually} disabled={addDisabled} title={addTitle} className="flex items-center gap-1.5 rounded-lg bg-control px-3 py-2 text-[12.5px] font-medium text-ink hover:bg-raised-hover disabled:opacity-40">
                 <Plus size={14} /> {t("connectApps.manage.addManually")}
@@ -175,7 +183,8 @@ export function ManageView(props: ManageViewProps) {
                 <ClipboardPaste size={14} /> {t("mcp.import")}
               </button>
             </div>
-            {forms}
+            )}
+            {!pluginsOnly && forms}
             {children}
           </div>
         </details>
