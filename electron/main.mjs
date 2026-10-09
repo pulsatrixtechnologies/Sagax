@@ -2386,9 +2386,6 @@ function refreshApplicationMenu() {
       onOpenSettings: () => {
         if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send("app:open-settings");
       },
-      onOpenReleaseNotes: () => {
-        if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send("release-notes:open");
-      },
       serverModeId: serverModeEnvironment(environmentsState)?.id ?? null,
       onLeaveServerMode: () => void workspaceMenuAction(leaveServerMode),
     }),

@@ -10,7 +10,7 @@ import {
   updateLabel,
   updatePhase,
 } from "./SidebarProfileMenu";
-import { APP_REPOSITORY, DOCS_URL, HELP_CENTER_URL, LICENSE_URL, RELEASES_URL, platformLabel } from "@/lib/app-links";
+import { APP_REPOSITORY, DOCS_URL, HELP_CENTER_URL, LICENSE_URL, platformLabel } from "@/lib/app-links";
 import type { UpdaterState } from "@/lib/updater";
 
 const state = (patch: Partial<UpdaterState>): UpdaterState => ({ status: "idle", ...patch }) as UpdaterState;
@@ -155,10 +155,9 @@ describe("updateNoteworthy", () => {
 describe("outward links", () => {
   // both were pointed somewhere else once; pin them so a future tidy-up of
   // app-links does not quietly send Help back to the README
-  it("sends Help Center, docs, releases, and the license to this fork", () => {
+  it("sends Help Center, docs, and the license to this fork", () => {
     expect(HELP_CENTER_URL).toBe(DOCS_URL);
     expect(DOCS_URL).toBe(`${APP_REPOSITORY}/tree/main/docs`);
-    expect(RELEASES_URL).toBe(`${APP_REPOSITORY}/releases`);
     expect(LICENSE_URL).toBe(`${APP_REPOSITORY}/blob/main/LICENSE`);
     expect(APP_REPOSITORY).toBe("https://github.com/pulsatrixtechnologies/sagax");
   });
@@ -172,7 +171,6 @@ describe("profileMenuItems", () => {
     onAchievements: () => {},
     onShortcuts: () => {},
     onAbout: () => {},
-    onReleaseNotes: () => {},
   };
   const items = (patch: Partial<Parameters<typeof profileMenuItems>[0]> = {}) => profileMenuItems({
     teamMapLabel: "Team map",
@@ -180,7 +178,6 @@ describe("profileMenuItems", () => {
     settingsLabel: "Settings",
     achievementsLabel: "Achievements",
     aboutLabel: "About",
-    releaseNotesLabel: "Release notes",
     teamMapActive: false,
     automationsActive: true,
     updateItem: null,
@@ -188,22 +185,17 @@ describe("profileMenuItems", () => {
     ...patch,
   });
 
-  it("puts Release notes right above Check for updates and opens the browse sheet", () => {
-    const calls: string[] = [];
+  it("has no Release notes row: that lives only in About", () => {
     const update = { key: "update", label: "Check for updates", onSelect: () => {} };
-    const menu = items({ updateItem: update as never, handlers: { ...handlers, onReleaseNotes: () => calls.push("browse") } });
-    const keys = menu.map((entry) => entry.key);
-    expect(keys.indexOf("release-notes")).toBe(keys.indexOf("update") - 1);
-    const entry = menu.find((item) => item.key === "release-notes");
-    expect(entry?.label).toBe("Release notes");
-    entry?.onSelect();
-    expect(calls).toEqual(["browse"]);
+    const menu = items({ updateItem: update as never });
+    expect(menu.some((entry) => entry.key === "release-notes" || /release/i.test(entry.label))).toBe(false);
+    expect(menu.map((entry) => entry.key)).toEqual(["team-map", "routines", "settings", "achievements", "shortcuts", "update", "about"]);
   });
 
   it("leads with Team map and Automations, then a hairline, and leaves out phone and help", () => {
     const menu = items();
     expect(menu.map((entry) => entry.key)).toEqual([
-      "team-map", "routines", "settings", "achievements", "shortcuts", "release-notes", "about",
+      "team-map", "routines", "settings", "achievements", "shortcuts", "about",
     ]);
     expect(menu.find((entry) => entry.key === "settings")?.separatorBefore).toBe(true);
     expect(menu.find((entry) => entry.key === "about")?.separatorBefore).toBe(true);
@@ -218,7 +210,7 @@ describe("profileMenuItems", () => {
 
   it("drops achievements when they are not ready and keeps one hairline under the pair", () => {
     const menu = items({ achievementsLabel: null, automationsActive: false });
-    expect(menu.map((entry) => entry.key)).toEqual(["team-map", "routines", "settings", "shortcuts", "release-notes", "about"]);
+    expect(menu.map((entry) => entry.key)).toEqual(["team-map", "routines", "settings", "shortcuts", "about"]);
     expect(menu.filter((entry) => entry.separatorBefore).map((entry) => entry.key)).toEqual(["settings", "about"]);
   });
 });

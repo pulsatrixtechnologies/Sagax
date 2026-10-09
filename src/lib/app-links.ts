@@ -5,11 +5,10 @@ export const APP_NAME = "Sagax";
 /** The full brand, sibling of Pulsatrix Perspicax: the About dialog. */
 export const APP_FULL_NAME = "Pulsatrix Sagax";
 export const APP_REPOSITORY = "https://github.com/pulsatrixtechnologies/sagax";
-/** Help, docs, releases, and the license all open this fork. */
+/** Help, docs, and the license all open this fork. */
 export const DOCS_URL = `${APP_REPOSITORY}/tree/main/docs`;
 export const HELP_CENTER_URL = DOCS_URL;
 export const APPROVAL_LEVELS_URL = `${APP_REPOSITORY}/blob/main/docs/approval-levels.md`;
-export const RELEASES_URL = `${APP_REPOSITORY}/releases`;
 /** No upstream Pro offer: the original project's site is never linked. */
 export const PRO_URL = "";
 /** No upstream plans page either. */
