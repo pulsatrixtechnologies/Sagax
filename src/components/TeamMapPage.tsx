@@ -20,6 +20,7 @@ import { TeamMemoryDialog } from "./TeamMemoryDialog";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { t } from "@/lib/i18n";
 import { CanvasComputers } from "./CanvasComputers";
+import { MarkdownEditor } from "./markdown/MarkdownEditor";
 import type { TeamComputer } from "../../shared/team-computer";
 import { useMacInsetChrome } from "./DesktopCapabilities";
 
@@ -66,7 +67,6 @@ interface SectionContextResponse {
 
 function SectionContextDialog({ section, label, onClose }: { section: string; label: string; onClose: () => void }) {
   const dialogRef = useRef<HTMLDivElement>(null);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const onCloseRef = useRef(onClose);
   const savingRef = useRef(false);
   const dirtyRef = useRef(false);
@@ -137,7 +137,6 @@ function SectionContextDialog({ section, label, onClose }: { section: string; la
         setSavedText(result.text);
         setUpdatedAt(result.updatedAt);
         setMaxBytes(result.maxBytes);
-        window.setTimeout(() => textareaRef.current?.focus(), 0);
       })
       .catch((cause) => {
         if (!cancelled) setError(cause instanceof Error ? cause.message : String(cause));
@@ -212,23 +211,25 @@ function SectionContextDialog({ section, label, onClose }: { section: string; la
             </div>
           ) : (
             <>
-              <textarea
-                ref={textareaRef}
+              <MarkdownEditor
                 value={text}
-                onChange={(event) => setText(event.target.value)}
+                onChange={setText}
+                autoFocus
+                minHeight={280}
+                dataField="team-instructions"
                 placeholder={"Goals\n- Ship the Windows onboarding refresh\n\nDecisions\n- Keep customer data local\n\nPreferences\n- Use concise weekly updates"}
-                aria-label={t("team.instructionsTitle", { name: label })}
-                className="min-h-[280px] w-full resize-y rounded-lg border border-border bg-ink/[0.03] px-2.5 py-1.5 font-mono text-[12.5px] leading-relaxed text-ink outline-none placeholder:text-ink-secondary focus:border-border-strong"
+                ariaLabel={t("team.instructionsTitle", { name: label })}
+                invalid={bytes > maxBytes}
+                footer={
+                  <span>
+                    Keep durable team facts here. Private notes stay in each bot's own Memory.
+                    {updatedAt ? ` Last saved ${new Date(updatedAt).toLocaleString()}.` : ""}{" "}
+                    <span className={cn("tabular-nums", bytes > maxBytes && "text-danger")}>
+                      {bytes.toLocaleString()} / {maxBytes.toLocaleString()} bytes
+                    </span>
+                  </span>
+                }
               />
-              <div className="mt-2 flex items-start justify-between gap-4 text-[11.5px] text-ink-secondary">
-                <span>
-                  Keep durable team facts here. Private notes stay in each bot's own Memory.
-                  {updatedAt ? ` Last saved ${new Date(updatedAt).toLocaleString()}.` : ""}
-                </span>
-                <span className={cn("shrink-0 tabular-nums", bytes > maxBytes && "text-danger")}>
-                  {bytes.toLocaleString()} / {maxBytes.toLocaleString()} bytes
-                </span>
-              </div>
             </>
           )}
           {error && <div className="mt-3 rounded-lg border border-danger/30 bg-danger/10 px-3 py-2 text-[12px] text-danger">{error}</div>}

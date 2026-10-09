@@ -11,7 +11,7 @@ import { t } from "@/lib/i18n";
 import { firstSentence, soulPatchFor, utf8Bytes } from "@/lib/soul";
 import { useStore, type Bot } from "@/state/store";
 import { useBotEditor } from "./bot-settings/BotEditorContext";
-import { inputCls } from "./bot-settings/field";
+import { MarkdownEditor } from "./markdown/MarkdownEditor";
 
 type SoulRead = { soul: string; revision: string; bytes: number; limit: number; file: string; drift: boolean; fileText?: string };
 
@@ -82,7 +82,7 @@ export function SoulField({
   return (
     <div className="block">
       <div className="mb-1.5 flex items-center justify-between gap-3">
-        <label htmlFor={`bot-soul-${bot.id}`} className={simple ? "text-[12px] text-ink-secondary" : "text-[13px] text-ink-secondary"}>
+        <label id={`bot-soul-label-${bot.id}`} htmlFor={`bot-soul-${bot.id}`} className={simple ? "text-[12px] text-ink-secondary" : "text-[13px] text-ink-secondary"}>
           {simple ? simple.label : t("botPanel.soul.label")}
         </label>
         {!simple && canMigrate && (
@@ -113,28 +113,26 @@ export function SoulField({
           </div>
         </div>
       )}
-      <textarea
+      <MarkdownEditor
         id={`bot-soul-${bot.id}`}
-        className={cn(
-          inputCls,
-          simple ? "min-h-[140px] resize-y rounded-xl text-[14px] leading-relaxed" : "min-h-[220px] resize-y font-mono leading-relaxed",
-          over && "ring-2 ring-red-500/60",
-        )}
+        ariaLabelledBy={`bot-soul-label-${bot.id}`}
+        dataField="soul"
+        minHeight={simple ? 140 : 220}
         placeholder={simple ? simple.placeholder : t("botPanel.soul.placeholder")}
-        aria-invalid={over || undefined}
+        invalid={over}
         disabled={resolving}
         value={draft}
-        onChange={(e) => change(e.target.value)}
+        onChange={change}
+        footer={(!simple || over) && (
+          <span className="flex flex-wrap items-baseline gap-x-2">
+            {!simple && <span>{t("botPanel.soul.context")}{info?.file ? <> {t("botPanel.soul.mirrored")} <span className="break-all">{info.file}</span>.</> : null}</span>}
+            <span className={cn("tabular-nums", over && "font-medium text-red-500")}>
+              {t("botPanel.prompt.bytes", { count: `${bytes.toLocaleString()} / ${limit.toLocaleString()}` })}
+              {over ? t("botPanel.soul.notSaved") : ""}
+            </span>
+          </span>
+        )}
       />
-      {(!simple || over) && <div className="mt-1.5 flex items-start justify-between gap-3 text-[11px] text-ink-secondary">
-        <span>
-          {!simple && <>{t("botPanel.soul.context")}{info?.file ? <> {t("botPanel.soul.mirrored")} <span className="break-all">{info.file}</span>.</> : null}</>}
-        </span>
-        <span className={cn("shrink-0 tabular-nums", over && "font-medium text-red-500")}>
-          {t("botPanel.prompt.bytes", { count: `${bytes.toLocaleString()} / ${limit.toLocaleString()}` })}
-          {over ? t("botPanel.soul.notSaved") : ""}
-        </span>
-      </div>}
     </div>
   );
 }

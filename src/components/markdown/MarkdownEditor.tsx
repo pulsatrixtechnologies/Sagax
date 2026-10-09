@@ -190,7 +190,8 @@ export interface MarkdownEditorProps {
   disabled?: boolean;
   readOnly?: boolean;
   invalid?: boolean;
-  /** hard cap in characters, like a textarea's maxLength */
+  /** hard cap in characters, like a textarea's maxLength; the count shows
+   * it when showCount is on */
   maxLength?: number;
   /** minimum height of the writing area in px (default 160) */
   minHeight?: number;
@@ -301,7 +302,7 @@ export function MarkdownEditor({
   };
 
   const words = useMemo(() => (showCount ? countWords(value) : 0), [value, showCount]);
-  const characters = useMemo(() => (showCount || maxLength ? countCharacters(value) : 0), [value, showCount, maxLength]);
+  const characters = useMemo(() => (showCount ? countCharacters(value) : 0), [value, showCount]);
   const shellStyle = { "--md-min-h": `${minHeight}px`, "--md-max-h": typeof maxHeight === "number" ? `${maxHeight}px` : maxHeight } as CSSProperties;
 
   const writing = (
@@ -463,13 +464,13 @@ export function MarkdownEditor({
           <div className="border-t border-hairline/40 sm:border-l sm:border-t-0">{preview}</div>
         </div>
       )}
-      {(showCount || footer || maxLength) && (
+      {(showCount || footer) && (
         <div id={statusId} className="flex items-start justify-between gap-3 border-t border-hairline/40 px-3 py-1.5 text-[11px] text-ink-secondary">
-          <span className="min-w-0">{footer}</span>
-          {(showCount || maxLength) && (
-            <span className={cn("shrink-0 tabular-nums", maxLength && characters >= maxLength && "font-medium text-danger")} data-markdown-count="">
-              {showCount && t("markdownEditor.count", { words: words.toLocaleString(), characters: characters.toLocaleString() })}
-              {maxLength ? `${showCount ? " · " : ""}${characters.toLocaleString()} / ${maxLength.toLocaleString()}` : ""}
+          <span className="min-w-0 flex-1">{footer}</span>
+          {showCount && (
+            <span className={cn("shrink-0 tabular-nums", maxLength && value.length >= maxLength && "font-medium text-danger")} data-markdown-count="">
+              {t("markdownEditor.count", { words: words.toLocaleString(), characters: characters.toLocaleString() })}
+              {maxLength ? ` · ${value.length.toLocaleString()} / ${maxLength.toLocaleString()}` : ""}
             </span>
           )}
         </div>

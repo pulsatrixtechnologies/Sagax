@@ -17,6 +17,7 @@ import type { NewBotDefaults } from "../../shared/new-bot-defaults";
 import type { Routine } from "@/lib/routines";
 import { IdentitySection } from "./bot-settings/IdentitySection";
 import { SoulSection } from "./bot-settings/SoulSection";
+import { MarkdownEditor } from "./markdown/MarkdownEditor";
 import { SkillsSection } from "./bot-settings/SkillsSection";
 import { AccessSection } from "./bot-settings/AccessSection";
 import { ModelSection } from "./bot-settings/ModelSection";
@@ -406,7 +407,7 @@ function DraftMemory({ draft }: { draft: BotCreationDraft }) {
     <select className={inputCls} aria-label="Memory file" value={path} onChange={event => setPath(event.target.value)}>
       {[...new Set(["MEMORY.md", ...Object.keys(draft.template.memory)])].map(file => <option key={file}>{file}</option>)}
     </select>
-    <textarea className={cn(inputCls, "min-h-72 font-mono")} aria-label="Memory contents" value={draft.template.memory[path] ?? ""} onChange={event => draft.setMemory(path, event.target.value)} />
+    <MarkdownEditor ariaLabel="Memory contents" dataField="new-bot-memory" minHeight={288} value={draft.template.memory[path] ?? ""} onChange={value => draft.setMemory(path, value)} />
     <div className="flex gap-2"><input className={inputCls} aria-label="New memory topic" placeholder="Topic name" value={name} onChange={event => setName(event.target.value)} />
       <button type="button" aria-label="Add memory topic" disabled={!/^[a-zA-Z0-9_-]+$/.test(name)} className="rounded-lg bg-control px-3 disabled:opacity-40" onClick={() => { const next = `memory/${name}.md`; if (!(next in draft.template.memory)) draft.setMemory(next, ""); setPath(next); setName(""); }}><Plus size={16} /></button>
       {path !== "MEMORY.md" && <button type="button" aria-label="Remove memory topic" className="rounded-lg bg-control px-3" onClick={() => { draft.setMemory(path, null); setPath("MEMORY.md"); }}><Trash2 size={16} /></button>}

@@ -88,6 +88,7 @@ import {
 } from "@/lib/routine-calendar";
 import { DAY_NAMES, durationLabel, intervalLabel, niceDate, niceTime, scheduleLabel } from "@/lib/schedule-label";
 import { Switch } from "./SettingsPrimitives";
+import { MarkdownEditor } from "./markdown/MarkdownEditor";
 import {
   isRoutineProblemRun,
   type Routine,
@@ -924,7 +925,7 @@ function EventEditor({
           </div>}
           <div className="flex items-start gap-4">
             <FileText size={18} className="mt-2.5 shrink-0 text-ink-secondary" />
-            <textarea value={description} onChange={(event) => setDescription(event.target.value)} rows={5} placeholder={isRoomGoal ? "What should the team accomplish?" : kind === "routine" ? "Add instructions for the bot" : "Add description or agenda"} className="min-w-0 flex-1 resize-y rounded-lg border border-border bg-ink/[0.03] px-2.5 py-1.5 text-[13px] leading-[18px] text-ink outline-none placeholder:text-ink-secondary focus:border-border-strong" />
+            <MarkdownEditor value={description} onChange={setDescription} minHeight={120} dataField="routine-instructions" className="min-w-0 flex-1" ariaLabel={isRoomGoal ? "What should the team accomplish?" : kind === "routine" ? "Add instructions for the bot" : "Add description or agenda"} placeholder={isRoomGoal ? "What should the team accomplish?" : kind === "routine" ? "Add instructions for the bot" : "Add description or agenda"} />
           </div>
           {kind === "routine" && !isRoomGoal && recurrence !== "none" && (
             <label className="ml-8 flex items-start gap-3 rounded-xl border border-hairline/40 bg-inset/40 px-3.5 py-3">
@@ -1125,7 +1126,7 @@ function QuickComposer({
         </div>
         <div className="flex items-start gap-3">
           <FileText size={16} className="mt-2.5 shrink-0 text-ink-secondary" />
-          <textarea value={description} onChange={(event) => setDescription(event.target.value)} rows={3} placeholder={kind === "routine" ? "What should the bot do?" : "Add a description (optional)"} className="min-w-0 flex-1 resize-none rounded-lg border border-border bg-ink/[0.03] px-2.5 py-1.5 text-[13px] leading-[18px] text-ink outline-none placeholder:text-ink-secondary focus:border-border-strong" />
+          <MarkdownEditor value={description} onChange={setDescription} minHeight={72} maxHeight={220} showCount={false} dataField="routine-instructions-quick" className="min-w-0 flex-1" ariaLabel={kind === "routine" ? "What should the bot do?" : "Add a description (optional)"} placeholder={kind === "routine" ? "What should the bot do?" : "Add a description (optional)"} />
         </div>
         {kind === "routine" && <ResultsDestination bot={bots.find((bot) => bot.id === botIds[0])} value={resultsThreadId} onChange={(threadId) => setResultsThreadId(threadId ?? null)} />}
         {error && <div className="rounded-lg bg-danger/10 px-3 py-2 text-[11.5px] text-danger">{error}</div>}
