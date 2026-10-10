@@ -15,7 +15,8 @@ describe("bundledReleaseCatalog", () => {
     expect(catalog["0.4.14"]).toContain("## English");
     expect(catalog["0.4.15"]).toContain("## English");
     expect(catalog["0.4.16"]).toContain("## English");
-    expect(Object.keys(catalog).sort()).toEqual(["0.4.0", "0.4.1", "0.4.10", "0.4.11", "0.4.12", "0.4.13", "0.4.14", "0.4.15", "0.4.16", "0.4.2", "0.4.3", "0.4.4", "0.4.5", "0.4.6", "0.4.7", "0.4.8", "0.4.9"]);
+    expect(catalog["0.4.17"]).toContain("## English");
+    expect(Object.keys(catalog).sort()).toEqual(["0.4.0", "0.4.1", "0.4.10", "0.4.11", "0.4.12", "0.4.13", "0.4.14", "0.4.15", "0.4.16", "0.4.17", "0.4.2", "0.4.3", "0.4.4", "0.4.5", "0.4.6", "0.4.7", "0.4.8", "0.4.9"]);
   });
 
   it("reads a version from the file name and picks the language section", () => {
@@ -42,7 +43,7 @@ describe("version browsing", () => {
 
   it("lists the real bundle newest first with the running release on top", () => {
     const versions = bundledVersions();
-    expect(versions[0]).toBe("0.4.16");
+    expect(versions[0]).toBe("0.4.17");
     expect(versions.at(-1)).toBe("0.4.0");
   });
 
