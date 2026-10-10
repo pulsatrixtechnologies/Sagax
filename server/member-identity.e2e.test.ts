@@ -366,7 +366,11 @@ posixOnly("an organization member's identity and bots", () => {
   });
 
   it("takes a changed name from Perspicax at the next sign-in", async () => {
-    avaCookie = await signIn({ ...AVA_USER, name: "Ava Q. Admin" });
+    // Perspicax changed the name: its directory says so as well as its sign-in, and the directory
+    // is what the server reads back, so the fixture's directory follows the rename.
+    const renamed = { ...AVA_USER, name: "Ava Q. Admin" };
+    idp!.directoryPeople = [ZARA_USER, MAX_USER, renamed].map((user) => idp!.personOf(user));
+    avaCookie = await signIn(renamed);
     const config = await api("GET", "/api/config", { as: "ava" });
     expect(config.body.viewer.name).toBe("Ava Q. Admin");
     expect((await api("GET", "/api/auth/session", { as: "ava" })).body.name).toBe("Ava Q. Admin");

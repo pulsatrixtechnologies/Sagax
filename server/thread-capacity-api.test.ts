@@ -202,6 +202,7 @@ describe("per-bot thread capacity through an isolated HTTP fixture", () => {
     });
     expect(created.status).toBe(201);
     const routineId = created.body.routine.id;
+    let siblingRoutineId: string | undefined;
     const runState = async (id: string) =>
       (await api("GET", "/api/routines")).body.runs.find((run: any) => run.id === id);
     try {
@@ -218,7 +219,15 @@ describe("per-bot thread capacity through an isolated HTTP fixture", () => {
       // while the scheduled run occupies the second slot.
       expect((await botState(botId)).busy).toBe(true);
       // At capacity the next run defers until a slot frees.
-      const second = (await api("POST", `/api/routines/${routineId}/run`)).body.run;
+      // One run of a routine is in flight at a time (409 run_in_flight), so the
+      // run that must wait for a slot belongs to a second routine of the same bot.
+      const sibling = await api("POST", "/api/routines", {
+        name: "Slot dispatch probe, second", prompt: "Write the scheduled digest.", target: "bot", botId, runOn: "maus", enabled: true,
+        schedule: { type: "daily", time: "23:30" },
+      });
+      expect(sibling.status).toBe(201);
+      siblingRoutineId = sibling.body.routine.id;
+      const second = (await api("POST", `/api/routines/${siblingRoutineId}/run`)).body.run;
       await new Promise((resolve) => setTimeout(resolve, 1_500));
       expect((await runState(second.id))?.status).toBe("queued");
       finish(threads[0]);
@@ -230,6 +239,7 @@ describe("per-bot thread capacity through an isolated HTTP fixture", () => {
       for (const threadId of await busyThreads(botId)) finish(threadId);
       await expect.poll(async () => (await busyThreads(botId)).length, { timeout: 15_000 }).toBe(0);
       await api("DELETE", `/api/routines/${routineId}`).catch(() => undefined);
+      if (siblingRoutineId) await api("DELETE", `/api/routines/${siblingRoutineId}`).catch(() => undefined);
       await api("DELETE", `/api/bots/${botId}`).catch(() => undefined);
     }
   }, 90_000);
@@ -370,8 +380,17 @@ describe("per-bot thread capacity through an isolated HTTP fixture", () => {
     // A routine turn is today's classic delegate_bot caller — a plain chat
     // turn is steered to coordinate_bots — and its held turn supplies the
     // internal comms capability that caller holds.
+    // One run of a routine is in flight at a time (409 run_in_flight) and a delegator waits on its
+    // handoff, so each delegator turn runs a routine of its own.
+    const secondRoutine = await api("POST", "/api/routines", {
+      name: "Delegated slot probe, second", prompt: "Hold the delegator turn.", target: "bot", botId: source.botId, runOn: "maus", enabled: true,
+      schedule: { type: "daily", time: "23:30" },
+    });
+    expect(secondRoutine.status).toBe(201);
+    const routineIds: string[] = [routineId, secondRoutine.body.routine.id];
+    let nextRoutine = 0;
     const delegatorTurn = async () => {
-      const run = (await api("POST", `/api/routines/${routineId}/run`)).body.run;
+      const run = (await api("POST", `/api/routines/${routineIds[nextRoutine++]}/run`)).body.run;
       await expect.poll(async () => (await runState(run.id))?.status, { timeout: 15_000 }).toBe("running");
       const started = await runState(run.id);
       const launched = await dump(started.threadId);
@@ -455,7 +474,7 @@ describe("per-bot thread capacity through an isolated HTTP fixture", () => {
         for (const threadId of await busyThreads(bot.botId)) finish(threadId);
       }
       await expect.poll(async () => (await busyThreads(target.botId)).length + (await busyThreads(source.botId)).length, { timeout: 15_000 }).toBe(0);
-      await api("DELETE", `/api/routines/${routineId}`).catch(() => undefined);
+      for (const id of routineIds) await api("DELETE", `/api/routines/${id}`).catch(() => undefined);
       await api("DELETE", `/api/bots/${target.botId}`).catch(() => undefined);
       await api("DELETE", `/api/bots/${source.botId}`).catch(() => undefined);
     }

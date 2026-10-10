@@ -46,8 +46,9 @@ describe("every modal dialog closes", () => {
 
   it.each(modalFiles.map((file) => [relative(ROOT, file.path), file] as const))("%s closes on Escape", (name, file) => {
     const host = ESCAPE_HOST[name];
-    // useModalDialog (hooks/use-modal-dialog.ts) and usePopoverDismiss (hooks/use-popover-dismiss.ts) close their dialog on Escape
-    expect(host ? readFileSync(join(ROOT, host), "utf8") : file.source).toMatch(/["']Escape["']|\buseModalDialog\(|\busePopoverDismiss\(/);
+    // useModalDialog (hooks/use-modal-dialog.ts), usePopoverDismiss (hooks/use-popover-dismiss.ts) and useCategoryModalKeyboard
+    // (components/category-modal.ts, shared by Achievements and the persona editor, #241) close their dialog on Escape
+    expect(host ? readFileSync(join(ROOT, host), "utf8") : file.source).toMatch(/["']Escape["']|\buseModalDialog\(|\busePopoverDismiss\(|\buseCategoryModalKeyboard\(/);
   });
 
   it.each(modalFiles.map((file) => [relative(ROOT, file.path), file] as const))("%s wires its Cancel and Close buttons", (_name, file) => {

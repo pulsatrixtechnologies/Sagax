@@ -1462,7 +1462,7 @@
   "connectApps.detail.accounts": "Comptes",
   "connectApps.detail.accountsCount": "Comptes",
   "connectApps.detail.addAccount": "Ajouter un autre compte",
-  "connectApps.detail.appToolsNote": "Un outil désactivé ici l'est pour tous les robots de cet espace de travail. Les choix d'outils de chaque robot s'appliquent toujours en plus.",
+  "connectApps.detail.appToolsNote": "Un outil désactivé ici l'est pour tous les robots de cette installation. Les choix d'outils de chaque robot s'appliquent toujours en plus.",
   "connectApps.detail.command": "Commande",
   "connectApps.detail.defaultAccount": "par défaut",
   "connectApps.detail.details": "Détails",

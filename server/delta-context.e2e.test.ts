@@ -282,9 +282,11 @@ it("offers a message steered into a running turn to the next turn once, marked a
 // a voice call that re-offer made the bot answer the same words twice.
 it("never offers again a steered message the engine said it took in", () => fixture(async (f) => {
   await warmUp(f);
-  f.plan[f.chief.id] = { reply: "Working", gateFile: f.gate("turn") };
+  // Engines stay warm (#2268): the turn reuses the warmed-up process, so it is the turn's own ready file
+  // that says it is running, not a second launch.
+  f.plan[f.chief.id] = { reply: "Working", readyFile: f.gate("turn-ready"), gateFile: f.gate("turn") };
   await f.send("Start on the report.");
-  await expect.poll(() => f.launches().length, { timeout: 15_000 }).toBe(2);
+  await expect.poll(() => existsSync(f.gate("turn-ready")), { timeout: 15_000 }).toBe(true);
   expect((await f.send("STEERED_AND_ECHOED also cover costs")).steered).toBe(true);
   f.open(f.gate("turn"));
   await f.wait();
@@ -292,7 +294,8 @@ it("never offers again a steered message the engine said it took in", () => fixt
   f.plan[f.chief.id] = { reply: "Covered" };
   await f.send("Is it done?");
   await f.wait();
-  expect(f.launches().at(-1).resume).not.toBeNull();
+  // the same warm process carried every turn (#2268): no relaunch, so the session continued
+  expect(f.launches()).toHaveLength(1);
   const next = f.prompt(f.turns().at(-1));
   expect(next).not.toContain("STEERED_AND_ECHOED");
   expect(next).not.toContain("you may already have it");

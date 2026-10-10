@@ -180,9 +180,11 @@ describe("new bot default model selection wiring in index.ts", () => {
       version: 1, companyModelsOnly: true, allowedEngines: "all", mcp: { allowCustom: true, allowlist: [] },
       computers: { thisComputer: true, localVm: true, box: true, vps: true }, remoteAccess: true });
     const managedDesktop = { owns: (instanceId: string) => enrolled && instanceId.startsWith("company.") };
-    const defaultSelection = new Function("hostedModels", "cfg", "registry", "managedDesktop", "managedPolicy", "BUILT_IN_DRIVERS", "selectDefaultModelSelection",
+    const defaultSelection = new Function("hostedModels", "cfg", "registry", "managedDesktop", "managedPolicy", "BUILT_IN_DRIVERS", "selectDefaultModelSelection", "orgEngineAllowRefusal",
       `${code}; return defaultSelection;`)(undefined, { defaultModelSelection: saved }, { describe: async () => instances }, managedDesktop, managedPolicy,
-      [{ driverKind: "claudeAgent", metadata: { displayName: "Claude" } }], selectDefaultModelSelection) as (saved?: ModelSelection | null) => Promise<ModelSelection>;
+      [{ driverKind: "claudeAgent", metadata: { displayName: "Claude" } }], selectDefaultModelSelection,
+      // the organization's engine allow-list (orgEngineAllowRefusal, org policy) has its own tests; here every engine is allowed
+      () => undefined) as (saved?: ModelSelection | null) => Promise<ModelSelection>;
     return { defaultSelection, close: () => managedPolicy.close() };
   }
 

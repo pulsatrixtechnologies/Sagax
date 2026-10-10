@@ -130,7 +130,7 @@ describe("bot-first sidebar", () => {
     expect(markup).toContain('data-testid="waiting-dot"');
     if (density !== "icons") {
       expect(markup).toContain('aria-current="page"');
-      expect(markup).toContain('aria-label="Unread threads"');
+      expect(markup).toMatch(/sr-only[^>]*>Unread threads</); // bold name plus a screen-reader label, no dot (478bd6216)
       expect(markup).not.toContain('aria-label="New thread"');
     }
   });

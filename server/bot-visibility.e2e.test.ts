@@ -135,7 +135,9 @@ const ids = { pub: "", pubThread: "", hr: "", hrThread: "", board: "", roomPub: 
 async function makeBot(name: string, section?: string) {
   const created = await api("POST", "/api/bots", { name, ...(section ? { section } : {}) }, BOSS);
   expect(created.status, JSON.stringify(created.body)).toBe(201);
-  const patched = await api("PATCH", `/api/bots/${created.body.bot.id}`, { modelSelection: { instanceId: "grok", model: "fake-model" } }, BOSS);
+  const patched = await api("PATCH", `/api/bots/${created.body.bot.id}`, // Off: a bot left on Auto attaches a Local VM when this machine has a container runtime and a prepared image, and a
+  // second turn then waits minutes for its desktop. Visibility has nothing to do with computers.
+  { modelSelection: { instanceId: "grok", model: "fake-model" }, computer: "off" }, BOSS);
   expect(patched.status).toBe(200);
   // A member reaches another person's bot only once its owner shares it
   // (direct grants); the audience below is what narrows it further.

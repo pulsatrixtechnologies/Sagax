@@ -590,7 +590,7 @@ describe("Group Local VM ownership on the real isolated server", () => {
       // the model picked the VM: the pin is the machine's record, not the
       // person's, so a Works on change sweeps it rather than the thread
       // staying stuck on the machine's choice
-      await api("PATCH", `/api/bots/${bot.id}`, { computer: "local" });
+      await api("PATCH", `/api/bots/${bot.id}`, { computer: "local", approvalMode: "ask" });
       const swept = (await api("GET", "/api/bots?messages=0")).bots.find((b: any) => b.id === bot.id);
       expect(swept.tasks.find((task: any) => task.threadId === bot.threadId).surface).toBeUndefined();
       expect(saved.messages.filter((message: any) => message.role === "user" && message.kind === "text")).toHaveLength(1);
@@ -754,7 +754,7 @@ describe("Group Local VM ownership on the real isolated server", () => {
     mkdirSync(dirname(cuaDescriptor), { recursive: true });
     writeFileSync(cuaDescriptor, JSON.stringify({ mode: "embedded", socketPath: "/fixture/cua.sock", mcpCommand: "/fixture/cua-driver", mcpArgs: ["mcp"], mcpEnv: {} }));
     try {
-      await api("PATCH", `/api/bots/${bots[0].id}`, { computer: "local" });
+      await api("PATCH", `/api/bots/${bots[0].id}`, { computer: "local", approvalMode: "ask" });
       await send(group.id);
       const sent = await dump() as { systemPrompt: string };
       const c = computer(sent);
@@ -775,7 +775,7 @@ describe("Group Local VM ownership on the real isolated server", () => {
 
   it("says why This computer cannot mount in a channel instead of dispatching without the promised tools", async () => {
     const { bots, group } = await room();
-    await api("PATCH", `/api/bots/${bots[0].id}`, { computer: "local" });
+    await api("PATCH", `/api/bots/${bots[0].id}`, { computer: "local", approvalMode: "ask" });
     await send(group.id);
     await until(() => api("GET", "/api/bots?messages=30"), state => JSON.stringify(state).includes("CUA Driver is not ready for this computer"));
     await idle(bots[0].id);
@@ -788,7 +788,7 @@ describe("Group Local VM ownership on the real isolated server", () => {
     mkdirSync(dirname(cuaDescriptor), { recursive: true });
     writeFileSync(cuaDescriptor, JSON.stringify({ mode: "unavailable", reason }), { mode: 0o600 });
     try {
-      await api("PATCH", `/api/bots/${bots[0].id}`, { computer: "local" });
+      await api("PATCH", `/api/bots/${bots[0].id}`, { computer: "local", approvalMode: "ask" });
       await send(group.id);
       const state = await until(() => api("GET", "/api/bots?messages=30"),
         value => JSON.stringify(value).includes(reason));

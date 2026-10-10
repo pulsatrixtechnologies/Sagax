@@ -71,7 +71,10 @@ posixOnly("usage attribution e2e", () => {
   };
   const newBot = async (instanceId: string, model: string) => {
     const created = (await api("POST", "/api/bots")).body.bot;
-    await api("PATCH", `/api/bots/${created.id}`, { modelSelection: { instanceId, model } });
+    // New bots start on Approve for me (51647a630); a guarded send needs the bot on Ask.
+    await api("PATCH", `/api/bots/${created.id}`, { modelSelection: { instanceId, model }, approvalMode: "ask", computer: "off" }); // computer off: no Local VM attaches on a machine that has a container runtime
+    // the opening thread keeps its own level, so it is set too
+    await api("PATCH", `/api/bots/${created.id}/tasks/${created.threadId}`, { approvalMode: "ask" });
     return created as { id: string; threadId: string };
   };
   /** Prompts the hanging ACP engine holds. "busy" turns true before the
