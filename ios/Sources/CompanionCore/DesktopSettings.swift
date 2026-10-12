@@ -376,6 +376,21 @@ public struct DesktopEngine: Decodable, Equatable, Identifiable, Sendable {
     public var snapshot: Snapshot
     /// A preset brand mark chosen for this provider (`icon.kind == "preset"`).
     public var icon: Icon?
+    /// Present when this build of the computer offers an in-app sign-in.
+    /// Older computers omit it; the card then keeps the install note.
+    public var authentication: Authentication?
+    /// Only the fields the phone needs. A command, a server install and a
+    /// managed download stay on the computer and are ignored here.
+    public var install: Install?
+
+    public struct Authentication: Decodable, Equatable, Sendable {
+        public var method: String?
+    }
+
+    public struct Install: Decodable, Equatable, Sendable {
+        public var apiKey: Bool?
+        public var signInCommand: String?
+    }
 
     public var iconPreset: String? { icon?.kind == "preset" ? icon?.preset : nil }
 
@@ -423,6 +438,92 @@ public struct DesktopEngine: Decodable, Equatable, Identifiable, Sendable {
         case "openaiCompat": .openaiCompat
         default: nil
         }
+    }
+
+    /// The computer runs the sign-in and the phone only shows the page,
+    /// the code and the result.
+    public var interactiveSignIn: Bool {
+        switch authentication?.method {
+        case "device-code", "open-link", "paste-code", "browser-pkce", "browser": true
+        default: false
+        }
+    }
+
+    /// A masked access key, stored on the computer. A named API-key provider
+    /// and an engine that says `install.apiKey` both qualify.
+    public var wantsAccessKey: Bool {
+        install?.apiKey == true || apiKeyProvider != nil
+    }
+
+    /// A short command kept behind a disclosure. Sentences and commands that
+    /// embed a key stay hidden.
+    public var manualCommand: String? {
+        guard let command = install?.signInCommand?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !command.isEmpty,
+              !command.contains("YOUR_"),
+              !command.contains("Settings →"),
+              command.range(of: #"^[A-Za-z][\w.-]*(?: \S+){0,6}$"#, options: .regularExpression) != nil
+        else { return nil }
+        return command
+    }
+}
+
+/// Pages the phone may open for a provider sign-in. Anything else stays a
+/// label: the computer already checked the address, and the phone checks it
+/// again before handing it to the system browser.
+public enum EngineSignInLink {
+    public static func allowed(_ raw: String) -> URL? {
+        guard let url = URL(string: raw),
+              let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
+              components.scheme == "https",
+              components.user == nil,
+              components.password == nil,
+              components.port == nil,
+              (components.fragment ?? "").isEmpty,
+              let host = components.host?.lowercased()
+        else { return nil }
+        let path = components.path
+        if host == "cursor.com" || host == "www.cursor.com" || host == "authenticator.cursor.sh" {
+            return path == "/login" || path == "/loginDeepControl" || path == "/loginDeepPage" ? url : nil
+        }
+        if host == "auth.openai.com" {
+            return path == "/codex/device" || path == "/api/accounts/authorize" ? url : nil
+        }
+        if host == "www.kimi.ai" || host == "www.kimi.com" {
+            return path == "/code/authorize_device" ? url : nil
+        }
+        if host == "x.ai" || host.hasSuffix(".x.ai") || host == "grok.com" || host.hasSuffix(".grok.com") {
+            return url
+        }
+        return nil
+    }
+}
+
+/// One sign-in the computer is running (`{ auth }` on the auth routes).
+public struct EngineSignInState: Decodable, Equatable, Sendable {
+    public var phase: String
+    public var flowId: String?
+    public var authorizationUrl: String?
+    public var expiresAt: String?
+    public var userCode: String?
+    public var message: String?
+
+    /// The app target builds a cancelled or finished state itself. The
+    /// synthesized memberwise initializer stays inside this module.
+    public init(
+        phase: String,
+        flowId: String? = nil,
+        authorizationUrl: String? = nil,
+        expiresAt: String? = nil,
+        userCode: String? = nil,
+        message: String? = nil
+    ) {
+        self.phase = phase
+        self.flowId = flowId
+        self.authorizationUrl = authorizationUrl
+        self.expiresAt = expiresAt
+        self.userCode = userCode
+        self.message = message
     }
 }
 

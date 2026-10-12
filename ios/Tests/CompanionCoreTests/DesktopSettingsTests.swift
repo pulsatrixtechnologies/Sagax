@@ -164,6 +164,74 @@ final class DesktopSettingsEnginesAndPairingTests: XCTestCase {
         XCTAssertEqual(engines[0].versionNumber, "2.1.232")
         XCTAssertEqual(engines[3].apiKeyProvider, .mistral)
         XCTAssertNil(engines[2].apiKeyProvider)
+        XCTAssertFalse(engines[0].interactiveSignIn)
+        XCTAssertTrue(engines[3].wantsAccessKey)
+    }
+
+    func testInteractiveSignInAndHiddenCommands() throws {
+        let json = #"""
+        {"instances":[
+         {"instanceId":"cursor","driverKind":"cursorAgent","displayName":"Cursor","snapshot":{"state":"available","authenticated":false},
+          "authentication":{"method":"open-link"},"install":{"apiKey":true,"signInCommand":"cursor-agent login","command":{"shell":"ignored"}}},
+         {"instanceId":"kimi","driverKind":"kimiAgent","displayName":"Kimi","snapshot":{"state":"available","authenticated":false},
+          "authentication":{"method":"device-code"},"install":{"signInCommand":"kimi login"}},
+         {"instanceId":"minimax","driverKind":"minimax","displayName":"MiniMax","snapshot":{"state":"unavailable"},
+          "install":{"apiKey":true,"signInCommand":"mmx auth login --api-key YOUR_MINIMAX_API_KEY"}},
+         {"instanceId":"mistral","driverKind":"mistral","displayName":"Mistral","snapshot":{"state":"unavailable"},
+          "install":{"signInCommand":"Add a key in Settings → API keys"}}]}
+        """#
+        struct List: Decodable { var instances: [DesktopEngine] }
+        let engines = try JSONDecoder().decode(List.self, from: Data(json.utf8)).instances
+        XCTAssertTrue(engines[0].interactiveSignIn)
+        XCTAssertTrue(engines[0].wantsAccessKey)
+        XCTAssertEqual(engines[0].manualCommand, "cursor-agent login")
+        XCTAssertEqual(engines[1].manualCommand, "kimi login")
+        XCTAssertTrue(engines[1].interactiveSignIn)
+        XCTAssertNil(engines[2].manualCommand)
+        XCTAssertTrue(engines[2].wantsAccessKey)
+        XCTAssertNil(engines[3].manualCommand)
+    }
+
+    func testEngineSignInRequestsStayOnTheInstance() throws {
+        let start = try client.startEngineSignInRequest(instanceId: "cursor")
+        XCTAssertEqual(start.httpMethod, "POST")
+        XCTAssertEqual(start.url?.path, "/api/instances/cursor/auth/start")
+        let status = try client.engineSignInStatusRequest(instanceId: "grok", flowId: "11111111-1111-1111-1111-111111111111")
+        XCTAssertEqual(status.url?.path, "/api/instances/grok/auth/status")
+        XCTAssertTrue(status.url?.query?.contains("flowId=") == true)
+        let cancel = try client.cancelEngineSignInRequest(instanceId: "kimi", flowId: "flow-1")
+        XCTAssertEqual(cancel.url?.path, "/api/instances/kimi/auth/cancel")
+        let complete = try client.completeEngineSignInRequest(instanceId: "claude", flowId: "flow-1", code: "abcd")
+        let completeBody = try XCTUnwrap(JSONSerialization.jsonObject(with: XCTUnwrap(complete.httpBody)) as? [String: String])
+        XCTAssertEqual(completeBody["flowId"], "flow-1")
+        XCTAssertEqual(completeBody["code"], "abcd")
+        XCTAssertEqual(try client.engineAccessKeyStatusRequest(instanceId: "gemini").url?.path, "/api/instances/gemini/api-key")
+        let saved = try client.saveEngineAccessKeyRequest(instanceId: "cursor", key: "")
+        XCTAssertEqual(saved.httpMethod, "POST")
+        XCTAssertEqual(saved.url?.path, "/api/instances/cursor/api-key")
+        for id in ["..", "...", "a/b", ""] {
+            XCTAssertThrowsError(try client.startEngineSignInRequest(instanceId: id))
+            XCTAssertThrowsError(try client.saveEngineAccessKeyRequest(instanceId: id, key: "x"))
+        }
+        XCTAssertThrowsError(try client.engineSignInStatusRequest(instanceId: "cursor", flowId: "../x"))
+        XCTAssertThrowsError(try client.completeEngineSignInRequest(instanceId: "cursor", flowId: "flow-1", code: " "))
+    }
+
+    func testSignInPagesAreAllowlisted() {
+        XCTAssertNotNil(EngineSignInLink.allowed("https://cursor.com/loginDeepControl?challenge=abc&uuid=def&mode=login"))
+        XCTAssertNotNil(EngineSignInLink.allowed("https://authenticator.cursor.sh/login"))
+        XCTAssertNotNil(EngineSignInLink.allowed("https://auth.openai.com/codex/device"))
+        XCTAssertNotNil(EngineSignInLink.allowed("https://auth.openai.com/api/accounts/authorize"))
+        XCTAssertNotNil(EngineSignInLink.allowed("https://www.kimi.com/code/authorize_device?user_code=ABCD-EF12"))
+        XCTAssertNotNil(EngineSignInLink.allowed("https://accounts.x.ai/device"))
+        XCTAssertNil(EngineSignInLink.allowed("https://evilx.ai/login"))
+        XCTAssertNil(EngineSignInLink.allowed("https://cursor.com.evil.test/loginDeepControl"))
+        XCTAssertNil(EngineSignInLink.allowed("https://user:pass@cursor.com/login"))
+        XCTAssertNil(EngineSignInLink.allowed("https://cursor.com:443/login"))
+        XCTAssertNil(EngineSignInLink.allowed("https://cursor.com/login#token"))
+        XCTAssertNil(EngineSignInLink.allowed("http://cursor.com/login"))
+        XCTAssertNil(EngineSignInLink.allowed("https://cursor.com/admin"))
+        XCTAssertNil(EngineSignInLink.allowed("https://www.kimi.com/login"))
     }
 
     func testPairingRequestsAndTimes() throws {

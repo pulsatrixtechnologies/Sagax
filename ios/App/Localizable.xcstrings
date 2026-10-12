@@ -53254,7 +53254,7 @@
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Vous préférez un terminal ?"
+            "value": "Vous préférez taper la commande vous-même ?"
           }
         },
         "pt-BR": {
@@ -59583,6 +59583,294 @@
       "localizations": {
         "en": { "stringUnit": { "state": "translated", "value": "Transcript" } },
         "fr": { "stringUnit": { "state": "translated", "value": "Transcription" } }
+      }
+    },
+    "Open sign-in": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open sign-in"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ouvrir la connexion"
+          }
+        }
+      }
+    },
+    "Cancel sign-in": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cancel sign-in"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Annuler la connexion"
+          }
+        }
+      }
+    },
+    "Waiting for you to finish signing in…": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Waiting for you to finish signing in…"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "En attente de la fin de la connexion…"
+          }
+        }
+      }
+    },
+    "Enter this code on the sign-in page": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enter this code on the sign-in page"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Entrez ce code sur la page de connexion"
+          }
+        }
+      }
+    },
+    "Paste the code from that page": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Paste the code from that page"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Collez le code affiché sur cette page"
+          }
+        }
+      }
+    },
+    "Finish sign-in": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Finish sign-in"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Terminer la connexion"
+          }
+        }
+      }
+    },
+    "Access key": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Access key"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Clé d’accès"
+          }
+        }
+      }
+    },
+    "Paste the access key": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Paste the access key"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Collez la clé d’accès"
+          }
+        }
+      }
+    },
+    "Save key": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Save key"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enregistrer la clé"
+          }
+        }
+      }
+    },
+    "Remove key": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Remove key"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Retirer la clé"
+          }
+        }
+      }
+    },
+    "Key saved": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Key saved"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Clé enregistrée"
+          }
+        }
+      }
+    },
+    "Key removed": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Key removed"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Clé retirée"
+          }
+        }
+      }
+    },
+    "Or paste an access key": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Or paste an access key"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ou collez une clé d’accès"
+          }
+        }
+      }
+    },
+    "Sign-in could not be completed. Try again.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sign-in could not be completed. Try again."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La connexion n’a pas abouti. Réessayez."
+          }
+        }
+      }
+    },
+    "Connected. Your models are being refreshed.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connected. Your models are being refreshed."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connecté. Vos modèles se mettent à jour."
+          }
+        }
+      }
+    },
+    "The sign-in page could not be opened.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The sign-in page could not be opened."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La page de connexion n’a pas pu être ouverte."
+          }
+        }
+      }
+    },
+    "Sign-in was cancelled.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sign-in was cancelled."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La connexion a été annulée."
+          }
+        }
+      }
+    },
+    "This sign-in expired. Start again.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This sign-in expired. Start again."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cette connexion a expiré. Commencez de nouveau."
+          }
+        }
       }
     }
   },
