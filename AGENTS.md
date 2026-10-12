@@ -898,12 +898,22 @@ built-in driver is missing from the lock or a pin's `bin` differs from the
 driver's default `cli`.
 
 - Dockerfile: `scripts/install-engines.mjs` installs the selection named by
-  `ENGINE_SET` (`none` default, the public image; `all`, what Perspicax's
-  `infra/scripts/build-push.sh` passes; `open`, only redistributable
-  licences; or ids), runs each `<cli> --version` (the build fails if one does
-  not start) and writes `/app/engines/manifest.json`. The legacy `ENGINES`
-  (npm specs) and `NATIVE_ENGINES` (native ids) build arguments still
-  override the lock's npm and native sets; `none` drops a kind.
+  `ENGINE_SET` (`all` default, since the 2026-10-12 GOX image
+  `pulsa-bot-server:main-20004735` shipped `engineSet none` when the arg was
+  omitted; `none` and `open` are explicit opt-outs; or ids). The build also
+  defaults `SAGAX_REQUIRE_ENGINES=1`, which fails the image when the set is
+  not the full lock. `scripts/build-production-image.sh` and
+  `.github/workflows/docker.yml` pass `ENGINE_SET=all`. OCI labels record
+  the commit (`org.opencontainers.image.revision`), the build time
+  (`org.opencontainers.image.created`) and `io.sagax.engine-set`. The legacy
+  `ENGINES` (npm specs) and `NATIVE_ENGINES` (native ids) build arguments
+  still override the lock's npm and native sets; `none` drops a kind. A
+  non-empty override that drops an engine fails the require flag. GOX deploys
+  through `deploy/gox/deploy-pulsabot.sh`: it refuses the same short set,
+  smoke-tests `/healthz` and the engine startup log, and on failure rolls
+  back to `/opt/pulsatrix/pulsabot-image.prev` then runs
+  `docker compose up -d --force-recreate --no-deps pulsabot-caddy`. Prune
+  keeps the running image and that previous image.
 - Installed by `ENGINE_SET=all`: Claude Code, Codex, pi, Gemini CLI, Kimi
   Code, Qwen Code, OpenCode, Droid (npm, global), Grok Build and Cursor Agent
   (native, `/opt/sagax-engines/<id>/<version>`, linked in `/usr/local/bin`),
@@ -917,7 +927,9 @@ driver's default `cli`.
   each preinstalled CLI runs `--version` once at boot, the result is logged
   (`[engines] claude: ...`) and is the instance's installed state from then
   on (`selfCheckedEngine` in `server/index.ts`): `engineInstalled` and
-  `/api/health` no longer probe those engines per request. An instance with
+  `/api/health` no longer probe those engines per request. A manifest whose
+  set is not `all`, or an engine that did not start, also logs
+  `[engines] engine_missing ...`. An instance with
   its own `config.cli` is probed as before. An engine of `notPreinstalled`
   that is absent answers `notAvailable` (the reason) on `/api/me/engines` and
   `/api/health`; the UI then reads "Not available on this server"

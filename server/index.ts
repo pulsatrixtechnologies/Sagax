@@ -5,6 +5,7 @@
 // the rename, electron/legacy-names.mjs).
 import "../electron/legacy-env-boot.mjs";
 import { ENVIRONMENT_PATHS, HEALTH_IDENTITY } from "../electron/legacy-names.mjs";
+import { healthzBody } from "./healthz.ts";
 // Then the upstream/analytics network block (network-guard.ts).
 import "./network-guard.ts";
 // The console's server log tail captures from here on (server-log-ring.ts).
@@ -26746,6 +26747,11 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         const secure = HOSTED_WORKSPACE || requestOrigin(req)?.startsWith("https://") === true;
         res.setHeader("set-cookie", serializeSessionCookie(SESSION_COOKIE, presented, { secure, maxAgeSeconds: cookieMaxAgeSeconds(gate.auth.session) }));
       }
+    }
+    // Deploy and docker-exec probes. Loopback is authenticated, so this
+    // answers before the stranger check below and does not require !gate.auth.
+    if (method === "GET" && path === "/healthz") {
+      return json(res, 200, healthzBody());
     }
     // Reachability probe, public: the phone races it across a server's
     // addresses before it has a session, and the tunnel verifier polls it.

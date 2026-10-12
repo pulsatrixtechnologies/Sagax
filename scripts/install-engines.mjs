@@ -8,10 +8,12 @@
 //   node scripts/install-engines.mjs --lock engines.lock.json --plan      (prints the selection, installs nothing)
 //
 // Selection, from the build arguments (the environment of the RUN step):
-//   ENGINE_SET      none (default: the public image carries no engine),
-//                   all (every engine of the lock: an organization server),
-//                   open (only the redistributable ones), or engine ids
-//                   ("claude codex grok").
+//   ENGINE_SET      all (the image default: every engine of the lock),
+//                   none or "" (install nothing; a production build with
+//                   SAGAX_REQUIRE_ENGINES=1 refuses this), open (only the
+//                   redistributable ones), or engine ids ("claude codex grok").
+//   SAGAX_REQUIRE_ENGINES  1, true or yes: fail the build unless the
+//                   selection is the full lock. The image defaults this on.
 //   ENGINES         legacy override: npm specs installed instead of the
 //                   lock's npm engines ("none" drops them). Perspicax's
 //                   PULSABOT_ENGINES lands here.
@@ -31,6 +33,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { gunzipSync } from "node:zlib";
+import { assessProductionManifest, enginesRequired } from "./engine-image-gate.mjs";
 
 const ENGINES_ROOT = "/opt/sagax-engines";
 const BIN_DIR = "/usr/local/bin";
@@ -229,13 +232,18 @@ export function versionOf(bin, env = process.env) {
   }
 }
 
-/** REQUIRE_ENGINES=1 (an organization server image, e.g. GOX): an empty
- * selection is a build error, not a silent engine-less image. main-20004735
- * shipped `engineSet: none` because ENGINE_SET=all was left off the build. */
-export function assertEnginesRequired({ required, engineSet, count }) {
-  if (!required || ["", "0", "false", "no"].includes(String(required).trim().toLowerCase())) return;
-  if (count > 0) return;
-  throw new Error(`REQUIRE_ENGINES is set but ENGINE_SET=${JSON.stringify(engineSet || "none")} selects no engine; pass --build-arg ENGINE_SET=all`);
+/** Why a production build must stop, or null when the selection may ship.
+ * `requireEngines` false keeps the historical selector: "" and "none" install nothing. */
+export function productionRefusal(lock, { engineSet = "", engines = "", nativeEngines = "", arch = "", requireEngines = false } = {}) {
+  if (!requireEngines) return null;
+  const { install } = selectEngines(lock, { engineSet, engines, nativeEngines, arch });
+  const manifest = {
+    engineSet: String(engineSet).trim() || "none",
+    installed: install.filter((engine) => engine.bin).map((engine) => ({ id: engine.id, bin: engine.bin })),
+  };
+  const verdict = assessProductionManifest(manifest, lock);
+  if (verdict.ok) return null;
+  return `production image refused: engine_missing ${verdict.errors.join("; ")}`;
 }
 
 function parseArgs(argv) {
@@ -257,13 +265,17 @@ async function main() {
   const lock = JSON.parse(readFileSync(options.lock, "utf8"));
   const engineSet = process.env.ENGINE_SET ?? "";
   const arch = process.env.TARGETARCH || (process.arch === "arm64" ? "arm64" : process.arch === "x64" ? "amd64" : process.arch);
-  const { install, unavailable } = selectEngines(lock, {
+  const engines = process.env.ENGINES ?? "";
+  const nativeEngines = process.env.NATIVE_ENGINES ?? "";
+  const refusal = productionRefusal(lock, {
     engineSet,
-    engines: process.env.ENGINES ?? "",
-    nativeEngines: process.env.NATIVE_ENGINES ?? "",
+    engines,
+    nativeEngines,
     arch,
+    requireEngines: enginesRequired(process.env.SAGAX_REQUIRE_ENGINES),
   });
-  assertEnginesRequired({ required: process.env.REQUIRE_ENGINES, engineSet, count: install.filter((engine) => engine.bin).length });
+  if (refusal) throw new Error(refusal);
+  const { install, unavailable } = selectEngines(lock, { engineSet, engines, nativeEngines, arch });
   if (options.plan) {
     console.log(JSON.stringify({ engineSet: engineSet || "none", arch, install: install.map(({ id, kind, version }) => ({ id, kind, version })), unavailable }, null, 2));
     return;
@@ -283,7 +295,6 @@ async function main() {
     console.log(`[engines] ${engine.id} ${engine.version}: ${reported}`);
     installed.push({ id: engine.id, name: engine.name, drivers: engine.drivers ?? [], kind: engine.kind, version: engine.version, bin: engine.bin, reported });
   }
-  assertEnginesRequired({ required: process.env.REQUIRE_ENGINES, engineSet, count: installed.length });
   mkdirSync(dirname(options.manifest), { recursive: true });
   writeFileSync(options.manifest, `${JSON.stringify({ lockVersion: lock.lockVersion, engineSet: engineSet || "none", arch, installed, notPreinstalled: unavailable }, null, 2)}\n`);
   console.log(`[engines] ${installed.length} engine(s) installed; manifest ${options.manifest}`);

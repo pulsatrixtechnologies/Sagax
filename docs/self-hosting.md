@@ -234,10 +234,11 @@ What the stack does, so you can adapt it:
 
 - [`Dockerfile`](../Dockerfile) builds the UI and the self-contained
   server bundle, and runs them as an unprivileged user with `HOME=/data`.
-  `--build-arg ENGINES="…"` (or `ENGINES=` in `.env`) bakes engine CLIs
-  into the image. `--build-arg ENGINE_SET=all` bakes every engine pinned in
-  [`engines.lock.json`](../engines.lock.json) instead (`open` keeps only the
-  open-source ones); see [Engines baked into a server image](custom-engines.md#engines-baked-into-a-server-image).
+  A build with no engine arguments bakes every engine pinned in
+  [`engines.lock.json`](../engines.lock.json) (`ENGINE_SET=all`). Leave
+  `ENGINES` empty in `.env`: a non-empty value replaces the lock's npm
+  engines. `ENGINE_SET=none` together with `SAGAX_REQUIRE_ENGINES=0` is the
+  image with no engine CLI; see [Engines baked into a server image](custom-engines.md#engines-baked-into-a-server-image).
 - [`deploy/docker-compose.yml`](../deploy/docker-compose.yml) runs Caddy
   **in the server's network namespace**, so Caddy reaches the server on
   `127.0.0.1` and the server never binds anything public.

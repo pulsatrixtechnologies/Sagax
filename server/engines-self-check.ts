@@ -14,6 +14,7 @@
 import { readFileSync } from "node:fs";
 import { stripVTControlCharacters } from "node:util";
 
+import { engineMissingLogLine } from "../shared/production-engines.ts";
 import { findCliCandidates } from "./env-path.ts";
 import { execCli } from "./procs.ts";
 
@@ -169,6 +170,8 @@ export async function runEngineSelfCheck(
   for (const entry of manifest.notPreinstalled) {
     if (entry.drivers.length) log(`[engines] ${entry.id}: not preinstalled, ${entry.reason}`);
   }
+  const missing = engineMissingLogLine(manifest, checks);
+  if (missing) log(missing);
   const ok = checks.filter((check) => check.ok).length;
   log(`[engines] self-check: ${ok}/${checks.length} preinstalled engine(s) start (image set ${manifest.engineSet ?? "unknown"})`);
   return new EngineSelfCheck(manifest, checks);
