@@ -77,9 +77,20 @@ export interface FakeXaiOptions {
   newConnectionMs?: number;
 }
 
+/** One provider mark correlated to a scripted utterance. `atMs` is milliseconds
+ * since this fake started. Control routes are not timings. */
+export interface FakeXaiTiming {
+  path: "/v1/stt" | "/v1/tts";
+  atMs: number;
+  utteranceId?: string;
+}
+
 export interface FakeXaiVoice {
   url: string;
   requests: FakeXaiRequest[];
+  /** STT finals and TTS first bytes, in order, tagged with the utterance id
+   * bound by POST /__utterance. */
+  timings: FakeXaiTiming[];
   speech: FakeSpeechControls;
   close(): Promise<void>;
 }
@@ -146,8 +157,25 @@ export function applySpeechControls(speech: FakeSpeechControls, input: unknown):
 
 export async function startFakeXaiVoice(options: FakeXaiOptions = {}): Promise<FakeXaiVoice> {
   const requests: FakeXaiRequest[] = [];
+  const timings: FakeXaiTiming[] = [];
+  const startedAt = Date.now();
   const speech: FakeSpeechControls = { refuse: false, openDelayMs: 0, dropAfter: 0, errorNext: false };
   const transcripts = [...(options.transcripts ?? [])];
+  let currentTranscript: string | undefined;
+  let boundUtteranceId: string | undefined;
+  const takeText = () => {
+    if (transcripts.length) return transcripts.shift()!;
+    if (currentTranscript !== undefined) return currentTranscript;
+    return options.transcript ?? "Hello from voice mode";
+  };
+  const takeUtterance = () => {
+    const id = boundUtteranceId;
+    boundUtteranceId = undefined;
+    return id;
+  };
+  const stamp = (path: "/v1/stt" | "/v1/tts", utteranceId?: string) => {
+    timings.push({ path, atMs: Date.now() - startedAt, ...(utteranceId ? { utteranceId } : {}) });
+  };
   const server: Server = createServer((req, res) => {
     const chunks: Buffer[] = [];
     req.on("data", (chunk: Buffer) => chunks.push(chunk));
@@ -164,6 +192,35 @@ export async function startFakeXaiVoice(options: FakeXaiOptions = {}): Promise<F
       if (req.method === "GET" && path === "/__requests") {
         res.writeHead(200, { "content-type": "application/json" });
         res.end(JSON.stringify(requests));
+        return;
+      }
+      if (req.method === "POST" && path === "/__transcript") {
+        try {
+          const bodyJson = JSON.parse(body.toString("utf8")) as { text?: unknown };
+          currentTranscript = typeof bodyJson.text === "string" ? bodyJson.text : undefined;
+        } catch {
+          currentTranscript = undefined;
+        }
+        res.writeHead(204);
+        res.end();
+        return;
+      }
+      if (req.method === "POST" && path === "/__utterance") {
+        try {
+          const bodyJson = JSON.parse(body.toString("utf8")) as { utteranceId?: unknown };
+          boundUtteranceId = typeof bodyJson.utteranceId === "string" && bodyJson.utteranceId.trim()
+            ? bodyJson.utteranceId.trim()
+            : undefined;
+        } catch {
+          boundUtteranceId = undefined;
+        }
+        res.writeHead(204);
+        res.end();
+        return;
+      }
+      if (req.method === "GET" && path === "/__timings") {
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify(timings));
         return;
       }
       const record: FakeXaiRequest = { method: req.method ?? "", path, authorization: req.headers.authorization };
@@ -205,7 +262,7 @@ export async function startFakeXaiVoice(options: FakeXaiOptions = {}): Promise<F
         record.fields = parsed.fields;
         record.fileHead = parsed.fileHead;
         res.writeHead(200, { "content-type": "application/json" });
-        res.end(JSON.stringify({ text: options.transcript ?? "Hello from voice mode", language: parsed.fields.language ?? "en", duration: 1.2 }));
+        res.end(JSON.stringify({ text: takeText(), language: parsed.fields.language ?? "en", duration: 1.2 }));
         return;
       }
       res.writeHead(404, { "content-type": "application/json" });
@@ -259,8 +316,10 @@ export async function startFakeXaiVoice(options: FakeXaiOptions = {}): Promise<F
           record.finalizes = (record.finalizes ?? 0) + 1;
           utteranceBytes = 0;
           wordsSent = 0;
-          const text = transcripts.shift() ?? options.transcript ?? "Hello from voice mode";
+          const text = takeText();
+          const utteranceId = takeUtterance();
           setTimeout(() => {
+            stamp("/v1/stt", utteranceId);
             if (ws.readyState === ws.OPEN) ws.send(JSON.stringify({ type: "transcript.partial", text, is_final: true, speech_final: true, start: 0, duration: 1, ...(options.sttConfidence !== undefined ? { confidence: options.sttConfidence } : {}) }));
           }, options.sttFinalizeMs ?? 80);
         } else if (message.type === "audio.done") {
@@ -294,6 +353,8 @@ export async function startFakeXaiVoice(options: FakeXaiOptions = {}): Promise<F
         say({ type: "audio.clear" });
       } else if (message.type === "text.done") {
         record.utterances!.push(text);
+        const utteranceId = takeUtterance();
+        let stamped = false;
         text = "";
         if (speech.errorNext) {
           speech.errorNext = false;
@@ -314,6 +375,10 @@ export async function startFakeXaiVoice(options: FakeXaiOptions = {}): Promise<F
             timer = null;
             say({ type: "audio.done", trace_id: "fake" });
             return;
+          }
+          if (!stamped) {
+            stamped = true;
+            stamp("/v1/tts", utteranceId);
           }
           say({ type: "audio.delta", delta: audio.subarray(at, at + chunk).toString("base64") });
           at += chunk;
@@ -337,6 +402,7 @@ export async function startFakeXaiVoice(options: FakeXaiOptions = {}): Promise<F
   return {
     url: `http://127.0.0.1:${address.port}`,
     requests,
+    timings,
     speech,
     close: () => new Promise<void>((resolve) => {
       for (const client of sockets.clients) client.terminate();

@@ -8,6 +8,7 @@ import { fileURLToPath } from "node:url";
 import { expect, it } from "vitest";
 
 import { parseVoiceCallMeta } from "../server/voice-call-prompt.ts";
+import { VOICE_BENCH_THRESHOLDS } from "./voice-benchmark/model.ts";
 import {
   BENCH_SAY_VOICE_FR,
   REAL_QUESTIONS,
@@ -244,7 +245,7 @@ it.skipIf(process.env.SAGAX_VOICE_BENCH !== "1")("measures a call's latency stag
       server: serverLog.split("\n").filter((line) => /\[voice-latency\]|relaunch|error|Error|voice/.test(line)).map((line) => line.replace(/xai-[A-Za-z0-9_-]+/g, "xai-[redacted]")).slice(-40),
     };
     if (real && typeof warm.total?.p50 === "number") {
-      report.targetMs = 800;
+      report.targetMs = VOICE_BENCH_THRESHOLDS.p50Ms;
       report.warmP50 = warm.total.p50;
     }
     if (process.env.BENCH_OUT) writeFileSync(process.env.BENCH_OUT, JSON.stringify(report, null, 2));

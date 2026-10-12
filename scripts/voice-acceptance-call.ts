@@ -19,6 +19,7 @@ import { VAD_FRAME, type VoiceProbability } from "../src/lib/voice-mode/vad.ts";
 import { nextSpeakSlot, type SpeakItem } from "../src/lib/voice-mode/voice-speak-queue.ts";
 import { classifyVoiceIntent } from "../src/lib/voice-mode/voice-topics.ts";
 import { percentile } from "../src/lib/voice-mode/latency.ts";
+import { VOICE_BENCH_THRESHOLDS } from "./voice-benchmark/model.ts";
 import {
   BENCH_SAY_VOICE_FR,
   ClockPlayer,
@@ -122,7 +123,7 @@ export function scoreAcceptance(
     && killed(events, "A")
     && done(events, "B");
   const warm = opts.warmTotals ?? [];
-  const target = opts.targetMs ?? 800;
+  const target = opts.targetMs ?? VOICE_BENCH_THRESHOLDS.p50Ms;
   const p50 = percentile(warm, 50);
   const latPass = typeof p50 === "number" && p50 <= target;
   return [
@@ -498,7 +499,7 @@ export async function runVoiceAcceptanceCall(outDir?: string): Promise<{
       }
     }
 
-    const scores = scoreAcceptance(events, { warmTotals: warmTotals.slice(1), targetMs: 800 });
+    const scores = scoreAcceptance(events, { warmTotals: warmTotals.slice(1) });
     writeFileSync(join(dir, "events.json"), JSON.stringify({ events, warmTotals, scores }, null, 2));
     writeFileSync(join(dir, "transcripts.md"), events.filter((event) => event.kind === "send" || event.kind === "turn-completed").map((event) => `${event.t} ${event.kind} ${event.id ?? ""}`).join("\n"));
     writePcm16Wav(join(dir, "bot.wav"), Buffer.concat(chunks.map((part) => Buffer.from(part))));
@@ -512,5 +513,12 @@ export async function runVoiceAcceptanceCall(outDir?: string): Promise<{
   } finally {
     child.kill("SIGTERM");
   }
+}
+
+/** The 32-turn acceptance benchmark. Imported on call so scoring this file
+ * does not boot a server. */
+export async function runAcceptanceBenchmark(profile: "synthetic" | "real" = "synthetic") {
+  const { runVoiceBenchmark } = await import("./voice-benchmark/run.ts");
+  return runVoiceBenchmark({ profile });
 }
 

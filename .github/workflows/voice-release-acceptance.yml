@@ -1,0 +1,52 @@
+name: Voice release acceptance
+
+on:
+  workflow_call:
+    inputs:
+      ref:
+        description: Commit to check out
+        required: true
+        type: string
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Commit to check out (defaults to the workflow sha)
+        required: false
+        type: string
+  schedule:
+    - cron: "17 6 * * *"
+
+permissions:
+  contents: read
+
+jobs:
+  accept:
+    name: Real voice acceptance
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+          persist-credentials: false
+      - uses: pnpm/action-setup@ff378ebe6b225b0680b81c1ad4498ae0d1d3a5e3 # v6.0.10
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: pnpm
+      - name: Install espeak-ng
+        run: sudo apt-get update && sudo apt-get install -y espeak-ng ffmpeg
+      - run: pnpm install --frozen-lockfile
+      - name: Real voice acceptance
+        env:
+          SAGAX_XAI_VOICE_KEY: ${{ secrets.SAGAX_XAI_VOICE_KEY }}
+          XAI_API_KEY: ${{ secrets.SAGAX_XAI_VOICE_KEY }}
+        run: pnpm voice:acceptance:real -- --enforce --out "$RUNNER_TEMP/voice-acceptance"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: voice-acceptance
+          path: |
+            ${{ runner.temp }}/voice-acceptance/report.json
+            ${{ runner.temp }}/voice-acceptance/report.md
+          if-no-files-found: warn

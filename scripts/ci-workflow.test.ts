@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { parse } from "yaml";
 
 const workflow = parse(readFileSync(new URL("../.github/workflows/ci.yml", import.meta.url), "utf8"));
-const requiredRuntimeJobs = ["vitest", "behavior-evals", "packaged-server", "windows-cua", "electron-smokes"];
+const requiredRuntimeJobs = ["vitest", "behavior-evals", "packaged-server", "windows-cua", "electron-smokes", "voice-acceptance"];
 
 function runGate(needs: Record<string, unknown>) {
   // Execute the actual gate, not a duplicate of its success/failure logic.
@@ -87,6 +87,25 @@ describe("CI concurrency", () => {
   it("makes a release wait for its commit's CI gate before any draft", () => {
     const release = parse(readFileSync(new URL("../.github/workflows/release.yml", import.meta.url), "utf8"));
     expect(release.jobs.assemble.needs).toContain("ci");
+    expect(release.jobs.assemble.needs).toContain("voice-acceptance");
+    expect(release.jobs["voice-acceptance"].needs).toBe("prepare");
+    expect(release.jobs["voice-acceptance"].uses).toBe("./.github/workflows/voice-release-acceptance.yml");
+    expect(release.jobs["voice-acceptance"].with.ref).toBe("${{ needs.prepare.outputs.sha }}");
+    expect(release.jobs["voice-acceptance"].secrets).toBe("inherit");
+    expect(release.jobs["voice-acceptance"].if).toBe("needs.prepare.outputs.should_release == 'true'");
+    const voice = parse(readFileSync(new URL("../.github/workflows/voice-release-acceptance.yml", import.meta.url), "utf8"));
+    expect(voice.on).toHaveProperty("workflow_call");
+    expect(voice.on).toHaveProperty("workflow_dispatch");
+    expect(voice.on).toHaveProperty("schedule");
+    const accept = voice.jobs.accept;
+    expect(accept.steps.some((step: { run?: string }) => step.run === "pnpm voice:acceptance:real -- --enforce --out \"$RUNNER_TEMP/voice-acceptance\"")).toBe(true);
+    expect(accept.steps.some((step: { env?: Record<string, string> }) =>
+      step.env?.SAGAX_XAI_VOICE_KEY === "${{ secrets.SAGAX_XAI_VOICE_KEY }}"
+      && step.env?.XAI_API_KEY === "${{ secrets.SAGAX_XAI_VOICE_KEY }}",
+    )).toBe(true);
+    expect(accept.steps.some((step: { if?: string; uses?: string }) => step.if === "always()" && step.uses?.startsWith("actions/upload-artifact@"))).toBe(true);
+    expect(JSON.stringify(accept)).toContain("espeak-ng");
+    expect(JSON.stringify(voice)).not.toContain("ship_without_ci");
     expect(release.jobs.ci.needs).toBe("prepare");
     expect(release.jobs.ci.permissions).toEqual({ actions: "write", contents: "write" });
     const wait = release.jobs.ci.steps.find((step: { run?: string }) => step.run === "node scripts/release-ci.mjs");

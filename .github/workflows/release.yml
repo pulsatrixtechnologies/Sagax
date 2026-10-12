@@ -484,9 +484,18 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  voice-acceptance:
+    name: Real voice acceptance
+    needs: prepare
+    if: needs.prepare.outputs.should_release == 'true'
+    uses: ./.github/workflows/voice-release-acceptance.yml
+    with:
+      ref: ${{ needs.prepare.outputs.sha }}
+    secrets: inherit
+
   assemble:
     name: Assemble the draft and verify every feed
-    needs: [prepare, ci, mac, windows, linux]
+    needs: [prepare, ci, mac, windows, linux, voice-acceptance]
     if: needs.prepare.outputs.should_release == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 30

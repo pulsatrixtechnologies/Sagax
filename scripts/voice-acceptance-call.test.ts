@@ -1,5 +1,7 @@
 // Review 4: score a scripted real duplex call (issue #292). The scorer is
 // pure. The live run (SAGAX_VOICE_ACCEPTANCE=1) drives real STT/LLM/TTS.
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { expect, it } from "vitest";
 
 import { classifyVoiceIntent } from "../src/lib/voice-mode/voice-topics.ts";
@@ -123,6 +125,12 @@ it.skipIf(process.env.SAGAX_VOICE_ACCEPTANCE !== "1")("runs the real STT/LLM/TTS
   expect(result.dir).toMatch(/sagax-voice-acceptance/);
   expect(result.scores.map((row) => row.scenario)).toEqual(["a", "b", "c", "d", "e", "f", "latency"]);
 }, 600_000);
+
+it("delegates the 32-turn benchmark lazily so importing the scorer boots nothing", () => {
+  const src = readFileSync(fileURLToPath(new URL("./voice-acceptance-call.ts", import.meta.url)), "utf8");
+  expect(src).toContain('import("./voice-benchmark/run.ts")');
+  expect(src).toContain("export function scoreAcceptance");
+});
 
 it("latency reports warm p50 against 800 ms without inventing a pass", () => {
   const miss = scoreAcceptance([], { warmTotals: [900, 1100, 1300, 1500], targetMs: 800 });

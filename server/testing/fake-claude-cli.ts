@@ -802,6 +802,17 @@ async function playVoiceTurn(prompt: JsonValue): Promise<void> {
   out({ type: "system", subtype: "init", session_id: sessionId, model, permissionMode, tools });
   replay(prompt);
   await pause(Number(process.env.FAKE_CLAUDE_FIRST_TOKEN_MS) || 0);
+  const promptText = typeof prompt === "string" ? prompt : JSON.stringify(prompt);
+  // The phrase stays in later turns' context. Only the turn that asks, with
+  // the words at the end of the prompt, runs the tool.
+  const ticketAt = promptText.toLowerCase().lastIndexOf("ticket count");
+  const ticketTail = ticketAt >= 0 ? promptText.slice(ticketAt + "ticket count".length) : "";
+  const ticketTurn = ticketAt >= 0 && ticketTail.length <= 160 && !/[A-Za-zÀ-ÿ]{4,}/.test(ticketTail);
+  if (process.env.FAKE_CLAUDE_VOICE_TOOL === "1" && ticketTurn) {
+    const id = `tu-voice-${process.pid}-${++toolUseCount}`;
+    out({ type: "assistant", message: { content: [{ type: "tool_use", id, name: "Bash", input: { command: "echo 3" } }] } });
+    out({ type: "user", message: { content: [{ type: "tool_result", tool_use_id: id, is_error: false, content: [{ type: "text", text: "3" }] }] } });
+  }
   const reply = process.env.FAKE_CLAUDE_VOICE_REPLY || "Sure. It is sunny in Montreal today, with a high of twenty degrees and a light wind. Do you want the forecast for tomorrow too?";
   const tokenMs = Number(process.env.FAKE_CLAUDE_TOKEN_MS) || 0;
   const words = reply.match(/\S+\s*/g) ?? [reply];

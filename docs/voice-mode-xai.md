@@ -360,6 +360,12 @@ default, or `post`), `BENCH_FASTER_END` (1 or 0), `BENCH_UNPUNCTUATED=1`
 answer). Its microphone's voiced frames are a voice-like tone whose last
 400 ms fall and fade, so the pitch reading sees a statement end.
 
+Release acceptance is a separate 32-turn run with hard gates (p50 at most
+800 ms, every turn at most 2,500 ms, no spoken overlap). Pull-request CI
+enforces those gates on the synthetic profile only.
+`pnpm voice:acceptance:real -- --enforce` is the real-provider run, and a
+release waits on it. Recipe: [docs/verification/voice-acceptance.md](verification/voice-acceptance.md).
+
 ## Stable tools during a call
 
 On an organization server each turn used to exchange the speaker's sign-in
@@ -510,5 +516,10 @@ the server's own voice routes.
   `pnpm exec vite build && node --experimental-strip-types scripts/verify-voice-mode.ts`.
   It drives the call through `window.__sagaxVoiceCall`, which exists only
   when `localStorage["omb.voiceCall.debug"]` is `"1"`.
+
+- Voice acceptance (`pnpm voice:acceptance`, and
+  `pnpm voice:acceptance:real -- --enforce` before a release): the 32-turn
+  ledger, the latency gates, and the provider-path audit. Recipe:
+  [docs/verification/voice-acceptance.md](verification/voice-acceptance.md).
 
 A change to the server routes needs the server image redeployed.

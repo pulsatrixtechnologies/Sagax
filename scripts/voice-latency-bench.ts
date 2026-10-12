@@ -96,7 +96,7 @@ export function loadVoiceBenchKey(): string | undefined {
   return undefined;
 }
 
-function readWavPcm16(path: string): Float32Array {
+export function readWavPcm16(path: string): Float32Array {
   const buf = readFileSync(path);
   let i = 12;
   while (i + 8 <= buf.length) {

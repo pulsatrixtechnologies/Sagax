@@ -96,6 +96,10 @@ export interface VoiceBenchRun {
 export interface VoiceBenchProviderAudit {
   paths: readonly string[];
   pass: boolean;
+  /** Paths outside the speech-to-text and text-to-speech allowlist.
+   * Omitted when the caller did not compute one, so an absent audit stays
+   * `{ paths: [], pass: false }`. */
+  unexpectedPaths?: readonly string[];
 }
 
 export interface VoiceBenchScenarioGate {
