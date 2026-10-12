@@ -5,6 +5,7 @@ import {
   BACKGROUND_WORKER_PROMPT,
   acceptAck,
   ackClaimsResult,
+  backgroundRepliesActive,
   backgroundRepliesEnabled,
   classifyRequest,
   frenchAnglicisms,
@@ -23,6 +24,28 @@ describe("background replies", () => {
     expect(backgroundRepliesEnabled({})).toBe(true);
     expect(backgroundRepliesEnabled({ backgroundReplies: true })).toBe(true);
     expect(backgroundRepliesEnabled({ backgroundReplies: false })).toBe(false);
+  });
+
+  it("stays one turn in the vitest fixture unless the bot turns it on", () => {
+    const namespace = process.env.SAGAX_LOCAL_VM_TEST_NAMESPACE;
+    const flag = process.env.SAGAX_BACKGROUND_REPLIES;
+    try {
+      delete process.env.SAGAX_LOCAL_VM_TEST_NAMESPACE;
+      delete process.env.SAGAX_BACKGROUND_REPLIES;
+      expect(backgroundRepliesActive({})).toBe(true);
+      process.env.SAGAX_LOCAL_VM_TEST_NAMESPACE = "suite";
+      expect(backgroundRepliesActive({})).toBe(false);
+      expect(backgroundRepliesActive({ backgroundReplies: true })).toBe(true);
+      delete process.env.SAGAX_LOCAL_VM_TEST_NAMESPACE;
+      process.env.SAGAX_BACKGROUND_REPLIES = "off";
+      expect(backgroundRepliesActive({})).toBe(false);
+      expect(backgroundRepliesActive({ backgroundReplies: true })).toBe(true);
+    } finally {
+      if (namespace === undefined) delete process.env.SAGAX_LOCAL_VM_TEST_NAMESPACE;
+      else process.env.SAGAX_LOCAL_VM_TEST_NAMESPACE = namespace;
+      if (flag === undefined) delete process.env.SAGAX_BACKGROUND_REPLIES;
+      else process.env.SAGAX_BACKGROUND_REPLIES = flag;
+    }
   });
 
   it("treats a greeting or a short question as quick, and a lookup as work", () => {

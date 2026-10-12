@@ -18,6 +18,8 @@
       "kind": "npm",
       "package": "@anthropic-ai/claude-code",
       "version": "2.1.288",
+      "integrity": "sha512-tnc8XuK5xQkyE6oowhhSPIjLuNc0S3MkjIHqycDsKP6yJlLtIjMt6v1TOkYLUiumcZ9jOgJZ6h9Vn3/f0murdQ==",
+      "installScripts": true,
       "bin": "claude",
       "license": "Anthropic Commercial Terms",
       "redistributable": false
@@ -29,6 +31,7 @@
       "kind": "npm",
       "package": "@openai/codex",
       "version": "0.160.0",
+      "integrity": "sha512-kEtVGzjRAYAMOwJxN39bGcna7LT3IDQgq64NNJ/dDTfu4OzZaocJcyNb5/gGJ/IVF/Vj7oK7E2m3nmTan7lpjg==",
       "bin": "codex",
       "license": "Apache-2.0",
       "redistributable": true
@@ -40,6 +43,7 @@
       "kind": "npm",
       "package": "@earendil-works/pi-coding-agent",
       "version": "1.0.1",
+      "integrity": "sha512-B7FGYpHpBPvS+Ux16CbCuVnE9S4v6c2h6ykocPNarC4msD/4JM/eFrCrO2wbRkedJZ25myFozSWHvCOx4QnN+w==",
       "bin": "pi",
       "license": "MIT",
       "redistributable": true
@@ -51,6 +55,7 @@
       "kind": "npm",
       "package": "@google/gemini-cli",
       "version": "0.62.0",
+      "integrity": "sha512-A1rw0Tf2sHLpGncfYdaq5WaJIufKAP8il4BmHD5Yw4ewmB/Wo0vRQb2bEvx7OqyaPFPZCh0hVhcMKsICZyIBww==",
       "bin": "gemini",
       "license": "Apache-2.0",
       "redistributable": true
@@ -62,6 +67,8 @@
       "kind": "npm",
       "package": "@moonshot-ai/kimi-code",
       "version": "2.1.1",
+      "integrity": "sha512-xClqcnTQUKgKDbeOGPU78qcwxGzL8wA2rqWuOX3CLpyQ1/NhSX7jAh6hZo/JFwThSX8obkgef3uw/li5JaJNyw==",
+      "installScripts": true,
       "bin": "kimi",
       "license": "MIT",
       "redistributable": true
@@ -73,6 +80,7 @@
       "kind": "npm",
       "package": "@qwen-code/qwen-code",
       "version": "0.24.7",
+      "integrity": "sha512-NE+Ps9juMJS7DaHEVENIAJWCrzTiO/2bNq2TidmxmFc0ZbSMVKCfX3tlu2RY+CoP8xHFfUcy3MfQDQNszBJpJQ==",
       "bin": "qwen",
       "license": "Apache-2.0",
       "redistributable": true
@@ -84,6 +92,8 @@
       "kind": "npm",
       "package": "opencode-ai",
       "version": "1.18.34",
+      "integrity": "sha512-9WUS2T0t4HHDVzXvuwTHF0nvhXvZ9mQ0r+ozCvKdJu0LVoQpOzqAW4qWTC3ygNc5Oedcc7j+Oct24JYlQYnySA==",
+      "installScripts": true,
       "bin": "opencode",
       "license": "MIT",
       "redistributable": true
@@ -95,6 +105,8 @@
       "kind": "npm",
       "package": "@factory/cli",
       "version": "0.230.0",
+      "integrity": "sha512-UF92icf5lP7EdNxOMHkjpJ+ehQ2fHBYQxBS9BCCOIIy6dtA7MiAEotrnigRVJPpOeGKxEGtbY8wdMBf58j19Xg==",
+      "installScripts": true,
       "bin": "droid",
       "license": "Factory proprietary (UNLICENSED)",
       "redistributable": false

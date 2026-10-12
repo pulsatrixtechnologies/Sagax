@@ -94,11 +94,19 @@ describe("bot act", () => {
     expect(box.cards[0]?.answered).toBeUndefined();
   });
 
-  it("runs a write immediately when the bot is in auto, and refuses unproven turns", async () => {
+  it("holds a write in auto, runs an ordinary write in full, and refuses unproven turns", async () => {
     const { service, performed } = harness({ mode: "auto" });
-    const ran = await service.handle({ facts: facts(), raw: { method: "POST", path: "/api/bots", body: { name: "Bea" } }, threadId: "t", botId: "b", botName: "Ada", botColor: "green", mode: "auto" });
+    const held = await service.handle({ facts: facts(), raw: { method: "POST", path: "/api/bots", body: { name: "Bea" } }, threadId: "t", botId: "b", botName: "Ada", botColor: "green", mode: "auto" });
+    expect(held.status).toBe(200);
+    expect(held.body.held).toBe(true);
+    expect(performed).toHaveLength(0);
+    const full = harness({ mode: "full" });
+    const ran = await full.service.handle({ facts: facts(), raw: { method: "POST", path: "/api/bots", body: { name: "Bea" } }, threadId: "t", botId: "b", botName: "Ada", botColor: "green", mode: "full" });
     expect(ran.status).toBe(200);
-    expect(performed).toHaveLength(1);
+    expect(full.performed).toHaveLength(1);
+    const escalated = await full.service.handle({ facts: facts(), raw: { ui: "decideRequest", input: { threadId: "t2", requestId: "r1", behavior: "allow" } }, threadId: "t", botId: "b", botName: "Ada", botColor: "green", mode: "full" });
+    expect(escalated.status).toBe(403);
+    expect(full.performed).toHaveLength(1);
     for (const reason of [
       { automation: true },
       { guest: true },
@@ -108,7 +116,7 @@ describe("bot act", () => {
       const refused = await service.handle({ facts: facts(reason), raw: { method: "GET", path: "/api/bots" }, threadId: "t", botId: "b", botName: "Ada", botColor: "green", mode: "full" });
       expect(refused.status, JSON.stringify(reason)).toBe(403);
     }
-    expect(performed).toHaveLength(1);
+    expect(performed).toHaveLength(0);
     const missing = harness({ session: null });
     const gone = await missing.service.handle({ facts: facts(), raw: { method: "GET", path: "/api/bots" }, threadId: "t", botId: "b", botName: "Ada", botColor: "green", mode: "full" });
     expect(gone).toMatchObject({ status: 403 });

@@ -1728,8 +1728,9 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
         allowed.push("mcp__phone");
       }
       if (turn.integrations?.browser) {
+        // Mounted, not pre-allowed: file: and loopback navigations stay on
+        // the approval path, and the browser route refuses them outright.
         mcpServers.browser = { ...turn.integrations.browser };
-        allowed.push("mcp__browser");
       }
       // dweb network daemon (status / repo / opencode model access) via
       // server/drivers/dweb-proxy.ts — points at the configured dweb instance

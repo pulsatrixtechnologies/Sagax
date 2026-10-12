@@ -32,6 +32,8 @@ import { join } from "node:path";
 import { z } from "zod";
 
 import { writeFileAtomic } from "./atomic.ts";
+import { guardedFetch } from "./public-fetch.ts";
+import { personalMcpHostRefusal } from "./person-connections.ts";
 import {
   BotPluginError,
   insideRoot,
@@ -356,7 +358,7 @@ export interface PluginMarketplacesOptions {
 }
 
 async function defaultFetchText(url: string): Promise<string> {
-  const response = await fetch(url, { redirect: "follow", signal: AbortSignal.timeout(15_000) });
+  const response = await guardedFetch(url, { signal: AbortSignal.timeout(15_000) });
   if (!response.ok) throw new BotPluginError(`The manifest address answered ${response.status}.`, "repository_unreadable", 422);
   const text = await response.text();
   if (text.length > MAX_MANIFEST_BYTES) throw new BotPluginError("The manifest is too large.", "too_large", 422);
@@ -428,6 +430,10 @@ export class PluginMarketplaces {
   }
 
   private async clone(source: GitSource, into: string, actor: string | undefined, env?: Record<string, string>): Promise<void> {
+    if (/^https?:/i.test(source.url)) {
+      const refusal = await personalMcpHostRefusal(source.url);
+      if (refusal) throw new BotPluginError(refusal, "repository_unreadable", 422);
+    }
     const staging = `${into}.tmp-${process.pid}-${this.now()}`;
     rmSync(staging, { recursive: true, force: true });
     mkdirSync(join(staging, ".."), { recursive: true });

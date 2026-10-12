@@ -23,6 +23,7 @@ import { z } from "zod";
 
 import { writeFileAtomic } from "./atomic.ts";
 import type { McpServerSpec, RemoteMcpSpec } from "./contracts.ts";
+import { guardedFetch } from "./public-fetch.ts";
 
 export type McpAuthState = "none" | "required" | "connected" | "expired" | "error";
 /** How the app gets a client id at this authorization server. */
@@ -1064,8 +1065,8 @@ export async function probeServer(
   let response: Response;
   try {
     response = server.type === "sse"
-      ? await fetcher(server.url, { method: "GET", headers: { ...headers, accept: "text/event-stream" }, signal, redirect: "follow" })
-      : await fetcher(server.url, {
+      ? await guardedFetch(server.url, { method: "GET", headers: { ...headers, accept: "text/event-stream" }, signal }, fetcher)
+      : await guardedFetch(server.url, {
         method: "POST",
         headers: { ...headers, "content-type": "application/json", accept: "application/json, text/event-stream", "MCP-Protocol-Version": PROTOCOL_VERSION },
         body: JSON.stringify({
@@ -1075,8 +1076,7 @@ export async function probeServer(
           params: { protocolVersion: PROTOCOL_VERSION, capabilities: {}, clientInfo: { name: "Sagax", version: "1" } },
         }),
         signal,
-        redirect: "follow",
-      });
+      }, fetcher);
   } catch {
     return { kind: "unreachable", error: "Could not reach this address. Check the URL and your network." };
   }

@@ -14,6 +14,7 @@ import {
   routineVisible,
   sameAudience,
   SEES_EVERYTHING,
+  SEES_NOTHING,
   storedVisibility,
   viewerSees,
   VisibleSet,
@@ -124,6 +125,11 @@ describe("VisibleSet", () => {
     const admin = new VisibleSet(bots, groups, SEES_EVERYTHING);
     expect(admin.everything).toBe(true);
     expect(admin.thread("t-hr")).toBe(true);
+    const closed = new VisibleSet(bots.map(({ visibility: _v, ...bot }) => bot), groups, SEES_NOTHING);
+    expect(closed.everything).toBe(false);
+    expect(closed.bot("pub")).toBe(false);
+    expect(closed.thread("t-pub")).toBe(false);
+    expect(viewerSees(SEES_NOTHING, "everyone")).toBe(false);
   });
 
   it("answers bots, rooms, threads and sections for a member", () => {

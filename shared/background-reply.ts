@@ -12,6 +12,17 @@ export function backgroundRepliesEnabled(bot: { backgroundReplies?: boolean } | 
   return Boolean(bot) && bot!.backgroundReplies !== false;
 }
 
+/** What a running server should do. Production follows `backgroundRepliesEnabled`
+ * (absent means on). A vitest server is marked with `SAGAX_LOCAL_VM_TEST_NAMESPACE`
+ * or `SAGAX_BACKGROUND_REPLIES=off` and stays on one turn unless this bot
+ * turned the feature on. The feature's own end-to-end test boots without
+ * either mark, so it still sees the product default. */
+export function backgroundRepliesActive(bot: { backgroundReplies?: boolean } | undefined): boolean {
+  const suite = Boolean(process.env.SAGAX_LOCAL_VM_TEST_NAMESPACE) || process.env.SAGAX_BACKGROUND_REPLIES === "off";
+  if (suite && bot?.backgroundReplies !== true) return false;
+  return backgroundRepliesEnabled(bot);
+}
+
 export type RequestPace = "quick" | "work";
 
 /** A greeting, thanks, or a yes/no that is the whole message. */

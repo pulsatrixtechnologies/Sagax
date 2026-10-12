@@ -219,6 +219,10 @@ extension Connection {
     /// another address of the same LAN/Bonjour kind is not interchangeable.
     public func allowsEndpoint(_ endpoint: CompanionEndpoint) -> Bool {
         guard allowsRouteKind(endpoint.kind) else { return false }
+        if endpoint.kind == .tailnet {
+            guard let allowedTailnetHost else { return false }
+            return endpoint.host.caseInsensitiveCompare(allowedTailnetHost) == .orderedSame
+        }
         guard endpoint.securityClass == .explicitLocal,
               allowedRouteKinds != nil
         else { return true }
@@ -244,17 +248,21 @@ extension Connection {
         case let endpoint? where endpoint.kind == .hosted:
             allowedRouteKinds = [.hosted]
             allowedLocalRouteURLs = []
+            allowedTailnetHost = nil
         case let endpoint? where endpoint.kind == .tailnet:
             allowedRouteKinds = [.tailnet, .hosted]
             allowedLocalRouteURLs = []
+            allowedTailnetHost = endpoint.host
         case let endpoint?:
             allowedRouteKinds = [endpoint.kind, .hosted]
             allowedLocalRouteURLs = [endpoint.url]
+            allowedTailnetHost = nil
         case nil:
             // A valid Connection always has a direct representation, but
             // fail closed to hosted if a corrupted value reaches this helper.
             allowedRouteKinds = [.hosted]
             allowedLocalRouteURLs = []
+            allowedTailnetHost = nil
         }
         if let endpoints {
             self.endpoints = Array(endpointsAllowedByRoutePolicy(endpoints).prefix(8))
@@ -289,6 +297,7 @@ extension Connection {
         let previousEndpoints = orderedEndpoints
         allowedRouteKinds = [endpoint.kind, .hosted]
         allowedLocalRouteURLs = endpoint.securityClass == .explicitLocal ? [endpoint.url] : []
+        allowedTailnetHost = endpoint.kind == .tailnet ? endpoint.host : nil
         activeEndpoint = endpoint
         host = endpoint.host
         port = endpoint.port
