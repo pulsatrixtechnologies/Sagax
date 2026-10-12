@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
-import { parseNpmSpec, selectEngines } from "./install-engines.mjs";
+import { assertEnginesRequired, parseNpmSpec, selectEngines } from "./install-engines.mjs";
 
 const lock = JSON.parse(readFileSync(join(import.meta.dirname, "..", "engines.lock.json"), "utf8"));
 const ids = (selection) => selection.install.map((engine) => engine.id);
@@ -72,5 +72,22 @@ describe("parseNpmSpec", () => {
     expect(parseNpmSpec("@openai/codex@0.160.0")).toEqual({ name: "@openai/codex", version: "0.160.0" });
     expect(parseNpmSpec("@openai/codex")).toEqual({ name: "@openai/codex", version: "" });
     expect(parseNpmSpec("opencode-ai@1.18.34")).toEqual({ name: "opencode-ai", version: "1.18.34" });
+  });
+});
+
+describe("REQUIRE_ENGINES (organization images)", () => {
+  it("fails an engine-less selection when required", () => {
+    expect(() => assertEnginesRequired({ required: "1", engineSet: "none", count: 0 })).toThrow(/selects no engine/);
+    expect(() => assertEnginesRequired({ required: "1", engineSet: "", count: 0 })).toThrow(/ENGINE_SET=all/);
+  });
+  it("passes the public image (not required) and a populated selection", () => {
+    expect(() => assertEnginesRequired({ required: "", engineSet: "none", count: 0 })).not.toThrow();
+    expect(() => assertEnginesRequired({ required: "1", engineSet: "all", count: 3 })).not.toThrow();
+  });
+  it("ENGINE_SET=all selects claude and grok on arm64 and amd64", () => {
+    for (const arch of ["arm64", "amd64"]) {
+      const ids = selectEngines(lock, { engineSet: "all", arch }).install.map((engine) => engine.id);
+      expect(ids).toEqual(expect.arrayContaining(["claude", "grok"]));
+    }
   });
 });

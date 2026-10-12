@@ -37,6 +37,14 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Build image
         run: docker build -t openmausbot:ci .
+      - name: Organization engine set is never empty (GOX main-20004735 shipped engineSet none)
+        run: |
+          set -euo pipefail
+          # The org build (ENGINE_SET=all REQUIRE_ENGINES=1) must select engines...
+          ENGINE_SET=all REQUIRE_ENGINES=1 TARGETARCH=arm64 node scripts/install-engines.mjs --lock engines.lock.json --plan | node -e 'const p=JSON.parse(require("fs").readFileSync(0,"utf8"));const ids=p.install.map(e=>e.id);for(const id of ["claude","grok"]) if(!ids.includes(id)){console.error("missing "+id);process.exit(1)};console.log(ids.join(","))'
+          # ...and an org build that forgets ENGINE_SET must fail, not ship an engine-less image.
+          if ENGINE_SET=none REQUIRE_ENGINES=1 node scripts/install-engines.mjs --lock engines.lock.json --plan; then echo "REQUIRE_ENGINES did not fail an empty set"; exit 1; fi
+          docker run --rm --entrypoint cat openmausbot:ci /app/engines/manifest.json
       - name: Boot the container and prove the server + UI answer
         run: |
           set -euo pipefail

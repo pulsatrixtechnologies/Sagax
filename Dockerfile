@@ -70,6 +70,9 @@ WORKDIR /app
 # Proprietary CLIs (Claude Code, Droid, Cursor) are installed only by an
 # image built for your own servers; docs/custom-engines.md lists each licence.
 ARG ENGINE_SET=none
+#   REQUIRE_ENGINES 1 fails the build when the selection installs no engine
+#                   (every organization/GOX build passes it with ENGINE_SET=all).
+ARG REQUIRE_ENGINES=""
 ARG ENGINES=""
 ARG NATIVE_ENGINES=""
 ARG TARGETARCH

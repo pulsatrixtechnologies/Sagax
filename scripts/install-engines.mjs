@@ -229,6 +229,15 @@ export function versionOf(bin, env = process.env) {
   }
 }
 
+/** REQUIRE_ENGINES=1 (an organization server image, e.g. GOX): an empty
+ * selection is a build error, not a silent engine-less image. main-20004735
+ * shipped `engineSet: none` because ENGINE_SET=all was left off the build. */
+export function assertEnginesRequired({ required, engineSet, count }) {
+  if (!required || ["", "0", "false", "no"].includes(String(required).trim().toLowerCase())) return;
+  if (count > 0) return;
+  throw new Error(`REQUIRE_ENGINES is set but ENGINE_SET=${JSON.stringify(engineSet || "none")} selects no engine; pass --build-arg ENGINE_SET=all`);
+}
+
 function parseArgs(argv) {
   const options = { lock: "", manifest: "", plan: false };
   for (let index = 0; index < argv.length; index += 1) {
@@ -254,6 +263,7 @@ async function main() {
     nativeEngines: process.env.NATIVE_ENGINES ?? "",
     arch,
   });
+  assertEnginesRequired({ required: process.env.REQUIRE_ENGINES, engineSet, count: install.filter((engine) => engine.bin).length });
   if (options.plan) {
     console.log(JSON.stringify({ engineSet: engineSet || "none", arch, install: install.map(({ id, kind, version }) => ({ id, kind, version })), unavailable }, null, 2));
     return;
@@ -273,6 +283,7 @@ async function main() {
     console.log(`[engines] ${engine.id} ${engine.version}: ${reported}`);
     installed.push({ id: engine.id, name: engine.name, drivers: engine.drivers ?? [], kind: engine.kind, version: engine.version, bin: engine.bin, reported });
   }
+  assertEnginesRequired({ required: process.env.REQUIRE_ENGINES, engineSet, count: installed.length });
   mkdirSync(dirname(options.manifest), { recursive: true });
   writeFileSync(options.manifest, `${JSON.stringify({ lockVersion: lock.lockVersion, engineSet: engineSet || "none", arch, installed, notPreinstalled: unavailable }, null, 2)}\n`);
   console.log(`[engines] ${installed.length} engine(s) installed; manifest ${options.manifest}`);
