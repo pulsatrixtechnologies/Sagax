@@ -40,7 +40,10 @@ permissions:
 
 jobs:
   build-and-smoke:
+    if: (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
     name: build image + boot smoke
+    # The ephemeral self-hosted linux/x64 pool has no Docker daemon
+    # (unix:///var/run/docker.sock is absent). GitHub-hosted Ubuntu ships one.
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
@@ -196,7 +199,8 @@ jobs:
     needs: build-and-smoke
     # Release dispatches on its published tag because GITHUB_TOKEN-created
     # tags do not start another workflow. A manual branch run is smoke-only.
-    if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && startsWith(github.ref, 'refs/tags/v'))
+    if: (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && startsWith(github.ref, 'refs/tags/v')))
+    # Same Docker daemon requirement as build-and-smoke.
     runs-on: ubuntu-latest
     permissions:
       contents: read

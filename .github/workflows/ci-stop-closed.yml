@@ -19,8 +19,9 @@ concurrency:
 
 jobs:
   stop:
+    if: (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
     name: stop this PR's CI
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64]
     timeout-minutes: 1
     steps:
       - run: echo "PR closed; its CI run (if any) was cancelled."
