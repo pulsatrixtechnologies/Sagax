@@ -2248,25 +2248,33 @@ polling while the environment is off. Works on is not on this tab. It is
 in Edit persona > Access, labelled Computer
 (`worksOn` in `src/components/bot-settings/sections.ts`, `WorksOnSetting`).
 
-Above the screen, one segmented control (`ScreenPicker`) when there is more
-than one choice (2026-10-11): Cloud, then each of the person's online
-computers that can run a Local VM, by the name its Sagax app registered
+Above the screen, one menu (`ScreenPicker` in
+`src/components/computer/ComputerMenu.tsx`) when there is more than one
+choice (2026-10-12): Cloud, then each of the person's online computers that
+can run a Local VM, by the full name its Sagax app registered
 (`os.hostname()`), the most recently seen first (`computerChoices` in
-`src/lib/desktop-bridge.ts`), so a person with two PCs sees two Local VMs.
-A dot marks where the bot works; the first screen shown is that one
-(`chosenComputer`). Picking one changes only what is shown and where that
-Local VM's buttons go: `POST /api/me/desktop-bridge/local-vm` takes an
-optional `desktopId` (a desktop id of the person's own, else 400), and
+`src/lib/desktop-bridge.ts`), so a person with two PCs sees both. The closed
+control and each option show the icon, the whole name (it wraps; it is never
+cut off) and the machine's power, a dot and a word (Off, On, Paused,
+Starting, Error, Unavailable; in French Éteint, Allumé, En pause, Démarrage,
+Erreur, Indisponible). "Works here" / "Travaille ici" marks where the bot
+works; the first screen shown is that one (`chosenComputer`). Arrow keys,
+Home, End, Enter, Space and a first letter move through the list while focus
+stays on the button; Escape closes only the menu. Picking one changes only
+what is shown and where that Local VM's buttons go:
+`POST /api/me/desktop-bridge/local-vm` takes an optional `desktopId` (a
+desktop id of the person's own, else 400), and
 `DesktopBridges.request(..., desktopId)` reaches that desktop or answers 409
 `not_connected` ("That computer is not connected right now ... or pick
 another computer"); without it, the current one as before. Never another
-person's desktop: the lookup stays by person. Browser mode is the
-control's last chip, Browser, where the server has the built-in browser
+person's desktop: the lookup stays by person. Browser mode is the menu's
+last choice, Browser, where the server has the built-in browser
 (`builtInBrowserEnabled` or an installed engine; Screen | Browser on a solo
 server): `BrowserPanel` in the screen's frame (`BrowserScreen`, "<Bot>'s
 browser" below), opened first when the bot works on its browser. Tests:
-`OrgComputerTab.test.ts`, `ComputerPanel.browser.test.ts`,
-`server/desktop-bridge.test.ts`, `server/desktop-bridge-local-vm.test.ts`.
+`OrgComputerTab.test.ts`, `ComputerMenu.test.ts`, `computer-menu.test.ts`,
+`ComputerPanel.browser.test.ts`, `server/desktop-bridge.test.ts`,
+`server/desktop-bridge-local-vm.test.ts`.
 States are words (Off, Starting, Running, Paused, Error); never show the desktop's raw
 answer. The server environment's live view is view-only with "Take control"
 in the middle of the screen and a "Release control" chip while in control.
@@ -2320,9 +2328,11 @@ The Local VM in server mode lives on the person's computer
   not send `use`. A sidecar pairing is not an organization, so the
   companion allow-list is not widened for these routes: the app does not
   ask them there. Auto and Cloud keep the existing computer viewer.
-  The same picker sits above the screen (`ios/App/ComputerChooser.swift`,
+  The same menu sits above the screen (`ios/App/ComputerChooser.swift`,
+  rows from `ComputerMenu` in `ios/Sources/CompanionCore/ComputerMenu.swift`,
   `PersonDesktopBridge.computerChoices` and `chosen`, `desktopId` on
-  `localVm(action:)`), and its Browser chip is browser mode: the bot's live
+  `localVm(action:)`). Each computer is its own row, by its full name, with
+  the same power words. Its Browser choice is browser mode: the bot's live
   browser, watched only (`ios/App/BrowserLiveView.swift` over
   `GET /api/bots/:id/browser/live`, each frame acknowledged; never input or
   navigation from the phone; `BrowserLive.swift`, `BrowserLiveClient.swift`).
