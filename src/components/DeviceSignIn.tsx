@@ -1,8 +1,7 @@
-// The one in-app sign-in with a code for an engine's CLI on the machine
-// running Sagax: Codex with a ChatGPT account, Grok Build with a
-// grok.com account (a one-time code entered at the provider's page), and the
-// ChatGPT plan (a browser page, no code). The same card on the desktop, a
-// self-hosted server and an organization server.
+// The one in-app sign-in for an engine's CLI on the machine running Sagax:
+// Codex and Kimi with a one-time code, Grok Build the same way, the ChatGPT
+// plan (a browser page, no code), and Cursor (its own page, no code). The
+// same card on the desktop, a self-hosted server and an organization server.
 import { useEffect, useState } from "react";
 import { Check, Copy, ExternalLink, Loader2, LogIn, X } from "lucide-react";
 import { api, ApiError, useStore } from "@/state/store";
@@ -10,6 +9,7 @@ import { t } from "@/lib/i18n";
 import { openExternalLink } from "@/lib/app-links";
 import { useCopyFeedback } from "@/lib/copy-text";
 import type { LocaleKey } from "@/locales";
+import { cursorSignInLink } from "../../shared/cli-sign-in";
 import { deviceSignInLink, isDeviceSignInCode, type DeviceSignInProvider } from "../../shared/device-sign-in";
 import { CodexMark } from "./ProviderIcons";
 
@@ -22,13 +22,18 @@ export interface DeviceSignInStatus {
   message?: string;
 }
 
-/** Whose page an engine's device code is entered at. */
+/** Whose page an engine's device code is entered at. Cursor is a page
+ * without a code (`open-link`); it is not mapped here. */
 export function deviceSignInProvider(driverKind: string): DeviceSignInProvider {
-  return driverKind === "grokAgent" ? "grok" : "codex";
+  if (driverKind === "grokAgent") return "grok";
+  if (driverKind === "kimiAgent") return "kimi";
+  return "codex";
 }
 
+export type SetupSignInProvider = DeviceSignInProvider | "cursor";
+
 /** The words that differ by whose account the code signs in. */
-export const DEVICE_SIGN_IN_COPY: Record<DeviceSignInProvider, Record<"description" | "start" | "enterCode" | "open" | "security" | "connected" | "connectedAccount" | "failed" | "invalidChallenge", LocaleKey>> = {
+export const DEVICE_SIGN_IN_COPY: Record<SetupSignInProvider, Record<"description" | "start" | "enterCode" | "open" | "security" | "connected" | "connectedAccount" | "failed" | "invalidChallenge", LocaleKey>> = {
   codex: {
     description: "engineSetup.device.description",
     start: "engineSetup.device.start",
@@ -50,6 +55,28 @@ export const DEVICE_SIGN_IN_COPY: Record<DeviceSignInProvider, Record<"descripti
     connectedAccount: "engineSetup.grok.connectedAccount",
     failed: "engineSetup.grok.failed",
     invalidChallenge: "engineSetup.grok.invalidChallenge",
+  },
+  kimi: {
+    description: "engineSetup.kimi.description",
+    start: "engineSetup.kimi.start",
+    enterCode: "engineSetup.kimi.enterCode",
+    open: "engineSetup.kimi.open",
+    security: "engineSetup.kimi.security",
+    connected: "engineSetup.kimi.connected",
+    connectedAccount: "engineSetup.kimi.connectedAccount",
+    failed: "engineSetup.kimi.failed",
+    invalidChallenge: "engineSetup.kimi.invalidChallenge",
+  },
+  cursor: {
+    description: "engineSetup.cursor.description",
+    start: "engineSetup.cursor.start",
+    enterCode: "engineSetup.cursor.enterCode",
+    open: "engineSetup.cursor.open",
+    security: "engineSetup.cursor.security",
+    connected: "engineSetup.cursor.connected",
+    connectedAccount: "engineSetup.cursor.connectedAccount",
+    failed: "engineSetup.cursor.failed",
+    invalidChallenge: "engineSetup.cursor.invalidChallenge",
   },
 };
 
@@ -85,11 +112,16 @@ export function deviceCodeHintShown(auth: Pick<DeviceSignInStatus, "phase" | "me
 
 const chatgptButton = "flex w-full items-center justify-center gap-2 rounded-lg border border-black/20 bg-white px-3 py-2 text-[12.5px] font-semibold text-black hover:opacity-85 disabled:opacity-50";
 
-export function DeviceSignInProgress({ auth, browserPkce = false, provider = "codex" }: { auth: DeviceSignInStatus; browserPkce?: boolean; provider?: DeviceSignInProvider }) {
+export function DeviceSignInProgress({ auth, browserPkce = false, linkOnly = false, provider = "codex" }: { auth: DeviceSignInStatus; browserPkce?: boolean; linkOnly?: boolean; provider?: SetupSignInProvider }) {
   // The code stays select-all, so one click selects it for Cmd/Ctrl+C when copying is blocked.
   const { state: codeCopy, copy: copyCode } = useCopyFeedback(auth.userCode ?? "");
   const copy = DEVICE_SIGN_IN_COPY[provider];
-  const link = browserPkce ? chatgptPlanLink(auth.authorizationUrl) : deviceSignInLink(provider, auth.authorizationUrl, auth.userCode);
+  const pageOnly = linkOnly || provider === "cursor";
+  const link = browserPkce
+    ? chatgptPlanLink(auth.authorizationUrl)
+    : pageOnly
+      ? cursorSignInLink(auth.authorizationUrl)
+      : deviceSignInLink(provider, auth.authorizationUrl, auth.userCode);
   const copyLabel = t(codeCopy === "failed" ? "common.copyFailed" : "engineSetup.device.copyCode");
 
   if (auth.phase !== "waiting") {
@@ -100,13 +132,13 @@ export function DeviceSignInProgress({ auth, browserPkce = false, provider = "co
     return <p role="status" className={auth.phase === "succeeded" ? "text-[12px] text-success" : "text-[12px] text-ink-secondary"}>{label}</p>;
   }
 
-  if (!link || (!browserPkce && !isDeviceSignInCode(provider, auth.userCode))) {
+  if (!link || (!browserPkce && !pageOnly && !isDeviceSignInCode(provider, auth.userCode))) {
     return <p role="alert" className="text-[12px] text-danger">{t(browserPkce ? "engineSetup.chatgpt.invalidChallenge" : copy.invalidChallenge)}</p>;
   }
 
   return (
     <div className="space-y-2 rounded-lg border border-hairline/50 bg-app p-3">
-      {!browserPkce && <><p className="text-[12px] text-ink-secondary">{t(copy.enterCode)}</p>
+      {!browserPkce && !pageOnly && <><p className="text-[12px] text-ink-secondary">{t(copy.enterCode)}</p>
       <div className="flex items-center justify-between gap-2 rounded-lg bg-inset px-3 py-2">
         <code className="select-all font-mono text-lg font-semibold tracking-widest text-ink">{auth.userCode}</code>
         <button
@@ -136,10 +168,13 @@ export function DeviceSignInProgress({ auth, browserPkce = false, provider = "co
   );
 }
 
-export function DeviceSignIn({ instanceId, browserPkce = false, provider = "codex", base: baseOverride, onSignedIn }: {
+export function DeviceSignIn({ instanceId, browserPkce = false, linkOnly = false, provider = "codex", base: baseOverride, onSignedIn }: {
   instanceId: string;
   browserPkce?: boolean;
-  provider?: DeviceSignInProvider;
+  /** A page with no one-time code (Cursor). The button opens it, and the
+   * card polls until the server confirms the sign-in. */
+  linkOnly?: boolean;
+  provider?: SetupSignInProvider;
   /** Another sign-in with the same verbs (start, status, cancel): a
    * person's own subscription on an organization server
    * (`/api/me/engines/<id>/login`). Defaults to the server's own engine. */
@@ -207,8 +242,8 @@ export function DeviceSignIn({ instanceId, browserPkce = false, provider = "code
       const { auth: next }: { auth: DeviceSignInStatus } = await api(`${base}/start`, { method: "POST" });
       setAuth(next);
       if (next.phase === "succeeded") await refresh();
-      else if (browserPkce && next.phase === "waiting") {
-        const link = chatgptPlanLink(next.authorizationUrl);
+      else if (next.phase === "waiting" && (browserPkce || linkOnly)) {
+        const link = browserPkce ? chatgptPlanLink(next.authorizationUrl) : cursorSignInLink(next.authorizationUrl);
         if (link) await openExternalLink(link);
       }
     } catch (cause) {
@@ -235,8 +270,8 @@ export function DeviceSignIn({ instanceId, browserPkce = false, provider = "code
     : t(browserPkce ? "engineSetup.chatgpt.start" : copy.start);
 
   return (
-    <div className="mt-3 space-y-2" data-device-sign-in={provider} data-chatgpt-plan-sign-in={browserPkce || undefined}>
-      {auth && <DeviceSignInProgress auth={auth} browserPkce={browserPkce} provider={provider} />}
+    <div className="mt-3 space-y-2" data-device-sign-in={linkOnly ? undefined : provider} data-link-sign-in={linkOnly ? provider : undefined} data-chatgpt-plan-sign-in={browserPkce || undefined}>
+      {auth && <DeviceSignInProgress auth={auth} browserPkce={browserPkce} linkOnly={linkOnly} provider={provider} />}
       {auth?.phase === "waiting" ? (
         <button type="button" disabled={busy} onClick={() => void cancel()} className="w-full rounded-lg bg-control px-3 py-2 text-[12px] font-medium text-ink disabled:opacity-50">
           {busy ? t("engineSetup.device.cancelling") : t("engineSetup.device.cancel")}

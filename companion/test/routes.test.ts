@@ -42,6 +42,10 @@ describe("what the app may do", () => {
     ["GET", "/api/instances"],
     ["POST", "/api/instances/claude/claude-update"],
     ["POST", "/api/instances/claude.work/claude-update"],
+    ["POST", "/api/instances/cursor/auth/start"],
+    ["GET", "/api/instances/cursor/auth/status"],
+    ["POST", "/api/instances/cursor/auth/cancel"],
+    ["POST", "/api/instances/claude.work/auth/complete"],
     ["GET", "/api/team-map"],
     ["GET", "/api/companion/endpoints"],
     ["GET", "/api/bots"],
@@ -315,9 +319,15 @@ describe("what it may not", () => {
       ["POST", "/api/instances/.../claude-update"],
       ["POST", "/api/instances/%2e%2e/claude-update"],
       ["PATCH", "/api/instances/claude"],
+      ["GET", "/api/instances/../auth/status"],
+      ["POST", "/api/instances/%2e%2e/auth/start"],
     ] as Array<[string, string]>) {
       expect(allowed(method, path), `${method} ${path}`).toBe(false);
     }
+    expect(allowed("POST", "/api/instances/cursor/auth/start")).toBe(true);
+    expect(allowed("GET", "/api/instances/cursor/auth/status")).toBe(true);
+    expect(allowed("POST", "/api/instances/cursor/auth/cancel")).toBe(true);
+    expect(allowed("POST", "/api/instances/cursor/auth/complete")).toBe(true);
   });
 
   // A phone may start, end and follow a Live call and change its voice and
@@ -439,6 +449,8 @@ describe("desktop remote-client parity", () => {
       ["POST", "/api/attachments"], ["GET", "/api/attachments/a1b2.png"], ["POST", "/api/files"],
       ["GET", "/api/bots/bot_1/connector-cards/m_1/status"], ["POST", "/api/bots/bot_1/connector-cards/m_1/authorize"],
       ["POST", "/api/bots/bot_1/secret-cards/m_1/dismiss"], ["POST", "/api/instances/claude/claude-update"],
+      ["POST", "/api/instances/cursor/auth/start"], ["GET", "/api/instances/cursor/auth/status"],
+      ["POST", "/api/instances/cursor/auth/cancel"], ["POST", "/api/instances/cursor/auth/complete"],
       // rooms
       ["POST", "/api/groups/room_1/messages"], ["POST", "/api/groups/room_1/interrupt"], ["POST", "/api/groups/room_1/read"],
       ["DELETE", "/api/groups/room_1/queue/q_1"], ["POST", "/api/groups/room_1/queue/q_1/steer"],

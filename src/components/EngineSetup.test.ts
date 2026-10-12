@@ -131,9 +131,14 @@ describe("install from Settings on the server", () => {
   });
 
   it("never offers an install when only sign-in is missing", () => {
-    const markup = render(npmEngine({ state: "available", authenticated: false, version: "1.0.0" }));
+    const engine = npmEngine({ state: "available", authenticated: false, version: "1.0.0" });
+    engine.authentication = { method: "device-code" };
+    const markup = render(engine);
     expect(markup).not.toContain("Install Kimi on this server");
+    expect(markup).toContain("Sign in to Kimi");
+    expect(markup).toContain("data-manual-command");
     expect(markup).toContain("kimi login");
+    expect(markup).not.toContain("Open sign-in in Terminal");
   });
 
   it("turns the update notice into a button when the server can update", () => {
@@ -159,7 +164,9 @@ describe("server device-code sign-in", () => {
     const markup = renderToStaticMarkup(createElement(StoreProvider, null, createElement(EngineSetup, { instance: engine })));
     expect(markup).toContain("Continue with ChatGPT");
     expect(markup).toContain("This is separate from API billing.");
-    expect(markup).not.toContain("codex login");
+    expect(markup).toContain("data-manual-command");
+    expect(markup).toContain("codex login");
+    expect(markup).not.toContain("Open sign-in in Terminal");
     expect(markup).not.toContain("Device-code login");
   });
 
@@ -190,7 +197,9 @@ describe("server device-code sign-in", () => {
     const markup = renderToStaticMarkup(createElement(StoreProvider, null, createElement(EngineSetup, { instance: engine })));
     expect(markup).toContain("Connect ChatGPT");
     expect(markup).toContain("no terminal or password sharing");
-    expect(markup).not.toContain("codex login");
+    expect(markup).toContain("data-manual-command");
+    expect(markup).toContain("codex login");
+    expect(markup).not.toContain("Open sign-in in Terminal");
   });
 
   it("does not ask to sign in when installing a CLI for local-model injection", () => {

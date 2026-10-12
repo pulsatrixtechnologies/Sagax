@@ -346,7 +346,17 @@ const support = (run: typeof execCli): AcpSupport => ({
   // Cursor's compatibility alias is unambiguous and ships with the same CLI.
   defaultCli: "cursor-agent",
   nativeSource: "cursor.acp",
-  loginNote: "Cursor CLI is not signed in — run `cursor-agent login` in a terminal, or set CURSOR_API_KEY",
+  loginNote: "Cursor is not signed in. Sign in from the provider card, or save an access key there.",
+  linkSignIn: {
+    product: "Cursor",
+    account: "Cursor",
+    homeEnv: "CURSOR_CONFIG_DIR",
+    homeDir: ".cursor",
+    loginArgs: ["login"],
+    install: "Install Cursor's CLI, then try again.",
+    spawnEnv: { NO_OPEN_BROWSER: "1", BROWSER: "none" },
+    signedIn: (env, cli) => probeCursorAuth(cli, env, run),
+  },
 
   install: {
     command: {

@@ -8,7 +8,7 @@ import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
 import { SettingsText } from "./SettingsLink";
 import { copyText } from "@/lib/copy-text";
-import { DEVICE_SIGN_IN_COPY, DeviceSignIn, deviceSignInProvider } from "./DeviceSignIn";
+import { DEVICE_SIGN_IN_COPY, DeviceSignIn, deviceSignInProvider, type SetupSignInProvider } from "./DeviceSignIn";
 import { ClaudeSignIn } from "./ClaudeSignIn";
 
 type Platform = "darwin" | "win32" | "linux";
@@ -37,9 +37,15 @@ export function needsSignIn(instance: InstanceInfo | undefined): boolean {
  * key row, an install, or a note that it cannot be set up here. A caller
  * that words a line around that card (a failed turn's headline) asks this,
  * so the line and the card never disagree. */
+function interactiveSignIn(instance: InstanceInfo | undefined): boolean {
+  const method = instance?.authentication?.method;
+  return method === "device-code" || method === "open-link" || method === "paste-code" || method === "browser-pkce" || method === "browser";
+}
+
 export function offersSignIn(instance: InstanceInfo | undefined): boolean {
-  return Boolean(instance && needsSignIn(instance) && instance.install
-    && !instance.snapshot.authenticationUnavailableReason && !apiKeySetup(instance));
+  if (!instance || !needsSignIn(instance) || !instance.install || instance.snapshot.authenticationUnavailableReason) return false;
+  if (!interactiveSignIn(instance) && apiKeySetup(instance)) return false;
+  return true;
 }
 
 /** The engine needs setup; unavailable does not prove its CLI is absent.
@@ -63,17 +69,27 @@ export function grokKeyInstead(instance: InstanceInfo, cloudHome: boolean): bool
   return instance.driverKind === "grokAgent" && needsCli(instance) && !serverTerminal(cloudHome);
 }
 
+/** A real CLI the person can still type, kept behind a disclosure. A
+ * sentence ("Settings → API keys") or a command that embeds a key is not. */
+export function manualSignInCommand(command: string | null | undefined): string | null {
+  if (!command || /YOUR_|Settings\s*→/.test(command)) return null;
+  return /^[a-z][\w.-]*(?:\s+\S+){0,6}$/i.test(command) ? command : null;
+}
+
 export function CommandRow({
   command,
   actionLabel,
   compact = false,
+  allowOpen = true,
 }: {
   command: string;
   actionLabel: string;
   compact?: boolean;
+  /** Open Terminal only where that terminal runs on this server. Copy stays. */
+  allowOpen?: boolean;
 }) {
   const [status, setStatus] = useState<"copied" | "failed" | "opened" | null>(null);
-  const canOpen = typeof window !== "undefined" && Boolean(window.ogb?.openInstallTerminal);
+  const canOpen = allowOpen && typeof window !== "undefined" && Boolean(window.ogb?.openInstallTerminal);
 
   const settle = (next: "copied" | "failed" | "opened") => {
     setStatus(next);
@@ -456,11 +472,21 @@ function GrokKeyInstead({ className, unframed }: { className?: string; unframed:
   );
 }
 
+function ManualCommand({ command }: { command: string }) {
+  return (
+    <details data-manual-command className="mt-2 rounded-lg border border-hairline/50 bg-app px-2.5 py-2 text-[11.5px] text-ink-secondary">
+      <summary className="cursor-pointer select-none">{t("engineSetup.preferTerminal")}</summary>
+      <CommandRow command={command} actionLabel={t("engineSetup.openSignIn")} compact allowOpen={serverTerminal(false)} />
+    </details>
+  );
+}
+
 /** `configured`: the key is saved, so the card offers to change it instead.
  * A typo'd key still counts as saved, and this is the way back to fix it. */
 function ApiKeyEngineSetup({ instance, className, unframed, configured = false }: { instance: InstanceInfo; className?: string; unframed: boolean; configured?: boolean }) {
   const { dispatch } = useStore();
   const remote = window.ogb?.remoteClient?.active === true;
+  const manual = manualSignInCommand(instance.install?.signInCommand);
   const copy = configured
     ? { title: "engineSetup.apiKey.configuredTitle", description: remote ? "engineSetup.apiKey.configuredRemote" : "engineSetup.apiKey.configuredDescription", action: "engineSetup.apiKey.change" } as const
     : { title: "engineSetup.apiKey.title", description: remote ? "engineSetup.apiKey.remote" : "engineSetup.apiKey.description", action: "engineSetup.apiKey.open" } as const;
@@ -493,6 +519,7 @@ function ApiKeyEngineSetup({ instance, className, unframed, configured = false }
           {t(copy.action)}
         </button>
       )}
+      {manual && <ManualCommand command={manual} />}
     </div>
   );
 }
@@ -529,10 +556,12 @@ export function EngineSetup({
   const installCommand = installCommandFor(install);
   const signInCommand = install?.signInCommand;
   const signInOnly = intent === "cloud" && needsSignIn(instance);
+  const linkSignIn = signInOnly && instance.authentication?.method === "open-link";
   const deviceSignIn = signInOnly && instance.authentication?.method === "device-code";
   const browserSignIn = signInOnly && instance.authentication?.method === "browser-pkce";
   const pasteSignIn = signInOnly && instance.authentication?.method === "paste-code";
-  const provider = deviceSignInProvider(instance.driverKind);
+  const provider: SetupSignInProvider = linkSignIn ? "cursor" : deviceSignInProvider(instance.driverKind);
+  const manual = manualSignInCommand(signInCommand);
   const command = signInOnly ? signInCommand : installCommand;
   const title = signInOnly
     ? t("engineSetup.signInTitle", { name: instance.displayName })
@@ -540,7 +569,7 @@ export function EngineSetup({
   const description = descriptionOverride ?? (signInOnly
     ? browserSignIn
       ? t("engineSetup.chatgpt.description")
-      : deviceSignIn
+      : linkSignIn || deviceSignIn
       ? t(DEVICE_SIGN_IN_COPY[provider].description)
       : pasteSignIn
       ? t("engineSetup.claude.description")
@@ -596,20 +625,16 @@ export function EngineSetup({
         </p>
       )}
 
-      {deviceSignIn || browserSignIn ? (
+      {deviceSignIn || browserSignIn || linkSignIn ? (
         <>
-          <DeviceSignIn key={instance.instanceId} instanceId={instance.instanceId} browserPkce={browserSignIn} provider={provider} />
-          {/* Grok keeps its terminal sign-in for people who prefer one, where
-              a terminal runs on this server; the code above needs none. */}
-          {deviceSignIn && provider === "grok" && signInCommand && serverTerminal(cloudHome) && (
-            <details className="mt-2 rounded-lg border border-hairline/50 bg-app px-2.5 py-2 text-[11.5px] text-ink-secondary">
-              <summary className="cursor-pointer select-none">{t("engineSetup.preferTerminal")}</summary>
-              <CommandRow command={signInCommand} actionLabel={t("engineSetup.openSignIn")} compact />
-            </details>
-          )}
+          <DeviceSignIn key={instance.instanceId} instanceId={instance.instanceId} browserPkce={browserSignIn} linkOnly={linkSignIn} provider={provider} />
+          {manual && <ManualCommand command={manual} />}
         </>
       ) : pasteSignIn ? (
-        <ClaudeSignIn key={instance.instanceId} instanceId={instance.instanceId} />
+        <>
+          <ClaudeSignIn key={instance.instanceId} instanceId={instance.instanceId} />
+          {manual && <ManualCommand command={manual} />}
+        </>
       ) : install.server && !signInOnly ? (
         <ServerEngineInstall instance={instance} mode="install" command={installCommand} />
       ) : install.managed ? (
