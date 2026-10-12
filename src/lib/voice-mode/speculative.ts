@@ -34,3 +34,9 @@ export function holdSpeculativePlayback(input: {
 }): boolean {
   return input.speculative && !input.endpointConfirmed;
 }
+
+/** A probe that arrives after the person has already paused is the finished
+ * turn: play as soon as audio exists. Mid-speech still waits for speech-end. */
+export function confirmSpeculativeEndpoint(inSilence: boolean): boolean {
+  return inSilence;
+}

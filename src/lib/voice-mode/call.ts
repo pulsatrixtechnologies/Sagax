@@ -41,7 +41,7 @@ import { attachVoiceCapture, type CaptureContext, type CaptureSource, type Voice
 import { LiveTranscriber, PROBE_AFTER_MS } from "./stt-stream";
 import { completeClause, CONTOUR_CONTINUATION_MS, FRAME_MS, incompleteClause, longFrenchOpen, stripTerminalPunctuation, TurnDetector } from "./turns";
 import { formatTimeline, materiallyDifferent, normalizedWords, type TurnMetrics } from "./latency";
-import { discardSpeculation, holdSpeculativePlayback, maySpeculate } from "./speculative";
+import { confirmSpeculativeEndpoint, discardSpeculation, holdSpeculativePlayback, maySpeculate } from "./speculative";
 import { ttsLeadStep, type TtsLeadAction } from "./tts-lead";
 import { LevelVad, SileroVad, VAD_FRAME, type VoiceProbability } from "./vad";
 import type { VoiceModeSettings } from "../../../shared/voice-mode";
@@ -1126,7 +1126,7 @@ export class VoiceCall {
     const now = this.now();
     this.turn = { stoppedAt: now, endedAt: now, earlyStart: true, sentAt: now, transcribedAt: now, utteranceId };
     this.speculated = text;
-    this.endpointConfirmed = false;
+    this.endpointConfirmed = confirmSpeculativeEndpoint(this.turns.inSilence);
     // An open long French sentence must not be forced onto the short
     // complete window; the long-French quiet still applies.
     if (!longFrenchOpen(text, this.turns.spokenMs)) this.turns.markComplete();

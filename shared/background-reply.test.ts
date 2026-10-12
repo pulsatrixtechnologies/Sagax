@@ -5,6 +5,7 @@ import {
   BACKGROUND_WORKER_PROMPT,
   acceptAck,
   ackClaimsResult,
+  backgroundConversationThread,
   backgroundRepliesEnabled,
   classifyRequest,
   frenchAnglicisms,
@@ -46,6 +47,22 @@ describe("background replies", () => {
     expect(shouldBackgroundReply({ bot, text: ALUBAR, hidden: true })).toBe(false);
     expect(shouldBackgroundReply({ bot, text: ALUBAR, nested: true })).toBe(false);
     expect(shouldBackgroundReply({ bot, text: "   " })).toBe(false);
+  });
+
+  it("stays in the conversation while teammates are still working", () => {
+    const bot = {};
+    expect(shouldBackgroundReply({ bot, text: ALUBAR, outstanding: 0 })).toBe(true);
+    expect(shouldBackgroundReply({ bot, text: "Please have Engineering build the CSV export. Own the result.", outstanding: 1 })).toBe(false);
+    expect(shouldBackgroundReply({ bot, text: "Also make sure the export is UTF-8.", outstanding: 2 })).toBe(false);
+  });
+
+  it("parents a background task's handoff to the conversation the person is reading", () => {
+    const parent = "thread-conversation";
+    const task = "thread-background";
+    expect(backgroundConversationThread(undefined, parent)).toBe(parent);
+    expect(backgroundConversationThread({ parallelOf: { threadId: parent } }, task)).toBe(task);
+    expect(backgroundConversationThread({ parallelOf: { threadId: parent, background: true } }, task)).toBe(parent);
+    expect(backgroundConversationThread({ parallelOf: { background: true } }, task)).toBe(task);
   });
 
   it("names the first step in Québec French from the person's own words", () => {

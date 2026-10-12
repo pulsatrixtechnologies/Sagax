@@ -145,9 +145,21 @@ export async function verifyWorkspaceBackup(report: (event: unknown) => void = (
     await control(source, "send", "--bot", bot.id, "--text", text);
     assert.equal((await control(source, "wait", "--bot", bot.id, "--timeout", "30") as { status: string }).status, "settled");
     await control(source, "messages", "--bot", bot.id, "--limit", "20");
-    const before = (await api(source, "GET", "/api/bots?messages=200")).body;
-    const original = before.bots.find((candidate: { id: string }) => candidate.id === bot.id);
-    assert.ok(original.messages.some((message: { text?: string }) => message.text?.includes("hello from fake claude")));
+    // An attachment is work, so the visible thread settles on the one-sentence
+    // acknowledgement and the fake engine answers on the background task.
+    // The result is posted back into this conversation once that task ends.
+    const replyDeadline = Date.now() + 30_000;
+    let before: { bots: Array<{ id: string; messages?: Array<{ text?: string }> }> } | undefined;
+    for (;;) {
+      before = (await api(source, "GET", "/api/bots?messages=200")).body;
+      const posted = before.bots.find((candidate) => candidate.id === bot.id)
+        ?.messages?.some((message) => message.text?.includes("hello from fake claude"));
+      if (posted || Date.now() >= replyDeadline) break;
+      await new Promise((done) => setTimeout(done, 250));
+    }
+    assert.ok(before);
+    const original = before.bots.find((candidate) => candidate.id === bot.id);
+    assert.ok(original?.messages?.some((message) => message.text?.includes("hello from fake claude")));
     const oldBytes = readFileSync(join(destination.info.dataDir, "bots.json"));
     const clientState = { "omb-skin": "default", "omb-drafts": JSON.stringify({ [bot.threadId]: "Keep draft" }), "omb-webhook-credentials": "private-source-webhook-url", "unrelated-auth-token": "must-not-transfer" };
     const exported = await api(source, "POST", "/api/workspace-backup/export", { password: PASSWORD, clientState });

@@ -376,6 +376,7 @@ import { isBusySendMode, type BusySendMode, type ParallelTaskRef, type ParallelT
 import {
   BACKGROUND_REPLY_PROMPT,
   BACKGROUND_WORKER_PROMPT,
+  backgroundConversationThread,
   backgroundRepliesEnabled,
   milestoneGate,
   shouldBackgroundReply,
@@ -12881,6 +12882,7 @@ async function startOrQueueDirectMessage(botId: string, threadId: string, text: 
   const spoken = Boolean(voiceCall) || via === "call";
   if (bot && task && shouldBackgroundReply({
     bot, text, voice: spoken, hidden: task.hidden === true, nested: Boolean(task.parallelOf),
+    outstanding: roomHandoffs.outstandingDirect(threadId).length,
   })) {
     try {
       const started = await startParallelTask({
@@ -29558,7 +29560,11 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         if (!internalCapability.roomCoordination || (source && (source.dm || !source.memberIds.includes(internalSender.id)))) {
           return json(res, 403, { error: "Coordination requires an active chat turn. Finish together already manages its own teammate turns." });
         }
-        const address = { groupId: source?.id, threadId: internalCapability.threadId, botId: internalSender.id };
+        const conversationThread = backgroundConversationThread(
+          store.taskByThread(internalSender.id, internalCapability.threadId),
+          internalCapability.threadId,
+        );
+        const address = { groupId: source?.id, threadId: conversationThread, botId: internalSender.id };
         const problem = roomHandoffProblem(address);
         if (problem) return json(res, 403, { error: problem });
         if (method === "GET" && path === "/api/internal/room-targets") {

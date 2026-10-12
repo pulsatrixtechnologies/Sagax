@@ -72,12 +72,28 @@ export function shouldBackgroundReply(input: {
   voice?: boolean;
   hidden?: boolean;
   nested?: boolean;
+  /** Teammate work this conversation already handed out and still waits on.
+   * A follow-up has to stay here so it can see those assignments. */
+  outstanding?: number;
 }): boolean {
   if (!backgroundRepliesEnabled(input.bot)) return false;
   if (input.voice || input.hidden || input.nested) return false;
+  if ((input.outstanding ?? 0) > 0) return false;
   const text = input.text.trim();
   if (!text || text.startsWith("/")) return false;
   return classifyRequest(text) === "work";
+}
+
+/** The conversation a background task's handoff belongs to. The person is
+ * reading the parent thread; the task's own thread is only where the work
+ * runs. A parallel task that is not a background reply keeps its own thread. */
+export function backgroundConversationThread(
+  task: { parallelOf?: { background?: boolean; threadId?: string } } | null | undefined,
+  threadId: string,
+): string {
+  const parent = task?.parallelOf;
+  if (parent?.background && parent.threadId) return parent.threadId;
+  return threadId;
 }
 
 const FRENCH_CUE = /[àâäéèêëïîôùûüçœæ]/i;
