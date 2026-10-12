@@ -42,6 +42,9 @@ import type { BotLaunchedAgentItem } from "../../shared/bot-launched-agents.ts";
 import { PASS, type RouteHandler } from "./table.ts";
 import { addCodingSignal, isCodingWork, type CodingSignals } from "../activity-coding.ts";
 import { CodeWorkCollector, type RepositoryInfo } from "../activity-code-work.ts";
+import type { CloudAgentManager } from "../cloud-agents/manager.ts";
+import { cloudAgentActivityItem } from "../cloud-agents/activity.ts";
+import { cloudAgentStatusActive, type CloudAgentRecord } from "../../shared/cloud-agents.ts";
 
 export interface ActivityBot {
   id: string;
@@ -119,6 +122,7 @@ export interface BotActivityRouteDeps {
   /** Agent API launches: hidden threads on peers this bot opened. */
   launchedAgents?(botId: string, viewerId: string | undefined): BotLaunchedAgentItem[];
   now?: () => number;
+  cloudAgents?: CloudAgentManager;
 }
 
 /** How far back a thread's tool calls are read to tell coding work. */
@@ -308,6 +312,21 @@ export function createBotActivityRoutes(deps: BotActivityRouteDeps): RouteHandle
     return !page.hasMore && page.messages.every((message) => message.role !== "user" && !message.tool);
   }
 
+  function cloudVisible(record: CloudAgentRecord, viewerId: string | undefined): boolean {
+    if (!viewerId) return true;
+    if (record.principalId === viewerId) return true;
+    return deps.threadReadable(record.botId, record.threadId, viewerId);
+  }
+
+  function cloudItems(bot: ActivityBot, viewerId: string | undefined): BotActivityItem[] {
+    if (!deps.cloudAgents) return [];
+    const since = now() - BOT_ACTIVITY_WINDOW_MS;
+    return deps.cloudAgents.list(bot.id)
+      .filter((record) => cloudVisible(record, viewerId))
+      .filter((record) => record.archived === false && (cloudAgentStatusActive(record.status) || (record.updatedAt >= since)))
+      .map((record) => cloudAgentActivityItem(bot.name, record));
+  }
+
   /** The list, newest first with running work on top. */
   function list(bot: ActivityBot, viewerId: string | undefined, limit: number): BotActivityItem[] {
     const since = now() - BOT_ACTIVITY_WINDOW_MS;
@@ -335,9 +354,43 @@ export function createBotActivityRoutes(deps: BotActivityRouteDeps): RouteHandle
       if (run.status === "queued" && !run.startedAt) continue;
       items.push(runItem(bot, run));
     }
+    for (const cloud of cloudItems(bot, viewerId)) items.push(cloud);
     return items
       .sort(newestRunningFirst)
       .slice(0, limit);
+  }
+
+  async function cloudDetail(bot: ActivityBot, cloudId: string, viewerId: string | undefined): Promise<BotActivityDetail | null> {
+    if (!deps.cloudAgents) return null;
+    const record = deps.cloudAgents.get(cloudId);
+    if (!record || record.botId !== bot.id || !cloudVisible(record, viewerId)) return null;
+    await deps.cloudAgents.refresh(cloudId);
+    const fresh = deps.cloudAgents.get(cloudId);
+    if (!fresh) return null;
+    const item = cloudAgentActivityItem(bot.name, fresh);
+    let lines: { at: number; role: string; text: string }[] = [];
+    try {
+      lines = await deps.cloudAgents.transcript(cloudId, fresh.principalId);
+    } catch {
+      // credentials may be missing for another viewer
+    }
+    const steps: BotActivityStep[] = lines.map((line, index) => ({
+      id: `cloud-line-${index}`,
+      name: line.role,
+      summary: line.text.slice(0, 500),
+      ok: line.role !== "system",
+      at: line.at,
+    }));
+    const note = fresh.error?.trim() || fresh.lastResult?.trim();
+    return {
+      ...item,
+      steps,
+      stepsTruncated: false,
+      files: [],
+      children: [],
+      canStop: activityStatusActive(item.status),
+      ...(note ? { note } : {}),
+    };
   }
 
   /** The sub-agents the listed threads started: running ones, and those
@@ -470,6 +523,12 @@ export function createBotActivityRoutes(deps: BotActivityRouteDeps): RouteHandle
     }
     const threadId = url.searchParams.get("threadId");
     const runId = url.searchParams.get("runId");
+    const cloudId = url.searchParams.get("cloudId");
+    if (cloudId) {
+      const item = await cloudDetail(bot, cloudId, viewerId);
+      if (!item) return json(res, 404, { error: "no such activity" });
+      return json(res, 200, { item });
+    }
     if (threadId) {
       const task = deps.tasks(bot.id).find((entry) => entry.threadId === threadId);
       // Not theirs reads exactly like not there.

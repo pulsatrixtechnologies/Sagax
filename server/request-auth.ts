@@ -392,6 +392,10 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   // what a bot is doing (the bot panel's Coding list): narrowed to the
   // viewer's own threads and the routines they may see (routes/bot-activity.ts)
   { methods: ["GET"], path: /^\/api\/bots\/[\w-]+\/activity(?:\/item)?$/ },
+  // Cloud coding agents (server/routes/cloud-agents.ts): reads for any bot
+  // the viewer may see; writes use the session person's encrypted provider keys.
+  { methods: ["GET", "POST"], path: /^\/api\/bots\/[\w-]+\/cloud-agents(?:\/[\w-]+(?:\/(?:follow-up|cancel|archive|artifacts|transcript))?)?$/ },
+  { methods: ["GET", "PUT", "DELETE", "POST"], path: /^\/api\/me\/cloud-agent-providers(?:\/(?:cursor|claude|codex)(?:\/test)?)?$/ },
   // chat, one to one
   { methods: ["POST"], path: /^\/api\/bots\/[\w-]+\/messages$/ },
   { methods: ["POST"], path: /^\/api\/bots\/[\w-]+\/messages\/[\w-]+\/edit$/ },

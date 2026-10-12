@@ -380,6 +380,14 @@ export function ActivitySection({ bot }: { bot: Bot }) {
   // The bot's threads changed (a turn started or settled, a hop arrived):
   // what the lists show changed too.
   useEffect(() => { void refresh(); }, [refresh, signature]);
+  useEffect(() => {
+    const onCloud = (event: Event) => {
+      const botId = (event as CustomEvent<{ botId?: string }>).detail?.botId;
+      if (botId === bot.id) void refresh();
+    };
+    window.addEventListener("sagax-cloud-agent", onCloud);
+    return () => window.removeEventListener("sagax-cloud-agent", onCloud);
+  }, [bot.id, refresh]);
   const active = Boolean(list && (
     [...list.items, ...list.subagents].some((item) => activityStatusActive(item.status))
     || (list.launchedAgents ?? []).some((item) => activityStatusActive(item.status))
@@ -396,13 +404,23 @@ export function ActivitySection({ bot }: { bot: Bot }) {
   }, [active]);
 
   const stop = useCallback((item: BotActivityItem) => {
-    if (!item.threadId) return;
     setStopping((current) => new Set(current).add(item.id));
     const done = () => setStopping((current) => {
       const next = new Set(current);
       next.delete(item.id);
       return next;
     });
+    if (item.id.startsWith("cloud:")) {
+      const cloudId = item.id.slice("cloud:".length);
+      void api(`/api/bots/${encodeURIComponent(item.botId)}/cloud-agents/${encodeURIComponent(cloudId)}/cancel`, { method: "POST" })
+        .catch(done)
+        .finally(() => { done(); void refresh(); });
+      return;
+    }
+    if (!item.threadId) {
+      done();
+      return;
+    }
     dispatch({ type: "interrupt", botId: item.botId, threadId: item.threadId, onError: done });
     window.setTimeout(() => { done(); void refresh(); }, 1_500);
   }, [dispatch, refresh]);

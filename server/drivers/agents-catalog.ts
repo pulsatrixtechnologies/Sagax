@@ -781,6 +781,110 @@ const toolDefinitions = (externalRuntime: boolean) => [
     },
   },
   {
+    name: "list_cloud_agents",
+    description:
+      "List cloud coding agents you launched on external providers (Cursor, Claude Code cloud, Codex cloud) for this bot. Each row is a long-running job on a repository with its own dashboard URL when the provider offers one.",
+    inputSchema: { type: "object", additionalProperties: false, properties: {} },
+  },
+  {
+    name: "get_cloud_agent",
+    description: "Read one cloud agent by its Sagax id (ca_… from list_cloud_agents).",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: { cloud_agent_id: { type: "string", description: "The Sagax cloud agent id." } },
+      required: ["cloud_agent_id"],
+    },
+  },
+  {
+    name: "launch_cloud_agent",
+    description:
+      "Launch a cloud coding agent on an external provider. The person's own API key for that provider must be configured in Sagax settings. Pass a complete task prompt and optional repository URL/ref. Writes need the person's approval unless their allowlist permits it.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        provider: { type: "string", enum: ["cursor", "claude", "codex"], description: "Which provider runs the agent." },
+        prompt: { type: "string", minLength: 1, maxLength: 50_000, description: "What the cloud agent should do." },
+        repo_url: { type: "string", description: "Git repository URL to work in." },
+        ref: { type: "string", description: "Branch, tag or commit to start from." },
+        model: { type: "string", description: "Optional provider model id." },
+        name: { type: "string", description: "Short label for the job." },
+        work_on_current_branch: { type: "boolean" },
+        auto_create_pr: { type: "boolean" },
+      },
+      required: ["provider", "prompt"],
+    },
+  },
+  {
+    name: "cloud_agent_follow_up",
+    description:
+      "Send another instruction to a cloud agent. mode queue waits for the current run; steer or interrupt cancels the active run and starts a new one with your text.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        cloud_agent_id: { type: "string" },
+        text: { type: "string", minLength: 1, maxLength: 50_000 },
+        mode: { type: "string", enum: ["queue", "steer", "interrupt"] },
+      },
+      required: ["cloud_agent_id", "text"],
+    },
+  },
+  {
+    name: "cancel_cloud_agent",
+    description: "Cancel the active run of a cloud agent.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: { cloud_agent_id: { type: "string" } },
+      required: ["cloud_agent_id"],
+    },
+  },
+  {
+    name: "archive_cloud_agent",
+    description: "Archive a cloud agent on the provider and mark it archived locally.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: { cloud_agent_id: { type: "string" } },
+      required: ["cloud_agent_id"],
+    },
+  },
+  {
+    name: "find_cloud_agent_by_pr",
+    description: "Find a cloud agent by pull request URL (local mirror first, then the provider when configured).",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        provider: { type: "string", enum: ["cursor", "claude", "codex"] },
+        pr_url: { type: "string" },
+      },
+      required: ["provider", "pr_url"],
+    },
+  },
+  {
+    name: "cloud_agent_transcript",
+    description: "Dump the transcript of a cloud agent's runs as JSON lines.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: { cloud_agent_id: { type: "string" } },
+      required: ["cloud_agent_id"],
+    },
+  },
+  {
+    name: "list_cloud_agent_artifacts",
+    description: "List artifact files a cloud agent produced.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: { cloud_agent_id: { type: "string" } },
+      required: ["cloud_agent_id"],
+    },
+  },
+  {
     name: "list_routines",
     description:
       "List routines owned by this bot, including their ids, schedules, status, and next run. The result includes the computer's authoritative current time and timezone; use those when interpreting relative dates. Only call this when the user asks about routines or wants to change one.",

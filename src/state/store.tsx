@@ -4714,6 +4714,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           botPatchQueue.cancel(frame.botId);
           rawDispatch({ type: "deleteBot", botId: frame.botId });
           break;
+        case "cloud.agent":
+          window.dispatchEvent(new CustomEvent("sagax-cloud-agent", { detail: { botId: frame.botId, item: frame.item } }));
+          break;
         case "live.call": {
           const framed = liveCallFromFrame(frame);
           // Rendered at once: a bot message frame right behind this one

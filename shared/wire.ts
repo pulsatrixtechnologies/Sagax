@@ -36,6 +36,7 @@ import type { Notification } from "./notification.ts";
 import type { Routine, RoutineRun } from "./routines.ts";
 import type { WebhookAttempt, WebhookTrigger } from "./webhooks.ts";
 import type { AutoModelRecord } from "./auto-model.ts";
+import type { CloudAgentWireItem } from "./cloud-agents.ts";
 
 /** Reasoning-effort levels, ascending. A union of everything any engine
  * accepts; each driver declares the subset its CLI will take. Lives here
@@ -1024,6 +1025,8 @@ export type ServerFrame =
   | { kind: "routine"; routine: Routine }
   | { kind: "routine.deleted"; routineId: string }
   | { kind: "routine.run"; run: RoutineRun }
+  /** A cloud coding agent record changed (server/cloud-agents/manager.ts). */
+  | { kind: "cloud.agent"; botId: string; item: CloudAgentWireItem }
   | { kind: "webhook"; webhook: WebhookTrigger }
   | { kind: "webhook.attempt"; attempt: WebhookAttempt }
   | { kind: "webhook.deleted"; webhookId: string }

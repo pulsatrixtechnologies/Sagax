@@ -233,7 +233,11 @@ export function historyItems(items: readonly BotActivityItem[], status: HistoryS
 export async function loadBotActivityDetail(api: Api, botId: string, itemId: string): Promise<BotActivityDetail> {
   const [kind, ...rest] = itemId.split(":");
   const id = rest.join(":");
-  const query = kind === "run" ? `runId=${encodeURIComponent(id)}` : `threadId=${encodeURIComponent(id)}`;
+  const query = kind === "run"
+    ? `runId=${encodeURIComponent(id)}`
+    : kind === "cloud"
+      ? `cloudId=${encodeURIComponent(id)}`
+      : `threadId=${encodeURIComponent(id)}`;
   const { item } = await api<{ item: BotActivityDetail }>(`/api/bots/${encodeURIComponent(botId)}/activity/item?${query}`);
   return item;
 }

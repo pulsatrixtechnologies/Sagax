@@ -795,6 +795,14 @@ import { docsIndexPrompt, readWorkspaceText, rulesSystemPrompt, WorkspacePathErr
 import { updateDoc, updateRules } from "./workspace-tools.ts";
 import { markWorkspaceUse, promptSectionPaths } from "./workspace-usage.ts";
 import { createBotActivityRoutes, type ActivityChildRef } from "./routes/bot-activity.ts";
+import { CloudAgentStore } from "./cloud-agents/store.ts";
+import { CloudAgentCredentialStore } from "./cloud-agents/credentials.ts";
+import { CloudAgentManager, type CloudAgentCompletionEvent } from "./cloud-agents/manager.ts";
+import { createProviderRegistry } from "./cloud-agents/providers/registry.ts";
+import { createCloudAgentRoutes } from "./routes/cloud-agents.ts";
+import { cloudAgentInternalAction, handleCloudAgentInternal } from "./routes/cloud-agents-internal.ts";
+import { cloudAgentWakePrompt } from "./cloud-agents/wake.ts";
+import { cloudAgentWireItem } from "./cloud-agents/activity.ts";
 import { inGitRepository } from "./activity-coding.ts";
 import { repositoryInfo } from "./activity-code-work.ts";
 import { launchedAgentsForBot } from "./launched-agents.ts";
@@ -5238,6 +5246,9 @@ function vaultKeySource(): VaultKeySource {
   return mcpOAuthKey;
 }
 const personConnections = new PersonConnections(DATA_DIR, vaultKeySource);
+const cloudAgentStore = new CloudAgentStore(DATA_DIR);
+const cloudAgentCredentials = new CloudAgentCredentialStore(DATA_DIR, vaultKeySource);
+let cloudAgentManager!: CloudAgentManager;
 const personOAuthManagers = new Map<string, McpOAuthManager>();
 function personOAuth(principalId: string): McpOAuthManager {
   let manager = personOAuthManagers.get(principalId);
@@ -8530,6 +8541,10 @@ function sseFrameFor(
   if (payload?.kind === "preferences" && !preferencesFrameAllowed(payload, client.viewerId)) return null;
   if ((payload?.kind === "nudge" || payload?.kind === "nudge.sent") && !nudgeFrameAllowed(payload, client.viewerId, localPrincipalId())) return null;
   if (payload?.kind === "presence.changed" && !presenceFrameAllowed(payload, client)) return null;
+  if (payload?.kind === "cloud.agent" && typeof payload.botId === "string") {
+    const bot = store.bot(payload.botId);
+    if (!bot || !listedBotVisible(bot, client.viewerId || undefined)) return null;
+  }
   // A read position in a conversation between two people follows both
   // people's "Send read receipts" choice (server/read-receipts.ts).
   if (payload?.kind === "thread.read" && !threadReadFrameAllowed(payload, client.viewerId)) return null;
@@ -21639,6 +21654,52 @@ ROUTES.push(createAccountRoutes({
     return { bots, threads };
   },
 }));
+function wakeFromCloudAgentCompletion(event: CloudAgentCompletionEvent): void {
+  const { record } = event;
+  const bot = store.bot(record.botId);
+  if (!bot || !store.taskByThread(record.botId, record.threadId)) return;
+  const principalId = turnSpeakerPrincipals.get(record.threadId);
+  const prompt = cloudAgentWakePrompt(event);
+  const speaker: TurnSpeaker | undefined = principalId
+    ? { origin: "person", principalId }
+    : undefined;
+  void startTurn(record.botId, prompt, {
+    threadId: record.threadId,
+    cardContinuation: true,
+    unattended: isUnattended(record.botId, record.threadId),
+    ...(speaker ? { speaker } : {}),
+  }).catch((error) => {
+    console.warn(`[cloud-agents] wake failed: ${error instanceof Error ? error.message : String(error)}`);
+  });
+}
+
+const cloudAgentProviders = createProviderRegistry();
+cloudAgentManager = new CloudAgentManager({
+  store: cloudAgentStore,
+  credentials: cloudAgentCredentials,
+  providers: cloudAgentProviders,
+  onComplete: (event) => { wakeFromCloudAgentCompletion(event); },
+  onChange: (record) => {
+    broadcast({ kind: "cloud.agent", botId: record.botId, item: cloudAgentWireItem(record) });
+  },
+});
+
+const CLOUD_AGENT_SYNC_MS = 15_000;
+setInterval(() => { void cloudAgentManager.syncActive(); }, CLOUD_AGENT_SYNC_MS).unref?.();
+
+ROUTES.push(createCloudAgentRoutes({
+  manager: cloudAgentManager,
+  credentials: cloudAgentCredentials,
+  providerLabel: (id) => cloudAgentProviders.get(id)?.label ?? id,
+  botVisible: (auth, botId) => {
+    const bot = store.bot(botId);
+    if (!bot) return false;
+    return listedBotVisible(bot, channelFilterViewerId(auth));
+  },
+  principalId: (auth) => sessionPrincipal(auth),
+  botName: (botId) => store.bot(botId)?.name,
+}));
+
 // What a bot is doing (server/routes/bot-activity.ts): its threads, the
 // work it handed other bots and its routine runs, as the viewer may read them.
 ROUTES.push(createBotActivityRoutes({
@@ -21665,6 +21726,7 @@ ROUTES.push(createBotActivityRoutes({
   runAccessCard: (run, viewerId) => routineRunAccessCard(run, viewerId),
   inRepository: (cwd) => inGitRepository(cwd),
   repository: (cwd) => repositoryInfo(cwd),
+  cloudAgents: cloudAgentManager,
   launchedAgents: (botId, viewerId) => launchedAgentsForBot({
     launcherBotId: botId,
     bots: () => store.bots,
@@ -26910,6 +26972,26 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
             ? { speakerPrincipalId: turnSpeakerPrincipals.get(internalCapability.threadId)! } : {}),
         }, agentApiTool, body ?? {}, aborted.signal);
         return json(res, answer.status, answer.body);
+      }
+      const cloudAgentAction = cloudAgentInternalAction(method, path);
+      if (cloudAgentAction) {
+        const body = await readInternalBody();
+        let principalId = turnSpeakerPrincipals.get(internalCapability.threadId);
+        if (!principalId && IDENTITY.kind !== "perspicax") principalId = localPrincipalId();
+        if (!principalId) {
+          return json(res, 403, { error: "Cloud agents need a signed-in person with provider credentials." });
+        }
+        const answer = await handleCloudAgentInternal(
+          cloudAgentAction,
+          (body && typeof body === "object" && !Array.isArray(body) ? body : {}) as Record<string, unknown>,
+          {
+            manager: cloudAgentManager,
+            principalId,
+            botId: internalSender.id,
+            threadId: internalCapability.threadId,
+          },
+        );
+        return json(res, answer.isError ? 400 : 200, answer);
       }
       if (path === "/api/internal/act" && method === "POST") {
         const body = await readInternalBody();

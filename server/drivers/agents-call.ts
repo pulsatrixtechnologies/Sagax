@@ -14,6 +14,7 @@ import { normalizeCronSchedule } from "../../shared/routine-schedule.ts";
 
 import { peerName } from "../peer-roster.ts";
 import { renderPeerDeliveryReceipts, type PeerDeliveryOutcome, type PeerDeliveryReceipt } from "../peer-delivery.ts";
+import { CLOUD_AGENT_READ_TOOLS, CLOUD_AGENT_WRITE_TOOLS, cloudAgentToolAction } from "../../shared/cloud-agents.ts";
 import { AGENT_API_TOOL_NAMES, catalogProfileFromEnv, SHARED_COMPUTER_TOOL_NAMES, WEEKDAYS } from "./agents-catalog.ts";
 import { harnessClientFromEnv } from "./agents-client.ts";
 import type { HarnessClient, Json } from "./agents-client.ts";
@@ -1369,6 +1370,27 @@ export async function callTool(name: string, args: Json, context: ToolCallContex
     return {
       text: `A confirmation card is now visible to the user for ${proposal}.${warningText}\n\n${status} End this turn and wait for the decision.`,
     };
+  }
+  const cloudAgentAction = cloudAgentToolAction(name);
+  if (cloudAgentAction) {
+    if (!CLOUD_AGENT_READ_TOOLS.has(name) && !CLOUD_AGENT_WRITE_TOOLS.has(name)) {
+      return { text: `Unknown cloud agent tool: ${name}`, isError: true };
+    }
+    const payload: Json = { ...args };
+    if (name === "launch_cloud_agent") {
+      const repoUrl = typeof args.repo_url === "string" ? args.repo_url.trim() : "";
+      const ref = typeof args.ref === "string" ? args.ref.trim() : "";
+      if (repoUrl) payload.repos = [{ url: repoUrl, ...(ref ? { ref } : {}) }];
+      delete payload.repo_url;
+      delete payload.ref;
+    }
+    const { ok, body } = await apiResponse(`/api/internal/cloud-agents/${cloudAgentAction}`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+    const text = String(body.text ?? body.error ?? "").slice(0, 8000);
+    if (!ok || body.isError) return { text: text || "The cloud agent call was refused.", isError: true };
+    return { text: text || "Done." };
   }
   if (name === "add_mcp_server") {
     let saved: Json;
