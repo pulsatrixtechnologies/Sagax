@@ -29,10 +29,25 @@ describe("background replies", () => {
   it("stays one turn in the vitest fixture unless the bot turns it on", () => {
     const namespace = process.env.SAGAX_LOCAL_VM_TEST_NAMESPACE;
     const flag = process.env.SAGAX_BACKGROUND_REPLIES;
+    const home = process.env.HOME;
+    const profile = process.env.USERPROFILE;
+    const data = process.env.SAGAX_DATA_DIR;
     try {
       delete process.env.SAGAX_LOCAL_VM_TEST_NAMESPACE;
       delete process.env.SAGAX_BACKGROUND_REPLIES;
+      process.env.HOME = "/home/sagax";
+      process.env.USERPROFILE = "/home/sagax";
+      delete process.env.SAGAX_DATA_DIR;
       expect(backgroundRepliesActive({})).toBe(true);
+      process.env.HOME = home;
+      if (profile === undefined) delete process.env.USERPROFILE;
+      else process.env.USERPROFILE = profile;
+      if (data === undefined) delete process.env.SAGAX_DATA_DIR;
+      else process.env.SAGAX_DATA_DIR = data;
+      expect(backgroundRepliesActive({})).toBe(false);
+      process.env.SAGAX_BACKGROUND_REPLIES = "on";
+      expect(backgroundRepliesActive({})).toBe(true);
+      delete process.env.SAGAX_BACKGROUND_REPLIES;
       process.env.SAGAX_LOCAL_VM_TEST_NAMESPACE = "suite";
       expect(backgroundRepliesActive({})).toBe(false);
       expect(backgroundRepliesActive({ backgroundReplies: true })).toBe(true);
@@ -45,6 +60,12 @@ describe("background replies", () => {
       else process.env.SAGAX_LOCAL_VM_TEST_NAMESPACE = namespace;
       if (flag === undefined) delete process.env.SAGAX_BACKGROUND_REPLIES;
       else process.env.SAGAX_BACKGROUND_REPLIES = flag;
+      if (home === undefined) delete process.env.HOME;
+      else process.env.HOME = home;
+      if (profile === undefined) delete process.env.USERPROFILE;
+      else process.env.USERPROFILE = profile;
+      if (data === undefined) delete process.env.SAGAX_DATA_DIR;
+      else process.env.SAGAX_DATA_DIR = data;
     }
   });
 

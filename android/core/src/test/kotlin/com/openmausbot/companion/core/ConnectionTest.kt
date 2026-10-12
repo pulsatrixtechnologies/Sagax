@@ -147,13 +147,20 @@ class ConnectionTest {
     @Test
     fun zonedIpv6UsesScopedAddressOnTheRealOkHttpConnectPath() = runBlocking {
         // Everything below needs a real interface name and index to build the
-        // scoped address with. Where the JVM exposes no IPv6 interface, failing
-        // here would measure the machine, not Connection — so skip instead.
+        // scoped address with. Loopback lists an IPv6 address but refuses a
+        // scoped fe80::1 ("no scope_id found"), and enumeration order is not
+        // stable, so the first IPv6 interface is often lo on a container.
+        // Failing there would measure the machine, not Connection — skip
+        // unless some interface can actually carry the scoped address.
         val ipv6Interface = Collections.list(NetworkInterface.getNetworkInterfaces())
             .firstOrNull { candidate ->
-                Collections.list(candidate.inetAddresses).any { it is Inet6Address }
+                val hasIpv6 = Collections.list(candidate.inetAddresses).any { it is Inet6Address }
+                hasIpv6 && runCatching {
+                    val unscoped = InetAddress.getByName("fe80::1") as Inet6Address
+                    Inet6Address.getByAddress("fe80::1", unscoped.address, candidate)
+                }.isSuccess
             }
-        assumeTrue(ipv6Interface != null, "this JVM exposes no IPv6-capable interface")
+        assumeTrue(ipv6Interface != null, "this JVM exposes no IPv6 interface that can carry a scoped address")
         val networkInterface = assertNotNull(ipv6Interface)
         var fallbackCalled = false
         val fallback = object : Dns {
