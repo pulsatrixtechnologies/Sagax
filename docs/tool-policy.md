@@ -47,3 +47,9 @@ Writes still raise the approval card. The decision is recorded on every agent-ap
 - `off`: skips the guard.
 
 In shadow mode the audit shows what enforcing would refuse. Today that is `create_agent`, which is admin tier and has no grants yet.
+
+## Grants routes (B3a)
+Admin scope only (gate + handler). Policy rows are `tool-grants:admin`, never default-enabled, so no agent tool can grant itself anything.
+- `GET /api/tool-grants[?kind=bot|user&id=…]`: every row (active, expired, revoked) with `state`.
+- `POST /api/tool-grants` `{subject:{kind,id}, scope:"<area>:<tier>", expiresAt?}`: a bot must exist; admin-tier grants need an expiry within 30 days.
+- `POST /api/tool-grants/<id>/revoke`: keeps the row. Both writes go to the admin activity log (category `rights`).

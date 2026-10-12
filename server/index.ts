@@ -787,6 +787,7 @@ import { createAchievementRoutes } from "./routes/achievements.ts";
 import { lockedLookChange, masteryDelegationFacts, masteryFrameFacts, masteryRequestFacts, masterySendFacts, threadCensus, type LookRefusal, type PersonFact } from "./achievements-mastery.ts";
 import { grandfatheredFromBots } from "../shared/achievements.ts";
 import { createBotMemoryRoutes } from "./routes/bot-memory.ts";
+import { createToolGrantRoutes } from "./routes/tool-grants.ts";
 import { createBotWorkspaceRoutes } from "./routes/bot-workspace.ts";
 import { docsIndexPrompt, readWorkspaceText, rulesSystemPrompt, WorkspacePathError } from "./workspace-files.ts";
 import { updateDoc, updateRules } from "./workspace-tools.ts";
@@ -25624,6 +25625,16 @@ function agentApiAudit(caller: AgentCaller, entry: AuditEntry): void {
 // B2 securable tool layer (docs/tool-policy.md): grants per bot and person;
 // SAGAX_TOOL_GUARD=shadow (default) audits the decision, enforce applies it.
 const toolGrants = ToolGrantStore.inDataDir(DATA_DIR);
+// B3a: the settings page reviews, grants and revokes them (admin only).
+ROUTES.push(createToolGrantRoutes({
+  grants: toolGrants,
+  botExists: (id) => Boolean(store.bot(id)),
+  audit: (action, auth, req, detail) => appendAdminAction(DATA_DIR, {
+    category: "rights", action,
+    ...(detail.subject && (detail.subject as { kind: string }).kind === "bot" ? { target: { kind: "bot", id: (detail.subject as { id: string }).id } } : {}),
+    after: detail, actor: adminActorFor(auth, req),
+  }),
+}));
 const agentApi = createAgentApi({
   guardMode: toolGuardMode(process.env.SAGAX_TOOL_GUARD),
   guard: (caller, policy) => guardDecision(policy, { kind: caller.kind === "bot" ? "bot" : "user", id: caller.id },
