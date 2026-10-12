@@ -338,6 +338,9 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   // which the handler keeps to the owner).
   { methods: ["GET"], path: /^\/api\/computer\/status$/ },
   { methods: ["POST"], path: /^\/api\/computer\/(?:update|reset)$/ },
+  // In-chat terminal: list shell-capable resources and manage the person's own sessions.
+  { methods: ["GET"], path: /^\/api\/terminal\/resources$/ },
+  { methods: ["GET", "POST"], path: /^\/api\/terminal\/sessions\/[\w-]+(?:\/(?:bot-input|close))?$/ },
   // Plugin catalog (reads: names, descriptions, icons; no secrets). Installing
   // one changes the server's MCP servers: the handler lets through an admin
   // or this computer's own person (clientSessionIsComputerOwner), nobody else.

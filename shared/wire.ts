@@ -37,6 +37,8 @@ import type { Routine, RoutineRun } from "./routines.ts";
 import type { WebhookAttempt, WebhookTrigger } from "./webhooks.ts";
 import type { AutoModelRecord } from "./auto-model.ts";
 import type { CloudAgentWireItem } from "./cloud-agents.ts";
+import type { TerminalEmbed } from "./terminal-resources.ts";
+import type { TerminalRequestCardData } from "./terminal-request.ts";
 
 /** Reasoning-effort levels, ascending. A union of everything any engine
  * accepts; each driver declares the subset its CLI will take. Lives here
@@ -664,6 +666,8 @@ export interface WireMessage {
   parallelTask?: ParallelTaskRef;
   /** steer-queue entry this drained user line came from. */
   queueId?: string;
+  /** In-chat terminal opened on a shell-capable resource. */
+  terminalEmbed?: TerminalEmbed;
 }
 
 export interface OptionCardData {
@@ -748,6 +752,8 @@ export interface OptionCardData {
   /** A bot action waiting for this person's Allow. The id matches requestId.
    * The card stores no body and no query. */
   botActRequest?: { id: string };
+  /** Interactive shell on a terminal-capable resource (approval required). */
+  terminalRequest?: TerminalRequestCardData;
 }
 
 /** Which app holds the microphone of a Live call: the desktop app (its own

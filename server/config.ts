@@ -760,6 +760,11 @@ export interface AppConfig {
   box?: { token?: string };
   /** A named host from the user's SSH config. Authentication stays with SSH. */
   vps?: { sshAlias?: string };
+  /** Shell resources offered in the in-chat terminal (credentials stay with SSH). */
+  terminalShell?: {
+    unraidSshAlias?: string;
+    hosts?: Array<{ id: string; label: string; hostLabel?: string; alias: string; provider?: string }>;
+  };
   opencodeGo?: { apiKey?: string; providerKeys?: Record<string, string> };
   tts?: { key?: string; fishKey?: string; xaiKey?: string; voice?: string; provider?: "elevenlabs" | "fish" | "system" | "chatterbox" | "xai"; baseUrl?: string; model?: string; fishModel?: FishTtsModel };
   /** The decision model; see the schema above and server/decider. */

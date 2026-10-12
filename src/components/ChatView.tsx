@@ -26,6 +26,7 @@ import {
   X,
 } from "lucide-react";
 import { WorkingDots } from "@/components/WorkingIndicator";
+import { TerminalChatEmbed } from "@/components/terminal/TerminalChatEmbed";
 import { MessageBar, MessageMenuItem } from "./MessageBar";
 import { TurnRunLine } from "./TurnRunLine";
 import { useHoverDwell } from "@/hooks/use-hover-dwell";
@@ -685,6 +686,7 @@ const Bubble = memo(function Bubble({
                   ))}
                 </div>
               )}
+              {message.terminalEmbed && <TerminalChatEmbed embed={message.terminalEmbed} />}
               <AttachmentGallery images={generatedPaths} files={linkedFiles} message={{ threadId, messageId: message.id }} className={text ? undefined : "mb-0"} eager={eagerAttachments} />
               {viewRaw && text ? (
                 <div data-citation-source={message.id} data-citation-owner-type="bot" data-citation-owner={botId} data-citation-thread={threadId}><RawMarkdownView text={text} /></div>

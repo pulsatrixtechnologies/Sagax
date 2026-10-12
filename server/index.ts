@@ -633,6 +633,8 @@ import { resolveMailSettings } from "./mail-config.ts";
 import { createCaptureMailer, createMailer, type Mailer } from "./mailer.ts";
 import { createMailSettingsRoutes } from "./mail-routes.ts";
 import { createVoiceModeRoutes } from "./voice-mode.ts";
+import { installTerminalFeature } from "./terminal-install.ts";
+import { resolveAndSendTerminal } from "./terminal-requests.ts";
 import { parseVoiceCallMeta, voiceCallSection, voiceCallSteerPrompt, voiceCallTurnPrompt } from "./voice-call-prompt.ts";
 import { VoiceCallSessions } from "./voice-call-session.ts";
 import { VoiceCallWarmup } from "./voice-call-warmup.ts";
@@ -7795,8 +7797,10 @@ const sandboxControlHolds = new SandboxControlHolds();
 // Cloud boot can revoke sessions before routes are registered. Create the
 // viewer manager before installing any revocation callbacks.
 const desktopViewer = createDesktopViewer({
-  // voice mode's live call (server/voice-mode.ts GET /voice/listen and /voice/speech)
-  acceptsUpgrade: (path) => /^\/api\/bots\/[\w-]+\/voice\/(?:listen|speech)$/.test(path),
+  // voice mode's live call; in-chat terminal WebSocket (server/routes/terminal.ts)
+  acceptsUpgrade: (path) =>
+    /^\/api\/bots\/[\w-]+\/voice\/(?:listen|speech)$/.test(path)
+    || /^\/api\/terminal\/sessions\/[\w-]+\/ws$/.test(path),
   target: (id, auth) => {
     if (id === SANDBOX_VIEWER_TARGET) {
       // The caller's own server environment desktop, never anyone else's.
@@ -7834,6 +7838,16 @@ const desktopViewer = createDesktopViewer({
     const holds = () => computerControl.ownsLease(key, controlLeaseId);
     return holds() ? holds : undefined;
   },
+});
+function terminalPrincipalId(auth: RequestAuth): string | undefined {
+  const id = actorPrincipalId(auth).trim().toLowerCase();
+  return id || undefined;
+}
+const terminalFeature = installTerminalFeature({
+  dataDir: DATA_DIR,
+  store,
+  cfg: () => cfg,
+  principalId: terminalPrincipalId,
 });
 function closeSessionStreams(sessionId: string): void {
   browserLive.closeForOwner(sessionId);
@@ -8014,7 +8028,8 @@ function isApprovalCardMessage(message: { kind?: unknown; card?: unknown }): boo
   return Boolean(
     card.tool || card.allowKey || card.commandAllowlist || card.approvalScope
     || card.skillRequest || card.routineRequest || card.profileRequest
-    || card.teamSetupRequest || card.modelRequest || card.tighteningRequest,
+    || card.teamSetupRequest || card.modelRequest || card.tighteningRequest
+    || card.terminalRequest,
   );
 }
 
@@ -8040,6 +8055,7 @@ function approvalAnswerRefusal(auth: RequestAuth, threadId: string, requestId: s
   // a question (the questionRequest form, or a persistent ask card) stays on the ordinary answer path
   const question = Boolean(message.card && typeof message.card === "object" && (message.card.questionRequest || isPersistentQuestionCard(message.card)));
   if (question) return null;
+  if (message.card && typeof message.card === "object" && message.card.terminalRequest) return null;
   if (!isApprovalCardMessage(message)) return refusal;
   const bot = botForApproval(threadId, message);
   const audience = bot ? approvalAudience({ ownerUserId: approvalOwnerId(bot), host: approvalHostOf(bot) }) : null;
@@ -8794,6 +8810,23 @@ async function respondToCard(input: {
   await answeringCardAs(auth, threadId, requestId, async () => {
     // peer-approval intercept, as the route: only a card on this thread
     if (card && resolvePeerComms(approvalBus, requestId, behavior)) return;
+    if (card?.terminalRequest) {
+      const principalId = terminalPrincipalId(auth);
+      if (!principalId) {
+        result = { ok: false, status: 401, error: "Sign in to open a terminal." };
+        return;
+      }
+      const settled = await terminalFeature.requests.resolve({ threadId, requestId, behavior, principalId });
+      if (!settled.claimed) {
+        result = { ok: false, status: 409, error: "The request is no longer open." };
+        return;
+      }
+      if ("status" in settled && settled.status) {
+        result = { ok: false, status: settled.status, error: settled.error };
+        return;
+      }
+      return;
+    }
     const outcome = await answerRequest(
       threadId, botForThread(bot.id, threadId)?.modelSelection.instanceId ?? "", requestId, behavior, message,
       { id: bot.id, name: bot.name },
@@ -26026,6 +26059,10 @@ ROUTES.push(createAntigravityLeftoverRoutes({
 }));
 
 ROUTES.push(desktopViewer.route);
+terminalFeature.wire(ROUTES, {
+  upgrade: (req) => desktopViewer.upgradeOf(req),
+  live: (auth) => auth.kind === "loopback" || (auth.kind === "session" && sessions.isLive(auth.session.id)),
+});
 
 // Live calls (GPT-Live as the voice, the bot as the brain). A client holds
 // the WebRTC audio; the harness creates the session with the key (which
@@ -34308,6 +34345,19 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           requestId: String(body.requestId),
           behavior,
         })) return;
+        const terminalCardBot = store.messagesFor(bot.threadId).find(
+          (message) => message.card?.requestId === String(body.requestId) && message.card.terminalRequest,
+        );
+        if (terminalCardBot?.card?.terminalRequest) {
+          const principalId = terminalPrincipalId(auth);
+          if (!principalId) return json(res, 401, { error: "Sign in to open a terminal." });
+          if (await resolveAndSendTerminal(res, terminalFeature.requests, {
+            threadId: bot.threadId,
+            requestId: String(body.requestId),
+            behavior,
+            principalId,
+          })) return;
+        }
         if (sendSkillResolution(res, resolveSkillRequest({
           botId: bot.id,
           botName: bot.name,
@@ -34391,6 +34441,19 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
             behavior,
             reviewedSha256,
           }))) return;
+        }
+        const terminalCard = store.messagesFor(threadId).find(
+          (message) => message.card?.requestId === requestId && message.card.terminalRequest,
+        );
+        if (terminalCard?.card?.terminalRequest) {
+          const principalId = terminalPrincipalId(auth);
+          if (!principalId) return json(res, 401, { error: "Sign in to open a terminal." });
+          if (await resolveAndSendTerminal(res, terminalFeature.requests, {
+            threadId,
+            requestId,
+            behavior,
+            principalId,
+          })) return;
         }
         const routineCard = store.messagesFor(threadId).find(
           (message) => message.card?.requestId === requestId && message.card.routineRequest,
