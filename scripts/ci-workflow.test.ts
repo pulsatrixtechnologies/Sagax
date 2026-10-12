@@ -76,7 +76,12 @@ describe("CI concurrency", () => {
 
   it("keeps each PR to one macOS job unless native code changed", () => {
     const macosJobs = Object.entries(workflow.jobs as Record<string, { "runs-on": unknown; strategy?: { matrix?: { os?: unknown } } }>)
-      .filter(([, job]) => (Array.isArray(job["runs-on"]) && job["runs-on"].includes("macos")) || JSON.stringify(job.strategy?.matrix?.os ?? "").includes("macos"))
+      .filter(([, job]) => {
+        // Runner labels keep GitHub's own casing (`macOS`), not `macos`.
+        const labels = Array.isArray(job["runs-on"]) ? job["runs-on"] : [];
+        const onMac = labels.some((label) => String(label).toLowerCase() === "macos" || String(label).toLowerCase() === "macos-latest");
+        return onMac || JSON.stringify(job.strategy?.matrix?.os ?? "").toLowerCase().includes("macos");
+      })
       .map(([name]) => name);
     // Sagax keeps its native apps: the iOS build runs only when ios/ changed.
     expect(macosJobs.sort()).toEqual(["electron-smokes", "ios"]);
