@@ -174,7 +174,8 @@ struct ComputerView: View {
     /// Organization full-screen computer stages share floating chrome in
     /// landscape (back, screen picker) over the picture.
     private func orgImmersiveScreen<Content: View>(@ViewBuilder content: () -> Content) -> some View {
-        ComputerImmersiveShell(
+        let picture = content()
+        return ComputerImmersiveShell(
             top: {
                 VStack(spacing: 12) {
                     HStack {
@@ -190,7 +191,7 @@ struct ComputerView: View {
             },
             bottom: { EmptyView() },
             content: {
-                content()
+                picture
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             }
         )
