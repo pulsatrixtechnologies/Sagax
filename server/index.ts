@@ -15,6 +15,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import { existsSync, readFileSync, realpathSync, rmSync, mkdirSync, statSync, writeFileSync } from "node:fs";
 import { ToolGrantStore } from "./tool-grants.ts";
+import { createAgentCardGuard } from "./agent-tool-card-guard.ts";
 import { guardDecision, toolGuardMode } from "./tool-guard.ts";
 import { writeFileAtomic } from "./atomic.ts";
 import { rm as removeDirectory } from "node:fs/promises";
@@ -10594,6 +10595,21 @@ bus.subscribe((event: RuntimeEvent) => {
       // access never invents an answer.
       const asker = bot ?? (speaker ? store.bot(speaker.botId) : undefined);
       const unattended = permission && asker && event.requestId ? isUnattended(asker.id, event.threadId) : false;
+      // B2.1: grant check, then speaker check, before the card (or Full access) answers
+      const cardGuardTool = event.mcpTool ?? event.tool;
+      const cardGuard = permission && asker && event.requestId && typeof cardGuardTool === "string"
+        ? agentCardGuard.opened({
+          requestId: event.requestId, mcpTool: cardGuardTool, bot: { id: asker.id, name: asker.name },
+          ...(!turnRoutineLineage.has(event.threadId) && turnSpeakerPrincipals.get(event.threadId)
+            ? { speakerPrincipalId: turnSpeakerPrincipals.get(event.threadId)! } : {}),
+        })
+        : null;
+      if (cardGuard?.deny && asker && event.requestId) {
+        const instance = event.providerInstanceId ? registry.get(event.providerInstanceId) : registry.get(asker.modelSelection.instanceId);
+        void instance?.adapter.respondToRequest(event.threadId, event.requestId, { behavior: "deny" }).catch(() => {});
+        pushMessage({ role: "bot", kind: "activity", tool: { name: `Refused ${cardGuardTool}: ${cardGuard.decision.reason === "speaker_not_granted" ? "the person this turn speaks for has" : "this bot has"} no grant for it (Settings → Tool access).`, ok: false } });
+        break;
+      }
       // A turn a guest drives on a Cloud home is Ask, room turns included,
       // and no command the owner saved answers for it.
       const guestDriven = cloudGuestDriven(event.threadId);
@@ -10804,6 +10820,7 @@ bus.subscribe((event: RuntimeEvent) => {
     }
     case "request.resolved": {
       if (event.requestId) pendingCommandRules.delete(`${event.threadId}:${event.requestId}`);
+      if (event.requestId) agentCardGuard.resolved(event.requestId, event.behavior, event.source);
       if (event.requestId) withdrawApprovalNotice(event.threadId, event.requestId);
       if (event.requestId) settleWaitingOnPersonChips(event.threadId, event.requestId, { behavior: event.behavior, source: event.source });
       // answered (by whoever): the turn is working again, unless it settled
@@ -25615,7 +25632,7 @@ function agentApiAudit(caller: AgentCaller, entry: AuditEntry): void {
     category: "client",
     action: `agents.${entry.tool}`,
     ...(entry.agentId ? { target: { kind: "bot", id: entry.agentId, ...(target ? { name: target.name } : {}) } } : {}),
-    after: { outcome: entry.outcome, ...(entry.code ? { code: entry.code } : {}), ...(caller.kind === "bot" ? { callerBotId: caller.id, callerBotName: caller.name } : {}), ...entry.detail },
+    after: { outcome: entry.outcome, ...(entry.code ? { code: entry.code } : {}), ...(caller.kind === "bot" ? { callerBotId: caller.id, callerBotName: caller.name, speakerPrincipalId: caller.speakerPrincipalId ?? null } : {}), ...entry.detail },
     actor: caller.kind === "person"
       ? { kind: "person", principalId: caller.id, via: caller.via === "console" ? "console" : "perspicax-mcp" }
       : { kind: "worker" },
@@ -25624,6 +25641,21 @@ function agentApiAudit(caller: AgentCaller, entry: AuditEntry): void {
 // B2 securable tool layer (docs/tool-policy.md): grants per bot and person;
 // SAGAX_TOOL_GUARD=shadow (default) audits the decision, enforce applies it.
 const toolGrants = ToolGrantStore.inDataDir(DATA_DIR);
+// B2.1: the guard before the approval card (server/agent-tool-card-guard.ts).
+const agentCardGuard = createAgentCardGuard({
+  grants: toolGrants,
+  mode: () => toolGuardMode(process.env.SAGAX_TOOL_GUARD),
+  audit: (row) => {
+    const target = store.bot(row.botId);
+    appendAdminAction(DATA_DIR, {
+      category: "client",
+      action: `agents.${row.tool}`,
+      target: { kind: "bot", id: row.botId, ...(target ? { name: target.name } : {}) },
+      after: { outcome: row.outcome, callerBotId: row.botId, ...(row.botName ? { callerBotName: row.botName } : {}), ...row.detail },
+      actor: { kind: "worker" },
+    });
+  },
+});
 const agentApi = createAgentApi({
   guardMode: toolGuardMode(process.env.SAGAX_TOOL_GUARD),
   guard: (caller, policy) => guardDecision(policy, { kind: caller.kind === "bot" ? "bot" : "user", id: caller.id },
