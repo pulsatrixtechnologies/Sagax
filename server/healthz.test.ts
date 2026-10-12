@@ -19,4 +19,10 @@ describe("healthz", () => {
     expect(block).toContain("healthzBody()");
     expect(block).not.toContain("!gate.auth");
   });
+
+  it("is not swallowed by the static UI's SPA fallback", () => {
+    const source = readFileSync(join(import.meta.dirname, "index.ts"), "utf8");
+    const line = source.split("\n").find((l) => l.includes("serveStatic(res, path)"));
+    expect(line).toContain('path !== "/healthz"');
+  });
 });
