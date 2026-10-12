@@ -104,8 +104,8 @@ struct LaunchedAgentsGroup: View {
                 LaunchedAgentRow(item: item, onOpen: onOpen)
             }
         }
-        .background(Theme.card, in: RoundedRectangle(cornerRadius: Theme.Profile.cardRadius, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: Theme.Profile.cardRadius, style: .continuous).stroke(Theme.hairline, lineWidth: 1))
+        .background(Theme.card, in: RoundedRectangle(cornerRadius: Theme.Metric.cardRadius, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: Theme.Metric.cardRadius, style: .continuous).stroke(Theme.hairline, lineWidth: 1))
         .accessibilityIdentifier("launched-agents")
     }
 }

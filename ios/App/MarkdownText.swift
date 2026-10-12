@@ -85,8 +85,14 @@ struct MarkdownText: View {
         mentionEveryone: Bool = false,
         attachmentScope: (threadId: String, messageId: String)? = nil,
         picturesAsText: Bool = false,
+        cwAsk: ((CwActionBody) -> Void)? = nil,
+        cwThreadId: String? = nil,
+        cwBotId: String? = nil,
         openLink: ((URL) -> OpenURLAction.Result)? = nil
     ) {
+        self.cwAsk = cwAsk
+        self.cwThreadId = cwThreadId
+        self.cwBotId = cwBotId
         self.source = source
         self.caret = caret
         self.scrollIdentifier = scrollIdentifier
