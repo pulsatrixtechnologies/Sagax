@@ -196,6 +196,30 @@ final class EndpointRefreshTests: XCTestCase {
         XCTAssertEqual(connection.hosts, [routes.tailnet.host])
     }
 
+    func testTailnetBearerStaysOnTheConsentedHost() throws {
+        let routes = try Self.routes()
+        var connection = Connection(
+            name: "Mac",
+            host: routes.tailnet.host,
+            port: routes.tailnet.port,
+            activeEndpoint: routes.tailnet,
+            endpoints: [routes.tailnet, routes.hosted]
+        )
+        connection.establishRoutePolicyFromInvite()
+        let other = try XCTUnwrap(CompanionEndpoint(
+            url: "http://other.ts.net:8810", kind: .tailnet, priority: 50
+        ))
+        let sameHost = try XCTUnwrap(CompanionEndpoint(
+            url: "http://MAC.tail1234.ts.net:9910", kind: .tailnet, priority: 80
+        ))
+
+        XCTAssertEqual(connection.allowedTailnetHost, "mac.tail1234.ts.net")
+        XCTAssertTrue(connection.allowsEndpoint(routes.tailnet))
+        XCTAssertTrue(connection.allowsEndpoint(sameHost))
+        XCTAssertFalse(connection.allowsEndpoint(other))
+        XCTAssertEqual(connection.dialing(other).activeEndpoint?.host, routes.tailnet.host)
+    }
+
     func testExplicitLocalInviteNeverLearnsTailscaleOrAnotherLANOrigin() throws {
         let routes = try Self.routes()
         var connection = Connection(
@@ -239,10 +263,11 @@ final class EndpointRefreshTests: XCTestCase {
         var connection = try JSONDecoder().decode(Connection.self, from: data)
         XCTAssertNil(connection.allowedRouteKinds)
         XCTAssertNil(connection.allowedLocalRouteURLs)
+        XCTAssertNil(connection.allowedTailnetHost)
 
         connection.reconcile(try Self.metadata())
 
-        XCTAssertEqual(connection.automaticEndpoints.map(\.kind), [.hosted, .tailnet])
+        XCTAssertEqual(connection.automaticEndpoints.map(\.kind), [.hosted])
     }
 
     private static func metadata() throws -> CompanionConnectionMetadata {

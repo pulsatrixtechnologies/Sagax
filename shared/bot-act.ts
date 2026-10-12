@@ -1,7 +1,10 @@
 // What a bot may do in the signed-in person's name.
 // The caller is that person. A route they cannot call is refused.
-// Reads and screen changes run now. A write waits unless the bot's
-// approval mode is auto or full. This module decides. It does not perform.
+// Reads and screen changes run now. A write waits for Allow unless this
+// turn's mode is Full (`approvalModeForTurn`, never the stored Auto).
+// Auto holds writes the same way Ask does. Changing an approval mode,
+// answering a card, or calling a /respond route is refused in every mode.
+// This module decides. It does not perform.
 
 const PATH_MAX = 512;
 const QUERY_KEYS_MAX = 20;
@@ -275,14 +278,43 @@ export function decideBotAct(input: {
   } else if (!input.scopes.includes("admin") && !input.scopes.includes("client")) {
     return { ok: false, status: 403, error: "This person cannot call that route." };
   }
+  if (escalatesApproval(target)) {
+    return { ok: false, status: 403, error: "A bot cannot change an approval mode or answer a card through act." };
+  }
   const write = target.kind === "route" ? target.method !== "GET" && target.method !== "HEAD" : target.write;
-  const unattended = input.mode === "auto" || input.mode === "full";
+  // Full still runs an ordinary write. Auto does not: it is "Approve for me"
+  // for the bot's own tools, not a pass for act to skip the card.
+  const unattended = input.mode === "full";
   return {
     ok: true,
     effect: write && !unattended ? "hold" : "run",
     summary: summaryOf(target),
     target,
   };
+}
+
+const ESCALATION_KEYS = new Set(["approvalMode", "confirmFullAccess"]);
+
+/** A card answer, a permission decision, a /respond route, or any
+ * approvalMode / confirmFullAccess field. Refused, not held: holding it
+ * would still let Allow on this thread raise a sibling to Full. */
+function escalatesApproval(target: ActTarget): boolean {
+  if (target.kind === "ui") {
+    if (target.command === "decideRequest" || target.command === "answerCard") return true;
+    return recordHasEscalation(target.input);
+  }
+  if (target.path.endsWith("/respond")) return true;
+  return recordHasEscalation(target.query) || recordHasEscalation(target.body);
+}
+
+function recordHasEscalation(value: unknown, depth = 0): boolean {
+  if (depth > 8 || value === null || typeof value !== "object") return false;
+  if (Array.isArray(value)) return value.some((item) => recordHasEscalation(item, depth + 1));
+  for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
+    if (ESCALATION_KEYS.has(key)) return true;
+    if (recordHasEscalation(child, depth + 1)) return true;
+  }
+  return false;
 }
 
 /** The nudge button's catalog name is one server call, not a screen

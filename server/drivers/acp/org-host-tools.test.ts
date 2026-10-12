@@ -173,9 +173,11 @@ describe("organization server: each admitted ACP engine withholds its own tools"
     expect(acpHostToolRequest({ kind: "edit", title: "write notes.txt" })).toBe(true);
     expect(acpHostToolRequest({ kind: "delete", title: "rm" })).toBe(true);
     expect(acpHostToolRequest({ kind: "move", title: "mv" })).toBe(true);
-    expect(acpHostToolRequest({ kind: "execute", title: "mcp__agents__list_bots" })).toBe(false);
+    expect(acpHostToolRequest({ kind: "execute", title: "mcp__agents__list_bots" })).toBe(true);
     expect(acpHostToolRequest({ kind: "other", title: "anything" })).toBe(false);
-    expect(acpHostToolRequest({ kind: "fetch", title: "mcp_notes_read" })).toBe(false);
+    expect(acpHostToolRequest({ kind: "fetch", title: "mcp_notes_read" })).toBe(true);
+    expect(acpHostToolRequest({ kind: "fetch", title: "mcp__agents__list_bots" })).toBe(false);
+    expect(acpHostToolRequest({ kind: "read", title: "mcp__browser__navigate" })).toBe(false);
   });
 
   it("names exactly the MCP servers Sagax passes a turn", () => {

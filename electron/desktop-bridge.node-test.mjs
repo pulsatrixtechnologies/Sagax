@@ -165,7 +165,7 @@ test("Local VM: only labelled Sagax containers", async () => {
 });
 
 test("network: this computer's own services and link-local never; local network only when asked", async () => {
-  for (const address of ["127.0.0.1", "::1", "169.254.169.254", "0.0.0.0", "::ffff:127.0.0.1", "fe80::1"]) assert.equal(isBlockedAddress(address), true, address);
+  for (const address of ["127.0.0.1", "::1", "169.254.169.254", "168.63.129.16", "::ffff:168.63.129.16", "0.0.0.0", "::ffff:127.0.0.1", "fe80::1"]) assert.equal(isBlockedAddress(address), true, address);
   for (const address of ["10.0.0.5", "192.168.1.2", "100.64.0.1", "8.8.8.8"]) assert.equal(isBlockedAddress(address), false, address);
   assert.equal(isLanAddress("192.168.1.2"), true);
   assert.equal(isLanAddress("8.8.8.8"), false);
@@ -176,7 +176,8 @@ test("network: this computer's own services and link-local never; local network 
   assert.equal((await tunnelVerdict("self.test", 80, "all", lookup)).code, "blocked");
   assert.equal((await tunnelVerdict("nowhere.test", 80, "all", lookup)).code, "unresolved");
   assert.equal((await tunnelVerdict("localhost", 80, "all", lookup, { proxied: true })).code, "blocked");
-  assert.deepEqual(await tunnelVerdict("only-the-proxy.test", 443, "all", lookup, { proxied: true }), { ok: true, address: null });
+  assert.equal((await tunnelVerdict("metadata.google.internal", 80, "all", lookup, { proxied: true })).code, "blocked");
+  assert.equal((await tunnelVerdict("only-the-proxy.test", 443, "all", lookup, { proxied: true })).code, "unresolved");
   assert.equal((await tunnelVerdict("only-the-proxy.test", 443, "lan", lookup, { proxied: true })).code, "unresolved");
 });
 
@@ -333,12 +334,13 @@ test("SOCKS5 without a password: the proxy resolves the name, nothing goes direc
   const echo = await echoServer();
   const socks = await fakeSocks5({ upstreamPort: echo.address().port });
   const direct = [];
-  const { socket, via } = await openConnection("intranet.corp", 443, null, proxyChain(`SOCKS5 127.0.0.1:${socks.port}`), {
+  const pinned = "93.184.216.34";
+  const { socket, via } = await openConnection("intranet.corp", 443, pinned, proxyChain(`SOCKS5 127.0.0.1:${socks.port}`), {
     connect: options => { if (options.port !== socks.port) direct.push(options); return new Promise((resolve, reject) => { const s = net.connect(options, () => resolve(s)); s.once("error", reject); }); },
   });
   assert.equal(via, `socks5 127.0.0.1:${socks.port}`);
   assert.equal(await exchange(socket, "ping"), "hello:ping");
-  assert.deepEqual(socks.seen, [{ host: "intranet.corp", port: 443 }]);
+  assert.deepEqual(socks.seen, [{ host: pinned, port: 443 }]);
   assert.deepEqual(direct, []);
   socks.server.close(); echo.close();
 });
@@ -350,25 +352,25 @@ test("SOCKS5 with a user name and password", async () => {
   const { socket } = await openConnection("93.184.216.34", 80, "93.184.216.34", chain, { credentials: () => ({ username: "ada", password: "s3cret" }) });
   assert.equal(await exchange(socket, "x"), "hello:x");
   assert.deepEqual(socks.seen, [{ host: "93.184.216.34", port: 80 }]);
-  await assert.rejects(openConnection("a.test", 80, null, chain, { credentials: () => ({ username: "ada", password: "wrong" }) }), /refused the user name and password/);
-  await assert.rejects(openConnection("a.test", 80, null, chain), /asks for a user name and password/);
+  await assert.rejects(openConnection("a.test", 80, "93.184.216.34", chain, { credentials: () => ({ username: "ada", password: "wrong" }) }), /refused the user name and password/);
+  await assert.rejects(openConnection("a.test", 80, "93.184.216.34", chain), /asks for a user name and password/);
   socks.server.close(); echo.close();
 });
 
 test("SOCKS4a (the PAC keyword SOCKS)", async () => {
   const echo = await echoServer();
   const socks = await fakeSocks5({ upstreamPort: echo.address().port, version: 4 });
-  const { socket, via } = await openConnection("wiki.corp", 8080, null, proxyChain(`SOCKS 127.0.0.1:${socks.port}`));
+  const { socket, via } = await openConnection("wiki.corp", 8080, "93.184.216.34", proxyChain(`SOCKS 127.0.0.1:${socks.port}`));
   assert.equal(via, `socks4 127.0.0.1:${socks.port}`);
   assert.equal(await exchange(socket, "y"), "hello:y");
-  assert.deepEqual(socks.seen, [{ host: "wiki.corp", port: 8080 }]);
+  assert.deepEqual(socks.seen, [{ host: "93.184.216.34", port: 8080 }]);
   socks.server.close(); echo.close();
 });
 
 test("HTTP CONNECT keeps bytes that arrive with the proxy's answer", async () => {
   const proxy = net.createServer(socket => socket.on("error", () => {}).once("data", () => socket.write("HTTP/1.1 200 Connection established\r\n\r\nhello:")));
   await new Promise(resolve => proxy.listen(0, "127.0.0.1", resolve));
-  const { socket } = await openConnection("example.test", 443, null, proxyChain(`PROXY 127.0.0.1:${proxy.address().port}`));
+  const { socket } = await openConnection("example.test", 443, "93.184.216.34", proxyChain(`PROXY 127.0.0.1:${proxy.address().port}`));
   const first = await new Promise(resolve => { socket.once("data", chunk => resolve(String(chunk))); socket.resume(); });
   assert.equal(first, "hello:");
   socket.destroy(); proxy.close();
@@ -398,7 +400,7 @@ test("the tunnel asks the system (PAC) per destination and records the route", a
   const tunnel = openDesktopTunnel({
     url: "ws://server.test/tunnel", headers: {}, WebSocketImpl: FakeSocket,
     resolveProxy: async url => { asked.push(url); return `SOCKS5 127.0.0.1:${socks.port}`; },
-    lookup: async () => { throw new Error("no local DNS for it"); },
+    lookup: async () => [{ address: "93.184.216.34" }],
     record: entry => records.push(entry),
   });
   await tunnel.ready;
@@ -407,7 +409,32 @@ test("the tunnel asks the system (PAC) per destination and records the route", a
   assert.deepEqual(asked, ["https://app.corp/"]);
   assert.equal(frames[0][0], TUNNEL.OPENED);
   assert.equal(frames.find(frame => frame[0] === TUNNEL.DATA).subarray(5).toString(), "hello:");
+  assert.deepEqual(socks.seen, [{ host: "93.184.216.34", port: 443 }]);
   assert.deepEqual(records, [{ host: "app.corp", port: 443, ok: true, via: `socks5 127.0.0.1:${socks.port}` }]);
+  tunnel.close(); socks.server.close(); echo.close();
+});
+
+test("an unresolved name is refused even when a proxy would resolve it", async () => {
+  const echo = await echoServer();
+  const socks = await fakeSocks5({ upstreamPort: echo.address().port });
+  const frames = [];
+  class FakeSocket {
+    constructor() { this.bufferedAmount = 0; this.readyState = 1; FakeSocket.last = this; queueMicrotask(() => this.onopen?.()); }
+    send(data) { frames.push(Buffer.from(data)); }
+    close() { this.onclose?.(); }
+  }
+  const tunnel = openDesktopTunnel({
+    url: "ws://server.test/tunnel", headers: {}, WebSocketImpl: FakeSocket,
+    resolveProxy: async () => `SOCKS5 127.0.0.1:${socks.port}`,
+    lookup: async () => { throw new Error("no local DNS for it"); },
+  });
+  await tunnel.ready;
+  FakeSocket.last.onmessage({ data: tunnelMessage(TUNNEL.OPEN, 8, Buffer.from(JSON.stringify({ host: "only-the-proxy.test", port: 443 }))) });
+  for (let tries = 0; tries < 100 && frames.length === 0; tries++) await new Promise(resolve => setTimeout(resolve, 20));
+  assert.equal(frames[0][0], TUNNEL.FAILED);
+  assert.deepEqual(socks.seen, []);
+  const body = JSON.parse(frames[0].subarray(5).toString());
+  assert.equal(body.code, "unresolved");
   tunnel.close(); socks.server.close(); echo.close();
 });
 
@@ -430,14 +457,14 @@ test("SOCKS5 with a password set in the system settings only: the person is aske
   const chain = proxyChain(`SOCKS5 127.0.0.1:${socks.port}`);
   const options = { credentials, askCredentials: credentials.ask, credentialsRefused: credentials.refused };
   // two connections at once: one question
-  const [first, second] = await Promise.all([openConnection("a.test", 80, null, chain, options), openConnection("b.test", 80, null, chain, options)]);
+  const [first, second] = await Promise.all([openConnection("a.test", 80, "93.184.216.34", chain, options), openConnection("b.test", 80, "93.184.216.34", chain, options)]);
   assert.equal(await exchange(first.socket, "1"), "hello:1");
   assert.equal(await exchange(second.socket, "2"), "hello:2");
   assert.deepEqual(asked, [{ host: "127.0.0.1", port: socks.port }]);
   assert.equal(fs.readFileSync(file, "utf8").includes("s3cret"), false, "never stored in clear");
   // a later launch: the saved answer, no question
   const later = createProxyCredentials({ env: {}, store: testStore(dir).store, prompt: async () => { throw new Error("asked again"); } });
-  const third = await openConnection("c.test", 80, null, chain, { credentials: later, askCredentials: later.ask, credentialsRefused: later.refused });
+  const third = await openConnection("c.test", 80, "93.184.216.34", chain, { credentials: later, askCredentials: later.ask, credentialsRefused: later.refused });
   assert.equal(await exchange(third.socket, "3"), "hello:3");
   socks.server.close(); echo.close();
   fs.rmSync(dir, { recursive: true, force: true });
@@ -452,21 +479,21 @@ test("SOCKS5 password questions: Cancel is not asked again, a refused saved pass
   let asked = 0;
   const declining = createProxyCredentials({ env: {}, store: testStore(dir).store, prompt: async () => { asked++; return null; } });
   const decline = { credentials: declining, askCredentials: declining.ask, credentialsRefused: declining.refused };
-  await assert.rejects(openConnection("a.test", 80, null, chain, decline), error => error.code === "proxy-auth" && error.proxy === true);
-  await assert.rejects(openConnection("a.test", 80, null, chain, decline), /asks for a user name and password/);
+  await assert.rejects(openConnection("a.test", 80, "93.184.216.34", chain, decline), error => error.code === "proxy-auth" && error.proxy === true);
+  await assert.rejects(openConnection("a.test", 80, "93.184.216.34", chain, decline), /asks for a user name and password/);
   assert.equal(asked, 1);
   // an old saved password: refused, forgotten, the person asked, the new one kept
   const { store } = testStore(dir);
   await store.set(proxy, { username: "ada", password: "old" });
   const answers = [];
   const changed = createProxyCredentials({ env: {}, store, prompt: async () => { answers.push("asked"); return { username: "ada", password: "new" }; } });
-  const { socket } = await openConnection("a.test", 80, null, chain, { credentials: changed, askCredentials: changed.ask, credentialsRefused: changed.refused });
+  const { socket } = await openConnection("a.test", 80, "93.184.216.34", chain, { credentials: changed, askCredentials: changed.ask, credentialsRefused: changed.refused });
   assert.equal(await exchange(socket, "z"), "hello:z");
   assert.deepEqual(answers, ["asked"]);
   assert.deepEqual(await testStore(dir).store.get(proxy), { username: "ada", password: "new" });
   // the environment wins, and a refused environment password is not replaced by a question
   const fromEnv = createProxyCredentials({ env: { ALL_PROXY: `socks5://ada:wrong@127.0.0.1:${socks.port}` }, store, prompt: async () => { throw new Error("asked"); } });
-  await assert.rejects(openConnection("a.test", 80, null, chain, { credentials: fromEnv, askCredentials: fromEnv.ask, credentialsRefused: fromEnv.refused }), /refused the user name and password/);
+  await assert.rejects(openConnection("a.test", 80, "93.184.216.34", chain, { credentials: fromEnv, askCredentials: fromEnv.ask, credentialsRefused: fromEnv.refused }), /refused the user name and password/);
   assert.deepEqual(await store.get(proxy), { username: "ada", password: "new" });
   socks.server.close(); echo.close();
   fs.rmSync(dir, { recursive: true, force: true });

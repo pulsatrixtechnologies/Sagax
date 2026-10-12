@@ -146,14 +146,19 @@ export function piHostToolArgs(withhold: boolean): string[] {
   return ["--no-builtin-tools", "--exclude-tools", PI_HOST_TOOLS.join(","), "--no-extensions"];
 }
 
-/** An ACP `session/request_permission` that would act on this machine: a
- * command, a file change, a move or a delete, not a call to one of Sagax's
- * MCP tools (titled `mcp__…`, `mcp.…` or `mcp:…`). Declined outright on a
- * withheld turn (acp/core.ts). */
+/** Sagax MCP tools a withheld turn may still call. A title that merely
+ * starts with "mcp" is not one of them. */
+const SAGAX_MCP_TITLE = /^mcp__(?:agents|browser|composio|computer)(?:__|$)/i;
+
+/** An ACP `session/request_permission` that would act on this machine.
+ * A command, a file change, a move or a delete is declined whatever its
+ * title. A read or a fetch is declined unless the title is one of Sagax's
+ * own MCP tools. Declined outright on a withheld turn (acp/core.ts). */
 export function acpHostToolRequest(toolCall: { kind?: unknown; title?: unknown }): boolean {
   const kind = String(toolCall.kind ?? "");
-  if (!["execute", "edit", "delete", "move"].includes(kind)) return false;
-  return !/^mcp(?:__|[.:_])/i.test(String(toolCall.title ?? ""));
+  if (["execute", "edit", "delete", "move"].includes(kind)) return true;
+  if (kind === "read" || kind === "fetch") return !SAGAX_MCP_TITLE.test(String(toolCall.title ?? ""));
+  return false;
 }
 
 /** The approval parameters of a withheld Codex turn: read-only, asking (so

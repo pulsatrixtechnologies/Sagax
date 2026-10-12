@@ -48,6 +48,8 @@ for (const [address, prefix] of [
   ["192.88.99.0", 24], ["192.168.0.0", 16], ["198.18.0.0", 15], ["198.51.100.0", 24],
   ["203.0.113.0", 24], ["224.0.0.0", 4], ["240.0.0.0", 4],
 ] as const) excludedAddresses.addSubnet(address, prefix, "ipv4");
+// Azure WireServer / IMDS. It is not in 169.254/16.
+excludedAddresses.addAddress("168.63.129.16", "ipv4");
 for (const [address, prefix] of [
   ["2001::", 23], ["2001:db8::", 32], ["2002::", 16], ["3fff::", 20],
 ] as const) excludedAddresses.addSubnet(address, prefix, "ipv6");
