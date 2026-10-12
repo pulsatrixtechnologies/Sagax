@@ -18,6 +18,9 @@ import {
   type SessionState,
 } from "../lib/session";
 import { pairedDestination } from "../lib/phone-pairing";
+import { readSignInProfileCache, writeSignInProfileCache } from "@/lib/sign-in-profile-cache";
+import { previewSignInPerson } from "../lib/session";
+import { ConnectionSignInPanel } from "./ConnectionSignInPanel";
 
 const input = "mt-1 w-full rounded-md border border-hairline/40 bg-inset px-3 py-2 text-[14px] text-ink outline-none focus:border-accent-border";
 const button = "mt-5 w-full rounded-md bg-accent px-4 py-2 text-[14px] font-medium text-accent-ink disabled:opacity-50";
@@ -124,7 +127,25 @@ export function PairPage({ initialCode, initialEmail = null, reason, autoSubmit 
   const [finishing, setFinishing] = useState(
     autoSubmit && Boolean(initialCode) && typeof window !== "undefined" && typeof window.ogb?.takeSignInReturn === "function",
   );
+  const [connectionProfile, setConnectionProfile] = useState(() => readSignInProfileCache());
   const autoStarted = useRef(false);
+  useEffect(() => {
+    if (!finishing || !initialCode) return;
+    const cached = readSignInProfileCache();
+    if (cached) setConnectionProfile(cached);
+    let live = true;
+    void previewSignInPerson(initialCode).then((preview) => {
+      if (!live || !preview) return;
+      const name = preview.name ?? cached?.name ?? "";
+      if (!name && !preview.avatarUrl) return;
+      const next = { name, avatarUrl: preview.avatarUrl ?? cached?.avatarUrl, at: Date.now() };
+      if (name) writeSignInProfileCache(next);
+      setConnectionProfile(next);
+    });
+    return () => {
+      live = false;
+    };
+  }, [finishing, initialCode]);
   useEffect(() => {
     if (!finishing || !initialCode || autoStarted.current) return;
     autoStarted.current = true;
@@ -224,7 +245,7 @@ export function PairPage({ initialCode, initialEmail = null, reason, autoSubmit 
             </a>
           </p>
         ) : finishing ? (
-          <p role="status" className="mt-4 text-[13.5px] text-ink-secondary">{t("pair.pulsatrix.finishing")}</p>
+          <ConnectionSignInPanel name={connectionProfile?.name ?? ""} avatarUrl={connectionProfile?.avatarUrl} />
         ) : mode === "pulsatrix" && loginPath && browserSignIn.state.status === "waiting" ? (
           <BrowserSignInWaiting onCancel={browserSignIn.cancel} onReopen={browserSignIn.reopen} />
         ) : mode === "pulsatrix" && loginPath ? (

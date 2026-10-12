@@ -186,6 +186,26 @@ export async function pairWithCode(
  * to, as the machine recorded it; the page shows this before the person
  * continues. Asking redeems nothing. Null when it is spent, expired or not
  * one at all. */
+/** Name and avatar for a Sagax Business return credential, before redemption. */
+export async function previewSignInPerson(credential: string, fetchImpl: typeof fetch = fetch): Promise<{ name?: string; avatarUrl?: string } | null> {
+  try {
+    const res = await fetchImpl("/api/auth/pair", {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ code: credential, preview: true }),
+    });
+    const body: unknown = await res.json().catch(() => ({}));
+    if (!res.ok) return null;
+    const record = Object(body) as Record<string, unknown>;
+    const name = typeof record.name === "string" && record.name.trim() ? record.name.trim() : undefined;
+    const avatarUrl = typeof record.avatarUrl === "string" && record.avatarUrl.startsWith("/") ? record.avatarUrl : undefined;
+    return name || avatarUrl ? { ...(name ? { name } : {}), ...(avatarUrl ? { avatarUrl } : {}) } : {};
+  } catch {
+    return null;
+  }
+}
+
 export async function previewBrowserSignIn(credential: string, fetchImpl: typeof fetch = fetch): Promise<{ owner: string } | null> {
   try {
     const res = await fetchImpl("/api/auth/pair", {

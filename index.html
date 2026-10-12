@@ -5,6 +5,17 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <link rel="icon" type="image/svg+xml" href="/app-icon.svg" />
     <title>Sagax</title>
+    <script>
+      (function () {
+        var SKINS = ["pulsatrix", "pulsatrix-light", "midnight", "atelier", "foundry", "lagoon", "graphite", "linen", "dusk", "daylight", "retro98", "meadow"];
+        var d = "pulsatrix";
+        var s;
+        try {
+          s = localStorage.getItem("omb-skin");
+        } catch (e) {}
+        document.documentElement.dataset.skin = SKINS.indexOf(s) >= 0 ? s : d;
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

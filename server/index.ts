@@ -26483,10 +26483,15 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       // A browser sign-in (the OMB Cloud page's "Use in your browser", docs/cloud-pro.md)
       // redeems only a window opened for one, and only into this browser's cookie.
       const browser = body?.browser === true;
-      if (browser && body?.preview === true) {
-        // Whose Cloud it signs in to, shown before the person continues. Redeems nothing.
-        const preview = sessions.previewBrowserSignIn(code);
-        return preview ? json(res, 200, preview) : json(res, 401, { error: "this sign-in link has expired or was already used" });
+      if (body?.preview === true) {
+        if (browser) {
+          // Whose Cloud it signs in to, shown before the person continues. Redeems nothing.
+          const preview = sessions.previewBrowserSignIn(code);
+          return preview ? json(res, 200, preview) : json(res, 401, { error: "this sign-in link has expired or was already used" });
+        }
+        const peek = sessions.previewSignInPrincipal(code);
+        if (!peek) return json(res, 401, { error: "this sign-in link has expired or was already used" });
+        return json(res, 200, { expiresAt: peek.expiresAt, ...sessionPersonFields(peek.principalId) });
       }
       if (browser && !wantsCookie) return json(res, 400, { error: "a browser sign-in sets this browser's cookie; send cookie: true" });
       const result = sessions.exchange({ code, label, attemptId, browser, source: requestSource(req), fallbackLabel: labelFromUserAgent(req.headers["user-agent"]) });
