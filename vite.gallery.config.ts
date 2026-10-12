@@ -10,7 +10,7 @@ export default defineConfig({
       "@": path.resolve(__dirname, "src"),
     },
   },
-  root: path.resolve(__dirname, "src/gallery"),
+  root: path.resolve(__dirname),
   publicDir: path.resolve(__dirname, "public"),
   server: {
     port: 5199,

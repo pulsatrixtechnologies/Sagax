@@ -1,4 +1,7 @@
 @import "tailwindcss";
+/* Gallery Vite uses a different root; keep these trees in the scan either way. */
+@source "./components";
+@source "./gallery";
 /* Geist (OFL-1.1, @fontsource-variable/geist 5.3.0), the Perspicax v3
    interface face. Vite bundles the woff2 files with the app, so nothing is
    fetched from a third party. Only the two Pulsatrix skins name it (see their

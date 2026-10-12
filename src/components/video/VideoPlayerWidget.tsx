@@ -107,21 +107,16 @@ export const VideoPlayerWidget = memo(function VideoPlayerWidget({
     >
       {video.posterUrl && (
         <div
-          className="pointer-events-none absolute inset-0 scale-110 bg-cover bg-center opacity-50 blur-2xl"
+          className="vpc-backdrop"
           style={{ backgroundImage: `url(${video.posterUrl})` }}
           aria-hidden
         />
       )}
       {showcase ? (
-        <img
-          src={video.posterUrl}
-          alt=""
-          className="absolute inset-0 z-[1] size-full object-cover"
-        />
+        <img src={video.posterUrl} alt="" />
       ) : (
         <video
           ref={videoRef}
-          className="absolute inset-0 z-[1] size-full object-contain"
           poster={video.posterUrl}
           playsInline
           controls={false}

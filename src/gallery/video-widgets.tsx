@@ -33,7 +33,20 @@ function Gallery() {
         </section>
         <section>
           <h1 className="mb-4 text-lg font-semibold">YouTube</h1>
-          <YouTubeMiniPlayer videoId="dQw4w9WgXcQ" />
+          <YouTubeMiniPlayer
+            videoId="dQw4w9WgXcQ"
+            posterOnly
+            initialTitle="Never Gonna Give You Up"
+            initialChannel="Rick Astley"
+            startDrawerOpen
+            highlightStartMs={18000}
+            initialCues={[
+              { startMs: 0, text: "We're no strangers to love" },
+              { startMs: 18000, text: "You know the rules and so do I" },
+              { startMs: 27000, text: "A full commitment's what I'm thinking of" },
+              { startMs: 35000, text: "You wouldn't get this from any other guy" },
+            ]}
+          />
         </section>
       </div>
     </div>

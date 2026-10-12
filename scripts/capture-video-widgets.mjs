@@ -52,7 +52,7 @@ vite.stdout?.on("data", (c) => { viteLog += c; });
 vite.stderr?.on("data", (c) => { viteLog += c; });
 
 try {
-  const base = "http://127.0.0.1:5199/video-widgets.html";
+  const base = "http://127.0.0.1:5199/src/gallery/video-widgets.html";
   await waitForServer(base);
   const { chromium } = await import(process.env.SAGAX_VERIFY_PLAYWRIGHT || "playwright");
   await mkdir(outDir, { recursive: true });
@@ -61,9 +61,28 @@ try {
 
   for (const { id, label } of skins) {
     await page.goto(`${base}?skin=${id}`, { waitUntil: "networkidle" });
-    await page.waitForSelector(".video-player-card", { timeout: 30_000 });
-    await page.locator(".video-player-stage").first().hover();
-    await page.waitForTimeout(1200);
+    await page.waitForSelector(".vpc-card", { timeout: 30_000 });
+    const layout = await page.locator(".vpc-top").first().evaluate((el) => {
+      const top = getComputedStyle(el);
+      const play = document.querySelector(".vpc-play");
+      const playStyle = play ? getComputedStyle(play) : null;
+      const card = document.querySelector(".vpc-card");
+      const cardStyle = card ? getComputedStyle(card) : null;
+      return {
+        topPosition: top.position,
+        playPosition: playStyle?.position ?? "missing",
+        radius: cardStyle?.borderRadius ?? "",
+        title: document.querySelector(".vpc-title")?.textContent ?? "",
+      };
+    });
+    if (layout.topPosition !== "absolute" || layout.playPosition !== "absolute") {
+      throw new Error(`video chrome is not overlaid: ${JSON.stringify(layout)}`);
+    }
+    if (!String(layout.radius).startsWith("16")) {
+      throw new Error(`video card radius is ${layout.radius}`);
+    }
+    await page.locator(".vpc-stage").first().hover();
+    await page.waitForTimeout(400);
     const path = join(outDir, `video-widgets-${label}.png`);
     await page.screenshot({ path, fullPage: true });
     console.log(`wrote ${path}`);

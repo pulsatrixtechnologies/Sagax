@@ -152,91 +152,57 @@ export const MediaPlayerChrome = memo(function MediaPlayerChrome({
   }, [native]);
 
   const showCenterPlay = !loading && !error && !playing && onPlayToggle;
+  const chromeOn = controlsVisible || !playing;
+  const viewers = header.viewerCount != null && header.viewerCount > 0
+    ? header.viewerCount.toLocaleString()
+    : null;
 
   return (
-    <div
-      className={cn(
-        "video-player-card my-3 max-w-[min(42rem,78%)] overflow-hidden rounded-2xl border border-hairline/45 bg-card",
-        drawerOpen && "ring-1 ring-accent/25",
-      )}
-      role="group"
-      aria-labelledby={labelId}
-    >
+    <div className="vpc-card" role="group" aria-labelledby={labelId} data-vpc="1">
       <div
         ref={stageRef}
-        className="video-player-stage group/stage relative aspect-video overflow-hidden bg-black"
+        className="vpc-stage"
         onMouseMove={bumpControls}
         onMouseLeave={() => setControlsVisible(false)}
         onFocus={bumpControls}
       >
         <span id={labelId} className="sr-only">{header.title}</span>
-        <div className="absolute inset-0 z-0">{children}</div>
+        <div className="vpc-media">{children}</div>
 
-        {/* Top metadata */}
-        <div
-          className={cn(
-            "pointer-events-none absolute inset-x-0 top-0 z-20 bg-gradient-to-b from-black/90 via-black/55 to-transparent px-3 pb-10 pt-3 transition-opacity duration-300",
-            controlsVisible || !playing ? "opacity-100" : "opacity-0",
-          )}
-        >
-          <div className="relative flex items-start gap-2.5 pr-2">
+        <div className="vpc-top" data-hidden={chromeOn ? "false" : "true"}>
+          <div className="vpc-id">
             {header.avatarUrl ? (
-              <img
-                src={header.avatarUrl}
-                alt=""
-                className="size-9 shrink-0 rounded-full border border-white/20 object-cover shadow-sm"
-              />
+              <img src={header.avatarUrl} alt="" className="vpc-avatar" />
             ) : header.streamer ? (
-              <span
-                className="flex size-9 shrink-0 items-center justify-center rounded-full bg-white/15 text-[13px] font-semibold text-white backdrop-blur-md"
-                aria-hidden
-              >
+              <span className="vpc-avatar-fallback" aria-hidden>
                 {header.streamer.slice(0, 1).toUpperCase()}
               </span>
             ) : null}
-            <div className="min-w-0 flex-1">
-              <p className="truncate text-[15px] font-semibold leading-tight text-white [text-shadow:0_1px_8px_rgba(0,0,0,0.85)]">
-                {header.title}
-              </p>
+            <div className="vpc-titles">
+              <p className="vpc-title">{header.title}</p>
               {(header.streamer || header.source) && (
-                <p className="truncate text-[12px] text-white/75">
+                <p className="vpc-sub">
                   {[header.streamer, header.source].filter(Boolean).join(" · ")}
                 </p>
               )}
             </div>
           </div>
           {header.live && (
-            <span
-              className={cn(
-                "pointer-events-none absolute right-3 top-3 z-10 inline-flex items-center gap-1.5 rounded-full bg-danger/95 px-2.5 py-1 text-[11px] font-bold uppercase tracking-wide text-white shadow-sm",
-                controlsVisible || !playing ? "opacity-100" : "opacity-0",
-                "transition-opacity duration-300",
-              )}
-            >
-              <span className="video-live-pulse size-1.5 rounded-full bg-white" aria-hidden />
+            <span className="vpc-live">
+              <span className="vpc-live-dot" aria-hidden />
               {t("video.live")}
-              {header.viewerCount != null && header.viewerCount > 0 && (
-                <span className="font-medium normal-case tabular-nums opacity-90">
-                  · {t("video.viewers", { count: String(header.viewerCount) })}
-                </span>
-              )}
+              {viewers && <span className="vpc-live-count">· {t("video.viewers", { count: viewers })}</span>}
             </span>
           )}
         </div>
 
-        {loading && (
-          <div className="video-player-shimmer pointer-events-none absolute inset-0 z-30" aria-hidden />
-        )}
+        {loading && <div className="vpc-shimmer" aria-hidden />}
 
         {error && (
-          <div className="absolute inset-0 z-40 flex flex-col items-center justify-center gap-3 bg-black/70 px-6 text-center backdrop-blur-sm">
-            <p className="text-[14px] leading-snug text-white/90">{error}</p>
+          <div className="vpc-error">
+            <p>{error}</p>
             {onRetry && (
-              <button
-                type="button"
-                onClick={onRetry}
-                className="inline-flex items-center gap-2 rounded-full bg-white/15 px-4 py-2 text-[13px] font-medium text-white backdrop-blur-md transition hover:bg-white/25"
-              >
+              <button type="button" className="vpc-chip" onClick={onRetry}>
                 <RotateCcw size={16} />
                 {t("video.retry")}
               </button>
@@ -245,27 +211,16 @@ export const MediaPlayerChrome = memo(function MediaPlayerChrome({
         )}
 
         {showCenterPlay && (
-          <button
-            type="button"
-            onClick={onPlayToggle}
-            className="absolute left-1/2 top-1/2 z-30 flex size-[4.25rem] -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-white/25 bg-white/15 text-white shadow-lg backdrop-blur-xl transition hover:scale-105 hover:bg-white/22 active:scale-95"
-            aria-label={t("video.play")}
-          >
-            <Play size={32} className="ml-0.5" fill="currentColor" />
+          <button type="button" className="vpc-play" onClick={onPlayToggle} aria-label={t("video.play")}>
+            <Play size={30} fill="currentColor" />
           </button>
         )}
 
-        {/* Bottom controls */}
-        <div
-          className={cn(
-            "absolute inset-x-0 bottom-0 z-20 bg-gradient-to-t from-black/85 via-black/45 to-transparent px-3 pb-2.5 pt-10 transition-opacity duration-300",
-            controlsVisible || !playing ? "opacity-100" : "pointer-events-none opacity-0",
-          )}
-        >
+        <div className="vpc-bottom" data-hidden={chromeOn ? "false" : "true"}>
           {native && !native.isLive && (
             <div
               ref={scrubRef}
-              className="relative mb-2 h-1 cursor-pointer rounded-full bg-white/20"
+              className="vpc-scrub"
               role="slider"
               aria-label={t("video.seek")}
               aria-valuemin={0}
@@ -282,21 +237,18 @@ export const MediaPlayerChrome = memo(function MediaPlayerChrome({
               onClick={(e) => seekFromClientX(e.clientX)}
             >
               <div
-                className="absolute inset-y-0 left-0 rounded-full bg-accent"
+                className="vpc-scrub-fill"
                 style={{ width: `${native.duration ? (native.current / native.duration) * 100 : 0}%` }}
               />
               {scrubHover && native.duration > 0 && (
-                <span
-                  className="pointer-events-none absolute -top-7 -translate-x-1/2 rounded-md bg-black/90 px-1.5 py-0.5 text-[11px] tabular-nums text-white"
-                  style={{ left: scrubHover.left }}
-                >
+                <span className="vpc-scrub-tip" style={{ left: scrubHover.left }}>
                   {formatMediaTime(scrubHover.ratio * native.duration * 1000)}
                 </span>
               )}
             </div>
           )}
 
-          <div className="flex flex-wrap items-center gap-1.5">
+          <div className="vpc-controls">
             {onPlayToggle && (
               <ChromeIconButton
                 label={playing ? t("video.pause") : t("video.play")}
@@ -307,7 +259,7 @@ export const MediaPlayerChrome = memo(function MediaPlayerChrome({
             )}
             {native && (
               <>
-                <span className="min-w-[4.5rem] tabular-nums text-[11px] text-white/80">
+                <span className="vpc-time">
                   {native.isLive
                     ? t("video.live")
                     : `${formatMediaTime(native.current * 1000)} / ${formatMediaTime((native.duration || 0) * 1000)}`}
@@ -335,7 +287,7 @@ export const MediaPlayerChrome = memo(function MediaPlayerChrome({
                     el.volume = v;
                     el.muted = v === 0;
                   }}
-                  className="h-1 w-16 accent-accent"
+                  className="vpc-volume"
                   aria-label={t("video.volume")}
                 />
                 {typeof document !== "undefined" && document.pictureInPictureEnabled && (
@@ -351,27 +303,17 @@ export const MediaPlayerChrome = memo(function MediaPlayerChrome({
             <ChromeIconButton
               label={fs ? t("video.exitFullscreen") : t("video.fullscreen")}
               onClick={toggleFs}
-              className={fs ? "bg-white/20" : undefined}
             >
               {fs ? <Minimize2 size={18} /> : <Maximize2 size={18} />}
             </ChromeIconButton>
-            {footerActions && (
-              <div className="ml-auto flex flex-wrap items-center gap-1.5">{footerActions}</div>
-            )}
+            {footerActions && <div className="vpc-actions">{footerActions}</div>}
           </div>
         </div>
       </div>
 
       {drawer && (
-        <div
-          className={cn(
-            "grid overflow-hidden transition-[grid-template-rows] duration-300 ease-out",
-            drawerOpen ? "grid-rows-[1fr]" : "grid-rows-[0fr]",
-          )}
-        >
-          <div className="min-h-0 overflow-hidden border-t border-hairline/40 bg-inset">
-            {drawer}
-          </div>
+        <div className="vpc-drawer" data-open={drawerOpen ? "true" : "false"}>
+          <div className="vpc-drawer-inner">{drawer}</div>
         </div>
       )}
     </div>
@@ -394,10 +336,7 @@ function ChromeIconButton({
       type="button"
       onClick={onClick}
       aria-label={label}
-      className={cn(
-        "rounded-full p-2 text-white/95 transition hover:bg-white/15 active:bg-white/20",
-        className,
-      )}
+      className={cn("vpc-icon", className)}
     >
       {children}
     </button>

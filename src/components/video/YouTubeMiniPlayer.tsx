@@ -11,20 +11,36 @@ import { TranscriptDrawer, type TranscriptCue } from "./TranscriptDrawer";
 export const YouTubeMiniPlayer = memo(function YouTubeMiniPlayer({
   videoId,
   onSendToBot,
+  initialTitle,
+  initialChannel,
+  initialCues,
+  startDrawerOpen,
+  highlightStartMs,
+  posterOnly,
 }: {
   videoId: string;
   message?: MessageAttachmentContext;
   onSendToBot?: (text: string) => void;
+  /** Known title/channel (oEmbed fills these when omitted). */
+  initialTitle?: string;
+  initialChannel?: string;
+  initialCues?: TranscriptCue[];
+  startDrawerOpen?: boolean;
+  highlightStartMs?: number;
+  /** Gallery: poster and chrome only, no iframe. */
+  posterOnly?: boolean;
 }) {
   const mountRef = useRef<HTMLDivElement>(null);
   const shellRef = useRef<HTMLDivElement>(null);
   const playerRef = useRef<YoutubePlayerHandle | null>(null);
-  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [drawerOpen, setDrawerOpen] = useState(!!startDrawerOpen);
+  const [metaTitle, setMetaTitle] = useState(initialTitle ?? "");
+  const [channel, setChannel] = useState(initialChannel ?? "");
   const [loading, setLoading] = useState(false);
   const [playerReady, setPlayerReady] = useState(false);
   const [playing, setPlaying] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [cues, setCues] = useState<TranscriptCue[]>([]);
+  const [cues, setCues] = useState<TranscriptCue[]>(initialCues ?? []);
   const [filter, setFilter] = useState("");
   const [activeCueMs, setActiveCueMs] = useState<number | null>(null);
   const [embedGrace, setEmbedGrace] = useState(false);
@@ -36,6 +52,24 @@ export const YouTubeMiniPlayer = memo(function YouTubeMiniPlayer({
   }, []);
 
   useEffect(() => {
+    let cancel = false;
+    const watch = `https://www.youtube.com/watch?v=${encodeURIComponent(videoId)}`;
+    void fetch(`https://www.youtube.com/oembed?format=json&url=${encodeURIComponent(watch)}`)
+      .then((res) => (res.ok ? res.json() as Promise<{ title?: string; author_name?: string }> : null))
+      .then((data) => {
+        if (cancel || !data) return;
+        if (data.title) setMetaTitle(data.title);
+        if (data.author_name) setChannel(data.author_name);
+      })
+      .catch(() => undefined);
+    return () => { cancel = true; };
+  }, [videoId]);
+
+  useEffect(() => {
+    if (posterOnly) {
+      setPlayerReady(true);
+      return;
+    }
     const mount = mountRef.current;
     if (!mount) return;
     let cancelled = false;
@@ -53,7 +87,7 @@ export const YouTubeMiniPlayer = memo(function YouTubeMiniPlayer({
       playerRef.current?.destroy();
       playerRef.current = null;
     };
-  }, [videoId]);
+  }, [videoId, posterOnly]);
 
   useEffect(() => {
     if (!drawerOpen || !cues.length) return;
@@ -109,7 +143,7 @@ export const YouTubeMiniPlayer = memo(function YouTubeMiniPlayer({
       type="button"
       onClick={() => (cues.length ? setDrawerOpen((v) => !v) : void fetchTranscript())}
       disabled={loading}
-      className="inline-flex items-center gap-1.5 rounded-full border border-white/25 bg-white/10 px-3 py-1.5 text-[12px] font-medium text-white backdrop-blur-md transition hover:bg-white/20 disabled:opacity-50"
+      className="vpc-chip"
     >
       <FileText size={14} />
       {loading ? t("youtube.transcriptLoading") : cues.length ? t("youtube.transcriptPanel") : t("youtube.fetchTranscript")}
@@ -119,8 +153,9 @@ export const YouTubeMiniPlayer = memo(function YouTubeMiniPlayer({
   return (
     <MediaPlayerChrome
       header={{
-        title: t("youtube.playerTitle"),
-        source: videoId,
+        title: metaTitle || t("youtube.playerTitle"),
+        streamer: channel || undefined,
+        source: "YouTube",
       }}
       stageRef={shellRef}
       labelId={titleId}
@@ -135,7 +170,7 @@ export const YouTubeMiniPlayer = memo(function YouTubeMiniPlayer({
             cues={cues}
             filter={filter}
             onFilter={setFilter}
-            activeStartMs={activeCueMs}
+            activeStartMs={highlightStartMs ?? activeCueMs}
             onSeek={(ms) => playerRef.current?.seekTo(ms / 1000)}
             error={error}
             onSendToBot={cues.length && onSendToBot ? handToBot : undefined}
@@ -146,16 +181,13 @@ export const YouTubeMiniPlayer = memo(function YouTubeMiniPlayer({
       <img
         src={`https://i.ytimg.com/vi/${videoId}/maxresdefault.jpg`}
         alt=""
-        className="pointer-events-none absolute inset-0 z-[1] size-full object-cover"
         onError={(e) => {
           e.currentTarget.src = `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`;
         }}
       />
-      <div
-        ref={mountRef}
-        className="absolute inset-0 z-[2] size-full [&_iframe]:size-full"
-        title={t("youtube.playerTitle")}
-      />
+      {!posterOnly && (
+        <div ref={mountRef} title={metaTitle || t("youtube.playerTitle")} />
+      )}
     </MediaPlayerChrome>
   );
 });
