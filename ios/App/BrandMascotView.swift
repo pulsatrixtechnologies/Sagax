@@ -47,16 +47,18 @@ struct BrandMascotView: View {
     var owlColor = "blue"
     var size: CGFloat
     var animated = true
+    /// Wing moves and beats for the owl, and Shapes moves for a shape (profile preview).
+    var owlHandle: OwlMascotHandle?
 
     var body: some View {
         Group {
             switch session.brandMascot {
             case .sagaxOwl:
-                OwlMascotView(color: owlColor, size: size, state: .idle, animated: animated)
+                OwlMascotView(color: owlColor, size: size, state: .idle, animated: animated, handle: owlHandle)
                     .accessibilityIdentifier("brand-mascot.owl")
             case let .primary(bot):
                 // Animated lightly; MascotCharacterView keeps Reduce Motion.
-                MascotCharacterView(bot: bot, size: size, state: .idle, animated: animated)
+                MascotCharacterView(bot: bot, size: size, state: .idle, animated: animated, owlHandle: owlHandle)
                     .accessibilityIdentifier("brand-mascot.\(bot.id)")
             }
         }

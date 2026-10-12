@@ -3,7 +3,7 @@
 // auto-review, quick replies, the call voice, the links and feedback) and
 // Settings > Experimental (SettingsModal.tsx "experimental": the
 // installation's early features, an admin pairing only), plus the picker
-// rows Appearance gains (list density, activity, bot intro).
+// rows Appearance gains (list density, activity, home chrome).
 import CompanionCore
 import MessageUI
 import SwiftUI

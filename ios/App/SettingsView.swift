@@ -122,6 +122,8 @@ private struct SettingsRootPage: View {
     @EnvironmentObject private var navigator: SettingsNavigator
     @ObservedObject private var themes = ThemeStore.shared
     @ObservedObject private var achievements = AchievementStore.shared
+    @StateObject private var brandMascotHandle = OwlMascotHandle()
+    @State private var brandMascotHop = false
     @State private var query = ""
 
     private var sections: [PhoneSettingsSection] {
@@ -215,18 +217,66 @@ private struct SettingsRootPage: View {
         return "\(mode) · \(themePalette.id.name)"
     }
 
-    /// The white Sagax owl over "Sagax".
+    /// The brand mascot over "Sagax", then quiet server and app metadata.
     private var footer: some View {
         VStack(spacing: 0) {
-            BrandMascotView(owlColor: "white", size: 47.67, animated: false)
+            BrandMascotView(owlColor: "white", size: 47.67, animated: true, owlHandle: brandMascotHandle)
+                .scaleEffect(brandMascotHop ? 1.04 : 1)
+                .offset(y: brandMascotHop ? -4 : 0)
+                .contentShape(Rectangle())
+                .onTapGesture(perform: brandMascotTapped)
+                .accessibilityLabel(Text("Sagax mascot"))
+                .accessibilityAddTraits(.isButton)
+                .accessibilityIdentifier("settings-brand-mascot")
             Text(verbatim: "Sagax")
                 .font(Theme.Font.appName)
                 .foregroundStyle(Theme.textPrimary)
                 .padding(.top, 15.3)
+            footerMetadata
+                .padding(.top, 14)
         }
         .frame(maxWidth: .infinity)
         .padding(.top, 60.67)
         .padding(.bottom, 40)
+    }
+
+    private var footerMetadata: some View {
+        VStack(spacing: 4) {
+            if let address = session.connection?.displayAddress {
+                Text(verbatim: address)
+                    .accessibilityIdentifier("settings-footer-server-url")
+            }
+            Text(verbatim: model.serverVersion ?? "—")
+                .accessibilityIdentifier("settings-footer-server-version")
+            Text("Version \(AboutPage.version) (\(AboutPage.build))")
+                .accessibilityIdentifier("settings-footer-app-version")
+            Text("settings.brandFooter.copyright")
+                .accessibilityIdentifier("settings-footer-copyright")
+        }
+        .font(Theme.Font.label)
+        .foregroundStyle(Theme.textSecondary)
+        .multilineTextAlignment(.center)
+        .padding(.horizontal, SettingsMetrics.cardMargin)
+    }
+
+    private func brandMascotTapped() {
+        Haptics.selection()
+        switch session.brandMascot {
+        case .sagaxOwl:
+            brandMascotHandle.flourish(.spread)
+        case let .primary(bot):
+            switch bot.resolvedMascotLook.character {
+            case .owl:
+                brandMascotHandle.flourish(.flap)
+            case .shape:
+                brandMascotHandle.shape(.wink)
+            default:
+                withAnimation(.spring(response: 0.22, dampingFraction: 0.5)) { brandMascotHop = true }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.22) {
+                    withAnimation(.spring(response: 0.3, dampingFraction: 0.55)) { brandMascotHop = false }
+                }
+            }
+        }
     }
 
     // MARK: Search

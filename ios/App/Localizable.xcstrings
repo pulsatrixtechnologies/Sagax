@@ -14647,6 +14647,22 @@
         }
       }
     },
+    "settings.brandFooter.copyright": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "© 2026 Pulsatrix Technologies Inc. All rights reserved."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "© 2026 Pulsatrix Technologies Inc. Tous droits réservés."
+          }
+        }
+      }
+    },
     "Server address": {
       "localizations": {
         "en": {

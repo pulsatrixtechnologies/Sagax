@@ -680,9 +680,12 @@ struct SandboxFullScreenDesktop: View {
     @State private var modifiers: Set<ComputerModifier> = []
     @State private var corner: Alignment = .topTrailing
     @State private var drag: CGSize = .zero
+    @State private var chromeVisible = true
+    @State private var chromeHideTask: Task<Void, Never>?
 
     var body: some View {
         GeometryReader { proxy in
+            let landscape = proxy.size.width > proxy.size.height
             ZStack(alignment: corner) {
                 Color.black.ignoresSafeArea()
                 SandboxDesktopHost(session: viewer, zoomable: true)
@@ -695,6 +698,9 @@ struct SandboxFullScreenDesktop: View {
                 controls
                     .padding(10)
                     .offset(drag)
+                    .opacity(showsChrome(landscape: landscape) ? 1 : 0)
+                    .animation(.easeInOut(duration: 0.22), value: chromeVisible)
+                    .allowsHitTesting(showsChrome(landscape: landscape))
                     .gesture(
                         DragGesture(coordinateSpace: .named("sandbox-full-screen"))
                             .onChanged { drag = $0.translation }
@@ -733,6 +739,12 @@ struct SandboxFullScreenDesktop: View {
                 .accessibilityHidden(true)
             }
             .coordinateSpace(name: "sandbox-full-screen")
+            .contentShape(Rectangle())
+            .onTapGesture {
+                if landscape, !chromeVisible { revealChrome(landscape: landscape) }
+            }
+            .onAppear { revealChrome(landscape: landscape) }
+            .onValueChange(of: landscape) { revealChrome(landscape: $0) }
         }
         .preferredColorScheme(.dark)
         .statusBarHidden(true)
@@ -744,6 +756,23 @@ struct SandboxFullScreenDesktop: View {
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("sandbox-full-screen-view")
+    }
+
+    private func showsChrome(landscape: Bool) -> Bool {
+        !landscape || chromeVisible
+    }
+
+    private func revealChrome(landscape: Bool) {
+        chromeVisible = true
+        chromeHideTask?.cancel()
+        guard landscape else { return }
+        chromeHideTask = Task {
+            try? await Task.sleep(for: .seconds(4))
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                withAnimation { chromeVisible = false }
+            }
+        }
     }
 
     private var controls: some View {
