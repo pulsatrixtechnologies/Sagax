@@ -32,6 +32,14 @@ describe("production image sources", () => {
     expect(workflow).not.toContain("docker build -t openmausbot:ci .");
   });
 
+  it("publishes the public GHCR image explicitly without engines", () => {
+    const workflow = read(".github/workflows/docker.yml");
+    const publish = workflow.slice(workflow.indexOf("\n  publish:"));
+    expect(publish).toMatch(/build-args: \|\n\s+ENGINE_SET=none\n\s+SAGAX_REQUIRE_ENGINES=0/);
+    expect(publish).toContain("io.sagax.engine-set=none");
+    expect(publish).not.toContain("ENGINE_SET=all");
+  });
+
   it("forwards the engine set from compose with an empty legacy ENGINES list", () => {
     const compose = read("deploy/docker-compose.yml");
     expect(compose).toContain("ENGINE_SET: ${ENGINE_SET:-all}");

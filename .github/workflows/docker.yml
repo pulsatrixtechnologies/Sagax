@@ -324,12 +324,16 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: |
             ${{ steps.meta.outputs.labels }}
-            io.sagax.engine-set=all
+            io.sagax.engine-set=none
             org.opencontainers.image.revision=${{ github.sha }}
             org.opencontainers.image.created=${{ env.SAGAX_BUILD_TIME }}
+          # The public GHCR image carries no proprietary engine CLI
+          # (docs/custom-engines.md). Explicit, because the Dockerfile's default
+          # is the production set; private ACR builds (GOX) use
+          # scripts/build-production-image.sh (the full engine set).
           build-args: |
-            ENGINE_SET=all
-            SAGAX_REQUIRE_ENGINES=1
+            ENGINE_SET=none
+            SAGAX_REQUIRE_ENGINES=0
             SAGAX_COMMIT_SHA=${{ github.sha }}
             SAGAX_BUILD_TIME=${{ env.SAGAX_BUILD_TIME }}
           cache-from: type=gha
