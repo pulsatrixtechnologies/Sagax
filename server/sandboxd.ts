@@ -17,6 +17,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import type { Duplex } from "node:stream";
 import { pathToFileURL } from "node:url";
 
+import { assertSandboxBackendSupported, sandboxBackendFromEnv } from "./sandbox-backend.ts";
 import { ensureSandboxdKey, SANDBOXD_AUTH_HEADER, SandboxdVerifier } from "./sandboxd-auth.ts";
 import { SandboxError, SandboxService } from "./sandboxd-core.ts";
 import { dockerApi } from "./sandboxd-docker.ts";
@@ -197,6 +198,7 @@ export function createSandboxdUpgradeHandler(service: SandboxService, verifier: 
 }
 
 async function main(): Promise<void> {
+  assertSandboxBackendSupported(sandboxBackendFromEnv());
   const config = sandboxdConfigFromEnv();
   const docker = dockerApi(config.dockerSocket);
   if (process.argv.includes("--uninstall-egress")) {

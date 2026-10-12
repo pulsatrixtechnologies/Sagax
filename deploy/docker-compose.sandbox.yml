@@ -45,6 +45,9 @@ services:
       SAGAX_SANDBOXD_LISTEN: 0.0.0.0:8791
       SAGAX_SANDBOXD_KEY_FILE: /run/sagax-sandboxd/key
       SAGAX_SANDBOXD_DOCKER_SOCKET: /var/run/docker.sock
+      # Rollback value for the Kubernetes pool. This image only implements
+      # docker; kubernetes fails closed (server/sandbox-backend.ts).
+      SANDBOX_BACKEND: ${SANDBOX_BACKEND:-docker}
       SAGAX_SANDBOX_INSTANCE: ${SAGAX_SANDBOX_INSTANCE:-default}
       SAGAX_SANDBOX_IMAGE: ${SAGAX_SANDBOX_IMAGE:-sagax-sandbox:local}
       SAGAX_SANDBOX_RUNTIME: ${SAGAX_SANDBOX_RUNTIME:-}

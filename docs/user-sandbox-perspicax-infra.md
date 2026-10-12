@@ -48,6 +48,11 @@ the contract between the two repositories.
 - The labels `com.pulsatrix.sagax.sandbox.instance=<instance>` and
   `sagax-user=<key>` (the README's cleanup commands filter on them).
 - The log line `egress policy enforced` (the bootstrap waits for it).
+- `SANDBOX_BACKEND=docker` on the GOX provisioner (the compose default).
+  `kubernetes` is the portable pool; this image exits before it opens the
+  Docker socket if that value is set, so a cutover cannot look healthy on
+  the Docker driver. Rollback is setting it back to `docker`
+  (`docs/ops/sandboxes/cutover-rollback.md`).
 
 ## Desktop in the server environment (Sagax PR feat/sandbox-desktop)
 

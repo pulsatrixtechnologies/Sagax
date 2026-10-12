@@ -1416,6 +1416,17 @@ not open a shared machine. Keep these rules, each covered by `server/user-sandbo
   Tests: `server/user-sandbox-desktop.test.ts`, `server/sandboxd.test.ts`;
   Docker: `scripts/smoke-sandbox-desktop.ts`.
 
+- Kubernetes pool (scaling audit option 3): manifests in
+  `deploy/k8s/sandboxes/` (cloud-agnostic base, Azure adapter only).
+  `SANDBOX_BACKEND` is `docker` or `kubernetes` (`server/sandbox-backend.ts`).
+  This image's provisioner exits before opening the Docker socket when the
+  value is `kubernetes`, so a cutover cannot report healthy on the Docker
+  driver. Rollback is `SANDBOX_BACKEND=docker`. A canary is
+  `SAGAX_SANDBOX_CANARY_BOTS` (every bot of that person: one environment per
+  person). Do not apply the pool to production from this tree; the runbook
+  is `docs/ops/sandboxes/cutover-rollback.md`. Tests:
+  `server/sandbox-backend.test.ts`.
+
 ## Desktop bridge (organization mode)
 
 In server mode the desktop app is the bridge between the organization server

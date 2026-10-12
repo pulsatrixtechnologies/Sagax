@@ -1,0 +1,13 @@
+# Azure Disk, so a stopped sandbox's volume detaches and the node can
+# scale to zero. Retain: deleting the pod does not delete the workspace.
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: sagax-sandbox
+provisioner: disk.csi.azure.com
+reclaimPolicy: Retain
+volumeBindingMode: WaitForFirstConsumer
+allowVolumeExpansion: true
+parameters:
+  skuName: Premium_LRS
+  kind: Managed

@@ -1,0 +1,52 @@
+# Daytime warm node. A small pause pod keeps one sandbox node from looking
+# empty between 07:30 and 19:00 America/Toronto on weekdays (KEDA cron on
+# this deployment). It does not reserve a person's 1536Mi.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sagax-sandbox-capacity
+  namespace: sagax-sandboxes
+  labels:
+    app.kubernetes.io/name: sagax-sandbox-capacity
+spec:
+  replicas: 0
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: sagax-sandbox-capacity
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: sagax-sandbox-capacity
+        app.kubernetes.io/part-of: sagax
+    spec:
+      priorityClassName: sagax-sandbox-buffer
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 0
+      tolerations:
+        - key: sagax.pulsatrix.ca/pool
+          operator: Equal
+          value: sandboxes
+          effect: NoSchedule
+      nodeSelector:
+        sagax.pulsatrix.ca/pool: sandboxes
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        runAsGroup: 65534
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: pause
+          image: registry.k8s.io/pause:3.10
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            requests:
+              cpu: 20m
+              memory: 32Mi
+            limits:
+              cpu: 20m
+              memory: 32Mi

@@ -1,0 +1,21 @@
+# Upstream cluster-autoscaler Helm values for a cluster we run ourselves
+# (k3s on any provider). cloudProvider is empty here; the adapter sets it.
+# Do not install this and Karpenter on the same nodes.
+cloudProvider: ""
+image:
+  tag: v1.32.0
+extraArgs:
+  scale-down-unneeded-time: 10m
+  scale-down-delay-after-add: 10m
+  scale-down-delay-after-delete: 10s
+  scale-down-utilization-threshold: "0.5"
+  skip-nodes-with-system-pods: "true"
+  skip-nodes-with-local-storage: "false"
+  balance-similar-node-groups: "true"
+  expander: least-waste
+  max-node-provision-time: 15m
+rbac:
+  create: true
+# The adapter appends one entry: min:max:pool, with the pool labelled and
+# tainted sagax.pulsatrix.ca/pool=sandboxes.
+autoscalingGroups: []

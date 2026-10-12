@@ -319,3 +319,13 @@ and a bot's cloud backend cannot be a per-bot VPS there (409 `org_user_sandbox`)
 Cloud there, including a cloud routine and a room, is the person's one
 server environment. The bot computer routes do not open a shared machine
 (the same 409).
+
+## Kubernetes pool
+
+The portable sandbox pool (option 3 of the scaling audit) is
+`deploy/k8s/sandboxes/`: cluster-autoscaler and Karpenter configs, KEDA for
+a pending queue, a weekday daytime warm node, health probes, Prometheus
+alerts, and the Azure adapter. The GOX VM stays on Docker until the cutover
+in `docs/ops/sandboxes/cutover-rollback.md`. `SANDBOX_BACKEND=docker` is the
+rollback. SOC 2 evidence for the same change is
+`docs/ops/sandboxes/soc2-evidence.md`.

@@ -1,0 +1,28 @@
+# Queue alternative to keda-pending-buffer.yaml. Apply this INSTEAD of that
+# file when the driver pushes a person key onto a Redis list before it
+# creates a pod. Do not apply both. No password in this file; point
+# TriggerAuthentication at the secret the operator stores outside git.
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: sagax-sandbox-queue
+  namespace: sagax-sandboxes
+spec:
+  scaleTargetRef:
+    name: sagax-sandbox-buffer
+  minReplicaCount: 0
+  maxReplicaCount: 4
+  pollingInterval: 15
+  cooldownPeriod: 300
+  advanced:
+    restoreToOriginalReplicaCount: true
+  triggers:
+    - type: redis
+      metadata:
+        address: sagax-sandbox-queue.sagax-sandboxes.svc:6379
+        listName: sagax-sandbox-pending
+        listLength: "1"
+        activationListLength: "1"
+        databaseIndex: "0"
+      authenticationRef:
+        name: sagax-sandbox-queue
