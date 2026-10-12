@@ -46,6 +46,9 @@ export function isLanAddress(address) {
 export function isBlockedAddress(address) {
   const family = net.isIP(address);
   if (family === 4) {
+    // 168.63.129.16 is the Azure host endpoint (WireServer / IMDS), which
+    // sits outside 169.254/16. Link-local metadata is already in that range.
+    if (address === "168.63.129.16") return true;
     return [[0x7f000000, 8], [0xa9fe0000, 16], [0x00000000, 8], [0xe0000000, 4], [0xf0000000, 4]].some(range => inV4(address, range));
   }
   if (family === 6) {
@@ -63,7 +66,7 @@ export function isBlockedAddress(address) {
  * VPN's DNS included). */
 export async function tunnelVerdict(host, port, network, lookup = dns.lookup, { proxied = false } = {}) {
   if (typeof host !== "string" || !host || host.length > 253 || !Number.isInteger(port) || port < 1 || port > 65535) return { ok: false, code: "bad", message: "Invalid destination" };
-  if (/^localhost\.?$|\.localhost\.?$/i.test(host)) return { ok: false, code: "blocked", message: "This computer's own services and link-local addresses are not reachable through it" };
+  if (/^localhost\.?$|\.localhost\.?$/i.test(host) || /^metadata\.google\.internal\.?$/i.test(host)) return { ok: false, code: "blocked", message: "This computer's own services and link-local addresses are not reachable through it" };
   let addresses;
   try {
     addresses = net.isIP(host) ? [host] : (await lookup(host, { all: true, verbatim: true })).map(entry => entry.address);
@@ -71,10 +74,10 @@ export async function tunnelVerdict(host, port, network, lookup = dns.lookup, { 
     addresses = [];
   }
   if (!addresses.length) {
-    // Behind a proxy that resolves names itself (a corporate SOCKS or HTTP
-    // proxy), a name this computer cannot resolve is the proxy's to resolve.
-    // "Local network only" needs this computer's own answer.
-    if (proxied && network !== "lan") return { ok: true, address: null };
+    // A name this computer cannot resolve is refused, including when a proxy
+    // would resolve it. CONNECT and SOCKS are pinned to an address we already
+    // checked, so an unresolved name must not be handed to the proxy.
+    void proxied;
     return { ok: false, code: "unresolved", message: `${host} could not be resolved on this computer` };
   }
   if (addresses.some(isBlockedAddress)) return { ok: false, code: "blocked", message: "This computer's own services and link-local addresses are not reachable through it" };
@@ -265,8 +268,8 @@ export async function openConnection(host, port, address, chain, { connect = def
   for (const route of chain) {
     let socket = null;
     try {
+      if (!address) throw new Error(`${host} could not be resolved on this computer`);
       if (route.type === "direct") {
-        if (!address) throw new Error(`${host} could not be resolved on this computer`);
         return { socket: await connect({ host: address, port }), via: "direct" };
       }
       const proxy = { type: route.type, host: route.host, port: route.port };
@@ -275,7 +278,7 @@ export async function openConnection(host, port, address, chain, { connect = def
         socket = await open();
         if (route.type === "socks5") {
           const known = await credentials(proxy);
-          try { await socks5Connect(socket, host, port, known); }
+          try { await socks5Connect(socket, address, port, known); }
           catch (error) {
             if (error.code === "proxy-auth-refused") await credentialsRefused(proxy, known);
             const ask = askCredentials && (error.code === "proxy-auth" || (error.code === "proxy-auth-refused" && known?.source === "saved"));
@@ -284,11 +287,11 @@ export async function openConnection(host, port, address, chain, { connect = def
             const given = await askCredentials(proxy);
             if (!given) throw error;
             socket = await open();
-            try { await socks5Connect(socket, host, port, given); }
+            try { await socks5Connect(socket, address, port, given); }
             catch (again) { if (again.code === "proxy-auth-refused") await credentialsRefused(proxy, given); throw again; }
           }
-        } else if (route.type === "socks4") await socks4Connect(socket, host, port);
-        else await httpConnect(socket, host, port);
+        } else if (route.type === "socks4") await socks4Connect(socket, address, port);
+        else await httpConnect(socket, address, port);
       } catch (error) {
         throw Object.assign(error instanceof Error ? error : new Error(String(error)), { proxy: true });
       }

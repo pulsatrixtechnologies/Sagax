@@ -215,7 +215,12 @@ final class SettingsClientTests: XCTestCase {
 
     func testInstallThroughATailnetComputerSendsItsOrigin() async throws {
         respond(#"{"name":"linear","alreadyInstalled":true,"auth":"connected"}"#)
-        let tailnet = Connection(name: "Studio", host: "studio.tail1234.ts.net", port: 8810)
+        let tailnet = Connection(
+            name: "Studio",
+            host: "studio.tail1234.ts.net",
+            port: 8810,
+            allowedTailnetHost: "studio.tail1234.ts.net"
+        )
         let result = try await client(tailnet).installPlugin(id: "linear", trust: true)
         XCTAssertFalse(result.needsSignIn)
         let sent = try body()

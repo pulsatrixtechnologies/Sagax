@@ -78,9 +78,10 @@ export function selectEngines(lock, { engineSet = "", engines = "", nativeEngine
       for (const spec of words(npmOverride)) {
         const { name, version } = parseNpmSpec(spec);
         const known = all.find((engine) => engine.kind === "npm" && engine.package === name);
-        legacyNpm.push(known
-          ? { ...known, version: version || "latest", spec }
-          : { id: name, name, drivers: [], kind: "npm", package: name, version: version || "latest", bin: "", spec });
+        if (!known) throw new Error(`unknown npm engine: ${spec}`);
+        if (!version || version === "latest") throw new Error(`${name}: npm engines need an exact version, not latest`);
+        if (version !== known.version) throw new Error(`${name}@${version} does not match the locked ${known.version}`);
+        legacyNpm.push({ ...known, spec: `${known.package}@${known.version}` });
       }
     }
   }
@@ -101,6 +102,8 @@ export function selectEngines(lock, { engineSet = "", engines = "", nativeEngine
   for (const engine of [...chosen, ...legacyNpm]) {
     if (seen.has(engine.id)) continue;
     seen.add(engine.id);
+    const pin = npmPinError(engine);
+    if (pin) throw new Error(pin);
     if (engine.kind === "native" && !engine.artifacts?.[arch]) {
       unavailable.push({ id: engine.id, name: engine.name, drivers: engine.drivers ?? [], reason: `No ${engine.name} build for ${arch || "this architecture"}.` });
       continue;
@@ -126,6 +129,30 @@ function sha256(buffer) {
   return createHash("sha256").update(buffer).digest("hex");
 }
 
+/** Why an npm engine cannot be installed, or null. Exact version and a
+ * sha512 integrity, never `latest` and never an unknown package. */
+export function npmPinError(engine) {
+  if (engine?.kind !== "npm") return null;
+  const label = engine.package || engine.id;
+  if (!/^\d+\.\d+\.\d+(?:[-+].+)?$/.test(String(engine.version ?? ""))) {
+    return `${label}: npm engines need an exact version, not latest`;
+  }
+  if (typeof engine.integrity !== "string" || !/^sha512-[A-Za-z0-9+/]+=*$/.test(engine.integrity)) {
+    return `${label}: npm engines need a sha512 integrity`;
+  }
+  return null;
+}
+
+/** Registry tarball for a pinned package. The unscoped name is the file. */
+export function npmTarballUrl(pkg, version) {
+  const base = String(pkg).startsWith("@") ? String(pkg).slice(String(pkg).lastIndexOf("/") + 1) : String(pkg);
+  return `https://registry.npmjs.org/${pkg}/-/${base}-${version}.tgz`;
+}
+
+export function integrityMatches(buffer, integrity) {
+  return integrity === `sha512-${createHash("sha512").update(buffer).digest("base64")}`;
+}
+
 async function download(url, expected) {
   const response = await fetch(url, { redirect: "follow" });
   if (!response.ok) throw new Error(`download failed (${response.status}): ${url}`);
@@ -146,16 +173,24 @@ function link(target, bin) {
   return path;
 }
 
-function installNpm(engines) {
+async function installNpm(engines) {
   if (!engines.length) return;
-  const specs = engines.map((engine) => engine.spec);
-  // npm 11 runs a dependency's install script only when the package is
-  // named (Claude Code and Droid fetch their native binary that way), and
-  // the platform binaries ride optional dependencies.
-  const allow = engines.map((engine) => `--allow-scripts=${engine.package}`);
-  run("npm", ["install", "-g", "--loglevel=error", "--include=optional", "--no-fund", "--no-audit", ...allow, ...specs], {
-    env: { ...process.env, npm_config_update_notifier: "false" },
-  });
+  for (const engine of engines) {
+    const url = npmTarballUrl(engine.package, engine.version);
+    const response = await fetch(url, { redirect: "error" });
+    if (!response.ok) throw new Error(`download failed (${response.status}): ${url}`);
+    const buffer = Buffer.from(await response.arrayBuffer());
+    if (!integrityMatches(buffer, engine.integrity)) throw new Error(`integrity mismatch for ${engine.package}@${engine.version}`);
+    const scratch = mkdtempSync(join(tmpdir(), `engine-${engine.id}-`));
+    const file = join(scratch, "package.tgz");
+    writeFileSync(file, buffer);
+    // --ignore-scripts: the tarball is already checked. A root install script
+    // is not run. Native engines stay on their own hashed download.
+    run("npm", ["install", "-g", "--ignore-scripts", "--loglevel=error", "--include=optional", "--no-fund", "--no-audit", file], {
+      env: { ...process.env, npm_config_update_notifier: "false" },
+    });
+    rmSync(scratch, { recursive: true, force: true });
+  }
 }
 
 async function installNative(engine, arch) {
@@ -280,7 +315,7 @@ async function main() {
     console.log(JSON.stringify({ engineSet: engineSet || "none", arch, install: install.map(({ id, kind, version }) => ({ id, kind, version })), unavailable }, null, 2));
     return;
   }
-  installNpm(install.filter((engine) => engine.kind === "npm"));
+  await installNpm(install.filter((engine) => engine.kind === "npm"));
   for (const engine of install) {
     if (engine.kind === "native") await installNative(engine, arch);
     else if (engine.kind === "python") await installPython(engine);

@@ -761,6 +761,7 @@ import {
   routineVisible,
   sameAudience,
   SEES_EVERYTHING,
+  SEES_NOTHING,
   VisibleSet,
   type FrameContext,
   type PathSubject,
@@ -768,6 +769,8 @@ import {
   type ThreadOwner,
   type Viewer,
 } from "./bot-visibility.ts";
+import { serviceThreadViewer, serviceViewerClosed } from "./service-viewer.ts";
+import { browserNavigationRefusal } from "./browser-navigation.ts";
 import { describeBrand, loadBrand } from "./brand.ts";
 import { deliverSseFrame } from "./sse-fanout.ts";
 import {
@@ -2231,10 +2234,14 @@ async function answeringCardAs(auth: RequestAuth, threadId: string, requestId: s
 }
 
 // ── bot visibility (server/bot-visibility.ts) ──────────────────────────
-/** Who is looking. The owner, a session-less local service (the Slack
- * worker) and admin sessions see every bot; any other session is a member,
- * known by the email it signed in with. */
-function viewerFor(auth: RequestAuth): Viewer {
+/** Who is looking. The owner and admin sessions see every bot; any other
+ * session is a member, known by the email it signed in with. Service
+ * loopback on an organization server sees nothing unless the path is an
+ * internal capability route. */
+function viewerFor(auth: RequestAuth, path?: string): Viewer {
+  // Service loopback on an organization server is not the operator. Internal
+  // capability routes stay open: the bearer already names the turn.
+  if (serviceViewerClosed(auth, path, privateThreads())) return SEES_NOTHING;
   if (auth.kind === "loopback" || auth.scopes.includes("admin")) return SEES_EVERYTHING;
   return { kind: "member", ...(auth.session.email ? { email: auth.session.email } : {}) };
 }
@@ -2256,7 +2263,7 @@ function threadOwner(threadId: string): ThreadOwner | undefined {
   return owner ?? undefined;
 }
 function visibleTo(viewer: Viewer): VisibleSet {
-  const key = viewer.kind === "all" ? "*" : `member:${viewer.email?.trim().toLowerCase() ?? ""}`;
+  const key = viewer.kind === "all" ? "*" : viewer.kind === "none" ? "none" : `member:${viewer.email?.trim().toLowerCase() ?? ""}`;
   let set = visibleSets.get(key);
   if (!set) {
     set = new VisibleSet(store.bots, store.groups, viewer, threadOwner);
@@ -23136,8 +23143,10 @@ function listedBotVisible(bot: { id: string; ownerUserId?: unknown; directGrants
     sections: facts.sections,
   });
 }
-/** A viewer's level on a bot (undefined viewer: the operator, "owner"). */
+/** A viewer's level on a bot (undefined viewer: the operator, "owner").
+ * Service loopback on an organization server is not the operator. */
 function viewerBotLevel(auth: RequestAuth, bot: Parameters<typeof botFacts>[0]): Level | "owner" | null {
+  if (privateThreads() && auth.kind === "loopback" && auth.trust === "service") return null;
   const viewer = authzViewerFor(auth);
   if (!viewer) return "owner";
   return botLevel({ viewer, ...botFacts(bot) });
@@ -27100,7 +27109,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
     // Bot visibility: a member reaches a restricted bot, its threads, rooms,
     // routines and files exactly as they reach an id that does not exist.
     // Lists and live frames are narrowed where they are built, below.
-    const visible = visibleTo(viewerFor(auth));
+    const visible = visibleTo(viewerFor(auth, path));
     const viewerId = channelFilterViewerId(auth);
     if (!visible.everything) {
       const subject = pathSubject(path);
@@ -27116,8 +27125,9 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
     // Private threads (server/thread-privacy.ts): the helpers routes call
     // without the request read who is asking from here. Set for every
     // request, so a kept-alive connection never inherits one.
-    threadViewerScope.enterWith(viewerId ?? null);
-    if (viewerId && privateThreads()) {
+    const scopedViewerId = serviceThreadViewer(serviceViewerClosed(auth, path, privateThreads()), viewerId);
+    threadViewerScope.enterWith(scopedViewerId ?? null);
+    if (scopedViewerId && privateThreads()) {
       // A bot thread named in the path or the query is its owner's only;
       // every bot a response carries shows this viewer their threads only.
       const named = path.match(/^\/api\/threads\/([\w-]+)(?:\/|$)/)?.[1]
@@ -27129,18 +27139,18 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       // organization admin answers a card that waits for an admin, without
       // reading the thread (POST .../respond only).
       if (named && owner && !adminAnswersPendingApproval(method, path, auth) &&
-        !botThreadReadable(owner, named, viewerId, method === "GET" ? "thread.read" : "thread.post")) {
+        !botThreadReadable(owner, named, scopedViewerId, method === "GET" ? "thread.read" : "thread.post")) {
         return json(res, 404, { error: "no such conversation" });
       }
-      onJsonBody(res, (body) => bodyForThreadViewer(body, viewerId));
+      onJsonBody(res, (body) => bodyForThreadViewer(body, scopedViewerId));
     }
-    if (viewerId && !grantRoute && !adminAnswersPendingApproval(method, path, auth)) {
+    if (scopedViewerId && !grantRoute && !adminAnswersPendingApproval(method, path, auth)) {
       const subject = pathSubject(path);
-      if (subject && !subjectSeesChannel(subject, viewerId)) return json(res, 404, { error: notFoundFor(subject) });
+      if (subject && !subjectSeesChannel(subject, scopedViewerId)) return json(res, 404, { error: notFoundFor(subject) });
       // Slice 4: a read-only member of a shared section reads its rooms and
       // changes nothing in them (settings, tasks, queue, interrupt, cards).
       const room = IDENTITY.kind === "perspicax" && method !== "GET" && method !== "HEAD" && !/^\/api\/(?:groups|threads)\/[\w-]+\/read$/.test(path) && !REACTION_ROUTE.test(path) ? roomOfSubject(subject) : null;
-      if (room && !groupPostAllowed(room, viewerId)) return json(res, 403, { error: "you may read this channel, not change it", code: "read_only" });
+      if (room && !groupPostAllowed(room, scopedViewerId)) return json(res, 403, { error: "you may read this channel, not change it", code: "read_only" });
     }
     {
       // A conversation between two people (server/people-dms.ts): only they
@@ -27621,12 +27631,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           botId: internalSender.id,
           botName: acting.name,
           botColor: acting.color,
-          mode: approvalModeFor({
-            approvalMode: acting.approvalMode,
-            autoApprove: acting.autoApprove,
-            approvalGrant: acting.approvalGrant,
-            threadId: internalCapability.threadId,
-          }),
+          mode: approvalModeForTurn(acting, false, internalCapability.threadId),
         });
         return json(res, result.status, result.body);
       }
@@ -27822,6 +27827,10 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         }
         if (body?.method !== "tools/list" && body?.method !== "tools/call") {
           return json(res, 400, { error: "unsupported browser method" });
+        }
+        if (body.method === "tools/call") {
+          const refusal = browserNavigationRefusal(body.params);
+          if (refusal) return json(res, 400, { error: refusal });
         }
         const result = await browserRuntime.agentRpc(browser.session, browser.spec, body.method, body.params, () => {
           requireActiveInternalCapability();
@@ -31004,7 +31013,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       return json(res, 405, { error: "method not allowed" });
     }
     if (method === "GET" && path === "/api/events") {
-      const viewer = viewerFor(auth);
+      const viewer = viewerFor(auth, path);
       const visibleNow = visibleTo(viewer);
       const client: SseClient = {
         res,
@@ -31661,7 +31670,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         features: { sharedComputers: lendingEnabled(), orgPairing: IDENTITY.kind === "perspicax", orgDirectory: IDENTITY.kind === "perspicax", serverCatalogue: IDENTITY.kind !== "perspicax" }, loopbackTrust: LOOPBACK.trust, cliOwnerToken,
       });
       if (!current.auth) return json(res, current.status, { error: current.error });
-      const currentVisible = visibleTo(viewerFor(current.auth));
+      const currentVisible = visibleTo(viewerFor(current.auth, path));
       if (threadId && !currentVisible.thread(threadId)) return json(res, 404, { error: "no such conversation" });
       const searchViewerId = channelFilterViewerId(current.auth);
       const hits = found
