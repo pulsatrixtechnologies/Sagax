@@ -61,6 +61,7 @@ import type { PlaceRow } from "../../shared/place-view";
 import { isProviderSafetyBlock, PROVIDER_SAFETY_GUIDANCE, PROVIDER_SAFETY_HELP_URL } from "../../shared/provider-safety";
 import { BotAvatar } from "./Avatar";
 import { TurnPresence } from "./TurnPresence";
+import { ultracodeFromSelection } from "@/lib/ultracode-chrome";
 import { showToolCallsEnabled, skillAuthoringEnabled } from "@/lib/feature-flags";
 import { showToolCallRows } from "@/lib/tool-activity-rows";
 import { normalizeState, stateForBot } from "@/lib/mascot";
@@ -1685,6 +1686,7 @@ export function ChatView({ bot: profile }: { bot: Bot }) {
             </div>
           )}
           <TurnPresence
+            ultracode={ultracodeFromSelection(bot.modelSelection)}
             avatar={
               // BotAvatar, not a bare MausAvatar: an uploaded profile image
               // (and a chosen mascot body) must match the sidebar row.

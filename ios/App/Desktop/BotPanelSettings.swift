@@ -78,8 +78,7 @@ struct BotPanelModel: View {
     }
     private var levels: [String] {
         guard instance?.capabilities?.modelVariants != true else { return [] }
-        var seen = Set<String>()
-        return (instance?.capabilities?.effortLevels ?? []).filter { !$0.isEmpty && seen.insert($0).inserted }
+        return UltracodeEffort.pickerLevels(instance?.capabilities?.effortLevels ?? [])
     }
 
     var body: some View {
@@ -147,6 +146,7 @@ struct BotPanelModel: View {
 
     private func effortChip(_ level: String?) -> some View {
         let on = selection.effort == level
+        let ultracode = level.map(UltracodeEffort.isUltracode) == true
         return Button {
             guard !on else { return }
             Task {
@@ -157,13 +157,13 @@ struct BotPanelModel: View {
                 saving = false
             }
         } label: {
-            Text(verbatim: level.map(Self.effortLabel) ?? String(localized: "Default"))
+            Text(verbatim: level.map { UltracodeEffort.label($0) } ?? String(localized: "Default"))
                 .font(theme.font(12))
-                .foregroundStyle(on ? theme.ink : theme.inkSecondary)
+                .foregroundStyle(on ? (ultracode ? Color(red: 0.49, green: 0.23, blue: 0.93) : theme.ink) : theme.inkSecondary)
                 .padding(.horizontal, 11)
                 .frame(height: 28)
-                .background(on ? theme.control : .clear, in: Capsule())
-                .overlay(Capsule().strokeBorder(on ? theme.accent.opacity(0.5) : theme.hairline40, lineWidth: 1))
+                .background(on ? (ultracode ? Color(red: 0.49, green: 0.23, blue: 0.93).opacity(0.12) : theme.control) : .clear, in: Capsule())
+                .overlay(Capsule().strokeBorder(on ? (ultracode ? Color(red: 0.49, green: 0.23, blue: 0.93).opacity(0.5) : theme.accent.opacity(0.5)) : theme.hairline40, lineWidth: 1))
                 .contentShape(Capsule())
         }
         .buttonStyle(.plain)
@@ -172,10 +172,7 @@ struct BotPanelModel: View {
     }
 
     static func effortLabel(_ effort: String) -> String {
-        switch effort.lowercased() {
-        case "xhigh": "X-High"
-        default: effort.capitalized
-        }
+        UltracodeEffort.label(effort)
     }
 }
 

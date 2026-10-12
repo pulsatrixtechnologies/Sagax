@@ -1872,10 +1872,60 @@ body {
   background-clip: text;
   color: transparent;
 }
+
+/* Ultracode effort: Claude-console purple, theme-aware and subdued in every skin. */
+:root {
+  --color-ultracode: #7c3aed;
+  --color-ultracode-ink: color-mix(in srgb, var(--color-ultracode) 88%, var(--color-ink));
+  --color-ultracode-soft: color-mix(in srgb, var(--color-ultracode) 14%, var(--color-composer));
+  --color-ultracode-glow: color-mix(in srgb, var(--color-ultracode) 22%, transparent);
+}
+.ultracode-chrome {
+  border-color: color-mix(in srgb, var(--color-ultracode) 38%, var(--color-border)) !important;
+  box-shadow:
+    0 2px 8px -1px #0000000d,
+    0 1px 2px #00000008,
+    0 0 0 1px color-mix(in srgb, var(--color-ultracode) 12%, #e4e4e40a),
+    0 0 28px -6px var(--color-ultracode-glow);
+}
+.ultracode-effort-chip {
+  color: var(--color-ultracode-ink);
+}
+.ultracode-effort-chip-active {
+  border-color: color-mix(in srgb, var(--color-ultracode) 52%, var(--color-hairline)) !important;
+  background: var(--color-ultracode-soft) !important;
+}
+.ultracode-effort-option:hover {
+  border-color: color-mix(in srgb, var(--color-ultracode) 42%, var(--color-hairline)) !important;
+  background: color-mix(in srgb, var(--color-ultracode) 10%, var(--color-control));
+  color: var(--color-ultracode-ink);
+}
+.ultracode-shimmer {
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--color-ultracode) 55%, var(--color-ink-secondary)) 35%,
+    var(--color-ultracode-ink) 50%,
+    color-mix(in srgb, var(--color-ultracode) 55%, var(--color-ink-secondary)) 65%
+  );
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.ultracode-sidebar-dot {
+  background: var(--color-ultracode);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-ultracode) 25%, var(--color-sidebar));
+}
+.turn-presence.ultracode-active .turn-mascot-in > :first-child {
+  filter: drop-shadow(0 0 10px var(--color-ultracode-glow));
+}
 @media (prefers-reduced-motion: reduce) {
   .animate-caret, .animate-msg-in, .animate-shimmer, .animate-pop-in, .animate-pop-out, .animate-call-dock-in, .animate-card-fade-in, .animate-card-fade-out { animation: none; }
   .animate-status-pulse { animation: none; opacity: 0.6; }
   .thinking-shimmer { background: none; color: var(--color-ink-secondary); }
+  .ultracode-shimmer { background: none; color: var(--color-ultracode-ink); }
+  .ultracode-sidebar-dot { animation: none; opacity: 0.85; }
+  .turn-presence.ultracode-active .turn-mascot-in > :first-child { filter: none; }
   .turn-mascot-in, .turn-mascot-out, .turn-answer { animation: none; }
   .animate-rise, .animate-spot-in { animation: none; }
   .animate-ripple, .animate-bolt { animation: none; }

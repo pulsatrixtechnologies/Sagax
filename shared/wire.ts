@@ -41,7 +41,7 @@ import type { CloudAgentWireItem } from "./cloud-agents.ts";
 /** Reasoning-effort levels, ascending. A union of everything any engine
  * accepts; each driver declares the subset its CLI will take. Lives here
  * because it is part of ModelSelection, which rides the wire. */
-export const EFFORT_LEVELS = ["none", "low", "medium", "high", "xhigh", "max"] as const;
+export const EFFORT_LEVELS = ["none", "low", "medium", "high", "xhigh", "max", "ultracode"] as const;
 export type EffortLevel = (typeof EFFORT_LEVELS)[number];
 
 /** Narrow untrusted API/config input before it becomes a model selection. */

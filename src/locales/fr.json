@@ -2365,6 +2365,8 @@
   "model.close": "Fermer",
   "model.defaultTag": "Par défaut",
   "model.effort": "Effort",
+  "model.effort.ultracode": "Ultracode",
+  "model.effort.ultracodeHint": "Flux de codage approfondi pour Claude; effort maximal chez les autres fournisseurs.",
   "model.loadedTag": "Chargé",
   "model.localGroup": "Local",
   "model.localSoon": "Les modèles locaux apparaîtront dès que l'agent sera installé.",

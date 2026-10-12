@@ -637,6 +637,7 @@ import { parseVoiceCallMeta, voiceCallSection, voiceCallSteerPrompt, voiceCallTu
 import { VoiceCallSessions } from "./voice-call-session.ts";
 import { VoiceCallWarmup } from "./voice-call-warmup.ts";
 import { callTurnEffort } from "./voice-call-effort.ts";
+import { effortAcceptedByEngine, resolveEngineTurnEffort } from "../shared/ultracode-effort.ts";
 import { VoiceLatencyLog } from "./voice-latency.ts";
 import { unansweredCallMessage, VOICE_CALL_WATCHDOG_MS, voiceCallRecoveryPrompt } from "./voice-call-watchdog.ts";
 import * as grokVoice from "./tts/grok.ts";
@@ -4775,8 +4776,8 @@ function checkedModelSelection(
       };
     }
   }
-  const allowed: readonly string[] = target?.adapter.capabilities.effortLevels ?? [];
-  if (target && selection.effort !== undefined && !allowed.includes(selection.effort)) {
+  const allowed = target?.adapter.capabilities.effortLevels ?? [];
+  if (target && selection.effort !== undefined && !effortAcceptedByEngine(selection.effort, allowed)) {
     return { ok: false, status: 400, error: `effort "${selection.effort}" is not offered by this bot's engine` };
   }
   if (target && selection.variant !== undefined && !target.adapter.capabilities.modelVariants) {
@@ -13400,7 +13401,7 @@ async function startTurn(
         viewerBotOverrideStore.getOne(person, bot.id),
         (level, instanceId) => {
           const levels = registry.get(instanceId)?.adapter.capabilities.effortLevels;
-          return Array.isArray(levels) && levels.includes(level);
+          return Array.isArray(levels) && effortAcceptedByEngine(level, levels);
         },
       );
       if (selection !== bot.modelSelection) bot = { ...bot, modelSelection: selection };
@@ -13581,7 +13582,7 @@ async function startTurn(
   assertModelVariantSupported({ variant, effort }, instance.adapter.capabilities);
   // A selection can be persisted while its engine is offline. Re-check when
   // the engine returns so an old or unsupported value never reaches a CLI.
-  if (effort && !instance.adapter.capabilities.effortLevels?.includes(effort)) {
+  if (effort && !effortAcceptedByEngine(effort, instance.adapter.capabilities.effortLevels ?? [])) {
     throw Object.assign(
       new Error(`effort "${effort}" is not offered by this bot's engine — choose another level in settings`),
       { status: 409 },
@@ -14869,7 +14870,7 @@ async function startTurn(
       // waiting for the first word (server/voice-call-effort.ts).
       const turnEffort = onCall || warmOnly
         ? callTurnEffort({ driverKind: instance.driverKind, levels: instance.adapter.capabilities.effortLevels, effort })
-        : effort;
+        : resolveEngineTurnEffort(effort, instance.driverKind, instance.adapter.capabilities.effortLevels);
       const dispatch = await guardTurnDispatch(withDesktopModelPerson(turnPlace.principal, () => {
         if (IDENTITY.kind === "perspicax") desktopLocalModels.assertAvailable(turnPlace.principal, model, instance.driverKind);
         return instance.adapter.sendTurn({
@@ -20599,7 +20600,7 @@ function autoPickForTurn(input: {
     if (record && autoRecordUsable(record, engines, skip)) {
       const engine = engines.find((candidate) => candidate.instanceId === record.instanceId)!;
       const selection: ModelSelection = { instanceId: record.instanceId, model: record.model };
-      if (record.instanceId === bot.modelSelection.instanceId && bot.modelSelection.effort && engine.effortLevels?.includes(bot.modelSelection.effort)) {
+      if (record.instanceId === bot.modelSelection.instanceId && bot.modelSelection.effort && engine.effortLevels && effortAcceptedByEngine(bot.modelSelection.effort, engine.effortLevels)) {
         selection.effort = bot.modelSelection.effort;
       }
       return {

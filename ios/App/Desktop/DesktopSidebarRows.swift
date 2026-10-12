@@ -613,7 +613,15 @@ struct DesktopThreadRow: View {
                     if task.activity == "waiting-on-you" {
                         Text("Waiting").font(theme.font(10, .medium)).foregroundStyle(theme.warning)
                     } else if task.isWorking {
-                        ProgressView().controlSize(.mini).tint(theme.success)
+                        let selection = task.modelSelection ?? bot.modelSelection
+                        if UltracodeEffort.isUltracode(selection.effort) {
+                            Circle()
+                                .fill(Color(red: 0.49, green: 0.23, blue: 0.93))
+                                .frame(width: 8, height: 8)
+                                .accessibilityLabel(Text("Ultracode"))
+                        } else {
+                            ProgressView().controlSize(.mini).tint(theme.success)
+                        }
                     }
                     if task.unread == true {
                         Circle().fill(theme.accent).frame(width: 6, height: 6)

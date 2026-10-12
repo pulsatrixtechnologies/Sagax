@@ -100,7 +100,7 @@ describe("EffortRow", () => {
     const markup = renderToStaticMarkup(createElement(EffortRow, { bot: bot(), compact: true }));
     expect(markup).toContain('aria-label="Reasoning effort"');
     expect(markup).not.toContain("<button");
-    expect([...markup.matchAll(/<option[^>]*>([^<]+)</g)].map((match) => match[1])).toEqual(["Default", "None", "Low", "High"]);
+    expect([...markup.matchAll(/<option[^>]*>([^<]+)</g)].map((match) => match[1])).toEqual(["Default", "None", "Low", "High", "Ultracode"]);
   });
   it("can apply effort to the pinned thread and bot default together", () => {
     fixture.instances = [engine(["high"])];
@@ -118,6 +118,15 @@ describe("EffortRow", () => {
     high.props.onClick();
     expect(fixture.dispatch).toHaveBeenLastCalledWith({ type: "setModel", botId: "atlas", threadId: "independent-thread", selection: { instanceId: "codex", model: "gpt-5.6", effort: "high" } });
   });
+  it("lists ultracode after native effort levels", () => {
+    fixture.instances = [engine(["low", "high", "max"])];
+    const row = EffortRow({ bot: bot() })!;
+    const levels = Children.toArray(row.props.children).at(-1) as ReactElement<{ children: ReactNode }>;
+    const labels = Children.toArray(levels.props.children).map(
+      (child) => (child as ReactElement<{ children: ReactNode }>).props.children,
+    );
+    expect(labels).toContain("Ultracode");
+  });
   it("renders nothing for an engine that declares no effort levels", () => {
     expect(renderEffort([engine()])).toBe("");
     // an engine that declares an empty list is the same promise as none
@@ -129,7 +138,7 @@ describe("EffortRow", () => {
   it("offers only the levels the selected engine accepts, plus Default", () => {
     const markup = renderEffort([engine(["low", "medium", "high"])]);
 
-    expect(levelButtons(markup).map((button) => button.label)).toEqual(["Default", "Low", "Medium", "High"]);
+    expect(levelButtons(markup).map((button) => button.label)).toEqual(["Default", "Low", "Medium", "High", "Ultracode"]);
     // the server rejects a level its engine does not offer, so one that is
     // never shown is one that can never be persisted
     expect(markup).not.toContain(">X-High<");
@@ -139,7 +148,7 @@ describe("EffortRow", () => {
   it("keeps Default and None apart — Default sends no level, None sends one", () => {
     const markup = renderEffort([engine(["none", "low"])]);
 
-    expect(levelButtons(markup).map((button) => button.label)).toEqual(["Default", "None", "Low"]);
+    expect(levelButtons(markup).map((button) => button.label)).toEqual(["Default", "None", "Low", "Ultracode"]);
   });
 
   it("marks the active level, and Default when the bot carries no level", () => {

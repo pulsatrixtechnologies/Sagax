@@ -758,7 +758,7 @@ async function checkedModelSelection(
     throw new ToolInputError(`model '${model}' is not offered by instance '${instanceId}'`);
   }
   const efforts = Array.isArray(instance.capabilities?.effortLevels) ? instance.capabilities.effortLevels : [];
-  if (effort && !efforts.includes(effort)) {
+  if (effort && !efforts.includes(effort) && effort !== "ultracode") {
     throw new ToolInputError(`effort '${effort}' is not offered by instance '${instanceId}'`);
   }
   return { instanceId, model, ...(effort ? { effort } : {}) };

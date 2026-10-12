@@ -85,6 +85,7 @@ import {
 import type { LocaleKey } from "@/locales";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { WorkingDots } from "./WorkingIndicator";
+import { ultracodeFromSelection } from "@/lib/ultracode-chrome";
 import { StatusDot } from "./StatusDot";
 import { nextRename } from "@/lib/rename";
 import { useDesktopCapabilities } from "./DesktopCapabilities";
@@ -1711,7 +1712,12 @@ export function BotThreadList({ bot, selected, density = "comfortable", query = 
   }, [botId, dispatch, generatedTitles]);
   const rowState = (task: ThreadTreeTask) => {
     const thread = currentTaskBot(bot, task.threadId);
-    return { busy: thread.busy, activity: thread.activity, waitingForTeammates: thread.waitingForTeammates };
+    return {
+      busy: thread.busy,
+      activity: thread.activity,
+      waitingForTeammates: thread.waitingForTeammates,
+      ultracode: Boolean(thread.busy && ultracodeFromSelection(thread.modelSelection)),
+    };
   };
   return (
     <ThreadTree ownerId={bot.id} ownerName={bot.name} owner="bot" folderOwner={bot} openThreadId={bot.threadId} tasks={tasks} projects={bot.projects ?? []}

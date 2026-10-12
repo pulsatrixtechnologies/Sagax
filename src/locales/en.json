@@ -3292,6 +3292,8 @@
   "model.effort.max": "Max",
   "model.effort.off": "Off",
   "model.effort.quick": "Quick",
+  "model.effort.ultracode": "Ultracode",
+  "model.effort.ultracodeHint": "Deep coding workflow on Claude; maximum effort on other providers.",
   "model.followsBot": "Uses {name}'s model",
   "model.loadedTag": "Loaded",
   "model.localGroup": "Local",

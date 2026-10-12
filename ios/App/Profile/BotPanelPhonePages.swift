@@ -111,8 +111,7 @@ struct BotModelSection: View {
     }
     private var levels: [String] {
         guard !usesVariants else { return [] }
-        var seen = Set<String>()
-        return (instance?.capabilities?.effortLevels ?? []).filter { !$0.isEmpty && seen.insert($0).inserted }
+        return UltracodeEffort.pickerLevels(instance?.capabilities?.effortLevels ?? [])
     }
     private var draft: ModelSelection {
         var next = usesVariants
@@ -124,7 +123,7 @@ struct BotModelSection: View {
     private var canApply: Bool {
         guard loaded, current.busy != true, let instance, instance.snapshot.isAvailable else { return false }
         let offered = modelID == instance.models.default || instance.models.options.contains { $0.id == modelID }
-        return offered && (effort.map(levels.contains) ?? true) && draft != saved
+        return offered && (effort.map { UltracodeEffort.accepts(effort: $0, in: instance?.capabilities?.effortLevels ?? []) } ?? true) && draft != saved
     }
 
     var body: some View {

@@ -11,6 +11,7 @@ export function TurnPresence({
   label = "Thinking",
   answering = false,
   since = null,
+  ultracode = false,
 }: {
   avatar: ReactNode;
   visible: boolean;
@@ -18,6 +19,8 @@ export function TurnPresence({
   answering?: boolean;
   /** Turn start (epoch ms) — shows a self-ticking elapsed readout while working. */
   since?: number | null;
+  /** Ultracode effort: purple activity shimmer while the turn runs. */
+  ultracode?: boolean;
 }) {
   const [mounted, setMounted] = useState(visible);
   const [phase, setPhase] = useState<"think" | "answer" | "out">(answering ? "answer" : "think");
@@ -45,7 +48,7 @@ export function TurnPresence({
   if (!mounted) return null;
   const showWorking = phase === "think";
   return (
-    <div className="turn-presence flex flex-col items-start">
+    <div className={cn("turn-presence flex flex-col items-start", ultracode && visible && "ultracode-active")}>
       <div
         className={cn(
           "flex items-center gap-2",
@@ -56,7 +59,7 @@ export function TurnPresence({
         {avatar}
         {showWorking ? (
           <span className="flex items-baseline gap-2 leading-none">
-            <span className="thinking-shimmer animate-shimmer text-[13px]">
+            <span className={cn("text-[13px]", ultracode ? "ultracode-shimmer animate-shimmer" : "thinking-shimmer animate-shimmer")}>
               {label}
             </span>
             {since !== null && (
