@@ -1437,24 +1437,34 @@
         }
       }
     },
-    "Bot intro animation": {
+    "Search and + at top": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Bot intro animation"
+            "value": "Search and + at top"
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Animation d'entrée du bot"
+            "value": "Recherche et bouton + en haut"
           }
-        },
-        "pt-BR": {
+        }
+      }
+    },
+    "Place search and the new button at the top of the home instead of the bottom.": {
+      "localizations": {
+        "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Animação de entrada do bot"
+            "value": "Place search and the new button at the top of the home instead of the bottom."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Afficher la recherche et le bouton + en haut de l'accueil plutôt qu'en bas."
           }
         }
       }

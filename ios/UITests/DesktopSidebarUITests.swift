@@ -40,7 +40,6 @@ final class DesktopSidebarUITests: XCTestCase {
         var arguments = [
             "-parityEndpoint", endpoint, "-parityToken", token, "-parityIPadScreen", "main",
             "-AppleLanguages", "(en)", "-AppleLocale", "en_US",
-            "-companion.prefs.islandIntro", "never",
             "-companion.onboarding.welcomeSeen", "YES",
             "-companion.onboarding.notificationsSeen", "YES",
             "-companion.sidebarPrefs.parity-harness", "{}",

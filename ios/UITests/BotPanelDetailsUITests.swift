@@ -99,7 +99,6 @@ final class BotPanelDetailsUITests: XCTestCase {
             "-parityEndpoint", fixture.endpoint, "-parityToken", fixture.token,
             "-parityScreen", "03-profile-info", "-parityChat", chat,
             "-AppleLanguages", "(en)", "-AppleLocale", "en_US",
-            "-companion.prefs.islandIntro", "never",
             "-companion.onboarding.welcomeSeen", "YES",
             "-companion.onboarding.notificationsSeen", "YES",
         ]

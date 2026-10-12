@@ -3,8 +3,8 @@
 // One flat list in the desktop's order (SettingsModal.tsx `SECTIONS`, the
 // sections a phone pairing can use: NavigationMenus.settings) under the
 // account card, which is Pair devices (switch, add, sign out, delete). The
-// phone's own settings sit in General; list density, activity and the bot
-// intro in Appearance. The search at the top finds any page.
+// phone's own settings sit in General; list density and home chrome in
+// Appearance. The search at the top finds any page.
 // Geometry: measure-settings.md §1 to §4.
 import CompanionCore
 import SwiftUI

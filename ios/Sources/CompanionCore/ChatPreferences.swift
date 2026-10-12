@@ -32,22 +32,6 @@ public enum ActivityDetail: String, CaseIterable, Codable, Sendable {
     }
 }
 
-/// When the island plays a bot's face on opening a chat.
-public enum IslandIntro: String, CaseIterable, Codable, Sendable {
-    case always
-    /// The first time each bot is opened, then never again for that bot.
-    case oncePerBot
-    case never
-
-    public var label: String {
-        switch self {
-        case .always: "Always"
-        case .oncePerBot: "First time per bot"
-        case .never: "Never"
-        }
-    }
-}
-
 /// One chip on the composer's quick-reply row.
 public struct QuickReply: Codable, Hashable, Identifiable, Sendable {
     public var id: String

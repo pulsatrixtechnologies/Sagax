@@ -222,14 +222,14 @@ struct ExperimentalSettingsView: View {
 
 // MARK: - Appearance's display pickers
 
-/// List density, activity and the bot intro, moved from the old Advanced
-/// page: how the home and the chats show things on this phone.
+/// List density, activity and home chrome, moved from the old Advanced page:
+/// how the home and the chats show things on this phone.
 struct DisplaySettingsCard: View {
     @Environment(\.themePalette) var themePalette
     @AppStorage(PrefKey.activityDetail) private var activityDetail = ActivityDetail.full.rawValue
-    @AppStorage(PrefKey.islandIntro) private var islandIntro = IslandIntro.oncePerBot.rawValue
     @AppStorage(PrefKey.rosterDensity) private var rosterDensity = RosterDensity.default.rawValue
     @AppStorage(PrefKey.updatesButton) private var updatesButton = false
+    @AppStorage(PrefKey.rosterChromeAtTop) private var rosterChromeAtTop = false
 
     var body: some View {
         SettingsSectionLabel(text: "Display")
@@ -263,16 +263,12 @@ struct DisplaySettingsCard: View {
             }
             .accessibilityIdentifier("settings-activity")
             CardHairline(leadingInset: SettingsMetrics.rowInset)
-            Menu {
-                Picker(selection: $islandIntro) {
-                    ForEach(IslandIntro.allCases, id: \.rawValue) { option in
-                        Text(LocalizedStringKey(option.label)).tag(option.rawValue)
-                    }
-                } label: { EmptyView() }
-            } label: {
-                SettingsRow(title: "Bot intro animation", accessory: .valueChevron(String(localized: String.LocalizationValue((IslandIntro(rawValue: islandIntro) ?? .oncePerBot).label))), height: 43.67)
-            }
-            .accessibilityIdentifier("settings-bot-intro")
+            SettingsRow(
+                title: "Search and + at top",
+                subtitle: "Place search and the new button at the top of the home instead of the bottom.",
+                accessory: .toggle($rosterChromeAtTop),
+                identifier: "settings.rosterChromeAtTop"
+            )
         }
         SettingsFooter(text: LocalizedStringKey(RosterDensity.shown(stored: rosterDensity).caption))
     }

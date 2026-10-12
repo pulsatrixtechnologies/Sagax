@@ -37,7 +37,6 @@ final class ThreadFoldersUITests: XCTestCase {
             "-parityEndpoint", endpoint, "-parityToken", token, "-parityScreen", screen,
             "-companion.prefs.rosterDensity", "standard",
             "-AppleLanguages", "(en)", "-AppleLocale", "en_US",
-            "-companion.prefs.islandIntro", "never",
             "-companion.onboarding.welcomeSeen", "YES",
             "-companion.onboarding.notificationsSeen", "YES",
         ]

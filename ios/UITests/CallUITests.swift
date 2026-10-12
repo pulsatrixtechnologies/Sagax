@@ -43,7 +43,6 @@ final class CallUITests: XCTestCase {
             "-parityToken", session.token,
             "-parityScreen", screen,
             "-AppleLanguages", "(en)", "-AppleLocale", "en_US",
-            "-companion.prefs.islandIntro", "never",
             "-companion.onboarding.welcomeSeen", "YES",
             "-companion.onboarding.notificationsSeen", "YES",
             "-callInjectAudio", Self.iosRoot.appendingPathComponent("UITests/CallAudio/\(audio)").path,
@@ -311,7 +310,6 @@ final class CallUITests: XCTestCase {
         var arguments = [
             "-parityEndpoint", session.endpoint, "-parityToken", session.token, "-parityIPadScreen", "main",
             "-AppleLanguages", "(en)", "-AppleLocale", "en_US",
-            "-companion.prefs.islandIntro", "never",
             "-companion.onboarding.welcomeSeen", "YES",
             "-companion.onboarding.notificationsSeen", "YES",
             "-callInjectAudio", Self.iosRoot.appendingPathComponent("UITests/CallAudio/bot").path,

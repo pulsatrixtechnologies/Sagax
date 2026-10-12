@@ -23,10 +23,10 @@ final class ThreadNavigationUITests: XCTestCase {
     }
 
     @MainActor
-    func testTopBarOpensThreadsWithIslandIntroEnabledAndSwitches() {
+    func testTopBarOpensThreadsWithHeaderLocationAndSwitches() {
         // #210: the name capsule carries Threads while Threads location is
         // the chat header (nothing is listed under the bot row then)
-        let app = launchPreview(islandIntro: "always", location: "header")
+        let app = launchPreview(location: "header")
         XCTAssertFalse(app.buttons["threads-toggle.preview-pepper"].exists)
         app.buttons.containing(.staticText, identifier: "Pepper").firstMatch.tap()
 
@@ -335,7 +335,7 @@ final class ThreadNavigationUITests: XCTestCase {
     /// earlier run saved; otherwise that density for this launch only.
     @MainActor
     private func launchPreview(
-        extraArguments: [String] = [], islandIntro: String = "never", density: String? = nil, location: String = "sidebar"
+        extraArguments: [String] = [], density: String? = nil, location: String = "sidebar"
     ) -> XCUIApplication {
         continueAfterFailure = false
         let app = XCUIApplication()
@@ -348,7 +348,6 @@ final class ThreadNavigationUITests: XCTestCase {
         app.launchArguments = [
             "-store-preview", "-threads-preview",
             "-AppleLanguages", "(en)", "-AppleLocale", "en_US",
-            "-companion.prefs.islandIntro", islandIntro,
             "-companion.onboarding.welcomeSeen", "YES",
             "-companion.onboarding.notificationsSeen", "YES"
         ] + densityArguments + extraArguments
