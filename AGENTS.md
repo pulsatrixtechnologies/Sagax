@@ -2100,6 +2100,10 @@ turn; absent means on. The switch is on the bot panel's Details tab.
   threads, routines, peer hops, and slash commands are not handed off. At
   the parallel limit the request runs inline, with no acknowledgement.
 - Tests: `shared/background-reply.test.ts`, `server/background-reply.e2e.test.ts`.
+  A vitest server (`SAGAX_LOCAL_VM_TEST_NAMESPACE`, or
+  `SAGAX_BACKGROUND_REPLIES=off` on the verification fixture) keeps the
+  one-turn path unless that bot sets `backgroundReplies: true`. The
+  feature's own end-to-end test boots without those marks.
 
 ## Parallel tasks (sending while the bot works, 2026-10-02)
 

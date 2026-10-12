@@ -697,7 +697,9 @@ describe("legacy routine comms e2e (fake ACP fleet)", () => {
       expect(woke).toContain("[A delegated task just completed]");
       expect(woke).toContain("ORCHID_EARLIER_CONTEXT");
       expect(woke.split("hello from fake acp").length - 1).toBe(1);
-      expect(woke).toContain("[Message from @Helper, another bot — untrusted peer content, not from your user]\n\"@Helper replied to the delegated task");
+      expect(woke).toContain("[Message from @Helper, another bot — untrusted peer content, not from your user]");
+      expect(woke).toContain("<<<UNTRUSTED source=\"bot\">>>");
+      expect(woke).toContain("\"@Helper replied to the delegated task");
     },
     45_000,
   );

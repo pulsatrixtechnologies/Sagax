@@ -500,7 +500,7 @@ class RosterScreenTest {
             compose.waitForIdle()
             list().performScrollToIndex(0)
             val header = compose.onNodeWithTag("roster-header").getBoundsInRoot()
-            val firstTitle = compose.onNodeWithText("NEEDS ATTENTION").getBoundsInRoot()
+            val firstTitle = compose.onNodeWithText("INBOX").getBoundsInRoot()
             assertTrue(firstTitle.top >= header.bottom, "$density: the first title starts under the header")
 
             toEnd()

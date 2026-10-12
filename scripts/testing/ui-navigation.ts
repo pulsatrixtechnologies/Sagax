@@ -11,19 +11,33 @@ export async function openCompose(click: (name: string) => Promise<unknown>): Pr
   await click("New");
 }
 
-/** Browse Bots on the Templates section (needs enableBrowseBots first). */
+/** Browse Bots on its home view (needs enableBrowseBots first). The config
+ * frame puts the sidebar row in place; the catalogue is a click, not a
+ * store import. Import and Share a team sit on that home view. */
 export async function openTemplatesCatalog(
   click: (name: string) => Promise<unknown>,
   evaluate: (js: string) => Promise<unknown>,
 ): Promise<void> {
-  await evaluate(`(async () => {
-    const store = await import("/src/state/store.tsx");
-    const config = await fetch("/api/config").then((response) => response.json());
-    store.dispatch({ type: "configStatus", config });
-    store.dispatch(store.openBotCatalog({ section: "templates" }));
-    return true;
-  })()`);
-  await click("Templates");
+  const open = async () => {
+    const text = String(await evaluate("document.body.innerText"));
+    return text.includes("Share a team") || text.includes("Community templates");
+  };
+  if (await open()) return;
+  const deadline = Date.now() + 12_000;
+  let clicked = false;
+  while (Date.now() < deadline) {
+    if (await open()) return;
+    if (!clicked) {
+      try {
+        await click("Browse Bots");
+        clicked = true;
+      } catch {
+        // The sidebar row appears once the config frame lands.
+      }
+    }
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+  throw new Error("Browse Bots did not open");
 }
 
 /** Team map → Create team (solo server sections). */

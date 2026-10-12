@@ -55,11 +55,12 @@ export function selectPushScope(files, show) {
 }
 
 // macOS runners are the scarce ones (five at a time for the whole account),
-// and only a couple of test blocks are macOS-only, so a PR runs the suite on
-// Linux and Windows. Main pushes, merge groups and manual runs add macOS, and
-// every PR still runs the macOS smokes.
+// and only a couple of test blocks are macOS-only. To keep the shared runner
+// queue short, a PR runs the suite on Linux only and skips the Windows, macOS
+// and iOS jobs (platforms=false). Main pushes, merge groups and manual runs
+// run every platform.
 const ALL_OS = ["macos-latest", "ubuntu-latest", "windows-latest"];
-const PR_OS = ["ubuntu-latest", "windows-latest"];
+const PR_OS = ["ubuntu-latest"];
 const SHA = /^[a-f\d]{40}(?:[a-f\d]{24})?$/i;
 
 const git = (args) => execFileSync("git", args, { encoding: "utf8", timeout: 30_000, stdio: ["ignore", "pipe", "pipe"] });
@@ -91,6 +92,7 @@ async function previousCommitGreen(sha) {
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   let scope = { runtime: true, mobile: true };
   let vitestOs = ALL_OS;
+  let platforms = true;
   if (process.env.GITHUB_EVENT_NAME === "pull_request") {
     try {
       const { pull_request: pr } = JSON.parse(readFileSync(process.env.GITHUB_EVENT_PATH, "utf8"));
@@ -101,6 +103,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
       }
       scope = selectCiScope(changedFiles(`${base}...${head}`));
       vitestOs = PR_OS;
+      platforms = false;
     } catch (error) {
       console.warn(`CI scope: using all checks because the pull request diff is unavailable: ${error.message}`);
     }
@@ -126,6 +129,6 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   }
   appendFileSync(
     process.env.GITHUB_OUTPUT,
-    `runtime=${scope.runtime}\nmobile=${scope.mobile}\nvitest_os=${JSON.stringify(vitestOs)}\n`,
+    `runtime=${scope.runtime}\nmobile=${scope.mobile}\nvitest_os=${JSON.stringify(vitestOs)}\nplatforms=${platforms}\n`,
   );
 }

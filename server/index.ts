@@ -68,7 +68,7 @@ import {
 } from "../shared/approval-mode.ts";
 import { botActFrameAllowed, fillPluginBot, type RouteTarget, type TurnFacts } from "../shared/bot-act.ts";
 import { createBotActService, type BotActAnswerer, type BotActService, type PerformActor } from "./bot-act.ts";
-import { cwActionCard, cwActionLanguage, cwToolWidget, createCwActionPasses } from "./cw-widget-actions.ts";
+import { cwActionCard, cwActionLanguage, cwActionsThreadId, cwToolWidget, createCwActionPasses } from "./cw-widget-actions.ts";
 import { cwActionInstruction, parseCwAction } from "../shared/cw-widgets/actions.ts";
 import { createApprovalModeSupport } from "./harness-capabilities.ts";
 import { escapeAttribute } from "../src/lib/composer-attachments.ts";
@@ -377,7 +377,7 @@ import {
   BACKGROUND_REPLY_PROMPT,
   BACKGROUND_WORKER_PROMPT,
   backgroundConversationThread,
-  backgroundRepliesEnabled,
+  backgroundRepliesActive,
   milestoneGate,
   shouldBackgroundReply,
   stepAcknowledgement,
@@ -664,6 +664,7 @@ import { createCaptureMailer, createMailer, type Mailer } from "./mailer.ts";
 import { createMailSettingsRoutes } from "./mail-routes.ts";
 import { createVoiceModeRoutes } from "./voice-mode.ts";
 import { installTerminalFeature } from "./terminal-install.ts";
+import { isTerminalSessionUpgrade } from "./routes/terminal.ts";
 import { resolveAndSendTerminal } from "./terminal-requests.ts";
 import { parseVoiceCallMeta, voiceCallSection, voiceCallSteerPrompt, voiceCallTurnPrompt } from "./voice-call-prompt.ts";
 import {
@@ -3872,7 +3873,9 @@ async function interruptDirectThread(botId: string, threadId: string, options?: 
     if (requestOwner.messageId) store.patchMessage(threadId, requestOwner.messageId, { requestCancelled: true });
   }
   const liveTurnId = liveTurnByThread.get(threadId);
-  if (liveTurnId) {
+  // A barge-in drops the dying turn's tokens and tool rows so they are never
+  // spoken. A Stop outside a call still records the interrupted tool.
+  if (liveTurnId && voiceCalls.active(threadId)) {
     let cancelled = cancelledVoiceTurns.get(threadId);
     if (!cancelled) {
       cancelled = new Set();
@@ -5882,7 +5885,7 @@ function previewSystemPrompt(bot: BotRecord) {
     { id: "memory", label: "Memory", text: memorySystemPrompt(bot.id, { managedWrites: agentsMounted, fileTools: Boolean(privateWorkspace), enabled: bot.memoryEnabled !== false }) },
     { id: "docs", label: "Documents index", text: docsIndexPrompt(bot.id, { tools: agentsMounted ? "agents" : privateWorkspace ? "files" : "none" }) },
     { id: "skills", label: "Skills index", text: privateWorkspace ? skillsSystemPrompt(bot.id, skillsLibraryEnabled(cfg) ? bot.assignedSkills : undefined) + pluginSkillsForTurn(bot, instance) : "" },
-    { id: "background-reply", label: "Background replies", text: backgroundRepliesEnabled(bot) ? BACKGROUND_REPLY_PROMPT : "" },
+    { id: "background-reply", label: "Background replies", text: backgroundRepliesActive(bot) ? BACKGROUND_REPLY_PROMPT : "" },
   ]);
   const totalBytes = built.sections.reduce((n, s) => n + s.bytes, 0);
   return {
@@ -7941,7 +7944,7 @@ const desktopViewer = createDesktopViewer({
   // voice mode's live call; in-chat terminal WebSocket (server/routes/terminal.ts)
   acceptsUpgrade: (path) =>
     /^\/api\/bots\/[\w-]+\/voice\/(?:listen|speech)$/.test(path)
-    || /^\/api\/terminal\/sessions\/[\w-]+\/ws$/.test(path),
+    || isTerminalSessionUpgrade(path),
   target: (id, auth) => {
     if (id === SANDBOX_VIEWER_TARGET) {
       // The caller's own server environment desktop, never anyone else's.
@@ -12880,7 +12883,7 @@ async function startOrQueueDirectMessage(botId: string, threadId: string, text: 
   const bot = store.bot(botId);
   const task = bot ? store.taskByThread(bot.id, threadId) : undefined;
   const spoken = Boolean(voiceCall) || via === "call";
-  if (bot && task && shouldBackgroundReply({
+  if (bot && task && backgroundRepliesActive(bot) && shouldBackgroundReply({
     bot, text, voice: spoken, hidden: task.hidden === true, nested: Boolean(task.parallelOf),
     outstanding: roomHandoffs.outstandingDirect(threadId).length,
   })) {
@@ -15294,7 +15297,7 @@ async function startTurn(
       const skipBackground = spokenTurn || Boolean(turnTask?.hidden) || Boolean(opts?.automationSource) || Boolean(opts?.unattended) || (opts?.commsDepth ?? 0) > 0 || Boolean(opts?.coordination) || Boolean(opts?.cardContinuation);
       const backgroundReplyText = backgroundWorker
         ? BACKGROUND_WORKER_PROMPT
-        : skipBackground || !backgroundRepliesEnabled(liveBot ?? bot) ? "" : BACKGROUND_REPLY_PROMPT;
+        : skipBackground || !backgroundRepliesActive(liveBot ?? bot) ? "" : BACKGROUND_REPLY_PROMPT;
       const prompt = buildSystemPrompt(persona, liveBot?.soul ?? bot.soul ?? "", [
         { id: "user-profile", label: "About the user", text: userProfileSystemPrompt(botUserProfile(bot)) },
         // first after the soul: the block names agent tools, so it only goes
@@ -31343,11 +31346,11 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       });
     }
 
-    m = path.match(/^\/api\/threads\/([\w-]+)\/cw-actions$/);
-    if (m && method === "POST") {
+    const cwThread = cwActionsThreadId(path, method);
+    if (cwThread) {
       const body = await readBody(req);
       if (!body || typeof body !== "object" || Array.isArray(body)) return json(res, 400, { error: "body must be a JSON object" });
-      const asked = await requestCwAction(auth, m[1], body);
+      const asked = await requestCwAction(auth, cwThread, body);
       return json(res, asked.status, asked.body);
     }
 

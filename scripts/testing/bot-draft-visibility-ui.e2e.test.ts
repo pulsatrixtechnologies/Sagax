@@ -6,6 +6,7 @@ import { resolveAgentBrowserBinary } from "../../server/browser-engine.ts";
 import { waitForExit } from "../../server/testing/cleanup.ts";
 import { runControlOmb } from "../control-omb.ts";
 import { UI_TOOLS_DIR } from "./control-omb-ui.ts";
+import { openNewBotDialog } from "./compose-flow.ts";
 
 const ROOT = fileURLToPath(new URL("../..", import.meta.url));
 const binary = resolveAgentBrowserBinary({ dataDir: UI_TOOLS_DIR, env: process.env });
@@ -28,9 +29,11 @@ if (!enabled) console.log("skipping draft visibility UI: set SAGAX_UI_E2E=1 to i
     }, { timeout: binary ? 180_000 : 600_000, interval: 250 }).toBe(true);
     const ui = (verb: string, ...args: string[]) => runControlOmb(["ui", verb, "--ui", info.ui, ...args]) as Promise<Record<string, any>>;
     const snapshot = async () => (await ui("snapshot")).snapshot as string;
+    const evaluate = async (js: string) => (await ui("eval", "--js", js)).result;
+    const click = (name: string) => ui("click", "--name", name);
     const bots = async () => (await fetch(`${info.url}/api/bots?messages=0`).then(response => response.json())).bots as Array<{ id: string; visibility?: string }>;
     const before = await bots();
-    await ui("press", "--keys", "Control+n");
+    await openNewBotDialog({ click, evaluate, snapshot });
     await expect.poll(snapshot).toContain("Who can see it");
     // The dialog appears before its defaults request completes. Never click
     // the disabled Create button while the fixture is still loading its draft.

@@ -9,6 +9,7 @@ import { waitForExit } from "../../server/testing/cleanup.ts";
 import { BOT_ROLES, roleProfilePatch } from "../../src/lib/bot-roles.ts";
 import { runControlOmb } from "../control-omb.ts";
 import { UI_TOOLS_DIR } from "./control-omb-ui.ts";
+import { openNewBotDialog } from "./compose-flow.ts";
 
 const ROOT = fileURLToPath(new URL("../..", import.meta.url));
 const binary = resolveAgentBrowserBinary({ dataDir: UI_TOOLS_DIR, env: process.env });
@@ -74,6 +75,9 @@ describe("bot setup and tools in the real renderer", () => {
       })()`);
     };
     const dialogCount = () => evaluate("document.querySelectorAll('[role=dialog]').length");
+    // ⌘N opens the compose picker. The full New bot dialog (Starting role)
+    // is the team-map path.
+    const openNewBot = () => openNewBotDialog({ click, evaluate, snapshot });
     const original = await bots();
     const coder = BOT_ROLES.find((role) => role.id === "coder")!;
 
@@ -93,14 +97,14 @@ describe("bot setup and tools in the real renderer", () => {
       };
       return true;
     })()`);
-    await press("Control+n");
+    await openNewBot();
     await chooseRole(coder.id);
     expect(await evaluate("window.botCreateRequests")).toBe(0);
     await click("Create bot");
     await expect.poll(() => evaluate("window.botCreateRequests"), { timeout: 10_000 }).toBe(1);
     await press("Escape");
     expect(await dialogCount()).toBe(0);
-    await press("Control+n");
+    await openNewBot();
     expect(await evaluate("document.querySelector('[role=dialog]')?.getAttribute('aria-busy')")).toBe("true");
     expect(await evaluate("[...document.querySelectorAll('[role=dialog] fieldset button, [role=dialog] input, [role=dialog] select, [role=dialog] textarea')].every(b => b.matches(':disabled'))")).toBe(true);
     await evaluate("[...document.querySelectorAll('[role=dialog] button')].find(b => b.textContent.includes('Create bot')).click()");
@@ -108,7 +112,7 @@ describe("bot setup and tools in the real renderer", () => {
     // Close remains usable; a slow server must not trap the user in a modal.
     await click("Close");
     expect(await dialogCount()).toBe(0);
-    await press("Control+n");
+    await openNewBot();
     await evaluate("window.releaseBotCreation(); true");
     await expect.poll(async () => (await bots()).find((bot) => bot.name === coder.name)?.soul, { timeout: 10_000 }).toBe(coder.soul);
     const created = (await bots()).filter((bot) => !original.some((old) => old.id === bot.id));
@@ -186,7 +190,7 @@ describe("bot setup and tools in the real renderer", () => {
 
     // Opening New Bot above settings must replace the old modal, not leave
     // two focus traps competing. Escape closes only the one remaining layer.
-    await press("Control+n");
+    await openNewBot();
     expect(await dialogCount()).toBe(1);
     await press("Shift+Tab");
     expect(await evaluate("document.querySelector('[role=dialog]')?.contains(document.activeElement)")).toBe(true);
@@ -211,7 +215,7 @@ describe("bot setup and tools in the real renderer", () => {
       return true;
     })()`);
     const ops = BOT_ROLES.find((role) => role.id === "ops")!;
-    await press("Control+n");
+    await openNewBot();
     await chooseRole(ops.id);
     await click("Create bot");
     await expect.poll(snapshot, { timeout: 10_000 }).toContain("Fixture preset rejected");

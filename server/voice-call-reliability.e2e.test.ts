@@ -235,15 +235,16 @@ it("duplex: interrupt aborts an in-flight tool; the late result never lands", as
       const all = await t.messages();
       return all.some((m) => m.kind === "activity" && String(m.tool?.name ?? "").includes("Bash"));
     }, { timeout: 15_000 }).toBe(true);
+    const before = (await t.messages()).filter((m) => m.role === "bot" && m.kind === "text").length;
+    // "stop" cancels the thinking turn and does not start a new reply.
     const sent = await t.send({ text: "stop", voiceCall: { callId: CALL_ID, interrupted: true, duplex: true } });
     expect(sent.queued).toBeUndefined();
-    const answered = async () => {
-      const all = await t.messages();
-      const asked = all.findIndex((m) => m.role === "user" && m.text === "stop");
-      return asked >= 0 && all.slice(asked + 1).some((m) => m.role === "bot" && m.kind === "text" && String(m.text ?? "").trim());
-    };
-    await expect.poll(answered, { timeout: 25_000 }).toBe(true);
+    expect(sent.stopped).toBe(true);
+    await expect.poll(t.busy, { timeout: 15_000 }).toBe(false);
+    // Past the fake CLI's late tool (800 ms) so a result that escaped the abort would be visible.
+    await new Promise((resolve) => setTimeout(resolve, 1_200));
     const all = await t.messages();
+    expect(all.filter((m) => m.role === "bot" && m.kind === "text")).toHaveLength(before);
     expect(all.some((m) => m.kind === "activity" && m.tool?.ok === true && String(m.tool?.output ?? "").includes("late-tool"))).toBe(false);
     expect(all.some((m) => m.role === "bot" && m.kind === "text" && String(m.text ?? "").includes("late-tool"))).toBe(false);
   } finally {

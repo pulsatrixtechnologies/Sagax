@@ -6,6 +6,7 @@ import {
   acceptAck,
   ackClaimsResult,
   backgroundConversationThread,
+  backgroundRepliesActive,
   backgroundRepliesEnabled,
   classifyRequest,
   frenchAnglicisms,
@@ -24,6 +25,57 @@ describe("background replies", () => {
     expect(backgroundRepliesEnabled({})).toBe(true);
     expect(backgroundRepliesEnabled({ backgroundReplies: true })).toBe(true);
     expect(backgroundRepliesEnabled({ backgroundReplies: false })).toBe(false);
+  });
+
+  it("stays one turn in the vitest fixture unless the bot turns it on", () => {
+    const namespace = process.env.SAGAX_LOCAL_VM_TEST_NAMESPACE;
+    const flag = process.env.SAGAX_BACKGROUND_REPLIES;
+    const home = process.env.HOME;
+    const profile = process.env.USERPROFILE;
+    const data = process.env.SAGAX_DATA_DIR;
+    const tmp = process.env.TMPDIR;
+    try {
+      delete process.env.SAGAX_LOCAL_VM_TEST_NAMESPACE;
+      delete process.env.SAGAX_BACKGROUND_REPLIES;
+      process.env.HOME = "/home/sagax";
+      process.env.USERPROFILE = "/home/sagax";
+      delete process.env.SAGAX_DATA_DIR;
+      expect(backgroundRepliesActive({})).toBe(true);
+      process.env.HOME = home;
+      if (profile === undefined) delete process.env.USERPROFILE;
+      else process.env.USERPROFILE = profile;
+      if (data === undefined) delete process.env.SAGAX_DATA_DIR;
+      else process.env.SAGAX_DATA_DIR = data;
+      expect(backgroundRepliesActive({})).toBe(false);
+      // A restarted fixture keeps its home under /tmp but points TMPDIR inside that home.
+      process.env.TMPDIR = `${process.env.HOME}/tmp`;
+      process.env.SAGAX_DATA_DIR = process.env.HOME;
+      expect(backgroundRepliesActive({})).toBe(false);
+      delete process.env.TMPDIR;
+      process.env.SAGAX_BACKGROUND_REPLIES = "on";
+      expect(backgroundRepliesActive({})).toBe(true);
+      delete process.env.SAGAX_BACKGROUND_REPLIES;
+      process.env.SAGAX_LOCAL_VM_TEST_NAMESPACE = "suite";
+      expect(backgroundRepliesActive({})).toBe(false);
+      expect(backgroundRepliesActive({ backgroundReplies: true })).toBe(true);
+      delete process.env.SAGAX_LOCAL_VM_TEST_NAMESPACE;
+      process.env.SAGAX_BACKGROUND_REPLIES = "off";
+      expect(backgroundRepliesActive({})).toBe(false);
+      expect(backgroundRepliesActive({ backgroundReplies: true })).toBe(true);
+    } finally {
+      if (namespace === undefined) delete process.env.SAGAX_LOCAL_VM_TEST_NAMESPACE;
+      else process.env.SAGAX_LOCAL_VM_TEST_NAMESPACE = namespace;
+      if (flag === undefined) delete process.env.SAGAX_BACKGROUND_REPLIES;
+      else process.env.SAGAX_BACKGROUND_REPLIES = flag;
+      if (home === undefined) delete process.env.HOME;
+      else process.env.HOME = home;
+      if (profile === undefined) delete process.env.USERPROFILE;
+      else process.env.USERPROFILE = profile;
+      if (data === undefined) delete process.env.SAGAX_DATA_DIR;
+      else process.env.SAGAX_DATA_DIR = data;
+      if (tmp === undefined) delete process.env.TMPDIR;
+      else process.env.TMPDIR = tmp;
+    }
   });
 
   it("treats a greeting or a short question as quick, and a lookup as work", () => {

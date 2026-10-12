@@ -14,7 +14,9 @@
 //      owner answers, a member may not
 //   5. the operator at this computer answers the cards of a bot it owns; an
 //      admin who does not own a bot may not, nor the operator another's
-//   6. a session-less local service (service loopback trust) answers none
+//   6. a session-less local service (service loopback trust) reaches none of
+//      the approval or Slack routes: those are not service routes, so a bot
+//      shell cannot answer, open a thread or post
 //   7. the decision row and the card both name who answered
 //   8. Undo on a change that applied without a person follows the same
 //      rule: the owner may, a member may not, even the one who started the
@@ -306,10 +308,11 @@ posixOnly("who may answer an approval card on a shared workspace", () => {
     expect(log).toContain("local requests: service trust (SAGAX_LOOPBACK_TRUST)");
     const requestId = await cardFrom(bot, bot.threadId, ADA);
 
+    const serviceRefusal = /may only use the service routes/;
     for (const behavior of ["allow", "deny"]) {
       const refused = await api("POST", `/api/threads/${bot.threadId}/respond`, { requestId, behavior });
       expect(refused.status, behavior).toBe(403);
-      expect(refused.body.error).toMatch(refusal);
+      expect(refused.body.error).toMatch(serviceRefusal);
     }
     // The bot-scoped route and the standing grant are not service routes at all.
     expect((await api("POST", `/api/bots/${bot.id}/respond`, { requestId, behavior: "allow" })).status).toBe(403);
@@ -320,21 +323,16 @@ posixOnly("who may answer an approval card on a shared workspace", () => {
     expect(answered.status, JSON.stringify(answered.body)).toBe(200);
     expect((await decision(requestId, "user-denied"))?.actor).toMatchObject({ kind: "session", email: BOSS });
 
-    // A Slack-shaped request: the worker opens the thread and sends through
-    // the guarded route, so no person can be named. The owner approves it in
-    // Sagax; a member may not.
+    // A session-less caller is not a credentialed worker. Opening a thread
+    // or posting through the guarded route stays off the service list, so a
+    // bot shell on this machine cannot do either.
     const task = await api("POST", `/api/bots/${bot.id}/tasks`, { title: "Slack · C1 · 1.0" });
-    expect(task.status, JSON.stringify(task.body)).toBe(201);
-    const threadId = task.body.task.threadId as string;
-    const page = await api("GET", `/api/threads/${threadId}/messages?limit=0`);
+    expect(task.status, JSON.stringify(task.body)).toBe(403);
+    expect(task.body.error).toMatch(serviceRefusal);
     const guarded = await api("POST", `/api/bots/${bot.id}/messages/guarded`, {
-      threadId, text: "run it", sendId: "slackjob_card_answerers_1", expectedActiveLeafId: page.body.activeLeafId ?? null,
+      threadId: bot.threadId, text: "run it", sendId: "slackjob_card_answerers_1", expectedActiveLeafId: null,
     });
-    expect(guarded.status, JSON.stringify(guarded.body)).toBe(202);
-    const slackCard = await openCard(threadId);
-    expect(slackCard).not.toBeNull();
-    expect((await api("POST", `/api/threads/${threadId}/respond`, { requestId: slackCard.card.requestId, behavior: "allow" }, ADA)).status).toBe(403);
-    const approved = await api("POST", `/api/threads/${threadId}/respond`, { requestId: slackCard.card.requestId, behavior: "allow" }, BOSS);
-    expect(approved.status, JSON.stringify(approved.body)).toBe(200);
+    expect(guarded.status, JSON.stringify(guarded.body)).toBe(403);
+    expect(guarded.body.error).toMatch(serviceRefusal);
   }, 90_000);
 });

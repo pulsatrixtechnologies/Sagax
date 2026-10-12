@@ -1,6 +1,6 @@
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { delimiter, join } from "node:path";
+import { delimiter, dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { enginesBinDir, enginesPrefix, installNpmEngine, npmPackageOf, serverInstallFor } from "./engine-install.ts";
 import { augmentedPath, findCliCandidates, registerPathDir, resetPathCacheForTests } from "./env-path.ts";
@@ -63,7 +63,10 @@ function useFakeNpm() {
     mkdirSync(ctx.binDir);
     writeFakeNpm(ctx.binDir);
     originalPath = process.env.PATH;
-    process.env.PATH = ctx.binDir;
+    // The stand-in npm is a shebang script. Vitest points HOME at a throwaway
+    // directory, so the usual Node install locations are not on the augmented
+    // PATH; keep this process's own node directory behind the stand-in.
+    process.env.PATH = [ctx.binDir, dirname(process.execPath)].join(delimiter);
     process.env.FAKE_NPM_LOG = join(ctx.scratch, "calls.jsonl");
     delete process.env.FAKE_NPM_MODE;
     resetPathCacheForTests();

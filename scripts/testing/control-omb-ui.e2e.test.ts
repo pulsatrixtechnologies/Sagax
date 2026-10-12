@@ -202,13 +202,13 @@ describe("control-omb ui drives the real renderer", () => {
     // Settings is its own chunk (src/components/lazy-screens.tsx): opened before
     // the idle prefetch has fetched it, it paints once the chunk arrives.
     await expect.poll(() => evaluate(`(() => {
-      const tab = [...document.querySelectorAll('button')].find(b => b.textContent.trim() === 'API keys');
+      const tab = [...document.querySelectorAll('button')].find(b => b.textContent.trim() === 'Models and accounts');
       tab?.click();
       return Boolean(tab);
     })()`), { timeout: 10_000 }).toBe(true);
-    // The shared OpenAI-compatible key lives under "Other", open once a key is saved.
-    await expect.poll(() => evaluate(`document.querySelector('[data-api-key-row="openaiCompat"]') !== null`), { timeout: 10_000 }).toBe(true);
-    await evaluate(`document.querySelector('[data-api-keys-other]').open = true; true`);
+    // The OpenAI-compatible key opens in its own dialog from the provider key list.
+    await expect.poll(() => evaluate(`(() => { const b = document.querySelector('[data-provider-key="openaiCompat"] button'); b?.click(); return Boolean(b); })()`), { timeout: 10_000 }).toBe(true);
+    await expect.poll(() => evaluate(`document.querySelector('[data-provider-key-dialog="openaiCompat"] [data-api-key-row="openaiCompat"]') !== null`), { timeout: 10_000 }).toBe(true);
 
     // A saved key with an untouched field can be checked again.
     await expect.poll(() => evaluate(`${testButton}?.disabled ?? null`), { timeout: 10_000 }).toBe(false);
@@ -274,16 +274,13 @@ describe("control-omb ui drives the real renderer", () => {
     const originalModel = originalBot.modelSelection.model;
     const models = await runControlOmb(["models", "--url", info.url]) as any;
     const options = models.instances.find((instance: any) => instance.instanceId === originalBot.modelSelection.instanceId).models.options;
-    const originalLabel = options.find((option: any) => option.id === originalModel).label;
     const nextModel = options.find((option: any) => option.id !== originalModel);
-    await ui("click", info.ui, "--name", originalLabel);
-    expect(await ui("eval", info.ui, "--js", "String(document.querySelector('[aria-label=\"Apply model changes to\"]') === null && Boolean(document.querySelector('[data-model-dropdown-trigger]')))"))
-      .toMatchObject({ result: "true" });
-    await ui("eval", info.ui, "--js", "document.querySelector('[data-model-dropdown-trigger]').click(); true");
+    await ui("eval", info.ui, "--js", "document.querySelector('[data-tour=\"model\"][aria-haspopup=\"listbox\"]').click(); true");
+    await expect.poll(async () => (await ui("eval", info.ui, "--js", "String(document.querySelector('[aria-label=\"Apply model changes to\"]') === null && Boolean(document.querySelector('[data-model-menu]')))")).result, { timeout: 10_000 }).toBe("true");
     const scopeShot = join(evidenceDir, "model-dropdown.png");
     mkdirSync(evidenceDir, { recursive: true });
     await ui("screenshot", info.ui, "--out", scopeShot);
-    await ui("click", info.ui, "--name", nextModel.label);
+    await ui("eval", info.ui, "--js", `document.querySelector('[data-model-menu] [data-model-option="${nextModel.id}"]').click(); true`);
     await expect.poll(async () => (await savedBot()).modelSelection.model, { timeout: 10_000 }).toBe(nextModel.id);
     expect((await savedBot()).tasks.find((task: any) => task.threadId === originalBot.threadId).modelSelection.model).toBe(nextModel.id);
     expect((await savedBot()).approvalMode).toBe(originalBot.approvalMode);

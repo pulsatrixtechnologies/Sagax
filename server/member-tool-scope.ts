@@ -47,6 +47,15 @@ export const MEMBER_OWN_SCOPE_AGENT_TOOLS: Readonly<Record<string, MemberToolFam
   create_options_card: "conversation",
   send_voice_note: "conversation",
   request_credential: "conversation",
+  // Opens nothing: the person taps the card before any shell starts.
+  offer_shell_terminal: "conversation",
+  // External provider jobs on the person's own key, not a command on this host.
+  launch_cloud_agent: "own-setup",
+  cloud_agent_follow_up: "conversation",
+  cancel_cloud_agent: "conversation",
+  archive_cloud_agent: "own-setup",
+  create_agent: "own-setup",
+  send_prompt: "conversation",
   memory_update: "memory",
   memory_log: "memory",
   group_memory_update: "memory",
@@ -65,13 +74,6 @@ export const MEMBER_OWN_SCOPE_AGENT_TOOLS: Readonly<Record<string, MemberToolFam
   propose_team_memory: "own-setup",
   propose_team_setup: "own-setup",
   propose_bot_deletion: "own-setup",
-  // The person's own cloud agents (their provider key, a card for writes).
-  launch_cloud_agent: "own-setup",
-  cloud_agent_follow_up: "own-setup",
-  cancel_cloud_agent: "own-setup",
-  archive_cloud_agent: "own-setup",
-  // Opens a shell only after the person allows the card.
-  offer_shell_terminal: "own-setup",
 });
 
 /** The agents tools that keep the admin gate, and why:

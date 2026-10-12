@@ -1,0 +1,115 @@
+# Trial builds of the Pulsatrix fork. The official package version is not bumped.
+# Artifacts and the GitHub tag use forkVersion (pulsa-vX.Y.Z).
+# The release body is docs/releases/<forkVersion>.md. The job refuses to tag
+# when that file is missing or has no "## English" section.
+# macOS is unsigned. Windows is unsigned. This does not touch the upstream release mirror.
+name: Fork release
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Branch or commit to build"
+        required: true
+        type: string
+        default: feat/org-channels
+      prerelease:
+        description: "Mark as a GitHub pre-release (the in-app updater offers it only to people who opted in)"
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+jobs:
+  mac:
+    name: macOS arm64 + x64
+    # The macOS 26 owl icon (build/icon.icon) is compiled by electron-builder
+    # with actool, which needs Xcode 26+. macos-26 is GitHub's hosted image
+    # for macOS Tahoe and carries Xcode 26 by default; macos-14 (Sonoma) does
+    # not offer it. See actions/runner-images macos-26 readme (GA since
+    # 2026-02-26, in public preview since 2025-09-11).
+    runs-on: [self-hosted, macOS, ARM64, sagax-release-mac]
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.ref }}
+          persist-credentials: false
+      - uses: pnpm/action-setup@ff378ebe6b225b0680b81c1ad4498ae0d1d3a5e3 # v6.0.10
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          # No dependency cache in a release build: a cache entry written from
+          # the default branch scope could be poisoned and then restored into a
+          # job that signs or publishes (CodeQL actions/cache-poisoning).
+      - run: pnpm install --frozen-lockfile
+      - name: Clean generated output
+        run: rm -rf dist dist-server dist-companion dist-native release
+      - run: pnpm package:fork:mac
+      - name: Upload macOS artifacts
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: pulsa-mac
+          if-no-files-found: error
+          path: |
+            release/*.dmg
+            release/*.zip
+            release/latest-mac.yml
+
+  win:
+    name: Windows x64 + arm64
+    runs-on: [self-hosted, windows, x64]
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.ref }}
+          persist-credentials: false
+      - uses: pnpm/action-setup@ff378ebe6b225b0680b81c1ad4498ae0d1d3a5e3 # v6.0.10
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          # No dependency cache in a release build: a cache entry written from
+          # the default branch scope could be poisoned and then restored into a
+          # job that signs or publishes (CodeQL actions/cache-poisoning).
+      - run: pnpm install --frozen-lockfile
+      - name: Clean generated output
+        shell: bash
+        run: rm -rf dist dist-server dist-companion dist-native release
+      - run: pnpm package:fork:win
+      - name: Upload Windows artifacts
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: pulsa-win
+          if-no-files-found: error
+          path: |
+            release/*.exe
+            release/*.exe.blockmap
+            release/*.zip
+            release/latest.yml
+
+  publish:
+    name: Publish trial release
+    needs: [mac, win]
+    runs-on: [self-hosted, linux, x64]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.ref }}
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          path: dist-release
+      - name: Create the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          node scripts/check-release-notes.mjs
+          fork=$(node -p "require('./package.json').forkVersion")
+          tag="pulsa-v$fork"
+          mkdir -p out
+          find dist-release -type f \( -name '*.dmg' -o -name '*.zip' -o -name '*.exe' -o -name '*.blockmap' -o -name '*.yml' \) -exec cp {} out/ \;
+          ls -lh out
+          gh release create "$tag" --repo "$GITHUB_REPOSITORY" ${{ inputs.prerelease && '--prerelease' || '' }} --title "Sagax $fork" --notes-file "docs/releases/$fork.md" out/*

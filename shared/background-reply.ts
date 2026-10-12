@@ -8,8 +8,41 @@
 // Absent `backgroundReplies` means on. A bot sets it false to wait for the
 // whole answer in one turn.
 
+import { tmpdir } from "node:os";
+import { sep } from "node:path";
+
 export function backgroundRepliesEnabled(bot: { backgroundReplies?: boolean } | undefined): boolean {
   return Boolean(bot) && bot!.backgroundReplies !== false;
+}
+
+/** What a running server should do. Production follows `backgroundRepliesEnabled`
+ * (absent means on). A vitest server is marked with `SAGAX_LOCAL_VM_TEST_NAMESPACE`
+ * or `SAGAX_BACKGROUND_REPLIES=off`, and a server whose home or data directory
+ * sits in the throwaway temp directory (the isolated e2e fixtures, which
+ * replace the environment and drop the namespace) stays on one turn unless
+ * this bot turned the feature on. `SAGAX_BACKGROUND_REPLIES=on` keeps the
+ * product default, including the feature's own end-to-end test. */
+export function backgroundRepliesActive(bot: { backgroundReplies?: boolean } | undefined): boolean {
+  if (process.env.SAGAX_BACKGROUND_REPLIES === "on") return backgroundRepliesEnabled(bot);
+  const suite = Boolean(process.env.SAGAX_LOCAL_VM_TEST_NAMESPACE)
+    || process.env.SAGAX_BACKGROUND_REPLIES === "off"
+    || throwawayServerHome();
+  if (suite && bot?.backgroundReplies !== true) return false;
+  return backgroundRepliesEnabled(bot);
+}
+
+function throwawayServerHome(): boolean {
+  // os.tmpdir() follows TMPDIR. A fixture restart points that at a folder
+  // inside its own home (`<data>/tmp`) and drops SAGAX_BACKGROUND_REPLIES,
+  // which would hide a home that still lives under the real temp directory.
+  // /tmp and /private/tmp stay roots so that home is still a throwaway one.
+  const homes = [process.env.SAGAX_DATA_DIR, process.env.HOME, process.env.USERPROFILE].filter(
+    (dir): dir is string => Boolean(dir),
+  );
+  const roots = new Set<string>([tmpdir(), "/tmp", "/private/tmp"]);
+  return homes.some((dir) => [...roots].some((root) =>
+    dir === root || dir.startsWith(root + sep) || dir.startsWith(root + "/"),
+  ));
 }
 
 export type RequestPace = "quick" | "work";
