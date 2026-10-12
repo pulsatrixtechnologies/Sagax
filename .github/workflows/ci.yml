@@ -434,7 +434,9 @@ jobs:
         # so the downloaded Chrome for Testing dies with "No usable sandbox".
         # This is Chrome's own documented fix for 23.10+; a developer machine
         # needs nothing, and the sandbox itself stays on.
-        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+        run: |
+          f=/proc/sys/kernel/apparmor_restrict_unprivileged_userns
+          if [ -r "$f" ] && [ "$(cat "$f")" != 0 ]; then sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0; else echo "user namespaces not restricted here"; fi
       - name: Drive the real renderer through control-omb ui
         env:
           SAGAX_UI_E2E: "1"
@@ -468,9 +470,9 @@ jobs:
           node-version: 24
           cache: pnpm
       - name: Install package validation and native smoke tools
-        run: >-
-          sudo apt-get update && sudo apt-get install -y
-          at-spi2-core dbus-x11 desktop-file-utils libxi6 libxkbcommon0 squashfs-tools x11-utils xdotool xvfb
+        run: |
+          pkgs="at-spi2-core dbus-x11 desktop-file-utils libxi6 libxkbcommon0 squashfs-tools x11-utils xdotool xvfb"
+          if dpkg -s $pkgs >/dev/null 2>&1; then echo "preinstalled: $pkgs"; else sudo apt-get update && sudo apt-get install -y $pkgs; fi
       - run: pnpm install --frozen-lockfile
       - name: Stage the pinned CUA runtime
         run: pnpm build:cua:linux

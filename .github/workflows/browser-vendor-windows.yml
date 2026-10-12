@@ -37,8 +37,7 @@ jobs:
       - name: Install the pinned Rust toolchain and upstream Windows linker
         run: |
           rustup toolchain install 1.97.1 --profile minimal --target x86_64-pc-windows-gnu
-          sudo apt-get update
-          sudo apt-get install -y mingw-w64
+          if dpkg -s mingw-w64 >/dev/null 2>&1; then echo "preinstalled: mingw-w64"; else sudo apt-get update && sudo apt-get install -y mingw-w64; fi
       - name: Build from the verified source and local backport
         run: node scripts/build-windows-browser-vendor.mjs --output "$RUNNER_TEMP/browser-vendor"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
