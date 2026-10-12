@@ -19,7 +19,11 @@ class FakeUpstream implements SpeechStream {
     this.ready = new Promise((resolve, reject) => { this.open = resolve; this.refuse = reject; });
     this.ready.catch(() => {});
   }
-  speak(text: string) { this.spoken.push(text); }
+  deltas: string[] = [];
+  dones = 0;
+  speak(text: string) { this.delta(text); this.done(); }
+  delta(text: string) { this.deltas.push(text); this.spoken.push(text); }
+  done() { this.dones += 1; }
   clear() { this.clears += 1; }
   close() {
     if (this.closed) return;
@@ -54,8 +58,11 @@ function make() {
     sampleRate: 24_000,
   });
   const say = (id: string, text: string) => session.message(JSON.stringify({ type: "say", id, text }));
+  const sayMore = (id: string, text: string) => session.message(JSON.stringify({ type: "say", id, text, more: true }));
+  const append = (id: string, text: string) => session.message(JSON.stringify({ type: "append", id, text }));
+  const finish = (id: string) => session.message(JSON.stringify({ type: "finish", id }));
   const cancel = (id: string) => session.message(JSON.stringify({ type: "cancel", id }));
-  return { session, upstreams, up: () => upstreams.at(-1)!, frames, audio, usage, log, closePage, say, cancel };
+  return { session, upstreams, up: () => upstreams.at(-1)!, frames, audio, usage, log, closePage, say, sayMore, append, finish, cancel };
 }
 
 const flush = () => new Promise((r) => setTimeout(r, 0));
@@ -80,6 +87,27 @@ describe("streaming voice session (server side)", () => {
     expect(t.frames).toEqual([{ type: "start", id: "c1" }, { type: "done", id: "c1" }, { type: "start", id: "c2" }, { type: "done", id: "c2" }]);
     expect(t.audio).toEqual([4800, 2400]);
     expect(t.usage).toEqual([8, 15]);
+  });
+
+  it("a lead clause sends text.delta without text.done until finish", async () => {
+    const t = make();
+    t.up().accept();
+    await t.session.ready;
+    t.sayMore("c1", "Four");
+    await flush();
+    expect(t.up().deltas).toEqual(["Four"]);
+    expect(t.up().dones).toBe(0);
+    expect(t.frames).toEqual([{ type: "start", id: "c1" }]);
+    t.up().handlers.onAudio(new Uint8Array(400));
+    t.append("c1", " is");
+    t.finish("c1");
+    await flush();
+    expect(t.up().deltas).toEqual(["Four", " is"]);
+    expect(t.up().dones).toBe(1);
+    t.up().handlers.onAudio(new Uint8Array(400));
+    t.up().handlers.onDone();
+    expect(t.frames).toEqual([{ type: "start", id: "c1" }, { type: "done", id: "c1" }]);
+    expect(t.audio).toEqual([400, 400]);
   });
 
   it("a clause with nothing speakable is skipped, never sent to xAI; a bad frame is ignored", async () => {

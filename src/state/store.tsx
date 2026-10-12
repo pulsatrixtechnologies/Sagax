@@ -249,6 +249,8 @@ export interface Message {
   sender?: import("../../shared/wire").WireMessage["sender"];
   /** Provider turn that produced this message. */
   turnId?: string;
+  /** Server-proven user message this bot reply answers. */
+  requestMessageId?: string;
   /** What the turn that wrote this reply ran on; no effort = engine default. */
   turnRun?: { instanceId: string; model: string; effort?: EffortLevel };
   /** Last assistant text item from a settled provider turn. */
@@ -1518,7 +1520,7 @@ export type Action =
   | { type: "computerControl"; botId: string; held: boolean; helpReason: string | null }
   | { type: "modelVariantRuntime"; event: RuntimeEvent }
   | { type: "setModel"; botId: string; selection: ModelSelection; threadId?: string; updateBotDefault?: boolean }
-  | { type: "interrupt"; botId: string; threadId?: string; onError?: () => void }
+  | { type: "interrupt"; botId: string; threadId?: string; expectedUtteranceId?: string; onError?: () => void }
   | { type: "connected"; value: boolean }
   | { type: "error"; message: string | null }
   | { type: "notice"; notice: AppState["notice"] }
@@ -4232,15 +4234,20 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             .then((answer) => { applyFolderOwner(dispatch, action, answer); action.onSaved?.(); })
             .catch((error) => { showError(error); action.onError?.(error instanceof Error ? error.message : String(error)); });
           break;
-        case "interrupt":
+        case "interrupt": {
+          const interruptBody = {
+            ...(action.threadId ? { threadId: action.threadId } : {}),
+            ...(action.expectedUtteranceId ? { expectedUtteranceId: action.expectedUtteranceId } : {}),
+          };
           api(`/api/bots/${action.botId}/interrupt`, {
             method: "POST",
-            body: action.threadId ? JSON.stringify({ threadId: action.threadId }) : undefined,
+            body: Object.keys(interruptBody).length ? JSON.stringify(interruptBody) : undefined,
           }).catch((error) => {
             showError(error);
             action.onError?.();
           });
           break;
+        }
         // tasks: the server answers with the bot AND the live transcript,
         // because switching changes which conversation is on screen
         case "newTask":

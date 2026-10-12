@@ -512,6 +512,10 @@ export interface VoiceCallMark {
   unheard?: string;
   /** these words complete the previous utterance, which was cut short */
   continues?: boolean;
+  /** full-duplex: replace the in-flight turn, never steer or queue */
+  duplex?: boolean;
+  /** STT partial sent before end-of-speech. Must not become a parallel task. */
+  speculative?: boolean;
 }
 
 export interface WireMessage {

@@ -26,6 +26,7 @@ const fixture = vi.hoisted(() => {
     bots: [] as unknown[],
     // state.config: an organization server's allowed model providers ride on it
     config: null as unknown,
+    showUnready: false,
   };
 });
 vi.mock("@/lib/perspicax-org", async (importOriginal) => ({
@@ -61,7 +62,7 @@ vi.mock("@/state/store", async (importOriginal) => ({
 // These cases cover the full picker; Simple mode has its own file.
 vi.mock("@/lib/interface-mode", () => ({ useAdvancedMode: () => true, setAdvancedMode: () => {} }));
 vi.mock("@/lib/unready-providers-preference", () => ({
-  useShowUnreadyProviders: () => false,
+  useShowUnreadyProviders: () => fixture.showUnready,
   setShowUnreadyProviders: () => {},
 }));
 
@@ -162,6 +163,7 @@ beforeEach(() => {
   fixture.myEngines = null;
   fixture.bots = [];
   fixture.config = null;
+  fixture.showUnready = false;
 });
 afterEach(() => vi.useRealTimers());
 
@@ -181,6 +183,7 @@ describe("ModelPicker with a signed-out or missing Claude", () => {
   });
 
   it("keeps a signed-out Claude on the rail and shows its sign-in card instead of pickable cloud models", () => {
+    fixture.showUnready = true;
     fixture.instances = [codex, signedOut()];
     const onCodex = bot("codex", "gpt-5.6");
     const opened = open(onCodex);

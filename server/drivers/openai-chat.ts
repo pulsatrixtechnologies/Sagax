@@ -115,6 +115,9 @@ interface RuntimeOptions<Config> {
    * and end the turn without calling a tool. When set, such a reply gets one
    * nudge per turn to act; a question, or anything longer, ends the turn. */
   nudgeAnnouncedAction?: boolean;
+  /** GET /models keep-alive for HTTP grok voice calls. Off for other
+   * OpenAI-compatible hosts: they did not opt into that ping. */
+  warmSession?: boolean;
 }
 
 const usageFrom = (usage: CompletionJson["usage"]): Usage | null =>
@@ -242,6 +245,52 @@ export function createOpenAIChatRuntime<Config>(options: RuntimeOptions<Config>)
   /** Models whose endpoint rejected an echoed `reasoning_content`. In memory
    * only: later rounds and turns omit the field instead of failing again. */
   const reasoningReplayRejected = new Set<string>();
+  /** Voice-call threads whose HTTP pool we keep alive with GET /models.
+   * There is no process to hold: Node's fetch idle timeout is a few seconds,
+   * the call keepalive is minutes, so a ping while any thread is warm. */
+  const warmThreads = new Set<string>();
+  let warmPing: ReturnType<typeof setInterval> | null = null;
+
+  const modelsUrl = () => `${options.apiUrl.replace(/\/$/, "")}/models`;
+
+  const pingModels = async () => {
+    try {
+      const response = await fetch(modelsUrl(), {
+        method: "GET",
+        headers: { authorization: `Bearer ${options.apiKey}` },
+      });
+      // Drain so undici returns the socket to the keep-alive pool.
+      await response.arrayBuffer().catch(() => undefined);
+      return response.ok;
+    } catch {
+      return false;
+    }
+  };
+
+  const startWarmPing = () => {
+    if (warmPing) return;
+    const ms = Number(process.env.FAKE_GROK_WARM_PING_MS ?? "2500");
+    if (!Number.isFinite(ms) || ms <= 0) return;
+    warmPing = setInterval(() => { void pingModels(); }, ms);
+    warmPing.unref?.();
+  };
+
+  const stopWarmPing = () => {
+    if (!warmPing) return;
+    clearInterval(warmPing);
+    warmPing = null;
+  };
+
+  const rememberWarm = (threadId: string) => {
+    const empty = warmThreads.size === 0;
+    warmThreads.add(threadId);
+    if (empty) startWarmPing();
+  };
+
+  const releaseWarm = (threadId: string) => {
+    warmThreads.delete(threadId);
+    if (warmThreads.size === 0) stopWarmPing();
+  };
 
   const emit = (event: RuntimeEvent) => {
     for (const listener of Array.from(listeners)) listener(event);
@@ -471,10 +520,19 @@ export function createOpenAIChatRuntime<Config>(options: RuntimeOptions<Config>)
 
   const sendTurn = async (turn: SendTurnInput) => {
     if (!options.apiKey) throw new Error(options.missingKeyError);
+    if (turn.warmOnly === true) {
+      if (!turn.warmSignal?.aborted) {
+        if (await pingModels()) rememberWarm(turn.threadId);
+        turn.warmSignal?.addEventListener("abort", () => releaseWarm(turn.threadId), { once: true });
+      }
+      return { turnId: newId() };
+    }
     if (active.has(turn.threadId)) throw new Error("a turn is already running on this thread");
     if (options.computerUse && (turn.images?.length || turn.integrations?.localComputer || turn.integrations?.browser)) assertImageTransport(options.apiUrl);
 
     const turnId = newId();
+    const reused = warmThreads.has(turn.threadId);
+    if (turn.keepWarm === true) rememberWarm(turn.threadId);
     const abort = new AbortController();
     const messages = messagesFor(turn);
     const retainImages = chatImageBudget();
@@ -829,7 +887,7 @@ export function createOpenAIChatRuntime<Config>(options: RuntimeOptions<Config>)
         resolveDone();
       }
     })();
-    return { turnId };
+    return { turnId, ...(reused ? { reused: true } : {}) };
   };
 
   return {
@@ -860,7 +918,10 @@ export function createOpenAIChatRuntime<Config>(options: RuntimeOptions<Config>)
         // No shell and no file tool on the host at all: only MCP tools, each
         // call a card in Ask (the Boat's `exec` runs on the Boat). A guest's
         // turn is as confined as it gets.
-        guestTurns: "confined" },
+        guestTurns: "confined",
+        // GET /models on warmOnly, then ping while the call thread is warm so
+        // the next spoken turn reuses the HTTP pool (no billed completion).
+        ...(options.warmSession ? { warmSession: true } : {}) },
       sendTurn,
       interruptTurn: async (threadId, turnId) => {
         const turn = active.get(threadId);
@@ -883,6 +944,7 @@ export function createOpenAIChatRuntime<Config>(options: RuntimeOptions<Config>)
         return "steered";
       },
       hasSession: (threadId) => active.has(threadId),
+      releaseWarmSession: (threadId) => releaseWarm(threadId),
       stopAll: async () => {
         const turns = [...active.values()];
         for (const turn of turns) turn.abort.abort();
@@ -904,6 +966,8 @@ export function createOpenAIChatRuntime<Config>(options: RuntimeOptions<Config>)
       for (const turn of turns) turn.abort.abort();
       await Promise.all(turns.map((turn) => turn.done));
       listeners.clear();
+      warmThreads.clear();
+      stopWarmPing();
     },
   };
 }

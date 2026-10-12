@@ -19,13 +19,35 @@ import { NO, YES } from "@/lib/voice-mode/answers";
 import { voiceCallSession } from "@/lib/voice-mode/api";
 import { VoiceCall, type BargeInMetrics, type TurnMetrics } from "@/lib/voice-mode/call";
 import { readCallSettings } from "@/lib/voice-mode/call-settings";
+import {
+  cancelSpeech,
+  createSpeechFence,
+  interruptBot,
+  noteUtteranceSent,
+  settleReplies,
+  shouldNarrateToolChip,
+  streamText,
+  type SpeechFence,
+} from "@/lib/voice-mode/speech-fence";
 import { stageDurations } from "@/lib/voice-mode/latency";
 import type { CallState } from "@/lib/voice-mode/call-machine";
 import { readVoiceModeSettings } from "@/lib/voice-mode/settings";
 import { publishLiveCall, retractLiveCall, useLiveCall, type LiveCallData, type LiveCallMetrics } from "@/lib/voice-mode/live-call-store";
 import { noteVoiceCallEnded, noteVoiceCallRunning } from "@/lib/voice-call-clock";
 import { callBarLines } from "@/lib/voice-call-transcript";
-import { t } from "@/lib/i18n";
+import { activeLocale, t } from "@/lib/i18n";
+import {
+  cancelToolFiller,
+  createToolFillerState,
+  noteToolFillerPlayed,
+  resetToolFiller,
+  shouldPlayToolFiller,
+  shouldSkipToolChip,
+  toolFillerLanguage,
+  toolFillerText,
+} from "@/lib/voice-mode/tool-filler";
+import { announceTopic, callHasBackgroundWork, howToSpeakTopicResult, sourceUserId, topicLabel } from "@/lib/voice-mode/voice-topics";
+import { nextSpeakSlot, type SpeakItem, type SpeakPriority } from "@/lib/voice-mode/voice-speak-queue";
 import { isRoutineApproval, isSkillApproval, pendingApprovals, spokenApprovalPrompt } from "../PendingApproval";
 import { VoiceModeBar, type VoiceAccessCard } from "./VoiceModeBar";
 
@@ -93,10 +115,25 @@ export function LiveCallEngine({ bot }: { bot: Bot }) {
   }
   const askedApproval = useRef<{ requestId: string; skill: boolean; routine: boolean; submitted: boolean } | null>(null);
   const askedQuestion = useRef<{ requestId: string; messageId: string } | null>(null);
-  /** after a barge-in: the old turn's words are not spoken (until a new answer) */
-  const dropOldReply = useRef(false);
-  /** the streamed block that was cut: ignored until the stream starts over */
-  const dropStream = useRef<string | null>(null);
+  /** after a barge-in: the old turn's words are not spoken across the next send */
+  const fence = useRef<SpeechFence>(createSpeechFence());
+  const filler = useRef(createToolFillerState());
+  const pendingSpeak = useRef<Array<SpeakItem & { text: string; kind: "say" | "done" }>>([]);
+  const drainSpeak = useCallback(() => {
+    const live = call;
+    if (!live) return;
+    const slot = nextSpeakSlot({
+      userSpeaking: live.current.phase === "hearing",
+      botSpeaking: live.player.busy || live.current.botAudible,
+      waiting: pendingSpeak.current,
+    });
+    if (slot.action === "hold") return;
+    const item = pendingSpeak.current.find((row) => row.id === slot.id);
+    if (!item) return;
+    pendingSpeak.current = pendingSpeak.current.filter((row) => row.id !== slot.id);
+    const played = item.kind === "done" ? live.replyDone(item.text) : live.say(item.text);
+    void Promise.resolve(played).finally(() => drainSpeak());
+  }, [call]);
 
   // ── the call itself (one per mount; StrictMode's probe gets its own) ──
   useEffect(() => {
@@ -138,19 +175,27 @@ export function LiveCallEngine({ bot }: { bot: Bot }) {
         setCaption("");
         if (cut.unheard) lastCut.current = { unheard: cut.unheard };
         // what was being said is cut: the rest of that answer is not spoken
-        dropOldReply.current = true;
-        dropStream.current = streamingRef.current ?? "";
+        fence.current = cancelSpeech(fence.current, streamingRef.current);
+        filler.current = cancelToolFiller(filler.current);
       }),
-      live.on("interrupt-bot", () => {
+      live.on("interrupt-bot", (target) => {
         const current = botRef.current;
-        // an approval being answered by voice keeps its turn
-        if (askedApproval.current || !current.busy) return;
+        // an approval or option card being answered by voice keeps its turn
+        if (askedApproval.current || askedQuestion.current || !current.busy) return;
         // what the stopped turn still streams is never spoken
-        dropStream.current = streamingRef.current ?? "";
-        dispatch({ type: "interrupt", botId: current.id, threadId: current.threadId });
+        fence.current = interruptBot(fence.current, streamingRef.current);
+        dispatch({
+          type: "interrupt",
+          botId: current.id,
+          threadId: current.threadId,
+          ...(target?.utteranceId ? { expectedUtteranceId: target.utteranceId } : {}),
+        });
       }),
     ];
-    void live.start();
+    void live.start().then(() => {
+      const language = toolFillerLanguage(readVoiceModeSettings().language, activeLocale());
+      void live.prefetchFiller(toolFillerText(language)).catch(() => {});
+    });
     return () => {
       for (const off of offs) off();
       live.end();
@@ -159,7 +204,7 @@ export function LiveCallEngine({ bot }: { bot: Bot }) {
 
   // ── what the person said ───────────────────────────────────────────────
   const onUtterance = useCallback(
-    (said: string, interrupted = false, cut?: { heard: string; unheard: string }, continues = false, spokenId?: string) => {
+    (said: string, interrupted = false, cut?: { heard: string; unheard: string }, continues = false, spokenId?: string, speculative = false) => {
       const current = botRef.current;
       if (!call || currentCall() !== current.id) return;
       setHeard("");
@@ -195,8 +240,9 @@ export function LiveCallEngine({ bot }: { bot: Bot }) {
         dispatch({ type: "answerCard", botId: current.id, threadId: current.threadId, messageId: openQuestion.messageId, answer: said });
         return;
       }
-      // a new turn: what the interrupted answer had left is never spoken
-      dropOldReply.current = false;
+      // a new turn: a cut answer that settles after this send stays silent
+      fence.current = noteUtteranceSent(fence.current);
+      filler.current = resetToolFiller(filler.current);
       const language = readVoiceModeSettings().language;
       // one id per utterance: the server delivers it once, whatever retries,
       // and logs its stages under it (the call's timeline uses the same)
@@ -229,6 +275,8 @@ export function LiveCallEngine({ bot }: { bot: Bot }) {
           // a barge-in says how much of the cut answer the person heard
           ...(interrupted ? { interrupted: true, ...(cut ? { heard: cut.heard, unheard: cut.unheard } : {}) } : {}),
           ...(language && language !== "auto" ? { language } : {}),
+          ...(readCallSettings().fullDuplex ? { duplex: true } : {}),
+          ...(speculative ? { speculative: true } : {}),
         },
       });
       send();
@@ -238,12 +286,16 @@ export function LiveCallEngine({ bot }: { bot: Bot }) {
 
   useEffect(() => {
     if (!call) return;
-    return call.on("utterance", (text, _metrics, turn) => onUtterance(text, turn.interrupted, turn.cut, turn.continues === true, turn.utteranceId));
+    return call.on("utterance", (text, _metrics, turn) => onUtterance(text, turn.interrupted, turn.cut, turn.continues === true, turn.utteranceId, turn.speculative === true));
   }, [call, onUtterance]);
 
   useEffect(() => {
     call?.setBotBusy(Boolean(bot.busy));
   }, [call, bot.busy]);
+
+  useEffect(() => {
+    call?.setBackgroundWork(callHasBackgroundWork(messages));
+  }, [call, messages]);
 
   // ── the answer, sentence by sentence while it is written ──────────────
   const live = streaming[bot.threadId];
@@ -251,17 +303,10 @@ export function LiveCallEngine({ bot }: { bot: Bot }) {
   streamingRef.current = live;
   useEffect(() => {
     if (!call) return;
-    if (live === undefined || live === "") {
-      dropStream.current = null;
-      return;
-    }
-    // the cut block keeps streaming until the server stops it: not spoken
-    if (dropStream.current !== null) {
-      if (live.length >= dropStream.current.length && live.startsWith(dropStream.current.slice(0, 16))) return;
-      dropStream.current = null;
-    }
-    if (dropOldReply.current) return;
-    call.replyProgress(live);
+    const accepted = streamText(fence.current, live);
+    fence.current = accepted.fence;
+    if (accepted.text === null) return;
+    call.replyProgress(accepted.text);
   }, [call, live]);
 
   // ── settled messages: the rest of an answer, prompts, narration ───────
@@ -286,25 +331,73 @@ export function LiveCallEngine({ bot }: { bot: Bot }) {
     const fresh = messages.filter((m) => !spokenIds.current.has(m.id));
     if (!fresh.length) return;
     for (const m of fresh) spokenIds.current.add(m.id);
-    const lastUser = messages.map((m) => m.role).lastIndexOf("user");
-    const replies = fresh.filter((m) => m.role === "bot" && m.kind === "text" && m.text?.trim());
-    for (const reply of replies) {
-      // an answer from before the person's latest words (the turn they cut)
-      if (dropOldReply.current || messages.indexOf(reply) < lastUser) {
-        setInterrupted((previous) => new Set(previous).add(reply.id));
-        // the words of it the person never heard stay in the transcript, marked
-        const cut = lastCut.current;
-        lastCut.current = null;
-        if (cut?.unheard) setUnheard((previous) => new Map(previous).set(reply.id, cut.unheard));
-        continue;
+    const settled = settleReplies(fence.current, messages, fresh.map((m) => m.id));
+    fence.current = settled.fence;
+    for (const id of settled.skip) {
+      setInterrupted((previous) => new Set(previous).add(id));
+      const cut = lastCut.current;
+      lastCut.current = null;
+      if (cut?.unheard) setUnheard((previous) => new Map(previous).set(id, cut.unheard));
+    }
+    const lastUser = [...messages].reverse().find((message) => message.role === "user");
+    for (const reply of settled.speak) {
+      const row = messages.find((message) => message.id === reply.id);
+      const idx = messages.findIndex((message) => message.id === reply.id);
+      const replyUserId = sourceUserId(messages, idx, row);
+      const mode = howToSpeakTopicResult({
+        replyUserId,
+        lastUserId: lastUser?.id,
+        isParallelResult: row?.parallelTask?.role === "result",
+      });
+      const priority: SpeakPriority = mode === "announce" ? "topic-result" : "user-reply";
+      const text = mode === "announce"
+        ? announceTopic(topicLabel(messages.find((message) => message.id === replyUserId)?.text ?? row?.parallelTask?.title ?? "the other thing"), reply.text)
+        : reply.text;
+      if (!pendingSpeak.current.some((item) => item.id === reply.id)) {
+        pendingSpeak.current.push({ id: reply.id, text, priority, at: Date.now(), kind: mode === "announce" ? "say" : "done" });
       }
-      void call.replyDone(reply.text!);
     }
+    for (const m of fresh) {
+      if (m.parallelTask?.role === "card" && m.parallelTask.state === "queued") {
+        const id = `queued-${m.id}`;
+        if (!pendingSpeak.current.some((item) => item.id === id)) {
+          pendingSpeak.current.push({
+            id,
+            text: t("voiceMode.call.taskQueued"),
+            priority: "queued-notice",
+            at: Date.now(),
+            kind: "say",
+          });
+        }
+      }
+    }
+    drainSpeak();
+    const replies = fresh.filter((m) => m.role === "bot" && m.kind === "text" && m.text?.trim());
     if (!replies.length && call.current.phase === "thinking") {
+      for (const m of fresh) {
+        if (m.kind !== "activity" || !m.tool) continue;
+        const toolKey = m.tool.itemId ?? m.id;
+        if (shouldPlayToolFiller(filler.current, {
+          thinking: true,
+          toolStarted: true,
+          toolKey,
+          speaking: call.player.busy || call.current.botAudible,
+        })) {
+          filler.current = noteToolFillerPlayed(filler.current, toolKey);
+          const language = toolFillerLanguage(readVoiceModeSettings().language, activeLocale());
+          void call.sayFiller(toolFillerText(language));
+        }
+      }
       const chip = [...fresh].reverse().find((m) => m.kind === "activity" && m.tool?.spoken);
-      if (chip?.tool?.spoken && !call.player.busy) void call.say(chip.tool.spoken);
+      if (chip?.tool?.spoken && !shouldSkipToolChip(filler.current) && shouldNarrateToolChip({ duplex: readCallSettings().fullDuplex, playerBusy: call.player.busy })) {
+        void call.say(chip.tool.spoken);
+      }
     }
-  }, [call, messages, approval, question, bot.name]);
+  }, [call, messages, approval, question, bot.name, drainSpeak]);
+
+  useEffect(() => {
+    if (state && !state.botAudible) drainSpeak();
+  }, [state, drainSpeak]);
 
   // ── what every surface shows ─────────────────────────────────────────
   const [startedAt] = useState(() => Date.now());

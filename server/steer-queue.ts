@@ -338,6 +338,13 @@ export function cancelThreadQueue(botId: string, threadId: string): number {
   return entry.items.length;
 }
 
+/** Duplex barge-in on a call: drop every queued follow-up on this thread
+ * so the latest utterance is the only one that runs. Typed chat still
+ * keeps its queue on interrupt (see file header). */
+export function discardSteeredQueue(botId: string, threadId: string): number {
+  return cancelThreadQueue(botId, threadId);
+}
+
 /** Atomically lift a thread's whole queue out of the map for a live steer.
  * The entry leaves first so a settle that starts draining while the adapter
  * is still thinking can never also dispatch the same words as a follow-up

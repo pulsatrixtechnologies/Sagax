@@ -20,7 +20,7 @@ fail if a call reaches any xAI path other than `/v1/stt`, `/v1/tts` and
 ## The bot knows it is on the phone
 
 Every turn said on a call is sent with `voiceCall` (`{ callId, interrupted?,
-language? }`, stored on the person's message as `Message.voiceCall`; words
+language?, duplex? }`, stored on the person's message as `Message.voiceCall`; words
 typed to a bot while its call is live carry the call id too). For such a turn
 the server adds a hidden "Phone call" section to the bot's system prompt
 (`server/voice-call-prompt.ts`): a live phone call with the person, words from
@@ -54,7 +54,44 @@ starts, stays alive and ends (`POST /api/bots/<id>/voice/call`
 lasts is a call turn, whatever path it takes (typed words, a queued line
 steered with the Steer button, a retry). A call never closed expires after
 20 minutes without a turn. On a call, words sent while the bot works always
-join its turn (no parallel or after chooser).
+join its turn (no parallel or after chooser), unless Advanced >
+"Full-duplex conversation" is on: then a new utterance interrupts the
+in-flight turn, discards the steer queue, and starts only those words
+(issue #292). The flag is on by default in internal, TestFlight and
+dev builds (kill-switch in Advanced). Public App Store builds stay
+off. Typed chat still keeps its queue on Stop.
+
+## Full-duplex conversation (issue #292)
+
+The stacked answers JC heard were not the TTS sentence queue (that is
+one reply's clauses, cancelled on barge-in). They were the harness
+steer queue: talking while the bot was thinking did not interrupt
+(`call-machine.ts`), a send that raced `stoppingThreads` was
+`queueSteeredMessage`, and drain played each leftover utterance as
+the next answer.
+
+`CallSettings.fullDuplex` (device-local, `omb.voiceCall.v1`, default
+on for internal / TestFlight / dev) plus `voiceCall.duplex` on the send:
+confirmed speech while the bot is busy or speaking cancels that turn; the
+server never steers or queues those words. The thinking cue is 400 ms
+instead of 1200 ms so
+the line is not dead air. Approvals stay spoken yes or no and are not
+cancelled. Tools still run on the bot; the prompt already asks for a
+spoken "Je regarde ça..." before slow work. A duplex send that races
+another is latest-wins (the slower one is superseded, never queued).
+`startTurn` thread_busy is retried until the interrupt cap. Cancelled
+turns stop streaming (`content.delta` of that turnId is not broadcast).
+The client speech fence (`speech-fence.ts`, iOS `CallConversation`)
+keeps `dropOldReply` across the send, so a dying answer that lands
+after the new user line is marked interrupted and never spoken.
+
+xAI Speech-to-Speech (`wss://api.x.ai/v1/realtime`, grok-voice-latest)
+is still not the brain: it would drop Sagax tools, memory, approvals
+and MCP. Tests: `src/lib/voice-mode/duplex-policy.test.ts`,
+`speech-fence.test.ts`, `call-logic.test.ts`,
+`server/voice-call-duplex.test.ts`,
+`scripts/voice-duplex-harness.test.ts`,
+`server/voice-call-reliability.e2e.test.ts` (duplex case).
 
 Each utterance has an `utteranceId` (also its `sendId`): the server
 delivers it once, and answers a second send of it with the first receipt.
@@ -256,8 +293,12 @@ What keeps it short:
   as its complete version (`voiceCall.continues`).
 - **The first clause speaks first.** Over POST, the first sentence is cut at
   a comma after about six words (36 characters). With the streaming voice
-  there is no character wait: the first clause goes at its first comma once
-  it has two words (`STREAMING_CLAUSES`), since the socket is already open.
+  there is no character wait: the first clause goes at a one-word
+  punctuated opener ("Well,", "Sure,") or at a space after two words
+  (`STREAMING_CLAUSES`), since the socket is already open. An unpunctuated
+  first grok token ("Four") opens the utterance as a lead (`say` with
+  `more: true`, xAI `text.delta` only) so TTS can start while the rest of
+  that clause is still being written; `append` / `finish` then `text.done`.
 - **Streaming voice (Advanced, on by default).** One socket for the call:
   the page opens `GET /voice/speech` (voice, speed and language in the
   query) when the call starts, and the server opens xAI's streaming text to
@@ -266,7 +307,8 @@ What keeps it short:
   `Authorization` header; `server/tts/grok.ts` `openSpeechStream`). Each
   clause of the answer is sent the moment it is written (`{"type":"say"}`)
   and becomes one xAI utterance (`text.delta`, `text.done`), spoken one after
-  the other on the same socket; its PCM comes back to the page as binary
+  the other on the same socket; a lead token uses `more: true` then
+  `append` / `finish`. PCM comes back to the page as binary
   frames between `start` and `done` and plays through the same player as a
   POST body (`src/lib/voice-mode/speech-stream.ts`). Barge-in, hold, hang-up
   and a reissued turn cancel a clause (`{"type":"cancel"}`): dropped from the
@@ -430,6 +472,9 @@ the server's own voice routes.
   verdict on synthetic contours (falling, rising, flat filler, mid-word),
   and the turn detector using it.
 - `server/tts/grok.test.ts`: the xAI requests (speed, language, STT form).
+- `src/lib/voice-mode/duplex-policy.test.ts`, `call-logic.test.ts` duplex
+  cases, `server/voice-call-duplex.test.ts`, `scripts/voice-duplex-harness.test.ts`:
+  full-duplex barge-in while thinking, admit never queues, one active turn.
 - `src/lib/voice-mode/call-logic.test.ts`: the call's state machine (barge-in,
   cancellation, hold, mute), endpointing and its adaptation, the echo guard,
   the sentence splitter.

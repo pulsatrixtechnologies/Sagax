@@ -1044,7 +1044,16 @@ const playReply = (prompt: JsonValue, mcpNote: string) => {
     // a gap a test can steer into; the closing reply carries anything that
     // was folded in, the way the real CLI includes a mid-turn message in
     // the same turn's next model call
+    let heldToolId: string | undefined;
+    if (process.env.FAKE_CLAUDE_HOLD_AFTER_TOOL) {
+      // emit tool_use and wait: interrupt must abort this in-flight call
+      heldToolId = `tu-${process.pid}-${++toolUseCount}`;
+      out({ type: "assistant", message: { content: [{ type: "tool_use", id: heldToolId, name: "Bash", input: { command: "sleep 30" } }] } });
+    }
     const finishSlowTurn = () => {
+      if (heldToolId) {
+        out({ type: "user", message: { content: [{ type: "tool_result", tool_use_id: heldToolId, is_error: false, content: [{ type: "text", text: "late-tool" }] }] } });
+      }
       if (process.env.FAKE_CLAUDE_SLOW_TAIL_TOOL) {
         // one more tool call before the reply: a fold seam the harness sees
         // AFTER a steer that this turn's stdin drain had already passed by
@@ -1062,8 +1071,13 @@ const playReply = (prompt: JsonValue, mcpNote: string) => {
     // FAKE_CLAUDE_GATE_DIR: a prompt carrying [gate:NAME] holds until
     // <dir>/NAME exists, so a test can finish several turns in any order.
     const gateDir = process.env.FAKE_CLAUDE_GATE_DIR;
-    // the last marker: a prompt may quote earlier lines before its request
-    const marker = gateDir ? [...promptText(prompt).matchAll(/\[gate:([\w-]+)\]/g)].at(-1)?.[1] : undefined;
+    // A parallel brief quotes earlier turns under "Recent lines" and puts
+    // this request after "Request:". Only this request's [gate:NAME] holds
+    // the turn; a quoted gate from the parent would deadlock both.
+    const whole = promptText(prompt);
+    const requestAt = whole.lastIndexOf("\nRequest:\n");
+    const region = requestAt >= 0 ? whole.slice(requestAt) : whole;
+    const marker = gateDir ? [...region.matchAll(/\[gate:([\w-]+)\]/g)].at(-1)?.[1] : undefined;
     const finishGate = marker && gateDir ? join(gateDir, marker)
       : lateContinuation ? process.env.FAKE_CLAUDE_LATE_STEER_GATE : process.env.FAKE_CLAUDE_SLOW_FINISH_GATE;
     if (finishGate) {

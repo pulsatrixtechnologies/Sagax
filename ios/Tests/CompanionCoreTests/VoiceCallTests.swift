@@ -67,6 +67,37 @@ final class CallMachineTests: XCTestCase {
         XCTAssertEqual(talk.state.phase, .hearing)
     }
 
+    func testDuplexTalkingWhileTheBotWorksSilentlyCancelsIt() {
+        var working = CallMachine.step(CallMachine.step(.initial, .connected).state, .botBusy(true)).state
+        working.duplex = true
+        XCTAssertEqual(working.phase, .thinking)
+        let talk = CallMachine.step(working, .speechStart)
+        XCTAssertEqual(talk.effects, [.cancelSpeech, .earcon(.interrupted), .interruptBot])
+        XCTAssertEqual(talk.state.phase, .interrupted)
+        XCTAssertFalse(talk.state.botAudible)
+    }
+
+    func testDuplexBargeInDoesNotKillBackgroundWork() {
+        var speaking = CallMachine.step(CallMachine.step(.initial, .connected).state, .botBusy(true)).state
+        speaking = CallMachine.step(speaking, .botAudioStart).state
+        speaking.duplex = true
+        speaking.backgroundWork = true
+        let barged = CallMachine.step(speaking, .speechStart)
+        XCTAssertEqual(barged.effects, [.cancelSpeech, .earcon(.interrupted)])
+        XCTAssertFalse(barged.effects.contains(.interruptBot))
+        XCTAssertEqual(barged.state.phase, .interrupted)
+    }
+
+    func testKillSwitchOffStillInterruptsASpeakingBusyTurnWithAToolChip() {
+        var speaking = CallMachine.step(CallMachine.step(.initial, .connected).state, .botBusy(true)).state
+        speaking = CallMachine.step(speaking, .botAudioStart).state
+        speaking.duplex = false
+        speaking.backgroundWork = true
+        let barged = CallMachine.step(speaking, .speechStart)
+        XCTAssertTrue(barged.effects.contains(.interruptBot))
+        XCTAssertEqual(barged.state.phase, .interrupted)
+    }
+
     func testTheInterruptButtonStopsTheVoiceButNotTheTurn() {
         let (state, effects) = run([.connected, .botBusy(true), .botAudioStart, .interrupt])
         XCTAssertEqual(state.phase, .thinking)
@@ -565,6 +596,86 @@ final class CallConversationTests: XCTestCase {
         XCTAssertEqual(conversation.stream("New"), "New", "a new answer streams again")
     }
 
+    func testADyingTurnAfterTheNextSendIsNeverSpoken() {
+        var conversation = CallConversation(existing: [])
+        conversation.speechCancelled(currentStream: "Once upon a time")
+        XCTAssertEqual(conversation.utterance("what about the weather"), .send("what about the weather"))
+        XCTAssertNil(conversation.stream("Once upon a time, there was a llama"))
+        let dying = text("a", "Once upon a time.")
+        var answer = text("b", "It is sunny.")
+        answer.requestMessageId = "uB"
+        let late = conversation.settle(
+            messages: [text("uA", "tell me a story", role: .user), text("uB", "what about the weather", role: .user), dying],
+            botName: "Ara", thinking: true, playerBusy: false
+        )
+        XCTAssertEqual(late, [])
+        XCTAssertEqual(conversation.interrupted, ["a"])
+        let spoken = conversation.settle(
+            messages: [text("uA", "tell me a story", role: .user), text("uB", "what about the weather", role: .user), dying, answer],
+            botName: "Ara", thinking: true, playerBusy: false
+        )
+        XCTAssertEqual(spoken, [.replyDone("It is sunny.", speakerId: nil)])
+    }
+
+    func testAnOlderTopicResultIsAnnouncedNotSpokenInFull() {
+        var conversation = CallConversation(existing: [])
+        let requestA = text("uA", "look up the weather in Montreal", role: .user)
+        var requestB = text("uB", "what time is it in Tokyo", role: .user)
+        requestB.parallelTask = ParallelTaskRef(threadId: "p", title: "time", requestMessageId: "uB", role: "request")
+        var resultB = text("bB", "It is morning in Tokyo.")
+        resultB.parallelTask = ParallelTaskRef(threadId: "p", title: "time", requestMessageId: "uB", role: "result")
+        let first = conversation.settle(messages: [requestA, requestB, resultB], botName: "Ara", thinking: true, playerBusy: false)
+        XCTAssertEqual(first, [.replyDone("It is morning in Tokyo.", speakerId: nil)])
+        let resultA = text("bA", "It is 12 and sunny in Montreal.")
+        let second = conversation.settle(messages: [requestA, requestB, resultB, resultA], botName: "Ara", thinking: true, playerBusy: false)
+        XCTAssertEqual(second, [.announce("For look up the weather in Montreal: It is 12 and sunny in Montreal.", speakerId: nil)])
+    }
+
+    func testBargeInDuringSpeechStillAnnouncesABackgroundResult() {
+        var conversation = CallConversation(existing: [])
+        conversation.speechCancelled(currentStream: "It is morning in Tokyo")
+        let requestA = text("uA", "look up the weather in Montreal", role: .user)
+        var requestB = text("uB", "what time is it in Tokyo", role: .user)
+        requestB.parallelTask = ParallelTaskRef(threadId: "p", title: "time", requestMessageId: "uB", role: "request")
+        let resultA = text("bA", "It is 12 and sunny in Montreal.")
+        let out = conversation.settle(messages: [requestA, requestB, resultA], botName: "Ara", thinking: true, playerBusy: false)
+        XCTAssertEqual(out, [.announce("For look up the weather in Montreal: It is 12 and sunny in Montreal.", speakerId: nil)])
+    }
+
+    func testOnlyALiveParallelCardIsBackgroundWork() {
+        var chip = Message(id: "t", role: .bot, kind: .activity, at: 0)
+        chip.tool = ToolActivity(name: "Bash")
+        XCTAssertFalse(CallConversation.hasBackgroundWork([chip]))
+        chip.tool = ToolActivity(name: "Bash", ok: true)
+        XCTAssertFalse(CallConversation.hasBackgroundWork([chip]))
+        var card = Message(id: "c", role: .bot, kind: .text, at: 0)
+        card.parallelTask = ParallelTaskRef(threadId: "p", title: "weather", requestMessageId: "uA", role: "card", state: "running")
+        XCTAssertTrue(CallConversation.hasBackgroundWork([card]))
+    }
+
+    func testThinkingBargeInIgnoresALateDeltaUntilTheStreamClears() {
+        var conversation = CallConversation(existing: [])
+        conversation.botInterrupted(currentStream: "")
+        XCTAssertNil(conversation.stream("Once upon a time, there was a llama"))
+        XCTAssertNil(conversation.stream(""))
+        XCTAssertEqual(conversation.stream("It is sunny."), "It is sunny.")
+    }
+
+    func testDuplexNarratesAToolChipWhileTheCuePlays() {
+        var conversation = CallConversation(existing: [])
+        var chip = Message(id: "t", role: .bot, kind: .activity, at: 0)
+        chip.tool = ToolActivity(name: "Bash", spoken: "Checking your calendar")
+        XCTAssertEqual(
+            conversation.settle(messages: [chip], botName: "Ara", thinking: true, playerBusy: true, duplex: true),
+            [.narrate("Checking your calendar", speakerId: nil)]
+        )
+        var quiet = CallConversation(existing: [])
+        XCTAssertEqual(
+            quiet.settle(messages: [chip], botName: "Ara", thinking: true, playerBusy: true),
+            []
+        )
+    }
+
     func testAnApprovalIsAskedAndAnsweredYesOrNoOnly() {
         var conversation = CallConversation(existing: [])
         let card = approval("c", requestId: "r1")
@@ -734,7 +845,17 @@ final class VoiceModeClientTests: XCTestCase {
         XCTAssertEqual(call["interrupted"] as? Bool, true)
         XCTAssertEqual(call["language"] as? String, "fr")
         XCTAssertEqual(call["utteranceId"] as? String, "utt-0123456789abcdef")
+        XCTAssertNil(call["duplex"])
         XCTAssertEqual(json["sendId"] as? String, "utt-0123456789abcdef", "the utterance is the send: delivered once")
+    }
+
+    func testADuplexCallTurnMarksTheSend() async throws {
+        VoiceStub.body = Data(#"{"ok":true}"#.utf8)
+        try await client.send(text: "Bonjour", toBot: "ara", threadId: "th-1", voiceCall: VoiceCallMeta(callId: "c-12345678", duplex: true))
+        let (_, body) = try XCTUnwrap(VoiceStub.requests.first)
+        let json = try XCTUnwrap(JSONSerialization.jsonObject(with: try XCTUnwrap(body)) as? [String: Any])
+        let call = try XCTUnwrap(json["voiceCall"] as? [String: Any])
+        XCTAssertEqual(call["duplex"] as? Bool, true)
     }
 
     func testTheCallTellsTheServerItStartsAndEnds() async throws {

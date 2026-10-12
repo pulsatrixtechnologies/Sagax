@@ -10,6 +10,9 @@
     <string name="notification_channel_always_on_desc">OpenMausBot 在背景保持連線時顯示</string>
     <string name="always_on_notification_title">MausBot 正在保持連線</string>
     <string name="always_on_notification_text">即使 App 關閉，你仍會收到通知</string>
+    <string name="pulsatrix_sign_in">使用 Pulsatrix 登入</string>
+    <string name="pulsatrix_sign_in_hint">您的組織透過 Pulsatrix 為您登入。您也可以輸入配對碼。</string>
+    <string name="pulsatrix_sign_in_unavailable">此手機沒有可用的瀏覽器來透過 Pulsatrix 登入。</string>
     <string name="mobile_text_da39a3ee"></string>
     <string name="mobile_answeredcount_of_questions_size_91c7d963">已回答 %1$s/%2$s 個問題</string>
     <string name="mobile_label_taskrules_title_task_48c15f59">%1$s：%2$s</string>

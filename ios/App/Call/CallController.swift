@@ -561,7 +561,8 @@ final class CallController: ObservableObject {
                     // delivers it once, whatever retries (desktop LiveCall)
                     let meta = VoiceCallMeta(
                         callId: callId, interrupted: turn.interrupted, language: voiceSettings.language,
-                        utteranceId: "utt-" + UUID().uuidString.lowercased(), cut: turn.cut, continues: turn.continues
+                        utteranceId: "utt-" + UUID().uuidString.lowercased(), cut: turn.cut, continues: turn.continues,
+                        duplex: callSettings.fullDuplex
                     )
                     var sent = await session.sendCallTurn(words, to: bot, threadId: threadId, voiceCall: meta)
                     if !sent, self.target?.id == target.id {
@@ -616,10 +617,11 @@ final class CallController: ObservableObject {
             lastBusy = busy
             engine.setBotBusy(busy)
         }
+        engine.setBackgroundWork(CallConversation.hasBackgroundWork(messages))
         if let live = conversation.stream(state.streaming[threadId]) {
             engine.replyProgress(live)
         }
-        let actions = conversation.settle(messages: messages, botName: name, thinking: engine.state.phase == .thinking, playerBusy: player.busy)
+        let actions = conversation.settle(messages: messages, botName: name, thinking: engine.state.phase == .thinking, playerBusy: player.busy, duplex: callSettings.fullDuplex)
         interrupted = conversation.interrupted
         unheard = conversation.unheard
         for action in actions {
@@ -634,6 +636,9 @@ final class CallController: ObservableObject {
                 player.speaker = speaker(speakerId)
                 engine.speakNow(SpokenText.spokenPart(text))
             case let .narrate(text, speakerId):
+                player.speaker = speaker(speakerId)
+                engine.speakNow(text)
+            case let .announce(text, speakerId):
                 player.speaker = speaker(speakerId)
                 engine.speakNow(text)
             }

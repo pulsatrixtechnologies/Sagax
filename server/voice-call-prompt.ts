@@ -13,6 +13,7 @@
 // ended, so the bot goes back to its written register.
 import type { Message } from "./store.ts";
 import { isVoiceModeLanguage, VOICE_MODE_LANGUAGES } from "../shared/voice-mode.ts";
+import { voiceCallTopicsNote, type VoiceTopic } from "../src/lib/voice-mode/voice-topics.ts";
 
 export type VoiceCallMeta = NonNullable<Message["voiceCall"]>;
 
@@ -37,6 +38,8 @@ export function parseVoiceCallMeta(value: unknown): VoiceCallMeta | undefined | 
   if (typeof record.callId !== "string" || !CALL_ID.test(record.callId)) return { error: "voiceCall.callId must be a call id" };
   if (record.interrupted !== undefined && typeof record.interrupted !== "boolean") return { error: "voiceCall.interrupted must be a boolean" };
   if (record.continues !== undefined && typeof record.continues !== "boolean") return { error: "voiceCall.continues must be a boolean" };
+  if (record.duplex !== undefined && typeof record.duplex !== "boolean") return { error: "voiceCall.duplex must be a boolean" };
+  if (record.speculative !== undefined && typeof record.speculative !== "boolean") return { error: "voiceCall.speculative must be a boolean" };
   if (record.language !== undefined && (!isVoiceModeLanguage(record.language) || record.language === "auto")) {
     return { error: "voiceCall.language must be a voice mode language" };
   }
@@ -57,6 +60,8 @@ export function parseVoiceCallMeta(value: unknown): VoiceCallMeta | undefined | 
     ...(interrupted && heard !== undefined ? { heard } : {}),
     ...(interrupted && unheard !== undefined ? { unheard } : {}),
     ...(record.continues === true ? { continues: true } : {}),
+    ...(record.duplex === true ? { duplex: true } : {}),
+    ...(record.speculative === true ? { speculative: true } : {}),
   };
 }
 
@@ -120,8 +125,12 @@ export function voiceCallSection(
   message: Pick<Message, "voiceCall"> | undefined,
   previous: Pick<Message, "voiceCall"> | undefined,
   person: string | undefined,
+  topics?: VoiceTopic[],
 ): string {
-  if (message?.voiceCall) return `\n\nPhone call:\n${voiceCallInstruction(person, message.voiceCall)}`;
+  if (message?.voiceCall) {
+    const note = topics?.length ? voiceCallTopicsNote(topics) : "";
+    return `\n\nPhone call:\n${voiceCallInstruction(person, message.voiceCall)}${note ? `\n${note}` : ""}`;
+  }
   if (previous?.voiceCall) return `\n\nPhone call:\n${voiceCallEndedNote(person)}`;
   return "";
 }

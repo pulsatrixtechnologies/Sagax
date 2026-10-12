@@ -50,11 +50,16 @@ async function call(path: string, options: CallOptions = {}) {
 // Counts D1 round trips the way production pays for them: one per statement
 // call and one per batch. Each call is recorded a macrotask late, so a query
 // queued with ctx.waitUntil as the response returns is counted after it.
+/** Miniflare D1 introspection. Production D1 does not bill these as app trips. */
+function isSchemaProbe(sql: string): boolean {
+  return /sqlite_master|sqlite_schema|pragma[_ ]/i.test(sql);
+}
+
 function tracedDB(queries: string[], failOn?: RegExp): D1Database {
   const statements = new WeakMap<object, { statement: D1PreparedStatement; sql: string }>();
   async function roundTrip<T>(sql: string, run: () => Promise<T>): Promise<T> {
     await new Promise((resolve) => setTimeout(resolve, 0));
-    queries.push(sql.replace(/\s+/g, " ").trim());
+    if (!isSchemaProbe(sql)) queries.push(sql.replace(/\s+/g, " ").trim());
     if (failOn?.test(sql)) throw new Error("D1_ERROR: injected failure");
     return run();
   }

@@ -29,7 +29,7 @@ const bot = {
 const call = { analysers: { mic: null, bot: null }, enrolled: false, endpointMs: 850, modelsReady: true } as unknown as VoiceCall;
 
 function render(phase: CallPhase, extra: Partial<VoiceModeBarProps> = {}, muted = false): string {
-  const state: CallState = { phase, muted, botBusy: false, botAudible: phase === "speaking", ducked: false };
+  const state: CallState = { phase, muted, botBusy: false, botAudible: phase === "speaking", ducked: false, duplex: false, backgroundWork: false };
   return renderToStaticMarkup(createElement(VoiceModeBar, {
     bot, call, state, heard: "", note: null, refusal: null, transcript: [], onRetry: () => {}, onEnd: () => {}, ...extra,
   }));

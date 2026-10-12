@@ -1,5 +1,6 @@
 // xAI TTS runs on the harness with the Grok voice key, not the bot xAI key.
 import { z } from "zod";
+import { WebSocket as WsWebSocket } from "ws";
 import type { Audio, Voice } from "./elevenlabs.ts";
 
 const API = (process.env.SAGAX_XAI_TTS_API || "https://api.x.ai/v1").replace(/\/+$/, "");
@@ -179,9 +180,21 @@ export interface TranscriptionHandlers {
   onClose(): void;
 }
 
-/** A WebSocket constructor that can send an Authorization header (Node's
- * global WebSocket, undici, takes `{ headers }`). Injected in tests. */
+/** A WebSocket constructor that can send an Authorization header. Production
+ * uses `ws` so idle `ping()` frames keep xAI from dropping the socket.
+ * Injected in tests. */
 export type HeaderWebSocket = new (url: string, init: { headers: Record<string, string> }) => WebSocket;
+
+/** Idle protocol ping on the TTS socket so the next clause does not pay a
+ * reconnect. Matches grok HTTP warmSession (GET /models every 2.5 s). */
+export const SPEECH_PING_MS = 2_500;
+
+function pingSocket(socket: WebSocket) {
+  const keep = socket as WebSocket & { ping?: () => void };
+  if (typeof keep.ping === "function") {
+    try { keep.ping(); } catch { /* socket closing */ }
+  }
+}
 
 /** Streaming speech to text for a live call: one connection per call,
  * audio frames in, partial and final transcripts out. The session goes on
@@ -288,6 +301,11 @@ export interface SpeechStream {
   ready: Promise<void>;
   /** one utterance: its text (`text.delta`), then `text.done` */
   speak(text: string): void;
+  /** a chunk of the current utterance (`text.delta` only). Audio can start
+   * before `done` (xAI buffers until it can pronounce). */
+  delta(text: string): void;
+  /** end the current utterance (`text.done`) */
+  done(): void;
   /** cancel the utterance in progress (`text.clear`); xAI answers `audio.clear` */
   clear(): void;
   close(): void;
@@ -307,7 +325,7 @@ export function openSpeechStream(
   key: string,
   options: { voice?: string; speed?: number; language?: string },
   handlers: SpeechStreamHandlers,
-  Socket: HeaderWebSocket = WebSocket as unknown as HeaderWebSocket,
+  Socket: HeaderWebSocket = WsWebSocket as unknown as HeaderWebSocket,
 ): SpeechStream {
   const query = new URLSearchParams({
     language: options.language || "auto",
@@ -320,6 +338,7 @@ export function openSpeechStream(
   const url = `${API.replace(/^http/, "ws")}/tts?${query}`;
   let socket: WebSocket;
   let closed = false;
+  let ping: ReturnType<typeof setInterval> | null = null;
   let resolveReady!: () => void;
   let rejectReady!: (error: Error) => void;
   const ready = new Promise<void>((resolve, reject) => {
@@ -327,9 +346,15 @@ export function openSpeechStream(
     rejectReady = reject;
   });
   ready.catch(() => {});
+  const stopPing = () => {
+    if (!ping) return;
+    clearInterval(ping);
+    ping = null;
+  };
   const end = () => {
     if (closed) return;
     closed = true;
+    stopPing();
     rejectReady(new Error("closed"));
     try { socket?.close(); } catch { /* already closed */ }
     handlers.onClose();
@@ -341,10 +366,17 @@ export function openSpeechStream(
       handlers.onError("Could not reach Grok voice. Check your connection.");
       end();
     });
-    return { ready, speak() {}, clear() {}, close() {} };
+    return { ready, speak() {}, delta() {}, done() {}, clear() {}, close() {} };
   }
   socket.binaryType = "arraybuffer";
-  socket.addEventListener("open", () => resolveReady());
+  socket.addEventListener("open", () => {
+    resolveReady();
+    if (closed || ping) return;
+    ping = setInterval(() => {
+      if (!closed && socket.readyState === 1) pingSocket(socket);
+    }, SPEECH_PING_MS);
+    ping.unref?.();
+  });
   socket.addEventListener("message", (event: MessageEvent) => {
     if (typeof event.data !== "string") return;
     let frame: Record<string, unknown>;
@@ -368,6 +400,12 @@ export function openSpeechStream(
   };
   return {
     ready,
+    delta(text) {
+      send({ type: "text.delta", delta: text });
+    },
+    done() {
+      send({ type: "text.done" });
+    },
     speak(text) {
       send({ type: "text.delta", delta: text });
       send({ type: "text.done" });

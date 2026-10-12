@@ -67,7 +67,7 @@ describe("describeApproval titles", () => {
     setLocale("fr");
     const args = JSON.stringify({ resource: "time/entries", operation: "create", body: { chargeToId: 287826, member: { identifier: "jcproulx" }, timeStart: "2026-10-02T13:00:00Z" } });
     const described = describeApproval("mcp__perspicax_pulsatrix_flow_jc__cw_psa__write", args, undefined, NOW);
-    expect(described.action).toBe("créer une entrée de temps");
+    expect(described.action).toBe("créer une saisie de temps");
     expect(described.risk).toBe("write");
     expect(described.summary).toBe("jcproulx, #287826, 2 oct.");
   });

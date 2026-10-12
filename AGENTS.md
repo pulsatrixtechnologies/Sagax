@@ -1040,9 +1040,17 @@ fake xAI: `scripts/verify-voice-mode.ts`. Details: `docs/voice-mode-xai.md`.
   backoff) switch the call to POST for good, logged once; a clause failed
   before any audio is spoken over POST, one cut mid-way is never said twice.
   Barge-in ducks then cancels the bot's voice and interrupts its running
-  turn. Tests: `call-logic.test.ts`, `call.test.ts`, `speech-stream.test.ts`,
+  turn. "Full-duplex conversation" (Advanced, on by default in internal /
+  TestFlight / dev, kill-switch in the panel, `CallSettings.fullDuplex`):
+  talking while the bot works or speaks cancels that turn, discards the
+  steer queue, and starts only the latest utterance (`voiceCall.duplex`,
+  issue #292). Off: words said while it works join that turn. Tests:
+  `call-logic.test.ts`, `voice-build.test.ts`,
+  `call.test.ts`, `duplex-policy.test.ts`, `speech-fence.test.ts`,
+  `speech-stream.test.ts`,
   `models.test.ts`, `server/voice-speech-session.test.ts`,
-  `server/voice-call.e2e.test.ts`.
+  `server/voice-call.e2e.test.ts`, `server/voice-call-duplex.test.ts`,
+  `scripts/voice-duplex-harness.test.ts`.
 - "Faster end of turn" (Advanced, on by default; never in Patient nor push
   to talk): `prosody.ts` reads the pitch and energy of the last 400 ms
   before a silence on the computer; a falling, fading or clearly rising

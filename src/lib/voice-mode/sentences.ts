@@ -11,8 +11,8 @@
 // speaking sooner; later short sentences are joined to the next one, so a reply of
 // many short lines is not many requests. With the streaming voice
 // (`streamingClauses`, speech-stream.ts) there is no character wait: the
-// first clause goes at its first comma once it has two words, since the
-// voice socket is already open and starts on it at once.
+// first clause goes at a one-word punctuated opener ("Well,", "Sure,") or
+// at a space after two words, since the voice socket is already open.
 
 import { speakableSentence } from "./spoken";
 
@@ -30,10 +30,12 @@ export interface SentenceStreamOptions {
   maxChars?: number;
   /** the first sentence is cut at a comma only once it has this many words */
   firstClauseWords?: number;
+  /** the first sentence is cut at a space after this many words (0 = off) */
+  firstSpaceWords?: number;
 }
 
 /** The streaming voice's splitting: clause boundaries, no character wait. */
-export const STREAMING_CLAUSES: SentenceStreamOptions = { firstClauseChars: 0, firstClauseWords: 2 };
+export const STREAMING_CLAUSES: SentenceStreamOptions = { firstClauseChars: 0, firstClauseWords: 1, firstSpaceWords: 2 };
 
 export class SentenceStream {
   private consumed = 0;
@@ -43,6 +45,7 @@ export class SentenceStream {
   private readonly firstClauseChars: number;
   private readonly maxChars: number;
   private readonly firstClauseWords: number;
+  private readonly firstSpaceWords: number;
 
   constructor(options: SentenceStreamOptions = {}) {
     this.minChars = options.minChars ?? 28;
@@ -51,6 +54,7 @@ export class SentenceStream {
     this.firstClauseChars = options.firstClauseChars ?? 36;
     this.maxChars = options.maxChars ?? 380;
     this.firstClauseWords = options.firstClauseWords ?? 0;
+    this.firstSpaceWords = options.firstSpaceWords ?? 0;
   }
 
   /** Characters of the text already turned into sentences. */
@@ -135,6 +139,7 @@ export class SentenceStream {
         return i + 1;
       }
       if (first && ch === "," && i >= this.firstClauseChars && next !== undefined && /\s/.test(next) && this.words(scan.slice(0, i)) >= this.firstClauseWords) return i + 1;
+      if (first && this.firstSpaceWords > 0 && /\s/.test(ch) && next !== undefined && /\S/.test(next) && this.words(scan.slice(0, i)) >= this.firstSpaceWords) return i + 1;
       if (i >= this.maxChars && /\s/.test(ch)) return i + 1;
     }
     return fence >= 0 ? fence : -1;

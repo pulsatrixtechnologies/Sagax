@@ -234,7 +234,13 @@ private fun LoadedChat(
     // calls on (SAGAX_LIVE_CALLS=1); off by default, our voice call engine is
     // the call path.
     var liveCallsEnabled by remember { mutableStateOf(false) }
-    LaunchedEffect(session) { liveCallsEnabled = session.liveSettings()?.enabled == true }
+    LaunchedEffect(session) {
+        repeat(20) {
+            liveCallsEnabled = session.liveSettings()?.enabled == true
+            if (liveCallsEnabled) return@LaunchedEffect
+            delay(50)
+        }
+    }
     // The call that waits on this phone's first-call disclosure.
     var pendingLiveCall by remember { mutableStateOf<PendingLiveCall?>(null) }
     fun startLiveCall(call: PendingLiveCall) =

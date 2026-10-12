@@ -1,0 +1,58 @@
+{
+  "cases": [
+    {
+      "name": "direct tap clicks once where the finger landed",
+      "mode": "direct", "view": [1000, 1000], "frame": [1000, 1000], "driving": true,
+      "steps": [
+        {"touch": {"id": 1, "phase": "began", "x": 400, "y": 250, "t": 0}},
+        {"touch": {"id": 1, "phase": "ended", "x": 400, "y": 250, "t": 0.05}}
+      ],
+      "expect": [
+        {"move": {"x": 0.4, "y": 0.25}},
+        {"press": {"button": "left", "clicks": 1}},
+        {"release": {"button": "left"}}
+      ]
+    },
+    {
+      "name": "direct double tap inside the window raises the count",
+      "mode": "direct", "view": [1000, 1000], "frame": [1000, 1000], "driving": true,
+      "steps": [
+        {"touch": {"id": 1, "phase": "began", "x": 400, "y": 250, "t": 0}},
+        {"touch": {"id": 1, "phase": "ended", "x": 400, "y": 250, "t": 0.05}},
+        {"touch": {"id": 2, "phase": "began", "x": 400, "y": 250, "t": 0.2}},
+        {"touch": {"id": 2, "phase": "ended", "x": 400, "y": 250, "t": 0.25}}
+      ],
+      "expect": [
+        {"move": {"x": 0.4, "y": 0.25}},
+        {"press": {"button": "left", "clicks": 1}},
+        {"release": {"button": "left"}},
+        {"move": {"x": 0.4, "y": 0.25}},
+        {"press": {"button": "left", "clicks": 2}},
+        {"release": {"button": "left"}}
+      ]
+    },
+    {
+      "name": "direct long press right clicks at the hold point",
+      "mode": "direct", "view": [1000, 1000], "frame": [1000, 1000], "driving": true,
+      "steps": [
+        {"touch": {"id": 1, "phase": "began", "x": 600, "y": 600, "t": 0}},
+        {"tick": 0.4},
+        {"tick": 0.5}
+      ],
+      "expect": [
+        {"move": {"x": 0.6, "y": 0.6}},
+        {"press": {"button": "right", "clicks": 1}},
+        {"release": {"button": "right"}}
+      ]
+    },
+    {
+      "name": "not driving swallows every touch",
+      "mode": "direct", "view": [1000, 1000], "frame": [1000, 1000], "driving": false,
+      "steps": [
+        {"touch": {"id": 1, "phase": "began", "x": 400, "y": 250, "t": 0}},
+        {"touch": {"id": 1, "phase": "ended", "x": 400, "y": 250, "t": 0.05}}
+      ],
+      "expect": []
+    }
+  ]
+}

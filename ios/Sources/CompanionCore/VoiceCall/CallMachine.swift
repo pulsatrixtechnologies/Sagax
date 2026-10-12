@@ -19,13 +19,19 @@ public struct CallState: Equatable, Sendable {
     public var botAudible: Bool
     /// The person is talking over the bot and the bot is ducked.
     public var ducked: Bool
+    /// Single active turn: talking while the bot works cancels it.
+    public var duplex: Bool
+    /// In-flight tools or a sibling topic: barge-in drops speech, not the work.
+    public var backgroundWork: Bool
 
-    public init(phase: CallPhase = .connecting, muted: Bool = false, botBusy: Bool = false, botAudible: Bool = false, ducked: Bool = false) {
+    public init(phase: CallPhase = .connecting, muted: Bool = false, botBusy: Bool = false, botAudible: Bool = false, ducked: Bool = false, duplex: Bool = false, backgroundWork: Bool = false) {
         self.phase = phase
         self.muted = muted
         self.botBusy = botBusy
         self.botAudible = botAudible
         self.ducked = ducked
+        self.duplex = duplex
+        self.backgroundWork = backgroundWork
     }
 
     public static let initial = CallState()
@@ -174,16 +180,27 @@ public enum CallMachine {
             }
         case .speechStart:
             if state.muted || state.phase == .held || state.phase == .connecting { return same }
+            if state.duplex && state.backgroundWork {
+                // barge-in cancels the spoken reply, not background tools
+                if state.botAudible {
+                    effects += [.cancelSpeech, .earcon(.interrupted)]
+                    return next { $0.phase = .interrupted; $0.botAudible = false; $0.ducked = false }
+                }
+                return next { $0.phase = .hearing }
+            }
             if state.botAudible {
                 // barge-in: the bot stops talking, what it had left to say is dropped
                 effects += [.cancelSpeech, .earcon(.interrupted)]
                 if state.botBusy { effects.append(.interruptBot) }
                 return next { $0.phase = .interrupted; $0.botAudible = false; $0.ducked = false }
             }
-            // Talking while the bot works (not speaking): the words join its
-            // running turn when they are sent (a steer), like a message typed
-            // while it works. Stopping the turn dropped the request it was
-            // working on (the desktop's call-machine.ts, PR #103).
+            if state.duplex && state.botBusy {
+                // full-duplex: talking while it thinks cancels that turn (no queue)
+                effects += [.cancelSpeech, .earcon(.interrupted), .interruptBot]
+                return next { $0.phase = .interrupted; $0.botAudible = false; $0.ducked = false }
+            }
+            // Talking while the bot works (not speaking), flag off: the words
+            // join its running turn when they are sent (a steer).
             return next { $0.phase = .hearing }
         case .speechEnd:
             guard state.phase == .hearing || state.phase == .interrupted else { return same }

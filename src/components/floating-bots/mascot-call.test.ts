@@ -31,7 +31,7 @@ function liveFor(botId: string, phase: LiveCallData["state"]["phase"] = "listeni
   return {
     botId,
     call,
-    state: { phase, muted: false, botBusy: false, botAudible: phase === "speaking", ducked: false },
+    state: { phase, muted: false, botBusy: false, botAudible: phase === "speaking", ducked: false, duplex: false, backgroundWork: false },
     startedAt: 1_000,
     heard: "what I am saying",
     caption: "what the bot says",

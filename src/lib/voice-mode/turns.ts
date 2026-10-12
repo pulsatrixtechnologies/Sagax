@@ -26,11 +26,12 @@ import { CONTOUR_MS, contourVerdict, type ContourPoint, type ContourVerdict } fr
 //   `incompleteMs` longer, so "give me a good prompt to" is not sent as is.
 // - The person's pace preference (`pause`: short, normal, patient) sets the
 //   range; the adaptation works inside it.
-// - A sentence that is clearly over ends sooner (`completeMs`): the words so
-//   far close with final punctuation ("what time is it?"), and the silence
-//   after them is confident (the VAD is sure nobody speaks, not just under
-//   its threshold). A pause inside a sentence never ends it early, and a
-//   person who goes on after it is joined back (call.ts CONTINUATION_MS).
+// - A sentence that is clearly over ends sooner (`completeMs`, 200-300 ms):
+//   the words so far close with final punctuation ("what time is it?").
+//   That cut uses unvoiced frames (`silenceMs`), so a breath above
+//   QUIET_PROBABILITY still ends a finished question. A pause inside an
+//   unfinished clause never ends it early. A person who goes on after a
+//   wrong cut is joined back (call.ts CONTINUATION_MS).
 // - How the voice ends counts too ("Faster end of turn", `prosody`, Short
 //   and Normal only): the pitch and energy of the last 400 ms before the
 //   silence (prosody.ts). A finished contour (a fall that fades out, or a
@@ -46,9 +47,9 @@ export const FRAME_MS = 32;
 
 /** The endpoint range for each pause preference (the call's settings). */
 export const PAUSE_PRESETS = {
-  short: { minEndpointMs: 420, endpointMs: 520, maxEndpointMs: 800, incompleteMs: 500, completeMs: 288 },
-  normal: { minEndpointMs: 560, endpointMs: 700, maxEndpointMs: 1_100, incompleteMs: 750, completeMs: 352 },
-  patient: { minEndpointMs: 800, endpointMs: 1_000, maxEndpointMs: 1_500, incompleteMs: 1_000, completeMs: 576 },
+  short: { minEndpointMs: 420, endpointMs: 520, maxEndpointMs: 800, incompleteMs: 500, completeMs: 224 },
+  normal: { minEndpointMs: 560, endpointMs: 700, maxEndpointMs: 1_100, incompleteMs: 750, completeMs: 256 },
+  patient: { minEndpointMs: 800, endpointMs: 1_000, maxEndpointMs: 1_500, incompleteMs: 1_000, completeMs: 288 },
 } as const;
 
 /** Under this voice probability a silent frame is a confident one. */
@@ -64,11 +65,12 @@ export type PausePreset = keyof typeof PAUSE_PRESETS;
  * stops on one is still going. */
 const CONTINUING_EN = [
   "and", "or", "but", "so", "because", "to", "the", "a", "an", "of", "in", "on", "at", "for", "with", "from", "about",
-  "my", "your", "our", "their", "his", "her", "its", "if", "that", "when", "which", "who", "is", "are", "was", "be",
+  "my", "your", "our", "their", "his", "her", "its", "if", "that", "what", "when", "which", "who", "is", "are", "was", "be",
   "into", "like", "than", "then", "as", "by", "me", "uh", "um", "erm", "hmm", "please",
+  "plus", "minus", "times", "versus", "vs",
 ];
 const CONTINUING_FR = [
-  "et", "ou", "mais", "donc", "parce", "que", "qu", "qui", "de", "du", "des", "le", "la", "les", "l", "un", "une",
+  "et", "ou", "mais", "donc", "parce", "que", "qu", "qui", "quel", "quelle", "quels", "quelles", "de", "du", "des", "le", "la", "les", "l", "un", "une",
   "au", "aux", "pour", "avec", "dans", "sur", "en", "mon", "ma", "mes", "ton", "ta", "tes", "son", "sa", "ses",
   "notre", "votre", "leur", "si", "quand", "est", "c", "ce", "cette", "comme", "euh", "ben", "puis",
 ];
@@ -118,7 +120,7 @@ export function incompleteClause(text: string): boolean {
   if (!trimmed) return false;
   // a sentence the recognizer closed is complete
   if (/[.!?\u2026]["')\]]*$/.test(trimmed)) return false;
-  if (/[,;:\u2013-]$/.test(trimmed)) return true;
+  if (/[,;:\u2013+\-*/]$/.test(trimmed)) return true;
   const words = trimmed.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").match(/[a-z0-9]+/g) ?? [];
   if (!words.length) return false;
   if (CONTINUING_WORDS.has(words.at(-1)!)) return true;
@@ -267,11 +269,26 @@ export class TurnDetector {
 
   /** The words recognized so far in this turn (the streaming transcript). */
   hint(text: string): void {
-    this.unfinished = this.state === "idle" ? false : incompleteClause(text);
-    this.complete = this.state === "idle" ? false : completeClause(text);
-    this.words = this.state === "idle" ? "" : text;
+    if (this.state === "idle") {
+      this.unfinished = false;
+      this.complete = false;
+      this.words = "";
+      return;
+    }
+    this.unfinished = incompleteClause(text);
+    // A speculative start already marked the words complete: keep that so
+    // the remaining silence uses completeMs, unless they kept talking.
+    this.complete = !this.unfinished && (this.complete || completeClause(text));
+    this.words = text;
     // words that arrive during the silence change what the contour means
     if (this.silenceMs > 0 && this.o.prosody) this.readContour();
+  }
+
+  /** The words so far can start the answer: end this turn on completeMs. */
+  markComplete(): void {
+    if (this.state === "idle") return;
+    this.complete = true;
+    this.unfinished = false;
   }
 
   /** The silence that ends the current turn early, when its words are a
@@ -298,6 +315,12 @@ export class TurnDetector {
 
   get active(): boolean {
     return this.state !== "idle";
+  }
+
+  /** Speaking and already in the endpoint silence. call.ts keeps feeding STT
+   * while the partial is incomplete, then stops so xAI can speech_final. */
+  get inSilence(): boolean {
+    return this.state === "speaking" && this.silenceMs > 0;
   }
 
   /** The person's usual level, learned from enrollment or accepted turns. */
@@ -391,7 +414,9 @@ export class TurnDetector {
     const contourEnd = this.contourEarly && !this.complete;
     const verdict = this.verdict;
     const early = this.earlyEndpointMs;
-    const endsEarly = early !== null && this.quietMs >= early && this.silenceMs < this.effectiveEndpointMs;
+    const punctuatedEarly = this.complete && early !== null && this.silenceMs >= early;
+    const contourQuietEarly = contourEnd && early !== null && this.quietMs >= early;
+    const endsEarly = (punctuatedEarly || contourQuietEarly) && this.silenceMs < this.effectiveEndpointMs;
     if (endsEarly || this.silenceMs >= this.effectiveEndpointMs || this.turnMs >= this.o.maxTurnMs) {
       const speechMs = this.speechMs;
       const endpointMs = endsEarly ? early : this.effectiveEndpointMs;

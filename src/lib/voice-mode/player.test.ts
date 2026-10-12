@@ -70,6 +70,26 @@ describe("PcmPlayer playback", () => {
   });
 });
 
+describe("PcmPlayer pump", () => {
+  it("plays a sentence enqueued after cancel while pump still awaits the previous audio", async () => {
+    const context = new FakeContext();
+    const player = new PcmPlayer(() => context as unknown as AudioContext);
+    const started: string[] = [];
+    player.events.onSentenceStart = (text) => started.push(text);
+    let resolveOld: (value: Awaited<Sentence["audio"]>) => void = () => {};
+    const oldAudio = new Promise<Awaited<Sentence["audio"]>>((resolve) => {
+      resolveOld = resolve;
+    });
+    player.enqueue({ text: "old", audio: oldAudio, abort() {} });
+    for (let i = 0; i < 10; i++) await tick();
+    await player.cancel();
+    player.enqueue(sentence("new", 0.05));
+    resolveOld(null);
+    for (let i = 0; i < 20 && started.length === 0; i++) await tick();
+    expect(started).toEqual(["new"]);
+  });
+});
+
 describe("splitAtShare", () => {
   it("cuts at a word boundary", () => {
     expect(splitAtShare("one two three four", 0.5)).toEqual(["one two", "three four"]);

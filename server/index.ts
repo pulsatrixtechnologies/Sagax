@@ -330,6 +330,7 @@ import {
   cancelSteeredMessage,
   drainSteeredMessages,
   cancelThreadQueue,
+  discardSteeredQueue,
   hasQueuedSteeredMessages,
   holdSteeredQueue,
   isSteeredMessageQueued,
@@ -636,6 +637,17 @@ import { createVoiceModeRoutes } from "./voice-mode.ts";
 import { installTerminalFeature } from "./terminal-install.ts";
 import { resolveAndSendTerminal } from "./terminal-requests.ts";
 import { parseVoiceCallMeta, voiceCallSection, voiceCallSteerPrompt, voiceCallTurnPrompt } from "./voice-call-prompt.ts";
+import {
+  admitDuplexSend,
+  dropCancelledVoiceEvent,
+  duplexEpoch,
+  DUPLEX_INTERRUPT_WAIT_MS,
+  isStaleAssistantOutput,
+  isThreadBusyError,
+  pinVoiceInterrupt,
+  waitForThreadIdle,
+} from "./voice-call-duplex.ts";
+import { callHasParkableWork, classifyVoiceIntent, topicsFromCallMessages } from "../src/lib/voice-mode/voice-topics.ts";
 import { VoiceCallSessions } from "./voice-call-session.ts";
 import { VoiceCallWarmup } from "./voice-call-warmup.ts";
 import { callTurnEffort } from "./voice-call-effort.ts";
@@ -3803,6 +3815,19 @@ async function interruptDirectThread(botId: string, threadId: string, options?: 
   if (requestOwner) {
     requestOwner.stopped = true;
     if (requestOwner.messageId) store.patchMessage(threadId, requestOwner.messageId, { requestCancelled: true });
+  }
+  const liveTurnId = liveTurnByThread.get(threadId);
+  if (liveTurnId) {
+    let cancelled = cancelledVoiceTurns.get(threadId);
+    if (!cancelled) {
+      cancelled = new Set();
+      cancelledVoiceTurns.set(threadId, cancelled);
+    }
+    cancelled.add(liveTurnId);
+    if (cancelled.size > 8) {
+      const oldest = cancelled.values().next().value;
+      if (oldest) cancelled.delete(oldest);
+    }
   }
   // Stop belongs to the conversation it was pressed in. This bot's turn ends
   // and this conversation stops awaiting its teammates, so nothing resumes
@@ -9319,6 +9344,11 @@ const turnCheckpoints = new Map<string, { botId: string; cwd: string; hash: stri
 // a digest can only count activity it can attribute — so an unstamped tool
 // row is attributed to the thread's live turn instead of to nothing.
 const liveTurnByThread = new Map<string, string>();
+/** The spoken utterance that currently owns this thread (voiceCall.utteranceId). */
+const liveVoiceUtteranceByThread = new Map<string, string>();
+/** Turns cancelled by a person (barge-in / Stop). Their leftover assistant
+ * text must not stream as the next answer. */
+const cancelledVoiceTurns = new Map<string, Set<string>>();
 
 /** Forget a thread's pre-turn checkpoint and drop its pin, so the shadow
  * repo's next cleanup may reclaim that commit. */
@@ -9340,6 +9370,7 @@ function clearTurnDigestState(threadId: string): void {
   turnStartedAt.delete(threadId);
   forgetTurnCheckpoint(threadId);
   liveTurnByThread.delete(threadId);
+  liveVoiceUtteranceByThread.delete(threadId);
   memoryRowsByThread.delete(threadId);
 }
 
@@ -10521,12 +10552,19 @@ bus.subscribe((event: RuntimeEvent) => {
     };
     broadcast({ kind: "runtime", event: publicAssistantEvent });
   }
-  if (event.type === "content.delta" && event.streamKind === "assistant_text") voiceLatency.mark(event.threadId, "firstToken");
-  else if (event.type === "turn.completed") voiceLatency.settled(event.threadId);
+  const staleAssistant = isStaleAssistantOutput({
+    eventTurnId: event.turnId,
+    cancelledTurnIds: cancelledVoiceTurns.get(event.threadId),
+    ownerStopped: directRequestOwners.get(event.threadId)?.stopped,
+    ownerTurnId: directRequestOwners.get(event.threadId)?.turnId,
+  });
+  if (event.type === "content.delta" && event.streamKind === "assistant_text") {
+    if (!staleAssistant) voiceLatency.mark(event.threadId, "firstToken");
+  } else if (event.type === "turn.completed") voiceLatency.settled(event.threadId);
   const privateImageEvent = event.type === "item.completed" && event.itemType === "assistant_image";
   // The durable message patch below is the public frame. Sending raw base64
   // through runtime SSE would multiply large bytes across every app window.
-  if (!privateImageEvent) {
+  if (!privateImageEvent && !dropCancelledVoiceEvent(staleAssistant, event)) {
     // Exact executable input is internal matching metadata, not inspector UI.
     // The event bus's persistence redactor does not scrub its live event.
     const publicEvent = event.type === "request.opened" ? { ...event, command: undefined } : event;
@@ -10575,6 +10613,7 @@ bus.subscribe((event: RuntimeEvent) => {
       if (typeof event.model === "string" && event.model) sessionModelByThread.set(event.threadId, event.model);
       break;
     case "item.completed":
+      if (dropCancelledVoiceEvent(staleAssistant, event)) break;
       if (event.itemType === "assistant_text") {
         const text = event.text;
         const ran = bot ? turnRunByThread.get(event.threadId) : undefined;
@@ -10634,6 +10673,7 @@ bus.subscribe((event: RuntimeEvent) => {
       }
       break;
     case "item.started":
+      if (dropCancelledVoiceEvent(staleAssistant, event)) break;
       if (event.itemType === "tool") {
         // ask_bot's raw tool chip is redundant — the internal endpoint
         // appends a richer "Messaged @X" chip linking to the channel
@@ -12527,6 +12567,89 @@ function drainAsideLane() {
   }).catch((error) => console.warn("aside-queue: drain failed", error));
 }
 
+const duplexEpochByThread = new Map<string, ReturnType<typeof duplexEpoch>>();
+function duplexEpochFor(threadId: string) {
+  let epoch = duplexEpochByThread.get(threadId);
+  if (!epoch) {
+    epoch = duplexEpoch();
+    duplexEpochByThread.set(threadId, epoch);
+  }
+  return epoch;
+}
+
+/** A duplex call send: interrupt the in-flight turn if any, drop the
+ * steer queue, start only this utterance. Never steers, never queues. */
+async function startDuplexCallTurn(
+  botId: string,
+  threadId: string,
+  text: string,
+  replyTo: Message | undefined,
+  sendId: string | undefined,
+  sender: ResolvedSender | undefined,
+  trigger: UsageTrigger,
+  speaker: TurnSpeaker,
+  voiceCall: Message["voiceCall"],
+) {
+  const current = store.projectBotForTask(botId, threadId);
+  if (!current) throw Object.assign(new Error("no such bot"), { status: 404 });
+  const backgroundWork = callHasParkableWork(store.messagesFor(threadId))
+    || store.tasks(current.id).some((task) => task.parallelOf?.threadId === threadId && parallelPending(task));
+  const intent = classifyVoiceIntent(text);
+  const admit = admitDuplexSend({
+    duplex: true,
+    botBusy: Boolean(current.busy) || threadBusy(botId, threadId),
+    stopping: stoppingThreads.has(threadId),
+    queued: hasQueuedSteeredMessages(current.id, threadId),
+    backgroundWork,
+    newTopic: intent === "new_topic",
+    intent,
+    continues: voiceCall?.continues === true,
+    speculative: voiceCall?.speculative === true,
+  });
+  if (admit.action === "defer") {
+    return { ok: true as const, threadId, deferred: true as const };
+  }
+  const epoch = duplexEpochFor(threadId);
+  const mine = epoch.claim();
+  if (admit.action === "background") {
+    discardSteeredQueue(current.id, threadId);
+    return startParallelTask({
+      botId, threadId, text, replyTo, sendId, sender, trigger, speaker, voiceCall,
+    });
+  }
+  if (admit.action === "stop") {
+    discardSteeredQueue(current.id, threadId);
+    if (admit.interrupt) await stopDirectThreadByPerson(current.id, threadId);
+    return { ok: true as const, threadId, stopped: true as const };
+  }
+  if (admit.action === "replace") {
+    if (admit.discardQueue) discardSteeredQueue(current.id, threadId);
+    if (admit.interrupt) {
+      await stopDirectThreadByPerson(current.id, threadId);
+    }
+    discardSteeredQueue(current.id, threadId);
+  }
+  if (!epoch.isLatest(mine)) return { ok: true as const, threadId, superseded: true as const };
+  const deadline = Date.now() + DUPLEX_INTERRUPT_WAIT_MS;
+  if (admit.action === "replace" && admit.interrupt) {
+    await waitForThreadIdle(() => threadBusy(botId, threadId), {
+      capMs: Math.max(0, deadline - Date.now()),
+    });
+  }
+  while (true) {
+    if (!epoch.isLatest(mine)) return { ok: true as const, threadId, superseded: true as const };
+    try {
+      const message = await startTurn(botId, text, {
+        threadId, replyTo, sendId, sender, trigger, speaker, ...(voiceCall ? { voiceCall } : {}),
+      });
+      return { ok: true as const, threadId, message };
+    } catch (err) {
+      if (!isThreadBusyError(err) || Date.now() >= deadline) throw err;
+      await new Promise((resolve) => setTimeout(resolve, 40));
+    }
+  }
+}
+
 /** Keep a person's words off the transcript until a direct-thread slot is
  * available. Reuse the existing cancellable, idempotent composer queue. */
 async function startOrQueueDirectMessage(botId: string, threadId: string, text: string, replyTo?: Message, sendId?: string, sender?: ResolvedSender, trigger?: UsageTrigger, speaker?: TurnSpeaker, voiceCall?: Message["voiceCall"], via?: "call") {
@@ -12604,6 +12727,8 @@ async function startParallelTask(input: {
   title?: string;
   /** Org audit actor. */
   auth?: RequestAuth;
+  /** Live call: the request was said on the call. */
+  voiceCall?: Message["voiceCall"];
 }): Promise<{ ok: true; threadId: string; message: Message; parallel: { threadId: string; title: string; state: ParallelTaskState; cardMessageId: string } }> {
   const bot = store.bot(input.botId);
   const parentTask = bot ? store.taskByThread(bot.id, input.threadId) : undefined;
@@ -12648,6 +12773,7 @@ async function startParallelTask(input: {
     replyToId: input.replyTo?.id,
     sendId: input.sendId,
     ...(input.sender ? { sender: input.sender } : {}),
+    ...(input.voiceCall ? { voiceCall: input.voiceCall } : {}),
     parallelTask: { threadId: child.threadId, title, requestMessageId: "", role: "request" },
   });
   if (request) {
@@ -13656,6 +13782,9 @@ async function startTurn(
           ...(opts?.relayed ? { relayed: true } : {}),
         });
   }
+  if (!warmOnly && opts?.voiceCall?.utteranceId) {
+    liveVoiceUtteranceByThread.set(threadId, opts.voiceCall.utteranceId);
+  }
   // Organization server (slice 3, D13): no turn without engine access. The
   // person's message stays; the thread gets the card saying why, the owner
   // a notification, and the sender an ordinary accepted send.
@@ -13680,6 +13809,7 @@ async function startTurn(
       userMessage,
       store.activePath(threadId).findLast((message) => message.role === "user" && message.id !== userMessage?.id && !message.peerAsk && message.at <= userMessage!.at),
       userMessage.sender?.name ?? botUserName(bot),
+      topicsFromCallMessages(store.activePath(threadId)),
     );
   // Organization server: where this turn's tools run, and for whom, decided
   // once (server/desktop-bridge.ts); the speaker's own attachments are
@@ -33974,6 +34104,13 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
             return { ok: true as const, threadId, message };
           }
 
+          // Full-duplex call: one live turn. Talking while the bot works
+          // cancels that turn, drops the steer queue, and starts only this
+          // utterance (issue #292). Flag off keeps the steer path below.
+          if (voiceCall?.duplex) {
+            return startDuplexCallTurn(bot.id, threadId, text, replyTo, sendId, messageSender(auth), trigger, speakerFor(auth), voiceCall);
+          }
+
           // A new request while this conversation works: its own task, which
           // runs now (or when a slot frees) and answers here.
           if (currentAtStart.busy && busyMode === "parallel") {
@@ -34580,12 +34717,22 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       }
       const body = rawBody ?? {};
       requirePinnedClientThread(bot.id, body.threadId);
+      if (body.expectedUtteranceId !== undefined && (typeof body.expectedUtteranceId !== "string" || !/^[\w-]+$/.test(body.expectedUtteranceId))) {
+        return json(res, 400, { error: "expectedUtteranceId must be an utterance id" });
+      }
+      const expectedUtteranceId = typeof body.expectedUtteranceId === "string" ? body.expectedUtteranceId : undefined;
       // Organization server: a person stops their own thread only, never
       // the bot's work for someone else (another person's thread, a room,
       // the owner's routine). The owner keeps the whole-bot stop.
       const stopper = scopedThreadViewer();
       if (stopper && !(viewerBotLevel(auth, bot) === "owner")) {
         const own = routeThreadId(bot, body.threadId);
+        if (expectedUtteranceId && pinVoiceInterrupt({
+          expectedUtteranceId,
+          liveUtteranceId: liveVoiceUtteranceByThread.get(own),
+        }) === "skip") {
+          return json(res, 200, { ok: true, skipped: true });
+        }
         const run = routines!.activeBotRunForBot(bot.id);
         if (run?.threadId === own) await routines!.cancelRun(run.id);
         else await stopDirectThreadByPerson(bot.id, own);
@@ -34595,6 +34742,12 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       const expectedThreadId = body.threadId;
       if (expectedThreadId !== undefined && (typeof expectedThreadId !== "string" || !/^[\w-]+$/.test(expectedThreadId))) {
         return json(res, 400, { error: "threadId must be a task id" });
+      }
+      if (expectedUtteranceId && pinVoiceInterrupt({
+        expectedUtteranceId,
+        liveUtteranceId: liveVoiceUtteranceByThread.get(typeof expectedThreadId === "string" ? expectedThreadId : bot.threadId),
+      }) === "skip") {
+        return json(res, 200, { ok: true, skipped: true });
       }
       // Explicit thread targets never fall through to another routine or
       // channel just because it belongs to the same bot.

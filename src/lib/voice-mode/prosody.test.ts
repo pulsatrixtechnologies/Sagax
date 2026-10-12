@@ -138,13 +138,13 @@ describe("end of turn on intonation (Faster end of turn)", () => {
   it("ends a falling, fading statement on the short window with no punctuation at all", () => {
     const { event, silentMs } = speak(normal(), glide(12, 190, 130, 0.25, 0.05), { words: "I want the report for Montreal" });
     expect(event).toMatchObject({ type: "end", early: true, onContour: true, contour: "finished" });
-    expect(silentMs).toBe(352);
+    expect(silentMs).toBe(PAUSE_PRESETS.normal.completeMs);
   });
 
   it("ends a rising question the same way", () => {
     const { event, silentMs } = speak(normal(), glide(12, 150, 270, 0.22, 0.1), { words: "is it raining in Quebec" });
     expect(event).toMatchObject({ type: "end", early: true, onContour: true });
-    expect(silentMs).toBe(352);
+    expect(silentMs).toBe(PAUSE_PRESETS.normal.completeMs);
   });
 
   it("keeps the long delay on a flat filler, even with no words yet", () => {
@@ -157,13 +157,13 @@ describe("end of turn on intonation (Faster end of turn)", () => {
   it("never ends mid-word: a contour cut at full strength waits the normal endpoint", () => {
     const { event, silentMs } = speak(normal(), glide(12, 190, 130, 0.12, 0.26), { words: "I want the report for Montreal" });
     expect(event?.type === "end" && event.onContour).toBeFalsy();
-    expect(silentMs).toBeGreaterThan(352);
+    expect(silentMs).toBeGreaterThan(PAUSE_PRESETS.normal.completeMs);
   });
 
   it("never ends on an unsure silence: the VAD must stay under 0.15 the whole short window", () => {
     const { event, silentMs } = speak(normal(), glide(12, 190, 130, 0.25, 0.05), { words: "I want the report for Montreal", quiet: 0.2 });
     expect(event?.type === "end" && event.early).toBeFalsy();
-    expect(silentMs).toBeGreaterThan(352);
+    expect(silentMs).toBeGreaterThan(PAUSE_PRESETS.normal.completeMs);
   });
 
   it("an unfinished clause in English is not shortened by its contour", () => {

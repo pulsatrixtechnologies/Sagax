@@ -6,6 +6,7 @@
 // bot is a draft the store does not hold yet, so the click shows the same
 // Appearance pane under the avatar instead.
 import { useState } from "react";
+import { Pencil } from "lucide-react";
 
 import { useStore, type Bot } from "@/state/store";
 import { useBotEditor } from "./bot-settings/BotEditorContext";
@@ -59,6 +60,21 @@ export function BotProfileAvatarCard({
             motionKey={mascotMotion?.nonce ?? 0}
           />
         </button>
+        {!draft && (
+          <button
+            type="button"
+            data-edit-persona=""
+            aria-label={t("persona.edit")}
+            title={t("persona.edit")}
+            onClick={(event) => {
+              event.stopPropagation();
+              dispatch({ type: "openPersonaEditor", botId: bot.id });
+            }}
+            className="absolute bottom-3 left-[calc(50%+28px)] flex size-7 items-center justify-center rounded-full border border-hairline/50 bg-panel text-ink-secondary hover:bg-raised hover:text-ink"
+          >
+            <Pencil size={14} strokeWidth={1.75} aria-hidden="true" />
+          </button>
+        )}
       </div>
       {draft && draftOpen && (
         <div data-avatar-appearance="" className="pb-2">

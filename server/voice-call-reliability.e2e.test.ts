@@ -117,8 +117,12 @@ it("delivers words said while the bot works once: steered in, never handed back 
     expect(first?.text).toContain("steered:");
     expect(first?.text).toContain("give me a good prompt");
     expect(sent).toHaveLength(2);
-    expect(sent[1]).not.toContain("give me a good prompt");
     expect(sent[1]).not.toContain("you may already have it");
+    // Steered words stay in the first turn. The next turn names them as an
+    // open topic in the phone-call instruction, never as the spoken user line.
+    expect(sent[1]).toContain("give me a good prompt (still running in the background)");
+    const spoken = sent[1].split("</system-reminder>").at(-1) ?? "";
+    expect(spoken).not.toContain("give me a good prompt");
     const users = (await t.messages()).filter((m) => m.role === "user");
     expect(users.filter((m) => m.text === "give me a good prompt")).toHaveLength(1);
   } finally {
@@ -190,6 +194,115 @@ it("words said while a turn is being stopped wait for the next turn and get an a
     };
     await expect.poll(answered, { timeout: 20_000 }).toBe(true);
     expect((await t.messages()).filter((m) => m.text === "what about the weather")).toHaveLength(1);
+  } finally {
+    await t.fixture.close();
+  }
+}, 120_000);
+
+it("duplex: /interrupt racing a new send never replays the cancelled reply", async () => {
+  const t = await callFixture({ FAKE_CLAUDE_MODE: "slow", FAKE_CLAUDE_EXIT_DELAY_MS: "800" });
+  try {
+    await t.api("POST", `/api/bots/${t.bot.id}/voice/call`, { threadId: t.thread, callId: CALL_ID, state: "start" });
+    await t.send({ text: "[gate:never] tell me a long story", voiceCall: { callId: CALL_ID, duplex: true } });
+    await expect.poll(t.busy, { timeout: 15_000 }).toBe(true);
+    const interrupt = t.api("POST", `/api/bots/${t.bot.id}/interrupt`, { threadId: t.thread });
+    const sent = t.send({ text: "what about the weather", voiceCall: { callId: CALL_ID, interrupted: true, duplex: true } });
+    const [stopped, next] = await Promise.all([interrupt, sent]);
+    expect(stopped).toMatchObject({ ok: true });
+    expect(next.queued).toBeUndefined();
+    expect(next.steered).toBeUndefined();
+    expect(next.message?.text).toBe("what about the weather");
+    const answered = async () => {
+      const all = await t.messages();
+      const asked = all.findIndex((m) => m.role === "user" && m.text === "what about the weather");
+      return asked >= 0 && all.slice(asked + 1).some((m) => m.role === "bot" && m.kind === "text" && String(m.text ?? "").trim());
+    };
+    await expect.poll(answered, { timeout: 25_000 }).toBe(true);
+    const all = await t.messages();
+    expect(all.some((m) => m.role === "bot" && m.kind === "text" && String(m.text ?? "").includes("long story"))).toBe(false);
+    expect(all.filter((m) => m.text === "what about the weather")).toHaveLength(1);
+  } finally {
+    await t.fixture.close();
+  }
+}, 120_000);
+
+it("duplex: interrupt aborts an in-flight tool; the late result never lands", async () => {
+  const t = await callFixture({ FAKE_CLAUDE_MODE: "slow", FAKE_CLAUDE_HOLD_AFTER_TOOL: "1" });
+  try {
+    await t.api("POST", `/api/bots/${t.bot.id}/voice/call`, { threadId: t.thread, callId: CALL_ID, state: "start" });
+    await t.send({ text: "[gate:never] look this up", voiceCall: { callId: CALL_ID, duplex: true } });
+    await expect.poll(async () => {
+      const all = await t.messages();
+      return all.some((m) => m.kind === "activity" && String(m.tool?.name ?? "").includes("Bash"));
+    }, { timeout: 15_000 }).toBe(true);
+    const sent = await t.send({ text: "stop", voiceCall: { callId: CALL_ID, interrupted: true, duplex: true } });
+    expect(sent.queued).toBeUndefined();
+    const answered = async () => {
+      const all = await t.messages();
+      const asked = all.findIndex((m) => m.role === "user" && m.text === "stop");
+      return asked >= 0 && all.slice(asked + 1).some((m) => m.role === "bot" && m.kind === "text" && String(m.text ?? "").trim());
+    };
+    await expect.poll(answered, { timeout: 25_000 }).toBe(true);
+    const all = await t.messages();
+    expect(all.some((m) => m.kind === "activity" && m.tool?.ok === true && String(m.tool?.output ?? "").includes("late-tool"))).toBe(false);
+    expect(all.some((m) => m.role === "bot" && m.kind === "text" && String(m.text ?? "").includes("late-tool"))).toBe(false);
+  } finally {
+    await t.fixture.close();
+  }
+}, 120_000);
+
+it("duplex: words said while the bot works replace that turn and never queue", async () => {
+  const t = await callFixture({ FAKE_CLAUDE_MODE: "slow", FAKE_CLAUDE_EXIT_DELAY_MS: "400" });
+  try {
+    await t.api("POST", `/api/bots/${t.bot.id}/voice/call`, { threadId: t.thread, callId: CALL_ID, state: "start" });
+    await t.send({ text: "[gate:never] tell me a long story", voiceCall: { callId: CALL_ID, duplex: true } });
+    await expect.poll(t.busy, { timeout: 15_000 }).toBe(true);
+    const sent = await t.send({ text: "what about the weather", voiceCall: { callId: CALL_ID, interrupted: true, duplex: true } });
+    expect(sent.queued).toBeUndefined();
+    expect(sent.steered).toBeUndefined();
+    expect(sent.message?.text).toBe("what about the weather");
+    const answered = async () => {
+      const all = await t.messages();
+      const asked = all.findIndex((m) => m.role === "user" && m.text === "what about the weather");
+      return asked >= 0 && all.slice(asked + 1).some((m) => m.role === "bot" && m.kind === "text" && String(m.text ?? "").trim());
+    };
+    await expect.poll(answered, { timeout: 25_000 }).toBe(true);
+    expect((await t.messages()).filter((m) => m.text === "what about the weather")).toHaveLength(1);
+  } finally {
+    await t.fixture.close();
+  }
+}, 120_000);
+
+it("duplex: a new topic is answered first while the long tool keeps running", async () => {
+  const t = await callFixture({ FAKE_CLAUDE_MODE: "slow", FAKE_CLAUDE_HOLD_AFTER_TOOL: "1" });
+  try {
+    await t.api("POST", `/api/bots/${t.bot.id}/voice/call`, { threadId: t.thread, callId: CALL_ID, state: "start" });
+    await t.send({ text: "[gate:one] look up the weather in Montreal", sendId: "topic-a-0000000001", voiceCall: { callId: CALL_ID, duplex: true } });
+    await expect.poll(async () => {
+      const all = await t.messages();
+      return all.some((m) => m.kind === "activity" && String(m.tool?.name ?? "").includes("Bash") && m.tool?.ok !== true);
+    }, { timeout: 15_000 }).toBe(true);
+    const sent = await t.send({ text: "what time is it in Tokyo", sendId: "topic-b-0000000002", voiceCall: { callId: CALL_ID, duplex: true } });
+    expect(sent.queued).toBeUndefined();
+    expect(sent.steered).toBeUndefined();
+    expect(sent.parallel?.state).toBe("running");
+    const bDone = async () => {
+      const all = await t.messages();
+      return all.some((m) => m.role === "bot" && m.kind === "text" && m.parallelTask?.role === "result" && String(m.text ?? "").includes("Tokyo"));
+    };
+    await expect.poll(bDone, { timeout: 25_000 }).toBe(true);
+    const afterB = await t.messages();
+    expect(afterB.some((m) => m.role === "bot" && m.kind === "text" && String(m.text ?? "").includes("Montreal") && !m.parallelTask)).toBe(false);
+    t.open("one");
+    await expect.poll(async () => {
+      const all = await t.messages();
+      return all.some((m) => m.role === "bot" && m.kind === "text" && String(m.text ?? "").includes("Montreal") && !m.parallelTask);
+    }, { timeout: 25_000 }).toBe(true);
+    const all = await t.messages();
+    const bAt = all.findIndex((m) => m.role === "bot" && m.kind === "text" && m.parallelTask?.role === "result");
+    const aAt = all.findIndex((m) => m.role === "bot" && m.kind === "text" && String(m.text ?? "").includes("Montreal") && !m.parallelTask);
+    expect(bAt).toBeGreaterThanOrEqual(0);
+    expect(aAt).toBeGreaterThan(bAt);
   } finally {
     await t.fixture.close();
   }

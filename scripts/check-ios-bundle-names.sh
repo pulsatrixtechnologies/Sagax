@@ -15,6 +15,11 @@
 #   openmausbot-phone-credential-v1         phone credential encryption label (#63)
 #   OpenMausBot phone credential v1         HKDF info of the same credential
 #   openmausbot (alone)                     the health body's `app` value
+#   openmausbot://                          legacy deep-link scheme (thread refs, auth)
+#   https://openmausbot.invalid/            reserved invalid origin in tests/binaries
+#   openmausbot.sidebarCollapsedSections.v1 local preference key
+#   openmausbot.sidebarSectionOrder.v1      local preference key
+#   openmausbot browser install             CLI binary name in the browser-install hint
 # Third-party license texts (paths containing LICENSE or Licenses) are skipped.
 set -eu
 
@@ -31,6 +36,11 @@ scan() { # $1 = file label, stdin = text
       -e 's#/\.well-known/openmausbot/environment##g' \
       -e 's#openmausbot-phone-credential-v1##g' \
       -e 's#OpenMausBot phone credential v1##g' \
+      -e 's#openmausbot://##g' \
+      -e 's#https://openmausbot\.invalid/##g' \
+      -e 's#openmausbot\.sidebarCollapsedSections\.v1##g' \
+      -e 's#openmausbot\.sidebarSectionOrder\.v1##g' \
+      -e 's#openmausbot browser install##g' \
       -e 's#^openmausbot$##' |
     grep -i -n 'openmaus' | sed "s#^#$1: #" >> "$report" || true
 }

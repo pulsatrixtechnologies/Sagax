@@ -54,6 +54,11 @@ function statementLabel(sql: string): string {
   return `${verb} ${table ?? "?"}`;
 }
 
+/** Miniflare D1 introspection. Production D1 does not bill these as app trips. */
+function isSchemaProbe(sqlOrLabel: string): boolean {
+  return /sqlite_master|sqlite_schema|pragma[_ ]/i.test(sqlOrLabel);
+}
+
 /** An env whose D1 binding records every round trip it makes. A batch is one
  * round trip, as in production, where D1 runs it as a single request. */
 function countingD1() {
@@ -64,7 +69,7 @@ function countingD1() {
       if (property === "bind") return (...values: unknown[]) => wrap(target.bind(...values), label);
       if (property === "first" || property === "all" || property === "run" || property === "raw") {
         return (...args: unknown[]) => {
-          trips.push([label]);
+          if (!isSchemaProbe(label)) trips.push([label]);
           return (target[property] as (...rest: unknown[]) => unknown).apply(target, args);
         };
       }
@@ -78,7 +83,8 @@ function countingD1() {
       if (property === "batch") {
         return (statements: D1PreparedStatement[]) => {
           const counted = statements.map((each) => (each as unknown as Record<symbol, CountedStatement>)[STATEMENT]);
-          trips.push(counted.map((each) => each.label));
+          const production = counted.filter((each) => !isSchemaProbe(each.label));
+          if (production.length) trips.push(production.map((each) => each.label));
           return target.batch(counted.map((each) => each.statement));
         };
       }

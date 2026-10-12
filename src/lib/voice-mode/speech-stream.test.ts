@@ -113,6 +113,27 @@ describe("streaming voice socket (page side)", () => {
     expect(server().says().map((m) => m.text)).toEqual(["Tout de suite."]);
   });
 
+  it("a lead clause sends say with more:true, then append and finish, and audio can start before finish", async () => {
+    const { socket, server } = make();
+    void socket.connect();
+    server().ready();
+    const lead = socket.begin("b-1", "Four", voice, "t-1");
+    await tick();
+    expect(server().sent).toEqual([{ type: "say", id: "c1", text: "Four", more: true }]);
+    server().text({ type: "start", id: "c1" });
+    const audio = (await lead)!;
+    server().audio(400);
+    socket.append(" is");
+    socket.finish();
+    expect(server().sent.slice(1)).toEqual([
+      { type: "append", id: "c1", text: " is" },
+      { type: "finish", id: "c1" },
+    ]);
+    server().audio(400);
+    server().text({ type: "done", id: "c1" });
+    expect(await readAll(audio.body)).toBe(800);
+  });
+
   it("barge-in: an aborted clause is cancelled on the server and nothing of it plays after", async () => {
     const { socket, server } = make();
     void socket.connect();
@@ -264,15 +285,30 @@ describe("clauses without the 36 character wait (streaming voice)", () => {
     expect(new SentenceStream().feed("Bien sûr, il fait")).toEqual([]);
   });
 
-  it("a one word opener is not a clause on its own", () => {
+  it("a one word punctuated opener is a clause", () => {
+    const well = new SentenceStream(STREAMING_CLAUSES);
+    expect(well.feed("Well, ")).toEqual(["Well,"]);
+    expect(well.feed("Well, it is sunny, ")).toEqual([]);
+    expect(new SentenceStream(STREAMING_CLAUSES).feed("Sure, ")).toEqual(["Sure,"]);
+  });
+
+  it("an unpunctuated one word is not a clause", () => {
     const stream = new SentenceStream(STREAMING_CLAUSES);
-    expect(stream.feed("Well, ")).toEqual([]);
-    expect(stream.feed("Well, it is sunny, ")).toEqual(["Well, it is sunny,"]);
+    expect(stream.feed("Well ")).toEqual([]);
+    expect(stream.feed("Well it is sunny")).toEqual(["Well it"]);
   });
 
   it("sentences still end at their punctuation, and later short ones still join", () => {
     const stream = new SentenceStream(STREAMING_CLAUSES);
     expect(stream.feed("Sure. It is sunny. ")).toEqual(["Sure."]);
     expect(stream.finish("Sure. It is sunny. Yes.")).toEqual(["It is sunny. Yes."]);
+  });
+
+  it("the first clause goes at a space after two words, even without a comma", () => {
+    const stream = new SentenceStream(STREAMING_CLAUSES);
+    expect(stream.feed("It is sunny today in Montreal")).toEqual(["It is"]);
+    expect(stream.feed("It is sunny today in Montreal this afternoon")).toEqual([]);
+    // the POST path still waits for punctuation or the six-word comma cut
+    expect(new SentenceStream().feed("It is sunny today in Montreal")).toEqual([]);
   });
 });

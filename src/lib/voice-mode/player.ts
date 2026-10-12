@@ -12,11 +12,13 @@ export interface Sentence {
   text: string;
   /** abort its download */
   abort(): void;
+  /** local tool filler: must not stamp firstAudioAt */
+  filler?: boolean;
 }
 
 export interface PlayerEvents {
   /** the first sample of a sentence is audible now */
-  onSentenceStart?(text: string): void;
+  onSentenceStart?(text: string, info?: { filler?: boolean }): void;
   /** everything queued has been heard */
   onIdle?(): void;
   onError?(error: unknown): void;
@@ -254,6 +256,10 @@ export class PcmPlayer {
     } finally {
       this.pumping = false;
     }
+    if (this.queue.length) {
+      void this.pump();
+      return;
+    }
     this.scheduleIdle();
   }
 
@@ -328,7 +334,7 @@ export class PcmPlayer {
           first = false;
           const delay = Math.max(0, (start - context.currentTime) * 1000);
           setTimeout(() => {
-            if (mine === this.generation) this.events.onSentenceStart?.(sentence.text);
+            if (mine === this.generation) this.events.onSentenceStart?.(sentence.text, sentence.filler ? { filler: true } : undefined);
           }, delay);
         }
       }

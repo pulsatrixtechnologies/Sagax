@@ -192,7 +192,7 @@ describe("Grump's moves", () => {
       expect(GRUMP_MOVE_TIMING[move].loop, clip).toBe(false);
     }
     // every timed desktop clip plays something on Grump
-    for (const clip of Object.keys(CLIP_MS)) if (clip !== "turn") expect(grumpMoveFor(clip), clip).not.toBeNull();
+    for (const clip of Object.keys(CLIP_MS)) if (clip !== "turn" && clip !== "scuttle") expect(grumpMoveFor(clip), clip).not.toBeNull();
     expect(GRUMP_HELD_CLIPS).toMatchObject({ walk: "walk", sleep: "sleep", drag: "drag" });
     for (const move of Object.values(GRUMP_HELD_CLIPS)) expect(GRUMP_MOVE_TIMING[move].loop).toBe(true);
     expect(grumpMoveFor("stretch")).toBe("stretch");

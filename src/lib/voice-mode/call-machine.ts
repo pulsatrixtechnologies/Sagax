@@ -4,6 +4,8 @@
 // to run (call.ts runs them), so the unit tests cover every transition,
 // barge-in and cancellation included.
 
+import { bargeInEffects } from "./duplex-policy";
+
 export type CallPhase = "connecting" | "listening" | "hearing" | "thinking" | "speaking" | "interrupted" | "held" | "ended";
 
 export interface CallState {
@@ -15,6 +17,10 @@ export interface CallState {
   botAudible: boolean;
   /** the person is talking over the bot and the bot is ducked */
   ducked: boolean;
+  /** single active turn: talking while the bot works cancels it (no steer queue) */
+  duplex: boolean;
+  /** in-flight tools or a sibling topic: barge-in drops speech, not the work */
+  backgroundWork: boolean;
 }
 
 export type CallEvent =
@@ -57,7 +63,7 @@ export type CallEffect =
   | { type: "mic"; open: boolean }
   | { type: "release" };
 
-export const INITIAL_CALL: CallState = { phase: "connecting", muted: false, botBusy: false, botAudible: false, ducked: false };
+export const INITIAL_CALL: CallState = { phase: "connecting", muted: false, botBusy: false, botAudible: false, ducked: false, duplex: false, backgroundWork: false };
 
 /** The phase to rest in when nobody is talking. */
 function idle(state: CallState): CallPhase {
@@ -116,18 +122,20 @@ export function step(state: CallState, event: CallEvent): { state: CallState; ef
       return next({ ducked: false, phase: state.phase === "hearing" || state.phase === "interrupted" ? idle(state) : state.phase });
     case "speech-start":
       if (state.muted || state.phase === "held" || state.phase === "connecting") return { state, effects };
-      if (state.botAudible) {
-        // barge-in: the bot stops talking, what it had left to say is dropped
-        effects.push({ type: "cancel-speech" }, { type: "earcon", sound: "interrupted" });
-        if (state.botBusy) effects.push({ type: "interrupt-bot" });
-        return next({ phase: "interrupted", botAudible: false, ducked: false });
+      switch (bargeInEffects(state)) {
+        case "cancel-and-interrupt":
+          effects.push({ type: "cancel-speech" }, { type: "earcon", sound: "interrupted" }, { type: "interrupt-bot" });
+          return next({ phase: "interrupted", botAudible: false, ducked: false });
+        case "cancel-speech-only":
+          // barge-in after the bot finished writing: drop remaining speech
+          effects.push({ type: "cancel-speech" }, { type: "earcon", sound: "interrupted" });
+          return next({ phase: "interrupted", botAudible: false, ducked: false });
+        case "none":
+          // Talking while the bot works (not speaking), flag off: the words
+          // join its running turn when they are sent (a steer). Duplex on
+          // never reaches here while botBusy.
+          return next({ phase: "hearing" });
       }
-      // Talking while the bot works (not speaking): the words join its
-      // running turn when they are sent (a steer), like a message typed
-      // while it works. Stopping the turn here dropped the request it was
-      // working on: the bot was then told it had been cut, and that request
-      // never got an answer.
-      return next({ phase: "hearing" });
     case "speech-end":
       if (state.phase !== "hearing" && state.phase !== "interrupted") return { state, effects };
       effects.push({ type: "finalize-stt" });
