@@ -10,6 +10,7 @@ import "@xterm/xterm/css/xterm.css";
 import type { TerminalEmbed } from "../../../shared/terminal-resources.ts";
 import { api } from "@/state/store";
 import { cn } from "@/lib/cn";
+import { copyText } from "@/lib/copy-text";
 import { t } from "@/lib/i18n";
 
 const THEME = {
@@ -83,7 +84,7 @@ export function TerminalChatEmbed({ embed }: { embed: TerminalEmbed }) {
 
   const copySelection = () => {
     const selection = termRef.current?.getSelection();
-    if (selection) void navigator.clipboard.writeText(selection);
+    if (selection) void copyText(selection);
   };
 
   const popOut = () => {

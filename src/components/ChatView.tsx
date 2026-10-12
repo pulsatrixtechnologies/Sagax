@@ -1,4 +1,4 @@
-import { Component, createContext, memo, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type Dispatch, type ReactNode } from "react";
+import { Component, Suspense, createContext, lazy, memo, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type Dispatch, type ReactNode } from "react";
 import { useCopyFeedback } from "@/lib/copy-text";
 import { botSeenCaption, messageParticipant } from "@/lib/read-receipts";
 import { useReportRead, useThreadReads } from "@/lib/read-receipts-feed";
@@ -26,7 +26,6 @@ import {
   X,
 } from "lucide-react";
 import { WorkingDots } from "@/components/WorkingIndicator";
-import { TerminalChatEmbed } from "@/components/terminal/TerminalChatEmbed";
 import { MessageBar, MessageMenuItem } from "./MessageBar";
 import { TurnRunLine } from "./TurnRunLine";
 import { useHoverDwell } from "@/hooks/use-hover-dwell";
@@ -139,6 +138,9 @@ import { useCanWriteIn } from "@/lib/cloud-guest";
 import { latestFailure, latestReply, type TranscriptSnapshot } from "@/lib/transcript-announcer";
 import { pendingApprovals } from "./PendingApproval";
 import { TranscriptAnnouncer } from "./TranscriptAnnouncer";
+
+// xterm touches `self` at import: load it only when a terminal embed renders.
+const TerminalChatEmbed = lazy(() => import("@/components/terminal/TerminalChatEmbed").then((m) => ({ default: m.TerminalChatEmbed })));
 
 /** Long user messages collapse behind a fade so pasted walls of text don't
  * bury the conversation; bots get full markdown. */
@@ -688,7 +690,7 @@ const Bubble = memo(function Bubble({
                   ))}
                 </div>
               )}
-              {message.terminalEmbed && <TerminalChatEmbed embed={message.terminalEmbed} />}
+              {message.terminalEmbed && <Suspense fallback={null}><TerminalChatEmbed embed={message.terminalEmbed} /></Suspense>}
               <AttachmentGallery images={generatedPaths} files={linkedFiles} message={{ threadId, messageId: message.id }} className={text ? undefined : "mb-0"} eager={eagerAttachments} />
               {viewRaw && text ? (
                 <div data-citation-source={message.id} data-citation-owner-type="bot" data-citation-owner={botId} data-citation-thread={threadId}><RawMarkdownView text={text} /></div>
