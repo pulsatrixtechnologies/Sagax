@@ -28,3 +28,10 @@ third_party/opencode/LICENSE text eol=lf
 # joins and every layering, healthcheck and trust check fails for a reason
 # that has nothing to do with the image. Docker itself reads LF everywhere.
 Dockerfile text eol=lf
+# Tests read these as text and match LF-only patterns or compare them byte for
+# byte with what a generator writes (src/components/ios-mascot-export.test.ts,
+# skin-fx.test.ts, BotPanel.frame.layout.test.ts). A CRLF checkout on the
+# Windows vitest shards failed them for a reason unrelated to the code.
+src/**/*.css text eol=lf
+ios/Sources/CompanionCore/*.swift text eol=lf
+ios/Tests/CompanionCoreTests/Fixtures/** text eol=lf

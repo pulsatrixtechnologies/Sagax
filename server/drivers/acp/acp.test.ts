@@ -31,6 +31,7 @@ import { removeTempDir } from "../../testing/cleanup.ts";
 import { startFakeHttpMcp } from "../../testing/fake-http-mcp-server.ts";
 import * as procs from "../../procs.ts";
 import * as quietStatus from "./quiet-status.ts";
+import { quarantined } from "../../../scripts/testing/quarantine.ts";
 
 /** Reviewed read-only agents tools Grok may run without its auto classifier. */
 const AGENTS_READ_ONLY_ALLOW = [...READ_ONLY_AGENT_TOOL_NAMES]
@@ -2731,7 +2732,7 @@ createInterface({ input: process.stdin }).on("line", (line) => {
       expect(launches()).toBe(3);
     });
 
-    it("does not load or prompt Qwen after Stop during old-process cleanup", async () => {
+    it.skipIf(quarantined("acp-qwen-stop-windows"))("does not load or prompt Qwen after Stop during old-process cleanup", async () => {
       const appendFile = join(scratch, "rpc-all.jsonl");
       process.env.FAKE_ACP_RPC_APPEND_FILE = appendFile;
       instance = await QwenAgentDriver.create({

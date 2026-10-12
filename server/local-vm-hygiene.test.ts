@@ -49,7 +49,8 @@ describe("Local VM folders", () => {
     expect(args.join(" ")).toContain(`--label ${WORKSPACE_PATH_LABEL}=/Users/ada/.openmausbot/vm-home`);
   });
 
-  it("knows a temporary folder, with or without macOS's /private prefix", () => {
+  // POSIX only: macOS and Linux temporary folder paths
+  it.skipIf(process.platform === "win32")("knows a temporary folder, with or without macOS's /private prefix", () => {
     expect(workspaceIsTemporary("/var/folders/5f/x/T/omb-org-mcp-1/.openmausbot/vm-home", "/var/folders/5f/x/T")).toBe(true);
     expect(workspaceIsTemporary("/private/var/folders/5f/x/T/omb-1/vm-home", "/var/folders/5f/x/T")).toBe(true);
     expect(workspaceIsTemporary("/Users/ada/.openmausbot/vm-home", "/var/folders/5f/x/T")).toBe(false);

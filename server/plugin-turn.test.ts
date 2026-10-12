@@ -61,8 +61,9 @@ describe("plugin skills and commands on a turn", () => {
     const files = pluginTurnFiles(enabled);
     expect(files.map((file) => file.path).sort()).toEqual([command, skill].sort());
     const grok = pluginTurnPrompt({ driverKind: "grokAgent", integrationsOff: false, files });
-    expect(grok).toContain(skill);
-    expect(grok).toContain(command);
+    // the prompt quotes each path as a JSON string (backslashes doubled on Windows)
+    expect(grok).toContain(JSON.stringify(skill));
+    expect(grok).toContain(JSON.stringify(command));
     expect(grok).toContain("Sagax");
     expect(grok).not.toContain("Body");
     expect(claudePluginDirs("grokAgent", false, enabled)).toEqual([]);

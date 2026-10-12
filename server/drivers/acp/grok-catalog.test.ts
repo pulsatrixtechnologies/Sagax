@@ -128,7 +128,8 @@ function writeModelsCache(home: string, ids: string[]) {
   writeFileSync(join(home, ".grok", "models_cache.json"), JSON.stringify({ fetched_at: "2026-10-08T15:02:13Z", grok_version: "1.0.50", origin: "https://cli-chat-proxy.grok.com/v1/models", models }));
 }
 
-describe("the Grok model list comes from the engine", () => {
+// POSIX only: the fake engine is a script run through its shebang
+describe.skipIf(process.platform === "win32")("the Grok model list comes from the engine", () => {
   it("reads the account catalog Grok cached, before the static list", () => {
     const home = scratchConfig(`[model.local-glm]\nname = "GLM local"\n`);
     writeModelsCache(home, ["grok-4.7", "grok-4.7-build-fast"]);

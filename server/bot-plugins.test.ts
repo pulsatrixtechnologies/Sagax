@@ -86,7 +86,8 @@ describe("marketplace policy", () => {
 });
 
 describe("insideRoot", () => {
-  it("keeps paths inside the repository", () => {
+  // POSIX only: the root and the expectations are POSIX paths
+  it.skipIf(process.platform === "win32")("keeps paths inside the repository", () => {
     expect(insideRoot("/r", "./plugins/a")).toBe("/r/plugins/a");
     expect(insideRoot("/r", "./")).toBe("/r");
     expect(() => insideRoot("/r", "../x")).toThrow(BotPluginError);

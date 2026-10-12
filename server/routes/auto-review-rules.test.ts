@@ -39,7 +39,9 @@ async function serve(auth: RequestAuth) {
   return `http://127.0.0.1:${(server.address() as AddressInfo).port}/api/auto-review/rules`;
 }
 
-describe("auto-review rules", () => {
+// POSIX only: the saved rules carry POSIX working folders (/work/...), which
+// the allowlist rightly refuses on Windows (no drive).
+describe.skipIf(process.platform === "win32")("auto-review rules", () => {
   it("stay admin scope for sessions", () => {
     expect(requiredScope("GET", "/api/auto-review/rules")).toBe("admin");
     expect(requiredScope("DELETE", "/api/auto-review/rules/cmd.a.b")).toBe("admin");

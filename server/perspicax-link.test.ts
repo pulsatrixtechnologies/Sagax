@@ -27,7 +27,11 @@ function tempDir() {
   return mkdtempSync(join(tmpdir(), "px-link-"));
 }
 
-describe("readLinkFile", () => {
+// POSIX only: the org server runs on Linux, and readLinkFile refuses a link
+// file by its POSIX mode (0600/0640), which Windows does not have.
+const posixDescribe = describe.skipIf(process.platform === "win32");
+
+posixDescribe("readLinkFile", () => {
   it("accepts 0640 and 0600 files that match this server", () => {
     const dir = tempDir();
     const path = join(dir, "pulsabot.json");
@@ -156,7 +160,7 @@ const person = (sub: string, patch: Partial<Directory["people"][number]> = {}): 
 });
 const directoryOf = (people: Directory["people"]): Directory => ({ server_id: SERVER_ID, people, teams: [] });
 
-describe("PerspicaxDirectory", () => {
+posixDescribe("PerspicaxDirectory", () => {
   it("creates principals for people who never signed in and sends the link token, version and accept", async () => {
     const h = harness(directoryOf([person("BOB"), person("ALICE", { role: "admin" })]));
     expect(h.sync.state()).toMatchObject({ state: "missing" });
@@ -274,7 +278,7 @@ describe("PerspicaxDirectory", () => {
   });
 });
 
-describe("PerspicaxDirectory, slice 4: teams and owner keys", () => {
+posixDescribe("PerspicaxDirectory, slice 4: teams and owner keys", () => {
   const withTeams = (people: Directory["people"], teams: Directory["teams"]): Directory => ({ server_id: SERVER_ID, people, teams });
 
   it("gives each person the teams the directory lists (manager wins) and hands the names over", async () => {
@@ -464,7 +468,7 @@ describe("PerspicaxDirectory, slice 4: teams and owner keys", () => {
   });
 });
 
-describe("PerspicaxDirectory, slice 5: profiles and token exchange", () => {
+posixDescribe("PerspicaxDirectory, slice 5: profiles and token exchange", () => {
   type Answer = { status: number; body?: unknown } | "throw";
   function exchangeHarness(answers: Answer[] = []) {
     const dir = tempDir();
@@ -609,7 +613,7 @@ describe("PerspicaxDirectory, slice 5: profiles and token exchange", () => {
   });
 });
 
-describe("PerspicaxDirectory, slice 6: routine delegations", () => {
+posixDescribe("PerspicaxDirectory, slice 6: routine delegations", () => {
   it("reports each person's delegation after each answer, a 304 with the cached people", async () => {
     const dates = { consented_at: "2026-09-30T10:00:00Z", renewed_at: "2026-09-30T10:05:00Z", expires_at: "2026-10-30T10:05:00Z" };
     const h = harness(directoryOf([

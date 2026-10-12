@@ -45,11 +45,11 @@ describe("PrincipalEngineLogins", () => {
     expect(started).toMatchObject({ phase: "waiting" });
     const dir = join(dataDir, "principals", A, "codex");
     expect(made[0]!.env.CODEX_HOME).toBe(dir);
-    expect(statSync(dir).mode & 0o777).toBe(0o700);
-    expect(statSync(join(dataDir, "principals", A)).mode & 0o777).toBe(0o700);
+    if (process.platform !== "win32") expect(statSync(dir).mode & 0o777).toBe(0o700);
+    if (process.platform !== "win32") expect(statSync(join(dataDir, "principals", A)).mode & 0o777).toBe(0o700);
     await made[0]!.finish();
     expect(logins.signedIn(A, "codex")).toBe(true);
-    expect(statSync(join(dir, LOGIN_MARKER)).mode & 0o777).toBe(0o600);
+    if (process.platform !== "win32") expect(statSync(join(dir, LOGIN_MARKER)).mode & 0o777).toBe(0o600);
     expect(JSON.parse(readFileSync(join(dir, LOGIN_MARKER), "utf8"))).toEqual({ at: 42 });
     // another person is not signed in by it
     expect(logins.signedIn(B, "codex")).toBe(false);
@@ -86,7 +86,7 @@ describe("PrincipalEngineLogins", () => {
     expect(logins.signedIn(A, "grokAgent")).toBe(false);
     await logins.start(B, "kimi", "session-b");
     expect(made[1]).toMatchObject({ driver: "kimiAgent", home: join(dataDir, "principals", B, "kimi") });
-    expect(statSync(made[1]!.home).mode & 0o777).toBe(0o700);
+    if (process.platform !== "win32") expect(statSync(made[1]!.home).mode & 0o777).toBe(0o700);
   });
 
   it("keeps flows per person and per session: another session cannot read or steal them", async () => {

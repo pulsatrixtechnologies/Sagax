@@ -153,7 +153,9 @@ describe("the bot's routines run on the owner's credentials", () => {
   });
 });
 
-describe("materializeEngineAccess", () => {
+// POSIX only: an organization server feature (Linux); the expectations are
+// POSIX paths under /data.
+describe.skipIf(process.platform === "win32")("materializeEngineAccess", () => {
   const deps = (answer: ProviderKeyResult | ((sub: string, provider: ModelProvider) => ProviderKeyResult)) => {
     const invalidated: string[] = [];
     const resolved: string[] = [];

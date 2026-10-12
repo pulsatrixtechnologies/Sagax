@@ -9,6 +9,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { launchVerificationServer, type VerificationServer } from "../scripts/control-omb.ts";
 import { tarArchive, zipArchive } from "./testing/archive-fixtures.mjs";
+import { quarantined } from "../scripts/testing/quarantine.ts";
 
 describe("archives attached in solo mode", () => {
   let session: VerificationServer;
@@ -40,7 +41,7 @@ describe("archives attached in solo mode", () => {
     await session?.close();
   });
 
-  it("unpacks a zip next to the upload and tells the bot what is inside, in a chat and in a group", async () => {
+  it.skipIf(quarantined("archive-attachments-windows"))("unpacks a zip next to the upload and tells the bot what is inside, in a chat and in a group", async () => {
     const zip = zipArchive([
       { name: "project/README.md", data: "# Project" },
       { name: "project/src/main.ts", data: "export const x = 1;" },

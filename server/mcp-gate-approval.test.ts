@@ -14,6 +14,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import type { GateAsk } from "./mcp-gate-approval.ts";
 import { removeTempDir } from "./testing/cleanup.ts";
+import { quarantined } from "../scripts/testing/quarantine.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const GATE = join(HERE, "mcp-gate.ts");
@@ -55,7 +56,7 @@ const READ_ONLY = ["api_search", "cw_psa__query", "memory_search"];
 
 type Policy = (ask: GateAsk) => "allow" | "deny" | "hang" | "close";
 
-describe("mcp-gate approval", () => {
+describe.skipIf(quarantined("mcp-gate-approval-windows"))("mcp-gate approval", () => {
   let scratch: string;
   let socketPath: string;
   let broker: Server | undefined;

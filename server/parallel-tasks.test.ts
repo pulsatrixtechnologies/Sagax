@@ -120,7 +120,8 @@ describe("parallel task workspace", () => {
     const workspace = prepareParallelWorkspace({ parentCwd: join(repo, "sub"), privateRoot: join(root, "private"), root: join(root, "wt"), botId: "bot", threadId: "thread-1" });
     expect(workspace).toMatchObject({ kind: "worktree", branch: "sagax/parallel-thread-1" });
     if (workspace.kind !== "worktree") return;
-    expect(workspace.cwd.endsWith(join("wt", "bot", "thread-1", "sub"))).toBe(true);
+    // git reports the worktree with forward slashes on Windows
+    expect(workspace.cwd.replace(/\\/g, "/").endsWith("wt/bot/thread-1/sub")).toBe(true);
     expect(existsSync(join(workspace.cwd, "a.txt"))).toBe(true);
   });
 });
