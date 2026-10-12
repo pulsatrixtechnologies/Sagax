@@ -10,8 +10,6 @@ import UIKit
 import CompanionCore
 
 enum PrefKey {
-    static let islandIntro = "companion.prefs.islandIntro"
-    static let islandSeen = "companion.prefs.islandSeen"
     static let activityDetail = "companion.prefs.activityDetail"
     static let quickReplies = "companion.prefs.quickReplies"
     static let language = "companion.prefs.language"
@@ -20,6 +18,8 @@ enum PrefKey {
     static let rosterDensity = "companion.prefs.rosterDensity"
     /// Personalization: the large Updates button on the standard home.
     static let updatesButton = "companion.prefs.updatesButton"
+    /// When on, the home's search and + sit at the top instead of the bottom.
+    static let rosterChromeAtTop = "companion.prefs.rosterChromeAtTop"
     /// The iPad desktop sidebar's density (comfortable, compact, icons),
     /// per device as on the desktop (`openmausbot.sidebarDensity`).
     static let desktopSidebarDensity = "companion.prefs.desktopSidebarDensity"
@@ -48,26 +48,3 @@ enum SidebarLogoRuntime {
     }
 }
 
-/// The set of chats whose island intro has already played.
-///
-/// Stored as JSON in the same defaults as everything else rather than in its
-/// own store: it is a handful of ids, and a chat that loses its entry simply
-/// plays its intro once more.
-enum IslandSeen {
-    static func contains(_ id: String, in json: String) -> Bool {
-        decode(json).contains(id)
-    }
-
-    static func adding(_ id: String, to json: String) -> String {
-        var seen = decode(json)
-        guard seen.insert(id).inserted else { return json }
-        guard let data = try? JSONEncoder().encode(seen.sorted()) else { return json }
-        return String(decoding: data, as: UTF8.self)
-    }
-
-    private static func decode(_ json: String) -> Set<String> {
-        guard let data = json.data(using: .utf8),
-              let list = try? JSONDecoder().decode([String].self, from: data) else { return [] }
-        return Set(list)
-    }
-}

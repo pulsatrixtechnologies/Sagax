@@ -28,6 +28,11 @@ export const READ_ONLY_AGENT_TOOL_NAMES: ReadonlySet<string> = new Set([
   "read_latest_page",
   "read_latest_page_with_threads",
   "read_transcript_cold",
+  "list_cloud_agents",
+  "get_cloud_agent",
+  "find_cloud_agent_by_pr",
+  "cloud_agent_transcript",
+  "list_cloud_agent_artifacts",
 ]);
 
 const READ_ONLY_ANNOTATIONS = Object.freeze({

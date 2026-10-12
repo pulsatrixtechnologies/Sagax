@@ -28,6 +28,7 @@ import { ComputerPanel } from "./ComputerPanel";
 import { BotProfileAvatarCard } from "./BotProfileAvatarCard";
 import { useCaptionChrome, useMacInsetChrome } from "./DesktopCapabilities";
 import { t } from "@/lib/i18n";
+import { SwitchRow } from "./SettingsPrimitives";
 import { canEditBotField } from "@/lib/bot-capabilities";
 import { viewerBotsReadOnly } from "@/lib/viewer";
 import { useBotSectionAvailability, useBotSectionContent } from "./bot-settings/useBotSectionContent";
@@ -260,6 +261,16 @@ export function BotSettingsDialog({ bot, onOpenVmWorkspace }: {
 
           {tab === "details" && (
             <div className="flex flex-col gap-6 px-4 pb-6 pt-2">
+              {canEditBotField(state.config, bot, "backgroundReplies") && (
+                <section data-bot-settings-section="background-replies">
+                  <SwitchRow
+                    label={t("botPanel.backgroundReplies.label")}
+                    description={t("botPanel.backgroundReplies.description")}
+                    checked={bot.backgroundReplies !== false}
+                    onChange={(next) => derived.patch({ backgroundReplies: next })}
+                  />
+                </section>
+              )}
               <ActivitySection bot={bot} />
               <section data-bot-settings-section="routines" className="flex flex-col gap-2">
                 <RoutinesSection bot={bot} routines={derived.botRoutines} runs={state.routineRuns} grouped />

@@ -11,6 +11,11 @@ import { encodeWav, TARGET_RATE, toPcm16 } from "./audio";
 import { transcribeVoiceMode, voiceModeListenUrl } from "./api";
 import { normalizedWords } from "./latency";
 
+/** Confident silence before one `finalize` probe. Four 32 ms frames. */
+export const PROBE_AFTER_MS = 128;
+/** Page keepalive so a proxy does not drop the listen socket between turns. */
+const KEEPALIVE_MS = 15_000;
+
 export interface LiveTranscriberOptions {
   botId: string;
   language: () => string;
@@ -35,6 +40,14 @@ interface Utterance {
   confidence?: number;
   /** the last final chunk kept (a resend of it is not new words) */
   lastChunk?: string;
+  /** the latest interim, used when finalize never answers */
+  interim?: string;
+  /** frames already sent when the last finalize went out */
+  closedAt?: number;
+  /** a finalize is in flight for `closedAt` */
+  probing?: boolean;
+  /** that finalize may have punctuated a sentence the person has not finished */
+  forced?: boolean;
   resolve?: (words: Heard) => void;
   timer?: ReturnType<typeof setTimeout>;
 }
@@ -74,6 +87,11 @@ export class LiveTranscriber {
   /** utterances settled by the timeout before xAI's final words came: the
    * frames that still arrive for them are theirs, never the next turn's */
   private draining = 0;
+  private keepalive: ReturnType<typeof setInterval> | null = null;
+  private reconnects = 0;
+  private closing = false;
+  /** the partial just notified came from a probe finalize */
+  forcedFlush = false;
 
   constructor(options: LiveTranscriberOptions) {
     this.options = options;
@@ -113,6 +131,7 @@ export class LiveTranscriber {
         if (frame.type === "ready") {
           clearTimeout(timer);
           this.open = true;
+          this.armKeepalive();
           done(true);
           // a turn that began while the socket was (re)opening
           if (this.current) this.flush(this.current);
@@ -121,9 +140,20 @@ export class LiveTranscriber {
       const lost = () => {
         if (socket !== this.socket) return;
         clearTimeout(timer);
+        const wasOpen = this.open;
         this.open = false;
-        this.streaming = false;
+        this.stopKeepalive();
         done(false);
+        // one reconnect after a drop mid-call; the first failure still uploads
+        if (wasOpen && !this.closing && this.reconnects < 1 && this.current && !this.current.finalized) {
+          this.reconnects += 1;
+          this.streaming = false;
+          void this.connect().then((ok) => {
+            if (ok && this.current) this.flush(this.current);
+          });
+          return;
+        }
+        this.streaming = false;
         // anything waiting on the socket is uploaded instead
         for (const utterance of this.utterances) if (utterance.finalized && !utterance.discard) void this.upload(utterance);
       };
@@ -159,6 +189,41 @@ export class LiveTranscriber {
       utterance.sent += 1;
       utterance.ended = false;
     }
+  }
+
+  /** Silence after the person stopped: one finalize so the last words come
+   * back during the endpoint, not after it. A second finalize with no new
+   * audio is not sent (that stuck the listen socket). */
+  probe(): boolean {
+    const utterance = this.current;
+    if (!utterance || utterance.discard || utterance.finalized || utterance.probing) return false;
+    if (!this.open || this.socket?.readyState !== 1) return false;
+    if (utterance.sent === 0 || utterance.closedAt === utterance.sent) return false;
+    utterance.probing = true;
+    utterance.closedAt = utterance.sent;
+    this.socket.send(JSON.stringify({ type: "finalize" }));
+    return true;
+  }
+
+  /** Stop sending silence: a probe is in flight, or it already closed this audio. */
+  get holdingSilence(): boolean {
+    const utterance = this.current;
+    if (!utterance) return false;
+    return Boolean(utterance.probing || (utterance.ended && utterance.closedAt === utterance.sent));
+  }
+
+  private armKeepalive(): void {
+    if (this.keepalive) return;
+    this.keepalive = setInterval(() => {
+      if (this.open && this.socket?.readyState === 1) this.socket.send(JSON.stringify({ type: "keepalive" }));
+    }, KEEPALIVE_MS);
+    this.keepalive.unref?.();
+  }
+
+  private stopKeepalive(): void {
+    if (!this.keepalive) return;
+    clearInterval(this.keepalive);
+    this.keepalive = null;
   }
 
   /** A new socket (another language); the old one is let go quietly. */
@@ -199,22 +264,37 @@ export class LiveTranscriber {
         void this.upload(utterance);
         return;
       }
-      // xAI already closed it (speech_final) and nothing was sent since:
+      // xAI already closed it (speech_final or a probe) and nothing was sent since:
       // a finalize would have nothing new to say
-      if (utterance.ended && utterance.text.trim()) {
+      if ((utterance.ended || utterance.probing) && utterance.closedAt === utterance.sent && (utterance.text.trim() || utterance.probing)) {
+        if (utterance.ended && utterance.text.trim()) {
+          this.settle(utterance);
+          return;
+        }
+        this.armFinalTimer(utterance);
+        return;
+      }
+      if (utterance.ended && utterance.text.trim() && utterance.closedAt === undefined) {
         this.settle(utterance);
         return;
       }
+      utterance.closedAt = utterance.sent;
+      utterance.probing = true;
       this.socket!.send(JSON.stringify({ type: "finalize" }));
-      utterance.timer = setTimeout(() => {
-        // no final words in time: what we have, else an upload of the turn
-        if (utterance.text.trim()) {
-          // its last words may still come: they belong to it, not the next turn
-          this.draining += 1;
-          this.settle(utterance);
-        } else void this.upload(utterance);
-      }, this.options.finalTimeoutMs ?? 2500);
+      this.armFinalTimer(utterance);
     });
+  }
+
+  private armFinalTimer(utterance: Utterance): void {
+    utterance.timer = setTimeout(() => {
+      const fallback = utterance.text.trim() || utterance.interim?.trim() || "";
+      if (fallback) {
+        if (!utterance.text.trim()) utterance.text = fallback;
+        // its last words may still come: they belong to it, not the next turn
+        this.draining += 1;
+        this.settle(utterance);
+      } else void this.upload(utterance);
+    }, this.options.finalTimeoutMs ?? 2500);
   }
 
   /** The candidate was a noise, or the turn is dropped: forget its words. */
@@ -224,7 +304,11 @@ export class LiveTranscriber {
     if (!utterance) return;
     utterance.discard = true;
     utterance.finalized = true;
-    if (this.open && this.socket?.readyState === 1) this.socket.send(JSON.stringify({ type: "finalize" }));
+    if (this.open && this.socket?.readyState === 1 && !utterance.probing) {
+      utterance.closedAt = utterance.sent;
+      utterance.probing = true;
+      this.socket.send(JSON.stringify({ type: "finalize" }));
+    }
     utterance.timer = setTimeout(() => {
       if (this.utterances.includes(utterance)) this.draining += 1;
       this.settle(utterance);
@@ -232,7 +316,9 @@ export class LiveTranscriber {
   }
 
   close(): void {
+    this.closing = true;
     this.open = false;
+    this.stopKeepalive();
     const socket = this.socket;
     this.socket = null;
     try { socket?.close(); } catch { /* closed */ }
@@ -255,6 +341,9 @@ export class LiveTranscriber {
     const utterance = this.utterances[0];
     if (!utterance) return;
     if (!frame.final) {
+      utterance.interim = frame.text;
+      utterance.forced = false;
+      this.forcedFlush = false;
       if (!utterance.discard) for (const fn of Array.from(this.partialWatchers)) fn(`${utterance.text} ${frame.text}`.trim());
       return;
     }
@@ -263,6 +352,9 @@ export class LiveTranscriber {
       utterance.text = `${utterance.text} ${frame.text.trim()}`.trim();
       if (typeof frame.confidence === "number") utterance.confidence = Math.min(utterance.confidence ?? 1, frame.confidence);
     }
+    const forced = utterance.probing === true;
+    if (forced) utterance.forced = true;
+    this.forcedFlush = forced && !utterance.discard;
     if (!utterance.discard) for (const fn of Array.from(this.partialWatchers)) fn(utterance.text);
     // A final chunk is one xAI will not revise, not the end of the
     // utterance: after a finalize, xAI can still send the chunk it had
@@ -271,6 +363,9 @@ export class LiveTranscriber {
     // final chunk cut sentences short ("give me a good prompt to") and
     // handed their last words to the next turn.
     if (!frame.speechFinal) return;
+    const covered = utterance.closedAt === undefined || utterance.sent === utterance.closedAt;
+    utterance.probing = false;
+    if (!covered) return;
     if (utterance.finalized) this.settle(utterance);
     else utterance.ended = true;
   }

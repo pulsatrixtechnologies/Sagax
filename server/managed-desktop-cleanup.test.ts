@@ -84,6 +84,10 @@ function fixture(kind: "direct" | "group", threadIds = ["first"]) {
     } } }) },
     turnResourceOwners: owners, directTurnGenerationByThread: generations, directTurnBots: directBots, groupSpeakers: speakers,
     directRequestOwners: new Map(),
+    // Duplex barge-in records the live turn as cancelled. Empty here: this
+    // fixture never starts a voice turn, so Stop is a no-op on that map.
+    liveTurnByThread: new Map(),
+    cancelledVoiceTurns: new Map(),
     autoVmClaims,
     turnResources: { release() {} }, settlingResourceOwners: new Map(), turnComputerResources: new Map(), teamComputerTurns: new Map(),
     roomHandoffs: { stopAwaitingDirect() {} }, noteTeammatesLeftRunning() {},

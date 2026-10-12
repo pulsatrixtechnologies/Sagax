@@ -20,6 +20,7 @@ import {
   sandboxNames,
   sandboxNetworkSpec,
   sandboxdConfigFromEnv,
+  sandboxVolumeSpec,
 } from "./user-sandbox-spec.ts";
 
 const config = sandboxdConfigFromEnv({ SAGAX_SANDBOX_IMAGE: "sagax-sandbox:test", SAGAX_SANDBOX_INSTANCE: "gox" });
@@ -216,5 +217,17 @@ describe("compose overlay (deploy/docker-compose.sandbox.yml)", () => {
     expect(sandboxd.privileged).toBeUndefined();
     expect(sandboxd.networks).toEqual(["sandbox-control"]);
     expect(compose.networks["sandbox-control"]!.internal).toBe(true);
+  });
+});
+
+describe("workspace volume hard quota", () => {
+  const key = "a".repeat(32);
+  it("is soft by default (no DriverOpts)", () => {
+    expect(sandboxVolumeSpec(config, key)).not.toHaveProperty("DriverOpts");
+    expect(config.hardVolumeQuota).toBe(false);
+  });
+  it("asks Docker for a hard size when SAGAX_SANDBOX_HARD_QUOTA=1", () => {
+    const hard = sandboxdConfigFromEnv({ SAGAX_SANDBOX_IMAGE: "x:1", SAGAX_SANDBOX_HARD_QUOTA: "1", SAGAX_SANDBOX_DISK_MB: "1024" });
+    expect(sandboxVolumeSpec(hard, key)).toMatchObject({ Driver: "local", DriverOpts: { size: "1024m" } });
   });
 });

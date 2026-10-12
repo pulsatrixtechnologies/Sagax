@@ -7,6 +7,7 @@ import { waitForExit } from "../../server/testing/cleanup.ts";
 import { runControlOmb } from "../control-omb.ts";
 import { request } from "../mcp-server.ts";
 import { UI_TOOLS_DIR } from "./control-omb-ui.ts";
+import { enableBrowseBots, openTemplatesCatalog } from "./ui-navigation.ts";
 
 const ROOT = fileURLToPath(new URL("../..", import.meta.url));
 const binary = resolveAgentBrowserBinary({ dataDir: UI_TOOLS_DIR, env: process.env });
@@ -39,6 +40,7 @@ describe("additive template imports in the real renderer", () => {
     const snapshot = async () => (await ui("snapshot")).snapshot as string;
     const api = (path: string, method = "GET", body?: unknown) => request(path, { method, ...(body === undefined ? {} : { body: JSON.stringify(body) }) }, info.url);
     const control = (...args: string[]) => runControlOmb([...args, "--url", info.url]);
+    await enableBrowseBots(api);
     await api(`/api/bots/${info!.botId}`, "PATCH", { section: "Existing work", chiefOfStaff: true });
     await control("new-bot", "--name", "Personal helper", "--section", "Personal");
     await control("send", "--bot", info!.botId, "--text", "Keep this original conversation after importing templates.");
@@ -64,8 +66,7 @@ describe("additive template imports in the real renderer", () => {
       return true;
     })()`);
     for (const source of ["library", "file"]) {
-      await click("New or share");
-      await click("Templates");
+      await openTemplatesCatalog(click, evaluate);
       if (source === "library") {
         await expect.poll(snapshot, { timeout: 10_000 }).toContain('button "Load"');
         await click("Load");

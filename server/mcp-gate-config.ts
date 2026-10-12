@@ -206,6 +206,7 @@ export function gateServer(input: {
       SAGAX_GATE_APPROVAL_TOKEN: approval.token,
       SAGAX_GATE_READ_ONLY: JSON.stringify([...new Set(approval.readOnly)].sort()),
     } : {}),
+    SAGAX_GATE_MISUSE_MODE: process.env.SAGAX_MISUSE_GUARDRAILS?.trim() || "shadow",
   };
   if (input.configEnvName && (!scoped || !/^SAGAX_GATE_CONFIG_[a-f0-9]{64}$/.test(input.configEnvName))) {
     throw new Error("Invalid private MCP gate configuration.");

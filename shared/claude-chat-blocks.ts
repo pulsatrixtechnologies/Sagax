@@ -176,6 +176,7 @@ export function antArtifactToMarkdown(attributeSource: string, body: string): st
   const type = (attrs.type ?? "").trim().toLowerCase();
   const language = (attrs.language ?? "").trim();
   const trimmed = body.replace(/^\n/, "").replace(/\n$/, "");
+  if (type === "application/vnd.sagax.cw+json") return fenced("cw", trimmed);
   if (type === "application/vnd.ant.mermaid" || type === "text/mermaid") return fenced("mermaid", trimmed);
   if (type === "text/markdown") return trimmed;
   if (type.includes("chart") || looksLikeChart(trimmed)) return fenced("chart", trimmed);

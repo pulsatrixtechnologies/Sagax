@@ -247,12 +247,23 @@ export function ActivityDetailModal({ item, onClose, onChanged }: {
   }, []);
 
   const stop = () => {
-    if (!detail?.threadId) return;
     setStopping(true);
+    const finish = () => { setStopping(false); void load(); onChanged(); };
+    if (current.id.startsWith("cloud:")) {
+      const cloudId = current.id.slice("cloud:".length);
+      void api(`/api/bots/${encodeURIComponent(current.botId)}/cloud-agents/${encodeURIComponent(cloudId)}/cancel`, { method: "POST" })
+        .catch(() => setStopping(false))
+        .finally(finish);
+      return;
+    }
+    if (!detail?.threadId) {
+      setStopping(false);
+      return;
+    }
     // a parallel task stops on its own: its conversation gets the outcome
     if (detail.parallel) dispatch({ type: "stopParallelTask", botId: detail.botId, threadId: detail.threadId });
     else dispatch({ type: "interrupt", botId: detail.botId, threadId: detail.threadId, onError: () => setStopping(false) });
-    window.setTimeout(() => { setStopping(false); void load(); onChanged(); }, 1_500);
+    window.setTimeout(finish, 1_500);
   };
   const openThread = (threadBotId: string, threadId: string) => {
     if (threadBotId !== state.selectedId) dispatch({ type: "select", id: threadBotId });

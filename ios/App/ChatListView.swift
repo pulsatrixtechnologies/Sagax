@@ -16,6 +16,7 @@ struct ChatListView: View {
     @AppStorage(PrefKey.activityDetail) private var activityDetail = ActivityDetail.full.rawValue
     @AppStorage(PrefKey.rosterDensity) private var rosterDensity = RosterDensity.default.rawValue
     @AppStorage(PrefKey.updatesButton) var showUpdatesButton = false
+    @AppStorage(PrefKey.rosterChromeAtTop) private var rosterChromeAtTop = false
     /// Driven so that making a bot can open it. Value-based navigation alone
     /// cannot push without a tap, and a new bot appearing silently at the
     /// bottom of the roster is a poor answer to pressing +.
@@ -85,6 +86,11 @@ struct ChatListView: View {
                 guard let chat else { return }
                 path.append(chat)
                 session.consumePendingChat()
+            }
+            .onValueChange(of: session.pendingInbox) { open in
+                guard open else { return }
+                showingUpdates = true
+                session.consumePendingInbox()
             }
             .task {
                 if let chat = session.notificationChat {
@@ -212,6 +218,7 @@ struct ChatListView: View {
             GeometryReader { _ in
             VStack(spacing: 0) {
                 header
+                if rosterChromeAtTop { bottomBar }
                 StatusBanner()
 
                 ScrollView {
@@ -278,7 +285,9 @@ struct ChatListView: View {
                 }
                 // The list scrolls beneath the floating bar, and its end is
                 // inset by the bar's measured height rather than a guess.
-                .safeAreaInset(edge: .bottom, spacing: 0) { bottomBar }
+                .safeAreaInset(edge: .bottom, spacing: 0) {
+                    if !rosterChromeAtTop { bottomBar }
+                }
             }
             // top-aligned: the roster fills downward from the header
             .frame(maxWidth: CompanionLayout.rosterWidth, maxHeight: .infinity, alignment: .top)
@@ -360,7 +369,7 @@ struct ChatListView: View {
     private var rosterSections: some View {
         let layout = self.layout
         if !attention.isEmpty {
-            sectionLabel(Text("Needs attention"))
+            sectionLabel(Text("Inbox"))
                 .padding(.top, 2)
                 .padding(.bottom, 4)
             ForEach(attention) { entry in
@@ -1304,12 +1313,39 @@ extension ChatListView {
     // The home's sub-trees are type-erased: since the parity packages, their
     // concrete SwiftUI type nests deep enough that resolving it at launch
     // overflowed the main thread's stack on iPad (TestFlight build 6).
+    /// Extra scroll clearance when search and + sit under the account row.
+    private var standardTopChromeInset: CGFloat {
+        guard rosterChromeAtTop else { return 0 }
+        var extra = Theme.Metric.glassLarge + 8
+        if showUpdatesButton { extra += 52 }
+        return extra
+    }
+
     private var standardHome: some View {
+        let headerClearance = HomeMetrics.headerTop + HomeMetrics.headerHeight + 8 + standardTopChromeInset
+        return Group {
+            if rosterChromeAtTop {
+                standardHomeScroll(headerClearance: headerClearance)
+            } else {
+                standardHomeScroll(headerClearance: headerClearance)
+                    .safeAreaInset(edge: .bottom, spacing: 0) { AnyView(standardBottomBar) }
+            }
+        }
+        .overlay(alignment: .top) {
+            if CompanionLayout.supportsIslandPresentation {
+                NeedsYouIsland(
+                    update: session.state.updates.first { $0.kind == .needsYou }
+                ) { chat in path.append(chat) }
+            }
+        }
+    }
+
+    private func standardHomeScroll(headerClearance: CGFloat) -> some View {
         ZStack(alignment: .top) {
             Theme.bg.ignoresSafeArea()
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
-                    Color.clear.frame(height: HomeMetrics.headerTop + HomeMetrics.headerHeight + 8)
+                    Color.clear.frame(height: headerClearance)
                     StatusBanner()
                         .frame(maxWidth: .infinity)
                     if session.isDemo { DemoBanner() }
@@ -1329,7 +1365,7 @@ extension ChatListView {
                 await AccountRowModel.shared.refresh(session)
             }
             .accessibilityIdentifier("roster-list")
-            .topScrollEdgeFade(height: HomeMetrics.headerTop + HomeMetrics.headerHeight + 8)
+            .topScrollEdgeFade(height: headerClearance)
             .overlay {
                 if rosterIsEmpty {
                     EmptyStateView(
@@ -1341,30 +1377,42 @@ extension ChatListView {
             }
             AnyView(standardHeader)
         }
-        .safeAreaInset(edge: .bottom, spacing: 0) { AnyView(standardBottomBar) }
-        .overlay(alignment: .top) {
-            if CompanionLayout.supportsIslandPresentation {
-                NeedsYouIsland(
-                    update: session.state.updates.first { $0.kind == .needsYou }
-                ) { chat in path.append(chat) }
-            }
-        }
     }
 
     // MARK: Header
 
     private var standardHeader: some View {
-        HStack(spacing: Theme.Metric.controlGap) {
-            HomeAccountButton(select: selectAccount)
-            Spacer(minLength: 0)
+        VStack(spacing: Theme.Metric.controlGap) {
+            HStack(spacing: Theme.Metric.controlGap) {
+                HomeAccountButton(select: selectAccount)
+                Spacer(minLength: 0)
+                if rosterChromeAtTop {
+                    standardChromeTrailing
+                }
+            }
+            if rosterChromeAtTop, showUpdatesButton {
+                updatesButton
+                    .padding(.horizontal, Theme.Metric.screenEdge - Theme.Metric.controlGap)
+            }
         }
         .padding(.horizontal, Theme.Metric.screenEdge)
         .padding(.top, HomeMetrics.headerTop)
+        .padding(.bottom, rosterChromeAtTop ? 8 : 0)
     }
 
-    /// Search and + sit at the bottom, within thumb's reach; with the
-    /// Personalization switch on, the large Updates button (the comfortable
-    /// home's pill) leads the row.
+    /// Search and + at the trailing edge (top placement) or in the bottom bar.
+    private var standardChromeTrailing: some View {
+        HStack(spacing: Theme.Metric.controlGap) {
+            GlassCircleButton(systemImage: "magnifyingglass", accessibilityLabel: "Search") {
+                showingSearch = true
+            }
+            .accessibilityIdentifier("home-search")
+            newMenuButton
+        }
+    }
+
+    /// Search and + sit at the bottom by default, within thumb's reach; with
+    /// the Personalization switch on, the large Updates button leads the row.
     private var standardBottomBar: some View {
         HStack(spacing: Theme.Metric.controlGap) {
             if showUpdatesButton {
@@ -1373,11 +1421,7 @@ extension ChatListView {
             } else {
                 Spacer(minLength: 0)
             }
-            GlassCircleButton(systemImage: "magnifyingglass", accessibilityLabel: "Search") {
-                showingSearch = true
-            }
-            .accessibilityIdentifier("home-search")
-            newMenuButton
+            standardChromeTrailing
         }
         .padding(.horizontal, Theme.Metric.screenEdge)
         .padding(.bottom, 8)
@@ -1422,7 +1466,7 @@ extension ChatListView {
         // waits on the person.
         let waitingOnYou = attention.filter { $0.task.activity == "waiting-on-you" }
         if !waitingOnYou.isEmpty {
-            section(key: "__attention", title: String(localized: "Needs attention")) {
+            section(key: "__attention", title: String(localized: "Inbox")) {
                 ForEach(waitingOnYou) { entry in
                     Button {
                         Haptics.selection()

@@ -253,3 +253,48 @@ final class ComputerChoiceTests: XCTestCase {
         XCTAssertNil(b.chosen(worksOnLocal: true, picked: nil))
     }
 }
+
+/// The machine menu lists each computer by its full name, with its power.
+final class ComputerMenuTests: XCTestCase {
+    private let labels = ComputerMenuLabels(cloud: "Cloud", screen: "Screen", browser: "Browser", computer: "Computer")
+
+    func testListsEachComputerByItsFullName() {
+        let choices: [ComputerChoice] = [
+            .cloud,
+            .desktop(id: "d2", name: "GOX-PC-07", platform: "win32"),
+            .desktop(id: "d1", name: "Jean-Christophes-MacBook-Pro", platform: "darwin"),
+        ]
+        let rows = ComputerMenu.rows(
+            organization: true, choices: choices, worksOnKey: "server", browser: true, labels: labels,
+            powers: ["server": .off, "desktop:d2": .on]
+        )
+        XCTAssertEqual(rows.map(\.key), ["server", "desktop:d2", "desktop:d1", "browser"])
+        XCTAssertEqual(rows.map(\.name), ["Cloud", "GOX-PC-07", "Jean-Christophes-MacBook-Pro", "Browser"])
+        XCTAssertEqual(rows.map(\.symbol), ["cloud", "laptopcomputer", "laptopcomputer", "globe"])
+        XCTAssertEqual(rows.map(\.here), [true, false, false, false])
+        XCTAssertEqual(rows.map(\.power), [.off, .on, nil, nil])
+    }
+
+    func testASoloServerIsScreenThenBrowser() {
+        let rows = ComputerMenu.rows(organization: false, choices: [.cloud], worksOnKey: nil, browser: true, labels: labels)
+        XCTAssertEqual(rows.map(\.key), ["screen", "browser"])
+        XCTAssertEqual(rows.map(\.power), [nil, nil])
+        let screen = ComputerMenu.rows(organization: true, choices: [], worksOnKey: nil, browser: false, labels: labels)
+        XCTAssertEqual(screen.map(\.key), ["screen"])
+    }
+
+    func testPowerFollowsTheScreenAndTheServerEnvironment() {
+        XCTAssertEqual(ComputerPower.from(screen: .running), .on)
+        XCTAssertEqual(ComputerPower.from(screen: .off), .off)
+        XCTAssertEqual(ComputerPower.from(screen: .paused), .paused)
+        XCTAssertEqual(ComputerPower.from(screen: .starting), .starting)
+        XCTAssertEqual(ComputerPower.from(screen: .error), .error)
+        XCTAssertEqual(ComputerPower.from(environment: ServerEnvironmentStatus(configured: false)), .off)
+        XCTAssertEqual(ComputerPower.from(environment: ServerEnvironmentStatus(configured: true, state: "running")), .on)
+        XCTAssertEqual(ComputerPower.from(environment: ServerEnvironmentStatus(configured: true, state: "paused")), .paused)
+        XCTAssertEqual(ComputerPower.from(environment: ServerEnvironmentStatus(configured: true, state: "stopped")), .off)
+        XCTAssertEqual(ComputerPower.from(environment: ServerEnvironmentStatus(configured: true, state: "missing")), .off)
+        XCTAssertEqual(ComputerPower.from(environment: ServerEnvironmentStatus(configured: true, state: "weird")), .unavailable)
+        XCTAssertEqual(ComputerPower.from(environment: ServerEnvironmentStatus(configured: true)), .unavailable)
+    }
+}

@@ -269,7 +269,6 @@ final class SettingsAppearanceUITests: XCTestCase {
         var arguments = [
             "-parityEndpoint", endpoint, "-parityToken", token, "-parityScreen", "01-home",
             "-AppleLanguages", "(en)", "-AppleLocale", "en_US",
-            "-companion.prefs.islandIntro", "never", "-companion.onboarding.welcomeSeen", "YES",
             "-companion.onboarding.notificationsSeen", "YES",
         ]
         if let environment { arguments += ["-parityEnvironment", environment] }

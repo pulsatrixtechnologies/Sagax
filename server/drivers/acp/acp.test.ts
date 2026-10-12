@@ -2731,6 +2731,35 @@ createInterface({ input: process.stdin }).on("line", (line) => {
       expect(launches()).toBe(3);
     });
 
+    it("primes a call's prompt cache in the background, then the spoken turn prompts again", async () => {
+      countFile = join(scratch, "launches");
+      const appendFile = join(scratch, "rpc-all.jsonl");
+      process.env.FAKE_ACP_LAUNCH_COUNT_FILE = countFile;
+      process.env.FAKE_ACP_RPC_APPEND_FILE = appendFile;
+      await create();
+      const agents = (token: string) => ({ agents: { command: process.execPath, args: [FAKE_CLI], env: { SAGAX_COMMS_TOKEN: token } } });
+      const calls = () => readFileSync(appendFile, "utf8").trim().split("\n").map((line) => JSON.parse(line).method as string)
+        .filter((method) => !method.endsWith(".result"));
+      await instance.adapter.sendTurn({
+        threadId: "t-call-prime", botId: "bot-warm", text: "", resumeCursor: "fake-acp-session",
+        keepWarm: true, warmOnly: true, cachePrime: true,
+        system: "You are Sage, on a phone call.",
+        integrations: agents("token-warm"),
+      });
+      await expect.poll(() => calls(), { timeout: 5_000 }).toEqual(["initialize", "authenticate", "session/load", "session/prompt"]);
+      expect(recorder.events.filter((event) => event.threadId === "t-call-prime")).toEqual([]);
+      expect(instance.adapter.hasSession("t-call-prime")).toBe(false);
+      const first = await instance.adapter.sendTurn({
+        threadId: "t-call-prime", botId: "bot-warm", text: "first spoken turn", resumeCursor: "fake-acp-session",
+        keepWarm: true, system: "You are Sage, on a phone call.",
+        integrations: agents("token-one"),
+      });
+      expect(first.reused).toBe(true);
+      expect(await recorder.until((event) => event.type === "turn.completed" && event.turnId === first.turnId)).toMatchObject({ ok: true });
+      expect(calls()).toEqual(["initialize", "authenticate", "session/load", "session/prompt", "session/prompt"]);
+      expect(launches()).toBe(1);
+    });
+
     it("does not load or prompt Qwen after Stop during old-process cleanup", async () => {
       const appendFile = join(scratch, "rpc-all.jsonl");
       process.env.FAKE_ACP_RPC_APPEND_FILE = appendFile;

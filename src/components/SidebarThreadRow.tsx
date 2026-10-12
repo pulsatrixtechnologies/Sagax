@@ -16,6 +16,8 @@ type ThreadRowTask = Pick<Task, "threadId" | "title" | "projectId" | "busy" | "a
   pinned?: boolean;
   createdAt?: number;
   updatedAt?: number;
+  /** A turn is running with Ultracode effort. */
+  ultracode?: boolean;
 };
 
 /** Local date and time. The runtime's timezone and locale are used on
@@ -380,7 +382,7 @@ export const SidebarThreadRow = memo(function SidebarThreadRow({ task, ownerId, 
         </span>
         {updatedLabel && <time dateTime={new Date(updatedAt).toISOString()} className="shrink-0 tabular-nums text-[10px] text-sidebar-ink-secondary">{updatedLabel}</time>}
         {task.pinned === true && <Pin size={11} className="shrink-0 text-sidebar-ink-secondary" aria-label={t("sidebar.bot.pin")} />}
-        {task.activity === "waiting-on-you" ? <span className="shrink-0 text-[10px] font-medium text-warning">{t("task.waiting")}</span> : isWaitingOnTeammate(task) ? <Clock3 size={11} className="shrink-0 text-sidebar-ink-secondary" aria-label={t("task.waitingOnTeammate")} /> : isWorking(task) ? <Loader2 size={11} className="shrink-0 animate-spin text-success" aria-label={activityLabel ?? t("chat.activity.working")} /> : task.queued ? <span className="shrink-0 text-[10px] text-sidebar-ink-secondary">{t("task.queued")}</span> : null}
+        {task.activity === "waiting-on-you" ? <span className="shrink-0 text-[10px] font-medium text-warning">{t("task.waiting")}</span> : isWaitingOnTeammate(task) ? <Clock3 size={11} className="shrink-0 text-sidebar-ink-secondary" aria-label={t("task.waitingOnTeammate")} /> : isWorking(task) ? (task.ultracode ? <span className="size-2 shrink-0 rounded-full ultracode-sidebar-dot animate-status-pulse" aria-label={activityLabel ?? t("chat.activity.working")} /> : <Loader2 size={11} className="shrink-0 animate-spin text-success" aria-label={activityLabel ?? t("chat.activity.working")} />) : task.queued ? <span className="shrink-0 text-[10px] text-sidebar-ink-secondary">{t("task.queued")}</span> : null}
         {task.unread && <span className="sr-only">{t("task.unread")}</span>}
       </button>}
       <button ref={actionRef} type="button" aria-label={t("task.actions", { title: task.title })} aria-expanded={Boolean(menu)}

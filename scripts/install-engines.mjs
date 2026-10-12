@@ -8,10 +8,12 @@
 //   node scripts/install-engines.mjs --lock engines.lock.json --plan      (prints the selection, installs nothing)
 //
 // Selection, from the build arguments (the environment of the RUN step):
-//   ENGINE_SET      none (default: the public image carries no engine),
-//                   all (every engine of the lock: an organization server),
-//                   open (only the redistributable ones), or engine ids
-//                   ("claude codex grok").
+//   ENGINE_SET      all (the image default: every engine of the lock),
+//                   none or "" (install nothing; a production build with
+//                   SAGAX_REQUIRE_ENGINES=1 refuses this), open (only the
+//                   redistributable ones), or engine ids ("claude codex grok").
+//   SAGAX_REQUIRE_ENGINES  1, true or yes: fail the build unless the
+//                   selection is the full lock. The image defaults this on.
 //   ENGINES         legacy override: npm specs installed instead of the
 //                   lock's npm engines ("none" drops them). Perspicax's
 //                   PULSABOT_ENGINES lands here.
@@ -31,6 +33,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { gunzipSync } from "node:zlib";
+import { assessProductionManifest, enginesRequired } from "./engine-image-gate.mjs";
 
 const ENGINES_ROOT = "/opt/sagax-engines";
 const BIN_DIR = "/usr/local/bin";
@@ -75,9 +78,10 @@ export function selectEngines(lock, { engineSet = "", engines = "", nativeEngine
       for (const spec of words(npmOverride)) {
         const { name, version } = parseNpmSpec(spec);
         const known = all.find((engine) => engine.kind === "npm" && engine.package === name);
-        legacyNpm.push(known
-          ? { ...known, version: version || "latest", spec }
-          : { id: name, name, drivers: [], kind: "npm", package: name, version: version || "latest", bin: "", spec });
+        if (!known) throw new Error(`unknown npm engine: ${spec}`);
+        if (!version || version === "latest") throw new Error(`${name}: npm engines need an exact version, not latest`);
+        if (version !== known.version) throw new Error(`${name}@${version} does not match the locked ${known.version}`);
+        legacyNpm.push({ ...known, spec: `${known.package}@${known.version}` });
       }
     }
   }
@@ -98,6 +102,8 @@ export function selectEngines(lock, { engineSet = "", engines = "", nativeEngine
   for (const engine of [...chosen, ...legacyNpm]) {
     if (seen.has(engine.id)) continue;
     seen.add(engine.id);
+    const pin = npmPinError(engine);
+    if (pin) throw new Error(pin);
     if (engine.kind === "native" && !engine.artifacts?.[arch]) {
       unavailable.push({ id: engine.id, name: engine.name, drivers: engine.drivers ?? [], reason: `No ${engine.name} build for ${arch || "this architecture"}.` });
       continue;
@@ -123,6 +129,30 @@ function sha256(buffer) {
   return createHash("sha256").update(buffer).digest("hex");
 }
 
+/** Why an npm engine cannot be installed, or null. Exact version and a
+ * sha512 integrity, never `latest` and never an unknown package. */
+export function npmPinError(engine) {
+  if (engine?.kind !== "npm") return null;
+  const label = engine.package || engine.id;
+  if (!/^\d+\.\d+\.\d+(?:[-+].+)?$/.test(String(engine.version ?? ""))) {
+    return `${label}: npm engines need an exact version, not latest`;
+  }
+  if (typeof engine.integrity !== "string" || !/^sha512-[A-Za-z0-9+/]+=*$/.test(engine.integrity)) {
+    return `${label}: npm engines need a sha512 integrity`;
+  }
+  return null;
+}
+
+/** Registry tarball for a pinned package. The unscoped name is the file. */
+export function npmTarballUrl(pkg, version) {
+  const base = String(pkg).startsWith("@") ? String(pkg).slice(String(pkg).lastIndexOf("/") + 1) : String(pkg);
+  return `https://registry.npmjs.org/${pkg}/-/${base}-${version}.tgz`;
+}
+
+export function integrityMatches(buffer, integrity) {
+  return integrity === `sha512-${createHash("sha512").update(buffer).digest("base64")}`;
+}
+
 async function download(url, expected) {
   const response = await fetch(url, { redirect: "follow" });
   if (!response.ok) throw new Error(`download failed (${response.status}): ${url}`);
@@ -143,16 +173,27 @@ function link(target, bin) {
   return path;
 }
 
-function installNpm(engines) {
+async function installNpm(engines) {
   if (!engines.length) return;
-  const specs = engines.map((engine) => engine.spec);
-  // npm 11 runs a dependency's install script only when the package is
-  // named (Claude Code and Droid fetch their native binary that way), and
-  // the platform binaries ride optional dependencies.
-  const allow = engines.map((engine) => `--allow-scripts=${engine.package}`);
-  run("npm", ["install", "-g", "--loglevel=error", "--include=optional", "--no-fund", "--no-audit", ...allow, ...specs], {
-    env: { ...process.env, npm_config_update_notifier: "false" },
-  });
+  for (const engine of engines) {
+    const url = npmTarballUrl(engine.package, engine.version);
+    const response = await fetch(url, { redirect: "error" });
+    if (!response.ok) throw new Error(`download failed (${response.status}): ${url}`);
+    const buffer = Buffer.from(await response.arrayBuffer());
+    if (!integrityMatches(buffer, engine.integrity)) throw new Error(`integrity mismatch for ${engine.package}@${engine.version}`);
+    const scratch = mkdtempSync(join(tmpdir(), `engine-${engine.id}-`));
+    const file = join(scratch, "package.tgz");
+    writeFileSync(file, buffer);
+    // --ignore-scripts: the tarball is already checked. A root install script
+    // is not run, unless the lock says the package cannot work without its
+    // own postinstall (claude, kimi, opencode, droid place their native
+    // binary there). Native engines stay on their own hashed download.
+    const scripts = engine.installScripts === true ? [] : ["--ignore-scripts"];
+    run("npm", ["install", "-g", ...scripts, "--loglevel=error", "--include=optional", "--no-fund", "--no-audit", file], {
+      env: { ...process.env, npm_config_update_notifier: "false" },
+    });
+    rmSync(scratch, { recursive: true, force: true });
+  }
 }
 
 async function installNative(engine, arch) {
@@ -229,6 +270,20 @@ export function versionOf(bin, env = process.env) {
   }
 }
 
+/** Why a production build must stop, or null when the selection may ship.
+ * `requireEngines` false keeps the historical selector: "" and "none" install nothing. */
+export function productionRefusal(lock, { engineSet = "", engines = "", nativeEngines = "", arch = "", requireEngines = false } = {}) {
+  if (!requireEngines) return null;
+  const { install } = selectEngines(lock, { engineSet, engines, nativeEngines, arch });
+  const manifest = {
+    engineSet: String(engineSet).trim() || "none",
+    installed: install.filter((engine) => engine.bin).map((engine) => ({ id: engine.id, bin: engine.bin })),
+  };
+  const verdict = assessProductionManifest(manifest, lock);
+  if (verdict.ok) return null;
+  return `production image refused: engine_missing ${verdict.errors.join("; ")}`;
+}
+
 function parseArgs(argv) {
   const options = { lock: "", manifest: "", plan: false };
   for (let index = 0; index < argv.length; index += 1) {
@@ -248,17 +303,22 @@ async function main() {
   const lock = JSON.parse(readFileSync(options.lock, "utf8"));
   const engineSet = process.env.ENGINE_SET ?? "";
   const arch = process.env.TARGETARCH || (process.arch === "arm64" ? "arm64" : process.arch === "x64" ? "amd64" : process.arch);
-  const { install, unavailable } = selectEngines(lock, {
+  const engines = process.env.ENGINES ?? "";
+  const nativeEngines = process.env.NATIVE_ENGINES ?? "";
+  const refusal = productionRefusal(lock, {
     engineSet,
-    engines: process.env.ENGINES ?? "",
-    nativeEngines: process.env.NATIVE_ENGINES ?? "",
+    engines,
+    nativeEngines,
     arch,
+    requireEngines: enginesRequired(process.env.SAGAX_REQUIRE_ENGINES),
   });
+  if (refusal) throw new Error(refusal);
+  const { install, unavailable } = selectEngines(lock, { engineSet, engines, nativeEngines, arch });
   if (options.plan) {
     console.log(JSON.stringify({ engineSet: engineSet || "none", arch, install: install.map(({ id, kind, version }) => ({ id, kind, version })), unavailable }, null, 2));
     return;
   }
-  installNpm(install.filter((engine) => engine.kind === "npm"));
+  await installNpm(install.filter((engine) => engine.kind === "npm"));
   for (const engine of install) {
     if (engine.kind === "native") await installNative(engine, arch);
     else if (engine.kind === "python") await installPython(engine);

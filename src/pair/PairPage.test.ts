@@ -15,10 +15,10 @@ afterEach(() => {
 });
 
 describe("sign-in errors (slice 6, fix 2)", () => {
-  it("says Perspicax is busy on a rate limit, in English and Quebec French", () => {
-    expect(signInErrorText("rate_limited")).toBe("Perspicax is busy right now. Wait a minute and try again.");
+  it("says Sagax Business is busy on a rate limit, in English and Quebec French", () => {
+    expect(signInErrorText("rate_limited")).toBe("Sagax Business is busy right now. Wait a minute and try again.");
     setLocale("fr");
-    expect(signInErrorText("rate_limited")).toBe("Perspicax est occupé en ce moment. Attendez une minute et réessayez.");
+    expect(signInErrorText("rate_limited")).toBe("Sagax Business est occupé en ce moment. Attendez une minute et réessayez.");
   });
 });
 
@@ -73,7 +73,8 @@ describe("the pairing hash", () => {
     vi.stubGlobal("navigator", { userAgent: "test" });
     vi.stubGlobal("window", { ogb: { platform: "darwin", takeSignInReturn: async () => true } });
     const html = renderToStaticMarkup(createElement(PairPage, { initialCode: CREDENTIAL, autoSubmit: true }));
-    expect(html).toContain("Finishing sign-in...");
+    expect(html).toContain("data-testid=\"connection-sign-in\"");
+    expect(html).toContain("Sagax Business");
     expect(html).not.toContain("pair-code");
     const form = renderToStaticMarkup(createElement(PairPage, { initialCode: "ABCD-EFGH-JKLM" }));
     expect(form).toContain("pair-code");

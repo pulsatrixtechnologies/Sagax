@@ -1,9 +1,8 @@
 // The chat's top bar (reference 02): back, the name capsule and its menu,
-// the computer button, and the island greeting. Split out of ChatView.swift
-// unchanged so the iPhone and the future iPad desktop layout share it.
+// and the computer button. Split out of ChatView.swift so the iPhone and the
+// iPad desktop layout share it.
 import SwiftUI
 import CompanionCore
-import UIKit
 
 extension ChatView {
     var mascotState: MausState { MausState.forChat(current, in: session.state) }
@@ -54,7 +53,7 @@ extension ChatView {
                     Color.clear.frame(width: Theme.Metric.glassLarge, height: Theme.Metric.glassLarge)
                 }
             }
-            ChatNameCapsule(chat: current, state: mascotState, mascotHidden: islandVisible) { openProfile() }
+            ChatNameCapsule(chat: current, state: mascotState) { openProfile() }
                 .frame(maxWidth: 230)
                 .contextMenu { nameCapsuleMenu }
                 .accessibilityLabel(Text(PeopleDirectory.shared.name(current, session: session)))
@@ -195,42 +194,4 @@ extension ChatView {
         }
     }
 
-    /// The island greeting: the face grows in the island, then shrinks into
-    /// the capsule's 24 pt mascot seat. One face in one layer, measured from
-    /// the screen's top edge.
-    var islandFace: some View {
-        let topInset = IslandGeometry.topInset
-        let islandSide: CGFloat = 220
-        // centred in the part of the square the hardware island does not cover
-        let islandFaceCentre = IslandGeometry.top + IslandGeometry.size.height + (islandSide - IslandGeometry.size.height) / 2
-        let seatCentre = topInset + 6 + Theme.Metric.glassLarge / 2
-        let seatSize = Theme.Chat.capsuleMascot
-        let faceSize = seatSize + (132 - seatSize) * facePhase
-        let faceCentre = seatCentre + (islandFaceCentre - seatCentre) * facePhase
-        let seatOffsetX = Self.capsuleMascotOffset(name: current.name) * (1 - facePhase)
-        let state = mascotState
-        return ZStack(alignment: .top) {
-            if islandVisible {
-                IslandShell(expanded: islandExpanded, expandedSize: CGSize(width: islandSide, height: islandSide)) {
-                    Color.clear
-                }
-                ChatAvatarView(chat: current, size: faceSize, state: state, animated: true, comets: islandExpanded)
-                    .offset(x: seatOffsetX, y: faceCentre - faceSize / 2)
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .top)
-        .ignoresSafeArea(edges: .top)
-        .allowsHitTesting(false)
-        .accessibilityHidden(true)
-    }
-
-    /// The capsule mascot's centre relative to the screen's centre: the
-    /// capsule is 12 + 24 + 10 + name + 14 wide and centred.
-    static func capsuleMascotOffset(name: String) -> CGFloat {
-        let nameWidth = ceil((name as NSString).size(withAttributes: [
-            .font: UIFont.systemFont(ofSize: 14, weight: .medium),
-        ]).width)
-        let width = min(230, 12 + Theme.Chat.capsuleMascot + 10 + nameWidth + 14)
-        return -width / 2 + 12 + Theme.Chat.capsuleMascot / 2
-    }
 }

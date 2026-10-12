@@ -14,6 +14,7 @@ import { normalizeCronSchedule } from "../../shared/routine-schedule.ts";
 
 import { peerName } from "../peer-roster.ts";
 import { renderPeerDeliveryReceipts, type PeerDeliveryOutcome, type PeerDeliveryReceipt } from "../peer-delivery.ts";
+import { CLOUD_AGENT_READ_TOOLS, CLOUD_AGENT_WRITE_TOOLS, cloudAgentToolAction } from "../../shared/cloud-agents.ts";
 import { AGENT_API_TOOL_NAMES, catalogProfileFromEnv, SHARED_COMPUTER_TOOL_NAMES, WEEKDAYS } from "./agents-catalog.ts";
 import { harnessClientFromEnv } from "./agents-client.ts";
 import type { HarnessClient, Json } from "./agents-client.ts";
@@ -934,6 +935,37 @@ export async function callTool(name: string, args: Json, context: ToolCallContex
       text: `A secure ${r.label ?? CREDENTIAL_TARGETS[credentialId].label} request is ready. The desktop app and a freshly QR-paired mobile app show its secure entry card; older mobile pairings explain how to pair again or finish on the computer. End this turn; Sagax will resume the task after the user saves or declines. Never ask them to paste the key into chat.`,
     };
   }
+  if (name === "list_terminal_resources") {
+    const query = new URLSearchParams({ fromBotId: BOT_ID, fromThreadId: THREAD_ID });
+    const r = await api(`/api/internal/terminal/resources?${query.toString()}`);
+    const resources = Array.isArray(r.resources) ? r.resources : [];
+    if (!resources.length) {
+      return { text: "No shell-capable resources are available for this person on this server." };
+    }
+    return { text: `Terminal-capable resources:\n${JSON.stringify(resources, null, 2)}` };
+  }
+  if (name === "offer_shell_terminal") {
+    const resourceId = typeof args.resource_id === "string" ? args.resource_id.trim() : "";
+    const provider = typeof args.provider === "string" ? args.provider.trim() : "";
+    const reason = typeof args.reason === "string" ? args.reason.trim().slice(0, 500) : "";
+    if (!resourceId || !provider || !reason) {
+      return { text: "offer_shell_terminal needs resource_id, provider, and reason.", isError: true };
+    }
+    const r = await api("/api/internal/terminal/offer", {
+      method: "POST",
+      body: JSON.stringify({
+        fromBotId: BOT_ID,
+        fromThreadId: THREAD_ID,
+        resourceId,
+        provider,
+        reason,
+      }),
+    });
+    if (r.error) return { text: String(r.error), isError: true };
+    return {
+      text: "A terminal approval card is in the chat. End this turn; the person must tap Ouvrir un terminal before any shell opens. Never ask them to paste passwords into chat.",
+    };
+  }
   if (name === "send_voice_note") {
     if (typeof args.text !== "string" || !args.text.trim()) {
       return { text: "send_voice_note needs text: the short speakable note, at most 1000 characters.", isError: true };
@@ -1369,6 +1401,27 @@ export async function callTool(name: string, args: Json, context: ToolCallContex
     return {
       text: `A confirmation card is now visible to the user for ${proposal}.${warningText}\n\n${status} End this turn and wait for the decision.`,
     };
+  }
+  const cloudAgentAction = cloudAgentToolAction(name);
+  if (cloudAgentAction) {
+    if (!CLOUD_AGENT_READ_TOOLS.has(name) && !CLOUD_AGENT_WRITE_TOOLS.has(name)) {
+      return { text: `Unknown cloud agent tool: ${name}`, isError: true };
+    }
+    const payload: Json = { ...args };
+    if (name === "launch_cloud_agent") {
+      const repoUrl = typeof args.repo_url === "string" ? args.repo_url.trim() : "";
+      const ref = typeof args.ref === "string" ? args.ref.trim() : "";
+      if (repoUrl) payload.repos = [{ url: repoUrl, ...(ref ? { ref } : {}) }];
+      delete payload.repo_url;
+      delete payload.ref;
+    }
+    const { ok, body } = await apiResponse(`/api/internal/cloud-agents/${cloudAgentAction}`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+    const text = String(body.text ?? body.error ?? "").slice(0, 8000);
+    if (!ok || body.isError) return { text: text || "The cloud agent call was refused.", isError: true };
+    return { text: text || "Done." };
   }
   if (name === "add_mcp_server") {
     let saved: Json;

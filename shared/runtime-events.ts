@@ -124,7 +124,16 @@ export type RuntimeEvent = RuntimeEventBase &
         parentItemId?: string;
       }
     | { type: "item.updated"; itemType: "tool" | "reasoning"; tokens?: number | null }
-    | { type: "item.completed"; itemType: "tool"; ok: boolean; output?: string }
+    | {
+        type: "item.completed";
+        itemType: "tool";
+        ok: boolean;
+        output?: string;
+        /** A ConnectWise call's whole result (server/tool-summary.ts
+         * cwToolResult), read once for its widget. Never broadcast, never
+         * written to the event log. */
+        resultText?: string;
+      }
     | { type: "item.completed"; itemType: "assistant_text"; text: string }
     /** Provider-generated raster bytes. This event is folded into the
      * private attachment store and is never forwarded to renderer SSE: a

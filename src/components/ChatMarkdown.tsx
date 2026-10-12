@@ -64,12 +64,16 @@ import {
   unclosedFenceOffset,
   type CalloutKind,
 } from "../lib/rich-blocks";
+import { parseCwWidgetText } from "../../shared/cw-widgets/validate.ts";
+import { CwWidgetView } from "./cw/CwWidgetView";
 import { ArtifactCard } from "./ArtifactCard";
 import { EmailCard } from "./EmailCard";
 import { WidgetFrame } from "./WidgetFrame";
 import { ChartBlock } from "./ChartBlock";
 import { RichTable, tableModelFromDelimited, tableModelFromMarkdown } from "./RichTable";
 import { TableFileButton } from "./TableFilePreview";
+import { youtubeVideoId } from "../../shared/video-widget.ts";
+import { YouTubeMiniPlayer } from "./video/YouTubeMiniPlayer";
 
 // highlighted code, so revisiting a thread doesn't re-tokenize settled
 // blocks; keys are content hashes. The two-theme HTML is about 20 to 28 times
@@ -1068,9 +1072,11 @@ const MAY_LINK_THREAD = /#|openmausbot|sagax/i;
 const NO_THREAD_REFS: ThreadRefsValue = { threads: [] };
 
 /** Render message Markdown with math, protected code, scoped attachments, and mentions. */
-function ChatMarkdownComponent({ text, message, mentionPeers = NO_MENTION_PEERS, everyone = false }: {
-  text: string; message?: MessageAttachmentContext;
+function ChatMarkdownComponent({ text, message, botId, mentionPeers = NO_MENTION_PEERS, everyone = false, youtubeSendToBot }: {
+  text: string; message?: MessageAttachmentContext; botId?: string;
   mentionPeers?: readonly MentionPeer[]; everyone?: boolean;
+  /** When set, the YouTube widget can hand a fetched transcript to the bot. */
+  youtubeSendToBot?: (text: string) => void;
 }) {
   // "#Title" mentions link to the threads the person can see (ThreadRefs);
   // @mentions were already decorated by remarkMentions, which runs first.
@@ -1142,6 +1148,10 @@ function ChatMarkdownComponent({ text, message, mentionPeers = NO_MENTION_PEERS,
           return <MermaidDiagram code={code} />;
         }
         const kind = richFenceKind(lang);
+        if (kind === "cw" && !pending) {
+          const widget = parseCwWidgetText(code);
+          if (widget) return <CwWidgetView widget={widget} threadId={threadId} botId={botId} />;
+        }
         const email = kind === "email" || !kind ? parseEmailBlock(code, lang) : null;
         if (email) return <EmailCard draft={email} pending={pending} />;
         if (kind === "widget") {
@@ -1221,6 +1231,16 @@ function ChatMarkdownComponent({ text, message, mentionPeers = NO_MENTION_PEERS,
         if (address || (href && looksLikeThreadRefUrl(href))) return <span className="break-words">{children}</span>;
         const localPath = localFilePath(href);
         if (localPath) return <LocalFileLink filePath={localPath} message={scopedMessage}>{children}</LocalFileLink>;
+        const ytId = href ? youtubeVideoId(href) : null;
+        if (ytId) {
+          return (
+            <YouTubeMiniPlayer
+              videoId={ytId}
+              message={scopedMessage}
+              onSendToBot={youtubeSendToBot}
+            />
+          );
+        }
         return (
           <a
             href={href}
@@ -1325,7 +1345,7 @@ function ChatMarkdownComponent({ text, message, mentionPeers = NO_MENTION_PEERS,
         return <hr className="border-hairline/40" />;
       },
     } as Components;
-  }, [threadId, messageId, threads, currentBotId, openFence, prefix]);
+  }, [threadId, messageId, botId, threads, currentBotId, openFence, prefix]);
   return (
     <div className="chat-md min-w-0 [&>*+*]:mt-2">
       <Markdown
@@ -1362,4 +1382,6 @@ export const ChatMarkdown = memo(ChatMarkdownComponent, (previous, next) => (
   && previous.everyone === next.everyone
   && previous.message?.threadId === next.message?.threadId
   && previous.message?.messageId === next.message?.messageId
+  && previous.youtubeSendToBot === next.youtubeSendToBot
+  && previous.botId === next.botId
 ));

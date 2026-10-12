@@ -48,11 +48,13 @@ public struct VoiceCallMeta: Codable, Hashable, Sendable {
     public var unheard: String?
     /// It completes the fragment sent just before (cut by a pause).
     public var continues: Bool?
+    /// Full-duplex: replace the in-flight turn, never steer or queue.
+    public var duplex: Bool?
 
     /// The longest heard or unheard excerpt kept (server VOICE_CALL_EXCERPT_MAX).
     public static let excerptMax = 1_200
 
-    public init(callId: String, interrupted: Bool = false, language: String? = nil, utteranceId: String? = nil, cut: PlaybackCut? = nil, continues: Bool = false) {
+    public init(callId: String, interrupted: Bool = false, language: String? = nil, utteranceId: String? = nil, cut: PlaybackCut? = nil, continues: Bool = false, duplex: Bool = false) {
         self.callId = callId
         self.interrupted = interrupted ? true : nil
         // "auto" is never sent: the server takes only a picked language
@@ -64,6 +66,7 @@ public struct VoiceCallMeta: Codable, Hashable, Sendable {
             unheard = Self.excerpt(cut.unheard)
         }
         self.continues = continues ? true : nil
+        self.duplex = duplex ? true : nil
     }
 
     private static func excerpt(_ text: String) -> String? {
@@ -82,6 +85,7 @@ public struct VoiceCallMeta: Codable, Hashable, Sendable {
             if let unheard { out["unheard"] = unheard }
         }
         if let language { out["language"] = language }
+        if duplex == true { out["duplex"] = true }
         return out
     }
 }

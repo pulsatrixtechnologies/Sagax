@@ -127,6 +127,7 @@ extension CompanionState {
         case .secret: return last.secret?.label ?? last.text ?? "Credential required"
         case .activity: return last.tool?.name ?? ""
         case .screen: return "Screenshot"
+        case .video: return last.video?.title ?? "Video"
         case .digest: return ""
         case .compaction: return last.compaction?.chipText ?? last.text ?? ""
         case .routineRun: return last.routineRun?.previewLine ?? last.text ?? ""

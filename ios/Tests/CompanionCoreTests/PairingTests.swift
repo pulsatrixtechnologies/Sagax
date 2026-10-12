@@ -114,7 +114,8 @@ final class PairingTests: XCTestCase {
             name: "Mac",
             host: "mac.tail1234.ts.net",
             port: 8810,
-            hosts: ["mac.tail1234.ts.net", "192.168.1.42", "openmausbot-aa.local"]
+            hosts: ["mac.tail1234.ts.net", "192.168.1.42", "openmausbot-aa.local"],
+            allowedTailnetHost: "mac.tail1234.ts.net"
         )
 
         await XCTAssertThrowsErrorAsync(
@@ -149,7 +150,8 @@ final class PairingTests: XCTestCase {
             name: "Mac",
             host: "mac.tail1234.ts.net",
             port: 8810,
-            hosts: ["192.168.1.42"]
+            hosts: ["192.168.1.42"],
+            allowedTailnetHost: "mac.tail1234.ts.net"
         )
 
         let outcome = try await CompanionClient.pairFirstReachable(
@@ -189,7 +191,8 @@ final class PairingTests: XCTestCase {
             host: hosted.host,
             port: hosted.port,
             activeEndpoint: hosted,
-            endpoints: [hosted, tailnet]
+            endpoints: [hosted, tailnet],
+            allowedTailnetHost: tailnet.host
         )
         let requestId = "4c825d5b-cf40-4db7-aac5-2455f805a8ec"
 
@@ -286,7 +289,8 @@ final class PairingTests: XCTestCase {
             host: hosted.host,
             port: hosted.port,
             activeEndpoint: hosted,
-            endpoints: [hosted, tailnet, lan]
+            endpoints: [hosted, tailnet, lan],
+            allowedTailnetHost: tailnet.host
         )
         let requestId = "d350b2ac-7f92-4f30-bf80-21e040c1494b"
 
@@ -357,7 +361,8 @@ final class PairingTests: XCTestCase {
             name: "Mac",
             host: "mac.tail1234.ts.net",
             port: 8810,
-            hosts: ["192.168.1.42"]
+            hosts: ["192.168.1.42"],
+            allowedTailnetHost: "mac.tail1234.ts.net"
         )
 
         do {

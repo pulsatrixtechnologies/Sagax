@@ -130,7 +130,6 @@ final class MessageActionsUITests: XCTestCase {
             "-parityToken", fixture.token,
             "-parityScreen", "02-chat",
             "-AppleLanguages", "(en)", "-AppleLocale", "en_US",
-            "-companion.prefs.islandIntro", "never",
             "-companion.onboarding.welcomeSeen", "YES",
             "-companion.onboarding.notificationsSeen", "YES",
         ]

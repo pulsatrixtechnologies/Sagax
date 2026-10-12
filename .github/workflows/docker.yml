@@ -15,6 +15,11 @@ on:
       - src/**
       - enterprise/**
       - scripts/bundle-server.mjs
+      - scripts/install-engines.mjs
+      - scripts/engine-image-gate.mjs
+      - scripts/gox-deploy.mjs
+      - scripts/build-production-image.sh
+      - engines.lock.json
       - package.json
       - pnpm-lock.yaml
       - .github/workflows/docker.yml
@@ -23,6 +28,11 @@ on:
       - Dockerfile
       - .dockerignore
       - deploy/**
+      - engines.lock.json
+      - scripts/install-engines.mjs
+      - scripts/engine-image-gate.mjs
+      - scripts/gox-deploy.mjs
+      - scripts/build-production-image.sh
       - .github/workflows/docker.yml
 
 permissions:
@@ -32,11 +42,29 @@ jobs:
   build-and-smoke:
     name: build image + boot smoke
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Image identity
+        id: identity
+        run: echo "time=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
       - name: Build image
-        run: docker build -t openmausbot:ci .
+        run: |
+          docker build \
+            --build-arg ENGINE_SET=all \
+            --build-arg SAGAX_REQUIRE_ENGINES=1 \
+            --build-arg SAGAX_COMMIT_SHA="${{ github.sha }}" \
+            --build-arg SAGAX_BUILD_TIME="${{ steps.identity.outputs.time }}" \
+            -t openmausbot:ci .
+      - name: Refuse an image whose engine set is not the full production set
+        run: |
+          set -euo pipefail
+          docker run --rm --entrypoint cat openmausbot:ci /app/engines/manifest.json > /tmp/engines-manifest.json
+          docker inspect --format '{{json .Config.Labels}}' openmausbot:ci > /tmp/engines-labels.json
+          node scripts/engine-image-gate.mjs \
+            --manifest /tmp/engines-manifest.json \
+            --labels /tmp/engines-labels.json \
+            --sha "${{ github.sha }}"
       - name: Boot the container and prove the server + UI answer
         run: |
           set -euo pipefail
@@ -48,6 +76,19 @@ jobs:
           done
           # the renderer is served by the server itself (SAGAX_STATIC_DIR)
           docker exec omb curl -sf http://127.0.0.1:8799/ | grep -qi "<html" || { docker logs omb; echo "UI not served"; exit 1; }
+          docker exec omb curl -sf http://127.0.0.1:8799/healthz > /tmp/healthz.json
+          grep -q '"ok":true' /tmp/healthz.json
+          grep -q openmausbot /tmp/healthz.json
+          for i in $(seq 1 60); do
+            if docker logs omb 2>&1 | grep -q '\[engines\] self-check:'; then break; fi
+            sleep 2
+            if [ "$i" = "60" ]; then docker logs omb; echo "engine self-check never logged"; exit 1; fi
+          done
+          docker logs omb > /tmp/omb-engines.log 2>&1
+          node scripts/engine-image-gate.mjs --startup-log /tmp/omb-engines.log
+          for bin in claude grok codex cursor-agent; do
+            docker exec omb "$bin" --version
+          done
           docker logs omb | tail -5
       - name: Prove the image runs the open-source edition
         # This distribution does not ship the source-available enterprise layer.
@@ -105,16 +146,20 @@ jobs:
           docker tag openmausbot:ci ghcr.io/milind-soni/openmausbot:latest
           printf 'DOMAIN=localhost\nENGINES=\n' > deploy/.env
           docker compose -f deploy/docker-compose.yml up -d --no-build
+          ready=0
           for i in $(seq 1 45); do
-            curl -sk -o /dev/null --max-time 2 https://localhost/.well-known/openmausbot/environment && break
+            if curl -sk -o /dev/null --max-time 2 https://localhost/.well-known/openmausbot/environment; then
+              ready=1
+              break
+            fi
             sleep 2
-            if [ "$i" = "45" ]; then docker compose -f deploy/docker-compose.yml logs; echo "caddy never answered"; exit 1; fi
           done
+          if [ "$ready" != 1 ]; then docker compose -f deploy/docker-compose.yml logs; echo "caddy never answered"; exit 1; fi
           code() { curl -sk -o /dev/null -w '%{http_code}' --max-time 5 "$@"; }
           body() { curl -sk --max-time 10 "$@"; }
           H=https://localhost
           grep -q '"environmentId"' <<<"$(body $H/.well-known/openmausbot/environment)"   # descriptor is public
-          grep -q '^{"app":"openmausbot"}$' <<<"$(body $H/api/health)"             # the probe is public, and says only the app name
+          grep -q '^{"app":"openmausbot","product":"sagax"}$' <<<"$(body $H/api/health)"  # public probe: app and product, nothing else
           test "$(code $H/api/bots)" = 403                                        # nothing else before pairing
           grep -q 'pair this device' <<<"$(body $H/api/bots)"
           grep -qi '<html' <<<"$(body $H/pair)"                                    # the UI shell is served so /pair can load
@@ -270,12 +315,27 @@ jobs:
             type=raw,value=latest,enable={{is_default_branch}}
             type=sha,format=long
             type=ref,event=tag
+      - name: Image identity
+        run: echo "SAGAX_BUILD_TIME=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_ENV"
       - uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           context: .
           push: true
           tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
+          labels: |
+            ${{ steps.meta.outputs.labels }}
+            io.sagax.engine-set=none
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.created=${{ env.SAGAX_BUILD_TIME }}
+          # The public GHCR image carries no proprietary engine CLI
+          # (docs/custom-engines.md). Explicit, because the Dockerfile's default
+          # is the production set; private ACR builds (GOX) use
+          # scripts/build-production-image.sh (the full engine set).
+          build-args: |
+            ENGINE_SET=none
+            SAGAX_REQUIRE_ENGINES=0
+            SAGAX_COMMIT_SHA=${{ github.sha }}
+            SAGAX_BUILD_TIME=${{ env.SAGAX_BUILD_TIME }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
       # The Cloud Pro home machine (deploy/fly/Dockerfile) on top of the server image just

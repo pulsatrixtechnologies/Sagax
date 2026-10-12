@@ -69,6 +69,7 @@ import {
 } from "@/lib/composer-attachments";
 import { normalizeState } from "@/lib/mascot";
 import { goalCoordinatorForComposer, groupComposerHint, jevRoomRoutingOn, roomRespondersForComposer } from "@/lib/group-routing";
+import { ultracodeFromSelection } from "@/lib/ultracode-chrome";
 import { PendingApprovalBox, pendingApprovals, type Pending } from "./PendingApproval";
 import { useDesktopCapabilities } from "./DesktopCapabilities";
 import { ReplyQuote } from "./ReplyQuote";
@@ -1112,7 +1113,14 @@ export function Composer({
             width where the chips and the placeholder cannot share a line,
             the editor takes a full line of its own above the chips.
             The same row in Simple and Advanced mode. */}
-        <div data-tour="composer" className="@container/composer relative z-[1] min-h-11 rounded-[22px] border-[0.5px] border-border bg-composer px-2 py-1.5 shadow-[0_2px_8px_-1px_#0000000d,0_1px_2px_#00000008,0_0_0_1px_#e4e4e40a] transition-colors hover:border-border-strong focus-within:border-border-strong">
+        <div
+          data-tour="composer"
+          data-ultracode={bot && ultracodeFromSelection(bot.modelSelection) ? "" : undefined}
+          className={cn(
+            "@container/composer relative z-[1] min-h-11 rounded-[22px] border-[0.5px] border-border bg-composer px-2 py-1.5 shadow-[0_2px_8px_-1px_#0000000d,0_1px_2px_#00000008,0_0_0_1px_#e4e4e40a] transition-colors hover:border-border-strong focus-within:border-border-strong",
+            bot && ultracodeFromSelection(bot.modelSelection) && "ultracode-chrome",
+          )}
+        >
         <div data-composer-row className="flex items-end gap-1 @max-[30rem]/composer:flex-wrap">
           <input
             ref={fileInput}

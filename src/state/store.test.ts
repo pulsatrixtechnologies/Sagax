@@ -117,6 +117,20 @@ describe("independent bot threads", () => {
     expect(currentTaskBot({ ...bot, tasks: [{ threadId: "first", title: "Legacy", createdAt: 1 }] }).modelSelection).toEqual(bot.modelSelection);
   });
 
+  it("keeps the open thread idle in the composer while a routine runs on another thread", () => {
+    const withRoutine: Bot = {
+      ...bot,
+      busy: true,
+      activity: "working",
+      tasks: [
+        { threadId: "first", title: "First", createdAt: 1, activity: "idle", busy: false, unread: false },
+        { threadId: "routine", title: "Dispatch", createdAt: 2, activity: "working", busy: true, unread: false, routineRunId: "run-1" },
+      ],
+    };
+    expect(currentTaskBot(withRoutine).busy).toBe(false);
+    expect(bot.busy).toBe(true);
+  });
+
   it("edits only the pinned thread model and approval defaults", () => {
     const modelSelection = { instanceId: "codex", model: "new-model" };
     const modeled = reducer(start(), { type: "setModel", botId: bot.id, threadId: "first", selection: modelSelection });

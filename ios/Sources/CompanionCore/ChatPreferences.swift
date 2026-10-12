@@ -32,22 +32,6 @@ public enum ActivityDetail: String, CaseIterable, Codable, Sendable {
     }
 }
 
-/// When the island plays a bot's face on opening a chat.
-public enum IslandIntro: String, CaseIterable, Codable, Sendable {
-    case always
-    /// The first time each bot is opened, then never again for that bot.
-    case oncePerBot
-    case never
-
-    public var label: String {
-        switch self {
-        case .always: "Always"
-        case .oncePerBot: "First time per bot"
-        case .never: "Never"
-        }
-    }
-}
-
 /// One chip on the composer's quick-reply row.
 public struct QuickReply: Codable, Hashable, Identifiable, Sendable {
     public var id: String
@@ -241,6 +225,7 @@ func previewText(of message: Message) -> String {
         return message.secret?.label ?? message.text ?? "Credential required"
     case .activity: return message.tool?.name ?? ""
     case .screen: return "Screenshot"
+    case .video: return message.video?.title ?? "Video"
     case .digest: return ""
     case .compaction: return message.compaction?.chipText ?? message.text ?? ""
     case .routineRun: return message.routineRun?.previewLine ?? message.text ?? ""
@@ -273,6 +258,8 @@ public func isToolActivityRow(_ message: Message) -> Bool {
     if ErrorRowRules.isError(message) { return false }
     if isStatusNotice(message) { return false }
     if message.comm != nil || message.threadRef != nil { return false }
+    // A ConnectWise widget is the transcript row. The tool chip stays folded.
+    if message.tool?.widget != nil { return false }
     return true
 }
 

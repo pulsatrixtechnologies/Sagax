@@ -43,7 +43,7 @@ import { gateServer, resultBudget } from "../mcp-gate-config.ts";
 import { canUseMcpServer } from "../../shared/tool-scope.ts";
 import { assertToolScopeSupported } from "../../shared/tool-scope-support.ts";
 import { newEventId, newId, type TurnAccessInput } from "../contracts.ts";
-import { askInputDetail, askInputSummary, commandSummary, toolDetailPreview } from "../tool-summary.ts";
+import { askInputDetail, askInputSummary, commandSummary, cwToolResult, toolDetailPreview } from "../tool-summary.ts";
 import { filesField, writtenFilesFromToolInput } from "../thread-files.ts";
 import { classifyError, computeBackoff, interruptibleDelay, RETRY_MAX_ATTEMPTS } from "./retry.ts";
 import { sessionIdlePolicy } from "./session-idle.ts";
@@ -1728,8 +1728,9 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
         allowed.push("mcp__phone");
       }
       if (turn.integrations?.browser) {
+        // Mounted, not pre-allowed: file: and loopback navigations stay on
+        // the approval path, and the browser route refuses them outright.
         mcpServers.browser = { ...turn.integrations.browser };
-        allowed.push("mcp__browser");
       }
       // dweb network daemon (status / repo / opencode model access) via
       // server/drivers/dweb-proxy.ts — points at the configured dweb instance
@@ -2418,11 +2419,14 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
             }
             for (const b of Array.isArray(o.message?.content) ? o.message.content : []) {
               if (b.type === "tool_result") {
-                emit({ ...base(threadId, currentTurnId()), type: "item.completed", itemType: "tool", itemId: b.tool_use_id, ok: !b.is_error, output: toolDetailPreview(b.content) });
+                const toolName = typeof b.tool_use_id === "string" ? session.toolNames.get(b.tool_use_id) : undefined;
+                emit({
+                  ...base(threadId, currentTurnId()), type: "item.completed", itemType: "tool", itemId: b.tool_use_id, ok: !b.is_error, output: toolDetailPreview(b.content),
+                  ...(b.is_error ? {} : cwToolResult(toolName, b.content)),
+                });
                 for (const img of extractMcpImages(b.content)) {
                   emit({ ...base(threadId, currentTurnId()), type: "item.completed", itemType: "assistant_image", data: img.data });
                 }
-                const toolName = typeof b.tool_use_id === "string" ? session.toolNames.get(b.tool_use_id) : undefined;
                 if (!b.is_error && isArtifactTool(toolName)) {
                   const page = parseArtifactPublish(b.content);
                   if (page) {

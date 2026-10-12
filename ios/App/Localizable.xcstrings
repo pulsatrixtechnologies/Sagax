@@ -1,6 +1,114 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "Inbox": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Inbox"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Boîte de réception"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Caixa de entrada"
+          }
+        }
+      }
+    },
+    "Place search and the new button at the top of the home instead of the bottom.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Place search and the new button at the top of the home instead of the bottom."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Afficher la recherche et le bouton + en haut de l'accueil plutôt qu'en bas."
+          }
+        }
+      }
+    },
+    "Routines use the tools of the person they run as, once that person allows routines to act in their name.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Routines use the tools of the person they run as, once that person allows routines to act in their name."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Les routines utilisent les outils de la personne au nom de qui elles s'exécutent, une fois qu'elle les a autorisées à agir en son nom."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "As rotinas usam as ferramentas da pessoa em nome de quem rodam, depois que ela permite que as rotinas ajam em seu nome."
+          }
+        }
+      }
+    },
+    "Run failed": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Run failed"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Exécution échouée"
+          }
+        }
+      }
+    },
+    "Search and + at top": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Search and + at top"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Recherche et bouton + en haut"
+          }
+        }
+      }
+    },
+    "Works here": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Works here"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Travaille ici"
+          }
+        }
+      }
+    },
     "approval.outcome.alwaysAllowed": {
       "localizations": {
         "en": {
@@ -765,6 +873,42 @@
             "value": "concluído"
           }
         }
+      }
+    },
+    "computer.power.error": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Error" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Erreur" } }
+      }
+    },
+    "computer.power.off": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Off" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Éteint" } }
+      }
+    },
+    "computer.power.on": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "On" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Allumé" } }
+      }
+    },
+    "computer.power.paused": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Paused" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "En pause" } }
+      }
+    },
+    "computer.power.starting": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Starting" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Démarrage" } }
+      }
+    },
+    "computer.power.unavailable": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Unavailable" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Indisponible" } }
       }
     },
     "not completed": {
@@ -8345,6 +8489,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "Ver e gerenciar as threads de tarefas do bot"
+          }
+        }
+      }
+    },
+    "settings.brandFooter.copyright": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "© 2026 Pulsatrix Technologies Inc. All rights reserved."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "© 2026 Pulsatrix Technologies Inc. Tous droits réservés."
           }
         }
       }
@@ -26241,6 +26401,70 @@
             "value": "Excluir thread"
           }
         }
+      }
+    },
+    "youtube.fetchTranscript": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Get full transcript" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Obtenir la transcription complète" } }
+      }
+    },
+    "youtube.handoffPrompt": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Here is the full transcript of the YouTube video %@:\n\n%@\n\nSummarize it for me."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Voici la transcription complète de la vidéo YouTube %@ :\n\n%@\n\nRésume-la pour moi."
+          }
+        }
+      }
+    },
+    "youtube.playerTitle": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "YouTube video" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Vidéo YouTube" } }
+      }
+    },
+    "youtube.searchTranscript": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Search transcript" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Rechercher dans la transcription" } }
+      }
+    },
+    "youtube.sendToBot": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Send to bot" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Envoyer au robot" } }
+      }
+    },
+    "youtube.transcriptEmpty": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "No transcript loaded yet." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Aucune transcription chargée." } }
+      }
+    },
+    "youtube.transcriptError": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Could not load the transcript." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Impossible de charger la transcription." } }
+      }
+    },
+    "youtube.transcriptLoading": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Loading transcript…" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Chargement de la transcription…" } }
+      }
+    },
+    "youtube.transcriptPanel": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Transcript" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Transcription" } }
       }
     },
     "“%@” and its conversation will be deleted. This cannot be undone.": {

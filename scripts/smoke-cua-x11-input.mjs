@@ -28,17 +28,35 @@ chmodSync(runtime, 0o700);
 chmodSync(home, 0o700);
 
 const title = `Sagax CUA input safety ${process.pid}`;
-const xev = spawn(
-  "xev",
-  ["-name", title, "-geometry", "320x180+40+40"],
-  { env: process.env, stdio: ["ignore", "pipe", "pipe"] },
-);
+let xev;
 let xevOutput = "";
-for (const stream of [xev.stdout, xev.stderr]) {
-  stream.setEncoding("utf8");
-  stream.on("data", (chunk) => {
-    xevOutput += chunk;
-  });
+function startXev() {
+  const child = spawn(
+    "xev",
+    ["-name", title, "-geometry", "320x180+40+40"],
+    { env: process.env, stdio: ["ignore", "pipe", "pipe"] },
+  );
+  for (const stream of [child.stdout, child.stderr]) {
+    stream.setEncoding("utf8");
+    stream.on("data", (chunk) => {
+      xevOutput += chunk;
+    });
+  }
+  return child;
+}
+
+async function rootProperty(name) {
+  try {
+    const { stdout } = await execFileAsync("xprop", ["-root", name]);
+    return stdout;
+  } catch {
+    return "";
+  }
+}
+
+function xpropWindowId(text) {
+  const match = text.match(/window id # (0x[0-9a-f]+)/i);
+  return match ? Number(match[1]) : 0;
 }
 
 const driverProcess = spawn(
@@ -75,6 +93,7 @@ driverProcess.stderr.on("data", (chunk) => {
 });
 let proxy;
 let proxyError = "";
+let wm;
 
 const delay = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
 async function until(probe, description, timeout = 10_000) {
@@ -86,6 +105,9 @@ async function until(probe, description, timeout = 10_000) {
       throw new Error(
         `Cua Driver exited before ${description}: ${driverProcess.exitCode ?? driverProcess.signalCode}\n${driverError}`,
       );
+    }
+    if (xev && (xev.exitCode !== null || xev.signalCode !== null) && description.includes("test window")) {
+      throw new Error(`xev exited before ${description}:\n${xevOutput}`);
     }
     await delay(25);
   }
@@ -181,19 +203,32 @@ async function stop(child) {
 }
 
 try {
+  // xev first: that window is what the rest of the smoke searches for.
+  // Openbox afterwards manages it and publishes _NET_ACTIVE_WINDOW. Starting
+  // the WM first left xdotool unable to find xev; faking the atom left CUA
+  // reading active=0x0.
+  xev = startXev();
   const windowId = await until(async () => {
     if (xev.exitCode !== null || xev.signalCode !== null) {
       throw new Error(`xev exited before its test window appeared:\n${xevOutput}`);
     }
     const { stdout } = await execFileAsync("xdotool", [
       "search",
-      "--onlyvisible",
       "--name",
       `^${title}$`,
     ]);
     return stdout.trim().split(/\s+/)[0] || null;
   }, "the unrelated X11 test window");
   if (!windowId) throw new Error("xev test window did not appear");
+  const windowNumber = Number(windowId);
+
+  wm = spawn("openbox", ["--sm-disable"], { env: process.env, stdio: "ignore" });
+  wm.on("error", () => { wm = undefined; });
+  await until(
+    async () => xpropWindowId(await rootProperty("_NET_SUPPORTING_WM_CHECK")) || null,
+    "openbox EWMH",
+    8_000,
+  );
 
   const metadata = await until(
     async () => {
@@ -234,15 +269,43 @@ try {
     "start_session",
   );
   xevOutput = "";
+  await execFileAsync("xdotool", ["windowunmap", windowId]).catch(() => {});
+  await delay(50);
+  await execFileAsync("xdotool", ["windowmap", windowId]).catch(() => {});
+  await execFileAsync("xdotool", ["windowfocus", "--sync", windowId]).catch(() => {});
+  await execFileAsync("xdotool", ["windowraise", windowId]).catch(() => {});
+  await execFileAsync("xdotool", ["windowactivate", "--sync", windowId]).catch(() => {});
+  try {
+    await until(
+      async () => {
+        await execFileAsync("xdotool", ["windowactivate", "--sync", windowId]).catch(() => {});
+        const active = xpropWindowId(await rootProperty("_NET_ACTIVE_WINDOW"));
+        return active === windowNumber ? active : null;
+      },
+      "openbox _NET_ACTIVE_WINDOW",
+      8_000,
+    );
+  } catch (error) {
+    const active = await rootProperty("_NET_ACTIVE_WINDOW");
+    const support = await rootProperty("_NET_SUPPORTING_WM_CHECK");
+    throw new Error(`${error instanceof Error ? error.message : error}\nwindow=${windowNumber}\n${support}${active}`);
+  }
   const target = {
     session,
     pid: xev.pid,
-    window_id: Number(windowId),
+    window_id: windowNumber,
     x: 80,
     y: 80,
     scope: "window",
     delivery_mode: "foreground",
   };
+  assertToolResult(
+    await rpc("tools/call", {
+      name: "get_window_state",
+      arguments: { session, pid: xev.pid, window_id: windowNumber, include_screenshot: true },
+    }),
+    "get_window_state",
+  );
   assertToolResult(
     await rpc("tools/call", { name: "click", arguments: target }),
     "click",
@@ -261,6 +324,7 @@ try {
 } finally {
   if (proxy) await stop(proxy);
   await stop(driverProcess);
-  if (xev.exitCode === null && xev.signalCode === null) xev.kill("SIGTERM");
+  if (xev && xev.exitCode === null && xev.signalCode === null) xev.kill("SIGTERM");
+  try { wm?.kill("SIGTERM"); } catch { /* openbox already gone */ }
   rmSync(sandbox, { recursive: true, force: true });
 }

@@ -39,7 +39,7 @@ public enum Walkie {
             // and the first thing it said. The full report is on screen.
             let line = message.routineRun?.previewLine ?? message.text ?? ""
             return line.isEmpty ? nil : line
-        case .activity, .screen, .digest, .compaction:
+        case .activity, .screen, .video, .digest, .compaction:
             return nil
         }
     }

@@ -51,8 +51,8 @@ export interface SandboxLimits {
   nanoCpus: number;
   pidsLimit: number;
   tmpBytes: number;
-  /** Soft quota on /workspace, checked by the provisioner (a named volume has
-   * no hard size on overlay2 without xfs project quotas). */
+  /** Quota on /workspace. Soft (measured by the provisioner) by default; hard
+   * when hardVolumeQuota is on and the volumes root is XFS with prjquota. */
   workspaceQuotaBytes: number;
   /** Hard per-file ceiling (RLIMIT_FSIZE). */
   maxFileBytes: number;
@@ -68,6 +68,11 @@ export interface SandboxdConfig {
   idleStopMs: number;
   maxRunning: number;
   limits: SandboxLimits;
+  /** Ask Docker for a hard size on each workspace volume (local driver
+   * `size` option). Needs the volumes root on XFS mounted with prjquota;
+   * Docker refuses the volume otherwise, so it is opt-in
+   * (SAGAX_SANDBOX_HARD_QUOTA=1). */
+  hardVolumeQuota?: boolean;
   requireEgressPolicy: boolean;
   egressDeny: string[];
   listenHost: string;
@@ -199,6 +204,7 @@ export function sandboxdConfigFromEnv(env: NodeJS.ProcessEnv = process.env): San
       maxFileBytes: Math.floor(positiveInt(env.SAGAX_SANDBOX_MAX_FILE_MB, DEFAULT_SANDBOX_LIMITS.maxFileBytes / MiB, "SAGAX_SANDBOX_MAX_FILE_MB", 1_048_576) * MiB),
       nofile: DEFAULT_SANDBOX_LIMITS.nofile,
     },
+    hardVolumeQuota: /^(1|true|yes|on)$/i.test(env.SAGAX_SANDBOX_HARD_QUOTA?.trim() ?? ""),
     requireEgressPolicy: !/^(0|false|no|off)$/i.test(env.SAGAX_SANDBOX_REQUIRE_EGRESS_POLICY?.trim() ?? ""),
     egressDeny: [...DEFAULT_EGRESS_DENY, ...extraDeny],
     listenHost: listenMatch[1]!.replace(/^\[|\]$/g, ""),
@@ -238,8 +244,16 @@ export function sandboxNetworkSpec(config: Pick<SandboxdConfig, "instance">, key
   };
 }
 
-export function sandboxVolumeSpec(config: Pick<SandboxdConfig, "instance">, key: string): Record<string, unknown> {
-  return { Name: sandboxNames(key).volume, Driver: "local", Labels: sandboxLabels(config, key) };
+export function sandboxVolumeSpec(
+  config: Pick<SandboxdConfig, "instance"> & Partial<Pick<SandboxdConfig, "limits" | "hardVolumeQuota">>,
+  key: string,
+): Record<string, unknown> {
+  const spec: Record<string, unknown> = { Name: sandboxNames(key).volume, Driver: "local", Labels: sandboxLabels(config, key) };
+  if (config.hardVolumeQuota && config.limits) {
+    // Docker's local driver enforces this with an XFS project quota.
+    spec.DriverOpts = { size: `${Math.max(1, Math.floor(config.limits.workspaceQuotaBytes / MiB))}m` };
+  }
+  return spec;
 }
 
 /** The container create body. Read-only root, non-root user, no
@@ -278,6 +292,23 @@ export function sandboxContainerSpec(config: Pick<SandboxdConfig, "instance" | "
       NanoCpus: limits.nanoCpus,
       CpuShares: 512,
       PidsLimit: limits.pidsLimit,
+      // Hide host-revealing /proc and /sys entries. The process still has
+      // its own /proc; reading the host through it is also refused by the
+      // misuse classifier (docs/security/misuse-guardrails.md).
+      MaskedPaths: [
+        "/proc/acpi",
+        "/proc/asound",
+        "/proc/kcore",
+        "/proc/keys",
+        "/proc/latency_stats",
+        "/proc/sched_debug",
+        "/proc/scsi",
+        "/proc/timer_list",
+        "/proc/timer_stats",
+        "/sys/firmware",
+        "/sys/devices/virtual/powercap",
+      ],
+      ReadonlyPaths: ["/proc/bus", "/proc/fs", "/proc/irq", "/proc/sys", "/proc/sysrq-trigger"],
       OomScoreAdj: 500,
       Ulimits: [
         { Name: "nofile", Soft: limits.nofile, Hard: limits.nofile },
@@ -330,6 +361,10 @@ export function sandboxIsolationProblems(spec: Spec, key: string): string[] {
   if (!(Number(host.Memory) > 0) || Number(host.MemorySwap) !== Number(host.Memory)) problems.push("no memory limit");
   if (!(Number(host.NanoCpus) > 0)) problems.push("no CPU limit");
   if (!(Number(host.PidsLimit) > 0)) problems.push("no pids limit");
+  const masked = Array.isArray(host.MaskedPaths) ? host.MaskedPaths.map(String) : [];
+  if (!masked.includes("/proc/kcore")) problems.push("host proc not masked");
+  const readonlyPaths = Array.isArray(host.ReadonlyPaths) ? host.ReadonlyPaths.map(String) : [];
+  if (!readonlyPaths.includes("/proc/sys")) problems.push("proc sys not read-only");
   if (Array.isArray(host.Binds) && host.Binds.length > 0) problems.push("host bind mounts");
   if (Array.isArray(host.Devices) && host.Devices.length > 0) problems.push("host devices");
   const mounts = Array.isArray(host.Mounts) ? host.Mounts as Spec[] : [];

@@ -15,7 +15,7 @@
 // power buttons, and it never takes control. Cloud uses `SandboxDesktopScreen`
 // (GET /api/desktop-viewer/sandbox/me), because POST computer/screenshot
 // answers 409 org_user_sandbox. `ComputerChooser` above the screen lists
-// Cloud, Other VMs and Browser; the host name sits under Other VMs.
+// Cloud and each computer by its full name, then Browser.
 import SwiftUI
 import CompanionCore
 import UIKit
@@ -66,7 +66,6 @@ struct ComputerView: View {
     private var fit: ComputerFit { ComputerFit(rawValue: fitRaw) ?? .fit }
     private var streamFrame: ScreenFrame? { session.state.screens[bot.id] }
     private var isEmbeddedPanel: Bool { embeddedWidth != nil }
-
     /// The bot as the stream last described it.
     private var current: Bot { session.state.bot(bot.id) ?? bot }
     private var offline: Bool {
@@ -153,30 +152,10 @@ struct ComputerView: View {
                     .accessibilityIdentifier("panel-computer")
             }
         } else {
-            VStack(spacing: 0) {
-                HStack {
-                    GlassCircleButton(
-                        systemImage: "chevron.left", fill: Theme.Computer.glassFill, accessibilityLabel: "Back",
-                        glyphSize: 18, glyphOffset: CGSize(width: 0.85, height: -0.25), glyphColor: Theme.Computer.ink
-                    ) { dismiss() }
-                        .accessibilityIdentifier("computer-back")
-                    Spacer(minLength: 0)
-                }
-                .padding(.horizontal, Theme.Metric.screenEdge)
-                .padding(.top, 6)
-                AnyView(chooser(dark: true))
-                    .padding(.horizontal, Theme.Metric.screenEdge)
-                    .padding(.bottom, 12)
+            orgImmersiveScreen {
                 localVmPanel
                     .padding(.horizontal, Theme.Metric.screenEdge)
-                Spacer(minLength: 0)
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(Theme.bgComputer.ignoresSafeArea())
-            .toolbar(.hidden, for: .navigationBar)
-            .navigationBarBackButtonHidden(true)
-            .background(SwipeBackBridge())
-            .preferredColorScheme(.dark)
         }
     }
 
@@ -190,6 +169,36 @@ struct ComputerView: View {
             computerName: chosen?.name
         )
         .id(chosen?.key ?? "current")
+    }
+
+    /// Organization full-screen computer stages share floating chrome in
+    /// landscape (back, screen picker) over the picture.
+    private func orgImmersiveScreen<Content: View>(@ViewBuilder content: () -> Content) -> some View {
+        let picture = content()
+        return ComputerImmersiveShell(
+            top: {
+                VStack(spacing: 12) {
+                    HStack {
+                        GlassCircleButton(
+                            systemImage: "chevron.left", fill: Theme.Computer.glassFill, accessibilityLabel: "Back",
+                            glyphSize: 18, glyphOffset: CGSize(width: 0.85, height: -0.25), glyphColor: Theme.Computer.ink
+                        ) { dismiss() }
+                            .accessibilityIdentifier("computer-back")
+                        Spacer(minLength: 0)
+                    }
+                    AnyView(chooser(dark: true))
+                }
+            },
+            bottom: { EmptyView() },
+            content: {
+                picture
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            }
+        )
+        .toolbar(.hidden, for: .navigationBar)
+        .navigationBarBackButtonHidden(true)
+        .background(SwipeBackBridge())
+        .preferredColorScheme(.dark)
     }
 
     /// Organization Cloud: the server-environment desktop (SandboxDesktopView).
@@ -209,20 +218,7 @@ struct ComputerView: View {
                 .accessibilityIdentifier("panel-computer")
             }
         } else {
-            VStack(spacing: 0) {
-                HStack {
-                    GlassCircleButton(
-                        systemImage: "chevron.left", fill: Theme.Computer.glassFill, accessibilityLabel: "Back",
-                        glyphSize: 18, glyphOffset: CGSize(width: 0.85, height: -0.25), glyphColor: Theme.Computer.ink
-                    ) { dismiss() }
-                        .accessibilityIdentifier("computer-back")
-                    Spacer(minLength: 0)
-                }
-                .padding(.horizontal, Theme.Metric.screenEdge)
-                .padding(.top, 6)
-                AnyView(chooser(dark: true))
-                    .padding(.horizontal, Theme.Metric.screenEdge)
-                    .padding(.bottom, 12)
+            orgImmersiveScreen {
                 SandboxDesktopScreen(
                     botName: current.name,
                     ink: Theme.Computer.ink,
@@ -230,14 +226,7 @@ struct ComputerView: View {
                     card: Theme.Computer.frameEmpty
                 )
                 .padding(.horizontal, Theme.Metric.screenEdge)
-                Spacer(minLength: 0)
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(Theme.bgComputer.ignoresSafeArea())
-            .toolbar(.hidden, for: .navigationBar)
-            .navigationBarBackButtonHidden(true)
-            .background(SwipeBackBridge())
-            .preferredColorScheme(.dark)
         }
     }
 
@@ -246,29 +235,22 @@ struct ComputerView: View {
     /// black full screen view rather than the panel's page.
     @ViewBuilder
     private func chooser(dark: Bool) -> some View {
-        let items = ComputerChooser.items(bridge: choices.bridge, organization: session.surfaceGate.organization,
-                                          worksOnLocal: showsLocalVm, browser: browserOffered)
-        if items.count > 1 {
-            VStack(alignment: dark ? .center : .leading, spacing: 6) {
-                ComputerChooser(
-                    items: items,
-                    chosen: ComputerChooser.selectedKey(showsBrowser: showsBrowser, chosen: chosen),
-                    colors: dark
-                        ? .init(ink: Theme.Computer.ink, secondary: Theme.Computer.ink.opacity(0.6), track: Theme.Computer.glassFill,
-                                selected: Theme.Computer.ink.opacity(0.18), dot: Theme.accent)
-                        : .init(ink: Theme.textPrimary, secondary: Theme.textSecondary, track: Theme.card,
-                                selected: Theme.cardRaised, dot: Theme.accent)
-                ) { picked = ComputerChooser.resolvePick($0, bridge: choices.bridge, current: chosen) }
-                ComputerChooser.provenance(
-                    bridge: choices.bridge, chosen: showsBrowser ? nil : chosen,
-                    pick: { picked = $0 },
-                    secondary: dark ? Theme.Computer.ink.opacity(0.6) : Theme.textSecondary
-                )
-            }
-            // Embedded in the profile sheet, the picker's horizontal scroll
-            // view would take the sheet's full width and start at its edge;
-            // it takes the screen's own width, which the sheet already
-            // insets by `Theme.Profile.cardMargin`.
+        let rows = ComputerChooser.rows(bridge: choices.bridge, organization: session.surfaceGate.organization,
+                                        worksOnLocal: showsLocalVm, browser: browserOffered, powers: choices.powers)
+        if rows.count > 1 {
+            ComputerChooser(
+                rows: rows,
+                chosen: ComputerChooser.selectedKey(showsBrowser: showsBrowser, chosen: chosen),
+                colors: dark
+                    ? .init(ink: Theme.Computer.ink, secondary: Theme.Computer.inkSecondary, card: Theme.Computer.glassFill,
+                            menu: Theme.Computer.frameEmpty, hairline: Color.white.opacity(0.16), field: Color.white.opacity(0.12),
+                            on: Theme.success, off: Theme.Computer.inkSecondary, paused: Theme.warning, starting: Theme.accent, danger: Theme.danger)
+                    : .init(ink: Theme.textPrimary, secondary: Theme.textSecondary, card: Theme.card, menu: Theme.cardRaised,
+                            hairline: Theme.hairline, field: Theme.card, on: Theme.success, off: Theme.textSecondary,
+                            paused: Theme.warning, starting: Theme.accent, danger: Theme.danger)
+            ) { picked = $0 }
+            // Embedded in the profile sheet, the menu takes the screen's own
+            // width, which the sheet already insets.
             .frame(width: dark ? nil : embeddedWidth, alignment: .leading)
         }
     }
@@ -284,30 +266,10 @@ struct ComputerView: View {
                     .accessibilityIdentifier("panel-computer")
             }
         } else {
-            VStack(spacing: 0) {
-                HStack {
-                    GlassCircleButton(
-                        systemImage: "chevron.left", fill: Theme.Computer.glassFill, accessibilityLabel: "Back",
-                        glyphSize: 18, glyphOffset: CGSize(width: 0.85, height: -0.25), glyphColor: Theme.Computer.ink
-                    ) { dismiss() }
-                        .accessibilityIdentifier("computer-back")
-                    Spacer(minLength: 0)
-                }
-                .padding(.horizontal, Theme.Metric.screenEdge)
-                .padding(.top, 6)
-                AnyView(chooser(dark: true))
-                    .padding(.horizontal, Theme.Metric.screenEdge)
-                    .padding(.bottom, 12)
+            orgImmersiveScreen {
                 BrowserLiveView(bot: current, secondary: Theme.Computer.ink.opacity(0.6), track: Theme.Computer.glassFill)
                     .padding(.horizontal, Theme.Metric.screenEdge)
-                Spacer(minLength: 0)
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(Theme.bgComputer.ignoresSafeArea())
-            .toolbar(.hidden, for: .navigationBar)
-            .navigationBarBackButtonHidden(true)
-            .background(SwipeBackBridge())
-            .preferredColorScheme(.dark)
         }
     }
 
@@ -365,43 +327,43 @@ struct ComputerView: View {
     }
 
     private var fullScreen: some View {
-        GeometryReader { proxy in
-            let width = proxy.size.width
-            let barCentre = proxy.safeAreaInsets.top + 6 + Theme.Metric.glassLarge / 2
-            let frameHeight = width / Theme.Computer.frameAspect
-            ZStack(alignment: .top) {
-                Theme.bgComputer.ignoresSafeArea()
-
+        ComputerImmersiveShell(
+            top: { topBar },
+            bottom: {
                 VStack(spacing: 0) {
-                    topBar
-                        .padding(.top, 6)
-                    Color.clear.frame(height: barCentre + Theme.Computer.frameTopFromBarCentre
-                        - proxy.safeAreaInsets.top - 6 - Theme.Metric.glassLarge)
-                    screen(width: width, height: frameHeight)
                     statusLine
-                    Spacer(minLength: 0)
                     bottomButtons
-                        .padding(.bottom, Theme.Computer.buttonsBottom)
                 }
-
-                toast
-                    .padding(.top, 6 - (Theme.Computer.toastSize.height - Theme.Metric.glassLarge) / 2)
-
-                RemoteKeyboardField(
-                    isActive: $keyboardUp,
-                    showsSpecialKeys: specialKeys,
-                    modifiers: controller.modifiers,
-                    onInsert: { controller.type($0) },
-                    onDelete: { controller.deleteBackward() },
-                    onSpecial: { controller.special($0) },
-                    onModifier: { controller.toggle($0) }
-                )
-                .frame(width: 1, height: 1)
-                .opacity(0.01)
-                .accessibilityHidden(true)
+            },
+            content: {
+                GeometryReader { proxy in
+                    let size = ComputerPictureLayout.fit(in: proxy.size)
+                    screen(width: size.width, height: size.height)
+                        .frame(width: proxy.size.width, height: proxy.size.height)
+                        .onAppear { controller.frameWidth = size.width }
+                        .onValueChange(of: proxy.size) {
+                            controller.frameWidth = ComputerPictureLayout.fit(in: $0).width
+                        }
+                }
             }
-            .onAppear { controller.frameWidth = width }
-            .onValueChange(of: width) { controller.frameWidth = $0 }
+        )
+        .overlay(alignment: .top) {
+            toast
+                .padding(.top, 6 - (Theme.Computer.toastSize.height - Theme.Metric.glassLarge) / 2)
+        }
+        .overlay {
+            RemoteKeyboardField(
+                isActive: $keyboardUp,
+                showsSpecialKeys: specialKeys,
+                modifiers: controller.modifiers,
+                onInsert: { controller.type($0) },
+                onDelete: { controller.deleteBackward() },
+                onSpecial: { controller.special($0) },
+                onModifier: { controller.toggle($0) }
+            )
+            .frame(width: 1, height: 1)
+            .opacity(0.01)
+            .accessibilityHidden(true)
         }
     }
 
@@ -886,8 +848,8 @@ struct LocalVmComputerChrome {
         )
     }
 
-    /// The bot panel's Computer tab on iPhone: same navy card as the name
-    /// block and tab bar, not the full-screen black stage.
+    /// The bot panel's Computer tab on iPhone: navy card colours on the stage
+    /// frame, not the full-screen black ink.
     static var panel: LocalVmComputerChrome {
         LocalVmComputerChrome(
             ink: Theme.textPrimary,

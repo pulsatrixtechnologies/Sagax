@@ -159,7 +159,6 @@ final class ComposerPowerUITests: XCTestCase {
             "-parityScreen", "02-chat",
             "-parityChat", chatName,
             "-AppleLanguages", "(en)", "-AppleLocale", "en_US",
-            "-companion.prefs.islandIntro", "never",
             "-companion.onboarding.welcomeSeen", "YES",
             "-companion.onboarding.notificationsSeen", "YES",
         ]

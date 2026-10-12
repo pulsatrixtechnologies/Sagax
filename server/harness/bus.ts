@@ -27,6 +27,14 @@ const DELTA_MERGE_MS = 50;
 
 type TextDelta = Extract<RuntimeEvent, { type: "content.delta" }>;
 
+/** A ConnectWise call's whole result is read once for its widget and is
+ * never logged: the widget the message keeps is its record. */
+export function withoutPrivateFields(event: RuntimeEvent): RuntimeEvent {
+  if (event.type !== "item.completed" || event.itemType !== "tool" || event.resultText === undefined) return event;
+  const { resultText: _resultText, ...rest } = event;
+  return rest;
+}
+
 /** Two deltas are one stream when only their text, id and time differ. */
 function sameStream(a: TextDelta, b: TextDelta): boolean {
   return a.provider === b.provider && a.providerInstanceId === b.providerInstanceId && a.turnId === b.turnId &&
@@ -94,7 +102,8 @@ export class EventBus {
 
   private write(event: RuntimeEvent) {
     const pendingWarning = this.pendingLogWarnings.get(event.threadId);
-    const persistedEvents = pendingWarning ? [pendingWarning, redactSecrets(event)] : [redactSecrets(event)];
+    const logged = withoutPrivateFields(event);
+    const persistedEvents = pendingWarning ? [pendingWarning, redactSecrets(logged)] : [redactSecrets(logged)];
     try {
       // the canonical log is a file people paste into bug reports; scrub
       // credential-shaped content (tool titles, request summaries, reply

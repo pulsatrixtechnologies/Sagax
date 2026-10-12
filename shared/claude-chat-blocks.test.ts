@@ -88,6 +88,7 @@ describe("formatArtifactFence", () => {
 
 describe("antArtifactToMarkdown", () => {
   it("routes HTML and SVG to a widget, mermaid to mermaid, markdown through, React to a code fence", () => {
+    expect(antArtifactToMarkdown('type="application/vnd.sagax.cw+json"', '{"family":"ticket"}')).toBe("```cw\n{\"family\":\"ticket\"}\n```");
     expect(antArtifactToMarkdown('type="text/html" title="Hi"', "<p>x</p>")).toBe("```widget\n<p>x</p>\n```");
     expect(antArtifactToMarkdown('type="image/svg+xml"', "<svg></svg>")).toBe("```widget\n<svg></svg>\n```");
     expect(antArtifactToMarkdown('type="application/vnd.ant.mermaid"', "graph TD; A-->B")).toBe("```mermaid\ngraph TD; A-->B\n```");

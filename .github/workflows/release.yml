@@ -416,7 +416,7 @@ jobs:
       - name: Install package validation and native smoke tools
         run: >-
           sudo apt-get update && sudo apt-get install -y
-          at-spi2-core dbus-x11 desktop-file-utils libxi6 libxkbcommon0 squashfs-tools x11-utils xdotool xvfb
+          at-spi2-core dbus-x11 desktop-file-utils libxi6 libxkbcommon0 openbox squashfs-tools x11-utils xdotool xvfb
       - run: pnpm install --frozen-lockfile
       - name: Clean generated output
         run: pnpm clean
@@ -483,6 +483,18 @@ jobs:
             release/latest-linux.yml
           if-no-files-found: error
           retention-days: 7
+
+  # Opt-in for 0.5.0: voice ships behind the full-duplex toggle and no xAI
+  # key is configured yet. Set repo variable SAGAX_VOICE_ACCEPTANCE_GATE=true
+  # to run it (it still does not block assemble until re-added to its needs).
+  voice-acceptance:
+    name: Real voice acceptance
+    needs: prepare
+    if: needs.prepare.outputs.should_release == 'true' && vars.SAGAX_VOICE_ACCEPTANCE_GATE == 'true'
+    uses: ./.github/workflows/voice-release-acceptance.yml
+    with:
+      ref: ${{ needs.prepare.outputs.sha }}
+    secrets: inherit
 
   assemble:
     name: Assemble the draft and verify every feed

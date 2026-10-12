@@ -93,15 +93,6 @@ struct ChatView: View {
     @State var threadOpenTask: Task<Void, Never>?
     @FocusState var composerFocused: Bool
     @StateObject var dictation = SpeechDictation()
-    /// The opening beat: the island grows with the bot's face in it, then
-    /// shrinks away as the face settles into the header. `facePhase` is 1
-    /// with the face in the island, 0 with it home in the header.
-    @State var islandExpanded = false
-    @State var islandVisible = false
-    @State var facePhase: CGFloat = 0
-
-    @AppStorage(PrefKey.islandIntro) var islandIntro = IslandIntro.oncePerBot.rawValue
-    @AppStorage(PrefKey.islandSeen) var islandSeen = ""
     @AppStorage(PrefKey.activityDetail) var activityDetail = ActivityDetail.full.rawValue
     @AppStorage(PrefKey.quickReplies) var quickReplies = ""
     /// The run card above the composer (ST4, WP14 `RunCardView`).
@@ -142,16 +133,6 @@ struct ChatView: View {
         guard case let .bot(bot) = chat else { return false }
         guard let live = session.state.bot(bot.id) else { return true }
         return live.tasks.map { !$0.contains { $0.threadId == selectedThreadId } } ?? false
-    }
-
-    /// A task changes a bot's thread, but it does not make it a new bot.
-    /// Intro history follows the chat itself so switching tasks cannot replay
-    /// a once-per-bot greeting.
-    var islandIntroID: String {
-        switch current {
-        case let .bot(bot): "bot.\(bot.id)"
-        case let .room(room): "room.\(room.id)"
-        }
     }
 
     var messages: [Message] {
@@ -322,8 +303,6 @@ struct ChatView: View {
 #if DEBUG
             // `-open-plus`: the + sheet up, for the screenshot harness
             if ProcessInfo.processInfo.arguments.contains("-open-plus") { showingPlus = true }
-            // Profile parity screenshots without automating a tap through the
-            // animated island/header transition.
             if ProcessInfo.processInfo.arguments.contains("-open-profile") { openProfile() }
             if let screen = ParityLaunch.current?.screen {
                 if screen.opensComputer { showingComputer = true }
@@ -522,6 +501,7 @@ struct ChatView: View {
                     .frame(maxWidth: .infinity)
                     .environment(\.messageActions, messageActionContext)
                     .environment(\.citeIntoComposer, citeIntoComposer)
+                    .environment(\.youtubeSendToBot, youtubeSendToBot)
                     .environment(\.conversationGallery, conversationGallery)
                     .background(BottomFollowProbe(model: follow))
                 }
@@ -558,30 +538,6 @@ struct ChatView: View {
                     }
                 }
                 .animation(.snappy(duration: 0.2), value: follow.following)
-                .overlay(alignment: .top) { islandFace }
-                .task {
-                    // grow, hold a beat, shrink — the face rides along
-                    guard CompanionLayout.supportsIslandPresentation, !reduceMotion else { return }
-                    // The intro is a greeting, and a greeting repeated every
-                    // time you open a chat stops being one.
-                    let intro = IslandIntro(rawValue: islandIntro) ?? .oncePerBot
-                    switch intro {
-                    case .never:
-                        return
-                    case .oncePerBot:
-                        guard !IslandSeen.contains(islandIntroID, in: islandSeen) else { return }
-                        islandSeen = IslandSeen.adding(islandIntroID, to: islandSeen)
-                    case .always:
-                        break
-                    }
-                    islandVisible = true
-                    try? await Task.sleep(for: .milliseconds(40))
-                    withAnimation(.spring(response: 0.5, dampingFraction: 0.8)) { islandExpanded = true; facePhase = 1 }
-                    try? await Task.sleep(for: .milliseconds(1000))
-                    withAnimation(.spring(response: 0.55, dampingFraction: 0.82)) { islandExpanded = false; facePhase = 0 }
-                    try? await Task.sleep(for: .milliseconds(600))
-                    islandVisible = false
-                }
                 // A conversation grows from the bottom: a transcript shorter
                 // than the screen rests at the bottom, and opening a chat
                 // starts on the newest message rather than the oldest.

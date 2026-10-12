@@ -37,6 +37,7 @@ import { openStartupModelCatalog, writeStartupModelCache } from "../../startup-m
 import { decodeInjectId } from "../local-inject.ts";
 import { DeviceAuthController, type DeviceSignIn } from "../device-auth.ts";
 import { deletePromptSplitReceipt, promptHalves, readPromptSplitReceipt, splitSessionPrompt, writePromptSplitReceipt } from "../prompt-split.ts";
+import { cachePrimePrompt, joinCachePrime } from "../../voice-first-sentence.ts";
 import type { PromptSplitReceipt } from "../prompt-split.ts";
 import { describeSpawnFailure, execCli, killCliTree, spawnCli } from "../../procs.ts";
 import {
@@ -78,12 +79,13 @@ import type {
 } from "../../contracts.ts";
 import { newEventId, newId, TurnNotStartedError } from "../../contracts.ts";
 import { augmentedPath } from "../../env-path.ts";
+import { isCwTool } from "../../../shared/cw-widgets/tool-call.ts";
 import { supportsApprovalMode } from "../../../shared/approval-mode.ts";
 import { MAX_QUESTION_TEXT, parseAskQuestions, parseChoices, questionAnswersByQuestion } from "../../../shared/ask-question.ts";
 
 import { appendNative } from "../native.ts";
 import { acpPermissionCommand, permissionLaunchCwd } from "../permission-command.ts";
-import { commandSummary, toolDetailPreview } from "../../tool-summary.ts";
+import { commandSummary, cwToolResult, toolDetailPreview } from "../../tool-summary.ts";
 import { acpWrittenFiles, filesField } from "../../thread-files.ts";
 import { extractMcpImages } from "../../mcp-tool-images.ts";
 import { redactSecretsInText } from "../../redact.ts";
@@ -94,6 +96,7 @@ import { classifyError } from "../retry.ts";
 import { canUseMcpServer, narrowsNativeTools, parseToolScope } from "../../../shared/tool-scope.ts";
 import { gateServer, mcpStdioServer } from "../../mcp-gate-config.ts";
 import type { GateAnswer, GateAsk } from "../../mcp-gate-approval.ts";
+import { takeSafetyNote } from "../../safety-review.ts";
 import { gatedMcpAsk } from "./gated-mcp-ask.ts";
 import { TURN_TOKEN_ENV, warmCommsEnv } from "../spawn-contract.ts";
 import { acpHostToolRequest } from "../host-tools.ts";
@@ -179,6 +182,8 @@ interface AcpTurn {
   };
   /** inputs of this turn's tool calls by id, for onToolCompleted */
   toolInputs?: Map<string, unknown>;
+  /** ConnectWise calls of this turn by id, for their widget */
+  cwToolNames?: Map<string, string>;
   acknowledge: () => void;
   asks: Map<string, AcpAskFinish>;
   /** Tool calls the agent started and has not yet reported finished. A tool
@@ -263,6 +268,11 @@ interface AcpSession {
   fallbackNotice?: string;
   /** the model the process was told to start sessions on (sessionModelEnv) */
   launchModel?: string;
+  /** A background session/prompt that writes the call's system prefix into
+   * the provider cache. The spoken turn joins it briefly. `current` stays
+   * null, so its chunks are not a turn. */
+  cachePrime?: Promise<void>;
+  cachePrimed?: boolean;
 }
 
 /** Per-harness specifics — everything that differs between Grok, Gemini, … */
@@ -952,9 +962,9 @@ export function createAcpDriver(support: AcpSupport): ProviderDriver<AcpConfig> 
       const handleGateConnection = (conn: Socket) => {
         conn.setEncoding("utf8");
         const open = new Set<() => void>();
-        const answer = (id: string, behavior: "allow" | "deny") => {
+        const answer = (id: string, behavior: "allow" | "deny", note?: string) => {
           if (conn.destroyed) return;
-          const message: GateAnswer = { t: "answer", id, behavior };
+          const message: GateAnswer = { t: "answer", id, behavior, ...(note ? { note } : {}) };
           conn.write(`${JSON.stringify(message)}\n`);
         };
         let buf = "";
@@ -981,13 +991,14 @@ export function createAcpDriver(support: AcpSupport): ProviderDriver<AcpConfig> 
             const preview = typeof ask.summary === "string" && ask.summary ? ` ${ask.summary}` : "";
             const requestId = newId();
             let timer: ReturnType<typeof setTimeout> | undefined;
-            const finish: AcpAskFinish = (behavior, source = "user") => {
+            const finish: AcpAskFinish = (behavior, source = "user", message) => {
               if (!current.asks.delete(requestId)) return "unavailable";
               if (timer) clearTimeout(timer);
               open.delete(onClose);
               // only an explicit "allow" from a person runs the call
               const allow = behavior === "allow" && source === "user";
-              answer(askId, allow ? "allow" : "deny");
+              const noted = allow ? undefined : (message?.trim() || takeSafetyNote(requestId));
+              answer(askId, allow ? "allow" : "deny", noted);
               emit({
                 ...base(threadId, current.turnId),
                 type: "request.resolved",
@@ -1014,6 +1025,7 @@ export function createAcpDriver(support: AcpSupport): ProviderDriver<AcpConfig> 
               tool: "other",
               summary: `${mcpTool}${preview}`.slice(0, 200),
               mcpTool,
+              ...(typeof ask.review === "string" && ask.review ? { input: ask.review.slice(0, 2000) } : {}),
               sagaxGate: true,
               approvalScope: current.controlsHost ? "local-computer" : undefined,
               // never a session-wide grant: every call is its own card
@@ -1690,6 +1702,9 @@ export function createAcpDriver(support: AcpSupport): ProviderDriver<AcpConfig> 
               if (support.onToolCompleted && typeof u.toolCallId === "string" && u.rawInput !== undefined) {
                 (current.toolInputs ??= new Map()).set(u.toolCallId, u.rawInput);
               }
+              if (typeof u.toolCallId === "string" && typeof u.title === "string" && isCwTool(u.title)) {
+                (current.cwToolNames ??= new Map()).set(u.toolCallId, u.title);
+              }
               emit({
                 ...base(threadId, current.turnId),
                 type: "item.started",
@@ -1720,7 +1735,11 @@ export function createAcpDriver(support: AcpSupport): ProviderDriver<AcpConfig> 
                   itemId: (typeof u.toolCallId === "string" && u.toolCallId) ? u.toolCallId : current.unkeyedToolIds.shift(),
                   ok: u.status !== "failed",
                   output: toolDetailPreview(u.rawOutput ?? u.content),
+                  ...(u.status === "completed" && typeof u.toolCallId === "string"
+                    ? cwToolResult(current.cwToolNames?.get(u.toolCallId), u.rawOutput ?? u.content)
+                    : {}),
                 });
+                if (typeof u.toolCallId === "string") current.cwToolNames?.delete(u.toolCallId);
                 for (const img of extractMcpImages(u.content ?? u.rawOutput)) {
                   emit({ ...base(threadId, current.turnId), type: "item.completed", itemType: "assistant_image", data: img.data });
                 }
@@ -2131,6 +2150,30 @@ export function createAcpDriver(support: AcpSupport): ProviderDriver<AcpConfig> 
           else {
             signal?.addEventListener("abort", releaseIfIdle, { once: true });
             if (sessions.get(threadId) === session && !session.current) armIdle(threadId);
+          }
+          // The handshake established the session and wrote no prompt, so the
+          // first spoken turn would be a cold prefill. One background prompt
+          // of the same system prefix fills the provider cache. It is not
+          // awaited: a warm still returns with no turn, and the spoken turn
+          // joins it for a moment (joinCachePrime).
+          if (turn.cachePrime === true && !signal?.aborted && session.sessionId && turn.system?.trim() && !session.cachePrimed) {
+            const primed = session;
+            const sessionId = session.sessionId;
+            const prime = request(
+              "session/prompt",
+              { sessionId, prompt: [{ type: "text", text: cachePrimePrompt(turn.system) }] },
+              20_000,
+            ).then(() => {
+              if (sessions.get(threadId) === primed) primed.cachePrimed = true;
+            }, () => {
+              // cancelled, or the call ended: the spoken turn pays the prefill
+            });
+            primed.cachePrime = prime;
+            signal?.addEventListener("abort", () => {
+              if (!primed.cachePrimed && primed.sessionId) {
+                primed.acp.send({ jsonrpc: "2.0", method: "session/cancel", params: { sessionId: primed.sessionId } });
+              }
+            }, { once: true });
           }
           return result;
         }
@@ -2544,6 +2587,14 @@ export function createAcpDriver(support: AcpSupport): ProviderDriver<AcpConfig> 
             }
             if (variant !== undefined && requestedVariantOption().currentValue !== variant) {
               throw new Error(`${support.displayName} changed variant before the prompt`);
+            }
+            if (session.cachePrime) {
+              const pending = session.cachePrime;
+              const sessionId = session.sessionId;
+              await joinCachePrime(pending, () => {
+                if (sessionId) session.acp.send({ jsonrpc: "2.0", method: "session/cancel", params: { sessionId } });
+              });
+              if (sessions.get(threadId) === session) session.cachePrime = undefined;
             }
             if (state.settled || state.stopped || session.closing) throw new Error("turn stopped");
             state.promptSent = true;

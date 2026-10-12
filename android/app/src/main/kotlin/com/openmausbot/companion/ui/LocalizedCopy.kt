@@ -272,7 +272,7 @@ private val localizedCopyResources = mapOf(
     "More" to R.string.mobile_more_4bab2d8f,
     "Move down" to R.string.mobile_move_down_260ff8ae,
     "Move up" to R.string.mobile_move_up_b4f57cd0,
-    "Needs attention" to R.string.mobile_roster_needs_attention,
+    "Inbox" to R.string.mobile_roster_needs_attention,
     "Needs you" to R.string.mobile_needs_you_0d9d0df1,
     "Needs your attention" to R.string.mobile_share_needs_attention,
     "New bot" to R.string.mobile_new_bot_66d3c052,

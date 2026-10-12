@@ -44,7 +44,6 @@ final class ParityChatUITests: XCTestCase {
             "-parityToken", session.token,
             "-parityScreen", "02-chat",
             "-AppleLanguages", "(en)", "-AppleLocale", "en_US",
-            "-companion.prefs.islandIntro", "never",
             "-companion.onboarding.welcomeSeen", "YES",
             "-companion.onboarding.notificationsSeen", "YES",
             // a call here never asks for the simulator's microphone

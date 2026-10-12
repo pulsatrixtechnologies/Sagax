@@ -156,7 +156,7 @@ export function readOnlyApprovals(approvals: Pending[]): Pending[] {
   return approvals.filter((pending) => {
     const card = pending.message.card;
     if (!card || card.adminApproval) return false;
-    if (card.routineRequest || card.skillRequest || card.profileRequest || card.teamSetupRequest || card.questionRequest) return false;
+    if (card.routineRequest || card.skillRequest || card.profileRequest || card.teamSetupRequest || card.questionRequest || card.terminalRequest) return false;
     return describeApproval(pending.tool, card.toolInput ?? card.subtitle, card.toolHints).risk === "read";
   });
 }

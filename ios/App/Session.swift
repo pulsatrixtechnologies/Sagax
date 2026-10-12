@@ -90,6 +90,7 @@ final class Session: ObservableObject {
     /// A chat a deep link asked for, consumed by the roster's
     /// NavigationStack the same way a notification response is.
     @Published private(set) var pendingChat: Chat?
+    @Published private(set) var pendingInbox = false
     /// Who this phone is signed in as (`GET /api/auth/session`), for the
     /// home's photo. Nil until loaded, or when the server does not say.
     @Published private(set) var account: AuthSession?
@@ -572,7 +573,13 @@ final class Session: ObservableObject {
             pairingRequested = true
         case let .chat(threadId):
             openChat(threadId: threadId)
+        case .inbox:
+            pendingInbox = true
         }
+    }
+
+    func consumePendingInbox() {
+        pendingInbox = false
     }
 
     /// A deep link that names a chat. An id this phone does not know — a
@@ -1191,6 +1198,13 @@ final class Session: ObservableObject {
     // result. Nothing here writes to `state` optimistically: the harness is
     // the source of truth, and a phone that draws its own version of events
     // is a phone that disagrees with the laptop.
+
+    /// The widget's change, as an approval card in this conversation.
+    func requestCwAction(_ action: CwActionBody, threadId: String, botId: String?) async {
+        await perform { client in
+            try await client.requestCwAction(threadId: threadId, action: action, botId: botId)
+        }
+    }
 
     func send(_ text: String, to chat: Chat) async {
         let connectionID = client?.connection.id
@@ -2025,6 +2039,17 @@ final class Session: ObservableObject {
 
     func image(threadId: String, messageId: String) async -> Data? {
         try? await client?.image(threadId: threadId, messageId: messageId)
+    }
+
+    func absoluteAPIURL(path: String) -> URL? {
+        guard let base = client?.connection.baseURL else { return nil }
+        let normalized = path.hasPrefix("/") ? path : "/\(path)"
+        return URL(string: normalized, relativeTo: base)?.absoluteURL
+    }
+
+    func youtubeTranscript(videoId: String) async throws -> YouTubeTranscriptResponse {
+        guard let client else { throw APIError.transport("This computer is offline.") }
+        return try await client.youtubeTranscript(videoId: videoId)
     }
 
     func search(_ query: String) async -> [SearchHit] {

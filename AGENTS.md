@@ -929,6 +929,46 @@ Tests: `server/model-auto.test.ts`, `server/auto-model.e2e.test.ts`,
 `server/team-setup-requests.test.ts`, `shared/viewer-bot-overrides.test.ts`,
 `src/lib/auto-model.test.ts`, `src/components/ModelPicker.interaction.test.ts`.
 
+## Misuse guardrails (2026-10-12)
+
+End users must not use a bot for privilege escalation, escape from the
+server environment, tampering with antivirus or logs, attacks on third
+parties, malware, reading the platform's files (`bots.json`, `messages.db`,
+`idp_key`, and the rest), destruction of the server, or resource abuse.
+Defensive security work (SentinelOne triage and the like) is the permission
+`security.triage` in Perspicax. It allows that work only. It does not lift
+a block. Details, the flag, and the French refusals:
+[`docs/security/misuse-guardrails.md`](docs/security/misuse-guardrails.md).
+
+- `SAGAX_MISUSE_GUARDRAILS` is `off`, `shadow`, or `enforce`. The default is
+  `shadow`: classify and write `misuse.shadow` (category `security` on the
+  admin activity log), refuse nothing. `enforce` refuses, alerts tenant
+  admins (`admin-action`, admins only), and locks a principal after 5
+  attempts in 10 minutes (15 minutes, 429 `misuse_locked`).
+- The prompt section `misuse-policy` is first in `buildSystemPrompt`, ahead
+  of the persona and the soul, and it is not a control. The server
+  classifies messages, shell, file, the shared-computer terminal,
+  `flow_action`, and MCP. The MCP gate subprocess blocks hard categories
+  only, and only in enforce mode.
+- The container limits, the metadata deny `169.254.0.0/16`, and the masked
+  host `/proc` entries stay on regardless of the flag. The path allowlist
+  follows the flag.
+- What a person reads is Québec French, with no anglicism. Tests:
+  `shared/misuse-guardrails.test.ts`, `server/misuse-guardrails.test.ts`.
+- Safety review uses the same flag. Shadow writes `safety.shadow` and
+  changes nothing. Enforce reviews shell, MCP, computer use, and routine
+  writes before they run: a hard block stays a 403 refusal, never a card
+  Full or Auto can accept; a risky call gets a safer path once, then a
+  native approval card the person accepts; denial and expiry are final for
+  that fingerprint, and for a destructive git intent, a prompt disclosure,
+  or a credential grab across rewording. Reads are auto-approved. Writes
+  and unknown tools wait. Outbound mail is a draft, then the existing send
+  card. Tool results, pages, files, and other bots' messages are wrapped
+  as `<<<UNTRUSTED>>>` and are not instructions. `security.triage` still
+  covers defensive work only. The tool guard (`SAGAX_TOOL_GUARD`) and the
+  agent card guard are unchanged. Tests: `shared/safety-review.test.ts`,
+  `server/safety-review.test.ts`.
+
 ## Bot actions
 
 A bot calls the same function as the button or the route (`act` in the
@@ -1024,12 +1064,22 @@ built-in driver is missing from the lock or a pin's `bin` differs from the
 driver's default `cli`.
 
 - Dockerfile: `scripts/install-engines.mjs` installs the selection named by
-  `ENGINE_SET` (`none` default, the public image; `all`, what Perspicax's
-  `infra/scripts/build-push.sh` passes; `open`, only redistributable
-  licences; or ids), runs each `<cli> --version` (the build fails if one does
-  not start) and writes `/app/engines/manifest.json`. The legacy `ENGINES`
-  (npm specs) and `NATIVE_ENGINES` (native ids) build arguments still
-  override the lock's npm and native sets; `none` drops a kind.
+  `ENGINE_SET` (`all` default, since the 2026-10-12 GOX image
+  `pulsa-bot-server:main-20004735` shipped `engineSet none` when the arg was
+  omitted; `none` and `open` are explicit opt-outs; or ids). The build also
+  defaults `SAGAX_REQUIRE_ENGINES=1`, which fails the image when the set is
+  not the full lock. `scripts/build-production-image.sh` and
+  `.github/workflows/docker.yml` pass `ENGINE_SET=all`. OCI labels record
+  the commit (`org.opencontainers.image.revision`), the build time
+  (`org.opencontainers.image.created`) and `io.sagax.engine-set`. The legacy
+  `ENGINES` (npm specs) and `NATIVE_ENGINES` (native ids) build arguments
+  still override the lock's npm and native sets; `none` drops a kind. A
+  non-empty override that drops an engine fails the require flag. GOX deploys
+  through `deploy/gox/deploy-pulsabot.sh`: it refuses the same short set,
+  smoke-tests `/healthz` and the engine startup log, and on failure rolls
+  back to `/opt/pulsatrix/pulsabot-image.prev` then runs
+  `docker compose up -d --force-recreate --no-deps pulsabot-caddy`. Prune
+  keeps the running image and that previous image.
 - Installed by `ENGINE_SET=all`: Claude Code, Codex, pi, Gemini CLI, Kimi
   Code, Qwen Code, OpenCode, Droid (npm, global), Grok Build and Cursor Agent
   (native, `/opt/sagax-engines/<id>/<version>`, linked in `/usr/local/bin`),
@@ -1043,7 +1093,9 @@ driver's default `cli`.
   each preinstalled CLI runs `--version` once at boot, the result is logged
   (`[engines] claude: ...`) and is the instance's installed state from then
   on (`selfCheckedEngine` in `server/index.ts`): `engineInstalled` and
-  `/api/health` no longer probe those engines per request. An instance with
+  `/api/health` no longer probe those engines per request. A manifest whose
+  set is not `all`, or an engine that did not start, also logs
+  `[engines] engine_missing ...`. An instance with
   its own `config.cli` is probed as before. An engine of `notPreinstalled`
   that is absent answers `notAvailable` (the reason) on `/api/me/engines` and
   `/api/health`; the UI then reads "Not available on this server"
@@ -1166,9 +1218,17 @@ fake xAI: `scripts/verify-voice-mode.ts`. Details: `docs/voice-mode-xai.md`.
   backoff) switch the call to POST for good, logged once; a clause failed
   before any audio is spoken over POST, one cut mid-way is never said twice.
   Barge-in ducks then cancels the bot's voice and interrupts its running
-  turn. Tests: `call-logic.test.ts`, `call.test.ts`, `speech-stream.test.ts`,
+  turn. "Full-duplex conversation" (Advanced, on by default in internal /
+  TestFlight / dev, kill-switch in the panel, `CallSettings.fullDuplex`):
+  talking while the bot works or speaks cancels that turn, discards the
+  steer queue, and starts only the latest utterance (`voiceCall.duplex`,
+  issue #292). Off: words said while it works join that turn. Tests:
+  `call-logic.test.ts`, `voice-build.test.ts`,
+  `call.test.ts`, `duplex-policy.test.ts`, `speech-fence.test.ts`,
+  `speech-stream.test.ts`,
   `models.test.ts`, `server/voice-speech-session.test.ts`,
-  `server/voice-call.e2e.test.ts`.
+  `server/voice-call.e2e.test.ts`, `server/voice-call-duplex.test.ts`,
+  `scripts/voice-duplex-harness.test.ts`.
 - "Faster end of turn" (Advanced, on by default; never in Patient nor push
   to talk): `prosody.ts` reads the pitch and energy of the last 400 ms
   before a silence on the computer; a falling, fading or clearly rising
@@ -2015,6 +2075,32 @@ of that thread. The owner's notification of such a run names no thread, only
 `InlineEditableText.test.ts`, `BotSettingsDialog.caption.test.ts`,
 `server/org-routines.e2e.test.ts` (owner pays).
 
+## Background replies (2026-10-12)
+
+A long request in a direct conversation is answered in two beats
+(`shared/background-reply.ts`, wired in `server/index.ts`). On by default.
+`backgroundReplies: false` on the bot waits for the whole answer in one
+turn; absent means on. The switch is on the bot panel's Details tab.
+
+- A greeting or a short question (`classifyRequest` `quick`) is answered
+  directly, with no acknowledgement.
+- Anything else gets one sentence naming the first step, in the person's
+  language (Québec French, tutoiement, no anglicisms when French), built
+  from their own words before the engine starts. It never states a result.
+  `timeToFirstMessageMs` on that message is the gap from their line to the
+  acknowledgement.
+- The work is a parallel task with `parallelOf.background`. The
+  conversation stays idle, so the person can keep chatting. A short
+  meaningful sentence from the task is copied in as a milestone (at most
+  six, at least 15 seconds apart). The result is a separate message in the
+  same thread, with one `done` notification on that thread. The task's own
+  `turn.completed` notification is suppressed.
+- The server does the handoff for every engine. The prompt is only a safety
+  net (`start_thread` with `report_back`). Rooms, voice, hidden AI-client
+  threads, routines, peer hops, and slash commands are not handed off. At
+  the parallel limit the request runs inline, with no acknowledgement.
+- Tests: `shared/background-reply.test.ts`, `server/background-reply.e2e.test.ts`.
+
 ## Parallel tasks (sending while the bot works, 2026-10-02)
 
 A message sent to a busy 1:1 conversation carries `busyMode`
@@ -2399,25 +2485,33 @@ polling while the environment is off. Works on is not on this tab. It is
 in Edit persona > Access, labelled Computer
 (`worksOn` in `src/components/bot-settings/sections.ts`, `WorksOnSetting`).
 
-Above the screen, one segmented control (`ScreenPicker`) when there is more
-than one choice (2026-10-11): Cloud, then each of the person's online
-computers that can run a Local VM, by the name its Sagax app registered
+Above the screen, one menu (`ScreenPicker` in
+`src/components/computer/ComputerMenu.tsx`) when there is more than one
+choice (2026-10-12): Cloud, then each of the person's online computers that
+can run a Local VM, by the full name its Sagax app registered
 (`os.hostname()`), the most recently seen first (`computerChoices` in
-`src/lib/desktop-bridge.ts`), so a person with two PCs sees two Local VMs.
-A dot marks where the bot works; the first screen shown is that one
-(`chosenComputer`). Picking one changes only what is shown and where that
-Local VM's buttons go: `POST /api/me/desktop-bridge/local-vm` takes an
-optional `desktopId` (a desktop id of the person's own, else 400), and
+`src/lib/desktop-bridge.ts`), so a person with two PCs sees both. The closed
+control and each option show the icon, the whole name (it wraps; it is never
+cut off) and the machine's power, a dot and a word (Off, On, Paused,
+Starting, Error, Unavailable; in French Éteint, Allumé, En pause, Démarrage,
+Erreur, Indisponible). "Works here" / "Travaille ici" marks where the bot
+works; the first screen shown is that one (`chosenComputer`). Arrow keys,
+Home, End, Enter, Space and a first letter move through the list while focus
+stays on the button; Escape closes only the menu. Picking one changes only
+what is shown and where that Local VM's buttons go:
+`POST /api/me/desktop-bridge/local-vm` takes an optional `desktopId` (a
+desktop id of the person's own, else 400), and
 `DesktopBridges.request(..., desktopId)` reaches that desktop or answers 409
 `not_connected` ("That computer is not connected right now ... or pick
 another computer"); without it, the current one as before. Never another
-person's desktop: the lookup stays by person. Browser mode is the
-control's last chip, Browser, where the server has the built-in browser
+person's desktop: the lookup stays by person. Browser mode is the menu's
+last choice, Browser, where the server has the built-in browser
 (`builtInBrowserEnabled` or an installed engine; Screen | Browser on a solo
 server): `BrowserPanel` in the screen's frame (`BrowserScreen`, "<Bot>'s
 browser" below), opened first when the bot works on its browser. Tests:
-`OrgComputerTab.test.ts`, `ComputerPanel.browser.test.ts`,
-`server/desktop-bridge.test.ts`, `server/desktop-bridge-local-vm.test.ts`.
+`OrgComputerTab.test.ts`, `ComputerMenu.test.ts`, `computer-menu.test.ts`,
+`ComputerPanel.browser.test.ts`, `server/desktop-bridge.test.ts`,
+`server/desktop-bridge-local-vm.test.ts`.
 States are words (Off, Starting, Running, Paused, Error); never show the desktop's raw
 answer. The server environment's live view is view-only with "Take control"
 in the middle of the screen and a "Release control" chip while in control.
@@ -2471,9 +2565,11 @@ The Local VM in server mode lives on the person's computer
   not send `use`. A sidecar pairing is not an organization, so the
   companion allow-list is not widened for these routes: the app does not
   ask them there. Auto and Cloud keep the existing computer viewer.
-  The same picker sits above the screen (`ios/App/ComputerChooser.swift`,
+  The same menu sits above the screen (`ios/App/ComputerChooser.swift`,
+  rows from `ComputerMenu` in `ios/Sources/CompanionCore/ComputerMenu.swift`,
   `PersonDesktopBridge.computerChoices` and `chosen`, `desktopId` on
-  `localVm(action:)`), and its Browser chip is browser mode: the bot's live
+  `localVm(action:)`). Each computer is its own row, by its full name, with
+  the same power words. Its Browser choice is browser mode: the bot's live
   browser, watched only (`ios/App/BrowserLiveView.swift` over
   `GET /api/bots/:id/browser/live`, each frame acknowledged; never input or
   navigation from the phone; `BrowserLive.swift`, `BrowserLiveClient.swift`).

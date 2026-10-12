@@ -7,7 +7,7 @@ import { describe, expect, it } from "vitest";
 import { INITIAL_CALL, step, type CallEffect, type CallEvent, type CallState } from "./call-machine";
 import { EchoGuard } from "./echo";
 import { SentenceStream } from "./sentences";
-import { completeClause, FRAME_MS, incompleteClause, PAUSE_PRESETS, TurnDetector, type TurnEvent } from "./turns";
+import { completeClause, FRAME_MS, incompleteClause, LONG_FRENCH_INCOMPLETE_CAP, LONG_FRENCH_QUIET_MS, PAUSE_PRESETS, semanticComplete, TurnDetector, type TurnEvent } from "./turns";
 
 function run(events: CallEvent[], from: CallState = INITIAL_CALL) {
   let state = from;
@@ -82,6 +82,38 @@ describe("call state machine", () => {
     // and they are sent when the person stops
     const said = run([{ type: "speech-end" }, { type: "utterance", text: "and also the llama" }], out.state);
     expect(said.types).toEqual(["finalize-stt", "send"]);
+  });
+
+  it("duplex: talking while the bot works silently cancels it", () => {
+    const working = run([{ type: "bot-busy", busy: true }], { ...connected, duplex: true }).state;
+    expect(working.phase).toBe("thinking");
+    expect(working.duplex).toBe(true);
+    const out = run([{ type: "speech-candidate" }, { type: "speech-start" }], working);
+    expect(out.types).toEqual(["cancel-speech", "earcon", "interrupt-bot"]);
+    expect(out.state.phase).toBe("interrupted");
+    expect(out.state.botAudible).toBe(false);
+  });
+
+  it("duplex: barge-in while speaking still cancels the voice and the turn", () => {
+    const speaking = run([{ type: "bot-busy", busy: true }, { type: "bot-audio-start" }], { ...connected, duplex: true }).state;
+    const barged = run([{ type: "speech-candidate" }, { type: "speech-start" }], speaking);
+    expect(barged.types).toEqual(["duck", "cancel-speech", "earcon", "interrupt-bot"]);
+    expect(barged.state.phase).toBe("interrupted");
+  });
+
+  it("duplex: barge-in during speech does not kill background work", () => {
+    const speaking = run([{ type: "bot-busy", busy: true }, { type: "bot-audio-start" }], { ...connected, duplex: true, backgroundWork: true }).state;
+    const barged = run([{ type: "speech-candidate" }, { type: "speech-start" }], speaking);
+    expect(barged.types).toEqual(["duck", "cancel-speech", "earcon"]);
+    expect(barged.types).not.toContain("interrupt-bot");
+    expect(barged.state.phase).toBe("interrupted");
+  });
+
+  it("duplex: talking while background work runs does not interrupt-bot", () => {
+    const working = run([{ type: "bot-busy", busy: true }], { ...connected, duplex: true, backgroundWork: true }).state;
+    const out = run([{ type: "speech-candidate" }, { type: "speech-start" }], working);
+    expect(out.types).not.toContain("interrupt-bot");
+    expect(out.state.phase).toBe("hearing");
   });
 
   it("another voice (Only my voice) is dropped with a soft earcon and the bot resumes", () => {
@@ -228,12 +260,81 @@ describe("turn detection (endpointing)", () => {
 
 describe("an unfinished clause", () => {
   it("is one that stops on a conjunction, a preposition, a comma or after a word or two", () => {
-    for (const text of ["give me a good prompt to", "the weather right now in", "and", "je voudrais que", "envoie-le à", "so I was thinking,", "the weather", "um"]) {
+    for (const text of ["give me a good prompt to", "the weather right now in", "and", "je voudrais que", "envoie-le à", "so I was thinking,", "the weather", "um", "What is two plus", "Can you remind me what", "Peux-tu me rappeler quel", "on y va pis", "c'est faque", "je vais chez", "le chemin de Montréal à", "what do you"]) {
       expect(incompleteClause(text), text).toBe(true);
     }
-    for (const text of ["What is the weather in Montreal?", "Give me a good prompt.", "send it to Max right away", "quelle heure est-il", ""]) {
+    for (const text of ["What is the weather in Montreal?", "Give me a good prompt.", "send it to Max right away", "quelle heure est-il", "", "how are you", "I want this", "where did you go yesterday", "those people over there left"]) {
       expect(incompleteClause(text), text).toBe(false);
     }
+  });
+});
+
+describe("Québec French end of speech", () => {
+  const turn16 = "Combien de temps pour aller de Montréal à Québec en voiture?";
+
+  it("a short punctuated question still ends on the short complete window", () => {
+    const detector = new TurnDetector({ ...PAUSE_PRESETS.normal });
+    feed(detector, [{ p: 0.9, n: frames(900) }]);
+    detector.hint("Quelle heure est-il?");
+    const end = feed(detector, [{ p: 0.05, n: frames(400) }]).find((event) => event.type === "end");
+    expect(end).toMatchObject({ type: "end", early: true, endpointMs: PAUSE_PRESETS.normal.completeMs });
+    expect(end!.at).toBe(PAUSE_PRESETS.normal.completeMs);
+  });
+
+  it("a punctuated long French turn waits 512 ms of confident silence", () => {
+    const detector = new TurnDetector({ ...PAUSE_PRESETS.normal });
+    feed(detector, [{ p: 0.9, n: frames(900) }]);
+    detector.hint(turn16);
+    expect(feed(detector, [{ p: 0.05, n: frames(300) }]).some((event) => event.type === "end")).toBe(false);
+    const detector2 = new TurnDetector({ ...PAUSE_PRESETS.normal });
+    feed(detector2, [{ p: 0.9, n: frames(900) }]);
+    detector2.hint(turn16);
+    const end = feed(detector2, [{ p: 0.05, n: frames(800) }]).find((event) => event.type === "end");
+    expect(end).toMatchObject({ type: "end", early: true, endpointMs: LONG_FRENCH_QUIET_MS });
+    expect(end!.at).toBe(LONG_FRENCH_QUIET_MS);
+    expect(end!.semantic).toBeUndefined();
+  });
+
+  it("a long French prefix still ending on à finishes inside the bench tail", () => {
+    const prefix = "Combien de temps pour aller de Montréal à";
+    expect(incompleteClause(prefix)).toBe(true);
+    const detector = new TurnDetector({ ...PAUSE_PRESETS.normal });
+    feed(detector, [{ p: 0.9, n: frames(900) }]);
+    detector.hint(prefix);
+    const end = feed(detector, [{ p: 0.05, n: frames(1600) }]).find((event) => event.type === "end");
+    const cap = PAUSE_PRESETS.normal.endpointMs + LONG_FRENCH_INCOMPLETE_CAP;
+    expect(end).toMatchObject({ type: "end", endpointMs: cap });
+    expect(end!.at).toBeGreaterThanOrEqual(cap);
+    expect(end!.at).toBeLessThan(cap + FRAME_MS);
+    expect(cap).toBeLessThan(PAUSE_PRESETS.normal.endpointMs + PAUSE_PRESETS.normal.incompleteMs);
+    expect(cap).toBeLessThanOrEqual(1200);
+  });
+
+  it("an English unfinished clause still waits the full extra", () => {
+    const detector = new TurnDetector({ ...PAUSE_PRESETS.normal });
+    feed(detector, [{ p: 0.9, n: frames(900) }]);
+    detector.hint("What is two plus");
+    const end = feed(detector, [{ p: 0.05, n: frames(2000) }]).find((event) => event.type === "end");
+    expect(end!.endpointMs).toBe(PAUSE_PRESETS.normal.endpointMs + PAUSE_PRESETS.normal.incompleteMs);
+  });
+
+  it("an unpunctuated short question ends on the semantic window when faster end of turn is on", () => {
+    expect(semanticComplete("quelle heure est il")).toBe(true);
+    expect(semanticComplete("what time is it")).toBe(true);
+    expect(semanticComplete("combien de temps pour aller")).toBe(false);
+    expect(semanticComplete(turn16)).toBe(false);
+    const detector = new TurnDetector({ ...PAUSE_PRESETS.normal });
+    detector.setProsody(true);
+    feed(detector, [{ p: 0.9, n: frames(900) }]);
+    detector.hint("quelle heure est il");
+    const end = feed(detector, [{ p: 0.05, n: frames(400) }]).find((event) => event.type === "end");
+    expect(end).toMatchObject({ type: "end", early: true, semantic: true, endpointMs: PAUSE_PRESETS.normal.completeMs });
+    expect(end!.at).toBe(PAUSE_PRESETS.normal.completeMs);
+
+    const patient = new TurnDetector({ ...PAUSE_PRESETS.normal });
+    feed(patient, [{ p: 0.9, n: frames(900) }]);
+    patient.hint("quelle heure est il");
+    expect(feed(patient, [{ p: 0.05, n: frames(400) }]).some((event) => event.type === "end")).toBe(false);
   });
 });
 
@@ -337,15 +438,13 @@ describe("a finished sentence ends sooner (docs/voice-mode-xai.md, Latency)", ()
     expect(end).toMatchObject({ type: "end", early: true, endpointMs: PAUSE_PRESETS.normal.completeMs });
     expect(detector.endpointMs).toBe(before);
 
-    // the same words, but the VAD is not sure it is silence (a breath, a murmur)
+    // a complete punctuated sentence ends on silence even if the VAD is a breath
     const unsure = new TurnDetector();
     unsure.setPause("normal");
     feed(unsure, [{ p: 0.9, n: frames(900) }]);
     unsure.hint("What time is it in Tokyo?");
-    expect(feed(unsure, [{ p: 0.25, n: frames(400) }]).some((event) => event.type === "end")).toBe(false);
-    const late = feed(unsure, [{ p: 0.25, n: frames(400) }]).find((event) => event.type === "end");
-    expect(late).toMatchObject({ type: "end" });
-    expect((late as { early?: boolean }).early).toBeUndefined();
+    const breath = feed(unsure, [{ p: 0.25, n: frames(300) }]).find((event) => event.type === "end");
+    expect(breath).toMatchObject({ type: "end", early: true, endpointMs: PAUSE_PRESETS.normal.completeMs });
 
     // not a finished sentence: the full endpoint
     const open = new TurnDetector();
@@ -353,6 +452,50 @@ describe("a finished sentence ends sooner (docs/voice-mode-xai.md, Latency)", ()
     feed(open, [{ p: 0.9, n: frames(900) }]);
     open.hint("give me a good prompt");
     expect(feed(open, [{ p: 0.05, n: frames(400) }]).some((event) => event.type === "end")).toBe(false);
+
+    // a speculative start on four stable words ends on completeMs
+    const speculated = new TurnDetector();
+    speculated.setPause("normal");
+    feed(speculated, [{ p: 0.9, n: frames(900) }]);
+    speculated.hint("How is the weather");
+    speculated.markComplete();
+    speculated.hint("How is the weather");
+    const speculatedEnd = feed(speculated, [{ p: 0.05, n: frames(400) }]).find((event) => event.type === "end");
+    expect(speculatedEnd).toMatchObject({ type: "end", early: true, endpointMs: PAUSE_PRESETS.normal.completeMs });
+  });
+
+  it("a complete punctuated sentence ends after 200-300 ms of silence", () => {
+    expect(PAUSE_PRESETS.normal.completeMs).toBeGreaterThanOrEqual(200);
+    expect(PAUSE_PRESETS.normal.completeMs).toBeLessThanOrEqual(300);
+    const detector = new TurnDetector({ ...PAUSE_PRESETS.normal });
+    feed(detector, [{ p: 0.9, n: frames(900) }]);
+    detector.hint("Quelle heure est-il?");
+    const events = feed(detector, [{ p: 0.25, n: frames(300) }]);
+    const end = events.find((event) => event.type === "end");
+    expect(end).toMatchObject({ type: "end", early: true, endpointMs: PAUSE_PRESETS.normal.completeMs });
+    expect(end!.at).toBeGreaterThanOrEqual(PAUSE_PRESETS.normal.completeMs);
+    expect(end!.at).toBeLessThanOrEqual(PAUSE_PRESETS.normal.completeMs + FRAME_MS);
+  });
+
+  it("an incomplete clause is not cut by a 300 ms pause mid-sentence", () => {
+    const detector = new TurnDetector({ ...PAUSE_PRESETS.normal });
+    feed(detector, [{ p: 0.9, n: frames(900) }]);
+    detector.hint("What is two plus");
+    expect(feed(detector, [{ p: 0.05, n: frames(300) }]).some((event) => event.type === "end")).toBe(false);
+    const resume = feed(detector, [{ p: 0.9, n: frames(400) }, { p: 0.05, n: frames(2000) }]);
+    expect(resume.filter((event) => event.type === "end")).toHaveLength(1);
+    const end = resume.find((event) => event.type === "end")!;
+    expect((end as { early?: boolean }).early).toBeUndefined();
+  });
+
+  it("inSilence is true only while speaking through the endpoint pause", () => {
+    const detector = new TurnDetector();
+    detector.setPause("normal");
+    expect(detector.inSilence).toBe(false);
+    feed(detector, [{ p: 0.9, n: frames(900) }]);
+    expect(detector.inSilence).toBe(false);
+    feed(detector, [{ p: 0.05, n: 1 }]);
+    expect(detector.inSilence).toBe(true);
   });
 
   it("speaks the first clause of an answer once it has about six words", () => {

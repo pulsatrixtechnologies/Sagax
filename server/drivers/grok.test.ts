@@ -30,6 +30,7 @@ describe("GrokDriver turns (fake fetch)", () => {
   let script: Array<{ status?: number; sse?: string }> = [];
   let calls = 0;
   let requestedModels: string[] = [];
+  let requestedUrls: string[] = [];
 
   const create = async () => {
     instance = await GrokDriver.create({
@@ -48,13 +49,20 @@ describe("GrokDriver turns (fake fetch)", () => {
     previousFetch = globalThis.fetch;
     calls = 0;
     requestedModels = [];
+    requestedUrls = [];
     // SAFETY: the stub only returns real Response objects, the sole member
-    // of fetch's return type this driver consumes.
-    globalThis.fetch = (async (_url, init) => {
-      requestedModels.push((JSON.parse(String(init?.body)) as { model: string }).model);
+    // of fetch's return type this driver consumes. A call warm is GET
+    // /models (no JSON body).
+    globalThis.fetch = (async (url, init) => {
+      requestedUrls.push(String(url));
+      const raw = init?.body != null ? String(init.body) : "";
+      if (raw) requestedModels.push((JSON.parse(raw) as { model: string }).model);
       const step = script.shift();
       calls++;
-      if (!step || step.sse !== undefined) return sseResponse(step?.sse ?? SSE_BODY("done from fake grok"));
+      if (!step || step.sse !== undefined) {
+        if (!raw) return new Response(JSON.stringify({ data: [] }), { status: 200, headers: { "content-type": "application/json" } });
+        return sseResponse(step?.sse ?? SSE_BODY("done from fake grok"));
+      }
       return new Response(`HTTP ${step.status} body`, { status: step.status });
     }) as typeof fetch;
   });
@@ -62,6 +70,7 @@ describe("GrokDriver turns (fake fetch)", () => {
   afterEach(async () => {
     globalThis.fetch = previousFetch;
     delete process.env.FAKE_GROK_RETRY_SCALE;
+    delete process.env.FAKE_GROK_WARM_PING_MS;
     recorder?.stop();
     await instance?.dispose();
   });
@@ -217,6 +226,41 @@ describe("GrokDriver turns (fake fetch)", () => {
     script = [];
     await create();
     await expect(instance.adapter.respondToRequest("t-x", "r", { behavior: "allow" })).resolves.toBe("unavailable");
+  });
+
+  it("warms a voice call without a billed completion, then reuses that connection", async () => {
+    script = [];
+    await create();
+    expect(instance.adapter.capabilities.warmSession).toBe(true);
+    const warm = await instance.adapter.sendTurn({
+      threadId: "t-call",
+      text: "",
+      keepWarm: true,
+      warmOnly: true,
+    });
+    expect(warm.reused).toBeUndefined();
+    expect(requestedUrls.some((url) => url.endsWith("/models"))).toBe(true);
+    expect(requestedUrls.some((url) => url.includes("/chat/completions"))).toBe(false);
+    expect(recorder.events.map((e) => e.type)).toEqual([]);
+
+    const spoken = await instance.adapter.sendTurn({ threadId: "t-call", text: "hi" });
+    await recorder.until((e) => e.type === "turn.completed");
+    expect(spoken.reused).toBe(true);
+    expect(requestedUrls.some((url) => url.includes("/chat/completions"))).toBe(true);
+  });
+
+  it("keeps the HTTP pool alive while the call is warm, and stops on hangup", async () => {
+    process.env.FAKE_GROK_WARM_PING_MS = "40";
+    script = [];
+    await create();
+    await instance.adapter.sendTurn({ threadId: "t-ping", text: "", keepWarm: true, warmOnly: true });
+    const afterWarm = requestedUrls.filter((url) => url.endsWith("/models")).length;
+    await new Promise((resolve) => setTimeout(resolve, 120));
+    expect(requestedUrls.filter((url) => url.endsWith("/models")).length).toBeGreaterThan(afterWarm);
+    instance.adapter.releaseWarmSession?.("t-ping");
+    const afterHangup = requestedUrls.filter((url) => url.endsWith("/models")).length;
+    await new Promise((resolve) => setTimeout(resolve, 120));
+    expect(requestedUrls.filter((url) => url.endsWith("/models")).length).toBe(afterHangup);
   });
 });
 

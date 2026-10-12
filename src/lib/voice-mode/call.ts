@@ -28,6 +28,7 @@ import speakerModelUrl from "./models/campplus-sv-en-int8.onnx?url";
 import { streamVoiceModeSpeech } from "./api";
 import { type CallSettings } from "./call-settings";
 import { INITIAL_CALL, step, type CallEffect, type CallEvent, type CallState } from "./call-machine";
+import { bargeInEffects, thinkingCueMs } from "./duplex-policy";
 import { EchoGuard } from "./echo";
 import { loadOrt } from "./onnx";
 import { PcmPlayer, type PlaybackCut, type Sentence } from "./player";
@@ -36,14 +37,23 @@ import { SpeechSocket } from "./speech-stream";
 import { estimatePitch } from "./prosody";
 import { spokenPart } from "./spoken";
 import { judge, readVoiceprint, saveVoiceprint, SpeakerEmbedder, voiceprintOf, type Voiceprint } from "./speaker-id";
-import { LiveTranscriber } from "./stt-stream";
-import { completeClause, CONTOUR_CONTINUATION_MS, FRAME_MS, incompleteClause, TurnDetector } from "./turns";
+import { attachVoiceCapture, type CaptureContext, type CaptureSource, type VoiceCapture } from "./capture-worklet";
+import { LiveTranscriber, PROBE_AFTER_MS } from "./stt-stream";
+import { completeClause, CONTOUR_CONTINUATION_MS, FRAME_MS, incompleteClause, longFrenchOpen, stripTerminalPunctuation, TurnDetector } from "./turns";
 import { formatTimeline, materiallyDifferent, normalizedWords, type TurnMetrics } from "./latency";
+import { discardSpeculation, holdSpeculativePlayback, maySpeculate } from "./speculative";
+import { ttsLeadStep, type TtsLeadAction } from "./tts-lead";
 import { LevelVad, SileroVad, VAD_FRAME, type VoiceProbability } from "./vad";
 import type { VoiceModeSettings } from "../../../shared/voice-mode";
 
 const RATE = 16_000;
-const PREROLL_FRAMES = 10; // 320 ms before the first voiced frame
+const PREROLL_IDLE_FRAMES = 10; // 320 ms before the first voiced frame
+const PREROLL_BARGE_FRAMES = 15; // 480 ms: first syllables over the bot stay in the STT window
+/** Trailing silence is still sent to STT while the partial is incomplete
+ * so the last word can land. After 128 ms of confident silence, one
+ * `finalize` probe asks for those words; further silence is held so a
+ * second finalize with no new audio cannot stick the listen socket. Once
+ * `maySpeculate`, silence stops even sooner so xAI can speech_final. */
 /** A turn that starts this soon after the last one ended, before the bot
  * said anything, continues it: one utterance cut by a pause. */
 export const CONTINUATION_MS = 1_500;
@@ -111,9 +121,10 @@ export interface VoiceCallEvents {
   /** an accepted turn: send it to the bot. `interrupted`: the person cut
    * the bot (talked over it, or over its running turn, or pressed
    * interrupt) since the last turn sent; the bot is told (Message.voiceCall). */
-  utterance(text: string, metrics: TurnMetrics, turn: { interrupted: boolean; cut?: PlaybackCut; continues?: boolean; utteranceId: string }): void;
-  /** stop the bot's running turn on the server */
-  "interrupt-bot"(): void;
+  utterance(text: string, metrics: TurnMetrics, turn: { interrupted: boolean; cut?: PlaybackCut; continues?: boolean; utteranceId: string; speculative?: boolean }): void;
+  /** stop the bot's running turn on the server. When dropping a speculative
+   * send, `utteranceId` is that send so /interrupt cannot kill a newer turn. */
+  "interrupt-bot"(target?: { utteranceId: string }): void;
   /** the bot's speech was cut (barge-in, interrupt, hold, end), with what
    * the person heard of it and what they did not */
   "speech-cancelled"(cut: PlaybackCut): void;
@@ -186,7 +197,7 @@ export class VoiceCall {
   };
   private stream: MediaStream | null = null;
   private capture: AudioContext | null = null;
-  private processor: ScriptProcessorNode | null = null;
+  private captureNode: VoiceCapture | null = null;
   private source: MediaStreamAudioSourceNode | null = null;
   private micAnalyser: AnalyserNode | null = null;
   private resample: ((input: Float32Array) => Float32Array[]) | null = null;
@@ -206,6 +217,8 @@ export class VoiceCall {
   private lastVoicedAt = 0;
   private speechWaiters: Array<(heard: boolean) => void> = [];
   private reply: SentenceStream | null = null;
+  /** first-clause TTS lead already sent (`text.delta`, not yet `text.done`) */
+  private leadSent: string | null = null;
   /** the call's streaming voice, while it holds (else POST per sentence) */
   private speechSocket: SpeechSocket | null = null;
   /** when the current candidate turn's first voiced frame came */
@@ -225,21 +238,32 @@ export class VoiceCall {
   /** the words recognized so far in the turn being heard, and when */
   private turnPartial = "";
   private partialAt = 0;
+  /** duplex: the partial already sent to the LLM, until the person stops or it is discarded */
+  private speculated: string | null = null;
+  /** a dropped guess must be replaced by the endpoint send, not forked */
+  private replaceSpeculation = false;
+  /** false while a speculative send waits for speech-end to play TTS */
+  private endpointConfirmed = true;
+  /** speculative TTS is fetched but not played until speech-end */
+  private held: Sentence[] = [];
   /** the soft tone of a slow answer, armed when a turn is sent */
   private cueTimer: ReturnType<typeof setTimeout> | null = null;
   private enrolling: { frames: Float32Array[]; levels: number[]; done: (frames: Float32Array[] | null) => void; until: number } | null = null;
   /** the on-device models loaded (else the level detector serves) */
   modelsReady = false;
+  /** pre-synthesized tool filler clips, keyed by the spoken words */
+  private fillerCache = new Map<string, { bytes: Uint8Array; sampleRate: number }>();
 
   constructor(options: VoiceCallOptions) {
     this.o = options;
+    this.state = { ...INITIAL_CALL, duplex: options.settings().fullDuplex === true };
     this.now = options.now ?? (() => performance.now());
     this.voiceprint = options.voiceprint !== undefined ? options.voiceprint : readVoiceprint();
     this.player = options.player ?? new PcmPlayer();
     this.transcriber = options.transcriber ?? new LiveTranscriber({ botId: options.botId, language: () => options.voice().language, threadId: options.threadId });
     this.player.events = {
-      onSentenceStart: (text) => {
-        if (this.turn && this.turn.firstAudioAt === undefined && this.turn.sentAt !== undefined) {
+      onSentenceStart: (text, info) => {
+        if (this.turn && this.turn.firstAudioAt === undefined && this.turn.sentAt !== undefined && this.turn.firstSentenceAt !== undefined && !info?.filler) {
           this.turn.firstAudioAt = this.now();
           this.disarmCue();
           this.emit("metrics", this.turn, this.bargeIn);
@@ -257,13 +281,18 @@ export class VoiceCall {
       onError: () => this.emit("error", "speech-failed"),
     };
     this.transcriber.onPartial((text) => {
-      // the words so far move the endpoint: an unfinished clause waits longer
-      if (this.turns.active) this.turns.hint(text);
+      // A probe may have punctuated a sentence the person has not finished.
+      // Endpointing and speculation see the words without that period.
+      const forced = this.transcriber.forcedFlush;
+      const heard = forced ? stripTerminalPunctuation(text) : text;
+      if (this.turns.active) this.turns.hint(heard);
       if (this.turns.active || this.pushing || this.state.phase === "thinking") {
-        this.turnPartial = text;
+        this.turnPartial = heard;
         this.partialAt = this.now();
       }
       this.emit("partial", text);
+      if (forced && longFrenchOpen(heard, this.turns.spokenMs)) return;
+      this.considerSpeculation(heard);
     });
     if (this.voiceprint?.level) this.turns.nearLevel = this.voiceprint.level;
   }
@@ -380,15 +409,46 @@ export class VoiceCall {
     if (this.state.botBusy !== busy) this.dispatch({ type: "bot-busy", busy });
   }
 
+  /** In-flight tools or a sibling topic: barge-in drops speech, not the work. */
+  setBackgroundWork(on: boolean): void {
+    if (this.state.backgroundWork === on) return;
+    this.state = { ...this.state, backgroundWork: on };
+    this.emit("state", this.state);
+  }
+
   // ── speaking ───────────────────────────────────────────────────────────
+
+  /** Pre-synthesize the tool filler so the first tool has no TTS wait. */
+  async prefetchFiller(text: string): Promise<void> {
+    if (!text.trim() || this.fillerCache.has(text) || this.closed) return;
+    const speech = this.o.speech ?? this.speechSocket?.speak ?? streamVoiceModeSpeech;
+    const spoken = await speech(this.o.botId, text, this.o.voice(), this.o.threadId(), new AbortController().signal);
+    if (!spoken || this.closed) return;
+    this.fillerCache.set(text, { bytes: await readPcm(spoken.body), sampleRate: spoken.sampleRate });
+  }
+
+  /** Speak the local tool filler (cached words when ready). Never a tone. */
+  sayFiller(text: string): Promise<boolean> {
+    if (this.state.phase === "held" || this.state.phase === "ended") return Promise.resolve(false);
+    const cached = this.fillerCache.get(text);
+    if (!cached) return this.say(text, { filler: true });
+    const sentence: Sentence = {
+      text,
+      audio: Promise.resolve({ body: pcmStream(cached.bytes), sampleRate: cached.sampleRate }),
+      abort: () => {},
+      filler: true,
+    };
+    this.player.enqueue(sentence);
+    return new Promise((resolve) => this.speechWaiters.push(resolve));
+  }
 
   /** Say a whole text (a prompt, a narration chip, a settled answer).
    * Resolves true once heard, false when cut. */
-  say(text: string): Promise<boolean> {
+  say(text: string, opts?: { filler?: boolean }): Promise<boolean> {
     if (this.state.phase === "held" || this.state.phase === "ended") return Promise.resolve(false);
     const stream = this.sentences();
     const sentences = stream.finish(text);
-    for (const sentence of sentences) this.enqueue(sentence);
+    for (const sentence of sentences) this.enqueue(sentence, opts);
     if (!sentences.length) return Promise.resolve(true);
     return new Promise((resolve) => this.speechWaiters.push(resolve));
   }
@@ -399,7 +459,7 @@ export class VoiceCall {
     if (this.turn && this.turn.sentAt !== undefined && this.turn.firstTokenAt === undefined && text.trim()) this.turn.firstTokenAt = this.now();
     this.reply ??= this.sentences();
     this.replyText = spokenPart(text);
-    for (const sentence of this.reply.feed(this.replyText)) this.enqueue(sentence);
+    this.applyTtsLead(this.reply.feed(this.replyText), this.replyText.slice(this.reply.position));
   }
 
   /** The answer (or this block of it) is complete. */
@@ -408,7 +468,11 @@ export class VoiceCall {
     const stream = this.reply ?? this.sentences();
     this.reply = null;
     const rest = stream.finish(spokenPart(text));
-    for (const sentence of rest) this.enqueue(sentence);
+    this.applyTtsLead(rest, "");
+    if (this.leadSent) {
+      this.runTtsLead({ action: "finish" });
+      this.leadSent = null;
+    }
     if (!this.player.busy) return Promise.resolve(true);
     return new Promise((resolve) => this.speechWaiters.push(resolve));
   }
@@ -427,15 +491,46 @@ export class VoiceCall {
     return new SentenceStream(this.streaming ? STREAMING_CLAUSES : {});
   }
 
-  private enqueue(text: string): void {
+  private applyTtsLead(emitted: string[], unconsumed: string): void {
+    const { actions, leadSent } = ttsLeadStep({
+      streaming: this.streaming,
+      leadSent: this.leadSent,
+      emitted,
+      unconsumed,
+    });
+    this.leadSent = leadSent;
+    for (const action of actions) this.runTtsLead(action);
+  }
+
+  private runTtsLead(action: TtsLeadAction): void {
+    switch (action.action) {
+      case "speak":
+        this.enqueue(action.text);
+        return;
+      case "begin":
+        this.enqueue(action.text, { more: true });
+        return;
+      case "append":
+        this.speechSocket?.append(action.text);
+        return;
+      case "finish":
+        if (action.append) this.speechSocket?.append(action.append);
+        this.speechSocket?.finish();
+        return;
+    }
+  }
+
+  private enqueue(text: string, opts?: { filler?: boolean; more?: boolean }): void {
     if (this.state.phase === "held" || this.state.phase === "ended") return;
     const turn = this.turn;
-    const first = Boolean(turn && turn.firstSentenceAt === undefined && turn.sentAt !== undefined);
+    const first = Boolean(!opts?.filler && turn && turn.firstSentenceAt === undefined && turn.sentAt !== undefined);
     if (first) turn!.firstSentenceAt = this.now();
     const controller = new AbortController();
     const socket = this.streaming ? this.speechSocket : null;
     if (first && socket) turn!.streamed = true;
-    const speech = this.o.speech ?? socket?.speak ?? streamVoiceModeSpeech;
+    const speech = opts?.more
+      ? (socket?.begin ?? this.o.speech ?? streamVoiceModeSpeech)
+      : (this.o.speech ?? socket?.speak ?? streamVoiceModeSpeech);
     let audio = speech(this.o.botId, text, this.o.voice(), this.o.threadId(), controller.signal);
     // the first sentence of an answer: when its first audio bytes arrive
     if (first) audio = audio.then((spoken) => (spoken ? { ...spoken, body: firstChunk(spoken.body, () => { turn!.ttsFirstByteAt ??= this.now(); }) } : spoken));
@@ -443,9 +538,25 @@ export class VoiceCall {
       text,
       audio,
       abort: () => controller.abort(),
+      ...(opts?.filler ? { filler: true } : {}),
     };
     sentence.audio.catch(() => {});
-    this.player.enqueue(sentence);
+    if (holdSpeculativePlayback({ speculative: this.speculated !== null, endpointConfirmed: this.endpointConfirmed }) && !opts?.filler) {
+      this.held.push(sentence);
+    } else {
+      this.player.enqueue(sentence);
+    }
+  }
+
+  private releaseHeldPlayback(): void {
+    const held = this.held;
+    this.held = [];
+    for (const sentence of held) this.player.enqueue(sentence);
+  }
+
+  private dropHeldPlayback(): void {
+    for (const sentence of this.held) sentence.abort();
+    this.held = [];
   }
 
   // ── push to talk ───────────────────────────────────────────────────────
@@ -546,30 +657,33 @@ export class VoiceCall {
     const analyser = context.createAnalyser();
     analyser.fftSize = 1024;
     const size = context.sampleRate === RATE ? VAD_FRAME : 2048;
-    // ScriptProcessor rather than an AudioWorklet: no module file to serve
-    // from a bundle that may be drawn on a server's origin
-    const processor = context.createScriptProcessor(size, 1, 1);
-    processor.onaudioprocess = (event) => this.onAudio(event.inputBuffer.getChannelData(0));
     source.connect(analyser);
-    source.connect(processor);
-    processor.connect(context.destination);
+    const captureNode = await attachVoiceCapture(context as CaptureContext, source as CaptureSource, (samples) => this.onAudio(samples), { bufferSize: size, frameSize: size });
+    if (this.closed) {
+      captureNode.disconnect();
+      source.disconnect();
+      analyser.disconnect();
+      for (const track of stream.getTracks()) track.stop();
+      void context.close().catch(() => {});
+      return;
+    }
     for (const track of stream.getAudioTracks()) track.enabled = !this.state.muted && this.state.phase !== "held";
     this.stream = stream;
     this.capture = context;
     this.source = source;
     this.micAnalyser = analyser;
-    this.processor = processor;
+    this.captureNode = captureNode;
     if (context.state === "suspended") await context.resume().catch(() => {});
   }
 
   private release(): void {
     this.closed = true;
-    this.processor?.disconnect();
+    this.captureNode?.disconnect();
     this.source?.disconnect();
     this.micAnalyser?.disconnect();
     for (const track of this.stream?.getTracks() ?? []) track.stop();
     const capture = this.capture;
-    this.processor = null;
+    this.captureNode = null;
     this.source = null;
     this.micAnalyser = null;
     this.stream = null;
@@ -641,20 +755,32 @@ export class VoiceCall {
     const event = this.turns.feed({ probability, level, botAudible, echo, pitch });
     if (!event) {
       if (this.turns.active) {
-        this.transcriber.push(frame);
+        // Keep sending trailing silence until the partial can start the LLM
+        // (complete clause or four stable words). An incomplete "What is two
+        // plus" keeps streaming so the last word can land. Then stop so xAI
+        // can speech_final.
+        const ready = maySpeculate(this.turnPartial, true);
+        if (this.turns.inSilence && this.turns.quietMs >= PROBE_AFTER_MS) this.transcriber.probe();
+        // Hold silence once a probe has closed this audio. Voiced frames
+        // still go out, so the person resuming clears the hold.
+        const hold = this.turns.inSilence && this.transcriber.holdingSilence;
+        if (!hold && (!this.turns.inSilence || !ready)) this.transcriber.push(frame);
         if (probability > 0.5) {
           this.lastVoicedAt = this.now();
           this.turnLevel.sum += level;
           this.turnLevel.frames += 1;
         }
+        if (this.turns.inSilence) this.considerSpeculation(this.turnPartial);
       } else this.keepPreroll(frame);
       return;
     }
     switch (event.type) {
-      case "candidate":
+      case "candidate": {
         this.keepPreroll(frame);
         this.turnPartial = "";
-        this.transcriber.begin(this.preroll);
+        this.replaceSpeculation = false;
+        const n = (event.bargeIn || this.state.botAudible) ? PREROLL_BARGE_FRAMES : PREROLL_IDLE_FRAMES;
+        this.transcriber.begin(this.preroll.slice(-n));
         this.preroll = [];
         this.turnLevel = { sum: level, frames: 1 };
         this.lastVoicedAt = this.now();
@@ -662,6 +788,7 @@ export class VoiceCall {
         if (event.bargeIn) this.bargeIn = { candidateAt: this.now() };
         this.dispatch({ type: "speech-candidate" });
         return;
+      }
       case "start":
         this.transcriber.push(frame);
         this.lastVoicedAt = this.now();
@@ -671,7 +798,7 @@ export class VoiceCall {
         this.dispatch({ type: "speech-cancel" });
         return;
       case "end":
-        this.beginTurnMetrics(this.lastVoicedAt, event.early === true, event.onContour === true);
+        this.beginTurnMetrics(this.lastVoicedAt, event.early === true, event.onContour === true, event.semantic === true);
         if (this.turn && event.contour && event.contour !== "unknown") this.turn.contour = event.contour;
         this.dispatch({ type: "speech-end" });
         return;
@@ -680,12 +807,29 @@ export class VoiceCall {
 
   private keepPreroll(frame: Float32Array): void {
     this.preroll.push(frame);
-    if (this.preroll.length > PREROLL_FRAMES) this.preroll.shift();
+    if (this.preroll.length > PREROLL_BARGE_FRAMES) this.preroll.shift();
   }
 
-  private beginTurnMetrics(stoppedAt: number, earlyEnd = false, contourEnd = false): void {
+  private beginTurnMetrics(stoppedAt: number, earlyEnd = false, contourEnd = false, semanticEnd = false): void {
     this.disarmCue();
-    this.turn = { stoppedAt, endedAt: this.now(), ...(earlyEnd ? { earlyEnd: true } : {}), ...(contourEnd ? { contourEnd: true } : {}) };
+    // only the in-flight speculation for THIS utterance keeps its sentAt
+    if (this.speculated && this.turn?.earlyStart && this.turn.firstAudioAt === undefined) {
+      this.turn.stoppedAt = stoppedAt;
+      this.turn.endedAt = this.now();
+      if (earlyEnd) this.turn.earlyEnd = true;
+      if (contourEnd) this.turn.contourEnd = true;
+      if (semanticEnd) this.turn.semanticEnd = true;
+      this.endpointConfirmed = true;
+      this.releaseHeldPlayback();
+      this.emit("metrics", this.turn, this.bargeIn);
+      return;
+    }
+    this.turn = {
+      stoppedAt, endedAt: this.now(),
+      ...(earlyEnd ? { earlyEnd: true } : {}),
+      ...(contourEnd ? { contourEnd: true } : {}),
+      ...(semanticEnd ? { semanticEnd: true } : {}),
+    };
   }
 
   /** The server took the turn's send (LiveCall, from its receipt). */
@@ -698,7 +842,7 @@ export class VoiceCall {
   private armCue(turn: TurnMetrics): void {
     this.disarmCue();
     if (!this.o.settings().thinkingCue) return;
-    const wait = Math.max(0, THINKING_CUE_MS - (this.now() - turn.stoppedAt));
+    const wait = Math.max(0, thinkingCueMs(this.state.duplex) - (this.now() - turn.stoppedAt));
     this.cueTimer = setTimeout(() => {
       this.cueTimer = null;
       if (this.turn !== turn || turn.firstAudioAt !== undefined || this.closed) return;
@@ -726,6 +870,8 @@ export class VoiceCall {
   // ── the state machine's effects ────────────────────────────────────────
 
   private dispatch(event: CallEvent): void {
+    const duplex = this.o.settings().fullDuplex === true;
+    if (this.state.duplex !== duplex) this.state = { ...this.state, duplex };
     // A turn that starts right after the last one, before the bot said a
     // word, is the same utterance cut by a pause: it is sent whole, and the
     // turn the fragment started is cancelled.
@@ -737,8 +883,9 @@ export class VoiceCall {
     if (event.type === "speech-start" && this.lastSent && (wrongCut || (!this.state.botAudible && !this.lastSent.botSpoke &&
       this.now() - this.lastSent.endedAt <= CONTINUATION_MS))) {
       this.continuing = true;
-      // over the bot's voice the barge-in itself stops its turn
-      if (this.state.botBusy && !this.state.botAudible) this.emit("interrupt-bot");
+      // over the bot's voice the barge-in itself stops its turn. Duplex
+      // speech-start already interrupt-bot via step(); flag off still needs this.
+      if (this.state.botBusy && !this.state.botAudible && bargeInEffects(this.state) !== "cancel-and-interrupt") this.emit("interrupt-bot");
     }
     if (event.type === "bot-audio-start" && this.lastSent) this.lastSent.botSpoke = true;
     const { state, effects } = step(this.state, event);
@@ -769,15 +916,17 @@ export class VoiceCall {
         const cut: PlaybackCut = { heard: played.heard, unheard: [played.unheard, unwritten].filter(Boolean).join(" ") };
         if (cut.heard || cut.unheard) this.lastCut = cut;
         this.player.resetLedger();
+        this.dropHeldPlayback();
+        const waiters = this.speechWaiters;
+        this.speechWaiters = [];
         void this.player.cancel();
         this.reply = null;
         this.replyText = "";
+        this.leadSent = null;
         if (this.bargeIn) {
           this.bargeIn.cancelledAt = this.now();
           this.emit("metrics", this.turn, this.bargeIn);
         }
-        const waiters = this.speechWaiters;
-        this.speechWaiters = [];
         for (const resolve of waiters) resolve(false);
         this.emit("speech-cancelled", cut);
         return;
@@ -793,7 +942,8 @@ export class VoiceCall {
           this.emit("metrics", this.turn, this.bargeIn);
           this.armCue(this.turn);
         }
-        const continues = this.continuing && this.lastSent !== null;
+        const continues = (this.continuing && this.lastSent !== null) || this.replaceSpeculation;
+        this.replaceSpeculation = false;
         const text = continues ? continuedTurn(this.lastSent!.text, effect.text) : effect.text;
         this.continuing = false;
         this.lastSent = { text, endedAt: this.turn?.endedAt ?? this.now(), botSpoke: false, ...(this.turn?.contourEnd ? { onContour: true } : {}) };
@@ -806,6 +956,9 @@ export class VoiceCall {
         this.cutBot = false;
         this.lastCut = null;
         // a new answer starts: what it plays is measured from here
+        this.reply = null;
+        this.replyText = "";
+        this.leadSent = null;
         this.player.resetLedger();
         return;
       }
@@ -813,6 +966,7 @@ export class VoiceCall {
         void this.finishTurn();
         return;
       case "cancel-stt":
+        this.dropSpeculation();
         this.transcriber.discard();
         this.turns.reset();
         this.pushing = false;
@@ -840,6 +994,28 @@ export class VoiceCall {
     // after the final's round trip; the final is checked when it comes.
     const partial = this.turnPartial.trim();
     const turn = this.turn;
+    if (this.speculated && turn) {
+      const verdict = await this.verify(audio);
+      if (this.closed) return;
+      if (!verdict) {
+        this.dropSpeculation();
+        turn.transcribedAt = this.now();
+        this.emit("rejected", "other-voice");
+        this.dispatch({ type: "utterance-rejected", reason: "other-voice" });
+        void final;
+        return;
+      }
+      turn.transcribedAt = turn.transcribedAt ?? this.now();
+      turn.earlyStart = true;
+      this.learnLevel(speechLevel);
+      const heard = await final;
+      if (this.closed) return;
+      turn.finalAt = this.now();
+      const text = heard.text.trim() || partial;
+      if (text && !isNoiseFragment(text, heard.confidence) && discardSpeculation(this.speculated, text)) this.reissue(turn, text);
+      this.speculated = null;
+      return;
+    }
     if (this.o.earlyStart !== false && turn && stablePartial(partial, this.partialAt, turn.stoppedAt) && !isNoiseFragment(partial)) {
       const verdict = await this.verify(audio);
       if (this.closed) return;
@@ -899,12 +1075,14 @@ export class VoiceCall {
     // the person already said something else: that turn carries on
     if (this.turn !== turn) return;
     turn.reissued = true;
-    if (this.state.botBusy) this.emit("interrupt-bot");
+    const cancelled = turn.utteranceId;
+    if (this.state.botBusy) this.emit("interrupt-bot", cancelled ? { utteranceId: cancelled } : undefined);
     if (this.player.busy || this.reply) {
       void this.player.cancel();
       this.player.resetLedger();
       this.reply = null;
       this.replyText = "";
+      this.leadSent = null;
     }
     const utteranceId = this.newId();
     turn.utteranceId = utteranceId;
@@ -913,6 +1091,59 @@ export class VoiceCall {
     turn.ttsFirstByteAt = undefined;
     this.lastSent = { text, endedAt: turn.endedAt, botSpoke: false };
     this.emit("utterance", text, turn, { interrupted: false, continues: true, utteranceId });
+  }
+
+  /** Duplex: start the LLM on a stable partial while the person is still
+   * talking. Stay in hearing so speech-end still finalizes STT. */
+  private considerSpeculation(text: string): void {
+    if (!this.o.settings().fullDuplex || !this.turns.active || this.closed) return;
+    const trimmed = text.trim();
+    if (this.speculated) {
+      if (!discardSpeculation(this.speculated, trimmed)) return;
+      this.dropSpeculation();
+      if (!maySpeculate(trimmed, this.turns.inSilence) || isNoiseFragment(trimmed)) {
+        this.replaceSpeculation = true;
+        return;
+      }
+      this.sendSpeculative(trimmed, true);
+      return;
+    }
+    if (!maySpeculate(trimmed, this.turns.inSilence) || isNoiseFragment(trimmed)) return;
+    this.sendSpeculative(trimmed);
+  }
+
+  private dropSpeculation(): void {
+    if (!this.speculated) return;
+    const utteranceId = this.turn?.utteranceId;
+    this.emit("interrupt-bot", utteranceId ? { utteranceId } : undefined);
+    this.speculated = null;
+    this.endpointConfirmed = true;
+    this.dropHeldPlayback();
+  }
+
+  private sendSpeculative(text: string, continues = false): void {
+    const utteranceId = this.newId();
+    const now = this.now();
+    this.turn = { stoppedAt: now, endedAt: now, earlyStart: true, sentAt: now, transcribedAt: now, utteranceId };
+    this.speculated = text;
+    this.endpointConfirmed = false;
+    // An open long French sentence must not be forced onto the short
+    // complete window; the long-French quiet still applies.
+    if (!longFrenchOpen(text, this.turns.spokenMs)) this.turns.markComplete();
+    this.lastSent = { text, endedAt: this.turn.endedAt, botSpoke: false };
+    this.reply = null;
+    this.replyText = "";
+    this.leadSent = null;
+    this.player.resetLedger();
+    this.armCue(this.turn);
+    this.emit("utterance", text, this.turn, {
+      interrupted: this.cutBot,
+      utteranceId,
+      speculative: true,
+      ...(continues ? { continues: true } : {}),
+    });
+    this.emit("metrics", this.turn, this.bargeIn);
+    this.cutBot = false;
   }
 
   private newId(): string {
@@ -1005,4 +1236,34 @@ async function defaultModels(withSpeaker: boolean): Promise<{ vad: VoiceProbabil
     withSpeaker ? SpeakerEmbedder.load(ort, speakerModelUrl).catch(() => null) : Promise.resolve(null),
   ]);
   return { vad, embedder };
+}
+
+async function readPcm(body: ReadableStream<Uint8Array>): Promise<Uint8Array> {
+  const reader = body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    if (value) {
+      chunks.push(value);
+      total += value.byteLength;
+    }
+  }
+  const out = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    out.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return out;
+}
+
+function pcmStream(bytes: Uint8Array): ReadableStream<Uint8Array> {
+  return new ReadableStream({
+    start(controller) {
+      if (bytes.byteLength) controller.enqueue(bytes);
+      controller.close();
+    },
+  });
 }

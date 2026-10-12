@@ -38,6 +38,10 @@ struct MarkdownText: View {
     /// bubbles pass `message-<id>-scroll`. Streaming and file preview pass nil.
     var scrollIdentifier: String? = nil
     var openLink: ((URL) -> OpenURLAction.Result)?
+    /// A ```cw fence asks for approval through this. Nil leaves the card read-only.
+    var cwAsk: ((CwActionBody) -> Void)? = nil
+    var cwThreadId: String? = nil
+    var cwBotId: String? = nil
     /// @mentions of these peers are tinted (MS21), as the desktop's
     /// `remarkMentions` does; links and code spans are left alone.
     var mentions: [MentionPeer] = []
@@ -81,8 +85,14 @@ struct MarkdownText: View {
         mentionEveryone: Bool = false,
         attachmentScope: (threadId: String, messageId: String)? = nil,
         picturesAsText: Bool = false,
+        cwAsk: ((CwActionBody) -> Void)? = nil,
+        cwThreadId: String? = nil,
+        cwBotId: String? = nil,
         openLink: ((URL) -> OpenURLAction.Result)? = nil
     ) {
+        self.cwAsk = cwAsk
+        self.cwThreadId = cwThreadId
+        self.cwBotId = cwBotId
         self.source = source
         self.caret = caret
         self.scrollIdentifier = scrollIdentifier
@@ -160,14 +170,24 @@ struct MarkdownText: View {
     private func view(for block: MarkdownBlock, tail: Bool, scrollIdentifier: String?, pending: Bool, identifier: String?) -> some View {
         switch block {
         case let .paragraph(text):
-            inline(text, tail: tail)
-                .font(bodyFont)
-                .lineSpacing(bodyLineSpacing)
-                .modifier(DesktopLineBox(theme: desktop))
-                .fixedSize(horizontal: false, vertical: true)
-                // a paragraph holding spoilers or footnote marks is findable
-                // (its taps are the block's actions); plain prose is untouched
-                .modifier(RichIdentifier(identifier: text.contains("~~") || text.contains(Markdown.footnoteScheme) ? identifier : nil))
+            let youtubeIds = YouTubeLinks.ids(in: text)
+            if youtubeIds.count == 1, YouTubeLinks.isStandaloneParagraph(text, videoId: youtubeIds[0]) {
+                YouTubeMiniPlayerView(videoId: youtubeIds[0], identifier: identifier.map { "\($0)-yt" })
+            } else {
+                VStack(alignment: .leading, spacing: desktop == nil ? Theme.Chat.paragraphSpacing : DesktopChatMetrics.paragraphGap) {
+                    if !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        inline(text, tail: tail)
+                            .font(bodyFont)
+                            .lineSpacing(bodyLineSpacing)
+                            .modifier(DesktopLineBox(theme: desktop))
+                            .fixedSize(horizontal: false, vertical: true)
+                            .modifier(RichIdentifier(identifier: text.contains("~~") || text.contains(Markdown.footnoteScheme) ? identifier : nil))
+                    }
+                    ForEach(youtubeIds, id: \.self) { videoId in
+                        YouTubeMiniPlayerView(videoId: videoId, identifier: identifier.map { "\($0)-yt-\(videoId)" })
+                    }
+                }
+            }
 
         case let .heading(level, text):
             // Three sizes, not six. A chat bubble is not a document, and an
@@ -241,7 +261,9 @@ struct MarkdownText: View {
         let kind = RichBlocks.fenceKind(lang)
         let email = kind == .email || kind == nil ? RichBlocks.parseEmailBlock(code, lang: lang) : nil
         let csv = kind == .csv && !pending ? MarkdownTable.delimited(code, language: lang) : nil
-        if lang.trimmingCharacters(in: .whitespaces).lowercased() == "mermaid" {
+        if kind == .cw, let widget = CwWidget.parse(code) {
+            CwWidgetCard(widget: widget, threadId: cwThreadId, botId: cwBotId, ask: cwAsk)
+        } else if lang.trimmingCharacters(in: .whitespaces).lowercased() == "mermaid" {
             MermaidBlockView(code: code, identifier: identifier)
         } else if let email {
             EmailCardView(draft: email, pending: pending, identifier: identifier)

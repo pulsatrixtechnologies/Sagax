@@ -14,6 +14,7 @@ final class RichBlocksTests: XCTestCase {
         XCTAssertEqual(RichBlocks.fenceKind("artifact"), .widget)
         XCTAssertEqual(RichBlocks.fenceKind("chart"), .chart)
         XCTAssertEqual(RichBlocks.fenceKind("TSV"), .csv)
+        XCTAssertEqual(RichBlocks.fenceKind("cw"), .cw)
         XCTAssertNil(RichBlocks.fenceKind("ts"))
         XCTAssertNil(RichBlocks.fenceKind(""))
     }
@@ -269,6 +270,7 @@ final class RichBlocksTests: XCTestCase {
     func testWidensBubblesForTablesAndRichFencesOnly() {
         XCTAssertTrue(RichBlocks.prefersWideBubble("| a | b |\n| --- | --- |\n| 1 | 2 |"))
         XCTAssertTrue(RichBlocks.prefersWideBubble("```chart\n{}\n```"))
+        XCTAssertTrue(RichBlocks.prefersWideBubble("```cw\n{}\n```"))
         XCTAssertTrue(RichBlocks.prefersWideBubble("<antArtifact type=\"text/html\"><p>x</p></antArtifact>"))
         XCTAssertFalse(RichBlocks.prefersWideBubble("```js\nx\n```\nplain prose"))
     }

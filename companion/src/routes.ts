@@ -365,6 +365,9 @@ const ALLOWED: ReadonlyArray<{ method: string; path: RegExp }> = [
   { method: "POST", path: /^\/api\/me\/achievements\/events$/ },
   { method: "PUT", path: /^\/api\/me\/achievements\/settings$/ },
   { method: "GET", path: /^\/api\/achievements\/public$/ },
+  // Inline video widgets: proxied media and YouTube transcripts (session auth).
+  { method: "GET", path: /^\/api\/media\/proxy\/.+/ },
+  { method: "POST", path: /^\/api\/youtube\/transcript$/ },
 
   // rooms — making one, and talking in one
   { method: "POST", path: /^\/api\/groups$/ },

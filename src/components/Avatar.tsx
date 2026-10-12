@@ -46,6 +46,7 @@ export interface MausAvatarHandle {
   spin: (durationMs?: number) => void;
   /** The owl has no expression sheet; kept so old callers still compile. */
   setExpression: (index: number) => void;
+  setPointerGaze: (offset: { x: number; y: number } | null) => void;
 }
 
 export type MausAvatarProps = {
@@ -78,6 +79,8 @@ export type MausAvatarProps = {
   trackPointer?: boolean;
   /** Run the animation. Off draws the resting pose once. */
   animated?: boolean;
+  /** Sidebar: shared pointer gaze while idle (no full body loop). */
+  sidebarGaze?: boolean;
   /** Ignored: every bot is the owl now. The field stays on the wire. */
   bodyId?: MascotBodyId;
   /** Special-edition skin. Missing or unknown values wear none. */
@@ -100,6 +103,7 @@ function MausAvatarComponent(
     gaze,
     trackPointer = true,
     animated = true,
+    sidebarGaze = false,
     skin,
     skinAnimated,
     move,
@@ -111,6 +115,7 @@ function MausAvatarComponent(
     blink: () => owl.current?.blink(),
     spin: () => owl.current?.play("success"),
     setExpression: () => {},
+    setPointerGaze: (offset) => owl.current?.setPointerGaze(offset),
   }));
 
   // success/alert are one-shots: the owl rests as idle and plays the beat
@@ -151,6 +156,7 @@ function MausAvatarComponent(
       size={size}
       label={label ?? null}
       animated={animated}
+      sidebarGaze={sidebarGaze}
       trackPointer={trackPointer}
       gaze={pinned}
       skin={skin}
@@ -163,6 +169,11 @@ function MausAvatarComponent(
 export const MausAvatar = memo(forwardRef(MausAvatarComponent));
 
 export type BotAvatarProps = Omit<MausAvatarProps, "color"> & {
+  /** Sidebar hover gaze and tap reactions while the row mascot is idle. */
+  sidebarAlive?: boolean;
+  /** Blink / hop for owls in the sidebar. */
+  mascotRef?: React.Ref<MausAvatarHandle>;
+  shapeGazeRef?: React.MutableRefObject<((gaze: { x: number; y: number }) => void) | null>;
   bot: {
     name?: string;
     color: MausColor;
@@ -298,10 +309,44 @@ export function frogExpressionFor(state: MausState | undefined): FrogExpression 
  * The bot's character, when it is not the owl: one of the shapes, Trombi, Bunbu, Shiba, Grump, Ogre or Frog, in the bot's look. Every bot avatar in the app comes through
  * BotAvatar, so this is where a character change shows everywhere.
  */
-function CharacterAvatar({ look, color, size, state, animated = true, label, move }: { look: MascotLook; color: MausColor; size: number; state?: MausState; animated?: boolean; label?: string | null; move?: FxMoveRequest | null }) {
+function CharacterAvatar({
+  look,
+  color,
+  size,
+  state,
+  animated = true,
+  sidebarGaze = false,
+  label,
+  move,
+  shapeGazeRef,
+}: {
+  look: MascotLook;
+  color: MausColor;
+  size: number;
+  state?: MausState;
+  animated?: boolean;
+  sidebarGaze?: boolean;
+  label?: string | null;
+  move?: FxMoveRequest | null;
+  shapeGazeRef?: React.MutableRefObject<((gaze: { x: number; y: number }) => void) | null>;
+}) {
   const full = completeMascotLook(look);
   if (full.character === "shape") {
-    return <ShapeMascot shape={full.shape} skin={full.skins.shape} color={color} size={size} mood={shapeMoodFor(state)} animated={animated} move={move} moveBody label={label ?? null} />;
+    return (
+      <ShapeMascot
+        shape={full.shape}
+        skin={full.skins.shape}
+        color={color}
+        size={size}
+        mood={shapeMoodFor(state)}
+        animated={animated}
+        sidebarGaze={sidebarGaze}
+        sidebarGazeRef={shapeGazeRef}
+        move={move}
+        moveBody
+        label={label ?? null}
+      />
+    );
   }
   if (full.character === "shiba") {
     return <ShibaMascot skin={full.skins.shiba} color={color} size={size} mood={bunbuMoodFor(state)} expression={shibaExpressionFor(state)} animated={animated} move={move} moveBody label={label ?? null} />;
@@ -367,7 +412,16 @@ export function BotAvatar({ primary, primaryRingClassName, ...props }: BotAvatar
   );
 }
 
-function BotAvatarImage({ bot, size = 44, label, characterMove, ...mascotProps }: Omit<BotAvatarProps, "primary" | "primaryRingClassName">) {
+function BotAvatarImage({
+  bot,
+  size = 44,
+  label,
+  characterMove,
+  sidebarAlive,
+  mascotRef,
+  shapeGazeRef,
+  ...mascotProps
+}: Omit<BotAvatarProps, "primary" | "primaryRingClassName">) {
   const profile = botAvatarProfile(bot);
   const [imageFailed, setImageFailed] = useState(false);
 
@@ -380,15 +434,30 @@ function BotAvatarImage({ bot, size = 44, label, characterMove, ...mascotProps }
   });
 
   const look = botMascotLook(bot.mascotLook);
+  const sidebarGaze = Boolean(sidebarAlive && !mascotProps.animated);
   if (outcome !== "flatImage" && look.character !== "owl") {
-    return <CharacterAvatar look={look} color={bot.color} size={size} state={mascotProps.state} animated={mascotProps.animated} label={label ?? bot.name} move={characterMove} />;
+    return (
+      <CharacterAvatar
+        look={look}
+        color={bot.color}
+        size={size}
+        state={mascotProps.state}
+        animated={mascotProps.animated}
+        sidebarGaze={sidebarGaze}
+        shapeGazeRef={shapeGazeRef}
+        label={label ?? bot.name}
+        move={characterMove}
+      />
+    );
   }
   if (outcome !== "flatImage") {
     return (
       <MausAvatar
+        ref={mascotRef}
         skin={bot.mascotSkin}
         move={characterMove}
         {...mascotProps}
+        sidebarGaze={sidebarGaze}
         showMouth={false}
         color={bot.color}
         size={size}

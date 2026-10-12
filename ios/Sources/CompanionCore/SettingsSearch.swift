@@ -27,7 +27,7 @@ public enum SettingsDestination: String, CaseIterable, Hashable, Sendable {
         case .timeZone: return ["time zone", "timezone", "clock"]
         case .botComputer: return ["computer", "local vm", "vm", "virtual", "desktop", "ordinateur", "update", "reset", "disk"]
         case .appearance: return ["skin", "theme", "appearance", "font", "threads", "show threads", "hide threads", "sidebar", "hidden", "hide", "show", "dark", "light", "app icon", "icon",
-                                     "activity", "tools", "tool calls", "run", "intro", "animation", "density", "compact", "comfortable", "list", "logo"]
+                                     "activity", "tools", "tool calls", "run", "density", "compact", "comfortable", "list", "logo", "search", "recherche", "plus", "top", "haut"]
         case .language: return ["language", "langue", "français", "english", "português"]
         case .haptics: return ["haptics", "vibration", "notifications", "sound", "sounds", "mute", "silent", "chime"]
         case .quickReplies: return ["quick replies", "replies", "shortcuts"]

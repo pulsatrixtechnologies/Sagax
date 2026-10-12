@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
+import { PRODUCTION_ENGINE_IDS } from "../shared/production-engines.ts";
 import { EngineSelfCheck, readEngineManifest, runEngineSelfCheck, type EngineManifest } from "./engines-self-check.ts";
 import { BUILT_IN_DRIVERS } from "./drivers/builtIn.ts";
 
@@ -81,7 +82,40 @@ describe("runEngineSelfCheck", () => {
     expect(lines.join("\n")).toContain("[engines] grok: FAILED, exec format error (pinned 1.0.46)");
     expect(lines.join("\n")).toContain("[engines] antigravity: not preinstalled, too big");
     expect(lines.join("\n")).not.toContain("minimax-cli");
+    const missing = lines.find((line) => line.includes("engine_missing"));
+    expect(missing).toContain("engineSet=all");
+    expect(missing).toContain("codex");
+    expect(missing).toContain("grok");
     expect(lines.at(-1)).toBe("[engines] self-check: 1/3 preinstalled engine(s) start (image set all)");
+  });
+
+  it("logs engine_missing when the image set is empty", async () => {
+    const lines: string[] = [];
+    await runEngineSelfCheck({ ...MANIFEST, engineSet: "none", installed: [] }, {
+      find: () => [],
+      probe: async () => { throw new Error("must not probe"); },
+      log: (line) => lines.push(line),
+    });
+    const missing = lines.find((line) => line.includes("engine_missing"));
+    expect(missing).toContain("engineSet=none");
+    expect(missing).toContain("claude");
+    expect(missing).toContain("cursor");
+    expect(lines.at(-1)).toBe("[engines] self-check: 0/0 preinstalled engine(s) start (image set none)");
+  });
+
+  it("stays quiet when every production engine started", async () => {
+    const lines: string[] = [];
+    const manifest: EngineManifest = {
+      ...MANIFEST,
+      installed: PRODUCTION_ENGINE_IDS.map((id) => ({ id, name: id, drivers: [], kind: "npm", version: "1", bin: id })),
+    };
+    await runEngineSelfCheck(manifest, {
+      find: (bin) => [`/usr/local/bin/${bin}`],
+      probe: async () => "1",
+      log: (line) => lines.push(line),
+    });
+    expect(lines.join("\n")).not.toContain("engine_missing");
+    expect(lines.at(-1)).toBe(`[engines] self-check: ${PRODUCTION_ENGINE_IDS.length}/${PRODUCTION_ENGINE_IDS.length} preinstalled engine(s) start (image set all)`);
   });
 
   it("does nothing without a manifest", async () => {
@@ -96,7 +130,7 @@ describe("runEngineSelfCheck", () => {
 
 describe("engines.lock.json", () => {
   const lock = JSON.parse(readFileSync(join(import.meta.dirname, "..", "engines.lock.json"), "utf8")) as {
-    engines: Array<{ id: string; drivers: string[]; bin: string; kind: string; version: string; redistributable: boolean; license: string; artifacts?: Record<string, { sha256: string; url: string }>; source?: { sha256: string } }>;
+    engines: Array<{ id: string; drivers: string[]; bin: string; kind: string; version: string; integrity?: string; redistributable: boolean; license: string; artifacts?: Record<string, { sha256: string; url: string }>; source?: { sha256: string } }>;
     notPreinstalled: Array<{ drivers: string[]; reason: string }>;
     noInstall: Array<{ drivers: string[] }>;
   };
@@ -117,6 +151,7 @@ describe("engines.lock.json", () => {
         const config = drivers.get(kind)!.defaultConfig() as { cli?: string };
         expect(config.cli, `${engine.id} ${kind}`).toBe(engine.bin);
       }
+      if (engine.kind === "npm") expect(engine.integrity, engine.id).toMatch(/^sha512-[A-Za-z0-9+/]+=*$/);
       if (engine.kind === "native") {
         expect(Object.keys(engine.artifacts ?? {}).sort(), engine.id).toEqual(["amd64", "arm64"]);
         for (const artifact of Object.values(engine.artifacts!)) {

@@ -7,7 +7,6 @@ final class VoiceNoteUITests: XCTestCase {
         app.terminate()
         app.launchArguments = ["-store-preview", "-threads-preview", "-voice-preview",
             "-AppleLanguages", "(en)", "-AppleLocale", "en_US",
-            "-companion.prefs.islandIntro", "never",
             "-companion.onboarding.welcomeSeen", "YES",
             "-companion.onboarding.notificationsSeen", "YES",
             // The compact list carries the threads toggle (the default is the standard home).

@@ -84,7 +84,6 @@ final class TranscriptPresentationUITests: XCTestCase {
         app.launchArguments = [
             "-store-preview", "-chat-presentation-preview",
             "-AppleLanguages", "(en)", "-AppleLocale", "en_US",
-            "-companion.prefs.islandIntro", "never",
             "-companion.prefs.activityDetail", detail,
             // These tests open Pepper through its "Threads" row. The update
             // fixture gives Pepper one thread, which only the comfortable

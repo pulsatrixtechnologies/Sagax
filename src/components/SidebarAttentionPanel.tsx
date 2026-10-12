@@ -1,4 +1,4 @@
-import { Activity, ChevronDown, ChevronRight, PinOff } from "lucide-react";
+import { ChevronDown, ChevronRight, Inbox, PinOff } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
 import type { SidebarDensity } from "@/lib/sidebar-preferences";
@@ -33,7 +33,7 @@ export function SidebarAttentionPanel({ entries, density, onUnpin, onJump, colla
         >
           <Chevron size={compact ? 11 : 12} aria-hidden="true" />
         </button>
-        <Activity size={compact ? 11 : 12} aria-hidden="true" className="shrink-0" />
+        <Inbox size={compact ? 11 : 12} aria-hidden="true" className="shrink-0" />
         <span className="min-w-0 flex-1 truncate">{t("attention.title")}</span>
         {entries.length > 0 && (
           <span className="text-[10.5px] font-normal tabular-nums">{entries.length}</span>

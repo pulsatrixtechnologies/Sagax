@@ -84,17 +84,21 @@ entry:
 
 A server image can carry every engine CLI Sagax drives, so the people of an
 organization server only sign in or add a key. The pins live in ONE file,
-[`engines.lock.json`](../engines.lock.json); the
+[`engines.lock.json`](../engines.lock.json). The
 [`Dockerfile`](../Dockerfile) installs them with
-[`scripts/install-engines.mjs`](../scripts/install-engines.mjs), and
-Perspicax's `infra/scripts/build-push.sh` (the GOX organization server)
-builds with `ENGINE_SET=all` from the same file.
+[`scripts/install-engines.mjs`](../scripts/install-engines.mjs).
+The image default is that full set. On 2026-10-12 a build that left
+`ENGINE_SET` unset shipped `engineSet none` and no CLIs
+(`pulsa-bot-server:main-20004735`). `SAGAX_REQUIRE_ENGINES=1` (also the
+default) fails a build that is not the full lock, including an explicit
+empty `--build-arg ENGINE_SET=`.
 
 ```sh
-docker build -t sagax .                                  # no engine CLI (the public image)
-docker build --build-arg ENGINE_SET=all -t sagax .       # every engine of the lock
-docker build --build-arg ENGINE_SET=open -t sagax .      # only the open-source licences
-docker build --build-arg ENGINE_SET="claude codex" -t sagax .
+docker build -t sagax .                                  # full engine set
+docker build --build-arg ENGINE_SET=none --build-arg SAGAX_REQUIRE_ENGINES=0 -t sagax .
+                                                         # no engine CLI
+docker build --build-arg ENGINE_SET=open --build-arg SAGAX_REQUIRE_ENGINES=0 -t sagax .
+                                                         # only the open-source licences
 ```
 
 The legacy `ENGINES` (npm specs) and `NATIVE_ENGINES` (native ids such as
@@ -130,10 +134,14 @@ OpenAI-compatible endpoints, Mistral, Cerebras, MiniMax (a key each), the
 Boat agent (runs on its cloud computer) and custom ACP agents (your own
 command, above).
 
-Proprietary CLIs (Claude Code, Droid, Cursor Agent) are installed only in an
-image you build for your own servers (`ENGINE_SET=all`); never publish such
-an image. At startup the server runs each baked CLI's `--version` once, logs
-it (`[engines] claude: 2.1.288 (Claude Code) (pinned 2.1.288, ...)`) and
+Proprietary CLIs (Claude Code, Droid, Cursor Agent) are part of the
+production image (`ENGINE_SET=all`, the default). The image with none of
+them is the explicit opt-out `ENGINE_SET=none` and
+`SAGAX_REQUIRE_ENGINES=0`. At startup the server runs each baked CLI's
+`--version` once, logs
+it (`[engines] claude: 2.1.288 (Claude Code) (pinned 2.1.288, ...)`), and a
+short set or a CLI that did not start also logs `[engines] engine_missing ...`.
+It
 uses that result as the engine's installed state, so no page or turn probes
 it again. An instance with its own `config.cli` is still probed as before.
 To move an engine to a new release, change its version (and hashes) in the

@@ -158,6 +158,14 @@ describe("a browser sign-in window (an OMB Cloud page's \"Use in your browser\")
     for (let attempt = 0; attempt < LOCKOUT.failures * 2; attempt += 1) registry.previewBrowserSignIn(generatePairingCredential());
     expect(registry.failureSources()).toEqual([]);
   });
+
+  it("names the principal behind a native sign-in credential before redemption", () => {
+    const { credential } = registry.openPairing({ principalId: "pr_alice", scopes: ["client"], ttlMs: 120_000 });
+    expect(registry.previewSignInPrincipal(credential)).toEqual({ principalId: "pr_alice", expiresAt: clock + 120_000 });
+    const signedIn = registry.exchange({ code: credential, label: "Mac", source: "10.0.0.11" });
+    if (!signedIn.ok) throw new Error(signedIn.error);
+    expect(registry.previewSignInPrincipal(credential)).toBeNull();
+  });
 });
 
 function pair(label = "MacBook", source = "10.0.0.2") {

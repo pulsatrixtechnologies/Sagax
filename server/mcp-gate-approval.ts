@@ -20,6 +20,8 @@ export interface GateAsk {
   tool: string;
   /** a short, model-supplied preview of the arguments */
   summary: string;
+  /** A longer argument preview for the safety review. The card keeps summary. */
+  review?: string;
 }
 
 /** server -> gate, one JSON line */
@@ -27,6 +29,8 @@ export interface GateAnswer {
   t: "answer";
   id: string;
   behavior: "allow" | "deny";
+  /** Shown to the model when the call did not run (a safer path, or a refusal). */
+  note?: string;
 }
 
 /** Preview of a call's arguments for the card, capped. */

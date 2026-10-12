@@ -26,6 +26,7 @@ const fixture = vi.hoisted(() => {
     bots: [] as unknown[],
     // state.config: an organization server's allowed model providers ride on it
     config: null as unknown,
+    showUnready: false,
   };
 });
 vi.mock("@/lib/perspicax-org", async (importOriginal) => ({
@@ -61,7 +62,7 @@ vi.mock("@/state/store", async (importOriginal) => ({
 // These cases cover the full picker; Simple mode has its own file.
 vi.mock("@/lib/interface-mode", () => ({ useAdvancedMode: () => true, setAdvancedMode: () => {} }));
 vi.mock("@/lib/unready-providers-preference", () => ({
-  useShowUnreadyProviders: () => false,
+  useShowUnreadyProviders: () => fixture.showUnready,
   setShowUnreadyProviders: () => {},
 }));
 
@@ -178,6 +179,7 @@ beforeEach(() => {
   fixture.myEngines = null;
   fixture.bots = [];
   fixture.config = null;
+  fixture.showUnready = false;
 });
 afterEach(() => vi.useRealTimers());
 

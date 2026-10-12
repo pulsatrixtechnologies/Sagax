@@ -7,7 +7,6 @@ final class GeneratedImageUITests: XCTestCase {
         app.terminate()
         app.launchArguments = ["-store-preview", "-threads-preview", "-images-preview",
             "-AppleLanguages", "(en)", "-AppleLocale", "en_US",
-            "-companion.prefs.islandIntro", "never",
             "-companion.onboarding.welcomeSeen", "YES",
             "-companion.onboarding.notificationsSeen", "YES",
             // The compact list carries the threads toggle (the default is the standard home).

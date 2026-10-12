@@ -15,6 +15,9 @@ import {
   type BotCodePullAction,
   type BotCodePullRequest,
 } from "../../shared/bot-activity";
+import type { BotLaunchedAgentItem } from "../../shared/bot-launched-agents.ts";
+
+export type { BotLaunchedAgentItem };
 
 export type { BotActivityDetail, BotActivityItem, BotActivityList, BotActivityStatus, BotActivityStep, BotCodeBranch, BotCodeCommit, BotCodePullRequest };
 export { activityStatusActive };
@@ -29,7 +32,7 @@ export async function loadBotActivity(api: Api, botId: string, options: { filter
   if (options.limit) query.set("limit", String(options.limit));
   const suffix = query.size ? `?${query}` : "";
   const list = await api<Partial<BotActivityList>>(`/api/bots/${encodeURIComponent(botId)}/activity${suffix}`);
-  return { items: list.items ?? [], subagents: list.subagents ?? [] };
+  return { items: list.items ?? [], subagents: list.subagents ?? [], launchedAgents: list.launchedAgents ?? [] };
 }
 
 /** A job that finishes stays this long in the panel ("Finished"), then
@@ -230,7 +233,11 @@ export function historyItems(items: readonly BotActivityItem[], status: HistoryS
 export async function loadBotActivityDetail(api: Api, botId: string, itemId: string): Promise<BotActivityDetail> {
   const [kind, ...rest] = itemId.split(":");
   const id = rest.join(":");
-  const query = kind === "run" ? `runId=${encodeURIComponent(id)}` : `threadId=${encodeURIComponent(id)}`;
+  const query = kind === "run"
+    ? `runId=${encodeURIComponent(id)}`
+    : kind === "cloud"
+      ? `cloudId=${encodeURIComponent(id)}`
+      : `threadId=${encodeURIComponent(id)}`;
   const { item } = await api<{ item: BotActivityDetail }>(`/api/bots/${encodeURIComponent(botId)}/activity/item?${query}`);
   return item;
 }

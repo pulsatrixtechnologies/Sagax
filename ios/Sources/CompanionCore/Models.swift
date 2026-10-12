@@ -13,6 +13,18 @@ import Foundation
 
 // MARK: - Messages
 
+/// Inline live or recorded video (`kind == .video`).
+public struct WireVideoWidget: Codable, Hashable, Sendable {
+    public var kind: String
+    public var playbackUrl: String
+    public var title: String?
+    public var streamer: String?
+    public var source: String?
+    public var posterUrl: String?
+    public var durationMs: Double?
+    public var viewerCount: Int?
+}
+
 public struct SkillRequestCardData: Codable, Hashable, Sendable {
     public var version: Int
     public var requestId: String
@@ -178,6 +190,52 @@ public struct ToolActivity: Codable, Hashable, Sendable {
     /// The driver's one-line summary: for a shell step, the command itself.
     /// The run card (`verify-steps.ts` `commandOf`) reads its steps here.
     public var summary: String?
+    /// A ConnectWise widget drawn in place of the quiet tool chip. A bad
+    /// widget is dropped; the rest of the activity still decodes.
+    public var widget: CwWidget?
+
+    public init(name: String, ok: Bool? = nil, spoken: String? = nil, setup: Bool? = nil, claudeUpdate: Bool? = nil, output: String? = nil, summary: String? = nil, widget: CwWidget? = nil) {
+        self.name = name
+        self.ok = ok
+        self.spoken = spoken
+        self.setup = setup
+        self.claudeUpdate = claudeUpdate
+        self.output = output
+        self.summary = summary
+        self.widget = widget
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case name, ok, spoken, setup, claudeUpdate, output, summary, widget
+    }
+
+    public init(from decoder: Decoder) throws {
+        let box = try decoder.container(keyedBy: CodingKeys.self)
+        name = try box.decode(String.self, forKey: .name)
+        ok = try box.decodeIfPresent(Bool.self, forKey: .ok)
+        spoken = try box.decodeIfPresent(String.self, forKey: .spoken)
+        setup = try box.decodeIfPresent(Bool.self, forKey: .setup)
+        claudeUpdate = try box.decodeIfPresent(Bool.self, forKey: .claudeUpdate)
+        output = try box.decodeIfPresent(String.self, forKey: .output)
+        summary = try box.decodeIfPresent(String.self, forKey: .summary)
+        do {
+            widget = try box.decodeIfPresent(CwWidget.self, forKey: .widget)
+        } catch {
+            widget = nil
+        }
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var box = encoder.container(keyedBy: CodingKeys.self)
+        try box.encode(name, forKey: .name)
+        try box.encodeIfPresent(ok, forKey: .ok)
+        try box.encodeIfPresent(spoken, forKey: .spoken)
+        try box.encodeIfPresent(setup, forKey: .setup)
+        try box.encodeIfPresent(claudeUpdate, forKey: .claudeUpdate)
+        try box.encodeIfPresent(output, forKey: .output)
+        try box.encodeIfPresent(summary, forKey: .summary)
+        try box.encodeIfPresent(widget, forKey: .widget)
+    }
 
     /// The output worth expanding the chip for; nil when there is none.
     public var expandableOutput: String? {
@@ -290,7 +348,7 @@ public struct CommChip: Codable, Hashable, Sendable {
 
 public struct Message: Codable, Hashable, Identifiable, Sendable {
     public enum Kind: String, Codable, Sendable {
-        case text, options, activity, screen, secret
+        case text, options, activity, screen, video, secret
         /// The harness's receipt of a settled turn: "[digest] · tools: … ·
         /// reply: …". Desktop shows it only behind "show tool calls"; it is
         /// a log line, not something anyone said, so the phone draws it as
@@ -427,6 +485,8 @@ public struct Message: Codable, Hashable, Identifiable, Sendable {
     /// `kind == .digest`: the structured digest; the phone reads which
     /// credentials paid for the turn from it (`DigestChip.tsx` TurnAccessChip).
     public var digest: MessageDigest? = nil
+    /// `kind == .video`: inline player payload.
+    public var video: WireVideoWidget? = nil
 
     public var date: Date { Date(timeIntervalSince1970: at / 1000) }
 

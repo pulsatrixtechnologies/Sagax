@@ -118,36 +118,71 @@ public struct CallSettings: Codable, Equatable, Sendable {
     /// `LiveCallEngine.thinkingCueSeconds` after the person stopped), so the
     /// silence is not a dead line
     public var thinkingCue: Bool
+    /// Advanced: talking while the bot works or speaks cancels that reply
+    /// and never stacks the next ones. On by default for TestFlight / debug.
+    public var fullDuplex: Bool
+    /// Intent marker matching desktop `fullDuplexRev`. A stored false
+    /// without rev 2 is the old default, not a kill-switch.
+    public var fullDuplexRev: Int
 
-    public init(input: Input = .auto, earcons: Bool = true, pause: CallPause = .normal, advancedOpen: Bool = false, onlyMyVoice: Bool = true, thinkingCue: Bool = true) {
+    public init(input: Input = .auto, earcons: Bool = true, pause: CallPause = .normal, advancedOpen: Bool = false, onlyMyVoice: Bool = true, thinkingCue: Bool = true, fullDuplex: Bool = true, fullDuplexRev: Int = CallSettings.currentFullDuplexRev) {
         self.input = input
         self.earcons = earcons
         self.pause = pause
         self.advancedOpen = advancedOpen
         self.onlyMyVoice = onlyMyVoice
         self.thinkingCue = thinkingCue
+        self.fullDuplex = fullDuplex
+        self.fullDuplexRev = fullDuplexRev
     }
 
     public static let storageKey = "omb.voiceCall.v1"
     public static let `default` = CallSettings()
+    public static let currentFullDuplexRev = 2
+
+    /// Public App Store builds stay off. TestFlight, debug and unknown
+    /// (sideload) stay on so the person hears duplex.
+    public static func defaultFullDuplex(publicRelease: Bool = isPublicRelease) -> Bool {
+        !publicRelease
+    }
+
+    public static var isPublicRelease: Bool {
+        #if DEBUG
+        return false
+        #else
+        guard let url = Bundle.main.appStoreReceiptURL else { return false }
+        return url.lastPathComponent == "receipt"
+        #endif
+    }
 
     public static func decode(_ raw: String?) -> CallSettings {
         guard let raw, let data = raw.data(using: .utf8),
               let record = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { return .default }
+        let rev = record["fullDuplexRev"] as? Int ?? 0
+        let stored = record["fullDuplex"] as? Bool
+        let duplex: Bool
+        if let stored, rev >= CallSettings.currentFullDuplexRev {
+            duplex = stored
+        } else {
+            duplex = CallSettings.defaultFullDuplex()
+        }
         return CallSettings(
             input: (record["input"] as? String) == "push" ? .push : .auto,
             earcons: record["earcons"] as? Bool ?? true,
             pause: (record["pause"] as? String).flatMap(CallPause.init(rawValue:)) ?? .normal,
             advancedOpen: record["advancedOpen"] as? Bool ?? false,
             onlyMyVoice: record["onlyMyVoice"] as? Bool ?? true,
-            thinkingCue: record["thinkingCue"] as? Bool ?? true
+            thinkingCue: record["thinkingCue"] as? Bool ?? true,
+            fullDuplex: duplex,
+            fullDuplexRev: CallSettings.currentFullDuplexRev
         )
     }
 
     public var encoded: String {
         let record: [String: Any] = [
             "input": input.rawValue, "earcons": earcons, "pause": pause.rawValue, "advancedOpen": advancedOpen,
-            "onlyMyVoice": onlyMyVoice, "thinkingCue": thinkingCue,
+            "onlyMyVoice": onlyMyVoice, "thinkingCue": thinkingCue, "fullDuplex": fullDuplex,
+            "fullDuplexRev": fullDuplexRev,
         ]
         let data = (try? JSONSerialization.data(withJSONObject: record, options: [.sortedKeys])) ?? Data()
         return String(decoding: data, as: UTF8.self)

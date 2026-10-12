@@ -212,11 +212,16 @@ export interface SendTurnInput {
    * token never forces a relaunch (docs/voice-mode-xai.md, "Latency"). */
   keepWarm?: boolean;
   /** Start (or keep) the pooled engine process without a user turn. No
-   * prompt is written and no turn events are emitted. A call warms the
-   * process when it is accepted so the first spoken turn reuses it.
-   * Drivers that cannot start without a prompt leave `warmSession` unset
-   * and the harness does not send them this flag. */
+   * prompt is written and no turn events are emitted, unless `cachePrime`
+   * asks for one background prompt that only fills the provider cache.
+   * A call warms the process when it is accepted so the first spoken turn
+   * reuses it. Drivers that cannot start without a prompt leave
+   * `warmSession` unset and the harness does not send them this flag. */
   warmOnly?: boolean;
+  /** With warmOnly, on a voice call: after the session exists, send one
+   * background prompt of the system prefix so the first spoken turn can
+   * read it from the provider cache. Not awaited, and not a turn. */
+  cachePrime?: boolean;
   /** Aborted when the call ends before that warm process is needed. The
    * driver closes the idle process this warm started. A process a real
    * turn already owns stays up. */
@@ -649,6 +654,16 @@ export interface TextGenerationUsage {
 export interface TextGenerationOptions {
   signal?: AbortSignal;
   onUsage?: (usage: TextGenerationUsage) => void;
+  /** Override the helper's own model. The voice opener uses the engine's
+   * smallest fast row for the first sentence only. */
+  model?: string;
+  /** A stable system prefix. Kept out of the user message so a provider
+   * can cache it across openers. */
+  system?: string;
+  /** Streamed assistant text, when the driver can stream this call. */
+  onDelta?: (delta: string) => void;
+  /** Cap the completion. The opener asks for a sentence, not an essay. */
+  maxTokens?: number;
 }
 
 export interface ProviderInstance {

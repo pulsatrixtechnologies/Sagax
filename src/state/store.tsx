@@ -48,6 +48,7 @@ import {
   skillRequestBehavior,
   type SkillRequestCardData,
 } from "../../shared/skill-request";
+import { terminalRequestBehavior } from "../../shared/terminal-request";
 import type { Routine, RoutineInput, RoutineRun, RoutineRunStatusFilter } from "@/lib/routines";
 import type { WebhookAttempt, WebhookIngressStatus, WebhookTrigger } from "@/lib/webhooks";
 import { botShowsUnread } from "@/lib/bot-unread";
@@ -171,6 +172,10 @@ export interface OptionCardData {
   questionRequest?: QuestionRequestCardData;
   /** A bot action waiting for this person's Allow. The id matches requestId. */
   botActRequest?: { id: string };
+  /** Shell terminal: opened only after the person taps Ouvrir un terminal. */
+  terminalRequest?: import("../../shared/terminal-request").TerminalRequestCardData;
+  /** A change asked from a ConnectWise widget (shared/wire.ts). */
+  cwActionRequest?: import("../../shared/wire").OptionCardData["cwActionRequest"];
 }
 
 export interface ConnectorCardData {
@@ -204,7 +209,7 @@ export interface SecretRequestCardData {
 export interface Message {
   id: string;
   role: "bot" | "user";
-  kind: "text" | "options" | "activity" | "screen" | "connector" | "secret" | "routine.run" | "goal.run" | "digest" | "compaction" | "access" | "nudge";
+  kind: "text" | "options" | "activity" | "screen" | "video" | "connector" | "secret" | "routine.run" | "goal.run" | "digest" | "compaction" | "access" | "nudge";
   text?: string;
   /** An accepted nudge. Drawn per viewer from these names, not as a bubble.
    * `groupId` is set when the line belongs to that group chat. */
@@ -218,6 +223,8 @@ export interface Message {
    * voice notes, documents, audio and video a bot attached with attach_file. */
   attachments?: import("../../shared/wire").WireMessage["attachments"];
   card?: OptionCardData;
+  /** Inline xterm session after a terminal request was allowed. */
+  terminalEmbed?: import("../../shared/terminal-resources").TerminalEmbed;
   connector?: ConnectorCardData;
   secret?: SecretRequestCardData;
   /** Lifecycle mirror for a routine whose real work lives in a fresh task. */
@@ -230,7 +237,7 @@ export interface Message {
    * narration of the same chip ("reading a file"), used by call mode. */
   /** `setup` marks an error fixed by installing something, not by retrying.
    * `summary` is the call's input on one redacted line (the shell command). */
-  tool?: { name: string; ok?: boolean; spoken?: string; setup?: boolean; claudeUpdate?: boolean; place?: PlaceRow; summary?: string; input?: string; output?: string ; itemId?: string; outputPath?: string; fullResult?: boolean };
+  tool?: { name: string; ok?: boolean; spoken?: string; setup?: boolean; claudeUpdate?: boolean; place?: PlaceRow; summary?: string; input?: string; output?: string ; itemId?: string; outputPath?: string; fullResult?: boolean; widget?: import("../../shared/cw-widgets/types").CwWidget };
   /** user messages sent into a running turn — the model saw it mid-turn */
   steered?: boolean;
   /** a user message that did not come from typing here: through the
@@ -244,6 +251,8 @@ export interface Message {
   sender?: import("../../shared/wire").WireMessage["sender"];
   /** Provider turn that produced this message. */
   turnId?: string;
+  /** Server-proven user message this bot reply answers. */
+  requestMessageId?: string;
   /** What the turn that wrote this reply ran on; no effort = engine default. */
   turnRun?: { instanceId: string; model: string; effort?: EffortLevel };
   /** Last assistant text item from a settled provider turn. */
@@ -255,6 +264,8 @@ export interface Message {
    * base64. Shown through the image route all the same. */
   png?: string;
   mime?: string;
+  /** kind "video": inline player payload. */
+  video?: import("../../shared/video-widget.ts").WireVideoWidget;
   at: number;
   /** the message this one follows; null = thread root. Edited messages
    * share a parentId with the version they replace — that's a fork. */
@@ -281,6 +292,10 @@ export interface Message {
   threadRef?: { botId: string; threadId: string; title: string; gone?: boolean };
   /** A parallel task this line belongs to (shared/parallel-tasks.ts). */
   parallelTask?: ParallelTaskRef;
+  /** A background reply: the first-step acknowledgement, or a later status. */
+  backgroundReply?: "ack" | "milestone";
+  /** Milliseconds from the person's message to an acknowledgement. */
+  timeToFirstMessageMs?: number;
   /** sent while the bot was mid-turn; auto-sends when the turn settles.
    * Rendered only while the bot is busy, so a flag stranded by a server
    * restart never shows a promise nothing will keep. */
@@ -566,6 +581,9 @@ export interface Bot {
   voiceNotes?: boolean;
   /** whether this bot uses native memory (on unless switched off) */
   memoryEnabled?: boolean;
+  /** Say the first step, then finish long requests in the background.
+   * Absent means on. */
+  backgroundReplies?: boolean;
   pinned?: boolean;
   hidden?: boolean;
   /** Sidebar section this bot renders under; absent = unsectioned. */
@@ -660,7 +678,7 @@ export function currentTaskBot(bot: Bot, threadId = bot.threadId): Bot {
     autoApprove: task.autoApprove ?? bot.autoApprove,
     alwaysAllow: task.alwaysAllow ?? bot.alwaysAllow,
     activity: task.activity ?? bot.activity,
-    busy: task.busy ?? (task.activity ? task.activity === "working" || task.activity === "waiting-on-you" : bot.busy),
+    busy: task.busy ?? (task.activity === "working" || task.activity === "waiting-on-you"),
     unread: task.unread ?? bot.unread,
     pinnedMessageId: task.pinnedMessageId,
     turnStartedAt: task.turnStartedAt ?? null,
@@ -1511,7 +1529,7 @@ export type Action =
   | { type: "computerControl"; botId: string; held: boolean; helpReason: string | null }
   | { type: "modelVariantRuntime"; event: RuntimeEvent }
   | { type: "setModel"; botId: string; selection: ModelSelection; threadId?: string; updateBotDefault?: boolean }
-  | { type: "interrupt"; botId: string; threadId?: string; onError?: () => void }
+  | { type: "interrupt"; botId: string; threadId?: string; expectedUtteranceId?: string; onError?: () => void }
   | { type: "connected"; value: boolean }
   | { type: "error"; message: string | null }
   | { type: "notice"; notice: AppState["notice"] }
@@ -3919,7 +3937,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
                 // answers the same way a 1:1 one does.
                 const response = card.skillRequest
                   ? { behavior: skillRequestBehavior(action.answer) }
-                  : answerResponse(card, action.answer);
+                  : card.terminalRequest
+                    ? { behavior: terminalRequestBehavior(action.answer) }
+                    : answerResponse(card, action.answer);
                 return api(`/api/threads/${action.threadId ?? host.threadId}/respond`, {
                   method: "POST",
                   body: JSON.stringify({
@@ -4223,15 +4243,20 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             .then((answer) => { applyFolderOwner(dispatch, action, answer); action.onSaved?.(); })
             .catch((error) => { showError(error); action.onError?.(error instanceof Error ? error.message : String(error)); });
           break;
-        case "interrupt":
+        case "interrupt": {
+          const interruptBody = {
+            ...(action.threadId ? { threadId: action.threadId } : {}),
+            ...(action.expectedUtteranceId ? { expectedUtteranceId: action.expectedUtteranceId } : {}),
+          };
           api(`/api/bots/${action.botId}/interrupt`, {
             method: "POST",
-            body: action.threadId ? JSON.stringify({ threadId: action.threadId }) : undefined,
+            body: Object.keys(interruptBody).length ? JSON.stringify(interruptBody) : undefined,
           }).catch((error) => {
             showError(error);
             action.onError?.();
           });
           break;
+        }
         // tasks: the server answers with the bot AND the live transcript,
         // because switching changes which conversation is on screen
         case "newTask":
@@ -4714,6 +4739,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           botPatchQueue.cancel(frame.botId);
           rawDispatch({ type: "deleteBot", botId: frame.botId });
           break;
+        case "cloud.agent":
+          window.dispatchEvent(new CustomEvent("sagax-cloud-agent", { detail: { botId: frame.botId, item: frame.item } }));
+          break;
         case "live.call": {
           const framed = liveCallFromFrame(frame);
           // Rendered at once: a bot message frame right behind this one
@@ -4729,6 +4757,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         // addressed to this person only (server/nudge.ts): front, shake, ring, notify
         case "nudge":
           void onNudgeReceived(frame, (target) => openNotificationTarget(dispatch, target, stateRef.current));
+          break;
+        case "voice.opener":
+          if (typeof window !== "undefined") {
+            window.dispatchEvent(new CustomEvent("sagax-voice-opener", { detail: frame }));
+          }
           break;
         // a nudge this person sent, on each of their windows: front, shake, ring
         case "nudge.sent":

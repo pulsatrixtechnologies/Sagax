@@ -319,6 +319,11 @@ sees them:
 - `openmausbot-phone-credential-v1` and `OpenMausBot phone credential v1`:
   the phone credential encryption labels (#63). Changing them breaks
   credential entry.
+- `openmausbot://` thread and auth deep links the desktop still emits.
+- `https://openmausbot.invalid/` reserved origin in binaries.
+- `openmausbot.sidebarCollapsedSections.v1` and
+  `openmausbot.sidebarSectionOrder.v1` preference keys.
+- `openmausbot browser install`: the CLI binary name in the install hint.
 
 `scripts/check-ios-bundle-names.sh path/to/Sagax.app` fails on any other
 "openmaus" in the built bundle; CI runs it after the simulator build.

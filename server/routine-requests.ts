@@ -346,6 +346,8 @@ export interface ProposeRoutineRequestArgs {
   /** Exact caller/turn lease checked synchronously after any readiness await
    * and immediately before the durable card append. */
   canCommit?: () => boolean;
+  /** Safety review: do not apply a Full-access grant until the person accepts. */
+  explicitConfirm?: boolean;
 }
 
 export interface RoutineProposalResult {
@@ -1239,7 +1241,7 @@ export class RoutineRequestService {
     // A bot applying its own routines keeps at most SELF_ROUTINE_CAP of them
     // on; a create or resume past that shows the card, as before. Full
     // access has no cap.
-    const automatic = grant === "full-access" || (grant === "self" && !this.overSelfCap(operation, owner));
+    const automatic = !args.explicitConfirm && (grant === "full-access" || (grant === "self" && !this.overSelfCap(operation, owner)));
     // This check and append are deliberately adjacent and synchronous. JS
     // cannot interleave another completed proposal between the capacity /
     // ownership decision and the durable transcript write.

@@ -1,4 +1,4 @@
-// The Active Threads popover geometry contract, as a ui-smoke leg: a sibling
+// The Inbox popover geometry contract, as a ui-smoke leg: a sibling
 // of approval-ui-smoke.cjs, run by scripts/smoke-approval-modes.cjs (its --ui
 // group, or --sidebar-attention-only alone; --capture-only writes the PNG
 // evidence without asserting, for before/after composites on other trees).
@@ -9,7 +9,7 @@
 // compact a static w-72 (288px) crossed the window edge by 32px
 // (272 < 16 + 288) and the OS clipped the title row, which is the reported
 // field bug. In the avatar column the header's actions stack vertically, so
-// the menu must anchor to the Active Threads button itself: anchored to the
+// the menu must anchor to the Inbox button itself: anchored to the
 // action cluster it opened below the + button instead, the reported
 // avatar-view bug.
 //
@@ -52,13 +52,13 @@ module.exports = async function verifySidebarAttentionUi({ root, url, api, until
   const evaluate = (js) => window.webContents.executeJavaScript(js).catch((error) => { throw new Error(`${error.message}: ${js}`); });
   const evidence = join(root, ".omb-scratch/verify-evidence/sidebar-attention");
   mkdirSync(evidence, { recursive: true });
-  const attentionButton = `[...document.querySelectorAll('button[aria-label]')].find((button) => button.getAttribute('aria-label') === 'Active Threads')`;
+  const attentionButton = `[...document.querySelectorAll('button[aria-label]')].find((button) => button.getAttribute('aria-label') === 'Inbox')`;
   const sidebarAtWidth = (width) => `(() => { const sidebar = document.querySelector('[data-sidebar]'); return sidebar ? Math.abs(sidebar.getBoundingClientRect().width - ${width}) < 1 : false; })()`;
   const openAndMeasure = async () => {
     await until(async () => await evaluate(`Boolean(${attentionButton})`));
     await evaluate(`${attentionButton}.click(); true`);
     const measured = await until(async () => await evaluate(`(() => {
-      const title = [...document.querySelectorAll('span')].find((node) => node.textContent.trim() === 'Active Threads' && node.closest('div.absolute'));
+      const title = [...document.querySelectorAll('span')].find((node) => node.textContent.trim() === 'Inbox' && node.closest('div.absolute'));
       if (!title) return null;
       const menu = title.closest('div.absolute');
       const button = ${attentionButton};
@@ -105,7 +105,7 @@ module.exports = async function verifySidebarAttentionUi({ root, url, api, until
           `the ${density} title must start inside the window: ${JSON.stringify(measured)}`);
       }
     }
-    // The avatar column anchors the menu to the Active Threads button
+    // The avatar column anchors the menu to the Inbox button
     // itself: left-0 on the button's left edge and top directly under it
     // (top-full + mt-1). Anchored to the cluster the menu opened a full
     // button-plus-gap lower - under the + button - which is the reported
@@ -118,9 +118,9 @@ module.exports = async function verifySidebarAttentionUi({ root, url, api, until
     if (!captureOnly) {
       assert.equal(icons.rows, 1, `the icons menu must show the one unread thread: ${JSON.stringify(icons)}`);
       assert.ok(Math.abs(icons.left - icons.buttonLeft) <= 0.5,
-        `the icons menu must align its left edge with the Active Threads button: ${JSON.stringify(icons)}`);
+        `the icons menu must align its left edge with the Inbox button: ${JSON.stringify(icons)}`);
       assert.ok(Math.abs(icons.top - (icons.buttonBottom + 4)) <= 0.5,
-        `the icons menu must open directly below the Active Threads button, not below the cluster: ${JSON.stringify(icons)}`);
+        `the icons menu must open directly below the Inbox button, not below the cluster: ${JSON.stringify(icons)}`);
       assert.ok(icons.left >= -0.5,
         `the icons menu must not spill past the window's left edge: ${JSON.stringify(icons)}`);
       assert.ok(Math.abs(icons.width - 288) <= 0.5,

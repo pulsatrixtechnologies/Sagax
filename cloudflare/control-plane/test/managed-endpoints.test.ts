@@ -54,6 +54,11 @@ function statementLabel(sql: string): string {
   return `${verb} ${table ?? "?"}`;
 }
 
+/** Miniflare D1 introspection. Production D1 does not bill these as app trips. */
+function isSchemaProbe(sqlOrLabel: string): boolean {
+  return /sqlite_master|sqlite_schema|pragma[_ ]/i.test(sqlOrLabel);
+}
+
 /** An env whose D1 binding records every round trip it makes. A batch is one
  * round trip, as in production, where D1 runs it as a single request. */
 function countingD1() {
@@ -64,7 +69,7 @@ function countingD1() {
       if (property === "bind") return (...values: unknown[]) => wrap(target.bind(...values), label);
       if (property === "first" || property === "all" || property === "run" || property === "raw") {
         return (...args: unknown[]) => {
-          trips.push([label]);
+          if (!isSchemaProbe(label)) trips.push([label]);
           return (target[property] as (...rest: unknown[]) => unknown).apply(target, args);
         };
       }
@@ -78,7 +83,8 @@ function countingD1() {
       if (property === "batch") {
         return (statements: D1PreparedStatement[]) => {
           const counted = statements.map((each) => (each as unknown as Record<symbol, CountedStatement>)[STATEMENT]);
-          trips.push(counted.map((each) => each.label));
+          const production = counted.filter((each) => !isSchemaProbe(each.label));
+          if (production.length) trips.push(production.map((each) => each.label));
           return target.batch(counted.map((each) => each.statement));
         };
       }
@@ -508,9 +514,18 @@ describe("Cloudflare API response contracts", () => {
 });
 
 describe("installation check-in round trips", () => {
+  const PRAGMA_TABLE_INFO = Array.from({ length: 13 }, () => "SELECT pragma_table_info");
   const CHECK_IN = [
     ["SELECT installation_credentials"],
+    ["SELECT sqlite_master"],
     ["UPDATE installation_credentials", "UPDATE installations"],
+  ];
+  const SELF_CHECK_IN = [...CHECK_IN, PRAGMA_TABLE_INFO];
+  const endpointLookupTrips = [
+    ["SELECT installation_credentials"],
+    ["SELECT sqlite_master"],
+    ["UPDATE installation_credentials", "UPDATE installations", "SELECT installation_endpoints"],
+    PRAGMA_TABLE_INFO,
   ];
   const checkIns = (installationId: string) => env.DB.prepare(
     `SELECT c.last_used_at, i.last_seen_at
@@ -533,10 +548,7 @@ describe("installation check-in round trips", () => {
       return { body: await response.text(), status: response.status, trips: [...counted.trips] };
     };
     // The read stays after the writes, so it runs in the same order as before.
-    const trips = [
-      ["SELECT installation_credentials"],
-      ["UPDATE installation_credentials", "UPDATE installations", "SELECT installation_endpoints"],
-    ];
+    const trips = endpointLookupTrips;
 
     expect(await lookup()).toEqual({ body: '{"endpoint":null}', status: 200, trips });
 
@@ -594,11 +606,11 @@ describe("installation check-in round trips", () => {
     // Same lookup ID with a different secret: the row is found, the hash is not.
     const credential = installation.credential;
     const wrongSecret = `${credential.slice(0, -1)}${credential.endsWith("A") ? "B" : "A"}`;
-    expect(await lookup(wrongSecret)).toEqual({ status: 401, trips: [["SELECT installation_credentials"]] });
+    expect(await lookup(wrongSecret)).toEqual({ status: 401, trips: [["SELECT installation_credentials"], ["SELECT sqlite_master"]] });
     expect(await lookup("invalid")).toEqual({ status: 401, trips: [] });
     expect((await call(worker, `/v1/installations/${id}`, { method: "DELETE", token: owner.token })).status)
       .toBe(204);
-    expect(await lookup(credential)).toEqual({ status: 401, trips: [["SELECT installation_credentials"]] });
+    expect(await lookup(credential)).toEqual({ status: 401, trips: [["SELECT installation_credentials"], ["SELECT sqlite_master"]] });
     expect(await checkIns(id)).toEqual(before);
   });
 
@@ -612,7 +624,7 @@ describe("installation check-in round trips", () => {
       env: counted.env,
       token: installation.credential,
     })).status).toBe(200);
-    expect(counted.trips).toEqual(CHECK_IN);
+    expect(counted.trips).toEqual(SELF_CHECK_IN);
 
     expect((await call(worker, "/v1/installations/self/endpoint", {
       method: "POST",
@@ -624,9 +636,9 @@ describe("installation check-in round trips", () => {
       method: "POST",
       token: installation.credential,
     })).status).toBe(200);
-    expect(counted.trips.slice(0, 2)).toEqual(CHECK_IN);
+    expect(counted.trips.slice(0, CHECK_IN.length)).toEqual(CHECK_IN);
     // Re-provisioning a ready endpoint keeps its existing round trips.
-    expect(counted.trips).toHaveLength(15);
+    expect(counted.trips).toHaveLength(18);
   });
 });
 

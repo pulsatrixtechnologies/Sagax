@@ -32,6 +32,10 @@ struct MessageRow: View {
     /// iPad desktop shell: the hover row beside the bubble (MessageActions.tsx).
     @Environment(\.desktopChatText) private var desktop
 
+    private func askCw(_ action: CwActionBody) {
+        Task { await session.requestCwAction(action, threadId: chat.threadId, botId: message.from?.botId) }
+    }
+
     private var versions: [Message] {
         session.state.versions(of: message, inThread: chat.threadId)
     }
@@ -198,7 +202,7 @@ struct MessageRow: View {
             if let ref = message.parallelTask, ref.part == .result {
                 ParallelResultLabel(ref: ref)
             }
-            TextBubble(message: message, chat: chat, tailed: endsRun, showingSource: showingSource, openLink: openLink)
+            TextBubble(message: message, chat: chat, tailed: endsRun, showingSource: showingSource, openLink: openLink, cwAsk: askCw)
         case .options:
             // A structured ask draws its own card: its answers are the
             // model's questions, not an allow/deny a tap could stand for.
@@ -214,10 +218,14 @@ struct MessageRow: View {
                     CredentialRequestCardView(chat: chat, message: message, secret: secret)
                 }
             } else if let text = message.text, !text.isEmpty {
-                TextBubble(message: message, chat: chat, tailed: endsRun, openLink: openLink)
+                TextBubble(message: message, chat: chat, tailed: endsRun, openLink: openLink, cwAsk: askCw)
             }
         case .activity:
-            if let ref = message.parallelTask, ref.isCard {
+            if let widget = message.tool?.widget, widget.isKnown {
+                CwWidgetCard(widget: widget, threadId: chat.threadId, botId: message.from?.botId) { action in
+                    Task { await session.requestCwAction(action, threadId: chat.threadId, botId: message.from?.botId) }
+                }
+            } else if let ref = message.parallelTask, ref.isCard {
                 ParallelTaskCardView(chat: chat, message: message, ref: ref, openThread: openThread)
             } else {
                 ActivityChip(
@@ -245,6 +253,10 @@ struct MessageRow: View {
             }
         case .screen:
             ScreenShot(threadId: chat.threadId, message: message)
+        case .video:
+            if let video = message.video {
+                VideoWidgetView(video: video)
+            }
         case .digest:
             // Not a bubble: a chip saying the turn did something, opening
             // onto what. No "Paid with" any more (#201): who paid stays in
@@ -267,25 +279,25 @@ struct MessageRow: View {
             } else if let text = message.text, !text.isEmpty {
                 // A computer that sent the kind without its card: the text
                 // is written for exactly this reader.
-                TextBubble(message: message, chat: chat, tailed: endsRun, openLink: openLink)
+                TextBubble(message: message, chat: chat, tailed: endsRun, openLink: openLink, cwAsk: askCw)
             }
         case .connector:
             if let connector = message.connector, session.surfaceGate.allows(.connectorCard) {
                 ConnectorCardView(chat: chat, message: message, connector: connector)
             } else if let text = message.text, !text.isEmpty {
-                TextBubble(message: message, chat: chat, tailed: endsRun, openLink: openLink)
+                TextBubble(message: message, chat: chat, tailed: endsRun, openLink: openLink, cwAsk: askCw)
             }
         case .access:
             if let access = message.access {
                 AccessCardView(access: access)
             } else if let text = message.text, !text.isEmpty {
-                TextBubble(message: message, chat: chat, tailed: endsRun, openLink: openLink)
+                TextBubble(message: message, chat: chat, tailed: endsRun, openLink: openLink, cwAsk: askCw)
             }
         case .goalRun:
             if let run = message.goalRun {
                 GoalRunCardView(run: run)
             } else if let text = message.text, !text.isEmpty {
-                TextBubble(message: message, chat: chat, tailed: endsRun, openLink: openLink)
+                TextBubble(message: message, chat: chat, tailed: endsRun, openLink: openLink, cwAsk: askCw)
             }
         case .unknown:
             // A message kind from a newer computer. Almost everything the
@@ -294,7 +306,7 @@ struct MessageRow: View {
             // When there is nothing to show, show nothing — a placeholder
             // saying "unsupported" is a worse gap than the gap.
             if let text = message.text, !text.isEmpty {
-                TextBubble(message: message, chat: chat, tailed: endsRun, openLink: openLink)
+                TextBubble(message: message, chat: chat, tailed: endsRun, openLink: openLink, cwAsk: askCw)
             }
         }
     }

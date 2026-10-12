@@ -419,7 +419,7 @@ struct ArchivedBotsView: View {
             }
             ForEach(archived) { bot in
                 HStack(spacing: 12) {
-                    BotMascotView(bot: bot, size: 32, state: .idle, animated: false)
+                    BotMascotView(bot: bot, size: 32, state: .idle, animated: false, sidebarTapReact: true)
                         .accessibilityHidden(true)
                     Text(verbatim: bot.name)
                         .foregroundStyle(Theme.textPrimary)

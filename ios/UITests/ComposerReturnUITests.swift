@@ -38,7 +38,6 @@ final class ComposerReturnUITests: XCTestCase {
         app.launchArguments = [
             "-store-preview", "-threads-preview",
             "-AppleLanguages", "(en)", "-AppleLocale", "en_US",
-            "-companion.prefs.islandIntro", "never",
             "-companion.onboarding.welcomeSeen", "YES",
             "-companion.onboarding.notificationsSeen", "YES",
             // The compact list: its rows carry the threads toggle. The

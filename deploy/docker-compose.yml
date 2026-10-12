@@ -12,7 +12,12 @@ services:
     build:
       context: ..
       args:
+        ENGINE_SET: ${ENGINE_SET:-all}
+        SAGAX_REQUIRE_ENGINES: ${SAGAX_REQUIRE_ENGINES:-1}
         ENGINES: ${ENGINES:-}
+        NATIVE_ENGINES: ${NATIVE_ENGINES:-}
+        SAGAX_COMMIT_SHA: ${SAGAX_COMMIT_SHA:-}
+        SAGAX_BUILD_TIME: ${SAGAX_BUILD_TIME:-}
     # prebuilt on every main push; `docker compose up --build` builds from source instead
     image: ghcr.io/milind-soni/openmausbot:latest
     restart: unless-stopped

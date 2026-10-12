@@ -5,6 +5,7 @@
 // the rename, electron/legacy-names.mjs).
 import "../electron/legacy-env-boot.mjs";
 import { ENVIRONMENT_PATHS, HEALTH_IDENTITY } from "../electron/legacy-names.mjs";
+import { healthzBody } from "./healthz.ts";
 // Then the upstream/analytics network block (network-guard.ts).
 import "./network-guard.ts";
 // The console's server log tail captures from here on (server-log-ring.ts).
@@ -17,6 +18,21 @@ import { existsSync, readFileSync, realpathSync, rmSync, mkdirSync, statSync, wr
 import { ToolGrantStore } from "./tool-grants.ts";
 import { createAgentCardGuard } from "./agent-tool-card-guard.ts";
 import { guardDecision, toolGuardMode } from "./tool-guard.ts";
+import { misusePathRefusal, misuseRefusal, misuseToolFrameText, setMisuseAlert } from "./misuse-guardrails.ts";
+import {
+  openSafetyHold,
+  safetyArm,
+  safetyForgetArmed,
+  safetyHttpRefusal,
+  safetyPermissionEffect,
+  safetyRejectArmed,
+  safetySettleRequest,
+  safetyToolHold,
+  setSafetyConfirm,
+  settleSafetyHold,
+  stashSafetyNote,
+  takeSafetyNote,
+} from "./safety-review.ts";
 import { writeFileAtomic } from "./atomic.ts";
 import { rm as removeDirectory } from "node:fs/promises";
 import { hostname, userInfo } from "node:os";
@@ -52,6 +68,8 @@ import {
 } from "../shared/approval-mode.ts";
 import { botActFrameAllowed, fillPluginBot, type RouteTarget, type TurnFacts } from "../shared/bot-act.ts";
 import { createBotActService, type BotActAnswerer, type BotActService, type PerformActor } from "./bot-act.ts";
+import { cwActionCard, cwActionLanguage, cwToolWidget, createCwActionPasses } from "./cw-widget-actions.ts";
+import { cwActionInstruction, parseCwAction } from "../shared/cw-widgets/actions.ts";
 import { createApprovalModeSupport } from "./harness-capabilities.ts";
 import { escapeAttribute } from "../src/lib/composer-attachments.ts";
 import { threadRefUrl } from "../src/lib/thread-refs.ts";
@@ -330,6 +348,7 @@ import {
   cancelSteeredMessage,
   drainSteeredMessages,
   cancelThreadQueue,
+  discardSteeredQueue,
   hasQueuedSteeredMessages,
   holdSteeredQueue,
   isSteeredMessageQueued,
@@ -355,6 +374,16 @@ import {
 } from "./parallel-tasks.ts";
 import { isBusySendMode, type BusySendMode, type ParallelTaskRef, type ParallelTaskState } from "../shared/parallel-tasks.ts";
 import {
+  BACKGROUND_REPLY_PROMPT,
+  BACKGROUND_WORKER_PROMPT,
+  backgroundRepliesEnabled,
+  milestoneGate,
+  shouldBackgroundReply,
+  stepAcknowledgement,
+  timeToFirstMessageMs,
+  type MilestoneGate,
+} from "../shared/background-reply.ts";
+import {
   cancelChannelMessage,
   drainChannelMessages,
   holdChannelQueue,
@@ -373,7 +402,7 @@ import {
   sendFingerprint,
   SendSequencer,
 } from "./send-idempotency.ts";
-import { EventBus } from "./harness/bus.ts";
+import { EventBus, withoutPrivateFields } from "./harness/bus.ts";
 import { ProviderRegistry } from "./harness/registry.ts";
 import { ManagedDesktopProviders } from "./managed-desktop.ts";
 import { HOST_COMPUTER_REFUSAL, computerKindForResource, ManagedDesktopPolicy, type ComputerKind } from "./managed-policy.ts";
@@ -633,10 +662,31 @@ import { resolveMailSettings } from "./mail-config.ts";
 import { createCaptureMailer, createMailer, type Mailer } from "./mailer.ts";
 import { createMailSettingsRoutes } from "./mail-routes.ts";
 import { createVoiceModeRoutes } from "./voice-mode.ts";
+import { installTerminalFeature } from "./terminal-install.ts";
+import { resolveAndSendTerminal } from "./terminal-requests.ts";
 import { parseVoiceCallMeta, voiceCallSection, voiceCallSteerPrompt, voiceCallTurnPrompt } from "./voice-call-prompt.ts";
+import {
+  VOICE_FIRST_SENTENCE_SYSTEM,
+  VoiceFirstSentenceJobs,
+  beginVoiceFirstSentence,
+  pickFastSentenceModel,
+  voiceOpenerFrameAllowed,
+} from "./voice-first-sentence.ts";
+import {
+  admitDuplexSend,
+  dropCancelledVoiceEvent,
+  duplexEpoch,
+  DUPLEX_INTERRUPT_WAIT_MS,
+  isStaleAssistantOutput,
+  isThreadBusyError,
+  pinVoiceInterrupt,
+  waitForThreadIdle,
+} from "./voice-call-duplex.ts";
+import { callHasParkableWork, classifyVoiceIntent, topicsFromCallMessages } from "../src/lib/voice-mode/voice-topics.ts";
 import { VoiceCallSessions } from "./voice-call-session.ts";
 import { VoiceCallWarmup } from "./voice-call-warmup.ts";
 import { callTurnEffort } from "./voice-call-effort.ts";
+import { effortAcceptedByEngine, resolveEngineTurnEffort } from "../shared/ultracode-effort.ts";
 import { VoiceLatencyLog } from "./voice-latency.ts";
 import { unansweredCallMessage, VOICE_CALL_WATCHDOG_MS, voiceCallRecoveryPrompt } from "./voice-call-watchdog.ts";
 import * as grokVoice from "./tts/grok.ts";
@@ -711,6 +761,7 @@ import {
   routineVisible,
   sameAudience,
   SEES_EVERYTHING,
+  SEES_NOTHING,
   VisibleSet,
   type FrameContext,
   type PathSubject,
@@ -718,6 +769,8 @@ import {
   type ThreadOwner,
   type Viewer,
 } from "./bot-visibility.ts";
+import { serviceThreadViewer, serviceViewerClosed } from "./service-viewer.ts";
+import { browserNavigationRefusal } from "./browser-navigation.ts";
 import { describeBrand, loadBrand } from "./brand.ts";
 import { deliverSseFrame } from "./sse-fanout.ts";
 import {
@@ -795,14 +848,26 @@ import { docsIndexPrompt, readWorkspaceText, rulesSystemPrompt, WorkspacePathErr
 import { updateDoc, updateRules } from "./workspace-tools.ts";
 import { markWorkspaceUse, promptSectionPaths } from "./workspace-usage.ts";
 import { createBotActivityRoutes, type ActivityChildRef } from "./routes/bot-activity.ts";
+import { CloudAgentStore } from "./cloud-agents/store.ts";
+import { CloudAgentCredentialStore } from "./cloud-agents/credentials.ts";
+import { CloudAgentManager, type CloudAgentCompletionEvent } from "./cloud-agents/manager.ts";
+import { createProviderRegistry } from "./cloud-agents/providers/registry.ts";
+import { createCloudAgentRoutes } from "./routes/cloud-agents.ts";
+import { cloudAgentInternalAction, handleCloudAgentInternal } from "./routes/cloud-agents-internal.ts";
+import { cloudAgentWakePrompt } from "./cloud-agents/wake.ts";
+import { cloudAgentWireItem } from "./cloud-agents/activity.ts";
 import { inGitRepository } from "./activity-coding.ts";
 import { repositoryInfo } from "./activity-code-work.ts";
+import { launchedAgentsForBot } from "./launched-agents.ts";
 import { createGroupMemoryRoutes } from "./routes/group-memory.ts";
 import { createTtsProviderRoutes } from "./routes/tts-provider.ts";
 import { createPeopleDmRoutes } from "./routes/people-dms.ts";
 import { createGroupFolderRoutes } from "./routes/group-folders.ts";
 import { createNudgeRoutes } from "./routes/nudges.ts";
 import { createPersonLabelRoutes } from "./routes/person-labels.ts";
+import { createMediaWidgetRoutes } from "./routes/media-widgets.ts";
+import { initMediaProxy } from "./media-proxy.ts";
+import { videoMessagesFromTool } from "./video-widget-turn.ts";
 import { createPresenceRoutes, presenceFrameAllowed, type PresenceViewer } from "./routes/presence.ts";
 import { PresenceTracker } from "./presence.ts";
 import { readApnsConfig } from "./push/config.ts";
@@ -918,6 +983,7 @@ const MIME: Record<string, string> = {
 };
 
 ensureDirs();
+initMediaProxy(DATA_DIR);
 // The desktop parent owns the primary lease and delegates one private child
 // claim; a standalone/headless server owns the primary lease itself. Acquire
 // before any durable identity, sessions, config, or Store state is loaded.
@@ -2177,10 +2243,14 @@ async function answeringCardAs(auth: RequestAuth, threadId: string, requestId: s
 }
 
 // ── bot visibility (server/bot-visibility.ts) ──────────────────────────
-/** Who is looking. The owner, a session-less local service (the Slack
- * worker) and admin sessions see every bot; any other session is a member,
- * known by the email it signed in with. */
-function viewerFor(auth: RequestAuth): Viewer {
+/** Who is looking. The owner and admin sessions see every bot; any other
+ * session is a member, known by the email it signed in with. Service
+ * loopback on an organization server sees nothing unless the path is an
+ * internal capability route. */
+function viewerFor(auth: RequestAuth, path?: string): Viewer {
+  // Service loopback on an organization server is not the operator. Internal
+  // capability routes stay open: the bearer already names the turn.
+  if (serviceViewerClosed(auth, path, privateThreads())) return SEES_NOTHING;
   if (auth.kind === "loopback" || auth.scopes.includes("admin")) return SEES_EVERYTHING;
   return { kind: "member", ...(auth.session.email ? { email: auth.session.email } : {}) };
 }
@@ -2202,7 +2272,7 @@ function threadOwner(threadId: string): ThreadOwner | undefined {
   return owner ?? undefined;
 }
 function visibleTo(viewer: Viewer): VisibleSet {
-  const key = viewer.kind === "all" ? "*" : `member:${viewer.email?.trim().toLowerCase() ?? ""}`;
+  const key = viewer.kind === "all" ? "*" : viewer.kind === "none" ? "none" : `member:${viewer.email?.trim().toLowerCase() ?? ""}`;
   let set = visibleSets.get(key);
   if (!set) {
     set = new VisibleSet(store.bots, store.groups, viewer, threadOwner);
@@ -3800,6 +3870,19 @@ async function interruptDirectThread(botId: string, threadId: string, options?: 
     requestOwner.stopped = true;
     if (requestOwner.messageId) store.patchMessage(threadId, requestOwner.messageId, { requestCancelled: true });
   }
+  const liveTurnId = liveTurnByThread.get(threadId);
+  if (liveTurnId) {
+    let cancelled = cancelledVoiceTurns.get(threadId);
+    if (!cancelled) {
+      cancelled = new Set();
+      cancelledVoiceTurns.set(threadId, cancelled);
+    }
+    cancelled.add(liveTurnId);
+    if (cancelled.size > 8) {
+      const oldest = cancelled.values().next().value;
+      if (oldest) cancelled.delete(oldest);
+    }
+  }
   // Stop belongs to the conversation it was pressed in. This bot's turn ends
   // and this conversation stops awaiting its teammates, so nothing resumes
   // into a stopped chat; assignments that never started are dropped. A
@@ -4815,8 +4898,8 @@ function checkedModelSelection(
       };
     }
   }
-  const allowed: readonly string[] = target?.adapter.capabilities.effortLevels ?? [];
-  if (target && selection.effort !== undefined && !allowed.includes(selection.effort)) {
+  const allowed = target?.adapter.capabilities.effortLevels ?? [];
+  if (target && selection.effort !== undefined && !effortAcceptedByEngine(selection.effort, allowed)) {
     return { ok: false, status: 400, error: `effort "${selection.effort}" is not offered by this bot's engine` };
   }
   if (target && selection.variant !== undefined && !target.adapter.capabilities.modelVariants) {
@@ -5305,6 +5388,9 @@ function vaultKeySource(): VaultKeySource {
   return mcpOAuthKey;
 }
 const personConnections = new PersonConnections(DATA_DIR, vaultKeySource);
+const cloudAgentStore = new CloudAgentStore(DATA_DIR);
+const cloudAgentCredentials = new CloudAgentCredentialStore(DATA_DIR, vaultKeySource);
+let cloudAgentManager!: CloudAgentManager;
 const personOAuthManagers = new Map<string, McpOAuthManager>();
 function personOAuth(principalId: string): McpOAuthManager {
   let manager = personOAuthManagers.get(principalId);
@@ -5795,6 +5881,7 @@ function previewSystemPrompt(bot: BotRecord) {
     { id: "memory", label: "Memory", text: memorySystemPrompt(bot.id, { managedWrites: agentsMounted, fileTools: Boolean(privateWorkspace), enabled: bot.memoryEnabled !== false }) },
     { id: "docs", label: "Documents index", text: docsIndexPrompt(bot.id, { tools: agentsMounted ? "agents" : privateWorkspace ? "files" : "none" }) },
     { id: "skills", label: "Skills index", text: privateWorkspace ? skillsSystemPrompt(bot.id, skillsLibraryEnabled(cfg) ? bot.assignedSkills : undefined) + pluginSkillsForTurn(bot, instance) : "" },
+    { id: "background-reply", label: "Background replies", text: backgroundRepliesEnabled(bot) ? BACKGROUND_REPLY_PROMPT : "" },
   ]);
   const totalBytes = built.sections.reduce((n, s) => n + s.bytes, 0);
   return {
@@ -7850,8 +7937,10 @@ const sandboxControlHolds = new SandboxControlHolds();
 // Cloud boot can revoke sessions before routes are registered. Create the
 // viewer manager before installing any revocation callbacks.
 const desktopViewer = createDesktopViewer({
-  // voice mode's live call (server/voice-mode.ts GET /voice/listen and /voice/speech)
-  acceptsUpgrade: (path) => /^\/api\/bots\/[\w-]+\/voice\/(?:listen|speech)$/.test(path),
+  // voice mode's live call; in-chat terminal WebSocket (server/routes/terminal.ts)
+  acceptsUpgrade: (path) =>
+    /^\/api\/bots\/[\w-]+\/voice\/(?:listen|speech)$/.test(path)
+    || /^\/api\/terminal\/sessions\/[\w-]+\/ws$/.test(path),
   target: (id, auth) => {
     if (id === SANDBOX_VIEWER_TARGET) {
       // The caller's own server environment desktop, never anyone else's.
@@ -7889,6 +7978,16 @@ const desktopViewer = createDesktopViewer({
     const holds = () => computerControl.ownsLease(key, controlLeaseId);
     return holds() ? holds : undefined;
   },
+});
+function terminalPrincipalId(auth: RequestAuth): string | undefined {
+  const id = actorPrincipalId(auth).trim().toLowerCase();
+  return id || undefined;
+}
+const terminalFeature = installTerminalFeature({
+  dataDir: DATA_DIR,
+  store,
+  cfg: () => cfg,
+  principalId: terminalPrincipalId,
 });
 function closeSessionStreams(sessionId: string): void {
   browserLive.closeForOwner(sessionId);
@@ -8069,7 +8168,8 @@ function isApprovalCardMessage(message: { kind?: unknown; card?: unknown }): boo
   return Boolean(
     card.tool || card.allowKey || card.commandAllowlist || card.approvalScope
     || card.skillRequest || card.routineRequest || card.profileRequest
-    || card.teamSetupRequest || card.modelRequest || card.tighteningRequest,
+    || card.teamSetupRequest || card.modelRequest || card.tighteningRequest
+    || card.terminalRequest,
   );
 }
 
@@ -8095,6 +8195,7 @@ function approvalAnswerRefusal(auth: RequestAuth, threadId: string, requestId: s
   // a question (the questionRequest form, or a persistent ask card) stays on the ordinary answer path
   const question = Boolean(message.card && typeof message.card === "object" && (message.card.questionRequest || isPersistentQuestionCard(message.card)));
   if (question) return null;
+  if (message.card && typeof message.card === "object" && message.card.terminalRequest) return null;
   if (!isApprovalCardMessage(message)) return refusal;
   const bot = botForApproval(threadId, message);
   const audience = bot ? approvalAudience({ ownerUserId: approvalOwnerId(bot), host: approvalHostOf(bot) }) : null;
@@ -8596,7 +8697,12 @@ function sseFrameFor(
   // a person's preferences reach that person's own devices only
   if (payload?.kind === "preferences" && !preferencesFrameAllowed(payload, client.viewerId)) return null;
   if ((payload?.kind === "nudge" || payload?.kind === "nudge.sent") && !nudgeFrameAllowed(payload, client.viewerId, localPrincipalId())) return null;
+  if (payload?.kind === "voice.opener" && !voiceOpenerFrameAllowed(payload, client.viewerId, localPrincipalId())) return null;
   if (payload?.kind === "presence.changed" && !presenceFrameAllowed(payload, client)) return null;
+  if (payload?.kind === "cloud.agent" && typeof payload.botId === "string") {
+    const bot = store.bot(payload.botId);
+    if (!bot || !listedBotVisible(bot, client.viewerId || undefined)) return null;
+  }
   // A read position in a conversation between two people follows both
   // people's "Send read receipts" choice (server/read-receipts.ts).
   if (payload?.kind === "thread.read" && !threadReadFrameAllowed(payload, client.viewerId)) return null;
@@ -8845,6 +8951,23 @@ async function respondToCard(input: {
   await answeringCardAs(auth, threadId, requestId, async () => {
     // peer-approval intercept, as the route: only a card on this thread
     if (card && resolvePeerComms(approvalBus, requestId, behavior)) return;
+    if (card?.terminalRequest) {
+      const principalId = terminalPrincipalId(auth);
+      if (!principalId) {
+        result = { ok: false, status: 401, error: "Sign in to open a terminal." };
+        return;
+      }
+      const settled = await terminalFeature.requests.resolve({ threadId, requestId, behavior, principalId });
+      if (!settled.claimed) {
+        result = { ok: false, status: 409, error: "The request is no longer open." };
+        return;
+      }
+      if ("status" in settled && settled.status) {
+        result = { ok: false, status: settled.status, error: settled.error };
+        return;
+      }
+      return;
+    }
     const outcome = await answerRequest(
       threadId, botForThread(bot.id, threadId)?.modelSelection.instanceId ?? "", requestId, behavior, message,
       { id: bot.id, name: bot.name },
@@ -9333,6 +9456,11 @@ const turnCheckpoints = new Map<string, { botId: string; cwd: string; hash: stri
 // a digest can only count activity it can attribute — so an unstamped tool
 // row is attributed to the thread's live turn instead of to nothing.
 const liveTurnByThread = new Map<string, string>();
+/** The spoken utterance that currently owns this thread (voiceCall.utteranceId). */
+const liveVoiceUtteranceByThread = new Map<string, string>();
+/** Turns cancelled by a person (barge-in / Stop). Their leftover assistant
+ * text must not stream as the next answer. */
+const cancelledVoiceTurns = new Map<string, Set<string>>();
 
 /** Forget a thread's pre-turn checkpoint and drop its pin, so the shadow
  * repo's next cleanup may reclaim that commit. */
@@ -9354,6 +9482,7 @@ function clearTurnDigestState(threadId: string): void {
   turnStartedAt.delete(threadId);
   forgetTurnCheckpoint(threadId);
   liveTurnByThread.delete(threadId);
+  liveVoiceUtteranceByThread.delete(threadId);
   memoryRowsByThread.delete(threadId);
 }
 
@@ -10535,15 +10664,22 @@ bus.subscribe((event: RuntimeEvent) => {
     };
     broadcast({ kind: "runtime", event: publicAssistantEvent });
   }
-  if (event.type === "content.delta" && event.streamKind === "assistant_text") voiceLatency.mark(event.threadId, "firstToken");
-  else if (event.type === "turn.completed") voiceLatency.settled(event.threadId);
+  const staleAssistant = isStaleAssistantOutput({
+    eventTurnId: event.turnId,
+    cancelledTurnIds: cancelledVoiceTurns.get(event.threadId),
+    ownerStopped: directRequestOwners.get(event.threadId)?.stopped,
+    ownerTurnId: directRequestOwners.get(event.threadId)?.turnId,
+  });
+  if (event.type === "content.delta" && event.streamKind === "assistant_text") {
+    if (!staleAssistant) voiceLatency.mark(event.threadId, "firstToken");
+  } else if (event.type === "turn.completed") voiceLatency.settled(event.threadId);
   const privateImageEvent = event.type === "item.completed" && event.itemType === "assistant_image";
   // The durable message patch below is the public frame. Sending raw base64
   // through runtime SSE would multiply large bytes across every app window.
-  if (!privateImageEvent) {
+  if (!privateImageEvent && !dropCancelledVoiceEvent(staleAssistant, event)) {
     // Exact executable input is internal matching metadata, not inspector UI.
     // The event bus's persistence redactor does not scrub its live event.
-    const publicEvent = event.type === "request.opened" ? { ...event, command: undefined } : event;
+    const publicEvent = event.type === "request.opened" ? { ...event, command: undefined } : withoutPrivateFields(event);
     broadcast({ kind: "runtime", event: publicEvent });
   }
   const routineRun = privateImageEvent ? null : (routines?.handleRuntimeEvent(event) ?? null);
@@ -10589,10 +10725,12 @@ bus.subscribe((event: RuntimeEvent) => {
       if (typeof event.model === "string" && event.model) sessionModelByThread.set(event.threadId, event.model);
       break;
     case "item.completed":
+      if (dropCancelledVoiceEvent(staleAssistant, event)) break;
       if (event.itemType === "assistant_text") {
         const text = event.text;
         const ran = bot ? turnRunByThread.get(event.threadId) : undefined;
         pushMessage({ role: "bot", kind: "text", text, turnId: event.turnId, ...(ran ? { turnRun: ran } : {}) });
+        noteBackgroundMilestone(event.threadId, text);
         // kept so "finished" can say what it finished with, rather than
         // just that something ended
         lastReply.set(event.threadId, text);
@@ -10623,10 +10761,14 @@ bus.subscribe((event: RuntimeEvent) => {
           // dropping it here would silently un-narrate every completed tool
           const existing = store.messagesFor(event.threadId).find((m) => m.id === messageId)?.tool;
           toolName = existing?.name ?? "tool";
+          const widget = event.ok && event.resultText ? cwToolWidget(toolName, existing?.input, event.resultText) : null;
           store.patchMessage(event.threadId, messageId, {
-            tool: { ...existing, name: toolName, ok: event.ok, output: event.output },
+            tool: { ...existing, name: toolName, ok: event.ok, output: event.output, ...(widget ? { widget } : {}) },
           });
           toolMessageByItem.delete(itemKey);
+        }
+        for (const videoMsg of videoMessagesFromTool(toolName, event.output, event.threadId)) {
+          pushMessage(videoMsg);
         }
         // the bot just acted ON ITS SCREEN — refresh the preview now. Only
         // computer tools can change the screen, and each capture competes
@@ -10645,6 +10787,7 @@ bus.subscribe((event: RuntimeEvent) => {
       }
       break;
     case "item.started":
+      if (dropCancelledVoiceEvent(staleAssistant, event)) break;
       if (event.itemType === "tool") {
         // ask_bot's raw tool chip is redundant — the internal endpoint
         // appends a richer "Messaged @X" chip linking to the channel
@@ -10693,6 +10836,31 @@ bus.subscribe((event: RuntimeEvent) => {
         pushMessage({ role: "bot", kind: "activity", tool: { name: `Refused ${cardGuardTool}: ${cardGuard.decision.reason === "speaker_not_granted" ? "the person this turn speaks for has" : "this bot has"} no grant for it (Settings → Tool access).`, ok: false } });
         break;
       }
+      // Safety review, before any mode answers. A hard block or the first
+      // safer path is a refusal, not a card Full could accept. A confirmation
+      // is an explicit card. A read may run. Shadow changes nothing.
+      const safetyName = event.mcpTool ?? event.tool;
+      const safetyText = [event.mcpTool, event.tool, event.command?.command, event.summary, event.input].filter((part): part is string => typeof part === "string" && part.length > 0).join("\n");
+      const safetyWho = permission && event.requestId ? safetyPrincipal(event.threadId) : undefined;
+      const safetyEffect = safetyWho
+        ? safetyPermissionEffect({
+          text: safetyText,
+          surface: /computer/i.test(safetyName) ? "computer" : /propose_routine/.test(safetyName) ? "routine" : event.mcpTool ? "mcp" : "shell",
+          tool: safetyName,
+          known: event.tool !== "other" || Boolean(event.mcpTool),
+          triage: safetyWho.triage,
+          ...(safetyWho.principalId ? { principalId: safetyWho.principalId } : {}),
+          threadId: event.threadId,
+          ...(asker ? { botId: asker.id } : {}),
+        })
+        : null;
+      if (safetyEffect?.kind === "stop" && event.requestId) {
+        stashSafetyNote(event.requestId, safetyEffect.message);
+        const instance = event.providerInstanceId ? registry.get(event.providerInstanceId) : asker ? registry.get(asker.modelSelection.instanceId) : undefined;
+        void instance?.adapter.respondToRequest(event.threadId, event.requestId, { behavior: "deny", message: safetyEffect.message }).catch(() => {});
+        pushMessage({ role: "bot", kind: "activity", tool: { name: safetyEffect.message, ok: false } });
+        break;
+      }
       // A turn a guest drives on a Cloud home is Ask, room turns included,
       // and no command the owner saved answers for it.
       const guestDriven = cloudGuestDriven(event.threadId);
@@ -10724,6 +10892,12 @@ bus.subscribe((event: RuntimeEvent) => {
           sagaxGate: event.sagaxGate === true,
           ruleAllowed: Boolean(gateAllowKey && !adminApproval && !guestDriven && botForThread(asker.id, event.threadId)?.alwaysAllow?.includes(gateAllowKey)),
           commandAllowed: Boolean(command && commandAllowlist.matches(asker.id, command)),
+          widgetApproved: !adminApproval && !guestDriven && !event.requiresExplicitApproval &&
+            cwActionPasses.take(event.threadId, event.mcpTool ?? event.tool, event.input) !== null,
+          safetyHold: safetyEffect?.kind === "hold",
+          // A gate card stays a person's choice. Reads the gate already
+          // trusts never reach this branch.
+          safetyAllow: safetyEffect?.kind === "allow" && safetyEffect.auto === true && event.sagaxGate !== true,
         })
         : null;
       // Auto's reviewer is the engine's own. Claude accepts `--permission-mode
@@ -10773,7 +10947,7 @@ bus.subscribe((event: RuntimeEvent) => {
             if (outcome !== "unavailable") pushMessage({
               role: "bot", kind: "activity",
               tool: outcome === "rejected"
-                ? { name: `The provider rejected this action despite ${verdict.source === "command-allowlist" ? "the saved command permission" : "Full access"}.`, ok: false }
+                ? { name: `The provider rejected this action despite ${verdict.source === "command-allowlist" ? "the saved command permission" : verdict.source === "widget-approval" ? "your approval in the ConnectWise widget" : "Full access"}.`, ok: false }
                 : failedTurnTool("could not deliver approval to the provider; retry the task after reconnecting."),
             });
             return;
@@ -10800,6 +10974,14 @@ bus.subscribe((event: RuntimeEvent) => {
           console.error("[approval] Could not record the provider approval result.");
         });
         break;
+      }
+      if (safetyEffect?.kind === "hold" && event.requestId) {
+        safetyArm(event.requestId, {
+          ...(safetyWho?.principalId ? { principalId: safetyWho.principalId } : {}),
+          threadId: event.threadId,
+          fingerprint: safetyEffect.fingerprint,
+          ...(safetyEffect.classKey ? { classKey: safetyEffect.classKey } : {}),
+        });
       }
       const heldContext = { source: verdict?.source, permission };
       // A structured ask (Claude's AskUserQuestion) is a question whatever
@@ -10838,7 +11020,7 @@ bus.subscribe((event: RuntimeEvent) => {
           // a member's bot is approved one action at a time: a session rule
           // (Claude's own suggestion) could reach past its workspace. Never on
           // a guest's turn either: an "always" for it would outlive it.
-          allowSession: permission && event.allowSession && !event.requiresExplicitApproval && !adminApproval && !memberAsker && !guestDriven ? true : undefined,
+          allowSession: permission && event.allowSession && !event.requiresExplicitApproval && !adminApproval && !memberAsker && !guestDriven && safetyEffect?.kind !== "hold" ? true : undefined,
           ...(adminApproval ? { adminApproval: true } : {}),
           // who will answer it, for the member's waiting line
           ...(adminApproval && orgAdminNames().length ? { adminNames: orgAdminNames() } : {}),
@@ -10903,6 +11085,8 @@ bus.subscribe((event: RuntimeEvent) => {
     }
     case "request.resolved": {
       if (event.requestId) pendingCommandRules.delete(`${event.threadId}:${event.requestId}`);
+      if (event.requestId) safetySettleRequest(event.requestId, event.behavior, event.source);
+      if (event.requestId) takeSafetyNote(event.requestId);
       if (event.requestId) agentCardGuard.resolved(event.requestId, event.behavior, event.source);
       if (event.requestId) withdrawApprovalNotice(event.threadId, event.requestId);
       if (event.requestId) settleWaitingOnPersonChips(event.threadId, event.requestId, { behavior: event.behavior, source: event.source });
@@ -11209,11 +11393,12 @@ bus.subscribe((event: RuntimeEvent) => {
         // Neither should a peer's hop: the exchange is already recorded in the
         // pair channel and chipped into both threads, which is the whole of
         // what the person needs to be able to find it.
-        if (!routineReportThread && !internal) store.patchTask(bot.id, event.threadId, { unread: true });
+        const backgroundChild = settledTask?.parallelOf?.background === true;
+        if (!routineReportThread && !internal && !backgroundChild) store.patchTask(bot.id, event.threadId, { unread: true });
         // A failed peer turn stays a chip too. The bot that delegated is woken
         // with the failure and answers the person in its own thread — buzzing
         // here as well would ring twice for one piece of news.
-        if ((!routineRun || routineRun.status === "completed") && !internal && !computerSelectionTurns.get(event.threadId)?.selected) {
+        if ((!routineRun || routineRun.status === "completed") && !internal && !backgroundChild && !computerSelectionTurns.get(event.threadId)?.selected) {
           // the frame carries the bot's avatar so every desktop client can
           // show the notification under that bot's own face
           const completionDetail = routineRun
@@ -12070,6 +12255,7 @@ async function compactConversation(input: {
 /** Threads on a live voice call (server/voice-call-session.ts). */
 const voiceCalls = new VoiceCallSessions();
 const voiceWarmup = new VoiceCallWarmup();
+const voiceFirstSentences = new VoiceFirstSentenceJobs();
 /** Close the idle engine a call warmed. A process a turn already owns stays. */
 function releaseWarmEngine(threadId: string): void {
   const bot = store.botByThread(threadId);
@@ -12553,6 +12739,117 @@ function drainAsideLane() {
   }).catch((error) => console.warn("aside-queue: drain failed", error));
 }
 
+const duplexEpochByThread = new Map<string, ReturnType<typeof duplexEpoch>>();
+function duplexEpochFor(threadId: string) {
+  let epoch = duplexEpochByThread.get(threadId);
+  if (!epoch) {
+    epoch = duplexEpoch();
+    duplexEpochByThread.set(threadId, epoch);
+  }
+  return epoch;
+}
+
+/** A duplex call send: interrupt the in-flight turn if any, drop the
+ * steer queue, start only this utterance. Never steers, never queues. */
+async function startDuplexCallTurn(
+  botId: string,
+  threadId: string,
+  text: string,
+  replyTo: Message | undefined,
+  sendId: string | undefined,
+  sender: ResolvedSender | undefined,
+  trigger: UsageTrigger,
+  speaker: TurnSpeaker,
+  voiceCall: Message["voiceCall"],
+) {
+  const current = store.projectBotForTask(botId, threadId);
+  if (!current) throw Object.assign(new Error("no such bot"), { status: 404 });
+  const backgroundWork = callHasParkableWork(store.messagesFor(threadId))
+    || store.tasks(current.id).some((task) => task.parallelOf?.threadId === threadId && parallelPending(task));
+  const intent = classifyVoiceIntent(text);
+  const admit = admitDuplexSend({
+    duplex: true,
+    botBusy: Boolean(current.busy) || threadBusy(botId, threadId),
+    stopping: stoppingThreads.has(threadId),
+    queued: hasQueuedSteeredMessages(current.id, threadId),
+    backgroundWork,
+    newTopic: intent === "new_topic",
+    intent,
+    continues: voiceCall?.continues === true,
+    speculative: voiceCall?.speculative === true,
+  });
+  if (admit.action === "defer") {
+    return { ok: true as const, threadId, deferred: true as const };
+  }
+  const epoch = duplexEpochFor(threadId);
+  const mine = epoch.claim();
+  if (admit.action === "background") {
+    discardSteeredQueue(current.id, threadId);
+    return startParallelTask({
+      botId, threadId, text, replyTo, sendId, sender, trigger, speaker, voiceCall,
+    });
+  }
+  if (admit.action === "stop") {
+    voiceFirstSentences.cancel(threadId);
+    discardSteeredQueue(current.id, threadId);
+    if (admit.interrupt) await stopDirectThreadByPerson(current.id, threadId);
+    return { ok: true as const, threadId, stopped: true as const };
+  }
+  if (admit.action === "replace") {
+    if (admit.discardQueue) discardSteeredQueue(current.id, threadId);
+    if (admit.interrupt) {
+      await stopDirectThreadByPerson(current.id, threadId);
+    }
+    discardSteeredQueue(current.id, threadId);
+  }
+  if (!epoch.isLatest(mine)) return { ok: true as const, threadId, superseded: true as const };
+  const deadline = Date.now() + DUPLEX_INTERRUPT_WAIT_MS;
+  if (admit.action === "replace" && admit.interrupt) {
+    await waitForThreadIdle(() => threadBusy(botId, threadId), {
+      capMs: Math.max(0, deadline - Date.now()),
+    });
+  }
+  const openerId = voiceCall?.utteranceId;
+  const openerCall = voiceCall?.callId;
+  if (openerId && openerCall && (admit.action === "start" || admit.action === "replace")) {
+    const engine = registry.get(current.modelSelection.instanceId);
+    const audience = speakerPrincipal(speaker, effectiveBotOwner(current));
+    if (engine?.generateText && audience) {
+      const generate = engine.generateText.bind(engine);
+      beginVoiceFirstSentence({
+        jobs: voiceFirstSentences,
+        threadId,
+        callId: openerCall,
+        utteranceId: openerId,
+        text,
+        driverKind: engine.driverKind,
+        modelIds: engine.models.options.map((option) => option.id),
+        generate,
+        emit: (opener) => broadcast({
+          kind: "voice.opener",
+          audience,
+          threadId,
+          callId: openerCall,
+          utteranceId: openerId,
+          text: opener,
+        }),
+      });
+    }
+  }
+  while (true) {
+    if (!epoch.isLatest(mine)) return { ok: true as const, threadId, superseded: true as const };
+    try {
+      const message = await startTurn(botId, text, {
+        threadId, replyTo, sendId, sender, trigger, speaker, ...(voiceCall ? { voiceCall } : {}),
+      });
+      return { ok: true as const, threadId, message };
+    } catch (err) {
+      if (!isThreadBusyError(err) || Date.now() >= deadline) throw err;
+      await new Promise((resolve) => setTimeout(resolve, 40));
+    }
+  }
+}
+
 /** Keep a person's words off the transcript until a direct-thread slot is
  * available. Reuse the existing cancellable, idempotent composer queue. */
 async function startOrQueueDirectMessage(botId: string, threadId: string, text: string, replyTo?: Message, sendId?: string, sender?: ResolvedSender, trigger?: UsageTrigger, speaker?: TurnSpeaker, voiceCall?: Message["voiceCall"], via?: "call") {
@@ -12579,6 +12876,27 @@ async function startOrQueueDirectMessage(botId: string, threadId: string, text: 
     });
     return { ok: true as const, queued: true as const, queueId: queued.id, threadId, reason: decision.reason };
   }
+  const bot = store.bot(botId);
+  const task = bot ? store.taskByThread(bot.id, threadId) : undefined;
+  const spoken = Boolean(voiceCall) || via === "call";
+  if (bot && task && shouldBackgroundReply({
+    bot, text, voice: spoken, hidden: task.hidden === true, nested: Boolean(task.parallelOf),
+  })) {
+    try {
+      const started = await startParallelTask({
+        botId, threadId, text, replyTo, sendId, sender, trigger, speaker,
+        principalId: speaker?.origin === "person" ? speaker.principalId : sender?.id,
+        ...(voiceCall ? { voiceCall } : {}),
+        background: true,
+      });
+      return { ok: true as const, threadId, message: started.message };
+    } catch (err) {
+      const code = (err as { code?: string }).code;
+      // The limit and a nested task throw before any message is stored, so
+      // the person still gets an answer in this turn, with no acknowledgement.
+      if (code !== "parallel_limit" && code !== "parallel_nested") throw err;
+    }
+  }
   const message = await startTurn(botId, text, { threadId, replyTo, sendId, sender, trigger, speaker, ...(voiceCall ? { voiceCall } : {}), ...(via ? { via } : {}) });
   return { ok: true as const, threadId, message };
 }
@@ -12590,6 +12908,12 @@ async function startOrQueueDirectMessage(botId: string, threadId: string, text: 
 
 /** Parallel tasks stopped by a person before their result was posted. */
 const parallelStops = new Set<string>();
+
+/** Milestones already copied from a background task into its conversation.
+ * In memory only: a restart loses the gate, and the settle still posts the
+ * result. Keyed by the task's own thread. */
+const backgroundMilestones = new Map<string, MilestoneGate>();
+const backgroundMilestoneLast = new Map<string, string>();
 
 /** The parallel task of a thread still owed a result, with its bot. */
 function pendingParallelTask(threadId: string): { bot: BotRecord; task: TaskRecord } | null {
@@ -12603,6 +12927,21 @@ function parallelTaskBlocked(botId: string, threadId: string): boolean {
   const task = store.taskByThread(botId, threadId);
   if (!task?.parallelOf) return false;
   return parallelBlocked({ task, tasks: store.tasks(botId), limit: maxParallelTasksPerPerson(cfg), busy: (id) => threadBusy(botId, id) });
+}
+
+/** Copy a short status from a background task into the conversation it
+ * answers. The acknowledgement and a repeated sentence are not statuses. */
+function noteBackgroundMilestone(threadId: string, text: string) {
+  const pending = pendingParallelTask(threadId);
+  const link = pending?.task.parallelOf;
+  if (!link?.background) return;
+  const ack = store.messagesFor(link.threadId).find((message) => message.backgroundReply === "ack" && message.replyToId === link.messageId)?.text ?? "";
+  const gated = milestoneGate(backgroundMilestones.get(threadId), text, Date.now(), ack);
+  backgroundMilestones.set(threadId, gated.state);
+  if (!gated.accept) return;
+  const trimmed = text.trim();
+  store.appendMessage(link.threadId, { role: "bot", kind: "text", text: trimmed, backgroundReply: "milestone" });
+  backgroundMilestoneLast.set(threadId, trimmed);
 }
 
 function patchParallelCard(parentThreadId: string, cardId: string | undefined, patch: Partial<ParallelTaskRef>) {
@@ -12630,6 +12969,11 @@ async function startParallelTask(input: {
   title?: string;
   /** Org audit actor. */
   auth?: RequestAuth;
+  /** Live call: the request was said on the call. */
+  voiceCall?: Message["voiceCall"];
+  /** Background reply: acknowledge the first step in the conversation, then
+   * do the work here. The conversation stays free. */
+  background?: boolean;
 }): Promise<{ ok: true; threadId: string; message: Message; parallel: { threadId: string; title: string; state: ParallelTaskState; cardMessageId: string } }> {
   const bot = store.bot(input.botId);
   const parentTask = bot ? store.taskByThread(bot.id, input.threadId) : undefined;
@@ -12667,6 +13011,7 @@ async function startParallelTask(input: {
   const now = Date.now();
   // The request line, in the conversation the person is reading. A task the
   // bot opened has no person's words to show: its card is the anchor.
+  const background = input.background === true ? { background: true as const } : {};
   const request = input.byBot ? null : store.appendMessage(input.threadId, {
     role: "user",
     kind: "text",
@@ -12674,19 +13019,36 @@ async function startParallelTask(input: {
     replyToId: input.replyTo?.id,
     sendId: input.sendId,
     ...(input.sender ? { sender: input.sender } : {}),
-    parallelTask: { threadId: child.threadId, title, requestMessageId: "", role: "request" },
+    ...(input.voiceCall ? { voiceCall: input.voiceCall } : {}),
+    parallelTask: { threadId: child.threadId, title, requestMessageId: "", role: "request", ...background },
   });
   if (request) {
     store.patchMessage(input.threadId, request.id, {
-      parallelTask: { threadId: child.threadId, title, requestMessageId: request.id, role: "request" },
+      parallelTask: { threadId: child.threadId, title, requestMessageId: request.id, role: "request", ...background },
+    });
+  }
+  // The acknowledgement is stored before the card and before the child is
+  // queued or started, so the person sees the first step even when the task
+  // waits for a slot, and the metric never includes the engine's own startup.
+  let acknowledgement: string | undefined;
+  if (input.background && request) {
+    store.titleTaskFromFirstMessage(bot.id, input.text, input.threadId);
+    acknowledgement = stepAcknowledgement(input.text);
+    store.appendMessage(input.threadId, {
+      role: "bot",
+      kind: "text",
+      text: acknowledgement,
+      backgroundReply: "ack",
+      timeToFirstMessageMs: timeToFirstMessageMs(request.at, Date.now()),
+      replyToId: request.id,
     });
   }
   const card = store.appendMessage(input.threadId, {
     role: "bot",
     kind: "activity",
-    tool: { name: `Parallel task #${title}`, ok: true },
+    tool: { name: input.background ? `Background · ${title}` : `Parallel task #${title}`, ok: true },
     threadRef: { botId: bot.id, threadId: child.threadId, title },
-    parallelTask: { threadId: child.threadId, title, requestMessageId: request?.id ?? "", role: "card", state: "queued", startedAt: now },
+    parallelTask: { threadId: child.threadId, title, requestMessageId: request?.id ?? "", role: "card", state: "queued", startedAt: now, ...background },
   });
   const anchorId = request?.id ?? card.id;
   if (!request) patchParallelCard(input.threadId, card.id, { requestMessageId: card.id });
@@ -12694,6 +13056,7 @@ async function startParallelTask(input: {
     threadId: input.threadId, messageId: anchorId, cardMessageId: card.id, at: now,
     ...(input.principalId ? { principalId: input.principalId } : {}),
     ...(input.byBot ? { byBot: true } : {}),
+    ...background,
   });
   if (IDENTITY.kind === "perspicax") {
     appendAdminAction(DATA_DIR, {
@@ -12716,6 +13079,8 @@ async function startParallelTask(input: {
     workspace,
     personName: input.sender?.name || cfg.profile?.name?.trim() || "The person",
     byBot: input.byBot,
+    background: input.background,
+    acknowledgement,
   });
   const reply = (state: ParallelTaskState) => ({
     ok: true as const, threadId: input.threadId, message: store.messagesFor(input.threadId).find((m) => m.id === anchorId) ?? request ?? card,
@@ -12763,15 +13128,27 @@ function settleParallelTask(threadId: string, outcome: { ok: boolean; reply: str
   const request = store.messagesFor(link.threadId).find((message) => message.id === link.messageId);
   const ref: ParallelTaskRef = {
     threadId, title: task.title, requestMessageId: link.messageId, role: "result", state, endedAt,
+    ...(link.background ? { background: true } : {}),
   };
-  store.appendMessage(link.threadId, {
-    role: "bot",
-    kind: "text",
-    text: redactSecretsInText(parallelResultText({ state, reply: outcome.reply, why: outcome.why })),
-    ...(request?.kind === "text" ? { replyToId: request.id } : {}),
-    parallelTask: ref,
-  });
+  const resultText = redactSecretsInText(parallelResultText({ state, reply: outcome.reply, why: outcome.why }));
+  const sameWords = (a: string, b: string) => a.replace(/\s+/g, " ").trim().toLowerCase() === b.replace(/\s+/g, " ").trim().toLowerCase();
+  const alreadySaid = link.background && backgroundMilestoneLast.get(threadId) && sameWords(backgroundMilestoneLast.get(threadId)!, resultText);
+  if (!alreadySaid) {
+    store.appendMessage(link.threadId, {
+      role: "bot",
+      kind: "text",
+      text: resultText,
+      ...(request?.kind === "text" ? { replyToId: request.id } : {}),
+      parallelTask: ref,
+    });
+  }
+  backgroundMilestones.delete(threadId);
+  backgroundMilestoneLast.delete(threadId);
   patchParallelCard(link.threadId, link.cardMessageId, { state, endedAt });
+  if (link.background) {
+    notify(deliverableNotification("done", bot, link.threadId, resultText, { avatarUrl: bot.avatarUrl }));
+    store.patchTask(bot.id, link.threadId, { unread: true });
+  }
   // The conversation's next turn reads what its session has not seen: the
   // request and this result.
   markTaskContextExternallyUpdated(bot, link.threadId);
@@ -12861,6 +13238,94 @@ function directSendRefusal(botId: string, threadId: string): DirectSendRefused |
   return null;
 }
 
+/** `security.triage` for the person a turn acts for. The operator at this
+ * computer holds it. A service, a guest and a member without the permission
+ * do not. An organization admin holds every key. */
+function misuseActor(principalId: string | undefined | null, origin?: string): { triage: boolean; principalId?: string } {
+  const id = principalId?.trim() || undefined;
+  const triage = origin === "operator" || (id ? can(principalPermissions(id), "security.triage") : false);
+  return { triage, ...(id ? { principalId: id } : {}) };
+}
+
+function misuseTextRefusal(
+  text: string,
+  principalId: string | undefined | null,
+  surface: "message" | "shell" | "file" | "terminal" | "mcp" | "flow",
+  extra?: { botId?: string; threadId?: string; tool?: string; origin?: string },
+): string | null {
+  const actor = misuseActor(principalId, extra?.origin);
+  return misuseRefusal(text, { ...actor, surface, botId: extra?.botId, threadId: extra?.threadId, tool: extra?.tool })?.message ?? null;
+}
+
+/** The turn's person, including a solo operator, for the safety review. */
+function safetyPrincipal(threadId: string): { principalId?: string; triage: boolean } {
+  const speaker = turnSpeakers.get(threadId);
+  const fromSpeaker = speaker && "principalId" in speaker ? speaker.principalId : undefined;
+  const principalId = turnSpeakerPrincipals.get(threadId) ?? fromSpeaker;
+  return misuseActor(principalId, speaker?.origin);
+}
+
+/** Isolated reviewer for one bot. It may only tighten a verdict, and only
+ * the tool path awaits it. Shadow never calls it. */
+function safetyReviewer(botId: string): ((prompt: string, signal?: AbortSignal) => Promise<string>) | undefined {
+  const selected = store.bot(botId)?.modelSelection.instanceId;
+  if (!selected) return undefined;
+  const instance = registry.get(selected);
+  const review = instance?.reviewPermission;
+  if (!review) return undefined;
+  return (prompt, signal) => review.call(instance, prompt, signal);
+}
+
+setMisuseAlert((alert) => {
+  const bot = alert.botId ? store.bot(alert.botId) : undefined;
+  broadcast({
+    kind: "notify",
+    notification: {
+      kind: "admin-action",
+      botId: alert.botId ?? "",
+      botName: bot?.name ?? "Sagax",
+      threadId: alert.threadId ?? bot?.threadId ?? "",
+      title: "Demande refusée",
+      body: alert.message,
+    },
+  }, { adminOnly: true });
+});
+
+// A risky call the engine will not ask about itself (a sandbox tool, a
+// desktop tool) waits on this card. Full and Auto do not answer it. The
+// respond route settles it before any provider sees the request id.
+setSafetyConfirm(async (request) => {
+  const threadId = request.threadId;
+  if (!threadId) return "deny";
+  const held = openSafetyHold();
+  const bot = (request.botId ? store.bot(request.botId) : undefined) ?? store.botByThread(threadId);
+  const summary = request.summary.replace(/\s+/g, " ").trim().slice(0, 500);
+  const message = store.appendMessage(threadId, {
+    role: "bot",
+    kind: "options",
+    card: {
+      title: "Approval needed",
+      subtitle: summary || "This action needs approval",
+      options: ["Allow", "Deny"],
+      requestId: held.requestId,
+      ...(request.tool ? { tool: request.tool } : {}),
+      held: HELD_NOTE["approval.held.native"],
+      heldCode: "approval.held.native",
+    },
+  });
+  if (bot) notify(deliverableNotification("approval", bot, threadId, summary, bot.avatarUrl ? { avatarUrl: bot.avatarUrl } : {}));
+  const answer = await held.answer;
+  if (answer === "timeout") {
+    const stale = store.messagesFor(threadId).find((row) => row.id === message.id);
+    if (stale?.card && !stale.card.answered) {
+      store.patchMessage(threadId, message.id, {
+        card: { ...stale.card, answered: "unavailable", dismissed: true, expired: true, options: [] },
+      });
+    }
+  }
+  return answer;
+});
+
 /** The one path a person's direct message takes into a bot turn: spend cap,
  * idempotency, steer into a running turn, queue, or start. Used by
  * POST /api/bots/:id/messages and by Live calls (via "call").
@@ -12924,6 +13389,12 @@ async function acceptDirectSend(
       if (!store.taskByThread(currentAtStart.id, threadId)) {
         throw Object.assign(new Error("the target task no longer exists"), { status: 409 });
       }
+
+      const messageActor = misuseActor(speaker?.origin === "person" || speaker?.origin === "owner-routine" || speaker?.origin === "peer" ? speaker.principalId : undefined, speaker?.origin);
+      const misuse = misuseRefusal(text, { ...messageActor, surface: "message", botId, threadId });
+      if (misuse) throw Object.assign(new Error(misuse.message), { status: misuse.status, code: misuse.code });
+      const safetyMessage = safetyHttpRefusal({ text, surface: "message", triage: messageActor.triage, ...(messageActor.principalId ? { principalId: messageActor.principalId } : {}), botId, threadId });
+      if (safetyMessage) throw Object.assign(new Error(safetyMessage.message), { status: safetyMessage.status, code: safetyMessage.code });
 
       // Organization server: a turn asking Full access is refused while
       // the organization does not allow it (org-full-access.ts).
@@ -13467,7 +13938,7 @@ async function startTurn(
         viewerBotOverrideStore.getOne(person, bot.id),
         (level, instanceId) => {
           const levels = registry.get(instanceId)?.adapter.capabilities.effortLevels;
-          return Array.isArray(levels) && levels.includes(level);
+          return Array.isArray(levels) && effortAcceptedByEngine(level, levels);
         },
       );
       if (selection !== bot.modelSelection) bot = { ...bot, modelSelection: selection };
@@ -13648,7 +14119,7 @@ async function startTurn(
   assertModelVariantSupported({ variant, effort }, instance.adapter.capabilities);
   // A selection can be persisted while its engine is offline. Re-check when
   // the engine returns so an old or unsupported value never reaches a CLI.
-  if (effort && !instance.adapter.capabilities.effortLevels?.includes(effort)) {
+  if (effort && !effortAcceptedByEngine(effort, instance.adapter.capabilities.effortLevels ?? [])) {
     throw Object.assign(
       new Error(`effort "${effort}" is not offered by this bot's engine — choose another level in settings`),
       { status: 409 },
@@ -13682,6 +14153,9 @@ async function startTurn(
           ...(opts?.relayed ? { relayed: true } : {}),
         });
   }
+  if (!warmOnly && opts?.voiceCall?.utteranceId) {
+    liveVoiceUtteranceByThread.set(threadId, opts.voiceCall.utteranceId);
+  }
   // Organization server (slice 3, D13): no turn without engine access. The
   // person's message stays; the thread gets the card saying why, the owner
   // a notification, and the sender an ordinary accepted send.
@@ -13706,6 +14180,7 @@ async function startTurn(
       userMessage,
       store.activePath(threadId).findLast((message) => message.role === "user" && message.id !== userMessage?.id && !message.peerAsk && message.at <= userMessage!.at),
       userMessage.sender?.name ?? botUserName(bot),
+      topicsFromCallMessages(store.activePath(threadId)),
     );
   // Organization server: where this turn's tools run, and for whom, decided
   // once (server/desktop-bridge.ts); the speaker's own attachments are
@@ -14811,6 +15286,13 @@ async function startTurn(
         coordinationNode.parentId ? roomHandoffs.nodes.get(coordinationNode.parentId) : undefined))) {
         throw new DirectTurnSetupCancelled("Coordination access changed before dispatch");
       }
+      const turnTask = store.taskByThread(bot.id, threadId);
+      const backgroundWorker = turnTask?.parallelOf?.background === true;
+      const spokenTurn = onCall || opts?.via === "call" || Boolean(userMessage.voiceCall) || Boolean(opts?.voiceCall);
+      const skipBackground = spokenTurn || Boolean(turnTask?.hidden) || Boolean(opts?.automationSource) || Boolean(opts?.unattended) || (opts?.commsDepth ?? 0) > 0 || Boolean(opts?.coordination) || Boolean(opts?.cardContinuation);
+      const backgroundReplyText = backgroundWorker
+        ? BACKGROUND_WORKER_PROMPT
+        : skipBackground || !backgroundRepliesEnabled(liveBot ?? bot) ? "" : BACKGROUND_REPLY_PROMPT;
       const prompt = buildSystemPrompt(persona, liveBot?.soul ?? bot.soul ?? "", [
         { id: "user-profile", label: "About the user", text: userProfileSystemPrompt(botUserProfile(bot)) },
         // first after the soul: the block names agent tools, so it only goes
@@ -14862,6 +15344,7 @@ async function startTurn(
         { id: "mentions", label: "Mentions", text: boundedCoordination && tagged.length ? `The user named these existing teammates: ${tagged.map(b => `${peerName(b.name)} (${b.id})`).join(", ")}. Use coordinate_bots when their contribution is needed; do not substitute native helper agents for these bots.` : mentionPrompt(tagged) },
         // a voice call: the phone-call instruction (server/voice-call-prompt.ts)
         { id: "voice-call", label: "Phone call", text: voiceCallText },
+        { id: "background-reply", label: "Background replies", text: backgroundReplyText },
       ]);
       turnPromptBytes.set(threadId, { stable: Buffer.byteLength(prompt.stable), volatile: Buffer.byteLength(prompt.volatile) });
       // the Files list's "last used": what this turn's prompt carried
@@ -14936,7 +15419,7 @@ async function startTurn(
       // waiting for the first word (server/voice-call-effort.ts).
       const turnEffort = onCall || warmOnly
         ? callTurnEffort({ driverKind: instance.driverKind, levels: instance.adapter.capabilities.effortLevels, effort })
-        : effort;
+        : resolveEngineTurnEffort(effort, instance.driverKind, instance.adapter.capabilities.effortLevels);
       const dispatch = await guardTurnDispatch(withDesktopModelPerson(turnPlace.principal, () => {
         if (IDENTITY.kind === "perspicax") desktopLocalModels.assertAvailable(turnPlace.principal, model, instance.driverKind);
         return instance.adapter.sendTurn({
@@ -14948,7 +15431,7 @@ async function startTurn(
         // on a live call the engine process stays warm from turn to turn.
         // A warm uses the same flag so the first spoken turn's contract matches.
         ...(onCall || warmOnly ? { keepWarm: true } : {}),
-        ...(warmOnly ? { warmOnly: true, ...(opts?.warmSignal ? { warmSignal: opts.warmSignal } : {}) } : {}),
+        ...(warmOnly ? { warmOnly: true, ...(onCall ? { cachePrime: true } : {}), ...(opts?.warmSignal ? { warmSignal: opts.warmSignal } : {}) } : {}),
         startupRecovery: !warmOnly && cfg.automaticRecovery?.enabled === true &&
           (opts?.automaticRecoveryIndex ?? 0) < ((liveBot ?? bot).fallback?.length || (cfg.automaticRecovery.backup ? 1 : 0)),
         text: warmOnly ? "" : (engineCommand ? engineCommand.engineText : withRecalled(recalled, dispatchContext.turnText)),
@@ -14989,8 +15472,32 @@ async function startTurn(
         await instance.adapter.interruptTurn(threadId).catch(() => {});
       });
       if (warmOnly) {
-        if (dispatch.cancelled || opts?.warmSignal?.aborted) instance.adapter.releaseWarmSession?.(threadId);
-        else warmOk = true;
+        // A duplex interrupt while the person is still talking cancels this
+        // claim: there is no spoken turn yet, and releasing the process
+        // would make the first words pay a cold start. Hangup aborts the
+        // signal and is the path that closes it. The interrupt also
+        // quarantines this handshake for 30s; the warm has no provider
+        // turn id to retire, so leaving the mark would hold the first
+        // utterance until it expired.
+        clearCancelledProviderHandshake(threadId, `direct:${dispatchClaimId}`);
+        if (opts?.warmSignal?.aborted) instance.adapter.releaseWarmSession?.(threadId);
+        else {
+          warmOk = true;
+          // The HTTP pool is already warm from GET /models. One 1-token
+          // completion on the opener's model opens the chat path and, when
+          // the prompt is long enough for the provider, writes the prefix.
+          // Not awaited: the call's first turn does not wait on it.
+          if (instance.driverKind === "grok" && instance.generateText) {
+            const fast = pickFastSentenceModel(instance.models.options.map((option) => option.id));
+            if (fast) {
+              void instance.generateText(".", {
+                system: VOICE_FIRST_SENTENCE_SYSTEM,
+                model: fast,
+                maxTokens: 1,
+              }).catch(() => undefined);
+            }
+          }
+        }
         return;
       }
       if (dispatch.cancelled) {
@@ -16157,6 +16664,14 @@ const outboundCounts = new OutboundCounts(join(DATA_DIR, "outbound-counts.json")
 const OUTBOUND_HOLD_MS = 9 * 60_000;
 
 function resolveAndSendTrust(res: ServerResponse, threadId: string, requestId: string, behavior: "allow" | "deny" | "answer"): boolean {
+  if ((behavior === "allow" || behavior === "deny") && settleSafetyHold(requestId, behavior)) {
+    const safetyCard = store.messagesFor(threadId).find((message) => message.card?.requestId === requestId);
+    if (safetyCard?.card && !safetyCard.card.answered) {
+      store.patchMessage(threadId, safetyCard.id, { card: { ...safetyCard.card, answered: behavior } });
+    }
+    json(res, 200, { ok: true, outcome: behavior === "allow" ? "allowed-once" : "rejected" });
+    return true;
+  }
   const teamMemoryCard = store.messagesFor(threadId).find(
     (message) => message.card?.requestId === requestId && message.card.teamMemoryRequest,
   );
@@ -16446,6 +16961,8 @@ function resolveAndSendRoutine(
   args: { botId: string; botName?: string; threadId: string; requestId: string; behavior: string; actorPrincipalId?: string },
   ownersAnswer = false,
 ): boolean {
+  if (args.behavior === "allow") safetyForgetArmed(args.requestId);
+  else if (args.behavior === "deny") safetyRejectArmed(args.requestId);
   const card = store.messagesFor(args.threadId).find(
     (message) => message.card?.requestId === args.requestId && message.card.routineRequest,
   )?.card;
@@ -20667,7 +21184,7 @@ function autoPickForTurn(input: {
     if (record && autoRecordUsable(record, engines, skip)) {
       const engine = engines.find((candidate) => candidate.instanceId === record.instanceId)!;
       const selection: ModelSelection = { instanceId: record.instanceId, model: record.model };
-      if (record.instanceId === bot.modelSelection.instanceId && bot.modelSelection.effort && engine.effortLevels?.includes(bot.modelSelection.effort)) {
+      if (record.instanceId === bot.modelSelection.instanceId && bot.modelSelection.effort && engine.effortLevels && effortAcceptedByEngine(bot.modelSelection.effort, engine.effortLevels)) {
         selection.effort = bot.modelSelection.effort;
       }
       return {
@@ -21172,6 +21689,7 @@ ROUTES.push(createAchievementRoutes({
   person: (auth) => actorPrincipalId(auth) || null,
   unlocked: (person, unlocked) => broadcast({ kind: "achievements", audience: person, unlocked }),
 }));
+ROUTES.push(createMediaWidgetRoutes());
 ROUTES.push(createDesktopBridgeRoutes({
   organization: () => IDENTITY.kind === "perspicax",
   bridges: desktopBridges, tunnels: desktopTunnels, audit: bridgeAudit,
@@ -21722,6 +22240,52 @@ ROUTES.push(createAccountRoutes({
     return { bots, threads };
   },
 }));
+function wakeFromCloudAgentCompletion(event: CloudAgentCompletionEvent): void {
+  const { record } = event;
+  const bot = store.bot(record.botId);
+  if (!bot || !store.taskByThread(record.botId, record.threadId)) return;
+  const principalId = turnSpeakerPrincipals.get(record.threadId);
+  const prompt = cloudAgentWakePrompt(event);
+  const speaker: TurnSpeaker | undefined = principalId
+    ? { origin: "person", principalId }
+    : undefined;
+  void startTurn(record.botId, prompt, {
+    threadId: record.threadId,
+    cardContinuation: true,
+    unattended: isUnattended(record.botId, record.threadId),
+    ...(speaker ? { speaker } : {}),
+  }).catch((error) => {
+    console.warn(`[cloud-agents] wake failed: ${error instanceof Error ? error.message : String(error)}`);
+  });
+}
+
+const cloudAgentProviders = createProviderRegistry();
+cloudAgentManager = new CloudAgentManager({
+  store: cloudAgentStore,
+  credentials: cloudAgentCredentials,
+  providers: cloudAgentProviders,
+  onComplete: (event) => { wakeFromCloudAgentCompletion(event); },
+  onChange: (record) => {
+    broadcast({ kind: "cloud.agent", botId: record.botId, item: cloudAgentWireItem(record) });
+  },
+});
+
+const CLOUD_AGENT_SYNC_MS = 15_000;
+setInterval(() => { void cloudAgentManager.syncActive(); }, CLOUD_AGENT_SYNC_MS).unref?.();
+
+ROUTES.push(createCloudAgentRoutes({
+  manager: cloudAgentManager,
+  credentials: cloudAgentCredentials,
+  providerLabel: (id) => cloudAgentProviders.get(id)?.label ?? id,
+  botVisible: (auth, botId) => {
+    const bot = store.bot(botId);
+    if (!bot) return false;
+    return listedBotVisible(bot, channelFilterViewerId(auth));
+  },
+  principalId: (auth) => sessionPrincipal(auth),
+  botName: (botId) => store.bot(botId)?.name,
+}));
+
 // What a bot is doing (server/routes/bot-activity.ts): its threads, the
 // work it handed other bots and its routine runs, as the viewer may read them.
 ROUTES.push(createBotActivityRoutes({
@@ -21748,6 +22312,24 @@ ROUTES.push(createBotActivityRoutes({
   runAccessCard: (run, viewerId) => routineRunAccessCard(run, viewerId),
   inRepository: (cwd) => inGitRepository(cwd),
   repository: (cwd) => repositoryInfo(cwd),
+  cloudAgents: cloudAgentManager,
+  launchedAgents: (botId, viewerId) => launchedAgentsForBot({
+    launcherBotId: botId,
+    bots: () => store.bots,
+    tasks: (peerId) => store.tasks(peerId),
+    messages: (threadId, limit) => store.messagesTail(threadId, limit).messages,
+    threadReadable: (peerId, threadId, who) => {
+      const peer = store.bot(peerId);
+      return Boolean(peer) && botThreadReadable(peer!, threadId, who, "thread.read");
+    },
+    threadBusy: (peerId, threadId) => threadBusy(peerId, threadId),
+    queued: (threadId) => {
+      const owner = store.botByThread(threadId);
+      return owner ? queuedThreadPosition(owner.id, threadId) !== null : false;
+    },
+    inRepository: (cwd) => inGitRepository(cwd),
+    repository: (cwd) => repositoryInfo(cwd),
+  }, viewerId),
 }));
 /** The access card a failed routine run left (refused for lack of
  * credentials, or paused), as this viewer may see it: on an organization
@@ -22207,6 +22789,115 @@ async function settleBotActCard(
   return settled ?? { status: 409, body: { error: "The request is no longer open." } };
 }
 
+const cwActionPasses = createCwActionPasses();
+
+function cwActionActor(auth: RequestAuth): PerformActor | null {
+  if (auth.kind === "session") {
+    return { kind: "person", sessionId: auth.session.id, personKey: personKey(auth.session), scopes: [...auth.session.scopes] };
+  }
+  return auth.kind === "loopback" && auth.trust !== "service" ? { kind: "operator" } : null;
+}
+
+/** A ConnectWise widget asks for a change (server/cw-widget-actions.ts): an
+ * approval card for the bot's owner, never a write. */
+async function requestCwAction(auth: RequestAuth, threadId: string, body: Record<string, unknown>): Promise<{ status: number; body: Record<string, unknown> }> {
+  const action = parseCwAction(body.action);
+  if (!action) return { status: 400, body: { error: "action is not a ConnectWise change this widget can ask for" } };
+  const group = store.groupByThread(threadId);
+  let bot: BotRecord | undefined;
+  if (group) {
+    if (group.peopleDm) return { status: 404, body: { error: "no such conversation" } };
+    if (IDENTITY.kind === "perspicax" && !groupPostAllowed(group, channelViewerId(auth))) {
+      return { status: 403, body: { error: "you may read this channel, not post in it", code: "read_only" } };
+    }
+    const botId = typeof body.botId === "string" ? body.botId : "";
+    if (!group.memberIds.includes(botId)) return { status: 400, body: { error: "botId must name a bot of this group" } };
+    bot = store.bot(botId) ?? undefined;
+  } else {
+    const owner = store.botByThread(threadId);
+    if (!owner) return { status: 404, body: { error: "no such conversation" } };
+    try {
+      routeThreadId(owner, threadId, "thread.post");
+    } catch (error) {
+      const status = (error as { status?: number }).status ?? 403;
+      return { status, body: { error: status === 404 ? "no such conversation" : "you may not post in this conversation" } };
+    }
+    bot = botForThread(owner.id, threadId) ?? owner;
+  }
+  if (!bot) return { status: 404, body: { error: "no such bot" } };
+  const audience = approvalAudience({ ownerUserId: approvalOwnerId(bot), host: approvalHostOf(bot) });
+  if (!cwActionActor(auth) || approvalAnswerStatus({ question: false, audience, callerUserId: approvalCallerUserId(auth) }) === 403) {
+    return { status: 403, body: { error: "Only the bot owner can approve a ConnectWise change.", code: "cw_action_owner_only" } };
+  }
+  const language = cwActionLanguage(cfg.language);
+  const card = cwActionCard(action, language, actorPrincipalId(auth));
+  const plain = approvalPlain({ botName: bot.name, tool: "cw_psa__write", toolInput: card.toolInput, detail: card.summary }, serverApprovalWords(cfg.language));
+  const message = store.appendMessage(threadId, {
+    role: "bot",
+    kind: "options",
+    from: { botId: bot.id, name: bot.name, color: bot.color },
+    card: {
+      title: "Approval needed",
+      subtitle: card.summary,
+      options: ["Allow", "Deny"],
+      requestId: card.requestId,
+      requestType: "permission",
+      tool: "cw_psa__write",
+      toolInput: card.toolInput,
+      ...(plain ? { plain } : {}),
+      cwActionRequest: card.cwActionRequest,
+    },
+  });
+  return { status: 201, body: { requestId: card.requestId, messageId: message.id } };
+}
+
+/** Allow on a widget's card: the person asks the bot for that one write and
+ * the write is let through once. Deny only closes the card. Null when the
+ * card is not a widget's. */
+async function resolveAndSendCwAction(
+  res: ServerResponse,
+  auth: RequestAuth,
+  threadId: string,
+  requestId: string,
+  behavior: string,
+): Promise<boolean> {
+  const message = store.messagesFor(threadId).find((row) => row.card?.requestId === requestId && row.card.cwActionRequest);
+  const card = message?.card;
+  if (!message || !card?.cwActionRequest) return false;
+  if (card.answered || card.dismissed || card.expired) {
+    json(res, 409, { error: "The request is no longer open." });
+    return true;
+  }
+  const action = parseCwAction(card.cwActionRequest.action);
+  const actor = cwActionActor(auth);
+  if (behavior !== "allow" || !action || !actor) {
+    store.patchMessage(threadId, message.id, { card: { ...card, answered: "deny" } });
+    json(res, 200, { ok: true, outcome: "rejected" });
+    return true;
+  }
+  const botId = message.from?.botId ?? store.botByThread(threadId)?.id;
+  const bot = botId ? store.bot(botId) : undefined;
+  if (!bot) {
+    json(res, 409, { error: "This bot is no longer here." });
+    return true;
+  }
+  store.patchMessage(threadId, message.id, { card: { ...card, answered: "allow" } });
+  cwActionPasses.grant(threadId, action);
+  const text = cwActionInstruction(action, cwActionLanguage(cfg.language));
+  const group = store.groupByThread(threadId);
+  const sent = await performBotActRoute(actor, group
+    ? { kind: "route", method: "POST", path: `/api/groups/${group.id}/messages`, body: { text: `@${bot.name} ${text}`, threadId } }
+    : { kind: "route", method: "POST", path: `/api/bots/${bot.id}/messages`, body: { text, threadId } });
+  if (sent.status >= 300) {
+    cwActionPasses.revoke(threadId, action);
+    store.patchMessage(threadId, message.id, { card });
+    json(res, 502, { error: "The bot could not be asked to make this change. Try again." });
+    return true;
+  }
+  json(res, 200, { ok: true, outcome: "allowed-once" });
+  return true;
+}
+
 async function performBotActRoute(actor: PerformActor, target: RouteTarget): Promise<{ status: number; text: string }> {
   if (target.path === "/api/internal" || target.path.startsWith("/api/internal/") || target.path === "/api/testing" || target.path.startsWith("/api/testing/")) {
     return { status: 400, text: "That path is not available." };
@@ -22542,8 +23233,10 @@ function listedBotVisible(bot: { id: string; ownerUserId?: unknown; directGrants
     sections: facts.sections,
   });
 }
-/** A viewer's level on a bot (undefined viewer: the operator, "owner"). */
+/** A viewer's level on a bot (undefined viewer: the operator, "owner").
+ * Service loopback on an organization server is not the operator. */
 function viewerBotLevel(auth: RequestAuth, bot: Parameters<typeof botFacts>[0]): Level | "owner" | null {
+  if (privateThreads() && auth.kind === "loopback" && auth.trust === "service") return null;
   const viewer = authzViewerFor(auth);
   if (!viewer) return "owner";
   return botLevel({ viewer, ...botFacts(bot) });
@@ -26107,6 +26800,10 @@ ROUTES.push(createAntigravityLeftoverRoutes({
 }));
 
 ROUTES.push(desktopViewer.route);
+terminalFeature.wire(ROUTES, {
+  upgrade: (req) => desktopViewer.upgradeOf(req),
+  live: (auth) => auth.kind === "loopback" || (auth.kind === "session" && sessions.isLive(auth.session.id)),
+});
 
 // Live calls (GPT-Live as the voice, the bot as the brain). A client holds
 // the WebRTC audio; the harness creates the session with the key (which
@@ -26269,7 +26966,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
     // Two public routes come first: what this server is, and turning a pairing
     // code into a session. Everything else needs the loopback owner or a
     // paired session with the right scope.
-    if (method === "GET" && !path.startsWith("/api/") && !path.startsWith("/.well-known/") && serveStatic(res, path)) return;
+    if (method === "GET" && path !== "/healthz" && !path.startsWith("/api/") && !path.startsWith("/.well-known/") && serveStatic(res, path)) return;
     // The new path and the old one (kept for one release, legacy-names.mjs).
     if (method === "GET" && ENVIRONMENT_PATHS.includes(path)) {
       return json(res, 200, environmentDescriptor({ environmentId: ENVIRONMENT_ID, desktopManaged: DESKTOP_MANAGED, emailSignIn: !HOSTED_WORKSPACE && !CLOUD_HOME && IDENTITY.kind === "solo" && emailSignIn.enabled(), sharedComputers: lendingEnabled(), cloudHome: Boolean(CLOUD_HOME), identity: identityDescriptor(IDENTITY) }));
@@ -26391,10 +27088,15 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       // A browser sign-in (the OMB Cloud page's "Use in your browser", docs/cloud-pro.md)
       // redeems only a window opened for one, and only into this browser's cookie.
       const browser = body?.browser === true;
-      if (browser && body?.preview === true) {
-        // Whose Cloud it signs in to, shown before the person continues. Redeems nothing.
-        const preview = sessions.previewBrowserSignIn(code);
-        return preview ? json(res, 200, preview) : json(res, 401, { error: "this sign-in link has expired or was already used" });
+      if (body?.preview === true) {
+        if (browser) {
+          // Whose Cloud it signs in to, shown before the person continues. Redeems nothing.
+          const preview = sessions.previewBrowserSignIn(code);
+          return preview ? json(res, 200, preview) : json(res, 401, { error: "this sign-in link has expired or was already used" });
+        }
+        const peek = sessions.previewSignInPrincipal(code);
+        if (!peek) return json(res, 401, { error: "this sign-in link has expired or was already used" });
+        return json(res, 200, { expiresAt: peek.expiresAt, ...sessionPersonFields(peek.principalId) });
       }
       if (browser && !wantsCookie) return json(res, 400, { error: "a browser sign-in sets this browser's cookie; send cookie: true" });
       const result = sessions.exchange({ code, label, attemptId, browser, source: requestSource(req), fallbackLabel: labelFromUserAgent(req.headers["user-agent"]) });
@@ -26474,6 +27176,11 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         const secure = HOSTED_WORKSPACE || requestOrigin(req)?.startsWith("https://") === true;
         res.setHeader("set-cookie", serializeSessionCookie(SESSION_COOKIE, presented, { secure, maxAgeSeconds: cookieMaxAgeSeconds(gate.auth.session) }));
       }
+    }
+    // Deploy and docker-exec probes. Loopback is authenticated, so this
+    // answers before the stranger check below and does not require !gate.auth.
+    if (method === "GET" && path === "/healthz") {
+      return json(res, 200, healthzBody());
     }
     // Reachability probe, public: the phone races it across a server's
     // addresses before it has a session, and the tunnel verifier polls it.
@@ -26566,7 +27273,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
     // Bot visibility: a member reaches a restricted bot, its threads, rooms,
     // routines and files exactly as they reach an id that does not exist.
     // Lists and live frames are narrowed where they are built, below.
-    const visible = visibleTo(viewerFor(auth));
+    const visible = visibleTo(viewerFor(auth, path));
     const viewerId = channelFilterViewerId(auth);
     if (!visible.everything) {
       const subject = pathSubject(path);
@@ -26582,8 +27289,9 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
     // Private threads (server/thread-privacy.ts): the helpers routes call
     // without the request read who is asking from here. Set for every
     // request, so a kept-alive connection never inherits one.
-    threadViewerScope.enterWith(viewerId ?? null);
-    if (viewerId && privateThreads()) {
+    const scopedViewerId = serviceThreadViewer(serviceViewerClosed(auth, path, privateThreads()), viewerId);
+    threadViewerScope.enterWith(scopedViewerId ?? null);
+    if (scopedViewerId && privateThreads()) {
       // A bot thread named in the path or the query is its owner's only;
       // every bot a response carries shows this viewer their threads only.
       const named = path.match(/^\/api\/threads\/([\w-]+)(?:\/|$)/)?.[1]
@@ -26595,18 +27303,18 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       // organization admin answers a card that waits for an admin, without
       // reading the thread (POST .../respond only).
       if (named && owner && !adminAnswersPendingApproval(method, path, auth) &&
-        !botThreadReadable(owner, named, viewerId, method === "GET" ? "thread.read" : "thread.post")) {
+        !botThreadReadable(owner, named, scopedViewerId, method === "GET" ? "thread.read" : "thread.post")) {
         return json(res, 404, { error: "no such conversation" });
       }
-      onJsonBody(res, (body) => bodyForThreadViewer(body, viewerId));
+      onJsonBody(res, (body) => bodyForThreadViewer(body, scopedViewerId));
     }
-    if (viewerId && !grantRoute && !adminAnswersPendingApproval(method, path, auth)) {
+    if (scopedViewerId && !grantRoute && !adminAnswersPendingApproval(method, path, auth)) {
       const subject = pathSubject(path);
-      if (subject && !subjectSeesChannel(subject, viewerId)) return json(res, 404, { error: notFoundFor(subject) });
+      if (subject && !subjectSeesChannel(subject, scopedViewerId)) return json(res, 404, { error: notFoundFor(subject) });
       // Slice 4: a read-only member of a shared section reads its rooms and
       // changes nothing in them (settings, tasks, queue, interrupt, cards).
       const room = IDENTITY.kind === "perspicax" && method !== "GET" && method !== "HEAD" && !/^\/api\/(?:groups|threads)\/[\w-]+\/read$/.test(path) && !REACTION_ROUTE.test(path) ? roomOfSubject(subject) : null;
-      if (room && !groupPostAllowed(room, viewerId)) return json(res, 403, { error: "you may read this channel, not change it", code: "read_only" });
+      if (room && !groupPostAllowed(room, scopedViewerId)) return json(res, 403, { error: "you may read this channel, not change it", code: "read_only" });
     }
     {
       // A conversation between two people (server/people-dms.ts): only they
@@ -27057,6 +27765,26 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         }, agentApiTool, body ?? {}, aborted.signal);
         return json(res, answer.status, answer.body);
       }
+      const cloudAgentAction = cloudAgentInternalAction(method, path);
+      if (cloudAgentAction) {
+        const body = await readInternalBody();
+        let principalId = turnSpeakerPrincipals.get(internalCapability.threadId);
+        if (!principalId && IDENTITY.kind !== "perspicax") principalId = localPrincipalId();
+        if (!principalId) {
+          return json(res, 403, { error: "Cloud agents need a signed-in person with provider credentials." });
+        }
+        const answer = await handleCloudAgentInternal(
+          cloudAgentAction,
+          (body && typeof body === "object" && !Array.isArray(body) ? body : {}) as Record<string, unknown>,
+          {
+            manager: cloudAgentManager,
+            principalId,
+            botId: internalSender.id,
+            threadId: internalCapability.threadId,
+          },
+        );
+        return json(res, answer.isError ? 400 : 200, answer);
+      }
       if (path === "/api/internal/act" && method === "POST") {
         const body = await readInternalBody();
         const acting = store.projectBotForTask(internalSender.id, internalCapability.threadId) ?? internalSender;
@@ -27067,12 +27795,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           botId: internalSender.id,
           botName: acting.name,
           botColor: acting.color,
-          mode: approvalModeFor({
-            approvalMode: acting.approvalMode,
-            autoApprove: acting.autoApprove,
-            approvalGrant: acting.approvalGrant,
-            threadId: internalCapability.threadId,
-          }),
+          mode: approvalModeForTurn(acting, false, internalCapability.threadId),
         });
         return json(res, result.status, result.body);
       }
@@ -27269,6 +27992,10 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         if (body?.method !== "tools/list" && body?.method !== "tools/call") {
           return json(res, 400, { error: "unsupported browser method" });
         }
+        if (body.method === "tools/call") {
+          const refusal = browserNavigationRefusal(body.params);
+          if (refusal) return json(res, 400, { error: refusal });
+        }
         const result = await browserRuntime.agentRpc(browser.session, browser.spec, body.method, body.params, () => {
           requireActiveInternalCapability();
           const current = store.bot(bot.id);
@@ -27313,7 +28040,25 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
             overQuota: () => userSandbox.workspaceOverQuota(ownerId),
             // An admin manages this person's plugins and MCP servers: the
             // engines' own plugin and MCP commands do not run for them.
-            commandRefusal: (command) => enginePluginCommandRefusal(personIntegrationsOff(ownerId), command),
+            commandRefusal: (command) => enginePluginCommandRefusal(personIntegrationsOff(ownerId), command)
+              ?? misuseTextRefusal(command, ownerId, "shell", { botId: internalCapability.botId, threadId: internalCapability.threadId, tool: "run_command" }),
+            pathRefusal: (path) => misusePathRefusal(path, { ...misuseActor(ownerId), botId: internalCapability.botId, threadId: internalCapability.threadId, tool: "read_file" })?.message ?? null,
+            textRefusal: (value) => misuseTextRefusal(value, ownerId, "shell", { botId: internalCapability.botId, threadId: internalCapability.threadId }),
+            beforeCall: (name, detail) => {
+              const who = safetyPrincipal(internalCapability.threadId);
+              const principalId = who.principalId ?? ownerId;
+              return safetyToolHold({
+                text: detail,
+                surface: name.includes("computer") ? "computer" : name === "run_command" ? "shell" : "file",
+                tool: name,
+                known: true,
+                triage: who.triage || misuseActor(ownerId).triage,
+                ...(principalId ? { principalId } : {}),
+                threadId: internalCapability.threadId,
+                botId: internalCapability.botId,
+                review: safetyReviewer(internalCapability.botId),
+              });
+            },
           });
           requireActiveInternalCapability();
           return json(res, 200, { result });
@@ -27341,6 +28086,24 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         };
         // The cap flipped after this turn mounted the server: do not relay,
         // and stop the child that already has the credential.
+        const personalFrame = misuseToolFrameText(frame);
+        if (personalFrame) {
+          const personalMisuse = misuseTextRefusal(personalFrame, person, personalFrame.includes("flow_action") ? "flow" : "mcp", { botId: internalCapability.botId, threadId: internalCapability.threadId, tool: "personal-mcp" });
+          if (personalMisuse) return json(res, 200, answerError(personalMisuse));
+          const who = safetyPrincipal(internalCapability.threadId);
+          const personalHeld = await safetyToolHold({
+            text: personalFrame,
+            surface: personalFrame.includes("flow_action") ? "flow" : "mcp",
+            tool: "personal-mcp",
+            known: true,
+            triage: who.triage || misuseActor(person).triage,
+            principalId: who.principalId ?? person,
+            threadId: internalCapability.threadId,
+            botId: internalCapability.botId,
+            review: safetyReviewer(internalCapability.botId),
+          });
+          if (personalHeld) return json(res, 200, answerError(personalHeld));
+        }
         if (personIntegrationsOff(person)) {
           stdioRelay.closePerson(person, name);
           await syncGithubForTurn(person, internalCapability.generation);
@@ -27380,7 +28143,24 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           const autoRefusal = autoState && autoComputerToolRefusal(autoState.selected, DESKTOP_BRIDGE_MCP_NAME,
             String((frame?.params as { name?: unknown } | undefined)?.name ?? ""));
           if (autoRefusal) return json(res, 200, { result: { content: [{ type: "text", text: autoRefusal }], isError: true } });
-          if (rpcMethod === "tools/call") await stagePendingAttachments(internalCapability.threadId, internalCapability.generation);
+          if (rpcMethod === "tools/call") {
+            const desktopParams = frame?.params as { name?: unknown; arguments?: unknown } | undefined;
+            const desktopTool = typeof desktopParams?.name === "string" ? desktopParams.name : "";
+            const who = safetyPrincipal(internalCapability.threadId);
+            const desktopHeld = await safetyToolHold({
+              text: `${desktopTool}\n${desktopParams?.arguments === undefined ? "" : JSON.stringify(desktopParams.arguments)}`,
+              surface: /computer/i.test(desktopTool) ? "computer" : "shell",
+              tool: desktopTool || "desktop",
+              known: Boolean(desktopTool),
+              triage: who.triage || misuseActor(person).triage,
+              principalId: who.principalId ?? person,
+              threadId: internalCapability.threadId,
+              botId: internalCapability.botId,
+              review: safetyReviewer(internalCapability.botId),
+            });
+            if (desktopHeld) return json(res, 200, { result: { content: [{ type: "text", text: desktopHeld }], isError: true } });
+            await stagePendingAttachments(internalCapability.threadId, internalCapability.generation);
+          }
           const result = await handleDesktopBridgeMcp(rpcMethod, frame?.params, async (operation: DesktopBridgeOperation) => {
             // The bot's own "no computer" setting holds on the person's screen too.
             if ((operation.action === "computer_tools" || operation.action === "computer_call") && store.bot(internalCapability.botId)?.computer === "off") {
@@ -27410,7 +28190,9 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
               throw error;
             }
           }, {
-            commandRefusal: (command) => enginePluginCommandRefusal(personIntegrationsOff(person), command),
+            commandRefusal: (command) => enginePluginCommandRefusal(personIntegrationsOff(person), command)
+              ?? misuseTextRefusal(command, person, "shell", { botId: internalCapability.botId, threadId: internalCapability.threadId, tool: "run_command" }),
+            payloadRefusal: (value) => misuseTextRefusal(value, person, "shell", { botId: internalCapability.botId, threadId: internalCapability.threadId, tool: "desktop" }),
           });
           requireActiveInternalCapability();
           return json(res, 200, { result });
@@ -27514,6 +28296,32 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           return json(res, 403, { error: why === "someone-else" ? LENDING_SOMEONE_ELSE : LENDING_MEMORY_CHANGED });
         }
         const active = () => lendingEnabled() && internalCapabilityIsActive(internalCapability);
+        const terminalText = [parsed.data.command, parsed.data.path, parsed.data.content].filter((part) => typeof part === "string").join("\n");
+        if (terminalText) {
+          const terminalMisuse = misuseRefusal(terminalText, {
+            ...misuseActor(principal),
+            surface: parsed.data.action === "run_command" ? "terminal" : "file",
+            botId: internalCapability.botId,
+            threadId: internalCapability.threadId,
+            tool: parsed.data.action,
+          });
+          if (terminalMisuse) return json(res, terminalMisuse.status, { error: terminalMisuse.message, code: terminalMisuse.code });
+        }
+        const who = safetyPrincipal(internalCapability.threadId);
+        const terminalPrincipal = who.principalId ?? principal ?? undefined;
+        const terminalTool = parsed.data.action === "computer_tools" ? "computer_list_tools" : parsed.data.action === "computer_call" ? "computer_use" : parsed.data.action;
+        const terminalHeld = await safetyToolHold({
+          text: terminalText || parsed.data.action,
+          surface: parsed.data.action === "run_command" ? "terminal" : parsed.data.action.startsWith("computer") ? "computer" : "file",
+          tool: terminalTool,
+          known: true,
+          triage: who.triage || misuseActor(principal).triage,
+          ...(terminalPrincipal ? { principalId: terminalPrincipal } : {}),
+          threadId: internalCapability.threadId,
+          botId: internalCapability.botId,
+          review: safetyReviewer(internalCapability.botId),
+        });
+        if (terminalHeld) return json(res, 403, { error: terminalHeld, code: "safety_blocked" });
         if (IDENTITY.kind === "perspicax") return json(res, 200, { result: await userComputers.request(personSpeaker(principal), parsed.data, active) });
         return json(res, 200, { result: await sharedComputers.request(parsed.data, principal, active) });
       }
@@ -27814,13 +28622,34 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         const wasOwners = proposedInput.action !== "create" && typeof proposedInput.routineId === "string" ? cloudRoutineIsOwners(proposedInput.routineId) : false;
         const run = activeRoutineRunForThread(fromThreadId);
         const ownersTurn = cloudOwnerOnlyThread(fromThreadId) || cloudRoutineRunIsOwners(run, from.id, fromThreadId);
+        const routineWho = safetyPrincipal(fromThreadId);
+        const routineSafety = safetyPermissionEffect({
+          text: JSON.stringify(body),
+          surface: "routine",
+          tool: "propose_routine",
+          known: true,
+          triage: routineWho.triage,
+          ...(routineWho.principalId ? { principalId: routineWho.principalId } : {}),
+          threadId: fromThreadId,
+          botId: from.id,
+        });
+        if (routineSafety?.kind === "stop") return json(res, 409, { error: routineSafety.message });
         const proposed = await routineRequests.submit({
           botId: from.id,
           threadId: fromThreadId,
           proposal: proposedInput,
           from: owner.group ? { botId: from.id, name: from.name, color: from.color } : undefined,
           canCommit: () => internalCapabilityIsActive(internalCapability),
+          ...(routineSafety?.kind === "hold" ? { explicitConfirm: true } : {}),
         });
+        if (routineSafety?.kind === "hold") {
+          safetyArm(proposed.requestId, {
+            ...(routineWho.principalId ? { principalId: routineWho.principalId } : {}),
+            threadId: fromThreadId,
+            fingerprint: routineSafety.fingerprint,
+            ...(routineSafety.classKey ? { classKey: routineSafety.classKey } : {}),
+          });
+        }
         const proposedCard = store.messagesFor(fromThreadId).find((message) => message.id === proposed.messageId)?.card;
         // Applied at once in a Full-access conversation. In the owner's own (one
         // only they provably wrote in) it is theirs, as if they had approved
@@ -29533,6 +30362,31 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           return json(res, 403, { error: "this Perspicax profile is not mounted in this turn", code: "profile_not_mounted" });
         }
         const frame = await readInternalBody();
+        const perspicaxText = misuseToolFrameText(frame);
+        if (perspicaxText) {
+          const speakerId = internalCapability.sandboxPrincipalId ?? internalCapability.desktopPrincipalId;
+          const perspicaxMisuse = misuseTextRefusal(perspicaxText, speakerId, perspicaxText.includes("flow_action") ? "flow" : "mcp", { botId: internalCapability.botId, threadId: internalCapability.threadId, tool: "perspicax" });
+          if (perspicaxMisuse) {
+            const id = frame && typeof frame === "object" && "id" in frame ? (frame as { id?: unknown }).id : undefined;
+            return json(res, 200, { jsonrpc: "2.0", id, result: { content: [{ type: "text", text: perspicaxMisuse }], isError: true } });
+          }
+          const who = safetyPrincipal(internalCapability.threadId);
+          const perspicaxHeld = await safetyToolHold({
+            text: perspicaxText,
+            surface: perspicaxText.includes("flow_action") ? "flow" : "mcp",
+            tool: "perspicax",
+            known: true,
+            triage: who.triage || misuseActor(speakerId).triage,
+            ...(who.principalId || speakerId ? { principalId: who.principalId ?? speakerId } : {}),
+            threadId: internalCapability.threadId,
+            botId: internalCapability.botId,
+            review: safetyReviewer(internalCapability.botId),
+          });
+          if (perspicaxHeld) {
+            const id = frame && typeof frame === "object" && "id" in frame ? (frame as { id?: unknown }).id : undefined;
+            return json(res, 200, { jsonrpc: "2.0", id, result: { content: [{ type: "text", text: perspicaxHeld }], isError: true } });
+          }
+        }
         const answer = await perspicaxMcp.relay({
           threadId: internalCapability.threadId,
           generation: internalCapability.generation,
@@ -29718,7 +30572,20 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           }).join("\n\n");
           const capNote = (count: number) =>
             `Sagax did not send this. ${currentSender.name} has reached its daily limit of ${count} outbound action${count === 1 ? "" : "s"}. Ask the user to raise the limit under the bot's Permissions before trying again.`;
-          if (policy.policy === "allow" && !opaque) {
+          const outboundWho = safetyPrincipal(threadId);
+          const outboundSafety = safetyPermissionEffect({
+            text: `${outboundTool}\n${summary}`,
+            surface: "mcp",
+            tool: outboundTool,
+            known: true,
+            triage: outboundWho.triage,
+            ...(outboundWho.principalId ? { principalId: outboundWho.principalId } : {}),
+            threadId,
+            botId: currentSender.id,
+          });
+          if (outboundSafety?.kind === "stop") return refuseOutbound(outboundSafety.message);
+          const safetyCard = outboundSafety?.kind === "hold" ? outboundSafety : null;
+          if (policy.policy === "allow" && !opaque && !safetyCard) {
             const today = outboundCounts.today(currentSender.id);
             if (today + outboundCalls.length > policy.dailyCap) {
               appendDecision(DATA_DIR, {
@@ -29730,6 +30597,14 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           } else {
             const owner = connectorThread(currentSender.id, threadId);
             const held = outboundRequests.open({ botId: currentSender.id, threadId, tool: outboundTool, timeoutMs: OUTBOUND_HOLD_MS });
+            if (safetyCard) {
+              safetyArm(held.requestId, {
+                ...(outboundWho.principalId ? { principalId: outboundWho.principalId } : {}),
+                threadId,
+                fingerprint: safetyCard.fingerprint,
+                ...(safetyCard.classKey ? { classKey: safetyCard.classKey } : {}),
+              });
+            }
             const card = store.appendMessage(threadId, {
               role: "bot",
               kind: "options",
@@ -29766,6 +30641,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
               }
             }
             if (answer !== "allow") {
+              if (safetyCard) safetyRejectArmed(held.requestId);
               if (answer === "timeout") {
                 const stale = store.messagesFor(threadId).find((message) => message.id === card.id);
                 if (stale?.card && !stale.card.answered) {
@@ -29778,6 +30654,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
                   : "Sagax did not send this: the user declined. Do not retry it; ask the user what they would like instead.",
               );
             }
+            if (safetyCard) safetyForgetArmed(held.requestId);
             outboundApproved = true;
             requireActiveInternalCapability();
           }
@@ -30300,7 +31177,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       return json(res, 405, { error: "method not allowed" });
     }
     if (method === "GET" && path === "/api/events") {
-      const viewer = viewerFor(auth);
+      const viewer = viewerFor(auth, path);
       const visibleNow = visibleTo(viewer);
       const client: SseClient = {
         res,
@@ -30458,6 +31335,14 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           }),
         ),
       });
+    }
+
+    m = path.match(/^\/api\/threads\/([\w-]+)\/cw-actions$/);
+    if (m && method === "POST") {
+      const body = await readBody(req);
+      if (!body || typeof body !== "object" || Array.isArray(body)) return json(res, 400, { error: "body must be a JSON object" });
+      const asked = await requestCwAction(auth, m[1], body);
+      return json(res, asked.status, asked.body);
     }
 
     // Read receipts (server/read-receipts.ts): GET answers the positions
@@ -30949,7 +31834,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         features: { sharedComputers: lendingEnabled(), orgPairing: IDENTITY.kind === "perspicax", orgDirectory: IDENTITY.kind === "perspicax", serverCatalogue: IDENTITY.kind !== "perspicax" }, loopbackTrust: LOOPBACK.trust, cliOwnerToken,
       });
       if (!current.auth) return json(res, current.status, { error: current.error });
-      const currentVisible = visibleTo(viewerFor(current.auth));
+      const currentVisible = visibleTo(viewerFor(current.auth, path));
       if (threadId && !currentVisible.thread(threadId)) return json(res, 404, { error: "no such conversation" });
       const searchViewerId = channelFilterViewerId(current.auth);
       const hits = found
@@ -31747,6 +32632,13 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         return json(res, 403, { error: "you may read this channel, not post in it", code: "read_only" });
       }
       if (group.peopleDm) return json(res, 202, sendPeopleDmMessage(group, auth, text, body.sendId, body.replyToId, body.threadId));
+      const groupSpeaker = speakerFor(auth);
+      const groupMisuseActor = misuseActor(groupSpeaker.origin === "person" ? groupSpeaker.principalId : undefined, groupSpeaker.origin);
+      const groupThreadId = typeof body.threadId === "string" ? body.threadId : group.threadId;
+      const groupMisuse = misuseRefusal(text, { ...groupMisuseActor, surface: "message", threadId: groupThreadId });
+      if (groupMisuse) return json(res, groupMisuse.status, { error: groupMisuse.message, code: groupMisuse.code });
+      const groupSafety = safetyHttpRefusal({ text, surface: "message", triage: groupMisuseActor.triage, ...(groupMisuseActor.principalId ? { principalId: groupMisuseActor.principalId } : {}), threadId: groupThreadId });
+      if (groupSafety) return json(res, groupSafety.status, { error: groupSafety.message, code: groupSafety.code });
       if (body.mode !== undefined && body.mode !== "chat" && body.mode !== "goal") {
         return json(res, 400, { error: "mode must be chat or goal" });
       }
@@ -32858,6 +33750,10 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         }
         patch.memoryEnabled = body.memoryEnabled;
       }
+      if (body.backgroundReplies !== undefined) {
+        if (typeof body.backgroundReplies !== "boolean") return json(res, 400, { error: "backgroundReplies must be true or false" });
+        patch.backgroundReplies = body.backgroundReplies;
+      }
       // which of those apps' tools this bot may call (connector grants 1/5:
       // data model only — enforcement lands with slice 2). null returns the
       // bot to boolean-only legacy behavior; {} means no tools.
@@ -33927,6 +34823,12 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       // On a call, words said while the bot works always join its turn: a
       // phone has no "run this in parallel" (and no chooser asks).
       const busyMode: BusySendMode = guardedBody || voiceCall ? "steer" : (body.busyMode ?? "steer");
+      const messageSpeaker = speakerFor(auth);
+      const postedActor = misuseActor(messageSpeaker.origin === "person" ? messageSpeaker.principalId : undefined, messageSpeaker.origin);
+      const messageMisuse = misuseRefusal(text, { ...postedActor, surface: "message", botId: bot.id, threadId });
+      if (messageMisuse) return json(res, messageMisuse.status, { error: messageMisuse.message, code: messageMisuse.code });
+      const postedSafety = safetyHttpRefusal({ text, surface: "message", triage: postedActor.triage, ...(postedActor.principalId ? { principalId: postedActor.principalId } : {}), botId: bot.id, threadId });
+      if (postedSafety) return json(res, postedSafety.status, { error: postedSafety.message, code: postedSafety.code });
       const receipt = await sendSequencer.run(
         sendId ? `bot:${bot.id}:${threadId}:${sendId}` : undefined,
         sendFingerprint(text, replyTo?.id),
@@ -33994,6 +34896,13 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
             }
             const message = await startTurn(bot.id, text, { threadId, replyTo, sendId, sender: messageSender(auth), trigger, speaker: speakerFor(auth), relayed: true });
             return { ok: true as const, threadId, message };
+          }
+
+          // Full-duplex call: one live turn. Talking while the bot works
+          // cancels that turn, drops the steer queue, and starts only this
+          // utterance (issue #292). Flag off keeps the steer path below.
+          if (voiceCall?.duplex) {
+            return startDuplexCallTurn(bot.id, threadId, text, replyTo, sendId, messageSender(auth), trigger, speakerFor(auth), voiceCall);
           }
 
           // A new request while this conversation works: its own task, which
@@ -34350,6 +35259,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       }
       return await answeringCardAs(auth, bot.threadId, String(body.requestId), async () => {
         if (resolveAndSendTrust(res, bot.threadId, String(body.requestId), behavior)) return;
+        if (await resolveAndSendCwAction(res, auth, bot.threadId, String(body.requestId), behavior)) return;
         if (await resolveAndSendTeamSetup(res, {
           botId: bot.id, threadId: bot.threadId, requestId: String(body.requestId), behavior,
         }, auth.kind === "loopback" ? DESKTOP_MANAGED || Boolean(req.headers.origin) && !store.bots.some((bot) => bot.busy || activeGroupTurnForBot(bot.id)) : auth.scopes.includes("admin"))) return;
@@ -34375,6 +35285,19 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           requestId: String(body.requestId),
           behavior,
         })) return;
+        const terminalCardBot = store.messagesFor(bot.threadId).find(
+          (message) => message.card?.requestId === String(body.requestId) && message.card.terminalRequest,
+        );
+        if (terminalCardBot?.card?.terminalRequest) {
+          const principalId = terminalPrincipalId(auth);
+          if (!principalId) return json(res, 401, { error: "Sign in to open a terminal." });
+          if (await resolveAndSendTerminal(res, terminalFeature.requests, {
+            threadId: bot.threadId,
+            requestId: String(body.requestId),
+            behavior,
+            principalId,
+          })) return;
+        }
         if (sendSkillResolution(res, resolveSkillRequest({
           botId: bot.id,
           botName: bot.name,
@@ -34443,6 +35366,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       }
       return await answeringCardAs(auth, threadId, requestId, async () => {
         if (resolveAndSendTrust(res, threadId, requestId, behavior)) return;
+        if (await resolveAndSendCwAction(res, auth, threadId, requestId, behavior)) return;
         const skillCard = store.messagesFor(threadId).find(
           (message) => message.card?.requestId === requestId && message.card.skillRequest,
         );
@@ -34458,6 +35382,19 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
             behavior,
             reviewedSha256,
           }))) return;
+        }
+        const terminalCard = store.messagesFor(threadId).find(
+          (message) => message.card?.requestId === requestId && message.card.terminalRequest,
+        );
+        if (terminalCard?.card?.terminalRequest) {
+          const principalId = terminalPrincipalId(auth);
+          if (!principalId) return json(res, 401, { error: "Sign in to open a terminal." });
+          if (await resolveAndSendTerminal(res, terminalFeature.requests, {
+            threadId,
+            requestId,
+            behavior,
+            principalId,
+          })) return;
         }
         const routineCard = store.messagesFor(threadId).find(
           (message) => message.card?.requestId === requestId && message.card.routineRequest,
@@ -34576,12 +35513,22 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       }
       const body = rawBody ?? {};
       requirePinnedClientThread(bot.id, body.threadId);
+      if (body.expectedUtteranceId !== undefined && (typeof body.expectedUtteranceId !== "string" || !/^[\w-]+$/.test(body.expectedUtteranceId))) {
+        return json(res, 400, { error: "expectedUtteranceId must be an utterance id" });
+      }
+      const expectedUtteranceId = typeof body.expectedUtteranceId === "string" ? body.expectedUtteranceId : undefined;
       // Organization server: a person stops their own thread only, never
       // the bot's work for someone else (another person's thread, a room,
       // the owner's routine). The owner keeps the whole-bot stop.
       const stopper = scopedThreadViewer();
       if (stopper && !(viewerBotLevel(auth, bot) === "owner")) {
         const own = routeThreadId(bot, body.threadId);
+        if (expectedUtteranceId && pinVoiceInterrupt({
+          expectedUtteranceId,
+          liveUtteranceId: liveVoiceUtteranceByThread.get(own),
+        }) === "skip") {
+          return json(res, 200, { ok: true, skipped: true });
+        }
         const run = routines!.activeBotRunForBot(bot.id);
         if (run?.threadId === own) await routines!.cancelRun(run.id);
         else await stopDirectThreadByPerson(bot.id, own);
@@ -34591,6 +35538,12 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       const expectedThreadId = body.threadId;
       if (expectedThreadId !== undefined && (typeof expectedThreadId !== "string" || !/^[\w-]+$/.test(expectedThreadId))) {
         return json(res, 400, { error: "threadId must be a task id" });
+      }
+      if (expectedUtteranceId && pinVoiceInterrupt({
+        expectedUtteranceId,
+        liveUtteranceId: liveVoiceUtteranceByThread.get(typeof expectedThreadId === "string" ? expectedThreadId : bot.threadId),
+      }) === "skip") {
+        return json(res, 200, { ok: true, skipped: true });
       }
       // Explicit thread targets never fall through to another routine or
       // channel just because it belongs to the same bot.
@@ -37239,7 +38192,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
   } catch (e) {
     const status = (e as any)?.status ?? 500;
     const candidateCode = (e as { code?: unknown })?.code;
-    const code = typeof candidateCode === "string" && ["guarded_busy", "guarded_branch", "guarded_permissions", "guarded_request_changed", "guarded_request_untracked", "outside_workspace", "org_full_access_disabled", "parallel_limit", "parallel_nested"].includes(candidateCode)
+    const code = typeof candidateCode === "string" && ["guarded_busy", "guarded_branch", "guarded_permissions", "guarded_request_changed", "guarded_request_untracked", "outside_workspace", "org_full_access_disabled", "parallel_limit", "parallel_nested", "misuse_blocked", "misuse_approval_required", "misuse_locked", "safety_blocked"].includes(candidateCode)
       ? candidateCode : undefined;
     return json(res, status, { error: e instanceof Error ? e.message : String(e), ...(code ? { code } : {}) });
   } finally {

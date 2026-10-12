@@ -3,7 +3,10 @@
 // streaming text to speech. Each clause of the bot's answer is sent the
 // moment it is written (`say`), spoken one after the other, and its PCM
 // comes back as binary frames between `start` and `done`, handed to the
-// player exactly like a POST /voice/stream body. A clause the player drops
+// player exactly like a POST /voice/stream body. The first grok token of a
+// clause can open the utterance early (`say` with `more: true`, then
+// `append` / `finish`) so TTS starts before that clause is complete. A
+// clause the player drops
 // (barge-in, hold, hang-up, a reissued turn) is cancelled on the server,
 // which clears it at xAI (`text.clear`), so nothing of it plays after.
 //
@@ -62,6 +65,7 @@ interface Clause {
   heard: boolean;
   ended: boolean;
   cancelled: boolean;
+  more: boolean;
 }
 
 const settingsKey = (settings: VoiceModeSettings) => `${settings.voice}|${settings.speed}|${settings.language}`;
@@ -124,7 +128,9 @@ export class SpeechSocket {
           this.state = "open";
           resolve(true);
           // clauses said while it was opening
-          for (const clause of this.clauses.values()) if (!clause.cancelled && !clause.started) this.send({ type: "say", id: clause.id, text: clause.text });
+          for (const clause of this.clauses.values()) if (!clause.cancelled && !clause.started) {
+            this.send(clause.more ? { type: "say", id: clause.id, text: clause.text, more: true } : { type: "say", id: clause.id, text: clause.text });
+          }
           return;
         }
         this.frame(frame);
@@ -142,12 +148,16 @@ export class SpeechSocket {
 
   /** One clause's speech; the same contract as POST /voice/stream
    * (streamVoiceModeSpeech), so the player plays either alike. */
-  speak: Speak = (botId, text, settings, threadId, signal) => {
+  speak: Speak = (botId, text, settings, threadId, signal) => this.enqueue(botId, text, settings, threadId, signal, false);
+
+  /** Open a first-clause lead: `text.delta` only, audio can start before
+   * the clause is complete. `append` / `finish` grow it then `text.done`. */
+  begin: Speak = (botId, text, settings, threadId, signal) => this.enqueue(botId, text, settings, threadId, signal, true);
+
+  private enqueue(botId: string, text: string, settings: VoiceModeSettings, threadId: string | undefined, signal: AbortSignal | undefined, more: boolean): Promise<Audio> {
     const post = this.o.post ?? streamVoiceModeSpeech;
     if (this.state === "failed" || this.state === "idle") return post(botId, text, settings, threadId, signal);
     if (settingsKey(settings) !== this.key) {
-      // another voice, speed or language: a new socket when nothing is in
-      // flight (this clause waits for it); else POST until then
       if ([...this.clauses.values()].some((clause) => !clause.ended)) return post(botId, text, settings, threadId, signal);
       this.reopen(settings);
       if (!this.streaming) return post(botId, text, settings, threadId, signal);
@@ -158,20 +168,42 @@ export class SpeechSocket {
     let controller: ReadableStreamDefaultController<Uint8Array> | null = null;
     const body = new ReadableStream<Uint8Array>({
       start: (c) => { controller = c; },
-      // the player let go of it (a cut): stop it at xAI
       cancel: () => this.cancel(id),
     });
     return new Promise<Audio>((resolve, reject) => {
       const clause: Clause = {
         id, text, settings, ...(threadId ? { threadId } : {}), ...(signal ? { signal } : {}), body, controller,
-        resolve, reject, settled: false, started: false, heard: false, ended: false, cancelled: false,
+        resolve, reject, settled: false, started: false, heard: false, ended: false, cancelled: false, more,
       };
       clause.controller = controller;
       this.clauses.set(id, clause);
       signal?.addEventListener("abort", () => this.cancel(id), { once: true });
-      if (this.state === "open") this.send({ type: "say", id, text });
+      if (this.state === "open") this.send(more ? { type: "say", id, text, more: true } : { type: "say", id, text });
     });
-  };
+  }
+
+  /** More of the open lead (xAI `text.delta`). */
+  append(text: string): void {
+    const clause = this.lead();
+    if (!clause || !text) return;
+    clause.text += text;
+    this.send({ type: "append", id: clause.id, text });
+  }
+
+  /** The first clause is complete (xAI `text.done`). */
+  finish(): void {
+    const clause = this.lead();
+    if (!clause) return;
+    clause.more = false;
+    this.send({ type: "finish", id: clause.id });
+  }
+
+  private lead(): Clause | undefined {
+    for (const clause of this.clauses.values()) {
+      if (clause.more && !clause.ended && !clause.cancelled) return clause;
+    }
+    return undefined;
+  }
 
   /** The call ended. */
   close(): void {

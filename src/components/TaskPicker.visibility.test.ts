@@ -105,7 +105,7 @@ describe("optional bot thread picker", () => {
 
 describe("the header picker lists only the open bot's threads", () => {
   // Other bots and rooms with threads that need the person: before
-  // 2026-10-08 they rode into this picker as an "Active Threads" section.
+  // 2026-10-08 they rode into this picker as an inbox section.
   const talon: Bot = { ...bot, id: "talon", name: "Talon", threadId: "talon-main", busy: false,
     tasks: [{ threadId: "talon-main", title: "Talon work", createdAt: 1, unread: true }, { threadId: "talon-wait", title: "Talon approval", createdAt: 2, activity: "waiting-on-you" }] };
   const room: Group = { id: "crew", name: "Crew", threadId: "crew-main", memberIds: [], defaultResponder: { kind: "everyone" }, bulletin: "", createdAt: 1, unread: true, messages: [],
@@ -121,7 +121,7 @@ describe("the header picker lists only the open bot's threads", () => {
     const markup = renderToStaticMarkup(createElement(TaskPicker, { bot: pepper, initialOpen: true }));
     for (const title of ["Current chat", "Quiet history", "Approval needed", "Research", "Next job", "Finished reply", "@Talon · work"]) expect(markup).toContain(title);
     expect(markup).toContain("opened by Talon");
-    for (const title of ["Talon work", "Talon approval", "Crew chat", "Nightly", "Active Threads"]) expect(markup).not.toContain(title);
+    for (const title of ["Talon work", "Talon approval", "Crew chat", "Nightly", "Inbox"]) expect(markup).not.toContain(title);
     expect(botPickerThreads(pepper).map((task) => task.threadId).sort())
       .toEqual(["current", "idle", "waiting", "working", "queued", "unread", "peer-opened"].sort());
   });

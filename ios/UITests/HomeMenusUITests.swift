@@ -26,7 +26,6 @@ final class HomeMenusUITests: XCTestCase {
         arguments = [
             "-parityEndpoint", endpoint, "-parityToken", token, "-parityScreen", "01-home",
             "-AppleLanguages", "(en)", "-AppleLocale", "en_US",
-            "-companion.prefs.islandIntro", "never",
         ]
         if let environment = env["PARITY_ENVIRONMENT"], !environment.isEmpty {
             arguments += ["-parityEnvironment", environment]

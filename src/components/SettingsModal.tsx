@@ -61,6 +61,7 @@ import { InitialsAvatar } from "./Avatar";
 import { profileInitials, profileLabel } from "./SidebarProfileMenu";
 import { ManagedProfileIdentity } from "./ManagedProfileIdentity";
 import { MyLabelField } from "./settings/MyLabelField";
+import { CloudAgentProvidersSettings } from "./settings/CloudAgentProvidersSettings";
 import { managedProfile } from "@/lib/profile-management";
 import { ThreadConcurrencySettings } from "./ThreadConcurrencySettings";
 import { AutomaticRecoverySettings } from "./AutomaticRecoverySettings";
@@ -1407,6 +1408,7 @@ export function SettingsModal() {
                   actionLabel={t("providerKeys.openPage")}
                   onOpen={() => dispatch({ type: "toggleAppSettings", open: true, section: "engines" })}
                 />
+                <CloudAgentProvidersSettings />
                 {connectedAppsEnabled(state.config) && <Card
                   collapsible
                   cardId="connections.apps"

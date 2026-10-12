@@ -9,6 +9,8 @@ import { resolveAgentBrowserBinary } from "../../server/browser-engine.ts";
 import { waitForExit } from "../../server/testing/cleanup.ts";
 import { runControlOmb } from "../control-omb.ts";
 import { UI_TOOLS_DIR } from "./control-omb-ui.ts";
+import { request } from "../mcp-server.ts";
+import { enableBrowseBots, openCompose, openTemplatesCatalog } from "./ui-navigation.ts";
 
 const ROOT = fileURLToPath(new URL("../..", import.meta.url));
 const binary = resolveAgentBrowserBinary({ dataDir: UI_TOOLS_DIR, env: process.env });
@@ -48,6 +50,7 @@ describe("full backup Settings in the real renderer", () => {
       await ui("type", "--name", name, "--text", text);
     };
     const snapshot = async () => (await ui("snapshot")).snapshot as string;
+    const api = (path: string, method = "GET", body?: unknown) => request(path, { method, ...(body === undefined ? {} : { body: JSON.stringify(body) }) }, info.url);
 
     // Only this page mocks the archive service. The server, Settings modal,
     // forms, validation, file input, React state and native link are real.
@@ -82,11 +85,14 @@ describe("full backup Settings in the real renderer", () => {
       return true;
     })()`);
     await expect.poll(snapshot, { timeout: 10_000 }).toContain('button "You"');
-    await click("New or share");
-    const menu = await snapshot();
-    expect(menu).toContain('button "Templates"');
-    expect(menu).not.toContain('button "Export backup"');
-    await click("Templates");
+    await enableBrowseBots(api);
+    await openCompose(click);
+    const compose = await snapshot();
+    expect(compose).not.toContain('button "Templates"');
+    expect(compose).not.toContain('button "Export backup"');
+    await ui("press", "--keys", "Escape");
+    await openTemplatesCatalog(click, evaluate);
+    expect(await snapshot()).toContain('button "Templates"');
     await ui("press", "--keys", "Escape");
     await click("You");
     await click("Settings");

@@ -1,4 +1,4 @@
-import { Component, createContext, memo, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type Dispatch, type ReactNode } from "react";
+import { Component, Suspense, createContext, lazy, memo, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type Dispatch, type ReactNode } from "react";
 import { useCopyFeedback } from "@/lib/copy-text";
 import { botSeenCaption, messageParticipant } from "@/lib/read-receipts";
 import { useReportRead, useThreadReads } from "@/lib/read-receipts-feed";
@@ -61,6 +61,7 @@ import type { PlaceRow } from "../../shared/place-view";
 import { isProviderSafetyBlock, PROVIDER_SAFETY_GUIDANCE, PROVIDER_SAFETY_HELP_URL } from "../../shared/provider-safety";
 import { BotAvatar } from "./Avatar";
 import { TurnPresence } from "./TurnPresence";
+import { ultracodeFromSelection } from "@/lib/ultracode-chrome";
 import { showToolCallsEnabled, skillAuthoringEnabled } from "@/lib/feature-flags";
 import { showToolCallRows } from "@/lib/tool-activity-rows";
 import { normalizeState, stateForBot } from "@/lib/mascot";
@@ -70,6 +71,7 @@ import { autoWorkerLine } from "@/lib/auto-model";
 import { showWorkingDots } from "@/lib/turn-tail";
 import { liveActivityLabel } from "@/lib/live-activity";
 import { ChatMarkdown } from "./ChatMarkdown";
+import { VideoPlayerWidget } from "./video/VideoPlayerWidget";
 import { VoiceNoteBubble, type VoiceNoteAttachment } from "./VoiceNoteBubble";
 import { RawMarkdownView } from "./RawMarkdownToggle";
 import { ParallelResultLabel, ParallelTaskCard } from "./ParallelTaskCard";
@@ -120,6 +122,7 @@ import { VoiceCallCard } from "./VoiceCallCard";
 import { BotExchangeChip, ExchangeColumnProvider, TranscriptDate, useExchangeColumn } from "./BotExchangeChip";
 import { StatusActivityRow } from "@/components/StatusActivityRow";
 import { ActivityRun } from "./ActivityRun";
+import { CwActivityWidgets, CwWidgetView } from "./cw/CwWidgetView";
 import { TurnNarrationRun } from "./TurnNarrationRun";
 import { webhookMessageView } from "@/lib/webhook-message";
 import { splitTranscriptAttachments } from "@/lib/composer-attachments";
@@ -135,6 +138,9 @@ import { useCanWriteIn } from "@/lib/cloud-guest";
 import { latestFailure, latestReply, type TranscriptSnapshot } from "@/lib/transcript-announcer";
 import { pendingApprovals } from "./PendingApproval";
 import { TranscriptAnnouncer } from "./TranscriptAnnouncer";
+
+// xterm touches `self` at import: load it only when a terminal embed renders.
+const TerminalChatEmbed = lazy(() => import("@/components/terminal/TerminalChatEmbed").then((m) => ({ default: m.TerminalChatEmbed })));
 
 /** Long user messages collapse behind a fade so pasted walls of text don't
  * bury the conversation; bots get full markdown. */
@@ -684,11 +690,20 @@ const Bubble = memo(function Bubble({
                   ))}
                 </div>
               )}
+              {message.terminalEmbed && <Suspense fallback={null}><TerminalChatEmbed embed={message.terminalEmbed} /></Suspense>}
               <AttachmentGallery images={generatedPaths} files={linkedFiles} message={{ threadId, messageId: message.id }} className={text ? undefined : "mb-0"} eager={eagerAttachments} />
               {viewRaw && text ? (
                 <div data-citation-source={message.id} data-citation-owner-type="bot" data-citation-owner={botId} data-citation-thread={threadId}><RawMarkdownView text={text} /></div>
               ) : text ? (
-                <div data-citation-source={message.id} data-citation-owner-type="bot" data-citation-owner={botId} data-citation-thread={threadId}><ChatMarkdown text={text} mentionPeers={mentionPeers} message={{ threadId, messageId: message.id }} /></div>
+                <div data-citation-source={message.id} data-citation-owner-type="bot" data-citation-owner={botId} data-citation-thread={threadId}>
+                  <ChatMarkdown
+                    botId={botId}
+                    text={text}
+                    mentionPeers={mentionPeers}
+                    message={{ threadId, messageId: message.id }}
+                    youtubeSendToBot={(body) => dispatch({ type: "send", botId, threadId, text: body })}
+                  />
+                </div>
               ) : null}
             </MessageBoundary>
           )}
@@ -1059,17 +1074,19 @@ const MessagesList = memo(function MessagesList({
           );
         }
         if (item.kind === "run") {
-          if (!showToolCalls) return null;
+          const hasWidget = item.messages.some((step) => step.tool?.widget);
+          if (!showToolCalls && !hasWidget) return null;
           return (
             <div key={item.id} className="contents">
               {newDay && <TranscriptDate at={first.at} />}
-              <ActivityRun messages={item.messages} forceOpen={item.messages.some((step) => step.id === focusedId)}>
+              <CwActivityWidgets messages={item.messages} threadId={threadId} botId={botId} />
+              {showToolCalls && <ActivityRun messages={item.messages} forceOpen={item.messages.some((step) => step.id === focusedId)}>
                 {item.messages.map((step) => (
                   <div key={step.id} className="contents" data-mid={step.id}>
                     <ActivityChip message={step} place={place} />
                   </div>
                 ))}
-              </ActivityRun>
+              </ActivityRun>}
             </div>
           );
         }
@@ -1132,6 +1149,14 @@ const MessagesList = memo(function MessagesList({
                 );
               }
               if (m.parallelTask?.role === "card") return <ParallelTaskCard message={m} botId={botId} />;
+              if (m.tool?.widget) {
+                return (
+                  <>
+                    <CwWidgetView widget={m.tool.widget} threadId={threadId} botId={botId} />
+                    {showToolCalls ? <ActivityChip message={m} place={place} /> : null}
+                  </>
+                );
+              }
               if (!showToolCalls && !m.comm && !m.threadRef) return null;
               return <ActivityChip message={m} place={place} />;
             }
@@ -1145,6 +1170,12 @@ const MessagesList = memo(function MessagesList({
               return m.compaction?.by === "harness" ? null : <CompactionChip message={m} />;
             case "screen":
               return <ScreenFrame threadId={threadId} message={m} />;
+            case "video":
+              return m.video ? (
+                <div className="flex justify-start">
+                  <VideoPlayerWidget video={m.video} />
+                </div>
+              ) : null;
             default:
               return (
                 <>
@@ -1685,6 +1716,7 @@ export function ChatView({ bot: profile }: { bot: Bot }) {
             </div>
           )}
           <TurnPresence
+            ultracode={ultracodeFromSelection(bot.modelSelection)}
             avatar={
               // BotAvatar, not a bare MausAvatar: an uploaded profile image
               // (and a chosen mascot body) must match the sidebar row.

@@ -414,6 +414,16 @@ export class SessionRegistry {
     return pairing ? { owner: pairing.owner ?? null, expiresAt: pairing.expiresAt } : null;
   }
 
+  /** Whose person a one-time sign-in credential belongs to, before it is
+   * redeemed (desktop or phone return from Sagax Business). Consumes nothing. */
+  previewSignInPrincipal(credential: string): { principalId: string; expiresAt: number } | null {
+    this.prune();
+    if (!isPairingCredential(credential)) return null;
+    const presented = sha256(credential);
+    const pairing = this.pairings.find((p) => p.principalId && sameDigest(p.credentialHash, presented));
+    return pairing?.principalId ? { principalId: pairing.principalId, expiresAt: pairing.expiresAt } : null;
+  }
+
   cancelPairing(id: string): boolean {
     const before = this.pairings.length;
     this.pairings = this.pairings.filter((p) => p.id !== id);

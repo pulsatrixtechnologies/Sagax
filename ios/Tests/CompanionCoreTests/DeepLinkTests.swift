@@ -31,6 +31,11 @@ final class DeepLinkTests: XCTestCase {
         XCTAssertEqual(CompanionDeepLink.parse(url), .chat(threadId: "t-9f2c"))
     }
 
+    func testParsesInboxLinksAndTheTodoAlias() throws {
+        XCTAssertEqual(CompanionDeepLink.parse(try XCTUnwrap(URL(string: "sagax://inbox"))), .inbox)
+        XCTAssertEqual(CompanionDeepLink.parse(try XCTUnwrap(URL(string: "sagax://todo"))), .inbox)
+    }
+
     func testParsesTheSagaxScheme() throws {
         let chat = try XCTUnwrap(URL(string: "sagax://chat/t-9f2c"))
         XCTAssertEqual(CompanionDeepLink.parse(chat), .chat(threadId: "t-9f2c"))

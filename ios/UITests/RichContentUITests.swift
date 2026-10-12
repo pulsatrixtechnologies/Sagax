@@ -62,7 +62,6 @@ final class RichContentUITests: XCTestCase {
             "-parityScreen", "02-chat",
             "-parityChat", "Rich Lab",
             "-AppleLanguages", "(en)", "-AppleLocale", "en_US",
-            "-companion.prefs.islandIntro", "never",
             "-companion.onboarding.welcomeSeen", "YES",
             "-companion.onboarding.notificationsSeen", "YES",
             "-companion.prefs.activityDetail", "full",

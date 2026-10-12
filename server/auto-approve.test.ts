@@ -102,6 +102,19 @@ describe("autoVerdict", () => {
     expect(autoVerdict("custom", "WebSearch")).toEqual({ approve: null, source: "native-approval" });
   });
 
+  it("holds a safety review for an explicit accept, and auto-approves a read", () => {
+    expect(autoVerdict("full", "Bash", { safetyHold: true, sagaxGate: true, ruleAllowed: true })).toEqual({
+      approve: null,
+      source: "safety-hold",
+    });
+    expect(autoVerdict("auto", "Bash", { safetyHold: true })).toEqual({ approve: null, source: "safety-hold" });
+    expect(autoVerdict("ask", "read_file", { safetyAllow: true })).toEqual({
+      approve: "approved read_file (read-only)",
+      source: "safety-read",
+    });
+    expect(approvalHeldNote({ source: "safety-hold", permission: true })).toBe("approval.held.native");
+  });
+
   it("lets Full access, a sandbox block, and a saved command beat the web-search grant", () => {
     expect(autoVerdict("full", "WebSearch")).toEqual({
       approve: "approved WebSearch (full access)",

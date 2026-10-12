@@ -6,6 +6,7 @@
 // facts are passed in as data. Nothing here reads the registry, the network
 // or the clock, so the same inputs always give the same pick.
 import type { EffortLevel, ModelSelection } from "../shared/wire.ts";
+import { effortAcceptedByEngine } from "../shared/ultracode-effort.ts";
 import type { AutoModelRecord, AutoPayerVia, AutoReason, AutoTaskClass, AutoTier } from "../shared/auto-model.ts";
 
 export type { AutoPayerVia, AutoReason } from "../shared/auto-model.ts";
@@ -484,7 +485,7 @@ function selectionOn(engine: AutoEngine, model: string, base: ModelSelection): M
   // The base effort stays on the same engine when it is still offered; a
   // variant belongs to one model only.
   if (engine.instanceId === base.instanceId) {
-    if (base.effort && (engine.effortLevels ?? []).includes(base.effort)) selection.effort = base.effort;
+    if (base.effort && effortAcceptedByEngine(base.effort, engine.effortLevels ?? [])) selection.effort = base.effort;
     if (base.variant !== undefined && base.model === model) selection.variant = base.variant;
   }
   return selection;

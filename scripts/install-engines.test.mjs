@@ -1,8 +1,9 @@
+import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
-import { parseNpmSpec, selectEngines } from "./install-engines.mjs";
+import { integrityMatches, npmPinError, npmTarballUrl, parseNpmSpec, productionRefusal, selectEngines } from "./install-engines.mjs";
 
 const lock = JSON.parse(readFileSync(join(import.meta.dirname, "..", "engines.lock.json"), "utf8"));
 const ids = (selection) => selection.install.map((engine) => engine.id);
@@ -38,24 +39,25 @@ describe("selectEngines", () => {
     expect(() => selectEngines(lock, { engineSet: "claude nope", arch: "arm64" })).toThrow(/nope/);
   });
 
-  it("keeps the legacy ENGINES and NATIVE_ENGINES overrides (Perspicax PULSABOT_ENGINES)", () => {
+  it("keeps a locked ENGINES override and refuses an unknown package, latest, or a different version", () => {
     const legacy = selectEngines(lock, {
       engineSet: "none",
-      engines: "@anthropic-ai/claude-code@2.1.288 @openai/codex@0.160.0 some-tool",
+      engines: "@anthropic-ai/claude-code@2.1.288 @openai/codex@0.160.0",
       nativeEngines: "grok",
       arch: "arm64",
     });
-    expect(ids(legacy)).toEqual(["grok", "claude", "codex", "some-tool"]);
+    expect(ids(legacy)).toEqual(["grok", "claude", "codex"]);
     expect(legacy.install.find((engine) => engine.id === "codex")).toMatchObject({ bin: "codex", spec: "@openai/codex@0.160.0", version: "0.160.0" });
-    expect(legacy.install.find((engine) => engine.id === "some-tool")).toMatchObject({ bin: "", spec: "some-tool" });
+    expect(legacy.install.find((engine) => engine.id === "codex").integrity).toMatch(/^sha512-/);
 
     const allButNative = selectEngines(lock, { engineSet: "all", nativeEngines: "none", arch: "arm64" });
     expect(ids(allButNative)).not.toContain("grok");
     expect(ids(allButNative)).not.toContain("cursor");
     expect(ids(allButNative)).toContain("hermes");
 
-    const replacedNpm = selectEngines(lock, { engineSet: "all", engines: "@openai/codex@0.150.0", arch: "arm64" });
-    expect(replacedNpm.install.filter((engine) => engine.kind === "npm").map((engine) => engine.spec)).toEqual(["@openai/codex@0.150.0"]);
+    expect(() => selectEngines(lock, { engineSet: "none", engines: "some-tool", arch: "arm64" })).toThrow(/unknown npm engine/);
+    expect(() => selectEngines(lock, { engineSet: "all", engines: "@openai/codex@0.150.0", arch: "arm64" })).toThrow(/does not match the locked/);
+    expect(() => selectEngines(lock, { engineSet: "none", engines: "@openai/codex", arch: "arm64" })).toThrow(/exact version/);
     expect(ids(selectEngines(lock, { engineSet: "all", engines: "none", arch: "arm64" })).every((id) => !lock.engines.find((engine) => engine.id === id && engine.kind === "npm"))).toBe(true);
     expect(() => selectEngines(lock, { nativeEngines: "claude", arch: "arm64" })).toThrow(/unknown native engine/);
   });
@@ -64,6 +66,35 @@ describe("selectEngines", () => {
     const selection = selectEngines(lock, { engineSet: "grok", arch: "riscv64" });
     expect(selection.install).toEqual([]);
     expect(selection.unavailable).toEqual([{ id: "grok", name: "Grok Build", drivers: ["grokAgent"], reason: "No Grok Build build for riscv64." }]);
+  });
+});
+
+describe("productionRefusal", () => {
+  it("accepts the full set and refuses an empty or partial one when required", () => {
+    expect(productionRefusal(lock, { engineSet: "all", arch: "amd64", requireEngines: true })).toBeNull();
+    expect(productionRefusal(lock, { engineSet: "none", arch: "amd64", requireEngines: false })).toBeNull();
+    for (const engineSet of ["", "none"]) {
+      expect(productionRefusal(lock, { engineSet, arch: "amd64", requireEngines: true })).toMatch(/engine_missing/);
+      expect(productionRefusal(lock, { engineSet, arch: "amd64", requireEngines: true })).toMatch(/engineSet is none/);
+    }
+    expect(productionRefusal(lock, { engineSet: "all", engines: "@openai/codex@0.160.0", arch: "amd64", requireEngines: true })).toMatch(/missing engines: claude/);
+  });
+});
+
+describe("npm integrity", () => {
+  it("names the registry tarball and refuses a pin without a sha512", () => {
+    expect(npmTarballUrl("@openai/codex", "0.160.0")).toBe("https://registry.npmjs.org/@openai/codex/-/codex-0.160.0.tgz");
+    expect(npmTarballUrl("opencode-ai", "1.18.34")).toBe("https://registry.npmjs.org/opencode-ai/-/opencode-ai-1.18.34.tgz");
+    expect(npmPinError({ kind: "npm", package: "opencode-ai", version: "latest" })).toMatch(/exact version/);
+    expect(npmPinError({ kind: "npm", package: "opencode-ai", version: "1.18.34" })).toMatch(/sha512/);
+    expect(integrityMatches(Buffer.from("abc"), `sha512-${Buffer.from("abc").toString("base64")}`)).toBe(false);
+    const integrity = `sha512-${createHash("sha512").update("abc").digest("base64")}`;
+    expect(integrityMatches(Buffer.from("abc"), integrity)).toBe(true);
+    for (const engine of lock.engines) {
+      if (engine.kind === "npm") expect(engine.integrity, engine.id).toMatch(/^sha512-/);
+    }
+    const scripted = lock.engines.filter((engine) => engine.installScripts === true).map((engine) => engine.id).sort();
+    expect(scripted).toEqual(["claude", "droid", "kimi", "opencode"]);
   });
 });
 

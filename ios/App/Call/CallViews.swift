@@ -701,6 +701,18 @@ struct CallSettingsPanel: View {
             .tint(Theme.toggleOn)
             .padding(.vertical, 6)
             .accessibilityIdentifier("call-thinking-cue")
+            Toggle(isOn: $call.callSettings.fullDuplex) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(String(localized: "Full-duplex conversation")).font(.system(size: 13 * scale)).foregroundStyle(CallTheme.inkSecondary)
+                    Text(String(localized: "Talk over the bot at any time. It stops its current answer and never stacks the next ones. On by default here. Turn off to have words said while it works join that turn."))
+                        .font(.system(size: 11.5 * scale))
+                        .foregroundStyle(CallTheme.inkTertiary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .tint(Theme.toggleOn)
+            .padding(.vertical, 6)
+            .accessibilityIdentifier("call-full-duplex")
         }
     }
 

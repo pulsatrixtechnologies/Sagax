@@ -18,6 +18,8 @@ import type { MascotBodyId } from "./mascot-bodies.ts";
 import type { MascotColorName } from "./mascot-colors.ts";
 import type { MascotSkinId } from "./mascot-skins.ts";
 import type { MascotLook } from "./mascot-look.ts";
+import type { CwWidget } from "./cw-widgets/types.ts";
+import type { CwAction } from "./cw-widgets/actions.ts";
 import type { MessageReaction } from "./reactions.ts";
 import type { BotCatalogListing } from "./bot-catalog.ts";
 import type { BotPublicProfile } from "./bot-public-profile.ts";
@@ -36,11 +38,15 @@ import type { Notification } from "./notification.ts";
 import type { Routine, RoutineRun } from "./routines.ts";
 import type { WebhookAttempt, WebhookTrigger } from "./webhooks.ts";
 import type { AutoModelRecord } from "./auto-model.ts";
+import type { CloudAgentWireItem } from "./cloud-agents.ts";
+import type { TerminalEmbed } from "./terminal-resources.ts";
+import type { TerminalRequestCardData } from "./terminal-request.ts";
+import type { WireVideoWidget } from "./video-widget.ts";
 
 /** Reasoning-effort levels, ascending. A union of everything any engine
  * accepts; each driver declares the subset its CLI will take. Lives here
  * because it is part of ModelSelection, which rides the wire. */
-export const EFFORT_LEVELS = ["none", "low", "medium", "high", "xhigh", "max"] as const;
+export const EFFORT_LEVELS = ["none", "low", "medium", "high", "xhigh", "max", "ultracode"] as const;
 export type EffortLevel = (typeof EFFORT_LEVELS)[number];
 
 /** Narrow untrusted API/config input before it becomes a model selection. */
@@ -349,6 +355,9 @@ export interface WireBot {
   voiceNotes?: boolean;
   /** Whether this bot uses native memory. Absent/true = enabled. */
   memoryEnabled?: boolean;
+  /** Say the first step at once, then finish a long request in the
+   * background (shared/background-reply.ts). Absent/true = on. */
+  backgroundReplies?: boolean;
   /** Queue direct-chat messages behind outstanding delegated work. */
   parkDirectMessages?: boolean;
   /** true after an edit/branch-switch rewound the visible conversation. */
@@ -508,13 +517,17 @@ export interface VoiceCallMark {
   unheard?: string;
   /** these words complete the previous utterance, which was cut short */
   continues?: boolean;
+  /** full-duplex: replace the in-flight turn, never steer or queue */
+  duplex?: boolean;
+  /** STT partial sent before end-of-speech. Must not become a parallel task. */
+  speculative?: boolean;
 }
 
 export interface WireMessage {
   roomRequest?: { id: string; phase: "request" | "result" };
   id: string;
   role: "bot" | "user";
-  kind: "text" | "options" | "activity" | "screen" | "connector" | "secret" | "routine.run" | "goal.run" | "digest" | "compaction" | "access" | "nudge";
+  kind: "text" | "options" | "activity" | "screen" | "video" | "connector" | "secret" | "routine.run" | "goal.run" | "digest" | "compaction" | "access" | "nudge";
   text?: string;
   /** An accepted nudge. The app draws one line from these names: first
    * person for the sender, the sender's name for everyone else. `groupId`
@@ -567,6 +580,8 @@ export interface WireMessage {
     files?: string[];
     /** A call a sub-agent made: the item id of the call that started it. */
     parentItemId?: string;
+    /** A ConnectWise call's result as an in-chat widget (shared/cw-widgets). */
+    widget?: CwWidget;
   };
   /** A bot line a "post" webhook wrote: whoever called the webhook chose
    * its words. On a Cloud home a conversation holding one is someone else's
@@ -618,6 +633,8 @@ export interface WireMessage {
   /** screen messages: a frame of the bot's computer (base64 image) */
   png?: string;
   mime?: string;
+  /** Inline live or recorded video (shared/video-widget.ts). */
+  video?: WireVideoWidget;
   at: number;
   /** the message this one follows; null = thread root. */
   parentId?: string | null;
@@ -661,8 +678,17 @@ export interface WireMessage {
   /** A parallel task this line belongs to (shared/parallel-tasks.ts): the
    * person's request, its live card, or its result. */
   parallelTask?: ParallelTaskRef;
+  /** A background reply (shared/background-reply.ts): the first-step
+   * acknowledgement, or a later one-sentence status. The result is an
+   * ordinary reply and does not carry this. */
+  backgroundReply?: "ack" | "milestone";
+  /** On an acknowledgement: milliseconds from the person's message to this
+   * one. Recorded before the background task's engine starts. */
+  timeToFirstMessageMs?: number;
   /** steer-queue entry this drained user line came from. */
   queueId?: string;
+  /** In-chat terminal opened on a shell-capable resource. */
+  terminalEmbed?: TerminalEmbed;
 }
 
 export interface OptionCardData {
@@ -747,6 +773,11 @@ export interface OptionCardData {
   /** A bot action waiting for this person's Allow. The id matches requestId.
    * The card stores no body and no query. */
   botActRequest?: { id: string };
+  /** Interactive shell on a terminal-capable resource (approval required). */
+  terminalRequest?: TerminalRequestCardData;
+  /** A change asked from a ConnectWise widget, waiting for an Allow
+   * (server/cw-widget-actions.ts). `by` is the principal who asked. */
+  cwActionRequest?: { id: string; action: CwAction; by: string };
 }
 
 /** Which app holds the microphone of a Live call: the desktop app (its own
@@ -1024,6 +1055,8 @@ export type ServerFrame =
   | { kind: "routine"; routine: Routine }
   | { kind: "routine.deleted"; routineId: string }
   | { kind: "routine.run"; run: RoutineRun }
+  /** A cloud coding agent record changed (server/cloud-agents/manager.ts). */
+  | { kind: "cloud.agent"; botId: string; item: CloudAgentWireItem }
   | { kind: "webhook"; webhook: WebhookTrigger }
   | { kind: "webhook.attempt"; attempt: WebhookAttempt }
   | { kind: "webhook.deleted"; webhookId: string }
@@ -1059,6 +1092,10 @@ export type ServerFrame =
    * when others see them offline), to their streams only. */
   | { kind: "presence.changed"; audience?: string; people: Array<{ principalId: string; state: "online" | "away" | "offline"; lastSeenAt: number | null; hidden?: true }> }
   | { kind: "live.call"; botId: string; threadId: string; call: LiveCallState | null }
+  /** A short first sentence spoken ahead of the bot's own reply on a duplex
+   * call (server/voice-first-sentence.ts). The speaker's streams only. Not
+   * stored. iOS ignores the kind. */
+  | { kind: "voice.opener"; audience: string; threadId: string; callId: string; utteranceId: string; text: string }
   /** The config status object spread flat into the frame; its full typing
    * is the deferred client-model extraction (see j1-phase-bc-progress). */
   | ({ kind: "config" } & Record<string, unknown>);

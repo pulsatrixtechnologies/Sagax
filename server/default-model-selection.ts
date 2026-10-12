@@ -1,4 +1,5 @@
 import type { EffortLevel, EngineAccess, ModelCatalog, ModelSelection, ProviderSnapshot } from "./contracts.ts";
+import { effortAcceptedByEngine } from "../shared/ultracode-effort.ts";
 
 export interface SelectableInstance {
   instanceId: string;
@@ -62,7 +63,7 @@ export function selectDefaultModelSelection(
     const selection = { ...preferred };
     // A saved effort can outlive driver support. Keep the intentional model,
     // but let the provider use its own effort default instead of failing turn 1.
-    if (selection.effort && !instance.capabilities?.effortLevels?.includes(selection.effort)) delete selection.effort;
+    if (selection.effort && !effortAcceptedByEngine(selection.effort, instance.capabilities?.effortLevels ?? [])) delete selection.effort;
     return selection;
   }
   // The organisation's policy is inert (no refusal) unless this desktop is enrolled.
@@ -86,7 +87,7 @@ export function withNewBotEffort(
   effort: EffortLevel | undefined,
   offered: readonly EffortLevel[] | undefined,
 ): ModelSelection {
-  if (!effort || selection.effort !== undefined || selection.variant !== undefined || !offered?.includes(effort)) {
+  if (!effort || selection.effort !== undefined || selection.variant !== undefined || !effortAcceptedByEngine(effort, offered ?? [])) {
     return selection;
   }
   return { ...selection, effort };

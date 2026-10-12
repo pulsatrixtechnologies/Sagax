@@ -129,6 +129,7 @@ function CallSection({ call, enrollment, onCallChange, onEnroll, onForget }: Req
       {mac && <p className="pb-1 text-[11.5px] leading-snug text-ink-tertiary">{t("voiceMode.call.voiceIsolation")}</p>}
       <Toggle label={t("voiceMode.call.streamingVoice")} description={t("voiceMode.call.streamingVoiceHelp")} checked={call.streamingVoice} data="streaming-voice" onChange={(streamingVoice) => onCallChange({ streamingVoice })} />
       <Toggle label={t("voiceMode.call.fasterEndOfTurn")} description={t("voiceMode.call.fasterEndOfTurnHelp")} checked={call.fasterEndOfTurn} data="faster-end-of-turn" onChange={(fasterEndOfTurn) => onCallChange({ fasterEndOfTurn })} />
+      <Toggle label={t("voiceMode.call.fullDuplex")} description={t("voiceMode.call.fullDuplexHelp")} checked={call.fullDuplex} data="full-duplex" onChange={(fullDuplex) => onCallChange({ fullDuplex })} />
     </div>
   );
 }

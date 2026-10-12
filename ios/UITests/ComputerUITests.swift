@@ -106,7 +106,6 @@ final class ComputerUITests: XCTestCase {
             // In control with the keyboard up, as in reference 13.
             "-parityScreen", "13-computer",
             "-AppleLanguages", "(en)", "-AppleLocale", "en_US",
-            "-companion.prefs.islandIntro", "never",
             "-companion.onboarding.welcomeSeen", "YES",
             "-companion.onboarding.notificationsSeen", "YES",
         ]

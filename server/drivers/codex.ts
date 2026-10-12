@@ -50,7 +50,7 @@ import { classifyError, computeBackoff, interruptibleDelay, RETRY_MAX_ATTEMPTS }
 import { redactSecretsInText } from "../redact.ts";
 import { appendNative } from "./native.ts";
 import { permissionCommand, permissionLaunchCwd } from "./permission-command.ts";
-import { commandSummary, toolDetailPreview } from "../tool-summary.ts";
+import { commandSummary, cwToolResult, toolDetailPreview } from "../tool-summary.ts";
 import { filesField, writtenFilesFromToolInput } from "../thread-files.ts";
 import { codexDeveloperInstructions, syncCodexInstructions } from "./codex-instructions.ts";
 import { volatileContextNote, withContextNote } from "./prompt-split.ts";
@@ -1640,6 +1640,9 @@ export const CodexDriver: ProviderDriver<CodexConfig> = {
                 itemId: item.id,
                 ok: item.status !== "failed" && item.status !== "declined",
                 output: toolDetailPreview(item.type === "commandExecution" ? { output: item.aggregatedOutput, exitCode: item.exitCode } : item.type === "mcpToolCall" ? item.error ?? item.result : item.type === "fileChange" ? item.changes : item.action),
+                ...(item.type === "mcpToolCall" && !item.error && typeof item.tool === "string"
+                  ? cwToolResult(typeof item.server === "string" ? `${item.server}__${item.tool}` : item.tool, item.result)
+                  : {}),
               });
               if (item.type === "mcpToolCall") {
                 for (const img of extractMcpImages(item.result)) {

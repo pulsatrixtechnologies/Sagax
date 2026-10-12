@@ -14,6 +14,8 @@ final class SettingsModel: ObservableObject {
     @Published private(set) var botSettings: BotSettingsResponse?
     @Published private(set) var rules: AutoReviewRules?
     @Published private(set) var installedCount: Int?
+    /// `GET /.well-known/openmausbot/environment` `version`, when reachable.
+    @Published private(set) var serverVersion: String?
     @Published var error: String?
 
     private weak var session: Session?
@@ -45,12 +47,14 @@ final class SettingsModel: ObservableObject {
         async let settings = try? client.botSettings()
         async let rules = try? client.autoReviewRules()
         async let installed = try? client.installedPlugins()
+        async let environment = try? client.environment()
         let loadedIdentity = await identity
         self.identity = loadedIdentity
         self.usage = await usage
         botSettings = await settings
         self.rules = await rules
         installedCount = await installed?.count
+        serverVersion = await environment?.version
         // The photo lives on the session (Session.accountPhoto), shared with
         // the home: opening Settings brings it up to date too.
         if let loadedIdentity, let session, let connectionID = session.connection?.id {

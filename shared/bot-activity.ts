@@ -5,6 +5,7 @@
 // GET /api/bots/:id/activity (server/routes/bot-activity.ts), narrowed to
 // what the asking person may read: on an organization server their own
 // threads only, and the routines they may see (routineSeenBy).
+import type { BotLaunchedAgentItem } from "./bot-launched-agents.ts";
 import type { WireAccessCard } from "./wire.ts";
 
 export type BotActivityKind = "session" | "routine" | "hop" | "subagent";
@@ -55,6 +56,8 @@ export interface BotActivityItem {
    * commits its own git, gh and GitHub tool calls produced. Absent for
    * everything else. */
   code?: BotCodeWork;
+  /** The engine and model this work runs on, when known. */
+  engine?: { instanceId: string; model: string };
 }
 
 /** What the bot did to a pull request, read off its own calls (`gh pr
@@ -111,6 +114,8 @@ export interface BotCodeWork {
 export interface BotActivityList {
   items: BotActivityItem[];
   subagents: BotActivityItem[];
+  /** Hidden peer conversations this bot opened (agent API send_prompt). */
+  launchedAgents?: BotLaunchedAgentItem[];
 }
 
 export interface BotActivityStep {

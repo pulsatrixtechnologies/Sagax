@@ -6,9 +6,10 @@
 # model); deploy/docker-compose.yml puts Caddy in the same network namespace
 # to terminate TLS and authentication at the edge.
 #
-#   docker build -t openmausbot .                                   (no engine CLI: the public image)
-#   docker build --build-arg ENGINE_SET=all -t openmausbot .        (every engine of engines.lock.json: an organization server)
-#   docker build --build-arg ENGINE_SET="claude codex grok" -t openmausbot .
+#   docker build -t openmausbot .                                   (full engine set: the production default)
+#   docker build --build-arg ENGINE_SET=none --build-arg SAGAX_REQUIRE_ENGINES=0 -t openmausbot .
+#                                                                   (public image, no engine CLI)
+#   docker build --build-arg ENGINE_SET="claude codex grok" --build-arg SAGAX_REQUIRE_ENGINES=0 -t openmausbot .
 #
 # /run/sagax-sandboxd: the provisioner's shared key (docs/user-sandbox.md);
 # an empty named volume mounted there inherits this owner.
@@ -59,24 +60,44 @@ WORKDIR /app
 # each one starts (`<cli> --version`) and writes the manifest the server's
 # startup self-check reads (server/engines-self-check.ts). Before the app's
 # own files so a code change does not reinstall the engines.
-#   ENGINE_SET      none (default: the public image carries no engine), all
-#                   (every engine of the lock: what Perspicax's build-push.sh
-#                   passes for an organization server), open (only the
-#                   redistributable ones), or engine ids ("claude codex").
+#   ENGINE_SET      all (default). none and an empty value install nothing.
+#                   On 2026-10-12 a build that left this unset shipped
+#                   pulsa-bot-server:main-20004735 with engineSet none and
+#                   installed []. open keeps redistributable engines; a list
+#                   of ids installs those. An empty --build-arg ENGINE_SET=
+#                   overrides this default, so SAGAX_REQUIRE_ENGINES=1 (also
+#                   the default) fails that build instead of publishing it.
 #   ENGINES         legacy override: npm specs installed instead of the lock's
-#                   npm engines ("none" drops them).
+#                   npm engines ("none" drops them). A non-empty value with
+#                   the require flag fails the build when it drops an engine.
 #   NATIVE_ENGINES  legacy override: native engine ids of the lock (grok,
 #                   cursor) instead of the selected ones ("none" drops them).
-# Proprietary CLIs (Claude Code, Droid, Cursor) are installed only by an
-# image built for your own servers; docs/custom-engines.md lists each licence.
-ARG ENGINE_SET=none
+# Proprietary CLIs (Claude Code, Droid, Cursor) ship in this image because
+# the organization server is the image this file builds. A public opt-out
+# is ENGINE_SET=none and SAGAX_REQUIRE_ENGINES=0. docs/custom-engines.md.
+# ENV copies the ARGs into the RUN environment. The installer reads them
+# from the environment; a RUN line that never mentions $ENGINE_SET does not
+# otherwise see a build-arg the builder failed to export.
+ARG ENGINE_SET=all
 ARG ENGINES=""
 ARG NATIVE_ENGINES=""
+ARG SAGAX_REQUIRE_ENGINES=1
 ARG TARGETARCH
-COPY engines.lock.json scripts/install-engines.mjs /app/engines/
+COPY engines.lock.json scripts/install-engines.mjs scripts/engine-image-gate.mjs /app/engines/
+ENV ENGINE_SET=${ENGINE_SET} \
+    ENGINES=${ENGINES} \
+    NATIVE_ENGINES=${NATIVE_ENGINES} \
+    SAGAX_REQUIRE_ENGINES=${SAGAX_REQUIRE_ENGINES}
 RUN node /app/engines/install-engines.mjs --lock /app/engines/engines.lock.json --manifest /app/engines/manifest.json \
   && npm cache clean --force \
   && rm -rf /root/.npm /root/.cache /tmp/*
+# Captured before the ENV clear. An ENV of the same name overrides an ARG in
+# later instructions, and the label must still say which set was installed.
+ARG SAGAX_ENGINE_SET=${ENGINE_SET}
+ENV ENGINE_SET= \
+    ENGINES= \
+    NATIVE_ENGINES= \
+    SAGAX_REQUIRE_ENGINES=
 # The bots' browser (docs/plans/browser-engine.md): the pinned agent-browser
 # and a Chrome for Testing with its libraries, so a server bot can browse.
 # Pin here and in server/browser-engine-release.ts together.
@@ -110,6 +131,12 @@ ENV HOME=/data \
     SAGAX_ENGINES_MANIFEST=/app/engines/manifest.json \
     NODE_ENV=production
 VOLUME ["/data"]
+# Declared after the engine install so a new commit does not rebuild it.
+ARG SAGAX_COMMIT_SHA=
+ARG SAGAX_BUILD_TIME=
+LABEL org.opencontainers.image.revision="${SAGAX_COMMIT_SHA}" \
+      org.opencontainers.image.created="${SAGAX_BUILD_TIME}" \
+      io.sagax.engine-set="${SAGAX_ENGINE_SET}"
 USER maus
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
   CMD curl -sf http://127.0.0.1:8799/api/health | grep -q openmausbot || exit 1

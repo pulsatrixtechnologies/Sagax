@@ -99,7 +99,6 @@ final class SwipeBackUITests: XCTestCase {
         app.launchArguments = [
             "-store-preview", "-threads-preview",
             "-AppleLanguages", "(en)", "-AppleLocale", "en_US",
-            "-companion.prefs.islandIntro", "never",
             "-companion.onboarding.welcomeSeen", "YES",
             "-companion.onboarding.notificationsSeen", "YES",
             // The compact list, whatever an earlier run saved (the install

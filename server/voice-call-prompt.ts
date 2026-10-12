@@ -13,6 +13,7 @@
 // ended, so the bot goes back to its written register.
 import type { Message } from "./store.ts";
 import { isVoiceModeLanguage, VOICE_MODE_LANGUAGES } from "../shared/voice-mode.ts";
+import { voiceCallTopicsNote, type VoiceTopic } from "../src/lib/voice-mode/voice-topics.ts";
 
 export type VoiceCallMeta = NonNullable<Message["voiceCall"]>;
 
@@ -37,6 +38,8 @@ export function parseVoiceCallMeta(value: unknown): VoiceCallMeta | undefined | 
   if (typeof record.callId !== "string" || !CALL_ID.test(record.callId)) return { error: "voiceCall.callId must be a call id" };
   if (record.interrupted !== undefined && typeof record.interrupted !== "boolean") return { error: "voiceCall.interrupted must be a boolean" };
   if (record.continues !== undefined && typeof record.continues !== "boolean") return { error: "voiceCall.continues must be a boolean" };
+  if (record.duplex !== undefined && typeof record.duplex !== "boolean") return { error: "voiceCall.duplex must be a boolean" };
+  if (record.speculative !== undefined && typeof record.speculative !== "boolean") return { error: "voiceCall.speculative must be a boolean" };
   if (record.language !== undefined && (!isVoiceModeLanguage(record.language) || record.language === "auto")) {
     return { error: "voiceCall.language must be a voice mode language" };
   }
@@ -57,6 +60,8 @@ export function parseVoiceCallMeta(value: unknown): VoiceCallMeta | undefined | 
     ...(interrupted && heard !== undefined ? { heard } : {}),
     ...(interrupted && unheard !== undefined ? { unheard } : {}),
     ...(record.continues === true ? { continues: true } : {}),
+    ...(record.duplex === true ? { duplex: true } : {}),
+    ...(record.speculative === true ? { speculative: true } : {}),
   };
 }
 
@@ -99,6 +104,7 @@ export function voiceCallInstruction(person: string | undefined, meta: VoiceCall
     "- Answer like a person on the phone: short spoken sentences, one to three at a time, then stop and let them talk. Stay conversational.",
     "- No markdown, lists, tables, code blocks, emojis or URLs: none of it can be heard. Summarize instead, and offer to send the details in the chat after the call.",
     "- Say numbers, dates, units and symbols the way you would speak them.",
+    "- A short first sentence may already have been spoken aloud. Do not repeat that acknowledgement; continue the answer.",
     "- When you are unsure what they want, ask one short clarifying question at a time.",
     "- Keep using your tools normally. When something will take a moment, say so briefly first (\"Let me check that...\", in French \"Je regarde ça...\").",
     "- When they wrap up the call and written details would help, say a short goodbye, then write a line with only --- and, below it, a concise written follow-up for the chat. Nothing after that line is read aloud.",
@@ -120,8 +126,12 @@ export function voiceCallSection(
   message: Pick<Message, "voiceCall"> | undefined,
   previous: Pick<Message, "voiceCall"> | undefined,
   person: string | undefined,
+  topics?: VoiceTopic[],
 ): string {
-  if (message?.voiceCall) return `\n\nPhone call:\n${voiceCallInstruction(person, message.voiceCall)}`;
+  if (message?.voiceCall) {
+    const note = topics?.length ? voiceCallTopicsNote(topics) : "";
+    return `\n\nPhone call:\n${voiceCallInstruction(person, message.voiceCall)}${note ? `\n${note}` : ""}`;
+  }
   if (previous?.voiceCall) return `\n\nPhone call:\n${voiceCallEndedNote(person)}`;
   return "";
 }

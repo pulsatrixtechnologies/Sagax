@@ -34,11 +34,15 @@ final class CallAdvancedSettingsTests: XCTestCase {
     func testOnlyMyVoiceAndSoftToneUseTheDesktopKeysAndDefaults() {
         XCTAssertTrue(CallSettings.default.onlyMyVoice, "on by default, as on the desktop (it waits for an enrollment)")
         XCTAssertTrue(CallSettings.default.thinkingCue)
+        XCTAssertTrue(CallSettings.default.fullDuplex, "on by default in TestFlight/debug so the person hears duplex")
         XCTAssertEqual(CallSettings.storageKey, "omb.voiceCall.v1")
         let off = CallSettings.decode(#"{"input":"auto","onlyMyVoice":false,"thinkingCue":false}"#)
         XCTAssertFalse(off.onlyMyVoice)
         XCTAssertFalse(off.thinkingCue)
+        XCTAssertTrue(off.fullDuplex, "a stored false without rev 2 is the old default, not a kill-switch")
         XCTAssertEqual(CallSettings.decode(off.encoded), off)
+        XCTAssertTrue(CallSettings.decode(#"{"fullDuplex":true}"#).fullDuplex)
+        XCTAssertFalse(CallSettings.decode(#"{"fullDuplex":false,"fullDuplexRev":2}"#).fullDuplex)
         let record = try? JSONSerialization.jsonObject(with: Data(off.encoded.utf8)) as? [String: Any]
         XCTAssertEqual(record?["onlyMyVoice"] as? Bool, false)
         XCTAssertEqual(record?["thinkingCue"] as? Bool, false)

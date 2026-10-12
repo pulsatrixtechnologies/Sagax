@@ -59,8 +59,11 @@ describe("trust controls in the real renderer", () => {
     const saved = async () => (await bots()).find(candidate => candidate.id === bot.id)!;
     const memory = async () => (await fetch(`${info.url}/api/team-memory?section=`).then(response => response.json())).entries as Array<{ id: string; name: string; detail: string }>;
 
-    await click("More");
-    await click("Activity");
+    await evaluate(`(async () => {
+      const { dispatch } = await import("/src/state/store.tsx");
+      dispatch({ type: "toggleActivity", open: true });
+      return true;
+    })()`);
     await expect.poll(snapshot, { timeout: 10_000 }).toContain("Nothing yet.");
     await runControlOmb(["send", "--bot", bot.id, "--text", "Run the harmless fixture tool.", "--url", info.url]);
     await runControlOmb(["wait", "--bot", bot.id, "--timeout", "20", "--url", info.url]);

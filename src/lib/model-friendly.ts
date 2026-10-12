@@ -12,6 +12,7 @@ const FRIENDLY_EFFORT: Record<EffortLevel, LocaleKey> = {
   high: "model.effort.deep",
   xhigh: "model.effort.deeper",
   max: "model.effort.max",
+  ultracode: "model.effort.ultracode",
 };
 
 export function friendlyEffort(level: EffortLevel): string {

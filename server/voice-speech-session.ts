@@ -4,7 +4,9 @@
 // clause of the bot's answer as it is written; each one is an xAI utterance
 // (`text.delta`, `text.done`), spoken one after the other on the same open
 // socket, its PCM forwarded to the page as binary frames between `start`
-// and `done`. A cancelled clause (barge-in, hold, hang-up) is dropped from
+// and `done`. A lead token (`say` with `more: true`) sends `text.delta`
+// without `text.done`; `append` grows it; `finish` ends it. A cancelled
+// clause (barge-in, hold, hang-up) is dropped from
 // the queue, or, when it is the one speaking, cleared at xAI (`text.clear`,
 // confirmed by `audio.clear`): nothing of it reaches the page after.
 //
@@ -70,6 +72,10 @@ interface Clause {
   id: string;
   text: string;
   cancelled?: boolean;
+  /** page opened this utterance on a lead token (`more: true`) */
+  more?: boolean;
+  /** page sent `finish` (text.done). A complete `say` starts finished. */
+  finished?: boolean;
 }
 
 export function createSpeechSession(deps: SpeechSessionDeps): SpeechSession {
@@ -113,7 +119,12 @@ export function createSpeechSession(deps: SpeechSessionDeps): SpeechSession {
     current = next;
     deps.usage(next.text.length);
     send({ type: "start", id: next.id });
-    upstream.speak(next.text);
+    if (next.more) {
+      upstream.delta(next.text);
+      if (next.finished) upstream.done();
+    } else {
+      upstream.speak(next.text);
+    }
     arm(stallMs);
   };
 
@@ -215,15 +226,38 @@ export function createSpeechSession(deps: SpeechSessionDeps): SpeechSession {
       let parsed: unknown;
       try { parsed = JSON.parse(text); } catch { return; }
       if (!parsed || typeof parsed !== "object") return;
-      const frame = parsed as { type?: unknown; id?: unknown; text?: unknown };
+      const frame = parsed as { type?: unknown; id?: unknown; text?: unknown; more?: unknown };
       const id = frame.id;
       if (typeof id !== "string" || !SPEECH_ID.test(id)) return;
       if (frame.type === "cancel") return cancel(id);
+      if (frame.type === "append") {
+        if (typeof frame.text !== "string" || !frame.text) return;
+        if (current && current.id === id && !current.cancelled) {
+          current.text += frame.text;
+          deps.usage(frame.text.length);
+          if (open) upstream?.delta(frame.text);
+          return;
+        }
+        const queued = queue.find((clause) => clause.id === id);
+        if (queued) queued.text += frame.text;
+        return;
+      }
+      if (frame.type === "finish") {
+        if (current && current.id === id && !current.cancelled) {
+          current.finished = true;
+          if (open) upstream?.done();
+          return;
+        }
+        const queued = queue.find((clause) => clause.id === id);
+        if (queued) queued.finished = true;
+        return;
+      }
       if (frame.type !== "say" || typeof frame.text !== "string") return;
       if (gone) return send({ type: "error", ids: [id] });
       const clean = deps.speakable(frame.text);
       if (!clean) return send({ type: "skip", id });
-      queue.push({ id, text: clean });
+      const more = frame.more === true;
+      queue.push({ id, text: clean, more, finished: !more });
       pump();
     },
     close() {

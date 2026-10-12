@@ -42,6 +42,10 @@ public struct Connection: Codable, Hashable, Identifiable, Sendable {
     /// LAN or Bonjour origin for local pairing. Absent alongside a nil kind
     /// policy on connections saved before route consent existed.
     public var allowedLocalRouteURLs: Set<String>?
+    /// The exact Tailscale MagicDNS host this pairing consented to. A device
+    /// bearer is sent only to this host. Absent means no Tailscale consent,
+    /// including connections saved before the host was recorded.
+    public var allowedTailnetHost: String?
     /// P-256 HPKE recipient point learned only from the camera-scanned QR.
     /// It is public key material; the phone never receives the private key.
     public var secretPublicKey: String?
@@ -70,6 +74,7 @@ public struct Connection: Codable, Hashable, Identifiable, Sendable {
         endpoints: [CompanionEndpoint]? = nil,
         allowedRouteKinds: Set<CompanionEndpointKind>? = nil,
         allowedLocalRouteURLs: Set<String>? = nil,
+        allowedTailnetHost: String? = nil,
         secretPublicKey: String? = nil,
         companionDeviceId: String? = nil,
         serverEnvironmentId: String? = nil,
@@ -84,6 +89,7 @@ public struct Connection: Codable, Hashable, Identifiable, Sendable {
         self.endpoints = endpoints
         self.allowedRouteKinds = allowedRouteKinds
         self.allowedLocalRouteURLs = allowedLocalRouteURLs
+        self.allowedTailnetHost = allowedTailnetHost
         self.secretPublicKey = secretPublicKey
         self.companionDeviceId = companionDeviceId
         self.serverEnvironmentId = serverEnvironmentId
@@ -1471,6 +1477,17 @@ public struct CompanionClient: Sendable {
             ),
             as: SidebarSectionResponse.self
         ).bots
+    }
+
+    /// Ask for one ConnectWise change. The server writes an approval card;
+    /// this call does not write to ConnectWise.
+    @discardableResult
+    public func requestCwAction(threadId: String, action: CwActionBody, botId: String?) async throws -> CwActionReceipt {
+        let encoded = try JSONEncoder().encode(action)
+        let object = try JSONSerialization.jsonObject(with: encoded)
+        var body: [String: Any] = ["action": object]
+        if let botId { body["botId"] = botId }
+        return try await send(try makeRequest("POST", "/api/threads/\(threadId)/cw-actions", body: body), as: CwActionReceipt.self)
     }
 
     @discardableResult

@@ -104,8 +104,10 @@ struct DesktopChatColumn: View {
 
     private func chatStack(width: CGFloat, totalWidth: CGFloat) -> some View {
         // the transcript column: px-5 inside the content, at most 960
-        let column = min(DesktopShellRules.chatColumn, width - 40)
-        return NavigationStack {
+        let railWidth: CGFloat = chat.isBot && width >= 900 ? 300 : 0
+        let chatArea = max(0, width - railWidth)
+        let column = min(DesktopShellRules.chatColumn, chatArea - 40)
+        let stack = NavigationStack {
             AnyView(ChatView(chat: chat))
         }
         .environment(\.desktopChatText, theme)
@@ -123,6 +125,16 @@ struct DesktopChatColumn: View {
             toggleInspector: { toggleInspector() },
             openModelPicker: { model.modelPickerOpen = true }
         ))
+        return Group {
+            if railWidth > 0, case .bot(let bot) = chat {
+                HStack(spacing: 0) {
+                    stack.frame(maxWidth: .infinity)
+                    DesktopBackgroundWorkRail(botId: bot.id)
+                }
+            } else {
+                stack
+            }
+        }
     }
 
     #if DEBUG

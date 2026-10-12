@@ -171,11 +171,12 @@ const ONE_SHOTS = new Set<OwlState>(["success", "alert"]);
 
 export function createOwlController(
   el: OwlRigElements,
-  opts: { state?: OwlState; hop?: number; pinnedGaze?: Offset | null; reducedMotion?: boolean } = {},
+  opts: { state?: OwlState; hop?: number; pinnedGaze?: Offset | null; reducedMotion?: boolean; gazeOnly?: boolean } = {},
 ): OwlController {
   let base: OwlState = opts.state ?? "idle";
   let hop = opts.hop ?? 1;
   let forcedReduce = opts.reducedMotion;
+  const gazeOnly = opts.gazeOnly === true;
   let pinned: Offset | null = opts.pinnedGaze ?? null;
   let pointer: Offset | null = null;
 
@@ -246,10 +247,28 @@ export function createOwlController(
         blinkStart >= 0 && now - blinkStart < blinkDur ? Math.sin((Math.PI * (now - blinkStart)) / blinkDur) : 0;
       const lid = Math.max(pose.lid, blinkAmt);
 
-      const reduce = forcedReduce ?? prefersReducedMotion();
+      const reduce = (forcedReduce ?? prefersReducedMotion()) && !gazeOnly;
       const writeTransform = (style: CSSStyleDeclaration, value: string) => {
         if (style.transform !== value) style.transform = value;
       };
+      if (gazeOnly) {
+        const target = pointer ?? pinned ?? gazeToOffset(owlPose("idle", 0, true, hop).gaze);
+        const k = 1 - Math.exp(-dt * (pointer ? 14 : 8));
+        gaze.x += (target.x - gaze.x) * k;
+        gaze.y += (target.y - gaze.y) * k;
+        writeTransform(el.rig.style, "");
+        writeTransform(el.nearWing.style, "");
+        if (el.nearWingBack) writeTransform(el.nearWingBack.style, "");
+        if (el.farWing && el.farWing.style.opacity !== "0") el.farWing.style.opacity = "0";
+        writeTransform(el.eyes.style, "");
+        writeTransform(el.pupil.style, pupilTransform(gaze));
+        const blinkDur = 0.16;
+        const blinkAmt =
+          blinkStart >= 0 && now - blinkStart < blinkDur ? Math.sin((Math.PI * (now - blinkStart)) / blinkDur) : 0;
+        writeTransform(el.lids.style, lidTransform(blinkAmt));
+        driven.fullRate = pointer !== null || blinkAmt > 0;
+        return;
+      }
       if (reduce) {
         const g = pinned ?? gazeToOffset(pose.gaze);
         gaze.x = g.x;
@@ -359,7 +378,8 @@ export function createOwlController(
     blinkRaf = requestAnimationFrame(step);
   };
 
-  if (reduced()) scheduleReducedBlink(1000 + Math.random() * 4000);
+  if (gazeOnly) start(driven);
+  else if (reduced()) scheduleReducedBlink(1000 + Math.random() * 4000);
   else start(driven);
 
   return {

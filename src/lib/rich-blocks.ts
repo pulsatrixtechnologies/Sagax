@@ -11,9 +11,10 @@
 //   ```artifact  HTML (same as widget) or JSON {title, url} for a published page
 //   ```chart   a JSON spec or CSV rows, drawn as an SVG chart without scripts
 //   ```csv / ```tsv  a data table with sort, filter and copy
+//   ```cw     a ConnectWise widget (application/vnd.sagax.cw+json)
 // Claude harness <antArtifact> tags are rewritten by liftClaudeChatBlocks.
 
-export type RichFenceKind = "email" | "widget" | "chart" | "csv";
+export type RichFenceKind = "email" | "widget" | "chart" | "csv" | "cw";
 
 export {
   formatArtifactFence,
@@ -33,6 +34,7 @@ const FENCE_KINDS: Readonly<Record<string, RichFenceKind>> = {
   chart: "chart",
   csv: "csv",
   tsv: "csv",
+  cw: "cw",
 };
 
 /** The rich renderer a fence language asks for, if any. */
@@ -604,7 +606,7 @@ export function unclosedFenceOffset(text: string): number {
   return -1;
 }
 
-const WIDE_FENCE = /(^|\n) {0,3}(?:`{3,}|~{3,})[ \t]*(?:email|mail|eml|widget|html-widget|artifact|chart|csv|tsv|mermaid)\b/i;
+const WIDE_FENCE = /(^|\n) {0,3}(?:`{3,}|~{3,})[ \t]*(?:email|mail|eml|widget|html-widget|artifact|chart|csv|tsv|mermaid|cw)\b/i;
 const TABLE_RULE = /(^|\n)\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?\s*(\n|$)/;
 const ANT_ARTIFACT = /<antArtifact\b/i;
 

@@ -18,12 +18,12 @@ export function UsageSection({ bot }: { bot: Bot }) {
 
   if (usage.turns === 0) {
     return (
-      <p className="text-[13px] text-ink-secondary">{t("botPanel.usage.empty")}</p>
+      <p data-bot-settings-section="usage" className="text-[13px] text-ink-secondary">{t("botPanel.usage.empty")}</p>
     );
   }
 
   return (
-    <div>
+    <div data-bot-settings-section="usage">
       <div className="flex items-baseline justify-between">
         <h3 className="text-[13px] font-medium text-ink">{t("botPanel.usage.title")}</h3>
         <button

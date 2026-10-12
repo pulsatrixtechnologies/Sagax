@@ -28,9 +28,9 @@ import {
  * `owner`: the machine's owner (a desktop, a one-person headless server).
  * `service`: a shared server where every bot's shell is also a loopback
  * caller, so "local" no longer means "the owner". Loopback may then use
- * only SERVICE_ALLOW below: health, the Slack worker's guarded routes, the
- * bot capability routes and the reads those callers need. Every other route,
- * and every admin change, needs a real session. */
+ * only SERVICE_ALLOW below: liveness, who-am-I, edition, brand, and the
+ * turn-scoped bot capability routes. Every other route, including the old
+ * Slack-worker data plane, needs a real session. */
 export type LoopbackTrust = "owner" | "service";
 
 export type RequestAuth =
@@ -54,41 +54,23 @@ const SERVICE_SCOPES: readonly Scope[] = ["client"];
 /** What a `service`-trust loopback caller may reach, and nothing else:
  *
  * - liveness and identity: health, who-am-I, edition and brand;
- * - the cloud Slack worker (openmaus-cloud server/slack-worker.ts), which
- *   shares the workspace's network namespace and reads the bot list, a
- *   thread's messages and a bot's PNG picture, creates a thread, sends
- *   through the guarded route, watches and stops its exact request,
- *   withdraws a queued line, and declines a card (the handler refuses any
- *   other answer from this caller);
  * - the turn-scoped bot capability routes, whose own bearer token is the
  *   authorization (checked in the handler), and the test-only capability
  *   mint that exists only when its private key is set.
  *
- * Residual risk, not closed here: a bot's shell is a loopback caller too, so
- * it can do everything the worker does. It can post into any bot's thread
- * through the guarded route, including an existing Full-access thread
- * (`expectedApprovalMode: "full"`), and while the operator's shared Full
- * access is on it can open new Full-access threads; either way work runs with
- * Full access and no card, whoever asked the bot. It can also stop a request
- * and decline a card. It can no longer change settings, keys, instances, MCP
- * servers, webhooks, sessions, people, budgets or fleet, loosen a bot's
- * permissions, or approve anything. The planned fix is a relay token that only
- * the Slack worker holds, so these routes stop answering session-less
- * loopback at all. */
+ * The cloud Slack worker (openmaus-cloud server/slack-worker.ts) used to
+ * share this list: bot list, messages, attachments, create-task, guarded
+ * send, request watch, interrupt, queue delete and card decline. A bot's
+ * shell is the same session-less loopback caller, so those routes let it
+ * read every thread and post into a Full-access one. That relay token is
+ * not in this repository. Until the worker carries its own credential,
+ * those calls answer 403. Owner loopback is unchanged.
+ */
 export const SERVICE_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: RegExp }> = [
   { methods: ["GET"], path: /^\/api\/health$/ },
   { methods: ["GET"], path: /^\/api\/auth\/session$/ },
   { methods: ["GET"], path: /^\/api\/edition$/ },
   { methods: ["GET"], path: /^\/api\/brand$/ },
-  { methods: ["GET"], path: /^\/api\/bots$/ },
-  { methods: ["GET"], path: /^\/api\/threads\/[\w-]+\/messages$/ },
-  { methods: ["GET"], path: /^\/api\/attachments\/[\w.-]+$/ },
-  { methods: ["POST"], path: /^\/api\/bots\/[\w-]+\/tasks$/ },
-  { methods: ["POST"], path: /^\/api\/bots\/[\w-]+\/messages\/guarded$/ },
-  { methods: ["GET"], path: /^\/api\/bots\/[\w-]+\/requests\/[\w-]+$/ },
-  { methods: ["POST"], path: /^\/api\/bots\/[\w-]+\/requests\/[\w-]+\/interrupt$/ },
-  { methods: ["DELETE"], path: /^\/api\/bots\/[\w-]+\/queue\/[\w-]+$/ },
-  { methods: ["POST"], path: /^\/api\/threads\/[\w-]+\/respond$/ }, // decline only: see the handler
   { methods: ["GET", "POST", "PUT", "PATCH", "DELETE"], path: /^\/api\/internal\// }, // capability bearer checked in the handler
   { methods: ["POST"], path: /^\/api\/testing\/internal-capability$/ }, // exists only with its private key
 ];
@@ -338,6 +320,9 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   // which the handler keeps to the owner).
   { methods: ["GET"], path: /^\/api\/computer\/status$/ },
   { methods: ["POST"], path: /^\/api\/computer\/(?:update|reset)$/ },
+  // In-chat terminal: list shell-capable resources and manage the person's own sessions.
+  { methods: ["GET"], path: /^\/api\/terminal\/resources$/ },
+  { methods: ["GET", "POST"], path: /^\/api\/terminal\/sessions\/[\w-]+(?:\/(?:bot-input|close))?$/ },
   // Plugin catalog (reads: names, descriptions, icons; no secrets). Installing
   // one changes the server's MCP servers: the handler lets through an admin
   // or this computer's own person (clientSessionIsComputerOwner), nobody else.
@@ -364,6 +349,9 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   { methods: ["POST"], path: /^\/api\/auth\/pairing$/, feature: "orgPairing" },
   // What this person has lent (owner-scoped status, no secrets). Same gate.
   { methods: ["GET"], path: /^\/api\/shared-computers$/, feature: "sharedComputers" },
+  // Inline video widgets: proxied media (session cookie) and YouTube transcripts.
+  { methods: ["GET"], path: /^\/api\/media\/proxy\/.+/ },
+  { methods: ["POST"], path: /^\/api\/youtube\/transcript$/ },
   // liveness, identity, the stream
   { methods: ["GET"], path: /^\/api\/health$/ },
   { methods: ["GET"], path: /^\/api\/edition$/ },
@@ -392,6 +380,10 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   // what a bot is doing (the bot panel's Coding list): narrowed to the
   // viewer's own threads and the routines they may see (routes/bot-activity.ts)
   { methods: ["GET"], path: /^\/api\/bots\/[\w-]+\/activity(?:\/item)?$/ },
+  // Cloud coding agents (server/routes/cloud-agents.ts): reads for any bot
+  // the viewer may see; writes use the session person's encrypted provider keys.
+  { methods: ["GET", "POST"], path: /^\/api\/bots\/[\w-]+\/cloud-agents(?:\/[\w-]+(?:\/(?:follow-up|cancel|archive|artifacts|transcript))?)?$/ },
+  { methods: ["GET", "PUT", "DELETE", "POST"], path: /^\/api\/me\/cloud-agent-providers(?:\/(?:cursor|claude|codex)(?:\/test)?)?$/ },
   // chat, one to one
   { methods: ["POST"], path: /^\/api\/bots\/[\w-]+\/messages$/ },
   { methods: ["POST"], path: /^\/api\/bots\/[\w-]+\/messages\/[\w-]+\/edit$/ },
@@ -449,6 +441,8 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   { methods: ["POST"], path: /^\/api\/bots\/[\w-]+\/respond$/ },
   { methods: ["POST"], path: /^\/api\/threads\/[\w-]+\/respond$/ },
   { methods: ["POST"], path: /^\/api\/threads\/[\w-]+\/undo$/ }, // whoever may answer the card: see the handler
+  // a ConnectWise widget's change: an approval card for whoever may answer it (server/cw-widget-actions.ts)
+  { methods: ["POST"], path: /^\/api\/threads\/[\w-]+\/cw-actions$/ },
   { methods: ["PATCH"], path: /^\/api\/bots\/[\w-]+\/cards\/[\w-]+$/ },
   { methods: ["POST"], path: /^\/api\/bots\/[\w-]+\/secret-cards\/[\w-]+\/(?:resume|dismiss)$/ },
   { methods: ["GET"], path: /^\/api\/bots\/[\w-]+\/connector-cards\/[\w-]+\/status$/ },

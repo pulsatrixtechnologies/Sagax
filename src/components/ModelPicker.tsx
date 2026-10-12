@@ -37,6 +37,7 @@ import { useAutoModelPreview } from "@/lib/auto-model-preview";
 import { threadsOnOwnModel } from "../../shared/thread-model";
 import { ThreadModelsLine } from "./ThreadModelsLine";
 import { effortLabel } from "@/lib/effort-label";
+import { isUltracodeEffort, pickerEffortLevels, ULTRACODE_EFFORT } from "../../shared/ultracode-effort";
 
 type ModelOption = InstanceInfo["models"]["options"][number];
 
@@ -121,9 +122,10 @@ export function EffortRow({
   if (instance?.capabilities?.modelVariants) {
     return <ModelVariantRow bot={bot} threadId={threadId} updateBotDefault={updateBotDefault} viewerLocal={viewerLocal} className={className} label={label} compact={compact} />;
   }
-  const levels = instance?.capabilities?.effortLevels;
+  const nativeLevels = instance?.capabilities?.effortLevels;
   // An engine with no levels gets no control at all, not an empty one.
-  if (!levels?.length) return null;
+  if (!nativeLevels?.length) return null;
+  const levels = pickerEffortLevels(nativeLevels);
 
   if (compact) return (
     <label className={cn("flex items-center justify-between gap-3", className)}>
@@ -156,7 +158,13 @@ export function EffortRow({
             key={level ?? "default"}
             type="button"
             aria-pressed={selection.effort === level}
-            title={level === undefined ? t("model.effort.defaultTitle") : t("model.effort.levelTitle", { level: effortLabel(level) })}
+            title={
+              level === undefined
+                ? t("model.effort.defaultTitle")
+                : isUltracodeEffort(level)
+                  ? t("model.effort.ultracodeHint")
+                  : t("model.effort.levelTitle", { level: effortLabel(level) })
+            }
             onClick={() => {
               if (viewerLocal) {
                 saveViewerChoice(dispatch, bot.id, { effort: level ?? null });
@@ -166,9 +174,13 @@ export function EffortRow({
             }}
             className={cn(
               "rounded-full border px-2.5 py-1 text-[12px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/70",
-              selection.effort === level
-                ? "border-accent/60 bg-control text-ink"
-                : "border-hairline/40 text-ink-secondary hover:bg-control/60 hover:text-ink",
+              selection.effort === level && isUltracodeEffort(level)
+                ? "ultracode-effort-chip ultracode-effort-chip-active"
+                : selection.effort === level
+                  ? "border-accent/60 bg-control text-ink"
+                  : level === ULTRACODE_EFFORT
+                    ? "ultracode-effort-option border-hairline/40 text-ink-secondary"
+                    : "border-hairline/40 text-ink-secondary hover:bg-control/60 hover:text-ink",
             )}
           >
             {level === undefined ? t("model.defaultTag") : effortLabel(level)}
@@ -1029,7 +1041,10 @@ export function ModelPicker({
       aria-expanded={menu && !bot.busy}
       aria-haspopup="listbox"
       title={bot.busy ? `${composerLabel}${followLine}\n${t(threadId ? "model.threadBusy" : "model.busy")}` : `${composerLabel}${followLine}`}
-      className="flex max-w-full items-center gap-1 rounded-lg px-1.5 py-1 text-[13px] text-ink-secondary hover:bg-raised hover:text-ink disabled:cursor-not-allowed disabled:opacity-50"
+      className={cn(
+        "flex max-w-full items-center gap-1 rounded-lg px-1.5 py-1 text-[13px] text-ink-secondary hover:bg-raised hover:text-ink disabled:cursor-not-allowed disabled:opacity-50",
+        isUltracodeEffort(selection.effort) && "ultracode-effort-chip",
+      )}
     >
       <span className="truncate">{composerLabel}</span>
       <ChevronDown size={14} className={cn("shrink-0 transition-transform", menu && "rotate-180")} />
@@ -1071,7 +1086,10 @@ export function ModelPicker({
         {selectedVariantLabel !== undefined ? (
           <span data-model-variant className="max-w-[120px] truncate text-ink-secondary">· {selectedVariantLabel}</span>
         ) : advanced && selection.effort && (
-          <span data-model-effort className="shrink-0 text-ink-secondary">
+          <span
+            data-model-effort
+            className={cn("shrink-0", isUltracodeEffort(selection.effort) ? "ultracode-effort-chip" : "text-ink-secondary")}
+          >
             · {effortLabel(selection.effort)}
           </span>
         )}

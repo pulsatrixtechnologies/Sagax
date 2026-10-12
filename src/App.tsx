@@ -11,6 +11,7 @@ import { ThreadRefsProvider } from "@/components/ThreadRefs";
 import { initAnalytics } from "@/lib/analytics";
 import { Sidebar } from "@/components/Sidebar";
 import { ChatView } from "@/components/ChatView";
+import { BackgroundWorkPanel } from "@/components/BackgroundWorkPanel";
 import { GroupView } from "@/components/GroupView";
 import { PersonPanel } from "@/components/PersonPanel";
 import { ComposeToPicker } from "@/components/ComposeToPicker";
@@ -38,7 +39,9 @@ import { RetroBootSlot, RetroChromeSlot } from "@/components/RetroChromeHost";
 import { setLocale, t } from "@/lib/i18n";
 import { shouldOpenKeyboardShortcuts } from "@/lib/keyboard-shortcuts";
 import { effectiveLanguage, useLanguageChoice } from "@/lib/language-preference";
+import { normalizeInboxDeepLink } from "@/lib/inbox-deep-link";
 import { openThreadVisible, pageOpenThreadTarget, type OpenThreadTarget } from "@/lib/open-thread-hash";
+import { saveSidebarAttentionPinned } from "@/lib/sidebar-preferences";
 import { botShowsUnread } from "@/lib/bot-unread";
 import { badgeCount } from "@/lib/attention";
 import { dockBadge, useLocalSwitch } from "@/lib/notification-preferences";
@@ -101,6 +104,12 @@ function Shell() {
     window.history.replaceState(null, "", rest);
     dispatch(phonePairingSettingsAction());
   }, [dispatch]);
+  // `?view=inbox` and the legacy `?view=todo` / `#todo` alias pin the inbox
+  // panel when it is shown in the sidebar.
+  useEffect(() => {
+    if (!normalizeInboxDeepLink(window.location)) return;
+    saveSidebarAttentionPinned(true);
+  }, []);
   // Mobile-only drawer state. Above md, none of these properties are emitted
   // at all — Sidebar scopes every mobile class with max-md: rather than
   // cancelling them with md:, which would still emit a translate value and
@@ -379,7 +388,10 @@ function Shell() {
       ) : group ? (
         <GroupView key={group.id} group={group} />
       ) : bot ? (
-        <ChatView bot={bot} />
+        <div className="flex h-full min-h-0 min-w-0 flex-1">
+          <ChatView bot={bot} />
+          <BackgroundWorkPanel bot={bot} />
+        </div>
       ) : (
         state.connected ? (
           // Connected with no bot: an empty state that invites creating one,

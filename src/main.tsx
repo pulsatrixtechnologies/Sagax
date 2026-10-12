@@ -12,6 +12,7 @@ import { BrowserSignInPage } from "./pair/BrowserSignInPage";
 import { PairPage } from "./pair/PairPage";
 import { rememberOpenThreadHash } from "./lib/open-thread-hash";
 import { syncUserPreferences } from "./lib/user-preferences-sync";
+import { cacheSignInProfileFromSession } from "./lib/sign-in-profile-cache";
 import { startPresence } from "./lib/presence";
 import { installAnimationPause } from "./lib/animation-pause";
 import { syncDesktopAppearance } from "./lib/desktop-appearance-sync";
@@ -69,6 +70,14 @@ async function chooseRoot(): Promise<React.ReactNode> {
     return <PairPage initialCode={pairing.code} autoSubmit={pairing.auto} initialEmail={takeInvitedEmailFromLocation()} />;
   }
   const session = await readSessionState();
+  if (session.kind === "session") {
+    try {
+      const res = await fetch("/api/auth/session", { credentials: "same-origin" });
+      if (res.ok) cacheSignInProfileFromSession(await res.json());
+    } catch {
+      /* offline */
+    }
+  }
   if (session.kind === "unauthenticated") return <PairPage initialCode={null} reason={session.error} />;
   // A service-trust server answers this machine's requests without a session
   // but refuses to let it manage anything: sign in first, as a remote browser would.

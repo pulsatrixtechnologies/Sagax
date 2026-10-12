@@ -489,7 +489,7 @@ struct DesktopStackedMauses: View {
         ZStack(alignment: .topLeading) {
             if members.count <= 1 {
                 if let bot = members.first {
-                    BotMascotView(bot: bot, size: single, state: .happy, animated: false)
+                    BotMascotView(bot: bot, size: single, state: .happy, animated: false, sidebarTapReact: true)
                         .frame(width: slot, height: slot)
                 }
             } else {
@@ -504,7 +504,7 @@ struct DesktopStackedMauses: View {
                     ? [CGPoint(x: 0, y: 2), CGPoint(x: slot - face, y: slot - face)]
                     : three
                 ForEach(Array(shown.enumerated()), id: \.offset) { index, bot in
-                    BotMascotView(bot: bot, size: face, state: .idle, animated: false)
+                    BotMascotView(bot: bot, size: face, state: .idle, animated: false, sidebarTapReact: true)
                         .frame(width: face, height: face)
                         .offset(x: spots[index].x, y: spots[index].y)
                 }
@@ -615,7 +615,15 @@ struct DesktopThreadRow: View {
                     if task.activity == "waiting-on-you" {
                         Text("Waiting").font(theme.font(10, .medium)).foregroundStyle(theme.warning)
                     } else if task.isWorking {
-                        ProgressView().controlSize(.mini).tint(theme.success)
+                        let selection = task.modelSelection ?? bot.modelSelection
+                        if UltracodeEffort.isUltracode(selection.effort) {
+                            Circle()
+                                .fill(Color(red: 0.49, green: 0.23, blue: 0.93))
+                                .frame(width: 8, height: 8)
+                                .accessibilityLabel(Text("Ultracode"))
+                        } else {
+                            ProgressView().controlSize(.mini).tint(theme.success)
+                        }
                     }
                     if task.unread == true {
                         Circle().fill(theme.accent).frame(width: 6, height: 6)

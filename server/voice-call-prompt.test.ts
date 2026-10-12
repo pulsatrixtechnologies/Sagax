@@ -32,9 +32,19 @@ describe("parseVoiceCallMeta", () => {
   });
 
   it("refuses a malformed mark", () => {
-    for (const bad of ["call", [], { callId: "no" }, { callId: "call-0123456789", interrupted: "yes" }, { callId: "call-0123456789", language: "auto" }, { callId: "call-0123456789", language: "xx" }, { callId: "call-0123456789", utteranceId: "x" }, { callId: "call-0123456789", heard: 3 }, { callId: "call-0123456789", continues: "yes" }]) {
+    for (const bad of ["call", [], { callId: "no" }, { callId: "call-0123456789", interrupted: "yes" }, { callId: "call-0123456789", language: "auto" }, { callId: "call-0123456789", language: "xx" }, { callId: "call-0123456789", utteranceId: "x" }, { callId: "call-0123456789", heard: 3 }, { callId: "call-0123456789", continues: "yes" }, { callId: "call-0123456789", duplex: "yes" }, { callId: "call-0123456789", speculative: "yes" }]) {
       expect(parseVoiceCallMeta(bad)).toHaveProperty("error");
     }
+  });
+
+  it("keeps duplex: true and drops duplex: false", () => {
+    expect(parseVoiceCallMeta({ callId: "call-0123456789", duplex: true })).toEqual({ callId: "call-0123456789", duplex: true });
+    expect(parseVoiceCallMeta({ callId: "call-0123456789", duplex: false })).toEqual({ callId: "call-0123456789" });
+  });
+
+  it("keeps speculative: true and drops speculative: false", () => {
+    expect(parseVoiceCallMeta({ callId: "call-0123456789", speculative: true })).toEqual({ callId: "call-0123456789", speculative: true });
+    expect(parseVoiceCallMeta({ callId: "call-0123456789", speculative: false })).toEqual({ callId: "call-0123456789" });
   });
 });
 
@@ -49,6 +59,7 @@ describe("the phone-call instruction", () => {
     expect(text).toContain("Je regarde ça");
     expect(text).toContain("(their call is set to French)");
     expect(text).toContain("Keep your own persona and instructions");
+    expect(text).toContain("Do not repeat that acknowledgement");
     expect(text).not.toContain(VOICE_CALL_INTERRUPTED_NOTE);
     expect(text).not.toMatch(/[–—]/);
   });
@@ -68,6 +79,18 @@ describe("the phone-call instruction", () => {
     expect(voiceCallSection({}, call, "Ada")).toContain(ENDED_MARK);
     expect(voiceCallSection({}, {}, "Ada")).toBe("");
     expect(voiceCallSection(undefined, undefined, "Ada")).toBe("");
+  });
+
+  it("injects open topics into the call instruction", () => {
+    const call = { voiceCall: { callId: "call-0123456789" } };
+    const text = voiceCallSection(call, undefined, "Ada", [
+      { id: "a", label: "weather in Montreal", status: "background" },
+      { id: "b", label: "time in Tokyo", status: "active" },
+    ]);
+    expect(text).toContain("Open topics on this call");
+    expect(text).toContain("weather in Montreal (still running in the background)");
+    expect(text).toContain("time in Tokyo (current)");
+    expect(text).not.toMatch(/[–—]/);
   });
 
   it("marks every call turn's own words, since a live session gets the section only once", () => {

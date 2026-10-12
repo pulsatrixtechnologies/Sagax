@@ -28,8 +28,6 @@ struct ChatNameCapsule: View {
     @Environment(\.themePalette) var themePalette
     let chat: Chat
     var state: MausState = .idle
-    /// Hidden while the island intro is carrying the face.
-    var mascotHidden = false
     let open: () -> Void
     @EnvironmentObject private var session: Session
     @ObservedObject private var people = PeopleDirectory.shared
@@ -47,7 +45,6 @@ struct ChatNameCapsule: View {
                     animated: state.showsActivity,
                     background: Theme.glassFill
                 )
-                .opacity(mascotHidden ? 0 : 1)
                 Text(verbatim: people.name(chat, session: session))
                     .font(Theme.Font.bodyMedium)
                     .foregroundStyle(Theme.textPrimary)

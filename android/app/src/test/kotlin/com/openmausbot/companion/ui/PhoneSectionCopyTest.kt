@@ -44,7 +44,7 @@ class PhoneSectionCopyTest {
         // and keep the canonical English text explicit in the default catalog.
         assertTrue(
             source.contains("R.string.mobile_open_openmausbot_settings_phone_38cfc5bb") &&
-                english.contains("1.  Open OpenMausBot → Settings → Phone"),
+                english.contains("1.  Open Sagax → Settings → Phone"),
             "the setup steps must use the localized Settings → Phone copy",
         )
         assertTrue(

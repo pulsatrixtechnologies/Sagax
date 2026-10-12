@@ -16,6 +16,8 @@ struct BotMascotView: View {
     var state: MausState = .idle
     /// Opt-in: an animated mascot ticks at 30 fps.
     var animated = false
+    /// Sidebar row: a short squish on tap (no hover on iOS).
+    var sidebarTapReact = false
     /// Comets orbiting the mascot: the island's "something is happening".
     var comets = false
     /// Wing moves and beats for the owl (profile preview).
@@ -24,6 +26,7 @@ struct BotMascotView: View {
     @EnvironmentObject private var session: Session
     @State private var image: UIImage?
     @State private var failed = false
+    @State private var tapSquish = false
 
     private var crop: AvatarCrop { bot.avatarCrop ?? .mascot }
     private var outcome: BotAvatarOutcome {
@@ -41,8 +44,19 @@ struct BotMascotView: View {
             }
         }
         .frame(width: size, height: size)
+        .scaleEffect(tapSquish ? CGSize(width: 1.1, height: 0.86) : CGSize(width: 1, height: 1))
+        .animation(.spring(response: 0.32, dampingFraction: 0.62), value: tapSquish)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(bot.name) avatar")
+        .simultaneousGesture(
+            sidebarTapReact
+                ? TapGesture().onEnded {
+                    guard !UIAccessibility.isReduceMotionEnabled else { return }
+                    tapSquish = true
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.34) { tapSquish = false }
+                }
+                : nil
+        )
         .task(id: "\(bot.avatarUrl ?? "")|\(crop.rawValue)") {
             image = nil
             failed = false
