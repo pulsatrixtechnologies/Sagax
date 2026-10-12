@@ -38,6 +38,7 @@ import {
   type BotActivityStep,
   type BotCodeWork,
 } from "../../shared/bot-activity.ts";
+import type { BotLaunchedAgentItem } from "../../shared/bot-launched-agents.ts";
 import { PASS, type RouteHandler } from "./table.ts";
 import { addCodingSignal, isCodingWork, type CodingSignals } from "../activity-coding.ts";
 import { CodeWorkCollector, type RepositoryInfo } from "../activity-code-work.ts";
@@ -115,6 +116,8 @@ export interface BotActivityRouteDeps {
   inRepository?(cwd: string): boolean;
   /** That repository's root, checked-out branch and origin remote. */
   repository?(cwd: string): RepositoryInfo | undefined;
+  /** Agent API launches: hidden threads on peers this bot opened. */
+  launchedAgents?(botId: string, viewerId: string | undefined): BotLaunchedAgentItem[];
   now?: () => number;
 }
 
@@ -462,7 +465,8 @@ export function createBotActivityRoutes(deps: BotActivityRouteDeps): RouteHandle
       const filter = asked === "coding" || asked === "other" ? asked : undefined;
       const all = list(bot, viewerId, LIST_MAX);
       const items = all.filter((item) => !filter || (filter === "coding") === Boolean(item.coding)).slice(0, limit);
-      return json(res, 200, { items, subagents: filter === "coding" ? [] : subagents(bot, all, viewerId) });
+      const launchedAgents = filter === "other" ? [] : (deps.launchedAgents?.(bot.id, viewerId) ?? []);
+      return json(res, 200, { items, subagents: filter === "coding" ? [] : subagents(bot, all, viewerId), launchedAgents });
     }
     const threadId = url.searchParams.get("threadId");
     const runId = url.searchParams.get("runId");

@@ -667,6 +667,8 @@
   "botPanel.coding.kind.routine": "Routine",
   "botPanel.coding.loading": "Chargement de l'activité…",
   "botPanel.coding.openAria": "Ouvrir {title}",
+  "botPanel.coding.runFailed": "Exécution échouée · #{number}",
+  "botPanel.coding.runFailedPrefix": "Exécution échouée",
   "botPanel.coding.status.failed": "Échec",
   "botPanel.coding.status.finished": "Terminé",
   "botPanel.coding.status.queued": "En file d'attente",

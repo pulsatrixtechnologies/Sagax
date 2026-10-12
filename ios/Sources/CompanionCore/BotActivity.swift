@@ -132,22 +132,51 @@ public struct BotActivityItem: Codable, Hashable, Identifiable, Sendable {
     public var stoppable: Bool { canStop == true && threadId != nil && status.isActive }
 }
 
+/// A pull request tied to a launched agent's failed run.
+public struct BotLaunchedAgentPullRequest: Codable, Hashable, Sendable {
+    public var number: Int
+    public var url: String?
+}
+
+/// A cloud agent this bot launched (agent API hidden peer thread).
+public struct BotLaunchedAgentItem: Codable, Hashable, Identifiable, Sendable {
+    public var id: String
+    public var targetBotId: String
+    public var targetBotName: String
+    public var title: String
+    public var status: BotActivityStatus
+    public var startedAt: Double
+    public var updatedAt: Double
+    public var threadId: String?
+    public var pullRequest: BotLaunchedAgentPullRequest?
+
+    public func asActivityItem() -> BotActivityItem {
+        BotActivityItem(
+            id: id, botId: targetBotId, title: title, status: status,
+            startedAt: startedAt, updatedAt: updatedAt, threadId: threadId
+        )
+    }
+}
+
 /// GET /api/bots/:id/activity.
 public struct BotActivityList: Decodable, Hashable, Sendable {
     public var items: [BotActivityItem]
     public var subagents: [BotActivityItem]
+    public var launchedAgents: [BotLaunchedAgentItem]
 
-    public init(items: [BotActivityItem] = [], subagents: [BotActivityItem] = []) {
+    public init(items: [BotActivityItem] = [], subagents: [BotActivityItem] = [], launchedAgents: [BotLaunchedAgentItem] = []) {
         self.items = items
         self.subagents = subagents
+        self.launchedAgents = launchedAgents
     }
 
-    private enum CodingKeys: String, CodingKey { case items, subagents }
+    private enum CodingKeys: String, CodingKey { case items, subagents, launchedAgents }
 
     public init(from decoder: Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
         items = try values.decodeIfPresent([BotActivityItem].self, forKey: .items) ?? []
         subagents = try values.decodeIfPresent([BotActivityItem].self, forKey: .subagents) ?? []
+        launchedAgents = try values.decodeIfPresent([BotLaunchedAgentItem].self, forKey: .launchedAgents) ?? []
     }
 
     public var all: [BotActivityItem] { items + subagents }

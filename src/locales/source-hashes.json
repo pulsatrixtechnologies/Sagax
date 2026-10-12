@@ -4358,6 +4358,8 @@
       "botPanel.coding.kind.routine": "0b5baf309897ec7e2def5db089f1f4ec5b15d5912296577d655d00ca0fc40b59",
       "botPanel.coding.loading": "a389c395010ec4043e0cf3bad214c54a6066f1bb1b02cc433a0cca259ebdb655",
       "botPanel.coding.openAria": "7944e5ee09b9de0d8389e95c28a24d277ca850a6561eb977a7bf66b361c63d69",
+      "botPanel.coding.runFailed": "c0b0e75721285ffce887840f5668179b4f54cccfe3ca8a9344237ef8d01c6327",
+      "botPanel.coding.runFailedPrefix": "97fddf2d43e8dfc8e31d22f8ba3957b67b9109306346435f0172ba7439e4658a",
       "botPanel.coding.status.failed": "031a8f0f659df890dfd53c92e45295b0f14c997185bae46e168831e403b273f7",
       "botPanel.coding.status.finished": "7804f7a79a9eee323b6e89d3f8287c7d36076f4d76291646295f435b0dec736e",
       "botPanel.coding.status.queued": "661ff40a07e037bbd5f7d4ec97a4df1503096ca910e7c9e2d7a4e9abd4e4e1a0",

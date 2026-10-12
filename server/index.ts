@@ -797,6 +797,7 @@ import { markWorkspaceUse, promptSectionPaths } from "./workspace-usage.ts";
 import { createBotActivityRoutes, type ActivityChildRef } from "./routes/bot-activity.ts";
 import { inGitRepository } from "./activity-coding.ts";
 import { repositoryInfo } from "./activity-code-work.ts";
+import { launchedAgentsForBot } from "./launched-agents.ts";
 import { createGroupMemoryRoutes } from "./routes/group-memory.ts";
 import { createTtsProviderRoutes } from "./routes/tts-provider.ts";
 import { createPeopleDmRoutes } from "./routes/people-dms.ts";
@@ -21664,6 +21665,23 @@ ROUTES.push(createBotActivityRoutes({
   runAccessCard: (run, viewerId) => routineRunAccessCard(run, viewerId),
   inRepository: (cwd) => inGitRepository(cwd),
   repository: (cwd) => repositoryInfo(cwd),
+  launchedAgents: (botId, viewerId) => launchedAgentsForBot({
+    launcherBotId: botId,
+    bots: () => store.bots,
+    tasks: (peerId) => store.tasks(peerId),
+    messages: (threadId, limit) => store.messagesTail(threadId, limit).messages,
+    threadReadable: (peerId, threadId, who) => {
+      const peer = store.bot(peerId);
+      return Boolean(peer) && botThreadReadable(peer!, threadId, who, "thread.read");
+    },
+    threadBusy: (peerId, threadId) => threadBusy(peerId, threadId),
+    queued: (threadId) => {
+      const owner = store.botByThread(threadId);
+      return owner ? queuedThreadPosition(owner.id, threadId) !== null : false;
+    },
+    inRepository: (cwd) => inGitRepository(cwd),
+    repository: (cwd) => repositoryInfo(cwd),
+  }, viewerId),
 }));
 /** The access card a failed routine run left (refused for lack of
  * credentials, or paused), as this viewer may see it: on an organization

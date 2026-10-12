@@ -877,6 +877,8 @@
   "botPanel.coding.kind.routine": "Routine",
   "botPanel.coding.loading": "Loading activity…",
   "botPanel.coding.openAria": "Open {title}",
+  "botPanel.coding.runFailed": "Run failed · #{number}",
+  "botPanel.coding.runFailedPrefix": "Run failed",
   "botPanel.coding.status.failed": "Failed",
   "botPanel.coding.status.finished": "Finished",
   "botPanel.coding.status.queued": "Queued",

@@ -152,8 +152,12 @@ struct BotPanelDetails: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 24) {
             if showsActivity {
-                AnyView(liveSection(.coding, icon: .squareTerminal, title: "Coding", items: activity.coding, showsError: true))
-                AnyView(liveSection(.other, icon: .activity, title: "Activity", items: activity.other, showsError: false))
+                if activity.showsCodingSection {
+                    AnyView(codingSection)
+                }
+                if activity.showsActivitySection {
+                    AnyView(liveSection(.other, icon: .activity, title: "Activity", items: activity.other, showsError: false))
+                }
             }
             AnyView(BotPanelRoutines(bot: bot))
         }
@@ -183,49 +187,67 @@ struct BotPanelDetails: View {
 
     // MARK: Coding, Activity
 
+    private var codingSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            PanelSectionHeader(icon: .squareTerminal, title: "Coding") { route = .history(.coding) }
+                .accessibilityIdentifier("desktop-panel-history.coding")
+            if !activity.launchedAgents.isEmpty {
+                LaunchedAgentsGroup(items: activity.launchedAgents) { item in
+                    route = .detail(item.asActivityItem())
+                }
+            }
+            liveSectionBody(.coding, items: activity.coding, showsError: true)
+        }
+    }
+
     private func liveSection(_ filter: BotActivityFilter, icon: DesktopIcon, title: LocalizedStringKey,
                              items: [BotActivityItem]?, showsError: Bool) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             PanelSectionHeader(icon: icon, title: title) { route = .history(filter) }
                 .accessibilityIdentifier("desktop-panel-history.\(filter.rawValue)")
-            if items == nil, showsError, activity.failed {
-                Text("Couldn't load this bot's activity.")
+            liveSectionBody(filter, items: items, showsError: showsError)
+        }
+    }
+
+    @ViewBuilder
+    private func liveSectionBody(_ filter: BotActivityFilter, items: [BotActivityItem]?, showsError: Bool) -> some View {
+        if items == nil, showsError, activity.failed {
+            Text("Couldn't load this bot's activity.")
+                .font(theme.font(12.5))
+                .foregroundStyle(theme.inkSecondary)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 10)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(theme.card, in: RoundedRectangle(cornerRadius: theme.radiusXl, style: .continuous))
+        } else if let items {
+            if items.isEmpty {
+                Text("Nothing running.")
                     .font(theme.font(12.5))
-                    .foregroundStyle(theme.inkSecondary)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 10)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(theme.card, in: RoundedRectangle(cornerRadius: theme.radiusXl, style: .continuous))
-            } else if let items {
-                if items.isEmpty {
-                    Text("Nothing running.")
-                        .font(theme.font(12.5))
-                        .foregroundStyle(theme.inkTertiary)
-                        .frame(height: 18.75)
-                        .padding(.horizontal, 2)
-                        .accessibilityIdentifier("desktop-panel-idle.\(filter.rawValue)")
-                } else {
-                    VStack(spacing: 8) {
-                        ForEach(items) { item in
-                            PanelActivityCard(item: item, now: activity.now.timeIntervalSince1970 * 1000,
-                                              stopping: activity.stopping.contains(item.id),
-                                              onOpen: { route = .detail($0) },
-                                              onStop: { stop($0) })
-                                .opacity(activity.fading(item) ? 0 : 1)
-                                .animation(.easeOut(duration: 0.6), value: activity.fading(item))
-                        }
+                    .foregroundStyle(theme.inkTertiary)
+                    .frame(height: 18.75)
+                    .padding(.horizontal, 2)
+                    .accessibilityIdentifier("desktop-panel-idle.\(filter.rawValue)")
+            } else {
+                VStack(spacing: 8) {
+                    ForEach(items) { item in
+                        PanelActivityCard(item: item, now: activity.now.timeIntervalSince1970 * 1000,
+                                          stopping: activity.stopping.contains(item.id),
+                                          onOpen: { route = .detail($0) },
+                                          onStop: { stop($0) })
+                            .opacity(activity.fading(item) ? 0 : 1)
+                            .animation(.easeOut(duration: 0.6), value: activity.fading(item))
                     }
                 }
-            } else if showsError {
-                HStack(spacing: 8) {
-                    ProgressView().controlSize(.small)
-                    Text("Loading activity…")
-                        .font(theme.font(12.5))
-                        .foregroundStyle(theme.inkSecondary)
-                }
-                .padding(.horizontal, 4)
-                .padding(.vertical, 8)
             }
+        } else if showsError {
+            HStack(spacing: 8) {
+                ProgressView().controlSize(.small)
+                Text("Loading activity…")
+                    .font(theme.font(12.5))
+                    .foregroundStyle(theme.inkSecondary)
+            }
+            .padding(.horizontal, 4)
+            .padding(.vertical, 8)
         }
     }
 

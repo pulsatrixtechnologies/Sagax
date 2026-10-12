@@ -24,7 +24,25 @@ final class BotActivityModel: ObservableObject {
         self.botId = botId
     }
 
-    var active: Bool { list?.all.contains { $0.status.isActive } ?? false }
+    var active: Bool {
+        guard let list else { return false }
+        return list.all.contains { $0.status.isActive }
+            || list.launchedAgents.contains { $0.status.isActive }
+    }
+
+    var launchedAgents: [BotLaunchedAgentItem] { list?.launchedAgents ?? [] }
+
+    var showsCodingSection: Bool {
+        guard list != nil else { return true }
+        return !(coding ?? []).isEmpty || !launchedAgents.isEmpty
+    }
+
+    var showsActivitySection: Bool {
+        guard list != nil else { return true }
+        return !(other ?? []).isEmpty
+    }
+
+    var showsAnySection: Bool { showsCodingSection || showsActivitySection }
 
     /// Details > Coding: running coding jobs and those just finished.
     var coding: [BotActivityItem]? {

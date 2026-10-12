@@ -19961,6 +19961,22 @@
         }
       }
     },
+    "Run failed": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Run failed"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Exécution échouée"
+          }
+        }
+      }
+    },
     "Coding": {
       "localizations": {
         "en": {

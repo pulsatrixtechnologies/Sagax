@@ -89,6 +89,87 @@ struct BotActivityRow: View {
     }
 }
 
+// MARK: - Launched agents (Coding)
+
+/// Cloud agents this bot launched, in one grouped card (Grok-style).
+struct LaunchedAgentsGroup: View {
+    @Environment(\.themePalette) var themePalette
+    let items: [BotLaunchedAgentItem]
+    let onOpen: (BotLaunchedAgentItem) -> Void
+
+    var body: some View {
+        VStack(spacing: 0) {
+            ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
+                if index > 0 { ProfileDivider(leading: Theme.Profile.iconColumn) }
+                LaunchedAgentRow(item: item, onOpen: onOpen)
+            }
+        }
+        .background(Theme.card, in: RoundedRectangle(cornerRadius: Theme.Profile.cardRadius, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: Theme.Profile.cardRadius, style: .continuous).stroke(Theme.hairline, lineWidth: 1))
+        .accessibilityIdentifier("launched-agents")
+    }
+}
+
+private struct LaunchedAgentRow: View {
+    @Environment(\.themePalette) var themePalette
+    let item: BotLaunchedAgentItem
+    let onOpen: (BotLaunchedAgentItem) -> Void
+
+    var body: some View {
+        Button {
+            guard item.threadId != nil else { return }
+            Haptics.selection()
+            onOpen(item)
+        } label: {
+            HStack(spacing: 0) {
+                BotActivityStatusIcon(status: item.status)
+                    .frame(width: Theme.Profile.iconColumn, alignment: .center)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(verbatim: item.title)
+                        .font(Theme.Font.body)
+                        .foregroundStyle(Theme.textPrimary)
+                        .lineLimit(1)
+                    LaunchedAgentSubtitle(item: item)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                if item.threadId != nil { ProfileChevronTrailing() }
+            }
+            .padding(.vertical, 10)
+            .padding(.trailing, 10)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(item.threadId == nil)
+        .accessibilityIdentifier("launched-agent.\(item.id)")
+    }
+}
+
+private struct LaunchedAgentSubtitle: View {
+    let item: BotLaunchedAgentItem
+
+    var body: some View {
+        if item.status == .failed, let pr = item.pullRequest, let url = pr.url, let link = URL(string: url) {
+            HStack(spacing: 0) {
+                Text(verbatim: String(localized: "Run failed"))
+                    .font(Theme.Profile.labelFont)
+                    .foregroundStyle(Theme.textSecondary)
+                Text(verbatim: " · ")
+                    .font(Theme.Profile.labelFont)
+                    .foregroundStyle(Theme.textSecondary)
+                Link("#\(pr.number)", destination: link)
+                    .font(Theme.Profile.labelFont)
+                    .lineLimit(1)
+            }
+            .accessibilityIdentifier("launched-agent-pr.\(item.id)")
+        } else {
+            Text(verbatim: BotActivityWording.launchedSubtitle(item))
+                .font(Theme.Profile.labelFont)
+                .foregroundStyle(Theme.textSecondary)
+                .lineLimit(1)
+        }
+    }
+}
+
 struct BotActivityStatusIcon: View {
     @Environment(\.themePalette) var themePalette
     let status: BotActivityStatus
@@ -122,17 +203,35 @@ struct BotActivityCard: View {
     @EnvironmentObject private var session: Session
 
     var body: some View {
-        ProfileCard {
-            section(.coding, icon: "chevron.left.forwardslash.chevron.right", items: model.coding, showsError: true)
-            ProfileDivider(leading: 0)
-            section(.other, icon: "waveform.path.ecg", items: model.other, showsError: false)
+        Group {
+            if model.showsAnySection {
+                ProfileCard {
+                    if model.showsCodingSection {
+                        sectionHeader(.coding, icon: "chevron.left.forwardslash.chevron.right")
+                        if !model.launchedAgents.isEmpty {
+                            LaunchedAgentsGroup(items: model.launchedAgents) { item in
+                                onOpen(item.asActivityItem())
+                            }
+                            .padding(.horizontal, 16)
+                            .padding(.bottom, (model.coding ?? []).isEmpty ? 12 : 4)
+                        }
+                        sectionBody(.coding, items: model.coding, showsError: true)
+                        if model.showsActivitySection {
+                            ProfileDivider(leading: 0)
+                        }
+                    }
+                    if model.showsActivitySection {
+                        sectionHeader(.other, icon: "waveform.path.ecg")
+                        sectionBody(.other, items: model.other, showsError: false)
+                    }
+                }
+            }
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("profile-activity")
     }
 
-    @ViewBuilder
-    private func section(_ filter: BotActivityFilter, icon: String, items: [BotActivityItem]?, showsError: Bool) -> some View {
+    private func sectionHeader(_ filter: BotActivityFilter, icon: String) -> some View {
         Button {
             Haptics.selection()
             onHistory(filter)
@@ -146,7 +245,10 @@ struct BotActivityCard: View {
         .buttonStyle(.plain)
         .accessibilityHint(Text("Open history"))
         .accessibilityIdentifier("activity-section.\(filter.rawValue)")
+    }
 
+    @ViewBuilder
+    private func sectionBody(_ filter: BotActivityFilter, items: [BotActivityItem]?, showsError: Bool) -> some View {
         if let items {
             if items.isEmpty {
                 quiet(Text("Nothing running."))

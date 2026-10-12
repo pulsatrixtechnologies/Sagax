@@ -15,6 +15,9 @@ import {
   type BotCodePullAction,
   type BotCodePullRequest,
 } from "../../shared/bot-activity";
+import type { BotLaunchedAgentItem } from "../../shared/bot-launched-agents.ts";
+
+export type { BotLaunchedAgentItem };
 
 export type { BotActivityDetail, BotActivityItem, BotActivityList, BotActivityStatus, BotActivityStep, BotCodeBranch, BotCodeCommit, BotCodePullRequest };
 export { activityStatusActive };
@@ -29,7 +32,7 @@ export async function loadBotActivity(api: Api, botId: string, options: { filter
   if (options.limit) query.set("limit", String(options.limit));
   const suffix = query.size ? `?${query}` : "";
   const list = await api<Partial<BotActivityList>>(`/api/bots/${encodeURIComponent(botId)}/activity${suffix}`);
-  return { items: list.items ?? [], subagents: list.subagents ?? [] };
+  return { items: list.items ?? [], subagents: list.subagents ?? [], launchedAgents: list.launchedAgents ?? [] };
 }
 
 /** A job that finishes stays this long in the panel ("Finished"), then

@@ -5,6 +5,17 @@ import CompanionCore
 import SwiftUI
 
 enum BotActivityWording {
+    static func launchedSubtitle(_ item: BotLaunchedAgentItem) -> String {
+        if item.status == .failed, let pr = item.pullRequest {
+            let prefix = String(localized: "Run failed")
+            if pr.url != nil { return "\(prefix) · #\(pr.number)" }
+            return String(localized: "Run failed · #\(pr.number)")
+        }
+        if item.status == .finished { return status(.finished) }
+        if item.status == .running { return status(.running) }
+        return status(item.status)
+    }
+
     static func status(_ status: BotActivityStatus) -> String {
         switch status {
         case .running: String(localized: "Running")

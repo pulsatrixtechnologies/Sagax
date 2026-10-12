@@ -9,6 +9,8 @@ vi.mock("@/state/store", () => ({
 
 import type { BotActivityDetail, BotActivityItem } from "../../../shared/bot-activity";
 import { ActivityList, ActivitySection, CodeWorkList, PanelSections, panelSections, SectionHeader } from "./ActivitySection";
+import { LaunchedAgentsList } from "./LaunchedAgentsList";
+import type { BotLaunchedAgentItem } from "../../../shared/bot-launched-agents.ts";
 import { ActivityDetailBody } from "./ActivityDetailModal";
 import { ActivityListModal } from "./ActivityListModal";
 import { activityLive, codingLive, codingWhere, codingWork, FINISHED_FADE_MS, FINISHED_LINGER_MS, formatActivityDuration, historyItems, isParallelWork, LiveActivity } from "@/lib/bot-activity";
@@ -317,6 +319,38 @@ describe("Coding, code work only", () => {
     expect(done).not.toContain("data-activity-card");
     expect(done).toContain("#42 Split the lexer");
     expect(panelSections({ items: [codeJob("thread:empty")], subagents: [] }, liveOf([])).showCoding).toBe(false);
+  });
+
+  it("draws launched cloud agents in one grouped card with failed PR link", () => {
+    const launched: BotLaunchedAgentItem[] = [{
+      id: "thread:agent-1",
+      targetBotId: "scout",
+      targetBotName: "Scout",
+      title: "Sagax: CI main au vert",
+      status: "failed",
+      startedAt: NOW - 50_000,
+      updatedAt: NOW - 40_000,
+      threadId: "agent-1",
+      pullRequest: { number: 200, url: "https://github.com/org/repo/pull/200" },
+    }];
+    const html = renderToStaticMarkup(createElement(LaunchedAgentsList, {
+      items: launched,
+      onOpen: () => {},
+    }));
+    expect(html).toContain("data-launched-agents");
+    expect(html).toContain("Sagax: CI main au vert");
+    expect(html).toContain('data-launched-pr');
+    expect(html).toContain("#200");
+    expect(html).toContain("Run failed");
+    const panel = renderToStaticMarkup(createElement(PanelSections, {
+      list: { items: [], subagents: [], launchedAgents: launched },
+      actions: { onOpen: () => {}, now: NOW },
+      onOpenHistory: () => {},
+      onOpenLaunched: () => {},
+    }));
+    expect(panel).toContain('data-bot-settings-section="coding"');
+    expect(panel).toContain("data-launched-agents");
+    expect(panelSections({ items: [], subagents: [], launchedAgents: launched }).showCoding).toBe(true);
   });
 });
 

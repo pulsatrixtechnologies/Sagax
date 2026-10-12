@@ -59,6 +59,14 @@ final class BotPanelDetailsTests: XCTestCase {
         "startedBy":{"kind":"routine","name":"Daily"}}],"subagents":[]}
         """#.utf8))
         XCTAssertEqual(list.items.count, 2)
+        let withLaunched = try JSONDecoder().decode(BotActivityList.self, from: Data(#"""
+        {"items":[],"subagents":[],"launchedAgents":[{"id":"thread:a1","targetBotId":"peer","targetBotName":"Peer",
+        "title":"Peer: Fix CI","status":"failed","startedAt":1,"updatedAt":2,"threadId":"a1",
+        "pullRequest":{"number":200,"url":"https://github.com/o/r/pull/200"}}]}
+        """#.utf8))
+        XCTAssertEqual(withLaunched.launchedAgents.count, 1)
+        XCTAssertEqual(withLaunched.launchedAgents[0].pullRequest?.number, 200)
+        XCTAssertEqual(withLaunched.launchedAgents[0].asActivityItem().botId, "peer")
         XCTAssertEqual(list.items[0].status, .running)
         XCTAssertTrue(list.items[0].stoppable)
         XCTAssertEqual(list.items[1].status, .finished, "an unknown status reads as finished")

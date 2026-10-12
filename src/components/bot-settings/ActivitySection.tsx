@@ -45,8 +45,10 @@ import {
   type BotActivityFilter,
   type BotActivityItem,
   type BotActivityList,
+  type BotLaunchedAgentItem,
 } from "@/lib/bot-activity";
 import { ActivityCard } from "./ActivityCard";
+import { LaunchedAgentsList } from "./LaunchedAgentsList";
 import { ActivityDetailModal } from "./ActivityDetailModal";
 import { ActivityListModal } from "./ActivityListModal";
 
@@ -228,8 +230,16 @@ export function CodeWorkList({ work, now }: { work: CodingWork; now: number }) {
 export function panelSections(list: BotActivityList | null, live?: LiveView) {
   const coding = list ? codingLive(list.items, live) : [];
   const work = list ? codingWork(list.items) : { pullRequests: [], branches: [], commits: [] };
+  const launched = list?.launchedAgents ?? [];
   const other = list ? activityLive(list.items, list.subagents, live) : [];
-  return { coding, work, other, showCoding: coding.length > 0 || !codingWorkEmpty(work), showActivity: other.length > 0 };
+  return {
+    coding,
+    work,
+    launched,
+    other,
+    showCoding: coding.length > 0 || launched.length > 0 || !codingWorkEmpty(work),
+    showActivity: other.length > 0,
+  };
 }
 
 /** A section header; its title opens the section's history. */
@@ -257,15 +267,16 @@ export function SectionHeader({ icon, title, name, onOpenHistory }: { icon: Reac
  * history reachable (the section titles open it otherwise). A first load
  * that failed is one quiet line; a later failed refresh keeps the last list.
  * Split out so it renders without the fetching. */
-export function PanelSections({ list, live, actions, onOpenHistory, error = false }: {
+export function PanelSections({ list, live, actions, onOpenHistory, onOpenLaunched, error = false }: {
   list: BotActivityList | null;
   live?: LiveView;
   actions: CardActions;
   onOpenHistory: (filter: BotActivityFilter) => void;
+  onOpenLaunched?: (item: BotLaunchedAgentItem) => void;
   /** The newest list fetch failed. */
   error?: boolean;
 }) {
-  const { coding, work, other, showCoding, showActivity } = panelSections(list, live);
+  const { coding, work, launched, other, showCoding, showActivity } = panelSections(list, live);
   if (list === null) {
     return error ? <p role="status" data-activity-error className="px-0.5 text-[12.5px] text-ink-tertiary">{t("botPanel.coding.error")}</p> : null;
   }
@@ -292,6 +303,7 @@ export function PanelSections({ list, live, actions, onOpenHistory, error = fals
             name="coding"
             onOpenHistory={onOpenHistory}
           />
+          {launched.length > 0 && onOpenLaunched && <LaunchedAgentsList items={launched} onOpen={onOpenLaunched} />}
           {coding.length > 0 && <ActivityList items={coding} error={false} {...actions} where={codingWhere} />}
           <CodeWorkList work={work} now={actions.now ?? Date.now()} />
         </section>
@@ -368,7 +380,10 @@ export function ActivitySection({ bot }: { bot: Bot }) {
   // The bot's threads changed (a turn started or settled, a hop arrived):
   // what the lists show changed too.
   useEffect(() => { void refresh(); }, [refresh, signature]);
-  const active = Boolean(list && [...list.items, ...list.subagents].some((item) => activityStatusActive(item.status)));
+  const active = Boolean(list && (
+    [...list.items, ...list.subagents].some((item) => activityStatusActive(item.status))
+    || (list.launchedAgents ?? []).some((item) => activityStatusActive(item.status))
+  ));
   useEffect(() => {
     const timer = window.setInterval(() => { void refresh(); }, active ? POLL_ACTIVE_MS : POLL_IDLE_MS);
     return () => window.clearInterval(timer);
@@ -394,10 +409,16 @@ export function ActivitySection({ bot }: { bot: Bot }) {
 
   const live = tracker.current.view();
   const actions: CardActions = { onOpen: setOpen, onStop: stop, stopping, now, fading: live.fading };
+  const openLaunched = useCallback((item: BotLaunchedAgentItem) => {
+    if (!item.threadId) return;
+    loadBotActivityDetail(api, item.targetBotId, item.id)
+      .then((detail) => setOpen(detail))
+      .catch(() => {});
+  }, []);
 
   return (
     <>
-      <PanelSections list={list} live={live} actions={actions} onOpenHistory={setAll} error={error} />
+      <PanelSections list={list} live={live} actions={actions} onOpenHistory={setAll} onOpenLaunched={openLaunched} error={error} />
       {all && (
         <ActivityListModal
           botId={bot.id}
