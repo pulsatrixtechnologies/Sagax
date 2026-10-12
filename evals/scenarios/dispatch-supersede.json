@@ -13,6 +13,7 @@
       "name": "Clive",
       "section": "Leadership",
       "chiefOfStaff": true,
+      "backgroundReplies": false,
       "managedSections": [
         "Engineering"
       ],
