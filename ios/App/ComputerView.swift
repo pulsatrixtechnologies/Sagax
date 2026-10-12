@@ -66,10 +66,6 @@ struct ComputerView: View {
     private var fit: ComputerFit { ComputerFit(rawValue: fitRaw) ?? .fit }
     private var streamFrame: ScreenFrame? { session.state.screens[bot.id] }
     private var isEmbeddedPanel: Bool { embeddedWidth != nil }
-<<<<<<< ours
-
-=======
->>>>>>> theirs
     /// The bot as the stream last described it.
     private var current: Bot { session.state.bot(bot.id) ?? bot }
     private var offline: Bool {
@@ -173,8 +169,6 @@ struct ComputerView: View {
             computerName: chosen?.name
         )
         .id(chosen?.key ?? "current")
-<<<<<<< ours
-=======
     }
 
     /// Organization full-screen computer stages share floating chrome in
@@ -204,7 +198,6 @@ struct ComputerView: View {
         .navigationBarBackButtonHidden(true)
         .background(SwipeBackBridge())
         .preferredColorScheme(.dark)
->>>>>>> theirs
     }
 
     /// Organization Cloud: the server-environment desktop (SandboxDesktopView).
@@ -854,13 +847,8 @@ struct LocalVmComputerChrome {
         )
     }
 
-<<<<<<< ours
-    /// The bot panel's Computer tab on iPhone: same navy card as the name
-    /// block and tab bar, not the full-screen black stage.
-=======
     /// The bot panel's Computer tab on iPhone: navy card colours on the stage
     /// frame, not the full-screen black ink.
->>>>>>> theirs
     static var panel: LocalVmComputerChrome {
         LocalVmComputerChrome(
             ink: Theme.textPrimary,
