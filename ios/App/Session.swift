@@ -1199,6 +1199,13 @@ final class Session: ObservableObject {
     // the source of truth, and a phone that draws its own version of events
     // is a phone that disagrees with the laptop.
 
+    /// The widget's change, as an approval card in this conversation.
+    func requestCwAction(_ action: CwActionBody, threadId: String, botId: String?) async {
+        await perform { client in
+            try await client.requestCwAction(threadId: threadId, action: action, botId: botId)
+        }
+    }
+
     func send(_ text: String, to chat: Chat) async {
         let connectionID = client?.connection.id
         var receipt: SendReceipt?

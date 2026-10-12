@@ -48,6 +48,8 @@ export function isToolActivityRow(message: Message): boolean {
   if (failedTurnCause(message.tool.name) !== null) return false;
   if (isStatusActivity(message)) return false;
   if (message.comm || message.threadRef) return false;
+  // A ConnectWise widget is the row. The tool chip stays in the fold.
+  if (message.tool.widget) return false;
   return true;
 }
 

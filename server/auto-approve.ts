@@ -141,6 +141,7 @@ export type AutoVerdictSource =
   | "explicit-approval-block"
   | "outbound-guard"
   | "allow-rule"
+  | "widget-approval"
   | "no-grant";
 
 export interface AutoVerdict {
@@ -166,6 +167,9 @@ export function autoVerdict(
     /** The person saved an Allow rule for this exact gated MCP tool
      * (BotRecord.alwaysAllow "mcp:<server>__<tool>"). */
     ruleAllowed?: boolean;
+    /** The person allowed this exact ConnectWise change on a widget's
+     * approval card (server/cw-widget-actions.ts): one write, one record. */
+    widgetApproved?: boolean;
   },
 ): AutoVerdict {
   // A question is for a person, whatever channel it arrived on — and
@@ -174,6 +178,7 @@ export function autoVerdict(
   if (ASKS_A_PERSON.has(bareToolName(tool))) {
     return { approve: null, source: "no-grant" };
   }
+  if (context?.widgetApproved) return { approve: `approved ${tool} (approved in the ConnectWise widget)`, source: "widget-approval" };
   // Full's promise is literal: even a sandbox widening is approved. Entering
   // Full is separately consent-gated by the bot PATCH endpoint, and the
   // request.opened caller invokes this for permissions only, never questions.

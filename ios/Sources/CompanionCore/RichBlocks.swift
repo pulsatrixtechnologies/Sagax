@@ -18,7 +18,7 @@
 import Foundation
 
 public enum RichFenceKind: String, Sendable {
-    case email, widget, chart, csv
+    case email, widget, chart, csv, cw
 }
 
 public enum RichBlocks {
@@ -27,6 +27,7 @@ public enum RichBlocks {
         "widget": .widget, "html-widget": .widget, "artifact": .widget,
         "chart": .chart,
         "csv": .csv, "tsv": .csv,
+        "cw": .cw,
     ]
 
     /// The rich renderer a fence language asks for, if any.
@@ -860,7 +861,7 @@ extension RichBlocks {
         return -1
     }
 
-    private static let wideFence = JS.regex(#"(^|\n) {0,3}(?:`{3,}|~{3,})[ \t]*(?:email|mail|eml|widget|html-widget|artifact|chart|csv|tsv|mermaid)\b"#, [.caseInsensitive])
+    private static let wideFence = JS.regex(#"(^|\n) {0,3}(?:`{3,}|~{3,})[ \t]*(?:email|mail|eml|widget|html-widget|artifact|chart|csv|tsv|mermaid|cw)\b"#, [.caseInsensitive])
     private static let tableRule = JS.regex(#"(^|\n)\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?\s*(\n|$)"#)
     private static let antArtifactWide = JS.regex(#"<antArtifact\b"#, [.caseInsensitive])
 
@@ -1105,6 +1106,7 @@ extension RichBlocks {
         var trimmed = body
         if trimmed.hasPrefix("\n") { trimmed = String(trimmed.dropFirst()) }
         if trimmed.hasSuffix("\n") { trimmed = String(trimmed.dropLast()) }
+        if type == "application/vnd.sagax.cw+json" { return fenced("cw", trimmed) }
         if type == "application/vnd.ant.mermaid" || type == "text/mermaid" { return fenced("mermaid", trimmed) }
         if type == "text/markdown" { return trimmed }
         if type.contains("chart") || looksLikeChart(trimmed) { return fenced("chart", trimmed) }

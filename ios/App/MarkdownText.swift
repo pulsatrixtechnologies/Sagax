@@ -38,6 +38,10 @@ struct MarkdownText: View {
     /// bubbles pass `message-<id>-scroll`. Streaming and file preview pass nil.
     var scrollIdentifier: String? = nil
     var openLink: ((URL) -> OpenURLAction.Result)?
+    /// A ```cw fence asks for approval through this. Nil leaves the card read-only.
+    var cwAsk: ((CwActionBody) -> Void)? = nil
+    var cwThreadId: String? = nil
+    var cwBotId: String? = nil
     /// @mentions of these peers are tinted (MS21), as the desktop's
     /// `remarkMentions` does; links and code spans are left alone.
     var mentions: [MentionPeer] = []
@@ -251,7 +255,9 @@ struct MarkdownText: View {
         let kind = RichBlocks.fenceKind(lang)
         let email = kind == .email || kind == nil ? RichBlocks.parseEmailBlock(code, lang: lang) : nil
         let csv = kind == .csv && !pending ? MarkdownTable.delimited(code, language: lang) : nil
-        if lang.trimmingCharacters(in: .whitespaces).lowercased() == "mermaid" {
+        if kind == .cw, let widget = CwWidget.parse(code) {
+            CwWidgetCard(widget: widget, threadId: cwThreadId, botId: cwBotId, ask: cwAsk)
+        } else if lang.trimmingCharacters(in: .whitespaces).lowercased() == "mermaid" {
             MermaidBlockView(code: code, identifier: identifier)
         } else if let email {
             EmailCardView(draft: email, pending: pending, identifier: identifier)

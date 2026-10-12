@@ -29,6 +29,7 @@ final class ClaudeChatBlocksTests: XCTestCase {
     }
 
     func testRoutesHTMLAndSVGToAWidgetMermaidToMermaidMarkdownThroughReactToACodeFence() {
+        XCTAssertEqual(RichBlocks.antArtifactToMarkdown("type=\"application/vnd.sagax.cw+json\"", "{\"family\":\"ticket\"}"), "```cw\n{\"family\":\"ticket\"}\n```")
         XCTAssertEqual(RichBlocks.antArtifactToMarkdown("type=\"text/html\" title=\"Hi\"", "<p>x</p>"), "```widget\n<p>x</p>\n```")
         XCTAssertEqual(RichBlocks.antArtifactToMarkdown("type=\"image/svg+xml\"", "<svg></svg>"), "```widget\n<svg></svg>\n```")
         XCTAssertEqual(RichBlocks.antArtifactToMarkdown("type=\"application/vnd.ant.mermaid\"", "graph TD; A-->B"), "```mermaid\ngraph TD; A-->B\n```")

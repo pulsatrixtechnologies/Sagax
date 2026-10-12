@@ -269,7 +269,7 @@ describe("composioSystemPrompt", () => {
 
 describe("RICH_OUTPUT_PROMPT", () => {
   it("teaches every fence the chat renders, and the sandbox rules", () => {
-    for (const fence of ["```email", "```chart", "```csv", "```widget", "```artifact", "```mermaid", "[!NOTE]"]) {
+    for (const fence of ["```email", "```chart", "```csv", "```widget", "```artifact", "```mermaid", "```cw", "[!NOTE]"]) {
       expect(RICH_OUTPUT_PROMPT).toContain(fence);
     }
     expect(RICH_OUTPUT_PROMPT).toMatch(/To:, Cc:, Bcc: and Subject:/);

@@ -180,6 +180,7 @@ export const RICH_OUTPUT_PROMPT =
   + " For a chart, use a ```chart fence holding JSON such as {\"type\":\"bar\",\"title\":\"Tickets\",\"labels\":[\"Mon\",\"Tue\"],\"series\":[{\"name\":\"Opened\",\"data\":[4,7]}]} (type bar, line, area or pie) or CSV with a header row; for a large dataset, a ```csv fence becomes a sortable, filterable table."
   + " For an interactive tool (calculator, simulator, small form or visualization), use a ```widget fence with self-contained HTML, CSS and inline JavaScript; it runs in a sandbox with no network access, so inline all data and never load external scripts, fonts or images."
   + " When you have a hosted page the person can open, put it in one ```artifact fence holding JSON such as {\"title\":\"Report\",\"url\":\"https://example.com/page\"} (a real https URL only, never invented); it shows as a card with Open."
+  + " To show ConnectWise records (tickets, time entries, schedule, agreements or companies), use one ```cw fence holding the widget JSON (family, view, records). A change from that card waits for the person's approval; do not write to ConnectWise from the fence yourself."
   + " To show an image, video or document, attach it or link its absolute path; a remote image loads only after the person allows it.";
 
 export const CREDENTIAL_PROMPT =

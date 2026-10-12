@@ -37,7 +37,7 @@ import {
 } from "./prompt-split.ts";
 import type { PromptSplitReceipt } from "./prompt-split.ts";
 import { SPAWNED_PROXIES } from "../proxy-paths.ts";
-import { commandSummary, toolDetailPreview } from "../tool-summary.ts";
+import { commandSummary, cwToolResult, toolDetailPreview } from "../tool-summary.ts";
 import { filesField, writtenFilesFromToolInput } from "../thread-files.ts";
 
 import type {
@@ -1027,6 +1027,7 @@ export const PiDriver: ProviderDriver<PiConfig> = {
               itemId: evt.toolCallId,
               ok: !evt.isError,
               output: toolDetailPreview(evt.result),
+              ...(evt.isError ? {} : cwToolResult(typeof evt.toolName === "string" ? evt.toolName : undefined, evt.result)),
             });
             return;
           }

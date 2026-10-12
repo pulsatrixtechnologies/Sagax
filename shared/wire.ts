@@ -18,6 +18,8 @@ import type { MascotBodyId } from "./mascot-bodies.ts";
 import type { MascotColorName } from "./mascot-colors.ts";
 import type { MascotSkinId } from "./mascot-skins.ts";
 import type { MascotLook } from "./mascot-look.ts";
+import type { CwWidget } from "./cw-widgets/types.ts";
+import type { CwAction } from "./cw-widgets/actions.ts";
 import type { MessageReaction } from "./reactions.ts";
 import type { BotCatalogListing } from "./bot-catalog.ts";
 import type { BotPublicProfile } from "./bot-public-profile.ts";
@@ -575,6 +577,8 @@ export interface WireMessage {
     files?: string[];
     /** A call a sub-agent made: the item id of the call that started it. */
     parentItemId?: string;
+    /** A ConnectWise call's result as an in-chat widget (shared/cw-widgets). */
+    widget?: CwWidget;
   };
   /** A bot line a "post" webhook wrote: whoever called the webhook chose
    * its words. On a Cloud home a conversation holding one is someone else's
@@ -761,6 +765,9 @@ export interface OptionCardData {
   botActRequest?: { id: string };
   /** Interactive shell on a terminal-capable resource (approval required). */
   terminalRequest?: TerminalRequestCardData;
+  /** A change asked from a ConnectWise widget, waiting for an Allow
+   * (server/cw-widget-actions.ts). `by` is the principal who asked. */
+  cwActionRequest?: { id: string; action: CwAction; by: string };
 }
 
 /** Which app holds the microphone of a Live call: the desktop app (its own

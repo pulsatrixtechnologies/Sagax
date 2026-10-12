@@ -91,6 +91,7 @@ import { foldCollapsedEntry, voiceCallPlan, voiceCallVisibleSpan } from "@/lib/v
 import { VoiceCallCard } from "./VoiceCallCard";
 import { BotExchangeChip, ExchangeColumnProvider, TranscriptDate, useExchangeColumn } from "./BotExchangeChip";
 import { ActivityRun } from "./ActivityRun";
+import { CwActivityWidgets, CwWidgetView } from "./cw/CwWidgetView";
 import { useDesktopCapabilities, useCaptionChrome, useMacInsetChrome } from "./DesktopCapabilities";
 import { cn } from "@/lib/cn";
 import { shortPath } from "@/lib/short-path";
@@ -400,6 +401,7 @@ function RoomTextMessage({
               ) : botText ? (
                 <div data-citation-source={m.id} data-citation-owner-type="group" data-citation-owner={group.id} data-citation-thread={group.threadId}>
                   <ChatMarkdown
+                    botId={m.from?.botId}
                     text={botText}
                     mentionPeers={members}
                     everyone={!group.dm}
@@ -621,7 +623,8 @@ export const Transcript = memo(function Transcript({
           );
         }
         if (item.kind === "run") {
-          if (!showToolCalls) return null;
+          const hasWidget = item.messages.some((step) => step.tool?.widget);
+          if (!showToolCalls && !hasWidget) return null;
           const cluster = !runs[i]!.joinsAbove;
           return (
             <div key={item.id} className="contents">
@@ -629,13 +632,14 @@ export const Transcript = memo(function Transcript({
               {first.from && cluster && (
                 <ClusterLabel bot={memberOf(first.from.botId)} name={first.from.name} color={first.from.color} />
               )}
-              <ActivityRun messages={item.messages} forceOpen={item.messages.some((step) => step.id === focusedId)}>
+              <CwActivityWidgets messages={item.messages} threadId={group.threadId} botId={first.from?.botId} />
+              {showToolCalls && <ActivityRun messages={item.messages} forceOpen={item.messages.some((step) => step.id === focusedId)}>
                 {item.messages.map((step) => (
                   <div key={step.id} className="contents" data-mid={step.id}>
                     <RoomToolChip message={step} />
                   </div>
                 ))}
-              </ActivityRun>
+              </ActivityRun>}
             </div>
           );
         }
@@ -731,6 +735,11 @@ export const Transcript = memo(function Transcript({
                   ? () => openNotificationTarget(dispatch, routineTarget, state)
                   : undefined}
               />
+            </div>
+          ) : m.kind === "activity" && m.tool?.widget ? (
+            <div className="flex flex-col gap-2">
+              <CwWidgetView widget={m.tool.widget} threadId={group.threadId} botId={m.from?.botId} />
+              {roomActivityVisible(m, showToolCalls) ? <RoomToolChip message={m} roomId={group.id} /> : null}
             </div>
           ) : m.kind === "activity" && m.tool ? (
             roomActivityVisible(m, showToolCalls) ? (

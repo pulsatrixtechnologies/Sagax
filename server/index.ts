@@ -52,6 +52,8 @@ import {
 } from "../shared/approval-mode.ts";
 import { botActFrameAllowed, fillPluginBot, type RouteTarget, type TurnFacts } from "../shared/bot-act.ts";
 import { createBotActService, type BotActAnswerer, type BotActService, type PerformActor } from "./bot-act.ts";
+import { cwActionCard, cwActionLanguage, cwToolWidget, createCwActionPasses } from "./cw-widget-actions.ts";
+import { cwActionInstruction, parseCwAction } from "../shared/cw-widgets/actions.ts";
 import { createApprovalModeSupport } from "./harness-capabilities.ts";
 import { escapeAttribute } from "../src/lib/composer-attachments.ts";
 import { threadRefUrl } from "../src/lib/thread-refs.ts";
@@ -374,7 +376,7 @@ import {
   sendFingerprint,
   SendSequencer,
 } from "./send-idempotency.ts";
-import { EventBus } from "./harness/bus.ts";
+import { EventBus, withoutPrivateFields } from "./harness/bus.ts";
 import { ProviderRegistry } from "./harness/registry.ts";
 import { ManagedDesktopProviders } from "./managed-desktop.ts";
 import { HOST_COMPUTER_REFUSAL, computerKindForResource, ManagedDesktopPolicy, type ComputerKind } from "./managed-policy.ts";
@@ -10567,7 +10569,7 @@ bus.subscribe((event: RuntimeEvent) => {
   if (!privateImageEvent && !dropCancelledVoiceEvent(staleAssistant, event)) {
     // Exact executable input is internal matching metadata, not inspector UI.
     // The event bus's persistence redactor does not scrub its live event.
-    const publicEvent = event.type === "request.opened" ? { ...event, command: undefined } : event;
+    const publicEvent = event.type === "request.opened" ? { ...event, command: undefined } : withoutPrivateFields(event);
     broadcast({ kind: "runtime", event: publicEvent });
   }
   const routineRun = privateImageEvent ? null : (routines?.handleRuntimeEvent(event) ?? null);
@@ -10648,8 +10650,9 @@ bus.subscribe((event: RuntimeEvent) => {
           // dropping it here would silently un-narrate every completed tool
           const existing = store.messagesFor(event.threadId).find((m) => m.id === messageId)?.tool;
           toolName = existing?.name ?? "tool";
+          const widget = event.ok && event.resultText ? cwToolWidget(toolName, existing?.input, event.resultText) : null;
           store.patchMessage(event.threadId, messageId, {
-            tool: { ...existing, name: toolName, ok: event.ok, output: event.output },
+            tool: { ...existing, name: toolName, ok: event.ok, output: event.output, ...(widget ? { widget } : {}) },
           });
           toolMessageByItem.delete(itemKey);
         }
@@ -10753,6 +10756,8 @@ bus.subscribe((event: RuntimeEvent) => {
           sagaxGate: event.sagaxGate === true,
           ruleAllowed: Boolean(gateAllowKey && !adminApproval && !guestDriven && botForThread(asker.id, event.threadId)?.alwaysAllow?.includes(gateAllowKey)),
           commandAllowed: Boolean(command && commandAllowlist.matches(asker.id, command)),
+          widgetApproved: !adminApproval && !guestDriven && !event.requiresExplicitApproval &&
+            cwActionPasses.take(event.threadId, event.mcpTool ?? event.tool, event.input) !== null,
         })
         : null;
       // Auto's reviewer is the engine's own. Claude accepts `--permission-mode
@@ -10802,7 +10807,7 @@ bus.subscribe((event: RuntimeEvent) => {
             if (outcome !== "unavailable") pushMessage({
               role: "bot", kind: "activity",
               tool: outcome === "rejected"
-                ? { name: `The provider rejected this action despite ${verdict.source === "command-allowlist" ? "the saved command permission" : "Full access"}.`, ok: false }
+                ? { name: `The provider rejected this action despite ${verdict.source === "command-allowlist" ? "the saved command permission" : verdict.source === "widget-approval" ? "your approval in the ConnectWise widget" : "Full access"}.`, ok: false }
                 : failedTurnTool("could not deliver approval to the provider; retry the task after reconnecting."),
             });
             return;
@@ -22375,6 +22380,115 @@ async function settleBotActCard(
   return settled ?? { status: 409, body: { error: "The request is no longer open." } };
 }
 
+const cwActionPasses = createCwActionPasses();
+
+function cwActionActor(auth: RequestAuth): PerformActor | null {
+  if (auth.kind === "session") {
+    return { kind: "person", sessionId: auth.session.id, personKey: personKey(auth.session), scopes: [...auth.session.scopes] };
+  }
+  return auth.kind === "loopback" && auth.trust !== "service" ? { kind: "operator" } : null;
+}
+
+/** A ConnectWise widget asks for a change (server/cw-widget-actions.ts): an
+ * approval card for the bot's owner, never a write. */
+async function requestCwAction(auth: RequestAuth, threadId: string, body: Record<string, unknown>): Promise<{ status: number; body: Record<string, unknown> }> {
+  const action = parseCwAction(body.action);
+  if (!action) return { status: 400, body: { error: "action is not a ConnectWise change this widget can ask for" } };
+  const group = store.groupByThread(threadId);
+  let bot: BotRecord | undefined;
+  if (group) {
+    if (group.peopleDm) return { status: 404, body: { error: "no such conversation" } };
+    if (IDENTITY.kind === "perspicax" && !groupPostAllowed(group, channelViewerId(auth))) {
+      return { status: 403, body: { error: "you may read this channel, not post in it", code: "read_only" } };
+    }
+    const botId = typeof body.botId === "string" ? body.botId : "";
+    if (!group.memberIds.includes(botId)) return { status: 400, body: { error: "botId must name a bot of this group" } };
+    bot = store.bot(botId) ?? undefined;
+  } else {
+    const owner = store.botByThread(threadId);
+    if (!owner) return { status: 404, body: { error: "no such conversation" } };
+    try {
+      routeThreadId(owner, threadId, "thread.post");
+    } catch (error) {
+      const status = (error as { status?: number }).status ?? 403;
+      return { status, body: { error: status === 404 ? "no such conversation" : "you may not post in this conversation" } };
+    }
+    bot = botForThread(owner.id, threadId) ?? owner;
+  }
+  if (!bot) return { status: 404, body: { error: "no such bot" } };
+  const audience = approvalAudience({ ownerUserId: approvalOwnerId(bot), host: approvalHostOf(bot) });
+  if (!cwActionActor(auth) || approvalAnswerStatus({ question: false, audience, callerUserId: approvalCallerUserId(auth) }) === 403) {
+    return { status: 403, body: { error: "Only the bot owner can approve a ConnectWise change.", code: "cw_action_owner_only" } };
+  }
+  const language = cwActionLanguage(cfg.language);
+  const card = cwActionCard(action, language, actorPrincipalId(auth));
+  const plain = approvalPlain({ botName: bot.name, tool: "cw_psa__write", toolInput: card.toolInput, detail: card.summary }, serverApprovalWords(cfg.language));
+  const message = store.appendMessage(threadId, {
+    role: "bot",
+    kind: "options",
+    from: { botId: bot.id, name: bot.name, color: bot.color },
+    card: {
+      title: "Approval needed",
+      subtitle: card.summary,
+      options: ["Allow", "Deny"],
+      requestId: card.requestId,
+      requestType: "permission",
+      tool: "cw_psa__write",
+      toolInput: card.toolInput,
+      ...(plain ? { plain } : {}),
+      cwActionRequest: card.cwActionRequest,
+    },
+  });
+  return { status: 201, body: { requestId: card.requestId, messageId: message.id } };
+}
+
+/** Allow on a widget's card: the person asks the bot for that one write and
+ * the write is let through once. Deny only closes the card. Null when the
+ * card is not a widget's. */
+async function resolveAndSendCwAction(
+  res: ServerResponse,
+  auth: RequestAuth,
+  threadId: string,
+  requestId: string,
+  behavior: string,
+): Promise<boolean> {
+  const message = store.messagesFor(threadId).find((row) => row.card?.requestId === requestId && row.card.cwActionRequest);
+  const card = message?.card;
+  if (!message || !card?.cwActionRequest) return false;
+  if (card.answered || card.dismissed || card.expired) {
+    json(res, 409, { error: "The request is no longer open." });
+    return true;
+  }
+  const action = parseCwAction(card.cwActionRequest.action);
+  const actor = cwActionActor(auth);
+  if (behavior !== "allow" || !action || !actor) {
+    store.patchMessage(threadId, message.id, { card: { ...card, answered: "deny" } });
+    json(res, 200, { ok: true, outcome: "rejected" });
+    return true;
+  }
+  const botId = message.from?.botId ?? store.botByThread(threadId)?.id;
+  const bot = botId ? store.bot(botId) : undefined;
+  if (!bot) {
+    json(res, 409, { error: "This bot is no longer here." });
+    return true;
+  }
+  store.patchMessage(threadId, message.id, { card: { ...card, answered: "allow" } });
+  cwActionPasses.grant(threadId, action);
+  const text = cwActionInstruction(action, cwActionLanguage(cfg.language));
+  const group = store.groupByThread(threadId);
+  const sent = await performBotActRoute(actor, group
+    ? { kind: "route", method: "POST", path: `/api/groups/${group.id}/messages`, body: { text: `@${bot.name} ${text}`, threadId } }
+    : { kind: "route", method: "POST", path: `/api/bots/${bot.id}/messages`, body: { text, threadId } });
+  if (sent.status >= 300) {
+    cwActionPasses.revoke(threadId, action);
+    store.patchMessage(threadId, message.id, { card });
+    json(res, 502, { error: "The bot could not be asked to make this change. Try again." });
+    return true;
+  }
+  json(res, 200, { ok: true, outcome: "allowed-once" });
+  return true;
+}
+
 async function performBotActRoute(actor: PerformActor, target: RouteTarget): Promise<{ status: number; text: string }> {
   if (target.path === "/api/internal" || target.path.startsWith("/api/internal/") || target.path === "/api/testing" || target.path.startsWith("/api/testing/")) {
     return { status: 400, text: "That path is not available." };
@@ -30577,6 +30691,14 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       });
     }
 
+    m = path.match(/^\/api\/threads\/([\w-]+)\/cw-actions$/);
+    if (m && method === "POST") {
+      const body = await readBody(req);
+      if (!body || typeof body !== "object" || Array.isArray(body)) return json(res, 400, { error: "body must be a JSON object" });
+      const asked = await requestCwAction(auth, m[1], body);
+      return json(res, asked.status, asked.body);
+    }
+
     // Read receipts (server/read-receipts.ts): GET answers the positions
     // this person may see and which one is theirs; POST moves their own,
     // forward only, to a message their app showed them.
@@ -34470,6 +34592,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       }
       return await answeringCardAs(auth, bot.threadId, String(body.requestId), async () => {
         if (resolveAndSendTrust(res, bot.threadId, String(body.requestId), behavior)) return;
+        if (await resolveAndSendCwAction(res, auth, bot.threadId, String(body.requestId), behavior)) return;
         if (await resolveAndSendTeamSetup(res, {
           botId: bot.id, threadId: bot.threadId, requestId: String(body.requestId), behavior,
         }, auth.kind === "loopback" ? DESKTOP_MANAGED || Boolean(req.headers.origin) && !store.bots.some((bot) => bot.busy || activeGroupTurnForBot(bot.id)) : auth.scopes.includes("admin"))) return;
@@ -34576,6 +34699,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       }
       return await answeringCardAs(auth, threadId, requestId, async () => {
         if (resolveAndSendTrust(res, threadId, requestId, behavior)) return;
+        if (await resolveAndSendCwAction(res, auth, threadId, requestId, behavior)) return;
         const skillCard = store.messagesFor(threadId).find(
           (message) => message.card?.requestId === requestId && message.card.skillRequest,
         );

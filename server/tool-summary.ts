@@ -2,6 +2,7 @@
 // show. Redacted before it is cut: a command line is where credentials get
 // pasted, and a key sliced in half would slip past the shapes redaction knows.
 import { MAX_QUESTION_TEXT } from "../shared/ask-question.ts";
+import { cwResultText, isCwTool } from "../shared/cw-widgets/tool-call.ts";
 import { redactSecrets, redactSecretsInText } from "./redact.ts";
 
 /** Display-only excerpt, never the raw protocol payload. Bound traversal and
@@ -44,6 +45,15 @@ export function toolDetailPreview(value: unknown): string | undefined {
   const text = typeof safe === "string" ? safe : JSON.stringify(safe, null, 2);
   if (!text?.trim() || text === "{}" || text === "[]") return undefined;
   return text.length > 6_000 ? `${text.slice(0, 6_000)}\n[… preview shortened]` : text;
+}
+
+/** The whole result of a ConnectWise call, for its in-chat widget (the
+ * preview above is cut at 6,000 characters). Server-private: index.ts reads
+ * it when the call completes and drops it before any broadcast or log. */
+export function cwToolResult(toolName: string | undefined, value: unknown): { resultText: string } | Record<string, never> {
+  if (!toolName || !isCwTool(toolName)) return {};
+  const resultText = cwResultText(value);
+  return resultText ? { resultText } : {};
 }
 
 const LIMIT = 200;

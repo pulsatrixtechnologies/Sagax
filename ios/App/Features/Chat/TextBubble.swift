@@ -11,6 +11,7 @@ struct TextBubble: View {
     /// View Source: the bot's markdown as written, monospaced (MS3).
     var showingSource = false
     let openLink: (URL, Message) -> OpenURLAction.Result
+    var cwAsk: ((CwActionBody) -> Void)? = nil
     @Environment(\.messageActions) private var context
     /// The desktop's bubble cap on iPad (nil on the iPhone).
     @Environment(\.desktopBubbleCap) private var bubbleCap
@@ -161,7 +162,10 @@ struct TextBubble: View {
                         scrollIdentifier: "message-\(message.id)-scroll",
                         mentions: context.mentionPeers,
                         mentionEveryone: context.mentionEveryone,
-                        attachmentScope: (chat.threadId, message.id)
+                        attachmentScope: (chat.threadId, message.id),
+                        cwAsk: cwAsk,
+                        cwThreadId: chat.threadId,
+                        cwBotId: message.from?.botId
                     ) { url in
                         openLink(url, message)
                     }

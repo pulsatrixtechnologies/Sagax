@@ -64,6 +64,8 @@ import {
   unclosedFenceOffset,
   type CalloutKind,
 } from "../lib/rich-blocks";
+import { parseCwWidgetText } from "../../shared/cw-widgets/validate.ts";
+import { CwWidgetView } from "./cw/CwWidgetView";
 import { ArtifactCard } from "./ArtifactCard";
 import { EmailCard } from "./EmailCard";
 import { WidgetFrame } from "./WidgetFrame";
@@ -1070,8 +1072,8 @@ const MAY_LINK_THREAD = /#|openmausbot|sagax/i;
 const NO_THREAD_REFS: ThreadRefsValue = { threads: [] };
 
 /** Render message Markdown with math, protected code, scoped attachments, and mentions. */
-function ChatMarkdownComponent({ text, message, mentionPeers = NO_MENTION_PEERS, everyone = false, youtubeSendToBot }: {
-  text: string; message?: MessageAttachmentContext;
+function ChatMarkdownComponent({ text, message, botId, mentionPeers = NO_MENTION_PEERS, everyone = false, youtubeSendToBot }: {
+  text: string; message?: MessageAttachmentContext; botId?: string;
   mentionPeers?: readonly MentionPeer[]; everyone?: boolean;
   /** When set, the YouTube widget can hand a fetched transcript to the bot. */
   youtubeSendToBot?: (text: string) => void;
@@ -1146,6 +1148,10 @@ function ChatMarkdownComponent({ text, message, mentionPeers = NO_MENTION_PEERS,
           return <MermaidDiagram code={code} />;
         }
         const kind = richFenceKind(lang);
+        if (kind === "cw" && !pending) {
+          const widget = parseCwWidgetText(code);
+          if (widget) return <CwWidgetView widget={widget} threadId={threadId} botId={botId} />;
+        }
         const email = kind === "email" || !kind ? parseEmailBlock(code, lang) : null;
         if (email) return <EmailCard draft={email} pending={pending} />;
         if (kind === "widget") {
@@ -1339,7 +1345,7 @@ function ChatMarkdownComponent({ text, message, mentionPeers = NO_MENTION_PEERS,
         return <hr className="border-hairline/40" />;
       },
     } as Components;
-  }, [threadId, messageId, threads, currentBotId, openFence, prefix]);
+  }, [threadId, messageId, botId, threads, currentBotId, openFence, prefix]);
   return (
     <div className="chat-md min-w-0 [&>*+*]:mt-2">
       <Markdown
@@ -1377,4 +1383,5 @@ export const ChatMarkdown = memo(ChatMarkdownComponent, (previous, next) => (
   && previous.message?.threadId === next.message?.threadId
   && previous.message?.messageId === next.message?.messageId
   && previous.youtubeSendToBot === next.youtubeSendToBot
+  && previous.botId === next.botId
 ));

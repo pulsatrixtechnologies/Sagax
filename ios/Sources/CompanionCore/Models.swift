@@ -189,6 +189,52 @@ public struct ToolActivity: Codable, Hashable, Sendable {
     /// The driver's one-line summary: for a shell step, the command itself.
     /// The run card (`verify-steps.ts` `commandOf`) reads its steps here.
     public var summary: String?
+    /// A ConnectWise widget drawn in place of the quiet tool chip. A bad
+    /// widget is dropped; the rest of the activity still decodes.
+    public var widget: CwWidget?
+
+    public init(name: String, ok: Bool? = nil, spoken: String? = nil, setup: Bool? = nil, claudeUpdate: Bool? = nil, output: String? = nil, summary: String? = nil, widget: CwWidget? = nil) {
+        self.name = name
+        self.ok = ok
+        self.spoken = spoken
+        self.setup = setup
+        self.claudeUpdate = claudeUpdate
+        self.output = output
+        self.summary = summary
+        self.widget = widget
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case name, ok, spoken, setup, claudeUpdate, output, summary, widget
+    }
+
+    public init(from decoder: Decoder) throws {
+        let box = try decoder.container(keyedBy: CodingKeys.self)
+        name = try box.decode(String.self, forKey: .name)
+        ok = try box.decodeIfPresent(Bool.self, forKey: .ok)
+        spoken = try box.decodeIfPresent(String.self, forKey: .spoken)
+        setup = try box.decodeIfPresent(Bool.self, forKey: .setup)
+        claudeUpdate = try box.decodeIfPresent(Bool.self, forKey: .claudeUpdate)
+        output = try box.decodeIfPresent(String.self, forKey: .output)
+        summary = try box.decodeIfPresent(String.self, forKey: .summary)
+        do {
+            widget = try box.decodeIfPresent(CwWidget.self, forKey: .widget)
+        } catch {
+            widget = nil
+        }
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var box = encoder.container(keyedBy: CodingKeys.self)
+        try box.encode(name, forKey: .name)
+        try box.encodeIfPresent(ok, forKey: .ok)
+        try box.encodeIfPresent(spoken, forKey: .spoken)
+        try box.encodeIfPresent(setup, forKey: .setup)
+        try box.encodeIfPresent(claudeUpdate, forKey: .claudeUpdate)
+        try box.encodeIfPresent(output, forKey: .output)
+        try box.encodeIfPresent(summary, forKey: .summary)
+        try box.encodeIfPresent(widget, forKey: .widget)
+    }
 
     /// The output worth expanding the chip for; nil when there is none.
     public var expandableOutput: String? {

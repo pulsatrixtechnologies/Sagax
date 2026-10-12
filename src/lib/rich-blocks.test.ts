@@ -264,6 +264,7 @@ describe("markdown extras", () => {
   it("widens bubbles for tables and rich fences only", () => {
     expect(prefersWideBubble("| a | b |\n| --- | --- |\n| 1 | 2 |")).toBe(true);
     expect(prefersWideBubble("```chart\n{}\n```")).toBe(true);
+    expect(prefersWideBubble("```cw\n{}\n```")).toBe(true);
     expect(prefersWideBubble('<antArtifact type="text/html"><p>x</p></antArtifact>')).toBe(true);
     expect(prefersWideBubble("```js\nx\n```\nplain prose")).toBe(false);
   });

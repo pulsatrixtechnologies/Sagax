@@ -78,12 +78,13 @@ import type {
 } from "../../contracts.ts";
 import { newEventId, newId, TurnNotStartedError } from "../../contracts.ts";
 import { augmentedPath } from "../../env-path.ts";
+import { isCwTool } from "../../../shared/cw-widgets/tool-call.ts";
 import { supportsApprovalMode } from "../../../shared/approval-mode.ts";
 import { MAX_QUESTION_TEXT, parseAskQuestions, parseChoices, questionAnswersByQuestion } from "../../../shared/ask-question.ts";
 
 import { appendNative } from "../native.ts";
 import { acpPermissionCommand, permissionLaunchCwd } from "../permission-command.ts";
-import { commandSummary, toolDetailPreview } from "../../tool-summary.ts";
+import { commandSummary, cwToolResult, toolDetailPreview } from "../../tool-summary.ts";
 import { acpWrittenFiles, filesField } from "../../thread-files.ts";
 import { extractMcpImages } from "../../mcp-tool-images.ts";
 import { redactSecretsInText } from "../../redact.ts";
@@ -179,6 +180,8 @@ interface AcpTurn {
   };
   /** inputs of this turn's tool calls by id, for onToolCompleted */
   toolInputs?: Map<string, unknown>;
+  /** ConnectWise calls of this turn by id, for their widget */
+  cwToolNames?: Map<string, string>;
   acknowledge: () => void;
   asks: Map<string, AcpAskFinish>;
   /** Tool calls the agent started and has not yet reported finished. A tool
@@ -1690,6 +1693,9 @@ export function createAcpDriver(support: AcpSupport): ProviderDriver<AcpConfig> 
               if (support.onToolCompleted && typeof u.toolCallId === "string" && u.rawInput !== undefined) {
                 (current.toolInputs ??= new Map()).set(u.toolCallId, u.rawInput);
               }
+              if (typeof u.toolCallId === "string" && typeof u.title === "string" && isCwTool(u.title)) {
+                (current.cwToolNames ??= new Map()).set(u.toolCallId, u.title);
+              }
               emit({
                 ...base(threadId, current.turnId),
                 type: "item.started",
@@ -1720,7 +1726,11 @@ export function createAcpDriver(support: AcpSupport): ProviderDriver<AcpConfig> 
                   itemId: (typeof u.toolCallId === "string" && u.toolCallId) ? u.toolCallId : current.unkeyedToolIds.shift(),
                   ok: u.status !== "failed",
                   output: toolDetailPreview(u.rawOutput ?? u.content),
+                  ...(u.status === "completed" && typeof u.toolCallId === "string"
+                    ? cwToolResult(current.cwToolNames?.get(u.toolCallId), u.rawOutput ?? u.content)
+                    : {}),
                 });
+                if (typeof u.toolCallId === "string") current.cwToolNames?.delete(u.toolCallId);
                 for (const img of extractMcpImages(u.content ?? u.rawOutput)) {
                   emit({ ...base(threadId, current.turnId), type: "item.completed", itemType: "assistant_image", data: img.data });
                 }

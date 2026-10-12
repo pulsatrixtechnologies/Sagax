@@ -114,7 +114,7 @@ enum DesktopChatMetrics {
 
     /// rich-blocks.ts `prefersWideBubble`: a table rule or a rich fence.
     static func prefersWide(_ text: String) -> Bool {
-        text.range(of: #"(^|\n) {0,3}(?:`{3,}|~{3,})[ \t]*(?:email|mail|eml|widget|html-widget|artifact|chart|csv|tsv|mermaid)\b"#,
+        text.range(of: #"(^|\n) {0,3}(?:`{3,}|~{3,})[ \t]*(?:email|mail|eml|widget|html-widget|artifact|chart|csv|tsv|mermaid|cw)\b"#,
                    options: [.regularExpression, .caseInsensitive]) != nil
             || text.range(of: #"(^|\n)\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?\s*(\n|$)"#, options: .regularExpression) != nil
     }

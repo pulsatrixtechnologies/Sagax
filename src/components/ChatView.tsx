@@ -123,6 +123,7 @@ import { VoiceCallCard } from "./VoiceCallCard";
 import { BotExchangeChip, ExchangeColumnProvider, TranscriptDate, useExchangeColumn } from "./BotExchangeChip";
 import { StatusActivityRow } from "@/components/StatusActivityRow";
 import { ActivityRun } from "./ActivityRun";
+import { CwActivityWidgets, CwWidgetView } from "./cw/CwWidgetView";
 import { TurnNarrationRun } from "./TurnNarrationRun";
 import { webhookMessageView } from "@/lib/webhook-message";
 import { splitTranscriptAttachments } from "@/lib/composer-attachments";
@@ -694,6 +695,7 @@ const Bubble = memo(function Bubble({
               ) : text ? (
                 <div data-citation-source={message.id} data-citation-owner-type="bot" data-citation-owner={botId} data-citation-thread={threadId}>
                   <ChatMarkdown
+                    botId={botId}
                     text={text}
                     mentionPeers={mentionPeers}
                     message={{ threadId, messageId: message.id }}
@@ -1070,17 +1072,19 @@ const MessagesList = memo(function MessagesList({
           );
         }
         if (item.kind === "run") {
-          if (!showToolCalls) return null;
+          const hasWidget = item.messages.some((step) => step.tool?.widget);
+          if (!showToolCalls && !hasWidget) return null;
           return (
             <div key={item.id} className="contents">
               {newDay && <TranscriptDate at={first.at} />}
-              <ActivityRun messages={item.messages} forceOpen={item.messages.some((step) => step.id === focusedId)}>
+              <CwActivityWidgets messages={item.messages} threadId={threadId} botId={botId} />
+              {showToolCalls && <ActivityRun messages={item.messages} forceOpen={item.messages.some((step) => step.id === focusedId)}>
                 {item.messages.map((step) => (
                   <div key={step.id} className="contents" data-mid={step.id}>
                     <ActivityChip message={step} place={place} />
                   </div>
                 ))}
-              </ActivityRun>
+              </ActivityRun>}
             </div>
           );
         }
@@ -1143,6 +1147,14 @@ const MessagesList = memo(function MessagesList({
                 );
               }
               if (m.parallelTask?.role === "card") return <ParallelTaskCard message={m} botId={botId} />;
+              if (m.tool?.widget) {
+                return (
+                  <>
+                    <CwWidgetView widget={m.tool.widget} threadId={threadId} botId={botId} />
+                    {showToolCalls ? <ActivityChip message={m} place={place} /> : null}
+                  </>
+                );
+              }
               if (!showToolCalls && !m.comm && !m.threadRef) return null;
               return <ActivityChip message={m} place={place} />;
             }
