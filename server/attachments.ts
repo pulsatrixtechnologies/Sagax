@@ -15,6 +15,7 @@ import {
 import { link, open, unlink } from "node:fs/promises";
 import { join, extname } from "node:path";
 import { DATA_DIR } from "./config.ts";
+import { UploadContentError, assertContentMatches, checkUploadedFile } from "./upload-content-check.ts";
 
 export const ATTACHMENTS_DIR = join(DATA_DIR, "attachments");
 
@@ -70,7 +71,7 @@ function invalidateAttachmentAccounting(): void {
 }
 
 /** Mimes the endpoint accepts, mapped to the extension stored on disk.
- * Sniffing is not attempted — a lie here only changes the filename. */
+ * The real bytes are checked against the claimed mime (upload-content-check.ts). */
 const IMAGE_MIMES: Record<string, string> = {
   "image/png": ".png",
   "image/jpeg": ".jpg",
@@ -536,6 +537,12 @@ export async function saveFile(
       await file.close();
       closed = true;
       try {
+        await checkUploadedFile(partialPath, normalized);
+      } catch (error) {
+        if (error instanceof UploadContentError) throw statusError(error.status, error.message);
+        throw error;
+      }
+      try {
         const accountingVersion = attachmentAccountingVersion;
         await link(partialPath, path);
         addCommittedBytes(bytes, accountingVersion);
@@ -571,6 +578,12 @@ export function saveImage(bytes: Buffer, mime: string, requestedUploadId?: strin
   if (bytes.byteLength === 0) throw Object.assign(new Error("empty image"), { status: 400 });
   if (bytes.byteLength > IMAGE_MAX_BYTES) {
     throw Object.assign(new Error(`image exceeds ${IMAGE_MAX_BYTES} bytes`), { status: 413 });
+  }
+  try {
+    assertContentMatches(mime.split(";")[0]!.trim().toLowerCase(), bytes.subarray(0, 4100));
+  } catch (error) {
+    if (error instanceof UploadContentError) throw Object.assign(new Error(error.message), { status: error.status });
+    throw error;
   }
   const uploadId = validateAttachmentUploadId(requestedUploadId);
   ensureAttachmentsDir();
