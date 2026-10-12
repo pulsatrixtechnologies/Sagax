@@ -484,10 +484,13 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  # Opt-in for 0.5.0: voice ships behind the full-duplex toggle and no xAI
+  # key is configured yet. Set repo variable SAGAX_VOICE_ACCEPTANCE_GATE=true
+  # to run it (it still does not block assemble until re-added to its needs).
   voice-acceptance:
     name: Real voice acceptance
     needs: prepare
-    if: needs.prepare.outputs.should_release == 'true'
+    if: needs.prepare.outputs.should_release == 'true' && vars.SAGAX_VOICE_ACCEPTANCE_GATE == 'true'
     uses: ./.github/workflows/voice-release-acceptance.yml
     with:
       ref: ${{ needs.prepare.outputs.sha }}
@@ -495,7 +498,7 @@ jobs:
 
   assemble:
     name: Assemble the draft and verify every feed
-    needs: [prepare, ci, mac, windows, linux, voice-acceptance]
+    needs: [prepare, ci, mac, windows, linux]
     if: needs.prepare.outputs.should_release == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 30

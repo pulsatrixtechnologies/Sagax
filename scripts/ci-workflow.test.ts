@@ -87,12 +87,12 @@ describe("CI concurrency", () => {
   it("makes a release wait for its commit's CI gate before any draft", () => {
     const release = parse(readFileSync(new URL("../.github/workflows/release.yml", import.meta.url), "utf8"));
     expect(release.jobs.assemble.needs).toContain("ci");
-    expect(release.jobs.assemble.needs).toContain("voice-acceptance");
+    expect(release.jobs.assemble.needs).not.toContain("voice-acceptance");
     expect(release.jobs["voice-acceptance"].needs).toBe("prepare");
     expect(release.jobs["voice-acceptance"].uses).toBe("./.github/workflows/voice-release-acceptance.yml");
     expect(release.jobs["voice-acceptance"].with.ref).toBe("${{ needs.prepare.outputs.sha }}");
     expect(release.jobs["voice-acceptance"].secrets).toBe("inherit");
-    expect(release.jobs["voice-acceptance"].if).toBe("needs.prepare.outputs.should_release == 'true'");
+    expect(release.jobs["voice-acceptance"].if).toBe("needs.prepare.outputs.should_release == 'true' && vars.SAGAX_VOICE_ACCEPTANCE_GATE == 'true'");
     const voice = parse(readFileSync(new URL("../.github/workflows/voice-release-acceptance.yml", import.meta.url), "utf8"));
     expect(voice.on).toHaveProperty("workflow_call");
     expect(voice.on).toHaveProperty("workflow_dispatch");
