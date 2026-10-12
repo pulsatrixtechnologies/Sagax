@@ -68,7 +68,7 @@ import {
 } from "../shared/approval-mode.ts";
 import { botActFrameAllowed, fillPluginBot, type RouteTarget, type TurnFacts } from "../shared/bot-act.ts";
 import { createBotActService, type BotActAnswerer, type BotActService, type PerformActor } from "./bot-act.ts";
-import { cwActionCard, cwActionLanguage, cwToolWidget, createCwActionPasses } from "./cw-widget-actions.ts";
+import { cwActionCard, cwActionLanguage, cwActionsThreadId, cwToolWidget, createCwActionPasses } from "./cw-widget-actions.ts";
 import { cwActionInstruction, parseCwAction } from "../shared/cw-widgets/actions.ts";
 import { createApprovalModeSupport } from "./harness-capabilities.ts";
 import { escapeAttribute } from "../src/lib/composer-attachments.ts";
@@ -663,6 +663,7 @@ import { createCaptureMailer, createMailer, type Mailer } from "./mailer.ts";
 import { createMailSettingsRoutes } from "./mail-routes.ts";
 import { createVoiceModeRoutes } from "./voice-mode.ts";
 import { installTerminalFeature } from "./terminal-install.ts";
+import { isTerminalSessionUpgrade } from "./routes/terminal.ts";
 import { resolveAndSendTerminal } from "./terminal-requests.ts";
 import { parseVoiceCallMeta, voiceCallSection, voiceCallSteerPrompt, voiceCallTurnPrompt } from "./voice-call-prompt.ts";
 import {
@@ -7872,7 +7873,7 @@ const desktopViewer = createDesktopViewer({
   // voice mode's live call; in-chat terminal WebSocket (server/routes/terminal.ts)
   acceptsUpgrade: (path) =>
     /^\/api\/bots\/[\w-]+\/voice\/(?:listen|speech)$/.test(path)
-    || /^\/api\/terminal\/sessions\/[\w-]+\/ws$/.test(path),
+    || isTerminalSessionUpgrade(path),
   target: (id, auth) => {
     if (id === SANDBOX_VIEWER_TARGET) {
       // The caller's own server environment desktop, never anyone else's.
@@ -31173,11 +31174,11 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       });
     }
 
-    m = path.match(/^\/api\/threads\/([\w-]+)\/cw-actions$/);
-    if (m && method === "POST") {
+    const cwThread = cwActionsThreadId(path, method);
+    if (cwThread) {
       const body = await readBody(req);
       if (!body || typeof body !== "object" || Array.isArray(body)) return json(res, 400, { error: "body must be a JSON object" });
-      const asked = await requestCwAction(auth, m[1], body);
+      const asked = await requestCwAction(auth, cwThread, body);
       return json(res, asked.status, asked.body);
     }
 

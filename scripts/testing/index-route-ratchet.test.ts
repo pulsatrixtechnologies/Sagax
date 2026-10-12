@@ -11,7 +11,9 @@ const EXACT: Record<string, number> = {
   // plus the fork routes merged on main after the 2026-10-08 sync branch was cut (the PRs after #176, Auto model #153 among them).
   // 190: DELETE /api/routine-runs ("Clear logs", #238), then the routes of the PRs merged on 2026-10-09 that kept
   // them in index.ts (people threads, reactions and Seen by, bot zip #271, persona Rules and Files, plugin updates #272).
-  'path === "/': 190,
+  // 191: GET /healthz stays in index.ts, before the stranger check, so a deploy probe is not asked to sign in
+  // (server/healthz.test.ts). The terminal upgrade and the ConnectWise action path live in their modules.
+  'path === "/': 191,
   "path.match(": 97,
   "path.startsWith(": 14,
   ".exec(path)": 23,
