@@ -30,7 +30,7 @@
 // O_NOFOLLOW. A read answers at most 128 KiB, a download at most 100 MiB.
 // Reads and downloads go to the admin activity log (category bot).
 import { constants, lstatSync, realpathSync, readdirSync, type Stats } from "node:fs";
-import { open, realpath, type FileHandle } from "node:fs/promises";
+import { lstat, open, realpath, type FileHandle } from "node:fs/promises";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { extname, isAbsolute, join, relative, sep } from "node:path";
 
@@ -193,7 +193,12 @@ export async function openNoFollow(rootDir: string, segments: readonly string[])
         next = await open(`/proc/self/fd/${current.fd}/${segments[index]}`, flags);
       } catch (error) {
         const code = (error as NodeJS.ErrnoException).code;
-        if (code === "ELOOP" || code === "EPERM") throw new FileRefusal(403, "link_refused", "Links are not followed here.");
+        // A symlink opened with O_DIRECTORY comes back ENOTDIR (the link is
+        // not followed, so it is not a directory). A symlink file is ELOOP.
+        const linked = code === "ENOTDIR"
+          ? await lstat(`/proc/self/fd/${current.fd}/${segments[index]}`).then((stat) => stat.isSymbolicLink()).catch(() => false)
+          : false;
+        if (code === "ELOOP" || code === "EPERM" || linked) throw new FileRefusal(403, "link_refused", "Links are not followed here.");
         throw notFound();
       }
       const real = await realpath(`/proc/self/fd/${next.fd}`).catch(() => "");

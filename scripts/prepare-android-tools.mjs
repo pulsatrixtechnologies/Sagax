@@ -1,7 +1,7 @@
 // Stage Google's official Android Platform Tools beside the packaged app so
 // USB phone support works on a clean machine without Homebrew or an SDK.
-// The archive is a pinned release, checked against its SHA-256. Never
-// platform-tools-latest: that URL moves and has no digest.
+// The archive is a pinned release, checked against its SHA-256. The moving
+// "latest" archive is not used: it has no digest.
 import { createHash } from "node:crypto";
 import { cpSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
