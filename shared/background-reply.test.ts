@@ -32,6 +32,7 @@ describe("background replies", () => {
     const home = process.env.HOME;
     const profile = process.env.USERPROFILE;
     const data = process.env.SAGAX_DATA_DIR;
+    const tmp = process.env.TMPDIR;
     try {
       delete process.env.SAGAX_LOCAL_VM_TEST_NAMESPACE;
       delete process.env.SAGAX_BACKGROUND_REPLIES;
@@ -45,6 +46,11 @@ describe("background replies", () => {
       if (data === undefined) delete process.env.SAGAX_DATA_DIR;
       else process.env.SAGAX_DATA_DIR = data;
       expect(backgroundRepliesActive({})).toBe(false);
+      // A restarted fixture keeps its home under /tmp but points TMPDIR inside that home.
+      process.env.TMPDIR = `${process.env.HOME}/tmp`;
+      process.env.SAGAX_DATA_DIR = process.env.HOME;
+      expect(backgroundRepliesActive({})).toBe(false);
+      delete process.env.TMPDIR;
       process.env.SAGAX_BACKGROUND_REPLIES = "on";
       expect(backgroundRepliesActive({})).toBe(true);
       delete process.env.SAGAX_BACKGROUND_REPLIES;
@@ -66,6 +72,8 @@ describe("background replies", () => {
       else process.env.USERPROFILE = profile;
       if (data === undefined) delete process.env.SAGAX_DATA_DIR;
       else process.env.SAGAX_DATA_DIR = data;
+      if (tmp === undefined) delete process.env.TMPDIR;
+      else process.env.TMPDIR = tmp;
     }
   });
 

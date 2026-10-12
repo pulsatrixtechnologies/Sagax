@@ -32,10 +32,17 @@ export function backgroundRepliesActive(bot: { backgroundReplies?: boolean } | u
 }
 
 function throwawayServerHome(): boolean {
-  const root = tmpdir();
-  return [process.env.SAGAX_DATA_DIR, process.env.HOME, process.env.USERPROFILE].some((dir) =>
-    Boolean(dir) && (dir === root || dir!.startsWith(root + sep) || dir!.startsWith(root + "/")),
+  // os.tmpdir() follows TMPDIR. A fixture restart points that at a folder
+  // inside its own home (`<data>/tmp`) and drops SAGAX_BACKGROUND_REPLIES,
+  // which would hide a home that still lives under the real temp directory.
+  // /tmp and /private/tmp stay roots so that home is still a throwaway one.
+  const homes = [process.env.SAGAX_DATA_DIR, process.env.HOME, process.env.USERPROFILE].filter(
+    (dir): dir is string => Boolean(dir),
   );
+  const roots = new Set<string>([tmpdir(), "/tmp", "/private/tmp"]);
+  return homes.some((dir) => [...roots].some((root) =>
+    dir === root || dir.startsWith(root + sep) || dir.startsWith(root + "/"),
+  ));
 }
 
 export type RequestPace = "quick" | "work";

@@ -3860,7 +3860,9 @@ async function interruptDirectThread(botId: string, threadId: string, options?: 
     if (requestOwner.messageId) store.patchMessage(threadId, requestOwner.messageId, { requestCancelled: true });
   }
   const liveTurnId = liveTurnByThread.get(threadId);
-  if (liveTurnId) {
+  // A barge-in drops the dying turn's tokens and tool rows so they are never
+  // spoken. A Stop outside a call still records the interrupted tool.
+  if (liveTurnId && voiceCalls.active(threadId)) {
     let cancelled = cancelledVoiceTurns.get(threadId);
     if (!cancelled) {
       cancelled = new Set();

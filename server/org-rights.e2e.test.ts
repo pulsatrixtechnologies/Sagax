@@ -281,6 +281,12 @@ posixOnly("Perspicax organization, slice 4: rights, teams, owner keys, sections"
   it("S4-6: the manager administers her team's grants under the anchor, never opening the bot", async () => {
     const mia = await signIn(MIA);
     expect([403, 404]).toContain((await api("GET", `/api/threads/${x.threadId}/messages`, mia)).status);
+    // S4-5's Run now returns as soon as the run is admitted. The list's
+    // running flag is that turn, so read it once the turn has settled.
+    await waitFor(async () => {
+      const row = ((await api("GET", "/api/org/bots", mia)).body.bots as Array<{ id: string; running?: boolean }>).find((b) => b.id === x.id);
+      return row && row.running === false ? row : null;
+    });
     const listed = (await api("GET", "/api/org/bots", mia)).body.bots as Array<{ id: string; grants: Array<{ target: string }> }>;
     expect(listed.find((b) => b.id === x.id)?.grants.map((g) => g.target)).toEqual([`team:${TEAM_T}`]);
     // the list carries the bot's public look and whether it works now, nothing more of it
