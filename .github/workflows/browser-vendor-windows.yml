@@ -18,8 +18,9 @@ permissions:
 
 jobs:
   build:
+    if: (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
     name: Build reviewed Windows browser
-    runs-on: ubuntu-24.04
+    runs-on: [self-hosted, linux, x64]
     timeout-minutes: 45
     env:
       RUSTUP_TOOLCHAIN: 1.97.1
@@ -48,9 +49,10 @@ jobs:
           retention-days: 14
 
   smoke:
+    if: (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
     name: Cold-start and restart on Windows
     needs: build
-    runs-on: windows-latest
+    runs-on: [self-hosted, windows, x64]
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
