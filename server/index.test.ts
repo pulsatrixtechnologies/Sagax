@@ -1170,6 +1170,8 @@ beforeAll(async () => {
       HOME: home,
       USERPROFILE: home,
       SAGAX_PORT: String(PORT),
+      // Fixtures use placeholder bytes; server/upload-content-check.test.ts covers the sniff.
+      SAGAX_UPLOAD_SNIFF: "off",
       SAGAX_WEBHOOK_PORT: String(WEBHOOK_PORT),
       SAGAX_EXTRA_PATH: fakeDockerDir,
       SAGAX_BOX_API: `http://127.0.0.1:${boatStubPort}`,
@@ -12195,7 +12197,9 @@ describe("bot memory API", () => {
     try {
       const before = await api("GET", `/api/bots/${bot.id}/system-prompt`);
       expect(before.status).toBe(200);
-      expect(before.body.sections[0]).toEqual({
+      // The platform security policy leads every prompt (server/misuse-guardrails.ts).
+      expect(before.body.sections[0].id).toBe("misuse-policy");
+      expect(before.body.sections[1]).toEqual({
         id: "persona",
         label: "Identity",
         text: "You are Kiwi, a personal bot in Sagax. Role: Tracker. About: Files bugs.",
@@ -12214,9 +12218,9 @@ describe("bot memory API", () => {
 
       await api("PATCH", `/api/bots/${bot.id}`, { soul: "Never file noise." });
       const after = await api("GET", `/api/bots/${bot.id}/system-prompt`);
-      expect(after.body.sections[1].id).toBe("soul");
-      expect(after.body.sections[1].text).toContain("Never file noise.");
-      expect(after.body.sections[1].bytes).toBe(Buffer.byteLength(after.body.sections[1].text, "utf8"));
+      expect(after.body.sections[2].id).toBe("soul");
+      expect(after.body.sections[2].text).toContain("Never file noise.");
+      expect(after.body.sections[2].bytes).toBe(Buffer.byteLength(after.body.sections[2].text, "utf8"));
       // Preview is settings-only: advertising a VM does not provision one.
       expect((await api("PATCH", `/api/bots/${bot.id}`, {
         computer: "vm",
