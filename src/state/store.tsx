@@ -4872,6 +4872,16 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     () => ({ state, dispatch, flushBotPatches, refreshInstances, refreshModels }),
     [state, dispatch, flushBotPatches, refreshInstances, refreshModels],
   );
+  // The isolated UI preview (scripts/testing/preview-fixture.ts) sets this
+  // flag so a harness can open the catalogue. The packaged app never does.
+  useEffect(() => {
+    const host = window as Window & { __sagaxUiHarness?: boolean; __sagaxDispatch?: typeof dispatch };
+    if (!host.__sagaxUiHarness) return;
+    host.__sagaxDispatch = dispatch;
+    return () => {
+      if (host.__sagaxDispatch === dispatch) delete host.__sagaxDispatch;
+    };
+  }, [dispatch]);
   return (
     <StoreContext.Provider value={value}>
       <StreamContext.Provider value={stream}>{children}</StreamContext.Provider>

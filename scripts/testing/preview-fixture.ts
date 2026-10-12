@@ -53,7 +53,7 @@ export async function mountPreview(
   options: PreviewOptions,
 ): Promise<MountedPreview> {
   const { entry, route, title, extraRoutes = [], viewport = "width=device-width, initial-scale=1", logLevel } = options;
-  const page = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="${escapeHtml(viewport)}"><title>${escapeHtml(title)}</title></head><body><div id="root"></div><script type="module" src="${escapeHtml(entry)}"></script></body></html>`;
+  const page = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="${escapeHtml(viewport)}"><title>${escapeHtml(title)}</title></head><body><div id="root"></div><script>window.__sagaxUiHarness = true</script><script type="module" src="${escapeHtml(entry)}"></script></body></html>`;
   const ui = await createServer({
     root: REPO_ROOT,
     ...(logLevel ? { logLevel } : {}),
