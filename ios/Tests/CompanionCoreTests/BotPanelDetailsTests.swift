@@ -349,6 +349,11 @@ final class BotPanelDetailsTests: XCTestCase {
         XCTAssertTrue(earned.characterLocked(.crab, current: .owl))
         XCTAssertFalse(earned.characterLocked(.crab, current: .crab), "what the bot wears stays usable")
         XCTAssertFalse(MascotUnlocks.nothingLocked.characterLocked(.crab, current: .owl))
+        let idle = MascotUnlocks.lockedUntilLoaded
+        XCTAssertTrue(idle.enforced)
+        XCTAssertTrue(idle.characterLocked(.crab, current: .owl))
+        XCTAssertFalse(idle.characterLocked(.owl, current: .owl))
+        XCTAssertFalse(idle.characterLocked(.crab, current: .crab), "what the bot wears stays usable")
         let crab = MascotUnlocks(enforced: true, keys: ["character:crab"])
         XCTAssertFalse(crab.characterLocked(.crab, current: .owl))
         XCTAssertFalse(earned.skinUnlocked(.shape, skin: "plain"), "a locked character's Common skins stay locked")
@@ -376,6 +381,17 @@ final class BotPanelDetailsTests: XCTestCase {
             present.fulfill()
         }
         wait(for: [present], timeout: 5)
+        PanelRequestStub.responses["/api/me/achievements"] = (500, #"{"error":"unavailable"}"#)
+        let failed = expectation(description: "500")
+        Task {
+            do {
+                _ = try await client.mascotUnlocks()
+                XCTFail("a 500 must not clear the lock")
+            } catch {
+                failed.fulfill()
+            }
+        }
+        wait(for: [failed], timeout: 5)
     }
 
     // MARK: Gate

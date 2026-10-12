@@ -1,6 +1,8 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
+import { NOTHING_LOCKED } from "../../../shared/achievements";
+import { resetAchievementsForTests } from "@/lib/achievements";
 import en from "@/locales/en.json";
 import fr from "@/locales/fr.json";
 import { BotAvatar } from "@/components/Avatar";
@@ -15,6 +17,8 @@ import { botMascotSkin, LEGACY_OWL_SKINS, MASCOT_SKIN_IDS, mascotSkinSchema, OWL
 import { parseBotProfilePatch } from "../../../server/bot-profile";
 import MascotLookEditor, { COLOR_GROUP_LABEL, OWL_SKIN_LABEL } from "./MascotLookEditor";
 import { colorTabFor, colorTabs, nextTab, SKIN_TIERS, skinTabFor, skinTierTabs } from "./editor-tabs";
+
+beforeEach(() => resetAchievementsForTests({ unlocks: NOTHING_LOCKED }));
 
 const render = (bot: { color?: string; mascotSkin?: string; mascotLook?: unknown }) =>
   renderToStaticMarkup(

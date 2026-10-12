@@ -109,9 +109,9 @@ struct CharacterEditor: View {
     /// Called after the draft is reset, so the owner also clears the picture
     /// (`avatarCrop: mascot`).
     var onReset: (() -> Void)?
-    /// What the person may wear (`GET /api/me/achievements`); nothing is
-    /// locked until it is known or on a server without achievements.
-    var unlocks: MascotUnlocks = .nothingLocked
+    /// What the person may wear. Enforced until a snapshot arrives; a 404 is `.nothingLocked`.
+    /// The bot's current character stays wearable either way.
+    var unlocks: MascotUnlocks = .lockedUntilLoaded
 
     @State private var photoItem: PhotosPickerItem?
     /// The colour row picked by hand; nil follows the colour worn.

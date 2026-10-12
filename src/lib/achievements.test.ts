@@ -53,8 +53,16 @@ afterEach(() => {
 });
 
 describe("locks", () => {
-  it("lock nothing until the server answers, and nothing on a server without achievements", async () => {
-    expect(characterLock(achievementsState().unlocks, "bunbu").locked).toBe(false);
+  it("locks characters until the server answers, and locks nothing only on a 404", async () => {
+    expect(achievementsState().unlocks.enforced).toBe(true);
+    expect(characterLock(achievementsState().unlocks, "bunbu").locked).toBe(true);
+    expect(characterLock(achievementsState().unlocks, "crab").locked).toBe(true);
+    setAchievementsFetcher(async () => new Response("no", { status: 500 }));
+    await loadAchievements();
+    expect(characterLock(achievementsState().unlocks, "crab").locked).toBe(true);
+    setAchievementsFetcher(async () => { throw new Error("offline"); });
+    await loadAchievements();
+    expect(characterLock(achievementsState().unlocks, "crab").locked).toBe(true);
     setAchievementsFetcher(async () => new Response("", { status: 404 }));
     await loadAchievements();
     expect(achievementsState().status).toBe("unavailable");

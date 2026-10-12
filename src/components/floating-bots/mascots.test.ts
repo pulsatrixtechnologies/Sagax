@@ -3,13 +3,13 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import en from "@/locales/en.json";
 import fr from "@/locales/fr.json";
 import { resetAchievementsForTests } from "@/lib/achievements";
 import { forgetLegacyBotLooks, readLegacyBotLooks, type FloatingStorage } from "@/lib/floating-bots";
 import { setGrokAccountLinked } from "@/lib/grok-account";
-import type { AchievementSnapshot } from "../../../shared/achievements";
+import { NOTHING_LOCKED, type AchievementSnapshot } from "../../../shared/achievements";
 import { BotAvatar } from "@/components/Avatar";
 import { SHAPE_ART, shapeSkinPaint } from "@/components/ShapeMascot";
 import { SHAPE_MOVES } from "@/components/shape-engine";
@@ -173,6 +173,7 @@ describe("the mascot registry", () => {
 });
 
 describe("the Appearance gallery", () => {
+  beforeEach(() => resetAchievementsForTests({ unlocks: NOTHING_LOCKED }));
   const render = (mascotLook?: Parameters<typeof botMascotLook>[0], mascotSkin = "none") =>
     renderToStaticMarkup(createElement(MascotLookEditor, { bot: { color: "blue", mascotSkin: mascotSkin as never, mascotLook: botMascotLook(mascotLook) }, onPatch: () => undefined }));
   const enforce = (rewards: string[]) => resetAchievementsForTests({ status: "ready", snapshot: { rewards, items: [] } as unknown as AchievementSnapshot });

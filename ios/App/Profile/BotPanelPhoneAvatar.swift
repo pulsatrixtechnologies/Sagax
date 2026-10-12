@@ -16,7 +16,7 @@ struct PhoneBotAvatarSheet: View {
     enum Tab: String, CaseIterable { case bot, generate, upload }
 
     @State private var tab: Tab = .bot
-    @State private var unlocks: MascotUnlocks = .nothingLocked
+    @State private var unlocks: MascotUnlocks = .lockedUntilLoaded
     @State private var generating = false
     @State private var generatePrompt = ""
     @State private var framing = false

@@ -10,7 +10,7 @@ import { MAUS_COLOR_NAMES } from "@/lib/mascot";
 import { setLocale } from "@/lib/i18n";
 import { resetAchievementsForTests } from "@/lib/achievements";
 import { StoreProvider, type Bot } from "@/state/store";
-import type { AchievementSnapshot } from "../../../shared/achievements";
+import { NOTHING_LOCKED, type AchievementSnapshot } from "../../../shared/achievements";
 import { botMascotLook } from "../../../shared/mascot-look";
 import MascotLookEditor, { type MascotLookPatch } from "../floating-bots/MascotLookEditor";
 import { AppearancePane, initialAppearanceMode } from "./AppearancePane";
@@ -38,6 +38,7 @@ const renderPane = (bot: Bot) => renderToStaticMarkup(createElement(StoreProvide
 const renderEditor = (bot: Bot) => renderToStaticMarkup(createElement(MascotLookEditor, { bot, onPatch: vi.fn() }));
 const enforce = (rewards: string[]) => resetAchievementsForTests({ status: "ready", snapshot: { rewards, items: [] } as unknown as AchievementSnapshot });
 
+beforeEach(() => resetAchievementsForTests({ unlocks: NOTHING_LOCKED }));
 afterEach(() => resetAchievementsForTests());
 afterAll(() => closeWindow());
 

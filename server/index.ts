@@ -46,8 +46,8 @@ import { z } from "zod";
 import { boundedContextText, selectReplay, DEFAULT_REBUILD_BYTES, MAX_SUMMARY_BYTES, type CompactionRecord } from "./context-rebuild.ts";
 import { draftSummary, foldPoint } from "./compaction-summary.ts";
 import { compactBudget, contextWindowFor, defaultCompactAt, nativeCompactionPoint, shouldCompact } from "./context-budget.ts";
-import { autoCompactWindow, ClaudeDriver, resolveClaudeConfigDir } from "./drivers/claude.ts";
-import { claudeAccountLinked } from "./claude-account.ts";
+import { autoCompactWindow, claudeSignedIn, resolveClaudeConfigDir, setSoloClaudeLinkedHandler } from "./drivers/claude.ts";
+import { claudeAccountLinked, soloClaudeAccountLinked, type SoloClaudeLinkCache } from "./claude-account.ts";
 import { claudeActivityEvents, isClaudeComputerTool } from "./claude-activity.ts";
 import { provenRequestPerson, SharedComputers, sharedComputerOperation, sharedComputerRegistration } from "./shared-computers.ts";
 import { createUserComputerRouter } from "./user-computers.ts";
@@ -1544,22 +1544,13 @@ function customDomainStatus() {
     serverIpv4: DESKTOP_MANAGED ? null : customDomainIpv4(),
   };
 }
-const registry = new ProviderRegistry(
-  IDENTITY.kind === "perspicax"
-    ? BUILT_IN_DRIVERS
-    : BUILT_IN_DRIVERS.map((driver) =>
-        driver.driverKind === "claudeAgent"
-          ? {
-              ...ClaudeDriver,
-              create: (input) => {
-                // the Claude driver takes this hook beside the generic input
-                const linked = { ...input, onClaudeLinked: () => recordAchievements(localPrincipalId(), [{ type: "claude.linked" }]) };
-                return ClaudeDriver.create(linked);
-              },
-            }
-          : driver,
-      ),
-);
+// Solo Claude login records claude.linked. The handler stays off
+// DriverCreateInput, which every driver shares. Org login uses
+// PrincipalEngineLogins.onClaudeLinked.
+if (IDENTITY.kind !== "perspicax") {
+  setSoloClaudeLinkedHandler(() => recordAchievements(localPrincipalId(), [{ type: "claude.linked" }]));
+}
+const registry = new ProviderRegistry(BUILT_IN_DRIVERS);
 // The approval gates below hand this their model selection — or a driver
 // view they already hold — and let the registry resolve the driver, instead
 // of each site unwrapping registry.cliTarget(...)?.driverKind itself.
@@ -22637,6 +22628,15 @@ ROUTES.push(createViewerBotOverrideRoutes({
   organization: () => IDENTITY.kind === "perspicax",
   bot: (id) => store.bot(id) ?? null,
 }));
+/** The Claude CLI this solo install runs. `claude` on PATH when unset. */
+function soloClaudeCli(): string {
+  const entries = Object.entries(instanceConfigs(cfg)).filter(([, entry]) => entry.driver === "claudeAgent");
+  const entry = entries.find(([id]) => id === "claude")?.[1] ?? entries[0]?.[1];
+  const cli = (entry?.config as { cli?: unknown } | undefined)?.cli;
+  return typeof cli === "string" && cli.trim() ? cli.trim() : "claude";
+}
+/** One `claude auth status` for this process when no marker and no own key. */
+const soloClaudeLinkCache: SoloClaudeLinkCache = { probe: null };
 // A person's achievements (server/achievements.ts), on every server.
 ROUTES.push(createAchievementRoutes({
   store: achievementStore,
@@ -22650,9 +22650,22 @@ ROUTES.push(createAchievementRoutes({
       const myKey = providersOfDriver("claudeAgent").some((provider) => held.includes(provider));
       return claudeAccountLinked({ signedIn, myKey, orgKey: false });
     }
-    const dir = resolveClaudeConfigDir(undefined, process.env);
-    const loginMarker = existsSync(join(dir, LOGIN_MARKER));
-    return claudeAccountLinked({ loginMarker, anthropicConfigured: Boolean(cfg.anthropic?.key) });
+    // Marker or own key is enough. Otherwise ask the CLI once per process
+    // (claude auth status), then write the marker. Never read .credentials.json.
+    let dir: string;
+    try {
+      dir = resolveClaudeConfigDir(undefined, process.env);
+    } catch {
+      return false;
+    }
+    const markerPath = join(dir, LOGIN_MARKER);
+    return soloClaudeAccountLinked({
+      loginMarker: existsSync(markerPath),
+      anthropicConfigured: Boolean(cfg.anthropic?.key),
+      cache: soloClaudeLinkCache,
+      probe: () => claudeSignedIn(soloClaudeCli(), process.env),
+      writeMarker: () => writeFileAtomic(markerPath, JSON.stringify({ at: Date.now() }), { mode: 0o600 }),
+    });
   },
 }));
 ROUTES.push(createMediaWidgetRoutes());

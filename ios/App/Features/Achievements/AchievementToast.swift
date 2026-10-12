@@ -158,6 +158,11 @@ struct AchievementToastView: View {
                         .lineLimit(1)
                 }
             }
+            if let art = item.definition.rewards.first?.revealingArt {
+                MascotCharacterView(look: art.look, color: art.color, skin: art.owlSkin, size: 34, animated: false)
+                    .accessibilityHidden(true)
+                    .accessibilityIdentifier("achievement-toast-art")
+            }
             Spacer(minLength: 0)
             Button(action: dismiss) {
                 Image(systemName: "xmark")

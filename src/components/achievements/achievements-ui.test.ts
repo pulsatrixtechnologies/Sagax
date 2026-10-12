@@ -237,6 +237,13 @@ describe("achievements page", () => {
     expect(hello).toContain("a surprise look");
     expect(hello).not.toContain("Pearl");
     expect(hello).not.toContain("Crab");
+    const recent = all.slice(all.indexOf('data-recent-achievement="hello-bot"'), all.indexOf("</li>", all.indexOf('data-recent-achievement="hello-bot"')));
+    expect(recent).toContain("lucide-bot");
+    expect(recent).not.toContain("data-character=");
+    resetAchievementsForTests({ status: "ready", snapshot: snapshot({ rewards: ["character:shape"] }) });
+    const owned = renderToStaticMarkup(createElement(AchievementsPage, { category: "all" }));
+    const ownedRecent = owned.slice(owned.indexOf('data-recent-achievement="hello-bot"'), owned.indexOf("</li>", owned.indexOf('data-recent-achievement="hello-bot"')));
+    expect(ownedRecent).not.toContain("lucide-bot");
     const pinch = html.slice(html.indexOf('data-achievement="first-pinch"'), html.indexOf("</li>", html.indexOf('data-achievement="first-pinch"')));
     expect(pinch).not.toContain("proud");
     expect(pinch).not.toContain("Look unlocked");

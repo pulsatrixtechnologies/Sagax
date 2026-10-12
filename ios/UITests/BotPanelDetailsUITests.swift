@@ -396,7 +396,7 @@ final class BotPanelDetailsUITests: XCTestCase {
         if rewards.contains("character:crab") {
             XCTAssertTrue(app.buttons["Crab"].firstMatch.waitForExistence(timeout: 10), "unlocked crab is on the row")
         } else {
-            // First paint is nothingLocked: wait until a locked tile leaves before asserting Crab is gone.
+            // First paint is lockedUntilLoaded (owl only): wait until a locked tile leaves before asserting Crab is gone.
             let sentinel = rewards.contains("character:ogre") ? "Shape" : "Ogre"
             XCTAssertTrue(waitGone(app.buttons[sentinel].firstMatch, timeout: 15), "unlocks dropped \(sentinel)")
             XCTAssertFalse(app.buttons["Crab"].firstMatch.exists, "locked crab is absent")

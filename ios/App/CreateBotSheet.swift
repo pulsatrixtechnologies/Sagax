@@ -39,7 +39,7 @@ struct CreateBotSheet: View {
     @State private var readOnly = false
     @State private var name = ""
     @State private var draft = CharacterDraft()
-    @State private var unlocks: MascotUnlocks = .nothingLocked
+    @State private var unlocks: MascotUnlocks = .lockedUntilLoaded
     @State private var creating = false
     @FocusState private var nameFocused: Bool
     /// How far the keyboard reaches up from the bottom of the screen, 0 when down.
@@ -82,8 +82,8 @@ struct CreateBotSheet: View {
             readOnly = NewBotRules.readOnly(await session.configStatus())
             presets = await session.botPresets()
             if !session.isDemo, session.surfaceGate.allows(.characterExtras), session.surfaceGate.allows(.achievements),
-               let client = session.profileClient {
-                unlocks = (try? await client.mascotUnlocks()) ?? .nothingLocked
+               let client = session.profileClient, let earned = try? await client.mascotUnlocks() {
+                unlocks = earned
             }
         }
         .sheet(isPresented: $importingZip) {

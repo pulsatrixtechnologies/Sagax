@@ -42,6 +42,20 @@ final class SettingsAppearanceParityTests: XCTestCase {
         XCTAssertNil(AchievementReward.emote(character: "crab", id: "proud").displayed(language: "en", keys: []))
         XCTAssertEqual(crab.displayed(language: "en", keys: [], revealing: true), "Character unlocked: Crab")
         XCTAssertEqual(AchievementReward.emote(character: "crab", id: "neutral").displayed(language: "en", keys: ["character:crab"]), "Look unlocked: Neutral")
+        let art = linked?.rewards.first?.revealingArt
+        XCTAssertEqual(art?.look.character, .crab)
+        XCTAssertEqual(art?.look.crabSkin, .plain)
+        XCTAssertEqual(art?.owlSkin, MascotSkin.none)
+        XCTAssertEqual(art?.color, "orange")
+        let name = AchievementText(en: "Galaxy", fr: "Galaxie", ptBR: "Galaxy")
+        let owl = AchievementText(en: "Owl", fr: "Hibou", ptBR: "Owl")
+        XCTAssertEqual(AchievementReward.skin(character: "owl", skin: "galaxy", name: name, characterName: owl).revealingArt?.owlSkin, .galaxy)
+        XCTAssertEqual(AchievementReward.skin(character: "shape", skin: "outline", name: name, characterName: owl).revealingArt?.look.shapeSkin, .outline)
+        XCTAssertNil(AchievementReward.emote(character: "crab", id: "neutral").revealingArt)
+        XCTAssertNil(AchievementReward.move(character: "crab", id: "claw-dance").revealingArt)
+        XCTAssertNil(AchievementReward.title(id: "rookie", name: owl).revealingArt)
+        XCTAssertNil(AchievementReward.appIcon(id: "glyph").revealingArt)
+        XCTAssertNil(AchievementReward.character(id: "nope", name: owl).revealingArt)
     }
 
     func testRarityAndLevelFollowTheSharedRules() {

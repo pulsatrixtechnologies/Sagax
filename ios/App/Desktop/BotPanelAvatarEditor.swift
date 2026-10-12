@@ -42,7 +42,7 @@ struct BotAvatarEditor: View {
 
     @State private var tab: Tab = .bot
     @State private var draft = CharacterDraft()
-    @State private var unlocks: MascotUnlocks = .nothingLocked
+    @State private var unlocks: MascotUnlocks = .lockedUntilLoaded
     @State private var prompt = ""
     @State private var working = false
     @State private var photo: PhotosPickerItem?
@@ -109,8 +109,8 @@ struct BotAvatarEditor: View {
             if session.isDemo { unlocks = .demo }
             config = await session.configStatus()
             if session.surfaceGate.allows(.characterExtras), session.surfaceGate.allows(.achievements),
-               let client = session.profileClient {
-                unlocks = (try? await client.mascotUnlocks()) ?? .nothingLocked
+               let client = session.profileClient, let earned = try? await client.mascotUnlocks() {
+                unlocks = earned
             }
         }
         .onValueChange(of: photo) { item in

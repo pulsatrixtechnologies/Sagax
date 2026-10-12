@@ -3,6 +3,8 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { NOTHING_LOCKED } from "../../shared/achievements";
+import { resetAchievementsForTests } from "@/lib/achievements";
 import en from "@/locales/en.json";
 import fr from "@/locales/fr.json";
 import { APP_ICON_CHOICES } from "@/lib/app-icon-choices";
@@ -163,6 +165,7 @@ describe("Bunbu on the desktop and in the popover", () => {
   });
 
   it("offers its colors, skins by rarity and moves in the Appearance gallery", () => {
+    resetAchievementsForTests({ unlocks: NOTHING_LOCKED });
     const render = (look: unknown) => renderToStaticMarkup(createElement(MascotLookEditor, { bot: { color: "mint", mascotSkin: "none", mascotLook: botMascotLook(look) }, onPatch: () => undefined }));
     const html = render({ character: "bunbu" });
     expect(html).toContain('data-character-option="bunbu"');

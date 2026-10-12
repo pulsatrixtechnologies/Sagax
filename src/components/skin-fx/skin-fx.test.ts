@@ -3,7 +3,9 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { NOTHING_LOCKED } from "../../../shared/achievements";
+import { resetAchievementsForTests } from "@/lib/achievements";
 import en from "@/locales/en.json";
 import fr from "@/locales/fr.json";
 import { BotAvatar } from "@/components/Avatar";
@@ -231,6 +233,7 @@ describe("skin ids persist and migrate", () => {
 });
 
 describe("the Appearance gallery's layout", () => {
+  beforeEach(() => resetAchievementsForTests({ unlocks: NOTHING_LOCKED }));
   const render = (mascotLook: unknown) =>
     renderToStaticMarkup(createElement(MascotLookEditor, { bot: { color: "blue", mascotSkin: "none", mascotLook: botMascotLook(mascotLook) }, onPatch: () => undefined }));
 

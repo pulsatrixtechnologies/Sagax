@@ -181,6 +181,8 @@ public struct MascotUnlocks: Hashable, Sendable {
     }
 
     public static let nothingLocked = MascotUnlocks(enforced: false)
+    /// Before a snapshot: the owl, plus the look already worn. A 404 is `nothingLocked`.
+    public static let lockedUntilLoaded = MascotUnlocks(enforced: true)
     /// What the demo offers: the owl and its skins only.
     public static let demo = MascotUnlocks(enforced: false, onlyOwl: true)
 

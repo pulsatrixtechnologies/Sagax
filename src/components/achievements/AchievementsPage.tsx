@@ -222,13 +222,15 @@ export function AchievementsPage({ category = "all" }: { category?: AchievementC
           <ul className="flex gap-2 overflow-x-auto pb-1">
             {recent.map((item) => {
               const reward = item.rewards[0];
+              const showArt = Boolean(reward && (reward.kind === "skin" || reward.kind === "character") && characterUnlocked(unlocks, reward.character));
+              const Icon = achievementIcon(item.icon);
               return (
                 <li key={item.id} className="flex min-w-[180px] items-center gap-2 rounded-xl border-[0.5px] border-border bg-card px-2.5 py-2" data-recent-achievement={item.id}>
                   <span className="grid size-9 shrink-0 place-items-center">
-                    {reward && (reward.kind === "skin" || reward.kind === "character") ? (
+                    {showArt && reward ? (
                       <Suspense fallback={null}><RewardPreview reward={reward} size={30} animated={false} /></Suspense>
                     ) : (
-                      (() => { const Icon = achievementIcon(item.icon); return <Icon size={18} aria-hidden="true" />; })()
+                      <Icon size={18} aria-hidden="true" />
                     )}
                   </span>
                   <span className="min-w-0">

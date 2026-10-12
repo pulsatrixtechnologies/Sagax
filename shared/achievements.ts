@@ -519,6 +519,9 @@ export interface Unlocks {
 
 export const NOTHING_LOCKED: Unlocks = Object.freeze({ enforced: false, keys: new Set<string>() });
 
+/** Before a snapshot arrives. Owl, plus a look already worn. A 404 is `NOTHING_LOCKED`. */
+export const LOCKED_UNTIL_LOADED: Unlocks = Object.freeze({ enforced: true, keys: new Set<string>() });
+
 export function unlocksFor(progress: Pick<AchievementProgress, "unlocked" | "grandfathered">, catalog: readonly AchievementDefinition[]): Unlocks {
   const keys = new Set<string>(progress.grandfathered);
   for (const item of catalog) {

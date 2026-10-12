@@ -4,13 +4,15 @@
 // that feed the toast queue, and what the mascot editor and the app icon
 // picker may offer (useUnlocks).
 //
-// A server without achievements (an older one) answers 404: then nothing is
-// locked and nothing is reported, so the app behaves exactly as before.
+// Until GET answers, pickers stay enforced (the owl, plus a look already
+// worn). A server without achievements answers 404: then nothing is locked
+// and nothing is reported. Any other failure keeps the lock.
 import { useSyncExternalStore } from "react";
 import { ACHIEVEMENTS, achievementById } from "../../shared/achievements-catalog";
 import {
   achievementRewarding,
   characterUnlocked,
+  LOCKED_UNTIL_LOADED,
   NOTHING_LOCKED,
   rewardedAppIcons,
   rewardLineVisible,
@@ -40,7 +42,7 @@ interface State {
   unlocks: Unlocks;
 }
 
-let state: State = { status: "idle", snapshot: null, unlocks: NOTHING_LOCKED };
+let state: State = { status: "idle", snapshot: null, unlocks: LOCKED_UNTIL_LOADED };
 const listeners = new Set<() => void>();
 
 function setState(next: Partial<State>): void {
@@ -73,7 +75,7 @@ export function useUnlocks(): Unlocks {
 
 /** Test seam: start over. */
 export function resetAchievementsForTests(next: Partial<State> = {}): void {
-  state = { status: "idle", snapshot: null, unlocks: NOTHING_LOCKED, ...next };
+  state = { status: "idle", snapshot: null, unlocks: LOCKED_UNTIL_LOADED, ...next };
   if (next.snapshot) state.unlocks = unlocksFromSnapshot(next.snapshot);
   pending = [];
 }

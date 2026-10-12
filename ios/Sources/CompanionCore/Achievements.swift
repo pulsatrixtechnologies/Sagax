@@ -108,6 +108,73 @@ public enum AchievementReward: Hashable, Sendable {
         guard let first = id.first else { return id }
         return first.uppercased() + id.dropFirst()
     }
+
+    /// The character or skin a revealing toast draws. Nil for a title, a move, or an unknown id.
+    public var revealingArt: AchievementRevealArt? {
+        switch self {
+        case let .character(id, _):
+            return Self.reveal(character: id, skin: nil)
+        case let .skin(character, skin, _, _):
+            return Self.reveal(character: character, skin: skin)
+        default:
+            return nil
+        }
+    }
+
+    /// Desktop `RewardPreview`: owl and Shapes in blue, everyone else in their fallback colour.
+    private static func reveal(character id: String, skin raw: String?) -> AchievementRevealArt? {
+        guard let character = MascotCharacter(rawValue: id) else { return nil }
+        var look = CompleteMascotLook(character: character)
+        var owlSkin = MascotSkin.none
+        if let raw {
+            switch character {
+            case .owl:
+                let resolved = MascotSkin.resolve(raw)
+                if resolved == .none && raw != "none" && raw != "classic" && raw != "plain" { return nil }
+                owlSkin = resolved
+            case .shape:
+                guard let skin = ShapeSkin.stored(raw) else { return nil }
+                look.shapeSkin = skin
+            case .trombi:
+                guard let skin = TrombiSkin.stored(raw) else { return nil }
+                look.trombiSkin = skin
+            case .bunbu:
+                guard let skin = BunbuSkin.stored(raw) else { return nil }
+                look.bunbuSkin = skin
+            case .shiba:
+                guard let skin = ShibaSkin.stored(raw) else { return nil }
+                look.shibaSkin = skin
+            case .grump:
+                guard let skin = GrumpSkin.stored(raw) else { return nil }
+                look.grumpSkin = skin
+            case .ogre:
+                guard let skin = OgreSkin.stored(raw) else { return nil }
+                look.ogreSkin = skin
+            case .frog:
+                guard let skin = FrogSkin.stored(raw) else { return nil }
+                look.frogSkin = skin
+            case .crab:
+                guard let skin = CrabSkin.stored(raw) else { return nil }
+                look.crabSkin = skin
+            }
+        }
+        let color = (character == .owl || character == .shape) ? "blue" : look.fallbackColor
+        return AchievementRevealArt(look: look, owlSkin: owlSkin, color: color)
+    }
+}
+
+/// What a revealing toast draws for a character or a skin (`RewardPreview`).
+public struct AchievementRevealArt: Hashable, Sendable {
+    public var look: CompleteMascotLook
+    /// The owl's skin. Other characters wear the skin on `look`.
+    public var owlSkin: MascotSkin
+    public var color: String
+
+    public init(look: CompleteMascotLook, owlSkin: MascotSkin, color: String) {
+        self.look = look
+        self.owlSkin = owlSkin
+        self.color = color
+    }
 }
 
 public struct AchievementDefinition: Identifiable, Hashable, Sendable {

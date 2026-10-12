@@ -1295,6 +1295,13 @@ function diagnosticClaudeUserMessage(message: ClaudeUserMessage): ClaudeUserMess
   };
 }
 
+/** Solo login success. Not a field of `DriverCreateInput`: every driver shares that type. */
+let onSoloClaudeLinked: (() => void) | undefined;
+
+export function setSoloClaudeLinkedHandler(handler: (() => void) | undefined): void {
+  onSoloClaudeLinked = handler;
+}
+
 export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
   driverKind: DRIVER_KIND,
   metadata: { displayName: "Claude", supportsMultipleInstances: true },
@@ -1314,8 +1321,8 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
   decodeConfig,
   defaultConfig: () => decodeConfig({}),
 
-  async create(input: DriverCreateInput<ClaudeConfig> & { onClaudeLinked?: () => void }): Promise<ProviderInstance> {
-    const { instanceId, config, onClaudeLinked } = input;
+  async create(input: DriverCreateInput<ClaudeConfig>): Promise<ProviderInstance> {
+    const { instanceId, config } = input;
     const environment = (model?: string | null, access?: TurnAccessInput) => {
       // Slice 4: an owner's key rides as instance environment for this one
       // turn (so claudeEnvironment keeps it); a person's own subscription
@@ -3018,7 +3025,7 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
         await refreshModels();
         const dir = resolveClaudeConfigDir(config.configDir, environment());
         writeFileAtomic(join(dir, LOGIN_MARKER), JSON.stringify({ at: Date.now() }), { mode: 0o600 });
-        onClaudeLinked?.();
+        onSoloClaudeLinked?.();
       },
     });
 
