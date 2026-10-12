@@ -59,6 +59,20 @@ describe("workspace backup data boundary", () => {
     for (const path of ["mcp-oauth.enc.md", "workspaces/bot/mcp-oauth.key", "notes/mcp-oauth.enc"]) expect(excludedWorkspaceAuthPath(path)).toBe(false);
   });
 
+  it("never exports a provider access key or a Hermes dotenv", () => {
+    for (const path of [
+      "engine-api-keys.enc", "engine-api-keys.json",
+      "engine-api-keys.enc.4242.05a7b3e0-1234-4abc-8def-0123456789ab.tmp",
+      "principals/pr_ada/engine-api-keys.enc",
+      ".hermes/.env", "people/ada/.hermes/.env",
+      "engine-policies/hermes-solo/.env", "engine-policies/hermes-org/.env",
+    ]) expect(excludedWorkspaceAuthPath(path)).toBe(true);
+    for (const path of [
+      "engine-api-keys.json.md", "workspaces/bot/engine-api-keys.json",
+      "notes/engine-api-keys.enc", ".hermes/config.yaml", "engine-policies/hermes-solo/config.yaml",
+    ]) expect(excludedWorkspaceAuthPath(path)).toBe(false);
+  });
+
   it("never exports or restores the organization GitHub access tokens", () => {
     for (const path of [
       "org-github-tokens.enc",

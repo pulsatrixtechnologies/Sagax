@@ -23,6 +23,9 @@
 //      openai, grokAgent: xai, geminiAgent: google,
 //      kimiAgent: moonshot, piAgent: any of them)       -> owner-key (the payer owns
 //                                                          the bot) or speaker-key
+//   4b. the payer pasted a key on this server, sealed
+//      for that person only (engine-api-keys.ts)        -> owner-key or speaker-key
+//                                                          (localKey, no provider)
 //   5. the server has a key for this engine (Settings >
 //      Connections, set by an admin: the organization's
 //      key), used automatically                         -> org-key
@@ -75,6 +78,9 @@ export interface TurnAccess {
   identity: string;
   /** Extra environment for this turn only (the payer's key). */
   environment?: Record<string, string>;
+  /** A file-backed key sealed for this person (engine-api-keys.ts). The
+   * key itself stays in that file; the driver reads it for this turn only. */
+  localKeyPrincipal?: string;
   /** Claude: the person's own login directory (CLAUDE_CONFIG_DIR). */
   claudeConfigDir?: string;
   /** Codex: the CODEX_HOME for this turn. */
@@ -156,10 +162,13 @@ export interface EngineCredentialInput {
   /** The instance's driver reads a key the server configured (Settings >
    * Connections): the organization's key. */
   keyBacked: boolean;
+  /** The payer has a file-backed key on this server (engine-api-keys.ts).
+   * Absent means none. It never names another person. */
+  hasLocalKey?: (principalId: string, driver: string) => boolean;
 }
 
 export type EngineCredentialPlan =
-  | { ok: true; via: AccessVia; payer: AccessPayer; payerPrincipalId?: string; provider?: ModelProvider; routine?: true }
+  | { ok: true; via: AccessVia; payer: AccessPayer; payerPrincipalId?: string; provider?: ModelProvider; localKey?: true; routine?: true }
   | { ok: false; reason: EngineAccessRefusal; cause?: NoAccessCause; payer?: "speaker" | "owner"; payerPrincipalId?: string; routine?: true };
 
 const key = (id: string | undefined) => id?.trim().toLowerCase() ?? "";
@@ -198,6 +207,9 @@ export function resolveEngineAccess(input: EngineCredentialInput, skip: { key?: 
   if (!skip.key && provider && facts?.sub) {
     return { ok: true, via: isOwner ? "owner-key" : "speaker-key", ...who, provider };
   }
+  if (payer.principalId && input.hasLocalKey?.(payer.principalId, driver)) {
+    return { ok: true, via: isOwner ? "owner-key" : "speaker-key", ...who, localKey: true };
+  }
   if (input.keyBacked) return { ok: true, via: "org-key", payer: "organization", ...routine };
   return { ok: false, reason: "no_access", cause: "no_credentials", ...who };
 }
@@ -230,6 +242,9 @@ export async function materializeEngineAccess(input: EngineCredentialInput, plan
     const dir = deps.loginDir(payer, driver);
     const where = driver === "claudeAgent" ? { claudeConfigDir: dir } : driver === "codex" ? { codexHome: dir } : { engineHome: dir };
     return { ok: true, plan, access: { via: "subscription", identity: `subscription:${payer}`, ...where } };
+  }
+  if (keyVia(plan.via) && plan.localKey && payer) {
+    return { ok: true, plan, access: { via: plan.via, identity: `${plan.via}:${payer}:local`, localKeyPrincipal: payer } };
   }
   if (keyVia(plan.via) && plan.provider && payer) {
     const facts = payerFacts(input, payer);

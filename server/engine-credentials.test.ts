@@ -82,6 +82,8 @@ describe("resolveEngineAccess: the person who speaks pays", () => {
     // Gemini CLI: a Google key only (the consumer login is retired)
     ["bob, his Google key", { instance: GEMINI, speaker: bob, signedIn: [`${BOB}/geminiAgent`], keys: ["SUB-BOB/google"] }, { ok: true, via: "speaker-key", payer: "speaker", payerPrincipalId: BOB, provider: "google" }],
     ["bob, a Gemini login is not a payer", { instance: GEMINI, speaker: bob, signedIn: [`${BOB}/geminiAgent`] }, { ok: false, reason: "no_access", cause: "no_credentials", payer: "speaker", payerPrincipalId: BOB }],
+    ["bob, a key he pasted, before the organization key", { instance: GEMINI, speaker: bob, keyBacked: true, hasLocalKey: (id, driver) => id === BOB && driver === "geminiAgent" }, { ok: true, via: "speaker-key", payer: "speaker", payerPrincipalId: BOB, localKey: true }],
+    ["bob, a pasted key does not beat his Perspicax key", { instance: GEMINI, speaker: bob, keys: ["SUB-BOB/google"], hasLocalKey: () => true }, { ok: true, via: "speaker-key", payer: "speaker", payerPrincipalId: BOB, provider: "google" }],
     // pi: any key the person keeps
     ["bob, pi on his xAI key", { instance: PI, speaker: bob, keys: ["SUB-BOB/xai"] }, { ok: true, via: "speaker-key", payer: "speaker", payerPrincipalId: BOB, provider: "xai" }],
     ["bob, pi with no key", { instance: PI, speaker: bob, keys: ["SUB-OWNER/anthropic"] }, { ok: false, reason: "no_access", cause: "no_credentials", payer: "speaker", payerPrincipalId: BOB }],
@@ -203,6 +205,16 @@ describe("materializeEngineAccess", () => {
     expect(await materializeEngineAccess(kimiSub, resolveEngineAccess(kimiSub), deps({ ok: false, error: "no_key" }))).toMatchObject({ ok: true, access: { via: "subscription", engineHome: `/data/principals/${OWNER}/kimi` } });
     const kimiKey = input({ instance: KIMI, keys: ["SUB-OWNER/moonshot"] });
     expect(await materializeEngineAccess(kimiKey, resolveEngineAccess(kimiKey), deps({ ok: true, key: "sk-moonshot-test-01", fingerprint: "fm" }))).toMatchObject({ ok: true, access: { via: "owner-key", environment: { MOONSHOT_API_KEY: "sk-moonshot-test-01" }, engineHome: `/data/principals/${OWNER}/kimiAgent-key` } });
+  });
+
+  it("a pasted key names the person and does not fetch Perspicax", async () => {
+    const inp = input({ instance: GEMINI, speaker: bob, keyBacked: true, hasLocalKey: (id, driver) => id === BOB && driver === "geminiAgent" });
+    const d = deps({ ok: true, key: "should-not-be-fetched", fingerprint: "no" });
+    expect(await materializeEngineAccess(inp, resolveEngineAccess(inp), d)).toMatchObject({
+      ok: true,
+      access: { via: "speaker-key", identity: `speaker-key:${BOB_PID}:local`, localKeyPrincipal: BOB_PID },
+    });
+    expect(d.resolved).toEqual([]);
   });
 
   it("Gemini runs on the payer's Google key as GEMINI_API_KEY", async () => {
