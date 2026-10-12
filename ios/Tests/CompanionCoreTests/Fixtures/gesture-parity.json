@@ -1,0 +1,19 @@
+{
+  "cases": [
+    {
+      "name": "a tap on the middle of the view",
+      "mode": "direct",
+      "view": [1280, 720],
+      "frame": [1280, 720],
+      "driving": true,
+      "steps": [
+        {"touch": {"id": 1, "phase": "ended", "x": 640, "y": 360, "t": 0.05}}
+      ],
+      "expect": [
+        {"move": {"x": 0.5, "y": 0.5}},
+        {"press": {"button": "left", "clicks": 1}},
+        {"release": {"button": "left"}}
+      ]
+    }
+  ]
+}

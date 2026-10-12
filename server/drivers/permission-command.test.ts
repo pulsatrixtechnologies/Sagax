@@ -1,14 +1,15 @@
+import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { permissionPaths } from "./permission-command.ts";
 
 describe("permissionPaths", () => {
-  const cwd = "/data/task-workspaces/bot-1/thread-1";
+  const cwd = resolve("/data/task-workspaces/bot-1/thread-1");
   it("reads the path fields of Claude's file tools, resolved against the working folder", () => {
-    expect(permissionPaths("Write", { file_path: "/data/.claude/settings.json", content: "" }, cwd)).toEqual(["/data/.claude/settings.json"]);
-    expect(permissionPaths("Edit", { file_path: "src/a.ts" }, cwd)).toEqual([`${cwd}/src/a.ts`]);
-    expect(permissionPaths("NotebookEdit", { notebook_path: "../../bot-2/n.ipynb" }, cwd)).toEqual(["/data/task-workspaces/bot-2/n.ipynb"]);
-    expect(permissionPaths("Grep", { pattern: "x", path: "/etc" }, cwd)).toEqual(["/etc"]);
+    expect(permissionPaths("Write", { file_path: "/data/.claude/settings.json", content: "" }, cwd)).toEqual([resolve("/data/.claude/settings.json")]);
+    expect(permissionPaths("Edit", { file_path: "src/a.ts" }, cwd)).toEqual([resolve(cwd, "src/a.ts")]);
+    expect(permissionPaths("NotebookEdit", { notebook_path: "../../bot-2/n.ipynb" }, cwd)).toEqual([resolve(cwd, "../../bot-2/n.ipynb")]);
+    expect(permissionPaths("Grep", { pattern: "x", path: "/etc" }, cwd)).toEqual([resolve("/etc")]);
   });
   it("uses the working folder for a search without a path", () => {
     expect(permissionPaths("Glob", { pattern: "**/*" }, cwd)).toEqual([cwd]);

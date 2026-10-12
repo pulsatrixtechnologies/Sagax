@@ -221,7 +221,7 @@ try {
   proxy.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" })}\n`);
   const listed = await rpc("tools/list");
   const toolNames = new Set(listed.tools.map(({ name }) => name));
-  for (const required of ["start_session", "click", "type_text"]) {
+  for (const required of ["start_session", "get_window_state", "click", "type_text"]) {
     if (!toolNames.has(required)) throw new Error(`Cua MCP did not expose ${required}`);
   }
 
@@ -243,6 +243,14 @@ try {
     scope: "window",
     delivery_mode: "foreground",
   };
+  // Driver 0.33 refuses a pixel click until this session has a screenshot of the window.
+  assertToolResult(
+    await rpc("tools/call", {
+      name: "get_window_state",
+      arguments: { session, pid: xev.pid, window_id: Number(windowId), include_screenshot: true },
+    }),
+    "get_window_state",
+  );
   assertToolResult(
     await rpc("tools/call", { name: "click", arguments: target }),
     "click",

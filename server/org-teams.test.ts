@@ -21,7 +21,7 @@ describe("OrgTeams", () => {
     expect(teams.name("A")).toBe("Alpha 2");
     expect(teams.has("C")).toBe(true);
     expect(teams.name("Z")).toBeUndefined();
-    expect(statSync(path).mode & 0o777).toBe(0o600);
+    if (process.platform !== "win32") expect(statSync(path).mode & 0o777).toBe(0o600);
     expect(JSON.parse(readFileSync(path, "utf8"))).toEqual({ version: 1, teams: [{ id: "A", name: "Alpha 2" }, { id: "C", name: "Charlie" }] });
     expect(new OrgTeams({ path }).list()).toHaveLength(2);
   });

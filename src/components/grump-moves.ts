@@ -840,6 +840,7 @@ export const GRUMP_CLIP_MOVES: Readonly<Record<string, GrumpMove>> = {
   groom: "groom",
   knead: "knead",
   pounce: "pounce",
+  scuttle: "pounce",
   ledge: "ledge",
   curl: "curl",
   hiss: "hiss",

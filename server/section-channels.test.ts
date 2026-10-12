@@ -31,7 +31,7 @@ describe("SectionChannels store", () => {
     expect(channels.byName("Support")).toMatchObject({ ownerPrincipalId: ALICE, members: [], defaultLevel: "use" });
     // private: no access facts at all
     expect(channels.accessFor("Support")).toBeNull();
-    expect(statSync(path).mode & 0o777).toBe(0o600);
+    if (process.platform !== "win32") expect(statSync(path).mode & 0o777).toBe(0o600);
     channels.rename("Support", "Support QC");
     expect(channels.byName("Support QC")?.id).toBe("sec_00000000-0000-4000-8000-000000000001");
     channels.reconcile(["Support QC"]);
