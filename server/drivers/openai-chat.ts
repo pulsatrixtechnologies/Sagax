@@ -311,6 +311,7 @@ export function createOpenAIChatRuntime<Config>(options: RuntimeOptions<Config>)
     onDelta?: (delta: string, kind: "assistant_text" | "reasoning_text") => void,
     tools: ChatToolDefinition[] = [],
     onUsage?: TextGenerationOptions["onUsage"],
+    maxTokens?: number,
   ): Promise<Completion> => {
     // Idle timer that is renewed on every received chunk during streaming
     const timeoutController = new AbortController();
@@ -336,6 +337,7 @@ export function createOpenAIChatRuntime<Config>(options: RuntimeOptions<Config>)
         body: JSON.stringify({
           ...options.requestBody(model, messages, stream),
           ...(tools.length ? { tools } : {}),
+          ...(typeof maxTokens === "number" ? { max_tokens: maxTokens } : {}),
         }),
         signal: activeSignal,
       });
@@ -958,9 +960,18 @@ export function createOpenAIChatRuntime<Config>(options: RuntimeOptions<Config>)
         return () => listeners.delete(listener);
       },
     },
-    generateText: async (prompt, { signal, onUsage } = {}) => {
-      const model = options.generateModel?.() ?? options.models().default;
-      const { text, reasoning, toolCalls } = await complete([{ role: "user", content: prompt }], model, false, signal, undefined, [], onUsage);
+    generateText: async (prompt, { signal, onUsage, model: requested, system, onDelta, maxTokens } = {}) => {
+      const model = requested ?? options.generateModel?.() ?? options.models().default;
+      const messages: OpenAIChatMessage[] = [
+        ...(system ? [{ role: "system" as const, content: system }] : []),
+        { role: "user", content: prompt },
+      ];
+      const stream = typeof onDelta === "function";
+      const { text, reasoning, toolCalls } = await complete(
+        messages, model, stream, signal,
+        onDelta ? (delta, kind) => { if (kind === "assistant_text") onDelta(delta); } : undefined,
+        [], onUsage, maxTokens,
+      );
       if (toolCalls.length) throw new ChatProtocolError("provider returned tool calls to a text-only helper");
       return text.trim() ? text : reasoning;
     },

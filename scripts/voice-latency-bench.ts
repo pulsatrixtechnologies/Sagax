@@ -18,7 +18,10 @@
 //   boot, MCP servers and session read back, from Claude's native logs),
 //   BENCH_LOAD_MS (900, assumed: one ACP session/load or session/new, the
 //   MCP servers reconnected and the history read back), BENCH_FIRST_TOKEN_MS
-//   (600: the model's first token), BENCH_STT_FINAL_MS (250),
+//   (600: the model's first token), BENCH_CACHED_FIRST_TOKEN_MS (180: a harness
+//   stand-in for a prefix-cache hit after the call's cache prime, not an
+//   xAI measurement; unset on the fake CLI keeps BENCH_FIRST_TOKEN_MS),
+//   BENCH_STT_FINAL_MS (250),
 //   BENCH_TTS_FIRST_MS (300), BENCH_TLS_MS (150: a new connection to
 //   api.x.ai), BENCH_SPEECH (socket: the streaming voice, GET /voice/speech,
 //   the default setting; post: one POST /voice/stream per sentence),
@@ -49,6 +52,7 @@ import { verificationServerEnvironment } from "./control-omb.ts";
 import { startFakeXaiVoice } from "../server/testing/fake-xai-voice.ts";
 import { freePortBlock } from "../server/testing/ports.ts";
 import { VoiceCall } from "../src/lib/voice-mode/call.ts";
+import { acceptVoiceOpener, type VoiceOpenerOwner } from "../src/lib/voice-mode/voice-opener.ts";
 import { SpeechSocket } from "../src/lib/voice-mode/speech-stream.ts";
 import { DEFAULT_CALL_SETTINGS } from "../src/lib/voice-mode/call-settings.ts";
 import type { PcmPlayer, Sentence } from "../src/lib/voice-mode/player.ts";
@@ -521,6 +525,7 @@ export async function runVoiceLatencyBench(engine: BenchEngine = "claude"): Prom
     FAKE_ACP_COLD_MS: String(knob("BENCH_COLD_MS", 2600)),
     FAKE_ACP_LOAD_MS: String(knob("BENCH_LOAD_MS", 900)),
     FAKE_ACP_FIRST_TOKEN_MS: String(knob("BENCH_FIRST_TOKEN_MS", 600)),
+    FAKE_ACP_CACHED_FIRST_TOKEN_MS: String(knob("BENCH_CACHED_FIRST_TOKEN_MS", 180)),
     FAKE_ACP_TOKEN_MS: "25",
     FAKE_ACP_RPC_APPEND_FILE: acpLog,
     SAGAX_XAI_TTS_API: fakeApi,
@@ -638,6 +643,7 @@ export async function runVoiceLatencyBench(engine: BenchEngine = "claude"): Prom
     live.on("rejected", (reason) => diag.rejects.push(reason));
     live.on("error", (reason) => diag.errors.push(reason));
     let currentLang: "en" | "fr" = "en";
+    const benchOwner: { current: VoiceOpenerOwner | null } = { current: null };
     live.on("utterance", (text, turnMetrics, turn) => {
       metrics = mergeBenchMetrics(metrics, { ...metrics, ...turnMetrics } as never);
       current.sentAt ??= performance.now();
@@ -653,9 +659,15 @@ export async function runVoiceLatencyBench(engine: BenchEngine = "claude"): Prom
         return;
       }
       const utteranceId = (turn as { utteranceId?: string }).utteranceId ?? `bench-${Math.random().toString(36).slice(2, 12)}`;
+      benchOwner.current = { threadId, callId, utteranceId, replyStarted: false };
       void api("POST", `/api/bots/${bot.id}/messages`, {
         threadId, text, sendId: utteranceId,
-        voiceCall: { callId, utteranceId, language: voiceCallMarkLanguage(currentLang), duplex: true, ...(turn.interrupted ? { interrupted: true } : {}), ...(turn.continues ? { continues: true } : {}) },
+        voiceCall: {
+          callId, utteranceId, language: voiceCallMarkLanguage(currentLang), duplex: true,
+          ...(turn.interrupted ? { interrupted: true } : {}),
+          ...(turn.continues ? { continues: true } : {}),
+          ...(turn.speculative ? { speculative: true } : {}),
+        },
       }).then((sent) => {
         diag.sends.push({ status: sent.status, ok: sent.ok, superseded: sent.superseded });
         benchLog(`send status=${sent.status} ok=${sent.ok}`);
@@ -675,7 +687,10 @@ export async function runVoiceLatencyBench(engine: BenchEngine = "claude"): Prom
     }) : [];
 
     const replySink: BenchReplySink = {
-      progress: (text) => live.replyProgress(text),
+      progress: (text) => {
+        if (text.trim() && benchOwner.current) benchOwner.current = { ...benchOwner.current, replyStarted: true };
+        live.replyProgress(text);
+      },
       done: (text) => { void live.replyDone(text); },
       setBusy: (busy) => live.setBotBusy(busy),
     };
@@ -709,6 +724,14 @@ export async function runVoiceLatencyBench(engine: BenchEngine = "claude"): Prom
           if (!data) continue;
           let frame: any;
           try { frame = JSON.parse(data); } catch { continue; }
+          if (frame?.kind === "voice.opener") {
+            const opener = acceptVoiceOpener(benchOwner.current, frame);
+            if (opener) {
+              benchOwner.current = benchOwner.current ? { ...benchOwner.current, replyStarted: true } : null;
+              void live.say(opener);
+            }
+            continue;
+          }
           const event = frame?.kind === "runtime" ? frame.event : null;
           if (!applyBenchRuntimeEvent(event, threadId, current, replySink)) continue;
           diag.sse += 1;

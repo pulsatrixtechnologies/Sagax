@@ -59,6 +59,7 @@ describe("the phone-call instruction", () => {
     expect(text).toContain("Je regarde ça");
     expect(text).toContain("(their call is set to French)");
     expect(text).toContain("Keep your own persona and instructions");
+    expect(text).toContain("Do not repeat that acknowledgement");
     expect(text).not.toContain(VOICE_CALL_INTERRUPTED_NOTE);
     expect(text).not.toMatch(/[–—]/);
   });

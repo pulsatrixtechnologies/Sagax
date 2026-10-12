@@ -201,8 +201,9 @@ it("Grok: warms at call start, then every call turn is a bare prompt whose tools
   const t = await grokFixture();
   try {
     await t.api("POST", `/api/bots/${t.bot.id}/voice/call`, { threadId: t.thread, callId: CALL_ID, state: "start" });
-    // the warm: handshake and a native session, no prompt
-    await expect.poll(() => t.rpc(), { timeout: 15_000 }).toEqual(["initialize", "authenticate", "session/new"]);
+    // the warm: handshake, a native session, then one background cache-prime
+    // prompt (not a turn). The spoken prompts come after.
+    await expect.poll(() => t.rpc(), { timeout: 15_000 }).toEqual(["initialize", "authenticate", "session/new", "session/prompt"]);
     for (let turn = 1; turn <= 3; turn++) {
       await t.send({ text: `question ${turn}`, sendId: `send-${turn}-000000000${turn}`, voiceCall: { callId: CALL_ID, utteranceId: `utt-000000${turn}` } });
       await expect.poll(async () => (await t.replies()).length, { timeout: 15_000 }).toBe(turn);
@@ -212,7 +213,10 @@ it("Grok: warms at call start, then every call turn is a bare prompt whose tools
     // (Grok's per-turn session/set_model pin is a wire call on the live
     // session, not an establishment: it is left as it was)
     const establishing = (methods: string[]) => methods.filter((method) => method !== "session/set_model");
-    expect(establishing(t.rpc())).toEqual(["initialize", "authenticate", "session/new", "session/prompt", "session/prompt", "session/prompt"]);
+    expect(establishing(t.rpc())).toEqual([
+      "initialize", "authenticate", "session/new", "session/prompt",
+      "session/prompt", "session/prompt", "session/prompt",
+    ]);
     for (const reply of await t.replies()) expect(String(reply.text)).toContain("mcp:list_bots:ok");
     await expect.poll(() => /\[voice-latency\] utt=utt-0000003 .*\(warm\)/.test(t.log()), { timeout: 5_000 }).toBe(true);
     expect(t.log()).toMatch(/\[voice-latency\] utt=utt-0000001 .*\(warm\)/);
@@ -223,7 +227,7 @@ it("Grok: warms at call start, then every call turn is a bare prompt whose tools
     await t.send({ text: "in writing now" });
     await expect.poll(async () => (await t.replies()).length, { timeout: 15_000 }).toBe(4);
     expect(t.processes()).toHaveLength(2);
-    expect(establishing(t.rpc()).slice(6)).toEqual(["initialize", "authenticate", "session/load", "session/prompt"]);
+    expect(establishing(t.rpc()).slice(7)).toEqual(["initialize", "authenticate", "session/load", "session/prompt"]);
     // the call's process ran at low effort; the written turn's at the bot's own (none set)
     const effort = (argv: string[]) => (argv.includes("--reasoning-effort") ? argv[argv.indexOf("--reasoning-effort") + 1] : undefined);
     expect(t.processes().map((launch) => effort(launch.argv))).toEqual(["low", undefined]);

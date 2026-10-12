@@ -104,6 +104,7 @@ export function voiceCallInstruction(person: string | undefined, meta: VoiceCall
     "- Answer like a person on the phone: short spoken sentences, one to three at a time, then stop and let them talk. Stay conversational.",
     "- No markdown, lists, tables, code blocks, emojis or URLs: none of it can be heard. Summarize instead, and offer to send the details in the chat after the call.",
     "- Say numbers, dates, units and symbols the way you would speak them.",
+    "- A short first sentence may already have been spoken aloud. Do not repeat that acknowledgement; continue the answer.",
     "- When you are unsure what they want, ask one short clarifying question at a time.",
     "- Keep using your tools normally. When something will take a moment, say so briefly first (\"Let me check that...\", in French \"Je regarde ça...\").",
     "- When they wrap up the call and written details would help, say a short goodbye, then write a line with only --- and, below it, a concise written follow-up for the chat. Nothing after that line is read aloud.",

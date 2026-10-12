@@ -37,6 +37,7 @@ import { openStartupModelCatalog, writeStartupModelCache } from "../../startup-m
 import { decodeInjectId } from "../local-inject.ts";
 import { DeviceAuthController, type DeviceSignIn } from "../device-auth.ts";
 import { deletePromptSplitReceipt, promptHalves, readPromptSplitReceipt, splitSessionPrompt, writePromptSplitReceipt } from "../prompt-split.ts";
+import { cachePrimePrompt, joinCachePrime } from "../../voice-first-sentence.ts";
 import type { PromptSplitReceipt } from "../prompt-split.ts";
 import { describeSpawnFailure, execCli, killCliTree, spawnCli } from "../../procs.ts";
 import {
@@ -266,6 +267,11 @@ interface AcpSession {
   fallbackNotice?: string;
   /** the model the process was told to start sessions on (sessionModelEnv) */
   launchModel?: string;
+  /** A background session/prompt that writes the call's system prefix into
+   * the provider cache. The spoken turn joins it briefly. `current` stays
+   * null, so its chunks are not a turn. */
+  cachePrime?: Promise<void>;
+  cachePrimed?: boolean;
 }
 
 /** Per-harness specifics — everything that differs between Grok, Gemini, … */
@@ -2142,6 +2148,30 @@ export function createAcpDriver(support: AcpSupport): ProviderDriver<AcpConfig> 
             signal?.addEventListener("abort", releaseIfIdle, { once: true });
             if (sessions.get(threadId) === session && !session.current) armIdle(threadId);
           }
+          // The handshake established the session and wrote no prompt, so the
+          // first spoken turn would be a cold prefill. One background prompt
+          // of the same system prefix fills the provider cache. It is not
+          // awaited: a warm still returns with no turn, and the spoken turn
+          // joins it for a moment (joinCachePrime).
+          if (turn.cachePrime === true && !signal?.aborted && session.sessionId && turn.system?.trim() && !session.cachePrimed) {
+            const primed = session;
+            const sessionId = session.sessionId;
+            const prime = request(
+              "session/prompt",
+              { sessionId, prompt: [{ type: "text", text: cachePrimePrompt(turn.system) }] },
+              20_000,
+            ).then(() => {
+              if (sessions.get(threadId) === primed) primed.cachePrimed = true;
+            }, () => {
+              // cancelled, or the call ended: the spoken turn pays the prefill
+            });
+            primed.cachePrime = prime;
+            signal?.addEventListener("abort", () => {
+              if (!primed.cachePrimed && primed.sessionId) {
+                primed.acp.send({ jsonrpc: "2.0", method: "session/cancel", params: { sessionId: primed.sessionId } });
+              }
+            }, { once: true });
+          }
           return result;
         }
 
@@ -2554,6 +2584,14 @@ export function createAcpDriver(support: AcpSupport): ProviderDriver<AcpConfig> 
             }
             if (variant !== undefined && requestedVariantOption().currentValue !== variant) {
               throw new Error(`${support.displayName} changed variant before the prompt`);
+            }
+            if (session.cachePrime) {
+              const pending = session.cachePrime;
+              const sessionId = session.sessionId;
+              await joinCachePrime(pending, () => {
+                if (sessionId) session.acp.send({ jsonrpc: "2.0", method: "session/cancel", params: { sessionId } });
+              });
+              if (sessions.get(threadId) === session) session.cachePrime = undefined;
             }
             if (state.settled || state.stopped || session.closing) throw new Error("turn stopped");
             state.promptSent = true;

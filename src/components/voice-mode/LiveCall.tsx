@@ -30,6 +30,7 @@ import {
   type SpeechFence,
 } from "@/lib/voice-mode/speech-fence";
 import { stageDurations } from "@/lib/voice-mode/latency";
+import { acceptVoiceOpener, VOICE_OPENER_EVENT, type VoiceOpenerOwner } from "@/lib/voice-mode/voice-opener";
 import type { CallState } from "@/lib/voice-mode/call-machine";
 import { readVoiceModeSettings } from "@/lib/voice-mode/settings";
 import { publishLiveCall, retractLiveCall, useLiveCall, type LiveCallData, type LiveCallMetrics } from "@/lib/voice-mode/live-call-store";
@@ -117,6 +118,8 @@ export function LiveCallEngine({ bot }: { bot: Bot }) {
   const askedQuestion = useRef<{ requestId: string; messageId: string } | null>(null);
   /** after a barge-in: the old turn's words are not spoken across the next send */
   const fence = useRef<SpeechFence>(createSpeechFence());
+  /** The utterance the opener may speak for. Cleared when that turn is dropped. */
+  const openerOwner = useRef<VoiceOpenerOwner | null>(null);
   const filler = useRef(createToolFillerState());
   const pendingSpeak = useRef<Array<SpeakItem & { text: string; kind: "say" | "done" }>>([]);
   const drainSpeak = useCallback(() => {
@@ -172,6 +175,7 @@ export function LiveCallEngine({ bot }: { bot: Bot }) {
         });
       }),
       live.on("speech-cancelled", (cut) => {
+        openerOwner.current = null;
         setCaption("");
         if (cut.unheard) lastCut.current = { unheard: cut.unheard };
         // what was being said is cut: the rest of that answer is not spoken
@@ -179,6 +183,7 @@ export function LiveCallEngine({ bot }: { bot: Bot }) {
         filler.current = cancelToolFiller(filler.current);
       }),
       live.on("interrupt-bot", (target) => {
+        openerOwner.current = null;
         const current = botRef.current;
         // an approval or option card being answered by voice keeps its turn
         if (askedApproval.current || askedQuestion.current || !current.busy) return;
@@ -247,6 +252,7 @@ export function LiveCallEngine({ bot }: { bot: Bot }) {
       // one id per utterance: the server delivers it once, whatever retries,
       // and logs its stages under it (the call's timeline uses the same)
       const utteranceId = spokenId ?? crypto.randomUUID();
+      openerOwner.current = { threadId: current.threadId, callId, utteranceId, replyStarted: false };
       // a send that failed (a network blip, a turn that ended under it) is
       // tried again once with the same utterance; then the person is told,
       // never left waiting on silence
@@ -290,6 +296,18 @@ export function LiveCallEngine({ bot }: { bot: Bot }) {
   }, [call, onUtterance]);
 
   useEffect(() => {
+    if (!call) return;
+    const onOpener = (event: Event) => {
+      const text = acceptVoiceOpener(openerOwner.current, (event as CustomEvent<VoiceOpenerOwner & { text?: string }>).detail);
+      if (!text) return;
+      openerOwner.current = openerOwner.current ? { ...openerOwner.current, replyStarted: true } : null;
+      void call.say(text);
+    };
+    window.addEventListener(VOICE_OPENER_EVENT, onOpener);
+    return () => window.removeEventListener(VOICE_OPENER_EVENT, onOpener);
+  }, [call]);
+
+  useEffect(() => {
     call?.setBotBusy(Boolean(bot.busy));
   }, [call, bot.busy]);
 
@@ -306,6 +324,9 @@ export function LiveCallEngine({ bot }: { bot: Bot }) {
     const accepted = streamText(fence.current, live);
     fence.current = accepted.fence;
     if (accepted.text === null) return;
+    if (openerOwner.current && accepted.text.trim()) {
+      openerOwner.current = { ...openerOwner.current, replyStarted: true };
+    }
     call.replyProgress(accepted.text);
   }, [call, live]);
 

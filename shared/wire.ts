@@ -1082,6 +1082,10 @@ export type ServerFrame =
    * when others see them offline), to their streams only. */
   | { kind: "presence.changed"; audience?: string; people: Array<{ principalId: string; state: "online" | "away" | "offline"; lastSeenAt: number | null; hidden?: true }> }
   | { kind: "live.call"; botId: string; threadId: string; call: LiveCallState | null }
+  /** A short first sentence spoken ahead of the bot's own reply on a duplex
+   * call (server/voice-first-sentence.ts). The speaker's streams only. Not
+   * stored. iOS ignores the kind. */
+  | { kind: "voice.opener"; audience: string; threadId: string; callId: string; utteranceId: string; text: string }
   /** The config status object spread flat into the frame; its full typing
    * is the deferred client-model extraction (see j1-phase-bc-progress). */
   | ({ kind: "config" } & Record<string, unknown>);

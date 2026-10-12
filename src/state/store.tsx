@@ -4751,6 +4751,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         case "nudge":
           void onNudgeReceived(frame, (target) => openNotificationTarget(dispatch, target, stateRef.current));
           break;
+        case "voice.opener":
+          if (typeof window !== "undefined") {
+            window.dispatchEvent(new CustomEvent("sagax-voice-opener", { detail: frame }));
+          }
+          break;
         // a nudge this person sent, on each of their windows: front, shake, ring
         case "nudge.sent":
           void onNudgeSentEcho(frame);
