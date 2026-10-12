@@ -7,7 +7,7 @@ describe("bundledReleaseCatalog", () => {
     expect(catalog["0.4.4"]).toContain("## English");
     expect(catalog["0.4.6"]).toContain("## English");
     expect(catalog["0.4.8"]).toContain("## English");
-    expect(catalog["0.4.9", "0.5.0"]).toContain("## English");
+    expect(catalog["0.4.9"]).toContain("## English");
     expect(catalog["0.4.10"]).toContain("## English");
     expect(catalog["0.4.11"]).toContain("## English");
     expect(catalog["0.4.12"]).toContain("## English");
@@ -21,6 +21,7 @@ describe("bundledReleaseCatalog", () => {
     expect(catalog["0.4.20"]).toContain("## English");
     expect(catalog["0.4.21"]).toContain("## English");
     expect(catalog["0.4.22"]).toContain("## English");
+    expect(catalog["0.5.0"]).toContain("## English");
     expect(Object.keys(catalog).sort()).toEqual(["0.4.0", "0.4.1", "0.4.10", "0.4.11", "0.4.12", "0.4.13", "0.4.14", "0.4.15", "0.4.16", "0.4.17", "0.4.18", "0.4.19", "0.4.2", "0.4.20", "0.4.21", "0.4.22", "0.4.3", "0.4.4", "0.4.5", "0.4.6", "0.4.7", "0.4.8", "0.4.9", "0.5.0"]);
   });
 
