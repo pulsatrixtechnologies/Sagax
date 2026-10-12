@@ -1576,8 +1576,100 @@ public struct CompanionClient: Sendable {
         return try await send(request, as: ClaudeUpdateResponse.self).version
     }
 
+    /// Start the computer's own provider sign-in. The answer is a page and,
+    /// for a device code, the code to type there. It never carries a token.
+    public func startEngineSignInRequest(instanceId: String) throws -> URLRequest {
+        guard Self.signInInstanceID(instanceId) else { throw APIError.badURL }
+        return try makeRequest("POST", "/api/instances/\(instanceId)/auth/start", body: [:])
+    }
+
+    public func startEngineSignIn(instanceId: String) async throws -> EngineSignInState {
+        try await send(try startEngineSignInRequest(instanceId: instanceId), as: EngineSignInEnvelope.self).auth
+    }
+
+    public func engineSignInStatusRequest(instanceId: String, flowId: String) throws -> URLRequest {
+        guard Self.signInInstanceID(instanceId), Self.signInFlowID(flowId) else { throw APIError.badURL }
+        return try makeRequest(
+            "GET",
+            "/api/instances/\(instanceId)/auth/status",
+            query: [URLQueryItem(name: "flowId", value: flowId)]
+        )
+    }
+
+    public func engineSignInStatus(instanceId: String, flowId: String) async throws -> EngineSignInState {
+        try await send(try engineSignInStatusRequest(instanceId: instanceId, flowId: flowId), as: EngineSignInEnvelope.self).auth
+    }
+
+    public func cancelEngineSignInRequest(instanceId: String, flowId: String) throws -> URLRequest {
+        guard Self.signInInstanceID(instanceId), Self.signInFlowID(flowId) else { throw APIError.badURL }
+        return try makeRequest("POST", "/api/instances/\(instanceId)/auth/cancel", body: ["flowId": flowId])
+    }
+
+    public func cancelEngineSignIn(instanceId: String, flowId: String) async throws {
+        try await send(try cancelEngineSignInRequest(instanceId: instanceId, flowId: flowId))
+    }
+
+    /// `code` is the short code from the provider's page (Claude). It is sent
+    /// once and never stored on the phone.
+    public func completeEngineSignInRequest(instanceId: String, flowId: String, code: String) throws -> URLRequest {
+        guard Self.signInInstanceID(instanceId), Self.signInFlowID(flowId) else { throw APIError.badURL }
+        let trimmed = code.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, trimmed.count <= 2048, !trimmed.contains("\u{0}") else { throw APIError.badURL }
+        return try makeRequest(
+            "POST",
+            "/api/instances/\(instanceId)/auth/complete",
+            body: ["flowId": flowId, "code": trimmed]
+        )
+    }
+
+    public func completeEngineSignIn(instanceId: String, flowId: String, code: String) async throws {
+        try await send(try completeEngineSignInRequest(instanceId: instanceId, flowId: flowId, code: code))
+    }
+
+    public func engineAccessKeyStatusRequest(instanceId: String) throws -> URLRequest {
+        guard Self.signInInstanceID(instanceId) else { throw APIError.badURL }
+        return try makeRequest("GET", "/api/instances/\(instanceId)/api-key")
+    }
+
+    /// Whether a key is saved. The computer never returns the key itself.
+    public func engineAccessKeyConfigured(instanceId: String) async throws -> Bool {
+        try await send(try engineAccessKeyStatusRequest(instanceId: instanceId), as: EngineAccessKeyStatus.self).configured
+    }
+
+    public func saveEngineAccessKeyRequest(instanceId: String, key: String) throws -> URLRequest {
+        guard Self.signInInstanceID(instanceId) else { throw APIError.badURL }
+        guard key.count <= 4096, !key.contains("\u{0}") else { throw APIError.badURL }
+        return try makeRequest("POST", "/api/instances/\(instanceId)/api-key", body: ["key": key])
+    }
+
+    public func saveEngineAccessKey(instanceId: String, key: String) async throws -> Bool {
+        try await send(try saveEngineAccessKeyRequest(instanceId: instanceId, key: key), as: EngineAccessKeyStatus.self).configured
+    }
+
     private struct ClaudeUpdateResponse: Decodable {
         let version: String
+    }
+
+    private struct EngineSignInEnvelope: Decodable {
+        var auth: EngineSignInState
+    }
+
+    private struct EngineAccessKeyStatus: Decodable {
+        var configured: Bool
+    }
+
+    /// `validInstanceID` still allows a run of dots. These routes reject it,
+    /// matching the companion's `(?!\.+\/)` guard.
+    private static func signInInstanceID(_ value: String) -> Bool {
+        validInstanceID(value) && value.contains { $0 != "." }
+    }
+
+    private static func signInFlowID(_ value: String) -> Bool {
+        (1...80).contains(value.utf8.count) && value.contains { $0 != "." }
+            && value.utf8.allSatisfy { byte in
+                (48...57).contains(byte) || (65...90).contains(byte) || (97...122).contains(byte)
+                    || byte == 45 || byte == 95 || byte == 46
+            }
     }
 
     /// Matches the harness's `[\w.-]+` instance route component.

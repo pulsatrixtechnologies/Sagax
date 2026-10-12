@@ -46,6 +46,15 @@ describe("workspace backup data boundary", () => {
     expect(excludedWorkspaceAuthPath(path)).toBe(true);
   });
 
+  it("never exports or restores provider access keys", () => {
+    for (const path of ["engine-api-keys.json", "engine-api-keys.json.4242.05a7b3e0-1234-4abc-8def-0123456789ab.tmp"]) {
+      expect(excludedWorkspaceAuthPath(path)).toBe(true);
+    }
+    for (const path of ["engine-api-keys.json.md", "workspaces/bot/engine-api-keys.json"]) {
+      expect(excludedWorkspaceAuthPath(path)).toBe(false);
+    }
+  });
+
   it("never exports or restores MCP sign-in tokens", () => {
     for (const path of ["mcp-oauth.json", "mcp-oauth.json.4242.05a7b3e0-1234-4abc-8def-0123456789ab.tmp"]) expect(excludedWorkspaceAuthPath(path)).toBe(true);
     for (const path of ["mcp-oauth.json.md", "workspaces/bot/mcp-oauth.json"]) expect(excludedWorkspaceAuthPath(path)).toBe(false);

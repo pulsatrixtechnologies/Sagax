@@ -235,6 +235,7 @@ import {
   mergeOpenCodeProviderKeys,
   openCodeProviderKeys,
 } from "./config.ts";
+import { configKeyPatch, engineKeyTarget, fileKeyConfigured, normalizeEngineKey, writeFileEngineKey, writeHermesAccessKey } from "./engine-api-keys.ts";
 import { sweepThreadEventLogs, type ThreadLogRetentionCandidate } from "./thread-retention.ts";
 import { ComputerControl } from "./computer-control.ts";
 import { augmentedPath, findCliCandidates, resetPathCache } from "./env-path.ts";
@@ -35933,6 +35934,56 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
     const companyMutation = /^\/api\/instances\/(company\.[\w.-]+)(?:\/|$)/.exec(path);
     if (hostedModels && path.startsWith("/api/instances/") && method !== "GET") return json(res, 403, { error: HOSTED_PROVIDER_SETTINGS_ERROR });
     if (companyMutation && method !== "GET") return json(res, 403, { error: "Company accounts are read-only here. Manage this connection in desktop Settings." });
+
+    // A masked access key pasted on a provider card. The answer is only
+    // whether one is saved. The value is never logged, never returned, and
+    // a save error is a fixed sentence so a parser cannot echo the key.
+    const engineKey = /^\/api\/instances\/([\w.-]+)\/api-key$/.exec(path);
+    if (engineKey && (method === "GET" || method === "POST")) {
+      res.setHeader("cache-control", "no-store");
+      const instanceId = engineKey[1]!;
+      const driver = registry.get(instanceId)?.driverKind ?? cfg.instances?.[instanceId]?.driver;
+      if (!driver) return json(res, 404, { error: "unknown instance" });
+      const target = engineKeyTarget(instanceId, driver);
+      if (!target) return json(res, 404, { error: "This provider does not take an access key here." });
+      const configuredNow = (): boolean => {
+        if (target.kind === "file") return fileKeyConfigured(DATA_DIR, driver, target.env);
+        const section = cfg[target.section] as { key?: string; apiKey?: string } | undefined;
+        return Boolean(section?.[target.field]);
+      };
+      if (method === "GET") return json(res, 200, { configured: configuredNow() });
+      if (!String(req.headers["content-type"] ?? "").toLowerCase().startsWith("application/json")) {
+        return json(res, 415, { error: "content-type must be application/json" });
+      }
+      const body = await readBody(req, 8192);
+      if (!body || typeof body !== "object" || typeof (body as { key?: unknown }).key !== "string") {
+        return json(res, 400, { error: "Send the access key as { key }." });
+      }
+      let key: string;
+      try {
+        key = normalizeEngineKey((body as { key: string }).key);
+      } catch {
+        return json(res, 400, { error: "Enter the access key as a single line, between 8 and 400 characters." });
+      }
+      if (providerConfigBusy) return json(res, 409, { error: "provider settings are already being updated" });
+      providerConfigBusy = true;
+      try {
+        if (target.kind === "config") {
+          saveConfig(configKeyPatch(target, key) as Parameters<typeof saveConfig>[0]);
+          Object.assign(cfg, loadConfig());
+          broadcast({ kind: "config", ...configStatus() });
+        } else {
+          writeFileEngineKey(DATA_DIR, driver, target.env, key);
+          if (target.hermes) writeHermesAccessKey(process.env as Record<string, string | undefined>, key);
+        }
+        await reloadProviders();
+        return json(res, 200, { configured: key.length > 0 });
+      } catch {
+        return json(res, 500, { error: "The access key could not be saved. Try again." });
+      } finally {
+        providerConfigBusy = false;
+      }
+    }
 
     const instanceIconPatch = /^\/api\/instances\/([\w.-]+)\/icon$/.exec(path);
     if (method === "PATCH" && instanceIconPatch) {

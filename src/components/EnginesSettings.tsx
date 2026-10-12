@@ -13,6 +13,7 @@ import { cn } from "@/lib/cn";
 import { useMenuMotion } from "./MenuMotion";
 import { t } from "@/lib/i18n";
 import { ApiKeyEngineManage, EngineSetup, EngineUpdateNotice, EngineWarningNotice, isApiKeyEngine } from "./EngineSetup";
+import { EngineApiKeyField } from "./EngineApiKeyField";
 import { AddClaudeAccount, ClaudeAccountSettings } from "./ClaudeAccountSettings";
 import { AddChatGptAccount, CodexAccountSettings } from "./CodexAccountSettings";
 import { DEVICE_SIGN_IN_COPY, deviceSignInProvider } from "./DeviceSignIn";
@@ -299,6 +300,15 @@ function EngineRow({ instance, mine, member = false, issuer = "" }: { instance: 
       {mine && <EngineConnect engine={mine} issuer={issuer} onChanged={reloadMyEngines} className="mb-3" />}
       {!mine && !engineReady(instance) && <EngineSetup instance={instance} intent={instance.access === "custom" ? "inject" : "cloud"} unframed />}
       {!mine && engineReady(instance) && <ApiKeyEngineManage instance={instance} className="mt-3" />}
+      {!mine && engineReady(instance) && instance.driverKind === "hermesAgent" && (
+        <EngineApiKeyField instanceId={instance.instanceId} />
+      )}
+      {!mine && engineReady(instance) && instance.driverKind === "cursorAgent" && (
+        <details className="mt-3 rounded-lg border border-hairline/50 bg-app px-2.5 py-2 text-[11.5px] text-ink-secondary">
+          <summary className="cursor-pointer select-none">{t("engineSetup.apiKey.orKey")}</summary>
+          <EngineApiKeyField instanceId={instance.instanceId} />
+        </details>
+      )}
       {instance.snapshot.update && <EngineUpdateNotice update={instance.snapshot.update} instance={instance} className="mt-3" />}
       {instance.snapshot.warning && <EngineWarningNotice warning={instance.snapshot.warning} className="mt-3" />}
       {!mine && instance.claudeAccount && <ClaudeAccountSettings instance={instance} />}
@@ -307,6 +317,8 @@ function EngineRow({ instance, mine, member = false, issuer = "" }: { instance: 
           ? <CodexAccountSettings instance={instance} />
           : instance.authentication?.method === "device-code"
           ? <p className="flex items-center gap-1.5 text-[12px] text-success"><Check size={13} />{t(DEVICE_SIGN_IN_COPY[deviceSignInProvider(instance.driverKind)].connectedAccount)}</p>
+          : instance.authentication?.method === "open-link"
+          ? <p className="flex items-center gap-1.5 text-[12px] text-success"><Check size={13} />{t(DEVICE_SIGN_IN_COPY.cursor.connectedAccount)}</p>
           : instance.authentication?.method === "paste-code" && !instance.claudeAccount && (
             <p className="flex items-center gap-1.5 text-[12px] text-success"><Check size={13} />{t("engineSetup.claude.connectedAccount")}</p>
           )

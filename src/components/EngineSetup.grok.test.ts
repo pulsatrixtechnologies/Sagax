@@ -2,8 +2,9 @@
 // Grok Build's setup card, wherever Grok is not ready: Settings → Engines,
 // My Cloud's sign-in and a failed turn's card all render this one. Signed out,
 // it is the in-app code, the same on the desktop, a server and My Cloud; the
-// `grok login` command stays behind "Prefer a terminal?" only where a
-// terminal runs on that machine. Where Grok cannot run and nobody here can
+// `grok login` stays collapsed under "Prefer a terminal?" everywhere. The
+// button that opens a terminal is only where that terminal runs on this
+// machine. Where Grok cannot run and nobody here can
 // install it, it is one honest line and one action: an xAI key.
 import { createElement } from "react";
 import { flushSync } from "react-dom";
@@ -54,30 +55,34 @@ afterEach(() => {
 });
 
 describe("signed out: the in-app code", () => {
-  it("signs in with xAI's code on a server's page, with no terminal command", () => {
+  it("signs in with xAI's code on a server's page, and keeps the command collapsed", () => {
     const html = render(signedOut, undefined);
     expect(html).toContain('data-device-sign-in="grok"');
     expect(html).toContain("Sign in with your grok.com account so Grok runs on this server");
     expect(html).toContain("Sign in to Grok");
-    expect(html).not.toContain("grok login");
-    expect(html).not.toContain("Prefer a terminal?");
+    expect(html).toContain("data-manual-command");
+    expect(html).toContain("grok login");
+    expect(html).not.toContain("Open sign-in in Terminal");
     expect(html).not.toMatch(/Connect ChatGPT|ChatGPT security settings/);
   });
 
-  it("keeps `grok login` behind Prefer a terminal? in the desktop app's own window", () => {
+  it("keeps `grok login` behind Prefer a terminal? and can open it in the desktop app's own window", () => {
     const html = render(signedOut, desktop);
     expect(html).toContain('data-device-sign-in="grok"');
     expect(html).toContain("Prefer a terminal?");
     expect(html).toContain("grok login");
+    expect(html).toContain("Open sign-in in Terminal");
   });
 
   it.each([
     // Sagax has no My Cloud (OMB Cloud removed), so its row is gone.
     ["a desktop paired to another server", pairedDesktop, false],
-  ] as const)("never hands %s a terminal command", (_where, ogb, cloudHome) => {
+  ] as const)("keeps the command collapsed for %s and does not open a terminal there", (_where, ogb, cloudHome) => {
     const html = render(signedOut, ogb, cloudHome);
     expect(html).toContain('data-device-sign-in="grok"');
-    expect(html).not.toContain("grok login");
+    expect(html).toContain("data-manual-command");
+    expect(html).toContain("grok login");
+    expect(html).not.toContain("Open sign-in in Terminal");
   });
 });
 

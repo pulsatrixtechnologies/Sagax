@@ -434,6 +434,7 @@ const support: AcpSupport = {
     },
     docsUrl: "https://hermes-agent.nousresearch.com/docs/getting-started/quickstart",
     signInCommand: "hermes setup",
+    apiKey: true,
   },
   spawnArgs: () => ["acp"],
   // Organization server: no shell, file, web, browser, code, subagent,

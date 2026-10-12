@@ -86,6 +86,7 @@ export const MinimaxDriver: ProviderDriver<MinimaxConfig> = {
       win32: "npm install -g mmx-cli",
     },
     signInCommand: "mmx auth login --api-key YOUR_MINIMAX_API_KEY",
+    apiKey: true,
     needsNode: true,
   },
   decodeConfig: decodeMinimaxConfig,

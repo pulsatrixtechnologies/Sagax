@@ -19,6 +19,7 @@ import type { MailSettings } from "./mail-config.ts";
 import { isRemoteMcpServer, parseStoredMcpServer } from "./mcp-registry.ts";
 import { parseJson, schemaIssue, type JsonObject, type JsonValue } from "./schema.ts";
 import { currentEnvName, defaultDataDir } from "../electron/legacy-names.mjs";
+import { applyStoredEngineEnv } from "./engine-api-keys.ts";
 
 const optionalText = z.string().optional();
 const SSH_ALIAS = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$/;
@@ -2080,6 +2081,7 @@ export function instanceConfigs(cfg: AppConfig): InstanceConfigMap {
       for (const [key, value] of injectedEnvironment(cfg, id, entry.driver)) environment[key] = value;
     }
     entry.environment = environment;
+    applyStoredEngineEnv(environment, entry.driver, DATA_DIR);
     // The driver URL is configuration, not a credential. Environment is
     // intentionally not consulted by ProviderRegistry when it decodes a
     // driver's config, so carry the workspace default into the transient

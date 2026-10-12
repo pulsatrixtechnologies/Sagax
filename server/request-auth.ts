@@ -651,6 +651,7 @@ export const PERMISSION_ROUTES: ReadonlyArray<{ methods: readonly string[]; path
   { methods: ["PATCH", "DELETE"], path: /^\/api\/instances\/[\w.-]+$/, permission: "engines.manage" },
   { methods: ["PATCH"], path: /^\/api\/instances\/[\w.-]+\/icon$/, permission: "engines.manage" },
   { methods: ["GET"], path: /^\/api\/instances\/[\w.-]+\/auth\/status$/, permission: "engines.manage" },
+  { methods: ["GET", "POST"], path: /^\/api\/instances\/[\w.-]+\/api-key$/, permission: "engines.manage" },
   { methods: ["POST"], path: /^\/api\/instances\/[\w.-]+\/(?:refresh-models|install|auth\/start|auth\/complete|auth\/cancel|auth\/sign-out|claude-update)$/, permission: "engines.manage" },
   { methods: ["POST"], path: /^\/api\/instances\/(?:claude|chatgpt)-accounts$/, permission: "engines.manage" },
 ];

@@ -156,6 +156,15 @@ const ALLOWED: ReadonlyArray<{ method: string; path: RegExp }> = [
   // configured CLI; the harness refuses it while any Claude turn is running.
   // Instance ids may carry dots, so a dots-only segment is refused outright.
   { method: "POST", path: /^\/api\/instances\/(?!\.+\/)[\w.-]+\/claude-update$/ },
+  // In-app sign-in and a masked access key. The phone never sees the key
+  // again: the status is a phase, and the key route answers only whether
+  // one is saved.
+  { method: "POST", path: /^\/api\/instances\/(?!\.+\/)[\w.-]+\/auth\/start$/ },
+  { method: "GET", path: /^\/api\/instances\/(?!\.+\/)[\w.-]+\/auth\/status$/ },
+  { method: "POST", path: /^\/api\/instances\/(?!\.+\/)[\w.-]+\/auth\/cancel$/ },
+  { method: "POST", path: /^\/api\/instances\/(?!\.+\/)[\w.-]+\/auth\/complete$/ },
+  { method: "GET", path: /^\/api\/instances\/(?!\.+\/)[\w.-]+\/api-key$/ },
+  { method: "POST", path: /^\/api\/instances\/(?!\.+\/)[\w.-]+\/api-key$/ },
   { method: "GET", path: /^\/api\/team-map$/ },
   // Sidecar-owned, authenticated endpoint metadata. The proxy terminates it
   // locally; it never becomes a newly exposed harness route.

@@ -219,7 +219,7 @@ const support: AcpSupport = {
   models: MODELS,
   defaultCli: "droid",
   nativeSource: "droid.acp",
-  loginNote: "Droid CLI is not signed in — run `droid` once and log in, or set FACTORY_API_KEY",
+  loginNote: "Droid is not signed in. Paste an access key on the provider card.",
 
   install: {
     command: {
@@ -229,6 +229,7 @@ const support: AcpSupport = {
     },
     docsUrl: "https://docs.factory.ai/droid-cli/quickstart",
     signInCommand: "droid",
+    apiKey: true,
   },
 
   // No model/mode flags here on purpose: see the header note. `-o acp` is the

@@ -19,8 +19,11 @@ key.
 
    Windows (native): `irm 'https://cursor.com/install?win32=true' | iex`
 
-2. Sign in with `cursor-agent login`, or set `CURSOR_API_KEY` / `CURSOR_AUTH_TOKEN`
-   in the environment of the Cursor instance.
+2. Sign in from the provider card. Sagax runs `cursor-agent login` and opens
+   Cursor's page; you finish there. Or paste an access key on that same card.
+   The command `cursor-agent login` stays under "Prefer a terminal?" for
+   anyone who still wants to type it. `CURSOR_API_KEY` or `CURSOR_AUTH_TOKEN`
+   in the instance environment still works.
 
 3. Confirm `cursor-agent --version` works. Cursor's docs call the command `agent`;
    the installer adds `cursor-agent` beside it, and Sagax runs that name,
