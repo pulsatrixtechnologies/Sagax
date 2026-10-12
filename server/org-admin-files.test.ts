@@ -3,7 +3,7 @@
 // list, stat, read and download answers, the rights (role and a manager's
 // reach), and the admin activity rows. The assertion gate itself is proven
 // in org-admin-routes.test.ts.
-import { closeSync, mkdirSync, mkdtempSync, openSync, rmSync, symlinkSync, writeFileSync, ftruncateSync } from "node:fs";
+import { closeSync, mkdirSync, mkdtempSync, openSync, realpathSync, rmSync, symlinkSync, writeFileSync, ftruncateSync } from "node:fs";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
@@ -20,6 +20,7 @@ import {
   parseRange,
   parseRelativePath,
   resolveInRoot,
+  openNoFollow,
   type BotAttachment,
   type BotFileRoot,
   type FileAccessRecord,
@@ -182,6 +183,24 @@ describe("the path rules", () => {
     expect(() => resolveInRoot(ws, ["inner-link.txt"])).toThrow(/Links are not followed/);
     expect(resolveInRoot(ws, ["memory", "topic.md"]).stat.isFile()).toBe(true);
     expect(() => resolveInRoot(join(dir, "nowhere"), [])).toThrow(/does not exist yet/);
+  });
+
+  it("does not follow a parent directory replaced by a symlink", async () => {
+    const root = join(dir, "nofollow");
+    const outside = join(dir, "outside-secret");
+    mkdirSync(join(root, "parent"), { recursive: true });
+    mkdirSync(outside, { recursive: true });
+    writeFileSync(join(root, "parent", "note.txt"), "INSIDE");
+    writeFileSync(join(outside, "note.txt"), "OUTSIDE");
+    const rootDir = realpathSync(root);
+    const opened = await openNoFollow(rootDir, ["parent", "note.txt"]);
+    const inside = Buffer.alloc(6);
+    await opened.read(inside, 0, 6, 0);
+    await opened.close();
+    expect(inside.toString()).toBe("INSIDE");
+    rmSync(join(root, "parent"), { recursive: true });
+    symlinkSync(outside, join(root, "parent"));
+    await expect(openNoFollow(rootDir, ["parent", "note.txt"])).rejects.toThrow(/Links are not followed/);
   });
 
   it("bounds a read range and reads text and binary apart", () => {

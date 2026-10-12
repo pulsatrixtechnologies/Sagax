@@ -1734,6 +1734,10 @@ describe("ClaudeDriver turns (fake CLI)", () => {
     expect(seen.argv[seen.argv.indexOf("--resume") + 1]).toBe("previous-host-computer-session");
     expect(seen.systemPrompt).toContain("no host computer tools are mounted");
     expect(seen.mcpConfig.mcpServers.browser).toBeTruthy();
+    const allowedTools = seen.argv.includes("--allowedTools")
+      ? String(seen.argv[seen.argv.indexOf("--allowedTools") + 1] ?? "").split(",")
+      : [];
+    expect(allowedTools).not.toContain("mcp__browser");
     expect(seen.mcpConfig.mcpServers.computer).toBeUndefined();
   });
 

@@ -33,9 +33,12 @@ export type { BotVisibility };
 /** The person looking, reduced to what visibility needs. `all` is the owner,
  * a local service or an admin session; `member` is any other session, with
  * the email it signed in with when it has one. */
-export type Viewer = { kind: "all" } | { kind: "member"; email?: string };
+export type Viewer = { kind: "all" } | { kind: "member"; email?: string } | { kind: "none" };
 
 export const SEES_EVERYTHING: Viewer = { kind: "all" };
+
+/** A session-less service on an organization server. Sees no bot, room or thread. */
+export const SEES_NOTHING: Viewer = { kind: "none" };
 
 export const MAX_VISIBILITY_PEOPLE = 500;
 const ENTRY = /^(?:[^\s@,;<>"]+@[^\s@,;<>"]+\.[^\s@,;<>"]+|@[^\s@,;<>"]+\.[^\s@,;<>"]+)$/;
@@ -83,6 +86,7 @@ function entryMatches(entry: string, email: string): boolean {
 }
 
 export function viewerSees(viewer: Viewer, visibility: unknown): boolean {
+  if (viewer.kind === "none") return false;
   if (viewer.kind === "all") return true;
   const stored = storedVisibility(visibility);
   if (stored === "everyone") return true;
@@ -192,7 +196,7 @@ export class VisibleSet {
   ) {
     this.viewer = viewer;
     this.everything = viewer.kind === "all" ||
-      (!bots.some((bot) => isRestricted(bot.visibility)) && !groups.some((group) => isRestricted(group.audienceFloor)));
+      (viewer.kind !== "none" && !bots.some((bot) => isRestricted(bot.visibility)) && !groups.some((group) => isRestricted(group.audienceFloor)));
     this.ownerOf = ownerOf ?? ((threadId) => this.indexedOwner(threadId));
     if (this.everything) return;
     for (const bot of bots) this.bots.set(bot.id, bot);

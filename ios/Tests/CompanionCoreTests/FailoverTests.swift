@@ -207,13 +207,16 @@ final class FailoverTests: XCTestCase {
             port: 8810,
             hosts: ["mac.tail1234.ts.net", "192.168.1.42", "openmausbot-aa.local"]
         )
-        XCTAssertEqual(connection.orderedHosts, ["192.168.1.42", "mac.tail1234.ts.net", "openmausbot-aa.local"])
+        XCTAssertEqual(connection.orderedHosts, ["192.168.1.42", "openmausbot-aa.local"])
     }
 
     func testOrderedHostsFallsBackToTheSingleStoredHost() {
-        // A connection saved before fallbacks existed still dials.
-        let connection = Connection(name: "Mac", host: "mac.tail1234.ts.net", port: 8810)
-        XCTAssertEqual(connection.orderedHosts, ["mac.tail1234.ts.net"])
+        // A connection saved before fallbacks existed still dials a LAN host.
+        let connection = Connection(name: "Mac", host: "192.168.1.42", port: 8810)
+        XCTAssertEqual(connection.orderedHosts, ["192.168.1.42"])
+        // An unconsented Tailscale name is not a dial candidate.
+        let tailnet = Connection(name: "Mac", host: "mac.tail1234.ts.net", port: 8810)
+        XCTAssertEqual(tailnet.orderedHosts, [])
     }
 
     func testDialingSwapsTheHostWithoutTouchingTheStoredOrder() {
@@ -239,13 +242,13 @@ final class FailoverTests: XCTestCase {
         )
         connection.promote("192.168.1.42")
         XCTAssertEqual(connection.host, "192.168.1.42")
-        XCTAssertEqual(connection.hosts, ["192.168.1.42", "mac.tail1234.ts.net", "openmausbot-aa.local"])
+        XCTAssertEqual(connection.hosts, ["192.168.1.42", "openmausbot-aa.local"])
 
         // A hand-typed address the list has never seen joins at the front —
         // the stored fallbacks remain worth walking behind it.
         connection.promote("10.0.0.7")
         XCTAssertEqual(connection.hosts?.first, "10.0.0.7")
-        XCTAssertEqual(connection.hosts?.count, 4)
+        XCTAssertEqual(connection.hosts?.count, 3)
     }
 
     func testTypedRoutesKeepHostedHTTPSAheadOfAnActiveLANFallback() throws {
@@ -346,7 +349,8 @@ final class FailoverTests: XCTestCase {
             host: tailnet.host,
             port: tailnet.port,
             activeEndpoint: tailnet,
-            endpoints: [tailnet, hosted]
+            endpoints: [tailnet, hosted],
+            allowedTailnetHost: tailnet.host
         )
 
         XCTAssertEqual(
@@ -379,7 +383,8 @@ final class FailoverTests: XCTestCase {
             port: tailnet.port,
             activeEndpoint: tailnet,
             endpoints: [lan, hosted, tailnet],
-            allowedRouteKinds: [.hosted, .tailnet]
+            allowedRouteKinds: [.hosted, .tailnet],
+            allowedTailnetHost: tailnet.host
         )
 
         XCTAssertEqual(
@@ -406,8 +411,9 @@ final class FailoverTests: XCTestCase {
 
         XCTAssertNil(connection.endpoints)
         XCTAssertEqual(connection.orderedEndpoints.map(\.host), [
-            "192.168.1.42", "mac.tail1234.ts.net", "openmausbot-aa.local",
+            "192.168.1.42", "openmausbot-aa.local",
         ])
+        XCTAssertFalse(connection.orderedEndpoints.contains { $0.host == "mac.tail1234.ts.net" })
     }
 
     func testTypedProtectedRotationPreservesSchemesAndPorts() throws {

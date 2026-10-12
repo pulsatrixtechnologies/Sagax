@@ -130,7 +130,7 @@ describe("runEngineSelfCheck", () => {
 
 describe("engines.lock.json", () => {
   const lock = JSON.parse(readFileSync(join(import.meta.dirname, "..", "engines.lock.json"), "utf8")) as {
-    engines: Array<{ id: string; drivers: string[]; bin: string; kind: string; version: string; redistributable: boolean; license: string; artifacts?: Record<string, { sha256: string; url: string }>; source?: { sha256: string } }>;
+    engines: Array<{ id: string; drivers: string[]; bin: string; kind: string; version: string; integrity?: string; redistributable: boolean; license: string; artifacts?: Record<string, { sha256: string; url: string }>; source?: { sha256: string } }>;
     notPreinstalled: Array<{ drivers: string[]; reason: string }>;
     noInstall: Array<{ drivers: string[] }>;
   };
@@ -151,6 +151,7 @@ describe("engines.lock.json", () => {
         const config = drivers.get(kind)!.defaultConfig() as { cli?: string };
         expect(config.cli, `${engine.id} ${kind}`).toBe(engine.bin);
       }
+      if (engine.kind === "npm") expect(engine.integrity, engine.id).toMatch(/^sha512-[A-Za-z0-9+/]+=*$/);
       if (engine.kind === "native") {
         expect(Object.keys(engine.artifacts ?? {}).sort(), engine.id).toEqual(["amd64", "arm64"]);
         for (const artifact of Object.values(engine.artifacts!)) {

@@ -122,6 +122,7 @@ final class ConnectionTests: XCTestCase {
         XCTAssertEqual(invite.connection.hosts, ["macbook.tail1234.ts.net"])
         XCTAssertEqual(invite.connection.allowedRouteKinds, [.tailnet, .hosted])
         XCTAssertEqual(invite.connection.allowedLocalRouteURLs, [])
+        XCTAssertEqual(invite.connection.allowedTailnetHost, "macbook.tail1234.ts.net")
     }
 
     func testHostedTypedInviteCannotRetainDirectFallbacks() throws {
@@ -183,9 +184,10 @@ final class ConnectionTests: XCTestCase {
         XCTAssertNil(saved.hosts)
         XCTAssertNil(saved.allowedRouteKinds)
         XCTAssertNil(saved.allowedLocalRouteURLs)
+        XCTAssertNil(saved.allowedTailnetHost)
         XCTAssertNil(saved.secretPublicKey)
         XCTAssertNil(saved.companionDeviceId)
-        XCTAssertEqual(saved.orderedHosts, ["mac.tail1234.ts.net"])
+        XCTAssertEqual(saved.orderedHosts, [])
     }
 
     func testRouteConsentPolicyPersistsAcrossEncoding() throws {
@@ -199,6 +201,7 @@ final class ConnectionTests: XCTestCase {
 
         XCTAssertEqual(restored.allowedRouteKinds, [.tailnet, .hosted])
         XCTAssertEqual(restored.allowedLocalRouteURLs, [])
+        XCTAssertEqual(restored.allowedTailnetHost, "mac.tail1234.ts.net")
         XCTAssertEqual(restored.automaticEndpoints.map(\.kind), [.tailnet])
     }
 

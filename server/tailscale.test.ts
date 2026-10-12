@@ -9,6 +9,10 @@ describe("tailscale helpers", () => {
       Self: { DNSName: "mini.tail1234.ts.net.", TailscaleIPs: ["100.64.0.7", "fd7a:115c:a1e0::7"] },
     }));
     expect(status).toEqual({ cli: "/usr/bin/tailscale", dnsName: "mini.tail1234.ts.net", addresses: ["100.64.0.7", "fd7a:115c:a1e0::7"], backendState: "Running" });
+    expect(parseTailscaleStatus("t", JSON.stringify({
+      Self: { DNSName: "mini.tail1234.ts.net." },
+      Peer: { "nodekey:other": { DNSName: "other.tail1234.ts.net." } },
+    }))?.dnsName).toBe("mini.tail1234.ts.net");
     expect(parseTailscaleStatus("t", "{}")?.dnsName).toBeNull();
     expect(parseTailscaleStatus("t", "not json")).toBeNull();
   });
