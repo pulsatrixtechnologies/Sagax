@@ -381,7 +381,7 @@
     <string name="mobile_roster_nothing_matches">Nothing matches</string>
     <string name="mobile_roster_empty_description">Bots you create on your computer show up here.</string>
     <string name="mobile_roster_no_thread_matches">No thread matches “%1$s”.</string>
-    <string name="mobile_roster_needs_attention">Needs attention</string>
+    <string name="mobile_roster_needs_attention">Inbox</string>
     <string name="mobile_roster_pinned">Pinned</string>
     <string name="mobile_roster_messages">Messages</string>
     <string name="mobile_thread_closed">Closed</string>

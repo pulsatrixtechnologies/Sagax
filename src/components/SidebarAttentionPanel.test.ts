@@ -47,9 +47,9 @@ function renderPanel(
 }
 
 describe("pinned attention panel", () => {
-  it("renders the popover's rows under the Active Threads name", () => {
+  it("renders the popover's rows under the Inbox name", () => {
     const { markup } = renderPanel();
-    expect(markup).toContain("Active Threads");
+    expect(markup).toContain("Inbox");
     expect(markup).toContain("Review permission");
     expect(markup).toContain("Atlas");
     expect(markup).toContain('data-testid="sidebar-attention-panel"');
@@ -73,8 +73,8 @@ describe("pinned attention panel", () => {
 
   it("collapses to the header row plus the empty label when nothing is active", () => {
     const { markup } = renderPanel([]);
-    expect(markup).toContain("Active Threads");
-    expect(markup).toContain("No active threads");
+    expect(markup).toContain("Inbox");
+    expect(markup).toContain("Inbox is empty");
     expect(markup).not.toContain("Review permission");
   });
 
@@ -86,7 +86,7 @@ describe("pinned attention panel", () => {
 
   it("hides the rows but keeps the header when collapsed", () => {
     const { markup } = renderPanel([entry], { collapsed: true });
-    expect(markup).toContain("Active Threads");
+    expect(markup).toContain("Inbox");
     expect(markup).not.toContain("Review permission");
     const label = t("sidebar.section.expand", { name: t("attention.title") });
     expect(markup).toContain('aria-label="' + label + '"');
@@ -95,7 +95,7 @@ describe("pinned attention panel", () => {
 
   it("shows the empty label only when expanded", () => {
     const { markup } = renderPanel([], { collapsed: true });
-    expect(markup).not.toContain("No active threads");
+    expect(markup).not.toContain("Inbox is empty");
   });
 
   it("toggles from the collapse/expand control", () => {

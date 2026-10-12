@@ -45,7 +45,7 @@ describe("header activity", () => {
   const entry = (task: Partial<Task> & { queued?: boolean }) => ({ kind: "bot" as const, botId: "a", botName: "Alpha", task: { threadId: "t", title: "T", createdAt: 0, queued: false, ...task } });
 
   it("names the pulse with the count only when there is something to count", () => {
-    expect(attentionTriggerLabel(0)).toBe("Active Threads");
+    expect(attentionTriggerLabel(0)).toBe("Inbox");
     expect(attentionTriggerLabel(2)).toBe(t("attention.titleCount", { count: 2 }));
   });
 

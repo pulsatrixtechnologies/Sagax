@@ -90,6 +90,7 @@ final class Session: ObservableObject {
     /// A chat a deep link asked for, consumed by the roster's
     /// NavigationStack the same way a notification response is.
     @Published private(set) var pendingChat: Chat?
+    @Published private(set) var pendingInbox = false
     /// Who this phone is signed in as (`GET /api/auth/session`), for the
     /// home's photo. Nil until loaded, or when the server does not say.
     @Published private(set) var account: AuthSession?
@@ -572,7 +573,13 @@ final class Session: ObservableObject {
             pairingRequested = true
         case let .chat(threadId):
             openChat(threadId: threadId)
+        case .inbox:
+            pendingInbox = true
         }
+    }
+
+    func consumePendingInbox() {
+        pendingInbox = false
     }
 
     /// A deep link that names a chat. An id this phone does not know — a

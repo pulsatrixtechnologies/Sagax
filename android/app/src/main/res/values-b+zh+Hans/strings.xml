@@ -380,7 +380,7 @@
     <string name="mobile_roster_nothing_matches">没有匹配项</string>
     <string name="mobile_roster_empty_description">你在电脑上创建的机器人会显示在这里。</string>
     <string name="mobile_roster_no_thread_matches">没有与“%1$s”匹配的对话。</string>
-    <string name="mobile_roster_needs_attention">需要处理</string>
+    <string name="mobile_roster_needs_attention">收件箱</string>
     <string name="mobile_roster_pinned">已置顶</string>
     <string name="mobile_roster_messages">消息</string>
     <string name="mobile_thread_closed">已关闭</string>

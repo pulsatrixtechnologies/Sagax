@@ -87,6 +87,11 @@ struct ChatListView: View {
                 path.append(chat)
                 session.consumePendingChat()
             }
+            .onValueChange(of: session.pendingInbox) { open in
+                guard open else { return }
+                showingUpdates = true
+                session.consumePendingInbox()
+            }
             .task {
                 if let chat = session.notificationChat {
                     path.append(chat)
@@ -364,7 +369,7 @@ struct ChatListView: View {
     private var rosterSections: some View {
         let layout = self.layout
         if !attention.isEmpty {
-            sectionLabel(Text("Needs attention"))
+            sectionLabel(Text("Inbox"))
                 .padding(.top, 2)
                 .padding(.bottom, 4)
             ForEach(attention) { entry in
@@ -1461,7 +1466,7 @@ extension ChatListView {
         // waits on the person.
         let waitingOnYou = attention.filter { $0.task.activity == "waiting-on-you" }
         if !waitingOnYou.isEmpty {
-            section(key: "__attention", title: String(localized: "Needs attention")) {
+            section(key: "__attention", title: String(localized: "Inbox")) {
                 ForEach(waitingOnYou) { entry in
                     Button {
                         Haptics.selection()

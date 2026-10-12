@@ -69,9 +69,9 @@ describe("task picker copy", () => {
     expect(TASK_PICKER_DISMISS_MS).toBeGreaterThanOrEqual(500);
   });
 
-  it("titles the attention section with the active threads name", () => {
-    expect(t("attention.title")).toBe("Active Threads");
-    expect(t("attention.empty")).toBe("No active threads");
+  it("titles the attention section Inbox", () => {
+    expect(t("attention.title")).toBe("Inbox");
+    expect(t("attention.empty")).toBe("Inbox is empty");
   });
 });
 

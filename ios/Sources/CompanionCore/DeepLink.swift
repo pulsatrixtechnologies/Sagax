@@ -22,12 +22,24 @@ public enum CompanionURLScheme {
 public enum CompanionDeepLink: Equatable, Sendable {
     case pairing(PairingInvite)
     case chat(threadId: String)
+    /// Cross-bot work that needs the person (`sagax://inbox`; `sagax://todo` is kept as an alias).
+    case inbox
 
     /// Parses one sagax:// URL, or a server pair link. Anything the
     /// app does not recognize returns nil and is ignored rather than
     /// surfaced as an error: the person holding the phone did not type it.
     public static func parse(_ url: URL) -> CompanionDeepLink? {
         if let invite = PairingInvite.parse(url) { return .pairing(invite) }
+        if CompanionURLScheme.accepts(url) {
+            switch url.host?.lowercased() {
+            case "inbox", "todo":
+                return .inbox
+            case "chat":
+                break
+            default:
+                return nil
+            }
+        }
         guard CompanionURLScheme.accepts(url),
               url.host?.lowercased() == "chat",
               let components = URLComponents(url: url, resolvingAgainstBaseURL: false),

@@ -8971,24 +8971,24 @@
         }
       }
     },
-    "Needs attention": {
+    "Inbox": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Needs attention"
+            "value": "Inbox"
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "À traiter"
+            "value": "Boîte de réception"
           }
         },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
-            "value": "Precisa de atenção"
+            "value": "Caixa de entrada"
           }
         }
       }

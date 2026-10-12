@@ -3,4 +3,5 @@
     <string name="pulsatrix_sign_in">Se connecter avec Pulsatrix</string>
     <string name="pulsatrix_sign_in_hint">Votre organisation vous connecte avec Pulsatrix. Vous pouvez aussi entrer un code d\'appairage.</string>
     <string name="pulsatrix_sign_in_unavailable">Ce téléphone n\'a aucun navigateur pour se connecter avec Pulsatrix.</string>
+    <string name="mobile_roster_needs_attention">Boîte de réception</string>
 </resources>

@@ -308,7 +308,7 @@ function ConversationTaskPicker({
       : t("task.switch");
   const grouped = folders ? groupThreadTasks(tasks, folders, query) : null;
   // Only this conversation's own threads: no other bot's or room's thread
-  // ever rides in here (JC, 2026-10-08). The sidebar's Active Threads panel
+  // ever rides in here (JC, 2026-10-08). The sidebar's inbox panel
   // is the cross-bot view.
   const visible = grouped ? grouped.flatMap((group) => group.tasks) : filterTasks(tasks, query);
   const looking = query.trim();
