@@ -114,6 +114,9 @@ export interface AgentCaller {
    * signed as an organization admin. */
   sub?: string;
   admin?: boolean;
+  /** Bot callers: the person the source turn spoke for, when known (the
+   * transport fills it; the core only carries it to notify). */
+  speakerPrincipalId?: string;
 }
 
 export interface AgentSummary {

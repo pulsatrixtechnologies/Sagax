@@ -77,7 +77,7 @@ function world(options: { replyAfterPolls?: number; reply?: (prompt: string) => 
       pending.delete(threadId);
       state.set(threadId, "idle");
     },
-    notify: (_caller, agent, result) => notified.push(`${agent.id}:${result.finished}:${result.reply}`),
+    notify: (caller, agent, result) => notified.push(`${agent.id}:${result.finished}:${result.reply}${caller.speakerPrincipalId ? `:as:${caller.speakerPrincipalId}` : ""}`),
     audit: (caller, entry) => audits.push({ caller: key(caller), entry }),
     secret: SECRET,
     now: () => clock,
@@ -228,6 +228,13 @@ describe("send_prompt / await_turn", () => {
     expect(r.body).toMatchObject({ accepted: true, finished: false, mode: "async" });
     await w.settle();
     expect(w.notified).toEqual(["bot-a:true:echo: later"]);
+  });
+
+  it("async notify keeps the person the source turn spoke for (wake mounts their connectors)", async () => {
+    const w = world();
+    await w.api.call({ ...bot("bot-x"), speakerPrincipalId: "person-jc" }, "send_prompt", { agent_id: "bot-a", prompt: "later", mode: "async" });
+    await w.settle();
+    expect(w.notified).toEqual(["bot-a:true:echo: later:as:person-jc"]);
   });
 
   it("on_busy: supersede interrupts (default), reject refuses, queue leaves the running turn", async () => {

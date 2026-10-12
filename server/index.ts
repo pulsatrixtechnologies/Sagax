@@ -11268,7 +11268,7 @@ function settleWaitingOnPersonChips(threadId: string, requestId?: string, resolu
 // fold the result in and answer the user instead of sitting idle. Mirrors
 // the cardContinuation resume pattern used for connector/credential cards.
 const delegationWakeBudget = new DelegationWakeBudget();
-const pendingDelegationWakes = new Map<string, { botId: string; targetName: string; failureReason?: string; routineRunId?: string; budgetAcquired?: boolean }>();
+const pendingDelegationWakes = new Map<string, { botId: string; targetName: string; failureReason?: string; routineRunId?: string; budgetAcquired?: boolean; speaker?: TurnSpeaker }>();
 
 /** Slice 6: a routine on the wire: runAs as the person (name included) in
  * organization mode, nothing in solo mode. */
@@ -11566,7 +11566,7 @@ function routineDelegationCanResume(threadId: string, routineRunId?: string): bo
   return !routineRunId || activeRoutineRunForThread(threadId)?.id === routineRunId;
 }
 
-function dispatchDelegationWake(botId: string, threadId: string, targetName: string, failureReason?: string, routineRunId?: string, budgetAcquired = false): void {
+function dispatchDelegationWake(botId: string, threadId: string, targetName: string, failureReason?: string, routineRunId?: string, budgetAcquired = false, speaker?: TurnSpeaker): void {
   if (!store.taskByThread(botId, threadId)) return;
   if (!routineDelegationCanResume(threadId, routineRunId)) return;
   if (!budgetAcquired && !delegationWakeBudget.tryAcquire(threadId)) {
@@ -11580,6 +11580,7 @@ function dispatchDelegationWake(botId: string, threadId: string, targetName: str
     threadId,
     cardContinuation: true,
     unattended: isUnattended(botId, threadId),
+    ...(speaker ? { speaker } : {}),
   })
     .then(() => undefined)
     .catch((error) => {
@@ -11588,7 +11589,7 @@ function dispatchDelegationWake(botId: string, threadId: string, targetName: str
       // Raced with a user turn claiming the bot — retry once it settles.
       // This is the same logical wake, so keep its original budget charge.
       if (isTurnAdmissionBlocked(error)) {
-        pendingDelegationWakes.set(threadId, { botId, targetName, failureReason, routineRunId, budgetAcquired: true });
+        pendingDelegationWakes.set(threadId, { botId, targetName, failureReason, routineRunId, budgetAcquired: true, ...(speaker ? { speaker } : {}) });
         return;
       }
       store.appendMessage(threadId, {
@@ -11600,7 +11601,7 @@ function dispatchDelegationWake(botId: string, threadId: string, targetName: str
     });
 }
 
-function wakeDelegationSource(source: BotRecord, threadId: string, targetName: string, failureReason?: string, routineRunId?: string): void {
+function wakeDelegationSource(source: BotRecord, threadId: string, targetName: string, failureReason?: string, routineRunId?: string, speaker?: TurnSpeaker): void {
   if (!store.taskByThread(source.id, threadId)) return;
   if (!routineDelegationCanResume(threadId, routineRunId)) return;
   // Busy? Hold the wake until the source settles, then drain it — the
@@ -11608,10 +11609,10 @@ function wakeDelegationSource(source: BotRecord, threadId: string, targetName: s
   // source processes it the moment it is free rather than only on a later
   // user nudge.
   if (threadBusy(source.id, threadId) || botAtThreadCapacity(source.id) || activeGroupTurnForBot(source.id)) {
-    pendingDelegationWakes.set(threadId, { botId: source.id, targetName, failureReason, routineRunId });
+    pendingDelegationWakes.set(threadId, { botId: source.id, targetName, failureReason, routineRunId, ...(speaker ? { speaker } : {}) });
     return;
   }
-  dispatchDelegationWake(source.id, threadId, targetName, failureReason, routineRunId);
+  dispatchDelegationWake(source.id, threadId, targetName, failureReason, routineRunId, false, speaker);
 }
 
 // ── incidents: a broken run reaches the Primary Bot ──────────────────
@@ -11742,7 +11743,7 @@ function drainDelegationWakes(): void {
     // could otherwise requeue after the last idle-release drain has run.
     if (threadBusy(entry.botId, threadId) || botAtThreadCapacity(entry.botId) || activeGroupTurnForBot(entry.botId)) continue;
     pendingDelegationWakes.delete(threadId);
-    dispatchDelegationWake(entry.botId, threadId, entry.targetName, entry.failureReason, entry.routineRunId, entry.budgetAcquired);
+    dispatchDelegationWake(entry.botId, threadId, entry.targetName, entry.failureReason, entry.routineRunId, entry.budgetAcquired, entry.speaker);
   }
 }
 
@@ -25726,7 +25727,10 @@ const agentApi = createAgentApi({
       ? (result.reply ? `@${agent.name} finished the turn you sent with send_prompt:\n\n${result.reply}` : `@${agent.name} finished the turn you sent with send_prompt, without text.`)
       : `@${agent.name} is waiting for a person to answer an approval before it can go on (send_prompt).`;
     store.appendMessage(caller.sourceThreadId, { role: "bot", kind: "text", text, ...(target ? { from: { botId: target.id, name: target.name, color: target.color } } : {}) });
-    if (result.finished) wakeDelegationSource(source, caller.sourceThreadId, agent.name);
+    if (result.finished) {
+      wakeDelegationSource(source, caller.sourceThreadId, agent.name, undefined, undefined,
+        caller.speakerPrincipalId ? { origin: "person", principalId: caller.speakerPrincipalId } : undefined);
+    }
   },
 });
 function memberForAgentCaller(caller: AgentCaller): MemberPerson {
@@ -26786,6 +26790,11 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           via: "agents-mcp",
           sourceThreadId: internalCapability.threadId,
           depth: internalCapability.depth,
+          // the person the source turn speaks for: its completion turn speaks
+          // for them too, so their Perspicax connectors stay mounted (GOX
+          // 2026-10-12: unknown_speaker on the a2a wake). Never a routine's.
+          ...(!turnRoutineLineage.has(internalCapability.threadId) && turnSpeakerPrincipals.get(internalCapability.threadId)
+            ? { speakerPrincipalId: turnSpeakerPrincipals.get(internalCapability.threadId)! } : {}),
         }, agentApiTool, body ?? {}, aborted.signal);
         return json(res, answer.status, answer.body);
       }
