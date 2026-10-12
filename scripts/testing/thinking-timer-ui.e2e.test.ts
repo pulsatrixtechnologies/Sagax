@@ -113,6 +113,21 @@ function elapsedSeconds(text: string): number {
   return -1;
 }
 
+/** Thread rows for this harness live under each bot in the sidebar, not the
+ * chat header (the product default since thread mode shipped). */
+async function pinSidebarThreads(handle: string): Promise<void> {
+  await ui("eval", handle, "--js", `(() => {
+    localStorage.setItem(${JSON.stringify(SHOW_THREADS_KEY)}, "1");
+    localStorage.setItem(${JSON.stringify(THREADS_LOCATION_KEY)}, "sidebar");
+    return true;
+  })()`);
+  await ui("eval", handle, "--js", "location.reload()");
+  await ui("wait-settle", handle, "--timeout", "120");
+}
+
+const SHOW_THREADS_KEY = "omb-show-threads";
+const THREADS_LOCATION_KEY = "omb-threads-location";
+
 /** Selection can already expand a thread list. Click only its collapsed DOM
  * chevron, avoiding both accidental collapse and transient duplicate AX names. */
 async function expandThreads(handle: string, name: string): Promise<void> {
@@ -165,6 +180,7 @@ describe("the thinking timer stays anchored across a thread switch", () => {
   run("counts from the server's turn-start stamp, not from the re-selection", async () => {
     launched = await launch(["--mode", "hang"]); // the turn never settles; the bot stays busy
     const { info } = launched;
+    await pinSidebarThreads(info.ui);
     const api = fixtureApi(info.url);
     const evaluate = async (js: string) => (await ui("eval", info.ui, "--js", js)).result;
     const timerText = () => evaluate(`document.querySelector('.turn-presence .tabular-nums')?.textContent ?? null`);

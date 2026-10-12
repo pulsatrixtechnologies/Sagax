@@ -8,6 +8,7 @@ import { waitForExit } from "../../server/testing/cleanup.ts";
 import { runControlOmb } from "../control-omb.ts";
 import { request } from "../mcp-server.ts";
 import { UI_TOOLS_DIR } from "./control-omb-ui.ts";
+import { enableBrowseBots, openCompose, openTemplatesCatalog } from "./ui-navigation.ts";
 import { jsLiteral } from "./js-literal.mjs";
 
 const ROOT = fileURLToPath(new URL("../..", import.meta.url));
@@ -45,6 +46,7 @@ describe("Preset bots in the real renderer", () => {
     const clickWhenFree = (name: string) => expect.poll(() => click(name).then(() => true, () => false), { timeout: 10_000 }).toBe(true);
     const snapshot = async () => (await ui("snapshot")).snapshot as string;
     const api = (path: string, method = "GET", body?: unknown) => request(path, { method, ...(body === undefined ? {} : { body: JSON.stringify(body) }) }, info.url);
+    await enableBrowseBots(api);
 
     // My New bot defaults: a name, words, a colour, a skill that is on, notes,
     // and things a preset must never carry (approval, connected apps).
@@ -84,8 +86,7 @@ describe("Preset bots in the real renderer", () => {
     await click("Close settings");
 
     // Templates → Import the file: preset bots for New bot, no team.
-    await clickWhenFree("New or share");
-    await click("Templates");
+    await openTemplatesCatalog(clickWhenFree, evaluate);
     await click("Import");
     await evaluate(`(() => { const input = document.querySelector('[role=dialog] input[type=file]'); const transfer = new DataTransfer(); transfer.items.add(new File([window.__presetText], 'sky-1.0.0.openmaus.json', { type: 'application/json' })); input.files = transfer.files; input.dispatchEvent(new Event('change', { bubbles: true })); return true; })()`);
     await expect.poll(snapshot, { timeout: 10_000 }).toContain("Preset bots and skills · no team");
@@ -108,8 +109,7 @@ describe("Preset bots in the real renderer", () => {
     writeFileSync(presetsFile, JSON.stringify(stored));
 
     // Share team: the defaults preset goes in only when ticked.
-    await clickWhenFree("New or share");
-    await click("Templates");
+    await openTemplatesCatalog(clickWhenFree, evaluate);
     await click("Share");
     await click("Share the General team");
     await expect.poll(snapshot, { timeout: 20_000 }).toContain("What's in the file");
@@ -126,8 +126,8 @@ describe("Preset bots in the real renderer", () => {
     const bots = async () => (await api("/api/bots")).bots as Array<{ id: string; name: string; installedPackage?: Record<string, unknown> }>;
     const create = async (value: string, expected: string, shot: string) => {
       const before = await bots();
-      await clickWhenFree("New or share");
-      await click("New Bot");
+      await openCompose(clickWhenFree);
+      await click("Create new Bot");
       await expect.poll(async () => (await ui("eval", "--js", "[...document.querySelectorAll('[role=dialog] button')].find(button => button.textContent.trim() === 'Create bot')?.disabled")).result, { timeout: 20_000 }).toBe(false);
       await expect.poll(() => evaluate("[...document.querySelectorAll('[role=dialog] select optgroup')].map(group => group.label).join(' | ')"), { timeout: 10_000 })
         .toBe("From Acme Partners | Imported presets | Built-in roles");

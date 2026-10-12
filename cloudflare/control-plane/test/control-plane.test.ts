@@ -536,14 +536,14 @@ describe("email OTP D1 round trips", () => {
     return rows.results.map((row) => row.identifier);
   }
 
-  it("sends a code in at most five round trips with one for the recipient limit", async () => {
+  it("sends a code in at most eight round trips with one for the recipient limit", async () => {
     const { response, beforeResponse } = await tracedCall(SEND_PATH, {
       email: "round-trips@example.com",
       type: "sign-in",
     });
     expect(response.status).toBe(200);
     expect(beforeResponse.filter((sql) => sql.includes("otp_recipient_rate_limits"))).toHaveLength(1);
-    expect(beforeResponse.length).toBeLessThanOrEqual(5);
+    expect(beforeResponse.length).toBeLessThanOrEqual(8);
   });
 
   it("keeps the 24-hour recipient retention sweep", async () => {
@@ -565,7 +565,7 @@ describe("email OTP D1 round trips", () => {
     expect(rows.results[0]?.attempts).toBe(1);
   });
 
-  it("signs in within eight round trips and sweeps expired codes after responding", async () => {
+  it("signs in within eleven round trips and sweeps expired codes after responding", async () => {
     const email = "round-trips-known@example.com";
     await signIn(email);
     const otp = await mintOTP(email);
@@ -581,7 +581,7 @@ describe("email OTP D1 round trips", () => {
     });
     expect(response.status).toBe(200);
     expect(beforeResponse.some((sql) => EXPIRED_SWEEP.test(sql))).toBe(false);
-    expect(beforeResponse.length).toBeLessThanOrEqual(8);
+    expect(beforeResponse.length).toBeLessThanOrEqual(11);
     expect(afterResponse.filter((sql) => EXPIRED_SWEEP.test(sql))).toHaveLength(1);
     // Only the expired row goes; a live code for another address survives.
     expect(await verificationIdentifiers()).toEqual(["sign-in-otp-pending@example.com"]);

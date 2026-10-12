@@ -817,6 +817,7 @@ export const GRUMP_CLIP_MOVES: Readonly<Record<string, GrumpMove>> = {
   land: "sitUp",
   petted: "bonk",
   celebrate: "celebrate",
+  scuttle: "pounce",
   sad: "earsFlat",
   // the dog's clips (Shiba's), should a cat ever be asked for one
   bark: "tailFlick",

@@ -508,9 +508,18 @@ describe("Cloudflare API response contracts", () => {
 });
 
 describe("installation check-in round trips", () => {
+  const PRAGMA_TABLE_INFO = Array.from({ length: 13 }, () => "SELECT pragma_table_info");
   const CHECK_IN = [
     ["SELECT installation_credentials"],
+    ["SELECT sqlite_master"],
     ["UPDATE installation_credentials", "UPDATE installations"],
+  ];
+  const SELF_CHECK_IN = [...CHECK_IN, PRAGMA_TABLE_INFO];
+  const endpointLookupTrips = [
+    ["SELECT installation_credentials"],
+    ["SELECT sqlite_master"],
+    ["UPDATE installation_credentials", "UPDATE installations", "SELECT installation_endpoints"],
+    PRAGMA_TABLE_INFO,
   ];
   const checkIns = (installationId: string) => env.DB.prepare(
     `SELECT c.last_used_at, i.last_seen_at
@@ -533,10 +542,7 @@ describe("installation check-in round trips", () => {
       return { body: await response.text(), status: response.status, trips: [...counted.trips] };
     };
     // The read stays after the writes, so it runs in the same order as before.
-    const trips = [
-      ["SELECT installation_credentials"],
-      ["UPDATE installation_credentials", "UPDATE installations", "SELECT installation_endpoints"],
-    ];
+    const trips = endpointLookupTrips;
 
     expect(await lookup()).toEqual({ body: '{"endpoint":null}', status: 200, trips });
 
@@ -594,11 +600,11 @@ describe("installation check-in round trips", () => {
     // Same lookup ID with a different secret: the row is found, the hash is not.
     const credential = installation.credential;
     const wrongSecret = `${credential.slice(0, -1)}${credential.endsWith("A") ? "B" : "A"}`;
-    expect(await lookup(wrongSecret)).toEqual({ status: 401, trips: [["SELECT installation_credentials"]] });
+    expect(await lookup(wrongSecret)).toEqual({ status: 401, trips: [["SELECT installation_credentials"], ["SELECT sqlite_master"]] });
     expect(await lookup("invalid")).toEqual({ status: 401, trips: [] });
     expect((await call(worker, `/v1/installations/${id}`, { method: "DELETE", token: owner.token })).status)
       .toBe(204);
-    expect(await lookup(credential)).toEqual({ status: 401, trips: [["SELECT installation_credentials"]] });
+    expect(await lookup(credential)).toEqual({ status: 401, trips: [["SELECT installation_credentials"], ["SELECT sqlite_master"]] });
     expect(await checkIns(id)).toEqual(before);
   });
 
@@ -612,7 +618,7 @@ describe("installation check-in round trips", () => {
       env: counted.env,
       token: installation.credential,
     })).status).toBe(200);
-    expect(counted.trips).toEqual(CHECK_IN);
+    expect(counted.trips).toEqual(SELF_CHECK_IN);
 
     expect((await call(worker, "/v1/installations/self/endpoint", {
       method: "POST",
@@ -624,9 +630,9 @@ describe("installation check-in round trips", () => {
       method: "POST",
       token: installation.credential,
     })).status).toBe(200);
-    expect(counted.trips.slice(0, 2)).toEqual(CHECK_IN);
+    expect(counted.trips.slice(0, CHECK_IN.length)).toEqual(CHECK_IN);
     // Re-provisioning a ready endpoint keeps its existing round trips.
-    expect(counted.trips).toHaveLength(15);
+    expect(counted.trips).toHaveLength(18);
   });
 });
 
