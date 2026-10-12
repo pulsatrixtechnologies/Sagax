@@ -18,8 +18,9 @@ permissions:
 
 jobs:
   build:
+    if: (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
     name: Build reviewed Windows browser
-    runs-on: ubuntu-24.04
+    runs-on: [self-hosted, linux, x64]
     timeout-minutes: 45
     env:
       RUSTUP_TOOLCHAIN: 1.97.1
@@ -36,8 +37,7 @@ jobs:
       - name: Install the pinned Rust toolchain and upstream Windows linker
         run: |
           rustup toolchain install 1.97.1 --profile minimal --target x86_64-pc-windows-gnu
-          sudo apt-get update
-          sudo apt-get install -y mingw-w64
+          if dpkg -s mingw-w64 >/dev/null 2>&1; then echo "preinstalled: mingw-w64"; else sudo apt-get update && sudo apt-get install -y mingw-w64; fi
       - name: Build from the verified source and local backport
         run: node scripts/build-windows-browser-vendor.mjs --output "$RUNNER_TEMP/browser-vendor"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -48,9 +48,10 @@ jobs:
           retention-days: 14
 
   smoke:
+    if: (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
     name: Cold-start and restart on Windows
     needs: build
-    runs-on: windows-latest
+    runs-on: [self-hosted, windows, x64]
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

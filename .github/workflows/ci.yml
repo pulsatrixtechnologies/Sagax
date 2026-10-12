@@ -41,8 +41,9 @@ jobs:
   # shards per platform, and every smoke reports on its own. One final `CI`
   # check aggregates the required jobs (see docs/ci.md for ruleset migration).
   static:
+    if: (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
     name: typecheck + lint
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64]
     timeout-minutes: 15
     permissions:
       contents: read
@@ -85,7 +86,7 @@ jobs:
     # Admit the expensive runner fan-out only after the quick checks pass.
     # A failing preflight still fails the required gates; nothing is waived.
     needs: static
-    if: needs.static.outputs.runtime == 'true'
+    if: (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && (needs.static.outputs.runtime == 'true')
     # vitest splits the file list deterministically across shards, so a
     # failure names the same shard on every run and one shard is reproducible
     # locally with the same --shard flag.
@@ -100,7 +101,7 @@ jobs:
         # queue seven), main pushes, merge groups and manual runs add macOS.
         os: ${{ fromJSON(needs.static.outputs.vitest_os) }}
         shard: [1, 2, 3, 4]
-    runs-on: ${{ matrix.os }}
+    runs-on: ${{ startsWith(matrix.os, 'ubuntu') && fromJSON('["self-hosted","linux","x64"]') || startsWith(matrix.os, 'windows') && fromJSON('["self-hosted","windows","x64"]') || fromJSON('["self-hosted","macos","arm64"]') }}
     # scripts/testing/duration-sequencer.ts splits the files by their recorded
     # CI seconds, not by count, so the heavy e2e files no longer share one
     # shard. The cap catches a hang, not normal suite growth.
@@ -141,7 +142,7 @@ jobs:
 
   behavior-evals:
     needs: static
-    if: needs.static.outputs.runtime == 'true'
+    if: (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && (needs.static.outputs.runtime == 'true')
     # The offline behavior-eval tiers (#1503): the evals' own vitest gate
     # (redaction, trace, golden replay), the tier-1 scenario runner, and the
     # tier-2 golden replay through the same entrypoint developers use. Tier
@@ -149,7 +150,7 @@ jobs:
     # env, and the last step proves the offline gate holds by asserting the
     # skip line is what CI gets.
     name: behavior evals (offline tiers 1-3)
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64]
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -188,7 +189,7 @@ jobs:
 
   packaged-server:
     needs: static
-    if: needs.static.outputs.runtime == 'true'
+    if: (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && (needs.static.outputs.runtime == 'true')
     # `pnpm build:server`, then the bundle is copied out of the repo and run
     # with no node_modules in reach: every bare import must be inlined. The
     # macOS copy runs inside the macOS smokes job, so it takes no extra
@@ -198,7 +199,7 @@ jobs:
       fail-fast: false
       matrix:
         os: ${{ needs.static.outputs.platforms == 'true' && fromJSON('["ubuntu-latest","windows-latest"]') || fromJSON('["ubuntu-latest"]') }}
-    runs-on: ${{ matrix.os }}
+    runs-on: ${{ startsWith(matrix.os, 'ubuntu') && fromJSON('["self-hosted","linux","x64"]') || startsWith(matrix.os, 'windows') && fromJSON('["self-hosted","windows","x64"]') || fromJSON('["self-hosted","macos","arm64"]') }}
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -213,9 +214,9 @@ jobs:
   windows-cua:
     needs: static
     # Windows/macOS/iOS run on main pushes and merge groups, not on PRs.
-    if: needs.static.outputs.runtime == 'true' && needs.static.outputs.platforms == 'true'
+    if: (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && (needs.static.outputs.runtime == 'true' && needs.static.outputs.platforms == 'true')
     name: Windows CUA host smoke
-    runs-on: windows-latest
+    runs-on: [self-hosted, windows, x64]
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -232,13 +233,13 @@ jobs:
   electron-smokes:
     needs: static
     # Windows/macOS/iOS run on main pushes and merge groups, not on PRs.
-    if: needs.static.outputs.runtime == 'true' && needs.static.outputs.platforms == 'true'
+    if: (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && (needs.static.outputs.runtime == 'true' && needs.static.outputs.platforms == 'true')
     # Real Electron utility processes against disposable homes and fake CLIs.
     # Never the live app. Each script prints its own evidence lines. Every
     # PR's macOS checks live in this one job: macOS runners are the scarce
     # ones, and each extra job pays its own queue wait and install.
     name: macOS smokes (packaged server + Electron)
-    runs-on: macos-latest
+    runs-on: [self-hosted, macos, arm64]
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -268,8 +269,8 @@ jobs:
     needs: [static, vitest, behavior-evals, packaged-server, windows-cua, electron-smokes]
     # Still report failed/skipped dependencies, but don't keep a superseded
     # workflow alive just to schedule its summary jobs.
-    if: ${{ !cancelled() }}
-    runs-on: ubuntu-latest
+    if: (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && (!cancelled())
+    runs-on: [self-hosted, linux, x64]
     timeout-minutes: 5
     steps:
       - name: Every required job passed
@@ -293,9 +294,9 @@ jobs:
 
   cloudflared-linux-arm64:
     needs: static
-    if: needs.static.outputs.runtime == 'true'
+    if: (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && (needs.static.outputs.runtime == 'true')
     name: cloudflared installer (Linux ARM64)
-    runs-on: ubuntu-24.04-arm
+    runs-on: [self-hosted, linux, arm64]
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -315,12 +316,12 @@ jobs:
 
   foss:
     needs: static
-    if: needs.static.outputs.runtime == 'true'
+    if: (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && (needs.static.outputs.runtime == 'true')
     # LICENSING.md promises that deleting enterprise/ leaves a working
     # open-source edition. Prove it on runtime changes: typecheck, the edition
     # tests, and a boot that reports "oss" even with a key set.
     name: open-source edition builds without enterprise/
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64]
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -348,9 +349,9 @@ jobs:
 
   control-plane:
     needs: static
-    if: needs.static.outputs.runtime == 'true'
+    if: (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && (needs.static.outputs.runtime == 'true')
     name: control-plane check + workerd tests + dry run
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64]
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -373,9 +374,9 @@ jobs:
     # the deploy gap that left #1914's broker fix (45cc2cf) sitting in
     # source without reaching Cloudflare.
     needs: [control-plane]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && (github.event_name == 'push' && github.ref == 'refs/heads/main')
     name: deploy composio broker (Cloudflare Worker)
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64]
     timeout-minutes: 10
     steps:
       # A repo without the secret (a fork, or before the token is created)
@@ -415,13 +416,13 @@ jobs:
 
   ui-smoke:
     needs: static
-    if: needs.static.outputs.runtime == 'true'
+    if: (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && (needs.static.outputs.runtime == 'true')
     # Advisory, outside the required `test` matrix: the renderer recipe in
     # docs/verification/chat-ui.md run by a machine. It downloads the pinned
     # agent-browser release (digest verified) and its Chrome, drives the real
     # <App/> against the isolated fake-engine fixture, and keeps the screenshot.
     name: renderer smoke (control-omb ui, Ubuntu 24.04)
-    runs-on: ubuntu-24.04
+    runs-on: [self-hosted, linux, x64]
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -438,7 +439,9 @@ jobs:
         # so the downloaded Chrome for Testing dies with "No usable sandbox".
         # This is Chrome's own documented fix for 23.10+; a developer machine
         # needs nothing, and the sandbox itself stays on.
-        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+        run: |
+          f=/proc/sys/kernel/apparmor_restrict_unprivileged_userns
+          if [ -r "$f" ] && [ "$(cat "$f")" != 0 ]; then sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0; else echo "user namespaces not restricted here"; fi
       - name: Drive the real renderer through control-omb ui
         env:
           SAGAX_UI_E2E: "1"
@@ -458,9 +461,9 @@ jobs:
 
   package-linux:
     needs: static
-    if: needs.static.outputs.runtime == 'true'
+    if: (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && (needs.static.outputs.runtime == 'true')
     name: package + smoke (Ubuntu 24.04 x64)
-    runs-on: ubuntu-24.04
+    runs-on: [self-hosted, linux, x64]
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -472,9 +475,9 @@ jobs:
           node-version: 24
           cache: pnpm
       - name: Install package validation and native smoke tools
-        run: >-
-          sudo apt-get update && sudo apt-get install -y
-          at-spi2-core dbus-x11 desktop-file-utils libxi6 libxkbcommon0 squashfs-tools x11-utils xdotool xvfb
+        run: |
+          pkgs="at-spi2-core dbus-x11 desktop-file-utils libxi6 libxkbcommon0 squashfs-tools x11-utils xdotool xvfb"
+          if dpkg -s $pkgs >/dev/null 2>&1; then echo "preinstalled: $pkgs"; else sudo apt-get update && sudo apt-get install -y $pkgs; fi
       - run: pnpm install --frozen-lockfile
       - name: Stage the pinned CUA runtime
         run: pnpm build:cua:linux
@@ -528,12 +531,12 @@ jobs:
   ios:
     needs: static
     # Windows/macOS/iOS run on main pushes and merge groups, not on PRs.
-    if: needs.static.outputs.mobile == 'true' && needs.static.outputs.platforms == 'true'
+    if: (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && (needs.static.outputs.mobile == 'true' && needs.static.outputs.platforms == 'true')
     # The simulator UI suite (about 90 minutes of iPhone + iPad runs) lives in
     # ios-thread-ui.yml: nightly, on main pushes that touch ios/, and by hand.
     # Here it held three of the account's five macOS runners at a time.
     name: Swift tests + iOS build
-    runs-on: macos-latest
+    runs-on: [self-hosted, macos, arm64]
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -562,9 +565,9 @@ jobs:
   # from ios/Tests/CompanionCoreTests/Fixtures.
   android:
     needs: static
-    if: needs.static.outputs.mobile == 'true'
+    if: (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && (needs.static.outputs.mobile == 'true')
     name: Kotlin tests + Android build
-    runs-on: ubuntu-24.04
+    runs-on: [self-hosted, linux, x64]
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
