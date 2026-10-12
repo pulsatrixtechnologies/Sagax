@@ -376,7 +376,7 @@ import { isBusySendMode, type BusySendMode, type ParallelTaskRef, type ParallelT
 import {
   BACKGROUND_REPLY_PROMPT,
   BACKGROUND_WORKER_PROMPT,
-  backgroundRepliesEnabled,
+  backgroundRepliesActive,
   milestoneGate,
   shouldBackgroundReply,
   stepAcknowledgement,
@@ -5814,7 +5814,7 @@ function previewSystemPrompt(bot: BotRecord) {
     { id: "memory", label: "Memory", text: memorySystemPrompt(bot.id, { managedWrites: agentsMounted, fileTools: Boolean(privateWorkspace), enabled: bot.memoryEnabled !== false }) },
     { id: "docs", label: "Documents index", text: docsIndexPrompt(bot.id, { tools: agentsMounted ? "agents" : privateWorkspace ? "files" : "none" }) },
     { id: "skills", label: "Skills index", text: privateWorkspace ? skillsSystemPrompt(bot.id, skillsLibraryEnabled(cfg) ? bot.assignedSkills : undefined) + pluginSkillsForTurn(bot, instance) : "" },
-    { id: "background-reply", label: "Background replies", text: backgroundRepliesEnabled(bot) ? BACKGROUND_REPLY_PROMPT : "" },
+    { id: "background-reply", label: "Background replies", text: backgroundRepliesActive(bot) ? BACKGROUND_REPLY_PROMPT : "" },
   ]);
   const totalBytes = built.sections.reduce((n, s) => n + s.bytes, 0);
   return {
@@ -12797,7 +12797,7 @@ async function startOrQueueDirectMessage(botId: string, threadId: string, text: 
   const bot = store.bot(botId);
   const task = bot ? store.taskByThread(bot.id, threadId) : undefined;
   const spoken = Boolean(voiceCall) || via === "call";
-  if (bot && task && shouldBackgroundReply({
+  if (bot && task && backgroundRepliesActive(bot) && shouldBackgroundReply({
     bot, text, voice: spoken, hidden: task.hidden === true, nested: Boolean(task.parallelOf),
   })) {
     try {
@@ -15210,7 +15210,7 @@ async function startTurn(
       const skipBackground = spokenTurn || Boolean(turnTask?.hidden) || Boolean(opts?.automationSource) || Boolean(opts?.unattended) || (opts?.commsDepth ?? 0) > 0 || Boolean(opts?.coordination) || Boolean(opts?.cardContinuation);
       const backgroundReplyText = backgroundWorker
         ? BACKGROUND_WORKER_PROMPT
-        : skipBackground || !backgroundRepliesEnabled(liveBot ?? bot) ? "" : BACKGROUND_REPLY_PROMPT;
+        : skipBackground || !backgroundRepliesActive(liveBot ?? bot) ? "" : BACKGROUND_REPLY_PROMPT;
       const prompt = buildSystemPrompt(persona, liveBot?.soul ?? bot.soul ?? "", [
         { id: "user-profile", label: "About the user", text: userProfileSystemPrompt(botUserProfile(bot)) },
         // first after the soul: the block names agent tools, so it only goes
