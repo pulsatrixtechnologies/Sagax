@@ -10,6 +10,7 @@ import { canonicalJson, parsePackageDocument } from "../../shared/package-format
 import { runControlOmb } from "../control-omb.ts";
 import { request } from "../mcp-server.ts";
 import { UI_TOOLS_DIR } from "./control-omb-ui.ts";
+import { enableBrowseBots, openTemplatesCatalog } from "./ui-navigation.ts";
 
 const ROOT = fileURLToPath(new URL("../..", import.meta.url));
 const FIXTURES = join(ROOT, "shared", "package-fixtures");
@@ -71,10 +72,11 @@ describe("the organization library in the real renderer", () => {
     const snapshot = async () => (await ui("snapshot")).snapshot as string;
     const api = (path: string, method = "GET", body?: unknown) => request(path, { method, ...(body === undefined ? {} : { body: JSON.stringify(body) }) }, info.url);
     const evidence = (name: string) => ui("screenshot", "--out", join(ROOT, ".omb-scratch", "verify-evidence", name));
+    const evaluate = async (js: string) => (await ui("eval", "--js", js)).result;
+    await enableBrowseBots(api);
 
     // No organization: Templates has no organization tab.
-    await click("New or share");
-    await click("Templates");
+    await openTemplatesCatalog(click, evaluate);
     await expect.poll(snapshot, { timeout: 10_000 }).toContain("Community templates");
     expect(await snapshot()).not.toContain("From Customer Co");
     await press("Escape");
@@ -94,8 +96,7 @@ describe("the organization library in the real renderer", () => {
     expect(relayed.status).toBe(200);
 
     // The shelf is the first tab and opens first.
-    await click("New or share");
-    await click("Templates");
+    await openTemplatesCatalog(click, evaluate);
     await expect.poll(snapshot, { timeout: 10_000 }).toContain("Packages Customer Co shares with you");
     let shelf = await snapshot();
     for (const line of ["From Customer Co", "Sales desk", "Recommended by Acme Partners", "Sales skills", "From Acme Partners"]) expect(shelf).toContain(line);
@@ -120,8 +121,7 @@ describe("the organization library in the real renderer", () => {
     expect((await api("/api/routines")).routines.every((routine: { enabled: boolean }) => !routine.enabled)).toBe(true);
 
     // The shelf now says Added; the skills-only package adds in place.
-    await click("New or share");
-    await click("Templates");
+    await openTemplatesCatalog(click, evaluate);
     await expect.poll(snapshot, { timeout: 10_000 }).toContain("Packages Customer Co shares with you");
     shelf = await snapshot();
     expect(shelf).toContain("Added");

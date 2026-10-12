@@ -46,12 +46,12 @@ export function ToolAccessSettings() {
   };
 
   if (error && !rows) return <p className="text-[13px] text-danger">{error}</p>;
-  if (!rows) return <p className="text-[13px] text-ink-muted">{t("settings.toolAccess.loading")}</p>;
+  if (!rows) return <p className="text-[13px] text-ink-secondary">{t("settings.toolAccess.loading")}</p>;
   return (
     <div className="flex flex-col gap-3">
     <GrantForm bots={state.bots} onGranted={load} />
     {error && <p className="text-[13px] text-danger">{error}</p>}
-    {!rows.length ? <p className="text-[13px] text-ink-muted">{t("settings.toolAccess.empty")}</p> : (
+    {!rows.length ? <p className="text-[13px] text-ink-secondary">{t("settings.toolAccess.empty")}</p> : (
     <ul className="flex flex-col gap-2" aria-label={t("settings.toolAccess.title")}>
       {rows.map((row) => (
         <li key={row.id} className="flex items-center justify-between gap-3 rounded-lg border border-hairline/40 px-3 py-2">
@@ -59,7 +59,7 @@ export function ToolAccessSettings() {
             <div className="text-[13px] font-medium text-ink">
               {nameOf(row)} · <code>{row.scope}</code>
             </div>
-            <div className="text-[12px] text-ink-muted">
+            <div className="text-[12px] text-ink-secondary">
               {t(STATE_KEY[row.state])}
               {row.expiresAt && row.state === "active" ? ` · ${t("settings.toolAccess.expires", { date: new Date(row.expiresAt).toLocaleDateString() })}` : ""}
             </div>
@@ -104,23 +104,23 @@ function GrantForm({ bots, onGranted }: { bots: ReadonlyArray<{ id: string; name
   const field = "rounded-md border border-hairline/40 bg-inset px-2 py-1 text-[12px]";
   return (
     <form className="flex flex-wrap items-end gap-2" onSubmit={(e) => { e.preventDefault(); void submit(); }} aria-label={t("settings.toolAccess.form.title")}>
-      <label className="flex flex-col gap-1 text-[12px] text-ink-muted">{t("settings.toolAccess.form.bot")}
+      <label className="flex flex-col gap-1 text-[12px] text-ink-secondary">{t("settings.toolAccess.form.bot")}
         <select className={field} value={draft.botId} onChange={(e) => set({ botId: e.target.value })}>
           <option value="">{t("settings.toolAccess.form.pickBot")}</option>
           {bots.map((bot) => <option key={bot.id} value={bot.id}>{bot.name}</option>)}
         </select>
       </label>
-      <label className="flex flex-col gap-1 text-[12px] text-ink-muted">{t("settings.toolAccess.form.area")}
+      <label className="flex flex-col gap-1 text-[12px] text-ink-secondary">{t("settings.toolAccess.form.area")}
         <input className={`${field} w-[110px]`} value={draft.area} onChange={(e) => set({ area: e.target.value })} />
       </label>
-      <label className="flex flex-col gap-1 text-[12px] text-ink-muted">{t("settings.toolAccess.form.tier")}
+      <label className="flex flex-col gap-1 text-[12px] text-ink-secondary">{t("settings.toolAccess.form.tier")}
         <select className={field} value={draft.tier} onChange={(e) => set({ tier: e.target.value as GrantDraft["tier"] })}>
           <option value="read">{t("settings.toolAccess.tier.read")}</option>
           <option value="write">{t("settings.toolAccess.tier.write")}</option>
           <option value="admin">{t("settings.toolAccess.tier.admin")}</option>
         </select>
       </label>
-      <label className="flex flex-col gap-1 text-[12px] text-ink-muted">{t("settings.toolAccess.form.days")}
+      <label className="flex flex-col gap-1 text-[12px] text-ink-secondary">{t("settings.toolAccess.form.days")}
         <input className={`${field} w-[70px]`} inputMode="numeric" value={draft.days} onChange={(e) => set({ days: e.target.value })} />
       </label>
       <button type="submit" disabled={saving} className="rounded-md border border-hairline/40 px-2 py-1 text-[12px]">{t("settings.toolAccess.form.grant")}</button>
