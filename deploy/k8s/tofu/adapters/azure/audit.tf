@@ -1,17 +1,17 @@
 resource "azurerm_storage_account" "audit" {
-  count                            = local.on ? 1 : 0
-  name                             = var.audit_storage_account_name
-  resource_group_name              = azurerm_resource_group.this[0].name
-  location                         = azurerm_resource_group.this[0].location
-  account_kind                     = "StorageV2"
-  account_tier                     = "Standard"
-  account_replication_type         = "GRS"
-  min_tls_version                  = "TLS1_2"
-  https_traffic_only_enabled       = true
-  allow_nested_items_to_be_public  = false
-  shared_access_key_enabled        = false
+  count                             = local.on ? 1 : 0
+  name                              = var.audit_storage_account_name
+  resource_group_name               = azurerm_resource_group.this[0].name
+  location                          = azurerm_resource_group.this[0].location
+  account_kind                      = "StorageV2"
+  account_tier                      = "Standard"
+  account_replication_type          = "GRS"
+  min_tls_version                   = "TLS1_2"
+  https_traffic_only_enabled        = true
+  allow_nested_items_to_be_public   = false
+  shared_access_key_enabled         = false
   infrastructure_encryption_enabled = true
-  public_network_access_enabled    = true
+  public_network_access_enabled     = true
 
   identity {
     type         = "UserAssigned"
@@ -60,7 +60,7 @@ resource "azurerm_storage_container" "audit" {
 
 resource "azurerm_storage_container_immutability_policy" "audit" {
   count                                 = local.on ? 1 : 0
-  storage_container_resource_manager_id = azurerm_storage_container.audit[0].resource_manager_id
+  storage_container_resource_manager_id = azurerm_storage_container.audit[0].id
   immutability_period_in_days           = var.security.audit_retention_days
   protected_append_writes_all_enabled   = true
   locked                                = var.lock_audit_immutability

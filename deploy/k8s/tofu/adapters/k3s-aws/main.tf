@@ -4,7 +4,7 @@ resource "aws_instance" "server" {
   instance_type          = var.server_instance_type
   subnet_id              = try(var.subnet_ids[0], null)
   vpc_security_group_ids = var.security_group_ids
-  user_data     = var.server_user_data
+  user_data              = var.server_user_data
 
   metadata_options {
     http_endpoint               = "enabled"
@@ -20,7 +20,7 @@ resource "aws_instance" "server" {
   }
 
   tags = {
-    Name        = "${var.name}-k3s-${count.index}"
+    Name            = "${var.name}-k3s-${count.index}"
     "sagax.io/role" = "control-plane"
   }
 
@@ -33,11 +33,11 @@ resource "aws_instance" "server" {
 }
 
 resource "aws_launch_template" "worker" {
-  count         = var.enabled ? 1 : 0
-  name_prefix   = "${var.name}-sbx-"
-  image_id      = var.ami_id
-  instance_type = var.pool.aws_instance_type
-  user_data     = base64encode(var.worker_user_data)
+  count                  = var.enabled ? 1 : 0
+  name_prefix            = "${var.name}-sbx-"
+  image_id               = var.ami_id
+  instance_type          = var.pool.aws_instance_type
+  user_data              = base64encode(var.worker_user_data)
   vpc_security_group_ids = var.security_group_ids
   update_default_version = true
 

@@ -1,5 +1,5 @@
 locals {
-  audit_policy = file("${path.module}/../../audit/policy.yaml")
+  audit_policy = file("${path.module}/../../../audit/policy.yaml")
 
   server_user_data = templatefile("${path.module}/cloud-init-server.yaml.tftpl", {
     audit_policy_b64 = base64encode(local.audit_policy)

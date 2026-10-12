@@ -18,7 +18,9 @@ helm lint "$chart" -f "$chart/values-azure.yaml"
 helm lint "$chart" -f "$chart/values-k3s.yaml"
 
 render() {
-  helm template sagax-sandboxes "$chart" "$@" > "$1"
+  out=$1
+  shift
+  helm template sagax-sandboxes "$chart" "$@" > "$out"
 }
 
 tmp=$(mktemp -d)
@@ -87,7 +89,7 @@ check_stack() {
 check_stack "$root/deploy/k8s/tofu/stacks/azure"
 check_stack "$root/deploy/k8s/tofu/stacks/k3s"
 
-if grep -RIn --exclude=validate.sh -E 'tofu apply|terraform apply' "$root/deploy/k8s" >/dev/null; then
+if grep -RIn --exclude=validate.sh --exclude-dir=.terraform -E 'tofu apply|terraform apply' "$root/deploy/k8s" >/dev/null; then
   echo "deploy/k8s contains an apply command" >&2
   exit 1
 fi

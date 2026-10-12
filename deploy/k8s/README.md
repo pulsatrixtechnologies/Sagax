@@ -111,7 +111,7 @@ credentials unless you intend to create the cluster. The examples keep
 | Requirement | AKS | k3s |
 |---|---|---|
 | API audit, immutable retention (365 days) | Diagnostic logs to a GRS account with an immutability policy and a customer-managed key. Locked only when `production` and `lock_audit_immutability` are both set. | Audit policy on the apiserver. A daily ship unit refuses to start until `/etc/sagax/audit-sink.env` exists. Object lock on the bucket is the operator's. |
-| Encryption at rest | Disk encryption set on both pools. etcd secrets through Key Vault KMS. | `encryption-provider-config`. A file that still says `REPLACE_ON_HOST` refuses to boot. Node disks: LUKS, ZFS or Ceph on Proxmox, Linode disk encryption, encrypted EBS on AWS. |
+| Encryption at rest | One disk encryption set on the cluster, covering node OS disks and volumes. etcd secrets through Key Vault KMS. | `encryption-provider-config`. A file that still says `REPLACE_ON_HOST` refuses to boot. Node disks: LUKS, ZFS or Ceph on Proxmox, Linode disk encryption, encrypted EBS on AWS. |
 | Named admins with MFA | Entra ID groups only, `local_account_disabled`. `entra_mfa_policy_id` is required and is not created here. | OIDC issuer, client and group claim. `oidc_mfa_enforced` must be true: that is the operator's attestation that the issuer requires MFA. |
 | No shared or local admin | No local accounts. Role assignments are groups. The chart refuses `system:masters`, `system:anonymous`, `admin` and `root`. | Anonymous auth off. Kubeconfig mode `0600`. The node certificate stays on the server; it is a process credential. |
 | Image signing and scan | The chart's admission policies, on every cluster. | Same chart. |

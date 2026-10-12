@@ -7,16 +7,16 @@ module "core" {
 module "azure" {
   source = "../../adapters/azure"
 
-  enabled                          = var.enabled
-  production                       = var.production
-  name                             = module.core.name
-  location                         = var.location
-  admin_group_object_ids           = var.admin_group_object_ids
-  entra_mfa_policy_id              = var.entra_mfa_policy_id
-  lock_audit_immutability          = var.lock_audit_immutability
-  api_server_authorized_ip_ranges  = var.api_server_authorized_ip_ranges
-  audit_storage_account_name       = var.audit_storage_account_name
-  key_vault_name                   = var.key_vault_name
+  enabled                         = var.enabled
+  production                      = var.production
+  name                            = module.core.name
+  location                        = var.location
+  admin_group_object_ids          = var.admin_group_object_ids
+  entra_mfa_policy_id             = var.entra_mfa_policy_id
+  lock_audit_immutability         = var.lock_audit_immutability
+  api_server_authorized_ip_ranges = var.api_server_authorized_ip_ranges
+  audit_storage_account_name      = var.audit_storage_account_name
+  key_vault_name                  = var.key_vault_name
   pool = {
     azure_vm_size    = module.core.sandbox_pool.azure_vm_size
     max_nodes        = module.core.sandbox_pool.max_nodes

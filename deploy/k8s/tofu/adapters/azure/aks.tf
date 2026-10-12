@@ -39,6 +39,9 @@ resource "azurerm_kubernetes_cluster" "this" {
     admin_group_object_ids = var.admin_group_object_ids
   }
 
+  # One disk encryption set for every node pool's OS disks and for volumes.
+  disk_encryption_set_id = azurerm_disk_encryption_set.this[0].id
+
   key_management_service {
     key_vault_key_id         = azurerm_key_vault_key.etcd[0].id
     key_vault_network_access = "Public"
@@ -52,17 +55,16 @@ resource "azurerm_kubernetes_cluster" "this" {
   }
 
   default_node_pool {
-    name                   = "system"
-    vm_size                = var.system_vm_size
-    auto_scaling_enabled   = true
-    min_count              = 1
-    max_count              = 2
-    os_disk_size_gb        = 64
-    os_disk_type           = "Managed"
-    os_sku                 = "AzureLinux"
-    vnet_subnet_id         = azurerm_subnet.nodes[0].id
-    zones                  = var.zones
-    disk_encryption_set_id = azurerm_disk_encryption_set.this[0].id
+    name                 = "system"
+    vm_size              = var.system_vm_size
+    auto_scaling_enabled = true
+    min_count            = 1
+    max_count            = 2
+    os_disk_size_gb      = 64
+    os_disk_type         = "Managed"
+    os_sku               = "AzureLinux"
+    vnet_subnet_id       = azurerm_subnet.nodes[0].id
+    zones                = var.zones
 
     upgrade_settings {
       max_surge = "10%"
@@ -118,7 +120,6 @@ resource "azurerm_kubernetes_cluster_node_pool" "sandboxes" {
   zones                 = var.zones
   node_labels           = var.pool.labels
   node_taints           = [var.pool.taint]
-  disk_encryption_set_id = azurerm_disk_encryption_set.this[0].id
 
   upgrade_settings {
     max_surge = "33%"
