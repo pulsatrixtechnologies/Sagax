@@ -213,7 +213,7 @@ export async function handleDesktopBridgeMcp(
   method: string,
   params: unknown,
   request: (operation: DesktopBridgeOperation) => Promise<unknown>,
-  options?: { commandRefusal?: (command: string) => string | null },
+  options?: { commandRefusal?: (command: string) => string | null; payloadRefusal?: (text: string) => string | null },
 ): Promise<unknown> {
   if (method === "tools/list") return { tools: DESKTOP_BRIDGE_TOOLS };
   if (method === "tools/call") {
@@ -229,6 +229,8 @@ export async function handleDesktopBridgeMcp(
       const refusal = options?.commandRefusal?.(operation.command);
       if (refusal) return text(refusal, true);
     }
+    const payloadRefusal = options?.payloadRefusal?.(JSON.stringify(operation));
+    if (payloadRefusal) return text(payloadRefusal, true);
     try {
       const result = desktopToolResult(await request(operation));
       const staleDesktop = result.isError && result.content[0]?.type === "text" && (result.content[0].text === "Invalid request" || result.content[0].text === "Unsupported operation");

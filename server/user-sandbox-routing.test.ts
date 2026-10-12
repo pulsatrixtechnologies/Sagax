@@ -111,6 +111,9 @@ describe("environment tools", () => {
     const { calls, exec } = recorder({ exitCode: 2, stderr: "boom" });
     const result = await callUserSandboxTool("run_command", { command: "ls /nope", timeout_seconds: 5 }, exec);
     expect(calls[0]).toEqual({ argv: ["bash", "-lc", "ls /nope"], timeoutSec: 5 });
+    const long = recorder();
+    await callUserSandboxTool("run_command", { command: "sleep 1", timeout_seconds: 99_999 }, long.exec);
+    expect(long.calls[0]!.timeoutSec).toBe(600);
     expect(result.isError).toBe(true);
     expect((result.content[0] as { text: string }).text).toContain("[exit 2]");
   });

@@ -66,6 +66,16 @@ describe("the permission catalogue", () => {
     expect(normalizePermissions(["routines.viewTeam", "routines.viewEverything"])).toEqual({ granted: ["routines.viewTeam"], unknown: ["routines.viewEverything"], ignored: [] });
   });
 
+  it("grants defensive security work only when a profile names it", () => {
+    expect(PERMISSIONS.find((entry) => entry.key === "security.triage")).toMatchObject({
+      group: "security", memberDefault: false, adminOnly: false,
+    });
+    expect(MEMBER_DEFAULT_PERMISSIONS).not.toContain("security.triage");
+    expect(can({ admin: true, permissions: [] }, "security.triage")).toBe(true);
+    expect(can({ admin: false, permissions: [] }, "security.triage")).toBe(false);
+    expect(can({ admin: false, permissions: ["security.triage"] }, "security.triage")).toBe(true);
+  });
+
   it("is what the console reads", () => {
     const catalogue = permissionCatalogue();
     expect(catalogue.version).toBe(1);

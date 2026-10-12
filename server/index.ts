@@ -18,6 +18,21 @@ import { existsSync, readFileSync, realpathSync, rmSync, mkdirSync, statSync, wr
 import { ToolGrantStore } from "./tool-grants.ts";
 import { createAgentCardGuard } from "./agent-tool-card-guard.ts";
 import { guardDecision, toolGuardMode } from "./tool-guard.ts";
+import { misusePathRefusal, misuseRefusal, misuseToolFrameText, setMisuseAlert } from "./misuse-guardrails.ts";
+import {
+  openSafetyHold,
+  safetyArm,
+  safetyForgetArmed,
+  safetyHttpRefusal,
+  safetyPermissionEffect,
+  safetyRejectArmed,
+  safetySettleRequest,
+  safetyToolHold,
+  setSafetyConfirm,
+  settleSafetyHold,
+  stashSafetyNote,
+  takeSafetyNote,
+} from "./safety-review.ts";
 import { writeFileAtomic } from "./atomic.ts";
 import { rm as removeDirectory } from "node:fs/promises";
 import { hostname, userInfo } from "node:os";
@@ -10734,6 +10749,31 @@ bus.subscribe((event: RuntimeEvent) => {
         pushMessage({ role: "bot", kind: "activity", tool: { name: `Refused ${cardGuardTool}: ${cardGuard.decision.reason === "speaker_not_granted" ? "the person this turn speaks for has" : "this bot has"} no grant for it (Settings → Tool access).`, ok: false } });
         break;
       }
+      // Safety review, before any mode answers. A hard block or the first
+      // safer path is a refusal, not a card Full could accept. A confirmation
+      // is an explicit card. A read may run. Shadow changes nothing.
+      const safetyName = event.mcpTool ?? event.tool;
+      const safetyText = [event.mcpTool, event.tool, event.command?.command, event.summary, event.input].filter((part): part is string => typeof part === "string" && part.length > 0).join("\n");
+      const safetyWho = permission && event.requestId ? safetyPrincipal(event.threadId) : undefined;
+      const safetyEffect = safetyWho
+        ? safetyPermissionEffect({
+          text: safetyText,
+          surface: /computer/i.test(safetyName) ? "computer" : /propose_routine/.test(safetyName) ? "routine" : event.mcpTool ? "mcp" : "shell",
+          tool: safetyName,
+          known: event.tool !== "other" || Boolean(event.mcpTool),
+          triage: safetyWho.triage,
+          ...(safetyWho.principalId ? { principalId: safetyWho.principalId } : {}),
+          threadId: event.threadId,
+          ...(asker ? { botId: asker.id } : {}),
+        })
+        : null;
+      if (safetyEffect?.kind === "stop" && event.requestId) {
+        stashSafetyNote(event.requestId, safetyEffect.message);
+        const instance = event.providerInstanceId ? registry.get(event.providerInstanceId) : asker ? registry.get(asker.modelSelection.instanceId) : undefined;
+        void instance?.adapter.respondToRequest(event.threadId, event.requestId, { behavior: "deny", message: safetyEffect.message }).catch(() => {});
+        pushMessage({ role: "bot", kind: "activity", tool: { name: safetyEffect.message, ok: false } });
+        break;
+      }
       // A turn a guest drives on a Cloud home is Ask, room turns included,
       // and no command the owner saved answers for it.
       const guestDriven = cloudGuestDriven(event.threadId);
@@ -10767,6 +10807,10 @@ bus.subscribe((event: RuntimeEvent) => {
           commandAllowed: Boolean(command && commandAllowlist.matches(asker.id, command)),
           widgetApproved: !adminApproval && !guestDriven && !event.requiresExplicitApproval &&
             cwActionPasses.take(event.threadId, event.mcpTool ?? event.tool, event.input) !== null,
+          safetyHold: safetyEffect?.kind === "hold",
+          // A gate card stays a person's choice. Reads the gate already
+          // trusts never reach this branch.
+          safetyAllow: safetyEffect?.kind === "allow" && safetyEffect.auto === true && event.sagaxGate !== true,
         })
         : null;
       // Auto's reviewer is the engine's own. Claude accepts `--permission-mode
@@ -10844,6 +10888,14 @@ bus.subscribe((event: RuntimeEvent) => {
         });
         break;
       }
+      if (safetyEffect?.kind === "hold" && event.requestId) {
+        safetyArm(event.requestId, {
+          ...(safetyWho?.principalId ? { principalId: safetyWho.principalId } : {}),
+          threadId: event.threadId,
+          fingerprint: safetyEffect.fingerprint,
+          ...(safetyEffect.classKey ? { classKey: safetyEffect.classKey } : {}),
+        });
+      }
       const heldContext = { source: verdict?.source, permission };
       // A structured ask (Claude's AskUserQuestion) is a question whatever
       // the provider routed it as: it has no allow/deny answer, only the
@@ -10881,7 +10933,7 @@ bus.subscribe((event: RuntimeEvent) => {
           // a member's bot is approved one action at a time: a session rule
           // (Claude's own suggestion) could reach past its workspace. Never on
           // a guest's turn either: an "always" for it would outlive it.
-          allowSession: permission && event.allowSession && !event.requiresExplicitApproval && !adminApproval && !memberAsker && !guestDriven ? true : undefined,
+          allowSession: permission && event.allowSession && !event.requiresExplicitApproval && !adminApproval && !memberAsker && !guestDriven && safetyEffect?.kind !== "hold" ? true : undefined,
           ...(adminApproval ? { adminApproval: true } : {}),
           // who will answer it, for the member's waiting line
           ...(adminApproval && orgAdminNames().length ? { adminNames: orgAdminNames() } : {}),
@@ -10946,6 +10998,8 @@ bus.subscribe((event: RuntimeEvent) => {
     }
     case "request.resolved": {
       if (event.requestId) pendingCommandRules.delete(`${event.threadId}:${event.requestId}`);
+      if (event.requestId) safetySettleRequest(event.requestId, event.behavior, event.source);
+      if (event.requestId) takeSafetyNote(event.requestId);
       if (event.requestId) agentCardGuard.resolved(event.requestId, event.behavior, event.source);
       if (event.requestId) withdrawApprovalNotice(event.threadId, event.requestId);
       if (event.requestId) settleWaitingOnPersonChips(event.threadId, event.requestId, { behavior: event.behavior, source: event.source });
@@ -13004,6 +13058,94 @@ function directSendRefusal(botId: string, threadId: string): DirectSendRefused |
   return null;
 }
 
+/** `security.triage` for the person a turn acts for. The operator at this
+ * computer holds it. A service, a guest and a member without the permission
+ * do not. An organization admin holds every key. */
+function misuseActor(principalId: string | undefined | null, origin?: string): { triage: boolean; principalId?: string } {
+  const id = principalId?.trim() || undefined;
+  const triage = origin === "operator" || (id ? can(principalPermissions(id), "security.triage") : false);
+  return { triage, ...(id ? { principalId: id } : {}) };
+}
+
+function misuseTextRefusal(
+  text: string,
+  principalId: string | undefined | null,
+  surface: "message" | "shell" | "file" | "terminal" | "mcp" | "flow",
+  extra?: { botId?: string; threadId?: string; tool?: string; origin?: string },
+): string | null {
+  const actor = misuseActor(principalId, extra?.origin);
+  return misuseRefusal(text, { ...actor, surface, botId: extra?.botId, threadId: extra?.threadId, tool: extra?.tool })?.message ?? null;
+}
+
+/** The turn's person, including a solo operator, for the safety review. */
+function safetyPrincipal(threadId: string): { principalId?: string; triage: boolean } {
+  const speaker = turnSpeakers.get(threadId);
+  const fromSpeaker = speaker && "principalId" in speaker ? speaker.principalId : undefined;
+  const principalId = turnSpeakerPrincipals.get(threadId) ?? fromSpeaker;
+  return misuseActor(principalId, speaker?.origin);
+}
+
+/** Isolated reviewer for one bot. It may only tighten a verdict, and only
+ * the tool path awaits it. Shadow never calls it. */
+function safetyReviewer(botId: string): ((prompt: string, signal?: AbortSignal) => Promise<string>) | undefined {
+  const selected = store.bot(botId)?.modelSelection.instanceId;
+  if (!selected) return undefined;
+  const instance = registry.get(selected);
+  const review = instance?.reviewPermission;
+  if (!review) return undefined;
+  return (prompt, signal) => review.call(instance, prompt, signal);
+}
+
+setMisuseAlert((alert) => {
+  const bot = alert.botId ? store.bot(alert.botId) : undefined;
+  broadcast({
+    kind: "notify",
+    notification: {
+      kind: "admin-action",
+      botId: alert.botId ?? "",
+      botName: bot?.name ?? "Sagax",
+      threadId: alert.threadId ?? bot?.threadId ?? "",
+      title: "Demande refusée",
+      body: alert.message,
+    },
+  }, { adminOnly: true });
+});
+
+// A risky call the engine will not ask about itself (a sandbox tool, a
+// desktop tool) waits on this card. Full and Auto do not answer it. The
+// respond route settles it before any provider sees the request id.
+setSafetyConfirm(async (request) => {
+  const threadId = request.threadId;
+  if (!threadId) return "deny";
+  const held = openSafetyHold();
+  const bot = (request.botId ? store.bot(request.botId) : undefined) ?? store.botByThread(threadId);
+  const summary = request.summary.replace(/\s+/g, " ").trim().slice(0, 500);
+  const message = store.appendMessage(threadId, {
+    role: "bot",
+    kind: "options",
+    card: {
+      title: "Approval needed",
+      subtitle: summary || "This action needs approval",
+      options: ["Allow", "Deny"],
+      requestId: held.requestId,
+      ...(request.tool ? { tool: request.tool } : {}),
+      held: HELD_NOTE["approval.held.native"],
+      heldCode: "approval.held.native",
+    },
+  });
+  if (bot) notify(deliverableNotification("approval", bot, threadId, summary, bot.avatarUrl ? { avatarUrl: bot.avatarUrl } : {}));
+  const answer = await held.answer;
+  if (answer === "timeout") {
+    const stale = store.messagesFor(threadId).find((row) => row.id === message.id);
+    if (stale?.card && !stale.card.answered) {
+      store.patchMessage(threadId, message.id, {
+        card: { ...stale.card, answered: "unavailable", dismissed: true, expired: true, options: [] },
+      });
+    }
+  }
+  return answer;
+});
+
 /** The one path a person's direct message takes into a bot turn: spend cap,
  * idempotency, steer into a running turn, queue, or start. Used by
  * POST /api/bots/:id/messages and by Live calls (via "call").
@@ -13067,6 +13209,12 @@ async function acceptDirectSend(
       if (!store.taskByThread(currentAtStart.id, threadId)) {
         throw Object.assign(new Error("the target task no longer exists"), { status: 409 });
       }
+
+      const messageActor = misuseActor(speaker?.origin === "person" || speaker?.origin === "owner-routine" || speaker?.origin === "peer" ? speaker.principalId : undefined, speaker?.origin);
+      const misuse = misuseRefusal(text, { ...messageActor, surface: "message", botId, threadId });
+      if (misuse) throw Object.assign(new Error(misuse.message), { status: misuse.status, code: misuse.code });
+      const safetyMessage = safetyHttpRefusal({ text, surface: "message", triage: messageActor.triage, ...(messageActor.principalId ? { principalId: messageActor.principalId } : {}), botId, threadId });
+      if (safetyMessage) throw Object.assign(new Error(safetyMessage.message), { status: safetyMessage.status, code: safetyMessage.code });
 
       // Organization server: a turn asking Full access is refused while
       // the organization does not allow it (org-full-access.ts).
@@ -16327,6 +16475,14 @@ const outboundCounts = new OutboundCounts(join(DATA_DIR, "outbound-counts.json")
 const OUTBOUND_HOLD_MS = 9 * 60_000;
 
 function resolveAndSendTrust(res: ServerResponse, threadId: string, requestId: string, behavior: "allow" | "deny" | "answer"): boolean {
+  if ((behavior === "allow" || behavior === "deny") && settleSafetyHold(requestId, behavior)) {
+    const safetyCard = store.messagesFor(threadId).find((message) => message.card?.requestId === requestId);
+    if (safetyCard?.card && !safetyCard.card.answered) {
+      store.patchMessage(threadId, safetyCard.id, { card: { ...safetyCard.card, answered: behavior } });
+    }
+    json(res, 200, { ok: true, outcome: behavior === "allow" ? "allowed-once" : "rejected" });
+    return true;
+  }
   const teamMemoryCard = store.messagesFor(threadId).find(
     (message) => message.card?.requestId === requestId && message.card.teamMemoryRequest,
   );
@@ -16616,6 +16772,8 @@ function resolveAndSendRoutine(
   args: { botId: string; botName?: string; threadId: string; requestId: string; behavior: string; actorPrincipalId?: string },
   ownersAnswer = false,
 ): boolean {
+  if (args.behavior === "allow") safetyForgetArmed(args.requestId);
+  else if (args.behavior === "deny") safetyRejectArmed(args.requestId);
   const card = store.messagesFor(args.threadId).find(
     (message) => message.card?.requestId === args.requestId && message.card.routineRequest,
   )?.card;
@@ -27611,7 +27769,25 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
             overQuota: () => userSandbox.workspaceOverQuota(ownerId),
             // An admin manages this person's plugins and MCP servers: the
             // engines' own plugin and MCP commands do not run for them.
-            commandRefusal: (command) => enginePluginCommandRefusal(personIntegrationsOff(ownerId), command),
+            commandRefusal: (command) => enginePluginCommandRefusal(personIntegrationsOff(ownerId), command)
+              ?? misuseTextRefusal(command, ownerId, "shell", { botId: internalCapability.botId, threadId: internalCapability.threadId, tool: "run_command" }),
+            pathRefusal: (path) => misusePathRefusal(path, { ...misuseActor(ownerId), botId: internalCapability.botId, threadId: internalCapability.threadId, tool: "read_file" })?.message ?? null,
+            textRefusal: (value) => misuseTextRefusal(value, ownerId, "shell", { botId: internalCapability.botId, threadId: internalCapability.threadId }),
+            beforeCall: (name, detail) => {
+              const who = safetyPrincipal(internalCapability.threadId);
+              const principalId = who.principalId ?? ownerId;
+              return safetyToolHold({
+                text: detail,
+                surface: name.includes("computer") ? "computer" : name === "run_command" ? "shell" : "file",
+                tool: name,
+                known: true,
+                triage: who.triage || misuseActor(ownerId).triage,
+                ...(principalId ? { principalId } : {}),
+                threadId: internalCapability.threadId,
+                botId: internalCapability.botId,
+                review: safetyReviewer(internalCapability.botId),
+              });
+            },
           });
           requireActiveInternalCapability();
           return json(res, 200, { result });
@@ -27639,6 +27815,24 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         };
         // The cap flipped after this turn mounted the server: do not relay,
         // and stop the child that already has the credential.
+        const personalFrame = misuseToolFrameText(frame);
+        if (personalFrame) {
+          const personalMisuse = misuseTextRefusal(personalFrame, person, personalFrame.includes("flow_action") ? "flow" : "mcp", { botId: internalCapability.botId, threadId: internalCapability.threadId, tool: "personal-mcp" });
+          if (personalMisuse) return json(res, 200, answerError(personalMisuse));
+          const who = safetyPrincipal(internalCapability.threadId);
+          const personalHeld = await safetyToolHold({
+            text: personalFrame,
+            surface: personalFrame.includes("flow_action") ? "flow" : "mcp",
+            tool: "personal-mcp",
+            known: true,
+            triage: who.triage || misuseActor(person).triage,
+            principalId: who.principalId ?? person,
+            threadId: internalCapability.threadId,
+            botId: internalCapability.botId,
+            review: safetyReviewer(internalCapability.botId),
+          });
+          if (personalHeld) return json(res, 200, answerError(personalHeld));
+        }
         if (personIntegrationsOff(person)) {
           stdioRelay.closePerson(person, name);
           await syncGithubForTurn(person, internalCapability.generation);
@@ -27678,7 +27872,24 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           const autoRefusal = autoState && autoComputerToolRefusal(autoState.selected, DESKTOP_BRIDGE_MCP_NAME,
             String((frame?.params as { name?: unknown } | undefined)?.name ?? ""));
           if (autoRefusal) return json(res, 200, { result: { content: [{ type: "text", text: autoRefusal }], isError: true } });
-          if (rpcMethod === "tools/call") await stagePendingAttachments(internalCapability.threadId, internalCapability.generation);
+          if (rpcMethod === "tools/call") {
+            const desktopParams = frame?.params as { name?: unknown; arguments?: unknown } | undefined;
+            const desktopTool = typeof desktopParams?.name === "string" ? desktopParams.name : "";
+            const who = safetyPrincipal(internalCapability.threadId);
+            const desktopHeld = await safetyToolHold({
+              text: `${desktopTool}\n${desktopParams?.arguments === undefined ? "" : JSON.stringify(desktopParams.arguments)}`,
+              surface: /computer/i.test(desktopTool) ? "computer" : "shell",
+              tool: desktopTool || "desktop",
+              known: Boolean(desktopTool),
+              triage: who.triage || misuseActor(person).triage,
+              principalId: who.principalId ?? person,
+              threadId: internalCapability.threadId,
+              botId: internalCapability.botId,
+              review: safetyReviewer(internalCapability.botId),
+            });
+            if (desktopHeld) return json(res, 200, { result: { content: [{ type: "text", text: desktopHeld }], isError: true } });
+            await stagePendingAttachments(internalCapability.threadId, internalCapability.generation);
+          }
           const result = await handleDesktopBridgeMcp(rpcMethod, frame?.params, async (operation: DesktopBridgeOperation) => {
             // The bot's own "no computer" setting holds on the person's screen too.
             if ((operation.action === "computer_tools" || operation.action === "computer_call") && store.bot(internalCapability.botId)?.computer === "off") {
@@ -27708,7 +27919,9 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
               throw error;
             }
           }, {
-            commandRefusal: (command) => enginePluginCommandRefusal(personIntegrationsOff(person), command),
+            commandRefusal: (command) => enginePluginCommandRefusal(personIntegrationsOff(person), command)
+              ?? misuseTextRefusal(command, person, "shell", { botId: internalCapability.botId, threadId: internalCapability.threadId, tool: "run_command" }),
+            payloadRefusal: (value) => misuseTextRefusal(value, person, "shell", { botId: internalCapability.botId, threadId: internalCapability.threadId, tool: "desktop" }),
           });
           requireActiveInternalCapability();
           return json(res, 200, { result });
@@ -27812,6 +28025,32 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           return json(res, 403, { error: why === "someone-else" ? LENDING_SOMEONE_ELSE : LENDING_MEMORY_CHANGED });
         }
         const active = () => lendingEnabled() && internalCapabilityIsActive(internalCapability);
+        const terminalText = [parsed.data.command, parsed.data.path, parsed.data.content].filter((part) => typeof part === "string").join("\n");
+        if (terminalText) {
+          const terminalMisuse = misuseRefusal(terminalText, {
+            ...misuseActor(principal),
+            surface: parsed.data.action === "run_command" ? "terminal" : "file",
+            botId: internalCapability.botId,
+            threadId: internalCapability.threadId,
+            tool: parsed.data.action,
+          });
+          if (terminalMisuse) return json(res, terminalMisuse.status, { error: terminalMisuse.message, code: terminalMisuse.code });
+        }
+        const who = safetyPrincipal(internalCapability.threadId);
+        const terminalPrincipal = who.principalId ?? principal ?? undefined;
+        const terminalTool = parsed.data.action === "computer_tools" ? "computer_list_tools" : parsed.data.action === "computer_call" ? "computer_use" : parsed.data.action;
+        const terminalHeld = await safetyToolHold({
+          text: terminalText || parsed.data.action,
+          surface: parsed.data.action === "run_command" ? "terminal" : parsed.data.action.startsWith("computer") ? "computer" : "file",
+          tool: terminalTool,
+          known: true,
+          triage: who.triage || misuseActor(principal).triage,
+          ...(terminalPrincipal ? { principalId: terminalPrincipal } : {}),
+          threadId: internalCapability.threadId,
+          botId: internalCapability.botId,
+          review: safetyReviewer(internalCapability.botId),
+        });
+        if (terminalHeld) return json(res, 403, { error: terminalHeld, code: "safety_blocked" });
         if (IDENTITY.kind === "perspicax") return json(res, 200, { result: await userComputers.request(personSpeaker(principal), parsed.data, active) });
         return json(res, 200, { result: await sharedComputers.request(parsed.data, principal, active) });
       }
@@ -28112,13 +28351,34 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         const wasOwners = proposedInput.action !== "create" && typeof proposedInput.routineId === "string" ? cloudRoutineIsOwners(proposedInput.routineId) : false;
         const run = activeRoutineRunForThread(fromThreadId);
         const ownersTurn = cloudOwnerOnlyThread(fromThreadId) || cloudRoutineRunIsOwners(run, from.id, fromThreadId);
+        const routineWho = safetyPrincipal(fromThreadId);
+        const routineSafety = safetyPermissionEffect({
+          text: JSON.stringify(body),
+          surface: "routine",
+          tool: "propose_routine",
+          known: true,
+          triage: routineWho.triage,
+          ...(routineWho.principalId ? { principalId: routineWho.principalId } : {}),
+          threadId: fromThreadId,
+          botId: from.id,
+        });
+        if (routineSafety?.kind === "stop") return json(res, 409, { error: routineSafety.message });
         const proposed = await routineRequests.submit({
           botId: from.id,
           threadId: fromThreadId,
           proposal: proposedInput,
           from: owner.group ? { botId: from.id, name: from.name, color: from.color } : undefined,
           canCommit: () => internalCapabilityIsActive(internalCapability),
+          ...(routineSafety?.kind === "hold" ? { explicitConfirm: true } : {}),
         });
+        if (routineSafety?.kind === "hold") {
+          safetyArm(proposed.requestId, {
+            ...(routineWho.principalId ? { principalId: routineWho.principalId } : {}),
+            threadId: fromThreadId,
+            fingerprint: routineSafety.fingerprint,
+            ...(routineSafety.classKey ? { classKey: routineSafety.classKey } : {}),
+          });
+        }
         const proposedCard = store.messagesFor(fromThreadId).find((message) => message.id === proposed.messageId)?.card;
         // Applied at once in a Full-access conversation. In the owner's own (one
         // only they provably wrote in) it is theirs, as if they had approved
@@ -29831,6 +30091,31 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           return json(res, 403, { error: "this Perspicax profile is not mounted in this turn", code: "profile_not_mounted" });
         }
         const frame = await readInternalBody();
+        const perspicaxText = misuseToolFrameText(frame);
+        if (perspicaxText) {
+          const speakerId = internalCapability.sandboxPrincipalId ?? internalCapability.desktopPrincipalId;
+          const perspicaxMisuse = misuseTextRefusal(perspicaxText, speakerId, perspicaxText.includes("flow_action") ? "flow" : "mcp", { botId: internalCapability.botId, threadId: internalCapability.threadId, tool: "perspicax" });
+          if (perspicaxMisuse) {
+            const id = frame && typeof frame === "object" && "id" in frame ? (frame as { id?: unknown }).id : undefined;
+            return json(res, 200, { jsonrpc: "2.0", id, result: { content: [{ type: "text", text: perspicaxMisuse }], isError: true } });
+          }
+          const who = safetyPrincipal(internalCapability.threadId);
+          const perspicaxHeld = await safetyToolHold({
+            text: perspicaxText,
+            surface: perspicaxText.includes("flow_action") ? "flow" : "mcp",
+            tool: "perspicax",
+            known: true,
+            triage: who.triage || misuseActor(speakerId).triage,
+            ...(who.principalId || speakerId ? { principalId: who.principalId ?? speakerId } : {}),
+            threadId: internalCapability.threadId,
+            botId: internalCapability.botId,
+            review: safetyReviewer(internalCapability.botId),
+          });
+          if (perspicaxHeld) {
+            const id = frame && typeof frame === "object" && "id" in frame ? (frame as { id?: unknown }).id : undefined;
+            return json(res, 200, { jsonrpc: "2.0", id, result: { content: [{ type: "text", text: perspicaxHeld }], isError: true } });
+          }
+        }
         const answer = await perspicaxMcp.relay({
           threadId: internalCapability.threadId,
           generation: internalCapability.generation,
@@ -30016,7 +30301,20 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           }).join("\n\n");
           const capNote = (count: number) =>
             `Sagax did not send this. ${currentSender.name} has reached its daily limit of ${count} outbound action${count === 1 ? "" : "s"}. Ask the user to raise the limit under the bot's Permissions before trying again.`;
-          if (policy.policy === "allow" && !opaque) {
+          const outboundWho = safetyPrincipal(threadId);
+          const outboundSafety = safetyPermissionEffect({
+            text: `${outboundTool}\n${summary}`,
+            surface: "mcp",
+            tool: outboundTool,
+            known: true,
+            triage: outboundWho.triage,
+            ...(outboundWho.principalId ? { principalId: outboundWho.principalId } : {}),
+            threadId,
+            botId: currentSender.id,
+          });
+          if (outboundSafety?.kind === "stop") return refuseOutbound(outboundSafety.message);
+          const safetyCard = outboundSafety?.kind === "hold" ? outboundSafety : null;
+          if (policy.policy === "allow" && !opaque && !safetyCard) {
             const today = outboundCounts.today(currentSender.id);
             if (today + outboundCalls.length > policy.dailyCap) {
               appendDecision(DATA_DIR, {
@@ -30028,6 +30326,14 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           } else {
             const owner = connectorThread(currentSender.id, threadId);
             const held = outboundRequests.open({ botId: currentSender.id, threadId, tool: outboundTool, timeoutMs: OUTBOUND_HOLD_MS });
+            if (safetyCard) {
+              safetyArm(held.requestId, {
+                ...(outboundWho.principalId ? { principalId: outboundWho.principalId } : {}),
+                threadId,
+                fingerprint: safetyCard.fingerprint,
+                ...(safetyCard.classKey ? { classKey: safetyCard.classKey } : {}),
+              });
+            }
             const card = store.appendMessage(threadId, {
               role: "bot",
               kind: "options",
@@ -30064,6 +30370,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
               }
             }
             if (answer !== "allow") {
+              if (safetyCard) safetyRejectArmed(held.requestId);
               if (answer === "timeout") {
                 const stale = store.messagesFor(threadId).find((message) => message.id === card.id);
                 if (stale?.card && !stale.card.answered) {
@@ -30076,6 +30383,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
                   : "Sagax did not send this: the user declined. Do not retry it; ask the user what they would like instead.",
               );
             }
+            if (safetyCard) safetyForgetArmed(held.requestId);
             outboundApproved = true;
             requireActiveInternalCapability();
           }
@@ -32053,6 +32361,13 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         return json(res, 403, { error: "you may read this channel, not post in it", code: "read_only" });
       }
       if (group.peopleDm) return json(res, 202, sendPeopleDmMessage(group, auth, text, body.sendId, body.replyToId, body.threadId));
+      const groupSpeaker = speakerFor(auth);
+      const groupMisuseActor = misuseActor(groupSpeaker.origin === "person" ? groupSpeaker.principalId : undefined, groupSpeaker.origin);
+      const groupThreadId = typeof body.threadId === "string" ? body.threadId : group.threadId;
+      const groupMisuse = misuseRefusal(text, { ...groupMisuseActor, surface: "message", threadId: groupThreadId });
+      if (groupMisuse) return json(res, groupMisuse.status, { error: groupMisuse.message, code: groupMisuse.code });
+      const groupSafety = safetyHttpRefusal({ text, surface: "message", triage: groupMisuseActor.triage, ...(groupMisuseActor.principalId ? { principalId: groupMisuseActor.principalId } : {}), threadId: groupThreadId });
+      if (groupSafety) return json(res, groupSafety.status, { error: groupSafety.message, code: groupSafety.code });
       if (body.mode !== undefined && body.mode !== "chat" && body.mode !== "goal") {
         return json(res, 400, { error: "mode must be chat or goal" });
       }
@@ -34229,6 +34544,12 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       // On a call, words said while the bot works always join its turn: a
       // phone has no "run this in parallel" (and no chooser asks).
       const busyMode: BusySendMode = guardedBody || voiceCall ? "steer" : (body.busyMode ?? "steer");
+      const messageSpeaker = speakerFor(auth);
+      const postedActor = misuseActor(messageSpeaker.origin === "person" ? messageSpeaker.principalId : undefined, messageSpeaker.origin);
+      const messageMisuse = misuseRefusal(text, { ...postedActor, surface: "message", botId: bot.id, threadId });
+      if (messageMisuse) return json(res, messageMisuse.status, { error: messageMisuse.message, code: messageMisuse.code });
+      const postedSafety = safetyHttpRefusal({ text, surface: "message", triage: postedActor.triage, ...(postedActor.principalId ? { principalId: postedActor.principalId } : {}), botId: bot.id, threadId });
+      if (postedSafety) return json(res, postedSafety.status, { error: postedSafety.message, code: postedSafety.code });
       const receipt = await sendSequencer.run(
         sendId ? `bot:${bot.id}:${threadId}:${sendId}` : undefined,
         sendFingerprint(text, replyTo?.id),
@@ -37592,7 +37913,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
   } catch (e) {
     const status = (e as any)?.status ?? 500;
     const candidateCode = (e as { code?: unknown })?.code;
-    const code = typeof candidateCode === "string" && ["guarded_busy", "guarded_branch", "guarded_permissions", "guarded_request_changed", "guarded_request_untracked", "outside_workspace", "org_full_access_disabled", "parallel_limit", "parallel_nested"].includes(candidateCode)
+    const code = typeof candidateCode === "string" && ["guarded_busy", "guarded_branch", "guarded_permissions", "guarded_request_changed", "guarded_request_untracked", "outside_workspace", "org_full_access_disabled", "parallel_limit", "parallel_nested", "misuse_blocked", "misuse_approval_required", "misuse_locked", "safety_blocked"].includes(candidateCode)
       ? candidateCode : undefined;
     return json(res, status, { error: e instanceof Error ? e.message : String(e), ...(code ? { code } : {}) });
   } finally {

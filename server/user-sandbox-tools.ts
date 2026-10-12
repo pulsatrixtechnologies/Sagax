@@ -8,6 +8,8 @@
 // computer_list_tools, then computer_use with one of SANDBOX_COMPUTER_TOOLS,
 // the same vocabulary as a cloud computer (server/drivers/chat-boat-tools.ts).
 // The desktop starts on the first such call (deploy/sandbox/sagax-desktop).
+import { MISUSE_MAX_COMMAND_SECONDS } from "../shared/misuse-guardrails.ts";
+import { wrapUntrusted } from "../shared/safety-review.ts";
 import type { SandboxExecOutput } from "./sandboxd-core.ts";
 
 export const USER_SANDBOX_TOOLS = [
@@ -105,6 +107,13 @@ export interface ToolExec {
   /** A refusal for a shell command, or null to run it (an admin who
    * manages this person's plugins and MCP servers: person-integrations.ts). */
   commandRefusal?(command: string): string | null;
+  /** A refusal for a file path, or null to use it (misuse guardrail). */
+  pathRefusal?(path: string): string | null;
+  /** A refusal for other tool text (a page address, file contents), or null. */
+  textRefusal?(text: string): string | null;
+  /** Safety review before the tool runs. A string stops the call. Plugin and
+   * misuse refusals are checked first, so this cannot hide them. */
+  beforeCall?(name: string, detail: string): Promise<string | null> | string | null;
 }
 
 type ToolContent = { type: "text"; text: string } | { type: "image"; data: string; mimeType: string };
@@ -118,14 +127,34 @@ function validPath(value: unknown): string {
 }
 
 function commandOutput(result: SandboxExecOutput): ToolResult {
-  const parts = [
+  const body = [
     result.stdout,
     result.stderr ? `${result.stdout ? "\n" : ""}[stderr]\n${result.stderr}` : "",
     result.truncated ? "\n[output shortened]" : "",
     result.timedOut ? "\n[stopped: time limit reached]" : "",
-    `\n[exit ${result.exitCode ?? "unknown"}]`,
-  ];
-  return text(parts.join("").trimStart(), result.exitCode !== 0);
+  ].join("").trimStart();
+  const exit = `\n[exit ${result.exitCode ?? "unknown"}]`;
+  return text(`${wrapUntrusted("tool", body)}${exit}`, result.exitCode !== 0);
+}
+
+/** Plugin and misuse refusals win over the safety review. */
+function earlyRefusal(name: string, args: Record<string, unknown>, exec: ToolExec): string | null {
+  if (name === "run_command" && typeof args.command === "string") return exec.commandRefusal?.(args.command) ?? null;
+  if ((name === "read_file" || name === "write_file" || name === "list_files") && typeof args.path === "string") {
+    const pathRefused = exec.pathRefusal?.(args.path);
+    if (pathRefused) return pathRefused;
+  }
+  if (name === "write_file" && typeof args.content === "string") {
+    const contentRefused = exec.textRefusal?.(args.content);
+    if (contentRefused) return contentRefused;
+  }
+  if (name === "browse" && typeof args.url === "string") return exec.textRefusal?.(args.url) ?? null;
+  if (name === "computer_use" && args.tool_name === "open_url") {
+    const toolArgs = args.arguments;
+    const url = toolArgs && typeof toolArgs === "object" && !Array.isArray(toolArgs) ? (toolArgs as { url?: unknown }).url : undefined;
+    if (typeof url === "string") return exec.textRefusal?.(url) ?? null;
+  }
+  return null;
 }
 
 /** A public http(s) URL only; the host egress policy also blocks private
@@ -193,6 +222,10 @@ export function sandboxComputerExec(name: string, args: Record<string, unknown>)
 }
 
 async function callSandboxComputerTool(name: string, args: Record<string, unknown>, exec: ToolExec): Promise<ToolResult> {
+  if (name === "open_url" && typeof args.url === "string") {
+    const refused = exec.textRefusal?.(args.url);
+    if (refused) return text(refused, true);
+  }
   const call = sandboxComputerExec(name, args);
   const result = await exec.exec(call);
   if (name === "screenshot") {
@@ -213,24 +246,37 @@ async function callSandboxComputerTool(name: string, args: Record<string, unknow
 
 export async function callUserSandboxTool(name: string, args: Record<string, unknown>, exec: ToolExec): Promise<ToolResult> {
   try {
+    const refusedEarly = earlyRefusal(name, args, exec);
+    if (refusedEarly) return text(refusedEarly, true);
+    if (exec.beforeCall) {
+      const held = await exec.beforeCall(name, JSON.stringify({ name, arguments: args }));
+      if (held) return text(held, true);
+    }
     if (name === "run_command") {
       const command = args.command;
       if (typeof command !== "string" || !command.trim() || command.length > 100_000) return text("command must be a non-empty string", true);
       const refused = exec.commandRefusal?.(command);
       if (refused) return text(refused, true);
-      const timeout = typeof args.timeout_seconds === "number" ? args.timeout_seconds : 120;
+      const asked = typeof args.timeout_seconds === "number" ? args.timeout_seconds : 120;
+      const timeout = Math.min(MISUSE_MAX_COMMAND_SECONDS, Math.max(1, Number.isFinite(asked) ? asked : 120));
       return commandOutput(await exec.exec({ argv: ["bash", "-lc", command], timeoutSec: timeout }));
     }
     if (name === "read_file") {
       const path = validPath(args.path);
+      const pathRefused = exec.pathRefusal?.(path);
+      if (pathRefused) return text(pathRefused, true);
       const max = Math.min(1_000_000, Math.max(1, Math.floor(typeof args.max_bytes === "number" ? args.max_bytes : 200_000)));
       const result = await exec.exec({ argv: ["head", "-c", String(max), "--", path], timeoutSec: 30, maxOutputBytes: max + 1024 });
       if (result.exitCode !== 0) return text(result.stderr.trim() || `could not read ${path}`, true);
-      return text(result.stdout);
+      return text(wrapUntrusted("file", result.stdout));
     }
     if (name === "write_file") {
       const path = validPath(args.path);
+      const pathRefused = exec.pathRefusal?.(path);
+      if (pathRefused) return text(pathRefused, true);
       if (typeof args.content !== "string") return text("content must be a string", true);
+      const contentRefused = exec.textRefusal?.(args.content);
+      if (contentRefused) return text(contentRefused, true);
       const bytes = Buffer.from(args.content, "utf8");
       if (bytes.length > MAX_WRITE_BYTES) return text("content is larger than 1 MiB; write it in parts or generate it with run_command", true);
       if (await exec.overQuota()) return text("Your server environment is over its disk quota. Delete files in /workspace first.", true);
@@ -243,10 +289,14 @@ export async function callUserSandboxTool(name: string, args: Record<string, unk
     }
     if (name === "list_files") {
       const path = args.path === undefined ? "/workspace" : validPath(args.path);
+      const pathRefused = exec.pathRefusal?.(path);
+      if (pathRefused) return text(pathRefused, true);
       return commandOutput(await exec.exec({ argv: ["ls", "-la", "--", path], timeoutSec: 30 }));
     }
     if (name === "browse") {
       const url = browsableUrl(args.url);
+      const refused = exec.textRefusal?.(url);
+      if (refused) return text(refused, true);
       if (args.screenshot === true) {
         const result = await exec.exec({
           argv: ["sh", "-c", `${CHROMIUM.join(" ")} --window-size=1280,900 --screenshot=/tmp/sagax-shot.png "$SAGAX_URL" >/dev/null 2>&1; base64 -w0 /tmp/sagax-shot.png; rm -f /tmp/sagax-shot.png`],
@@ -260,7 +310,7 @@ export async function callUserSandboxTool(name: string, args: Record<string, unk
       }
       const result = await exec.exec({ argv: [...CHROMIUM, "--dump-dom", url], timeoutSec: 90, maxOutputBytes: 512 * 1024 });
       if (result.exitCode !== 0) return text(`The page could not be opened.${result.stderr ? `\n${result.stderr.slice(0, 2000)}` : ""}`, true);
-      return text(`${result.stdout}${result.truncated ? "\n[page shortened]" : ""}`);
+      return text(wrapUntrusted("page", `${result.stdout}${result.truncated ? "\n[page shortened]" : ""}`));
     }
     if (name === "computer_list_tools") return text(JSON.stringify({ tools: SANDBOX_COMPUTER_TOOLS }));
     if (name === "computer_use") {

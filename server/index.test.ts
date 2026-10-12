@@ -28,6 +28,7 @@ import { startFakeOAuthMcp } from "./testing/fake-oauth-mcp-server.ts";
 import { freePortBlock } from "./testing/ports.ts";
 import { openSse } from "./testing/sse.ts";
 import { FILE_MAX_BYTES, IMAGE_MAX_BYTES } from "./attachments.ts";
+import { MISUSE_POLICY_PROMPT } from "../shared/misuse-guardrails.ts";
 import { computerPrompt, SIGN_IN_PROMPT } from "./system-prompt.ts";
 import {
   PHONE_SECRET_INFO,
@@ -8241,9 +8242,11 @@ describe("harness HTTP API", () => {
       expect((await api("POST", `/api/bots/${bot.id}/messages`, { text: "hello" })).status).toBe(202);
       const seen = await readJsonFileWhenReady<{ systemPrompt?: string }>(fakeClaudeDump, 15_000);
       const system: string = seen.systemPrompt ?? "";
-      expect(system.startsWith("You are Kiwi, a personal bot in Sagax. Role: Tracker.")).toBe(true);
+      expect(system.startsWith(MISUSE_POLICY_PROMPT)).toBe(true);
       const persona = "You are Kiwi, a personal bot in Sagax. Role: Tracker.";
-      const afterPersona = system.slice(persona.length);
+      const afterPolicy = system.slice(MISUSE_POLICY_PROMPT.length);
+      expect(afterPolicy.startsWith(persona)).toBe(true);
+      const afterPersona = afterPolicy.slice(persona.length);
       expect(afterPersona.startsWith("\n\nYour standing instructions follow.")).toBe(true);
       expect(system).toContain("--- BEGIN STANDING INSTRUCTIONS (SOUL.md, 28 bytes) ---\nFile bugs. Never file noise.\n--- END STANDING INSTRUCTIONS ---");
     } finally {
@@ -8332,7 +8335,7 @@ describe("harness HTTP API", () => {
       rmSync(fakeClaudeDump, { force: true });
       expect((await api("POST", `/api/bots/${bot.id}/messages`, { text: "hello" })).status).toBe(202);
       let system = (await readJsonFileWhenReady<{ systemPrompt: string }>(fakeClaudeDump, 15_000)).systemPrompt;
-      expect(system.startsWith("You are Blank, a personal bot in Sagax.")).toBe(true);
+      expect(system.startsWith(MISUSE_POLICY_PROMPT + "You are Blank, a personal bot in Sagax.")).toBe(true);
       expect(system).not.toContain("at most four questions");
       expect(system).toContain("propose_profile");
 

@@ -94,7 +94,7 @@ describe("RULES.md", () => {
       { id: "rules", label: "Rules", text: rulesSystemPrompt(BOT) },
       { id: "docs", label: "Docs", text: " DOCS-MARKER" },
     ]);
-    expect(built.sections.map((section) => section.id)).toEqual(["persona", "soul", "rules", "user-profile", "memory", "docs"]);
+    expect(built.sections.map((section) => section.id)).toEqual(["misuse-policy", "persona", "soul", "rules", "user-profile", "memory", "docs"]);
     expect(built.text.indexOf("BEGIN RULES")).toBeGreaterThan(built.text.indexOf("END STANDING INSTRUCTIONS"));
     expect(built.text.indexOf("BEGIN RULES")).toBeLessThan(built.text.indexOf("MEMORY-MARKER"));
     // rules are standing: the stable half; the docs index moves with docs_update

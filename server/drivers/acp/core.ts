@@ -96,6 +96,7 @@ import { classifyError } from "../retry.ts";
 import { canUseMcpServer, narrowsNativeTools, parseToolScope } from "../../../shared/tool-scope.ts";
 import { gateServer, mcpStdioServer } from "../../mcp-gate-config.ts";
 import type { GateAnswer, GateAsk } from "../../mcp-gate-approval.ts";
+import { takeSafetyNote } from "../../safety-review.ts";
 import { gatedMcpAsk } from "./gated-mcp-ask.ts";
 import { TURN_TOKEN_ENV, warmCommsEnv } from "../spawn-contract.ts";
 import { acpHostToolRequest } from "../host-tools.ts";
@@ -961,9 +962,9 @@ export function createAcpDriver(support: AcpSupport): ProviderDriver<AcpConfig> 
       const handleGateConnection = (conn: Socket) => {
         conn.setEncoding("utf8");
         const open = new Set<() => void>();
-        const answer = (id: string, behavior: "allow" | "deny") => {
+        const answer = (id: string, behavior: "allow" | "deny", note?: string) => {
           if (conn.destroyed) return;
-          const message: GateAnswer = { t: "answer", id, behavior };
+          const message: GateAnswer = { t: "answer", id, behavior, ...(note ? { note } : {}) };
           conn.write(`${JSON.stringify(message)}\n`);
         };
         let buf = "";
@@ -990,13 +991,14 @@ export function createAcpDriver(support: AcpSupport): ProviderDriver<AcpConfig> 
             const preview = typeof ask.summary === "string" && ask.summary ? ` ${ask.summary}` : "";
             const requestId = newId();
             let timer: ReturnType<typeof setTimeout> | undefined;
-            const finish: AcpAskFinish = (behavior, source = "user") => {
+            const finish: AcpAskFinish = (behavior, source = "user", message) => {
               if (!current.asks.delete(requestId)) return "unavailable";
               if (timer) clearTimeout(timer);
               open.delete(onClose);
               // only an explicit "allow" from a person runs the call
               const allow = behavior === "allow" && source === "user";
-              answer(askId, allow ? "allow" : "deny");
+              const noted = allow ? undefined : (message?.trim() || takeSafetyNote(requestId));
+              answer(askId, allow ? "allow" : "deny", noted);
               emit({
                 ...base(threadId, current.turnId),
                 type: "request.resolved",
@@ -1023,6 +1025,7 @@ export function createAcpDriver(support: AcpSupport): ProviderDriver<AcpConfig> 
               tool: "other",
               summary: `${mcpTool}${preview}`.slice(0, 200),
               mcpTool,
+              ...(typeof ask.review === "string" && ask.review ? { input: ask.review.slice(0, 2000) } : {}),
               sagaxGate: true,
               approvalScope: current.controlsHost ? "local-computer" : undefined,
               // never a session-wide grant: every call is its own card

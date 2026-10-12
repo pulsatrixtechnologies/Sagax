@@ -803,6 +803,46 @@ Tests: `server/model-auto.test.ts`, `server/auto-model.e2e.test.ts`,
 `server/team-setup-requests.test.ts`, `shared/viewer-bot-overrides.test.ts`,
 `src/lib/auto-model.test.ts`, `src/components/ModelPicker.interaction.test.ts`.
 
+## Misuse guardrails (2026-10-12)
+
+End users must not use a bot for privilege escalation, escape from the
+server environment, tampering with antivirus or logs, attacks on third
+parties, malware, reading the platform's files (`bots.json`, `messages.db`,
+`idp_key`, and the rest), destruction of the server, or resource abuse.
+Defensive security work (SentinelOne triage and the like) is the permission
+`security.triage` in Perspicax. It allows that work only. It does not lift
+a block. Details, the flag, and the French refusals:
+[`docs/security/misuse-guardrails.md`](docs/security/misuse-guardrails.md).
+
+- `SAGAX_MISUSE_GUARDRAILS` is `off`, `shadow`, or `enforce`. The default is
+  `shadow`: classify and write `misuse.shadow` (category `security` on the
+  admin activity log), refuse nothing. `enforce` refuses, alerts tenant
+  admins (`admin-action`, admins only), and locks a principal after 5
+  attempts in 10 minutes (15 minutes, 429 `misuse_locked`).
+- The prompt section `misuse-policy` is first in `buildSystemPrompt`, ahead
+  of the persona and the soul, and it is not a control. The server
+  classifies messages, shell, file, the shared-computer terminal,
+  `flow_action`, and MCP. The MCP gate subprocess blocks hard categories
+  only, and only in enforce mode.
+- The container limits, the metadata deny `169.254.0.0/16`, and the masked
+  host `/proc` entries stay on regardless of the flag. The path allowlist
+  follows the flag.
+- What a person reads is Québec French, with no anglicism. Tests:
+  `shared/misuse-guardrails.test.ts`, `server/misuse-guardrails.test.ts`.
+- Safety review uses the same flag. Shadow writes `safety.shadow` and
+  changes nothing. Enforce reviews shell, MCP, computer use, and routine
+  writes before they run: a hard block stays a 403 refusal, never a card
+  Full or Auto can accept; a risky call gets a safer path once, then a
+  native approval card the person accepts; denial and expiry are final for
+  that fingerprint, and for a destructive git intent, a prompt disclosure,
+  or a credential grab across rewording. Reads are auto-approved. Writes
+  and unknown tools wait. Outbound mail is a draft, then the existing send
+  card. Tool results, pages, files, and other bots' messages are wrapped
+  as `<<<UNTRUSTED>>>` and are not instructions. `security.triage` still
+  covers defensive work only. The tool guard (`SAGAX_TOOL_GUARD`) and the
+  agent card guard are unchanged. Tests: `shared/safety-review.test.ts`,
+  `server/safety-review.test.ts`.
+
 ## Bot actions
 
 A bot calls the same function as the button or the route (`act` in the

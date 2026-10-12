@@ -5,6 +5,7 @@
 // orders them, drops the empty ones, and reports the size of each section.
 // The sentences that both the direct-turn and room-turn paths use live
 // here too, so neither path can drift from the other or from the preview.
+import { MISUSE_POLICY_PROMPT } from "../shared/misuse-guardrails.ts";
 import { soulSystemPrompt } from "./bot-folder.ts";
 import { teammateAvailabilityPrompt, type RosterMember } from "./peer-roster.ts";
 import type { ConnectorToolGrant } from "../shared/wire.ts";
@@ -55,6 +56,7 @@ export function buildSystemPrompt(
   // before everything else, wherever a call site lists it: hard constraints
   // belong next to the standing instructions, ahead of memory.
   const ordered: PromptPart[] = [
+    { id: "misuse-policy", label: "Security policy", text: MISUSE_POLICY_PROMPT },
     { id: "persona", label: "Identity", text: persona },
     { id: "soul", label: "Standing instructions (SOUL.md)", text: soulSystemPrompt(soul) },
     ...parts.filter((part) => part.id === "rules"),

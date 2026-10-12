@@ -278,6 +278,23 @@ export function sandboxContainerSpec(config: Pick<SandboxdConfig, "instance" | "
       NanoCpus: limits.nanoCpus,
       CpuShares: 512,
       PidsLimit: limits.pidsLimit,
+      // Hide host-revealing /proc and /sys entries. The process still has
+      // its own /proc; reading the host through it is also refused by the
+      // misuse classifier (docs/security/misuse-guardrails.md).
+      MaskedPaths: [
+        "/proc/acpi",
+        "/proc/asound",
+        "/proc/kcore",
+        "/proc/keys",
+        "/proc/latency_stats",
+        "/proc/sched_debug",
+        "/proc/scsi",
+        "/proc/timer_list",
+        "/proc/timer_stats",
+        "/sys/firmware",
+        "/sys/devices/virtual/powercap",
+      ],
+      ReadonlyPaths: ["/proc/bus", "/proc/fs", "/proc/irq", "/proc/sys", "/proc/sysrq-trigger"],
       OomScoreAdj: 500,
       Ulimits: [
         { Name: "nofile", Soft: limits.nofile, Hard: limits.nofile },
@@ -330,6 +347,10 @@ export function sandboxIsolationProblems(spec: Spec, key: string): string[] {
   if (!(Number(host.Memory) > 0) || Number(host.MemorySwap) !== Number(host.Memory)) problems.push("no memory limit");
   if (!(Number(host.NanoCpus) > 0)) problems.push("no CPU limit");
   if (!(Number(host.PidsLimit) > 0)) problems.push("no pids limit");
+  const masked = Array.isArray(host.MaskedPaths) ? host.MaskedPaths.map(String) : [];
+  if (!masked.includes("/proc/kcore")) problems.push("host proc not masked");
+  const readonlyPaths = Array.isArray(host.ReadonlyPaths) ? host.ReadonlyPaths.map(String) : [];
+  if (!readonlyPaths.includes("/proc/sys")) problems.push("proc sys not read-only");
   if (Array.isArray(host.Binds) && host.Binds.length > 0) problems.push("host bind mounts");
   if (Array.isArray(host.Devices) && host.Devices.length > 0) problems.push("host devices");
   const mounts = Array.isArray(host.Mounts) ? host.Mounts as Spec[] : [];
