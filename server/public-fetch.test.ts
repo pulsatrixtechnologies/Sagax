@@ -10,8 +10,8 @@ describe("guardedFetch", () => {
 
   it("does not follow a redirect onto loopback or the Azure WireServer", async () => {
     const calls: string[] = [];
-    const inner = async (input: RequestInfo | URL) => {
-      calls.push(String(input));
+    const inner: typeof fetch = async (input) => {
+      calls.push(typeof input === "string" ? input : input instanceof URL ? input.href : input.url);
       return new Response(null, { status: 302, headers: { location: "http://127.0.0.1/secret" } });
     };
     await expect(guardedFetch("http://127.0.0.1:9/start", {}, inner)).rejects.toThrow(/public internet/);

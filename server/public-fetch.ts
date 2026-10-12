@@ -14,7 +14,7 @@ import { personalMcpHostRefusal } from "./person-connections.ts";
 const MAX_HOPS = 3;
 const REDIRECT = new Set([301, 302, 303, 307, 308]);
 
-export async function guardedFetch(input: RequestInfo | URL, init: RequestInit = {}, inner: typeof fetch = fetch): Promise<Response> {
+export async function guardedFetch(input: Parameters<typeof fetch>[0], init: RequestInit = {}, inner: typeof fetch = fetch): Promise<Response> {
   const first = await inner(input, { ...init, redirect: "manual" });
   if (!REDIRECT.has(first.status)) return first;
   const location = first.headers.get("location");
@@ -38,7 +38,7 @@ async function followRedirect(next: URL, init: RequestInit, status: number, hops
   return followRedirect(new URL(location, next), nextInit, response.status, hops + 1);
 }
 
-function requestUrl(input: RequestInfo | URL): string {
+function requestUrl(input: Parameters<typeof fetch>[0]): string {
   if (typeof input === "string") return input;
   if (input instanceof URL) return input.href;
   return input.url;
@@ -52,7 +52,7 @@ async function pinPublicAddress(hostname: string): Promise<string> {
   return pinned;
 }
 
-function headerRecord(headers: HeadersInit | undefined): Record<string, string> {
+function headerRecord(headers: RequestInit["headers"]): Record<string, string> {
   const out: Record<string, string> = {};
   if (!headers) return out;
   const pairs = headers instanceof Headers ? [...headers.entries()] : Array.isArray(headers) ? headers : Object.entries(headers);
@@ -60,7 +60,7 @@ function headerRecord(headers: HeadersInit | undefined): Record<string, string> 
   return out;
 }
 
-function bodyBuffer(body: BodyInit | null | undefined): Buffer | undefined {
+function bodyBuffer(body: RequestInit["body"]): Buffer | undefined {
   if (body == null) return undefined;
   if (typeof body === "string") return Buffer.from(body);
   if (body instanceof Uint8Array) return Buffer.from(body);
