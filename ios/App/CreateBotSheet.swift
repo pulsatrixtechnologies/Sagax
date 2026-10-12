@@ -39,6 +39,7 @@ struct CreateBotSheet: View {
     @State private var readOnly = false
     @State private var name = ""
     @State private var draft = CharacterDraft()
+    @State private var unlocks: MascotUnlocks = .nothingLocked
     @State private var creating = false
     @FocusState private var nameFocused: Bool
     /// How far the keyboard reaches up from the bottom of the screen, 0 when down.
@@ -77,8 +78,13 @@ struct CreateBotSheet: View {
             keyboardHeight = 0
         }
         .task {
+            if session.isDemo { unlocks = .demo }
             readOnly = NewBotRules.readOnly(await session.configStatus())
             presets = await session.botPresets()
+            if !session.isDemo, session.surfaceGate.allows(.characterExtras), session.surfaceGate.allows(.achievements),
+               let client = session.profileClient {
+                unlocks = (try? await client.mascotUnlocks()) ?? .nothingLocked
+            }
         }
         .sheet(isPresented: $importingZip) {
             BotZipImportSheet(close: { importingZip = false }) { bot in
@@ -190,7 +196,7 @@ struct CreateBotSheet: View {
             GeometryReader { box in
                 ScrollView {
                     VStack(spacing: 0) {
-                        CharacterEditor(draft: $draft, metrics: .createSheet, unlocks: session.isDemo ? .demo : .nothingLocked)
+                        CharacterEditor(draft: $draft, metrics: .createSheet, unlocks: session.isDemo ? .demo : unlocks)
                             .padding(.bottom, 12)
                             .frame(minHeight: box.size.height, alignment: .top)
                         moreOptionsRow
