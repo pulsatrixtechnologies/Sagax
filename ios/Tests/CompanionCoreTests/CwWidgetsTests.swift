@@ -21,7 +21,7 @@ final class CwWidgetsTests: XCTestCase {
         let message = try JSONDecoder().decode(Message.self, from: data)
         XCTAssertEqual(message.tool?.widget?.family, "time")
         XCTAssertFalse(isToolActivityRow(message))
-        let rows = transcriptRows([message], detail: .quiet)
+        let rows = transcriptRows([message], detail: .hidden)
         XCTAssertEqual(rows.map(\.id), ["w"])
     }
 
