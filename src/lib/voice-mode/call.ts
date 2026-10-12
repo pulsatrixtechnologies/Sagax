@@ -38,8 +38,8 @@ import { estimatePitch } from "./prosody";
 import { spokenPart } from "./spoken";
 import { judge, readVoiceprint, saveVoiceprint, SpeakerEmbedder, voiceprintOf, type Voiceprint } from "./speaker-id";
 import { attachVoiceCapture, type CaptureContext, type CaptureSource, type VoiceCapture } from "./capture-worklet";
-import { LiveTranscriber } from "./stt-stream";
-import { completeClause, CONTOUR_CONTINUATION_MS, FRAME_MS, incompleteClause, TurnDetector } from "./turns";
+import { LiveTranscriber, PROBE_AFTER_MS } from "./stt-stream";
+import { completeClause, CONTOUR_CONTINUATION_MS, FRAME_MS, incompleteClause, longFrenchOpen, stripTerminalPunctuation, TurnDetector } from "./turns";
 import { formatTimeline, materiallyDifferent, normalizedWords, type TurnMetrics } from "./latency";
 import { discardSpeculation, holdSpeculativePlayback, maySpeculate } from "./speculative";
 import { ttsLeadStep, type TtsLeadAction } from "./tts-lead";
@@ -50,9 +50,10 @@ const RATE = 16_000;
 const PREROLL_IDLE_FRAMES = 10; // 320 ms before the first voiced frame
 const PREROLL_BARGE_FRAMES = 15; // 480 ms: first syllables over the bot stay in the STT window
 /** Trailing silence is still sent to STT while the partial is incomplete
- * so the last word can land. Once `maySpeculate`, stop so xAI can
- * speech_final. Do not send `{type:"finalize"}` here: that stuck the listen
- * socket. */
+ * so the last word can land. After 128 ms of confident silence, one
+ * `finalize` probe asks for those words; further silence is held so a
+ * second finalize with no new audio cannot stick the listen socket. Once
+ * `maySpeculate`, silence stops even sooner so xAI can speech_final. */
 /** A turn that starts this soon after the last one ended, before the bot
  * said anything, continues it: one utterance cut by a pause. */
 export const CONTINUATION_MS = 1_500;
@@ -239,6 +240,8 @@ export class VoiceCall {
   private partialAt = 0;
   /** duplex: the partial already sent to the LLM, until the person stops or it is discarded */
   private speculated: string | null = null;
+  /** a dropped guess must be replaced by the endpoint send, not forked */
+  private replaceSpeculation = false;
   /** false while a speculative send waits for speech-end to play TTS */
   private endpointConfirmed = true;
   /** speculative TTS is fetched but not played until speech-end */
@@ -278,14 +281,18 @@ export class VoiceCall {
       onError: () => this.emit("error", "speech-failed"),
     };
     this.transcriber.onPartial((text) => {
-      // the words so far move the endpoint: an unfinished clause waits longer
-      if (this.turns.active) this.turns.hint(text);
+      // A probe may have punctuated a sentence the person has not finished.
+      // Endpointing and speculation see the words without that period.
+      const forced = this.transcriber.forcedFlush;
+      const heard = forced ? stripTerminalPunctuation(text) : text;
+      if (this.turns.active) this.turns.hint(heard);
       if (this.turns.active || this.pushing || this.state.phase === "thinking") {
-        this.turnPartial = text;
+        this.turnPartial = heard;
         this.partialAt = this.now();
       }
       this.emit("partial", text);
-      this.considerSpeculation(text);
+      if (forced && longFrenchOpen(heard, this.turns.spokenMs)) return;
+      this.considerSpeculation(heard);
     });
     if (this.voiceprint?.level) this.turns.nearLevel = this.voiceprint.level;
   }
@@ -753,7 +760,11 @@ export class VoiceCall {
         // plus" keeps streaming so the last word can land. Then stop so xAI
         // can speech_final.
         const ready = maySpeculate(this.turnPartial, true);
-        if (!this.turns.inSilence || !ready) this.transcriber.push(frame);
+        if (this.turns.inSilence && this.turns.quietMs >= PROBE_AFTER_MS) this.transcriber.probe();
+        // Hold silence once a probe has closed this audio. Voiced frames
+        // still go out, so the person resuming clears the hold.
+        const hold = this.turns.inSilence && this.transcriber.holdingSilence;
+        if (!hold && (!this.turns.inSilence || !ready)) this.transcriber.push(frame);
         if (probability > 0.5) {
           this.lastVoicedAt = this.now();
           this.turnLevel.sum += level;
@@ -767,6 +778,7 @@ export class VoiceCall {
       case "candidate": {
         this.keepPreroll(frame);
         this.turnPartial = "";
+        this.replaceSpeculation = false;
         const n = (event.bargeIn || this.state.botAudible) ? PREROLL_BARGE_FRAMES : PREROLL_IDLE_FRAMES;
         this.transcriber.begin(this.preroll.slice(-n));
         this.preroll = [];
@@ -786,7 +798,7 @@ export class VoiceCall {
         this.dispatch({ type: "speech-cancel" });
         return;
       case "end":
-        this.beginTurnMetrics(this.lastVoicedAt, event.early === true, event.onContour === true);
+        this.beginTurnMetrics(this.lastVoicedAt, event.early === true, event.onContour === true, event.semantic === true);
         if (this.turn && event.contour && event.contour !== "unknown") this.turn.contour = event.contour;
         this.dispatch({ type: "speech-end" });
         return;
@@ -798,7 +810,7 @@ export class VoiceCall {
     if (this.preroll.length > PREROLL_BARGE_FRAMES) this.preroll.shift();
   }
 
-  private beginTurnMetrics(stoppedAt: number, earlyEnd = false, contourEnd = false): void {
+  private beginTurnMetrics(stoppedAt: number, earlyEnd = false, contourEnd = false, semanticEnd = false): void {
     this.disarmCue();
     // only the in-flight speculation for THIS utterance keeps its sentAt
     if (this.speculated && this.turn?.earlyStart && this.turn.firstAudioAt === undefined) {
@@ -806,12 +818,18 @@ export class VoiceCall {
       this.turn.endedAt = this.now();
       if (earlyEnd) this.turn.earlyEnd = true;
       if (contourEnd) this.turn.contourEnd = true;
+      if (semanticEnd) this.turn.semanticEnd = true;
       this.endpointConfirmed = true;
       this.releaseHeldPlayback();
       this.emit("metrics", this.turn, this.bargeIn);
       return;
     }
-    this.turn = { stoppedAt, endedAt: this.now(), ...(earlyEnd ? { earlyEnd: true } : {}), ...(contourEnd ? { contourEnd: true } : {}) };
+    this.turn = {
+      stoppedAt, endedAt: this.now(),
+      ...(earlyEnd ? { earlyEnd: true } : {}),
+      ...(contourEnd ? { contourEnd: true } : {}),
+      ...(semanticEnd ? { semanticEnd: true } : {}),
+    };
   }
 
   /** The server took the turn's send (LiveCall, from its receipt). */
@@ -924,7 +942,8 @@ export class VoiceCall {
           this.emit("metrics", this.turn, this.bargeIn);
           this.armCue(this.turn);
         }
-        const continues = this.continuing && this.lastSent !== null;
+        const continues = (this.continuing && this.lastSent !== null) || this.replaceSpeculation;
+        this.replaceSpeculation = false;
         const text = continues ? continuedTurn(this.lastSent!.text, effect.text) : effect.text;
         this.continuing = false;
         this.lastSent = { text, endedAt: this.turn?.endedAt ?? this.now(), botSpoke: false, ...(this.turn?.contourEnd ? { onContour: true } : {}) };
@@ -1082,7 +1101,10 @@ export class VoiceCall {
     if (this.speculated) {
       if (!discardSpeculation(this.speculated, trimmed)) return;
       this.dropSpeculation();
-      if (!maySpeculate(trimmed, this.turns.inSilence) || isNoiseFragment(trimmed)) return;
+      if (!maySpeculate(trimmed, this.turns.inSilence) || isNoiseFragment(trimmed)) {
+        this.replaceSpeculation = true;
+        return;
+      }
       this.sendSpeculative(trimmed, true);
       return;
     }
@@ -1105,7 +1127,9 @@ export class VoiceCall {
     this.turn = { stoppedAt: now, endedAt: now, earlyStart: true, sentAt: now, transcribedAt: now, utteranceId };
     this.speculated = text;
     this.endpointConfirmed = false;
-    this.turns.markComplete();
+    // An open long French sentence must not be forced onto the short
+    // complete window; the long-French quiet still applies.
+    if (!longFrenchOpen(text, this.turns.spokenMs)) this.turns.markComplete();
     this.lastSent = { text, endedAt: this.turn.endedAt, botSpoke: false };
     this.reply = null;
     this.replyText = "";

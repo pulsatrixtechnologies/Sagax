@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { openSpeechStream, SPEECH_PING_MS, type HeaderWebSocket } from "./grok.ts";
+import { openSpeechStream, openTranscriptionStream, SPEECH_PING_MS, type HeaderWebSocket } from "./grok.ts";
 
 class FakeSocket {
   static last: FakeSocket | null = null;
@@ -65,6 +65,23 @@ describe("openSpeechStream", () => {
     stream.close();
     await vi.advanceTimersByTimeAsync(SPEECH_PING_MS);
     expect(socket.pings).toBe(2);
+  });
+});
+
+describe("openTranscriptionStream", () => {
+  it("pings while the call is up so a quiet stretch does not drop speech to text", async () => {
+    vi.useFakeTimers();
+    const handlers = { onTranscript() {}, onError() {}, onClose() {} };
+    const stream = openTranscriptionStream("fixture-voice-key", { language: "fr" }, handlers, FakeSocket as unknown as HeaderWebSocket);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(FakeSocket.last!.url).toContain("/stt?");
+    expect(FakeSocket.last!.pings).toBe(0);
+    await vi.advanceTimersByTimeAsync(SPEECH_PING_MS);
+    expect(FakeSocket.last!.pings).toBe(1);
+    const socket = FakeSocket.last!;
+    stream.close();
+    await vi.advanceTimersByTimeAsync(SPEECH_PING_MS);
+    expect(socket.pings).toBe(1);
   });
 });
 

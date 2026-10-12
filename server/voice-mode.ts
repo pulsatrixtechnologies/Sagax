@@ -357,6 +357,9 @@ export function createVoiceModeRoutes(deps: VoiceModeDeps): RouteHandler {
       onText: (text) => {
         let message: { type?: unknown } | null = null;
         try { message = JSON.parse(text) as { type?: unknown }; } catch { /* ignored */ }
+        // The page's keepalive keeps a proxy from dropping the listen
+        // socket. It is never forwarded to xAI.
+        if (message?.type === "keepalive") return;
         if (message?.type === "finalize") {
           upstream.finalize();
           book();

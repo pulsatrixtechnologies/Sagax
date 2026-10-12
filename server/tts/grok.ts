@@ -204,7 +204,7 @@ export function openTranscriptionStream(
   key: string,
   options: { language?: string; endpointingMs?: number },
   handlers: TranscriptionHandlers,
-  Socket: HeaderWebSocket = WebSocket as unknown as HeaderWebSocket,
+  Socket: HeaderWebSocket = WsWebSocket as unknown as HeaderWebSocket,
 ): TranscriptionStream {
   const query = new URLSearchParams({
     model: "grok-voice-transcribe-2.0",
@@ -217,6 +217,7 @@ export function openTranscriptionStream(
   const url = `${API.replace(/^http/, "ws")}/stt?${query}`;
   let socket: WebSocket;
   let closed = false;
+  let ping: ReturnType<typeof setInterval> | null = null;
   let resolveReady!: () => void;
   let rejectReady!: (error: Error) => void;
   const ready = new Promise<void>((resolve, reject) => {
@@ -224,9 +225,15 @@ export function openTranscriptionStream(
     rejectReady = reject;
   });
   ready.catch(() => {});
+  const stopPing = () => {
+    if (!ping) return;
+    clearInterval(ping);
+    ping = null;
+  };
   const fail = (message: string) => {
     if (closed) return;
     closed = true;
+    stopPing();
     rejectReady(new Error(message));
     handlers.onError(message);
     try { socket?.close(); } catch { /* already closed */ }
@@ -239,6 +246,13 @@ export function openTranscriptionStream(
     return { ready, send() {}, finalize() {}, close() {} };
   }
   socket.binaryType = "arraybuffer";
+  socket.addEventListener("open", () => {
+    if (closed || ping) return;
+    ping = setInterval(() => {
+      if (!closed && socket.readyState === 1) pingSocket(socket);
+    }, SPEECH_PING_MS);
+    ping.unref?.();
+  });
   socket.addEventListener("message", (event: MessageEvent) => {
     if (typeof event.data !== "string") return;
     let frame: Record<string, unknown>;
@@ -259,6 +273,7 @@ export function openTranscriptionStream(
   });
   socket.addEventListener("error", () => fail("Could not reach Grok voice. Check your connection."));
   socket.addEventListener("close", () => {
+    stopPing();
     if (closed) return;
     closed = true;
     rejectReady(new Error("closed"));
@@ -275,6 +290,7 @@ export function openTranscriptionStream(
     close() {
       if (closed) return;
       closed = true;
+      stopPing();
       try {
         if (socket.readyState === 1) socket.send(JSON.stringify({ type: "audio.done" }));
         socket.close();

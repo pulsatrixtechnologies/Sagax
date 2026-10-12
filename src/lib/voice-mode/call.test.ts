@@ -850,7 +850,7 @@ describe("latency (docs/voice-mode-xai.md, Latency)", () => {
     expect(t.socket().audioBytes).toBe(bytesReady);
   });
 
-  it("duplex keeps feeding STT past 96 ms while the clause is incomplete so the last word can land", async () => {
+  it("duplex probes STT once after 128 ms of silence, then holds so the last word can land", async () => {
     const t = await setup({
       transcripts: ["What is two plus two?"],
       settings: { fullDuplex: true },
@@ -860,11 +860,16 @@ describe("latency (docs/voice-mode-xai.md, Latency)", () => {
     t.socket().partial("What is two plus");
     await t.settle();
     const start = t.socket().audioBytes;
-    await t.feed(0.02, 0.001, 10);
+    await t.feed(0.02, 0.001, 3);
     expect(t.socket().audioBytes).toBeGreaterThan(start);
-    const stillIncomplete = t.socket().audioBytes;
-    await t.feed(0.02, 0.001, 4);
-    expect(t.socket().audioBytes).toBeGreaterThan(stillIncomplete);
+    expect(t.socket().finalizes).toBe(0);
+    const beforeProbe = t.socket().audioBytes;
+    await t.feed(0.02, 0.001, 1);
+    expect(t.socket().finalizes).toBe(1);
+    expect(t.socket().audioBytes).toBe(beforeProbe);
+    await t.feed(0.02, 0.001, 6);
+    expect(t.socket().audioBytes).toBe(beforeProbe);
+    expect(t.socket().finalizes).toBe(1);
   });
 
   it("does not start the LLM on a partial when duplex is off", async () => {

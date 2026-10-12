@@ -265,7 +265,15 @@ What keeps it short:
   final punctuation and the silence is confident (Silero under 0.15), the
   turn ends after 288, 352 or 576 ms (Short, Normal, Patient) instead of the
   adaptive endpoint. A pause inside a sentence never ends it early; words
-  said right after are joined back (`voiceCall.continues`).
+  said right after are joined back (`voiceCall.continues`). A long Québec
+  sentence (eight words, or about three seconds of French, such as "Combien
+  de temps pour aller de Montréal à Québec en voiture?") does not use that
+  short window: with final punctuation it needs 512 ms of confident silence,
+  and while the partial still ends on a linking word ("à", "de", "pis",
+  "faque") the extra wait is capped at 400 ms past the endpoint. A short
+  question stays on the short window. After 128 ms of confident silence the
+  call sends one `finalize` so the last word can arrive during the wait; a
+  second finalize with no new audio is not sent.
 - **The voice's ending counts ("Faster end of turn", Advanced, on by
   default).** The call reads the pitch and energy of the last 400 ms of
   speech before a silence, on this computer (`src/lib/voice-mode/prosody.ts`:

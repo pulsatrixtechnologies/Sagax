@@ -55,6 +55,19 @@ export const PAUSE_PRESETS = {
 /** Under this voice probability a silent frame is a confident one. */
 export const QUIET_PROBABILITY = 0.15;
 
+/** A long Québec sentence (bench turn 16: "Combien de temps pour aller de
+ * Montréal à Québec en voiture?") is not cut on the short complete window.
+ * Eight words, or a few seconds of speech, is the line. */
+export const LONG_FRENCH_WORDS = 8;
+export const LONG_FRENCH_SPEECH_MS = 3_200;
+/** Confident silence before a punctuated long French turn may end. Longer
+ * than a breath in macOS `say`, shorter than the bench's post-speech tail. */
+export const LONG_FRENCH_QUIET_MS = 512;
+/** Unfinished long French extra, capped so a lagging partial (still ending
+ * on "à" / "de") still ends inside the bench's ~1200 ms of trailing silence.
+ * The English unfinished extra stays `incompleteMs`. */
+export const LONG_FRENCH_INCOMPLETE_CAP = 400;
+
 /** A turn ended on its contour and the person spoke again this soon after:
  * it was a wrong cut, the new words continue it (call.ts). */
 export const CONTOUR_CONTINUATION_MS = 600;
@@ -73,6 +86,9 @@ const CONTINUING_FR = [
   "et", "ou", "mais", "donc", "parce", "que", "qu", "qui", "quel", "quelle", "quels", "quelles", "de", "du", "des", "le", "la", "les", "l", "un", "une",
   "au", "aux", "pour", "avec", "dans", "sur", "en", "mon", "ma", "mes", "ton", "ta", "tes", "son", "sa", "ses",
   "notre", "votre", "leur", "si", "quand", "est", "c", "ce", "cette", "comme", "euh", "ben", "puis",
+  // Québec: a pause on one of these is not the end of the sentence
+  "pis", "faque", "fak", "genre", "tse", "ouin", "mettons", "chez", "vers", "sans", "par", "entre", "sous",
+  "ces", "cet", "chaque", "dont",
 ];
 const CONTINUING_WORDS = new Set([...CONTINUING_EN, ...CONTINUING_FR]);
 /** Sounds, not words: a turn held on one is never a French ending to trust. */
@@ -90,6 +106,29 @@ export function endsOnContinuingWord(text: string): boolean {
   return last !== undefined && CONTINUING_WORDS.has(last);
 }
 
+/** French function words, accents stripped ("à" is "a"). */
+const FRENCH_MARKERS = new Set([
+  ...CONTINUING_FR,
+  "je", "tu", "il", "elle", "on", "nous", "vous", "ils", "elles", "pas", "ne", "y", "moi", "toi",
+  "combien", "comment", "pourquoi", "quand", "quoi", "oui", "non", "merci",
+]);
+
+/** The line is Québec or French: an accent, or more than one French function word. */
+export function looksFrench(text: string): boolean {
+  if (/[àâäéèêëïîôùûüçœ]/i.test(text)) return true;
+  const words = lastWords(text);
+  let marks = 0;
+  for (const word of words) if (FRENCH_MARKERS.has(word) && !ENGLISH.has(word)) marks += 1;
+  return marks >= 2;
+}
+
+/** "à" strips to "a", which is also the English article. In a French line it
+ * is the preposition. */
+function frenchContinuing(last: string, text: string): boolean {
+  if (last === "a" && looksFrench(text)) return true;
+  return CONTINUING_WORDS.has(last) && !ENGLISH.has(last) && !FILLERS.has(last);
+}
+
 /** The words so far are unfinished only because of a French linking word
  * ("c'est comme", "on verra puis"), not a filler, a comma or an English
  * word: the case where a finished intonation may shorten the wait. */
@@ -99,7 +138,13 @@ export function frenchEnding(text: string): boolean {
   const words = lastWords(trimmed);
   const last = words.at(-1);
   if (!last || words.length <= 2) return false;
-  return CONTINUING_WORDS.has(last) && !ENGLISH.has(last) && !FILLERS.has(last);
+  return frenchContinuing(last, trimmed);
+}
+
+/** A long French turn: do not use the short complete window. */
+export function longFrenchTurn(text: string, speechMs: number): boolean {
+  if (!looksFrench(text)) return false;
+  return lastWords(text).length >= LONG_FRENCH_WORDS || speechMs >= LONG_FRENCH_SPEECH_MS;
 }
 
 /** The words so far are a finished sentence: closed by final punctuation
@@ -123,9 +168,52 @@ export function incompleteClause(text: string): boolean {
   if (/[,;:\u2013+\-*/]$/.test(trimmed)) return true;
   const words = trimmed.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").match(/[a-z0-9]+/g) ?? [];
   if (!words.length) return false;
-  if (CONTINUING_WORDS.has(words.at(-1)!)) return true;
+  const last = words.at(-1)!;
+  if (CONTINUING_WORDS.has(last)) return true;
+  if (last === "a" && looksFrench(trimmed)) return true;
+  // "what do you" / "can you tell me" are still open; "how are you" is not
+  const beforeYou = words.at(-2);
+  if (last === "you" && beforeYou && /^(do|does|did|can|could|will|would|to)$/.test(beforeYou)) return true;
   // one or two words with no closing punctuation: a fragment
   return words.length <= 2;
+}
+
+/** Punctuation a probe finalize may have added. Endpointing must not treat
+ * that period as the person having finished. */
+export function stripTerminalPunctuation(text: string): string {
+  return text.replace(/[.!?\u2026]+["')\]]*$/u, "").trim();
+}
+
+const FR_OPEN_INFINITIVE = /\bpour (aller|faire|avoir|etre|voir|dire|prendre|parler|ouvrir)\b/;
+
+/** A short utterance that is linguistically finished without punctuation:
+ * an English or Québec question or a short imperative. A long French line
+ * is never this (it waits for punctuation or the longer quiet). */
+export function semanticComplete(text: string): boolean {
+  const trimmed = stripTerminalPunctuation(text);
+  if (!trimmed || incompleteClause(trimmed)) return false;
+  const words = lastWords(trimmed);
+  if (words.length < 3 || words.length > 8) return false;
+  if (longFrenchTurn(trimmed, 0)) return false;
+  const bare = words.join(" ");
+  if (FR_OPEN_INFINITIVE.test(bare)) return false;
+  if (/\b(est|sont|fait|font|peux|peut|puis|vais|va|ai|as|avez) (il|elle|tu|vous|on|ce)\b/.test(bare)) return true;
+  if (/^est ce que\b/.test(bare) && words.length >= 4) return true;
+  if (/^(quel|quelle|quels|quelles|combien|comment|pourquoi|quand)\b/.test(bare) && /\b(est|sont|fait|font|peux|va|ai|as|avez|ont)\b/.test(bare)) return true;
+  if (/^(dis|ouvre|cherche|trouve|explique|resume|raconte|donne|appelle|montre)\b/.test(bare)) return true;
+  if (/^(what|who|when|where|why|how|which)\b/.test(bare) && /\b(is|are|was|were|do|does|did|can|could)\b/.test(bare)) return true;
+  if (/^(do|does|did|can|could|will|would|is|are|should)\b/.test(bare) && words.length >= 4) return true;
+  if (/^(say|tell|remind|summarize|explain|open|show)\b/.test(bare)) return true;
+  return false;
+}
+
+/** Long French still in progress: no final punctuation and not a short
+ * closed question. A pause here is not the end of the turn. */
+export function longFrenchOpen(text: string, speechMs: number): boolean {
+  if (!longFrenchTurn(text, speechMs)) return false;
+  if (completeClause(text)) return false;
+  if (semanticComplete(text)) return false;
+  return true;
 }
 
 export interface TurnOptions {
@@ -177,7 +265,7 @@ export type TurnEvent =
   /** the candidate died out before `start`, or the turn was too short */
   | { type: "cancel" }
   /** the person stopped talking */
-  | { type: "end"; speechMs: number; endpointMs: number; early?: boolean; contour?: ContourVerdict; onContour?: boolean };
+  | { type: "end"; speechMs: number; endpointMs: number; early?: boolean; contour?: ContourVerdict; onContour?: boolean; semantic?: boolean };
 
 type State = "idle" | "candidate" | "speaking";
 
@@ -197,7 +285,7 @@ export class TurnDetector {
   /** the current turn's words so far are a finished sentence */
   private complete = false;
   /** consecutive confidently silent frames (ms) */
-  private quietMs = 0;
+  private quietRun = 0;
   /** the words recognized so far in this turn */
   private words = "";
   /** the last 2 x CONTOUR_MS of the turn's voiced frames */
@@ -236,9 +324,20 @@ export class TurnDetector {
   get effectiveEndpointMs(): number {
     if (this.o.prosody && this.verdict === "unfinished") return this.endpoint + this.o.incompleteMs;
     if (!this.unfinished) return this.endpoint;
+    const extra = longFrenchTurn(this.words, this.speechMs) ? Math.min(this.o.incompleteMs, LONG_FRENCH_INCOMPLETE_CAP) : this.o.incompleteMs;
     // a French linking word on a contour that says the sentence is over
-    if (this.o.prosody && this.verdict === "finished" && frenchEnding(this.words)) return this.endpoint + Math.round(this.o.incompleteMs / 2);
-    return this.endpoint + this.o.incompleteMs;
+    if (this.o.prosody && this.verdict === "finished" && frenchEnding(this.words)) return this.endpoint + Math.round(extra / 2);
+    return this.endpoint + extra;
+  }
+
+  /** Voiced time of the turn being heard (diagnostics, the long-French guard). */
+  get spokenMs(): number {
+    return this.speechMs;
+  }
+
+  /** Confident silence so far in this pause. */
+  get quietMs(): number {
+    return this.quietRun;
   }
 
   /** "Faster end of turn": read the voice's ending (never in Patient, the
@@ -275,10 +374,12 @@ export class TurnDetector {
       this.words = "";
       return;
     }
-    this.unfinished = incompleteClause(text);
+    const open = incompleteClause(text) || longFrenchOpen(text, this.speechMs);
+    this.unfinished = open;
     // A speculative start already marked the words complete: keep that so
-    // the remaining silence uses completeMs, unless they kept talking.
-    this.complete = !this.unfinished && (this.complete || completeClause(text));
+    // the remaining silence uses completeMs, unless they kept talking or
+    // this is still a long French sentence.
+    this.complete = !open && (this.complete || completeClause(text));
     this.words = text;
     // words that arrive during the silence change what the contour means
     if (this.silenceMs > 0 && this.o.prosody) this.readContour();
@@ -295,7 +396,7 @@ export class TurnDetector {
    * finished sentence (else null). */
   get earlyEndpointMs(): number | null {
     if (!this.o.completeMs) return null;
-    if (this.complete || this.contourEarly) return Math.min(this.endpoint, this.o.completeMs);
+    if (this.complete || this.contourEarly || this.semanticEarly) return Math.min(this.endpoint, this.o.completeMs);
     return null;
   }
 
@@ -303,6 +404,12 @@ export class TurnDetector {
    * so far (if any) are not an unfinished clause. */
   private get contourEarly(): boolean {
     return this.o.prosody && this.verdict === "finished" && !this.unfinished;
+  }
+
+  /** "Faster end of turn": a short closed question or imperative, with no
+   * punctuation yet. A long French sentence is never this. */
+  private get semanticEarly(): boolean {
+    return this.o.prosody && !this.unfinished && semanticComplete(this.words) && !longFrenchTurn(this.words, this.speechMs);
   }
 
   private readContour(): void {
@@ -318,7 +425,8 @@ export class TurnDetector {
   }
 
   /** Speaking and already in the endpoint silence. call.ts keeps feeding STT
-   * while the partial is incomplete, then stops so xAI can speech_final. */
+   * while the partial is incomplete, probes once after 128 ms, then holds
+   * silence so xAI can speech_final. */
   get inSilence(): boolean {
     return this.state === "speaking" && this.silenceMs > 0;
   }
@@ -343,7 +451,7 @@ export class TurnDetector {
     this.bargeIn = false;
     this.unfinished = false;
     this.complete = false;
-    this.quietMs = 0;
+    this.quietRun = 0;
     this.words = "";
     this.contour = [];
     this.verdict = "unknown";
@@ -399,7 +507,7 @@ export class TurnDetector {
     if (voiced) {
       if (this.silenceMs > 0) this.longestPauseMs = Math.max(this.longestPauseMs, this.silenceMs);
       this.silenceMs = 0;
-      this.quietMs = 0;
+      this.quietRun = 0;
       this.speechMs += frameMs;
       if (this.o.prosody) {
         this.remember(frame, frameMs);
@@ -409,18 +517,24 @@ export class TurnDetector {
       // the silence begins: how did the voice end?
       if (this.silenceMs === 0 && this.o.prosody) this.readContour();
       this.silenceMs += frameMs;
-      this.quietMs = frame.probability < QUIET_PROBABILITY ? this.quietMs + frameMs : 0;
+      this.quietRun = frame.probability < QUIET_PROBABILITY ? this.quietRun + frameMs : 0;
     }
     const contourEnd = this.contourEarly && !this.complete;
     const verdict = this.verdict;
     const early = this.earlyEndpointMs;
-    const punctuatedEarly = this.complete && early !== null && this.silenceMs >= early;
-    const contourQuietEarly = contourEnd && early !== null && this.quietMs >= early;
-    const endsEarly = (punctuatedEarly || contourQuietEarly) && this.silenceMs < this.effectiveEndpointMs;
+    // a long French sentence needs a longer confident quiet than a short
+    // question, so a breath in the middle (or `say`'s pause) does not cut it
+    const floor = longFrenchTurn(this.words, this.speechMs) ? LONG_FRENCH_QUIET_MS : 0;
+    const need = early === null ? 0 : Math.max(early, floor);
+    const punctuatedEarly = this.complete && early !== null && this.silenceMs >= need && (floor === 0 || this.quietRun >= need);
+    const contourQuietEarly = contourEnd && early !== null && this.quietRun >= need;
+    const semanticQuietEarly = this.semanticEarly && early !== null && this.quietRun >= need;
+    const endsEarly = (punctuatedEarly || contourQuietEarly || semanticQuietEarly) && this.silenceMs < this.effectiveEndpointMs;
     if (endsEarly || this.silenceMs >= this.effectiveEndpointMs || this.turnMs >= this.o.maxTurnMs) {
       const speechMs = this.speechMs;
-      const endpointMs = endsEarly ? early : this.effectiveEndpointMs;
+      const endpointMs = endsEarly ? need : this.effectiveEndpointMs;
       const longest = this.longestPauseMs;
+      const semantic = semanticQuietEarly && !punctuatedEarly && !contourQuietEarly;
       this.reset();
       if (speechMs < this.o.minTurnMs) return { type: "cancel" };
       // an early end says nothing about the person's pauses: no adaptation
@@ -430,6 +544,7 @@ export class TurnDetector {
         ...(endsEarly ? { early: true } : {}),
         ...(this.o.prosody && verdict !== "unknown" ? { contour: verdict } : {}),
         ...(endsEarly && contourEnd ? { onContour: true } : {}),
+        ...(semantic ? { semantic: true } : {}),
       };
     }
     return null;

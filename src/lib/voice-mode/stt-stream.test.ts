@@ -104,6 +104,41 @@ describe("LiveTranscriber finalize", () => {
   });
 });
 
+describe("a silence probe", () => {
+  it("sends one finalize and does not send another with no new audio", async () => {
+    const { socket, transcriber, speak } = await ears();
+    socket.onFinalize = (s) => setTimeout(() => s.transcript("voiture.", true, true), 5);
+    speak();
+    expect(transcriber.probe()).toBe(true);
+    expect(transcriber.holdingSilence).toBe(true);
+    expect(transcriber.probe()).toBe(false);
+    expect(socket.finalizes).toBe(1);
+    expect((await transcriber.finishHeard()).text).toBe("voiture.");
+    expect(socket.finalizes).toBe(1);
+    expect(transcriber.forcedFlush).toBe(true);
+  });
+
+  it("finishHeard waits on an in-flight probe", async () => {
+    const { socket, transcriber, speak } = await ears();
+    speak();
+    expect(transcriber.probe()).toBe(true);
+    const pending = transcriber.finishHeard();
+    expect(socket.finalizes).toBe(1);
+    socket.transcript("hello bot", true, true);
+    await expect(pending).resolves.toEqual({ text: "hello bot" });
+    expect(socket.finalizes).toBe(1);
+  });
+
+  it("uses the interim when finalize never answers", async () => {
+    const { socket, transcriber, speak } = await ears(40);
+    speak();
+    socket.transcript("quelle heure", false, false);
+    const pending = transcriber.finishHeard();
+    await wait(60);
+    await expect(pending).resolves.toEqual({ text: "quelle heure" });
+  });
+});
+
 describe("a final chunk xAI sends again", () => {
   it("a chunk already closed and resent after the finalize is kept once (never the sentence twice)", async () => {
     const { socket, transcriber, speak } = await ears();
