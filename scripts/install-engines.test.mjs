@@ -93,6 +93,8 @@ describe("npm integrity", () => {
     for (const engine of lock.engines) {
       if (engine.kind === "npm") expect(engine.integrity, engine.id).toMatch(/^sha512-/);
     }
+    const scripted = lock.engines.filter((engine) => engine.installScripts === true).map((engine) => engine.id).sort();
+    expect(scripted).toEqual(["claude", "droid", "kimi", "opencode"]);
   });
 });
 

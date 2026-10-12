@@ -185,8 +185,11 @@ async function installNpm(engines) {
     const file = join(scratch, "package.tgz");
     writeFileSync(file, buffer);
     // --ignore-scripts: the tarball is already checked. A root install script
-    // is not run. Native engines stay on their own hashed download.
-    run("npm", ["install", "-g", "--ignore-scripts", "--loglevel=error", "--include=optional", "--no-fund", "--no-audit", file], {
+    // is not run, unless the lock says the package cannot work without its
+    // own postinstall (claude, kimi, opencode, droid place their native
+    // binary there). Native engines stay on their own hashed download.
+    const scripts = engine.installScripts === true ? [] : ["--ignore-scripts"];
+    run("npm", ["install", "-g", ...scripts, "--loglevel=error", "--include=optional", "--no-fund", "--no-audit", file], {
       env: { ...process.env, npm_config_update_notifier: "false" },
     });
     rmSync(scratch, { recursive: true, force: true });

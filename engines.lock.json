@@ -19,6 +19,7 @@
       "package": "@anthropic-ai/claude-code",
       "version": "2.1.288",
       "integrity": "sha512-tnc8XuK5xQkyE6oowhhSPIjLuNc0S3MkjIHqycDsKP6yJlLtIjMt6v1TOkYLUiumcZ9jOgJZ6h9Vn3/f0murdQ==",
+      "installScripts": true,
       "bin": "claude",
       "license": "Anthropic Commercial Terms",
       "redistributable": false
@@ -67,6 +68,7 @@
       "package": "@moonshot-ai/kimi-code",
       "version": "2.1.1",
       "integrity": "sha512-xClqcnTQUKgKDbeOGPU78qcwxGzL8wA2rqWuOX3CLpyQ1/NhSX7jAh6hZo/JFwThSX8obkgef3uw/li5JaJNyw==",
+      "installScripts": true,
       "bin": "kimi",
       "license": "MIT",
       "redistributable": true
@@ -91,6 +93,7 @@
       "package": "opencode-ai",
       "version": "1.18.34",
       "integrity": "sha512-9WUS2T0t4HHDVzXvuwTHF0nvhXvZ9mQ0r+ozCvKdJu0LVoQpOzqAW4qWTC3ygNc5Oedcc7j+Oct24JYlQYnySA==",
+      "installScripts": true,
       "bin": "opencode",
       "license": "MIT",
       "redistributable": true
@@ -103,6 +106,7 @@
       "package": "@factory/cli",
       "version": "0.230.0",
       "integrity": "sha512-UF92icf5lP7EdNxOMHkjpJ+ehQ2fHBYQxBS9BCCOIIy6dtA7MiAEotrnigRVJPpOeGKxEGtbY8wdMBf58j19Xg==",
+      "installScripts": true,
       "bin": "droid",
       "license": "Factory proprietary (UNLICENSED)",
       "redistributable": false
