@@ -18,6 +18,7 @@
 //     reaches the bots that person can use in Sagax.
 // Either way every send lands in a hidden conversation (#291, #302) that the
 // caller owns, never in the person's open chat.
+import type { GuardDecision, GuardPolicy, ToolGuardMode } from "./tool-guard.ts";
 import { createHmac, timingSafeEqual } from "node:crypto";
 
 export const AGENT_TOOL_NAMES = [
@@ -46,6 +47,11 @@ export interface AgentToolPolicy {
   readOnly: boolean;
   /** Calls per caller per window (RATE_WINDOW_MS[access]). */
   rate: number;
+}
+
+/** The tool-policy row of an agent tool (docs/tool-policy.md). */
+export function agentToolGuardPolicy(policy: AgentToolPolicy): GuardPolicy {
+  return { tier: policy.access, scope: `agents:${policy.access}`, readOnly: policy.readOnly, defaultEnabled: policy.access !== "admin" };
 }
 
 export const RATE_WINDOW_MS = { read: 60_000, write: 60_000, admin: 3_600_000 } as const;
@@ -206,6 +212,10 @@ export interface AgentApiDeps {
   /** Async mode: tell the caller the turn ended (a bot is woken with the reply). */
   notify?(caller: AgentCaller, agent: AgentSummary, result: TurnResult): void;
   audit(caller: AgentCaller, entry: AuditEntry): void;
+  /** The securable tool layer (server/tool-guard.ts): grants and the speaker.
+   * Absent, or mode "off", skips it; "shadow" records the decision only. */
+  guard?(caller: AgentCaller, policy: GuardPolicy): GuardDecision;
+  guardMode?: ToolGuardMode;
   /** The HMAC key turn handles are signed with (at least 32 bytes). */
   secret: Buffer;
   now?(): number;
@@ -772,6 +782,9 @@ export function createAgentApi(deps: AgentApiDeps): AgentApi {
       const args = objectArgs(rawArgs);
       const agentId = args && typeof args.agent_id === "string" ? args.agent_id : null;
       const policy = AGENT_TOOL_POLICY[tool];
+      const guardMode = deps.guard ? deps.guardMode ?? "shadow" : "off";
+      const guardPolicy = agentToolGuardPolicy(policy);
+      let guarded: GuardDecision | null = null;
       const finish = (answer: AgentApiAnswer, detail?: Record<string, unknown>): AgentApiAnswer => {
         const outcome = answer.status < 400 ? "ok" : answer.status >= 500 ? "error" : "refused";
         deps.audit(caller, {
@@ -779,13 +792,23 @@ export function createAgentApi(deps: AgentApiDeps): AgentApi {
           agentId,
           outcome,
           ...(outcome !== "ok" && typeof answer.body.code === "string" ? { code: answer.body.code } : {}),
-          detail: { access: policy.access, ...detail },
+          detail: {
+            access: policy.access, readOnly: policy.readOnly, scope: guardPolicy.scope,
+            ...(guarded ? { guard: guarded.reason, guardAllow: guarded.allow, guardMode } : {}),
+            ...detail,
+          },
         });
         return answer;
       };
       if (!args) return finish(asAnswer(refuse(400, "bad_request", "Arguments are a JSON object.")));
       if (!caller.scopes.has(policy.scope)) {
         return finish(asAnswer(refuse(403, "forbidden_scope", `This caller does not hold the ${policy.scope} scope that ${tool} needs.`, { scope: policy.scope })));
+      }
+      if (guardMode !== "off") {
+        guarded = deps.guard!(caller, guardPolicy);
+        if (!guarded.allow && guardMode === "enforce") {
+          return finish(asAnswer(refuse(403, "not_granted", `${tool} needs a ${guardPolicy.scope} grant${guarded.reason === "speaker_not_granted" ? " for the person this turn speaks for" : ""}; ask the owner in Settings.`, { scope: guardPolicy.scope })));
+        }
       }
       const wait = limiter.admit(caller, tool, now());
       if (wait !== null) return finish(asAnswer(refuse(429, "rate_limited", `Too many ${tool} calls; try again in ${Math.ceil(wait / 1000)} s.`, { retry_after_ms: wait })));

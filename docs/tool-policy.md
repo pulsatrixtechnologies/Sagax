@@ -28,3 +28,22 @@ A request that matches no row is treated as **write**, off by default (`UNKNOWN_
 The route list comes from the server sources (`scripts/tool-policy/route-inventory.ts`). Sagax routes are code, not a registry. `server/request-auth.ts` is left out because its path rules are the auth gate, not routes.
 
 Status: B1 declares the policy only and nothing enforces it yet. B2 adds grants and the guard (docs/agent-api.md).
+
+## Grants and the guard (B2)
+
+`server/tool-grants.ts` stores grants in `<data>/tool-grants.json`. Each grant has a subject (a bot or a user), a scope, who granted it, an optional expiry and a revocation. A grant at a higher tier covers the lower tiers of the same area.
+
+`server/tool-guard.ts` makes one decision per agent tool call:
+
+1. A default-enabled read or write is allowed.
+2. Anything else needs a grant for the caller.
+3. A bot's call also needs a grant for the person its turn speaks for, so a bot never reaches past its speaker.
+
+Writes still raise the approval card. The decision is recorded on every agent-api audit row as `guard`, `guardAllow`, `guardMode`, `scope` and `readOnly`.
+
+`SAGAX_TOOL_GUARD` sets the mode:
+- `shadow` (default): audits the decision and changes nothing.
+- `enforce`: refuses with `not_granted`.
+- `off`: skips the guard.
+
+In shadow mode the audit shows what enforcing would refuse. Today that is `create_agent`, which is admin tier and has no grants yet.

@@ -1,3 +1,5 @@
+import { ToolGrantStore } from "./tool-grants.ts";
+import { guardDecision } from "./tool-guard.ts";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -417,3 +419,44 @@ describe("end to end: two bots", () => {
     expect(w.audits.map((row) => row.entry.tool)).toEqual(["find_agents", "send_prompt", "await_turn", "read_latest_page"]);
   });
 });
+
+describe("securable tool layer (B2)", () => {
+  const withGuard = (mode: "shadow" | "enforce") => {
+    const w = world();
+    const grants = new ToolGrantStore(null);
+    const api = createAgentApi({
+      ...w.deps,
+      guardMode: mode,
+      guard: (caller, policy) => guardDecision(policy, { kind: caller.kind === "bot" ? "bot" : "user", id: caller.id },
+        caller.speakerPrincipalId ? { kind: "user", id: caller.speakerPrincipalId } : null, grants),
+    });
+    return { w, api, grants };
+  };
+
+  it("shadow records the decision and changes nothing", async () => {
+    const { w, api } = withGuard("shadow");
+    expect((await api.call(bot("bot-x"), "create_agent", { name: "Shadowed" })).status).toBe(200);
+    expect(w.audits.at(-1)!.entry.detail).toMatchObject({ access: "admin", scope: "agents:admin", guard: "not_granted", guardAllow: false, guardMode: "shadow" });
+    await api.call(bot("bot-x"), "list_agents", {});
+    expect(w.audits.at(-1)!.entry.detail).toMatchObject({ readOnly: true, scope: "agents:read", guard: "default", guardAllow: true });
+  });
+
+  it("enforce refuses admin without grants, for the bot and its speaker", async () => {
+    const { w, api, grants } = withGuard("enforce");
+    const caller = { ...bot("bot-x"), speakerPrincipalId: "pr_jc" };
+    expect((await api.call(caller, "create_agent", { name: "No" })).body).toMatchObject({ code: "not_granted" });
+    expect(w.audits.at(-1)!.entry).toMatchObject({ outcome: "refused", code: "not_granted" });
+    grants.grant({ kind: "bot", id: "bot-x" }, "agents:admin", "pr_jc");
+    expect((await api.call(caller, "create_agent", { name: "No" })).body.message).toContain("person this turn speaks for");
+    grants.grant({ kind: "user", id: "pr_jc" }, "agents:admin", "pr_jc");
+    expect((await api.call(caller, "create_agent", { name: "Yes" })).status).toBe(200);
+    expect((await api.call(caller, "list_agents", {})).status).toBe(200);
+  });
+
+  it("without a guard dependency the audit carries no guard fields", async () => {
+    const w = world();
+    await w.api.call(bot("bot-x"), "list_agents", {});
+    expect(w.audits.at(-1)!.entry.detail).not.toHaveProperty("guard");
+  });
+});
+

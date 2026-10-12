@@ -14,6 +14,8 @@ import { groupOwnerId, groupPatchOwnerRefusal, mayDeleteGroup, ownsGroup, type G
 import { AsyncLocalStorage } from "node:async_hooks";
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import { existsSync, readFileSync, realpathSync, rmSync, mkdirSync, statSync, writeFileSync } from "node:fs";
+import { ToolGrantStore } from "./tool-grants.ts";
+import { guardDecision, toolGuardMode } from "./tool-guard.ts";
 import { writeFileAtomic } from "./atomic.ts";
 import { rm as removeDirectory } from "node:fs/promises";
 import { hostname, userInfo } from "node:os";
@@ -25618,7 +25620,13 @@ function agentApiAudit(caller: AgentCaller, entry: AuditEntry): void {
       : { kind: "worker" },
   });
 }
+// B2 securable tool layer (docs/tool-policy.md): grants per bot and person;
+// SAGAX_TOOL_GUARD=shadow (default) audits the decision, enforce applies it.
+const toolGrants = ToolGrantStore.inDataDir(DATA_DIR);
 const agentApi = createAgentApi({
+  guardMode: toolGuardMode(process.env.SAGAX_TOOL_GUARD),
+  guard: (caller, policy) => guardDecision(policy, { kind: caller.kind === "bot" ? "bot" : "user", id: caller.id },
+    caller.kind === "bot" && caller.speakerPrincipalId ? { kind: "user", id: caller.speakerPrincipalId } : null, toolGrants),
   secret: agentApiSecret(),
   audit: agentApiAudit,
   async agents(caller) {
