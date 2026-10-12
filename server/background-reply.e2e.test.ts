@@ -107,13 +107,20 @@ posixOnly("background replies e2e", () => {
     expect(ack.timeToFirstMessageMs).toEqual(expect.any(Number));
     expect(ack.timeToFirstMessageMs).toBeLessThan(1000);
     await waitFor(async () => (await tasks(bot.id)).some((task) => task.parallelOf?.background === true && task.busy), "the background task to start");
+    const ordered = await messages(bot.threadId);
+    const ackAt = ordered.findIndex((message) => message.backgroundReply === "ack");
+    const cardAt = ordered.findIndex((message) => message.parallelTask?.role === "card");
+    expect(cardAt).toBeGreaterThan(ackAt);
     const parent = (await tasks(bot.id)).find((task) => task.threadId === bot.threadId);
     expect(parent.busy).not.toBe(true);
     expect(early.some((message) => message.parallelTask?.role === "result")).toBe(false);
 
     const posted = await sent;
     expect(posted.status).toBe(202);
-    const hello = await api("POST", `/api/bots/${bot.id}/messages`, { text: "Bonjour", threadId: bot.threadId });
+    // The parent has no engine session yet, so this follow-up replays the
+    // gated request. The fake CLI only honours a [gate:] after the last
+    // "Request:" line; without that line the replay would hold this turn too.
+    const hello = await api("POST", `/api/bots/${bot.id}/messages`, { text: "Request:\nBonjour", threadId: bot.threadId });
     expect(hello.status).toBe(202);
     await waitFor(
       async () => (await messages(bot.threadId)).some((message) => message.role === "bot" && message.text?.includes("Bonjour") && !message.backgroundReply),

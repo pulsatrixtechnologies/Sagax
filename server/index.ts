@@ -12845,6 +12845,22 @@ async function startParallelTask(input: {
       parallelTask: { threadId: child.threadId, title, requestMessageId: request.id, role: "request", ...background },
     });
   }
+  // The acknowledgement is stored before the card and before the child is
+  // queued or started, so the person sees the first step even when the task
+  // waits for a slot, and the metric never includes the engine's own startup.
+  let acknowledgement: string | undefined;
+  if (input.background && request) {
+    store.titleTaskFromFirstMessage(bot.id, input.text, input.threadId);
+    acknowledgement = stepAcknowledgement(input.text);
+    store.appendMessage(input.threadId, {
+      role: "bot",
+      kind: "text",
+      text: acknowledgement,
+      backgroundReply: "ack",
+      timeToFirstMessageMs: timeToFirstMessageMs(request.at, Date.now()),
+      replyToId: request.id,
+    });
+  }
   const card = store.appendMessage(input.threadId, {
     role: "bot",
     kind: "activity",
@@ -12867,22 +12883,6 @@ async function startParallelTask(input: {
       target: auditBotTarget(bot.id),
       after: { threadId: child.threadId, conversation: input.threadId, ...(input.byBot ? { byBot: true } : {}) },
       actor: input.auth ? orgAuditActor(input.auth) : { kind: "worker" },
-    });
-  }
-  // The acknowledgement is stored before the child is queued or started, so
-  // the person sees the first step even when the task waits for a slot, and
-  // the metric never includes the engine's own startup.
-  let acknowledgement: string | undefined;
-  if (input.background && request) {
-    store.titleTaskFromFirstMessage(bot.id, input.text, input.threadId);
-    acknowledgement = stepAcknowledgement(input.text);
-    store.appendMessage(input.threadId, {
-      role: "bot",
-      kind: "text",
-      text: acknowledgement,
-      backgroundReply: "ack",
-      timeToFirstMessageMs: timeToFirstMessageMs(request.at, Date.now()),
-      replyToId: request.id,
     });
   }
   const recent: BriefLine[] = store.activePath(input.threadId)
