@@ -59452,6 +59452,70 @@
           }
         }
       }
+    },
+    "youtube.fetchTranscript": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Get full transcript" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Obtenir la transcription complète" } }
+      }
+    },
+    "youtube.handoffPrompt": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Here is the full transcript of the YouTube video %@:\n\n%@\n\nSummarize it for me."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Voici la transcription complète de la vidéo YouTube %@ :\n\n%@\n\nRésume-la pour moi."
+          }
+        }
+      }
+    },
+    "youtube.playerTitle": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "YouTube video" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Vidéo YouTube" } }
+      }
+    },
+    "youtube.searchTranscript": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Search transcript" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Rechercher dans la transcription" } }
+      }
+    },
+    "youtube.sendToBot": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Send to bot" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Envoyer au robot" } }
+      }
+    },
+    "youtube.transcriptEmpty": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "No transcript loaded yet." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Aucune transcription chargée." } }
+      }
+    },
+    "youtube.transcriptError": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Could not load the transcript." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Impossible de charger la transcription." } }
+      }
+    },
+    "youtube.transcriptLoading": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Loading transcript…" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Chargement de la transcription…" } }
+      }
+    },
+    "youtube.transcriptPanel": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Transcript" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Transcription" } }
+      }
     }
   },
   "version": "1.0"

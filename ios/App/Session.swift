@@ -2033,6 +2033,11 @@ final class Session: ObservableObject {
         return URL(string: normalized, relativeTo: base)?.absoluteURL
     }
 
+    func youtubeTranscript(videoId: String) async throws -> YouTubeTranscriptResponse {
+        guard let client else { throw APIError.transport("This computer is offline.") }
+        return try await client.youtubeTranscript(videoId: videoId)
+    }
+
     func search(_ query: String) async -> [SearchHit] {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard trimmed.count >= 2, let client else { return [] }

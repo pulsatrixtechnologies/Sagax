@@ -160,14 +160,24 @@ struct MarkdownText: View {
     private func view(for block: MarkdownBlock, tail: Bool, scrollIdentifier: String?, pending: Bool, identifier: String?) -> some View {
         switch block {
         case let .paragraph(text):
-            inline(text, tail: tail)
-                .font(bodyFont)
-                .lineSpacing(bodyLineSpacing)
-                .modifier(DesktopLineBox(theme: desktop))
-                .fixedSize(horizontal: false, vertical: true)
-                // a paragraph holding spoilers or footnote marks is findable
-                // (its taps are the block's actions); plain prose is untouched
-                .modifier(RichIdentifier(identifier: text.contains("~~") || text.contains(Markdown.footnoteScheme) ? identifier : nil))
+            let youtubeIds = YouTubeLinks.ids(in: text)
+            if youtubeIds.count == 1, YouTubeLinks.isStandaloneParagraph(text, videoId: youtubeIds[0]) {
+                YouTubeMiniPlayerView(videoId: youtubeIds[0], identifier: identifier.map { "\($0)-yt" })
+            } else {
+                VStack(alignment: .leading, spacing: desktop == nil ? Theme.Chat.paragraphSpacing : DesktopChatMetrics.paragraphGap) {
+                    if !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        inline(text, tail: tail)
+                            .font(bodyFont)
+                            .lineSpacing(bodyLineSpacing)
+                            .modifier(DesktopLineBox(theme: desktop))
+                            .fixedSize(horizontal: false, vertical: true)
+                            .modifier(RichIdentifier(identifier: text.contains("~~") || text.contains(Markdown.footnoteScheme) ? identifier : nil))
+                    }
+                    ForEach(youtubeIds, id: \.self) { videoId in
+                        YouTubeMiniPlayerView(videoId: videoId, identifier: identifier.map { "\($0)-yt-\(videoId)" })
+                    }
+                }
+            }
 
         case let .heading(level, text):
             // Three sizes, not six. A chat bubble is not a document, and an

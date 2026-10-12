@@ -309,6 +309,13 @@ extension ChatView {
         }
     }
 
+    /// YouTube transcript handoff into this conversation's composer.
+    var youtubeSendToBot: ((String) -> Void)? {
+        { text in
+            Task { await session.send(text, to: chat) }
+        }
+    }
+
     /// Every picture of this conversation, for the lightbox (CA31).
     var conversationGallery: ConversationGalleryContext {
         ConversationGalleryContext(threadId: threadId, images: ConversationGallery.images(in: messages))
