@@ -355,6 +355,9 @@ export interface WireBot {
   voiceNotes?: boolean;
   /** Whether this bot uses native memory. Absent/true = enabled. */
   memoryEnabled?: boolean;
+  /** Say the first step at once, then finish a long request in the
+   * background (shared/background-reply.ts). Absent/true = on. */
+  backgroundReplies?: boolean;
   /** Queue direct-chat messages behind outstanding delegated work. */
   parkDirectMessages?: boolean;
   /** true after an edit/branch-switch rewound the visible conversation. */
@@ -675,6 +678,13 @@ export interface WireMessage {
   /** A parallel task this line belongs to (shared/parallel-tasks.ts): the
    * person's request, its live card, or its result. */
   parallelTask?: ParallelTaskRef;
+  /** A background reply (shared/background-reply.ts): the first-step
+   * acknowledgement, or a later one-sentence status. The result is an
+   * ordinary reply and does not carry this. */
+  backgroundReply?: "ack" | "milestone";
+  /** On an acknowledgement: milliseconds from the person's message to this
+   * one. Recorded before the background task's engine starts. */
+  timeToFirstMessageMs?: number;
   /** steer-queue entry this drained user line came from. */
   queueId?: string;
   /** In-chat terminal opened on a shell-capable resource. */

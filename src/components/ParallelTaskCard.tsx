@@ -56,7 +56,7 @@ export function ParallelTaskCard({ message, botId }: { message: Message; botId: 
           ? <Loader2 size={14} className="shrink-0 animate-spin text-accent" aria-hidden="true" />
           : <GitFork size={14} className={cn("shrink-0", status === "failed" ? "text-danger" : "text-ink-secondary")} aria-hidden="true" />}
         <div className="min-w-0">
-          <div className="truncate font-medium text-ink">{t("chat.parallel.title", { title: ref.title })}</div>
+          <div className="truncate font-medium text-ink">{t(ref.background ? "chat.parallel.backgroundTitle" : "chat.parallel.title", { title: ref.title })}</div>
           <div className="text-[11px] text-ink-secondary">
             {STATE_LABEL[status]()}
             {status !== "queued" && elapsed > 0 ? ` · ${formatElapsed(elapsed)}` : ""}
@@ -96,7 +96,7 @@ export function ParallelResultLabel({ message }: { message: Message }) {
   return (
     <div className="mb-1 flex items-center gap-1.5 pl-0.5 text-[11px] text-ink-secondary" data-parallel-result={ref.threadId}>
       <GitFork size={11} aria-hidden="true" />
-      <span>{t("chat.parallel.result", { title: ref.title })}</span>
+      <span>{t(ref.background ? "chat.parallel.backgroundResult" : "chat.parallel.result", { title: ref.title })}</span>
     </div>
   );
 }

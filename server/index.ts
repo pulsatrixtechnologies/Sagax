@@ -358,6 +358,16 @@ import {
 } from "./parallel-tasks.ts";
 import { isBusySendMode, type BusySendMode, type ParallelTaskRef, type ParallelTaskState } from "../shared/parallel-tasks.ts";
 import {
+  BACKGROUND_REPLY_PROMPT,
+  BACKGROUND_WORKER_PROMPT,
+  backgroundRepliesEnabled,
+  milestoneGate,
+  shouldBackgroundReply,
+  stepAcknowledgement,
+  timeToFirstMessageMs,
+  type MilestoneGate,
+} from "../shared/background-reply.ts";
+import {
   cancelChannelMessage,
   drainChannelMessages,
   holdChannelQueue,
@@ -5773,6 +5783,7 @@ function previewSystemPrompt(bot: BotRecord) {
     { id: "memory", label: "Memory", text: memorySystemPrompt(bot.id, { managedWrites: agentsMounted, fileTools: Boolean(privateWorkspace), enabled: bot.memoryEnabled !== false }) },
     { id: "docs", label: "Documents index", text: docsIndexPrompt(bot.id, { tools: agentsMounted ? "agents" : privateWorkspace ? "files" : "none" }) },
     { id: "skills", label: "Skills index", text: privateWorkspace ? skillsSystemPrompt(bot.id, skillsLibraryEnabled(cfg) ? bot.assignedSkills : undefined) + pluginSkillsForTurn(bot, instance) : "" },
+    { id: "background-reply", label: "Background replies", text: backgroundRepliesEnabled(bot) ? BACKGROUND_REPLY_PROMPT : "" },
   ]);
   const totalBytes = built.sections.reduce((n, s) => n + s.bytes, 0);
   return {
@@ -10620,6 +10631,7 @@ bus.subscribe((event: RuntimeEvent) => {
         const text = event.text;
         const ran = bot ? turnRunByThread.get(event.threadId) : undefined;
         pushMessage({ role: "bot", kind: "text", text, turnId: event.turnId, ...(ran ? { turnRun: ran } : {}) });
+        noteBackgroundMilestone(event.threadId, text);
         // kept so "finished" can say what it finished with, rather than
         // just that something ended
         lastReply.set(event.threadId, text);
@@ -11228,11 +11240,12 @@ bus.subscribe((event: RuntimeEvent) => {
         // Neither should a peer's hop: the exchange is already recorded in the
         // pair channel and chipped into both threads, which is the whole of
         // what the person needs to be able to find it.
-        if (!routineReportThread && !internal) store.patchTask(bot.id, event.threadId, { unread: true });
+        const backgroundChild = settledTask?.parallelOf?.background === true;
+        if (!routineReportThread && !internal && !backgroundChild) store.patchTask(bot.id, event.threadId, { unread: true });
         // A failed peer turn stays a chip too. The bot that delegated is woken
         // with the failure and answers the person in its own thread — buzzing
         // here as well would ring twice for one piece of news.
-        if ((!routineRun || routineRun.status === "completed") && !internal && !computerSelectionTurns.get(event.threadId)?.selected) {
+        if ((!routineRun || routineRun.status === "completed") && !internal && !backgroundChild && !computerSelectionTurns.get(event.threadId)?.selected) {
           // the frame carries the bot's avatar so every desktop client can
           // show the notification under that bot's own face
           const completionDetail = routineRun
@@ -12681,6 +12694,27 @@ async function startOrQueueDirectMessage(botId: string, threadId: string, text: 
     });
     return { ok: true as const, queued: true as const, queueId: queued.id, threadId, reason: decision.reason };
   }
+  const bot = store.bot(botId);
+  const task = bot ? store.taskByThread(bot.id, threadId) : undefined;
+  const spoken = Boolean(voiceCall) || via === "call";
+  if (bot && task && shouldBackgroundReply({
+    bot, text, voice: spoken, hidden: task.hidden === true, nested: Boolean(task.parallelOf),
+  })) {
+    try {
+      const started = await startParallelTask({
+        botId, threadId, text, replyTo, sendId, sender, trigger, speaker,
+        principalId: speaker?.origin === "person" ? speaker.principalId : sender?.id,
+        ...(voiceCall ? { voiceCall } : {}),
+        background: true,
+      });
+      return { ok: true as const, threadId, message: started.message };
+    } catch (err) {
+      const code = (err as { code?: string }).code;
+      // The limit and a nested task throw before any message is stored, so
+      // the person still gets an answer in this turn, with no acknowledgement.
+      if (code !== "parallel_limit" && code !== "parallel_nested") throw err;
+    }
+  }
   const message = await startTurn(botId, text, { threadId, replyTo, sendId, sender, trigger, speaker, ...(voiceCall ? { voiceCall } : {}), ...(via ? { via } : {}) });
   return { ok: true as const, threadId, message };
 }
@@ -12692,6 +12726,12 @@ async function startOrQueueDirectMessage(botId: string, threadId: string, text: 
 
 /** Parallel tasks stopped by a person before their result was posted. */
 const parallelStops = new Set<string>();
+
+/** Milestones already copied from a background task into its conversation.
+ * In memory only: a restart loses the gate, and the settle still posts the
+ * result. Keyed by the task's own thread. */
+const backgroundMilestones = new Map<string, MilestoneGate>();
+const backgroundMilestoneLast = new Map<string, string>();
 
 /** The parallel task of a thread still owed a result, with its bot. */
 function pendingParallelTask(threadId: string): { bot: BotRecord; task: TaskRecord } | null {
@@ -12705,6 +12745,21 @@ function parallelTaskBlocked(botId: string, threadId: string): boolean {
   const task = store.taskByThread(botId, threadId);
   if (!task?.parallelOf) return false;
   return parallelBlocked({ task, tasks: store.tasks(botId), limit: maxParallelTasksPerPerson(cfg), busy: (id) => threadBusy(botId, id) });
+}
+
+/** Copy a short status from a background task into the conversation it
+ * answers. The acknowledgement and a repeated sentence are not statuses. */
+function noteBackgroundMilestone(threadId: string, text: string) {
+  const pending = pendingParallelTask(threadId);
+  const link = pending?.task.parallelOf;
+  if (!link?.background) return;
+  const ack = store.messagesFor(link.threadId).find((message) => message.backgroundReply === "ack" && message.replyToId === link.messageId)?.text ?? "";
+  const gated = milestoneGate(backgroundMilestones.get(threadId), text, Date.now(), ack);
+  backgroundMilestones.set(threadId, gated.state);
+  if (!gated.accept) return;
+  const trimmed = text.trim();
+  store.appendMessage(link.threadId, { role: "bot", kind: "text", text: trimmed, backgroundReply: "milestone" });
+  backgroundMilestoneLast.set(threadId, trimmed);
 }
 
 function patchParallelCard(parentThreadId: string, cardId: string | undefined, patch: Partial<ParallelTaskRef>) {
@@ -12734,6 +12789,9 @@ async function startParallelTask(input: {
   auth?: RequestAuth;
   /** Live call: the request was said on the call. */
   voiceCall?: Message["voiceCall"];
+  /** Background reply: acknowledge the first step in the conversation, then
+   * do the work here. The conversation stays free. */
+  background?: boolean;
 }): Promise<{ ok: true; threadId: string; message: Message; parallel: { threadId: string; title: string; state: ParallelTaskState; cardMessageId: string } }> {
   const bot = store.bot(input.botId);
   const parentTask = bot ? store.taskByThread(bot.id, input.threadId) : undefined;
@@ -12771,6 +12829,7 @@ async function startParallelTask(input: {
   const now = Date.now();
   // The request line, in the conversation the person is reading. A task the
   // bot opened has no person's words to show: its card is the anchor.
+  const background = input.background === true ? { background: true as const } : {};
   const request = input.byBot ? null : store.appendMessage(input.threadId, {
     role: "user",
     kind: "text",
@@ -12779,19 +12838,19 @@ async function startParallelTask(input: {
     sendId: input.sendId,
     ...(input.sender ? { sender: input.sender } : {}),
     ...(input.voiceCall ? { voiceCall: input.voiceCall } : {}),
-    parallelTask: { threadId: child.threadId, title, requestMessageId: "", role: "request" },
+    parallelTask: { threadId: child.threadId, title, requestMessageId: "", role: "request", ...background },
   });
   if (request) {
     store.patchMessage(input.threadId, request.id, {
-      parallelTask: { threadId: child.threadId, title, requestMessageId: request.id, role: "request" },
+      parallelTask: { threadId: child.threadId, title, requestMessageId: request.id, role: "request", ...background },
     });
   }
   const card = store.appendMessage(input.threadId, {
     role: "bot",
     kind: "activity",
-    tool: { name: `Parallel task #${title}`, ok: true },
+    tool: { name: input.background ? `Background · ${title}` : `Parallel task #${title}`, ok: true },
     threadRef: { botId: bot.id, threadId: child.threadId, title },
-    parallelTask: { threadId: child.threadId, title, requestMessageId: request?.id ?? "", role: "card", state: "queued", startedAt: now },
+    parallelTask: { threadId: child.threadId, title, requestMessageId: request?.id ?? "", role: "card", state: "queued", startedAt: now, ...background },
   });
   const anchorId = request?.id ?? card.id;
   if (!request) patchParallelCard(input.threadId, card.id, { requestMessageId: card.id });
@@ -12799,6 +12858,7 @@ async function startParallelTask(input: {
     threadId: input.threadId, messageId: anchorId, cardMessageId: card.id, at: now,
     ...(input.principalId ? { principalId: input.principalId } : {}),
     ...(input.byBot ? { byBot: true } : {}),
+    ...background,
   });
   if (IDENTITY.kind === "perspicax") {
     appendAdminAction(DATA_DIR, {
@@ -12807,6 +12867,22 @@ async function startParallelTask(input: {
       target: auditBotTarget(bot.id),
       after: { threadId: child.threadId, conversation: input.threadId, ...(input.byBot ? { byBot: true } : {}) },
       actor: input.auth ? orgAuditActor(input.auth) : { kind: "worker" },
+    });
+  }
+  // The acknowledgement is stored before the child is queued or started, so
+  // the person sees the first step even when the task waits for a slot, and
+  // the metric never includes the engine's own startup.
+  let acknowledgement: string | undefined;
+  if (input.background && request) {
+    store.titleTaskFromFirstMessage(bot.id, input.text, input.threadId);
+    acknowledgement = stepAcknowledgement(input.text);
+    store.appendMessage(input.threadId, {
+      role: "bot",
+      kind: "text",
+      text: acknowledgement,
+      backgroundReply: "ack",
+      timeToFirstMessageMs: timeToFirstMessageMs(request.at, Date.now()),
+      replyToId: request.id,
     });
   }
   const recent: BriefLine[] = store.activePath(input.threadId)
@@ -12821,6 +12897,8 @@ async function startParallelTask(input: {
     workspace,
     personName: input.sender?.name || cfg.profile?.name?.trim() || "The person",
     byBot: input.byBot,
+    background: input.background,
+    acknowledgement,
   });
   const reply = (state: ParallelTaskState) => ({
     ok: true as const, threadId: input.threadId, message: store.messagesFor(input.threadId).find((m) => m.id === anchorId) ?? request ?? card,
@@ -12868,15 +12946,27 @@ function settleParallelTask(threadId: string, outcome: { ok: boolean; reply: str
   const request = store.messagesFor(link.threadId).find((message) => message.id === link.messageId);
   const ref: ParallelTaskRef = {
     threadId, title: task.title, requestMessageId: link.messageId, role: "result", state, endedAt,
+    ...(link.background ? { background: true } : {}),
   };
-  store.appendMessage(link.threadId, {
-    role: "bot",
-    kind: "text",
-    text: redactSecretsInText(parallelResultText({ state, reply: outcome.reply, why: outcome.why })),
-    ...(request?.kind === "text" ? { replyToId: request.id } : {}),
-    parallelTask: ref,
-  });
+  const resultText = redactSecretsInText(parallelResultText({ state, reply: outcome.reply, why: outcome.why }));
+  const sameWords = (a: string, b: string) => a.replace(/\s+/g, " ").trim().toLowerCase() === b.replace(/\s+/g, " ").trim().toLowerCase();
+  const alreadySaid = link.background && backgroundMilestoneLast.get(threadId) && sameWords(backgroundMilestoneLast.get(threadId)!, resultText);
+  if (!alreadySaid) {
+    store.appendMessage(link.threadId, {
+      role: "bot",
+      kind: "text",
+      text: resultText,
+      ...(request?.kind === "text" ? { replyToId: request.id } : {}),
+      parallelTask: ref,
+    });
+  }
+  backgroundMilestones.delete(threadId);
+  backgroundMilestoneLast.delete(threadId);
   patchParallelCard(link.threadId, link.cardMessageId, { state, endedAt });
+  if (link.background) {
+    notify(deliverableNotification("done", bot, link.threadId, resultText, { avatarUrl: bot.avatarUrl }));
+    store.patchTask(bot.id, link.threadId, { unread: true });
+  }
   // The conversation's next turn reads what its session has not seen: the
   // request and this result.
   markTaskContextExternallyUpdated(bot, link.threadId);
@@ -14920,6 +15010,13 @@ async function startTurn(
         coordinationNode.parentId ? roomHandoffs.nodes.get(coordinationNode.parentId) : undefined))) {
         throw new DirectTurnSetupCancelled("Coordination access changed before dispatch");
       }
+      const turnTask = store.taskByThread(bot.id, threadId);
+      const backgroundWorker = turnTask?.parallelOf?.background === true;
+      const spokenTurn = onCall || opts?.via === "call" || Boolean(userMessage.voiceCall) || Boolean(opts?.voiceCall);
+      const skipBackground = spokenTurn || Boolean(turnTask?.hidden) || Boolean(opts?.automationSource) || Boolean(opts?.unattended) || (opts?.commsDepth ?? 0) > 0 || Boolean(opts?.coordination) || Boolean(opts?.cardContinuation);
+      const backgroundReplyText = backgroundWorker
+        ? BACKGROUND_WORKER_PROMPT
+        : skipBackground || !backgroundRepliesEnabled(liveBot ?? bot) ? "" : BACKGROUND_REPLY_PROMPT;
       const prompt = buildSystemPrompt(persona, liveBot?.soul ?? bot.soul ?? "", [
         { id: "user-profile", label: "About the user", text: userProfileSystemPrompt(botUserProfile(bot)) },
         // first after the soul: the block names agent tools, so it only goes
@@ -14971,6 +15068,7 @@ async function startTurn(
         { id: "mentions", label: "Mentions", text: boundedCoordination && tagged.length ? `The user named these existing teammates: ${tagged.map(b => `${peerName(b.name)} (${b.id})`).join(", ")}. Use coordinate_bots when their contribution is needed; do not substitute native helper agents for these bots.` : mentionPrompt(tagged) },
         // a voice call: the phone-call instruction (server/voice-call-prompt.ts)
         { id: "voice-call", label: "Phone call", text: voiceCallText },
+        { id: "background-reply", label: "Background replies", text: backgroundReplyText },
       ]);
       turnPromptBytes.set(threadId, { stable: Buffer.byteLength(prompt.stable), volatile: Buffer.byteLength(prompt.volatile) });
       // the Files list's "last used": what this turn's prompt carried
@@ -33092,6 +33190,10 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           return json(res, 409, { error: "stop this bot's turn before changing its memory setting" });
         }
         patch.memoryEnabled = body.memoryEnabled;
+      }
+      if (body.backgroundReplies !== undefined) {
+        if (typeof body.backgroundReplies !== "boolean") return json(res, 400, { error: "backgroundReplies must be true or false" });
+        patch.backgroundReplies = body.backgroundReplies;
       }
       // which of those apps' tools this bot may call (connector grants 1/5:
       // data model only — enforcement lands with slice 2). null returns the

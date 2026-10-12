@@ -69,6 +69,17 @@ describe("parallel task brief and result", () => {
       .toContain("Parallel task you started yourself");
     expect(parallelBrief({ request: "x", recent: [], workspace: { kind: "read-only", folder: "/proj" }, personName: "P" }))
       .toContain("/proj is in use by your other task");
+    const background = parallelBrief({
+      request: "Peux tu m'affiche l'age des comptes de Alubar",
+      recent: [],
+      workspace: { kind: "own" },
+      personName: "Marie",
+      background: true,
+      acknowledgement: "Je vérifie l'âge des comptes d'Alubar.",
+    });
+    expect(background).not.toContain("while you were busy");
+    expect(background).toContain("Je vérifie l'âge des comptes d'Alubar.");
+    expect(background).toContain("which is not an answer");
   });
 
   it("titles the task from the request and words the outcome", () => {
