@@ -1,0 +1,40 @@
+{{- if .Values.backup.enabled }}
+apiVersion: velero.io/v1
+kind: BackupStorageLocation
+metadata:
+  name: sagax-sandbox-offsite
+  namespace: {{ .Values.backup.veleroNamespace | quote }}
+  labels:
+    {{- include "sagax-sandboxes.labels" . | nindent 4 }}
+spec:
+  provider: {{ .Values.backup.destination.veleroProvider | quote }}
+  objectStorage:
+    bucket: {{ .Values.backup.destination.bucket | quote }}
+    prefix: sagax-sandboxes
+  credential:
+    name: {{ .Values.backup.destination.credentialSecret | quote }}
+    key: {{ .Values.backup.destination.credentialKey | quote }}
+  config:
+    region: {{ .Values.backup.destination.region | quote }}
+    s3Url: {{ .Values.backup.destination.endpoint | quote }}
+    s3ForcePathStyle: "true"
+---
+apiVersion: velero.io/v1
+kind: Schedule
+metadata:
+  name: sagax-sandbox-workspaces
+  namespace: {{ .Values.backup.veleroNamespace | quote }}
+  labels:
+    {{- include "sagax-sandboxes.labels" . | nindent 4 }}
+spec:
+  schedule: {{ .Values.backup.schedule | quote }}
+  template:
+    includedNamespaces:
+      - {{ .Values.sandboxNamespace | quote }}
+    includedResources:
+      - persistentvolumeclaims
+      - persistentvolumes
+    snapshotVolumes: true
+    ttl: {{ .Values.backup.ttl | quote }}
+    storageLocation: sagax-sandbox-offsite
+{{- end }}

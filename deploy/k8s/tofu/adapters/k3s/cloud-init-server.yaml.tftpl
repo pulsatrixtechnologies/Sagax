@@ -1,0 +1,89 @@
+#cloud-config
+# Sagax sandbox control plane. The join token and the etcd encryption key are
+# files on the host. They are not in this user-data and not in Terraform state.
+write_files:
+  - path: /var/lib/rancher/k3s/server/audit.yaml
+    permissions: "0600"
+    encoding: b64
+    content: ${audit_policy_b64}
+  - path: /etc/rancher/k3s/config.yaml
+    permissions: "0600"
+    content: |
+      write-kubeconfig-mode: "0600"
+      token-file: /etc/sagax/k3s-token
+      secrets-encryption: false
+      kube-apiserver-arg:
+        - audit-policy-file=/var/lib/rancher/k3s/server/audit.yaml
+        - audit-log-path=/var/log/k3s/audit/audit.log
+        - audit-log-maxage=${audit_log_maxage}
+        - audit-log-maxbackup=30
+        - audit-log-maxsize=100
+        - encryption-provider-config=/var/lib/rancher/k3s/server/encryption.yaml
+        - anonymous-auth=false
+        - authorization-mode=Node,RBAC
+        - oidc-issuer-url="${oidc_issuer_url}"
+        - oidc-client-id="${oidc_client_id}"
+        - oidc-username-claim=email
+        - oidc-groups-claim=groups
+        - oidc-username-prefix=-
+        - oidc-groups-prefix=-
+      disable:
+        - traefik
+        - servicelb
+      node-label:
+        - sagax.io/role=control-plane
+  - path: /usr/local/sbin/sagax-audit-ship
+    permissions: "0750"
+    content: |
+      #!/bin/sh
+      set -eu
+      envfile=/etc/sagax/audit-sink.env
+      if [ ! -f "$envfile" ]; then
+        echo "audit sink is not configured; object-lock retention is required" >&2
+        exit 1
+      fi
+      # The env file holds AUDIT_S3_URI and the tool's own credentials.
+      # It is mode 0600 and is not rendered by OpenTofu.
+      # shellcheck disable=SC1090
+      . "$envfile"
+      if [ -z "$${AUDIT_S3_URI:-}" ]; then
+        echo "AUDIT_S3_URI is required" >&2
+        exit 1
+      fi
+      if command -v aws >/dev/null 2>&1; then
+        aws s3 sync /var/log/k3s/audit "$AUDIT_S3_URI" --only-show-errors
+      elif command -v rclone >/dev/null 2>&1; then
+        rclone copy /var/log/k3s/audit "$AUDIT_S3_URI"
+      else
+        echo "install aws or rclone on the image; this script does not download them" >&2
+        exit 1
+      fi
+  - path: /etc/systemd/system/sagax-audit-ship.service
+    permissions: "0644"
+    content: |
+      [Unit]
+      Description=Ship Sagax API audit logs to immutable storage
+      [Service]
+      Type=oneshot
+      ExecStart=/usr/local/sbin/sagax-audit-ship
+  - path: /etc/systemd/system/sagax-audit-ship.timer
+    permissions: "0644"
+    content: |
+      [Unit]
+      Description=Daily Sagax API audit shipping
+      [Timer]
+      OnCalendar=daily
+      Persistent=true
+      [Install]
+      WantedBy=timers.target
+
+runcmd:
+  - install -d -m 0700 /var/log/k3s/audit /etc/sagax /var/lib/rancher/k3s/server
+  - test -x /usr/local/bin/k3s
+  - test -s /etc/sagax/k3s-token
+  - test "$(stat -c %a /etc/sagax/k3s-token)" = "600"
+  - test -s /var/lib/rancher/k3s/server/encryption.yaml
+  - if grep -q REPLACE_ON_HOST /var/lib/rancher/k3s/server/encryption.yaml; then echo "etcd encryption key was not provisioned"; exit 1; fi
+  - systemctl daemon-reload
+  - systemctl enable --now sagax-audit-ship.timer
+  - systemctl enable --now k3s

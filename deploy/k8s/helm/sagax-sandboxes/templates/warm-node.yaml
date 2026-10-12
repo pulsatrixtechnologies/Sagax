@@ -1,0 +1,160 @@
+{{- if .Values.warmNode.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sagax-sandbox-warmer
+  namespace: {{ .Values.systemNamespace | quote }}
+  labels:
+    {{- include "sagax-sandboxes.labels" . | nindent 4 }}
+    app.kubernetes.io/name: sagax-sandbox-warmer
+spec:
+  replicas: {{ .Values.warmNode.replicas }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: sagax-sandbox-warmer
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: sagax-sandbox-warmer
+      annotations:
+        cluster-autoscaler.kubernetes.io/safe-to-evict: "false"
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 0
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65535
+        runAsGroup: 65535
+        seccompProfile:
+          type: RuntimeDefault
+      nodeSelector:
+        {{- toYaml .Values.warmNode.nodeSelector | nindent 8 }}
+      tolerations:
+        - key: {{ .Values.warmNode.tolerationKey | quote }}
+          operator: Equal
+          value: {{ .Values.warmNode.tolerationValue | quote }}
+          effect: NoSchedule
+      containers:
+        - name: pause
+          image: {{ .Values.warmNode.pauseImage | quote }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              cpu: 10m
+              memory: 16Mi
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: sagax-sandbox-warm-up
+  namespace: {{ .Values.systemNamespace | quote }}
+  labels:
+    {{- include "sagax-sandboxes.labels" . | nindent 4 }}
+spec:
+  schedule: {{ .Values.warmNode.scaleUp | quote }}
+  timeZone: {{ .Values.warmNode.timezone | quote }}
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      ttlSecondsAfterFinished: 86400
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: sagax-sandbox-warmer
+        spec:
+          serviceAccountName: sagax-sandbox-warmer
+          automountServiceAccountToken: true
+          restartPolicy: Never
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65532
+            runAsGroup: 65532
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: scale
+              image: {{ .Values.warmNode.kubectlImage | quote }}
+              imagePullPolicy: IfNotPresent
+              command:
+                - kubectl
+                - scale
+                - deployment/sagax-sandbox-warmer
+                - --replicas=1
+                - -n
+                - {{ .Values.systemNamespace | quote }}
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: ["ALL"]
+              resources:
+                requests:
+                  cpu: 20m
+                  memory: 64Mi
+                limits:
+                  cpu: 200m
+                  memory: 128Mi
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: sagax-sandbox-warm-down
+  namespace: {{ .Values.systemNamespace | quote }}
+  labels:
+    {{- include "sagax-sandboxes.labels" . | nindent 4 }}
+spec:
+  schedule: {{ .Values.warmNode.scaleDown | quote }}
+  timeZone: {{ .Values.warmNode.timezone | quote }}
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      ttlSecondsAfterFinished: 86400
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: sagax-sandbox-warmer
+        spec:
+          serviceAccountName: sagax-sandbox-warmer
+          automountServiceAccountToken: true
+          restartPolicy: Never
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65532
+            runAsGroup: 65532
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: scale
+              image: {{ .Values.warmNode.kubectlImage | quote }}
+              imagePullPolicy: IfNotPresent
+              command:
+                - kubectl
+                - scale
+                - deployment/sagax-sandbox-warmer
+                - --replicas=0
+                - -n
+                - {{ .Values.systemNamespace | quote }}
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: ["ALL"]
+              resources:
+                requests:
+                  cpu: 20m
+                  memory: 64Mi
+                limits:
+                  cpu: 200m
+                  memory: 128Mi
+{{- end }}

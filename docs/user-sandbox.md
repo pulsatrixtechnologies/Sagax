@@ -319,3 +319,13 @@ and a bot's cloud backend cannot be a per-bot VPS there (409 `org_user_sandbox`)
 Cloud there, including a cloud routine and a room, is the person's one
 server environment. The bot computer routes do not open a shared machine
 (the same 409).
+
+## Kubernetes pool
+
+The portable home for these environments, once they leave the Sagax VM, is
+`deploy/k8s/`: a Helm chart for the sandbox namespace and a cloud-agnostic
+OpenTofu core with an optional Azure AKS adapter and generic k3s adapters.
+That tree does not change `sagax-sandboxd` yet. The provisioner still talks
+to Docker until a Kubernetes adapter is added behind the same signed API.
+`deploy/k8s/SOC2.md` maps the chart and the modules to the SOC 2 controls
+they give evidence for.

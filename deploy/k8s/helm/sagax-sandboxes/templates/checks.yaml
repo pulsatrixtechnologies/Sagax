@@ -1,0 +1,3 @@
+{{- include "sagax-sandboxes.storage.assert" . -}}
+{{- include "sagax-sandboxes.backup.assert" . -}}
+{{- include "sagax-sandboxes.images.assert" . -}}

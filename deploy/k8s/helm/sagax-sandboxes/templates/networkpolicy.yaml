@@ -1,0 +1,140 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny
+  namespace: {{ .Values.sandboxNamespace | quote }}
+  labels:
+    {{- include "sagax-sandboxes.labels" . | nindent 4 }}
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny
+  namespace: {{ .Values.systemNamespace | quote }}
+  labels:
+    {{- include "sagax-sandboxes.labels" . | nindent 4 }}
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: sandbox-egress
+  namespace: {{ .Values.sandboxNamespace | quote }}
+  labels:
+    {{- include "sagax-sandboxes.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      com.pulsatrix.sagax.sandbox: "1"
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.dns.namespace | quote }}
+          podSelector:
+            matchLabels:
+              {{- toYaml .Values.dns.podLabels | nindent 14 }}
+      ports:
+        - port: {{ .Values.dns.port }}
+          protocol: UDP
+        - port: {{ .Values.dns.port }}
+          protocol: TCP
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              {{- toYaml .Values.egressDeny | nindent 14 }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: provisioner
+  namespace: {{ .Values.systemNamespace | quote }}
+  labels:
+    {{- include "sagax-sandboxes.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: sagax-sandboxd
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.sagax.namespace | quote }}
+        {{- range .Values.sagax.cidrs }}
+        - ipBlock:
+            cidr: {{ . | quote }}
+        {{- end }}
+      ports:
+        - port: {{ .Values.sagax.port }}
+          protocol: TCP
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.dns.namespace | quote }}
+          podSelector:
+            matchLabels:
+              {{- toYaml .Values.dns.podLabels | nindent 14 }}
+      ports:
+        - port: {{ .Values.dns.port }}
+          protocol: UDP
+        - port: {{ .Values.dns.port }}
+          protocol: TCP
+    {{- range .Values.apiServer.cidrs }}
+    - to:
+        - ipBlock:
+            cidr: {{ . | quote }}
+      ports:
+        - port: {{ $.Values.apiServer.port }}
+          protocol: TCP
+    {{- end }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: warmer
+  namespace: {{ .Values.systemNamespace | quote }}
+  labels:
+    {{- include "sagax-sandboxes.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: sagax-sandbox-warmer
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        {{- range .Values.apiServer.cidrs }}
+        - ipBlock:
+            cidr: {{ . | quote }}
+        {{- end }}
+      ports:
+        - port: {{ .Values.apiServer.port }}
+          protocol: TCP
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.dns.namespace | quote }}
+          podSelector:
+            matchLabels:
+              {{- toYaml .Values.dns.podLabels | nindent 14 }}
+      ports:
+        - port: {{ .Values.dns.port }}
+          protocol: UDP
+        - port: {{ .Values.dns.port }}
+          protocol: TCP
