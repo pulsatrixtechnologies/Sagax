@@ -46,6 +46,13 @@ export function excludedWorkspaceAuthPath(path: string): boolean {
   if (/^mcp-oauth\.(?:enc|key)(?:$|\.\d+\.[0-9a-f-]+\.tmp$)/.test(path)) return true;
   // Organization GitHub access tokens (server/org-github-tokens.ts).
   if (/^org-github-tokens\.enc(?:$|\.\d+\.[0-9a-f-]+\.tmp$)/.test(path)) return true;
+  // File-backed provider keys (server/engine-api-keys.ts), solo and per person.
+  if (/^engine-api-keys\.(?:enc|json)(?:$|\.\d+\.[0-9a-f-]+\.tmp$)/.test(path)) return true;
+  if (/^principals\/[^/]+\/engine-api-keys\.enc(?:$|\.\d+\.[0-9a-f-]+\.tmp$)/.test(path)) return true;
+  // Hermes reads `.env` itself. A verification server's home is the data
+  // directory, and a turn's private home lives under engine-policies.
+  if (/(?:^|\/)\.hermes\/\.env$/.test(path)) return true;
+  if (/^engine-policies\/hermes-(?:solo|org)\/\.env$/.test(path)) return true;
   return /^(?:(?:providers|caddy|chrome-profile|\.agent-browser)(?:\/|$)|workspace-credentials\.json$|external-runtimes\.json$|browser-engine-key$)/.test(path) ||
     /^(?:config\.json|webhooks\.json|workspace-credentials\.json|external-runtimes\.json|browser-engine-key|sessions\.json|tunnel-account\.json|idp-grants\.enc|idp-grants\.key)\.\d+(?:\.[0-9a-f-]+)?\.tmp$/.test(path) ||
     /^(?:vm-home|vm-homes\/[^/]+)\/\.browser-profiles(?:\/|$)/.test(path);

@@ -46,6 +46,8 @@ describe("what the app may do", () => {
     ["GET", "/api/instances/cursor/auth/status"],
     ["POST", "/api/instances/cursor/auth/cancel"],
     ["POST", "/api/instances/claude.work/auth/complete"],
+    ["GET", "/api/instances/mistral/api-key"],
+    ["POST", "/api/instances/mistral/api-key"],
     ["GET", "/api/team-map"],
     ["GET", "/api/companion/endpoints"],
     ["GET", "/api/bots"],
@@ -321,6 +323,9 @@ describe("what it may not", () => {
       ["PATCH", "/api/instances/claude"],
       ["GET", "/api/instances/../auth/status"],
       ["POST", "/api/instances/%2e%2e/auth/start"],
+      ["POST", "/api/instances/../api-key"],
+      ["POST", "/api/instances/.../api-key"],
+      ["GET", "/api/instances/%2e%2e/api-key"],
     ] as Array<[string, string]>) {
       expect(allowed(method, path), `${method} ${path}`).toBe(false);
     }
@@ -328,6 +333,8 @@ describe("what it may not", () => {
     expect(allowed("GET", "/api/instances/cursor/auth/status")).toBe(true);
     expect(allowed("POST", "/api/instances/cursor/auth/cancel")).toBe(true);
     expect(allowed("POST", "/api/instances/cursor/auth/complete")).toBe(true);
+    expect(allowed("GET", "/api/instances/mistral/api-key")).toBe(true);
+    expect(allowed("POST", "/api/instances/mistral/api-key")).toBe(true);
   });
 
   // A phone may start, end and follow a Live call and change its voice and
@@ -451,6 +458,7 @@ describe("desktop remote-client parity", () => {
       ["POST", "/api/bots/bot_1/secret-cards/m_1/dismiss"], ["POST", "/api/instances/claude/claude-update"],
       ["POST", "/api/instances/cursor/auth/start"], ["GET", "/api/instances/cursor/auth/status"],
       ["POST", "/api/instances/cursor/auth/cancel"], ["POST", "/api/instances/cursor/auth/complete"],
+      ["GET", "/api/instances/mistral/api-key"], ["POST", "/api/instances/mistral/api-key"],
       // rooms
       ["POST", "/api/groups/room_1/messages"], ["POST", "/api/groups/room_1/interrupt"], ["POST", "/api/groups/room_1/read"],
       ["DELETE", "/api/groups/room_1/queue/q_1"], ["POST", "/api/groups/room_1/queue/q_1/steer"],

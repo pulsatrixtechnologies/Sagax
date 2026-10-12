@@ -83,7 +83,10 @@ interface NativeLog {
 interface RuntimeOptions<Config> {
   input: DriverCreateInput<Config>;
   driverKind: string;
-  apiKey: string;
+  /** A string is the key captured for this instance. A function is read at
+   * the start of each turn, so a key saved after launch is the one that
+   * pays for that turn. */
+  apiKey: string | ((turn?: SendTurnInput) => string);
   apiUrl: string;
   models: () => ModelCatalog;
   requestBody(model: string, messages: OpenAIChatMessage[], stream: boolean): Record<string, unknown>;
@@ -229,6 +232,8 @@ function refusedToolCallFailure(error: RejectedToolCallError, earlierSteps: bool
 /** Shared runtime for the three providers that speak OpenAI chat completions. */
 export function createOpenAIChatRuntime<Config>(options: RuntimeOptions<Config>): ProviderInstance {
   const { input } = options;
+  const resolveKey = (turn?: SendTurnInput): string =>
+    (typeof options.apiKey === "function" ? options.apiKey(turn) : options.apiKey).trim();
   const listeners = new Set<RuntimeEventListener>();
   const active = new Map<string, {
     abort: AbortController;
@@ -253,11 +258,12 @@ export function createOpenAIChatRuntime<Config>(options: RuntimeOptions<Config>)
 
   const modelsUrl = () => `${options.apiUrl.replace(/\/$/, "")}/models`;
 
-  const pingModels = async () => {
+  const pingModels = async (turn?: SendTurnInput) => {
+    const apiKey = resolveKey(turn);
     try {
       const response = await fetch(modelsUrl(), {
         method: "GET",
-        headers: { authorization: `Bearer ${options.apiKey}` },
+        headers: { authorization: `Bearer ${apiKey}` },
       });
       // Drain so undici returns the socket to the keep-alive pool.
       await response.arrayBuffer().catch(() => undefined);
@@ -312,6 +318,7 @@ export function createOpenAIChatRuntime<Config>(options: RuntimeOptions<Config>)
     tools: ChatToolDefinition[] = [],
     onUsage?: TextGenerationOptions["onUsage"],
     maxTokens?: number,
+    apiKey = "",
   ): Promise<Completion> => {
     // Idle timer that is renewed on every received chunk during streaming
     const timeoutController = new AbortController();
@@ -333,7 +340,7 @@ export function createOpenAIChatRuntime<Config>(options: RuntimeOptions<Config>)
       const response = await fetch(`${options.apiUrl}/chat/completions`, {
         method: "POST",
         ...(messages.some(message => Array.isArray(message.content) && message.content.some(part => part.type === "image_url")) ? { redirect: "error" as const } : {}),
-        headers: { authorization: `Bearer ${options.apiKey}`, "content-type": "application/json" },
+        headers: { authorization: `Bearer ${apiKey}`, "content-type": "application/json" },
         body: JSON.stringify({
           ...options.requestBody(model, messages, stream),
           ...(tools.length ? { tools } : {}),
@@ -343,7 +350,7 @@ export function createOpenAIChatRuntime<Config>(options: RuntimeOptions<Config>)
       });
       if (!response.ok) {
         const body = await response.text().catch(() => "");
-        if (rejectsKey(response.status, body)) noteKeyRejected(options.apiUrl, options.apiKey);
+        if (rejectsKey(response.status, body)) noteKeyRejected(options.apiUrl, apiKey);
         const message = `${options.httpErrorLabel} HTTP ${response.status}${body ? `: ${body.slice(0, 200)}` : ""}`;
         if (rejectsToolsParameter(response.status, body)) throw new UnsupportedChatToolsError(message);
         const refusal = refusedToolCall(response.status, body);
@@ -353,7 +360,7 @@ export function createOpenAIChatRuntime<Config>(options: RuntimeOptions<Config>)
         }
         throw new Error(message);
       }
-      noteKeyAccepted(options.apiUrl, options.apiKey);
+      noteKeyAccepted(options.apiUrl, apiKey);
 
       if (!stream || response.headers.get("content-type")?.includes("application/json")) {
         const json = await response.json() as CompletionJson;
@@ -521,10 +528,11 @@ export function createOpenAIChatRuntime<Config>(options: RuntimeOptions<Config>)
   };
 
   const sendTurn = async (turn: SendTurnInput) => {
-    if (!options.apiKey) throw new Error(options.missingKeyError);
+    const apiKey = resolveKey(turn);
+    if (!apiKey) throw new Error(options.missingKeyError);
     if (turn.warmOnly === true) {
       if (!turn.warmSignal?.aborted) {
-        if (await pingModels()) rememberWarm(turn.threadId);
+        if (await pingModels(turn)) rememberWarm(turn.threadId);
         turn.warmSignal?.addEventListener("abort", () => releaseWarm(turn.threadId), { once: true });
       }
       return { turnId: newId() };
@@ -540,7 +548,7 @@ export function createOpenAIChatRuntime<Config>(options: RuntimeOptions<Config>)
     const retainImages = chatImageBudget();
     for (const message of messages) retainImages(message.content);
     const model = turn.model || options.models().default;
-    const secrets = [options.apiKey].filter((value): value is string => Boolean(value));
+    const secrets = [apiKey].filter((value): value is string => Boolean(value));
     for (const integration of Object.values(turn.integrations ?? {})) {
       const entries = object(integration);
       const specs = entries && "command" in entries ? [entries] : Object.values(entries ?? {}).map(object);
@@ -654,7 +662,7 @@ export function createOpenAIChatRuntime<Config>(options: RuntimeOptions<Config>)
                 streamed = true;
                 if (streamKind === "assistant_text") answerStreamed = true;
                 delta(text, streamKind);
-              }, tools.definitions);
+              }, tools.definitions, undefined, undefined, apiKey);
               delta("", "assistant_text", true);
               delta("", "reasoning_text", true);
               break;
@@ -905,8 +913,9 @@ export function createOpenAIChatRuntime<Config>(options: RuntimeOptions<Config>)
     },
     ...(options.refreshModels ? { refreshModels: options.refreshModels } : {}),
     snapshot: async () => {
-      if (!options.apiKey) return { state: "unavailable", reason: options.unavailableReason };
-      if (keyRejected(options.apiUrl, options.apiKey)) return { state: "available", authenticated: false, reason: KEY_REJECTED_REASON, version: null };
+      const apiKey = resolveKey();
+      if (!apiKey) return { state: "unavailable", reason: options.unavailableReason };
+      if (keyRejected(options.apiUrl, apiKey)) return { state: "available", authenticated: false, reason: KEY_REJECTED_REASON, version: null };
       return { state: "available", authenticated: true, version: null, ...(options.billing ? { billing: options.billing } : {}) };
     },
     adapter: {
@@ -970,7 +979,7 @@ export function createOpenAIChatRuntime<Config>(options: RuntimeOptions<Config>)
       const { text, reasoning, toolCalls } = await complete(
         messages, model, stream, signal,
         onDelta ? (delta, kind) => { if (kind === "assistant_text") onDelta(delta); } : undefined,
-        [], onUsage, maxTokens,
+        [], onUsage, maxTokens, resolveKey(),
       );
       if (toolCalls.length) throw new ChatProtocolError("provider returned tool calls to a text-only helper");
       return text.trim() ? text : reasoning;

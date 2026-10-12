@@ -161,6 +161,10 @@ const ALLOWED: ReadonlyArray<{ method: string; path: RegExp }> = [
   { method: "GET", path: /^\/api\/instances\/(?!\.+\/)[\w.-]+\/auth\/status$/ },
   { method: "POST", path: /^\/api\/instances\/(?!\.+\/)[\w.-]+\/auth\/cancel$/ },
   { method: "POST", path: /^\/api\/instances\/(?!\.+\/)[\w.-]+\/auth\/complete$/ },
+  // A masked access key. The phone sends it once and afterwards only learns
+  // whether one is saved.
+  { method: "GET", path: /^\/api\/instances\/(?!\.+\/)[\w.-]+\/api-key$/ },
+  { method: "POST", path: /^\/api\/instances\/(?!\.+\/)[\w.-]+\/api-key$/ },
   { method: "GET", path: /^\/api\/team-map$/ },
   // Sidecar-owned, authenticated endpoint metadata. The proxy terminates it
   // locally; it never becomes a newly exposed harness route.

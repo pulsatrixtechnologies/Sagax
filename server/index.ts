@@ -723,6 +723,7 @@ import { cookieMaxAgeSeconds, formatPairingCode, SessionRegistry, type Scope, ty
 import { isAccountEmail, isPrincipalId, PrincipalRegistry, type Principal } from "./principals.ts";
 import { OrgTeams } from "./org-teams.ts";
 import { keyVia, materializeEngineAccess, providersOfDriver, resolveEngineAccess, subscriptionDriver, turnPayer, type AccessPayer, type SubscriptionDriver, type EngineCredentialInput, type EngineCredentialPlan, type NoAccessCause, type TurnAccess } from "./engine-credentials.ts";
+import { configKeyPatch, engineKeyScope, engineKeyTarget, EngineKeyError, fileKeyConfigured, hermesProviderEnv, normalizeEngineKey, writeFileEngineKey } from "./engine-api-keys.ts";
 import { isLoginDriver, loginCliFor, PrincipalEngineLogins } from "./principal-engine-logins.ts";
 import { createSectionChannelRoutes, migrationOwner, recordAccess, SectionChannels, sectionShareGrants } from "./section-channels.ts";
 import { createBotGrantRoutes, visibleGrants, wireGrants } from "./bot-grants.ts";
@@ -20943,6 +20944,7 @@ function orgEngineInput(bot: BotRecord, instance: { instanceId: string; driverKi
     subscriptionSignedIn: (principalId, driver) => engineLogins?.signedIn(principalId, driver) ?? false,
     hasKey: (sub, provider) => perspicaxDirectory?.providerKeys(sub).includes(provider) ?? false,
     keyBacked: driverKeyBacked(cfg, instance.driverKind, instance.instanceId),
+    hasLocalKey: (principalId, driver) => fileKeyConfigured(DATA_DIR, { organization: true, principalId }, driver),
   };
 }
 /** A person's Perspicax subject (only from this server's issuer) and
@@ -36423,6 +36425,70 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
     const companyMutation = /^\/api\/instances\/(company\.[\w.-]+)(?:\/|$)/.exec(path);
     if (hostedModels && path.startsWith("/api/instances/") && method !== "GET") return json(res, 403, { error: HOSTED_PROVIDER_SETTINGS_ERROR });
     if (companyMutation && method !== "GET") return json(res, 403, { error: "Company accounts are read-only here. Manage this connection in desktop Settings." });
+
+    // A masked access key pasted on a provider card. The answer is only
+    // whether one is saved. The value is never logged and never returned.
+    const engineKey = /^\/api\/instances\/([\w.-]+)\/api-key$/.exec(path);
+    if (engineKey && (method === "GET" || method === "POST")) {
+      res.setHeader("cache-control", "no-store");
+      const instanceId = engineKey[1]!;
+      const driver = registry.get(instanceId)?.driverKind ?? cfg.instances?.[instanceId]?.driver;
+      if (!driver) return json(res, 404, { error: "unknown instance" });
+      const target = engineKeyTarget(instanceId, driver);
+      if (!target) return json(res, 404, { error: "This provider does not take an access key here." });
+      const organization = IDENTITY.kind === "perspicax";
+      const principalId = auth.kind === "session" ? auth.session.principalId?.trim().toLowerCase() || null : null;
+      let scope: ReturnType<typeof engineKeyScope>;
+      try {
+        scope = engineKeyScope(organization, principalId, target);
+      } catch (error) {
+        if (error instanceof EngineKeyError) return json(res, error.status, { error: error.message, code: error.code });
+        return json(res, 500, { error: "The access key could not be saved. Try again." });
+      }
+      const configuredNow = (): boolean => {
+        if (target.kind === "file") return fileKeyConfigured(DATA_DIR, scope, driver);
+        const section = cfg[target.section] as { key?: string; apiKey?: string } | undefined;
+        return Boolean(section?.[target.field]);
+      };
+      if (method === "GET") return json(res, 200, { configured: configuredNow() });
+      if (!String(req.headers["content-type"] ?? "").toLowerCase().startsWith("application/json")) {
+        return json(res, 415, { error: "content-type must be application/json" });
+      }
+      const body = await readBody(req, 8192);
+      if (!body || typeof body !== "object" || typeof (body as { key?: unknown }).key !== "string") {
+        return json(res, 400, { error: "Send the access key as { key }." });
+      }
+      let key: string;
+      try {
+        key = normalizeEngineKey((body as { key: string }).key);
+      } catch (error) {
+        const message = error instanceof EngineKeyError ? error.message : "Enter the access key as a single line, between 8 and 400 characters.";
+        return json(res, 400, { error: message, code: "engine_key_shape" });
+      }
+      const provider = typeof (body as { provider?: unknown }).provider === "string" ? (body as { provider: string }).provider : undefined;
+      if (providerConfigBusy) return json(res, 409, { error: "provider settings are already being updated" });
+      providerConfigBusy = true;
+      try {
+        if (target.kind === "config") {
+          saveConfig(configKeyPatch(target, key) as Parameters<typeof saveConfig>[0]);
+          Object.assign(cfg, loadConfig());
+          broadcast({ kind: "config", ...configStatus() });
+        } else if ("hermes" in target) {
+          const envName = hermesProviderEnv(provider);
+          if (!envName) return json(res, 400, { error: "Unknown provider.", code: "engine_key_provider" });
+          writeFileEngineKey(DATA_DIR, scope, driver, envName, key);
+        } else {
+          writeFileEngineKey(DATA_DIR, scope, driver, target.env, key);
+        }
+        await reloadProviders();
+        return json(res, 200, { configured: key.length > 0 });
+      } catch (error) {
+        if (error instanceof EngineKeyError) return json(res, error.status, { error: error.message, code: error.code });
+        return json(res, 500, { error: "The access key could not be saved. Try again." });
+      } finally {
+        providerConfigBusy = false;
+      }
+    }
 
     const instanceIconPatch = /^\/api\/instances\/([\w.-]+)\/icon$/.exec(path);
     if (method === "PATCH" && instanceIconPatch) {

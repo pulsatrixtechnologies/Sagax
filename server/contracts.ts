@@ -120,6 +120,8 @@ export interface TurnAccessInput {
   via: "subscription" | "owner-key" | "speaker-key" | "server" | "org-key";
   identity: string;
   environment?: Record<string, string>;
+  /** File-backed key sealed for this person (engine-api-keys.ts). */
+  localKeyPrincipal?: string;
   claudeConfigDir?: string;
   codexHome?: string;
   codexOwnerKey?: boolean;
@@ -552,6 +554,8 @@ export interface EngineInstall {
   /** Set up inside the app rather than in a terminal: the engine needs a key
    * saved under Settings → API keys, and the setup card links there. */
   settings?: "connections";
+  /** The setup card takes a masked access key and stores it as a secret. */
+  apiKey?: boolean;
   /** Settings can install or update this engine on the machine running the
    * server, as the server's own user, into a directory the app owns. Set by
    * the registry when the install one-liner is an npm package and npm is on

@@ -9,6 +9,7 @@ import { z } from "zod";
 import { normalizeImageGenerationUrl, type ImageGenerationConfig } from "../shared/image-generation.ts";
 
 import { writeFileAtomic } from "./atomic.ts";
+import { applyStoredEngineEnv } from "./engine-api-keys.ts";
 import { withoutComputerEngine } from "./computer-engine-removal.ts";
 import { newBotDefaultsSchema, type NewBotDefaults } from "./new-bot-defaults.ts";
 import { EFFORT_LEVELS, type LiveSettings } from "../shared/wire.ts";
@@ -2080,6 +2081,16 @@ export function instanceConfigs(cfg: AppConfig): InstanceConfigMap {
       for (const [key, value] of injectedEnvironment(cfg, id, entry.driver)) environment[key] = value;
     }
     entry.environment = environment;
+    // Solo file keys ride the instance. An organization server has no person
+    // here, so this injects nothing: a turn reads that person's own file.
+    applyStoredEngineEnv(
+      environment,
+      entry.driver,
+      DATA_DIR,
+      process.env.SAGAX_IDENTITY?.trim().toLowerCase() === "perspicax"
+        ? { organization: true, principalId: null }
+        : { organization: false },
+    );
     // The driver URL is configuration, not a credential. Environment is
     // intentionally not consulted by ProviderRegistry when it decodes a
     // driver's config, so carry the workspace default into the transient

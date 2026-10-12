@@ -32,7 +32,8 @@ import { lstat, mkdir, readFile, realpath, stat, writeFile } from "node:fs/promi
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { createHash, randomBytes } from "node:crypto";
 
-import { PROVIDER_CREDENTIAL_ENV, stripControlPlaneEnv, WORKSPACE_CREDENTIAL_ENV } from "../../config.ts";
+import { DATA_DIR, PROVIDER_CREDENTIAL_ENV, stripControlPlaneEnv, WORKSPACE_CREDENTIAL_ENV } from "../../config.ts";
+import { applyStoredEngineEnv } from "../../engine-api-keys.ts";
 import { openStartupModelCatalog, writeStartupModelCache } from "../../startup-model-catalog.ts";
 import { decodeInjectId } from "../local-inject.ts";
 import { DeviceAuthController, type DeviceSignIn } from "../device-auth.ts";
@@ -435,7 +436,7 @@ export interface AcpSupport {
    *  snapshot share `transformEnv` and must not see a per-turn overlay. */
   applyTurnEnv?(
     env: Record<string, string | undefined>,
-    ctx: { model?: string; requestedModel?: string; fullAuto: boolean; botId?: string; cwd: string; toolScope?: SendTurnInput["toolScope"]; withholdHostTools?: boolean },
+    ctx: { model?: string; requestedModel?: string; fullAuto: boolean; botId?: string; cwd: string; toolScope?: SendTurnInput["toolScope"]; withholdHostTools?: boolean; localKeyPrincipal?: string },
   ): void;
   /** Organization server (SendTurnInput.access): point this one turn's child
    *  at the payer's own home and key, never the server's own login.
@@ -1898,6 +1899,12 @@ export function createAcpDriver(support: AcpSupport): ProviderDriver<AcpConfig> 
           : turn.cwd ?? turnConfig.workspace ?? homedir();
         const env = childEnv(turnConfig);
         if (turn.access) support.applyAccess?.(env, turn.access, input.environment);
+        // After applyAccess: a driver's own hook may clear a variable and
+        // restore only a Perspicax key. A pasted key fills the variable when
+        // it is still empty, and only for this person.
+        if (turn.access?.localKeyPrincipal) {
+          applyStoredEngineEnv(env, DRIVER_KIND, DATA_DIR, { organization: true, principalId: turn.access.localKeyPrincipal });
+        }
         if (
           support.requireAuthenticationBeforeSpawn
           && !skipSubscriptionAuthForLocalInject(turn.model)
@@ -1913,6 +1920,7 @@ export function createAcpDriver(support: AcpSupport): ProviderDriver<AcpConfig> 
         support.applyTurnEnv?.(env, {
           model: resolvedModel, requestedModel: turn.model, fullAuto: turnConfig.fullAuto === true, botId: turn.botId, cwd, toolScope: turn.toolScope,
           withholdHostTools: turn.withholdHostTools === true,
+          localKeyPrincipal: turn.access?.localKeyPrincipal,
         });
         // Rebound once, before the prompt, when a fallbackModel support swaps
         // a model this session does not offer for one it does.
