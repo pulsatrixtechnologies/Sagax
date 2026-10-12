@@ -113,6 +113,22 @@ function elapsedSeconds(text: string): number {
   return -1;
 }
 
+/** Threads default to the chat header. The timer case needs the list under
+ * the bot in the sidebar so `data-sidebar-thread-row` stays mounted. */
+async function putThreadsInSidebar(handle: string): Promise<void> {
+  await ui("click", handle, "--name", "You");
+  await ui("click", handle, "--name", "Settings");
+  await ui("click", handle, "--name", "Appearance");
+  await ui("eval", handle, "--js", `(() => {
+    const select = document.querySelector('select[aria-label="Threads location"]');
+    if (!(select instanceof HTMLSelectElement)) throw new Error("Threads location is missing");
+    select.value = "sidebar";
+    select.dispatchEvent(new Event("change", { bubbles: true }));
+    return select.value;
+  })()`);
+  await ui("click", handle, "--name", "Close settings");
+}
+
 /** Selection can already expand a thread list. Click only its collapsed DOM
  * chevron, avoiding both accidental collapse and transient duplicate AX names. */
 async function expandThreads(handle: string, name: string): Promise<void> {
@@ -177,6 +193,7 @@ describe("the thinking timer stays anchored across a thread switch", () => {
     // POST the sidebar's "New thread" menu item dispatches.
     const busyThread = (await api("GET", "/api/bots")).bots.find((bot: any) => bot.id === info.botId).threadId;
     const otherThread = (await api("POST", `/api/bots/${info.botId}/tasks`, {})).task.threadId;
+    await putThreadsInSidebar(info.ui);
     // Expand Pepper's thread list if selection has not already opened it.
     await expandThreads(info.ui, "Pepper");
     await waitUntil(() => evaluate(`Boolean(document.querySelector('[data-sidebar-thread-row="${otherThread}"]'))`), 10_000, "the new thread's sidebar row to appear");

@@ -10,6 +10,7 @@ import { canonicalJson, parsePackageDocument } from "../../shared/package-format
 import { runControlOmb } from "../control-omb.ts";
 import { request } from "../mcp-server.ts";
 import { UI_TOOLS_DIR } from "./control-omb-ui.ts";
+import { openTemplatesCatalog } from "./compose-flow.ts";
 
 const ROOT = fileURLToPath(new URL("../..", import.meta.url));
 const FIXTURES = join(ROOT, "shared", "package-fixtures");
@@ -71,11 +72,11 @@ describe("the organization library in the real renderer", () => {
     const snapshot = async () => (await ui("snapshot")).snapshot as string;
     const api = (path: string, method = "GET", body?: unknown) => request(path, { method, ...(body === undefined ? {} : { body: JSON.stringify(body) }) }, info.url);
     const evidence = (name: string) => ui("screenshot", "--out", join(ROOT, ".omb-scratch", "verify-evidence", name));
+    const catalogFlow = { click, flag: (assignment: string) => ui("flag", "--set", assignment), snapshot };
 
-    // No organization: Templates has no organization tab.
-    await click("New or share");
-    await click("Templates");
-    await expect.poll(snapshot, { timeout: 10_000 }).toContain("Community templates");
+    // No organization: Templates has no organization shelf.
+    await openTemplatesCatalog(catalogFlow);
+    await expect.poll(snapshot, { timeout: 10_000 }).toContain("Templates");
     expect(await snapshot()).not.toContain("From Customer Co");
     await press("Escape");
 
@@ -93,23 +94,23 @@ describe("the organization library in the real renderer", () => {
     });
     expect(relayed.status).toBe(200);
 
-    // The shelf is the first tab and opens first.
-    await click("New or share");
-    await click("Templates");
-    await expect.poll(snapshot, { timeout: 10_000 }).toContain("Packages Customer Co shares with you");
+    // Org packages sit on Templates, first in the list.
+    await openTemplatesCatalog(catalogFlow);
+    await expect.poll(snapshot, { timeout: 10_000 }).toContain("Sales desk");
     let shelf = await snapshot();
-    for (const line of ["From Customer Co", "Sales desk", "Recommended by Acme Partners", "Sales skills", "From Acme Partners"]) expect(shelf).toContain(line);
+    for (const line of ["Sales desk", "Recommended by Acme Partners", "Sales skills", "by Acme Partners"]) expect(shelf).toContain(line);
     await evidence("org-library-shelf.png");
 
     // Details is the existing preview: skills arrive switched on here.
-    await click("Details of Sales desk");
+    await click("Show Sales desk");
     await expect.poll(snapshot, { timeout: 10_000 }).toContain("Included skills (switched on)");
     expect(await snapshot()).toContain("Skills arrive switched on and routines paused");
     await evidence("org-library-preview.png");
-    await click("Back to templates");
+    await click("Back");
 
-    // One click adds the team: no confirmation.
-    await click("Add Sales desk");
+    // Use this template adds the team: no confirmation.
+    await click("Show Sales desk");
+    await click("Use this template");
     await expect.poll(snapshot, { timeout: 20_000 }).toContain('button "Sales desk"');
     const bots = (await api("/api/bots")).bots.filter((bot: { section?: string }) => bot.section === "Sales desk");
     expect(bots).toHaveLength(3);
@@ -120,13 +121,12 @@ describe("the organization library in the real renderer", () => {
     expect((await api("/api/routines")).routines.every((routine: { enabled: boolean }) => !routine.enabled)).toBe(true);
 
     // The shelf now says Added; the skills-only package adds in place.
-    await click("New or share");
-    await click("Templates");
-    await expect.poll(snapshot, { timeout: 10_000 }).toContain("Packages Customer Co shares with you");
+    await openTemplatesCatalog(catalogFlow);
+    await expect.poll(snapshot, { timeout: 10_000 }).toContain("Sales desk");
     shelf = await snapshot();
     expect(shelf).toContain("Added");
-    expect(shelf).not.toContain("Add Sales desk");
-    await click("Add Sales skills");
+    await click("Show Sales skills");
+    await click("Use this template");
     await expect.poll(snapshot, { timeout: 10_000 }).toContain("Sales skills is added. Its skills are offered under each bot's Skills.");
     await evidence("org-library-added.png");
     await press("Escape");
@@ -137,8 +137,9 @@ describe("the organization library in the real renderer", () => {
       .find(([, entry]) => entry.role === "button" && /Open .+ profile/.test(entry.name));
     expect(profile).toBeDefined();
     await ui("click", "--ref", `@${profile![0]}`);
-    await click("Identity");
     await expect.poll(snapshot, { timeout: 10_000 }).toContain("From Sales desk 1.3.0 · Acme Partners");
+    await click("Edit persona");
+    await expect.poll(snapshot, { timeout: 10_000 }).toContain("Skills");
     await click("Skills");
     await expect.poll(snapshot, { timeout: 10_000 }).toContain("Skills your organization shares");
     await evidence("org-library-bot-skills.png");

@@ -9,6 +9,7 @@ import { runControlOmb } from "../control-omb.ts";
 import { request } from "../mcp-server.ts";
 import { UI_TOOLS_DIR } from "./control-omb-ui.ts";
 import { jsLiteral } from "./js-literal.mjs";
+import { openNewBotDialog, openTemplatesCatalog } from "./compose-flow.ts";
 
 const ROOT = fileURLToPath(new URL("../..", import.meta.url));
 const binary = resolveAgentBrowserBinary({ dataDir: UI_TOOLS_DIR, env: process.env });
@@ -45,6 +46,8 @@ describe("Preset bots in the real renderer", () => {
     const clickWhenFree = (name: string) => expect.poll(() => click(name).then(() => true, () => false), { timeout: 10_000 }).toBe(true);
     const snapshot = async () => (await ui("snapshot")).snapshot as string;
     const api = (path: string, method = "GET", body?: unknown) => request(path, { method, ...(body === undefined ? {} : { body: JSON.stringify(body) }) }, info.url);
+    const catalog = { click: clickWhenFree, flag: (assignment: string) => ui("flag", "--set", assignment), snapshot };
+    const newBot = { click: clickWhenFree, evaluate, snapshot };
 
     // My New bot defaults: a name, words, a colour, a skill that is on, notes,
     // and things a preset must never carry (approval, connected apps).
@@ -83,9 +86,8 @@ describe("Preset bots in the real renderer", () => {
     await click("Done");
     await click("Close settings");
 
-    // Templates → Import the file: preset bots for New bot, no team.
-    await clickWhenFree("New or share");
-    await click("Templates");
+    // Browse Bots → Import the file: preset bots for New bot, no team.
+    await openTemplatesCatalog(catalog);
     await click("Import");
     await evaluate(`(() => { const input = document.querySelector('[role=dialog] input[type=file]'); const transfer = new DataTransfer(); transfer.items.add(new File([window.__presetText], 'sky-1.0.0.openmaus.json', { type: 'application/json' })); input.files = transfer.files; input.dispatchEvent(new Event('change', { bubbles: true })); return true; })()`);
     await expect.poll(snapshot, { timeout: 10_000 }).toContain("Preset bots and skills · no team");
@@ -108,9 +110,8 @@ describe("Preset bots in the real renderer", () => {
     writeFileSync(presetsFile, JSON.stringify(stored));
 
     // Share team: the defaults preset goes in only when ticked.
-    await clickWhenFree("New or share");
-    await click("Templates");
-    await click("Share");
+    await openTemplatesCatalog(catalog);
+    await click("Share a team");
     await click("Share the General team");
     await expect.poll(snapshot, { timeout: 20_000 }).toContain("What's in the file");
     expect(await snapshot()).not.toContain('term "Preset bots"');
@@ -120,14 +121,13 @@ describe("Preset bots in the real renderer", () => {
     expect(await snapshot()).toContain("Never their model, folder, computer, approval level or connected apps.");
     await ui("screenshot", "--out", evidence("share-team"));
     await click("Cancel");
-    await click("Close templates");
+    await ui("press", "--keys", "Escape");
 
     // New bot: organization presets, then imported ones, above the built-in roles.
     const bots = async () => (await api("/api/bots")).bots as Array<{ id: string; name: string; installedPackage?: Record<string, unknown> }>;
     const create = async (value: string, expected: string, shot: string) => {
       const before = await bots();
-      await clickWhenFree("New or share");
-      await click("New Bot");
+      await openNewBotDialog(newBot);
       await expect.poll(async () => (await ui("eval", "--js", "[...document.querySelectorAll('[role=dialog] button')].find(button => button.textContent.trim() === 'Create bot')?.disabled")).result, { timeout: 20_000 }).toBe(false);
       await expect.poll(() => evaluate("[...document.querySelectorAll('[role=dialog] select optgroup')].map(group => group.label).join(' | ')"), { timeout: 10_000 })
         .toBe("From Acme Partners | Imported presets | Built-in roles");

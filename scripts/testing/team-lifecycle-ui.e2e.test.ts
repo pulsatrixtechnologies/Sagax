@@ -76,7 +76,9 @@ if (!enabled) console.log("skipping team lifecycle UI e2e: set SAGAX_UI_E2E=1 to
     const a = (await control("new-bot", "--name", "Researcher", "--section", "Research") as any).bot;
     const b = (await control("new-bot", "--name", "Engineer", "--section", "Engineering") as any).bot;
 
-    await click("New or share");
+    await click("You");
+    await click("Team map");
+    await click("Add to team map");
     await click("Create team");
     await type("Team name", "Delivery");
     await click("Create team");

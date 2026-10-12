@@ -413,6 +413,8 @@ function ConversationTaskPicker({
                   ) : (
                     <button
                       type="button"
+                      data-sidebar-thread-row={task.threadId}
+                      aria-current={active ? "page" : undefined}
                       onClick={(e) => {
                         if (taskPickerPointerIntent("click", e.detail) !== "select") return;
                         if (!active) onSwitch(task.threadId);

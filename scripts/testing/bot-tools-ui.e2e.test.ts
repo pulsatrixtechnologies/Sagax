@@ -6,9 +6,10 @@ import { fileURLToPath } from "node:url";
 import { afterAll, describe, expect, it } from "vitest";
 import { resolveAgentBrowserBinary } from "../../server/browser-engine.ts";
 import { waitForExit } from "../../server/testing/cleanup.ts";
-import { BOT_ROLES, roleProfilePatch } from "../../src/lib/bot-roles.ts";
+import { BOT_ROLES } from "../../src/lib/bot-roles.ts";
 import { runControlOmb } from "../control-omb.ts";
 import { UI_TOOLS_DIR } from "./control-omb-ui.ts";
+import { openNewBotDialog } from "./compose-flow.ts";
 
 const ROOT = fileURLToPath(new URL("../..", import.meta.url));
 const binary = resolveAgentBrowserBinary({ dataDir: UI_TOOLS_DIR, env: process.env });
@@ -53,15 +54,12 @@ describe("bot setup and tools in the real renderer", () => {
     const press = (keys: string) => ui("press", "--keys", keys);
     const bots = async (): Promise<SavedBot[]> => (await fetch(`${info.url}/api/bots`).then((response) => response.json())).bots;
     const snapshot = async () => (await ui("snapshot")).snapshot as string;
-    const openTools = async () => {
-      // Composer tray Tools is gone; open bot settings (mascot) then Access.
-      // Accordion starts collapsed, so Access must be expanded explicitly.
-      const state = await ui("snapshot", "--interactive");
-      const profile = Object.entries(state.refs as Record<string, { role: string; name: string }>)
-        .find(([, entry]) => entry.role === "button" && /Open .+ profile/.test(entry.name));
-      expect(profile).toBeDefined();
-      await ui("click", "--ref", `@${profile![0]}`);
-      await click("Access");
+    const openPersona = async (section: string) => {
+      await click("Open agent profile");
+      await expect.poll(snapshot, { timeout: 10_000 }).toContain("Edit persona");
+      await click("Edit persona");
+      await expect.poll(snapshot, { timeout: 10_000 }).toContain(section);
+      await click(section);
     };
     const chooseRole = async (roleId: string) => {
       await expect.poll(snapshot, { timeout: 10_000 }).toContain("Starting role");
@@ -75,10 +73,9 @@ describe("bot setup and tools in the real renderer", () => {
     };
     const dialogCount = () => evaluate("document.querySelectorAll('[role=dialog]').length");
     const original = await bots();
-    const coder = BOT_ROLES.find((role) => role.id === "coder")!;
 
-    // Hold creation in this disposable browser to exercise a close/reopen
-    // while the request is pending, not just two clicks in one dialog.
+    // Compose Create new Bot is instant create. Hold POST to show pending:
+    // the picker closes, Create new Bot stays disabled until the server replies.
     await evaluate(`(() => {
       const fetch = window.fetch.bind(window);
       window.botCreateRequests = 0;
@@ -94,71 +91,35 @@ describe("bot setup and tools in the real renderer", () => {
       return true;
     })()`);
     await press("Control+n");
-    await chooseRole(coder.id);
+    await expect.poll(snapshot, { timeout: 10_000 }).toContain("Create new Bot");
     expect(await evaluate("window.botCreateRequests")).toBe(0);
-    await click("Create bot");
+    await click("Create new Bot");
     await expect.poll(() => evaluate("window.botCreateRequests"), { timeout: 10_000 }).toBe(1);
+    await expect.poll(dialogCount, { timeout: 10_000 }).toBe(0);
+    await press("Control+n");
+    await expect.poll(snapshot, { timeout: 10_000 }).toContain("Create new Bot");
+    expect(await evaluate("[...document.querySelectorAll('button')].find(b => b.textContent.trim() === 'Create new Bot')?.disabled")).toBe(true);
     await press("Escape");
     expect(await dialogCount()).toBe(0);
-    await press("Control+n");
-    expect(await evaluate("document.querySelector('[role=dialog]')?.getAttribute('aria-busy')")).toBe("true");
-    expect(await evaluate("[...document.querySelectorAll('[role=dialog] fieldset button, [role=dialog] input, [role=dialog] select, [role=dialog] textarea')].every(b => b.matches(':disabled'))")).toBe(true);
-    await evaluate("[...document.querySelectorAll('[role=dialog] button')].find(b => b.textContent.includes('Create bot')).click()");
-    expect(await evaluate("window.botCreateRequests")).toBe(1);
-    // Close remains usable; a slow server must not trap the user in a modal.
-    await click("Close");
-    expect(await dialogCount()).toBe(0);
-    await press("Control+n");
     await evaluate("window.releaseBotCreation(); true");
-    await expect.poll(async () => (await bots()).find((bot) => bot.name === coder.name)?.soul, { timeout: 10_000 }).toBe(coder.soul);
+    await expect.poll(async () => (await bots()).length, { timeout: 10_000 }).toBe(original.length + 1);
     const created = (await bots()).filter((bot) => !original.some((old) => old.id === bot.id));
     expect(created).toHaveLength(1);
-    expect(created[0]).toMatchObject(roleProfilePatch(coder));
     expect(created[0].computer).toBe(original[0].computer);
     expect(created[0].browser).toBe(original[0].browser);
-    await expect.poll(() => evaluate("document.querySelector('[role=dialog]')?.getAttribute('aria-busy')"), { timeout: 10_000 }).toBe("false");
-    // The old dialog's callback must not close this newer dialog instance.
-    expect(await dialogCount()).toBe(1);
-    await press("Escape");
-    await expect.poll(dialogCount, { timeout: 10_000 }).toBe(0);
 
-    // Give the selected disposable bot real usage so its header shortcut
-    // exercises the same external open action as the shipped chat header.
+    // Give the selected disposable bot real usage so Usage has turns.
     await runControlOmb(["send", "--bot", created[0].id, "--text", "Reply briefly for the sidebar test.", "--url", info.url]);
     expect((await runControlOmb(["wait", "--bot", created[0].id, "--timeout", "20", "--url", info.url]) as { status: string }).status).toBe("settled");
-    await openTools();
+    await evaluate(`document.querySelector(${JSON.stringify(`[data-sidebar-bot-row="${created[0].id}"]`)})?.click(); true`);
+
+    await openPersona("Access");
     await expect.poll(snapshot, { timeout: 10_000 }).toContain("No MCP servers added yet.");
-    const usageExpanded = () => evaluate("[...document.querySelectorAll('[role=dialog] button')].find(b => b.textContent.trim() === 'Usage')?.getAttribute('aria-expanded')");
-    const openHeaderUsage = async () => {
-      await click("More");
-      const state = await ui("snapshot", "--interactive");
-      const cost = Object.entries(state.refs as Record<string, { role: string; name: string }>)
-        .filter(([, entry]) => entry.role === "menuitem" && entry.name.includes("$0.01"));
-      expect(cost).toHaveLength(1);
-      await ui("click", "--ref", `@${cost[0][0]}`);
-      await expect.poll(usageExpanded, { timeout: 10_000 }).toBe("true");
-      expect(await snapshot()).toContain("All bots");
-      // Allow subpixel rounding at the bottom edge of the scroll viewport.
-      await expect.poll(() => evaluate("(() => { const row = document.querySelector('[data-bot-settings-section=usage]'); const rect = row?.getBoundingClientRect(); return rect ? Math.max(-rect.top, rect.bottom - innerHeight) : 9999; })()"), { timeout: 10_000 }).toBeLessThanOrEqual(1);
-    };
-    await openHeaderUsage();
-    await click("Usage");
-    expect(await usageExpanded()).toBe("false");
-    await openHeaderUsage(); // same section, already mounted, after collapse
-    const search = await ui("snapshot", "--interactive");
-    const searchRef = Object.entries(search.refs as Record<string, { role: string; name: string }>)
-      .find(([, entry]) => entry.role === "textbox" && entry.name === "Search settings");
-    expect(searchRef).toBeDefined();
-    await ui("type", "--ref", `@${searchRef![0]}`, "--text", "standing");
-    expect(await evaluate("document.querySelector('[aria-label=\"Search settings\"]')?.value")).toBe("standing");
-    await openHeaderUsage(); // a stale search must not hide an external target
-    expect(await evaluate("document.querySelector('[aria-label=\"Search settings\"]')?.value")).toBe("");
-    await ui("screenshot", "--out", `${info.logPath}.settings.png`);
-    await click("Overview");
-    await expect.poll(snapshot, { timeout: 10_000 }).toContain("Optional ways to customize this bot. You can start chatting now.");
-    await click("Access");
-    await click("Add an MCP server…");
-    // The registry loads on mount; Paste config is disabled until it finishes.
+    await click("Manage in Connect apps");
+    await expect.poll(() => evaluate("Boolean(document.querySelector('[data-plugins-connected]'))"), { timeout: 10_000 }).toBe(true);
+    await evaluate("document.querySelector('[data-plugins-connected]')?.click(); true");
+    await expect.poll(() => evaluate("Boolean(document.querySelector('[data-plugins-advanced]'))"), { timeout: 10_000 }).toBe(true);
+    await evaluate("(() => { const details = document.querySelector('[data-plugins-advanced]'); if (details instanceof HTMLDetailsElement) details.open = true; return true; })()");
     await expect.poll(() => evaluate("[...document.querySelectorAll('button')].find(b => b.textContent.trim() === 'Paste config')?.disabled"), { timeout: 10_000 }).toBe(false);
     await click("Paste config");
     await expect.poll(() => evaluate("Boolean(document.querySelector('textarea[aria-label=\"Paste config\"]'))"), { timeout: 10_000 }).toBe(true);
@@ -175,28 +136,32 @@ describe("bot setup and tools in the real renderer", () => {
     await expect.poll(snapshot, { timeout: 10_000 }).toContain("Turn fixture on");
     await click("Turn fixture on");
     await expect.poll(registry, { timeout: 10_000 }).toMatchObject([{ name: "fixture", enabled: true }]);
+    await click("Close plugins");
     await press("Escape");
-    await openTools();
+    await openPersona("Access");
     await expect.poll(() => evaluate("document.querySelector('[aria-label=\"Let this bot use fixture\"]')?.getAttribute('aria-checked')"), { timeout: 10_000 }).toBe("true");
     await click("Let this bot use fixture");
     await expect.poll(async () => (await bots()).find((bot) => bot.id === created[0].id)?.mcpServers, { timeout: 10_000 }).toEqual([]);
     await press("Escape");
-    await openTools();
+    await openPersona("Access");
     await expect.poll(() => evaluate("document.querySelector('[aria-label=\"Let this bot use fixture\"]')?.getAttribute('aria-checked')"), { timeout: 10_000 }).toBe("false");
 
-    // Opening New Bot above settings must replace the old modal, not leave
-    // two focus traps competing. Escape closes only the one remaining layer.
-    await press("Control+n");
-    expect(await dialogCount()).toBe(1);
-    await press("Shift+Tab");
-    expect(await evaluate("document.querySelector('[role=dialog]')?.contains(document.activeElement)")).toBe(true);
-    await press("Tab");
-    expect(await evaluate("document.querySelector('[role=dialog]')?.contains(document.activeElement)")).toBe(true);
     await press("Escape");
-    expect(await dialogCount()).toBe(0);
+    await openPersona("Usage");
+    await expect.poll(snapshot, { timeout: 10_000 }).toContain("All bots");
+    await expect.poll(() => evaluate("(() => { const row = document.querySelector('[data-bot-settings-section=usage]'); const rect = row?.getBoundingClientRect(); return rect ? Math.max(-rect.top, rect.bottom - innerHeight) : 9999; })()"), { timeout: 10_000 }).toBeLessThanOrEqual(1);
+    const search = await ui("snapshot", "--interactive");
+    const searchRef = Object.entries(search.refs as Record<string, { role: string; name: string }>)
+      .find(([, entry]) => entry.role === "textbox" && entry.name === "Search the categories");
+    expect(searchRef).toBeDefined();
+    await ui("type", "--ref", `@${searchRef![0]}`, "--text", "tokens");
+    expect(await evaluate("document.querySelector('[aria-label=\"Search the categories\"]')?.value")).toBe("tokens");
+    await ui("screenshot", "--out", `${info.logPath}.settings.png`);
 
     // A failed profile step must roll back the incomplete bot and leave the
-    // editable draft available for a single successful retry.
+    // editable draft available for a single successful retry. NewBotDialog
+    // (Team map → named team → New Bot) PATCHes soul; compose instant-create does not.
+    await press("Escape");
     const beforeFailure = await bots();
     await evaluate(`(() => {
       const fetch = window.fetch.bind(window);
@@ -211,7 +176,7 @@ describe("bot setup and tools in the real renderer", () => {
       return true;
     })()`);
     const ops = BOT_ROLES.find((role) => role.id === "ops")!;
-    await press("Control+n");
+    await openNewBotDialog({ click, evaluate, snapshot });
     await chooseRole(ops.id);
     await click("Create bot");
     await expect.poll(snapshot, { timeout: 10_000 }).toContain("Fixture preset rejected");
@@ -219,6 +184,8 @@ describe("bot setup and tools in the real renderer", () => {
     expect(await dialogCount()).toBe(1);
     await click("Create bot");
     await expect.poll(async () => (await bots()).length, { timeout: 10_000 }).toBe(beforeFailure.length + 1);
+    await expect.poll(async () => !(await snapshot()).includes("Starting role"), { timeout: 10_000 }).toBe(true);
+    await press("Escape");
     await expect.poll(dialogCount, { timeout: 10_000 }).toBe(0);
     expect((await bots()).filter(bot => !beforeFailure.some(old => old.id === bot.id))).toMatchObject([{ name: ops.name, soul: ops.soul }]);
     const logs = await ui("console");
