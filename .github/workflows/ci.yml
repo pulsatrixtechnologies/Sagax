@@ -17,16 +17,16 @@ permissions:
   contents: read
 
 concurrency:
-  # A new PR push supersedes that PR's older checks. Main keeps one run going
-  # and one waiting: each merge replaces the waiting run, so a burst of
-  # merges costs two full runs, not one per merge (fifteen queued behind each
-  # other in October 2026). The running one always finishes. A release runs
-  # CI on its own commit in a release-ci/v<version> lane when main's run for
-  # it was replaced (scripts/release-ci.mjs). Merge-queue runs stay on their
-  # own refs. A PR's group is named by its number, never by github.ref: a
-  # merged PR's closed event reports the base branch as github.ref, so a
-  # ref-named group let every merge cancel main's run (ci-stop-closed.yml).
-  group: ci-${{ github.event_name == 'merge_group' && github.event.merge_group.head_ref || github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || github.ref }}
+  # A new PR push supersedes that PR's older checks (cancel-in-progress on
+  # pull_request only). Every push to main gets its own group, named by its
+  # commit, so no main run is ever cancelled or replaced: each main commit
+  # gets a verdict (audit 2026-10-12; four main runs were cancelled in a row
+  # while main was red, so nobody could tell which merge broke what). This
+  # costs one full run per merge. Merge-queue runs stay on their own refs. A
+  # PR's group is named by its number, never by github.ref: a merged PR's
+  # closed event reports the base branch as github.ref, so a ref-named group
+  # let every merge cancel main's run (ci-stop-closed.yml).
+  group: ci-${{ github.event_name == 'merge_group' && github.event.merge_group.head_ref || github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || github.event_name == 'push' && github.ref == 'refs/heads/main' && format('main-{0}', github.sha) || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
@@ -469,7 +469,7 @@ jobs:
       - name: Install package validation and native smoke tools
         run: >-
           sudo apt-get update && sudo apt-get install -y
-          at-spi2-core dbus-x11 desktop-file-utils libxi6 libxkbcommon0 squashfs-tools x11-utils xdotool xvfb
+          at-spi2-core dbus-x11 desktop-file-utils libxi6 libxkbcommon0 openbox squashfs-tools x11-utils xdotool xvfb
       - run: pnpm install --frozen-lockfile
       - name: Stage the pinned CUA runtime
         run: pnpm build:cua:linux
@@ -499,7 +499,7 @@ jobs:
           sudo chmod 4755 release/linux-unpacked/chrome-sandbox
           test "$(stat -c '%U:%G %a' release/linux-unpacked/chrome-sandbox)" = "root:root 4755"
       - name: Verify the installed browser with Ubuntu sandbox restrictions
-        run: node scripts/smoke-browser-bundle.mjs --resources "/opt/Pulsa Bot/resources"
+        run: node scripts/smoke-browser-bundle.mjs --resources "/opt/Sagax/resources"
       - name: Launch packaged app and verify lifecycle
         env:
           SAGAX_KEEP_SMOKE_DIR: "1"
