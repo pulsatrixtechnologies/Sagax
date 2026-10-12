@@ -60,7 +60,7 @@ describe("CI concurrency", () => {
   });
 
   it("allows cancelled summary jobs to stop without skipping failure reporting", () => {
-    expect(workflow.jobs.gate.if).toBe("${{ !cancelled() }}");
+    expect(workflow.jobs.gate.if).toBe("(github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && (!cancelled())");
     expect(workflow.jobs.gate.needs).toEqual(["static", ...requiredRuntimeJobs]);
   });
 
@@ -75,8 +75,8 @@ describe("CI concurrency", () => {
   });
 
   it("keeps each PR to one macOS job unless native code changed", () => {
-    const macosJobs = Object.entries(workflow.jobs as Record<string, { "runs-on": string; strategy?: { matrix?: { os?: unknown } } }>)
-      .filter(([, job]) => job["runs-on"] === "macos-latest" || JSON.stringify(job.strategy?.matrix?.os ?? "").includes("macos"))
+    const macosJobs = Object.entries(workflow.jobs as Record<string, { "runs-on": unknown; strategy?: { matrix?: { os?: unknown } } }>)
+      .filter(([, job]) => (Array.isArray(job["runs-on"]) && job["runs-on"].includes("macos")) || JSON.stringify(job.strategy?.matrix?.os ?? "").includes("macos"))
       .map(([name]) => name);
     // Sagax keeps its native apps: the iOS build runs only when ios/ changed.
     expect(macosJobs.sort()).toEqual(["electron-smokes", "ios"]);
@@ -166,7 +166,7 @@ describe("CI concurrency", () => {
 
   it("always starts the workflow and validates selection and docs before fanout", () => {
     expect(workflow.on.pull_request).toBeNull();
-    expect(workflow.jobs.static.if).toBeUndefined();
+    expect(workflow.jobs.static.if).toBe("(github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)");
     expect(workflow.jobs.static.steps[0].with["fetch-depth"]).toBe(0);
     expect(workflow.jobs.static.steps.find((step: { id?: string }) => step.id === "scope").run).toBe("node scripts/ci-scope.mjs");
     expect(workflow.jobs.static.outputs).toEqual({
@@ -182,7 +182,7 @@ describe("CI concurrency", () => {
       // not part of the merge gate.
       if (name === "deploy-composio-broker") {
         expect(job.needs).toEqual(["control-plane"]);
-        expect(job.if).toBe("github.event_name == 'push' && github.ref == 'refs/heads/main'");
+        expect(job.if).toBe("(github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && (github.event_name == 'push' && github.ref == 'refs/heads/main')");
         expect(workflow.jobs.gate.needs).not.toContain(name);
         // Without the Cloudflare token the deploy is skipped with a warning, not failed:
         // every step after the token check waits on it.
@@ -195,9 +195,10 @@ describe("CI concurrency", () => {
       }
       expect(job.needs).toBe("static");
       const selector = `needs.static.outputs.${["ios", "android"].includes(name) ? "mobile" : "runtime"} == 'true'`;
+      const forkGuard = "(github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)";
       // Windows, macOS and iOS jobs run on main pushes and merge groups only.
-      expect(job.if).toBe(["windows-cua", "electron-smokes", "ios"].includes(name)
-        ? `${selector} && needs.static.outputs.platforms == 'true'` : selector);
+      expect(job.if).toBe(`${forkGuard} && (${["windows-cua", "electron-smokes", "ios"].includes(name)
+        ? `${selector} && needs.static.outputs.platforms == 'true'` : selector})`);
     }
   });
 
