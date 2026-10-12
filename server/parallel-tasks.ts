@@ -50,9 +50,14 @@ export function parallelBrief(input: {
   workspace: ParallelWorkspace;
   personName: string;
   byBot?: boolean;
+  /** Background reply: the person already saw a one-sentence acknowledgement. */
+  background?: boolean;
+  acknowledgement?: string;
 }): string {
   const from = input.conversationTitle ? ` in #${input.conversationTitle}` : "";
-  const head = input.byBot
+  const head = input.background
+    ? `[Background task${from}. The person already saw this one-sentence acknowledgement, which is not an answer: "${input.acknowledgement ?? ""}". Do the work. A one-sentence status only when something meaningful changed. Your last message is the full result and is delivered separately. Do not repeat the acknowledgement. Do not state a result you have not checked.]`
+    : input.byBot
     ? `[Parallel task you started yourself${from}. It runs as its own task while that conversation goes on. Do the work here and end with a clear result: it is posted back into that conversation as a reply to the request.]`
     : `[Parallel task. ${input.personName} sent this while you were busy with other work${from}. It runs as its own task, in parallel with that work, which keeps going. Do it here and end with a clear answer: it is posted back into that conversation as a reply to this request.]`;
   const lines = input.recent.slice(-BRIEF_LINES).map((line) => {

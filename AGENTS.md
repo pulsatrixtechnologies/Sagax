@@ -1918,6 +1918,32 @@ of that thread. The owner's notification of such a run names no thread, only
 `InlineEditableText.test.ts`, `BotSettingsDialog.caption.test.ts`,
 `server/org-routines.e2e.test.ts` (owner pays).
 
+## Background replies (2026-10-12)
+
+A long request in a direct conversation is answered in two beats
+(`shared/background-reply.ts`, wired in `server/index.ts`). On by default.
+`backgroundReplies: false` on the bot waits for the whole answer in one
+turn; absent means on. The switch is on the bot panel's Details tab.
+
+- A greeting or a short question (`classifyRequest` `quick`) is answered
+  directly, with no acknowledgement.
+- Anything else gets one sentence naming the first step, in the person's
+  language (Québec French, tutoiement, no anglicisms when French), built
+  from their own words before the engine starts. It never states a result.
+  `timeToFirstMessageMs` on that message is the gap from their line to the
+  acknowledgement.
+- The work is a parallel task with `parallelOf.background`. The
+  conversation stays idle, so the person can keep chatting. A short
+  meaningful sentence from the task is copied in as a milestone (at most
+  six, at least 15 seconds apart). The result is a separate message in the
+  same thread, with one `done` notification on that thread. The task's own
+  `turn.completed` notification is suppressed.
+- The server does the handoff for every engine. The prompt is only a safety
+  net (`start_thread` with `report_back`). Rooms, voice, hidden AI-client
+  threads, routines, peer hops, and slash commands are not handed off. At
+  the parallel limit the request runs inline, with no acknowledgement.
+- Tests: `shared/background-reply.test.ts`, `server/background-reply.e2e.test.ts`.
+
 ## Parallel tasks (sending while the bot works, 2026-10-02)
 
 A message sent to a busy 1:1 conversation carries `busyMode`

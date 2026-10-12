@@ -30,7 +30,7 @@ describe("canEditBotField", () => {
   it("lets an organization member edit member fields only on a bot they own", () => {
     expect(viewerOwnsBot(member, own)).toBe(true);
     expect(viewerOwnsBot(member, other)).toBe(false);
-    for (const field of ["name", "soul", "notifications", "modelSelection", "avatarUrl", "color"]) {
+    for (const field of ["name", "soul", "notifications", "modelSelection", "avatarUrl", "color", "backgroundReplies"]) {
       expect(canEditBotField(member, own, field), field).toBe(true);
     }
     for (const field of ["cwd", "computer", "approvalMode", "mcpServers", "fallback", "voice", "speakReplies", "memoryEnabled", "chiefOfStaff", "outbound", "approvePeerComms"]) {

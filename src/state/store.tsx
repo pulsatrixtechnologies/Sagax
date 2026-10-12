@@ -292,6 +292,10 @@ export interface Message {
   threadRef?: { botId: string; threadId: string; title: string; gone?: boolean };
   /** A parallel task this line belongs to (shared/parallel-tasks.ts). */
   parallelTask?: ParallelTaskRef;
+  /** A background reply: the first-step acknowledgement, or a later status. */
+  backgroundReply?: "ack" | "milestone";
+  /** Milliseconds from the person's message to an acknowledgement. */
+  timeToFirstMessageMs?: number;
   /** sent while the bot was mid-turn; auto-sends when the turn settles.
    * Rendered only while the bot is busy, so a flag stranded by a server
    * restart never shows a promise nothing will keep. */
@@ -577,6 +581,9 @@ export interface Bot {
   voiceNotes?: boolean;
   /** whether this bot uses native memory (on unless switched off) */
   memoryEnabled?: boolean;
+  /** Say the first step, then finish long requests in the background.
+   * Absent means on. */
+  backgroundReplies?: boolean;
   pinned?: boolean;
   hidden?: boolean;
   /** Sidebar section this bot renders under; absent = unsectioned. */
