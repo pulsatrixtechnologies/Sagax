@@ -58,14 +58,14 @@ public enum YouTubeLinks {
     /// True when the paragraph is only a YouTube URL or markdown link to one.
     public static func isStandaloneParagraph(_ text: String, videoId: String) -> Bool {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        if videoId(from: trimmed) == videoId { return true }
+        if Self.videoId(from: trimmed) == videoId { return true }
         let md = #"^\[[^\]]*]\((https?://[^)]+)\)\s*$"#
         guard let regex = try? NSRegularExpression(pattern: md, options: .caseInsensitive),
               let match = regex.firstMatch(in: trimmed, range: NSRange(trimmed.startIndex..., in: trimmed)),
               match.numberOfRanges > 1,
               let r = Range(match.range(at: 1), in: trimmed)
         else { return false }
-        return videoId(from: String(trimmed[r])) == videoId
+        return Self.videoId(from: String(trimmed[r])) == videoId
     }
 }
 
