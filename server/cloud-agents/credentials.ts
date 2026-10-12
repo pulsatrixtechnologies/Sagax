@@ -36,10 +36,13 @@ export interface CloudAgentCredentialListing {
 export class CloudAgentCredentialStore {
   private readonly cache = new Map<string, z.infer<typeof documentSchema>>();
 
-  constructor(
-    private readonly dataDir: string,
-    private readonly keySource: () => VaultKeySource,
-  ) {}
+  private readonly dataDir: string;
+  private readonly keySource: () => VaultKeySource;
+
+  constructor(dataDir: string, keySource: () => VaultKeySource) {
+    this.dataDir = dataDir;
+    this.keySource = keySource;
+  }
 
   private key(): Buffer {
     const source = this.keySource();

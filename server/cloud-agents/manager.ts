@@ -29,7 +29,9 @@ const TERMINAL = new Set(["finished", "failed", "cancelled", "archived"]);
 
 export class CloudAgentManager {
   private readonly now: () => number;
-  constructor(private readonly deps: CloudAgentManagerDeps) {
+  private readonly deps: CloudAgentManagerDeps;
+  constructor(deps: CloudAgentManagerDeps) {
+    this.deps = deps;
     this.now = deps.now ?? Date.now;
   }
 
