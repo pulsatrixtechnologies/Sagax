@@ -225,6 +225,9 @@ final class CardActionsTests: XCTestCase {
         XCTAssertNil(ApprovalOutcome.of(card))
         card.answered = "allow"
         XCTAssertEqual(ApprovalOutcome.of(card), .allowed)
+        card.alwaysAllowed = "mcp:sagax-environment__run_command"
+        XCTAssertEqual(ApprovalOutcome.of(card), .alwaysAllowed, "Always allow reads like the web pill")
+        card.alwaysAllowed = nil
         card.answered = "deny"
         XCTAssertEqual(ApprovalOutcome.of(card), .denied)
         card.routineRequest = ProposalRequestMarker(operation: .init(action: "pause"))

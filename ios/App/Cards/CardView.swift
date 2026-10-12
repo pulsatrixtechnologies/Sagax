@@ -42,9 +42,12 @@ struct CardView: View {
     /// it is waiting. Allowed, denied and expired asks leave the chat.
     private var answeredInDock: Bool { message.card?.isPermission == true }
 
-    /// Finished permission asks are not drawn. Questions are not this.
+    /// Finished permission asks are not drawn. Questions are not this. One
+    /// answered with Always allow stays: it says which Allow rule it saved
+    /// and offers Edit rule (ApprovalCard.tsx AllowRuleInset).
     private var settledPermission: Bool {
-        answeredInDock && message.card?.isPending != true
+        guard answeredInDock, let card = message.card, !card.isPending else { return false }
+        return AllowRuleText.savedRule(card) == nil
     }
 
     /// A first-run quiz goes once picked, dismissed or talked past.
@@ -65,7 +68,7 @@ struct CardView: View {
                         .foregroundStyle(Theme.readable(tint))
                 }
                 HStack(alignment: .top, spacing: 8) {
-                    Text(card.title)
+                    Text(cardTitle(card))
                         .font(.system(size: 16, weight: .semibold))
                         .foregroundStyle(Theme.attentionText)
                         .fixedSize(horizontal: false, vertical: true)
@@ -93,7 +96,7 @@ struct CardView: View {
                         .accessibilityIdentifier("card-dismiss-\(message.id)")
                     }
                 }
-                if !card.subtitle.isEmpty {
+                if !card.subtitle.isEmpty, AllowRuleText.savedRule(card) == nil {
                     Text(card.subtitle)
                         .font(.system(size: 15))
                         .foregroundStyle(Theme.attentionSecondary)
@@ -179,7 +182,7 @@ struct CardView: View {
                     .padding(.top, 2)
 
                 } else if answeredInDock, let outcome = ApprovalOutcome.of(card) {
-                    Label(Self.outcomeText(outcome), systemImage: outcome == .allowed || card.answered == "allow" ? "checkmark.circle" : "xmark.circle")
+                    Label(Self.outcomeText(outcome), systemImage: outcome == .allowed || outcome == .alwaysAllowed || card.answered == "allow" ? "checkmark.circle" : "xmark.circle")
                         .font(.system(size: 14))
                         .foregroundStyle(Theme.attentionSecondary)
                         .accessibilityIdentifier("card-outcome-\(message.id)")
@@ -206,6 +209,15 @@ struct CardView: View {
         }
     }
 
+    /// A kept Always-allowed card reads as the dock did ("Cryptic wants to
+    /// run a command", in the app's language); every other card its title.
+    private func cardTitle(_ card: OptionCard) -> String {
+        guard let rule = AllowRuleText.savedRule(card) else { return card.title }
+        let action = AllowRuleText.action(of: rule) ?? .of(tool: card.tool)
+        let name = message.from?.name ?? chat.name
+        return String(localized: "\(name) wants to \(ApprovalDock.phrase(action))")
+    }
+
     /// The X shows on a card still open that the dock does not own.
     private func canDismiss(_ card: OptionCard) -> Bool {
         !answeredInDock && card.answered == nil && card.dismissed != true && card.expired != true
@@ -224,6 +236,7 @@ struct CardView: View {
         switch outcome {
         case .expired: String(localized: "Expired. Ask for a fresh proposal")
         case .allowed: String(localized: "Allowed")
+        case .alwaysAllowed: String(localized: "approval.outcome.alwaysAllowed", defaultValue: "Always allowed")
         case .denied: String(localized: "Denied")
         case .cancelled: String(localized: "Cancelled")
         case .routineScheduled: String(localized: "Routine scheduled")

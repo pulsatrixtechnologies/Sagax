@@ -370,6 +370,9 @@ final class ChatPreferencesTests: XCTestCase {
         XCTAssertFalse(settledPermissionLeavesChat(open))
         XCTAssertTrue(settledPermissionLeavesChat(allowed))
         XCTAssertFalse(settledPermissionLeavesChat(question))
+        var saved = allowed
+        saved.card?.alwaysAllowed = "mcp:sagax-environment__run_command"
+        XCTAssertFalse(settledPermissionLeavesChat(saved), "an Always-allowed card stays to show its rule")
         XCTAssertEqual(
             transcriptRows([text("hi"), open, allowed, denied, expired, question], detail: .full).map(\.id),
             ["hi", "open", "question"]
