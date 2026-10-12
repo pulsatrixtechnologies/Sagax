@@ -14,7 +14,7 @@ import { MAUS_COLORS } from "@/lib/mascot";
 import { cn } from "@/lib/cn";
 import { MASCOT_SHAPES, SHAPE_SKIN_TIER, SHAPE_SKINS, type MascotShape, type ShapeSkin, type SkinTier } from "../../shared/mascot-look";
 import { SHAPE_ART } from "./shape-art";
-import { clayStops, isShapeMove, mixHex, rainbowStops, ShapeEngine, stillFrame, type ShapeExpression, type ShapeFrame } from "./shape-engine";
+import { clayStops, gazeFrame, isShapeMove, mixHex, rainbowStops, ShapeEngine, stillFrame, type ShapeExpression, type ShapeFrame } from "./shape-engine";
 import { shapeSkinBase, shapeSkinLayers, tint, type ShapeSkinBase, type ShapeSkinLayers } from "./skin-fx/shape-skins";
 import { EquipFx, MoveFx } from "./skin-fx/SkinFx";
 import { fxDetail, fxPalette, useEquipBurst, useFxVisibility, useMoveBurst, useReducedMotion, useReplayMove, type FxDetail, type FxMoveRequest } from "./skin-fx/skin-fx";
@@ -58,6 +58,10 @@ export interface ShapeMascotProps {
   moveBody?: boolean;
   /** The face turns toward the pointer (on by default while live). */
   trackPointer?: boolean;
+  /** Sidebar idle: gaze from the shared loop without the full live engine. */
+  sidebarGaze?: boolean;
+  /** Filled with an imperative gaze setter when `sidebarGaze` is on. */
+  sidebarGazeRef?: React.MutableRefObject<((gaze: { x: number; y: number }) => void) | null>;
   label?: string | null;
   className?: string;
 }
@@ -187,7 +191,30 @@ function pointerAround(box: DOMRect, x: number, y: number): { x: number; y: numb
   return { x: (x - (box.left + box.width / 2)) / reach, y: (y - (box.top + box.height / 2)) / reach };
 }
 
-export function ShapeMascot({ shape = "circle", skin = "plain", color, size = 44, mood = "idle", expression, animated = true, detail, move, moveBody = false, trackPointer = true, label = null, className }: ShapeMascotProps) {
+function applyShapeCut(svg: SVGSVGElement | null, cut: string) {
+  if (!svg) return;
+  svg.querySelectorAll<SVGPathElement>(".shape-body path").forEach((path) => {
+    if (path.getAttribute("d")) path.setAttribute("d", cut);
+  });
+}
+
+export function ShapeMascot({
+  shape = "circle",
+  skin = "plain",
+  color,
+  size = 44,
+  mood = "idle",
+  expression,
+  animated = true,
+  detail,
+  move,
+  moveBody = false,
+  trackPointer = true,
+  sidebarGaze = false,
+  sidebarGazeRef,
+  label = null,
+  className,
+}: ShapeMascotProps) {
   const known: MascotShape = MASCOT_SHAPES.includes(shape) ? shape : "circle";
   const knownSkin: ShapeSkin = SHAPE_SKINS.includes(skin) ? skin : "plain";
   const hex = hexOf(color);
@@ -208,6 +235,21 @@ export function ShapeMascot({ shape = "circle", skin = "plain", color, size = 44
 
   const state = { shape: known, expression: face, color: hex };
   const still = useMemo(() => stillFrame({ shape: known, expression: face, color: hex }), [known, face, hex]);
+  const sidebarState = useRef(state);
+  sidebarState.current = state;
+
+  useEffect(() => {
+    if (!sidebarGaze || live || !sidebarGazeRef) return;
+    const apply = (gaze: { x: number; y: number }) => {
+      const frame = gazeFrame(sidebarState.current, gaze.x, gaze.y);
+      applyShapeCut(body.current, frame.body + frame.eyes);
+    };
+    sidebarGazeRef.current = apply;
+    return () => {
+      sidebarGazeRef.current = null;
+      applyShapeCut(body.current, still.body + still.eyes);
+    };
+  }, [sidebarGaze, live, sidebarGazeRef, still]);
   const engine = useRef<ShapeEngine | null>(null);
   const [frame, setFrame] = useState<ShapeFrame | null>(null);
   if (live && engine.current) engine.current.set(state, seconds());

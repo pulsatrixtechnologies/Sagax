@@ -487,7 +487,7 @@ struct DesktopStackedMauses: View {
         ZStack(alignment: .topLeading) {
             if members.count <= 1 {
                 if let bot = members.first {
-                    BotMascotView(bot: bot, size: single, state: .happy, animated: false)
+                    BotMascotView(bot: bot, size: single, state: .happy, animated: false, sidebarTapReact: true)
                         .frame(width: slot, height: slot)
                 }
             } else {
@@ -502,7 +502,7 @@ struct DesktopStackedMauses: View {
                     ? [CGPoint(x: 0, y: 2), CGPoint(x: slot - face, y: slot - face)]
                     : three
                 ForEach(Array(shown.enumerated()), id: \.offset) { index, bot in
-                    BotMascotView(bot: bot, size: face, state: .idle, animated: false)
+                    BotMascotView(bot: bot, size: face, state: .idle, animated: false, sidebarTapReact: true)
                         .frame(width: face, height: face)
                         .offset(x: spots[index].x, y: spots[index].y)
                 }

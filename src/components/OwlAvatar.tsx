@@ -47,6 +47,8 @@ export interface OwlAvatarHandle {
   blink: () => void;
   /** Open the wings for one move. */
   flourish: (move: OwlWingMove) => void;
+  /** Sidebar shared gaze: viewBox pupil offset, or null for center. */
+  setPointerGaze: (offset: { x: number; y: number } | null) => void;
 }
 
 export interface OwlAvatarProps {
@@ -60,6 +62,8 @@ export interface OwlAvatarProps {
   label?: string | null;
   /** Off draws the resting pose once, with no loop at all. */
   animated?: boolean;
+  /** Sidebar idle: pupil follows the shared sidebar pointer without body motion. */
+  sidebarGaze?: boolean;
   /** Let the eye follow the pointer across this avatar. */
   trackPointer?: boolean;
   /** Pin the gaze (-1..1 per axis); undefined keeps the state's own. */
@@ -101,6 +105,7 @@ function OwlAvatarComponent(
     size = 44,
     label,
     animated = true,
+    sidebarGaze = false,
     trackPointer = true,
     gaze,
     reducedMotion,
@@ -156,6 +161,21 @@ function OwlAvatarComponent(
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [animated]);
 
+  useEffect(() => {
+    if (animated || !sidebarGaze) return;
+    const els = { rig: rig.current, nearWing: nearWing.current, eyes: eyes.current, pupil: pupil.current, lids: lids.current };
+    if (!els.rig || !els.nearWing || !els.eyes || !els.pupil || !els.lids) return;
+    const c = createOwlController(
+      { rig: els.rig, nearWing: els.nearWing, eyes: els.eyes, pupil: els.pupil, lids: els.lids, farWing: farWing.current, nearWingBack: nearWingBack.current },
+      { state: "idle", hop, gazeOnly: true },
+    );
+    controller.current = c;
+    return () => {
+      c.destroy();
+      controller.current = null;
+    };
+  }, [animated, sidebarGaze, hop]);
+
   useEffect(() => controller.current?.setState(state), [state]);
   useEffect(() => controller.current?.setHop(hop), [hop]);
   useEffect(() => controller.current?.setReducedMotion(reducedMotion), [reducedMotion]);
@@ -169,6 +189,7 @@ function OwlAvatarComponent(
     play: (s, durationMs) => controller.current?.play(s, durationMs),
     blink: () => controller.current?.blink(),
     flourish: (move) => controller.current?.flourish(move),
+    setPointerGaze: (offset) => controller.current?.setPointer(offset),
   }));
 
   const follow = trackPointer && animated;

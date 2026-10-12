@@ -399,14 +399,26 @@ const fmt = (v: number) => (Math.round(v * 1000) / 1000).toString();
 
 /** The resting frame of a shape: no wander, no blink, no move (thumbnails, reduced motion, the first paint). */
 export function stillFrame(state: ShapeState): ShapeFrame {
+  return gazeFrame(state, 0, 0);
+}
+
+/** Gaze toward normalized pointer (-1..1); optional rigid lean on the whole body (sidebar). */
+export function gazeFrame(
+  state: ShapeState,
+  nx: number,
+  ny: number,
+  body: { rot?: number; sx?: number; sy?: number } = {},
+  open = { left: 1, right: 1 },
+): ShapeFrame {
+  const gaze = hoverGaze(nx, ny);
   return composeFrame({
     radii: SHAPE_RADII[state.shape],
     rest: SHAPE_RADII[state.shape],
     face: EXPRESSIONS[state.expression],
-    gaze: { yaw: 0, pitch: 0, roll: 0 },
-    open: { left: 1, right: 1 },
+    gaze: { ...gaze, roll: 0 },
+    open,
     color: state.color,
-    body: { x: 0, y: 0, rot: 0, sx: 1, sy: 1 },
+    body: { x: 0, y: 0, rot: body.rot ?? 0, sx: body.sx ?? 1, sy: body.sy ?? 1 },
     eyes: 1,
     pose: null,
     t: 0,

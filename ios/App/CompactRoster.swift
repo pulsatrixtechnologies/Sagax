@@ -105,7 +105,8 @@ struct CompactBotEntry: View {
                     BotMascotView(
                         bot: bot, size: face,
                         state: MausState.forChat(.bot(bot), in: session.state),
-                        animated: false
+                        animated: false,
+                        sidebarTapReact: true
                     )
                     .accessibilityHidden(true)
                     .padding(.trailing, CompactRosterMetrics.faceSpacing)
