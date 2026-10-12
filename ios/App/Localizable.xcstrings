@@ -275,6 +275,58 @@
         }
       }
     },
+    "Works here": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Works here"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Travaille ici"
+          }
+        }
+      }
+    },
+    "computer.power.off": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Off" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Éteint" } }
+      }
+    },
+    "computer.power.on": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "On" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Allumé" } }
+      }
+    },
+    "computer.power.paused": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Paused" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "En pause" } }
+      }
+    },
+    "computer.power.starting": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Starting" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Démarrage" } }
+      }
+    },
+    "computer.power.error": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Error" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Erreur" } }
+      }
+    },
+    "computer.power.unavailable": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Unavailable" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Indisponible" } }
+      }
+    },
     "Show the screen of": {
       "localizations": {
         "en": {

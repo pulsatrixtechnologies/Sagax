@@ -138,9 +138,8 @@ public struct PersonDesktopBridge: Decodable, Equatable, Sendable {
         chosen(worksOnLocal: local, picked: nil)
     }
 
-    /// iOS Computer-tab chips. Electron names each host (truncated 132px).
-    /// An iPhone chip overflows, so every Local VM shares "Other VMs"
-    /// (JC 2026-10-11); the chosen host sits under the picker.
+    /// True when the Computer menu lists a Local VM. The menu names each
+    /// computer; this only says whether any is online.
     public func iosChooserHasVMs() -> Bool {
         computerChoices().contains { $0 != .cloud }
     }

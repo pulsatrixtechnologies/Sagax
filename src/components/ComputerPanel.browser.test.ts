@@ -1,9 +1,9 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { afterAll, describe, expect, it, vi } from "vitest";
+import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Bot } from "@/state/store";
 import { browserAvailable, type FeatureFlagConfig } from "@/lib/feature-flags";
-import { t } from "@/lib/i18n";
+import { setLocale, t } from "@/lib/i18n";
 
 const fixture = vi.hoisted(() => {
   vi.stubGlobal("window", {});
@@ -44,6 +44,7 @@ const renderBrowser = (config: FeatureFlagConfig & { cloudHome?: boolean }, brow
 
 describe("Browser panel installation access", () => {
   const missing = { kind: "unavailable", installable: true } as const;
+  beforeEach(() => setLocale("en"));
 
   it("shows the real install panel before the engine is available", () => {
     const config = { features: { browser: true }, browserEngine: missing };
@@ -55,11 +56,13 @@ describe("Browser panel installation access", () => {
     const off = render({ features: { browser: false } });
     expect(off).not.toContain('data-computer-choice="browser"');
     const missingEngine = render({ features: { browser: true }, browserEngine: missing });
-    expect(missingEngine).toContain('data-computer-choice="browser"');
-    expect(missingEngine).toContain('aria-checked="true" data-computer-choice="screen"');
+    expect(missingEngine).toContain('data-computer-options="screen browser"');
+    expect(missingEngine).toContain('aria-expanded="false"');
+    expect(missingEngine).toContain('data-computer-choice="screen"');
     expect(missingEngine).not.toContain("Install the browser engine");
     const ready = render({ features: { browser: true }, browserEngine: { kind: "engine" } }, true);
-    expect(ready).toContain(">Browser<");
+    expect(ready).toContain('data-computer-options="screen browser"');
+    expect(ready).toContain(">Screen<");
     expect(ready).not.toContain("Loading browser…");
     expect(ready).not.toContain("data-browser-view");
   });
