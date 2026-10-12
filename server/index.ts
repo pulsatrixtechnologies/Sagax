@@ -10600,7 +10600,7 @@ bus.subscribe((event: RuntimeEvent) => {
       const cardGuardTool = event.mcpTool ?? event.tool;
       const cardGuard = permission && asker && event.requestId && typeof cardGuardTool === "string"
         ? agentCardGuard.opened({
-          requestId: event.requestId, mcpTool: cardGuardTool, bot: { id: asker.id, name: asker.name },
+          requestId: event.requestId, mcpTool: cardGuardTool, bot: { id: asker.id, name: asker.name }, input: event.input, summary: event.summary,
           ...(!turnRoutineLineage.has(event.threadId) && turnSpeakerPrincipals.get(event.threadId)
             ? { speakerPrincipalId: turnSpeakerPrincipals.get(event.threadId)! } : {}),
         })
@@ -25657,11 +25657,12 @@ const agentCardGuard = createAgentCardGuard({
   grants: toolGrants,
   mode: () => toolGuardMode(process.env.SAGAX_TOOL_GUARD),
   audit: (row) => {
-    const target = store.bot(row.botId);
+    // the target is the agent the call is aimed at, like the call's own row
+    const target = row.agentId ? store.bot(row.agentId) : undefined;
     appendAdminAction(DATA_DIR, {
       category: "client",
       action: `agents.${row.tool}`,
-      target: { kind: "bot", id: row.botId, ...(target ? { name: target.name } : {}) },
+      ...(row.agentId ? { target: { kind: "bot", id: row.agentId, ...(target ? { name: target.name } : {}) } } : {}),
       after: { outcome: row.outcome, callerBotId: row.botId, ...(row.botName ? { callerBotName: row.botName } : {}), ...row.detail },
       actor: { kind: "worker" },
     });

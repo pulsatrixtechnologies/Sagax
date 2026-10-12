@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { createAgentCardGuard, type CardGuardRow } from "./agent-tool-card-guard.ts";
+import { createAgentCardGuard, targetAgentId, type CardGuardRow } from "./agent-tool-card-guard.ts";
 import { ToolGrantStore } from "./tool-grants.ts";
 import type { ToolGuardMode } from "./tool-guard.ts";
 
@@ -65,5 +65,20 @@ describe("agent tool guard before the card (B2.1)", () => {
     const { guard, rows } = setup("off");
     expect(guard.opened({ requestId: "g", mcpTool: "agents__send_prompt", bot })).toBeNull();
     expect(rows).toHaveLength(0);
+  });
+});
+
+describe("the card row's target (the agent called, not the caller)", () => {
+  it("reads agent_id from the input or the ACP summary", () => {
+    expect(targetAgentId({ agent_id: "a-1" })).toBe("a-1");
+    expect(targetAgentId(undefined, 'agents__send_prompt {"agent_id":"9c37-b","mode":"fire_and_forget"}')).toBe("9c37-b");
+    expect(targetAgentId(undefined, 'agents__send_prompt {"agent_id":"9c37-b","prompt":"cut off')).toBe("9c37-b");
+    expect(targetAgentId(undefined, "agents__list_agents")).toBeUndefined();
+  });
+  it("carries it on both rows", () => {
+    const { guard, rows } = setup();
+    guard.opened({ requestId: "t", mcpTool: "agents__send_prompt", bot, summary: 'agents__send_prompt {"agent_id":"dispatch"}' });
+    guard.resolved("t", "deny", "user");
+    expect(rows.map((r) => r.agentId)).toEqual(["dispatch", "dispatch"]);
   });
 });
