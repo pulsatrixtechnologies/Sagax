@@ -16,6 +16,10 @@ on:
       - scripts/bundle-server.mjs
       - .github/workflows/npm-package.yml
 
+concurrency:
+  group: npm-package-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 permissions:
   contents: read
 
