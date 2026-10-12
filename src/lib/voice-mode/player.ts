@@ -1,10 +1,20 @@
 // The bot's voice in a live call: raw PCM sentences streamed from the server
-// (POST /voice/stream), scheduled back to back on Web Audio as their chunks
-// arrive, so a sentence starts playing before xAI has finished it and the
-// next one is already fetched while this one plays. One gain node does the
-// phone things: duck at once when the person starts talking, fade out and
-// drop everything on a barge-in, earcons on the side. An analyser on the
+// (the call's speech socket or POST /voice/stream), scheduled back to back
+// on Web Audio as their chunks arrive, so a sentence starts playing before
+// xAI has finished it and the next one is already fetched while this one
+// plays. The voice goes through a gain node of its own (a bus) per answer:
+// duck at once when the person starts talking; on a barge-in the bus fades
+// out within FADE_MS, every source on it is stopped on the audio clock and
+// its downloads are cancelled, and what is queued after the cut plays on a
+// fresh bus at full level. Earcons go beside the buses. An analyser on the
 // output feeds the waveform and the echo guard.
+//
+// The first chunk of a sentence starts a little ahead of the audio clock (a
+// jitter buffer of `lead` seconds). A later chunk of the same sentence that
+// arrives after the audio before it ran out is an underrun (a gap in the
+// middle of a word): the lead grows by how late it was, and sentences that
+// play through give it back slowly, so a steady network pays BASE_LEAD_S
+// and a jittery one stops stuttering.
 
 export interface Sentence {
   /** the speech of one sentence; resolves null when there is nothing to say */
@@ -19,7 +29,7 @@ export interface Sentence {
 export interface PlayerEvents {
   /** the first sample of a sentence is audible now */
   onSentenceStart?(text: string, info?: { filler?: boolean }): void;
-  /** everything queued has been heard */
+  /** everything queued has been heard, or was cut */
   onIdle?(): void;
   onError?(error: unknown): void;
 }
@@ -58,22 +68,47 @@ interface LedgerEntry {
   complete: boolean;
 }
 
-const DUCK_LEVEL = 0.12;
-const DUCK_MS = 30;
-const FADE_MS = 60;
+export const DUCK_LEVEL = 0.12;
+const DUCK_MS = 10;
+const UNDUCK_MS = 120;
+/** A barge-in's fade: silent well inside the 150 ms the person waits from
+ * their first word, long enough not to click. */
+export const FADE_MS = 12;
+/** The jitter buffer: where the lead starts and the most it grows to. */
+export const BASE_LEAD_S = 0.015;
+export const MAX_LEAD_S = 0.12;
+/** Added on top of how late an underrun's chunk was. */
+const LEAD_MARGIN_S = 0.01;
+/** Given back by each sentence that plays through without a gap. */
+const LEAD_RELAX_S = 0.005;
+/** A chunk scheduled with less than this left of the audio before it can
+ * no longer join it seamlessly (render quantum and thread hop). */
+const JOIN_S = 0.005;
+
+export interface PlayerStats {
+  /** the current start lead (ms) */
+  leadMs: number;
+  /** chunks that arrived after the audio before them ran out, this call */
+  underruns: number;
+}
 
 export class PcmPlayer {
   private context: AudioContext | null = null;
-  private gain: GainNode | null = null;
+  /** the current answer's gain node (a cut fades it and starts another) */
+  private bus: GainNode | null = null;
   private analyser: AnalyserNode | null = null;
   private queue: Sentence[] = [];
   private sources = new Set<AudioBufferSourceNode>();
+  private readers = new Set<ReadableStreamDefaultReader<Uint8Array>>();
   private nextTime = 0;
   private generation = 0;
-  private pumping = false;
+  /** the generation whose pump runs (-1: none); a cut one never blocks the next */
+  private pumpGeneration = -1;
   private idleTimer: ReturnType<typeof setTimeout> | null = null;
   private readonly samples = new Float32Array(1024);
   private ducked = false;
+  private lead = BASE_LEAD_S;
+  private underruns = 0;
   /** the sentences of the current answer, in order, with when they play */
   private ledger: LedgerEntry[] = [];
   private readonly createContext: () => AudioContext;
@@ -87,14 +122,12 @@ export class PcmPlayer {
   open(): AudioContext {
     if (this.context) return this.context;
     const context = this.createContext();
-    const gain = context.createGain();
     const analyser = context.createAnalyser();
     analyser.fftSize = 1024;
-    gain.connect(analyser);
     analyser.connect(context.destination);
     this.context = context;
-    this.gain = gain;
     this.analyser = analyser;
+    this.bus = this.newBus();
     if (context.state === "suspended") void context.resume().catch(() => {});
     return context;
   }
@@ -106,7 +139,12 @@ export class PcmPlayer {
 
   /** Something is queued or audible. */
   get busy(): boolean {
-    return this.queue.length > 0 || this.pumping || (this.context !== null && this.context.currentTime < this.nextTime);
+    return this.queue.length > 0 || this.pumpGeneration === this.generation || (this.context !== null && this.context.currentTime < this.nextTime);
+  }
+
+  /** The jitter buffer's state (diagnostics, the latency bench). */
+  get stats(): PlayerStats {
+    return { leadMs: Math.round(this.lead * 1000), underruns: this.underruns };
   }
 
   /** RMS of what is playing now, 0..1. */
@@ -124,7 +162,7 @@ export class PcmPlayer {
     this.ledger.push({ text: sentence.text, complete: false });
     if (this.idleTimer) clearTimeout(this.idleTimer);
     this.idleTimer = null;
-    if (!this.pumping) void this.pump();
+    if (this.pumpGeneration !== this.generation) void this.pump();
   }
 
   /** A new answer begins: forget what the last one played. */
@@ -161,55 +199,56 @@ export class PcmPlayer {
 
   /** Lower the bot at once (the person may be talking). */
   duck(): void {
-    if (!this.gain || !this.context || this.ducked) return;
+    if (!this.bus || !this.context || this.ducked) return;
     this.ducked = true;
-    const now = this.context.currentTime;
-    this.gain.gain.cancelScheduledValues(now);
-    this.gain.gain.setValueAtTime(this.gain.gain.value, now);
-    this.gain.gain.linearRampToValueAtTime(DUCK_LEVEL, now + DUCK_MS / 1000);
+    this.rampBus(this.bus, DUCK_LEVEL, DUCK_MS);
   }
 
   unduck(): void {
-    if (!this.gain || !this.context || !this.ducked) return;
+    if (!this.bus || !this.context || !this.ducked) return;
     this.ducked = false;
-    const now = this.context.currentTime;
-    this.gain.gain.cancelScheduledValues(now);
-    this.gain.gain.setValueAtTime(this.gain.gain.value, now);
-    this.gain.gain.linearRampToValueAtTime(1, now + 0.12);
+    this.rampBus(this.bus, 1, UNDUCK_MS);
   }
 
-  /** Fade out within FADE_MS and drop every queued sentence. Resolves once silent. */
+  /** Cut everything: the playing answer fades out within FADE_MS and its
+   * sources stop on the audio clock, queued sentences and their downloads
+   * are dropped, and the player is idle at once (anything enqueued from
+   * now on plays on a fresh bus). Resolves once the fade has ended. */
   cancel(): Promise<void> {
+    const wasBusy = this.busy;
     this.generation += 1;
     for (const sentence of this.queue) sentence.abort();
     this.queue = [];
-    const context = this.context;
-    const gain = this.gain;
+    for (const reader of this.readers) void reader.cancel().catch(() => {});
+    this.readers.clear();
     if (this.idleTimer) clearTimeout(this.idleTimer);
     this.idleTimer = null;
-    const wasBusy = context !== null && (context.currentTime < this.nextTime || this.sources.size > 0);
-    this.nextTime = 0;
-    this.ducked = false;
-    if (!context || !gain) return Promise.resolve();
-    const now = context.currentTime;
-    gain.gain.cancelScheduledValues(now);
-    gain.gain.setValueAtTime(gain.gain.value, now);
-    gain.gain.linearRampToValueAtTime(0, now + FADE_MS / 1000);
+    const context = this.context;
+    const bus = this.bus;
     const sources = [...this.sources];
     this.sources.clear();
-    return new Promise((resolve) => {
-      setTimeout(() => {
-        for (const source of sources) {
-          try { source.stop(); } catch { /* not started */ }
-          source.disconnect();
-        }
-        const at = context.currentTime;
-        gain.gain.cancelScheduledValues(at);
-        gain.gain.setValueAtTime(1, at);
-        if (wasBusy) this.events.onIdle?.();
-        resolve();
-      }, FADE_MS);
-    });
+    this.nextTime = 0;
+    this.ducked = false;
+    let faded: Promise<void> = Promise.resolve();
+    if (context && bus) {
+      const end = context.currentTime + FADE_MS / 1000;
+      this.rampBus(bus, 0, FADE_MS);
+      for (const source of sources) {
+        source.onended = null;
+        // a chunk scheduled to start after `end` never plays at all
+        try { source.stop(end); } catch { /* never started */ }
+      }
+      this.bus = this.newBus();
+      faded = new Promise((resolve) => {
+        setTimeout(() => {
+          for (const source of sources) source.disconnect();
+          bus.disconnect();
+          resolve();
+        }, FADE_MS + 8);
+      });
+    }
+    if (wasBusy) this.events.onIdle?.();
+    return faded;
   }
 
   /** A short tone or two (earcons), beside the bot's voice. */
@@ -237,33 +276,42 @@ export class PcmPlayer {
     await this.cancel();
     const context = this.context;
     this.context = null;
-    this.gain = null;
+    this.bus = null;
     this.analyser = null;
     await context?.close().catch(() => {});
   }
 
-  private async pump(): Promise<void> {
-    if (this.pumping) return;
-    this.pumping = true;
-    try {
-      while (this.queue.length) {
-        const mine = this.generation;
-        const sentence = this.queue[0]!;
-        await this.playOne(sentence, mine);
-        // a cancel emptied the queue meanwhile: what is there now is new
-        if (this.queue[0] === sentence) this.queue.shift();
-      }
-    } finally {
-      this.pumping = false;
-    }
-    if (this.queue.length) {
-      void this.pump();
-      return;
-    }
-    this.scheduleIdle();
+  private newBus(): GainNode {
+    const bus = this.context!.createGain();
+    bus.connect(this.analyser!);
+    return bus;
   }
 
-  private scheduleIdle(): void {
+  private rampBus(bus: GainNode, value: number, ms: number): void {
+    const now = this.context!.currentTime;
+    bus.gain.cancelScheduledValues(now);
+    bus.gain.setValueAtTime(bus.gain.value, now);
+    bus.gain.linearRampToValueAtTime(value, now + ms / 1000);
+  }
+
+  private async pump(): Promise<void> {
+    const mine = this.generation;
+    if (this.pumpGeneration === mine) return;
+    this.pumpGeneration = mine;
+    try {
+      while (mine === this.generation && this.queue.length) {
+        const sentence = this.queue[0]!;
+        await this.playOne(sentence, mine);
+        if (mine === this.generation && this.queue[0] === sentence) this.queue.shift();
+      }
+    } finally {
+      if (this.pumpGeneration === mine) this.pumpGeneration = -1;
+    }
+    // a cut meanwhile: the queue is the next generation's
+    if (mine === this.generation) this.scheduleIdle();
+  }
+
+  private scheduleIdle(clock = -1): void {
     const context = this.context;
     if (!context) return;
     const wait = Math.max(0, (this.nextTime - context.currentTime) * 1000);
@@ -271,7 +319,13 @@ export class PcmPlayer {
     const mine = this.generation;
     this.idleTimer = setTimeout(() => {
       this.idleTimer = null;
-      if (mine === this.generation && !this.queue.length && !this.pumping) this.events.onIdle?.();
+      if (mine !== this.generation || this.queue.length || this.pumpGeneration === mine) return;
+      // The audio clock runs behind the wall clock (a device starting, large
+      // output buffers): wait for it. A clock that stopped is a suspended
+      // device, which will not play the rest.
+      const now = this.context?.currentTime ?? 0;
+      if (now < this.nextTime && now > clock) return this.scheduleIdle(now);
+      this.events.onIdle?.();
     }, wait + 20);
   }
 
@@ -288,11 +342,14 @@ export class PcmPlayer {
     if (!audio || mine !== this.generation) {
       // nothing to say (a code block, a link): it takes no time
       if (entry && mine === this.generation) entry.complete = true;
+      if (audio && mine !== this.generation) void audio.body.cancel().catch(() => {});
       return;
     }
     const reader = audio.body.getReader();
+    this.readers.add(reader);
     let carry: number | null = null;
-    let first = true;
+    let chunks = 0;
+    let gapped = false;
     try {
       for (;;) {
         const { done, value } = await reader.read();
@@ -318,10 +375,23 @@ export class PcmPlayer {
         const buffer = context.createBuffer(1, count, audio.sampleRate);
         const channel = buffer.getChannelData(0);
         for (let i = 0; i < count; i++) channel[i] = view.getInt16(i * 2, true) / 32768;
+        const now = context.currentTime;
+        let start: number;
+        if (chunks === 0) {
+          start = Math.max(now + this.lead, this.nextTime);
+        } else if (this.nextTime >= now + JOIN_S) {
+          start = this.nextTime;
+        } else {
+          // the audio before it already ran out: grow the buffer and refill it
+          const late = now + JOIN_S - this.nextTime;
+          this.lead = Math.min(MAX_LEAD_S, this.lead + late + LEAD_MARGIN_S);
+          this.underruns += 1;
+          gapped = true;
+          start = now + this.lead;
+        }
         const source = context.createBufferSource();
         source.buffer = buffer;
-        source.connect(this.gain!);
-        const start = Math.max(context.currentTime + 0.015, this.nextTime);
+        source.connect(this.bus!);
         source.start(start);
         this.nextTime = start + buffer.duration;
         if (entry) {
@@ -330,17 +400,19 @@ export class PcmPlayer {
         }
         this.sources.add(source);
         source.onended = () => this.sources.delete(source);
-        if (first) {
-          first = false;
-          const delay = Math.max(0, (start - context.currentTime) * 1000);
+        if (chunks === 0) {
+          const delay = Math.max(0, (start - now) * 1000);
           setTimeout(() => {
             if (mine === this.generation) this.events.onSentenceStart?.(sentence.text, sentence.filler ? { filler: true } : undefined);
           }, delay);
         }
+        chunks += 1;
       }
+      if (mine === this.generation && chunks > 1 && !gapped) this.lead = Math.max(BASE_LEAD_S, this.lead - LEAD_RELAX_S);
     } catch (error) {
       if (mine === this.generation) this.events.onError?.(error);
     } finally {
+      this.readers.delete(reader);
       if (mine !== this.generation) await reader.cancel().catch(() => {});
     }
   }
