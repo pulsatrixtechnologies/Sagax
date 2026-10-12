@@ -81,6 +81,7 @@ import {
 import * as checkpoints from "./checkpoints.ts";
 import { commandReceipt } from "./commands.ts";
 import { buildTurnDigest, coverageForDriver, digestPromptLine, renderDigest, toolEvidence } from "./digest.ts";
+import { expireApprovalsAfterRestart } from "./approval-restart.ts";
 import { appendDecision, bindDecisionRetention, boundRetentionDays, decisionRetentionDays, decisionsCsv, flushDecisionLog, pruneDecisions, readDecisionRange, readDecisions, withDecisionActor, type DecisionActor } from "./decision-log.ts";
 import { validateBotCwd } from "./bot-cwd.ts";
 import {
@@ -307,7 +308,7 @@ import { BUILT_IN_DRIVERS } from "./drivers/builtIn.ts";
 import { orgWithholdHostTools } from "./org-engine-admission.ts";
 import { openCodeProviderKeysAllowed, setOpenCodeProviderKeyPolicy } from "./drivers/acp/opencode-go.ts";
 import { getOrCreateChannel, mirrorActivity, mirrorExchange, mirrorReply, type CommsBus } from "./comms-visibility.ts";
-import { readMessageText, recallMessages, recentMessages, searchMessagesAsync, closeMessageSearch, closeMessageDb, chatFollowups, cancelledChatFollowup, settleChatFollowups, threadsReferencing } from "./message-db.ts";
+import { openApprovalCardMessages, readMessageText, recallMessages, recentMessages, searchMessagesAsync, closeMessageSearch, closeMessageDb, chatFollowups, cancelledChatFollowup, settleChatFollowups, threadsReferencing } from "./message-db.ts";
 import { briefCrossingLabel, claimRecallCrossings, recallCrossingLabel } from "./recall-disclosure.ts";
 import { parseSince, parseUntil, recentWork, recentWorkPrompt, turnOutcomeLine } from "./recent-work.ts";
 import { chiefForBot, INCIDENTS_THREAD_TITLE, IncidentLedger, incidentChip, incidentText, type Incident, type IncidentKind } from "./incidents.ts";
@@ -37073,6 +37074,22 @@ console.log(describeBrand(loadBrand()));
 // attachment quota cache off the same scan. This used to happen implicitly on
 // every reservation, which is exactly what made uploads quadratic in
 // directory size; do the initial sweep before accepting requests.
+// Approval cards whose live request died with the previous process: they
+// read Expired instead of staying pending forever (server/approval-restart.ts).
+try {
+  const closed = expireApprovalsAfterRestart({
+    open: openApprovalCardMessages,
+    patch: (threadId, messageId, card) => { store.patchMessage(threadId, messageId, { card }); },
+    decide: ({ threadId, requestId, tool, summary }) => {
+      const bot = store.botByThread(threadId);
+      appendDecision(DATA_DIR, { threadId, requestId, botId: bot?.id, botName: bot?.name, tool, summary, decision: "auto-denied", source: "restart" });
+    },
+  });
+  if (closed > 0) console.log(`[approval] expired ${closed} approval card(s) left open by the previous run`);
+} catch (error) {
+  console.warn(`[approval] startup expiry of open approval cards failed: ${error instanceof Error ? error.message : String(error)}`);
+}
+
 // ponytail: once per boot, not periodic. A partial orphaned while this
 // process is up survives until the next restart — add a timer only if that
 // shows up as real quota pressure.

@@ -11,6 +11,7 @@ import { closeMessageDb,
   indexMemoryFile,
   indexedMemoryFiles,
   insertMessage,
+  openApprovalCardMessages,
   latestSaidByBot,
   readMessageText,
   recentMessages,
@@ -42,6 +43,17 @@ describe("message-db", () => {
     closeMessageDb();
     rmSync(DATA_DIR, { recursive: true, force: true });
     mkdirSync(DATA_DIR, { recursive: true });
+  });
+
+  it("finds only open permission cards (startup expiry after a restart)", () => {
+    const card = (extra: Record<string, unknown>) => ({ title: "t", subtitle: "s", options: ["Allow"], requestType: "permission", requestId: "r", ...extra }) as Message["card"];
+    insertMessage("ap1", msg("open", "", { role: "bot", kind: "options", card: card({}) }));
+    insertMessage("ap1", msg("answered", "", { role: "bot", kind: "options", card: card({ answered: "allow" }) }));
+    insertMessage("ap1", msg("dismissed", "", { role: "bot", kind: "options", card: card({ dismissed: true }) }));
+    insertMessage("ap1", msg("expired", "", { role: "bot", kind: "options", card: card({ expired: true }) }));
+    insertMessage("ap1", msg("question", "", { role: "bot", kind: "options", card: card({ requestType: "question" }) }));
+    insertMessage("ap2", msg("plain", "hello"));
+    expect(openApprovalCardMessages().map((h) => `${h.threadId}/${h.message.id}`)).toEqual(["ap1/open"]);
   });
 
   it("persists inserts, updates, and the active leaf across a reopen", () => {

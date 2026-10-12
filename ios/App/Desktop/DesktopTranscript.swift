@@ -422,6 +422,12 @@ struct DesktopPermissionCard: View {
             .foregroundStyle(theme.inkSecondary)
             .frame(minHeight: 19.5)
             .padding(.top, 8)
+            if let rule = AllowRuleText.savedRule(card) {
+                AllowRuleInset(
+                    rule: rule, botId: AllowRuleInset.botId(of: message, in: chat), font: { theme.font($0) },
+                    ink: theme.ink, secondary: theme.inkSecondary, accent: theme.accent, surface: theme.inset
+                )
+            }
             if !proposal, !open, card.tool?.isEmpty == false {
                 DesktopTechnicalDetails(card: card, theme: theme)
             }

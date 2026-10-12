@@ -497,6 +497,23 @@ export function workingGoalRunMessages(): Array<{ threadId: string; message: Mes
   return rows.map((row) => ({ threadId: row.thread_id, message: JSON.parse(row.json) as Message }));
 }
 
+/** Approval cards still open in storage. Their live request (engine
+ * process, gate broker hold) is memory-only, so after a restart nothing can
+ * deliver an answer to them: startup expires them (server/approval-restart.ts). */
+export function openApprovalCardMessages(): Array<{ threadId: string; message: Message }> {
+  const rows = db()
+    .prepare(
+      "SELECT thread_id, json FROM messages " +
+      "WHERE json_extract(json, '$.card.requestType') = 'permission' " +
+      "AND json_extract(json, '$.card.requestId') IS NOT NULL " +
+      "AND json_extract(json, '$.card.answered') IS NULL " +
+      "AND COALESCE(json_extract(json, '$.card.dismissed'), 0) = 0 " +
+      "AND COALESCE(json_extract(json, '$.card.expired'), 0) = 0",
+    )
+    .all() as Array<{ thread_id: string; json: string }>;
+  return rows.map((row) => ({ threadId: row.thread_id, message: JSON.parse(row.json) as Message }));
+}
+
 export function setActiveLeaf(threadId: string, leafId: string | null): void {
   db()
     .prepare(

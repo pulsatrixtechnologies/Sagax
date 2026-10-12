@@ -66,6 +66,9 @@ public struct OptionCard: Codable, Hashable, Sendable {
     public var held: String?
     /// The narrow grant "always allow" would remember, e.g. `Bash:git`.
     public var allowKey: String?
+    /// The Allow rule (an `allowKey`) saved when this card was answered with
+    /// Always allow: the card says so and offers Edit rule.
+    public var alwaysAllowed: String? = nil
     /// Learned skills must show their complete reviewed contents before an
     /// approval button is offered on a compact companion surface.
     public var skillRequest: SkillRequestCardData? = nil

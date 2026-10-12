@@ -692,6 +692,29 @@ public enum ApprovalToolAction: Hashable, Sendable {
     }
 }
 
+/// "Added to your Allow rules": the rule a card saved, as the action it
+/// lets the bot take (`describeAllowRule`, shared/approval-describe.ts).
+public enum AllowRuleText {
+    /// The card's saved rule, only on a card that was allowed with it.
+    public static func savedRule(_ card: OptionCard) -> String? {
+        guard card.answered == "allow", card.expired != true, let rule = card.alwaysAllowed, !rule.isEmpty else { return nil }
+        return rule
+    }
+
+    /// The action an `mcp:<server>__<tool>` rule allows; nil for other keys
+    /// (the app shows those as sent).
+    public static func action(of rule: String) -> ApprovalToolAction? {
+        guard rule.hasPrefix("mcp:") else { return nil }
+        // mcp:<server>__<tool>: the tool after the server's own name
+        let key = String(rule.dropFirst(4))
+        let tool = key.range(of: "__").map { String(key[$0.upperBound...]) } ?? key
+        switch tool {
+        case "run_command", "vm_exec", "exec": return .runCommand
+        default: return .of(tool: tool)
+        }
+    }
+}
+
 /// The dock's heading for a request: a plain tool ask names the bot and
 /// the action; a proposal says what is being confirmed.
 public enum ApprovalHeading: Hashable, Sendable {

@@ -273,6 +273,11 @@ struct ChatView: View {
         .onValueChange(of: showingRoomInfo) { shown in
             if shown { dictation.stop() }
         }
+        .onReceive(NotificationCenter.default.publisher(for: .approvalEditRule)) { note in
+            // Edit rule: the bot's panel, where Access holds its Allow rules
+            guard case let .bot(bot) = current, (note.object as? String).map({ $0 == bot.id }) ?? true else { return }
+            showingPanel = true
+        }
         .onValueChange(of: showingPanel) { shown in
             if shown { dictation.stop() }
         }

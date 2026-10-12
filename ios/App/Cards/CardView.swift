@@ -188,6 +188,9 @@ struct CardView: View {
                         .font(.system(size: 14))
                         .foregroundStyle(Theme.attentionSecondary)
                 }
+                if let rule = AllowRuleText.savedRule(card) {
+                    AllowRuleInset(rule: rule, botId: AllowRuleInset.botId(of: message, in: chat), accent: Theme.readable(tint))
+                }
             }
             .padding(14)
             .frame(maxWidth: .infinity, alignment: .leading)

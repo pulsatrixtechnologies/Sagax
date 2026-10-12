@@ -556,4 +556,15 @@ final class ApprovalPlainWordsTests: XCTestCase {
         let routine = try card(#"{"title":"Routine","subtitle":"x","options":["Confirm"],"requestId":"r2","tool":"schedule_routine","routineRequest":{"operation":{"action":"create"}},"plain":{"title":"Allow X to schedule?","line":"y"}}"#)
         XCTAssertNil(ApprovalHeading.plainTitle(routine, language: "en"))
     }
+
+    func testSavedAllowRuleShowsOnlyOnAnAllowedCard() throws {
+        let base = #""title":"t","subtitle":"s","options":[],"requestId":"r","tool":"other""#
+        let saved = try card("{\(base),\"answered\":\"allow\",\"alwaysAllowed\":\"mcp:sagax-environment__run_command\"}")
+        XCTAssertEqual(AllowRuleText.savedRule(saved), "mcp:sagax-environment__run_command")
+        XCTAssertNil(AllowRuleText.savedRule(try card("{\(base),\"answered\":\"allow\"}")))
+        XCTAssertNil(AllowRuleText.savedRule(try card("{\(base),\"answered\":\"deny\",\"alwaysAllowed\":\"mcp:a__b\"}")))
+        XCTAssertEqual(AllowRuleText.action(of: "mcp:sagax-environment__run_command"), .runCommand)
+        XCTAssertEqual(AllowRuleText.action(of: "mcp:perspicax__cw_psa__write"), .named("cw psa write"))
+        XCTAssertNil(AllowRuleText.action(of: "ask_bot:b2"))
+    }
 }
