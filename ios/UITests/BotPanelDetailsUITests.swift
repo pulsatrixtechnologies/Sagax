@@ -380,4 +380,23 @@ final class BotPanelDetailsUITests: XCTestCase {
         RunLoop.current.run(until: Date().addingTimeInterval(2))
         XCTAssertEqual(try bot(named: "Ara")?["mascotSkin"] as? String ?? "none", "none", "a locked skin is not saved")
     }
+
+    /// Character row (BP6): Owl is always there; Crab is absent until character:crab is in rewards.
+    @MainActor
+    func testLockedCrabIsAbsentFromTheCharacterRow() throws {
+        let rewards = (try api("GET", "/api/me/achievements", allowFailure: true) as? [String: Any])?["rewards"] as? [String]
+        guard let rewards else { throw XCTSkip("this server keeps no achievements: nothing is locked") }
+        let ara = try XCTUnwrap(try bot(named: "Ara"))
+        let id = try XCTUnwrap(ara["id"] as? String)
+        defer { _ = try? api("PATCH", "/api/bots/\(id)", ["mascotLook": ["character": "owl"], "color": "purple", "mascotSkin": "none"]) }
+        try api("PATCH", "/api/bots/\(id)", ["mascotLook": ["character": "owl"]])
+        let app = launchProfile()
+        element("profile-mascot", in: app).tap()
+        XCTAssertTrue(app.buttons["Owl"].firstMatch.waitForExistence(timeout: 15), "Owl stays on the row")
+        if rewards.contains("character:crab") {
+            XCTAssertTrue(app.buttons["Crab"].firstMatch.waitForExistence(timeout: 10), "unlocked crab is on the row")
+        } else {
+            XCTAssertFalse(app.buttons["Crab"].firstMatch.exists, "locked crab is absent")
+        }
+    }
 }

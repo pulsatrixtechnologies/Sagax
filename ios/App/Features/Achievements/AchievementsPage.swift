@@ -227,7 +227,7 @@ struct AchievementsPage: View {
     private func cards(_ snapshot: AchievementSnapshot) -> some View {
         LazyVGrid(columns: [GridItem(.adaptive(minimum: 300), spacing: 10)], spacing: 10) {
             ForEach(snapshot.cards(category: category, filter: filter, query: query, language: language)) { definition in
-                AchievementCard(definition: definition, state: snapshot.state(definition.id), language: language)
+                AchievementCard(definition: definition, state: snapshot.state(definition.id), language: language, keys: Set(snapshot.rewards))
             }
         }
         .padding(.horizontal, SettingsMetrics.cardMargin)
@@ -279,6 +279,7 @@ struct AchievementCard: View {
     let definition: AchievementDefinition
     let state: AchievementItemState?
     let language: String?
+    let keys: Set<String>
 
     private var unlocked: Bool { state?.unlocked == true }
     private var secret: Bool { definition.hidden && !unlocked }
@@ -322,8 +323,9 @@ struct AchievementCard: View {
                     if let percent = state?.percent {
                         Text("\(percent)% of people")
                     }
-                    if !secret, let reward = definition.rewards.first {
-                        Text(verbatim: AchievementWording.rewardLabel(reward, language: language)).lineLimit(1)
+                    if !secret, let reward = definition.rewards.first,
+                       let line = AchievementWording.displayReward(reward, language: language, keys: keys) {
+                        Text(verbatim: line).lineLimit(1)
                     }
                 }
                 .font(Theme.Font.label)

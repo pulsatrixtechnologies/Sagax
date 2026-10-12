@@ -108,7 +108,7 @@ private struct AchievementToastLayer: View {
     var body: some View {
         VStack {
             if let item = store.toast {
-                AchievementToastView(item: item) { store.dismissToast() }
+                AchievementToastView(item: item, keys: Set(store.snapshot?.rewards ?? [])) { store.dismissToast() }
                     .padding(.horizontal, 12)
                     .padding(.top, 6)
                     .transition(.move(edge: .top).combined(with: .opacity))
@@ -125,6 +125,7 @@ struct AchievementToastView: View {
     @Environment(\.themePalette) var themePalette
     @Environment(\.locale) private var locale
     let item: AchievementToastItem
+    let keys: Set<String>
     let dismiss: () -> Void
 
     private var language: String? { AchievementLanguage.current ?? locale.language.languageCode?.identifier }
@@ -150,7 +151,7 @@ struct AchievementToastView: View {
                     .font(Theme.Font.bodyMedium)
                     .foregroundStyle(Theme.textPrimary)
                     .lineLimit(1)
-                if let reward = item.rewardLabel(language) {
+                if let reward = item.rewardLabel(language, keys: keys) {
                     Text(verbatim: reward)
                         .font(Theme.Font.label)
                         .foregroundStyle(Theme.textSecondary)

@@ -213,7 +213,7 @@ final class AchievementStore: ObservableObject {
         guard snapshot?.settings.native == true, UIApplication.shared.applicationState != .active else { return }
         let content = UNMutableNotificationContent()
         content.title = String(localized: "Achievement unlocked (+\(item.points))")
-        content.body = [item.definition.name.resolved(AchievementLanguage.current), item.rewardLabel(AchievementLanguage.current)]
+        content.body = [item.definition.name.resolved(AchievementLanguage.current), item.rewardLabel(AchievementLanguage.current, keys: Set(snapshot?.rewards ?? []))]
             .compactMap { $0 }.joined(separator: "\n")
         if NotificationSounds.isEnabled { content.sound = .default }
         UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: "sagax-achievement:\(item.definition.id)", content: content, trigger: nil))
@@ -225,8 +225,9 @@ struct AchievementToastItem: Identifiable, Equatable {
     let points: Int
     var id: String { definition.id }
 
-    func rewardLabel(_ language: String?) -> String? {
-        definition.rewards.first.map { AchievementWording.rewardLabel($0, language: language) }
+    func rewardLabel(_ language: String?, keys: Set<String>) -> String? {
+        guard let reward = definition.rewards.first else { return nil }
+        return AchievementWording.displayReward(reward, language: language, keys: keys, revealing: true)
     }
 }
 
