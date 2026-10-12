@@ -113,7 +113,7 @@ export function containerGuestTransport(options: {
     token: options.token,
     container: options.container,
     runtime: options.runtime,
-    exec: ({ argv, stdin }) => new Promise<GuestRun>((resolve) => {
+    exec: ({ argv, stdin }: { argv: string[]; stdin?: string }) => new Promise<GuestRun>((resolve) => {
       const [bin, ...rest] = argv as string[];
       const env: NodeJS.ProcessEnv = { ...process.env, PATH: augmentedPath() };
       delete env[S1_TOKEN_ENV];
@@ -221,11 +221,13 @@ function rewrite(host: Record<string, unknown>, item: { text: string }, value: u
   };
 }
 
+type DesktopProtectAnswer = { protection?: { state?: string; error?: string; code?: string }; audited?: boolean };
+
 function interpretDesktop(raw: unknown, token: string): Outcome {
   const found = resultText(raw);
   const text = redactText(found?.text ?? "", token);
-  let parsed: { protection?: { state?: string; error?: string; code?: string }; audited?: boolean } | null = null;
-  try { parsed = JSON.parse(text) as typeof parsed; } catch { parsed = null; }
+  let parsed: DesktopProtectAnswer | null = null;
+  try { parsed = JSON.parse(text) as DesktopProtectAnswer; } catch { parsed = null; }
   const protection = parsed?.protection;
   const error = protection?.error ? redactText(protection.error, token).slice(0, 300) : undefined;
   if (protection?.state === "active") return { state: "active", audited: parsed?.audited === true };
