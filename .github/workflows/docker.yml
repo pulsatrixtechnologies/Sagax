@@ -37,7 +37,8 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Build image
-        run: docker build -t openmausbot:ci .
+        # Uses the runner's per-job builder (no Docker daemon or host socket on the runner).
+        run: image-build -t openmausbot:ci --tar "$RUNNER_TEMP/openmausbot-ci.tar" .
       - name: Boot the container and prove the server + UI answer
         run: |
           set -euo pipefail
