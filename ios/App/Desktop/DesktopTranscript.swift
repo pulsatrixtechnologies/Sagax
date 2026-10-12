@@ -405,9 +405,9 @@ struct DesktopPermissionCard: View {
             }
             HStack(spacing: 6) {
                 if let outcome {
-                    Image(systemName: outcome == .allowed ? "checkmark" : "xmark")
+                    Image(systemName: outcome == .allowed || outcome == .alwaysAllowed ? "checkmark" : "xmark")
                         .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(outcome == .allowed ? theme.success : theme.inkSecondary)
+                        .foregroundStyle(outcome == .allowed || outcome == .alwaysAllowed ? theme.success : theme.inkSecondary)
                         .frame(width: 14, height: 14)
                     Text(verbatim: CardView.outcomeText(outcome))
                         .accessibilityIdentifier("card-outcome-\(message.id)")

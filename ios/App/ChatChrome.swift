@@ -14,8 +14,8 @@ import CompanionCore
 /// desktop's header opens its panel.
 enum ChatProfileRoute {
     @ViewBuilder
-    static func destination(for bot: Bot, tab: DesktopPanelTab) -> some View {
-        PhoneBotPanel(bot: bot, tab: tab)
+    static func destination(for bot: Bot, tab: DesktopPanelTab, section: DesktopPanelSection? = nil) -> some View {
+        PhoneBotPanel(bot: bot, tab: tab, section: section)
     }
 }
 

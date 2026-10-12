@@ -1,6 +1,28 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "approval.outcome.alwaysAllowed": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Always allowed"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Toujours autorisé"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sempre permitido"
+          }
+        }
+      }
+    },
     "Added to your Allow rules": {
       "localizations": {
         "en": {
@@ -553,6 +575,12 @@
     },
     "Manage threads": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gérer les fils"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -629,6 +657,12 @@
     },
     "Play voice note": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Écouter la note vocale"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -639,6 +673,12 @@
     },
     "Pause voice note": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mettre la note vocale en pause"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -649,6 +689,12 @@
     },
     "Voice note position": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Position dans la note vocale"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -659,6 +705,12 @@
     },
     "Couldn’t load the voice note.": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Impossible de charger la note vocale."
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -669,6 +721,12 @@
     },
     "completed": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "terminé"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -679,6 +737,12 @@
     },
     "not completed": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "non terminé"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -769,6 +833,12 @@
     },
     "5–1,440": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "5 à 1 440"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -779,6 +849,12 @@
     },
     "A section can have one Chief. Go back and choose one Chief, or use a section without one.": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Une section peut avoir un seul chef. Reviens en arrière et choisis un chef, ou utilise une section sans chef."
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -789,6 +865,12 @@
     },
     "A task is one conversation and result, with its own context and working folder.": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Une tâche, c'est une conversation et un résultat, avec son propre contexte et son propre dossier de travail."
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -799,6 +881,12 @@
     },
     "Account alias": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Alias du compte"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -809,6 +897,12 @@
     },
     "Account details are unavailable from this provider. Refresh after authorization finishes.": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Les détails du compte ne sont pas offerts par ce fournisseur. Actualise une fois l'autorisation terminée."
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -863,6 +957,12 @@
     },
     "Add Quick Reply": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ajouter une réponse rapide"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -873,6 +973,12 @@
     },
     "Add a document from Files": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ajouter un document depuis Fichiers"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -883,6 +989,12 @@
     },
     "Add a photo to this message": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ajouter une photo à ce message"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -893,6 +1005,12 @@
     },
     "Add another account": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ajouter un autre compte"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -903,6 +1021,12 @@
     },
     "Add the shared ElevenLabs key in this agent's profile on the computer. The key is never returned to iOS.": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ajoute la clé ElevenLabs partagée dans le profil de cet agent sur l'ordinateur. La clé n'est jamais renvoyée à iOS."
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -913,6 +1037,12 @@
     },
     "Add the shared Fish Audio key in Sagax on your computer. The key is never returned to iOS.": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ajoute la clé Fish Audio partagée dans Sagax sur ton ordinateur. La clé n'est jamais renvoyée à iOS."
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -923,6 +1053,12 @@
     },
     "Add to section": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ajouter à une section"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -933,6 +1069,12 @@
     },
     "Adds to existing section": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ajoute à une section existante"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -943,6 +1085,12 @@
     },
     "Advanced · %@ run limit": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Avancé · limite de %@ par exécution"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -953,6 +1101,12 @@
     },
     "Advanced · no run limit": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Avancé · aucune limite d'exécution"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -963,6 +1117,12 @@
     },
     "Agent": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Agent"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -973,6 +1133,12 @@
     },
     "Agent notifications": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Notifications des agents"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -983,6 +1149,12 @@
     },
     "Agent tasks": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tâches des agents"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -993,6 +1165,12 @@
     },
     "Agents with an ElevenLabs voice picked on your computer use it when this is on. Everyone else uses the voice above.": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Les agents qui ont une voix ElevenLabs choisie sur ton ordinateur l'utilisent quand cette option est activée. Les autres utilisent la voix ci-dessus."
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -1003,6 +1181,12 @@
     },
     "Alerts arrive while Sagax is open or was recently in the background. Closed-app delivery is not available yet.": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Les alertes arrivent quand Sagax est ouvert ou était récemment en arrière-plan. La livraison quand l'app est fermée n'est pas encore offerte."
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -1013,6 +1197,12 @@
     },
     "All quiet": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tout est calme"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -1023,6 +1213,12 @@
     },
     "Allow camera access to scan the pairing QR code shown by Sagax.": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Autorise l'accès à la caméra pour balayer le code QR de jumelage affiché par Sagax."
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -1033,6 +1229,12 @@
     },
     "Always": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Toujours"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -1043,6 +1245,12 @@
     },
     "Always allow this tool": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Toujours autoriser cet outil"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -1053,6 +1261,12 @@
     },
     "Apply model": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Appliquer le modèle"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -1107,6 +1321,12 @@
     },
     "Asks for permission to send notifications": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Demande la permission d'envoyer des notifications"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -1117,6 +1337,12 @@
     },
     "Avatar": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Avatar"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -1149,6 +1375,12 @@
     },
     "Back to bots": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Retour aux bots"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -1159,6 +1391,12 @@
     },
     "Bot chats": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Conversations avec les bots"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -1191,6 +1429,12 @@
     },
     "Bot settings": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Réglages du bot"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -1245,6 +1489,12 @@
     },
     "Built-in Mac voices are unavailable": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Les voix intégrées du Mac ne sont pas offertes"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -1255,6 +1505,12 @@
     },
     "Built-in Mac voices need no key, and this computer has none available. Switch the voice engine to ElevenLabs in this agent's profile on the computer to keep using voice.": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Les voix intégrées du Mac ne demandent aucune clé, et cet ordinateur n'en a aucune. Choisis le moteur vocal ElevenLabs dans le profil de cet agent sur l'ordinateur pour continuer à utiliser la voix."
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -1265,6 +1521,12 @@
     },
     "Camera access needed": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Accès à la caméra requis"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -1275,6 +1537,12 @@
     },
     "Can reach": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Peut joindre"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -1307,6 +1575,12 @@
     },
     "Changes the language inside Sagax. Buttons drawn by iOS itself follow the phone's language, which you can set for this app in iOS Settings.": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Change la langue dans Sagax. Les boutons dessinés par iOS suivent la langue du téléphone, que tu peux choisir pour cette app dans les Réglages d'iOS."
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -1317,6 +1591,12 @@
     },
     "Changes this bot's model, profile, notifications, and voice": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Change le modèle, le profil, les notifications et la voix de ce bot"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -1327,6 +1607,12 @@
     },
     "Channel name (optional)": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nom du canal (facultatif)"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -1337,6 +1623,12 @@
     },
     "Channel tasks": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tâches du canal"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -1347,6 +1639,12 @@
     },
     "Channels": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Canaux"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -1379,6 +1677,12 @@
     },
     "Chats": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Conversations"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -1389,6 +1693,12 @@
     },
     "Checking Cloud VM availability…": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Vérification de la disponibilité de la VM infonuagique…"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -1399,6 +1709,12 @@
     },
     "Chips": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pastilles"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -1409,6 +1725,12 @@
     },
     "Choose File": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Choisir un fichier"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -1463,6 +1785,12 @@
     },
     "Choose an agent": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Choisir un agent"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -1473,6 +1801,12 @@
     },
     "Choose an agent voice": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Choisir une voix d'agent"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -1483,6 +1817,12 @@
     },
     "Choose an available provider to change this bot's model.": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Choisis un fournisseur offert pour changer le modèle de ce bot."
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -1493,6 +1833,12 @@
     },
     "Choose bots": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Choisir des bots"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -1503,6 +1849,12 @@
     },
     "Choose up to 100 bots for one section.": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Choisis jusqu'à 100 bots pour une section."
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -1513,6 +1865,12 @@
     },
     "Circle": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cercle"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -1567,6 +1925,12 @@
     },
     "Close slash commands": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fermer les commandes à barre oblique"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -1577,6 +1941,12 @@
     },
     "Cloud VM": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "VM infonuagique"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -1587,6 +1957,12 @@
     },
     "Cloud VM status is unavailable": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "L'état de la VM infonuagique n'est pas disponible"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -1619,6 +1995,12 @@
     },
     "Completed, waiting, failed, and manually started runs appear here.": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Les exécutions terminées, en attente, échouées et lancées manuellement s'affichent ici."
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -1673,6 +2055,12 @@
     },
     "Computer only": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ordinateur seulement"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -1683,6 +2071,12 @@
     },
     "Computers": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ordinateurs"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -1693,6 +2087,12 @@
     },
     "Computers ready to pair will appear here.": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Les ordinateurs prêts à être jumelés s'affichent ici."
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -1703,6 +2103,12 @@
     },
     "Configure Composio on your computer first. Provider credentials are never returned to this device.": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Configure d'abord Composio sur ton ordinateur. Les identifiants des fournisseurs ne sont jamais renvoyés à cet appareil."
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -1757,6 +2163,12 @@
     },
     "Connect another computer": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connecter un autre ordinateur"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -1767,6 +2179,12 @@
     },
     "Connect computer": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connecter l'ordinateur"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -1799,6 +2217,12 @@
     },
     "Connect to your computer": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Te connecter à ton ordinateur"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -1809,6 +2233,12 @@
     },
     "Connect when you're ready": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connecte-toi quand tu es prêt"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -1863,6 +2293,12 @@
     },
     "Connected apps need setup": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Les apps connectées doivent être configurées"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -1873,6 +2309,12 @@
     },
     "Connected to %@": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connecté à %@"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -1883,6 +2325,12 @@
     },
     "Connected to your computer": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connecté à ton ordinateur"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -1893,6 +2341,12 @@
     },
     "Connecting…": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connexion…"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -1903,6 +2357,12 @@
     },
     "Connection & Security": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connexion et sécurité"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -1913,6 +2373,12 @@
     },
     "Connection details": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Détails de la connexion"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -1923,6 +2389,12 @@
     },
     "Connection unknown": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connexion inconnue"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -1955,6 +2427,12 @@
     },
     "Continue with %lld bots": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Continuer avec %lld bots"
+          }
+        },
         "en": {
           "variations": {
             "plural": {
@@ -2073,6 +2551,12 @@
     },
     "Copy CSV": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Copier en CSV"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -2083,6 +2567,12 @@
     },
     "Copy Diff": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Copier les différences"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -2093,6 +2583,12 @@
     },
     "Couldn't load": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Chargement impossible"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -2103,6 +2599,12 @@
     },
     "Couldn't open link": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Impossible d'ouvrir le lien"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -2113,6 +2615,12 @@
     },
     "Couldn't start the microphone.": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Impossible de démarrer le micro."
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -2123,6 +2631,12 @@
     },
     "Couldn't transcribe that.": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Impossible de transcrire ça."
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -2133,6 +2647,12 @@
     },
     "Couldn’t create section": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Impossible de créer la section"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -2165,6 +2685,12 @@
     },
     "Create a bot first, then come back to group it into a section.": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Crée d'abord un bot, puis reviens pour le regrouper dans une section."
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -2175,6 +2701,12 @@
     },
     "Create section": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Créer la section"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -2185,6 +2717,12 @@
     },
     "Creates a new section": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Crée une nouvelle section"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -2195,6 +2733,12 @@
     },
     "Creating or rotating a webhook changes an internet-reachable trigger and signing secret, so webhook management remains on the paired computer. Webhook run receipts still appear above.": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Créer ou renouveler un webhook modifie un déclencheur joignable par Internet et son secret de signature : la gestion des webhooks reste donc sur l'ordinateur jumelé. Les reçus d'exécution des webhooks s'affichent toujours ci-dessus."
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -2205,6 +2749,12 @@
     },
     "Creating…": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Création…"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -2215,6 +2765,12 @@
     },
     "Current agent voice": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Voix actuelle de l'agent"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -2225,6 +2781,12 @@
     },
     "Current computer": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ordinateur actuel"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -2235,6 +2797,12 @@
     },
     "Current provider (unavailable)": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fournisseur actuel (non disponible)"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -2245,6 +2813,12 @@
     },
     "Custom interval in minutes": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Intervalle personnalisé en minutes"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -2255,6 +2829,12 @@
     },
     "Custom interval…": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Intervalle personnalisé…"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -2265,6 +2845,12 @@
     },
     "Default": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Par défaut"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -2319,6 +2905,12 @@
     },
     "Deleted agent": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Agent supprimé"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -2329,6 +2921,12 @@
     },
     "Dictation isn't available for this language.": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La dictée n'est pas offerte dans cette langue."
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -2339,6 +2937,12 @@
     },
     "Dictation needs Microphone access. Enable it in Settings, then Sagax.": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La dictée a besoin d'accéder au micro. Active-le dans Réglages, puis Sagax."
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -2349,6 +2953,12 @@
     },
     "Dictation needs Speech Recognition access. Enable it in Settings, then Sagax.": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La dictée a besoin de la reconnaissance vocale. Active-la dans Réglages, puis Sagax."
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -2381,6 +2991,12 @@
     },
     "Does": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fait"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -2413,6 +3029,12 @@
     },
     "Double tap to add this bot": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Touche deux fois pour ajouter ce bot"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -2423,6 +3045,12 @@
     },
     "Double tap to remove this bot": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Touche deux fois pour retirer ce bot"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -2433,6 +3061,12 @@
     },
     "Each computer is paired separately. Only the selected computer is active at a time.": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Chaque ordinateur est jumelé séparément. Un seul ordinateur est actif à la fois."
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -2443,6 +3077,12 @@
     },
     "Each occurrence creates a fresh task. If the previous run is still active, the next occurrence is skipped instead of queued.": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Chaque occurrence crée une nouvelle tâche. Si l'exécution précédente est encore en cours, l'occurrence suivante est sautée au lieu d'être mise en file."
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -2453,6 +3093,12 @@
     },
     "Each occurrence creates a fresh task. No cron syntax is used.": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Chaque occurrence crée une nouvelle tâche. Aucune syntaxe cron n'est utilisée."
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -2485,6 +3131,12 @@
     },
     "Edit address": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Modifier l'adresse"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -2495,6 +3147,12 @@
     },
     "Edit and retry": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Modifier et réessayer"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -2527,6 +3185,12 @@
     },
     "ElevenLabs is not configured": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ElevenLabs n'est pas configuré"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -2537,6 +3201,12 @@
     },
     "Fish Audio": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fish Audio"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -2547,6 +3217,12 @@
     },
     "Fish Audio is not configured": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fish Audio n'est pas configuré"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -2579,6 +3255,12 @@
     },
     "Encrypted and saved on your computer": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Chiffré et enregistré sur ton ordinateur"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -2589,6 +3271,12 @@
     },
     "Encrypted and sent to your computer.": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Chiffré et envoyé à ton ordinateur."
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -2603,6 +3291,12 @@
     },
     "Enter a different value": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Saisir une autre valeur"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -2613,6 +3307,12 @@
     },
     "Enter a whole number from 5 to 1,440 minutes.": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Saisis un nombre entier de 5 à 1 440 minutes."
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -2623,6 +3323,12 @@
     },
     "Enter address and code": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Saisir l'adresse et le code"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -2633,6 +3339,12 @@
     },
     "Enter it securely on this phone.": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Saisis-le de façon sécurisée sur ce téléphone."
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -2643,6 +3355,12 @@
     },
     "Enter securely on this phone": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Saisir de façon sécurisée sur ce téléphone"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -2653,6 +3371,12 @@
     },
     "Enter the 6-digit code shown on your computer": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Saisis le code à 6 chiffres affiché sur ton ordinateur"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -2685,6 +3409,12 @@
     },
     "Every X minutes": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Toutes les X minutes"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -2695,6 +3425,12 @@
     },
     "Every step a bot takes.": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Chaque étape d'un bot."
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -2705,6 +3441,12 @@
     },
     "Explain steps": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Expliquer les étapes"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -2737,6 +3479,12 @@
     },
     "First time per bot": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La première fois par bot"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -2747,6 +3495,12 @@
     },
     "Follow the system": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Suivre le système"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -2757,6 +3511,12 @@
     },
     "For example, Research": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Par exemple, Recherche"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -2789,6 +3549,12 @@
     },
     "Generate an avatar": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Générer un avatar"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -2799,6 +3565,12 @@
     },
     "Generate on computer": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Générer sur l'ordinateur"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -2809,6 +3581,12 @@
     },
     "Generation uses the shared image provider configured on your computer. No provider key is sent to or stored on this device.": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La génération utilise le fournisseur d'images partagé configuré sur ton ordinateur. Aucune clé de fournisseur n'est envoyée à cet appareil ni enregistrée dessus."
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -2857,6 +3635,12 @@
     },
     "Hidden": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Masqué"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -2867,6 +3651,12 @@
     },
     "Hide Diff": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Masquer les différences"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -2877,6 +3667,12 @@
     },
     "Hide full address": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Masquer l'adresse complète"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -2887,6 +3683,12 @@
     },
     "Hides the steps": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Masque les étapes"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -2897,6 +3699,12 @@
     },
     "How often this routine runs": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "À quelle fréquence cette routine s'exécute"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -2907,6 +3715,12 @@
     },
     "INPUT": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ENTRÉE"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -2917,6 +3731,12 @@
     },
     "Icon": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Icône"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -2927,6 +3747,12 @@
     },
     "Identity": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Identité"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -2937,6 +3763,12 @@
     },
     "Idle": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Inactif"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -2947,6 +3779,12 @@
     },
     "Inspect latest git changes and patches": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Inspecter les derniers changements Git et correctifs"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -2957,6 +3795,12 @@
     },
     "Interactive VNC session. Access must be enabled for this device in the Mac's Phone settings.": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Session VNC interactive. L'accès doit être activé pour cet appareil dans les réglages Téléphone du Mac."
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -2967,6 +3811,12 @@
     },
     "Interrupt": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Interrompre"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -2977,6 +3827,12 @@
     },
     "It will appear on both this device and your computer.": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Il apparaîtra sur cet appareil et sur ton ordinateur."
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -2987,6 +3843,12 @@
     },
     "Label": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Libellé"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -3019,6 +3881,12 @@
     },
     "Load earlier messages": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Charger les messages précédents"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -3029,6 +3897,12 @@
     },
     "Loading models": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Chargement des modèles"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -3039,6 +3913,12 @@
     },
     "Loads the image preview": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Charge l'aperçu de l'image"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -3049,6 +3929,12 @@
     },
     "Local Network access is off. Enable it in Settings, or enter a Tailscale address below.": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "L'accès au réseau local est désactivé. Active-le dans Réglages, ou saisis une adresse Tailscale ci-dessous."
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -3059,6 +3945,12 @@
     },
     "Local discovery isn't available right now. Enter the address shown in Phone settings.": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La découverte locale n'est pas disponible pour l'instant. Saisis l'adresse affichée dans les réglages Téléphone."
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -3069,6 +3961,12 @@
     },
     "Local discovery was interrupted. Retrying…": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La découverte locale a été interrompue. Nouvel essai…"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -3101,6 +3999,12 @@
     },
     "Make sure this is the computer you expect before connecting.": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Assure-toi que c'est bien l'ordinateur attendu avant de te connecter."
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -3111,6 +4015,12 @@
     },
     "Mascot": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mascotte"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -3165,6 +4075,12 @@
     },
     "Model": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Modèle"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -3175,6 +4091,12 @@
     },
     "Model, profile, voice and notifications": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Modèle, profil, voix et notifications"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -3229,6 +4151,12 @@
     },
     "Name section": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nommer la section"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -3261,6 +4189,12 @@
     },
     "Needs pairing": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Jumelage requis"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -3271,6 +4205,12 @@
     },
     "Needs you": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A besoin de toi"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -3281,6 +4221,12 @@
     },
     "Never": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Jamais"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -3291,6 +4237,12 @@
     },
     "New Quick Reply": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nouvelle réponse rapide"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -3301,6 +4253,12 @@
     },
     "New bot": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nouveau bot"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -3311,6 +4269,12 @@
     },
     "New channel": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nouveau canal"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -3321,6 +4285,12 @@
     },
     "New routine": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nouvelle routine"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -3353,6 +4323,12 @@
     },
     "New task": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nouvelle tâche"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -3385,6 +4361,12 @@
     },
     "No activity, only messages.": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aucune activité, seulement les messages."
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -3417,6 +4399,12 @@
     },
     "No changes recorded yet.": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aucun changement enregistré pour l'instant."
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -3427,6 +4415,12 @@
     },
     "No computer connected": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aucun ordinateur connecté"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -3437,6 +4431,12 @@
     },
     "No cron syntax. Every run uses the agent's existing model, tools, permissions, computer, and connected apps. Times follow the paired computer's local timezone.": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aucune syntaxe cron. Chaque exécution utilise le modèle, les outils, les permissions, l'ordinateur et les apps connectées de l'agent. Les heures suivent le fuseau horaire de l'ordinateur jumelé."
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -3447,6 +4447,12 @@
     },
     "No limit": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aucune limite"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -3457,6 +4463,12 @@
     },
     "No model providers are available": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aucun fournisseur de modèle n'est disponible"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -3467,6 +4479,12 @@
     },
     "No routines": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aucune routine"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -3477,6 +4495,12 @@
     },
     "No workspace default voice is selected. Choose an agent-specific voice above; synthesis still uses the built-in Mac voices on your computer.": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aucune voix par défaut n'est choisie pour l'espace de travail. Choisis une voix propre à l'agent ci-dessus; la synthèse utilise quand même les voix intégrées du Mac sur ton ordinateur."
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -3487,6 +4511,12 @@
     },
     "No workspace default voice is selected. Choose an agent-specific voice above; synthesis still uses the shared ElevenLabs key on your computer.": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aucune voix par défaut n'est choisie pour l'espace de travail. Choisis une voix propre à l'agent ci-dessus; la synthèse utilise quand même la clé ElevenLabs partagée sur ton ordinateur."
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -3497,6 +4527,12 @@
     },
     "No workspace default voice is selected. Choose an agent-specific voice above; synthesis still uses the shared Fish Audio key on your computer.": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aucune voix par défaut n'est choisie pour l'espace de travail. Choisis une voix propre à l'agent ci-dessus; la synthèse utilise quand même la clé Fish Audio partagée sur ton ordinateur."
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -3529,6 +4565,12 @@
     },
     "Not enabled": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Non activé"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -3561,6 +4603,12 @@
     },
     "Not paired": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Non jumelé"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -3571,6 +4619,12 @@
     },
     "Not provided": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Non fourni"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -3581,6 +4635,12 @@
     },
     "Not provided.": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Non fourni."
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -3613,6 +4673,12 @@
     },
     "Nothing needs you": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Rien ne requiert ton attention"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -3623,6 +4689,12 @@
     },
     "Nothing scheduled or learned yet.": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Rien de planifié ni d'appris pour l'instant."
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -3677,6 +4749,12 @@
     },
     "Notifications are enabled": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Les notifications sont activées"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -3709,6 +4787,12 @@
     },
     "OUTPUT": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "SORTIE"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -3719,6 +4803,12 @@
     },
     "Off in Settings": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Désactivé dans Réglages"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -3773,6 +4863,12 @@
     },
     "On your computer, open Sagax, then Settings, then Phone.": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sur ton ordinateur, ouvre Sagax, puis Réglages, puis Téléphone."
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -3783,6 +4879,12 @@
     },
     "On your computer, open Sagax, then Settings, then Phone, then Set up a phone.": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sur ton ordinateur, ouvre Sagax, puis Réglages, puis Téléphone, puis Configurer un téléphone."
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -3815,6 +4917,12 @@
     },
     "Only continue on a network you trust. Local connections are authenticated but are not encrypted by Sagax.": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Continue seulement sur un réseau de confiance. Les connexions locales sont authentifiées, mais Sagax ne les chiffre pas."
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -3825,6 +4933,12 @@
     },
     "Open Settings": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ouvrir Réglages"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -3835,6 +4949,12 @@
     },
     "Open chat to review": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ouvrir la conversation pour examiner"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -3845,6 +4965,12 @@
     },
     "Open chats, approve actions, and send new work from this device.": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ouvre tes conversations, approuve des actions et envoie du travail depuis cet appareil."
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -3855,6 +4981,12 @@
     },
     "Open desktop": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ouvrir le bureau"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -3865,6 +4997,12 @@
     },
     "Open links to other computer files from the original chat message.": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ouvre les liens vers les fichiers d'un autre ordinateur depuis le message original de la conversation."
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -3875,6 +5013,12 @@
     },
     "Open live cloud desktop": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ouvrir le bureau infonuagique en direct"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -3885,6 +5029,12 @@
     },
     "Open live cloud desktop?": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ouvrir le bureau infonuagique en direct?"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -3895,6 +5045,12 @@
     },
     "Open live screen & desktop controls": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ouvrir l'écran en direct et les commandes du bureau"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -3905,6 +5061,12 @@
     },
     "Open task": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ouvrir la tâche"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -3915,6 +5077,12 @@
     },
     "Open the chat to review SKILL.md": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ouvre la conversation pour examiner SKILL.md"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -3929,6 +5097,12 @@
     },
     "Sagax is trying the saved connection automatically.": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sagax essaie automatiquement la connexion enregistrée."
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -3939,6 +5113,12 @@
     },
     "Opening…": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ouverture…"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -3949,6 +5129,12 @@
     },
     "Opens a preview": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ouvre un aperçu"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -3959,6 +5145,12 @@
     },
     "Opens device Settings": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ouvre les Réglages de l'appareil"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -3969,6 +5161,12 @@
     },
     "Opens the image full screen": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ouvre l'image en plein écran"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -3979,6 +5177,12 @@
     },
     "Optional. The clock starts when work actually begins and does not control how often the routine starts.": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Facultatif. Le chrono démarre quand le travail commence vraiment et ne contrôle pas la fréquence de la routine."
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -3989,6 +5193,12 @@
     },
     "Other computers": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Autres ordinateurs"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -3999,6 +5209,12 @@
     },
     "Other ways to connect": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Autres façons de se connecter"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -4009,6 +5225,12 @@
     },
     "PNG, JPEG, GIF, or WebP, up to 10 MB. Images are stored on your paired computer and loaded with this device's pairing token.": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "PNG, JPEG, GIF ou WebP, jusqu'à 10 Mo. Les images sont enregistrées sur ton ordinateur jumelé et chargées avec le jeton de jumelage de cet appareil."
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -4019,6 +5241,12 @@
     },
     "Pair again": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Jumeler de nouveau"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -4029,6 +5257,12 @@
     },
     "Pair again by QR code, or finish on your computer.": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Jumelle de nouveau avec le code QR, ou termine sur ton ordinateur."
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -4039,6 +5273,12 @@
     },
     "Pair again to enter here": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Jumelle de nouveau pour saisir ici"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -4049,6 +5289,12 @@
     },
     "Pair this device with Sagax to see your chats and respond to your bots.": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Jumelle cet appareil avec Sagax pour voir tes conversations et répondre à tes bots."
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -4125,6 +5371,12 @@
     },
     "Photo Library": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Photothèque"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -4135,6 +5387,12 @@
     },
     "Pick a voice for this agent before enabling speech.": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Choisis une voix pour cet agent avant d'activer la parole."
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -4145,6 +5403,12 @@
     },
     "Pick an agent voice or configure a workspace default on your computer first.": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Choisis d'abord une voix d'agent ou configure une voix par défaut de l'espace de travail sur ton ordinateur."
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -4155,6 +5419,12 @@
     },
     "Pick up the same conversations from your computer.": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reprends les mêmes conversations que sur ton ordinateur."
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -4165,6 +5435,12 @@
     },
     "Pinned": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Épinglés"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -4175,6 +5451,12 @@
     },
     "Pinned bots stay in Pinned until you unpin them.": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Les bots épinglés restent dans Épinglés jusqu'à ce que tu les désépingles."
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -4185,6 +5467,12 @@
     },
     "Point the camera at the QR code on your computer": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pointe la caméra vers le code QR sur ton ordinateur"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -4199,6 +5487,12 @@
     },
     "Preparing attachments…": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Préparation des pièces jointes…"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -4209,6 +5503,12 @@
     },
     "Preview": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aperçu"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -4219,6 +5519,12 @@
     },
     "Preview voice": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Écouter la voix"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -4229,6 +5535,12 @@
     },
     "Primary account": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Compte principal"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -4239,6 +5551,12 @@
     },
     "Private by design": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Privé dès la conception"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -4249,6 +5567,12 @@
     },
     "Prompt": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Invite"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -4259,6 +5583,12 @@
     },
     "Provider": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fournisseur"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -4269,6 +5599,12 @@
     },
     "Provider accounts and API keys stay on your computer. Default sends no reasoning level and lets the provider decide.": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Les comptes des fournisseurs et les clés d'API restent sur ton ordinateur. Par défaut, aucun niveau de raisonnement n'est envoyé et le fournisseur décide."
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -4301,6 +5637,12 @@
     },
     "Quietly on": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Activé en silence"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -4311,6 +5653,12 @@
     },
     "Reasoning effort": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Effort de raisonnement"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -4321,6 +5669,12 @@
     },
     "Recent changes": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Changements récents"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -4331,6 +5685,12 @@
     },
     "Reduced": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Réduit"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -4385,6 +5745,12 @@
     },
     "Remove %@?": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Retirer %@?"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -4395,6 +5761,12 @@
     },
     "Remove connection from this device": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Retirer la connexion de cet appareil"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -4405,6 +5777,12 @@
     },
     "Remove from this device": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Retirer de cet appareil"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -4415,6 +5793,12 @@
     },
     "Remove this computer?": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Retirer cet ordinateur?"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -4425,6 +5809,12 @@
     },
     "Remove this connection?": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Retirer cette connexion?"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -4457,6 +5847,12 @@
     },
     "Rename task": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Renommer la tâche"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -4467,6 +5863,12 @@
     },
     "Repeats": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Répétitions"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -4477,6 +5879,12 @@
     },
     "Requesting camera access…": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Demande d'accès à la caméra…"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -4487,6 +5895,12 @@
     },
     "Reset quick replies?": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Réinitialiser les réponses rapides?"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -4497,6 +5911,12 @@
     },
     "Reset to Defaults": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Rétablir les valeurs par défaut"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -4507,6 +5927,12 @@
     },
     "Respond when a bot needs you": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Réponds quand un bot a besoin de toi"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -4539,6 +5965,12 @@
     },
     "Resuming…": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reprise…"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -4571,6 +6003,12 @@
     },
     "Retry the last turn with fresh context": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Relancer le dernier tour avec un contexte neuf"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -4581,6 +6019,12 @@
     },
     "Review approvals without going back to your desk.": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Examine les approbations sans retourner à ton bureau."
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -4591,6 +6035,12 @@
     },
     "Review the complete SKILL.md": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Examiner le SKILL.md complet"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -4601,6 +6051,12 @@
     },
     "Rounded": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Arrondi"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -4611,6 +6067,12 @@
     },
     "Routine = a schedule that creates a fresh task": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Routine = un horaire qui crée une nouvelle tâche"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -4621,6 +6083,12 @@
     },
     "Routine name": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nom de la routine"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -4653,6 +6121,12 @@
     },
     "Run all automated tests": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Lancer tous les tests automatisés"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -4663,6 +6137,12 @@
     },
     "Run location": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Lieu d'exécution"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -4695,6 +6175,12 @@
     },
     "Run receipts": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reçus d'exécution"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -4705,6 +6191,12 @@
     },
     "Run tests": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Lancer les tests"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -4715,6 +6207,12 @@
     },
     "Runs every": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "S'exécute toutes les"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -4725,6 +6223,12 @@
     },
     "Runs on": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "S'exécute sur"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -4735,6 +6239,12 @@
     },
     "Runs the agent and its tools inside its Boat virtual machine. The VM wakes automatically for each run; keep Sagax running so its scheduler can launch the job.": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Exécute l'agent et ses outils dans sa machine virtuelle Boat. La VM se réveille automatiquement à chaque exécution; garde Sagax ouvert pour que son planificateur puisse lancer la tâche."
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -4745,6 +6255,12 @@
     },
     "SLASH COMMANDS": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "COMMANDES À BARRE OBLIQUE"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -4777,6 +6293,12 @@
     },
     "Save profile changes": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enregistrer les changements du profil"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -4787,6 +6309,12 @@
     },
     "Saved securely on your computer.": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enregistré de façon sécurisée sur ton ordinateur."
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -4797,6 +6325,12 @@
     },
     "Saved securely. The task resumed.": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enregistré de façon sécurisée. La tâche a repris."
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -4807,6 +6341,12 @@
     },
     "Scan QR Code": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Balayer le code QR"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -4839,6 +6379,12 @@
     },
     "Scan the QR code in Sagax. We'll securely choose the best way to connect.": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Balaie le code QR dans Sagax. On choisira de façon sécurisée la meilleure façon de se connecter."
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -4849,6 +6395,12 @@
     },
     "Scanner unavailable": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Lecteur non disponible"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -4881,6 +6433,12 @@
     },
     "Schedule recurring or one-time agent work.": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Planifie du travail d'agent récurrent ou ponctuel."
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -4935,6 +6493,12 @@
     },
     "Search chats": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Rechercher dans les conversations"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -4945,6 +6509,12 @@
     },
     "Secure connection required": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connexion sécurisée requise"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -4977,6 +6547,12 @@
     },
     "Select all": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tout sélectionner"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -4987,6 +6563,12 @@
     },
     "Selected days": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Jours choisis"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -5041,6 +6623,12 @@
     },
     "Set the interval to": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Régler l'intervalle à"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -5095,6 +6683,12 @@
     },
     "Share as JSON": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Partager en JSON"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -5105,6 +6699,12 @@
     },
     "Share transcript": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Partager la transcription"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -5115,6 +6715,12 @@
     },
     "Show diff": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Afficher les différences"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -5125,6 +6731,12 @@
     },
     "Show first 80 lines": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Afficher les 80 premières lignes"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -5135,6 +6747,12 @@
     },
     "Show full address": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Afficher l'adresse complète"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -5167,6 +6785,12 @@
     },
     "Shows the steps": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Affiche les étapes"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -5199,6 +6823,12 @@
     },
     "Something went wrong": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Une erreur est survenue"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -5209,6 +6839,12 @@
     },
     "Source: %@": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Source : %@"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -5219,6 +6855,12 @@
     },
     "Source: unknown": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Source : inconnue"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -5229,6 +6871,12 @@
     },
     "Speak replies": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Lire les réponses à voix haute"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -5239,6 +6887,12 @@
     },
     "Square": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Carré"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -5293,6 +6947,12 @@
     },
     "Steer and redirect active execution": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Orienter et rediriger l'exécution en cours"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -5303,6 +6963,12 @@
     },
     "Steps fold into one line. Failures always show.": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Les étapes tiennent sur une ligne. Les échecs s'affichent toujours."
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -5335,6 +7001,12 @@
     },
     "Stop if still running after": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Arrêter si encore en cours après"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -5345,6 +7017,12 @@
     },
     "Stop the current turn": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Arrêter le tour en cours"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -5355,6 +7033,12 @@
     },
     "Stop this bot before changing its model.": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Arrête ce bot avant de changer son modèle."
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -5365,6 +7049,12 @@
     },
     "Structured transcript data": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Données structurées de la transcription"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -5375,6 +7065,12 @@
     },
     "Swipe a section together": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Glisse pour regrouper une section"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -5385,6 +7081,12 @@
     },
     "Swipe another section together, or tap Done.": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Glisse pour regrouper une autre section, ou touche OK."
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -5395,6 +7097,12 @@
     },
     "Switch to Secure phone access (HTTPS) or Tailscale, then try again. You can still finish this request on your computer.": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Passe à l'accès sécurisé du téléphone (HTTPS) ou à Tailscale, puis réessaie. Tu peux aussi terminer cette demande sur ton ordinateur."
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -5405,6 +7113,12 @@
     },
     "Switch, rename or remove one": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Changer, renommer ou retirer un ordinateur"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -5415,6 +7129,12 @@
     },
     "Switches Sagax to this computer": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fait passer Sagax à cet ordinateur"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -5447,6 +7167,12 @@
     },
     "Take your bots with you": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Emporte tes bots avec toi"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -5457,6 +7183,12 @@
     },
     "Tap a chip to edit it. Drag to reorder, swipe to delete.": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Touche une pastille pour la modifier. Glisse pour réordonner, balaie pour supprimer."
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -5467,6 +7199,12 @@
     },
     "Tap bots individually, or hold and swipe through the grid.": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Touche les bots un à un, ou maintiens et glisse dans la grille."
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -5477,6 +7215,12 @@
     },
     "Tap to preview": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Touche pour l'aperçu"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -5487,6 +7231,12 @@
     },
     "Tap to switch": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Touche pour changer"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -5497,6 +7247,12 @@
     },
     "Task = one conversation and result": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tâche = une conversation et un résultat"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -5507,6 +7263,12 @@
     },
     "Tasks": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tâches"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -5517,6 +7279,12 @@
     },
     "Tasks & Routines": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tâches et routines"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -5527,6 +7295,12 @@
     },
     "Temporarily on": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Activé temporairement"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -5537,6 +7311,12 @@
     },
     "That address doesn't look right. Copy it from Phone settings and try again.": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cette adresse ne semble pas correcte. Copie-la depuis les réglages Téléphone et réessaie."
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -5547,6 +7327,12 @@
     },
     "That image is larger than 10 MB.": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cette image dépasse 10 Mo."
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -5573,6 +7359,12 @@
     },
     "That link couldn't be opened.": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Impossible d'ouvrir ce lien."
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -5605,6 +7397,12 @@
     },
     "The chip row is hidden while this list is empty.": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La rangée de pastilles est masquée tant que cette liste est vide."
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -5615,6 +7413,12 @@
     },
     "The connection was removed on your computer. Pair again to keep using your chats here.": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La connexion a été retirée sur ton ordinateur. Jumelle de nouveau pour continuer à utiliser tes conversations ici."
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -5625,6 +7429,12 @@
     },
     "The copied diff always includes every line": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Les différences copiées incluent toujours toutes les lignes"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -5635,6 +7445,12 @@
     },
     "The downloaded file couldn't be previewed.": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Impossible d'afficher l'aperçu du fichier téléchargé."
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -5645,6 +7461,12 @@
     },
     "The generated audio could not be played.": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Impossible de lire l'audio généré."
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -5655,6 +7477,12 @@
     },
     "The voice choice belongs to this agent. Workspace default uses the shared voice selected on your computer.": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Le choix de voix appartient à cet agent. La voix par défaut de l'espace de travail utilise la voix partagée choisie sur ton ordinateur."
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -5665,6 +7493,12 @@
     },
     "Thinking…": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Réflexion…"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -5675,6 +7509,12 @@
     },
     "This bot's computer is only captured while it is working.": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "L'ordinateur de ce bot n'est capté que pendant qu'il travaille."
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -5685,6 +7525,12 @@
     },
     "This chat as Markdown": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cette conversation en Markdown"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -5695,6 +7541,12 @@
     },
     "This computer": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cet ordinateur"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -5705,6 +7557,12 @@
     },
     "This computer is connected and responding normally.": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cet ordinateur est connecté et répond normalement."
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -5715,6 +7573,12 @@
     },
     "This creates a new version and continues from there.": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ça crée une nouvelle version et continue à partir de là."
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -5725,6 +7589,12 @@
     },
     "This device is not paired with a computer.": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cet appareil n'est jumelé à aucun ordinateur."
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -5735,6 +7605,12 @@
     },
     "This device was removed from the computer. Pair it again to reconnect.": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cet appareil a été retiré de l'ordinateur. Jumelle-le de nouveau pour te reconnecter."
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -5745,6 +7621,12 @@
     },
     "This device was unpaired": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cet appareil a été déjumelé"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -5755,6 +7637,12 @@
     },
     "This device was unpaired on the computer.": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cet appareil a été déjumelé sur l'ordinateur."
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -5765,6 +7653,12 @@
     },
     "This existing Cloud VM choice is preserved, but it cannot run until the paired computer has a configured Boat API key and an available Boat agent.": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ce choix de VM infonuagique est conservé, mais il ne peut pas s'exécuter tant que l'ordinateur jumelé n'a pas de clé d'API Boat configurée et un agent Boat disponible."
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -5775,6 +7669,12 @@
     },
     "This gives this device full control of the cloud computer, including anything signed in inside it.": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ça donne à cet appareil le plein contrôle de l'ordinateur infonuagique, y compris tout ce qui y est connecté."
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -5807,6 +7707,12 @@
     },
     "This pairing predates secure phone entry. Scan a fresh QR from Sagax, or finish this request on your computer.": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ce jumelage est antérieur à la saisie sécurisée sur téléphone. Balaie un nouveau code QR dans Sagax, ou termine cette demande sur ton ordinateur."
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -5817,6 +7723,12 @@
     },
     "This proposal was created by an older build and cannot be safely applied. Deny it and ask the bot to create it again.": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cette proposition a été créée par une version antérieure et ne peut pas être appliquée en toute sécurité. Refuse-la et demande au bot de la recréer."
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -5827,6 +7739,12 @@
     },
     "This removes the connection from this device only. It does not revoke this device on your Mac. To remove Mac-side access, open Sagax, then Settings, then Phone and remove it there.": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ça retire la connexion de cet appareil seulement. L'accès de cet appareil n'est pas révoqué sur ton Mac. Pour retirer l'accès côté Mac, ouvre Sagax, puis Réglages, puis Téléphone, et retire-le là."
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -5837,6 +7755,12 @@
     },
     "This removes the saved connection from this device only.": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ça retire la connexion enregistrée de cet appareil seulement."
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -5847,6 +7771,12 @@
     },
     "This restores the four chips the app came with and discards your own.": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ça rétablit les quatre pastilles d'origine et supprime les tiennes."
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -5857,6 +7787,12 @@
     },
     "This routine uses a schedule added by a newer Sagax. Choose One time, Selected days, or Every X minutes before saving.": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cette routine utilise un horaire ajouté par une version plus récente de Sagax. Choisis Une fois, Jours choisis ou Toutes les X minutes avant d'enregistrer."
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -5867,6 +7803,12 @@
     },
     "This task is waiting for your answer.": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cette tâche attend ta réponse."
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -5877,6 +7819,12 @@
     },
     "Thought Process": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Raisonnement"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -5909,6 +7857,12 @@
     },
     "Title (optional)": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Titre (facultatif)"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -5919,6 +7873,12 @@
     },
     "To generate images, configure the shared image provider in Sagax on your computer. Provider keys cannot be added from this device.": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pour générer des images, configure le fournisseur d'images partagé dans Sagax sur ton ordinateur. Les clés de fournisseur ne peuvent pas être ajoutées depuis cet appareil."
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -5929,6 +7889,12 @@
     },
     "To review": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "À examiner"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -5939,6 +7905,12 @@
     },
     "Touch a bot, then glide. Pause briefly on each bot until it clicks.": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Touche un bot, puis glisse. Fais une courte pause sur chaque bot jusqu'au déclic."
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -5993,6 +7965,12 @@
     },
     "Troubleshooting": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dépannage"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -6025,6 +8003,12 @@
     },
     "Try again.": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Réessaie."
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -6035,6 +8019,12 @@
     },
     "Try reconnecting": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Essayer de se reconnecter"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -6045,6 +8035,12 @@
     },
     "Try resuming the task": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Essayer de reprendre la tâche"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -6077,6 +8073,12 @@
     },
     "Untitled task": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tâche sans titre"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -6109,6 +8111,12 @@
     },
     "Upload image": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Téléverser une image"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -6119,6 +8127,12 @@
     },
     "Use": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Utiliser"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -6129,6 +8143,12 @@
     },
     "Use Apple Passwords, 1Password, Bitwarden, or paste. The value is encrypted for your computer and never added to chat.": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Utilise Mots de passe d'Apple, 1Password, Bitwarden, ou colle la valeur. Elle est chiffrée pour ton ordinateur et n'est jamais ajoutée à la conversation."
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -6139,6 +8159,12 @@
     },
     "Use another computer": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Utiliser un autre ordinateur"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -6149,6 +8175,12 @@
     },
     "Use mascot": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Utiliser la mascotte"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -6159,6 +8191,12 @@
     },
     "Use secure phone access or Tailscale, or finish on your computer.": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Utilise l'accès sécurisé du téléphone ou Tailscale, ou termine sur ton ordinateur."
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -6169,6 +8207,12 @@
     },
     "Use the Camera app to scan the QR code, or enter the address and code manually.": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Utilise l'app Appareil photo pour balayer le code QR, ou saisis l'adresse et le code manuellement."
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -6179,6 +8223,12 @@
     },
     "Use the address shown in Phone settings on your computer.": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Utilise l'adresse affichée dans les réglages Téléphone de ton ordinateur."
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -6189,6 +8239,12 @@
     },
     "Use the address shown in Phone settings on your computer. Your pairing is kept.": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Utilise l'adresse affichée dans les réglages Téléphone de ton ordinateur. Ton jumelage est conservé."
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -6199,6 +8255,12 @@
     },
     "Uses this agent's selected model and computer setting on the paired computer.": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Utilise le modèle et le réglage d'ordinateur choisis pour cet agent sur l'ordinateur jumelé."
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -6209,6 +8271,12 @@
     },
     "View Diff": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Voir les différences"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -6219,6 +8287,12 @@
     },
     "View and manage bot task threads": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Voir et gérer les fils de tâches des bots"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -6305,6 +8379,12 @@
     },
     "Waiting for a frame…": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "En attente d'une image…"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -6337,6 +8417,12 @@
     },
     "Watch computer": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Regarder l'ordinateur"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -6347,6 +8433,12 @@
     },
     "Webhooks": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Webhooks"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -6357,6 +8449,12 @@
     },
     "What gets sent to the bot when you tap the chip.": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ce qui est envoyé au bot quand tu touches la pastille."
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -6367,6 +8465,12 @@
     },
     "What should the agent do?": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Que doit faire l'agent?"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -6377,6 +8481,12 @@
     },
     "What should this section be called?": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Quel nom donner à cette section?"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -6409,6 +8519,12 @@
     },
     "What this bot does": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ce que fait ce bot"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -6419,6 +8535,12 @@
     },
     "What's next?": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Et ensuite?"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -6429,6 +8551,12 @@
     },
     "When a bot stops for an answer, is mid-task, or finishes something, it shows up here.": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Quand un bot attend une réponse, est en pleine tâche ou termine quelque chose, il s'affiche ici."
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -6439,6 +8567,12 @@
     },
     "Where does it run?": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Où s'exécute-t-elle?"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -6449,6 +8583,12 @@
     },
     "Where to get this key": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Où obtenir cette clé"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -6459,6 +8599,12 @@
     },
     "Who": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Qui"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -6469,6 +8615,12 @@
     },
     "Won't": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ne fera pas"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -6479,6 +8631,12 @@
     },
     "Work": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Travail"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -6489,6 +8647,12 @@
     },
     "Work, Personal, Client…": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Travail, Personnel, Client…"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -6521,6 +8685,12 @@
     },
     "Workspace": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Espace de travail"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -6531,6 +8701,12 @@
     },
     "Workspace default": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Par défaut de l'espace de travail"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -6563,6 +8739,12 @@
     },
     "You choose which trusted computer this device connects to.": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tu choisis à quel ordinateur de confiance cet appareil se connecte."
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -6573,6 +8755,12 @@
     },
     "Your chats, in your pocket": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tes conversations, dans ta poche"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -6583,6 +8771,12 @@
     },
     "Your computer could not open its credential store, so it cannot say which accounts are connected. Nothing has been disconnected — restarting Sagax on your computer usually clears this.": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ton ordinateur n'a pas pu ouvrir son magasin d'identifiants, donc il ne peut pas dire quels comptes sont connectés. Rien n'a été déconnecté — redémarrer Sagax sur ton ordinateur règle généralement le problème."
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -6593,6 +8787,12 @@
     },
     "a custom interval": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "un intervalle personnalisé"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
@@ -6603,6 +8803,12 @@
     },
     "minutes": {
       "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "minutes"
+          }
+        },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",

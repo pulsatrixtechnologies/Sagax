@@ -34,9 +34,11 @@ import UIKit
 struct PhoneBotPanel: View {
     let bot: Bot
     var tab: DesktopPanelTab = .details
+    /// Opens straight on an Edit persona section (Edit rule: Access).
+    var section: DesktopPanelSection? = nil
 
     var body: some View {
-        AnyView(PhoneBotPanelContent(bot: bot, startTab: tab)).id(bot.id)
+        AnyView(PhoneBotPanelContent(bot: bot, startTab: tab, startSection: section)).id(bot.id)
     }
 }
 
@@ -74,9 +76,17 @@ private struct PhoneBotPanelContent: View {
     @State private var runLogs = false
     @State private var deletingRoutine: Routine?
 
-    init(bot: Bot, startTab: DesktopPanelTab) {
+    init(bot: Bot, startTab: DesktopPanelTab, startSection: DesktopPanelSection? = nil) {
         self.bot = bot
         _tab = State(initialValue: startTab)
+        // a deep link lands on the section with Edit persona under it (Back
+        // returns to the persona list, as a tap through it would)
+        var start = NavigationPath()
+        if let startSection {
+            start.append(PanelPersonaRoute())
+            start.append(startSection)
+        }
+        _path = State(initialValue: start)
         _draft = State(initialValue: CharacterDraft(bot: bot))
         _activity = StateObject(wrappedValue: BotActivityModel(botId: bot.id))
     }

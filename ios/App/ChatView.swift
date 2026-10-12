@@ -45,6 +45,8 @@ struct ChatView: View {
     @State var showingPlus = false
     /// The bot panel, full screen, and the tab it opens on (`BotPanelDoor`).
     @State var showingPanel = false
+    /// Edit rule opens the panel on Access; cleared when the panel closes.
+    @State var panelSection: DesktopPanelSection?
     @State var panelTab: DesktopPanelTab = .details
     /// The live call (the composer's white capsule): the desktop's voice mode.
     @ObservedObject var call = CallController.shared
@@ -187,7 +189,7 @@ struct ChatView: View {
         }
         .fullScreenCover(isPresented: $showingPanel) {
             if case let .bot(bot) = current {
-                ChatProfileRoute.destination(for: bot, tab: panelTab)
+                ChatProfileRoute.destination(for: bot, tab: panelTab, section: panelSection)
                     .environmentObject(session)
             }
         }
@@ -276,10 +278,11 @@ struct ChatView: View {
         .onReceive(NotificationCenter.default.publisher(for: .approvalEditRule)) { note in
             // Edit rule: the bot's panel, where Access holds its Allow rules
             guard case let .bot(bot) = current, (note.object as? String).map({ $0 == bot.id }) ?? true else { return }
+            panelSection = .access
             showingPanel = true
         }
         .onValueChange(of: showingPanel) { shown in
-            if shown { dictation.stop() }
+            if shown { dictation.stop() } else { panelSection = nil }
         }
         .onValueChange(of: call.active) { onCall in
             if onCall { dictation.stop() }

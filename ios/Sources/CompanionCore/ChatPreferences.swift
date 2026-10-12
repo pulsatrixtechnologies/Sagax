@@ -284,10 +284,11 @@ public func isActivityReceipt(_ message: Message) -> Bool {
 }
 
 /// A finished permission ask leaves the chat. The message stays stored.
-/// An open ask, a question and a quiz stay (they are not this).
+/// An open ask, a question and a quiz stay (they are not this), and so does
+/// one answered with Always allow: it shows the Allow rule it saved.
 public func settledPermissionLeavesChat(_ message: Message) -> Bool {
     guard message.kind == .options, let card = message.card, card.isPermission else { return false }
-    return !card.isPending
+    return !card.isPending && AllowRuleText.savedRule(card) == nil
 }
 
 /// Folds a transcript to the requested level of detail.

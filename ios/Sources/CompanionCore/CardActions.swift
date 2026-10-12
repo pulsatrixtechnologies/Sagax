@@ -366,7 +366,7 @@ public enum ApprovalDockRules {
 
 /// What a settled approval card says happened (`approvalCardOutcome`).
 public enum ApprovalOutcome: Hashable, Sendable {
-    case expired, allowed, denied, cancelled
+    case expired, allowed, alwaysAllowed, denied, cancelled
     case routineScheduled, routineUpdated, routinePaused, routineResumed, routineRunQueued, routineDeleted
     case skillEnabled, skillUpdated, profileUpdated
     case teamSetupApplied, botDeleted
@@ -376,6 +376,8 @@ public enum ApprovalOutcome: Hashable, Sendable {
         guard let answered = card.answered else { return nil }
         let proposal = ApprovalDockRules.isProposal(card)
         guard answered == "allow" else { return proposal ? .cancelled : .denied }
+        // answered with Always allow: the saved rule reads like the web pill
+        if !proposal, card.alwaysAllowed?.isEmpty == false { return .alwaysAllowed }
         if let setup = card.teamSetupRequest { return setup.deletion == true ? .botDeleted : .teamSetupApplied }
         switch card.routineRequest?.operation?.action {
         case "create": return .routineScheduled
