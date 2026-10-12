@@ -25,6 +25,7 @@ on:
       - deploy/**
       - .github/workflows/docker.yml
 
+# One run per PR: a new push cancels the superseded run.
 concurrency:
   group: docker-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
