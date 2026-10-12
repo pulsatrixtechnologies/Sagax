@@ -555,11 +555,23 @@ jobs:
     # Here it held three of the account's five macOS runners at a time.
     name: Swift tests + iOS build
     runs-on: macos-latest
-    timeout-minutes: 30
+    # swift test, the simulator build, then one disposable iPhone long
+    # enough to screenshot the provider-setup preview. Not the UI suite.
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Swift package tests
-        run: swift test --package-path ios
+        run: |
+          set -o pipefail
+          swift test --package-path ios 2>&1 | tee "$RUNNER_TEMP/swift-test.txt"
+      - name: Upload the Swift test log
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ios-swift-test
+          path: ${{ runner.temp }}/swift-test.txt
+          if-no-files-found: warn
+          retention-days: 7
       - name: Generate the Xcode project
         run: |
           brew install xcodegen
@@ -578,6 +590,50 @@ jobs:
             build
       - name: No upstream name in the app bundle
         run: scripts/check-ios-bundle-names.sh ios/build/dd/Build/Products/Debug-iphonesimulator/Sagax.app
+      - name: Screenshot the provider setup preview
+        run: |
+          set -euo pipefail
+          runtime_id=$(xcrun simctl list runtimes -j | python3 -c '
+          import json, sys
+          runtimes = json.load(sys.stdin)["runtimes"]
+          available = [r for r in runtimes if r.get("isAvailable") and r.get("identifier", "").startswith("com.apple.CoreSimulator.SimRuntime.iOS")]
+          if not available:
+              raise SystemExit("No available iOS simulator runtime")
+          available.sort(key=lambda r: tuple(int(part) for part in r["version"].split(".")))
+          print(available[-1]["identifier"])
+          ')
+          device_type=$(xcrun simctl list devicetypes -j | python3 -c '
+          import json, sys
+          types = json.load(sys.stdin)["devicetypes"]
+          matches = [t for t in types if t["name"] == "iPhone 17 Pro"]
+          if not matches:
+              matches = [t for t in types if t["name"].startswith("iPhone") and "Pro" in t["name"]]
+          if not matches:
+              matches = [t for t in types if t["name"].startswith("iPhone")]
+          if not matches:
+              raise SystemExit("No available iPhone simulator type")
+          print(matches[-1]["identifier"])
+          ')
+          simulator_id=$(xcrun simctl create "sagax-provider-setup-${GITHUB_RUN_ID}" "$device_type" "$runtime_id")
+          cleanup() {
+            xcrun simctl shutdown "$simulator_id" >/dev/null 2>&1 || true
+            xcrun simctl delete "$simulator_id" >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+          xcrun simctl boot "$simulator_id"
+          xcrun simctl bootstatus "$simulator_id" -b
+          xcrun simctl install "$simulator_id" ios/build/dd/Build/Products/Debug-iphonesimulator/Sagax.app
+          xcrun simctl launch "$simulator_id" ca.pulsatrix.sagax -providerSetupPreview -AppleLanguages "(en)" -AppleLocale en_US
+          sleep 8
+          xcrun simctl io "$simulator_id" screenshot "$RUNNER_TEMP/provider-setup-preview.png"
+          test -s "$RUNNER_TEMP/provider-setup-preview.png"
+      - name: Upload the provider setup screenshot
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ios-provider-setup-preview
+          path: ${{ runner.temp }}/provider-setup-preview.png
+          if-no-files-found: error
+          retention-days: 7
 
   # Selection includes ios/** as well as android/**: :core's fixtures come
   # from ios/Tests/CompanionCoreTests/Fixtures.
