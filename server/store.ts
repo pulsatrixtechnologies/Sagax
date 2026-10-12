@@ -2480,7 +2480,12 @@ export class Store {
    * (server/thread-privacy.ts), never over someone else's. */
   activityOf(botId: string, include: (task: TaskRecord) => boolean): { activity: BotActivity; busy: boolean } {
     const bot = this.bot(botId);
-    const activities = [this.legacyActivities.get(botId), ...(bot?.tasks ?? []).filter(include).map((task) => task.activity)];
+    const activities = [
+      this.legacyActivities.get(botId),
+      ...(bot?.tasks ?? [])
+        .filter((task) => include(task) && !task.routineRunId)
+        .map((task) => task.activity),
+    ];
     const activity = (["waiting-on-you", "no-signal", "working", "dead"] as const)
       .find((candidate) => activities.includes(candidate)) ?? "idle";
     return { activity, busy: ACTIVITY_BUSY.has(activity) };

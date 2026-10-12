@@ -56,6 +56,8 @@ export interface BotActivityItem {
    * commits its own git, gh and GitHub tool calls produced. Absent for
    * everything else. */
   code?: BotCodeWork;
+  /** The engine and model this work runs on, when known. */
+  engine?: { instanceId: string; model: string };
 }
 
 /** What the bot did to a pull request, read off its own calls (`gh pr

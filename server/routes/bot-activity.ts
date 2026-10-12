@@ -219,12 +219,14 @@ export function createBotActivityRoutes(deps: BotActivityRouteDeps): RouteHandle
     const active = activityStatusActive(status);
     const current = active ? currentStep(task.threadId, run) : undefined;
     const coding = codingThread(task);
+    const selection = task.modelSelection ?? bot.modelSelection ?? undefined;
     return {
       id: `thread:${task.threadId}`,
       kind: run || task.routineRunId ? "routine" : task.openedBy && task.openedBy.botId !== bot.id ? "hop" : "session",
       botId: bot.id,
       botName: bot.name,
       title: task.title.trim() || run?.routineName || bot.name,
+      ...(selection ? { engine: { instanceId: selection.instanceId, model: selection.model } } : {}),
       status,
       startedAt,
       ...(activityStatusActive(status) ? {} : { endedAt: run?.finishedAt ?? updatedAt }),
@@ -293,12 +295,14 @@ export function createBotActivityRoutes(deps: BotActivityRouteDeps): RouteHandle
   function runItem(bot: ActivityBot, run: RoutineRun): BotActivityItem {
     const status = runStatus(run.status);
     const updatedAt = run.finishedAt ?? run.startedAt ?? run.scheduledFor;
+    const selection = bot.modelSelection ?? undefined;
     return {
       id: `run:${run.id}`,
       kind: "routine",
       botId: bot.id,
       botName: bot.name,
       title: run.routineName,
+      ...(selection ? { engine: { instanceId: selection.instanceId, model: selection.model } } : {}),
       status,
       startedAt: run.startedAt ?? run.scheduledFor,
       ...(activityStatusActive(status) ? {} : { endedAt: updatedAt }),

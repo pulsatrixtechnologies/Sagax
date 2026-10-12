@@ -18,17 +18,15 @@
 // first, by status, searchable), and a card opens ActivityDetailModal. The
 // list refetches when the bot's threads change (the store's event stream)
 // and polls while work runs.
-import { useCallback, useEffect, useReducer, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Activity, ChevronRight, History, GitBranch, GitCommitHorizontal, GitMerge, GitPullRequest, GitPullRequestClosed, Loader2, SquareTerminal } from "lucide-react";
 
-import { api, useStore, type Bot } from "@/state/store";
+import { api, type Bot } from "@/state/store";
 import { t } from "@/lib/i18n";
 import { cn } from "@/lib/cn";
 import { openExternalLink } from "@/lib/app-links";
 import {
   activityLive,
-  activitySignature,
-  activityStatusActive,
   codeWorkWhen,
   codingLive,
   codingWhere,
@@ -38,23 +36,18 @@ import {
   type BotCodePullRequest,
   type CodingWork,
   FINISHED_FADE_MS,
-  LiveActivity,
   type LiveView,
-  loadBotActivity,
-  loadBotActivityDetail,
   type BotActivityFilter,
   type BotActivityItem,
   type BotActivityList,
   type BotLaunchedAgentItem,
+  loadBotActivityDetail,
 } from "@/lib/bot-activity";
 import { ActivityCard } from "./ActivityCard";
 import { LaunchedAgentsList } from "./LaunchedAgentsList";
 import { ActivityDetailModal } from "./ActivityDetailModal";
 import { ActivityListModal } from "./ActivityListModal";
-
-const POLL_ACTIVE_MS = 4_000;
-const POLL_IDLE_MS = 30_000;
-const LIST_LIMIT = 50;
+import { useBotActivityFeed } from "@/lib/use-bot-activity-feed";
 
 export interface CardActions {
   onOpen: (item: BotActivityItem) => void;
@@ -230,8 +223,8 @@ export function CodeWorkList({ work, now }: { work: CodingWork; now: number }) {
 export function panelSections(list: BotActivityList | null, live?: LiveView) {
   const coding = list ? codingLive(list.items, live) : [];
   const work = list ? codingWork(list.items) : { pullRequests: [], branches: [], commits: [] };
-  const launched = list?.launchedAgents ?? [];
   const other = list ? activityLive(list.items, list.subagents, live) : [];
+  const launched = list?.launchedAgents ?? [];
   return {
     coding,
     work,
@@ -324,109 +317,14 @@ export function PanelSections({ list, live, actions, onOpenHistory, onOpenLaunch
 }
 
 export function ActivitySection({ bot }: { bot: Bot }) {
-  const { state, dispatch } = useStore();
-  const [list, setList] = useState<BotActivityList | null>(null);
-  const [error, setError] = useState(false);
+  const feed = useBotActivityFeed(bot);
   const [open, setOpen] = useState<BotActivityItem | null>(null);
   const [all, setAll] = useState<BotActivityFilter | null>(null);
-  // Finished work leaves the panel a few seconds after it finished.
-  const [, rerender] = useReducer((count: number) => count + 1, 0);
-  const tracker = useRef<LiveActivity | null>(null);
-  tracker.current ??= new LiveActivity(rerender);
-  useEffect(() => () => tracker.current?.dispose(), []);
-  const [stopping, setStopping] = useState<ReadonlySet<string>>(new Set());
-  const [now, setNow] = useState(() => Date.now());
-  const request = useRef(0);
-  const signature = activitySignature(bot.tasks);
+  const list = feed.list;
+  const error = feed.error;
+  const stop = feed.stop;
+  const actions: CardActions = { onOpen: setOpen, onStop: stop, stopping: feed.stopping, now: feed.now, fading: feed.live.fading };
 
-  const refresh = useCallback(() => {
-    const id = ++request.current;
-    return loadBotActivity(api, bot.id, { limit: LIST_LIMIT })
-      .then((next) => {
-        if (id !== request.current) return;
-        tracker.current?.update([...next.items, ...next.subagents]);
-        setList(next);
-        setNow(Date.now());
-        setError(false);
-      })
-      // A failed fetch keeps what is on screen (a first one says so); the
-      // next poll tries again.
-      .catch(() => {
-        if (id === request.current) setError(true);
-      });
-  }, [bot.id]);
-
-  useEffect(() => {
-    setList(null);
-    setError(false);
-    setOpen(null);
-    setAll(null);
-    tracker.current?.dispose();
-    tracker.current = new LiveActivity(rerender);
-  }, [bot.id]);
-  // A notification asked for one entry (openBotActivity): open it once,
-  // even when it is past the list's window (a routine run refused on the
-  // owner's credentials in another person's thread).
-  const target = state.botActivityTarget;
-  useEffect(() => {
-    if (!target || target.botId !== bot.id) return;
-    dispatch({ type: "botActivityOpened" });
-    let live = true;
-    loadBotActivityDetail(api, bot.id, target.itemId)
-      .then((detail) => { if (live) setOpen(detail); })
-      .catch(() => {});
-    return () => { live = false; };
-  }, [target, bot.id, dispatch]);
-  // The bot's threads changed (a turn started or settled, a hop arrived):
-  // what the lists show changed too.
-  useEffect(() => { void refresh(); }, [refresh, signature]);
-  useEffect(() => {
-    const onCloud = (event: Event) => {
-      const botId = (event as CustomEvent<{ botId?: string }>).detail?.botId;
-      if (botId === bot.id) void refresh();
-    };
-    window.addEventListener("sagax-cloud-agent", onCloud);
-    return () => window.removeEventListener("sagax-cloud-agent", onCloud);
-  }, [bot.id, refresh]);
-  const active = Boolean(list && (
-    [...list.items, ...list.subagents].some((item) => activityStatusActive(item.status))
-    || (list.launchedAgents ?? []).some((item) => activityStatusActive(item.status))
-  ));
-  useEffect(() => {
-    const timer = window.setInterval(() => { void refresh(); }, active ? POLL_ACTIVE_MS : POLL_IDLE_MS);
-    return () => window.clearInterval(timer);
-  }, [refresh, active]);
-  // Elapsed times tick between fetches while something runs.
-  useEffect(() => {
-    if (!active) return;
-    const timer = window.setInterval(() => setNow(Date.now()), 1_000);
-    return () => window.clearInterval(timer);
-  }, [active]);
-
-  const stop = useCallback((item: BotActivityItem) => {
-    setStopping((current) => new Set(current).add(item.id));
-    const done = () => setStopping((current) => {
-      const next = new Set(current);
-      next.delete(item.id);
-      return next;
-    });
-    if (item.id.startsWith("cloud:")) {
-      const cloudId = item.id.slice("cloud:".length);
-      void api(`/api/bots/${encodeURIComponent(item.botId)}/cloud-agents/${encodeURIComponent(cloudId)}/cancel`, { method: "POST" })
-        .catch(done)
-        .finally(() => { done(); void refresh(); });
-      return;
-    }
-    if (!item.threadId) {
-      done();
-      return;
-    }
-    dispatch({ type: "interrupt", botId: item.botId, threadId: item.threadId, onError: done });
-    window.setTimeout(() => { done(); void refresh(); }, 1_500);
-  }, [dispatch, refresh]);
-
-  const live = tracker.current.view();
-  const actions: CardActions = { onOpen: setOpen, onStop: stop, stopping, now, fading: live.fading };
   const openLaunched = useCallback((item: BotLaunchedAgentItem) => {
     if (!item.threadId) return;
     loadBotActivityDetail(api, item.targetBotId, item.id)
@@ -434,9 +332,13 @@ export function ActivitySection({ bot }: { bot: Bot }) {
       .catch(() => {});
   }, []);
 
+  useEffect(() => {
+    if (feed.deepLinked) setOpen(feed.deepLinked);
+  }, [feed.deepLinked]);
+
   return (
     <>
-      <PanelSections list={list} live={live} actions={actions} onOpenHistory={setAll} onOpenLaunched={openLaunched} error={error} />
+      <PanelSections list={list} live={feed.live} actions={actions} onOpenHistory={setAll} onOpenLaunched={openLaunched} error={error} />
       {all && (
         <ActivityListModal
           botId={bot.id}
@@ -445,14 +347,14 @@ export function ActivitySection({ bot }: { bot: Bot }) {
           onClose={() => setAll(null)}
           onOpen={setOpen}
           onStop={stop}
-          stopping={stopping}
+          stopping={feed.stopping}
         />
       )}
       {open && (
         <ActivityDetailModal
           item={open}
           onClose={() => setOpen(null)}
-          onChanged={() => { void refresh(); }}
+          onChanged={() => { void feed.refresh(); }}
         />
       )}
     </>

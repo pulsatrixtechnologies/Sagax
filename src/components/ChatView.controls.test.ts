@@ -54,6 +54,22 @@ const bot: Bot = {
 };
 
 describe("thread control placement", () => {
+  it("keeps the composer enabled on the open thread while a routine runs elsewhere", () => {
+    const routineBusy: Bot = {
+      ...bot,
+      busy: true,
+      activity: "working",
+      tasks: [
+        { threadId: "selected", title: "Selected", createdAt: 1, busy: false, activity: "idle",
+          modelSelection: { instanceId: "test", model: "thread-model" }, approvalMode: "ask" },
+        { threadId: "routine", title: "Dispatch", createdAt: 2, busy: true, activity: "working", unread: false, routineRunId: "run-1" },
+      ],
+    };
+    const markup = renderToStaticMarkup(createElement(ChatView, { bot: routineBusy }));
+    expect(markup).toMatch(/<textarea[^>]*(?![^>]*disabled)[^>]*>/);
+    expect(markup).not.toMatch(/<textarea[^>]*disabled=""[^>]*aria-busy="true"/);
+  });
+
   it("keeps the composer inert until the deleted thread's replacement transcript arrives", () => {
     const markup = renderToStaticMarkup(createElement(ChatView, { bot: { ...bot, awaitingThreadSnapshot: true } }));
     expect(markup).toMatch(/<textarea[^>]*disabled=""[^>]*aria-busy="true"/);

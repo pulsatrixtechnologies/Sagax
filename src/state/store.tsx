@@ -671,7 +671,7 @@ export function currentTaskBot(bot: Bot, threadId = bot.threadId): Bot {
     autoApprove: task.autoApprove ?? bot.autoApprove,
     alwaysAllow: task.alwaysAllow ?? bot.alwaysAllow,
     activity: task.activity ?? bot.activity,
-    busy: task.busy ?? (task.activity ? task.activity === "working" || task.activity === "waiting-on-you" : bot.busy),
+    busy: task.busy ?? (task.activity === "working" || task.activity === "waiting-on-you"),
     unread: task.unread ?? bot.unread,
     pinnedMessageId: task.pinnedMessageId,
     turnStartedAt: task.turnStartedAt ?? null,
