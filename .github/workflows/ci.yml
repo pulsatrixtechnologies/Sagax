@@ -52,6 +52,7 @@ jobs:
       runtime: ${{ steps.scope.outputs.runtime }}
       mobile: ${{ steps.scope.outputs.mobile }}
       vitest_os: ${{ steps.scope.outputs.vitest_os }}
+      platforms: ${{ steps.scope.outputs.platforms }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -196,7 +197,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        os: ${{ needs.static.outputs.platforms == 'true' && fromJSON('["ubuntu-latest","windows-latest"]') || fromJSON('["ubuntu-latest"]') }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 15
     steps:
@@ -211,7 +212,8 @@ jobs:
 
   windows-cua:
     needs: static
-    if: needs.static.outputs.runtime == 'true'
+    # Windows/macOS/iOS run on main pushes and merge groups, not on PRs.
+    if: needs.static.outputs.runtime == 'true' && needs.static.outputs.platforms == 'true'
     name: Windows CUA host smoke
     runs-on: windows-latest
     timeout-minutes: 10
@@ -229,7 +231,8 @@ jobs:
 
   electron-smokes:
     needs: static
-    if: needs.static.outputs.runtime == 'true'
+    # Windows/macOS/iOS run on main pushes and merge groups, not on PRs.
+    if: needs.static.outputs.runtime == 'true' && needs.static.outputs.platforms == 'true'
     # Real Electron utility processes against disposable homes and fake CLIs.
     # Never the live app. Each script prints its own evidence lines. Every
     # PR's macOS checks live in this one job: macOS runners are the scarce
@@ -280,7 +283,9 @@ jobs:
             const runtime = needs.static.outputs.runtime;
             if (runtime !== "true" && runtime !== "false") throw new Error("Missing CI selection");
             const bad = Object.entries(needs).filter(([job, { result }]) => {
-              const expected = job === "static" || runtime === "true" ? "success" : "skipped";
+              const platformOnly = job === "windows-cua" || job === "electron-smokes";
+              const platforms = needs.static.outputs.platforms !== "false";
+              const expected = job === "static" || (runtime === "true" && (platforms || !platformOnly)) ? "success" : "skipped";
               return result !== expected;
             });
             if (bad.length) { console.error(`\n${bad.length} required job(s) did not pass: ${bad.map(([job]) => job).join(", ")}`); process.exit(1); }
@@ -522,7 +527,8 @@ jobs:
 
   ios:
     needs: static
-    if: needs.static.outputs.mobile == 'true'
+    # Windows/macOS/iOS run on main pushes and merge groups, not on PRs.
+    if: needs.static.outputs.mobile == 'true' && needs.static.outputs.platforms == 'true'
     # The simulator UI suite (about 90 minutes of iPhone + iPad runs) lives in
     # ios-thread-ui.yml: nightly, on main pushes that touch ios/, and by hand.
     # Here it held three of the account's five macOS runners at a time.

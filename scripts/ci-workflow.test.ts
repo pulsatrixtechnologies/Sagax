@@ -147,6 +147,15 @@ describe("CI concurrency", () => {
     }
   });
 
+  it("accepts skipped Windows/macOS jobs only when platforms are deselected", () => {
+    const pr = (extra: object) => {
+      const base = gateNeeds("true");
+      return { ...base, static: { ...base.static, outputs: { ...base.static.outputs, platforms: "false" } }, ...extra };
+    };
+    expect(runGate(pr({ "windows-cua": { result: "skipped" }, "electron-smokes": { result: "skipped" } })).status).toBe(0);
+    expect(runGate(pr({ "windows-cua": { result: "skipped" }, "electron-smokes": { result: "skipped" }, vitest: { result: "skipped" } })).status).toBe(1);
+  });
+
   it("rejects failed preflight and missing or malformed selection", () => {
     for (const result of ["failure", "cancelled", "skipped"]) {
       expect(runGate({ ...gateNeeds("false"), static: { result, outputs: { runtime: "false" } } }).status).toBe(1);
@@ -162,7 +171,7 @@ describe("CI concurrency", () => {
     expect(workflow.jobs.static.steps.find((step: { id?: string }) => step.id === "scope").run).toBe("node scripts/ci-scope.mjs");
     expect(workflow.jobs.static.outputs).toEqual({
       runtime: "${{ steps.scope.outputs.runtime }}", mobile: "${{ steps.scope.outputs.mobile }}",
-      vitest_os: "${{ steps.scope.outputs.vitest_os }}",
+      vitest_os: "${{ steps.scope.outputs.vitest_os }}", platforms: "${{ steps.scope.outputs.platforms }}",
     });
     expect(workflow.jobs.static.steps.some((step: { run?: string }) =>
       step.run === "pnpm exec vitest run scripts/ci-scope.test.ts scripts/ci-workflow.test.ts scripts/testing/verification-docs.test.ts",
@@ -185,7 +194,10 @@ describe("CI concurrency", () => {
         continue;
       }
       expect(job.needs).toBe("static");
-      expect(job.if).toBe(`needs.static.outputs.${["ios", "android"].includes(name) ? "mobile" : "runtime"} == 'true'`);
+      const selector = `needs.static.outputs.${["ios", "android"].includes(name) ? "mobile" : "runtime"} == 'true'`;
+      // Windows, macOS and iOS jobs run on main pushes and merge groups only.
+      expect(job.if).toBe(["windows-cua", "electron-smokes", "ios"].includes(name)
+        ? `${selector} && needs.static.outputs.platforms == 'true'` : selector);
     }
   });
 
