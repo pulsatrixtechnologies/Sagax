@@ -21,6 +21,8 @@ export interface PerspicaxOrg {
     interimAttach?: { until: number | null; people: number };
     /** Whether bots may run with Full access (absent: allowed). */
     allowFullAccess?: boolean;
+    /** Install SentinelOne on persistent local virtual machines (absent: on). */
+    sentinelOneVmAgent?: boolean;
     /** Where bots' Claude Code plugins may come from (any by default). */
     pluginMarketplaces?: { mode: "any" } | { mode: "list"; allow: string[] };
     /** The organization's GitHub OAuth App for "Connecter GitHub". */

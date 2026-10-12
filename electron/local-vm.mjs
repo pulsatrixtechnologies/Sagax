@@ -17,6 +17,9 @@
 //   localVmDesktopSpec, checked here), start it. Idempotent.
 // - Installs nothing by itself: an install opens the vendor's download page,
 //   or runs Homebrew, only after the person confirms in an OS dialog.
+//   SentinelOne on a persistent machine is electron/sentinelone-vm.mjs: the
+//   site token is stdin of one file write, then removed. It is never an
+//   argument and never kept in the guest.
 // - A bot may ask to create the Local VM when none exists (`create`, the
 //   local_vm tool's create): the same setup from the server's recipe, only
 //   after the person said yes on this computer (`confirmCreate`, the desktop
@@ -27,6 +30,7 @@
 //   local-vm-computer.mjs. Never a shell line, never a path the bot chose,
 //   never this computer's own screen.
 import { spawn } from "node:child_process";
+import { commandGuestTransport, packagePathFor, publicProtection, redactText, runSentinelOneInstall, S1_TOKEN_ENV } from "./sentinelone-vm.mjs";
 import { randomBytes } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
@@ -51,14 +55,18 @@ const OUTPUT_LIMIT = 256 * 1024;
 const text = value => ({ content: [{ type: "text", text: typeof value === "string" ? value : JSON.stringify(value) }] });
 
 /** Run one program with arguments (never a shell line). */
-export function execArgv(argv, { timeoutSeconds = 60, env = process.env } = {}) {
+export function execArgv(argv, { timeoutSeconds = 60, env = process.env, stdin } = {}) {
   return new Promise(resolve => {
     let child;
     try {
-      child = spawn(argv[0], argv.slice(1), { env, windowsHide: true, stdio: ["ignore", "pipe", "pipe"] });
+      child = spawn(argv[0], argv.slice(1), { env, windowsHide: true, stdio: [stdin === undefined ? "ignore" : "pipe", "pipe", "pipe"] });
     } catch (error) {
       resolve({ code: -1, stdout: "", stderr: String(error?.message ?? error) });
       return;
+    }
+    if (stdin !== undefined && child.stdin) {
+      child.stdin.on("error", () => { /* the child closed the pipe */ });
+      child.stdin.end(stdin);
     }
     const out = []; const err = []; let bytes = 0;
     const take = target => chunk => { bytes += chunk.length; if (bytes <= OUTPUT_LIMIT * 8) target.push(chunk); };
@@ -611,6 +619,31 @@ export function createLocalVm({
       const out = `${answer.stdout}${err}\n[exit ${answer.code}]`.trimStart();
       return { ...text(out.slice(0, OUTPUT_LIMIT)), ...(answer.code === 0 ? {} : { isError: true }) };
     },
+    /** Install SentinelOne as root. The token is stdin of the write step only. */
+    async protect(token) {
+      if (typeof token !== "string" || !token.trim()) throw new Error("The SentinelOne site token is not configured.");
+      const runtime = await need();
+      const vm = await pick(runtime);
+      if (vm.stale) throw new Error(staleMessage(vm));
+      if (vm.state !== "running") throw new Error("The Local VM is not running.");
+      const os = "linux-deb";
+      const guestEnv = { ...runEnv() };
+      delete guestEnv[S1_TOKEN_ENV];
+      const transport = commandGuestTransport({
+        os,
+        token,
+        container: vm.name,
+        runtime: runtime.cli,
+        exec: ({ argv, stdin: input }) => exec(argv, { timeoutSeconds: 90, env: guestEnv, stdin: input }),
+      });
+      const result = await runSentinelOneInstall({
+        transport,
+        token,
+        os,
+        packagePath: packagePathFor(os, env),
+      });
+      return text(redactText(JSON.stringify({ protection: publicProtection(result), audited: result.audited === true }), token));
+    },
     async exec(container, command, options) {
       const runtime = await need();
       const vm = await pick(runtime, container);
@@ -622,7 +655,7 @@ export function createLocalVm({
     },
   };
   // Commands, creations and screen grabs are use, held for as long as they run.
-  for (const name of ["create", "exec", "screenshot", "computer"]) {
+  for (const name of ["create", "exec", "screenshot", "computer", "protect"]) {
     const work = api[name];
     api[name] = (...args) => using(() => work(...args));
   }

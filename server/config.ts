@@ -453,6 +453,10 @@ const appConfigSchema = z.object({
      * (server/org-full-access.ts). Absent means allowed; an admin turns it
      * off in Settings > Organization. */
     allowFullAccess: z.boolean().optional(),
+    /** Install the SentinelOne agent on persistent local virtual machines.
+     * Absent means on. An admin turns it off for the whole organization.
+     * A missing site token still installs nothing. */
+    sentinelOneVmAgent: z.boolean().optional(),
     /** Where bots' Claude Code plugins may come from (server/bot-plugins.ts).
      * Absent means any marketplace; an admin may keep a list. */
     pluginMarketplaces: z.union([
@@ -707,6 +711,8 @@ export interface AppConfig {
   organization?: {
     interimAttach?: { since: number; days: number };
     allowFullAccess?: boolean;
+    /** Absent means on. See appConfigSchema.organization.sentinelOneVmAgent. */
+    sentinelOneVmAgent?: boolean;
     pluginMarketplaces?: { mode: "any" } | { mode: "list"; allow: string[] };
     githubClientId?: string;
     allowedEngines?: string[];
@@ -1438,6 +1444,9 @@ export const WORKSPACE_CREDENTIAL_ENV = [
   "SAGAX_CLOUD_BOAT_TOKEN",
   "SAGAX_CLOUD_VOICE_TOKEN",
   "SAGAX_CLOUD_DECIDER_TOKEN",
+  // SentinelOne site token for persistent local virtual machines. Injected
+  // into the guest only for the install, then wiped. Never a child env.
+  "SAGAX_S1_SITE_TOKEN",
   // Harness-private filesystem hints are not credentials themselves, but
   // exposing them to a shell-capable agent points straight at app-owned
   // state. The built-in browser master is delivered privately in memory.

@@ -192,6 +192,7 @@ import {
   type LocalVmTarget,
   type Runtime,
 } from "./container-computer.ts";
+import { presentContainerStatus } from "./sentinelone-vm.ts";
 import { attachForTurn, saveBotAttachment } from "./bot-attachment.ts";
 import {
   cacheUntilConfigChanges,
@@ -20282,8 +20283,34 @@ function stderrOf(err: unknown): string {
   return typeof s === "string" ? s : Buffer.isBuffer(s) ? s.toString("utf8") : "";
 }
 
+function withSentinelOne(status: ContainerComputerStatus, target: LocalVmTarget, retry = false) {
+  return presentContainerStatus(status, {
+    key: target.key,
+    persistent: target.persistent,
+    enabled: cfg.organization?.sentinelOneVmAgent !== false,
+    dataDir: DATA_DIR,
+    os: target.guestOs,
+    retry,
+    env: process.env,
+  });
+}
+
+/** Hold a running machine until SentinelOne is online, after the lifecycle
+ * lock is released. A missing token, an ephemeral machine, or the organization
+ * switch off leaves readiness as the desktop reported it. */
+async function sealLocalVm(status: ContainerComputerStatus, target: LocalVmTarget, isCurrent: () => boolean) {
+  let current = withSentinelOne(status, target);
+  const deadline = Date.now() + LOCAL_VM_DESKTOP_WAIT_MS;
+  while (isCurrent() && !current.ready && current.container === "running" && current.protection?.state !== "failed" && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 2_000));
+    if (!isCurrent()) break;
+    current = withSentinelOne(await containerComputerStatus(undefined, undefined, target), target);
+  }
+  return current;
+}
+
 async function localVmPayload(target: LocalVmTarget, auth: RequestAuth) {
-  const status = await containerComputerStatus(undefined, undefined, target);
+  const status = withSentinelOne(await containerComputerStatus(undefined, undefined, target), target);
   return {
     ...localVmViewerStatus(status, auth),
     stop_reason: localVmStopReason(target.key, status),
@@ -20310,56 +20337,56 @@ async function readyLocalVmForTurn(botId: string, target: LocalVmTarget, isCurre
   const pooled = target.key.startsWith("pool:");
   const ownsProvision = !pooled && !localVmProvisionBusy;
   if (ownsProvision) localVmProvisionBusy = true;
-  let status: ContainerComputerStatus;
+  const release = () => {
+    if (ownsProvision) localVmProvisionBusy = false;
+    localVmLifecycleBusy.delete(target.key);
+  };
+  let status!: ContainerComputerStatus;
+  // "seal" waits for the desktop and, when required, for SentinelOne.
+  // The wait runs only after the lifecycle lock is released.
+  let hold: "overlay" | "seal" = "overlay";
+  let touched = false;
   try {
     status = await containerComputerStatus(undefined, undefined, target);
     noteLocalVmSeen(target, status);
-    if (!isCurrent()) return status;
-    const action = localVmWakeAction(status);
-    if (status.ready || !action || !status.runtime) return status;
-    // An organization server never creates a desktop on itself (the claim is
-    // refused too; this keeps a turn from even starting one).
-    if (hostComputerRefusal()) return status;
-    // Another creation is already mid-flight and its container is not yet
-    // visible to a count, so the safe answer is the inspected status —
-    // exactly what the over-cap path below returns.
-    if (action === "run" && !pooled && !ownsProvision) return status;
-
-    if (action === "run" && target.key.startsWith("bot:")) {
-      const count = await existingPerBotLocalVmCount(status.runtime);
-      if (!isCurrent() || count >= localVmMaxInstances(cfg)) return status;
-    }
-
-    broadcast({ kind: "computer", botId, state: "provisioning" });
-    try {
-      status = await containerComputerAction(action, undefined, undefined, target);
-    } catch {
-      // Keep the inspected status: its `problem` names the real obstacle,
-      // which is more use to the person than "podman run exited non-zero".
-      // `run` can throw after the container exists, so arm the idle
-      // backstop anyway — expiry defers while the target is busy and its
-      // remove step no-ops unless a fresh probe sees a running container.
-      // The problem text stays as inspected: cheaply telling a half-created
-      // container from none here would need another container probe.
-      localVmIdleFor(target).touch();
-      return status;
+    if (isCurrent()) {
+      const action = localVmWakeAction(status);
+      if (status.ready || !action || !status.runtime) {
+        hold = status.container === "running" ? "seal" : "overlay";
+      } else if (hostComputerRefusal() || (action === "run" && !pooled && !ownsProvision)) {
+        // An organization server never creates a desktop on itself. Another
+        // creation already mid-flight is answered with the inspected status.
+        hold = "overlay";
+      } else {
+        let blocked = false;
+        if (action === "run" && target.key.startsWith("bot:")) {
+          const count = await existingPerBotLocalVmCount(status.runtime);
+          if (!isCurrent() || count >= localVmMaxInstances(cfg)) blocked = true;
+        }
+        if (!blocked) {
+          broadcast({ kind: "computer", botId, state: "provisioning" });
+          try {
+            status = await containerComputerAction(action, undefined, undefined, target);
+            touched = true;
+            hold = "seal";
+          } catch {
+            // Keep the inspected status: its `problem` names the real obstacle,
+            // which is more use to the person than "podman run exited non-zero".
+            // `run` can throw after the container exists, so arm the idle
+            // backstop anyway — expiry defers while the target is busy and its
+            // remove step no-ops unless a fresh probe sees a running container.
+            touched = true;
+            hold = "overlay";
+          }
+        }
+      }
     }
   } finally {
-    if (ownsProvision) localVmProvisionBusy = false;
-    localVmLifecycleBusy.delete(target.key);
+    release();
   }
-  localVmIdleFor(target).touch();
-
-  // The container is up before Cua Driver is. Waiting here rather than failing
-  // the turn is the whole point: a person who has been away eight hours should
-  // not have to send their message twice.
-  const deadline = Date.now() + LOCAL_VM_DESKTOP_WAIT_MS;
-  while (isCurrent() && !status.ready && status.container === "running" && Date.now() < deadline) {
-    await new Promise((resolve) => setTimeout(resolve, 2_000));
-    if (!isCurrent()) break;
-    status = await containerComputerStatus(undefined, undefined, target);
-  }
-  return status;
+  if (touched) localVmIdleFor(target).touch();
+  if (hold === "seal") return sealLocalVm(status, target, isCurrent);
+  return withSentinelOne(status, target);
 }
 
 async function existingPerBotLocalVmCount(runtime: Runtime) {
@@ -21506,6 +21533,7 @@ ROUTES.push(createDesktopBridgeRoutes({
   bridges: desktopBridges, tunnels: desktopTunnels, audit: bridgeAudit,
   workplace: (person) => workplacePreference(person),
   localModels: desktopLocalModels,
+  sentinelOne: () => ({ enabled: cfg.organization?.sentinelOneVmAgent !== false, dataDir: DATA_DIR }),
 }));
 // A personal computer hands its look to the paired phone (shared/desktop-appearance.ts).
 ROUTES.push(createDesktopAppearanceRoutes({ store: createDesktopAppearanceStore(DATA_DIR), organization: () => IDENTITY.kind === "perspicax" }));
@@ -22902,6 +22930,7 @@ function orgSettings(): OrgSettings {
   return {
     orgKeyConfigured: orgKeyConfigured(),
     allowFullAccess: orgFullAccessPolicy(),
+    sentinelOneVmAgent: cfg.organization?.sentinelOneVmAgent !== false,
     pluginMarketplaces: pluginMarketplacePolicy() ?? { mode: "any" },
     github: { clientId: githubClientId() ?? null, fromEnvironment: !cfg.organization?.githubClientId && Boolean(process.env.SAGAX_GITHUB_CLIENT_ID?.trim()) },
     ...(IDENTITY.kind === "perspicax"
@@ -24328,6 +24357,7 @@ if (IDENTITY.kind === "perspicax") {
     // (org-full-access.ts). Turning it off makes stored Full run as Ask and
     // refuses new turns asking Full; nothing is rewritten.
     saveAllowFullAccess: (allowed, auth) => saveOrgAllowFullAccess(allowed, orgAuditActor(auth)),
+    saveSentinelOneVmAgent: (enabled, auth) => saveOrgSentinelOneVmAgent(enabled, orgAuditActor(auth)),
     // Where bots' plugins may come from (server/bot-plugins.ts): any
     // marketplace, or the admin's list of owner/repo, owner/* or URLs.
     savePluginMarketplaces: (raw, auth) => saveOrgPluginMarketplaces(raw, orgAuditActor(auth)),
@@ -25802,6 +25832,7 @@ const orgOpsDeps: OpsDeps = {
       throw new ConsoleRefusal(400, "invalid_policy", error instanceof Error ? error.message : "That marketplace list is not valid.");
     }
     if (changes.allowFullAccess !== undefined) saveOrgAllowFullAccess(changes.allowFullAccess, actor);
+    if (changes.sentinelOneVmAgent !== undefined) saveOrgSentinelOneVmAgent(changes.sentinelOneVmAgent, actor);
     if (changes.interimAttachDays !== undefined) saveOrgInterimAttachDays(changes.interimAttachDays, actor);
     if (changes.allowedEngines !== undefined) {
       const before = cfg.organization?.allowedEngines ?? null;
@@ -25849,6 +25880,15 @@ function saveOrgInterimAttachDays(days: number, actor: AdminActor): void {
   orgAudit({
     category: "org", action: "org.settings", target: { kind: "organization" }, changed: ["interimAttachDays"],
     before: { interimAttachDays: before?.days ?? null }, after: { interimAttachDays: days }, actor,
+  });
+}
+function saveOrgSentinelOneVmAgent(enabled: boolean, actor: AdminActor): void {
+  const before = cfg.organization?.sentinelOneVmAgent !== false;
+  saveConfig({ organization: { ...cfg.organization, sentinelOneVmAgent: enabled } });
+  cfg.organization = { ...cfg.organization, sentinelOneVmAgent: enabled };
+  orgAudit({
+    category: "org", action: "org.settings", target: { kind: "organization" }, changed: ["sentinelOneVmAgent"],
+    before: { sentinelOneVmAgent: before }, after: { sentinelOneVmAgent: enabled }, actor,
   });
 }
 function saveOrgAllowFullAccess(allowed: boolean, actor: AdminActor): void {
@@ -35848,7 +35888,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       if (action === "pull") localVmImageBusy = true;
       else localVmLifecycleBusy.add(SHARED_LOCAL_VM_TARGET.key);
       try {
-        const status = await containerComputerAction(action, undefined, undefined, SHARED_LOCAL_VM_TARGET);
+        const status = await withSentinelOne(await containerComputerAction(action, undefined, undefined, SHARED_LOCAL_VM_TARGET), SHARED_LOCAL_VM_TARGET);
         if (action === "run" || action === "start") {
           localVmSeen.add(SHARED_LOCAL_VM_TARGET.key);
           localVmIdleFor(SHARED_LOCAL_VM_TARGET).touch();
@@ -35865,6 +35905,21 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         if (action === "pull") localVmImageBusy = false;
         else localVmLifecycleBusy.delete(SHARED_LOCAL_VM_TARGET.key);
       }
+    }
+    if (method === "POST" && path === "/api/local-computer/protect-retry") {
+      if (!String(req.headers["content-type"] ?? "").toLowerCase().startsWith("application/json")) {
+        return json(res, 415, { error: "content-type must be application/json" });
+      }
+      const hostVmRefusal = hostComputerRefusal();
+      if (hostVmRefusal) return json(res, 403, { error: hostVmRefusal, code: "host_computer" });
+      const status = await withSentinelOne(await containerComputerStatus(undefined, undefined, SHARED_LOCAL_VM_TARGET), SHARED_LOCAL_VM_TARGET, true);
+      return json(res, 200, {
+        ...localVmViewerStatus(status, auth),
+        commands: setupCommands(status.runtime, process.platform, SHARED_LOCAL_VM_TARGET),
+        idle_timeout_ms: localVmIdleMs(),
+        mode: localVmMode(cfg),
+        max_instances: localVmMaxInstances(cfg),
+      });
     }
     if (method === "POST" && path === "/api/local-computer/screenshot") {
       localVmIdleFor(SHARED_LOCAL_VM_TARGET).touch();
@@ -35927,7 +35982,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
             }
           }
         }
-        const status = await containerComputerAction(action, undefined, undefined, target);
+        const status = await withSentinelOne(await containerComputerAction(action, undefined, undefined, target), target);
         if (action === "run" || action === "start") {
           localVmSeen.add(target.key);
           localVmIdleFor(target).touch();
@@ -35944,6 +35999,25 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         if (action === "run") localVmProvisionBusy = false;
         localVmLifecycleBusy.delete(target.key);
       }
+    }
+    m = path.match(/^\/api\/bots\/([\w-]+)\/local-computer\/protect-retry$/);
+    if (m && method === "POST") {
+      if (!String(req.headers["content-type"] ?? "").toLowerCase().startsWith("application/json")) {
+        return json(res, 415, { error: "content-type must be application/json" });
+      }
+      const hostVmRefusal = hostComputerRefusal();
+      if (hostVmRefusal) return json(res, 403, { error: hostVmRefusal, code: "host_computer" });
+      const bot = store.bot(m[1]);
+      if (!bot) return json(res, 404, { error: "no such bot" });
+      const target = localVmTargetForBot(bot.id);
+      const status = await withSentinelOne(await containerComputerStatus(undefined, undefined, target), target, true);
+      return json(res, 200, {
+        ...localVmViewerStatus(status, auth),
+        commands: setupCommands(status.runtime, process.platform, target),
+        idle_timeout_ms: localVmIdleMs(),
+        mode: localVmMode(cfg),
+        max_instances: localVmMaxInstances(cfg),
+      });
     }
     m = path.match(/^\/api\/bots\/([\w-]+)\/local-computer\/screenshot$/);
     if (m && method === "POST") {

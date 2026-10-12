@@ -227,6 +227,10 @@ describe("the Local VM's view", () => {
     expect(localVmView(status(null, { runtime: { found: false, runtime: null, cli: null, product: null, daemonUp: false, installed: [] } }), true)).toMatchObject({ state: "error", problem: "no_runtime" });
     const failed = status(null, { setup: { state: "error", steps: [], error: "boom", code: "no_runtime", previousFolder: null } });
     expect(localVmView(failed, true).problem).toBe("no_runtime");
+    expect(localVmView(status({ ...healthy, state: "running" }, { protection: { state: "installing" } }), true)).toMatchObject({ state: "starting", canStop: true, protection: "installing", canRetryProtection: false });
+    expect(localVmView(status({ ...healthy, state: "running" }, { protection: { state: "failed", error: "offline", code: "timeout" } }), true)).toMatchObject({ state: "error", problem: "protection_failed", canRetryProtection: true, canStop: true, protection: "failed" });
+    expect(localVmView(status({ ...healthy, state: "running" }, { protection: { state: "active" } }), true)).toMatchObject({ state: "running", protection: "active", canPause: true, canStop: true });
+    expect(localVmView(status({ ...healthy, state: "running" }), true, "protect-retry").state).toBe("starting");
   });
 
   it("reads the desktop's answer and says which runtime it found", () => {

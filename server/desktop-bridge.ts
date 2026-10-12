@@ -65,7 +65,7 @@ export const DESKTOP_BRIDGE_ACTIONS = [
   // Unpack a staged archive next to it (electron/archive-extract.mjs).
   "extract_archive",
   // The person's own Local VM from their Computer tab (desktop-bridge-routes.ts).
-  "vm_stop", "vm_pause", "vm_resume", "vm_setup", "vm_install", "vm_screenshot", "vm_computer_call",
+  "vm_stop", "vm_pause", "vm_resume", "vm_setup", "vm_install", "vm_screenshot", "vm_computer_call", "vm_protect",
   // One allowlisted call to a loopback model the desktop published (endpoint id, never a URL).
   "local_model",
 ] as const;
@@ -95,7 +95,8 @@ export const desktopBridgeOperation = z.object({
   endpoint: z.string().max(40).optional(),
   http_method: z.enum(["GET", "POST"]).optional(),
   http_path: z.enum(["/models", "/chat/completions", "/messages"]).optional(),
-  /** local_model JSON body. Never logged. */
+  /** local_model JSON body, or the SentinelOne site token for vm_protect.
+   * Never logged. vm_protect deletes it once the desktop has finished. */
   json: z.string().max(1_000_000).optional(),
 }).strict();
 export type DesktopBridgeOperation = z.infer<typeof desktopBridgeOperation>;
@@ -109,7 +110,7 @@ export function desktopBridgeCapability(action: DesktopBridgeAction): keyof Desk
     case "browse": return "browser";
     case "computer_tools": case "computer_call": return "computer";
     case "vm_status": case "vm_start": case "vm_run_command": case "vm_create":
-    case "vm_stop": case "vm_pause": case "vm_resume": case "vm_setup": case "vm_install": case "vm_screenshot": case "vm_computer_call": return "localVm";
+    case "vm_stop": case "vm_pause": case "vm_resume": case "vm_setup": case "vm_install": case "vm_screenshot": case "vm_computer_call": case "vm_protect": return "localVm";
     case "local_model": return "localModels";
   }
 }
@@ -353,6 +354,8 @@ export class DesktopBridges {
 
   private finish(entry: Bridge, job: Job, error: Error | null, result?: unknown) {
     clearTimeout(job.timer);
+    // The site token rode in json only until the desktop finished the install.
+    if (job.operation.action === "vm_protect") delete job.operation.json;
     if (!entry.jobs.delete(job.id)) return;
     if (error) job.reject(error); else job.resolve(result);
   }

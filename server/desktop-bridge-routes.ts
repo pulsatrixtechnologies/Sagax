@@ -21,8 +21,10 @@ import type { IncomingMessage, Server } from "node:http";
 import { Socket } from "node:net";
 import type { Duplex } from "node:stream";
 
+import { readSiteToken } from "../electron/sentinelone-vm.mjs";
 import { localVmDesktopSpec } from "./container-computer.ts";
 import { desktopBridgeRegistration, desktopSystemInfo, type DesktopBridgeOperation, type DesktopBridges } from "./desktop-bridge.ts";
+import { decorateDesktopLocalVmResult } from "./sentinelone-vm.ts";
 import type { DesktopTunnels } from "./desktop-egress.ts";
 import { PASS, type RouteHandler } from "./routes/table.ts";
 
@@ -99,6 +101,8 @@ export function createDesktopBridgeRoutes(deps: {
     update(person: string, body: unknown): { ok: true; value: unknown } | { ok: false; error: string };
     publish(person: string, body: unknown): { ok: true } | { ok: false; error: string };
   };
+  /** Persistent-VM SentinelOne policy. Absent: enabled, and no audit directory. */
+  sentinelOne?: () => { enabled: boolean; dataDir: string };
 }): RouteHandler {
   return async ({ req, res, path, method, auth, json, readBody }) => {
     const publishMatch = LOCAL_MODELS_PUBLISH.exec(path);
@@ -132,6 +136,30 @@ export function createDesktopBridgeRoutes(deps: {
     if (path === LOCAL_VM_ROUTE) {
       // The person's own Local VM on their own connected computer, asked by
       // that person from their Computer tab (never a bot, never another's).
+      // A person with several computers names the one they are looking at
+      // (its id from GET /api/me/desktop-bridge); without it, the current one.
+      const desktopId = typeof body?.desktopId === "string" && /^[0-9a-f-]{36}$/.test(body.desktopId) ? body.desktopId : undefined;
+      if (body?.desktopId !== undefined && desktopId === undefined) return json(res, 400, { error: "desktopId must be a desktop id from GET /api/me/desktop-bridge" });
+      const policy = deps.sentinelOne?.() ?? { enabled: true, dataDir: "" };
+      // The browser never supplies the site token. The server reads it and
+      // puts it on vm_protect only; finish() deletes it after the job.
+      const protect = (token: string) => deps.bridges.request(person, {
+        action: "vm_protect", json: token, timeout_seconds: 90,
+      }, () => true, undefined, desktopId);
+      const bridgeError = (error: unknown) => {
+        const status = (error as { status?: number }).status;
+        return json(res, typeof status === "number" && status >= 400 && status < 600 ? status : 502, { error: (error as Error).message, code: (error as { code?: string }).code });
+      };
+      if (body?.action === "protect-retry") {
+        if (policy.enabled === false) return json(res, 409, { error: "SentinelOne install is turned off for this organization.", code: "sentinelone_off" });
+        if (!readSiteToken()) return json(res, 409, { error: "The SentinelOne site token is not configured.", code: "sentinelone_token" });
+        try {
+          const result = await deps.bridges.request(person, { action: "vm_status" }, () => true, undefined, desktopId);
+          return json(res, 200, { result: decorateDesktopLocalVmResult({ person, result, enabled: policy.enabled, dataDir: policy.dataDir, retry: true, protect, env: process.env }) });
+        } catch (error) {
+          return bridgeError(error);
+        }
+      }
       const action = typeof body?.action === "string" && Object.hasOwn(LOCAL_VM_ACTIONS, body.action) ? LOCAL_VM_ACTIONS[body.action] : undefined;
       if (!action) return json(res, 400, { error: `action must be one of ${Object.keys(LOCAL_VM_ACTIONS).join(", ")}` });
       const operation: DesktopBridgeOperation = action === "vm_setup"
@@ -141,15 +169,12 @@ export function createDesktopBridgeRoutes(deps: {
         : action === "vm_install"
           ? { action, arguments: { choice: typeof body?.choice === "string" ? body.choice.slice(0, 40) : "" } }
           : { action };
-      // A person with several computers names the one they are looking at
-      // (its id from GET /api/me/desktop-bridge); without it, the current one.
-      const desktopId = typeof body?.desktopId === "string" && /^[0-9a-f-]{36}$/.test(body.desktopId) ? body.desktopId : undefined;
-      if (body?.desktopId !== undefined && desktopId === undefined) return json(res, 400, { error: "desktopId must be a desktop id from GET /api/me/desktop-bridge" });
       try {
-        return json(res, 200, { result: await deps.bridges.request(person, operation, () => true, undefined, desktopId) });
+        const result = await deps.bridges.request(person, operation, () => true, undefined, desktopId);
+        if (body?.action !== "status") return json(res, 200, { result });
+        return json(res, 200, { result: decorateDesktopLocalVmResult({ person, result, enabled: policy.enabled, dataDir: policy.dataDir, protect, env: process.env }) });
       } catch (error) {
-        const status = (error as { status?: number }).status;
-        return json(res, typeof status === "number" && status >= 400 && status < 600 ? status : 502, { error: (error as Error).message, code: (error as { code?: string }).code });
+        return bridgeError(error);
       }
     }
     const secret = String(req.headers["x-sagax-bridge-secret"] ?? "");

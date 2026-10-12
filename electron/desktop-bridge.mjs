@@ -72,7 +72,7 @@ const WRITE_MAX = 1024 * 1024;
 const FETCH_MAX = 256 * 1024;
 /** The server's largest upload (an archive, server/attachments.ts). */
 const STAGE_MAX = 90 * 1024 * 1024;
-const ACTIONS = new Set(["run_command", "read_file", "write_file", "list_files", "search_files", "fetch_url", "browse", "computer_tools", "computer_call", "vm_status", "vm_start", "vm_run_command", "vm_create", "vm_stop", "vm_pause", "vm_resume", "vm_setup", "vm_install", "vm_screenshot", "vm_computer_call", "stage_file", "extract_archive", "local_model"]);
+const ACTIONS = new Set(["run_command", "read_file", "write_file", "list_files", "search_files", "fetch_url", "browse", "computer_tools", "computer_call", "vm_status", "vm_start", "vm_run_command", "vm_create", "vm_stop", "vm_pause", "vm_resume", "vm_setup", "vm_install", "vm_screenshot", "vm_computer_call", "vm_protect", "stage_file", "extract_archive", "local_model"]);
 const KEYS = new Set(["action", "path", "content", "encoding", "offset", "max_bytes", "command", "cwd", "timeout_seconds", "pattern", "glob", "url", "screenshot", "tool_name", "arguments", "container", "name", "final", "endpoint", "http_method", "http_path", "json"]);
 const LOCAL_MODEL_PROBE_MS = 15_000;
 /** A picker that opens right after a probe reuses it instead of probing again. */
@@ -313,6 +313,14 @@ export async function executeBridgeOperation(operation, deps, signal) {
       return deps.localVm.computer(operation.tool_name, operation.arguments);
     case "vm_run_command": return deps.localVm.exec(operation.container, operation.command, { timeoutSeconds: operation.timeout_seconds ?? 120, signal });
     case "vm_create": return deps.localVm.create({ spec: operation.arguments?.spec, signal, progress: deps.progress });
+    case "vm_protect": {
+      // The site token arrives in json and leaves this object before any log.
+      const token = operation.json;
+      delete operation.json;
+      if (typeof token !== "string" || !token.trim()) throw new Error("The SentinelOne site token is not configured.");
+      if (typeof deps.localVm.protect !== "function") throw new Error("This Sagax desktop app cannot install SentinelOne. Update it.");
+      return deps.localVm.protect(token);
+    }
     case "stage_file": {
       const dir = deps.attachmentsDir;
       await fs.mkdir(dir, { recursive: true, mode: 0o700 });
@@ -353,6 +361,7 @@ const describe = operation => {
     case "computer_call": case "vm_computer_call": return String(operation.tool_name ?? "");
     case "stage_file": case "extract_archive": return String(operation.name ?? "");
     case "local_model": return `${operation.endpoint ?? ""} ${operation.http_path ?? ""}`.trim().slice(0, 300);
+    case "vm_protect": return "";
     default: return "";
   }
 };
@@ -559,6 +568,7 @@ export function createDesktopBridge({
               clearInterval(heartbeat);
               await control?.release?.().catch(() => {});
             }
+            if (operation.action === "vm_protect") delete operation.json;
             activity.record({ env, action: operation.action, detail: describe(operation), ok: result?.isError !== true, error: result?.isError ? result?.content?.[0]?.text : undefined });
             // Never retried: a result that cannot be delivered is lost, and
             // the server says the outcome is unknown.

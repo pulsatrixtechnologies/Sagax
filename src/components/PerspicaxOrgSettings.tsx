@@ -23,6 +23,7 @@ import { InterimPeople } from "./settings/InterimPeople";
 
 import { OrgPluginPolicy } from "./settings/OrgPluginPolicy";
 import { OrgFullAccessPolicy } from "./settings/OrgFullAccessPolicy";
+import { OrgSentinelOnePolicy } from "./settings/OrgSentinelOnePolicy";
 
 interface PendingAdminApproval {
   botId: string;
@@ -119,6 +120,7 @@ export function PerspicaxOrgSettings({ org, onChanged }: { org: PerspicaxOrg; on
       {interimVisible && interim?.until ? <InterimPeople until={interim.until} onChanged={onChanged} /> : null}
       <OrgSharing admin={admin} />
       {admin && <OrgFullAccessPolicy initial={org.settings.allowFullAccess !== false} onChanged={onChanged} />}
+      {admin && <OrgSentinelOnePolicy initial={org.settings.sentinelOneVmAgent !== false} onChanged={onChanged} />}
       {admin && (
         <OrgPluginPolicy
           marketplaces={org.settings.pluginMarketplaces ?? { mode: "any" }}

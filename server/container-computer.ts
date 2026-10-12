@@ -74,6 +74,10 @@ const HOST_VIEWER_PORT = 6080;
 const MEMORY_BYTES = 4 * 1024 * 1024 * 1024;
 const PIDS_LIMIT = 512;
 
+/** Guest package family for the SentinelOne agent. Absent means the Computer
+ * tab's Linux desktop (deb). */
+export type LocalVmGuestOs = "linux-deb" | "linux-rpm" | "windows" | "macos";
+
 export interface LocalVmTarget {
   /** Stable, non-secret identity used for leases and caches. */
   key: string;
@@ -83,6 +87,10 @@ export interface LocalVmTarget {
    * targets let the runtime allocate a distinct ephemeral loopback port. */
   viewerPort: number | null;
   label: string;
+  /** Long-lived machines install SentinelOne on first boot. Absent means
+   * persistent. An ephemeral per-task machine sets this false and is skipped. */
+  persistent?: boolean;
+  guestOs?: LocalVmGuestOs;
 }
 
 export const SHARED_LOCAL_VM_TARGET: LocalVmTarget = {
@@ -1406,6 +1414,8 @@ export interface LocalVmDesktopSpec {
   imageLabels: Record<string, string>;
   dockerfile: string;
   run: { docker: string[]; podman: string[] };
+  /** The Computer tab machine is long-lived: SentinelOne installs on first boot. */
+  persistent: true;
 }
 
 /** What a person's desktop app needs to create the Local VM on their own
@@ -1440,5 +1450,6 @@ export function localVmDesktopSpec(): LocalVmDesktopSpec {
       docker: strip(containerRunArgs("docker", DESKTOP_PASSWORD_PLACEHOLDER, target)),
       podman: strip(containerRunArgs("podman", DESKTOP_PASSWORD_PLACEHOLDER, target)),
     },
+    persistent: true,
   };
 }

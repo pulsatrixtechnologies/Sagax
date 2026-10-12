@@ -56,6 +56,7 @@ export interface OpsDeps {
 
 export interface SettingsChanges {
   allowFullAccess?: boolean;
+  sentinelOneVmAgent?: boolean;
   pluginMarketplaces?: { mode: "any" } | { mode: "list"; allow: string[] };
   allowedEngines?: string[] | null;
   defaults?: { engine?: string | null; model?: string | null; approvalMode?: string | null };
@@ -82,13 +83,17 @@ export async function timed(check: () => Promise<TestResult | null>): Promise<{ 
 }
 
 function settingsChanges(body: Record<string, unknown>): SettingsChanges | string {
-  const extra = onlyKeys(body, ["allowFullAccess", "pluginMarketplaces", "allowedEngines", "defaults", "interimAttachDays"]);
+  const extra = onlyKeys(body, ["allowFullAccess", "sentinelOneVmAgent", "pluginMarketplaces", "allowedEngines", "defaults", "interimAttachDays"]);
   if (extra) return extra;
   if (!Object.keys(body).length) return "Send at least one setting.";
   const out: SettingsChanges = {};
   if (body.allowFullAccess !== undefined) {
     if (typeof body.allowFullAccess !== "boolean") return "allowFullAccess is true or false.";
     out.allowFullAccess = body.allowFullAccess;
+  }
+  if (body.sentinelOneVmAgent !== undefined) {
+    if (typeof body.sentinelOneVmAgent !== "boolean") return "sentinelOneVmAgent is true or false.";
+    out.sentinelOneVmAgent = body.sentinelOneVmAgent;
   }
   if (body.pluginMarketplaces !== undefined) {
     const value = objectBody(body.pluginMarketplaces);

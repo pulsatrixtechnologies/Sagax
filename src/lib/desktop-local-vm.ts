@@ -4,7 +4,7 @@
 // shows the raw answer: every state and problem has words.
 import type { LocaleKey } from "@/locales";
 
-export type LocalVmAction = "status" | "start" | "stop" | "pause" | "resume" | "setup" | "install" | "screenshot";
+export type LocalVmAction = "status" | "start" | "stop" | "pause" | "resume" | "setup" | "install" | "screenshot" | "protect-retry";
 export type InstallChoice = "orbstack-download" | "docker-download" | "docker-windows" | "podman-download" | "orbstack-brew";
 
 export interface DesktopRuntime {
@@ -34,6 +34,8 @@ export interface DesktopLocalVmStatus {
   vm: DesktopLocalVm | null;
   setup: SetupJob | null;
   install: { product: string; state: string; error: string | null } | null;
+  /** SentinelOne on a persistent machine. Absent when install is not required. */
+  protection?: { state: "installing" | "active" | "failed"; error?: string; code?: string } | null;
 }
 
 export interface LocalVmAnswer {
@@ -72,7 +74,7 @@ export async function desktopLocalVm(action: LocalVmAction, extra: { choice?: In
 /** The screen's five states, as the person reads them. */
 export type ScreenState = "off" | "starting" | "running" | "paused" | "error";
 
-export type LocalVmProblem = "not_connected" | "no_runtime" | "runtime_stopped" | "missing" | "stale" | "foreign" | "setup_failed";
+export type LocalVmProblem = "not_connected" | "no_runtime" | "runtime_stopped" | "missing" | "stale" | "foreign" | "setup_failed" | "protection_failed";
 
 export interface LocalVmView {
   state: ScreenState;
@@ -86,12 +88,14 @@ export interface LocalVmView {
    * recreates something on their computer. */
   playNeedsConsent: boolean;
   repair: boolean;
+  protection: "installing" | "active" | "failed" | null;
+  canRetryProtection: boolean;
 }
 
 export function localVmView(status: DesktopLocalVmStatus | null, connected: boolean, pending: LocalVmAction | null = null): LocalVmView {
-  const base: LocalVmView = { state: "off", problem: null, canPlay: false, canPause: false, canResume: false, canStop: false, playNeedsConsent: false, repair: false };
+  const base: LocalVmView = { state: "off", problem: null, canPlay: false, canPause: false, canResume: false, canStop: false, playNeedsConsent: false, repair: false, protection: null, canRetryProtection: false };
   if (!connected) return { ...base, problem: "not_connected" };
-  if (pending === "setup" || pending === "start" || pending === "resume" || status?.setup?.state === "running") return { ...base, state: "starting" };
+  if (pending === "setup" || pending === "start" || pending === "resume" || pending === "protect-retry" || status?.setup?.state === "running") return { ...base, state: "starting" };
   if (!status) return base;
   if (status.setup?.state === "error") {
     const code = status.setup.code;
@@ -106,7 +110,13 @@ export function localVmView(status: DesktopLocalVmStatus | null, connected: bool
   if (!vm) return { ...base, problem: "missing", canPlay: true, playNeedsConsent: true };
   if (vm.stale === "foreign") return { ...base, state: "error", problem: "foreign" };
   if (vm.stale && vm.stale !== "old_image") return { ...base, state: "error", problem: "stale", canPlay: true, playNeedsConsent: true, repair: true };
-  if (vm.state === "running") return { ...base, state: "running", canPause: true, canStop: true };
+  if (vm.state === "running") {
+    const protection = status.protection?.state ?? null;
+    if (protection === "installing") return { ...base, state: "starting", canStop: true, protection: "installing" };
+    if (protection === "failed") return { ...base, state: "error", problem: "protection_failed", canRetryProtection: true, canStop: true, protection: "failed" };
+    if (protection === "active") return { ...base, state: "running", canPause: true, canStop: true, protection: "active" };
+    return { ...base, state: "running", canPause: true, canStop: true };
+  }
   if (vm.state === "paused") return { ...base, state: "paused", canResume: true, canStop: true };
   if (vm.state === "starting") return { ...base, state: "starting" };
   return { ...base, canPlay: true };
@@ -115,6 +125,17 @@ export function localVmView(status: DesktopLocalVmStatus | null, connected: bool
 /** The words for a problem (the screen's message). */
 export function localVmProblemKey(problem: LocalVmProblem): LocaleKey {
   return `localVm.problem.${problem}` as LocaleKey;
+}
+
+/** SentinelOne words for the screen, when protection is the message. */
+export function localVmStatusCopy(view: LocalVmView, status: DesktopLocalVmStatus | null): { key: LocaleKey; values: Record<string, string> } | null {
+  if (view.protection === "installing") return { key: "localVm.protection.installing", values: {} };
+  if (view.protection === "failed") {
+    if (status?.protection?.code === "timeout") return { key: "localVm.protection.timeout", values: {} };
+    return { key: "localVm.problem.protection_failed", values: { error: status?.protection?.error ?? "" } };
+  }
+  if (view.protection === "active") return { key: "localVm.protection.active", values: {} };
+  return null;
 }
 
 /** What "found" says about the runtime, for Settings and the screen. */

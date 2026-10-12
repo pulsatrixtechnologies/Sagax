@@ -30,7 +30,7 @@ import { ChevronDown, Cpu, Globe, HardDrive, Info, Laptop, MemoryStick, Server }
 import { powerFromEnvironment, powerFromScreen, type ComputerPower } from "@/lib/computer-menu";
 import { chosenComputer, computerChoices, currentDesktop, type ComputerChoice, type DesktopBridgeStatus } from "@/lib/desktop-bridge";
 import {
-  desktopLocalVm, installChoices, localVmProblemKey, localVmView, runtimeSummaryKey,
+  desktopLocalVm, installChoices, localVmProblemKey, localVmStatusCopy, localVmView, runtimeSummaryKey,
   type DesktopLocalVmStatus, type InstallChoice, type LocalVmAction, type ScreenState, type SetupStep,
 } from "@/lib/desktop-local-vm";
 import { t } from "@/lib/i18n";
@@ -307,7 +307,7 @@ export function useDesktopLocalVm(connected: boolean, initial: DesktopLocalVmSta
       setError(cause instanceof Error ? cause.message : t("orgComputer.actionFailed"));
     }
   }, [desktopId]);
-  const settingUp = status?.setup?.state === "running";
+  const settingUp = status?.setup?.state === "running" || status?.protection?.state === "installing";
   useEffect(() => {
     if (!connected || !visible) return;
     void refresh();
@@ -373,14 +373,19 @@ export function LocalComputerScreen({ bridge, caption, initial = null, desktopId
     for (const choice of installChoices(desktop?.platform)) actions.push({ label: t(`localVm.install.${choice}`), onClick: () => void vm.act("install", { choice }), primary: actions.length === 0 });
   } else if (view.repair) {
     actions.push({ label: t("localVm.repair"), onClick: setUp, primary: true });
+  } else if (view.canRetryProtection) {
+    actions.push({ label: t("localVm.protection.retry"), onClick: () => void vm.act("protect-retry"), primary: true });
   } else if (view.canPlay && view.state !== "running") {
     actions.push({ label: t(view.problem === "missing" ? "localVm.setupOneClick" : "computerScreen.play"), onClick: setUp, primary: true });
   }
+  const protectionCopy = localVmStatusCopy(view, vm.status);
   const message = view.state === "starting" && setup?.state === "running"
     ? setupProgress(setup.steps)
-    : view.problem
-      ? `${t(localVmProblemKey(view.problem), { product: runtime.product, folder: vm.status?.vm?.folder ?? "" })}${setup?.state === "error" && setup.error && view.problem === "setup_failed" ? ` ${setup.error}` : ""}`
-      : view.state === "off" ? t("computerScreen.localOff") : undefined;
+    : protectionCopy
+      ? t(protectionCopy.key, protectionCopy.values)
+      : view.problem
+        ? `${t(localVmProblemKey(view.problem), { product: runtime.product, folder: vm.status?.vm?.folder ?? "" })}${setup?.state === "error" && setup.error && view.problem === "setup_failed" ? ` ${setup.error}` : ""}`
+        : view.state === "off" ? t("computerScreen.localOff") : undefined;
   return (
     <>
       <ComputerScreen

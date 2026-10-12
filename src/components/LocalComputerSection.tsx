@@ -53,6 +53,7 @@ interface Status {
   viewer_url: string;
   idle_timeout_ms: number;
   stop_reason?: "idle" | null;
+  protection?: { state: "installing" | "active" | "failed"; error?: string; code?: string } | null;
   mode: "shared" | "per-bot" | "pool";
   /** An organization server: one environment per person, no VM per bot. */
   organization?: boolean;
@@ -969,6 +970,7 @@ export function LocalComputerSection() {
   const [status, setStatus] = useState<Status | null>(null);
   const [loading, setLoading] = useState(true);
   const [pending, setPending] = useState<Action | null>(null);
+  const [protecting, setProtecting] = useState(false);
   const actionController = useRef<AbortController | null>(null);
   useEffect(() => () => actionController.current?.abort(), []);
   const [error, setError] = useState<string | null>(null);
@@ -1168,6 +1170,26 @@ export function LocalComputerSection() {
     signal.throwIfAborted();
     setStatus(body as Status);
     return body as Status;
+  };
+
+  const retryProtection = async () => {
+    if (pending !== null || protecting) return;
+    setProtecting(true);
+    setError(null);
+    try {
+      const response = await fetch("/api/local-computer/protect-retry", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: "{}",
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(body.error ?? t("localVm.protection.failed"));
+      setStatus(body as Status);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : t("localVm.protection.failed"));
+    } finally {
+      setProtecting(false);
+    }
   };
 
   const confirmAction = (message: string) => window.ogb?.confirm ? window.ogb.confirm(message) : window.confirm(message);
@@ -1402,17 +1424,28 @@ export function LocalComputerSection() {
   const perBotRuntimeUnsupported = perBot && status?.runtime === "container";
   const headerReady = perBot ? Boolean(status?.daemonUp && status?.image && !perBotRuntimeUnsupported) : ready;
 
+  const protectionLine = status?.protection?.state === "installing"
+    ? t("localVm.protection.installing")
+    : status?.protection?.state === "failed"
+      ? status.protection.code === "timeout"
+        ? t("localVm.protection.timeout")
+        : t("localVm.problem.protection_failed", { error: status.protection.error ?? "" })
+      : status?.protection?.state === "active"
+        ? t("localVm.protection.active")
+        : null;
   const statusText = loading
     ? t("common.checking")
     : unavailable
       ? t("vm.main.statusUnavailable")
-      : perBot && headerReady
-        ? t("vm.main.readyPerBot")
-        : perBotRuntimeUnsupported
-          ? t("vm.main.perBotUnsupported")
-          : ready
-            ? t("vm.main.ready")
-            : (status?.problem ?? t("vm.main.notReady"));
+      : protectionLine
+        ? protectionLine
+        : perBot && headerReady
+          ? t("vm.main.readyPerBot")
+          : perBotRuntimeUnsupported
+            ? t("vm.main.perBotUnsupported")
+            : ready
+              ? t("vm.main.ready")
+              : (status?.problem ?? t("vm.main.notReady"));
 
   return (
     <>
@@ -1629,8 +1662,20 @@ export function LocalComputerSection() {
                 <p className="text-[13px] text-ink-secondary">{t(status.stop_reason === "idle" ? "vm.stopped.idle" : "vm.stopped.detail")}</p>
                 <ActionButton action="start" pending={pending} onClick={() => void act("start")}>{t("vm.setup.start")}</ActionButton>
               </>
+            ) : status?.container === "running" && status.protection?.state === "failed" ? (
+              <>
+                <p className="text-[13px] text-warning">{status.protection.code === "timeout" ? t("localVm.protection.timeout") : t("localVm.problem.protection_failed", { error: status.protection.error ?? "" })}</p>
+                <button type="button" onClick={() => void retryProtection()} disabled={pending !== null || protecting}
+                  className="flex items-center gap-1.5 rounded-lg bg-accent px-3 py-1.5 text-[12.5px] font-medium text-accent-ink hover:brightness-110 disabled:opacity-50">
+                  {protecting && <Loader2 size={13} className="animate-spin" />}
+                  {t("localVm.protection.retry")}
+                </button>
+              </>
             ) : status?.container === "running" ? (
-              <div className="flex items-center gap-2 text-[13px] text-ink-secondary"><Loader2 size={13} className="animate-spin" /> {t("vm.setup.waiting")}</div>
+              <div className="flex items-center gap-2 text-[13px] text-ink-secondary">
+                {!ready && <Loader2 size={13} className="animate-spin" />}
+                {status.protection?.state === "installing" ? t("localVm.protection.installing") : ready && status.protection?.state === "active" ? t("localVm.protection.active") : t("vm.setup.waiting")}
+              </div>
             ) : status?.image ? (
               <>
                 <ActionButton action="run" pending={pending} onClick={() => void act("run")}>{t("vm.setup.start")}</ActionButton>

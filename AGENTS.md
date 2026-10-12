@@ -2367,6 +2367,15 @@ The Local VM in server mode lives on the person's computer
   a real-named VM is refused in the temp folder (`localVmFolderRefusal`).
   Tests: `electron/local-vm.node-test.mjs`, `server/local-vm-hygiene.test.ts`,
   `server/desktop-bridge-local-vm.test.ts`.
+- A persistent Local VM (the Computer tab; `persistent` defaults on) installs
+  the SentinelOne agent on first boot when `SAGAX_S1_SITE_TOKEN` is set and
+  the organization has not turned it off (`organization.sentinelOneVmAgent`).
+  The token is written to a root-only file and removed. It is never an
+  argument, a guest variable, a log line, or an API field. The machine is
+  ready once the agent is online (a time limit, then retry). An ephemeral
+  machine (`persistent: false`) skips the install. Kubernetes nodes get the
+  agent per node (a DaemonSet), and each sandbox does not. Tests:
+  `server/sentinelone-vm.test.ts`, `electron/sentinelone-vm.node-test.mjs`.
 - The bot sees and drives that VM's desktop with `local_vm` action `use`
   (operation `vm_computer_call`). The Computer tab itself stays a still
   image and the power buttons. See Desktop bridge above.

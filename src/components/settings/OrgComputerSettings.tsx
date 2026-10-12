@@ -9,7 +9,7 @@ import { Check, Circle, Loader2, MoreHorizontal, X } from "lucide-react";
 
 import { cn } from "@/lib/cn";
 import { currentDesktop, type DesktopBridgeStatus } from "@/lib/desktop-bridge";
-import { installChoices, localVmProblemKey, localVmView, runtimeSummaryKey, type DesktopLocalVmStatus, type SetupStep } from "@/lib/desktop-local-vm";
+import { installChoices, localVmProblemKey, localVmStatusCopy, localVmView, runtimeSummaryKey, type DesktopLocalVmStatus, type SetupStep } from "@/lib/desktop-local-vm";
 import { t } from "@/lib/i18n";
 import { loadServerEnvironment, resetServerEnvironment, type ServerEnvironmentStatus } from "@/lib/server-environment";
 import { ServerComputerScreen, useDesktopLocalVm } from "../computer/OrgComputerTab";
@@ -42,6 +42,7 @@ function LocalVmCard({ bridge, initial, confirm }: { bridge: DesktopBridgeStatus
   const view = localVmView(vm.status, connected, vm.pending);
   const runtime = runtimeSummaryKey(vm.status?.runtime);
   const setup = vm.status?.setup;
+  const protectionCopy = localVmStatusCopy(view, vm.status);
   const oneClick = () => {
     if (!confirm(t("localVm.consent.oneClick", { folder: vm.status?.workspace ?? "" }))) return;
     void vm.act("setup");
@@ -57,7 +58,10 @@ function LocalVmCard({ bridge, initial, confirm }: { bridge: DesktopBridgeStatus
               <StateChip label={screenStateLabel(view.state)} tone={view.state === "running" ? "ok" : view.state === "error" ? "bad" : "idle"} />
               {vm.status && <span className="text-[12px] text-ink-secondary" data-runtime-product={vm.status.runtime.product ?? ""}>{t(runtime.key, { product: runtime.product })}</span>}
             </div>
-            {view.problem && view.problem !== "not_connected" && (
+            {protectionCopy && (
+              <p className="text-[12px] leading-relaxed text-ink-secondary" data-local-vm-protection={view.protection ?? ""}>{t(protectionCopy.key, protectionCopy.values)}</p>
+            )}
+            {view.problem && view.problem !== "not_connected" && !protectionCopy && (
               <p className="text-[12px] leading-relaxed text-ink-secondary">{t(localVmProblemKey(view.problem), { product: runtime.product, folder: vm.status?.vm?.folder ?? "" })}</p>
             )}
             <div className="flex flex-wrap gap-2">
@@ -66,6 +70,12 @@ function LocalVmCard({ bridge, initial, confirm }: { bridge: DesktopBridgeStatus
                 {setup?.state === "running" && <Loader2 size={13} aria-hidden="true" className="animate-spin" />}
                 {setup?.state === "error" ? t("localVm.retry") : view.repair ? t("localVm.repair") : t("localVm.setupOneClick")}
               </button>
+              {view.canRetryProtection && (
+                <button type="button" onClick={() => void vm.act("protect-retry")} disabled={vm.pending !== null}
+                  className="min-h-[44px] rounded-lg border border-hairline/40 px-2.5 py-1 text-[12.5px] text-ink-secondary hover:bg-control hover:text-ink disabled:opacity-40 md:min-h-0">
+                  {t("localVm.protection.retry")}
+                </button>
+              )}
               <button type="button" onClick={() => void vm.refresh()} disabled={vm.pending !== null}
                 className="min-h-[44px] rounded-lg border border-hairline/40 px-2.5 py-1 text-[12.5px] text-ink-secondary hover:bg-control hover:text-ink disabled:opacity-40 md:min-h-0">
                 {t("vm.main.recheck")}
