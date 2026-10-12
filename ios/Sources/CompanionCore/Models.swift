@@ -13,6 +13,17 @@ import Foundation
 
 // MARK: - Messages
 
+/// Inline live or recorded video (`kind == .video`).
+public struct WireVideoWidget: Codable, Hashable, Sendable {
+    public var kind: String
+    public var playbackUrl: String
+    public var title: String?
+    public var streamer: String?
+    public var source: String?
+    public var posterUrl: String?
+    public var durationMs: Double?
+}
+
 public struct SkillRequestCardData: Codable, Hashable, Sendable {
     public var version: Int
     public var requestId: String
@@ -290,7 +301,7 @@ public struct CommChip: Codable, Hashable, Sendable {
 
 public struct Message: Codable, Hashable, Identifiable, Sendable {
     public enum Kind: String, Codable, Sendable {
-        case text, options, activity, screen, secret
+        case text, options, activity, screen, video, secret
         /// The harness's receipt of a settled turn: "[digest] · tools: … ·
         /// reply: …". Desktop shows it only behind "show tool calls"; it is
         /// a log line, not something anyone said, so the phone draws it as
@@ -427,6 +438,8 @@ public struct Message: Codable, Hashable, Identifiable, Sendable {
     /// `kind == .digest`: the structured digest; the phone reads which
     /// credentials paid for the turn from it (`DigestChip.tsx` TurnAccessChip).
     public var digest: MessageDigest? = nil
+    /// `kind == .video`: inline player payload.
+    public var video: WireVideoWidget? = nil
 
     public var date: Date { Date(timeIntervalSince1970: at / 1000) }
 

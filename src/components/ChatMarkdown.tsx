@@ -70,6 +70,8 @@ import { WidgetFrame } from "./WidgetFrame";
 import { ChartBlock } from "./ChartBlock";
 import { RichTable, tableModelFromDelimited, tableModelFromMarkdown } from "./RichTable";
 import { TableFileButton } from "./TableFilePreview";
+import { youtubeVideoId } from "../../shared/video-widget.ts";
+import { YouTubeMiniPlayer } from "./video/YouTubeMiniPlayer";
 
 // highlighted code, so revisiting a thread doesn't re-tokenize settled
 // blocks; keys are content hashes. The two-theme HTML is about 20 to 28 times
@@ -1068,9 +1070,11 @@ const MAY_LINK_THREAD = /#|openmausbot|sagax/i;
 const NO_THREAD_REFS: ThreadRefsValue = { threads: [] };
 
 /** Render message Markdown with math, protected code, scoped attachments, and mentions. */
-function ChatMarkdownComponent({ text, message, mentionPeers = NO_MENTION_PEERS, everyone = false }: {
+function ChatMarkdownComponent({ text, message, mentionPeers = NO_MENTION_PEERS, everyone = false, youtubeSendToBot }: {
   text: string; message?: MessageAttachmentContext;
   mentionPeers?: readonly MentionPeer[]; everyone?: boolean;
+  /** When set, the YouTube widget can hand a fetched transcript to the bot. */
+  youtubeSendToBot?: (text: string) => void;
 }) {
   // "#Title" mentions link to the threads the person can see (ThreadRefs);
   // @mentions were already decorated by remarkMentions, which runs first.
@@ -1221,6 +1225,16 @@ function ChatMarkdownComponent({ text, message, mentionPeers = NO_MENTION_PEERS,
         if (address || (href && looksLikeThreadRefUrl(href))) return <span className="break-words">{children}</span>;
         const localPath = localFilePath(href);
         if (localPath) return <LocalFileLink filePath={localPath} message={scopedMessage}>{children}</LocalFileLink>;
+        const ytId = href ? youtubeVideoId(href) : null;
+        if (ytId) {
+          return (
+            <YouTubeMiniPlayer
+              videoId={ytId}
+              message={scopedMessage}
+              onSendToBot={youtubeSendToBot}
+            />
+          );
+        }
         return (
           <a
             href={href}
@@ -1362,4 +1376,5 @@ export const ChatMarkdown = memo(ChatMarkdownComponent, (previous, next) => (
   && previous.everyone === next.everyone
   && previous.message?.threadId === next.message?.threadId
   && previous.message?.messageId === next.message?.messageId
+  && previous.youtubeSendToBot === next.youtubeSendToBot
 ));

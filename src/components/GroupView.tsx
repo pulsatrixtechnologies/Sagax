@@ -46,6 +46,7 @@ import { StatusActivityRow } from "@/components/StatusActivityRow";
 import { mausInk, normalizeState } from "@/lib/mascot";
 import { defaultResponderName, effectiveDefaultResponder, groupResponseHint, jevRoomRoutingOn } from "@/lib/group-routing";
 import { ChatMarkdown } from "./ChatMarkdown";
+import { VideoPlayerWidget } from "./video/VideoPlayerWidget";
 import { CopyButton, FailedTurnRow, MessageBoundary } from "./ChatView";
 import { MessageActions, messageActionClass } from "./MessageActions";
 import { RawMarkdownView, RawToggleAction } from "./RawMarkdownToggle";
@@ -397,7 +398,15 @@ function RoomTextMessage({
               {viewRaw && botText ? (
                 <div data-citation-source={m.id} data-citation-owner-type="group" data-citation-owner={group.id} data-citation-thread={group.threadId}><RawMarkdownView text={botText} /></div>
               ) : botText ? (
-                <div data-citation-source={m.id} data-citation-owner-type="group" data-citation-owner={group.id} data-citation-thread={group.threadId}><ChatMarkdown text={botText} mentionPeers={members} everyone={!group.dm} message={{ threadId: group.threadId, messageId: m.id }} /></div>
+                <div data-citation-source={m.id} data-citation-owner-type="group" data-citation-owner={group.id} data-citation-thread={group.threadId}>
+                  <ChatMarkdown
+                    text={botText}
+                    mentionPeers={members}
+                    everyone={!group.dm}
+                    message={{ threadId: group.threadId, messageId: m.id }}
+                    youtubeSendToBot={(body) => dispatch({ type: "sendGroup", groupId: group.id, threadId: group.threadId, text: body })}
+                  />
+                </div>
               ) : null}
             </MessageBoundary>
           )}
@@ -729,6 +738,10 @@ export const Transcript = memo(function Transcript({
             ) : null
           ) : m.kind === "screen" ? (
             <ScreenFrame threadId={group.threadId} message={m} />
+          ) : m.kind === "video" && m.video ? (
+            <div className="flex justify-start">
+              <VideoPlayerWidget video={m.video} />
+            </div>
           ) : m.kind === "compaction" ? (
             m.compaction?.by === "harness" ? null : <CompactionChip message={m} />
           ) : m.kind === "digest" ? (

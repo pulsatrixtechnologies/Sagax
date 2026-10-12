@@ -2027,6 +2027,12 @@ final class Session: ObservableObject {
         try? await client?.image(threadId: threadId, messageId: messageId)
     }
 
+    func absoluteAPIURL(path: String) -> URL? {
+        guard let base = client?.connection.baseURL else { return nil }
+        let normalized = path.hasPrefix("/") ? path : "/\(path)"
+        return URL(string: normalized, relativeTo: base)?.absoluteURL
+    }
+
     func search(_ query: String) async -> [SearchHit] {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard trimmed.count >= 2, let client else { return [] }

@@ -245,6 +245,10 @@ struct MessageRow: View {
             }
         case .screen:
             ScreenShot(threadId: chat.threadId, message: message)
+        case .video:
+            if let video = message.video {
+                VideoWidgetView(video: video)
+            }
         case .digest:
             // Not a bubble: a chip saying the turn did something, opening
             // onto what. No "Paid with" any more (#201): who paid stays in

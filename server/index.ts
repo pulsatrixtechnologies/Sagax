@@ -815,6 +815,9 @@ import { createPeopleDmRoutes } from "./routes/people-dms.ts";
 import { createGroupFolderRoutes } from "./routes/group-folders.ts";
 import { createNudgeRoutes } from "./routes/nudges.ts";
 import { createPersonLabelRoutes } from "./routes/person-labels.ts";
+import { createMediaWidgetRoutes } from "./routes/media-widgets.ts";
+import { initMediaProxy } from "./media-proxy.ts";
+import { videoMessagesFromTool } from "./video-widget-turn.ts";
 import { createPresenceRoutes, presenceFrameAllowed, type PresenceViewer } from "./routes/presence.ts";
 import { PresenceTracker } from "./presence.ts";
 import { readApnsConfig } from "./push/config.ts";
@@ -925,6 +928,7 @@ const MIME: Record<string, string> = {
 };
 
 ensureDirs();
+initMediaProxy(DATA_DIR);
 // The desktop parent owns the primary lease and delegates one private child
 // claim; a standalone/headless server owns the primary lease itself. Acquire
 // before any durable identity, sessions, config, or Store state is loaded.
@@ -10609,6 +10613,9 @@ bus.subscribe((event: RuntimeEvent) => {
             tool: { ...existing, name: toolName, ok: event.ok, output: event.output },
           });
           toolMessageByItem.delete(itemKey);
+        }
+        for (const videoMsg of videoMessagesFromTool(toolName, event.output, event.threadId)) {
+          pushMessage(videoMsg);
         }
         // the bot just acted ON ITS SCREEN — refresh the preview now. Only
         // computer tools can change the screen, and each capture competes
@@ -21138,6 +21145,7 @@ ROUTES.push(createAchievementRoutes({
   person: (auth) => actorPrincipalId(auth) || null,
   unlocked: (person, unlocked) => broadcast({ kind: "achievements", audience: person, unlocked }),
 }));
+ROUTES.push(createMediaWidgetRoutes());
 ROUTES.push(createDesktopBridgeRoutes({
   organization: () => IDENTITY.kind === "perspicax",
   bridges: desktopBridges, tunnels: desktopTunnels, audit: bridgeAudit,

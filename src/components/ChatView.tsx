@@ -72,6 +72,7 @@ import { autoWorkerLine } from "@/lib/auto-model";
 import { showWorkingDots } from "@/lib/turn-tail";
 import { liveActivityLabel } from "@/lib/live-activity";
 import { ChatMarkdown } from "./ChatMarkdown";
+import { VideoPlayerWidget } from "./video/VideoPlayerWidget";
 import { VoiceNoteBubble, type VoiceNoteAttachment } from "./VoiceNoteBubble";
 import { RawMarkdownView } from "./RawMarkdownToggle";
 import { ParallelResultLabel, ParallelTaskCard } from "./ParallelTaskCard";
@@ -691,7 +692,14 @@ const Bubble = memo(function Bubble({
               {viewRaw && text ? (
                 <div data-citation-source={message.id} data-citation-owner-type="bot" data-citation-owner={botId} data-citation-thread={threadId}><RawMarkdownView text={text} /></div>
               ) : text ? (
-                <div data-citation-source={message.id} data-citation-owner-type="bot" data-citation-owner={botId} data-citation-thread={threadId}><ChatMarkdown text={text} mentionPeers={mentionPeers} message={{ threadId, messageId: message.id }} /></div>
+                <div data-citation-source={message.id} data-citation-owner-type="bot" data-citation-owner={botId} data-citation-thread={threadId}>
+                  <ChatMarkdown
+                    text={text}
+                    mentionPeers={mentionPeers}
+                    message={{ threadId, messageId: message.id }}
+                    youtubeSendToBot={(body) => dispatch({ type: "send", botId, threadId, text: body })}
+                  />
+                </div>
               ) : null}
             </MessageBoundary>
           )}
@@ -1148,6 +1156,12 @@ const MessagesList = memo(function MessagesList({
               return m.compaction?.by === "harness" ? null : <CompactionChip message={m} />;
             case "screen":
               return <ScreenFrame threadId={threadId} message={m} />;
+            case "video":
+              return m.video ? (
+                <div className="flex justify-start">
+                  <VideoPlayerWidget video={m.video} />
+                </div>
+              ) : null;
             default:
               return (
                 <>
