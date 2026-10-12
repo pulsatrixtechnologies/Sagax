@@ -8177,7 +8177,21 @@
       "settings.toolAccess.adminWarning": "87c71cb90338c7942d7d28ec86b1dd91ef0e585b9e846b1e0bc96e214adf869f",
       "settings.toolAccess.state.active": "92340695899bd2d86223e4a007620e0d6502fc0e08809773634c7e0743764a9c",
       "settings.toolAccess.state.expired": "424a2551d356754c882d04ac16c63e6b50b80b159549d23231001f629455756e",
-      "settings.toolAccess.state.revoked": "f6f738d043929f59fe41b1a5b414b33ea28ca9a6ddc74e682bdb7167b5a6ac6e"
+      "settings.toolAccess.state.revoked": "f6f738d043929f59fe41b1a5b414b33ea28ca9a6ddc74e682bdb7167b5a6ac6e",
+      "settings.toolAccess.form.title": "3d08e19a7fd0fde770c05bce0aa61a13f0310c445e5a0a13265de6cd304b2125",
+      "settings.toolAccess.form.bot": "41e35ba1a1fd8b4cdc7f899b3b8f9442a7542f445170e8782e219732cc25c10f",
+      "settings.toolAccess.form.pickBot": "9bf9c8e83ac5213d7903082fa149626859c328bca89804caf0ea8c658930c281",
+      "settings.toolAccess.form.area": "024dc204d7ba77a8ff9ba36a886c96335a5b4a0d2f9af2130d04bc5b39a1a764",
+      "settings.toolAccess.form.tier": "ec5ba0abb717da87aab2655bd4b4a40f93f2a591a0ade63611c42925c49c17e9",
+      "settings.toolAccess.form.days": "e08c0aa8f558f39fa99077e92036cf7d2210fe88ffae4d3b30fd489d9ac99e02",
+      "settings.toolAccess.form.grant": "78b7d0379d5eb3fa70147f422b792dfff88e99f1682d74b03828ec584bc56c09",
+      "settings.toolAccess.form.needBot": "5f6598df11691a1cd9367471be98b5e2b404632430bb274052b5ad432bf1592c",
+      "settings.toolAccess.form.badArea": "f6b7f228a86d4181b5495289ffd5d305db30b2a7eb83b669d2f85a007171955e",
+      "settings.toolAccess.form.badDays": "10cb68df222163985dc3550385e77ab3c526064c9cf392ad2af9e485f8a1ccac",
+      "settings.toolAccess.form.adminDays": "c55c1dfd4dff2f2963f82ced19f118fa9e091e0aa92787f37fd80f24f341a42a",
+      "settings.toolAccess.tier.read": "9b9a8d05a7ec353bda84f9c1bb3178c299de3001b5e970508ddc889c487f92ca",
+      "settings.toolAccess.tier.write": "3f00927a719345edd4a8316599d3b328857987547f8884306861161ffa09647e",
+      "settings.toolAccess.tier.admin": "c1c224b03cd9bc7b6a86d77f5dace40191766c485cd55dc48caf9ac873335d6f"
     },
     "hi": {
       "approval.action.allowOnce": "168511d24d9ee03122b3200f929be11eaaedad45cb0ecb20a95f549b3e3f4d0f",

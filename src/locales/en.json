@@ -6457,5 +6457,19 @@
   "settings.toolAccess.adminWarning": "Admin access: can change settings, people or billing. Keep it short.",
   "settings.toolAccess.state.active": "Active",
   "settings.toolAccess.state.expired": "Expired",
-  "settings.toolAccess.state.revoked": "Revoked"
+  "settings.toolAccess.state.revoked": "Revoked",
+  "settings.toolAccess.form.title": "Grant tool access",
+  "settings.toolAccess.form.bot": "Bot",
+  "settings.toolAccess.form.pickBot": "Choose a bot",
+  "settings.toolAccess.form.area": "Area",
+  "settings.toolAccess.form.tier": "Access",
+  "settings.toolAccess.form.days": "Days",
+  "settings.toolAccess.form.grant": "Grant",
+  "settings.toolAccess.form.needBot": "Choose a bot first.",
+  "settings.toolAccess.form.badArea": "An area is lowercase letters, digits and dashes, like agents.",
+  "settings.toolAccess.form.badDays": "Days is a whole number from 1 to 365, or empty for no end.",
+  "settings.toolAccess.form.adminDays": "Admin access needs an end date, 30 days at most.",
+  "settings.toolAccess.tier.read": "Read",
+  "settings.toolAccess.tier.write": "Write",
+  "settings.toolAccess.tier.admin": "Admin"
 }

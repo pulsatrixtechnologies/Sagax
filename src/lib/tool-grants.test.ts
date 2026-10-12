@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import en from "../locales/en.json";
 import fr from "../locales/fr.json";
-import { grantTier, sortGrants, type ToolGrantRow } from "./tool-grants";
+import { grantRequest, grantTier, sortGrants, type ToolGrantRow } from "./tool-grants";
 
 const row = (id: string, state: ToolGrantRow["state"], grantedAt: number, scope = "agents:write"): ToolGrantRow =>
   ({ id, subject: { kind: "bot", id: "b" }, scope, grantedBy: "x", grantedAt, state });
@@ -17,7 +17,22 @@ describe("tool grants page model", () => {
   });
   it("has every Tool access string in French", () => {
     const keys = Object.keys(en).filter((k) => k.startsWith("settings.toolAccess."));
-    expect(keys.length).toBe(11);
+    expect(keys.length).toBe(25);
     for (const k of keys) expect((fr as Record<string, string>)[k], k).toBeTruthy();
+  });
+});
+
+describe("grant form (B3c)", () => {
+  const now = 1_800_000_000_000;
+  it("builds the scope and expiry", () => {
+    expect(grantRequest({ botId: "b", area: " Agents ", tier: "write", days: "" }, now)).toEqual({ ok: true, body: { subject: { kind: "bot", id: "b" }, scope: "agents:write" } });
+    expect(grantRequest({ botId: "b", area: "org", tier: "admin", days: "7" }, now)).toMatchObject({ ok: true, body: { scope: "org:admin", expiresAt: now + 7 * 86_400_000 } });
+  });
+  it("refuses what the server would refuse", () => {
+    expect(grantRequest({ botId: "", area: "agents", tier: "read", days: "" }, now)).toMatchObject({ ok: false, error: "settings.toolAccess.form.needBot" });
+    expect(grantRequest({ botId: "b", area: "a b", tier: "read", days: "" }, now)).toMatchObject({ ok: false, error: "settings.toolAccess.form.badArea" });
+    expect(grantRequest({ botId: "b", area: "agents", tier: "read", days: "1.5" }, now)).toMatchObject({ ok: false, error: "settings.toolAccess.form.badDays" });
+    expect(grantRequest({ botId: "b", area: "org", tier: "admin", days: "" }, now)).toMatchObject({ ok: false, error: "settings.toolAccess.form.adminDays" });
+    expect(grantRequest({ botId: "b", area: "org", tier: "admin", days: "31" }, now)).toMatchObject({ ok: false, error: "settings.toolAccess.form.adminDays" });
   });
 });

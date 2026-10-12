@@ -4486,5 +4486,19 @@
   "settings.toolAccess.adminWarning": "Accès admin : peut modifier les réglages, les personnes ou la facturation. Garde-le court.",
   "settings.toolAccess.state.active": "Active",
   "settings.toolAccess.state.expired": "Expirée",
-  "settings.toolAccess.state.revoked": "Révoquée"
+  "settings.toolAccess.state.revoked": "Révoquée",
+  "settings.toolAccess.form.title": "Accorder un accès aux outils",
+  "settings.toolAccess.form.bot": "Bot",
+  "settings.toolAccess.form.pickBot": "Choisis un bot",
+  "settings.toolAccess.form.area": "Domaine",
+  "settings.toolAccess.form.tier": "Accès",
+  "settings.toolAccess.form.days": "Jours",
+  "settings.toolAccess.form.grant": "Accorder",
+  "settings.toolAccess.form.needBot": "Choisis d'abord un bot.",
+  "settings.toolAccess.form.badArea": "Un domaine contient seulement des minuscules, des chiffres et des tirets, comme agents.",
+  "settings.toolAccess.form.badDays": "Le nombre de jours est un entier de 1 à 365, ou vide pour aucune fin.",
+  "settings.toolAccess.form.adminDays": "L'accès admin doit avoir une date de fin, dans 30 jours au plus.",
+  "settings.toolAccess.tier.read": "Lecture",
+  "settings.toolAccess.tier.write": "Écriture",
+  "settings.toolAccess.tier.admin": "Admin"
 }
