@@ -60,7 +60,7 @@ describe("CI concurrency", () => {
   });
 
   it("allows cancelled summary jobs to stop without skipping failure reporting", () => {
-    expect(workflow.jobs.gate.if).toBe("${{ !cancelled() }}");
+    expect(workflow.jobs.gate.if).toBe("(github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && (!cancelled())");
     expect(workflow.jobs.gate.needs).toEqual(["static", ...requiredRuntimeJobs]);
   });
 
@@ -75,8 +75,8 @@ describe("CI concurrency", () => {
   });
 
   it("keeps each PR to one macOS job unless native code changed", () => {
-    const macosJobs = Object.entries(workflow.jobs as Record<string, { "runs-on": string; strategy?: { matrix?: { os?: unknown } } }>)
-      .filter(([, job]) => job["runs-on"] === "macos-latest" || JSON.stringify(job.strategy?.matrix?.os ?? "").includes("macos"))
+    const macosJobs = Object.entries(workflow.jobs as Record<string, { "runs-on": unknown; strategy?: { matrix?: { os?: unknown } } }>)
+      .filter(([, job]) => (Array.isArray(job["runs-on"]) && job["runs-on"].includes("macos")) || JSON.stringify(job.strategy?.matrix?.os ?? "").includes("macos"))
       .map(([name]) => name);
     // Sagax keeps its native apps: the iOS build runs only when ios/ changed.
     expect(macosJobs.sort()).toEqual(["electron-smokes", "ios"]);
@@ -157,7 +157,7 @@ describe("CI concurrency", () => {
 
   it("always starts the workflow and validates selection and docs before fanout", () => {
     expect(workflow.on.pull_request).toBeNull();
-    expect(workflow.jobs.static.if).toBeUndefined();
+    expect(workflow.jobs.static.if).toBe("(github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)");
     expect(workflow.jobs.static.steps[0].with["fetch-depth"]).toBe(0);
     expect(workflow.jobs.static.steps.find((step: { id?: string }) => step.id === "scope").run).toBe("node scripts/ci-scope.mjs");
     expect(workflow.jobs.static.outputs).toEqual({
