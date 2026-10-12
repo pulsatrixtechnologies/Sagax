@@ -51,8 +51,8 @@ export interface SandboxLimits {
   nanoCpus: number;
   pidsLimit: number;
   tmpBytes: number;
-  /** Soft quota on /workspace, checked by the provisioner (a named volume has
-   * no hard size on overlay2 without xfs project quotas). */
+  /** Quota on /workspace. Soft (measured by the provisioner) by default; hard
+   * when hardVolumeQuota is on and the volumes root is XFS with prjquota. */
   workspaceQuotaBytes: number;
   /** Hard per-file ceiling (RLIMIT_FSIZE). */
   maxFileBytes: number;
@@ -68,6 +68,11 @@ export interface SandboxdConfig {
   idleStopMs: number;
   maxRunning: number;
   limits: SandboxLimits;
+  /** Ask Docker for a hard size on each workspace volume (local driver
+   * `size` option). Needs the volumes root on XFS mounted with prjquota;
+   * Docker refuses the volume otherwise, so it is opt-in
+   * (SAGAX_SANDBOX_HARD_QUOTA=1). */
+  hardVolumeQuota?: boolean;
   requireEgressPolicy: boolean;
   egressDeny: string[];
   listenHost: string;
@@ -199,6 +204,7 @@ export function sandboxdConfigFromEnv(env: NodeJS.ProcessEnv = process.env): San
       maxFileBytes: Math.floor(positiveInt(env.SAGAX_SANDBOX_MAX_FILE_MB, DEFAULT_SANDBOX_LIMITS.maxFileBytes / MiB, "SAGAX_SANDBOX_MAX_FILE_MB", 1_048_576) * MiB),
       nofile: DEFAULT_SANDBOX_LIMITS.nofile,
     },
+    hardVolumeQuota: /^(1|true|yes|on)$/i.test(env.SAGAX_SANDBOX_HARD_QUOTA?.trim() ?? ""),
     requireEgressPolicy: !/^(0|false|no|off)$/i.test(env.SAGAX_SANDBOX_REQUIRE_EGRESS_POLICY?.trim() ?? ""),
     egressDeny: [...DEFAULT_EGRESS_DENY, ...extraDeny],
     listenHost: listenMatch[1]!.replace(/^\[|\]$/g, ""),
@@ -238,8 +244,16 @@ export function sandboxNetworkSpec(config: Pick<SandboxdConfig, "instance">, key
   };
 }
 
-export function sandboxVolumeSpec(config: Pick<SandboxdConfig, "instance">, key: string): Record<string, unknown> {
-  return { Name: sandboxNames(key).volume, Driver: "local", Labels: sandboxLabels(config, key) };
+export function sandboxVolumeSpec(
+  config: Pick<SandboxdConfig, "instance"> & Partial<Pick<SandboxdConfig, "limits" | "hardVolumeQuota">>,
+  key: string,
+): Record<string, unknown> {
+  const spec: Record<string, unknown> = { Name: sandboxNames(key).volume, Driver: "local", Labels: sandboxLabels(config, key) };
+  if (config.hardVolumeQuota && config.limits) {
+    // Docker's local driver enforces this with an XFS project quota.
+    spec.DriverOpts = { size: `${Math.max(1, Math.floor(config.limits.workspaceQuotaBytes / MiB))}m` };
+  }
+  return spec;
 }
 
 /** The container create body. Read-only root, non-root user, no
