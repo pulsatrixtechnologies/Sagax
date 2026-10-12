@@ -18,9 +18,11 @@ export async function openTemplatesCatalog(
 ): Promise<void> {
   await evaluate(`(async () => {
     const store = await import("/src/state/store.tsx");
+    const dispatch = window.__sagaxDispatch;
+    if (typeof dispatch !== "function") throw new Error("the preview page has no test dispatch");
     const config = await fetch("/api/config").then((response) => response.json());
-    store.dispatch({ type: "configStatus", config });
-    store.dispatch(store.openBotCatalog({ section: "templates" }));
+    dispatch({ type: "configStatus", config });
+    dispatch(store.openBotCatalog({ section: "templates" }));
     return true;
   })()`);
   await click("Templates");
