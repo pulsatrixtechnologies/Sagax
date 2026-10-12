@@ -5,7 +5,9 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { z } from "zod";
 
-import type { ModelCatalog, ProviderDriver } from "../contracts.ts";
+import type { ModelCatalog, ProviderDriver, SendTurnInput } from "../contracts.ts";
+import { DATA_DIR } from "../config.ts";
+import { applyStoredEngineEnv } from "../engine-api-keys.ts";
 import { createOpenAIChatRuntime } from "./openai-chat.ts";
 
 const DRIVER_KIND = "minimax";
@@ -63,6 +65,32 @@ export function loadLocalMiniMaxConfig(home = homedir()): LocalMiniMaxConfig {
   }
 }
 
+/** The key for this turn. A sealed key saved after the instance was created
+ * wins over the environment captured at creation. On an organization server
+ * only the turn's person is read; a turn with no person gets no sealed key. */
+export function minimaxKeyForTurn(
+  environment: Record<string, string | undefined>,
+  turn?: SendTurnInput,
+  dataDir = process.env.SAGAX_DATA_DIR?.trim() || DATA_DIR,
+): string {
+  const organization = process.env.SAGAX_IDENTITY === "perspicax";
+  const principal = turn?.access?.localKeyPrincipal?.trim() || "";
+  const sealed: Record<string, string | undefined> = {};
+  if (organization) {
+    if (principal) applyStoredEngineEnv(sealed, DRIVER_KIND, dataDir, { organization: true, principalId: principal });
+  } else {
+    applyStoredEngineEnv(sealed, DRIVER_KIND, dataDir, { organization: false });
+  }
+  if (sealed[API_KEY_ENV]) return sealed[API_KEY_ENV].trim();
+  if (organization) return turn?.access?.environment?.[API_KEY_ENV]?.trim() || "";
+  return (
+    turn?.access?.environment?.[API_KEY_ENV]?.trim() ||
+    environment[API_KEY_ENV]?.trim() ||
+    process.env[API_KEY_ENV]?.trim() ||
+    loadLocalMiniMaxConfig().apiKey
+  );
+}
+
 export function decodeMinimaxConfig(raw: unknown): MinimaxConfig {
   const tools = ((raw ?? {}) as Record<string, unknown>).tools;
   if (tools !== undefined && typeof tools !== "boolean") throw new Error("tools must be a boolean");
@@ -94,10 +122,6 @@ export const MinimaxDriver: ProviderDriver<MinimaxConfig> = {
 
   async create(input) {
     const local = loadLocalMiniMaxConfig();
-    const apiKey =
-      input.environment[API_KEY_ENV]?.trim() ||
-      process.env[API_KEY_ENV]?.trim() ||
-      local.apiKey;
     const apiUrl = input.config.url === DEFAULT_URL && local.url !== DEFAULT_URL
       ? local.url
       : input.config.url;
@@ -108,7 +132,7 @@ export const MinimaxDriver: ProviderDriver<MinimaxConfig> = {
     return createOpenAIChatRuntime({
       input,
       driverKind: DRIVER_KIND,
-      apiKey,
+      apiKey: (turn) => minimaxKeyForTurn(input.environment, turn),
       apiUrl,
       tools: input.config.tools,
       models: () => models,

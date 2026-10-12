@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { recordEvents } from "../testing/events.ts";
+import { writeFileEngineKey } from "../engine-api-keys.ts";
 import { decodeMinimaxConfig, loadLocalMiniMaxConfig, MinimaxDriver } from "./minimax.ts";
 
 describe("MinimaxDriver", () => {
@@ -186,6 +187,75 @@ describe("MinimaxDriver", () => {
     expect(instance.adapter.hasSession("thread")).toBe(false);
     recorder.stop();
     await instance.dispose();
+  });
+
+  it("reads the sealed key on each turn instead of the key captured at creation", async () => {
+    const data = mkdtempSync(join(tmpdir(), "sagax-minimax-turn-key-"));
+    const saved = {
+      data: process.env.SAGAX_DATA_DIR,
+      vault: process.env.SAGAX_MCP_OAUTH_KEY,
+      identity: process.env.SAGAX_IDENTITY,
+    };
+    process.env.SAGAX_DATA_DIR = data;
+    process.env.SAGAX_MCP_OAUTH_KEY = "ab".repeat(32);
+    delete process.env.SAGAX_IDENTITY;
+    const first = "witness-minimax-not-secret";
+    const second = "witness-minimax-turned-not-secret";
+    const ada = "pr_00000000-0000-4000-8000-00000000000a";
+    const bob = "pr_00000000-0000-4000-8000-00000000000b";
+    const headers: string[] = [];
+    vi.stubGlobal("fetch", vi.fn(async (_input: string | URL | Request, init?: RequestInit) => {
+      headers.push(new Headers(init?.headers).get("authorization") ?? "");
+      return new Response(
+        'data: {"choices":[{"delta":{"content":"ok"}}]}\ndata: [DONE]\n',
+        { status: 200, headers: { "content-type": "text/event-stream" } },
+      );
+    }));
+    try {
+      writeFileEngineKey(data, { organization: false }, "minimax", "MINIMAX_API_KEY", first);
+      const instance = await MinimaxDriver.create({
+        instanceId: "minimax-live",
+        displayName: "MiniMax",
+        enabled: true,
+        config: MinimaxDriver.defaultConfig(),
+        environment: { MINIMAX_API_KEY: "frozen-at-create" },
+      });
+      await instance.adapter.sendTurn({ threadId: "t1", text: "one" });
+      await vi.waitFor(() => expect(headers).toEqual([`Bearer ${first}`]));
+      writeFileEngineKey(data, { organization: false }, "minimax", "MINIMAX_API_KEY", second);
+      await instance.adapter.sendTurn({ threadId: "t2", text: "two" });
+      await vi.waitFor(() => expect(headers).toEqual([`Bearer ${first}`, `Bearer ${second}`]));
+      expect(headers.join(" ")).not.toContain("frozen-at-create");
+
+      process.env.SAGAX_IDENTITY = "perspicax";
+      writeFileEngineKey(data, { organization: true, principalId: ada }, "minimax", "MINIMAX_API_KEY", "witness-ada-not-secret");
+      writeFileEngineKey(data, { organization: true, principalId: bob }, "minimax", "MINIMAX_API_KEY", "witness-bob-not-secret");
+      await instance.adapter.sendTurn({
+        threadId: "t3",
+        text: "ada",
+        access: { via: "speaker-key", identity: `speaker-key:${ada}:local`, localKeyPrincipal: ada },
+      });
+      await vi.waitFor(() => expect(headers.at(-1)).toBe("Bearer witness-ada-not-secret"));
+      await instance.adapter.sendTurn({
+        threadId: "t4",
+        text: "bob",
+        access: { via: "owner-key", identity: `owner-key:${bob}:local`, localKeyPrincipal: bob },
+      });
+      await vi.waitFor(() => expect(headers.at(-1)).toBe("Bearer witness-bob-not-secret"));
+      const beforeAnonymous = headers.length;
+      await expect(instance.adapter.sendTurn({ threadId: "t5", text: "nobody" })).rejects.toThrow(/no MiniMax key/);
+      expect(headers).toHaveLength(beforeAnonymous);
+      expect(headers.filter((header) => header.includes("witness-ada-not-secret"))).toHaveLength(1);
+      expect(headers.filter((header) => header.includes("witness-bob-not-secret"))).toHaveLength(1);
+      await instance.dispose();
+    } finally {
+      if (saved.data === undefined) delete process.env.SAGAX_DATA_DIR;
+      else process.env.SAGAX_DATA_DIR = saved.data;
+      if (saved.vault === undefined) delete process.env.SAGAX_MCP_OAUTH_KEY;
+      else process.env.SAGAX_MCP_OAUTH_KEY = saved.vault;
+      if (saved.identity === undefined) delete process.env.SAGAX_IDENTITY;
+      else process.env.SAGAX_IDENTITY = saved.identity;
+    }
   });
 });
 
