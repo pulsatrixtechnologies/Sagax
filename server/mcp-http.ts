@@ -9,6 +9,7 @@ import { request as httpsRequest } from "node:https";
 import { Readable } from "node:stream";
 
 import type { RemoteMcpSpec } from "./contracts.ts";
+import { guardedFetch } from "./public-fetch.ts";
 
 export type McpHttpFailure = "network" | "status" | "protocol";
 
@@ -208,7 +209,7 @@ export class RemoteMcpClient {
 
   constructor(target: RemoteMcpSpec, options: { fetch?: typeof fetch; maxBytes?: number; onNotification?: (message: JsonRpcMessage) => void } = {}) {
     this.target = target;
-    this.fetchImpl = options.fetch ?? fetch;
+    this.fetchImpl = options.fetch ?? ((input, init) => guardedFetch(input, init ?? {}));
     this.maxBytes = options.maxBytes ?? MAX_REMOTE_MCP_BYTES;
     this.onNotification = options.onNotification;
   }

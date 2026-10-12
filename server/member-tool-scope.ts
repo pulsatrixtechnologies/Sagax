@@ -47,6 +47,15 @@ export const MEMBER_OWN_SCOPE_AGENT_TOOLS: Readonly<Record<string, MemberToolFam
   create_options_card: "conversation",
   send_voice_note: "conversation",
   request_credential: "conversation",
+  // Opens nothing: the person taps the card before any shell starts.
+  offer_shell_terminal: "conversation",
+  // External provider jobs on the person's own key, not a command on this host.
+  launch_cloud_agent: "own-setup",
+  cloud_agent_follow_up: "conversation",
+  cancel_cloud_agent: "conversation",
+  archive_cloud_agent: "own-setup",
+  create_agent: "own-setup",
+  send_prompt: "conversation",
   memory_update: "memory",
   memory_log: "memory",
   group_memory_update: "memory",

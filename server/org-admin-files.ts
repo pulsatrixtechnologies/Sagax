@@ -29,10 +29,10 @@
 // real path must stay inside the root's real path. Reads open with
 // O_NOFOLLOW. A read answers at most 128 KiB, a download at most 100 MiB.
 // Reads and downloads go to the admin activity log (category bot).
-import { constants, lstatSync, readdirSync, realpathSync, type Stats } from "node:fs";
-import { open } from "node:fs/promises";
+import { constants, lstatSync, realpathSync, readdirSync, type Stats } from "node:fs";
+import { lstat, open, realpath, type FileHandle } from "node:fs/promises";
 import type { IncomingMessage, ServerResponse } from "node:http";
-import { extname, join, sep } from "node:path";
+import { extname, isAbsolute, join, relative, sep } from "node:path";
 
 export const ADMIN_FILES_ROUTE = /^files\/([A-Za-z0-9_-]{1,128})\/(roots|list|stat|read|download)$/;
 export const FILES_MAX_ENTRIES = 1_000;
@@ -164,6 +164,59 @@ export function resolveInRoot(dir: string, segments: readonly string[]): { path:
   return { path: real, stat };
 }
 
+function procFdAvailable(): boolean {
+  try {
+    realpathSync("/proc/self/fd");
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Open `segments` under `rootDir` without following a symlink. On Linux each
+ * segment is opened from the previous directory fd (`/proc/self/fd/N`), so a
+ * parent replaced by a link after the walk cannot be followed. Without
+ * `/proc/self/fd` the path is checked again and opened with O_NOFOLLOW. */
+export async function openNoFollow(rootDir: string, segments: readonly string[]): Promise<FileHandle> {
+  if (!procFdAvailable()) {
+    const resolved = resolveInRoot(rootDir, segments);
+    return open(resolved.path, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
+  }
+  const noFollow = constants.O_NOFOLLOW ?? 0;
+  let current: FileHandle | undefined = await open(rootDir, constants.O_RDONLY | constants.O_DIRECTORY | noFollow);
+  try {
+    for (let index = 0; index < segments.length; index += 1) {
+      const last = index === segments.length - 1;
+      const flags = constants.O_RDONLY | noFollow | (last ? 0 : constants.O_DIRECTORY);
+      let next: FileHandle;
+      try {
+        next = await open(`/proc/self/fd/${current.fd}/${segments[index]}`, flags);
+      } catch (error) {
+        const code = (error as NodeJS.ErrnoException).code;
+        // A symlink opened with O_DIRECTORY comes back ENOTDIR (the link is
+        // not followed, so it is not a directory). A symlink file is ELOOP.
+        const linked = code === "ENOTDIR"
+          ? await lstat(`/proc/self/fd/${current.fd}/${segments[index]}`).then((stat) => stat.isSymbolicLink()).catch(() => false)
+          : false;
+        if (code === "ELOOP" || code === "EPERM" || linked) throw new FileRefusal(403, "link_refused", "Links are not followed here.");
+        throw notFound();
+      }
+      const real = await realpath(`/proc/self/fd/${next.fd}`).catch(() => "");
+      if (!real || !isInside(rootDir, real)) {
+        await next.close();
+        throw new FileRefusal(403, "link_refused", "Links are not followed here.");
+      }
+      await current.close();
+      current = next;
+    }
+    const opened = current;
+    current = undefined;
+    return opened;
+  } finally {
+    await current?.close().catch(() => undefined);
+  }
+}
+
 export function entryType(stat: Stats): FileEntryType {
   if (stat.isSymbolicLink()) return "link";
   if (stat.isDirectory()) return "dir";
@@ -252,6 +305,9 @@ interface Located {
   name: string;
   real: string;
   stat: Stats;
+  /** Real path of the root. Reads walk `segments` from here. */
+  rootDir: string;
+  segments: readonly string[];
 }
 
 /** The file or folder a request names, through its root. */
@@ -264,7 +320,7 @@ async function locate(deps: OrgAdminFilesDeps, botId: string, roots: BotFileRoot
   if (root.kind === "attachments") {
     if (segments.length === 0) {
       const { path, stat } = resolveInRoot(root.dir, []);
-      return { root: root.id, path: "", name: "", real: path, stat };
+      return { root: root.id, path: "", name: "", real: path, stat, rootDir: path, segments: [] };
     }
     if (segments.length !== 1) throw notFound();
     const found = (await deps.attachments(botId)).find((a) => a.id === segments[0]);
@@ -281,10 +337,18 @@ async function locate(deps: OrgAdminFilesDeps, botId: string, roots: BotFileRoot
     }
     if (stat.isSymbolicLink()) throw new FileRefusal(403, "link_refused", "Links are not followed here.");
     if (!isInside(rootReal, real)) throw new FileRefusal(403, "outside_root", "This path leaves its folder.");
-    return { root: root.id, path: found.id, name: found.name, real, stat };
+    const disk = relative(rootReal, found.localPath);
+    if (!disk || disk.startsWith("..") || isAbsolute(disk)) throw new FileRefusal(403, "outside_root", "This path leaves its folder.");
+    return { root: root.id, path: found.id, name: found.name, real, stat, rootDir: rootReal, segments: disk.split(sep).filter(Boolean) };
+  }
+  let rootDir: string;
+  try {
+    rootDir = realpathSync(root.dir);
+  } catch {
+    throw new FileRefusal(404, "root_missing", "This folder does not exist yet.");
   }
   const { path, stat } = resolveInRoot(root.dir, segments);
-  return { root: root.id, path: segments.join("/"), name: segments.at(-1) ?? "", real: path, stat };
+  return { root: root.id, path: segments.join("/"), name: segments.at(-1) ?? "", real: path, stat, rootDir, segments };
 }
 
 export type FilesSend = (res: ServerResponse, status: number, body: unknown) => void;
@@ -351,7 +415,7 @@ export async function answerBotFiles(input: {
     if (type !== "file") throw new FileRefusal(400, "not_a_file", "This is not a file.");
     if (action === "read") {
       const { offset, length } = parseRange(params.get("offset"), params.get("length"));
-      const handle = await open(target.real, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
+      const handle = await openNoFollow(target.rootDir, target.segments);
       try {
         const stat = await handle.stat();
         if (!stat.isFile()) throw new FileRefusal(400, "not_a_file", "This is not a file.");
@@ -381,7 +445,7 @@ export async function answerBotFiles(input: {
       }
     }
     // download
-    const handle = await open(target.real, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
+    const handle = await openNoFollow(target.rootDir, target.segments);
     let stat: Stats;
     try {
       stat = await handle.stat();

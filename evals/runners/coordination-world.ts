@@ -33,6 +33,7 @@ export class CoordinationWorld extends BaseWorld {
     for (const bot of scenario.bots) {
       const patch: Record<string, unknown> = {};
       if (bot.chiefOfStaff !== undefined) patch.chiefOfStaff = bot.chiefOfStaff;
+      if (bot.backgroundReplies !== undefined) patch.backgroundReplies = bot.backgroundReplies;
       if (bot.managedSections !== undefined) patch.managedSections = bot.managedSections;
       if (bot.acknowledgePeerScope !== undefined) patch.acknowledgePeerScope = bot.acknowledgePeerScope;
       else if ((bot.managedSections ?? []).length > 0) patch.acknowledgePeerScope = true;

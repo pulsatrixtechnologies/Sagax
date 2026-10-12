@@ -52,13 +52,25 @@ describe("decideBotAct", () => {
     if (allowed.ok && allowed.target.kind === "route") expect(allowed.target.query).toEqual({ section: "general" });
   });
 
-  it("holds a write in ask mode and runs it in auto or full", () => {
+  it("holds a write in ask and auto, and runs an ordinary write only in full", () => {
     const held = decideBotAct({ raw: { method: "POST", path: "/api/bots", body: { name: "Ada" } }, mode: "ask", scopes: ["client"], neededScope: client });
     expect(held).toMatchObject({ ok: true, effect: "hold", summary: "POST /api/bots" });
     expect(decideBotAct({ raw: { method: "POST", path: "/api/bots", body: ["a"] }, mode: undefined, scopes: ["client"], neededScope: client })).toMatchObject({ effect: "hold" });
-    expect(decideBotAct({ raw: { method: "DELETE", path: "/api/bots/b1" }, mode: "auto", scopes: ["admin", "client"], neededScope: client })).toMatchObject({ effect: "run" });
+    expect(decideBotAct({ raw: { method: "DELETE", path: "/api/bots/b1" }, mode: "auto", scopes: ["admin", "client"], neededScope: client })).toMatchObject({ effect: "hold" });
     expect(decideBotAct({ raw: { method: "PATCH", path: "/api/bots/b1", body: { name: "Bea" } }, mode: "full", scopes: ["admin", "client"], neededScope: client })).toMatchObject({ effect: "run" });
     expect(decideBotAct({ raw: { method: "POST", path: "/api/bots" }, mode: "edits", scopes: ["client"], neededScope: client })).toMatchObject({ effect: "hold" });
+  });
+
+  it("refuses a mode change or a card answer in every mode, including full", () => {
+    const error = "A bot cannot change an approval mode or answer a card through act.";
+    const full = { mode: "full" as const, scopes: ["admin", "client"] as const, neededScope: client };
+    expect(decideBotAct({ raw: { ui: "decideRequest", input: { threadId: "t2", requestId: "r1", behavior: "allow" } }, ...full })).toMatchObject({ ok: false, status: 403, error });
+    expect(decideBotAct({ raw: { ui: "answerCard", input: { botId: "b1", messageId: "m1", answer: "yes" } }, ...full })).toMatchObject({ ok: false, status: 403, error });
+    expect(decideBotAct({ raw: { method: "POST", path: "/api/threads/t2/respond", body: { behavior: "allow" } }, ...full })).toMatchObject({ ok: false, status: 403, error });
+    expect(decideBotAct({ raw: { method: "PATCH", path: "/api/bots/b1/tasks/t2", body: { approvalMode: "full", confirmFullAccess: true } }, ...full })).toMatchObject({ ok: false, status: 403, error });
+    expect(decideBotAct({ raw: { ui: "updateBot", input: { botId: "b1", patch: { approvalMode: "full" } } }, ...full })).toMatchObject({ ok: false, status: 403, error });
+    expect(decideBotAct({ raw: { ui: "updateTask", input: { botId: "b1", threadId: "t2", patch: { confirmFullAccess: true } } }, ...full })).toMatchObject({ ok: false, status: 403, error });
+    expect(decideBotAct({ raw: { method: "PATCH", path: "/api/bots/b1", query: { approvalMode: "full" } }, mode: "auto", scopes: ["admin", "client"], neededScope: client })).toMatchObject({ ok: false, status: 403, error });
   });
 
   it("runs a screen change and holds a screen write", () => {
@@ -153,7 +165,7 @@ describe("nudgePerson", () => {
     });
     expect(decision).toMatchObject({
       ok: true,
-      effect: "run",
+      effect: "hold",
       summary: "Nudge",
       target: { kind: "route", method: "POST", path: "/api/nudges", body: { principalId: "pr_bob" } },
     });
@@ -168,7 +180,7 @@ describe("nudgePerson", () => {
     });
     expect(decision).toMatchObject({
       ok: true,
-      effect: "run",
+      effect: "hold",
       summary: "Nudge",
       target: { kind: "route", method: "POST", path: "/api/nudges", body: { groupId: "room-1" } },
     });
