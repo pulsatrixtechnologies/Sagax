@@ -54,6 +54,7 @@ import { FONT_IDS, applyFont, readFont, type FontId } from "@/lib/fonts";
 import { RoomTurnTimeoutSettings } from "./RoomTurnTimeoutSettings";
 import { AboutMeEditor, aboutMeFirstLine } from "./AboutMeSettings";
 import { McpCallTimeoutSettings } from "./McpCallTimeoutSettings";
+import { ToolAccessSettings } from "./ToolAccessSettings";
 import { mcpCallTimeoutMinutes } from "@/lib/mcp-call-timeout";
 import { SettingsSubPage, SettingsSubPageRow } from "./SettingsSubPage";
 import { InitialsAvatar } from "./Avatar";
@@ -1314,6 +1315,17 @@ export function SettingsModal() {
                     summary={`${mcpCallTimeoutMinutes(state.config)} ${t("settings.mcpCalls.minutes")}`}
                   >
                     <McpCallTimeoutSettings />
+                  </Card>
+                )}
+                {advanced && editConfig && (
+                  <Card
+                    collapsible
+                    cardId="general.toolAccess"
+                    defaultOpen={false}
+                    title={t("settings.toolAccess.title")}
+                    subtitle={t("settings.toolAccess.subtitle")}
+                  >
+                    <ToolAccessSettings />
                   </Card>
                 )}
                 {advanced && editConfig && <ThreadConcurrencySettings />}

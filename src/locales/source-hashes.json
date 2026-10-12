@@ -8166,7 +8166,18 @@
       "approval.rule.tool": "c6da1d0244db2c817524b6f39551c289031839427b31943d582edf91d60dce6e",
       "approval.rule.askBot": "3f7423941029fe92b396a58582d616229f719d3474911c82f6108189589a64e3",
       "approval.rule.delegateBot": "cb44dd9b33b77d70fd026d76cd7f072cbd96f3480d748347757cf15ae0fde492",
-      "approval.rule.postToRoom": "a2eb5b5c0e84ab909223c5e07c97f50c8d6b29ced0f2a4a9813944ec7698ca92"
+      "approval.rule.postToRoom": "a2eb5b5c0e84ab909223c5e07c97f50c8d6b29ced0f2a4a9813944ec7698ca92",
+      "settings.toolAccess.title": "af24830760baf7cb77034c8b32bc72f654312fe3efb4c2c3172fa850083045eb",
+      "settings.toolAccess.subtitle": "cf38e421da41f050662dbd585f4108ca3d0e0a0bce699b87c20732f35624772d",
+      "settings.toolAccess.loading": "2ad40dc9038652088f9cf2c37de5df6fc70d360d855047408e31ee0437d6daa9",
+      "settings.toolAccess.empty": "ec25d3928b9a1cda8a82a4baca7a3583b07b62c6d98a3095f8ceb779adaa9d4c",
+      "settings.toolAccess.error": "64cfb2fcbeb1b6bbc8aab61d314e3bb13c2684686ba44fb75d697f622a533661",
+      "settings.toolAccess.revoke": "87e6d00bbf53ec5ae251de23ace84d5cf01c69deae04cfff08a5fe353a9853bb",
+      "settings.toolAccess.expires": "c41d2792d8cc2496827836a5e3fc00ddcfb2e89e2537afb19fcd0be1dcf01e32",
+      "settings.toolAccess.adminWarning": "87c71cb90338c7942d7d28ec86b1dd91ef0e585b9e846b1e0bc96e214adf869f",
+      "settings.toolAccess.state.active": "92340695899bd2d86223e4a007620e0d6502fc0e08809773634c7e0743764a9c",
+      "settings.toolAccess.state.expired": "424a2551d356754c882d04ac16c63e6b50b80b159549d23231001f629455756e",
+      "settings.toolAccess.state.revoked": "f6f738d043929f59fe41b1a5b414b33ea28ca9a6ddc74e682bdb7167b5a6ac6e"
     },
     "hi": {
       "approval.action.allowOnce": "168511d24d9ee03122b3200f929be11eaaedad45cb0ecb20a95f549b3e3f4d0f",

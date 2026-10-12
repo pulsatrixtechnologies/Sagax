@@ -4475,5 +4475,16 @@
   "approval.rule.tool": "{action}, avec n'importe quels détails",
   "approval.rule.askBot": "Demander de l'aide à {target}",
   "approval.rule.delegateBot": "Confier du travail à {target}",
-  "approval.rule.postToRoom": "Publier dans {target}"
+  "approval.rule.postToRoom": "Publier dans {target}",
+  "settings.toolAccess.title": "Accès aux outils",
+  "settings.toolAccess.subtitle": "Ce que les bots et les personnes peuvent faire avec les outils, au-delà des accès par défaut",
+  "settings.toolAccess.loading": "Chargement des autorisations…",
+  "settings.toolAccess.empty": "Aucune autorisation pour l'instant : les bots et les personnes n'ont que l'accès par défaut aux outils.",
+  "settings.toolAccess.error": "Impossible de charger les autorisations.",
+  "settings.toolAccess.revoke": "Révoquer",
+  "settings.toolAccess.expires": "prend fin le {date}",
+  "settings.toolAccess.adminWarning": "Accès admin : peut modifier les réglages, les personnes ou la facturation. Garde-le court.",
+  "settings.toolAccess.state.active": "Active",
+  "settings.toolAccess.state.expired": "Expirée",
+  "settings.toolAccess.state.revoked": "Révoquée"
 }

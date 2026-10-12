@@ -6446,5 +6446,16 @@
   "approval.rule.added": "Added to your Allow rules",
   "approval.rule.edit": "Edit rule",
   "approval.details.viewFull": "View the full request",
-  "approval.details.hideFull": "Hide the full request"
+  "approval.details.hideFull": "Hide the full request",
+  "settings.toolAccess.title": "Tool access",
+  "settings.toolAccess.subtitle": "What bots and people may do through tools beyond the defaults",
+  "settings.toolAccess.loading": "Loading grants…",
+  "settings.toolAccess.empty": "No grants yet: bots and people only have the default tool access.",
+  "settings.toolAccess.error": "Couldn't load the grants.",
+  "settings.toolAccess.revoke": "Revoke",
+  "settings.toolAccess.expires": "ends {date}",
+  "settings.toolAccess.adminWarning": "Admin access: can change settings, people or billing. Keep it short.",
+  "settings.toolAccess.state.active": "Active",
+  "settings.toolAccess.state.expired": "Expired",
+  "settings.toolAccess.state.revoked": "Revoked"
 }
