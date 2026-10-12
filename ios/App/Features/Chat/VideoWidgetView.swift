@@ -4,47 +4,51 @@ import SwiftUI
 import CompanionCore
 
 struct VideoWidgetView: View {
-    @Environment(\.themePalette) var themePalette
     @EnvironmentObject private var session: Session
     let video: WireVideoWidget
     @State private var player: AVPlayer?
+    @State private var loading = true
+    @State private var error: String?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            if let title = video.title ?? video.streamer {
-                Text(title)
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(Theme.textPrimary)
-            }
-            if video.kind == "live" {
-                Text("En direct")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 2)
-                    .background(Capsule().fill(Color.red))
-            }
+        VideoWidgetChrome(
+            title: video.title ?? video.streamer ?? String(localized: "video.untitled"),
+            streamer: video.streamer,
+            source: video.source,
+            live: video.kind == "live",
+            viewerCount: video.viewerCount,
+            loading: loading && player != nil,
+            error: error,
+            onRetry: { Task { await load() } }
+        ) {
             Group {
                 if let player {
                     VideoPlayer(player: player)
-                        .aspectRatio(16 / 9, contentMode: .fit)
-                        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                 } else {
                     RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .fill(Theme.card)
-                        .aspectRatio(16 / 9, contentMode: .fit)
-                        .overlay { ProgressView() }
+                        .fill(Color.black)
                 }
             }
         }
-        .frame(maxWidth: 520, alignment: .leading)
-        .task {
-            guard player == nil, let url = session.absoluteAPIURL(path: video.playbackUrl) else { return }
-            player = AVPlayer(url: url)
-        }
+        .task { await load() }
         .onDisappear {
             player?.pause()
             player = nil
         }
+    }
+
+    @MainActor
+    private func load() async {
+        loading = true
+        error = nil
+        guard let url = session.absoluteAPIURL(path: video.playbackUrl) else {
+            error = String(localized: "video.playbackError")
+            loading = false
+            return
+        }
+        let item = AVPlayerItem(url: url)
+        let p = AVPlayer(playerItem: item)
+        player = p
+        loading = false
     }
 }

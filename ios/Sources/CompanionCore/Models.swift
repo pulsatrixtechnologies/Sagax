@@ -22,6 +22,7 @@ public struct WireVideoWidget: Codable, Hashable, Sendable {
     public var source: String?
     public var posterUrl: String?
     public var durationMs: Double?
+    public var viewerCount: Int?
 }
 
 public struct SkillRequestCardData: Codable, Hashable, Sendable {

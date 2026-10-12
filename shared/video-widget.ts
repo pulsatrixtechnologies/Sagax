@@ -11,6 +11,7 @@ export interface WireVideoWidget {
   source?: string;
   posterUrl?: string;
   durationMs?: number;
+  viewerCount?: number;
 }
 
 export interface SagaxVideoEmit {
@@ -23,6 +24,7 @@ export interface SagaxVideoEmit {
   posterUrl?: string;
   durationMs?: number;
   duration?: number;
+  viewerCount?: number;
 }
 
 const URL_KEYS = ["hlsUrl", "hls_url", "playbackUrl", "playback_url", "streamUrl", "stream_url", "url", "m3u8", "mp4"] as const;
@@ -70,6 +72,14 @@ function durationMs(row: Record<string, unknown>): number | undefined {
   return undefined;
 }
 
+function viewerCount(row: Record<string, unknown>): number | undefined {
+  for (const key of ["viewerCount", "viewer_count", "viewers", "viewCount"]) {
+    const v = row[key];
+    if (typeof v === "number" && v >= 0) return Math.floor(v);
+  }
+  return undefined;
+}
+
 function poster(row: Record<string, unknown>): string | undefined {
   for (const key of ["posterUrl", "poster_url", "poster", "thumbnail", "thumbnailUrl"]) {
     const v = row[key];
@@ -89,6 +99,7 @@ function rowToWidget(row: Record<string, unknown>, defaults?: { source?: string;
     source: typeof row.source === "string" ? row.source : defaults?.source,
     posterUrl: poster(row),
     durationMs: durationMs(row),
+    viewerCount: viewerCount(row),
   };
 }
 

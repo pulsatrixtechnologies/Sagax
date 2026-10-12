@@ -26,10 +26,19 @@ export function loadYoutubeIframeApi(): Promise<void> {
 
 export type YoutubePlayerHandle = {
   seekTo: (seconds: number) => void;
+  getCurrentTimeMs: () => number | null;
+  play: () => void;
+  pause: () => void;
   destroy: () => void;
 };
 
-type YtTarget = { seekTo: (s: number, allowSeekAhead: boolean) => void; destroy: () => void };
+type YtTarget = {
+  seekTo: (s: number, allowSeekAhead: boolean) => void;
+  getCurrentTime: () => number;
+  playVideo: () => void;
+  pauseVideo: () => void;
+  destroy: () => void;
+};
 
 export async function createYoutubePlayer(
   mount: HTMLElement,
@@ -55,12 +64,28 @@ export async function createYoutubePlayer(
     const player = new Player(mount, {
       videoId,
       host: "https://www.youtube-nocookie.com",
-      playerVars: { modestbranding: 1, rel: 0, origin: window.location.origin },
+      playerVars: {
+        controls: 0,
+        modestbranding: 1,
+        rel: 0,
+        playsinline: 1,
+        origin: window.location.origin,
+      },
       events: {
         onReady: (event) => {
           const target = event.target;
           resolve({
             seekTo: (seconds) => target.seekTo(seconds, true),
+            getCurrentTimeMs: () => {
+              try {
+                const s = target.getCurrentTime();
+                return Number.isFinite(s) ? Math.round(s * 1000) : null;
+              } catch {
+                return null;
+              }
+            },
+            play: () => target.playVideo(),
+            pause: () => target.pauseVideo(),
             destroy: () => target.destroy(),
           });
         },

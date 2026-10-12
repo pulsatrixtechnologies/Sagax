@@ -1,0 +1,47 @@
+/* Inline chat video chrome — tokens only; surfaces sit on the card, overlays on the dark stage. */
+
+:root {
+  --video-card-shadow: 0 10px 40px color-mix(in srgb, var(--color-ink) 14%, transparent);
+  --video-stage-overlay: color-mix(in srgb, #000 55%, transparent);
+}
+
+.video-player-card {
+  box-shadow: var(--video-card-shadow);
+}
+
+.video-player-stage {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  background: #000;
+}
+
+.video-player-shimmer {
+  background: linear-gradient(
+    110deg,
+    color-mix(in srgb, var(--color-raised) 0%, transparent) 8%,
+    color-mix(in srgb, var(--color-raised) 55%, transparent) 18%,
+    color-mix(in srgb, var(--color-raised) 0%, transparent) 33%
+  );
+  background-size: 200% 100%;
+  animation: video-shimmer 1.4s ease-in-out infinite;
+}
+
+@keyframes video-shimmer {
+  0% { background-position: 100% 0; }
+  100% { background-position: -100% 0; }
+}
+
+.video-live-pulse {
+  animation: video-live-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes video-live-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.55; transform: scale(0.92); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .video-player-shimmer { animation: none; opacity: 0.35; }
+  .video-live-pulse { animation: none; }
+}

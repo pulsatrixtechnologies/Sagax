@@ -17,7 +17,6 @@ extension EnvironmentValues {
 }
 
 struct YouTubeMiniPlayerView: View {
-    @Environment(\.themePalette) var themePalette
     @Environment(\.youtubeSendToBot) private var sendToBot
     @EnvironmentObject private var session: Session
     let videoId: String
@@ -25,110 +24,103 @@ struct YouTubeMiniPlayerView: View {
 
     @State private var transcriptOpen = false
     @State private var loading = false
+    @State private var embedReady = false
     @State private var error: String?
     @State private var cues: [YouTubeTranscriptCue] = []
     @State private var filter = ""
+    @State private var activeCueMs: Int?
     @State private var seeker = YouTubePlayerSeeker()
 
     var body: some View {
-        RichBlockFrame(icon: "play.rectangle.fill", title: String(localized: "youtube.playerTitle"), identifier: identifier) {
-            VStack(alignment: .leading, spacing: 0) {
-                YouTubeEmbedWebView(videoId: videoId, seeker: seeker)
-                    .aspectRatio(16 / 9, contentMode: .fit)
-                    .accessibilityIdentifier(identifier.map { "\($0)-embed" } ?? "youtube-embed")
-                HStack(spacing: 8) {
-                    Button {
-                        Task { await loadTranscript() }
-                    } label: {
-                        Text(loading ? String(localized: "youtube.transcriptLoading") : String(localized: "youtube.fetchTranscript"))
-                            .font(.system(size: 13, weight: .medium))
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .tint(Theme.accent)
-                    .disabled(loading)
-
-                    if !cues.isEmpty, sendToBot != nil {
-                        Button {
-                            handToBot()
-                        } label: {
-                            Label(String(localized: "youtube.sendToBot"), systemImage: "paperplane.fill")
-                                .font(.system(size: 13))
-                        }
-                        .buttonStyle(.bordered)
-                    }
-
-                    if !cues.isEmpty {
-                        Spacer(minLength: 4)
-                        Button {
-                            withAnimation(.easeInOut(duration: 0.15)) { transcriptOpen.toggle() }
-                        } label: {
-                            Label(String(localized: "youtube.transcriptPanel"), systemImage: transcriptOpen ? "chevron.up" : "chevron.down")
-                                .font(.system(size: 13))
-                                .foregroundStyle(Theme.textSecondary)
-                        }
-                        .buttonStyle(.plain)
-                    }
+        VideoWidgetChrome(
+            title: String(localized: "youtube.playerTitle"),
+            source: videoId,
+            loading: !embedReady,
+            drawerOpen: transcriptOpen
+        ) {
+            YouTubeEmbedWebView(videoId: videoId, seeker: seeker, onReady: { embedReady = true })
+                .accessibilityIdentifier(identifier.map { "\($0)-embed" } ?? "youtube-embed")
+        } drawer: {
+            transcriptDrawer
+        }
+        .overlay(alignment: .bottomTrailing) {
+            HStack(spacing: 8) {
+                Button {
+                    Task { await loadTranscript() }
+                } label: {
+                    Label(
+                        loading ? String(localized: "youtube.transcriptLoading") : (cues.isEmpty ? String(localized: "youtube.fetchTranscript") : String(localized: "youtube.transcriptPanel")),
+                        systemImage: "text.quote"
+                    )
+                    .font(.system(size: 12, weight: .medium))
                 }
-                .padding(.horizontal, 10)
-                .padding(.vertical, 8)
-
-                if transcriptOpen {
-                    Divider().overlay(Theme.hairline.opacity(0.3))
-                    transcriptBody
-                        .padding(10)
-                }
+                .buttonStyle(.bordered)
+                .tint(.white)
+                .padding(10)
             }
         }
     }
 
     @ViewBuilder
-    private var transcriptBody: some View {
-        if let error {
-            Text(error)
-                .font(.system(size: 13))
-                .foregroundStyle(Theme.warning)
-        } else if cues.isEmpty, !loading {
-            Text(String(localized: "youtube.transcriptEmpty"))
-                .font(.system(size: 13))
-                .foregroundStyle(Theme.textSecondary)
-        } else {
-            HStack(spacing: 6) {
-                Image(systemName: "magnifyingglass")
+    private var transcriptDrawer: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if let error {
+                Text(error)
                     .font(.system(size: 13))
-                    .foregroundStyle(Theme.textTertiary)
-                TextField(String(localized: "youtube.searchTranscript"), text: $filter)
+                    .foregroundStyle(Theme.warning)
+            } else if cues.isEmpty, !loading {
+                Text(String(localized: "youtube.transcriptEmpty"))
                     .font(.system(size: 13))
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-            }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 6)
-            .background(RoundedRectangle(cornerRadius: 8).fill(Theme.cardRaised))
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 4) {
-                    ForEach(filteredCues, id: \.self) { cue in
-                        Button {
-                            seeker.seek(toMs: cue.startMs)
-                        } label: {
-                            HStack(alignment: .top, spacing: 8) {
-                                Text(formatCueTime(cue.startMs))
-                                    .font(.system(size: 12, weight: .medium, design: .monospaced))
-                                    .foregroundStyle(Theme.accent)
-                                    .frame(width: 44, alignment: .leading)
-                                Text(cue.text)
-                                    .font(.system(size: 13))
-                                    .foregroundStyle(Theme.textPrimary)
-                                    .multilineTextAlignment(.leading)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .foregroundStyle(Theme.textSecondary)
+            } else {
+                HStack(spacing: 6) {
+                    Image(systemName: "magnifyingglass")
+                        .foregroundStyle(Theme.textTertiary)
+                    TextField(String(localized: "youtube.searchTranscript"), text: $filter)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                }
+                .padding(10)
+                .background(RoundedRectangle(cornerRadius: 12).fill(Theme.cardRaised))
+                if !cues.isEmpty, sendToBot != nil {
+                    Button(action: handToBot) {
+                        Label(String(localized: "youtube.sendToBot"), systemImage: "paperplane.fill")
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(Theme.accent)
+                }
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 4) {
+                        ForEach(filteredCues, id: \.self) { cue in
+                            Button {
+                                activeCueMs = cue.startMs
+                                seeker.seek(toMs: cue.startMs)
+                            } label: {
+                                HStack(alignment: .top, spacing: 8) {
+                                    Text(formatCueTime(cue.startMs))
+                                        .font(.system(size: 12, weight: .medium, design: .monospaced))
+                                        .foregroundStyle(Theme.accent)
+                                        .frame(width: 44, alignment: .leading)
+                                    Text(cue.text)
+                                        .font(.system(size: 13))
+                                        .foregroundStyle(Theme.textPrimary)
+                                        .multilineTextAlignment(.leading)
+                                }
+                                .padding(8)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 10)
+                                        .fill(activeCueMs == cue.startMs ? Theme.accent.opacity(0.14) : Color.clear)
+                                )
                             }
-                            .padding(.vertical, 2)
+                            .buttonStyle(.plain)
                         }
-                        .buttonStyle(.plain)
                     }
                 }
+                .frame(maxHeight: 200)
             }
-            .frame(maxHeight: 180)
         }
+        .padding(12)
     }
 
     private var filteredCues: [YouTubeTranscriptCue] {
@@ -180,8 +172,9 @@ final class YouTubePlayerSeeker: ObservableObject {
 private struct YouTubeEmbedWebView: UIViewRepresentable {
     let videoId: String
     @ObservedObject var seeker: YouTubePlayerSeeker
+    var onReady: () -> Void
 
-    func makeCoordinator() -> Coordinator { Coordinator() }
+    func makeCoordinator() -> Coordinator { Coordinator(onReady: onReady) }
 
     func makeUIView(context: Context) -> WKWebView {
         let config = WKWebViewConfiguration()
@@ -220,8 +213,8 @@ private struct YouTubeEmbedWebView: UIViewRepresentable {
           player = new YT.Player('player', {
             videoId: '\(videoId)',
             host: 'https://www.youtube-nocookie.com',
-            playerVars: { playsinline: 1, modestbranding: 1, rel: 0 },
-            events: { onReady: function(e) { e.target.playVideo(); } }
+            playerVars: { playsinline: 1, modestbranding: 1, rel: 0, controls: 0 },
+            events: { onReady: function(e) { window.webkit?.messageHandlers?.ready?.postMessage('1'); } }
           });
         }
         window.ombSeekTo = function(seconds) {
@@ -232,5 +225,11 @@ private struct YouTubeEmbedWebView: UIViewRepresentable {
         """
     }
 
-    final class Coordinator: NSObject, WKNavigationDelegate {}
+    final class Coordinator: NSObject, WKNavigationDelegate {
+        let onReady: () -> Void
+        init(onReady: @escaping () -> Void) { self.onReady = onReady }
+        func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { self.onReady() }
+        }
+    }
 }

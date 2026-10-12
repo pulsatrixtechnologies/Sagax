@@ -225,6 +225,7 @@ func previewText(of message: Message) -> String {
         return message.secret?.label ?? message.text ?? "Credential required"
     case .activity: return message.tool?.name ?? ""
     case .screen: return "Screenshot"
+    case .video: return message.video?.title ?? "Video"
     case .digest: return ""
     case .compaction: return message.compaction?.chipText ?? message.text ?? ""
     case .routineRun: return message.routineRun?.previewLine ?? message.text ?? ""
