@@ -10,6 +10,7 @@ import { BOT_ROLES } from "../../src/lib/bot-roles.ts";
 import { runControlOmb } from "../control-omb.ts";
 import { UI_TOOLS_DIR } from "./control-omb-ui.ts";
 import { openNewBotDialog } from "./compose-flow.ts";
+import { clickAccessible } from "./ui-click.ts";
 
 const ROOT = fileURLToPath(new URL("../..", import.meta.url));
 const binary = resolveAgentBrowserBinary({ dataDir: UI_TOOLS_DIR, env: process.env });
@@ -50,11 +51,13 @@ describe("bot setup and tools in the real renderer", () => {
     }, { timeout: LAUNCH_TIMEOUT_MS + 120_000, interval: 250 }).toBe(true);
     const ui = (verb: string, ...args: string[]) => runControlOmb(["ui", verb, "--ui", info.ui, ...args]) as Promise<Record<string, any>>;
     const evaluate = async (js: string) => (await ui("eval", "--js", js)).result;
-    const click = (name: string) => ui("click", "--name", name);
+    const rawClick = (name: string) => ui("click", "--name", name);
+    const click = (name: string) => clickAccessible({ click: rawClick, evaluate }, name);
     const press = (keys: string) => ui("press", "--keys", keys);
     const bots = async (): Promise<SavedBot[]> => (await fetch(`${info.url}/api/bots`).then((response) => response.json())).bots;
     const snapshot = async () => (await ui("snapshot")).snapshot as string;
     const openPersona = async (section: string) => {
+      await press("Escape");
       await click("Open agent profile");
       await expect.poll(snapshot, { timeout: 10_000 }).toContain("Edit persona");
       await click("Edit persona");
@@ -98,7 +101,7 @@ describe("bot setup and tools in the real renderer", () => {
     await expect.poll(dialogCount, { timeout: 10_000 }).toBe(0);
     await press("Control+n");
     await expect.poll(snapshot, { timeout: 10_000 }).toContain("Create new Bot");
-    expect(await evaluate("[...document.querySelectorAll('button')].find(b => b.textContent.trim() === 'Create new Bot')?.disabled")).toBe(true);
+    expect(await evaluate("document.querySelector('[data-compose-action=\"create-bot\"]')?.disabled")).toBe(true);
     await press("Escape");
     expect(await dialogCount()).toBe(0);
     await evaluate("window.releaseBotCreation(); true");
@@ -133,6 +136,20 @@ describe("bot setup and tools in the real renderer", () => {
     await click("Add servers");
     const registry = async () => (await fetch(`${info.url}/api/mcp/servers`).then((response) => response.json())).servers;
     await expect.poll(registry, { timeout: 10_000 }).toMatchObject([{ name: "fixture", enabled: false }]);
+    // Adding a server can close the plugins overlay. Re-open it and open
+    // the fixture row so the workspace toggle is in the snapshot.
+    if (!(await snapshot()).includes("Turn fixture on")) {
+      await openPersona("Access");
+      await click("Manage in Connect apps");
+      await expect.poll(() => evaluate("Boolean(document.querySelector('[data-plugins-connected]'))"), { timeout: 10_000 }).toBe(true);
+      await evaluate("document.querySelector('[data-plugins-connected]')?.click(); true");
+      await expect.poll(snapshot, { timeout: 10_000 }).toContain("fixture");
+      await evaluate(`(() => {
+        const row = [...document.querySelectorAll("button, [role=button]")].find((el) => (el.textContent || "").includes("fixture"));
+        row?.click();
+        return Boolean(row);
+      })()`);
+    }
     await expect.poll(snapshot, { timeout: 10_000 }).toContain("Turn fixture on");
     await click("Turn fixture on");
     await expect.poll(registry, { timeout: 10_000 }).toMatchObject([{ name: "fixture", enabled: true }]);

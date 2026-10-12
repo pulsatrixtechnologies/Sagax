@@ -836,6 +836,8 @@ export const GRUMP_CLIP_MOVES: Readonly<Record<string, GrumpMove>> = {
   sideEye: "look",
   blinkOne: "slowBlink",
   longJump: "pounce",
+  // the crab's clips (Crab's), should a cat ever be asked for one
+  scuttle: "pounce",
   // the cat's own clips
   groom: "groom",
   knead: "knead",

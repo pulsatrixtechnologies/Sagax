@@ -217,7 +217,7 @@ const SHIBA_SKINS = new Set(["plain", "cream", "blacktan", "red", "sesame", "whi
 const GRUMP_SKINS = new Set(["plain", "tuxedo", "calico", "tabby", "siamese", "void", "retro98", "gold", "neon", "chrome", "glitch", "holo", "molten"]);
 const OGRE_SKINS = new Set(["plain", "swamp", "moss", "stone", "lava", "armor", "retro98", "gold", "neon", "chrome", "glitch", "holo", "molten"]);
 const FROG_SKINS = new Set(["plain", "leaf", "tree", "poison", "bullfrog", "ghost", "retro98", "gold", "neon", "chrome", "glitch", "holo", "molten"]);
-const CRAB_SKINS = new Set(["plain", "coral", "sand", "ink", "mint"]);
+const CRAB_SKINS = new Set(["plain", "coral", "sand", "ink", "mint", "gold", "pearl", "neon", "chrome", "crystal", "circuit", "holo", "molten", "galaxy"]);
 /** Other names a stored skin may carry (shared/mascot-look.ts LEGACY_SHAPE_SKINS, LEGACY_TROMBI_SKINS, LEGACY_BUNBU_SKINS, LEGACY_SHIBA_SKINS, LEGACY_GRUMP_SKINS, LEGACY_OGRE_SKINS, LEGACY_FROG_SKINS, LEGACY_CRAB_SKINS). */
 const LEGACY_SHAPE_SKINS = { ink: "outline", royal: "gold", metal: "chrome", "liquid-metal": "chrome", glass: "crystal", cyber: "circuit", iridescent: "holo", holographic: "holo", lava: "molten", nebula: "galaxy" };
 const LEGACY_TROMBI_SKINS = { retro: "retro98", win98: "retro98", royal: "gold", metal: "chrome", cyber: "glitch", iridescent: "holo", holographic: "holo", lava: "molten" };
@@ -226,7 +226,7 @@ const LEGACY_OGRE_SKINS = { bog: "swamp", marsh: "swamp", forest: "moss", granit
 const LEGACY_SHIBA_SKINS = { "black-and-tan": "blacktan", black_tan: "blacktan", kuro: "blacktan", aka: "red", goma: "sesame", shiro: "white", retro: "retro98", win98: "retro98", royal: "gold", metal: "chrome", cyber: "glitch", iridescent: "holo", holographic: "holo", lava: "molten" };
 const LEGACY_GRUMP_SKINS = { tux: "tuxedo", "black-and-white": "tuxedo", tortie: "calico", tortoiseshell: "calico", tiger: "tabby", mackerel: "tabby", colorpoint: "siamese", colourpoint: "siamese", "seal-point": "siamese", black: "void", shadow: "void", retro: "retro98", win98: "retro98", royal: "gold", metal: "chrome", cyber: "glitch", iridescent: "holo", holographic: "holo", lava: "molten" };
 const LEGACY_FROG_SKINS = { green: "leaf", "tree-frog": "tree", treefrog: "tree", "red-eyed": "tree", dart: "poison", "poison-dart": "poison", bull: "bullfrog", glass: "ghost", "glass-frog": "ghost", golden: "gold", retro: "retro98", win98: "retro98", royal: "gold", metal: "chrome", cyber: "glitch", iridescent: "holo", holographic: "holo", lava: "molten" };
-const LEGACY_CRAB_SKINS = { classic: "coral", orange: "coral", cream: "sand", black: "ink", green: "mint" };
+const LEGACY_CRAB_SKINS = { classic: "coral", orange: "coral", cream: "sand", black: "ink", green: "mint", royal: "gold", treasure: "gold", nacre: "pearl", opal: "pearl", frost: "pearl", metal: "chrome", "liquid-metal": "chrome", glass: "crystal", cyber: "circuit", iridescent: "holo", holographic: "holo", lava: "molten", nebula: "galaxy" };
 /** The app's skins (src/lib/skins.ts SKIN_IDS): the balloon wears the one the app wears. */
 export const APP_SKINS = new Set(["pulsatrix", "pulsatrix-light", "midnight", "atelier", "foundry", "lagoon", "graphite", "linen", "dusk", "daylight", "retro98", "meadow"]);
 const ACCENT_RE = /^#[0-9a-fA-F]{6}$/;

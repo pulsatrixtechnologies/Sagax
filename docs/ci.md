@@ -68,10 +68,11 @@ half hours. Now:
 
 ## Main and releases
 
-Main keeps one CI run going and one waiting. Each merge replaces the waiting
-run, and the running one always finishes, so a burst of merges costs two full
-runs instead of one per merge (fifteen queued behind each other in October
-2026, with the release waiting behind them).
+Every push to main gets its own CI run (concurrency group `ci-main-<sha>`), and
+no main run is cancelled or replaced, so every commit on main gets a verdict.
+This replaced "one running, one waiting" (Oct 12 2026): replaced runs left
+main commits without a result while main was red. A burst of merges now costs
+one full run per merge.
 
 `release.yml` ships only a commit whose code passed CI
 (`scripts/release-ci.mjs`, overlapping the platform builds). A run counts only

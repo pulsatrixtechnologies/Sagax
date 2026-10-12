@@ -34,11 +34,11 @@ describe("CI concurrency", () => {
     expect(workflow.concurrency["cancel-in-progress"]).toBe("${{ github.event_name == 'pull_request' }}");
   });
 
-  it("keeps main to one running and one waiting run, apart from PR and merge-queue groups", () => {
-    // One group for every main push: GitHub keeps the running run and only
-    // the newest waiting one, so a burst of merges cannot pile up full runs.
+  it("gives every main commit its own run, apart from PR and merge-queue groups", () => {
+    // One group per main commit: no main run is cancelled or replaced, so
+    // every commit on main gets a verdict.
     expect(workflow.concurrency.group).toBe(
-      "ci-${{ github.event_name == 'merge_group' && github.event.merge_group.head_ref || github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || github.ref }}",
+      "ci-${{ github.event_name == 'merge_group' && github.event.merge_group.head_ref || github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || github.event_name == 'push' && github.ref == 'refs/heads/main' && format('main-{0}', github.sha) || github.ref }}",
     );
   });
 

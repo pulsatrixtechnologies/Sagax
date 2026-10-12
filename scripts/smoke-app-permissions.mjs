@@ -96,33 +96,23 @@ async function run() {
     assert.equal(guard.begin(win.webContents.mainFrame), true);
     assert.ok((await capture(display)).error, "another origin must not capture");
     assert.deepEqual(displayDecisions, [false, true, false], "foreign capture must not reach source selection");
-    // The verified Cloud open in this window: the microphone, and nothing more.
+    // No hosted Cloud: main never grants a Cloud page the microphone
+    // (electron/app-permissions.node-test.mjs). The organization server's
+    // bundled UI is the only extra origin, via microphoneOrigins.
     await win.loadURL(cloudOrigin);
-    assert.equal(await pageMic(), "allowed", "the verified Cloud's page is told the app allows it");
-    assert.deepEqual(await capture(microphone), { tracks: ["audio"] });
-    assert.deepEqual(await capture(camera), { error: "NotAllowedError" });
+    assert.equal(await pageMic(), "refused", "a hosted Cloud page is not granted the microphone");
+    assert.deepEqual(await capture(microphone), { error: "NotAllowedError" });
     assert.equal(guard.begin(win.webContents.mainFrame), true);
     assert.ok((await capture(display)).error, "the Cloud must not capture the screen");
     assert.deepEqual(displayDecisions, [false, true, false], "the Cloud's capture must not reach source selection");
-    // The first seconds after launch: the Cloud page is open before the saved
-    // sign-in has restored. Its microphone request waits, then is granted
-    // once the restore names this page's origin as the person's Cloud.
-    const restoreNaming = (page, named) => () => {
-      waited.push(page);
-      return new Promise(resolve => setTimeout(() => { home = named; restoring = null; resolve(); }, 300));
-    };
     await win.loadURL(laterCloudOrigin);
     home = null;
-    restoring = restoreNaming("cloud", laterCloudOrigin);
-    assert.deepEqual(await capture(microphone), { tracks: ["audio"] }, "a Cloud page that asked early hears the microphone once the sign-in has restored");
-    assert.deepEqual(waited, ["cloud"], "the request waited for the restore, then was decided");
-    // A restore that ends without naming the page refuses it, after the same wait.
-    await win.loadURL(laterForeignOrigin);
-    home = null;
-    restoring = restoreNaming("foreign", laterCloudOrigin);
+    restoring = () => { waited.push("cloud"); return Promise.resolve(); };
     assert.deepEqual(await capture(microphone), { error: "NotAllowedError" });
-    assert.deepEqual(waited, ["cloud", "foreign"], "another server's page waited too, then was refused");
-    console.log(JSON.stringify({ electron: process.versions.electron, microphone: "allowed", camera: "denied", display: "intent-bound", foreignOrigin: "denied", cloudHome: "microphone only", cloudHomeBeforeRestore: "waits, then allowed" }));
+    await win.loadURL(laterForeignOrigin);
+    restoring = () => { waited.push("foreign"); return Promise.resolve(); };
+    assert.deepEqual(await capture(microphone), { error: "NotAllowedError" });
+    console.log(JSON.stringify({ electron: process.versions.electron, microphone: "allowed", camera: "denied", display: "intent-bound", foreignOrigin: "denied", cloudHome: "refused" }));
   } finally {
     clearTimeout(timeout);
     win?.destroy();

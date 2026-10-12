@@ -35,12 +35,16 @@ export function createAuth(
     },
     advanced: {
       useSecureCookies: true,
+      // D1 migrations own the schema (migrations/, checked by the suite).
+      // Better Auth 1.7.7 otherwise introspects every table (sqlite_master +
+      // one pragma_table_info per table) on a fresh instance, which is every
+      // request here: extra D1 round trips on sign-in and check-in.
       ipAddress: {
         // Cloudflare writes this header at the edge. Do not trust a client-
         // supplied x-forwarded-for chain for rate limits or session metadata.
         ipAddressHeaders: ["cf-connecting-ip"],
       },
-      database: { generateId: "uuid" },
+      database: { generateId: "uuid", validateSchema: false },
       backgroundTasks: {
         handler(promise) {
           ctx.waitUntil(promise);
