@@ -23,16 +23,16 @@ import {
   sandboxVolumeSpec,
 } from "./user-sandbox-spec.ts";
 
-const config = sandboxdConfigFromEnv({ SAGAX_SANDBOX_IMAGE: "sagax-sandbox:test", SAGAX_SANDBOX_INSTANCE: "gox" });
-const key = sandboxKeyForPrincipal("gox", "pr_00000000-0000-4000-8000-000000000001");
+const config = sandboxdConfigFromEnv({ SAGAX_SANDBOX_IMAGE: "sagax-sandbox:test", SAGAX_SANDBOX_INSTANCE: "test" });
+const key = sandboxKeyForPrincipal("test", "pr_00000000-0000-4000-8000-000000000001");
 type Spec = Record<string, unknown> & { HostConfig: Record<string, unknown> };
 const spec = () => sandboxContainerSpec(config, key) as Spec;
 
 describe("sandbox keys and names", () => {
   it("derives one opaque key per person and instance, never from a bot", () => {
     expect(key).toMatch(/^[a-f0-9]{32}$/);
-    expect(sandboxKeyForPrincipal("gox", "pr_00000000-0000-4000-8000-000000000001")).toBe(key);
-    expect(sandboxKeyForPrincipal("gox", "pr_00000000-0000-4000-8000-000000000002")).not.toBe(key);
+    expect(sandboxKeyForPrincipal("test", "pr_00000000-0000-4000-8000-000000000001")).toBe(key);
+    expect(sandboxKeyForPrincipal("test", "pr_00000000-0000-4000-8000-000000000002")).not.toBe(key);
     expect(sandboxKeyForPrincipal("other", "pr_00000000-0000-4000-8000-000000000001")).not.toBe(key);
   });
 

@@ -13,11 +13,11 @@ const ENV_SECRET = "Hj3Ks6Wq1Ez5Rt8Uy0Io";
 
 const admin: RequestAuth = {
   kind: "session", via: "cookie", scopes: ["admin", "client"],
-  session: { id: "s-admin", label: "web", scopes: ["admin", "client"], createdAt: 1, lastSeenAt: 1, email: "boss@gox.ca" } as SessionRecord,
+  session: { id: "s-admin", label: "web", scopes: ["admin", "client"], createdAt: 1, lastSeenAt: 1, email: "boss@example.com" } as SessionRecord,
 };
 const member: RequestAuth = {
   kind: "session", via: "cookie", scopes: ["client"],
-  session: { id: "s-member", label: "web", scopes: ["client"], createdAt: 1, lastSeenAt: 1, email: "ada@gox.ca" } as SessionRecord,
+  session: { id: "s-member", label: "web", scopes: ["client"], createdAt: 1, lastSeenAt: 1, email: "ada@example.com" } as SessionRecord,
 };
 const operator: RequestAuth = { kind: "loopback", scopes: ["admin", "client"] };
 
@@ -34,7 +34,7 @@ function harness(options: Partial<Omit<MailSettingsRouteDeps, "env">> & { initia
     save: (next) => { saves.push(next); saved = next; },
     env: () => env ?? {},
     mailer: () => mailer,
-    callerEmail: (auth) => (auth.kind === "session" ? auth.session.email : "owner@gox.ca"),
+    callerEmail: (auth) => (auth.kind === "session" ? auth.session.email : "owner@example.com"),
     now: () => clock,
     ...overrides,
   });
@@ -59,7 +59,7 @@ function fragments(secret: string): string[] {
   return out;
 }
 
-const READY: MailSettings = { provider: "twilio", from: "bot@gox.ca", twilio: { apiKeySid: "SKfakesid", apiKeySecret: SAVED_SECRET } };
+const READY: MailSettings = { provider: "twilio", from: "bot@example.com", twilio: { apiKeySid: "SKfakesid", apiKeySecret: SAVED_SECRET } };
 
 describe("GET /api/mail/settings", () => {
   it("never returns a secret, saved or from the environment, not even a fragment", async () => {
@@ -71,7 +71,7 @@ describe("GET /api/mail/settings", () => {
     expect(out.body.fields["twilio.apiKeySecret"]).toEqual({ source: "saved", serverDefault: false, configured: true });
     expect(out.body.fields["sendgrid.apiKey"]).toEqual({ source: "server", serverDefault: true, configured: true });
     expect(out.body.ready).toBe(true);
-    expect(out.body.testAddress).toBe("boss@gox.ca");
+    expect(out.body.testAddress).toBe("boss@example.com");
   });
 
   it("passes on other paths", async () => {
@@ -83,7 +83,7 @@ describe("who may use the mail settings", () => {
   it("refuses a session without admin scope", async () => {
     const h = harness({ initial: READY });
     for (const [method, path] of [["GET", "/api/mail/settings"], ["PUT", "/api/mail/settings"], ["POST", "/api/mail/test"]] as const) {
-      const out = await h.call({ method, path, auth: member, body: { from: "x@gox.ca" } });
+      const out = await h.call({ method, path, auth: member, body: { from: "x@example.com" } });
       expect(out.status, `${method} ${path}`).toBe(403);
       expect(out.body.code).toBe("forbidden");
     }
@@ -94,7 +94,7 @@ describe("who may use the mail settings", () => {
   it("answers 403 identity_perspicax on an organization server, to an admin too", async () => {
     const h = harness({ initial: READY, organization: true });
     for (const [method, path] of [["GET", "/api/mail/settings"], ["PUT", "/api/mail/settings"], ["POST", "/api/mail/test"]] as const) {
-      const out = await h.call({ method, path, auth: admin, body: { from: "x@gox.ca" } });
+      const out = await h.call({ method, path, auth: admin, body: { from: "x@example.com" } });
       expect(out.status, `${method} ${path}`).toBe(403);
       expect(out.body.code).toBe("identity_perspicax");
       expect(JSON.stringify(out.body)).not.toContain(SAVED_SECRET);
@@ -106,7 +106,7 @@ describe("who may use the mail settings", () => {
   it("lets the operator at this computer in", async () => {
     const out = await harness({ initial: READY }).call({ method: "GET", path: "/api/mail/settings", auth: operator });
     expect(out.status).toBe(200);
-    expect(out.body.testAddress).toBe("owner@gox.ca");
+    expect(out.body.testAddress).toBe("owner@example.com");
   });
 
   it("refuses a service-trust loopback caller", async () => {
@@ -118,20 +118,20 @@ describe("who may use the mail settings", () => {
 describe("PUT /api/mail/settings", () => {
   it("saves the change into the config mail block and answers without the secret", async () => {
     const h = harness({ initial: { provider: "smtp", smtp: { host: "old" } } });
-    const out = await h.call({ method: "PUT", path: "/api/mail/settings", body: { provider: "twilio", from: "bot@gox.ca", "twilio.apiKeySid": "SKfakesid", "twilio.apiKeySecret": SAVED_SECRET } });
+    const out = await h.call({ method: "PUT", path: "/api/mail/settings", body: { provider: "twilio", from: "bot@example.com", "twilio.apiKeySid": "SKfakesid", "twilio.apiKeySecret": SAVED_SECRET } });
     expect(out.status).toBe(200);
-    expect(h.saved()).toEqual({ provider: "twilio", from: "bot@gox.ca", smtp: { host: "old" }, twilio: { apiKeySid: "SKfakesid", apiKeySecret: SAVED_SECRET } });
+    expect(h.saved()).toEqual({ provider: "twilio", from: "bot@example.com", smtp: { host: "old" }, twilio: { apiKeySid: "SKfakesid", apiKeySecret: SAVED_SECRET } });
     for (const part of fragments(SAVED_SECRET)) expect(JSON.stringify(out.body)).not.toContain(part);
     expect(out.body.fields["twilio.apiKeySecret"].configured).toBe(true);
     expect(out.body.ready).toBe(true);
   });
 
   it("reverts a field to the server's value with null", async () => {
-    const h = harness({ initial: { provider: "smtp", from: "ui@gox.ca" }, env: { SAGAX_MAIL_FROM: "env@gox.ca" } });
+    const h = harness({ initial: { provider: "smtp", from: "ui@example.com" }, env: { SAGAX_MAIL_FROM: "env@example.com" } });
     const out = await h.call({ method: "PUT", path: "/api/mail/settings", body: { from: null } });
     expect(out.status).toBe(200);
     expect(h.saved()).toEqual({ provider: "smtp" });
-    expect(out.body.fields.from).toEqual({ source: "server", serverDefault: true, value: "env@gox.ca", serverValue: "env@gox.ca" });
+    expect(out.body.fields.from).toEqual({ source: "server", serverDefault: true, value: "env@example.com", serverValue: "env@example.com" });
   });
 
   it("refuses an invalid change without saving", async () => {
@@ -155,9 +155,9 @@ describe("POST /api/mail/test", () => {
     const h = harness({ initial: READY });
     const out = await h.call({ method: "POST", path: "/api/mail/test" });
     expect(out.status).toBe(200);
-    expect(out.body).toEqual({ sentTo: "boss@gox.ca" });
+    expect(out.body).toEqual({ sentTo: "boss@example.com" });
     expect(h.sent).toHaveLength(1);
-    expect(h.sent[0]!.to).toBe("boss@gox.ca");
+    expect(h.sent[0]!.to).toBe("boss@example.com");
   });
 
   it("accepts no recipient or any other field", async () => {

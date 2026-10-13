@@ -50,7 +50,7 @@ describe("Model providers on an organization server", () => {
     instanceId, driverKind, displayName, access: "cloud", cliDefault: instanceId,
     snapshot: { state: "available", authenticated: true, account: { email: "server-login@example.test" }, ...snapshot },
   });
-  const ORG = { org: { name: "GOX", identity: { kind: "perspicax" as const, issuer: "https://px.example.test" } } };
+  const ORG = { org: { name: "Example", identity: { kind: "perspicax" as const, issuer: "https://px.example.test" } } };
   const mine = (instanceId: string, driver: string, displayName: string, over: Partial<MyEngine> = {}): MyEngine => ({
     instanceId, driver, displayName, installed: true, subscription: { supported: true, signedIn: false }, myKey: false, orgKey: false, myTurns: "none", ...over,
   });

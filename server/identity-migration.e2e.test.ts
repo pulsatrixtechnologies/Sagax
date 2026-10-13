@@ -100,7 +100,7 @@ posixOnly("identity migration at boot", () => {
     home = mkdtempSync(join(tmpdir(), "omb-identity-migration-"));
     data = join(home, ".sagax");
     mkdirSync(data, { recursive: true });
-    write("config.json", { profile: { name: "JC", email: "jc@gox.ca" } });
+    write("config.json", { profile: { name: "JC", email: "jc@example.com" } });
     // A first boot only builds a valid bot and channel; they are then
     // rewritten to what a build before principals stored.
     await start();
@@ -123,11 +123,11 @@ posixOnly("identity migration at boot", () => {
     rmSync(join(data, "principals.json"), { force: true });
     const config = read("config.json");
     delete config.identityMigratedAt;
-    config.org = { name: "GOX", host: { kind: "server", url: "https://pulsa.gox.ca" }, ownerUserId: "jc@gox.ca" };
-    config.profile = { name: "JC", email: "jc@gox.ca" };
+    config.org = { name: "Example", host: { kind: "server", url: "https://server.example.com" }, ownerUserId: "jc@example.com" };
+    config.profile = { name: "JC", email: "jc@example.com" };
     write("config.json", config);
-    write("bots.json", (read("bots.json") as any[]).map((b) => (b.id === botId ? { ...b, ownerUserId: "local-owner", directGrants: ["zach@gox.ca"] } : b)));
-    write("groups.json", (read("groups.json") as any[]).map((g) => (g.id === channelId ? { ...g, humanIds: ["jc@gox.ca", "zach@gox.ca"] } : g)));
+    write("bots.json", (read("bots.json") as any[]).map((b) => (b.id === botId ? { ...b, ownerUserId: "local-owner", directGrants: ["zach@example.com"] } : b)));
+    write("groups.json", (read("groups.json") as any[]).map((g) => (g.id === channelId ? { ...g, humanIds: ["jc@example.com", "zach@example.com"] } : g)));
     rmSync(join(data, "sessions.json"), { force: true });
     const registry = new SessionRegistry({ file: join(data, "sessions.json") });
     const admin = registry.issue({ label: "JC's old phone", scopes: ["admin", "client"] });
@@ -154,16 +154,16 @@ posixOnly("identity migration at boot", () => {
     const local = principals.filter((p) => p.local);
     expect(local).toHaveLength(1);
     const localId = local[0]!.id;
-    expect(local[0]!.email).toBe("jc@gox.ca");
+    expect(local[0]!.email).toBe("jc@example.com");
     const emails = principals.map((p) => p.email).filter(Boolean);
     expect(new Set(emails).size).toBe(emails.length);
-    const zach = principals.find((p) => p.email === "zach@gox.ca")!;
+    const zach = principals.find((p) => p.email === "zach@example.com")!;
     expect(zach.id).toMatch(/^pr_/);
     expect(principals).toHaveLength(2);
 
     // Slice 8: the interim organization is gone; its old key is left as it
     // was (ignored), never rewritten.
-    expect(first.orgOwner).toBe("jc@gox.ca");
+    expect(first.orgOwner).toBe("jc@example.com");
     expect(first.bot).toEqual({ ownerUserId: localId, directGrants: [zach.id] });
     expect(first.humanIds).toEqual([localId, zach.id]);
     const byId = new Map(first.sessions.map((s) => [s.id, s.principalId]));

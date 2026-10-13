@@ -170,7 +170,7 @@ describe("live view of the server environment desktop", () => {
   });
 
   it("rebuilds an environment from before the desktop when its owner opens the desktop, keeping /workspace", async () => {
-    // GOX 2026-10-02: an environment created on an image without
+    // production 2026-10-02: an environment created on an image without
     // sagax-desktop answered every open with a bare 502, "not available".
     await get("/api/desktop-viewer/sandbox/me", alice);
     const names = sandboxNames(manager.keyFor(ALICE));

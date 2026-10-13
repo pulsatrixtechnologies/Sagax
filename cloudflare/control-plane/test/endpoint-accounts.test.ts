@@ -120,7 +120,7 @@ describe("endpoint account configuration", () => {
 });
 
 const PRIMARY: EndpointAccount = {
-  accountId: "0c92969a82eb9e173b013a7e7a02333d",
+  accountId: "00000000000000000000000000000000",
   apiToken: "primary-token-for-pure-tests-only",
   companionHostSuffix: "openmausbot.com",
   dnsRecordLimit: 1000,

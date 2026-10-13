@@ -1,5 +1,5 @@
 // A routine whose engine fails, on a Perspicax organization server, through
-// the real server (GOX, 2026-10-08: "Dispatch matin TN" on Orion showed a bare
+// the real server (production, 2026-10-08: "Dispatch matin TN" on Orion showed a bare
 // "Failed: rpc_error" on Run now).
 //
 //   Run now      the owner (an admin) runs her own routine: the turn reaches
@@ -32,7 +32,7 @@ const FAKE_ACP = join(SERVER_DIR, "testing", "fake-acp-cli.ts");
 const FAKE_PI = join(SERVER_DIR, "testing", "fake-pi-cli.ts");
 const posixOnly = describe.skipIf(process.platform === "win32");
 const ALICE: FakeOidcUser = { sub: "01J9S6ALICE00000000000000A", email: "alice@example.test", name: "Alice", preferred_username: "alice", role: "admin" };
-/** What grok 1.0.50 answered on GOX (server data, native thread log). */
+/** What grok 1.0.50 answered on production (server data, native thread log). */
 const GROK_402 = {
   code: -32603,
   message: "Internal error",
@@ -148,7 +148,7 @@ posixOnly("Perspicax organization: a routine whose engine fails says why", () =>
     chmodSync(FAKE_PI, 0o755);
     idp = await startFakeOidcProvider({ user: ALICE });
     // alice keeps no key in Perspicax: Claude and Grok run on the
-    // organization's keys, pi has none to run on (as on GOX)
+    // organization's keys, pi has none to run on (as on production)
     idp.directoryPeople = [idp.personOf(ALICE)];
     PORT = await freePortBlock([0, 1]);
     BASE = `http://127.0.0.1:${PORT}`;

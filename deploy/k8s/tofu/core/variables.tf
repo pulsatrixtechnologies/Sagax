@@ -10,7 +10,7 @@ variable "name" {
 
 variable "timezone" {
   type        = string
-  description = "IANA timezone for the warm-node window. America/Toronto matches the GOX daytime."
+  description = "IANA timezone for the warm-node window. America/Toronto matches the production daytime."
   default     = "America/Toronto"
 }
 

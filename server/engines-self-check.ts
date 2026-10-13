@@ -60,7 +60,7 @@ export interface EngineCheck {
 
 const VERSION_TIMEOUT_MS = 20_000;
 /** How many `--version` probes run at once. All 11 at once (Promise.all)
- * peaked near 3.9 GiB on GOX (2026-10-13) and the kernel OOM-killed children:
+ * peaked near 3.9 GiB on production (2026-10-13) and the kernel OOM-killed children:
  * several engine CLIs boot a whole Node or Python runtime just to print a
  * version. Two at a time keeps the peak to the two largest. */
 export const ENGINE_PROBE_CONCURRENCY = 2;

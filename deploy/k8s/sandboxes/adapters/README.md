@@ -9,7 +9,7 @@ is not required for k3s on Proxmox, EKS, or LKE.
 | Nodes | cluster-autoscaler values, or Karpenter NodePool | AKS node pool command, or `karpenter.yaml` (`AKSNodeClass`) |
 | Disk | a CSI class that detaches | `storageclass.yaml` (`disk.csi.azure.com`, Retain) |
 | Path from Sagax | in-cluster Service | internal load balancer |
-| Ingress from the VM | none until the adapter | `networkpolicy-gox.yaml` (placeholder subnet) |
+| Ingress from the VM | none until the adapter | `networkpolicy-ingress.yaml` (placeholder subnet) |
 | Backups | Velero `Schedule` | Blob `BackupStorageLocation` |
 | Metrics | kube-prometheus address in the ScaledObject | change the `serverAddress` in the change record if you use Azure Monitor |
 

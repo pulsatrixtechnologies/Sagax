@@ -7,11 +7,11 @@ const environments = { state: async () => ({ environments: [] }) };
 const orgJoin = { probe: async () => ({ origin: "", issuer: "" }), join: async () => ({ ok: true }) };
 
 describe("launch screen", () => {
-  it("prefills the GOX Sagax server unless the build names another", () => {
-    expect(DEFAULT_SERVER_ADDRESS).toBe("https://bot.pulsatrix.mcp.goxcloud.ca");
-    expect(defaultServerAddress()).toBe(DEFAULT_SERVER_ADDRESS);
+  it("leaves the address empty unless the build names one", () => {
+    expect(DEFAULT_SERVER_ADDRESS).toBe("");
+    expect(defaultServerAddress()).toBe("");
     expect(defaultServerAddress(" https://sagax.example.test ")).toBe("https://sagax.example.test");
-    expect(defaultServerAddress("")).toBe(DEFAULT_SERVER_ADDRESS);
+    expect(defaultServerAddress("")).toBe("");
   });
 
   it("is offered only by the desktop app's own window, which can add and sign in to a server", () => {

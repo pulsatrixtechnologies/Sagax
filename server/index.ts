@@ -28693,7 +28693,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           sourceThreadId: internalCapability.threadId,
           depth: internalCapability.depth,
           // the person the source turn speaks for: its completion turn speaks
-          // for them too, so their Perspicax connectors stay mounted (GOX
+          // for them too, so their Perspicax connectors stay mounted (production
           // 2026-10-12: unknown_speaker on the a2a wake). Never a routine's.
           ...(!turnRoutineLineage.has(internalCapability.threadId) && turnSpeakerPrincipals.get(internalCapability.threadId)
             ? { speakerPrincipalId: turnSpeakerPrincipals.get(internalCapability.threadId)! } : {}),

@@ -15,7 +15,7 @@ import { aboutMeBotPreview, aboutMeCount, withOutline, ABOUT_ME_MAX } from "./Ab
 const fixture = vi.hoisted(() => ({
   section: "general" as AppSettingsSection,
   subPage: null as string | null,
-  aboutMe: "## Who I am\nIT lead at GOX.",
+  aboutMe: "## Who I am\nIT lead at production.",
 }));
 vi.mock("./DesktopCapabilities", () => ({ useDesktopCapabilities: () => ({ capabilities: {} }) }));
 vi.mock("@/state/store", async (importOriginal) => ({
@@ -80,7 +80,7 @@ describe("sub-page navigation", () => {
     expect(html).toContain('aria-label="Back to General"');
     expect(html).toMatch(/<nav aria-label="Settings path"[^>]*>.*>General<\/button>.*aria-current="page"[^>]*>About me</);
     expect(html).toContain('id="profile-about-me"');
-    expect(html).toContain("IT lead at GOX.");
+    expect(html).toContain("IT lead at production.");
     expect(html).toContain("What to write");
     expect(html).toContain("How bots see it");
     expect(html).toContain("About the user (shared with all bots):");

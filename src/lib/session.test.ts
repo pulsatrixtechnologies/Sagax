@@ -139,7 +139,7 @@ describe("Sign in with Pulsatrix on an organization server", () => {
 describe("previewing a Sagax Business return credential (2026-10-13, desktop 0.5.0 vs server 167d8e13)", () => {
   const credential = `omb_pair_${"Q".repeat(43)}`;
   const env = (capabilities: Partial<EnvironmentDescriptor["capabilities"]>): EnvironmentDescriptor => ({
-    environmentId: "e", label: "GOX", platform: "linux", version: "0.4.22",
+    environmentId: "e", label: "Example", platform: "linux", version: "0.4.22",
     capabilities: { remoteSessions: true, selfUpdate: "operator", ...capabilities },
   });
 

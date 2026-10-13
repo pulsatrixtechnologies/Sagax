@@ -681,9 +681,8 @@ probes the address (`orgJoin.probe`, Perspicax-linked servers only) then
 `orgJoin.join` saves the server and starts the existing **Sign in with
 Pulsatrix** (`electron/org-join.mjs`, `startPulsatrixSignIn` in
 `electron/main.mjs`). Do not add another sign-in path. The choice lives in
-`config.onboarding.launchMode`; the default address is
-`DEFAULT_SERVER_ADDRESS`, overridable at build time with
-`SAGAX_DEFAULT_SERVER`. The welcome tour and Settings > Organization no longer
+`config.onboarding.launchMode`; the address field is empty unless the build
+sets `SAGAX_DEFAULT_SERVER`. The welcome tour and Settings > Organization no longer
 offer the inherited managed-desktop Admin sign-in. Organization is Perspicax. See
 `docs/self-hosting.md` ("At launch: No server or Server").
 
@@ -1065,7 +1064,7 @@ driver's default `cli`.
 
 - Dockerfile: `scripts/install-engines.mjs` installs the selection named by
   `ENGINE_SET` (`all` default, since the 2026-10-12 production image
-  `pulsa-bot-server:main-20004735` shipped `engineSet none` when the arg was
+  `pulsa-bot-server:main-example1` shipped `engineSet none` when the arg was
   omitted; `none` and `open` are explicit opt-outs; or ids). The build also
   defaults `SAGAX_REQUIRE_ENGINES=1`, which fails the image when the set is
   not the full lock. `scripts/build-production-image.sh` and
@@ -1075,7 +1074,7 @@ driver's default `cli`.
   `ENGINES` (npm specs) and `NATIVE_ENGINES` (native ids) build arguments
   still override the lock's npm and native sets; `none` drops a kind. A
   non-empty override that drops an engine fails the require flag. Production deploys
-  through `deploy/gox/deploy-pulsabot.sh`: it refuses the same short set,
+  through `deploy/example/deploy-server.sh`: it refuses the same short set,
   smoke-tests `/healthz` and the engine startup log, and on failure rolls
   back to `/opt/pulsatrix/pulsabot-image.prev` then runs
   `docker compose up -d --force-recreate --no-deps pulsabot-caddy`. Prune

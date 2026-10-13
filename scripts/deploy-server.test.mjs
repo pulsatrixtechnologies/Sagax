@@ -12,12 +12,12 @@ import {
   deployImage,
   formatAlert,
   imagesToPrune,
-} from "./gox-deploy.mjs";
+} from "./deploy-server.mjs";
 
 const lock = JSON.parse(readFileSync(join(import.meta.dirname, "..", "engines.lock.json"), "utf8"));
 const required = productionEngineIds(lock);
-const candidate = "pulsa-bot-server:main-20004735";
-const previous = "pulsa-bot-server:main-167d8e13";
+const candidate = "pulsa-bot-server:main-example1";
+const previous = "pulsa-bot-server:main-example0";
 
 function fullManifest() {
   return {
@@ -180,10 +180,10 @@ describe("alertsFromLog", () => {
 
 describe("deploy script", () => {
   it("records the previous-image path and the exact caddy recreate", () => {
-    const script = readFileSync(join(import.meta.dirname, "..", "deploy", "gox", "deploy-pulsabot.sh"), "utf8");
+    const script = readFileSync(join(import.meta.dirname, "..", "deploy", "example", "deploy-server.sh"), "utf8");
     expect(script).toContain(PREV_FILE);
     expect(script).toContain(CADDY_RECREATE_COMMAND);
-    expect(script).toContain('exec node "$ROOT/scripts/gox-deploy.mjs"');
+    expect(script).toContain('exec node "$ROOT/scripts/deploy-server.mjs"');
     expect(PREV_FILE).toBe("/opt/pulsatrix/pulsabot-image.prev");
   });
 });

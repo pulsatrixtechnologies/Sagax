@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // The production engine gate. A server image is fit to run only when its
 // manifest says engineSet "all" and every engine of engines.lock.json is
-// installed. On 2026-10-12 GOX deployed pulsa-bot-server:main-20004735 with
+// installed. On 2026-10-12 production deployed pulsa-bot-server:main-example1 with
 // engineSet "none" and installed [] because the image default and the build
 // that omitted ENGINE_SET both meant "install nothing".
 //

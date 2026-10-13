@@ -72,7 +72,7 @@ export function OrgPluginPolicy({
             {t("organization.plugins.list")}
           </label>
           {mode === "list" && (
-            <textarea value={list} onChange={(event) => setList(event.target.value)} rows={3} placeholder={"pulsatrixtechnologies/marketplace\ngoxtechnologies/*"}
+            <textarea value={list} onChange={(event) => setList(event.target.value)} rows={3} placeholder={"pulsatrixtechnologies/marketplace\nexample-org/*"}
               aria-label={t("organization.plugins.list")}
               className={`${fieldClass} font-mono`} />
           )}

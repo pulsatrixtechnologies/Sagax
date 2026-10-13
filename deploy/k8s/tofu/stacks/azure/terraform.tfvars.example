@@ -9,5 +9,5 @@ admin_group_object_ids  = ["00000000-0000-0000-0000-000000000000"]
 entra_mfa_policy_id     = "00000000-0000-0000-0000-000000000000"
 lock_audit_immutability = false
 api_server_authorized_ip_ranges = ["203.0.113.10/32"]
-audit_storage_account_name      = "sagaxsbxaudit0001"
-key_vault_name                  = "sagax-sbx-kv"
+audit_storage_account_name      = "examplesbxaudit001"
+key_vault_name                  = "example-sbx-kv"

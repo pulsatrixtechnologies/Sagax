@@ -123,12 +123,12 @@ final class BotCatalogTests: XCTestCase {
     }
 
     func testTemplatesFoldPresetsCommunityAndRoles() throws {
-        let presetJSON = #"{"id":"pr1","source":"org","key":"k","name":"Support","packageName":"Desk","release":"1.0","publisherName":"GOX","bot":{"name":"Helper","title":"Support agent","soul":"Be kind","appearance":{"color":"pink"}},"skills":[{"name":"triage"}],"skillsEnabled":true,"playbooks":[],"notes":["Recommended"]}"#
+        let presetJSON = #"{"id":"pr1","source":"org","key":"k","name":"Support","packageName":"Desk","release":"1.0","publisherName":"Example","bot":{"name":"Helper","title":"Support agent","soul":"Be kind","appearance":{"color":"pink"}},"skills":[{"name":"triage"}],"skillsEnabled":true,"playbooks":[],"notes":["Recommended"]}"#
         let preset = try JSONDecoder().decode(BotPreset.self, from: Data(presetJSON.utf8))
         let team = try JSONDecoder().decode(TeamLibraryCatalog.Team.self, from: Data(#"{"slug":"sales","name":"Sales","summary":"Pipeline.","category":"Sales","members":3}"#.utf8))
         let templates = BotCatalogRules.templates(presets: [preset], community: [team], roles: NewBotRules.builtInRoles)
         XCTAssertEqual(templates.prefix(2).map(\.id), ["preset:pr1", "community:sales"])
-        XCTAssertEqual(templates[0].creator, "GOX")
+        XCTAssertEqual(templates[0].creator, "Example")
         XCTAssertEqual(templates[1].category, "sales", "a community category that is a default chip")
         XCTAssertEqual(templates.first { $0.id == "role:coder" }?.category, "engineering")
 

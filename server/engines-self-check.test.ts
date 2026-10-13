@@ -89,7 +89,7 @@ describe("runEngineSelfCheck", () => {
     expect(lines.at(-1)).toBe("[engines] self-check: 1/3 preinstalled engine(s) start (image set all)");
   });
 
-  it("never runs more than two --version probes at once (2026-10-13: eleven at once OOM-killed GOX)", async () => {
+  it("never runs more than two --version probes at once (2026-10-13: eleven at once OOM-killed production)", async () => {
     expect(ENGINE_PROBE_CONCURRENCY).toBe(2);
     const eleven: EngineManifest = {
       ...MANIFEST,

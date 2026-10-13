@@ -53,14 +53,14 @@ export function grokStallRetryMs(
 }
 
 /** Grok's own system prompt and tool definitions, in tokens, that ride every
- * request beside Sagax's text (measured on the GOX server: a bare "pong" on a
+ * request beside Sagax's text (measured on the production server: a bare "pong" on a
  * new session reports ~12.5-14.7k input tokens). */
 const GROK_BASE_CONTEXT_TOKENS = 13_000;
 export const GROK_STALL_MIN_MS = 10_000;
 export const GROK_STALL_MAX_MS = 30_000;
 
 /** How long a silent prompt is given before the stall guard asks again.
- * Measured on the GOX server (179 prompts, 2026-10-11): a healthy first
+ * Measured on the production server (179 prompts, 2026-10-11): a healthy first
  * streamed update came at p50 2.4 s / p90 7.8 s; uncached prefills of
  * 94-173k tokens took 8.7-19.8 s; the provider stalls (no update at all)
  * ran 27-90 s, some on contexts under 20k tokens. A flat 20 s wait made a
@@ -639,7 +639,7 @@ function grokPinsModelInProfile(turn: { withholdHostTools?: boolean; toolScope?:
 
 /** Grok Build reports an account refusal from xAI as a JSON-RPC internal
  * error whose data carries the HTTP status and xAI's words. Recorded on the
- * GOX organization server, grok 1.0.50, 2026-10-08:
+ * production organization server, grok 1.0.50, 2026-10-08:
  * `{code: -32603, message: "Internal error", data: {message: "API error
  * (status 402 Payment Required): Grok Build usage balance exhausted",
  * http_status: 402}}`. Without this the turn ended as a bare rpc_error. */
@@ -914,7 +914,7 @@ const support: AcpSupport = {
 
   // Grok reaches every Sagax MCP tool through search_tool then use_tool, and
   // each of those is a full model round trip carrying the whole context.
-  // Measured on the GOX server (2026-10-11): a one-tool turn took three
+  // Measured on the production server (2026-10-11): a one-tool turn took three
   // rounds (search_tool, use_tool, answer), ~3.5 s each. A tool already found
   // in this conversation needs no second search.
   stableSystemHint: GROK_TOOL_REUSE_HINT,
@@ -930,7 +930,7 @@ const support: AcpSupport = {
 
   // grok.com sometimes takes 30-90 s to its first token. Normal silent
   // stretches before the first streamed byte stayed under 9 s (a reasoning
-  // round, GOX server 2026-10-11), so 20 s of nothing at all is a stall.
+  // round, production server 2026-10-11), so 20 s of nothing at all is a stall.
   stallRetryMs: grokStallRetryMs,
   roundContextUsage: grokRoundContextUsage,
 };

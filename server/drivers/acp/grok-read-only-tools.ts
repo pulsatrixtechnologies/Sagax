@@ -1,7 +1,7 @@
 // Read-only Sagax tools that skip Grok's auto-mode safety check.
 //
 // In `--permission-mode auto`, Grok runs its own classifier before every MCP
-// tool call. Measured on the GOX server (2026-10-11): 4-7 s (up to 17 s)
+// tool call. Measured on the production server (2026-10-11): 4-7 s (up to 17 s)
 // between Grok choosing a tool and the tool running, for tools that answer in
 // under 0.5 s. A local A/B on grok 1.0.50 showed the same call taking 8.2-11.7 s
 // in auto mode and 4.8-5.2 s with a matching `--allow MCPTool(...)` rule,

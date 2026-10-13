@@ -4,7 +4,7 @@ metadata:
   name: default-deny
   namespace: {{ .Values.sandboxNamespace | quote }}
   labels:
-    {{- include "sagax-sandboxes.labels" . | nindent 4 }}
+    {{- include "sandboxes.labels" . | nindent 4 }}
 spec:
   podSelector: {}
   policyTypes:
@@ -17,7 +17,7 @@ metadata:
   name: default-deny
   namespace: {{ .Values.systemNamespace | quote }}
   labels:
-    {{- include "sagax-sandboxes.labels" . | nindent 4 }}
+    {{- include "sandboxes.labels" . | nindent 4 }}
 spec:
   podSelector: {}
   policyTypes:
@@ -30,7 +30,7 @@ metadata:
   name: sandbox-egress
   namespace: {{ .Values.sandboxNamespace | quote }}
   labels:
-    {{- include "sagax-sandboxes.labels" . | nindent 4 }}
+    {{- include "sandboxes.labels" . | nindent 4 }}
 spec:
   podSelector:
     matchLabels:
@@ -62,7 +62,7 @@ metadata:
   name: provisioner
   namespace: {{ .Values.systemNamespace | quote }}
   labels:
-    {{- include "sagax-sandboxes.labels" . | nindent 4 }}
+    {{- include "sandboxes.labels" . | nindent 4 }}
 spec:
   podSelector:
     matchLabels:
@@ -110,7 +110,7 @@ metadata:
   name: warmer
   namespace: {{ .Values.systemNamespace | quote }}
   labels:
-    {{- include "sagax-sandboxes.labels" . | nindent 4 }}
+    {{- include "sandboxes.labels" . | nindent 4 }}
 spec:
   podSelector:
     matchLabels:

@@ -3,7 +3,7 @@
 Cloud-agnostic manifests for the provisioner. The kind script and the
 unit tests apply this directory. The production cutover scales the
 Deployment in `deploy/k8s/sandboxes/base/sandboxd.yaml` instead. Both
-name `sagax-sandboxd` in `sagax-sandboxes`; apply one Deployment, not both.
+name `sagax-sandboxd` in `sandboxes`; apply one Deployment, not both.
 Applying them creates no load
 balancer and pulls no image (`example.invalid/sagax:must-set`). The design,
 the environment variables, and the SOC 2 mapping are in

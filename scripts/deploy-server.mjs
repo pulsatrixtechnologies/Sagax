@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// GOX deploy gate for the Sagax server image (pulsa-bot-server).
+// production deploy gate for the Sagax server image (pulsa-bot-server).
 //
 // Refuses an image whose manifest is not engineSet "all" with every engine
 // of engines.lock.json. After a switch, smoke-tests GET /healthz and the
@@ -12,12 +12,12 @@
 // and removes nothing when the keep set is empty. Any log line containing
 // engine_missing is an alert on stderr (`ALERT ...`) and a non-zero exit.
 //
-//   node scripts/gox-deploy.mjs check --image <ref>
-//   node scripts/gox-deploy.mjs deploy --image <ref>
-//   node scripts/gox-deploy.mjs prune
-//   node scripts/gox-deploy.mjs alert --log server.log
+//   node scripts/deploy-server.mjs check --image <ref>
+//   node scripts/deploy-server.mjs deploy --image <ref>
+//   node scripts/deploy-server.mjs prune
+//   node scripts/deploy-server.mjs alert --log server.log
 //
-// This script does not SSH anywhere. GOX runs it on the host that already
+// This script does not SSH anywhere. production runs it on the host that already
 // holds the image. Env: PULSABOT_PREV_FILE, PULSABOT_IMAGE_FILE,
 // PULSABOT_COMPOSE_DIR, PULSABOT_SERVICE, PULSABOT_CONTAINER.
 import { spawnSync } from "node:child_process";
@@ -31,7 +31,7 @@ export const PREV_FILE = "/opt/pulsatrix/pulsabot-image.prev";
 export const IMAGE_FILE = "/opt/pulsatrix/pulsabot-image";
 export const CADDY_SERVICE = "pulsabot-caddy";
 export const SERVER_SERVICE = "pulsabot";
-/** The edge recreate, exactly as GOX must run it after a rollback. */
+/** The edge recreate, exactly as production must run it after a rollback. */
 export const CADDY_RECREATE_ARGV = ["docker", "compose", "up", "-d", "--force-recreate", "--no-deps", CADDY_SERVICE];
 export const CADDY_RECREATE_COMMAND = "docker compose up -d --force-recreate --no-deps pulsabot-caddy";
 

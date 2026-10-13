@@ -5,7 +5,7 @@ metadata:
   name: sagax-sandbox-warmer
   namespace: {{ .Values.systemNamespace | quote }}
   labels:
-    {{- include "sagax-sandboxes.labels" . | nindent 4 }}
+    {{- include "sandboxes.labels" . | nindent 4 }}
     app.kubernetes.io/name: sagax-sandbox-warmer
 spec:
   replicas: {{ .Values.warmNode.replicas }}
@@ -56,7 +56,7 @@ metadata:
   name: sagax-sandbox-warm-up
   namespace: {{ .Values.systemNamespace | quote }}
   labels:
-    {{- include "sagax-sandboxes.labels" . | nindent 4 }}
+    {{- include "sandboxes.labels" . | nindent 4 }}
 spec:
   schedule: {{ .Values.warmNode.scaleUp | quote }}
   timeZone: {{ .Values.warmNode.timezone | quote }}
@@ -110,7 +110,7 @@ metadata:
   name: sagax-sandbox-warm-down
   namespace: {{ .Values.systemNamespace | quote }}
   labels:
-    {{- include "sagax-sandboxes.labels" . | nindent 4 }}
+    {{- include "sandboxes.labels" . | nindent 4 }}
 spec:
   schedule: {{ .Values.warmNode.scaleDown | quote }}
   timeZone: {{ .Values.warmNode.timezone | quote }}

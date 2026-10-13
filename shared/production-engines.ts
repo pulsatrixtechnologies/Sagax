@@ -1,5 +1,5 @@
-/** The engine set a production image bakes. An empty set shipped to GOX on
- * 2026-10-12 (`pulsa-bot-server:main-20004735`, engineSet "none"). */
+/** The engine set a production image bakes. An empty set shipped to production on
+ * 2026-10-12 (`pulsa-bot-server:main-example1`, engineSet "none"). */
 export const PRODUCTION_ENGINE_SET = "all";
 
 /** `engines.lock.json` `engines[].id`, in lock order. The unit test fails

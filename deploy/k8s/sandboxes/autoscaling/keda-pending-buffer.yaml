@@ -8,7 +8,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: sagax-sandbox-buffer
-  namespace: sagax-sandboxes
+  namespace: sandboxes
   labels:
     app.kubernetes.io/name: sagax-sandbox-buffer
 spec:
@@ -26,12 +26,12 @@ spec:
       automountServiceAccountToken: false
       terminationGracePeriodSeconds: 0
       tolerations:
-        - key: sagax.pulsatrix.ca/pool
+        - key: sagax.io/pool
           operator: Equal
           value: sandboxes
           effect: NoSchedule
       nodeSelector:
-        sagax.pulsatrix.ca/pool: sandboxes
+        sagax.io/pool: sandboxes
       securityContext:
         runAsNonRoot: true
         runAsUser: 65534
@@ -58,7 +58,7 @@ apiVersion: keda.sh/v1alpha1
 kind: ScaledObject
 metadata:
   name: sagax-sandbox-pending
-  namespace: sagax-sandboxes
+  namespace: sandboxes
 spec:
   scaleTargetRef:
     name: sagax-sandbox-buffer
@@ -86,5 +86,5 @@ spec:
         threshold: "1"
         activationThreshold: "1"
         query: >-
-          sum(kube_pod_status_phase{namespace="sagax-sandboxes",phase="Pending",pod=~"sagax-user-.+"})
+          sum(kube_pod_status_phase{namespace="sandboxes",phase="Pending",pod=~"sagax-user-.+"})
           or vector(0)

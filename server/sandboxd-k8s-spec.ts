@@ -7,7 +7,7 @@ import { SANDBOX_INSTANCE_LABEL, SANDBOX_KEY_RE, SANDBOX_LABEL, SANDBOX_UID, SAN
 
 const MiB = 1024 * 1024;
 
-export const SANDBOX_NAMESPACE_DEFAULT = "sagax-sandboxes";
+export const SANDBOX_NAMESPACE_DEFAULT = "sandboxes";
 export const SANDBOX_QUOTA_NAME = "sagax-sandbox-quota";
 export const SANDBOX_DEFAULT_DENY_NAME = "sagax-default-deny";
 export const SANDBOX_WORKLOAD_SA = "sagax-sandbox-workload";

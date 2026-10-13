@@ -176,8 +176,8 @@ import { createOrg, issueInvite, memberListsAfterAccept } from "./org-record.ts"
 
 describe("org record", () => {
   it("records the creator as the only owner on this computer", () => {
-    expect(createOrg({ name: "GOX", ownerUserId: "jc", host: { kind: "this-computer" } })).toEqual({
-      name: "GOX",
+    expect(createOrg({ name: "Example", ownerUserId: "jc", host: { kind: "this-computer" } })).toEqual({
+      name: "Example",
       ownerUserId: "jc",
       host: { kind: "this-computer" },
     });
@@ -272,7 +272,7 @@ Le test instancie les handlers avec un faux store en mémoire `{ org: null, invi
 ```ts
 it("joins once and reports already-member the second time", () => {
   const state = emptyOrgState();
-  createOrgRoute(state, { name: "GOX", ownerUserId: "jc", host: { kind: "this-computer" } });
+  createOrgRoute(state, { name: "Example", ownerUserId: "jc", host: { kind: "this-computer" } });
   const issued = issueInviteRoute(state, { actorId: "jc", email: "zachary@example.test", now: 1, token: "tok" });
   expect(issued.status).toBe(200);
   expect(acceptInviteRoute(state, { token: "tok", userId: "zachary@example.test", now: 2 }).body.status).toBe("joined");
@@ -327,12 +327,12 @@ it("offers creation when there is no organization", () => {
 });
 it("lists members once the organization exists", () => {
   const html = renderToStaticMarkup(createElement(OrgDirectory, {
-    org: { name: "GOX" },
+    org: { name: "Example" },
     people: [{ id: "zachary@example.test", role: "member" }],
     onCreate() {},
     onInvite() {},
   }));
-  expect(html).toContain("GOX");
+  expect(html).toContain("Example");
   expect(html).toContain("zachary@example.test");
   expect(html).not.toContain("Créer l'organisation");
 });
@@ -530,11 +530,11 @@ Le rendu contient `orgName`, chaque nom de canal, le titre `Direct`, et les noms
 ```ts
 it("lists channels and direct bots under the organization", () => {
   const html = renderToStaticMarkup(createElement(OrgSidebar, {
-    orgName: "GOX",
+    orgName: "Example",
     channels: [{ id: "c1", name: "administration", preview: "Parfait." }],
     directs: [{ id: "b1", name: "Ara" }],
   }));
-  expect(html).toContain("GOX");
+  expect(html).toContain("Example");
   expect(html).toContain("administration");
   expect(html).toContain("Direct");
   expect(html).toContain("Ara");

@@ -5,12 +5,12 @@ metadata:
   name: sagax-sandbox-offsite
   namespace: {{ .Values.backup.veleroNamespace | quote }}
   labels:
-    {{- include "sagax-sandboxes.labels" . | nindent 4 }}
+    {{- include "sandboxes.labels" . | nindent 4 }}
 spec:
   provider: {{ .Values.backup.destination.veleroProvider | quote }}
   objectStorage:
     bucket: {{ .Values.backup.destination.bucket | quote }}
-    prefix: sagax-sandboxes
+    prefix: sandboxes
   credential:
     name: {{ .Values.backup.destination.credentialSecret | quote }}
     key: {{ .Values.backup.destination.credentialKey | quote }}
@@ -25,7 +25,7 @@ metadata:
   name: sagax-sandbox-workspaces
   namespace: {{ .Values.backup.veleroNamespace | quote }}
   labels:
-    {{- include "sagax-sandboxes.labels" . | nindent 4 }}
+    {{- include "sandboxes.labels" . | nindent 4 }}
 spec:
   schedule: {{ .Values.backup.schedule | quote }}
   template:

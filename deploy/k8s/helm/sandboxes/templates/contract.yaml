@@ -4,7 +4,7 @@ metadata:
   name: sagax-sandbox-contract
   namespace: {{ .Values.systemNamespace | quote }}
   labels:
-    {{- include "sagax-sandboxes.labels" . | nindent 4 }}
+    {{- include "sandboxes.labels" . | nindent 4 }}
 data:
   instance: {{ .Values.sandbox.instance | quote }}
   image: {{ .Values.sandbox.image | quote }}

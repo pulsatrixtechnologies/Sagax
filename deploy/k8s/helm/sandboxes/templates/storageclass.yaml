@@ -3,7 +3,7 @@ kind: StorageClass
 metadata:
   name: {{ .Values.storage.className | quote }}
   labels:
-    {{- include "sagax-sandboxes.labels" . | nindent 4 }}
+    {{- include "sandboxes.labels" . | nindent 4 }}
   annotations:
     storageclass.kubernetes.io/is-default-class: "false"
 provisioner: {{ .Values.storage.provisioner | quote }}

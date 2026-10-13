@@ -119,7 +119,7 @@ posixOnly("org identity", () => {
     home = mkdtempSync(join(tmpdir(), "omb-org-identity-"));
     data = join(home, ".sagax");
     mkdirSync(data, { recursive: true });
-    writeFileSync(join(data, "config.json"), JSON.stringify({ profile: { name: "JC", email: "jc@gox.ca" } }));
+    writeFileSync(join(data, "config.json"), JSON.stringify({ profile: { name: "JC", email: "jc@example.com" } }));
     // Zara is a person this server knows by address, with a device bound to
     // her principal (a pairing session, not an email sign-in).
     writeFileSync(join(data, "principals.json"), JSON.stringify({ version: 1, principals: [{ id: ZARA_ID, kind: "human", email: ZARA, createdAt: 1 }] }));
@@ -164,13 +164,13 @@ posixOnly("org identity", () => {
 
   it("has no organization: GET 404, create and change 410", async () => {
     expect(await api("GET", "/api/org")).toMatchObject({ status: 404, body: { code: "no_organization" } });
-    expect(await api("POST", "/api/org", { name: "GOX", host: { kind: "server", url: "https://pulsa.gox.ca" } })).toMatchObject({ status: 410, body: { code: "interim_org_removed" } });
-    expect(await api("PATCH", "/api/org", { host: { kind: "server", url: "https://pulsa.gox.ca" } })).toMatchObject({ status: 410, body: { code: "interim_org_removed" } });
+    expect(await api("POST", "/api/org", { name: "Example", host: { kind: "server", url: "https://server.example.com" } })).toMatchObject({ status: 410, body: { code: "interim_org_removed" } });
+    expect(await api("PATCH", "/api/org", { host: { kind: "server", url: "https://server.example.com" } })).toMatchObject({ status: 410, body: { code: "interim_org_removed" } });
     const config = await api("GET", "/api/config");
     ownerId = config.body.viewer.principalId;
     expect(ownerId).toMatch(/^pr_/);
     const local = principalsFile().principals.filter((p) => p.local);
-    expect(local).toEqual([expect.objectContaining({ id: ownerId, email: "jc@gox.ca" })]);
+    expect(local).toEqual([expect.objectContaining({ id: ownerId, email: "jc@example.com" })]);
     kioskStream?.abort();
   });
 
@@ -232,9 +232,9 @@ posixOnly("org identity", () => {
     const token = await pairAs(["admin", "client"]);
     const session = await api("GET", "/api/auth/session", undefined, token);
     expect(session.body.profileManagedBy).toBeUndefined();
-    const saved = await api("PUT", "/api/config", { profile: { name: "JC Proulx", email: "jc@gox.ca" } }, token);
+    const saved = await api("PUT", "/api/config", { profile: { name: "JC Proulx", email: "jc@example.com" } }, token);
     expect(saved.status, JSON.stringify(saved.body)).toBe(200);
-    expect(saved.body.profile).toMatchObject({ name: "JC Proulx", email: "jc@gox.ca" });
+    expect(saved.body.profile).toMatchObject({ name: "JC Proulx", email: "jc@example.com" });
     const config = await api("GET", "/api/config", undefined, token);
     expect(config.body.viewer.profileManagedBy).toBeUndefined();
     expect(config.body.viewer.profileManageUrl).toBeUndefined();
@@ -265,14 +265,14 @@ posixOnly("slice 8: a solo server keeps email sign-in, without an organization",
     const data2 = join(home2, ".sagax");
     mkdirSync(data2, { recursive: true });
     writeFileSync(join(data2, "config.json"), JSON.stringify({
-      profile: { name: "JC", email: "jc@gox.ca" },
-      signIn: { admins: ["jc@gox.ca"], members: ["dana@example.test"] },
+      profile: { name: "JC", email: "jc@example.com" },
+      signIn: { admins: ["jc@example.com"], members: ["dana@example.test"] },
       invites: [
         { token: "e".repeat(32), email: "eve@example.test", createdAt: 1, expiresAt: 2 },
         { token: "f".repeat(32), email: "fay@example.test", createdAt: Date.now(), expiresAt: Date.now() + 86_400_000 },
       ],
-      org: { name: "GOX", host: { kind: "server", url: "https://pulsa.gox.ca" }, ownerUserId: "jc@gox.ca" },
-      mail: { provider: "smtp", from: "bot@gox.ca", smtp: { host: "smtp.gox.ca" } },
+      org: { name: "Example", host: { kind: "server", url: "https://server.example.com" }, ownerUserId: "jc@example.com" },
+      mail: { provider: "smtp", from: "bot@example.com", smtp: { host: "smtp.example.com" } },
     }));
     // Dana signed in with an emailed code under an older build: her address
     // is on the list, so her session survives the seeding registry's close.
@@ -339,7 +339,7 @@ posixOnly("slice 8: a solo server keeps email sign-in, without an organization",
       expect(await call("GET", "/api/org", { token: paired.token })).toMatchObject({ status: 404, body: { code: "no_organization" } });
       expect((await call("GET", "/join")).status).not.toBe(302);
       const config2 = JSON.parse(readFileSync(join(data2, "config.json"), "utf8")) as Record<string, unknown>;
-      expect(config2.signIn).toEqual({ admins: ["jc@gox.ca"], members: ["dana@example.test"] });
+      expect(config2.signIn).toEqual({ admins: ["jc@example.com"], members: ["dana@example.test"] });
       // An admin issues an invitation; it is mailed with its /join link.
       const issued = await call("POST", "/api/org/invites", { body: { email: "gus@example.test" }, token: paired.token });
       expect(issued.status, JSON.stringify(issued.body)).toBe(200);

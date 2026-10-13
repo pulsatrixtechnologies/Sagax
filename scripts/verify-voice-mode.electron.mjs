@@ -51,7 +51,7 @@ async function until(what, predicate, ms = 15_000) {
 }
 const xaiRequests = async () => (await fetch(`${xaiUrl}/__requests`)).json();
 
-let state = environments.withEnvironment({ environments: [], activeId: "local" }, { origin, name: "GOX" }, () => "org");
+let state = environments.withEnvironment({ environments: [], activeId: "local" }, { origin, name: "Example" }, () => "org");
 state = environments.withActive(state, "org");
 state = environments.withOrganizationUpgrade(state, { orgOrigins: new Set([origin]), serverModeChosen: true });
 const handoff = signIn.createSignInHandoff();
@@ -91,7 +91,7 @@ app.whenReady().then(async () => {
   ipcMain.on("workspace:bundled-ui", (event) => {
     event.returnValue = event.sender === win.webContents && event.senderFrame === win.webContents.mainFrame && new URL(event.senderFrame.url).origin === bundled;
   });
-  ipcMain.handle("server-mode:state", localOrigin.desktopUiOnly("server-mode:state", () => ({ active: true, name: "GOX", origin })));
+  ipcMain.handle("server-mode:state", localOrigin.desktopUiOnly("server-mode:state", () => ({ active: true, name: "Example", origin })));
   ipcMain.handle("workspaces:state", () => environments.workspaceSummary(state));
   ipcMain.handle("auth-return:take", (event, code) => {
     if (event.sender !== win.webContents || event.senderFrame !== win.webContents.mainFrame) return false;

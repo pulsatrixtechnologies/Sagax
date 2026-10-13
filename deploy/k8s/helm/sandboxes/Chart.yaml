@@ -1,5 +1,5 @@
 apiVersion: v2
-name: sagax-sandboxes
+name: sandboxes
 description: Namespace, least-privilege RBAC, network policy and storage for Sagax per-person sandboxes.
 type: application
 version: 0.1.0

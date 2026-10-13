@@ -9,7 +9,7 @@ change records. An empty template is not a review.
 
 - The `sagax-sandboxd` ServiceAccount and Role
   (`deploy/k8s/sandboxes/base/rbac.yaml`): pods, pod exec, pod logs, and
-  claims in `sagax-sandboxes` only. It must not be able to read Secrets
+  claims in `sandboxes` only. It must not be able to read Secrets
   or touch another namespace.
 - Humans and automation who can `kubectl exec` into a sandbox, change
   the node pool, or read a Velero backup.
@@ -22,7 +22,7 @@ change records. An empty template is not a review.
 
 ## Steps
 
-1. Export the Role and the RoleBindings in `sagax-sandboxes` and the
+1. Export the Role and the RoleBindings in `sandboxes` and the
    ClusterRoleBindings that name this cluster. Diff them against
    `rbac.yaml`. Anything wider is a finding.
 2. List who signed in to the cluster since the previous review. Remove
@@ -33,7 +33,7 @@ change records. An empty template is not a review.
    identity and the two operators, not the whole directory.
 4. Confirm the production NetworkPolicy is the subnet from the change record,
    not `192.0.2.10/32`, and that no Service of type LoadBalancer in
-   `sagax-sandboxes` is public.
+   `sandboxes` is public.
 5. Confirm `sagax-sandboxd` is still the only workload with a service
    account token in the namespace. Sandbox pods set
    `automountServiceAccountToken: false`.
