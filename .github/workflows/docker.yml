@@ -3,9 +3,14 @@ name: Docker image
 on:
   # release.yml dispatches this on the tag it just published: a tag created
   # with the workflow token never fires push events on its own.
+  # Pull requests run quick checks only. This image build and boot smoke is
+  # the full suite: release candidate branches (release/*), version tags,
+  # manual dispatch, and main when an image input changes.
   workflow_dispatch:
   push:
-    branches: [main]
+    branches:
+      - main
+      - "release/*"
     tags: ["v*"]
     paths:
       - Dockerfile
@@ -23,19 +28,9 @@ on:
       - package.json
       - pnpm-lock.yaml
       - .github/workflows/docker.yml
-  pull_request:
-    paths:
-      - Dockerfile
-      - .dockerignore
-      - deploy/**
-      - engines.lock.json
-      - scripts/install-engines.mjs
-      - scripts/engine-image-gate.mjs
-      - scripts/gox-deploy.mjs
-      - scripts/build-production-image.sh
-      - .github/workflows/docker.yml
 
-# One run per PR: a new push cancels the superseded run.
+# Pull requests do not start this workflow. A push does not cancel the build
+# already running for that ref.
 concurrency:
   group: docker-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -45,7 +40,7 @@ permissions:
 
 jobs:
   build-and-smoke:
-    if: (!startsWith(github.event_name, 'pull_request') || github.event.pull_request.head.repo.full_name == github.repository) && (github.event_name != 'workflow_run' || github.event.workflow_run.head_repository.full_name == github.repository)
+    if: (!startsWith(github.event_name, 'pull_request') || github.event.pull_request.head.repo.full_name == github.repository) && (github.event_name != 'workflow_run' || github.event.workflow_run.head_repository.full_name == github.repository) && (github.event_name != 'pull_request')
     name: build image + boot smoke
     runs-on: [self-hosted, linux, x64]
     timeout-minutes: 60

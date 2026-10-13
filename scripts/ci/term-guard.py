@@ -130,7 +130,7 @@ def main(argv):
         i = args.index("--commits")
         with open(args[i + 1], encoding="utf-8") as fh:
             text = fh.read().strip()
-        # a JSON array, or one commit object per line (gh api --paginate --jq '.[]')
+        # a JSON array, or one commit object per line
         commits = json.loads(text) if text.startswith("[") else [json.loads(l) for l in text.splitlines() if l.strip()]
         found += scan_commits(commits, terms)
         del args[i:i + 2]
