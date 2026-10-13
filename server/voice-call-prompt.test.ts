@@ -56,10 +56,13 @@ describe("the phone-call instruction", () => {
     expect(text).toContain("never mention a transcript, dictation or voice mode");
     expect(text).toContain("one to three at a time");
     expect(text).toContain("No markdown, lists, tables, code blocks, emojis or URLs");
-    expect(text).toContain("Je regarde ça");
+    // no stock filler to repeat ("Je regarde ça" on every tool, JC 2026-10-13)
+    expect(text).not.toContain("Je regarde");
+    expect(text).toContain("never a stock phrase");
     expect(text).toContain("(their call is set to French)");
     expect(text).toContain("Keep your own persona and instructions");
-    expect(text).toContain("Do not repeat that acknowledgement");
+    // no duplex opener on this call: nothing to "not repeat"
+    expect(text).not.toContain("Do not repeat that acknowledgement");
     expect(text).not.toContain(VOICE_CALL_INTERRUPTED_NOTE);
     expect(text).not.toMatch(/[–—]/);
   });
@@ -81,16 +84,16 @@ describe("the phone-call instruction", () => {
     expect(voiceCallSection(undefined, undefined, "Ada")).toBe("");
   });
 
-  it("injects open topics into the call instruction", () => {
+  it("never lists open topics: an ordinary follow-up is not work running in the background", () => {
     const call = { voiceCall: { callId: "call-0123456789" } };
-    const text = voiceCallSection(call, undefined, "Ada", [
-      { id: "a", label: "weather in Montreal", status: "background" },
-      { id: "b", label: "time in Tokyo", status: "active" },
-    ]);
-    expect(text).toContain("Open topics on this call");
-    expect(text).toContain("weather in Montreal (still running in the background)");
-    expect(text).toContain("time in Tokyo (current)");
-    expect(text).not.toMatch(/[–—]/);
+    const text = voiceCallSection(call, undefined, "Ada");
+    expect(text).not.toContain("Open topics on this call");
+    expect(text).not.toContain("still running in the background");
+  });
+
+  it("mentions an opener spoken by another model only on a duplex call", () => {
+    expect(voiceCallSection({ voiceCall: { callId: "call-0123456789" } }, undefined, "Ada")).not.toContain("A short first sentence");
+    expect(voiceCallSection({ voiceCall: { callId: "call-0123456789", duplex: true } }, undefined, "Ada")).toContain("A short first sentence");
   });
 
   it("marks every call turn's own words, since a live session gets the section only once", () => {

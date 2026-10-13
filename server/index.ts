@@ -694,10 +694,12 @@ import {
   isThreadBusyError,
   lastOwnUserVoiceText,
   matchingVoiceSibling,
+  voiceFullDuplexEnabled,
+  withoutDuplexMarks,
   pinVoiceInterrupt,
   waitForThreadIdle,
 } from "./voice-call-duplex.ts";
-import { callHasParkableWork, classifyVoiceIntent, topicsFromCallMessages } from "../src/lib/voice-mode/voice-topics.ts";
+import { callHasParkableWork, classifyVoiceIntent } from "../src/lib/voice-mode/voice-topics.ts";
 import { VoiceCallSessions } from "./voice-call-session.ts";
 import { VoiceCallWarmup } from "./voice-call-warmup.ts";
 import { callTurnEffort } from "./voice-call-effort.ts";
@@ -14899,7 +14901,6 @@ async function startTurn(
       userMessage,
       store.activePath(threadId).findLast((message) => message.role === "user" && message.id !== userMessage?.id && !message.peerAsk && message.at <= userMessage!.at),
       userMessage.sender?.name ?? botUserName(bot),
-      topicsFromCallMessages(store.activePath(threadId)),
     );
   // Organization server: where this turn's tools run, and for whom, decided
   // once (server/desktop-bridge.ts); the speaker's own attachments are
@@ -35802,8 +35803,14 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       const text = String(body.text ?? "").trim();
       if (!text) return json(res, 400, { error: "text required" });
       // words said on a voice call: the turn gets the phone-call instruction
-      const sentVoiceCall = parseVoiceCallMeta(body.voiceCall);
-      if (sentVoiceCall && "error" in sentVoiceCall) return json(res, 400, { error: sentVoiceCall.error });
+      const parsedVoiceCall = parseVoiceCallMeta(body.voiceCall);
+      if (parsedVoiceCall && "error" in parsedVoiceCall) return json(res, 400, { error: parsedVoiceCall.error });
+      // Server duplex off: the page's duplex and speculative marks are
+      // dropped, so the turn takes the pre-0.5.0 steer path and its prompt
+      // never mentions a duplex opener.
+      const sentVoiceCall = parsedVoiceCall && !voiceFullDuplexEnabled()
+        ? withoutDuplexMarks(parsedVoiceCall)
+        : parsedVoiceCall;
       const bot = store.bot(m[1]);
       if (!bot) return json(res, 404, { error: "no such bot" });
       requirePinnedClientThread(bot.id, body.threadId);
@@ -35953,7 +35960,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           // thinks cancels that turn, drops the steer queue, and starts only
           // this utterance (issue #292). While its tool runs, the words fall
           // through to the steer path below and join it. Flag off: steer.
-          if (voiceCall?.duplex) {
+          if (voiceCall?.duplex && voiceFullDuplexEnabled()) {
             const duplex = await startDuplexCallTurn(bot.id, threadId, text, replyTo, sendId, messageSender(auth), trigger, speakerFor(auth), voiceCall);
             if (duplex !== DUPLEX_JOIN_RUNNING_TURN) return duplex;
           }
