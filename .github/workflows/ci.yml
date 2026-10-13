@@ -450,7 +450,10 @@ jobs:
     # agent-browser release (digest verified) and its Chrome, drives the real
     # <App/> against the isolated fake-engine fixture, and keeps the screenshot.
     name: renderer smoke (control-omb ui, Ubuntu 24.04)
-    runs-on: [self-hosted, linux, x64]
+    # The ephemeral pool sets no_new_privs, so sudo cannot relax AppArmor
+    # and Chrome for Testing dies with "No usable sandbox". GitHub-hosted
+    # Ubuntu 24.04 can apply the sysctl below.
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -489,7 +492,9 @@ jobs:
     needs: static
     if: (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && (needs.static.outputs.runtime == 'true')
     name: package + smoke (Ubuntu 24.04 x64)
-    runs-on: [self-hosted, linux, x64]
+    # apt, dpkg and the chrome-sandbox bit need root. The ephemeral pool
+    # blocks sudo (no_new_privs), so this job stays on GitHub-hosted Ubuntu.
+    runs-on: ubuntu-24.04
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -512,7 +517,7 @@ jobs:
       - name: Package from the verified offline CUA stage
         run: pnpm package:linux:offline
       - run: node scripts/verify-linux-package.mjs
-      - name: Match a normal Ubuntu package parent on the ephemeral runner
+      - name: Match a normal Ubuntu package parent
         run: |
           test ! -L /opt
           test "$(stat -c '%F %U:%G' /opt)" = "directory root:root"
