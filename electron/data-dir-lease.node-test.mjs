@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { execFileSync, spawn } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { hostname, platform, tmpdir, uptime as osUptime } from "node:os";
+import { hostname, tmpdir, uptime as osUptime } from "node:os";
 import path from "node:path";
 import test from "node:test";
 
@@ -708,12 +708,12 @@ test("process identity does not weaken exclusion: a live owner still blocks", (t
   assert.throws(() => acquireDataDirLease(dataDir), /already using this data directory/i);
   // another container (another hostname) sharing the volume: its pid cannot be
   // checked from here. The same boot id still proves this computer, so the
-  // conservative check applies. Windows records no boot id, so a different
-  // hostname is another machine.
+  // conservative check applies. Without a boot id (Windows), another hostname
+  // cannot be told apart from another computer and still fails closed.
   plantOver(dataDir, base, { pid: process.pid, token: randomUUID(), pidns: "pid:[4026532001]", start: 12, host: `${hostname()}-sibling` });
   assert.throws(
     () => acquireDataDirLease(dataDir),
-    platform() === "win32" ? /another machine/i : /already using this data directory/i,
+    base.boot === null ? /already owned by a process on another machine/i : /already using this data directory/i,
   );
   // a record from an older build carries no identity: unchanged behaviour
   const { pidns: _ns, start: _start, ...legacy } = base;
