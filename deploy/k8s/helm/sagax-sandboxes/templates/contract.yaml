@@ -1,0 +1,28 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: sagax-sandbox-contract
+  namespace: {{ .Values.systemNamespace | quote }}
+  labels:
+    {{- include "sagax-sandboxes.labels" . | nindent 4 }}
+data:
+  instance: {{ .Values.sandbox.instance | quote }}
+  image: {{ .Values.sandbox.image | quote }}
+  uid: {{ .Values.sandbox.uid | quote }}
+  workspaceMount: {{ .Values.sandbox.workspaceMount | quote }}
+  memory: {{ .Values.sandbox.memory | quote }}
+  cpu: {{ .Values.sandbox.cpu | quote }}
+  pids: {{ .Values.sandbox.pids | quote }}
+  tmp: {{ .Values.sandbox.tmp | quote }}
+  workspace: {{ .Values.sandbox.workspace | quote }}
+  storageClass: {{ .Values.storage.className | quote }}
+  poolLabel: sagax.io/pool=sandboxes
+  poolTaint: {{ printf "%s=%s:NoSchedule" .Values.warmNode.tolerationKey .Values.warmNode.tolerationValue | quote }}
+  runningPodAnnotation: "cluster-autoscaler.kubernetes.io/safe-to-evict=false"
+  egressDeny: |
+    {{- range .Values.egressDeny }}
+    {{ . }}
+    {{- end }}
+  labels: |
+    com.pulsatrix.sagax.sandbox=1
+    com.pulsatrix.sagax.sandbox.instance={{ .Values.sandbox.instance }}

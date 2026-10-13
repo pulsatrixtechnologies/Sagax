@@ -1,14 +1,15 @@
 // Bot → Skills → From {Organization}: skills the organization's packages
 // offer without putting them on a bot. Adding one puts it on this bot,
-// switched on — the organization's Admin published it. With no organization
+// switched on: the organization's Admin published it. With no organization
 // (or nothing offered) the card is absent.
-import { Building2, Check } from "lucide-react";
+import { Check } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import type { Bot } from "@/state/store";
 import { t } from "@/lib/i18n";
 import type { OfferedOrgSkill } from "@/lib/org-library";
 import { useBotEditor } from "./BotEditorContext";
+import { PaneSection } from "./PaneSection";
 
 export function OrgSkillsCard({ bot, onAdded }: { bot: Bot; onAdded: () => void }) {
   const { request, draft } = useBotEditor();
@@ -66,13 +67,8 @@ export function OrgSkillsCard({ bot, onAdded }: { bot: Bot; onAdded: () => void 
   };
 
   return (
-    <div className="rounded-xl border border-hairline/40 p-4">
-      <div className="flex items-center gap-2">
-        <Building2 size={16} className="text-ink-secondary" />
-        <div className="text-[13px] font-medium text-ink">{t("orgLibrary.tab", { name: organization })}</div>
-      </div>
-      <div className="mt-1 text-[12px] leading-relaxed text-ink-secondary">{t("orgLibrary.skillsHint")}</div>
-      <div className="mt-3 divide-y divide-hairline/40 overflow-hidden rounded-lg border border-hairline/40">
+    <PaneSection title={t("orgLibrary.tab", { name: organization })} help={t("orgLibrary.skillsHint")}>
+      <div className="divide-y divide-hairline/40 overflow-hidden rounded-lg border border-hairline/40">
         {skills.map((skill) => (
           <div key={`${skill.installId}:${skill.name}`} className="flex items-center gap-2 px-3 py-2.5">
             <div className="min-w-0 flex-1">
@@ -101,6 +97,6 @@ export function OrgSkillsCard({ bot, onAdded }: { bot: Bot; onAdded: () => void 
         ))}
       </div>
       {error && <div role="alert" className="mt-2 text-[12px] text-danger">{error}</div>}
-    </div>
+    </PaneSection>
   );
 }

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { discardSpeculation, holdSpeculativePlayback, maySpeculate } from "./speculative";
+import { discardSpeculation, holdSpeculativePlayback, mayReviseSpeculation, maySpeculate, SPECULATIVE_REVISE_MS } from "./speculative";
 
 describe("maySpeculate", () => {
   it("starts the LLM on four stable words, even without end-of-turn punctuation", () => {
@@ -38,6 +38,13 @@ describe("holdSpeculativePlayback", () => {
     expect(holdSpeculativePlayback({ speculative: true, endpointConfirmed: false })).toBe(true);
     expect(holdSpeculativePlayback({ speculative: true, endpointConfirmed: true })).toBe(false);
     expect(holdSpeculativePlayback({ speculative: false, endpointConfirmed: false })).toBe(false);
+  });
+});
+
+describe("mayReviseSpeculation", () => {
+  it("waits SPECULATIVE_REVISE_MS after the last change before replacing", () => {
+    expect(mayReviseSpeculation(1000, 1000 + SPECULATIVE_REVISE_MS - 1)).toBe(false);
+    expect(mayReviseSpeculation(1000, 1000 + SPECULATIVE_REVISE_MS)).toBe(true);
   });
 });
 

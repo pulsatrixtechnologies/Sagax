@@ -6,6 +6,7 @@
 // reading, that a new thread now exists. When the thread has since been
 // deleted the receipt is not drawn at all (lib/dead-thread-chips).
 import { openThread, useStore, type Message } from "@/state/store";
+import { useShowThreads } from "@/lib/thread-preferences";
 import { t } from "@/lib/i18n";
 import { navigationTargetGone } from "@/lib/dead-thread-chips";
 import { ConversationLink } from "./ConversationLink";
@@ -13,6 +14,7 @@ import type { MausColor } from "@/lib/mascot";
 
 export function ThreadChip({ message }: { message: Message }) {
   const { state, dispatch } = useStore();
+  const showThreads = useShowThreads();
   const ref = message.threadRef;
   const tool = message.tool;
   if (!ref || !tool) return null;
@@ -28,7 +30,7 @@ export function ThreadChip({ message }: { message: Message }) {
       color={color}
       attributes={{ "data-thread-chip": ref.threadId }}
       title={ref.title ? t("chat.openThread", { title: ref.title }) : t("chat.goToConversation")}
-      onClick={() => openThread(dispatch, ref, state)}
+      onClick={() => openThread(dispatch, ref, state, showThreads)}
     />
   );
 }

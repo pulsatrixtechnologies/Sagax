@@ -70,10 +70,25 @@ describe("room message actions", () => {
     const html = markup([text("a", "bot", "The build is green")]);
     expect(html).toContain('data-testid="message-actions"');
     expect(html).toContain("Copy message");
-    expect(html).toContain("Show raw markdown");
-    expect(html).toContain("Add an ElevenLabs key");
     expect(html).toContain("Reply to message");
-    expect(html).toContain("Pin message");
+    expect(html).toContain('aria-haspopup="menu"');
+    // the rest waits in the more menu, as in a 1:1 chat
+    expect(html).not.toContain("Show raw markdown");
+    expect(html).not.toContain("Pin message");
+  });
+
+  it("puts read aloud, raw markdown and pin in a room reply's more menu", () => {
+    vi.unstubAllGlobals();
+    const messages = [text("a", "bot", "The build is green")];
+    flushSync(() => root.render(createElement(Transcript, {
+      group: { ...room, messages }, members: [lead], locale: "en", messages, transcript: messages, onReply: () => {},
+    })));
+    flushSync(() => host.querySelector<HTMLButtonElement>('button[aria-haspopup="menu"]')!.click());
+    const items = [...host.querySelectorAll<HTMLButtonElement>("[role=menuitem]")];
+    expect(items.map((item) => item.textContent)).toEqual(expect.arrayContaining(["Read this aloud", "Show raw markdown", "Pin message", "Copy message ID"]));
+    const speak = items.find((item) => item.textContent === "Read this aloud");
+    expect(speak?.title).toBe("Add an ElevenLabs key in an agent profile to read messages aloud");
+    expect(speak?.disabled).toBe(true);
   });
 
   it("copies a person's message and folds a long one", () => {
@@ -81,6 +96,27 @@ describe("room message actions", () => {
     expect(html).toContain("Copy message");
     expect(html).toContain("Show full message");
     expect(html).not.toContain("Show raw markdown");
+  });
+
+  it("keeps delivered files beneath the reply alongside its quiet actions", () => {
+    const reply: Message = {
+      ...text("a", "bot", "See [notes.md](/work/notes.md). The report is attached."),
+      attachments: [
+        { kind: "file", path: "/store/notes.md", name: "notes.md", mime: "text/markdown" },
+        { kind: "file", path: "/store/report.pdf", name: "report.pdf", mime: "application/pdf" },
+      ],
+    };
+    const html = markup([reply]);
+    // The inline delivery stays inline, and the other file keeps main's
+    // compact beneath-reply gallery rather than a duplicate attachment card.
+    expect(html.match(/title="Save a copy"/g)).toHaveLength(1);
+    expect(html).toContain(">notes.md<");
+    expect(html).not.toContain('aria-label="Save a copy of notes.md"');
+    expect(html.match(/aria-label="Save a copy of report\.pdf"/g)).toHaveLength(1);
+    expect(html).toMatch(/<section[^>]*class="mt-2\.5 /);
+    expect(html).toContain('data-testid="message-actions"');
+    expect(html).toContain("Reply to message");
+    expect(html).toContain('aria-haspopup="menu"');
   });
 });
 

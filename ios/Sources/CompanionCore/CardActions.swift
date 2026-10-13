@@ -113,7 +113,7 @@ public enum ApprovalRiskClassifier {
     private static func prefixTokens(_ name: String) -> Int {
         let lower = name.lowercased()
         let prefixes: [(String, Int)] = [
-            ("cw_psa", 2), ("cw_rmm", 2), ("cw_automate", 2), ("s1", 1), ("sentinelone", 1), ("sc", 1),
+            ("cw_psa", 2), ("cw_rmm", 2), ("cw_automate", 2), ("sc", 1),
             ("screenconnect", 1), ("m365", 1), ("outlook", 1), ("graph", 1), ("bookstack", 1), ("passportal", 1),
             ("axcient", 1), ("itglue", 1),
         ]

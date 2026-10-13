@@ -1,0 +1,7 @@
+apiVersion: v2
+name: sagax-sandboxes
+description: Namespace, least-privilege RBAC, network policy and storage for Sagax per-person sandboxes.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+kubeVersion: ">= 1.29.0-0"

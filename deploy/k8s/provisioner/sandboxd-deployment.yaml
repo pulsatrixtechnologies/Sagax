@@ -1,0 +1,109 @@
+# sagax-sandboxd on Kubernetes. The Docker socket is not mounted. The image reference is
+# deliberately unusable: a mistaken apply does not pull a real image.
+# Attestation variables are left unset so the process refuses to serve
+# until an operator sets them from a real cluster review.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sagax-sandboxd
+  namespace: sagax-sandboxes
+  labels:
+    app: sagax-sandboxd
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: sagax-sandboxd
+  template:
+    metadata:
+      labels:
+        app: sagax-sandboxd
+    spec:
+      serviceAccountName: sagax-sandboxd
+      automountServiceAccountToken: true
+      enableServiceLinks: false
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: sandboxd
+          image: example.invalid/sagax:must-set
+          imagePullPolicy: IfNotPresent
+          args: ["dist-server/sandboxd.js"]
+          ports:
+            - name: https
+              containerPort: 8791
+          env:
+            - name: SANDBOX_BACKEND
+              value: kubernetes
+            - name: SAGAX_SANDBOX_IMAGE
+              value: example.invalid/sagax-sandbox:must-set
+            - name: SAGAX_SANDBOX_K8S_REGISTRY
+              value: example.invalid
+            - name: SAGAX_SANDBOX_K8S_STORAGE_CLASS
+              value: must-set-encrypted
+            - name: SAGAX_SANDBOXD_TLS_CERT
+              value: /var/run/sagax-tls/tls.crt
+            - name: SAGAX_SANDBOXD_TLS_KEY
+              value: /var/run/sagax-tls/tls.key
+            - name: SAGAX_SANDBOX_AUDIT_LOG
+              value: /var/log/sagax/sandbox-audit.jsonl
+            - name: SAGAX_SANDBOXD_KEY_FILE
+              value: /run/sagax-sandboxd/key
+            - name: SAGAX_SANDBOXD_LISTEN
+              value: 0.0.0.0:8791
+          securityContext:
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+            seccompProfile:
+              type: RuntimeDefault
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: https
+              scheme: HTTPS
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: "1"
+              memory: 512Mi
+          volumeMounts:
+            - name: tls
+              mountPath: /var/run/sagax-tls
+              readOnly: true
+            - name: audit
+              mountPath: /var/log/sagax
+            - name: key
+              mountPath: /run/sagax-sandboxd
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tls
+          secret:
+            secretName: sagax-sandboxd-tls
+        - name: audit
+          emptyDir: {}
+        - name: key
+          emptyDir: {}
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: sagax-sandboxd
+  namespace: sagax-sandboxes
+spec:
+  type: ClusterIP
+  selector:
+    app: sagax-sandboxd
+  ports:
+    - name: https
+      port: 8791
+      targetPort: https

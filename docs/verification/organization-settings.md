@@ -1,6 +1,6 @@
 # Optional desktop organization connection
 
-The hosted OpenMausBot Admin portal (menu **Sign in with your organization**,
+The hosted Sagax Admin portal (menu **Sign in with your organization**,
 Company models, company cloud backups, the People portal link) is removed.
 Settings → Organization is Perspicax. The smoke below describes the retired
 portal client and will not pass against current Settings.

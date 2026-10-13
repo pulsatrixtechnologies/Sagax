@@ -3,24 +3,13 @@ export interface YoutubeTranscriptCue {
   text: string;
 }
 
-/** One pass, so `&amp;lt;` stays `&lt;` and is not decoded a second time. */
 function decodeEntities(text: string): string {
-  return text.replace(/&(?:amp|lt|gt|quot|#39);/g, (entity) => {
-    switch (entity) {
-      case "&amp;":
-        return "&";
-      case "&lt;":
-        return "<";
-      case "&gt;":
-        return ">";
-      case "&quot;":
-        return '"';
-      case "&#39;":
-        return "'";
-      default:
-        return entity;
-    }
-  });
+  return text
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'");
 }
 
 function parseXmlTimedText(xml: string): YoutubeTranscriptCue[] {
@@ -29,8 +18,7 @@ function parseXmlTimedText(xml: string): YoutubeTranscriptCue[] {
   for (const block of blocks) {
     const start = block.match(/\bstart="([^"]+)"/);
     const inner = block.replace(/^<text[^>]*>/, "").replace(/<\/text>$/, "");
-    // Drop every angle bracket, including an unclosed `<script`.
-    const text = decodeEntities(inner).replace(/[<>]/g, "").trim();
+    const text = decodeEntities(inner.replace(/<[^>]+>/g, "").trim());
     if (!text || !start) continue;
     const startSec = Number(start[1]);
     if (!Number.isFinite(startSec)) continue;

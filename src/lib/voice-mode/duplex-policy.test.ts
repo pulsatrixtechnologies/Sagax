@@ -1,12 +1,13 @@
-// Pure duplex turn policy: barge-in cancels the active turn (speaking or
-// thinking), flag off keeps today's steer-while-thinking behavior.
+// Pure duplex turn policy: barge-in of speech cancels that reply. Talking
+// while it thinks does not interrupt (the send forks, stops, or replaces).
+// Flag off keeps today's steer-while-thinking behavior.
 import { describe, expect, it } from "vitest";
 
 import { bargeInEffects, thinkingCueMs } from "./duplex-policy";
 
 describe("duplex barge-in policy", () => {
-  it("duplex barge-in while the bot is thinking cancels and interrupts", () => {
-    expect(bargeInEffects({ duplex: true, botBusy: true, botAudible: false })).toBe("cancel-and-interrupt");
+  it("duplex talking while the bot is thinking does not interrupt: the send forks or stops", () => {
+    expect(bargeInEffects({ duplex: true, botBusy: true, botAudible: false })).toBe("none");
   });
 
   it("flag off while thinking does not interrupt", () => {

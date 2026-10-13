@@ -1,6 +1,7 @@
 // The names this app used before it was called Sagax, and how they are still
-// honored for one release. One module for Electron main, the server and the
-// CLI (the server imports it from here, like data-dir-lease.mjs).
+// honored (AGENTS.md, "Legacy names kept for compatibility", says which stay
+// on purpose). One module for Electron main, the server and the CLI (the
+// server imports it from here, like data-dir-lease.mjs).
 //
 // The code reads the new names (SAGAX_*). The old ones are still accepted
 // from outside (a person's shell, a compose file, an older deployment) and
@@ -325,8 +326,8 @@ export function appLink(host) {
 // ── tokens ───────────────────────────────────────────────────────────────
 //
 // Tokens this app issues start sgx_; omb_ ones issued before keep working
-// until they expire. Pairing credentials stay omb_pair_ when issued for one
-// more release (the released phone apps check that prefix) but sgx_pair_ is
+// until they expire. Pairing credentials stay omb_pair_ when issued, on
+// purpose (the released phone apps check that prefix), but sgx_pair_ is
 // accepted everywhere. omb_install_ and omb_workspace_ belong to a hosted
 // service this project does not run and are not renamed.
 
@@ -340,9 +341,10 @@ export function hasTokenPrefix(value, kind) {
 
 // ── health ───────────────────────────────────────────────────────────────
 //
-// /api/health keeps `app: "openmausbot"` for one release: deployed health
-// checks grep the body for that word and older clients compare it exactly.
-// `product: "sagax"` is the new name; step 2 + 1 release flips `app`.
+// /api/health keeps `app: "openmausbot"` on purpose (AGENTS.md, "Legacy
+// names kept for compatibility"): deployed health checks grep the body for
+// that word and older clients compare it exactly. `product: "sagax"` is the
+// new name.
 
 export const HEALTH_APP = "openmausbot";
 export const HEALTH_PRODUCT = "sagax";

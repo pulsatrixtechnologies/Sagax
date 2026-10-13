@@ -21,12 +21,14 @@
 // (org-admin-files.ts, JC 2026-10-08: "access to all features of every bot,
 // view their files"): a bot's files, for managers in reach and admins, each
 // read and download written to the admin activity log.
+import { MASCOT_CATALOG_FAMILIES, mascotCatalogue } from "../shared/mascot-catalog.ts";
 import { permissionCatalogue } from "../shared/permissions.ts";
 import type { IncomingMessage, ServerResponse } from "node:http";
 
 import { aggregateOrgUsage, ORG_USAGE_MAX_ROWS, parseOrgUsageRange, type OrgUsageAggregate, type UsageRow } from "./usage-ledger.ts";
 import type { ConsoleAssertion, OidcTeamClaim } from "./oidc-rp.ts";
 import type { IdentifiedAdminAction } from "./admin-activity.ts";
+import type { AdminBotLook, AdminBotPersona } from "./org-admin-look.ts";
 import { ADMIN_FILES_ROUTE, answerBotFiles, type OrgAdminFilesDeps } from "./org-admin-files.ts";
 import {
   compileRoutes,
@@ -54,8 +56,9 @@ const MAX_BODY_BYTES = 16 * 1024;
 /** The version of this API `GET capabilities` reports: 1 was the nine first
  * routes, 2 the console routes of 2026-10-08, 3 the permission catalogue
  * of 2026-10-09 (`permissions`, `permissionGroups`, `permissionsVersion`),
- * 4 the engine list of the same day (`engines`). */
-export const ORG_ADMIN_API_VERSION = 4;
+ * 4 the engine list of the same day (`engines`), 5 the bots' look and
+ * persona with the mascot catalogue of 2026-10-11 (`mascots`). */
+export const ORG_ADMIN_API_VERSION = 5;
 
 /** One engine (model provider) of this server, as `GET capabilities` lists
  * it: grouped Cloud or Local as the model picker's provider column groups it
@@ -130,6 +133,11 @@ export interface AdminBot {
   label: string | null;
   /** Its conversations: the main one plus every task. */
   threads: number;
+  /** 2026-10-11: what it wears (server/org-admin-look.ts), for the console
+   * to draw the mascot or show the picture. */
+  look: AdminBotLook;
+  /** 2026-10-11: the persona window's name, role and short description. */
+  persona: AdminBotPersona;
 }
 
 /** What a manager's reach is checked against for one bot. */
@@ -527,6 +535,7 @@ export function createOrgAdminRoutes(deps: OrgAdminRouteDeps): (req: IncomingMes
         locale: consoleLocale(assertion.locale),
         url,
         params: hit.params,
+        headers: req.headers,
         body,
         ...(rawUpload ? { request: req } : {}),
         reach,
@@ -573,6 +582,10 @@ export function createOrgAdminRoutes(deps: OrgAdminRouteDeps): (req: IncomingMes
         // 2026-10-09 (api 4): the engines, so the console groups Cloud and
         // Local from the server instead of guessing from an id.
         ...(deps.engines ? { engines: deps.engines() } : {}),
+        // 2026-10-11 (api 5): the characters a bot's `look` names, so the
+        // console draws every one of them.
+        mascotFamilies: [...MASCOT_CATALOG_FAMILIES],
+        mascots: mascotCatalogue(),
       });
       return true;
     }

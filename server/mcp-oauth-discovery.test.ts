@@ -71,6 +71,15 @@ describe("discoverMcpAuth", () => {
     expect(meta?.issuer).toBe("https://mcp.example.com");
   });
 
+  it("keeps the issuer from the authorization server metadata, not the listed spelling", async () => {
+    const { impl } = stubFetch({
+      "https://mcp.example.com/.well-known/oauth-protected-resource": { authorization_servers: ["https://auth.example.com/"] },
+      "https://auth.example.com/.well-known/oauth-authorization-server": AS,
+    });
+    const meta = await discoverMcpAuth("https://mcp.example.com/mcp", null, { fetch: impl });
+    expect(meta?.issuer).toBe("https://auth.example.com");
+  });
+
   it("refuses an authorization server without PKCE S256", async () => {
     const { impl } = stubFetch({
       "https://mcp.example.com/.well-known/oauth-protected-resource": { authorization_servers: ["https://auth.example.com"] },

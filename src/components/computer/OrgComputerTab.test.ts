@@ -5,10 +5,9 @@
 // usage panel, and words for every state, never the desktop's raw answer.
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { beforeEach, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 
 import { chosenComputer, computerChoices, type DesktopBridgeStatus } from "@/lib/desktop-bridge";
-import { setLocale } from "@/lib/i18n";
 import { localVmView, parseLocalVmAnswer, runtimeSummaryKey, type DesktopLocalVmStatus } from "@/lib/desktop-local-vm";
 import { formatBytes, powerState } from "@/lib/server-environment";
 import { BOT_SECTIONS } from "../bot-settings/sections";
@@ -28,8 +27,6 @@ const status = (vm: DesktopLocalVmStatus["vm"], extra: Partial<DesktopLocalVmSta
 const STALE = { name: "openmausbot-computer", state: "exited", managed: true, stale: "missing_folder" as const, folder: "/private/var/folders/5f/T/omb-org-mcp-Em133z/.openmausbot/vm-home", folderExists: false };
 
 describe("Computer tab on an organization server", () => {
-  beforeEach(() => setLocale("en"));
-
   it("shows the server environment for Auto and Cloud, even with the person's computer connected", () => {
     for (const place of ["auto", "cloud"] as const) {
       const markup = renderToStaticMarkup(createElement(OrgComputerTab, { bridge: bridge(true, "computer"), place, computerOff: false, botName: "Luna" }));
@@ -51,8 +48,8 @@ describe("Computer tab on an organization server", () => {
   it("shows only the screen: Works on is not a control inside this screen", () => {
     for (const place of ["auto", "cloud", "vm", "local"] as const) {
       const markup = renderToStaticMarkup(createElement(OrgComputerTab, { bridge: bridge(true, "computer"), place, computerOff: false, botName: "Luna" }));
-      // Works on is not a control on this screen, and the machine menu is a listbox.
-      expect(markup).not.toContain('role="radiogroup"');
+      // the one radio group is the screen picker, never Works on
+      expect(markup.match(/role="radiogroup"/g)?.length ?? 0).toBeLessThanOrEqual(1);
       expect(markup).not.toContain("data-works-on-setting");
     }
     const ids = BOT_SECTIONS.map((entry) => entry.id);
@@ -83,29 +80,15 @@ describe("Computer tab on an organization server", () => {
 
     const markup = renderToStaticMarkup(createElement(OrgComputerTab, { bridge: two, place: "vm", computerOff: false, botName: "Luna" }));
     expect(markup).toContain('data-computer-picker=""');
-    expect(markup).toContain('data-computer-options="server desktop:d2 desktop:d1"');
-    expect(markup).toContain('aria-haspopup="listbox"');
-    expect(markup).toContain('aria-expanded="false"');
-    expect(markup).not.toContain('role="radiogroup"');
-    expect(markup).not.toContain("max-w-[132px]");
-    // Closed, the control shows the machine the bot works on, by its full name.
-    expect(markup).toContain('data-computer-choice="desktop:d2"');
+    expect(markup).toContain(">Cloud<");
     expect(markup).toContain(">GOX-PC-07<");
-    expect(markup).toContain('title="GOX-PC-07: this bot works here"');
-    expect(markup).toContain(">Works here<");
-    expect(markup).not.toContain(">Cloud<");
-    expect(markup).not.toContain("JeanChrophesMBP");
+    expect(markup).toContain(">JeanChrophesMBP<");
     expect(markup).not.toContain("Old-Laptop");
     expect(markup).not.toContain(">NoVm<");
+    // the bot works on the current computer: its chip is checked and dotted
+    expect(markup).toMatch(/aria-checked="true" data-computer-choice="desktop:d2"[^>]*title="GOX-PC-07: this bot works here"/);
     expect(markup).toContain("Luna&#x27;s screen · GOX-PC-07");
     expect(markup).toContain('data-org-computer="user-desktop"');
-
-    const powered = renderToStaticMarkup(createElement(OrgComputerTab, {
-      bridge: two, place: "vm", computerOff: false, botName: "Luna",
-      initialPowers: { "desktop:d2": "on", server: "off" },
-    }));
-    expect(powered).toContain('data-computer-power="on"');
-    expect(powered).toContain(">On<");
   });
 
   it("shows no picker when there is only the cloud to look at", () => {
@@ -167,9 +150,10 @@ describe("Computer tab on an organization server", () => {
 describe("the bot's Works on", () => {
   it("uses the same place names as the composer chip, with the meaning in each tooltip", () => {
     const markup = renderToStaticMarkup(createElement(WorksOnControl, { value: "cloud", onChange: () => {}, disabled: {}, organization: true }));
-    expect(markup).toContain('class="mb-4 rounded-xl border border-hairline/40 p-4"');
-    expect(markup).toContain('<div id="works-on-setting" class="text-[13px] font-medium text-ink">Works on</div>');
-    expect(markup).toMatch(/id="works-on-setting-hint" class="mt-0.5 text-\[13px\] text-ink-secondary">Where this bot works\./);
+    // a section of the Access pane (no card); its meaning behind the info button
+    expect(markup).toContain('class="border-t border-hairline/40 pt-5"');
+    expect(markup).toContain('<h3 id="works-on-setting" class="text-[13px] font-medium text-ink">Works on</h3>');
+    expect(markup).toMatch(/<span id="works-on-setting-hint">Where this bot works\./);
     expect(markup.match(/role="radio"/g)).toHaveLength(6);
     for (const label of [">Auto (Cloud)<", ">Cloud (server environment)<", ">Local VM<", ">This computer<", ">Browser<", ">Off<"]) expect(markup).toContain(label);
     expect(markup).toMatch(/aria-checked="true"[^>]*data-works-on-choice="cloud"/);

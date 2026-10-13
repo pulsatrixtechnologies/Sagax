@@ -226,6 +226,9 @@ const PAIRS = [
   ["--color-accent-ink", "--color-accent", 4.5],
   ["--color-danger-ink", "--color-danger", 4.5],
   ["--color-success-ink", "--color-success", 4.5],
+  // The Primary Bot star (Avatar.tsx PrimaryBotBadge): its orange disc is
+  // the mark, 3:1 on the rail it sits on (the star inside is decoration).
+  ["--color-primary-badge", "--color-sidebar", 3],
   ...["--color-app", "--color-panel", "--color-card", "--color-menu", "--color-composer", "--color-raised-hover", "--color-inset"].map((s) => ["--color-accent-text", s, 4.5]),
   ...["--color-danger", "--color-success", "--color-warning"].flatMap((tone) => [
     [tone, "--color-card", 4.5],

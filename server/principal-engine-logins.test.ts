@@ -10,7 +10,7 @@ import { LOGIN_MARKER, loginCliFor, PrincipalEngineLogins, type LoginController 
 const A = "pr_00000000-0000-4000-8000-00000000000a";
 const B = "pr_00000000-0000-4000-8000-00000000000b";
 
-function harness() {
+function harness(options: { onClaudeLinked?: (principalId: string) => void } = {}) {
   const dataDir = mkdtempSync(join(tmpdir(), "engine-logins-"));
   const made: Array<{ driver: string; home: string; env: Record<string, string | undefined>; finish: () => Promise<void>; signedOut: boolean }> = [];
   const logins = new PrincipalEngineLogins({
@@ -33,6 +33,7 @@ function harness() {
       };
       return controller;
     },
+    ...(options.onClaudeLinked ? { onClaudeLinked: options.onClaudeLinked } : {}),
   });
   return { dataDir, logins, made };
 }
@@ -45,11 +46,11 @@ describe("PrincipalEngineLogins", () => {
     expect(started).toMatchObject({ phase: "waiting" });
     const dir = join(dataDir, "principals", A, "codex");
     expect(made[0]!.env.CODEX_HOME).toBe(dir);
-    expect(statSync(dir).mode & 0o777).toBe(0o700);
-    expect(statSync(join(dataDir, "principals", A)).mode & 0o777).toBe(0o700);
+    if (process.platform !== "win32") expect(statSync(dir).mode & 0o777).toBe(0o700);
+    if (process.platform !== "win32") expect(statSync(join(dataDir, "principals", A)).mode & 0o777).toBe(0o700);
     await made[0]!.finish();
     expect(logins.signedIn(A, "codex")).toBe(true);
-    expect(statSync(join(dir, LOGIN_MARKER)).mode & 0o777).toBe(0o600);
+    if (process.platform !== "win32") expect(statSync(join(dir, LOGIN_MARKER)).mode & 0o777).toBe(0o600);
     expect(JSON.parse(readFileSync(join(dir, LOGIN_MARKER), "utf8"))).toEqual({ at: 42 });
     // another person is not signed in by it
     expect(logins.signedIn(B, "codex")).toBe(false);
@@ -86,7 +87,7 @@ describe("PrincipalEngineLogins", () => {
     expect(logins.signedIn(A, "grokAgent")).toBe(false);
     await logins.start(B, "kimi", "session-b");
     expect(made[1]).toMatchObject({ driver: "kimiAgent", home: join(dataDir, "principals", B, "kimi") });
-    expect(statSync(made[1]!.home).mode & 0o777).toBe(0o700);
+    if (process.platform !== "win32") expect(statSync(made[1]!.home).mode & 0o777).toBe(0o700);
   });
 
   it("keeps flows per person and per session: another session cannot read or steal them", async () => {
@@ -102,6 +103,17 @@ describe("PrincipalEngineLogins", () => {
     logins.revokeOwner("session-b");
     await new Promise((resolve) => setTimeout(resolve, 10));
     await expect(logins.status(B, "codex", "session-b", b.flowId!)).rejects.toMatchObject({ status: 404 });
+  });
+
+  it("notifies onClaudeLinked only after a Claude login", async () => {
+    const linked: string[] = [];
+    const { logins, made } = harness({ onClaudeLinked: (person) => linked.push(person) });
+    await logins.start(A, "claude", "session-a");
+    await made[0]!.finish();
+    expect(linked).toEqual([A]);
+    await logins.start(A, "codex", "session-a");
+    await made[1]!.finish();
+    expect(linked).toEqual([A]);
   });
 
   it("marks signed in when the status poll sees success first", async () => {

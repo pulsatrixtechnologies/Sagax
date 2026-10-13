@@ -59,7 +59,7 @@ GET /api/org/admin/capabilities
 ```json
 {
   "version": "0.4.15",
-  "api": 4,
+  "api": 5,
   "routes": ["GET audit", "GET bots", "GET capabilities", "GET overview", "GET usage"],
   "permissionsVersion": 1,
   "permissionGroups": [{ "id": "bots", "label": { "en": "Bots", "fr": "Bots" } }],
@@ -86,6 +86,11 @@ GET /api/org/admin/capabilities
     { "id": "claude", "name": "Claude", "kind": "cloud", "installed": true, "auth": "oauth" },
     { "id": "openai", "name": "OpenAI", "kind": "cloud", "installed": true, "auth": "apiKey" },
     { "id": "ollama", "name": "Ollama", "kind": "local", "installed": true, "auth": "none" }
+  ],
+  "mascotFamilies": ["classics", "shapes", "animals"],
+  "mascots": [
+    { "id": "owl", "family": "classics", "colors": true, "skins": ["none", "snowy", "..."], "defaultSkin": "none", "defaultColor": null },
+    { "id": "shape", "family": "shapes", "colors": true, "skins": ["plain", "pastel", "..."], "defaultSkin": "plain", "defaultColor": null, "shapes": ["circle", "bean", "squircle", "pill", "pick", "hexagon", "cloud", "drop"] }
   ]
 }
 ```
@@ -93,8 +98,9 @@ GET /api/org/admin/capabilities
 `version` is the Sagax release people know (`package.json` `forkVersion`, or
 `SAGAX_RELEASE_VERSION`), not the base version the link sends. `api` is 1 for
 a server that predates this route (it answers `404 not_found`), 2 since
-the console routes, 3 since the permission catalogue and 4 since `engines`
-(both 2026-10-09). A route
+the console routes, 3 since the permission catalogue, 4 since `engines`
+(both 2026-10-09) and 5 since the bots' `look` and `persona` with `mascots`
+(2026-10-11). A route
 missing from `routes` is not offered by this server: the console says so
 instead of calling it.
 
@@ -121,6 +127,14 @@ local model server, `cloud` for a subscription or API key engine),
 access (`oauth`: a sign-in with the provider's account, `apiKey`: a key,
 `none`: nothing to sign in to). A server before api 4 answers without
 `engines`.
+
+`mascots` (api 5) lists every character a bot's `look` can name, in the
+app's registry order (`shared/mascot-catalog.ts`, checked against
+`src/components/floating-bots/mascots.tsx`): its `family` (one of
+`mascotFamilies`, the Appearance gallery's chips), whether it is painted in
+the bot's color (`colors`; Trombi is not), its skins in the picker's order,
+the skin it wears by default and the color it shows where no bot gives one.
+See "A bot's look and persona" below for the whole list.
 
 ### `GET overview`
 
@@ -183,11 +197,16 @@ GET /api/org/admin/bots?status=active&q=atl&limit=50
     "engine": { "instanceId": "claude", "driverKind": "claudeAgent", "installed": true }, "model": "claude-opus-4-1",
     "access": "org-key", "mcpProfiles": [], "grants": [], "sections": [], "routines": 1,
     "createdAt": 1791500000000, "lastActivityAt": 1791500100000,
-    "status": "active", "label": null, "threads": 3
+    "status": "active", "label": null, "threads": 3,
+    "look": { "kind": "mascot", "character": "shiba", "family": "animals", "color": "orange", "colorHex": "#E78531", "skin": "sesame", "shape": null, "expression": null, "image": null },
+    "persona": { "displayName": "Atlas", "title": "Sales assistant", "description": "Prepares the weekly sales digest." }
   }],
   "next": null
 }
 ```
+
+Every bot carries `look` and `persona` (api 5, "A bot's look and persona"
+below), with or without paging.
 
 Every bot now carries `status` (`archived` is Sagax's archived bot: out of
 the sidebar, skipped by rooms, its routines do not run, until restored),
@@ -217,6 +236,8 @@ organization categories are read as before.
 | `POST people/{principal}/disable` | admin | turn a person off or on in this Sagax |
 | `POST people/{principal}/reset-access` | admin | delete their engine sign-ins, end their sessions |
 | `POST people/{principal}/connections/revoke` | admin | remove their own connections |
+| `POST people/{principal}/routines/pause` | admin | pause every routine that runs as them |
+| `POST people/{principal}/routines/resume` | admin | resume every routine that runs as them |
 
 ### `GET people`
 
@@ -310,11 +331,28 @@ The body of the session route: `{"all": true}`, `{"kind": "mcp", "name"}`,
 `{removed, connections}` (the listing after the change). Audited
 `connections.revoke` when something was removed.
 
+### `POST people/{principal}/routines/pause`, `resume`
+
+`{}` (or no body). Pauses, or resumes, every routine that runs as the
+person: its chosen run-as person, else its bot's owner (the routines `GET
+people/{principal}` lists in `routinesAsRunner`). A routine already in that
+state is left alone. Answers `{person, changed, routines: [{id, name,
+botId, enabled}]}` (`changed` the number moved). One admin activity row for
+the whole action, `person.routines_pause` or `person.routines_resume`
+(category `people`, target the person, `after.routines` the ids moved), and
+none when nothing moved. Pausing does not change whom a routine runs as, and
+a resume brings back routines an admin or their owner had paused one by one
+too. The procedure when someone leaves: pause their routines, transfer
+their bots or change whom the routines run as, then disable them (a
+disabled person's routines stop anyway). Listed in `GET capabilities` as
+`POST people/{principal}/routines/pause` and `.../resume`.
+
 ## Bots
 
 | Method and path | Role | What |
 |---|---|---|
 | `GET bots/{id}` | manager | a bot's page |
+| `GET bots/{id}/avatar` | manager | the bot's uploaded picture |
 | `POST bots/{id}/clone` | manager (bot and new owner in reach) | a copy for its owner or another person |
 | `POST bots/{id}/archive` | manager in reach, admin | archive |
 | `POST bots/{id}/restore` | manager in reach, admin | restore |
@@ -346,6 +384,70 @@ The body of the session route: `{"all": true}`, `{"kind": "mcp", "name"}`,
 The AdminBot fields of `GET bots`, plus the facts above. `soul.summary` is
 the first line of the instructions (at most 140 characters), never the
 instructions themselves; no message, memory or routine prompt is answered.
+
+### A bot's look and persona
+
+`look` is what the bot wears, as the app resolves it
+(`server/org-admin-look.ts`, the rule of `src/components/Avatar.tsx`); the
+console draws the character itself from it.
+
+```json
+{
+  "kind": "image",
+  "character": "owl", "family": "classics",
+  "color": "blue", "colorHex": "#377FE6",
+  "skin": "galaxy", "shape": null, "expression": "happy",
+  "image": { "crop": "circle", "zoom": 1.4, "focusX": 0.5, "focusY": 0.35, "version": "9f2c41d07ab3e655", "type": "image/png" }
+}
+```
+
+- `kind`: `image` when the bot has an uploaded picture shown with a photo
+  crop (`GET bots/{id}/avatar` serves it); `mascot` when its owner chose a
+  character or a skin; `default` when they chose nothing: the owl in the
+  bot's color, as every bot wore before. The character fields are always
+  there: they are what the app draws when the picture fails to load.
+- `character`: `owl`, `crab`, `shape`, `trombi`, `bunbu`, `shiba`,
+  `grump`, `ogre` or `frog`. `family`: `classics` (owl, trombi), `shapes`
+  (shape) or `animals` (crab, bunbu, shiba, grump, ogre, frog).
+- `color`: the bot's color name (`shared/mascot-colors.ts`, six palettes);
+  `colorHex` its value, null for a name this server does not know. Trombi
+  ignores it.
+- `skin`: the character's skin. The owl's is the bot's owl skin (`none`,
+  `snowy`, `barn`, `carbon`, `gold`, `frost`, `neon`, `lightning`,
+  `chrome`, `inferno`, `holo`, `galaxy`, `spirit`); the other characters'
+  are listed per character in `GET capabilities` `mascots[].skins`
+  (shape: `plain` ... `galaxy`; trombi: `classic` ... `molten`; bunbu,
+  shiba, grump, ogre, frog and crab: `plain`, their own coats, then the
+  premium set). An older stored name reads as its current id.
+- `shape`: the shape character's shape (`circle`, `bean` the heart,
+  `squircle`, `pill` the capsule, `pick` the triangle, `hexagon`, `cloud`,
+  `drop` the teardrop), else null.
+- `expression`: the owl's resting face when the owner picked one, else null.
+- `image`: null unless `kind` is `image`. `crop` is `circle`, `rounded`
+  (22 % radius) or `square`; `zoom` 1 to 3 over a cover fit; `focusX` and
+  `focusY` the point of the picture kept in the middle, 0 to 1; `version`
+  changes when the picture changes (it is the avatar route's ETag); `type`
+  the picture's media type.
+
+Sagax stores no accessory on a bot (nothing beyond character, skin, shape,
+color and the owl's face), so `look` has none. A bot's legacy `mascotBody`
+is not drawn by the app any more and is left out.
+
+`persona` is what the persona window shows: `displayName` (the bot's name),
+`title` (its role or tagline, null when empty) and `description` (null when
+empty, at most 500 characters; `descriptionTruncated: true` when the stored
+one was longer).
+
+### `GET bots/{id}/avatar`
+
+The bytes of the bot's uploaded picture (PNG, JPEG, GIF or WebP, at most 10
+MiB) with its `content-type`, a strong `ETag` (`"<look.image.version>"`),
+`Cache-Control: private, no-cache` and `X-Content-Type-Options: nosniff`;
+`If-None-Match` with that tag answers `304`. `404 not_found` when the bot
+has no picture (or shows its mascot), `413 too_large` past the cap, and the
+bot route's reach rules (out of a manager's reach is 404). The answer never
+names a file or a path; the picture is read without following a link. Not
+audited (a read of what the bot shows everyone it talks to).
 
 ### `POST bots/{id}/clone`
 
@@ -459,6 +561,7 @@ document without `format` still works).
 | `GET routines?q&status&bot&owner&limit&cursor` | manager | every routine in reach |
 | `GET routines/{id}` | manager | one routine |
 | `GET routines/{id}/runs?limit&cursor` | manager | its runs, newest first |
+| `GET routines/runs?from&to&scope&bot&routine&state&q&limit&cursor` | employee | the calendar: every run in a window, past and planned |
 | `POST routines/{id}/run` | manager in reach, admin | run now |
 | `POST routines/{id}/pause` | manager in reach, admin | pause or resume |
 
@@ -518,6 +621,73 @@ bot id; `owner` the bot owner's principal id or Perspicax user id.
 the run carries one). The thread opens in Sagax at
 `<server>/#thread=<threadId>&bot=<botId>`.
 
+### `GET routines/runs` (the calendar)
+
+```http
+GET /api/org/admin/routines/runs?from=2026-10-05&to=2026-10-11&scope=all&limit=200
+```
+
+```json
+{
+  "from": 1791158400000, "to": 1791763199999, "scope": "all",
+  "items": [
+    {
+      "id": "run_9", "routineId": "r_1", "routineName": "Daily digest", "botId": "5e38...", "botName": "Atlas",
+      "owner": { "principalId": "pr_1abf...", "sub": "01J9...", "name": "Alice" },
+      "runAs": { "principalId": "pr_1abf...", "sub": "01J9...", "name": "Alice" },
+      "startedAt": 1791500000000, "endedAt": 1791500050000, "durationMs": 50000,
+      "state": "failed", "planned": false, "trigger": "schedule",
+      "reason": "rate_limited", "label": "The provider is rate limiting", "threadId": "a5fe..."
+    },
+    {
+      "id": "planned:r_1:1791586400000", "routineId": "r_1", "routineName": "Daily digest", "botId": "5e38...", "botName": "Atlas",
+      "owner": { "principalId": "pr_1abf...", "sub": "01J9...", "name": "Alice" }, "runAs": { "principalId": "pr_1abf...", "sub": "01J9...", "name": "Alice" },
+      "startedAt": 1791586400000, "endedAt": null, "durationMs": 1800000,
+      "state": "planned", "planned": true, "trigger": "schedule", "reason": null, "label": null, "threadId": null,
+      "redacted": true
+    }
+  ],
+  "next": "bzoyMDA",
+  "truncated": false
+}
+```
+
+- `from` and `to`: milliseconds, an ISO date (`to` as a date covers that
+  whole UTC day) or an ISO date and time; at most 92 days apart. Without
+  them: the last 7 days and the next 7. The answer echoes the window in
+  milliseconds.
+- Items are every run that overlaps the window (started or scheduled
+  before `to`, ended or still going after `from`), then the planned
+  occurrences from now (or `from`, when later) to `to`, computed from each
+  enabled routine's schedule in the routines' time zone; a suspended or
+  paused routine plans nothing, and an occurrence already queued is listed
+  once, as that run. Sorted by `startedAt`, then routine.
+- `state`: `ok`, `failed`, `skipped` (cancelled or missed), `running`
+  (queued, running or waiting; `startedAt` is then its scheduled time until
+  it starts) or `planned`. `reason` and `label` as on `GET routines` (codes,
+  words in the assertion's language). `trigger`: `schedule`, `manual` or
+  `webhook`. `durationMs`: the run's own length once it ended; on a planned
+  item, the routine's calendar length (its `durationMinutes`).
+- `scope` (default `mine`), the console's reach and the Automations scope
+  together:
+  - `mine`: the routines whose bot the caller owns or that run as them.
+  - `team`: mine, plus every routine whose bot owner or run-as person is in
+    one of the caller's teams (the assertion's `teams`), or whose bot is
+    shared with one of them; for a manager also every routine in their
+    reach. Managers, admins, and anyone holding `routines.viewTeam` or
+    `routines.viewAll`.
+  - `all`: every routine. Admins and holders of `routines.viewAll`.
+  A scope the caller may not ask for is `403 routine_scope_not_allowed`
+  with the missing `permission`.
+- A run outside the caller's console reach (an admin reaches everyone, a
+  manager their teams' people, anyone else themselves) comes with
+  `redacted: true` and `threadId` null. No prompt, output or message is
+  ever answered.
+- `bot`, `routine` (ids) and `state` narrow the list; `q` searches the
+  routine, bot, owner and run-as names. Pages of `limit` 1 to 500 (default
+  200) by `cursor`. A routine plans at most 500 occurrences per window and
+  a window at most 20,000 items; past either, `truncated` is true.
+
 ### `POST routines/{id}/run`
 
 `{}`. Answers `{run: {id, startedAt, status: "running"}}`; 409
@@ -559,9 +729,10 @@ listed, never decidable.
 ```
 
 From the decision log: the cards a person answered (in Sagax or from the
-console), newest first. Sagax records no expiry decision: `expired` is never
-answered. `by` names the person when Sagax knows them, else the device
-label.
+console), and since 2026-10-11 the permission cards nobody answered before
+their own timeout (`decision: "expired"`, `by` null), newest first. `by`
+names the person when Sagax knows them, else the device label. A card that
+expired before that day has no row.
 
 ## Connections
 
@@ -655,10 +826,12 @@ engine, person, bot or day and exports CSV from the rows it holds.
 }
 ```
 
-The last 2,000 lines this process wrote to its console, kept in memory (a
-restart starts empty), each at most 2,000 characters, secrets redacted when
-captured (`redactSecretsInText`). The container's log driver keeps the
-whole log.
+The last 2,000 lines the server wrote to its console, each at most 2,000
+characters, secrets redacted when captured (`redactSecretsInText`). Since
+2026-10-11 the window also lives on disk (`<data>/server-log/`, two files of
+at most 2 MiB each, mode 0600, left out of workspace backups), so a restart
+keeps the last lines and `seq` keeps growing across restarts; the answer's
+shape is unchanged. The container's log driver keeps the whole log.
 
 ### `GET incidents`
 
@@ -735,10 +908,174 @@ engine) is enforced everywhere since 2026-10-09:
   models. A provider the person already connected but no longer allowed
   shows once, disabled, as "Not allowed by your organization".
 
+## Computers
+
+| Method and path | Role | What |
+|---|---|---|
+| `GET computers?kind&state&owner&q&limit&cursor` | admin | every server environment and every connected desktop |
+| `GET computers/{id}` | admin | one computer and its recent activity |
+| `POST computers/{id}/start`, `stop`, `pause`, `resume`, `update` | admin | power and rebuild a server environment (`{}`, or `{"confirm": true}` while a bot works there) |
+| `POST computers/{id}/reset`, `delete` | admin | erase a server environment (`{"confirm": true}` required) |
+
+Code: `server/org-admin-computers.ts`. A server environment is the
+organization's machine for one person (sagax-sandboxd,
+`docs/user-sandbox.md`): an admin acts on it with the calls the person's
+own Computer tab makes. A desktop computer is the person's own (the Sagax
+app signed in to this server, the desktop bridge): it is listed read only,
+by its name, platform, presence and last contact, and never acted on; the
+console never reaches its files, its system facts or its Local VM.
+
+### `GET computers`
+
+```json
+{
+  "items": [
+    {
+      "id": "env:pr_7c1e...", "kind": "server-environment", "name": "Bob",
+      "owner": { "principalId": "pr_7c1e...", "sub": "01J9...", "name": "Bob" },
+      "state": "running", "lastUsedAt": 1791500000000,
+      "resources": { "cpus": 2, "memoryLimitBytes": 2147483648, "diskLimitBytes": 10737418240, "workspaceBytes": 512000000, "workspaceQuotaBytes": 10737418240, "overQuota": false, "cpuPercent": 12.5, "memoryBytes": 314572800 },
+      "image": "sagax-sandbox:0.4.20", "os": "Debian GNU/Linux 12 (bookworm)", "arch": "x86_64",
+      "platform": null, "busy": 0, "pendingDeletionAt": null, "localVm": false, "appVersion": null,
+      "bots": [{ "id": "5e38...", "name": "Atlas" }],
+      "actions": ["stop", "pause", "update", "reset", "delete"]
+    },
+    {
+      "id": "desktop:3f9a0c2e71b4d856", "kind": "desktop", "name": "Bob's MacBook",
+      "owner": { "principalId": "pr_7c1e...", "sub": "01J9...", "name": "Bob" },
+      "state": "online", "lastUsedAt": 1791500005000,
+      "resources": null, "image": null, "os": null, "arch": null,
+      "platform": "darwin", "busy": 0, "pendingDeletionAt": null, "localVm": true, "appVersion": "0.4.20",
+      "bots": [{ "id": "77ab...", "name": "Beacon" }],
+      "actions": []
+    }
+  ],
+  "next": null,
+  "environments": { "configured": true, "reachable": true, "maxRunning": 10, "idleMinutes": 10 }
+}
+```
+
+- `id`: `env:<principal id>` for a server environment, `desktop:<16 hex>`
+  for a desktop (a digest of its person and the app's own id, which never
+  reaches the wire). Stable while the desktop stays registered.
+- `kind`: `server-environment` or `desktop`. `name`: the owner's name for
+  an environment, the name the Sagax app registered (`os.hostname()`) for a
+  desktop.
+- `state`: a server environment is `running`, `paused`, `stopped` or
+  `unavailable` (the provisioner did not answer for it within 3 s); one that
+  was never created, or was deleted, is not listed. A desktop is `online`
+  (it polled within 40 s) or `offline`; one whose session ended is gone.
+- `lastUsedAt`: the environment's last use (the idle stop counts from it),
+  or the desktop's last contact.
+- `resources` (environments only): the limits (`cpus`, memory, disk), the
+  workspace size and quota, and, while it runs, `cpuPercent` (of its own CPU
+  quota) and `memoryBytes`. `image`, `os` and `arch` come from the same
+  sample (the provisioner's image name and tag; the OS once read inside).
+- `busy`: commands running in the environment now. `pendingDeletionAt`:
+  set while its person is signed out by Perspicax (it is stopped and deleted
+  at that time unless they come back).
+- `localVm` (desktops): the app can run a Local VM for its person. Its VM's
+  own state is not asked for: that is a call to the person's computer.
+- `bots`: the owner's bots whose Works on sends their tools there: Auto and
+  Cloud to the environment, This computer and Local VM to the desktop. A
+  bot shared with the person also works in the person's environment when
+  they talk to it; routines work in the bot owner's.
+- `actions`: what an admin may do now (a desktop: none). `start` when
+  stopped or paused (not while its person is signed out), `stop` when
+  running or paused, `pause` when running, `resume` when paused, `update`
+  and `reset` unless unavailable or signed out, `delete` unless unavailable.
+- `environments`: whether this server has the provisioner (`configured`),
+  whether it answers (`reachable`), its limit of running environments and
+  its idle stop in minutes. Without it the list holds the desktops only.
+- `kind`, `state` (any value above) and `owner` (principal id or Perspicax
+  user id) narrow the list; `q` searches the name, owner, image and
+  platform. Each listing asks the provisioner for every person of the
+  organization, eight at a time.
+
+### `GET computers/{id}`
+
+`{computer, activity}`: the item above, and the newest 20 admin activity
+rows about it (`audit` row shape): the console's actions on it and, from
+the last 30 days, the bots' `computer.switch` rows for its person to or
+from it (Auto choosing the cloud, This computer or the Local VM). Unknown,
+deleted or gone computers are `404 not_found`.
+
+### `POST computers/{id}/{action}`
+
+| Action | What it does | Body |
+|---|---|---|
+| `start` | create or start it; a paused one resumes | `{}` |
+| `stop` | stop it; `/workspace` stays | `{}`, `{"confirm": true}` while busy |
+| `pause` | freeze it; bots are refused until it resumes | `{}`, `{"confirm": true}` while busy |
+| `resume` | unfreeze it | `{}` |
+| `update` | rebuild it from the provisioner's current image; `/workspace` stays | `{}`, `{"confirm": true}` while busy |
+| `reset` | erase it and its `/workspace`, start a fresh one | `{"confirm": true}` |
+| `delete` | erase it and its `/workspace`; the next use creates a new one | `{"confirm": true}` |
+
+Answers `{computer}` (the item after the change), or `{deleted: id}`.
+Refusals: `400 confirm_required` (reset or delete without `confirm: true`),
+`409 confirm_running` (a bot turn or a command runs there: send `confirm:
+true` to go on), `409 not_offered` (not in `actions` now), `409
+personal_computer` (any action on a desktop), `409 person_out` (its person
+is signed out), `429 capacity` (the provisioner runs its limit), `502
+unavailable` (the provisioner did not do it), `404 not_found`. Each action
+writes one admin activity row: category `computer`, action
+`computer.start` ... `computer.delete`, target `{kind: "computer", id,
+name}` (the owner's name), `before.state`, `after.state` (`deleted` after a
+delete), `after.ownerPrincipalId` and `after.confirmed` when confirmed.
+The person is not told; their Computer tab shows the new state.
+
+## Link routes (`/api/org/link/*`)
+
+Routes Perspicax calls on its own behalf, not for a person: their only
+credential is the link token Perspicax wrote to this server's link file
+(`SAGAX_PERSPICAX_LINK_FILE`, the `link_token` field), never a console
+assertion. Code: `server/org-link-routes.ts`.
+
+| Method and path | Credential | What |
+|---|---|---|
+| `POST /api/org/link/directory-refresh` | link token | read the directory now |
+
+### `POST /api/org/link/directory-refresh`
+
+```http
+POST /api/org/link/directory-refresh
+Authorization: Bearer pxat1.<link token>
+```
+
+Sagax re-reads the directory (`GET /api/v1/pulsabot/directory`) every
+`SAGAX_PERSPICAX_DIRECTORY_SECONDS` (300 by default), so a rights change
+made in Perspicax (a permission set or its assignment, `sagax_bots`,
+`sagax_integrations`, a team, a profile, a role) reached Sagax up to five
+minutes later. Perspicax calls this route right after such a change, and
+Sagax fetches the directory at once. Call it once per change; no body.
+
+- Answers `202 {"ok": true, "refresh": "started"}`, or `"queued"` when a
+  fetch is running or one started less than 2 s ago: exactly one more fetch
+  then follows, so a change committed during a running fetch is still read.
+  The fetch runs after the answer; its outcome is in the server log and in
+  `GET overview` like a poll's. Nothing else is written.
+- `401 {"error": "unauthorized"}` for a missing or wrong token, a token sent
+  any other way than `Authorization: Bearer` (query, Basic, cookie) included.
+  A token Perspicax just rotated is accepted: a mismatch re-reads the link
+  file once.
+- `429 {"error": "rate_limited"}` with `Retry-After: 60` after 10 failed
+  authentications from one socket address in 60 s (even with the good token
+  until the window passes), or beyond 60 accepted calls in a minute.
+- `404 {"error": "not_found"}` on a solo server or an organization server
+  with no link file; `405` for another method.
+- Every answer carries `Cache-Control: no-store`.
+
+Perspicax holds the link token only where it writes the link file itself
+(the server of `pulsabot_origin` with `PXC_PULSABOT_LINK_FILE`); a server
+linked from the console keeps the poll and the refresh at each sign-in.
+
 ## Not offered yet
 
 | Route | Why |
 |---|---|
 | `people[].engines[].ok` in `GET connections` | no background check: null, test on demand |
 | `presence.idle` | Sagax knows online, away and offline only: always 0 |
-| `approvals/history` `decision: "expired"` | Sagax records no expiry decision |
+| actions on a desktop computer, its files, system facts or Local VM | a person's own computer is theirs: listed read only (`409 personal_computer`) |
+| the Local VM's own state in `GET computers` | it lives on the person's computer; asking is a call to it |
+| `look` accessories | Sagax stores none on a bot |

@@ -54,8 +54,6 @@ const RESIZE_SETTLE_MS = 220;
 /** A flight to the screen edge or back home (the clips are timed to it). */
 const FLIGHT_MS = 1400;
 const GAZE_MS = 200;
-/** A bot's picture, drawn flat. */
-export const CHARACTER_SIZE = 88;
 /** The owl's own box. */
 const OWL_SIZE = 120;
 /** The stage around it: big enough that no spin, flip, jump or spread wing is ever cut off (fit.ts). */

@@ -79,4 +79,5 @@ describe("buildApplicationMenu", () => {
     expect(onLeaveServerMode).toHaveBeenCalledOnce();
     expect(onSwitch).not.toHaveBeenCalled();
   });
+
 });

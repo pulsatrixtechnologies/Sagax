@@ -1004,7 +1004,7 @@ private struct BotPanelMemory: View {
         let size = "\(MemoryCapacity.formatBytes(capacity.bytes)) / \(MemoryCapacity.formatBytes(capacity.maxBytes))"
         return VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .top, spacing: 12) {
-                Text("How much of MEMORY.md loads").panelText(13, 19.5, .medium).foregroundStyle(theme.ink)
+                Text(verbatim: "MEMORY.md").panelText(13, 19.5, .medium).foregroundStyle(theme.ink)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .layoutPriority(1)
                 Text(verbatim: "\(lines) · \(size)").panelText(12, 18).foregroundStyle(theme.inkSecondary)
@@ -1012,7 +1012,10 @@ private struct BotPanelMemory: View {
             }
             gauge("Lines", share: capacity.lineShare).padding(.top, 8)
             gauge("Size", share: capacity.byteShare).padding(.top, 8)
-            Text(verbatim: summary(capacity)).panelText(12.5, 20.3125).foregroundStyle(theme.inkSecondary).padding(.top, 8)
+            // The numbers are said once, above; a line only when a cut happens (desktop MemoryGauge).
+            if let warning = summary(capacity) {
+                Text(verbatim: warning).panelText(12.5, 20.3125).foregroundStyle(theme.danger).padding(.top, 8)
+            }
         }
         .padding(.horizontal, 4)
     }
@@ -1034,12 +1037,10 @@ private struct BotPanelMemory: View {
         .accessibilityValue(Text(verbatim: "\(Int((share * 100).rounded())) %"))
     }
 
-    /// `memoryCapacitySummary` (src/lib/memory.ts).
-    private func summary(_ capacity: MemoryCapacity) -> String {
-        if capacity.truncated, capacity.missingLines > 0 {
-            return String(localized: "\(capacity.lines) lines saved, \(capacity.loadedLines) load into every conversation — \(capacity.missingLines) lines are not being loaded. Trim this file or move notes into a topic file.")
-        }
-        return String(localized: "\(capacity.lines) of \(capacity.maxLines) lines · \(MemoryCapacity.formatBytes(capacity.bytes)) of \(MemoryCapacity.formatBytes(capacity.maxBytes)) — only the first \(capacity.maxLines) lines load each turn.")
+    /// `capacityStatus(...).warning` (src/lib/memory.ts): only when lines are cut.
+    private func summary(_ capacity: MemoryCapacity) -> String? {
+        guard capacity.truncated, capacity.missingLines > 0 else { return nil }
+        return String(localized: "\(capacity.missingLines) lines are not loaded. Trim MEMORY.md or move notes into a topic.")
     }
 
     private func patch(_ patch: BotAccessPatch) async {

@@ -12,7 +12,7 @@ import { PASS, type RouteHandler } from "./table.ts";
 
 export interface DesktopAppearanceRouteDeps {
   store: DesktopAppearanceStore;
-  /** True on an organization server (OMB_IDENTITY=perspicax). */
+  /** True on an organization server (SAGAX_IDENTITY=perspicax). */
   organization: () => boolean;
 }
 

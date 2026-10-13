@@ -5,7 +5,7 @@
 // dialog's own z-50, plus: an Import from GitHub row, a static "when it's
 // used" line on every row (learned skills have no triggers to show), and a
 // read-only click-through view of a skill's full text.
-import { ArrowUpRight, BookOpen, Trash2 } from "lucide-react";
+import { ArrowUpRight, Trash2 } from "lucide-react";
 import { t } from "@/lib/i18n";
 import { useEffect, useRef, useState } from "react";
 
@@ -16,7 +16,9 @@ import { viewerBotsReadOnly, viewerIntegrationsManagedByAdmin } from "@/lib/view
 import { IntegrationsManagedNotice } from "../settings/MyConnectionsSettings";
 import { Switch } from "../SettingsPrimitives";
 import { inputCls } from "./field";
+import { PaneEmpty, PaneSection } from "./PaneSection";
 import { OrgSkillsCard } from "./OrgSkillsCard";
+import { WriteCommandCard } from "./WriteCommandCard";
 
 export interface ManagedSkill {
   name: string;
@@ -408,20 +410,13 @@ export function SkillsSection({ bot }: { bot: Bot }) {
   };
 
   return (
-    <div className="flex flex-col gap-4">
-      <div className="rounded-xl border border-hairline/40 p-4">
-        <div className="flex items-center gap-2">
-          <BookOpen size={16} className="text-ink-secondary" />
-          <div className="text-[13px] font-medium text-ink">{t("botPanel.skills.title")}</div>
-        </div>
-        <div className="mt-1 text-[12px] leading-relaxed text-ink-secondary">
-          {featureEnabled ? t("skills.learned.hintOn") : t("skills.learned.hintOff")}
-        </div>
+    <div className="flex flex-col gap-5">
+      <PaneSection title={t("botPanel.skills.title")} help={<>{featureEnabled ? t("skills.learned.hintOn") : t("skills.learned.hintOff")} {t("botPanel.skills.whenRelevant")}.</>}>
 
         {integrationsLocked ? (
-          <div className="mt-3"><IntegrationsManagedNotice /></div>
+          <IntegrationsManagedNotice />
         ) : skillWrites && libraryOn ? (
-          <div className="mt-3 flex flex-col gap-1.5">
+          <div className="flex flex-col gap-1.5">
             {libraryPool.length > 0 ? (
               <div className="flex items-center gap-2">
                 <select
@@ -465,7 +460,7 @@ export function SkillsSection({ bot }: { bot: Bot }) {
         ) : skillWrites ? (
           <>
             <form
-              className="mt-3 flex items-center gap-2"
+              className="flex items-center gap-2"
               onSubmit={(e) => {
                 e.preventDefault();
                 void importSkill();
@@ -493,7 +488,7 @@ export function SkillsSection({ bot }: { bot: Bot }) {
         {loading ? (
           <div className="mt-3 text-[12px] text-ink-secondary">{t("botPanel.loading")}</div>
         ) : skills.length === 0 ? (
-          <div className="mt-3 rounded-lg bg-inset px-3 py-2 text-[12px] text-ink-secondary">{t("botPanel.skills.empty")}</div>
+          <div className="mt-3"><PaneEmpty>{t("botPanel.skills.empty")}</PaneEmpty></div>
         ) : (
           <div className="mt-3 divide-y divide-hairline/40 overflow-hidden rounded-lg border border-hairline/40">
             {skills.map((skill) => (
@@ -511,7 +506,6 @@ export function SkillsSection({ bot }: { bot: Bot }) {
                       </span>
                     )}
                     <div className="mt-0.5 line-clamp-2 text-[11.5px] text-ink-secondary">{skill.description}</div>
-                    <div className="mt-0.5 text-[10.5px] text-ink-secondary">{t("botPanel.skills.whenRelevant")}</div>
                   </button>
                   {skillWrites && (
                     <>
@@ -547,7 +541,9 @@ export function SkillsSection({ bot }: { bot: Bot }) {
           </div>
         )}
         {error && <div role="alert" className="mt-2 text-[12px] text-danger">{error}</div>}
-      </div>
+      </PaneSection>
+
+      {skillWrites && <WriteCommandCard bot={bot} taken={skills.map((skill) => skill.name)} onSaved={() => void refresh()} />}
 
       {skillWrites && <OrgSkillsCard bot={bot} onAdded={() => void refresh()} />}
 

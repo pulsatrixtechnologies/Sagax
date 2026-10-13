@@ -29,7 +29,7 @@ vi.mock("../DesktopCapabilities", () => ({
 const { AccessSection } = await import("./AccessSection");
 
 // WorkingFolder (moved into this file) reads window.ogb?.pickFolder directly
-// at render time, same "node" environment gap as above — stub per test, the
+// at render time, same "node" environment gap as above: stub per test, the
 // way desktop.test.ts and EngineUpdateNotice.test.ts do.
 beforeEach(() => { vi.stubGlobal("window", {}); fixture.dispatch.mockReset(); fixture.mcpError = false; fixture.servers = null; fixture.config = null; fixture.organization = false; });
 afterEach(() => vi.unstubAllGlobals());
@@ -185,7 +185,7 @@ describe("AccessSection always-allowed list", () => {
 
   it("shows a placeholder when nothing is standing yet", () => {
     const markup = render(makeBot());
-    expect(markup).toContain("Nothing standing yet.");
+    expect(markup).toContain("Nothing allowed yet.");
   });
 
   it("lists each always-allowed entry with a Remove button", () => {

@@ -2,7 +2,7 @@ import { Children, createElement, isValidElement, type EffectCallback, type Reac
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const fixture = vi.hoisted(() => ({ effects: [] as EffectCallback[], dispatch: vi.fn(), api: vi.fn(), create: vi.fn(), ready: false, hook: 0, admin: false, state: {} as Record<string, unknown> }));
+const fixture = vi.hoisted(() => ({ effects: [] as EffectCallback[], dispatch: vi.fn(), api: vi.fn(), create: vi.fn(), setDraft: vi.fn(), ready: false, hook: 0, admin: false, state: {} as Record<string, unknown> }));
 vi.mock("@/lib/use-owner-or-admin", () => ({ useOwnerOrAdmin: () => fixture.admin }));
 vi.mock("./DesktopCapabilities", () => ({ useDesktopCapabilities: () => ({ capabilities: {} }) }));
 vi.mock("react", async importOriginal => {
@@ -14,6 +14,7 @@ vi.mock("react", async importOriginal => {
       const draft = state[0] as { bot: { name: string }; patch: (patch: { name: string }) => void };
       if (draft.bot.name !== "Fixture") draft.patch({ name: "Fixture" });
     }
+    if (index === 1) return [state[0], fixture.setDraft];
     return fixture.ready && index === 3 ? [true, state[1]] : state;
   } };
 });
@@ -24,7 +25,7 @@ vi.mock("@/state/store", async importOriginal => {
   const store = await importOriginal<typeof import("@/state/store")>();
   return { ...store, api: fixture.api, BotEditorStore: () => null, useStore: () => ({ state: { ...store.initialState, ...fixture.state }, dispatch: fixture.dispatch }) };
 });
-import { LocalNewBotDialog as NewBotDialog, BotsReadOnlyDialog, CompanionNewBotDialog, DefaultBotSettings, NewBotDialog as RoutedNewBotDialog } from "./NewBotDialog";
+import { LocalNewBotDialog as NewBotDialog, BotsReadOnlyDialog, CompanionNewBotDialog, DefaultBotSettings, NewBotDialog as RoutedNewBotDialog, newBotStartMode } from "./NewBotDialog";
 
 type Node = ReactElement<{ children?: ReactNode; role?: string; "aria-label"?: string; onClick?: () => void; onMouseDown?: (event: unknown) => void; onKeyDown?: (event: KeyboardEvent<HTMLDivElement>) => void; disabled?: boolean }>;
 function nodes(value: ReactNode): Node[] {
@@ -40,7 +41,7 @@ function render(defaultsMode = false, onCreated?: () => void | Promise<void>) {
 }
 beforeEach(() => {
   fixture.effects = []; fixture.dispatch.mockReset(); fixture.api.mockReset();
-  fixture.ready = false; fixture.admin = false; fixture.create.mockReset(); fixture.state = {};
+  fixture.ready = false; fixture.admin = false; fixture.create.mockReset(); fixture.setDraft.mockReset(); fixture.state = {};
   fixture.api.mockReturnValue(new Promise(() => {}));
 });
 afterEach(() => vi.unstubAllGlobals());
@@ -114,6 +115,27 @@ describe("bot draft dialog", () => {
     expect(fixture.dispatch).not.toHaveBeenCalled();
     const submit = result.nodes.find(node => node.type === "button" && node.props.disabled)!;
     expect(submit.props.disabled).toBe(true);
+  });
+
+  it.each([undefined, null, { instanceId: "", model: "" }])("fills an unselected saved default from the available model (%j)", async selection => {
+    const available = { instanceId: "openrouter", model: "fixture-model" };
+    fixture.api.mockResolvedValue({ defaults: { profile: { modelSelection: selection }, memory: {}, skills: [], routines: [] }, modelSelection: available, suggestedName: "Fixture" });
+    render();
+    fixture.effects[0]();
+    await vi.waitFor(() => expect(fixture.setDraft).toHaveBeenCalledOnce());
+    expect(fixture.setDraft.mock.calls[0]![0].bot.modelSelection).toEqual(available);
+  });
+
+  it.each([
+    { instanceId: "claude", model: "chosen-model" },
+    { instanceId: "claude", model: "" },
+    { instanceId: "", model: "chosen-model" },
+  ])("preserves an intentional saved model choice (%j)", async selection => {
+    fixture.api.mockResolvedValue({ defaults: { profile: { modelSelection: selection }, memory: {}, skills: [], routines: [] }, modelSelection: { instanceId: "openrouter", model: "fixture-model" }, suggestedName: "Fixture" });
+    render();
+    fixture.effects[0]();
+    await vi.waitFor(() => expect(fixture.setDraft).toHaveBeenCalledOnce());
+    expect(fixture.setDraft.mock.calls[0]![0].bot.modelSelection).toEqual(selection);
   });
 
   it("can cancel a loading draft without creating or deleting a bot", () => {
@@ -204,5 +226,16 @@ describe("bot draft dialog", () => {
       expect(onClose).toHaveBeenCalledOnce();
       expect(renderToStaticMarkup(createElement(DefaultBotSettings))).toContain("data-bots-read-only");
     });
+  });
+});
+
+describe("newBotStartMode (2026-10-11)", () => {
+  it("starts on the template's level, else the server's, else Approve for me; This computer keeps its own warning", () => {
+    expect(newBotStartMode({ approvalMode: "auto" }, "ask")).toBe("auto");
+    expect(newBotStartMode({}, "ask")).toBe("ask");
+    expect(newBotStartMode({}, "auto")).toBe("auto");
+    // an older server that sends no level
+    expect(newBotStartMode({}, undefined)).toBe("auto");
+    expect(newBotStartMode({ computer: "local" }, "auto")).toBeUndefined();
   });
 });

@@ -1,0 +1,19 @@
+# Ingress from the GOX VM. 192.0.2.10/32 is TEST-NET-1 and matches nothing.
+# Replace it with the VM's subnet in the change record before apply.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: sagax-sandboxd-from-gox
+  namespace: sagax-sandboxes
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: sagax-sandboxd
+  policyTypes: ["Ingress"]
+  ingress:
+    - from:
+        - ipBlock:
+            cidr: 192.0.2.10/32
+      ports:
+        - protocol: TCP
+          port: 8791

@@ -1,0 +1,132 @@
+# Portable defaults. Azure-specific storage and admin settings live in
+# values-azure.yaml. The day/night schedule matches deploy/k8s/tofu/core.
+nameOverride: ""
+
+sandboxNamespace: sagax-sandboxes
+systemNamespace: sagax-sandbox-system
+
+# Matches server/user-sandbox-spec.ts. One environment per person.
+sandbox:
+  instance: default
+  maxRunning: 8
+  memory: 1536Mi
+  cpu: "1"
+  pids: 512
+  tmp: 512Mi
+  workspace: 2Gi
+  uid: 1000
+  workspaceMount: /workspace
+  image: ghcr.io/pulsatrixtechnologies/sagax-sandbox:0.1.0
+
+quota:
+  pods: "8"
+  requestsCpu: "8"
+  requestsMemory: 12Gi
+  requestsStorage: 16Gi
+  persistentVolumeClaims: "8"
+
+# Encryption at rest is mandatory. The default provisioner is Longhorn,
+# which k3s on Proxmox uses. Adapters override the provisioner.
+storage:
+  className: sagax-sandbox-workspace
+  encrypted: true
+  provisioner: driver.longhorn.io
+  reclaimPolicy: Retain
+  volumeBindingMode: WaitForFirstConsumer
+  allowExpansion: true
+  parameters:
+    encrypted: "true"
+    numberOfReplicas: "2"
+
+# Destinations a sandbox may never reach. Same list as DEFAULT_EGRESS_DENY
+# in server/user-sandbox-spec.ts. Public internet stays open.
+egressDeny:
+  - 0.0.0.0/8
+  - 10.0.0.0/8
+  - 100.64.0.0/10
+  - 127.0.0.0/8
+  - 168.63.129.16/32
+  - 169.254.0.0/16
+  - 172.16.0.0/12
+  - 192.0.0.0/24
+  - 192.168.0.0/16
+  - 198.18.0.0/15
+  - 224.0.0.0/4
+  - 240.0.0.0/4
+
+dns:
+  namespace: kube-system
+  podLabels:
+    k8s-app: kube-dns
+  port: 53
+
+# Sagax (pulsabot) calls the provisioner. It stays off this cluster in the
+# option-3 layout, so allow its network as well as an in-cluster namespace.
+sagax:
+  namespace: sagax
+  port: 8791
+  cidrs: []
+
+# Kubernetes API the provisioner is allowed to reach. k3s default service IP.
+apiServer:
+  cidrs:
+    - 10.43.0.1/32
+  port: 443
+
+# The Deployment is off until sagax-sandboxd grows a Kubernetes adapter.
+# The ServiceAccount and Role are created either way.
+provisioner:
+  enabled: false
+  image: ghcr.io/pulsatrixtechnologies/sagax:0.1.0
+  port: 8791
+
+# One warm worker from 07:00 to 19:00 America/Toronto, none at night.
+# The sandbox pool's autoscaler min is 0; this pod is what holds a node.
+warmNode:
+  enabled: true
+  replicas: 0
+  timezone: America/Toronto
+  scaleUp: "0 7 * * *"
+  scaleDown: "0 19 * * *"
+  pauseImage: registry.k8s.io/pause@sha256:ee6521f290b2168b6e0935a181d4cff9be1ac3f505666ef0e3c98fae8199917a
+  kubectlImage: registry.k8s.io/kubectl@sha256:b48ea9c7a5306ad509987009af385561476e4a4c4c75de99bd4b4efbe4d66332
+  nodeSelector:
+    sagax.io/pool: sandboxes
+  tolerationKey: sagax.io/sandboxes
+  tolerationValue: "true"
+
+# Named people only. Off on AKS, where Entra ID and Azure RBAC are the admin
+# path. On for k3s (values-k3s.yaml). Never a User subject, never system:masters.
+admin:
+  kubernetesRbac:
+    enabled: false
+  group: sagax-admins
+
+admission:
+  validating: true
+  kyverno:
+    enabled: true
+    failureAction: Enforce
+    issuer: https://token.actions.githubusercontent.com
+    subject: https://github.com/pulsatrixtechnologies/sagax/*
+  # Digest-pinned images that are allowed beside signed Pulsatrix images.
+  allowedImages:
+    - registry.k8s.io/pause@sha256:ee6521f290b2168b6e0935a181d4cff9be1ac3f505666ef0e3c98fae8199917a
+    - registry.k8s.io/kubectl@sha256:b48ea9c7a5306ad509987009af385561476e4a4c4c75de99bd4b4efbe4d66332
+
+# Velero Schedule. Credentials stay in a Secret this chart does not create.
+# destination.provider must name a different operator than productionProvider.
+backup:
+  enabled: true
+  veleroNamespace: velero
+  productionProvider: k3s
+  schedule: "0 3 * * *"
+  ttl: 720h
+  destination:
+    provider: minio
+    veleroProvider: aws
+    bucket: sagax-sandbox-backups
+    endpoint: https://s3.example.invalid
+    region: us-east-1
+    credentialSecret: sagax-backup
+    credentialKey: cloud

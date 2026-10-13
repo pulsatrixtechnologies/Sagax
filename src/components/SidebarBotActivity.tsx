@@ -229,9 +229,14 @@ export function PinnedThreadRows({ entries, now, onJump, onUnpin }: { entries: A
 }
 
 /** The escape hatch for other ongoing conversations when their tree is hidden.
- * These are selection-only buttons: no create, rename, move, or delete menu. */
-export function SidebarBotActivity({ bot, density, pendingQueued, dispatch }: { bot: Bot; density: SidebarDensity; pendingQueued: AppState["pendingQueued"]; dispatch: Dispatch<Action> }) {
-  const tasks = threadsWhenTreeHidden(bot, pendingQueued).filter((task) => task.threadId !== bot.threadId);
+ * These are selection-only buttons: no create, rename, move, or delete menu.
+ * `rowThreadId` is the thread the bot's own row stands for, so it gets no
+ * row here: the one on screen while the bot is, else the one its row opens
+ * (botOpensTo). With threads hidden that is the bot's main thread, and the
+ * thread the bot was left on gets a row like any sibling: a reply landing
+ * there must not wait for the bot to be opened first. */
+export function SidebarBotActivity({ bot, rowThreadId, density, pendingQueued, dispatch }: { bot: Bot; rowThreadId: string; density: SidebarDensity; pendingQueued: AppState["pendingQueued"]; dispatch: Dispatch<Action> }) {
+  const tasks = threadsWhenTreeHidden(bot, pendingQueued).filter((task) => task.threadId !== rowThreadId);
   if (!tasks.length) return null;
   const iconOnly = density === "icons";
   return <div data-sidebar-bot-activity={bot.id} className={cn("mb-1 space-y-0.5", !iconOnly && "ml-6")}>

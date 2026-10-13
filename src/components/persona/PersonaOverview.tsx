@@ -78,7 +78,7 @@ function ActionButton({ icon, label, onClick, disabled, reason, id }: {
         {icon}
         {label}
       </button>
-      {disabled && reason && <span data-persona-action-reason={id} className="mt-1 max-w-[220px] text-[11.5px] leading-4 text-ink-secondary">{reason}</span>}
+      {disabled && reason && <span data-persona-action-reason={id} className="sr-only">{reason}</span>}
     </div>
   );
 }
@@ -197,7 +197,7 @@ export function PersonaOverview({ bot, derived, onClose }: {
       </dl>
 
       <div>
-        <div className="mb-2 text-[13px] text-ink-secondary">{t("persona.overview.actions")}</div>
+        <div className="sr-only">{t("persona.overview.actions")}</div>
         <div className="flex flex-wrap items-start gap-2">
           <ActionButton
             id="rename"

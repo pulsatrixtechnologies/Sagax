@@ -7,7 +7,9 @@
 // rules decided here:
 //
 // - the organization allows it (Settings > Organization, admin only,
-//   `organization.allowFullAccess`, on by default);
+//   `organization.allowFullAccess`). Off until an admin turns it on
+//   (2026-10-11); an organization that already used Full before that keeps
+//   it, written as an explicit `true` once (orgFullAccessGrandfathered);
 // - the caller is a person signed in (a session with a principal), and is
 //   the bot's owner: a bot's own shell, a service caller or loopback never
 //   is, so a bot cannot raise itself;
@@ -49,9 +51,44 @@ export const FULL_ACCESS_CONFIRM_REQUIRED: FullAccessRefusal = {
   code: "full_access_confirm_required",
 };
 
-/** The organization's policy: allowed unless an admin turned it off. */
+/** The organization's policy: allowed only once an admin turned it on
+ * (2026-10-11; it was on unless turned off before). */
 export function orgFullAccessAllowed(organization: { allowFullAccess?: unknown } | undefined): boolean {
-  return organization?.allowFullAccess !== false;
+  return organization?.allowFullAccess === true;
+}
+
+/** The marker of the one-time pass below, in the data directory. */
+export const ORG_FULL_ACCESS_DEFAULT_MARKER = "org-full-access-default.v1";
+
+interface FullAccessHolder {
+  approvalMode?: unknown;
+  fullAccessConsent?: unknown;
+  tasks?: Array<{ approvalMode?: unknown }>;
+}
+
+/** 2026-10-11, once per data directory of an organization server: Full
+ * access used to be allowed unless an admin turned it off, and is now off
+ * until one turns it on. An organization that never saved the setting and
+ * whose bots already run Full (a bot or a thread on Full, with its owner's
+ * consent) keeps it: the caller writes `allowFullAccess: true`. Any saved
+ * value, true or false, is left alone. */
+export function orgFullAccessGrandfathered(
+  organization: { allowFullAccess?: unknown } | undefined,
+  bots: readonly FullAccessHolder[],
+): boolean {
+  if (organization?.allowFullAccess !== undefined) return false;
+  return bots.some((bot) => parseFullAccessConsent(bot.fullAccessConsent) !== null &&
+    (bot.approvalMode === "full" || (bot.tasks ?? []).some((task) => task.approvalMode === "full")));
+}
+
+/** 2026-10-11: the approval level a new bot starts on, on an organization
+ * server. The policy is `defaults.approvalMode` (the console's New bot
+ * default, `newBotDefaults.profile.approvalMode`): Approve for me when it
+ * says so, otherwise Ask, also when no policy was ever saved. Full and
+ * Custom need the owner's own confirmation for that bot, which a bot that
+ * does not exist yet cannot have, so they start on Ask too. */
+export function orgNewBotApprovalMode(policy: unknown): "ask" | "auto" {
+  return policy === "auto" ? "auto" : "ask";
 }
 
 export function parseFullAccessConsent(value: unknown): FullAccessConsent | null {

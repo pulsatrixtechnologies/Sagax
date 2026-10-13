@@ -165,6 +165,22 @@ it("stamps ClockPlayer firstAudio 15 ms after TTS first byte when the player mis
   expect(silent.firstAudioAt).toBeUndefined();
 });
 
+it("does not stamp firstAudio from held speculative TTS before the endpoint", () => {
+  const held = { ttsFirstByteAt: 1000, firstSentenceAt: 900, earlyStart: true, stoppedAt: 500, endedAt: 500 };
+  stampClockPlayback(held);
+  expect(held.firstAudioAt).toBeUndefined();
+  const confirmed = { ttsFirstByteAt: 1000, firstSentenceAt: 900, earlyStart: true, stoppedAt: 500, endedAt: 800 };
+  stampClockPlayback(confirmed);
+  expect(confirmed.firstAudioAt).toBe(1015);
+});
+
+it("does not keep firstAudio across a new utterance id", () => {
+  const prev = { utteranceId: "utt-1", firstAudioAt: 1015, ttsFirstByteAt: 1000 };
+  const next = mergeBenchMetrics(prev, { utteranceId: "utt-2", ttsFirstByteAt: 2000, firstSentenceAt: 1900 });
+  expect(next.firstAudioAt).toBeUndefined();
+  expect(mergeBenchMetrics(prev, { utteranceId: "utt-1", ttsFirstByteAt: 1000 }).firstAudioAt).toBe(1015);
+});
+
 it("ClockPlayer ignores a scheduled sentence start after cancel", async () => {
   const player = new ClockPlayer();
   const started: string[] = [];

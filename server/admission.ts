@@ -20,7 +20,8 @@ export type AdmissionSurface =
   | "guarded" // guarded external send: refuse when anything is busy
   | "unattended" // routines/webhooks: busy means a missed run
   | "peer" // delegations and resume drains: slot-aware admission
-  | "opened-thread"; // a bot's self-opened thread: queue behind a slot
+  | "opened-thread" // a bot's self-opened thread: queue behind a slot
+  | "incident"; // a report to the Chief's incidents thread: never refused
 
 /** The 1:1 queue's reason vocabulary, shared by the receipt, the chip, and
  * the position lookup. A reasonless park is a busy-thread correction. */
@@ -125,6 +126,8 @@ export interface AdmissionState {
   parksBehindCoordination?: boolean;
   /** The room is mid-turn (its sends always queue; they never steer). */
   roomWorking?: boolean;
+  /** The room thread itself is mid-turn. */
+  threadWorking?: boolean;
 }
 
 export type AdmissionDecision =
@@ -160,7 +163,7 @@ export function admit(
     case "room":
       // Room sends never auto-steer; the queue is the policy. Human override
       // is the head-only manual steer below.
-      return state.roomWorking ? { action: "queue" } : { action: "start" };
+      return (state.threadWorking ?? state.roomWorking) ? { action: "queue" } : { action: "start" };
     case "room-steer": {
       if (!message.speakerPresent || message.engineCanSteer !== true) {
         // An incapable room keeps its queue, exactly like an incapable 1:1
@@ -201,6 +204,18 @@ export function admit(
       // (peerAsk, unattended) survives the wait in the queue payload.
       if (state.atCapacity || state.groupTurn) {
         return { action: "queue", reason: state.atCapacity ? "capacity" : "group-turn" };
+      }
+      return { action: "start" };
+    }
+    case "incident": {
+      // The Chief's one incidents thread is reused, so the previous report
+      // can still be running there. A report waits for that thread, a slot
+      // or a room turn and is never refused: a refused report was a lost
+      // one. It never parks behind work the Chief handed on (#1194 is about
+      // one conversation's follow-ups; reports are independent) and never
+      // steers: reports that waited together are one turn of their own.
+      if (state.atCapacity || state.threadBusy || state.groupTurn) {
+        return { action: "queue", reason: state.atCapacity ? "capacity" : state.groupTurn ? "group-turn" : undefined };
       }
       return { action: "start" };
     }

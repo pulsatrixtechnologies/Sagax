@@ -9,7 +9,8 @@
 // - Sagax.exe must match the package architecture.
 // - Every other .exe/.dll must be a PE image (never Mach-O or ELF). In the
 //   arm64 package, x64 and x86 images are allowed only where we knowingly ship
-//   them for emulation (cloudflared, the browser engine, Android tools).
+//   them for emulation (cloudflared, the browser engine, Android tools), plus
+//   electron-builder's NSIS elevate.exe, which only exists as x86.
 //
 // Usage: node scripts/verify-win-natives.mjs <app dir> <x64|arm64>
 import { open, readdir } from "node:fs/promises";
@@ -21,6 +22,10 @@ const MACHINE_NAME = new Map(Object.entries(PE_MACHINE).map(([name, value]) => [
 
 /** Resource folders that may hold x64/x86 images in the arm64 package. */
 export const EMULATED_IN_ARM64 = Object.freeze(["cloudflared", "browser-engine", "android-platform-tools"]);
+
+/** Single files that may be x86 in the arm64 package: electron-builder copies
+ *  its NSIS elevate.exe (x86 only, no arm64 build exists) into resources/. */
+export const IA32_FILES_IN_ARM64 = Object.freeze(["resources/elevate.exe"]);
 
 /** Names the format of a binary header, for error messages. */
 export function binaryFormat(bytes) {
@@ -79,8 +84,9 @@ export async function verifyWindowsNatives(appDir, arch, { readHeaderImpl = read
     const resourceDir = rel.startsWith("resources/") ? rel.split("/")[1] : null;
     const emulated = !strict && arch === "arm64" && [PE_MACHINE.x64, PE_MACHINE.ia32].includes(machine) &&
       EMULATED_IN_ARM64.includes(resourceDir);
+    const x86Helper = !strict && arch === "arm64" && machine === PE_MACHINE.ia32 && IA32_FILES_IN_ARM64.includes(rel);
     const x86OnX64 = !strict && arch === "x64" && machine === PE_MACHINE.ia32;
-    if (emulated || x86OnX64) continue;
+    if (emulated || x86OnX64 || x86Helper) continue;
     problems.push(`${rel}: built for ${MACHINE_NAME.get(machine) ?? `machine 0x${machine.toString(16)}`}, package is ${arch}`);
   }
   return { problems, addons };

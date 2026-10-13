@@ -51,12 +51,18 @@ release.
 - **Hosted or shared workspaces.** On a hosted or shared workspace (service
   loopback trust, see `docs/self-hosting.md`) a session-less loopback caller,
   which includes every bot's shell, may use only the routes in `SERVICE_ALLOW`
-  (`server/request-auth.ts`). Reaching an admin route or approving a card that
-  way is a vulnerability. Known and documented, not yet closed: that caller
-  keeps the Slack worker's guarded routes, so a bot's shell can post into an
-  existing Full-access thread, or open one while shared Full access is on, and
-  get Full-access work done without a card. A worker-only relay token is the
-  planned fix.
+  (`server/request-auth.ts`): health, who-am-I, edition, brand, and the bots'
+  capability routes. The worker data plane (the bot list, messages,
+  attachments, new threads, the guarded send, the request fence, a queued
+  line, a card decline) answers only when the request also presents the
+  worker relay token (`SAGAX_WORKER_RELAY_TOKEN`, header
+  `x-sagax-worker-relay`). The server reads that value once at start and
+  removes it from its environment, so a bot's shell does not inherit it. No
+  API returns the token and no log line contains it. Reaching an admin route,
+  or using the worker routes without that token, is a vulnerability. The
+  hosted worker that delivers chat messages lives in a separate service and
+  must send the same header in the same change window. Until both sides
+  carry the token, those routes stay closed.
 - **Organization mode with Perspicax.** Sign-in, roles, and admin scope on an
   organization server; one person reading or acting on another person's bots,
   threads, credentials or private threads; a routine that does not act in its

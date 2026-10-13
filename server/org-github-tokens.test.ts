@@ -60,7 +60,7 @@ describe("org github access tokens", () => {
     const envelope = JSON.parse(cipher.toString("utf8")) as { v: number; data: string };
     expect(envelope.v).toBe(1);
     expect(Buffer.from(envelope.data, "base64").includes(Buffer.from(ALPHA))).toBe(false);
-    expect(statSync(file).mode & 0o777).toBe(0o600);
+    if (process.platform !== "win32") expect(statSync(file).mode & 0o777).toBe(0o600);
 
     const kept = store.change({ op: "remove", id: bravo!.id });
     expect(kept.map((entry) => entry.label)).toEqual(["Alpha org", "Charlie org"]);

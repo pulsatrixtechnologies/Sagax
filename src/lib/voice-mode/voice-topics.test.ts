@@ -86,14 +86,30 @@ describe("voice topics", () => {
     expect(callHasBackgroundWork([{ kind: "text" }])).toBe(false);
   });
 
-  it("a new topic parks when an own-turn tool is still in flight, or a parallel card is live", () => {
-    expect(callHasParkableWork([{ kind: "activity", tool: { name: "Bash" } }])).toBe(true);
+  it("a new topic parks only while the call turn's own tool is in flight", () => {
+    expect(callHasParkableWork([{ role: "user" }, { kind: "activity", tool: { name: "Bash" } }])).toBe(true);
     expect(callHasParkableWork([{ kind: "activity", tool: { name: "Bash", ok: false } }])).toBe(false);
     expect(callHasParkableWork([{ kind: "activity", tool: { name: "Bash", ok: true } }])).toBe(false);
     expect(callHasParkableWork([{ kind: "text" }])).toBe(false);
-    expect(callHasParkableWork([{ parallelTask: { role: "card", state: "running" } }])).toBe(true);
-    expect(callHasParkableWork([{ parallelTask: { role: "card", state: "queued" } }])).toBe(true);
-    expect(callHasParkableWork([{ parallelTask: { role: "card", state: "done" } }])).toBe(false);
+  });
+
+  it("a live parallel card does not park the call turn: replacing it never touches that task", () => {
+    expect(callHasParkableWork([{ parallelTask: { role: "card", state: "running" } }])).toBe(false);
+    expect(callHasParkableWork([{ parallelTask: { role: "card", state: "queued" } }])).toBe(false);
+  });
+
+  it("a tool chip an earlier, replaced utterance left unsettled does not park the next one", () => {
+    expect(callHasParkableWork([
+      { role: "user" },
+      { kind: "activity", tool: { name: "Bash" } },
+      { role: "user" },
+    ])).toBe(false);
+    // a parallel request line is not the call turn's own utterance
+    expect(callHasParkableWork([
+      { role: "user" },
+      { kind: "activity", tool: { name: "Bash" } },
+      { role: "user", parallelTask: { role: "request" } },
+    ])).toBe(true);
   });
 
   it("a result for an older topic is announced; the latest is spoken in full", () => {

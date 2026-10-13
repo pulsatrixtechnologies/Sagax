@@ -1,8 +1,8 @@
-// Engines settings — per-instance CLI path override. One "Set CLI…" button
+// Engines settings: per-instance CLI path override. One "Set CLI…" button
 // per engine reveals a picker: a "detected" dropdown of every binary the
 // server found on PATH, plus a manual path input. Saving first probes the
 // binary (`<cli> --version`, same PATH a real turn uses); a failed probe
-// asks before registering — the classic miss is a path the terminal sees
+// asks before registering: the classic miss is a path the terminal sees
 // but this GUI app can't.
 import { useEffect, useRef, useState } from "react";
 import { Check, ChevronDown, Loader2, RefreshCw, TriangleAlert } from "lucide-react";
@@ -14,7 +14,7 @@ import { useMenuMotion } from "./MenuMotion";
 import { t } from "@/lib/i18n";
 import { ApiKeyEngineManage, EngineSetup, EngineUpdateNotice, EngineWarningNotice, isApiKeyEngine } from "./EngineSetup";
 import { AddClaudeAccount, ClaudeAccountSettings } from "./ClaudeAccountSettings";
-import { AddChatGptAccount, CodexAccountSettings } from "./CodexAccountSettings";
+import { AddProviderAccount, CodexAccountSettings } from "./CodexAccountSettings";
 import { DEVICE_SIGN_IN_COPY, deviceSignInProvider } from "./DeviceSignIn";
 import { AntigravityFreeSpace } from "./AntigravityFreeSpace";
 import { ManageMyKeysLink } from "./settings/MyEngines";
@@ -24,6 +24,8 @@ import { reloadMyEngines, useMyEngines, usePerspicaxOrg, type MyEngine } from "@
 import { viewerCan, viewerIsOrgMember } from "@/lib/viewer";
 import { connectedAppsEnabled } from "@/lib/feature-flags";
 import { OrgHostToolsNote, orgRefusesEngine } from "./OrgHostToolsNote";
+import { HelpTip } from "./SettingsPrimitives";
+import { ENGINE_KEY_ROWS, PROVIDER_KEY_ROWS, ProviderKeyDialog, ProviderKeyRows } from "./settings/ProviderKeys";
 
 interface ProbeResult {
   ok: boolean;
@@ -41,7 +43,7 @@ function CustomPicker({ instance, cliDefault, onClose, onSaved }: {
   // `selected` starts EMPTY, never at instance.cli: a wrapper override
   // ("/ag claude agp") has no matching <option>, and a select whose value
   // points at a missing option renders the placeholder while still holding
-  // the ghost value — the form would look empty yet refuse to save.
+  // the ghost value: the form would look empty yet refuse to save.
   const [selected, setSelected] = useState<string>("");
   const [manual, setManual] = useState<string>(
     // the current override rides the manual input unless it is exactly a
@@ -90,7 +92,7 @@ function CustomPicker({ instance, cliDefault, onClose, onSaved }: {
       method: "PATCH",
       body: JSON.stringify({ cli: committed }),
     })
-      // onSaved (refreshInstances) failing must NOT read as "not saved" —
+      // onSaved (refreshInstances) failing must NOT read as "not saved":
       // the PATCH already returned 200. Close regardless; the global banner
       // from refreshInstances already reports the refresh failure.
       .then(() => Promise.resolve(onSaved()).catch(() => {}))
@@ -145,7 +147,7 @@ function CustomPicker({ instance, cliDefault, onClose, onSaved }: {
         onKeyDown={(e) => {
           if (e.key !== "Enter") return;
           e.preventDefault();
-          if (!value || !dirty) return; // nothing to save — same hint the disabled button gives
+          if (!value || !dirty) return; // nothing to save: same hint the disabled button gives
           save();
         }}
         placeholder={candidates?.length ? t("engines.manualPath") : "/absolute/path/to/cli"}
@@ -229,7 +231,7 @@ function EngineRow({ instance, mine, member = false, issuer = "" }: { instance: 
   const wasOpenFor = useRef<string | null>(null);
 
   // Close the picker when this instance's override changes to anything else
-  // — a save from this row, another tab, or the 5-min refresh. The picker
+  // (a save from this row, another tab, or the 5-min refresh. The picker
   // initialized its fields from the OLD value and never re-syncs, so staying
   // open would show stale state.
   useEffect(() => {
@@ -307,16 +309,24 @@ function EngineRow({ instance, mine, member = false, issuer = "" }: { instance: 
           ? <CodexAccountSettings instance={instance} />
           : instance.authentication?.method === "device-code"
           ? <p className="flex items-center gap-1.5 text-[12px] text-success"><Check size={13} />{t(DEVICE_SIGN_IN_COPY[deviceSignInProvider(instance.driverKind)].connectedAccount)}</p>
+          : instance.authentication?.method === "open-link"
+          ? <p className="flex items-center gap-1.5 text-[12px] text-success"><Check size={13} />{t(DEVICE_SIGN_IN_COPY.cursor.connectedAccount)}</p>
           : instance.authentication?.method === "paste-code" && !instance.claudeAccount && (
             <p className="flex items-center gap-1.5 text-[12px] text-success"><Check size={13} />{t("engineSetup.claude.connectedAccount")}</p>
           )
       )}
       {instance.freeUpSpace && <AntigravityFreeSpace instance={instance} />}
+      {!member && instance.driverKind === "antigravityAgent" && (
+        <div className="mt-3 space-y-3">
+          {instance.snapshot.authenticated && <p className="break-words text-[12px] text-ink-secondary">{instance.snapshot.account?.email ?? t("engineSetup.antigravity.emailUnavailable")}</p>}
+          <AddProviderAccount antigravityInstanceId={instance.instanceId} />
+        </div>
+      )}
       {!member && instance.driverKind === "claudeAgent" && instance.access !== "custom" && (
         <div className="mt-3"><AddClaudeAccount /></div>
       )}
       {!member && instance.snapshot.chatgptPlan && !instance.snapshot.authenticationUnavailableReason && (
-        <div className="mt-3"><AddChatGptAccount /></div>
+        <div className="mt-3"><AddProviderAccount /></div>
       )}
       <details className="mt-4 border-t border-hairline/40 pt-3">
         <summary className="cursor-pointer rounded-md py-1 text-[12px] font-medium text-ink-secondary outline-none hover:text-ink focus-visible:ring-2 focus-visible:ring-accent">{t("engines.library.advanced")}</summary>
@@ -410,32 +420,44 @@ export function EnginesSettings() {
   const mineOf = (instance: InstanceInfo) => (org ? myEngines?.find((engine) => engine.instanceId === instance.instanceId) : undefined);
   const shown = org ? orgEngineRows(rows, myEngines).filter((instance) => !member || mineOf(instance)) : rows;
 
+  // Keys are an installation write: a member's own keys live in Perspicax.
+  const keys = !member && (typeof window === "undefined" || window.ogb?.remoteClient?.active !== true);
   return (
     <div className="flex min-w-0 flex-col gap-6 pb-2">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0 flex-1 basis-60">
-          <h1 className="text-[22px] font-semibold tracking-tight text-ink">{t("settings.engines.title")}</h1>
-          <p className="mt-2 max-w-lg text-[13px] leading-relaxed text-ink-secondary">{t(member ? "myEngines.memberIntro" : "engines.library.intro")}</p>
-        </div>
-        <div className="flex shrink-0 flex-wrap items-center gap-1">
-          {org && <ManageMyKeysLink issuer={org.org.identity.issuer} />}
-          {!member && <RefreshEngines />}
-        </div>
+      <div className="-mt-1 flex flex-wrap items-center justify-end gap-1">
+        {member && <p className="mr-auto text-[13px] text-ink-secondary">{t("myEngines.memberIntro")}</p>}
+        {org && <ManageMyKeysLink issuer={org.org.identity.issuer} />}
+        {!member && <RefreshEngines />}
       </div>
+      {/* Auto (docs/plans/2026-10-08-auto-model.md): one line, the detail behind its info button. */}
+      <section data-auto-model-explainer className="flex items-center gap-1.5">
+        <h2 className="text-[13px] font-medium text-ink">{t("model.auto.settings.title")}</h2>
+        <span className="text-[13px] text-ink-secondary">{t("model.auto.settings.short")}</span>
+        <HelpTip label={t("settings.moreAbout", { title: t("model.auto.settings.title") })}>{t("model.auto.settings.body")}</HelpTip>
+      </section>
       {/* The claude.ai connectors of the person's own Claude account live in
           Connected apps; while that experiment is off, their read-only
           status shows here, next to the Claude sign-in that brings them. */}
-      {/* Auto (docs/plans/2026-10-08-auto-model.md), in one paragraph. */}
-      <section data-auto-model-explainer className="max-w-2xl">
-        <h2 className="text-[13px] font-semibold text-ink">{t("model.auto.settings.title")}</h2>
-        <p className="mt-1 text-[12.5px] leading-relaxed text-ink-secondary">{t("model.auto.settings.body")}</p>
-      </section>
       {!connectedAppsEnabled(state.config) && <HarnessConnectorsSection placement="settings" />}
-      <EngineSections
-        instances={shown}
-        renderEngine={(instance) => <EngineRow instance={instance} mine={mineOf(instance)} member={member} issuer={org?.org.identity.issuer} />}
-        isReady={(instance) => { const mine = mineOf(instance); return mine ? mine.myTurns !== "none" : engineReady(instance); }}
-      />
+      {keys && (
+        <section className="flex flex-col gap-2" data-settings-card="engines.keys">
+          <h2 className="flex items-center gap-1.5 text-[13px] font-medium text-ink">
+            {t("providerKeys.title")}
+            <HelpTip label={t("settings.moreAbout", { title: t("providerKeys.title") })}>{t("providerKeys.help")}</HelpTip>
+          </h2>
+          <ProviderKeyRows rows={PROVIDER_KEY_ROWS} />
+          <ProviderKeyRows rows={ENGINE_KEY_ROWS} />
+          <ProviderKeyDialog />
+        </section>
+      )}
+      <section className="flex flex-col gap-2">
+        <h2 className="text-[13px] font-medium text-ink">{t("engines.title")}</h2>
+        <EngineSections
+          instances={shown}
+          renderEngine={(instance) => <EngineRow instance={instance} mine={mineOf(instance)} member={member} issuer={org?.org.identity.issuer} />}
+          isReady={(instance) => { const mine = mineOf(instance); return mine ? mine.myTurns !== "none" : engineReady(instance); }}
+        />
+      </section>
       {member && org && myEngines !== null && shown.length === 0 && (
         <p className="text-[13px] text-ink-secondary" data-member-no-engines>{t("myEngines.noneOnServer")}</p>
       )}

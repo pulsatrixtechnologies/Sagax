@@ -51,6 +51,10 @@ export interface CaptureTurn {
   /** False when another person of a shared workspace sent the message:
    * their facts may be kept, but never offered for the owner's About me. */
   owner?: boolean;
+  /** The finished turn this came from. A batch still waiting at shutdown is
+   * saved as these ids, never as text, and read back from the transcript at
+   * the next start (memory-upkeep.ts). */
+  turnId?: string;
 }
 
 const WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
@@ -208,6 +212,17 @@ export class CaptureBuffer {
       if (entry.timer) clearTimeout(entry.timer);
       this.pending.delete(threadId);
     }
+  }
+
+  /** Every waiting batch, without capturing it: shutdown saves them. */
+  drain(): CaptureBatch[] {
+    const batches: CaptureBatch[] = [];
+    for (const [threadId, entry] of Array.from(this.pending.entries())) {
+      if (entry.timer) clearTimeout(entry.timer);
+      this.pending.delete(threadId);
+      if (entry.turns.length) batches.push({ botId: entry.botId, threadId, turns: entry.turns });
+    }
+    return batches;
   }
 
   flushAll(): void {

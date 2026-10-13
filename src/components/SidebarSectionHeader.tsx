@@ -1,4 +1,3 @@
-import { ChevronRight } from "lucide-react";
 import type { DragEvent, KeyboardEvent, MouseEvent } from "react";
 
 import { cn } from "@/lib/cn";
@@ -12,6 +11,8 @@ export function SidebarSectionHeader({
   name,
   collapsed,
   attention,
+  count,
+  alert,
   onToggle,
   reorderable,
   dragging,
@@ -23,6 +24,9 @@ export function SidebarSectionHeader({
   name: string;
   collapsed: boolean;
   attention?: SidebarSectionAttention;
+  /** What the section holds, shown at the right while it is folded. */
+  count?: number;
+  alert?: boolean;
   onToggle?: () => void;
   reorderable: boolean;
   dragging: boolean;
@@ -67,6 +71,12 @@ export function SidebarSectionHeader({
         </span>
       )}
       {attentionLabel && <span className="sr-only">{attentionLabel}</span>}
+      {alert && (
+        <>
+          <span data-testid="section-alert" aria-hidden="true" className="size-2 shrink-0 rounded-full bg-danger" />
+          <span className="sr-only">{t("computer.routines.needsYou")}</span>
+        </>
+      )}
     </>
   );
 
@@ -96,17 +106,21 @@ export function SidebarSectionHeader({
                 ? t("sidebar.section.expand", { name })
                 : t("sidebar.section.collapse", { name })
           }
-          // Perspicax's group header: a small-capitals label, the section's
-          // attention marks, and a chevron that turns as the group opens
-          className="group/section flex h-[30px] w-full min-w-0 items-center gap-2 rounded-lg px-3 text-left text-sidebar-ink-secondary transition-colors hover:bg-sidebar-hover hover:text-sidebar-ink"
+          // The reference window's header: the name in sentence case (as
+          // upstream), 12px regular in the secondary ink, then the section's
+          // attention marks; no chevron (a click folds it, aria-expanded
+          // says which way), and while folded what it holds at the right
+          className="group/section flex h-7 w-full min-w-0 items-center gap-2 rounded-lg px-3 text-left text-sidebar-ink-secondary transition-colors hover:bg-sidebar-hover hover:text-sidebar-ink"
         >
-          <span className="sidebar-section-label truncate text-[11px] font-medium leading-4">{name}</span>
+          <span className="sidebar-section-label truncate text-[12px] font-normal leading-4">{name}</span>
           {marks}
-          <ChevronRight size={16} strokeWidth={2} className={cn("ml-auto shrink-0 transition-transform duration-200 motion-reduce:transition-none", !collapsed && "rotate-90")} aria-hidden="true" />
+          {collapsed && count !== undefined && count > 0 && (
+            <span data-section-count="" className="ml-auto shrink-0 text-[12px] leading-4 tabular-nums">{count}</span>
+          )}
         </button>
       ) : (
-        <div className="flex h-[30px] min-w-0 items-center gap-2 px-3">
-          <span className="sidebar-section-label truncate text-[11px] font-medium leading-4 text-sidebar-ink-secondary">{name}</span>
+        <div className="flex h-7 min-w-0 items-center gap-2 px-3">
+          <span className="sidebar-section-label truncate text-[12px] font-normal leading-4 text-sidebar-ink-secondary">{name}</span>
           {marks}
         </div>
       )}

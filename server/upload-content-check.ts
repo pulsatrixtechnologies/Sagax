@@ -87,12 +87,14 @@ export class UploadContentError extends Error {
 
 export type SniffMode = "off" | "warn" | "enforce";
 
-/** SAGAX_UPLOAD_SNIFF=off|warn|enforce. Default enforce; off under the test
- * runner, whose fixtures use placeholder bytes (this module has its own tests). */
+/** SAGAX_UPLOAD_SNIFF=off|warn|enforce. Default warn (observe and log only),
+ * so existing deployments are not broken by a false positive; set enforce once
+ * the logs are clean. Off under the test runner, whose fixtures use placeholder
+ * bytes (this module has its own tests). */
 export function sniffModeFromEnv(env: NodeJS.ProcessEnv = process.env): SniffMode {
   const value = env.SAGAX_UPLOAD_SNIFF?.trim().toLowerCase();
   if (value === "off" || value === "warn" || value === "enforce") return value;
-  return env.VITEST ? "off" : "enforce";
+  return env.VITEST ? "off" : "warn";
 }
 
 /** Throws when the bytes are an executable or do not match the declared mime. */

@@ -17,6 +17,13 @@ services:
     environment:
       SAGAX_SANDBOXD_URL: http://sagax-sandboxd:8791
       SAGAX_SANDBOXD_KEY_FILE: /run/sagax-sandboxd/key
+      # Empty until a canary. https only, with SAGAX_SANDBOXD_TLS_CA mounted
+      # on this service. SAGAX_SANDBOX_ROUTE=docker sends everyone back here.
+      SAGAX_SANDBOXD_K8S_URL: ${SAGAX_SANDBOXD_K8S_URL:-}
+      SAGAX_SANDBOXD_TLS_CA: ${SAGAX_SANDBOXD_TLS_CA:-}
+      SAGAX_SANDBOX_CANARY_PEOPLE: ${SAGAX_SANDBOX_CANARY_PEOPLE:-}
+      SAGAX_SANDBOX_CANARY_BOTS: ${SAGAX_SANDBOX_CANARY_BOTS:-}
+      SAGAX_SANDBOX_ROUTE: ${SAGAX_SANDBOX_ROUTE:-}
       SAGAX_SANDBOX_INSTANCE: ${SAGAX_SANDBOX_INSTANCE:-default}
       SAGAX_SANDBOX_DELETE_GRACE_HOURS: ${SAGAX_SANDBOX_DELETE_GRACE_HOURS:-72}
     volumes:
@@ -45,6 +52,9 @@ services:
       SAGAX_SANDBOXD_LISTEN: 0.0.0.0:8791
       SAGAX_SANDBOXD_KEY_FILE: /run/sagax-sandboxd/key
       SAGAX_SANDBOXD_DOCKER_SOCKET: /var/run/docker.sock
+      # This process stays on Docker. The Kubernetes provisioner is
+      # deploy/k8s/provisioner/ with SANDBOX_BACKEND=kubernetes.
+      SANDBOX_BACKEND: ${SANDBOX_BACKEND:-docker}
       SAGAX_SANDBOX_INSTANCE: ${SAGAX_SANDBOX_INSTANCE:-default}
       SAGAX_SANDBOX_IMAGE: ${SAGAX_SANDBOX_IMAGE:-sagax-sandbox:local}
       SAGAX_SANDBOX_RUNTIME: ${SAGAX_SANDBOX_RUNTIME:-}

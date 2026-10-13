@@ -165,7 +165,7 @@ reason (below). `NN` is the order in
 
 **Organization fixture** (`PARITY_ORG=1`, or `--org`:
 `node ios/parity/desktop/capture-desktop.mjs --org [--viewport WxH] [--only <regex>]`).
-`ios/parity/org-fixture.mjs` runs the server in organization mode (`OMB_IDENTITY=perspicax`)
+`ios/parity/org-fixture.mjs` runs the server in organization mode (`SAGAX_IDENTITY=perspicax`)
 against the repo's stub identity provider (`server/testing/fake-oidc-provider.ts`:
 discovery, JWKS with an ES256 key made at start, authorize, token, revoke, directory,
 token exchange; six placeholder people, two teams, three MCP profiles), signs in through

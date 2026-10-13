@@ -42,7 +42,6 @@ export type BotPatch = Partial<
     | "fallback"
     | "speakReplies"
     | "memoryEnabled"
-    | "backgroundReplies"
     | "voice"
     | "chiefOfStaff"
     | "managedSections"

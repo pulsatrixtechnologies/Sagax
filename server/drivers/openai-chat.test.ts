@@ -689,6 +689,51 @@ describe("createOpenAIChatRuntime refused tool calls", () => {
   });
 });
 
+describe("createOpenAIChatRuntime HTTP error text", () => {
+  // MOCA-228: an xAI account with no credits left answered with a raw,
+  // cut-off JSON envelope instead of the provider's own sentence.
+  const XAI_NO_CREDITS = "Your team 0000-fixture has either used all available credits or reached its monthly spending limit. To continue making API requests, please purchase more credits or raise your spending limit.";
+  const failure = async (status: number, body: string) => {
+    const fetchMock = vi.fn(async (url: string | URL) =>
+      String(url).endsWith("/chat/completions") ? new Response(body, { status }) : new Response("", { status: 404 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const instance = await GrokDriver.create({
+      instanceId: "xaiApi", displayName: "xAI", enabled: true,
+      config: GrokDriver.decodeConfig({ url: "https://xai.invalid/v1" }),
+      environment: { XAI_API_KEY: "fixture-key" },
+    });
+    const events: RuntimeEvent[] = [];
+    const stop = instance.adapter.onEvent((event) => events.push(event));
+    await instance.adapter.sendTurn({ threadId: "thread", text: "hi" });
+    await vi.waitFor(() => {
+      if (!events.some((event) => event.type === "turn.completed")) throw new Error("turn still running");
+    });
+    stop();
+    const error = events.find((event) => event.type === "runtime.error") as { message: string } | undefined;
+    const calls = fetchMock.mock.calls.filter(([url]) => String(url).endsWith("/chat/completions")).length;
+    return { message: error?.message, calls };
+  };
+
+  it("shows an out-of-credits account in the provider's own words, whole, and does not retry it", async () => {
+    const { message, calls } = await failure(402, JSON.stringify({
+      code: "The caller does not have permission to execute the specified operation",
+      error: XAI_NO_CREDITS,
+    }));
+    expect(message).toBe(`xAI HTTP 402: ${XAI_NO_CREDITS}`);
+    expect(calls).toBe(1);
+  });
+
+  it("reads an OpenAI-style error envelope's message", async () => {
+    const { message } = await failure(401, JSON.stringify({ error: { message: "Incorrect API key provided", code: "invalid_api_key" } }));
+    expect(message).toBe("xAI HTTP 401: Incorrect API key provided (invalid_api_key)");
+  });
+
+  it("keeps a body that is not a JSON error envelope as it was sent", async () => {
+    expect((await failure(400, "upstream rejected the request")).message).toBe("xAI HTTP 400: upstream rejected the request");
+    expect((await failure(400, JSON.stringify({ status: "rejected" }))).message).toBe('xAI HTTP 400: {"status":"rejected"}');
+  });
+});
+
 describe("createOpenAIChatRuntime rejected keys", () => {
   const create = (key: string) => OpenAICompatDriver.create({
     instanceId: "openaiCompat", displayName: "Other", enabled: true,
@@ -740,4 +785,36 @@ describe("createOpenAIChatRuntime rejected keys", () => {
     expect(await instance.snapshot()).toMatchObject({ state: "available", authenticated: true });
     await instance.dispose();
   });
+});
+
+describe("interruptTurn duplex cap", () => {
+  it("returns within DUPLEX_INTERRUPT_WAIT_MS when the stream hangs, and does not delete a newer turn", async () => {
+    const { DUPLEX_INTERRUPT_WAIT_MS } = await import("../voice-call-duplex.ts");
+    let completions = 0;
+    vi.stubGlobal("fetch", vi.fn(async (url: string | URL) => {
+      if (!String(url).endsWith("/chat/completions")) return new Response(JSON.stringify({ data: [] }), { status: 200 });
+      completions += 1;
+      if (completions === 1) return await new Promise<Response>(() => { /* hang past abort */ });
+      return sse(`data: ${JSON.stringify({ choices: [{ delta: { content: "next" }, finish_reason: "stop" }] })}\n\ndata: [DONE]\n\n`);
+    }));
+    const instance = await OpenAICompatDriver.create({
+      instanceId: "compat", displayName: "Compat", enabled: true,
+      config: OpenAICompatDriver.decodeConfig({ url: "https://api.example.test/v1", apiKeyEnv: "K", model: "fixture" }),
+      environment: { K: "secret" },
+    });
+    const events: RuntimeEvent[] = [];
+    instance.adapter.onEvent((event) => events.push(event));
+    await instance.adapter.sendTurn({ threadId: "thread", text: "first" });
+    await vi.waitFor(() => {
+      if (!events.some((event) => event.type === "turn.started")) throw new Error("waiting");
+    });
+    expect(instance.adapter.hasSession("thread")).toBe(true);
+    const t0 = Date.now();
+    await instance.adapter.interruptTurn("thread");
+    expect(Date.now() - t0).toBeLessThan(DUPLEX_INTERRUPT_WAIT_MS + 250);
+    expect(instance.adapter.hasSession("thread")).toBe(false);
+    await instance.adapter.sendTurn({ threadId: "thread", text: "second" });
+    expect(instance.adapter.hasSession("thread")).toBe(true);
+    await instance.dispose();
+  }, 15_000);
 });

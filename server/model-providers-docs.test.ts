@@ -9,7 +9,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { PROVIDER_CREDENTIAL_ENV, WORKSPACE_CREDENTIAL_ENV, stripWorkspaceCredentialEnv } from "./config.ts";
+import { OPENCODE_PROVIDER_ENV, PROVIDER_CREDENTIAL_ENV, WORKSPACE_CREDENTIAL_ENV, stripWorkspaceCredentialEnv } from "./config.ts";
 import { discoverOpenCodeModels, ensureOpenCodeInjectModel, resetOpenCodeModelCache } from "./drivers/acp/opencode-go.ts";
 import { readClaudeAuthSettings, readClaudeModelCatalog } from "./drivers/claude.ts";
 import { removeTempDir } from "./testing/cleanup.ts";
@@ -178,7 +178,7 @@ describe("OpenCode config file", () => {
 });
 
 describe("Keys exported on a server", () => {
-  const exported = ["OPENROUTER_API_KEY", "FIREWORKS_API_KEY", "DEEPSEEK_API_KEY", "CLINE_API_KEY"];
+  const exported = ["OPENROUTER_API_KEY", "FIREWORKS_API_KEY", "DEEPSEEK_API_KEY"];
 
   it("reach every engine, as the page warns", () => {
     // Every engine filters its inherited environment through these two lists
@@ -192,6 +192,16 @@ describe("Keys exported on a server", () => {
     const text = section("### OpenCode");
     for (const name of exported) expect(text).toContain(`\`${name}\``);
     expect(text).toContain("Keys exported this way reach every engine on that server, and any bot that can run commands can read them.");
+  });
+
+  it("documents Cline's separate credential scope and native setup", () => {
+    expect(PROVIDER_CREDENTIAL_ENV).toContain("CLINE_API_KEY");
+    expect(OPENCODE_PROVIDER_ENV).toContain("CLINE_API_KEY");
+    expect(section("### OpenCode")).toContain("`CLINE_API_KEY` is scoped to the Cline and OpenCode engines.");
+    const cline = section("### Cline engine");
+    expect(cline).toContain("`cline auth`");
+    expect(cline).toContain("**Cline default (configured)**");
+    expect(cline).toContain("An unconfigured account remains unavailable.");
   });
 
 });

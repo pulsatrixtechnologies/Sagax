@@ -33,8 +33,10 @@ export type RegistryEntry =
 
 /** The driver's install descriptor plus what this machine can do about it. */
 function withServerInstall(install: AnyProviderDriver["install"], npmPresent: boolean): AnyProviderDriver["install"] {
-  const server = install ? serverInstallFor(install, npmPresent) : null;
-  return server ? { ...install, server } : install;
+  if (!install) return undefined;
+  const server = serverInstallFor(install, npmPresent);
+  const platform = process.platform === "darwin" || process.platform === "linux" || process.platform === "win32" ? process.platform : undefined;
+  return { ...install, platform, ...(server ? { server } : {}) };
 }
 
 /** The `cli` field off a driver's default config, when it has one — the
@@ -78,6 +80,8 @@ export class ProviderRegistry {
   }
 
   async load(configs: InstanceConfigMap, decorate?: (instance: ProviderInstance) => ProviderInstance) {
+    // A replaced instance keeps its place in the list; new ones follow.
+    const slots = [...this.byId.keys()];
     // Create instances concurrently: a driver's create may probe its CLI with
     // a multi-second timeout, and N slow CLIs must not queue on each other.
     // Each entry resolves to the RegistryEntry it becomes — a create or
@@ -91,12 +95,15 @@ export class ProviderRegistry {
       }),
     );
     // Config order, not completion order: entries()/describe() are the UI's
-    // list and must not shuffle when a slow CLI lands last. An entry that a
-    // dispose replaced or removed meanwhile is no longer this load's to place.
-    for (const entry of loaded) {
-      if (this.byId.get(entry.instanceId) !== entry) continue;
-      this.byId.delete(entry.instanceId);
-      this.byId.set(entry.instanceId, entry);
+    // list and must not shuffle when a slow CLI lands last, nor when one
+    // engine is replaced. An entry that a dispose replaced or removed
+    // meanwhile is no longer this load's to place.
+    const placed = new Set(loaded.filter((entry) => this.byId.get(entry.instanceId) === entry).map((entry) => entry.instanceId));
+    const entries = new Map(this.byId);
+    this.byId.clear();
+    for (const id of [...slots, ...[...entries.keys()].filter((id) => !placed.has(id)), ...placed]) {
+      const entry = entries.get(id);
+      if (entry && !this.byId.has(id)) this.byId.set(id, entry);
     }
   }
 

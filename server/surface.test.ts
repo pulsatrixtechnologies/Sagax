@@ -4,7 +4,9 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  browserIsThePlace,
   cloudPlaceRefusal,
+  computerSkippedNote,
   computerToolsRefusal,
   parseSurface,
   placeUnavailable,
@@ -12,6 +14,19 @@ import {
   surfaceOfComputerKind,
   surfacePrompt,
 } from "./surface.ts";
+
+describe("browserIsThePlace", () => {
+  it("is true only where the conversation works on the built-in browser", () => {
+    expect(browserIsThePlace(resolveSurface({ destination: "browser", browserOn: true }))).toBe(true);
+    // An Auto conversation whose first turn landed on the browser.
+    expect(browserIsThePlace(resolveSurface({ destination: undefined, pinnedSurface: "browser", browserOn: true }))).toBe(true);
+    // Auto only falls back to the browser when no computer is reached.
+    expect(browserIsThePlace(resolveSurface({ destination: undefined, browserOn: true }))).toBe(false);
+    expect(browserIsThePlace(resolveSurface({ destination: "browser", browserOn: false }))).toBe(false);
+    expect(browserIsThePlace(resolveSurface({ destination: "local", browserOn: true }))).toBe(false);
+    expect(browserIsThePlace(resolveSurface({ destination: "off", browserOn: true }))).toBe(false);
+  });
+});
 
 describe("resolveSurface", () => {
   it("browser destination mounts only the built-in browser", () => {
@@ -49,6 +64,18 @@ describe("resolveSurface", () => {
     // nothing mounted, so the surface paragraph stays silent and only the
     // note tells the model why it has no screen
     expect(surfacePrompt({ computer: null, browser: false }, { note: plan.note })).toBe(plan.note);
+  });
+
+  it("a Team incidents turn that lost its computer is told why and that it has none", () => {
+    const note = computerSkippedNote("The team's cloud computer is missing; explicitly create or retry it from the Team map.");
+    expect(note).toMatch(/^ This turn answers a Team incidents report and your computer could not be prepared for it \(The team's cloud computer is missing; explicitly create or retry it from the Team map\), so no computer is mounted/);
+    expect(note).toMatch(/never claim to have checked that computer yourself\.$/);
+    // nothing mounted: the note alone is the surface paragraph
+    expect(surfacePrompt({ computer: null, browser: false }, { note })).toBe(note);
+    // a browser the plan allowed still mounts beside it, and is described
+    const withBrowser = surfacePrompt({ computer: null, browser: true }, { note });
+    expect(withBrowser).toMatch(/^ Everything you do on screen happens in the built-in browser tab/);
+    expect(withBrowser.endsWith(note)).toBe(true);
   });
 
   it("Off is the one setting a conversation pin cannot override", () => {

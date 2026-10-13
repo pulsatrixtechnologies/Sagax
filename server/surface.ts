@@ -57,6 +57,15 @@ const NO_BROWSER_NOTE =
 const OFF_NOTE =
   " This bot's \"Works on\" setting is Off, so no computer and no built-in browser are mounted this turn: you cannot open a page, click, or type on any screen. If the user asks for something that needs one, tell them Works on is Off in this bot's settings — never claim you are opening a browser you do not have.";
 
+/** The note for a Team incidents turn whose computer could not be had (the
+ * dispatch's skipComputer): it runs without it rather than refusing the
+ * report, and the model is told why, so it neither pretends to look at a
+ * screen nor loses the cause the person may need to hear. */
+export function computerSkippedNote(cause: string): string {
+  const why = cause.trim().replace(/[\s.]+$/, "");
+  return ` This turn answers a Team incidents report and your computer could not be prepared for it (${why}), so no computer is mounted: you cannot open, click or check anything on it this turn. Act through your teammates, or tell the person what only they can fix — never claim to have checked that computer yourself.`;
+}
+
 /** Decide what a turn mounts. One place per turn: a computer destination
  * mounts only that computer (web work happens in its own browser), a browser
  * destination mounts only the built-in browser, Off mounts nothing. A
@@ -106,6 +115,12 @@ export function resolveSurface(input: {
     return { computer: destination, browser: false, pinned: null, note: "" };
   }
   return { computer: undefined, browser: browserOn, pinned: null, note: "" };
+}
+
+/** The conversation works on the built-in browser: its Works on is Browser,
+ * or it is pinned there. Auto without a pin only falls back to the browser. */
+export function browserIsThePlace(plan: SurfacePlan): boolean {
+  return plan.computer === "off" && plan.browser;
 }
 
 /** Why this engine can't work on the cloud computer, as a failed place, or

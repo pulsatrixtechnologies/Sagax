@@ -6,7 +6,7 @@
 > release (`/releases/latest`); a GitHub pre-release is offered only to people
 > who switched on Settings > General > Pre-release versions. Publish a
 > version everyone should get (starting with 0.4.0) as a full release, not a
-> pre-release; the fork release workflow's `prerelease` input defaults to off.
+> pre-release (`gh release create` without `--prerelease`, step 5 below).
 
 For a normal release, run **Actions → Prepare next release → Run workflow** and
 choose a patch, minor, or custom version. It opens a tiny version-bump PR;
@@ -62,8 +62,8 @@ Sagax releases are built on a Mac, not by the workflows above:
    after the update. `node scripts/check-release-notes.mjs` fails with a
    clear message when the file is missing, has no French section, or has
    no `## English` line. `pnpm package:fork:mac` and `pnpm package:fork:win`
-   run the same check before packaging, and the fork release workflow runs
-   it before creating the tag. A version that fails the check cannot be tagged.
+   run the same check before packaging, and step 5 runs it again before
+   the tag is created. A version that fails the check is not tagged.
 2. macOS: `SAGAX_MAC_IDENTITY="<Developer ID name or SHA-1 hash>" pnpm package:fork:mac`
    (a hash is required when the keychain holds two identities with the same
    name), then notarize and staple each `.zip`/`.dmg`, re-zip and regenerate
@@ -73,7 +73,8 @@ Sagax releases are built on a Mac, not by the workflows above:
    package whose `.node` addons or `Sagax.exe` are not PE images for that
    arch; recheck a built or downloaded package with
    `node scripts/verify-win-natives.mjs <win-unpacked or unzipped dir> x64|arm64`.
-   Nothing here runs the app: a Windows launch is still needed before release.
+   Nothing here runs the app: a Windows launch (Windows, below) is still
+   needed before release.
 4. Gates: `scripts/smoke-browser-bundle.mjs` (live on the host arch,
    `--check-only` for the others) and `SAGAX_SMOKE_DIST=<resources>/server
    node scripts/smoke-packaged-server.mjs` for every package.
@@ -94,6 +95,57 @@ Sagax releases are built on a Mac, not by the workflows above:
    not possible. A Latest release without `latest.yml` breaks the Windows
    update check, so never publish without both feeds (0.4.11 shipped macOS
    only for this reason).
+
+### Windows
+
+The Windows packages are cross-built on macOS (step 3) and nothing in that
+flow runs the app, so a person launches it on a real Windows PC before the
+release: Windows 11 on arm64 first (a Snapdragon PC, or a Windows 11 ARM VM
+on Apple Silicon), then Windows 10 or 11 on x64, ideally on a clean user
+profile. Note the Windows build (`winver`) and the arch.
+
+- The installer's hash matches the feed. In PowerShell, the base64 value
+  must equal the `sha512` line of `latest.yml`:
+
+  ```powershell
+  $h = (Get-FileHash .\Sagax-X.Y.Z-setup.exe -Algorithm SHA512).Hash
+  [Convert]::ToBase64String([byte[]] -split ($h -replace '..', '0x$& '))
+  Select-String -Path .\latest.yml -Pattern 'sha512'
+  ```
+
+- Install: the build is unsigned, so SmartScreen needs More info, then Run
+  anyway; no UAC prompt (per-user install); Sagax opens by itself; the Start
+  menu and desktop shortcut read "Pulsatrix Sagax" and Installed apps lists
+  "Pulsatrix Sagax X.Y.Z"; Task Manager's Architecture column shows
+  `Sagax.exe` as ARM64 on arm64 and x64 on x64 (not emulated).
+- First launch: the chat loads within 60 s (not "Couldn't start the bot
+  server", not a black window), and no update popup shows.
+- Working app: `%APPDATA%\sagax` exists (an older install may still use
+  `%APPDATA%\openmausbot`) and its `logs\server.log` has no stack trace at
+  startup; the model picker lists at least one engine (the `.cmd` shim
+  resolution of `server/procs.ts` runs only on Windows); a new bot answers a
+  message; a small `.zip` attached to a message reaches the bot; the chat is
+  still there after closing and reopening from the Start menu; quitting
+  leaves no `Sagax.exe` in Task Manager.
+- Portable zips: the same first launch checks with the zip of the PC's arch,
+  and on arm64 the x64 zip too (it runs emulated, slower).
+- Optional scripted smoke, with Node 24 and a checkout on the PC (use `x64`
+  on an x64 PC; the shortcut's "Open file location" shows the folder):
+
+  ```powershell
+  node scripts\smoke-packaged-launch.mjs --app "$env:LOCALAPPDATA\Programs\Sagax\Sagax.exe"
+  node scripts\verify-win-natives.mjs "$env:LOCALAPPDATA\Programs\Sagax" arm64
+  ```
+
+  It prints `[smoke] renderer-ready` and exits 0 when the window reached the
+  server.
+- Update path: the previous version, installed and launched, offers and
+  installs the new one and restarts on it (About shows the version). A
+  download that does nothing points at a `latest.yml` sha512 mismatch.
+
+Report the Windows build, the arch and each check, or the failure with a
+screenshot and the last 50 lines of `server.log`. Never paste a token, cookie
+or credentials file.
 
 ## Updater migration invariant
 

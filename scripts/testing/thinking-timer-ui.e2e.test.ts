@@ -113,20 +113,21 @@ function elapsedSeconds(text: string): number {
   return -1;
 }
 
-/** Thread rows for this harness live under each bot in the sidebar, not the
- * chat header (the product default since thread mode shipped). */
-async function pinSidebarThreads(handle: string): Promise<void> {
+/** Threads default to the chat header. The timer case needs the list under
+ * the bot in the sidebar so `data-sidebar-thread-row` stays mounted. */
+async function putThreadsInSidebar(handle: string): Promise<void> {
+  await ui("click", handle, "--name", "You");
+  await ui("click", handle, "--name", "Settings");
+  await ui("click", handle, "--name", "Appearance");
   await ui("eval", handle, "--js", `(() => {
-    localStorage.setItem(${JSON.stringify(SHOW_THREADS_KEY)}, "1");
-    localStorage.setItem(${JSON.stringify(THREADS_LOCATION_KEY)}, "sidebar");
-    return true;
+    const select = document.querySelector('select[aria-label="Threads location"]');
+    if (!(select instanceof HTMLSelectElement)) throw new Error("Threads location is missing");
+    select.value = "sidebar";
+    select.dispatchEvent(new Event("change", { bubbles: true }));
+    return select.value;
   })()`);
-  await ui("eval", handle, "--js", "location.reload()");
-  await ui("wait-settle", handle, "--timeout", "120");
+  await ui("click", handle, "--name", "Close settings");
 }
-
-const SHOW_THREADS_KEY = "omb-show-threads";
-const THREADS_LOCATION_KEY = "omb-threads-location";
 
 /** Selection can already expand a thread list. Click only its collapsed DOM
  * chevron, avoiding both accidental collapse and transient duplicate AX names. */
@@ -180,7 +181,6 @@ describe("the thinking timer stays anchored across a thread switch", () => {
   run("counts from the server's turn-start stamp, not from the re-selection", async () => {
     launched = await launch(["--mode", "hang"]); // the turn never settles; the bot stays busy
     const { info } = launched;
-    await pinSidebarThreads(info.ui);
     const api = fixtureApi(info.url);
     const evaluate = async (js: string) => (await ui("eval", info.ui, "--js", js)).result;
     const timerText = () => evaluate(`document.querySelector('.turn-presence .tabular-nums')?.textContent ?? null`);
@@ -193,6 +193,7 @@ describe("the thinking timer stays anchored across a thread switch", () => {
     // POST the sidebar's "New thread" menu item dispatches.
     const busyThread = (await api("GET", "/api/bots")).bots.find((bot: any) => bot.id === info.botId).threadId;
     const otherThread = (await api("POST", `/api/bots/${info.botId}/tasks`, {})).task.threadId;
+    await putThreadsInSidebar(info.ui);
     // Expand Pepper's thread list if selection has not already opened it.
     await expandThreads(info.ui, "Pepper");
     await waitUntil(() => evaluate(`Boolean(document.querySelector('[data-sidebar-thread-row="${otherThread}"]'))`), 10_000, "the new thread's sidebar row to appear");

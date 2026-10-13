@@ -11,14 +11,37 @@ final class SettingsAppearanceParityTests: XCTestCase {
 
     func testTheCatalogMatchesTheDesktopOne() {
         let catalog = AchievementDefinition.catalog
-        // 52 from the first catalog, plus the 24 of the Mastery tier (docs/achievements.md, DC47)
-        XCTAssertEqual(catalog.count, 76)
+        // 52 from the first catalog, plus the 24 of the Mastery tier (docs/achievements.md, DC47), plus the 10 of the Claude ladder
+        XCTAssertEqual(catalog.count, 86)
         XCTAssertEqual(Set(catalog.map(\.id)).count, catalog.count, "ids are unique")
         XCTAssertEqual(AchievementDefinition.lookup("first-words")?.name.fr, "Premiers mots")
         XCTAssertEqual(AchievementDefinition.lookup("first-words")?.rewards.first?.key, "title:rookie")
         XCTAssertTrue(catalog.contains { $0.hidden && $0.hint != nil }, "secrets carry a hint")
         // ACHIEVEMENT_POINTS in shared/achievements.ts: the Mastery tier adds 150 to 300
         XCTAssertTrue(catalog.allSatisfy { [5, 10, 20, 50, 100, 150, 200, 250, 300].contains($0.points) })
+    }
+
+    func testClaudeLinkedRewardsTheCrabAndHidesUnregisteredLines() {
+        let linked = AchievementDefinition.lookup("claude-linked")
+        XCTAssertEqual(linked?.category, .claude)
+        XCTAssertEqual(linked?.rewards.first?.key, "character:crab")
+        XCTAssertEqual(linked?.name.fr, "Compte Claude lié")
+        XCTAssertEqual(linked?.name.en, "Claude Linked")
+        XCTAssertTrue(RewardRegistry.lineVisible(.character(id: "crab", name: AchievementText(en: "Crab", fr: "Crabe", ptBR: "Crab"))))
+        XCTAssertFalse(RewardRegistry.lineVisible(.emote(character: "crab", id: "proud")))
+        XCTAssertTrue(RewardRegistry.lineVisible(.emote(character: "crab", id: "neutral")))
+        XCTAssertEqual(AchievementCategory.allCases.map(\.rawValue), [
+            "onboarding", "productivity", "power", "voice", "claude", "collaboration", "streaks", "mastery", "tiers", "secrets",
+        ])
+        XCTAssertEqual(AchievementReward.emote(character: "crab", id: "neutral").key, "emote:crab:neutral")
+        XCTAssertEqual(AchievementReward.move(character: "crab", id: "claw-dance").key, "move:crab:claw-dance")
+        XCTAssertEqual(AchievementReward.accessory(id: "captain").key, "accessory:captain")
+        XCTAssertEqual(AchievementReward.effect(id: "bubbles").key, "effect:bubbles")
+        let crab = AchievementReward.character(id: "crab", name: AchievementText(en: "Crab", fr: "Crabe", ptBR: "Crab"))
+        XCTAssertEqual(crab.displayed(language: "en", keys: []), "a surprise character")
+        XCTAssertNil(AchievementReward.emote(character: "crab", id: "proud").displayed(language: "en", keys: []))
+        XCTAssertEqual(crab.displayed(language: "en", keys: [], revealing: true), "Character unlocked: Crab")
+        XCTAssertEqual(AchievementReward.emote(character: "crab", id: "neutral").displayed(language: "en", keys: ["character:crab"]), "Look unlocked: Neutral")
     }
 
     func testRarityAndLevelFollowTheSharedRules() {

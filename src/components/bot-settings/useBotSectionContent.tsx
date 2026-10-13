@@ -8,6 +8,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type
 import { api, useStore, type Bot, type BotSettingsSection, type ConfigStatus } from "@/state/store";
 import type { BotOverview } from "@/lib/bot-overview-types";
 import type { LocaleKey } from "@/locales";
+import { t } from "@/lib/i18n";
 import { canEditBotField, canStepPrimary } from "@/lib/bot-capabilities";
 import { viewerBotsReadOnly, viewerIsOrgMember } from "@/lib/viewer";
 import { servedPage } from "@/lib/desktop";
@@ -230,7 +231,7 @@ export function useBotSectionContent(bot: Bot, {
         body: JSON.stringify(target),
       });
     } catch (e: unknown) {
-        dispatch({ type: "error", message: e instanceof Error ? e.message : "Couldn't undo that change." });
+        dispatch({ type: "error", message: e instanceof Error ? e.message : t("botPanel.history.undoError") });
     } finally {
       await loadHistory();
       setRollingBack(false);
@@ -241,7 +242,7 @@ export function useBotSectionContent(bot: Bot, {
     switch (id) {
       case "overview":
         return overview === null && overviewError ? (
-          <div className="rounded-xl bg-card p-4 text-[13px] text-ink-secondary">Couldn’t load the overview.</div>
+          <div className="text-[13px] text-ink-secondary">{t("botPanel.overview.loadError")}</div>
         ) : (
           // Data wins over a transient refetch failure: once an overview has
           // loaded once, a later failed refetch (routines/webhooks/bot-record
@@ -301,7 +302,7 @@ export function useBotSectionContent(bot: Bot, {
       case "history":
         if (!historyAllowed) return null;
         return historyRows === null && historyError ? (
-          <div className="rounded-xl bg-card p-4 text-[13px] text-ink-secondary">Couldn’t load history.</div>
+          <div className="text-[13px] text-ink-secondary">{t("botPanel.history.loadError")}</div>
         ) : (
           // Same precedence as the Overview: rows already on screen
           // survive a failed reload (after an undo, say) with a quiet
@@ -326,9 +327,9 @@ export function useBotSectionContent(bot: Bot, {
   const dialogs = (
     <ConfirmDialog
       open={rollbackTarget !== null}
-      title="Restore previous instructions?"
-      body="Replaces current SOUL with the version before this change. Current version stays in History."
-      confirmLabel="Restore instructions"
+      title={t("botPanel.history.restoreTitle")}
+      body={t("botPanel.history.restoreBody")}
+      confirmLabel={t("botPanel.history.restoreConfirm")}
       tone="neutral"
       returnFocusRef={returnFocusRef}
       onCancel={() => setRollbackTarget(null)}

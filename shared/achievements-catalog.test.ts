@@ -92,6 +92,18 @@ describe("achievements catalog", () => {
     expect(shapes[0]!.rule).toEqual({ kind: "count", event: "grok.linked", target: 1 });
   });
 
+  it("unlocks the crab only through a linked Claude account", () => {
+    const crab = ACHIEVEMENTS.filter((item) => item.rewards.some((reward) => reward.kind === "character" && reward.character === "crab"));
+    expect(crab.map((item) => item.id)).toEqual(["claude-linked"]);
+    expect(crab[0]!.rule).toEqual({ kind: "count", event: "claude.linked", target: 1 });
+    expect(crab[0]!.category).toBe("claude");
+    expect(crab[0]!.points).toBe(10);
+    expect(ACHIEVEMENT_CATEGORIES).toContain("claude");
+    expect(achievementById("claw-streak")?.points).toBe(20);
+    expect(achievementById("claw-streak")?.rule).toEqual({ kind: "eventStreak", event: "claude.turn", target: 7 });
+    expect(achievementById("three-tides")?.rule).toEqual({ kind: "distinct", event: "claude.turn", target: 3 });
+  });
+
   it("keeps the points tiers reachable without the secrets", () => {
     const visible = ACHIEVEMENTS.filter((item) => !item.hidden && item.rule.kind !== "points" && item.rule.kind !== "completion");
     const all = Object.fromEntries(visible.map((item) => [item.id, 1]));

@@ -5,6 +5,8 @@
 // companion allows the first four for the phone apps (companion/src/routes.ts).
 // The fifth, device-revoked, is the companion's own notice that it unpaired a
 // phone; a phone can never send it (companion/src/routes.ts COMPANION_NOTICES).
+// A start without a key is refused with 409 `needsKey`, for every client:
+// the phones' starts come through here too. No plan is ever asked for.
 import type { IncomingMessage } from "node:http";
 import { z } from "zod";
 import type { LiveSettings } from "../../shared/wire.ts";

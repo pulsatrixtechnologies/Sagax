@@ -1,0 +1,21 @@
+# Weekday warm window. America/Toronto follows the GOX daily cycle (quiet
+# at night and on weekends). KEDA owns this deployment's replicas; do not
+# also run a CronJob against it.
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: sagax-sandbox-warm
+  namespace: sagax-sandboxes
+spec:
+  scaleTargetRef:
+    name: sagax-sandbox-capacity
+  minReplicaCount: 0
+  maxReplicaCount: 1
+  cooldownPeriod: 300
+  triggers:
+    - type: cron
+      metadata:
+        timezone: America/Toronto
+        start: "30 7 * * 1-5"
+        end: "0 19 * * 1-5"
+        desiredReplicas: "1"

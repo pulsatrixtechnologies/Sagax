@@ -741,7 +741,6 @@ describe("agents-proxy MCP surface", () => {
       "list_shared_computers",
       "list_bots", "list_rooms", "check_delegation", "wait_delegation", "list_threads",
       "list_team_setup",
-      "list_terminal_resources",
       "workspace_read", "workspace_search",
       "session_search", "session_read",
       "list_cloud_agents", "get_cloud_agent", "find_cloud_agent_by_pr", "cloud_agent_transcript", "list_cloud_agent_artifacts",

@@ -69,6 +69,8 @@ interface PersonRecord extends AchievementProgress {
   settings: AchievementSettings;
   /** Grandfathering ran once for this person. */
   migrated: boolean;
+  /** Crab keep-on-upgrade ran once for this person. Missing in stored JSON means false. */
+  migratedCrab: boolean;
   /** Ids of events already counted (bounded). */
   seen: string[];
   updatedAt: number;
@@ -102,6 +104,8 @@ export interface AchievementStoreOptions {
   catalog?: readonly AchievementDefinition[];
   /** Reward keys a person keeps from before achievements existed (their bots' current looks). */
   grandfather?: (person: string) => string[];
+  /** Reward keys for people already wearing the crab (one-time crab keep). */
+  grandfatherCrab?: (person: string) => string[];
   /** Coalesce writes (petting the mascot is quick); 0 writes at once. */
   persistDelayMs?: number;
 }
@@ -115,7 +119,7 @@ const MAX_EVENTS_PER_CALL = 32;
 export const MIN_PEOPLE_FOR_PERCENT = 5;
 
 function freshRecord(now: number): PersonRecord {
-  return { ...emptyProgress(), settings: { ...DEFAULT_ACHIEVEMENT_SETTINGS }, migrated: false, seen: [], updatedAt: now };
+  return { ...emptyProgress(), settings: { ...DEFAULT_ACHIEVEMENT_SETTINGS }, migrated: false, migratedCrab: false, seen: [], updatedAt: now };
 }
 
 function stringList(value: unknown, max: number): string[] {
@@ -165,6 +169,7 @@ function cleanRecord(input: unknown, now: number): PersonRecord {
   record.grandfathered = stringList(value.grandfathered, 200);
   record.seen = stringList(value.seen, MAX_SEEN);
   record.migrated = value.migrated === true;
+  record.migratedCrab = value.migratedCrab === true;
   record.settings = cleanSettings(value.settings);
   record.updatedAt = typeof value.updatedAt === "number" ? value.updatedAt : now;
   if (value.mastery && typeof value.mastery === "object") record.mastery = cleanMasteryState(value.mastery);
@@ -245,6 +250,15 @@ export function createAchievementStore(options: AchievementStoreOptions): Achiev
         for (const key of options.grandfather?.(person) ?? []) pushBounded(record.grandfathered, key, 200);
       } catch {
         /* the bots could not be read: nothing is grandfathered, nothing breaks */
+      }
+      persist(true);
+    }
+    if (!record.migratedCrab) {
+      record.migratedCrab = true;
+      try {
+        for (const key of options.grandfatherCrab?.(person) ?? []) pushBounded(record.grandfathered, key, 200);
+      } catch {
+        /* same as grandfather: nothing breaks */
       }
       persist(true);
     }

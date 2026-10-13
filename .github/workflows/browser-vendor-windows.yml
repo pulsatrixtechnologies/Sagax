@@ -13,14 +13,17 @@ on:
       - scripts/smoke-browser-bundle.mjs
       - third_party/browser/agent-browser-windows-stdio.patch
 
+concurrency:
+  group: browser-vendor-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 permissions:
   contents: read
 
 jobs:
   build:
-    if: (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
     name: Build reviewed Windows browser
-    runs-on: [self-hosted, linux, x64]
+    runs-on: ubuntu-24.04
     timeout-minutes: 45
     env:
       RUSTUP_TOOLCHAIN: 1.97.1
@@ -49,10 +52,9 @@ jobs:
           retention-days: 14
 
   smoke:
-    if: (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
     name: Cold-start and restart on Windows
     needs: build
-    runs-on: [self-hosted, windows, x64]
+    runs-on: windows-latest
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

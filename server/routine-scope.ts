@@ -135,6 +135,8 @@ const REDACTED_ROUTINE_FIELDS = ["prompt", "attachments", "sourceThreadId", "res
 const REDACTED_RUN_FIELDS = [
   "prompt", "attachments", "output", "attention", "denials",
   "executionThreadId", "sourceThreadId", "resultsThreadId", "threadId", "webhookId", "deliveryId",
+  // what the organization memory told the person it runs as
+  "memoryHint",
 ] as const;
 
 /** Someone else's run: its status and timing, never its work. */

@@ -6,6 +6,7 @@ import { TOOL_SCOPE_SUPPORT } from "../../../shared/tool-scope-support";
 import { useBotEditor } from "./BotEditorContext";
 import { SwitchRow } from "../SettingsPrimitives";
 import { inputCls } from "./field";
+import { PaneSection } from "./PaneSection";
 
 type Draft = { custom: boolean; onlyListed: boolean; allow: string; deny: string };
 const lines = (text: string) => text.split(/\r?\n/).map(line => line.trim()).filter(Boolean);
@@ -52,14 +53,10 @@ export function ToolSelectionCard({ bot, engineKind }: { bot: Bot; engineKind?: 
     : engineKind === "grokAgent" ? "native:read_file\nnative:search_replace\nnative:write"
       : support === "mcp" ? "native:*\nmcp:mail:read_notes" : "native:ask_user\nmcp:mail:read_notes";
 
-  return <div className="rounded-xl bg-card p-4">
-    <div className="text-[15px] font-medium text-ink">{t("botAccess.tools.title")}</div>
-    <p className="mt-0.5 text-[13px] text-ink-secondary">{t("botAccess.tools.description")}</p>
-    <p role={saved.ok ? "status" : "alert"} className={`mt-2 text-[12px] ${saved.ok ? "text-ink-secondary" : "text-danger"}`}>
-      {!saved.ok ? t("botAccess.tools.corrupt") : scope?.allow?.length === 0 ? t("botAccess.tools.none")
-        : scope === undefined ? t("botAccess.tools.all") : t("botAccess.tools.customSaved")}
-    </p>
-    <label className="mt-3 block text-[13px] text-ink-secondary">
+  return <PaneSection title={t("botAccess.tools.title")} help={t("botAccess.tools.description")}>
+    {!saved.ok && <p role="alert" className="mb-2 text-[12px] text-danger">{t("botAccess.tools.corrupt")}</p>}
+    {saved.ok && scope?.allow?.length === 0 && <p role="status" className="mb-2 text-[12px] text-ink-secondary">{t("botAccess.tools.none")}</p>}
+    <label className="block text-[13px] text-ink-secondary">
       {t("botAccess.tools.mode")}
       <select aria-label={t("botAccess.tools.title")} disabled={saving || !!bot.busy} value={fields.custom ? "custom" : "all"}
         className={`${inputCls} mt-1 text-[13px]`} onChange={event => change({ custom: event.target.value === "custom", onlyListed: fields.custom ? fields.onlyListed : true })}>
@@ -88,11 +85,11 @@ export function ToolSelectionCard({ bot, engineKind }: { bot: Bot; engineKind?: 
     {error && <p role="alert" className="mt-2 text-[12px] text-danger">{error}</p>}
     {bot.busy && <p className="mt-2 text-[12px] text-ink-secondary">{t("botAccess.tools.busy")}</p>}
     <div className="mt-3 flex flex-wrap items-center gap-3">
-      <button type="button" disabled={saving || !!bot.busy || !draft || !parsed.ok} onClick={() => void save()}
+      {draft && <button type="button" disabled={saving || !!bot.busy || !draft || !parsed.ok} onClick={() => void save()}
         className="rounded-lg bg-control px-3 py-2 text-[13px] text-ink hover:bg-raised-hover disabled:opacity-50">
         {t(saving ? "botAccess.tools.saving" : "botAccess.tools.save")}
-      </button>
+      </button>}
       <a href="https://github.com/pulsatrixtechnologies/sagax/blob/main/docs/tool-selection.md" target="_blank" rel="noreferrer" className="text-[12px] text-ink-secondary underline">{t("botAccess.tools.examples")}</a>
     </div>
-  </div>;
+  </PaneSection>;
 }

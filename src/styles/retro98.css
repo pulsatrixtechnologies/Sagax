@@ -195,7 +195,6 @@
 [data-skin="retro98"] [data-sidebar] [data-section] .sidebar-section-label {
   color: #000 !important;
   font-weight: bold;
-  text-transform: none !important;
 }
 [data-skin="retro98"] [data-sidebar] [data-section] svg {
   display: none;

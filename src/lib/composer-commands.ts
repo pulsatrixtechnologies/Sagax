@@ -16,6 +16,12 @@ export interface ComposerSlashCommand {
   description: string;
 }
 
+/** A bot's enabled skill as the skills listing names it (src/lib/use-slash-skills.ts). */
+export interface SlashSkill {
+  name: string;
+  description: string;
+}
+
 export interface ComposerSlashTrigger {
   query: string;
   start: number;

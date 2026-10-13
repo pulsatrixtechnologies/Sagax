@@ -15,8 +15,6 @@
  * - after: wait for the running turn, then run (the queue). */
 export type BusySendMode = "steer" | "parallel" | "after";
 
-export const BUSY_SEND_MODES: readonly BusySendMode[] = ["steer", "parallel", "after"];
-
 /** The person's default for a busy send (localStorage, synced per person on an
  * organization server): "ask" offers the three choices each time. */
 export type BusySendPreference = "ask" | BusySendMode;
@@ -50,9 +48,6 @@ export interface ParallelTaskRef {
   state?: ParallelTaskState;
   startedAt?: number;
   endedAt?: number;
-  /** A background reply: the person was not busy, the bot said the first
-   * step, and this task does the rest. Absent on a parallel send. */
-  background?: boolean;
 }
 
 /** On a task opened as a parallel task: the conversation it answers. */
@@ -71,9 +66,6 @@ export interface TaskParallelOf {
   outcome?: ParallelTaskState;
   /** Opened by the bot itself (start_thread with report_back), not a person. */
   byBot?: boolean;
-  /** A background reply (shared/background-reply.ts): the conversation stays
-   * free while this task does the work the acknowledgement named. */
-  background?: boolean;
 }
 
 /** Default number of parallel tasks one person may have running on one bot. */

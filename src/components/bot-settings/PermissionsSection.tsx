@@ -1,4 +1,4 @@
-// Permissions: how autonomously this bot acts — the approval level (ask /
+// Permissions: how autonomously this bot acts: the approval level (ask /
 // auto / full / custom), review-routine approvals, whether it asks before
 // contacting other bots, and whether it is its person's Primary Bot
 // (formerly Chief of Staff). Moved from SettingsPanel.tsx (Chief of Staff ~720-755,
@@ -12,7 +12,6 @@
 // warnings remember which bot they were opened for, so a bot switch while
 // one is up never applies the choice to the newly selected bot.
 import { useEffect, useState } from "react";
-import { Star } from "lucide-react";
 
 import { canEditBotField, canStepPrimary } from "@/lib/bot-capabilities";
 import { useAdvancedMode } from "@/lib/interface-mode";
@@ -28,9 +27,10 @@ import { ApprovalModeSelector } from "../ApprovalModeSelector";
 import { CommandAllowlistDialog } from "../CommandAllowlistDialog";
 import { FullAccessWarning } from "../FullAccessWarning";
 import { LocalComputerAutoWarning } from "../LocalComputerAutoWarning";
-import { Switch } from "../SettingsPrimitives";
+import { SwitchRow } from "../SettingsPrimitives";
 import { ManagedTeamsSettings } from "./ManagedTeamsSettings";
 import { ProposalStatus } from "./ProposalStatus";
+import { PaneSection } from "./PaneSection";
 import type { useBotSettingsDerived } from "./useBotSettingsDerived";
 import { useBotEditor } from "./BotEditorContext";
 
@@ -99,31 +99,12 @@ export function PermissionsSection({
   if (!showPrimaryUi && !showApproval && !showContactUi && !showOutboundUi) return null;
 
   return (
-    <div className="flex flex-col gap-4">
-      {showPrimaryUi && <div
-        className={cn(
-          "rounded-xl border border-hairline/40 p-4",
-        )}
-      >
-        <div className="flex items-center gap-3">
-          <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-control text-ink-secondary">
-            <Star size={17} className="text-orange-500" />
-          </span>
-          <div className="min-w-0 flex-1">
-            <div className="text-[13px] font-medium text-ink">{t("botPanel.permissions.primary")}</div>
-            <div className="text-[11.5px] text-ink-secondary">{t("botPanel.permissions.one")}</div>
-          </div>
-          <Switch
-            checked={Boolean(bot.chiefOfStaff)}
-            aria-label={t("botPanel.permissions.primary")}
-            disabled={!bot.chiefOfStaff && !canCoordinate}
-            onClick={togglePrimary}
-            title={!bot.chiefOfStaff && !canCoordinate ? t("botPanel.permissions.cannotContact") : undefined}
-            className="disabled:cursor-not-allowed"
-          />
-        </div>
-        <div className="mt-3 text-[13px] leading-relaxed text-ink-secondary">
-          {bot.chiefOfStaff && !canCoordinate
+    <div className="flex flex-col gap-5">
+      {showPrimaryUi && <PaneSection title={<>{t("botPanel.permissions.primarySection")}{showTeams && bot.chiefOfStaff && <ProposalStatus bot={bot} />}</>}>
+        <SwitchRow
+          label={t("botPanel.permissions.primary")}
+          description={t("botPanel.permissions.one")}
+          help={bot.chiefOfStaff && !canCoordinate
             ? t("botPanel.permissions.holdsRole")
             : bot.chiefOfStaff
               ? t("botPanel.permissions.isPrimary", { team: sectionName })
@@ -132,7 +113,10 @@ export function PermissionsSection({
                 : currentChief
                   ? t("botPanel.permissions.handOver", { name: currentChief.name })
                   : t("botPanel.permissions.makePrimary")}
-        </div>
+          checked={Boolean(bot.chiefOfStaff)}
+          disabled={!bot.chiefOfStaff && !canCoordinate}
+          onChange={() => togglePrimary()}
+        />
         {primaryError && <div role="alert" className="mt-2 text-[12px] text-danger">{primaryError}</div>}
         {showTeams && bot.chiefOfStaff && <ManagedTeamsSettings
           key={bot.id + JSON.stringify(bot.managedSections ?? [])}
@@ -141,50 +125,36 @@ export function PermissionsSection({
           allowed={bot.managedSections ?? []}
           onSave={managedSections => patch({ managedSections, acknowledgePeerScope: true })}
         />}
-        {showTeams && bot.chiefOfStaff && <ProposalStatus bot={bot} />}
-      </div>}
+      </PaneSection>}
 
-      {showContactUi && <div className="flex items-center justify-between gap-4 rounded-xl border border-hairline/40 p-4">
-        <div>
-          <div className="text-[13px] font-medium text-ink">{t("botPanel.permissions.ask")}</div>
-          <div className="mt-0.5 text-[13px] text-ink-secondary">
-            {bot.approvePeerComms
-              ? t("botPanel.permissions.askOn")
-              : t("botPanel.permissions.askOff")}
-          </div>
-          <ProposalStatus bot={bot} />
-        </div>
-        <Switch
+      {showContactUi && <PaneSection title={<>{t("botPanel.permissions.contactSection")}<ProposalStatus bot={bot} /></>}>
+        <SwitchRow
+          label={t("botPanel.permissions.ask")}
+          help={bot.approvePeerComms ? t("botPanel.permissions.askOn") : t("botPanel.permissions.askOff")}
           checked={Boolean(bot.approvePeerComms)}
-          aria-label={t("botPanel.permissions.ask")}
           disabled={!bot.approvePeerComms && !canCoordinate}
-          onClick={() => patch({ approvePeerComms: !bot.approvePeerComms })}
-          title={!bot.approvePeerComms && !canCoordinate ? t("botPanel.permissions.cannotContact") : undefined}
-          className="disabled:cursor-not-allowed"
+          onChange={() => patch({ approvePeerComms: !bot.approvePeerComms })}
         />
-      </div>}
+        {!bot.approvePeerComms && !canCoordinate && <p className="mt-1 text-[12px] text-ink-secondary">{t("botPanel.permissions.cannotContact")}</p>}
+      </PaneSection>}
 
-      {showApproval && <div className="rounded-xl border border-hairline/40 p-4">
-        <div className="text-[13px] font-medium text-ink">{t("botPanel.permissions.approval")}</div>
-        <div className="mt-0.5 text-[13px] text-ink-secondary">
-          {draft ? t("botPanel.permissions.approvalDraft") : t("botPanel.permissions.approvalHelp")}
-        </div>
-        <ProposalStatus bot={bot} />
-        <div className="mt-3">
-          <ApprovalModeSelector
-            approvalMode={bot.approvalMode}
-            autoApprove={bot.autoApprove}
-            providerName={engine?.displayName ?? bot.name}
-            driverKind={engine?.driverKind ?? ""}
-            onSelect={setApprovalMode}
-            menuDirection="down"
-            wide
-            disabled={Boolean(bot.busy)}
-            trustedModesAvailable={trustedModesAvailable}
-            orgFullAccess={orgFullAccess}
-            onManageCommandAllowlist={advanced && !draft && ownerOrAdmin === true ? () => setCommandAllowlistTarget({ botId: bot.id, botName: bot.name }) : undefined}
-          />
-        </div>
+      {showApproval && <PaneSection
+        title={<>{t("botPanel.permissions.approval")}<ProposalStatus bot={bot} /></>}
+        help={draft ? t("botPanel.permissions.approvalDraft") : t("botPanel.permissions.approvalHelp")}
+      >
+        <ApprovalModeSelector
+          approvalMode={bot.approvalMode}
+          autoApprove={bot.autoApprove}
+          providerName={engine?.displayName ?? bot.name}
+          driverKind={engine?.driverKind ?? ""}
+          onSelect={setApprovalMode}
+          menuDirection="down"
+          wide
+          disabled={Boolean(bot.busy)}
+          trustedModesAvailable={trustedModesAvailable}
+          orgFullAccess={orgFullAccess}
+          onManageCommandAllowlist={advanced && !draft && ownerOrAdmin === true ? () => setCommandAllowlistTarget({ botId: bot.id, botName: bot.name }) : undefined}
+        />
         {!draft && advanced && approvalMode === "full" && trustedModesAvailable && <button
           type="button" disabled={Boolean(bot.busy)}
           className="mt-3 text-[13px] text-ink-secondary hover:text-ink hover:underline disabled:opacity-40"
@@ -195,10 +165,10 @@ export function PermissionsSection({
           className="mt-3 block text-[13px] text-ink-secondary hover:text-ink hover:underline"
           onClick={() => setCommandAllowlistTarget({ botId: bot.id, botName: bot.name })}
         >{t("commandAllowlist.manage")}</button>}
-      </div>}
+      </PaneSection>}
 
       {commandAllowlistTarget && <CommandAllowlistDialog
-        key={commandAllowlistTarget.botId}
+        key={`command-allowlist:${commandAllowlistTarget.botId}`}
         {...commandAllowlistTarget}
         onClose={() => setCommandAllowlistTarget(null)}
       />}
@@ -270,12 +240,8 @@ function OutboundControl({ bot, onChange }: { bot: Bot; onChange: (policy: Outbo
   };
 
   return (
-    <div className="rounded-xl bg-card p-4">
-      <div className="text-[15px] font-medium text-ink">{t("botPanel.permissions.outbound")}</div>
-      <div className="mt-0.5 text-[13px] text-ink-secondary">
-        {t("botPanel.permissions.outboundHelp")}
-      </div>
-      <div className="mt-3 flex gap-1 rounded-lg bg-inset p-0.5">
+    <PaneSection title={t("botPanel.permissions.outbound")} help={t("botPanel.permissions.outboundHelp")}>
+      <div className="flex gap-1 rounded-lg bg-inset p-0.5">
         {(
           [
             ["ask", "botPanel.permissions.askEvery", "botPanel.permissions.askEveryHint"],
@@ -323,6 +289,6 @@ function OutboundControl({ bot, onChange }: { bot: Bot; onChange: (policy: Outbo
           </span>
         </div>
       )}
-    </div>
+    </PaneSection>
   );
 }

@@ -265,6 +265,36 @@ describe("streaming voice socket (page side)", () => {
     expect(post).toHaveBeenCalledTimes(1);
   });
 
+  it("retune while idle reopens on the new voice before the next clause", async () => {
+    const { socket, servers } = make();
+    void socket.connect();
+    servers[0]!.ready();
+    const faster = { ...voice, speed: 1.25 };
+    socket.retune(faster);
+    expect(servers).toHaveLength(2);
+    expect(servers[0]!.closed).toBe(true);
+    expect(servers[1]!.url).toContain("speed=1.25");
+    servers[1]!.ready();
+    const next = socket.speak("b-1", "Vite.", faster, "t-1");
+    await tick();
+    expect(servers[1]!.says().map((m) => m.text)).toEqual(["Vite."]);
+    servers[1]!.text({ type: "skip", id: servers[1]!.says()[0]!.id });
+    expect(await next).toBeNull();
+  });
+
+  it("retune while a clause is open leaves that socket alone", async () => {
+    const { socket, servers } = make();
+    void socket.connect();
+    servers[0]!.ready();
+    const busy = socket.speak("b-1", "En cours.", voice, "t-1");
+    await tick();
+    socket.retune({ ...voice, speed: 1.25 });
+    expect(servers).toHaveLength(1);
+    expect(servers[0]!.closed).toBe(false);
+    servers[0]!.text({ type: "skip", id: servers[0]!.says()[0]!.id });
+    expect(await busy).toBeNull();
+  });
+
   it("hang-up closes the socket and ends what was in flight", async () => {
     const { socket, server } = make();
     void socket.connect();

@@ -1,7 +1,7 @@
 // Usage: what this bot has spent across its tasks. Moved verbatim from
-// SettingsPanel.tsx's BotUsageCard (~40-77); its "All bots →" button keeps
-// dispatching toggleAppSettings, which closes this dialog — intended, since
-// the destination is the app-wide Usage settings, not a per-bot view.
+// SettingsPanel.tsx's BotUsageCard (~40-77); its "All bots" button keeps
+// dispatching toggleAppSettings, which closes this dialog (intended, since
+// the destination is the app-wide Usage settings, not a per-bot view).
 //
 // BotUsageCard used to render nothing at all for a bot with no turns yet,
 // which was fine buried among a dozen other cards in the old aside; as this
@@ -18,16 +18,14 @@ export function UsageSection({ bot }: { bot: Bot }) {
 
   if (usage.turns === 0) {
     return (
-      <div data-bot-settings-section="usage" className="rounded-xl border border-hairline/40 p-4 text-[13px] text-ink-secondary">
-        {t("botPanel.usage.empty")}
-      </div>
+      <p className="text-[13px] text-ink-secondary">{t("botPanel.usage.empty")}</p>
     );
   }
 
   return (
-    <div data-bot-settings-section="usage" className="rounded-xl border border-hairline/40 p-4">
+    <div>
       <div className="flex items-baseline justify-between">
-        <div className="text-[13px] font-medium text-ink">{t("botPanel.usage.title")}</div>
+        <h3 className="text-[13px] font-medium text-ink">{t("botPanel.usage.title")}</h3>
         <button
           onClick={() => dispatch({ type: "toggleAppSettings", open: true, section: "usage" })}
           className="text-[12px] text-ink-secondary hover:text-ink"
@@ -37,11 +35,11 @@ export function UsageSection({ bot }: { bot: Bot }) {
       </div>
       <div className="mt-3 grid grid-cols-3 gap-3 text-[13px]">
         <div>
-          <div className="text-[11.5px] uppercase tracking-wide text-ink-secondary">{t("botPanel.usage.turns")}</div>
+          <div className="text-[12px] text-ink-secondary">{t("botPanel.usage.turns")}</div>
           <div className="mt-0.5 tabular-nums text-ink">{usage.turns}</div>
         </div>
         <div>
-          <div className="text-[11.5px] uppercase tracking-wide text-ink-secondary">{tokensColumnLabel(usage)}</div>
+          <div className="text-[12px] text-ink-secondary">{tokensColumnLabel(usage)}</div>
           <div
             className="mt-0.5 tabular-nums text-ink"
             title={usageDetail(usage)}
@@ -50,9 +48,9 @@ export function UsageSection({ bot }: { bot: Bot }) {
           </div>
         </div>
         <div>
-          <div className="text-[11.5px] uppercase tracking-wide text-ink-secondary">{t("botPanel.usage.cost")}</div>
+          <div className="text-[12px] text-ink-secondary">{t("botPanel.usage.cost")}</div>
           <div className="mt-0.5 tabular-nums text-ink">
-            {hasFiniteCost(usage.costUsd) ? formatUsd(usage.costUsd) : "—"}
+            {hasFiniteCost(usage.costUsd) ? formatUsd(usage.costUsd) : "-"}
           </div>
         </div>
       </div>

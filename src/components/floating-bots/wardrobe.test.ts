@@ -49,6 +49,11 @@ describe("the filter chips", () => {
     const sold: WardrobeEntry[] = [...MASCOTS, { id: "axolotl", family: "animals", premium: { price: "$2.99" }, isNew: true }];
     expect(wardrobeFilters(sold)).toEqual(["all", "owned", "locked", "premium", "family:classics", "family:shapes", "family:animals"]);
   });
+
+  it("drops the To unlock chip when no listed row is locked", () => {
+    expect(wardrobeFilters(MASCOTS, () => false)).toEqual(["all", "owned", "family:classics", "family:shapes", "family:animals"]);
+    expect(wardrobeFilters(MASCOTS)).toEqual(["all", "owned", "locked", "family:classics", "family:shapes", "family:animals"]);
+  });
 });
 
 describe("shelves and filters", () => {

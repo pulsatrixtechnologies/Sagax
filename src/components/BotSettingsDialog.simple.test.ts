@@ -41,7 +41,8 @@ describe("bot panel in Simple mode", () => {
     expect(html).not.toContain('data-bot-settings-section="access"');
     // Simple still offers the persona editor, which hides the same sections
     expect(html).toContain('data-edit-persona=""');
-    // the mascot's menu is offered from the header's "..." button too
-    expect(html).toContain('data-mascot-menu-button=""');
+    // the header's "..." button became the pencil on the mascot (2026-10-12)
+    expect(html).not.toContain('data-mascot-menu-button=""');
+    expect(html).toContain('data-persona-edit-badge=""');
   });
 });

@@ -10,13 +10,11 @@
 //   (src/lib/desktop-local-vm.ts, electron/local-vm.mjs), set up, repaired or
 //   started from the screen itself.
 //
-// Above the screen, when there is more than one to look at, one menu:
-// Cloud, then each of the person's online computers by its full name
-// (a person with two PCs sees two). The closed control and each option
-// show the icon, the whole name and the machine's power. "Works here"
-// marks the one the bot works on. Picking one only changes the screen
-// shown (and where its Local VM actions go, `desktopId`), never where
-// the bot works.
+// Above the screen, when there is more than one to look at, a segmented
+// control: Cloud, then each of the person's online computers by its name
+// (a person with two PCs sees two), a dot on the one the bot works on.
+// Picking one only changes the screen shown (and where its Local VM
+// actions go, `desktopId`), never where the bot works.
 //
 // Under it, only the usage of that computer (disk, CPU, memory, OS) behind
 // a small Details toggle. The bot's Works on is Edit persona > Access
@@ -24,11 +22,10 @@
 //
 // Every action is the signed-in person's own (the server takes the person
 // from the session); nothing here names a bot or another person.
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
-import { ChevronDown, Cpu, Globe, HardDrive, Info, Laptop, MemoryStick, Server } from "lucide-react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { ChevronDown, Cpu, Globe, HardDrive, Info, Laptop, MemoryStick, Server, type LucideIcon } from "lucide-react";
 
-import { powerFromEnvironment, powerFromScreen, type ComputerPower } from "@/lib/computer-menu";
-import { chosenComputer, computerChoices, currentDesktop, type ComputerChoice, type DesktopBridgeStatus } from "@/lib/desktop-bridge";
+import { chosenComputer, computerChoices, currentDesktop, type DesktopBridgeStatus } from "@/lib/desktop-bridge";
 import {
   desktopLocalVm, installChoices, localVmProblemKey, localVmView, runtimeSummaryKey,
   type DesktopLocalVmStatus, type InstallChoice, type LocalVmAction, type ScreenState, type SetupStep,
@@ -41,12 +38,8 @@ import {
 } from "@/lib/server-environment";
 import { SandboxDesktopView } from "../SandboxDesktopView";
 import { ComputerScreen, type ScreenAction } from "./ComputerScreen";
-import { ScreenPicker, type ScreenPickerItem } from "./ComputerMenu";
 import { SandboxDesktopModal } from "./SandboxDesktopModal";
 
-export { ScreenPicker, type ScreenPickerItem };
-
-const MENU_POWER_MS = 10_000;
 const STATS_REFRESH_MS = 5_000;
 const STATS_IDLE_REFRESH_MS = 15_000;
 const LOCAL_STATUS_MS = 10_000;
@@ -69,17 +62,15 @@ export function activeComputer(bridge: DesktopBridgeStatus, place: EffectivePlac
   return { source: "server", reason: "none" };
 }
 
-export function OrgComputerTab({ bridge, place, computerOff, botName, initialLocal = null, browser = null, initialPowers }: {
+export function OrgComputerTab({ bridge, place, computerOff, botName, initialLocal = null, browser = null }: {
   bridge: DesktopBridgeStatus;
   /** The bot's Works on (Auto when unset). */
   place: EffectivePlace;
   computerOff: boolean; botName: string;
   /** Tests: the desktop's Local VM status to start from. */
   initialLocal?: DesktopLocalVmStatus | null;
-  /** The bot's live browser, offered as the menu's last choice. */
+  /** The bot's live browser, offered as the picker's last chip. */
   browser?: ReactNode;
-  /** Tests: power words to show before anything is asked. */
-  initialPowers?: Readonly<Record<string, ComputerPower>>;
 }) {
   const active = activeComputer(bridge, place);
   const choices = computerChoices(bridge);
@@ -91,17 +82,11 @@ export function OrgComputerTab({ bridge, place, computerOff, botName, initialLoc
   const source = chosen?.source ?? active.source;
   const desktop = chosen?.source === "local" ? bridge.desktops.find((entry) => entry.id === chosen.desktopId) ?? null : currentDesktop(bridge);
   const worksOnKey = active.source === "server" ? "server" : chosenComputer(choices, "local", bridge, null)?.key ?? null;
-  const pickerShown = choices.length > 1 || browser !== null;
-  const { powers, report } = useComputerPowers(choices, pickerShown, initialPowers);
-  const shownKey = showingBrowser ? null : chosen?.key ?? null;
-  const reportShown = useCallback((power: ComputerPower) => {
-    if (shownKey) report(shownKey, power);
-  }, [report, shownKey]);
   const [details, setDetails] = useState(false);
   const caption = t("computer.screenOf", { name: botName });
   return (
     <div className="flex flex-col gap-3" data-org-computer={source === "server" ? "user-sandbox" : "user-desktop"} data-works-on={place}>
-      {pickerShown && (
+      {(choices.length > 1 || browser !== null) && (
         <ScreenPicker
           items={[
             ...choices.map((choice): ScreenPickerItem => ({
@@ -109,7 +94,6 @@ export function OrgComputerTab({ bridge, place, computerOff, botName, initialLoc
               label: choice.source === "server" ? t("orgComputer.choice.cloud") : choice.name,
               icon: choice.source === "server" ? Server : Laptop,
               here: choice.key === worksOnKey,
-              ...(powers[choice.key] ? { status: powers[choice.key] } : {}),
             })),
             ...(browser !== null ? [{ key: "browser", label: t("computer.view.browser"), icon: Globe }] : []),
           ]}
@@ -120,7 +104,7 @@ export function OrgComputerTab({ bridge, place, computerOff, botName, initialLoc
       {showingBrowser
         ? <BrowserScreen caption={t("computer.browserOf", { name: botName })}>{browser}</BrowserScreen>
         : source === "server"
-        ? <ServerComputerScreen caption={caption} onPower={reportShown} />
+        ? <ServerComputerScreen caption={caption} />
         : (
           <LocalComputerScreen
             // a new computer starts over: its own status, frames and errors
@@ -129,7 +113,6 @@ export function OrgComputerTab({ bridge, place, computerOff, botName, initialLoc
             desktopId={chosen?.source === "local" ? chosen.desktopId : undefined}
             caption={chosen?.source === "local" ? `${caption} · ${chosen.name}` : caption}
             initial={initialLocal}
-            onPower={reportShown}
           />
         )}
       {computerOff && !showingBrowser && <p role="note" className="-mt-1 text-center text-[12px] text-ink-secondary">{t("computer.phase.off")}</p>}
@@ -146,48 +129,39 @@ export function OrgComputerTab({ bridge, place, computerOff, botName, initialLoc
   );
 }
 
-/** Power for every machine in the menu, so each option can say Éteint or
- * Allumé. The screen on show reports its own state on top of the poll.
- * A seeded map (tests) is not asked again. */
-function useComputerPowers(choices: ComputerChoice[], enabled: boolean, initial?: Readonly<Record<string, ComputerPower>>) {
-  const visible = usePageVisible();
-  const seeded = initial !== undefined;
-  const choicesRef = useRef(choices);
-  choicesRef.current = choices;
-  const [fetched, setFetched] = useState<Record<string, ComputerPower>>(() => ({ ...initial }));
-  const [overlay, setOverlay] = useState<Record<string, ComputerPower>>({});
-  const signature = choices.map((choice) => choice.key).join(" ");
-  useEffect(() => {
-    if (!enabled || !visible || seeded) return;
-    let cancelled = false;
-    const load = async () => {
-      const next: Record<string, ComputerPower> = {};
-      await Promise.all(choicesRef.current.map(async (choice) => {
-        try {
-          if (choice.source === "server") {
-            next[choice.key] = powerFromEnvironment(await loadServerEnvironment());
-          } else {
-            const answer = await desktopLocalVm("status", { desktopId: choice.desktopId });
-            if (!answer.status) return;
-            next[choice.key] = powerFromScreen(localVmView(answer.status, true).state);
-          }
-        } catch { /* keep the last reading */ }
-      }));
-      if (!cancelled) setFetched((prev) => ({ ...prev, ...next }));
-    };
-    void load();
-    const timer = window.setInterval(() => void load(), MENU_POWER_MS);
-    return () => { cancelled = true; window.clearInterval(timer); };
-  }, [enabled, visible, seeded, signature]);
-  const report = useCallback((key: string, power: ComputerPower) => {
-    setOverlay((prev) => (prev[key] === power ? prev : { ...prev, [key]: power }));
-  }, []);
-  const powers: Record<string, ComputerPower> = { ...fetched };
-  for (const choice of choices) {
-    const reported = overlay[choice.key];
-    if (reported) powers[choice.key] = reported;
-  }
-  return { powers, report };
+/** One chip of a screen picker. */
+export interface ScreenPickerItem {
+  key: string;
+  label: string;
+  icon: LucideIcon;
+  /** The bot works here: a dot, and the tooltip says so. */
+  here?: boolean;
+}
+
+/** The Computer tab's one segmented control: Cloud and each of the person's
+ * computers by name on an organization server, then the bot's Browser
+ * (Screen and Browser on a solo server). The dot marks where the bot works. */
+export function ScreenPicker({ items, chosen, onPick }: { items: ScreenPickerItem[]; chosen: string | null; onPick: (key: string) => void }) {
+  return (
+    <div role="radiogroup" aria-label={t("orgComputer.choice.label")} data-computer-picker=""
+      className="flex max-w-full gap-0.5 self-center overflow-x-auto rounded-full bg-control p-0.5 [scrollbar-width:none]">
+      {items.map((item) => {
+        const selected = item.key === chosen;
+        const Icon = item.icon;
+        return (
+          <button key={item.key} type="button" role="radio" aria-checked={selected} data-computer-choice={item.key}
+            title={item.here ? t("orgComputer.choice.worksHere", { name: item.label }) : item.label}
+            onClick={() => onPick(item.key)}
+            className={`flex min-w-0 shrink-0 items-center gap-1.5 rounded-full px-2.5 py-1 text-[12.5px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 ${
+              selected ? "bg-elevated text-ink shadow-sm" : "text-ink-secondary hover:text-ink"}`}>
+            <Icon size={12} aria-hidden="true" />
+            <span className="max-w-[132px] truncate">{item.label}</span>
+            {item.here && <span aria-hidden="true" data-works-here="" className="size-1.5 rounded-full bg-accent" />}
+          </button>
+        );
+      })}
+    </div>
+  );
 }
 
 /** The bot's live browser in the screen's own frame, its name below. */
@@ -211,12 +185,7 @@ function usePageVisible(): boolean {
 }
 
 /** The person's server environment on the screen. */
-export function ServerComputerScreen({ caption, initial = null, onPower }: {
-  caption: string;
-  initial?: ServerEnvironmentStatus | null;
-  /** The menu's power for this screen, once the environment has answered. */
-  onPower?: (power: ComputerPower) => void;
-}) {
+export function ServerComputerScreen({ caption, initial = null }: { caption: string; initial?: ServerEnvironmentStatus | null }) {
   const [status, setStatus] = useState<ServerEnvironmentStatus | null>(initial);
   const [pending, setPending] = useState<PowerAction | null>(null);
   const [error, setError] = useState("");
@@ -249,11 +218,6 @@ export function ServerComputerScreen({ caption, initial = null, onPower }: {
 
   const power = powerState(status?.state, pending);
   const state: ScreenState = !status ? "starting" : !status.configured || power === "unavailable" ? (status.configured ? "error" : "off") : power;
-  useEffect(() => {
-    // "Starting" before the first answer is the screen's own wait, not the machine.
-    if (!onPower || !status) return;
-    onPower(powerFromScreen(state));
-  }, [onPower, status, state]);
   const busy = pending !== null || !status;
   const message = !status ? undefined
     : !status.configured ? t("serverEnvironment.notConfigured")
@@ -330,22 +294,15 @@ export function useDesktopLocalVm(connected: boolean, initial: DesktopLocalVmSta
   return { status, pending, error, act, refresh, visible };
 }
 
-export function LocalComputerScreen({ bridge, caption, initial = null, desktopId, onPower }: {
+export function LocalComputerScreen({ bridge, caption, initial = null, desktopId }: {
   bridge: DesktopBridgeStatus; caption: string; initial?: DesktopLocalVmStatus | null;
   /** The computer the person picked by name; their current one without it. */
   desktopId?: string;
-  /** The menu's power for this screen, once its status is known. */
-  onPower?: (power: ComputerPower) => void;
 }) {
   const desktop = desktopId ? bridge.desktops.find((entry) => entry.id === desktopId && entry.online) ?? null : currentDesktop(bridge);
   const connected = Boolean(desktop?.capabilities?.localVm);
   const vm = useDesktopLocalVm(connected, initial, desktopId);
   const view = localVmView(vm.status, connected, vm.pending);
-  useEffect(() => {
-    // Connected, and not asked yet: "Off" would be a guess.
-    if (!onPower || (connected && vm.status === null && vm.pending === null)) return;
-    onPower(powerFromScreen(view.state));
-  }, [onPower, connected, vm.status, vm.pending, view.state]);
   const [frame, setFrame] = useState<string | null>(null);
   const running = view.state === "running";
   useEffect(() => {

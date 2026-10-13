@@ -9,6 +9,7 @@ export const WORKSPACE_BACKUP_CLIENT_KEYS = [
   "omb-show-threads",
   "omb-show-run-card",
   "omb-show-unready-providers",
+  "omb-send-key",
   "openmausbot.sidebarDensity",
   "openmausbot.sidebarCollapsedSections.v1",
   "openmausbot.sidebarSectionOrder.v1",

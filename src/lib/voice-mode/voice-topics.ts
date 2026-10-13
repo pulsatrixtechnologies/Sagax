@@ -134,18 +134,24 @@ export function callHasBackgroundWork(messages: Array<{
   });
 }
 
-/** Admit a new spoken topic as a parallel task. Barge-in stays card-only
- * (`callHasBackgroundWork`): an own-turn tool chip must not keep a thinking
- * reply un-cancellable. A still-running tool on this thread is parkable. */
+/** New words join the running call turn (steer) instead of replacing it
+ * only while its own tool is in flight: replacing would kill the work.
+ * A live parallel card does not count (a replace never touches it), nor a
+ * chip an earlier, replaced utterance left unsettled. Barge-in stays
+ * card-only (`callHasBackgroundWork`). */
 export function callHasParkableWork(messages: Array<{
+  role?: string;
   kind?: string;
   tool?: { name?: string; ok?: boolean };
   parallelTask?: { role?: string; state?: string };
 }>): boolean {
-  if (callHasBackgroundWork(messages)) return true;
-  return messages.some((message) => (
-    message.kind === "activity" && message.tool && message.tool.ok !== true && message.tool.ok !== false
-  ));
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const message = messages[i]!;
+    if (message.role === "user" && !message.parallelTask) return false;
+    if (message.kind === "activity" && message.tool && !message.parallelTask
+      && message.tool.ok !== true && message.tool.ok !== false) return true;
+  }
+  return false;
 }
 
 export function howToSpeakTopicResult(opts: {

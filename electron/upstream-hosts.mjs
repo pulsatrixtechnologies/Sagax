@@ -11,6 +11,7 @@ export const BLOCKED_DOMAINS = Object.freeze([
   "openmausbot.ai",
   "openmausbot.app",
   "openmausbot.dev",
+  "mausbot.si",
   "posthog.com",
 ]);
 

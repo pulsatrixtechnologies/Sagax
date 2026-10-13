@@ -219,6 +219,36 @@ export function owlSkinLook(skin: OwlSkinId, hex: string): OwlSkinLook {
   }
 }
 
+/** Each owl skin as a material finish: how the feathers shine or glow (the
+ * 2D owl draws effect layers instead). Kept from the modeled 3D owl, which is
+ * gone; a test holds every special skin to a finish of its own. */
+export function skinFinish(skin: string): { metalness: number; roughness: number; emissive: string; glow: number; pulse: number } {
+  switch (skin) {
+    case "gold":
+      return { metalness: 0.75, roughness: 0.28, emissive: "#6b4a00", glow: 0.25, pulse: 0 };
+    case "neon":
+      return { metalness: 0, roughness: 0.4, emissive: "#29f0ff", glow: 0.55, pulse: 0.25 };
+    case "inferno":
+      return { metalness: 0, roughness: 0.6, emissive: "#ff5a12", glow: 0.6, pulse: 0.3 };
+    case "frost":
+      return { metalness: 0.1, roughness: 0.2, emissive: "#bfe8ff", glow: 0.3, pulse: 0.1 };
+    case "carbon":
+      return { metalness: 0.45, roughness: 0.35, emissive: "#000000", glow: 0, pulse: 0 };
+    case "lightning":
+      return { metalness: 0.2, roughness: 0.45, emissive: "#ffe14a", glow: 0.35, pulse: 0.5 };
+    case "chrome":
+      return { metalness: 0.9, roughness: 0.15, emissive: "#000000", glow: 0, pulse: 0 };
+    case "holo":
+      return { metalness: 0.5, roughness: 0.25, emissive: "#f5a8ff", glow: 0.25, pulse: 0.1 };
+    case "galaxy":
+      return { metalness: 0.2, roughness: 0.4, emissive: "#6b4cff", glow: 0.3, pulse: 0.1 };
+    case "spirit":
+      return { metalness: 0, roughness: 0.6, emissive: "#7ff0ff", glow: 0.45, pulse: 0.15 };
+    default:
+      return { metalness: 0, roughness: 0.8, emissive: "#000000", glow: 0, pulse: 0 };
+  }
+}
+
 /* ------------------------------------------------------------- lightning */
 
 /** A small seeded PRNG so the bolts are the same on every render. */

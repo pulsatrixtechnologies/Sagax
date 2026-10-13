@@ -117,6 +117,8 @@ const OUTCOME_OF_DECISION: Record<DecisionKind, ActivityOutcome> = {
   // A person reverted a change that had applied on its own.
   "user-undone": "denied",
   "review-would-deny": "denied",
+  // Nobody answered in time: nothing ran.
+  expired: "denied",
   "card-shown": "waiting",
 };
 

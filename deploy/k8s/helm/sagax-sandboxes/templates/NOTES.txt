@@ -1,0 +1,20 @@
+Sagax sandbox namespace {{ .Values.sandboxNamespace }} is declared.
+sagax-sandboxd's ServiceAccount may create, read and delete pods and
+workspace volumes in that namespace only. It has no ClusterRole.
+
+The provisioner Deployment is not part of this chart. sagax-sandboxd still
+speaks Docker until its Kubernetes adapter lands. Do not mount a Docker
+socket into that adapter.
+
+Warm node: {{ .Values.warmNode.replicas }} replica now, scale to 1 at
+{{ .Values.warmNode.scaleUp }} and to 0 at {{ .Values.warmNode.scaleDown }}
+({{ .Values.warmNode.timezone }}). The pool autoscaler min stays 0.
+
+Storage class {{ .Values.storage.className }} uses {{ .Values.storage.provisioner }}.
+Volume backups go to {{ .Values.backup.destination.provider }}, which must stay
+a different provider than {{ .Values.backup.productionProvider }}.
+The backup Secret {{ .Values.backup.destination.credentialSecret }} is not created here.
+
+Image admission expects cosign signatures and a vulnerability attestation
+from {{ .Values.admission.kyverno.issuer }}.
+SOC 2 control mapping: deploy/k8s/SOC2.md

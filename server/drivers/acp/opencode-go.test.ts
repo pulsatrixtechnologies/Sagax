@@ -379,6 +379,7 @@ describe("OpenCode catalog", () => {
           OPENAI_API_KEY: "openai-shell-key",
           ANTHROPIC_API_KEY: "anthropic-shell-key",
           GEMINI_API_KEY: "gemini-shell-key",
+          CLINE_API_KEY: "cline-provider-key",
           // Sagax's own saved keys for other engines never ride along.
           XAI_API_KEY: "saved-for-grok",
           MISTRAL_API_KEY: "saved-for-mistral",
@@ -394,6 +395,7 @@ describe("OpenCode catalog", () => {
       expect(child.env.OPENAI_API_KEY).toBe("openai-shell-key");
       expect(child.env.ANTHROPIC_API_KEY).toBe("anthropic-shell-key");
       expect(child.env.GEMINI_API_KEY).toBe("gemini-shell-key");
+      expect(child.env.CLINE_API_KEY).toBe("cline-provider-key");
       expect(child.env.XAI_API_KEY).toBeUndefined();
       expect(child.env.MISTRAL_API_KEY).toBeUndefined();
       expect(child.env.SAGAX_ANTHROPIC_API_KEY).toBeUndefined();

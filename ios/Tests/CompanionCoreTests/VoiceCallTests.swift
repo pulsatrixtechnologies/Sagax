@@ -67,14 +67,14 @@ final class CallMachineTests: XCTestCase {
         XCTAssertEqual(talk.state.phase, .hearing)
     }
 
-    func testDuplexTalkingWhileTheBotWorksSilentlyCancelsIt() {
+    func testDuplexTalkingWhileTheBotWorksSilentlyDoesNotInterrupt() {
         var working = CallMachine.step(CallMachine.step(.initial, .connected).state, .botBusy(true)).state
         working.duplex = true
         XCTAssertEqual(working.phase, .thinking)
         let talk = CallMachine.step(working, .speechStart)
-        XCTAssertEqual(talk.effects, [.cancelSpeech, .earcon(.interrupted), .interruptBot])
-        XCTAssertEqual(talk.state.phase, .interrupted)
-        XCTAssertFalse(talk.state.botAudible)
+        XCTAssertEqual(talk.effects, [])
+        XCTAssertEqual(talk.state.phase, .hearing)
+        XCTAssertFalse(talk.effects.contains(.interruptBot))
     }
 
     func testDuplexBargeInDoesNotKillBackgroundWork() {
@@ -185,8 +185,10 @@ final class TurnDetectorTests: XCTestCase {
         // echo is never speech
         XCTAssertNil(detector.feed(TurnFrame(probability: 0.95, level: 0.1, botAudible: true, echo: true)))
         let loud = TurnFrame(probability: 0.95, level: 0.2, botAudible: true)
-        let events = feed(detector, loud, 5)
-        XCTAssertEqual(events, [.candidate(bargeIn: true), .start(bargeIn: true)], "a barge-in confirms after 160 ms")
+        let early = TurnDetector()
+        XCTAssertEqual(feed(early, loud, 3), [.candidate(bargeIn: true)], "three frames only duck")
+        let events = feed(detector, loud, 4)
+        XCTAssertEqual(events, [.candidate(bargeIn: true), .start(bargeIn: true)], "a barge-in confirms at 128 ms")
     }
 
     func testTheEndpointStretchesForSomeoneWhoPausesAndTightensAgain() {

@@ -15,7 +15,7 @@
 //
 // It never touches the legal files, vendored third-party code, lockfiles or
 // binary files, nor the compatibility code that must keep reading the old
-// names for one release (LEGACY_FILES). Some old spellings are protected on
+// names (SKIP_EXACT). Some old spellings are protected on
 // purpose (PROTECT): live endpoints and wire contracts of services this
 // project does not run, store identities of shipped apps, and identifiers
 // written into files people already have.
@@ -111,7 +111,8 @@ const PROTECT = [
   re(`applicationId\\s*=\\s*"[^"]*"`),
   // file format ids, stored preference names and notification ids
   re(`${OLD_SHORT}\\.[a-z][A-Za-z0-9_.-]*`),
-  // compatibility kept for one release (step 1 of the rename): both schemes,
+  // compatibility kept on purpose (AGENTS.md, "Legacy names kept for
+  // compatibility"): both schemes,
   // the old protocol and links, the lease files old and new copies share,
   // the runtime name that names the keychain secret, the health word
   re(`sagax\\|${OLD}`),

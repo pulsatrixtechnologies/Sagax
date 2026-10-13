@@ -46,8 +46,22 @@ describe("verifyWindowsNatives", () => {
       "resources/cloudflared/cloudflared.exe": pe(PE_MACHINE.x64),
       "resources/browser-engine/agent-browser.exe": pe(PE_MACHINE.x64),
       "resources/android-platform-tools/win32/adb.exe": pe(PE_MACHINE.ia32),
+      "resources/elevate.exe": pe(PE_MACHINE.ia32),
     });
     await expect(verifyWindowsNatives(root, "arm64")).resolves.toEqual({ problems: [], addons: 1 });
+  });
+
+  it("allows only the x86 NSIS elevate.exe, not an x64 one or another x86 file", async () => {
+    const root = await app({
+      "Sagax.exe": pe(PE_MACHINE.arm64),
+      "resources/elevate.exe": pe(PE_MACHINE.x64),
+      "resources/other.exe": pe(PE_MACHINE.ia32),
+    });
+    const { problems } = await verifyWindowsNatives(root, "arm64");
+    expect(problems.sort()).toEqual([
+      "resources/elevate.exe: built for x64, package is arm64",
+      "resources/other.exe: built for ia32, package is arm64",
+    ]);
   });
 
   it("rejects a native addon cross-built for the host (darwin) or the other arch", async () => {

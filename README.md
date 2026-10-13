@@ -294,6 +294,10 @@ First launch notes:
   or allow it in System Settings > Privacy & Security > **Open Anyway**.
 - **iPhone and iPad.** Install from TestFlight. A voice call shows as a card
   in the conversation.
+- **Phone web app.** The web UI can also be installed from Safari or Chrome
+  as a standalone phone app. See
+  [Install the phone web app](docs/phone-web-app.md) for Home Screen
+  installation and pairing.
 - **Windows SmartScreen.** The installer is not signed, so SmartScreen shows an
   unknown publisher. Choose **More info**, then **Run anyway**.
 - **Engines.** The computer that runs your bots needs at least one engine

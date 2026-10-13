@@ -84,16 +84,24 @@ it("keeps the selected API model for direct, group and scheduled Boat turns and 
       const conversation = scenario === "group" ? current.groups.find((item: any) => item.id === group.id) : current.bots.find((item: any) => item.id === bot.id);
       const card = conversation.messages.find((message: any) => message.card?.requestId && !message.card.answered)?.card;
       expect(card?.requestId).toBeTruthy();
+      const commandsBefore = commands.length;
       if (scenario === "held") await api("POST", `/api/bots/${bot.id}/computer/control`, { action: "take" });
       await api("POST", `/api/threads/${scenario === "group" ? group.threadId : bot.activeTaskId}/respond`, { requestId: card.requestId, behavior: "allow" });
+      if (scenario === "held") {
+        // The screenshot waits for the person inside the call, the turn
+        // still going, and acts on nothing while they hold it; handed back,
+        // it is answered unperformed — the screen moved under their hands.
+        await new Promise(resolve => setTimeout(resolve, 1_000));
+        expect(commands).toHaveLength(commandsBefore);
+        await api("POST", `/api/bots/${bot.id}/computer/control`, { action: "release" });
+      }
       const settled = await control(["wait", ...destination, "--timeout", "20"]);
       expect(settled.status).toBe(scenario === "held" ? "failed" : "settled");
       expect(requests.slice(before)).toHaveLength(2);
       expect(requests.slice(before).every(request => request.model === "chosen-vision-model")).toBe(true);
       const followup = requests[before + 1].messages;
       if (scenario === "held") {
-        expect(followup.at(-1).content).toContain("NOT performed");
-        await api("POST", `/api/bots/${bot.id}/computer/control`, { action: "release" });
+        expect(followup.at(-1).content).toContain("The person has handed this computer back. This call was NOT performed");
       } else {
         expect(followup.at(-1).content[1].type).toBe("image_url");
       }

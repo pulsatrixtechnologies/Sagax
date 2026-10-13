@@ -1,0 +1,17 @@
+# Daily backup of the sandbox namespace, including workspace PVCs. The
+# storage location is the adapter's (another provider than the cluster, so
+# the backup is off-site). Cron is UTC: 11:00 UTC is 07:00 EDT and 06:00 EST,
+# before the warm window. The drill record notes which civil time that was.
+apiVersion: velero.io/v1
+kind: Schedule
+metadata:
+  name: sagax-sandboxes-daily
+  namespace: velero
+spec:
+  schedule: "0 11 * * *"
+  template:
+    includedNamespaces:
+      - sagax-sandboxes
+    snapshotVolumes: true
+    ttl: 720h0m0s
+    storageLocation: sagax-sandboxes

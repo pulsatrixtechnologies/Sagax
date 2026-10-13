@@ -142,8 +142,14 @@ export function narrowBotForViewer<T extends Record<string, unknown>>(
   const threadIsMine = threadId !== undefined && (shownTasks
     ? shownTasks.some((task) => task.threadId === threadId)
     : threadId === input.mine);
-  if (threadIsMine && (!tasks || shownTasks!.length === tasks.length)) return bot;
+  // The bot's main thread (WireBot.mainThreadId) may be someone else's:
+  // a viewer is told only a thread of their own.
+  const main = typeof bot.mainThreadId === "string" ? bot.mainThreadId : undefined;
+  const mainHidden = main !== undefined
+    && !(shownTasks ? shownTasks.some((task) => task.threadId === main) : main === input.mine);
+  if (threadIsMine && !mainHidden && (!tasks || shownTasks!.length === tasks.length)) return bot;
   const out: Record<string, unknown> = { ...bot };
+  if (mainHidden) delete out.mainThreadId;
   if (shownTasks) out.tasks = shownTasks;
   if (!threadIsMine && threadId !== undefined) {
     for (const field of TRANSCRIPT_FIELDS) delete out[field];

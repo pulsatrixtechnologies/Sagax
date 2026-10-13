@@ -8,7 +8,7 @@ a Sagax account of its own.
 
 ## Use My Cloud on your phone
 
-With OMB Cloud, pair the phone with your Cloud instead of your computer, and
+With MausBot Cloud, pair the phone with your Cloud instead of your computer, and
 it keeps working while the computer is off.
 
 1. In the desktop app, open the menu under your name and choose **Get the

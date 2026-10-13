@@ -7,7 +7,7 @@
 // permission. Opened from the mascot's menu in the bot panel, and on
 // Appearance from a click on the bot's avatar (store action openPersonaEditor).
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
-import { Lock, Search, X } from "lucide-react";
+import { ChevronRight, Lock, Search, X } from "lucide-react";
 
 import { useStore, type Bot, type BotSettingsSection } from "@/state/store";
 import { t } from "@/lib/i18n";
@@ -123,14 +123,21 @@ function PersonaEditor({ bot, section, onClose }: { bot: Bot; section: BotSettin
       return (
         <div className="flex flex-col">
           <PersonaOverview bot={bot} derived={derived} onClose={onClose} />
-          <SubHeading>{t("persona.overview.summary")}</SubHeading>
-          {renderSectionBody("overview")}
           {sharing && (
             <>
               <SubHeading>{personaCategoryLabel(sharing)}</SubHeading>
               {renderSectionBody(sharing)}
             </>
           )}
+          {/* What the server says the bot does, reaches and won't do, the
+              prompt preview and the recent changes: one click away. */}
+          <details data-persona-summary="" className="group mt-8 border-t border-hairline/40 pt-5">
+            <summary className="flex cursor-pointer list-none items-center gap-1.5 text-[13px] font-medium text-ink [&::-webkit-details-marker]:hidden">
+              <ChevronRight size={14} aria-hidden="true" className="text-ink-secondary transition-transform group-open:rotate-90 motion-reduce:transition-none" />
+              {t("persona.overview.summary")}
+            </summary>
+            <div className="mt-4">{renderSectionBody("overview")}</div>
+          </details>
         </div>
       );
     }
@@ -158,17 +165,12 @@ function PersonaEditor({ bot, section, onClose }: { bot: Bot; section: BotSettin
       return (
         <div className="flex flex-col">
           {renderSectionBody("access")}
-          {worksOn && (
-            <>
-              <SubHeading>{personaCategoryLabel("worksOn")}</SubHeading>
-              {renderSectionBody("worksOn")}
-            </>
-          )}
+          {worksOn && <div className="mt-5">{renderSectionBody("worksOn")}</div>}
           {available("slack") && (
-            <>
-              <SubHeading>{personaCategoryLabel("slack")}</SubHeading>
+            <div className="mt-5 border-t border-hairline/40 pt-5">
+              <h3 className="mb-3 text-[13px] font-medium text-ink">{personaCategoryLabel("slack")}</h3>
               {renderSectionBody("slack")}
-            </>
+            </div>
           )}
         </div>
       );

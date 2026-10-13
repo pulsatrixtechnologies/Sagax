@@ -61,9 +61,6 @@ describe("parallel task card", () => {
     expect(parallelCardState(card("queued"), { busy: false })).toBe("queued");
     const result = { id: "r", role: "bot", kind: "text", at: NOW, text: "ok", parallelTask: { threadId: "par", title: "Draft the email", requestMessageId: "req", role: "result" } } as never;
     expect(renderToStaticMarkup(createElement(ParallelResultLabel, { message: result }))).toContain("Answer from the parallel task · Draft the email");
-    const background = card("running") as { parallelTask: { background?: boolean } };
-    background.parallelTask = { ...background.parallelTask, background: true };
-    expect(renderToStaticMarkup(createElement(ParallelTaskCard, { message: background as never, botId: "pepper" }))).toContain("In the background · Draft the email");
   });
 });
 

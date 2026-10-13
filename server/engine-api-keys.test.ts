@@ -76,7 +76,7 @@ describe("provider access keys", () => {
     writeFileEngineKey(data, scope, "cursorAgent", "CURSOR_API_KEY", WITNESS, vault);
     const path = join(data, ENGINE_API_KEYS_FILE);
     expect(fileKeyConfigured(data, scope, "cursorAgent", vault)).toBe(true);
-    expect(statSync(path).mode & 0o777).toBe(0o600);
+    if (process.platform !== "win32") expect(statSync(path).mode & 0o777).toBe(0o600);
     const sealed = readFileSync(path, "utf8");
     expect(sealed).not.toContain(WITNESS);
     expect(sealed).not.toContain("CURSOR_API_KEY");

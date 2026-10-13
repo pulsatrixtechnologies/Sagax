@@ -87,8 +87,18 @@ const withSkins = !flag("--no-skins");
 const withDom = !flag("--no-dom");
 const keep = flag("--keep");
 const orgMode = flag("--org") || process.env.PARITY_ORG === "1";
+// --language fr: every surface in that language (a surface's own wins);
+// --skin midnight: every surface in that skin instead of the default one.
+const languageArg = opt("--language");
+const skinArg = opt("--skin");
+// --text: also write the top dialog's text (or the page's) as <file>.txt.
+const withText = flag("--text");
+// --advanced: the interface in Advanced mode (src/lib/interface-mode.ts).
+const advancedMode = flag("--advanced");
 
 const log = (...m) => console.error("[desktop-refs]", ...m);
+const PACKAGE = JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8"));
+const RELEASE_VERSION = PACKAGE.forkVersion ?? PACKAGE.version;
 
 // ── processes ───────────────────────────────────────────────────────────
 const children = [];
@@ -384,9 +394,10 @@ async function main() {
     // The organization pass draws only the surfaces that need that server;
     // the solo pass all the others.
     for (const surface of SURFACES.filter((s) => s.phase === phase.id && Boolean(s.org) === orgMode)) {
-      const variants = surface.skins === "all" ? (withSkins ? SKIN_IDS : ["pulsatrix"]) : ["pulsatrix"];
+      const base = skinArg ?? "pulsatrix";
+      const variants = surface.skins === "all" && !skinArg ? (withSkins ? SKIN_IDS : [base]) : [base];
       for (const skin of variants) {
-        const name = skin === "pulsatrix" ? `${surface.nn}-${surface.id}` : `${surface.nn}-${surface.id}-skin-${skin}`;
+        const name = skin === base ? `${surface.nn}-${surface.id}` : `${surface.nn}-${surface.id}-skin-${skin}`;
         if (only && !only(name)) continue;
         plan.push({ phase, surface, skin, name });
       }
@@ -409,7 +420,10 @@ async function main() {
         localStorage: {
           "omb-skin": item.skin,
           "openmausbot.sidebarDensity": item.surface.density ?? "comfortable",
-          "omb-language": item.surface.language ?? "en",
+          "omb-language": item.surface.language ?? languageArg ?? "en",
+          ...(advancedMode ? { "sagax.interfaceMode.v1": "advanced" } : {}),
+          // "What's new" for the running version counts as seen: it would cover the surface.
+          "sagax.releaseNotes.seen.v1": JSON.stringify({ version: RELEASE_VERSION }),
           ...item.surface.localStorage,
         },
         // A page the server serves (the bridge's remote subset, without
@@ -442,6 +456,16 @@ async function main() {
           throw new Error("blank page at capture time");
         }
         writeFileSync(join(REFS, `${file}.png`), await page.screenshot());
+        // --text also shows the end of a scrolled dialog: one more shot
+        // (<file>-end.png) when its content runs past the window.
+        if (withText) {
+          const scrolled = await page.eval(`(() => { let moved = false; const d = [...document.querySelectorAll("[role=dialog]")].pop(); if (!d) return false; for (const el of d.querySelectorAll("*")) { if (el.scrollHeight > el.clientHeight + 40 && /auto|scroll/.test(getComputedStyle(el).overflowY)) { el.scrollTop = el.scrollHeight; moved = true; } } return moved; })()`);
+          if (scrolled) { await sleep(400); writeFileSync(join(REFS, `${file}-end.png`), await page.screenshot()); }
+        }
+        if (withText) {
+          const text = await page.eval(`(() => { const d = [...document.querySelectorAll("[role=dialog]")].pop(); return (d ?? document.body).innerText; })()`);
+          writeFileSync(join(REFS, `${file}.txt`), `${text}\n`);
+        }
         if (withDom) {
           const dom = await page.eval(MEASURE);
           dom.surface = item.name;

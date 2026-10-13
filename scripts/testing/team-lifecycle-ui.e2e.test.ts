@@ -10,7 +10,6 @@ import { request } from "../mcp-server.ts";
 import { mountPreview, type MountedPreview } from "./preview-fixture.ts";
 import { UI_TOOLS_DIR } from "./control-omb-ui.ts";
 import { jsLiteral } from "./js-literal.mjs";
-import { openCreateTeamDialog } from "./ui-navigation.ts";
 
 const ROOT = fileURLToPath(new URL("../..", import.meta.url));
 const binary = resolveAgentBrowserBinary({ dataDir: UI_TOOLS_DIR, env: process.env });
@@ -77,7 +76,10 @@ if (!enabled) console.log("skipping team lifecycle UI e2e: set SAGAX_UI_E2E=1 to
     const a = (await control("new-bot", "--name", "Researcher", "--section", "Research") as any).bot;
     const b = (await control("new-bot", "--name", "Engineer", "--section", "Engineering") as any).bot;
 
-    await openCreateTeamDialog(click);
+    await click("You");
+    await click("Team map");
+    await click("Add to team map");
+    await click("Create team");
     await type("Team name", "Delivery");
     await click("Create team");
     await expect.poll(snapshot, { timeout: 10_000 }).toContain('button "Delivery"');

@@ -2,12 +2,12 @@ import XCTest
 @testable import CompanionCore
 
 /// Electron Settings > Appearance > Sidebar logo (`src/lib/sidebar-logo-preferences.ts`):
-/// local only (`sagax-show-sidebar-logo`), shown unless stored as `"0"`.
+/// local only (`sagax-show-sidebar-logo`), hidden unless stored as `"1"`.
 final class SidebarLogoPreferenceTests: XCTestCase {
     func testKeyAndDefaultMatchElectron() {
         XCTAssertEqual(SidebarLogoPreference.key, "sagax-show-sidebar-logo")
-        XCTAssertTrue(SidebarLogoPreference.defaultEnabled)
-        XCTAssertTrue(SidebarLogoPreference.enabled(stored: nil))
+        XCTAssertFalse(SidebarLogoPreference.defaultEnabled)
+        XCTAssertFalse(SidebarLogoPreference.enabled(stored: nil))
         XCTAssertTrue(SidebarLogoPreference.enabled(stored: "1"))
         XCTAssertTrue(SidebarLogoPreference.enabled(stored: "true"))
         XCTAssertFalse(SidebarLogoPreference.enabled(stored: "0"))
@@ -23,12 +23,13 @@ final class SidebarLogoPreferenceTests: XCTestCase {
         XCTAssertTrue(SidebarLogoPreference.isBrandVisible(enabled: false, idiomIsPad: false, isMac: false))
     }
 
-    func testMacKeepsTheBrandVisible() {
+    func testMacKeepsTheDefault() {
         // Mac Catalyst and Designed for iPad on Mac: Electron already has this
-        // toggle in the desktop app. The iOS binary on Mac always shows the brand.
-        XCTAssertTrue(SidebarLogoPreference.isBrandVisible(enabled: false, idiomIsPad: true, isMac: true))
-        XCTAssertTrue(SidebarLogoPreference.isBrandVisible(enabled: false, idiomIsPad: false, isMac: true))
-        XCTAssertTrue(SidebarLogoPreference.isBrandVisible(enabled: true, idiomIsPad: true, isMac: true))
+        // toggle in the desktop app. The iOS binary on Mac shows no switch and
+        // keeps the default, hidden like the desktop's.
+        XCTAssertFalse(SidebarLogoPreference.isBrandVisible(enabled: false, idiomIsPad: true, isMac: true))
+        XCTAssertFalse(SidebarLogoPreference.isBrandVisible(enabled: false, idiomIsPad: false, isMac: true))
+        XCTAssertFalse(SidebarLogoPreference.isBrandVisible(enabled: true, idiomIsPad: true, isMac: true))
     }
 
     func testTheAppearanceSwitchIsIPadOSOnly() {

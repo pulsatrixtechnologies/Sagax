@@ -63,7 +63,7 @@ describe("what the personal server keeps", () => {
     expect(store.get()).toBeNull();
     expect(store.sessionFields("pr_local")).toEqual({});
     store.set(parseOwnerIdentityMessage(wire())!.identity);
-    expect(statSync(file).mode & 0o777).toBe(0o600);
+    if (process.platform !== "win32") expect(statSync(file).mode & 0o777).toBe(0o600);
     const again = new OwnerIdentityStore(file);
     expect(again.get()?.avatar?.bytes.equals(PNG)).toBe(true);
     expect(again.sessionFields("pr_local")).toEqual({

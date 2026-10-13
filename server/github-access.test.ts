@@ -59,7 +59,7 @@ async function fakeGithub(): Promise<{ origin: string; seen: string[] }> {
       const path = req.url.slice("/repos/acme/private/contents/".length).split("?")[0];
       if (path === "") return send(200, [{ type: "dir", name: "skills", path: "skills" }]);
       if (path === "skills") return send(200, [{ type: "dir", name: "digest", path: "skills/digest" }]);
-      if (path === "skills/digest") return send(200, [{ type: "file", name: "SKILL.md", path: "skills/digest/SKILL.md", download_url: `${origin}/raw/digest` }]);
+      if (path === "skills/digest") return send(200, [{ type: "file", name: "SKILL.md", path: "skills/digest/SKILL.md", download_url: "https://raw.githubusercontent.com/acme/private/main/skills/digest/SKILL.md" }]);
     }
     if (req.url === "/raw/digest") {
       res.writeHead(200, { "content-type": "text/plain" });
@@ -111,7 +111,8 @@ describe("why GitHub refuses", () => {
     const github = await fakeGithub();
     const routed: typeof fetch = (input, init) => {
       const url = new URL(typeof input === "string" || input instanceof URL ? input : input.url);
-      const local = url.hostname === "api.github.com" ? `${github.origin}${url.pathname}${url.search}` : url.toString();
+      const local = url.hostname === "api.github.com" ? `${github.origin}${url.pathname}${url.search}`
+        : url.hostname === "raw.githubusercontent.com" ? `${github.origin}/raw/digest` : url.toString();
       return fetch(local, init);
     };
     const without = await fetchSkillFromSource("https://github.com/acme/private", githubSkillFetch([], routed, env(github.origin)));

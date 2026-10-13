@@ -129,7 +129,7 @@ describe("LiveCallSettings", () => {
     expect(markup).toContain("Marin (default)");
     expect(markup).toContain("A new voice starts with the next call.");
     expect(markup).toContain("Key and limits are in");
-    expect(markup).toContain(">API keys<");
+    expect(markup).toContain(">Integrations<");
     expect(markup).not.toContain("Read replies to typed messages");
     expect(markup).not.toContain("Change key");
     expect(markup).toMatch(/role="dialog" tabindex="-1"/);

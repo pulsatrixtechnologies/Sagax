@@ -2,9 +2,11 @@ import { createElement, type ComponentProps } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { setLocale } from "@/lib/i18n";
+import type { SendKey } from "@/lib/send-key";
+import { en, locales } from "@/locales";
 import type { AppSettingsSection } from "@/state/store";
 import type { Switch } from "./SettingsPrimitives";
-import { SettingsModal } from "./SettingsModal";
+import { SECTIONS, sectionMatches, SettingsModal } from "./SettingsModal";
 
 vi.mock("@/lib/interface-mode", () => ({ useAdvancedMode: () => true, setAdvancedMode: () => {} }));
 
@@ -22,6 +24,8 @@ const fixture = vi.hoisted(() => ({
   setNotificationSounds: vi.fn(),
   locals: {} as Record<string, boolean>,
   setLocal: vi.fn(),
+  sendKey: "enter" as SendKey,
+  setSendKey: vi.fn(),
   api: vi.fn(),
   dispatch: vi.fn(),
   switches: [] as ComponentProps<typeof Switch>[],
@@ -69,6 +73,11 @@ vi.mock("@/lib/notification-preferences", () => {
     useLocalSwitch: (choice: { enabled: () => boolean }) => choice.enabled(),
   };
 });
+vi.mock("@/lib/send-key", async (importOriginal) => ({
+  ...await importOriginal<typeof import("@/lib/send-key")>(),
+  useSendKey: () => fixture.sendKey,
+  setSendKey: fixture.setSendKey,
+}));
 vi.mock("@/lib/analytics", () => ({ analyticsEnabled: () => false, setAnalyticsEnabled: vi.fn() }));
 vi.mock("./SettingsPrimitives", async (importOriginal) => {
   const original = await importOriginal<typeof import("./SettingsPrimitives")>();
@@ -90,6 +99,7 @@ beforeEach(() => {
   fixture.notificationSounds = true;
   fixture.nudgeSound = true;
   fixture.locals = {};
+  fixture.sendKey = "enter";
   fixture.switches = [];
   fixture.showUnreadyProviders = false;
   vi.stubGlobal("window", {});
@@ -176,6 +186,44 @@ describe("Settings → Appearance", () => {
     expect(on.checked).toBe(true);
   });
 
+  it.each([
+    ["enter", "Enter"],
+    ["shift-enter", "Shift+Enter"],
+    ["mod-enter", "Ctrl+Enter"],
+  ] as const)("shows the saved send key (%s) on this device only", (sendKey, label) => {
+    fixture.sendKey = sendKey;
+    const html = render();
+    expect(html).toContain("Send messages with");
+    expect(html).toContain('aria-label="Send messages with"');
+    expect(html).toContain("Choose Shift+Enter or Ctrl+Enter so Enter starts a new line");
+    expect(html).toContain("as Japanese input does. Ctrl+Enter sends whichever you choose.");
+    expect(html).toContain(`<option value="${sendKey}" selected="">${label}</option>`);
+    const options = [...html.matchAll(/<option value="(enter|shift-enter|mod-enter)"[^>]*>([^<]*)</g)].map((match) => [match[1], match[2]]);
+    // only the key, so the closed menu fits its 240px column in every language
+    expect(options).toEqual([["enter", "Enter"], ["shift-enter", "Shift+Enter"], ["mod-enter", "Ctrl+Enter"]]);
+    expect(fixture.setSendKey).not.toHaveBeenCalled();
+    expect(fixture.api).not.toHaveBeenCalled();
+    expect(fixture.dispatch).not.toHaveBeenCalled();
+  });
+
+  it("asks Japanese speakers in Japanese, with the key named for this computer", () => {
+    setLocale("ja");
+    fixture.sendKey = "shift-enter";
+    const html = render();
+    expect(html).toContain("メッセージの送信キー");
+    expect(html).toContain("日本語入力のように Enter で変換を確定する場合は、Shift+Enter か Ctrl+Enter を選ぶと Enter で改行できます。");
+    expect(html).toContain('<option value="enter">Enter</option>');
+    expect(html).toContain('<option value="shift-enter" selected="">Shift+Enter</option>');
+    expect(html).toContain('<option value="mod-enter">Ctrl+Enter</option>');
+  });
+
+  it("finds the send key by the keys' names on every platform", () => {
+    const appearance = SECTIONS.find((section) => section.id === "appearance")!;
+    for (const query of ["enter", "return", "shift+enter", "ctrl+enter", "cmd", "cmd+enter", "⌘", "⌘+enter", "command", "send", "new line", "ime"]) {
+      expect(sectionMatches(appearance, query), query).toBe(true);
+    }
+  });
+
   it("offers the run card visibility toggle in Appearance", () => {
     fixture.showRunCard = true;
     const html = render();
@@ -239,13 +287,29 @@ describe("Settings → Appearance", () => {
     expect(html).toContain("Older team backups and shareable templates");
   });
 
-  it("uses English fallback for new keys in untranslated languages", () => {
+  it("renders Appearance and its controls in Japanese", () => {
     setLocale("ja");
     const html = render();
-    expect(html).toContain("Appearance");
-    expect(html).toContain('aria-label="Show threads"');
-    expect(html).toContain("all conversation history and running work");
-    expect(html).not.toContain("settings.threadDisplay");
+    for (const key of ["settings.section.appearance", "settings.threadDisplay.show"] as const) {
+      expect(locales.ja[key], key).toBeTruthy();
+      expect(locales.ja[key], key).not.toBe(en[key]);
+      expect(html, key).toContain(locales.ja[key]!);
+    }
+  });
+
+  it("uses English fallback for new keys in an incomplete language pack", () => {
+    locales.zz = {};
+    try {
+      setLocale("zz");
+      const html = render();
+      expect(html).toContain("Appearance");
+      expect(html).toContain('aria-label="Show threads"');
+      expect(html).toContain("all conversation history and running work");
+      expect(html).not.toContain("settings.threadDisplay");
+    } finally {
+      delete locales.zz;
+      setLocale("en");
+    }
   });
 
   // The joined-servers list and the join card both wait on the /api/org

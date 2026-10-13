@@ -651,3 +651,38 @@ describe("Regenerate title", () => {
     vi.unstubAllGlobals();
   });
 });
+
+describe("Thread link", () => {
+  it("shows the assigned link as a chip and removes it from the menu", () => {
+    vi.stubGlobal("window", { innerWidth: 1024, innerHeight: 768 });
+    vi.stubGlobal("document", { body: { nodeType: 1 } });
+    const task = { threadId: "t1", title: "Fix the login", link: "https://github.com/o/r/pull/42" };
+    const onLink = vi.fn();
+    const closed = renderRow(task, "scout", true, { onLink });
+    let chip: RowNode | undefined;
+    walk(closed, (element) => { if (element.type === "a") chip = element; });
+    expect(chip?.props).toMatchObject({ href: task.link, target: "_blank", "aria-label": "Open #42" });
+    expect(textOf(chip)).toBe("#42");
+    let other: RowNode | undefined;
+    walk(renderRow({ ...task, link: "https://docs.example.com/plan" }, "scout", true, { onLink }), (element) => { if (element.type === "a") other = element; });
+    expect(textOf(other)).toBe("Link");
+    expect(other?.props?.["aria-label"]).toBe("Open https://docs.example.com/plan");
+    (moreMenuButton(closed)!.props!.onClick as (event: unknown) => void)({ currentTarget: { getBoundingClientRect: () => ({ left: 100, bottom: 200 }) } });
+    (buttonWithLabel(renderRow(task, "scout", false, { onLink }), "Remove link")!.props!.onClick as () => void)();
+    expect(onLink).toHaveBeenCalledWith(task, null);
+    const unlinked = { threadId: "t2", title: "No link" };
+    (moreMenuButton(renderRow(unlinked, "scout", true, { onLink }))!.props!.onClick as (event: unknown) => void)({ currentTarget: { getBoundingClientRect: () => ({ left: 100, bottom: 200 }) } });
+    expect(buttonWithLabel(renderRow(unlinked, "scout", false, { onLink }), "Remove link")).toBeUndefined();
+    vi.unstubAllGlobals();
+  });
+
+  it("places the chip before the timestamp, outside the row button", () => {
+    const now = Date.UTC(2026, 8, 25, 12, 0, 0);
+    const markup = renderToStaticMarkup(createElement(SidebarThreadRow, {
+      task: { threadId: "t", title: "Fix", updatedAt: now - 3_600_000, link: "https://github.com/o/r/pull/42" },
+      ownerId: "b", current: false, now, onSelect: vi.fn(), onRename: vi.fn(), onDelete: vi.fn(), locale: "en",
+    }));
+    expect(markup.indexOf("</button>")).toBeLessThan(markup.indexOf(">#42</a>"));
+    expect(markup.indexOf(">#42</a>")).toBeLessThan(markup.indexOf("<time"));
+  });
+});

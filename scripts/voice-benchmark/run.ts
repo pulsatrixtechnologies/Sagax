@@ -166,6 +166,18 @@ async function pump(call: VoiceCall, frames: Float32Array[]): Promise<void> {
   }
 }
 
+async function stopChild(child: ChildProcess | null, graceMs = 10_000): Promise<void> {
+  if (!child || child.exitCode !== null || child.signalCode !== null) return;
+  const exited = new Promise<void>((resolve) => child.once("exit", () => resolve()));
+  child.kill("SIGTERM");
+  const timer = setTimeout(() => child.kill("SIGKILL"), graceMs);
+  try {
+    await exited;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 export async function runVoiceBenchmark(options: VoiceBenchmarkOptions): Promise<VoiceBenchReport> {
   if (options.profile === "real") assertRealVoiceCredentials();
   const secrets = [process.env.SAGAX_XAI_VOICE_KEY, process.env.XAI_API_KEY, FAKE_KEY]
@@ -517,9 +529,12 @@ export async function runVoiceBenchmark(options: VoiceBenchmarkOptions): Promise
       if (!active.speechEnd) active.speechEnd = speechEnd || performance.now();
       // Silence is counted in frames. The transcript arrives afterwards, on
       // the speech-to-text socket, so keep yielding until that event lands.
+      // Under full duplex a stable partial is sent speculatively while the
+      // call still hears the person; its reply is held until speech-end
+      // confirms the endpoint, so keep the mic fed until that happens too.
       let extra = 0;
       const heardBy = performance.now() + 4_000;
-      while (!active.utteranceId && performance.now() < heardBy) {
+      while ((!active.utteranceId || live.current.phase === "hearing") && performance.now() < heardBy) {
         if (extra < 80) {
           live.frame(quietFrame());
           await live.settled();
@@ -589,8 +604,11 @@ export async function runVoiceBenchmark(options: VoiceBenchmarkOptions): Promise
   } finally {
     eventsAbort.abort();
     call?.end();
-    child?.kill("SIGTERM");
+    // The server keeps writing its data dir while it shuts down (store,
+    // provider children). Wait for it to exit before removing the dir, or
+    // rmSync races it and fails with ENOTEMPTY.
+    await stopChild(child);
     await xai?.close();
-    rmSync(dataDir, { recursive: true, force: true });
+    rmSync(dataDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
   }
 }

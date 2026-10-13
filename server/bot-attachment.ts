@@ -12,7 +12,7 @@ import {
   saveFile,
   saveImage,
 } from "./attachments.ts";
-import { mimeFor, openMessageFile } from "./message-file.ts";
+import { mimeFor, openFileSavedSince, openMessageFile, type OpenedMessageFile } from "./message-file.ts";
 import type { Message } from "./store.ts";
 
 export type BotAttachment = NonNullable<Message["attachments"]>[number];
@@ -62,6 +62,22 @@ export interface SaveBotAttachmentInput {
   roots: readonly string[];
   /** The bot's mounted Local VM, if any. */
   guest?: { root: string; host: string };
+  /** A host engine's turn may also deliver a file it saved this turn outside
+   * the roots, at a place the person named: one copied file, never a folder
+   * or a link grant (openFileSavedSince). Absent: roots only, as before. */
+  savedThisTurn?: { since: number; refuse: readonly string[] };
+}
+
+/** The roots first. Only their outside_workspace refusal falls through to a
+ * file this turn saved elsewhere, so a missing or oversized file in the
+ * working folder still says exactly that. */
+async function openSource(path: string, roots: readonly string[], savedThisTurn: SaveBotAttachmentInput["savedThisTurn"]): Promise<OpenedMessageFile> {
+  try {
+    return await openMessageFile(path, roots);
+  } catch (error) {
+    if (!savedThisTurn || (error as { code?: unknown } | null)?.code !== "outside_workspace") throw error;
+    return openFileSavedSince(path, savedThisTurn);
+  }
 }
 
 export interface SavedBotAttachment {
@@ -75,14 +91,16 @@ export async function saveBotAttachment(input: SaveBotAttachmentInput): Promise<
   const guestHost = input.guest ? guestWorkspaceToHost(requested, input.guest.root, input.guest.host) : null;
   // A bot with a VM works in it: a relative path means its VM workspace first.
   const roots = input.guest ? [input.guest.host, ...input.roots] : input.roots;
-  const file = await openMessageFile(guestHost ?? requested, roots);
+  // A VM turn's tools never wrote to the host, so it gets roots only.
+  const file = await openSource(guestHost ?? requested, roots, input.guest ? undefined : input.savedThisTurn);
   try {
     const mime = mimeFor(file.name);
     const name = displayNameFor(input.name, file.name);
     if (extensionForMime(mime)) {
       if (file.bytes > IMAGE_MAX_BYTES) throw statusError(413, `image exceeds ${IMAGE_MAX_BYTES} bytes`);
       const saved = saveImage(await file.handle.readFile(), mime);
-      return { attachment: { kind: "image", path: saved.path, mime: saved.mime }, bytes: saved.bytes };
+      // The name lets the reply's inline picture of this file show the copy (deliveredCopy).
+      return { attachment: { kind: "image", path: saved.path, mime: saved.mime, name }, bytes: saved.bytes };
     }
     if (!extensionForFileMime(mime)) {
       throw statusError(415, `${file.name} is not a supported attachment type. Supported: ${ATTACH_SUPPORTED_TYPES}.`);
@@ -95,6 +113,29 @@ export async function saveBotAttachment(input: SaveBotAttachmentInput): Promise<
   } finally {
     await file.handle.close().catch(() => undefined);
   }
+}
+
+/**
+ * The copy a bot delivered with attach_file of a file its reply shows or
+ * links, by name: the rule a link in the chat follows
+ * (src/components/AttachmentGallery.tsx replyAttachmentGroup). attach_file
+ * posts its own message, so the reply's turn is searched, from the reply
+ * back to the message before it that is not the bot's. Only the reply's
+ * author counts, and two deliveries with one name match neither.
+ */
+export function deliveredCopy(messages: readonly Message[], reply: Message, name: string): Exclude<BotAttachment, { kind: "audio" }> | null {
+  const byId = new Map(messages.map((message) => [message.id, message]));
+  const author = reply.from?.botId;
+  let found: Exclude<BotAttachment, { kind: "audio" }> | null = null;
+  for (let message: Message | undefined = reply; message?.role === "bot"; message = message.parentId ? byId.get(message.parentId) : undefined) {
+    if (message.from?.botId !== author) continue;
+    for (const attachment of message.attachments ?? []) {
+      if (attachment.kind === "audio" || attachment.name !== name) continue;
+      if (found) return null;
+      found = attachment;
+    }
+  }
+  return found;
 }
 
 export type AttachForTurnOutcome<S> =

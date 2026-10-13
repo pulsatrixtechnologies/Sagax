@@ -13,6 +13,8 @@ import { join } from "node:path";
 import type { ModelCatalog, TurnAccessInput } from "../../contracts.ts";
 import { decodeInjectId, hostApiKey, LOCAL_HOSTS, localHost, mergeLocalInject } from "../local-inject.ts";
 import { kimiHostToolProfile, withheldWorkspace } from "../host-tools.ts";
+import type { DeviceSignIn } from "../device-auth.ts";
+import { DEVICE_LOGIN_SPECS, deviceLoginFailure } from "../device-login.ts";
 import { createAcpDriver, type AcpSupport } from "./core.ts";
 
 const STATIC_KIMI_MODELS: ModelCatalog = {
@@ -543,6 +545,21 @@ export function kimiApplyAccess(env: Record<string, string | undefined>, access:
   env[KIMI_KEY_MARK] = "1";
 }
 
+/** Kimi Code's half of the in-app sign-in: `kimi login --region global`
+ * on the subscription. Confirmed by the credential file a turn checks. */
+export const KIMI_DEVICE_SIGN_IN: DeviceSignIn = {
+  provider: "kimi",
+  product: "Kimi",
+  account: "Kimi",
+  homeEnv: "KIMI_CODE_HOME",
+  homeDir: ".kimi-code",
+  loginArgs: ["login", "--region", "global"],
+  install: "Install Kimi Code, then try again.",
+  failure: (output) => deviceLoginFailure(DEVICE_LOGIN_SPECS.kimiAgent, output),
+  signedIn: (env) => existsSync(credentialsPath(env)),
+  spawnEnv: { BROWSER: "none" },
+};
+
 const support: AcpSupport = {
   driverKind: "kimiAgent",
   displayName: "Kimi",
@@ -552,7 +569,8 @@ const support: AcpSupport = {
   resolveModels: (env) => mergeLocalInject(readKimiModelCatalog(env), env),
   defaultCli: "kimi",
   nativeSource: "kimi.acp",
-  loginNote: "Kimi Code CLI is not signed in — run `kimi login` in a terminal",
+  loginNote: "Kimi is not signed in. Sign in from the provider card.",
+  deviceSignIn: KIMI_DEVICE_SIGN_IN,
 
   // Official installers put the binary on PATH without requiring an existing
   // Node install. Keep the commands platform-specific so Windows never gets a

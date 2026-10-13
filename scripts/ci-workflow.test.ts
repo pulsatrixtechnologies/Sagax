@@ -60,7 +60,7 @@ describe("CI concurrency", () => {
   });
 
   it("allows cancelled summary jobs to stop without skipping failure reporting", () => {
-    expect(workflow.jobs.gate.if).toBe("(github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && (!cancelled())");
+    expect(workflow.jobs.gate.if).toBe("${{ !cancelled() }}");
     expect(workflow.jobs.gate.needs).toEqual(["static", ...requiredRuntimeJobs]);
   });
 
@@ -71,17 +71,12 @@ describe("CI concurrency", () => {
     expect(workflow.jobs.vitest.strategy.matrix).toEqual({
       os: "${{ fromJSON(needs.static.outputs.vitest_os) }}", shard: [1, 2, 3, 4],
     });
-    expect(workflow.jobs.vitest["timeout-minutes"]).toBe("${{ matrix.os == 'ubuntu-latest' && 20 || 35 }}");
+    expect(workflow.jobs.vitest["timeout-minutes"]).toBe("${{ matrix.os == 'ubuntu-latest' && 30 || 35 }}");
   });
 
   it("keeps each PR to one macOS job unless native code changed", () => {
-    const macosJobs = Object.entries(workflow.jobs as Record<string, { "runs-on": unknown; strategy?: { matrix?: { os?: unknown } } }>)
-      .filter(([, job]) => {
-        // Runner labels keep GitHub's own casing (`macOS`), not `macos`.
-        const labels = Array.isArray(job["runs-on"]) ? job["runs-on"] : [];
-        const onMac = labels.some((label) => String(label).toLowerCase() === "macos" || String(label).toLowerCase() === "macos-latest");
-        return onMac || JSON.stringify(job.strategy?.matrix?.os ?? "").toLowerCase().includes("macos");
-      })
+    const macosJobs = Object.entries(workflow.jobs as Record<string, { "runs-on": string; strategy?: { matrix?: { os?: unknown } } }>)
+      .filter(([, job]) => job["runs-on"] === "macos-latest" || JSON.stringify(job.strategy?.matrix?.os ?? "").includes("macos"))
       .map(([name]) => name);
     // Sagax keeps its native apps: the iOS build runs only when ios/ changed.
     expect(macosJobs.sort()).toEqual(["electron-smokes", "ios"]);
@@ -92,12 +87,12 @@ describe("CI concurrency", () => {
   it("makes a release wait for its commit's CI gate before any draft", () => {
     const release = parse(readFileSync(new URL("../.github/workflows/release.yml", import.meta.url), "utf8"));
     expect(release.jobs.assemble.needs).toContain("ci");
-    expect(release.jobs.assemble.needs).not.toContain("voice-acceptance");
+    expect(release.jobs.assemble.needs).toContain("voice-acceptance");
     expect(release.jobs["voice-acceptance"].needs).toBe("prepare");
     expect(release.jobs["voice-acceptance"].uses).toBe("./.github/workflows/voice-release-acceptance.yml");
     expect(release.jobs["voice-acceptance"].with.ref).toBe("${{ needs.prepare.outputs.sha }}");
     expect(release.jobs["voice-acceptance"].secrets).toBe("inherit");
-    expect(release.jobs["voice-acceptance"].if).toBe("needs.prepare.outputs.should_release == 'true' && vars.SAGAX_VOICE_ACCEPTANCE_GATE == 'true'");
+    expect(release.jobs["voice-acceptance"].if).toBe("needs.prepare.outputs.should_release == 'true'");
     const voice = parse(readFileSync(new URL("../.github/workflows/voice-release-acceptance.yml", import.meta.url), "utf8"));
     expect(voice.on).toHaveProperty("workflow_call");
     expect(voice.on).toHaveProperty("workflow_dispatch");
@@ -190,7 +185,7 @@ describe("CI concurrency", () => {
 
   it("always starts the workflow and validates selection and docs before fanout", () => {
     expect(workflow.on.pull_request).toBeNull();
-    expect(workflow.jobs.static.if).toBe("(github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)");
+    expect(workflow.jobs.static.if).toBeUndefined();
     expect(workflow.jobs.static.steps[0].with["fetch-depth"]).toBe(0);
     expect(workflow.jobs.static.steps.find((step: { id?: string }) => step.id === "scope").run).toBe("node scripts/ci-scope.mjs");
     expect(workflow.jobs.static.outputs).toEqual({
@@ -206,7 +201,7 @@ describe("CI concurrency", () => {
       // not part of the merge gate.
       if (name === "deploy-composio-broker") {
         expect(job.needs).toEqual(["control-plane"]);
-        expect(job.if).toBe("(github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && (github.event_name == 'push' && github.ref == 'refs/heads/main')");
+        expect(job.if).toBe("github.event_name == 'push' && github.ref == 'refs/heads/main'");
         expect(workflow.jobs.gate.needs).not.toContain(name);
         // Without the Cloudflare token the deploy is skipped with a warning, not failed:
         // every step after the token check waits on it.
@@ -219,10 +214,14 @@ describe("CI concurrency", () => {
       }
       expect(job.needs).toBe("static");
       const selector = `needs.static.outputs.${["ios", "android"].includes(name) ? "mobile" : "runtime"} == 'true'`;
-      const forkGuard = "(github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)";
       // Windows, macOS and iOS jobs run on main pushes and merge groups only.
-      expect(job.if).toBe(`${forkGuard} && (${["windows-cua", "electron-smokes", "ios", "cloudflared-linux-arm64"].includes(name)
-        ? `${selector} && needs.static.outputs.platforms == 'true'` : selector})`);
+      expect(job.if).toBe(["windows-cua", "electron-smokes", "ios"].includes(name)
+        ? `${selector} && needs.static.outputs.platforms == 'true'` : selector);
+      if (name === "ios") {
+        const ios = job as { "runs-on"?: string; steps?: { run?: string }[] };
+        expect(ios["runs-on"]).toBe("macos-latest");
+        expect(ios.steps?.some((step) => step.run?.includes("swift test --package-path ios"))).toBe(true);
+      }
     }
   });
 

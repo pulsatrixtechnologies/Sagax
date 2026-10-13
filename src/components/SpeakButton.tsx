@@ -45,6 +45,9 @@ export function useSpeakControl({
   return { label, ready, mine, preparing, toggle };
 }
 
+/** The same hook under the name the rooms' "more" menu (message-menu.tsx) reads. */
+export const useSpeakAction = useSpeakControl;
+
 /** Read one message aloud. Hover-revealed beside the copy control, and it
  * becomes a stop button while this message is the one speaking, the same
  * button, because "speak" and "shut up" are the same intent twice.

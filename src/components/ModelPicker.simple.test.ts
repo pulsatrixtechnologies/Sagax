@@ -14,12 +14,6 @@ vi.mock("@/lib/unready-providers-preference", () => ({
   setShowUnreadyProviders: () => {},
 }));
 vi.mock("./MenuMotion", () => ({ useMenuMotion: () => ({ shown: true, closing: false, className: "", exitProps: {} }) }));
-// The model dropdown drawn open, so its rows show in static markup.
-vi.mock("./ModelDropdown", async (importOriginal) => {
-  const original = await importOriginal<typeof import("./ModelDropdown")>();
-  const { createElement: h } = await import("react");
-  return { ...original, ModelDropdown: ({ label, children }: { label: unknown; children: unknown }) => h("div", { "data-model-dropdown": "" }, label as never, children as never) };
-});
 vi.mock("@/state/store", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/state/store")>()),
   useStore: () => ({
@@ -71,10 +65,11 @@ function bot(): Bot {
 const html = () => renderToStaticMarkup(createElement(ModelPicker, { bot: bot() }));
 
 describe("model picker in Simple mode", () => {
-  it("keeps the model dropdown and hides effort, catalog chrome and settings links", () => {
+  it("keeps the model list and hides effort, catalog chrome and settings links", () => {
     fixture.instances = [claude(true)];
     const markup = html();
-    expect(markup).toContain("data-model-dropdown");
+    expect(markup).toContain('data-model-search-list="window"');
+    expect(markup).toContain('placeholder="Search models"');
     expect(markup).toContain("Opus");
     // Every model of the provider, in one list, in Simple too.
     expect(markup).toContain("Extra three");
@@ -97,7 +92,7 @@ describe("model picker in Simple mode", () => {
     instance.models.options.push({ id: "dwarfstar::qwen3.8-flash-next-chat", label: "DwarfStar: Qwen3.8 Flash Next", custom: true, local: true });
     fixture.instances = [instance];
     const markup = html();
-    expect(markup).toContain("data-model-local-group");
+    expect(markup).toContain('data-model-section="local"');
     expect(markup).toContain("DwarfStar: Qwen3.8 Flash Next");
     expect(markup).not.toContain("data-model-local-entry");
   });
@@ -124,18 +119,24 @@ describe("a thread's picker and its bot's model", () => {
   }
   const threadPicker = (forBot: Bot) => renderToStaticMarkup(createElement(ModelPicker, { bot: forBot, threadId: "thread-atlas" }));
 
+  /** The "<bot>'s model" row of the window's list, as markup. */
+  const followRow = (markup: string) => {
+    const window = markup.slice(markup.indexOf("data-model-picker-content"));
+    return /<div[^>]*data-follow-bot-model="true"[^>]*>/.exec(window)?.[0] ?? "";
+  };
+
   it("offers the bot's model to a thread on its own", () => {
     fixture.instances = [claude(true)];
     const markup = threadPicker(scout(haiku));
     expect(markup).toContain("Use Atlas&#x27;s model");
-    expect(markup).toContain("Claude · Opus");
-    expect(markup).toContain('data-follow-bot-model="true" aria-pressed="false"');
+    expect(markup).toMatch(/Use Atlas&#x27;s model<\/span><span data-model-row-detail="true" class="[^"]*">Opus<\/span>/);
+    expect(followRow(markup)).not.toContain("aria-current");
   });
 
   it("shows a thread that follows its bot as following, and says so in the chip's tooltip", () => {
     fixture.instances = [claude(true)];
     const markup = threadPicker(scout(null));
-    expect(markup).toContain('data-follow-bot-model="true" aria-pressed="true"');
+    expect(followRow(markup)).toContain('aria-current="true"');
     expect(markup).toContain("Uses Atlas&#x27;s model");
   });
 

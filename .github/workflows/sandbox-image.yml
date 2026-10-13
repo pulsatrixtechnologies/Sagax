@@ -1,0 +1,32 @@
+# Manual build of the sandbox image. workflow_dispatch only: it is not part
+# of required CI, it does not push, and a green run of this file is not by
+# itself evidence that a published image was signed or scanned.
+name: Sandbox image
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-scan:
+    name: build local OCI archive and scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Build multi-arch OCI archive
+        run: scripts/build-sandbox-image.sh dist/sagax-sandbox.oci
+      - name: Scan with trivy
+        run: scripts/scan-sandbox-image.sh dist/sagax-sandbox.oci
+      - name: Verify signature
+        env:
+          COSIGN_PUBLIC_KEY: ${{ secrets.COSIGN_PUBLIC_KEY }}
+        run: |
+          if [ -z "${COSIGN_PUBLIC_KEY}" ]; then
+            echo "COSIGN_PUBLIC_KEY is unset; this step did not verify a signature"
+            exit 0
+          fi
+          echo "A key is configured, but this workflow does not push an image, so there is no registry digest to verify."
+          echo "This step did not verify a signature."

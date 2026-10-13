@@ -36,7 +36,7 @@ export const PERSPICAX_UNAVAILABLE_WHY: Record<PerspicaxUnavailableReason, strin
   no_session: "the person speaking has no live Perspicax sign-in on this server",
   unreachable: "Perspicax could not be reached",
   rate_limited: "Perspicax is rate limiting this server; try again in a minute",
-  no_delegation: "the person it runs as has not allowed routines to act in their name",
+  no_delegation: "the person it runs as has no recent sign-in to Sagax, so Perspicax gave this run no access in their name; once they sign in to Sagax again (web, desktop or phone), the next run gets it",
   unknown_speaker: "the person speaking is not known to Perspicax",
   unknown_profile: "Perspicax no longer lists this profile",
 };

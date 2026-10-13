@@ -29,7 +29,8 @@ const { PermissionsSection } = await import("./PermissionsSection");
 const { VisibilitySection } = await import("./VisibilitySection");
 
 const CHIEF_COPY = "The Primary Bot can propose this";
-const OWNER_COPY = "Owner-only";
+// A lock after the section title; the sentence is its tooltip.
+const OWNER_COPY = "Only the owner changes this";
 
 function makeBot(overrides: Partial<Bot> = {}): Bot {
   return {
@@ -156,10 +157,9 @@ describe("Edit Profile boundary markers in sections", () => {
       createElement(StoreProvider, null, createElement(AccessSection, { bot: makeBot(), derived: makeDerived() })),
     );
     expect(markup).not.toContain(CHIEF_COPY);
-    expect(markup).toContain(
-      'This server has no browser engine.</div><div class="mt-1 text-[11.5px] leading-snug text-ink-secondary">Owner-only',
-    );
-    expect(markup).toContain("Inbound triggers wired to this bot.");
+    expect(markup).toMatch(/Browser<span role="img" data-proposal-owner=""[^>]*title="Only the owner changes this/);
+    expect(markup).toContain("This server has no browser engine.");
+    expect(markup).toContain("Each request to a webhook starts a task for this bot.");
   });
 
   it("shows no Access markers without a covering Chief", () => {

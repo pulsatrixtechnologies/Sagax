@@ -10,7 +10,7 @@ import { Trophy, X } from "lucide-react";
 import { ACHIEVEMENTS } from "../../../shared/achievements-catalog";
 import { rarityForPoints } from "../../../shared/achievements";
 import { achievementToasts, TOAST_SHOW_MS } from "@/lib/achievement-toasts";
-import { achievementsState, flushAchievementEvents, loadAchievements, localized, reportAchievement, rewardLabel, saveAchievementSettings } from "@/lib/achievements";
+import { achievementsState, displayReward, flushAchievementEvents, loadAchievements, localized, reportAchievement, saveAchievementSettings } from "@/lib/achievements";
 import { grokAccountLinked, setGrokAccountLinked } from "@/lib/grok-account";
 import { useMyEngines } from "@/lib/perspicax-org";
 import { readRetroUnlocked } from "@/lib/retro98";
@@ -61,9 +61,10 @@ function nativeNotification(id: string): boolean {
   const settings = achievementsState().snapshot?.settings;
   if (!item || !settings?.native || typeof Notification === "undefined" || Notification.permission !== "granted") return false;
   const reward = item.rewards[0];
+  const line = reward ? displayReward(reward, achievementsState().unlocks, { revealing: true }) : null;
   try {
     new Notification(t("achievements.toast.title", { points: item.points }), {
-      body: [localized(item.name), reward ? rewardLabel(reward) : ""].filter(Boolean).join("\n"),
+      body: [localized(item.name), line ?? ""].filter(Boolean).join("\n"),
       tag: `sagax-achievement:${id}`,
       ...(notificationSoundsEnabled() ? {} : { silent: true }),
     });
@@ -79,6 +80,7 @@ export function AchievementToast({ id, leaving, onDismiss }: { id: string; leavi
   const tier = rarityForPoints(item.points);
   const Icon = achievementIcon(item.icon);
   const reward = item.rewards[0];
+  const line = reward ? displayReward(reward, achievementsState().unlocks, { revealing: true }) : null;
   return (
     <div className="achievement-toast" data-tier={tier} data-leaving={leaving ? "" : undefined} data-achievement-toast={id} role="status" aria-live="polite">
       <span className="achievement-toast-badge" aria-hidden="true">
@@ -91,9 +93,9 @@ export function AchievementToast({ id, leaving, onDismiss }: { id: string; leavi
           <span className="achievement-toast-points">+{item.points}</span>
         </span>
         <span className="achievement-toast-name">{localized(item.name)}</span>
-        {reward && <span className="achievement-toast-reward">{rewardLabel(reward)}</span>}
+        {line && <span className="achievement-toast-reward">{line}</span>}
       </span>
-      {reward && (reward.kind === "skin" || reward.kind === "character") && (
+      {line && reward && (reward.kind === "skin" || reward.kind === "character") && (
         <span className="achievement-toast-preview" aria-hidden="true">
           <Suspense fallback={null}>
             <RewardPreview reward={reward} size={34} />

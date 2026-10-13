@@ -181,6 +181,10 @@ async function grokFixture() {
     expect(response.status, `${method} ${path}: ${JSON.stringify(result)}`).toBe(status);
     return result;
   };
+  // The seed bot only gets a signed-in engine by itself (#2614) and this
+  // fake Grok is signed out: put the bot on it.
+  const seed = (await api("GET", "/api/bots")).bots[0];
+  await api("PATCH", `/api/bots/${seed.id}`, { modelSelection: { instanceId: "grok", model: "grok-4.7" } });
   const bot = (await api("GET", "/api/bots")).bots[0];
   expect(bot.modelSelection.instanceId).toBe("grok");
   const thread = bot.threadId as string;

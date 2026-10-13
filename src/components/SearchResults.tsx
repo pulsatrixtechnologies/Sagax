@@ -9,12 +9,14 @@ import { BotAvatar } from "./Avatar";
 import { cn } from "@/lib/cn";
 import type { SearchHit } from "@/lib/search-hit";
 import { landOnSearchHit } from "@/lib/focus-message";
+import { useShowThreads } from "@/lib/thread-preferences";
 
 export const MIN_QUERY = 2;
 const DEBOUNCE_MS = 250;
 
 export function SearchResults({ query, onLanded }: { query: string; onLanded: () => void }) {
   const { state, dispatch } = useStore();
+  const showThreads = useShowThreads();
   const [hits, setHits] = useState<SearchHit[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const q = query.trim();
@@ -45,7 +47,7 @@ export function SearchResults({ query, onLanded }: { query: string; onLanded: ()
 
   const land = async (hit: SearchHit) => {
     try {
-      await landOnSearchHit(hit, state, dispatch);
+      await landOnSearchHit(hit, state, dispatch, showThreads);
       onLanded();
     } catch (e) {
       dispatch({ type: "error", message: e instanceof Error ? e.message : String(e) });

@@ -32,6 +32,11 @@ struct TasksRoutinesView: View {
     @State private var quickSlot: AutomationsSlot?
     @State private var pendingSeed: RoutineEditorSeed?
     @State private var rescheduling: RoutineCalendarItem?
+    /// AU20: Mine, My teams or Everyone, and their filters (organization
+    /// server only; `sagax.routineScope.v1` on the desktop).
+    @State private var scopeQuery = RoutineScopeQuery()
+    @State private var allowedScopes = RoutineScopeAllowed.mineOnly
+    @State private var scopeFacets = RoutineScopeFacets()
 
     enum RoutinesSection: Hashable { case routines, logs }
     /// The desktop's Schedule view: List or Calendar (the default).
@@ -43,6 +48,7 @@ struct TasksRoutinesView: View {
     }
 
     private var automations: Bool { page == .automations }
+    private var organization: Bool { session.surfaceGate.organization }
     private var showsCalendar: Bool { automations && section == .routines && scheduleView == .calendar }
 
     private var seenAllowed: Bool { session.surfaceGate.allows(.routineRunsSeen) }
@@ -59,6 +65,32 @@ struct TasksRoutinesView: View {
         }
         .pickerStyle(.segmented)
         .accessibilityIdentifier("routines-section")
+    }
+
+    /// AU20: the desktop's scope control (RoutineScopeBar). A scope the
+    /// person may not use stays visible, disabled, naming what is missing.
+    private var scopePicker: some View {
+        Picker("Routines shown", selection: Binding(get: { scopeQuery.scope }, set: { next in
+            guard allowedScopes.allows(next) else { return }
+            scopeQuery = scopeQuery.choosing(next)
+        })) {
+            ForEach(RoutineScope.allCases, id: \.self) { scope in
+                Text(scope.label).tag(scope)
+                    .disabled(!allowedScopes.allows(scope))
+            }
+        }
+        .pickerStyle(.segmented)
+        .accessibilityIdentifier("routines-scope")
+    }
+
+    @ViewBuilder
+    private var scopeNote: some View {
+        if let locked = RoutineScope.allCases.first(where: { !allowedScopes.allows($0) }), let permission = locked.permission {
+            Text(String(localized: "\(locked.label) needs the \(permission) permission. Ask an admin to add it in Perspicax."))
+                .font(.caption)
+                .foregroundStyle(Theme.textSecondary)
+                .accessibilityIdentifier("routines-scope-note")
+        }
     }
 
     private var scheduleViewPicker: some View {
@@ -78,6 +110,10 @@ struct TasksRoutinesView: View {
                 botId: botFilter.botId, loading: loading
             ) {
                 sectionPicker
+                if organization {
+                    scopePicker
+                    scopeNote
+                }
                 scheduleViewPicker
             } onCreate: { at in
                 quickSlot = AutomationsSlot(at: at)
@@ -90,6 +126,13 @@ struct TasksRoutinesView: View {
                     sectionPicker
                         .listRowBackground(Color.clear)
                         .listRowInsets(EdgeInsets())
+                    if organization {
+                        scopePicker
+                            .listRowBackground(Color.clear)
+                            .listRowInsets(EdgeInsets())
+                        scopeNote
+                            .listRowBackground(Color.clear)
+                    }
                     if automations && section == .routines {
                         scheduleViewPicker
                             .listRowBackground(Color.clear)
@@ -134,10 +177,15 @@ struct TasksRoutinesView: View {
                     Picker(selection: $botFilter) {
                         Text("All bots").tag(RoutineBotFilter())
                         ForEach(visibleBots) { bot in Text(verbatim: bot.name).tag(RoutineBotFilter(botId: bot.id)) }
+                        // AU20: the bots of a wider scope the person does not see
+                        ForEach(scopeFacets.botChoices.filter { choice in !visibleBots.contains { $0.id == choice.id } }) { choice in
+                            Text(verbatim: choice.name).tag(RoutineBotFilter(botId: choice.id))
+                        }
                     } label: {
                         Label("Filter by bot", systemImage: "line.3.horizontal.decrease.circle")
                     }
                     .pickerStyle(.menu)
+                    if organization { scopeFilters }
                     if seenAllowed {
                         Button("Mark all as read", systemImage: "checkmark.circle") {
                             Task { await markAllSeen() }
@@ -145,7 +193,7 @@ struct TasksRoutinesView: View {
                         .accessibilityIdentifier("routines-mark-all-seen")
                     }
                 } label: {
-                    Label("Automation menu", systemImage: botFilter.botId == nil ? "ellipsis.circle" : "line.3.horizontal.decrease.circle.fill")
+                    Label("Automation menu", systemImage: botFilter.botId == nil && !scopeQuery.hasFilters ? "ellipsis.circle" : "line.3.horizontal.decrease.circle.fill")
                 }
                 .accessibilityIdentifier("routines-menu")
             }
@@ -173,6 +221,10 @@ struct TasksRoutinesView: View {
         .task { await reload() }
         .refreshable { await reload() }
         .onValueChange(of: botFilter) { _ in routineFilter = nil }
+        .onValueChange(of: scopeQuery) { _ in
+            routineFilter = nil
+            Task { await reload() }
+        }
         .sheet(item: $editor) { target in
             RoutineEditorView(routine: target.routine, seed: target.seed) { await reload() }
         }
@@ -212,6 +264,41 @@ struct TasksRoutinesView: View {
         }
     }
 
+    /// AU20: the desktop's Team, Owner and Status filters, in the menu.
+    @ViewBuilder
+    private var scopeFilters: some View {
+        if scopeQuery.scope != .mine && !scopeFacets.teams.isEmpty {
+            Picker(selection: $scopeQuery.teamId) {
+                Text("All teams").tag(String?.none)
+                ForEach(scopeFacets.teams) { team in Text(verbatim: team.name).tag(Optional(team.id)) }
+            } label: {
+                Label("Filter by team", systemImage: "person.3")
+            }
+            .pickerStyle(.menu)
+        }
+        if scopeQuery.scope != .mine && !scopeFacets.owners.isEmpty {
+            Picker(selection: $scopeQuery.ownerId) {
+                Text("All owners").tag(String?.none)
+                ForEach(scopeFacets.owners) { owner in Text(verbatim: owner.name).tag(Optional(owner.id)) }
+            } label: {
+                Label("Filter by owner", systemImage: "person.crop.circle")
+            }
+            .pickerStyle(.menu)
+        }
+        Picker(selection: $scopeQuery.status) {
+            Text("Any status").tag(RoutineScopeStatus?.none)
+            ForEach(RoutineScopeStatus.allCases, id: \.self) { status in Text(status.label).tag(Optional(status)) }
+        } label: {
+            Label("Filter by status", systemImage: "circle.dashed")
+        }
+        .pickerStyle(.menu)
+        if scopeQuery.hasFilters {
+            Button("Reset filters", systemImage: "xmark.circle") {
+                scopeQuery = RoutineScopeQuery(scope: scopeQuery.scope)
+            }
+        }
+    }
+
     // MARK: Routines
 
     @ViewBuilder
@@ -233,13 +320,14 @@ struct TasksRoutinesView: View {
                 EmptyStateView("No routines", systemImage: "calendar.badge.plus", description: Text("Schedule recurring or one-time agent work."))
             }
             ForEach(shown) { routine in
-                let canToggle = routine.canToggle()
+                // AU20: someone else's routine (a wider scope) is read-only
+                let canToggle = routine.mayEdit && routine.canToggle()
                 RoutineRow(
                     routine: routine, bot: session.state.bot(routine.botId),
                     unseenFailure: seenAllowed && runs.contains { $0.routineId == routine.id && $0.isUnseenProblem }
                 )
                 .contentShape(Rectangle())
-                .onTapGesture { editor = .edit(routine) }
+                .onTapGesture { if routine.mayEdit { editor = .edit(routine) } else { showLogs(of: routine) } }
                 .swipeActions(edge: .leading, allowsFullSwipe: true) {
                     if canToggle {
                         Button(routine.enabled ? "Pause" : "Resume") {
@@ -249,17 +337,19 @@ struct TasksRoutinesView: View {
                     }
                 }
                 .swipeActions(edge: .trailing) {
-                    Button("Delete", role: .destructive) { deleting = routine }
-                    Button("Run now") { Task { await runNow(routine) } }.tint(Theme.accent)
+                    if routine.mayEdit { Button("Delete", role: .destructive) { deleting = routine } }
+                    if routine.mayRun { Button("Run now") { Task { await runNow(routine) } }.tint(Theme.accent) }
                 }
                 .contextMenu {
-                    Button("Run now", systemImage: "play.fill") { Task { await runNow(routine) } }
+                    if routine.mayRun {
+                        Button("Run now", systemImage: "play.fill") { Task { await runNow(routine) } }
+                    }
                     if canToggle {
                         Button(routine.enabled ? "Pause" : "Resume", systemImage: routine.enabled ? "pause" : "play") {
                             Task { await toggle(routine) }
                         }
                     }
-                    Button("Edit", systemImage: "pencil") { editor = .edit(routine) }
+                    if routine.mayEdit { Button("Edit", systemImage: "pencil") { editor = .edit(routine) } }
                     Button("Run logs", systemImage: "doc.text") {
                         routineFilter = routine.id
                         statusFilter = .all
@@ -270,7 +360,9 @@ struct TasksRoutinesView: View {
                             Task { await session.openNotification(results) }
                         }
                     }
-                    Button("Delete", systemImage: "trash", role: .destructive) { deleting = routine }
+                    if routine.mayEdit {
+                        Button("Delete", systemImage: "trash", role: .destructive) { deleting = routine }
+                    }
                 }
                 .accessibilityIdentifier("routines-row.\(routine.name)")
             }
@@ -348,14 +440,30 @@ struct TasksRoutinesView: View {
 
     private func reload() async {
         loading = true
-        let loaded = await session.loadRoutines()
-        routines = loaded.routines.sorted(by: Routine.listOrder)
-        runs = loaded.runs
+        if organization {
+            let loaded = await session.loadScopedRoutines(scopeQuery)
+            routines = loaded.routines.sorted(by: Routine.listOrder)
+            runs = loaded.runs
+            allowedScopes = loaded.allowed
+            scopeFacets = loaded.facets
+            // the server answered another scope (a permission taken back)
+            if loaded.scope != scopeQuery.scope { scopeQuery = scopeQuery.choosing(loaded.scope) }
+        } else {
+            let loaded = await session.loadRoutines()
+            routines = loaded.routines.sorted(by: Routine.listOrder)
+            runs = loaded.runs
+        }
         loading = false
     }
 
+    private func showLogs(of routine: Routine) {
+        routineFilter = routine.id
+        statusFilter = .all
+        section = .logs
+    }
+
     private func toggle(_ routine: Routine) async {
-        guard routine.canToggle() else { return }
+        guard routine.mayEdit, routine.canToggle() else { return }
         _ = await session.setRoutineEnabled(routine, enabled: !routine.enabled)
         await reload()
     }
@@ -375,15 +483,16 @@ struct TasksRoutinesView: View {
     private func handle(_ action: AutomationsEventAction, _ item: RoutineCalendarItem) {
         switch action {
         case .open:
-            if let run = item.run { openRun = run } else if let routine = item.routine { editor = .edit(routine) }
+            if let run = item.run { openRun = run }
+            else if let routine = item.routine { if routine.mayEdit { editor = .edit(routine) } else { showLogs(of: routine) } }
         case .reschedule:
             rescheduling = item
         case .edit:
-            if let routine = item.routine { editor = .edit(routine) }
+            if let routine = item.routine, routine.mayEdit { editor = .edit(routine) }
         case .runNow:
-            if let routine = item.routine { Task { await runNow(routine) } }
+            if let routine = item.routine, routine.mayRun { Task { await runNow(routine) } }
         case .toggle:
-            if let routine = item.routine { Task { await toggle(routine) } }
+            if let routine = item.routine, routine.mayEdit { Task { await toggle(routine) } }
         case .logs:
             guard let routine = item.routine else { return }
             routineFilter = routine.id
@@ -444,10 +553,17 @@ private struct RoutineRow: View {
             else { Image(systemName: "calendar.badge.exclamationmark").frame(width: 42, height: 42) }
             VStack(alignment: .leading, spacing: 3) {
                 Text(routine.name).font(.headline).foregroundStyle(Theme.textPrimary)
-                ((bot.map { Text(verbatim: $0.name) } ?? Text("Deleted agent"))
+                ((bot.map { Text(verbatim: $0.name) } ?? routine.bot.map { Text(verbatim: $0.name) } ?? Text("Deleted agent"))
                     + Text(verbatim: " · \(RoutineWording.schedule(routine.schedule)) · ")
                     + Text(LocalizedStringKey(routine.isTeamGoal ? "Team goal" : routine.runLocation.label)))
                     .font(.caption).foregroundStyle(Theme.textSecondary).lineLimit(2)
+                // AU20: someone else's routine names its owner
+                if let owner = routine.foreignOwnerName {
+                    Text(String(localized: "Owned by \(owner)"))
+                        .font(.caption2)
+                        .foregroundStyle(Theme.textSecondary)
+                        .accessibilityIdentifier("routines-row-owner.\(routine.name)")
+                }
                 // #149: an organization routine acts in its owner's name
                 if let runAs = routine.runAs {
                     Text(String(localized: "Runs as \(runAs.name.isEmpty ? runAs.principalId : runAs.name)"))
@@ -480,3 +596,24 @@ private extension RoutineRunLocation {
     }
 }
 
+
+// AU20: the desktop's routines.scope.* words.
+private extension RoutineScope {
+    var label: String {
+        switch self {
+        case .mine: String(localized: "Mine")
+        case .team: String(localized: "My teams")
+        case .all: String(localized: "Everyone")
+        }
+    }
+}
+
+private extension RoutineScopeStatus {
+    var label: String {
+        switch self {
+        case .active: String(localized: "Active")
+        case .paused: String(localized: "Paused")
+        case .failing: String(localized: "Failing")
+        }
+    }
+}

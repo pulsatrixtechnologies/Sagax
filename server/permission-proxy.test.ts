@@ -21,6 +21,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { brokerSocketPath } from "./procs.ts";
 import { removeTempDir } from "./testing/cleanup.ts";
+import { formatQuestionAnswers } from "../shared/ask-question.ts";
 
 const PROXY = join(dirname(fileURLToPath(import.meta.url)), "permission-proxy.ts");
 
@@ -218,6 +219,19 @@ describe("permission proxy", () => {
     });
   });
 
+  it("delivers pasted Q/A text to Claude as one answer without overwriting another", async () => {
+    const input = { questions: [
+      { question: "Which framework?", options: [] },
+      { question: "Which features?", options: [] },
+    ] };
+    const pasted = "Notes\n\nQ: Which framework?\nA: Vue";
+    answerWith = () => ({ behavior: "answer", source: "user", message: formatQuestionAnswers(input.questions, [["React"], [pasted]]) });
+    rpc({ jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "approve", arguments: { tool_name: "AskUserQuestion", input } } });
+    expect(resultJson(await waitFor(2))).toEqual({
+      behavior: "allow", updatedInput: { ...input, answers: { "Which framework?": "React", "Which features?": pasted } },
+    });
+  });
+
   it("files a timeout's own note as unanswered, not as the user's choice", async () => {
     // what the broker actually sends on a timeout: `answer`, source "timeout",
     // and a full sentence. A blank-message stand-in never exercised this, which
@@ -370,6 +384,38 @@ describe("permission proxy", () => {
     expect(asks[0]).toMatchObject({ kind: "question", tool: "ask_user", input: { question: "Ready?" } });
     // a question's answer is text, never a permission envelope
     expect(res.result.content[0].text).toBe("ship it");
+  });
+
+  it("asks a multiSelect ask_user as a checkbox question and returns the picks", async () => {
+    const card = [{ question: "Which fruits?", multiSelect: true, options: [{ label: "Apple" }, { label: "Banana" }, { label: "Cherry" }] }];
+    answerWith = () => ({ behavior: "answer", source: "user", message: formatQuestionAnswers(card, [["Apple", "Cherry"]]) });
+    rpc({
+      jsonrpc: "2.0",
+      id: 2,
+      method: "tools/call",
+      params: { name: "ask_user", arguments: { question: "Which fruits?", choices: ["Apple", "Banana", "Cherry"], multiSelect: true } },
+    });
+    const res = await waitFor(2);
+    expect(asks[0]).toMatchObject({ kind: "question", tool: "ask_user", input: { question: "Which fruits?", questions: card } });
+    expect(res.result.content[0].text).toBe("Apple, Cherry");
+  });
+
+  it("keeps a multiSelect ask_user's system note as the note, not as picks", async () => {
+    answerWith = () => ({ behavior: "answer", source: "timeout", message: "Nobody answered in time." });
+    rpc({
+      jsonrpc: "2.0",
+      id: 2,
+      method: "tools/call",
+      params: { name: "ask_user", arguments: { question: "Which fruits?", choices: ["Apple", "Banana"], multiSelect: true } },
+    });
+    expect((await waitFor(2)).result.content[0].text).toBe("Nobody answered in time.");
+  });
+
+  it("leaves a single-pick ask_user without a question card", async () => {
+    answerWith = () => ({ behavior: "answer", message: "wait", source: "user" });
+    rpc({ jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "ask_user", arguments: { question: "Ready?", choices: ["ship it", "wait"], multiSelect: false } } });
+    await waitFor(2);
+    expect(asks[0].input.questions).toBeUndefined();
   });
 
   it("denies every waiting ask when the broker dies", async () => {

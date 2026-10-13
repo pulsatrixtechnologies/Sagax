@@ -89,6 +89,37 @@ describe("BotListItem", () => {
     expect(markup).not.toContain("[digest]");
   });
 
+  // Hanging up appends the call's record as the chat's last row. Like the
+  // digest receipt, it is not what the row says about the chat.
+  describe("the record of a live call that ended last", () => {
+    const at = (minute: number) => new Date(2026, 9, 6, 10, minute).getTime();
+    const record = {
+      id: "r1", role: "bot", kind: "call", at: at(2), text: "Call with Atlas · 1:42",
+      call: { callId: "c1", botId: "atlas", client: "ios", startedAt: at(0), endedAt: at(2), seconds: 102, endReason: "hung-up" },
+    };
+    const spoken = { id: "u1", role: "user", kind: "text", text: "what is the weather", at: at(0), via: "call", callId: "c1" };
+    const draw = (candidate: Bot) => renderRow(candidate);
+
+    it("previews the last reply, not the record that follows it", () => {
+      const markup = draw(bot({
+        messages: [spoken, { id: "b1", role: "bot", kind: "text", text: "Sunny in Pune.", at: at(1) }, record] as Bot["messages"],
+      }));
+      expect(markup).toContain("Sunny in Pune.");
+      expect(markup).not.toContain("Call with Atlas");
+    });
+
+    it("previews a failed turn's row when the record follows it", () => {
+      const markup = draw(bot({
+        messages: [spoken, { id: "e1", role: "bot", kind: "activity", at: at(1), tool: { name: "error: This computer isn't a place on your OMB Cloud: its bots run in the cloud.", ok: false } }, record] as Bot["messages"],
+      }));
+      expect(markup).toContain("This computer isn&#x27;t a place on your OMB Cloud: its bots run in the cloud.");
+      expect(markup).not.toContain("Call with Atlas");
+    });
+    // Upstream also times the open row and names the running step from a
+    // searched thread list; this row reads its selection from the store and
+    // lists no threads under the bot (header mode), so those stay out here.
+  });
+
   // A failed turn's row is stored as "error: …"; the preview reads like the
   // chat row (src/lib/failed-turn.ts), not like a log line.
   it("previews a failed turn without its error marker", () => {
@@ -170,24 +201,36 @@ describe("BotListItem", () => {
 
   const titlePill = /<span class="max-w-\[46%\] shrink truncate[^"]*">([^<]*)<\/span>/;
 
-  it("shows the bot's title as a pill beside the name", () => {
+  it("draws no title pill: the title is in the avatar's tooltip and read out with the name", () => {
     const markup = renderRow(bot({ title: "Developer" }));
 
-    expect(titlePill.exec(markup)?.[1]).toBe("Developer");
-    expect(markup.indexOf(">Developer<")).toBeGreaterThan(markup.indexOf(">Atlas<"));
+    expect(titlePill.test(markup)).toBe(false);
+    expect(markup).toContain('title="Atlas · Developer"');
+    expect(markup).toContain('<span class="sr-only">, Developer</span>');
+    expect(markup.indexOf(", Developer<")).toBeGreaterThan(markup.indexOf(">Atlas<"));
     expect(markup).toContain('title="Double-click to rename"');
 
-    expect(titlePill.test(renderRow(bot()))).toBe(false);
-    expect(titlePill.test(renderRow(bot({ title: "  " })))).toBe(false);
+    expect(renderRow(bot())).not.toContain("sr-only\">, ");
+    expect(renderRow(bot({ title: "  " }))).not.toContain("sr-only\">, ");
   });
 
-  it("lets a long title truncate beside the name", () => {
-    const longTitle = "Meta-Agent — opensource team maintainer";
+  it("keeps a long title out of the row, the name truncating alone", () => {
+    const longTitle = "Meta-Agent, opensource team maintainer";
     const markup = renderRow(bot({ name: "Team Maintainer", title: longTitle }));
 
-    expect(titlePill.exec(markup)?.[1]).toBe(longTitle);
+    expect(titlePill.test(markup)).toBe(false);
     expect(markup).toContain(">Team Maintainer<");
+    expect(markup).toContain(`title="Team Maintainer · ${longTitle}"`);
     expect(markup).toContain("truncate");
+  });
+
+  it("previews the last reply as plain text, without its markdown", () => {
+    const markup = renderRow(bot({
+      messages: [{ id: "b1", role: "bot", kind: "text", text: "I read **[Prudctual/Sagax](https://github.com/Prudctual/Sagax)**. Run `pnpm install` first.", at: 1 }] as Bot["messages"],
+    }));
+    expect(markup).toContain(">I read Prudctual/Sagax. Run pnpm install first.<");
+    expect(markup).not.toContain("**");
+    expect(markup).not.toContain("](https://");
   });
 
   it("shows typing dots instead of preview text while the bot works", () => {
@@ -345,9 +388,9 @@ describe("bot deletion feedback", () => {
       expect(markup).not.toContain(">hello<");
     });
 
-    it("shows the title pill and the star when quiet rows are off", () => {
+    it("reads the title out and shows the star when quiet rows are off", () => {
       const markup = renderRow(bot({ title: "Developer", chiefOfStaff: true }));
-      expect(markup).toContain(">Developer<");
+      expect(markup).toContain(", Developer<");
       expect(markup).toContain('data-testid="primary-bot-badge"');
     });
   });

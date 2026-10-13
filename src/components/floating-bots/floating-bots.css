@@ -479,7 +479,7 @@ html[data-floating-bot] #root {
   pointer-events: none;
 }
 
-/* ─── the 3D mascot (owl3d/) and its little life (behavior.ts) ─────────── */
+/* ─── the desktop owl's stage (Owl25D) and its little life (behavior.ts) ─── */
 
 .fb-root .fb-stage[data-3d] {
   width: 140px;

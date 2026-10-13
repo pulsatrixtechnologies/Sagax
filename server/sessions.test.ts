@@ -14,6 +14,7 @@ import {
   normalizePairingCode,
   PAIRING_CODE_ALPHABET,
   PAIRING_CODE_TTL_MS,
+  PAIRING_RESTART_HINT_MS,
   SESSION_TTL_MS,
   BOT_ACT_SESSION_TTL_MS,
   SessionRegistry,
@@ -829,5 +830,21 @@ describe("admin scope only (an OMB Cloud home is personal: server/cloud-owner.ts
     expect(registry.isLive(owner.session.id)).toBe(true);
     const next = registry.exchange({ code: registry.openPairing({ scopes: ["admin"] }).credential, label: "Phone", source: "c" });
     expect(next.ok).toBe(true);
+  });
+});
+
+describe("a pairing window lost to a restart (2026-10-13)", () => {
+  it("says the server may have restarted while it is young, and only then", () => {
+    const { credential } = registry.openPairing({ label: "Mac", principalId: "p1" });
+    registry.close();
+    // a restart: open windows lived in memory only (hashes, never on disk)
+    const restarted = new SessionRegistry({ file: file(), now: () => clock });
+    expect(readFileSync(file(), "utf8")).not.toContain(credential);
+    const lost = restarted.exchange({ code: credential, label: "Mac", source: "a" });
+    expect(lost).toMatchObject({ ok: false, status: 401, code: "server_restarted" });
+    if (!lost.ok) expect(lost.error).toMatch(/wrong or has expired.*restarted/);
+    clock += PAIRING_RESTART_HINT_MS;
+    const later = restarted.exchange({ code: credential, label: "Mac", source: "b" });
+    expect(later).toEqual({ ok: false, status: 401, error: "pairing code is wrong or has expired; create a new one on the server" });
   });
 });

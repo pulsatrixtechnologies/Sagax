@@ -59,6 +59,7 @@ import { accessCardVisibleTo } from "./engine-access.ts";
 import { isSameOrigin } from "./request-auth.ts";
 import { websocketAccept } from "./ws-bridge.ts";
 import { webSocketSession } from "./ws-session.ts";
+import { readFrench, readsFrench } from "./tts/french-reading.ts";
 import type { SpeechStream, SpeechStreamHandlers, SynthesizeOptions, TranscriptEvent, TranscriptionHandlers, TranscriptionStream } from "./tts/grok.ts";
 import { createSpeechSession } from "./voice-speech-session.ts";
 import type { ProviderKeyResult } from "./perspicax-link.ts";
@@ -270,7 +271,12 @@ export function createVoiceModeRoutes(deps: VoiceModeDeps): RouteHandler {
     let page: ReturnType<typeof webSocketSession> | null = null;
     const session = createSpeechSession({
       open: (handlers) => openSpeech(key, { voice, speed, language: ttsLanguage(language) }, handlers),
-      speakable: (text) => (text.length > VOICE_MODE_MAX_TEXT * 4 ? "" : deps.utterances(text).join(" ").trim().slice(0, VOICE_MODE_MAX_TEXT)),
+      speakable: (text) => {
+        if (text.length > VOICE_MODE_MAX_TEXT * 4) return "";
+        const joined = deps.utterances(text).join(" ").trim();
+        const read = readsFrench(language) ? readFrench(joined) : joined;
+        return read.slice(0, VOICE_MODE_MAX_TEXT);
+      },
       usage: (characters) => usage("grok-tts", characters),
       sendText: (frame) => page?.sendText(JSON.stringify(frame)),
       sendBinary: (pcm) => page?.sendBinary(pcm),
@@ -467,7 +473,7 @@ export function createVoiceModeRoutes(deps: VoiceModeDeps): RouteHandler {
       const raw = String(record.text ?? "").trim();
       if (!raw) return json(res, 400, { error: "text required" });
       // a live call sends the bot's own sentence: made speakable here, like /prepare
-      const text = action === "stream" ? deps.utterances(raw).join(" ").trim() : raw;
+      let text = action === "stream" ? deps.utterances(raw).join(" ").trim() : raw;
       if (action === "stream" && raw.length > VOICE_MODE_MAX_TEXT * 4) return json(res, 413, { error: `voice sentences are limited to ${VOICE_MODE_MAX_TEXT * 4} characters` });
       if (text.length > VOICE_MODE_MAX_TEXT) return json(res, 413, { error: `voice utterances are limited to ${VOICE_MODE_MAX_TEXT} characters` });
       const voice = record.voice === undefined || record.voice === "" ? undefined : record.voice;
@@ -478,6 +484,10 @@ export function createVoiceModeRoutes(deps: VoiceModeDeps): RouteHandler {
       }
       const language = record.language === undefined ? "auto" : record.language;
       if (!isVoiceModeLanguage(language)) return json(res, 400, { error: "unknown language" });
+      if (action === "stream" && readsFrench(language)) {
+        text = readFrench(text);
+        if (text.length > VOICE_MODE_MAX_TEXT) return json(res, 413, { error: `voice utterances are limited to ${VOICE_MODE_MAX_TEXT} characters` });
+      }
       if (action === "stream") {
         // nothing to say once made speakable (a code block, a link): silence
         if (!text) { res.writeHead(204, { "cache-control": "no-store" }); res.end(); return; }

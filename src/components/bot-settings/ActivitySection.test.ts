@@ -332,6 +332,7 @@ describe("Coding, code work only", () => {
       updatedAt: NOW - 40_000,
       threadId: "agent-1",
       pullRequest: { number: 200, url: "https://github.com/org/repo/pull/200" },
+      coding: true,
     }];
     const html = renderToStaticMarkup(createElement(LaunchedAgentsList, {
       items: launched,
@@ -351,6 +352,41 @@ describe("Coding, code work only", () => {
     expect(panel).toContain('data-bot-settings-section="coding"');
     expect(panel).toContain("data-launched-agents");
     expect(panelSections({ items: [], subagents: [], launchedAgents: launched }).showCoding).toBe(true);
+  });
+});
+
+describe("launched agents by kind of work", () => {
+  const agent = (id: string, title: string, coding?: true): BotLaunchedAgentItem => ({
+    id, targetBotId: "peer", targetBotName: "Peer", title, status: "finished",
+    startedAt: NOW - 50_000, updatedAt: NOW - 40_000, threadId: id.slice("thread:".length), ...(coding ? { coding } : {}),
+  });
+
+  it("Coding holds only coding agents; a dispatch or bot-to-bot run goes to Activity", () => {
+    const list = {
+      items: [], subagents: [],
+      launchedAgents: [agent("thread:d1", "Dispatch"), agent("thread:o1", "Orion: @Cryptic · work"), agent("thread:s1", "Scout: Split the lexer", true)],
+    };
+    const sections = panelSections(list);
+    expect(sections.launched.map((item) => item.id)).toEqual(["thread:s1"]);
+    expect(sections.launchedOther.map((item) => item.id)).toEqual(["thread:d1", "thread:o1"]);
+    expect(sections.showCoding).toBe(true);
+    expect(sections.showActivity).toBe(true);
+    const panel = renderToStaticMarkup(createElement(PanelSections, {
+      list, actions: { onOpen: () => {}, now: NOW }, onOpenHistory: () => {}, onOpenLaunched: () => {},
+    }));
+    const coding = panel.slice(panel.indexOf('data-bot-settings-section="coding"'), panel.indexOf('data-bot-settings-section="activity"'));
+    const activity = panel.slice(panel.indexOf('data-bot-settings-section="activity"'));
+    expect(coding).toContain("Scout: Split the lexer");
+    expect(coding).not.toContain("Dispatch");
+    expect(coding).not.toContain("Orion");
+    expect(activity).toContain("Dispatch");
+    expect(activity).toContain("Orion: @Cryptic · work");
+  });
+
+  it("no coding agent: the Coding section is not drawn for other launched work", () => {
+    const sections = panelSections({ items: [], subagents: [], launchedAgents: [agent("thread:d1", "Dispatch")] });
+    expect(sections.showCoding).toBe(false);
+    expect(sections.showActivity).toBe(true);
   });
 });
 

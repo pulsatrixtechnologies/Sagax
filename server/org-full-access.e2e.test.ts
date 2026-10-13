@@ -125,6 +125,8 @@ posixOnly("organization Full access", () => {
     erinId = (await api("GET", "/api/auth/session", erin)).body.principalId;
     const created = await api("POST", "/api/bots", erin, { name: "Zed" });
     expect(created.status, created.text).toBe(201);
+    // 2026-10-11: no policy saved, so a new bot of the organization starts on Ask
+    expect(created.body.bot.approvalMode).toBe("ask");
     const patched = await api("PATCH", `/api/bots/${created.body.bot.id}`, erin, { modelSelection: { instanceId: "claude", model: "fake-model" } });
     expect(patched.status, patched.text).toBe(200);
     zed = { id: created.body.bot.id, threadId: created.body.bot.threadId };
@@ -143,8 +145,13 @@ posixOnly("organization Full access", () => {
   });
 
   it("FA-1: the owner confirms once, the turn bypasses prompts, host tools stay withheld", async () => {
-    expect((await api("GET", "/api/org", alice)).body.settings.allowFullAccess).toBe(true);
+    // 2026-10-11: off until an admin turns it on
+    expect((await api("GET", "/api/org", alice)).body.settings.allowFullAccess).toBe(false);
     const thread = `/api/bots/${zed.id}/tasks/${zed.threadId}`;
+    expect((await api("PATCH", thread, erin, { approvalMode: "full", confirmFullAccess: true })).body.code).toBe("org_full_access_disabled");
+    const on = await api("PATCH", "/api/org/settings", alice, { allowFullAccess: true });
+    expect(on.status, on.text).toBe(200);
+    expect(on.body.settings.allowFullAccess).toBe(true);
     const unconfirmed = await api("PATCH", thread, erin, { approvalMode: "full" });
     expect(unconfirmed.status, unconfirmed.text).toBe(409);
     expect(unconfirmed.body.code).toBe("full_access_confirm_required");

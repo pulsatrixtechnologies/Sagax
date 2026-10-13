@@ -15,7 +15,9 @@ class FakeUpstream implements SpeechStream {
   ready: Promise<void>;
   private open!: () => void;
   private refuse!: (error: Error) => void;
-  constructor(readonly handlers: SpeechStreamHandlers) {
+  readonly handlers: SpeechStreamHandlers;
+  constructor(handlers: SpeechStreamHandlers) {
+    this.handlers = handlers;
     this.ready = new Promise((resolve, reject) => { this.open = resolve; this.refuse = reject; });
     this.ready.catch(() => {});
   }
@@ -36,7 +38,7 @@ class FakeUpstream implements SpeechStream {
   drop() { this.close(); }
 }
 
-function make() {
+function make(maxAgeMs?: number) {
   const upstreams: FakeUpstream[] = [];
   const frames: SpeechFrame[] = [];
   const audio: number[] = [];
@@ -56,6 +58,7 @@ function make() {
     closePage,
     log,
     sampleRate: 24_000,
+    ...(maxAgeMs !== undefined ? { maxAgeMs } : {}),
   });
   const say = (id: string, text: string) => session.message(JSON.stringify({ type: "say", id, text }));
   const sayMore = (id: string, text: string) => session.message(JSON.stringify({ type: "say", id, text, more: true }));
@@ -229,6 +232,44 @@ describe("streaming voice session (server side)", () => {
     const t = make();
     t.up().drop();
     expect(await t.session.ready).toBe(false);
+    t.session.close();
+  });
+
+  it("an idle socket past the age limit reconnects without a failure, and the next clause still speaks", async () => {
+    vi.useFakeTimers();
+    const t = make(50);
+    t.up().accept();
+    await t.session.ready;
+    await vi.advanceTimersByTimeAsync(49);
+    expect(t.upstreams).toHaveLength(1);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(t.upstreams).toHaveLength(2);
+    expect(t.upstreams[0]!.closed).toBe(true);
+    expect(t.frames.filter((frame) => frame.type === "error" || frame.type === "fallback")).toEqual([]);
+    expect(t.log).not.toHaveBeenCalled();
+    t.up().accept();
+    await vi.advanceTimersByTimeAsync(0);
+    t.say("c9", "Encore.");
+    expect(t.up().spoken).toEqual(["Encore."]);
+    t.session.close();
+  });
+
+  it("a clause in flight is not cut at the age limit; the socket rotates once it is idle", async () => {
+    vi.useFakeTimers();
+    const t = make(50);
+    t.up().accept();
+    await t.session.ready;
+    t.say("c1", "Longue.");
+    expect(t.up().spoken).toEqual(["Longue."]);
+    await vi.advanceTimersByTimeAsync(50);
+    expect(t.up().closed).toBe(false);
+    expect(t.upstreams).toHaveLength(1);
+    t.up().handlers.onAudio(new Uint8Array(10));
+    t.up().handlers.onDone();
+    expect(t.frames).toContainEqual({ type: "done", id: "c1" });
+    expect(t.upstreams).toHaveLength(2);
+    expect(t.upstreams[0]!.closed).toBe(true);
+    expect(t.frames.filter((frame) => frame.type === "error" || frame.type === "fallback")).toEqual([]);
     t.session.close();
   });
 

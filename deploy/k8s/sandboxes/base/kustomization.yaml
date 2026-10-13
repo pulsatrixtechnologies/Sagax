@@ -1,0 +1,16 @@
+# Cloud-agnostic sandbox pool. Apply an adapter overlay, not this directory
+# alone, and only by the cutover runbook. replicas of sagax-sandboxd stay 0
+# until the image contains a Kubernetes driver.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - namespace.yaml
+  - priorityclass.yaml
+  - rbac.yaml
+  - networkpolicy.yaml
+  - sandboxd.yaml
+  - capacity.yaml
+  - keda.yaml
+  - ../autoscaling/keda-pending-buffer.yaml
+  - prometheus-rules.yaml
+  - velero-schedule.yaml

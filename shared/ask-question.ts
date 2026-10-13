@@ -42,6 +42,10 @@ export interface AskQuestion {
   header?: string;
   multiSelect?: boolean;
   options: AskQuestionOption[];
+  /** false when the provider can only take one of `options` back (an ACP
+   * permission-style question answers with an option id, never text). The
+   * card then offers no free-text "Other". Absent means free text is fine. */
+  custom?: false;
 }
 
 /** Durable payload on a question card. Versioned like the other card
@@ -129,6 +133,8 @@ function parseQuestion(value: unknown): AskQuestion | null {
     ...(header ? { header } : {}),
     ...(value.multiSelect === true ? { multiSelect: true } : {}),
     options,
+    // only meaningful beside options: with none, free text is the only answer
+    ...(value.custom === false && options.length ? { custom: false as const } : {}),
   };
 }
 
@@ -248,6 +254,7 @@ export const ASK_USER_TOOL_DEFINITION = {
  * is delivered on the deny channel, so it has to say what it is — and the
  * card strips it back off when it shows the person what they sent. */
 export const ANSWER_PREAMBLE = "The user answered your questions.";
+const JSON_ANSWERS_PREFIX = `${ANSWER_PREAMBLE}\n\nAnswers (JSON):\n`;
 
 /**
  * What the model is told. It arrives as the tool's result, so it has to
@@ -257,14 +264,18 @@ export function formatQuestionAnswers(
   questions: readonly AskQuestion[],
   answers: readonly (readonly string[])[],
 ): string {
-  const blocks: string[] = [];
+  const pairs: [string, string][] = [];
   questions.forEach((question, index) => {
     const picked = (answers[index] ?? []).map((value) => value.trim()).filter(Boolean);
     if (!picked.length) return;
-    blocks.push(`Q: ${question.question}\nA: ${picked.join(", ")}`);
+    pairs.push([question.question, picked.join(", ")]);
   });
-  if (!blocks.length) return "";
-  return `${ANSWER_PREAMBLE}\n\n${blocks.join("\n\n")}`;
+  if (!pairs.length) return "";
+  // Newlines can contain Q:/A: headers; JSON preserves them as answer text.
+  if (pairs.some(pair => pair.some(value => /[\r\n]/.test(value)))) {
+    return JSON_ANSWERS_PREFIX + JSON.stringify(pairs);
+  }
+  return `${ANSWER_PREAMBLE}\n\n${pairs.map(([question, answer]) => `Q: ${question}\nA: ${answer}`).join("\n\n")}`;
 }
 
 /** The same answer with the model-facing lead-in removed, for the settled
@@ -279,8 +290,8 @@ export function answerWithoutPreamble(answer: string): string {
  * `AskUserQuestion` is answered through its own `answers` field, keyed by the
  * question's text — but the card sends ONE answer for the whole set, because
  * a person answers the whole card at once. `formatQuestionAnswers` writes
- * each question's text beside its answer for exactly this reason, so the map
- * is recovered rather than guessed.
+ * each question's text beside its answer (JSON pairs when either has a
+ * newline), so the map is recovered rather than guessed.
  *
  * A message that carries no blocks at all is the flat path: an older client,
  * or a phone answering a single-question card with one of the option labels
@@ -364,6 +375,17 @@ export function questionAnswersById(
       continue;
     }
     idByText.set(question.question, id);
+  }
+  if (message.startsWith(JSON_ANSWERS_PREFIX)) {
+    let pairs: unknown;
+    try { pairs = JSON.parse(message.slice(JSON_ANSWERS_PREFIX.length)); }
+    catch { return {}; }
+    if (!Array.isArray(pairs) || !pairs.every(pair => Array.isArray(pair) && pair.length === 2 && pair.every(value => typeof value === "string"))) return {};
+    for (const [asked, answer] of pairs as [string, string][]) {
+      const id = idByText.get(asked);
+      if (id && !ambiguous.has(asked) && answer.trim()) answers[id] = answer;
+    }
+    return answers;
   }
   // A block runs from one Q: header to the next (blank lines inside an
   // answer are the answer's, not block boundaries), so the reply is scanned

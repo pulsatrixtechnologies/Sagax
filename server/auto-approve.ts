@@ -141,9 +141,9 @@ export type AutoVerdictSource =
   | "explicit-approval-block"
   | "outbound-guard"
   | "allow-rule"
-  | "widget-approval"
   | "safety-hold"
   | "safety-read"
+  | "widget-approval"
   | "no-grant";
 
 export interface AutoVerdict {
@@ -169,13 +169,13 @@ export function autoVerdict(
     /** The person saved an Allow rule for this exact gated MCP tool
      * (BotRecord.alwaysAllow "mcp:<server>__<tool>"). */
     ruleAllowed?: boolean;
-    /** The person allowed this exact ConnectWise change on a widget's
-     * approval card (server/cw-widget-actions.ts): one write, one record. */
-    widgetApproved?: boolean;
     /** Safety review: the person must accept this call. Full and Auto do not. */
     safetyHold?: boolean;
     /** Safety review: a read-only call may run without a card. */
     safetyAllow?: boolean;
+    /** The person allowed this exact ConnectWise change on a widget's
+     * approval card (server/cw-widget-actions.ts): one write, one record. */
+    widgetApproved?: boolean;
   },
 ): AutoVerdict {
   // A question is for a person, whatever channel it arrived on — and

@@ -10,7 +10,8 @@ import { canonicalJson, parsePackageDocument } from "../../shared/package-format
 import { runControlOmb } from "../control-omb.ts";
 import { request } from "../mcp-server.ts";
 import { UI_TOOLS_DIR } from "./control-omb-ui.ts";
-import { enableBrowseBots, openTemplatesCatalog } from "./ui-navigation.ts";
+import { openTemplatesCatalog } from "./compose-flow.ts";
+import { clickAccessible, openProfileAria } from "./ui-click.ts";
 
 const ROOT = fileURLToPath(new URL("../..", import.meta.url));
 const FIXTURES = join(ROOT, "shared", "package-fixtures");
@@ -67,17 +68,27 @@ describe("the organization library in the real renderer", () => {
       try { info = JSON.parse(stdout); return Boolean(info.ui); } catch { return false; }
     }, { timeout: launchTimeout, interval: 250 }).toBe(true);
     const ui = (verb: string, ...args: string[]) => runControlOmb(["ui", verb, "--ui", info.ui, ...args]) as Promise<Record<string, any>>;
-    const click = (name: string) => ui("click", "--name", name);
+    const evaluate = async (js: string) => (await ui("eval", "--js", js)).result;
+    const rawClick = (name: string) => ui("click", "--name", name);
+    const click = (name: string) => clickAccessible({ click: rawClick, evaluate }, name);
     const press = (keys: string) => ui("press", "--keys", keys);
     const snapshot = async () => (await ui("snapshot")).snapshot as string;
     const api = (path: string, method = "GET", body?: unknown) => request(path, { method, ...(body === undefined ? {} : { body: JSON.stringify(body) }) }, info.url);
     const evidence = (name: string) => ui("screenshot", "--out", join(ROOT, ".omb-scratch", "verify-evidence", name));
-    const evaluate = async (js: string) => (await ui("eval", "--js", js)).result;
-    await enableBrowseBots(api);
+    const clickExact = async (label: string) => {
+      const ok = await evaluate(`(() => {
+        const btn = [...document.querySelectorAll("button")].find((b) => (b.textContent || "").trim() === ${JSON.stringify(label)});
+        if (!btn) return false;
+        btn.click();
+        return true;
+      })()`);
+      if (!ok) throw new Error(`button ${JSON.stringify(label)} is missing`);
+    };
+    const catalogFlow = { click, flag: (assignment: string) => ui("flag", "--set", assignment), snapshot };
 
-    // No organization: Templates has no organization tab.
-    await openTemplatesCatalog(click, evaluate);
-    await expect.poll(snapshot, { timeout: 10_000 }).toContain("Community templates");
+    // No organization: Templates has no organization shelf.
+    await openTemplatesCatalog(catalogFlow);
+    await expect.poll(snapshot, { timeout: 10_000 }).toContain("Templates");
     expect(await snapshot()).not.toContain("From Customer Co");
     await press("Escape");
 
@@ -95,23 +106,30 @@ describe("the organization library in the real renderer", () => {
     });
     expect(relayed.status).toBe(200);
 
-    // The shelf is the first tab and opens first.
-    await openTemplatesCatalog(click, evaluate);
-    await expect.poll(snapshot, { timeout: 10_000 }).toContain("Packages Customer Co shares with you");
+    // Org packages sit on Templates, first in the list.
+    await openTemplatesCatalog(catalogFlow);
+    await expect.poll(snapshot, { timeout: 10_000 }).toContain("Sales desk");
     let shelf = await snapshot();
-    for (const line of ["From Customer Co", "Sales desk", "Recommended by Acme Partners", "Sales skills", "From Acme Partners"]) expect(shelf).toContain(line);
+    for (const line of ["Sales desk", "Sales skills", "by Acme Partners"]) expect(shelf).toContain(line);
     await evidence("org-library-shelf.png");
 
     // Details is the existing preview: skills arrive switched on here.
-    await click("Details of Sales desk");
+    // Mode badges ("Recommended by …") live on the detail notes, not the shelf.
+    await click("Show Sales desk");
     await expect.poll(snapshot, { timeout: 10_000 }).toContain("Included skills (switched on)");
-    expect(await snapshot()).toContain("Skills arrive switched on and routines paused");
+    const detail = await snapshot();
+    expect(detail).toContain("Skills arrive switched on and routines paused");
+    expect(detail).toContain("Recommended by Acme Partners");
     await evidence("org-library-preview.png");
-    await click("Back to templates");
+    await click("Back");
 
-    // One click adds the team: no confirmation.
-    await click("Add Sales desk");
-    await expect.poll(snapshot, { timeout: 20_000 }).toContain('button "Sales desk"');
+    // Use this template adds the team: no confirmation. Click the exact
+    // label so a card's short "Use" is not taken instead.
+    await click("Show Sales desk");
+    await clickExact("Use this template");
+    await expect.poll(async () => (await api("/api/bots")).bots.filter((bot: { section?: string }) => bot.section === "Sales desk").length, { timeout: 20_000 }).toBe(3);
+    // The sidebar lists the new team as its own section group.
+    await expect.poll(snapshot, { timeout: 20_000 }).toContain('group "Sales desk"');
     const bots = (await api("/api/bots")).bots.filter((bot: { section?: string }) => bot.section === "Sales desk");
     expect(bots).toHaveLength(3);
     for (const bot of bots) {
@@ -121,30 +139,31 @@ describe("the organization library in the real renderer", () => {
     expect((await api("/api/routines")).routines.every((routine: { enabled: boolean }) => !routine.enabled)).toBe(true);
 
     // The shelf now says Added; the skills-only package adds in place.
-    await openTemplatesCatalog(click, evaluate);
-    await expect.poll(snapshot, { timeout: 10_000 }).toContain("Packages Customer Co shares with you");
+    await openTemplatesCatalog(catalogFlow);
+    await expect.poll(snapshot, { timeout: 10_000 }).toContain("Sales desk");
     shelf = await snapshot();
     expect(shelf).toContain("Added");
-    expect(shelf).not.toContain("Add Sales desk");
-    await click("Add Sales skills");
+    await click("Show Sales skills");
+    await clickExact("Use this template");
     await expect.poll(snapshot, { timeout: 10_000 }).toContain("Sales skills is added. Its skills are offered under each bot's Skills.");
     await evidence("org-library-added.png");
     await press("Escape");
 
-    // The added bot's settings: the provenance line, and Skills → From Customer Co.
-    const state = await ui("snapshot", "--interactive");
-    const profile = Object.entries(state.refs as Record<string, { role: string; name: string }>)
-      .find(([, entry]) => entry.role === "button" && /Open .+ profile/.test(entry.name));
-    expect(profile).toBeDefined();
-    await ui("click", "--ref", `@${profile![0]}`);
-    await click("Identity");
+    // Provenance lives on the bot panel Details tab. Select a Sales desk
+    // bot first: after the catalog closes the header may still be on another bot.
+    const deskBot = bots[0] as { id: string; name: string };
+    await evaluate(`document.querySelector(${JSON.stringify(`[data-sidebar-bot-row="${deskBot.id}"]`)})?.click(); true`);
+    await expect.poll(snapshot, { timeout: 10_000 }).toContain(openProfileAria(deskBot.name));
+    await click(openProfileAria(deskBot.name));
     await expect.poll(snapshot, { timeout: 10_000 }).toContain("From Sales desk 1.3.0 · Acme Partners");
+    await click("Edit bot");
+    await expect.poll(snapshot, { timeout: 10_000 }).toContain("Skills");
     await click("Skills");
-    await expect.poll(snapshot, { timeout: 10_000 }).toContain("Skills your organization shares");
+    // The shared skills card: its hint now sits behind the heading's help tip.
+    await expect.poll(snapshot, { timeout: 10_000 }).toContain('heading "From Customer Co"');
     await evidence("org-library-bot-skills.png");
     await click("Add follow-up to this bot");
-    const selected = bots.find((bot: { name: string }) => profile![1].name.includes(bot.name));
-    await expect.poll(async () => ((await api(`/api/bots/${selected.id}/skills`)).skills as Array<{ name: string; enabled: boolean }>)
+    await expect.poll(async () => ((await api(`/api/bots/${deskBot.id}/skills`)).skills as Array<{ name: string; enabled: boolean }>)
       .find((skill) => skill.name === "follow-up")?.enabled, { timeout: 10_000 }).toBe(true);
     process.stdout.write(`${JSON.stringify({ fixture: info!, addedSection: "Sales desk", offeredSkill: "follow-up" })}\n`);
   }, launchTimeout + 120_000);

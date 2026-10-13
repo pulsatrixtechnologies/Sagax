@@ -5,7 +5,8 @@
 //
 // What only the desktop window can do stays there: joining an organization
 // from the desktop app, "Use Sagax from another device", control of the Mac,
-// installing or signing in a model provider's CLI. The iPad says where.
+// and installing a model provider's CLI. Sign-in and access keys happen on
+// the phone; the computer finishes them.
 import SwiftUI
 import UIKit
 import CoreImage.CIFilterBuiltins
@@ -619,7 +620,7 @@ struct DesktopEnginesSettings: View {
                             .monospacedDigit()
                     }
                     .padding(.top, ready || !engines.contains(where: \.ready) ? 0 : 16)
-                    DesktopEngineGrid(engines: rows, open: $open) { provider in
+                    DesktopEngineGrid(engines: rows, open: $open, client: session.settingsClient, reload: { await load() }) { provider in
                         shell.settingsSection = .connections
                         _ = provider
                     }
@@ -645,6 +646,8 @@ struct DesktopEnginesSettings: View {
 struct DesktopEngineGrid: View {
     let engines: [DesktopEngine]
     @Binding var open: String?
+    var client: CompanionClient?
+    var reload: () async -> Void = {}
     let openKeys: (DesktopAPIKeyProvider) -> Void
 
     var body: some View {
@@ -689,7 +692,7 @@ struct DesktopEngineGrid: View {
     }
 
     private func card(_ engine: DesktopEngine) -> some View {
-        DesktopEngineCard(engine: engine, open: open == engine.id, toggle: {
+        DesktopEngineCard(engine: engine, open: open == engine.id, client: client, reload: reload, toggle: {
             withAnimation(.easeOut(duration: 0.15)) { open = open == engine.id ? nil : engine.id }
         }, openKeys: openKeys)
         .frame(maxWidth: .infinity)
@@ -707,6 +710,8 @@ struct DesktopEngineCard: View {
     @Environment(\.desktopTheme) private var theme
     let engine: DesktopEngine
     let open: Bool
+    var client: CompanionClient?
+    var reload: () async -> Void = {}
     let toggle: () -> Void
     let openKeys: (DesktopAPIKeyProvider) -> Void
 
@@ -773,21 +778,25 @@ struct DesktopEngineCard: View {
             .accessibilityElement(children: .combine)
             .accessibilityIdentifier("desktop-settings.engine.\(engine.id)")
             if open {
-                VStack(alignment: .leading, spacing: 10) {
-                    if let provider = engine.apiKeyProvider {
-                        DesktopText("This provider runs on an API key saved on the computer.", color: \.inkSecondary)
-                        Button("Open API keys") { openKeys(provider) }
-                            .buttonStyle(DesktopButtonStyle(kind: .control))
-                    } else if engine.ready {
-                        DesktopText("Ready on the computer. Its sign-in and updates are managed in Sagax there.", color: \.inkSecondary)
-                    } else {
-                        DesktopText("Install it and sign in on the computer, in Sagax > Settings > Model providers. This list updates when you check again.",
-                                    color: \.inkSecondary)
+                if let client, (engine.interactiveSignIn && !engine.ready) || engine.wantsAccessKey {
+                    DesktopEngineSetup(engine: engine, client: client, reload: reload, openKeys: openKeys)
+                } else {
+                    VStack(alignment: .leading, spacing: 10) {
+                        if let provider = engine.apiKeyProvider {
+                            DesktopText("This provider runs on an API key saved on the computer.", color: \.inkSecondary)
+                            Button("Open API keys") { openKeys(provider) }
+                                .buttonStyle(DesktopButtonStyle(kind: .control))
+                        } else if engine.ready {
+                            DesktopText("Ready on the computer. Its sign-in and updates are managed in Sagax there.", color: \.inkSecondary)
+                        } else {
+                            DesktopText("Install it and sign in on the computer, in Sagax > Settings > Model providers. This list updates when you check again.",
+                                        color: \.inkSecondary)
+                        }
                     }
+                    .padding(16)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .overlay(alignment: .top) { Rectangle().fill(theme.hairline.opacity(0.4)).frame(height: 1) }
                 }
-                .padding(16)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .overlay(alignment: .top) { Rectangle().fill(theme.hairline.opacity(0.4)).frame(height: 1) }
             }
         }
         .padding(1)
@@ -796,6 +805,257 @@ struct DesktopEngineCard: View {
             RoundedRectangle(cornerRadius: 16, style: .continuous)
                 .strokeBorder(theme.hairline.opacity(open ? 0.7 : 0.4), lineWidth: 1)
         )
+    }
+}
+
+/// Sign-in and access keys for one provider. The computer runs the login and
+/// stores the key; this view only shows the page, the code and whether a key
+/// is saved. The key itself never stays in the view after a save.
+struct DesktopEngineSetup: View {
+    @Environment(\.desktopTheme) private var theme
+    @Environment(\.openURL) private var openURL
+    let engine: DesktopEngine
+    let client: CompanionClient
+    let reload: () async -> Void
+    let openKeys: (DesktopAPIKeyProvider) -> Void
+
+    @State private var auth: EngineSignInState?
+    @State private var busy = false
+    @State private var error: String?
+    @State private var notice: String?
+    @State private var pasted = ""
+    @State private var key = ""
+    @State private var keyConfigured = false
+    @State private var keyBusy = false
+    @State private var openedLink = false
+
+    private var method: String? { engine.authentication?.method }
+    private var waitingId: String? { auth?.phase == "waiting" ? auth?.flowId : nil }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            if engine.ready {
+                DesktopText("Ready on the computer. Its sign-in and updates are managed in Sagax there.", color: \.inkSecondary)
+            }
+            if engine.interactiveSignIn, !engine.ready {
+                signIn
+            }
+            if engine.wantsAccessKey {
+                if engine.interactiveSignIn, !engine.ready {
+                    DisclosureGroup {
+                        keyFields
+                    } label: {
+                        Text("Or paste an access key")
+                    }
+                } else {
+                    keyFields
+                    if !engine.interactiveSignIn, let provider = engine.apiKeyProvider {
+                        Button("Open API keys") { openKeys(provider) }
+                            .buttonStyle(DesktopButtonStyle(kind: .control))
+                    }
+                }
+            }
+            if let command = engine.manualCommand {
+                DisclosureGroup {
+                    Text(verbatim: command)
+                        .font(.system(size: 12, design: .monospaced))
+                        .textSelection(.enabled)
+                        .foregroundStyle(theme.inkSecondary)
+                    Button("Copy command") { UIPasteboard.general.string = command }
+                        .buttonStyle(DesktopButtonStyle(kind: .control))
+                } label: {
+                    Text("Prefer a terminal?")
+                }
+                .accessibilityIdentifier("desktop-settings.engine.manual.\(engine.id)")
+            }
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .overlay(alignment: .top) { Rectangle().fill(theme.hairline.opacity(0.4)).frame(height: 1) }
+        .task { await loadKey() }
+        .task(id: waitingId) { await poll() }
+    }
+
+    @ViewBuilder
+    private var signIn: some View {
+        if let auth { statusLine(auth) }
+        if auth?.phase == "waiting" {
+            if method == "device-code", let code = auth?.userCode, !code.isEmpty {
+                DesktopText("Enter this code on the sign-in page", color: \.inkSecondary)
+                HStack(spacing: 8) {
+                    Text(verbatim: code)
+                        .font(.system(size: 18, design: .monospaced))
+                        .tracking(2)
+                        .textSelection(.enabled)
+                        .foregroundStyle(theme.ink)
+                    Spacer(minLength: 8)
+                    Button("Copy code") { UIPasteboard.general.string = code }
+                        .buttonStyle(DesktopButtonStyle(kind: .control))
+                }
+            }
+            if method == "paste-code" {
+                TextField("Paste the code from that page", text: $pasted)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .textFieldStyle(.roundedBorder)
+                Button("Finish sign-in") { Task { await finish() } }
+                    .buttonStyle(DesktopButtonStyle(kind: .accent))
+                    .disabled(busy || pasted.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+            if let raw = auth?.authorizationUrl, let url = EngineSignInLink.allowed(raw) {
+                Button("Open sign-in") {
+                    openedLink = true
+                    openURL(url)
+                }
+                .buttonStyle(DesktopButtonStyle(kind: .accent))
+            }
+            Button("Cancel sign-in") { Task { await cancel() } }
+                .buttonStyle(DesktopButtonStyle(kind: .control))
+                .disabled(busy)
+        } else if auth?.phase != "succeeded" {
+            Button(auth == nil && error == nil ? "Sign in" : "Try again") { Task { await start() } }
+                .buttonStyle(DesktopButtonStyle(kind: .accent))
+                .disabled(busy)
+        }
+        if let error {
+            DesktopText(verbatim: error, color: \.danger)
+        } else if let notice, auth?.phase != "waiting" {
+            DesktopText(verbatim: notice, color: \.success)
+        }
+    }
+
+    private func statusLine(_ auth: EngineSignInState) -> some View {
+        let text: String
+        switch auth.phase {
+        case "waiting": text = String(localized: "Waiting for you to finish signing in…")
+        case "succeeded": text = String(localized: "Connected. Your models are being refreshed.")
+        case "cancelled": text = String(localized: "Sign-in was cancelled.")
+        case "expired": text = String(localized: "This sign-in expired. Start again.")
+        default: text = auth.message ?? String(localized: "Sign-in could not be completed. Try again.")
+        }
+        return DesktopText(verbatim: text, color: auth.phase == "succeeded" ? \.success : \.inkSecondary)
+    }
+
+    @ViewBuilder
+    private var keyFields: some View {
+        DesktopText("Access key", size: 12, weight: .semibold)
+        SecureField("Paste the access key", text: $key)
+            .textInputAutocapitalization(.never)
+            .autocorrectionDisabled()
+            .textFieldStyle(.roundedBorder)
+        HStack(spacing: 8) {
+            Button(keyBusy ? "Saving…" : "Save key") { Task { await saveKey(key) } }
+                .buttonStyle(DesktopButtonStyle(kind: .accent))
+                .disabled(keyBusy || key.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            if keyConfigured {
+                Button("Remove key") { Task { await saveKey("") } }
+                    .buttonStyle(DesktopButtonStyle(kind: .control))
+                    .disabled(keyBusy)
+            }
+        }
+    }
+
+    private func start() async {
+        busy = true
+        error = nil
+        notice = nil
+        defer { busy = false }
+        do {
+            let next = try await client.startEngineSignIn(instanceId: engine.instanceId)
+            auth = next
+            if next.phase == "succeeded" {
+                notice = String(localized: "Connected. Your models are being refreshed.")
+                await reload()
+            } else {
+                openOnce(next)
+            }
+        } catch {
+            self.error = error.localizedDescription
+        }
+    }
+
+    private func openOnce(_ state: EngineSignInState) {
+        guard !openedLink, method == "open-link" || method == "browser-pkce" else { return }
+        guard let raw = state.authorizationUrl, let url = EngineSignInLink.allowed(raw) else {
+            error = String(localized: "The sign-in page could not be opened.")
+            return
+        }
+        openedLink = true
+        openURL(url)
+    }
+
+    private func poll() async {
+        guard let flowId = waitingId else { return }
+        while !Task.isCancelled {
+            try? await Task.sleep(nanoseconds: 2_000_000_000)
+            if Task.isCancelled { return }
+            guard auth?.phase == "waiting", auth?.flowId == flowId else { return }
+            do {
+                let next = try await client.engineSignInStatus(instanceId: engine.instanceId, flowId: flowId)
+                if Task.isCancelled { return }
+                auth = next
+                error = nil
+                if next.phase == "succeeded" {
+                    notice = String(localized: "Connected. Your models are being refreshed.")
+                    await reload()
+                    return
+                }
+                if next.phase != "waiting" { return }
+            } catch {
+                if Task.isCancelled { return }
+                self.error = error.localizedDescription
+            }
+        }
+    }
+
+    private func cancel() async {
+        guard let flowId = auth?.flowId else { return }
+        busy = true
+        error = nil
+        defer { busy = false }
+        do {
+            try await client.cancelEngineSignIn(instanceId: engine.instanceId, flowId: flowId)
+            auth = EngineSignInState(phase: "cancelled", flowId: nil, authorizationUrl: nil, expiresAt: nil, userCode: nil, message: nil)
+        } catch {
+            self.error = error.localizedDescription
+        }
+    }
+
+    private func finish() async {
+        guard let flowId = auth?.flowId else { return }
+        busy = true
+        error = nil
+        defer { busy = false }
+        do {
+            try await client.completeEngineSignIn(instanceId: engine.instanceId, flowId: flowId, code: pasted)
+            pasted = ""
+            notice = String(localized: "Connected. Your models are being refreshed.")
+            auth = EngineSignInState(phase: "succeeded", flowId: flowId, authorizationUrl: nil, expiresAt: nil, userCode: nil, message: nil)
+            await reload()
+        } catch {
+            self.error = error.localizedDescription
+        }
+    }
+
+    private func loadKey() async {
+        guard engine.wantsAccessKey else { return }
+        do { keyConfigured = try await client.engineAccessKeyConfigured(instanceId: engine.instanceId) }
+        catch { self.error = error.localizedDescription }
+    }
+
+    private func saveKey(_ value: String) async {
+        keyBusy = true
+        error = nil
+        defer { keyBusy = false }
+        do {
+            let saved = try await client.saveEngineAccessKey(instanceId: engine.instanceId, key: value)
+            key = ""
+            keyConfigured = saved
+            notice = saved ? String(localized: "Key saved") : String(localized: "Key removed")
+            await reload()
+        } catch {
+            self.error = error.localizedDescription
+        }
     }
 }
 

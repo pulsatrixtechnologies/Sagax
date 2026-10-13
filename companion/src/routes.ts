@@ -160,6 +160,11 @@ const ALLOWED: ReadonlyArray<{ method: string; path: RegExp }> = [
   // whether one is saved.
   { method: "GET", path: /^\/api\/instances\/(?!\.+\/)[\w.-]+\/api-key$/ },
   { method: "POST", path: /^\/api\/instances\/(?!\.+\/)[\w.-]+\/api-key$/ },
+  // In-app sign-in. The phone sees a phase, never a password.
+  { method: "POST", path: /^\/api\/instances\/(?!\.+\/)[\w.-]+\/auth\/start$/ },
+  { method: "GET", path: /^\/api\/instances\/(?!\.+\/)[\w.-]+\/auth\/status$/ },
+  { method: "POST", path: /^\/api\/instances\/(?!\.+\/)[\w.-]+\/auth\/cancel$/ },
+  { method: "POST", path: /^\/api\/instances\/(?!\.+\/)[\w.-]+\/auth\/complete$/ },
   { method: "GET", path: /^\/api\/team-map$/ },
   // Sidecar-owned, authenticated endpoint metadata. The proxy terminates it
   // locally; it never becomes a newly exposed harness route.

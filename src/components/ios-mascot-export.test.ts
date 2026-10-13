@@ -719,7 +719,8 @@ function check(path: string, content: string) {
     writeFileSync(path, content);
     return;
   }
-  expect(readFileSync(path, "utf8"), `${path} is out of date: run UPDATE_IOS_MASCOT=1 pnpm vitest run src/components/ios-mascot-export.test.ts`).toBe(content);
+  // a Windows checkout can hand these files over with CRLF; the content is what is compared
+  expect(readFileSync(path, "utf8").replace(/\r\n/g, "\n"), `${path} is out of date: run UPDATE_IOS_MASCOT=1 pnpm vitest run src/components/ios-mascot-export.test.ts`).toBe(content);
 }
 
 describe("the phone's copy of the mascot looks", () => {

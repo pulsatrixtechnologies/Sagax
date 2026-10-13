@@ -125,18 +125,20 @@ describe("environment identity", () => {
       label: "cab mini",
       platform: process.platform,
       version: "0.1.99",
-      capabilities: { remoteSessions: true, selfUpdate: "desktop-managed", emailSignIn: false },
+      capabilities: { remoteSessions: true, selfUpdate: "desktop-managed", emailSignIn: false, signInPreview: true },
     });
     expect(environmentDescriptor({ environmentId: "abc", desktopManaged: false }).capabilities.selfUpdate).toBe("operator");
+    // A client previews a sign-in credential only where preview redeems nothing.
+    expect(environmentDescriptor({ environmentId: "abc", desktopManaged: false }).capabilities.signInPreview).toBe(true);
     // Computer sharing is advertised only while its opt-in gate is on, so a
     // client is never told this server speaks a protocol it would refuse.
     expect(environmentDescriptor({ environmentId: "abc", desktopManaged: true, sharedComputers: false }).capabilities)
       .not.toHaveProperty("sharedComputers");
     expect(environmentDescriptor({ environmentId: "abc", desktopManaged: true, sharedComputers: true }).capabilities)
-      .toEqual({ remoteSessions: true, sharedComputers: true, selfUpdate: "desktop-managed", emailSignIn: false });
+      .toEqual({ remoteSessions: true, sharedComputers: true, selfUpdate: "desktop-managed", emailSignIn: false, signInPreview: true });
     // An OMB Cloud home says so, so its pairing page points to the app's Connect to my Cloud.
     expect(environmentDescriptor({ environmentId: "abc", desktopManaged: false, cloudHome: true }).capabilities)
-      .toEqual({ remoteSessions: true, cloudHome: true, selfUpdate: "operator", emailSignIn: false });
+      .toEqual({ remoteSessions: true, cloudHome: true, selfUpdate: "operator", emailSignIn: false, signInPreview: true });
     expect(environmentDescriptor({ environmentId: "abc", desktopManaged: false, cloudHome: false }).capabilities).not.toHaveProperty("cloudHome");
   });
 
