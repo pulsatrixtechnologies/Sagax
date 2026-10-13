@@ -9,8 +9,7 @@ permissions:
 
 jobs:
   windows:
-    # Fork guard: a fork pull request never reaches a self-hosted runner.
-    if: (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+    if: (!startsWith(github.event_name, 'pull_request') || github.event.pull_request.head.repo.full_name == github.repository)
     name: Windows shared terminal
     runs-on: [self-hosted, windows, x64, ephrunner.vm-windows]
     timeout-minutes: 10

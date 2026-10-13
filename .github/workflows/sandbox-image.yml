@@ -11,8 +11,7 @@ permissions:
 
 jobs:
   build-scan:
-    # Fork guard: a fork pull request never reaches a self-hosted runner.
-    if: (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+    if: (!startsWith(github.event_name, 'pull_request') || github.event.pull_request.head.repo.full_name == github.repository)
     name: build local OCI archive and scan
     runs-on: [self-hosted, linux, x64]
     timeout-minutes: 45

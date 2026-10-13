@@ -6,8 +6,13 @@ import { join } from 'node:path'
 
 const dir = process.argv[2] ?? '.github/workflows'
 const hosted = /^(ubuntu-|windows-|macos-)|-latest$/i
-// Sagax is public: a fork pull request must never reach a self-hosted runner.
-const FORK_GUARD = "(github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)"
+// Every job must start its if: with this repository guard.
+const FORK_GUARD = "(!startsWith(github.event_name, 'pull_request') || github.event.pull_request.head.repo.full_name == github.repository)"
+// Comment-style triggers additionally need this actor check.
+const ACTOR_GUARD = "(github.event_name != 'issue_comment' || contains(fromJSON('[\"OWNER\",\"MEMBER\",\"COLLABORATOR\"]'), github.event.comment.author_association))"
+const COMMENT_EVENTS = /\b(issue_comment|pull_request_review_comment|discussion_comment|issues|discussion|pull_request_review)\b/
+// Event fields an outside author controls; never expand them inside run:.
+const UNTRUSTED = /\$\{\{[^}]*\b(github\.head_ref|github\.event\.(pull_request|issue|comment|review|discussion|head_commit|commits|workflow_run)\.[A-Za-z_.]*(title|body|ref|label|message|name|email|default_branch|page_name)\b|github\.event\.(head_commit|commits|pages)\b)/
 const problems = []
 
 // Job-level fork guard and pull_request_target safety, per workflow file.
@@ -29,12 +34,26 @@ function checkForkSafety(path, lines) {
     }
     const flat = cond.replace(/\s+/g, ' ').replace(/^ ?(>-|>|\|)? ?(\$\{\{ ?)?/, '')
     if (!flat.startsWith(FORK_GUARD + ' &&') && flat.trim() !== FORK_GUARD)
-      problems.push(`${path}:${starts[n] + 1}: job ${name} lacks the leading fork guard: if: ${FORK_GUARD} && (...)`)
+      problems.push(`${path}:${starts[n] + 1}: job ${name} lacks the leading repository guard: if: ${FORK_GUARD} && (...)`)
+    if (COMMENT_EVENTS.test(lines.slice(0, jobsAt).join('\n')) && !flat.includes(ACTOR_GUARD))
+      problems.push(`${path}:${starts[n] + 1}: job ${name} runs on a comment trigger without the actor guard ${ACTOR_GUARD}`)
+  }
+  // run: scripts must take event text through env:, not ${{ }} expansion.
+  for (let i = 0; i < lines.length; i++) {
+    const m = lines[i].match(/^(\s*)(?:-\s+)?run:\s*(.*)$/)
+    if (!m) continue
+    const indent = lines[i].search(/\S/)
+    const script = [m[2]]
+    for (let k = i + 1; k < lines.length && (lines[k].trim() === '' || lines[k].search(/\S/) > indent); k++) script.push(lines[k])
+    if (UNTRUSTED.test(script.join('\n')))
+      problems.push(`${path}:${i + 1}: run: expands event text with \${{ }}; pass it through env: and quote it`)
   }
   // pull_request_target and workflow_run carry secrets and write tokens: they must
   // never check out or run the pull request's code.
   const text = lines.join('\n')
   if (/\b(pull_request_target|workflow_run)\b/.test(text)) {
+    if (/\bpersist-credentials:\s*true\b/.test(text))
+      problems.push(`${path}: pull_request_target/workflow_run must not persist checkout credentials`)
     lines.forEach((l, i) => {
       if (/^\s*ref:.*(pull_request\.head|head_sha|head_ref|head\.sha|head\.ref|refs\/pull\/)/.test(l))
         problems.push(`${path}:${i + 1}: pull_request_target/workflow_run must not check out pull request code: ${l.trim()}`)
@@ -87,8 +106,8 @@ for (const file of readdirSync(dir).filter((f) => /\.ya?ml$/.test(f)).sort()) {
 }
 
 if (problems.length) {
-  console.error(`GitHub-hosted runners are not allowed (${problems.length}):`)
+  console.error(`runner guard failed (${problems.length}):`)
   for (const p of problems) console.error(`  ${p}`)
   process.exit(1)
 }
-console.log('runner guard: every job runs on a self-hosted runner behind the fork guard')
+console.log('runner guard: every job is self-hosted and repository-guarded')
