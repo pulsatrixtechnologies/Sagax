@@ -2462,5 +2462,11 @@
   "settings.sendKey.subtitle": "Оберіть Shift+Enter або {key}, щоб Enter починав новий рядок, — зручно, коли метод введення підтверджує текст клавішею Enter, як-от під час введення японською. {key} надсилає за будь-якого вибору. Лише на цьому пристрої.",
   "computer.files.homeFolder": "Домашня папка",
   "computer.files.changeDefaultFolder": "Змінити типову папку",
-  "computer.files.pinnedFolderHint": "Ця розмова зберігає свою поточну папку. Змініть типову папку для нових розмов."
+  "computer.files.pinnedFolderHint": "Ця розмова зберігає свою поточну папку. Змініть типову папку для нових розмов.",
+  "chat.gotoGroup.agents": "Агентів: {count}",
+  "chat.gotoGroup.agentsOne": "1 агент",
+  "chat.gotoGroup.aria": "Розмов: {count}, з {agents}: показати список",
+  "chat.gotoGroup.count": "Розмов: {count}",
+  "chat.gotoGroup.menu": "Розмови",
+  "chat.gotoGroup.with": "Розмов: {count}, з"
 }

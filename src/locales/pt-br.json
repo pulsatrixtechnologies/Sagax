@@ -2773,5 +2773,11 @@
   "approval.rule.added": "Adicionado às suas regras de permissão",
   "approval.rule.edit": "Editar regra",
   "approval.details.viewFull": "Ver a solicitação completa",
-  "approval.details.hideFull": "Ocultar a solicitação completa"
+  "approval.details.hideFull": "Ocultar a solicitação completa",
+  "chat.gotoGroup.agents": "{count} agentes",
+  "chat.gotoGroup.agentsOne": "1 agente",
+  "chat.gotoGroup.aria": "{count} conversas com {agents}: mostrar a lista",
+  "chat.gotoGroup.count": "{count} conversas",
+  "chat.gotoGroup.menu": "Conversas",
+  "chat.gotoGroup.with": "{count} conversas com"
 }

@@ -2811,5 +2811,11 @@
   "cloudSignIn.creditEnded": "My Cloud 上已无法再使用试用 Claude 额度。请在下方选择你自己的 AI，让机器人继续工作。",
   "computer.files.homeFolder": "主目录",
   "computer.files.changeDefaultFolder": "更改默认目录",
-  "computer.files.pinnedFolderHint": "此对话会继续使用当前文件夹。可更改新对话使用的默认文件夹。"
+  "computer.files.pinnedFolderHint": "此对话会继续使用当前文件夹。可更改新对话使用的默认文件夹。",
+  "chat.gotoGroup.agents": "{count} 个智能体",
+  "chat.gotoGroup.agentsOne": "1 个智能体",
+  "chat.gotoGroup.aria": "与{agents}的 {count} 个对话：显示列表",
+  "chat.gotoGroup.count": "{count} 个对话",
+  "chat.gotoGroup.menu": "对话",
+  "chat.gotoGroup.with": "{count} 个对话，对象"
 }

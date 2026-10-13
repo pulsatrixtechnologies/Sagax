@@ -1950,7 +1950,13 @@
       "cloudNotice.signIn.title": "acdfae32611206329c6f77452e84938019c631bd7d0cbfb4034af743c4783b35",
       "cloudNotice.signIn.hint": "ae0180edbadbf6656c158aa791fd447339df0f9204e5b16492788bf8a35ad720",
       "cloudNotice.removed.title": "63afc9137e83d6995aaeeae984cdaa6002ee55888512bf07c2b837ab07a4ce6d",
-      "cloudNotice.removed.hint": "2ab8fa0340a1a9f32961d46c598b4d4d75aa2a7362df476551a856958a74b3b4"
+      "cloudNotice.removed.hint": "2ab8fa0340a1a9f32961d46c598b4d4d75aa2a7362df476551a856958a74b3b4",
+      "chat.gotoGroup.agents": "ff36f38df2465d266fd1a7b647c1ac5ec9b7d5cb4a058de6b06e2176309c2e28",
+      "chat.gotoGroup.agentsOne": "868279c53f3a7e35a30604d8beafa99cc1093cae569d6f194c751eb8a79efd0d",
+      "chat.gotoGroup.aria": "d3da87b3f0e55029efd0e39e6d91228655dca8eb0b1e8f98ce89c0ed2a8a3cbe",
+      "chat.gotoGroup.count": "2889fc6b0647a2fedbc11147886e0a16d775f8adb722d01247db45081f924b64",
+      "chat.gotoGroup.menu": "1d432f58690c2b4a9737b0a97f04b70bb4f0d9950d5177619039afe139f3b31e",
+      "chat.gotoGroup.with": "08f08cae64408ed5623d5741a737e4ce636efb8a583bd2d56b04ebc7b34803d3"
     },
     "es": {
       "approval.action.allowOnce": "168511d24d9ee03122b3200f929be11eaaedad45cb0ecb20a95f549b3e3f4d0f",
@@ -3883,7 +3889,13 @@
       "cloudNotice.signIn.title": "acdfae32611206329c6f77452e84938019c631bd7d0cbfb4034af743c4783b35",
       "cloudNotice.signIn.hint": "ae0180edbadbf6656c158aa791fd447339df0f9204e5b16492788bf8a35ad720",
       "cloudNotice.removed.title": "63afc9137e83d6995aaeeae984cdaa6002ee55888512bf07c2b837ab07a4ce6d",
-      "cloudNotice.removed.hint": "2ab8fa0340a1a9f32961d46c598b4d4d75aa2a7362df476551a856958a74b3b4"
+      "cloudNotice.removed.hint": "2ab8fa0340a1a9f32961d46c598b4d4d75aa2a7362df476551a856958a74b3b4",
+      "chat.gotoGroup.agents": "ff36f38df2465d266fd1a7b647c1ac5ec9b7d5cb4a058de6b06e2176309c2e28",
+      "chat.gotoGroup.agentsOne": "868279c53f3a7e35a30604d8beafa99cc1093cae569d6f194c751eb8a79efd0d",
+      "chat.gotoGroup.aria": "d3da87b3f0e55029efd0e39e6d91228655dca8eb0b1e8f98ce89c0ed2a8a3cbe",
+      "chat.gotoGroup.count": "2889fc6b0647a2fedbc11147886e0a16d775f8adb722d01247db45081f924b64",
+      "chat.gotoGroup.menu": "1d432f58690c2b4a9737b0a97f04b70bb4f0d9950d5177619039afe139f3b31e",
+      "chat.gotoGroup.with": "08f08cae64408ed5623d5741a737e4ce636efb8a583bd2d56b04ebc7b34803d3"
     },
     "fr": {
       "access.addKey": "8a9f02fd9bdb83ac02d3240dcade949d6f3ffa2fc0b3df528e348bb4d29ae639",
@@ -4990,6 +5002,12 @@
       "chat.generatedImage": "df37e04fda71344a780bccfbbdc77adb8ee5b6ca8c2a83f791cfb285691b561f",
       "chat.goToConversation": "06d59595419072f55a35c452c357352cfdbd6bd374eec355762fca9d2e763286",
       "chat.goToConversationWith": "d0319c06faabf72ae63d9156db0a1c272a4acd3b2e7868618a3fb04ac0c4daba",
+      "chat.gotoGroup.agents": "ff36f38df2465d266fd1a7b647c1ac5ec9b7d5cb4a058de6b06e2176309c2e28",
+      "chat.gotoGroup.agentsOne": "868279c53f3a7e35a30604d8beafa99cc1093cae569d6f194c751eb8a79efd0d",
+      "chat.gotoGroup.aria": "d3da87b3f0e55029efd0e39e6d91228655dca8eb0b1e8f98ce89c0ed2a8a3cbe",
+      "chat.gotoGroup.count": "2889fc6b0647a2fedbc11147886e0a16d775f8adb722d01247db45081f924b64",
+      "chat.gotoGroup.menu": "1d432f58690c2b4a9737b0a97f04b70bb4f0d9950d5177619039afe139f3b31e",
+      "chat.gotoGroup.with": "08f08cae64408ed5623d5741a737e4ce636efb8a583bd2d56b04ebc7b34803d3",
       "chat.inspector": "da188e3b1cefc8a70813b78ef4ef13461693a08eb69b0327fbc897cf8981702f",
       "chat.inspectorHint": "ee0beef37ee017b06bdd522e1e025ccbf4096a17f038990bf7823d006df6b835",
       "chat.jumpToLatest": "867524581f012f0ba381fd98a720aa569ffd1b70f320307943072a253a2a3b6a",
@@ -11134,7 +11152,13 @@
       "cloudNotice.signIn.title": "acdfae32611206329c6f77452e84938019c631bd7d0cbfb4034af743c4783b35",
       "cloudNotice.signIn.hint": "ae0180edbadbf6656c158aa791fd447339df0f9204e5b16492788bf8a35ad720",
       "cloudNotice.removed.title": "63afc9137e83d6995aaeeae984cdaa6002ee55888512bf07c2b837ab07a4ce6d",
-      "cloudNotice.removed.hint": "2ab8fa0340a1a9f32961d46c598b4d4d75aa2a7362df476551a856958a74b3b4"
+      "cloudNotice.removed.hint": "2ab8fa0340a1a9f32961d46c598b4d4d75aa2a7362df476551a856958a74b3b4",
+      "chat.gotoGroup.agents": "ff36f38df2465d266fd1a7b647c1ac5ec9b7d5cb4a058de6b06e2176309c2e28",
+      "chat.gotoGroup.agentsOne": "868279c53f3a7e35a30604d8beafa99cc1093cae569d6f194c751eb8a79efd0d",
+      "chat.gotoGroup.aria": "d3da87b3f0e55029efd0e39e6d91228655dca8eb0b1e8f98ce89c0ed2a8a3cbe",
+      "chat.gotoGroup.count": "2889fc6b0647a2fedbc11147886e0a16d775f8adb722d01247db45081f924b64",
+      "chat.gotoGroup.menu": "1d432f58690c2b4a9737b0a97f04b70bb4f0d9950d5177619039afe139f3b31e",
+      "chat.gotoGroup.with": "08f08cae64408ed5623d5741a737e4ce636efb8a583bd2d56b04ebc7b34803d3"
     },
     "ja": {
       "approval.action.allowOnce": "168511d24d9ee03122b3200f929be11eaaedad45cb0ecb20a95f549b3e3f4d0f",
@@ -15161,7 +15185,13 @@
       "vm.stopped.idle": "13fb43421eeec5eaf52a3b24609563d0a1ecff13ab72af7dabe09b8410d71eaf",
       "vm.stopped.detail": "2994d8d455f2ba62d39d0a3169b70afb82a7c07f5ccb70a7d26dbee3a9f78a2e",
       "vm.setup.starting": "30f7b42ba703ba6d60ae810be69afd3a526b7a536972995190586c356e7866a3",
-      "computer.phase.vmStopped": "489d93ba0be242bde4cfb4b1e7c6f744b940e96e872ae02fcef01e0cef5649a3"
+      "computer.phase.vmStopped": "489d93ba0be242bde4cfb4b1e7c6f744b940e96e872ae02fcef01e0cef5649a3",
+      "chat.gotoGroup.agents": "ff36f38df2465d266fd1a7b647c1ac5ec9b7d5cb4a058de6b06e2176309c2e28",
+      "chat.gotoGroup.agentsOne": "868279c53f3a7e35a30604d8beafa99cc1093cae569d6f194c751eb8a79efd0d",
+      "chat.gotoGroup.aria": "d3da87b3f0e55029efd0e39e6d91228655dca8eb0b1e8f98ce89c0ed2a8a3cbe",
+      "chat.gotoGroup.count": "2889fc6b0647a2fedbc11147886e0a16d775f8adb722d01247db45081f924b64",
+      "chat.gotoGroup.menu": "1d432f58690c2b4a9737b0a97f04b70bb4f0d9950d5177619039afe139f3b31e",
+      "chat.gotoGroup.with": "08f08cae64408ed5623d5741a737e4ce636efb8a583bd2d56b04ebc7b34803d3"
     },
     "pt-br": {
       "access.routineDelegation.reason.no_right": "ac5fc48626b20107ca2c65df67b3c5abe42acd2044cdb994e0c73821b3cbb71b",
@@ -17938,7 +17968,13 @@
       "cloudNotice.removed.hint": "2ab8fa0340a1a9f32961d46c598b4d4d75aa2a7362df476551a856958a74b3b4",
       "sidebar.bot.markAllRead": "376c642893b92e6aa073a9f2bd5405f5fb1e91a8a319da476e8841f3d6c1e0b0",
       "sidebar.bot.markingAllRead": "24d6245af13bf44e2213f0b097c4f55d6aba6f4781d3d998d1b6de169d509d18",
-      "sidebar.bot.markAllReadFailed": "f9977c111c63c8b4d7b6f0cfbb43d95c48b94f7c55fa0a3a44cc5cd52e270fc3"
+      "sidebar.bot.markAllReadFailed": "f9977c111c63c8b4d7b6f0cfbb43d95c48b94f7c55fa0a3a44cc5cd52e270fc3",
+      "chat.gotoGroup.agents": "ff36f38df2465d266fd1a7b647c1ac5ec9b7d5cb4a058de6b06e2176309c2e28",
+      "chat.gotoGroup.agentsOne": "868279c53f3a7e35a30604d8beafa99cc1093cae569d6f194c751eb8a79efd0d",
+      "chat.gotoGroup.aria": "d3da87b3f0e55029efd0e39e6d91228655dca8eb0b1e8f98ce89c0ed2a8a3cbe",
+      "chat.gotoGroup.count": "2889fc6b0647a2fedbc11147886e0a16d775f8adb722d01247db45081f924b64",
+      "chat.gotoGroup.menu": "1d432f58690c2b4a9737b0a97f04b70bb4f0d9950d5177619039afe139f3b31e",
+      "chat.gotoGroup.with": "08f08cae64408ed5623d5741a737e4ce636efb8a583bd2d56b04ebc7b34803d3"
     },
     "uk": {
       "approval.action.allowOnce": "168511d24d9ee03122b3200f929be11eaaedad45cb0ecb20a95f549b3e3f4d0f",
@@ -20404,7 +20440,13 @@
       "routines.scheduleNote.openCloud": "e2c608d0e9b10194b9fc7385578cb4187d4bd51caaf7914fd19fedd847ac96c1",
       "routines.scheduleNote.leave": "ea56e98a31f8a19a2a9e7f22a8f8d0ee5105f223baab99c02d71734027463d94",
       "routines.scheduleNote.cloud": "53b4f858070d0fbdacf874056059ef3a0ff3899cdf6ffbea95e6b475f5159ac5",
-      "routines.scheduleNote.server": "e4f0b8187ee6c7aad992ea474187692b0d1cef7424c3a6c21e3244002a7d685d"
+      "routines.scheduleNote.server": "e4f0b8187ee6c7aad992ea474187692b0d1cef7424c3a6c21e3244002a7d685d",
+      "chat.gotoGroup.agents": "ff36f38df2465d266fd1a7b647c1ac5ec9b7d5cb4a058de6b06e2176309c2e28",
+      "chat.gotoGroup.agentsOne": "868279c53f3a7e35a30604d8beafa99cc1093cae569d6f194c751eb8a79efd0d",
+      "chat.gotoGroup.aria": "d3da87b3f0e55029efd0e39e6d91228655dca8eb0b1e8f98ce89c0ed2a8a3cbe",
+      "chat.gotoGroup.count": "2889fc6b0647a2fedbc11147886e0a16d775f8adb722d01247db45081f924b64",
+      "chat.gotoGroup.menu": "1d432f58690c2b4a9737b0a97f04b70bb4f0d9950d5177619039afe139f3b31e",
+      "chat.gotoGroup.with": "08f08cae64408ed5623d5741a737e4ce636efb8a583bd2d56b04ebc7b34803d3"
     },
     "zh-tw": {
       "access.worksOn": "f85a852d83f31ae30da146438dd4cfa1a3b9c491c768fd20ae3c7e833097714e",
@@ -24283,7 +24325,13 @@
       "routines.scheduleNote.cloud": "53b4f858070d0fbdacf874056059ef3a0ff3899cdf6ffbea95e6b475f5159ac5",
       "routines.scheduleNote.server": "e4f0b8187ee6c7aad992ea474187692b0d1cef7424c3a6c21e3244002a7d685d",
       "settings.sendKey.title": "becbbd29d1f61fe205d7c429df6dd886f2337c6c40e8eea742c0519409c82949",
-      "settings.sendKey.subtitle": "30a7d3ac5102dad9e2d202785e2cef0185c85241b279d5177fba55e5beda91cd"
+      "settings.sendKey.subtitle": "30a7d3ac5102dad9e2d202785e2cef0185c85241b279d5177fba55e5beda91cd",
+      "chat.gotoGroup.agents": "ff36f38df2465d266fd1a7b647c1ac5ec9b7d5cb4a058de6b06e2176309c2e28",
+      "chat.gotoGroup.agentsOne": "868279c53f3a7e35a30604d8beafa99cc1093cae569d6f194c751eb8a79efd0d",
+      "chat.gotoGroup.aria": "d3da87b3f0e55029efd0e39e6d91228655dca8eb0b1e8f98ce89c0ed2a8a3cbe",
+      "chat.gotoGroup.count": "2889fc6b0647a2fedbc11147886e0a16d775f8adb722d01247db45081f924b64",
+      "chat.gotoGroup.menu": "1d432f58690c2b4a9737b0a97f04b70bb4f0d9950d5177619039afe139f3b31e",
+      "chat.gotoGroup.with": "08f08cae64408ed5623d5741a737e4ce636efb8a583bd2d56b04ebc7b34803d3"
     },
     "zh": {
       "approval.action.allowOnce": "168511d24d9ee03122b3200f929be11eaaedad45cb0ecb20a95f549b3e3f4d0f",
@@ -27098,7 +27146,13 @@
       "routines.scheduleNote.cloud": "53b4f858070d0fbdacf874056059ef3a0ff3899cdf6ffbea95e6b475f5159ac5",
       "routines.scheduleNote.server": "e4f0b8187ee6c7aad992ea474187692b0d1cef7424c3a6c21e3244002a7d685d",
       "settings.sendKey.title": "becbbd29d1f61fe205d7c429df6dd886f2337c6c40e8eea742c0519409c82949",
-      "settings.sendKey.subtitle": "30a7d3ac5102dad9e2d202785e2cef0185c85241b279d5177fba55e5beda91cd"
+      "settings.sendKey.subtitle": "30a7d3ac5102dad9e2d202785e2cef0185c85241b279d5177fba55e5beda91cd",
+      "chat.gotoGroup.agents": "ff36f38df2465d266fd1a7b647c1ac5ec9b7d5cb4a058de6b06e2176309c2e28",
+      "chat.gotoGroup.agentsOne": "868279c53f3a7e35a30604d8beafa99cc1093cae569d6f194c751eb8a79efd0d",
+      "chat.gotoGroup.aria": "d3da87b3f0e55029efd0e39e6d91228655dca8eb0b1e8f98ce89c0ed2a8a3cbe",
+      "chat.gotoGroup.count": "2889fc6b0647a2fedbc11147886e0a16d775f8adb722d01247db45081f924b64",
+      "chat.gotoGroup.menu": "1d432f58690c2b4a9737b0a97f04b70bb4f0d9950d5177619039afe139f3b31e",
+      "chat.gotoGroup.with": "08f08cae64408ed5623d5741a737e4ce636efb8a583bd2d56b04ebc7b34803d3"
     }
   }
 }

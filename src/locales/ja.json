@@ -4023,5 +4023,11 @@
   "place.view.ccToolsOff.line": "{bot} が使えるものにコンピューターは含まれていません。",
   "place.view.ccSignIn.short": "先にサインインしてください",
   "place.view.ccSignIn.line": "まず {engine} にサインインしてください。{bot} はクラウドコンピューターでも同じものを使います。",
-  "place.view.ccSignIn.lineMyCloud": "まず My Cloud で {engine} にサインインしてください。{bot} はクラウドコンピューターでも同じものを使います。"
+  "place.view.ccSignIn.lineMyCloud": "まず My Cloud で {engine} にサインインしてください。{bot} はクラウドコンピューターでも同じものを使います。",
+  "chat.gotoGroup.agents": "{count} 件のエージェント",
+  "chat.gotoGroup.agentsOne": "1 件のエージェント",
+  "chat.gotoGroup.aria": "{agents}との {count} 件の会話: 一覧を表示",
+  "chat.gotoGroup.count": "{count} 件の会話",
+  "chat.gotoGroup.menu": "会話",
+  "chat.gotoGroup.with": "{count} 件の会話:"
 }

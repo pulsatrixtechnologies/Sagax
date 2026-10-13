@@ -1947,5 +1947,11 @@
   "settings.sendKey.subtitle": "Wähle Shift+Enter oder {key}, damit Enter stattdessen eine neue Zeile beginnt – praktisch, wenn deine Eingabemethode Text mit Enter bestätigt, wie bei japanischer Eingabe. {key} sendet bei jeder Wahl. Nur auf diesem Gerät.",
   "computer.files.homeFolder": "Home-Ordner",
   "computer.files.changeDefaultFolder": "Standard ändern",
-  "computer.files.pinnedFolderHint": "Diese Unterhaltung behält ihren aktuellen Ordner. Ändere den Standardordner für neue Unterhaltungen."
+  "computer.files.pinnedFolderHint": "Diese Unterhaltung behält ihren aktuellen Ordner. Ändere den Standardordner für neue Unterhaltungen.",
+  "chat.gotoGroup.agents": "{count} Agenten",
+  "chat.gotoGroup.agentsOne": "1 Agent",
+  "chat.gotoGroup.aria": "{count} Unterhaltungen mit {agents}: Liste anzeigen",
+  "chat.gotoGroup.count": "{count} Unterhaltungen",
+  "chat.gotoGroup.menu": "Unterhaltungen",
+  "chat.gotoGroup.with": "{count} Unterhaltungen mit"
 }

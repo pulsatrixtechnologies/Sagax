@@ -3875,5 +3875,11 @@
   "cloudSignIn.creditEnded": "My Cloud 上已無法再使用試用 Claude 額度。請在下方選擇你自己的 AI，讓機器人繼續工作。",
   "computer.files.homeFolder": "家目錄",
   "computer.files.changeDefaultFolder": "變更預設資料夾",
-  "computer.files.pinnedFolderHint": "這段對話會繼續使用目前的資料夾。您可以變更新對話使用的預設資料夾。"
+  "computer.files.pinnedFolderHint": "這段對話會繼續使用目前的資料夾。您可以變更新對話使用的預設資料夾。",
+  "chat.gotoGroup.agents": "{count} 個代理",
+  "chat.gotoGroup.agentsOne": "1 個代理",
+  "chat.gotoGroup.aria": "與{agents}的 {count} 個對話：顯示清單",
+  "chat.gotoGroup.count": "{count} 個對話",
+  "chat.gotoGroup.menu": "對話",
+  "chat.gotoGroup.with": "{count} 個對話，對象"
 }
