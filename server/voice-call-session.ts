@@ -32,6 +32,10 @@ interface CallRecord {
   utterances: Map<string, string>;
   /** the MCP servers the call's last turn mounted (names) */
   mcp?: string[];
+  /** The bot asked to hang up. The record stays until the turn finishes,
+   * so the goodbye is still a call turn. A newer start() replaces the
+   * record and drops this flag: an old turn cannot end the new call. */
+  ending?: boolean;
 }
 
 export class VoiceCallSessions {
@@ -60,12 +64,31 @@ export class VoiceCallSessions {
     });
   }
 
-  /** The page hung up. Ownership-safe: an old call's end never ends a newer one. */
+  /** The page hung up. Ownership-safe: an old call's end never ends a newer one.
+   * A bot's pending hang-up is dropped with the record. */
   end(threadId: string, callId: string): boolean {
     const existing = this.calls.get(threadId);
     if (!existing || existing.callId !== callId) return false;
     this.calls.delete(threadId);
     return true;
+  }
+
+  /** The bot asked to end the live call. Idempotent. Nothing is deleted:
+   * the goodbye is still being written. Undefined when no call is live. */
+  requestEnd(threadId: string): { callId: string } | undefined {
+    const record = this.live(threadId);
+    if (!record) return undefined;
+    record.ending = true;
+    return { callId: record.callId };
+  }
+
+  /** The bot's turn finished. Deletes the record only when that call is
+   * still the live one and the bot asked to end it. */
+  takeEnding(threadId: string): { callId: string } | undefined {
+    const record = this.live(threadId);
+    if (!record?.ending) return undefined;
+    this.calls.delete(threadId);
+    return { callId: record.callId };
   }
 
   private live(threadId: string): CallRecord | undefined {

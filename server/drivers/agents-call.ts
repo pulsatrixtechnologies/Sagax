@@ -996,6 +996,20 @@ export async function callTool(name: string, args: Json, context: ToolCallContex
       return { text: `Voice note not sent: ${error instanceof Error ? error.message : String(error)}`, isError: true };
     }
   }
+  if (name === "end_call") {
+    const none = "There is no live phone call on this conversation. Do not call end_call.";
+    if (EXTERNAL_RUNTIME) return { text: none, isError: true };
+    try {
+      await api("/api/internal/voice-call/end", {
+        method: "POST",
+        body: JSON.stringify({ fromBotId: BOT_ID, fromThreadId: THREAD_ID }),
+      });
+      return { text: "The call will end when you finish this turn. Say one short goodbye if you have not already, then stop. Do not start new work." };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return { text: message.includes("no live phone call") ? none : message, isError: true };
+    }
+  }
   if (name === "list_routines") {
     const query = new URLSearchParams({ fromBotId: BOT_ID, fromThreadId: THREAD_ID });
     const r = await api(`/api/internal/routines?${query.toString()}`);

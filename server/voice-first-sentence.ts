@@ -174,14 +174,15 @@ export async function joinCachePrime(
   return "cancelled";
 }
 
-/** `voice.opener` reaches the person the turn speaks for, and the operator
- * at this computer when the stream has no viewer. Same rule as a nudge. */
+/** `voice.opener` and `voice.call.ended` reach the person the turn speaks
+ * for, and the operator at this computer when the stream has no viewer.
+ * Same rule as a nudge. */
 export function voiceOpenerFrameAllowed(
   payload: { kind?: unknown; audience?: unknown },
   viewerId: string | undefined,
   localPersonId: string,
 ): boolean {
-  if (payload.kind !== "voice.opener") return true;
+  if (payload.kind !== "voice.opener" && payload.kind !== "voice.call.ended") return true;
   if (typeof payload.audience !== "string") return false;
   const audience = payload.audience.trim().toLowerCase();
   if (!audience) return false;

@@ -29,6 +29,9 @@ export interface CatalogProfile {
   sharedComputers: boolean;
   /** A voice is actually configured for this bot (tts voiceReady). */
   voiceNotes: boolean;
+  /** This turn's thread is on a live phone call. `end_call` is shown only
+   * then. Absent is off, so the wire goldens stay as they are. */
+  voiceCall?: boolean;
   /** The server is a Cloud home (server/cloud-home.ts): no "this computer"
    * of the person's and no Local VM to offer. */
   cloudHome: boolean;
@@ -56,6 +59,7 @@ export function catalogProfileFromEnv(env: NodeJS.ProcessEnv): CatalogProfile {
     skillAuthoring: env.SAGAX_SKILL_AUTHORING_ENABLED === "1",
     sharedComputers: env.SAGAX_SHARED_COMPUTERS_ENABLED === "1",
     voiceNotes: env.SAGAX_VOICE_NOTES === "1",
+    voiceCall: !externalRuntime && env.SAGAX_VOICE_CALL === "1",
     // Sagax is never an OMB Cloud home, so the env switch is ignored.
     cloudHome: false,
     memoryEnabled: env.SAGAX_MEMORY_ENABLED !== "0",
@@ -620,6 +624,16 @@ const toolDefinitions = (externalRuntime: boolean) => [
         },
       },
       required: ["text"],
+    },
+  },
+  {
+    name: "end_call",
+    description:
+      "Hang up the live phone call on this conversation. Say one short goodbye first if you have not already. The call ends when this turn finishes, so the goodbye is spoken. Then stop: do not start new work. There is no live call unless this tool is in your list.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {},
     },
   },
   {
@@ -1298,6 +1312,7 @@ export const SHARED_COMPUTER_TOOL_NAMES = new Set(["list_shared_computers", "sha
 // tool whose every call would end in a setup error. The route behind it
 // refuses regardless; this keeps the catalog honest about what can work.
 const VOICE_TOOL_NAMES = new Set(["send_voice_note"]);
+const CALL_TOOL_NAMES = new Set(["end_call"]);
 // And for a role: every route behind these refuses a bot that is not its
 // section's Primary Bot, as it does a for_bot_id naming another bot on
 // propose_profile or propose_model. (A routine's for_bot_id is open to any
@@ -1353,9 +1368,12 @@ function coreCatalogTools(profile: CatalogProfile) {
   const VOICE_READY_TOOLS = profile.voiceNotes
     ? SHAREABLE_TOOLS
     : SHAREABLE_TOOLS.filter((tool) => !VOICE_TOOL_NAMES.has(tool.name));
-  const ROLE_TOOLS = profile.chief
+  const CALL_TOOLS = profile.voiceCall
     ? VOICE_READY_TOOLS
-    : VOICE_READY_TOOLS.filter((tool) => !CHIEF_ONLY_TOOL_NAMES.has(tool.name)).map((tool) => {
+    : VOICE_READY_TOOLS.filter((tool) => !CALL_TOOL_NAMES.has(tool.name));
+  const ROLE_TOOLS = profile.chief
+    ? CALL_TOOLS
+    : CALL_TOOLS.filter((tool) => !CHIEF_ONLY_TOOL_NAMES.has(tool.name)).map((tool) => {
       if (!CHIEF_TARGET_TOOL_NAMES.has(tool.name)) return tool;
       const properties = Object.fromEntries(Object.entries(tool.inputSchema.properties).filter(([key]) => key !== "for_bot_id"));
       return { ...tool, description: tool.description.replace(CHIEF_PROFILE_TARGET, ""), inputSchema: { ...tool.inputSchema, properties } };

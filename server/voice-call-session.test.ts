@@ -42,6 +42,30 @@ describe("VoiceCallSessions", () => {
     expect(calls.claimUtterance("t1", "call-0123456789", "utt-00000002", "send-c")).toEqual({ first: true });
   });
 
+  it("lets the bot ask to hang up, and a newer call is not that one", () => {
+    const calls = new VoiceCallSessions();
+    expect(calls.requestEnd("t1")).toBeUndefined();
+    calls.start("t1", "call-0123456789");
+    expect(calls.requestEnd("t1")).toEqual({ callId: "call-0123456789" });
+    // asking again does not invent a second hang-up
+    expect(calls.requestEnd("t1")).toEqual({ callId: "call-0123456789" });
+    expect(calls.active("t1")?.callId).toBe("call-0123456789");
+    // the person hung up first: the turn that finishes finds nothing
+    expect(calls.end("t1", "call-0123456789")).toBe(true);
+    expect(calls.takeEnding("t1")).toBeUndefined();
+
+    calls.start("t1", "call-0123456789");
+    calls.requestEnd("t1");
+    calls.start("t1", "call-newer-123456");
+    expect(calls.takeEnding("t1")).toBeUndefined();
+    expect(calls.active("t1")?.callId).toBe("call-newer-123456");
+    expect(calls.requestEnd("t1")).toEqual({ callId: "call-newer-123456" });
+    expect(calls.end("t1", "call-old-000000")).toBe(false);
+    expect(calls.takeEnding("t1")).toEqual({ callId: "call-newer-123456" });
+    expect(calls.active("t1")).toBeUndefined();
+    expect(calls.takeEnding("t1")).toBeUndefined();
+  });
+
   it("reports a call turn's MCP servers that changed since its last turn", () => {
     const calls = new VoiceCallSessions();
     expect(calls.noteMcp("t1", ["a"])).toEqual({ added: [], removed: [] });
