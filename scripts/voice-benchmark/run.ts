@@ -531,9 +531,9 @@ export async function runVoiceBenchmark(options: VoiceBenchmarkOptions): Promise
         throw new Error(`no utterance for ${scenario.id} after ${extra} quiet frames (phase=${live.current.phase})`);
       }
       // Duplex may send on a stable partial while the phase is still hearing.
-      // That speech stays held until the silence that ends the turn, and the
-      // clock only moves when frames arrive. Keep feeding quiet frames until
-      // the endpoint (or the turn was cancelled on purpose).
+      // Speech stays held until the silence that ends the turn, and the clock
+      // only moves when frames arrive. Keep feeding quiet frames until the
+      // endpoint, including when the turn was cancelled on purpose.
       const turn = active;
       if (!turn.finished) {
         for (let i = 0; i < 48 && (live.current.phase === "hearing" || live.current.phase === "interrupted"); i++) {
