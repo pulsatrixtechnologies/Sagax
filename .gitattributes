@@ -28,3 +28,9 @@ third_party/opencode/LICENSE text eol=lf
 # joins and every layering, healthcheck and trust check fails for a reason
 # that has nothing to do with the image. Docker itself reads LF everywhere.
 Dockerfile text eol=lf
+# Electron node tests match source with LF newlines. A CRLF checkout on
+# Windows makes those matches fail for a reason that has nothing to do
+# with the source. electron-builder.yml is matched the same way.
+electron/**/*.mjs text eol=lf
+electron/**/*.cjs text eol=lf
+electron-builder.yml text eol=lf

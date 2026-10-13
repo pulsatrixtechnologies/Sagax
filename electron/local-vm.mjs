@@ -300,7 +300,12 @@ export function createLocalVm({
   confirmCreate = null, pollMs = 1000,
   idleStopMs = LOCAL_VM_IDLE_STOP_MS, now = Date.now, setTimer = setTimeout, clearTimer = clearTimeout,
 } = {}) {
-  const workspace = path.join(dataDir, "vm-home");
+  // The folder belongs to the machine named by `platform`, which tests set
+  // apart from this process. The host's path.join would rewrite a POSIX
+  // folder with this computer's separators, and a healthy VM then looks
+  // stale.
+  const paths = platform === "win32" ? path.win32 : path.posix;
+  const workspace = paths.join(dataDir, "vm-home");
   let job = null;
   let installJob = null;
   let confirming = false;

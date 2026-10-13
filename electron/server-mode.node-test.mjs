@@ -9,7 +9,7 @@ import vm from "node:vm";
 
 const require = createRequire(import.meta.url);
 const env = require("./environments.cjs");
-const source = readFileSync(new URL("./main.mjs", import.meta.url), "utf8");
+const source = readFileSync(new URL("./main.mjs", import.meta.url), "utf8").replace(/\r\n/g, "\n");
 const ORG = "https://org.example.test";
 const LOCAL = "http://127.0.0.1:48997";
 

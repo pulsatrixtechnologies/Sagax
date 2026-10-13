@@ -127,6 +127,25 @@ test("setup repairs the stale container on this app's folder, in steps", async (
   assert.ok(!docker.calls.slice(before).some(call => / (rm|run) /.test(call)));
 });
 
+test("the workspace folder follows the VM platform, not this process", async () => {
+  const dataDir = "C:\\Users\\ada\\.openmausbot";
+  const workspace = `${dataDir}\\vm-home`;
+  const docker = fakeDocker();
+  const made = [];
+  const vm = createLocalVm({
+    exec: docker.exec, dataDir, home: "C:\\Users\\ada", platform: "win32", env: {},
+    exists: () => false, mkdir: async dir => { made.push(dir); },
+    makeTemp: async () => "/tmp/ctx", writeFile: async () => {}, removeDir: async () => {},
+  });
+  await vm.setup(spec());
+  const status = await settle(vm);
+  assert.equal(status.setup.state, "done", JSON.stringify(status.setup));
+  const run = docker.calls.find(call => call.startsWith("docker run "));
+  assert.ok(run.includes(`source=${workspace},`), run);
+  assert.ok(run.includes(`com.openmausbot.workspace-path=${workspace}`), run);
+  assert.deepEqual(made, [workspace]);
+});
+
 test("setup keeps a real folder it was bound to and prepares a missing image", async () => {
   const other = "/Users/ada/old-data/vm-home";
   const docker = fakeDocker({ existing: container({ source: other, label: other }), imageReady: false });

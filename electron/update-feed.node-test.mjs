@@ -120,7 +120,7 @@ test("the pre-release opt-in is off unless saved on", () => {
 
 test("electron-builder publishes to the same repository", async () => {
   const { readFileSync } = await import("node:fs");
-  const yml = readFileSync(new URL("../electron-builder.yml", import.meta.url), "utf8");
+  const yml = readFileSync(new URL("../electron-builder.yml", import.meta.url), "utf8").replace(/\r\n/g, "\n");
   const publish = yml.match(/^publish:\n((?:[ \t-].*\n)+)/m)?.[1] ?? "";
   assert.match(publish, /provider: github/);
   assert.match(publish, /owner: pulsatrixtechnologies/);

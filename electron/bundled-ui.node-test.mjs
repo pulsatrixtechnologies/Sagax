@@ -210,7 +210,7 @@ test("the preload gives the bundled organization page the desktop-UI parts, and 
 });
 
 test("main draws the bundle only for the active organization server and trusts it for the desktop-UI channels", () => {
-  const main = readFileSync(new URL("./main.mjs", import.meta.url), "utf8");
+  const main = readFileSync(new URL("./main.mjs", import.meta.url), "utf8").replace(/\r\n/g, "\n");
   assert.match(main, /function syncBundledUi\(\) \{\n  const origin = bundledOrigin\(environmentsState\);/);
   assert.match(main, /environmentsState = next;\n  syncBundledUi\(\);/, "every saved change re-syncs the handler");
   assert.match(main, /environmentsState = readEnvironments\(\);\n  syncBundledUi\(\);/, "and the first read at launch");
