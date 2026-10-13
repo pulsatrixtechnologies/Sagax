@@ -10,7 +10,7 @@ import { selectCiScope, selectPushScope, versionOnlyPackageJson } from "./ci-sco
 
 const script = fileURLToPath(new URL("./ci-scope.mjs", import.meta.url));
 const ALL_OS = JSON.stringify(["macos-latest", "ubuntu-latest", "windows-latest"]);
-const PR_OS = JSON.stringify(["ubuntu-latest"]);
+const PR_OS = JSON.stringify(["ubuntu-latest", "windows-latest"]);
 const temporaryDirectories: string[] = [];
 afterEach(() => {
   for (const directory of temporaryDirectories.splice(0)) rmSync(directory, { recursive: true, force: true });
@@ -143,6 +143,17 @@ describe("CI scope CLI", () => {
   it.each(["merge_group", "workflow_dispatch"])("runs everything for %s", (event) => {
     const { directory } = fixture();
     expect(run(directory, event, {}).output).toBe(`runtime=true\nmobile=true\nvitest_os=${ALL_OS}\nplatforms=true\n`);
+  });
+
+  it("runs Vitest on Ubuntu and Windows for a runtime pull request, not macOS", () => {
+    const { directory, git, base } = fixture("server/index.ts");
+    writeFileSync(join(directory, "server/index.ts"), "changed\n");
+    git("commit", "--quiet", "-am", "change");
+    const { output } = run(directory, "pull_request", {
+      pull_request: { base: { sha: base }, head: { sha: git("rev-parse", "HEAD") } },
+    });
+    expect(output).toBe(`runtime=true\nmobile=false\nvitest_os=${PR_OS}\nplatforms=false\n`);
+    expect(JSON.parse(PR_OS)).toEqual(["ubuntu-latest", "windows-latest"]);
   });
 });
 

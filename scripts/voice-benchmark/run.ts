@@ -48,6 +48,7 @@ import {
   syntheticVoiceFrames,
   type VoiceScenarioTurn,
 } from "./scenario.ts";
+import { sseEventCut, sseEventData } from "./sse.ts";
 
 const ROOT = fileURLToPath(new URL("../..", import.meta.url));
 const FAKE_KEY = "xai-BENCHfakeKq7Zp2Lw9Rt4Mn6Bv";
@@ -151,14 +152,6 @@ function scenarioGates(
     concurrentTopics: gate(concurrentTopics, 2),
     tools: gate(toolStarts, 1),
   };
-}
-
-function sseEventCut(buffer: string): { at: number; skip: number } | null {
-  const crlf = buffer.indexOf("\r\n\r\n");
-  const lf = buffer.indexOf("\n\n");
-  if (crlf >= 0 && (lf < 0 || crlf <= lf)) return { at: crlf, skip: 4 };
-  if (lf >= 0) return { at: lf, skip: 2 };
-  return null;
 }
 
 function auditPaths(paths: readonly string[]): VoiceBenchProviderAudit {
@@ -472,7 +465,7 @@ export async function runVoiceBenchmark(options: VoiceBenchmarkOptions): Promise
               const block = buffer.slice(0, cut.at);
               buffer = buffer.slice(cut.at + cut.skip);
               cut = sseEventCut(buffer);
-              const data = block.split(/\r?\n/).filter((line) => line.startsWith("data:")).map((line) => line.slice(5).trim()).join("");
+              const data = sseEventData(block);
               if (!data) continue;
               let frame: { kind?: string; event?: RuntimeEvent } | null = null;
               try { frame = JSON.parse(data) as { kind?: string; event?: RuntimeEvent }; } catch { continue; }
