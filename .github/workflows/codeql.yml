@@ -28,7 +28,7 @@ permissions:
 jobs:
   analyze:
     name: analyze (${{ matrix.language }})
-    runs-on: [self-hosted, linux, x64]
+    runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
       contents: read
@@ -40,7 +40,7 @@ jobs:
         # java-kotlin is left out: the Android sources are Kotlin, and CodeQL
         # build-mode none extracts Java only, so the database came out empty.
         # Kotlin needs a Gradle build with the Android SDK; add it once that
-        # build is available on the self-hosted runners.
+        # build is available on the Linux runners.
         include:
           - { language: javascript-typescript, build-mode: none }
           - { language: actions, build-mode: none }

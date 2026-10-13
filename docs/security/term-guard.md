@@ -20,7 +20,9 @@ GitHub noreply address (`<id>+<login>@users.noreply.github.com`) for commits.
 
 Tests: `python3 scripts/ci/term-guard.test.py`.
 
-Runs on self-hosted Linux runners only.
+Runs on the `ubuntu-latest` runner. The workflow file is read from the base
+branch (`pull_request_target`), so a runner change takes effect after it
+lands there.
 
 ## Path allowlist
 
