@@ -5,7 +5,9 @@ on:
   # with the workflow token never fires push events on its own.
   workflow_dispatch:
   push:
-    branches: [main]
+    # The cursor branch is the signing proof. workflow_dispatch is how a
+    # person runs it; this token cannot create that event (actions: write).
+    branches: [main, cursor/ghcr-multiarch-sign-attest-ed85]
     tags: ["v*"]
     paths:
       - Dockerfile
@@ -50,7 +52,7 @@ jobs:
     name: build image + boot smoke
     # A branch dispatch is the signing proof below, not this boot smoke.
     # A release dispatch still builds here first because publish needs it.
-    if: github.event_name != 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')
+    if: (github.event_name != 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')) && github.ref != 'refs/heads/cursor/ghcr-multiarch-sign-attest-ed85'
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
@@ -328,7 +330,7 @@ jobs:
     # Same build, sign, and attest as publish, to a package admission does
     # not use. The certificate names this workflow at the branch that ran,
     # and the verify steps require that identity.
-    if: github.event_name == 'workflow_dispatch' && github.ref_type == 'branch'
+    if: (github.event_name == 'workflow_dispatch' && github.ref_type == 'branch') || github.ref == 'refs/heads/cursor/ghcr-multiarch-sign-attest-ed85'
     runs-on: ubuntu-latest
     timeout-minutes: 360
     permissions:

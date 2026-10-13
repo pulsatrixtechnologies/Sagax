@@ -73,6 +73,7 @@ describe("production image sources", () => {
     expect(policy).not.toContain("kyverno.subject ");
     const proof = workflow.slice(workflow.indexOf("name: signing proof"));
     expect(proof).toContain("github.ref_type == 'branch'");
+    expect(proof).toContain("refs/heads/cursor/ghcr-multiarch-sign-attest-ed85");
     expect(proof).toContain('echo "IMAGE=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/sagax-signing-test" >> "$GITHUB_ENV"');
     expect(proof).toContain("type=raw,value=pr436");
     expect(proof).toContain("platforms: linux/amd64,linux/arm64");
