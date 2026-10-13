@@ -73,11 +73,21 @@ export interface WidgetSettled {
   tone: "confirm" | "cancel" | "submit";
   at: number;
   sendId?: string;
+  /** The field values that went with the press, for the read-only Details view. */
+  values?: WidgetValues;
+  /** Set while the press waits in the steer queue behind a running turn:
+   * cancelling that queued message reopens the widget. */
+  queueId?: string;
 }
 
 export interface WidgetPayload {
   v: 1;
   root: WidgetRoot;
+  /** How many times update_widget has replaced the tree (absent: never). An
+   * update renumbers node ids, so a press names the revision it was made on
+   * and one made on an older tree is refused instead of landing on whatever
+   * now holds that id. */
+  rev?: number;
   settled?: WidgetSettled;
 }
 
@@ -124,6 +134,14 @@ function text(max: number, mode: "optional" | "required" | "nonEmpty" = "optiona
   };
 }
 
+/** One line of text: a label, a title, a placeholder. A run of whitespace,
+ * line breaks included, becomes one space, so nothing a bot writes into a
+ * label can add a line to the message a press is recorded as. */
+function line(max: number, mode: "optional" | "required" | "nonEmpty" = "optional"): Reader {
+  const read = text(max, mode);
+  return (raw, path) => read(typeof raw === "string" ? raw.replace(/\s+/g, " ") : raw, path);
+}
+
 function oneOf(...values: string[]): Reader {
   return (raw) => (typeof raw === "string" && values.includes(raw) ? raw : undefined);
 }
@@ -154,7 +172,8 @@ function length(max = 2_000): Reader {
   return (raw) => {
     if (raw === "100%" || raw === "full") return "full";
     const px = typeof raw === "number" && Number.isFinite(raw) ? raw : pxOf(raw);
-    return px === undefined ? undefined : clamp(Math.round(px), 0, max);
+    // under a pixel is not a size: it is how content gets hidden
+    return px === undefined || px < 1 ? undefined : clamp(Math.round(px), 1, max);
   };
 }
 
@@ -214,7 +233,23 @@ function icon(fallback?: string): Reader {
   return (raw) => (typeof raw === "string" && WIDGET_ICON_NAMES.includes(raw) ? raw : raw === undefined || raw === null ? undefined : fallback);
 }
 
-const isoDate: Reader = (raw) => (typeof raw === "string" && ISO_DATE.test(raw) && !Number.isNaN(Date.parse(`${raw}T00:00:00Z`)) ? raw : undefined);
+/** A layout share. Two decimals is finer than any screen; a share that rounds
+ * to nothing is dropped, because a zero weight is an error in a renderer. */
+const flexShare: Reader = (raw, path) => {
+  const share = decimal(0, 12)(raw, path);
+  const rounded = typeof share === "number" ? Math.round(share * 100) / 100 : 0;
+  return rounded > 0 ? rounded : undefined;
+};
+
+/** The dates a picker may be asked to show. Far outside them a platform's own
+ * calendar range runs out. */
+const DATE_YEARS = { min: 1900, max: 2200 } as const;
+
+const isoDate: Reader = (raw) => {
+  if (typeof raw !== "string" || !ISO_DATE.test(raw) || Number.isNaN(Date.parse(`${raw}T00:00:00Z`))) return undefined;
+  const year = Number(raw.slice(0, 4));
+  return year >= DATE_YEARS.min && year <= DATE_YEARS.max ? raw : undefined;
+};
 
 const action: Reader = (raw, path) => {
   if (raw === undefined || raw === null) return undefined;
@@ -247,7 +282,7 @@ const buttonSpec: Reader = (raw, path) => {
   if (raw === undefined || raw === null) return undefined;
   if (!isRecord(raw)) return fail(path, "must be {label, action}");
   const spec: WidgetButtonSpec = {
-    label: text(WIDGET_LIMITS.label, "nonEmpty")(raw.label, `${path}.label`) as string,
+    label: line(WIDGET_LIMITS.label, "nonEmpty")(raw.label, `${path}.label`) as string,
     action: (action(raw.action, `${path}.action`) ?? fail(`${path}.action`, "is required")) as WidgetAction,
   };
   return spec;
@@ -256,7 +291,7 @@ const buttonSpec: Reader = (raw, path) => {
 const status: Reader = (raw, path) => {
   if (raw === undefined || raw === null) return undefined;
   const record: Record<string, unknown> = isRecord(raw) ? raw : { text: raw };
-  const label = text(WIDGET_LIMITS.caption, "nonEmpty")(record.text, `${path}.text`);
+  const label = line(WIDGET_LIMITS.caption, "nonEmpty")(record.text, `${path}.text`);
   const name = icon()(record.icon, `${path}.icon`);
   return name ? { text: label, icon: name } : { text: label };
 };
@@ -267,14 +302,18 @@ const options: Reader = (raw, path) => {
   return raw.map((item, index) => {
     const at = `${path}[${index}]`;
     const record: Record<string, unknown> = isRecord(item) ? item : { value: item };
-    const value = text(200, "nonEmpty")(typeof record.value === "boolean" ? String(record.value) : record.value, `${at}.value`) as string;
+    const value = line(200, "nonEmpty")(typeof record.value === "boolean" ? String(record.value) : record.value, `${at}.value`) as string;
     if (seen.has(value)) return fail(at, `repeats the value ${JSON.stringify(value)}`);
     seen.add(value);
-    return { label: (text(WIDGET_LIMITS.label)(record.label, `${at}.label`) as string | undefined) ?? value, value };
+    return { label: (line(WIDGET_LIMITS.label)(record.label, `${at}.label`) as string | undefined) ?? value, value };
   });
 };
 
-const fieldName: Reader = (raw, path) => (typeof raw === "string" && FIELD_NAME.test(raw) ? raw : fail(path, 'is required: letters, digits and "_.-", at most 64'));
+/** Names that would write to an object's prototype instead of naming a value. */
+const UNSAFE_KEYS = new Set(["__proto__", "constructor", "prototype"]);
+const fieldName: Reader = (raw, path) => (typeof raw === "string" && FIELD_NAME.test(raw) && !raw.split(".").some((part) => UNSAFE_KEYS.has(part))
+  ? raw
+  : fail(path, 'is required: letters, digits and "_.-", at most 64'));
 
 const inputType: Reader = (raw, path) => {
   if (raw === "password") return fail(path, "password fields are not allowed in a widget; use request_credential for secrets");
@@ -283,13 +322,19 @@ const inputType: Reader = (raw, path) => {
 
 const imageSrc: Reader = (raw, path) => (isWebUrl(raw, ["https:"]) ? raw : fail(path, "must be an https url"));
 
+const CHART_MAX = 1e12;
+
 const chartData: Reader = (raw, path) => {
   if (!Array.isArray(raw) || raw.length < 1 || raw.length > WIDGET_LIMITS.chartRows) return fail(path, `needs 1 to ${WIDGET_LIMITS.chartRows} rows`);
   return raw.map((row, index) => {
     if (!isRecord(row)) return fail(`${path}[${index}]`, "must be an object");
     const out: Record<string, string | number | null> = {};
     for (const [key, value] of Object.entries(row).slice(0, 12)) {
-      if (typeof value === "number" ? Number.isFinite(value) : typeof value === "string" || value === null) out[key.slice(0, 64)] = typeof value === "string" ? value.slice(0, 120) : value as number | null;
+      if (UNSAFE_KEYS.has(key)) continue;
+      if (typeof value === "number" ? Number.isFinite(value) : typeof value === "string" || value === null) {
+        // a chart library lays out what it is given: keep numbers within what every one of them can
+        out[key.slice(0, 64)] = typeof value === "string" ? value.slice(0, 120) : typeof value === "number" ? clamp(value, -CHART_MAX, CHART_MAX) : null;
+      }
     }
     return out;
   });
@@ -304,7 +349,7 @@ const chartSeries: Reader = (raw, path) => {
       type: (oneOf("bar", "line", "area")(item.type, at) as string | undefined) ?? "bar",
       dataKey: text(64, "nonEmpty")(item.dataKey, `${at}.dataKey`) as string,
     };
-    const label = text(WIDGET_LIMITS.label)(item.label, `${at}.label`);
+    const label = line(WIDGET_LIMITS.label)(item.label, `${at}.label`);
     if (typeof label === "string") series.label = label;
     const stack = text(32)(item.stack, `${at}.stack`);
     if (typeof stack === "string") series.stack = stack;
@@ -322,17 +367,17 @@ const LAYOUT: Record<string, Reader> = {
   align: oneOf("start", "center", "end", "baseline", "stretch"),
   justify: oneOf("start", "center", "end", "between", "around", "evenly", "stretch"),
   wrap: (raw) => (raw === true || raw === "wrap" ? true : undefined),
-  flex: decimal(0, 12),
+  flex: flexShare,
   width: length(), height: length(), minWidth: length(), maxWidth: length(), minHeight: length(), maxHeight: length(),
   aspectRatio, background, border, radius,
 };
-const TEXT_STYLE: Record<string, Reader> = { weight, color: inkColor, textAlign, truncate: on, maxLines: integer(1, 20) };
+const TEXT_STYLE: Record<string, Reader> = { weight, color: inkColor, textAlign, truncate: on, maxLines: integer(1, 20), width: length() };
 const ROOT: Record<string, Reader> = {
-  title: text(WIDGET_LIMITS.title), caption: text(WIDGET_LIMITS.caption), meta: text(WIDGET_LIMITS.label), status,
+  title: line(WIDGET_LIMITS.title), caption: line(WIDGET_LIMITS.caption), meta: line(WIDGET_LIMITS.label), status,
   confirm: buttonSpec, cancel: buttonSpec,
 };
 const FIELD: Record<string, Reader> = { name: fieldName, disabled: on, required: on };
-const PLACEHOLDER = text(WIDGET_LIMITS.title);
+const PLACEHOLDER = line(WIDGET_LIMITS.title);
 
 interface NodeSpec {
   props: Record<string, Reader>;
@@ -355,27 +400,27 @@ const SPECS: Record<string, NodeSpec> = {
     props: { align: textAlign, vAlign: textAlign, colSpan: integer(1, WIDGET_LIMITS.tableCols), rowSpan: integer(1, 20), width: length(), colSize: oneOf("xs", "sm", "md", "lg", "xl"), padding },
     children: "any",
   },
-  Text: { props: { value: text(WIDGET_LIMITS.text, "required"), size: oneOf("xs", "sm", "md", "lg", "xl"), ...TEXT_STYLE, italic: on, lineThrough: on, minLines: integer(1, 20), width: length() } },
+  Text: { props: { value: text(WIDGET_LIMITS.text, "required"), size: oneOf("xs", "sm", "md", "lg", "xl"), ...TEXT_STYLE, italic: on, lineThrough: on, minLines: integer(1, 20) } },
   Title: { props: { value: text(WIDGET_LIMITS.text, "required"), size: oneOf("sm", "md", "lg", "xl", "2xl", "3xl", "4xl", "5xl"), ...TEXT_STYLE } },
   Caption: { props: { value: text(WIDGET_LIMITS.text, "required"), size: oneOf("sm", "md", "lg"), ...TEXT_STYLE } },
-  Label: { props: { value: text(WIDGET_LIMITS.title, "nonEmpty"), fieldName: text(64), size: oneOf("xs", "sm", "md", "lg", "xl"), weight, color: inkColor, textAlign } },
+  Label: { props: { value: line(WIDGET_LIMITS.title, "nonEmpty"), fieldName: text(64), size: oneOf("xs", "sm", "md", "lg", "xl"), weight, color: inkColor, textAlign, width: length() } },
   Markdown: { props: { value: text(WIDGET_LIMITS.markdown, "required") } },
   Image: {
     props: {
-      src: imageSrc, alt: text(WIDGET_LIMITS.caption), fit: oneOf("none", "fill", "cover", "contain", "scale-down"),
+      src: imageSrc, alt: line(WIDGET_LIMITS.caption), fit: oneOf("none", "fill", "cover", "contain", "scale-down"),
       position: oneOf("center", "top", "bottom", "left", "right", "top left", "top right", "bottom left", "bottom right"),
       frame: on, flush: on, width: length(), height: length(), minWidth: length(), maxWidth: length(), minHeight: length(), maxHeight: length(), aspectRatio, radius,
     },
   },
   Icon: { props: { name: icon("dot"), color: inkColor, size: oneOf("xs", "sm", "md", "lg", "xl", "2xl", "3xl") } },
-  Chart: { props: { data: chartData, series: chartSeries, xAxis: chartAxis, showYAxis: on, showLegend: off, showGrid: off, height: length(400), aspectRatio, flex: decimal(0, 12), width: length() } },
-  Badge: { props: { label: text(WIDGET_LIMITS.label, "nonEmpty"), color: oneOf("secondary", "success", "danger", "warning", "info", "discovery"), variant: oneOf("soft", "solid", "outline", "dot"), size: oneOf("sm", "md", "lg"), pill: off } },
-  Progress: { props: { value: decimal(0, 1), label: text(WIDGET_LIMITS.caption) } },
-  Button: { props: { label: text(WIDGET_LIMITS.label), iconStart: icon(), iconEnd: icon(), block: on, disabled: on, submit: on, onClickAction: action } },
+  Chart: { props: { data: chartData, series: chartSeries, xAxis: chartAxis, showYAxis: on, showLegend: off, showGrid: off, height: length(400), aspectRatio, flex: flexShare, width: length() } },
+  Badge: { props: { label: line(WIDGET_LIMITS.label, "nonEmpty"), color: oneOf("secondary", "success", "danger", "warning", "info", "discovery"), variant: oneOf("soft", "solid", "outline", "dot"), size: oneOf("sm", "md", "lg"), pill: off } },
+  Progress: { props: { value: decimal(0, 1), label: line(WIDGET_LIMITS.caption) } },
+  Button: { props: { label: line(WIDGET_LIMITS.label), iconStart: icon(), iconEnd: icon(), block: on, disabled: on, submit: on, onClickAction: action } },
   Select: { props: { ...FIELD, options, placeholder: PLACEHOLDER, defaultValue: text(200), clearable: on, block: on } },
   DatePicker: { props: { ...FIELD, placeholder: PLACEHOLDER, defaultValue: isoDate, min: isoDate, max: isoDate, clearable: on, block: on } },
-  Checkbox: { props: { ...FIELD, label: text(WIDGET_LIMITS.title), defaultChecked: on } },
-  RadioGroup: { props: { ...FIELD, options, defaultValue: text(200), direction: oneOf("row", "col"), ariaLabel: text(WIDGET_LIMITS.title) } },
+  Checkbox: { props: { ...FIELD, label: line(WIDGET_LIMITS.title), defaultChecked: on } },
+  RadioGroup: { props: { ...FIELD, options, defaultValue: text(200), direction: oneOf("row", "col"), ariaLabel: line(WIDGET_LIMITS.title) } },
   Input: { props: { ...FIELD, inputType, placeholder: PLACEHOLDER, defaultValue: text(WIDGET_LIMITS.fieldValue), pattern: text(200) } },
   Textarea: { props: { ...FIELD, placeholder: PLACEHOLDER, defaultValue: text(WIDGET_LIMITS.fieldValue), rows: integer(1, 12), maxRows: integer(1, 20), autoResize: on } },
   Transition: { props: {}, children: "one" },
@@ -439,6 +484,11 @@ function normalize(input: unknown, path: string, depth: number, slot: "root" | "
     if (context.fields.has(name)) return fail(`${path}.name`, `repeats the field name ${JSON.stringify(name)}`);
     context.fields.add(name);
     if (context.fields.size > WIDGET_LIMITS.fields) return fail(path, `the widget has more than ${WIDGET_LIMITS.fields} fields`);
+    if (type === "DatePicker") {
+      if (typeof node.min === "string" && typeof node.max === "string" && node.min > node.max) delete node.max;
+      const picked = node.defaultValue;
+      if (typeof picked === "string" && ((typeof node.min === "string" && picked < node.min) || (typeof node.max === "string" && picked > node.max))) delete node.defaultValue;
+    }
     const chosen = node.defaultValue;
     if ((type === "Select" || type === "RadioGroup") && chosen !== undefined && !(node.options as Array<{ value: string }>).some((option) => option.value === chosen)) delete node.defaultValue;
   }
@@ -504,7 +554,7 @@ function buttonSpecOf(root: WidgetRoot, key: "confirm" | "cancel"): WidgetButton
 function walk(node: WidgetNode, visit: (node: WidgetNode, ancestors: WidgetNode[]) => void, ancestors: WidgetNode[] = []): void {
   visit(node, ancestors);
   const next = [...ancestors, node];
-  for (const child of Array.isArray(node.children) ? node.children : []) walk(child, visit, next);
+  for (const child of Array.isArray(node.children) ? node.children : []) if (isRecord(child)) walk(child, visit, next);
 }
 
 function lastOf<T>(items: readonly T[], match: (item: T) => boolean): T | undefined {
@@ -512,11 +562,15 @@ function lastOf<T>(items: readonly T[], match: (item: T) => boolean): T | undefi
   return undefined;
 }
 
-/** The first Title or Text under a node: what a row is called. */
+/** What a row is called: its first Title or Text, on one line. A text held
+ * to a fixed width is a column label ("TO"), or can be squeezed to nothing,
+ * so it never names the row; and the name stops at the label limit, so what
+ * is recorded for a press is what fits on the row the person pressed. */
 function firstText(node: WidgetNode): string {
   let found = "";
   walk(node, (inner) => {
-    if (!found && (inner.type === "Title" || inner.type === "Text") && typeof inner.value === "string" && inner.value) found = inner.value;
+    if (found || (inner.type !== "Title" && inner.type !== "Text") || typeof inner.value !== "string" || typeof inner.width === "number") return;
+    found = inner.value.replace(/\s+/g, " ").trim().slice(0, WIDGET_LIMITS.label);
   });
   return found;
 }
@@ -539,6 +593,7 @@ function collectActions(root: WidgetRoot, strict: boolean): WidgetActionEntry[] 
   const found: Array<WidgetActionEntry & { row?: string }> = [];
   walk(root, (node, ancestors) => {
     if (node.type === "Button") {
+      if (node.disabled === true) return;
       const form = lastOf(ancestors, (ancestor) => ancestor.type === "Form");
       const own = isRecord(node.onClickAction) ? node.onClickAction as unknown as WidgetAction : undefined;
       const submitted = node.submit === true && isRecord(form?.onSubmitAction) ? form.onSubmitAction as unknown as WidgetAction : undefined;
@@ -550,7 +605,7 @@ function collectActions(root: WidgetRoot, strict: boolean): WidgetActionEntry[] 
       const row = lastOf(ancestors, (ancestor) => ancestor.type === "ListViewItem" || ancestor.type === "Table.Row" || ancestor.type === "Row");
       found.push({ ref: node.id, label: widgetString(node, "label") ?? "", action: picked, kind: "button", ...(node.submit === true ? { tone: "submit" as const } : {}), ...(row ? { row: firstText(row) } : {}) });
     } else if (node.type === "ListViewItem" && isRecord(node.onClickAction)) {
-      found.push({ ref: node.id, label: firstText(node).slice(0, WIDGET_LIMITS.label), action: node.onClickAction as unknown as WidgetAction, kind: "item" });
+      found.push({ ref: node.id, label: firstText(node), action: node.onClickAction as unknown as WidgetAction, kind: "item" });
     }
   });
   for (const key of ["confirm", "cancel"] as const) {
@@ -590,7 +645,9 @@ export function widgetScope(root: WidgetRoot, ref: string): WidgetNode {
 export interface WidgetField {
   name: string;
   type: string;
-  /** Its Label's text, else its own label or placeholder, else its name. */
+  /** Its Label's text, else a Checkbox's own label, else its name: only words
+   * drawn beside the field, because this is how the field is named in the
+   * message a press is recorded as. */
   label: string;
   node: WidgetNode;
 }
@@ -604,7 +661,7 @@ export function widgetFields(scope: WidgetNode, root: WidgetRoot = scope): Widge
   const fields: WidgetField[] = [];
   walk(scope, (node) => {
     if (!FIELD_TYPES.has(node.type) || typeof node.name !== "string") return;
-    fields.push({ name: node.name, type: node.type, node, label: labels.get(node.name) ?? widgetString(node, "label") ?? widgetString(node, "ariaLabel") ?? widgetString(node, "placeholder") ?? node.name });
+    fields.push({ name: node.name, type: node.type, node, label: labels.get(node.name) ?? (node.type === "Checkbox" ? widgetString(node, "label") : undefined) ?? node.name });
   });
   return fields;
 }
@@ -646,7 +703,8 @@ export function resolveWidgetAction(payload: WidgetPayload, ref: string, values:
   const lines: string[] = [];
   const mustFill = entry.tone === "confirm" || entry.tone === "submit";
   for (const field of fields) {
-    const raw = Object.hasOwn(given, field.name) ? given[field.name] : initial[field.name];
+    // a field the person could not change keeps what it was drawn with
+    const raw = Object.hasOwn(given, field.name) && field.node.disabled !== true ? given[field.name] : initial[field.name];
     if (field.type === "Checkbox") {
       if (typeof raw !== "boolean") return { ok: false, status: 400, error: `${field.label} must be on or off.` };
       if (mustFill && field.node.required === true && !raw) return { ok: false, status: 400, error: `${field.label} is required.` };
@@ -671,7 +729,8 @@ export function resolveWidgetAction(payload: WidgetPayload, ref: string, values:
       if ((min && value < min) || (max && value > max)) return { ok: false, status: 400, error: `${field.label} is outside the dates offered.` };
     }
     clean[field.name] = value;
-    if (value) lines.push(`${field.label}: ${shown.replace(/\s+/g, " ").slice(0, 300)}`);
+    // whole: this line is all the bot reads of what the person typed
+    if (value) lines.push(`${field.label}: ${shown}`);
   }
   return done(clean, lines);
 }
