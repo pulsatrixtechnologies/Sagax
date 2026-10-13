@@ -26,11 +26,11 @@ describe("Allow rule receipt", () => {
   });
   it("shows the rule and Edit rule under an always-allowed card", () => {
     const message = { id: "m1", role: "bot", kind: "options", card: { ...card, answered: "allow", alwaysAllowed: card.allowKey } } as unknown as Message;
-    const html = render(createElement(ApprovalCard, { bot: { name: "Dispatch" }, message }));
+    const html = render(createElement(ApprovalCard, { bot: { name: "Dispatch" }, message, defaultExpanded: true }));
     expect(html).toContain("data-allow-rule");
     expect(html).toContain("Added to your Allow rules");
     expect(html).toContain("Edit rule");
     const once = { ...message, card: { ...message.card!, alwaysAllowed: undefined } } as Message;
-    expect(render(createElement(ApprovalCard, { bot: { name: "Dispatch" }, message: once }))).not.toContain("data-allow-rule");
+    expect(render(createElement(ApprovalCard, { bot: { name: "Dispatch" }, message: once, defaultExpanded: true }))).not.toContain("data-allow-rule");
   });
 });

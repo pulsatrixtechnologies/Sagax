@@ -11,10 +11,10 @@ import { memo, useState } from "react";
 import { ChevronLeft, ChevronRight, GitFork } from "lucide-react";
 import { useStore, type Bot, type Message } from "@/state/store";
 import { cn } from "@/lib/cn";
-import { t, tFromServer } from "@/lib/i18n";
+import { t } from "@/lib/i18n";
 import type { LocaleKey } from "@/locales";
 import { SkillRequestPreview } from "@/components/SkillRequestPreview";
-import { adminWillAnswerLine, toolApprovalView, toolLabel } from "./ApprovalCard";
+import { adminWillAnswerLine, heldNoteWorthShowing, HeldLine, PeerRequest, toolApprovalView, toolLabel, useKnownBots } from "./ApprovalCard";
 import { ApprovalHeading, TechnicalDetails } from "./ApprovalParts";
 import { describeApproval, isTechnicalText } from "@/lib/approval-describe";
 import { reviewedSkillSha256 } from "../../shared/skill-request";
@@ -209,10 +209,11 @@ export const PendingApprovalPanel = memo(function PendingApprovalPanel({
    * and nothing else about a pending approval changes with the language. */
   locale?: string;
 }) {
-  const heldNote = tFromServer(pending.heldCode, pending.held);
+  const known = useKnownBots();
+  const heldNote = heldNoteWorthShowing({ held: pending.held, heldCode: pending.heldCode });
   const card = pending.message.card;
   const proposal = isSkillApproval(pending) || isRoutineApproval(pending) || isProfileApproval(pending) || Boolean(card?.teamSetupRequest);
-  const view = !proposal && card ? toolApprovalView(card, bot?.name) : undefined;
+  const view = !proposal && card ? toolApprovalView(card, bot?.name, known) : undefined;
   // never truncated: long commands wrap and scroll
   const visibleText = proposal ? pending.detail : pending.commandAllowlist?.command ?? view?.plain;
   return (
@@ -273,11 +274,12 @@ export const PendingApprovalPanel = memo(function PendingApprovalPanel({
           {visibleText}
         </pre>
       )}
+      {view?.peer && <PeerRequest peer={view.peer} bots={known} />}
       {card?.skillRequest && <SkillRequestPreview request={card.skillRequest} />}
-      {heldNote && <div className="mt-2 text-[12px] text-warning">{heldNote}</div>}
+      <HeldLine note={heldNote} />
       {view && (view.args || pending.tool) && (
         // keyed by request: stepping to another request starts collapsed
-        <TechnicalDetails key={pending.requestId} tool={pending.tool} server={view.server} args={view.args} argsLabel={t("approval.aria.reviewDetails")} />
+        <TechnicalDetails key={pending.requestId} tool={card?.mcpTool ?? pending.tool} server={view.server} args={view.args} argsLabel={t("approval.aria.reviewDetails")} />
       )}
     </div>
   );
@@ -353,7 +355,7 @@ export function PendingApprovalActions({
           type="button"
           onClick={() => decide("deny")}
           autoFocus={isTeamSetup}
-          className={cn(base, "border border-danger/40 text-danger hover:bg-danger/10")}
+          className={cn(base, "border border-hairline/50 text-ink hover:border-danger/40 hover:bg-danger/10 hover:text-danger")}
         >
           {isSuggestion ? t("approval.action.notNow") : isRoutineRequest || isProfileRequest || isTeamSetup ? t("approval.action.cancel") : t("approval.action.deny")}
         </button>
@@ -402,7 +404,7 @@ export function PendingApprovalActions({
               : t("approval.action.enable")
             : isRoutineRequest || isProfileRequest
               ? t("approval.action.confirm")
-              : t("approval.action.allowOnce")}
+              : t("approval.action.allow")}
         </button>
       </div>
     </div>

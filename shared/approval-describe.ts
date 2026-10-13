@@ -566,10 +566,15 @@ export function approvalAction(tool: string | undefined, input: string | undefin
   const action = described.action && described.verbless && !composio
     ? words.t("approval.verb.use", { name: described.action })
     : described.action ?? composio ?? name.replace(/_+/g, " ");
-  // Sagax's own built-in servers (sagax-environment, sagax-computer) are the
-  // bot itself: "run a command", not "run a command in Sagax Environment"
-  const builtinServer = server.startsWith("sagax-");
+  // Sagax's own built-in servers (sagax-environment, sagax-computer, and the
+  // agents server of its teammate tools) are the bot itself: "run a
+  // command", not "run a command in Sagax Environment" or "in Agents"
+  const builtinServer = isBuiltinServer(server);
   return described.product && !builtinServer ? words.t("approval.phrase.inProduct", { action, product: described.product }) : action;
+}
+
+function isBuiltinServer(server: string): boolean {
+  return server.startsWith("sagax-") || server === "agents";
 }
 
 const capitalize = (text: string) => (text ? text[0]!.toLocaleUpperCase() + text.slice(1) : text);
@@ -612,7 +617,7 @@ export function approvalPlain(
     ? detail : "";
   const risk = described.risk;
   // Sagax's own built-in servers are the bot itself: no "in Sagax Environment"
-  const product = described.server?.startsWith("sagax-") ? undefined : described.product;
+  const product = described.server && isBuiltinServer(described.server) ? undefined : described.product;
   const riskKey = risk ?? "other";
   const fallback = product ? words.t(`approval.line.${riskKey}In`, { product }) : words.t(`approval.line.${riskKey}`);
   const line = described.summary
