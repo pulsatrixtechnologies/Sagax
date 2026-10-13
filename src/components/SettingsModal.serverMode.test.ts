@@ -19,7 +19,7 @@ vi.mock("./DesktopCapabilities", () => ({ useDesktopCapabilities: () => ({ capab
 vi.mock("@/state/store", async (importOriginal) => ({
   ...await importOriginal<typeof import("@/state/store")>(),
   api: vi.fn(),
-  useStore: () => ({ state: { appSettingsSection: fixture.section, appSettingsSubPage: null, instances: [], bots: [], groups: [], config: fixture.viewer ? { rooms: { turnTimeoutMinutes: 5 }, viewer: fixture.viewer, profile: { aboutMe: "I run IT at production.\nAnswer in French." } } : undefined }, dispatch: vi.fn() }),
+  useStore: () => ({ state: { appSettingsSection: fixture.section, appSettingsSubPage: null, instances: [], bots: [], groups: [], config: fixture.viewer ? { rooms: { turnTimeoutMinutes: 5 }, viewer: fixture.viewer, profile: { aboutMe: "I run IT at Example.\nAnswer in French." } } : undefined }, dispatch: vi.fn() }),
 }));
 vi.mock("./ServerModeSettings", async (importOriginal) => ({
   ...await importOriginal<typeof import("./ServerModeSettings")>(),
@@ -71,7 +71,7 @@ describe("Settings in server mode", () => {
     fixture.viewer = { name: "Jean Tremblay", email: "jean@example.com", profileManagedBy: "perspicax", profileManageUrl: "https://px.example.test/console/me" };
     const html = render();
     expect(html).toContain('Connected to <strong class="font-semibold text-ink">bot.example.test</strong>');
-    expect(html).toContain("Organization: production");
+    expect(html).toContain("Organization: Example");
     expect(html).toContain("Signed in as Jean Tremblay (jean@example.com)");
     expect(html).toContain("Sign out returns this app to the launch screen");
     expect(html).toMatch(/<button type="button" class="ui-button[^"]*">.*?Sign out<\/button>/);
@@ -97,7 +97,7 @@ describe("Settings in server mode", () => {
     // not the operator, so the row stays hidden instead of offering a save
     // the server would refuse. It is still a row, not a card, for the operator.
     expect(html).not.toContain('data-settings-card="general.aboutMe"');
-    expect(html).not.toContain("I run IT at production.");
+    expect(html).not.toContain("I run IT at Example.");
     expect(html).not.toContain("<textarea");
   });
 

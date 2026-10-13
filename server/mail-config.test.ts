@@ -157,7 +157,7 @@ describe("a mail settings change", () => {
       { to: "x@y.z" },
       { from: "Sagax <bot@example.com>" },
       { from: "not-an-address" },
-      { fromName: "production\r\nBcc: x@y.z" },
+      { fromName: "Example\r\nBcc: x@y.z" },
       { fromName: "A <b>" },
       { "smtp.port": 0 },
       { "smtp.port": 70000 },

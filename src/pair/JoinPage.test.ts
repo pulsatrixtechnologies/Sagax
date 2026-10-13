@@ -15,7 +15,7 @@ const response = (status: number, body: unknown) => ({ ok: status >= 200 && stat
 describe("join page", () => {
   it("shows the organization, the masked address and a Join button for an open invite", () => {
     const html = view({ kind: "open", orgName: "Example", email: "z***@example.com" });
-    expect(html).toContain("Join production");
+    expect(html).toContain("Join Example");
     expect(html).toContain("Invited as z***@example.com");
     expect(html).toContain("ui-button ui-button-primary");
     expect(html).toContain(">Join<");
@@ -39,13 +39,13 @@ describe("join page", () => {
   it("keeps a failed join on screen with its error", () => {
     const html = view({ kind: "open", orgName: "Example", email: "z***@example.com", error: "too many failed attempts" });
     expect(html).toContain("too many failed attempts");
-    expect(html).toContain("Join production");
+    expect(html).toContain("Join Example");
   });
 
   it("speaks Quebec French", () => {
     setLocale("fr");
     const html = view({ kind: "open", orgName: "Example", email: "z***@example.com" });
-    expect(html).toContain("Rejoindre production");
+    expect(html).toContain("Rejoindre Example");
     expect(html).toContain("Invitation pour z***@example.com");
     expect(view({ kind: "already-member" })).toContain("Connecte-toi plutôt");
   });

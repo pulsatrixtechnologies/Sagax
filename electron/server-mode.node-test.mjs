@@ -61,7 +61,7 @@ test("while server mode is on, nothing switches to this computer or another serv
   context.switchEnvironment("h1");
   assert.deepEqual(calls.persisted, []);
   assert.deepEqual(calls.navigated, []);
-  assert.throws(() => context.requireNotServerMode(), /connected to production/);
+  assert.throws(() => context.requireNotServerMode(), /connected to Example/);
 });
 
 test("leaving asks first; Cancel changes nothing", async () => {
@@ -70,7 +70,7 @@ test("leaving asks first; Cancel changes nothing", async () => {
   assert.equal(calls.dialogs.length, 1);
   assert.match(calls.dialogs[0].detail, /nothing on this computer is changed/);
   // Settings > General > Server says Sign out; the confirmation says the same
-  assert.equal(calls.dialogs[0].message, "Sign out of production?");
+  assert.equal(calls.dialogs[0].message, "Sign out of Example?");
   assert.deepEqual([...calls.dialogs[0].buttons], ["Sign out", "Cancel"]);
   assert.deepEqual(calls.fetched, []);
   assert.equal(context.environmentsState.serverModeId, "o1");

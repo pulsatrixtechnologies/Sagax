@@ -114,7 +114,7 @@ posixOnly("org invite links", () => {
     token = /token=([0-9a-f]+)/.exec(invite.body.link)![1]!;
     expect(invite.body.mailed).toBe(true);
     const mail = await until(() => mails().find((m) => m.to === ZARA));
-    expect(mail?.text).toContain(`Open ${invite.body.link} within 7 days to join production.`);
+    expect(mail?.text).toContain(`Open ${invite.body.link} within 7 days to join Example.`);
     const listed = await api("GET", "/api/org/invites");
     expect(listed.body.org).toMatchObject({ name: "Example", host: { kind: "this-computer" } });
     expect(listed.body.pendingInvites).toEqual([expect.objectContaining({ email: ZARA, link: invite.body.link })]);

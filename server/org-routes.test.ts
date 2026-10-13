@@ -264,15 +264,15 @@ describe("invite mail", () => {
 describe("invite mail text (inviteMailMessage)", () => {
   it("names the inviter and gives the invite link when both are known", () => {
     expect(inviteMailMessage({ orgName: "Example", inviterEmail: "jc@example.com", link: "https://server.example.com/join#token=abc" })).toEqual({
-      subject: "You are invited to production on Sagax",
-      text: "jc@example.com invited you to production. Open https://server.example.com/join#token=abc within 7 days to join production.",
+      subject: "You are invited to Example on Sagax",
+      text: "jc@example.com invited you to Example. Open https://server.example.com/join#token=abc within 7 days to join Example.",
     });
   });
 
   it("falls back to a generic greeting and drops the link clause when neither is known", () => {
     expect(inviteMailMessage({ orgName: "Example", link: null })).toEqual({
-      subject: "You are invited to production on Sagax",
-      text: "You were invited to production. Sign in with this address on this server's sign-in page within 7 days.",
+      subject: "You are invited to Example on Sagax",
+      text: "You were invited to Example. Sign in with this address on this server's sign-in page within 7 days.",
     });
   });
 });

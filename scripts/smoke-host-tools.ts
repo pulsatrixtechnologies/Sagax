@@ -65,6 +65,6 @@ check("control: a solo turn has Bash", solo.includes("Bash"));
 const leaked = HOST_ACTING.filter((tool) => org.includes(tool));
 check("organization turn: no shell, file or fetch tool on the Sagax server", leaked.length === 0, leaked.join(",") || `${org.length} tools left`);
 check("organization turn: a Bash call cannot be made (tool absent)", !org.includes("Bash"));
-check("organization turn with production's SAGAX_CLAUDE_ALLOW rules: Bash still absent (deny wins)", !orgWithAllow.includes("Bash"));
+check("organization turn with standing SAGAX_CLAUDE_ALLOW rules: Bash still absent (deny wins)", !orgWithAllow.includes("Bash"));
 console.log(failed ? `\n${failed} check(s) failed` : "\nall checks passed");
 process.exit(failed ? 1 : 0);
