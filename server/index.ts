@@ -361,7 +361,7 @@ import {
   queueAsideMessage,
   restoreAsideMessages,
 } from "./aside-queue.ts";
-import { promptWithReply, transcriptText } from "./replies.ts";
+import { promptWithReply, transcriptText, type ReplyTarget } from "./replies.ts";
 import { parseDataContext, type DataContext } from "./data-context.ts";
 import { promptWithDataContext } from "../shared/data-context.ts";
 import { admit, DRAIN_COALESCE_MAX_ITEMS } from "./admission.ts";
@@ -592,7 +592,7 @@ import { createScreenFrameSource, type ScreenCapture } from "./screen-frame-sour
 import { screenFrameHash, screenSurfaceForTool, screenTouchingTool, settledFrameIsNews } from "./screen-frame-gate.ts";
 import { asSchedule, RoutineRequestService } from "./routine-requests.ts";
 import { directApply, UNDO_STALE, type DirectApply } from "./direct-apply.ts";
-import { createOptionsCard } from "./options-card.ts";
+import { createAgentCard, prepareWidgetPress, reopenCancelledPress } from "./chat-widgets.ts";
 import { buildBotOverview, type BotOverview, connectedAppsFacts } from "./bot-overview.ts";
 import { ProfileRequestService } from "./profile-requests.ts";
 import { ModelRequestService } from "./model-requests.ts";
@@ -5432,6 +5432,11 @@ const store = new Store(
 const teamComputers = new TeamComputers(join(DATA_DIR, "team-computers.json"), ENVIRONMENT_ID);
 let followupsReady = false;
 const sendSequencer = new SendSequencer();
+/** Presses that fold their widget, while their message is on its way in:
+ * thread:widget -> the sendId that holds it. The widget is only marked
+ * answered once the message is accepted, and a second tap in between must
+ * not send a second answer (server/chat-widgets.ts prepareWidgetPress). */
+const widgetPressesInFlight = new Map<string, string | undefined>();
 // Before the new-bot default is read: a saved default may name the engine.
 await retryComputerEngineMove();
 // Reading the new-bot default probes every engine CLI (each up to its
@@ -20406,7 +20411,7 @@ function resolveReplyTarget(threadId: string, value: unknown): Message | undefin
   if (value === undefined || value === null || value === "") return undefined;
   if (typeof value !== "string") throw Object.assign(new Error("replyToId must be a message id"), { status: 400 });
   const target = store.messagesFor(threadId).find((message) => message.id === value);
-  if (!target || target.kind !== "text" || !target.text?.trim()) {
+  if (!target || (target.kind !== "text" && target.kind !== "widget") || !target.text?.trim()) {
     throw Object.assign(new Error("the message being replied to is no longer available"), { status: 404 });
   }
   return target;
@@ -28967,14 +28972,14 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         }
         const body = await readInternalBody();
         requireActiveInternalCapability();
-        const result = createOptionsCard({
+        const result = createAgentCard({
           store,
           bot: internalSender,
           threadId: internalCapability.threadId,
-          input: body,
+          input: body, authored: (id) => handoffs.authored(internalCapability.threadId, internalCapability.generation, id),
         });
         return result.ok
-          ? json(res, 201, { messageId: result.messageId })
+          ? json(res, 201, { messageId: result.messageId, ...("masked" in result && result.masked ? { masked: true } : {}) })
           : json(res, result.status, { error: result.error });
       }
       // A group's shared memory (server/group-memory.ts): only a bot of
@@ -33148,7 +33153,8 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         const who = msg.role === "user"
           ? msg.via === "api" ? `${sentBy} (via the local API)` : sentBy
           : (msg.from?.name ?? bot?.name ?? "Bot");
-        if (msg.kind === "text" && msg.text) lines.push(`**${who}:**`, "", msg.text, "");
+        // A widget exports as its text fallback (shared/widget.ts widgetToText).
+        if ((msg.kind === "text" || msg.kind === "widget") && msg.text) lines.push(`**${who}:**`, "", msg.text, "");
         else if (msg.kind === "activity" && msg.tool) lines.push(`> ${msg.tool.name}`, "");
         else if (msg.kind === "screen") lines.push("> [screen capture]", "");
         else if (msg.kind === "options" && msg.card) {
@@ -35968,6 +35974,11 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       if (!body || typeof body !== "object" || Array.isArray(body)) {
         return json(res, 400, { error: "body must be a JSON object" });
       }
+      // A press on a widget (`widgetAction`) is a person's own tap in one of
+      // this workspace's clients: a relay has no widget to press. A client
+      // that writes the field as null on an ordinary send means no press.
+      const pressed = body.widgetAction !== undefined && body.widgetAction !== null;
+      if (guarded && pressed) return json(res, 400, { error: "guarded sends cannot answer a widget" });
       // External interfaces must opt into a distinct route: an older server
       // returns 404 rather than silently ignoring safety preconditions.
       const guardedBody = guarded ? guardedSendSchema.safeParse(body) : null;
@@ -35977,8 +35988,10 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           ? "onBehalfOf must name the person with an email address, a name, or both"
           : "guarded sends require threadId, sendId, text and expectedActiveLeafId" });
       }
-      const text = String(body.text ?? "").trim();
-      if (!text) return json(res, 400, { error: "text required" });
+      // A press sends no words of its own: the server writes them from the
+      // stored widget below, once the task and the sendId are known.
+      const typed = pressed ? "" : String(body.text ?? "").trim();
+      if (!pressed && !typed) return json(res, 400, { error: "text required" });
       // words said on a voice call: the turn gets the phone-call instruction
       const parsedVoiceCall = parseVoiceCallMeta(body.voiceCall);
       if (parsedVoiceCall && "error" in parsedVoiceCall) return json(res, 400, { error: parsedVoiceCall.error });
@@ -36007,9 +36020,9 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       const voiceCall = guarded ? sentVoiceCall : voiceCalls.markFor(threadId, sentVoiceCall);
       // An engine command the chat cannot run is refused before it is
       // recorded (server/harness-commands.ts).
-      if (text.startsWith("/")) {
-        const typed = await typedCommandForTurn(extractTurnImages(text).text, harnessCommandSource(bot, threadId, { speaker: harnessCommandSpeaker(auth) }), harnessCommands);
-        if (typed.kind === "unavailable") return json(res, 409, unavailableCommandError(typed));
+      if (typed.startsWith("/")) {
+        const command = await typedCommandForTurn(extractTurnImages(typed).text, harnessCommandSource(bot, threadId, { speaker: harnessCommandSpeaker(auth) }), harnessCommands);
+        if (command.kind === "unavailable") return json(res, 409, unavailableCommandError(command));
       }
       // Who this message is from, for the ledger. It is captured here and
       // travels with the message: into the turn it starts, or into the queue
@@ -36039,8 +36052,23 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         if (!claim.first) sendId = claim.sendId;
         else voiceLatency.received(threadId, voiceCall.utteranceId);
       }
-      const replyTo = resolveReplyTarget(threadId, body.replyToId);
-      const dataContext = parseDataContext(body.dataContext);
+      // The press becomes an ordinary message that replies to its widget:
+      // the label, then one line per field. Nothing is written yet.
+      const press = pressed ? prepareWidgetPress(store, threadId, body.widgetAction, sendId) : null;
+      if (press && !press.ok) return json(res, press.status, { error: press.error });
+      const text = press ? press.text : typed;
+      const target = resolveReplyTarget(threadId, press ? press.messageId : body.replyToId);
+      // Only here is a reply known to be a press: a copy of the widget row
+      // says so to whatever composes the prompt (server/replies.ts). A typed
+      // reply to the same row carries no such mark, whatever its words.
+      const replyTo: ReplyTarget | undefined = press && target ? { ...target, widgetPress: { label: press.label, action: press.action } } : target;
+      const pressKey = press?.settles ? `${threadId}:${press.messageId}` : undefined;
+      if (pressKey && widgetPressesInFlight.has(pressKey) && !(sendId && widgetPressesInFlight.get(pressKey) === sendId)) {
+        return json(res, 409, { error: "That answer is already on its way." });
+      }
+      // A Data context is put in front of the words the model gets, and a
+      // press is read by its first line (server/replies.ts): it carries none.
+      const dataContext = press ? undefined : parseDataContext(body.dataContext);
       // What a send to a busy conversation does (shared/parallel-tasks.ts):
       // join the running turn (steer, the default), run as its own task in
       // parallel, or wait for the running turn (after).
@@ -36056,6 +36084,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       if (messageMisuse) return json(res, messageMisuse.status, { error: messageMisuse.message, code: messageMisuse.code });
       const postedSafety = safetyHttpRefusal({ text, surface: "message", triage: postedActor.triage, ...(postedActor.principalId ? { principalId: postedActor.principalId } : {}), botId: bot.id, threadId });
       if (postedSafety) return json(res, postedSafety.status, { error: postedSafety.message, code: postedSafety.code });
+      if (pressKey) widgetPressesInFlight.set(pressKey, sendId);
       const receipt = await sendSequencer.run(
         sendId ? `bot:${bot.id}:${threadId}:${sendId}` : undefined,
         sendFingerprint(text, replyTo?.id),
@@ -36266,7 +36295,13 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           }
           return startOrQueueDirectMessage(bot.id, threadId, text, replyTo, sendId, messageSender(auth), trigger, speakerFor(auth), voiceCall, undefined, undefined, dataContext);
         },
-      );
+      ).finally(() => {
+        if (pressKey) widgetPressesInFlight.delete(pressKey);
+      });
+      // Only an accepted message (started, steered or queued) answers the
+      // widget. A retry of the press that already did changes nothing. A
+      // queued one is remembered by its slot: cancelling it reopens the widget.
+      press?.settle(receipt && typeof receipt === "object" && "queueId" in receipt && typeof receipt.queueId === "string" ? receipt.queueId : undefined);
       const person = actorPrincipalId(auth);
       recordAchievements(person, achievementSendEvents({ text, parallel: busyMode === "parallel", ...(voiceCall ? { voiceCall } : {}) }, achievementCallStarts, Date.now()));
       if (voiceCall) {
@@ -36287,6 +36322,9 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       if (!cancelSteeredMessage(bot.id, queueId, bot.threadId)) {
         return json(res, 404, { error: "no such queued message" });
       }
+      // The words never reached the bot. If they were the answer to a
+      // widget, it takes an answer again.
+      reopenCancelledPress(store, bot.threadId, queueId);
       return json(res, 200, { ok: true });
     }
 
