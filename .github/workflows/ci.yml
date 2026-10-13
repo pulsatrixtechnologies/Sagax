@@ -95,9 +95,9 @@ jobs:
       matrix:
         # The harness and pure desktop capabilities stay portable across all
         # supported host platforms. POSIX-only process tests self-skip.
-        # scripts/ci-scope.mjs picks the platforms: PRs run Linux and Windows
-        # (the account runs only five macOS jobs at a time, and a PR used to
-        # queue seven), main pushes, merge groups and manual runs add macOS.
+        # scripts/ci-scope.mjs picks the platforms: pull requests, main
+        # pushes and merge groups run Linux only. Windows and macOS run
+        # only from a manual dispatch.
         os: ${{ fromJSON(needs.static.outputs.vitest_os) }}
         shard: [1, 2, 3, 4]
     runs-on: ${{ matrix.os }}
@@ -213,7 +213,7 @@ jobs:
 
   windows-cua:
     needs: static
-    # Windows/macOS/iOS run on main pushes and merge groups, not on PRs.
+    # Windows/macOS/iOS run only on manual dispatch (platforms=true).
     if: needs.static.outputs.runtime == 'true' && needs.static.outputs.platforms == 'true'
     name: Windows CUA host smoke
     runs-on: windows-latest
@@ -232,12 +232,11 @@ jobs:
 
   electron-smokes:
     needs: static
-    # Windows/macOS/iOS run on main pushes and merge groups, not on PRs.
+    # Windows/macOS/iOS run only on manual dispatch (platforms=true).
     if: needs.static.outputs.runtime == 'true' && needs.static.outputs.platforms == 'true'
     # Real Electron utility processes against disposable homes and fake CLIs.
-    # Never the live app. Each script prints its own evidence lines. Every
-    # PR's macOS checks live in this one job: macOS runners are the scarce
-    # ones, and each extra job pays its own queue wait and install.
+    # Never the live app. Each script prints its own evidence lines. This
+    # macOS job runs only from a manual dispatch.
     name: macOS smokes (packaged server + Electron)
     runs-on: macos-latest
     timeout-minutes: 25
@@ -558,11 +557,11 @@ jobs:
 
   ios:
     needs: static
-    # Windows/macOS/iOS run on main pushes and merge groups, not on PRs.
+    # Windows/macOS/iOS run only on manual dispatch (platforms=true).
     if: needs.static.outputs.mobile == 'true' && needs.static.outputs.platforms == 'true'
     # The simulator UI suite (about 90 minutes of iPhone + iPad runs) lives in
-    # ios-thread-ui.yml: nightly, on main pushes that touch ios/, and by hand.
-    # Here it held three of the account's five macOS runners at a time.
+    # ios-thread-ui.yml and runs by hand. Here it held three of the account's
+    # five macOS runners at a time.
     name: Swift tests + iOS build
     runs-on: macos-latest
     # swift test, the simulator build, then one disposable iPhone long
