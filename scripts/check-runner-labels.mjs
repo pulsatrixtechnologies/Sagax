@@ -25,12 +25,12 @@ function checkForkSafety(path, lines) {
   for (let n = 0; n + 1 < starts.length; n++) {
     const block = lines.slice(starts[n], starts[n + 1])
     const name = block[0].trim().replace(/:$/, '')
-    if (!block.some((l) => /^    runs-on:/.test(l))) continue // reusable-workflow call
-    const at = block.findIndex((l) => /^    if:/.test(l))
+    if (!block.some((l) => l.startsWith('    runs-on:'))) continue // reusable-workflow call
+    const at = block.findIndex((l) => l.startsWith('    if:'))
     let cond = ''
     if (at >= 0) {
       cond = block[at].replace(/^    if:/, '')
-      for (let k = at + 1; k < block.length && /^      /.test(block[k]); k++) cond += ' ' + block[k]
+      for (let k = at + 1; k < block.length && block[k].startsWith('      '); k++) cond += ' ' + block[k]
     }
     const flat = cond.replace(/\s+/g, ' ').replace(/^ ?(>-|>|\|)? ?(\$\{\{ ?)?/, '')
     if (!flat.startsWith(FORK_GUARD + ' &&') && flat.trim() !== FORK_GUARD)
