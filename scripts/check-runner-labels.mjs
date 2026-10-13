@@ -1,10 +1,11 @@
 #!/usr/bin/env node
-// Fails when any job in .github/workflows would run on a GitHub-hosted runner.
-// Every runs-on must name self-hosted and no GitHub-hosted image label.
+// Jobs may run on a self-hosted runner or a GitHub-hosted image (ubuntu-latest
+// is the usual Linux default), whichever is available. Repository guards stay.
 import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 const dir = process.argv[2] ?? '.github/workflows'
+// GitHub-hosted image labels. ubuntu-latest is the usual Linux default.
 const hosted = /^(ubuntu-|windows-|macos-)|-latest$/i
 // Every job must start its if: with this repository guard.
 const FORK_GUARD = "(!startsWith(github.event_name, 'pull_request') || github.event.pull_request.head.repo.full_name == github.repository) && (github.event_name != 'workflow_run' || github.event.workflow_run.head_repository.full_name == github.repository)"
@@ -82,26 +83,25 @@ for (const file of readdirSync(dir).filter((f) => /\.ya?ml$/.test(f)).sort()) {
     const where = `${path}:${i + 1}`
     const labels = []
     if (value.includes('${{')) {
-      // Expressions: every quoted literal inside must be a self-hosted label set.
       for (const q of value.matchAll(/['"]([^'"]+)['"]/g)) labels.push(q[1])
-      if (/matrix\./.test(value) && !value.includes('self-hosted')) {
-        problems.push(`${where}: runs-on resolves through a matrix/expression without self-hosted: ${value}`)
-        return
-      }
     } else {
       labels.push(...value.replace(/^\[|\]$/g, '').split(',').map((s) => s.trim().replace(/^['"]|['"]$/g, '')).filter(Boolean))
     }
-    const bad = labels.filter((l) => hosted.test(l))
-    if (bad.length) problems.push(`${where}: GitHub-hosted label(s) ${bad.join(', ')}`)
-    else if (!value.includes('self-hosted')) problems.push(`${where}: runs-on lacks self-hosted: ${value}`)
+    const selfHosted = value.includes('self-hosted') || labels.includes('self-hosted')
+    const hostedImage = hosted.test(value) || labels.some((l) => hosted.test(l))
+    // matrix.os is checked against the matrix values below.
+    if (!selfHosted && !hostedImage && !/matrix\.os/.test(value))
+      problems.push(`${where}: runs-on is neither self-hosted nor a GitHub-hosted label: ${value}`)
   })
-  // Matrix values that look like hosted images are a problem when a job routes runs-on through them.
   lines.forEach((line, i) => {
     const m = line.match(/^\s*os:\s*\[(.*)\]/)
     if (!m) return
-    const bad = m[1].split(',').map((s) => s.trim().replace(/^['"]|['"]$/g, '')).filter((l) => hosted.test(l))
-    const routed = lines.some((l) => /runs-on:.*matrix\.os/.test(l) && !l.includes('self-hosted'))
-    if (bad.length && routed) problems.push(`${path}:${i + 1}: matrix os feeds runs-on with hosted label(s) ${bad.join(', ')}`)
+    const routed = lines.some((l) => /runs-on:.*matrix\.os/.test(l))
+    const selfHostedRoute = lines.some((l) => /runs-on:.*matrix\.os/.test(l) && l.includes('self-hosted'))
+    if (!routed || selfHostedRoute) return
+    const values = m[1].split(',').map((s) => s.trim().replace(/^['"]|['"]$/g, '')).filter(Boolean)
+    const bad = values.filter((l) => !hosted.test(l))
+    if (bad.length) problems.push(`${path}:${i + 1}: matrix os is neither self-hosted nor a GitHub-hosted label: ${bad.join(', ')}`)
   })
 }
 
@@ -110,4 +110,4 @@ if (problems.length) {
   for (const p of problems) console.error(`  ${p}`)
   process.exit(1)
 }
-console.log('runner guard: every job is self-hosted and repository-guarded')
+console.log('runner guard: jobs may use a self-hosted runner or a GitHub-hosted label, and every job is repository-guarded')

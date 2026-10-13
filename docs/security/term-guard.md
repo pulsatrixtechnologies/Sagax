@@ -17,13 +17,14 @@ GitHub noreply address (`<id>+<login>@users.noreply.github.com`) for commits.
 - Runs on `pull_request_target` so fork PRs are covered; it checks out only the
   base branch's `scripts/ci/term-guard.py` and reads the PR as data through the
   API. It never checks out or executes pull-request code.
-- The runner has no `gh` CLI. The diff and commits are read with `curl` and
-  `jq` and `GITHUB_TOKEN`. Commits are at most three pages of 100. A longer
-  list fails closed. Missing `curl` or `jq` fails the job.
+- The diff and commits are read with `curl` and `jq` and `GITHUB_TOKEN`, so
+  the job does not need the `gh` CLI. Commits are at most three pages of 100.
+  A longer list fails closed. Missing `curl` or `jq` fails the job.
 
 Tests: `python3 scripts/ci/term-guard.test.py`.
 
-Runs on self-hosted Linux runners only.
+Runs on `ubuntu-latest` by default. A self-hosted Linux runner is also
+allowed. The fetch works on either.
 
 ## Path allowlist
 
