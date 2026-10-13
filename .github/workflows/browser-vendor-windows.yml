@@ -23,7 +23,7 @@ permissions:
 jobs:
   build:
     name: Build reviewed Windows browser
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     timeout-minutes: 45
     env:
       RUSTUP_TOOLCHAIN: 1.97.1
