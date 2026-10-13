@@ -71,6 +71,19 @@ describe("production image sources", () => {
     expect(policy).toContain("subjectRegExp: {{ .Values.admission.kyverno.subjectRegExp | quote }}");
     expect(policy).not.toContain("kyverno.subjects");
     expect(policy).not.toContain("kyverno.subject ");
+    const proof = workflow.slice(workflow.indexOf("name: signing proof"));
+    expect(proof).toContain("github.ref_type == 'branch'");
+    expect(proof).toContain('echo "IMAGE=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/sagax-signing-test" >> "$GITHUB_ENV"');
+    expect(proof).toContain("type=raw,value=pr436");
+    expect(proof).toContain("platforms: linux/amd64,linux/arm64");
+    expect(proof).toContain('cosign sign --yes "${IMAGE}@${DIGEST}"');
+    expect(proof).toContain('cosign attest --yes --type vuln --predicate vuln.json "${IMAGE}@${DIGEST}"');
+    expect(proof).toContain("cosign verify \\");
+    expect(proof).toContain("--certificate-identity");
+    expect(proof).toContain("cosign verify-attestation \\");
+    expect(proof).toContain("--type vuln \\");
+    expect(proof).toContain('docker buildx imagetools inspect "${IMAGE}:pr436"');
+    expect(proof).toContain('docker buildx imagetools inspect "${IMAGE}@${DIGEST}"');
   });
 
   it("forwards the engine set from compose with an empty legacy ENGINES list", () => {
