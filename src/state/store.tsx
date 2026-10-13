@@ -5203,6 +5203,12 @@ export function useStore() {
   return ctx;
 }
 
+/** The store when one is mounted, else null: for pieces that also render
+ * outside the app (static renders, previews) and only read names from it. */
+export function useOptionalStore() {
+  return useContext(StoreContext);
+}
+
 /** Scoped state for an unsaved editor. The parent workspace remains intact. */
 export function BotEditorStore({ value, children }: { value: ReturnType<typeof useStore>; children: ReactNode }) {
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>;

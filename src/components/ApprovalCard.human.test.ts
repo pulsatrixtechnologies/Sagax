@@ -57,7 +57,11 @@ describe("human approval card", () => {
   it("offers the collapsed technical details once settled", () => {
     const message = ask("a", TOOL, ARGS);
     message.card!.answered = "allow";
-    const html = renderToStaticMarkup(createElement(ApprovalCard, { bot, message }));
+    // a settled card is a one-line receipt; its details open from it
+    const collapsed = renderToStaticMarkup(createElement(ApprovalCard, { bot, message }));
+    expect(collapsed).toContain("data-approval-receipt");
+    expect(collapsed).not.toContain("View the full request");
+    const html = renderToStaticMarkup(createElement(ApprovalCard, { bot, message, defaultExpanded: true }));
     expect(html).toContain("View the full request");
     expect(html).toContain('aria-expanded="false"');
     expect(html).not.toContain("conditions");

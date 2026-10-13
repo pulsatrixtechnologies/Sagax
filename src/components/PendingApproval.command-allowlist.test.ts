@@ -70,8 +70,8 @@ describe("remembering exact command approvals", () => {
     }));
   });
 
-  it("keeps Allow once and Deny from saving a grant", () => {
-    for (const [label, behavior] of [["Allow once", "allow"], ["Deny", "deny"]]) {
+  it("keeps Allow and Deny from saving a grant", () => {
+    for (const [label, behavior] of [["Allow", "allow"], ["Deny", "deny"]]) {
       fixture.dispatch.mockClear();
       view().buttons.find((button) => button.props.children === label)!.props.onClick!();
       expect(fixture.dispatch).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({
@@ -85,7 +85,7 @@ describe("remembering exact command approvals", () => {
     const result = view();
     expect(result.html).not.toContain("Always allow this command");
     expect(result.html).toContain("Always allow this session");
-    expect(result.html).toContain("Allow once");
+    expect(result.html).toContain(">Allow</button>");
   });
 
   it("preserves session approval for requests without an exact command", () => {
