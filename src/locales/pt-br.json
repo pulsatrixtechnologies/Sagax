@@ -43,6 +43,7 @@
   "approval.card.profileWantsToOwn": "{name} quer atualizar o próprio perfil",
   "approval.card.wantsTo": "Quer {action}",
   "approval.held.native": "O provedor exige a sua aprovação para esta ação.",
+  "approval.held.safety": "A revisão de segurança do Sagax pede que você confirme esta ação.",
   "approval.held.sandbox": "Isto altera o sandbox do provedor, então só Acesso total pode aprovar automaticamente.",
   "approval.held.undelivered": "Aprovar por mim não conseguiu responder a esta.",
   "approval.held.undeliveredFull": "Acesso total não conseguiu entregar esta aprovação.",
@@ -2773,5 +2774,6 @@
   "approval.rule.added": "Adicionado às suas regras de permissão",
   "approval.rule.edit": "Editar regra",
   "approval.details.viewFull": "Ver a solicitação completa",
+  "approval.held.gate": "Este bot pergunta antes de qualquer ação que altere algo. Sempre permitir deixa de perguntar por esta.",
   "approval.details.hideFull": "Ocultar a solicitação completa"
 }

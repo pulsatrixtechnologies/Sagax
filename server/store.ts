@@ -3261,6 +3261,24 @@ export class Store {
     return this.patchTask(botId, threadId, { approvalMode: mode, autoApprove, alwaysAllow });
   }
 
+  /** Rules removed from the bot's Always allowed list stop answering in
+   * every conversation, including those that copied them when they were
+   * opened or where the rule was first given. Other rules a thread holds
+   * stay. One durable write. */
+  revokeAlwaysAllow(botId: string, keys: readonly string[]): BotRecord | null {
+    const bot = this.bot(botId);
+    if (!bot || !keys.length) return bot;
+    const drop = new Set(keys);
+    const strip = (list: string[] | undefined) => list?.filter((key) => !drop.has(key));
+    const tasks = (bot.tasks ?? []).map((task) => task.alwaysAllow?.some((key) => drop.has(key)) ? { ...task, alwaysAllow: strip(task.alwaysAllow) } : task);
+    const next = { ...bot, alwaysAllow: strip(bot.alwaysAllow), tasks };
+    this.saveBots(this.bots.map((candidate) => candidate === bot ? next : candidate));
+    bot.tasks?.forEach((task, index) => { if (tasks[index] !== task) task.alwaysAllow = tasks[index]!.alwaysAllow; });
+    bot.alwaysAllow = next.alwaysAllow;
+    this.emit({ type: "bot", botId });
+    return bot;
+  }
+
   private mirrorActiveTask(bot: BotRecord, task: TaskRecord) {
     bot.threadId = task.threadId;
     bot.resumeCursors = structuredClone(task.resumeCursors);

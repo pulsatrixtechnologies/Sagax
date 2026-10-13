@@ -8,7 +8,9 @@
 // - starts Grok in `default` mode (its own built-in tools still prompt, and
 //   their cards are unchanged);
 // - mounts EVERY MCP server through the MCP gate with an approval socket;
-// - lets only reviewed read-only tools through unasked (below), and holds
+// - lets only reviewed read-only tools through unasked (below), plus the
+//   teammate tools the bot's own "Ask me before contacting other bots"
+//   decides on the server, and holds
 //   every other call, unknown, new and third-party ones included, until the
 //   person approves its card. Declining, no answer, a closed channel or no
 //   running turn all mean the call never reaches the server.
@@ -21,7 +23,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { DATA_DIR } from "../../config.ts";
 import type { McpServerSpec } from "../../contracts.ts";
-import { READ_ONLY_AGENT_TOOL_NAMES } from "../../agent-tool-policy.ts";
+import { PEER_REVIEWED_AGENT_TOOL_NAMES, READ_ONLY_AGENT_TOOL_NAMES } from "../../agent-tool-policy.ts";
 import { isPerspicaxBridge, PERSPICAX_READ_ONLY_TOOLS } from "./grok-read-only-tools.ts";
 import { AUTO_COMPUTER_MCP_NAME } from "../../auto-computer.ts";
 import { cloudOnlyBot } from "../../cloud-only-bots.ts";
@@ -42,14 +44,17 @@ export function grokApprovalGateEnabled(botId: string | undefined, dataDir: stri
   return bots.some((id) => typeof id === "string" && id === botId);
 }
 
-/** The reviewed read-only tools of one mounted server, by upstream name.
- * Only Sagax's own agents server (its reviewed catalog, the same one that
- * sets its readOnlyHint) and harness-spawned Perspicax bridges (an explicit
+/** The tools of one mounted server that pass the gate unasked, by upstream
+ * name: reviewed read-only tools, and on Sagax's own agents server the
+ * teammate tools its peer review decides. Only Sagax's own agents server (its
+ * reviewed catalog, the same one that sets its readOnlyHint) and harness-spawned Perspicax bridges (an explicit
  * reviewed list) have any, plus computer_select for a cloud-only bot (a
  * no-op there). Everything else, including every third-party
  * server and any annotation it sends, gets none: all its calls ask. */
 export function gateReadOnlyTools(server: { name: string; builtin: boolean; spec?: McpServerSpec }, botId?: string, dataDir: string = DATA_DIR): string[] {
-  if (server.builtin && server.name === "agents") return [...READ_ONLY_AGENT_TOOL_NAMES];
+  // Teammate tools pass too: the bot's "Ask me before contacting other bots"
+  // decides them on the server, with its own card (agent-tool-policy.ts).
+  if (server.builtin && server.name === "agents") return [...READ_ONLY_AGENT_TOOL_NAMES, ...PEER_REVIEWED_AGENT_TOOL_NAMES];
   // A cloud-only bot's Works on is forced to fixed cloud (cloud-only-bots.ts,
   // turnWorksOn), so computer_select only reports ("you already work on the
   // cloud") or refuses: it can never switch computers. Every other bot's

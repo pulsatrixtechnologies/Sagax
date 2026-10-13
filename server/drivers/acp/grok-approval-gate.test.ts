@@ -47,6 +47,13 @@ describe("gateReadOnlyTools", () => {
     }
   });
 
+  it("lets the teammate tools through on Sagax's own agents server: the bot's peer review decides them", () => {
+    const agents = gateReadOnlyTools({ name: "agents", builtin: true });
+    for (const tool of ["coordinate_bots", "ask_bot", "delegate_bot", "send_to_bot", "post_to_room"]) expect(agents).toContain(tool);
+    // a server that only borrows the name gets none of them
+    expect(gateReadOnlyTools({ name: "agents", builtin: false })).not.toContain("coordinate_bots");
+  });
+
   it("gives every other server nothing, whatever it is named", () => {
     expect(gateReadOnlyTools({ name: "agents", builtin: false, spec: bridge })).toEqual([]);
     expect(gateReadOnlyTools({ name: "perspicax_fake", builtin: false, spec: { command: "node", args: ["/tmp/x.mjs"], env: { SAGAX_PERSPICAX_PROFILE: "p" } } })).toEqual([]);

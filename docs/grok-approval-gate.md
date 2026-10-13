@@ -12,9 +12,11 @@ In `--permission-mode auto`, Grok runs its safety classifier before **every** MC
   - Only reviewed read-only tools run unasked:
     - agents: `READ_ONLY_AGENT_TOOL_NAMES`
     - harness-spawned Perspicax bridges: `PERSPICAX_READ_ONLY_TOOLS`
-  - Every other call, including unknown, new and third-party tools, waits for a canonical approval card. A server's own `readOnlyHint` is ignored.
+  - The agents server's teammate tools (`PEER_REVIEWED_AGENT_TOOL_NAMES`: `coordinate_bots`, `ask_bot`, `delegate_bot`, `send_to_bot`, `post_to_room`) also pass. They are not reads: the bot's own "Ask me before contacting other bots" (`approvePeerComms`) decides them on the server with its own card, and the server's depth, queue and room budgets bound them at every level. Gating them too made a bot set to talk to its teammates without confirmation ask anyway (JC, 2026-10-13, Cryptic and `agents__coordinate_bots`).
+  - Every other call, including unknown, new and third-party tools, waits for a canonical approval card. A server's own `readOnlyHint` is ignored. The card's note says this bot asks before any action that changes something (`approval.held.gate`), never that the provider asked.
+- **Always allow:** answering a gate card with Always allow saves `mcp:<server>__<tool>` in the bot's Always allowed list (Access settings) and in that conversation. The rule answers the same tool in every conversation of the bot; removing it in Access stops it everywhere (`store.revokeAlwaysAllow`). A person who may answer the card but not edit the bot keeps the rule to that conversation. Covered by `server/gate-allow-rule.e2e.test.ts`.
 - **Fail closed:** a decline, the 15 min timeout, a stopped turn, no running turn, a closed or unreachable socket, an answer other than an explicit allow, a corrupt config, and JSON-RPC batches or unreadable frames all mean the call never reaches the server.
-- **No replay:** each call is its own card. An "always" answer is not reused.
+- **No replay in the driver:** each call is its own card at the gate, and an "always" answer is not reused by the driver. Only the server's saved Allow rule (above) answers a later card.
 
 ## Rollback
 Remove the bot from the flag file (or delete the file). That needs no deploy.

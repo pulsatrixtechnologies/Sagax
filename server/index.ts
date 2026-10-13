@@ -3848,6 +3848,16 @@ function botForThread(botId: string, threadId: string): BotRecord | null {
   return directTurnBots.get(threadId) ?? store.projectBotForTask(botId, threadId) ?? store.bot(botId);
 }
 
+/** Whether a saved Allow rule answers a gated MCP call in this conversation:
+ * the bot's own Always allowed list (Access settings), or a rule given in
+ * this conversation only. A conversation keeps the rules it copied when it
+ * opened, so the bot's list is read as well: a rule added later answers in
+ * every conversation, and removing it there stops it everywhere
+ * (store.revokeAlwaysAllow). */
+function allowRuleHolds(botId: string, threadId: string, allowKey: string): boolean {
+  return Boolean(botForThread(botId, threadId)?.alwaysAllow?.includes(allowKey) || store.bot(botId)?.alwaysAllow?.includes(allowKey));
+}
+
 /** A warm claim holds setup bookkeeping only. It does not occupy the thread:
  * the first utterance must reach startTurn and join the warm process. */
 function directClaimOccupies(threadId: string): boolean {
@@ -11444,7 +11454,7 @@ bus.subscribe((event: RuntimeEvent) => {
         ? autoVerdict(adminApproval ? "ask" : effectiveApprovalMode, event.tool, {
           requiresExplicitApproval: event.requiresExplicitApproval,
           sagaxGate: event.sagaxGate === true,
-          ruleAllowed: Boolean(gateAllowKey && !adminApproval && !guestDriven && botForThread(asker.id, event.threadId)?.alwaysAllow?.includes(gateAllowKey)),
+          ruleAllowed: Boolean(gateAllowKey && !adminApproval && !guestDriven && allowRuleHolds(asker.id, event.threadId, gateAllowKey)),
           commandAllowed: Boolean(command && commandAllowlist.matches(asker.id, command)),
           safetyHold: safetyEffect?.kind === "hold",
           // A gate card stays a person's choice. Reads the gate already
@@ -11687,7 +11697,7 @@ bus.subscribe((event: RuntimeEvent) => {
                 ...(event.source === "timeout" ? { expired: true, options: [] } : {}),
                 // allowed and the person saved this card's rule first (Always allow)
                 ...(event.behavior === "allow" && existing.card.allowKey?.startsWith("mcp:")
-                  && waiting && botForThread(waiting.id, event.threadId)?.alwaysAllow?.includes(existing.card.allowKey) ? { alwaysAllowed: existing.card.allowKey } : {}),
+                  && waiting && allowRuleHolds(waiting.id, event.threadId, existing.card.allowKey) ? { alwaysAllowed: existing.card.allowKey } : {}),
               },
             });
           }
@@ -34515,11 +34525,16 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       // the card it came from may remember it.
       const refusal = cardAnswerRefusal(auth, bot.threadId, pending.card!.requestId!, "allow");
       if (refusal) return json(res, 403, { error: refusal });
-      store.patchTask(bot.id, bot.threadId, {
-        alwaysAllow: [...new Set([...(bot.alwaysAllow ?? []), allowKey])].slice(0, 200),
-      });
+      const withKey = (list: string[] | undefined) => [...new Set([...(list ?? []), allowKey])].slice(0, 200);
+      store.patchTask(bot.id, bot.threadId, { alwaysAllow: withKey(bot.alwaysAllow) });
       const live = directTurnBots.get(bot.threadId);
-      if (live) live.alwaysAllow = [...new Set([...(live.alwaysAllow ?? []), allowKey])].slice(0, 200);
+      if (live) live.alwaysAllow = withKey(live.alwaysAllow);
+      // The card says "Added to your Allow rules" and links to the bot's
+      // Always allowed: the rule is the bot's, listed and removable there,
+      // and answers in every conversation (allowRuleHolds). Someone who may
+      // answer the card but not edit the bot keeps it to this conversation.
+      const owned = store.bot(bot.id)!;
+      if (ownerOrAdminOf(auth, owned) || computerOwner(auth)) store.patchBot(bot.id, { alwaysAllow: withKey(owned.alwaysAllow) });
       const updated = store.bot(bot.id)!;
       const visible = wireBot(updated);
       broadcast({ kind: "bot", bot: visible });
@@ -35102,6 +35117,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       if (Array.isArray(patch.alwaysAllow) && patch.alwaysAllow.some((key) => !(existingBot?.alwaysAllow ?? []).includes(key))) {
         loosened.push("alwaysAllow");
       }
+      const allowBefore = [...(existingBot?.alwaysAllow ?? [])];
       if (body.mcpServers !== undefined && Array.isArray(existingBot?.mcpServers) &&
           (requestedMcpServers === undefined || requestedMcpServers.some((name) => !existingBot.mcpServers!.includes(name)))) {
         loosened.push("mcpServers");
@@ -35195,6 +35211,18 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         bot = store.patchBot(m[1], patch);
       }
       if (!bot) return json(res, 404, { error: "no such bot" });
+      // A rule removed from Always allowed stops answering in every
+      // conversation, the running ones included (allowRuleHolds).
+      if (Array.isArray(patch.alwaysAllow)) {
+        const kept = patch.alwaysAllow as string[];
+        const revoked = allowBefore.filter((key) => !kept.includes(key));
+        if (revoked.length) {
+          store.revokeAlwaysAllow(bot.id, revoked);
+          for (const live of directTurnBots.values()) {
+            if (live.id === bot.id && live.alwaysAllow?.some((key) => revoked.includes(key))) live.alwaysAllow = live.alwaysAllow.filter((key) => !revoked.includes(key));
+          }
+        }
+      }
       if (body.memoryUpkeep === false || body.memoryEnabled === false) memoryUpkeep.dropBot(bot.id);
       // A defined Works on is the newest explicit choice: this bot's
       // auto-recorded pins that now point elsewhere give way immediately, so
