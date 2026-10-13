@@ -1491,3 +1491,57 @@ html[data-floating-bot] #root {
     transition: none;
   }
 }
+
+/* ─── asleep (sleep.ts): every character, on top of its own sleep move ──── */
+/* Dimmed a little and floating bold "z Z" beside the head, outlined so they
+   read on any wallpaper. Under reduced motion the glyphs stand still, "z Z"
+   side by side, and the character keeps its sleeping face with no bob. */
+.fb-root .fb-stage[data-asleep] .fb-body,
+.fb-root .fb-stage[data-3d][data-asleep] .fb-body {
+  filter: drop-shadow(0 6px 10px rgb(0 0 0 / 0.22)) brightness(0.8) saturate(0.7);
+  opacity: 0.86;
+  transition: filter 0.6s ease-out, opacity 0.6s ease-out;
+}
+.fb-root .fb-stage[data-asleep] .fb-zzz {
+  color: var(--color-ink, #e8eaf0);
+  font-weight: 800;
+  line-height: 1;
+  text-shadow:
+    0 0 2px var(--color-elevated, #1b1f27),
+    0 0 2px var(--color-elevated, #1b1f27),
+    0 1px 3px rgb(0 0 0 / 0.45);
+}
+.fb-root .fb-stage[data-asleep] .fb-zzz span { animation-duration: 3.6s; }
+.fb-root .fb-stage[data-asleep] .fb-zzz span:nth-child(1) { font-size: 13px; }
+.fb-root .fb-stage[data-asleep] .fb-zzz span:nth-child(2) { font-size: 17px; animation-delay: 1.2s; }
+.fb-root .fb-stage[data-asleep] .fb-zzz span:nth-child(3) { font-size: 22px; animation-delay: 2.4s; }
+.fb-root[data-reduced] .fb-stage[data-asleep] .fb-zzz span:nth-child(1) {
+  display: none;
+}
+.fb-root[data-reduced] .fb-stage[data-asleep] .fb-zzz span:nth-child(2) {
+  opacity: 0.85;
+  transform: translate(0, 4px);
+}
+.fb-root[data-reduced] .fb-stage[data-asleep] .fb-zzz span:nth-child(3) {
+  opacity: 0.95;
+  transform: translate(12px, -12px);
+}
+.fb-root[data-reduced] .fb-stage[data-asleep] .fb-fx[data-side="left"] .fb-zzz span:nth-child(3) {
+  transform: translate(-12px, -12px);
+}
+@media (prefers-reduced-motion: reduce) {
+  .fb-root .fb-stage[data-asleep] .fb-zzz span:nth-child(1) {
+    display: none;
+  }
+  .fb-root .fb-stage[data-asleep] .fb-zzz span:nth-child(2) {
+    opacity: 0.85;
+    transform: translate(0, 4px);
+  }
+  .fb-root .fb-stage[data-asleep] .fb-zzz span:nth-child(3) {
+    opacity: 0.95;
+    transform: translate(12px, -12px);
+  }
+  .fb-root .fb-stage[data-asleep] .fb-fx[data-side="left"] .fb-zzz span:nth-child(3) {
+    transform: translate(-12px, -12px);
+  }
+}

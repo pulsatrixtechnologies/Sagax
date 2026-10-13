@@ -6,6 +6,19 @@ Grump, Ogre, Frog) that the Mastery achievements unlock
 (`shared/mascot-unlocks.ts`, [achievements](achievements.md)). Each section
 below describes one character: its art, its colors, its skins and its moves.
 
+## Asleep, every character
+
+On the desktop a sleeping mascot must not look idle. The stage carries
+`data-asleep` when the mascot naps (`activity` `sleep`) or the brain's pose
+is `sleep` while it rests (`src/components/floating-bots/sleep.ts`,
+`mascotAsleep`; never while dragged, walking or flying). On top of each
+character's own sleep move (closed eyes, a slow breath, a nap pose), the
+shared layer dims the character a little (brightness 0.8, opacity 0.86) and
+floats bold, outlined "z Z" glyphs beside its head, on the effects lane
+(`floating-bots.css`, "asleep"). Under reduced motion the glyphs stand still,
+"z Z" side by side, and the character keeps its sleeping face with no bob.
+Covered by `src/components/floating-bots/sleep.test.ts`.
+
 ## Shiba
 
 The Shiba Inu of direction C ("aplat net", approved by JC on 2026-10-09): two
@@ -351,6 +364,14 @@ on opposite leg pairs), scuttle (three walk cycles side to side, the Moves
 menu), hop (crouch, lift, landing squash, min sy under 0.94), celebrate,
 sleep, talk, listen, work, alert, drag. No GSAP: CSS idle on avatars, the JS
 rig on the desktop mascot.
+
+**Asleep.** The face `asleep` draws the eyes closed: a 4x1 dash on the eye's
+lower row (`crabEyeDraw`), wider than the eye so it never reads as the happy
+squint or the sleepy lid, and never squashed by a blink. The sleep move
+breathes slowly (4.2 s): the whole sprite rises one cell on the inhale and
+settles back, rigid like every crab move. The app's avatars do the same in
+CSS (`crab-mood-sleeping`, `crab-breathe`). Under reduced motion the eyes
+stay closed and nothing moves.
 
 **Desktop.** `crabHeldFor` keeps an activity going: scuttling while the
 window walks, hopping while it flies, sleeping, dangling while dragged,

@@ -1442,6 +1442,21 @@ Electron restart (no HMR); launch-test them before committing.
 - Effects (signs, thought dots, Zzz, hearts, sparkles, confetti, Trombi's
   sparkle) are drawn in the lane beside the character (`.fb-fx[data-side]`),
   never over it; add a new one there.
+- The floating cluster (the character and the pill hanging on it: the quick
+  input "Écrire à ...", or the call's pill) never goes under the macOS Dock,
+  the Windows taskbar or off screen (2026-10-13). The page reports the pill's
+  box with the character's (`setBody(rect, keep)`, `keepRectIn`); main keeps
+  their union inside the display's `workArea`, never `bounds`
+  (`clusterBox`, `clampClusterToDisplays`), on every drag step, at drag end,
+  when the pill opens, on `display-added`, `display-removed`,
+  `display-metrics-changed` (the Dock resized or hidden) and on show. Where
+  the Dock is right under its feet the pill goes over its head instead
+  (`pillSide` in `placement.ts`, `layout.pill`), the reply's bubble stacked
+  above it. Positions stay in `floating-bot-positions.json`: per display
+  setup as before (`{x, y, v: 2}`, read by older builds), plus per display
+  (`display:<frame>`, with `t`), so a bot comes back to its spot on a display
+  that is still there (`savedSpotFor`). Tests:
+  `electron/floating-bot-cluster.test.mjs`, `floating-bots/sleep.test.ts`.
 - The balloon wears the app's theme: the brain sends `theme` (the skin and
   the brand accent, `theme.ts`, followed live) and the window stamps it;
   Trombi keeps its Hibou 98 balloon whatever the theme.

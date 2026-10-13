@@ -112,6 +112,50 @@ export function clampBodyToDisplays(bounds, body, workAreas) {
 }
 
 /**
+ * The box that must stay on screen: the character's own box, grown to take
+ * in what hangs on it (the quick input pill under or over its feet, the
+ * call's pill), both in window coordinates. Without `keep` it is the body.
+ */
+export function clusterBox(body, keep) {
+  if (!keep) return body;
+  const x = Math.min(body.x, keep.x);
+  const y = Math.min(body.y, keep.y);
+  return {
+    x,
+    y,
+    width: Math.max(body.x + body.width, keep.x + keep.width) - x,
+    height: Math.max(body.y + body.height, keep.y + keep.height) - y,
+  };
+}
+
+/**
+ * Keeps the whole floating cluster (the character and the pill hanging on it)
+ * inside one display's work area: never under the macOS Dock, the Windows
+ * taskbar or the menu bar, whichever edge they sit on, since the work area
+ * already leaves them out. The window's transparent room may still hang off.
+ */
+export function clampClusterToDisplays(bounds, body, keep, workAreas) {
+  return clampBodyToDisplays(bounds, clusterBox(body, keep), workAreas);
+}
+
+/**
+ * The display a spot belongs to, as a key that survives a change of the other
+ * displays: its frame, as one entry of `displaySignature`. Positions are kept
+ * per display setup and per display (`display:<frame>`), so a bot comes back
+ * to its spot on a display that is still there when the setup changed.
+ */
+export const DISPLAY_KEY_PREFIX = "display:";
+export function displayKeyAt(point, displays) {
+  const own = displays.find((d) => {
+    const b = d.bounds ?? d.workArea;
+    return point.x >= b.x && point.x < b.x + b.width && point.y >= b.y && point.y < b.y + b.height;
+  });
+  if (!own) return null;
+  const b = own.bounds ?? own.workArea;
+  return `${DISPLAY_KEY_PREFIX}${b.x},${b.y},${b.width}x${b.height}`;
+}
+
+/**
  * macOS (with "Displays have separate Spaces", its default) snaps a window
  * back when more than about a fifth of it reaches onto another display while
  * most of it is on the first: the move is undone a moment later. So there
@@ -572,15 +616,34 @@ export function sanitizeFloatingEvent(value) {
 export function sanitizePositions(value) {
   const clean = {};
   if (!value || typeof value !== "object" || Array.isArray(value)) return clean;
-  for (const [signature, bots] of Object.entries(value).slice(0, 32)) {
+  for (const [signature, bots] of Object.entries(value).slice(0, 64)) {
     if (typeof signature !== "string" || signature.length > 512 || !bots || typeof bots !== "object") continue;
     const entry = {};
     for (const [botId, spot] of Object.entries(bots).slice(0, 64)) {
-      if (isBotId(botId) && spot && isFiniteNumber(spot.x) && isFiniteNumber(spot.y)) entry[botId] = { x: spot.x, y: spot.y, ...(spot.v === 2 ? { v: 2 } : {}) };
+      if (isBotId(botId) && spot && isFiniteNumber(spot.x) && isFiniteNumber(spot.y)) {
+        entry[botId] = { x: spot.x, y: spot.y, ...(spot.v === 2 ? { v: 2 } : {}), ...(isFiniteNumber(spot.t) && spot.t > 0 ? { t: spot.t } : {}) };
+      }
     }
     clean[signature] = entry;
   }
   return clean;
+}
+
+/**
+ * The saved spot for a bot: the one kept for this exact display setup, else
+ * the latest one kept on a display that is still connected (its frame
+ * unchanged). Null when neither is known.
+ */
+export function savedSpotFor(positions, botId, displays) {
+  const exact = positions[displaySignature(displays)]?.[botId];
+  if (exact) return exact;
+  let best = null;
+  for (const display of displays) {
+    const b = display.bounds ?? display.workArea;
+    const spot = positions[`${DISPLAY_KEY_PREFIX}${b.x},${b.y},${b.width}x${b.height}`]?.[botId];
+    if (spot && (!best || (spot.t ?? 0) > (best.t ?? 0))) best = spot;
+  }
+  return best;
 }
 
 /* -------------------------------------------------------------- controller */
@@ -667,10 +730,11 @@ export function createFloatingBotWindows(deps) {
     const { width, height } = entry.win.getBounds();
     return width === FLOAT_HOME.width && height === FLOAT_HOME.height ? FLOAT_BODY : null;
   };
-  /** A window spot, moved so the character is fully on a screen (the whole window when its box is not known yet). */
+  /** A window spot, moved so the character and its pill are fully on a screen (the whole window when its box is not known yet). */
   const clampFor = (entry, bounds) => {
-    const body = entry ? bodyOf(entry) : null;
-    if (!body) return clampToDisplays(bounds, workAreas());
+    const own = entry ? bodyOf(entry) : null;
+    if (!own) return clampToDisplays(bounds, workAreas());
+    const body = clusterBox(own, entry.keep ?? null);
     const placed = clampBodyToDisplays(bounds, body, workAreas());
     if (!seams) return placed;
     // macOS undoes a move that puts too much of the window on a neighbouring display
@@ -692,7 +756,11 @@ export function createFloatingBotWindows(deps) {
     const all = savedPositions();
     const key = signature();
     // the character's own corner, whatever the balloon and the window's room do
-    all[key] = { ...all[key], [botId]: { x: x + body.x + body.width, y: y + body.y + body.height, v: 2 } };
+    const spot = { x: x + body.x + body.width, y: y + body.y + body.height, v: 2 };
+    all[key] = { ...all[key], [botId]: spot };
+    // and for the display it stands on, so another setup with that display brings it back there
+    const own = displayKeyAt({ x: x + body.x + body.width / 2, y: y + body.y + body.height / 2 }, screen.getAllDisplays());
+    if (own) all[own] = { ...all[own], [botId]: { ...spot, t: Date.now() } };
     try {
       deps.writePositions?.(all);
     } catch {
@@ -701,8 +769,9 @@ export function createFloatingBotWindows(deps) {
   };
 
   const startBounds = (botId) => {
-    const saved = savedPositions()[signature()]?.[botId];
-    // the spot kept for this display setup, exactly (a setup that changed starts from the default spot)
+    const saved = savedSpotFor(savedPositions(), botId, screen.getAllDisplays());
+    // the spot kept for this display setup, exactly, else the last one on a display still there
+    // (a setup with none of its displays starts from the default spot)
     const bounds = saved
       ? saved.v === 2
         ? { x: saved.x - FLOAT_BODY.x - FLOAT_BODY.width, y: saved.y - FLOAT_BODY.y - FLOAT_BODY.height, ...FLOAT_HOME }
@@ -748,7 +817,7 @@ export function createFloatingBotWindows(deps) {
     const made = created.getBounds();
     if (made.x !== start.x || made.y !== start.y) created.setBounds(start);
     // interactive and focusable as last set, so a repeated request costs nothing (and never flickers)
-    const entry = { win: created, snapshot: existing?.snapshot ?? pending.get(botId) ?? null, onTop: alwaysOnTop, autopilot: false, interactive: !clickThrough, focusable: false, body: null };
+    const entry = { win: created, snapshot: existing?.snapshot ?? pending.get(botId) ?? null, onTop: alwaysOnTop, autopilot: false, interactive: !clickThrough, focusable: false, body: null, keep: null };
     pending.delete(botId);
     floats.set(botId, entry);
     applyOnTop(created, alwaysOnTop);
@@ -984,7 +1053,9 @@ export function createFloatingBotWindows(deps) {
       };
       // the character keeps its distance to that corner until the page reports where it really is
       const body = bodyOf(found.entry);
-      found.entry.body = body ? bodyAfterResize(body, bounds, sized, { x: fromLeft ? "left" : "right", y: fromTop ? "top" : "bottom" }) : null;
+      const corner = { x: fromLeft ? "left" : "right", y: fromTop ? "top" : "bottom" };
+      found.entry.body = body ? bodyAfterResize(body, bounds, sized, corner) : null;
+      found.entry.keep = found.entry.keep ? bodyAfterResize(found.entry.keep, bounds, sized, corner) : null;
       // a drag's path was the window's old frame: the next step starts from this one
       found.entry.drag = null;
       const next = clampFor(found.entry, sized);
@@ -1010,6 +1081,8 @@ export function createFloatingBotWindows(deps) {
       // where it was drawn just before, as the page measured it (else what main last heard)
       const was = sanitizeBody(frame.from, bounds) ?? bodyOf(entry) ?? body;
       entry.body = body;
+      // the pill moves with the new layout: the page reports it again
+      entry.keep = null;
       entry.drag = null;
       const next = clampFor(entry, { x: bounds.x + was.x - body.x, y: bounds.y + was.y - body.y, ...size });
       place(entry.win, next);
@@ -1142,8 +1215,17 @@ export function createFloatingBotWindows(deps) {
     "floating-bots:body": (event, value) => {
       const found = senderFloat(event);
       if (!found) return;
-      const body = sanitizeBody(value, found.entry.win.getBounds());
-      if (body) found.entry.body = body;
+      const bounds = found.entry.win.getBounds();
+      const body = sanitizeBody(value, bounds);
+      if (!body) return;
+      found.entry.body = body;
+      // what hangs on the character (the input pill): kept on screen with it, never under the Dock or taskbar
+      found.entry.keep = value && typeof value === "object" ? sanitizeBody(value.keep, bounds) : null;
+      // a pill that just opened past the work area's edge brings the cluster back in (never mid-drag or mid-flight)
+      if (found.entry.keep && !found.entry.autopilot && !found.entry.drag) {
+        const next = clampFor(found.entry, bounds);
+        if (next.x !== bounds.x || next.y !== bounds.y) place(found.entry.win, next);
+      }
     },
     "floating-bots:autopilot": (event, on) => {
       const found = senderFloat(event);
@@ -1154,8 +1236,11 @@ export function createFloatingBotWindows(deps) {
     "floating-bots:moved": (event) => {
       const found = senderFloat(event);
       if (!found) return;
-      // the drag is over: the next one starts from where the window stands
+      // the drag is over: the next one starts from where the window stands, the whole cluster on screen
       found.entry.drag = null;
+      const bounds = found.entry.win.getBounds();
+      const next = clampFor(found.entry, bounds);
+      if (next.x !== bounds.x || next.y !== bounds.y) place(found.entry.win, next);
       clearTimeout(found.entry.rememberTimer);
       remember(found.botId);
     },

@@ -31,7 +31,8 @@ import { mascotStage } from "./fit";
 import { mascotFields, type FloatingEvent, type FloatingMenuItem, type FloatingPose, type FloatingSnapshot } from "./protocol";
 import { characterMoves, isMoveClip } from "./moves";
 import { CHAT_BALLOON, dockedWindowSize, type Size } from "./window-frame";
-import { effectLane, effectSide, type ChatPlacement, type EffectSide } from "./placement";
+import { effectLane, effectSide, pillTop, type ChatPlacement, type EffectSide, type PillSide } from "./placement";
+import { mascotAsleep } from "./sleep";
 import { useHeldMenuMotion } from "@/components/MenuMotion";
 import { ReplyBubble, ReplyPill, usesReplyBubble } from "./ReplyBubble";
 import { MascotCallCardView, MascotCallPill, type LevelSource, type MascotCallCard } from "./MascotCall";
@@ -135,6 +136,8 @@ export interface MascotLayout {
   chat: ChatPlacement | null;
   /** Where the effects go: beside the character, never over it. */
   fx?: EffectSide;
+  /** Where the input pill goes: under the feet, or over the head when the work area's bottom (the Dock, the taskbar) is too near. */
+  pill?: PillSide;
 }
 
 /** The balloon's room from a placement: as big as that side of the display allows, and how far it may be dragged away. */
@@ -565,6 +568,12 @@ export function FloatingBotView({ snapshot: given, onEvent, mover, interactive, 
   const room = desk?.chat ? chatRoomFor(desk.chat) : ownRoom;
   const shift = desk?.chat?.shift ?? 0;
   const balloonOpen = Boolean(balloon);
+  // the pill under the feet, or over the head near the Dock: the card above then sits over the pill
+  const pillSideNow: PillSide = desk?.pill ?? "below";
+  const pillShown = Boolean(call) || Boolean(balloon && usesReplyBubble(balloon, retro));
+  const pillAbove = pillSideNow === "above" && pillShown;
+  const cardOverlap = pillAbove ? pillTop("above", OWL_BOX) - CARD_GAP + 2 : STAGE.top - CARD_GAP + 8;
+  const asleep = !away && mascotAsleep(activity, snapshot.pose);
   // the call pill's card (settings, transcript) opens where the balloon goes
   const [callCard, setCallCard] = useState<MascotCallCard>(null);
   // a draft in the reply pill keeps the reply's bubble from fading
@@ -604,7 +613,7 @@ export function FloatingBotView({ snapshot: given, onEvent, mover, interactive, 
   // The effects (signs, hearts, the thought dots, the Zzz) go beside the character, never over
   // it: on the desktop the window's layout says which side; over the app, the viewport's room
   const [ownFx, setOwnFx] = useState<EffectSide>("right");
-  const fxShown = activity !== "idle" || Boolean(burst) || snapshot.pose === "think";
+  const fxShown = activity !== "idle" || Boolean(burst) || snapshot.pose === "think" || asleep;
   useLayoutEffect(() => {
     if (desk || !fxShown || typeof window === "undefined") return;
     const rect = stageRef.current?.getBoundingClientRect();
@@ -809,7 +818,7 @@ export function FloatingBotView({ snapshot: given, onEvent, mover, interactive, 
           hover={hover}
           held={replyBusy}
           // right above the character's head, over the stage's empty room (as the call's card)
-          style={side.below ? undefined : { marginBottom: -(STAGE.top - CARD_GAP + 8) }}
+          style={side.below ? undefined : { marginBottom: -cardOverlap }}
         />
       )}
       {shown.shown && shown.value && !usesReplyBubble(shown.value, retro) && (
@@ -834,11 +843,11 @@ export function FloatingBotView({ snapshot: given, onEvent, mover, interactive, 
       )}
       {call && callCardShown && (
         // right above the character's head, over the stage's empty room (no gap of empty stage between them)
-        <MascotCallCardView call={call} name={snapshot.name} card={callCard} onEvent={onEvent} hover={hover} style={side.below ? undefined : { marginBottom: -(STAGE.top - CARD_GAP + 8) }} />
+        <MascotCallCardView call={call} name={snapshot.name} card={callCard} onEvent={onEvent} hover={hover} style={side.below ? undefined : { marginBottom: -cardOverlap }} />
       )}
       {tray && !balloon && (
         // where the chat goes, right above the character's head (as the call's card)
-        <MascotTray tray={tray} name={snapshot.name} onEvent={onEvent} hover={hover} style={side.below ? undefined : { marginBottom: -(STAGE.top - CARD_GAP + 8) }} />
+        <MascotTray tray={tray} name={snapshot.name} onEvent={onEvent} hover={hover} style={side.below ? undefined : { marginBottom: -cardOverlap }} />
       )}
       {menuOpen && (
         <div role="menu" aria-label={snapshot.name} className={cn("fb-menu", retro && "r98-menu")} onPointerEnter={() => hover(true)} onPointerLeave={() => hover(false)}>
@@ -870,6 +879,7 @@ export function FloatingBotView({ snapshot: given, onEvent, mover, interactive, 
         className="fb-stage"
         data-pose={snapshot.pose}
         data-activity={activity}
+        data-asleep={asleep ? "" : undefined}
         data-3d=""
         data-away={away ? "" : undefined}
         data-call={call && !away ? (call.muted || call.phase === "held" ? "quiet" : call.phase) : undefined}
@@ -894,8 +904,8 @@ export function FloatingBotView({ snapshot: given, onEvent, mover, interactive, 
           {snapshot.pose === "think" && activity !== "flyOut" && activity !== "think" && (
             <span className="fb-thought"><span /><span /><span /></span>
           )}
-          {activity === "sleep" && (
-            <span className="fb-zzz"><span>z</span><span>z</span><span>Z</span></span>
+          {asleep && (
+            <span className="fb-zzz" data-sleep-glyphs=""><span>z</span><span>z</span><span>Z</span></span>
           )}
           <Emote activity={activity} hoot={snapshot.hints.hoot} />
           {burst && <Burst key={burst.key} kind={burst.kind} reduced={reduced} />}
@@ -974,12 +984,12 @@ export function FloatingBotView({ snapshot: given, onEvent, mover, interactive, 
         </button>
         {!call && balloon && usesReplyBubble(balloon, retro) && (
           // the input pill under its feet, where the call's pill goes
-          <div className="fb-call fb-reply-call" style={{ top: STAGE.top + OWL_SIZE + 2 }}>
+          <div className="fb-call fb-reply-call" data-pill-side={pillSideNow} style={{ top: pillTop(pillSideNow, OWL_BOX) }}>
             <ReplyPill balloon={balloon} onEvent={onEvent} hover={hover} wantsKeyboard={wantsKeyboard} callLabel={snapshot.hints.call} onFocusChange={setReplyBusy} />
           </div>
         )}
         {call && (
-          <div className="fb-call" style={{ top: STAGE.top + OWL_SIZE + 2 }}>
+          <div className="fb-call" data-pill-side={pillSideNow} style={{ top: pillTop(pillSideNow, OWL_BOX) }}>
             <MascotCallPill call={call} name={snapshot.name} card={callCard} onCard={setCallCard} onEvent={onEvent} hover={hover} levels={onLevels} />
           </div>
         )}

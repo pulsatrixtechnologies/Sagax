@@ -197,14 +197,17 @@ export const CRAB_TRACKS: Readonly<Record<CrabMove, CrabTrack>> = {
       { at: 1, ease: "inOut" },
     ],
   },
+  // closed eyes (a drawn dash, never a blink that squashes them away) and a
+  // slow breath: the whole sprite rises one cell on the inhale (rigid, crabSnap)
   sleep: {
-    duration: 3.2,
+    duration: 4.2,
     loop: true,
     reduced: "face",
     keys: [
-      { at: 0, face: "sleepy", blink: 1, y: 1.2, sy: 0.98 },
-      { at: 0.5, blink: 1, y: 0.4, sy: 1.01 },
-      { at: 1, blink: 1, y: 1.2, sy: 0.98 },
+      { at: 0, face: "asleep", y: 0 },
+      { at: 0.45, ease: "inOut", face: "asleep", y: -CRAB_PX },
+      { at: 0.6, face: "asleep", y: -CRAB_PX },
+      { at: 1, ease: "inOut", face: "asleep", y: 0 },
     ],
   },
   talk: {
@@ -413,8 +416,9 @@ export function crabMoveFor(clip: string | undefined | null): CrabMove | null {
 export function crabHeldFor(activity: string, pose: string): CrabMove | null {
   if (activity === "walk") return "walk";
   if (activity === "fly" || activity === "flyOut" || activity === "return") return "hop";
-  if (activity === "sleep" || pose === "sleep") return "sleep";
+  // carried, it dangles even when the brain says sleep (floating-bots/sleep.ts)
   if (activity === "drag") return "drag";
+  if (activity === "sleep" || pose === "sleep") return "sleep";
   if (activity === "working" || pose === "think") return "work";
   if (pose === "speak") return "talk";
   if (pose === "alert") return "listen";
@@ -444,7 +448,8 @@ export function crabTransforms(pose: CrabPose): Record<CrabGroup, string> {
   const whole = `translate(${crabSnap(pose.x)} ${crabSnap(pose.y)}) rotate(${Math.max(-4, Math.min(4, pose.rot)).toFixed(2)} ${g})`;
   const arm = (rot: number) => `translate(0 ${Math.abs(rot) >= 30 ? -CRAB_PX : 0})`;
   const leg = (i: 0 | 1 | 2 | 3) => `translate(0 ${pose[`leg${i}`] <= -CRAB_PX / 2 ? -CRAB_PX : 0})`;
-  const blink = Math.max(0.08, 1 - pose.blink);
+  // closed eyes are drawn closed: the idle blink never squashes them away
+  const blink = pose.expression === "asleep" ? 1 : Math.max(0.08, 1 - pose.blink);
   const eye = (side: "L" | "R") => {
     const p = CRAB_PIVOTS[`eye${side}`];
     return `translate(${p[0]} ${p[1]}) scale(1 ${blink.toFixed(3)}) translate(${-p[0]} ${-p[1]})`;
