@@ -44,6 +44,7 @@ jobs:
     name: build image + boot smoke
     # The ephemeral self-hosted linux/x64 pool has no Docker daemon
     # (unix:///var/run/docker.sock is absent). GitHub-hosted Ubuntu ships one.
+    # Rerun marker: the path filter starts this job only when this file changes.
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
