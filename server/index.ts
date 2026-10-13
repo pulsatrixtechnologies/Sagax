@@ -698,7 +698,7 @@ import {
   waitForThreadIdle,
 } from "./voice-call-duplex.ts";
 import { callHasParkableWork, classifyVoiceIntent, topicsFromCallMessages } from "../src/lib/voice-mode/voice-topics.ts";
-import { VoiceCallSessions } from "./voice-call-session.ts";
+import { VoiceCallSessions, voiceCallTurnSettle } from "./voice-call-session.ts";
 import { VoiceCallWarmup } from "./voice-call-warmup.ts";
 import { callTurnEffort } from "./voice-call-effort.ts";
 import { effortAcceptedByEngine, resolveEngineTurnEffort } from "../shared/ultracode-effort.ts";
@@ -905,6 +905,7 @@ import { ADMIN_ACTIVITY_CATEGORIES } from "./admin-activity.ts";
 import { createOrgMemberRoutes, type MemberPerson, type MemberRequest } from "./org-member-routes.ts";
 import { createOrgLinkRoutes, DirectoryRefreshScheduler } from "./org-link-routes.ts";
 import { internalAgentApiTool } from "./routes/agent-api-internal.ts";
+import { isInternalVoiceCallEnd } from "./routes/voice-call-internal.ts";
 import { createAgentApi, refuse as agentRefuse, SEND_FILE_MAX_BYTES as AGENT_SEND_FILE_MAX_BYTES, type AgentCaller, type AgentScope, type AgentSummary, type AuditEntry, type FileInput, type Refusal, type TurnState } from "./agent-api.ts";
 import { parseHideList, planHiddenAgentThreads, planHiddenBotThreads } from "./agent-threads.ts";
 import { MemberLiveText } from "./member-live-text.ts";
@@ -11764,7 +11765,6 @@ bus.subscribe((event: RuntimeEvent) => {
       }
       break;
     case "turn.completed": {
-      finishVoiceCallRequestedByBot(event.threadId);
       settleWaitingOnPersonChips(event.threadId);
       // A peer-started turn settles as coordination, not as news. What keeps
       // that classification from outliving its turn is the rewrite at
@@ -11850,6 +11850,9 @@ bus.subscribe((event: RuntimeEvent) => {
         && (stoppedTurnId === undefined || completedTurnId === undefined || stoppedTurnId === completedTurnId);
       stoppedTurns.delete(event.threadId);
       const stopped = event.stopReason === "interrupted" || clientStopped;
+      // Hang up only when the goodbye finished. A failed or interrupted
+      // turn drops the request so a later turn does not inherit it.
+      finishVoiceCallRequestedByBot(event.threadId, voiceCallTurnSettle(event, stopped));
       // A run that broke — not one the person stopped, and not a routine's,
       // which reports through its own failure path — is the Primary Bot's to see.
       // A lazy computer-claim rejection already reported its failure and
@@ -12929,9 +12932,10 @@ function broadcastVoiceCallEnded(threadId: string, callId: string, by: "person" 
   broadcast({ kind: "voice.call.ended", audience, threadId, callId, by });
 }
 /** The bot asked to hang up. Run only when that turn has finished, so the
- * goodbye is still a call turn, and only if this call is still the live one. */
-function finishVoiceCallRequestedByBot(threadId: string): void {
-  const ending = voiceCalls.takeEnding(threadId);
+ * goodbye is still a call turn, and only if this call is still the live one.
+ * A failed or interrupted goodbye drops the request and keeps the call. */
+function finishVoiceCallRequestedByBot(threadId: string, settle: ReturnType<typeof voiceCallTurnSettle>): void {
+  const ending = voiceCalls.settleEnding(threadId, settle);
   if (!ending) return;
   voiceWarmup.cancel(threadId, ending.callId);
   releaseWarmEngine(threadId);
@@ -31424,7 +31428,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           throw error;
         }
       }
-      if (method === "POST" && path === "/api/internal/voice-call/end") {
+      if (isInternalVoiceCallEnd(method, path)) {
         await readInternalBody();
         const ending = voiceCalls.requestEnd(internalCapability.threadId);
         if (!ending) {

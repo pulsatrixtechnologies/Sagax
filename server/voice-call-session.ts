@@ -18,6 +18,19 @@
 // it away mid-call.
 import type { VoiceCallMeta } from "./voice-call-prompt.ts";
 
+/** How a call turn settled for a hang-up the bot already asked for. */
+export type VoiceCallTurnSettle = "completed" | "failed" | "interrupted";
+
+/** Map a provider settle onto the hang-up: finished, failed, or cut off. */
+export function voiceCallTurnSettle(
+  event: { ok: boolean; stopReason?: string | null },
+  interrupted = false,
+): VoiceCallTurnSettle {
+  if (interrupted || event.stopReason === "interrupted") return "interrupted";
+  if (event.ok) return "completed";
+  return "failed";
+}
+
 /** A call with no turn and no keep-alive for this long has ended. */
 export const VOICE_CALL_IDLE_MS = 20 * 60_000;
 /** No call lasts longer than this without being started again. */
@@ -89,6 +102,15 @@ export class VoiceCallSessions {
     if (!record?.ending) return undefined;
     this.calls.delete(threadId);
     return { callId: record.callId };
+  }
+
+  /** How a call turn settled: hang up only on a finished goodbye. A failed
+   * or interrupted turn drops the request so a later turn does not inherit it. */
+  settleEnding(threadId: string, settle: VoiceCallTurnSettle): { callId: string } | undefined {
+    if (settle === "completed") return this.takeEnding(threadId);
+    const record = this.live(threadId);
+    if (record?.ending) record.ending = false;
+    return undefined;
   }
 
   private live(threadId: string): CallRecord | undefined {

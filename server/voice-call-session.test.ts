@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { VOICE_CALL_IDLE_MS, VoiceCallSessions } from "./voice-call-session.ts";
+import { VOICE_CALL_IDLE_MS, VoiceCallSessions, voiceCallTurnSettle } from "./voice-call-session.ts";
 
 describe("VoiceCallSessions", () => {
   it("marks every send to a thread on a live call, typed or said", () => {
@@ -61,8 +61,37 @@ describe("VoiceCallSessions", () => {
     expect(calls.active("t1")?.callId).toBe("call-newer-123456");
     expect(calls.requestEnd("t1")).toEqual({ callId: "call-newer-123456" });
     expect(calls.end("t1", "call-old-000000")).toBe(false);
-    expect(calls.takeEnding("t1")).toEqual({ callId: "call-newer-123456" });
+    expect(calls.settleEnding("t1", "completed")).toEqual({ callId: "call-newer-123456" });
     expect(calls.active("t1")).toBeUndefined();
+    expect(calls.takeEnding("t1")).toBeUndefined();
+  });
+
+  it("names a failed or interrupted turn so the hang-up is not taken", () => {
+    expect(voiceCallTurnSettle({ ok: true })).toBe("completed");
+    expect(voiceCallTurnSettle({ ok: false })).toBe("failed");
+    expect(voiceCallTurnSettle({ ok: false, stopReason: "error" })).toBe("failed");
+    expect(voiceCallTurnSettle({ ok: false, stopReason: "interrupted" })).toBe("interrupted");
+    expect(voiceCallTurnSettle({ ok: false }, true)).toBe("interrupted");
+    // a person who cut the goodbye wins over an engine that still said ok
+    expect(voiceCallTurnSettle({ ok: true }, true)).toBe("interrupted");
+    expect(voiceCallTurnSettle({ ok: true, stopReason: "interrupted" })).toBe("interrupted");
+  });
+
+  it("drops a hang-up request when that turn fails, and the call stays", () => {
+    const calls = new VoiceCallSessions();
+    calls.start("t1", "call-0123456789");
+    calls.requestEnd("t1");
+    expect(calls.settleEnding("t1", "failed")).toBeUndefined();
+    expect(calls.active("t1")?.callId).toBe("call-0123456789");
+    expect(calls.takeEnding("t1")).toBeUndefined();
+  });
+
+  it("drops a hang-up request when that turn is interrupted, and the call stays", () => {
+    const calls = new VoiceCallSessions();
+    calls.start("t1", "call-0123456789");
+    calls.requestEnd("t1");
+    expect(calls.settleEnding("t1", "interrupted")).toBeUndefined();
+    expect(calls.active("t1")?.callId).toBe("call-0123456789");
     expect(calls.takeEnding("t1")).toBeUndefined();
   });
 
