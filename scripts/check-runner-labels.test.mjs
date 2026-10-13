@@ -15,7 +15,8 @@ for (const name of ['good', 'workflow-run-good', 'hosted', 'hosted-matrix']) {
 }
 
 for (const [name, expected] of [
-  ['unknown-runner', /neither self-hosted nor a GitHub-hosted label/],
+  ['self-hosted', /uses a self-hosted label/],
+  ['unknown-runner', /not a GitHub-hosted label/],
   ['no-repo-guard', /lacks the leading repository guard/],
   ['prt-no-guard', /lacks the leading repository guard/],
   ['prt-head-checkout', /must not check out pull request code/],

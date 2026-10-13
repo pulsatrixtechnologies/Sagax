@@ -54,11 +54,10 @@ export function selectPushScope(files, show) {
   return scope;
 }
 
-// Every job runs on a self-hosted runner. The Windows and macOS runners are
-// reserved for releases and manual runs: pull requests, main pushes and merge
-// groups run the suite on Linux only and skip the Windows, macOS and iOS jobs
-// (platforms=false). Only workflow_dispatch runs every platform. The names
-// below are matrix keys that ci.yml maps to self-hosted runner labels.
+// Pull requests, main pushes and merge groups run the suite on Linux
+// (ubuntu-latest) and skip the Windows, macOS and iOS jobs (platforms=false).
+// Only workflow_dispatch runs every platform. The names below are matrix keys
+// that ci.yml maps to GitHub-hosted runners.
 const ALL_OS = ["macos", "linux", "windows"];
 const PR_OS = ["linux"];
 const SHA = /^[a-f\d]{40}(?:[a-f\d]{24})?$/i;

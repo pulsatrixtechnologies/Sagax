@@ -2,5 +2,5 @@ on: pull_request_target
 jobs:
   a:
     if: github.event_name == 'pull_request_target'
-    runs-on: [self-hosted, linux, x64]
+    runs-on: ubuntu-latest
     steps: [{run: "true"}]

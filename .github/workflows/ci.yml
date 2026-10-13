@@ -43,7 +43,7 @@ jobs:
   static:
     if: (!startsWith(github.event_name, 'pull_request') || github.event.pull_request.head.repo.full_name == github.repository) && (github.event_name != 'workflow_run' || github.event.workflow_run.head_repository.full_name == github.repository)
     name: typecheck + lint
-    runs-on: [self-hosted, linux, x64]
+    runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
       contents: read
@@ -101,7 +101,7 @@ jobs:
         # queue seven), main pushes, merge groups and manual runs add macOS.
         os: ${{ fromJSON(needs.static.outputs.vitest_os) }}
         shard: [1, 2, 3, 4]
-    runs-on: ${{ matrix.os == 'windows' && fromJSON('["self-hosted","windows","x64","ephrunner.vm-windows"]') || matrix.os == 'macos' && fromJSON('["self-hosted","macOS","ARM64","ephrunner.mac"]') || 'ubuntu-latest' }}
+    runs-on: ${{ matrix.os == 'windows' && 'windows-latest' || matrix.os == 'macos' && 'macos-latest' || 'ubuntu-latest' }}
     # scripts/testing/duration-sequencer.ts splits the files by their recorded
     # CI seconds, not by count, so the heavy e2e files no longer share one
     # shard. The cap catches a hang, not normal suite growth: 0.5.0 brought
@@ -200,7 +200,7 @@ jobs:
       fail-fast: false
       matrix:
         os: ${{ needs.static.outputs.platforms == 'true' && fromJSON('["linux","windows"]') || fromJSON('["linux"]') }}
-    runs-on: ${{ matrix.os == 'windows' && fromJSON('["self-hosted","windows","x64","ephrunner.vm-windows"]') || matrix.os == 'macos' && fromJSON('["self-hosted","macOS","ARM64","ephrunner.mac"]') || fromJSON('["self-hosted","linux","x64"]') }}
+    runs-on: ${{ matrix.os == 'windows' && 'windows-latest' || matrix.os == 'macos' && 'macos-latest' || 'ubuntu-latest' }}
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -218,7 +218,7 @@ jobs:
     # push, pull_request or merge_group.
     if: (!startsWith(github.event_name, 'pull_request') || github.event.pull_request.head.repo.full_name == github.repository) && (github.event_name != 'workflow_run' || github.event.workflow_run.head_repository.full_name == github.repository) && (needs.static.outputs.runtime == 'true' && needs.static.outputs.platforms == 'true')
     name: Windows CUA host smoke
-    runs-on: [self-hosted, windows, x64, ephrunner.vm-windows]
+    runs-on: windows-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -242,7 +242,7 @@ jobs:
     # PR's macOS checks live in this one job: macOS runners are the scarce
     # ones, and each extra job pays its own queue wait and install.
     name: macOS smokes (packaged server + Electron)
-    runs-on: [self-hosted, macOS, ARM64, ephrunner.mac]
+    runs-on: macos-latest
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -300,7 +300,7 @@ jobs:
     # Still report failed/skipped dependencies, but don't keep a superseded
     # workflow alive just to schedule its summary jobs.
     if: (!startsWith(github.event_name, 'pull_request') || github.event.pull_request.head.repo.full_name == github.repository) && (github.event_name != 'workflow_run' || github.event.workflow_run.head_repository.full_name == github.repository) && (!cancelled())
-    runs-on: [self-hosted, linux, x64]
+    runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
       - name: Every required job passed
@@ -328,7 +328,7 @@ jobs:
     # Asserts process.arch == arm64, so it needs an ARM64 Linux runner. No
     # such runner is registered yet: manual runs only, outside the gate.
     name: cloudflared installer (Linux ARM64)
-    runs-on: [self-hosted, linux, ARM64]
+    runs-on: ubuntu-24.04-arm
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -408,7 +408,7 @@ jobs:
     needs: [control-plane]
     if: (!startsWith(github.event_name, 'pull_request') || github.event.pull_request.head.repo.full_name == github.repository) && (github.event_name != 'workflow_run' || github.event.workflow_run.head_repository.full_name == github.repository) && (github.event_name == 'push' && github.ref == 'refs/heads/main')
     name: deploy composio broker (Cloudflare Worker)
-    runs-on: [self-hosted, linux, x64]
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       # A repo without the secret (a fork, or before the token is created)
@@ -570,7 +570,7 @@ jobs:
     # ios-thread-ui.yml: nightly, on main pushes that touch ios/, and by hand.
     # Here it held three of the account's five macOS runners at a time.
     name: Swift tests + iOS build
-    runs-on: [self-hosted, macOS, ARM64, ephrunner.mac]
+    runs-on: macos-latest
     # swift test, the simulator build, then one disposable iPhone long
     # enough to screenshot the provider-setup preview. Not the UI suite.
     timeout-minutes: 45

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-// Jobs may run on a self-hosted runner or a GitHub-hosted image (ubuntu-latest
-// is the usual Linux default), whichever is available. Repository guards stay.
+// Every job runs on a GitHub-hosted runner. ubuntu-latest is the usual Linux
+// image. A self-hosted label fails. Repository guards stay.
 import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
@@ -89,19 +89,23 @@ for (const file of readdirSync(dir).filter((f) => /\.ya?ml$/.test(f)).sort()) {
     }
     const selfHosted = value.includes('self-hosted') || labels.includes('self-hosted')
     const hostedImage = hosted.test(value) || labels.some((l) => hosted.test(l))
+    if (selfHosted)
+      problems.push(`${where}: runs-on uses a self-hosted label: ${value}`)
     // matrix.os is checked against the matrix values below.
-    if (!selfHosted && !hostedImage && !/matrix\.os/.test(value))
-      problems.push(`${where}: runs-on is neither self-hosted nor a GitHub-hosted label: ${value}`)
+    else if (!hostedImage && !/matrix\.os/.test(value))
+      problems.push(`${where}: runs-on is not a GitHub-hosted label: ${value}`)
   })
   lines.forEach((line, i) => {
     const m = line.match(/^\s*os:\s*\[(.*)\]/)
     if (!m) return
     const routed = lines.some((l) => /runs-on:.*matrix\.os/.test(l))
-    const selfHostedRoute = lines.some((l) => /runs-on:.*matrix\.os/.test(l) && l.includes('self-hosted'))
-    if (!routed || selfHostedRoute) return
+    if (!routed) return
     const values = m[1].split(',').map((s) => s.trim().replace(/^['"]|['"]$/g, '')).filter(Boolean)
-    const bad = values.filter((l) => !hosted.test(l))
-    if (bad.length) problems.push(`${path}:${i + 1}: matrix os is neither self-hosted nor a GitHub-hosted label: ${bad.join(', ')}`)
+    const selfHostedValues = values.filter((l) => l.includes('self-hosted'))
+    if (selfHostedValues.length)
+      problems.push(`${path}:${i + 1}: matrix os uses a self-hosted label: ${selfHostedValues.join(', ')}`)
+    const bad = values.filter((l) => !hosted.test(l) && !l.includes('self-hosted'))
+    if (bad.length) problems.push(`${path}:${i + 1}: matrix os is not a GitHub-hosted label: ${bad.join(', ')}`)
   })
 }
 
@@ -110,4 +114,4 @@ if (problems.length) {
   for (const p of problems) console.error(`  ${p}`)
   process.exit(1)
 }
-console.log('runner guard: jobs may use a self-hosted runner or a GitHub-hosted label, and every job is repository-guarded')
+console.log('runner guard: every job uses a GitHub-hosted runner and is repository-guarded')

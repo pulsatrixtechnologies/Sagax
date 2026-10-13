@@ -1,5 +1,5 @@
 on: pull_request
 jobs:
   a:
-    runs-on: [self-hosted, linux, x64]
+    runs-on: ubuntu-latest
     steps: [{run: "true"}]

@@ -11,7 +11,7 @@ jobs:
   windows:
     if: (!startsWith(github.event_name, 'pull_request') || github.event.pull_request.head.repo.full_name == github.repository) && (github.event_name != 'workflow_run' || github.event.workflow_run.head_repository.full_name == github.repository)
     name: Windows shared terminal
-    runs-on: [self-hosted, windows, x64, ephrunner.vm-windows]
+    runs-on: windows-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1

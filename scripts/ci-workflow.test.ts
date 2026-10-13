@@ -77,7 +77,7 @@ describe("CI concurrency", () => {
 
   it("keeps each PR to one macOS job unless native code changed", () => {
     const macosJobs = Object.entries(workflow.jobs as Record<string, { "runs-on": string; strategy?: { matrix?: { os?: unknown } } }>)
-      .filter(([, job]) => JSON.stringify(job["runs-on"]).includes("ephrunner.mac") && !JSON.stringify(job["runs-on"]).includes("matrix.os"))
+      .filter(([, job]) => JSON.stringify(job["runs-on"]).includes("macos-latest") && !JSON.stringify(job["runs-on"]).includes("matrix.os"))
       .map(([name]) => name);
     // Sagax keeps its native apps: the iOS build runs only when ios/ changed.
     expect(macosJobs.sort()).toEqual(["electron-smokes", "ios"]);
@@ -222,7 +222,7 @@ describe("CI concurrency", () => {
       expect(job.if).toBe(`${FORK} && (${selector}${extra})`);
       if (name === "ios") {
         const ios = job as { "runs-on"?: string; steps?: { run?: string }[] };
-        expect(ios["runs-on"]).toEqual(["self-hosted", "macOS", "ARM64", "ephrunner.mac"]);
+        expect(ios["runs-on"]).toBe("macos-latest");
         expect(ios.steps?.some((step) => step.run?.includes("swift test --package-path ios"))).toBe(true);
       }
     }

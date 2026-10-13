@@ -23,8 +23,7 @@ GitHub noreply address (`<id>+<login>@users.noreply.github.com`) for commits.
 
 Tests: `python3 scripts/ci/term-guard.test.py`.
 
-Runs on `ubuntu-latest` by default. A self-hosted Linux runner is also
-allowed. The fetch works on either.
+Runs on `ubuntu-latest`. The fetch uses curl and jq.
 
 ## Path allowlist
 
