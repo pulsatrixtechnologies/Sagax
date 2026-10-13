@@ -1,0 +1,5 @@
+on: pull_request
+jobs:
+  a:
+    runs-on: [self-hosted, linux, x64]
+    steps: [{run: "true"}]
