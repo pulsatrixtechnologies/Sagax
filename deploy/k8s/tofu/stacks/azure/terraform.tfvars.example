@@ -4,7 +4,9 @@ enabled                 = false
 production              = false
 subscription_id         = "00000000-0000-0000-0000-000000000000"
 location                = "canadacentral"
-name                    = "sagax"
+# Prefix for Azure names (the cluster is "${name}-aks"). Use a name that is
+# not a live cluster.
+name                    = "example"
 admin_group_object_ids  = ["00000000-0000-0000-0000-000000000000"]
 entra_mfa_policy_id     = "00000000-0000-0000-0000-000000000000"
 lock_audit_immutability = false
