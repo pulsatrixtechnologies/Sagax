@@ -54,28 +54,23 @@ describe("production image sources", () => {
     expect(publish).toContain("https://cosign.sigstore.dev/attestation/vuln/v1");
     expect(publish).toContain("https://token.actions.githubusercontent.com");
     expect(publish).toContain(
-      "https://github.com/pulsatrixtechnologies/Sagax/.github/workflows/docker.yml@refs/heads/main",
-    );
-    expect(publish).toContain(
-      "https://github.com/pulsatrixtechnologies/Sagax/.github/workflows/docker.yml@refs/tags/*",
+      "^https://github\\.com/pulsatrixtechnologies/Sagax/\\.github/workflows/docker\\.yml@refs/(heads/main|tags/v.*)$",
     );
     expect(publish).toContain('echo "IMAGE=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_ENV"');
     expect(publish).not.toContain("ghcr.io/${{ github.repository }}");
-    expect(publish).toContain("startsWith(github.ref, 'refs/tags/')");
+    expect(publish).toContain("startsWith(github.ref, 'refs/tags/v')");
     expect(publish).toContain("node scripts/vuln-attestation.mjs vuln.json vuln-amd64.json vuln-arm64.json");
     expect(publish).toContain("--platform");
     const values = read("deploy/k8s/helm/sagax-sandboxes/values.yaml");
     const admission = values.slice(values.indexOf("admission:"));
     expect(admission).toContain(
-      "- https://github.com/pulsatrixtechnologies/Sagax/.github/workflows/docker.yml@refs/heads/main",
+      "subjectRegExp: '^https://github\\.com/pulsatrixtechnologies/Sagax/\\.github/workflows/docker\\.yml@refs/(heads/main|tags/v.*)$'",
     );
-    expect(admission).toContain(
-      "- https://github.com/pulsatrixtechnologies/Sagax/.github/workflows/docker.yml@refs/tags/*",
-    );
-    expect(admission).not.toContain("pulsatrixtechnologies/sagax/*");
+    expect(admission).not.toContain("pulsatrixtechnologies/sagax");
     const policy = read("deploy/k8s/helm/sagax-sandboxes/templates/admission.yaml");
-    expect(policy).toContain("range .Values.admission.kyverno.subjects");
-    expect(policy).not.toMatch(/\.Values\.admission\.kyverno\.subject\b/);
+    expect(policy).toContain("subjectRegExp: {{ .Values.admission.kyverno.subjectRegExp | quote }}");
+    expect(policy).not.toContain("kyverno.subjects");
+    expect(policy).not.toContain("kyverno.subject ");
   });
 
   it("forwards the engine set from compose with an empty legacy ENGINES list", () => {

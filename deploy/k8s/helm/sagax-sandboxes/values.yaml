@@ -109,11 +109,9 @@ admission:
     failureAction: Enforce
     issuer: https://token.actions.githubusercontent.com
     # Fulcio copies job_workflow_ref into the certificate SAN and does not
-    # change case, so the repository name stays Sagax. Publish runs on main
-    # and on tags. One entry must match (admission.yaml, attestors count 1).
-    subjects:
-      - https://github.com/pulsatrixtechnologies/Sagax/.github/workflows/docker.yml@refs/heads/main
-      - https://github.com/pulsatrixtechnologies/Sagax/.github/workflows/docker.yml@refs/tags/*
+    # change case, so the repository name stays Sagax. Anchored to docker.yml
+    # on main or on a v* tag (admission.yaml subjectRegExp).
+    subjectRegExp: '^https://github\.com/pulsatrixtechnologies/Sagax/\.github/workflows/docker\.yml@refs/(heads/main|tags/v.*)$'
   # Digest-pinned images that are allowed beside signed Pulsatrix images.
   allowedImages:
     - registry.k8s.io/pause@sha256:ee6521f290b2168b6e0935a181d4cff9be1ac3f505666ef0e3c98fae8199917a

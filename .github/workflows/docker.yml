@@ -208,20 +208,19 @@ jobs:
     name: publish to GHCR
     needs: build-and-smoke
     # Release dispatches on its published tag because GITHUB_TOKEN-created
-    # tags do not start another workflow. A manual run publishes only when
-    # the ref is a tag. A branch dispatch stays smoke-only: Fulcio's
-    # certificate names that branch, and admission accepts only main and tags.
-    if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && startsWith(github.ref, 'refs/tags/'))
+    # tags do not start another workflow. A manual run publishes only on a
+    # v* tag. A branch dispatch stays smoke-only: Fulcio's certificate names
+    # that branch, and admission's subjectRegExp accepts only docker.yml at
+    # refs/heads/main or refs/tags/v*.
+    if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && startsWith(github.ref, 'refs/tags/v'))
     runs-on: ubuntu-latest
     timeout-minutes: 360
     # Keyless signing. Fulcio copies the OIDC job_workflow_ref into the
     # certificate SAN and does not change case, so this repository stays
     # pulsatrixtechnologies/Sagax. Issuer is
-    # https://token.actions.githubusercontent.com. The subject is
-    # https://github.com/pulsatrixtechnologies/Sagax/.github/workflows/docker.yml@refs/heads/main
-    # on a push to main, and
-    # https://github.com/pulsatrixtechnologies/Sagax/.github/workflows/docker.yml@refs/tags/*
-    # on a tag. Those are admission.kyverno.subjects
+    # https://token.actions.githubusercontent.com. The subject matches
+    # admission.kyverno.subjectRegExp
+    # ^https://github\.com/pulsatrixtechnologies/Sagax/\.github/workflows/docker\.yml@refs/(heads/main|tags/v.*)$
     # (deploy/k8s/helm/sagax-sandboxes/values.yaml). The vulnerability
     # attestation uses predicate type
     # https://cosign.sigstore.dev/attestation/vuln/v1
@@ -253,11 +252,6 @@ jobs:
         uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
         with:
           images: ${{ env.IMAGE }}
-          # A v* tag still receives latest from the action's auto flavor.
-          # Any other tag, including a dispatch that only proves signing,
-          # must not move latest.
-          flavor: |
-            latest=${{ (github.ref_type == 'tag' && !startsWith(github.ref_name, 'v')) && 'false' || 'auto' }}
           tags: |
             type=raw,value=latest,enable={{is_default_branch}}
             type=sha,format=long
