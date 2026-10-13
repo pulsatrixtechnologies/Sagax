@@ -7,10 +7,12 @@ const script = fileURLToPath(new URL('./check-runner-labels.mjs', import.meta.ur
 const fixture = (name) => fileURLToPath(new URL(`./testing/runner-guard-fixtures/${name}`, import.meta.url))
 const guard = (dir) => spawnSync(process.execPath, [script, dir], { encoding: 'utf8' })
 
-test('passes a self-hosted, guarded workflow', () => {
-  const r = guard(fixture('good'))
-  assert.equal(r.status, 0, r.stderr)
-})
+for (const name of ['good', 'workflow-run-good']) {
+  test(`passes ${name}`, () => {
+    const r = guard(fixture(name))
+    assert.equal(r.status, 0, r.stderr)
+  })
+}
 
 for (const [name, expected] of [
   ['hosted', /GitHub-hosted label\(s\) ubuntu-latest/],
@@ -20,6 +22,7 @@ for (const [name, expected] of [
   ['prt-head-checkout', /must not check out pull request code/],
   ['comment-no-actor', /without the actor guard/],
   ['run-interpolation', /pass it through env: and quote it/],
+  ['workflow-run-no-head-repo', /lacks the leading repository guard/],
 ]) {
   test(`fails ${name}`, () => {
     const r = guard(fixture(name))

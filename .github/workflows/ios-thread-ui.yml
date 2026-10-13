@@ -17,7 +17,7 @@ concurrency:
 
 jobs:
   thread-ui:
-    if: (!startsWith(github.event_name, 'pull_request') || github.event.pull_request.head.repo.full_name == github.repository)
+    if: (!startsWith(github.event_name, 'pull_request') || github.event.pull_request.head.repo.full_name == github.repository) && (github.event_name != 'workflow_run' || github.event.workflow_run.head_repository.full_name == github.repository)
     name: iOS thread UI (iPhone + iPad simulators)
     runs-on: [self-hosted, macOS, ARM64, ephrunner.mac]
     # The iPhone suite and the iPad roster suite finished inside 60 minutes

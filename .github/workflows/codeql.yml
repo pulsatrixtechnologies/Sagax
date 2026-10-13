@@ -19,7 +19,7 @@ permissions:
 
 jobs:
   analyze:
-    if: (!startsWith(github.event_name, 'pull_request') || github.event.pull_request.head.repo.full_name == github.repository)
+    if: (!startsWith(github.event_name, 'pull_request') || github.event.pull_request.head.repo.full_name == github.repository) && (github.event_name != 'workflow_run' || github.event.workflow_run.head_repository.full_name == github.repository)
     name: analyze (${{ matrix.language }})
     runs-on: [self-hosted, linux, x64]
     timeout-minutes: 30
@@ -50,7 +50,7 @@ jobs:
 
   analyze-swift:
     # Swift: macOS, manual runs only.
-    if: (!startsWith(github.event_name, 'pull_request') || github.event.pull_request.head.repo.full_name == github.repository) && (github.event_name == 'workflow_dispatch')
+    if: (!startsWith(github.event_name, 'pull_request') || github.event.pull_request.head.repo.full_name == github.repository) && (github.event_name != 'workflow_run' || github.event.workflow_run.head_repository.full_name == github.repository) && (github.event_name == 'workflow_dispatch')
     name: analyze (${{ matrix.language }})
     runs-on: [self-hosted, macOS, ARM64, ephrunner.mac]
     timeout-minutes: 60

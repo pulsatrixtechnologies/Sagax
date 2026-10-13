@@ -7,7 +7,7 @@ import { join } from 'node:path'
 const dir = process.argv[2] ?? '.github/workflows'
 const hosted = /^(ubuntu-|windows-|macos-)|-latest$/i
 // Every job must start its if: with this repository guard.
-const FORK_GUARD = "(!startsWith(github.event_name, 'pull_request') || github.event.pull_request.head.repo.full_name == github.repository)"
+const FORK_GUARD = "(!startsWith(github.event_name, 'pull_request') || github.event.pull_request.head.repo.full_name == github.repository) && (github.event_name != 'workflow_run' || github.event.workflow_run.head_repository.full_name == github.repository)"
 // Comment-style triggers additionally need this actor check.
 const ACTOR_GUARD = "(github.event_name != 'issue_comment' || contains(fromJSON('[\"OWNER\",\"MEMBER\",\"COLLABORATOR\"]'), github.event.comment.author_association))"
 const COMMENT_EVENTS = /\b(issue_comment|pull_request_review_comment|discussion_comment|issues|discussion|pull_request_review)\b/

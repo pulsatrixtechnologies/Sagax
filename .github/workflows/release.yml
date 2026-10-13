@@ -48,7 +48,7 @@ permissions:
 
 jobs:
   prepare:
-    if: (!startsWith(github.event_name, 'pull_request') || github.event.pull_request.head.repo.full_name == github.repository)
+    if: (!startsWith(github.event_name, 'pull_request') || github.event.pull_request.head.repo.full_name == github.repository) && (github.event_name != 'workflow_run' || github.event.workflow_run.head_repository.full_name == github.repository)
     name: Pin the release commit
     runs-on: [self-hosted, linux, x64]
     timeout-minutes: 5
@@ -116,7 +116,7 @@ jobs:
     # touch) and deletes that branch afterwards.
     name: CI passed on the release commit
     needs: prepare
-    if: (!startsWith(github.event_name, 'pull_request') || github.event.pull_request.head.repo.full_name == github.repository) && (needs.prepare.outputs.should_release == 'true')
+    if: (!startsWith(github.event_name, 'pull_request') || github.event.pull_request.head.repo.full_name == github.repository) && (github.event_name != 'workflow_run' || github.event.workflow_run.head_repository.full_name == github.repository) && (needs.prepare.outputs.should_release == 'true')
     runs-on: [self-hosted, linux, x64]
     timeout-minutes: 180
     permissions:
@@ -147,7 +147,7 @@ jobs:
   mac:
     name: macOS arm64 + x64 (sign, notarize, staple)
     needs: prepare
-    if: (!startsWith(github.event_name, 'pull_request') || github.event.pull_request.head.repo.full_name == github.repository) && (needs.prepare.outputs.should_release == 'true')
+    if: (!startsWith(github.event_name, 'pull_request') || github.event.pull_request.head.repo.full_name == github.repository) && (github.event_name != 'workflow_run' || github.event.workflow_run.head_repository.full_name == github.repository) && (needs.prepare.outputs.should_release == 'true')
     runs-on: [self-hosted, macOS, ARM64, ephrunner.mac]
     timeout-minutes: 90
     steps:
@@ -323,7 +323,7 @@ jobs:
   windows:
     name: Windows x64
     needs: prepare
-    if: (!startsWith(github.event_name, 'pull_request') || github.event.pull_request.head.repo.full_name == github.repository) && (needs.prepare.outputs.should_release == 'true')
+    if: (!startsWith(github.event_name, 'pull_request') || github.event.pull_request.head.repo.full_name == github.repository) && (github.event_name != 'workflow_run' || github.event.workflow_run.head_repository.full_name == github.repository) && (needs.prepare.outputs.should_release == 'true')
     runs-on: [self-hosted, windows, x64, ephrunner.vm-windows]
     timeout-minutes: 30
     steps:
@@ -399,7 +399,7 @@ jobs:
   linux:
     name: Ubuntu 24.04 x64
     needs: prepare
-    if: (!startsWith(github.event_name, 'pull_request') || github.event.pull_request.head.repo.full_name == github.repository) && (needs.prepare.outputs.should_release == 'true')
+    if: (!startsWith(github.event_name, 'pull_request') || github.event.pull_request.head.repo.full_name == github.repository) && (github.event_name != 'workflow_run' || github.event.workflow_run.head_repository.full_name == github.repository) && (needs.prepare.outputs.should_release == 'true')
     runs-on: [self-hosted, linux, x64, ephrunner.vm-sudo]
     timeout-minutes: 40
     steps:
@@ -497,7 +497,7 @@ jobs:
   assemble:
     name: Assemble the draft and verify every feed
     needs: [prepare, ci, mac, windows, linux, voice-acceptance]
-    if: (!startsWith(github.event_name, 'pull_request') || github.event.pull_request.head.repo.full_name == github.repository) && (needs.prepare.outputs.should_release == 'true')
+    if: (!startsWith(github.event_name, 'pull_request') || github.event.pull_request.head.repo.full_name == github.repository) && (github.event_name != 'workflow_run' || github.event.workflow_run.head_repository.full_name == github.repository) && (needs.prepare.outputs.should_release == 'true')
     runs-on: [self-hosted, linux, x64]
     timeout-minutes: 30
     concurrency:

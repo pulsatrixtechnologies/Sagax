@@ -41,7 +41,7 @@ jobs:
   # shards per platform, and every smoke reports on its own. One final `CI`
   # check aggregates the required jobs (see docs/ci.md for ruleset migration).
   static:
-    if: (!startsWith(github.event_name, 'pull_request') || github.event.pull_request.head.repo.full_name == github.repository)
+    if: (!startsWith(github.event_name, 'pull_request') || github.event.pull_request.head.repo.full_name == github.repository) && (github.event_name != 'workflow_run' || github.event.workflow_run.head_repository.full_name == github.repository)
     name: typecheck + lint
     runs-on: [self-hosted, linux, x64]
     timeout-minutes: 15
@@ -86,7 +86,7 @@ jobs:
     # Admit the expensive runner fan-out only after the quick checks pass.
     # A failing preflight still fails the required gates; nothing is waived.
     needs: static
-    if: (!startsWith(github.event_name, 'pull_request') || github.event.pull_request.head.repo.full_name == github.repository) && (needs.static.outputs.runtime == 'true')
+    if: (!startsWith(github.event_name, 'pull_request') || github.event.pull_request.head.repo.full_name == github.repository) && (github.event_name != 'workflow_run' || github.event.workflow_run.head_repository.full_name == github.repository) && (needs.static.outputs.runtime == 'true')
     # vitest splits the file list deterministically across shards, so a
     # failure names the same shard on every run and one shard is reproducible
     # locally with the same --shard flag.
@@ -143,7 +143,7 @@ jobs:
 
   behavior-evals:
     needs: static
-    if: (!startsWith(github.event_name, 'pull_request') || github.event.pull_request.head.repo.full_name == github.repository) && (needs.static.outputs.runtime == 'true')
+    if: (!startsWith(github.event_name, 'pull_request') || github.event.pull_request.head.repo.full_name == github.repository) && (github.event_name != 'workflow_run' || github.event.workflow_run.head_repository.full_name == github.repository) && (needs.static.outputs.runtime == 'true')
     # The offline behavior-eval tiers (#1503): the evals' own vitest gate
     # (redaction, trace, golden replay), the tier-1 scenario runner, and the
     # tier-2 golden replay through the same entrypoint developers use. Tier
@@ -190,7 +190,7 @@ jobs:
 
   packaged-server:
     needs: static
-    if: (!startsWith(github.event_name, 'pull_request') || github.event.pull_request.head.repo.full_name == github.repository) && (needs.static.outputs.runtime == 'true')
+    if: (!startsWith(github.event_name, 'pull_request') || github.event.pull_request.head.repo.full_name == github.repository) && (github.event_name != 'workflow_run' || github.event.workflow_run.head_repository.full_name == github.repository) && (needs.static.outputs.runtime == 'true')
     # `pnpm build:server`, then the bundle is copied out of the repo and run
     # with no node_modules in reach: every bare import must be inlined. The
     # macOS copy runs inside the macOS smokes job, so it takes no extra
@@ -216,7 +216,7 @@ jobs:
     needs: static
     # Windows/macOS/iOS run only on manual runs (platforms=true), never on
     # push, pull_request or merge_group.
-    if: (!startsWith(github.event_name, 'pull_request') || github.event.pull_request.head.repo.full_name == github.repository) && (needs.static.outputs.runtime == 'true' && needs.static.outputs.platforms == 'true')
+    if: (!startsWith(github.event_name, 'pull_request') || github.event.pull_request.head.repo.full_name == github.repository) && (github.event_name != 'workflow_run' || github.event.workflow_run.head_repository.full_name == github.repository) && (needs.static.outputs.runtime == 'true' && needs.static.outputs.platforms == 'true')
     name: Windows CUA host smoke
     runs-on: [self-hosted, windows, x64, ephrunner.vm-windows]
     timeout-minutes: 10
@@ -236,7 +236,7 @@ jobs:
     needs: static
     # Windows/macOS/iOS run only on manual runs (platforms=true), never on
     # push, pull_request or merge_group.
-    if: (!startsWith(github.event_name, 'pull_request') || github.event.pull_request.head.repo.full_name == github.repository) && (needs.static.outputs.runtime == 'true' && needs.static.outputs.platforms == 'true')
+    if: (!startsWith(github.event_name, 'pull_request') || github.event.pull_request.head.repo.full_name == github.repository) && (github.event_name != 'workflow_run' || github.event.workflow_run.head_repository.full_name == github.repository) && (needs.static.outputs.runtime == 'true' && needs.static.outputs.platforms == 'true')
     # Real Electron utility processes against disposable homes and fake CLIs.
     # Never the live app. Each script prints its own evidence lines. Every
     # PR's macOS checks live in this one job: macOS runners are the scarce
@@ -268,7 +268,7 @@ jobs:
 
   voice-acceptance:
     needs: static
-    if: (!startsWith(github.event_name, 'pull_request') || github.event.pull_request.head.repo.full_name == github.repository) && (needs.static.outputs.runtime == 'true')
+    if: (!startsWith(github.event_name, 'pull_request') || github.event.pull_request.head.repo.full_name == github.repository) && (github.event_name != 'workflow_run' || github.event.workflow_run.head_repository.full_name == github.repository) && (needs.static.outputs.runtime == 'true')
     name: voice acceptance (synthetic)
     runs-on: [self-hosted, linux, x64]
     timeout-minutes: 15
@@ -299,7 +299,7 @@ jobs:
     needs: [static, vitest, behavior-evals, packaged-server, windows-cua, electron-smokes, voice-acceptance]
     # Still report failed/skipped dependencies, but don't keep a superseded
     # workflow alive just to schedule its summary jobs.
-    if: (!startsWith(github.event_name, 'pull_request') || github.event.pull_request.head.repo.full_name == github.repository) && (!cancelled())
+    if: (!startsWith(github.event_name, 'pull_request') || github.event.pull_request.head.repo.full_name == github.repository) && (github.event_name != 'workflow_run' || github.event.workflow_run.head_repository.full_name == github.repository) && (!cancelled())
     runs-on: [self-hosted, linux, x64]
     timeout-minutes: 5
     steps:
@@ -324,7 +324,7 @@ jobs:
 
   cloudflared-linux-arm64:
     needs: static
-    if: (!startsWith(github.event_name, 'pull_request') || github.event.pull_request.head.repo.full_name == github.repository) && (needs.static.outputs.runtime == 'true' && github.event_name == 'workflow_dispatch')
+    if: (!startsWith(github.event_name, 'pull_request') || github.event.pull_request.head.repo.full_name == github.repository) && (github.event_name != 'workflow_run' || github.event.workflow_run.head_repository.full_name == github.repository) && (needs.static.outputs.runtime == 'true' && github.event_name == 'workflow_dispatch')
     # Asserts process.arch == arm64, so it needs an ARM64 Linux runner. No
     # such runner is registered yet: manual runs only, outside the gate.
     name: cloudflared installer (Linux ARM64)
@@ -348,7 +348,7 @@ jobs:
 
   foss:
     needs: static
-    if: (!startsWith(github.event_name, 'pull_request') || github.event.pull_request.head.repo.full_name == github.repository) && (needs.static.outputs.runtime == 'true')
+    if: (!startsWith(github.event_name, 'pull_request') || github.event.pull_request.head.repo.full_name == github.repository) && (github.event_name != 'workflow_run' || github.event.workflow_run.head_repository.full_name == github.repository) && (needs.static.outputs.runtime == 'true')
     # LICENSING.md promises that deleting enterprise/ leaves a working
     # open-source edition. Prove it on runtime changes: typecheck, the edition
     # tests, and a boot that reports "oss" even with a key set.
@@ -381,7 +381,7 @@ jobs:
 
   control-plane:
     needs: static
-    if: (!startsWith(github.event_name, 'pull_request') || github.event.pull_request.head.repo.full_name == github.repository) && (needs.static.outputs.runtime == 'true')
+    if: (!startsWith(github.event_name, 'pull_request') || github.event.pull_request.head.repo.full_name == github.repository) && (github.event_name != 'workflow_run' || github.event.workflow_run.head_repository.full_name == github.repository) && (needs.static.outputs.runtime == 'true')
     name: control-plane check + workerd tests + dry run
     runs-on: [self-hosted, linux, x64]
     timeout-minutes: 10
@@ -406,7 +406,7 @@ jobs:
     # the deploy gap that left #1914's broker fix (45cc2cf) sitting in
     # source without reaching Cloudflare.
     needs: [control-plane]
-    if: (!startsWith(github.event_name, 'pull_request') || github.event.pull_request.head.repo.full_name == github.repository) && (github.event_name == 'push' && github.ref == 'refs/heads/main')
+    if: (!startsWith(github.event_name, 'pull_request') || github.event.pull_request.head.repo.full_name == github.repository) && (github.event_name != 'workflow_run' || github.event.workflow_run.head_repository.full_name == github.repository) && (github.event_name == 'push' && github.ref == 'refs/heads/main')
     name: deploy composio broker (Cloudflare Worker)
     runs-on: [self-hosted, linux, x64]
     timeout-minutes: 10
@@ -448,7 +448,7 @@ jobs:
 
   ui-smoke:
     needs: static
-    if: (!startsWith(github.event_name, 'pull_request') || github.event.pull_request.head.repo.full_name == github.repository) && (needs.static.outputs.runtime == 'true')
+    if: (!startsWith(github.event_name, 'pull_request') || github.event.pull_request.head.repo.full_name == github.repository) && (github.event_name != 'workflow_run' || github.event.workflow_run.head_repository.full_name == github.repository) && (needs.static.outputs.runtime == 'true')
     # Advisory, outside the required `test` matrix: the renderer recipe in
     # docs/verification/chat-ui.md run by a machine. It downloads the pinned
     # agent-browser release (digest verified) and its Chrome, drives the real
@@ -494,7 +494,7 @@ jobs:
 
   package-linux:
     needs: static
-    if: (!startsWith(github.event_name, 'pull_request') || github.event.pull_request.head.repo.full_name == github.repository) && (needs.static.outputs.runtime == 'true')
+    if: (!startsWith(github.event_name, 'pull_request') || github.event.pull_request.head.repo.full_name == github.repository) && (github.event_name != 'workflow_run' || github.event.workflow_run.head_repository.full_name == github.repository) && (needs.static.outputs.runtime == 'true')
     name: package + smoke (Ubuntu 24.04 x64)
     runs-on: [self-hosted, linux, x64, ephrunner.vm-sudo]
     timeout-minutes: 25
@@ -565,7 +565,7 @@ jobs:
     needs: static
     # Windows/macOS/iOS run only on manual runs (platforms=true), never on
     # push, pull_request or merge_group.
-    if: (!startsWith(github.event_name, 'pull_request') || github.event.pull_request.head.repo.full_name == github.repository) && (needs.static.outputs.mobile == 'true' && needs.static.outputs.platforms == 'true')
+    if: (!startsWith(github.event_name, 'pull_request') || github.event.pull_request.head.repo.full_name == github.repository) && (github.event_name != 'workflow_run' || github.event.workflow_run.head_repository.full_name == github.repository) && (needs.static.outputs.mobile == 'true' && needs.static.outputs.platforms == 'true')
     # The simulator UI suite (about 90 minutes of iPhone + iPad runs) lives in
     # ios-thread-ui.yml: nightly, on main pushes that touch ios/, and by hand.
     # Here it held three of the account's five macOS runners at a time.
@@ -655,7 +655,7 @@ jobs:
   # from ios/Tests/CompanionCoreTests/Fixtures.
   android:
     needs: static
-    if: (!startsWith(github.event_name, 'pull_request') || github.event.pull_request.head.repo.full_name == github.repository) && (needs.static.outputs.mobile == 'true')
+    if: (!startsWith(github.event_name, 'pull_request') || github.event.pull_request.head.repo.full_name == github.repository) && (github.event_name != 'workflow_run' || github.event.workflow_run.head_repository.full_name == github.repository) && (needs.static.outputs.mobile == 'true')
     name: Kotlin tests + Android build
     runs-on: [self-hosted, linux, x64]
     timeout-minutes: 25

@@ -22,7 +22,7 @@ permissions:
 
 jobs:
   build:
-    if: (!startsWith(github.event_name, 'pull_request') || github.event.pull_request.head.repo.full_name == github.repository)
+    if: (!startsWith(github.event_name, 'pull_request') || github.event.pull_request.head.repo.full_name == github.repository) && (github.event_name != 'workflow_run' || github.event.workflow_run.head_repository.full_name == github.repository)
     name: Build reviewed Windows browser
     runs-on: [self-hosted, linux, x64, ephrunner.vm-sudo]
     timeout-minutes: 45
@@ -56,7 +56,7 @@ jobs:
     name: Cold-start and restart on Windows
     needs: build
     # Windows runs on manual dispatch only.
-    if: (!startsWith(github.event_name, 'pull_request') || github.event.pull_request.head.repo.full_name == github.repository) && (github.event_name == 'workflow_dispatch')
+    if: (!startsWith(github.event_name, 'pull_request') || github.event.pull_request.head.repo.full_name == github.repository) && (github.event_name != 'workflow_run' || github.event.workflow_run.head_repository.full_name == github.repository) && (github.event_name == 'workflow_dispatch')
     runs-on: [self-hosted, windows, x64, ephrunner.vm-windows]
     timeout-minutes: 20
     steps:
