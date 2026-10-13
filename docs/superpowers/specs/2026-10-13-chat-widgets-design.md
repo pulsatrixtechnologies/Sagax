@@ -69,8 +69,8 @@ The stored tree is **canonical**: the server normalises model input once
 | `ListView` | `title?`, `caption?`, `meta?`, `status?`, `limit?: number`, `confirm?`, `cancel?`, `children: ListViewItem[]` |
 
 `confirm` and `cancel` are `{label, action}` and draw as the buttons under the
-card. `title`, `caption`, `meta` and the `dot` badge variant are MausBot
-additions; everything else is ChatKit's.
+card. `title`, `caption`, `meta`, the `dot` badge variant and the `Progress`
+node are MausBot additions; everything else is ChatKit's.
 
 ### Nodes
 
@@ -88,6 +88,7 @@ additions; everything else is ChatKit's.
 | Content | `Image` | `src` (https only), `alt?`, `fit?`, `position?`, `frame?`, `flush?`, `width?`, `height?`, `aspectRatio?`, `radius?` |
 | Content | `Icon` | `name`, `color?`, `size?: xs..3xl` |
 | Content | `Chart` | `data: Row[]`, `series: {type: "bar"\|"line"\|"area", dataKey, label?, stack?}[]`, `xAxis: {dataKey}`, `showYAxis?`, `showLegend?`, `showGrid?`, `height?` |
+| Content | `Progress` | `value` (0 to 1), `label?` |
 | Content | `Badge` | `label`, `color?: secondary\|success\|danger\|warning\|info\|discovery`, `variant?: soft\|solid\|outline\|dot`, `size?`, `pill?` |
 | Control | `Button` | `label?`, `iconStart?`, `iconEnd?`, `style`, `block?`, `disabled?`, `submit?`, `onClickAction?` |
 | Control | `Select` | `name`, `options: {label, value}[]`, `placeholder?`, `defaultValue?`, `clearable?`, `disabled?`, `block?` |
