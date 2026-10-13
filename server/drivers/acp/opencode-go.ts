@@ -852,6 +852,7 @@ const support = (loadCatalog: OpenCodeCatalogLoader): AcpSupport => ({
     docsUrl: "https://opencode.ai/docs/",
     signInCommand: "opencode auth login",
     needsNode: true,
+    apiKey: true,
   },
   spawnArgs: () => ["acp"],
   credentialEnv: ["OPENCODE_API_KEY", ...OPENCODE_PROVIDER_ENV],

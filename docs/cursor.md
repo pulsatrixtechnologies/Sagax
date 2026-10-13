@@ -19,8 +19,11 @@ key.
 
    Windows (native): `irm 'https://cursor.com/install?win32=true' | iex`
 
-2. Sign in with `cursor-agent login`, or set `CURSOR_API_KEY` / `CURSOR_AUTH_TOKEN`
-   in the environment of the Cursor instance.
+2. Sign in from the provider card. Sagax runs `cursor-agent login` and opens
+   Cursor's page; you finish there. Or paste an access key on that same card.
+   The command `cursor-agent login` stays under "Prefer a terminal?" for
+   anyone who still wants to type it. `CURSOR_API_KEY` or `CURSOR_AUTH_TOKEN`
+   in the instance environment still works.
 
 3. Confirm `cursor-agent --version` works. Cursor's docs call the command `agent`;
    the installer adds `cursor-agent` beside it, and Sagax runs that name,
@@ -40,10 +43,21 @@ Live ids are merged into the main cloud rail (not the local-models pane). A
 failed listing keeps the last usable catalog (then the static fallback) rather
 than emptying the rail.
 
-`--model <id>` is passed as a global CLI flag before `acp`. When the running
-CLI also implements ACP `session/set_model`, Sagax pins the same id over
-the wire. If that method is missing (`-32601`), the argv pin is left to stand
-and the turn continues.
+`--model <id>` is passed as a global CLI flag before `acp`. Current CLIs
+(checked with 2026.09.28) ignore that flag in ACP sessions: every session
+starts on `default[]` (Auto). The pick only lands through ACP
+`session/set_model`, which accepts only the parameterised ids the session
+advertises, such as `grok-4.7[context=256k,reasoning_effort=high,fast=true]`.
+Sagax maps the picker slug onto that list: `auto` to `default[]`, a
+plain slug to its Standard variant, `-fast` to `fast=true`, and an effort
+slug such as `grok-4.7-high-fast` to the variant with that effort. The
+session advertises one variant per base, so a slug with another effort
+(`grok-4.7-medium-fast`) gets that variant and a notice in the conversation.
+
+If `session/set_model` is missing (`-32601`), the argv pin is left to stand
+and the turn continues. If Cursor refuses the id (`-32602`), the turn also
+continues, on the model the session started with, and the conversation shows
+a notice that names it.
 
 ## Autonomy
 

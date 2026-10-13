@@ -219,9 +219,6 @@ export function grumpOutline(size: number): number {
   return r2(Math.max(1.9, (1.6 * box) / Math.max(1, size)));
 }
 
-/** Every outline at once, sitting (glows, auras, the hit area). */
-export const GRUMP_SILHOUETTE = `${GRUMP_ART.earL} ${GRUMP_ART.earR} ${GRUMP_ART.body} ${GRUMP_ART.head}`;
-
 /* -------------------------------------------------------------- colors */
 
 /**

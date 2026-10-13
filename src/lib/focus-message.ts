@@ -13,14 +13,20 @@ export async function landOnSearchHit(
   hit: SearchHit,
   state: Pick<AppState, "bots" | "groups">,
   dispatch: React.Dispatch<Action>,
+  threadsShown: boolean,
 ): Promise<void> {
   const ownerId = hit.botId ?? hit.groupId;
   const bot = hit.botId ? state.bots.find((candidate) => candidate.id === hit.botId) : undefined;
   const group = hit.groupId ? state.groups.find((candidate) => candidate.id === hit.groupId) : undefined;
   if (!ownerId || (!bot && !group)) throw new Error("That conversation is no longer available.");
 
-  dispatch({ type: "select", id: ownerId });
-  if (bot && bot.threadId !== hit.threadId) {
+  // With threads hidden, another of a bot's threads opens as every way into
+  // one does (openBotThread): by the switch alone, so the thread the bot was
+  // on keeps its unread mark. Last, so it loads the hit's version of the
+  // thread, and whole: the hit can be older than a page.
+  const switchAlone = bot && bot.threadId !== hit.threadId && !threadsShown ? bot : undefined;
+  if (!switchAlone) dispatch({ type: "select", id: ownerId });
+  if (bot && bot.threadId !== hit.threadId && !switchAlone) {
     const result = await api(`/api/bots/${bot.id}/tasks/${hit.threadId}`, { method: "POST" });
     if (result?.bot) dispatch({ type: "taskSwitched", bot: result.bot });
   }
@@ -31,12 +37,13 @@ export async function landOnSearchHit(
   if (bot && !hit.onActivePath) {
     const branch = await api(`/api/bots/${bot.id}/active-branch`, {
       method: "POST",
-      body: JSON.stringify({ messageId: hit.messageId }),
+      body: JSON.stringify({ messageId: hit.messageId, threadId: hit.threadId }),
     });
     if (branch?.activeLeafId) {
       dispatch({ type: "threadActive", threadId: hit.threadId, activeLeafId: branch.activeLeafId });
     }
   }
+  if (switchAlone) dispatch({ type: "switchTask", botId: switchAlone.id, threadId: hit.threadId, whole: true });
   dispatch({
     type: "focusMessage",
     threadId: hit.threadId,

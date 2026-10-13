@@ -11,6 +11,7 @@ import { closeMessageDb,
   indexMemoryFile,
   indexedMemoryFiles,
   insertMessage,
+  latestPersonLineAts,
   openApprovalCardMessages,
   latestSaidByBot,
   readMessageText,
@@ -380,6 +381,27 @@ describe("message-db", () => {
     expect(path.at(-1)?.text).toBe("edited");
     // both branches survive in the tree
     expect(reloaded.messagesFor(bot.threadId).filter((m) => m.parentId === first.parentId)).toHaveLength(2);
+  });
+});
+
+describe("latestPersonLineAts", () => {
+  beforeEach(() => {
+    closeMessageDb();
+    rmSync(DATA_DIR, { recursive: true, force: true });
+    mkdirSync(DATA_DIR, { recursive: true });
+  });
+
+  it("is each thread's newest line a person sent from an app, never a prompt, a bot's delivery, a relayed line or a reply", () => {
+    insertMessage("chat", msg("asked", "Good morning.", { at: 10, sendId: "send-1" }));
+    // A routine's or a webhook's prompt carries no sendId.
+    insertMessage("chat", msg("prompt", "Report this run's state.", { at: 20 }));
+    insertMessage("chat", msg("delivered", "Take this over.", { at: 30, sendId: "send-2", peerAsk: { botId: "teammate", name: "Teammate" } }));
+    insertMessage("chat", msg("relayed", "Sent from Slack.", { at: 40, sendId: "send-3", relayed: true }));
+    insertMessage("chat", msg("reply", "Morning!", { at: 50, role: "bot", sendId: "send-4" }));
+    insertMessage("webhook", msg("payload", "Handle the build event.", { at: 60 }));
+    insertMessage("later", msg("first", "One.", { at: 70, sendId: "send-5" }));
+    insertMessage("later", msg("second", "Two.", { at: 80, sendId: "send-6" }));
+    expect(Object.fromEntries(latestPersonLineAts(["chat", "webhook", "later", "empty"]))).toEqual({ chat: 10, later: 80 });
   });
 });
 

@@ -4,7 +4,7 @@
 // Escape (NewBotDialog.test.ts holds the behavioural regression). This scan
 // keeps the rule for dialogs added later, without a DOM in the test run.
 import { readdirSync, readFileSync, statSync } from "node:fs";
-import { join, relative } from "node:path";
+import { join, relative, sep } from "node:path";
 import { describe, expect, it } from "vitest";
 
 const ROOT = join(__dirname, "..");
@@ -32,8 +32,9 @@ const ESCAPE_HOST: Record<string, string> = {
   "components/floating-bots/Balloon.tsx": "components/floating-bots/FloatingBotView.tsx",
 };
 
+const posix = (path: string) => relative(ROOT, path).split(sep).join("/");
 const modalFiles = sources(ROOT)
-  .map((path) => ({ path, source: readFileSync(path, "utf8") }))
+  .map((path) => ({ path, source: readFileSync(path, "utf8").replace(/\r\n/g, "\n") }))
   .map((file) => ({ ...file, modal: dialogTags(file.source).filter((tag) => !/aria-modal=(?:"false"|\{false\})/.test(tag)) }))
   .filter((file) => file.modal.length > 0);
 
@@ -41,17 +42,17 @@ describe("every modal dialog closes", () => {
   it("finds the app's dialogs", () => {
     // a broken pattern must not pass by finding nothing
     expect(modalFiles.length).toBeGreaterThan(20);
-    expect(modalFiles.map((file) => relative(ROOT, file.path))).toContain("components/NewBotDialog.tsx");
+    expect(modalFiles.map((file) => posix(file.path))).toContain("components/NewBotDialog.tsx");
   });
 
-  it.each(modalFiles.map((file) => [relative(ROOT, file.path), file] as const))("%s closes on Escape", (name, file) => {
+  it.each(modalFiles.map((file) => [posix(file.path), file] as const))("%s closes on Escape", (name, file) => {
     const host = ESCAPE_HOST[name];
     // useModalDialog (hooks/use-modal-dialog.ts), usePopoverDismiss (hooks/use-popover-dismiss.ts) and useCategoryModalKeyboard
     // (components/category-modal.ts, shared by Achievements and the persona editor, #241) close their dialog on Escape
-    expect(host ? readFileSync(join(ROOT, host), "utf8") : file.source).toMatch(/["']Escape["']|\buseModalDialog\(|\busePopoverDismiss\(|\buseCategoryModalKeyboard\(/);
+    expect(host ? readFileSync(join(ROOT, host), "utf8").replace(/\r\n/g, "\n") : file.source).toMatch(/["']Escape["']|\buseModalDialog\(|\busePopoverDismiss\(|\buseCategoryModalKeyboard\(/);
   });
 
-  it.each(modalFiles.map((file) => [relative(ROOT, file.path), file] as const))("%s wires its Cancel and Close buttons", (_name, file) => {
+  it.each(modalFiles.map((file) => [posix(file.path), file] as const))("%s wires its Cancel and Close buttons", (_name, file) => {
     const buttons = [...file.source.matchAll(/<button\b[^>]*>\s*\{t\("common\.(?:cancel|close)"\)\}/g)].map((match) => match[0]);
     for (const button of buttons) {
       expect(button, button).toMatch(/onClick=\{/);

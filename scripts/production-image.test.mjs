@@ -30,14 +30,10 @@ describe("production image sources", () => {
     expect(workflow).toContain("/healthz");
     expect(workflow).toContain("cursor-agent");
     expect(workflow).not.toContain("docker build -t openmausbot:ci .");
-  });
-
-  it("publishes the public GHCR image explicitly without engines", () => {
-    const workflow = read(".github/workflows/docker.yml");
-    const publish = workflow.slice(workflow.indexOf("\n  publish:"));
-    expect(publish).toMatch(/build-args: \|\n\s+ENGINE_SET=none\n\s+SAGAX_REQUIRE_ENGINES=0/);
-    expect(publish).toContain("io.sagax.engine-set=none");
-    expect(publish).not.toContain("ENGINE_SET=all");
+    // The Cloud Pro home Dockerfile is not in this tree. A step that builds
+    // it fails the job after the engine gate.
+    expect(workflow).not.toMatch(/docker build -f deploy\/fly\/Dockerfile/);
+    expect(workflow).not.toMatch(/file: deploy\/fly\/Dockerfile/);
   });
 
   it("forwards the engine set from compose with an empty legacy ENGINES list", () => {

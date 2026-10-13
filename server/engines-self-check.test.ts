@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { PRODUCTION_ENGINE_IDS } from "../shared/production-engines.ts";
-import { EngineSelfCheck, readEngineManifest, runEngineSelfCheck, type EngineManifest } from "./engines-self-check.ts";
+import { ENGINE_PROBE_CONCURRENCY, EngineSelfCheck, mapLimited, readEngineManifest, runEngineSelfCheck, type EngineManifest } from "./engines-self-check.ts";
 import { BUILT_IN_DRIVERS } from "./drivers/builtIn.ts";
 
 const dirs: string[] = [];
@@ -87,6 +87,41 @@ describe("runEngineSelfCheck", () => {
     expect(missing).toContain("codex");
     expect(missing).toContain("grok");
     expect(lines.at(-1)).toBe("[engines] self-check: 1/3 preinstalled engine(s) start (image set all)");
+  });
+
+  it("never runs more than two --version probes at once (2026-10-13: eleven at once OOM-killed GOX)", async () => {
+    expect(ENGINE_PROBE_CONCURRENCY).toBe(2);
+    const eleven: EngineManifest = {
+      ...MANIFEST,
+      installed: Array.from({ length: 11 }, (_, i) => ({ id: `e${i}`, name: `E${i}`, drivers: [`d${i}`], kind: "npm", version: "1", bin: `e${i}` })),
+      notPreinstalled: [],
+    };
+    let running = 0;
+    let peak = 0;
+    const order: string[] = [];
+    const check = await runEngineSelfCheck(eleven, {
+      find: (bin) => [`/usr/local/bin/${bin}`],
+      probe: async (path) => {
+        running += 1;
+        peak = Math.max(peak, running);
+        await new Promise((resolve) => setTimeout(resolve, path.endsWith("e0") ? 15 : 2));
+        running -= 1;
+        order.push(path);
+        return `v ${path}`;
+      },
+      log: () => {},
+    });
+    expect(peak).toBe(2);
+    expect(order).toHaveLength(11);
+    // results keep the manifest's order however the probes finish
+    expect(check.checks.map((c) => c.id)).toEqual(eleven.installed.map((e) => e.id));
+    expect(check.checks.every((c) => c.ok)).toBe(true);
+  });
+
+  it("mapLimited keeps order, survives an empty list and a limit above the list", async () => {
+    expect(await mapLimited([], 2, async (x: number) => x)).toEqual([]);
+    expect(await mapLimited([3, 1, 2], 10, async (x) => x * 2)).toEqual([6, 2, 4]);
+    expect(await mapLimited([3, 1, 2], 0, async (x) => x)).toEqual([3, 1, 2]);
   });
 
   it("logs engine_missing when the image set is empty", async () => {

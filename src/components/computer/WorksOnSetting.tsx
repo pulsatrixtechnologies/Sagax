@@ -11,6 +11,7 @@ import { placeLabelKey, placeOffered, type EffectivePlace } from "@/lib/place";
 import { usePerspicaxOrg } from "@/lib/perspicax-org";
 import { useStore, type Bot } from "@/state/store";
 import { LocalComputerAutoWarning } from "../LocalComputerAutoWarning";
+import { HelpTip } from "../SettingsPrimitives";
 import { useBotSettingsDerived } from "../bot-settings/useBotSettingsDerived";
 
 export type WorksOnMode = Bot["computer"] | null;
@@ -55,9 +56,13 @@ export function WorksOnControl({ value, onChange, disabled, organization = true,
 }) {
   const shown = modes ?? WORKS_ON_MODES;
   return (
-    <section aria-labelledby="works-on-setting" aria-describedby="works-on-setting-hint" className="mb-4 rounded-xl border border-hairline/40 p-4" data-works-on-setting={value ?? "auto"} data-works-on-org={organization ? "1" : "0"}>
-      <div id="works-on-setting" className="text-[13px] font-medium text-ink">{t("computer.worksOn")}</div>
-      <div id="works-on-setting-hint" className="mt-0.5 text-[13px] text-ink-secondary">{t(organization ? "worksOn.sectionTip" : "worksOn.help")}</div>
+    <section aria-labelledby="works-on-setting" aria-describedby="works-on-setting-hint" className="border-t border-hairline/40 pt-5" data-works-on-setting={value ?? "auto"} data-works-on-org={organization ? "1" : "0"}>
+      <div className="flex items-center gap-1.5">
+        <h3 id="works-on-setting" className="text-[13px] font-medium text-ink">{t("computer.worksOn")}</h3>
+        <HelpTip label={t("settings.moreAbout", { title: t("computer.worksOn") })}>
+          <span id="works-on-setting-hint">{t(organization ? "worksOn.sectionTip" : "worksOn.help")}</span>
+        </HelpTip>
+      </div>
       <div role="radiogroup" aria-labelledby="works-on-setting" className="mt-3 grid grid-cols-3 gap-0.5 rounded-lg bg-control p-0.5">
         {shown.map((mode) => {
           const key = (mode ?? "auto") as EffectivePlace;

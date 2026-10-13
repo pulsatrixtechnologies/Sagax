@@ -19,8 +19,8 @@ describe("Grok Build", () => {
     const env: Record<string, string | undefined> = { HOME: "/data", GROK_HOME: "/data/.grok", XAI_API_KEY: "xai-server" };
     grokApplyAccess(env, { via: "subscription", identity: "subscription:p", engineHome: dir }, { XAI_API_KEY: "xai-org" });
     expect(env).toEqual({ HOME: dir, GROK_HOME: join(dir, ".grok") });
-    expect(statSync(dir).mode & 0o777).toBe(0o700);
-    expect(statSync(join(dir, ".grok")).mode & 0o777).toBe(0o700);
+    if (process.platform !== "win32") expect(statSync(dir).mode & 0o777).toBe(0o700);
+    if (process.platform !== "win32") expect(statSync(join(dir, ".grok")).mode & 0o777).toBe(0o700);
   });
 
   it("a key turn runs on the payer's key in an empty home; an org-key turn on the instance's key", () => {

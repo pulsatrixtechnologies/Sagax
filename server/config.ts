@@ -5,10 +5,12 @@ import { DEFAULT_MAX_PARALLEL_PER_PERSON, MAX_PARALLEL_PER_PERSON } from "../sha
 import { readFileSync, mkdirSync, existsSync, renameSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { isDeepStrictEqual } from "node:util";
 import { z } from "zod";
 import { normalizeImageGenerationUrl, type ImageGenerationConfig } from "../shared/image-generation.ts";
 
 import { writeFileAtomic } from "./atomic.ts";
+import { applyStoredEngineEnv } from "./engine-api-keys.ts";
 import { withoutComputerEngine } from "./computer-engine-removal.ts";
 import { newBotDefaultsSchema, type NewBotDefaults } from "./new-bot-defaults.ts";
 import { EFFORT_LEVELS, type LiveSettings } from "../shared/wire.ts";
@@ -40,9 +42,6 @@ export const MAX_ROOM_TURN_TIMEOUT_MINUTES = 1_440;
 export const DEFAULT_MCP_CALL_TIMEOUT_MINUTES = 10;
 export const MIN_MCP_CALL_TIMEOUT_MINUTES = 1;
 export const MAX_MCP_CALL_TIMEOUT_MINUTES = 60;
-export const DEFAULT_ROOM_HANDOFF_LIFETIME_MINUTES = 30;
-export const DEFAULT_ROOM_HANDOFF_MIN_RUNWAY_MINUTES = 10;
-export const DEFAULT_ROOM_HANDOFF_HARD_CAP_MINUTES = 240;
 export const DEFAULT_MAX_CONCURRENT_BOT_THREADS = 3;
 export const MAX_CONCURRENT_BOT_THREADS = 10;
 /** Bounds for threads.eventLogMaxBytes: the floor keeps the kept tail large
@@ -115,20 +114,7 @@ const roomConfigSchema = z.object({
     .int()
     .min(MIN_ROOM_TURN_TIMEOUT_MINUTES)
     .max(MAX_ROOM_TURN_TIMEOUT_MINUTES),
-  /** Room handoff tree lifetime. Active execution pauses this clock; the
-   * hard cap is the maximum stall window, measured wall-clock from the
-   * tree's last durable progress. */
-  handoffLifetimeMinutes: z.number().int().min(1).max(MAX_ROOM_TURN_TIMEOUT_MINUTES).optional(),
-  handoffMinRunwayMinutes: z.number().int().min(1).max(MAX_ROOM_TURN_TIMEOUT_MINUTES).optional(),
-  handoffHardCapMinutes: z.number().int().min(1).max(7 * MAX_ROOM_TURN_TIMEOUT_MINUTES).optional(),
-}).refine(
-  (rooms) =>
-    (rooms.handoffMinRunwayMinutes ?? DEFAULT_ROOM_HANDOFF_MIN_RUNWAY_MINUTES) <=
-      (rooms.handoffLifetimeMinutes ?? DEFAULT_ROOM_HANDOFF_LIFETIME_MINUTES) &&
-    (rooms.handoffLifetimeMinutes ?? DEFAULT_ROOM_HANDOFF_LIFETIME_MINUTES) <=
-      (rooms.handoffHardCapMinutes ?? DEFAULT_ROOM_HANDOFF_HARD_CAP_MINUTES),
-  { message: "rooms handoff bounds must satisfy handoffMinRunwayMinutes <= handoffLifetimeMinutes <= handoffHardCapMinutes" },
-);
+});
 const mcpConfigSchema = z.object({
   /** Ceiling (minutes) for one bot MCP tool call. Missing values resolve to
    * 10, preserving the historic chat-mcp-tools constant. */
@@ -507,6 +493,7 @@ const appConfigSchema = z.object({
   }).optional(),
   mistral: z.object({ key: optionalText }).optional(),
   cerebras: z.object({ key: optionalText }).optional(),
+  groq: z.object({ key: optionalText, url: optionalText }).optional(),
   xai: z.object({ key: optionalText, url: optionalText }).optional(),
   /** Anthropic API key for Claude Code billed per token, handed only to
    * Claude instances; `url` only for a proxy or a test double. Never a
@@ -745,6 +732,7 @@ export interface AppConfig {
   xai?: { key?: string; url?: string };
   mistral?: { key?: string };
   cerebras?: { key?: string };
+  groq?: { key?: string; url?: string };
   /** `everyClaudeBot`: the key runs every Claude bot instead of its login.
    * Unset means true, which is how a key behaved before it had its own
    * `claudeApi` instance; a key first saved from Settings sets false. */
@@ -772,7 +760,7 @@ export interface AppConfig {
   imageGen?: ImageGenerationConfig;
   live?: { key?: string; voice?: string; readTypedReplies?: boolean; idleMinutes?: number };
   profile?: { name?: string; email?: string; aboutMe?: string; avatarUrl?: string };
-  rooms?: { turnTimeoutMinutes: number; handoffLifetimeMinutes?: number; handoffMinRunwayMinutes?: number; handoffHardCapMinutes?: number };
+  rooms?: { turnTimeoutMinutes: number };
   mcp?: { callTimeoutMinutes?: number };
   threads?: { maxConcurrentPerBot: number; maxParallelPerPerson?: number; eventLogMaxBytes?: number; eventLogRetentionDays?: number };
   context?: { rebuildBytes?: number; compactAt?: number; autoCompact?: boolean; autoCompactOffBots?: string[] };
@@ -983,23 +971,6 @@ export function liveSettingsFor(cfg: AppConfig, env: NodeJS.ProcessEnv = process
   };
 }
 
-export interface RoomHandoffLimitsMs {
-  lifetimeMs: number;
-  minRunwayMs: number;
-  hardCapMs: number;
-}
-
-/** Room handoff tree budgets in milliseconds. The tree lifetime pauses
- * while a node is actively executing; the hard cap is the maximum stall
- * window, measured wall-clock from the tree's last durable progress. Read
- * when the server starts. */
-export function roomHandoffLimits(cfg: AppConfig): RoomHandoffLimitsMs {
-  return {
-    lifetimeMs: (cfg.rooms?.handoffLifetimeMinutes ?? DEFAULT_ROOM_HANDOFF_LIFETIME_MINUTES) * 60_000,
-    minRunwayMs: (cfg.rooms?.handoffMinRunwayMinutes ?? DEFAULT_ROOM_HANDOFF_MIN_RUNWAY_MINUTES) * 60_000,
-    hardCapMs: (cfg.rooms?.handoffHardCapMinutes ?? DEFAULT_ROOM_HANDOFF_HARD_CAP_MINUTES) * 60_000,
-  };
-}
 
 /** Accepts a full config or a parsed patch: the concurrency limit may be
  * read from either, and a patch may legitimately omit it. */
@@ -1137,6 +1108,7 @@ export function llmThreadTitlesEnabled(cfg: AppConfig): boolean {
   return cfg.features?.llmThreadTitles === true;
 }
 
+
 /** Opt-in shared skills library (skills lane S1): one store at the data dir
  * that bots reference by assignment instead of per-workspace copies. Off
  * unless enabled by hand in ~/.sagax/config.json
@@ -1146,34 +1118,45 @@ export function skillsLibraryEnabled(cfg: AppConfig): boolean {
   return cfg.features?.skillsLibrary === true;
  }
 
-/** Config sections no provider driver reads. A write that touches only
- * these must not rebuild the fleet: rebuilding disposes every engine child
- * and reloads it, seconds of work that would also interrupt in-flight
- * turns. The guided tour writes `onboarding` on every step, so it in
- * particular has to stay cheap. */
-export const FLEET_NEUTRAL_KEYS: ReadonlySet<string> = new Set([
-  "profile",
-  "language",
-  "tts",
-  // no engine reads it: the harness asks it before a turn starts
-  "decider",
-  "imageGen",
-  "live",
-  "vps",
-  "rooms",
-  "threads",
-  "automaticRecovery",
-  "context",
-  "memory",
-  "localVm",
-  "features",
-  "browserProfiles",
-  "onboarding",
-]);
+/** What each engine is launched with, as far as a config write can change
+ * it: its instance config (driver, settings, and the credentials
+ * instanceConfigs() injects), plus the workspace env its driver falls back to
+ * when that environment lacks a value — which syncCredentialEnv rewrites on
+ * the same save. */
+export function engineLaunches(configs: InstanceConfigMap, env: Record<string, string | undefined> = process.env): Record<string, unknown> {
+  return Object.fromEntries(Object.entries(configs).map(([id, entry]) =>
+    [id, { ...entry, fallbackEnv: Object.fromEntries(fallbackEnv(entry).map((name) => [name, env[name]])) }]));
+}
 
-/** The keys of a config patch that require the provider fleet to reload. */
-export function providerReloadKeys(patch: object): string[] {
-  return Object.keys(patch).filter((key) => !FLEET_NEUTRAL_KEYS.has(key));
+/** The workspace env an in-process API-key driver reads when the instance's
+ * own environment lacks it (mistral.ts, cerebras.ts, grok.ts,
+ * openai-compat.ts): an instance with its own address gets no injected key,
+ * yet still reads the saved one from here. OpenAI's and OpenRouter's own
+ * instances read only their own key. */
+function fallbackEnv(entry: InstanceConfigMap[string]): string[] {
+  const config = typeof entry.config === "object" && entry.config !== null && !Array.isArray(entry.config)
+    ? entry.config as { apiKeyEnv?: unknown } : {};
+  const named = typeof config.apiKeyEnv === "string" && config.apiKeyEnv ? config.apiKeyEnv : undefined;
+  switch (entry.driver) {
+    case "mistral": return ["MISTRAL_API_KEY"];
+    case "cerebras": return ["CEREBRAS_API_KEY"];
+    case "grok": return [named ?? "XAI_API_KEY"];
+    case "openai-compat":
+      return named && Object.values(API_KEY_FLEET).some((own) => (own.config as { apiKeyEnv?: string } | undefined)?.apiKeyEnv === named)
+        ? [named]
+        : [...new Set([named ?? "OPENAI_COMPAT_API_KEY", "OPENAI_COMPAT_API_KEY", "OPENAI_COMPAT_URL", "OPENAI_COMPAT_MODEL", "OPENAI_COMPAT_PROVIDER"])];
+    default: return [];
+  }
+}
+
+/** The engines a config write changed (engineLaunches before and after):
+ * each instance added, removed, or launched differently. Only these need
+ * rebuilding. A write that repeats the saved values, or touches a section no
+ * driver reads (the guided tour writes `onboarding` on every step), changes
+ * none, and no turn is interrupted for it. */
+export function changedInstanceIds(before: Record<string, unknown>, after: Record<string, unknown>): string[] {
+  return [...new Set([...Object.keys(before), ...Object.keys(after)])]
+    .filter((id) => !isDeepStrictEqual(before[id], after[id]));
 }
 
 // SAGAX_DATA_DIR (or OMB_DATA_DIR) isolates test/soak rigs from the user's real
@@ -1279,6 +1262,9 @@ export function loadConfig(): AppConfig {
   if (process.env.MISTRAL_API_KEY !== undefined) cfg.mistral.key = process.env.MISTRAL_API_KEY;
   cfg.cerebras = { ...cfg.cerebras };
   if (process.env.CEREBRAS_API_KEY !== undefined) cfg.cerebras.key = process.env.CEREBRAS_API_KEY;
+  cfg.groq = { ...cfg.groq };
+  // Keep the workspace key separate from an operator's OpenCode Groq key.
+  if (process.env.SAGAX_GROQ_API_KEY !== undefined) cfg.groq.key = process.env.SAGAX_GROQ_API_KEY;
   cfg.xai = { ...cfg.xai };
   if (process.env.XAI_API_KEY !== undefined) cfg.xai.key = process.env.XAI_API_KEY;
   // Deliberately not ANTHROPIC_API_KEY: a key in the server's own env is
@@ -1367,6 +1353,7 @@ export function syncCredentialEnv(patch: Partial<Omit<AppConfig, "threads">>): v
     [patch.xai?.key, "XAI_API_KEY"],
     [patch.mistral?.key, "MISTRAL_API_KEY"],
     [patch.cerebras?.key, "CEREBRAS_API_KEY"],
+    [patch.groq?.key, "SAGAX_GROQ_API_KEY"],
     [patch.anthropic?.key, "SAGAX_ANTHROPIC_API_KEY"],
     [patch.openaiCompat?.key, "OPENAI_COMPAT_API_KEY"],
     [patch.openai?.key, "SAGAX_OPENAI_API_KEY"],
@@ -1411,6 +1398,7 @@ export const WORKSPACE_CREDENTIAL_ENV = [
   "XAI_API_KEY",
   "MISTRAL_API_KEY",
   "CEREBRAS_API_KEY",
+  "SAGAX_GROQ_API_KEY",
   "SAGAX_ANTHROPIC_API_KEY",
   "SAGAX_ANTHROPIC_API_URL",
   "SAGAX_HOSTED_MODEL_TOKEN",
@@ -1489,6 +1477,7 @@ export function stripWorkspaceCredentialEnv(env: Record<string, string | undefin
  * along in `...process.env` must not flip a subscription CLI onto
  * pay-as-you-go billing the user never granted. */
 export const PROVIDER_CREDENTIAL_ENV = [
+  "CLINE_API_KEY",
   "ANTHROPIC_API_KEY",
   "FACTORY_API_KEY",
   "GEMINI_API_KEY",
@@ -1501,6 +1490,7 @@ export const PROVIDER_CREDENTIAL_ENV = [
   "XAI_API_KEY",
   "MISTRAL_API_KEY",
   "CEREBRAS_API_KEY",
+  "GROQ_API_KEY",
   "CURSOR_API_KEY",
   "CURSOR_AUTH_TOKEN",
 ] as const;
@@ -1511,6 +1501,7 @@ export const PROVIDER_CREDENTIAL_ENV = [
  * Anthropic key) are workspace credentials under other names and never
  * ride along. */
 export const OPENCODE_PROVIDER_ENV = [
+  "CLINE_API_KEY",
   "ANTHROPIC_API_KEY",
   "OPENAI_API_KEY",
   "GEMINI_API_KEY",
@@ -1518,6 +1509,7 @@ export const OPENCODE_PROVIDER_ENV = [
   "KIMI_API_KEY",
   "MOONSHOT_API_KEY",
   "MINIMAX_API_KEY",
+  "GROQ_API_KEY",
 ] as const;
 
 /** Keys the owner saves in Settings for OpenCode's other providers (Venice,
@@ -1628,7 +1620,7 @@ export function saveConfig(
   // back after we have successfully recognized the legacy list.
   const storedProfiles = storedBrowserProfilesSchema.safeParse(disk.browserProfiles);
   if (storedProfiles.success) disk.browserProfiles = storedProfiles.data;
-  for (const key of ["xai", "anthropic", "mistral", "cerebras", "openai", "openrouter", "openaiCompat", "composio", "box", "opencodeGo", "tts", "decider", "imageGen", "live", "profile", "rooms", "mcp", "threads", "context", "memory", "localVm", "features", "budgets", "billing", "decisions", "onboarding", "browserEngine"] as const) {
+  for (const key of ["xai", "anthropic", "mistral", "cerebras", "groq", "openai", "openrouter", "openaiCompat", "composio", "box", "opencodeGo", "tts", "decider", "imageGen", "live", "profile", "rooms", "mcp", "threads", "context", "memory", "localVm", "features", "budgets", "billing", "decisions", "onboarding", "browserEngine"] as const) {
     const section = checkedPatch[key];
     if (!section) continue;
     const current = jsonObjectSchema.safeParse(disk[key]);
@@ -1870,6 +1862,8 @@ export function instanceOwnsRouting(
       return own(entry.environment?.MISTRAL_API_KEY) || ownUrl("https://api.mistral.ai/v1");
     case "cerebras":
       return own(entry.environment?.CEREBRAS_API_KEY) || ownUrl("https://api.cerebras.ai/v1");
+    case "groq":
+      return own(entry.environment?.GROQ_API_KEY) || ownUrl("https://api.groq.com/openai/v1", cfg.groq?.url);
     case "grok":
       return own(entry.environment?.XAI_API_KEY) || (own(config.apiKeyEnv) && config.apiKeyEnv !== "XAI_API_KEY")
         || ownUrl("https://api.x.ai/v1", cfg.xai?.url);
@@ -1888,6 +1882,7 @@ function injectedEnvironment(cfg: AppConfig, instanceId: string, driver: string)
   const environment = new Map<string, string>();
   if (driver === "mistral" && cfg.mistral?.key) environment.set("MISTRAL_API_KEY", cfg.mistral.key);
   if (driver === "cerebras" && cfg.cerebras?.key) environment.set("CEREBRAS_API_KEY", cfg.cerebras.key);
+  if (driver === "groq" && cfg.groq?.key) environment.set("GROQ_API_KEY", cfg.groq.key);
   if (driver === "grok" && cfg.xai?.key) environment.set("XAI_API_KEY", cfg.xai.key);
   // Grok Build never runs on it in solo mode (acp/grok.ts strips it); on an
   // organization server it is the organization's key for Grok Build, after
@@ -2005,14 +2000,17 @@ export function instanceConfigs(cfg: AppConfig): InstanceConfigMap {
     openaiCompat: { driver: "openai-compat" },
     mistral: { driver: "mistral" },
     cerebras: { driver: "cerebras" },
+    groq: { driver: "groq" },
     ...API_KEY_FLEET,
     qwen: { driver: "qwenAgent" },
     hermes: { driver: "hermesAgent" },
+    cline: { driver: "clineAgent" },
     pi: { driver: "piAgent" },
   };
   const CUSTOM_ONLY = {
     qwen: { driver: "qwenAgent" },
     hermes: { driver: "hermesAgent" },
+    cline: { driver: "clineAgent" },
     pi: { driver: "piAgent" },
   } as const;
   // New default-fleet engines that existing product configs would otherwise
@@ -2024,6 +2022,7 @@ export function instanceConfigs(cfg: AppConfig): InstanceConfigMap {
     openaiCompat: { driver: "openai-compat" },
     mistral: { driver: "mistral" },
     cerebras: { driver: "cerebras" },
+    groq: { driver: "groq" },
     ...API_KEY_FLEET,
     ...CUSTOM_ONLY,
   } as const;
@@ -2080,6 +2079,19 @@ export function instanceConfigs(cfg: AppConfig): InstanceConfigMap {
       for (const [key, value] of injectedEnvironment(cfg, id, entry.driver)) environment[key] = value;
     }
     entry.environment = environment;
+    // Solo file keys ride the instance. An organization server has no person
+    // here, so this injects nothing: a turn reads that person's own file.
+    applyStoredEngineEnv(
+      environment,
+      entry.driver,
+      DATA_DIR,
+      process.env.SAGAX_IDENTITY?.trim().toLowerCase() === "perspicax"
+        ? { organization: true, principalId: null }
+        : { organization: false },
+    );
+    if (entry.driver === "groq" && cfg.groq?.url && !ownsRouting) {
+      entry.config = { ...entry.config as object, url: cfg.groq.url };
+    }
     // The driver URL is configuration, not a credential. Environment is
     // intentionally not consulted by ProviderRegistry when it decodes a
     // driver's config, so carry the workspace default into the transient

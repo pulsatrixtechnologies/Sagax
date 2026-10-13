@@ -109,6 +109,15 @@ describe("tasks", () => {
     expect(store.titleTaskFromFirstMessage(bot.id, "a second message", task.threadId)).toBeNull();
   });
 
+  it("names a task from the first line as typed; nothing in the words is stripped", async () => {
+    const { store, titleFromMessage } = await freshStore();
+    const bot = store.createBot();
+    const task = store.createTask(bot.id)!;
+    expect(store.titleTaskFromFirstMessage(bot.id, "Compare monthly sales\nKeep the chart", task.threadId)?.title).toBe("Compare monthly sales");
+    const typed = "<data-context>{bad}</data-context>";
+    expect(titleFromMessage(`${typed}\nKeep this visible`)).toBe(typed);
+  });
+
   it("cannot be re-armed by restoring the sentinel title after the first attempt", async () => {
     const { store } = await freshStore();
     const bot = store.createBot();

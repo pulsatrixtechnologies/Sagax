@@ -10,8 +10,9 @@ import type { Duplex } from "node:stream";
 
 import { writeFileAtomic } from "./atomic.ts";
 import type { SandboxExecInput, SandboxExecOutput, SandboxStats, SandboxStatus, SandboxStdioSpec } from "./sandboxd-core.ts";
+import { sandboxRouteFromEnv, type SandboxBackend } from "./sandbox-route.ts";
 import type { SandboxdClient, SandboxdInfo } from "./user-sandbox-client.ts";
-import { SandboxdRequestError } from "./user-sandbox-client.ts";
+import { SandboxdRequestError, validSandboxdUrl } from "./user-sandbox-client.ts";
 import { sandboxKeyForPrincipal } from "./user-sandbox-spec.ts";
 
 export const DEFAULT_DELETE_GRACE_MS = 72 * 3600_000;
@@ -36,7 +37,12 @@ export class UserSandboxUnavailable extends Error {
 }
 
 export interface UserSandboxManagerOptions {
+  /** Docker provisioner. Also the only client when Kubernetes is not configured. */
   client: SandboxdClient;
+  /** Kubernetes provisioner. Used when `backendFor` returns kubernetes. */
+  kubernetes?: SandboxdClient;
+  /** Per call, so a test can change the route. Production reads the environment each call. */
+  backendFor?: (principalId: string, botId?: string) => SandboxBackend;
   instance: string;
   /** JSON file holding pending deletions (DATA_DIR/user-sandbox-deletions.json). */
   stateFile: string;
@@ -70,6 +76,21 @@ export class UserSandboxManager {
     return sandboxKeyForPrincipal(this.options.instance, principalId);
   }
 
+  /** Docker, unless this person or this bot is on the Kubernetes canary. */
+  private clientFor(principalId: string, botId?: string): SandboxdClient {
+    const backend = this.options.backendFor?.(principalId, botId) ?? "docker";
+    if (backend === "docker") return this.options.client;
+    if (!this.options.kubernetes) {
+      throw new UserSandboxUnavailable("This environment is set to Kubernetes, and that provisioner is not configured.", "kubernetes_unconfigured");
+    }
+    return this.options.kubernetes;
+  }
+
+  /** Stop and delete reach both provisioners so a revert does not leave the other one running. */
+  private clients(): SandboxdClient[] {
+    return this.options.kubernetes ? [this.options.client, this.options.kubernetes] : [this.options.client];
+  }
+
   private load(): void {
     if (!existsSync(this.options.stateFile)) return;
     try {
@@ -90,17 +111,21 @@ export class UserSandboxManager {
     return this.pending.get(principalId) ?? null;
   }
 
-  private async provisionerInfo(): Promise<SandboxdInfo | null> {
+  private async provisionerInfo(client: SandboxdClient = this.options.client): Promise<SandboxdInfo | null> {
     try {
-      this.info = await this.options.client.info();
-    } catch { /* keep the last answer */ }
-    return this.info;
+      const info = await client.info();
+      if (client === this.options.client) this.info = info;
+      return info;
+    } catch {
+      return client === this.options.client ? this.info : null;
+    }
   }
 
-  async status(principalId: string): Promise<UserSandboxView> {
+  async status(principalId: string, botId?: string): Promise<UserSandboxView> {
     const pendingDeletionAt = this.pendingDeletionAt(principalId);
     try {
-      const [status, info] = await Promise.all([this.options.client.status(this.keyFor(principalId)), this.provisionerInfo()]);
+      const client = this.clientFor(principalId, botId);
+      const [status, info] = await Promise.all([client.status(this.keyFor(principalId)), this.provisionerInfo(client)]);
       return {
         state: status.state,
         lastUsedAt: status.lastUsedAt,
@@ -114,9 +139,61 @@ export class UserSandboxManager {
     } catch (error) {
       return {
         state: "unavailable", lastUsedAt: null, workspaceBytes: null, overQuota: false, limits: null,
-        idleMinutes: null, pendingDeletionAt, error: error instanceof SandboxdRequestError ? error.code : "unreachable",
+        idleMinutes: null, pendingDeletionAt,
+        error: error instanceof UserSandboxUnavailable || error instanceof SandboxdRequestError ? error.code : "unreachable",
       };
     }
+  }
+
+  /** The provisioner's own facts (its limit, idle stop and egress), null
+   * when it does not answer. */
+  async provisioner(): Promise<SandboxdInfo | null> {
+    try {
+      return await this.options.client.info();
+    } catch {
+      return null;
+    }
+  }
+
+  /** The console's Computers (2026-10-11): each of these people's
+   * environments that exists, with its status, the commands running there
+   * and its usage sample. Eight people at a time, each call bounded by
+   * `timeoutMs`; an environment that does not answer in time reads
+   * `unavailable`. Starts nothing. */
+  async inventory(principalIds: readonly string[], timeoutMs = 3_000): Promise<Map<string, { view: UserSandboxView; busy: number; stats: SandboxStats | null }>> {
+    const info = await this.provisionerInfo();
+    const queue = [...new Set(principalIds)];
+    const out = new Map<string, { view: UserSandboxView; busy: number; stats: SandboxStats | null }>();
+    const bounded = async <T>(call: () => Promise<T>): Promise<T | null> => {
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      try {
+        return await Promise.race([call(), new Promise<null>((resolve) => { timer = setTimeout(() => resolve(null), timeoutMs); })]);
+      } catch {
+        return null;
+      } finally {
+        if (timer) clearTimeout(timer);
+      }
+    };
+    const worker = async () => {
+      for (let id = queue.shift(); id !== undefined; id = queue.shift()) {
+        const key = this.keyFor(id);
+        const pendingDeletionAt = this.pendingDeletionAt(id);
+        const status = await bounded(() => this.options.client.status(key));
+        if (!status) {
+          out.set(id, { view: { state: "unavailable", lastUsedAt: null, workspaceBytes: null, overQuota: false, limits: null, idleMinutes: info?.idleMinutes ?? null, pendingDeletionAt, error: "unreachable" }, busy: 0, stats: null });
+          continue;
+        }
+        if (status.state === "missing") continue;
+        const stats = await bounded(() => this.options.client.stats(key));
+        out.set(id, {
+          view: { state: status.state, lastUsedAt: status.lastUsedAt, workspaceBytes: status.workspaceBytes, overQuota: status.overQuota, limits: status.limits, idleMinutes: info?.idleMinutes ?? null, pendingDeletionAt },
+          busy: status.busy,
+          stats,
+        });
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(8, queue.length) }, worker));
+    return out;
   }
 
   /** The console's Overview (2026-10-08): how many of these people's
@@ -132,7 +209,7 @@ export class UserSandboxManager {
         let timer: ReturnType<typeof setTimeout> | undefined;
         try {
           const status = await Promise.race([
-            this.options.client.status(this.keyFor(id)),
+            this.clientFor(id).status(this.keyFor(id)),
             new Promise<null>((resolve) => { timer = setTimeout(() => resolve(null), timeoutMs); }),
           ]);
           if (status?.state === "running") running += 1;
@@ -153,13 +230,12 @@ export class UserSandboxManager {
     }
   }
 
-  async exec(principalId: string, input: SandboxExecInput): Promise<SandboxExecOutput> {
+  async exec(principalId: string, input: SandboxExecInput, botId?: string): Promise<SandboxExecOutput> {
     this.refuseIfOut(principalId);
     try {
-      return await this.options.client.exec(this.keyFor(principalId), input);
+      return await this.clientFor(principalId, botId).exec(this.keyFor(principalId), input);
     } catch (error) {
-      if (error instanceof SandboxdRequestError) throw new UserSandboxUnavailable(error.message, error.code);
-      throw new UserSandboxUnavailable("The server environment could not be reached. Try again in a moment.", "unreachable");
+      throw asUnavailable(error);
     }
   }
 
@@ -167,8 +243,7 @@ export class UserSandboxManager {
     try {
       return await work();
     } catch (error) {
-      if (error instanceof SandboxdRequestError) throw new UserSandboxUnavailable(error.message, error.code);
-      throw new UserSandboxUnavailable("The server environment could not be reached. Try again in a moment.", "unreachable");
+      throw asUnavailable(error);
     }
   }
 
@@ -178,12 +253,13 @@ export class UserSandboxManager {
   async power(principalId: string, action: "start" | "shutdown" | "pause" | "resume"): Promise<UserSandboxView> {
     if (action !== "shutdown") this.refuseIfOut(principalId);
     const key = this.keyFor(principalId);
+    const client = this.clientFor(principalId);
     await this.call(async () => {
-      if (action === "shutdown") return this.options.client.stop(key);
-      if (action === "pause") return this.options.client.pause(key);
-      if (action === "resume") return this.options.client.resume(key);
-      const current = await this.options.client.status(key);
-      return current.state === "paused" ? this.options.client.resume(key) : this.options.client.ensure(key);
+      if (action === "shutdown") return client.stop(key);
+      if (action === "pause") return client.pause(key);
+      if (action === "resume") return client.resume(key);
+      const current = await client.status(key);
+      return current.state === "paused" ? client.resume(key) : client.ensure(key);
     });
     return this.status(principalId);
   }
@@ -191,10 +267,10 @@ export class UserSandboxManager {
   /** The person is on a voice call (its heartbeat): count it as use of
    * their environment, so the provisioner's idle stop never takes it away
    * mid-call. Best effort; starts nothing, and never for a person signed out. */
-  async markUsed(principalId: string): Promise<boolean> {
+  async markUsed(principalId: string, botId?: string): Promise<boolean> {
     if (this.pending.has(principalId)) return false;
     try {
-      await this.options.client.markUsed(this.keyFor(principalId));
+      await this.clientFor(principalId, botId).markUsed(this.keyFor(principalId));
       return true;
     } catch {
       return false;
@@ -202,14 +278,14 @@ export class UserSandboxManager {
   }
 
   /** Commands in flight in the person's environment right now. */
-  async busy(principalId: string): Promise<number> {
-    try { return (await this.options.client.status(this.keyFor(principalId))).busy; } catch { return 0; }
+  async busy(principalId: string, botId?: string): Promise<number> {
+    try { return (await this.clientFor(principalId, botId).status(this.keyFor(principalId))).busy; } catch { return 0; }
   }
 
   /** The usage panel: CPU, memory, disk and OS of the person's own
    * environment. Starts nothing. */
   stats(principalId: string): Promise<SandboxStats> {
-    return this.call(() => this.options.client.stats(this.keyFor(principalId)));
+    return this.call(() => this.clientFor(principalId).stats(this.keyFor(principalId)));
   }
 
   /** Open the person's desktop for their live view: start the sandbox and its
@@ -246,8 +322,9 @@ export class UserSandboxManager {
       }
       console.error("user-sandbox: an environment from an older image had no desktop; updating it from the current image");
       await this.call(async () => {
-        await this.options.client.remove(this.keyFor(principalId), { keepWorkspace: true });
-        await this.options.client.ensure(this.keyFor(principalId));
+        const client = this.clientFor(principalId);
+        await client.remove(this.keyFor(principalId), { keepWorkspace: true });
+        await client.ensure(this.keyFor(principalId));
       });
       result = await start();
     }
@@ -265,7 +342,7 @@ export class UserSandboxManager {
   async desktopStream(principalId: string, options: { control: boolean }): Promise<Duplex> {
     this.refuseIfOut(principalId);
     try {
-      const stream = await this.options.client.desktopStream(this.keyFor(principalId), options);
+      const stream = await this.clientFor(principalId).desktopStream(this.keyFor(principalId), options);
       const views = this.desktopViews.get(principalId);
       if (views) {
         views.open += 1;
@@ -273,21 +350,20 @@ export class UserSandboxManager {
       }
       return stream;
     } catch (error) {
-      if (error instanceof SandboxdRequestError) throw new UserSandboxUnavailable(error.message, error.code);
-      throw new UserSandboxUnavailable("The server environment could not be reached. Try again in a moment.", "unreachable");
+      throw asUnavailable(error);
     }
   }
 
   /** A person's own MCP server command, running in their environment,
    * as a byte stream (server/sandbox-stdio-mcp.ts). Starts it when needed. */
-  async stdioStream(principalId: string, spec: SandboxStdioSpec): Promise<Duplex> {
+  async stdioStream(principalId: string, spec: SandboxStdioSpec, botId?: string): Promise<Duplex> {
     this.refuseIfOut(principalId);
-    return this.call(() => this.options.client.stdioStream(this.keyFor(principalId), spec));
+    return this.call(() => this.clientFor(principalId, botId).stdioStream(this.keyFor(principalId), spec));
   }
 
-  async workspaceOverQuota(principalId: string): Promise<boolean> {
+  async workspaceOverQuota(principalId: string, botId?: string): Promise<boolean> {
     try {
-      return (await this.options.client.status(this.keyFor(principalId))).overQuota;
+      return (await this.clientFor(principalId, botId).status(this.keyFor(principalId))).overQuota;
     } catch {
       return false;
     }
@@ -298,8 +374,9 @@ export class UserSandboxManager {
   async reset(principalId: string): Promise<UserSandboxView> {
     this.refuseIfOut(principalId);
     const key = this.keyFor(principalId);
-    await this.options.client.remove(key);
-    await this.options.client.ensure(key);
+    const client = this.clientFor(principalId);
+    await client.remove(key);
+    await client.ensure(key);
     return this.status(principalId);
   }
 
@@ -309,14 +386,20 @@ export class UserSandboxManager {
   async update(principalId: string): Promise<UserSandboxView> {
     this.refuseIfOut(principalId);
     const key = this.keyFor(principalId);
-    await this.options.client.remove(key, { keepWorkspace: true });
-    await this.options.client.ensure(key);
+    const client = this.clientFor(principalId);
+    await client.remove(key, { keepWorkspace: true });
+    await client.ensure(key);
     return this.status(principalId);
   }
 
   /** Delete the environment and its /workspace now (account deletion). */
   async removeNow(principalId: string): Promise<void> {
-    await this.options.client.remove(this.keyFor(principalId));
+    const key = this.keyFor(principalId);
+    const errors: unknown[] = [];
+    for (const client of this.clients()) {
+      try { await client.remove(key); } catch (error) { errors.push(error); }
+    }
+    if (errors.length) throw errors[0];
     if (this.pending.delete(principalId)) this.persist();
   }
 
@@ -326,10 +409,13 @@ export class UserSandboxManager {
       this.pending.set(principalId, this.now() + this.graceMs);
       this.persist();
     }
-    try {
-      await this.options.client.stop(this.keyFor(principalId));
-    } catch (error) {
-      console.error(`user-sandbox: could not stop an environment of a person signed out: ${error instanceof Error ? error.message : String(error)}`);
+    const key = this.keyFor(principalId);
+    for (const client of this.clients()) {
+      try {
+        await client.stop(key);
+      } catch (error) {
+        console.error(`user-sandbox: could not stop an environment of a person signed out: ${error instanceof Error ? error.message : String(error)}`);
+      }
     }
   }
 
@@ -345,7 +431,12 @@ export class UserSandboxManager {
     for (const [principalId, dueAt] of new Map(this.pending)) {
       if (dueAt > now) continue;
       try {
-        await this.options.client.remove(this.keyFor(principalId));
+        const key = this.keyFor(principalId);
+        const errors: unknown[] = [];
+        for (const client of this.clients()) {
+          try { await client.remove(key); } catch (error) { errors.push(error); }
+        }
+        if (errors.length) throw errors[0];
         this.pending.delete(principalId);
         removed.push(principalId);
       } catch (error) {
@@ -375,6 +466,12 @@ const VNC_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789"
  * change the passwords. */
 const DESKTOP_CONNECT_MS = 30_000;
 
+function asUnavailable(error: unknown): never {
+  if (error instanceof UserSandboxUnavailable) throw error;
+  if (error instanceof SandboxdRequestError) throw new UserSandboxUnavailable(error.message, error.code);
+  throw new UserSandboxUnavailable("The server environment could not be reached. Try again in a moment.", "unreachable");
+}
+
 function vncPassword(): string {
   let value = "";
   for (let index = 0; index < 8; index++) value += VNC_ALPHABET[randomInt(VNC_ALPHABET.length)];
@@ -383,16 +480,36 @@ function vncPassword(): string {
 
 /** The manager this server runs, or null when organization mode or the
  * provisioner is not configured (solo servers never have one). */
-export function userSandboxSettingsFromEnv(env: NodeJS.ProcessEnv = process.env): { url: string; keyFile: string; instance: string; graceMs: number } | null {
+export function userSandboxSettingsFromEnv(env: NodeJS.ProcessEnv = process.env): {
+  url: string;
+  keyFile: string;
+  instance: string;
+  graceMs: number;
+  kubernetesUrl: string | null;
+  tlsCaFile: string | null;
+} | null {
   const url = env.SAGAX_SANDBOXD_URL?.trim();
   if (!url) return null;
   const hours = env.SAGAX_SANDBOX_DELETE_GRACE_HOURS?.trim();
   const graceHours = hours ? Number(hours) : DEFAULT_DELETE_GRACE_MS / 3600_000;
   if (!Number.isFinite(graceHours) || graceHours < 0 || graceHours > 24 * 90) throw new Error("SAGAX_SANDBOX_DELETE_GRACE_HOURS must be between 0 and 2160");
+  const kubernetesUrl = env.SAGAX_SANDBOXD_K8S_URL?.trim() || null;
+  const tlsCaFile = env.SAGAX_SANDBOXD_TLS_CA?.trim() || null;
+  const route = sandboxRouteFromEnv(env);
+  const canary = route.forced === "kubernetes" || route.bots.length > 0 || route.people.length > 0;
+  if (kubernetesUrl) {
+    if (!tlsCaFile) throw new Error("SAGAX_SANDBOXD_K8S_URL requires SAGAX_SANDBOXD_TLS_CA");
+    validSandboxdUrl(kubernetesUrl, { ca: Buffer.from("configured") });
+    if (new URL(kubernetesUrl).protocol !== "https:") throw new Error("SAGAX_SANDBOXD_K8S_URL must be https");
+  } else if (canary && route.forced !== "docker") {
+    throw new Error("a Kubernetes canary requires SAGAX_SANDBOXD_K8S_URL");
+  }
   return {
     url,
     keyFile: env.SAGAX_SANDBOXD_KEY_FILE?.trim() || "/run/sagax-sandboxd/key",
     instance: env.SAGAX_SANDBOX_INSTANCE?.trim() || "default",
     graceMs: graceHours * 3600_000,
+    kubernetesUrl,
+    tlsCaFile,
   };
 }

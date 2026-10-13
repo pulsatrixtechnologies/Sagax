@@ -29,7 +29,7 @@ type Lens = "run" | "events" | "raw";
 export function InspectorPanel({ bot }: { bot: Bot }) {
   const { dispatch } = useStore();
   // Docked flush under the Windows caption corner: drop the header 16px.
-  const { padClass } = useCaptionChrome();
+  const { padClass, dragProps } = useCaptionChrome();
   const { macInset, browser } = useMacInsetChrome();
   const threadId = bot.threadId;
   const [lens, setLens] = useState<Lens>("run");
@@ -173,7 +173,7 @@ export function InspectorPanel({ bot }: { bot: Bot }) {
   return (
     <aside aria-label="Inspector" className="app-docked-panel animate-panel-in absolute inset-0 z-40 flex h-full min-w-0 flex-col border-l-[0.5px] border-hairline-weak bg-app lg:static lg:z-auto lg:w-[min(460px,45vw)] lg:shrink-0">
       {(macInset || browser) && <div className="content-topbar-strip" />}
-      <div className={cn("content-topbar flex items-center justify-between px-4 py-3", padClass)}>
+      <div {...dragProps} className={cn("content-topbar flex items-center justify-between px-4 py-3", padClass)}>
         <span className="flex items-center gap-2 text-[13px] font-medium leading-[18px] text-ink">
           <Bug size={16} className="text-ink-secondary" /> Inspector
         </span>

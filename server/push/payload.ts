@@ -11,8 +11,6 @@ import { botAvatarUrlSchema } from "../../shared/bot-avatar.ts";
 
 export type PushKind = "message" | "nudge" | "approval" | "achievement" | "routine";
 
-export const PUSH_KINDS: readonly PushKind[] = ["message", "nudge", "approval", "achievement", "routine"];
-
 export interface PushMessage {
   kind: PushKind;
   /** The person it is for (principal id). */

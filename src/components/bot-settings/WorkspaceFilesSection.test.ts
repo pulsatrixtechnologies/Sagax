@@ -88,8 +88,8 @@ describe("WorkspaceFilesSection", () => {
 
   it("shows sizes against budgets, dates and last use in Advanced", () => {
     const html = render();
-    expect(html).toContain("12 of 200 lines · 800 B of 23.4 KB");
-    expect(html).toContain("4 of 60 lines · 90 B of 7.8 KB");
+    expect(html).toContain("12 / 200 lines · 800 B / 23.4 KB");
+    expect(html).toContain("4 / 60 lines · 90 B / 7.8 KB");
     expect(html).toContain("last used 1 min ago");
     expect(html).toContain("not used yet");
     expect(html).toContain("data-workspace-path");

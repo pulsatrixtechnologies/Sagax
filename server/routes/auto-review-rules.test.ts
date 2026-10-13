@@ -22,8 +22,8 @@ async function serve(auth: RequestAuth) {
   const dir = mkdtempSync(join(tmpdir(), "omb-rules-"));
   dirs.push(dir);
   const store = new CommandAllowlistStore(join(dir, "command-allowlist.json"));
-  store.add("bot-a", { command: "npm test", cwd: "/work/a", providerInstanceId: "claude" });
-  store.add("bot-b", { command: "make lint", cwd: "/work/b", providerInstanceId: "codex" });
+  store.add("bot-a", { command: "npm test", cwd: dir, providerInstanceId: "claude" });
+  store.add("bot-b", { command: "make lint", cwd: dir, providerInstanceId: "codex" });
   const routes = [createAutoReviewRuleRoutes({
     bots: () => [{ id: "bot-a", name: "Alpha" }, { id: "bot-b", name: "Beta" }],
     rules: (botId) => store.list(botId),

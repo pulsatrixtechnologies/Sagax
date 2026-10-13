@@ -93,14 +93,24 @@ describe("sidebar head row height", () => {
     expect(rowClasses).toContain("items-center");
     expect(px(rowClasses.find((token) => token.startsWith("h-"))!)).toBe(headerHeight);
     // no extra margin above the row on any platform: the chat header has none
-    expect(sidebar).toContain("<div className={SIDEBAR_HEAD_ROW}>");
+    expect(sidebar).toContain("<div className={titleBarHead ? SIDEBAR_TITLE_ROW : SIDEBAR_HEAD_ROW}");
     expect(sidebar).not.toMatch(/h-11 items-center justify-between/);
   });
 
-  it("sits under the same 36px macOS inset strip the chat column draws", () => {
+  it("with the logo on, sits under the same 36px macOS inset strip the chat column draws", () => {
     const head = sidebar.slice(sidebar.indexOf("<div data-sidebar-head"), sidebar.indexOf("{/* Bot list."));
-    expect(head).toMatch(/\(macInset \|\| browser\) && \(\s*<div className=\{cn\("flex h-9 items-center"/);
+    expect(head).toMatch(/\(macInset \|\| browser\) && \(density === "icons" \|\| showLogo\) && \(\s*<div className=\{cn\("flex h-9 items-center"/);
     expect(chatView).toContain('{(macInset || browser) && <div className="content-topbar-strip" />}');
     expect(styles).toMatch(/\[data-skin="pulsatrix-light"\] \.content-topbar-strip \{[^}]*height: 36px;/);
+  });
+
+  it("with no logo, puts search and New in the title bar's 48px row, level with the lights", () => {
+    expect(sidebar).toContain("const titleBarHead = (macInset || browser) && !showLogo;");
+    const row = sidebar.match(/export const SIDEBAR_TITLE_ROW = "([^"]+)"/)?.[1];
+    expect(row).toBeDefined();
+    const rowClasses = classes(row!);
+    expect(rowClasses).toContain("items-center");
+    expect(px(rowClasses.find((token) => token.startsWith("h-"))!)).toBe(48);
+    expect(rowClasses).toContain("pr-4");
   });
 });

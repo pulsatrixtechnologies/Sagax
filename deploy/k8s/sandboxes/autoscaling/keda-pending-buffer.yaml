@@ -1,0 +1,90 @@
+# Pending-sandbox scaling. One buffer pod per Pending sagax-user pod, each
+# reserving a sandbox's cpu and memory, at a lower priority. The node
+# autoscaler (cluster-autoscaler or Karpenter, not both) sees the
+# unschedulable buffer and adds a node. Delete this ScaledObject before the
+# driver creates sandbox pods itself, or the reservation is counted twice
+# (docs/ops/sandboxes/cutover-rollback.md).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sagax-sandbox-buffer
+  namespace: sagax-sandboxes
+  labels:
+    app.kubernetes.io/name: sagax-sandbox-buffer
+spec:
+  replicas: 0
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: sagax-sandbox-buffer
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: sagax-sandbox-buffer
+        app.kubernetes.io/part-of: sagax
+    spec:
+      priorityClassName: sagax-sandbox-buffer
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 0
+      tolerations:
+        - key: sagax.pulsatrix.ca/pool
+          operator: Equal
+          value: sandboxes
+          effect: NoSchedule
+      nodeSelector:
+        sagax.pulsatrix.ca/pool: sandboxes
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        runAsGroup: 65534
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: pause
+          image: registry.k8s.io/pause:3.10
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            requests:
+              cpu: "1"
+              memory: 1536Mi
+            limits:
+              cpu: "1"
+              memory: 1536Mi
+---
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: sagax-sandbox-pending
+  namespace: sagax-sandboxes
+spec:
+  scaleTargetRef:
+    name: sagax-sandbox-buffer
+  minReplicaCount: 0
+  maxReplicaCount: 4
+  pollingInterval: 15
+  cooldownPeriod: 300
+  advanced:
+    horizontalPodAutoscalerConfig:
+      behavior:
+        scaleDown:
+          stabilizationWindowSeconds: 300
+        scaleUp:
+          stabilizationWindowSeconds: 0
+    restoreToOriginalReplicaCount: true
+  fallback:
+    failureThreshold: 3
+    replicas: 0
+  triggers:
+    - type: prometheus
+      metricType: Value
+      metadata:
+        serverAddress: http://prometheus-k8s.monitoring.svc.cluster.local:9090
+        metricName: sagax_sandboxes_pending
+        threshold: "1"
+        activationThreshold: "1"
+        query: >-
+          sum(kube_pod_status_phase{namespace="sagax-sandboxes",phase="Pending",pod=~"sagax-user-.+"})
+          or vector(0)

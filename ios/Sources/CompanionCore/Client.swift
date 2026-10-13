@@ -1221,6 +1221,14 @@ public struct CompanionClient: Sendable {
         return (response.routines, response.runs)
     }
 
+    /// AU20: the Automations listing in a scope (Mine, My teams, Everyone)
+    /// with its filters (`GET /api/routines?scope=...`). Mine with no filter
+    /// sends no parameter, so an older server answers as before.
+    public func routines(in query: RoutineScopeQuery) async throws -> ScopedRoutines {
+        let response = try await send(try makeRequest("GET", "/api/routines", query: query.queryItems), as: RoutinesResponse.self)
+        return ScopedRoutines(response: response, asked: query.scope)
+    }
+
     /// A read-only summary of one bot: who it is, what it does and won't do,
     /// and its recent activity. No settings, no transcript.
     public func overview(botId: String) async throws -> BotOverview {

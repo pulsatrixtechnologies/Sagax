@@ -1,0 +1,212 @@
+# The provisioner. replicas is 0 so applying this tree does not start a
+# process. SANDBOX_BACKEND=kubernetes runs the Kubernetes backend
+# (server/sandboxd-k8s.ts). Scale up from the cutover runbook.
+apiVersion: v1
+kind: Service
+metadata:
+  name: sagax-sandboxd
+  namespace: sagax-sandboxes
+  labels:
+    app.kubernetes.io/name: sagax-sandboxd
+spec:
+  selector:
+    app.kubernetes.io/name: sagax-sandboxd
+  ports:
+    - name: http
+      port: 8791
+      targetPort: http
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sagax-sandboxd
+  namespace: sagax-sandboxes
+  labels:
+    app.kubernetes.io/name: sagax-sandboxd
+spec:
+  replicas: 0
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: sagax-sandboxd
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: sagax-sandboxd
+        app.kubernetes.io/part-of: sagax
+    spec:
+      serviceAccountName: sagax-sandboxd
+      automountServiceAccountToken: true
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: sagax.pulsatrix.ca/pool
+                    operator: NotIn
+                    values: ["sandboxes"]
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: sandboxd
+          image: REPLACE_IMAGE
+          imagePullPolicy: IfNotPresent
+          args: ["node", "dist-server/sandboxd.js"]
+          ports:
+            - name: http
+              containerPort: 8791
+          env:
+            - name: SANDBOX_BACKEND
+              value: kubernetes
+            - name: SAGAX_SANDBOXD_LISTEN
+              value: 0.0.0.0:8791
+            - name: SAGAX_SANDBOXD_KEY_FILE
+              value: /run/sagax-sandboxd/key
+            - name: SAGAX_SANDBOX_INSTANCE
+              value: gox
+            - name: SAGAX_SANDBOX_IMAGE
+              value: REPLACE_SANDBOX_IMAGE
+            - name: SAGAX_SANDBOX_MEMORY_MB
+              value: "1536"
+            - name: SAGAX_SANDBOX_CPUS
+              value: "1"
+            - name: SAGAX_SANDBOX_PIDS
+              value: "512"
+            - name: SAGAX_SANDBOX_TMP_MB
+              value: "512"
+            - name: SAGAX_SANDBOX_DISK_MB
+              value: "2048"
+            - name: SAGAX_SANDBOX_MAX_RUNNING
+              value: "64"
+            - name: SAGAX_SANDBOX_IDLE_MINUTES
+              value: "10"
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 5
+            failureThreshold: 12
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 200m
+              memory: 192Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: key
+              mountPath: /run/sagax-sandboxd
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: key
+          secret:
+            secretName: sagax-sandboxd-key
+            defaultMode: 288
+        - name: tmp
+          emptyDir:
+            sizeLimit: 16Mi
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: sagax-sandboxd
+  namespace: sagax-sandboxes
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: sagax-sandboxd
+---
+# What the driver must create for one person. The Docker spec's isolation
+# rules are the source (server/user-sandbox-spec.ts); this is the same
+# shape on the Kubernetes API. pids 512 is the driver's limit, not a
+# node-wide kubelet limit.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: sagax-sandbox-pod-template
+  namespace: sagax-sandboxes
+data:
+  pod.yaml: |
+    apiVersion: v1
+    kind: Pod
+    metadata:
+      labels:
+        app.kubernetes.io/name: sagax-sandbox
+        app.kubernetes.io/part-of: sagax
+        com.pulsatrix.sagax.sandbox: "1"
+      annotations:
+        sagax.pulsatrix.ca/pids-limit: "512"
+    spec:
+      restartPolicy: Never
+      priorityClassName: sagax-sandbox
+      automountServiceAccountToken: false
+      runtimeClassName: REPLACE_RUNTIME_CLASS
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      tolerations:
+        - key: sagax.pulsatrix.ca/pool
+          operator: Equal
+          value: sandboxes
+          effect: NoSchedule
+      nodeSelector:
+        sagax.pulsatrix.ca/pool: sandboxes
+      containers:
+        - name: sandbox
+          image: REPLACE_SANDBOX_IMAGE
+          command: ["sleep", "infinity"]
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            requests:
+              cpu: "1"
+              memory: 1536Mi
+            limits:
+              cpu: "1"
+              memory: 1536Mi
+          volumeMounts:
+            - name: workspace
+              mountPath: /workspace
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: workspace
+          persistentVolumeClaim:
+            claimName: sagax-user-WORKSPACE
+        - name: tmp
+          emptyDir:
+            sizeLimit: 512Mi

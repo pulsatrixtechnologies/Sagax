@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { ChevronDown, ChevronRight, ExternalLink, Layers, Loader2 } from "lucide-react";
 
 import { api, openThread, useStore, type Bot } from "@/state/store";
+import { useShowThreads } from "@/lib/thread-preferences";
 import { t } from "@/lib/i18n";
 import { cn } from "@/lib/cn";
 import {
@@ -160,6 +161,7 @@ function BackgroundWorkCard({
 
 export function BackgroundWorkPanel({ bot }: { bot: Bot }) {
   const { state, dispatch } = useStore();
+  const threadsShown = useShowThreads();
   const feed = useBotActivityFeed(bot);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [modalItem, setModalItem] = useState<BotActivityItem | null>(null);
@@ -171,8 +173,8 @@ export function BackgroundWorkPanel({ bot }: { bot: Bot }) {
 
   const openTranscript = useCallback((item: BotActivityItem) => {
     if (!item.threadId) return;
-    openThread(dispatch, { botId: bot.id, threadId: item.threadId }, state);
-  }, [bot.id, dispatch, state]);
+    openThread(dispatch, { botId: bot.id, threadId: item.threadId }, state, threadsShown);
+  }, [bot.id, dispatch, state, threadsShown]);
 
   useEffect(() => {
     if (feed.deepLinked) setModalItem(feed.deepLinked);

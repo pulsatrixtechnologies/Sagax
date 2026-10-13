@@ -199,7 +199,10 @@ export type BotAvatarProps = Omit<MausAvatarProps, "color"> & {
 
 /** The Primary Bot mark: orange circle, white star, bottom-right. */
 export function PrimaryBotBadge({ size, ringClassName = "ring-panel", label }: { size: number; ringClassName?: string; label?: string }) {
-  const badge = Math.min(18, Math.max(10, Math.round(size * 0.28)));
+  // A quarter of the avatar (16 on a 64px tile), tucked into the corner of
+  // the avatar's box over the mascot's edge, as the reference window draws it.
+  const badge = Math.min(16, Math.max(10, Math.round(size * 0.25)));
+  const inset = { right: Math.round(size * 0.04), bottom: Math.round(size * 0.06) };
   return (
     <span
       data-testid="primary-bot-badge"
@@ -207,8 +210,8 @@ export function PrimaryBotBadge({ size, ringClassName = "ring-panel", label }: {
       aria-label={label}
       aria-hidden={label ? undefined : true}
       title={label}
-      className={`pointer-events-none absolute -bottom-0.5 -right-0.5 flex items-center justify-center rounded-full bg-accent ring-2 ${ringClassName}`}
-      style={{ width: badge, height: badge }}
+      className={`pointer-events-none absolute flex items-center justify-center rounded-full bg-primary-badge text-primary-badge-ink ring-2 ${ringClassName}`}
+      style={{ width: badge, height: badge, ...inset }}
     >
       <svg viewBox="0 0 24 24" width={Math.round(badge * 0.66)} height={Math.round(badge * 0.66)} fill="currentColor" aria-hidden="true">
         <path d="M12 2.6l2.83 5.73 6.33.92-4.58 4.46 1.08 6.3L12 17.03l-5.66 2.98 1.08-6.3-4.58-4.46 6.33-.92z" />

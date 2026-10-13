@@ -138,6 +138,59 @@ describe("steer-queue module", () => {
     expect(run.mock.calls[0][3].peerAsk).toEqual(peerAsk);
   });
 
+  // A thread a bot opened on itself hands work on as the opener's turn
+  // would have: where that work started rides the wait, and a restart.
+  it("keeps where a self-opened thread's work started through persistence and a capacity wait", () => {
+    const bot = fakeBot("bot-self-origin", "thread-self-origin", true);
+    const store = fakeStore([bot]);
+    const run = vi.fn();
+    const peerAsk = { botId: bot.id, name: "Planner" };
+    const origin = { kind: "user", request: "Review each open PR" } as const;
+    queueSteeredMessage(bot.id, bot.threadId, "Review PR 12", { reason: "capacity", peerAsk, origin });
+    // a forged or corrupt origin in the durable row is dropped, not trusted
+    saveChatFollowup({ id: "forged-origin", kind: "bot", ownerId: bot.id, threadId: "thread-forged-origin",
+      payload: { text: "x", peerAsk, origin: { kind: "user", request: "" } as never } });
+    restoreSteeredMessages();
+    bot.busy = false;
+    drainSteeredMessages(store, run);
+    const turn = (threadId: string, at = 0) => run.mock.calls.filter((call) => call[1] === threadId)[at]!;
+    expect(turn(bot.threadId)[6].origin).toEqual(origin);
+    expect(turn("thread-forged-origin")[6].origin).toBeUndefined();
+    expect(store.messages.find((message) => message.text === "Review PR 12")?.peerAsk).toEqual(peerAsk);
+    // the bot's own work from another request never folds into this turn
+    queueSteeredMessage(bot.id, bot.threadId, "Review PR 13", { peerAsk, origin });
+    queueSteeredMessage(bot.id, bot.threadId, "Check the logs", { peerAsk });
+    drainSteeredMessages(store, run);
+    expect(turn(bot.threadId, 1)[2]).toBe("Review PR 13");
+    drainSteeredMessages(store, run);
+    expect(turn(bot.threadId, 2)[2]).toBe("Check the logs");
+    expect(turn(bot.threadId, 2)[6].origin).toBeUndefined();
+  });
+
+  it("answers Team incidents reports that waited as one turn, whichever bot broke, through a restart", () => {
+    const chief = fakeBot("bot-incidents-chief", "thread-incidents-reports", true);
+    const store = fakeStore([chief]);
+    const run = vi.fn();
+    const ada = { botId: "bot-ada", name: "Ada", unattended: true, incident: { threadId: "thread-ada" } };
+    const ben = { botId: "bot-ben", name: "Ben", unattended: true, incident: { threadId: "thread-ben", notified: true } };
+    queueSteeredMessage(chief.id, chief.threadId, "Ada's report", { unattended: true, peerAsk: ada });
+    queueSteeredMessage(chief.id, chief.threadId, "Ben's report", { unattended: true, peerAsk: ben });
+    // the person's own words never ride along with reports
+    queueSteeredMessage(chief.id, chief.threadId, "what happened?");
+    restoreSteeredMessages(); // a restart reads every report back, provenance and all
+    const heads: unknown[] = [];
+    chief.busy = false;
+    drainSteeredMessages(store, run, (_botId, _threadId, head) => { heads.push(head.peerAsk); return false; });
+    expect(heads).toEqual([ada]);
+    expect(store.messages.map((message) => [message.text, message.peerAsk])).toEqual([["Ada's report", ada], ["Ben's report", ben]]);
+    expect(run).toHaveBeenCalledTimes(1);
+    expect(run.mock.calls[0][2]).toBe("Ada's report\n\nBen's report");
+    expect(run.mock.calls[0][5]).toBe(true);
+    drainSteeredMessages(store, run);
+    expect(store.messages.at(-1)).toMatchObject({ text: "what happened?" });
+    expect(store.messages.at(-1)?.peerAsk).toBeUndefined();
+  });
+
   it("keeps who sent each queued message, so a steer of the held queue can still name them", () => {
     const botId = "bot-sender-held";
     const threadId = "thread-sender-held";
@@ -181,13 +234,97 @@ describe("steer-queue module", () => {
     queueSteeredMessage(bot.id, bot.threadId, "what is on my calendar", { via: "call" });
     restoreSteeredMessages(); // a restart reads via back from the durable row
     bot.busy = false;
-    drainSteeredMessages(store, run);
+    drainSteeredMessages(store, run); // the typed line starts its own turn
+    drainSteeredMessages(store, run); // then the spoken one starts its own
     expect(store.messages.map((message) => [message.text, message.via])).toEqual([
       ["typed while the bot worked", undefined],
       ["what is on my calendar", "call"],
     ]);
     expect("via" in store.messages[0]).toBe(false);
-    expect(run.mock.calls[0][3].via).toBe("call");
+    expect(run).toHaveBeenCalledTimes(2);
+    expect(run.mock.calls[1][3].via).toBe("call");
+  });
+
+  it("keeps a call's id on the line it drains, also after a restart", () => {
+    const bot = fakeBot("bot-call-id-drain", "thread-call-id-drain", true);
+    const store = fakeStore([bot]);
+    const run = vi.fn();
+    queueSteeredMessage(bot.id, bot.threadId, "typed while the bot worked");
+    queueSteeredMessage(bot.id, bot.threadId, "what is on my calendar", { via: "call", callId: "call-1" });
+    restoreSteeredMessages(); // a restart reads the id back from the durable row
+    bot.busy = false;
+    drainSteeredMessages(store, run); // the typed line starts its own turn
+    drainSteeredMessages(store, run); // then the spoken one starts its own
+    expect(store.messages.map((message) => [message.text, message.via, message.callId])).toEqual([
+      ["typed while the bot worked", undefined, undefined],
+      ["what is on my calendar", "call", "call-1"],
+    ]);
+    expect("callId" in store.messages[0]!).toBe(false);
+    // the line handed to each turn is the stamped one
+    expect(run).toHaveBeenCalledTimes(2);
+    expect(run.mock.calls[0]![3].callId).toBeUndefined();
+    expect(run.mock.calls[1]![3].callId).toBe("call-1");
+  });
+
+  // A merged turn's request is only its last line, so a call's record (its
+  // work is found by the lines the call spoke) could not tell a typed line's
+  // work from a spoken one's: a spoken line never shares a turn with a line
+  // that was not spoken on the same call, though one person sent both.
+  it.each([
+    ["a spoken line, then a typed one", "spoken-typed", { via: "call", callId: "call-1" }, {}],
+    ["a typed line, then a spoken one", "typed-spoken", {}, { via: "call", callId: "call-1" }],
+    ["a spoken line with no call id (an older build's row), then a typed one", "legacy-typed", { via: "call" }, {}],
+  ] as const)("drains %s as two turns", (_what, slug, first, second) => {
+    const bot = fakeBot(`bot-call-split-${slug}`, `thread-call-split-${slug}`, true);
+    const store = fakeStore([bot]);
+    const run = vi.fn();
+    queueSteeredMessage(bot.id, bot.threadId, "first words", first);
+    queueSteeredMessage(bot.id, bot.threadId, "second words", second);
+    bot.busy = false;
+    drainSteeredMessages(store, run);
+    expect(run).toHaveBeenCalledTimes(1);
+    expect(run.mock.calls[0]![2]).toBe("first words");
+    drainSteeredMessages(store, run);
+    expect(run).toHaveBeenCalledTimes(2);
+    expect(run.mock.calls[1]![2]).toBe("second words");
+    expect(store.messages.map((message) => message.text)).toEqual(["first words", "second words"]);
+  });
+
+  it("drains one call's spoken lines as one turn, and the next call's as its own", () => {
+    const bot = fakeBot("bot-call-groups", "thread-call-groups", true);
+    const store = fakeStore([bot]);
+    const run = vi.fn();
+    queueSteeredMessage(bot.id, bot.threadId, "check the build", { via: "call", callId: "call-1" });
+    queueSteeredMessage(bot.id, bot.threadId, "and the tests", { via: "call", callId: "call-1" });
+    queueSteeredMessage(bot.id, bot.threadId, "then deploy", { via: "call", callId: "call-2" });
+    bot.busy = false;
+    drainSteeredMessages(store, run);
+    drainSteeredMessages(store, run);
+    expect(run.mock.calls.map((call) => call[2])).toEqual(["check the build\n\nand the tests", "then deploy"]);
+    expect(store.messages.map((message) => [message.text, message.callId])).toEqual([
+      ["check the build", "call-1"],
+      ["and the tests", "call-1"],
+      ["then deploy", "call-2"],
+    ]);
+  });
+
+  it("never puts a call id on a line that was not spoken", () => {
+    const bot = fakeBot("bot-call-id-stray", "thread-call-id-stray", true);
+    const store = fakeStore([bot]);
+    const run = vi.fn();
+    queueSteeredMessage(bot.id, bot.threadId, "typed with a stray id", { callId: "call-stray" });
+    // a durable row another build wrote: an id without "call"
+    saveChatFollowup({
+      id: "followup-stray-call-id", kind: "bot", ownerId: bot.id, threadId: bot.threadId,
+      payload: { text: "typed by another build", prompt: "typed by another build", callId: "call-stray", queuedAt: Date.now() },
+    });
+    restoreSteeredMessages();
+    bot.busy = false;
+    drainSteeredMessages(store, run);
+    expect(store.messages.map((message) => [message.text, message.via, message.callId])).toEqual([
+      ["typed with a stray id", undefined, undefined],
+      ["typed by another build", undefined, undefined],
+    ]);
   });
 
   it("still loads and drains a durable row written before senders were kept", () => {
@@ -348,7 +485,7 @@ describe("steer-queue module", () => {
     const blocked = vi.fn(() => true);
     queueSteeredMessage(bot.id, bot.threadId, "after handshake");
     drainSteeredMessages(store, run, blocked);
-    expect(blocked).toHaveBeenCalledWith(bot.id, bot.threadId);
+    expect(blocked).toHaveBeenCalledWith(bot.id, bot.threadId, expect.anything());
     expect(run).not.toHaveBeenCalled();
     expect(store.messages).toHaveLength(0);
     expect(_queuedCount(bot.threadId)).toBe(1);

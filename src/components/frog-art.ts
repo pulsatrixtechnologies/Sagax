@@ -81,9 +81,6 @@ export function frogOutline(size: number): number {
   return r2(Math.max(1.9, (1.6 * box) / Math.max(1, size)));
 }
 
-/** Every outline at once (glows, auras, the hit area). */
-export const FROG_SILHOUETTE = `${FROG_ART.body} ${FROG_ART.head}`;
-
 /** The viewBox for a size: the whole box, or the bust under 48 px. */
 export function frogViewBox(size: number): string {
   return size <= FROG_BUST_MAX ? `${FROG_BUST.x} ${FROG_BUST.y} ${FROG_BUST.w} ${FROG_BUST.h}` : "0 0 100 100";

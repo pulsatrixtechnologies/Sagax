@@ -54,6 +54,7 @@ import { LEARN_SOURCE_PREFIX } from "./skill-learn.ts";
 import { librarySkillFilePath, listLibrarySkills, type LibrarySkillListing } from "./skill-library.ts";
 import { workspaceDir } from "./workspace.ts";
 import { isSkillName, parseSkillMd, scanSkillText, SKILL_FILE_MAX_BYTES, type ParsedSkill } from "../shared/skill-md.ts";
+import { parseSkillCommand } from "../shared/skill-command.ts";
 
 // SKILL.md parsing and the static scan live in shared/ so the package
 // format (Admin and the renderer included) validates skills with the exact
@@ -1454,6 +1455,32 @@ function composeSkillsSystemPrompt(botId: string, assignedLibrary: readonly stri
     loggedIndexOmissions.delete(botId);
   }
   return block(lines, omitted.length);
+}
+
+/** The SKILL.md a bot reads for one enabled skill: the reviewed workspace
+ * copy, or the library file for an assigned library skill. The same path
+ * the prompt index names, so a `/name` turn points at exactly that file. */
+export function enabledSkillFile(botId: string, name: string, assignedLibrary?: readonly string[]): string | null {
+  const skill = resolveBotSkills(botId, assignedLibrary).find((entry) => entry.name === name && entry.enabled);
+  if (!skill) return null;
+  const entry = readManifest(botId)[name];
+  return entry ? join(skillTarget(workspaceDir(botId), name, entry), "SKILL.md") : librarySkillFilePath(name);
+}
+
+/** The text the engine reads for a `/name` turn (shared/skill-command.ts).
+ * Any other message, or a name that is not an enabled skill of this bot,
+ * passes through unchanged, so an engine's own slash commands still work. */
+export function expandSkillCommandTurnText(botId: string, text: string, assignedLibrary?: readonly string[]): string {
+  if (!text.trimStart().startsWith("/")) return text;
+  const names = resolveBotSkills(botId, assignedLibrary).filter((skill) => skill.enabled).map((skill) => skill.name);
+  const command = parseSkillCommand(text, names);
+  if (!command) return text;
+  const file = enabledSkillFile(botId, command.name, assignedLibrary);
+  if (!file) return text;
+  const lead = `The user ran your ${command.name} skill with /${command.name}. Read ${JSON.stringify(file)} with your file tools and follow it for this turn.`;
+  return command.request
+    ? `${lead} Where the skill says {input}, use the request.\n\nRequest: ${command.request}`
+    : `${lead} There is no further request, so run it as the skill describes.`;
 }
 
 // --- Skills library composition (features.skillsLibrary) ---

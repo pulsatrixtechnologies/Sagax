@@ -2494,6 +2494,18 @@ final class Session: ObservableObject {
         catch { actionError = error.localizedDescription; return ([], []) }
     }
 
+    /// AU20: the Automations listing in a scope. A scope the server refuses
+    /// (a permission taken back since) falls back to Mine.
+    func loadScopedRoutines(_ query: RoutineScopeQuery) async -> ScopedRoutines {
+        guard let client else { return ScopedRoutines(routines: [], runs: []) }
+        do { return try await client.routines(in: query) }
+        catch {
+            if query.scope != .mine, let mine = try? await client.routines(in: query.choosing(.mine)) { return mine }
+            actionError = error.localizedDescription
+            return ScopedRoutines(routines: [], runs: [])
+        }
+    }
+
     func loadRoutineRunAvailability() async -> RoutineRunAvailability? {
         guard let client else { return nil }
         do {

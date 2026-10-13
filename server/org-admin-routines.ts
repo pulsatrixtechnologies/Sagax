@@ -234,7 +234,10 @@ export function routinesRoutes(deps: RoutinesDeps): ConsoleRoute[] {
         if (isAnswer(page)) return page;
         const now = ctx.now();
         const items = deps.decisions({ from: new Date(now - APPROVAL_HISTORY_DAYS * DAY_MS), to: new Date(now) })
-          .filter((decision) => decision.source === "user" && (decision.decision === "user-approved" || decision.decision === "user-denied") && decision.requestId)
+          // 2026-10-11: a card whose own timeout passed is `expired`, by nobody
+          .filter((decision) => decision.requestId && (
+            (decision.source === "user" && (decision.decision === "user-approved" || decision.decision === "user-denied")) ||
+            decision.decision === "expired"))
           .map((decision) => ({
             botId: decision.botId ?? null,
             botName: decision.botName ?? null,
@@ -243,8 +246,8 @@ export function routinesRoutes(deps: RoutinesDeps): ConsoleRoute[] {
             type: decision.tool ? "tool" : "other",
             tool: decision.tool ?? null,
             summary: decision.summary ?? null,
-            decision: decision.decision === "user-approved" ? "allow" as const : "deny" as const,
-            by: deps.decisionPerson(decision.actor),
+            decision: decision.decision === "user-approved" ? "allow" as const : decision.decision === "expired" ? "expired" as const : "deny" as const,
+            by: decision.decision === "expired" ? null : deps.decisionPerson(decision.actor),
             at: Date.parse(decision.at),
           }))
           .filter((item) => matchesQuery(page.q, item.botName, item.tool, item.summary, item.by?.name))

@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 
 import type { SubjectTokenOutcome } from "./idp-session.ts";
 import type { ExchangeResult } from "./perspicax-link.ts";
-import { PERSPICAX_ACCESS_ENDED, PERSPICAX_SESSION_RESET, PerspicaxMcp, parseMcpBody, perspicaxReplayable, perspicaxSessionLost, perspicaxUnavailableRow, type PerspicaxMcpLink } from "./perspicax-mcp.ts";
+import { PERSPICAX_ACCESS_ENDED, PERSPICAX_SESSION_RESET, PERSPICAX_UNAVAILABLE_WHY, PerspicaxMcp, parseMcpBody, perspicaxReplayable, perspicaxSessionLost, perspicaxUnavailableRow, type PerspicaxMcpLink } from "./perspicax-mcp.ts";
 
 const ISS = "https://px.example.test";
 const ALICE = "pr_alice";
@@ -31,7 +31,7 @@ function harness(options: { held?: Record<string, string[]>; mcp?: (request: { h
   let signInFails: SubjectTokenOutcome | null = null;
   let exchangeFails: ExchangeResult | null = null;
   let exchangeFailsOnce: ExchangeResult | null = null;
-  /** Slice 6: who allowed routines to act in their name. */
+  /** Slice 6: who holds a routine delegation (issued from a recent sign-in). */
   const delegations = new Set<string>();
   const delegationCalls: string[] = [];
   const refusedDelegations: string[] = [];
@@ -359,6 +359,15 @@ describe("PerspicaxMcp", () => {
     expect(parseMcpBody(`{"jsonrpc":"2.0","id":1}`, 1)).toEqual({ jsonrpc: "2.0", id: 1 });
     expect(parseMcpBody(`event: message\ndata: {"id":0}\n\ndata: {"id":1,"x":true}\n\n`, 1)).toEqual({ id: 1, x: true });
     expect(parseMcpBody("", 1)).toBeNull();
+  });
+});
+
+describe("PERSPICAX_UNAVAILABLE_WHY", () => {
+  it("no_delegation says the person has no recent sign-in and what to do, never that they refused routines (Perspicax 1.8.15)", () => {
+    const why = PERSPICAX_UNAVAILABLE_WHY.no_delegation;
+    expect(why).toContain("no recent sign-in to Sagax");
+    expect(why).toContain("sign in to Sagax again");
+    expect(why).not.toMatch(/allow/i);
   });
 });
 

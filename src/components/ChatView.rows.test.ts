@@ -36,8 +36,10 @@ vi.mock("./ToolActivity", async (importOriginal) => ({
 // The real button, run inside a counting component: whatever it subscribes
 // to re-renders this component, so every render of it is counted.
 vi.mock("./SpeakButton", async (importOriginal) => {
-  const { SpeakButton, SpeakMenuItem } = await importOriginal<typeof import("./SpeakButton")>();
+  const actual = await importOriginal<typeof import("./SpeakButton")>();
+  const { SpeakButton, SpeakMenuItem } = actual;
   return {
+    ...actual,
     SpeakButton: (props: Parameters<typeof SpeakButton>[0]) => {
       renders.speak++;
       return SpeakButton(props);

@@ -67,8 +67,9 @@ The final startup JSON includes the server `url`, `previewUrl`, `pepperId`,
    the card must become settled and exactly one matching routine must appear.
    Reloading must preserve both the routine and the card's settled state.
    Open that routine and run it. Its lifecycle receipt lands in Pepper's main
-   thread (her oldest open conversation), not the source chat or a new
-   "· Results" thread, and leads to the isolated execution thread.
+   thread (the open conversation the person last wrote in, here the source
+   chat), not a new "· Results" thread, and leads to the isolated execution
+   thread.
 2. Open **Automations → Schedule**. Toggle **List / Calendar**. The list must
    show paused and finished schedules as well as active ones; changing views
    must not change a routine or start a run. Filter by Pepper and Miso and
@@ -115,17 +116,22 @@ The final startup JSON includes the server `url`, `previewUrl`, `pepperId`,
     bot's main thread and never creates a "· Results" thread.
 
 Every routine reports into its bot's main thread unless the user chooses another
-destination, whether it was made in a chat, the editor or the API, and whether
-a teammate (such as a Chief) asked for it. The main thread is the bot's oldest
-open conversation: the one it was created with until that is deleted or
-archived. A routine still pointing at an automatic "<name> · Results" thread
-from an older version moves to the main thread on its next run; that thread and
-its reports stay. On a Cloud home, a routine written by someone other than the
-owner keeps its own results conversation, opened as theirs. Historical runs keep
-the destination they started with. If that destination is deleted, their
-execution threads become visible so results and approvals remain reachable;
-future runs report into the main thread. No existing user conversation is
-silently deleted or filed.
+destination, whether it was made in a chat, the editor or the API, and whether a
+teammate (such as a Chief) asked for it. The main thread is the open
+conversation a person last wrote in (until anyone has, the selected one, then
+the oldest); a bot with hidden threads opens there too. Conversations from
+before the server kept that take it, once on upgrade, from the newest line a
+person sent there from the app. Each run looks it up
+again, so the routine saves nothing and its results follow the person. A routine
+still pointing at an automatic "<name> · Results" thread from an older version
+moves to the main thread on its next run; that thread and its reports stay. The
+oldest thread that v0.1.98 to v0.1.107 saved on routines as if it were chosen is
+cleared once on upgrade, also when it was archived since. On a Cloud home, a routine written by someone other
+than the owner keeps its own results conversation, opened as theirs. Historical
+runs keep the destination they started with. If that destination is deleted,
+their execution threads become visible so results and approvals remain
+reachable; future runs report into the main thread. No existing user
+conversation is silently deleted or filed.
 
 An unconfirmed proposal is not an active routine. A run marked **Waiting** is
 not necessarily asking the user for approval: its attention text can explain

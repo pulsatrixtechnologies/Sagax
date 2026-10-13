@@ -49,7 +49,7 @@ permissions:
 jobs:
   prepare:
     name: Pin the release commit
-    runs-on: [self-hosted, linux, x64]
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     outputs:
       sha: ${{ steps.pin.outputs.sha }}
@@ -116,7 +116,7 @@ jobs:
     name: CI passed on the release commit
     needs: prepare
     if: needs.prepare.outputs.should_release == 'true'
-    runs-on: [self-hosted, linux, x64]
+    runs-on: ubuntu-24.04
     timeout-minutes: 180
     permissions:
       # read CI runs, start CI in the release lane, and re-run jobs that
@@ -147,7 +147,7 @@ jobs:
     name: macOS arm64 + x64 (sign, notarize, staple)
     needs: prepare
     if: needs.prepare.outputs.should_release == 'true'
-    runs-on: [self-hosted, macOS, ARM64, sagax-release-mac]
+    runs-on: macos-14
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -323,7 +323,7 @@ jobs:
     name: Windows x64
     needs: prepare
     if: needs.prepare.outputs.should_release == 'true'
-    runs-on: [self-hosted, windows, x64]
+    runs-on: windows-latest
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -399,7 +399,7 @@ jobs:
     name: Ubuntu 24.04 x64
     needs: prepare
     if: needs.prepare.outputs.should_release == 'true'
-    runs-on: [self-hosted, linux, x64]
+    runs-on: ubuntu-24.04
     timeout-minutes: 40
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -484,13 +484,10 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-  # Opt-in for 0.5.0: voice ships behind the full-duplex toggle and no xAI
-  # key is configured yet. Set repo variable SAGAX_VOICE_ACCEPTANCE_GATE=true
-  # to run it (it still does not block assemble until re-added to its needs).
   voice-acceptance:
     name: Real voice acceptance
     needs: prepare
-    if: needs.prepare.outputs.should_release == 'true' && vars.SAGAX_VOICE_ACCEPTANCE_GATE == 'true'
+    if: needs.prepare.outputs.should_release == 'true'
     uses: ./.github/workflows/voice-release-acceptance.yml
     with:
       ref: ${{ needs.prepare.outputs.sha }}
@@ -498,9 +495,9 @@ jobs:
 
   assemble:
     name: Assemble the draft and verify every feed
-    needs: [prepare, ci, mac, windows, linux]
+    needs: [prepare, ci, mac, windows, linux, voice-acceptance]
     if: needs.prepare.outputs.should_release == 'true'
-    runs-on: [self-hosted, linux, x64]
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     concurrency:
       group: release-mirror-v${{ needs.prepare.outputs.version }}

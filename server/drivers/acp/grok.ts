@@ -11,6 +11,7 @@ import { parse as parseYaml } from "yaml";
 
 import type { ModelCatalog, ProviderErrorCode, TurnAccessInput } from "../../contracts.ts";
 import { harnessHome, splitCliString } from "../../env-path.ts";
+import { resolveCli } from "../../procs.ts";
 import type { DeviceSignIn } from "../device-auth.ts";
 import { decodeInjectId, hostApiKey, localHost, mergeLocalInject } from "../local-inject.ts";
 import { createAcpDriver, type AccountErrorCode, type AcpSupport } from "./core.ts";
@@ -207,8 +208,10 @@ export async function probeGrokModels(
     const timer = setTimeout(() => finish(null), LIVE_MODELS_TIMEOUT_MS);
     try {
       // SAGAX_GROK_MODEL_PROBE marks this child for the test fake; Grok ignores it.
-      child = spawn(cli, ["agent", "--no-leader", "stdio"], {
-        env: { ...env, SAGAX_GROK_MODEL_PROBE: "1" }, stdio: ["pipe", "pipe", "ignore"],
+      // resolved as the driver does: on Windows a .cmd shim or a node script cannot be spawned bare
+      const resolved = resolveCli(cli, ["agent", "--no-leader", "stdio"], env as NodeJS.ProcessEnv);
+      child = spawn(resolved.command, resolved.args, {
+        env: { ...env, SAGAX_GROK_MODEL_PROBE: "1" }, stdio: ["pipe", "pipe", "ignore"], windowsHide: true,
       });
     } catch {
       finish(null);

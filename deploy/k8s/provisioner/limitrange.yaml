@@ -1,0 +1,16 @@
+# Example per-container ceiling. Must still admit the sandbox Pod
+# (1 CPU, 1536Mi by default) and the provisioner. The admin applies this.
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: sagax-sandbox-limits
+  namespace: sagax-sandboxes
+spec:
+  limits:
+    - type: Container
+      max:
+        cpu: "2"
+        memory: 4Gi
+      min:
+        cpu: 50m
+        memory: 32Mi

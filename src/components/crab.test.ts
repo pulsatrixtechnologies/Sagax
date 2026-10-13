@@ -113,7 +113,7 @@ describe("Crab's look", () => {
     expect(CHARACTER_LABEL.crab).toBe("floatingBots.mascot.crab");
     expect(colorGroupsFor("crab", "orange")).toContain("clay");
     expect(APP_ICON_CHOICES.some((choice) => choice.art.kind === "crab")).toBe(true);
-    expect(DEFAULT_CHARACTERS).toContain("crab");
+    expect(DEFAULT_CHARACTERS).not.toContain("crab");
     for (const skin of CRAB_SKINS) expect(skinTier("crab", skin), skin).toBe(CRAB_SKIN_TIER[skin]);
     const rewarded = ACHIEVEMENTS.flatMap((item) => item.rewards.map(rewardKey));
     for (const skin of CRAB_SKINS) if (skinTier("crab", skin) !== "common") expect(rewarded, skin).toContain(`skin:crab:${skin}`);

@@ -2,7 +2,7 @@ import { EventEmitter } from "node:events";
 import type { ServerResponse } from "node:http";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { BrowserRuntime } from "./browser-runtime.ts";
-import { BrowserLive, browserStreamPort, normalizeBrowserLiveMessage, parseBrowserLiveAction } from "./browser-live.ts";
+import { BrowserActionFailedError, BrowserLive, browserStreamPort, normalizeBrowserLiveMessage, parseBrowserLiveAction } from "./browser-live.ts";
 
 const execute = vi.hoisted(() => vi.fn());
 const nativeClose = vi.hoisted(() => vi.fn());
@@ -41,8 +41,9 @@ class SocketFixture extends EventTarget {
   readyState = 1;
   bufferedAmount = 0;
   messages: unknown[] = [];
-  constructor(readonly url: string) {
-    super(); SocketFixture.instances.push(this);
+  readonly url: string;
+  constructor(url: string) {
+    super(); this.url = url; SocketFixture.instances.push(this);
     queueMicrotask(() => {
       this.dispatchEvent(new Event(SocketFixture.failOpen ? "error" : "open"));
       for (const message of SocketFixture.initialMessages) this.receive(message);
@@ -205,6 +206,34 @@ describe("authenticated browser viewer relay", () => {
     expect(res.writableEnded).toBe(false);
     expect(res.chunks).toHaveLength(0);
   });
+  // "google" typed in the address bar opened https://google/; the engine
+  // answered that the navigation failed, and the view then asked for a restart.
+  it("reports a page that would not open as settled, without the engine's own error, and keeps the view usable", async () => {
+    const { action } = await open();
+    await action({ type: "take" });
+    const failed = Object.assign(new Error("Command failed: agent-browser open https://google/"), {
+      code: 1, stdout: JSON.stringify({ success: false, data: null, error: "Navigation failed: net::ERR_NAME_NOT_RESOLVED" }) + "\n", stderr: "",
+    });
+    execute.mockRejectedValueOnce(failed);
+    const refused = action({ type: "navigate", url: "https://google/" });
+    await expect(refused).rejects.toMatchObject({ status: 422, settled: true, message: "This page could not be opened. Check the address and try again." });
+    await expect(refused).rejects.toBeInstanceOf(BrowserActionFailedError);
+    // The engine answered with success:false and exit 0 too.
+    execute.mockResolvedValueOnce({ stdout: JSON.stringify({ success: false, error: "element not found" }), stderr: "" });
+    await expect(action({ type: "tab-new" })).rejects.toMatchObject({ settled: true, message: "The browser could not do that. Try again." });
+    execute.mockResolvedValueOnce(output({ url: "https://duckduckgo.com/?q=google" }));
+    await expect(action({ type: "navigate", url: "https://duckduckgo.com/?q=google" })).resolves.toEqual({ ok: true });
+  });
+
+  it("still treats a command with no answer (killed, aborted) as interrupted, not settled", async () => {
+    const { action } = await open();
+    await action({ type: "take" });
+    execute.mockRejectedValueOnce(Object.assign(new Error("Command failed"), { code: null, signal: "SIGTERM", stdout: "", stderr: "" }));
+    const refused = action({ type: "navigate", url: "https://example.com/" });
+    await expect(refused).rejects.not.toHaveProperty("settled");
+    await expect(refused).rejects.toMatchObject({ status: 503 });
+  });
+
   it("resets a daemon stuck on a failed launch so reconnecting starts a fresh session (#1383)", async () => {
     const openS = () => live.open({ botId: "a", session: "s", owner: "a", isCurrent: () => true,
       res: new ResponseFixture() as unknown as ServerResponse, spec: { command: "/engine", env: { AGENT_BROWSER_SESSION: "s" } } });

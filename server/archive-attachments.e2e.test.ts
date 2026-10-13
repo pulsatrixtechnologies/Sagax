@@ -4,6 +4,7 @@
 // the Files tab lists the archive.
 import { existsSync, readFileSync } from "node:fs";
 import { request } from "node:http";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
@@ -28,7 +29,7 @@ describe("archives attached in solo mode", () => {
   const promptsSeen = () => existsSync(prompts) ? readFileSync(prompts, "utf8").trim().split("\n").filter(Boolean).map((line) => JSON.stringify(JSON.parse(line))) : [];
 
   beforeAll(async () => {
-    prompts = join(process.env.TMPDIR ?? "/tmp", `sagax-archive-prompts-${process.pid}-${Date.now()}.jsonl`);
+    prompts = join(tmpdir(), `sagax-archive-prompts-${process.pid}-${Date.now()}.jsonl`);
     session = await launchVerificationServer({
       ...process.env,
       FAKE_CLAUDE_PROMPTS: prompts,

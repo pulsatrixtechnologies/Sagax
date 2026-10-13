@@ -37,6 +37,8 @@ export interface ConsoleContext {
   url: URL;
   /** The path parameters of the template, decoded. */
   params: Record<string, string>;
+  /** The request's headers (a conditional GET's If-None-Match). */
+  headers?: import("node:http").IncomingHttpHeaders;
   /** The JSON body of a POST: null when empty, undefined when unreadable. */
   body: unknown;
   /** A route with `rawBody`: the request whose body is a file, unread. */
@@ -97,7 +99,6 @@ export function fail(status: number, code: string, message: string, extra: Recor
 
 export const notFound = (what = "No such record.") => fail(404, "not_found", what);
 export const badRequest = (message: string) => fail(400, "bad_request", message);
-export const forbiddenRole = (min: ConsoleRole) => fail(403, "forbidden_role", `This needs the ${min} role in Perspicax.`);
 
 /** A route not offered by this server yet: the read side exists, this write
  * does not. */
@@ -123,7 +124,8 @@ export function compileRoutes(routes: readonly ConsoleRoute[]): CompiledRoute[] 
 }
 
 /** The routes whose template matches `sub`, with their decoded parameters;
- * a parameter that is not a plain id makes the path unmatched. */
+ * a parameter that is not a plain id makes the path unmatched. A literal
+ * segment wins over a parameter: `routines/runs` before `routines/{id}`. */
 export function matchRoutes(compiled: readonly CompiledRoute[], sub: string): Array<{ route: ConsoleRoute; params: Record<string, string> }> {
   const hits: Array<{ route: ConsoleRoute; params: Record<string, string> }> = [];
   for (const entry of compiled) {
@@ -143,7 +145,7 @@ export function matchRoutes(compiled: readonly CompiledRoute[], sub: string): Ar
     });
     if (valid) hits.push({ route: entry.route, params });
   }
-  return hits;
+  return hits.sort((a, b) => Object.keys(a.params).length - Object.keys(b.params).length);
 }
 
 export interface PageRequest {

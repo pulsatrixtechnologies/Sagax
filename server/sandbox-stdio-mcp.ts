@@ -50,7 +50,7 @@ interface Session {
 }
 
 export interface SandboxStdioRelayOptions {
-  open: (principalId: string, spec: SandboxStdioSpec) => Promise<Duplex>;
+  open: (principalId: string, spec: SandboxStdioSpec, botId?: string) => Promise<Duplex>;
   idleMs?: number;
   now?: () => number;
 }
@@ -136,7 +136,7 @@ export class SandboxStdioRelay {
     return this.sessions.size;
   }
 
-  private async session(key: string, principalId: string, spec: SandboxStdioSpec, fresh: boolean): Promise<Session> {
+  private async session(key: string, principalId: string, spec: SandboxStdioSpec, fresh: boolean, botId?: string): Promise<Session> {
     const fingerprint = stdioFingerprint(spec);
     const current = this.sessions.get(key);
     if (current && !current.closed && current.fingerprint === fingerprint && !fresh) return current;
@@ -144,7 +144,7 @@ export class SandboxStdioRelay {
     const inFlight = this.opening.get(key);
     if (inFlight && !fresh) return inFlight;
     const opening = (async () => {
-      const stream = await this.options.open(principalId, spec);
+      const stream = await this.options.open(principalId, spec, botId);
       const session: Session = { stream, fingerprint, pending: new Map(), buffer: Buffer.alloc(0), lastUsed: this.now(), closed: false, firstLine: true };
       stream.on("data", (chunk: Buffer) => this.onData(key, session, chunk));
       stream.on("close", () => this.close(key, session, "exited"));
@@ -205,7 +205,7 @@ export class SandboxStdioRelay {
     const fresh = frame.method === "initialize" && this.sessions.has(key);
     const isRequest = typeof frame.method === "string" && frame.id !== undefined && frame.id !== null;
     if (isRequest && typeof frame.id !== "string" && typeof frame.id !== "number") throw new StdioRelayError("Invalid request.", "invalid");
-    const session = await this.session(key, input.principalId, input.spec, fresh);
+    const session = await this.session(key, input.principalId, input.spec, fresh, input.botId);
     if (session.closed) throw session.failure ?? new StdioRelayError("The MCP server stopped.", "stopped");
     session.lastUsed = this.now();
     const line = `${JSON.stringify(frame)}\n`;

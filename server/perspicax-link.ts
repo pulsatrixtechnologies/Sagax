@@ -15,6 +15,7 @@
 //
 // Spec: docs/superpowers/specs/2026-09-29-perspicax-multiuser-design.md,
 // sections 5 and 6 (link file, directory), 9 (T5).
+import { createHash, timingSafeEqual } from "node:crypto";
 import { lstatSync, readFileSync } from "node:fs";
 import { z } from "zod";
 
@@ -75,7 +76,8 @@ export function readLinkFile(path: string, expect: LinkExpectation): LinkFileRea
       : { ok: false, code: "not_a_file", reason: `the link file cannot be read (${code ?? "error"})` };
   }
   if (!stat.isFile()) return { ok: false, code: "not_a_file", reason: "the link file is not a regular file" };
-  if ((stat.mode & 0o007) !== 0) return { ok: false, code: "mode", reason: "the link file is readable by other users; make it 0640 or 0600" };
+  // Windows reports no POSIX permission bits (every file reads as 0666): the ACL of the folder guards the file there
+  if (process.platform !== "win32" && (stat.mode & 0o007) !== 0) return { ok: false, code: "mode", reason: "the link file is readable by other users; make it 0640 or 0600" };
   if (stat.size > LINK_FILE_MAX_BYTES) return { ok: false, code: "size", reason: "the link file is larger than 4 KiB" };
   let parsed: unknown;
   try {
@@ -259,6 +261,13 @@ export type RoutineDelegationIssue =
    * token was refused; link: the link token was refused. */
   | { ok: false; error: "unsupported" | "subject" | "link" | "rate_limited" | "unreachable"; retryAfterMs?: number };
 
+/** What a link-authenticated POST answered (linkPostJson): `link` the link
+ * is missing or refused, `unreachable` no answer in time, `too_large` the
+ * answer passed its limit, `refused` a non-2xx answer (its JSON body kept). */
+export type LinkPostResult =
+  | { ok: true; status: number; body: unknown }
+  | { ok: false; error: "link" | "unreachable" | "too_large" | "refused"; status?: number; body?: unknown };
+
 export interface PerspicaxDirectoryOptions {
   /** SAGAX_PERSPICAX_ISSUER: the subjects' `iss`. */
   issuer: string;
@@ -333,6 +342,13 @@ async function readLimited(response: Response, max: number): Promise<string | nu
 
 const VERSION_HEADER = /^[0-9A-Za-z.+-]{1,64}$/;
 
+/** Constant-time comparison of two secrets of any length (their SHA-256
+ * digests, so the length of neither leaks). */
+export function sameSecret(presented: string, expected: string): boolean {
+  if (!presented || !expected) return false;
+  return timingSafeEqual(createHash("sha256").update(presented).digest(), createHash("sha256").update(expected).digest());
+}
+
 /** The organization's people, read from Perspicax with the link token. One
  * refresh at a time; a failed call keeps the last good data. */
 export class PerspicaxDirectory {
@@ -369,6 +385,17 @@ export class PerspicaxDirectory {
   /** The server id Perspicax gave this server, once a link file was read. */
   serverId(): string | undefined {
     return this.link?.serverId;
+  }
+
+  /** Whether `token` is this server's link token (2026-10-11, the
+   * directory refresh route). Compared in constant time against the token
+   * last read; a mismatch re-reads the link file once, so a token Perspicax
+   * just rotated is accepted. Never logs either token. */
+  linkTokenMatches(token: string): boolean {
+    if (!token) return false;
+    if (this.link && sameSecret(token, this.link.linkToken)) return true;
+    const reread = this.readLink();
+    return reread !== null && sameSecret(token, reread.linkToken);
   }
 
   /** The last directory Perspicax sent, or null before the first answer. */
@@ -713,6 +740,55 @@ export class PerspicaxDirectory {
     }
     this.keyCache.set(cacheKey, { key, fingerprint, until: this.now() + PROVIDER_KEY_CACHE_MS });
     return { ok: true, key, fingerprint };
+  }
+
+  /** 2026-10-11: POST a JSON body to a Perspicax route that takes the link
+   * token (the memory signals, server/perspicax-memory.ts). A 401 re-reads
+   * the link file once. Bounded by `timeoutMs` and `maxBytes`; never throws,
+   * never logs the token or the body. */
+  async linkPostJson(path: string, body: unknown, limits: { timeoutMs: number; maxBytes: number }): Promise<LinkPostResult> {
+    let link = this.link ?? this.readLink();
+    if (!link) return { ok: false, error: "link" };
+    const payload = JSON.stringify(body);
+    const call = (token: string) => this.fetcher(`${this.options.serverBase.replace(/\/+$/, "")}${path}`, {
+      method: "POST",
+      redirect: "error",
+      signal: AbortSignal.timeout(limits.timeoutMs),
+      headers: { accept: "application/json", "content-type": "application/json", authorization: `Bearer ${token}` },
+      body: payload,
+    });
+    let response: Response;
+    try {
+      response = await call(link.linkToken);
+      if (response.status === 401) {
+        void response.body?.cancel().catch(() => {});
+        const again = this.readLink();
+        if (!again) return { ok: false, error: "link" };
+        link = again;
+        response = await call(link.linkToken);
+      }
+    } catch {
+      return { ok: false, error: "unreachable" };
+    }
+    if (response.status === 401 || response.status === 403) {
+      void response.body?.cancel().catch(() => {});
+      return { ok: false, error: "link", status: response.status };
+    }
+    let text: string | null;
+    try {
+      text = await readLimited(response, limits.maxBytes);
+    } catch {
+      return { ok: false, error: "unreachable" };
+    }
+    if (text === null) return { ok: false, error: "too_large", status: response.status };
+    let parsed: unknown = null;
+    try {
+      parsed = text ? JSON.parse(text) : null;
+    } catch {
+      parsed = null;
+    }
+    if (response.status < 200 || response.status >= 300) return { ok: false, error: "refused", status: response.status, body: parsed };
+    return { ok: true, status: response.status, body: parsed };
   }
 
   /** A person's avatar at a given version, read through the link and kept

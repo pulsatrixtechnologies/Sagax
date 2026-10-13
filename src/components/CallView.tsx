@@ -20,7 +20,8 @@
 import { useCallback, useEffect, useId, useRef, useState, type CSSProperties } from "react";
 import { AudioLines, Loader2, PhoneOff, X } from "lucide-react";
 
-import { useStore, visibleMessages, type Bot } from "@/state/store";
+import { useShowThreads } from "@/lib/thread-preferences";
+import { openBot, useStore, visibleMessages, type Bot } from "@/state/store";
 import { cn } from "@/lib/cn";
 import { useMenuMotion } from "./MenuMotion";
 import { currentCall, deferCallCleanup, endCall, startCall, useOnCall } from "@/lib/call";
@@ -104,6 +105,7 @@ export function CallTargetButton({
   onStart: () => void;
 }) {
   const { state, dispatch } = useStore();
+  const showThreads = useShowThreads();
   const { capabilities, ready: capabilitiesReady } = useDesktopCapabilities();
   const active = useOnCall() === targetId;
   const xaiVoice = voiceMode?.available === true;
@@ -225,7 +227,9 @@ export function CallTargetButton({
               type="button"
               onClick={() => {
                 setHelpOpen(false);
-                if (setupBotId && setupBotId !== targetId) dispatch({ type: "select", id: setupBotId });
+                // A room's member opens on its main thread when threads are hidden.
+                const setupBot = setupBotId && setupBotId !== targetId ? state.bots.find((candidate) => candidate.id === setupBotId) : undefined;
+                if (setupBot) openBot(dispatch, setupBot, showThreads);
                 dispatch({ type: "toggleSettings", open: true, section: "voice" });
               }}
               className="mt-2.5 rounded-lg bg-accent px-3 py-1.5 text-[12px] font-medium text-accent-ink hover:brightness-110"

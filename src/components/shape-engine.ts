@@ -107,9 +107,6 @@ export function blendExpression(a: Expression, b: Expression, t: number): Expres
 
 /* ------------------------------------------------------------ colors */
 
-/** The twelve Shapes colors (the editor's Clay palette, shared/mascot-colors.ts). */
-export const SHAPE_COLORS = ["ink", "brown", "tomato", "tangerine", "honey", "jade", "turquoise", "cobalt", "violet", "rose", "ash", "cream"] as const;
-
 function hexToRgb(hex: string): [number, number, number] {
   const n = Number.parseInt(hex.replace("#", "").slice(0, 6), 16);
   return [(n >> 16) & 255, (n >> 8) & 255, n & 255];

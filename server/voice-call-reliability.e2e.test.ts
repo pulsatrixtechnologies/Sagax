@@ -235,14 +235,12 @@ it("duplex: interrupt aborts an in-flight tool; the late result never lands", as
       const all = await t.messages();
       return all.some((m) => m.kind === "activity" && String(m.tool?.name ?? "").includes("Bash"));
     }, { timeout: 15_000 }).toBe(true);
+    // A spoken "stop" cancels the turn and starts no new reply (8d8fdbbd9):
+    // wait for the thread to settle instead of waiting for an answer.
     const sent = await t.send({ text: "stop", voiceCall: { callId: CALL_ID, interrupted: true, duplex: true } });
     expect(sent.queued).toBeUndefined();
-    const answered = async () => {
-      const all = await t.messages();
-      const asked = all.findIndex((m) => m.role === "user" && m.text === "stop");
-      return asked >= 0 && all.slice(asked + 1).some((m) => m.role === "bot" && m.kind === "text" && String(m.text ?? "").trim());
-    };
-    await expect.poll(answered, { timeout: 25_000 }).toBe(true);
+    expect(sent.stopped).toBe(true);
+    await expect.poll(t.busy, { timeout: 25_000 }).toBe(false);
     const all = await t.messages();
     expect(all.some((m) => m.kind === "activity" && m.tool?.ok === true && String(m.tool?.output ?? "").includes("late-tool"))).toBe(false);
     expect(all.some((m) => m.role === "bot" && m.kind === "text" && String(m.text ?? "").includes("late-tool"))).toBe(false);
@@ -273,7 +271,7 @@ it("duplex: words said while the bot works replace that turn and never queue", a
   }
 }, 120_000);
 
-it("duplex: a new topic is answered first while the long tool keeps running", async () => {
+it("duplex: new words while the long tool runs join that turn; the tool is not killed and nothing forks", async () => {
   const t = await callFixture({ FAKE_CLAUDE_MODE: "slow", FAKE_CLAUDE_HOLD_AFTER_TOOL: "1" });
   try {
     await t.api("POST", `/api/bots/${t.bot.id}/voice/call`, { threadId: t.thread, callId: CALL_ID, state: "start" });
@@ -283,26 +281,16 @@ it("duplex: a new topic is answered first while the long tool keeps running", as
       return all.some((m) => m.kind === "activity" && String(m.tool?.name ?? "").includes("Bash") && m.tool?.ok !== true);
     }, { timeout: 15_000 }).toBe(true);
     const sent = await t.send({ text: "what time is it in Tokyo", sendId: "topic-b-0000000002", voiceCall: { callId: CALL_ID, duplex: true } });
-    expect(sent.queued).toBeUndefined();
-    expect(sent.steered).toBeUndefined();
-    expect(sent.parallel?.state).toBe("running");
-    const bDone = async () => {
-      const all = await t.messages();
-      return all.some((m) => m.role === "bot" && m.kind === "text" && m.parallelTask?.role === "result" && String(m.text ?? "").includes("Tokyo"));
-    };
-    await expect.poll(bDone, { timeout: 25_000 }).toBe(true);
-    const afterB = await t.messages();
-    expect(afterB.some((m) => m.role === "bot" && m.kind === "text" && String(m.text ?? "").includes("Montreal") && !m.parallelTask)).toBe(false);
+    expect(sent.parallel).toBeUndefined();
     t.open("one");
     await expect.poll(async () => {
       const all = await t.messages();
-      return all.some((m) => m.role === "bot" && m.kind === "text" && String(m.text ?? "").includes("Montreal") && !m.parallelTask);
+      return all.some((m) => m.role === "bot" && m.kind === "text" && String(m.text ?? "").includes("Montreal") && String(m.text ?? "").includes("Tokyo"));
     }, { timeout: 25_000 }).toBe(true);
     const all = await t.messages();
-    const bAt = all.findIndex((m) => m.role === "bot" && m.kind === "text" && m.parallelTask?.role === "result");
-    const aAt = all.findIndex((m) => m.role === "bot" && m.kind === "text" && String(m.text ?? "").includes("Montreal") && !m.parallelTask);
-    expect(bAt).toBeGreaterThanOrEqual(0);
-    expect(aAt).toBeGreaterThan(bAt);
+    expect(all.filter((m) => m.parallelTask)).toEqual([]);
+    // the held Bash call was answered, not cancelled
+    expect(all.some((m) => m.kind === "activity" && String(m.tool?.name ?? "").includes("Bash") && m.tool?.ok === false)).toBe(false);
   } finally {
     await t.fixture.close();
   }

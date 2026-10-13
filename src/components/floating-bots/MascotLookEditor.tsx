@@ -4,12 +4,11 @@
 // shows everywhere the bot appears and on its desktop mascot. Kept compact so
 // every option shows at a normal modal size without scrolling.
 //
-//   Left, the gallery: a search, the filter chips (All, Owned, To unlock,
-//   Premium while one is sold, then one per family) and the shelves (Yours,
-//   To unlock, Premium; wardrobe.ts), one tile per character of the registry
-//   (mascots.tsx) in the bot's color, its lock and achievement progress on
-//   the tile; a character behind a secret achievement stays out until
-//   earned. The arrow keys move across the tiles.
+//   Left, the gallery: a search, the filter chips (All, Owned, Premium while
+//   one is sold, then one per family) and the shelves (Yours, Premium;
+//   wardrobe.ts), one tile per unlocked character of the registry
+//   (mascots.tsx) in the bot's color, plus the character the bot already
+//   wears. A locked character stays out. The arrow keys move across the tiles.
 //   Right, the detail: a preview stage of the character picked in the
 //   gallery (the real avatar, which plays the moves and the equip
 //   animation), its name and family, then that character's own options:
@@ -28,13 +27,12 @@
 //   opening on the current choice (editor-tabs.ts).
 //
 // An unlocked character saves at once when picked (as the avatar popover
-// did); a locked one only previews, its options disabled. Each character
-// keeps its own skin, so switching and back finds it again. Loaded lazily
-// with the pane.
+// did). A locked character stays out of the gallery, except the one the bot
+// already wears. Each character keeps its own skin, so switching and back
+// finds it again. Loaded lazily with the pane.
 import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
 import { Check, Lock, Search } from "lucide-react";
 import { characterLock, lockHint, reportAchievement, skinLock, useUnlocks, type LockInfo } from "@/lib/achievements";
-import { useGrokAccountLinked } from "@/lib/grok-account";
 import "@/components/achievements/achievements.css";
 import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
@@ -554,18 +552,9 @@ export default function MascotLookEditor({ bot, disabled, onPatch: savePatch, on
   const look = completeMascotLook(bot.mascotLook);
   const owlSkin = botMascotSkin(bot.mascotSkin);
   // what this person unlocked (src/lib/achievements.ts); what the bot wears now always stays.
-  // A linked Grok account shows Shapes at once, before the reward key comes back.
-  const stored = useUnlocks();
-  const grokLinked = useGrokAccountLinked();
-  const unlocks = grokLinked && stored.enforced && !stored.keys.has("character:shape")
-    ? { enforced: true as const, keys: new Set([...stored.keys, "character:shape"]) }
-    : stored;
+  const unlocks = useUnlocks();
   const lockOf = (id: MascotCharacter): LockInfo => (id === look.character ? { locked: false } : characterLock(unlocks, id));
-  // A character behind a secret achievement (Trombi's hidden command) stays out until it is earned: the easter egg stays one.
-  const listed = MASCOTS.filter((option) => {
-    const lock = lockOf(option.id);
-    return !(lock.locked && lock.achievement?.hidden && !lock.item?.unlockedAt);
-  });
+  const listed = MASCOTS.filter((option) => option.id === look.character || !characterLock(unlocks, option.id).locked);
   const onPatch = (patch: MascotLookPatch) => {
     savePatch(patch);
     reportAchievement("bot.customized", { key: patch.mascotLook?.character ?? look.character });
@@ -597,7 +586,7 @@ export default function MascotLookEditor({ bot, disabled, onPatch: savePatch, on
   // the gallery: a search and a chip narrow it, the shelves split what is left
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<WardrobeFilter>("all");
-  const filters = wardrobeFilters(listed);
+  const filters = wardrobeFilters(listed, (entry) => characterLock(unlocks, entry.id as MascotCharacter).locked && entry.id !== look.character);
   const kept = filterWardrobe(listed, {
     filter,
     query,

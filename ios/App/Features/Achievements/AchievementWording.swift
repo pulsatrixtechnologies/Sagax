@@ -17,7 +17,33 @@ enum AchievementWording {
             return String(localized: "App icon unlocked")
         case let .title(_, name):
             return String(localized: "Title unlocked: \(name.resolved(language))")
+        case let .emote(_, id):
+            return String(localized: "Look unlocked: \(idName(id))")
+        case let .move(_, id):
+            return String(localized: "Move unlocked: \(idName(id))")
+        case let .accessory(id):
+            return String(localized: "Accessory unlocked: \(idName(id))")
+        case let .effect(id):
+            return String(localized: "Effect unlocked: \(idName(id))")
         }
+    }
+
+    static func displayReward(_ reward: AchievementReward, language: String?, keys: Set<String>, revealing: Bool = false) -> String? {
+        guard RewardRegistry.lineVisible(reward) else { return nil }
+        if !revealing {
+            if case let .character(id, _) = reward, !keys.contains("character:\(id)") && id != "owl" {
+                return String(localized: "a surprise character")
+            }
+            if case let .skin(character, _, _, _) = reward, !keys.contains("character:\(character)") && character != "owl" {
+                return String(localized: "a surprise look")
+            }
+        }
+        return rewardLabel(reward, language: language)
+    }
+
+    private static func idName(_ id: String) -> String {
+        guard let first = id.first else { return id }
+        return first.uppercased() + id.dropFirst()
     }
 
     static func rarityLabel(_ rarity: AchievementRarity) -> LocalizedStringKey {
@@ -46,6 +72,7 @@ enum AchievementWording {
         case .productivity?: "Productivity"
         case .power?: "Power user"
         case .voice?: "Voice"
+        case .claude?: "Claude"
         case .collaboration?: "Together"
         case .streaks?: "Streaks"
         case .mastery?: "Mastery"
@@ -73,7 +100,7 @@ enum AchievementWording {
         "CalendarClock": "calendar.badge.clock", "CalendarDays": "calendar", "Cog": "gearshape.fill", "Crown": "crown.fill",
         "Feather": "leaf.fill", "FileArchive": "doc.zipper", "Flame": "flame.fill", "FolderOpen": "folder.fill",
         "Gamepad2": "gamecontroller.fill", "Gem": "diamond.fill", "Hand": "hand.raised.fill", "Heart": "heart.fill",
-        "HeartHandshake": "hands.sparkles.fill", "Keyboard": "keyboard", "Layers": "square.3.layers.3d", "Medal": "medal.fill",
+        "HeartHandshake": "hands.sparkles.fill", "Keyboard": "keyboard", "Layers": "square.3.layers.3d", "Link": "link", "Medal": "medal.fill",
         "MessageCircle": "message.fill", "MessageSquareMore": "text.bubble.fill", "MessagesSquare": "bubble.left.and.bubble.right.fill",
         "Monitor": "display", "Moon": "moon.fill", "MousePointerClick": "cursorarrow.click", "Navigation": "location.north.fill",
         "Network": "point.3.connected.trianglepath.dotted", "Palette": "paintpalette.fill", "Paperclip": "paperclip",

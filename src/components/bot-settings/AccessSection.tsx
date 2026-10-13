@@ -33,11 +33,13 @@ import {
   type ConnectorVerb,
 } from "@/lib/connector-grants";
 import { inputCls } from "./field";
+import { PaneEmpty, PaneSection } from "./PaneSection";
+import { BotWebhooks } from "./BotWebhooks";
 import type { ConnectorScope, ConnectorScopes } from "../../../shared/connector-scopes";
 import type { useBotSettingsDerived } from "./useBotSettingsDerived";
 
 /** Where a bot's shell tools run. Set per bot; each task pins its own copy
- * on its first turn (the server does the pinning — Claude keeps sessions
+ * on its first turn (the server does the pinning: Claude keeps sessions
  * per project folder, so a folder must not move under a live task). The
  * PATCH is made directly rather than through updateBot: the server
  * validates the path and a rejected folder must not stick in local state. */
@@ -71,11 +73,9 @@ function WorkingFolder({ bot }: { bot: Bot }) {
   };
 
   return (
-    <div className="rounded-xl border border-hairline/40 p-4">
-      <div className="text-[13px] font-medium text-ink">{t("botPanel.access.folder")}</div>
-      <div className="mt-0.5 text-[13px] text-ink-secondary">{t("botPanel.access.folderHelp")}</div>
+    <PaneSection title={t("botPanel.access.folder")} help={t("botPanel.access.folderHelp")}>
       {canPick ? (
-        <div className="mt-3 flex items-center gap-2">
+        <div className="flex items-center gap-2">
           <div className="min-w-0 flex-1 truncate rounded-lg border border-hairline/40 bg-inset px-3 py-2 font-mono text-[12.5px] text-ink" title={bot.cwd}>
             {bot.cwd ? shortPath(bot.cwd, home) : <span className="text-ink-secondary">{t("botPanel.access.private")}</span>}
           </div>
@@ -90,10 +90,10 @@ function WorkingFolder({ bot }: { bot: Bot }) {
         </div>
       ) : (
         <form
-          className="mt-3 flex items-center gap-2"
+          className="flex items-center gap-2"
           onSubmit={(e) => {
             e.preventDefault();
-            // an emptied field clears the folder — the server wants null
+            // an emptied field clears the folder: the server wants null
             void save((draft ?? bot.cwd ?? "").trim() || null);
           }}
         >
@@ -114,7 +114,7 @@ function WorkingFolder({ bot }: { bot: Bot }) {
           {t("botPanel.access.pinnedBefore")} {pinned ? <span className="font-mono">{shortPath(pinned, home)}</span> : t("botPanel.access.home")}. {t("botPanel.access.pinnedAfter")}
         </div>
       )}
-    </div>
+    </PaneSection>
   );
 }
 
@@ -155,27 +155,18 @@ function McpServersCard({ bot, patch }: {
     patch({ mcpServers: next });
   };
   return (
-    <div className="rounded-xl border border-hairline/40 p-4">
-      <div className="flex items-center justify-between gap-4">
-        <div>
-          <div className="text-[13px] font-medium text-ink">{t("connectors.tab.mcp")}</div>
-          <div className="mt-0.5 text-[13px] text-ink-secondary">
-            {t("botAccess.mcpDescription")}
-          </div>
-          <ProposalStatus bot={bot} />
-        </div>
-      </div>
+    <PaneSection title={<>{t("connectors.tab.mcp")}<ProposalStatus bot={bot} /></>} help={t("botAccess.mcpDescription")}>
       {error && (
         <div role="alert" className="mt-3 text-[12px] text-danger">
           {t("botAccess.mcpRefreshError")} <button type="button" onClick={() => void refresh()} className="underline">{t("connectors.action.retry")}</button>
         </div>
       )}
       {servers === null ? !error && (
-        <div className="mt-3 text-[12px] text-ink-secondary">{t("mcp.loading")}</div>
+        <PaneEmpty>{t("mcp.loading")}</PaneEmpty>
       ) : servers.length === 0 ? (
-        <div className="mt-3 rounded-lg bg-inset px-3 py-2 text-[12px] text-ink-secondary">{t("botAccess.mcpEmpty")}</div>
+        <PaneEmpty>{t("botAccess.mcpEmpty")}</PaneEmpty>
       ) : (
-        <div className="mt-3 divide-y divide-hairline/40 overflow-hidden rounded-lg border border-hairline/40">
+        <div className="divide-y divide-hairline/40 overflow-hidden rounded-lg border border-hairline/40">
           {servers.map((server) => (
             <div key={server.name} className="flex items-center justify-between gap-3 px-3 py-2">
               <div className="min-w-0 flex-1">
@@ -219,7 +210,7 @@ function McpServersCard({ bot, patch }: {
         )}
       </div>
       {bot.busy && <p className="mt-2 text-[12px] text-ink-secondary">{t("botAccess.mcpBusy")}</p>}
-    </div>
+    </PaneSection>
   );
 }
 
@@ -266,7 +257,7 @@ const VERB_LABELS: Record<ConnectorVerb, LocaleKey> = {
  * Each connected service row expands into the exact-name editor: search,
  * verb-class preset chips that expand to explicit names, and one-click All
  * tools per service or globally. A grants record this build cannot parse
- * renders as a read-only summary — never a guess that could destroy fields
+ * renders as a read-only summary: never a guess that could destroy fields
  * a newer server understands. */
 function ConnectorToolsGrants({
   bot,
@@ -583,7 +574,6 @@ export function AccessSection({
     };
   }, [connectedAppsFeature]);
 
-  const webhooks = state.webhooks.filter((webhook) => webhook.botId === bot.id);
   const alwaysAllow = bot.alwaysAllow ?? [];
   const connectedSlugs = inventory?.authoritative
     ? Object.entries(inventory.services)
@@ -597,11 +587,11 @@ export function AccessSection({
   if (!canEdit("computer") && !canEdit("cwd") && !canEdit("mcpServers") && !canEdit("browser") && !canEdit("composio")) return null;
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-5">
       {/* Boat or VPS is which cloud computer Auto and Cloud use. It is not
           a second Works on: that control is More > Computer. */}
       {!organization && (!bot.computer || bot.computer === "cloud") && cloudComputersOffered(state.config) && (
-        <div className="rounded-xl border border-hairline/40 p-4" data-cloud-backend>
+        <PaneSection data-cloud-backend="">
           {!bot.computer && (
             <div className="rounded-lg bg-inset px-3 py-2.5 text-[11.5px] leading-relaxed text-ink-secondary">
               <span className="font-medium text-ink">{t("worksOn.autoCloudTitle")}</span>{" "}
@@ -631,16 +621,15 @@ export function AccessSection({
               />
             </div>
           )}
-        </div>
+        </PaneSection>
       )}
 
       <WorkingFolder bot={bot} />
 
-      {connectedAppsFeature && <div className="rounded-xl border border-hairline/40 p-4">
+      {connectedAppsFeature && <PaneSection title={<>{t("botPanel.access.apps")}<ProposalStatus bot={bot} /></>}>
         <div className="flex items-center justify-between gap-4">
           <div>
-            <div className="text-[13px] font-medium text-ink">{t("botPanel.access.apps")}</div>
-            <div className="mt-0.5 text-[13px] text-ink-secondary">
+            <div className="text-[13px] text-ink-secondary">
               {!connectedAppsConfigured
                 ? t("botPanel.access.appsConnect")
                 : !canUseConnectedApps
@@ -653,7 +642,6 @@ export function AccessSection({
                         : t("botPanel.access.appsOn")
                     : t("botPanel.access.appsOff")}
             </div>
-            <ProposalStatus bot={bot} />
           </div>
           <Switch
             checked={connectedAppsEnabled}
@@ -679,15 +667,15 @@ export function AccessSection({
           </>
         )}
         {connectedAppsEnabled && connectedAppsConfigured && <div className="mt-2"><ManageInConnectApps surface="apps" /></div>}
-      </div>}
+      </PaneSection>}
 
       <McpServersCard bot={bot} patch={patch} />
       <ToolSelectionCard key={bot.id} bot={bot} engineKind={derived.engine?.driverKind} />
 
-      {browserFeature && <div className="flex items-center justify-between gap-4 rounded-xl border border-hairline/40 p-4">
+      {browserFeature && <PaneSection title={<>{t("botPanel.access.browser")}<ProposalStatus bot={bot} /></>}>
+        <div className="flex items-center justify-between gap-4">
         <div>
-          <div className="text-[13px] font-medium text-ink">{t("botPanel.access.browser")}</div>
-          <div className="mt-0.5 text-[13px] text-ink-secondary">
+          <div className="text-[13px] text-ink-secondary">
             {!desktopBrowser
               ? browserBlockedOnWindows && !browserInstallable
                 ? t("settings.experimental.browserWindows")
@@ -702,7 +690,6 @@ export function AccessSection({
                       ? t("botPanel.access.browserOn")
                       : t("botPanel.access.browserKeepOff")}
           </div>
-          <ProposalStatus bot={bot} />
         </div>
         <Switch
           checked={browserEnabled && bot.computer !== "off"}
@@ -715,44 +702,16 @@ export function AccessSection({
           title={bot.computer === "off" ? t("botPanel.access.browserOffShort") : undefined}
           className="disabled:cursor-not-allowed"
         />
-      </div>}
+        </div>
+      </PaneSection>}
 
-      {!draft && <div className="rounded-xl border border-hairline/40 p-4">
-        <div className="text-[13px] font-medium text-ink">{t("botPanel.access.webhooks")}</div>
-        <div className="mt-0.5 text-[13px] text-ink-secondary">{t("botPanel.access.webhooksHelp")}</div>
-        <ProposalStatus bot={bot} />
-        {webhooks.length === 0 ? (
-          <div className="mt-3 rounded-lg bg-inset px-3 py-2 text-[12px] text-ink-secondary">{t("botPanel.access.noWebhooks")}</div>
-        ) : (
-          <div className="mt-3 divide-y divide-hairline/40 overflow-hidden rounded-lg border border-hairline/40">
-            {webhooks.map((webhook) => (
-              <div key={webhook.id} className="flex items-center justify-between gap-3 px-3 py-2">
-                <span className="min-w-0 flex-1 truncate text-[13px] text-ink">{webhook.name}</span>
-                <span
-                  className={cn(
-                    "shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium",
-                    webhook.enabled ? "bg-accent/15 text-accent-text" : "bg-control text-ink-secondary",
-                  )}
-                >
-                  {webhook.enabled ? t("botPanel.access.active") : t("botPanel.access.paused")}
-                </span>
-                <span className="shrink-0 text-[11.5px] tabular-nums text-ink-secondary">
-                  {t("botPanel.access.deliveries", { count: String(webhook.deliveryCount) })}
-                </span>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>}
+      {!draft && <BotWebhooks bot={bot} />}
 
-      {!draft && <div className="rounded-xl border border-hairline/40 p-4">
-        <div className="text-[13px] font-medium text-ink">{t("botPanel.access.always")}</div>
-        <div className="mt-0.5 text-[13px] text-ink-secondary">{t("botPanel.access.alwaysHelp")}</div>
-        <ProposalStatus bot={bot} />
+      {!draft && <PaneSection title={<>{t("botPanel.access.always")}<ProposalStatus bot={bot} /></>} help={t("botPanel.access.alwaysHelp")}>
         {alwaysAllow.length === 0 ? (
-          <div className="mt-3 rounded-lg bg-inset px-3 py-2 text-[12px] text-ink-secondary">{t("botPanel.access.nothing")}</div>
+          <PaneEmpty>{t("botPanel.access.nothing")}</PaneEmpty>
         ) : (
-          <div className="mt-3 divide-y divide-hairline/40 overflow-hidden rounded-lg border border-hairline/40">
+          <div className="divide-y divide-hairline/40 overflow-hidden rounded-lg border border-hairline/40">
             {alwaysAllow.map((entry) => (
               <div key={entry} className="flex items-center justify-between gap-3 px-3 py-2">
                 <span className="min-w-0 flex-1 truncate font-mono text-[12.5px] text-ink">{entry}</span>
@@ -768,7 +727,7 @@ export function AccessSection({
             ))}
           </div>
         )}
-      </div>}
+      </PaneSection>}
     </div>
   );
 }

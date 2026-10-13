@@ -1,0 +1,76 @@
+# Canonical Kubernetes API audit policy for a Sagax sandbox cluster.
+# The Helm chart ships a copy of this file (files/audit-policy.yaml) and the
+# k3s adapter installs it on the control plane. AKS sends the same categories
+# through a diagnostic setting; it does not read this file.
+# Secret and ConfigMap bodies stay at Metadata so the retained log is not a
+# second copy of the secrets it is auditing.
+apiVersion: audit.k8s.io/v1
+kind: Policy
+omitStages:
+  - RequestReceived
+rules:
+  - level: None
+    nonResourceURLs:
+      - /healthz*
+      - /readyz*
+      - /livez*
+      - /version
+      - /metrics
+  - level: None
+    users:
+      - system:kube-proxy
+    verbs:
+      - watch
+    resources:
+      - group: ""
+        resources:
+          - endpoints
+          - services
+          - services/status
+  - level: None
+    userGroups:
+      - system:nodes
+    verbs:
+      - get
+      - update
+      - patch
+    resources:
+      - group: ""
+        resources:
+          - nodes
+          - nodes/status
+  - level: Metadata
+    resources:
+      - group: ""
+        resources:
+          - secrets
+          - configmaps
+  - level: RequestResponse
+    verbs:
+      - create
+      - update
+      - patch
+      - delete
+      - connect
+    resources:
+      - group: ""
+        resources:
+          - pods
+          - pods/exec
+          - pods/attach
+          - pods/portforward
+          - persistentvolumeclaims
+          - serviceaccounts
+      - group: rbac.authorization.k8s.io
+        resources:
+          - roles
+          - rolebindings
+          - clusterroles
+          - clusterrolebindings
+      - group: admissionregistration.k8s.io
+        resources:
+          - validatingadmissionpolicies
+          - validatingadmissionpolicybindings
+  - level: Metadata
+    omitStages:
+      - RequestReceived

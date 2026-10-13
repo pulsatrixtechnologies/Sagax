@@ -1,6 +1,7 @@
 // A Sagax release tag (pulsa-vX.Y.Z) is the GitHub release whose body is
-// docs/releases/<forkVersion>.md. Packaging and the fork release workflow
-// refuse to continue when that file is missing or has no English section.
+// docs/releases/<forkVersion>.md. Packaging and the release steps of
+// docs/releasing.md refuse to continue when that file is missing or has no
+// English section.
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";

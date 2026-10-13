@@ -138,7 +138,9 @@ export async function discoverMcpAuth(
   const tokenEndpointAuthMethods = stringList(metadata.token_endpoint_auth_methods_supported);
   target.hash = "";
   return {
-    issuer,
+    // RFC 9207: a callback's iss is compared with the metadata's issuer,
+    // which may differ from the listed one by a trailing slash (Google).
+    issuer: typeof metadata.issuer === "string" ? metadata.issuer : issuer,
     authorizationEndpoint,
     tokenEndpoint,
     ...(registrationEndpoint ? { registrationEndpoint } : {}),

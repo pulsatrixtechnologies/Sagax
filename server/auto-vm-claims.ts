@@ -33,14 +33,10 @@ export interface AutoVmClaimSlot {
   label?: string;
   /** This claim mounts a local workspace, not a remote Boat/VPS desktop. */
   localVm?: boolean;
-  /** How long a computer call waits on this claim before it is answered,
-   * when the claim itself is slow: a cloud computer that has to be created
-   * or woken takes up to a minute. A slow claim is waited on by every call
-   * while it runs, not only by the call that fired it. Unset: the gate's
-   * short default, for a desktop that claims at once. */
-  graceMs?: number;
-  /** What the gate answers while this claim is still running, instead of
-   * the contention text a fast claim earns. */
+  /** What the gate answers when a call's wait ran out with this claim still
+   * running, instead of the contention text a queued claim earns. Every
+   * call waits on a running claim (the gate's call wait), not only the call
+   * that fired it. */
   pendingReason?: string;
   /** The Boat a cloud computer's claim created or woke (mountBotBoat):
    * its tools reach that Boat once the claim has landed. */
@@ -79,14 +75,4 @@ export function startAutoVmClaim(table: AutoVmClaimTable, threadId: string, gene
       slot.onRejected?.(slot.failure, error);
     },
   );
-}
-
-/** How long a computer call should wait on its thread's lazy claim, or null
- * when it should not wait: the first call waits while the claim it fires
- * lands; a slow claim (graceMs) is waited on by every call until it settles. */
-export function lazyClaimWaitMs(slot: AutoVmClaimSlot | undefined, defaultGraceMs: number): number | null {
-  if (!slot?.lazy) return null;
-  if (!slot.begin) return slot.graceMs ?? defaultGraceMs;
-  if (slot.graceMs !== undefined && !slot.claimed && !slot.failed) return slot.graceMs;
-  return null;
 }

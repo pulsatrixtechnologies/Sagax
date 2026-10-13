@@ -1,0 +1,10 @@
+# All three targets stay off. Set one enabled flag only for a reviewed plan.
+name              = "sagax"
+oidc_issuer_url   = "https://idp.example.invalid/realms/sagax"
+oidc_client_id    = "sagax"
+oidc_admin_group  = "sagax-admins"
+server_url        = "https://k3s.example.invalid:6443"
+proxmox_enabled   = false
+linode_enabled    = false
+aws_enabled       = false
+aws_region        = "ca-central-1"

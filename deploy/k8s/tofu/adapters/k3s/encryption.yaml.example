@@ -1,0 +1,15 @@
+# Example only. Do not install this file.
+# Provision /var/lib/rancher/k3s/server/encryption.yaml on the control plane
+# out of band (SOPS, the hypervisor secret store). Mode 0600, root owned.
+# The aescbc secret is 32 bytes, base64. A placeholder fails closed at boot.
+apiVersion: apiserver.config.k8s.io/v1
+kind: EncryptionConfiguration
+resources:
+  - resources:
+      - secrets
+    providers:
+      - aescbc:
+          keys:
+            - name: key1
+              secret: REPLACE_ON_HOST
+      - identity: {}

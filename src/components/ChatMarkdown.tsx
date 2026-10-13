@@ -17,7 +17,6 @@ import type { HighlighterCore } from "shiki/core";
 import Markdown, { defaultUrlTransform, type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
-import rehypeKatex from "rehype-katex";
 import { fromMarkdown, type Options as MarkdownParseOptions } from "mdast-util-from-markdown";
 import {
   Check,
@@ -49,8 +48,11 @@ import {
 import { repairMarkdownTables } from "../lib/markdown-tables";
 import { TRANSCRIPT_WINDOW_SIZE } from "../lib/transcript-window";
 import { windowsPathDestinations } from "../../shared/markdown-windows-paths";
+import { githubRefFromProps, remarkGithubRefs } from "@/lib/github-refs";
+import { GITHUB_REF_ICONS, LinkHoverCard } from "@/components/LinkHoverCard";
+import { useThreadLinkMenu } from "@/components/ThreadLinkMenu";
 import { looksLikeThreadRefUrl, parseThreadRefUrl, resolveThreadRefAddress, remarkThreadRefs } from "../lib/thread-refs";
-import { MarkdownImagePreview, MessageFolderFiles, OutsideWorkspaceFile, useLocalFileSave, type MessageAttachmentContext } from "./AttachmentPreview";
+import { MarkdownImagePreview, MessageFolderFiles, OutsideWorkspaceFile, saveFailureText, useLocalFileSave, type MessageAttachmentContext } from "./AttachmentPreview";
 import { ThreadLink, ThreadRefsContext, threadLinkFromProps, type ThreadRefsValue } from "./ThreadRefs";
 import { t } from "../lib/i18n";
 import {
@@ -245,6 +247,11 @@ async function highlightFence(code: string, lang: string): Promise<string> {
   });
 }
 const highlightKey = (lang: string, code: string) => `${lang}:${hash(code)}`;
+// Past this size a block stays plain text. Shiki tokenizes on the renderer's
+// main thread: 100 KB of TypeScript took 1.1 s, 200 KB 2.3 s and 1 MB 12 s,
+// and HTML that big is never cached (HIGHLIGHT_CACHE_MAX_CHARS), so every
+// remount froze the window again. Chat snippets sit far below the bound.
+export const HIGHLIGHT_MAX_CHARS = 100_000;
 const mermaidKey = (scheme: "dark" | "light", code: string) => `${scheme}:${hash(code)}`;
 
 // A markdown link whose target is a file on this machine: bots hand over
@@ -408,7 +415,8 @@ export interface CodeBlockProps {
 export function CodeBlock({ code, lang }: CodeBlockProps) {
   // a block highlighted before (revisiting a thread) paints highlighted in
   // its first frame instead of plain first and highlighted after the effect
-  const [html, setHtml] = useState<string | null>(() => highlightCache.get(highlightKey(lang, code)) ?? null);
+  const highlightable = code.length <= HIGHLIGHT_MAX_CHARS;
+  const [html, setHtml] = useState<string | null>(() => highlightable ? highlightCache.get(highlightKey(lang, code)) ?? null : null);
   // React compares dangerouslySetInnerHTML by identity: a fresh object each
   // render would rebuild the highlighted DOM on every re-render
   const markup = useMemo(() => (html ? { __html: html } : null), [html]);
@@ -417,6 +425,8 @@ export function CodeBlock({ code, lang }: CodeBlockProps) {
   const [expanded, setExpanded] = useState(false);
 
   useEffect(() => {
+    // a block too big to highlight keeps the plain <pre>
+    if (!highlightable) return setHtml(null);
     const key = highlightKey(lang, code);
     const cached = highlightCache.get(key);
     if (cached) return setHtml(cached);
@@ -433,7 +443,7 @@ export function CodeBlock({ code, lang }: CodeBlockProps) {
     return () => {
       alive = false;
     };
-  }, [code, lang]);
+  }, [code, lang, highlightable]);
 
   const download = () => {
     const filename = getSnippetFileName(lang);
@@ -724,8 +734,8 @@ export function MermaidDiagram({ code }: MermaidDiagramProps) {
 // and an <a href="file://…"> would still reach setWindowOpenHandler on a
 // middle or modifier click, which calls shell.openExternal without the main
 // process' containment check.
-function LocalFileLink({ filePath, children, message }: { filePath: string; children?: ReactNode; message?: MessageAttachmentContext }) {
-  const save = useLocalFileSave(filePath, undefined, message);
+function LocalFileLink({ filePath, name, children, message }: { filePath: string; name?: string; children?: ReactNode; message?: MessageAttachmentContext }) {
+  const save = useLocalFileSave(filePath, name, message);
   if (!message) {
     return <span title="Unavailable legacy file reference" className="break-words text-ink-secondary">{children}</span>;
   }
@@ -739,7 +749,7 @@ function LocalFileLink({ filePath, children, message }: { filePath: string; chil
 
   return (
     <span dir="ltr" className="inline-flex flex-wrap items-center gap-x-1.5 [unicode-bidi:isolate]">
-      <TableFileButton path={filePath} name={filePath.split(/[\\/]/).at(-1) ?? filePath} message={message} />
+      <TableFileButton path={filePath} name={name ?? fileName(filePath)} message={message} />
       <button
         type="button"
         onClick={() => void save.save()}
@@ -753,7 +763,7 @@ function LocalFileLink({ filePath, children, message }: { filePath: string; chil
         ) : save.state === "saved" ? (
           <Check size={12} className="shrink-0 text-success" aria-hidden="true" />
         ) : save.state === "failed" ? (
-          <RotateCcw size={12} className="shrink-0" aria-hidden="true" />
+          !save.outsideWorkspace && <RotateCcw size={12} className="shrink-0" aria-hidden="true" />
         ) : (
           <Download size={12} className="shrink-0" aria-hidden="true" />
         )}
@@ -764,7 +774,7 @@ function LocalFileLink({ filePath, children, message }: { filePath: string; chil
           title={save.state === "saved" ? save.savedTo : undefined}
           className={`text-[12px] ${save.state === "saved" ? "text-success" : save.state === "failed" ? "text-danger" : "text-ink-secondary"}`}
         >
-          {save.state === "failed" ? save.reason : label}
+          {save.state === "failed" ? saveFailureText(save) : label}
         </span>
       )}
       {save.state === "failed" && save.outsideWorkspace && (
@@ -975,6 +985,98 @@ function normalizeMessageMarkdown(text: string) {
   return normalized;
 }
 
+type KatexPlugin = (typeof import("rehype-katex"))["default"];
+
+// KaTeX is a large parse of the main bundle. It loads the first time a
+// message actually contains math, the same way Mermaid waits for a diagram
+// fence. The stylesheet travels with that chunk, not with the first paint.
+let katexPlugin: KatexPlugin | null = null;
+let katexLoad: Promise<void> | null = null;
+
+/** Load rehype-katex and, in the browser, its stylesheet. Static markup
+ * tests call this first: renderToStaticMarkup does not run the effect that
+ * loads it for a real message. */
+export function ensureChatKatex(): Promise<void> {
+  if (katexPlugin) return Promise.resolve();
+  katexLoad ??= import("rehype-katex").then(async (mod) => {
+    if (typeof document !== "undefined") await import("katex/dist/katex.min.css");
+    katexPlugin = mod.default;
+  }).catch(error => {
+    katexLoad = null;
+    throw error;
+  });
+  return katexLoad;
+}
+
+/** True when normalized markdown still has a `$` or `$$` span. Currency was
+ * escaped to `\$` and code fences were restored unchanged, so a price line
+ * does not match. A dollar that survived inside code may match; loading
+ * KaTeX for that is cheaper than missing a real formula. */
+function normalizedSourceHasMath(source: string): boolean {
+  for (let i = 0; i < source.length; i++) {
+    if (source.charCodeAt(i) === 92) {
+      i += 1;
+      continue;
+    }
+    if (source[i] !== "$") continue;
+    const next = source[i + 1];
+    if (next === undefined) return false;
+    if (next === "$") {
+      if (source.indexOf("$$", i + 2) !== -1) return true;
+      i += 1;
+      continue;
+    }
+    return source.indexOf("$", i + 1) !== -1;
+  }
+  return false;
+}
+
+/** Whether this message should pull in KaTeX. */
+export function messageNeedsKatex(text: string): boolean {
+  return normalizedSourceHasMath(normalizeMessageMarkdown(text).source);
+}
+
+/** A delivered file's name to its stored attachment path. */
+export type DeliveredFiles = Readonly<Record<string, string>>;
+
+const fileName = (path: string) => path.split(/[\\/]/).at(-1) ?? path;
+
+// An external link: the hover card, and the thread link menu on a right
+// click (assign the link to the open thread) when one is offered.
+function ExternalLink({ href, github, children }: { href: string; github: ReturnType<typeof githubRefFromProps>; children?: ReactNode }) {
+  const linkMenu = useThreadLinkMenu(href);
+  const Icon = github ? GITHUB_REF_ICONS[github.kind] : null;
+  return (
+    <LinkHoverCard href={href} github={github}>
+      {(hoverAnchor) => {
+        const anchor = linkMenu.onContextMenu ? { ...hoverAnchor, onContextMenu: linkMenu.onContextMenu } : hoverAnchor;
+        return (
+          <>
+            {linkMenu.menu}
+            {Icon ? (
+              // a GitHub reference reads as a small pill. Left to right and
+              // isolated, so "#2547" never turns into "2547#" in a right-to-left
+              // line. The full address is the tooltip.
+              <a {...anchor} href={href} target="_blank" rel="noreferrer" dir="ltr" title={href} data-github-ref={github!.kind} className={GITHUB_REF_CLASS}>
+                <Icon size={13} aria-hidden="true" className="shrink-0 self-center text-ink-tertiary" />
+                <span>{children}</span>
+              </a>
+            ) : (
+              <a {...anchor} href={href} target="_blank" rel="noreferrer" dir="auto" className={LINK_CLASS}>
+                {children}
+              </a>
+            )}
+          </>
+        );
+      }}
+    </LinkHoverCard>
+  );
+}
+
+const LINK_CLASS = "break-words text-accent underline decoration-accent/40 hover:decoration-accent [unicode-bidi:isolate]";
+const GITHUB_REF_CLASS =
+  "inline-flex items-baseline gap-1 whitespace-nowrap rounded-full bg-inset px-1.5 align-baseline font-mono text-[0.88em] text-ink underline decoration-ink/30 underline-offset-2 hover:decoration-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus [unicode-bidi:isolate]";
+
 // GitHub alerts: "> [!NOTE]" (and TIP, IMPORTANT, WARNING, CAUTION) as the
 // first line of a blockquote turns it into a callout. The marker is removed
 // from the text and carried as data-callout / data-callout-title.
@@ -1072,11 +1174,12 @@ const MAY_LINK_THREAD = /#|openmausbot|sagax/i;
 const NO_THREAD_REFS: ThreadRefsValue = { threads: [] };
 
 /** Render message Markdown with math, protected code, scoped attachments, and mentions. */
-function ChatMarkdownComponent({ text, message, botId, mentionPeers = NO_MENTION_PEERS, everyone = false, youtubeSendToBot }: {
+function ChatMarkdownComponent({ text, message, botId, mentionPeers = NO_MENTION_PEERS, everyone = false, youtubeSendToBot, delivered }: {
   text: string; message?: MessageAttachmentContext; botId?: string;
   mentionPeers?: readonly MentionPeer[]; everyone?: boolean;
   /** When set, the YouTube widget can hand a fetched transcript to the bot. */
   youtubeSendToBot?: (text: string) => void;
+  delivered?: DeliveredFiles;
 }) {
   // "#Title" mentions link to the threads the person can see (ThreadRefs);
   // @mentions were already decorated by remarkMentions, which runs first.
@@ -1169,7 +1272,7 @@ function ChatMarkdownComponent({ text, message, botId, mentionPeers = NO_MENTION
       img(props) {
         const { src, alt } = props;
         if (!src) {
-          return <span className="text-[12px] text-danger" role="alert">Image unavailable</span>;
+          return <span className="text-[12px] text-danger" role="alert">{t("attach.imageUnavailable")}</span>;
         }
         const filePath = localFilePath(src) ?? undefined;
         const sourceOffset = (props as { node?: { position?: { start?: { offset?: number } } } })
@@ -1230,7 +1333,12 @@ function ChatMarkdownComponent({ text, message, botId, mentionPeers = NO_MENTION
         if (ref) return <ThreadLink target={ref} ambiguous={ref.ambiguous}>{children}</ThreadLink>;
         if (address || (href && looksLikeThreadRefUrl(href))) return <span className="break-words">{children}</span>;
         const localPath = localFilePath(href);
-        if (localPath) return <LocalFileLink filePath={localPath} message={scopedMessage}>{children}</LocalFileLink>;
+        if (localPath) {
+          // a link to a file the bot delivered saves that delivered copy, so
+          // the file shows once, in the text
+          const copy = delivered && Object.hasOwn(delivered, fileName(localPath)) ? delivered[fileName(localPath)] : undefined;
+          return <LocalFileLink filePath={copy ?? localPath} name={copy ? fileName(localPath) : undefined} message={scopedMessage}>{children}</LocalFileLink>;
+        }
         const ytId = href ? youtubeVideoId(href) : null;
         if (ytId) {
           return (
@@ -1241,17 +1349,16 @@ function ChatMarkdownComponent({ text, message, botId, mentionPeers = NO_MENTION
             />
           );
         }
-        return (
-          <a
-            href={href}
-            target="_blank"
-            rel="noreferrer"
-            dir="auto"
-            className="break-words text-accent underline decoration-accent/40 hover:decoration-accent [unicode-bidi:isolate]"
-          >
-            {children}
-          </a>
-        );
+        if (!href || !/^https?:\/\//i.test(href)) {
+          return (
+            <a href={href} target="_blank" rel="noreferrer" dir="auto" className={LINK_CLASS}>
+              {children}
+            </a>
+          );
+        }
+        // SAFETY: react-markdown hands hast data-* attributes through as string props
+        const github = githubRefFromProps(rest as Record<string, unknown>, href);
+        return <ExternalLink href={href} github={github}>{children}</ExternalLink>;
       },
       table({ node, children }: BlockProps) {
         const model = tableModelFromMarkdown(children);
@@ -1345,12 +1452,33 @@ function ChatMarkdownComponent({ text, message, botId, mentionPeers = NO_MENTION
         return <hr className="border-hairline/40" />;
       },
     } as Components;
-  }, [threadId, messageId, botId, threads, currentBotId, openFence, prefix]);
+  }, [threadId, messageId, botId, threads, currentBotId, openFence, prefix, delivered]);
+  // KaTeX loads the first time a message actually holds math (ensureChatKatex).
+  const needsMath = normalizedSourceHasMath(source);
+  const [katexReady, setKatexReady] = useState(() => katexPlugin !== null);
+  useEffect(() => {
+    if (!needsMath) return;
+    if (katexPlugin) {
+      setKatexReady(true);
+      return;
+    }
+    let alive = true;
+    void ensureChatKatex().then(() => {
+      if (alive) setKatexReady(true);
+    }, () => {
+      // Keep the formula readable as source. A later math message can retry
+      // a failed download instead of inheriting a permanently rejected load.
+    });
+    return () => {
+      alive = false;
+    };
+  }, [needsMath]);
+  const mathPlugin = needsMath && katexReady ? katexPlugin : null;
   return (
     <div className="chat-md min-w-0 [&>*+*]:mt-2">
       <Markdown
-        remarkPlugins={[remarkGfm, remarkMath, remarkWindowsPathDestinations, unwrapLinkedImages, remarkCallouts, [remarkMentions, { peers: mentionPeers, everyone }], remarkThreadRefs(threads, currentBotId)]}
-        rehypePlugins={[rehypeKatex]}
+        remarkPlugins={[remarkGfm, remarkMath, remarkWindowsPathDestinations, unwrapLinkedImages, remarkCallouts, remarkGithubRefs, [remarkMentions, { peers: mentionPeers, everyone }], remarkThreadRefs(threads, currentBotId)]}
+        rehypePlugins={mathPlugin ? [mathPlugin] : []}
         remarkRehypeOptions={{ clobberPrefix: prefix }}
         urlTransform={chatUrlTransform}
         components={components}
@@ -1384,4 +1512,12 @@ export const ChatMarkdown = memo(ChatMarkdownComponent, (previous, next) => (
   && previous.message?.messageId === next.message?.messageId
   && previous.youtubeSendToBot === next.youtubeSendToBot
   && previous.botId === next.botId
+  && sameDelivered(previous.delivered, next.delivered)
 ));
+
+function sameDelivered(previous: DeliveredFiles | undefined, next: DeliveredFiles | undefined): boolean {
+  if (previous === next) return true;
+  const a = Object.entries(previous ?? {});
+  const b = next ?? {};
+  return a.length === Object.keys(b).length && a.every(([name, path]) => b[name] === path);
+}

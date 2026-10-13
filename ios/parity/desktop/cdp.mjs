@@ -42,6 +42,8 @@ export async function launchChrome({ port = 0, binary = findChrome() } = {}) {
     "--disable-renderer-backgrounding",
     "--disable-features=Translate,MediaRouter",
     "--lang=en-US",
+    // Linux containers run as root, where Chrome refuses its sandbox.
+    ...(process.platform === "linux" && process.getuid?.() === 0 ? ["--no-sandbox"] : []),
     "about:blank",
   ], { stdio: ["ignore", "ignore", "pipe"] });
   let stderr = "";

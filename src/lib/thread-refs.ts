@@ -144,6 +144,7 @@ export interface ThreadRefAddress {
 }
 
 const THREAD_URL_PREFIX = "openmausbot://thread/";
+const BOT_URL_PREFIX = "openmausbot://bot/";
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const ID_LIMIT = 256;
 
@@ -186,6 +187,32 @@ export function parseThreadRefUrl(value: string): ThreadRefAddress | null {
   const owner = bot === null ? undefined : plainId(bot);
   if (!thread || owner === null) return null;
   return owner ? { threadId: thread, botId: owner } : { threadId: thread };
+}
+
+/** Parse a canonical bot link: `openmausbot://bot/<bot-id>`, the stable link
+ * an external dashboard uses when it only knows the bot. Null for anything
+ * else, including near-misses with extra path or query. */
+export function parseBotRefUrl(value: string): { botId: string } | null {
+  const raw = value.trim();
+  if (!raw.toLowerCase().startsWith(BOT_URL_PREFIX)) return null;
+  let url: URL;
+  try {
+    url = new URL(raw);
+  } catch {
+    return null;
+  }
+  if (url.username || url.password || url.port || url.hash) return null;
+  if (url.hostname.toLowerCase() !== "bot") return null;
+  if ([...url.searchParams.keys()].length) return null;
+  let botId: string;
+  try {
+    botId = decodeURIComponent(url.pathname.slice(1));
+  } catch {
+    return null;
+  }
+  if (!botId || botId.includes("/") || url.pathname.slice(1) !== encodeURIComponent(botId)) return null;
+  const bot = plainId(botId);
+  return bot ? { botId: bot } : null;
 }
 
 /** Whether a value is shaped like a thread link at all — even one that

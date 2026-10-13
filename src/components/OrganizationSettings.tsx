@@ -73,7 +73,7 @@ function ServerInvitesDirectory() {
 }
 
 /** Settings → Organization is Perspicax (or a solo server's own invitations).
- * The hosted OpenMausBot Admin portal is not offered here. */
+ * The hosted Sagax Admin portal is not offered here. */
 export function OrganizationSettings() {
   const { state: store } = useStore();
   const remoteActive = window.ogb?.remoteClient?.active === true;

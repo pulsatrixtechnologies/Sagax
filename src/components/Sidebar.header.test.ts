@@ -70,15 +70,15 @@ describe("sidebar header", () => {
   );
 
   it.each(["comfortable", "compact", "icons"] as const)(
-    "draws New as a round button like search, with the new-conversation glyph, at %s density",
+    "draws New as a round button like search, with upstream's plus glyph, at %s density",
     (density) => {
       fixture.density = density;
       const html = render();
       const news = html.match(/<button[^>]*data-sidebar-new[^>]*>[\s\S]*?<\/button>/g) ?? [];
       expect(news).toHaveLength(1);
       expect(news[0]).toContain('title="New"');
-      expect(news[0]).toContain("lucide-square-pen");
-      expect(news[0]).not.toContain("lucide-plus");
+      expect(news[0]).toContain("lucide-plus");
+      expect(news[0]).not.toContain("lucide-square-pen");
       const search = (html.match(/<button[^>]*data-sidebar-search[^>]*>/g) ?? [])[0] ?? "";
       const classOf = (tag: string) => /class="([^"]*)"/.exec(tag)?.[1];
       expect(classOf(news[0] ?? "")).toBe(classOf(search));

@@ -1,9 +1,9 @@
-import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
-import { integrityMatches, npmPinError, npmTarballUrl, parseNpmSpec, productionRefusal, selectEngines } from "./install-engines.mjs";
+import { createHash } from "node:crypto";
+import { parseNpmSpec, integrityMatches, npmPinError, npmTarballUrl, productionRefusal, selectEngines } from "./install-engines.mjs";
 
 const lock = JSON.parse(readFileSync(join(import.meta.dirname, "..", "engines.lock.json"), "utf8"));
 const ids = (selection) => selection.install.map((engine) => engine.id);
@@ -39,7 +39,7 @@ describe("selectEngines", () => {
     expect(() => selectEngines(lock, { engineSet: "claude nope", arch: "arm64" })).toThrow(/nope/);
   });
 
-  it("keeps a locked ENGINES override and refuses an unknown package, latest, or a different version", () => {
+  it("keeps an exact locked ENGINES override and refuses an unknown package or a changed version", () => {
     const legacy = selectEngines(lock, {
       engineSet: "none",
       engines: "@anthropic-ai/claude-code@2.1.288 @openai/codex@0.160.0",
@@ -48,7 +48,6 @@ describe("selectEngines", () => {
     });
     expect(ids(legacy)).toEqual(["grok", "claude", "codex"]);
     expect(legacy.install.find((engine) => engine.id === "codex")).toMatchObject({ bin: "codex", spec: "@openai/codex@0.160.0", version: "0.160.0" });
-    expect(legacy.install.find((engine) => engine.id === "codex").integrity).toMatch(/^sha512-/);
 
     const allButNative = selectEngines(lock, { engineSet: "all", nativeEngines: "none", arch: "arm64" });
     expect(ids(allButNative)).not.toContain("grok");
@@ -57,7 +56,6 @@ describe("selectEngines", () => {
 
     expect(() => selectEngines(lock, { engineSet: "none", engines: "some-tool", arch: "arm64" })).toThrow(/unknown npm engine/);
     expect(() => selectEngines(lock, { engineSet: "all", engines: "@openai/codex@0.150.0", arch: "arm64" })).toThrow(/does not match the locked/);
-    expect(() => selectEngines(lock, { engineSet: "none", engines: "@openai/codex", arch: "arm64" })).toThrow(/exact version/);
     expect(ids(selectEngines(lock, { engineSet: "all", engines: "none", arch: "arm64" })).every((id) => !lock.engines.find((engine) => engine.id === id && engine.kind === "npm"))).toBe(true);
     expect(() => selectEngines(lock, { nativeEngines: "claude", arch: "arm64" })).toThrow(/unknown native engine/);
   });
@@ -82,19 +80,25 @@ describe("productionRefusal", () => {
 });
 
 describe("npm integrity", () => {
-  it("names the registry tarball and refuses a pin without a sha512", () => {
-    expect(npmTarballUrl("@openai/codex", "0.160.0")).toBe("https://registry.npmjs.org/@openai/codex/-/codex-0.160.0.tgz");
-    expect(npmTarballUrl("opencode-ai", "1.18.34")).toBe("https://registry.npmjs.org/opencode-ai/-/opencode-ai-1.18.34.tgz");
-    expect(npmPinError({ kind: "npm", package: "opencode-ai", version: "latest" })).toMatch(/exact version/);
-    expect(npmPinError({ kind: "npm", package: "opencode-ai", version: "1.18.34" })).toMatch(/sha512/);
-    expect(integrityMatches(Buffer.from("abc"), `sha512-${Buffer.from("abc").toString("base64")}`)).toBe(false);
-    const integrity = `sha512-${createHash("sha512").update("abc").digest("base64")}`;
-    expect(integrityMatches(Buffer.from("abc"), integrity)).toBe(true);
-    for (const engine of lock.engines) {
-      if (engine.kind === "npm") expect(engine.integrity, engine.id).toMatch(/^sha512-/);
-    }
+  it("pins every npm engine and runs postinstall only where the lock says so", () => {
     const scripted = lock.engines.filter((engine) => engine.installScripts === true).map((engine) => engine.id).sort();
     expect(scripted).toEqual(["claude", "droid", "kimi", "opencode"]);
+    for (const engine of lock.engines) {
+      if (engine.kind !== "npm") {
+        expect(npmPinError(engine)).toBeNull();
+        continue;
+      }
+      expect(npmPinError(engine), engine.id).toBeNull();
+      expect(npmTarballUrl(engine.package, engine.version)).toBe(
+        `https://registry.npmjs.org/${engine.package}/-/${engine.package.startsWith("@") ? engine.package.slice(engine.package.lastIndexOf("/") + 1) : engine.package}-${engine.version}.tgz`,
+      );
+    }
+    expect(npmPinError({ kind: "npm", package: "some-tool", version: "latest" })).toMatch(/exact version/);
+    expect(npmPinError({ kind: "npm", package: "some-tool", version: "1.2.3" })).toMatch(/sha512/);
+    const body = Buffer.from("fixture-tarball");
+    const integrity = `sha512-${createHash("sha512").update(body).digest("base64")}`;
+    expect(integrityMatches(body, integrity)).toBe(true);
+    expect(integrityMatches(body, "sha512-aaaa")).toBe(false);
   });
 });
 

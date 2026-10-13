@@ -11,7 +11,6 @@
 // assistant's position (omb.retro98.prefs), this device's voices
 // (openmausbot.remote-voice.v1), the settings cards left open, caches and
 // credentials.
-import { z } from "zod";
 
 export const USER_PREFERENCE_KEYS = [
   // appearance (the Hibou 98 switch goes with the skin it swaps)
@@ -72,10 +71,6 @@ const keySet: ReadonlySet<string> = new Set(USER_PREFERENCE_KEYS);
 export function isUserPreferenceKey(key: unknown): key is UserPreferenceKey {
   return typeof key === "string" && keySet.has(key);
 }
-
-export const userPreferencesSchema = z
-  .record(z.string(), z.string().max(MAX_PREFERENCE_VALUE))
-  .refine((value) => Object.keys(value).every(isUserPreferenceKey), { message: "unknown preference" });
 
 /** Keep the known keys with string values, drop everything else. */
 export function cleanUserPreferences(input: unknown): UserPreferences {

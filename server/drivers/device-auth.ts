@@ -58,6 +58,8 @@ export interface DeviceSignIn {
   status?: { args: readonly string[]; read(code: number | null, output: string): DeviceSignInState };
   /** Without a status command: whether the sign-in a turn uses is now there. */
   signedIn?(env: Env): boolean;
+  /** Extra environment for the login command only (`BROWSER=none`). */
+  spawnEnv?: Record<string, string>;
   /** With a status command: removes the stored sign-in (Settings' sign-out). */
   logoutArgs?: readonly string[];
 }
@@ -258,7 +260,7 @@ export class DeviceAuthController {
       }
       let child: ReturnType<typeof spawnCli>;
       try {
-        child = spawnCli(this.options.cli, args, { env: { ...env, NO_COLOR: "1" }, cwd, stdio: ["pipe", "pipe", "pipe"] });
+        child = spawnCli(this.options.cli, args, { env: { ...env, ...this.spec.spawnEnv, NO_COLOR: "1" }, cwd, stdio: ["pipe", "pipe", "pipe"] });
       } catch {
         rejectExec(new Error(`${product} could not start on this server. Install or update the configured ${product} CLI, then try again.`));
         return;
@@ -296,7 +298,7 @@ export class DeviceAuthController {
     if (flow.status.phase !== "waiting") return;
     let child: ReturnType<typeof spawnCli>;
     try {
-      child = spawnCli(this.options.cli, args, { env: { ...env, NO_COLOR: "1" }, cwd, stdio: ["pipe", "pipe", "pipe"] });
+      child = spawnCli(this.options.cli, args, { env: { ...env, ...this.spec.spawnEnv, NO_COLOR: "1" }, cwd, stdio: ["pipe", "pipe", "pipe"] });
     } catch {
       this.finish(flow, "failed", `${product} could not start on this server. Install or update the configured ${product} CLI, then try again.`);
       return;

@@ -229,6 +229,7 @@ const support: AcpSupport = {
     },
     docsUrl: "https://docs.factory.ai/droid-cli/quickstart",
     signInCommand: "droid",
+    apiKey: true,
   },
 
   // No model/mode flags here on purpose: see the header note. `-o acp` is the

@@ -244,7 +244,7 @@ posixOnly("Perspicax organization, slice 3: directory, sharing with a user, acce
     // (none), the plugin marketplace policy (any, the default) and the
     // labeled access tokens (none).
     expect((await api("GET", "/api/org", alice)).body.settings).toEqual({
-      orgKeyConfigured: true, allowFullAccess: true, interimAttach: { until: null, people: 0 },
+      orgKeyConfigured: true, allowFullAccess: false, interimAttach: { until: null, people: 0 },
       github: { clientId: null, fromEnvironment: false }, pluginMarketplaces: { mode: "any" },
       githubTokens: [],
     });
@@ -542,10 +542,15 @@ posixOnly("Perspicax organization, slice 3: directory, sharing with a user, acce
   }, 60_000);
 
   it("S3-7: Full access on a member's bot is its owner's choice, confirmed once; Custom never", async () => {
+    // off until an admin turns it on (2026-10-11)
+    const allowed = await api("PATCH", "/api/org/settings", alice, { allowFullAccess: true });
+    expect(allowed.status, allowed.text).toBe(200);
     const erin = await signIn(ERIN);
     const created = await api("POST", "/api/bots", erin, { name: "Zed" });
     expect(created.status, created.text).toBe(201);
     const zed = created.body.bot;
+    // no New bot policy saved: an organization's new bot starts on Ask
+    expect(zed.approvalMode).toBe("ask");
     expect(zed.ownerUserId).toBe((await api("GET", "/api/auth/session", erin)).body.principalId);
     // an admin reaches a member's Direct only when it is shared with them
     expect((await api("PATCH", `/api/bots/${zed.id}`, alice, { approvalMode: "custom" })).status).toBe(404);

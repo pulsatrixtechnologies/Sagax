@@ -120,6 +120,8 @@ export interface TurnAccessInput {
   via: "subscription" | "owner-key" | "speaker-key" | "server" | "org-key";
   identity: string;
   environment?: Record<string, string>;
+  /** File-backed key sealed for this person (engine-api-keys.ts). */
+  localKeyPrincipal?: string;
   claudeConfigDir?: string;
   codexHome?: string;
   codexOwnerKey?: boolean;
@@ -145,6 +147,10 @@ export interface SendTurnInput {
    * credentials this one turn runs with. Absent in solo mode: the instance's
    * own configuration, as always. */
   access?: TurnAccessInput;
+  /** The automatic recall block the harness put in front of the person's
+   * message inside `text`. It informs this turn only, so a driver that
+   * replays the turn as sent later can leave it out. */
+  recalled?: string;
   /** Per-bot approval policy, reasserted by providers on every turn so a
    * resumed native session cannot retain a stale, more permissive mode. */
   approvalMode?: ApprovalMode;
@@ -180,10 +186,6 @@ export interface SendTurnInput {
    * prompt (server/resume-recovery.ts) — so a session the provider lost
    * does not brick the thread, and the new session is not blank. */
   recoveryText?: string;
-  /** recoveryText is the replay this turn would have been sent without a
-   * resume cursor (it carries an update from outside the session). A driver
-   * that rebuilds only some lost sessions may also rebuild this one. */
-  recoveryIsReplay?: boolean;
   /** Prior turns for transcript-replay providers (API-backed drivers). */
   transcript?: Array<{ role: "user" | "assistant"; text: string }>;
   /** Bot persona (name/title/description) as a system prompt. */
@@ -231,6 +233,10 @@ export interface SendTurnInput {
    * prompt when the provider supports it; the current brief also arrives
    * in this turn's text. */
   refreshSystemPrompt?: boolean;
+  /** The built-in browser is this conversation's place, so the bot will very
+   * likely browse: a driver may load its tools up front instead of behind a
+   * tool search, which costs the first browser action a model step. */
+  preloadBrowserTools?: boolean;
   /** Per-bot integrations the driver may hand to the agent as tools. */
   integrations?: {
     /** A local stdio bridge owns the remote Composio transport. Keeping the
@@ -267,6 +273,10 @@ export interface SendTurnInput {
      * that forwards to the Electron-owned WebContentsView the Browser tab
      * shows. One tab per bot, in its own persistent session partition. */
     browser?: { command: string; args: string[]; env: Record<string, string> };
+    /** The Data tools (server/data): an MCP proxy (server/harness-mcp-proxy
+     * data) that forwards to the harness, where DuckDB runs on this bot's
+     * own database and the Computer panel's Data tab shows the sheet. */
+    data?: { command: string; args: string[]; env: Record<string, string> };
     /** dweb network daemon: an MCP proxy exposing dweb status, repo, and
      * opencode model access as tools. url is the dweb HTTP base. */
     dweb?: { url: string };
@@ -389,6 +399,10 @@ export interface ProviderAdapter {
     /** True when the driver can mount the built-in browser MCP. Same rule:
      * a bot must never be told it has a browser its driver cannot hand it. */
     browserMcp?: boolean;
+    /** True when the driver can mount the Data tools MCP (the same stdio
+     * proxy shape as the browser). Same rule: never tell a bot it has data
+     * tools its driver cannot hand it. */
+    dataMcp?: boolean;
     /** True when this engine accepts images in the prompt — gates image
      * paste in the composer. Same rule as computerMcp: never offer an
      * attachment an engine cannot open (a bot told it has an image it
@@ -534,6 +548,8 @@ export interface ProviderSnapshot {
 // login (Codex, Grok) signs in from the app instead (drivers/device-auth.ts),
 // and signInCommand stays its terminal route.
 export interface EngineInstall {
+  /** Added by the registry: commands run on this server, not its web client. */
+  platform?: "darwin" | "win32" | "linux";
   /** One-liner per platform. Omit a platform that has no such command —
    * the UI falls back to docsUrl rather than offering something that
    * cannot work there (a curl|bash line is not a Windows command). */
@@ -552,6 +568,8 @@ export interface EngineInstall {
   /** Set up inside the app rather than in a terminal: the engine needs a key
    * saved under Settings → API keys, and the setup card links there. */
   settings?: "connections";
+  /** The setup card takes a masked access key and stores it as a secret. */
+  apiKey?: boolean;
   /** Settings can install or update this engine on the machine running the
    * server, as the server's own user, into a directory the app owns. Set by
    * the registry when the install one-liner is an npm package and npm is on
@@ -680,7 +698,7 @@ export interface ProviderInstance {
   /** Optional first-party runtime installation and account setup. */
   readonly installRuntime?: () => Promise<void>;
   readonly startAuthentication?: () => Promise<ProviderAuthenticationStart>;
-  readonly authenticationMethod?: "browser-pkce";
+  readonly authenticationMethod?: "browser-pkce" | "open-link";
   readonly getAuthentication?: (flowId: string) => Promise<ProviderAuthenticationStatus>;
   readonly completeAuthentication?: (flowId: string, callbackUrl: string) => Promise<void>;
   readonly cancelAuthentication?: () => Promise<void>;
@@ -693,6 +711,11 @@ export interface ProviderInstance {
    * The signal is a best-effort cap: drivers that can honor it abort the
    * underlying provider call; the rest keep their own timeout. */
   generateText?(prompt: string, options?: TextGenerationOptions): Promise<string>;
+  /** A one-shot text call for memory upkeep only, on an engine whose turns
+   * are a whole agent process (the ACP family). It starts a fresh tool-free
+   * session on the engine's own provider, so it is never offered to titles or
+   * compaction, which would then spawn a process for every new chat. */
+  generateMemoryText?(prompt: string, options?: TextGenerationOptions): Promise<string>;
   /** Isolated, tool-free permission review on this same provider. Kept
    * separate from generateText so the UI never infers a security capability
    * from a generic helper that may expose prompts in argv or lack approvals. */

@@ -1,7 +1,7 @@
 // The bot settings dialog's Overview section: a plain-language read of a
 // single bot, built entirely from server-generated sentences (BotOverview,
 // server/bot-overview.ts) so the phone app and this dialog never disagree
-// about what a bot does. Pure presentational — no store, no fetch; the
+// about what a bot does. Pure presentational (no store, no fetch); the
 // dialog owns loading, errors, and the section switch (onOpen).
 import { useState } from "react";
 
@@ -38,12 +38,10 @@ export function OverviewSection({
         </div>
       )}
 
-      <div className="rounded-xl bg-hover p-3">
-        <div className="text-[13px] font-medium text-ink">{overview.who.name}</div>
-        {overview.who.title && <div className="mt-0.5 text-[13px] text-ink-secondary">{overview.who.title}</div>}
-        {overview.who.blurb && <p className="mt-2 text-[13px] leading-relaxed text-ink">{overview.who.blurb}</p>}
+      {(overview.who.blurb || overview.who.soulLead) && <div>
+        {overview.who.blurb && <p className="text-[13px] leading-relaxed text-ink">{overview.who.blurb}</p>}
         {overview.who.soulLead && (
-          <div className="mt-3">
+          <div className={overview.who.blurb ? "mt-2" : undefined}>
             <p className="text-[13px] leading-relaxed text-ink-secondary">{overview.who.soulLead}</p>
             <button
               type="button"
@@ -54,9 +52,9 @@ export function OverviewSection({
             </button>
           </div>
         )}
-      </div>
+      </div>}
 
-      <div className="rounded-xl bg-hover p-3">
+      <div>
         <div className="text-[13px] font-medium text-ink">{t("botPanel.overview.does")}</div>
         {overview.does.length === 0 ? (
           <p className="mt-2 text-[13px] text-ink-secondary">{t("botPanel.overview.nothingScheduled")}</p>
@@ -69,7 +67,7 @@ export function OverviewSection({
         )}
       </div>
 
-      <div className="rounded-xl bg-hover p-3">
+      <div>
         <div className="text-[13px] font-medium text-ink">{t("botPanel.overview.reach")}</div>
         {overview.reaches.length === 0 ? (
           <p className="mt-2 text-[13px] text-ink-secondary">{t("botPanel.overview.nothingYet")}</p>
@@ -82,7 +80,7 @@ export function OverviewSection({
         )}
       </div>
 
-      <div className="rounded-xl bg-hover p-3">
+      <div>
         <div className="text-[13px] font-medium text-ink">{t("botPanel.overview.wont")}</div>
         <ul className="mt-2 flex flex-col gap-1.5 text-[13px] leading-relaxed text-ink">
           {overview.wont.map((line, i) => (
@@ -98,7 +96,7 @@ export function OverviewSection({
         onToggle={() => setPromptOpen((current) => !current)}
       />
 
-      <div className="rounded-xl bg-hover p-3">
+      <div>
         <div className="flex items-baseline justify-between gap-3">
           <div className="text-[13px] font-medium text-ink">{t("botPanel.overview.recent")}</div>
           <button

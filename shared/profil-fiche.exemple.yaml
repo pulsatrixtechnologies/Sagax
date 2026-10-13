@@ -1,0 +1,26 @@
+fiche_de_besoins:
+  version: 1
+  employe:
+    nom: "Alex Martin"
+    role: soutien
+  bots:
+    - nom: Accueil
+      domaine: "Coordination du soutien"
+      permissions:
+        demandes: lecture
+        reponses: ecriture-avec-confirmation
+      connecteurs: [courriel, documents]
+      niveau_perspicax:
+        - organisation:lecture
+        - equipe:lecture
+        - personnel:ecriture
+      niveau_autonomie: 0
+    - nom: "Suivi des dossiers"
+      domaine: "Suivi des dossiers"
+      permissions:
+        dossiers: lecture
+      connecteurs: []
+      niveau_perspicax:
+        - personnel:lecture
+      niveau_autonomie: 0
+  secrets: aucun

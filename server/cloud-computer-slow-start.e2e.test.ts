@@ -157,6 +157,10 @@ describe("a slow cloud computer start", () => {
         SAGAX_BOX_API: `${relayBase}/own-key-must-not-be-used`,
         SAGAX_CLOUD_BOAT_URL: `${relayBase}/relay/api/box/v1`,
         SAGAX_CLOUD_BOAT_TOKEN: INCLUDED,
+        // One call's wait on its computer: the computer-control gate's
+        // (upstream) and the older cloud start wait (ours), whichever the
+        // server reads.
+        SAGAX_COMPUTER_CALL_WAIT_MS: String(CALL_WAIT_MS),
         SAGAX_CLOUD_COMPUTER_START_WAIT_MS: String(CALL_WAIT_MS),
         SAGAX_CLOUD_COMPUTER_START_BUDGET_MS: String(START_BUDGET_MS),
       },

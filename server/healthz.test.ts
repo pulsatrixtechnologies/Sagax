@@ -9,20 +9,17 @@ describe("healthz", () => {
     expect(healthzBody()).toEqual({ ok: true, app: "openmausbot", product: "sagax" });
   });
 
-  it("is served before the stranger health check and does not require an empty session", () => {
+  it("is served before the SPA fallback and does not require an empty session", () => {
     const source = readFileSync(join(import.meta.dirname, "index.ts"), "utf8");
     const route = source.indexOf('path === "/healthz"');
+    const spa = source.indexOf("serveStatic(res, path)");
     const stranger = source.indexOf('path === "/api/health" && !gate.auth');
     expect(route).toBeGreaterThan(0);
+    expect(spa).toBeGreaterThan(route);
     expect(stranger).toBeGreaterThan(route);
-    const block = source.slice(route, route + 120);
+    expect(source.indexOf('path === "/healthz"', route + 1)).toBe(-1);
+    const block = source.slice(route, route + 160);
     expect(block).toContain("healthzBody()");
     expect(block).not.toContain("!gate.auth");
-  });
-
-  it("is not swallowed by the static UI's SPA fallback", () => {
-    const source = readFileSync(join(import.meta.dirname, "index.ts"), "utf8");
-    const line = source.split("\n").find((l) => l.includes("serveStatic(res, path)"));
-    expect(line).toContain('path !== "/healthz"');
   });
 });

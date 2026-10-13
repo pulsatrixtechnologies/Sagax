@@ -9,8 +9,8 @@
 // On an organization server, Local VM and This computer use
 // LocalVmComputerPanel instead: a still and power buttons, no Take control.
 // Cloud uses SandboxDesktopScreen (the desktop's SandboxDesktopView). There
-// `ComputerChooser` on top lists Cloud and each computer by its full name,
-// then Browser. Browser mode shows the bot's live browser.
+// `ComputerChooser` on top lists Cloud, Other VMs and Browser; the host
+// name sits under Other VMs. Browser mode shows the bot's live browser.
 import SwiftUI
 import UIKit
 import CompanionCore
@@ -105,18 +105,21 @@ struct BotPanelComputer: View {
     /// than one screen to look at.
     @ViewBuilder
     private var chooser: some View {
-        let rows = ComputerChooser.rows(bridge: choices.bridge, organization: session.surfaceGate.organization,
-                                        worksOnLocal: showsLocalVm, browser: browserOffered, powers: choices.powers)
-        if rows.count > 1 {
-            ComputerChooser(
-                rows: rows,
-                chosen: ComputerChooser.selectedKey(showsBrowser: showsBrowser, chosen: chosen),
-                colors: .init(
-                    ink: theme.ink, secondary: theme.inkSecondary, card: theme.card, menu: theme.menu,
-                    hairline: theme.hairline, field: theme.control, on: theme.success, off: theme.inkSecondary,
-                    paused: theme.warning, starting: theme.accent, danger: theme.danger
+        let items = ComputerChooser.items(bridge: choices.bridge, organization: session.surfaceGate.organization,
+                                          worksOnLocal: showsLocalVm, browser: browserOffered)
+        if items.count > 1 {
+            VStack(spacing: 6) {
+                ComputerChooser(
+                    items: items,
+                    chosen: ComputerChooser.selectedKey(showsBrowser: showsBrowser, chosen: chosen),
+                    colors: .init(ink: theme.ink, secondary: theme.inkSecondary, track: theme.control, selected: theme.elevated, dot: theme.focus)
+                ) { picked = ComputerChooser.resolvePick($0, bridge: choices.bridge, current: chosen) }
+                ComputerChooser.provenance(
+                    bridge: choices.bridge, chosen: showsBrowser ? nil : chosen,
+                    pick: { picked = $0 },
+                    secondary: theme.inkSecondary
                 )
-            ) { picked = $0 }
+            }
             .padding(.top, 16)
             .padding(.horizontal, 16)
         }

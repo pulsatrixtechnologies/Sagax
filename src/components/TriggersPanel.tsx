@@ -13,7 +13,8 @@ import { glassPopupFrameStyle } from "@/lib/glass-popup";
 import { t } from "@/lib/i18n";
 import type { LocaleKey } from "@/locales";
 import { WEBHOOK_DEFAULT_MAX_PENDING_RUNS, webhookActivationDefaults, type WebhookTrigger, type WebhookTriggerInput } from "@/lib/webhooks";
-import { api, useStore, type Bot } from "@/state/store";
+import { api, openBotThread, useStore, type Bot } from "@/state/store";
+import { useShowThreads } from "@/lib/thread-preferences";
 
 import { Switch } from "./SettingsPrimitives";
 import { MarkdownEditor } from "./markdown/MarkdownEditor";
@@ -67,6 +68,7 @@ const selectClass =
 
 export function TriggersPanel() {
   const { state, dispatch } = useStore();
+  const showThreads = useShowThreads();
   const bots = state.bots.filter((bot) => !bot.hidden);
   const dialogRef = useRef<HTMLDivElement>(null);
   const actions = useWebhookActions();
@@ -263,8 +265,9 @@ export function TriggersPanel() {
                     onEdit={() => setEditing(webhook)}
                     onOpenChat={(threadId) => {
                       close();
-                      dispatch({ type: "select", id: webhook.botId });
-                      dispatch({ type: "switchTask", botId: webhook.botId, threadId });
+                      // offered only while the webhook's bot is here
+                      const bot = state.bots.find((candidate) => candidate.id === webhook.botId);
+                      if (bot) openBotThread(dispatch, bot, threadId, showThreads);
                     }}
                   />
                 ))}

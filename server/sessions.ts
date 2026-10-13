@@ -20,6 +20,11 @@ export const SCOPES: readonly Scope[] = ["admin", "client"];
 export const PAIRING_CODE_ALPHABET = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ";
 export const PAIRING_CODE_LENGTH = 12;
 export const PAIRING_CODE_TTL_MS = 5 * 60_000;
+/** Open pairing windows live in memory only (a code or sign-in credential is
+ * a bearer secret; only its hash is kept, and never on disk). A restart drops
+ * them, so a refusal within this long after start says the server may have
+ * restarted since the code was made, rather than only "wrong or expired". */
+export const PAIRING_RESTART_HINT_MS = PAIRING_CODE_TTL_MS;
 /** A whole number of days from an environment variable, as milliseconds.
  * Anything that is not a whole number of days between 1 and 3650 falls back
  * to the default rather than being clamped, so a typo is not silently
@@ -156,7 +161,7 @@ export interface PublicPairing {
 
 export type ExchangeResult =
   | { ok: true; token: string; session: PublicSession }
-  | { ok: false; status: 401 | 403 | 429; error: string };
+  | { ok: false; status: 401 | 403 | 429; error: string; code?: "server_restarted" };
 
 const sha256 = (value: string) => createHash("sha256").update(value).digest("hex");
 
@@ -253,6 +258,7 @@ export class SessionRegistry {
   private exchanged: ((session: Readonly<SessionRecord>, pairing: Readonly<PairingCode>) => void) | undefined;
   private lastSeenWrites = new Map<string, number>();
   private readonly now: () => number;
+  private readonly startedAt: number;
   private readonly options: SessionStoreOptions;
   private readonly openMarker: string;
   private closed = false;
@@ -264,6 +270,7 @@ export class SessionRegistry {
   constructor(options: SessionStoreOptions) {
     this.options = options;
     this.now = options.now ?? Date.now;
+    this.startedAt = this.now();
     this.openMarker = `${options.file}.open`;
     const unclean = existsSync(this.openMarker);
     try {
@@ -496,6 +503,9 @@ export class SessionRegistry {
       (sameDigest(p.credentialHash, presented) || (!p.browser && sameDigest(p.codeHash, presented))));
     if (index < 0) {
       this.recordFailure(input.source);
+      if (now - this.startedAt < PAIRING_RESTART_HINT_MS) {
+        return { ok: false, status: 401, code: "server_restarted", error: "pairing code is wrong or has expired, or this server restarted since it was made (a restart drops open codes); create a new one on the server" };
+      }
       return { ok: false, status: 401, error: "pairing code is wrong or has expired; create a new one on the server" };
     }
     const [pairing] = this.pairings.splice(index, 1); // single use

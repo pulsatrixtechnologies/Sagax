@@ -5,13 +5,14 @@ import type { Bot, Group } from "@/state/store";
 
 const fixture = vi.hoisted(() => ({
   showThreads: true,
+  location: "header" as "header" | "sidebar",
   queued: {} as Record<string, unknown[]>,
   bots: [] as Bot[],
   groups: [] as Group[],
   threadReturn: null as null | { ownerId: string; threadId: string },
   dispatch: vi.fn(),
 }));
-vi.mock("@/lib/thread-preferences", () => ({ useShowThreads: () => fixture.showThreads, useThreadsLocationChoice: () => "header" }));
+vi.mock("@/lib/thread-preferences", () => ({ useShowThreads: () => fixture.showThreads, useThreadsLocationChoice: () => fixture.location }));
 vi.mock("@/state/store", async (importOriginal) => ({
   ...await importOriginal<typeof import("@/state/store")>(),
   useStore: () => ({
@@ -87,6 +88,10 @@ describe("optional bot thread picker", () => {
     const shown = renderToStaticMarkup(createElement(GroupTaskPicker, { group }));
     expect(shown).toContain('aria-label="All threads"');
     expect(shown).toContain("rounded-full border");
+    // the sidebar location lists the room's threads under its row instead
+    fixture.location = "sidebar";
+    expect(renderToStaticMarkup(createElement(GroupTaskPicker, { group }))).toBe("");
+    fixture.location = "header";
     fixture.showThreads = false;
     expect(renderToStaticMarkup(createElement(GroupTaskPicker, { group }))).toBe("");
   });

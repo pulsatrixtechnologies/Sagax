@@ -332,7 +332,7 @@ Like `opencode` in a terminal, it reads provider keys from its environment
 (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`, `GOOGLE_API_KEY`,
 `KIMI_API_KEY`, `MOONSHOT_API_KEY`, `MINIMAX_API_KEY`) and offers those
 providers' models, billed to that key. It does so only where the server's
-environment is one person's own: never on an OMB Cloud home, a hosted team
+environment is one person's own: never on MausBot Cloud, a hosted team
 workspace, an organisation-managed desktop, or a server whose sign-in list
 lets other people in (users, more than one admin, or a whole domain).
 Providers added with `opencode auth login` work everywhere.
@@ -529,22 +529,33 @@ loopback request **without a session** is trusted, and logs it:
 
 ```
 local requests: owner trust (self-hosted default)
-local requests: service trust (hosted workspace); without a session, loopback may use only health, the Slack worker's guarded routes and bot capability routes
+local requests: service trust (hosted workspace); without a session, loopback may use only health, edition, brand and bot capability routes. The worker data plane answers only when the relay token is presented.
 ```
 
 | Trust | Default for | A session-less loopback request may |
 |---|---|---|
 | `owner` | a self-hosted server, the desktop app | do everything, as today |
-| `service` | a hosted workspace: any of `SAGAX_ADMIN_URL`, `SAGAX_ADMIN_WORKSPACE` or `SAGAX_ADMIN_MEMBERSHIP` set (shared-workspace Full access only works there, so it is covered too) | read health, who-am-I, the bot list, a thread's messages and a bot's picture; open a thread; send through the guarded route; watch and stop its exact request; withdraw a queued line; **decline** a card; use the bots' own capability routes (`/api/internal/*`, which check their own per-turn token) |
+| `service` | a hosted workspace: any of `SAGAX_ADMIN_URL`, `SAGAX_ADMIN_WORKSPACE` or `SAGAX_ADMIN_MEMBERSHIP` set (shared-workspace Full access only works there, so it is covered too) | read health, who-am-I, edition and brand; use the bots' own capability routes (`/api/internal/*`, which check their own per-turn token). The worker data plane below answers only with the relay token. |
 
 Under `service`, everything else from loopback needs a real session and
 answers 403: settings and keys (`/api/config`), instances, MCP servers,
 webhooks, sessions and pairing, people and sign-in lists, usage, budgets,
 the decision log, fleet, workspace backups, creating or loosening bots, and
-approving or answering any card. The Slack worker (the only session-less
-local caller a hosted workspace has) needs nothing more and keeps working
-unchanged. Sessions — a portal sign-in, an email sign-in or a pairing — work
-exactly as before, with their own scopes.
+approving or answering any card. Sessions — a portal sign-in, an email
+sign-in or a pairing — work exactly as before, with their own scopes.
+
+The worker data plane is the bot list, a thread's messages, attachments, a
+new thread, the guarded send, the exact request fence and its stop,
+withdrawing a queued line, and declining a card. Those routes answer a
+session-less loopback caller only when the request carries
+`x-sagax-worker-relay` and the value matches `SAGAX_WORKER_RELAY_TOKEN`
+(one line, 32 to 256 characters). The server reads the variable once at
+start and deletes it, so an engine it starts does not inherit the token. No
+API returns it and no log line contains it. A missing, short or wrong token
+leaves the data plane closed. The hosted worker that delivers chat messages
+lives in a separate service: it must send the same header in the same
+change window as this server. Until both sides carry the token, that
+worker's calls answer 403.
 
 Set `SAGAX_LOOPBACK_TRUST=service` on a self-hosted server people share (with
 an email sign-in list, say), or `SAGAX_LOOPBACK_TRUST=owner` to opt a hosted
@@ -567,20 +578,14 @@ With `service` on a self-hosted server:
 - A browser on an SSH tunnel gets the sign-in page instead of the app.
 - The MCP server script works with `SAGAX_TOKEN` set to a paired session.
 
-**What `service` does not close yet.** Any bot's shell can still do
-everything the Slack worker does, and on a shared workspace that is a real
-gap: it can post into any bot's thread through the guarded route, including
-an existing Full-access thread (`expectedApprovalMode: "full"`), and while
-shared Full access is on it can open new Full-access threads. Either way the
-work runs with Full access and no card, so a user who can talk to a bot
-can get Full access through it. It can also stop a request and decline a
-card. It cannot approve a card, change settings, keys, people or sessions,
-or loosen a bot's permissions. The planned fix is a relay token that only
-the Slack worker holds, so these routes stop answering session-less loopback
-at all; until then, turn shared Full access on only where every user may
-have Full access. Files the server's user owns (`config.json`, the engine's
-environment) are also still readable from a bot's shell; that needs a
-second user for engines, a separate change.
+**What the relay token closes.** A bot's shell is the same session-less
+loopback caller as the hosted worker, and it does not have the relay token.
+Without that header it cannot list bots, post through the guarded route,
+open a thread, stop a request or decline a card. The token does not open an
+admin route, and it does not let `act` change an approval mode. Files the
+server's user owns (`config.json`, the engine's environment) are still
+readable from a bot's shell; that needs a second user for engines, a
+separate change.
 
 ## Sign in with Pulsatrix (organization server)
 
@@ -746,7 +751,9 @@ id).
   sign-ins and refreshes, and wait in a sealed queue (`idp-revocations.enc`)
   until they go through.
 - The directory is read at start, every `SAGAX_PERSPICAX_DIRECTORY_SECONDS`,
-  and after each sign-in. Everyone it lists becomes a person here (so a bot
+  after each sign-in, and when Perspicax asks for it after a rights change
+  (`POST /api/org/link/directory-refresh` with the link token,
+  `docs/org-admin-api.md` "Link routes"). Everyone it lists becomes a person here (so a bot
   can be shared with someone before their first sign-in), with their name,
   login, address and role. Someone disabled or deleted in Perspicax is
   logged out as a back-channel logout would, even if that push never
@@ -1215,10 +1222,11 @@ alone.
   share "everyone", so nothing changes until an admin restricts one. A bot a
   Chief creates (directly, or in a reviewed team setup) gets exactly the
   Chief's audience.
-- **Who sees everything.** Admin sessions, the owner on this machine, and a
-  session-less local service (the Slack worker under `service` trust) see
-  every bot. A pairing-code device with no email sees only bots everyone
-  can see. Users never receive a bot's audience list.
+- **Who sees everything.** Admin sessions and the owner on this machine see
+  every bot. On a hosted workspace the worker sees every bot only after it
+  presents the relay token. On an organization server a session-less
+  service caller sees none. A pairing-code device with no email sees only
+  bots everyone can see. Users never receive a bot's audience list.
 - **Files.** An attachment is refused only when everything that uses it —
   a message in a thread, a bot's picture — is hidden from that user. A
   file nothing uses yet (someone's own upload) is served; its name is random.
@@ -1554,8 +1562,11 @@ docker compose -f deploy/docker-compose.yml pull omb && docker compose -f deploy
 git pull && pnpm install && sudo systemctl restart openmausbot          # from source
 ```
 
-Routines and queued work survive restarts; in-flight turns do not, so
-update between runs.
+Routines and queued work survive restarts. A teammate turn in flight runs
+again once at the next start, told to check what it already did, and the bot
+that asked for it is told. A person's own turn and a running routine are not
+run again: the conversation says it was interrupted. Update between runs
+where you can.
 
 Stop the server before a filesystem backup so SQLite is copied consistently.
 Back up the entire app data directory and, separately, the service user's

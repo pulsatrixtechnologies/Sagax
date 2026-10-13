@@ -170,12 +170,28 @@ const __SAGAX_DEFAULT_SERVER__: string;
         state: () => Promise<{
           localOrigin: string;
           remote: boolean;
+          /** Named local environments exist only in a packaged build. */
+          packaged: boolean;
           activeId: string;
-          environments: Array<{ id: string; name: string; origin: string }>;
+          environments: Array<{
+            id: string;
+            kind?: "local" | "remote";
+            name: string;
+            origin?: string;
+            dataDir?: string;
+            missing?: boolean;
+          }>;
         }>;
-        switch: (id: string) => Promise<void>;
+        /** Local targets answer {ok, error?} (error strings are an open set); remote ones answer nothing. */
+        switch: (id: string) => Promise<{ ok: boolean; error?: string } | void>;
         addFromLink: (link: string, name?: string) => Promise<boolean | void>;
-        forget: (id: string) => Promise<void>;
+        /** Register a named local environment; an omitted dataDir lands beside the app's own. */
+        create: (name: string, dataDir?: string) => Promise<{ ok: boolean; error?: string; state: unknown }>;
+        /** Native folder chooser for the create form; { ok: false } on cancel. */
+        pickDir: () => Promise<{ ok: boolean; path?: string }>;
+        /** {ok:false} when main refused (active local, failed folder delete); a
+         * cancelled remote confirm and remote success answer nothing. */
+        forget: (id: string, purge?: boolean) => Promise<{ ok: boolean; error?: string } | void>;
         /** `panel` "copy": that server's Copy this computer here panel; otherwise its Computer access. */
         onOpenSettings?: (callback: (computerId?: string | null, panel?: "copy") => void) => () => void;
       };
@@ -316,6 +332,9 @@ const __SAGAX_DEFAULT_SERVER__: string;
       };
       /** Receives a GitHub package URL opened through openmausbot://install. */
       onPackageInstall?(cb: (url: string) => void): () => void;
+      /** Receives a chat link (openmausbot://thread/… or openmausbot://bot/…)
+       * opened from outside the app. */
+      onChatLink?(cb: (link: string) => void): () => void;
       /** The desktop shell's app-menu Preferences… item was activated; open
        * app Settings. Local-shell only: remote server pages never receive
        * the channel, and the bridge is absent in the browser. "cloud" is the
@@ -444,6 +463,8 @@ export interface UpdaterState {
    * newest first and drops anything that is not text.
    */
   notes?: string | Array<{ version: string; note: string }>;
+  /** the release's notes as one string (HTML or Markdown), when the feed has them */
+  releaseNotes?: string;
   percent?: number;
   message?: string;
   /** pre-release versions are offered (opt-in, this computer only) */

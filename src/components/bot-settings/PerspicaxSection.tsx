@@ -6,6 +6,7 @@
 // GET and PUT /api/bots/:id/perspicax (server/bot-perspicax.ts).
 import { useEffect, useState } from "react";
 import { Loader2 } from "lucide-react";
+import { HelpTip } from "../SettingsPrimitives";
 
 import { api, ApiError, type Bot } from "@/state/store";
 import { t } from "@/lib/i18n";
@@ -142,10 +143,10 @@ export function PerspicaxSection({ bot }: { bot: Pick<Bot, "id"> }) {
     return () => { alive = false; };
   }, [bot.id]);
 
-  if (loadFailed) return <p className="rounded-xl border border-hairline/40 p-4 text-[13px] text-ink-secondary">{t("botSettings.perspicax.unavailable")}</p>;
+  if (loadFailed) return <p className="text-[13px] text-ink-secondary">{t("botSettings.perspicax.unavailable")}</p>;
   if (!answer) {
     return (
-      <div className="flex items-center gap-2 rounded-xl border border-hairline/40 p-4 text-[13px] text-ink-secondary">
+      <div className="flex items-center gap-2 text-[13px] text-ink-secondary">
         <Loader2 size={13} className="animate-spin" aria-hidden="true" />
         {t("botSettings.perspicax.loading")}
       </div>
@@ -177,8 +178,14 @@ export function PerspicaxSection({ bot }: { bot: Pick<Bot, "id"> }) {
   };
 
   return (
-    <div className="flex flex-col gap-3 rounded-xl border border-hairline/40 p-4" data-bot-perspicax>
-      <p className="text-[12.5px] leading-relaxed text-ink-secondary">{t("botSettings.perspicax.help")}</p>
+    <div className="flex flex-col gap-3" data-bot-perspicax>
+      <div className="flex items-center gap-1.5 text-[12.5px] text-ink-secondary">
+        <span>{t("botSettings.perspicax.short")}</span>
+        <HelpTip label={t("settings.moreAbout", { title: t("botSettings.perspicax.title") })}>
+          <span className="block">{t("botSettings.perspicax.help")}</span>
+          <span className="mt-2 block">{t("botSettings.perspicax.routines")}</span>
+        </HelpTip>
+      </div>
       {rows.length === 0 ? (
         <p className="text-[13px] text-ink-secondary">{t("botSettings.perspicax.none")}</p>
       ) : (
@@ -195,7 +202,6 @@ export function PerspicaxSection({ bot }: { bot: Pick<Bot, "id"> }) {
           ))}
         </ul>
       )}
-      <p className="text-[12px] text-ink-secondary">{t("botSettings.perspicax.routines")}</p>
       {answer.canEdit ? (
         <div className="flex flex-wrap items-center gap-2">
           <button

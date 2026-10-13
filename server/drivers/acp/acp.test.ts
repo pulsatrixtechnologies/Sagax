@@ -14,6 +14,7 @@ import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { DATA_DIR, ensureDirs, NATIVE_DIR } from "../../config.ts";
+import { BUILT_IN_DATA_SYSTEM_PROMPT } from "../../data/instructions.ts";
 import type { ProviderInstance } from "../../contracts.ts";
 import { TurnNotStartedError } from "../../contracts.ts";
 import { recordEvents, type EventRecorder } from "../../testing/events.ts";
@@ -241,7 +242,10 @@ describe("ACP turns (fake CLI)", () => {
     recorder = recordEvents(instance.adapter);
   };
 
+  let savedAgyModel: string | undefined;
   beforeEach(() => {
+    savedAgyModel = process.env.AGY_ACP_DEFAULT_MODEL;
+    delete process.env.AGY_ACP_DEFAULT_MODEL;
     ensureDirs();
     chmodSync(FAKE_CLI, 0o755);
     scratch = mkdtempSync(join(tmpdir(), "omb-acp-test-"));
@@ -263,12 +267,16 @@ describe("ACP turns (fake CLI)", () => {
     delete process.env.FAKE_ACP_PERMISSION_TOOL_CALL;
     delete process.env.FAKE_ACP_PERMISSION_OPTIONS;
     delete process.env.FAKE_ACP_QUESTION_OPTIONS;
+    delete process.env.FAKE_ACP_HOLD_ON_CANCELLED;
     delete process.env.XAI_API_KEY;
     delete process.env.OPENCODE_API_KEY;
+    delete process.env.CLINE_API_KEY;
     delete process.env.CURSOR_API_KEY;
     delete process.env.CURSOR_AUTH_TOKEN;
     delete process.env.BOX_TOKEN;
     delete process.env.SAGAX_TTS_KEY;
+    if (savedAgyModel !== undefined) process.env.AGY_ACP_DEFAULT_MODEL = savedAgyModel;
+    else delete process.env.AGY_ACP_DEFAULT_MODEL;
     for (const name of Object.keys(CONTROL_PLANE_FIXTURE)) delete process.env[name];
     delete process.env.FAKE_ACP_MODELS;
     delete process.env.FAKE_ACP_MODEL_STICKS;
@@ -808,6 +816,7 @@ describe("ACP turns (fake CLI)", () => {
     process.env.FAKE_ACP_DUMP = dump;
     process.env.XAI_API_KEY = "xai-should-not-leak";
     process.env.OPENCODE_API_KEY = "opencode-should-not-leak";
+    process.env.CLINE_API_KEY = "cline-should-not-leak";
     process.env.CURSOR_API_KEY = "cursor-should-not-leak";
     process.env.CURSOR_AUTH_TOKEN = "cursor-token-should-not-leak";
     // workspace credentials with no CLI consumer at all — held by the
@@ -825,6 +834,7 @@ describe("ACP turns (fake CLI)", () => {
     expect(seen.argv).toContain("--permission-mode");
     expect(seen.env.XAI_API_KEY).toBeUndefined();
     expect(seen.env.OPENCODE_API_KEY).toBeUndefined();
+    expect(seen.env.CLINE_API_KEY).toBeUndefined();
     expect(seen.env.CURSOR_API_KEY).toBeUndefined();
     expect(seen.env.CURSOR_AUTH_TOKEN).toBeUndefined();
     expect(seen.env.BOX_TOKEN).toBeUndefined();
@@ -857,6 +867,25 @@ describe("ACP turns (fake CLI)", () => {
       args: ["/tmp/connector-proxy.js"],
       env: [{ name: "SAGAX_CONNECTOR_UPSTREAM_URL", value: "http://127.0.0.1:8799/api/internal/connectors/mcp" }],
     });
+  });
+
+  it.each([false, true])("mounts Data through the existing stdio transport unless excluded (excluded=%s)", async (excluded) => {
+    await create();
+    const dump = join(scratch, "data.json");
+    process.env.FAKE_ACP_DUMP = dump;
+    process.env.FAKE_ACP_DUMP_PROMPT = "1";
+    const data = { command: process.execPath, args: [join(scratch, "data-proxy.mjs")], env: { SAGAX_DATA_TOKEN: "synthetic-turn-capability" } };
+    expect(instance.adapter.capabilities.dataMcp).toBe(true);
+    await instance.adapter.sendTurn({
+      threadId: "t-data", text: "Update the existing result.", system: BUILT_IN_DATA_SYSTEM_PROMPT,
+      integrations: { data }, ...(excluded ? { toolScope: { allow: ["native:*"] } } : {}),
+    });
+    expect(await recorder.until((event) => event.type === "turn.completed")).toMatchObject({ ok: true });
+    expect(JSON.parse(readFileSync(`${dump}.mcp.json`, "utf8"))).toEqual(excluded ? [] : [{
+      name: "data", ...data, env: [{ name: "SAGAX_DATA_TOKEN", value: "synthetic-turn-capability" }],
+    }]);
+    const prompt = JSON.parse(readFileSync(`${dump}.prompt.json`, "utf8")) as Array<{ type: string; text?: string }>;
+    expect(prompt.find(block => block.type === "text")?.text).toContain(BUILT_IN_DATA_SYSTEM_PROMPT.trim());
   });
 
   it("droid takes model and autonomy over the wire, never through argv", async () => {
@@ -1206,11 +1235,61 @@ describe("ACP turns (fake CLI)", () => {
     });
     const resolved = await recorder.until((e) => e.type === "request.resolved");
     expect(resolved).toMatchObject({ behavior: "deny", source: "system" });
-    expect(recorder.events.find((e) => e.type === "runtime.error")).toMatchObject({
-      message: expect.stringContaining("matching answer"),
-    });
+    const error = recorder.events.find((e) => e.type === "runtime.error") as { message: string } | undefined;
+    expect(error?.message).toContain("isn't one of the choices");
+    expect(error?.message).not.toContain("Agent");
     await recorder.until((e) => e.type === "turn.completed");
     expect(readFileSync(answer, "utf8")).toBe("cancelled");
+  });
+
+  it("marks an ACP question as options-only, so the card offers no free text", async () => {
+    await create(GrokAgentDriver, "question");
+    await instance.adapter.sendTurn({ threadId: "t-question-custom", text: "go" });
+    const opened = await recorder.until((e) => e.type === "request.opened");
+    expect(opened).toMatchObject({ questions: [{ question: "Which color?", custom: false }] });
+  });
+
+  // Antigravity's shape: options carry their own ids and names, and after a
+  // "cancelled" outcome the agent waits for session/cancel instead of going on.
+  it.each([
+    { name: "a typed answer", response: { behavior: "answer", message: "The user answered your questions.\n\nQ: Which article?\nA: my own article" }, error: true },
+    { name: "a closed question", response: { behavior: "deny" }, error: false },
+  ])("ends the turn instead of hanging after $name matches no option", async ({ response, error }) => {
+    process.env.FAKE_ACP_HOLD_ON_CANCELLED = "1";
+    process.env.FAKE_ACP_QUESTION_OPTIONS = JSON.stringify([
+      { optionId: "opt-0", kind: "allow_once", name: "Machines of Loving Grace (Recommended)" },
+      { optionId: "opt-1", kind: "allow_once", name: "A new piece on reasoning models" },
+    ]);
+    const answer = join(scratch, "question-hold.txt");
+    process.env.FAKE_ACP_PERMISSION_ANSWER = answer;
+    await create(GrokAgentDriver, "question");
+    await instance.adapter.sendTurn({ threadId: "t-question-hold", text: "go" });
+    const opened = await recorder.until((e) => e.type === "request.opened");
+    await instance.adapter.respondToRequest("t-question-hold", (opened as { requestId: string }).requestId, response as never);
+    const done = await recorder.until((e) => e.type === "turn.completed");
+    expect(done).toMatchObject({ stopReason: "cancelled" });
+    expect(readFileSync(answer, "utf8")).toBe("cancelled");
+    expect(recorder.events.some((e) => e.type === "runtime.error")).toBe(error);
+  });
+
+  it("still sends the picked option id on Antigravity's option shape", async () => {
+    process.env.FAKE_ACP_HOLD_ON_CANCELLED = "1";
+    process.env.FAKE_ACP_QUESTION_OPTIONS = JSON.stringify([
+      { optionId: "opt-0", kind: "allow_once", name: "Machines of Loving Grace (Recommended)" },
+      { optionId: "opt-1", kind: "allow_once", name: "A new piece on reasoning models" },
+    ]);
+    const answer = join(scratch, "question-pick.txt");
+    process.env.FAKE_ACP_PERMISSION_ANSWER = answer;
+    await create(GrokAgentDriver, "question");
+    await instance.adapter.sendTurn({ threadId: "t-question-pick", text: "go" });
+    const opened = await recorder.until((e) => e.type === "request.opened");
+    expect(await instance.adapter.respondToRequest("t-question-pick", (opened as { requestId: string }).requestId, {
+      behavior: "answer",
+      message: "The user answered your questions.\n\nQ: Which color?\nA: A new piece on reasoning models",
+    })).toBe("answered");
+    const done = await recorder.until((e) => e.type === "turn.completed");
+    expect(done).toMatchObject({ ok: true });
+    expect(readFileSync(answer, "utf8")).toBe("opt-1");
   });
 
   it.each([false, true])("maps capped labels back to their option id, refusing collisions (%s)", async collision => {
@@ -1869,7 +1948,10 @@ createInterface({ input: process.stdin }).on("line", (line) => {
           /^\[turn-latency\] \S+ thread=t-latenc path=spawn queue=\d+ms setup=\d+ms ttfa=\d+ms ttft=\d+ms tools=\d+ total=\d+ms prompt=\d+ch full=\S+ in=\S+ cached=\S+ stallGuard=150ms retried ok$/,
         );
         expect(Number(/queue=(\d+)ms/.exec(lines[0]!)![1])).toBeGreaterThanOrEqual(40);
-        expect(Number(/ttfa=(\d+)ms/.exec(lines[0]!)![1])).toBeGreaterThanOrEqual(150);
+        // The stall guard is 150ms. The latency clock and setTimeout are not
+        // the same instant: a busy runner reports 149. Still well above an
+        // answer that skipped the guard.
+        expect(Number(/ttfa=(\d+)ms/.exec(lines[0]!)![1])).toBeGreaterThanOrEqual(120);
       } finally {
         log.mockRestore();
       }
@@ -2791,7 +2873,11 @@ createInterface({ input: process.stdin }).on("line", (line) => {
         await stopping;
         await instance.adapter.interruptTurn("qwen-stop");
         release();
-        expect(await recorder.until((e) => e.type === "turn.completed" && e.turnId === second.turnId)).toMatchObject({ ok: false });
+        // Stop races two endings: the new child's close (exit_before_result, ok false) or the
+        // handshake's "session closed" (cancelled, ok true); Windows reaps fast enough to see the
+        // second. Either way the turn never ends as a normal answer.
+        const done = await recorder.until((e) => e.type === "turn.completed" && e.turnId === second.turnId);
+        expect(done).toSatisfy((e: any) => e.ok === false || e.stopReason === "cancelled");
         const calls = readFileSync(appendFile, "utf8").trim().split("\n").map((line) => JSON.parse(line).method);
         expect(calls.filter((method) => method === "initialize")).toHaveLength(1);
         expect(calls.filter((method) => method === "session/load")).toHaveLength(0);

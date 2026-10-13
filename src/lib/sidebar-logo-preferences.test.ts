@@ -47,14 +47,16 @@ afterEach(() => {
 });
 
 describe("local sidebar logo visibility", () => {
-  it("defaults on and ignores malformed values without writing anything", async () => {
+  it("defaults off, shows only for a stored \"1\" and writes nothing on read", async () => {
     const preference = await import("./sidebar-logo-preferences");
-    expect(preference.useShowSidebarLogo()).toBe(true);
-    expect(hook.serverSnapshot!()).toBe(true);
-    for (const value of ["", "false", "broken", "1"]) {
+    expect(preference.useShowSidebarLogo()).toBe(false);
+    expect(hook.serverSnapshot!()).toBe(false);
+    for (const value of ["", "false", "broken", "0", "true"]) {
       local.setItem(preference.SIDEBAR_LOGO_KEY, value);
-      expect(preference.useShowSidebarLogo()).toBe(true);
+      expect(preference.useShowSidebarLogo()).toBe(false);
     }
+    local.setItem(preference.SIDEBAR_LOGO_KEY, "1");
+    expect(preference.useShowSidebarLogo()).toBe(true);
     local.setItem.mockClear();
     preference.useShowSidebarLogo();
     expect(local.setItem).not.toHaveBeenCalled();
@@ -102,10 +104,10 @@ describe("local sidebar logo visibility", () => {
     preference.useShowSidebarLogo();
     const listener = vi.fn();
     const unsubscribe = hook.subscribe!(listener);
-    local.setItem(preference.SIDEBAR_LOGO_KEY, "0");
+    local.setItem(preference.SIDEBAR_LOGO_KEY, "1");
     storageEvent(preference.SIDEBAR_LOGO_KEY);
     expect(listener).toHaveBeenCalledOnce();
-    expect(hook.snapshot!()).toBe(false);
+    expect(hook.snapshot!()).toBe(true);
 
     storageEvent("other-key");
     storageEvent(preference.SIDEBAR_LOGO_KEY, memoryStorage());
@@ -114,7 +116,7 @@ describe("local sidebar logo visibility", () => {
     local.clear();
     storageEvent(null);
     expect(listener).toHaveBeenCalledTimes(2);
-    expect(hook.snapshot!()).toBe(true);
+    expect(hook.snapshot!()).toBe(false);
     unsubscribe();
     storageEvent(null);
     expect(listener).toHaveBeenCalledTimes(2);
@@ -130,7 +132,7 @@ describe("local sidebar logo visibility", () => {
       if (failure === "read") local.getItem.mockImplementation(() => { throw new Error("blocked"); });
     }
     const preference = await import("./sidebar-logo-preferences");
-    expect(preference.useShowSidebarLogo()).toBe(true);
+    expect(preference.useShowSidebarLogo()).toBe(false);
     preference.setShowSidebarLogo(false);
     expect(preference.useShowSidebarLogo()).toBe(false);
     preference.setShowSidebarLogo(true);

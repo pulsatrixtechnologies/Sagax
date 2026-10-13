@@ -2,11 +2,17 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { EngineSetup, EngineUpdateNotice, needsCli, needsSignIn } from "./EngineSetup";
+import { EngineSetup, EngineUpdateNotice, installCommandFor, needsCli, needsSignIn } from "./EngineSetup";
 import { engineStatus } from "./ModelPicker";
 import { StoreProvider, type InstanceInfo } from "@/state/store";
 
 afterEach(() => vi.unstubAllGlobals());
+
+it("chooses the server installer even when the client has a different OS", () => {
+  vi.stubGlobal("window", { ogb: { platform: "win32" } });
+  expect(installCommandFor({ platform: "linux", command: { linux: "linux-install", win32: "windows-install" } })).toBe("linux-install");
+  expect(installCommandFor({ platform: "linux", command: { win32: "windows-only" } })).toBeNull();
+});
 
 function instance(snapshot: InstanceInfo["snapshot"]): InstanceInfo {
   return {
@@ -92,7 +98,7 @@ describe("engines set up with a key in Settings", () => {
     };
     const markup = renderToStaticMarkup(createElement(StoreProvider, null, createElement(EngineSetup, { instance: engine })));
     expect(markup).toContain("Other (OpenAI-compatible) needs an API key");
-    expect(markup).toContain("Open API keys");
+    expect(markup).toContain("Add the key");
     expect(markup).not.toContain("Open install in Terminal");
     expect(markup).not.toContain("config.json");
   });
@@ -131,9 +137,14 @@ describe("install from Settings on the server", () => {
   });
 
   it("never offers an install when only sign-in is missing", () => {
-    const markup = render(npmEngine({ state: "available", authenticated: false, version: "1.0.0" }));
+    const engine = npmEngine({ state: "available", authenticated: false, version: "1.0.0" });
+    engine.authentication = { method: "device-code" };
+    const markup = render(engine);
     expect(markup).not.toContain("Install Kimi on this server");
+    expect(markup).toContain("Sign in to Kimi");
+    expect(markup).toContain("data-manual-command");
     expect(markup).toContain("kimi login");
+    expect(markup).not.toContain("Open sign-in in Terminal");
   });
 
   it("turns the update notice into a button when the server can update", () => {
@@ -159,7 +170,9 @@ describe("server device-code sign-in", () => {
     const markup = renderToStaticMarkup(createElement(StoreProvider, null, createElement(EngineSetup, { instance: engine })));
     expect(markup).toContain("Continue with ChatGPT");
     expect(markup).toContain("This is separate from API billing.");
-    expect(markup).not.toContain("codex login");
+    expect(markup).toContain("data-manual-command");
+    expect(markup).toContain("codex login");
+    expect(markup).not.toContain("Open sign-in in Terminal");
     expect(markup).not.toContain("Device-code login");
   });
 
@@ -190,7 +203,9 @@ describe("server device-code sign-in", () => {
     const markup = renderToStaticMarkup(createElement(StoreProvider, null, createElement(EngineSetup, { instance: engine })));
     expect(markup).toContain("Connect ChatGPT");
     expect(markup).toContain("no terminal or password sharing");
-    expect(markup).not.toContain("codex login");
+    expect(markup).toContain("data-manual-command");
+    expect(markup).toContain("codex login");
+    expect(markup).not.toContain("Open sign-in in Terminal");
   });
 
   it("does not ask to sign in when installing a CLI for local-model injection", () => {
@@ -219,7 +234,7 @@ describe("API-key engine setup", () => {
     const html = render(keyEngine("grok", { state: "unavailable", reason: "No xAI API key — open Settings → API keys." }));
     expect(html).toContain("data-engine-setup-api-key");
     expect(html).toContain("Grok (API) needs an API key");
-    expect(html).toContain("Open API keys");
+    expect(html).toContain("Add the key");
     expect(html).not.toContain("config.json");
   });
 
@@ -227,14 +242,14 @@ describe("API-key engine setup", () => {
     const html = render(keyEngine("grok", { state: "available", authenticated: false, reason: "The provider rejected this key." }));
     expect(html).toContain("data-engine-setup-api-key");
     expect(html).toContain("The provider rejected the saved key.");
-    expect(html).toContain("Open API keys");
+    expect(html).toContain("Add the key");
     expect(render(keyEngine("grok", { state: "unavailable" }))).not.toContain("rejected");
   });
 
   it("has no button on a remote client, whose settings hide the keys", () => {
     const html = render(keyEngine("openai-compat", { state: "unavailable" }), { platform: "darwin", remoteClient: { active: true } });
     expect(html).toContain("on the computer running Sagax");
-    expect(html).not.toContain("Open API keys");
+    expect(html).not.toContain("Add the key");
   });
 
   it("leaves CLI engines on their install card", () => {

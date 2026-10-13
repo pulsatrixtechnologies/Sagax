@@ -17,7 +17,6 @@ import { startPresence } from "./lib/presence";
 import { installAnimationPause } from "./lib/animation-pause";
 import { syncDesktopAppearance } from "./lib/desktop-appearance-sync";
 import { JoinPage, takeInviteTokenFromLocation } from "./pair/JoinPage";
-import "katex/dist/katex.min.css";
 import "./styles.css";
 
 // Before the first paint, not inside a component: stamping the skin during

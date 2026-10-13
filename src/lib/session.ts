@@ -7,7 +7,7 @@ export interface EnvironmentDescriptor {
   label: string;
   platform: string;
   version: string;
-  capabilities: { remoteSessions: true; selfUpdate: "desktop-managed" | "operator"; emailSignIn?: boolean; sharedComputers?: true; cloudHome?: true };
+  capabilities: { remoteSessions: true; selfUpdate: "desktop-managed" | "operator"; emailSignIn?: boolean; sharedComputers?: true; cloudHome?: true; signInPreview?: true };
   /** An organization server: people sign in with Pulsatrix Perspicax at
    * `loginPath` (server/oidc-login.ts); email codes and invitations are off. */
   identity?: { kind: "perspicax"; protocol: "oidc"; issuer: string; loginPath: string };
@@ -164,7 +164,7 @@ export function newAttemptId(): string {
 export async function pairWithCode(
   input: { code: string; label: string; attemptId?: string; browser?: boolean },
   fetchImpl: typeof fetch = fetch,
-): Promise<{ ok: true } | { ok: false; error: string }> {
+): Promise<{ ok: true } | { ok: false; error: string; status?: number; restarted?: true }> {
   let res: Response;
   try {
     res = await fetchImpl("/api/auth/pair", {
@@ -179,17 +179,85 @@ export async function pairWithCode(
   const body: unknown = await res.json().catch(() => ({}));
   if (res.ok) return { ok: true };
   const error = Reflect.get(Object(body), "error");
-  return { ok: false, error: typeof error === "string" ? error : `${res.status} ${res.statusText}` };
+  // The server restarted since the code was made: open codes live in memory
+  // only, so it is gone and a fresh sign-in is the only way forward.
+  const restarted = Reflect.get(Object(body), "code") === "server_restarted";
+  return { ok: false, error: typeof error === "string" ? error : `${res.status} ${res.statusText}`, status: res.status, ...(restarted ? { restarted: true as const } : {}) };
+}
+
+/** Whether this server's /api/auth/pair answers `preview: true` without
+ * redeeming. Servers before the flag ignore `preview` and REDEEM the
+ * credential on that request (2026-10-13: desktop 0.5.0 against server
+ * 167d8e13 spent every Sagax Business return on its preview, then the real
+ * redeem got "pairing code is wrong or has expired"). */
+export function signInPreviewSupported(environment: EnvironmentDescriptor | null): boolean {
+  return environment?.capabilities?.signInPreview === true;
+}
+
+/** A sign-in credential (`omb_pair_…`), as opposed to a typed pairing code. */
+export function isSignInCredential(code: string): boolean {
+  return SIGN_IN_CREDENTIAL.test(code);
+}
+
+// Sign-in credentials this tab already saw refused as spent. Only a short
+// fingerprint is kept (never the credential), for this tab's life: a reload of
+// /pair#code=<c>&auto=1 or a click on the prefilled form must not POST a
+// credential the server already consumed.
+const SPENT_SIGN_IN_KEY = "sagax.spentSignIn.v1";
+
+function spentFingerprint(code: string): string {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < code.length; i += 1) {
+    h ^= code.charCodeAt(i);
+    h = Math.imul(h, 0x01000193) >>> 0;
+  }
+  return h.toString(16).padStart(8, "0");
+}
+
+function spentStore(): Storage | undefined {
+  try {
+    return typeof sessionStorage === "undefined" ? undefined : sessionStorage;
+  } catch {
+    return undefined;
+  }
+}
+
+function readSpent(): string[] {
+  try {
+    const parsed: unknown = JSON.parse(spentStore()?.getItem(SPENT_SIGN_IN_KEY) ?? "[]");
+    return Array.isArray(parsed) ? parsed.filter((v): v is string => typeof v === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
+export function markSignInCredentialSpent(code: string): void {
+  if (!isSignInCredential(code)) return;
+  const next = [...new Set([...readSpent(), spentFingerprint(code)])].slice(-20);
+  try {
+    spentStore()?.setItem(SPENT_SIGN_IN_KEY, JSON.stringify(next));
+  } catch {
+    /* storage unavailable: the in-page state still stops the retry */
+  }
+}
+
+export function signInCredentialSpent(code: string): boolean {
+  return isSignInCredential(code) && readSpent().includes(spentFingerprint(code));
 }
 
 /** Whose Cloud a browser sign-in (takeBrowserSignInFromLocation) signs in
  * to, as the machine recorded it; the page shows this before the person
  * continues. Asking redeems nothing. Null when it is spent, expired or not
  * one at all. */
-/** Name and avatar for a Sagax Business return credential, before redemption. */
-export async function previewSignInPerson(credential: string, fetchImpl: typeof fetch = fetch): Promise<{ name?: string; avatarUrl?: string } | null> {
+/** Name and avatar for a Sagax Business return credential, before
+ * redemption. Sent only to a server that advertises `signInPreview`
+ * (signInPreviewSupported): an older one would redeem the credential here and
+ * the real sign-in right after would be refused. `?preview=1` lets the desktop
+ * app's redeem watcher (electron/main.mjs) tell this request from the redeem. */
+export async function previewSignInPerson(credential: string, environment: EnvironmentDescriptor | null, fetchImpl: typeof fetch = fetch): Promise<{ name?: string; avatarUrl?: string } | null> {
+  if (!signInPreviewSupported(environment)) return null;
   try {
-    const res = await fetchImpl("/api/auth/pair", {
+    const res = await fetchImpl("/api/auth/pair?preview=1", {
       method: "POST",
       credentials: "same-origin",
       headers: { "content-type": "application/json" },

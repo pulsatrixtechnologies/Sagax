@@ -1843,6 +1843,18 @@ public struct Routine: Codable, Hashable, Identifiable, Sendable {
     public var resultsThreadId: String? = nil
     public var runAs: RoutineRunAs? = nil
     public var suspended: RoutineSuspension? = nil
+    // The scoped listing of an organization server (AU20, RoutineScope.swift).
+    // Absent from a plain listing and from older servers.
+    /// Whose routine it is (its bot's owner, or the person it runs as).
+    public var owner: RoutineOwner? = nil
+    public var teamIds: [String]? = nil
+    public var bot: RoutineScopeChoice? = nil
+    /// False outside the caller's own routines: no Run now.
+    public var canRun: Bool? = nil
+    /// False outside the caller's own routines: no Edit, Pause or Delete.
+    public var canEdit: Bool? = nil
+    /// Someone else's routine: no prompt, attachments or threads.
+    public var redacted: Bool? = nil
 }
 
 public struct RoutineRun: Codable, Hashable, Identifiable, Sendable {
@@ -1877,6 +1889,8 @@ public struct RoutineRun: Codable, Hashable, Identifiable, Sendable {
     public var sourceThreadId: String? = nil
     public var resultsThreadId: String? = nil
     public var attachments: [RoutineAttachment]? = nil
+    /// Someone else's run (AU20): status and timing only.
+    public var redacted: Bool? = nil
 }
 
 /// Where a routine posts its dated results (`ResultsDestination.tsx`).
@@ -2200,6 +2214,10 @@ struct GeneratedAvatarResponse: Codable, Sendable {
 struct RoutinesResponse: Codable, Sendable {
     var routines: [Routine]
     var runs: [RoutineRun]
+    // AU20: what a scoped listing adds; absent from an older server.
+    var scope: RoutineScope? = nil
+    var allowed: RoutineScopeAllowed? = nil
+    var facets: RoutineScopeFacets? = nil
 }
 
 struct RoutineResponse: Codable, Sendable { var routine: Routine }

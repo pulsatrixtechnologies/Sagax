@@ -116,6 +116,8 @@ class LiveCallChatWiringTest {
                         json(200, """{"call":${call("ended")}}""")
                     }
                     request.path == "/api/live/call" -> json(200, """{"call":null}""")
+                    request.method == "GET" && request.path?.substringBefore("?") == "/api/config" ->
+                        json(200, """{"live":{"enabled":true}}""")
                     request.path == "/api/instances" -> json(200, """{"instances":[]}""")
                     request.path == "/api/config" -> json(200, """{"live":{"enabled":true,"configured":true,"voice":"marin"}}""")
                     request.path?.startsWith("/api/threads/") == true -> json(200, """{"messages":[],"hasMore":false}""")
@@ -137,8 +139,7 @@ class LiveCallChatWiringTest {
         mount { chatScreen() }
         compose.onNodeWithText("via call").assertIsDisplayed()
 
-        waitForCallButton()
-        compose.onNodeWithContentDescription("Call Scout").performClick()
+        clickCall()
         compose.waitUntil(10_000) { requests.any { it.path == "/api/live/session" } }
         compose.onNodeWithText("Connecting…").assertIsDisplayed()
         attach()
@@ -168,8 +169,7 @@ class LiveCallChatWiringTest {
     @Test
     fun `a phone's first call says what it sends to OpenAI first, once`() {
         mount(disclosureShown = false) { chatScreen() }
-        waitForCallButton()
-        compose.onNodeWithContentDescription("Call Scout").performClick()
+        clickCall()
         compose.onNodeWithText(LiveCallRules.DISCLOSURE).assertIsDisplayed()
         compose.onNodeWithText("Cancel").performClick()
         compose.waitForIdle()
@@ -231,8 +231,7 @@ class LiveCallChatWiringTest {
         mount(bots = listOf(longChat)) { chatScreen(longChat) }
         compose.waitUntil(5_000) { compose.onAllNodesWithText(NEWEST, useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }
 
-        waitForCallButton()
-        compose.onNodeWithContentDescription("Call Scout").performClick()
+        clickCall()
         compose.waitUntil(10_000) { requests.any { it.path == "/api/live/session" } }
         compose.onNodeWithText("Connecting…").assertIsDisplayed()
         assertNewestAbove("Live call")
@@ -308,6 +307,13 @@ class LiveCallChatWiringTest {
                 ),
             )
         }
+    }
+
+    private fun clickCall() {
+        compose.waitUntil(5_000) {
+            compose.onAllNodesWithContentDescription("Call Scout").fetchSemanticsNodes().isNotEmpty()
+        }
+        compose.onNodeWithContentDescription("Call Scout").performClick()
     }
 
     /**

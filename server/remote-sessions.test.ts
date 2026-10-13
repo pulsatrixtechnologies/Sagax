@@ -202,6 +202,7 @@ describe("before pairing", () => {
       remoteSessions: true,
       selfUpdate: "operator",
       emailSignIn: false,
+      signInPreview: true,
     });
     const refused = await call("/api/bots", { headers: remote("10.0.0.1") });
     expect(refused.status).toBe(403);
@@ -280,6 +281,8 @@ describe("pairing", () => {
     const wrong = await call("/api/auth/pair", { method: "POST", headers: remote("10.0.0.3"), body: JSON.stringify({ code: "AAAA-AAAA-AAAA" }) });
     expect(wrong.status).toBe(401);
     expect(wrong.body.error).toMatch(/wrong or has expired/);
+    // a freshly started server cannot tell a typo from a code a restart dropped
+    expect(wrong.body.code).toBe("server_restarted");
     const paired = await call("/api/auth/pair", {
       method: "POST",
       headers: remote("10.0.0.3", { "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0) Safari/605.1" }),

@@ -183,6 +183,8 @@ posixOnly("Perspicax organization: a member's own engines and read-only bots", (
         // absent on this server whatever the machine has installed
         cursor: { driver: "cursorAgent", config: { cli: "sagax-test-no-such-cursor-agent" } },
       },
+      // Full access is off until an admin turns it on (2026-10-11); MA-5 tests the read-only rule on top of an allowed policy
+      organization: { allowFullAccess: true },
     }));
     await start();
     alice = await signIn(ALICE);

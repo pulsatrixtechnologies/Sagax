@@ -30,11 +30,14 @@ let policyBotId: string | undefined;
 const policyEvidence: unknown[] = [];
 const state = (role: string | null = "admin", outage = false, license: { features?: string[]; expiresAt?: string; invalid?: boolean } = {}) => writeFileSync(stateFile, JSON.stringify({ role, outage, license }));
 
-function call(path: string, options: { method?: string; cookie?: string; token?: string; local?: boolean; body?: unknown } = {}) {
+const RELAY = "r".repeat(43);
+function call(path: string, options: { method?: string; cookie?: string; token?: string; local?: boolean; body?: unknown; relay?: boolean | string } = {}) {
   return new Promise<{ status: number; body: any; cookies: string[]; location?: string; contractVersion?: string | string[] }>((resolve, reject) => {
+    const relay = options.relay === true ? RELAY : typeof options.relay === "string" ? options.relay : undefined;
     const req = request({ hostname: "127.0.0.1", port: PORT, path, method: options.method ?? "GET", headers: {
       ...(options.local ? {} : { host: HOST, "x-forwarded-for": "203.0.113.8", "x-forwarded-proto": "https" }),
       ...(options.cookie ? { cookie: options.cookie } : {}), ...(options.token ? { authorization: `Bearer ${options.token}` } : {}),
+      ...(relay ? { "x-sagax-worker-relay": relay } : {}),
       ...(options.body === undefined ? {} : { "content-type": "application/json" }),
     } }, (res) => {
       let raw = ""; res.on("data", (chunk) => raw += chunk);
@@ -355,10 +358,15 @@ describe.skipIf(!enterpriseAdapterPresent)("hosted bridge in the full server", (
     expect((await call(path, { local: true })).body).toEqual({ available: false });
     policyEvidence.push({ slackManagement: management.body, memberStatus: asMember.status, localMembershipAvailable: false });
   }, 30_000);
-  it("treats a session-less local caller as a service by default: the Slack worker's calls work, admin changes need a session", async () => {
+  it("treats a session-less local caller as a service by default: the worker data plane needs the relay token, admin changes need a session", async () => {
     state();
-    await restart({ SAGAX_ADMIN_MEMBERSHIP: "portal", SAGAX_SHARED_WORKSPACE_FULL_ACCESS: "1", SAGAX_LOOPBACK_TRUST: undefined });
+    await restart({
+      SAGAX_ADMIN_MEMBERSHIP: "portal", SAGAX_SHARED_WORKSPACE_FULL_ACCESS: "1",
+      SAGAX_LOOPBACK_TRUST: undefined, SAGAX_WORKER_RELAY_TOKEN: RELAY,
+    });
     expect(log).toContain("local requests: service trust (hosted workspace)");
+    expect(log).toContain("The worker data plane answers only when the relay token is presented.");
+    expect(log).not.toContain(RELAY);
     const admin = await login();
     const adminSession = (await call("/api/auth/session", { cookie: admin })).body;
     expect(adminSession.scopes).toEqual(["admin", "client"]);
@@ -370,23 +378,29 @@ describe.skipIf(!enterpriseAdapterPresent)("hosted bridge in the full server", (
     expect(created.status, JSON.stringify(created.body)).toBe(201);
     const botId = created.body.bot.id as string;
 
-    // What the loopback caller is, and the worker's whole path (cloud server/slack-worker.ts).
+    // What the loopback caller is. The worker's path (the hosted worker) needs
+    // the relay header. The same calls without it, or with the wrong token,
+    // stay closed. The token does not open an admin route.
     expect((await call("/api/auth/session", { local: true })).body).toMatchObject({ kind: "loopback", scopes: ["client"], trust: "service" });
     const health = await call("/api/health", { local: true });
     expect(health.status).toBe(200);
     expect(health.body.capabilities).toMatchObject({ guardedMessages: 1, guardedRequests: 1, sharedWorkspaceFullAccess: 1 });
-    expect((await call("/api/bots?messages=0", { local: true })).status).toBe(200);
-    const task = await call(`/api/bots/${botId}/tasks`, { method: "POST", local: true, body: { title: "Slack · C1 · 1.0", approvalMode: "full" } });
+    expect((await call("/api/bots?messages=0", { local: true })).status).toBe(403);
+    expect((await call(`/api/bots/${botId}/tasks`, { method: "POST", local: true, body: { title: "bare", approvalMode: "full" } })).status).toBe(403);
+    expect((await call("/api/bots?messages=0", { local: true, relay: "nope" })).status).toBe(403);
+    expect((await call("/api/config", { method: "PUT", local: true, relay: true, body: { budgets: { monthlyUsd: 0 } } })).status).toBe(403);
+    expect((await call("/api/bots?messages=0", { local: true, relay: true })).status).toBe(200);
+    const task = await call(`/api/bots/${botId}/tasks`, { method: "POST", local: true, relay: true, body: { title: "Slack · C1 · 1.0", approvalMode: "full" } });
     expect(task.status, JSON.stringify(task.body)).toBe(201);
     const threadId = task.body.task.threadId as string;
-    const page = await call(`/api/threads/${threadId}/messages?limit=0`, { local: true });
+    const page = await call(`/api/threads/${threadId}/messages?limit=0`, { local: true, relay: true });
     expect(page.status).toBe(200);
     const sendId = "slackjob_0123456789abcdef";
-    const sent = await call(`/api/bots/${botId}/messages/guarded`, { method: "POST", local: true, body: {
-      threadId, text: "hello from Slack", sendId, expectedActiveLeafId: page.body.activeLeafId ?? null, expectedApprovalMode: "full",
+    const sent = await call(`/api/bots/${botId}/messages/guarded`, { method: "POST", local: true, relay: true, body: {
+      threadId, text: "hello from the worker", sendId, expectedActiveLeafId: page.body.activeLeafId ?? null, expectedApprovalMode: "full",
     } });
     expect(sent.status, JSON.stringify(sent.body)).toBe(202);
-    expect((await call(`/api/bots/${botId}/requests/${sendId}?threadId=${threadId}`, { local: true })).status).toBe(200);
+    expect((await call(`/api/bots/${botId}/requests/${sendId}?threadId=${threadId}`, { local: true, relay: true })).status).toBe(200);
 
     // Admin changes from a bot's shell are refused, and leave nothing changed.
     const refused: Array<[string, string, unknown?]> = [
@@ -405,7 +419,7 @@ describe.skipIf(!enterpriseAdapterPresent)("hosted bridge in the full server", (
       expect(response.body.error).toMatch(/shared server/);
     }
     expect((await call("/api/auth/session", { cookie: admin })).status).toBe(200);
-    const bots = (await call("/api/bots?messages=0", { local: true })).body.bots;
+    const bots = (await call("/api/bots?messages=0", { local: true, relay: true })).body.bots;
     expect(bots.some((bot: any) => bot.name === "Rogue")).toBe(false);
     expect(bots.find((bot: any) => bot.id === botId).approvalMode).not.toBe("auto");
 

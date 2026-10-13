@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import { expect, it } from "vitest";
 import { launchVerificationServer, runControlOmb, verificationServerEnvironment } from "../scripts/control-omb.ts";
 import { waitForExit } from "./testing/cleanup.ts";
+import { readHandoffs } from "./testing/handoff-rows.ts";
 
 const primary = { instanceId: "opencodeGo", model: "fixture/recovery" };
 const backup = { instanceId: "claude", model: "claude-sonnet-5" };
@@ -205,13 +206,13 @@ it("recovers a coordinated specialist and returns its result to the Chief exactl
     }));
     await control("send", "--bot", chief.id, "--task", chief.activeTaskId, "--text", "Ask Engineering to verify this task and report the result.");
     expect((await control("wait", "--bot", chief.id, "--task", chief.activeTaskId, "--timeout", "30")).status).toBe("settled");
-    const nodes = JSON.parse(readFileSync(join(dataDir, "room-handoffs.json"), "utf8")) as any[];
+    const nodes = readHandoffs(dataDir);
     evidence.push({ nodes });
     expect(nodes).toHaveLength(2);
     expect(nodes.every((node) => !node.groupId && node.status === "completed" && node.reported)).toBe(true);
-    const child = nodes.find((node) => node.botId === specialist.id);
+    const child = nodes.find((node) => node.botId === specialist.id)!;
     expect(child.result).toBe(specialistReply);
-    expect(nodes.find((node) => node.botId === chief.id).executions).toBe(2);
+    expect(nodes.find((node) => node.botId === chief.id)!.executions).toBe(2);
     const turns = jsonLines(`${planPath}.evidence.jsonl`);
     expect(turns.filter((turn) => turn.botId === chief.id)).toHaveLength(2);
     expect(turns.filter((turn) => turn.botId === specialist.id)).toHaveLength(1);

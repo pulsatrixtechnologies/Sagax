@@ -47,13 +47,13 @@ describe("the desktop owl wears its skin's own effect layers", () => {
     const { createElement } = await import("react");
     const { renderToStaticMarkup } = await import("react-dom/server");
     const { default: Owl25D } = await import("./Owl25D");
-    const { skinFinish } = await import("./owl3d/Owl3D");
+    const { skinFinish } = await import("@/lib/owl/owl-skins");
     for (const skin of ["lightning", "gold", "neon", "inferno", "frost", "carbon"]) {
       const html = renderToStaticMarkup(createElement(Owl25D, { color: "blue", skin, size: 120, frame: () => REST_FRAME, fps: () => 30, onHitTest: () => undefined }));
       expect(html).toContain(`data-owl-skin="${skin}"`);
       expect(html).toContain('data-owl-fx="live"');
       expect(html).toMatch(/owl-fx/);
-      // and the 3D owl has a finish for it
+      // and the skin has a material finish of its own
       expect(skinFinish(skin)).not.toEqual(skinFinish("none"));
     }
     const plain = renderToStaticMarkup(createElement(Owl25D, { color: "blue", skin: "none", size: 120, frame: () => REST_FRAME, fps: () => 30, onHitTest: () => undefined }));

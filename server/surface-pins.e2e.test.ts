@@ -4,6 +4,7 @@
 // restartable fixture home so tests can seed bots.json between boots — the
 // sourceless pin shapes only exist on disk.
 import { spawn, type ChildProcess } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { createServer, type Server } from "node:http";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -395,6 +396,41 @@ describe("surface pin provenance against the real server", () => {
     await idle(bot.id, task.threadId);
     expect(await lastRow()).toBe("error: Cloud computers can't start right now. It isn't anything you did. Clear this conversation's place in the composer to continue.");
     expect(savedTask(bot.id, task.threadId)).toMatchObject({ surface: "cloud", surfaceSource: "user" });
+    boatDown = false;
+    await apiOk("DELETE", `/api/bots/${bot.id}`);
+    await stop();
+  });
+
+  // A line relayed from Slack was written there, not in this conversation,
+  // so it never makes this the thread the person is in (server/main-thread.ts):
+  // nor when select_computer continues its turn on another computer, a turn
+  // that carries the same line.
+  it("never takes a relayed line's conversation for where the person writes, when select_computer continues its turn", async () => {
+    await start();
+    const { bot } = await apiOk("POST", "/api/bots", { name: "Relayed place bot" });
+    const { task } = await apiOk("POST", `/api/bots/${bot.id}/tasks`, {});
+    // Sagax starts a thread on Approve for me; a guarded send expects Ask.
+    await apiOk("PATCH", `/api/bots/${bot.id}/tasks/${task.threadId}`, { approvalMode: "ask" });
+    await apiOk("PUT", "/api/config", { box: { token: "box_fixture" } });
+    const lastRow = async () => {
+      const { messages } = await apiOk("GET", `/api/threads/${task.threadId}/messages?limit=30`);
+      return String(messages.filter((message: any) => message.kind !== "digest").at(-1)?.tool?.name ?? "");
+    };
+    resetTurn();
+    await apiOk("POST", `/api/bots/${bot.id}/messages/guarded`, {
+      threadId: task.threadId, sendId: randomUUID(), text: "Check the dashboard on the cloud computer.", expectedActiveLeafId: null,
+    });
+    const sent = await dump();
+    const token = sent.mcpConfig.mcpServers.agents.env.SAGAX_COMMS_TOKEN;
+    const selected = await fetch(base + "/api/internal/computer/select", { method: "POST",
+      headers: { authorization: `Bearer ${token}`, "content-type": "application/json" }, body: JSON.stringify({ surface: "cloud" }) });
+    expect(await selected.json()).toMatchObject({ status: "pending", surface: "cloud" });
+    // The continuation runs, and ends at once on a Boat that is down.
+    boatDown = true;
+    writeFileSync(finishFile, "finish");
+    await until(() => lastRow(), row => row.startsWith("error:"));
+    await idle(bot.id, task.threadId);
+    expect(savedTask(bot.id, task.threadId)).not.toHaveProperty("askedAt");
     boatDown = false;
     await apiOk("DELETE", `/api/bots/${bot.id}`);
     await stop();

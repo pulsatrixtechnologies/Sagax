@@ -16,6 +16,7 @@ import { formatBytes } from "@/lib/memory";
 import { RULES_PATH, fetchWorkspaceDoc, rulesCount, saveWorkspaceDoc } from "@/lib/workspace-files";
 import type { Bot } from "@/state/store";
 import { MarkdownEditor } from "../markdown/MarkdownEditor";
+import { HelpTip } from "../SettingsPrimitives";
 
 /** The starter template. Mirrors server/workspace-files.ts RULES_TEMPLATE
  * (a test keeps them equal). */
@@ -109,13 +110,14 @@ export function RulesSection({ bot, active, initial }: { bot: Bot; active: boole
 
   return (
     <div className="flex flex-col gap-3" data-rules-section="">
-      <p className="text-[13px] leading-relaxed text-ink-secondary">{t("persona.rules.intro")}</p>
-      <p role="note" data-rules-inheritance="" className="rounded-lg bg-raised/60 px-3 py-2 text-[12.5px] leading-snug text-ink-secondary">
-        {t("persona.rules.inheritance")}
-      </p>
-      {starter && !dirty && (
-        <p data-rules-starter="" className="text-[12.5px] text-ink-secondary">{t("persona.rules.starter")}</p>
-      )}
+      <div className="flex items-center gap-1.5 text-[13px] text-ink-secondary">
+        <span>{t("persona.rules.short")}</span>
+        <HelpTip label={t("settings.moreAbout", { title: t("botSettings.nav.rules") })}>
+          <span className="block">{t("persona.rules.intro")}</span>
+          <span data-rules-inheritance="" className="mt-2 block">{t("persona.rules.inheritance")}</span>
+          {starter && !dirty && <span data-rules-starter="" className="mt-2 block">{t("persona.rules.starter")}</span>}
+        </HelpTip>
+      </div>
       <MarkdownEditor
         ariaLabel={t("persona.rules.editorLabel")}
         value={draft}

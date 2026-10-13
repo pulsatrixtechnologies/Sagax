@@ -46,6 +46,13 @@ export function excludedWorkspaceAuthPath(path: string): boolean {
   if (/^mcp-oauth\.(?:enc|key)(?:$|\.\d+\.[0-9a-f-]+\.tmp$)/.test(path)) return true;
   // Organization GitHub access tokens (server/org-github-tokens.ts).
   if (/^org-github-tokens\.enc(?:$|\.\d+\.[0-9a-f-]+\.tmp$)/.test(path)) return true;
+  // File-backed provider keys (server/engine-api-keys.ts), solo and per person.
+  if (/^engine-api-keys\.(?:enc|json)(?:$|\.\d+\.[0-9a-f-]+\.tmp$)/.test(path)) return true;
+  if (/^principals\/[^/]+\/engine-api-keys\.enc(?:$|\.\d+\.[0-9a-f-]+\.tmp$)/.test(path)) return true;
+  // Hermes reads `.env` itself. A verification server's home is the data
+  // directory, and a turn's private home lives under engine-policies.
+  if (/(?:^|\/)\.hermes\/\.env$/.test(path)) return true;
+  if (/^engine-policies\/hermes-(?:solo|org)\/\.env$/.test(path)) return true;
   return /^(?:(?:providers|caddy|chrome-profile|\.agent-browser)(?:\/|$)|workspace-credentials\.json$|external-runtimes\.json$|browser-engine-key$)/.test(path) ||
     /^(?:config\.json|webhooks\.json|workspace-credentials\.json|external-runtimes\.json|browser-engine-key|sessions\.json|tunnel-account\.json|idp-grants\.enc|idp-grants\.key)\.\d+(?:\.[0-9a-f-]+)?\.tmp$/.test(path) ||
     /^(?:vm-home|vm-homes\/[^/]+)\/\.browser-profiles(?:\/|$)/.test(path);
@@ -69,5 +76,16 @@ export function redownloadedOrgLibraryPath(path: string): boolean {
  * process that wrote it, so it is never exported or installed, and a restore
  * leaves the destination's own marker where it is (workspace-backup.ts). */
 export function ephemeralWorkspaceTokenPath(path: string): boolean {
-  return /^(?:hook-tokens(?:\/|$)|sessions\.json\.open$)/.test(path);
+  // The server log window (server/server-log-ring.ts) belongs to the machine
+  // and the process that wrote it, like the marker.
+  return /^(?:hook-tokens(?:\/|$)|server-log(?:\/|$)|sessions\.json\.open$)/.test(path);
+}
+
+/** A bot's DuckDB database (`bots/<id>/data.duckdb`, its WAL, its spill
+ * directory; server/data/engine.ts). Copying the file while the engine holds
+ * it open is not a consistent snapshot (an unflushed WAL), it can run to
+ * gigabytes, and every table in it came from a source the bot can load
+ * again. The sheet beside it (sheet.json) is backed up. */
+export function liveDataEnginePath(path: string): boolean {
+  return /^bots\/[^/]+\/(?:data\.duckdb(?:\.wal)?$|data-tmp(?:\/|$))/.test(path);
 }

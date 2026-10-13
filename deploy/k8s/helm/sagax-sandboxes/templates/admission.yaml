@@ -1,0 +1,172 @@
+{{- if .Values.admission.validating }}
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: sagax-sandboxes-images
+  labels:
+    {{- include "sagax-sandboxes.labels" . | nindent 4 }}
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["pods"]
+  variables:
+    - name: images
+      expression: |
+        object.spec.containers +
+        (has(object.spec.initContainers) ? object.spec.initContainers : []) +
+        (has(object.spec.ephemeralContainers) ? object.spec.ephemeralContainers : [])
+    - name: allowed
+      expression: {{ .Values.admission.allowedImages | toJson | quote }}
+  validations:
+    - expression: |
+        variables.images.all(c,
+          !c.image.endsWith(':latest') &&
+          (
+            c.image.startsWith('ghcr.io/pulsatrixtechnologies/') ||
+            variables.allowed.exists(a, a == c.image)
+          )
+        )
+      message: "Images must be signed Pulsatrix images or a digest-pinned operational image, and must not use the latest tag."
+    - expression: |
+        (!has(object.spec.hostNetwork) || object.spec.hostNetwork == false) &&
+        (!has(object.spec.hostPID) || object.spec.hostPID == false) &&
+        (!has(object.spec.hostIPC) || object.spec.hostIPC == false) &&
+        (!has(object.spec.volumes) || !object.spec.volumes.exists(v, has(v.hostPath))) &&
+        variables.images.all(c,
+          (!has(c.securityContext) || !has(c.securityContext.privileged) || c.securityContext.privileged == false) &&
+          (!has(c.securityContext) || !has(c.securityContext.allowPrivilegeEscalation) || c.securityContext.allowPrivilegeEscalation == false)
+        )
+      message: "Sandbox pods cannot be privileged, escalate, use the host network, or mount a host path (including the Docker socket)."
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: sagax-sandboxes-images
+  labels:
+    {{- include "sagax-sandboxes.labels" . | nindent 4 }}
+spec:
+  policyName: sagax-sandboxes-images
+  validationActions: ["Deny"]
+  matchResources:
+    namespaceSelector:
+      matchExpressions:
+        - key: kubernetes.io/metadata.name
+          operator: In
+          values:
+            - {{ .Values.sandboxNamespace | quote }}
+            - {{ .Values.systemNamespace | quote }}
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: sagax-sandboxes-placement
+  labels:
+    {{- include "sagax-sandboxes.labels" . | nindent 4 }}
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["pods"]
+  validations:
+    - expression: |
+        has(object.spec.nodeSelector) &&
+        object.spec.nodeSelector['sagax.io/pool'] == 'sandboxes' &&
+        has(object.spec.tolerations) &&
+        object.spec.tolerations.exists(t,
+          t.key == 'sagax.io/sandboxes' && t.effect == 'NoSchedule'
+        )
+      message: "Sandbox pods must run on the sagax.io/pool=sandboxes pool."
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: sagax-sandboxes-placement
+  labels:
+    {{- include "sagax-sandboxes.labels" . | nindent 4 }}
+spec:
+  policyName: sagax-sandboxes-placement
+  validationActions: ["Deny"]
+  matchResources:
+    namespaceSelector:
+      matchLabels:
+        kubernetes.io/metadata.name: {{ .Values.sandboxNamespace | quote }}
+{{- end }}
+{{- if .Values.admission.kyverno.enabled }}
+---
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: sagax-sandboxes-verify-images
+  labels:
+    {{- include "sagax-sandboxes.labels" . | nindent 4 }}
+  annotations:
+    policies.kyverno.io/title: Sagax sandbox image signature and scan
+    policies.kyverno.io/severity: high
+spec:
+  validationFailureAction: {{ .Values.admission.kyverno.failureAction | quote }}
+  background: false
+  webhookTimeoutSeconds: 30
+  rules:
+    - name: verify-signature-and-scan
+      match:
+        any:
+          - resources:
+              kinds: ["Pod"]
+              namespaces:
+                - {{ .Values.sandboxNamespace | quote }}
+                - {{ .Values.systemNamespace | quote }}
+      exclude:
+        any:
+          - resources:
+              selector:
+                matchLabels:
+                  app.kubernetes.io/name: sagax-sandbox-warmer
+      verifyImages:
+        - imageReferences:
+            - ghcr.io/pulsatrixtechnologies/*
+          attestors:
+            - count: 1
+              entries:
+                - keyless:
+                    issuer: {{ .Values.admission.kyverno.issuer | quote }}
+                    subject: {{ .Values.admission.kyverno.subject | quote }}
+          attestations:
+            - predicateType: https://cosign.sigstore.dev/attestation/vuln/v1
+              conditions:
+                - all:
+                    - key: {{ `"{{ scanner.result.Summary.Critical }}"` | quote }}
+                      operator: LessThanOrEquals
+                      value: 0
+                    - key: {{ `"{{ scanner.result.Summary.High }}"` | quote }}
+                      operator: LessThanOrEquals
+                      value: 0
+    - name: deny-other-images
+      match:
+        any:
+          - resources:
+              kinds: ["Pod"]
+              namespaces:
+                - {{ .Values.sandboxNamespace | quote }}
+                - {{ .Values.systemNamespace | quote }}
+      validate:
+        foreach:
+          - list: request.object.spec.containers
+            deny:
+              conditions:
+                all:
+                  - key: {{ `"{{ regex_match('^ghcr.io/pulsatrixtechnologies/', element.image) }}"` | quote }}
+                    operator: Equals
+                    value: false
+                  - key: {{ `"{{ element.image }}"` | quote }}
+                    operator: AnyNotIn
+                    value:
+                      {{- toYaml .Values.admission.allowedImages | nindent 22 }}
+            message: "Image is not a signed Pulsatrix image and is not on the operational allowlist."
+{{- end }}

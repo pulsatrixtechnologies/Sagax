@@ -39,7 +39,11 @@ Object.defineProperty(globalThis.navigator, "language", { value: "en", configura
 // SQLite keeps the database file open for the lifetime of its handle.
 // Windows will not remove a directory containing an open database, so close
 // the per-test handle before the next test resets its throwaway data dir.
-const { closeMessageDb } = await import("../message-db.ts");
+// A DOM environment (happy-dom) never opens it, and Vite cannot bundle
+// node:sqlite for one, so those files skip the import.
+const { closeMessageDb } = !("window" in globalThis)
+  ? await import("../message-db.ts")
+  : { closeMessageDb: () => {} };
 afterEach(closeMessageDb);
 
 // Windows holds a directory that is a live process's cwd, and a just-killed

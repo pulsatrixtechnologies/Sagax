@@ -17,7 +17,7 @@ export interface CallState {
   botAudible: boolean;
   /** the person is talking over the bot and the bot is ducked */
   ducked: boolean;
-  /** single active turn: talking while the bot works cancels it (no steer queue) */
+  /** barge-in of speech cancels that reply; a new topic while thinking forks */
   duplex: boolean;
   /** in-flight tools or a sibling topic: barge-in drops speech, not the work */
   backgroundWork: boolean;
@@ -131,9 +131,9 @@ export function step(state: CallState, event: CallEvent): { state: CallState; ef
           effects.push({ type: "cancel-speech" }, { type: "earcon", sound: "interrupted" });
           return next({ phase: "interrupted", botAudible: false, ducked: false });
         case "none":
-          // Talking while the bot works (not speaking), flag off: the words
-          // join its running turn when they are sent (a steer). Duplex on
-          // never reaches here while botBusy.
+          // Talking while the bot works (not speaking): flag off, the words
+          // join its running turn (a steer). Duplex on, the send forks a
+          // new topic, stops, or replaces a correction.
           return next({ phase: "hearing" });
       }
     case "speech-end":

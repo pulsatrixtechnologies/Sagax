@@ -982,7 +982,7 @@ describe("the desktop window's mascot look", () => {
     expect(mascotLook({ character: "frog", skins: { frog: "junk", shiba: "red" } })).toEqual({ character: "frog", skins: { shiba: "red" } });
   });
 
-  it("knows Crab and its five skins, legacy names included, as the app does", () => {
+  it("knows Crab and its fourteen skins, legacy names included, as the app does", () => {
     for (const skin of CRAB_SKINS) expect(mascotLook({ character: "crab", skins: { crab: skin } })).toEqual({ character: "crab", skins: { crab: skin } });
     for (const [old, current] of Object.entries(LEGACY_CRAB_SKINS)) expect(mascotLook({ character: "crab", skins: { crab: old } }).skins.crab).toBe(current);
     expect(mascotLook({ character: "crab", skins: { crab: "junk", frog: "tree" } })).toEqual({ character: "crab", skins: { frog: "tree" } });

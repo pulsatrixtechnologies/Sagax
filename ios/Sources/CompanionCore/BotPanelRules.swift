@@ -184,8 +184,8 @@ public struct MascotUnlocks: Hashable, Sendable {
     /// What the demo offers: the owl and its skins only.
     public static let demo = MascotUnlocks(enforced: false, onlyOwl: true)
 
-    /// The character every person has (`DEFAULT_CHARACTERS`): the owl and the crab.
-    public static let defaultCharacters: Set<MascotCharacter> = [.owl, .crab]
+    /// The character every person has (`DEFAULT_CHARACTERS`): the owl. The crab waits on `character:crab`.
+    public static let defaultCharacters: Set<MascotCharacter> = [.owl]
 
     public func characterUnlocked(_ character: MascotCharacter) -> Bool {
         if onlyOwl { return character == .owl }

@@ -30,7 +30,7 @@ export function ActivityRow({ entry }: { entry: ActivityEntry }) {
           </div>
           {entry.type === "approval" && entry.summary && <div className="mt-0.5 truncate text-[12px] text-ink-secondary">{entry.summary}</div>}
           {detail && (
-            <button type="button" onClick={() => setOpen(!open)} aria-expanded={open} className="mt-0.5 flex items-center gap-1 text-[12px] text-ink-secondary hover:text-ink">
+            <button type="button" onClick={() => setOpen(!open)} aria-expanded={open} className="cursor-pointer mt-0.5 flex items-center gap-1 text-[12px] text-ink-secondary hover:text-ink">
               <ChevronRight size={12} className={cn("transition-transform", open && "rotate-90")} />
               {t("activity.changed", { paths: (entry.changed ?? []).join(", ") || "—" })}
             </button>
@@ -113,10 +113,10 @@ export function ActivitySection() {
           {t("activity.to")}
           <input type="date" value={filters.to} min={filters.from || undefined} onChange={(e) => set({ to: e.target.value })} className={inputClass} />
         </label>
-        <button type="button" onClick={() => void load()} disabled={loading} aria-label={t("activity.refresh")} title={t("activity.refresh")} className="rounded-md p-2 text-ink-secondary hover:bg-control hover:text-ink disabled:opacity-50">
+        <button type="button" onClick={() => void load()} disabled={loading} aria-label={t("activity.refresh")} title={t("activity.refresh")} className="cursor-pointer rounded-md p-2 text-ink-secondary hover:bg-control hover:text-ink disabled:opacity-50">
           {loading ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
         </button>
-        <a href={`/api/admin-activity.csv${query}`} download className="flex items-center gap-1.5 rounded-lg bg-control px-3 py-2 text-[12.5px] font-medium text-ink hover:bg-control/70">
+        <a href={`/api/admin-activity.csv${query}`} download className="ui-button hover:bg-raised-hover">
           <Download size={13} aria-hidden="true" />{t("activity.export")}
         </a>
       </div>

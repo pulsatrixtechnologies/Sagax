@@ -28,3 +28,8 @@ export declare function acquireDataDirLeaseForProcess(
 ): OwnedDataDirLease | DelegatedDataDirLease;
 
 export declare function dataDirLeaseIsActive(dataDir: string): boolean;
+
+/** Tests only: stand in for Linux /proc identity reads. Pass null to restore. */
+export declare function setProcessIdentityProbesForTesting(
+  probes: { pidNamespace?: () => string | null; processStart?: (pid: number) => number | null } | null,
+): void;

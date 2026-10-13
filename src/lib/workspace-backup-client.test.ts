@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { applyWorkspaceClientState, collectWorkspaceClientState } from "./workspace-backup-client";
+import { SEND_KEY_KEY } from "./send-key";
 
 function memory(values: Record<string, string>) {
   const entries = new Map(Object.entries(values));
@@ -30,6 +31,13 @@ describe("full-backup browser state", () => {
     expect(collectWorkspaceClientState(storage)).toEqual({ "omb-show-unready-providers": "1" });
     applyWorkspaceClientState({ "omb-show-unready-providers": "0" }, storage);
     expect(storage.getItem("omb-show-unready-providers")).toBe("0");
+  });
+
+  it("carries the send key choice in a workspace backup", () => {
+    const storage = memory({ [SEND_KEY_KEY]: "mod-enter" });
+    expect(collectWorkspaceClientState(storage)).toEqual({ "omb-send-key": "mod-enter" });
+    applyWorkspaceClientState({ "omb-send-key": "enter" }, storage);
+    expect(storage.getItem(SEND_KEY_KEY)).toBe("enter");
   });
 
   it.each([null, [], { "auth-token": "injected" }, { "omb-webhook-credentials": "source URL" }, { "omb-drafts": 1 }])("rejects invalid client state before clearing anything (%j)", (value) => {

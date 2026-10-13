@@ -1,7 +1,7 @@
 # Mascots
 
 The characters a bot can wear (`bot.mascotLook`, `shared/mascot-look.ts`):
-the owl, the Shapes, Trombi, Bunbu, and the Mastery characters (Shiba,
+the owl, the crab, the Shapes, Trombi, Bunbu, and the Mastery characters (Shiba,
 Grump, Ogre, Frog) that the Mastery achievements unlock
 (`shared/mascot-unlocks.ts`, [achievements](achievements.md)). Each section
 below describes one character: its art, its colors, its skins and its moves.
@@ -266,7 +266,9 @@ The smug sad frog, approved by JC on 2026-10-09 in direction C ("aplat net":
 two flat tones plus a shade crescent, one uniform outline, never under 1.6 px
 on screen). An original drawing: the head's outline carries the two eye
 domes, heavy lids and wide flat lips carry every face, the shoulders hunch up
-along the cheeks. No meme pose, no text, no clothing.
+along the cheeks. Full drawings keep palmate hind legs (fat thighs, shorter
+shins, webbed feet as one silhouette) in a sitting squat that kicks out on a
+hop. No meme pose, no text, no clothing.
 
 | Piece | Where |
 |---|---|
@@ -322,3 +324,42 @@ pond or the pad, still).
 `src/components/frog-moves.test.ts` (moves table, the hop arc, the throat,
 the tongue, one lid at a time, the pond, the pad, the rig's layering, the
 desktop mapping), `MascotLookFixtureTests` on the phone (palettes and faces).
+
+## Crab
+
+The pixel-rect crab: only axis-aligned rectangles, one coral fill
+(`#DD775B`) and two black square eyes, two stub arms and four legs. The idle
+sprite is a 15-cell grid mapped into the 0..100 drawing box
+(`shape-rendering="crispEdges"`). It is a free default character with the
+owl (`DEFAULT_CHARACTERS`), not a Mastery character. Do not brand it Claude
+or Clawd in product strings.
+
+| Piece | Where |
+|---|---|
+| Art (rects, pivots, bust crop under 48 px) | `src/components/crab-art.ts` |
+| Component (CSS idle, rig) | `src/components/CrabMascot.tsx`, `crab-mascot.css` |
+| Moves (keyframe tracks, rig, desktop mapping) | `src/components/crab-moves.ts` |
+| Skins | `src/components/skin-fx/crab-skins.tsx`, `shared/mascot-look.ts` (`CRAB_SKINS`, `CRAB_SKIN_TIER`, `LEGACY_CRAB_SKINS`) |
+| Phone | `ios/Sources/CompanionCore/CrabArt.swift`, `ios/App/Mascots/CrabMascotView.swift` |
+
+**Color.** Plain takes 45 % of the bot colour into the coral (`crabFill` /
+`mixColor`). Named skins keep their own fill: Coral, Sand, Ink (cream eyes),
+Mint. All five skins are common.
+
+**Moves.** Idle bob, blink, look, wave (right arm), walk (a looping scuttle
+on opposite leg pairs), scuttle (three walk cycles side to side, the Moves
+menu), hop (crouch, lift, landing squash, min sy under 0.94), celebrate,
+sleep, talk, listen, work, alert, drag. No GSAP: CSS idle on avatars, the JS
+rig on the desktop mascot.
+
+**Desktop.** `crabHeldFor` keeps an activity going: scuttling while the
+window walks, hopping while it flies, sleeping, dangling while dragged,
+working, talking while the reply streams, listening while its bot waits.
+Cues: a wave on a nudge, a hop for an achievement, a look when a message
+lands, sleep before a snooze. The Moves menu: Wave, Hop, Look, Scuttle /
+Trotter, Celebrate.
+
+**Checks.** `src/components/crab.test.ts` (art, skins, look, drawing),
+`src/components/crab-moves.test.ts` (moves table, hop squash, scuttle,
+wave, the rig, the desktop mapping), `MascotLookFixtureTests` on the phone
+(palettes).

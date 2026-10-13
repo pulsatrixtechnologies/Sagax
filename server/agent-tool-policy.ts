@@ -28,7 +28,6 @@ export const READ_ONLY_AGENT_TOOL_NAMES: ReadonlySet<string> = new Set([
   "read_latest_page",
   "read_latest_page_with_threads",
   "read_transcript_cold",
-  "list_terminal_resources",
   "list_cloud_agents",
   "get_cloud_agent",
   "find_cloud_agent_by_pr",

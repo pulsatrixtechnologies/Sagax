@@ -6,7 +6,7 @@
 import type { ValidateFunction } from "ajv";
 import { isolatedRemoteCommand, runCommand, screenshotBoat } from "./boat.ts";
 import type { AppConfig } from "./config.ts";
-import { CONTROL_REFUSAL_PLAIN } from "./control-client.ts";
+import { controlRefusal, type ControlState } from "./control-client.ts";
 import { compileToolSchema } from "./mcp-schema-validator.ts";
 
 const coordinate = { type: "integer", minimum: 0, maximum: 32767 };
@@ -101,7 +101,7 @@ export async function cloudComputerRpc(
     cfg: AppConfig;
     /** The Boat this call acts on, read after the gate. */
     boxId(): string | null | undefined;
-    gate(): Promise<{ held: boolean; blockedReason?: string }>;
+    gate(): Promise<Pick<ControlState, "held" | "reason" | "blockedReason">>;
     assertActive(): void;
     signal: AbortSignal;
   },
@@ -117,7 +117,7 @@ export async function cloudComputerRpc(
   if (problem) return { isError: true, content: [{ type: "text", text: problem }] };
   const control = await deps.gate();
   deps.assertActive();
-  if (control.held) return { isError: true, content: [{ type: "text", text: control.blockedReason || CONTROL_REFUSAL_PLAIN }] };
+  if (control.held) return { isError: true, content: [{ type: "text", text: controlRefusal(control) }] };
   const boxId = deps.boxId();
   if (!boxId) return { isError: true, content: [{ type: "text", text: CLOUD_COMPUTER_NOT_READY }] };
   const result = await runCloudComputerTool(deps.cfg, boxId, params.name as string, args as Record<string, unknown>, deps.signal);

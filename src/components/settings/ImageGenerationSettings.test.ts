@@ -43,7 +43,7 @@ describe("AvatarImageGenerator", () => {
     fixture.config = { imageGen: { configured: false, provider: "openai" } };
     const html = generate();
     expect(html).toContain("Set up image generation");
-    expect(html).toContain(">API keys<");
+    expect(html).toContain(">Integrations<");
     expect(html).not.toContain('type="password"');
     expect(html).not.toContain("Image provider");
     expect(html).not.toContain("Generate avatar");
@@ -54,7 +54,7 @@ describe("AvatarImageGenerator", () => {
     const html = generate();
     expect(html).toContain("Image generation is not set up on this server.");
     expect(html).not.toContain("Set up image generation");
-    expect(html).not.toContain(">API keys<");
+    expect(html).not.toContain(">Integrations<");
   });
 
   it("generates from a direction once the installation is configured", () => {

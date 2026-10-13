@@ -10,13 +10,6 @@ import type { createTerminalSessionManager } from "../terminal-sessions.ts";
 import type { TerminalResourceRegistry } from "../terminal-resources/registry.ts";
 
 const SESSION = /^\/api\/terminal\/sessions\/([\w-]+)(?:\/(ws|bot-input|close))?$/;
-const SESSION_UPGRADE = /^\/api\/terminal\/sessions\/[\w-]+\/ws$/;
-
-/** WebSocket path for an in-chat terminal session. Kept here so server/index.ts
- * does not grow another path guard. */
-export function isTerminalSessionUpgrade(path: string): boolean {
-  return SESSION_UPGRADE.test(path);
-}
 
 export interface TerminalRouteDeps {
   registry: TerminalResourceRegistry;

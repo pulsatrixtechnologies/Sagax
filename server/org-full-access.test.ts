@@ -3,19 +3,51 @@ import { describe, expect, it } from "vitest";
 import {
   fullAccessConsentedBy,
   orgFullAccessAllowed,
+  orgFullAccessGrandfathered,
   orgFullAccessGrantRefusal,
   orgFullAccessHolds,
+  orgNewBotApprovalMode,
 } from "./org-full-access.ts";
 
 const consent = { principalId: "alice", at: 1 };
 
 describe("organization Full access policy", () => {
-  it("is allowed by default and off only when an admin turned it off", () => {
-    expect(orgFullAccessAllowed(undefined)).toBe(true);
-    expect(orgFullAccessAllowed({})).toBe(true);
+  it("is off until an admin turns it on (2026-10-11)", () => {
+    expect(orgFullAccessAllowed(undefined)).toBe(false);
+    expect(orgFullAccessAllowed({})).toBe(false);
     expect(orgFullAccessAllowed({ allowFullAccess: true })).toBe(true);
     expect(orgFullAccessAllowed({ allowFullAccess: false })).toBe(false);
+    expect(orgFullAccessAllowed({ allowFullAccess: "true" })).toBe(false);
   });
+
+  it("keeps Full allowed for an organization that never saved it and already runs a consented Full bot or thread", () => {
+    const fullBot = { approvalMode: "full", fullAccessConsent: consent, tasks: [{ approvalMode: "full" }] };
+    const fullThread = { approvalMode: "auto", fullAccessConsent: consent, tasks: [{ approvalMode: "ask" }, { approvalMode: "full" }] };
+    expect(orgFullAccessGrandfathered(undefined, [fullBot])).toBe(true);
+    expect(orgFullAccessGrandfathered({}, [{ approvalMode: "ask" }, fullThread])).toBe(true);
+    // a saved choice, on or off, is never rewritten
+    expect(orgFullAccessGrandfathered({ allowFullAccess: false }, [fullBot])).toBe(false);
+    expect(orgFullAccessGrandfathered({ allowFullAccess: true }, [fullBot])).toBe(false);
+    // no Full in use, or Full stored without its owner's consent (it ran as Ask): off
+    expect(orgFullAccessGrandfathered({}, [])).toBe(false);
+    expect(orgFullAccessGrandfathered({}, [{ approvalMode: "auto", tasks: [{ approvalMode: "ask" }] }])).toBe(false);
+    expect(orgFullAccessGrandfathered({}, [{ approvalMode: "full", tasks: [{ approvalMode: "full" }] }])).toBe(false);
+  });
+});
+
+describe("the level a new bot starts on in an organization (2026-10-11)", () => {
+  it("is Approve for me only when the policy says so, else Ask", () => {
+    expect(orgNewBotApprovalMode("auto")).toBe("auto");
+    expect(orgNewBotApprovalMode("ask")).toBe("ask");
+    expect(orgNewBotApprovalMode(undefined)).toBe("ask");
+    expect(orgNewBotApprovalMode(null)).toBe("ask");
+    expect(orgNewBotApprovalMode("full")).toBe("ask");
+    expect(orgNewBotApprovalMode("custom")).toBe("ask");
+    expect(orgNewBotApprovalMode("edits")).toBe("ask");
+  });
+});
+
+describe("organization Full access grants", () => {
 
   it("refuses a grant while the policy is off, whoever asks", () => {
     expect(orgFullAccessGrantRefusal({ policyAllowed: false, callerPrincipalId: "alice", ownerPrincipalId: "alice", confirmed: true, consent })?.code)

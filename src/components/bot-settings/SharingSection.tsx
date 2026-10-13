@@ -55,7 +55,7 @@ export function SharingSection({ bot }: { bot: Bot }) {
   const ownerAdminister: GrantAdministration | null = isOwner && mayShare ? { any: true, teamIds: [], maxLevel: "manage", canAdd: true } : null;
 
   return (
-    <div className="flex flex-col gap-3 rounded-xl border border-hairline/40 p-4" data-bot-sharing>
+    <div className="flex flex-col gap-3" data-bot-sharing>
       <p className="text-[12.5px] leading-relaxed text-ink-secondary">{t("botSettings.sharing.notice")}</p>
       {isOwner && !mayShare && <p role="note" data-sharing-permission className="text-[12.5px] leading-relaxed text-ink-secondary">{permissionMissingText("sharing.grants")}</p>}
       <GrantEditor

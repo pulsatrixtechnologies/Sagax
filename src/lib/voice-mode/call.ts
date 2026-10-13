@@ -41,7 +41,7 @@ import { attachVoiceCapture, type CaptureContext, type CaptureSource, type Voice
 import { LiveTranscriber, PROBE_AFTER_MS } from "./stt-stream";
 import { completeClause, CONTOUR_CONTINUATION_MS, FRAME_MS, incompleteClause, longFrenchOpen, stripTerminalPunctuation, TurnDetector } from "./turns";
 import { formatTimeline, materiallyDifferent, normalizedWords, type TurnMetrics } from "./latency";
-import { discardSpeculation, holdSpeculativePlayback, maySpeculate } from "./speculative";
+import { discardSpeculation, holdSpeculativePlayback, mayReviseSpeculation, maySpeculate } from "./speculative";
 import { ttsLeadStep, type TtsLeadAction } from "./tts-lead";
 import { LevelVad, SileroVad, VAD_FRAME, type VoiceProbability } from "./vad";
 import type { VoiceModeSettings } from "../../../shared/voice-mode";
@@ -240,6 +240,9 @@ export class VoiceCall {
   private partialAt = 0;
   /** duplex: the partial already sent to the LLM, until the person stops or it is discarded */
   private speculated: string | null = null;
+  /** a later complete partial waiting SPECULATIVE_REVISE_MS of stability */
+  private revisionText: string | null = null;
+  private revisionAt = 0;
   /** a dropped guess must be replaced by the endpoint send, not forked */
   private replaceSpeculation = false;
   /** false while a speculative send waits for speech-end to play TTS */
@@ -730,9 +733,14 @@ export class VoiceCall {
     const level = rms(frame);
     const probability = await this.vad.probability(frame);
     const pitch = this.turns.prosody && probability >= 0.3 ? estimatePitch(frame) : null;
+    // a voice, speed or language change reopens the warm socket while idle,
+    // so the next clause does not pay the reconnect before its first audio
+    this.speechSocket?.retune(this.o.voice());
     const playback = this.player.level();
     const echo = this.guard.update(level, playback);
-    const botAudible = this.state.botAudible || playback > 0.004;
+    // lingering: the speakers can still be returning the bot after playback
+    // itself has stopped (speakerphone, Bluetooth). Echo frames stay echo.
+    const botAudible = this.state.botAudible || playback > 0.004 || this.guard.lingering;
 
     if (this.enrolling) {
       if (probability > 0.6 && !botAudible) {
@@ -771,6 +779,7 @@ export class VoiceCall {
           this.turnLevel.frames += 1;
         }
         if (this.turns.inSilence) this.considerSpeculation(this.turnPartial);
+        else this.flushRevision();
       } else this.keepPreroll(frame);
       return;
     }
@@ -812,8 +821,10 @@ export class VoiceCall {
 
   private beginTurnMetrics(stoppedAt: number, earlyEnd = false, contourEnd = false, semanticEnd = false): void {
     this.disarmCue();
-    // only the in-flight speculation for THIS utterance keeps its sentAt
-    if (this.speculated && this.turn?.earlyStart && this.turn.firstAudioAt === undefined) {
+    // only the in-flight speculation for THIS utterance keeps its sentAt.
+    // firstAudioAt may already be set (held TTS bytes, a ClockPlayer stamp):
+    // dropping sentAt here is what stalls the next firstSentenceAt.
+    if (this.speculated && this.turn?.earlyStart) {
       this.turn.stoppedAt = stoppedAt;
       this.turn.endedAt = this.now();
       if (earlyEnd) this.turn.earlyEnd = true;
@@ -883,8 +894,8 @@ export class VoiceCall {
     if (event.type === "speech-start" && this.lastSent && (wrongCut || (!this.state.botAudible && !this.lastSent.botSpoke &&
       this.now() - this.lastSent.endedAt <= CONTINUATION_MS))) {
       this.continuing = true;
-      // over the bot's voice the barge-in itself stops its turn. Duplex
-      // speech-start already interrupt-bot via step(); flag off still needs this.
+      // over the bot's voice the barge-in itself stops its turn. A pause
+      // continuation of the same utterance still replaces the fragment.
       if (this.state.botBusy && !this.state.botAudible && bargeInEffects(this.state) !== "cancel-and-interrupt") this.emit("interrupt-bot");
     }
     if (event.type === "bot-audio-start" && this.lastSent) this.lastSent.botSpoke = true;
@@ -1014,6 +1025,7 @@ export class VoiceCall {
       const text = heard.text.trim() || partial;
       if (text && !isNoiseFragment(text, heard.confidence) && discardSpeculation(this.speculated, text)) this.reissue(turn, text);
       this.speculated = null;
+      this.revisionText = null;
       return;
     }
     if (this.o.earlyStart !== false && turn && stablePartial(partial, this.partialAt, turn.stoppedAt) && !isNoiseFragment(partial)) {
@@ -1089,6 +1101,7 @@ export class VoiceCall {
     turn.firstTokenAt = undefined;
     turn.firstSentenceAt = undefined;
     turn.ttsFirstByteAt = undefined;
+    turn.firstAudioAt = undefined;
     this.lastSent = { text, endedAt: turn.endedAt, botSpoke: false };
     this.emit("utterance", text, turn, { interrupted: false, continues: true, utteranceId });
   }
@@ -1099,17 +1112,33 @@ export class VoiceCall {
     if (!this.o.settings().fullDuplex || !this.turns.active || this.closed) return;
     const trimmed = text.trim();
     if (this.speculated) {
-      if (!discardSpeculation(this.speculated, trimmed)) return;
-      this.dropSpeculation();
-      if (!maySpeculate(trimmed, this.turns.inSilence) || isNoiseFragment(trimmed)) {
-        this.replaceSpeculation = true;
+      if (!discardSpeculation(this.speculated, trimmed)) {
+        this.revisionText = null;
         return;
       }
-      this.sendSpeculative(trimmed, true);
+      // keep the in-flight guess until a complete replacement is stable, so
+      // STT restating a long question does not restart grok on every partial.
+      if (!maySpeculate(trimmed, this.turns.inSilence) || isNoiseFragment(trimmed)) return;
+      if (this.revisionText !== trimmed) {
+        this.revisionText = trimmed;
+        this.revisionAt = this.now();
+      }
+      this.flushRevision();
       return;
     }
+    this.flushRevision();
     if (!maySpeculate(trimmed, this.turns.inSilence) || isNoiseFragment(trimmed)) return;
     this.sendSpeculative(trimmed);
+  }
+
+  private flushRevision(): void {
+    if (!this.revisionText || this.closed || !this.speculated) return;
+    if (!mayReviseSpeculation(this.revisionAt, this.now())) return;
+    const text = this.revisionText;
+    if (!maySpeculate(text, this.turns.inSilence) || isNoiseFragment(text)) return;
+    this.revisionText = null;
+    this.dropSpeculation();
+    this.sendSpeculative(text, true);
   }
 
   private dropSpeculation(): void {
@@ -1117,6 +1146,7 @@ export class VoiceCall {
     const utteranceId = this.turn?.utteranceId;
     this.emit("interrupt-bot", utteranceId ? { utteranceId } : undefined);
     this.speculated = null;
+    this.revisionText = null;
     this.endpointConfirmed = true;
     this.dropHeldPlayback();
   }

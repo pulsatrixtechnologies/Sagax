@@ -14,7 +14,9 @@ import type { ModelCatalog } from "../../contracts.ts";
 import { harnessHome } from "../../env-path.ts";
 import { resolveCli } from "../../procs.ts";
 import { decodeInjectId, hostApiKey, INJECT_SEP, localHost, mergeLocalInject } from "../local-inject.ts";
-import { hermesHostToolEnv, withheldWorkspace } from "../host-tools.ts";
+import { DATA_DIR } from "../../config.ts";
+import { HERMES_PROVIDER_ENV, hermesManagedEnvText } from "../../engine-api-keys.ts";
+import { hermesTurnHome, withheldWorkspace } from "../host-tools.ts";
 import { createAcpDriver, type AcpSupport } from "./core.ts";
 
 const EMPTY: ModelCatalog = { default: "", options: [] };
@@ -313,6 +315,13 @@ export async function fetchHermesAcpModels(
     };
     timer = setTimeout(() => done([]), hermesAcpModelsTimeoutMs(env));
     child.once("error", () => done([]));
+    // The probe writes to the child's stdin, and a child that has already
+    // exited makes that socket emit EPIPE. `write`'s callback reports the
+    // error but the socket emits it as well, and an unhandled 'error' event
+    // on a stream takes the whole harness down — observed crashing the server
+    // at startup on a machine with Hermes installed. Swallow it here: the
+    // write callback and the close handler already settle the probe.
+    child.stdin?.on("error", () => done([]));
     child.once("close", () => {
       if (hardKillTimer) clearTimeout(hardKillTimer);
       done([]);
@@ -434,6 +443,7 @@ const support: AcpSupport = {
     },
     docsUrl: "https://hermes-agent.nousresearch.com/docs/getting-started/quickstart",
     signInCommand: "hermes setup",
+    apiKey: true,
   },
   spawnArgs: () => ["acp"],
   // Organization server: no shell, file, web, browser, code, subagent,
@@ -441,13 +451,28 @@ const support: AcpSupport = {
   // verified on 0.21.5 with scripts/verify-org-host-tools.ts).
   withholdsHostTools: true,
   withheldWorkspace,
-  applyTurnEnv: (env, { withholdHostTools }) => hermesHostToolEnv(env, withholdHostTools === true, env.HERMES_HOME || harnessHome("hermes", env)),
+  applyTurnEnv: (env, { withholdHostTools, localKeyPrincipal }) => {
+    const organization = process.env.SAGAX_IDENTITY?.trim().toLowerCase() === "perspicax";
+    const scope = organization
+      ? { organization: true as const, principalId: localKeyPrincipal?.trim().toLowerCase() || null }
+      : { organization: false as const };
+    // The private home is the only `.env` this turn can read. The source
+    // home's file is never opened.
+    hermesTurnHome(env, {
+      withhold: withholdHostTools === true,
+      sourceHome: env.HERMES_HOME || harnessHome("hermes", env),
+      envText: hermesManagedEnvText(DATA_DIR, scope),
+      dataDir: DATA_DIR,
+    });
+    for (const name of Object.values(HERMES_PROVIDER_ENV)) delete env[name];
+    delete env.OPENAI_API_KEY;
+  },
   transformEnv: (env) => {
     // A leftover OPENAI_API_KEY makes Hermes auto-resolve to OpenRouter and
-    // send no Authorization header. ACP also reloads ~/.hermes/.env, so the
-    // named custom provider + session/set_model is the real route.
+    // send no Authorization header. The turn's key lives in the private
+    // home, never in the child environment.
     delete env.OPENAI_API_KEY;
-    delete env.OPENROUTER_API_KEY;
+    for (const name of Object.values(HERMES_PROVIDER_ENV)) delete env[name];
   },
   pickAuthMethod: () => null,
   authFailure: "continue",

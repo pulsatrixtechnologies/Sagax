@@ -5,6 +5,8 @@ import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { gzipSync } from "node:zlib";
 import { Header } from "tar";
+import { openRuntimeStore } from "./runtime/store.ts";
+import type { Assignment } from "./runtime/types.ts";
 import { SessionRegistry } from "./sessions.ts";
 import { afterEach, describe, expect, it } from "vitest";
 import {
@@ -16,6 +18,24 @@ import { PrincipalRegistry } from "./principals.ts";
 
 const PASSWORD = "correct horse battery staple";
 const AVATAR_BYTES = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", "base64");
+/** One settled assignment (server/runtime/types.ts) for the source's
+ * runtime.db: the job runtime's record travels as a database snapshot. */
+const RUNTIME_ROW: Assignment = {
+  id: "handoff", rootId: "handoff", depth: 0,
+  origin: { kind: "person", source: "chat", quote: "Ship it" },
+  requester: { kind: "person", threadId: "thread" },
+  assignee: { botId: "bot", destination: { kind: "standing_thread", threadId: "thread" } },
+  mode: "work", reply: "resume", brief: "Ship it", status: "completed", outcome: "done", level: "ask", levelSource: "own",
+  executions: 1, restarts: 0, createdAt: 1_000, lastActivityAt: 2_000, finishedAt: 2_000, result: "Built", rework: false, version: 1,
+};
+/** One unsettled assignment: a restore ends it instead of rerunning it. */
+const RUNTIME_LIVE_ROW: Assignment = {
+  ...RUNTIME_ROW, id: "live", rootId: "live", status: "running", executions: 1, restarts: 0, restart: "rerun", result: "",
+  question: undefined, createdAt: 3_000, lastActivityAt: 3_000, startedAt: 3_000,
+};
+delete (RUNTIME_LIVE_ROW as { outcome?: unknown }).outcome;
+delete (RUNTIME_LIVE_ROW as { finishedAt?: unknown }).finishedAt;
+delete (RUNTIME_LIVE_ROW as { question?: unknown }).question;
 const scratch: string[] = [];
 function directory(): string {
   const path = mkdtempSync(join(tmpdir(), "omb-workspace-backup-"));
@@ -37,6 +57,12 @@ function fixture(root: string): DatabaseSync {
   json(join(root, "webhooks.json"), { version: 1, webhooks: [{ id: "hook", endpointId: "endpoint", enabled: true, secretHash: "a".repeat(64) }], deliveries: [{ id: "delivery" }] });
   json(join(root, "calendar-calls.json"), { version: 1, calls: [{ id: "call", nextRunAt: 100 }] });
   json(join(root, "delegations.json"), { thread: [{ id: "pending" }] });
+  // The job runtime's record (server/runtime/store.ts): SQLite like messages.db.
+  const runtime = openRuntimeStore(join(root, "runtime.db"));
+  try {
+    runtime.insert(RUNTIME_ROW, { kind: "enqueued", at: RUNTIME_ROW.createdAt });
+    runtime.insert(RUNTIME_LIVE_ROW, { kind: "started", at: RUNTIME_LIVE_ROW.createdAt });
+  } finally { runtime.close(); }
   json(join(root, "delegation-receipts.json"), [{ id: "receipt" }]);
   json(join(root, "sessions.json"), { identity: "source-session" });
   json(join(root, "cloud-owner.json"), { identity: "source-owner-record" });
@@ -99,6 +125,7 @@ describe("encrypted full workspace backups", () => {
     try {
       json(join(source, "team-computers.json"), { version: 1, environmentId: "source-environment", computers: [{ id: "source-computer", name: "Source desktop", section: "Design" }] });
       const originalDb = readFileSync(join(source, "messages.db"));
+      const originalRuntimeDb = readFileSync(join(source, "runtime.db"));
       const exported = await createWorkspaceBackup(source, {
         password: PASSWORD, appVersion: "test",
         clientState: { "omb-drafts": '{"thread":"unsent"}', "omb-draft-attachments": JSON.stringify({ thread: [{ kind: "file", path: join(source, "attachments", "image.png") }] }) },
@@ -110,6 +137,7 @@ describe("encrypted full workspace backups", () => {
       expect(encrypted.includes(Buffer.from("private-secret"))).toBe(false);
       expect(encrypted.includes(Buffer.from("private-key-in-config"))).toBe(false);
       expect(readFileSync(join(source, "messages.db"))).toEqual(originalDb);
+      expect(readFileSync(join(source, "runtime.db"))).toEqual(originalRuntimeDb);
       const target = directory();
       const connections = { xai: { key: "destination-key", url: "https://destination.example" }, instances: { local: { driver: "claudeAgent", config: { configDir: join(target, "providers", "local") } } } };
       json(join(target, "config.json"), { ...connections, language: "en" });
@@ -129,6 +157,7 @@ describe("encrypted full workspace backups", () => {
       const data = join(target, ".backups", staged.id, "staged", "data");
       expect(existsSync(join(data, "team-computers.json"))).toBe(false);
       expect(existsSync(join(data, "bots.json"))).toBe(true);
+      expect(existsSync(join(data, "runtime.db"))).toBe(true);
       expect(existsSync(join(data, "cloud-owner.json"))).toBe(false);
       expect(readJson(join(data, "config.json"))).toEqual({ language: "ja" });
       expect(readJson(join(data, "webhooks.json")).webhooks[0]).not.toHaveProperty("secretHash");
@@ -178,6 +207,20 @@ describe("encrypted full workspace backups", () => {
       expect(readJson(join(target, "webhooks.json")).webhooks[0].secretHash).not.toBe("a".repeat(64));
       expect(readJson(join(target, "calendar-calls.json")).calls[0].nextRunAt).toBeNull();
       expect(readJson(join(target, "delegations.json"))).toEqual({});
+      // The runtime's record arrives as a database snapshot like messages.db,
+      // never its WAL. Settled rows travel as they are; unsettled work ends
+      // here with the reason, because the source may still be running it and
+      // a restore is not a restart (the §5 rerun is for restarts only).
+      expect(existsSync(join(target, "runtime.db-wal"))).toBe(false);
+      const restoredRuntime = new DatabaseSync(join(target, "runtime.db"), { readOnly: true });
+      try {
+        const rows = restoredRuntime.prepare("SELECT json FROM assignments ORDER BY created_at").all().map((row) => JSON.parse(String(row.json)));
+        expect(rows[0]).toEqual(RUNTIME_ROW);
+        expect(rows[1]).toMatchObject({ id: "live", status: "failed", outcome: "interrupted", result: "Not resumed after workspace restore." });
+        expect(rows[1]).not.toHaveProperty("restart");
+        expect(restoredRuntime.prepare("SELECT status FROM assignments WHERE id = 'live'").get()).toEqual({ status: "failed" });
+        expect(restoredRuntime.prepare("SELECT kind FROM assignment_events ORDER BY id").all().map((row) => row.kind)).toEqual(["enqueued", "started", "settled"]);
+      } finally { restoredRuntime.close(); }
       expect(readJson(join(target, "delegation-receipts.json"))).toEqual([{ id: "receipt" }]);
       const receipt = readLastWorkspaceRestore(target)!;
       expect(receipt.id).toBe(staged.id);

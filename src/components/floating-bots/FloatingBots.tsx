@@ -6,6 +6,7 @@
 // the bot over the app itself as a draggable overlay. Every API call happens
 // here, through the store, exactly as if the message had been typed in the
 // app: the floating windows never hold a session.
+import { useShowThreads } from "@/lib/thread-preferences";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { ACHIEVEMENT_UNLOCKED_EVENT, reportAchievement } from "@/lib/achievements";
 import { NUDGE_RECEIVED_EVENT } from "@/lib/desktop-nudge";
@@ -212,6 +213,9 @@ export function FloatingBots() {
   const bridge = useMemo(desktopBridge, []);
   const [sessions, setSessions] = useState<Record<string, FloatingSession>>({});
   const stateRef = useRef(state);
+  const showThreads = useShowThreads();
+  const showThreadsRef = useRef(showThreads);
+  showThreadsRef.current = showThreads;
   stateRef.current = state;
   const sessionsRef = useRef(sessions);
   sessionsRef.current = sessions;
@@ -472,7 +476,7 @@ export function FloatingBots() {
       if (!target) return;
       if (event.action === "open" && target.threadId) {
         setTrayFor(null);
-        openThread(dispatch, { botId: target.botId, threadId: target.threadId }, stateRef.current);
+        openThread(dispatch, { botId: target.botId, threadId: target.threadId }, stateRef.current, showThreadsRef.current);
       } else if (target.kind === "approval" && (event.action === "allow" || event.action === "stop")) {
         dispatch({ type: "decideRequest", threadId: target.threadId, requestId: target.requestId, behavior: event.action === "allow" ? "allow" : "deny", message: event.action === "stop" ? "Denied by the user." : undefined });
         // a refusal: the bot's mascot reacts (a Grump hisses)
@@ -483,7 +487,7 @@ export function FloatingBots() {
       return;
     }
     const session = sessionsRef.current[botId] ?? newFloatingSession();
-    const openInApp = () => openThread(dispatch, { botId, threadId: session.threadId ?? bot.threadId }, stateRef.current);
+    const openInApp = () => openThread(dispatch, { botId, threadId: session.threadId ?? bot.threadId }, stateRef.current, showThreadsRef.current);
     // the chat opening puts this bot's tray away (they share the room above the mascot)
     if ((event.type === "click" && !session.open) || (event.type === "menu" && event.id === "balloon" && !session.open)) setTrayFor((current) => (current === botId ? null : current));
     switch (event.type) {

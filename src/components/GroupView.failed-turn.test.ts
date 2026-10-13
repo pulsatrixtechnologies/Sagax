@@ -54,7 +54,9 @@ describe("a member's failed turn in a room", () => {
     const markup = room(signedOut);
     expect(markup).toContain("Sign in to Claude");
     expect(markup).not.toContain("isn&#x27;t signed in yet");
-    expect(markup).not.toContain("<details");
+    // only the terminal command behind the card (#386), no error Details
+    expect(markup.match(/<details/g)).toHaveLength(1);
+    expect(markup).toContain("<details data-manual-command");
     expect(markup).not.toContain("Not logged in");
     expect(markup).not.toContain('data-testid="tool-activity"');
   });

@@ -9,6 +9,7 @@ import { tmpdir } from "node:os";
 import { pathToFileURL } from "node:url";
 import { delimiter, dirname, join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { CONTROL_UNCONFIRMED } from "./control-client.ts";
 import { gatedLocalComputer } from "./local-computer.ts";
 import { SPAWNED_PROXIES } from "./proxy-paths.ts";
 
@@ -34,14 +35,17 @@ describe("local computer proxy (isolated child and control endpoint)", () => {
   it.each(["node", "electron"])("%s: keeps discovery lease-free, refuses contention and outages, and drains the final gated frame", async (runtime) => {
     let held = true;
     let unavailable = false;
+    let delayMs = 0;
     let reads = 0;
     const auth: Array<string | undefined> = [];
-    const reason = "Another thread is using this computer. Pause this thread until it finishes.";
+    const reason = "Another thread is using this computer. This call was not performed.";
     const server = createServer((request, response) => {
       reads += 1;
       auth.push(request.headers.authorization);
-      response.writeHead(unavailable ? 503 : 200, { "content-type": "application/json" });
-      response.end(JSON.stringify({ held, helpOpen: false, ...(held ? { blockedReason: reason } : {}) }));
+      setTimeout(() => {
+        response.writeHead(unavailable ? 503 : 200, { "content-type": "application/json" });
+        response.end(JSON.stringify({ held, helpOpen: false, ...(held ? { blockedReason: reason } : {}) }));
+      }, delayMs);
     });
     await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
     const original = {
@@ -88,10 +92,10 @@ describe("local computer proxy (isolated child and control endpoint)", () => {
         replies.delete(message.id);
       });
       let nextId = 0;
-      const rpc = (method: string, params = {}, end = false): Promise<any> => {
+      const rpc = (method: string, params = {}, end = false, waitMs = 5_000): Promise<any> => {
         const id = ++nextId;
         return new Promise((resolve, reject) => {
-          const timer = setTimeout(() => reject(new Error(`no fixture response for ${id}`)), 5_000);
+          const timer = setTimeout(() => reject(new Error(`no fixture response for ${id}`)), waitMs);
           replies.set(id, (value) => { clearTimeout(timer); resolve(value); });
           const frame = JSON.stringify({ jsonrpc: "2.0", id, method, params }) + "\n";
           if (end) child!.stdin!.end(frame);
@@ -104,12 +108,20 @@ describe("local computer proxy (isolated child and control endpoint)", () => {
       expect((await rpc("ping")).result).toEqual({});
       const refused = await rpc("tools/call", { name: "click" });
       expect(refused.result).toMatchObject({ isError: true, content: [{ type: "text", text: reason }] });
+      // The harness holds a check while the computer is busy. The bridge's
+      // real client waits it out — past the 2 s that used to turn this
+      // answer into "A person has taken control".
+      delayMs = 2_600;
+      const slow = await rpc("tools/call", { name: "click" }, false, 8_000);
+      expect(slow.result).toMatchObject({ isError: true, content: [{ type: "text", text: reason }] });
+      delayMs = 0;
       held = false;
       const allowed = await rpc("tools/call", { name: "screenshot" });
       expect(allowed.result).toMatchObject({ calls: 1, marker: "preserved-driver-env", tokenPresent: false, argv: ["two words; not a shell"] });
       expect(allowed.result.path.split(delimiter)).toContain(dirname(process.execPath));
       unavailable = true;
-      expect((await rpc("tools/call", { name: "click" })).result.isError).toBe(true);
+      const outage = await rpc("tools/call", { name: "click" });
+      expect(outage.result).toMatchObject({ isError: true, content: [{ type: "text", text: CONTROL_UNCONFIRMED }] });
       unavailable = false;
       const exited = once(child, "exit");
       const final = await rpc("tools/call", { name: "screenshot", large: true }, true);

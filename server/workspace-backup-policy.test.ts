@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ephemeralWorkspaceTokenPath, excludedWorkspaceAuthPath, portableWorkspaceConfig, redownloadedOrgLibraryPath, restoredWorkspaceConfig } from "./workspace-backup-policy.ts";
+import { ephemeralWorkspaceTokenPath, excludedWorkspaceAuthPath, liveDataEnginePath, portableWorkspaceConfig, redownloadedOrgLibraryPath, restoredWorkspaceConfig } from "./workspace-backup-policy.ts";
 
 describe("workspace backup data boundary", () => {
   it("exports ordinary settings only and retains destination connection sections unchanged", () => {
@@ -59,6 +59,20 @@ describe("workspace backup data boundary", () => {
     for (const path of ["mcp-oauth.enc.md", "workspaces/bot/mcp-oauth.key", "notes/mcp-oauth.enc"]) expect(excludedWorkspaceAuthPath(path)).toBe(false);
   });
 
+  it("never exports a provider access key or a Hermes dotenv", () => {
+    for (const path of [
+      "engine-api-keys.enc", "engine-api-keys.json",
+      "engine-api-keys.enc.4242.05a7b3e0-1234-4abc-8def-0123456789ab.tmp",
+      "principals/pr_ada/engine-api-keys.enc",
+      ".hermes/.env", "people/ada/.hermes/.env",
+      "engine-policies/hermes-solo/.env", "engine-policies/hermes-org/.env",
+    ]) expect(excludedWorkspaceAuthPath(path)).toBe(true);
+    for (const path of [
+      "engine-api-keys.json.md", "workspaces/bot/engine-api-keys.json",
+      "notes/engine-api-keys.enc", ".hermes/config.yaml", "engine-policies/hermes-solo/config.yaml",
+    ]) expect(excludedWorkspaceAuthPath(path)).toBe(false);
+  });
+
   it("never exports or restores the organization GitHub access tokens", () => {
     for (const path of [
       "org-github-tokens.enc",
@@ -82,6 +96,16 @@ describe("workspace backup data boundary", () => {
     for (const path of ["org-library", "org-library/state.json", "org-library/presets.json", "org-library/catalog.json.bak", "org-library/blobs.md",
       "workspaces/bot/org-library/catalog.json", "attachments/org-library/blobs/x.json", "catalog.json", "blobs/x.json"]) {
       expect(redownloadedOrgLibraryPath(path)).toBe(false);
+    }
+  });
+
+  it("leaves out a bot's live DuckDB database, WAL and spill directory, and nothing else in its folder", () => {
+    for (const path of ["bots/b1/data.duckdb", "bots/b1/data.duckdb.wal", "bots/b1/data-tmp", "bots/b1/data-tmp/duckdb_temp_storage-0.tmp"]) {
+      expect(liveDataEnginePath(path)).toBe(true);
+    }
+    for (const path of ["bots/b1/SOUL.md", "bots/b1/sheet.json", "bots/b1/data.duckdb.bak", "bots/b1/data-tmp.zip", "bots/data.duckdb", "data.duckdb",
+      "workspaces/bot/data.duckdb", "bots/b1/exports/data.duckdb", "attachments/data-tmp/x"]) {
+      expect(liveDataEnginePath(path)).toBe(false);
     }
   });
 

@@ -4,11 +4,13 @@
 // answer per character, so a paid edition or a new family is an entry in
 // the registry, not a change here.
 //
-//   Chips: All, Owned, To unlock, Premium (only while the registry sells
-//   one), then one per family the registry uses, in MASCOT_FAMILIES order.
+//   Chips: All, Owned, To unlock (omitted when lockedOf is passed and no
+//   listed row is locked), Premium (only while the registry sells one), then
+//   one per family the registry uses, in MASCOT_FAMILIES order.
 //   Shelves: Yours (unlocked), To unlock (locked by an achievement), Premium
 //   (a paid edition not owned yet). The character the bot wears is always
-//   unlocked, so it is always on Yours.
+//   unlocked, so it is always on Yours. Locked characters stay out of the
+//   gallery, so To unlock is empty there.
 import type { LocaleKey } from "@/locales";
 
 /** The families, in the chip order. */
@@ -34,12 +36,13 @@ export type WardrobeFilter = "all" | "owned" | "locked" | "premium" | `family:${
 export type WardrobeShelf = "yours" | "locked" | "premium";
 
 /** The chips the gallery offers for these entries. */
-export function wardrobeFilters(entries: readonly WardrobeEntry[]): WardrobeFilter[] {
+export function wardrobeFilters(entries: readonly WardrobeEntry[], lockedOf?: (entry: WardrobeEntry) => boolean): WardrobeFilter[] {
   const families = MASCOT_FAMILIES.filter((family) => entries.some((entry) => entry.family === family));
+  const showLocked = lockedOf ? entries.some((entry) => lockedOf(entry)) : true;
   return [
     "all",
     "owned",
-    "locked",
+    ...(showLocked ? (["locked"] as const) : []),
     ...(entries.some((entry) => entry.premium) ? (["premium"] as const) : []),
     ...families.map((family) => `family:${family}` as const),
   ];

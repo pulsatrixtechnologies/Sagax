@@ -1,0 +1,34 @@
+# Overlay for the optional Azure AKS adapter. The disk encryption set id is
+# a tofu output (disk_encryption_set_id). Replace the placeholder before install.
+storage:
+  encrypted: true
+  provisioner: disk.csi.azure.com
+  parameters:
+    # Clear the Longhorn keys inherited from values.yaml.
+    encrypted: ""
+    numberOfReplicas: ""
+    skuName: Premium_LRS
+    diskEncryptionSetID: REPLACE_WITH_DISK_ENCRYPTION_SET_ID
+    networkAccessPolicy: DenyAll
+
+# AKS API server. Restrict this to the Sagax VM and operator networks.
+apiServer:
+  cidrs:
+    - 10.215.0.1/32
+  port: 443
+
+# Entra ID groups receive Azure RBAC. Do not also bind cluster-admin here.
+admin:
+  kubernetesRbac:
+    enabled: false
+
+backup:
+  productionProvider: azure
+  destination:
+    provider: minio
+    veleroProvider: aws
+    bucket: sagax-sandbox-backups
+    endpoint: https://s3.example.invalid
+    region: us-east-1
+    credentialSecret: sagax-backup
+    credentialKey: cloud

@@ -35,6 +35,10 @@ function harness(options: Options = {}) {
   const xai = {
     listVoices: vi.fn(async (_key: string) => [{ id: "ara", label: "Ara" }, { id: "eve", label: "Eve" }]),
     synthesize: vi.fn(async (_text: string, _voice: string | undefined, _key: string, _options: { speed?: number; language?: string }) => ({ bytes: new Uint8Array([1, 2, 3]), mime: "audio/mpeg" as const })),
+    synthesizeStream: vi.fn(async (_text: string, _voice: string | undefined, _key: string, _options: { speed?: number; language?: string }) => ({
+      body: new ReadableStream<Uint8Array>({ start(controller) { controller.enqueue(new Uint8Array([1])); controller.close(); } }),
+      sampleRate: 24_000,
+    })),
     transcribe: vi.fn(async (_audio: Uint8Array, _mime: string, _key: string, _language?: string) => ({ text: "  hello bot  " })),
   };
   let clock = 1_000_000;
@@ -61,7 +65,11 @@ function harness(options: Options = {}) {
       setHeader: () => {},
       headersSent: false,
       writableEnded: false,
+      destroyed: false,
       writeHead(status: number, headers: Record<string, string>) { out.status = status; out.headers = headers; },
+      write() {},
+      flushHeaders() {},
+      once() {},
       end(bytes: Buffer) { out.bytes = bytes; },
     };
     const url = new URL(`http://localhost${input.path}`);
@@ -168,6 +176,18 @@ describe("voice mode routes", () => {
     expect(out.headers?.["content-type"]).toBe("audio/mpeg");
     expect(xai.synthesize).toHaveBeenCalledWith("Bonjour", "ara", OWN_KEY, { speed: 1.25, language: "fr" });
     expect(usage).toEqual([expect.objectContaining({ via: "speaker-key", payerPrincipalId: "p-ada", model: "grok-tts", input: 7, target: { botId: "b-cryptic", botName: "Cryptic", threadId: "t-ada", ownerPrincipalId: "p-owner" } })]);
+  });
+
+  it("reads a French time and price on the stream, and speaks a note verbatim", async () => {
+    const { call, xai } = harness();
+    const streamed = await call({ method: "POST", path: "/api/bots/b-cryptic/voice/stream", body: { text: "Rendez-vous à 14 h 30, c'est 25 $.", language: "fr" } });
+    expect(streamed.status).toBe(200);
+    expect(xai.synthesizeStream).toHaveBeenCalledWith("Rendez-vous à 14 heures 30, c'est 25 dollars.", undefined, ORG_KEY, { speed: 1, language: "fr" }, expect.any(AbortSignal));
+    const english = await call({ method: "POST", path: "/api/bots/b-cryptic/voice/stream", body: { text: "Meet at 14 h 30.", language: "en" } });
+    expect(english.status).toBe(200);
+    expect(xai.synthesizeStream).toHaveBeenCalledWith("Meet at 14 h 30.", undefined, ORG_KEY, { speed: 1, language: "en" }, expect.any(AbortSignal));
+    await call({ method: "POST", path: "/api/bots/b-cryptic/voice/speak", body: { text: "Bonjour", language: "fr" } });
+    expect(xai.synthesize).toHaveBeenCalledWith("Bonjour", undefined, ORG_KEY, { speed: 1, language: "fr" });
   });
 
   it("speaks a language xAI TTS lacks as auto, on the organization's key", async () => {

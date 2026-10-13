@@ -94,9 +94,10 @@ struct DesktopSidebar: View {
 
 // MARK: - Head
 
-/// The brand row (`h-11 pl-4 pr-3`: mark 22 at x 16, "Sagax" 16/20
-/// semibold at x 46, then the round Search and New buttons, 36 pt circles
-/// 8 apart ending 12 pt from the edge). There is no search field and no
+/// The head (`SIDEBAR_TITLE_ROW`, `h-12 pr-4`): the round Search and New
+/// buttons, 36 pt circles 8 apart ending 16 pt from the edge. The desktop
+/// draws no logo unless Settings > Appearance > Sidebar logo turns it on,
+/// and the iPad follows the same switch. There is no search field and no
 /// collapse button any more: the palette opens from the round button (⌘K)
 /// and the sidebar's edge collapses it (drag, double tap, ⌘\).
 struct DesktopSidebarHead: View {
@@ -120,15 +121,17 @@ struct DesktopSidebarHead: View {
                 .accessibilityElement(children: .combine)
                 .accessibilityLabel(Text("Sagax"))
                 .accessibilityIdentifier("desktop-sidebar-brand")
+                Spacer(minLength: 8)
+            } else {
+                Spacer(minLength: 16)
             }
-            Spacer(minLength: 8)
             DesktopSearchButton()
             DesktopNewButton()
                 .padding(.leading, 8)
-                // pr-3 inside the 1 pt border
-                .padding(.trailing, 13)
+                // pr-4 inside the 1 pt border
+                .padding(.trailing, 17)
         }
-        .frame(height: 44)
+        .frame(height: 48)
     }
 }
 
@@ -193,7 +196,7 @@ struct DesktopNewButton: View {
 
     var body: some View {
         GeometryReader { geometry in
-            DesktopHeadButton(icon: .squarePen, label: "New", id: "desktop-sidebar-new") {
+            DesktopHeadButton(icon: .plus, label: "New", id: "desktop-sidebar-new") {
                 let frame = geometry.frame(in: .named(desktopShellSpace))
                 model.menu = model.menu?.kind == .new
                     ? nil
@@ -331,8 +334,9 @@ enum DesktopSidebarSections {
 
 // MARK: - Section
 
-/// A section: its header (11/16 medium, uppercase, tracking 0.44, a 16 pt
-/// chevron) and, unless folded, its rows. The rail draws rows only. A row
+/// A section: its header (12/16 regular, sentence case, no chevron, the
+/// count at the right while folded, like SidebarSectionHeader.tsx) and,
+/// unless folded, its rows. The rail draws rows only. A row
 /// dropped here files it in this section, a header dropped here moves that
 /// section before or after this one (DD1).
 struct DesktopSidebarSection: View {
@@ -416,16 +420,19 @@ struct DesktopSectionHeader: View {
             withAnimation(.snappy(duration: 0.2)) { prefs.toggleCollapsed(session, section.id) }
         } label: {
             HStack(spacing: 8) {
-                DesktopLineText(text: section.title.uppercased(), size: 11, weight: .medium,
-                             color: hovering ? theme.sidebarInk : theme.sidebarInkSecondary, lineHeight: 16, tracking: 0.44)
+                DesktopLineText(text: section.title, size: 12, weight: .regular,
+                             color: hovering ? theme.sidebarInk : theme.sidebarInkSecondary, lineHeight: 16)
                 if collapsed { attentionMarks }
                 Spacer(minLength: 0)
-                DesktopIconView(icon: .chevronRight, size: 16)
-                    .rotationEffect(.degrees(collapsed ? 0 : 90))
+                // what a folded section holds, at the right
+                if collapsed, !section.rows.isEmpty {
+                    DesktopLineText(text: "\(section.rows.count)", size: 12,
+                                 color: hovering ? theme.sidebarInk : theme.sidebarInkSecondary, lineHeight: 16)
+                }
             }
             .foregroundStyle(hovering ? theme.sidebarInk : theme.sidebarInkSecondary)
             .padding(.horizontal, 12)
-            .frame(height: 30)
+            .frame(height: 28)
             .frame(maxWidth: .infinity)
             .background(hovering ? theme.sidebarHover : .clear, in: RoundedRectangle(cornerRadius: theme.radiusLg, style: .continuous))
             .contentShape(Rectangle())

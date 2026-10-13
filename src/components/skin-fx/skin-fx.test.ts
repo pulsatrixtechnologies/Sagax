@@ -16,7 +16,7 @@ import { MoveFx } from "./SkinFx";
 import { fxPalette } from "./skin-fx";
 
 const here = dirname(fileURLToPath(import.meta.url));
-const css = readFileSync(join(here, "skin-fx.css"), "utf8");
+const css = readFileSync(join(here, "skin-fx.css"), "utf8").replace(/\r\n/g, "\n");
 /** The eyes a shape's fill cuts out: its outline's closed subpaths after the body's own. */
 const eyeCuts = (html: string) => (/class="shape-fill" d="([^"]+)" fill-rule="evenodd"/.exec(html)?.[1] ?? "").split("M").filter(Boolean).slice(1);
 const shape = (skin: string, size: number, extra: Record<string, unknown> = {}) =>

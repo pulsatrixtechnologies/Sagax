@@ -4,7 +4,6 @@ import { fileURLToPath } from "node:url";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it } from "vitest";
-import { isMasteryCharacter } from "../../../shared/mascot-unlocks";
 import en from "@/locales/en.json";
 import fr from "@/locales/fr.json";
 import { resetAchievementsForTests } from "@/lib/achievements";
@@ -185,7 +184,7 @@ describe("the Appearance gallery", () => {
 
   it("offers the owl its colors, skins and wing moves when nothing is locked", () => {
     const html = render(undefined);
-    for (const id of ["owl", "shape", "trombi"]) expect(html).toContain(`data-character-option="${id}"`);
+    for (const id of ["owl", "crab", "shape", "trombi"]) expect(html).toContain(`data-character-option="${id}"`);
     expect(html).toContain('data-character-options="owl"');
     // the skins open on the current one's rarity (none: Common), one tab per rarity
     for (const skin of ["none", "snowy", "barn", "carbon"]) expect(html).toContain(`data-mascot-skin-option="${skin}"`);
@@ -197,45 +196,32 @@ describe("the Appearance gallery", () => {
     expect(html).not.toContain("data-character-shape");
   });
 
-  it("shows every character, the locked ones on To unlock with their achievement, and Shapes once a Grok account is linked", () => {
+  it("lists unlocked and worn characters only, with no To unlock shelf for characters", () => {
     const lockedIds = (html: string) => [...html.matchAll(/data-character-option="([a-z]+)" data-locked=""/g)].map((match) => match[1]);
-    const shelf = (html: string, id: string) => {
-      const start = html.indexOf(`data-mascot-shelf="${id}"`);
-      return start < 0 ? "" : html.slice(start, html.indexOf("</section>", start));
-    };
+    const options = (html: string) => [...html.matchAll(/data-character-option="([a-z]+)"/g)].map((match) => match[1]);
     enforce([]);
-    const locked = render(undefined);
-    // Trombi's achievement is a secret: the easter egg stays out until earned
-    expect(locked).not.toContain('data-character-option="trombi"');
-    // the owl the bot wears is on Yours; every other character waits on To unlock, previewable (never disabled)
-    expect(lockedIds(locked)).toEqual(MASCOTS.filter((option) => option.id !== "owl" && option.id !== "trombi" && option.id !== "crab").map((option) => option.id));
-    expect(shelf(locked, "yours")).toContain('data-character-option="owl"');
-    expect(shelf(locked, "locked")).toContain('data-character-option="ogre"');
-    expect(locked).toMatch(/data-character-option="ogre" data-locked="" data-unlock-achievement="conductor"/);
-    expect(locked).not.toMatch(/data-character-option="ogre"[^>]*\sdisabled=""/);
-    // no paid edition is sold, so there is no Premium shelf nor chip
-    expect(locked).not.toContain('data-mascot-shelf="premium"');
-    expect(locked).not.toContain('data-mascot-filter="premium"');
+    const html = render(undefined);
+    expect(options(html)).toEqual(["owl"]);
+    expect(html).not.toContain('data-character-option="crab"');
+    expect(html).not.toContain('data-character-option="shape"');
+    expect(html).not.toContain('data-character-option="ogre"');
+    expect(html).not.toContain('data-mascot-shelf="locked"');
+    expect(html).not.toContain('data-mascot-filter="locked"');
+    expect(lockedIds(html)).toEqual([]);
     // locked skins stay out, the Mastery ones excepted
-    expect(locked).not.toContain('data-tab="epic"');
-    expect(locked).toContain('data-mascot-skin-option="none"');
+    expect(html).not.toContain('data-tab="epic"');
+    expect(html).toContain('data-mascot-skin-option="none"');
     // the skin this bot already wears stays visible
     expect(render(undefined, "chrome")).toContain('data-mascot-skin-option="chrome"');
     expect(render(undefined, "chrome")).not.toContain('data-mascot-skin-option="lightning"');
+    expect(options(render({ character: "crab" }))).toContain("crab");
+    enforce(["character:crab"]);
+    expect(options(render(undefined))).toEqual(expect.arrayContaining(["owl", "crab"]));
     setGrokAccountLinked(true);
-    const linked = render(undefined);
-    expect(lockedIds(linked)).not.toContain("shape");
-    expect(lockedIds(linked)).toContain("bunbu");
+    expect(options(render(undefined))).not.toContain("shape");
     setGrokAccountLinked(false);
-    enforce(["character:trombi", "character:bunbu", "skin:owl:chrome"]);
-    const earned = render(undefined);
-    expect(lockedIds(earned)).not.toContain("trombi");
-    expect(lockedIds(earned)).not.toContain("bunbu");
-    expect(lockedIds(earned)).toContain("shape");
-    expect(shelf(earned, "yours")).toContain('data-character-option="trombi"');
-    expect(earned).toContain('data-tab="epic"');
-    // Mastery characters keep their achievement on the tile
-    for (const id of lockedIds(earned).filter(isMasteryCharacter)) expect(earned).toMatch(new RegExp(`data-character-option="${id}" data-locked="" data-unlock-achievement="[a-z-]+"`));
+    enforce(["character:shape"]);
+    expect(options(render(undefined))).toContain("shape");
   });
 
   it("offers a shape its shapes, colors, skins by rarity and its own moves, and nothing of the owl", () => {

@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { beforeEach, describe, expect, it } from "vitest";
@@ -197,17 +197,14 @@ describe("floating bots: the fly-away setting", () => {
     expect(hotkeyLabel("Control+Alt+Space", false)).toBe("Ctrl+Alt+Space");
   });
 
-  it("keeps three.js out of every chunk but the floating mascot's", () => {
+  it("draws the desktop owl flat, with no 3D renderer and no three.js", () => {
+    const pkg = JSON.parse(readFileSync(join(here, "../../package.json"), "utf8")) as { dependencies?: Record<string, string>; devDependencies?: Record<string, string> };
+    expect({ ...pkg.dependencies, ...pkg.devDependencies }).not.toHaveProperty("three");
+    expect(existsSync(join(here, "../components/floating-bots/owl3d"))).toBe(false);
     const settings = readFileSync(join(here, "../components/SettingsModal.tsx"), "utf8");
-    expect(settings).not.toMatch(/from\s+"three"/);
     expect(settings).not.toMatch(/from\s+"@\/components\/floating-bots\//);
     const view = readFileSync(join(here, "../components/floating-bots/FloatingBotView.tsx"), "utf8");
-    expect(view).not.toMatch(/from\s+"three"/);
-    expect(view).not.toMatch(/from\s+"\.\/owl3d\//);
     expect(view).not.toMatch(/style === "3d"/);
-    const registry = readFileSync(join(here, "../components/floating-bots/mascots.tsx"), "utf8");
-    expect(registry).not.toMatch(/from\s+"three"/);
-    expect(registry).not.toMatch(/owl3d\/Owl3D/);
     const editor = readFileSync(join(here, "../components/floating-bots/MascotLookEditor.tsx"), "utf8");
     expect(editor).not.toMatch(/data-character-style/);
   });

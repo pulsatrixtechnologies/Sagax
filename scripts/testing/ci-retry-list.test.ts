@@ -153,8 +153,9 @@ describe("the runner", () => {
 
   it("reads its own list in a happy-dom test file, where the global URL is the DOM's", async () => {
     // Every vitest job failed in CI once: `new URL(…)` built the default list
-    // path with the DOM's URL, which fs refuses. Inside the repo so happy-dom resolves.
-    const directory = mkdtempSync(join(ROOT, "node_modules", ".omb-ci-retry-"));
+    // path with the DOM's URL, which fs refuses. Beside node_modules so happy-dom
+    // resolves without placing the fixture inside Vitest's excluded dependency tree.
+    const directory = mkdtempSync(join(ROOT, ".omb-ci-retry-"));
     scratch.push(directory);
     writeFileSync(join(directory, "dom.test.mjs"), 'it("runs in a DOM", () => { expect(typeof document).toBe("object"); });\n');
     writeFileSync(join(directory, "vitest.config.mjs"), `export default { test: { globals: true, environment: "happy-dom", include: ["dom.test.mjs"], runner: ${JSON.stringify(RUNNER)} } };\n`);

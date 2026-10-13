@@ -162,12 +162,20 @@ export function execCli(
  * reads as a crash. On a CLI spawn the common codes mean exactly one thing
  * each, and both are setup problems the user can fix, so say which. The
  * `setup` flag lets the UI offer "Install" instead of a "Retry" that is
- * guaranteed to fail the same way. */
+ * guaranteed to fail the same way.
+ *
+ * Node also reports a missing working folder as the CLI's own ENOENT, so a
+ * bot whose folder was moved or deleted read as "isn't installed" even
+ * though the CLI was there (MOCA-309). Pass the spawn's `cwd` to tell the
+ * two apart. */
 type SpawnFailure = { message: string; setup: boolean };
 
-export function describeSpawnFailure(err: NodeJS.ErrnoException, cli: string): SpawnFailure {
-  if (err.code === "ENOENT")
+export function describeSpawnFailure(err: NodeJS.ErrnoException, cli: string, cwd?: string): SpawnFailure {
+  if (err.code === "ENOENT") {
+    if (cwd && !existsSync(cwd))
+      return { message: `This chat's working folder no longer exists: ${cwd}. Choose another folder in the bot's settings, or create it again.`, setup: false };
     return { message: `\`${cli}\` isn't installed, or isn't on this app's PATH`, setup: true };
+  }
   if (err.code === "EACCES" || err.code === "EPERM")
     return { message: `\`${cli}\` isn't executable — check its file permissions`, setup: true };
   if (err.code === "ENAMETOOLONG")

@@ -1,27 +1,28 @@
 // Settings > Appearance > Sidebar logo (`src/lib/sidebar-logo-preferences.ts`).
 // Same key as Electron (`sagax-show-sidebar-logo`), local only: UserDefaults
-// here, localStorage on desktop. Not synced through the server. Default on
-// (shown) unless the stored value is `"0"`.
+// here, localStorage on desktop. Not synced through the server. Default off:
+// shown only once turned on (the owner's reference window of 2026-10-12).
 import Foundation
 
 public enum SidebarLogoPreference: Sendable {
     /// Electron `SIDEBAR_LOGO_KEY`.
     public static let key = "sagax-show-sidebar-logo"
 
-    /// Electron default: shown unless explicitly turned off.
-    public static let defaultEnabled = true
+    /// Electron default: hidden unless explicitly turned on.
+    public static let defaultEnabled = false
 
-    /// Electron `showSidebarLogo()`: anything other than `"0"` is shown.
+    /// Electron `showSidebarLogo()`: shown only when stored as `"1"`
+    /// (`"true"` is how UserDefaults may spell a Bool).
     public static func enabled(stored: String?) -> Bool {
-        stored != "0"
+        stored == "1" || stored == "true"
     }
 
     /// The mark and "Sagax" in the sidebar head. iPadOS honors the stored
-    /// preference. iPhone and Mac (Catalyst / Designed for iPad on Mac) keep
-    /// the brand visible: Electron already owns this toggle on the Mac desktop
-    /// app, and the phone roster has no brand row to hide.
+    /// preference. Mac (Catalyst / Designed for iPad on Mac) has no switch
+    /// (Electron owns it on the Mac desktop app), so it keeps the default,
+    /// hidden like the desktop's; the phone roster has no brand row to hide.
     public static func isBrandVisible(enabled: Bool, idiomIsPad: Bool, isMac: Bool) -> Bool {
-        if isMac { return true }
+        if isMac { return defaultEnabled }
         if idiomIsPad { return enabled }
         return true
     }

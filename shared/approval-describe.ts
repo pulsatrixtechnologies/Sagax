@@ -168,7 +168,6 @@ const PRODUCT_BY_PREFIX: Array<[RegExp, string, number]> = [
   [/^cw_psa(_|$)/, "ConnectWise PSA", 2],
   [/^cw_rmm(_|$)/, "ConnectWise RMM", 2],
   [/^cw_automate(_|$)/, "ConnectWise Automate", 2],
-  [/^(s1|sentinelone)(_|$)/, "SentinelOne", 1],
   [/^(sc|screenconnect)(_|$)/, "ScreenConnect", 1],
   [/^(m365|outlook|graph)(_|$)/, "Microsoft 365", 1],
   [/^bookstack(_|$)/, "BookStack", 1],
@@ -180,7 +179,6 @@ const PRODUCT_BY_PREFIX: Array<[RegExp, string, number]> = [
 const PRODUCT_BY_SERVER: Array<[RegExp, string]> = [
   [/connectwise|(^|_)cw(_|$)/i, "ConnectWise PSA"],
   [/microsoft_?365|outlook/i, "Microsoft 365"],
-  [/sentinel_?one/i, "SentinelOne"],
   [/screen_?connect/i, "ScreenConnect"],
   [/perspicax|pulsatrix/i, "Pulsatrix"],
 ];

@@ -124,6 +124,14 @@ describe("thread control placement", () => {
     expect(markup).not.toContain("<button");
     expect(renderToStaticMarkup(createElement(ErrorRow, { message: "Network timeout", onRetry: () => {} }))).toContain("<button");
   });
+  it("draws Retry and the next action on the 28px control step", () => {
+    const retry = renderToStaticMarkup(createElement(ErrorRow, { message: "Network timeout", onRetry: () => {} }));
+    const action = renderToStaticMarkup(createElement(ErrorRow, { message: "Network timeout", action: { label: "Open", onClick: () => {} } }));
+    for (const markup of [retry, action]) {
+      expect(markup).toContain('class="ui-button ui-button-md ');
+      expect(markup).not.toContain("text-[12.5px]");
+    }
+  });
   it("directs ChatGPT plan limits to usage settings rather than repeatedly retrying", () => {
     const markup = renderToStaticMarkup(createElement(ErrorRow, { message: "ChatGPT plan usage limit reached (subscription_sharing_usage_limit_exceeded)", onRetry: () => {} }));
     expect(markup).toContain("Manage usage");
@@ -142,7 +150,10 @@ describe("thread control placement", () => {
     expect(markup).not.toContain("isn&#x27;t signed in yet");
     // the minimal engine card (#160): one Connect button
     expect(markup).toContain("Connect Claude</button>");
-    expect(markup).not.toContain("<details");
+    // the only disclosure is the terminal command behind the card (#386),
+    // never an error's Details
+    expect(markup.match(/<details/g)).toHaveLength(1);
+    expect(markup).toContain("<details data-manual-command");
     expect(markup).not.toContain("Not logged in");
     expect(markup).not.toContain(">Retry<");
     // a generic failure keeps the row
@@ -159,6 +170,17 @@ describe("thread control placement", () => {
       expect(row).not.toContain("isn&#x27;t signed in");
       expect(activityPreview(update, engine)).toBe("Claude Code 2.1.268 does not support this model");
     }
+  });
+  it("opens a failed turn with a technical cause on one plain line, the engine's words under Details", () => {
+    const raw = 'API Error: 529 {"type":"error","error":{"type":"overloaded_error","message":"Overloaded"}}';
+    const markup = renderToStaticMarkup(createElement(FailedTurnRow, { tool: { name: `error: ${raw}`, ok: false }, engine: undefined, onRetry: () => {} }));
+    expect(markup).toContain(">The service is busy right now. Try again in a moment.</span>");
+    expect(markup).toMatch(/<summary[^>]*>Details<\/summary><p[^>]*>API Error: 529/);
+    expect(markup).toContain(" Retry</button>");
+    // a cause already written for a person stays the headline, with nothing to expand
+    const plain = renderToStaticMarkup(createElement(FailedTurnRow, { tool: { name: "error: no activity for 10 minutes — the turn was stopped", ok: false }, engine: undefined }));
+    expect(plain).toContain(">no activity for 10 minutes — the turn was stopped</span>");
+    expect(plain).not.toContain(">Details</summary>");
   });
   it("offers to update Claude Code for a too-old install, or hands over the command", () => {
     const claude = { instanceId: "claude", driverKind: "claudeAgent", displayName: "Claude", snapshot: { state: "available", authenticated: true } } as InstanceInfo;
@@ -188,6 +210,21 @@ describe("thread control placement", () => {
     ];
     const render = () => renderToStaticMarkup(createElement(ChatView, { bot: { ...bot, busy: false, messages } }));
     expect(render()).toContain("Retry</button>");
+    messages.push({ id: "next", role: "user", kind: "text", at: 4, text: "A different request" });
+    expect(render()).not.toContain("Retry</button>");
+  });
+  it("keeps Retry on a failed turn after hanging up, when the call's record is the last row", () => {
+    const messages: Bot["messages"] = [
+      { id: "ask", role: "user", kind: "text", at: 1, text: "Try the new model", via: "call", callId: "c1" },
+      { id: "error", role: "bot", kind: "activity", at: 2, tool: { name: "error: outdated engine", ok: false } },
+      {
+        id: "record", role: "bot", kind: "call", at: 3, text: "Call with Pepper · 0:42",
+        call: { callId: "c1", botId: "bot", client: "ios", startedAt: 0, endedAt: 3, seconds: 42, endReason: "hung-up" },
+      },
+    ];
+    const render = () => renderToStaticMarkup(createElement(ChatView, { bot: { ...bot, busy: false, messages } }));
+    expect(render()).toContain("Retry</button>");
+    expect(render()).toContain('data-testid="call-record"');
     messages.push({ id: "next", role: "user", kind: "text", at: 4, text: "A different request" });
     expect(render()).not.toContain("Retry</button>");
   });
@@ -416,5 +453,31 @@ describe("a guest's composer on a Cloud home", () => {
     expect(allowed).toContain("<textarea");
     expect(allowed).toContain('data-testid="citation-toolbar"');
     fixture.canWrite = null;
+  });
+});
+
+const { awayFromMainThread, openBot } = await import("@/state/store");
+
+// Sagax shows the way back as ThreadsOffReturnLink in the banner stack, not
+// upstream's header button; the rule under it is the store's.
+describe("the way back to the bot's own conversation", () => {
+  const visiting: Bot = {
+    ...bot, threadId: "side", mainThreadId: "main",
+    tasks: [
+      { threadId: "main", title: "Our chat", createdAt: 1, busy: false, activity: "idle" },
+      { threadId: "side", title: "Routine report", createdAt: 2, busy: false, activity: "idle" },
+    ],
+  };
+
+  it("is offered with threads hidden while a side thread is open, and opens the main thread", () => {
+    expect(awayFromMainThread(visiting, false)).toBe(true);
+    fixture.dispatch.mockReset();
+    openBot(fixture.dispatch, visiting, false);
+    expect(fixture.dispatch.mock.calls.map(([action]) => action)).toContainEqual(expect.objectContaining({ threadId: "main" }));
+  });
+
+  it("never with threads shown, nor in the main thread itself", () => {
+    expect(awayFromMainThread(visiting, true)).toBe(false);
+    expect(awayFromMainThread({ ...visiting, threadId: "main" }, false)).toBe(false);
   });
 });

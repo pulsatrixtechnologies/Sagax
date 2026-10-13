@@ -111,7 +111,7 @@ struct DesktopTheme: Equatable {
                           sidebarSelected: "#4f86f729", sidebarHairline: "#223353", glow: (0.16, 0.09), radii: (8, 12), face: .geist),
         .pulsatrixLight: Extra(sidebar: "#24324d", sidebarInk: "#eef2fb", sidebarInkSecondary: "#c3cce0", sidebarHover: "#eef2fb12",
                                sidebarSelected: "#6b9bff38", sidebarHairline: "#41526f", glow: (0.08, 0.05), radii: (8, 12), face: .geist),
-        .midnight: Extra(sidebar: "#111111", sidebarInk: "#fcfcfc", sidebarInkSecondary: "#fcfcfc99", sidebarHover: "#7777772c",
+        .midnight: Extra(sidebar: "#111111", sidebarInk: "#fcfcfc", sidebarInkSecondary: "#fcfcfca1", sidebarHover: "#7777772c",
                          sidebarSelected: "#77777752", sidebarHairline: "#363636", radii: (8, 12), face: .system),
         .atelier: Extra(sidebar: "#fbf8f2", sidebarInk: "#1a1a18", sidebarInkSecondary: "#6b6559", sidebarHover: "#7777772c",
                         sidebarSelected: "#77777752", sidebarHairline: "#c8bda8", radii: (6, 10), face: .system),

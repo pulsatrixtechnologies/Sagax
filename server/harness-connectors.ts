@@ -40,10 +40,6 @@ import { PASS, type RouteHandler } from "./routes/table.ts";
 
 /** How Claude Code names a claude.ai connector's server. */
 export const CLAUDE_AI_SERVER_PREFIX = "claude.ai ";
-/** The tool name prefix of every claude.ai connector tool. Keep it out of
- * any engine tool denial: those block host shell, file and fetch built-ins,
- * never a person's connectors (their calls ride the approval flow). */
-export const CLAUDE_AI_CONNECTOR_TOOL_PREFIX = "mcp__claude_ai_";
 /** Where a person adds, signs in to and removes their connectors. */
 export const CLAUDE_AI_CONNECTORS_URL = "https://claude.ai/customize/connectors";
 

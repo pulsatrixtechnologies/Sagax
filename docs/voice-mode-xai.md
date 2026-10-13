@@ -118,7 +118,11 @@ the call says it did not get through.
 
 Before synthesis the call strips any markdown, emoji, URL or HTML the bot
 still wrote, and stops at the follow-up rule (`src/lib/voice-mode/spoken.ts`,
-then the server's `server/tts/speech-text.ts`).
+then the server's `server/tts/speech-text.ts`). A French call
+(`language` `fr` or `fr-*`) then reads times, prices, short ordinals and
+titles aloud (`server/tts/french-reading.ts`: "14 h 30" as "14 heures 30",
+"25 $" as "25 dollars"). A spoken note sent with `/voice/speak` stays
+verbatim.
 
 ## A live call, like a phone
 
@@ -131,12 +135,13 @@ the configured TTS provider, half duplex).
 
 - **Full duplex.** The microphone stays open for the whole call. While the bot
   speaks, the person can talk over it: on the first voiced frame (32 ms) the
-  bot is ducked to 12% within 30 ms; once speech is confirmed (160 ms of
-  voice over the bot) its voice fades out in 60 ms, every queued sentence is
-  dropped, and the bot's running turn is interrupted (`/interrupt`) if it is
-  still writing. What it had written stays in the transcript, marked
-  interrupted, and the new words become the next turn. A cough or a click
-  only ducks it for a moment.
+  bot is ducked to 12% within 10 ms; once speech is confirmed (128 ms, four
+  frames over the bot) its voice fades out in 12 ms, so it is silent by
+  140 ms. Every queued sentence is dropped, and the bot's running turn is
+  interrupted (`/interrupt`) if it is still writing. What it had written
+  stays in the transcript, marked interrupted, and the new words become the
+  next turn. A cough or a click (three frames, 96 ms) only ducks it for a
+  moment.
 - **Turns.** Silero VAD v5 (on this computer, `models/silero-vad-v5.onnx`)
   gives a voice probability per 32 ms frame; `turns.ts` starts a turn after
   about 190 ms of voice and ends it after an adaptive silence. Settings >
@@ -171,9 +176,12 @@ the configured TTS provider, half duplex).
   Control Center > Mic Mode > Voice Isolation filters the room further (apps
   cannot set it). The neural VAD ignores steady noise, keyboards and music;
   a level gate ignores far-field voices once the person's level is known.
-- **Echo.** Beside Chromium's echo canceller, `echo.ts` learns the echo
-  path's coupling while the bot speaks and refuses voice frames that are no
-  louder than the bot's own residue, so the bot never interrupts itself.
+- **Echo.** Beside Chromium's echo canceller, `echo.ts` keeps 512 ms of
+  playback and lines the microphone up with it (a delay of up to 384 ms, so
+  a speakerphone or a Bluetooth speaker is still the bot). It learns the
+  coupling and refuses frames no louder than that delayed residue. For the
+  first second the coupling stays at least at its prior. The person barging
+  in is far louder at once, so the bot never interrupts itself.
 - **Only my voice.** Optional: the person records about six seconds of speech
   once (Settings in the bar, "Record my voice"); a CAM++ speaker embedding
   (3D-Speaker, Apache-2.0, int8, `models/campplus-sv-en-int8.onnx`) makes a
@@ -330,9 +338,12 @@ What keeps it short:
   logs it once. A clause the socket failed before any of its audio arrived is
   spoken over POST; one cut mid-way ends where it was cut (never said twice).
   A clause without audio progress for 8 s, or a clear not confirmed in 2 s,
-  counts as a dropped socket. Changing the voice, speed or language mid-call
-  opens a socket for them at the next clause, which waits for it (a clause
-  said while another is still in flight goes over POST). Hold, mute,
+  counts as a dropped socket. xAI closes a streaming socket around 600 s;
+  while nothing is in flight the server rotates it at 540 s and does not
+  count that as a failure. Changing the voice, speed or language mid-call
+  reopens the socket at once when nothing is in flight, so the next clause
+  does not pay the reconnect before its first audio; a clause said while
+  another is still in flight goes over POST. Hold, mute,
   hang-up, the transcript card and the thread card are the same either way.
 - **A warm connection to xAI's speech.** Each turn's end (`finalize`) opens
   a pooled connection to api.x.ai (at most every 2 s), so the first
@@ -500,7 +511,7 @@ the server's own voice routes.
 - `src/lib/voice-mode/player.test.ts`, `stt-stream.test.ts`: what was heard
   at a cut, xAI finalize semantics.
 - `src/lib/voice-mode/call.test.ts`: the call with fake devices (one turn,
-  barge-in under 160 ms, a cough, the streamed answer, Only my voice, push to
+  barge-in silent by 140 ms, a cough, the streamed answer, Only my voice, push to
   talk, mute, hold, a language change, the upload fallback).
 - `src/lib/voice-mode/models.test.ts`: the real models on recorded fixtures
   (speech, noise, keyboard, music, a TV across the room, echo, barge-in;

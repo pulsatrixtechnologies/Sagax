@@ -19,7 +19,7 @@ import {
 } from "../lib/session";
 import { pairedDestination } from "../lib/phone-pairing";
 import { readSignInProfileCache, writeSignInProfileCache } from "@/lib/sign-in-profile-cache";
-import { previewSignInPerson } from "../lib/session";
+import { isSignInCredential, markSignInCredentialSpent, previewSignInPerson, signInCredentialSpent } from "../lib/session";
 import { ConnectionSignInPanel } from "./ConnectionSignInPanel";
 
 const input = "mt-1 w-full rounded-md border border-hairline/40 bg-inset px-3 py-2 text-[14px] text-ink outline-none focus:border-accent-border";
@@ -101,20 +101,32 @@ export async function finishReturnedSignIn<R>({ code, bridge, pair }: { code: st
   return handed ? pair() : "ask";
 }
 
+/** A returned sign-in credential the server refused: spent (an older server
+ * may have consumed it already) or expired. Retrying it can only fail again,
+ * so the page drops it and asks for a fresh sign-in instead. */
+export function returnedCredentialRefused(code: string, result: { ok: true } | { ok: false; status?: number }): boolean {
+  return !result.ok && result.status === 401 && isSignInCredential(code);
+}
+
 /** The page a pairing link opens: /pair#code=XXXX-XXXX-XXXX. Also what the
  * app shows instead of itself when a remote browser has no session yet.
  * When the server has a sign-in allow-list, "sign in with your email" comes
  * first and the pairing code stays one link away. */
-export function PairPage({ initialCode, initialEmail = null, reason, autoSubmit = false }: { initialCode: string | null; initialEmail?: string | null; reason?: string; autoSubmit?: boolean }) {
+export function PairPage({ initialCode: handedCode, initialEmail = null, reason, autoSubmit = false }: { initialCode: string | null; initialEmail?: string | null; reason?: string; autoSubmit?: boolean }) {
+  // A sign-in credential this tab already saw refused is never sent again
+  // (a reload of /pair#code=<c>&auto=1, or the form it would prefill).
+  const [spentReturn, setSpentReturn] = useState(() => Boolean(handedCode && signInCredentialSpent(handedCode)));
+  const [initialCode] = useState(() => (handedCode && !spentReturn ? handedCode : null));
   const [code, setCode] = useState(initialCode ?? "");
   const [label, setLabel] = useState(defaultDeviceLabel());
   const [environment, setEnvironment] = useState<EnvironmentDescriptor | null>(null);
   const [session, setSession] = useState<SessionState | null>(null);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(() => (spentReturn ? t("pair.pulsatrix.errorSpent") : null));
   // one id per code typed: a retry after a lost response reuses it, a new code gets a new one
   const [attemptId, setAttemptId] = useState(() => newAttemptId());
   const [mode, setMode] = useState<"pulsatrix" | "email" | "code" | null>(initialCode ? "code" : null);
+  const environmentLoaded = useRef<{ value: EnvironmentDescriptor | null } | null>(null);
   const [signInError] = useState(() => takeSignInErrorFromLocation());
   const [email, setEmail] = useState(initialEmail ?? "");
   const [otp, setOtp] = useState("");
@@ -134,7 +146,9 @@ export function PairPage({ initialCode, initialEmail = null, reason, autoSubmit 
     const cached = readSignInProfileCache();
     if (cached) setConnectionProfile(cached);
     let live = true;
-    void previewSignInPerson(initialCode).then((preview) => {
+    // Waits for the descriptor: only a server that says preview redeems
+    // nothing is asked (signInPreviewSupported); the cached profile covers the rest.
+    void previewSignInPerson(initialCode, environment).then((preview) => {
       if (!live || !preview) return;
       const name = preview.name ?? cached?.name ?? "";
       if (!name && !preview.avatarUrl) return;
@@ -145,7 +159,7 @@ export function PairPage({ initialCode, initialEmail = null, reason, autoSubmit 
     return () => {
       live = false;
     };
-  }, [finishing, initialCode]);
+  }, [finishing, initialCode, environment]);
   useEffect(() => {
     if (!finishing || !initialCode || autoStarted.current) return;
     autoStarted.current = true;
@@ -162,6 +176,18 @@ export function PairPage({ initialCode, initialEmail = null, reason, autoSubmit 
         location.replace(pairedDestination(location.search));
         return;
       }
+      if (returnedCredentialRefused(initialCode, result)) {
+        // Spent or expired: never offer it again. Back to "Sign in with
+        // Sagax Business" (or the empty code form) with a clear reason.
+        markSignInCredentialSpent(initialCode);
+        setSpentReturn(true);
+        setCode("");
+        setError(t(!result.ok && result.restarted ? "pair.pulsatrix.errorRestarted" : "pair.pulsatrix.errorSpent"));
+        const loaded = environmentLoaded.current;
+        setMode(loaded ? (pulsatrixLoginPath(loaded.value) ? "pulsatrix" : loaded.value?.capabilities.emailSignIn ? "email" : "code") : null);
+        setFinishing(false);
+        return;
+      }
       setError(result.error);
       setFinishing(false);
     });
@@ -171,10 +197,12 @@ export function PairPage({ initialCode, initialEmail = null, reason, autoSubmit 
     void fetchEnvironmentDescriptor()
       .then((r) => (r.ok ? r.json() : null))
       .then((d: EnvironmentDescriptor | null) => {
+        environmentLoaded.current = { value: d };
         setEnvironment(d);
         setMode((current) => current ?? (pulsatrixLoginPath(d) ? "pulsatrix" : d?.capabilities.emailSignIn ? "email" : "code"));
       })
       .catch(() => {
+        environmentLoaded.current = { value: null };
         setEnvironment(null);
         setMode((current) => current ?? "code");
       });
@@ -188,6 +216,10 @@ export function PairPage({ initialCode, initialEmail = null, reason, autoSubmit 
 
   async function submitCode(e: React.FormEvent) {
     e.preventDefault();
+    if (signInCredentialSpent(code.trim())) {
+      setError(t("pair.pulsatrix.errorSpent"));
+      return;
+    }
     setBusy(true);
     setError(null);
     const result = await pairWithCode({ code, label, attemptId });
@@ -196,6 +228,7 @@ export function PairPage({ initialCode, initialEmail = null, reason, autoSubmit 
       location.replace(pairedDestination(location.search));
       return;
     }
+    if (returnedCredentialRefused(code.trim(), result)) markSignInCredentialSpent(code.trim());
     setError(result.error);
   }
 
@@ -250,7 +283,9 @@ export function PairPage({ initialCode, initialEmail = null, reason, autoSubmit 
           <BrowserSignInWaiting onCancel={browserSignIn.cancel} onReopen={browserSignIn.reopen} />
         ) : mode === "pulsatrix" && loginPath ? (
           <div>
-            {browserSignIn.state.status === "error" ? (
+            {spentReturn && error ? (
+              <p role="alert" className="mt-3 text-[13px] text-danger">{error}</p>
+            ) : browserSignIn.state.status === "error" ? (
               <p role="alert" className="mt-3 text-[13px] text-danger">{browserSignInErrorText(browserSignIn.state.error)}</p>
             ) : signInError ? <p role="alert" className="mt-3 text-[13px] text-danger">{signInErrorText(signInError)}</p> : null}
             {/* A full-page navigation: the server answers with the Perspicax

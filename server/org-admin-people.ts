@@ -1,7 +1,8 @@
 // People (console design 4.2 and section 5): every person of the
 // organization as Sagax knows them, a person's page, and the admin actions
-// Disable or Enable, Reset access, and revoke a connection. Metadata only:
-// never a token, a key value, a message or an instruction.
+// Disable or Enable, Reset access, revoke a connection, and pause or resume
+// every routine that runs as the person (2026-10-11). Metadata only: never a
+// token, a key value, a message or an instruction.
 import type { RemovedConnection } from "./org-person-connections.ts";
 import type { AdminBot, AdminBotReach, AdminPerson } from "./org-admin-routes.ts";
 import {
@@ -48,7 +49,12 @@ export interface PeopleDeps {
   people(): PersonFacts[];
   person(principalId: string): AdminPerson;
   bots(): Array<{ bot: AdminBot; reach: AdminBotReach }>;
-  routines(): Array<{ id: string; name: string; botId: string; runAs: string | null }>;
+  /** Every routine with the person it runs as (its runAs, else its bot's
+   * owner) and whether it is active. */
+  routines(): Array<{ id: string; name: string; botId: string; runAs: string | null; enabled?: boolean }>;
+  /** 2026-10-11: turn one routine on or off, as POST routines/{id}/pause
+   * does; false when it is gone. */
+  setRoutineEnabled?(routineId: string, enabled: boolean, actorPrincipalId: string): boolean;
   usageRows(range: { from: Date; to: Date }): UsageRow[];
   /** Bots shared with this person, and how. */
   shared(principalId: string): Array<{ botId: string; botName: string; level: string; via: "user" | "team" | "section" }>;
@@ -225,6 +231,39 @@ export function peopleRoutes(deps: PeopleDeps): ConsoleRoute[] {
         return ok({ person: findRow(ctx, deps, principalId), cleared });
       },
     },
+    ...(deps.setRoutineEnabled ? (["pause", "resume"] as const).map((verb): ConsoleRoute => ({
+      method: "POST",
+      path: `people/{principal}/routines/${verb}`,
+      min: "admin",
+      handle(ctx) {
+        const principalId = ctx.params.principal!;
+        const body = ctx.body === undefined || ctx.body === null ? {} : objectBody(ctx.body);
+        if (!body || Object.keys(body).length) return badRequest("Send {} (no fields).");
+        const person = findRow(ctx, deps, principalId);
+        if (!person) return notFound("No such person.");
+        const enabled = verb === "resume";
+        const theirs = deps.routines().filter((routine) => routine.runAs === principalId);
+        const changed: string[] = [];
+        for (const routine of theirs) {
+          if ((routine.enabled !== false) === enabled) continue;
+          if (deps.setRoutineEnabled!(routine.id, enabled, ctx.viewer.principalId)) changed.push(routine.id);
+        }
+        // One row for the whole action, naming every routine it moved.
+        if (changed.length) {
+          ctx.record({
+            category: "people", action: enabled ? "person.routines_resume" : "person.routines_pause",
+            target: { kind: "person", id: principalId, name: person.name }, changed: ["enabled"],
+            before: { enabled: !enabled }, after: { enabled, routines: changed },
+          });
+        }
+        const now = new Set(theirs.map((routine) => routine.id));
+        return ok({
+          person: findRow(ctx, deps, principalId),
+          changed: changed.length,
+          routines: deps.routines().filter((routine) => now.has(routine.id)).map(({ id, name, botId, enabled: on }) => ({ id, name, botId, enabled: on !== false })),
+        });
+      },
+    })) : []),
     {
       method: "POST",
       path: "people/{principal}/connections/revoke",

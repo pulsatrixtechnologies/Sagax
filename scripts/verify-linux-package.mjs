@@ -383,6 +383,7 @@ function verifyCloudflaredResources(resources, label, { directoryMode = 0o755 } 
     requireRegularMode(path.join(licenses, name), 0o644);
     requireContained(licenses, path.join(licenses, name));
   }
+  // electron-builder copies LICENSE-APACHE here. Root LICENSE is Sagax's own notice.
   if (sha256(path.join(licenses, "cloudflared-LICENSE.txt")) !== sha256(path.join(root, "LICENSE-APACHE"))) {
     fail(`${label} cloudflared license text differs from the reviewed Apache 2.0 text`);
   }
@@ -477,7 +478,7 @@ try {
     "StartupWMClass=com.openmausbot.app",
     "Categories=Utility;",
   ]) {
-    if (!desktop.includes(expected)) fail(`desktop entry is missing ${JSON.stringify(expected)}`);
+    if (!desktop.includes(expected)) fail(`desktop entry is missing ${JSON.stringify(expected)}\n${desktop}`);
   }
   execFileSync("desktop-file-validate", [desktopFile], { stdio: "inherit" });
 } finally {

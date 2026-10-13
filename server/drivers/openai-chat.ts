@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type {
   DriverCreateInput,
   ModelCatalog,
@@ -20,6 +21,7 @@ import { ChatProtocolError, ChatReasoningDetails, ChatToolCalls, object, type Ch
 import { appendNative } from "./native.ts";
 import { classifyError, computeBackoff, interruptibleDelay, RETRY_MAX_ATTEMPTS } from "./retry.ts";
 import { classifyContinuable, writeTurnHandoff } from "../turn-continuation.ts";
+import { DUPLEX_INTERRUPT_WAIT_MS } from "../voice-call-duplex.ts";
 import { KEY_REJECTED_REASON, keyRejected, noteKeyAccepted, noteKeyRejected, rejectsKey } from "../key-rejections.ts";
 
 export interface OpenAIChatMessage {
@@ -58,6 +60,8 @@ interface CompletionJson {
   error?: unknown;
   base_resp?: { status_code?: unknown; status_msg?: unknown };
   usage?: { prompt_tokens?: number; completion_tokens?: number; prompt_tokens_details?: { cached_tokens?: number }; cost?: number };
+  /** Groq reports streaming usage in its final x_groq envelope. */
+  x_groq?: { usage?: CompletionJson["usage"] };
 }
 
 /** The message of a JSON error body a provider returned with HTTP 200.
@@ -74,6 +78,23 @@ function providerError(json: CompletionJson): string | null {
   return null;
 }
 
+/** An error envelope's machine code ("invalid_api_key"), never a sentence. */
+const MACHINE_CODE = /^[a-z][a-z0-9_]*$/;
+
+/** What a failed HTTP response says, for the person: a JSON error envelope's
+ *  own message ("Your team has used all available credits…") instead of the
+ *  envelope, or the raw body when it carries none. The envelope's machine
+ *  code follows the message, after the cut, so a caller can still read it. */
+function httpErrorDetail(body: string, limit = 500): string {
+  let json: CompletionJson | undefined;
+  try { json = object(JSON.parse(body)); } catch { json = undefined; }
+  const message = json ? providerError(json) : null;
+  if (!message || message === "unknown error") return body.slice(0, limit);
+  const code = object(json?.error)?.code;
+  const suffix = typeof code === "string" && MACHINE_CODE.test(code) ? ` (${code})` : "";
+  return message.slice(0, limit) + suffix;
+}
+
 interface NativeLog {
   source: string;
   outgoing(turn: SendTurnInput, messages: OpenAIChatMessage[], model: string, tools: ChatToolDefinition[]): unknown;
@@ -83,7 +104,10 @@ interface NativeLog {
 interface RuntimeOptions<Config> {
   input: DriverCreateInput<Config>;
   driverKind: string;
-  apiKey: string;
+  /** A string is the key captured for this instance. A function is read at
+   * the start of each turn, so a key saved after launch is the one that
+   * pays for that turn. */
+  apiKey: string | ((turn?: SendTurnInput) => string);
   apiUrl: string;
   models: () => ModelCatalog;
   requestBody(model: string, messages: OpenAIChatMessage[], stream: boolean): Record<string, unknown>;
@@ -125,6 +149,8 @@ const usageFrom = (usage: CompletionJson["usage"]): Usage | null =>
     ? { input: usage.prompt_tokens ?? 0, output: usage.completion_tokens ?? 0 }
     : null;
 
+const completionUsage = (json: CompletionJson) => json.usage ?? json.x_groq?.usage;
+
 const asError = (value: unknown): Error =>
   value instanceof Error ? value : new Error(String(value));
 
@@ -140,6 +166,68 @@ const MAX_CHAT_ROUNDS = 64;
 const MAX_TURN_TOOL_CALLS = 200;
 const stoppedAfter = (count: string) =>
   `Stopped after ${count} without a final answer. The steps so far already ran, so ask only for what's left.`;
+
+interface DeliveredUserMessage {
+  /** The turn text the harness passed, recall left out, before any note. */
+  text: string;
+  /** That text as it went to the provider, which is how it is replayed. */
+  sent: string;
+  /** The trimmed volatile half, when this message carried its note. */
+  volatile?: string;
+  /** Fingerprint of the message just before it when it was sent ("" for
+   * none), so an identical text sent elsewhere later is not mistaken for it. */
+  after: string;
+}
+
+/** Bytes replaying messages as sent may add to the stored transcript, which
+ * the harness already bounds. Spent oldest first: an earlier message keeps
+ * its replayed form for as long as it stays in the window, so a request
+ * that runs out of budget changes only at the end of the previous one. */
+const MAX_REPLAY_EXTRA_BYTES = 24_000;
+/** Threads remembered at once; the least recently sent is forgotten first. */
+const MAX_DELIVERED_THREADS = 256;
+
+const fingerprint = (text: string) => createHash("sha256").update(text).digest("base64url");
+
+/** Line a stored transcript up with what its user messages carried. The
+ * stored text is what the person typed, which the turn text ends with after
+ * whatever the harness put in front (the clock), so a record matches a
+ * message that is its whole text or its last paragraph, and follows the
+ * same message it followed when sent. The first message of the window
+ * matches on text alone, since what came before it may have been dropped.
+ * Matching runs newest first, because the window drops the oldest
+ * messages; a message no record matches is replayed as stored. */
+function replayDelivered(
+  transcript: ReadonlyArray<{ role: "user" | "assistant"; text: string }>,
+  records: readonly DeliveredUserMessage[],
+): { content: Map<number, string>; matched: DeliveredUserMessage[]; volatile: string | undefined } {
+  const found: Array<{ index: number; record: DeliveredUserMessage }> = [];
+  let next = records.length - 1;
+  for (let index = transcript.length - 1; index >= 0 && next >= 0; index--) {
+    const message = transcript[index]!;
+    if (message.role !== "user" || !message.text) continue;
+    const after = index > 0 ? fingerprint(transcript[index - 1]!.text) : undefined;
+    for (let at = next; at >= 0; at--) {
+      const record = records[at]!;
+      if (record.text !== message.text && !record.text.endsWith("\n\n" + message.text)) continue;
+      if (after !== undefined && record.after !== after) continue;
+      found.unshift({ index, record });
+      next = at - 1;
+      break;
+    }
+  }
+  const content = new Map<number, string>();
+  let volatile: string | undefined;
+  let budget = MAX_REPLAY_EXTRA_BYTES;
+  for (const { index, record } of found) {
+    const extra = Buffer.byteLength(record.sent) - Buffer.byteLength(transcript[index]!.text);
+    if (extra > budget) break;
+    budget -= extra;
+    content.set(index, record.sent);
+    if (record.volatile !== undefined) volatile = record.volatile;
+  }
+  return { content, matched: found.map(({ record }) => record), volatile };
+}
 
 const NUDGE_ANNOUNCED_ACTION = "You said what you would do next but called no tool. Do it now with your tools, or reply with your final answer if nothing is left to do.";
 
@@ -229,6 +317,8 @@ function refusedToolCallFailure(error: RejectedToolCallError, earlierSteps: bool
 /** Shared runtime for the three providers that speak OpenAI chat completions. */
 export function createOpenAIChatRuntime<Config>(options: RuntimeOptions<Config>): ProviderInstance {
   const { input } = options;
+  const resolveKey = (turn?: SendTurnInput): string =>
+    (typeof options.apiKey === "function" ? options.apiKey(turn) : options.apiKey).trim();
   const listeners = new Set<RuntimeEventListener>();
   const active = new Map<string, {
     abort: AbortController;
@@ -253,11 +343,12 @@ export function createOpenAIChatRuntime<Config>(options: RuntimeOptions<Config>)
 
   const modelsUrl = () => `${options.apiUrl.replace(/\/$/, "")}/models`;
 
-  const pingModels = async () => {
+  const pingModels = async (turn?: SendTurnInput) => {
+    const apiKey = resolveKey(turn);
     try {
       const response = await fetch(modelsUrl(), {
         method: "GET",
-        headers: { authorization: `Bearer ${options.apiKey}` },
+        headers: { authorization: `Bearer ${apiKey}` },
       });
       // Drain so undici returns the socket to the keep-alive pool.
       await response.arrayBuffer().catch(() => undefined);
@@ -292,6 +383,21 @@ export function createOpenAIChatRuntime<Config>(options: RuntimeOptions<Config>)
     if (warmThreads.size === 0) stopWarmPing();
   };
 
+  /** What each user message of a thread actually carried, oldest first. The
+   * stored transcript holds only what the person typed, while the request
+   * carried the turn text (the clock) and maybe a context note; replaying
+   * the stored text would rewrite history the provider has cached. In memory
+   * only: after a restart a thread replays as stored, as it always did. */
+  const delivered = new Map<string, DeliveredUserMessage[]>();
+  /** "Always allow this session" grants by thread and bot: the exact tools a
+   * person allowed one bot for the rest of the conversation. A room runs
+   * every member on the room's thread, and one bot's allow is not another's.
+   * This runtime has no native session, so the conversation's lives as long
+   * as this instance does, as an ACP agent's does with its process; none
+   * survives a restart. Not cleared on `sessionReset`: with no cursor to
+   * resume, the harness sends that on nearly every turn of this runtime. */
+  const sessionGrants = new Map<string, Set<string>>();
+
   const emit = (event: RuntimeEvent) => {
     for (const listener of Array.from(listeners)) listener(event);
   };
@@ -312,6 +418,7 @@ export function createOpenAIChatRuntime<Config>(options: RuntimeOptions<Config>)
     tools: ChatToolDefinition[] = [],
     onUsage?: TextGenerationOptions["onUsage"],
     maxTokens?: number,
+    apiKey = "",
   ): Promise<Completion> => {
     // Idle timer that is renewed on every received chunk during streaming
     const timeoutController = new AbortController();
@@ -333,7 +440,7 @@ export function createOpenAIChatRuntime<Config>(options: RuntimeOptions<Config>)
       const response = await fetch(`${options.apiUrl}/chat/completions`, {
         method: "POST",
         ...(messages.some(message => Array.isArray(message.content) && message.content.some(part => part.type === "image_url")) ? { redirect: "error" as const } : {}),
-        headers: { authorization: `Bearer ${options.apiKey}`, "content-type": "application/json" },
+        headers: { authorization: `Bearer ${apiKey}`, "content-type": "application/json" },
         body: JSON.stringify({
           ...options.requestBody(model, messages, stream),
           ...(tools.length ? { tools } : {}),
@@ -343,8 +450,8 @@ export function createOpenAIChatRuntime<Config>(options: RuntimeOptions<Config>)
       });
       if (!response.ok) {
         const body = await response.text().catch(() => "");
-        if (rejectsKey(response.status, body)) noteKeyRejected(options.apiUrl, options.apiKey);
-        const message = `${options.httpErrorLabel} HTTP ${response.status}${body ? `: ${body.slice(0, 200)}` : ""}`;
+        if (rejectsKey(response.status, body)) noteKeyRejected(options.apiUrl, apiKey);
+        const message = `${options.httpErrorLabel} HTTP ${response.status}${body ? `: ${httpErrorDetail(body)}` : ""}`;
         if (rejectsToolsParameter(response.status, body)) throw new UnsupportedChatToolsError(message);
         const refusal = refusedToolCall(response.status, body);
         if (refusal) throw new RejectedToolCallError(message, refusal);
@@ -353,19 +460,20 @@ export function createOpenAIChatRuntime<Config>(options: RuntimeOptions<Config>)
         }
         throw new Error(message);
       }
-      noteKeyAccepted(options.apiUrl, options.apiKey);
+      noteKeyAccepted(options.apiUrl, apiKey);
 
       if (!stream || response.headers.get("content-type")?.includes("application/json")) {
         const json = await response.json() as CompletionJson;
+        const tokenUsage = completionUsage(json);
         if (onUsage) {
           activeSignal.throwIfAborted();
           const count = (value: unknown) => typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : undefined;
           onUsage({
             model: typeof json.model === "string" && json.model.trim() ? json.model : model,
-            input: count(json.usage?.prompt_tokens),
-            output: count(json.usage?.completion_tokens),
-            cachedInput: count(json.usage?.prompt_tokens_details?.cached_tokens),
-            costUsd: count(json.usage?.cost),
+            input: count(tokenUsage?.prompt_tokens),
+            output: count(tokenUsage?.completion_tokens),
+            cachedInput: count(tokenUsage?.prompt_tokens_details?.cached_tokens),
+            costUsd: count(tokenUsage?.cost),
           });
         }
         const bodyError = completionError(json, "completion error");
@@ -387,7 +495,7 @@ export function createOpenAIChatRuntime<Config>(options: RuntimeOptions<Config>)
           reasoning: options.reasoning && typeof reasoning === "string"
             ? reasoning
             : "",
-          usage: usageFrom(json.usage),
+          usage: usageFrom(tokenUsage),
           toolCalls: calls.finish(finishReason, false),
           finishReason,
           protocolReasoning: typeof reasoning === "string" ? reasoning : "",
@@ -450,7 +558,8 @@ export function createOpenAIChatRuntime<Config>(options: RuntimeOptions<Config>)
           text += contentDelta;
           onDelta?.(contentDelta, "assistant_text");
         }
-        if (chunk.usage) usage = usageFrom(chunk.usage);
+        const tokenUsage = completionUsage(chunk);
+        if (tokenUsage) usage = usageFrom(tokenUsage);
         return false;
       };
       try {
@@ -498,33 +607,49 @@ export function createOpenAIChatRuntime<Config>(options: RuntimeOptions<Config>)
     // The system message is the head of the resent prefix, so only the
     // stable half belongs there: a volatile edit must not re-price the
     // tools, instructions and transcript the provider already cached.
-    // The volatile half rides the newest user message instead, every
-    // turn. Unlike a CLI session, this request is rebuilt from the stored
-    // transcript, which never contains the delivered notes, so tracking a
-    // digest and delivering only on change would leave the model without
-    // its memory on unchanged turns. The newest message is fresh input
-    // on every request anyway.
+    // The volatile half rides a user message instead. Earlier user messages
+    // are replayed as they were sent, notes included, so the previous
+    // request stays a prefix of this one and a note the model already has
+    // is not repeated; the newest message carries one only when the replayed
+    // history does not already end on the current copy. Automatic recall
+    // informed its own turn only and is not replayed.
     const halves = promptHalves(turn);
-    const note = halves.stable !== null ? volatileContextNote(halves.volatile, false) : "";
+    const transcript = turn.transcript ?? [];
+    const replay = replayDelivered(transcript, delivered.get(turn.threadId) ?? []);
+    const volatile = halves.volatile.trim();
+    const note = halves.stable === null || (!turn.mentionTurn && replay.volatile === volatile) ? ""
+      : volatileContextNote(volatile, Boolean(replay.volatile));
+    const textOnly = (text: string) => !options.computerUse || seesImages(turn) || !turn.images?.length ? text
+      : `${text}\n\n${TEXT_ONLY_ATTACHMENT_NOTE}`;
     const userTurn = note ? { ...turn, text: withContextNote(note, turn.text) } : turn;
+    const content = options.computerUse && seesImages(turn) ? chatUserContent(userTurn) : textOnly(userTurn.text);
+    const kept = turn.recalled ? turn.text.replace(`${turn.recalled}\n\n`, "") : turn.text;
+    const record = {
+      text: kept,
+      sent: textOnly(withContextNote(note, kept)),
+      ...(note ? { volatile } : {}),
+      after: transcript.length ? fingerprint(transcript.at(-1)!.text) : "",
+    };
+    delivered.delete(turn.threadId);
+    delivered.set(turn.threadId, [...replay.matched, record]);
+    if (delivered.size > MAX_DELIVERED_THREADS) delivered.delete(delivered.keys().next().value!);
     const system = halves.stable ?? turn.system;
     return [
       ...(system ? [{ role: "system" as const, content: system }] : []),
-      ...(turn.transcript ?? []).map((message) => ({
+      ...transcript.map((message, index) => ({
         role: message.role,
-        content: message.text,
+        content: replay.content.get(index) ?? message.text,
       })),
-      { role: "user", content: !options.computerUse ? userTurn.text
-        : seesImages(turn) ? chatUserContent(userTurn)
-        : userTurn.images?.length ? `${userTurn.text}\n\n${TEXT_ONLY_ATTACHMENT_NOTE}` : userTurn.text },
+      { role: "user", content },
     ];
   };
 
   const sendTurn = async (turn: SendTurnInput) => {
-    if (!options.apiKey) throw new Error(options.missingKeyError);
+    const apiKey = resolveKey(turn);
+    if (!apiKey) throw new Error(options.missingKeyError);
     if (turn.warmOnly === true) {
       if (!turn.warmSignal?.aborted) {
-        if (await pingModels()) rememberWarm(turn.threadId);
+        if (await pingModels(turn)) rememberWarm(turn.threadId);
         turn.warmSignal?.addEventListener("abort", () => releaseWarm(turn.threadId), { once: true });
       }
       return { turnId: newId() };
@@ -540,7 +665,7 @@ export function createOpenAIChatRuntime<Config>(options: RuntimeOptions<Config>)
     const retainImages = chatImageBudget();
     for (const message of messages) retainImages(message.content);
     const model = turn.model || options.models().default;
-    const secrets = [options.apiKey].filter((value): value is string => Boolean(value));
+    const secrets = [apiKey].filter((value): value is string => Boolean(value));
     for (const integration of Object.values(turn.integrations ?? {})) {
       const entries = object(integration);
       const specs = entries && "command" in entries ? [entries] : Object.values(entries ?? {}).map(object);
@@ -561,11 +686,19 @@ export function createOpenAIChatRuntime<Config>(options: RuntimeOptions<Config>)
       dir, source: options.nativeLog.source,
       msg: JSON.parse(JSON.stringify(msg, (_key, part) => typeof part === "string" ? safeText(part) : part)),
     });
+    const grantsKey = JSON.stringify([turn.threadId, turn.botId ?? null]);
+    const granted = sessionGrants.get(grantsKey) ?? new Set<string>();
+    sessionGrants.delete(grantsKey);
+    sessionGrants.set(grantsKey, granted);
+    if (sessionGrants.size > MAX_DELIVERED_THREADS) sessionGrants.delete(sessionGrants.keys().next().value!);
     const approval = createChatToolApproval({
       signal: abort.signal,
+      // A guest's turn neither uses the owner's grants nor keeps one: its
+      // cards offer allow once only (index.ts request.opened).
+      granted: turn.guestConfined ? undefined : granted,
       open: (ask) => emit({
         ...base(turn.threadId, turnId), type: "request.opened", requestType: "permission",
-        requestId: ask.id, tool: ask.tool, summary: ask.summary, allowSession: false,
+        requestId: ask.id, tool: ask.tool, summary: ask.summary, allowSession: ask.grant !== undefined,
       }),
       resolved: (ask, allowed, source) => emit({
         ...base(turn.threadId, turnId), type: "request.resolved", requestId: ask.id,
@@ -654,7 +787,7 @@ export function createOpenAIChatRuntime<Config>(options: RuntimeOptions<Config>)
                 streamed = true;
                 if (streamKind === "assistant_text") answerStreamed = true;
                 delta(text, streamKind);
-              }, tools.definitions);
+              }, tools.definitions, undefined, undefined, apiKey);
               delta("", "assistant_text", true);
               delta("", "reasoning_text", true);
               break;
@@ -799,7 +932,7 @@ export function createOpenAIChatRuntime<Config>(options: RuntimeOptions<Config>)
                 // an OpenAI-compatible engine stops for a card, and a Primary Bot's
                 // delegated Full access cannot help either.
                 const allowed = turn.approvalMode === "full" || !shown.ask
-                  || await approval.ask(shown.title, shownPreview ?? "This tool has no arguments.");
+                  || await approval.ask(shown.title, shownPreview ?? "This tool has no arguments.", shown.grant);
                 abort.signal.throwIfAborted();
                 emit({ ...base(turn.threadId, turnId), type: "item.started", itemType: "tool", itemId: call.id,
                   title: shown.title, ...(shownPreview ? { input: shownPreview } : {}),
@@ -884,7 +1017,7 @@ export function createOpenAIChatRuntime<Config>(options: RuntimeOptions<Config>)
             if (handoffPath) emit({ ...base(turn.threadId, turnId), type: "cap.exhausted", handoffPath, reason: continuable });
           }
         }
-        active.delete(turn.threadId);
+        if (active.get(turn.threadId) === turnEntry) active.delete(turn.threadId);
         emit({ ...base(turn.threadId, turnId), type: "turn.completed", ok, stopReason, cost: null,
           ...(hasUsage && (options.includeUsageInCompleted || seenCalls.size) ? { usage } : {}),
           ...(denials.length ? { denials } : {}),
@@ -905,8 +1038,9 @@ export function createOpenAIChatRuntime<Config>(options: RuntimeOptions<Config>)
     },
     ...(options.refreshModels ? { refreshModels: options.refreshModels } : {}),
     snapshot: async () => {
-      if (!options.apiKey) return { state: "unavailable", reason: options.unavailableReason };
-      if (keyRejected(options.apiUrl, options.apiKey)) return { state: "available", authenticated: false, reason: KEY_REJECTED_REASON, version: null };
+      const apiKey = resolveKey();
+      if (!apiKey) return { state: "unavailable", reason: options.unavailableReason };
+      if (keyRejected(options.apiUrl, apiKey)) return { state: "available", authenticated: false, reason: KEY_REJECTED_REASON, version: null };
       return { state: "available", authenticated: true, version: null, ...(options.billing ? { billing: options.billing } : {}) };
     },
     adapter: {
@@ -917,12 +1051,15 @@ export function createOpenAIChatRuntime<Config>(options: RuntimeOptions<Config>)
         // Its tool loop only reaches MCP servers; nothing runs on this machine.
         withholdsHostTools: true,
         sessionModelSwitch: "in-session", customMcp: options.tools !== false, agentsMcp: options.tools !== false, composioMcp: options.tools !== false,
+        dataMcp: options.tools !== false,
         // The runtime owns the whole tool loop, so it can always take a
         // user message mid-turn: park it, deliver before the next completion.
         queueing: true,
         // No shell and no file tool on the host at all: only MCP tools, each
-        // call a card in Ask (the Boat's `exec` runs on the Boat). A guest's
-        // turn is as confined as it gets.
+        // call a card in Ask unless "Always allow this session" covers it,
+        // and the harness's own agents tools none, as on Claude and Codex
+        // (the Boat's `exec` runs on the Boat). A guest's turn is as confined
+        // as it gets.
         guestTurns: "confined",
         // GET /models on warmOnly, then ping while the call thread is warm so
         // the next spoken turn reuses the HTTP pool (no billed completion).
@@ -932,10 +1069,19 @@ export function createOpenAIChatRuntime<Config>(options: RuntimeOptions<Config>)
         const turn = active.get(threadId);
         if (!turn || (turnId && turn.turnId !== turnId)) return;
         turn.abort.abort();
-        await turn.done;
+        // Free the slot before turn.done: a hanging grok stream must not
+        // block the next duplex send (real20 t9/t18 paid the leftover TTFB).
+        if (active.get(threadId) === turn) active.delete(threadId);
+        await Promise.race([
+          turn.done,
+          new Promise<void>((resolve) => {
+            const timer = setTimeout(resolve, DUPLEX_INTERRUPT_WAIT_MS);
+            timer.unref?.();
+          }),
+        ]);
       },
       respondToRequest: async (threadId, requestId, decision) =>
-        active.get(threadId)?.approval.answer(requestId, decision.behavior, decision.message) ?? "unavailable",
+        active.get(threadId)?.approval.answer(requestId, decision.behavior, decision.message, decision.always) ?? "unavailable",
       steer: async (threadId, text) => {
         // This engine has no external session to respect — parking the
         // words in the live turn's entry IS delivery into the loop, so a
@@ -970,7 +1116,7 @@ export function createOpenAIChatRuntime<Config>(options: RuntimeOptions<Config>)
       const { text, reasoning, toolCalls } = await complete(
         messages, model, stream, signal,
         onDelta ? (delta, kind) => { if (kind === "assistant_text") onDelta(delta); } : undefined,
-        [], onUsage, maxTokens,
+        [], onUsage, maxTokens, resolveKey(),
       );
       if (toolCalls.length) throw new ChatProtocolError("provider returned tool calls to a text-only helper");
       return text.trim() ? text : reasoning;

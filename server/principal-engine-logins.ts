@@ -85,6 +85,8 @@ export interface PrincipalEngineLoginsOptions {
   /** Tests pass fakes; the default is the drivers' own controllers. */
   controller?(input: { driver: LoginDriver; cli: string; home: string; environment: () => Record<string, string | undefined>; onAuthenticated: () => Promise<void> }): LoginController;
   now?: () => number;
+  /** Own Claude login succeeded for this person. */
+  onClaudeLinked?: (principalId: string) => void;
 }
 
 const failure = (message: string, status: number) => Object.assign(new Error(message), { status });
@@ -169,7 +171,10 @@ export class PrincipalEngineLogins {
         }
         return env;
       };
-      const onAuthenticated = async () => { this.markSignedIn(principalId, driver); };
+      const onAuthenticated = async () => {
+        this.markSignedIn(principalId, driver);
+        if (driver === "claudeAgent") this.options.onClaudeLinked?.(principalId);
+      };
       controller = this.options.controller
         ? this.options.controller({ driver, cli: facts.cli, home: dir, environment, onAuthenticated })
         : driver === "claudeAgent"

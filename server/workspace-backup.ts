@@ -17,7 +17,7 @@ import { writeFileAtomic } from "./atomic.ts";
 import { mergePrincipalFiles } from "./principals.ts";
 import { escapeAttribute, splitTranscriptAttachments } from "../src/lib/composer-attachments.ts";
 import { WORKSPACE_BACKUP_CLIENT_KEYS } from "../shared/workspace-backup-client.ts";
-import { ephemeralWorkspaceTokenPath, excludedWorkspaceAuthPath, portableWorkspaceConfig, redownloadedOrgLibraryPath, restoredWorkspaceConfig } from "./workspace-backup-policy.ts";
+import { ephemeralWorkspaceTokenPath, excludedWorkspaceAuthPath, liveDataEnginePath, portableWorkspaceConfig, redownloadedOrgLibraryPath, restoredWorkspaceConfig } from "./workspace-backup-policy.ts";
 import type { WorkspaceBackupClientState, WorkspaceBackupPrivateMetadata, WorkspaceBackupSummary } from "../shared/workspace-backup.ts";
 
 export type { WorkspaceBackupSummary, WorkspaceBackupPrivateMetadata } from "../shared/workspace-backup.ts";
@@ -37,6 +37,9 @@ const EXCLUDED = new Set([
   // sessions, which are never carried over either.
   "idp-grants.enc", "idp-grants.key",
   "openmausbot-server.lease", "box-create-requests.lock", "messages.db-wal", "messages.db-shm",
+  // The job runtime's record (server/runtime/store.ts) is a SQLite database
+  // like messages.db: snapshotted through the backup API, never its WAL.
+  "runtime.db-wal", "runtime.db-shm",
   // This machine's decision-model log (server/decider/log.ts): local
   // measurement of what the classifier picked, not workspace data.
   "decider-log",
@@ -93,8 +96,12 @@ function preserved(name: string): boolean {
   // Existing WAL/SHM belong to the old database and must move into safety,
   // never accompany a different restored main database.
   const folded = name.toLowerCase();
-  return excluded(folded) && folded !== "messages.db-wal" && folded !== "messages.db-shm";
+  return excluded(folded) && !LIVE_DATABASE_SIDECARS.has(folded);
 }
+/** SQLite databases the snapshot copies through the backup API (a consistent
+ * copy with committed WAL records), by name → the snapshot file. */
+const SNAPSHOT_DATABASES: Record<string, string> = { "messages.db": "messages-snapshot.db", "runtime.db": "runtime-snapshot.db" };
+const LIVE_DATABASE_SIDECARS = new Set(Object.keys(SNAPSHOT_DATABASES).flatMap((name) => [`${name}-wal`, `${name}-shm`]));
 /** Left where it is by a restore. The session registry's open marker is this
  * machine's own (never exported or installed): a crash before the restore
  * still costs account sign-ins, as it would have without one. */
@@ -321,11 +328,13 @@ export async function createWorkspaceBackupSnapshot(dataDir: string, options: Cr
   let skippedWorkLinks = 0;
   try {
     const root = realpathSync(dataDir);
-    const sourceDb = join(root, "messages.db");
     // The caller closes its message handle after flushing, while maintenance
     // remains held. The native snapshot includes any committed WAL records.
-    if (existsSync(sourceDb)) {
-      if (lstatSync(sourceDb).isSymbolicLink()) throw new Error("The message database must not be a symbolic link.");
+    // The runtime's database is snapshotted the same way.
+    for (const [name, snapshotName] of Object.entries(SNAPSHOT_DATABASES)) {
+      const sourceDb = join(root, name);
+      if (!existsSync(sourceDb)) continue;
+      if (lstatSync(sourceDb).isSymbolicLink()) throw new Error(`The ${name === "messages.db" ? "message" : "runtime"} database must not be a symbolic link.`);
       // Another connection may still open this database meanwhile: a copy's
       // status poll counts its chats (cloud-move.ts workspaceContents). Its
       // open (WAL recovery) and close (checkpoint) keep a new reader out for a
@@ -336,16 +345,16 @@ export async function createWorkspaceBackupSnapshot(dataDir: string, options: Cr
       // activity after an async scrypt. A scoped pulse prevents an idle server
       // from waiting indefinitely; it owns no data and always stops here.
       const completionPulse = setInterval(() => {}, 25);
-      try { await backup(db, join(snapshot, "messages-snapshot.db")); }
+      try { await backup(db, join(snapshot, snapshotName)); }
       finally { clearInterval(completionPulse); db.close(); }
-      const snapshotDb = new DatabaseSync(join(snapshot, "messages-snapshot.db"));
+      const snapshotDb = new DatabaseSync(join(snapshot, snapshotName));
       try { snapshotDb.exec("PRAGMA journal_mode = DELETE"); } finally { snapshotDb.close(); }
     }
     const walk = (directory: string, prefix = "") => {
       for (const name of readdirSync(directory).sort()) {
         if (!prefix && excluded(name)) continue;
         const path = prefix ? `${prefix}/${name}` : name;
-        if (excludedWorkspaceAuthPath(path) || ephemeralWorkspaceTokenPath(path) || redownloadedOrgLibraryPath(path)) continue;
+        if (excludedWorkspaceAuthPath(path) || ephemeralWorkspaceTokenPath(path) || redownloadedOrgLibraryPath(path) || liveDataEnginePath(path)) continue;
         // Do not silently skip noncanonical source spellings: reject them so
         // a case-sensitive host cannot export auth paths active on Windows/Mac.
         if (forbiddenArchivePath(path)) throw new Error("A workspace filename conflicts with a protected authentication or runtime path.");
@@ -400,7 +409,7 @@ export async function createWorkspaceBackupSnapshot(dataDir: string, options: Cr
               writeJson(destination, value);
             }
             copied = { size: lstatSync(destination).size, mode: 0o600, sha256: hashFile(destination) };
-          } else copied = copyRegular(path === "messages.db" ? join(snapshot, "messages-snapshot.db") : source, destination);
+          } else copied = copyRegular(SNAPSHOT_DATABASES[path] ? join(snapshot, SNAPSHOT_DATABASES[path]) : source, destination);
           bytes += copied.size;
           if (bytes > MAX_WORKSPACE_BACKUP_BYTES) throw new Error("The workspace exceeds the 10 GB backup limit.");
           entries.push({ path, type: "file", ...copied });
@@ -883,6 +892,37 @@ function prepareRestore(dataDir: string, id: string, manifest: Manifest): string
       db.exec("COMMIT");
     } finally { db.close(); }
   }
+  // The job runtime's record: a restore is not a restart, and the source may
+  // still be running its unsettled work, so the copy's ends here with the
+  // reason instead of rerunning once at the next boot (runtime contract §5
+  // applies to restarts, never to a copy). Settled rows travel as they are.
+  const runtimePath = join(prepared, "runtime.db");
+  if (existsSync(runtimePath)) {
+    const db = new DatabaseSync(runtimePath);
+    try {
+      db.exec("BEGIN");
+      const now = Date.now();
+      const update = db.prepare("UPDATE assignments SET status = 'failed', finished_at = ?, json = ? WHERE id = ?");
+      const event = db.prepare("INSERT INTO assignment_events (assignment_id, at, kind, detail) VALUES (?, ?, 'settled', ?)");
+      for (const row of db.prepare("SELECT id, json FROM assignments WHERE status NOT IN ('completed', 'failed', 'cancelled')").iterate()) {
+        const assignment: unknown = JSON.parse(String(row.json));
+        if (!record(assignment)) continue;
+        assignment.status = "failed";
+        assignment.outcome = "interrupted";
+        assignment.outcomeDetail = "Not resumed after workspace restore.";
+        assignment.result = "Not resumed after workspace restore.";
+        assignment.finishedAt = now;
+        assignment.lastActivityAt = now;
+        delete assignment.restart;
+        delete assignment.question;
+        delete assignment.answer;
+        update.run(now, JSON.stringify(assignment), row.id);
+        event.run(row.id, now, "failed: interrupted — Not resumed after workspace restore.");
+      }
+      db.exec("COMMIT");
+      db.exec("PRAGMA journal_mode = DELETE");
+    } finally { db.close(); }
+  }
   return prepared;
 }
 
@@ -989,5 +1029,5 @@ export function removeWorkspaceBackupJob(dataDir: string, id: string): void {
  * rules as the export walk (cloud-move.ts sizes a move with it). Symbolic
  * links are the caller's to skip. */
 export function omittedFromWorkspaceBackup(path: string): boolean {
-  return excluded(path.split("/")[0]) || excludedWorkspaceAuthPath(path) || ephemeralWorkspaceTokenPath(path) || redownloadedOrgLibraryPath(path);
+  return excluded(path.split("/")[0]) || excludedWorkspaceAuthPath(path) || ephemeralWorkspaceTokenPath(path) || redownloadedOrgLibraryPath(path) || liveDataEnginePath(path);
 }

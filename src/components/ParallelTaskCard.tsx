@@ -11,6 +11,7 @@ import { ChevronRight, GitFork, Loader2, Square } from "lucide-react";
 import { liveParallelState, type ParallelTaskState } from "../../shared/parallel-tasks";
 import { openThread, useStore, type Message } from "@/state/store";
 import { t } from "@/lib/i18n";
+import { useShowThreads } from "@/lib/thread-preferences";
 import { cn } from "@/lib/cn";
 import { formatElapsed } from "@/lib/working-time";
 
@@ -32,6 +33,7 @@ export function parallelCardState(message: Message, task: { busy?: boolean; acti
 
 export function ParallelTaskCard({ message, botId }: { message: Message; botId: string }) {
   const { state, dispatch } = useStore();
+  const showThreads = useShowThreads();
   const ref = message.parallelTask;
   const owner = state.bots.find((candidate) => candidate.id === (message.threadRef?.botId ?? botId));
   const task = owner?.tasks?.find((candidate) => candidate.threadId === ref?.threadId);
@@ -56,7 +58,7 @@ export function ParallelTaskCard({ message, botId }: { message: Message; botId: 
           ? <Loader2 size={14} className="shrink-0 animate-spin text-accent" aria-hidden="true" />
           : <GitFork size={14} className={cn("shrink-0", status === "failed" ? "text-danger" : "text-ink-secondary")} aria-hidden="true" />}
         <div className="min-w-0">
-          <div className="truncate font-medium text-ink">{t(ref.background ? "chat.parallel.backgroundTitle" : "chat.parallel.title", { title: ref.title })}</div>
+          <div className="truncate font-medium text-ink">{t("chat.parallel.title", { title: ref.title })}</div>
           <div className="text-[11px] text-ink-secondary">
             {STATE_LABEL[status]()}
             {status !== "queued" && elapsed > 0 ? ` · ${formatElapsed(elapsed)}` : ""}
@@ -77,7 +79,7 @@ export function ParallelTaskCard({ message, botId }: { message: Message; botId: 
         <button
           type="button"
           data-parallel-open={ref.threadId}
-          onClick={() => openThread(dispatch, { botId: owner.id, threadId: ref.threadId }, state)}
+          onClick={() => openThread(dispatch, { botId: owner.id, threadId: ref.threadId }, state, showThreads)}
           title={status === "waiting" ? t("chat.parallel.openApproval") : t("chat.parallel.open")}
           className="flex shrink-0 items-center gap-1 rounded-full px-2 py-1 text-[12px] text-ink-secondary hover:bg-raised hover:text-ink"
         >
@@ -96,7 +98,7 @@ export function ParallelResultLabel({ message }: { message: Message }) {
   return (
     <div className="mb-1 flex items-center gap-1.5 pl-0.5 text-[11px] text-ink-secondary" data-parallel-result={ref.threadId}>
       <GitFork size={11} aria-hidden="true" />
-      <span>{t(ref.background ? "chat.parallel.backgroundResult" : "chat.parallel.result", { title: ref.title })}</span>
+      <span>{t("chat.parallel.result", { title: ref.title })}</span>
     </div>
   );
 }

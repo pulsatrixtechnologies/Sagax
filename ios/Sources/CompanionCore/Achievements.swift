@@ -33,7 +33,7 @@ public struct AchievementText: Hashable, Sendable {
 
 public enum AchievementCategory: String, CaseIterable, Hashable, Sendable {
     /// mastery: the Mastery tier (hard, unlocks the Mastery characters); tiers: the points tiers.
-    case onboarding, productivity, power, voice, collaboration, streaks, mastery, tiers, secrets
+    case onboarding, productivity, power, voice, claude, collaboration, streaks, mastery, tiers, secrets
 }
 
 /// The rarity an achievement's points set (`rarityForPoints`).
@@ -50,6 +50,10 @@ public enum AchievementReward: Hashable, Sendable {
     case skin(character: String, skin: String, name: AchievementText, characterName: AchievementText)
     case appIcon(id: String)
     case title(id: String, name: AchievementText)
+    case emote(character: String, id: String)
+    case move(character: String, id: String)
+    case accessory(id: String)
+    case effect(id: String)
 
     /// The reward as one string, as the server lists it in `rewards`.
     public var key: String {
@@ -58,7 +62,51 @@ public enum AchievementReward: Hashable, Sendable {
         case let .skin(character, skin, _, _): return "skin:\(character):\(skin)"
         case let .appIcon(id): return "appIcon:\(id)"
         case let .title(id, _): return "title:\(id)"
+        case let .emote(character, id): return "emote:\(character):\(id)"
+        case let .move(character, id): return "move:\(character):\(id)"
+        case let .accessory(id): return "accessory:\(id)"
+        case let .effect(id): return "effect:\(id)"
         }
+    }
+
+    /// Shown on a card: surprise copy while the character is locked, nothing for an unregistered item.
+    public func displayed(language: String?, keys: Set<String>, revealing: Bool = false) -> String? {
+        guard RewardRegistry.lineVisible(self) else { return nil }
+        if !revealing {
+            if case let .character(id, _) = self, !keys.contains("character:\(id)") && id != "owl" {
+                return String(localized: "a surprise character")
+            }
+            if case let .skin(character, _, _, _) = self, !keys.contains("character:\(character)") && character != "owl" {
+                return String(localized: "a surprise look")
+            }
+        }
+        return label(language: language)
+    }
+
+    public func label(language: String?) -> String {
+        switch self {
+        case let .character(_, name):
+            return String(localized: "Character unlocked: \(name.resolved(language))")
+        case let .skin(_, _, name, characterName):
+            return String(localized: "Skin unlocked: \(name.resolved(language)) (\(characterName.resolved(language)))")
+        case .appIcon:
+            return String(localized: "App icon unlocked")
+        case let .title(_, name):
+            return String(localized: "Title unlocked: \(name.resolved(language))")
+        case let .emote(_, id):
+            return String(localized: "Look unlocked: \(Self.idName(id))")
+        case let .move(_, id):
+            return String(localized: "Move unlocked: \(Self.idName(id))")
+        case let .accessory(id):
+            return String(localized: "Accessory unlocked: \(Self.idName(id))")
+        case let .effect(id):
+            return String(localized: "Effect unlocked: \(Self.idName(id))")
+        }
+    }
+
+    private static func idName(_ id: String) -> String {
+        guard let first = id.first else { return id }
+        return first.uppercased() + id.dropFirst()
     }
 }
 

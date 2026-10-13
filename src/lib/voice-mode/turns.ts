@@ -178,6 +178,12 @@ export function incompleteClause(text: string): boolean {
   return words.length <= 2;
 }
 
+/** Voiced time over the bot before a barge-in cuts. Four 32 ms frames:
+ * the cut is at 128 ms from the first voiced frame, and the player's 12 ms
+ * fade is silent by 140 ms, inside the 150 ms the person waits. Three
+ * frames (96 ms, a cough) stay under it and only duck. */
+export const BARGE_IN_START_MS = 128;
+
 /** Punctuation a probe finalize may have added. Endpointing must not treat
  * that period as the person having finished. */
 export function stripTerminalPunctuation(text: string): string {
@@ -299,7 +305,7 @@ export class TurnDetector {
       negative: 0.35,
       startMs: 192,
       bargeInPositive: 0.7,
-      bargeInStartMs: 160,
+      bargeInStartMs: BARGE_IN_START_MS,
       minEndpointMs: 480,
       maxEndpointMs: 900,
       endpointMs: 600,

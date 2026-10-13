@@ -17,7 +17,7 @@ export function Switch({
       role="switch"
       aria-checked={checked}
       className={cn(
-        "relative h-5 w-11 shrink-0 rounded-full transition-colors enabled:hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40 motion-reduce:transition-none",
+        "relative h-5 w-11 shrink-0 cursor-pointer rounded-full transition-colors enabled:hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40 motion-reduce:transition-none",
         checked ? SWITCH_ON : SWITCH_OFF,
         className,
       )}
@@ -38,6 +38,7 @@ export function Switch({
 export function SwitchRow({
   label,
   description,
+  help,
   checked,
   disabled,
   onChange,
@@ -45,6 +46,8 @@ export function SwitchRow({
 }: {
   label: React.ReactNode;
   description?: React.ReactNode;
+  /** The longer explanation, behind an info button after the label. */
+  help?: React.ReactNode;
   checked: boolean;
   disabled?: boolean;
   onChange: (next: boolean) => void;
@@ -53,7 +56,10 @@ export function SwitchRow({
   return (
     <label className={cn("flex min-w-0 items-center justify-between gap-4 text-[13px] text-ink", disabled ? "cursor-not-allowed" : "cursor-pointer", className)}>
       <span className="min-w-0">
-        <span className="block leading-[18px]">{label}</span>
+        <span className="flex items-center gap-1.5 leading-[18px]">
+          <span className="min-w-0">{label}</span>
+          {help && <HelpTip label={t("settings.moreAbout", { title: typeof label === "string" ? label : "" })}>{help}</HelpTip>}
+        </span>
         {description && <span className="mt-0.5 block text-[12px] leading-relaxed text-ink-secondary">{description}</span>}
       </span>
       <Switch checked={checked} disabled={disabled} onClick={() => onChange(!checked)} />
@@ -257,16 +263,18 @@ export function SettingRow({
   help,
   children,
   message,
+  className,
 }: {
   title: string;
   subtitle?: React.ReactNode;
   help?: React.ReactNode;
   children: React.ReactNode;
   message?: React.ReactNode;
+  className?: string;
 }) {
   const titleId = useId();
   return (
-    <div role="group" aria-labelledby={titleId} className="setting-row px-3.5 py-2.5">
+    <div role="group" aria-labelledby={titleId} className={cn("setting-row px-3.5 py-2.5", className)}>
       <div className="grid min-w-0 grid-cols-1 items-center gap-2.5 sm:grid-cols-[minmax(0,1fr)_auto] sm:gap-4">
         <div className="min-w-0">
           <div className="flex items-center gap-1.5">

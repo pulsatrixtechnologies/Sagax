@@ -16,14 +16,17 @@ on:
       - scripts/bundle-server.mjs
       - .github/workflows/npm-package.yml
 
+concurrency:
+  group: npm-package-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 permissions:
   contents: read
 
 jobs:
   pack-and-prove:
-    if: (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
     name: assemble, pack, run standalone
-    runs-on: [self-hosted, linux, x64]
+    runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -48,6 +51,8 @@ jobs:
           node cli.js --help | grep -q "openmausbot serve"
           HOME=/tmp/omb-pack/home node cli.js serve --no-pair --port 18799 --data-dir /tmp/omb-pack/data --label ci --public-url https://ci.example > serve.log 2>&1 &
           for i in $(seq 1 60); do curl -sf http://127.0.0.1:18799/api/health >/dev/null && break; sleep 1; done
+          # The server answers /api/health before the CLI prints its "running" line, so wait for the line too.
+          for i in $(seq 1 30); do grep -q "reachable at https://ci.example" serve.log && break; sleep 1; done
           grep -q "reachable at https://ci.example" serve.log
           SAGAX_PORT=18799 node cli.js status | grep -q "ci ·"
           SAGAX_PORT=18799 node cli.js pair --label "CI phone" | grep -q "open or scan:  https://ci.example/pair#code="
@@ -57,7 +62,7 @@ jobs:
           node dist-server/openmausbot.js --help | grep -q "openmausbot serve"
           SAGAX_PORT=1 node dist-server/pair-cli.js > pair.out 2>&1 || true
           cat pair.out
-          grep -q "no Pulsa Bot server" pair.out
+          grep -q "no Sagax server" pair.out
           # --tunnel ships its own processes and fails closed without an account
           test -f dist-server/tunnel-guardian.js && test -f dist-server/prepare-cloudflared.js
           if [ -e enterprise ]; then echo "enterprise directory must not ship"; exit 1; fi
@@ -76,8 +81,8 @@ jobs:
   publish-npm:
     name: publish to npm
     needs: pack-and-prove
-    if: (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && (startsWith(github.ref, 'refs/tags/v'))
-    runs-on: [self-hosted, linux, x64]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
       contents: read
@@ -104,8 +109,8 @@ jobs:
   update-github-release:
     name: update GitHub release
     needs: publish-npm
-    if: (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && (startsWith(github.ref, 'refs/tags/v'))
-    runs-on: [self-hosted, linux, x64]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
       contents: write

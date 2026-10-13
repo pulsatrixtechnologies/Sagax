@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 
 import { botsRoutes, BULK_MAX_IDS, type BotsDeps } from "./org-admin-bots.ts";
 import { ConsoleRefusal } from "./org-admin-console.ts";
+import { botLook, botPersona } from "./org-admin-look.ts";
 import type { AdminBot, AdminBotReach } from "./org-admin-routes.ts";
 import { fakeConsole } from "./testing/console-context.ts";
 
@@ -14,7 +15,8 @@ function setup() {
     bots.set(id, {
       id, name: id.toUpperCase(), owner: { principalId: owner, sub: null, name: owner }, ownerRole: "member",
       engine: { instanceId: "claude", driverKind: "claudeAgent", installed: true }, model: "m1", access: "org-key",
-      mcpProfiles: [], grants: [], sections: [], routines: 0, createdAt: 1, lastActivityAt: null, status: "active", label: null, threads: 1, ...extra,
+      mcpProfiles: [], grants: [], sections: [], routines: 0, createdAt: 1, lastActivityAt: null, status: "active", label: null, threads: 1,
+      look: botLook({ name: id, color: "green" }, () => false), persona: botPersona({ name: id }), ...extra,
     });
     reach.set(id, { ownerPrincipalId: owner, grantTargets: [], sectionMemberTargets: [] });
   };
@@ -47,6 +49,7 @@ function setup() {
     exportPackage: (id) => ({ document: { format: "package", version: 2, bot: id, secret: "[redacted]" }, filename: `${id} pkg.json`, redacted: ["x"], skipped: [] }),
     importPackage: async (_doc, input) => { add("imported", input.ownerPrincipalId, { name: input.name ?? "IMPORTED" }); return { botId: "imported", warnings: ["agents[x].skills: too_large"] }; },
     exportZip: (id, options) => ({ filename: `${id}.sagaxbot.zip`, bytes: id === "huge" ? 600 * 1024 * 1024 : 4, write: async (sink) => { await sink(Buffer.from(`PK${options.conversations ? "c" : ""}`)); return { bytes: 3, redacted: 2 }; } }),
+    avatar: (id) => (id === "a" ? { bytes: Buffer.from("PNGBYTES"), type: "image/png", version: "0123456789abcdef" } : id === "p" ? "too_large" : null),
     importZip: async (_request, input) => {
       if (input.preview) return { preview: { kind: "zip", name: "A", importName: input.name ?? "A 2", includes: {}, hasConversations: false, hasSharing: false, created: [], skipped: [], needsAction: [] } };
       add("zipped", input.ownerPrincipalId, { name: input.name ?? "ZIPPED" });
@@ -161,5 +164,25 @@ describe("bots", () => {
     expect(imported).toMatchObject({ status: 201, body: { bot: { id: "zipped", name: "Copy", owner: { principalId: "pr_bob" } } } });
     expect(console.records.at(-1)).toMatchObject({ action: "bot.import", after: { format: "zip", ownerPrincipalId: "pr_bob" } });
     expect((await console.call("POST", "bots/import?ownerSub=nobody", { request: {} })).body.code).toBe("owner_not_found");
+  });
+
+  it("a bot's picture: bytes, a strong ETag and 304, private no-cache, nosniff; 404 without one", async () => {
+    const { console } = setup();
+    const got = await console.call("GET", "bots/a/avatar");
+    expect(got.status).toBe(200);
+    expect(got.raw?.toString()).toBe("PNGBYTES");
+    expect(got.headers).toEqual({ etag: "\"0123456789abcdef\"", "cache-control": "private, no-cache", "x-content-type-options": "nosniff", "content-type": "image/png", "content-length": "8" });
+    const again = await console.call("GET", "bots/a/avatar", { headers: { "if-none-match": "\"0123456789abcdef\"" } });
+    expect(again.status).toBe(304);
+    expect(again.raw?.length).toBe(0);
+    expect((await console.call("GET", "bots/b/avatar")).body.code).toBe("not_found");
+    expect((await console.call("GET", "bots/p/avatar")).body.code).toBe("too_large");
+    // out of a manager's reach reads as no such bot
+    expect((await console.call("GET", "bots/a/avatar", MANAGER)).status).toBe(404);
+  });
+
+  it("every bot carries its look and persona", async () => {
+    const { console } = setup();
+    expect((await console.call("GET", "bots/a")).body.bot).toMatchObject({ look: { kind: "default", character: "owl", family: "classics" }, persona: { displayName: "a", title: null } });
   });
 });

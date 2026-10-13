@@ -25,9 +25,11 @@ const index = (overrides: Partial<MemoryCapacity> = {}): MemoryCapacity => ({
 });
 
 describe("MemoryGauge", () => {
-  it("always carries the plain sentence about what loads", () => {
+  it("shows two meters with their numbers and no sentence", () => {
     const markup = render(createElement(MemoryGauge, { index: index() }));
-    expect(markup).toContain("only the first 200 lines load each turn");
+    expect(markup).toContain("40 / 200");
+    expect(markup).toContain("2 KB / 23.4 KB");
+    expect(markup).not.toContain(" of 200 lines");
     expect(markup).toContain('aria-valuenow="20"');
     expect(markup).toContain("bg-accent");
     expect(markup).not.toContain("bg-danger");
@@ -35,8 +37,7 @@ describe("MemoryGauge", () => {
 
   it("turns red and says how many lines are not being loaded", () => {
     const markup = render(createElement(MemoryGauge, { index: index({ lines: 260, loadedLines: 200, truncated: true }) }));
-    expect(markup).toContain("60 lines are not being loaded");
-    expect(markup).toContain("only the first 200 lines load each turn");
+    expect(markup).toContain("60 lines are not loaded");
     expect(markup).toContain("bg-danger");
     // the bar never overflows its track
     expect(markup).toContain('aria-valuenow="100"');
@@ -59,15 +60,15 @@ describe("MemoryFileRows", () => {
   ];
 
   it("lists files with size and age, and a delete control per row", () => {
-    const markup = render(createElement(MemoryFileRows, { title: "Topic files", hint: "hint", files, onOpen: vi.fn(), onDelete: vi.fn() }));
+    const markup = render(createElement(MemoryFileRows, { files, empty: "No topic files yet.", onOpen: vi.fn(), onDelete: vi.fn() }));
     expect(markup).toContain("clients.md");
     expect(markup).toContain("120 B");
     expect(markup).toContain("3 min ago");
     expect(markup).toContain('aria-label="Delete clients.md"');
   });
 
-  it("says None yet for an empty list", () => {
-    expect(render(createElement(MemoryFileRows, { title: "Daily logs", hint: "", files: [], onOpen: vi.fn(), onDelete: vi.fn() }))).toContain("None yet.");
+  it("says its empty line for an empty list", () => {
+    expect(render(createElement(MemoryFileRows, { files: [], empty: "No topic files yet.", onOpen: vi.fn(), onDelete: vi.fn() }))).toContain("No topic files yet.");
   });
 });
 
@@ -139,7 +140,8 @@ describe("MemoryUpkeepCard", () => {
   const noop = () => undefined;
   it("explains the switch and hides the tidy button while off", () => {
     const markup = render(createElement(MemoryUpkeepCard, { enabled: false, status: null, tidying: false, onToggle: noop, onTidy: noop }));
-    expect(markup).toContain("Memory upkeep");
+    expect(markup).toContain("Upkeep");
+    // the explanation is behind the switch's info button
     expect(markup).toContain("you can undo it");
     expect(markup).not.toContain("you can remove any");
     expect(markup).not.toContain("Tidy up now");
@@ -155,6 +157,7 @@ describe("MemoryUpkeepCard", () => {
     }));
     expect(markup).toContain("Tidy up now");
     expect(markup).toContain("archived 1 expired note, merged 2 duplicates");
+    expect(markup).toContain("Limited with this bot");
     expect(markup).toContain("can't make the quick background model call");
     const noticed = render(createElement(MemoryUpkeepCard, { enabled: true, status: { enabled: true, modelSteps: true, lastCapture: { at: Date.now() - 60_000, added: 1, topics: 2, aboutMe: 1 } }, tidying: false, onToggle: noop, onTidy: noop }));
     expect(noticed).toContain("Last noticed 3 facts");
@@ -236,7 +239,7 @@ describe("MemoryToggleCard", () => {
     expect(markup).toContain('role="switch"');
     expect(markup).toContain('aria-checked="true"');
     expect(markup).not.toContain('type="checkbox"');
-    expect(markup).toContain("Let this bot use memory");
+    expect(markup).toContain("Use memory");
     expect(markup).toContain("Off stops memory prompts");
     expect(markup).toContain("<label");
   });

@@ -40,10 +40,11 @@ describe("Store", () => {
     const store = new Store(selection);
     const bot = store.createBot({ name: "Dispatch" }, { seedMessages: false });
     const main = bot.tasks![0]!;
-    store.patchTask(bot.id, main.threadId, { activity: "idle", busy: false } as never);
+    store.setTaskActivity(bot.id, main.threadId, "idle");
     const routine = store.createTask(bot.id, "Routine run", false);
     expect(routine).toBeTruthy();
-    store.patchTask(bot.id, routine!.threadId, { activity: "working", busy: true, routineRunId: "run-1" } as never);
+    store.patchTask(bot.id, routine!.threadId, { routineRunId: "run-1" });
+    store.setTaskActivity(bot.id, routine!.threadId, "working");
     expect(store.activityOf(bot.id, () => true)).toEqual({ activity: "idle", busy: false });
   });
 
@@ -323,6 +324,22 @@ describe("Store", () => {
     expect(JSON.stringify(reloaded.messagesFor(bot.threadId))).not.toContain(key);
     const wire = toWireTask(reloaded.taskByThread(bot.id, bot.threadId)!, selection());
     for (const field of Object.keys(patch)) expect(wire).not.toHaveProperty(field);
+  });
+
+  it("keeps a Live call row's record across a restart and scrubs a secret from its title", () => {
+    const store = new Store(selection);
+    const bot = store.createBot({}, { seedMessages: false });
+    const key = "sk-ant-" + "c".repeat(90);
+    const row = store.appendMessage(bot.threadId, {
+      role: "bot",
+      kind: "call",
+      text: "Call with Ada · 1:42",
+      call: { callId: "call-1", botId: bot.id, client: "ios", startedAt: 1_000, endedAt: 103_000, seconds: 102, endReason: "hung-up", title: `Deploy with ${key}` },
+    });
+    expect(row.call?.title).not.toContain(key);
+    const reloaded = new Store(selection).messagesFor(bot.threadId).find((message) => message.id === row.id);
+    expect(reloaded?.call).toMatchObject({ callId: "call-1", botId: bot.id, client: "ios", seconds: 102, endReason: "hung-up" });
+    expect(JSON.stringify(reloaded)).not.toContain(key);
   });
 
   it("round-trips audio attachments with their metadata through persistence", () => {
@@ -1721,8 +1738,11 @@ describe("Store", () => {
       if (change.type === "thread") changes.push({ type: "thread", activeLeafId: change.activeLeafId });
     });
 
-    const edited = store.branchMessage(bot.threadId, original.id, "v2", "edit-send-id")!;
+    const edited = store.branchMessage(bot.threadId, original.id, "v2", "edit-send-id", undefined, { cardId: "c_1", draftSql: "select 1" })!;
     expect(edited.sendId).toBe("edit-send-id");
+    // a rerun keeps the Data context its words were sent with, as its own field
+    expect(edited.dataContext).toEqual({ cardId: "c_1", draftSql: "select 1" });
+    expect(edited.text).toBe("v2");
     // a fork is a sibling, not a child of the visible leaf, so the message
     // frame alone never moves a client's leaf: the thread frame must follow
     expect(changes).toEqual([
@@ -2134,10 +2154,15 @@ describe("Store redacts bot-authored secrets on write", () => {
       role: "bot",
       kind: "activity",
       tool: { name: `Bash: export TOKEN=${key}`, ok: true, summary: `export TOKEN=${key}` },
+      dataResult: { botId: bot.id, cardId: "c_1", title: `Revenue ${key}`, kind: "table", sql: `SELECT '${key}' AS token` },
     });
     expect(chip.tool?.name).not.toContain(key);
     expect(chip.tool?.summary).not.toContain(key);
     expect(chip.tool?.summary).toContain("«redacted");
+    expect(chip.dataResult?.title).not.toContain(key);
+    expect(chip.dataResult?.title).toContain("«redacted");
+    expect(chip.dataResult?.sql).not.toContain(key);
+    expect(chip.dataResult?.sql).toContain("«redacted");
     const card = store.appendMessage(bot.threadId, {
       role: "bot",
       kind: "options",
@@ -2349,6 +2374,38 @@ describe("Store task usage", () => {
   });
 });
 
+describe("Store askedAt from before builds kept it", () => {
+  beforeEach(() => {
+    rmSync(DATA_DIR, { recursive: true, force: true });
+  });
+
+  // Builds before askedAt kept where a person wrote only in transcripts.
+  it("fills a thread's askedAt from the newest line a person sent there, once per data directory", () => {
+    const store = new Store(selection);
+    const bot = store.createBot({ name: "Upgraded" });
+    const first = bot.threadId;
+    const later = store.createTask(bot.id, "Later")!.threadId;
+    const run = store.createTask(bot.id, "Run")!.threadId;
+    store.patchTask(bot.id, run, { routineRunId: "run-1" });
+    const asked = store.appendMessage(first, { role: "user", kind: "text", text: "Good morning.", sendId: "send-1" });
+    store.appendMessage(first, { role: "bot", kind: "text", text: "Morning!" });
+    // A routine's prompt, and a hidden run's lines, are no one's words here.
+    store.appendMessage(later, { role: "user", kind: "text", text: "Report this run's state." });
+    store.appendMessage(run, { role: "user", kind: "text", text: "Go.", sendId: "send-2" });
+    expect(existsSync(join(DATA_DIR, "asked-at-filled"))).toBe(true);
+    rmSync(join(DATA_DIR, "asked-at-filled"));
+    const upgraded = new Store(selection);
+    expect(upgraded.taskByThread(bot.id, first)?.askedAt).toBe(asked.at);
+    expect(upgraded.taskByThread(bot.id, later)).not.toHaveProperty("askedAt");
+    expect(upgraded.taskByThread(bot.id, run)).not.toHaveProperty("askedAt");
+    expect(toWireTask(upgraded.taskByThread(bot.id, first)!, selection())).not.toHaveProperty("askedAt");
+    // Once: since then every person's line stamps its thread as it is
+    // written (index.ts startTurn), so no later start reads a transcript.
+    upgraded.appendMessage(later, { role: "user", kind: "text", text: "Hello.", sendId: "send-3" });
+    expect(new Store(selection).taskByThread(bot.id, later)).not.toHaveProperty("askedAt");
+  });
+});
+
 describe("Store task working folder", () => {
   beforeEach(() => {
     rmSync(DATA_DIR, { recursive: true, force: true });
@@ -2370,6 +2427,18 @@ describe("Store task working folder", () => {
     // a new task starts in the bot's current folder
     const next = store.createTask(bot.id, "second")!;
     expect(store.pinTaskCwd(bot.id, next.threadId)).toBe("/tmp/project-b");
+  });
+
+  it("persists a new task's explicit folder before its first turn without changing the bot default", () => {
+    const store = new Store(selection);
+    const bot = store.createBot({ cwd: "/tmp/default-project" });
+    const task = store.createTask(bot.id, "Explicit project", true, undefined, undefined, undefined, undefined, undefined, false, "/tmp/chosen-project")!;
+    expect(task.cwd).toBe("/tmp/chosen-project");
+    expect(bot.cwd).toBe("/tmp/default-project");
+    const reloaded = new Store(selection);
+    reloaded.patchBot(bot.id, { cwd: "/tmp/later-project" });
+    expect(reloaded.pinTaskCwd(bot.id, task.threadId)).toBe("/tmp/chosen-project");
+    expect(reloaded.createTask(bot.id)?.cwd).toBeUndefined();
   });
 
   it("pins a private-only conversation to its own folder when it first runs, and never moves one that already ran elsewhere", () => {
@@ -2556,6 +2625,7 @@ describe("soul", () => {
       ] };
     store.applyTeamSetup(request);
     expect(new Store(selection).bot("created-by-chief")?.visibility).toEqual({ people: ["hr@example.test"] });
+    expect(new Store(selection).bot("created-by-chief")).toMatchObject({ composio: false, connectorTools: {}, approvePeerComms: false });
     const open = new Store(selection);
     const everyoneChief = open.createBot({ name: "Ops", section: "Ops" });
     open.patchBot(everyoneChief.id, { chiefOfStaff: true });

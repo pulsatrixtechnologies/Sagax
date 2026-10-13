@@ -44,8 +44,9 @@ describe("failed turn text", () => {
   it("keeps the engine's words when there is no sign-in to offer", () => {
     // signed in again: the card is gone, so is the promise of one
     expect(activityPreview(loginRow, engine({}, { authenticated: true }))).toBe("Not logged in · Please run /login");
-    // an API-key engine's card is a key row, and its own words say so
-    const keyed = engine({ driverKind: "opencode", access: "api" } as Partial<InstanceInfo>, { version: "1" });
+    // an API-key engine's card is a key row, and its own words say so (no
+    // interactive sign-in method: one would win over the key row, #386)
+    const keyed = engine({ driverKind: "opencode", access: "api", authentication: undefined } as Partial<InstanceInfo>, { version: "1" });
     expect(activityPreview({ ...loginRow, name: "error: Add your key in Settings → API keys" }, keyed)).toBe("Add your key in Settings → API keys");
     expect(signedOutEngine(loginRow, keyed)).toBeUndefined();
     // a failure that is not about setup is never blamed on sign-in
@@ -61,6 +62,13 @@ describe("failed turn text", () => {
     const limit = "Your Pro plan includes 2 cloud computers at once. Delete one to start another.";
     expect(activityPreview({ name: `error: ${limit}`, ok: false }, engine())).toBe(limit);
     expect(activityPreview({ name: "Bash", ok: true }, engine())).toBe("Bash");
+    expect(activityPreview({ name: "stopped: Stopped", ok: true }, engine())).toBe("Stopped");
+    expect(activityPreview({ name: "error: The request was cancelled by the client.", ok: false }, engine())).toBe("Stopped");
+  });
+
+  it("previews a technical cause as its plain line", () => {
+    expect(activityPreview({ name: 'error: API Error: 529 {"type":"error","error":{"type":"overloaded_error"}}', ok: false }, engine()))
+      .toBe("The service is busy right now. Try again in a moment.");
   });
 
   it("finds the engine a bot's turns ran on", () => {

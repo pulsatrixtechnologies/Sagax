@@ -60,6 +60,9 @@ export interface BotsDeps {
    * preview, or a new bot of `ownerPrincipalId`. */
   importZip?(request: IncomingMessage, input: { ownerPrincipalId: string; name?: string; conversations: boolean; sharing: boolean; preview: boolean }):
     Promise<{ preview: BotZipPreview } | { botId: string; warnings: string[] }>;
+  /** 2026-10-11: the bot's uploaded picture (server/org-admin-look.ts
+   * readBotAvatar): null when it has none, `too_large` past the cap. */
+  avatar?(botId: string): { bytes: Buffer; type: string; version: string } | "too_large" | null;
 }
 
 type Find = { bot: AdminBot; reach: AdminBotReach } | null;
@@ -171,6 +174,24 @@ export function botsRoutes(deps: BotsDeps): ConsoleRoute[] {
         const detail = entry ? deps.detail(entry.bot.id) : null;
         if (!entry || !detail) return notFound("No such bot.");
         return ok({ bot: { ...entry.bot, ...detail } });
+      },
+    },
+    {
+      // 2026-10-11: the picture `look.kind: "image"` names, for the gallery.
+      method: "GET",
+      path: "bots/{id}/avatar",
+      min: "manager",
+      handle(ctx) {
+        const entry = find(ctx, deps, ctx.params.id!);
+        if (!entry) return notFound("No such bot.");
+        const picture = deps.avatar?.(entry.bot.id) ?? null;
+        if (picture === "too_large") return fail(413, "too_large", "This bot's picture is larger than the console serves.");
+        if (!picture) return notFound("This bot has no picture.");
+        const etag = `"${picture.version}"`;
+        const headers = { etag, "cache-control": "private, no-cache", "x-content-type-options": "nosniff" };
+        const asked = ctx.headers?.["if-none-match"];
+        if (typeof asked === "string" && asked.split(",").map((tag) => tag.trim()).includes(etag)) return { status: 304, body: null, raw: "", headers };
+        return { status: 200, body: null, raw: picture.bytes, headers: { ...headers, "content-type": picture.type, "content-length": String(picture.bytes.length) } };
       },
     },
     {

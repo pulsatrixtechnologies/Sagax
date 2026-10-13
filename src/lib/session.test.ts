@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import {
-  BROWSER_SIGN_IN_FAILED, cloudOwnerOf, isConnected, isOwnerOrAdmin, previewBrowserSignIn, pulsatrixLoginPath, readSessionState, reasonWorthShowing, SERVICE_TRUST_REASON, signInWithBrowserGrant,
+  BROWSER_SIGN_IN_FAILED, cloudOwnerOf, markSignInCredentialSpent, pairWithCode, previewSignInPerson, signInCredentialSpent, signInPreviewSupported, isConnected, isOwnerOrAdmin, previewBrowserSignIn, pulsatrixLoginPath, readSessionState, reasonWorthShowing, SERVICE_TRUST_REASON, signInWithBrowserGrant,
   takeBrowserSignInFromLocation, takeInvitedEmailFromLocation, takePairingCodeFromLocation, takeSignInErrorFromLocation, type EnvironmentDescriptor,
 } from "./session";
 
@@ -80,7 +80,7 @@ describe("the OMB Cloud page's \"Use in your browser\" link", () => {
     for (const request of requests) expect(request.body).toMatchObject({ code: credential, cookie: true, browser: true, attemptId: "attempt-page-0001" });
     // A spent or expired one says so.
     const spent = (async () => new Response(JSON.stringify({ error: "pairing code is wrong or has expired" }), { status: 401 })) as unknown as typeof fetch;
-    expect(await signInWithBrowserGrant(credential, "attempt-page-0002", spent)).toEqual({ ok: false, error: "pairing code is wrong or has expired" });
+    expect(await signInWithBrowserGrant(credential, "attempt-page-0002", spent)).toEqual({ ok: false, error: "pairing code is wrong or has expired", status: 401 });
     expect(reasonWorthShowing(BROWSER_SIGN_IN_FAILED)).toBe(BROWSER_SIGN_IN_FAILED);
   });
 
@@ -133,5 +133,50 @@ describe("Sign in with Pulsatrix on an organization server", () => {
     expect(replaceState).toHaveBeenCalledWith(null, "", "/pair");
     expect(takeSignInErrorFromLocation({ hash: "#code=ABCD", pathname: "/pair", search: "" }, { replaceState })).toBeNull();
     expect(takeSignInErrorFromLocation({ hash: "#signin_error=<script>", pathname: "/pair", search: "" }, { replaceState })).toBeNull();
+  });
+});
+
+describe("previewing a Sagax Business return credential (2026-10-13, desktop 0.5.0 vs server 167d8e13)", () => {
+  const credential = `omb_pair_${"Q".repeat(43)}`;
+  const env = (capabilities: Partial<EnvironmentDescriptor["capabilities"]>): EnvironmentDescriptor => ({
+    environmentId: "e", label: "GOX", platform: "linux", version: "0.4.22",
+    capabilities: { remoteSessions: true, selfUpdate: "operator", ...capabilities },
+  });
+
+  it("never asks a server that does not advertise a non-redeeming preview: it would spend the credential", async () => {
+    const fetchImpl = vi.fn(async () => new Response(JSON.stringify({ token: "t", session: {} }), { status: 200 }));
+    expect(signInPreviewSupported(null)).toBe(false);
+    expect(signInPreviewSupported(env({}))).toBe(false);
+    expect(await previewSignInPerson(credential, null, fetchImpl as unknown as typeof fetch)).toBeNull();
+    expect(await previewSignInPerson(credential, env({ emailSignIn: false }), fetchImpl as unknown as typeof fetch)).toBeNull();
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it("asks a server that advertises it, marked ?preview=1 so the desktop redeem watcher skips it", async () => {
+    const requests: Array<{ path: string; body: unknown }> = [];
+    const fetchImpl = (async (path: string, init?: RequestInit) => {
+      requests.push({ path, body: JSON.parse(String(init?.body)) });
+      return new Response(JSON.stringify({ expiresAt: 1, name: "Ada", avatarUrl: "/api/people/a/avatar" }), { status: 200 });
+    }) as unknown as typeof fetch;
+    expect(await previewSignInPerson(credential, env({ signInPreview: true }), fetchImpl)).toEqual({ name: "Ada", avatarUrl: "/api/people/a/avatar" });
+    expect(requests).toEqual([{ path: "/api/auth/pair?preview=1", body: { code: credential, preview: true } }]);
+  });
+
+  it("reports the status of a refused redeem, and remembers a spent credential by fingerprint only", async () => {
+    const stored = new Map<string, string>();
+    vi.stubGlobal("sessionStorage", { getItem: (k: string) => stored.get(k) ?? null, setItem: (k: string, v: string) => void stored.set(k, v) });
+    const refused = (async () => new Response(JSON.stringify({ error: "pairing code is wrong or has expired; create a new one on the server" }), { status: 401 })) as unknown as typeof fetch;
+    expect(await pairWithCode({ code: credential, label: "Mac" }, refused)).toEqual({ ok: false, error: "pairing code is wrong or has expired; create a new one on the server", status: 401 });
+    expect(signInCredentialSpent(credential)).toBe(false);
+    const restartedServer = (async () => new Response(JSON.stringify({ error: "pairing code is wrong or has expired, or this server restarted", code: "server_restarted" }), { status: 401 })) as unknown as typeof fetch;
+    expect(await pairWithCode({ code: credential, label: "Mac" }, restartedServer)).toMatchObject({ ok: false, status: 401, restarted: true });
+    markSignInCredentialSpent(credential);
+    expect(signInCredentialSpent(credential)).toBe(true);
+    expect(signInCredentialSpent(`omb_pair_${"R".repeat(43)}`)).toBe(false);
+    expect([...stored.values()].join("")).not.toContain(credential);
+    // a typed pairing code is never remembered: it may be typed again legitimately
+    markSignInCredentialSpent("ABCD-EFGH-JKLM");
+    expect(signInCredentialSpent("ABCD-EFGH-JKLM")).toBe(false);
+    vi.unstubAllGlobals();
   });
 });
