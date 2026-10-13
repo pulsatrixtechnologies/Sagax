@@ -6,7 +6,7 @@ Treat a firing alert as the start of the incident; do not wait for a
 person to write in.
 
 Severity `page` is answered when it fires, including outside the warm
-window. Severity `ticket` is answered the next business hour. The GOX
+window. Severity `ticket` is answered the next business hour. The production
 VM itself is not restarted as a first action.
 
 ## Roles
@@ -40,7 +40,7 @@ is 30–90 seconds, so 3 minutes means the autoscaler is not adding a node.
 
 1. Confirm only one of cluster-autoscaler and Karpenter is installed.
 2. Check the quota (Canada Central arm64). The Azure adapter ships a max
-   of one `Standard_D4ps_v6` beside the GOX VM.
+   of one `Standard_D4ps_v6` beside the production VM.
 3. If the buffer ScaledObject `sagax-sandbox-pending` is still applied
    and the driver is also creating pods, delete the ScaledObject. That
    is the double-reservation case. Downtime **0**.

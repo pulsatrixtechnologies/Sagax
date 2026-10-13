@@ -1,11 +1,11 @@
 # Sandboxes on Kubernetes
 
 Sommaire. Ce dossier est l'option 3 de l'audit du 12 octobre 2026 : un
-pool portable de bacs à sable, hors de la VM GOX, qui peut revenir à zéro
+pool portable de bacs à sable, hors de la VM de production, qui peut revenir à zéro
 nœud la nuit et garder un nœud chaud le jour. Le même dossier tient le
 provisionneur Kubernetes (`provisioner/`), le pool (`sandboxes/`), le chart
 Helm et les modules OpenTofu. `SANDBOX_BACKEND=kubernetes` lance ce
-provisionneur. Le service compose GOX reste sur Docker. Sagax choisit
+provisionneur. Le service compose de production reste sur Docker. Sagax choisit
 lequel appeler (`docs/ops/sandboxes/cutover-rollback.md`).
 
 English follows.
@@ -34,7 +34,7 @@ audit report.
 
 ## Option 3, as built
 
-The GOX VM (`Standard_D4pls_v6`, arm64, Canada Central) stays the home of
+The production VM (`Standard_D4pls_v6`, arm64, Canada Central) stays the home of
 Pulsabot. Sandboxes move to a pool that speaks the Kubernetes API, so the
 same chart runs on k3s, AKS, EKS or LKE.
 

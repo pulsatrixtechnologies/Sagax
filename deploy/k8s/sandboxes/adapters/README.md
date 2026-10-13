@@ -1,7 +1,7 @@
 # Adapters
 
 The base manifests are the product. An adapter binds them to one
-provider. Azure is the one written out, because GOX runs there today. It
+provider. Azure is the one written out, because production runs there today. It
 is not required for k3s on Proxmox, EKS, or LKE.
 
 | Concern | Portable | Azure adapter |
