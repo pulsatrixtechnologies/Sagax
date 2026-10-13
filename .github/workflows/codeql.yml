@@ -1,17 +1,12 @@
 name: CodeQL
 
-# Advanced setup replacing CodeQL default setup. Default setup has no
-# concurrency control, so it queued one analysis per pushed commit. A repo
-# admin must switch default setup off (Settings > Code security > CodeQL
-# analysis) once this lands, or both will run.
+# Advanced setup beside CodeQL's default setup. Default setup stays on. It
+# already covers Swift, so this workflow has no Swift job. It analyzes
+# javascript-typescript, actions and python on ubuntu-latest.
 #
-# javascript-typescript, actions and python run on ubuntu-latest. Swift runs
-# on macos-latest, and only from a manual dispatch.
-#
-# Results upload unless the repository variable CODEQL_ADVANCED_UPLOAD is
-# "false". While default setup is still on, GitHub rejects the SARIF upload;
-# set that variable to "false" until default setup is off. Query and
-# extraction errors still fail the job.
+# Upload is off unless the repository variable CODEQL_ADVANCED_UPLOAD is
+# "true". While default setup is on, GitHub rejects a second SARIF upload, so
+# leave the variable unset. Query and extraction errors still fail the job.
 on:
   workflow_dispatch:
   push:
@@ -56,32 +51,4 @@ jobs:
       - uses: github/codeql-action/analyze@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
         with:
           category: /language:${{ matrix.language }}
-          upload: ${{ vars.CODEQL_ADVANCED_UPLOAD != 'false' && 'always' || 'never' }}
-
-  analyze-swift:
-    # Swift needs a macOS runner and a build (no build-mode none for Swift).
-    # It runs only from a manual dispatch.
-    if: github.event_name == 'workflow_dispatch'
-    name: analyze (${{ matrix.language }})
-    runs-on: macos-latest
-    timeout-minutes: 60
-    permissions:
-      contents: read
-      security-events: write
-      actions: read
-    strategy:
-      matrix:
-        include:
-          - { language: swift, build-mode: autobuild }
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: github/codeql-action/init@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
-        with:
-          languages: ${{ matrix.language }}
-          build-mode: ${{ matrix.build-mode }}
-      - uses: github/codeql-action/analyze@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
-        with:
-          category: /language:${{ matrix.language }}
-          upload: ${{ vars.CODEQL_ADVANCED_UPLOAD != 'false' && 'always' || 'never' }}
+          upload: ${{ vars.CODEQL_ADVANCED_UPLOAD == 'true' && 'always' || 'never' }}
