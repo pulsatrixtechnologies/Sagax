@@ -2,6 +2,8 @@
 // Local VM is never created in a temporary folder, every container names
 // the folder it was made for, and the desktop app gets the same hardened
 // recipe this server uses (server/container-computer.ts).
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -54,6 +56,8 @@ describe("Local VM folders", () => {
     expect(workspaceIsTemporary("/private/var/folders/5f/x/T/omb-1/vm-home", "/var/folders/5f/x/T")).toBe(true);
     expect(workspaceIsTemporary("/Users/ada/.openmausbot/vm-home", "/var/folders/5f/x/T")).toBe(false);
     expect(workspaceIsTemporary("/tmpfoo/vm-home", "/tmp")).toBe(false);
+    const root = tmpdir();
+    expect(workspaceIsTemporary(join(root, "omb-1", "vm-home"), root)).toBe(true);
   });
 
   it("refuses to create a real-named Local VM in a temporary folder, never a test's namespaced one", () => {

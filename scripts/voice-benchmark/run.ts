@@ -40,6 +40,7 @@ import {
   VoiceBenchLedger,
 } from "./model.ts";
 import {
+  SYNTHETIC_STT_FINAL_TIMEOUT_MS,
   SYNTHETIC_VOICE_DELAYS,
   VOICE_ACCEPTANCE_SCRIPT,
   VOICE_ACCEPTANCE_SCRIPT_REVISION,
@@ -150,6 +151,14 @@ function scenarioGates(
     concurrentTopics: gate(concurrentTopics, 2),
     tools: gate(toolStarts, 1),
   };
+}
+
+function sseEventCut(buffer: string): { at: number; skip: number } | null {
+  const crlf = buffer.indexOf("\r\n\r\n");
+  const lf = buffer.indexOf("\n\n");
+  if (crlf >= 0 && (lf < 0 || crlf <= lf)) return { at: crlf, skip: 4 };
+  if (lf >= 0) return { at: lf, skip: 2 };
+  return null;
 }
 
 function auditPaths(paths: readonly string[]): VoiceBenchProviderAudit {
@@ -303,6 +312,7 @@ export async function runVoiceBenchmark(options: VoiceBenchmarkOptions): Promise
       botId,
       language: () => "en",
       threadId: () => threadId,
+      ...(real ? {} : { finalTimeoutMs: SYNTHETIC_STT_FINAL_TIMEOUT_MS }),
       socket: (url) => new WebSocket(url.replace(/^ws:\/\/localhost/, origin.replace(/^http/, "ws")), { headers: { origin } }) as unknown as globalThis.WebSocket,
       transcribe: async (_botId, audio, language, thread) => {
         const query = new URLSearchParams({ language, ...(thread ? { threadId: thread } : {}) });
@@ -457,11 +467,12 @@ export async function runVoiceBenchmark(options: VoiceBenchmarkOptions): Promise
             const { done, value } = await reader.read();
             if (done) return;
             buffer += decoder.decode(value, { stream: true });
-            let cut;
-            while ((cut = buffer.indexOf("\n\n")) >= 0) {
-              const block = buffer.slice(0, cut);
-              buffer = buffer.slice(cut + 2);
-              const data = block.split("\n").filter((line) => line.startsWith("data:")).map((line) => line.slice(5).trim()).join("");
+            let cut = sseEventCut(buffer);
+            while (cut) {
+              const block = buffer.slice(0, cut.at);
+              buffer = buffer.slice(cut.at + cut.skip);
+              cut = sseEventCut(buffer);
+              const data = block.split(/\r?\n/).filter((line) => line.startsWith("data:")).map((line) => line.slice(5).trim()).join("");
               if (!data) continue;
               let frame: { kind?: string; event?: RuntimeEvent } | null = null;
               try { frame = JSON.parse(data) as { kind?: string; event?: RuntimeEvent }; } catch { continue; }
@@ -568,7 +579,7 @@ export async function runVoiceBenchmark(options: VoiceBenchmarkOptions): Promise
           `${scenario.id} did not finish (completed=${turn.turnCompleted} llm=${turn.llm !== undefined} tts=${turn.tts !== undefined} audio=${turn.audio !== undefined} busy=${live.current.botBusy} player=${player.busy})`,
         );
       }
-      const idleDeadline = performance.now() + 4_000;
+      const idleDeadline = performance.now() + 200;
       while ((live.current.botBusy || player.busy) && performance.now() < idleDeadline) await sleep(20);
       if (live.current.botBusy) live.setBotBusy(false);
       await player.cancel();
