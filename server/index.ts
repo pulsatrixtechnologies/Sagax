@@ -1563,9 +1563,10 @@ const supportsApprovalMode = createApprovalModeSupport(registry);
 // Engines installed from Settings live under the data directory and win over
 // any other copy on PATH.
 registerEnginesBinDir();
-// The engines baked into this image (engines.lock.json): each CLI's
-// `--version` once, logged, then their installed state for good
-// (server/engines-self-check.ts). No manifest: nothing changes.
+// The engines baked into this image (engines.lock.json): the version the
+// image build recorded, logged, then their installed state for good
+// (server/engines-self-check.ts). A manifest entry with no recorded version
+// is probed one at a time. No manifest: nothing changes.
 let engineSelfCheck = new EngineSelfCheck(null);
 /** When the boot self-check finished (the console's Overview). */
 let engineSelfCheckAt: number | null = null;

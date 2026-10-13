@@ -1090,10 +1090,14 @@ driver's default `cli`.
   licence published). API engines (Grok API, OpenAI-compatible, Mistral,
   Cerebras, MiniMax), Boat and custom ACP need no install.
 - Startup self-check (`server/engines-self-check.ts`, `SAGAX_ENGINES_MANIFEST`):
-  each preinstalled CLI runs `--version` once at boot, the result is logged
-  (`[engines] claude: ...`) and is the instance's installed state from then
-  on (`selfCheckedEngine` in `server/index.ts`): `engineInstalled` and
-  `/api/health` no longer probe those engines per request. A manifest whose
+  the image build already ran each CLI's `--version` and stored it as
+  `reported`. At boot the server checks that binary is on PATH and logs that
+  recorded line (`[engines] claude: ...`); it does not spawn the CLI again.
+  An entry with no `reported` line (a manifest from before this) is probed
+  one at a time (`ENGINE_PROBE_CONCURRENCY`). That result is the instance's
+  installed state from then on (`selfCheckedEngine` in `server/index.ts`):
+  `engineInstalled` and `/api/health` no longer probe those engines per
+  request. A manifest whose
   set is not `all`, or an engine that did not start, also logs
   `[engines] engine_missing ...`. An instance with
   its own `config.cli` is probed as before. An engine of `notPreinstalled`

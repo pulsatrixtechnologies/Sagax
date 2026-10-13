@@ -3,14 +3,17 @@
 //
 // The image's engines step writes a manifest (SAGAX_ENGINES_MANIFEST): which
 // engine CLIs it installed, at which pinned version, and which engines it
-// deliberately does not carry, with the reason. At boot each installed CLI
-// runs `--version` once; the result is logged and becomes the engine's
-// installed state for every instance that runs that CLI by its default name,
-// so neither a turn nor a page load ever probes it again. An engine the
-// manifest lists as not preinstalled reads "Not available on this server"
-// (with the reason) instead of "Not installed". Without a manifest (the
-// desktop app, a source checkout, an image built before the lock) nothing
-// here applies and the per-instance probes keep their old behaviour.
+// deliberately does not carry, with the reason. That step already ran
+// `--version` and stored the line on each engine (`reported`). At boot the
+// server checks the binary is on PATH and logs that line; it does not spawn
+// the CLI again. The result becomes the engine's installed state for every
+// instance that runs that CLI by its default name, so neither a turn nor a
+// page load ever probes it again. An entry with no recorded line is probed
+// one at a time. An engine the manifest lists as not preinstalled reads
+// "Not available on this server" (with the reason) instead of "Not
+// installed". Without a manifest (the desktop app, a source checkout, an
+// image built before the lock) nothing here applies and the per-instance
+// probes keep their old behaviour.
 import { readFileSync } from "node:fs";
 import { stripVTControlCharacters } from "node:util";
 
@@ -59,11 +62,16 @@ export interface EngineCheck {
 }
 
 const VERSION_TIMEOUT_MS = 20_000;
-/** How many `--version` probes run at once. All 11 at once (Promise.all)
- * peaked near 3.9 GiB on GOX (2026-10-13) and the kernel OOM-killed children:
- * several engine CLIs boot a whole Node or Python runtime just to print a
- * version. Two at a time keeps the peak to the two largest. */
-export const ENGINE_PROBE_CONCURRENCY = 2;
+/**
+ * How many live `--version` probes run at once. Only an engine whose manifest
+ * has no `reported` line is probed. The image build already ran `--version`
+ * once per CLI, one after another, and stored that line (`reported`).
+ * Spawning the CLIs again at server boot boots a Node or Python runtime per
+ * engine: all eleven at once (0.5.0, `Promise.all`) and then two at a time
+ * (0.5.1) are the startup memory spike. One at a time is the fallback for a
+ * manifest written before `reported` existed.
+ */
+export const ENGINE_PROBE_CONCURRENCY = 1;
 
 /** `items` mapped by `run`, at most `limit` at a time, results in input order. */
 export async function mapLimited<T, R>(items: readonly T[], limit: number, run: (item: T) => Promise<R>): Promise<R[]> {
@@ -160,7 +168,8 @@ export class EngineSelfCheck {
   }
 }
 
-/** Run every installed engine's `--version` once and log the result. */
+/** Log each installed engine. A recorded `reported` line is kept; only an
+ * engine without one is started, at most `ENGINE_PROBE_CONCURRENCY` at a time. */
 export async function runEngineSelfCheck(
   manifest: EngineManifest | null,
   options: { probe?: VersionProbe; find?: (bin: string) => string[]; log?: (line: string) => void; concurrency?: number } = {},
@@ -173,6 +182,11 @@ export async function runEngineSelfCheck(
     const base = { id: engine.id, name: engine.name, drivers: engine.drivers, bin: engine.bin, pinned: engine.version };
     const path = find(engine.bin)[0];
     if (!path) return { ...base, ok: false, error: `\`${engine.bin}\` is not on this server's PATH` };
+    // The image build already proved this binary starts and recorded what
+    // `--version` printed. Looking it up on PATH does not boot the CLI.
+    if (typeof engine.reported === "string") {
+      return { ...base, path, version: engine.reported.slice(0, 200), ok: true };
+    }
     try {
       const version = await probe(path);
       return { ...base, path, version, ok: true };
