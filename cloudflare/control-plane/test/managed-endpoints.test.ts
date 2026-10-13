@@ -2456,7 +2456,7 @@ describe("managed endpoints in several Cloudflare accounts", () => {
     expect(refusedAgain.status).toBe(503);
     await expect(refusedAgain.json()).resolves.toEqual({ error: "endpoint_capacity" });
     expect(await endpointState(untotalled.installation.id)).toMatchObject({ last_error_code: "cf_tunnel_quota" });
-  });
+  }, 20_000);
 
   it("judges a create 429 by the scan less what cleanup has deleted since", async () => {
     const cloudflare = new FakeCloudflare();

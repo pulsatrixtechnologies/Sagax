@@ -53,13 +53,14 @@ starts, stays alive and ends (`POST /api/bots/<id>/voice/call`
 `{threadId, callId, state}`), and every send to that thread while the call
 lasts is a call turn, whatever path it takes (typed words, a queued line
 steered with the Steer button, a retry). A call never closed expires after
-20 minutes without a turn. On a call, words sent while the bot works always
-join its turn (no parallel or after chooser), unless Advanced >
-"Full-duplex conversation" is on: then a new utterance interrupts the
-in-flight turn, discards the steer queue, and starts only those words
-(issue #292). The flag is on by default in internal, TestFlight and
-dev builds (kill-switch in Advanced). Public App Store builds stay
-off. Typed chat still keeps its queue on Stop.
+20 minutes without a turn. On a call, words sent while the bot works join its turn (no parallel
+or after chooser). Advanced > "Full-duplex conversation" is off by
+default on every channel (2026-10-13). When the person turns it on and
+the server has `SAGAX_VOICE_FULL_DUPLEX=1`, a new utterance interrupts
+the in-flight turn, discards the steer queue, and starts only those
+words (issue #292). Otherwise the page's duplex and speculative marks
+are dropped and the send takes the steer path. Typed chat still keeps
+its queue on Stop.
 
 ## Full-duplex conversation (issue #292)
 
@@ -71,14 +72,16 @@ steer queue: talking while the bot was thinking did not interrupt
 the next answer.
 
 `CallSettings.fullDuplex` (device-local, `omb.voiceCall.v1`, default
-on for internal / TestFlight / dev) plus `voiceCall.duplex` on the send:
+off on every channel; rev 3 drops the on that 0.5.x stored) plus
+`voiceCall.duplex` on the send, and only while `SAGAX_VOICE_FULL_DUPLEX=1`:
 confirmed speech while the bot is busy or speaking cancels that turn; the
 server never steers or queues those words. The thinking cue is 400 ms
 instead of 1200 ms so
 the line is not dead air. Approvals stay spoken yes or no and are not
-cancelled. Tools still run on the bot; the prompt already asks for a
-spoken "Je regarde ça..." before slow work. A duplex send that races
-another is latest-wins (the slower one is superseded, never queued).
+cancelled. Tools still run on the bot. The call speaks no canned filler
+and no tool-chip narration; the prompt asks the bot to say so once, in
+its own words, only when something will genuinely take a while. A duplex
+send that races another is latest-wins (the slower one is superseded, never queued).
 `startTurn` thread_busy is retried until the interrupt cap. Cancelled
 turns stop streaming (`content.delta` of that turnId is not broadcast).
 The client speech fence (`speech-fence.ts`, iOS `CallConversation`)

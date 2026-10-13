@@ -51,6 +51,14 @@ describe("the bar's transcript and its card motion", () => {
     expect(live).not.toMatch(/messages\.filter\(\(m\) => m\.kind === "text" && m\.text\?\.trim\(\)\)\.slice\(-8\)/);
   });
 
+  it("speaks no canned filler and no tool chip while the bot works", () => {
+    expect(live).not.toContain("sayFiller");
+    expect(live).not.toContain("prefetchFiller");
+    expect(live).not.toContain("toolFillerText");
+    expect(live).not.toContain("shouldNarrateToolChip");
+    expect(live).toContain("No canned filler");
+  });
+
   it("closing keeps drawing the panel it had while the card folds, out of reach; a card that closes under reduced motion goes at once", () => {
     expect(bar).toMatch(/if \(cardKey !== null\) heldPanel\.current = panel;/);
     expect(bar).toContain("{...cardMotion.exitProps}");

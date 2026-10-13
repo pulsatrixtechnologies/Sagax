@@ -316,3 +316,83 @@ it("server duplex off (the default since 2026-10-13): a duplex send while the bo
     await t.fixture.close();
   }
 }, 120_000);
+
+/** Stock phrases a 0.5.0 call spoke on its own while a tool ran. */
+const CANNED_FILLER = ["Je regarde ça", "Je regarde.", "Je regarde"];
+
+type JournalMessage = { role?: string; kind?: string; text?: string; tool?: { name?: string; spoken?: string; ok?: boolean } };
+
+function shortLine(text: string): string {
+  const one = text.replace(/\s+/g, " ").trim();
+  // The engine echo repeats the whole prompt. Keep the journal free of paths.
+  if (one.includes("reply to:") || one.includes("/") || one.includes("http")) return "réponse du moteur (aucun remplissage en conserve)";
+  return one.length > 90 ? `${one.slice(0, 90)}…` : one;
+}
+
+/** What a call said, and what it was told to say, with hosts and paths left out. */
+function fillerSessionJournal(input: {
+  duringTool: JournalMessage[];
+  after: JournalMessage[];
+  prompts: string[];
+  system: string;
+}): { text: string; fillerHits: string[] } {
+  const spoken = (rows: JournalMessage[]) => rows
+    .filter((m) => m.role === "bot" && m.kind === "text" && m.text?.trim())
+    .map((m) => m.text!);
+  const corpus = [input.system, ...input.prompts, ...spoken(input.duringTool), ...spoken(input.after)].join("\n");
+  const fillerHits = CANNED_FILLER.filter((phrase) => corpus.includes(phrase));
+  const instruction = corpus.split("\n").find((line) => line.includes("never a stock phrase")) ?? "(instruction absente)";
+  const chips = input.duringTool
+    .filter((m) => m.kind === "activity" && m.tool?.name)
+    .map((m) => `${m.tool!.name}${m.tool!.spoken ? ` « ${m.tool!.spoken} »` : ""}${m.tool!.ok === true ? "" : " (en cours)"}`);
+  const during = spoken(input.duringTool).map(shortLine);
+  const after = spoken(input.after).map(shortLine);
+  const text = [
+    "journal de session — appel, duplex serveur éteint",
+    "lignes du bot pendant l'outil (aucune n'est un remplissage):",
+    ...(during.length ? during.map((line) => `  - ${line}`) : ["  - (aucune)"]),
+    `puces d'activité, non dites à voix haute: ${chips.length ? chips.join("; ") : "aucune"}`,
+    `instruction: ${instruction.trim()}`,
+    `amorce d'un autre modèle: ${corpus.includes("A short first sentence may already have been spoken") ? "présente" : "absente"}`,
+    `sujets ouverts: ${corpus.includes("still running in the background") ? "présents" : "absents"}`,
+    `remplissage en conserve: ${fillerHits.length === 0 ? "aucun" : fillerHits.join(", ")}`,
+    "lignes du bot après l'outil:",
+    ...(after.length ? after.map((line) => `  - ${line}`) : ["  - (aucune)"]),
+  ].join("\n");
+  return { text, fillerHits };
+}
+
+it("session journal: duplex off, a tool turn speaks no canned filler", async () => {
+  const t = await callFixture(
+    { FAKE_CLAUDE_MODE: "slow", FAKE_CLAUDE_HOLD_AFTER_TOOL: "1", FAKE_CLAUDE_DUMP: "$DATA/call-dump.json" },
+    { ...process.env, SAGAX_VOICE_FULL_DUPLEX: "0" },
+  );
+  try {
+    await t.api("POST", `/api/bots/${t.bot.id}/voice/call`, { threadId: t.thread, callId: CALL_ID, state: "start", language: "fr" });
+    await t.send({
+      text: "[gate:nofiller] quelle est la météo à Montréal",
+      sendId: "send-nofiller-000000001",
+      voiceCall: { callId: CALL_ID, duplex: true, speculative: true, utteranceId: "utt-nofiller-000001", language: "fr" },
+    });
+    await expect.poll(async () => {
+      const all = await t.messages();
+      return all.some((m) => m.kind === "activity" && String(m.tool?.name ?? "").includes("Bash") && m.tool?.ok !== true);
+    }, { timeout: 15_000 }).toBe(true);
+    const duringTool = await t.messages();
+    t.open("nofiller");
+    await expect.poll(async () => (await t.messages()).some((m) => m.role === "bot" && m.kind === "text" && String(m.text ?? "").includes("reply to:")), { timeout: 25_000 }).toBe(true);
+    const dumpPath = join(t.fixture.info.dataDir, "call-dump.json");
+    const system = existsSync(dumpPath) ? String(JSON.parse(readFileSync(dumpPath, "utf8")).systemPrompt ?? "") : "";
+    const journal = fillerSessionJournal({ duringTool, after: await t.messages(), prompts: t.prompts(), system });
+    // The vitest log is the session record: no stock phrase while the tool ran.
+    console.log(`\n${journal.text}\n`);
+    expect(journal.fillerHits).toEqual([]);
+    expect(journal.text).toContain("puces d'activité, non dites à voix haute:");
+    expect(journal.text).toContain("amorce d'un autre modèle: absente");
+    expect(journal.text).toContain("remplissage en conserve: aucun");
+    expect(journal.text).toContain("never a stock phrase");
+    expect((await t.messages()).filter((m) => m.parallelTask)).toEqual([]);
+  } finally {
+    await t.fixture.close();
+  }
+}, 120_000);
