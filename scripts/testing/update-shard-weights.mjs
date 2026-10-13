@@ -60,7 +60,7 @@ export function buildWeights(samples, exists) {
 function windowsRun(id) {
   const gh = (...args) => execFileSync("gh", args, { cwd: ROOT, encoding: "utf8", maxBuffer: 256 * 1024 * 1024 });
   const shards = JSON.parse(gh("run", "view", id, "--json", "jobs")).jobs
-    .filter((job) => /^vitest \(windows-latest, shard \d+\/\d+\)$/.test(job.name));
+    .filter((job) => /^vitest \(windows, shard \d+\/\d+\)$/.test(job.name));
   if (shards.length === 0) throw new Error(`run ${id} has no Windows vitest jobs`);
   return new Map(shards.flatMap((job) => [...parseVitestLog(gh("run", "view", id, "--log", "--job", String(job.databaseId)))]));
 }

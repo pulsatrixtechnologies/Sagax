@@ -54,13 +54,13 @@ export function selectPushScope(files, show) {
   return scope;
 }
 
-// macOS runners are the scarce ones (five at a time for the whole account),
-// and only a couple of test blocks are macOS-only. To keep the shared runner
-// queue short, a PR runs the suite on Linux only and skips the Windows, macOS
-// and iOS jobs (platforms=false). Main pushes, merge groups and manual runs
-// run every platform.
-const ALL_OS = ["macos-latest", "ubuntu-latest", "windows-latest"];
-const PR_OS = ["ubuntu-latest"];
+// Every job runs on a self-hosted runner. The Windows and macOS runners are
+// reserved for releases and manual runs: pull requests, main pushes and merge
+// groups run the suite on Linux only and skip the Windows, macOS and iOS jobs
+// (platforms=false). Only workflow_dispatch runs every platform. The names
+// below are matrix keys that ci.yml maps to self-hosted runner labels.
+const ALL_OS = ["macos", "linux", "windows"];
+const PR_OS = ["linux"];
 const SHA = /^[a-f\d]{40}(?:[a-f\d]{24})?$/i;
 
 const git = (args) => execFileSync("git", args, { encoding: "utf8", timeout: 30_000, stdio: ["ignore", "pipe", "pipe"] });
@@ -91,8 +91,9 @@ async function previousCommitGreen(sha) {
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   let scope = { runtime: true, mobile: true };
-  let vitestOs = ALL_OS;
-  let platforms = true;
+  const manual = process.env.GITHUB_EVENT_NAME === "workflow_dispatch";
+  let vitestOs = manual ? ALL_OS : PR_OS;
+  let platforms = manual;
   if (process.env.GITHUB_EVENT_NAME === "pull_request") {
     try {
       const { pull_request: pr } = JSON.parse(readFileSync(process.env.GITHUB_EVENT_PATH, "utf8"));

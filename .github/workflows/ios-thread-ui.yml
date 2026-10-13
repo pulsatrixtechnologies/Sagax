@@ -1,20 +1,11 @@
 name: iOS thread UI
 
 # The offline iPhone + iPad simulator suite from docs/verification/ios-threads.md.
-# It needs about 90 minutes of one macOS runner, and the account runs only five
-# macOS jobs at a time, so it is not part of every change's CI (ci.yml still
-# runs the Swift tests and the simulator build for iOS changes). It runs every
-# night, after main pushes that touch the app, and by hand from the Actions tab.
+# It needs about 90 minutes of one macOS runner, so it is not part of every
+# change's CI (ci.yml runs the Swift tests and the simulator build on manual
+# runs). macOS jobs run only by hand from the Actions tab.
 on:
   workflow_dispatch:
-  schedule:
-    - cron: "30 20 * * *"
-  push:
-    branches: [main]
-    paths:
-      - "ios/**"
-      - "scripts/verify-ios-thread-navigation-ci.sh"
-      - ".github/workflows/ios-thread-ui.yml"
 
 permissions:
   contents: read
@@ -26,8 +17,10 @@ concurrency:
 
 jobs:
   thread-ui:
+    # Fork guard: a fork pull request never reaches a self-hosted runner.
+    if: (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
     name: iOS thread UI (iPhone + iPad simulators)
-    runs-on: macos-latest
+    runs-on: [self-hosted, macOS, ARM64, ephrunner.mac]
     # The iPhone suite and the iPad roster suite finished inside 60 minutes
     # with the iPad UI suite still running; the whole matrix needs about 85.
     timeout-minutes: 100

@@ -27,6 +27,8 @@ permissions:
 
 jobs:
   analyze:
+    # Fork guard: a fork pull request never reaches a self-hosted runner.
+    if: (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
     name: analyze (${{ matrix.language }})
     runs-on: [self-hosted, linux, x64]
     timeout-minutes: 30
@@ -62,9 +64,10 @@ jobs:
     # Swift needs a macOS runner and a build (no build-mode none for Swift).
     # macOS runners are the scarcest, so Swift runs on main pushes, the weekly
     # schedule and manual runs, not on every PR.
-    if: github.event_name != 'pull_request'
+    # macOS runs on manual dispatch only.
+    if: (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && (github.event_name == 'workflow_dispatch')
     name: analyze (${{ matrix.language }})
-    runs-on: [self-hosted, macos, arm64]
+    runs-on: [self-hosted, macOS, ARM64, ephrunner.mac]
     timeout-minutes: 60
     permissions:
       contents: read

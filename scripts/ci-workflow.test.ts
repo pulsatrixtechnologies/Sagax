@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import { parse } from "yaml";
 
 const workflow = parse(readFileSync(new URL("../.github/workflows/ci.yml", import.meta.url), "utf8"));
+const FORK = "(github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)";
 const requiredRuntimeJobs = ["vitest", "behavior-evals", "packaged-server", "windows-cua", "electron-smokes", "voice-acceptance"];
 
 function runGate(needs: Record<string, unknown>) {
@@ -60,7 +61,7 @@ describe("CI concurrency", () => {
   });
 
   it("allows cancelled summary jobs to stop without skipping failure reporting", () => {
-    expect(workflow.jobs.gate.if).toBe("${{ !cancelled() }}");
+    expect(workflow.jobs.gate.if).toBe(`${FORK} && (!cancelled())`);
     expect(workflow.jobs.gate.needs).toEqual(["static", ...requiredRuntimeJobs]);
   });
 
@@ -71,12 +72,12 @@ describe("CI concurrency", () => {
     expect(workflow.jobs.vitest.strategy.matrix).toEqual({
       os: "${{ fromJSON(needs.static.outputs.vitest_os) }}", shard: [1, 2, 3, 4],
     });
-    expect(workflow.jobs.vitest["timeout-minutes"]).toBe("${{ matrix.os == 'ubuntu-latest' && 30 || 35 }}");
+    expect(workflow.jobs.vitest["timeout-minutes"]).toBe("${{ matrix.os == 'linux' && 30 || 35 }}");
   });
 
   it("keeps each PR to one macOS job unless native code changed", () => {
     const macosJobs = Object.entries(workflow.jobs as Record<string, { "runs-on": string; strategy?: { matrix?: { os?: unknown } } }>)
-      .filter(([, job]) => job["runs-on"] === "macos-latest" || JSON.stringify(job.strategy?.matrix?.os ?? "").includes("macos"))
+      .filter(([, job]) => JSON.stringify(job["runs-on"]).includes("ephrunner.mac") && !JSON.stringify(job["runs-on"]).includes("matrix.os"))
       .map(([name]) => name);
     // Sagax keeps its native apps: the iOS build runs only when ios/ changed.
     expect(macosJobs.sort()).toEqual(["electron-smokes", "ios"]);
@@ -185,7 +186,7 @@ describe("CI concurrency", () => {
 
   it("always starts the workflow and validates selection and docs before fanout", () => {
     expect(workflow.on.pull_request).toBeNull();
-    expect(workflow.jobs.static.if).toBeUndefined();
+    expect(workflow.jobs.static.if).toBe(FORK);
     expect(workflow.jobs.static.steps[0].with["fetch-depth"]).toBe(0);
     expect(workflow.jobs.static.steps.find((step: { id?: string }) => step.id === "scope").run).toBe("node scripts/ci-scope.mjs");
     expect(workflow.jobs.static.outputs).toEqual({
@@ -201,7 +202,7 @@ describe("CI concurrency", () => {
       // not part of the merge gate.
       if (name === "deploy-composio-broker") {
         expect(job.needs).toEqual(["control-plane"]);
-        expect(job.if).toBe("github.event_name == 'push' && github.ref == 'refs/heads/main'");
+        expect(job.if).toBe(`${FORK} && (github.event_name == 'push' && github.ref == 'refs/heads/main')`);
         expect(workflow.jobs.gate.needs).not.toContain(name);
         // Without the Cloudflare token the deploy is skipped with a warning, not failed:
         // every step after the token check waits on it.
@@ -214,12 +215,14 @@ describe("CI concurrency", () => {
       }
       expect(job.needs).toBe("static");
       const selector = `needs.static.outputs.${["ios", "android"].includes(name) ? "mobile" : "runtime"} == 'true'`;
-      // Windows, macOS and iOS jobs run on main pushes and merge groups only.
-      expect(job.if).toBe(["windows-cua", "electron-smokes", "ios"].includes(name)
-        ? `${selector} && needs.static.outputs.platforms == 'true'` : selector);
+      // Windows, macOS and iOS jobs run on manual dispatch only.
+        const extra = ["windows-cua", "electron-smokes", "ios"].includes(name)
+        ? " && needs.static.outputs.platforms == 'true'"
+        : name === "cloudflared-linux-arm64" ? " && github.event_name == 'workflow_dispatch'" : "";
+      expect(job.if).toBe(`${FORK} && (${selector}${extra})`);
       if (name === "ios") {
         const ios = job as { "runs-on"?: string; steps?: { run?: string }[] };
-        expect(ios["runs-on"]).toBe("macos-latest");
+        expect(ios["runs-on"]).toEqual(["self-hosted", "macOS", "ARM64", "ephrunner.mac"]);
         expect(ios.steps?.some((step) => step.run?.includes("swift test --package-path ios"))).toBe(true);
       }
     }

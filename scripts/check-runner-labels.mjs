@@ -6,11 +6,46 @@ import { join } from 'node:path'
 
 const dir = process.argv[2] ?? '.github/workflows'
 const hosted = /^(ubuntu-|windows-|macos-)|-latest$/i
+// Sagax is public: a fork pull request must never reach a self-hosted runner.
+const FORK_GUARD = "(github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)"
 const problems = []
+
+// Job-level fork guard and pull_request_target safety, per workflow file.
+function checkForkSafety(path, lines) {
+  const jobsAt = lines.indexOf('jobs:')
+  if (jobsAt < 0) return
+  const starts = []
+  for (let i = jobsAt + 1; i < lines.length; i++) if (/^  [A-Za-z0-9_-]+:\s*$/.test(lines[i])) starts.push(i)
+  starts.push(lines.length)
+  for (let n = 0; n + 1 < starts.length; n++) {
+    const block = lines.slice(starts[n], starts[n + 1])
+    const name = block[0].trim().replace(/:$/, '')
+    if (!block.some((l) => /^    runs-on:/.test(l))) continue // reusable-workflow call
+    const at = block.findIndex((l) => /^    if:/.test(l))
+    let cond = ''
+    if (at >= 0) {
+      cond = block[at].replace(/^    if:/, '')
+      for (let k = at + 1; k < block.length && /^      /.test(block[k]); k++) cond += ' ' + block[k]
+    }
+    const flat = cond.replace(/\s+/g, ' ').replace(/^ ?(>-|>|\|)? ?(\$\{\{ ?)?/, '')
+    if (!flat.startsWith(FORK_GUARD + ' &&') && flat.trim() !== FORK_GUARD)
+      problems.push(`${path}:${starts[n] + 1}: job ${name} lacks the leading fork guard: if: ${FORK_GUARD} && (...)`)
+  }
+  // pull_request_target and workflow_run carry secrets and write tokens: they must
+  // never check out or run the pull request's code.
+  const text = lines.join('\n')
+  if (/\b(pull_request_target|workflow_run)\b/.test(text)) {
+    lines.forEach((l, i) => {
+      if (/^\s*ref:.*(pull_request\.head|head_sha|head_ref|head\.sha|head\.ref|refs\/pull\/)/.test(l))
+        problems.push(`${path}:${i + 1}: pull_request_target/workflow_run must not check out pull request code: ${l.trim()}`)
+    })
+  }
+}
 
 for (const file of readdirSync(dir).filter((f) => /\.ya?ml$/.test(f)).sort()) {
   const path = join(dir, file)
   const lines = readFileSync(path, 'utf8').split('\n')
+  checkForkSafety(path, lines)
   lines.forEach((line, i) => {
     const m = line.match(/^(\s*)runs-on:\s*(.*)$/)
     if (!m || line.trim().startsWith('#')) return
@@ -56,4 +91,4 @@ if (problems.length) {
   for (const p of problems) console.error(`  ${p}`)
   process.exit(1)
 }
-console.log('runner guard: every job runs on a self-hosted runner')
+console.log('runner guard: every job runs on a self-hosted runner behind the fork guard')

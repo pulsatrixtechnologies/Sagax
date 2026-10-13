@@ -25,8 +25,10 @@ permissions:
 
 jobs:
   pack-and-prove:
+    # Fork guard: a fork pull request never reaches a self-hosted runner.
+    if: (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
     name: assemble, pack, run standalone
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64]
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -81,8 +83,8 @@ jobs:
   publish-npm:
     name: publish to npm
     needs: pack-and-prove
-    if: startsWith(github.ref, 'refs/tags/v')
-    runs-on: ubuntu-latest
+    if: (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && (startsWith(github.ref, 'refs/tags/v'))
+    runs-on: [self-hosted, linux, x64]
     timeout-minutes: 5
     permissions:
       contents: read
@@ -109,8 +111,8 @@ jobs:
   update-github-release:
     name: update GitHub release
     needs: publish-npm
-    if: startsWith(github.ref, 'refs/tags/v')
-    runs-on: ubuntu-latest
+    if: (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && (startsWith(github.ref, 'refs/tags/v'))
+    runs-on: [self-hosted, linux, x64]
     timeout-minutes: 5
     permissions:
       contents: write
