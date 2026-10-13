@@ -3,7 +3,7 @@
 Workspaces are the per-person volumes (`SAGAX_SANDBOX_DISK_MB`, default
 2048). On the pool they are PersistentVolumeClaims in `sagax-sandboxes`,
 reclaim `Retain`, on a disk class that detaches. The Docker volumes on
-the GOX VM stay the copy of record until that person has been cut over
+the production VM stay the copy of record until that person has been cut over
 and one off-site backup of the PVC has succeeded.
 
 ## What is backed up
@@ -19,7 +19,7 @@ Velero `Schedule` `sagax-sandboxes-daily` (`deploy/k8s/sandboxes/base/velero-sch
   record fills it. The credential secret `velero-azure` is created
   outside git.
 
-The GOX VM's existing disk backup is unchanged by this document. Do not
+The production VM's existing disk backup is unchanged by this document. Do not
 turn it off as part of the sandbox cutover.
 
 ## Targets
@@ -53,7 +53,7 @@ missed it.
 
 Run before step 10 of the cutover, and once a quarter after that. The
 drill namespace is `sagax-sandboxes-drill`. Delete it at the end. Do not
-restore over the GOX Docker volumes.
+restore over the production Docker volumes.
 
 1. Confirm `SagaxSandboxBackupStale` is not firing. The alert exists only
    after Velero has published one success timestamp; the drill is what
@@ -73,7 +73,7 @@ night's backup is the one that failed (`SagaxSandboxBackupStale`).
 
 If a restore replaced a live claim, stop that person's sandbox and
 restore the previous backup the same way. Estimate another **15–30
-minutes** for that person. If the Docker volume on the GOX VM still has
+minutes** for that person. If the Docker volume on the production VM still has
 their files, copy from there with
 `scripts/sandbox-workspace-migrate.ts --direction pvc-to-docker` and set
 `SAGAX_SANDBOX_ROUTE=docker` for the rollback in `cutover-rollback.md`.

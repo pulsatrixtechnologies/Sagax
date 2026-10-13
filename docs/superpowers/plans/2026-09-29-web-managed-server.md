@@ -71,50 +71,50 @@ function store(start = 1_000) {
 describe("email one-time codes", () => {
   it("accepts the code once, for that address only", () => {
     const { s } = store();
-    const issued = s.issue("Zach@Gox.ca", "10.0.0.1");
+    const issued = s.issue("Zach@example.com", "10.0.0.1");
     expect(issued).toEqual({ ok: true, code: "12345678" });
-    expect(s.verify("other@gox.ca", "12345678").ok).toBe(false);
-    expect(s.verify("zach@gox.ca", "12345678")).toEqual({ ok: true });
-    expect(s.verify("zach@gox.ca", "12345678").ok).toBe(false);
+    expect(s.verify("other@example.com", "12345678").ok).toBe(false);
+    expect(s.verify("zach@example.com", "12345678")).toEqual({ ok: true });
+    expect(s.verify("zach@example.com", "12345678").ok).toBe(false);
   });
 
   it("expires after ten minutes", () => {
     const { s, tick } = store();
-    s.issue("zach@gox.ca", "src");
+    s.issue("zach@example.com", "src");
     tick(OTP_TTL_MS + 1);
-    expect(s.verify("zach@gox.ca", "12345678")).toMatchObject({ ok: false, status: 401 });
+    expect(s.verify("zach@example.com", "12345678")).toMatchObject({ ok: false, status: 401 });
   });
 
   it("burns the code after five wrong tries", () => {
     const { s } = store();
-    s.issue("zach@gox.ca", "src");
-    for (let i = 0; i < 5; i++) expect(s.verify("zach@gox.ca", "00000000").ok).toBe(false);
-    expect(s.verify("zach@gox.ca", "12345678")).toMatchObject({ ok: false });
+    s.issue("zach@example.com", "src");
+    for (let i = 0; i < 5; i++) expect(s.verify("zach@example.com", "00000000").ok).toBe(false);
+    expect(s.verify("zach@example.com", "12345678")).toMatchObject({ ok: false });
   });
 
   it("refuses a malformed code without counting it as a guess", () => {
     const { s } = store();
-    s.issue("zach@gox.ca", "src");
-    expect(s.verify("zach@gox.ca", "12ab")).toMatchObject({ ok: false, status: 400 });
-    expect(s.verify("zach@gox.ca", "12345678")).toEqual({ ok: true });
+    s.issue("zach@example.com", "src");
+    expect(s.verify("zach@example.com", "12ab")).toMatchObject({ ok: false, status: 400 });
+    expect(s.verify("zach@example.com", "12345678")).toEqual({ ok: true });
   });
 
   it("limits sends per address and per source", () => {
     const { s, tick } = store();
-    for (let i = 0; i < 3; i++) expect(s.issue("zach@gox.ca", `s${i}`).ok).toBe(true);
-    expect(s.issue("zach@gox.ca", "s9")).toMatchObject({ ok: false, status: 429 });
-    for (let i = 0; i < 10; i++) s.issue(`p${i}@gox.ca`, "office");
-    expect(s.issue("p99@gox.ca", "office")).toMatchObject({ ok: false, status: 429 });
+    for (let i = 0; i < 3; i++) expect(s.issue("zach@example.com", `s${i}`).ok).toBe(true);
+    expect(s.issue("zach@example.com", "s9")).toMatchObject({ ok: false, status: 429 });
+    for (let i = 0; i < 10; i++) s.issue(`p${i}@example.com`, "office");
+    expect(s.issue("p99@example.com", "office")).toMatchObject({ ok: false, status: 429 });
     tick(15 * 60_000 + 1);
-    expect(s.issue("zach@gox.ca", "s10").ok).toBe(true);
+    expect(s.issue("zach@example.com", "s10").ok).toBe(true);
   });
 
   it("keeps only the newest code for an address", () => {
     const { s } = store();
-    s.issue("zach@gox.ca", "a");
-    s.issue("zach@gox.ca", "b");
-    expect(s.verify("zach@gox.ca", "12345678").ok).toBe(false);
-    expect(s.verify("zach@gox.ca", "87654321")).toEqual({ ok: true });
+    s.issue("zach@example.com", "a");
+    s.issue("zach@example.com", "b");
+    expect(s.verify("zach@example.com", "12345678").ok).toBe(false);
+    expect(s.verify("zach@example.com", "87654321")).toEqual({ ok: true });
   });
 });
 ```
@@ -227,12 +227,12 @@ import { mailReady, publicMailStatus, resolveMailSettings } from "./mail-config.
 describe("mail settings", () => {
   it("lets the environment win and reports which fields it manages", () => {
     const r = resolveMailSettings({
-      file: { provider: "sendgrid", from: "web@gox.ca", sendgrid: { apiKey: "SG.file" } },
-      env: { SAGAX_MAIL_PROVIDER: "smtp", SAGAX_SMTP_HOST: "smtp.gox.ca", SAGAX_SMTP_PORT: "587", SAGAX_SMTP_SECURE: "starttls", SAGAX_SMTP_PASSWORD: "pw" },
+      file: { provider: "sendgrid", from: "web@example.com", sendgrid: { apiKey: "SG.file" } },
+      env: { SAGAX_MAIL_PROVIDER: "smtp", SAGAX_SMTP_HOST: "smtp.example.com", SAGAX_SMTP_PORT: "587", SAGAX_SMTP_SECURE: "starttls", SAGAX_SMTP_PASSWORD: "pw" },
     });
     expect(r.settings.provider).toBe("smtp");
-    expect(r.settings.from).toBe("web@gox.ca");
-    expect(r.settings.smtp).toMatchObject({ host: "smtp.gox.ca", port: 587, secure: "starttls", password: "pw" });
+    expect(r.settings.from).toBe("web@example.com");
+    expect(r.settings.smtp).toMatchObject({ host: "smtp.example.com", port: 587, secure: "starttls", password: "pw" });
     expect(r.envManaged.sort()).toEqual(["provider", "smtp.host", "smtp.password", "smtp.port", "smtp.secure"]);
   });
 
@@ -274,12 +274,12 @@ describe("mailer", () => {
 
   it("sends through SendGrid's HTTP API", async () => {
     const fetchImpl = vi.fn(async () => new Response(null, { status: 202 }));
-    const mailer = createMailer({ provider: "sendgrid", from: "pulsa@gox.ca", sendgrid: { apiKey: "SG.k" } }, { fetchImpl: fetchImpl as unknown as typeof fetch })!;
-    await mailer.send({ to: "zach@gox.ca", subject: "Code", text: "12345678" });
+    const mailer = createMailer({ provider: "sendgrid", from: "pulsa@example.com", sendgrid: { apiKey: "SG.k" } }, { fetchImpl: fetchImpl as unknown as typeof fetch })!;
+    await mailer.send({ to: "zach@example.com", subject: "Code", text: "12345678" });
     const [url, init] = fetchImpl.mock.calls[0] as unknown as [string, RequestInit];
     expect(url).toBe("https://api.sendgrid.com/v3/mail/send");
     expect((init.headers as Record<string, string>).authorization).toBe("Bearer SG.k");
-    expect(JSON.parse(String(init.body))).toMatchObject({ from: { email: "pulsa@gox.ca" }, personalizations: [{ to: [{ email: "zach@gox.ca" }] }], subject: "Code" });
+    expect(JSON.parse(String(init.body))).toMatchObject({ from: { email: "pulsa@example.com" }, personalizations: [{ to: [{ email: "zach@example.com" }] }], subject: "Code" });
   });
 
   it("reports a SendGrid refusal without leaking the key", async () => {
@@ -337,19 +337,19 @@ import { createServerEmailSignIn } from "./account-signin.ts";
 import { EmailOtpStore } from "./email-otp.ts";
 
 describe("server-issued email sign-in", () => {
-  const allow = { admins: ["jc@gox.ca"], members: ["@gox.ca"] };
+  const allow = { admins: ["jc@example.com"], members: ["@example.com"] };
   it("is disabled until mail is configured", () => {
     expect(createServerEmailSignIn({ allow, otp: new EmailOtpStore(), mailer: () => null }).enabled()).toBe(false);
   });
   it("mails a code to a welcome address and signs it in with the right scopes", async () => {
     const send = vi.fn(async () => undefined);
     const otp = new EmailOtpStore({ random: () => "24681357" });
-    const signIn = createServerEmailSignIn({ allow, otp, mailer: () => ({ send }), publicUrl: () => "https://pulsa.gox.ca" });
+    const signIn = createServerEmailSignIn({ allow, otp, mailer: () => ({ send }), publicUrl: () => "https://sagax.example.com" });
     expect(signIn.enabled()).toBe(true);
-    expect(await signIn.start("zach@gox.ca", "src")).toEqual({ ok: true });
-    expect(send).toHaveBeenCalledWith(expect.objectContaining({ to: "zach@gox.ca", text: expect.stringContaining("24681357") }));
-    expect(send.mock.calls[0]![0].text).toContain("https://pulsa.gox.ca/pair");
-    expect(await signIn.verify("zach@gox.ca", "24681357")).toEqual({ ok: true, email: "zach@gox.ca", userId: "", scopes: ["client"] });
+    expect(await signIn.start("zach@example.com", "src")).toEqual({ ok: true });
+    expect(send).toHaveBeenCalledWith(expect.objectContaining({ to: "zach@example.com", text: expect.stringContaining("24681357") }));
+    expect(send.mock.calls[0]![0].text).toContain("https://sagax.example.com/pair");
+    expect(await signIn.verify("zach@example.com", "24681357")).toEqual({ ok: true, email: "zach@example.com", userId: "", scopes: ["client"] });
   });
   it("never mails an address that is not on the list", async () => {
     const send = vi.fn(async () => undefined);
@@ -359,8 +359,8 @@ describe("server-issued email sign-in", () => {
   });
   it("reports a mail failure as 502 and keeps the code unusable", async () => {
     const signIn = createServerEmailSignIn({ allow, otp: new EmailOtpStore({ random: () => "11112222" }), mailer: () => ({ send: async () => { throw new Error("the mail server refused the message: 550"); } }) });
-    expect(await signIn.start("zach@gox.ca", "src")).toMatchObject({ ok: false, status: 502 });
-    expect((await signIn.verify("zach@gox.ca", "11112222")).ok).toBe(false);
+    expect(await signIn.start("zach@example.com", "src")).toMatchObject({ ok: false, status: 502 });
+    expect((await signIn.verify("zach@example.com", "11112222")).ok).toBe(false);
   });
 });
 ```
@@ -382,11 +382,11 @@ For the last test: when sending fails, `start` voids the issued code. Call `otp.
     - text: `<inviter> invited you. Sign in with this address at <publicUrl>/pair within 7 days.`
     - A send failure does not undo the invite. The route's JSON gains `mailed: boolean`.
   - **`AppConfig` (`server/config.ts`):** add `mail?: MailSettings` to the type and the Zod schema. It must round-trip through `saveConfig` (the save/patch logic belongs to Task 4).
-- Append an e2e case to `server/org-identity.e2e.test.ts`: boot with `SAGAX_MAIL_PROVIDER=sendgrid`, `SAGAX_MAIL_FROM`, `SAGAX_SENDGRID_API_KEY`, and `SAGAX_SIGNIN_EMAILS=jc@gox.ca`. Stub `globalThis.fetch` for `api.sendgrid.com` if the harness runs in-process. If it runs as a child process, add a `mailer` test seam the harness can set, e.g. env `SAGAX_MAIL_CAPTURE_FILE` that writes messages to a file instead of sending; name it in the report. Then:
-  - `POST /api/auth/email/start` for jc@gox.ca;
+- Append an e2e case to `server/org-identity.e2e.test.ts`: boot with `SAGAX_MAIL_PROVIDER=sendgrid`, `SAGAX_MAIL_FROM`, `SAGAX_SENDGRID_API_KEY`, and `SAGAX_SIGNIN_EMAILS=jc@example.com`. Stub `globalThis.fetch` for `api.sendgrid.com` if the harness runs in-process. If it runs as a child process, add a `mailer` test seam the harness can set, e.g. env `SAGAX_MAIL_CAPTURE_FILE` that writes messages to a file instead of sending; name it in the report. Then:
+  - `POST /api/auth/email/start` for jc@example.com;
   - read the code from the captured message;
   - `POST /api/auth/email/verify`;
-  - expect a session whose `principalId` is the local operator's principal (profile email jc@gox.ca).
+  - expect a session whose `principalId` is the local operator's principal (profile email jc@example.com).
 - [ ] **Step 4:** Run `npx vitest run server/account-signin.test.ts server/email-otp.test.ts server/org-identity.e2e.test.ts server/org-routes.test.ts` and `pnpm -s typecheck`.
 - [ ] **Step 5: Commit** `feat: sign in by email with codes this server sends`, followed by the Co-Authored-By line.
 
@@ -438,7 +438,7 @@ describe("first admin", () => {
     expect(shouldIssueFirstAdminCode({ desktopManaged: false, liveSessions: 0, admins: [] })).toBe(true);
     expect(shouldIssueFirstAdminCode({ desktopManaged: true, liveSessions: 0, admins: [] })).toBe(false);
     expect(shouldIssueFirstAdminCode({ desktopManaged: false, liveSessions: 1, admins: [] })).toBe(false);
-    expect(shouldIssueFirstAdminCode({ desktopManaged: false, liveSessions: 0, admins: ["jc@gox.ca"] })).toBe(false);
+    expect(shouldIssueFirstAdminCode({ desktopManaged: false, liveSessions: 0, admins: ["jc@example.com"] })).toBe(false);
   });
   it("prints one line with the pairing link", () => {
     const line = firstAdminLine({ publicUrl: "http://localhost:8080", code: "ABCD-EFGH-JKLM", expiresAt: Date.UTC(2026, 8, 29, 12, 0) });

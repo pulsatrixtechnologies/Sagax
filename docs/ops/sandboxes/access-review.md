@@ -15,7 +15,7 @@ change records. An empty template is not a review.
   the node pool, or read a Velero backup.
 - On Azure: the role assignments on the cluster, the node resource
   group, and the Blob account `REPLACE_STORAGE_ACCOUNT`.
-- On the GOX VM, until the socket is removed: who is in the Docker
+- On the production VM, until the socket is removed: who is in the Docker
   group that owns `/var/run/docker.sock`.
 - The HMAC key file. It stays mode 0440 and is never copied into a
   ticket, a log, or a change record.
@@ -31,7 +31,7 @@ change records. An empty template is not a review.
 3. List Azure role assignments on the cluster and the backup account.
    Owner and Contributor on the backup account should be the backup
    identity and the two operators, not the whole directory.
-4. Confirm the GOX NetworkPolicy is the subnet from the change record,
+4. Confirm the production NetworkPolicy is the subnet from the change record,
    not `192.0.2.10/32`, and that no Service of type LoadBalancer in
    `sagax-sandboxes` is public.
 5. Confirm `sagax-sandboxd` is still the only workload with a service

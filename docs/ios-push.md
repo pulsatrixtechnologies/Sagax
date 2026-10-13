@@ -4,7 +4,7 @@ The phone app shows notifications by itself only while it runs or lingers in
 the background with its live stream open. Once it is closed, or suspended
 for long, only Apple Push Notification service (APNs) can reach it. The
 organization server (Sagax in server mode, the `pulsabot` container on the
-GOX VM) therefore sends real APNs pushes.
+production VM) therefore sends real APNs pushes.
 
 ## What gets pushed
 
@@ -150,7 +150,7 @@ nothing: phones still register, and the first push that would have gone out
 logs one line `push: APNs is not configured (...)`; after that, quiet. With
 them, startup logs `push: APNs on (...)`.
 
-## On the GOX VM (Perspicax infra)
+## On the production VM (Perspicax infra)
 
 The `pulsabot` container already reads its secrets from
 `/opt/pulsatrix/secrets/pulsabot` (mounted at `/run/secrets/pulsabot`, files
@@ -163,7 +163,7 @@ by the orchestrator, not by this pull request.
 
    ```sh
    export AZURE_CONFIG_DIR=~/.azure-pulsatrix
-   vault=$(az keyvault list --resource-group rg-pulsatrix-gox --query '[0].name' -o tsv)
+   vault=$(az keyvault list --resource-group <RESOURCE_GROUP> --query '[0].name' -o tsv)
    az keyvault secret set --vault-name "$vault" --name sagax-apns-key-p8 \
      --file AuthKey_XXXXXXXXXX.p8 --encoding base64 --output none
    az keyvault secret set --vault-name "$vault" --name sagax-apns-key-id \
@@ -216,7 +216,7 @@ by the orchestrator, not by this pull request.
 Nothing can be checked end to end without the real key. With the key on the
 VM and a TestFlight build:
 
-1. Open the app signed in to GOX once (it registers: `GET /api/push/devices`
+1. Open the app signed in to production once (it registers: `GET /api/push/devices`
    lists the phone, token masked).
 2. Close the app (swipe it away), then from another account send a direct
    message, then a nudge. The phone shows both; the nudge plays the nudge

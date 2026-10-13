@@ -1,7 +1,7 @@
-# Cutover and rollback: GOX sandboxes to the Kubernetes pool
+# Cutover and rollback: production sandboxes to the Kubernetes pool
 
-Production today is the GOX VM `azpxcgoxglley5tfv6mykvm` in
-`RG-PULSATRIX-GOX` (Canada Central, `Standard_D4pls_v6`). Sagax, the
+Production today is the production VM `<VM_NAME>` in
+`<RESOURCE_GROUP>` (Canada Central, `Standard_D4pls_v6`). Sagax, the
 provisioner and the sandboxes share that VM, and the provisioner is the
 only container with the Docker socket (`docs/user-sandbox.md`).
 
@@ -13,7 +13,7 @@ Do not apply the manifests, create a cluster, or run the `az` commands
 below until the change record in `change-management.md` is approved.
 This repository does not do that apply.
 
-Two provisioners run side by side. The GOX compose service stays
+Two provisioners run side by side. The production compose service stays
 `SANDBOX_BACKEND=docker` and keeps the Docker socket. A second process,
 `deploy/k8s/provisioner/`, runs with `SANDBOX_BACKEND=kubernetes` and
 talks to the Kubernetes API (`server/sandboxd-k8s.ts`). That value does
@@ -63,7 +63,7 @@ the digest in the change record. The build script does not push.
 Figures are estimates for a cutover done while the driver exists, from
 the idle-stop default (10 minutes), the audit's node-boot range (30–90
 seconds), a workspace copy of at most 2 GiB on the same region, and a
-Sagax container recreate. They are not measurements from the GOX VM.
+Sagax container recreate. They are not measurements from the production VM.
 
 | Step | What changes | Who is interrupted | Estimate |
 |---|---|---|---|
@@ -121,7 +121,7 @@ used by this VM). Raising it is a separate change record.
 
 ```bash
 az aks nodepool add \
-  --resource-group RG-PULSATRIX-GOX \
+  --resource-group <RESOURCE_GROUP> \
   --cluster-name REPLACE_CLUSTER \
   --name sbox \
   --mode User \
