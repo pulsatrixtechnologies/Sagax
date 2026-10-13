@@ -121,7 +121,7 @@ add({ id: "sidebar-bot-menu", phase: "main", note: "a bot row's actions menu (th
 add({ id: "sidebar-bot-context-menu", phase: "main", note: "right-click on a bot row",
   open: async (ctx) => { await ctx.rightClick({ text: /^Helix/, tag: "[role=button],button,a,li" }); } });
 add({ id: "sidebar-section-menu", phase: "main", note: "right-click on a section header (sections editing)",
-  open: async (ctx) => { await ctx.rightClick({ text: "ADMINISTRATION", tag: "button,[role=button],h2,h3,div,span" }); } });
+  open: async (ctx) => { await ctx.rightClick({ text: /^Administration$/i, tag: "button,[role=button],h2,h3,div,span" }); } });
 add({ id: "sidebar-profile-menu", phase: "main", note: "the account menu (sidebar footer)",
   open: async (ctx) => { await ctx.click('[aria-label="Parity Person"]'); } });
 add({ id: "sidebar-new-menu", phase: "main", note: "sidebar New (+): compose-to picker (also Cmd-N)",
@@ -317,6 +317,46 @@ add({ id: "settings-myConnections", phase: "main", note: "Settings > myConnectio
     if (current !== "myConnections") return { skip: `section myConnections not shown on this page (opened ${current})` };
     await ctx.sleep(700);
   } });
+
+// The simplification pass (2026-10-12): the persona categories the loop
+// above does not name, every Settings section the page can list, and the
+// same on the organization server (where Organization, People, Mail and
+// the persona's Perspicax profiles have their content). Appended so the
+// earlier numbers stay put.
+const PERSONA_ALL = ["overview", "appearance", "soul", "rules", "skills", "memory", "files", "access", "model", "permissions", "voice", "perspicax", "history", "usage"];
+// a deep link opens the persona editor on the category (store: toggleSettings)
+const openPersona = async (ctx, category) => {
+  await ctx.dispatch({ type: "toggleSettings", open: true, section: category });
+  const selector = `[data-persona-category="${category}"]`;
+  await ctx.waitFor(`Boolean(document.querySelector(${jsLiteral(selector)}))`, { timeoutMs: 8_000 }).catch(() => {});
+  if (!(await ctx.exists(selector))) return { skip: `category ${category} not listed for this bot` };
+  await ctx.click(selector);
+  await ctx.sleep(1200);
+};
+for (const category of PERSONA_ALL) {
+  add({ id: `persona-${category}`, phase: "main", note: `persona editor > ${category}`, open: (ctx) => openPersona(ctx, category) });
+}
+for (const category of ["overview", "appearance", "soul", "rules", "skills", "memory", "files", "access", "model", "permissions", "voice", "perspicax", "history", "usage"]) {
+  add({ id: `org-persona-${category}`, phase: "main", org: true, note: `persona editor > ${category} (organization server)`, open: (ctx) => openPersona(ctx, category) });
+}
+for (const section of ["memory", "privacy", "notifications"]) {
+  add({ id: `settings-${section}`, phase: "main", note: `Settings > ${section}`,
+    open: async (ctx) => {
+      await openSettings(ctx, section, { retries: 3 });
+      const current = await ctx.eval(`__parity.state().appSettingsSection ?? null`);
+      if (current && current !== section) return { skip: `section ${section} not shown on this page (opened ${current})` };
+      await ctx.sleep(500);
+    } });
+}
+for (const section of ["general", "memory", "privacy", "notifications", "organization", "appearance", "experimental", "connections", "decisionModel", "engines", "companion", "computer", "usage", "backups", "myConnections"]) {
+  add({ id: `org-settings-${section}`, phase: "main", org: true, note: `Settings > ${section} (organization server)`,
+    open: async (ctx) => {
+      await openSettings(ctx, section, { retries: 6 });
+      const current = await ctx.eval(`__parity.state().appSettingsSection ?? null`);
+      if (current !== section) return { skip: `section ${section} not shown on this page (opened ${current})` };
+      await ctx.sleep(700);
+    } });
+}
 
 // notes for the spec: not capturable here
 export const NOT_CAPTURED = [

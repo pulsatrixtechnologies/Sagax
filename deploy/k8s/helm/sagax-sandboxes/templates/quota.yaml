@@ -1,0 +1,37 @@
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: sagax-sandboxes
+  namespace: {{ .Values.sandboxNamespace | quote }}
+  labels:
+    {{- include "sagax-sandboxes.labels" . | nindent 4 }}
+spec:
+  hard:
+    pods: {{ .Values.quota.pods | quote }}
+    requests.cpu: {{ .Values.quota.requestsCpu | quote }}
+    requests.memory: {{ .Values.quota.requestsMemory | quote }}
+    requests.storage: {{ .Values.quota.requestsStorage | quote }}
+    persistentvolumeclaims: {{ .Values.quota.persistentVolumeClaims | quote }}
+---
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: sagax-sandboxes
+  namespace: {{ .Values.sandboxNamespace | quote }}
+  labels:
+    {{- include "sagax-sandboxes.labels" . | nindent 4 }}
+spec:
+  limits:
+    - type: Container
+      max:
+        cpu: {{ .Values.sandbox.cpu | quote }}
+        memory: {{ .Values.sandbox.memory | quote }}
+      default:
+        cpu: {{ .Values.sandbox.cpu | quote }}
+        memory: {{ .Values.sandbox.memory | quote }}
+      defaultRequest:
+        cpu: {{ .Values.sandbox.cpu | quote }}
+        memory: {{ .Values.sandbox.memory | quote }}
+    - type: PersistentVolumeClaim
+      max:
+        storage: {{ .Values.sandbox.workspace | quote }}

@@ -3,7 +3,9 @@
 import { describe, expect, it } from "vitest";
 
 import { peopleRoutes, usageByPerson, type PeopleDeps, type PersonFacts } from "./org-admin-people.ts";
+import { botLook, botPersona } from "./org-admin-look.ts";
 import type { AdminBot } from "./org-admin-routes.ts";
+import { routeNames } from "./org-admin-console.ts";
 import { fakeConsole } from "./testing/console-context.ts";
 import type { UsageRow } from "./usage-ledger.ts";
 
@@ -16,6 +18,7 @@ const bot = (id: string, owner: string): { bot: AdminBot; reach: { ownerPrincipa
   bot: {
     id, name: id, owner: { principalId: owner, sub: null, name: owner }, ownerRole: "member", engine: { instanceId: "claude", driverKind: "claudeAgent", installed: true },
     model: null, access: "org-key", mcpProfiles: [], grants: [], sections: [], routines: 0, createdAt: null, lastActivityAt: null, status: "active", label: null, threads: 1,
+    look: botLook({ name: id, color: "green" }, () => false), persona: botPersona({ name: id }),
   },
   reach: { ownerPrincipalId: owner, grantTargets: [], sectionMemberTargets: [] },
 });
@@ -120,5 +123,66 @@ describe("people", () => {
       { ...usage("x", NOW, 2), trigger: { kind: "owner" } },
     ];
     expect(usageByPerson(rows).get("pr_bob")).toEqual({ turns: 2, costUsd: 3, lastAt: NOW });
+  });
+});
+
+describe("pause or resume every routine of a person (2026-10-11)", () => {
+  function withRoutines() {
+    const base = setup();
+    const state = new Map([["r1", true], ["r2", true], ["r3", false], ["r4", true]]);
+    const calls: Array<{ id: string; enabled: boolean; actor: string }> = [];
+    const deps: PeopleDeps = {
+      ...base.deps,
+      routines: () => [
+        { id: "r1", name: "Digest", botId: "b1", runAs: "pr_bob", enabled: state.get("r1")! },
+        { id: "r2", name: "Triage", botId: "b2", runAs: "pr_bob", enabled: state.get("r2")! },
+        { id: "r3", name: "Paused already", botId: "b1", runAs: "pr_bob", enabled: state.get("r3")! },
+        { id: "r4", name: "Alice's", botId: "a1", runAs: "pr_alice", enabled: state.get("r4")! },
+      ],
+      setRoutineEnabled: (id, enabled, actor) => { calls.push({ id, enabled, actor }); state.set(id, enabled); return true; },
+    };
+    return { console: fakeConsole(peopleRoutes(deps), () => NOW), state, calls };
+  }
+
+  it("pauses only the person's active routines, in one audited row, and resumes them", async () => {
+    const h = withRoutines();
+    const paused = await h.console.call("POST", "people/pr_bob/routines/pause", { body: {} });
+    expect(paused).toMatchObject({ status: 200, body: { changed: 2, person: { principalId: "pr_bob" } } });
+    expect(paused.body.routines).toEqual([
+      { id: "r1", name: "Digest", botId: "b1", enabled: false },
+      { id: "r2", name: "Triage", botId: "b2", enabled: false },
+      { id: "r3", name: "Paused already", botId: "b1", enabled: false },
+    ]);
+    expect(h.calls).toEqual([{ id: "r1", enabled: false, actor: "pr_admin" }, { id: "r2", enabled: false, actor: "pr_admin" }]);
+    expect(h.state.get("r4")).toBe(true);
+    expect(h.console.records).toEqual([expect.objectContaining({
+      category: "people", action: "person.routines_pause", target: { kind: "person", id: "pr_bob", name: "Bob" },
+      changed: ["enabled"], before: { enabled: true }, after: { enabled: false, routines: ["r1", "r2"] },
+    })]);
+    // nothing left to pause: no row
+    expect((await h.console.call("POST", "people/pr_bob/routines/pause")).body.changed).toBe(0);
+    expect(h.console.records).toHaveLength(1);
+    const resumed = await h.console.call("POST", "people/pr_bob/routines/resume", { body: {} });
+    expect(resumed.body.changed).toBe(3);
+    expect(h.console.records.at(-1)).toMatchObject({ action: "person.routines_resume", after: { enabled: true, routines: ["r1", "r2", "r3"] } });
+  });
+
+  it("is an admin's, takes no fields, and 404s an unknown person", async () => {
+    const h = withRoutines();
+    // the router refuses a role under `min` (server/org-admin-routes.ts)
+    const routes = peopleRoutes({ ...setup().deps, setRoutineEnabled: () => true });
+    expect(routes.filter((route) => route.path.startsWith("people/{principal}/routines/")).map((route) => [route.method, route.path, route.min])).toEqual([
+      ["POST", "people/{principal}/routines/pause", "admin"],
+      ["POST", "people/{principal}/routines/resume", "admin"],
+    ]);
+    // GET capabilities lists what the console table serves
+    expect(routeNames(routes)).toEqual(expect.arrayContaining(["POST people/{principal}/routines/pause", "POST people/{principal}/routines/resume"]));
+    expect((await h.console.call("POST", "people/pr_bob/routines/pause", { body: { all: true } })).status).toBe(400);
+    expect((await h.console.call("POST", "people/pr_nobody/routines/resume", { body: {} })).status).toBe(404);
+    expect(h.calls).toEqual([]);
+  });
+
+  it("is not served without the hook", () => {
+    expect(peopleRoutes(setup().deps).map((route) => route.path)).not.toContain("people/{principal}/routines/pause");
   });
 });

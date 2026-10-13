@@ -9,7 +9,7 @@ import { Card } from "./SettingsPrimitives";
 
 type BackupStatus = { busy: boolean; pendingRestore?: boolean; lastRestoreId?: string };
 const inputClass = "w-full rounded-lg border border-hairline/50 bg-inset px-3 py-2 text-[14px] text-ink disabled:opacity-50";
-const buttonClass = "inline-flex items-center justify-center gap-2 rounded-lg bg-accent px-3 py-2 text-[13px] font-medium text-accent-ink disabled:opacity-40";
+const buttonClass = "cursor-pointer inline-flex items-center justify-center gap-2 rounded-lg bg-accent px-3 py-2 text-[13px] font-medium text-accent-ink disabled:opacity-40";
 const validPassword = (value: string) => value.length >= 12 && value.length <= 1024;
 
 /** A renderer reload cannot apply a restore; the owning server must restart. */
@@ -168,7 +168,7 @@ function WorkspaceBackupForm() {
     </Card>
     {error && <p role="alert" className="break-words text-[13px] text-danger">{error}</p>}
     {status?.pendingRestore ? <div className="rounded-xl border border-warning/40 bg-warning/10 p-4 text-ink"><WorkspaceBackupRestartNotice /></div> : <>
-      {(!status || status.busy) && <div role="status" className="flex items-center gap-3 text-[13px] text-ink-secondary"><span>{status?.busy ? t("backup.serverBusy") : t("backup.checkStatus")}</span><button type="button" onClick={() => void refresh()} className="underline">{t("connectors.action.retry")}</button></div>}
+      {(!status || status.busy) && <div role="status" className="flex items-center gap-3 text-[13px] text-ink-secondary"><span>{status?.busy ? t("backup.serverBusy") : t("backup.checkStatus")}</span><button type="button" onClick={() => void refresh()} className="cursor-pointer underline">{t("connectors.action.retry")}</button></div>}
       <Card collapsible cardId="backups.export" title={t("backup.export")} subtitle={t("backup.passwordHint")} summary={t("settings.card.exportSummary")}>
         <form className="flex flex-col gap-3" onSubmit={(event) => { event.preventDefault(); void exportBackup(); }}>
           <label className="text-[13px] text-ink">{t("backup.exportPassword")}<input type="password" autoComplete="new-password" minLength={12} maxLength={1024} required disabled={disabled} value={exportPassword} onChange={(event) => setExportPassword(event.target.value)} className={`${inputClass} mt-1`} /></label>
@@ -188,7 +188,7 @@ function WorkspaceBackupForm() {
           <p className="text-[13px] leading-relaxed text-danger">{t("backup.replaceWarning")}</p>
           <p className="text-[13px] leading-relaxed text-danger">{t("backup.trustWarning")}</p>
           <label className="text-[13px] text-ink">{t("backup.confirmReplace")}<input value={confirmation} autoComplete="off" spellCheck={false} disabled={disabled} onChange={(event) => setConfirmation(event.target.value)} className={`${inputClass} mt-1`} /></label>
-          <button type="button" disabled={disabled || confirmation !== "REPLACE"} onClick={() => void restoreBackup()} className="rounded-lg bg-danger px-3 py-2 text-[13px] font-medium text-danger-ink disabled:opacity-40">{busy === "restore" ? t("backup.restoring") : t("backup.replace")}</button>
+          <button type="button" disabled={disabled || confirmation !== "REPLACE"} onClick={() => void restoreBackup()} className="cursor-pointer rounded-lg bg-danger px-3 py-2 text-[13px] font-medium text-danger-ink disabled:opacity-40">{busy === "restore" ? t("backup.restoring") : t("backup.replace")}</button>
         </div>}
       </Card>
     </>}
@@ -241,7 +241,7 @@ export function WorkspaceBackupRecovery({ children }: { children: ReactNode }) {
     {error && <button type="button" className={buttonClass} onClick={() => { setRestartRequired(false); setAttempt((value) => value + 1); }}>{t("connectors.action.retry")}</button>}
     {error && <>
       <p className="max-w-lg text-[13px] text-ink-secondary">{t("backup.skipDraftsHint")}</p>
-      <button type="button" className="rounded-lg border border-hairline/50 bg-control px-3 py-2 text-[13px] font-medium text-ink" onClick={continueWithoutDrafts}>{t("backup.skipDrafts")}</button>
+      <button type="button" className="cursor-pointer rounded-lg border border-hairline/50 bg-control px-3 py-2 text-[13px] font-medium text-ink" onClick={continueWithoutDrafts}>{t("backup.skipDrafts")}</button>
     </>}
   </main>;
 }

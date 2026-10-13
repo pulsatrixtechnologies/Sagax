@@ -7,6 +7,11 @@ import { waitForExit } from "./cleanup.ts";
 
 type AgentsIntegration = { command: string; args: string[]; env: Record<string, string> };
 
+/** One entry of a `script` plan: the turn whose own text holds every `match`
+ * string runs it, once (or every time, with `repeat`). The other fields are a
+ * plan's. */
+type ScriptEntry = { key: string; match: string[]; repeat?: boolean; [field: string]: unknown };
+
 // Claude reads its MCP config and system prompt files once, at launch. The
 // harness removes both when the first turn settles, so a process kept warm
 // for later turns must not read them again.
@@ -16,10 +21,70 @@ const readAtLaunch = (path: string) => {
   return launchFiles.get(path)!;
 };
 
+const REPLAYED_HISTORY_END = "[Now reply to the user's latest message:]";
+
+/** What a turn itself was asked: the text after any history the harness
+ * replayed, with recalled passages cut, since both can quote another
+ * conversation's words. */
+export function ownTurnText(prompt: unknown): string {
+  const content = (prompt as any)?.message?.content;
+  const text = typeof content === "string" ? content
+    : Array.isArray(content) ? content.map((block: any) => typeof block === "string" ? block : block?.text ?? "").join("\n") : "";
+  const replayed = text.lastIndexOf(REPLAYED_HISTORY_END);
+  return (replayed < 0 ? text : text.slice(replayed + REPLAYED_HISTORY_END.length))
+    .replace(/Recalled for this message[\s\S]*?\[end of recalled passages[^\]]*\]/g, "");
+}
+
+/** A permission request made the way Claude Code makes one for a tool its
+ * permission mode will not run unasked: through the permission-prompt tool
+ * the harness mounts for it (server/permission-proxy.ts). Resolves with the
+ * answer — the person's, the engine's timer's, or a shutdown's. */
+async function askPermission(server: AgentsIntegration, ask: { tool_name: string; input: Record<string, unknown> }): Promise<{ behavior: string; message?: string }> {
+  const child = spawn(server.command, server.args, { env: { ...process.env, ...server.env }, stdio: ["pipe", "pipe", "pipe"] });
+  child.stderr.resume();
+  try {
+    return await new Promise((resolve, reject) => {
+      createInterface({ input: child.stdout }).on("line", line => {
+        try {
+          const data = JSON.parse(line);
+          if (data.id !== 2) return;
+          const text = String(data.result?.content?.[0]?.text ?? "");
+          try { resolve(JSON.parse(text)); } catch { resolve({ behavior: "unparsed", message: text }); }
+        } catch { reject(new Error("Fixture permission MCP returned malformed JSON")); }
+      });
+      child.on("error", reject);
+      child.on("exit", (code, signal) => reject(new Error(`Fixture permission MCP exited before answering: ${signal ?? code}`)));
+      const send = (id: number, method: string, params: unknown) => child.stdin.write(JSON.stringify({ jsonrpc: "2.0", id, method, params }) + "\n");
+      send(1, "initialize", { protocolVersion: "2024-11-05", capabilities: {}, clientInfo: { name: "claude-code", version: "fixture" } });
+      send(2, "tools/call", { name: "approve", arguments: { ...ask, tool_use_id: `toolu_fixture_${process.pid}_${Date.now()}` } });
+    });
+  } finally {
+    child.stdin.destroy();
+    await waitForExit(child, { signal: "SIGTERM", graceMs: 500 });
+  }
+}
+
+/** Screen calls as the bridge of a mounted computer makes them: each one
+ * first asks the harness whether this turn may act (control-client.ts), and
+ * the harness may hold that check open while the computer is busy. Each
+ * answer is kept with how long it took. */
+async function screenCalls(server: AgentsIntegration, count: number): Promise<Array<{ ms: number; state: unknown }>> {
+  const calls: Array<{ ms: number; state: unknown }> = [];
+  for (let call = 0; call < count; call += 1) {
+    const at = Date.now();
+    const response = await fetch(server.env.SAGAX_CONTROL_URL!, { headers: { authorization: `Bearer ${server.env.SAGAX_CONTROL_TOKEN}` } });
+    calls.push({ ms: Date.now() - at, state: response.ok ? await response.json() : { status: response.status } });
+  }
+  return calls;
+}
+
 /** `launch` replaces Claude's argv files for another fake engine: the agents
  * server it mounted, its instructions, and extra evidence fields. `progress`
  * streams a plan's `progress` text before the turn waits on its gate, and its
- * `progressAfterGate` text once the gate opens. */
+ * `progressAfterGate` text once the gate opens. Before that, a plan's
+ * `approve` asks the person through Claude's permission-prompt tool (an
+ * answer that is not an allow replies `replyIfDenied`), and its
+ * `screenCalls` makes that many calls on the computer the turn mounted. */
 export async function runRoomHandoffAgent(argv: string[], planPath: string, prompt?: unknown,
   launch?: { integration: AgentsIntegration; system: string; evidence?: Record<string, unknown> },
   progress?: (text: string) => void): Promise<string> {
@@ -55,14 +120,34 @@ export async function runRoomHandoffAgent(argv: string[], planPath: string, prom
   // the user message, so inspect both surfaces just as the model does.
   const turnContext = `${system}\n${JSON.stringify(prompt)}`;
   const resumed = turnContext.includes("Your downstream room requests have settled.");
-  const basePlan = JSON.parse(readFileSync(planPath, "utf8"))[botId] ?? {};
+  // `byPrompt` picks a bot's plan by what its turn was sent, for turns whose
+  // order no index can pin (a thread the bot opened on itself runs beside
+  // the turn that opened it): [{ promptIncludes, plan }], first match wins.
+  const botPlan = JSON.parse(readFileSync(planPath, "utf8"))[botId] ?? {};
+  const basePlan = (botPlan.byPrompt as Array<{ promptIncludes: string; plan: any }> | undefined)
+    ?.find(rule => turnContext.includes(rule.promptIncludes))?.plan ?? botPlan;
   const previous = existsSync(`${planPath}.evidence.jsonl`) ? readFileSync(`${planPath}.evidence.jsonl`, "utf8").trim().split("\n").filter(Boolean).map(line => JSON.parse(line)) : [];
   const turnIndex = previous.filter(p => p.botId === botId).length;
-  const plan = basePlan.turns ? basePlan.turns[turnIndex] : basePlan;
+  // `script` picks a turn's entry by what that turn itself was asked, so a
+  // turn nobody scripted (an unplanned resume, a duplicate dispatch) fails
+  // loudly instead of quietly taking the next entry. One-shot entries win
+  // over `repeat` ones, so a loop entry never swallows a later, more
+  // specific turn.
+  const script = botPlan.script as ScriptEntry[] | undefined;
+  const own = script ? ownTurnText(prompt) : "";
+  const used = new Set(previous.filter(p => p.botId === botId && p.planKey).map(p => p.planKey as string));
+  const matches = (entry: ScriptEntry) => entry.match.every(text => own.includes(text));
+  const entry = script && (script.find(e => !e.repeat && !used.has(e.key) && matches(e)) ?? script.find(e => e.repeat && matches(e)));
+  if (script && !entry) {
+    appendFileSync(`${planPath}.evidence.jsonl`, JSON.stringify({ botId, turnIndex, threadId: integration.env.SAGAX_THREAD_ID, unplanned: true, resumed, system, prompt }) + "\n");
+    throw new Error(`Unplanned fixture turn for ${botId}: ${own.slice(0, 300)}`);
+  }
+  const plan: any = entry ?? (basePlan.turns ? basePlan.turns[turnIndex] : basePlan);
   if (!plan) throw new Error(`Unexpected extra fixture turn ${turnIndex} for ${botId}`);
   for (const expected of plan.expectSystemIncludes ?? []) if (!system.includes(expected)) throw new Error(`Missing discussion context: ${expected}`);
   for (const expected of plan.expectContextIncludes ?? []) if (!turnContext.includes(expected)) throw new Error(`Missing conversation context: ${expected}`);
-  const steps = basePlan.turns ? plan.steps ?? [] : resumed ? plan.resumeSteps ?? [] : plan.steps ?? [];
+  const indexed = Boolean(entry || basePlan.turns);
+  const steps = indexed ? plan.steps ?? [] : resumed ? plan.resumeSteps ?? [] : plan.steps ?? [];
   const child = spawn(integration.command, integration.args, { env: { ...process.env, ...integration.env }, stdio: ["pipe", "pipe", "pipe"] });
   const pending = new Map<number, { resolve: (value: any) => void; reject: (error: Error) => void }>();
   let serial = 0;
@@ -98,6 +183,8 @@ export async function runRoomHandoffAgent(argv: string[], planPath: string, prom
   let delayTimer: ReturnType<typeof setTimeout> | undefined;
   let gateTimer: ReturnType<typeof setInterval> | undefined;
   const evidence: unknown[] = [];
+  let approval: { behavior: string; message?: string } | undefined;
+  let screen: Array<{ ms: number; state: unknown }> | undefined;
   try {
     return await Promise.race([failed, (async () => {
       await call("initialize", { protocolVersion: "2024-11-05", capabilities: {}, clientInfo: { name: "room-fixture", version: "1" } });
@@ -108,12 +195,22 @@ export async function runRoomHandoffAgent(argv: string[], planPath: string, prom
         evidence.push({ step, response });
         if (Boolean(response.error || response.result?.isError) !== Boolean(step.expectError)) throw new Error(`Unexpected tool outcome: ${JSON.stringify(response)}`);
       }
+      // All MCP calls have completed. A person's answer, like an explicit
+      // test gate, is owned by the parent test's timeout, not the transport
+      // deadline: long conversation fixtures may deliberately keep a
+      // teammate waiting across many turns.
+      if (plan.gateFile || plan.approve || plan.screenCalls) clearTimeout(timer);
+      const mounted = launch ? {} : JSON.parse(readAtLaunch(arg("--mcp-config"))).mcpServers as Record<string, AgentsIntegration>;
+      if (plan.approve) {
+        if (!mounted.ogb || !argv.includes("--permission-prompt-tool")) throw new Error("A scripted approval needs Claude's permission-prompt tool");
+        approval = await askPermission(mounted.ogb, plan.approve);
+      }
+      if (plan.screenCalls) {
+        if (!mounted.computer?.env?.SAGAX_CONTROL_URL) throw new Error("Scripted screen calls need a mounted computer");
+        screen = await screenCalls(mounted.computer, plan.screenCalls);
+      }
       if (typeof plan.progress === "string") progress?.(plan.progress);
       if (plan.readyFile) writeFileSync(plan.readyFile, "ready");
-      // All MCP calls have completed. An explicit test gate is owned by the
-      // parent test's timeout, not the transport deadline: long conversation
-      // fixtures may deliberately keep a teammate waiting across many turns.
-      if (plan.gateFile) clearTimeout(timer);
       if (plan.gateFile && !existsSync(plan.gateFile)) await new Promise<void>(resolve => {
         gateTimer = setInterval(() => {
           if (!existsSync(plan.gateFile)) return;
@@ -125,6 +222,8 @@ export async function runRoomHandoffAgent(argv: string[], planPath: string, prom
       if (plan.delayMs) await new Promise(resolve => { delayTimer = setTimeout(resolve, plan.delayMs); });
       if (plan.fail && !resumed) throw new Error("Scripted addressed agent failure");
       if (plan.failResumed && resumed) throw new Error("Scripted failure of a resumed turn");
+      if (approval && approval.behavior !== "allow") return plan.replyIfDenied ?? `${plan.reply} (approval ${approval.behavior})`;
+      if (entry) return plan.reply ?? `Result from ${botId}`;
       return basePlan.turns ? plan.reply : resumed ? plan.resumeReply ?? `Summary from ${botId}` : plan.reply ?? `Result from ${botId}`;
     })()]);
   } finally {
@@ -135,6 +234,6 @@ export async function runRoomHandoffAgent(argv: string[], planPath: string, prom
       model: argv.includes("--model") ? arg("--model") : undefined,
       permissionMode: argv.includes("--permission-mode") ? arg("--permission-mode") : undefined,
       snapshotMode: argv.includes("--system-prompt-snapshot") ? arg("--system-prompt-snapshot") : undefined,
-      resumed, system, prompt, evidence, ...launch?.evidence }) + "\n");
+      resumed, system, prompt, evidence, ...(entry ? { planKey: entry.key } : {}), ...(approval ? { approval } : {}), ...(screen ? { screen } : {}), ...launch?.evidence }) + "\n");
   }
 }

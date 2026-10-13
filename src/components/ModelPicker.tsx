@@ -7,9 +7,9 @@
 // Reasoning effort rides along (EffortRow): model and effort are one choice to
 // the person making it, so the chat header and the settings dialog render the
 // same row and write through the same action.
-import { Fragment, useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { Check, ChevronDown, KeyRound, Loader2, Plus, RefreshCw, X } from "lucide-react";
+import { ChevronDown, ChevronRight, Info, KeyRound, Loader2, Plus, RefreshCw, Sparkles, X } from "lucide-react";
 import { useStore, type Bot, type InstanceInfo, type ModelSelection } from "@/state/store";
 import type { ModelVariantOption } from "../../shared/runtime-events";
 import { isDesktopModelId, localModelRows, localRowUnavailable, refreshLocalModelsOnOpen, runsLoopbackModels } from "@/lib/local-models";
@@ -19,7 +19,7 @@ import { useShowUnreadyProviders } from "@/lib/unready-providers-preference";
 import { InstanceProviderMark } from "./ProviderIcons";
 import { EngineSetup, EngineUpdateNotice, hasSavedApiKey, needsCli, needsSignIn } from "./EngineSetup";
 import { EngineGroupLabel } from "./EngineGroupLabel";
-import { ModelDropdown, ModelMenuGroup, ModelMenuRow } from "./ModelDropdown";
+import { ModelMenuItem, ModelSearchList, type ModelMenuRow, type ModelMenuSection } from "./ModelMenu";
 import { ChatGptPlanStatus } from "./ChatGptPlanStatus";
 import { cn } from "@/lib/cn";
 import { useMenuMotion } from "./MenuMotion";
@@ -29,7 +29,6 @@ import { reloadMyEngines, useMyEngines, usePerspicaxOrg } from "@/lib/perspicax-
 import { orgEngineState } from "@/lib/model-payers";
 import { ModelPickerPayers } from "./ModelPickerPayers";
 import { OrgHostToolsNote, orgRefusesEngine } from "./OrgHostToolsNote";
-import { paysWithText } from "./EngineConnect";
 import { COMPACT_SQUARE } from "@/lib/compact-chip";
 import { saveViewerBotOverride } from "@/lib/viewer-bot-overrides";
 import type { ViewerBotOverridePatch } from "../../shared/viewer-bot-overrides";
@@ -95,7 +94,7 @@ export { effortLabel };
  * both in the picker's popover and in the settings dialog's Model section so
  * the two cannot drift: one list of levels, one `setModel` dispatch.
  *
- * `undefined` ("Default") is not the `none` level — Default sends nothing and
+ * `undefined` ("Default") is not the `none` level: Default sends nothing and
  * lets the engine decide, `none` is a level the engine is told to use. Only
  * pi offers both, and dropping either would change what an existing bot
  * sends, so both stay and the tooltips say which is which. */
@@ -131,7 +130,7 @@ export function EffortRow({
   if (compact) return (
     <label className={cn("flex items-center justify-between gap-3", className)}>
       {label}
-      <select aria-label="Reasoning effort" value={selection.effort ?? ""}
+      <select aria-label={t("model.effort.aria")} value={selection.effort ?? ""}
         onChange={(event) => {
           const effort = levels.find((level) => level === event.target.value);
           if (viewerLocal) {
@@ -142,7 +141,7 @@ export function EffortRow({
             selection: { ...selection, effort } });
         }}
         className="min-w-0 max-w-[65%] rounded-lg border border-hairline/40 bg-inset px-2 py-1.5 text-[12px] text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/70">
-        <option value="">Default</option>
+        <option value="">{t("model.defaultTag")}</option>
         {levels.map((level) => <option key={level} value={level}>{effortLabel(level)}</option>)}
       </select>
     </label>
@@ -153,7 +152,7 @@ export function EffortRow({
       {label}
       {/* wraps rather than dividing a fixed width: pi offers Default plus six
           levels, which a segmented control would squeeze in the popover */}
-      <div className="mt-2 flex flex-wrap gap-1" role="group" aria-label="Reasoning effort">
+      <div className="mt-2 flex flex-wrap gap-1" role="group" aria-label={t("model.effort.aria")}>
         {[undefined, ...levels].map((level) => (
           <button
             key={level ?? "default"}
@@ -161,10 +160,10 @@ export function EffortRow({
             aria-pressed={selection.effort === level}
             title={
               level === undefined
-                ? "Send no effort level and let the provider decide"
+                ? t("model.effort.defaultTitle")
                 : isUltracodeEffort(level)
                   ? t("model.effort.ultracodeHint")
-                  : `Ask for ${effortLabel(level)} reasoning effort`
+                  : t("model.effort.levelTitle", { level: effortLabel(level) })
             }
             onClick={() => {
               if (viewerLocal) {
@@ -184,7 +183,7 @@ export function EffortRow({
                     : "border-hairline/40 text-ink-secondary hover:bg-control/60 hover:text-ink",
             )}
           >
-            {level === undefined ? "Default" : effortLabel(level)}
+            {level === undefined ? t("model.defaultTag") : effortLabel(level)}
           </button>
         ))}
       </div>
@@ -193,7 +192,7 @@ export function EffortRow({
 }
 
 function variantLabel(option: ModelVariantOption): string {
-  return option.id === "default" ? "OpenCode default" : option.label;
+  return option.id === "default" ? t("model.variant.openCodeDefault") : option.label;
 }
 
 /** ACP variant ids are opaque; their model/session declares the available choices. */
@@ -230,16 +229,16 @@ export function ModelVariantRow({ bot, threadId, updateBotDefault, viewerLocal =
     <div className={className}>
       <label className="flex items-center justify-between gap-3">
         {label}
-        <select aria-label="Reasoning variant" disabled={bot.busy}
+        <select aria-label={t("model.variant.aria")} disabled={bot.busy}
           value={selection.variant === undefined ? "unset" : missing ? "missing" : String(options.findIndex((option) => option.id === selection.variant))}
           onChange={(event) => choose(options[Number(event.target.value)]?.id)}
           className="min-w-0 max-w-[65%] rounded-lg border border-hairline/40 bg-inset px-2 py-1.5 text-[12px] text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/70 disabled:opacity-50">
-          <option value="unset">Use session setting</option>
-          {missing && <option value="missing" disabled>{selection.variant} ({unavailable ? "unavailable" : "unverified"})</option>}
+          <option value="unset">{t("model.variant.session")}</option>
+          {missing && <option value="missing" disabled>{selection.variant} ({unavailable ? t("model.variant.unavailableTag") : t("model.variant.unverifiedTag")})</option>}
           {options.map((option, index) => <option key={option.id} value={String(index)}>{variantLabel(option)}</option>)}
         </select>
       </label>
-      {missing && <p className="mt-1 text-[11px] text-ink-secondary">{unavailable ? "Saved variant is unavailable. Choose another or use the session setting." : "Saved variant has not been checked in this session."}</p>}
+      {missing && <p className="mt-1 text-[11px] text-ink-secondary">{unavailable ? t("model.variant.unavailableShort") : t("model.variant.uncheckedShort")}</p>}
     </div>
   );
   return (
@@ -247,27 +246,27 @@ export function ModelVariantRow({ bot, threadId, updateBotDefault, viewerLocal =
       {label}
       {(selection.variant === undefined || missing) && (
         <p className="mt-2 text-[12px] text-ink-secondary">
-          {unavailable ? `Saved variant “${selection.variant}” is unavailable. Choose an available variant.`
-            : missing ? `Saved variant “${selection.variant}” has not been checked in this session.` : "No variant selected."}
-          {current !== undefined && ` Session: ${variantLabel(options.find((option) => option.id === current) ?? { id: current, label: current })}.`}
+          {unavailable ? t("model.variant.unavailable", { variant: selection.variant! })
+            : missing ? t("model.variant.unchecked", { variant: selection.variant! }) : t("model.variant.none")}
+          {current !== undefined && ` ${t("model.variant.sessionNow", { variant: variantLabel(options.find((option) => option.id === current) ?? { id: current, label: current }) })}`}
         </p>
       )}
       {selection.variant !== undefined && (
         <button type="button" disabled={bot.busy} onClick={() => choose()}
-          title="Send no variant selection; OpenCode keeps its session or configured setting"
+          title={t("model.variant.clearTitle")}
           className="mt-2 block text-[12px] text-ink-secondary underline underline-offset-2 hover:text-ink disabled:opacity-50">
-          Clear variant selection
+          {t("model.variant.clear")}
         </button>
       )}
       {options.length > 0 && (
-        <div className="mt-2 flex flex-wrap gap-1" role="group" aria-label="Reasoning variant">
+        <div className="mt-2 flex flex-wrap gap-1" role="group" aria-label={t("model.variant.aria")}>
           {options.map((option) => (
             <button
               key={option.id}
               type="button"
               disabled={bot.busy}
               aria-pressed={selection.variant === option.id}
-              title={`Use ${variantLabel(option)} for this model`}
+              title={t("model.variant.useTitle", { variant: variantLabel(option) })}
               onClick={() => choose(option.id)}
               className={cn(
                 "rounded-full border px-2.5 py-1 text-[12px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/70 disabled:opacity-50",
@@ -294,36 +293,15 @@ export function modelSelectionForPick(selection: ModelSelection, instance: Insta
   return next;
 }
 
-/** A thread's picker: back onto the bot's model, so the thread moves with
- * the bot again. Checked while the thread follows the bot. */
-export function FollowBotModelRow({ name, model, follows, onPick }: { name: string; model: string; follows: boolean; onPick: () => void }) {
-  return (
-    <button
-      type="button"
-      data-follow-bot-model
-      aria-pressed={follows}
-      onClick={onPick}
-      className={cn(
-        "flex w-full shrink-0 items-center justify-between gap-2 border-b border-hairline/40 px-4 py-2.5 text-left text-[13px] text-ink hover:bg-control/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus",
-        follows && "bg-control/40",
-      )}
-    >
-      <span className="flex min-w-0 items-baseline gap-2">
-        <span className="shrink-0 font-medium">{t("model.useBotModel", { name })}</span>
-        <span className="truncate text-[12px] text-ink-secondary">{model}</span>
-      </span>
-      {follows && <Check size={14} className="shrink-0 text-accent" aria-hidden="true" />}
-    </button>
-  );
-}
-
 /** Once any key is saved, the keys shortcut is also the way to fix one. */
 function apiKeysLabel(instances: InstanceInfo[]): string {
   return t(instances.some(hasSavedApiKey) ? "model.addOrChangeApiKeys" : "model.addApiKeys");
 }
 
-export function ModelEngineRail({ instances, selectedInstance, claudeInstance, openaiInstance, onSelect, onAddApiKeys, wide = false, statusOf, notAllowed, showUnready: showUnreadyProp }: {
+export function ModelEngineRail({ instances, selectedInstance, claudeInstance, openaiInstance, onSelect, onAddApiKeys, wide = false, statusOf, notAllowed, showUnready: showUnreadyProp, auto }: {
   instances: InstanceInfo[];
+  /** The window's first mode: Auto, every allowed engine's models together. */
+  auto?: { on: boolean; selected: boolean; onSelect: () => void };
   selectedInstance?: InstanceInfo;
   /** The account a folded button opens on (the last one browsed). */
   claudeInstance?: InstanceInfo;
@@ -374,7 +352,11 @@ export function ModelEngineRail({ instances, selectedInstance, claudeInstance, o
         data-rail-provider={family ?? instance.instanceId}
         data-rail-not-allowed={blocked || undefined}
         disabled={blocked}
-        onClick={() => onSelect(target)}
+        onClick={(event?: ReactMouseEvent<HTMLButtonElement>) => {
+          // the focus follows the choice, so only the selected mode looks selected
+          event?.currentTarget.focus();
+          onSelect(target);
+        }}
         aria-label={managedBy ? `${label} · ${managedBy}` : label}
         aria-describedby={`model-rail-status-${instance.instanceId}`}
         aria-pressed={selected}
@@ -402,7 +384,11 @@ export function ModelEngineRail({ instances, selectedInstance, claudeInstance, o
       <button
         type="button"
         key={instance.instanceId}
-        onClick={() => onSelect(target)}
+        onClick={(event?: ReactMouseEvent<HTMLButtonElement>) => {
+          // the focus follows the choice, so only the selected mode looks selected
+          event?.currentTarget.focus();
+          onSelect(target);
+        }}
         disabled={blocked}
         data-rail-not-allowed={blocked || undefined}
         aria-label={managedBy ? `${label} · ${managedBy}` : label}
@@ -438,7 +424,7 @@ export function ModelEngineRail({ instances, selectedInstance, claudeInstance, o
     if (visible.length === 0 && !extra) return null;
     const heading = headingClass
       ? <EngineGroupLabel className={headingClass}>{label}</EngineGroupLabel>
-      : <EngineGroupLabel className="hidden px-2.5 pb-0.5 pt-2 text-[10px] first:pt-0.5 sm:block">{label}</EngineGroupLabel>;
+      : <EngineGroupLabel className="hidden px-2.5 pb-0.5 pt-2 text-[11.5px] normal-case tracking-normal first:pt-0.5 sm:block">{label}</EngineGroupLabel>;
     return (
       <Fragment key={`rail-${label}`}>
         {heading}
@@ -451,6 +437,31 @@ export function ModelEngineRail({ instances, selectedInstance, claudeInstance, o
     return (
       <nav aria-label={t("model.providers")} data-model-provider-column
         className="flex shrink-0 gap-1 overflow-x-auto border-b border-hairline/40 bg-panel p-2 mr-12 sm:mr-0 sm:w-56 sm:flex-col sm:overflow-y-auto sm:overflow-x-visible sm:border-b-0 sm:border-r sm:p-3">
+        {auto && (
+          <button
+            type="button"
+            data-rail-auto
+            onClick={(event?: ReactMouseEvent<HTMLButtonElement>) => {
+              event?.currentTarget.focus();
+              auto.onSelect();
+            }}
+            aria-pressed={auto.selected}
+            aria-describedby="model-rail-status-auto"
+            className={cn("relative flex min-w-[9.5rem] shrink-0 items-center gap-2.5 rounded-lg px-2.5 py-2 text-left sm:mb-1 sm:min-w-0 sm:w-full",
+              auto.selected ? "bg-selected ring-1 ring-hairline/50" : "hover:bg-hover")}
+          >
+            <span className="flex size-7 shrink-0 items-center justify-center rounded-md bg-inset text-ink">
+              <Sparkles size={15} aria-hidden="true" />
+            </span>
+            <span className="flex min-w-0 flex-1 flex-col">
+              <span className="truncate text-[13px] font-medium text-ink">{t("model.auto.label")}</span>
+              <span id="model-rail-status-auto" data-rail-status className="flex items-center gap-1 truncate text-[11px] text-ink-secondary">
+                {auto.on && <span aria-hidden="true" className="size-1.5 shrink-0 rounded-full bg-success" />}
+                <span className="truncate">{auto.on ? t("model.auto.on") : t("model.auto.rail")}</span>
+              </span>
+            </span>
+          </button>
+        )}
         {renderGroup(t("model.rail.cloud"), subscription)}
         {renderGroup(t("model.rail.apiKeys"), api, onAddApiKeys && (
           <button type="button" data-rail-add-api-key onClick={onAddApiKeys}
@@ -508,6 +519,13 @@ export function ClaudeAccountSelect({ accounts, selectedId, onSelect }: {
 /** What Tab may land on inside the modal, in document order. */
 const FOCUSABLE = 'button:not([disabled]), a[href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), summary, [tabindex]:not([tabindex="-1"])';
 
+
+/** The window's rail entry that is not an engine: Auto. */
+const AUTO_RAIL = "auto";
+
+/** The composer's model menu: a popover above the chip, never wider than the window. */
+const MENU_WIDTH = 340;
+
 export function ModelPicker({
   bot,
   threadId,
@@ -516,29 +534,39 @@ export function ModelPicker({
   inComposer = false,
   viewerLocal = false,
   label,
+  windowOnly = false,
+  onWindowClose,
 }: {
   bot: Bot;
   threadId?: string;
   className?: string;
-  /** Profile row: the label sits above the pill. The menu is still the
-   * same modal as the composer. The profile card already has Effort, so
-   * the modal does not repeat it. */
+  /** Profile row: the label sits above the pill, which opens the model
+   * window. The profile card already has Effort, so the window does not
+   * repeat it. */
   contained?: boolean;
-  /** Sit in the composer as a text row. */
+  /** Sit in the composer as a text row that opens the model menu. */
   inComposer?: boolean;
   /** Settings of a shared bot: save this person's model, not the owner's. */
   viewerLocal?: boolean;
   label?: ReactNode;
+  /** No chip: the model window, open from the start (the sidebar's bot
+   * menu opens it through ModelWindowHost). */
+  windowOnly?: boolean;
+  onWindowClose?: () => void;
 }) {
   const { state, dispatch, refreshInstances, refreshModels: refreshInstanceModels } = useStore();
-  const [open, setOpen] = useState(false);
+  // The model window (a modal like Settings) and the composer's model menu.
+  const [open, setOpen] = useState(windowOnly);
+  const [menu, setMenu] = useState(false);
   const motion = useMenuMotion(open && !bot.busy);
+  const menuMotion = useMenuMotion(menu && !bot.busy);
   const [railId, setRailId] = useState<string | null>(null);
-  // The model dropdown inside the dialog.
-  const [menuOpen, setMenuOpen] = useState(false);
+  const [autoInfo, setAutoInfo] = useState(false);
+  const [menuAt, setMenuAt] = useState<{ right: number; bottom: number } | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   // The bot's model just changed from this thread's picker: say how many
   // threads kept a model of their own, until the picker opens again.
@@ -554,9 +582,7 @@ export function ModelPicker({
   const myEngines = useMyEngines();
   const showUnready = useShowUnreadyProviders();
   const orgMode = org !== null;
-  // Every opener uses the composer modal. An in-flow menu is clipped by
-  // the profile sidebar (overflow-y-auto, a narrow column).
-  const modal = true;
+  const anyOpen = open || menu;
 
   const selection = bot.modelSelection;
   // Auto (docs/plans/2026-10-08-auto-model.md): the chip names what this
@@ -596,14 +622,25 @@ export function ModelPicker({
   const showActiveAccount = (multipleClaudeAccounts && isClaudeAccount(active)) || Boolean(active?.snapshot.chatgptPlan);
   const claudeRailInstance = claudeAccounts.find((instance) => instance.instanceId === lastClaudeIdRef.current)
     ?? claudeAccounts.find((instance) => instance.instanceId === selection.instanceId) ?? claudeAccounts[0];
+  // The window opens on Auto while the bot is on Auto, else on its engine.
+  const autoPane = !viewerLocal && (railId ?? (autoOn ? AUTO_RAIL : null)) === AUTO_RAIL;
   const railInstance =
-    selectable.find((instance) => instance.instanceId === (railId ?? selection.instanceId)) ?? selectable[0];
+    selectable.find((instance) => instance.instanceId === (railId && railId !== AUTO_RAIL ? railId : selection.instanceId)) ?? selectable[0];
   const displayedInstanceId = railInstance?.instanceId;
   // Slice 4, organization server: who a bot on this engine can answer.
   const railEngine = myEngines?.find((engine) => engine.instanceId === displayedInstanceId) ?? null;
   // A routine's thread pays as the bot's owner (engine-credentials.ts).
   const routineThread = Boolean(orgMode && threadId && state.bots.find((candidate) => candidate.id === bot.id)?.tasks
     ?.some((task) => task.threadId === threadId && task.routineRunId));
+
+  const closeWindow = () => {
+    setOpen(false);
+    if (windowOnly) onWindowClose?.();
+  };
+  const closeMenu = (refocus = false) => {
+    setMenu(false);
+    if (refocus) triggerRef.current?.focus();
+  };
 
   const refreshLocalInstances = useCallback(() => {
     if (refreshingRef.current) return;
@@ -637,10 +674,10 @@ export function ModelPicker({
   }, [displayedInstanceId, orgMode, refreshInstanceModels, refreshInstances]);
 
   useEffect(() => {
-    if (!open) return;
+    if (!anyOpen) return;
     refreshLocalInstances();
     if (orgMode) void reloadMyEngines();
-  }, [open, orgMode, refreshLocalInstances]);
+  }, [anyOpen, orgMode, refreshLocalInstances]);
 
   // Opening the picker looks for local models again (a server started after
   // launch), at most once per LOCAL_REFRESH_FRESH_MS. Solo probes this
@@ -649,7 +686,7 @@ export function ModelPicker({
   const railDriverKind = railInstance?.driverKind;
   const railNeedsSetup = Boolean(railInstance && (needsCli(railInstance) || railInstance.policy));
   useEffect(() => {
-    if (!open || !displayedInstanceId) return;
+    if (!anyOpen || !displayedInstanceId) return;
     if (orgMode) {
       const bridgeRefresh = window.ogb?.serverMode?.refreshLocalModels;
       if (!bridgeRefresh) return;
@@ -658,30 +695,30 @@ export function ModelPicker({
     }
     if (railNeedsSetup || !runsLoopbackModels(railDriverKind)) return;
     void refreshLocalModelsOnOpen({ key: displayedInstanceId, orgMode: false, refreshModels: () => refreshInstanceModels(displayedInstanceId) });
-  }, [open, displayedInstanceId, orgMode, railDriverKind, railNeedsSetup, refreshInstances, refreshInstanceModels]);
+  }, [anyOpen, displayedInstanceId, orgMode, railDriverKind, railNeedsSetup, refreshInstances, refreshInstanceModels]);
 
   useEffect(() => {
-    if (bot.busy) setOpen(false);
-  }, [bot.busy]);
+    if (!bot.busy) return;
+    setMenu(false);
+    if (!windowOnly) setOpen(false);
+  }, [bot.busy, windowOnly]);
 
-  // Escape closes (the model dropdown closes itself first). The modal
-  // closes on its backdrop and keeps Tab inside itself.
+  const closeWindowRef = useRef(closeWindow);
+  closeWindowRef.current = closeWindow;
+  // Escape closes the window. The window closes on its backdrop and keeps
+  // Tab inside itself.
   useEffect(() => {
     if (!open) return;
-    const closeOnOutsideClick = (event: MouseEvent) => {
-      const clickedNode = event.target instanceof Node ? event.target : null;
-      if (!rootRef.current?.contains(clickedNode)) setOpen(false);
-    };
     const onKey = (event: KeyboardEvent) => {
       const dialog = dialogRef.current;
       // A child dialog (the provider switch confirmation) owns its keys.
       if (event.defaultPrevented || document.querySelector('[role="alertdialog"]')) return;
       if (event.key === "Escape") {
         event.preventDefault();
-        setOpen(false);
+        closeWindowRef.current();
         return;
       }
-      if (!modal || event.key !== "Tab" || !dialog) return;
+      if (event.key !== "Tab" || !dialog) return;
       const focusable = [...dialog.querySelectorAll<HTMLElement>(FOCUSABLE)].filter((element) => element.getClientRects().length > 0);
       if (focusable.length === 0) {
         event.preventDefault();
@@ -699,17 +736,13 @@ export function ModelPicker({
         first.focus();
       }
     };
-    if (!modal) window.addEventListener("mousedown", closeOnOutsideClick);
     window.addEventListener("keydown", onKey);
-    return () => {
-      window.removeEventListener("mousedown", closeOnOutsideClick);
-      window.removeEventListener("keydown", onKey);
-    };
-  }, [open, modal]);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open]);
 
-  // The modal takes focus when it opens and gives it back to the chip.
+  // The window takes focus when it opens and gives it back to the chip.
   useEffect(() => {
-    if (!open || !modal) return;
+    if (!open) return;
     const trigger = triggerRef.current;
     const dialog = dialogRef.current;
     const start = dialog?.querySelector<HTMLElement>('[data-model-provider-column] [aria-pressed="true"]') ?? dialog;
@@ -717,10 +750,28 @@ export function ModelPicker({
     return () => {
       if (trigger?.isConnected && !trigger.disabled) trigger.focus();
     };
-  }, [open, modal]);
+  }, [open]);
+
+  // The menu: a click outside or a resize closes it; Escape anywhere in it
+  // closes it and gives the focus back to the chip.
+  useEffect(() => {
+    if (!menu) return;
+    const outside = (event: MouseEvent) => {
+      const target = event.target instanceof Node ? event.target : null;
+      if (menuRef.current?.contains(target) || triggerRef.current?.contains(target)) return;
+      setMenu(false);
+    };
+    const resize = () => setMenu(false);
+    document.addEventListener("mousedown", outside);
+    window.addEventListener("resize", resize);
+    return () => {
+      document.removeEventListener("mousedown", outside);
+      window.removeEventListener("resize", resize);
+    };
+  }, [menu]);
 
   const openApiKeys = () => {
-    setOpen(false);
+    closeWindow();
     dispatch({ type: "toggleAppSettings", open: true, section: "connections" });
   };
 
@@ -729,7 +780,6 @@ export function ModelPicker({
     if (isClaudeAccount(instance)) lastClaudeIdRef.current = instance.instanceId;
     if (signInFamily(instance) === "openai") lastOpenaiIdRef.current = instance.instanceId;
     setRailId(instance.instanceId);
-    setMenuOpen(false);
   };
 
   // A thread's picker knows whether the thread follows its bot's model
@@ -742,11 +792,16 @@ export function ModelPicker({
     : profile.modelSelection.model;
   const ownModelThreads = threadsOnOwnModel(profile.modelSelection, profile.tasks ?? []).length;
 
+  const closeAll = () => {
+    setMenu(false);
+    closeWindow();
+  };
+
   /** Back onto the bot's model: the server keeps no model of the thread's
    * own for a pick that is the bot's. */
   const pickBotModel = () => {
     if (bot.busy) return;
-    setOpen(false);
+    closeAll();
     if (follows !== false) return;
     dispatch({ type: "setModel", botId: bot.id, threadId: threadId ?? bot.threadId, updateBotDefault: false, selection: profile.modelSelection });
   };
@@ -760,10 +815,9 @@ export function ModelPicker({
     if (bot.busy || instance.policy || notAllowed(instance)) return;
     const localRow = instance.models.options.find((option) => option.id === model && (option.local || isDesktopModelId(option.id)));
     if (localRow && localRowUnavailable(instance.driverKind, model, localRow.anthropic)) return;
-    setMenuOpen(false);
     if (viewerLocal) {
       saveViewerChoice(dispatch, bot.id, { model: { instanceId: instance.instanceId, model } });
-      setOpen(false);
+      closeAll();
       return;
     }
     dispatch({
@@ -774,13 +828,15 @@ export function ModelPicker({
       selection: modelSelectionForPick(selection, instance, model),
     });
     if (threadId) setChangedBotModel(true);
-    setOpen(false);
+    closeAll();
   };
 
-  // Auto keeps the engine and base model; choosing a model above pins it.
-  // The same one mode: the thread and the bot's default.
+  // Auto keeps the engine and base model; choosing a model pins it. The
+  // same one mode: the thread and the bot's default.
   const chooseAuto = () => {
-    if (bot.busy || viewerLocal || autoOn) return;
+    if (bot.busy || viewerLocal) return;
+    closeAll();
+    if (autoOn) return;
     dispatch({
       type: "setModel",
       botId: bot.id,
@@ -789,35 +845,122 @@ export function ModelPicker({
       selection: { ...selection, auto: true },
     });
     if (threadId) setChangedBotModel(true);
-    setOpen(false);
   };
 
-  // The dropdown's two headings. Local: models on this machine (solo) or on
-  // the person's own computer (organization server), and a local server's
-  // models (`server::model`). Cloud: everything else the engine offers. On
-  // an organization server the server's own custom models are never listed.
-  const options = railInstance?.models.options ?? [];
-  const localRows = railInstance ? localModelRows(options, orgMode) : [];
-  const localIds = new Set(localRows.map((option) => option.id));
-  const isLocal = (option: ModelOption) => localIds.has(option.id) || Boolean(option.custom && option.id.includes("::"));
-  const offered = orgMode ? options.filter((option) => !option.custom || isDesktopModelId(option.id)) : options;
-  const cloudOptions = offered.filter((option) => !isLocal(option));
-  const localOptions = offered.filter(isLocal);
-  // Loaded local models first, as the old local list did.
-  const localSorted = [...localOptions.filter((option) => option.loaded), ...localOptions.filter((option) => !option.loaded)];
-  const unavailableText = (id: string): string | undefined => {
-    if (!railInstance || !localIds.has(id)) return undefined;
-    const reason = localRowUnavailable(railInstance.driverKind, id, localRows.find((option) => option.id === id)?.anthropic);
-    if (!reason) return undefined;
-    return reason === "anthropic" ? t("model.localUnavailable.anthropic") : t("model.localUnavailable.engine", { engine: railInstance.displayName });
+  // An engine's models under two headings. Local: models on this machine
+  // (solo) or on the person's own computer (organization server), and a
+  // local server's models (`server::model`). Cloud: everything else the
+  // engine offers. On an organization server the server's own custom models
+  // are never listed. A signed-out engine (solo) offers its local models
+  // only: its cloud ones wait for the sign-in.
+  const catalogOf = (instance: InstanceInfo) => {
+    const options = instance.models.options;
+    const localRows = localModelRows(options, orgMode);
+    const localIds = new Set(localRows.map((option) => option.id));
+    const isLocal = (option: ModelOption) => localIds.has(option.id) || Boolean(option.custom && option.id.includes("::"));
+    const offered = orgMode ? options.filter((option) => !option.custom || isDesktopModelId(option.id)) : options;
+    const localOptions = offered.filter(isLocal);
+    const signInFirst = !orgMode && needsSignIn(instance);
+    const unavailable = (id: string): string | undefined => {
+      if (!localIds.has(id)) return undefined;
+      const reason = localRowUnavailable(instance.driverKind, id, localRows.find((option) => option.id === id)?.anthropic);
+      if (!reason) return undefined;
+      return reason === "anthropic" ? t("model.localUnavailable.anthropic") : t("model.localUnavailable.engine", { engine: instance.displayName });
+    };
+    return {
+      official: options.filter((option) => !option.custom),
+      cloud: signInFirst ? [] : offered.filter((option) => !isLocal(option)),
+      // Loaded local models first, as the old local list did.
+      local: [...localOptions.filter((option) => option.loaded), ...localOptions.filter((option) => !option.loaded)],
+      signInFirst,
+      unavailable,
+    };
   };
-  const official = options.filter((option) => !option.custom);
-  // Solo: a signed-out engine shows its sign-in; its local models stay
-  // pickable below it. On an organization server the server's own sign-in
-  // is not the person's: only a missing engine blocks the list.
-  const signInFirst = Boolean(railInstance && !orgMode && needsSignIn(railInstance));
-  const currentOption = !autoOn && selection.instanceId === railInstance?.instanceId
-    ? options.find((option) => option.id === selection.model) : undefined;
+
+  // A row reads "name" then, muted, what a pick would run it with: the
+  // provider (OpenRouter), the effort kept on the same engine, the variant
+  // of the current model, Local. In a thread, the bot's own model is the
+  // row above the engines ("<bot>'s model"), not a tag here.
+  const modelRow = (instance: InstanceInfo, option: ModelOption, local: boolean, unavailable: string | undefined, saysLocal: boolean): ModelMenuRow => {
+    const current = !autoOn && follows !== true && selection.instanceId === instance.instanceId && selection.model === option.id;
+    const sameEngine = instance.instanceId === selection.instanceId;
+    const variant = sameEngine && selection.model === option.id ? selectedVariantLabel : undefined;
+    const effort = sameEngine && !instance.capabilities?.modelVariants && selection.effort ? effortLabel(selection.effort) : undefined;
+    return {
+      key: `${instance.instanceId}\u0000${option.id}`,
+      kind: "model",
+      instanceId: instance.instanceId,
+      modelId: option.id,
+      label: option.label,
+      detail: [option.provider, variant ?? effort, local && saysLocal ? t("model.localGroup") : undefined].filter(Boolean).join(" · ") || undefined,
+      tags: [
+        option.id === instance.models.default ? t("model.defaultTag") : undefined,
+        option.loaded ? t("model.loadedTag") : undefined,
+      ].filter((tag): tag is string => Boolean(tag)),
+      current,
+      unavailable,
+      keywords: instance.displayName,
+    };
+  };
+  // Under an engine's own heading a local model says Local; under Cloud
+  // and Local headings (the window's engine mode) the heading says it.
+  const rowsOf = (instance: InstanceInfo, saysLocal: boolean) => {
+    const catalog = catalogOf(instance);
+    return {
+      catalog,
+      cloud: catalog.cloud.map((option) => modelRow(instance, option, false, undefined, saysLocal)),
+      local: catalog.local.map((option) => modelRow(instance, option, true, catalog.unavailable(option.id), saysLocal)),
+    };
+  };
+
+  // The rows above the engines: Auto (the bot's choice; a shared bot's
+  // viewer pins their own model, the owner's Auto stays the owner's) and,
+  // in a thread, the bot's own model.
+  const autoShown = autoPreview ?? autoRecord;
+  const topRows: ModelMenuRow[] = [
+    ...(!viewerLocal ? [{
+      key: "auto", kind: "auto" as const, label: t("model.auto.label"), current: autoOn,
+      detail: autoOn && autoShown ? autoShown.modelLabel : t("model.auto.rowHint"),
+    }] : []),
+    ...(follows !== undefined ? [{
+      key: "follow", kind: "follow" as const, label: t("model.useBotModel", { name: profile.name }),
+      detail: modelLabel(botModelInstance, profile.modelSelection.model), keywords: botModelName, current: follows,
+    }] : []),
+  ];
+
+  // The menu and the window's Auto mode list every engine the bot can use:
+  // its own first, then the others the server allows. An engine to install
+  // or blocked by a policy stays in the window; on an organization server
+  // an engine nothing pays for yet stays there too, unless it is the bot's.
+  const engineLabel = (instance: InstanceInfo) => {
+    const family = signInFamily(instance);
+    return family && selectable.filter((candidate) => signInFamily(candidate) === family).length === 1
+      ? SIGN_IN_FAMILY_LABEL[family] : instance.displayName;
+  };
+  const menuInstances = [
+    ...selectable.filter((instance) => instance.instanceId === selection.instanceId),
+    ...selectable.filter((instance) => instance.instanceId !== selection.instanceId),
+  ].filter((instance) => {
+    if (instance.policy || needsCli(instance)) return false;
+    if (!orgMode || instance.instanceId === selection.instanceId) return true;
+    const engine = myEngines?.find((candidate) => candidate.instanceId === instance.instanceId);
+    return !engine || orgEngineState(engine) === "connected";
+  });
+  const allSections: ModelMenuSection[] = [
+    { key: "top", rows: topRows },
+    ...menuInstances.map((instance) => {
+      const { catalog, cloud, local } = rowsOf(instance, true);
+      return { key: instance.instanceId, label: engineLabel(instance), note: catalog.signInFirst ? t("model.signInRequired") : undefined, rows: [...cloud, ...local] };
+    }),
+  ];
+
+  const onRow = (row: ModelMenuRow) => {
+    if (row.kind === "auto") return chooseAuto();
+    if (row.kind === "follow") return pickBotModel();
+    const instance = state.instances.find((candidate) => candidate.instanceId === row.instanceId);
+    if (instance && row.modelId !== undefined) pick(instance, row.modelId);
+  };
+
   const orgStatusOf = (instance: InstanceInfo) => {
     const engine = myEngines?.find((candidate) => candidate.instanceId === instance.instanceId);
     if (!engine) return { label: engineStatus(instance), attention: needsCli(instance) };
@@ -825,31 +968,13 @@ export function ModelPicker({
     return { label: t(`model.org.state.${state}`), attention: state !== "connected" };
   };
 
-  // In a thread's picker the bot's model says so, beside the thread's own.
-  const botModelId = follows !== undefined && profile.modelSelection.instanceId === railInstance?.instanceId
-    ? profile.modelSelection.model : undefined;
-  const renderRow = (option: ModelOption) => (
-    <ModelMenuRow
-      key={option.id}
-      id={option.id}
-      label={option.label}
-      provider={option.provider}
-      current={!autoOn && selection.instanceId === railInstance?.instanceId && selection.model === option.id}
-      isDefault={option.id === railInstance?.models.default}
-      loaded={option.loaded === true}
-      botModel={option.id === botModelId}
-      unavailable={unavailableText(option.id)}
-      onPick={() => railInstance && pick(railInstance, option.id)}
-    />
-  );
-
   // The idle tooltip's whole text, and the busy tooltip's first line.
   const summary = autoOn
     ? autoRecord ? autoReasonSentence(autoRecord) : autoChipLabel(null)
     : active
     ? `${active.displayName} · ${modelLabel(active, selection.model)}${
         modelProvider(active, selection.model) ? ` · ${modelProvider(active, selection.model)}` : ""
-      }${selectedVariantLabel ? ` · ${selectedVariantLabel}` : advanced && selection.effort ? ` · ${effortLabel(selection.effort)} effort` : ""}`
+      }${selectedVariantLabel ? ` · ${selectedVariantLabel}` : advanced && selection.effort ? ` · ${t("model.effort.summary", { level: effortLabel(selection.effort) })}` : ""}`
     : selection.model;
   const followLine = follows === true ? `\n${t("model.followsBot", { name: profile.name })}` : follows === false ? `\n${t("model.ownModel")}` : "";
 
@@ -860,20 +985,44 @@ export function ModelPicker({
     !selectedVariantLabel && selection.effort ? effortLabel(selection.effort) : "",
   ].filter(Boolean).join(" ");
 
-  const toggle = () => {
-    if (bot.busy) return;
+  const rememberActiveAccount = () => {
     if (active && isClaudeAccount(active)) lastClaudeIdRef.current = active.instanceId;
     if (active && signInFamily(active) === "openai") lastOpenaiIdRef.current = active.instanceId;
-    const initial = selectable.find((instance) => instance.instanceId === selection.instanceId) ?? selectable[0];
-    setRailId(initial?.instanceId ?? null);
-    setChangedBotModel(false);
-    setMenuOpen(false);
-    setOpen((wasOpen) => !wasOpen);
   };
 
-  // the desktop mascot's model chip: the app comes forward and this chip opens
-  const toggleRef = useRef(toggle);
-  toggleRef.current = toggle;
+  /** The model window, on Auto when the bot is on it, else on its engine. */
+  const openWindow = () => {
+    if (bot.busy) return;
+    rememberActiveAccount();
+    const initial = selectable.find((instance) => instance.instanceId === selection.instanceId) ?? selectable[0];
+    setRailId(autoOn ? AUTO_RAIL : initial?.instanceId ?? null);
+    setAutoInfo(false);
+    setChangedBotModel(false);
+    setMenu(false);
+    setOpen(true);
+  };
+  const toggleWindow = () => (open ? closeWindow() : openWindow());
+
+  const toggleMenu = () => {
+    if (bot.busy) return;
+    if (menu) {
+      setMenu(false);
+      return;
+    }
+    rememberActiveAccount();
+    setRailId(null);
+    setChangedBotModel(false);
+    const rect = triggerRef.current?.getBoundingClientRect();
+    if (rect && typeof window.innerWidth === "number") {
+      const right = Math.max(8, Math.min(window.innerWidth - rect.right, window.innerWidth - MENU_WIDTH - 8));
+      setMenuAt({ right, bottom: window.innerHeight - rect.top + 6 });
+    } else setMenuAt(null);
+    setMenu(true);
+  };
+
+  // the desktop mascot's model chip: the app comes forward and this chip's menu opens
+  const toggleRef = useRef(toggleMenu);
+  toggleRef.current = toggleMenu;
   useEffect(() => {
     if (!inComposer) return;
     const onModel = (event: Event) => {
@@ -883,14 +1032,14 @@ export function ModelPicker({
     return () => window.removeEventListener(COMPOSER_MODEL_EVENT, onModel);
   }, [inComposer, bot.id]);
 
-  const trigger = inComposer ? (
+  const trigger = windowOnly ? null : inComposer ? (
     <button data-tour="model"
       ref={triggerRef}
       type="button"
       disabled={Boolean(bot.busy)}
-      onClick={toggle}
-      aria-expanded={open && !bot.busy}
-      aria-haspopup="dialog"
+      onClick={toggleMenu}
+      aria-expanded={menu && !bot.busy}
+      aria-haspopup="listbox"
       title={bot.busy ? `${composerLabel}${followLine}\n${t(threadId ? "model.threadBusy" : "model.busy")}` : `${composerLabel}${followLine}`}
       className={cn(
         "flex max-w-full items-center gap-1 rounded-lg px-1.5 py-1 text-[13px] text-ink-secondary hover:bg-raised hover:text-ink disabled:cursor-not-allowed disabled:opacity-50",
@@ -898,21 +1047,21 @@ export function ModelPicker({
       )}
     >
       <span className="truncate">{composerLabel}</span>
-      <ChevronDown size={14} className={cn("shrink-0 transition-transform", open && "rotate-180")} />
+      <ChevronDown size={14} className={cn("shrink-0 transition-transform", menu && "rotate-180")} />
     </button>
   ) : (
     <button data-tour="model"
       ref={triggerRef}
       type="button"
       disabled={Boolean(bot.busy)}
-      onClick={toggle}
+      onClick={toggleWindow}
       aria-expanded={open && !bot.busy}
       aria-haspopup="dialog"
       className={cn(
         "flex items-center gap-1.5 rounded-full border border-hairline/40 bg-control/60 py-1 pl-2 pr-2.5 text-[13px] text-ink hover:bg-raised-hover disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-control/60",
         // in a narrow chat header fold to a rounded square with just the
         // provider mark; the model name rides the tooltip (a bot with no
-        // resolved engine keeps its label — the mark is what would hide it).
+        // resolved engine keeps its label: the mark is what would hide it).
         // Multiple Claude accounts keep their name even in the compact chip.
         !contained && active && !showActiveAccount && COMPACT_SQUARE,
       )}
@@ -960,15 +1109,14 @@ export function ModelPicker({
   // connected is said once, on the access card below (Connected and
   // Disconnect), and in the provider column.
   const header = railInstance && (
-    <div className={cn("shrink-0", modal ? "pb-1" : "px-4 pb-2 pt-3.5")}>
+    <div className="shrink-0 pb-1">
       <div className="flex items-center justify-between gap-3">
         <div className="flex min-w-0 flex-col">
-          <h2 id={modal ? "model-picker-title" : undefined} className={cn("truncate font-semibold text-ink", modal ? "text-[16px]" : "text-[14px]")}>
+          <h2 id="model-picker-title" className="truncate text-[16px] font-semibold text-ink">
             {signInFamily(railInstance) ? SIGN_IN_FAMILY_LABEL[signInFamily(railInstance)!] : railInstance.displayName}
           </h2>
-          {railEngine && !modal && <div data-my-turns={railEngine.myTurns} className="truncate text-[11px] text-ink-secondary">{paysWithText(railEngine)}</div>}
         </div>
-        <div className={cn("flex shrink-0 items-center gap-1", modal && "pr-10")}>
+        <div className="flex shrink-0 items-center gap-1 pr-10">
           <button
             type="button"
             data-model-refresh
@@ -1010,29 +1158,22 @@ export function ModelPicker({
     </div>
   );
 
-  // One choice for the whole bot, above the engines' own lists. A shared
-  // bot's viewer pins their own model; the owner's Auto stays the owner's.
-  const autoSection = !viewerLocal && (
-    <div data-model-auto className={cn("rounded-xl border px-3 py-2.5", autoOn ? "border-accent/40 bg-accent/5" : "border-hairline/40")}>
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <div className="text-[12.5px] font-medium text-ink">{t("model.auto.title")}</div>
-          <p className="mt-0.5 text-[11.5px] leading-relaxed text-ink-secondary">{t("model.auto.hint")}</p>
-        </div>
-        <button
-          type="button"
-          data-model-auto-toggle
-          aria-pressed={autoOn}
-          disabled={Boolean(bot.busy) || autoOn}
-          onClick={chooseAuto}
-          className={cn("shrink-0 rounded-lg border px-2.5 py-1.5 text-[12px]",
-            autoOn ? "border-accent/40 text-accent" : "border-hairline/40 text-ink hover:bg-control/60")}
-        >
-          {autoOn ? <span className="flex items-center gap-1"><Check size={12} aria-hidden="true" />{t("model.auto.on")}</span> : t("model.auto.use")}
+  // Auto is a mode of the window like an engine: one line on what it does,
+  // the rest behind the info button, then every model of every engine.
+  const autoHeader = (
+    <div data-model-auto className="shrink-0 pb-1">
+      <h2 id="model-picker-title" className="truncate pr-10 text-[16px] font-semibold text-ink">{t("model.auto.label")}</h2>
+      <p className="mt-1 flex items-center gap-1.5 text-[12.5px] text-ink-secondary">
+        <span>{t("model.auto.short")}</span>
+        <button type="button" data-model-auto-info aria-expanded={autoInfo} aria-label={t("model.auto.about")} title={t("model.auto.about")}
+          onClick={() => setAutoInfo((shown) => !shown)}
+          className="flex size-5 shrink-0 items-center justify-center rounded-full text-ink-secondary hover:bg-control hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/70">
+          <Info size={13} aria-hidden="true" />
         </button>
-      </div>
-      {autoOn && (autoPreview ?? autoRecord) && (
-        <p data-model-auto-reason className="mt-1.5 text-[11.5px] leading-relaxed text-ink">{autoReasonSentence((autoPreview ?? autoRecord)!)}</p>
+      </p>
+      {autoInfo && <p data-model-auto-details className="mt-2 rounded-lg bg-inset px-3 py-2 text-[12px] leading-relaxed text-ink-secondary">{t("model.auto.settings.body")}</p>}
+      {autoOn && autoShown && (
+        <p data-model-auto-reason className="mt-1.5 text-[12px] leading-relaxed text-ink">{autoReasonSentence(autoShown)}</p>
       )}
     </div>
   );
@@ -1044,34 +1185,22 @@ export function ModelPicker({
 
   const payersFirst = Boolean(railEngine && !routineThread && orgEngineState(railEngine) !== "connected");
 
-  const cloudShown = signInFirst ? [] : cloudOptions;
-  const dropdown = (cloudShown.length > 0 || localSorted.length > 0) ? (
-    <ModelDropdown
-      open={menuOpen}
-      onOpenChange={setMenuOpen}
-      disabled={Boolean(bot.busy)}
-      label={currentOption ? (
-        <>
-          <span className="truncate">{currentOption.label}</span>
-          {currentOption.id === railInstance?.models.default && (
-            <span className="shrink-0 rounded bg-control px-1.5 py-px text-[10px] text-ink-secondary">{t("model.defaultTag")}</span>
-          )}
-        </>
-      ) : <span className="truncate text-ink-secondary">{t("model.choose")}</span>}
-    >
-      {cloudShown.length > 0 && (
-        <ModelMenuGroup label={t("model.rail.cloud")} data-model-cloud-group>{cloudShown.map(renderRow)}</ModelMenuGroup>
-      )}
-      {localSorted.length > 0 && (
-        <ModelMenuGroup label={t("model.localGroup")} data-model-local-group>{localSorted.map(renderRow)}</ModelMenuGroup>
-      )}
-    </ModelDropdown>
-  ) : null;
+  // The browsed engine's list, always open: the bot's model first (a
+  // thread), then Cloud and Local.
+  const railRows = railInstance ? rowsOf(railInstance, false) : null;
+  const engineSections: ModelMenuSection[] = railRows ? [
+    { key: "top", rows: topRows.filter((row) => row.kind === "follow") },
+    { key: "cloud", label: t("model.rail.cloud"), rows: railRows.cloud },
+    { key: "local", label: t("model.localGroup"), rows: railRows.local },
+  ] : [];
+  const railHasModels = Boolean(railRows && (railRows.cloud.length > 0 || railRows.local.length > 0));
+  const official = railRows?.catalog.official ?? [];
+  const signInFirst = Boolean(railRows?.catalog.signInFirst);
 
   const listSection = railInstance && (
     railInstance.policy ? (
       // The organisation does not allow this engine: shown, never pickable.
-      <div data-policy-blocked className={cn("min-h-0 flex-1 overflow-y-auto pb-3 pt-1 text-[12.5px] leading-relaxed text-ink-secondary", !modal && "px-3")}>
+      <div data-policy-blocked className="min-h-0 flex-1 overflow-y-auto pb-3 pt-1 text-[12.5px] leading-relaxed text-ink-secondary">
         <p className="font-medium text-ink">{t("policy.managedBy", { organization: railInstance.policy.organizationName })}</p>
         <p className="mt-1">{t("policy.modelBlocked", { organization: railInstance.policy.organizationName })}</p>
       </div>
@@ -1104,11 +1233,10 @@ export function ModelPicker({
         {advanced && !signInFirst && railInstance.snapshot.update && (
           <EngineUpdateNotice update={railInstance.snapshot.update} instance={railInstance} />
         )}
-        {follows !== undefined && (
-          <FollowBotModelRow name={profile.name} model={botModelName} follows={follows} onPick={pickBotModel} />
+        {(railHasModels || follows !== undefined) && (
+          <ModelSearchList key={railInstance.instanceId} variant="window" sections={engineSections} onPick={onRow} disabled={Boolean(bot.busy)} />
         )}
-        {dropdown}
-        {!dropdown && !signInFirst && (
+        {!railHasModels && !signInFirst && (
           <p className="py-2 text-[12.5px] text-ink-secondary">{orgMode ? t("model.org.noModels") : t("model.simple.noModels")}</p>
         )}
       </div>
@@ -1119,20 +1247,21 @@ export function ModelPicker({
   // not the provider being browsed), under the same one mode. `contained`
   // callers (the settings dialog) render their own EffortRow card, and two
   // copies of one control in one view read as a bug.
+  const effortTitle = active?.capabilities?.modelVariants ? t("model.reasoning") : t("model.effort");
   const effort = advanced && !contained && (
     <EffortRow
       bot={bot}
       threadId={threadId}
       updateBotDefault={Boolean(threadId)}
       className="shrink-0"
-      label={<span className="text-[12.5px] font-medium text-ink">{active?.capabilities?.modelVariants ? t("model.reasoning") : t("model.effort")}</span>}
+      label={<span className="text-[12.5px] font-medium text-ink">{effortTitle}</span>}
     />
   );
 
   const footer = !advanced ? null : (
     <div className="flex shrink-0 border-t border-hairline/40">
       <button type="button" data-model-engines-link onClick={() => {
-        setOpen(false);
+        closeWindow();
         dispatch({ type: "toggleAppSettings", open: true, section: "engines" });
       }} className="flex-1 px-4 py-2.5 text-left text-[12px] text-ink-secondary hover:bg-control/60 hover:text-ink">
         {t("settings.engines.title")}
@@ -1149,11 +1278,12 @@ export function ModelPicker({
   );
 
   const railProps = {
-    instances: pickerInstances, selectedInstance: railInstance, claudeInstance: claudeRailInstance,
+    instances: pickerInstances, selectedInstance: autoPane ? undefined : railInstance, claudeInstance: claudeRailInstance,
     openaiInstance: openaiRailInstance, onSelect: selectRail,
     onAddApiKeys: advanced && window.ogb?.remoteClient?.active !== true ? openApiKeys : undefined,
     ...(orgMode && myEngines ? { statusOf: orgStatusOf } : {}),
     ...(orgMode ? { notAllowed } : {}),
+    ...(!viewerLocal ? { auto: { on: autoOn, selected: autoPane, onSelect: () => setRailId(AUTO_RAIL) } } : {}),
     showUnready,
   };
 
@@ -1161,15 +1291,16 @@ export function ModelPicker({
     <div
       data-model-picker-backdrop
       className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 sm:items-center sm:p-6"
-      onMouseDown={(event) => event.target === event.currentTarget && setOpen(false)}
+      onMouseDown={(event) => event.target === event.currentTarget && closeWindow()}
     >
       <div
         ref={dialogRef}
         data-model-picker-content
+        data-model-pane={autoPane ? AUTO_RAIL : railInstance?.instanceId}
         role="dialog"
         aria-modal="true"
-        aria-labelledby={railInstance ? "model-picker-title" : undefined}
-        aria-label={railInstance ? undefined : t("model.choose")}
+        aria-labelledby={autoPane || railInstance ? "model-picker-title" : undefined}
+        aria-label={autoPane || railInstance ? undefined : t("model.choose")}
         tabIndex={-1}
         {...motion.exitProps}
         className={cn(
@@ -1178,24 +1309,26 @@ export function ModelPicker({
           motion.className,
         )}
       >
-        <button type="button" onClick={() => setOpen(false)} aria-label={t("model.close")}
-          className="absolute right-2.5 top-2.5 z-10 flex size-8 items-center justify-center rounded-full text-ink-tertiary hover:bg-ink/10 hover:text-ink-secondary">
+        <button type="button" onClick={closeWindow} aria-label={t("model.close")}
+          className="absolute right-2.5 top-2.5 z-20 flex size-8 items-center justify-center rounded-full text-ink-tertiary hover:bg-ink/10 hover:text-ink-secondary">
           <X size={18} aria-hidden="true" />
         </button>
         {pickerInstances.length > 0 && <ModelEngineRail {...railProps} wide />}
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
           <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-4 pb-4 pt-4 sm:px-6 sm:pt-5">
-            {railInstance ? (
+            {autoPane ? (
+              <>
+                {autoHeader}
+                <ModelSearchList key={AUTO_RAIL} variant="window" sections={allSections} onPick={onRow} disabled={Boolean(bot.busy)} />
+                {effort}
+              </>
+            ) : railInstance ? (
               <>
                 {header}
                 {/* Nothing pays yet: how to fix that comes first. Otherwise
                     the choice does, and who pays follows. */}
                 {payersFirst && payers}
-                {autoSection}
-                <div>
-                  <div className="mb-1 text-[12.5px] font-medium text-ink">{t("model.models")}</div>
-                  {listSection}
-                </div>
+                {listSection}
                 {effort}
                 {!payersFirst && payers}
               </>
@@ -1209,6 +1342,47 @@ export function ModelPicker({
     </div>
   );
 
+  // The composer's menu (2026-10-12, JC: like Cursor's): search, Auto, every
+  // engine's models, the effort, and Edit… for the whole window.
+  const menuPanel = (
+    <div
+      ref={menuRef}
+      data-model-menu
+      role="dialog"
+      aria-label={t("model.menu")}
+      style={menuAt ? { right: menuAt.right, bottom: menuAt.bottom, width: MENU_WIDTH } : { width: MENU_WIDTH }}
+      onKeyDown={(event) => {
+        if (event.key !== "Escape" || event.defaultPrevented) return;
+        event.preventDefault();
+        closeMenu(true);
+      }}
+      {...menuMotion.exitProps}
+      className={cn(
+        "z-50 flex max-h-[min(560px,calc(100dvh-96px))] max-w-[calc(100vw-16px)] flex-col overflow-hidden rounded-xl border border-popover-hairline popover-surface bg-popover py-1 text-popover-ink shadow-2xl shadow-black/50",
+        menuAt ? "fixed" : "absolute bottom-full right-0 mb-1.5",
+        menuMotion.className,
+      )}
+    >
+      <ModelSearchList variant="popover" autoFocus sections={allSections} onPick={onRow} onEscape={() => closeMenu(true)} disabled={Boolean(bot.busy)} />
+      {advanced && (active?.capabilities?.effortLevels?.length || active?.capabilities?.modelVariants) ? (
+        <div data-model-menu-effort className="border-t border-popover-hairline px-3.5 py-2">
+          <EffortRow bot={bot} threadId={threadId} updateBotDefault={Boolean(threadId)} compact
+            label={<span className="shrink-0 text-[12.5px] text-popover-ink-secondary">{effortTitle}</span>} />
+        </div>
+      ) : null}
+      <div className="border-t border-popover-hairline px-1.5 pt-1">
+        <ModelMenuItem variant="popover" data-model-edit onClick={openWindow}>
+          <span>{t("model.edit")}</span>
+          <ChevronRight size={14} aria-hidden="true" className="text-popover-ink-secondary" />
+        </ModelMenuItem>
+      </div>
+    </div>
+  );
+
+  // Portalled like Settings: a translated sidebar or composer would
+  // otherwise become the containing block. Without a document (static
+  // rendering in tests) they render in place.
+  const portal = (node: ReactNode) => (typeof document === "undefined" ? node : createPortal(node, document.body));
   return (
     <div ref={rootRef} className={cn(contained ? "w-full" : "relative", className)}>
       {contained ? (
@@ -1220,13 +1394,9 @@ export function ModelPicker({
         trigger
       )}
 
-      {motion.shown && (
-        // Portalled like Settings: a translated sidebar or composer would
-        // otherwise become the containing block. Without a document (static
-        // rendering in tests) the dialog renders in place.
-        typeof document === "undefined" ? modalPanel : createPortal(modalPanel, document.body)
-      )}
-      {!contained && changedBotModel && !open && ownModelThreads > 0 && (
+      {menuMotion.shown && portal(menuPanel)}
+      {motion.shown && portal(modalPanel)}
+      {!contained && !windowOnly && changedBotModel && !anyOpen && ownModelThreads > 0 && (
         <div data-thread-models-notice role="status"
           className="absolute right-0 top-full z-30 mt-2 flex max-w-[calc(100vw-2rem)] items-center gap-2 rounded-xl border border-hairline/50 bg-card py-2 pl-3 pr-2 shadow-xl shadow-black/30">
           <ThreadModelsLine bot={profile} />

@@ -9,6 +9,7 @@ is off, and every memory write is a journaled, undoable row. See [the memory gui
 
 ```sh
 pnpm exec vitest run server/memory-layer.e2e.test.ts
+pnpm exec vitest run server/memory-capture-restart.e2e.test.ts
 pnpm exec vitest run server/spend-cap-api.test.ts
 pnpm exec vitest run server/memory-entries.test.ts server/recall.test.ts server/memory-upkeep.test.ts server/workspace.test.ts
 pnpm exec vitest run src/components/bot-settings/MemorySection.test.ts src/lib/memory.test.ts server/drivers/agents-catalog-wire.test.ts
@@ -32,6 +33,7 @@ Evidence covers:
 - A fact about the person reaches About me on its own as a dated, attributed line in the prompt; Remove takes it out and a second Remove is refused.
 - The tidy-up archives the expired entry and strikes the contradicted one, reports it, and Undo restores the file.
 - A routine run is not captured as a person's conversation and never adds owner facts to About me.
+- A turn still waiting for the quiet spell when the server stops is saved as ids only, read back from the transcript after a restart, and captured then (POSIX: a Windows SIGTERM skips the shutdown hooks).
 - Background calls book their actual helper model, tokens and cost to the bot's usage. Capture, organization and contradiction checks each respect the configured monthly cap; free deterministic cleanup still runs at the cap.
 
 Unit tests add the share limit on small notebooks (no contradiction change below

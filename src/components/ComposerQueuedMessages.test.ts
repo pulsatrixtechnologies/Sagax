@@ -46,6 +46,12 @@ describe("double-Enter steer gesture", () => {
 });
 
 describe("QueuedComposerMessages", () => {
+  it("shows a queued message's words exactly as typed, with nothing hidden", () => {
+    const text = '<data-context>{"cardId":"c_1"}</data-context>\nOnly show last month';
+    const markup = renderToStaticMarkup(createElement(QueuedComposerMessages, { items: [{ queueId: "q", text }], onCancel: () => undefined }));
+    expect(markup).toContain("Only show last month");
+    expect(markup).toContain("&lt;data-context&gt;");
+  });
   it("explains a capacity wait without offering to interrupt another thread", () => {
     const markup = renderToStaticMarkup(createElement(QueuedComposerMessages, {
       items: [{ queueId: "capacity", text: "Run when there is room", reason: "capacity" }],

@@ -22,6 +22,9 @@ differences with OpenCode 2.x.
 In a bot's model picker it is called **OpenAI-compatible (OpenRouter / Groq)**
 and, for now, sits in the Local group.
 
+The Cline row lists its hosted model service. To run Cline's own coding agent,
+use the [Cline engine](#cline-engine).
+
 Other engines (Antigravity, Cursor, Gemini, Qwen, Grok, Droid, Kimi, Hermes,
 Pi and custom agents) use their own sign-in.
 
@@ -80,9 +83,12 @@ tested that with Sagax.
 
 On a self-hosted server that you start from a terminal, OpenCode also reads
 provider keys exported in that terminal, such as `OPENROUTER_API_KEY`,
-`FIREWORKS_API_KEY`, `DEEPSEEK_API_KEY` or `CLINE_API_KEY`. Keys exported
+`FIREWORKS_API_KEY` or `DEEPSEEK_API_KEY`. Keys exported
 this way reach every engine on that server, and any bot that can run commands
 can read them. On OpenCode 2.x this also has a side effect; see below.
+
+`CLINE_API_KEY` is scoped to the Cline and OpenCode engines. For ClinePass in
+OpenCode, `opencode auth login` also keeps its sign-in in OpenCode's own settings.
 
 ### Chat engine
 
@@ -110,6 +116,21 @@ To use more than one provider at once, add extra `openai-compat` engines to
 `config.json` (see [Bring your own engine](https://github.com/milind-soni/OpenMausBot/blob/main/docs/custom-engines.md#any-openai-compatible-endpoint-no-process-at-all)).
 Give each one its own key. An engine without a key uses the key from
 Connections and sends it to that engine's address.
+
+### Cline engine
+
+1. Install the standalone CLI with `npm install -g cline`.
+2. Run `cline auth` in a terminal to choose its provider, model and account.
+3. In Sagax's bot model picker, select **Cline** and
+   **Cline default (configured)**.
+
+Sagax uses Cline's selected provider and saved credentials. Change the
+provider or model through `cline auth`; the configured model is pinned before
+each prompt. An unconfigured account remains unavailable. **Set CLI** can
+select a wrapper with `--config` or `--data-dir` for a separate Cline home.
+
+Cline receives the bot's scoped MCP tools and uses Sagax's approval
+broker, including Full Access. Native Cline tool selection is not supported.
 
 ### Claude Code
 

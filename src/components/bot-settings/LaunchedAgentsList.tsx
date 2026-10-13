@@ -1,5 +1,5 @@
-// Details > Coding: cloud agents this bot launched (agent API), in one
-// grouped card like Grok Bot's panel.
+// Agents this bot launched (agent API), in one grouped card like Grok Bot's
+// panel: the coding ones under Details > Coding, the rest under Activity.
 import { ChevronRight } from "lucide-react";
 
 import { t } from "@/lib/i18n";
@@ -7,12 +7,12 @@ import { openExternalLink } from "@/lib/app-links";
 import type { BotLaunchedAgentItem } from "../../../shared/bot-launched-agents.ts";
 import { ActivityStatusIcon } from "./ActivityCard";
 
-export function LaunchedAgentsList({ items, onOpen }: { items: BotLaunchedAgentItem[]; onOpen: (item: BotLaunchedAgentItem) => void }) {
+export function LaunchedAgentsList({ items, onOpen, label }: { items: BotLaunchedAgentItem[]; onOpen: (item: BotLaunchedAgentItem) => void; label?: string }) {
   if (!items.length) return null;
   return (
     <ul
       className="overflow-hidden rounded-xl border border-hairline-weak bg-card"
-      aria-label={t("botPanel.coding.title")}
+      aria-label={label ?? t("botPanel.coding.title")}
       data-launched-agents
     >
       {items.map((item, index) => (

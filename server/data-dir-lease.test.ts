@@ -62,7 +62,14 @@ describe("Sagax data-directory lease", () => {
     // boot/uptime identify which boot wrote the record, so a pid recycled
     // across a restart cannot be mistaken for a live owner. boot is null on
     // platforms that expose no boot id, so it is checked separately.
-    const { boot, ...rest } = stored;
+    // pidns/start (Linux only) tell a restarted container's reused pid from the owner.
+    const { boot, pidns, start, ...rest } = stored;
+    if (process.platform === "linux") {
+      expect(pidns).toMatch(/^pid:\[\d+\]$/);
+      expect(Number.isSafeInteger(start)).toBe(true);
+    } else {
+      expect({ pidns, start }).toEqual({ pidns: undefined, start: undefined });
+    }
     expect(rest).toEqual({
       version: 1,
       pid: process.pid,
@@ -72,7 +79,7 @@ describe("Sagax data-directory lease", () => {
       uptime: expect.any(Number),
     });
     expect(boot === null || (typeof boot === "string" && boot.length > 0)).toBe(true);
-    expect(Object.keys(stored).sort()).toEqual(
+    expect(Object.keys(stored).filter((key) => key !== "pidns" && key !== "start").sort()).toEqual(
       ["boot", "createdAt", "host", "pid", "token", "uptime", "version"],
     );
     expect(() => acquireDataDirLease(dir)).toThrow(/already using this data directory/i);

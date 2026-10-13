@@ -86,7 +86,8 @@ public struct TurnOptions: Sendable {
     public var startMs: Double = 192
     /// while the bot is audible
     public var bargeInPositive: Float = 0.7
-    public var bargeInStartMs: Double = 160
+    /// Four 32 ms frames. The cut is at 128 ms; a 12 ms fade is silent by 140 ms.
+    public var bargeInStartMs: Double = 128
     public var minEndpointMs: Double = 480
     public var maxEndpointMs: Double = 900
     public var endpointMs: Double = 600

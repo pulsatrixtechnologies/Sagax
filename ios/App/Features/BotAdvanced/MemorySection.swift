@@ -497,9 +497,6 @@ struct BotMemoryGauge: View {
             if let warning {
                 Text(warning).font(.system(size: 12.5)).foregroundStyle(Theme.danger)
             }
-            Text(String(localized: "\(capacity.lines) of \(capacity.maxLines) lines · \(MemoryCapacity.formatBytes(capacity.bytes)) of \(MemoryCapacity.formatBytes(capacity.maxBytes)) — only the first \(capacity.maxLines) lines load each turn."))
-                .font(.system(size: 12))
-                .foregroundStyle(Theme.textSecondary)
         }
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier("memory-gauge")

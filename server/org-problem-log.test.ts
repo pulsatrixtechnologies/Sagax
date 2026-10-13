@@ -51,7 +51,7 @@ describe("problem log", () => {
     expect(rows[1]!.detail).toHaveLength(300);
     expect(rows[1]!.reason).toBe("failed");
     expect(readProblems(dir, { from: base + 500 }).map((row) => row.botId)).toEqual(["b2"]);
-    expect(statSync(problemFileFor(dir, new Date(base))).mode & 0o777).toBe(0o600);
+    if (process.platform !== "win32") expect(statSync(problemFileFor(dir, new Date(base))).mode & 0o777).toBe(0o600);
     expect(readFileSync(problemFileFor(dir, new Date(base)), "utf8").split("\n").filter(Boolean)).toHaveLength(2);
   });
 });

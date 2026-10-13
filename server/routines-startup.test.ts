@@ -13,14 +13,19 @@ it("recovers queued/due work without resurrecting an interrupted routine after r
   const { url, dataDir, logPath } = fixture.info;
   let restarted: ChildProcess | undefined;
   const api = async (method: string, path: string, body?: unknown) => {
-    const response = await fetch(`${url}${path}`, {
-      method,
-      headers: { "content-type": "application/json" },
-      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-      signal: AbortSignal.timeout(2_000),
-    });
-    expect(response.ok, `${method} ${path}`).toBe(true);
-    return await response.json() as any;
+    const startedAt = Date.now();
+    try {
+      const response = await fetch(`${url}${path}`, {
+        method,
+        headers: { "content-type": "application/json" },
+        ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+        signal: AbortSignal.timeout(2_000),
+      });
+      expect(response.ok, `${method} ${path}`).toBe(true);
+      return await response.json() as any;
+    } catch (cause) {
+      throw new Error(`${method} ${path} failed after ${Date.now() - startedAt}ms (${restarted ? "after" : "before"} restart)`, { cause });
+    }
   };
   try {
     const scheduledBot = (await api("POST", "/api/bots", { name: "Restart scheduled" })).bot;
@@ -150,6 +155,11 @@ it("recovers queued/due work without resurrecting an interrupted routine after r
     const evidence = { fixture: fixture.info, restartPid: restarted.pid, runs, wait, messages };
     writeFileSync(`${logPath}.routines-restart.json`, JSON.stringify(evidence, null, 2));
     console.log(JSON.stringify({ logPath, evidencePath: `${logPath}.routines-restart.json` }));
+  } catch (error) {
+    // CI must retain the owned fixture's diagnostics, not only a fetch timeout.
+    try { console.error(`Routine startup fixture ${logPath}\n${readFileSync(logPath, "utf8").slice(-8_000)}`); }
+    catch { /* keep the original test failure if the log cannot be read */ }
+    throw error;
   } finally {
     await waitForExit(restarted, { signal: "SIGTERM" });
     await fixture.close();

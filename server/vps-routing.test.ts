@@ -31,6 +31,7 @@ import {
   MANAGED_LABEL,
 } from "./container-computer.ts";
 import { VPS_CONTAINER_LABEL, VPS_IMAGE, VPS_MANAGED_LABEL, VPS_VIEWER_LABEL, vpsContainerName } from "./vps-computer.ts";
+import { CONTROL_BUSY, CONTROL_REFUSAL_PLAIN, controlRefusal, createControlClient } from "./control-client.ts";
 import { removeTempDir, waitForExit } from "./testing/cleanup.ts";
 import { freePortBlock } from "./testing/ports.ts";
 import type { RoutineSchedule } from "../shared/routines.ts";
@@ -41,6 +42,10 @@ const PORT = await freePortBlock([0, 1]);
 const BASE = `http://127.0.0.1:${PORT}`;
 const IMAGE_ID = `sha256:${"a".repeat(64)}`;
 const CONTAINER_ID = "b".repeat(64);
+/** One computer call's wait on a busy desktop, shortened — but past the 2 s
+ * after which the bridges' old control client gave up and told the model a
+ * person had taken control. */
+const CALL_WAIT_MS = 3_000;
 
 // the fake docker is a POSIX shell script, like every process fixture here
 const posixOnly = describe.skipIf(process.platform === "win32");
@@ -155,6 +160,10 @@ posixOnly("VPS turn routing e2e (fake ACP fleet + fake docker over SSH)", () => 
   let stderr = "";
   let gateFile: string;
   let acpDump: string;
+  // A second engine with its own gate: a teammate that stays mid-turn
+  // while the VPS bot answers it.
+  let askerGate: string;
+  let askerDump: string;
   let dockerLog: string;
 
   type ApiBody = Record<string, string | boolean | null | RoutineSchedule | { instanceId: string; model: string } | { sshAlias: string }>;
@@ -188,6 +197,8 @@ posixOnly("VPS turn routing e2e (fake ACP fleet + fake docker over SSH)", () => 
     mkdirSync(fakeBin, { recursive: true });
     gateFile = join(home, "turn.gate");
     acpDump = join(home, "acp.dump.json");
+    askerGate = join(home, "asker.gate");
+    askerDump = join(home, "asker.dump.json");
     dockerLog = join(fakeBin, "docker.log");
 
     writeFileSync(join(fakeBin, "docker"), FAKE_DOCKER, { mode: 0o755 });
@@ -220,6 +231,11 @@ createServer(socket => socket.end()).listen(port, '127.0.0.1');
             environment: { FAKE_ACP_MODE: "echo-gated", FAKE_ACP_GATE_FILE: gateFile, FAKE_ACP_DUMP: acpDump },
             config: { cli: FAKE_CLI, fullAuto: true },
           },
+          asker: {
+            driver: "grokAgent",
+            environment: { FAKE_ACP_MODE: "echo-gated", FAKE_ACP_GATE_FILE: askerGate, FAKE_ACP_DUMP: askerDump },
+            config: { cli: FAKE_CLI, fullAuto: true },
+          },
         },
       }),
     );
@@ -231,6 +247,7 @@ createServer(socket => socket.end()).listen(port, '127.0.0.1');
       SAGAX_EXTRA_PATH: fakeBin,
       FAKE_DOCKER_DIR: fakeBin,
       FAKE_DOCKER_LOG: dockerLog,
+      SAGAX_COMPUTER_CALL_WAIT_MS: String(CALL_WAIT_MS),
     };
     if (process.env.PATH) env.PATH = process.env.PATH;
     if (process.env.SystemRoot) env.SystemRoot = process.env.SystemRoot;
@@ -671,8 +688,9 @@ createServer(socket => socket.end()).listen(port, '127.0.0.1');
         const env = (name: string) => computer!.env?.find((entry) => entry.name === name)?.value ?? "";
         return { args: computer!.args ?? [], url: env("SAGAX_CONTROL_URL"), token: env("SAGAX_CONTROL_TOKEN") };
       };
-      const gate = async (mount: { url: string; token: string }) =>
-        (await fetch(mount.url, { headers: { authorization: `Bearer ${mount.token}` } })).json() as Promise<any>;
+      // A computer call's check, exactly as the mounted bridge makes it:
+      // the real control client, with its own timeout.
+      const gate = (mount: { url: string; token: string }) => createControlClient({ url: mount.url, token: mount.token }).state(true);
       const activities = async (threadId: string) =>
         ((await api("GET", `/api/threads/${threadId}/messages`)).body.messages as any[])
           .filter((m) => m.kind === "activity").map((m) => String(m.tool?.name ?? ""));
@@ -704,12 +722,14 @@ createServer(socket => socket.end()).listen(port, '127.0.0.1');
         // The desktop: nobody has touched it, so the second thread's first
         // computer call claims it at once…
         expect(await gate(checkMount)).toEqual({ held: false, helpOpen: false });
-        // …and the long task's first computer call finds it taken: refused
-        // with the pause text, and its chip names who is running what.
-        expect(await gate(refillMount)).toMatchObject({
-          held: true, helpOpen: false,
-          blockedReason: "Another thread is using this computer. This call was not performed. Pause computer work until that thread finishes, then take a fresh screenshot before acting.",
-        });
+        // …and the long task's first computer call finds it taken: it waits
+        // for it — longer than the old client's 2 s — then says so, never
+        // that a person took control, and its chip names who is running what.
+        const started = Date.now();
+        const contended = await gate(refillMount);
+        expect(contended).toEqual({ held: true, helpOpen: false, blockedReason: CONTROL_BUSY });
+        expect(controlRefusal(contended)).not.toBe(CONTROL_REFUSAL_PLAIN);
+        expect(Date.now() - started).toBeGreaterThanOrEqual(CALL_WAIT_MS - 200);
         // The chip may carry its queue position and, once the resource has
         // wait history, an estimate suffix (#1652). The holder it names is
         // the fact under test here, so the shape stays pinned around it.
@@ -735,4 +755,52 @@ createServer(socket => socket.end()).listen(port, '127.0.0.1');
     },
     60_000,
   );
+
+  // A Chief's assignment (coordinate_bots) to a bot whose VPS was stopped
+  // failed at dispatch, even when the work never needed a screen. The turn
+  // now runs, and its model is told why there is no computer and what the
+  // person can do.
+  it("runs a teammate turn whose Auto VPS is unavailable, telling the model why instead of failing it", async () => {
+    expect((await api("PUT", "/api/config", { vps: { sshAlias: "production-vps" } })).status).toBe(200);
+    const asker = (await api("POST", "/api/bots")).body.bot;
+    await api("PATCH", `/api/bots/${asker.id}`, { name: "Asker", browser: false, modelSelection: { instanceId: "asker", model: "fake-model" } });
+    const teammate = (await api("POST", "/api/bots")).body.bot;
+    await api("PATCH", `/api/bots/${teammate.id}`, { name: "VPS teammate", browser: false, cloudBackend: "vps", computer: null,
+      modelSelection: { instanceId: "vps", model: "fake-model" } });
+    writeFileSync(join(dirname(dockerLog), "container.name"), vpsContainerName(teammate.id));
+    const template = join(dirname(dockerLog), "container.json.tpl");
+    const original = readFileSync(template, "utf8");
+    writeFileSync(template, original.replace('"Running":true', '"Running":false'));
+    writeFileSync(gateFile, "open");
+    rmSync(askerGate, { force: true });
+    rmSync(`${askerDump}.mcp.json`, { force: true });
+    try {
+      expect((await api("POST", `/api/bots/${asker.id}/messages`, { text: "Ask your teammate for the queue summary" })).status).toBe(202);
+      await until(async () => existsSync(`${askerDump}.mcp.json`), "the asker's turn");
+      const agents = (JSON.parse(readFileSync(`${askerDump}.mcp.json`, "utf8")) as Array<{ name: string; env?: Array<{ name: string; value: string }> }>)
+        .find((server) => server.name === "agents");
+      const token = agents?.env?.find((entry) => entry.name === "SAGAX_COMMS_TOKEN")?.value ?? "";
+      const sent = await fetch(`${BASE}/api/internal/coordinate-bots`, {
+        method: "POST",
+        headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+        body: JSON.stringify({ botIds: [teammate.id], message: "Summarise the queue numbers from this morning." }),
+      });
+      const queued = await sent.json() as { receipts?: Array<{ threadId?: string }> };
+      expect(sent.status, JSON.stringify(queued)).toBe(200);
+      const workThread = queued.receipts?.[0]?.threadId ?? "";
+      const replies = async () => ((await api("GET", `/api/threads/${workThread}/messages?limit=100`)).body.messages as any[]) ?? [];
+      // Its turn either runs (and echoes its prompt) or fails at dispatch.
+      await until(async () => (await replies()).some((message) =>
+        message.text?.startsWith("echo: ") || String(message.tool?.name ?? "").startsWith("error:")), "the teammate's turn");
+      const thread = await replies();
+      expect(thread.filter((message) => String(message.tool?.name ?? "").startsWith("error:"))).toEqual([]);
+      const echo = thread.find((message) => message.text?.startsWith("echo: ")).text as string;
+      expect(echo).toContain("This bot's VPS computer is unavailable this turn (The Sagax VPS container is stopped)");
+      expect(echo).toContain("Open Computer and enable Start VPS automatically");
+    } finally {
+      writeFileSync(template, original);
+      writeFileSync(askerGate, "open");
+      await api("POST", `/api/bots/${asker.id}/interrupt`, {});
+    }
+  }, 45_000);
 });

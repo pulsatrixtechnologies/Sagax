@@ -1,0 +1,14 @@
+# Example caps. The admin applies this; sagax-sandboxd can only get and list
+# it, so it cannot raise its own quota. Size it for the pool. The numbers
+# here are a starting point, not a claim about any cloud account.
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: sagax-sandbox-quota
+  namespace: sagax-sandboxes
+spec:
+  hard:
+    pods: "10"
+    limits.cpu: "8"
+    limits.memory: 16Gi
+    requests.storage: 50Gi

@@ -396,10 +396,6 @@ export function isPermissionKey(value: unknown): value is PermissionKey {
   return typeof value === "string" && BY_KEY.has(value);
 }
 
-export function permissionDefinition(key: string): PermissionDefinition<PermissionKey> | undefined {
-  return BY_KEY.get(key);
-}
-
 /** What a plain member holds when Perspicax sends no list. */
 export const MEMBER_DEFAULT_PERMISSIONS: readonly PermissionKey[] = PERMISSIONS
   .filter((entry) => entry.memberDefault && !entry.adminOnly)

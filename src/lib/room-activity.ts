@@ -20,6 +20,8 @@ export function roomActivityVisible(
   const tool = message.tool;
   if (message.kind !== "activity" || !tool) return false;
   if (isTurnStoppedNotice(message)) return false;
+  // a Data receipt is a person's own result, never a tool receipt to hide
+  if (message.dataResult) return true;
   if (hideToolReceipts) return !isToolActivityRow(message);
   if (message.comm || message.threadRef || isStatusActivity(message)) return true;
   return tool.ok === false || failedTurnCause(tool.name) !== null || showToolCalls;

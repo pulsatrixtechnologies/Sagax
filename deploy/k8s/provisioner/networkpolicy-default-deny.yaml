@@ -1,0 +1,15 @@
+# Applied by the provisioner at start as well (ensureDefaultDeny). Selects
+# every Pod. Apply networkpolicy-provisioner.yaml first so the provisioner
+# keeps its API path.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: sagax-default-deny
+  namespace: sagax-sandboxes
+  labels:
+    com.pulsatrix.sagax.sandbox: egress
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress

@@ -582,9 +582,8 @@ describe("OpenAICompatDriver", () => {
 
     // The resent prefix (system + transcript) must stay byte-identical when
     // the volatile half changes, so only the stable half may sit in the
-    // system message. The volatile half rides the newest user message on
-    // every turn: the stored transcript never contains the delivered
-    // notes, so a model handed nothing would lose its memory.
+    // system message. The volatile half rides the newest user message
+    // whenever the replayed history does not already carry it.
     const messages: any[] = sentBody?.messages ?? [];
     expect(messages[0]).toEqual({ role: "system", content: "Standing rules." });
     expect(messages.slice(1, 3)).toEqual([
@@ -655,6 +654,197 @@ describe("OpenAICompatDriver", () => {
     expect(after).not.toContain(CALL_MARK);
     recorder.stop();
     await inst.dispose();
+  });
+
+  describe("replays what each earlier user message actually carried", () => {
+    const NOTE = "Context from Sagax updated since this conversation started; it replaces any earlier copy:\n\n";
+    // index.ts stamps the turn text (clock, recall) but stores only what the
+    // person typed, which is what later turns get back as transcript.
+    const clock = (minute: string) => `Current time when this message was sent: Friday, 2026-10-09 18:${minute} UTC (UTC+00:00).\n\n`;
+
+    const fixture = async () => {
+      const bodies: any[] = [];
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+          if (String(input).endsWith("/models")) return new Response(JSON.stringify({ data: [] }), { status: 200 });
+          bodies.push(JSON.parse(String(init?.body)));
+          return new Response(
+            'data: {"choices":[{"delta":{"content":"hi"}}]}\n' + "data: [DONE]\n",
+            { status: 200, headers: { "content-type": "text/event-stream" } },
+          );
+        }),
+      );
+      const inst = await OpenAICompatDriver.create({
+        instanceId: "test-replay-notes",
+        displayName: "Replay notes",
+        enabled: true,
+        config: { url: "http://localhost:9/v1", apiKeyEnv: "TEST_KEY" },
+        environment: { TEST_KEY: "secret" },
+      });
+      const recorder = recordEvents(inst.adapter);
+      let turns = 0;
+      const send = async (input: { text: string; volatile: string; transcript: Array<{ role: "user" | "assistant"; text: string }>; threadId?: string; mentionTurn?: boolean; recalled?: string }) => {
+        const threadId = input.threadId ?? "thread-replay";
+        const settled = ++turns;
+        await inst.adapter.sendTurn({
+          threadId,
+          text: input.text,
+          system: `Standing rules.\n\n${input.volatile}`,
+          systemStable: "Standing rules.",
+          systemVolatile: input.volatile,
+          transcript: input.transcript,
+          ...(input.mentionTurn ? { mentionTurn: true } : {}),
+          ...(input.recalled ? { recalled: input.recalled } : {}),
+        });
+        await recorder.until((e) => e.type === "turn.completed" && e.threadId === threadId &&
+          recorder.events.filter((x) => x.type === "turn.completed").length >= settled);
+        return bodies.at(-1)!.messages as any[];
+      };
+      return { send, done: async () => { recorder.stop(); await inst.dispose(); } };
+    };
+
+    it("keeps the previous request a byte-identical prefix when the volatile half is unchanged", async () => {
+      const { send, done } = await fixture();
+      const first = await send({ text: clock("00") + "hello", volatile: "Memory: likes tea.", transcript: [] });
+      const second = await send({
+        text: clock("01") + "next",
+        volatile: "Memory: likes tea.",
+        transcript: [{ role: "user", text: "hello" }, { role: "assistant", text: "hi" }],
+      });
+      expect(second.slice(0, first.length)).toEqual(first);
+      expect(first.at(-1)).toEqual({ role: "user", content: NOTE + "Memory: likes tea.\n\n" + clock("00") + "hello" });
+      // The note is still in the replayed history, so it is not repeated.
+      expect(second.slice(first.length)).toEqual([
+        { role: "assistant", content: "hi" },
+        { role: "user", content: clock("01") + "next" },
+      ]);
+      await done();
+    });
+
+    it("keeps the prefix and appends the new note when the volatile half changes", async () => {
+      const { send, done } = await fixture();
+      const first = await send({ text: clock("00") + "hello", volatile: "Memory: likes tea.", transcript: [] });
+      const second = await send({
+        text: clock("01") + "next",
+        volatile: "Memory: likes coffee.",
+        transcript: [{ role: "user", text: "hello" }, { role: "assistant", text: "hi" }],
+      });
+      expect(second.slice(0, first.length)).toEqual(first);
+      expect(second.at(-1)).toEqual({ role: "user", content: NOTE + "Memory: likes coffee.\n\n" + clock("01") + "next" });
+      // Clearing the volatile half announces it instead of going silent.
+      const third = await send({
+        text: "again",
+        volatile: "",
+        transcript: [
+          { role: "user", text: "hello" }, { role: "assistant", text: "hi" },
+          { role: "user", text: "next" }, { role: "assistant", text: "hi" },
+        ],
+      });
+      expect(third.slice(0, second.length)).toEqual(second);
+      expect(third.at(-1)).toEqual({
+        role: "user",
+        content: "The Sagax context notes from earlier in this conversation have been cleared; the standing instructions still apply.\n\nagain",
+      });
+      await done();
+    });
+
+    it("re-delivers the note once the message that carried it leaves the replayed window", async () => {
+      const { send, done } = await fixture();
+      await send({ text: "hello", volatile: "Memory: likes tea.", transcript: [] });
+      await send({ text: "next", volatile: "Memory: likes tea.", transcript: [{ role: "user", text: "hello" }, { role: "assistant", text: "hi" }] });
+      const trimmed = await send({
+        text: "third",
+        volatile: "Memory: likes tea.",
+        transcript: [
+          { role: "assistant", text: "[2 earlier messages omitted from this context; full history remains in the app.]" },
+          { role: "user", text: "next" }, { role: "assistant", text: "hi" },
+        ],
+      });
+      expect(trimmed.slice(1, -1)).toEqual([
+        { role: "assistant", content: "[2 earlier messages omitted from this context; full history remains in the app.]" },
+        { role: "user", content: "next" },
+        { role: "assistant", content: "hi" },
+      ]);
+      expect(trimmed.at(-1)).toEqual({ role: "user", content: NOTE + "Memory: likes tea.\n\nthird" });
+      await done();
+    });
+
+    it("leaves automatic recall out of the replay and keeps the added bytes bounded", async () => {
+      const { send, done } = await fixture();
+      const transcript: Array<{ role: "user" | "assistant"; text: string }> = [];
+      const bytes = (messages: any[]) => Buffer.byteLength(JSON.stringify(messages));
+      let previous: any[] = [];
+      for (let turn = 0; turn < 20; turn++) {
+        const minute = String(turn).padStart(2, "0");
+        const recalled = `<recalled turn="${turn}">\n${"r".repeat(6000)}\n</recalled>`;
+        const typed = `message ${turn}`;
+        const messages = await send({
+          text: `${clock(minute)}${recalled}\n\n${typed}`,
+          recalled,
+          // a volatile half that changes every turn puts a fresh note on each one
+          volatile: `Recent work: ${"w".repeat(2000)} ${turn}`,
+          transcript: [...transcript],
+        });
+        expect(messages.at(-1).content).toContain(recalled);
+        // Everything before the previous user message is resent unchanged;
+        // that message itself is replayed without the recall it carried.
+        if (turn > 0) expect(messages.slice(0, previous.length - 1)).toEqual(previous.slice(0, -1));
+        for (const message of messages.slice(1, -1)) expect(message.content).not.toContain("<recalled");
+        const stored = [{ role: "system", content: "Standing rules." }, ...transcript.map((m) => ({ role: m.role, content: m.text }))];
+        expect(bytes(messages.slice(0, -1)) - bytes(stored)).toBeLessThanOrEqual(24_000 + 2_000);
+        previous = messages;
+        transcript.push({ role: "user", text: typed }, { role: "assistant", text: "hi" });
+      }
+      await done();
+    });
+
+    it("does not lend a record to a later identical message it did not send", async () => {
+      const { send, done } = await fixture();
+      await send({ text: clock("00") + "continue", volatile: "Memory: likes tea.", transcript: [] });
+      // A second "continue" went to another engine, which this runtime never saw.
+      const messages = await send({
+        text: clock("05") + "next",
+        volatile: "Memory: likes tea.",
+        transcript: [
+          { role: "user", text: "continue" }, { role: "assistant", text: "hi" },
+          { role: "user", text: "continue" }, { role: "assistant", text: "done" },
+        ],
+      });
+      expect(messages.slice(1, -1)).toEqual([
+        { role: "user", content: NOTE + "Memory: likes tea.\n\n" + clock("00") + "continue" },
+        { role: "assistant", content: "hi" },
+        { role: "user", content: "continue" },
+        { role: "assistant", content: "done" },
+      ]);
+      await done();
+    });
+
+    it("still delivers the note on a mention turn and on a thread it has not seen", async () => {
+      const { send, done } = await fixture();
+      await send({ text: "hello", volatile: "Tagged: @Testy", transcript: [] });
+      const mention = await send({
+        text: "@Testy again",
+        volatile: "Tagged: @Testy",
+        transcript: [{ role: "user", text: "hello" }, { role: "assistant", text: "hi" }],
+        mentionTurn: true,
+      });
+      expect(mention.at(-1)).toEqual({ role: "user", content: NOTE + "Tagged: @Testy\n\n@Testy again" });
+      // A thread rebuilt after a restart has no record: its transcript goes
+      // out as stored and the newest message carries the note, as before.
+      const unseen = await send({
+        threadId: "thread-unseen",
+        text: "later",
+        volatile: "Memory: likes tea.",
+        transcript: [{ role: "user", text: "hello" }, { role: "assistant", text: "hi" }],
+      });
+      expect(unseen.slice(1)).toEqual([
+        { role: "user", content: "hello" },
+        { role: "assistant", content: "hi" },
+        { role: "user", content: NOTE + "Memory: likes tea.\n\nlater" },
+      ]);
+      await done();
+    });
   });
 
   it("omits provider routing on non-OpenRouter endpoints even when configured", async () => {

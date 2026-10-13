@@ -42,9 +42,10 @@ import {
   markMemoryReviewed,
 } from "@/lib/memory";
 import { ApiError, useStore, type Bot } from "@/state/store";
-import { Switch, SwitchRow } from "../SettingsPrimitives";
+import { HelpTip, SwitchRow } from "../SettingsPrimitives";
 import { MarkdownEditor } from "../markdown/MarkdownEditor";
 import { inputCls } from "./field";
+import { PaneEmpty, PaneSection } from "./PaneSection";
 
 const buttonCls = "rounded-lg bg-control px-3 py-1.5 text-[13px] text-ink hover:bg-raised-hover disabled:opacity-50";
 const quietButtonCls = "rounded-md px-2 py-1 text-[12.5px] text-ink-secondary hover:bg-control hover:text-ink disabled:opacity-50";
@@ -60,25 +61,25 @@ interface Editing {
 
 interface Conflict {
   path: string;
-  /** What is on disk now — the bot's version. */
+  /** What is on disk now: the bot's version. */
   current: string;
   currentHash: string;
 }
 
-/** The on/off card at the top of the Memory section: the standard switch row. */
+/** The on/off switch at the top of the Memory section: the standard switch
+ * row, the detail behind its info button. */
 export function MemoryToggleCard({ enabled, busy, onToggle }: { enabled: boolean; busy: boolean; onToggle: (next: boolean) => void }) {
   return (
-    <div className="rounded-xl border border-hairline/40 p-4">
-      <div className="text-[13px] font-medium text-ink">{t("botPanel.memory.title")}</div>
+    <PaneSection>
       <SwitchRow
-        className="mt-3"
         label={t("botPanel.memory.let")}
-        description={<>{t("botPanel.memory.off")}{busy ? t("botPanel.memory.busy") : ""}</>}
+        help={t("botPanel.memory.off")}
+        description={busy ? t("botPanel.memory.busy").trim() : undefined}
         checked={enabled}
         disabled={busy}
         onChange={onToggle}
       />
-    </div>
+    </PaneSection>
   );
 }
 
@@ -443,7 +444,7 @@ export function MemorySection({ bot, active = true, onToggle }: { bot: Bot; acti
   };
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-5">
       <MemoryToggleCard enabled={bot.memoryEnabled !== false} busy={Boolean(bot.busy)} onToggle={onToggle} />
 
       {lendingReview && (
@@ -468,7 +469,24 @@ export function MemorySection({ bot, active = true, onToggle }: { bot: Bot; acti
         />
       )}
 
-      {overview && <MemoryGauge index={overview.index} />}
+      {overview && (
+        <PaneSection title="MEMORY.md" help={t("botPanel.memory.indexHelp")}>
+          <button
+            type="button"
+            onClick={() => void open(MEMORY_INDEX)}
+            aria-label={t("botPanel.memory.aria")}
+            className={cn(
+              "mb-3 flex w-full items-center gap-2 rounded-lg border border-hairline/40 px-3 py-2 text-left hover:bg-control/40",
+              editing?.path === MEMORY_INDEX && "bg-control/60",
+            )}
+          >
+            <FileText size={14} className="shrink-0 text-ink-secondary" />
+            <span className="truncate font-mono text-[12.5px] text-ink">MEMORY.md</span>
+            <span className="ml-auto shrink-0 text-[12px] text-ink-secondary">{t("botPanel.memory.open")}</span>
+          </button>
+          <MemoryGauge index={overview.index} />
+        </PaneSection>
+      )}
 
       {bot.memoryEnabled !== false && <MemoryUpkeepCard
         enabled={bot.memoryUpkeep !== false}
@@ -497,23 +515,10 @@ export function MemorySection({ bot, active = true, onToggle }: { bot: Bot; acti
       )}
 
       {overview && (
-        <div className="rounded-xl border border-hairline/40 p-4">
-          <button
-            type="button"
-            onClick={() => void open(MEMORY_INDEX)}
-            aria-label={t("botPanel.memory.aria")}
-            className={cn(
-              "mb-4 flex w-full items-center gap-2 rounded-lg border border-hairline/40 px-3 py-2 text-left hover:bg-control/40",
-              editing?.path === MEMORY_INDEX && "bg-control/60",
-            )}
-          >
-            <FileText size={14} className="shrink-0 text-ink-secondary" />
-            <span className="truncate font-mono text-[12.5px] text-ink">MEMORY.md</span>
-          </button>
+        <PaneSection title={t("botPanel.memory.topics")} help={t("botPanel.memory.topicsHint")}>
           <MemoryFileRows
-            title={t("botPanel.memory.topics")}
-            hint={t("botPanel.memory.topicsHint")}
             files={overview.topics}
+            empty={t("botPanel.memory.noTopics")}
             selected={editing?.path}
             onOpen={(file) => void open(file.path)}
             onDelete={(file) => void remove(file)}
@@ -529,37 +534,31 @@ export function MemorySection({ bot, active = true, onToggle }: { bot: Bot; acti
                 if (e.key === "Enter") void createTopic();
               }}
             />
-            <button type="button" className={buttonCls} disabled={!newTopic.trim()} onClick={() => void createTopic()}>
+            <button type="button" className={cn(buttonCls, "shrink-0 whitespace-nowrap")} disabled={!newTopic.trim()} onClick={() => void createTopic()}>
               {t("botPanel.memory.newTopic")}
             </button>
           </div>
-          {overview.logs.length > 0 && (
-            <div className="mt-4">
-              <MemoryFileRows
-                title={t("botPanel.memory.logs")}
-                hint={t("botPanel.memory.logsHint")}
-                files={overview.logs}
-                selected={editing?.path}
-                onOpen={(file) => void open(file.path)}
-                onDelete={(file) => void remove(file)}
-              />
-            </div>
-          )}
-        </div>
+        </PaneSection>
       )}
 
-      <div className="rounded-xl border border-hairline/40 p-4">
-        <div className="text-[13px] font-medium text-ink">{t("botPanel.memory.changes")}</div>
-        <p className="mt-1 text-[13px] leading-relaxed text-ink-secondary">
-          {t("botPanel.memory.changesHelp")}
-        </p>
-        <div className="mt-3">
-          <MemoryJournalList rows={journal} botName={bot.name} reverting={reverting} onRevert={(row) => void revert(row)} />
-        </div>
-      </div>
+      {overview && overview.logs.length > 0 && (
+        <PaneSection title={t("botPanel.memory.logs")} help={t("botPanel.memory.logsHint")}>
+          <MemoryFileRows
+            files={overview.logs}
+            empty={t("botPanel.memory.noneYet")}
+            selected={editing?.path}
+            onOpen={(file) => void open(file.path)}
+            onDelete={(file) => void remove(file)}
+          />
+        </PaneSection>
+      )}
 
-      {notice && <div className="text-[12.5px] text-ink-secondary">{notice}</div>}
-      {error && <div className="text-[12.5px] text-danger">{error}</div>}
+      <PaneSection title={t("botPanel.memory.changes")} help={t("botPanel.memory.changesHelp")}>
+        <MemoryJournalList rows={journal} botName={bot.name} reverting={reverting} onRevert={(row) => void revert(row)} />
+      </PaneSection>
+
+      {notice && <div role="status" className="text-[12.5px] text-ink-secondary">{notice}</div>}
+      {error && <div role="alert" className="text-[12.5px] text-danger">{error}</div>}
     </div>
   );
 }
@@ -586,21 +585,24 @@ export function MemoryUpkeepCard({
   onToggle: () => void;
   onTidy: () => void;
 }) {
+  const limited = enabled && status !== null && !status.modelSteps;
+  const last = status?.lastTidy
+    ? t("botPanel.memory.lastTidy", { when: relativeTime(status.lastTidy.at), summary: tidySummary(status.lastTidy).toLowerCase() })
+    : t("botPanel.memory.notTidied");
+  const noticed = status?.lastCapture ? noticedCount(status.lastCapture) : 0;
   return (
-    <div className="rounded-xl bg-card p-4">
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <div className="text-[15px] font-medium text-ink">{t("botPanel.memory.upkeep")}</div>
-          <p className="mt-1 text-[13px] leading-relaxed text-ink-secondary">
-            {t("botPanel.memory.upkeepHelp")}
-          </p>
+    <PaneSection title={t("botPanel.memory.upkeep")}>
+      <SwitchRow
+        label={t("botPanel.memory.upkeepSwitch")}
+        help={t("botPanel.memory.upkeepHelp")}
+        checked={enabled}
+        onChange={onToggle}
+      />
+      {limited && (
+        <div className="mt-2 flex items-center gap-1.5 text-[12.5px] text-ink-secondary">
+          <span>{t("botPanel.memory.limited")}</span>
+          <HelpTip label={t("botPanel.memory.limited")}>{t("botPanel.memory.noSteps")}</HelpTip>
         </div>
-        <Switch checked={enabled} aria-label={t("botPanel.memory.upkeep")} onClick={onToggle} />
-      </div>
-      {enabled && status && !status.modelSteps && (
-        <p className="mt-2 text-[12.5px] text-ink-secondary">
-          {t("botPanel.memory.noSteps")}
-        </p>
       )}
       {enabled && (
         <div className="mt-3 flex flex-wrap items-center gap-3">
@@ -608,48 +610,40 @@ export function MemoryUpkeepCard({
             {tidying ? t("botPanel.memory.tidying") : t("botPanel.memory.tidyNow")}
           </button>
           <span className="text-[12.5px] text-ink-secondary">
-            {status?.lastTidy
-              ? t("botPanel.memory.lastTidy", { when: relativeTime(status.lastTidy.at), summary: tidySummary(status.lastTidy).toLowerCase() })
-              : t("botPanel.memory.notTidied")}
-            {status?.lastCapture && noticedCount(status.lastCapture)
-              ? t(noticedCount(status.lastCapture) === 1 ? "botPanel.memory.noticedOne" : "botPanel.memory.noticedMany", {
-                count: String(noticedCount(status.lastCapture)),
+            {last}
+            {status?.lastCapture && noticed
+              ? t(noticed === 1 ? "botPanel.memory.noticedOne" : "botPanel.memory.noticedMany", {
+                count: String(noticed),
                 when: relativeTime(status.lastCapture.at),
               })
               : ""}
           </span>
         </div>
       )}
-    </div>
+    </PaneSection>
   );
 }
 
+/** Two small meters with their numbers. The rule they measure (only the
+ * first lines load) is the section's info button; a cut that is happening
+ * is one line under them. */
 export function MemoryGauge({ index }: { index: MemoryCapacity }) {
   const status = capacityStatus(index);
   const fill = status.level === "over" ? "bg-danger" : status.level === "near" ? "bg-warning" : "bg-accent";
   return (
-    <div className={cn("p-1", status.level === "over" && "rounded-xl border border-danger/30 bg-danger/10 p-4")}>
-      <div className="flex items-center justify-between gap-3 text-[13px]">
-        <span className="font-medium text-ink">{t("botPanel.memory.lines")}</span>
-        <span className={cn("text-[12px]", status.level === "over" ? "text-danger" : "text-ink-secondary")}>
-          {index.lines} / {index.maxLines} {t("botPanel.memory.linesLabel").toLocaleLowerCase()} · {formatBytes(index.bytes)} / {formatBytes(index.maxBytes)}
-        </span>
-      </div>
-      <GaugeBar label={t("botPanel.memory.linesLabel")} share={status.lineShare} fill={fill} />
-      <GaugeBar label={t("botPanel.memory.sizeLabel")} share={status.byteShare} fill={fill} />
-      <p className={cn("mt-2 text-[12.5px] leading-relaxed", status.level === "over" ? "text-danger" : "text-ink-secondary")}>
-        {status.warning ?? status.sentence}
-      </p>
-      {status.warning && <p className="mt-1 text-[12px] text-ink-secondary">{status.sentence}</p>}
+    <div data-memory-gauge={status.level} title={status.sentence}>
+      <GaugeBar label={t("botPanel.memory.linesLabel")} value={`${index.lines} / ${index.maxLines}`} share={status.lineShare} fill={fill} />
+      <GaugeBar label={t("botPanel.memory.sizeLabel")} value={`${formatBytes(index.bytes)} / ${formatBytes(index.maxBytes)}`} share={status.byteShare} fill={fill} />
+      {status.warning && <p role="alert" className="mt-2 text-[12.5px] leading-relaxed text-danger">{status.warning}</p>}
     </div>
   );
 }
 
-function GaugeBar({ label, share, fill }: { label: string; share: number; fill: string }) {
+function GaugeBar({ label, value, share, fill }: { label: string; value: string; share: number; fill: string }) {
   const width = `${Math.min(100, Math.round(share * 100))}%`;
   return (
-    <div className="mt-2 flex items-center gap-2 text-[11.5px] text-ink-secondary">
-      <span className="w-10 shrink-0">{label}</span>
+    <div className="mt-2 flex items-center gap-3 text-[12px] text-ink-secondary first:mt-0">
+      <span className="w-12 shrink-0">{label}</span>
       <div
         className="h-1.5 flex-1 overflow-hidden rounded-full bg-inset"
         role="meter"
@@ -657,9 +651,11 @@ function GaugeBar({ label, share, fill }: { label: string; share: number; fill: 
         aria-valuemin={0}
         aria-valuemax={100}
         aria-valuenow={Math.min(100, Math.round(share * 100))}
+        aria-valuetext={value}
       >
         <div className={cn("h-full rounded-full", fill)} style={{ width }} />
       </div>
+      <span className="w-[120px] shrink-0 text-right tabular-nums">{value}</span>
     </div>
   );
 }
@@ -694,28 +690,25 @@ export function ConflictNotice({
 }
 
 export function MemoryFileRows({
-  title,
-  hint,
   files,
+  empty,
   selected,
   onOpen,
   onDelete,
 }: {
-  title: string;
-  hint: string;
   files: MemoryFileInfo[];
+  /** The one line shown when there are no files. */
+  empty: string;
   selected?: string;
   onOpen: (file: MemoryFileInfo) => void;
   onDelete: (file: MemoryFileInfo) => void;
 }) {
   return (
     <div>
-      <div className="text-[12px] font-medium uppercase tracking-[0.08em] text-ink-secondary">{title}</div>
-      <div className="mt-0.5 text-[12px] text-ink-secondary">{hint}</div>
       {files.length === 0 ? (
-        <div className="mt-2 text-[12.5px] text-ink-secondary">{t("botPanel.memory.noneYet")}</div>
+        <PaneEmpty>{empty}</PaneEmpty>
       ) : (
-        <div className="mt-2 overflow-hidden rounded-lg border border-hairline/40">
+        <div className="overflow-hidden rounded-lg border border-hairline/40">
           {files.map((file) => (
             <div
               key={file.path}

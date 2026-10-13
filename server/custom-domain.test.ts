@@ -9,13 +9,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const { httpsRequestMock } = vi.hoisted(() => ({ httpsRequestMock: vi.fn() }));
 vi.mock("node:https", () => ({ request: httpsRequestMock }));
 
-import {
+// The test setup reaches this module through config.ts (public-fetch.ts) with
+// the real node:https before the mock above exists; load it again with the mock.
+vi.resetModules();
+const {
   CUSTOM_DOMAIN_CHALLENGE_PATH,
   createCustomDomainVerifier,
   customDomainIpv4,
   isPublicDomainAddress,
   normalizeCustomDomain,
-} from "./custom-domain.ts";
+} = await import("./custom-domain.ts");
 
 const environmentId = "2cac4256-d238-49a4-bab5-227183911e55";
 const publicAddress: LookupAddress = { address: "8.8.8.8", family: 4 };

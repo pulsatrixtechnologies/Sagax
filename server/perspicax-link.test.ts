@@ -44,7 +44,8 @@ describe("readLinkFile", () => {
     const path = join(dir, "pulsabot.json");
     expect(readLinkFile(path, EXPECT)).toMatchObject({ ok: false, code: "missing" });
     writeLink(path, linkDoc(), 0o644);
-    expect(readLinkFile(path, EXPECT)).toMatchObject({ ok: false, code: "mode" });
+    // Windows has no POSIX "other users" bits to refuse on
+    if (process.platform !== "win32") expect(readLinkFile(path, EXPECT)).toMatchObject({ ok: false, code: "mode" });
     writeLink(path, JSON.stringify({ ...linkDoc(), pad: "x".repeat(5000) }), 0o600);
     expect(readLinkFile(path, EXPECT)).toMatchObject({ ok: false, code: "size" });
   });
@@ -237,6 +238,24 @@ describe("PerspicaxDirectory", () => {
     expect(await h.sync.refresh()).toMatchObject({ state: "error", error: "link_refused" });
   });
 
+  it("knows its own link token in constant time, follows a rotation, and refuses anything else (2026-10-11)", async () => {
+    const h = harness(directoryOf([person("BOB")]));
+    // before any fetch: the file is read on demand
+    expect(h.sync.linkTokenMatches(TOKEN_A)).toBe(true);
+    expect(h.sync.linkTokenMatches(TOKEN_B)).toBe(false);
+    expect(h.sync.linkTokenMatches("")).toBe(false);
+    expect(h.sync.linkTokenMatches(`${TOKEN_A}x`)).toBe(false);
+    // Perspicax rotates the token and rewrites the file: the new one opens, the old one no longer
+    writeLink(h.linkFile, linkDoc({ link_token: TOKEN_B }));
+    expect(h.sync.linkTokenMatches(TOKEN_B)).toBe(true);
+    expect(h.sync.linkTokenMatches(TOKEN_A)).toBe(false);
+    // a link file this server refuses (here, readable by others; on Windows, which has no such bits, a wrong version) closes it once it is read again
+    if (process.platform === "win32") writeLink(h.linkFile, linkDoc({ link_token: TOKEN_B, version: 2 }));
+    else writeLink(h.linkFile, linkDoc({ link_token: TOKEN_B }), 0o644);
+    expect(h.sync.linkTokenMatches(TOKEN_A)).toBe(false);
+    expect(h.sync.linkTokenMatches(TOKEN_B)).toBe(false);
+  });
+
   it("runs one refresh at a time", async () => {
     const h = harness(directoryOf([person("BOB")]));
     const [a, b] = await Promise.all([h.sync.refresh(), h.sync.refresh()]);
@@ -268,7 +287,9 @@ describe("PerspicaxDirectory", () => {
 
   it("reports a bad link file as an error and a missing one as missing", async () => {
     const h = harness(directoryOf([]));
-    chmodSync(h.linkFile, 0o644);
+    // readable by others; Windows has no such bits, so a wrong version there
+    if (process.platform === "win32") writeLink(h.linkFile, linkDoc({ version: 2 }));
+    else chmodSync(h.linkFile, 0o644);
     expect(await h.sync.refresh()).toMatchObject({ state: "error", error: "link_invalid" });
     expect(h.requests).toHaveLength(0);
   });

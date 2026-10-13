@@ -91,7 +91,7 @@ struct BotPerspicaxSection: View {
                         .font(.footnote).foregroundStyle(Theme.textSecondary)
                 }
             } footer: {
-                Text(String(localized: "Routines use the tools of the person they run as, once that person allows routines to act in their name."))
+                Text(String(localized: "Routines use the tools of the person they run as. That person needs a recent sign-in to Sagax; a run while they have none goes without these tools until they sign in again."))
             }
         }
     }

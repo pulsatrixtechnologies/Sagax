@@ -9,6 +9,7 @@ import test from "node:test";
 import {
   acquireDataDirLease,
   acquireDataDirLeaseForProcess,
+  setProcessIdentityProbesForTesting,
 } from "./data-dir-lease.mjs";
 
 const MODULE_URL = new URL("./data-dir-lease.mjs", import.meta.url).href;
@@ -660,4 +661,80 @@ test("a live but unrelated Windows pid reused within the same boot is treated as
   } finally {
     lease.release();
   }
+});
+
+// 2026-10-13, GOX: a killed container left a lease naming pid 7; after the
+// restart the container's own pid 7 was alive again and every start failed.
+// The probes stand in for /proc on macOS and Windows; the real reads are
+// exercised by the Linux test at the end.
+function plantOver(dataDir, base, overrides) {
+  writeFileSync(path.join(dataDir, LEASE_NAME), `${JSON.stringify({ ...base, ...overrides })}\n`, { mode: 0o600 });
+}
+
+function withIdentity(t, { ns, starts = {} }) {
+  setProcessIdentityProbesForTesting({ pidNamespace: () => ns, processStart: (pid) => starts[pid] ?? null });
+  t.after(() => setProcessIdentityProbesForTesting(null));
+}
+
+test("a lease from an earlier run of this container is retired even though its pid is live again", (t) => {
+  withIdentity(t, { ns: "pid:[4026532002]", starts: { [process.pid]: 900 } });
+  const { dataDir } = temporaryDirectory();
+  assert.equal(recordWrittenByThisProcess(dataDir).pidns, "pid:[4026532002]");
+  plantOwner(dataDir, { pid: process.pid, token: randomUUID(), pidns: "pid:[4026532001]", start: 12 });
+
+  const lease = acquireDataDirLease(dataDir);
+  assert.equal(lease.ownerPid, process.pid);
+  const written = JSON.parse(readFileSync(path.join(dataDir, LEASE_NAME), "utf8"));
+  assert.equal(written.pidns, "pid:[4026532002]");
+  assert.equal(written.start, 900);
+  assert.equal(lease.release(), true);
+});
+
+test("a pid reused by another process in the same namespace no longer blocks startup", (t) => {
+  withIdentity(t, { ns: "pid:[4026532002]", starts: { [process.pid]: 900 } });
+  const { dataDir } = temporaryDirectory();
+  plantOwner(dataDir, { pid: process.pid, token: randomUUID(), pidns: "pid:[4026532002]", start: 12 });
+
+  const lease = acquireDataDirLease(dataDir);
+  assert.equal(lease.release(), true);
+});
+
+test("process identity does not weaken exclusion: a live owner still blocks", (t) => {
+  withIdentity(t, { ns: "pid:[4026532002]", starts: { [process.pid]: 900 } });
+  const { dataDir } = temporaryDirectory();
+  const base = recordWrittenByThisProcess(dataDir);
+  // the same process, same namespace, same start: alive
+  plantOver(dataDir, base, { pid: process.pid, token: randomUUID(), pidns: "pid:[4026532002]", start: 900 });
+  assert.throws(() => acquireDataDirLease(dataDir), /already using this data directory/i);
+  // another container (another hostname) sharing the volume: its pid cannot be
+  // checked from here, so the old conservative check still applies
+  plantOver(dataDir, base, { pid: process.pid, token: randomUUID(), pidns: "pid:[4026532001]", start: 12, host: `${hostname()}-sibling` });
+  assert.throws(() => acquireDataDirLease(dataDir), /already using this data directory/i);
+  // a record from an older build carries no identity: unchanged behaviour
+  const { pidns: _ns, start: _start, ...legacy } = base;
+  plantOver(dataDir, legacy, { pid: process.pid, token: randomUUID() });
+  assert.throws(() => acquireDataDirLease(dataDir), /already using this data directory/i);
+});
+
+test("a malformed pid namespace or start time fails closed", (t) => {
+  withIdentity(t, { ns: "pid:[4026532002]" });
+  const { dataDir } = temporaryDirectory();
+  const base = recordWrittenByThisProcess(dataDir);
+  plantOver(dataDir, base, { pid: process.pid, token: randomUUID(), pidns: "../../etc" });
+  assert.throws(() => acquireDataDirLease(dataDir), /lease is invalid/i);
+  plantOver(dataDir, base, { pid: process.pid, token: randomUUID(), pidns: "pid:[1]", start: -1 });
+  assert.throws(() => acquireDataDirLease(dataDir), /lease is invalid/i);
+});
+
+test("Linux records the real pid namespace and start time, and a live sibling with another start is stale", async (t) => {
+  if (process.platform !== "linux") return t.skip("Linux-only: /proc identity");
+  const { dataDir } = temporaryDirectory();
+  const record = recordWrittenByThisProcess(dataDir);
+  assert.match(record.pidns, /^pid:\[\d+\]$/);
+  assert.ok(Number.isSafeInteger(record.start));
+  plantOver(dataDir, record, { pid: process.pid, token: randomUUID(), start: record.start });
+  assert.throws(() => acquireDataDirLease(dataDir), /already using this data directory/i);
+  plantOver(dataDir, record, { pid: process.pid, token: randomUUID(), start: record.start + 1 });
+  const lease = acquireDataDirLease(dataDir);
+  assert.equal(lease.release(), true);
 });

@@ -21,12 +21,14 @@ export function supportsApprovalMode(driverKind: string | undefined, mode: Appro
   // engines could never stop asking — not by its own level, and not through
   // a Primary Bot's delegated Full access either.
   return ["codex", "claudeAgent", "antigravityAgent", "cursorAgent", "grokAgent", "opencodeGo", "qwenAgent", "geminiAgent",
-    "openai-compat", "grok", "minimax", "mistral", "cerebras"].includes(driverKind ?? "");
+    "clineAgent", "openai-compat", "grok", "minimax", "mistral", "cerebras", "groq"].includes(driverKind ?? "");
 }
 
-/** A Full/Custom grant belongs to one provider's tool semantics. Other
- * modes carry across only when the destination actually implements them.
- * Adapted from tahodev's provider-switch guard in PR #1120. */
+/** Whether switching engines must first drop this level to Ask. A Full or
+ * Custom grant belongs to one provider's tool semantics, so Sagax asks again
+ * on another engine (upstream lets Full carry silently since 295f947d; Sagax
+ * keeps the confirmation). Every mode stops at an engine that cannot run it.
+ * Adapted from tahodev's provider-switch guard (#1120). */
 export function modelSwitchNeedsAsk(
   mode: ApprovalMode,
   fromDriver: string | undefined,

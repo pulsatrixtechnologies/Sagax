@@ -30,7 +30,8 @@ public struct RoutineCalendarItem: Hashable, Identifiable, Sendable {
     /// `canMove`: an upcoming occurrence of a routine whose schedule a move
     /// can rewrite; a receipt and a cron routine stay put.
     public var canMove: Bool {
-        guard let routine, run == nil else { return false }
+        // AU20: someone else's routine (a wider scope) is read-only
+        guard let routine, run == nil, routine.mayEdit else { return false }
         return routine.schedule.type != .cron && routine.schedule.type != .unknown
     }
 

@@ -1,0 +1,19 @@
+# Real sandboxes preempt the capacity buffer. The buffer only reserves a
+# slot; it must not keep a person waiting once their pod can run.
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: sagax-sandbox
+value: 1000000
+preemptionPolicy: PreemptLowerPriority
+globalDefault: false
+description: A person's Sagax server environment.
+---
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: sagax-sandbox-buffer
+value: 0
+preemptionPolicy: Never
+globalDefault: false
+description: Placeholder that asks the autoscaler for a node. Never preempts.

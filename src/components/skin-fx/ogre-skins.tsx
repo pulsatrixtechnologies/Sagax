@@ -221,35 +221,3 @@ export function ogreSkinLayers(skin: OgreSkin, d: string, hex: string, uid: stri
       return null;
   }
 }
-
-/** The color a skin shows where a single color stands for it (a swatch, the gallery). */
-export function ogreSkinSwatch(skin: OgreSkin, hex: string): string {
-  switch (skin) {
-    case "swamp":
-      return "#6E8F3A";
-    case "moss":
-      return "#A9CC4E";
-    case "stone":
-      return "#9A9C98";
-    case "lava":
-      return "#FF7A1A";
-    case "armor":
-      return "#A9B4BF";
-    case "retro98":
-      return "#00c000";
-    case "gold":
-      return "#e2ae34";
-    case "neon":
-      return "#0d0f15";
-    case "chrome":
-      return "#8c98a6";
-    case "glitch":
-      return "#2a3348";
-    case "holo":
-      return "#ece9fb";
-    case "molten":
-      return "#2a120c";
-    default:
-      return ogrePalette(hex).skin;
-  }
-}

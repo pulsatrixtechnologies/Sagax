@@ -14,11 +14,10 @@ permissions: {}
 jobs:
   cla:
     name: CLA for enterprise/ changes
-    # Self-hosted only: nothing triggered by a fork or an outside commenter runs here.
     if: >-
-      (github.event_name == 'pull_request_target' && github.event.pull_request.head.repo.full_name == github.repository && !contains(fromJSON('["OWNER","MEMBER"]'), github.event.pull_request.author_association))
-      || (github.event_name == 'issue_comment' && github.event.issue.pull_request && contains(github.event.comment.body, 'I have read the CLA Document and I hereby sign the CLA') && contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association))
-    runs-on: [self-hosted, linux, x64]
+      (github.event_name == 'pull_request_target' && !contains(fromJSON('["OWNER","MEMBER"]'), github.event.pull_request.author_association))
+      || (github.event_name == 'issue_comment' && github.event.issue.pull_request && contains(github.event.comment.body, 'I have read the CLA Document and I hereby sign the CLA'))
+    runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
       actions: write

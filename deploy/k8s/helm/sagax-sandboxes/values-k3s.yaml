@@ -1,0 +1,29 @@
+# Generic k3s (Proxmox, Linode, AWS). Longhorn is the default StorageClass.
+# Operator access is the OIDC group from the k3s adapter, not a local kubeconfig.
+storage:
+  encrypted: true
+  provisioner: driver.longhorn.io
+  parameters:
+    encrypted: "true"
+    numberOfReplicas: "2"
+
+admin:
+  kubernetesRbac:
+    enabled: true
+  group: sagax-admins
+
+apiServer:
+  cidrs:
+    - 10.43.0.1/32
+  port: 443
+
+backup:
+  productionProvider: k3s
+  destination:
+    provider: minio
+    veleroProvider: aws
+    bucket: sagax-sandbox-backups
+    endpoint: https://s3.example.invalid
+    region: us-east-1
+    credentialSecret: sagax-backup
+    credentialKey: cloud

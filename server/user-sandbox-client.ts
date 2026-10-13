@@ -1,7 +1,9 @@
 // The Sagax server's side of the sandbox provisioner API (server/sandboxd.ts):
 // signed requests on the internal control network. Holds no Docker access.
 import { createHash } from "node:crypto";
-import { request } from "node:http";
+import { readFileSync } from "node:fs";
+import { request as httpRequest } from "node:http";
+import { request as httpsRequest } from "node:https";
 import type { Duplex } from "node:stream";
 
 import { signSandboxdRequest, SANDBOXD_AUTH_HEADER } from "./sandboxd-auth.ts";
@@ -47,20 +49,36 @@ export interface SandboxdClient {
   stdioStream(key: string, spec: SandboxStdioSpec): Promise<Duplex>;
 }
 
-/** Only plain http to a host on the internal network: no credentials in the
- * URL, no path, no query. */
-export function validSandboxdUrl(raw: string): URL {
+export interface SandboxdTls {
+  /** PEM CA that signed the provisioner's certificate. Required for https. */
+  ca: Buffer;
+}
+
+function caFromEnv(): Buffer | undefined {
+  const file = process.env.SAGAX_SANDBOXD_TLS_CA?.trim();
+  if (!file) return undefined;
+  try { return readFileSync(file); } catch { return undefined; }
+}
+
+/** Plain http on the internal network, or https when a CA is supplied.
+ * No credentials in the URL, no path, no query. https without a CA is refused. */
+export function validSandboxdUrl(raw: string, tls?: SandboxdTls): URL {
   const url = new URL(raw);
-  if (url.protocol !== "http:" || url.username || url.password || (url.pathname !== "/" && url.pathname !== "") || url.search || url.hash) {
+  const https = url.protocol === "https:";
+  if ((url.protocol !== "http:" && !https) || url.username || url.password || (url.pathname !== "/" && url.pathname !== "") || url.search || url.hash) {
     throw new Error("SAGAX_SANDBOXD_URL must be http://<host>:<port> on the internal network");
   }
+  if (https && !tls?.ca?.length) throw new Error("SAGAX_SANDBOXD_URL https requires a CA (SAGAX_SANDBOXD_TLS_CA)");
   return url;
 }
 
-export function sandboxdClient(baseUrl: string, key: () => string, fetchImpl: typeof fetch = fetch): SandboxdClient {
-  const base = validSandboxdUrl(baseUrl);
+export function sandboxdClient(baseUrl: string, key: () => string, fetchImpl: typeof fetch = fetch, tls?: SandboxdTls): SandboxdClient {
+  const ca = tls?.ca?.length ? tls.ca : caFromEnv();
+  const base = validSandboxdUrl(baseUrl, ca ? { ca } : undefined);
+  const secure = base.protocol === "https:";
   const call = async <T>(method: string, path: string, body?: unknown, timeoutMs = 120_000): Promise<T> => {
     const text = body === undefined ? "" : JSON.stringify(body);
+    if (secure) return httpsCall<T>(method, path, text, body !== undefined, timeoutMs);
     const response = await fetchImpl(new URL(path, base), {
       method,
       redirect: "error",
@@ -75,15 +93,45 @@ export function sandboxdClient(baseUrl: string, key: () => string, fetchImpl: ty
     if (!response.ok) throw new SandboxdRequestError(response.status, payload.code ?? "error", payload.error ?? `the provisioner answered ${response.status}`);
     return payload as T;
   };
+  const httpsCall = <T>(method: string, path: string, text: string, hasBody: boolean, timeoutMs: number): Promise<T> => new Promise((resolve, reject) => {
+    const req = httpsRequest({
+      hostname: base.hostname,
+      port: base.port || 443,
+      method,
+      path,
+      ca,
+      servername: base.hostname,
+      rejectUnauthorized: true,
+      timeout: timeoutMs,
+      headers: {
+        ...(hasBody ? { "content-type": "application/json", "content-length": String(Buffer.byteLength(text)) } : {}),
+        [SANDBOXD_AUTH_HEADER]: signSandboxdRequest(key(), method, path, text),
+      },
+    }, (res) => {
+      const chunks: Buffer[] = [];
+      res.on("data", (chunk: Buffer) => chunks.push(chunk));
+      res.on("end", () => {
+        let payload: { error?: string; code?: string } = {};
+        try { payload = JSON.parse(Buffer.concat(chunks).toString("utf8") || "{}") as { error?: string; code?: string }; } catch { payload = {}; }
+        if ((res.statusCode ?? 500) >= 400) reject(new SandboxdRequestError(res.statusCode ?? 500, payload.code ?? "error", payload.error ?? `the provisioner answered ${res.statusCode}`));
+        else resolve(payload as T);
+      });
+    });
+    req.on("timeout", () => req.destroy(new Error("the provisioner did not answer")));
+    req.on("error", reject);
+    req.end(hasBody ? text : undefined);
+  });
   const keyPath = (sandboxKey: string, suffix = "") => {
     if (!SANDBOX_KEY_RE.test(sandboxKey)) throw new Error("invalid sandbox key");
     return `/v1/sandboxes/${sandboxKey}${suffix}`;
   };
   /** A signed upgrade on `path`: the socket once the provisioner switched. */
   const upgrade = (path: string, protocol: string) => new Promise<Duplex>((resolve, reject) => {
+    const request = secure ? httpsRequest : httpRequest;
     const req = request({
-      hostname: base.hostname, port: base.port || 80, method: "POST", path, timeout: 15_000,
+      hostname: base.hostname, port: base.port || (secure ? 443 : 80), method: "POST", path, timeout: 15_000,
       headers: { connection: "Upgrade", upgrade: protocol, [SANDBOXD_AUTH_HEADER]: signSandboxdRequest(key(), "POST", path, "") },
+      ...(secure ? { ca, servername: base.hostname, rejectUnauthorized: true } : {}),
     });
     req.on("upgrade", (_res, socket, head) => {
       socket.setTimeout(0);
@@ -121,29 +169,9 @@ export function sandboxdClient(baseUrl: string, key: () => string, fetchImpl: ty
     stats: (sandboxKey) => call<SandboxStats>("GET", keyPath(sandboxKey, "/stats"), undefined, 30_000),
     remove: (sandboxKey, options = {}) => call<SandboxStatus>("DELETE", keyPath(sandboxKey, options.keepWorkspace ? "?keepWorkspace=1" : "")),
     exec: (sandboxKey, input) => call<SandboxExecOutput>("POST", keyPath(sandboxKey, "/exec"), input, ((input.timeoutSec ?? 120) + 60) * 1000),
-    desktopStream: (sandboxKey, options) => new Promise<Duplex>((resolve, reject) => {
+    desktopStream: (sandboxKey, options) => {
       const path = keyPath(sandboxKey, `/desktop${options.control ? "?control=1" : ""}`);
-      const req = request({
-        hostname: base.hostname, port: base.port || 80, method: "POST", path, timeout: 15_000,
-        headers: { connection: "Upgrade", upgrade: "sagax-rfb", [SANDBOXD_AUTH_HEADER]: signSandboxdRequest(key(), "POST", path, "") },
-      });
-      req.on("upgrade", (_res, socket, head) => {
-        socket.setTimeout(0);
-        if (head.length) socket.unshift(head);
-        resolve(socket);
-      });
-      req.on("response", (res) => {
-        const chunks: Buffer[] = [];
-        res.on("data", (chunk: Buffer) => { if (chunks.length < 16) chunks.push(chunk); });
-        res.on("end", () => {
-          let code = "error";
-          try { code = (JSON.parse(Buffer.concat(chunks).toString("utf8")) as { code?: string }).code ?? code; } catch { /* plain */ }
-          reject(new SandboxdRequestError(res.statusCode ?? 502, code, `the provisioner answered ${res.statusCode}`));
-        });
-      });
-      req.on("timeout", () => req.destroy(new Error("the provisioner did not answer")));
-      req.on("error", reject);
-      req.end();
-    }),
+      return upgrade(path, "sagax-rfb");
+    },
   };
 }

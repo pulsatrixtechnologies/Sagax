@@ -8,6 +8,7 @@ import { fileURLToPath } from "node:url";
 import { expect, it } from "vitest";
 import { launchVerificationServer, runControlOmb } from "../scripts/control-omb.ts";
 import { waitForExit } from "./testing/cleanup.ts";
+import { readHandoffs } from "./testing/handoff-rows.ts";
 
 it("applies requested Full Access workflows through MCP without duplicate approvals, while exact Ask tasks still wait", async () => {
   const fixture = await launchVerificationServer({}, undefined, undefined, undefined, undefined, { scripted: true });
@@ -147,6 +148,7 @@ it("applies requested Full Access workflows through MCP without duplicate approv
         step("propose_team_setup", { reason: "Requested Research specialist and Chief description", newTeams: ["Research"], operations: [
           specialist("Mira", "Research"), { action: "update", botId: chief.id, fields: { description: "Coordinates monthly fixture reports" } },
         ] }),
+        step("create_bot", { name: "Theo", role: "Totals checker", instructions: "Check fixture totals before each report." }),
       ], { guarded: "full" });
     expect(created.permissionMode).toBe("bypassPermissions");
     for (const entry of created.evidence.filter((item: any) => ["propose_profile", "propose_routine", "skill_manage", "propose_team_setup"].includes(item.step?.tool))) {
@@ -155,6 +157,11 @@ it("applies requested Full Access workflows through MCP without duplicate approv
     }
     const updatedChief = (await bots()).find(bot => bot.id === chief.id);
     expect(updatedChief).toMatchObject({ title: "Monthly reporting Chief", description: "Coordinates monthly fixture reports", soul: "Report only verified fixture results.", approvalMode: "full", approvePeerComms: true, managedSections: ["Research"] });
+    // create_bot takes the same reviewed path, which Full access applies now.
+    const createdTheo = created.evidence.find((item: any) => item.step?.tool === "create_bot");
+    expect(createdTheo.response.result.content[0].text).toMatch(/^Created @Theo in Operations/);
+    expect((await bots()).find(bot => bot.name === "Theo")).toMatchObject({ section: "Operations", title: "Totals checker",
+      soul: "Check fixture totals before each report.", approvalMode: "auto", autoApprove: true, composio: false }); // Sagax: Approve for me by default
     const mira = (await bots()).find(bot => bot.name === "Mira");
     expect(mira).toMatchObject({ section: "Research", approvalMode: "auto", autoApprove: true, composio: false });
     const routine = (await api("GET", "/api/routines")).routines.find((item: any) => item.name === "Monthly fixture report");
@@ -188,7 +195,9 @@ it("applies requested Full Access workflows through MCP without duplicate approv
     await run(chief, chief.activeTaskId, "Have Ada independently verify the fixture reporting instructions and return the result.", [
       step("coordinate_bots", { bot_ids: [peer.id], request_key: "verify-monthly", message: "Verify the fixture reporting instructions and state your result." }),
     ], { guarded: "full", resumeReply: "Ada verified the fixture reporting instructions; requested work is complete." });
-    const handoffs = JSON.parse(readFileSync(join(dataDir, "room-handoffs.json"), "utf8"));
+    // The coordinated turns as the runtime records them (DATA_DIR/runtime.db).
+    const handoffs = readHandoffs(dataDir);
+    expect(handoffs.length).toBeGreaterThan(0);
     expect(handoffs.every((node: any) => node.status === "completed")).toBe(true);
     expect(providerTurns().filter(turn => turn.botId === peer.id)).toHaveLength(1);
     // A Full-access Chief's delegation runs Full. Ada's own level stays
@@ -248,13 +257,16 @@ it("applies requested Full Access workflows through MCP without duplicate approv
     evidence.push({ persistedBots: persisted, routines: await api("GET", "/api/routines"), handoffs,
       fullMessages: await messages(chief.activeTaskId), askMessages: await messages(ask.threadId), inverseMessages: await messages(inverse.activeTaskId) });
 
-    // A restart while the Chief awaits a teammate must not promote its
-    // earlier "assigned" terminal to a final. Completed requests survive.
+    // A restart while the Chief awaits a teammate runs the teammate's cut
+    // turn again once, told to check first, and resumes the Chief once, told
+    // so. Its earlier "assigned" terminal never becomes the request's final,
+    // and no execution owner survives a restart. Completed requests survive.
     const interrupted = (await api("POST", `/api/bots/${chief.id}/tasks`, { title: "Restart while awaiting teammate" }, 201)).task;
     const gate = join(dataDir, "restart-peer.gate");
+    const peerWorking = join(dataDir, "restart-peer.ready");
     plans[chief.id].turns.push({ steps: [step("coordinate_bots", { bot_ids: [peer.id], request_key: "restart-proof", message: "Wait at the isolated fixture gate." })],
-      reply: "Assigned the restart check", resumeReply: "THIS_MUST_NOT_REPLAY_AFTER_RESTART" });
-    plans[peer.id].turns.push({ gateFile: gate, reply: "The gated check finished" });
+      reply: "Assigned the restart check" }, { reply: "Reviewed the resumed check" });
+    plans[peer.id].turns.push({ gateFile: gate, readyFile: peerWorking, reply: "The gated check finished" });
     writeFileSync(planPath, JSON.stringify(plans));
     const pendingInput = { threadId: interrupted.threadId, text: "Coordinate the gated restart check.", sendId: randomUUID(), expectedActiveLeafId: null, expectedApprovalMode: "full" };
     const pendingReceipt = await api("POST", `/api/bots/${chief.id}/messages/guarded`, pendingInput, 202);
@@ -263,17 +275,33 @@ it("applies requested Full Access workflows through MCP without duplicate approv
       const snapshot = await api("GET", pendingRoute);
       return snapshot.phase === "waiting" && snapshot.messages.some((message: any) => message.turnTerminal && message.turnSucceeded);
     }, { timeout: 25_000 }).toBe(true);
-    expect((await api("GET", pendingRoute)).messages[0]).toMatchObject({ id: pendingReceipt.message.id, requestPending: true });
+    const beforeSnapshot = await api("GET", pendingRoute);
+    expect(beforeSnapshot.messages[0]).toMatchObject({ id: pendingReceipt.message.id, requestPending: true });
+    expect(beforeSnapshot.executionId).toEqual(expect.any(String));
+    // Ada's turn is running in its engine. Ada's request can still be queued
+    // when the Chief's turn ends, and a restart then cuts nothing: it simply
+    // runs once afterwards, with nothing to say about a restart.
+    await expect.poll(() => existsSync(peerWorking), { timeout: 25_000 }).toBe(true);
     await waitForExit(restarted, { signal: "SIGTERM" });
     const beforeRestart = providerTurns().length;
     await restart();
+    writeFileSync(gate, "open");
+    await expect.poll(async () => (await messages(interrupted.threadId)).some(message => message.text === "Reviewed the resumed check"), { timeout: 25_000 }).toBe(true);
+    const [rerun, review] = providerTurns().slice(beforeRestart);
+    expect(providerTurns()).toHaveLength(beforeRestart + 2);
+    expect(rerun).toMatchObject({ botId: peer.id, resumed: false, permissionMode: "bypassPermissions" });
+    expect(JSON.stringify(rerun.prompt)).toContain("this turn continues it");
+    expect(review).toMatchObject({ botId: chief.id, threadId: interrupted.threadId, resumed: true });
+    expect(JSON.stringify(review.prompt)).toContain("A restart cut these teammates' turns: Ada (resumed once in place");
     const recovered = await api("GET", pendingRoute);
-    expect(recovered).toMatchObject({ phase: "untracked", activeTurnId: null, executionId: null });
+    expect(recovered).toMatchObject({ phase: "untracked", activeTurnId: null });
+    expect(recovered.executionId).not.toBe(beforeSnapshot.executionId);
+    expect(recovered.messages[0]).toMatchObject({ id: pendingReceipt.message.id, requestPending: true });
     expect(recovered.messages.some((message: any) => message.turnTerminal && message.text === "Assigned the restart check" && message.turnSucceeded)).toBe(true);
     expect((await api("GET", guardedRoutes.get(inverse.activeTaskId)!)).phase).toBe("settled");
     await new Promise(resolve => setTimeout(resolve, 250));
-    expect(providerTurns()).toHaveLength(beforeRestart);
-    evidence.push({ restartWhileAwaiting: { phase: recovered.phase, noProviderReplay: true, completedRequestStillSettled: true } });
+    expect(providerTurns()).toHaveLength(beforeRestart + 2);
+    evidence.push({ restartWhileAwaiting: { phase: recovered.phase, teammateRerunOnce: true, chiefResumedOnce: true, completedRequestStillSettled: true } });
     expect(readFileSync(logPath, "utf8")).not.toMatch(/ReferenceError|change listener threw|Unexpected extra fixture turn/);
   } finally {
     await waitForExit(restarted, { signal: "SIGTERM" });

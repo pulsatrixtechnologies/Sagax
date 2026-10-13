@@ -1,4 +1,5 @@
 import { isCitationAttachment, serializeCitation, type CitationAttachment } from "./citations.ts";
+export { dataContextFor, type DataContext, type DataViewContext } from "../../shared/data-context.ts";
 
 // What is attached to the next message: text too long for the input or a
 // file dropped onto the window. Chips fold back into a normal prompt on

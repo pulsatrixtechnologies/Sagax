@@ -22,6 +22,8 @@ export interface AchievementRouteDeps {
   person: (auth: RequestAuth) => string | null;
   /** An unlock happened: tell that person's streams. */
   unlocked: (person: string, unlocks: AchievementUnlock[]) => void;
+  /** Own Claude login or own Anthropic key. GET records claude.linked when true. */
+  linked?: (person: string) => boolean;
 }
 
 function isJson(header: unknown): boolean {
@@ -43,6 +45,10 @@ export function createAchievementRoutes(deps: AchievementRouteDeps): RouteHandle
 
     if (path === ACHIEVEMENTS_PATH) {
       if (method !== "GET") return json(res, 405, { error: "GET" });
+      if (deps.linked?.(person)) {
+        const result = deps.store.record(person, [{ type: "claude.linked" }], "server");
+        if (result.unlocked.length) deps.unlocked(person, result.unlocked);
+      }
       return json(res, 200, deps.store.snapshot(person));
     }
 

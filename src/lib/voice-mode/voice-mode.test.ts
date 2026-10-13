@@ -43,6 +43,7 @@ describe("voice mode settings", () => {
 
   it("maps languages to what xAI takes", () => {
     expect(ttsLanguage("fr")).toBe("fr");
+    expect(ttsLanguage("fr-CA")).toBe("fr");
     expect(ttsLanguage("ca")).toBe("auto");
     expect(sttLanguage("pt-BR")).toBe("pt");
     expect(sttLanguage("zh")).toBeUndefined();

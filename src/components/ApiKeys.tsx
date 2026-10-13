@@ -1,6 +1,6 @@
 // Paste-a-key rows. Packaged Electron saves secrets in the OS-backed store;
 // browser development falls back to PUT /api/config. Secrets are write-only
-// either way — GET /api/config returns configured flags, never values.
+// either way: GET /api/config returns configured flags, never values.
 import { useEffect, useId, useRef, useState } from "react";
 import { Check, CircleHelp, ExternalLink, Loader2, TriangleAlert } from "lucide-react";
 import { api, useStore, type ConfigStatus } from "@/state/store";
@@ -9,9 +9,9 @@ import { useMenuMotion } from "./MenuMotion";
 import { t } from "@/lib/i18n";
 import type { LocaleKey } from "@/locales";
 
-export type ConfigSection = "composio" | "box" | "opencodeGo" | "anthropic" | "openai" | "openrouter" | "openaiCompat" | "xai" | "mistral" | "cerebras";
+export type ConfigSection = "composio" | "box" | "opencodeGo" | "anthropic" | "openai" | "openrouter" | "openaiCompat" | "xai" | "mistral" | "cerebras" | "groq";
 /** Sections whose key can be tried against the provider from the server. */
-export type TestableProvider = "anthropic" | "openai" | "openrouter" | "openaiCompat" | "xai" | "mistral" | "cerebras";
+export type TestableProvider = "anthropic" | "openai" | "openrouter" | "openaiCompat" | "xai" | "mistral" | "cerebras" | "groq";
 
 const SECTIONS: Record<
   ConfigSection,
@@ -45,6 +45,7 @@ const SECTIONS: Record<
   openaiCompat: { body: (v) => ({ openaiCompat: { key: v } }), flag: (c) => c.openaiCompat?.configured ?? false },
   mistral: { body: (v) => ({ mistral: { key: v } }), flag: (c) => c.mistral?.configured ?? false },
   cerebras: { body: (v) => ({ cerebras: { key: v } }), flag: (c) => c.cerebras?.configured ?? false },
+  groq: { body: (v) => ({ groq: { key: v } }), flag: (c) => c.groq?.configured ?? false },
   xai: { body: (v) => ({ xai: { key: v } }), flag: (c) => c.xai?.configured ?? false },
 };
 
@@ -60,7 +61,7 @@ const CREDENTIALS: Record<
   ConfigSection,
   {
     labelKey: LocaleKey;
-    /** a literal placeholder that is not copy — an example key shape */
+    /** a literal placeholder that is not copy: an example key shape */
     placeholder?: string;
     placeholderKey?: LocaleKey;
     descriptionKey: LocaleKey;
@@ -148,6 +149,14 @@ const CREDENTIALS: Record<
     linkLabelKey: "keys.cerebras.link",
     optional: true,
   },
+  groq: {
+    labelKey: "keys.groq.label",
+    placeholder: "gsk_…",
+    descriptionKey: "keys.groq.desc",
+    href: "https://console.groq.com/docs/overview",
+    linkLabelKey: "keys.groq.link",
+    optional: true,
+  },
   xai: {
     labelKey: "keys.xai.label",
     placeholder: "xai-…",
@@ -159,7 +168,7 @@ const CREDENTIALS: Record<
 };
 
 /** The catalog is read when a row renders, not when this module loads. */
-function credentialCopy(section: ConfigSection) {
+export function credentialCopy(section: ConfigSection) {
   const entry = CREDENTIALS[section];
   return {
     ...entry,
@@ -209,7 +218,7 @@ function CredentialHelp({ section }: { section: ConfigSection }) {
         aria-expanded={open}
         aria-controls={popoverId}
         onClick={() => setOpen((current) => !current)}
-        className="flex size-6 items-center justify-center rounded-md text-ink-secondary outline-none transition-colors hover:bg-control hover:text-ink focus-visible:ring-2 focus-visible:ring-accent/70"
+        className="cursor-pointer flex size-6 items-center justify-center rounded-md text-ink-secondary outline-none transition-colors hover:bg-control hover:text-ink focus-visible:ring-2 focus-visible:ring-accent/70"
       >
         <CircleHelp size={14} aria-hidden="true" />
       </button>
@@ -248,8 +257,12 @@ export function ApiKeyRow({
   section,
   onSaved,
   testProvider,
+  bare = false,
 }: {
   section: ConfigSection;
+  /** Inside the key dialog (settings/ProviderKeys.tsx): the dialog already
+   * names the provider and says where to get a key, so no header row. */
+  bare?: boolean;
   /** Called after a successful save with the section's new configured flag. */
   onSaved?: (configured: boolean) => void;
   /** Check the key against the provider as soon as it saves, and offer a
@@ -335,18 +348,13 @@ export function ApiKeyRow({
 
   return (
     <div data-api-key-row={section}>
-      <div className="mb-1.5 flex items-center gap-2 text-[13px] text-ink-secondary">
+      {!bare && <div className="mb-1.5 flex items-center gap-2 text-[13px] text-ink-secondary">
         <span className={cn("size-1.5 rounded-full", configured || included ? "bg-accent" : "bg-raised-hover")} />
         <span>{credential.label}</span>
-        {credential.optional && (
-          <span className="rounded bg-control px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-ink-secondary">
-            {t("keys.optional")}
-          </span>
-        )}
         {configured && <span className="text-[11px] text-ink-secondary">{t("keys.configured")}</span>}
         {included && <span className="text-[11px] text-ink-secondary">{t("keys.includedWithCloudPro")}</span>}
         <CredentialHelp section={section} />
-      </div>
+      </div>}
       <div className="flex gap-2">
         <div className="relative w-full">
           <input
@@ -371,7 +379,7 @@ export function ApiKeyRow({
             type="button"
             onClick={() => save(true)}
             disabled={saving}
-            className="flex w-[72px] shrink-0 items-center justify-center rounded-lg bg-control py-2 text-[13px] text-danger hover:bg-raised-hover disabled:cursor-not-allowed disabled:opacity-50"
+            className="cursor-pointer flex w-[72px] shrink-0 items-center justify-center rounded-lg bg-control py-2 text-[13px] text-danger hover:bg-raised-hover disabled:cursor-not-allowed disabled:opacity-50"
             title={t("keys.removeKey")}
           >
             {t("keys.clear")}
@@ -382,7 +390,7 @@ export function ApiKeyRow({
             type="button"
             onClick={() => void test()}
             disabled={testing || saving}
-            className="flex shrink-0 items-center justify-center rounded-lg border border-hairline/40 px-3 py-2 text-[13px] text-ink-secondary hover:bg-raised/50 hover:text-ink disabled:cursor-not-allowed disabled:opacity-50"
+            className="cursor-pointer flex shrink-0 items-center justify-center rounded-lg border border-hairline/40 px-3 py-2 text-[13px] text-ink-secondary hover:bg-raised/50 hover:text-ink disabled:cursor-not-allowed disabled:opacity-50"
           >
             {testing ? t("keys.testing") : t("keys.test")}
           </button>
@@ -459,7 +467,7 @@ export function OpenCodeProviderKeys() {
               onClick={() => remove(saved)}
               disabled={busy}
               aria-label={t("keys.opencode.otherProviders.removeAria", { name: saved })}
-              className="flex w-[72px] shrink-0 items-center justify-center rounded-lg bg-control py-1.5 text-[13px] text-danger hover:bg-raised-hover disabled:cursor-not-allowed disabled:opacity-50"
+              className="cursor-pointer flex w-[72px] shrink-0 items-center justify-center rounded-lg bg-control py-1.5 text-[13px] text-danger hover:bg-raised-hover disabled:cursor-not-allowed disabled:opacity-50"
             >
               {removing === saved ? <Loader2 size={13} className="animate-spin" aria-hidden="true" /> : t("keys.clear")}
             </button>
@@ -493,7 +501,7 @@ export function OpenCodeProviderKeys() {
             type="button"
             onClick={add}
             disabled={busy || !name.trim() || !key.trim()}
-            className="flex w-[72px] shrink-0 items-center justify-center gap-1.5 rounded-lg bg-control py-2 text-[13px] text-ink hover:bg-raised-hover disabled:cursor-not-allowed disabled:opacity-50"
+            className="cursor-pointer flex w-[72px] shrink-0 items-center justify-center gap-1.5 rounded-lg bg-control py-2 text-[13px] text-ink hover:bg-raised-hover disabled:cursor-not-allowed disabled:opacity-50"
           >
             {adding ? <Loader2 size={13} className="animate-spin" aria-hidden="true" /> : <><Check size={13} aria-hidden="true" />{t("common.save")}</>}
           </button>
@@ -576,9 +584,6 @@ export function VpsConnection() {
       <div className="mb-1.5 flex items-center gap-2 text-[13px] text-ink-secondary">
         <span className={cn("size-1.5 rounded-full", configured ? "bg-accent" : "bg-raised-hover")} />
         <span>{t("keys.vps.label")}</span>
-        <span className="rounded bg-control px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-ink-secondary">
-          {t("keys.optional")}
-        </span>
         {configured && <span className="text-[11px] text-success">{t("keys.connected")}</span>}
       </div>
       <div className="mb-1.5 text-[12px] leading-relaxed text-ink-secondary">
@@ -608,7 +613,7 @@ export function VpsConnection() {
           onClick={save}
           disabled={saving || (!alias.trim() && !configured)}
           className={cn(
-            "flex w-[72px] shrink-0 items-center justify-center gap-1.5 rounded-lg py-2 text-[13px]",
+            "cursor-pointer flex w-[72px] shrink-0 items-center justify-center gap-1.5 rounded-lg py-2 text-[13px]",
             !alias.trim() && configured ? "bg-control text-danger hover:bg-raised-hover" : "bg-control text-ink hover:bg-raised-hover",
             "disabled:cursor-not-allowed disabled:opacity-50",
           )}

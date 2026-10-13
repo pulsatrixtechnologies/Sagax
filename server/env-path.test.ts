@@ -203,6 +203,28 @@ describe("augmentedPath", () => {
     }
   });
 
+  it("finds a Kimi install after launch with an unchanged Windows process PATH", () => {
+    const platform = process.platform;
+    const previousExt = process.env.PATHEXT;
+    const bin = join(homedir(), ".kimi-code", "bin");
+    try {
+      Object.defineProperty(process, "platform", { value: "win32" });
+      process.env.PATHEXT = ".cmd;.exe";
+      resetPathCacheForTests();
+      expect(findCliCandidates("kimi-fixture")).toEqual([]);
+      mkdirSync(bin, { recursive: true });
+      writeFileSync(join(bin, "kimi-fixture.cmd"), "@echo off\n");
+      resetPathCache();
+      expect(findCliCandidates("kimi-fixture")).toContain(join(bin, "kimi-fixture.cmd"));
+    } finally {
+      Object.defineProperty(process, "platform", { value: platform });
+      if (previousExt === undefined) delete process.env.PATHEXT;
+      else process.env.PATHEXT = previousExt;
+      resetPathCacheForTests();
+      rmSync(bin, { recursive: true, force: true });
+    }
+  });
+
   // MOCA-272: OMB installs Cursor from Settings with cursor.com's Windows
   // script, which puts cursor-agent.* (and `agent` copies) in
   // %LOCALAPPDATA%\cursor-agent and adds that to the user PATH — which a

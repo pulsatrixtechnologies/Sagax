@@ -893,7 +893,7 @@ async function planTunnel(options: CliOptions, log: (line: string) => void, reco
     // A fleet-started container: the credential is the whole identity.
     log(`tunnel: using the installation credential from ${FLEET_CREDENTIAL_ENV}`);
     try {
-      access = await fleetAccess({ credential });
+      access = await fleetAccess({ credential, version: serverVersion() });
     } catch (error) {
       return { error: `--tunnel: ${message(error)}` };
     }

@@ -8,6 +8,11 @@
 // their Composio project, which Sagax already prefers
 // (listCustomAuthConfigs). This appends that explanation to the tool result,
 // leaving the provider's own error untouched.
+//
+// Only a call that failed counts. Composio's successful answers quote the
+// same 403 wording as documentation (COMPOSIO_SEARCH_TOOLS lists it under
+// known_pitfalls), and a note on those stopped bots from reading Gmail at
+// all (#2467).
 
 const SCOPE_ERROR = /ACCESS_TOKEN_SCOPE_INSUFFICIENT|insufficient authentication scopes|insufficientPermissions/i;
 
@@ -29,27 +34,67 @@ function appName(slug: string): string {
 /** The note a bot reads after its call was refused for a missing permission. */
 export function scopeHint(slugs: readonly string[]): string {
   const slug = slugs.find((candidate) => requiredScope(candidate)) ?? slugs[0] ?? "";
-  const app = slug ? appName(slug) : "This app";
+  const app = slug ? appName(slug) : null;
   const scope = slug ? requiredScope(slug) : null;
   const permission = scope ? `the ${scope} permission` : "the permission this action needs";
-  return `Sagax note: ${app} refused this because the connected account has not granted ${permission}. ` +
+  return `Sagax note: ${app ?? "The app"} refused this because the connected account has not granted ${permission}. ` +
     `Reconnecting will not add it: the default Composio connection never asks for it. ` +
-    `To allow it, the person creates their own ${app} auth config in their Composio project that includes ${permission}, ` +
-    `then reconnects ${app} under Connected apps; Sagax uses that config automatically. ` +
+    `To allow it, the person creates their own ${app ? `${app} ` : ""}auth config in their Composio project that includes ${permission}, ` +
+    `then reconnects ${app ?? "the app"} under Connected apps; Sagax uses that config automatically. ` +
     `Tell the person this. Do not retry this call.`;
 }
 
 type ToolResultFrame = { result?: { content?: unknown; isError?: unknown } };
 
+/**
+ * Collects the refusals in a parsed Composio answer: objects marked
+ * `successful: false`, or carrying an `error`, whose failure is a scope
+ * error. Each entry is the tool that failed, when the result names it — a
+ * MULTI_EXECUTE batch reports per-tool results under `tool_slug`. The
+ * deepest failure wins, so a batch names the tool rather than itself. Text
+ * anywhere else, such as a successful search's known_pitfalls, never counts.
+ */
+function collectRefusals(node: unknown, slug: string | null, found: Array<string | null>): void {
+  if (Array.isArray(node)) {
+    for (const item of node) collectRefusals(item, slug, found);
+    return;
+  }
+  if (!node || typeof node !== "object") return;
+  const record = node as Record<string, unknown>;
+  const own = [record.tool_slug, record.slug].find((value): value is string => typeof value === "string" && value !== "") ?? slug;
+  const before = found.length;
+  for (const value of Object.values(record)) collectRefusals(value, own, found);
+  if (found.length > before) return;
+  const hasError = record.error !== undefined && record.error !== null && record.error !== "";
+  const failed = record.successful === false || (hasError && record.successful !== true);
+  // A failed result can carry Google's 403 in `data` rather than `error`.
+  if (failed && SCOPE_ERROR.test(JSON.stringify(record.successful === false ? record : record.error))) found.push(own);
+}
+
+function parseJson(text: string): unknown {
+  try {
+    return JSON.parse(text);
+  } catch {
+    return undefined;
+  }
+}
+
 /** Adds the note to one JSON-RPC frame whose tool result is a scope refusal. */
 function annotateFrame(frame: unknown, slugs: readonly string[]): boolean {
   const result = (frame as ToolResultFrame | null)?.result;
   if (!result || !Array.isArray(result.content)) return false;
-  const refused = result.content.some((item) =>
-    item && typeof item === "object" && typeof (item as { text?: unknown }).text === "string" &&
-    SCOPE_ERROR.test((item as { text: string }).text));
-  if (!refused) return false;
-  result.content.push({ type: "text", text: scopeHint(slugs) });
+  const texts = result.content.flatMap((item) => {
+    const text = (item as { text?: unknown } | null)?.text;
+    return typeof text === "string" ? [text] : [];
+  });
+  const refusals: Array<string | null> = [];
+  for (const text of texts) collectRefusals(parseJson(text), null, refusals);
+  // A result flagged as an error is a failure as a whole, even when its
+  // text is plain or names the 403 outside an error field.
+  if (!refusals.length && result.isError === true && texts.some((text) => SCOPE_ERROR.test(text))) refusals.push(null);
+  if (!refusals.length) return false;
+  const named = refusals.filter((slug): slug is string => slug !== null);
+  result.content.push({ type: "text", text: scopeHint(named.length ? named : slugs) });
   return true;
 }
 

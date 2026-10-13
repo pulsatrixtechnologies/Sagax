@@ -19,12 +19,6 @@ import { redactSecrets } from "./redact.ts";
 export const CW_ACTION_PASS_MS = 10 * 60_000;
 export const CW_ACTION_REQUEST_PREFIX = "cwact-";
 
-/** Thread id of POST /api/threads/<id>/cw-actions, or undefined. */
-export function cwActionsThreadId(path: string, method: string): string | undefined {
-  if (method === "POST") return /^\/api\/threads\/([\w-]+)\/cw-actions$/.exec(path)?.[1];
-  return undefined;
-}
-
 /** The site deep links open: SAGAX_CW_SITE (the web host, or the API host)
  * and SAGAX_CW_COMPANY_ID (the company id typed at sign-in). Without them,
  * links follow the `_info` addresses of the records themselves. */

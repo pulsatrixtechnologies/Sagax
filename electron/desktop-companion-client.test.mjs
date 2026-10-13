@@ -20,6 +20,8 @@ import {
 } from "./desktop-companion-client.mjs";
 
 const token = `omb_${"a".repeat(43)}`;
+// The one opaque label the control plane puts in front of a managed domain.
+const LABEL = "c-0123456789abcdef0123456789abcdef";
 const deviceId = "123e4567-e89b-12d3-a456-426614174000";
 const access = {
   endpoint: "http://host.example-tailnet.ts.net:8810",
@@ -59,16 +61,39 @@ describe("desktop companion endpoint", () => {
     for (const endpoint of [
       "https://c-opaque.openmausbot.com",
       "c-opaque.openmausbot.com",
+      // The original project's managed addresses, on either of its domains.
+      `https://${LABEL}.openmausbot.com`,
+      `${LABEL}.openmausbot.com`,
+      `https://${LABEL}.mausbot.si`,
       "https://unrelated.example.com",
-      "http://c-opaque.openmausbot.com",
+      `http://${LABEL}.openmausbot.com`,
       "http://10.0.0.4:8810",
       "http://host.local:8810",
       "https://10.0.0.4",
       "http://host.example-tailnet.ts.net/path",
-      "https://c-opaque.openmausbot.com/path",
+      `https://${LABEL}.openmausbot.com/path`,
       "http://user@host.example-tailnet.ts.net",
       "http://host.example-tailnet.ts.net.evil.test",
-      "https://c-opaque.openmausbot.com.evil.test",
+      `https://${LABEL}.openmausbot.com.evil.test`,
+      `http://${LABEL}.mausbot.si`,
+      `https://${LABEL}.mausbot.si/path`,
+      `https://${LABEL}.mausbot.si.evil.test`,
+      "https://mausbot.si",
+      "mausbot.si",
+      "https://evilmausbot.si",
+      `https://${LABEL}.evilmausbot.si`,
+      // Only the names the control plane issues: never another record in
+      // either zone, which may serve something else entirely.
+      "https://www.mausbot.si",
+      "https://app.mausbot.si",
+      "https://accounts.openmausbot.com",
+      "https://c-opaque.openmausbot.com",
+      "https://c-opaque.mausbot.si",
+      `https://${LABEL.slice(0, -1)}.mausbot.si`,
+      `https://${LABEL}0.mausbot.si`,
+      `https://${LABEL.replace("c-", "d-")}.mausbot.si`,
+      `https://${LABEL}.extra.mausbot.si`,
+      `https://www.${LABEL}.mausbot.si`,
     ]) {
       expect(normalizeDesktopCompanionEndpoint(endpoint), endpoint).toBe("");
     }

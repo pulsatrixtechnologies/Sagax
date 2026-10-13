@@ -26,6 +26,10 @@ export interface FakeOAuthOptions {
   refreshStatus?: number;
   /** metadata claims this issuer instead of its own address */
   claimIssuer?: string;
+  /** resource metadata lists the issuer with a trailing slash, as Google's does */
+  listIssuerWithSlash?: boolean;
+  /** /authorize returns its issuer as iss (RFC 9207) */
+  returnIss?: boolean;
   /** apps registered in advance: client id → its secret, or null for a
    * public app. A confidential app must prove its secret at /token. */
   preRegistered?: Record<string, string | null>;
@@ -115,7 +119,7 @@ export async function startFakeOAuth(options: FakeOAuthOptions = {}): Promise<Fa
     void (async () => {
       const url = new URL(req.url ?? "/", issuer);
       if (req.method === "GET" && url.pathname.startsWith("/.well-known/oauth-protected-resource")) {
-        return json(res, 200, { resource: `${issuer}/mcp`, authorization_servers: [issuer], scopes_supported: ["mcp"] });
+        return json(res, 200, { resource: `${issuer}/mcp`, authorization_servers: [options.listIssuerWithSlash ? `${issuer}/` : issuer], scopes_supported: ["mcp"] });
       }
       if (req.method === "GET" && url.pathname === "/.well-known/oauth-authorization-server") {
         return json(res, 200, {
@@ -141,6 +145,7 @@ export async function startFakeOAuth(options: FakeOAuthOptions = {}): Promise<Fa
         fake.lastAuthorize = url.searchParams;
         const redirect = new URL(url.searchParams.get("redirect_uri") ?? "");
         redirect.searchParams.set("state", url.searchParams.get("state") ?? "");
+        if (options.returnIss) redirect.searchParams.set("iss", options.claimIssuer ?? issuer);
         const clientId = url.searchParams.get("client_id") ?? "";
         if (!clients.has(clientId) && !Object.hasOwn(preRegistered, clientId)) {
           redirect.searchParams.set("error", "unauthorized_client");

@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { launchVerificationServer, runControlOmb, type VerificationServer } from "../scripts/control-omb.ts";
+import { readHandoffs } from "./testing/handoff-rows.ts";
 
 type Bot = { id: string; activeTaskId: string };
 type Message = { id: string; role: string; kind: string; text?: string; sendId?: string; steered?: boolean; turnTerminal?: boolean; tool?: { name: string; ok?: boolean } };
@@ -213,7 +214,8 @@ describe("guarded external messages through an isolated runtime", () => {
     expect((await api("POST", `${route}/interrupt`, target, { origin: "https://untrusted.example.test" })).status).toBe(403);
     const stopped = await api("POST", `${route}/interrupt`, target);
     expect(stopped).toMatchObject({ status: 200, body: { ok: true, outcome: "stopped" } });
-    await expect.poll(async () => (await api("GET", "/api/bots?messages=0")).body.bots.find((entry: any) => entry.id === bot.id).busy).toBe(false);
+    // the stop reaps the engine's process tree first; taskkill on Windows takes longer than the default second
+    await expect.poll(async () => (await api("GET", "/api/bots?messages=0")).body.bots.find((entry: any) => entry.id === bot.id).busy, { timeout: 15_000 }).toBe(false);
     expect((await api("POST", `${route}/interrupt`, target)).status).toBe(409);
     expect(existsSync(file(bot.activeTaskId, "gate"))).toBe(false);
   }, 30_000);
@@ -269,7 +271,7 @@ it("refuses a parked conversation after its own provider settles while its teamm
       [teammate.id]: { gateFile: gate, reply: "The gated check passed." },
     }));
     await control(["send", "--bot", chief.id, "--task", chief.activeTaskId, "--text", "Coordinate the gated fixture check."]);
-    const nodes = () => JSON.parse(readFileSync(join(fixture.info.dataDir, "room-handoffs.json"), "utf8")) as Array<{ botId: string; status: string }>;
+    const nodes = () => readHandoffs(fixture.info.dataDir);
     await expect.poll(() => { try { return nodes().find(node => node.botId === teammate.id)?.status; } catch { return undefined; } }, { timeout: 15_000 }).toBe("running");
     // Unlike the public busy flag (which includes coordination), this no-op
     // permission PATCH only succeeds after the exact task's raw busy flag

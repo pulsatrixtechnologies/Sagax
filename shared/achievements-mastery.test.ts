@@ -184,7 +184,7 @@ describe("Ogre: orchestration", () => {
     // eight days later the first two have left the window
     run(state, [{ kind: "tool.used", threadId: "t1", integration: "linear" }], 9);
     expect(masteryMetricValue(state, "integrations.week")).toBe(2);
-    run(state, [{ kind: "tool.used", threadId: "t1", integration: "notion" }, { kind: "tool.used", threadId: "t1", integration: "perspicax:sentinelone" }], 10);
+    run(state, [{ kind: "tool.used", threadId: "t1", integration: "notion" }, { kind: "tool.used", threadId: "t1", integration: "perspicax:endpoint" }], 10);
     expect(masteryMetricValue(state, "integrations.week")).toBe(3);
   });
 

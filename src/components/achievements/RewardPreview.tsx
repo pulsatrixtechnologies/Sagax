@@ -19,6 +19,7 @@ import { CrabRewardArt } from "@/components/CrabMascot";
 export default function RewardPreview({ reward, size = 34, animated = true }: { reward: AchievementReward; size?: number; animated?: boolean }) {
   if (reward.kind === "title") return <Award size={size * 0.7} aria-hidden="true" />;
   if (reward.kind === "appIcon") return <Trophy size={size * 0.7} aria-hidden="true" />;
+  if (reward.kind !== "character" && reward.kind !== "skin") return null;
   const character = reward.character;
   const skin = reward.kind === "skin" ? reward.skin : undefined;
   // a Mastery character: its registered art, or the placeholder until it lands

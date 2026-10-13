@@ -19,11 +19,12 @@ import { CIRCLE_BUTTON } from "@/lib/circle-button";
 
 const bot = { id: "bot-1", name: "Maily", title: "", description: "Sorts the inbox.", messages: [], tasks: [] } as never as Bot;
 // The provider reads window.ogb.platform on render, so each case sees its stub.
-const header = () => {
+const headerTag = () => {
   const html = renderToStaticMarkup(createElement(DesktopCapabilitiesProvider, null, createElement(BotSettingsDialog, { bot })));
   // The top bar holds only the controls; the name sits under the avatar.
-  return html.match(/<div class="(content-topbar [^"]*)"/)?.[1] ?? "";
+  return html.match(/<div[^>]*class="content-topbar [^"]*"[^>]*>/)?.[0] ?? "";
 };
+const header = () => headerTag().match(/class="([^"]*)"/)?.[1] ?? "";
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -39,24 +40,47 @@ describe("bot settings caption inset", () => {
     expect(classes).toContain("h-12");
     expect(classes).not.toContain("pt-[28px]");
   });
+
+  it.each([["darwin", true], ["win32", true], ["linux", false]] as const)(
+    "makes the header a window drag region on %s: %s",
+    (platform, drags) => {
+      vi.stubGlobal("window", { ogb: { platform } });
+      const tag = headerTag();
+      expect(tag.includes("data-window-drag")).toBe(drags);
+      expect(tag.includes("-webkit-app-region:drag")).toBe(drags);
+    },
+  );
 });
 
 describe("bot panel header and tabs", () => {
-  it("draws the mascot menu button (...) as the same round control as its neighbours", () => {
+  it("keeps the header to round controls and puts Edit bot on the mascot as a pencil", () => {
     vi.stubGlobal("window", { ogb: { platform: "darwin" } });
     const html = renderToStaticMarkup(createElement(DesktopCapabilitiesProvider, null, createElement(BotSettingsDialog, { bot })));
     const classOf = (marker: RegExp) => html.match(marker)?.[1] ?? html.match(marker)?.[2];
-    const menu = classOf(/<button[^>]*data-mascot-menu-button=""[^>]*class="([^"]*)"|<button[^>]*class="([^"]*)"[^>]*data-mascot-menu-button=""/);
     const close = classOf(/<button[^>]*aria-label="Close"[^>]*class="([^"]*)"|<button[^>]*class="([^"]*)"[^>]*aria-label="Close"/);
-    expect(menu).toBe(CIRCLE_BUTTON);
     expect(close).toBe(CIRCLE_BUTTON);
+    // no "..." in the header: the pencil sits on the mascot, after it
+    expect(html).not.toContain("data-mascot-menu-button");
+    const badge = html.match(/<button[^>]*data-persona-edit-badge=""[^>]*>/)?.[0] ?? "";
+    expect(badge).toContain('aria-label="Edit bot"');
+    expect(badge).toContain('title="Edit bot"');
+    expect(badge).toContain("size-7");
+    expect(html.indexOf("data-persona-edit-badge")).toBeGreaterThan(html.indexOf("data-avatar-edit"));
   });
 
-  it("offers one Edit persona pencil on the mascot, before the tab bar", () => {
+  it("offers one pencil on the mascot, before the tab bar", () => {
     vi.stubGlobal("window", { ogb: { platform: "darwin" } });
     const html = renderToStaticMarkup(createElement(DesktopCapabilitiesProvider, null, createElement(BotSettingsDialog, { bot })));
     expect(html.match(/data-edit-persona=""/g)).toHaveLength(1);
-    expect(html).toContain('aria-label="Edit persona"');
+    // no second persona button (the 0.4.19 one): the badge says Edit bot
+    expect(html).not.toContain('aria-label="Edit persona"');
+    expect(html).not.toContain(">Edit persona<");
+    // the name and label pencils show only on hover or focus (and on touch screens)
+    const inlinePencils = [...html.matchAll(/<svg[^>]*lucide-pencil[^>]*>/g)].map((m) => m[0]).filter((svg) => svg.includes("opacity-0"));
+    expect(inlinePencils).toHaveLength(2);
+    for (const svg of inlinePencils) expect(svg).toContain("group-hover/inline:opacity-100");
+    // the one pencil is the mascot's badge
+    expect(html.match(/<button[^>]*data-edit-persona=""[^>]*>/)?.[0]).toContain("data-persona-edit-badge");
     expect(html.indexOf('data-edit-persona=""')).toBeLessThan(html.indexOf('role="tablist"'));
     expect(html).not.toMatch(/role="tablist"[\s\S]*data-edit-persona=""/);
   });

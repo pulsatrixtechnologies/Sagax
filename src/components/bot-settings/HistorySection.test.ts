@@ -54,20 +54,20 @@ describe("HistorySection", () => {
     expect(markup).toContain("No changes recorded yet.");
   });
 
-  it("renders each row's actor, via, and summary", () => {
+  it("renders each row's actor in words, its via as a tooltip, and its summary", () => {
     const markup = render([soulRow, titleRow]);
-    expect(markup).toContain("user");
-    expect(markup).toContain("ui");
+    expect(markup).toContain("You ·");
+    expect(markup).toContain('title="ui"');
     expect(markup).toContain("soul: 120 → 340 bytes");
-    expect(markup).toContain("bot");
-    expect(markup).toContain("api");
+    expect(markup).toContain("The bot ·");
+    expect(markup).toContain('title="api"');
     expect(markup).toContain("Title changed");
   });
 
   it("shows an Undo button only on soul rows", () => {
     const markup = render([soulRow, titleRow]);
     expect(markup).toContain("Undo this change");
-    // Only one Undo button should appear — the soul row's.
+    // Only one Undo button should appear: the soul row's.
     expect(markup.match(/Undo this change/g)?.length).toBe(1);
   });
 
@@ -80,14 +80,14 @@ describe("HistorySection", () => {
     const reason = "This version is missing exact text or contains redacted sensitive text and cannot be restored.";
     const markup = render([{ ...soulRow, canRestore: false, restoreUnavailableReason: reason }]);
     expect(markup).not.toContain("Undo this change");
-    expect(markup).toContain(reason);
+    expect(markup).toContain("This change cannot be undone");
   });
 
   it("fails closed if an older server omits restoration eligibility", () => {
     const { canRestore: _canRestore, ...legacyRow } = soulRow;
     const markup = render([legacyRow]);
     expect(markup).not.toContain("Undo this change");
-    expect(markup).toContain("The exact previous instructions are unavailable");
+    expect(markup).toContain("This change cannot be undone");
   });
 
   it("orders rows newest first regardless of input order", () => {

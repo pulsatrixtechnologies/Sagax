@@ -4,7 +4,9 @@ export const SIDEBAR_LOGO_KEY = "sagax-show-sidebar-logo";
 
 // Only a renderer preference: no conversation or server configuration belongs
 // here. Keep a session choice even if private/blocked storage rejects reads or
-// writes; another window's storage event can supersede that choice.
+// writes; another window's storage event can supersede that choice. Off
+// unless the person turned it on ("1"): the head then sits in the title bar
+// (Sidebar.tsx, the owner's reference window of 2026-10-12).
 let sessionChoice: boolean | undefined;
 const listeners = new Set<() => void>();
 
@@ -19,9 +21,9 @@ function storage(): Storage | undefined {
 function showSidebarLogo(): boolean {
   if (sessionChoice !== undefined) return sessionChoice;
   try {
-    return storage()?.getItem(SIDEBAR_LOGO_KEY) !== "0";
+    return storage()?.getItem(SIDEBAR_LOGO_KEY) === "1";
   } catch {
-    return true;
+    return false;
   }
 }
 
@@ -60,5 +62,5 @@ export function setShowSidebarLogo(enabled: boolean): void {
 }
 
 export function useShowSidebarLogo(): boolean {
-  return useSyncExternalStore(subscribe, showSidebarLogo, () => true);
+  return useSyncExternalStore(subscribe, showSidebarLogo, () => false);
 }

@@ -5,7 +5,7 @@ import { compileRoutes, ConsoleRefusal, matchRoutes } from "../org-admin-console
 import type { ConsoleRole } from "../org-admin-routes.ts";
 
 export interface FakeConsole {
-  call(method: "GET" | "POST", path: string, input?: { role?: ConsoleRole; principalId?: string; reach?: string[] | null; body?: unknown; locale?: "en" | "fr"; request?: unknown }): Promise<{ status: number; body: any; raw?: Buffer }>;
+  call(method: "GET" | "POST", path: string, input?: { role?: ConsoleRole; principalId?: string; reach?: string[] | null; body?: unknown; locale?: "en" | "fr"; request?: unknown; headers?: Record<string, string>; teams?: ConsoleContext["viewer"]["teams"] }): Promise<{ status: number; body: any; raw?: Buffer; headers?: Record<string, string> }>;
   records: ConsoleAuditEntry[];
 }
 
@@ -22,14 +22,15 @@ export function fakeConsole(routes: ConsoleRoute[], now = () => Date.now()): Fak
       const reach = input.reach === undefined ? null : input.reach ? new Set(input.reach) : null;
       const principalId = input.principalId ?? "pr_admin";
       const ctx: ConsoleContext = {
-        viewer: { principalId, sub: "sub", name: "Viewer", role: input.role ?? "admin", orgAdmin: (input.role ?? "admin") === "admin", teams: [] },
+        viewer: { principalId, sub: "sub", name: "Viewer", role: input.role ?? "admin", orgAdmin: (input.role ?? "admin") === "admin", teams: input.teams ?? [] },
         locale: input.locale ?? "en",
         url,
         params: hit.params,
+        ...(input.headers ? { headers: input.headers } : {}),
         body: input.body ?? null,
         ...(input.request ? { request: input.request as ConsoleContext["request"] } : {}),
         reach,
-        managedTeams: new Set(),
+        managedTeams: new Set((input.teams ?? []).filter((team) => team.manager).map((team) => team.id)),
         inReach: (id) => !reach || (id ? reach.has(id) : false),
         botVisible: (facts) => !reach || reach.has(facts.ownerPrincipalId) || facts.grantTargets.some((target) => target.startsWith("user:") && reach.has(target.slice(5))),
         record: (entry) => records.push(entry),
@@ -42,7 +43,8 @@ export function fakeConsole(routes: ConsoleRoute[], now = () => Date.now()): Fak
           await answer.stream(async (chunk) => { chunks.push(chunk); });
           return { status: answer.status, body: answer.body as any, raw: Buffer.concat(chunks) };
         }
-        return { status: answer.status, body: answer.body as any };
+        if (answer.raw !== undefined) return { status: answer.status, body: answer.body as any, raw: Buffer.from(answer.raw), ...(answer.headers ? { headers: answer.headers } : {}) };
+        return { status: answer.status, body: answer.body as any, ...(answer.headers ? { headers: answer.headers } : {}) };
       } catch (error) {
         // as server/org-admin-routes.ts answers a thrown refusal
         if (error instanceof ConsoleRefusal) return { status: error.status, body: { code: error.code, message: error.message, reason: error.message } };

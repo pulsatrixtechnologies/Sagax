@@ -99,7 +99,7 @@ test("a sign-out the server cannot confirm still leaves; a packaged app with no 
 });
 
 test("the packaged app starts no local server in server mode, and the window never falls back to Local", () => {
-  assert.match(source, /\} else if \(app\.isPackaged && serverModeEnvironment\(readEnvironments\(\)\)\) \{\n[\s\S]{0,400}?slog\("server mode: the local server is not started"\);\n  \} else if \(app\.isPackaged\) \{\n    await startServerPackaged\(\);/);
+  assert.match(source, /\} else if \(app\.isPackaged && serverModeEnvironment\(readEnvironments\(\)\)\) \{\n[\s\S]{0,400}?slog\("server mode: the local server is not started"\);\n  \} else if \(app\.isPackaged\) \{\n    (?:const booted = )?await startServerPackaged\(\);/);
   const failLoad = section('win.webContents.on("did-fail-load"', 'win.webContents.on("did-finish-load"');
   assert.ok(failLoad.indexOf("serverModeEnvironment(environmentsState)") < failLoad.indexOf("switchEnvironment(LOCAL_ID)"));
   // the launch screen's join is what turns it on, on a probed organization server

@@ -9,7 +9,11 @@ class FakeSocket {
   readyState = 1;
   binaryType = "arraybuffer";
   private listeners: Record<string, Array<() => void>> = {};
-  constructor(readonly url: string, readonly init: { headers: Record<string, string> }) {
+  readonly url: string;
+  readonly init: { headers: Record<string, string> };
+  constructor(url: string, init: { headers: Record<string, string> }) {
+    this.url = url;
+    this.init = init;
     FakeSocket.last = this;
   }
   addEventListener(type: string, cb: () => void) {

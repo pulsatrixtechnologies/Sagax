@@ -5,9 +5,13 @@ import {
   executableTarget,
   verifyCloudflaredExecutable,
 } from "./prepare-cloudflared.mjs";
+import { fileURLToPath } from "node:url";
 import { verifyBrowserBundle } from "./prepare-browser.mjs";
 import { verifyWindowsNatives } from "./verify-win-natives.mjs";
+import { pinnedDuckdbVersion, pinnedResvgVersion, verifyDuckdbTree } from "./prepare-duckdb.mjs";
 import { LIPO_ARCH, isMachO, writeThinMachO } from "./mac-thin.mjs";
+
+const root = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
 
 async function requireRealDirectory(directory, mode = 0o755) {
   const details = await lstat(directory);
@@ -67,6 +71,23 @@ async function validateCloudflared(resources, platform, required) {
   );
 }
 
+// The DuckDB binding the server requires at runtime (server/data/engine.ts):
+// the pinned packages, the native binding beside its library, and on macOS
+// only this app's slice, so an Intel Mac never gets an arm64-only dylib.
+async function validateDuckdb(resources, platform, arch, required) {
+  const duckdb = path.join(resources, "duckdb");
+  const present = await lstat(duckdb).then(() => true, (error) => {
+    if (error?.code === "ENOENT") return false;
+    throw error;
+  });
+  // Unit fixtures carry only the resources they test; a real build fails
+  // closed because electron-builder only warns about a missing `from`.
+  if (!present && !required) return;
+  if (!arch) throw new Error(`Unsupported DuckDB package architecture: ${arch}`);
+  await requireRealDirectory(duckdb, platform === "win32" ? undefined : 0o755);
+  await verifyDuckdbTree(duckdb, platform, arch, pinnedDuckdbVersion(root), pinnedResvgVersion(root));
+}
+
 // Google ships macOS Platform Tools universal, and the shared top-level
 // extraResources entry copies that tree into both single-arch apps. Keep only
 // this app's slice, before electron-builder signs the nested code.
@@ -122,6 +143,10 @@ export default async function afterPack(context) {
       throw new Error(`Windows ${arch} package has binaries for the wrong target:\n  ${problems.join("\n  ")}`);
     }
   }
+  // Windows arm64 has no DuckDB or resvg binding to stage (prepare-duckdb):
+  // that package may ship without the Data engine; every other one must not.
+  const duckdbStaged = !(context.electronPlatformName === "win32" && arch === "arm64");
+  await validateDuckdb(resources, context.electronPlatformName, arch, Boolean(context.packager) && duckdbStaged);
   if (context.electronPlatformName === "darwin") await thinMacPlatformTools(resources, arch);
 
   if (context.electronPlatformName !== "linux") return;

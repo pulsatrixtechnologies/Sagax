@@ -28,7 +28,27 @@ struct CompanionApp: App {
 
     var body: some Scene {
         WindowGroup {
-            MascotGalleryGate { RootView() }
+            #if DEBUG
+            if ProviderSetupPreview.requested {
+                // The CI screenshot. Skip pairing and the event stream.
+                ProviderSetupPreview()
+            } else {
+                liveRoot
+            }
+            #else
+            liveRoot
+            #endif
+        }
+        // `.defaultSize` is iOS 17 and `SceneBuilder` takes no conditionals,
+        // so it is dropped while the app supports 16. It only suggested an
+        // opening window size for iPad and Stage Manager; the system picks a
+        // sensible one on its own.
+    }
+
+    /// The paired app. The debug preview is a separate branch of the
+    /// window, so a screenshot launch never opens the event stream.
+    private var liveRoot: some View {
+        MascotGalleryGate { RootView() }
                 .environmentObject(session)
                 // One modifier is the whole language seam. SwiftUI resolves a
                 // `LocalizedStringKey` against the environment's locale, so
@@ -74,11 +94,6 @@ struct CompanionApp: App {
                     @unknown default: break
                     }
                 }
-        }
-        // `.defaultSize` is iOS 17 and `SceneBuilder` takes no conditionals,
-        // so it is dropped while the app supports 16. It only suggested an
-        // opening window size for iPad and Stage Manager; the system picks a
-        // sensible one on its own.
     }
 }
 

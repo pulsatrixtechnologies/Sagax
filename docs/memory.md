@@ -164,6 +164,13 @@ off. It keeps the notes in shape without the bot having to decide to:
   A fact that ends on a known day gets its `until` date; a birthday or other
   yearly date never does. Turns started by another bot or by the harness,
   rooms and failed turns are never read.
+  Turns still waiting when the app quits or restarts through its normal
+  shutdown are kept as their ids (never their text) in
+  `memory-capture-pending.json`, at most 50 chats, and read back from the
+  chat at the next start, so what was said just before quitting is still
+  noticed. A crash or a forced kill skips that step (on Windows a `SIGTERM`
+  is one), and those turns are not captured. A chat deleted or rewound
+  meanwhile leaves nothing to read.
 - **Organizing.** Whoever wrote a line in `MEMORY.md` — the bot with
   `memory_update`, the person, or capture — after each capture and in the
   nightly tidy-up one quick model call looks at lines not judged before and
@@ -199,9 +206,15 @@ full stop are ignored, nothing else — `Balance is -10` and `Balance is 10`,
 
 Every upkeep change is a journal row by **Memory upkeep** and can be undone.
 Upkeep pauses while a backup runs. The model steps need an engine with a
-one-shot text call — Claude, Grok, OpenAI-compatible, Mistral and MiniMax.
-On any other engine the panel says so and only the expiry and exact-duplicate
-steps run.
+one-shot text call — Claude, Grok, OpenAI-compatible, Mistral and MiniMax,
+and the agent engines that speak ACP (Grok CLI, Gemini, Kimi, Droid, Cursor,
+OpenCode, Qwen, Hermes, Antigravity and custom ACP agents). On an ACP engine
+each call starts the engine's own CLI in a fresh session of its own, never a
+chat's, in an empty folder, with no MCP servers and in the ask-first approval
+mode; it is refused and dropped the moment the agent asks for a tool, a file
+or a permission. The text goes only to the provider the bot already uses.
+On any other engine (Pi, for now) the panel says so and only the expiry and
+exact-duplicate steps run.
 
 ## Editing
 

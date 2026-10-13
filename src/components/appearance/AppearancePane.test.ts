@@ -107,7 +107,7 @@ describe("the Mascot gallery", () => {
   it("searches nine mascots, filters by chip, and shows each tile with its name and family", () => {
     const html = renderEditor(makeBot());
     expect(html).toContain('placeholder="Search 9 mascots"');
-    expect([...html.matchAll(/data-mascot-filter="([\w:]+)"/g)].map((match) => match[1])).toEqual(["all", "owned", "locked", "family:classics", "family:shapes", "family:animals"]);
+    expect([...html.matchAll(/data-mascot-filter="([\w:]+)"/g)].map((match) => match[1])).toEqual(["all", "owned", "family:classics", "family:shapes", "family:animals"]);
     expect(html).toMatch(/aria-pressed="true" data-mascot-filter="all"/);
     expect(html).toContain(">Classics<");
     expect(html).toContain(">Animals<");
@@ -161,18 +161,16 @@ describe("picking in the gallery", () => {
     expect(tile("frog").getAttribute("aria-pressed")).toBe("true");
   });
 
-  it("previews a locked character without saving, its options off and its unlock hint on the button", async () => {
+  it("hides locked characters from the gallery", async () => {
     enforce([]);
     await mount(makeBot());
-    await act(async () => tile("ogre").click());
+    expect(host.querySelector('[data-character-option="ogre"]')).toBeNull();
+    expect(host.querySelector('[data-character-option="crab"]')).toBeNull();
+    expect(host.querySelector('[data-character-option="owl"]')).not.toBeNull();
+    expect(host.querySelector('[data-mascot-shelf="locked"]')).toBeNull();
+    expect(host.querySelector('[data-mascot-filter="locked"]')).toBeNull();
     expect(patches).toEqual([]);
-    expect(host.querySelector("[data-mascot-detail]")?.getAttribute("data-mascot-detail")).toBe("ogre");
-    expect(action().getAttribute("data-mascot-action")).toBe("locked");
-    expect(action().disabled).toBe(true);
-    expect(action().textContent).toBe("Unlock: Conductor");
-    expect(host.querySelector<HTMLButtonElement>("[data-mascot-color]")?.disabled).toBe(true);
-    // its moves still play on the stage
-    expect(host.querySelector<HTMLButtonElement>("[data-character-move]")?.disabled).toBe(false);
+    expect(action().getAttribute("data-mascot-action")).toBe("in-use");
   });
 
   it("narrows the tiles by chip and by search, and says when nothing matches", async () => {
@@ -180,10 +178,9 @@ describe("picking in the gallery", () => {
     await mount(makeBot());
     const shown = () => [...host.querySelectorAll("[data-character-option]")].map((element) => element.getAttribute("data-character-option"));
     await act(async () => host.querySelector<HTMLButtonElement>('[data-mascot-filter="family:classics"]')!.click());
-    // Trombi's secret keeps it out while locked
     expect(shown()).toEqual(["owl"]);
     await act(async () => host.querySelector<HTMLButtonElement>('[data-mascot-filter="owned"]')!.click());
-    expect(shown()).toEqual(["owl", "crab"]);
+    expect(shown()).toEqual(["owl"]);
     await act(async () => host.querySelector<HTMLButtonElement>('[data-mascot-filter="all"]')!.click());
     const search = host.querySelector<HTMLInputElement>("[data-mascot-search]")!;
     await act(async () => {

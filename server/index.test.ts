@@ -8,7 +8,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { once } from "node:events";
 import { createServer, request, type Server } from "node:http";
 import { connect, type Socket } from "node:net";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -23,6 +23,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { z } from "zod";
 
 import { removeTempDir, waitForExit } from "./testing/cleanup.ts";
+import { hostTimeout } from "./testing/host-timeout.ts";
 import { startFakeHttpMcp } from "./testing/fake-http-mcp-server.ts";
 import { startFakeOAuthMcp } from "./testing/fake-oauth-mcp-server.ts";
 import { freePortBlock } from "./testing/ports.ts";
@@ -50,7 +51,7 @@ async function mintTestCapability(
   baseUrl: string,
   botId: string,
   threadId: string,
-  options: { kind?: "agents" | "connectors" | "computer"; skillAuthoring?: boolean } = {},
+  options: { kind?: "agents" | "connectors" | "computer"; skillAuthoring?: boolean; deliversSavedFiles?: boolean } = {},
 ): Promise<string> {
   const response = await fetch(`${baseUrl}/api/testing/internal-capability`, {
     method: "POST",
@@ -58,7 +59,13 @@ async function mintTestCapability(
       "content-type": "application/json",
       "x-openmausbot-test-capability": TEST_CAPABILITY_KEY,
     },
-    body: JSON.stringify({ botId, threadId, kind: options.kind ?? "agents", skillAuthoring: options.skillAuthoring ?? false }),
+    body: JSON.stringify({
+      botId,
+      threadId,
+      kind: options.kind ?? "agents",
+      skillAuthoring: options.skillAuthoring ?? false,
+      ...(options.deliversSavedFiles ? { deliversSavedFiles: true } : {}),
+    }),
   });
   expect(response.status).toBe(201);
   return ((await response.json()) as { token: string }).token;
@@ -110,6 +117,8 @@ let boatStubPort = 0;
 const boatRouteCalls: Array<{ method: string; path: string }> = [];
 const boatPromptBodies: Array<Record<string, unknown>> = [];
 let boatSlowRequestCount = 0;
+/** Holds a "box_slow" credential check open until released; unset, it takes 150 ms. */
+let boatSlowHold: Promise<void> | null = null;
 let managedBoatRows: Array<Record<string, unknown>> = [];
 let managedBoatListRowsOverride: Array<Record<string, unknown>> | null = null;
 let managedBoatListStatus = 200;
@@ -208,7 +217,9 @@ const waitForIsolatedServer = async (
   port: number,
   capturedStderr: () => string,
 ): Promise<void> => {
-  const deadline = Date.now() + 20_000;
+  // a cold start on a loaded Windows runner (an isolated server loads and
+  // strips every server module) has taken past 20 s; hostTimeout doubles it there
+  const deadline = Date.now() + hostTimeout(20_000);
   let lastObservedHealth = "none";
   for (;;) {
     if (serverChild.exitCode !== null || serverChild.signalCode !== null) {
@@ -441,6 +452,7 @@ beforeAll(async () => {
   mkdirSync(join(home, ".sagax"), { recursive: true });
   mkdirSync(join(staticDir, "assets"), { recursive: true });
   writeFileSync(join(staticDir, "index.html"), "<!doctype html><title>Packaged Sagax</title>");
+  writeFileSync(join(staticDir, "manifest.webmanifest"), '{"name":"Fixture web app","display":"standalone","start_url":"/"}');
   writeFileSync(join(staticDir, "assets", "smoke.css"), "body { color: white; }");
   writeFileSync(
     join(home, ".sagax", "config.json"),
@@ -612,6 +624,12 @@ beforeAll(async () => {
   writeFileSync(linkedImage, "png preview bytes");
   writeFileSync(generatedImage, "generated image bytes");
   writeFileSync(userAttachment, "%PDF shared from the phone\n", { mode: 0o600 });
+  // A picture a bot saved outside the room's folders, and the copy attach_file made of it.
+  const outsideImage = join(home, "Downloads", "sideboard.png");
+  const deliveredImage = join(privateAttachments, "5e1dbd0a-7c3a-4f1e-9b2d-6a0c4f8e2b71.png");
+  mkdirSync(join(home, "Downloads"), { recursive: true });
+  writeFileSync(outsideImage, "outside photo bytes");
+  writeFileSync(deliveredImage, "delivered photo bytes");
   writeFileSync(
     join(home, ".sagax", "messages-test-linked-file-room-thread.json"),
     JSON.stringify({
@@ -674,6 +692,24 @@ beforeAll(async () => {
           role: "user",
           kind: "text",
           text: `<attached-file path="${linkedFile}" />`,
+        },
+        // A side branch: a reply showing an outside picture, alone and then
+        // after the turn delivered it with attach_file.
+        {
+          id: "outside-image-message", at: 9, parentId: "user-outside-file-message", role: "bot", kind: "text",
+          text: `Heidi, 51 – Sideboard\n\n![Sideboard](<${pathToFileURL(outsideImage).href}>)\n\nEinschätzung`,
+          from: { botId: "test-bot-a", name: "Test bot A", color: "purple" },
+        },
+        { id: "photo-request-message", at: 10, parentId: "outside-image-message", role: "user", kind: "text", text: "Show me the photo" },
+        {
+          id: "delivered-image-message", at: 11, parentId: "photo-request-message", role: "bot", kind: "text", text: "",
+          attachments: [{ kind: "image", path: deliveredImage, mime: "image/png", name: "sideboard.png" }],
+          from: { botId: "test-bot-a", name: "Test bot A", color: "purple" },
+        },
+        {
+          id: "delivered-image-reply-message", at: 12, parentId: "delivered-image-message", role: "bot", kind: "text",
+          text: `Heidi, 51 – Sideboard\n\n![Sideboard](<${pathToFileURL(outsideImage).href}>)\n\nEinschätzung`,
+          from: { botId: "test-bot-a", name: "Test bot A", color: "purple" },
         },
       ],
     }),
@@ -959,7 +995,7 @@ beforeAll(async () => {
       && new URL(req.url ?? "/", "http://box.invalid").pathname === "/boxes"
     ) {
       boatSlowRequestCount += 1;
-      await new Promise((resolve) => setTimeout(resolve, 150));
+      await (boatSlowHold ?? new Promise((resolve) => setTimeout(resolve, 150)));
     }
     if (
       req.headers.authorization === "Bearer box_route" ||
@@ -1170,9 +1206,6 @@ beforeAll(async () => {
       HOME: home,
       USERPROFILE: home,
       SAGAX_PORT: String(PORT),
-      SAGAX_BACKGROUND_REPLIES: "off",
-      // Fixtures use placeholder bytes; server/upload-content-check.test.ts covers the sniff.
-      SAGAX_UPLOAD_SNIFF: "off",
       SAGAX_WEBHOOK_PORT: String(WEBHOOK_PORT),
       SAGAX_EXTRA_PATH: fakeDockerDir,
       SAGAX_BOX_API: `http://127.0.0.1:${boatStubPort}`,
@@ -1323,7 +1356,6 @@ describe("harness HTTP API", () => {
           HOME: isolatedHome,
           USERPROFILE: isolatedHome,
           SAGAX_PORT: String(isolatedPort),
-          SAGAX_BACKGROUND_REPLIES: "off",
           SAGAX_WEBHOOK_PORT: String(isolatedPort + 1),
           SAGAX_STATIC_DIR: isolatedStatic,
           FAKE_CLAUDE_MODE: "hang",
@@ -1676,7 +1708,6 @@ describe("harness HTTP API", () => {
         ...(process.env.SystemRoot ? { SystemRoot: process.env.SystemRoot } : {}),
         SAGAX_DATA_DIR: join(home, ".sagax"),
         SAGAX_PORT: String(contenderPort),
-        SAGAX_BACKGROUND_REPLIES: "off",
         SAGAX_STATIC_DIR: staticDir,
       },
       stdio: ["ignore", "ignore", "pipe"],
@@ -1712,6 +1743,11 @@ describe("harness HTTP API", () => {
     const index = await fetch(`${BASE}/index.html`);
     expect(index.headers.get("cache-control")).toBe("no-cache");
     await index.arrayBuffer();
+
+    const manifest = await fetch(`${BASE}/manifest.webmanifest`, { headers: { host: "workspace.example.test" } });
+    expect(manifest.status).toBe(200);
+    expect(manifest.headers.get("content-type")).toBe("application/manifest+json");
+    expect(await manifest.json()).toMatchObject({ display: "standalone" });
 
     // Content-hashed build output: the browser keeps it instead of
     // downloading the whole bundle again on every load.
@@ -2500,8 +2536,10 @@ describe("harness HTTP API", () => {
         return { status: response.status, body };
       };
 
+      // Below Full Access the specialist waits on one review card.
       const direct = await createOperator(chief.threadId, "Direct Task Operator");
-      expect(direct).toMatchObject({ status: 201, body: { section: "Channel creation test" } });
+      expect(direct).toMatchObject({ status: 201, body: { state: "pending" } });
+      expect(direct.body.detail).toContain('Section: "Channel creation test"');
       // a name is quoted into every other room member's system prompt as one
       // line, so one that spans lines is refused here as it is at the profile
       // endpoints — an injected Chief must not be the way round that door
@@ -2737,18 +2775,103 @@ describe("harness HTTP API", () => {
         return { status: response.status, body: await response.json() as { id?: string; error?: string } };
       };
       const folder = mkdtempSync(join(tmpdir(), "omb-create-cwd-"));
-      const landed = await create(`Folder operator ${chief.id}`, folder);
-      expect(landed.status).toBe(201);
-      createdId = landed.body.id;
-      const state = (await api("GET", "/api/bots?messages=0")).body;
-      expect(state.bots.find((bot: { id?: string }) => bot.id === createdId)?.cwd).toBe(folder);
+      const landed = await create(`Folder operator ${chief.id}`, folder) as { status: number; body: { requestId?: string; state?: string; detail?: string } };
+      expect(landed.body).toMatchObject({ state: "pending" });
+      expect(landed.body.detail).toContain(`Working folder: "${folder}"`);
       const relative = await create(`Relative operator ${chief.id}`, "relative/path");
       expect(relative).toMatchObject({ status: 400, body: { error: "working folder must be an absolute path" } });
       const missing = await create(`Missing operator ${chief.id}`, join(folder, "missing"));
       expect(missing.status).toBe(400);
       expect(missing.body.error).toBe(`that folder doesn't exist: ${join(folder, "missing")}`);
+      // Applying the card resumes the Chief, which retires this turn's token.
+      const applied = await fetch(`${BASE}/api/threads/${chief.threadId}/respond`, {
+        method: "POST",
+        headers: { "content-type": "application/json", origin: BASE },
+        body: JSON.stringify({ requestId: landed.body.requestId, behavior: "allow" }),
+      });
+      const result = await applied.json() as { result: { bots: Array<{ id: string }> } };
+      expect(applied.status, JSON.stringify(result)).toBe(200);
+      createdId = result.result.bots[0]?.id;
+      const state = (await api("GET", "/api/bots?messages=0")).body;
+      expect(state.bots.find((bot: { id?: string }) => bot.id === createdId)?.cwd).toBe(folder);
     } finally {
       if (createdId) await api("DELETE", `/api/bots/${createdId}`);
+      await api("DELETE", `/api/bots/${chief.id}`);
+    }
+  });
+
+  it("keeps create_bot on its review card below Full Access, whatever the Chief always allows", async () => {
+    const chief = (await api("POST", "/api/bots")).body.bot;
+    try {
+      expect((await api("PATCH", `/api/bots/${chief.id}`, { chiefOfStaff: true })).status).toBe(200);
+      // Every key a standing grant could plausibly carry for this tool.
+      const grants = ["create_bot", "mcp__agents__create_bot", "mcp__openmausbot__create_bot", "propose_team_setup", "set_up_team"];
+      expect((await api("PATCH", `/api/bots/${chief.id}`, { alwaysAllow: grants })).status).toBe(200);
+      const granted = (await api("GET", "/api/bots?messages=0")).body.bots.find((bot: { id: string }) => bot.id === chief.id);
+      expect(granted.alwaysAllow).toEqual(grants);
+      const before = (await api("GET", "/api/bots?messages=0")).body.bots.length;
+      const token = await mintTestCapability(BASE, chief.id, chief.threadId);
+      const response = await fetch(`${BASE}/api/internal/create-bot`, {
+        method: "POST",
+        headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+        body: JSON.stringify({ name: `Granted operator ${chief.id}`, role: "Ops", instructions: "Work carefully.\nReport back." }),
+      });
+      const card = await response.json() as { state: string; requestId: string; detail: string };
+      expect(response.status).toBe(201);
+      expect(card.state).toBe("pending");
+      expect(card.detail).toContain("+Work carefully.");
+      expect((await api("GET", "/api/bots?messages=0")).body.bots.length).toBe(before);
+      // A team-setup card offers no "Always allow" to remember either.
+      for (const allowKey of grants) {
+        expect((await api("POST", `/api/bots/${chief.id}/always-allow`, { threadId: chief.threadId, allowKey })).status).toBe(409);
+      }
+      const denied = await fetch(`${BASE}/api/threads/${chief.threadId}/respond`, {
+        method: "POST",
+        headers: { "content-type": "application/json", origin: BASE },
+        body: JSON.stringify({ requestId: card.requestId, behavior: "deny" }),
+      });
+      expect((await denied.json() as { result: { state: string } }).result.state).toBe("denied");
+      expect((await api("GET", "/api/bots?messages=0")).body.bots.length).toBe(before);
+    } finally {
+      await api("DELETE", `/api/bots/${chief.id}`);
+    }
+  });
+
+  it("keeps one suggested specialist open per conversation and remembers Not now", async () => {
+    const chief = (await api("POST", "/api/bots")).body.bot;
+    try {
+      expect((await api("PATCH", `/api/bots/${chief.id}`, { chiefOfStaff: true })).status).toBe(200);
+      const before = (await api("GET", "/api/bots?messages=0")).body.bots.length;
+      const token = await mintTestCapability(BASE, chief.id, chief.threadId);
+      const suggest = async (name: string) => {
+        const response = await fetch(`${BASE}/api/internal/create-bot`, {
+          method: "POST",
+          headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+          body: JSON.stringify({ name, role: "Checker", instructions: "Check the totals.", suggestion: true }),
+        });
+        return { status: response.status, body: await response.json() as { state?: string; requestId?: string; title?: string; error?: string } };
+      };
+      const first = await suggest(`Suggested ${chief.id}`);
+      expect(first).toMatchObject({ status: 201, body: { state: "pending", title: `Add @Suggested ${chief.id} to the team?` } });
+      const card = (await api("GET", `/api/threads/${chief.threadId}/messages?limit=20`)).body.messages.find((m: { card?: { requestId?: string } }) => m.card?.requestId === first.body.requestId).card;
+      expect(card.options).toEqual(["Add bot", "Not now"]);
+      expect(await suggest(`Second ${chief.id}`)).toMatchObject({ status: 409, body: { error: expect.stringMatching(/already waiting/) } });
+      const notNow = await fetch(`${BASE}/api/threads/${chief.threadId}/respond`, {
+        method: "POST",
+        headers: { "content-type": "application/json", origin: BASE },
+        body: JSON.stringify({ requestId: first.body.requestId, behavior: "deny" }),
+      });
+      expect((await notNow.json() as { result: { state: string } }).result.state).toBe("denied");
+      const fresh = await mintTestCapability(BASE, chief.id, chief.threadId);
+      const again = await fetch(`${BASE}/api/internal/create-bot`, {
+        method: "POST",
+        headers: { authorization: `Bearer ${fresh}`, "content-type": "application/json" },
+        body: JSON.stringify({ name: `Third ${chief.id}`, role: "Checker", instructions: "Check the totals.", suggestion: true }),
+      });
+      expect(again.status).toBe(409);
+      expect((await again.json() as { error: string }).error).toMatch(/not now/);
+      expect((await api("GET", "/api/bots?messages=0")).body.bots.length).toBe(before);
+    } finally {
       await api("DELETE", `/api/bots/${chief.id}`);
     }
   });
@@ -2780,14 +2903,27 @@ describe("harness HTTP API", () => {
     }
   });
 
-  it("keeps bot-to-bot channels single-threaded and blocks task changes on an open approval", async () => {
+  it("keeps bot-to-bot channels single-threaded and lets another task start beside an open approval", async () => {
     const dm = await api("POST", "/api/groups/test-dm/tasks", {});
     expect(dm.status).toBe(400);
     expect(dm.body.error).toMatch(/one canonical conversation/i);
 
-    const blocked = await api("POST", "/api/groups/test-stranded-room/tasks", {});
-    expect(blocked.status).toBe(409);
-    expect(blocked.body.error).toMatch(/waiting on you/i);
+    // A card holds only its own task: the person can start another while it
+    // waits, and the card stays in its task to be answered there.
+    const created = await api("POST", "/api/groups/test-stranded-room/tasks", {});
+    expect(created.status).toBe(201);
+    const taskThreadId = created.body.task.threadId as string;
+    expect(taskThreadId).not.toBe("test-stranded-room-thread");
+    try {
+      const back = await api("POST", "/api/groups/test-stranded-room/tasks/test-stranded-room-thread", {});
+      expect(back.status).toBe(200);
+      const card = back.body.group.messages.find((message: { id: string }) => message.id === "stranded-card")?.card;
+      expect(card?.requestId).toBe("stranded-request");
+      expect(card.answered).toBeFalsy();
+    } finally {
+      await api("POST", "/api/groups/test-stranded-room/tasks/test-stranded-room-thread", {});
+      await api("DELETE", `/api/groups/test-stranded-room/tasks/${taskThreadId}`);
+    }
   });
 
   it("keeps Chief room changes behind pending user approvals", async () => {
@@ -3548,7 +3684,10 @@ describe("harness HTTP API", () => {
         await expect.poll(async () => JSON.stringify(await threadMessages(task.threadId)), { timeout: 5_000 })
           .toMatch(new RegExp(`${index + 1}(st|nd|rd) in queue`));
         expect((await threadMessages(task.threadId)).some(message => (message.tool?.name ?? "").includes("recent waits here"))).toBe(false);
-        expect((await threadEvents(task.threadId)).find(event => event.type === "turn.wait_started")).toMatchObject({ position: index + 1 });
+        // The bus appends the event log asynchronously, so the chip can be
+        // readable before its wait_started line reaches disk.
+        await expect.poll(async () => (await threadEvents(task.threadId)).find(event => event.type === "turn.wait_started"), { timeout: 5_000 })
+          .toMatchObject({ position: index + 1 });
       }
 
       // Releasing the holder grants the seat to position 1 alone: exactly
@@ -3626,7 +3765,6 @@ describe("harness HTTP API", () => {
         HOME: isolatedHome,
         USERPROFILE: isolatedHome,
         SAGAX_PORT: String(isolatedPort),
-        SAGAX_BACKGROUND_REPLIES: "off",
         SAGAX_WEBHOOK_PORT: String(isolatedPort + 1),
         SAGAX_STATIC_DIR: isolatedStatic,
         SAGAX_BOX_API: `http://127.0.0.1:${boatStubPort}`,
@@ -3869,7 +4007,6 @@ describe("harness HTTP API", () => {
         HOME: isolatedHome,
         USERPROFILE: isolatedHome,
         SAGAX_PORT: String(isolatedPort),
-        SAGAX_BACKGROUND_REPLIES: "off",
         SAGAX_WEBHOOK_PORT: String(isolatedPort + 1),
         SAGAX_STATIC_DIR: isolatedStatic,
         SAGAX_BOX_API: `http://127.0.0.1:${boatStubPort}`,
@@ -5419,7 +5556,6 @@ describe("harness HTTP API", () => {
         HOME: isolatedHome,
         USERPROFILE: isolatedHome,
         SAGAX_PORT: String(isolatedPort),
-        SAGAX_BACKGROUND_REPLIES: "off",
         SAGAX_WEBHOOK_PORT: String(isolatedPort + 1),
         SAGAX_STATIC_DIR: isolatedStatic,
         FAKE_CLAUDE_MODE: "hang",
@@ -6414,7 +6550,6 @@ describe("harness HTTP API", () => {
           HOME: isolatedHome,
           USERPROFILE: isolatedHome,
           SAGAX_PORT: String(isolatedPort),
-          SAGAX_BACKGROUND_REPLIES: "off",
           SAGAX_WEBHOOK_PORT: String(isolatedPort + 1),
           SAGAX_STATIC_DIR: isolatedStatic,
           FAKE_CLAUDE_MODE: "hang",
@@ -6944,15 +7079,23 @@ describe("harness HTTP API", () => {
       await expect.poll(async () => (await api("GET", "/api/bots?messages=0")).body.groups.find(
         (candidate: { id: string }) => candidate.id === room.id,
       )?.working).toBe(true);
-      const rejected = await held.finish();
-      expect(rejected.status).toBe(409);
-      expect(rejected.body.error).toMatch(/working/i);
+      const finished = await held.finish();
       const current = (await api("GET", "/api/bots?messages=0")).body.groups.find(
         (candidate: { id: string }) => candidate.id === room.id,
       );
-      expect(current.threadId).toBe(room.threadId);
-      expect(current.tasks).toHaveLength(1);
-      expect(current.tasks[0].title).not.toBe("Delayed task");
+      const running = current.tasks.find((task: { threadId: string }) => task.threadId === room.threadId);
+      expect(running.working).toBe(true);
+      if (method === "POST") {
+        // Each task has its own queue: a new one starts beside the running one.
+        expect(finished.status).toBe(201);
+        expect(current.tasks).toHaveLength(2);
+      } else {
+        // Renaming the running task still waits for it, checked after the body.
+        expect(finished.status).toBe(409);
+        expect(finished.body.error).toMatch(/running/i);
+        expect(current.tasks).toHaveLength(1);
+        expect(running.title).not.toBe("Delayed task");
+      }
     } finally {
       held.close();
       await api("POST", `/api/groups/${room.id}/interrupt`, {});
@@ -7787,6 +7930,10 @@ describe("harness HTTP API", () => {
 
   it("excludes new Boat turns, lifecycle actions, and bot deletion while a token change validates", async () => {
     let botId = "";
+    // The check stays open until every refusal below is seen: a save that
+    // reloads no engine is over in moments.
+    let release = () => {};
+    boatSlowHold = new Promise<void>((resolve) => { release = resolve; });
     try {
       expect((await api("PUT", "/api/config", { box: { token: "" } })).status).toBe(200);
       const bot = (await api("POST", "/api/bots")).body.bot;
@@ -7803,11 +7950,14 @@ describe("harness HTTP API", () => {
       expect(turn.status).toBe(409);
       expect(turn.body.error).toMatch(/Boat account settings are being updated/i);
       expect((await api("DELETE", `/api/bots/${bot.id}`)).status).toBe(409);
+      release();
       expect((await changing).status).toBe(200);
 
       expect((await api("DELETE", `/api/bots/${bot.id}`)).status).toBe(200);
       botId = "";
     } finally {
+      release();
+      boatSlowHold = null;
       if (botId) await api("DELETE", `/api/bots/${botId}`).catch(() => undefined);
       await api("PUT", "/api/config", { box: { token: "" } }).catch(() => undefined);
     }
@@ -8160,7 +8310,7 @@ describe("harness HTTP API", () => {
         mcpConfig: z.object({ mcpServers: z.object({ ogb: z.object({ args: z.array(z.string()) }) }) }),
       }).parse(await readJsonFileWhenReady(fakeClaudeDump));
       const socketPath = dump.mcpConfig.mcpServers.ogb.args[1];
-      const raise = async (id: string, command: string) => {
+      const raise = async (id: string, command: string, extra: Record<string, unknown> = {}) => {
         const conn = connect(socketPath);
         conns.push(conn);
         const answered = new Promise<{ behavior: string; always?: boolean }>((resolve) => {
@@ -8175,7 +8325,7 @@ describe("harness HTTP API", () => {
           conn.on("connect", resolve);
           conn.on("error", reject);
         });
-        conn.write(JSON.stringify({ t: "ask", id, tool: "Bash", input: { command } }) + "\n");
+        conn.write(JSON.stringify({ t: "ask", id, tool: "Bash", input: { command, ...extra } }) + "\n");
         return answered;
       };
       type Msg = { kind: string; tool?: { name: string }; card?: { title: string; subtitle: string; requestId?: string; held?: string; heldCode?: string; allowKey?: string; allowSession?: boolean; answered?: string } };
@@ -8211,6 +8361,17 @@ describe("harness HTTP API", () => {
       const plain = await second;
       expect(plain).toMatchObject({ behavior: "allow" });
       expect(plain).not.toHaveProperty("always");
+
+      // A card that offers no session allow keeps none, whatever the answer
+      // claims: widening the sandbox is allowed once at most.
+      const widen = raise("ask-widen", "ls /", { dangerouslyDisableSandbox: true });
+      await expect.poll(async () => (await messages()).find((m) => m.card?.subtitle === "ls /")?.card?.title).toBe("Approval needed");
+      const widenCard = (await messages()).find((m) => m.card?.subtitle === "ls /")!.card!;
+      expect(widenCard.allowSession).toBeUndefined();
+      expect((await api("POST", `/api/bots/${bot.id}/respond`, { requestId: widenCard.requestId, behavior: "allow", always: true })).status).toBe(200);
+      const once = await widen;
+      expect(once).toMatchObject({ behavior: "allow" });
+      expect(once).not.toHaveProperty("always");
     } finally {
       for (const conn of conns) conn.destroy();
       await api("POST", `/api/bots/${bot.id}/interrupt`);
@@ -8918,6 +9079,46 @@ describe("harness HTTP API", () => {
     }
   }, 60_000);
 
+  it.each(["direct", "room"] as const)("loads the browser tools up front only when the browser is the conversation's place in %s turns", async (target) => {
+    // Behind Claude's tool search, the first browser action costs a model
+    // step. Works on: Browser preloads them. Auto, which only falls back to
+    // the browser, keeps them deferred, so turns that never browse stay small.
+    const bots: string[] = [];
+    const rooms: string[] = [];
+    const mounted = async (computer: "browser" | undefined) => {
+      const bot = (await api("POST", "/api/bots")).body.bot;
+      bots.push(bot.id);
+      expect((await api("PATCH", `/api/bots/${bot.id}`, {
+        approvalMode: "auto",
+        modelSelection: { instanceId: "claude", model: "claude-sonnet-5" },
+        ...(computer ? { computer } : {}),
+      })).status).toBe(200);
+      let path = `/api/bots/${bot.id}/messages`;
+      if (target === "room") {
+        const room = (await api("POST", "/api/groups", { name: `Browser preload ${bots.length}`, memberIds: [bot.id] })).body.group;
+        rooms.push(room.id);
+        // a Sagax group is usable at once: there is no setup step to skip
+        path = `/api/groups/${room.id}/messages`;
+      }
+      rmSync(fakeClaudeDump, { force: true });
+      expect((await api("POST", path, { text: "Check the website." })).status).toBe(202);
+      const dump = await readJsonFileWhenReady(fakeClaudeDump) as { mcpConfig: { mcpServers: { browser?: { alwaysLoad?: boolean } } } };
+      expect(dump.mcpConfig.mcpServers.browser).toBeDefined();
+      return dump.mcpConfig.mcpServers.browser!;
+    };
+    try {
+      expect((await api("PATCH", "/api/config", { features: { browser: true } })).status).toBe(200);
+      expect((await mounted(undefined)).alwaysLoad).toBeUndefined();
+      expect((await mounted("browser")).alwaysLoad).toBe(true);
+    } finally {
+      for (const id of rooms) await api("POST", `/api/groups/${id}/interrupt`, {}).catch(() => undefined);
+      for (const id of bots) await api("POST", `/api/bots/${id}/interrupt`, {}).catch(() => undefined);
+      await api("PATCH", "/api/config", { features: { browser: false } }).catch(() => undefined);
+      for (const id of rooms) await api("DELETE", `/api/groups/${id}`).catch(() => undefined);
+      for (const id of bots) await api("DELETE", `/api/bots/${id}`).catch(() => undefined);
+    }
+  }, 60_000);
+
   it.each(["direct", "room"] as const)("resolves the same computer paragraph in the settings preview and %s turns", async (target) => {
     // The paragraph a plan earns is decided once, by the shared resolver:
     // what the preview shows and what a dispatched turn says cannot drift.
@@ -9076,7 +9277,6 @@ describe("harness HTTP API", () => {
           HOME: isolatedHome,
           USERPROFILE: isolatedHome,
           SAGAX_PORT: String(isolatedPort),
-          SAGAX_BACKGROUND_REPLIES: "off",
           SAGAX_WEBHOOK_PORT: String(isolatedPort + 1),
           SAGAX_STATIC_DIR: isolatedStatic,
           // A real agent-browser picked up from PATH cannot even name its
@@ -9617,7 +9817,7 @@ describe("harness HTTP API", () => {
       // and structural guards therefore cannot see a false idle window.
       const immediate = (await api("GET", "/api/bots?messages=0")).body;
       expect(immediate.groups.find((group: { id: string }) => group.id === room.id)?.working).toBe(true);
-      expect((await api("POST", `/api/groups/${room.id}/tasks`, { title: "Too soon" })).status).toBe(409);
+      expect((await api("PATCH", `/api/groups/${room.id}/tasks/${room.threadId}`, { title: "Too soon" })).status).toBe(409);
       // A bot leaving mid-turn is applied (b809e0570); a member change that
       // removes nobody, and a bulletin edit, still wait for the turn.
       expect((await api("PATCH", `/api/groups/${room.id}`, { memberIds: [second.id, first.id] })).status).toBe(409);
@@ -9770,6 +9970,24 @@ describe("harness HTTP API", () => {
       await api("DELETE", `/api/groups/${room.id}`);
       await api("DELETE", `/api/bots/${first.id}`);
       await api("DELETE", `/api/bots/${second.id}`);
+    }
+  });
+
+  it("records where the person stopped reading a thread", async () => {
+    const bot = (await api("POST", "/api/bots", {})).body.bot;
+    try {
+      const task = async () => (await api("GET", "/api/bots")).body.bots
+        .find((candidate: { id: string }) => candidate.id === bot.id)
+        .tasks.find((candidate: { threadId: string }) => candidate.threadId === bot.threadId);
+      const newest = (await api("GET", `/api/threads/${bot.threadId}/messages?limit=50`)).body.messages.at(-1)?.id;
+      expect(newest).toBeTruthy();
+      expect((await task()).lastReadMessageId).toBeUndefined();
+      expect((await api("PATCH", `/api/bots/${bot.id}`, { unread: true })).status).toBe(200);
+      const read = await api("POST", `/api/bots/${bot.id}/read`, { threadId: bot.threadId });
+      expect(read.status).toBe(200);
+      expect(await task()).toMatchObject({ unread: false, lastReadMessageId: newest });
+    } finally {
+      await api("DELETE", `/api/bots/${bot.id}`);
     }
   });
 
@@ -11562,6 +11780,60 @@ describe("bot memory API", () => {
     }
   });
 
+  it("delivers a file a host engine's turn saved outside its folders by copy, and nothing else from there", async () => {
+    const bot = (await api("POST", "/api/bots", {})).body.bot;
+    try {
+      const attachWith = (token: string, path: string) => fetch(`${BASE}/api/internal/attach-file`, {
+        method: "POST",
+        headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+        body: JSON.stringify({ path }),
+      });
+      // A real turn has made its folders before the engine starts.
+      mkdirSync(workspaceOf(bot.id), { recursive: true });
+      const designs = join(home, "Desktop", "designs", "2026-10-08_News");
+      mkdirSync(designs, { recursive: true });
+      const old = join(designs, "last-week.jpg");
+      writeFileSync(old, "jpeg-old");
+      utimesSync(old, new Date(Date.now() - 3_600_000), new Date(Date.now() - 3_600_000));
+
+      // Without the host-files grant nothing outside the folders is attached, as before.
+      const plain = await mintTestCapability(BASE, bot.id, bot.threadId);
+      writeFileSync(join(designs, "PREVIEW.jpg"), "jpeg-new");
+      expect((await attachWith(plain, join(designs, "PREVIEW.jpg"))).status).toBe(403);
+
+      const token = await mintTestCapability(BASE, bot.id, bot.threadId, { deliversSavedFiles: true });
+      writeFileSync(join(designs, "PREVIEW.jpg"), "jpeg-this-turn");
+      const attached = await attachWith(token, join(designs, "PREVIEW.jpg"));
+      expect(attached.status).toBe(200);
+      const old403 = await attachWith(token, old);
+      expect(old403.status).toBe(403);
+      expect(((await old403.json()) as { error: string }).error).toContain("not saved during this turn");
+      expect((await attachWith(token, designs)).status).toBe(400);
+
+      const dump = await api("GET", `/api/threads/${bot.threadId}/export?format=json`);
+      const delivered = (dump.body.messages as Array<{ id: string; attachments?: Array<{ path: string }> }>)
+        .filter((message) => message.attachments?.length);
+      expect(delivered).toHaveLength(1);
+      const copy = delivered[0]!.attachments![0]!.path;
+      expect(readFileSync(join(designs, "PREVIEW.jpg"), "utf8")).toBe("jpeg-this-turn");
+      const served = await fetch(`${BASE}/api/threads/${bot.threadId}/messages/${delivered[0]!.id}/file`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ path: copy }),
+      });
+      expect(served.status).toBe(200);
+      expect(Buffer.from(await served.arrayBuffer()).toString()).toBe("jpeg-this-turn");
+      // The original folder is still no grant for a message link.
+      expect((await fetch(`${BASE}/api/threads/${bot.threadId}/messages/${delivered[0]!.id}/file`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ path: join(designs, "PREVIEW.jpg") }),
+      })).status).toBe(403);
+    } finally {
+      await api("DELETE", `/api/bots/${bot.id}`);
+    }
+  });
+
   it("keeps a turn to its attachment limit when the calls arrive at the same time", async () => {
     const bot = (await api("POST", "/api/bots", {})).body.bot;
     try {
@@ -12205,7 +12477,7 @@ describe("bot memory API", () => {
     try {
       const before = await api("GET", `/api/bots/${bot.id}/system-prompt`);
       expect(before.status).toBe(200);
-      // The platform security policy leads every prompt (server/misuse-guardrails.ts).
+      // The platform security policy (#365) leads every prompt.
       expect(before.body.sections[0].id).toBe("misuse-policy");
       expect(before.body.sections[1]).toEqual({
         id: "persona",
@@ -12550,6 +12822,28 @@ describe("message pages", () => {
     expect((await fetch(
       `${BASE}/api/threads/${threadId}/messages/prose-file-message/file?preview=1&ref=0`,
     )).status).toBe(400);
+  });
+
+  it("shows the copy a bot delivered of an outside picture, and says why one it never delivered is refused", async () => {
+    const threadId = "test-linked-file-room-thread";
+    const ref = "Heidi, 51 – Sideboard\n\n".length;
+    const refused = await fetch(`${BASE}/api/threads/${threadId}/messages/outside-image-message/file?preview=1&ref=${ref}`);
+    expect(refused.status).toBe(403);
+    expect(((await refused.json()) as { code?: string }).code).toBe("outside_workspace");
+
+    const delivered = await fetch(`${BASE}/api/threads/${threadId}/messages/delivered-image-reply-message/file?preview=1&ref=${ref}`);
+    expect(delivered.status).toBe(200);
+    expect(delivered.headers.get("content-type")).toBe("image/png");
+    expect(await delivered.text()).toBe("delivered photo bytes");
+
+    // a link to it saves the same copy
+    const saved = await fetch(`${BASE}/api/threads/${threadId}/messages/delivered-image-reply-message/file`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ path: pathToFileURL(join(home, "Downloads", "sideboard.png")).href }),
+    });
+    expect(saved.status).toBe(200);
+    expect(await saved.text()).toBe("delivered photo bytes");
   });
 
   it("downloads an exact user attachment only from the private attachment store", async () => {

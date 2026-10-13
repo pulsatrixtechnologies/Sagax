@@ -50,12 +50,15 @@ let log = "";
 const tokens: Record<string, string> = {};
 const sessionIds: Record<string, string> = {};
 
-const api = async (method: string, path: string, body?: unknown, as?: string): Promise<{ status: number; body: any }> => {
+const RELAY = "r".repeat(43);
+
+const api = async (method: string, path: string, body?: unknown, as?: string, relay = false): Promise<{ status: number; body: any }> => {
   const res = await fetch(`${BASE}${path}`, {
     method,
     headers: {
       ...(body ? { "content-type": "application/json" } : {}),
       ...(as ? { authorization: `Bearer ${tokens[as]}` } : {}),
+      ...(relay ? { "x-sagax-worker-relay": RELAY } : {}),
     },
     body: body ? JSON.stringify(body) : undefined,
   });
@@ -302,34 +305,40 @@ posixOnly("who may answer an approval card on a shared workspace", () => {
   it("lets a session-less local service answer no approval under service trust", async () => {
     const bot = await makeBot("Serviced");
     await waitForExit(child, { signal: "SIGTERM" });
-    await start({ SAGAX_LOOPBACK_TRUST: "service" });
+    log = "";
+    await start({ SAGAX_LOOPBACK_TRUST: "service", SAGAX_WORKER_RELAY_TOKEN: RELAY });
     expect(log).toContain("local requests: service trust (SAGAX_LOOPBACK_TRUST)");
+    expect(log).toContain("The worker data plane answers only when the relay token is presented.");
+    expect(log).not.toContain(RELAY);
     const requestId = await cardFrom(bot, bot.threadId, ADA);
 
     for (const behavior of ["allow", "deny"]) {
       const refused = await api("POST", `/api/threads/${bot.threadId}/respond`, { requestId, behavior });
       expect(refused.status, behavior).toBe(403);
-      expect(refused.body.error).toMatch(refusal);
+      expect(refused.body.error, behavior).toMatch(/service routes/);
     }
-    // The bot-scoped route and the standing grant are not service routes at all.
-    expect((await api("POST", `/api/bots/${bot.id}/respond`, { requestId, behavior: "allow" })).status).toBe(403);
-    expect((await api("POST", `/api/bots/${bot.id}/always-allow`, { allowKey: "shell:echo" })).status).toBe(403);
-    expect((await api("POST", `/api/threads/${bot.threadId}/undo`, { requestId })).status).toBe(403);
+    // The bot-scoped route and the standing grant are not service routes, and the relay does not open them.
+    expect((await api("POST", `/api/bots/${bot.id}/respond`, { requestId, behavior: "allow" }, undefined, true)).status).toBe(403);
+    expect((await api("POST", `/api/bots/${bot.id}/always-allow`, { allowKey: "shell:echo" }, undefined, true)).status).toBe(403);
+    expect((await api("POST", `/api/threads/${bot.threadId}/undo`, { requestId }, undefined, true)).status).toBe(403);
     expect((await openCard(bot.threadId))?.card.requestId).toBe(requestId);
     const answered = await api("POST", `/api/threads/${bot.threadId}/respond`, { requestId, behavior: "deny" }, BOSS);
     expect(answered.status, JSON.stringify(answered.body)).toBe(200);
     expect((await decision(requestId, "user-denied"))?.actor).toMatchObject({ kind: "session", email: BOSS });
 
-    // A Slack-shaped request: the worker opens the thread and sends through
-    // the guarded route, so no person can be named. The owner approves it in
-    // Sagax; a member may not.
-    const task = await api("POST", `/api/bots/${bot.id}/tasks`, { title: "Slack · C1 · 1.0" });
+    // A worker-shaped request: without the relay the data plane stays closed.
+    // With it, the worker opens the thread and sends through the guarded
+    // route, so no person can be named. The owner approves it in Sagax; a
+    // member may not.
+    const bare = await api("POST", `/api/bots/${bot.id}/tasks`, { title: "closed" });
+    expect(bare.status, JSON.stringify(bare.body)).toBe(403);
+    const task = await api("POST", `/api/bots/${bot.id}/tasks`, { title: "Worker · C1 · 1.0" }, undefined, true);
     expect(task.status, JSON.stringify(task.body)).toBe(201);
     const threadId = task.body.task.threadId as string;
-    const page = await api("GET", `/api/threads/${threadId}/messages?limit=0`);
+    const page = await api("GET", `/api/threads/${threadId}/messages?limit=0`, undefined, undefined, true);
     const guarded = await api("POST", `/api/bots/${bot.id}/messages/guarded`, {
       threadId, text: "run it", sendId: "slackjob_card_answerers_1", expectedActiveLeafId: page.body.activeLeafId ?? null,
-    });
+    }, undefined, true);
     expect(guarded.status, JSON.stringify(guarded.body)).toBe(202);
     const slackCard = await openCard(threadId);
     expect(slackCard).not.toBeNull();

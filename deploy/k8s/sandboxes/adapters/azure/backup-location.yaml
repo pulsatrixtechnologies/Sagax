@@ -1,0 +1,19 @@
+# Off-site from the node disks: an Azure Blob container. The account name
+# is filled in the change record. The credential is a secret named
+# velero-azure, key cloud, created outside git.
+apiVersion: velero.io/v1
+kind: BackupStorageLocation
+metadata:
+  name: sagax-sandboxes
+  namespace: velero
+spec:
+  provider: azure
+  objectStorage:
+    bucket: sagax-sandbox-backups
+    prefix: gox
+  credential:
+    name: velero-azure
+    key: cloud
+  config:
+    resourceGroup: RG-PULSATRIX-GOX
+    storageAccount: REPLACE_STORAGE_ACCOUNT

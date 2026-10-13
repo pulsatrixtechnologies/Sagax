@@ -97,14 +97,14 @@ describe("Grok cannot run here: an xAI key instead", () => {
     expect(html.match(/<button/g)).toHaveLength(1);
     expect(html).toContain("Add xAI key");
     expect(html).not.toContain(CURL);
-    expect(html).not.toContain("Install Grok");
+    expect(html).not.toContain("Set up Grok");
     expect(html).not.toContain("Terminal");
   });
 
-  it("opens Settings → API keys", () => {
+  it("opens Settings → Models and accounts", () => {
     render(missing, undefined);
     host.querySelector("button")!.click();
-    expect(dispatch).toHaveBeenCalledExactlyOnceWith({ type: "toggleAppSettings", open: true, section: "connections" });
+    expect(dispatch).toHaveBeenCalledExactlyOnceWith({ type: "toggleAppSettings", open: true, section: "engines" });
   });
 
   it("has no button on a paired desktop, whose Settings hide the keys", () => {
@@ -116,7 +116,7 @@ describe("Grok cannot run here: an xAI key instead", () => {
   it("keeps the install on the desktop, where a terminal can run it", () => {
     const html = render(missing, desktop);
     expect(grokKeyInstead(missing, false)).toBe(false);
-    expect(html).toContain("Install Grok");
+    expect(html).toContain("Set up Grok");
     expect(html).toContain(CURL);
     expect(html).not.toContain("Add xAI key");
   });

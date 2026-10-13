@@ -5,7 +5,8 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { setLocale } from "@/lib/i18n";
 import { parsePairingHash, takePairingFromLocation } from "@/lib/session";
-import { BrowserSignInWaiting, PairPage, browserSignInErrorText, finishReturnedSignIn, signInErrorText } from "./PairPage";
+import { markSignInCredentialSpent } from "@/lib/session";
+import { BrowserSignInWaiting, PairPage, browserSignInErrorText, finishReturnedSignIn, returnedCredentialRefused, signInErrorText } from "./PairPage";
 
 const CREDENTIAL = `omb_pair_${"A1b2_C3d4-".repeat(4)}xyz`;
 
@@ -124,5 +125,35 @@ describe("the sign-in page speaks one language (S7 minor)", () => {
     expect(html).toContain("Code de jumelage");
     expect(html).toContain("Cet appareil");
     for (const english of ["Connect to", "Pairing code", "This device", "Enter the pairing code"]) expect(html).not.toContain(english);
+  });
+});
+
+describe("a returned credential the server refused (2026-10-13, older server spent it)", () => {
+  it("counts only a 401 on a sign-in credential as spent", () => {
+    expect(returnedCredentialRefused(CREDENTIAL, { ok: false, status: 401 })).toBe(true);
+    expect(returnedCredentialRefused(CREDENTIAL, { ok: false, status: 429 })).toBe(false);
+    expect(returnedCredentialRefused(CREDENTIAL, { ok: false })).toBe(false);
+    expect(returnedCredentialRefused(CREDENTIAL, { ok: true })).toBe(false);
+    expect(returnedCredentialRefused("ABCD-EFGH-JKLM", { ok: false, status: 401 })).toBe(false);
+  });
+
+  it("a reload with a spent credential neither redeems nor prefills it, and says to sign in again", () => {
+    const stored = new Map<string, string>();
+    vi.stubGlobal("sessionStorage", { getItem: (k: string) => stored.get(k) ?? null, setItem: (k: string, v: string) => void stored.set(k, v) });
+    markSignInCredentialSpent(CREDENTIAL);
+    const fetchSpy = vi.fn(() => new Promise(() => {}));
+    vi.stubGlobal("fetch", fetchSpy);
+    vi.stubGlobal("location", { hash: "", pathname: "/pair", search: "" });
+    vi.stubGlobal("navigator", { userAgent: "test" });
+    const take = vi.fn(async () => true);
+    vi.stubGlobal("window", { ogb: { platform: "darwin", takeSignInReturn: take } });
+    const html = renderToStaticMarkup(createElement(PairPage, { initialCode: CREDENTIAL, autoSubmit: true }));
+    expect(html).not.toContain("data-testid=\"connection-sign-in\"");
+    expect(html).not.toContain(CREDENTIAL);
+    expect(html).toContain("This sign-in was already used or has expired. Sign in again with Sagax Business.");
+    expect(take).not.toHaveBeenCalled();
+    setLocale("fr");
+    const fr = renderToStaticMarkup(createElement(PairPage, { initialCode: CREDENTIAL, autoSubmit: true }));
+    expect(fr).toContain("Cette connexion a déjà servi ou a expiré. Reconnectez-vous avec Sagax Business.");
   });
 });

@@ -34,6 +34,13 @@ COPY cloudflare/control-plane/package.json ./cloudflare/control-plane/package.js
 COPY scripts/install-git-hooks.mjs ./scripts/install-git-hooks.mjs
 RUN pnpm install --frozen-lockfile
 COPY . .
+# The Data engine's native modules (DuckDB, resvg; server/data/engine.ts),
+# staged like the desktop app's extraResources for this image's own
+# architecture (amd64 or arm64), at one path the runtime stage copies.
+RUN arch="$(node -p 'process.arch === "arm64" ? "arm64" : "x64"')" \
+  && node --input-type=module -e "import { stageDuckdb } from './scripts/prepare-duckdb.mjs'; await stageDuckdb({ root: process.cwd(), targets: [{ platform: 'linux', arch: '$arch' }] });" \
+  && mv "dist-native/duckdb/linux-$arch" dist-native/duckdb/linux \
+  && chmod -R go-w dist-native/duckdb
 RUN pnpm build:server && pnpm exec vite build
 
 FROM node:24-trixie-slim
@@ -117,13 +124,17 @@ RUN npm install -g agent-browser@${AGENT_BROWSER_VERSION} \
        && ln -s /opt/openmausbot-browser/.agent-browser/browsers/chrome-*/chrome /opt/openmausbot-browser/chrome; \
      fi \
   && agent-browser --version
+# DuckDB and resvg change on a version bump, not per commit: beneath the app files.
+COPY --from=build --chown=maus:maus /src/dist-native/duckdb/linux ./duckdb
 # The app itself last: a code change rebuilds only these layers.
 COPY --from=build --chown=maus:maus /src/dist-server ./dist-server
 COPY --from=build --chown=maus:maus /src/dist ./dist
 # Keep the baked-in browser outside both root's private home and /data,
 # which may be an existing mounted volume. Session state still lives in HOME.
+#  OMB_DUCKDB_DIR: the DuckDB binding tree the server requires (no node_modules here).
 ENV HOME=/data \
     AGENT_BROWSER_EXECUTABLE_PATH=/opt/openmausbot-browser/chrome \
+    OMB_DUCKDB_DIR=/app/duckdb \
     OMB_DATA_DIR=/data/.openmausbot \
     OMB_STATIC_DIR=/app/dist \
     OMB_PORT=8799 \

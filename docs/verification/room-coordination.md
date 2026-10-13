@@ -7,13 +7,81 @@ The chat header shows **Teammates working**, leaves the composer usable and
 retains Stop. Explicit command-line `wait` still waits for the whole result.
 Accepted handoffs survive a failed source provider turn; explicit Stop,
 deleted conversations and revoked routes keep their existing cancellation
-behavior. This does not add restart replay or remove task capacity limits.
+behavior. This does not remove task capacity limits.
+
+A restart (quit, update, Cloud rollout or crash) never ends a job silently.
+At the next start (the runtime's restart policy, `server/runtime/runtime.ts` `open()`, docs/runtime-contract.md §5):
+
+- A teammate turn the restart cut runs again once, in place: the same request
+  in its own conversation and retained native session, opening with a note to
+  check what that turn already did (files, commits, messages, anything sent or
+  started) before it continues. Its chat shows "Resuming after a restart" (a
+  cut review, "Resumed with … results after a restart, reviewing"), and a
+  direct requester's chat shows "Mira was cut off by a restart; resuming".
+- Never a second automatic run. A restart that cuts that rerun too ends it,
+  failed: "Interrupted by another Sagax restart after resuming once; not
+  resumed again. Some of its steps may already have taken effect." The
+  requester gets that result like any other; a Chief's own review ended that
+  way says so in the Chief's conversation.
+- A requester whose own turn was cut after it handed out work is not run
+  again: it waits for that work and resumes once with it, told its turn was
+  cut. A turn cut while reviewing results it already had runs that review
+  again once, like any other cut turn.
+- The requester's resume says what the restart did to each teammate it waited
+  on: resumed once and told to check (its rerun completed), set to resume but
+  ended before finishing (never started, start refused, stopped or expired;
+  its result says how, and it may be partly done), or cut twice. It checks the
+  results as usual.
+- No notification is added: a fan-out still sends its one "Results in from …",
+  and the rerun of a review that already sent it sends nothing.
+- Work queued but never started, and a resume owed but not yet run, go ahead.
+  Every time budget of a tree that outlived a restart starts again at boot
+  (downtime is nobody's budget); request and execution counts carry on, and a
+  rerun costs one execution. Stop on the requester cancels a rerun not yet
+  started, "Stopped before it resumed", since nothing of it is running; a
+  rerun already running is left alone like any teammate mid-turn, and so is
+  one the person left working by a Stop before the restart.
+- A routine run still going at a restart fails, as before, and its
+  teammates' work ends with it, "Sagax restarted while this routine was
+  running": none of it runs again, so no result lands after the person was
+  told the routine failed.
+- On a quit or update, shutdown dispatches nothing more and leaves the turns
+  it tears down cut for the next start, so a quit ends where a crash does,
+  whatever the engine. Each conversation with a turn still running gets
+  "error: turn interrupted — Sagax restarted", as a provider reload's
+  does, and nothing more (no unread mark, no notification), unless the next
+  start goes on with that turn: a cut teammate turn, or a requester's turn
+  that had sent work, says what happened when it resumes instead (a failed
+  line there would offer Retry and start the job twice). Any other turn, such
+  as a person's own 1:1 turn with nothing sent out, is not run again, so that
+  line answers it. A crash, or Windows' `SIGTERM`, cannot write that line;
+  the hand-off recovery above still runs.
+- A workspace restore carries the runtime's record (`runtime.db`) as a
+  database snapshot, like `messages.db`, and rewrites nothing in it. At the
+  next start the restart policy above applies to what the restore brought: a
+  cut teammate turn runs again once, told to check what it already did; a
+  requester cut after handing out work waits for that work; queued work and
+  owed resumes go ahead.
 
 Regression checks (all use disposable fixtures):
 
 ```sh
-pnpm exec vitest run server/room-handoffs.test.ts server/direct-coordination.e2e.test.ts server/room-coordination.e2e.test.ts
+pnpm exec vitest run server/runtime/ server/runtime-coordinator.test.ts server/direct-coordination.e2e.test.ts server/room-coordination.e2e.test.ts
+pnpm exec vitest run server/delta-context.e2e.test.ts -t "restart"
+pnpm exec vitest run server/full-access-workflows.e2e.test.ts server/room-recovery.e2e.test.ts
 SAGAX_UI_E2E=1 pnpm exec vitest run scripts/testing/direct-coordination-ui.e2e.test.ts
+```
+
+The long-running Chief suite plays one Chief of Staff job per scenario through
+the real harness with fake engines, and checks what the person, the Chief and
+each teammate are shown: a consult-and-implement job through a step cap,
+approvals allowed, denied and left unanswered, a quit and a crash mid-job, a
+provider save that changes nothing, a stalled turn, two jobs sharing a
+teammate behind a card, two jobs sharing a busy computer, and what a teammate
+is told for the person's own job and for a routine's run:
+
+```sh
+pnpm exec vitest run server/long-running-chief.e2e.test.ts
 ```
 
 Gated fake-model turns prove a teammate starts before the Chief settles,
@@ -111,7 +179,7 @@ Chiefs, and peer restrictions still block work. Revoking supervision before
 queued work starts prevents dispatch.
 
 ```sh
-pnpm exec vitest run server/peer-roster.test.ts server/post-to-room.test.ts server/room-coordination.e2e.test.ts server/direct-coordination.e2e.test.ts server/room-handoffs.test.ts server/peer-allowlist.e2e.test.ts
+pnpm exec vitest run server/peer-roster.test.ts server/post-to-room.test.ts server/room-coordination.e2e.test.ts server/direct-coordination.e2e.test.ts server/runtime-coordinator.test.ts server/peer-allowlist.e2e.test.ts
 ```
 
 The coordination suites use `launchVerificationServer`, `control-omb`, and the
@@ -125,7 +193,7 @@ server workflow checks, not UI or live-model verification.
 ### Broader coordination checks
 
 ```sh
-pnpm exec vitest run server/room-handoffs.test.ts server/room-coordination.e2e.test.ts src/components/GroupView.test.ts src/lib/room-activity.test.ts --maxWorkers=2
+pnpm exec vitest run server/runtime-coordinator.test.ts server/room-coordination.e2e.test.ts src/components/GroupView.test.ts src/lib/room-activity.test.ts --maxWorkers=2
 pnpm exec vitest run server/group-goal-run.e2e.test.ts server/group-goal-wait-cap.e2e.test.ts server/drivers/agents-proxy.test.ts --maxWorkers=2
 pnpm exec vitest run server/room-recovery.e2e.test.ts server/testing/room-handoff-agent.test.ts
 pnpm exec vitest run server/direct-coordination.e2e.test.ts --maxWorkers=1
@@ -171,8 +239,9 @@ resolution serves `ask_bot` and `delegate_bot`, and every roster line the Chief
 and its peers read carries the teammate's `[id: …]`, so the tools can be called
 straight from the prompt.
 Unit checks cover bounded depth/fan-out, idempotent retry, original request
-retention, automatic return, cancellation and restart without replay, and the
-scoped stop: unstarted work cancelled, a running teammate left with its
+retention, automatic return, cancellation, restart recovery (one rerun in
+place, a second cut ending it, the requester told, budgets restarted at boot,
+nothing dispatched while shutting down), and the scoped stop: unstarted work cancelled, a running teammate left with its
 process, its result still reported, and no resume of the stopped conversation.
 Turn-correlation checks cover completion before the provider's dispatch ACK,
 late completion after Stop and a replacement turn, cross-thread isolation, and
@@ -226,10 +295,16 @@ new loop, and a turn of theirs that lands in a conversation cancels no
 coordination there. Finish together remains separate too. Cancelling a request
 stops the descendants it is still waiting on, except a teammate whose turn had
 already started when the person stopped the conversation above it: that process
-is left alone and reports its result. Restart records interruption without
-replaying side effects.
-Limits: four cross-room edges, 24 child requests, 48 executions, 30 minutes per
-root. Failures return to the sender, not a false success. Model quality and
+is left alone and reports its result. A restart runs each teammate turn it
+cut again once, in place and told to check what it already did, and tells its
+requester (see the top of this page).
+Limits (docs/runtime-contract.md §6; `DEFAULT_LIMITS` in `server/runtime/types.ts`
+and the coordinator's overrides): depth 4; per root, 24 requests, 48 executions
+and 48 wakes since its last durable progress; a queued assignment that never
+started within 24 hours expires; four hours without durable progress fails the
+tree; a turn with no activity for 24 hours is stalled; a question to the person
+waits 30 minutes, then the assignment expires, never approved. Failures return
+to the sender, not a false success. Model quality and
 provider availability still matter; this is not a guarantee of autonomous
 correctness or permission to bypass approvals.
 

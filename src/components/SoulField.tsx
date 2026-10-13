@@ -7,11 +7,12 @@ import { useEffect, useState } from "react";
 
 import { BOT_PROFILE_LIMITS } from "../../shared/bot-profile";
 import { cn } from "@/lib/cn";
-import { t } from "@/lib/i18n";
+import { activeLocale, t } from "@/lib/i18n";
 import { firstSentence, soulPatchFor, utf8Bytes } from "@/lib/soul";
 import { useStore, type Bot } from "@/state/store";
 import { useBotEditor } from "./bot-settings/BotEditorContext";
 import { MarkdownEditor } from "./markdown/MarkdownEditor";
+import { HelpTip } from "./SettingsPrimitives";
 
 type SoulRead = { soul: string; revision: string; bytes: number; limit: number; file: string; drift: boolean; fileText?: string };
 
@@ -85,6 +86,14 @@ export function SoulField({
         <label id={`bot-soul-label-${bot.id}`} htmlFor={`bot-soul-${bot.id}`} className={simple ? "text-[12px] text-ink-secondary" : "text-[13px] text-ink-secondary"}>
           {simple ? simple.label : t("botPanel.soul.label")}
         </label>
+        {!simple && (
+          <span className="mr-auto">
+            <HelpTip label={t("settings.moreAbout", { title: t("botPanel.soul.label") })}>
+              {t("botPanel.soul.intro")} {t("botPanel.soul.context")}
+              {info?.file ? <> {t("botPanel.soul.mirrored")} <span className="break-all font-mono">{info.file}</span>.</> : null}
+            </HelpTip>
+          </span>
+        )}
         {!simple && canMigrate && (
           <button
             type="button"
@@ -125,9 +134,8 @@ export function SoulField({
         onChange={change}
         footer={(!simple || over) && (
           <span className="flex flex-wrap items-baseline gap-x-2">
-            {!simple && <span>{t("botPanel.soul.context")}{info?.file ? <> {t("botPanel.soul.mirrored")} <span className="break-all">{info.file}</span>.</> : null}</span>}
             <span className={cn("tabular-nums", over && "font-medium text-red-500")}>
-              {t("botPanel.prompt.bytes", { count: `${bytes.toLocaleString()} / ${limit.toLocaleString()}` })}
+              {t("botPanel.prompt.bytes", { count: `${bytes.toLocaleString(activeLocale())} / ${limit.toLocaleString(activeLocale())}` })}
               {over ? t("botPanel.soul.notSaved") : ""}
             </span>
           </span>

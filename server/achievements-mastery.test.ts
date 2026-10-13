@@ -73,8 +73,8 @@ describe("what the server's frames mean", () => {
   });
 
   it("reads tool lines: a sub-agent, an integration, a skill", () => {
-    const facts = masteryFrameFacts({ kind: "message", threadId: "t1", message: { kind: "activity", tool: { name: "mcp__perspicax_gox__sentinelone__query", parentItemId: "agent-1" } } }, lookups);
-    expect(facts).toEqual([{ person: ADA, fact: { kind: "tool.used", threadId: "t1", subagent: "agent-1", integration: "perspicax:sentinelone" } }]);
+    const facts = masteryFrameFacts({ kind: "message", threadId: "t1", message: { kind: "activity", tool: { name: "mcp__perspicax_gox__endpoint__query", parentItemId: "agent-1" } } }, lookups);
+    expect(facts).toEqual([{ person: ADA, fact: { kind: "tool.used", threadId: "t1", subagent: "agent-1", integration: "perspicax:endpoint" } }]);
     expect(masteryFrameFacts({ kind: "message", threadId: "t1", message: { kind: "activity", tool: { name: "Skill", input: "{\n  \"skill\": \"Deploy\"\n}" } } }, lookups)).toEqual([
       { person: ADA, fact: { kind: "tool.used", threadId: "t1", skill: "deploy" } },
     ]);

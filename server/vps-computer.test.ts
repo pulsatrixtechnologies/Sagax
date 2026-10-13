@@ -46,6 +46,7 @@ import {
   vpsLifecycleBusy,
   vpsSshTunnelArgs,
   vpsStartsForTurn,
+  vpsUnavailableHint,
   inspectVpsForAuto,
   reuseVps,
   type VpsCommandRunner,
@@ -570,6 +571,34 @@ describe("VPS computer", () => {
       await Promise.allSettled([preview, readiness]);
       vi.useRealTimers();
     }
+  });
+
+  it("shares one Auto inspection among turns that ask while it runs, never jumping a stop queued behind it", async () => {
+    const config: AppConfig = { vps: { sshAlias: "burst-vps" } };
+    const fake = fixture();
+    let release!: () => void;
+    let gate = new Promise<void>((resolve) => { release = resolve; });
+    const runner: VpsCommandRunner = async (args, options) => {
+      if (args[2] === "image") await gate;
+      return fake.runner(args, options);
+    };
+    const inspections = () => fake.calls.filter(({ args }) => args[2] === "image").length;
+    // A burst: three turns ask while the first inspection is still out.
+    const burst = [1, 2, 3].map(() => inspectVpsForAuto(config, BOT_ID, runner));
+    release();
+    expect((await Promise.all(burst)).map((status) => status.ready)).toEqual([true, true, true]);
+    expect(inspections()).toBe(1);
+
+    // A stop queues behind a running inspection: a turn that asks after it
+    // waits its turn and sees the stopped desktop, not the answer in flight.
+    gate = new Promise<void>((resolve) => { release = resolve; });
+    const running = inspectVpsForAuto(config, BOT_ID, runner);
+    const stop = vpsComputerAction("stop", config, BOT_ID, runner);
+    const after = inspectVpsForAuto(config, BOT_ID, runner);
+    release();
+    expect((await running).ready).toBe(true);
+    expect((await stop).container).toBe("stopped");
+    expect(await after).toMatchObject({ ready: false, container: "stopped" });
   });
 
   it("keeps provisioning and readiness checks on the alias captured at operation start", async () => {
@@ -1151,6 +1180,20 @@ describe("VPS computer", () => {
     // another explicit destination is never the VPS
     expect(vpsStartsForTurn({ wants: "vm", automationSource: "schedule" })).toBe(false);
     expect(vpsStartsForTurn({ wants: "off", autoStartVps: true })).toBe(false);
+  });
+
+  it("names the one way on that fits what Auto's VPS check found", () => {
+    const connection = "Check the VPS connection in Settings → API keys.";
+    // A stopped desktop on a VPS that answered: the switch starts it.
+    expect(vpsUnavailableHint({ reachable: true })).toBe("Open Computer and enable Start VPS automatically, or choose Cloud computer to start it manually.");
+    // A VPS that never answered, or a start the switch allowed that failed.
+    expect(vpsUnavailableHint({ reachable: false })).toBe(connection);
+    expect(vpsUnavailableHint({ autoStartVps: true, reachable: true })).toBe(connection);
+    expect(vpsUnavailableHint({ autoStartVps: true })).toBe(connection);
+    // A check that timed out behind a start already under way: the problem
+    // says to try again shortly, and no switch would help.
+    expect(vpsUnavailableHint({})).toBe("");
+    expect(vpsUnavailableHint({ automationSource: "schedule" })).toMatch(/^This scheduled run tried to start the VPS computer/);
   });
 });
 

@@ -15,13 +15,17 @@ description is in [self-hosting](../self-hosting.md#loopback-trust-owner-or-serv
   `service`); the desktop app always keeps `owner` behind its per-launch
   capability. Under `service` a session-less loopback request may use only
   `SERVICE_ALLOW` (`server/request-auth.ts`): health, who-am-I, edition,
-  brand, the bot list, thread messages, attachments, new threads, the guarded
-  send, the exact request fence and its stop, withdrawing a queued line,
-  `POST /api/threads/:id/respond` (decline only), and the bots' capability
-  routes under `/api/internal/*`. Everything else answers 403. That is
-  exactly the set the cloud Slack worker calls (checked against the cloud
-  repository's worker source, every released version), so the deployed
-  worker needs no change.
+  brand, and the bots' capability routes under `/api/internal/*` (plus the
+  test-only capability mint). Everything else answers 403 unless the request
+  also presents the worker relay token. That token opens `WORKER_RELAY_ALLOW`
+  only: the bot list, thread messages, attachments, new threads, the guarded
+  send, the exact request fence and its stop, withdrawing a queued line, and
+  `POST /api/threads/:id/respond` (decline only). Admin routes stay closed
+  with the token. The hosted worker that delivers chat messages lives in a
+  separate service and must send header `x-sagax-worker-relay` with the same
+  value as `SAGAX_WORKER_RELAY_TOKEN` in the same change window. The server
+  reads the variable once and deletes it, so a bot's shell does not inherit
+  it. The value is never logged and never returned by an API.
 - **The CLI under service trust.** `openmausbot serve` hands the server it
   starts a per-launch secret over the server's stdin; that secret opens
   `/api/auth/pairing` for that CLI alone, so `serve` still prints the first
@@ -67,18 +71,23 @@ pnpm exec vitest run server/request-auth.test.ts server/decision-log.test.ts \
   src/components/PeopleSection.test.ts src/components/ServerPairingCard.test.ts src/lib/session.test.ts
 ```
 
-- `server/request-auth.test.ts` runs the worker's calls and a list of admin
-  calls through the resolver under each trust level, sessions under
-  `service`, the desktop capability overriding `service`, the serving CLI's
-  secret opening the pairing route and nothing else, and the start-up choice.
+- `server/request-auth.test.ts` runs the service routes and a list of admin
+  calls through the resolver under each trust level, the worker data plane
+  with the relay token and without it, sessions under `service`, the desktop
+  capability overriding `service`, the serving CLI's secret opening the
+  pairing route and nothing else, and the start-up choice.
 - `server/hosted-access.test.ts` ("treats a session-less local caller as a
   service by default") boots a portal-membership workspace with shared Full
-  access and no override: the start-up log line, the worker's whole path over
-  loopback (health, bot list, a Full-access thread, a guarded send, its
-  request fence), 403 for `PUT /api/config`, `POST /api/webhooks`, session
-  list and revocation, bot creation and loosening, and an unguarded send,
-  with nothing changed afterwards; then an admin portal session saves the
-  retention window and reads `membership`. The other cases in that file keep
+  access, no loopback override and a fixture relay token: the start-up log
+  line (it names the relay rule and does not contain the token), health and
+  who-am-I without the header, 403 for the bot list and a new thread without
+  the header and with a wrong token, 403 for `PUT /api/config` even with the
+  token, then the worker's path with the header (bot list, a thread, a
+  guarded send, its request fence). The same case still expects 403 for
+  `PUT /api/config`, `POST /api/webhooks`, session list and revocation, bot
+  creation and loosening, and an unguarded send, with nothing changed
+  afterwards; then an admin portal session saves the retention window and
+  reads `membership`. The other cases in that file keep
   `SAGAX_LOOPBACK_TRUST=owner` because they set fixtures up over loopback.
 - `server/card-answerers.e2e.test.ts` boots a server with one admin and two
   members on the sign-in list and the fake ACP engine asking permission every
@@ -102,11 +111,12 @@ pnpm exec vitest run server/request-auth.test.ts server/decision-log.test.ts \
   from its source and exercised route by route above.
 - "Always allow" by a refused member is covered by code, not by the fake
   engine, whose cards carry no allow key.
-- Not closed: a bot's shell under `service` trust can still use the guarded
-  route to post into an existing Full-access thread, or open one while shared
-  Full access is on, so a member can get Full-access work done without a
-  card. It can also stop a request and decline a card, and read files its
-  user owns. A worker-only relay token is the planned fix.
+- Closed for the worker data plane: a bot's shell under `service` trust no
+  longer reaches the guarded route, a new thread, a stop or a card decline
+  unless it presents the relay token, which the server removes from the
+  environment before it starts an engine. The hosted worker must be deployed
+  with the same token in the same window, or its calls answer 403. Files the
+  server's user owns remain readable from a bot's shell.
 - The Settings screens and the sign-in redirect were checked by rendering and
   unit tests, not in Electron or a browser.
 

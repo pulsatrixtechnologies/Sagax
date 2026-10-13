@@ -26,12 +26,13 @@ describe("semantic tones", () => {
     expect(routines).toContain("${PILL_INFO}");
     expect(routines).not.toMatch(/data-routine-suspended[^\n]*(warning|amber)/);
     expect(read("src/components/TeamMapPage.tsx")).not.toMatch(/queued"\s*\?\s*"[^"]*warning/);
-    expect(read("src/components/WebhooksPanel.tsx")).toContain('{ label: "Active", tone: "text-accent-text", dot: "bg-accent" }');
+    expect(read("src/components/WebhooksPanel.tsx")).toContain('{ label: t("webhooks.status.active"), tone: "text-accent-text", dot: "bg-accent" }');
   });
 
   it("keeps the verdict tones for work that earns them", () => {
     expect(read("src/components/RoutineRunCard.tsx")).toContain("bg-warning/15 text-warning");
     expect(read("src/components/bot-settings/ActivitySteps.tsx")).toContain('"bg-success" : "bg-danger"');
-    expect(read("src/components/SecretRequestCard.tsx")).toMatch(/bg-success\/15[^"]*text-success/);
+    // a saved key folds into the ask card's settled line, checked in green
+    expect(read("src/components/AskCard.tsx")).toContain('className="text-success/80"');
   });
 });

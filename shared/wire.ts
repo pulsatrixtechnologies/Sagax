@@ -9,6 +9,7 @@
  * fails compilation until it is either declared here or explicitly listed
  * as server-private. */
 import type { ParallelTaskRef, TaskParallelOf } from "./parallel-tasks.ts";
+import type { DataBroadcast } from "./data-surface.ts";
 import type { ApprovalMode } from "./approval-mode.ts";
 import type { ToolScope } from "./tool-scope.ts";
 import type { CommandAllowlistCandidate } from "./command-allowlist.ts";
@@ -171,6 +172,8 @@ export interface WireTask {
   /** The person pinned this thread above the update-ordered list. Only true
    * is stored; absence means unpinned. */
   pinned?: boolean;
+  link?: string;
+  linkAuto?: boolean;
   /** Epoch ms of the newest message, or createdAt when the thread has none.
    * Server-derived. Clients must not write it. */
   updatedAt?: number;
@@ -193,6 +196,9 @@ export interface WireTask {
   autoApprove?: boolean;
   alwaysAllow?: string[];
   unread?: boolean;
+  /** The newest message on screen the last time the person read this
+   * conversation. The New divider goes after it. */
+  lastReadMessageId?: string;
   /** true after an edit/branch-switch rewound the visible conversation. */
   rewound?: boolean;
   pinnedMessageId?: string;
@@ -288,6 +294,10 @@ export interface WireBot {
   id: string;
   /** The task selected in the UI; running turns keep their own thread id. */
   threadId: string;
+  /** The bot's main thread (server/main-thread.ts): where a routine without
+   * a thread of its own reports, and what a bot opens to while threads are
+   * hidden. Server-derived; absent only for a bot without threads. */
+  mainThreadId?: string;
   /** every task this bot has, newest first, projected like wireTask */
   tasks?: WireTask[];
   /** Projects group this bot's threads; older bots have no projects. */
@@ -355,9 +365,6 @@ export interface WireBot {
   voiceNotes?: boolean;
   /** Whether this bot uses native memory. Absent/true = enabled. */
   memoryEnabled?: boolean;
-  /** Say the first step at once, then finish a long request in the
-   * background (shared/background-reply.ts). Absent/true = on. */
-  backgroundReplies?: boolean;
   /** Queue direct-chat messages behind outstanding delegated work. */
   parkDirectMessages?: boolean;
   /** true after an edit/branch-switch rewound the visible conversation. */
@@ -527,7 +534,7 @@ export interface WireMessage {
   roomRequest?: { id: string; phase: "request" | "result" };
   id: string;
   role: "bot" | "user";
-  kind: "text" | "options" | "activity" | "screen" | "video" | "connector" | "secret" | "routine.run" | "goal.run" | "digest" | "compaction" | "access" | "nudge";
+  kind: "text" | "options" | "activity" | "screen" | "video" | "connector" | "secret" | "routine.run" | "goal.run" | "digest" | "compaction" | "access" | "nudge" | "call";
   text?: string;
   /** An accepted nudge. The app draws one line from these names: first
    * person for the sender, the sender's name for everyone else. `groupId`
@@ -552,7 +559,7 @@ export interface WireMessage {
    * and video a bot attached with attach_file; they are opened through the
    * message-scoped file route, never by path. */
   attachments?: Array<
-    | { kind: "image"; path: string; mime: string }
+    | { kind: "image"; path: string; mime: string; name?: string }
     | { kind: "file"; path: string; mime: string; name: string }
     | { kind: "audio"; path: string; mime: string; durationMs?: number }
   >;
@@ -563,6 +570,10 @@ export interface WireMessage {
   routineRun?: RoutineRunCardData;
   /** Terminal receipt for a bounded multi-bot channel goal. */
   goalRun?: GroupGoalRunCardData;
+  /** call rows (kind "call"): the finished Live call this row records. The
+   * row's text is only the fallback line for clients that do not know the
+   * kind. */
+  call?: LiveCallRecord;
   /** activity messages: tool name + outcome. */
   tool?: {
     name: string; ok?: boolean; spoken?: string; setup?: boolean; terminal?: boolean; summary?: string; input?: string; output?: string;
@@ -597,6 +608,10 @@ export interface WireMessage {
   /** A user-role message that arrived through the server's HTTP API
    * ("api"), or a request a person spoke on a Live call ("call"). */
   via?: "api" | "call";
+  /** The Live call a "call" line was spoken on (LiveCallState.callId). Set
+   * only on user messages with `via: "call"`; a turn's own messages point
+   * at their request through `requestMessageId` instead. */
+  callId?: string;
   /** A user line an external interface relayed through the guarded send
    * route (the Slack worker, for someone else, as this computer): nobody
    * typed it in one of this workspace's clients. A Live call never reads it
@@ -658,8 +673,12 @@ export interface WireMessage {
    * not know it ignore it. */
   routedBy?: { provider: "jev"; probability: number };
   /** Set on the user-role line another bot delivered into this bot's own
-   * conversation (ask_bot, start_thread). */
-  peerAsk?: { botId: string; name: string; unattended?: boolean };
+   * conversation (ask_bot, start_thread). `incident`: the line is
+   * Sagax's Team incidents report about that bot's broken run in
+   * `threadId` (server/incidents.ts), not its words; `notified`: that
+   * failure already buzzed the person (a run that could not start, a
+   * failed routine). */
+  peerAsk?: { botId: string; name: string; unattended?: boolean; incident?: { threadId: string; notified?: boolean } };
   /** Auto: the model this delivered work ran on, and why (the delegation
    * card and the worker's activity row). Clients that do not know it ignore it. */
   autoModel?: AutoModelRecord;
@@ -673,18 +692,18 @@ export interface WireMessage {
   /** thread chips: "Opened thread #Title on @X". */
   /** `gone` is stamped at read time when the target thread no longer exists. */
   threadRef?: { botId: string; threadId: string; title: string; gone?: boolean };
+  /** A published Data result, linked to its bot's main viewer. */
+  dataResult?: { botId: string; cardId: string; title: string; kind: "table" | "chart" | "text"; sql?: string };
+  /** user messages: the Data result the person was viewing when they sent
+   * this (shared/data-context.ts). Its own field, so `text` stays exactly
+   * what they typed; the server puts the hint in front of the text it
+   * sends the model for this turn and for every retry of it. */
+  dataContext?: { cardId: string; draftSql?: string };
   /** user messages waiting in the steer-queue while the bot is mid-turn. */
   queued?: boolean;
   /** A parallel task this line belongs to (shared/parallel-tasks.ts): the
    * person's request, its live card, or its result. */
   parallelTask?: ParallelTaskRef;
-  /** A background reply (shared/background-reply.ts): the first-step
-   * acknowledgement, or a later one-sentence status. The result is an
-   * ordinary reply and does not carry this. */
-  backgroundReply?: "ack" | "milestone";
-  /** On an acknowledgement: milliseconds from the person's message to this
-   * one. Recorded before the background task's engine starts. */
-  timeToFirstMessageMs?: number;
   /** steer-queue entry this drained user line came from. */
   queueId?: string;
   /** In-chat terminal opened on a shell-capable resource. */
@@ -808,6 +827,22 @@ export interface LiveCallState {
   error?: string;
 }
 
+/** One finished Live call, written once when a call that went live ends. Never carries speech. */
+export interface LiveCallRecord {
+  callId: string;
+  botId: string;
+  client: LiveClient;
+  /** epoch ms, = LiveCallState.startedAt */
+  startedAt: number;
+  /** epoch ms when the call ended */
+  endedAt: number;
+  /** whole seconds: OpenAI usage seconds when given, else wall clock */
+  seconds: number;
+  endReason: LiveEndReason;
+  /** only when LLM thread titles are on and the engine can generateText */
+  title?: string;
+}
+
 /** Non-secret Live settings, as GET /api/config and PATCH /api/live/settings report them. */
 export interface LiveSettings {
   /** Live calls are off in Sagax unless the server runs with SAGAX_LIVE_CALLS=1
@@ -898,6 +933,10 @@ export interface GroupTask {
    * before threads existed (titled "General" by the migration). Clients may
    * show the title localized while it is still "General". */
   general?: true;
+  /** Whether a turn is actively running in this thread. */
+  working?: boolean;
+  /** The member bot currently speaking or generating in this thread, if any. */
+  busyBotId?: string | null;
 }
 
 /** A room as a client may see it: the record plus the computed working
@@ -924,6 +963,9 @@ export interface WireGroup {
   unread: boolean;
   /** Kept in the home's pinned row (the phone's, like a bot's `pinned`). */
   pinned?: boolean;
+  /** The newest message on screen the last time the person read this
+   * conversation. The New divider goes after it. */
+  lastReadMessageId?: string;
   createdAt: number;
   /** Organization server: the principal who created the room. A bot's
    * follow-up no person asked for runs in this person's server environment
@@ -1067,6 +1109,9 @@ export type ServerFrame =
    * computer (absent: a Local VM). */
   | { kind: "computer"; botId: string; state: "provisioning" | "waking" | "ready"; place?: "cloud" }
   | { kind: "computer-control"; botId: string; held: boolean; helpReason: string | null }
+  /** A bot's data sheet changed (a card added, updated, failed, removed; a
+   * table loaded). Whole sheet each time: see shared/data-surface.ts. */
+  | DataBroadcast
   | { kind: "bot.deleted"; botId: string }
   /** A person's own unlocks (server/achievements.ts), to their streams only. */
   | { kind: "achievements"; audience: string; unlocked: Array<{ id: string; points: number; unlockedAt: number }> }

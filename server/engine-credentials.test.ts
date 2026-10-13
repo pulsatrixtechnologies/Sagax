@@ -1,6 +1,7 @@
 // Slice 4 (D8), revised 2026-10-01: the person who speaks pays. The whole
 // decision table of a turn's credentials on an organization server, and
 // what the driver receives.
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import type { TurnSpeaker } from "./engine-access.ts";
@@ -184,9 +185,9 @@ describe("materializeEngineAccess", () => {
   it("runs Codex on the payer's OpenAI key from an empty home of their own", async () => {
     const inp = input({ instance: CODEX, keys: ["SUB-OWNER/openai"] });
     const out = await materializeEngineAccess(inp, resolveEngineAccess(inp), deps({ ok: true, key: "sk-test-openai-000000000001", fingerprint: "fp2" }));
-    expect(out).toMatchObject({ ok: true, access: { via: "owner-key", identity: `owner-key:${OWNER}:fp2`, environment: { SAGAX_OWNER_OPENAI_API_KEY: "sk-test-openai-000000000001" }, codexHome: `/data/principals/${OWNER}/codex-key`, codexOwnerKey: true } });
+    expect(out).toMatchObject({ ok: true, access: { via: "owner-key", identity: `owner-key:${OWNER}:fp2`, environment: { SAGAX_OWNER_OPENAI_API_KEY: "sk-test-openai-000000000001" }, codexHome: join("/data", "principals", OWNER, "codex-key"), codexOwnerKey: true } });
     const bobs = input({ speaker: bob, instance: CODEX, keys: ["SUB-BOB/openai"] });
-    expect(await materializeEngineAccess(bobs, resolveEngineAccess(bobs), deps({ ok: true, key: "sk-test-openai-000000000002", fingerprint: "fp3" }))).toMatchObject({ ok: true, access: { via: "speaker-key", codexHome: `/data/principals/${BOB_PID}/codex-key`, codexOwnerKey: true } });
+    expect(await materializeEngineAccess(bobs, resolveEngineAccess(bobs), deps({ ok: true, key: "sk-test-openai-000000000002", fingerprint: "fp3" }))).toMatchObject({ ok: true, access: { via: "speaker-key", codexHome: join("/data", "principals", BOB_PID, "codex-key"), codexOwnerKey: true } });
   });
 
   it("a subscription points the driver at the speaker's own login directory", async () => {
@@ -200,11 +201,11 @@ describe("materializeEngineAccess", () => {
     const grokSub = input({ instance: GROK, speaker: bob, signedIn: [`${BOB}/grokAgent`] });
     expect(await materializeEngineAccess(grokSub, resolveEngineAccess(grokSub), deps({ ok: false, error: "no_key" }))).toEqual({ ok: true, plan: expect.anything(), access: { via: "subscription", identity: `subscription:${BOB_PID}`, engineHome: `/data/principals/${BOB_PID}/grok` } });
     const grokKey = input({ instance: GROK, speaker: bob, keys: ["SUB-BOB/xai"] });
-    expect(await materializeEngineAccess(grokKey, resolveEngineAccess(grokKey), deps({ ok: true, key: "xai-test-bob-000001", fingerprint: "fx" }))).toMatchObject({ ok: true, access: { via: "speaker-key", identity: `speaker-key:${BOB_PID}:fx`, environment: { XAI_API_KEY: "xai-test-bob-000001" }, engineHome: `/data/principals/${BOB_PID}/grokAgent-key` } });
+    expect(await materializeEngineAccess(grokKey, resolveEngineAccess(grokKey), deps({ ok: true, key: "xai-test-bob-000001", fingerprint: "fx" }))).toMatchObject({ ok: true, access: { via: "speaker-key", identity: `speaker-key:${BOB_PID}:fx`, environment: { XAI_API_KEY: "xai-test-bob-000001" }, engineHome: join("/data", "principals", BOB_PID, "grokAgent-key") } });
     const kimiSub = input({ instance: KIMI, signedIn: [`${OWNER}/kimiAgent`] });
     expect(await materializeEngineAccess(kimiSub, resolveEngineAccess(kimiSub), deps({ ok: false, error: "no_key" }))).toMatchObject({ ok: true, access: { via: "subscription", engineHome: `/data/principals/${OWNER}/kimi` } });
     const kimiKey = input({ instance: KIMI, keys: ["SUB-OWNER/moonshot"] });
-    expect(await materializeEngineAccess(kimiKey, resolveEngineAccess(kimiKey), deps({ ok: true, key: "sk-moonshot-test-01", fingerprint: "fm" }))).toMatchObject({ ok: true, access: { via: "owner-key", environment: { MOONSHOT_API_KEY: "sk-moonshot-test-01" }, engineHome: `/data/principals/${OWNER}/kimiAgent-key` } });
+    expect(await materializeEngineAccess(kimiKey, resolveEngineAccess(kimiKey), deps({ ok: true, key: "sk-moonshot-test-01", fingerprint: "fm" }))).toMatchObject({ ok: true, access: { via: "owner-key", environment: { MOONSHOT_API_KEY: "sk-moonshot-test-01" }, engineHome: join("/data", "principals", OWNER, "kimiAgent-key") } });
   });
 
   it("a pasted key names the person and does not fetch Perspicax", async () => {
@@ -219,20 +220,20 @@ describe("materializeEngineAccess", () => {
 
   it("Gemini runs on the payer's Google key as GEMINI_API_KEY", async () => {
     const inp = input({ instance: GEMINI, speaker: bob, keys: ["SUB-BOB/google"] });
-    expect(await materializeEngineAccess(inp, resolveEngineAccess(inp), deps({ ok: true, key: "AIza-test-bob-0001", fingerprint: "fg" }))).toMatchObject({ ok: true, access: { via: "speaker-key", environment: { GEMINI_API_KEY: "AIza-test-bob-0001" }, engineHome: `/data/principals/${BOB_PID}/geminiAgent-key` } });
+    expect(await materializeEngineAccess(inp, resolveEngineAccess(inp), deps({ ok: true, key: "AIza-test-bob-0001", fingerprint: "fg" }))).toMatchObject({ ok: true, access: { via: "speaker-key", environment: { GEMINI_API_KEY: "AIza-test-bob-0001" }, engineHome: join("/data", "principals", BOB_PID, "geminiAgent-key") } });
   });
 
   it("pi gets every key the payer keeps, and only theirs", async () => {
     const inp = input({ instance: PI, speaker: bob, keys: ["SUB-BOB/openai", "SUB-BOB/moonshot", "SUB-OWNER/anthropic"] });
     const d = deps((_sub, provider) => ({ ok: true, key: `key-${provider}`, fingerprint: `f-${provider}` }));
     const out = await materializeEngineAccess(inp, resolveEngineAccess(inp), d);
-    expect(out).toMatchObject({ ok: true, access: { via: "speaker-key", identity: `speaker-key:${BOB_PID}:f-openai+f-moonshot`, environment: { OPENAI_API_KEY: "key-openai", MOONSHOT_API_KEY: "key-moonshot" }, engineHome: `/data/principals/${BOB_PID}/piAgent-key` } });
+    expect(out).toMatchObject({ ok: true, access: { via: "speaker-key", identity: `speaker-key:${BOB_PID}:f-openai+f-moonshot`, environment: { OPENAI_API_KEY: "key-openai", MOONSHOT_API_KEY: "key-moonshot" }, engineHome: join("/data", "principals", BOB_PID, "piAgent-key") } });
     expect(d.resolved).toEqual(["SUB-BOB/openai", "SUB-BOB/moonshot"]);
   });
 
   it("the org key gives a home engine an empty organization home, never the server's login", async () => {
     const inp = input({ instance: GROK, speaker: bob, keyBacked: true });
-    expect(await materializeEngineAccess(inp, resolveEngineAccess(inp), deps({ ok: false, error: "no_key" }))).toMatchObject({ ok: true, access: { via: "org-key", identity: "org-key", engineHome: "/data/org/grokAgent-key" } });
+    expect(await materializeEngineAccess(inp, resolveEngineAccess(inp), deps({ ok: false, error: "no_key" }))).toMatchObject({ ok: true, access: { via: "org-key", identity: "org-key", engineHome: join("/data", "org", "grokAgent-key") } });
   });
 
   it("S4-14: a key plan for a payer disabled since never reads the (cached) key", async () => {

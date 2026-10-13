@@ -53,6 +53,10 @@ const CODING_SCAN = 80;
 const SETTLED_SCAN = 12;
 
 function settledStatus(messages: readonly LaunchedAgentMessage[]): BotActivityStatus {
+  // A person's Stop marks the request (requestCancelled); the interrupted
+  // turn then ends with turnSucceeded: false, which is not a failure.
+  const request = messages.findLast((message) => message.role === "user");
+  if (request?.requestCancelled) return "stopped";
   for (let index = messages.length - 1; index >= 0; index--) {
     const message = messages[index]!;
     if (message.role === "user") return "finished";
@@ -70,15 +74,16 @@ function displayTitle(task: LaunchedAgentTask, targetName: string): string {
   return body ? `${targetName}: ${body}` : targetName;
 }
 
+/** Coding work, read off the agent's own tool calls and folder. */
+function codingRun(messages: readonly LaunchedAgentMessage[], repository: RepositoryInfo | undefined): boolean {
+  const signals: CodingSignals = { edits: 0, codeFiles: 0, vcs: false };
+  for (const message of messages) if (message.tool) addCodingSignal(signals, message.tool);
+  return isCodingWork(signals, Boolean(repository));
+}
+
 function latestPullRequest(messages: readonly LaunchedAgentMessage[], repository: RepositoryInfo | undefined): BotLaunchedAgentPullRequest | undefined {
   const collector = new CodeWorkCollector(repository?.origin);
-  const signals: CodingSignals = { edits: 0, codeFiles: 0, vcs: false };
-  for (const message of messages) {
-    if (!message.tool) continue;
-    addCodingSignal(signals, message.tool);
-    collector.add(message.tool, 0);
-  }
-  if (!isCodingWork(signals, Boolean(repository))) return undefined;
+  for (const message of messages) if (message.tool) collector.add(message.tool, 0);
   const prs = collector.result().pullRequests;
   if (!prs.length) return undefined;
   const newest = prs.reduce((best, entry) => (entry.at > best.at ? entry : best), prs[0]!);
@@ -109,7 +114,8 @@ export function launchedAgentsForBot(deps: LaunchedAgentsDeps, viewerId: string 
       const readable = deps.threadReadable(peer.id, task.threadId, viewerId);
       const messages = deps.messages(task.threadId, CODING_SCAN);
       const repository = task.cwd && deps.inRepository?.(task.cwd) ? deps.repository?.(task.cwd) : undefined;
-      const pullRequest = status === "failed" ? latestPullRequest(messages, repository) : undefined;
+      const coding = codingRun(messages, repository);
+      const pullRequest = coding && status === "failed" ? latestPullRequest(messages, repository) : undefined;
       out.push({
         id: `thread:${task.threadId}`,
         targetBotId: peer.id,
@@ -119,6 +125,7 @@ export function launchedAgentsForBot(deps: LaunchedAgentsDeps, viewerId: string 
         startedAt: task.openedBy?.at ?? task.createdAt,
         updatedAt,
         ...(readable ? { threadId: task.threadId } : {}),
+        ...(coding ? { coding: true as const } : {}),
         ...(pullRequest ? { pullRequest } : {}),
       });
     }

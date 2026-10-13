@@ -14,6 +14,7 @@ import {
   type ComposerSlashCommand,
   type ComposerSlashCommandId,
 } from "./composer-commands";
+import { enabledSlashSkills } from "./use-slash-skills";
 
 describe("composer slash commands", () => {
   it("opens command search only for the first unfinished token", () => {
@@ -47,6 +48,23 @@ describe("composer slash commands", () => {
     expect(
       replaceComposerSlashTrigger("/se", { query: "se", start: 0, end: 3 }, "/setup "),
     ).toEqual({ text: "/setup ", caret: 7 });
+  });
+
+  it("opens on a skill name with digits", () => {
+    expect(composerSlashTrigger("/weekly-2", 9)).toEqual({ query: "weekly-2", start: 0, end: 9 });
+  });
+
+  it("reads only enabled, named skills from the skills listing", () => {
+    expect(enabledSlashSkills({ skills: [
+      { name: "standup", description: "Writes the note.", enabled: true },
+      { name: "draft", description: "Off for now.", enabled: false },
+      { name: 7, description: "broken", enabled: true },
+      { name: "bare", enabled: true },
+    ] })).toEqual([
+      { name: "standup", description: "Writes the note." },
+      { name: "bare", description: "" },
+    ]);
+    expect(enabledSlashSkills(null)).toEqual([]);
   });
 });
 

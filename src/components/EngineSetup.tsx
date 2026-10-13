@@ -10,7 +10,9 @@ import { SettingsText } from "./SettingsLink";
 import { copyText } from "@/lib/copy-text";
 import { DEVICE_SIGN_IN_COPY, DeviceSignIn, deviceSignInProvider, type SetupSignInProvider } from "./DeviceSignIn";
 import { ClaudeSignIn } from "./ClaudeSignIn";
+import { keyRowForEngine, openProviderKeyDialog } from "./settings/ProviderKeys";
 import { EngineApiKeyField } from "./EngineApiKeyField";
+import { RefreshEngines } from "./EngineLibrary";
 
 type Platform = "darwin" | "win32" | "linux";
 
@@ -26,7 +28,7 @@ function hostPlatform(): Platform {
 /** The install command for this machine, or null when the engine has none
  * here (a GUI download, or a POSIX-only installer viewed on Windows). */
 export function installCommandFor(install: EngineInstall | undefined): string | null {
-  return install?.command?.[hostPlatform()] ?? null;
+  return install?.command?.[install.platform ?? hostPlatform()] ?? null;
 }
 
 /** Installed but missing the cloud account session. */
@@ -34,7 +36,7 @@ export function needsSignIn(instance: InstanceInfo | undefined): boolean {
   return instance?.snapshot.state === "available" && instance.snapshot.authenticated === false;
 }
 
-/** The card EngineSetup shows for this engine is its sign-in — not an API
+/** The card EngineSetup shows for this engine is its sign-in: not an API
  * key row, an install, or a note that it cannot be set up here. A caller
  * that words a line around that card (a failed turn's headline) asks this,
  * so the line and the card never disagree. */
@@ -81,16 +83,15 @@ export function CommandRow({
   command,
   actionLabel,
   compact = false,
-  allowOpen = true,
+  allowTerminal = true,
 }: {
   command: string;
   actionLabel: string;
   compact?: boolean;
-  /** Open Terminal only where that terminal runs on this server. Copy stays. */
-  allowOpen?: boolean;
+  allowTerminal?: boolean;
 }) {
   const [status, setStatus] = useState<"copied" | "failed" | "opened" | null>(null);
-  const canOpen = allowOpen && typeof window !== "undefined" && Boolean(window.ogb?.openInstallTerminal);
+  const canOpen = typeof window !== "undefined" && allowTerminal && serverTerminal(false);
 
   const settle = (next: "copied" | "failed" | "opened") => {
     setStatus(next);
@@ -197,7 +198,7 @@ export function CommandRow({
  * server, as the server's own user, into the app's own folder. The terminal
  * command stays behind a disclosure for people who prefer it. */
 function ServerEngineInstall({ instance, mode, command }: { instance: InstanceInfo; mode: "install" | "update"; command: string | null }) {
-  const { refreshInstances, refreshModels } = useStore();
+  const { state, dispatch, refreshModels } = useStore();
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -208,10 +209,13 @@ function ServerEngineInstall({ instance, mode, command }: { instance: InstanceIn
     setDone(false);
     setError(null);
     try {
-      await api(`/api/instances/${encodeURIComponent(instance.instanceId)}/install`, { method: "POST" });
+      const { instances } = await api(`/api/instances/${encodeURIComponent(instance.instanceId)}/install`, { method: "POST" });
+      const installed = (instances as InstanceInfo[] | undefined)?.find((candidate) => candidate.instanceId === instance.instanceId);
+      if (instances) dispatch({ type: "instances", instances });
+      if (installed?.snapshot.state !== "available") {
+        throw new Error(t("engineSetup.installNotVerified", { reason: installed?.snapshot.reason ?? t("engineSetup.noReason") }));
+      }
       setDone(true);
-      // The install has happened even if the status refresh fails.
-      await refreshInstances().catch(() => {});
       await refreshModels(instance.instanceId).catch(() => {});
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
@@ -233,12 +237,12 @@ function ServerEngineInstall({ instance, mode, command }: { instance: InstanceIn
           ? t("engineSetup.serverInstalling")
           : t(mode === "update" ? "engineSetup.serverUpdate" : "engineSetup.serverInstall", { name: instance.displayName })}
       </button>
-      {done && !busy && <p role="status" className="text-center text-[11px] text-success">{t("engineSetup.serverInstalled")}</p>}
+      {done && !busy && <p role="status" className="text-center text-[11px] text-success">{t("engineSetup.installVerified")}</p>}
       {error && <p role="alert" className="whitespace-pre-wrap text-[11.5px] leading-relaxed text-danger">{error}</p>}
       {command && (
         <details className="rounded-lg border border-hairline/50 bg-app px-2.5 py-2 text-[11.5px] text-ink-secondary">
           <summary className="cursor-pointer select-none">{t("engineSetup.preferTerminal")}</summary>
-          <CommandRow command={command} actionLabel={t(mode === "update" ? "engineSetup.openUpdate" : "engineSetup.openInstall")} compact />
+          <CommandRow command={command} actionLabel={t(mode === "update" ? "engineSetup.openUpdate" : "engineSetup.openInstall")} compact allowTerminal={state.config?.cloudHome !== true} />
         </details>
       )}
     </div>
@@ -276,7 +280,7 @@ export function EngineUpdateNotice({
 }
 
 /** Like the update notice, minus the command: there is nothing to run, only
- * something to know — the message says what and where to change it. */
+ * something to know: the message says what and where to change it. */
 export function EngineWarningNotice({
   warning,
   className,
@@ -428,7 +432,7 @@ function ManagedEngineSetup({ instance, signInOnly }: { instance: InstanceInfo; 
 }
 
 /** Engines that run on a pasted API key. Their setup is the key row in
- * Settings → API keys, never a terminal command or a sign-in. Claude on the
+ * Settings > Models and accounts, never a terminal command or a sign-in. Claude on the
  * workspace key still needs its CLI first, which the install card covers. */
 export function isApiKeyEngine(instance: InstanceInfo | undefined): boolean {
   if (!instance || instance.access !== "api" || instance.managed) return false;
@@ -462,7 +466,7 @@ function GrokKeyInstead({ className, unframed }: { className?: string; unframed:
       {!remote && (
         <button
           type="button"
-          onClick={() => dispatch({ type: "toggleAppSettings", open: true, section: "connections" })}
+          onClick={() => { dispatch({ type: "toggleAppSettings", open: true, section: "engines" }); openProviderKeyDialog("xai"); }}
           className="mt-3 flex items-center gap-1.5 rounded-lg bg-raised px-3 py-1.5 text-[12.5px] font-medium text-ink hover:bg-raised-hover"
         >
           <KeyRound size={13} aria-hidden="true" />
@@ -477,7 +481,7 @@ function ManualCommand({ command }: { command: string }) {
   return (
     <details data-manual-command className="mt-2 rounded-lg border border-hairline/50 bg-app px-2.5 py-2 text-[11.5px] text-ink-secondary">
       <summary className="cursor-pointer select-none">{t("engineSetup.preferTerminal")}</summary>
-      <CommandRow command={command} actionLabel={t("engineSetup.openSignIn")} compact allowOpen={serverTerminal(false)} />
+      <CommandRow command={command} actionLabel={t("engineSetup.openSignIn")} compact />
     </details>
   );
 }
@@ -501,7 +505,7 @@ function ApiKeyEngineSetup({ instance, className, unframed, configured = false }
           <div className="text-[13px] font-semibold text-ink">{t(copy.title, { name: instance.displayName })}</div>
           <p className="mt-0.5 text-[12px] leading-relaxed text-ink-secondary">
             {copy.description === "engineSetup.apiKey.description" ? (
-              <SettingsText text={t(copy.description)} links={{ settings: { section: "connections", cardId: "connections.providers" } }} />
+              <SettingsText text={t(copy.description)} links={{ settings: { section: "engines", cardId: "engines.keys" } }} />
             ) : t(copy.description)}
           </p>
         </div>
@@ -514,7 +518,7 @@ function ApiKeyEngineSetup({ instance, className, unframed, configured = false }
       {!remote && (
         <button
           type="button"
-          onClick={() => dispatch({ type: "toggleAppSettings", open: true, section: "connections" })}
+          onClick={() => { dispatch({ type: "toggleAppSettings", open: true, section: "engines" }); openProviderKeyDialog(keyRowForEngine(instance.driverKind, instance.instanceId)); }}
           className="mt-3 flex items-center gap-1.5 rounded-lg bg-raised px-3 py-1.5 text-[12.5px] font-medium text-ink hover:bg-raised-hover"
         >
           <KeyRound size={13} aria-hidden="true" />
@@ -567,7 +571,7 @@ export function EngineSetup({
   const command = signInOnly ? signInCommand : installCommand;
   const title = signInOnly
     ? t("engineSetup.signInTitle", { name: instance.displayName })
-    : t("engineSetup.installTitle", { name: instance.displayName });
+    : t("engineSetup.setupTitle", { name: instance.displayName });
   const description = descriptionOverride ?? (signInOnly
     ? browserSignIn
       ? t("engineSetup.chatgpt.description")
@@ -577,7 +581,7 @@ export function EngineSetup({
       ? t("engineSetup.claude.description")
       : install?.managed
       ? t("engineSetup.managedSignIn")
-      : t("engineSetup.terminalSignIn")
+      : t("engineSetup.terminalSignInCheck")
     : intent === "inject"
       ? t("engineSetup.injectDesc")
       : install?.server
@@ -645,6 +649,7 @@ export function EngineSetup({
         <CommandRow
           command={command}
           actionLabel={signInOnly ? t("engineSetup.openSignIn") : t("engineSetup.openInstall")}
+          allowTerminal={!cloudHome}
         />
       ) : (
         <p className="mt-3 rounded-lg bg-inset px-2.5 py-2 text-[12px] leading-relaxed text-ink-secondary">
@@ -666,6 +671,13 @@ export function EngineSetup({
 
       {!signInOnly && install.apiKey && instance.snapshot.state !== "available" && (
         <EngineApiKeyField instanceId={instance.instanceId} />
+      )}
+      {(install.command || signInCommand) && !deviceSignIn && !browserSignIn && !pasteSignIn && !install.managed && (
+        <div className="mt-3 border-t border-hairline/40 pt-2">
+          <p className="mb-1 text-[11.5px] leading-relaxed text-ink-secondary">{t("engineSetup.sameMachine")}</p>
+          {needsCli(instance) && <p className="mb-1 text-[11.5px] leading-relaxed text-ink-secondary">{t("engineSetup.pathHint")}</p>}
+          <RefreshEngines key={instance.instanceId} />
+        </div>
       )}
 
       {install.docsUrl && (

@@ -271,9 +271,14 @@ struct AutomationsCalendarView<Header: View>: View {
                 .accessibilityIdentifier("automations-reschedule")
         }
         if let routine = item.routine {
-            Button(String(localized: "Edit"), systemImage: "pencil") { onAction(.edit, item) }
-            Button(String(localized: "Run now"), systemImage: "play.fill") { onAction(.runNow, item) }
-            if routine.canToggle() {
+            // AU20: someone else's routine is read-only (canEdit, canRun)
+            if routine.mayEdit {
+                Button(String(localized: "Edit"), systemImage: "pencil") { onAction(.edit, item) }
+            }
+            if routine.mayRun {
+                Button(String(localized: "Run now"), systemImage: "play.fill") { onAction(.runNow, item) }
+            }
+            if routine.mayEdit && routine.canToggle() {
                 Button(routine.enabled ? String(localized: "Pause") : String(localized: "Resume"),
                        systemImage: routine.enabled ? "pause" : "play") { onAction(.toggle, item) }
             }

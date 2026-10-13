@@ -1,6 +1,6 @@
 import { memo, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Archive, ArchiveRestore, BellOff, Clock, Clock3, FolderInput, FolderPlus, Link2, Loader2, MoreHorizontal, Pencil, Pin, PinOff, Plus, RefreshCw, Trash2 } from "lucide-react";
+import { Archive, ArchiveRestore, BellOff, Clock, Clock3, FolderInput, FolderPlus, Link2, Link2Off, Loader2, MoreHorizontal, Pencil, Pin, PinOff, Plus, RefreshCw, Trash2 } from "lucide-react";
 import type { BotProject, Task } from "@/state/store";
 import { cn } from "@/lib/cn";
 import { useHeldMenuMotion } from "./MenuMotion";
@@ -10,8 +10,9 @@ import { threadRefUrl } from "@/lib/thread-refs";
 import { copyText } from "@/lib/copy-text";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { THREAD_DRAG_TYPE } from "@/lib/folder-order";
+import { threadLinkLabel } from "../../shared/thread-link";
 
-type ThreadRowTask = Pick<Task, "threadId" | "title" | "projectId" | "busy" | "activity" | "unread" | "openedBy" | "closedBy" | "archivedAt" | "snoozedUntil" | "waitingForTeammates"> & {
+type ThreadRowTask = Pick<Task, "threadId" | "title" | "projectId" | "busy" | "activity" | "unread" | "openedBy" | "closedBy" | "archivedAt" | "snoozedUntil" | "waitingForTeammates" | "link"> & {
   queued?: boolean;
   pinned?: boolean;
   createdAt?: number;
@@ -260,6 +261,7 @@ type ThreadRowProps = {
   onArchive?: (task: ThreadRowTask, archivedAt: number | null) => void;
   onPin?: (task: ThreadRowTask, pinned: boolean) => void;
   onSnooze?: (task: ThreadRowTask, snoozedUntil: number | null) => void;
+  onLink?: (task: ThreadRowTask, link: string | null) => void;
   /** Copy this bot's current approval level and saved approvals onto this thread. */
   onRefreshPermissions?: (task: ThreadRowTask) => void;
   onCreateThread?: () => void;
@@ -281,7 +283,7 @@ const sameThreadRow = ({ task: previousTask, ...previous }: ThreadRowProps, { ta
 
 /** One quiet row for bot and group histories. Surface denotes selection;
  * working/waiting/unread remain independent signals, never different cards. */
-export const SidebarThreadRow = memo(function SidebarThreadRow({ task, ownerId, current, compact, folders, onSelect, onRename, onRegenerateTitle, onDelete, onMove, onArchive, onPin, onSnooze, onRefreshPermissions, onCreateThread, onCreateFolder, activityLabel, now }: ThreadRowProps) {
+export const SidebarThreadRow = memo(function SidebarThreadRow({ task, ownerId, current, compact, folders, onSelect, onRename, onRegenerateTitle, onDelete, onMove, onArchive, onPin, onSnooze, onLink, onRefreshPermissions, onCreateThread, onCreateFolder, activityLabel, now }: ThreadRowProps) {
   const [menu, setMenu] = useState<{ left: number; top: number } | null>(null);
   const menuMotion = useHeldMenuMotion(menu);
   const [renaming, setRenaming] = useState(false);
@@ -380,11 +382,15 @@ export const SidebarThreadRow = memo(function SidebarThreadRow({ task, ownerId, 
             <span className="min-w-0 max-w-[45%] shrink truncate font-normal text-sidebar-ink-secondary/80">{byline}</span>
           )}
         </span>
+        {task.unread && <span className="sr-only">{t("task.unread")}</span>}
+      </button>}
+      {task.link && <a href={task.link} target="_blank" rel="noreferrer" dir="ltr" title={task.link} aria-label={t("task.openLink", { link: threadLinkLabel(task.link) ?? task.link })}
+        className="shrink-0 rounded px-1 font-mono text-[11px] text-sidebar-ink-secondary hover:bg-sidebar-hover hover:text-sidebar-ink outline-none focus-visible:ring-1 focus-visible:ring-accent/60 [unicode-bidi:isolate]">{threadLinkLabel(task.link) ?? t("task.link")}</a>}
+      {!renaming && <span className="flex shrink-0 items-center gap-2 px-1" onClick={() => onSelect(task)} onContextMenu={(event) => { event.preventDefault(); event.stopPropagation(); openMenu(event.clientX, event.clientY); }}>
         {updatedLabel && <time dateTime={new Date(updatedAt).toISOString()} className="shrink-0 tabular-nums text-[10px] text-sidebar-ink-secondary">{updatedLabel}</time>}
         {task.pinned === true && <Pin size={11} className="shrink-0 text-sidebar-ink-secondary" aria-label={t("sidebar.bot.pin")} />}
         {task.activity === "waiting-on-you" ? <span className="shrink-0 text-[10px] font-medium text-warning">{t("task.waiting")}</span> : isWaitingOnTeammate(task) ? <Clock3 size={11} className="shrink-0 text-sidebar-ink-secondary" aria-label={t("task.waitingOnTeammate")} /> : isWorking(task) ? (task.ultracode ? <span className="size-2 shrink-0 rounded-full ultracode-sidebar-dot animate-status-pulse" aria-label={activityLabel ?? t("chat.activity.working")} /> : <Loader2 size={11} className="shrink-0 animate-spin text-success" aria-label={activityLabel ?? t("chat.activity.working")} />) : task.queued ? <span className="shrink-0 text-[10px] text-sidebar-ink-secondary">{t("task.queued")}</span> : null}
-        {task.unread && <span className="sr-only">{t("task.unread")}</span>}
-      </button>}
+      </span>}
       <button ref={actionRef} type="button" aria-label={t("task.actions", { title: task.title })} aria-expanded={Boolean(menu)}
         onClick={(event) => { if (menu) { setMenu(null); return; } const rect = event.currentTarget.getBoundingClientRect(); openMenu(rect.left, rect.bottom); }}
         className="mr-0.5 flex size-6 shrink-0 items-center justify-center rounded text-sidebar-ink-secondary opacity-0 hover:bg-sidebar-hover hover:text-sidebar-ink focus-visible:opacity-100 group-hover/thread:opacity-100 max-md:opacity-70 touch:opacity-70">
@@ -407,6 +413,7 @@ export const SidebarThreadRow = memo(function SidebarThreadRow({ task, ownerId, 
         </select>
       </label>}
       {onPin && <button type="button" onClick={() => { setMenu(null); onPin(task, task.pinned !== true); }} className="flex w-full items-center gap-2 rounded px-2.5 py-2 text-left text-[12px] text-ink hover:bg-raised">{task.pinned === true ? <PinOff size={12} /> : <Pin size={12} />}{task.pinned === true ? t("sidebar.bot.unpin") : t("sidebar.bot.pin")}</button>}
+      {onLink && task.link && <button type="button" onClick={() => { setMenu(null); onLink(task, null); }} className="flex w-full items-center gap-2 rounded px-2.5 py-2 text-left text-[12px] text-ink hover:bg-raised"><Link2Off size={12} />{t("task.removeLink")}</button>}
       {onArchive && <button type="button" disabled={isWorking(task)} onClick={() => { setMenu(null); onArchive(task, isArchived(task) ? null : Date.now()); }} className="flex w-full items-center gap-2 rounded px-2.5 py-2 text-left text-[12px] text-ink hover:bg-raised disabled:opacity-40">{archived ? <ArchiveRestore size={12} /> : <Archive size={12} />}{archived ? t("task.unarchive") : t("task.archive")}</button>}
       {onSnooze && <div className="px-2.5 pt-1">
         <span className="flex items-center gap-2 text-[11px] text-ink-secondary"><Clock size={12} />{t("task.snooze")}</span>

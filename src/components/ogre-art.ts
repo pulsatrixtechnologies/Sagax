@@ -192,9 +192,6 @@ export function ogreOutline(size: number): number {
   return r2(Math.max(1.9, (1.6 * box) / Math.max(1, size)));
 }
 
-/** Every outline at once, at rest (glows, auras, the hit area). */
-export const OGRE_SILHOUETTE = `${OGRE_ART.earL} ${OGRE_ART.earR} ${OGRE_ART.body} ${OGRE_ART.head}`;
-
 /* -------------------------------------------------------------- colors */
 
 /** What every part is painted with; a skin maps each role to a paint (ogre skins in skin-fx/ogre-skins.tsx). */
@@ -552,7 +549,6 @@ export const CRACKS_HEAD = "M33 26.4L35.6 31.4L33.6 35.8M66.4 24.6L63.4 29.6L65.
 export const CRACKS_EAR_L = "M12.6 35.6L16.6 38.4L19.6 37.8";
 export const CRACKS_NECK = "M38 73L41 77.6L39.8 81M62 72L59.4 76.4";
 export const CRACKS_STAND_NECK = "M46 37L48 40.4";
-export const CRACKS_ARM = 0.5;
 
 /** One rivet. */
 const rivet = (x: number, y: number): OgreOp => ({ d: ellipsePath(x, y, 1.1, 1.1), fill: "buckle", stroke: "line", width: 0.6 });

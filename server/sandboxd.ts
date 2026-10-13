@@ -12,6 +12,10 @@
 //
 //   node dist-server/sandboxd.js                    serve (compose service)
 //   node dist-server/sandboxd.js --uninstall-egress remove the host egress rules
+//
+// SANDBOX_BACKEND=kubernetes (server/sandboxd-k8s.ts) serves the same API
+// against the Kubernetes API and does not open the Docker socket. Unset, or
+// docker, keeps the path below.
 import { createHash } from "node:crypto";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import type { Duplex } from "node:stream";
@@ -20,6 +24,7 @@ import { pathToFileURL } from "node:url";
 import { ensureSandboxdKey, SANDBOXD_AUTH_HEADER, SandboxdVerifier } from "./sandboxd-auth.ts";
 import { SandboxError, SandboxService } from "./sandboxd-core.ts";
 import { dockerApi } from "./sandboxd-docker.ts";
+import { sandboxBackendFromEnv } from "./sandboxd-k8s-spec.ts";
 import { egressHelperSpec, egressUninstallScript, sandboxdConfigFromEnv } from "./user-sandbox-spec.ts";
 
 const MAX_BODY_BYTES = 2 * 1024 * 1024;
@@ -197,6 +202,11 @@ export function createSandboxdUpgradeHandler(service: SandboxService, verifier: 
 }
 
 async function main(): Promise<void> {
+  if (sandboxBackendFromEnv() === "kubernetes") {
+    const { startKubernetesProvisioner } = await import("./sandboxd-k8s.ts");
+    await startKubernetesProvisioner();
+    return;
+  }
   const config = sandboxdConfigFromEnv();
   const docker = dockerApi(config.dockerSocket);
   if (process.argv.includes("--uninstall-egress")) {

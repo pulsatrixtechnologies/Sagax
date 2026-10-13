@@ -69,12 +69,13 @@ function menuFor(bot: Bot, handlers = { onMakePrimary: vi.fn(), onReplacePrimary
 }
 
 describe("Primary Bot badge", () => {
-  it("draws the accent star at the avatar's corner only when asked", () => {
+  it("draws the orange star at the avatar's corner only when asked", () => {
     const marked = renderToStaticMarkup(createElement(BotAvatar, { bot: cryptic, size: 32, animated: false, primary: true }));
     expect(marked).toContain('data-testid="primary-bot-badge"');
-    // #188 moved the badge from fixed orange to the skin accent
-    expect(marked).toContain("bg-accent");
-    expect(marked).not.toContain("bg-orange-500");
+    // #188 had moved the badge to the skin accent (grey or navy in some
+    // skins); it is orange again, from its own token, in every skin
+    expect(marked).toContain("bg-primary-badge");
+    expect(marked).not.toContain("bg-accent");
     expect(marked).toContain('aria-label="Primary Bot"');
     expect(renderToStaticMarkup(createElement(BotAvatar, { bot: cryptic, size: 32, animated: false }))).not.toContain("primary-bot-badge");
   });

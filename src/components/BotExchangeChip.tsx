@@ -128,7 +128,7 @@ function ExchangeSheet({ run, bots, showToolCalls, onClose }: { run: ExchangeRun
                   <div className="whitespace-pre-wrap rounded-[18px] bg-card px-3 py-2 text-[13px] leading-5 text-ink">
                     {exchangeBody(message)}
                   </div>
-                  <span className="self-end pb-1 text-[11px] tabular-nums text-ink-tertiary opacity-0 transition-opacity group-hover:opacity-100">
+                  <span className="self-end pb-1 text-[11px] tabular-nums text-ink-tertiary opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 touch:opacity-100">
                     {formatTime(message.at)}
                   </span>
                 </div>

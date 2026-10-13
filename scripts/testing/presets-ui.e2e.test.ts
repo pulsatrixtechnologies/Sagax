@@ -8,8 +8,9 @@ import { waitForExit } from "../../server/testing/cleanup.ts";
 import { runControlOmb } from "../control-omb.ts";
 import { request } from "../mcp-server.ts";
 import { UI_TOOLS_DIR } from "./control-omb-ui.ts";
-import { enableBrowseBots, openCompose, openTemplatesCatalog } from "./ui-navigation.ts";
 import { jsLiteral } from "./js-literal.mjs";
+import { openNewBotDialog, openTemplatesCatalog } from "./compose-flow.ts";
+import { clickAccessible } from "./ui-click.ts";
 
 const ROOT = fileURLToPath(new URL("../..", import.meta.url));
 const binary = resolveAgentBrowserBinary({ dataDir: UI_TOOLS_DIR, env: process.env });
@@ -39,14 +40,12 @@ describe("Preset bots in the real renderer", () => {
     }, { timeout: launchTimeout, interval: 250 }).toBe(true);
     const ui = (verb: string, ...args: string[]) => runControlOmb(["ui", verb, "--ui", info.ui, ...args]) as Promise<Record<string, any>>;
     const evaluate = async (js: string) => (await ui("eval", "--js", js)).result;
-    const click = (name: string) => ui("click", "--name", name).catch((error: Error) => { throw new Error(`clicking "${name}": ${error.message}`); });
-    // A panel or dialog that just closed can still cover the sidebar for a
-    // frame; agent-browser refuses a covered click without sending it, so
-    // retrying is safe.
-    const clickWhenFree = (name: string) => expect.poll(() => click(name).then(() => true, () => false), { timeout: 10_000 }).toBe(true);
+    const rawClick = (name: string) => ui("click", "--name", name).catch((error: Error) => { throw new Error(`clicking "${name}": ${error.message}`); });
+    const click = (name: string) => clickAccessible({ click: rawClick, evaluate }, name);
     const snapshot = async () => (await ui("snapshot")).snapshot as string;
     const api = (path: string, method = "GET", body?: unknown) => request(path, { method, ...(body === undefined ? {} : { body: JSON.stringify(body) }) }, info.url);
-    await enableBrowseBots(api);
+    const catalog = { click, flag: (assignment: string) => ui("flag", "--set", assignment), snapshot };
+    const newBot = { click, evaluate, snapshot };
 
     // My New bot defaults: a name, words, a colour, a skill that is on, notes,
     // and things a preset must never carry (approval, connected apps).
@@ -85,8 +84,8 @@ describe("Preset bots in the real renderer", () => {
     await click("Done");
     await click("Close settings");
 
-    // Templates → Import the file: preset bots for New bot, no team.
-    await openTemplatesCatalog(clickWhenFree, evaluate);
+    // Browse Bots → Import the file: preset bots for New bot, no team.
+    await openTemplatesCatalog(catalog);
     await click("Import");
     await evaluate(`(() => { const input = document.querySelector('[role=dialog] input[type=file]'); const transfer = new DataTransfer(); transfer.items.add(new File([window.__presetText], 'sky-1.0.0.openmaus.json', { type: 'application/json' })); input.files = transfer.files; input.dispatchEvent(new Event('change', { bubbles: true })); return true; })()`);
     await expect.poll(snapshot, { timeout: 10_000 }).toContain("Preset bots and skills · no team");
@@ -109,9 +108,9 @@ describe("Preset bots in the real renderer", () => {
     writeFileSync(presetsFile, JSON.stringify(stored));
 
     // Share team: the defaults preset goes in only when ticked.
-    await openTemplatesCatalog(clickWhenFree, evaluate);
-    await click("Share");
-    await click("Share the General team");
+    await openTemplatesCatalog(catalog);
+    await click("Share a team");
+    await click("Share the Unassigned team");
     await expect.poll(snapshot, { timeout: 20_000 }).toContain("What's in the file");
     expect(await snapshot()).not.toContain('term "Preset bots"');
     await click("Include my New bot defaults as a preset");
@@ -120,14 +119,14 @@ describe("Preset bots in the real renderer", () => {
     expect(await snapshot()).toContain("Never their model, folder, computer, approval level or connected apps.");
     await ui("screenshot", "--out", evidence("share-team"));
     await click("Cancel");
-    await click("Close templates");
+    await ui("press", "--keys", "Escape");
+    await expect.poll(async () => !(await snapshot()).includes("What's in the file"), { timeout: 10_000 }).toBe(true);
 
     // New bot: organization presets, then imported ones, above the built-in roles.
     const bots = async () => (await api("/api/bots")).bots as Array<{ id: string; name: string; installedPackage?: Record<string, unknown> }>;
     const create = async (value: string, expected: string, shot: string) => {
       const before = await bots();
-      await openCompose(clickWhenFree);
-      await click("Create new Bot");
+      await openNewBotDialog(newBot);
       await expect.poll(async () => (await ui("eval", "--js", "[...document.querySelectorAll('[role=dialog] button')].find(button => button.textContent.trim() === 'Create bot')?.disabled")).result, { timeout: 20_000 }).toBe(false);
       await expect.poll(() => evaluate("[...document.querySelectorAll('[role=dialog] select optgroup')].map(group => group.label).join(' | ')"), { timeout: 10_000 })
         .toBe("From Acme Partners | Imported presets | Built-in roles");
@@ -138,6 +137,7 @@ describe("Preset bots in the real renderer", () => {
       await ui("screenshot", "--out", evidence(shot));
       await click("Create bot");
       await expect.poll(async () => (await bots()).length, { timeout: 15_000 }).toBe(before.length + 1);
+      await expect.poll(async () => !(await snapshot()).includes("Starting role"), { timeout: 10_000 }).toBe(true);
       return (await bots()).find((bot) => !before.some((old) => old.id === bot.id))!;
     };
     const fromFile = await create(`preset:${filePreset!.id}`, "Skills, added switched off: follow-up", "new-bot-file");

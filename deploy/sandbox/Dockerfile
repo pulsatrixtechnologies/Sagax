@@ -2,6 +2,9 @@
 # isolated Linux environment on an organization server (docs/user-sandbox.md).
 #
 #   docker build -f deploy/sandbox/Dockerfile -t sagax-sandbox:local .
+#   docker buildx build --platform linux/amd64,linux/arm64 \
+#     -f deploy/sandbox/Dockerfile -o type=oci,dest=dist/sagax-sandbox.oci .
+#   (scripts/build-sandbox-image.sh; it never pushes)
 #
 # The provisioner (server/sandboxd.ts) runs it read-only, as uid 1000, with no
 # capabilities, no new privileges, Docker's default seccomp and AppArmor

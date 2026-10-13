@@ -5,8 +5,6 @@
 // TypeScript module. Keep the two checks in step.
 
 export const DESKTOP_HOST_ID = /^desk[a-z0-9]{3,24}$/;
-export const LOCAL_MODEL_PATHS = ["/models", "/chat/completions"] as const;
-export const LOCAL_MODEL_METHODS = ["GET", "POST"] as const;
 
 export interface LoopbackEndpoint {
   id: string;

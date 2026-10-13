@@ -1,52 +1,53 @@
 // @vitest-environment happy-dom
-// The "…" handle flips what is on screen. A mouse or a keyboard reaches it
-// with the tray already out, so a click tucks it back and a second click
-// holds it out after the pointer leaves. A tap opens it and a second tap
-// tucks it. A held tray lets go on Escape or a press outside, so trays never
-// pile up down the transcript.
+// Reply and copy show only while the pointer is over the message or keyboard
+// focus is inside it, and on touch after a tap or long press on the message.
+// The more button opens a menu of the moved actions that closes on Escape,
+// a press outside or a pick.
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { setLocale } from "@/lib/i18n";
-import { MessageActions } from "./MessageActions";
+import { MESSAGE_ROW, MessageActions } from "./MessageActions";
 
 let host: HTMLDivElement;
 let root: Root;
 
+const row = () => host.querySelector<HTMLElement>(`[${MESSAGE_ROW}]`)!;
+const body = () => host.querySelector<HTMLElement>("p")!;
 const tray = () => host.querySelector<HTMLElement>('[data-testid="message-actions"]')!;
-const handle = () => tray().querySelector<HTMLButtonElement>('button[aria-label="Message actions"]')!;
-const expanded = () => handle().getAttribute("aria-expanded");
-const held = () => tray().dataset.open === "true";
-// hover and keyboard focus reveal the tray through these classes; a tucked
-// tray drops them so it stays in while the pointer is still on the handle
-const revealsOnHover = () => tray().children[1]!.className.includes("group-hover/actions:grid-cols-[1fr]");
+const shown = () => tray().dataset.shown === "true";
+const more = () => tray().querySelector<HTMLButtonElement>('button[aria-haspopup="menu"]')!;
+const items = () => [...host.querySelectorAll<HTMLButtonElement>("[role=menuitem]")];
 
-const pointer = (type: string, target: Element, pointerType: string, relatedTarget: Element | null = null) =>
+const pointer = (type: string, target: Element, pointerType: string) =>
   act(async () => {
-    target.dispatchEvent(new PointerEvent(type, { bubbles: true, pointerType, relatedTarget }));
+    target.dispatchEvent(new PointerEvent(type, { bubbles: type !== "pointerenter" && type !== "pointerleave", pointerType }));
   });
-const enter = () => pointer("pointerover", handle(), "mouse");
-const leave = () => pointer("pointerout", handle(), "mouse", document.body);
-const press = (pointerType: string) =>
-  act(async () => {
-    handle().dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, pointerType }));
-    handle().click();
-  });
+
+let picked: string[] = [];
 
 async function render(forceOpen = false) {
   await act(async () => {
     root.render(
-      createElement(MessageActions, {
-        side: "bot",
-        forceOpen,
-        children: createElement("button", { type: "button" }, "copy"),
-      }),
+      createElement("div", { [MESSAGE_ROW]: "" },
+        createElement("p", null, "an answer"),
+        createElement(MessageActions, {
+          side: "bot",
+          forceOpen,
+          menu: [
+            { key: "pin", icon: null, label: "Pin message", onSelect: () => picked.push("pin") },
+            { key: "raw", icon: null, label: "Show raw markdown", onSelect: () => picked.push("raw") },
+          ],
+          children: createElement("button", { type: "button" }, "copy"),
+        }),
+      ),
     );
   });
 }
 
 beforeEach(() => {
   setLocale("en");
+  picked = [];
   host = document.createElement("div");
   document.body.append(host);
   root = createRoot(host);
@@ -55,66 +56,83 @@ beforeEach(() => {
 afterEach(async () => {
   await act(async () => root.unmount());
   host.remove();
+  vi.useRealTimers();
 });
 
-describe("MessageActions handle", () => {
-  it("tucks a hover-opened tray on click and holds it out on the next click", async () => {
+describe("message actions row", () => {
+  it("shows while the pointer is over the message and hides when it leaves", async () => {
     await render();
-    await enter();
-    expect(expanded()).toBe("true");
-
-    await press("mouse");
-    expect(expanded()).toBe("false");
-    expect(revealsOnHover()).toBe(false);
-
-    await press("mouse");
-    expect(expanded()).toBe("true");
-    expect(held()).toBe(true);
-
-    await leave();
-    expect(held()).toBe(true);
-    expect(expanded()).toBe("true");
+    expect(shown()).toBe(false);
+    await pointer("pointerenter", row(), "mouse");
+    expect(shown()).toBe(true);
+    await pointer("pointerleave", row(), "mouse");
+    expect(shown()).toBe(false);
   });
 
-  it("hovers open again once the pointer leaves a tucked tray", async () => {
+  it("does not treat a touch passing over as a hover", async () => {
     await render();
-    await enter();
-    await press("mouse");
-    await leave();
-    expect(revealsOnHover()).toBe(true);
-    await enter();
-    expect(expanded()).toBe("true");
+    await pointer("pointerenter", row(), "touch");
+    expect(shown()).toBe(false);
   });
 
-  it("opens on a tap and tucks on the next tap", async () => {
+  it("shows on a tap of the message and hides on the next", async () => {
     await render();
-    await press("touch");
-    expect(held()).toBe(true);
-    expect(expanded()).toBe("true");
-    await press("touch");
-    expect(held()).toBe(false);
-    expect(expanded()).toBe("false");
+    await pointer("pointerdown", body(), "touch");
+    await pointer("pointerup", body(), "touch");
+    expect(shown()).toBe(true);
+    await pointer("pointerdown", body(), "touch");
+    await pointer("pointerup", body(), "touch");
+    expect(shown()).toBe(false);
   });
 
-  it("lets go of a held tray on a press outside or on Escape", async () => {
+  it("shows on a long press of the message", async () => {
+    vi.useFakeTimers();
     await render();
-    await press("touch");
-    await pointer("pointerdown", document.body, "mouse");
-    expect(held()).toBe(false);
-    expect(expanded()).toBe("false");
+    await pointer("pointerdown", body(), "touch");
+    await act(async () => { vi.advanceTimersByTime(500); });
+    expect(shown()).toBe(true);
+  });
 
-    await press("touch");
+  it("does not reveal actions after a canceled touch at the same position", async () => {
+    vi.useFakeTimers();
+    await render();
+    await pointer("pointerdown", body(), "touch");
+    await pointer("pointercancel", body(), "touch");
+    await act(async () => { vi.advanceTimersByTime(500); });
+    expect(shown()).toBe(false);
+    await pointer("pointerup", body(), "touch");
+    expect(shown()).toBe(false);
+  });
+
+  it("opens the more menu with the moved actions and closes it on a pick", async () => {
+    await render();
+    await pointer("pointerenter", row(), "mouse");
+    expect(items()).toHaveLength(0);
+    await act(async () => more().click());
+    expect(more().getAttribute("aria-expanded")).toBe("true");
+    expect(items().map((item) => item.textContent)).toEqual(["Pin message", "Show raw markdown"]);
+    // the row stays out while its menu is open, even with the pointer gone
+    await pointer("pointerleave", row(), "mouse");
+    expect(shown()).toBe(true);
+    await act(async () => items()[0]!.click());
+    expect(picked).toEqual(["pin"]);
+    expect(items()).toHaveLength(0);
+  });
+
+  it("closes the menu on Escape", async () => {
+    await render();
+    await act(async () => more().click());
+    expect(items()).toHaveLength(2);
     await act(async () => {
-      window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+      document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
     });
-    expect(held()).toBe(false);
+    expect(items()).toHaveLength(0);
   });
 
-  it("keeps a tray that must stay reachable out whatever the handle does", async () => {
+  it("keeps a row that must stay reachable out", async () => {
     await render(true);
-    await enter();
-    await press("mouse");
-    expect(held()).toBe(true);
-    expect(expanded()).toBe("true");
+    expect(shown()).toBe(true);
+    await pointer("pointerleave", row(), "mouse");
+    expect(shown()).toBe(true);
   });
 });

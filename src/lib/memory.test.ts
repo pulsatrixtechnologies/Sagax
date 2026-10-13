@@ -53,7 +53,7 @@ describe("capacityStatus", () => {
   it("always says the plain sentence about what loads", () => {
     const status = capacityStatus(index());
     expect(status.level).toBe("ok");
-    expect(status.sentence).toBe("40 of 200 lines · 2 KB of 23.4 KB — only the first 200 lines load each turn.");
+    expect(status.sentence).toBe("Only the first 200 lines load each turn.");
     expect(status.warning).toBeNull();
     expect(status.lineShare).toBeCloseTo(0.2);
   });
@@ -67,16 +67,14 @@ describe("capacityStatus", () => {
   it("goes red when truncated and says exactly how much is not loading", () => {
     const status = capacityStatus(index({ lines: 260, loadedLines: 200, truncated: true }));
     expect(status.level).toBe("over");
-    expect(status.warning).toBe(
-      "260 lines saved, 200 load into every conversation — 60 lines are not being loaded. Trim this file or move notes into a topic file.",
-    );
-    expect(capacityStatus(index({ lines: 201, loadedLines: 200, truncated: true })).warning).toContain("1 line is not being loaded");
+    expect(status.warning).toBe("60 lines are not loaded. Trim MEMORY.md or move notes into a topic.");
+    expect(capacityStatus(index({ lines: 201, loadedLines: 200, truncated: true })).warning).toContain("1 line is not loaded");
   });
 
   it("explains a byte cut when the line count fits", () => {
     const status = capacityStatus(index({ lines: 10, bytes: 30_000, loadedBytes: 24_000, truncated: true }));
     expect(status.level).toBe("over");
-    expect(status.warning).toContain("29.3 KB saved, 23.4 KB load into every conversation — the rest is not being loaded");
+    expect(status.warning).toContain("Only 23.4 KB of 29.3 KB loads");
   });
 
   it("does not divide by a zero budget", () => {

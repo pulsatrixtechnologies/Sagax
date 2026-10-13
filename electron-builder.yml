@@ -133,6 +133,13 @@ mac:
       to: cloudflared/cloudflared
     - from: dist-native/browser/darwin-${arch}
       to: browser-engine
+    # The Data engine's native modules (DuckDB, resvg; server/data/engine.ts)
+    # as a node_modules tree the server requires at runtime; prepare-duckdb
+    # stages this arch's slice. The copy names the node_modules directory
+    # itself: electron-builder's resource filter drops a root-level
+    # node_modules entry of any tree it copies (app-builder-lib util/filter).
+    - from: dist-native/duckdb/darwin-${arch}/node_modules
+      to: duckdb/node_modules
   extendInfo:
     NSMicrophoneUsageDescription: Sagax uses the microphone for voice dictation into the composer and for voice mode with your bots.
     NSSpeechRecognitionUsageDescription: Sagax transcribes your voice on-device to type messages for you.
@@ -175,6 +182,12 @@ win:
     # under x64 emulation (server/browser-engine.ts packagedBrowser).
     - from: dist-native/browser/win32-x64
       to: browser-engine
+    # The Data engine's native modules (DuckDB, resvg; server/data/engine.ts),
+    # per arch. prepare-duckdb stages win32-x64 only: no DuckDB/resvg binding
+    # exists for Windows arm64 yet, so that package ships without the Data
+    # engine (after-pack does not require it there; the engine says why).
+    - from: dist-native/duckdb/win32-${arch}/node_modules
+      to: duckdb/node_modules
     # CUA driver and SDK for Windows, per arch (prepare-cua-win stages both),
     # outside ASAR for native modules
     - from: dist-native/cua-win32-${arch}/cua-driver.exe
@@ -227,6 +240,8 @@ linux:
       to: cloudflared/cloudflared
     - from: dist-native/browser/linux-x64
       to: browser-engine
+    - from: dist-native/duckdb/linux-x64/node_modules
+      to: duckdb/node_modules
     - from: build/linux-openmausbot-browser.apparmor
       to: openmausbot-browser.apparmor
   desktop:

@@ -19,7 +19,7 @@ public struct CallState: Equatable, Sendable {
     public var botAudible: Bool
     /// The person is talking over the bot and the bot is ducked.
     public var ducked: Bool
-    /// Single active turn: talking while the bot works cancels it.
+    /// Barge-in of speech cancels that reply; a new topic while thinking forks.
     public var duplex: Bool
     /// In-flight tools or a sibling topic: barge-in drops speech, not the work.
     public var backgroundWork: Bool
@@ -194,13 +194,9 @@ public enum CallMachine {
                 if state.botBusy { effects.append(.interruptBot) }
                 return next { $0.phase = .interrupted; $0.botAudible = false; $0.ducked = false }
             }
-            if state.duplex && state.botBusy {
-                // full-duplex: talking while it thinks cancels that turn (no queue)
-                effects += [.cancelSpeech, .earcon(.interrupted), .interruptBot]
-                return next { $0.phase = .interrupted; $0.botAudible = false; $0.ducked = false }
-            }
-            // Talking while the bot works (not speaking), flag off: the words
-            // join its running turn when they are sent (a steer).
+            // Talking while the bot works (not speaking): flag off, the words
+            // join its running turn (a steer). Duplex on, the send forks a
+            // new topic, stops, or replaces a correction.
             return next { $0.phase = .hearing }
         case .speechEnd:
             guard state.phase == .hearing || state.phase == .interrupted else { return same }

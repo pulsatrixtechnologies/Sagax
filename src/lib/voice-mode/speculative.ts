@@ -8,6 +8,16 @@ import { completeClause, incompleteClause } from "./turns";
 const MIN_WORDS = 4;
 const MIN_WORDS_SILENCE = 4;
 
+/** Wait this long after a revised partial before replacing the guess.
+ * STT restates a long question several times; each replace restarts grok
+ * TTFB (real19 turn 18: four continues, firstToken 12250). */
+export const SPECULATIVE_REVISE_MS = 320;
+
+/** The revised partial has been unchanged long enough to replace the guess. */
+export function mayReviseSpeculation(changedAt: number, now: number, reviseMs = SPECULATIVE_REVISE_MS): boolean {
+  return now - changedAt >= reviseMs;
+}
+
 function wordCount(text: string): number {
   return (text.trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").match(/[a-z0-9]+/g) ?? []).length;
 }

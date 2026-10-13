@@ -13,6 +13,8 @@ describe("scrub", () => {
       id: "b1",
       name: "Rio",
       resumeCursors: { ghost: "session-abc" },
+      // the conversation a phone opens the bot at with threads hidden
+      mainThreadId: "t2",
       tasks: [
         { threadId: "t1", title: "One", resumeCursors: { ghost: "session-def" } },
         { threadId: "t2", title: "Two" },
@@ -25,7 +27,7 @@ describe("scrub", () => {
     expect(JSON.stringify(cleaned)).not.toContain("session-def");
     // and nothing else was disturbed
     expect(cleaned).toEqual({
-      bots: [{ id: "b1", name: "Rio", tasks: [{ threadId: "t1", title: "One" }, { threadId: "t2", title: "Two" }] }],
+      bots: [{ id: "b1", name: "Rio", mainThreadId: "t2", tasks: [{ threadId: "t1", title: "One" }, { threadId: "t2", title: "Two" }] }],
       groups: [],
     });
   });

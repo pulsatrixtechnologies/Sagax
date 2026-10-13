@@ -27,7 +27,6 @@ import {
   GRUMP_LEGS,
   GRUMP_ORDER,
   GRUMP_PAWS,
-  grumpLegOps,
   grumpOutline,
   grumpParts,
   grumpPawOps,
@@ -516,6 +515,3 @@ export function GrumpMascot({ skin = "plain", color, size = 44, mood = "idle", e
     </span>
   );
 }
-
-/** Kept for the keyframe renders and the tests: a leg's ops at rest. */
-export const grumpRestLegOps = (leg: GrumpLeg, size: number) => grumpLegOps(leg, 0, 0, grumpOutline(size));

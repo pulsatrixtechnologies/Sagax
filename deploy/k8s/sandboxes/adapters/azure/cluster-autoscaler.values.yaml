@@ -1,0 +1,26 @@
+# k3s (or any self-managed cluster) on Azure VMs. For managed AKS, do not
+# install this chart: use the node pool command in the cutover runbook,
+# which turns on the AKS cluster-autoscaler. Never both, and never together
+# with Karpenter.
+cloudProvider: azure
+azureCloud: AzurePublicCloud
+azureResourceGroup: RG-PULSATRIX-GOX
+azureVMType: vmss
+extraArgs:
+  scale-down-unneeded-time: 10m
+  scale-down-delay-after-add: 10m
+  scale-down-delay-after-delete: 10s
+  scale-down-utilization-threshold: "0.5"
+  skip-nodes-with-system-pods: "true"
+  skip-nodes-with-local-storage: "false"
+  expander: least-waste
+  max-node-provision-time: 15m
+# One D4ps_v6 (4 vCPU, 16 GiB). The Canada Central arm64 quota seen on
+# 2026-10-12 was 10 vCPU with 4 used by the GOX VM, so max is 1 node until
+# a quota increase. Raise max only in a reviewed change record.
+autoscalingGroups:
+  - name: REPLACE_VMSS
+    minSize: 0
+    maxSize: 1
+rbac:
+  create: true

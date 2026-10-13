@@ -6,6 +6,7 @@
 // (server/bot-visibility.ts). No confirmation step: it is a setting.
 import { useEffect, useState } from "react";
 import { Check, Loader2 } from "lucide-react";
+import { HelpTip } from "../SettingsPrimitives";
 
 import { api, useStore, type Bot } from "@/state/store";
 import { cn } from "@/lib/cn";
@@ -111,8 +112,11 @@ export function VisibilitySection({ bot }: { bot: Bot }) {
   };
 
   return (
-    <div className="flex flex-col gap-3 rounded-xl border border-hairline/40 p-4" data-bot-visibility>
-      <p className="text-[12.5px] leading-relaxed text-ink-secondary">{t("botSettings.visibility.subtitle")}</p>
+    <div className="flex flex-col gap-3" data-bot-visibility>
+      <div className="flex items-center gap-1.5 text-[12.5px] text-ink-secondary">
+        <span>{t("botSettings.visibility.subtitle")}</span>
+        <HelpTip label={t("settings.moreAbout", { title: t("botSettings.visibility.title") })}>{t("botSettings.visibility.rooms")}</HelpTip>
+      </div>
       <div role="radiogroup" aria-label={t("botSettings.visibility.title")} className="flex flex-col gap-1.5">
         {OPTIONS.map((option) => (
           <label key={option.mode} className="flex cursor-pointer items-center gap-2 text-[13px] text-ink">
@@ -141,7 +145,6 @@ export function VisibilitySection({ bot }: { bot: Bot }) {
           />
         </label>
       )}
-      <p className="text-[11.5px] leading-relaxed text-ink-secondary">{t("botSettings.visibility.rooms")}</p>
       {mixed.length > 0 && (
         <div className="flex flex-col gap-2 rounded-lg border border-accent/25 bg-accent/10 px-3 py-2 text-[12px] leading-relaxed text-ink-secondary" data-visibility-mixed-rooms>
           <p>{t("botSettings.visibility.mixedRooms", { rooms: mixed.map((room) => JSON.stringify(room.name)).join(", ") })}</p>

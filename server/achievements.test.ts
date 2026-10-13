@@ -93,6 +93,23 @@ describe("achievement engine", () => {
     expect(store.snapshot(ADA).items.find((item) => item.id === "best-friends")).toMatchObject({ current: 400, target: 500 });
   });
 
+  it("refuses a client that posts claude.linked", () => {
+    const { store } = setup();
+    expect(store.record(ADA, [{ type: "claude.linked" }], "client")).toEqual({ accepted: 0, unlocked: [] });
+    const server = store.record(ADA, [{ type: "claude.linked" }], "server");
+    expect(server.unlocked.map((item) => item.id)).toContain("claude-linked");
+    expect(store.snapshot(ADA).rewards).toContain("character:crab");
+    expect(store.record(ADA, [{ type: "claude.linked" }], "server").unlocked).toEqual([]);
+  });
+
+  it("three-tides needs opus, sonnet and haiku keys; a Fable turn does not count as a tide", () => {
+    const { store } = setup();
+    store.record(ADA, [{ type: "claude.turn" }], "server");
+    expect(store.snapshot(ADA).items.find((item) => item.id === "three-tides")).toMatchObject({ current: 0, target: 3 });
+    store.record(ADA, [{ type: "claude.turn", key: "opus" }, { type: "claude.turn", key: "sonnet" }, { type: "claude.turn", key: "haiku" }], "server");
+    expect(store.snapshot(ADA).items.find((item) => item.id === "three-tides")?.unlockedAt).toBeTypeOf("number");
+  });
+
   it("unlocks Trombi for good with its command", () => {
     const { dir, store } = setup();
     expect(store.snapshot(ADA).rewards).not.toContain("character:trombi");
@@ -109,6 +126,28 @@ describe("achievement engine", () => {
     store.snapshot(ADA);
     expect(calls).toBe(1);
     expect(store.snapshot(ADA).points).toBe(0);
+  });
+
+  it("runs migratedCrab once and does not grant crab from an owl leftover skin", () => {
+    let calls = 0;
+    const dir = mkdtempSync(join(tmpdir(), "sagax-achievements-"));
+    const store = createAchievementStore({
+      dataDir: dir,
+      persistDelayMs: 0,
+      grandfather: () => [],
+      grandfatherCrab: () => (calls++, ["character:crab"]),
+    });
+    expect(store.snapshot(ADA).rewards).toContain("character:crab");
+    store.snapshot(ADA);
+    expect(calls).toBe(1);
+    const again = createAchievementStore({
+      dataDir: dir,
+      persistDelayMs: 0,
+      grandfatherCrab: () => (calls++, ["character:crab", "should-not-apply"]),
+    });
+    expect(again.snapshot(ADA).rewards).toContain("character:crab");
+    expect(again.snapshot(ADA).rewards).not.toContain("should-not-apply");
+    expect(calls).toBe(1);
   });
 
   it("shares points by default, validates settings, and keeps an explicit off private", () => {
@@ -214,8 +253,8 @@ describe("achievement engine", () => {
     writeFileSync(file, `${JSON.stringify({
       version: 1,
       people: {
-        [ADA]: { settings: { showPoints: true, toasts: true, native: false, public: false }, migrated: true, unlocked: { "first-words": 1 }, updatedAt: 1 },
-        [BOB]: { settings: { showPoints: true, toasts: true, native: false }, migrated: true, unlocked: { "first-words": 1 }, updatedAt: 1 },
+        [ADA]: { settings: { showPoints: true, toasts: true, native: false, public: false }, migrated: true, migratedCrab: true, unlocked: { "first-words": 1 }, updatedAt: 1 },
+        [BOB]: { settings: { showPoints: true, toasts: true, native: false }, migrated: true, migratedCrab: true, unlocked: { "first-words": 1 }, updatedAt: 1 },
       },
     })}\n`);
     const store = createAchievementStore({ dataDir: dir, persistDelayMs: 0 });
@@ -323,6 +362,32 @@ describe("/api/me/achievements", () => {
     expect(JSON.stringify(shared)).not.toContain("Up Up Down Down");
     expect(await call(route, { method: "PUT", path: `${ACHIEVEMENTS_PATH}/settings`, person: ADA, body: { settings: { public: false } } })).toMatchObject({ status: 200, body: { settings: { public: false, toasts: false } } });
     expect(await call(route, { method: "GET", path: `/api/achievements/public?ids=${ADA}`, person: BOB })).toMatchObject({ status: 200, body: { points: {} } });
+  });
+
+  it("records claude.linked on GET when the person is already linked, and does not toast twice", async () => {
+    const { store } = setup();
+    const told: string[] = [];
+    let linked = true;
+    const route = createAchievementRoutes({
+      store,
+      person: (auth) => (auth as unknown as { person?: string | null }).person ?? null,
+      unlocked: (person, unlocks) => told.push(`${person}:${unlocks.map((item) => item.id).join(",")}`),
+      linked: () => linked,
+    });
+    const first = await call(route, { method: "GET", person: ADA });
+    expect(first).toMatchObject({ status: 200 });
+    expect((first as { body: { rewards: string[] } }).body.rewards).toContain("character:crab");
+    expect(told.some((line) => line.includes("claude-linked"))).toBe(true);
+    const before = told.length;
+    await call(route, { method: "GET", person: ADA });
+    expect(told.length).toBe(before);
+    linked = false;
+    const still = await call(route, { method: "GET", person: ADA });
+    expect((still as { body: { rewards: string[] } }).body.rewards).toContain("character:crab");
+    const { store: other } = setup();
+    const quiet = createAchievementRoutes({ store: other, person: () => ADA, unlocked: () => undefined, linked: () => false });
+    const empty = await call(quiet, { method: "GET", person: ADA });
+    expect((empty as { body: { rewards: string[] } }).body.rewards).not.toContain("character:crab");
   });
 
   it("is a member's own route (client scope)", () => {

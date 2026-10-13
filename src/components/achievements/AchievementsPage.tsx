@@ -10,8 +10,8 @@
 import { lazy, Suspense, useEffect, useMemo, useState } from "react";
 import { Flame, Lock, Trophy } from "lucide-react";
 import { ACHIEVEMENTS } from "../../../shared/achievements-catalog";
-import { rarityForPoints, type AchievementCategory, type AchievementDefinition, type AchievementItemState, type AchievementReward } from "../../../shared/achievements";
-import { loadAchievements, localized, reportAchievement, rewardLabel, saveAchievementSettings, useAchievements } from "@/lib/achievements";
+import { rarityForPoints, type AchievementCategory, type AchievementDefinition, type AchievementItemState, type AchievementReward, type Unlocks } from "../../../shared/achievements";
+import { characterUnlocked, displayReward, loadAchievements, localized, reportAchievement, saveAchievementSettings, unlocksFromSnapshot, useAchievements } from "@/lib/achievements";
 import { forgetPublicAchievements } from "@/lib/public-achievements";
 import { requestNotificationPermission } from "@/lib/notify";
 import { activeLocale, t } from "@/lib/i18n";
@@ -19,7 +19,7 @@ import { cn } from "@/lib/cn";
 import type { LocaleKey } from "@/locales";
 import { SettingRow, Switch } from "../SettingsPrimitives";
 import { achievementIcon } from "./icons";
-import { ACHIEVEMENT_REWARD_FILTERS, achievementMatches, achievementRewardFilterLabel, type AchievementRewardFilter, type AchievementStatusFilter } from "./achievement-filters";
+import { achievementMatches, achievementRewardFilterLabel, achievementRewardFilters, type AchievementRewardFilter, type AchievementStatusFilter } from "./achievement-filters";
 import "./achievements.css";
 
 const RewardPreview = lazy(() => import("./RewardPreview"));
@@ -29,6 +29,7 @@ export const CATEGORY_LABEL: Record<AchievementCategory, LocaleKey> = {
   productivity: "achievements.category.productivity",
   power: "achievements.category.power",
   voice: "achievements.category.voice",
+  claude: "achievements.category.claude",
   collaboration: "achievements.category.collaboration",
   streaks: "achievements.category.streaks",
   mastery: "achievements.category.mastery",
@@ -59,29 +60,34 @@ const MASTERY_PREVIEWS = 5;
  * greyed until it unlocks (a character that has not landed yet is its
  * placeholder), then "+N" for the rest.
  */
-function MasteryUnlockPreview({ item, unlocked }: { item: AchievementDefinition; unlocked: boolean }) {
+function MasteryUnlockPreview({ item, unlocked, unlocks }: { item: AchievementDefinition; unlocked: boolean; unlocks: Unlocks }) {
   const looks = item.rewards.filter((reward): reward is Extract<AchievementReward, { kind: "character" | "skin" }> => reward.kind === "character" || reward.kind === "skin");
   if (!looks.length) return null;
   const shown = looks.slice(0, MASTERY_PREVIEWS);
   return (
     <div className="mt-1.5 flex items-center gap-1" data-mastery-preview={item.id} aria-label={t("achievements.mastery.unlocks")}>
       <span className="mr-0.5 text-[11px] text-ink-tertiary">{t("achievements.mastery.unlocks")}</span>
-      {shown.map((reward) => (
-        <span
-          key={`${reward.character}:${reward.kind === "skin" ? reward.skin : ""}`}
-          className="mastery-look grid size-7 place-items-center"
-          data-locked={unlocked ? undefined : ""}
-          title={rewardLabel(reward)}
-        >
-          <Suspense fallback={null}><RewardPreview reward={reward} size={24} animated={false} /></Suspense>
-        </span>
-      ))}
+      {shown.map((reward) => {
+        const line = displayReward(reward, unlocks);
+        if (!line) return null;
+        const showArt = characterUnlocked(unlocks, reward.character);
+        return (
+          <span
+            key={`${reward.character}:${reward.kind === "skin" ? reward.skin : ""}`}
+            className="mastery-look grid size-7 place-items-center"
+            data-locked={unlocked ? undefined : ""}
+            title={line}
+          >
+            {showArt ? <Suspense fallback={null}><RewardPreview reward={reward} size={24} animated={false} /></Suspense> : null}
+          </span>
+        );
+      })}
       {looks.length > shown.length && <span className="text-[11px] tabular-nums text-ink-tertiary">{t("achievements.mastery.more", { count: looks.length - shown.length })}</span>}
     </div>
   );
 }
 
-function AchievementCard({ item, state }: { item: AchievementDefinition; state?: AchievementItemState }) {
+function AchievementCard({ item, state, unlocks }: { item: AchievementDefinition; state?: AchievementItemState; unlocks: Unlocks }) {
   const unlocked = Boolean(state?.unlockedAt);
   const secret = item.hidden && !unlocked;
   const tier = rarityForPoints(item.points);
@@ -90,6 +96,7 @@ function AchievementCard({ item, state }: { item: AchievementDefinition; state?:
   // a Mastery card always shows how far it went, 0 included: the bar is the point
   const progress = state && !unlocked && (mastery ? !secret && state.target > 0 : state.target > 1 && state.current > 0) ? state.current / state.target : null;
   const reward = item.rewards[0];
+  const line = reward && !secret && !mastery ? displayReward(reward, unlocks) : null;
   return (
     <li
       className="achievement-card flex gap-3 rounded-xl border-[0.5px] border-border bg-card p-3"
@@ -123,9 +130,9 @@ function AchievementCard({ item, state }: { item: AchievementDefinition; state?:
         <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] leading-[14px]">
           <span className="achievement-card-tier font-semibold uppercase tracking-[0.06em]">{t(TIER_LABEL[tier])}</span>
           {state?.percent !== undefined && <span className="text-ink-tertiary">{t("achievements.percent", { percent: state.percent })}</span>}
-          {reward && !secret && !mastery && <span className="truncate text-ink-tertiary">{rewardLabel(reward)}</span>}
+          {line && <span className="truncate text-ink-tertiary">{line}</span>}
         </div>
-        {mastery && !secret && <MasteryUnlockPreview item={item} unlocked={unlocked} />}
+        {mastery && !secret && <MasteryUnlockPreview item={item} unlocked={unlocked} unlocks={unlocks} />}
       </div>
     </li>
   );
@@ -154,7 +161,8 @@ export function AchievementsPage({ category = "all" }: { category?: AchievementC
   }, []);
 
   const states = useMemo(() => new Map((snapshot?.items ?? []).map((item) => [item.id, item])), [snapshot]);
-  const shown = ACHIEVEMENTS.filter((item) => achievementMatches(item, states.get(item.id)?.unlockedAt, { category, status: filter, reward, search }));
+  const unlocks = unlocksFromSnapshot(snapshot ?? { rewards: [] });
+  const shown = ACHIEVEMENTS.filter((item) => achievementMatches(item, states.get(item.id)?.unlockedAt, { category, status: filter, reward, search }, unlocks));
 
   if (status === "unavailable") {
     return <p className="px-1 text-[13px] text-ink-secondary" data-achievements-unavailable="">{t("achievements.unavailable")}</p>;
@@ -252,7 +260,7 @@ export function AchievementsPage({ category = "all" }: { category?: AchievementC
             onChange={(event) => setReward(event.target.value as AchievementRewardFilter)}
             className="rounded-lg border border-border bg-ink/[0.03] px-2 py-1 text-[12px] text-ink"
           >
-            {ACHIEVEMENT_REWARD_FILTERS.map((id) => <option key={id} value={id}>{achievementRewardFilterLabel(id)}</option>)}
+            {achievementRewardFilters(unlocksFromSnapshot(snapshot)).map((id) => <option key={id} value={id}>{achievementRewardFilterLabel(id)}</option>)}
           </select>
           <select
             value={filter}
@@ -266,7 +274,7 @@ export function AchievementsPage({ category = "all" }: { category?: AchievementC
           </select>
         </div>
         <ul className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-          {shown.map((item) => <AchievementCard key={item.id} item={item} state={states.get(item.id)} />)}
+          {shown.map((item) => <AchievementCard key={item.id} item={item} state={states.get(item.id)} unlocks={unlocks} />)}
         </ul>
       </section>
 

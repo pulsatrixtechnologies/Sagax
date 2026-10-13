@@ -936,9 +936,6 @@ export function ogreMoveFrame(move: OgreMove, at: number, facing: 1 | -1 = 1): O
   }
 }
 
-/** How long a move shows, s (a held move: one cycle). */
-export const ogreMoveLength = (move: OgreMove) => OGRE_MOVE_TIMING[move].duration;
-
 /* ------------------------------------------------------------- blending */
 
 /** A move's face and stance, still: what reduced motion shows while it plays (null shows nothing). */

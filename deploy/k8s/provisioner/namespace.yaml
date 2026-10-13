@@ -1,0 +1,10 @@
+# Dedicated namespace for one person's sandbox each. The provisioner does
+# not create this; apply it before sagax-sandboxd starts.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: sagax-sandboxes
+  labels:
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/warn: restricted
+    pod-security.kubernetes.io/audit: restricted

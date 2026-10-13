@@ -33,7 +33,7 @@ type MarkdownNode = {
   children?: MarkdownNode[];
 };
 
-function fileIdentity(path: string): string {
+export function fileIdentity(path: string): string {
   // This is only presentation deduplication, never an authorization check.
   // localFilePath has already decoded file:// once, including literal #/?
   // characters in filenames. Only raw Markdown paths have suffixes to strip.
@@ -125,6 +125,37 @@ export function splitMessageAttachments(attachments: readonly MessageAttachmentE
     else if (attachment.kind === "image" || attachment.kind === undefined) images.push(attachment.path);
   }
   return { images, files };
+}
+
+/** What goes in the group under a bot reply that has text, and which
+ * delivered files its inline links stand for. A local file the text already
+ * links is not repeated as a chip: the inline link is the download. When that
+ * link names a file the bot also delivered with attach_file, the link saves
+ * the delivered copy (`delivered`), which the message itself authorizes.
+ * Linked video and audio keep their player in the group. */
+export function replyAttachmentGroup(text: string, attachments: readonly MessageAttachmentEntry[] = NO_GENERATED_ATTACHMENTS): {
+  images: string[];
+  files: GalleryFile[];
+  delivered: Record<string, string>;
+} {
+  const attached = splitMessageAttachments(attachments);
+  const links = collectMessageFiles(text);
+  const linkedNames = new Set(links.map((link) => link.name));
+  const delivered: Record<string, string> = {};
+  const files: GalleryFile[] = [];
+  const deliveredNames = new Map<string, number>();
+  for (const file of attached.files) deliveredNames.set(file.name, (deliveredNames.get(file.name) ?? 0) + 1);
+  for (const file of attached.files) {
+    // two deliveries with one name stay chips: a link can't say which it means
+    if (linkedNames.has(file.name) && deliveredNames.get(file.name) === 1) delivered[file.name] = file.path;
+    else files.push(file);
+  }
+  const taken = new Set([...attached.images, ...attached.files.map((file) => file.path)].map(fileIdentity));
+  for (const link of links) {
+    if (Object.hasOwn(delivered, link.name) || taken.has(fileIdentity(link.path))) continue;
+    if (isVideoAttachment(link.path) || isAudioAttachment(link.path)) files.push(link);
+  }
+  return { images: attached.images, files, delivered };
 }
 
 /** Group/room rows can share the gallery without parsing every old message
@@ -388,11 +419,17 @@ type GalleryItem = { key: string } & (
   | { kind: "video" | "audio" | "pdf" | "file"; file: GalleryFile }
 );
 
-export function AttachmentGallery({ images = [], files = [], message, eager = false, className }: {
+/** How many items the group under a reply shows before "+N more". */
+const BENEATH_LIMIT = 6;
+
+export function AttachmentGallery({ images = [], files = [], message, eager = false, beneath = false, className }: {
   images?: Array<string | TranscriptImageAttachment>;
   files?: GalleryFile[];
   message?: MessageAttachmentContext;
   eager?: boolean;
+  /** The compact group under a reply's text: image thumbnails and file
+   * pills in wrapping rows, then "+N more". */
+  beneath?: boolean;
   className?: string;
 }) {
   const [expanded, setExpanded] = useState(false);
@@ -428,13 +465,58 @@ export function AttachmentGallery({ images = [], files = [], message, eager = fa
     return result;
   }, [images, files, message]);
   if (!items.length) return null;
-  const shown = expanded ? items : items.slice(0, 4);
+  const limit = beneath ? BENEATH_LIMIT : 4;
+  const shown = expanded ? items : items.slice(0, limit);
   const media = shown.filter((item) => item.kind === "image" || item.kind === "video");
   const documents = shown.filter((item) => item.kind === "file" || item.kind === "audio" || item.kind === "pdf");
   const previews = items.flatMap((item) => item.kind === "image" ? [item.image] : []);
+  const label = items.length === 1 ? t("attach.gallerySingle") : t("attach.galleryCount", { count: items.length });
+  const dialog = selected && previews.some((image) => image.src === selected.src) && (
+    <AttachmentPreviewDialog image={selected} images={previews} initialIndex={previews.findIndex((image) => image.src === selected.src)} onClose={() => setSelected(null)} />
+  );
+
+  if (beneath) {
+    const thumbs = shown.filter((item) => item.kind === "image");
+    const videos = shown.filter((item) => item.kind === "video");
+    // a PDF under a reply is a compact pill like any other file
+    const rest = shown.filter((item) => item.kind === "file" || item.kind === "audio" || item.kind === "pdf");
+    return (
+      <section aria-label={label} className={cn("mt-2.5 flex max-w-full flex-col items-start gap-2 text-start whitespace-normal", className)}>
+        {thumbs.length > 0 && (
+          <div className="flex max-w-full flex-wrap gap-2">
+            {thumbs.map((item) => item.kind === "image" && (
+              <div key={item.key} className="min-w-0" title={item.image.name}>
+                <AttachmentThumbnail key={item.image.src} image={item.image} eager={eager} onPreview={() => setSelected(item.image)} className="h-24 w-auto max-w-48 rounded-2xl border-0" />
+              </div>
+            ))}
+          </div>
+        )}
+        {videos.length > 0 && message && (
+          <div className={cn("grid w-[min(34rem,70vw)] max-w-full gap-2", videos.length === 1 ? "grid-cols-1" : "grid-cols-2")}>
+            {videos.map((item) => item.kind === "video" && (
+              <VideoAttachment key={`${message.threadId}:${message.messageId}:${item.key}`} file={item.file} message={message} />
+            ))}
+          </div>
+        )}
+        {(rest.length > 0 || items.length > limit) && (
+          <div className="flex max-w-full flex-wrap items-start gap-1.5">
+            {rest.map((item) => item.kind === "audio" && message
+              ? <AudioAttachment key={`${message.threadId}:${message.messageId}:${item.key}`} file={item.file} message={message} />
+              : (item.kind === "file" || item.kind === "pdf") && <AttachedFileChip key={item.key} file={item.file} linked={item.file.linked} message={message} compact />)}
+            {items.length > limit && (
+              <button type="button" onClick={() => setExpanded(!expanded)} aria-expanded={expanded} className="inline-flex h-7 items-center rounded-full px-2.5 text-[13px] leading-none text-ink-secondary transition-colors hover:bg-ink/[0.06] hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus">
+                {expanded ? t("attach.showLess") : t("attach.moreCount", { count: items.length - limit })}
+              </button>
+            )}
+          </div>
+        )}
+        {dialog}
+      </section>
+    );
+  }
 
   return (
-    <section aria-label={items.length === 1 ? t("attach.gallerySingle") : t("attach.galleryCount", { count: items.length })} className={cn("mb-1.5 w-[min(34rem,70vw)] max-w-full space-y-1.5 text-left whitespace-normal", className)}>
+    <section aria-label={label} className={cn("mb-1.5 w-[min(34rem,70vw)] max-w-full space-y-1.5 text-left whitespace-normal", className)}>
       {media.length > 0 && (
         <div className={cn("grid gap-2", media.length === 1 ? "grid-cols-1" : "grid-cols-2")}>
           {media.map((item) => item.kind === "image" ? (
@@ -455,15 +537,13 @@ export function AttachmentGallery({ images = [], files = [], message, eager = fa
               : (item.kind === "file" || item.kind === "pdf") && <AttachedFileChip key={item.key} file={item.file} linked={item.file.linked} message={message} className="max-w-none rounded-xl border-hairline/25 bg-transparent" />)}
         </div>
       )}
-      {items.length > 4 && (
+      {items.length > limit && (
         <button type="button" onClick={() => setExpanded(!expanded)} aria-expanded={expanded} className="flex min-h-8 items-center gap-1 rounded-lg px-1 py-1 text-[11px] text-ink-secondary transition-colors hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60">
           {expanded ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
-          {expanded ? t("attach.showLess") : t("attach.showMore", { count: items.length - 4 })}
+          {expanded ? t("attach.showLess") : t("attach.showMore", { count: items.length - limit })}
         </button>
       )}
-      {selected && previews.some((image) => image.src === selected.src) && (
-        <AttachmentPreviewDialog image={selected} images={previews} initialIndex={previews.findIndex((image) => image.src === selected.src)} onClose={() => setSelected(null)} />
-      )}
+      {dialog}
     </section>
   );
 }

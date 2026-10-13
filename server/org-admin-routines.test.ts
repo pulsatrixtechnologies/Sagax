@@ -29,6 +29,8 @@ function setup() {
     { at: new Date(NOW - 1000).toISOString(), threadId: "t9", requestId: "q1", botId: "b2", botName: "B2", tool: "Bash", summary: "uptime", decision: "user-approved", source: "user", actor: { kind: "session", sessionId: "console", label: "Alice (console)", userId: "pr_alice" } },
     { at: new Date(NOW - 2000).toISOString(), threadId: "t9", requestId: "q2", decision: "user-denied", source: "user", actor: { kind: "loopback" } },
     { at: new Date(NOW - 3000).toISOString(), threadId: "t9", requestId: "q3", decision: "auto-approved", source: "user" },
+    // 2026-10-11: a card nobody answered before its own timeout
+    { at: new Date(NOW - 4000).toISOString(), threadId: "t9", requestId: "q4", botId: "b2", botName: "B2", tool: "Write", summary: "notes.md", decision: "expired", source: "timeout" },
   ];
   const deps: RoutinesDeps = {
     routines: () => routines,
@@ -100,6 +102,7 @@ describe("routines", () => {
     expect(got.body).toEqual({ next: null, items: [
       { botId: "b2", botName: "B2", threadId: "t9", requestId: "q1", type: "tool", tool: "Bash", summary: "uptime", decision: "allow", by: { principalId: "pr_alice", sub: null, name: "Alice" }, at: NOW - 1000 },
       { botId: null, botName: null, threadId: "t9", requestId: "q2", type: "other", tool: null, summary: null, decision: "deny", by: { principalId: "", sub: null, name: "This computer" }, at: NOW - 2000 },
+      { botId: "b2", botName: "B2", threadId: "t9", requestId: "q4", type: "tool", tool: "Write", summary: "notes.md", decision: "expired", by: null, at: NOW - 4000 },
     ] });
   });
 

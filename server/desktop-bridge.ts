@@ -237,6 +237,18 @@ export class DesktopBridges {
     }));
   }
 
+  /** Every connected desktop and its person, for the organization admin
+   * API's Computers (2026-10-11): what a desktop is called, its platform,
+   * whether it is online and when it was last seen. No secret, no session,
+   * no system facts. */
+  inventory(): Array<{ person: string; id: string; name: string; platform: string; online: boolean; lastSeenAt: number; localVm: boolean; version: string | null }> {
+    this.reap();
+    return [...this.bridges.values()].map(entry => ({
+      person: entry.person, id: entry.registration.id, name: entry.registration.name, platform: entry.registration.platform,
+      online: this.online(entry), lastSeenAt: entry.seen, localVm: entry.registration.capabilities.localVm, version: entry.registration.version ?? null,
+    }));
+  }
+
   /** The desktop's coarse system facts, for its own person only. */
   setSystem(id: string, session: string, secret: string, system: DesktopSystemInfo): void {
     const entry = this.authorize(id, session, secret);

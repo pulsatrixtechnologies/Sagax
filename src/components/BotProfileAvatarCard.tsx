@@ -22,6 +22,7 @@ export function BotProfileAvatarCard({
   mascotMotion,
   onPatch,
   onContextMenu,
+  onEdit,
 }: {
   bot: Bot;
   activeState: MausState;
@@ -29,6 +30,9 @@ export function BotProfileAvatarCard({
   onPatch: (patch: AvatarPatch) => void;
   /** A right click on the mascot (the bot panel opens its bot menu). */
   onContextMenu?: (event: React.MouseEvent<HTMLButtonElement>) => void;
+  /** The bot panel's pencil at the mascot's lower right: opens the persona
+   * editor (it replaced the header's "..." button, 2026-10-12). */
+  onEdit?: () => void;
 }) {
   const { dispatch } = useStore();
   const { draft } = useBotEditor();
@@ -60,19 +64,19 @@ export function BotProfileAvatarCard({
             motionKey={mascotMotion?.nonce ?? 0}
           />
         </button>
-        {!draft && (
+        {onEdit && (
           <button
             type="button"
+            data-persona-edit-badge=""
             data-edit-persona=""
-            aria-label={t("persona.edit")}
-            title={t("persona.edit")}
-            onClick={(event) => {
-              event.stopPropagation();
-              dispatch({ type: "openPersonaEditor", botId: bot.id });
-            }}
-            className="absolute bottom-3 left-[calc(50%+28px)] flex size-7 items-center justify-center rounded-full border border-hairline/50 bg-panel text-ink-secondary hover:bg-raised hover:text-ink"
+            aria-label={t("botPanel.editBot")}
+            title={t("botPanel.editBot")}
+            onClick={onEdit}
+            onContextMenu={onContextMenu}
+            // 28 px circle, 44 px to touch (the ::before extends the hit area)
+            className="relative -ml-7 mb-1 flex size-7 shrink-0 items-center justify-center self-end rounded-full border border-hairline-weak bg-elevated text-ink-tertiary shadow-sm transition-colors before:absolute before:-inset-2 before:content-[''] hover:bg-hover hover:text-ink focus-visible:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
           >
-            <Pencil size={14} strokeWidth={1.75} aria-hidden="true" />
+            <Pencil size={14} aria-hidden="true" />
           </button>
         )}
       </div>

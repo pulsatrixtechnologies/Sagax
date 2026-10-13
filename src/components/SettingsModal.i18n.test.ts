@@ -39,24 +39,24 @@ describe("Settings → General", () => {
     setLocale("pt-br");
     const pt = await renderSettings();
     expect(pt).toContain("Configurações");
-    expect(pt).toContain("Provedores de modelos");
+    expect(pt).toContain("Geral");
     expect(pt).toContain("Idioma do app");
     expect(pt).toContain("Duração máxima do turno");
 
     // same module instance, no reload: a frozen label would still say
-    // "Provedores de modelos" here
+    // "Geral" here
     setLocale("ja");
     const ja = await renderSettings();
     expect(ja).toContain("設定");
-    expect(ja).toContain("モデルプロバイダー");
-    expect(ja).not.toContain("Provedores de modelos");
+    expect(ja).toContain("一般");
+    expect(ja).not.toContain(">Geral<");
   });
 
   it("stays English when no language is picked", async () => {
     setLocale("en");
     const en = await renderSettings();
     expect(en).toContain("Settings");
-    expect(en).toContain("Model providers");
+    expect(en).toContain("Models and accounts");
     expect(en).toContain("Maximum turn length");
   });
 

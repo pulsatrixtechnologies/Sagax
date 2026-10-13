@@ -58,12 +58,6 @@ export async function checkVoiceMode(botId: string, signal?: AbortSignal): Promi
   }
 }
 
-/** Kept for callers that only need the answer. */
-export async function fetchVoiceModeStatus(botId: string, signal?: AbortSignal): Promise<VoiceModeStatus | null> {
-  const check = await checkVoiceMode(botId, signal);
-  return check.state === "ready" ? check.status : null;
-}
-
 export async function fetchVoiceModeVoices(botId: string, signal?: AbortSignal): Promise<VoiceOption[]> {
   const res = await fetch(`${base(botId)}/voices`, { signal });
   if (!res.ok) throw await failure(res);

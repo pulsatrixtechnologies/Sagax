@@ -101,7 +101,7 @@ export function AccessCard({ access, viewer, onSignIn }: { access: WireAccessCar
         <span className="break-words">{lines.text}</span>
         {lines.hint && (
           lines.hint.includes("{settings}")
-            ? <SettingsText text={lines.hint} links={{ settings: { section: "connections", cardId: "connections.providers" } }} className="break-words text-[12px] text-ink-secondary" />
+            ? <SettingsText text={lines.hint} links={{ settings: { section: "engines", cardId: "engines.keys" } }} className="break-words text-[12px] text-ink-secondary" />
             : <span className="break-words text-[12px] text-ink-secondary">{lines.hint}</span>
         )}
         {(lines.signIn && onSignIn) || lines.link ? (

@@ -45,3 +45,11 @@ export function withTurnClock(text: string, now: Date, timeZone: string): string
   if (text.startsWith(TURN_CLOCK_MARKER)) return text;
   return `${turnClockNote(now, timeZone)}\n\n${text}`;
 }
+
+/** How the clock note opens, for code that strips it from an echoed turn. */
+export const TURN_CLOCK_LEAD = TURN_CLOCK_MARKER;
+
+/** The host's IANA timezone (a runtime that reports none reads as UTC). */
+export function hostTimeZone(): string {
+  return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+}

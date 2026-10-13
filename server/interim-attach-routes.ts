@@ -13,7 +13,6 @@ import type { RequestAuth } from "./request-auth.ts";
 import { PASS, type RouteHandler } from "./routes/table.ts";
 
 export const INTERIM_WINDOW_DAYS = 30;
-export const MAX_INTERIM_WINDOW_DAYS = 90;
 const DAY_MS = 86_400_000;
 
 export interface InterimWindow { since: number; days: number }

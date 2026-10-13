@@ -1,11 +1,12 @@
 // The Sagax side of the per-person environment: one key per person shared by
 // all their bots, stop and delayed delete when Perspicax signs them out,
 // cancel when they come back, and pending deletions that survive a restart.
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
+import { sandboxBackendFor, sandboxRouteFromEnv } from "./sandbox-route.ts";
 import { SandboxService } from "./sandboxd-core.ts";
 import { FakeDocker } from "./testing/fake-docker.ts";
 import { inProcessSandboxdClient } from "./testing/in-process-sandboxd.ts";
@@ -167,7 +168,99 @@ describe("UserSandboxManager", () => {
   it("is configured only with a provisioner URL", () => {
     expect(userSandboxSettingsFromEnv({})).toBeNull();
     expect(userSandboxSettingsFromEnv({ SAGAX_SANDBOXD_URL: "http://sagax-sandboxd:8791", SAGAX_SANDBOX_DELETE_GRACE_HOURS: "24" }))
-      .toMatchObject({ url: "http://sagax-sandboxd:8791", graceMs: 24 * HOUR, instance: "default" });
+      .toMatchObject({ url: "http://sagax-sandboxd:8791", graceMs: 24 * HOUR, instance: "default", kubernetesUrl: null });
     expect(() => userSandboxSettingsFromEnv({ SAGAX_SANDBOXD_URL: "http://x:1", SAGAX_SANDBOX_DELETE_GRACE_HOURS: "-1" })).toThrow();
+  });
+
+  it("the console's inventory: each existing environment with its status, commands and usage; a slow one is unavailable", async () => {
+    const m = manager();
+    await m.exec(ALICE, { argv: ["true"] });
+    const found = await m.inventory([ALICE, BOB]);
+    expect([...found.keys()]).toEqual([ALICE]);
+    expect(found.get(ALICE)).toMatchObject({ view: { state: "running", pendingDeletionAt: null }, busy: 0, stats: { image: "sagax-sandbox:test" } });
+    expect(await m.provisioner()).toMatchObject({ maxRunning: expect.any(Number), idleMinutes: expect.any(Number) });
+    const slow = new UserSandboxManager({
+      client: { ...inProcessClient(), status: () => new Promise(() => {}), info: () => Promise.reject(new Error("down")) },
+      instance: "default", stateFile: join(dir, "slow.json"), now: () => now,
+    });
+    expect((await slow.inventory([ALICE], 20)).get(ALICE)).toMatchObject({ view: { state: "unavailable" }, stats: null });
+    expect(await slow.provisioner()).toBeNull();
+  });
+
+  it("requires https and a CA for the kubernetes provisioner, and refuses a canary without it", () => {
+    const ca = join(dir, "ca.pem");
+    writeFileSync(ca, "ca");
+    expect(userSandboxSettingsFromEnv({
+      SAGAX_SANDBOXD_URL: "http://sagax-sandboxd:8791",
+      SAGAX_SANDBOXD_K8S_URL: "https://sagax-sandboxd-k8s:8791",
+      SAGAX_SANDBOXD_TLS_CA: ca,
+    })).toMatchObject({ kubernetesUrl: "https://sagax-sandboxd-k8s:8791", tlsCaFile: ca });
+    expect(() => userSandboxSettingsFromEnv({
+      SAGAX_SANDBOXD_URL: "http://sagax-sandboxd:8791",
+      SAGAX_SANDBOXD_K8S_URL: "http://sagax-sandboxd-k8s:8791",
+      SAGAX_SANDBOXD_TLS_CA: ca,
+    })).toThrow(/https/);
+    expect(() => userSandboxSettingsFromEnv({
+      SAGAX_SANDBOXD_URL: "http://sagax-sandboxd:8791",
+      SAGAX_SANDBOX_CANARY_PEOPLE: ALICE,
+    })).toThrow(/SAGAX_SANDBOXD_K8S_URL/);
+    expect(userSandboxSettingsFromEnv({
+      SAGAX_SANDBOXD_URL: "http://sagax-sandboxd:8791",
+      SAGAX_SANDBOX_ROUTE: "docker",
+      SAGAX_SANDBOX_CANARY_PEOPLE: ALICE,
+    })?.kubernetesUrl).toBeNull();
+  });
+
+  it("sends a listed person or bot to kubernetes and reverts with SAGAX_SANDBOX_ROUTE=docker", async () => {
+    const seen: string[] = [];
+    const client = (name: string): SandboxdClient => ({
+      info: () => Promise.reject(new Error("unused")),
+      status: () => Promise.reject(new Error("unused")),
+      ensure: () => Promise.reject(new Error("unused")),
+      stop: () => Promise.reject(new Error("unused")),
+      pause: () => Promise.reject(new Error("unused")),
+      resume: () => Promise.reject(new Error("unused")),
+      markUsed: () => Promise.reject(new Error("unused")),
+      stats: () => Promise.reject(new Error("unused")),
+      remove: () => Promise.reject(new Error("unused")),
+      desktopStream: () => Promise.reject(new Error("unused")),
+      stdioStream: () => Promise.reject(new Error("unused")),
+      exec: () => {
+        seen.push(name);
+        return Promise.resolve({ exitCode: 0, stdout: "", stderr: "", truncated: false, timedOut: false });
+      },
+    });
+    const env: NodeJS.ProcessEnv = { SAGAX_SANDBOX_CANARY_PEOPLE: ALICE, SAGAX_SANDBOX_CANARY_BOTS: "bot-a" };
+    const m = new UserSandboxManager({
+      client: client("docker"),
+      kubernetes: client("kubernetes"),
+      backendFor: (principalId, botId) => sandboxBackendFor(sandboxRouteFromEnv(env), principalId, botId),
+      instance: "default",
+      stateFile: join(dir, "route.json"),
+    });
+    await m.exec(ALICE, { argv: ["true"] });
+    await m.exec(BOB, { argv: ["true"] }, "bot-a");
+    await m.exec(BOB, { argv: ["true"] }, "bot-b");
+    env.SAGAX_SANDBOX_ROUTE = "docker";
+    await m.exec(ALICE, { argv: ["true"] }, "bot-a");
+    expect(seen).toEqual(["kubernetes", "kubernetes", "docker", "docker"]);
+  });
+
+  it("refuses a kubernetes route when that provisioner is not configured", async () => {
+    const m = new UserSandboxManager({
+      client: {
+        info: () => Promise.reject(new Error("unused")), status: () => Promise.reject(new Error("unused")),
+        ensure: () => Promise.reject(new Error("unused")), stop: () => Promise.reject(new Error("unused")),
+        pause: () => Promise.reject(new Error("unused")), resume: () => Promise.reject(new Error("unused")),
+        markUsed: () => Promise.reject(new Error("unused")), stats: () => Promise.reject(new Error("unused")),
+        remove: () => Promise.reject(new Error("unused")), desktopStream: () => Promise.reject(new Error("unused")),
+        stdioStream: () => Promise.reject(new Error("unused")), exec: () => Promise.reject(new Error("unused")),
+      },
+      backendFor: () => "kubernetes",
+      instance: "default",
+      stateFile: join(dir, "missing-k8s.json"),
+    });
+    await expect(m.exec(ALICE, { argv: ["true"] })).rejects.toMatchObject({ code: "kubernetes_unconfigured" });
+    expect((await m.status(ALICE)).error).toBe("kubernetes_unconfigured");
   });
 });

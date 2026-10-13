@@ -37,6 +37,11 @@ export interface EnvironmentDescriptor {
     selfUpdate: "desktop-managed" | "operator";
     /** Whether /pair offers "sign in with your email" (an allow-list is set). */
     emailSignIn?: boolean;
+    /** POST /api/auth/pair with `preview: true` (no `browser`) only reads
+     * whose a sign-in credential is and redeems nothing. A server without
+     * this flag (0.4.x, 0.5.0) redeems the credential on that request, so a
+     * client must never send it there. */
+    signInPreview?: true;
   };
   /** Present on an organization server: people sign in with Perspicax
    * (OpenID Connect) at `loginPath`, and email codes are off. */
@@ -174,6 +179,7 @@ export function environmentDescriptor(input: { environmentId: string; desktopMan
       ...(input.cloudHome === true ? { cloudHome: true as const } : {}),
       selfUpdate: input.desktopManaged ? "desktop-managed" : "operator",
       emailSignIn: input.emailSignIn === true,
+      signInPreview: true,
     },
     ...(input.identity ? { identity: input.identity } : {}),
   };

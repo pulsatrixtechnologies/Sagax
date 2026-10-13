@@ -27,7 +27,6 @@ import { assistantWindowOptions, clampToDisplays, displaySignature } from "./ret
 
 export const FLOATING_QUERY = "omb-floating-bot=1";
 
-export const FLOAT_SIZE = Object.freeze({ width: 156, height: 172 });
 /**
  * The window the mascot stands in while it is home: the quick chat's room
  * (`chatHomeSize(mascotStage(120))` in window-frame.ts). The character stays
@@ -226,26 +225,7 @@ const LEGACY_OGRE_SKINS = { bog: "swamp", marsh: "swamp", forest: "moss", granit
 const LEGACY_SHIBA_SKINS = { "black-and-tan": "blacktan", black_tan: "blacktan", kuro: "blacktan", aka: "red", goma: "sesame", shiro: "white", retro: "retro98", win98: "retro98", royal: "gold", metal: "chrome", cyber: "glitch", iridescent: "holo", holographic: "holo", lava: "molten" };
 const LEGACY_GRUMP_SKINS = { tux: "tuxedo", "black-and-white": "tuxedo", tortie: "calico", tortoiseshell: "calico", tiger: "tabby", mackerel: "tabby", colorpoint: "siamese", colourpoint: "siamese", "seal-point": "siamese", black: "void", shadow: "void", retro: "retro98", win98: "retro98", royal: "gold", metal: "chrome", cyber: "glitch", iridescent: "holo", holographic: "holo", lava: "molten" };
 const LEGACY_FROG_SKINS = { green: "leaf", "tree-frog": "tree", treefrog: "tree", "red-eyed": "tree", dart: "poison", "poison-dart": "poison", bull: "bullfrog", glass: "ghost", "glass-frog": "ghost", golden: "gold", retro: "retro98", win98: "retro98", royal: "gold", metal: "chrome", cyber: "glitch", iridescent: "holo", holographic: "holo", lava: "molten" };
-const LEGACY_CRAB_SKINS = {
-  classic: "coral",
-  orange: "coral",
-  cream: "sand",
-  black: "ink",
-  green: "mint",
-  royal: "gold",
-  treasure: "gold",
-  nacre: "pearl",
-  opal: "pearl",
-  frost: "pearl",
-  metal: "chrome",
-  "liquid-metal": "chrome",
-  glass: "crystal",
-  cyber: "circuit",
-  iridescent: "holo",
-  holographic: "holo",
-  lava: "molten",
-  nebula: "galaxy",
-};
+const LEGACY_CRAB_SKINS = { classic: "coral", orange: "coral", cream: "sand", black: "ink", green: "mint", royal: "gold", treasure: "gold", nacre: "pearl", opal: "pearl", frost: "pearl", metal: "chrome", "liquid-metal": "chrome", glass: "crystal", cyber: "circuit", iridescent: "holo", holographic: "holo", lava: "molten", nebula: "galaxy" };
 /** The app's skins (src/lib/skins.ts SKIN_IDS): the balloon wears the one the app wears. */
 export const APP_SKINS = new Set(["pulsatrix", "pulsatrix-light", "midnight", "atelier", "foundry", "lagoon", "graphite", "linen", "dusk", "daylight", "retro98", "meadow"]);
 const ACCENT_RE = /^#[0-9a-fA-F]{6}$/;

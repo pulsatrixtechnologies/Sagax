@@ -1,0 +1,4 @@
+# Path globs whose added lines the term guard does not scan. Paths only, never terms.
+# Read from the base branch: a pull request cannot allowlist its own files.
+# Lists of common given names: a name can coincide with a term.
+src/data/given-names/*.json

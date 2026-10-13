@@ -142,14 +142,3 @@ export function chosenComputer(choices: ComputerChoice[], source: "server" | "lo
   const current = currentDesktop(status);
   return choices.find((choice) => choice.source === "local" && choice.desktopId === current?.id) ?? null;
 }
-
-/** The person's own Local VM through their connected desktop app. Returns
- * the desktop's answer as plain text. */
-export async function localVmThroughDesktop(action: "status" | "start", fetchImpl: typeof fetch = fetch): Promise<string> {
-  const response = await fetchImpl("/api/me/desktop-bridge/local-vm", {
-    method: "POST", credentials: "same-origin", headers: { "content-type": "application/json" }, body: JSON.stringify({ action }),
-  });
-  const body = await response.json().catch(() => ({})) as { result?: { content?: { type?: string; text?: string }[] }; error?: string };
-  if (!response.ok) throw new Error(body.error ?? `local VM ${response.status}`);
-  return (body.result?.content ?? []).filter((item) => item.type === "text").map((item) => item.text ?? "").join("\n").slice(0, 2000);
-}

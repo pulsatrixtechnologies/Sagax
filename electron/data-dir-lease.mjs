@@ -1,6 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
-import { existsSync, linkSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
+import { existsSync, linkSync, mkdirSync, readFileSync, readlinkSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { hostname, uptime } from "node:os";
 import { join } from "node:path";
 
@@ -93,9 +93,91 @@ function ownerPredatesThisBoot(owner) {
   return false;
 }
 
+/**
+ * Linux process identity beyond the pid (2026-10-13, GOX: a container killed
+ * mid-run left a lease naming pid 7; the restarted container's own pid 7 was
+ * alive again, so every start failed with DataDirLeaseError and the container
+ * restart-looped). The boot id cannot tell those apart: every container on a
+ * host shares the host kernel's boot id. Two exact facts can:
+ *
+ * - `pidns`: the pid namespace the owner ran in (/proc/self/ns/pid). A pid is
+ *   only meaningful inside its namespace, and each container start gets a new
+ *   one. A record from another namespace under this same hostname was written
+ *   by an earlier run of this container (a container runs at most once at a
+ *   time, and its hostname is its own), so that owner is gone. A record from
+ *   another namespace under another hostname may be a live sibling container
+ *   sharing the volume: that still goes through the old check, unchanged.
+ * - `start`: the owner's start time in clock ticks since boot
+ *   (/proc/<pid>/stat field 22). Within one namespace and one boot, a live pid
+ *   whose start differs is a different process that reused the pid.
+ *
+ * Like the boot checks, these only ever prove an owner DEAD, never alive, and
+ * a record without them (an older build, macOS, Windows) keeps the old check.
+ */
+const PID_NAMESPACE = /^pid:\[\d{1,20}\]$/;
+
+function readPidNamespace() {
+  if (process.platform !== "linux") return null;
+  try {
+    const value = readlinkSync("/proc/self/ns/pid");
+    return PID_NAMESPACE.test(value) ? value : null;
+  } catch {
+    return null;
+  }
+}
+
+function readProcessStart(pid) {
+  if (process.platform !== "linux") return null;
+  try {
+    const stat = readFileSync(`/proc/${pid}/stat`, "utf8");
+    // The command name (field 2) may hold spaces and parentheses: fields are
+    // counted from the last ")". Field 3 is rest[0], so field 22 is rest[19].
+    const rest = stat.slice(stat.lastIndexOf(")") + 2).split(" ");
+    const start = Number(rest[19]);
+    return Number.isSafeInteger(start) && start >= 0 ? start : null;
+  } catch {
+    return null;
+  }
+}
+
+let identityProbes = { pidNamespace: readPidNamespace, processStart: readProcessStart };
+let cachedPidNamespace;
+
+/** Tests only: stand in for /proc on platforms that have none. */
+export function setProcessIdentityProbesForTesting(probes) {
+  identityProbes = probes ? { pidNamespace: probes.pidNamespace ?? readPidNamespace, processStart: probes.processStart ?? readProcessStart } : { pidNamespace: readPidNamespace, processStart: readProcessStart };
+  cachedPidNamespace = undefined;
+}
+
+function pidNamespace() {
+  if (cachedPidNamespace === undefined) {
+    const value = identityProbes.pidNamespace();
+    cachedPidNamespace = typeof value === "string" && PID_NAMESPACE.test(value) ? value : null;
+  }
+  return cachedPidNamespace;
+}
+
+/** This process's identity fields, present only where they can be read. */
+function processIdentity() {
+  const ns = pidNamespace();
+  if (ns === null) return {};
+  const start = identityProbes.processStart(process.pid);
+  return { pidns: ns, ...(Number.isSafeInteger(start) && start >= 0 ? { start } : {}) };
+}
+
+function ownerProvablyGoneOnThisBoot(owner) {
+  if (typeof owner.pidns !== "string") return false;
+  const ns = pidNamespace();
+  if (ns === null) return false;
+  if (owner.pidns !== ns) return owner.host === hostname();
+  if (!Number.isSafeInteger(owner.start)) return false;
+  const start = identityProbes.processStart(owner.pid);
+  return Number.isSafeInteger(start) && start !== owner.start;
+}
+
 /** The only liveness question this module should ever ask about a record. */
 function ownerIsAlive(owner) {
-  return !ownerPredatesThisBoot(owner) && processIsAlive(owner.pid) && ownerIdentityMatches(owner);
+  return !ownerPredatesThisBoot(owner) && processIsAlive(owner.pid) && !ownerProvablyGoneOnThisBoot(owner) && ownerIdentityMatches(owner);
 }
 
 /**
@@ -134,7 +216,9 @@ function isLeaseOwner(value) {
     // Optional so a lease written by an older build stays readable rather
     // than bricking startup on an "invalid lease" during the upgrade.
     && (value.boot === undefined || isBootIdentity(value.boot))
-    && (value.uptime === undefined || (Number.isInteger(value.uptime) && value.uptime >= 0));
+    && (value.uptime === undefined || (Number.isInteger(value.uptime) && value.uptime >= 0))
+    && (value.pidns === undefined || (typeof value.pidns === "string" && PID_NAMESPACE.test(value.pidns)))
+    && (value.start === undefined || (Number.isSafeInteger(value.start) && value.start >= 0));
 }
 
 function isReaperOwner(value, targetToken) {
@@ -299,6 +383,7 @@ function claimReaperAuthority(leasePath, expected) {
       createdAt: Date.now(),
       boot: bootSession(),
       uptime: uptimeMs(),
+      ...processIdentity(),
       targetToken: expected.token,
     };
     if (publishRecord(
@@ -455,6 +540,7 @@ function acquireDataDirLeaseInternal(dataDir, options = {}) {
     createdAt: Date.now(),
     boot: bootSession(),
     uptime: uptimeMs(),
+    ...processIdentity(),
   };
   const candidatePath = `${leasePath}.candidate-${owner.pid}-${owner.token}`;
   try {

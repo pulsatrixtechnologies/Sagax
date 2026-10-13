@@ -1,6 +1,7 @@
 // Scripted acceptance for issue #292: utterance A, barge-in, utterance B.
 // Drives the real call machine and duplex admit (no xAI key). Duplex on:
-// only B's answer is spoken and the steer queue is empty. Flag off: A then
+// B replaces A (one interrupt, at send time while A is thinking), only B's
+// answer is spoken and the steer queue is empty. Flag off: A then
 // B stack, which is today's typed-chat-on-a-call behaviour.
 import { INITIAL_CALL, step, type CallEffect, type CallEvent, type CallState } from "../src/lib/voice-mode/call-machine.ts";
 import { admitDuplexSend } from "../server/voice-call-duplex.ts";
@@ -75,6 +76,9 @@ export function runVoiceDuplexHarness(opts: { duplex: boolean }): DuplexHarnessR
     }
   }
 
+  // Talking while the bot thinks no longer interrupts at speech-start
+  // (#293, Review 3): the send is classified first, and a replace carries
+  // the interrupt of the in-flight turn.
   const admit = admitDuplexSend({
     duplex: opts.duplex,
     botBusy: state.botBusy,
@@ -83,6 +87,7 @@ export function runVoiceDuplexHarness(opts: { duplex: boolean }): DuplexHarnessR
   });
 
   if (admit.action === "replace") {
+    if (admit.interrupt && interrupts === 0) interrupts += 1;
     queue = [];
     let fence = cancelSpeech(createSpeechFence(), ANSWERS[sends[0] ?? ""] ?? "");
     fence = noteUtteranceSent(fence);

@@ -1,9 +1,9 @@
 // iPad I3: the model picker (ModelPicker.tsx), opened by the composer's
 // model chip: a centred 880 x 640 dialog over a 50 % scrim. On the left the
 // engine rail (Cloud: each engine with its state; API keys), on the right
-// the engine's name and version, a search, the suggested models (current,
-// default, then the catalogue, five) or all of them under Cloud and Local,
-// and a footer to the providers. One mode (#261): a pick runs this thread
+// the engine's name and version, a search and every model under Cloud and
+// Local, always open (2026-10-12, the desktop's model window: no collapsed
+// list), and a footer to the providers. One mode (#261): a pick runs this thread
 // and becomes the bot's model in one request (`ModelPickerRules`); "Use
 // <bot>'s model" puts the thread back on the bot's. An organization lists
 // only the providers its admin allows.
@@ -23,7 +23,6 @@ struct DesktopModelPicker: View {
     /// Organization server: the providers its admin allows (#261).
     @State private var allowedEngines: [String]?
     @State private var query = ""
-    @State private var showAll = false
     @State private var saving = false
     @State private var refreshing = false
     @State private var updating = false
@@ -144,7 +143,6 @@ struct DesktopModelPicker: View {
         let selected = family.map { $0 == rail.flatMap(DesktopEngineRail.family) } ?? (instance.instanceId == rail?.instanceId)
         return Button {
             railId = target.instanceId
-            showAll = false
             query = ""
         } label: {
             HStack(spacing: 10) {
@@ -350,30 +348,12 @@ struct DesktopModelPicker: View {
         let current = selection.instanceId == rail.instanceId ? (selection.model.isEmpty ? rail.models.default : selection.model) : nil
         let groups = ModelPickerRules.groups(rail.models.options, organization: organization)
         let cloud = groups.cloud
-        let shown = !query.isEmpty ? ModelSuggestions.filter(cloud, query: query)
-            : showAll ? cloud : ModelSuggestions.suggested(cloud, defaultId: rail.models.default, currentId: current)
+        let shown = query.isEmpty ? cloud : ModelSuggestions.filter(cloud, query: query)
         let local = query.isEmpty ? groups.local : ModelSuggestions.filter(groups.local, query: query)
         VStack(alignment: .leading, spacing: 0) {
-            // the dropdown's two headings (#261)
-            groupHeading(query.isEmpty && !showAll ? "Suggested" : "Cloud")
+            // the whole list, always open (the desktop's model window, 2026-10-12)
+            if !shown.isEmpty { groupHeading("Cloud") }
             ForEach(shown) { option in modelRow(rail, option, current: current) }
-            if query.isEmpty, !showAll, cloud.count > shown.count {
-                Button { showAll = true } label: {
-                    HStack {
-                        Text("Show all \(cloud.count) models")
-                        Spacer()
-                        Image(systemName: "chevron.down").font(.system(size: 11))
-                    }
-                    .font(theme.font(12.5, .medium))
-                    .foregroundStyle(theme.inkSecondary)
-                    .padding(.horizontal, 10)
-                    .frame(height: 35.8)
-                    .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(theme.hairline.opacity(0.4), lineWidth: 1))
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .padding(.top, 4)
-            }
             if !local.isEmpty {
                 groupHeading("Local").padding(.top, 10)
                 ForEach(local) { option in modelRow(rail, option, current: current) }

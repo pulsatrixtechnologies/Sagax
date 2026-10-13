@@ -27,7 +27,6 @@ import {
   GRUMP_ORDER,
   GRUMP_PIVOTS,
   GRUMP_STANCE_HEAD,
-  GRUMP_TAIL,
   TAIL_JOINTS,
   grumpLegOps,
   grumpOpsToSvg,
@@ -749,9 +748,6 @@ export function grumpHeadPlace(stance: GrumpStance): string {
   return `translate(${head.x} ${head.y}) rotate(${head.rot} ${nx} ${ny}) translate(${nx} ${ny}) scale(${head.scale}) translate(${-nx} ${-ny})`;
 }
 
-/** The rest of each stance's tail (for a stance's own tail). */
-export const GRUMP_TAIL_REST = GRUMP_TAIL;
-
 /* ------------------------------------------------------------ SVG frame */
 
 /**
@@ -817,7 +813,6 @@ export const GRUMP_CLIP_MOVES: Readonly<Record<string, GrumpMove>> = {
   land: "sitUp",
   petted: "bonk",
   celebrate: "celebrate",
-  scuttle: "pounce",
   sad: "earsFlat",
   // the dog's clips (Shiba's), should a cat ever be asked for one
   bark: "tailFlick",
@@ -837,6 +832,8 @@ export const GRUMP_CLIP_MOVES: Readonly<Record<string, GrumpMove>> = {
   sideEye: "look",
   blinkOne: "slowBlink",
   longJump: "pounce",
+  // the crab's clips (Crab's), should a cat ever be asked for one
+  scuttle: "pounce",
   // the cat's own clips
   groom: "groom",
   knead: "knead",

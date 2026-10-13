@@ -24,6 +24,19 @@ export function releaseNotesFrom(info) {
   return notes;
 }
 
+/** electron-updater's release notes as one string for the renderer: the
+ * GitHub provider gives the release body (HTML), a multi-release feed an
+ * array of { version, note }. Capped, because it rides every state broadcast. */
+export function releaseNotesText(notes) {
+  const text = typeof notes === "string"
+    ? notes
+    : Array.isArray(notes)
+      ? notes.map((entry) => (typeof entry?.note === "string" ? entry.note : "")).filter(Boolean).join("\n")
+      : "";
+  const trimmed = text.trim();
+  return trimmed ? trimmed.slice(0, 8000) : undefined;
+}
+
 function withNotes(patch, info) {
   const notes = releaseNotesFrom(info);
   return notes === undefined ? patch : { ...patch, notes };
@@ -98,7 +111,12 @@ export function createUpdaterCoordinator(updater, setState, { handOffInstall = n
   // person asked for this check, or when only they can fix it (routeError).
   updater.on("update-available", (info) => {
     if (checkOwnsState()) {
-      download(Boolean(checkOperation?.manual), withNotes({ version: info?.version, percent: undefined, message: undefined }, info));
+      download(Boolean(checkOperation?.manual), withNotes({
+        version: info?.version,
+        releaseNotes: releaseNotesText(info?.releaseNotes),
+        percent: undefined,
+        message: undefined,
+      }, info));
     }
   });
   updater.on("update-not-available", () => {

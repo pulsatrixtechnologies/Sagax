@@ -5,11 +5,11 @@ import { setLocale } from "@/lib/i18n";
 describe("settings links", () => {
   it("names a section with the label Settings shows", () => {
     setLocale("en");
-    expect(settingsSectionLabel("connections")).toBe("API keys");
+    expect(settingsSectionLabel("connections")).toBe("Integrations");
     expect(settingsSectionLabel("companion")).toBe("Pair devices");
     expect(settingsSectionLabel("experimental")).toBe("Experimental");
     setLocale("fr");
-    expect(settingsSectionLabel("connections")).toBe("Clés API");
+    expect(settingsSectionLabel("connections")).toBe("Intégrations");
     setLocale("en");
   });
 

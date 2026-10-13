@@ -48,10 +48,6 @@ export const scenarioBotSchema = z.object({
   name: z.string(),
   section: z.string().optional(),
   chiefOfStaff: z.boolean().optional(),
-  /** Absent means the product default (on). A coordination pin that must
-   * stay in the conversation sets this false: a work-paced message would
-   * otherwise leave as its own task and never see the outstanding assignment. */
-  backgroundReplies: z.boolean().optional(),
   managedSections: z.array(z.string()).optional(),
   acknowledgePeerScope: z.boolean().optional(),
   computer: z.enum(["vm", "browser", "off"]).optional(),

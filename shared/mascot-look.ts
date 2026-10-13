@@ -509,9 +509,6 @@ export const BUNBU_DEFAULT_COLOR = "mint";
 /** The color Shiba shows where no bot gives one (the app icon, the gallery): the breed's own orange. */
 export const SHIBA_DEFAULT_COLOR = "orange";
 
-/** The color Grump shows where no bot gives one (the app icon, the gallery): a warm brown, the classic points. */
-export const GRUMP_DEFAULT_COLOR = "brown";
-
 /** The color Ogre shows where no bot gives one (the app icon, the gallery): green, so the skin stays the ogre's own. */
 export const OGRE_DEFAULT_COLOR = "green";
 

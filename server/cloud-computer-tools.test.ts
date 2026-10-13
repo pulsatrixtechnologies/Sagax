@@ -37,7 +37,7 @@ beforeAll(async () => {
 beforeEach(() => { calls.length = 0; holdCommand = false; commandStarted = undefined; });
 afterAll(async () => { vi.unstubAllEnvs(); server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve())); });
 
-const rpc = (request: unknown, gate: { held: boolean; blockedReason?: string } = { held: false }, signal = new AbortController().signal) => {
+const rpc = (request: unknown, gate: { held: boolean; reason?: "person"; blockedReason?: string } = { held: false }, signal = new AbortController().signal) => {
   let gated = 0;
   let checks = 0;
   const done = tools.cloudComputerRpc(request as never, {
@@ -111,8 +111,10 @@ describe("cloud computer tools", () => {
   });
 
   it.each([
-    ["a person holds control", { held: true }, "NOT performed"],
+    ["a person holds control", { held: true, reason: "person" as const }, "A person has taken control of this computer"],
     ["another thread owns the seat", { held: true, blockedReason: "Another thread is using this computer." }, "Another thread is using this computer."],
+    // A hold the harness gave no words for is never blamed on a person.
+    ["the hold has no reason", { held: true }, "could not confirm that this computer is free"],
   ])("performs nothing on the Boat when %s", async (_label, gate, text) => {
     const call = rpc({ method: "tools/call", params: { name: "click", arguments: { x: 3, y: 4 } } }, gate);
     const result = await call.done as { isError?: boolean; content: Array<{ text: string }> };

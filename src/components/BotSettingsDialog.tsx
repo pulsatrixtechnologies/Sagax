@@ -1,11 +1,11 @@
-// Per-bot settings as a right sidebar with fold-out (accordion) categories —
+// Per-bot settings as a right sidebar with fold-out (accordion) categories:
 // same shell pattern as InspectorPanel. Every section lives under
 // bot-settings/; their bodies and reads (overview, system-prompt, history)
 // are useBotSectionContent, shared with the persona editor. This dialog owns
 // which tab is up; every section but Details opens in the persona editor.
 import { useCallback, useEffect, useRef, useState } from "react";
 import { DockedPanelResizeHandle, useDockedPanelWidth } from "./DockedPanelResize";
-import { Bug, MoreHorizontal, PanelRight } from "lucide-react";
+import { Bug, PanelRight } from "lucide-react";
 
 import { useStore, visibleMessages, type Bot } from "@/state/store";
 import { requestPrimaryBot } from "@/lib/bot-quick-actions";
@@ -28,7 +28,6 @@ import { ComputerPanel } from "./ComputerPanel";
 import { BotProfileAvatarCard } from "./BotProfileAvatarCard";
 import { useCaptionChrome, useMacInsetChrome } from "./DesktopCapabilities";
 import { t } from "@/lib/i18n";
-import { SwitchRow } from "./SettingsPrimitives";
 import { canEditBotField } from "@/lib/bot-capabilities";
 import { viewerBotsReadOnly } from "@/lib/viewer";
 import { useBotSectionAvailability, useBotSectionContent } from "./bot-settings/useBotSectionContent";
@@ -43,7 +42,7 @@ export function BotSettingsDialog({ bot, onOpenVmWorkspace }: {
   const showInspector = useShowInspectorButton();
   const advanced = useAdvancedMode();
   const { state, dispatch } = useStore();
-  const { padClass } = useCaptionChrome();
+  const { padClass, dragProps } = useCaptionChrome();
   const { macInset, browser } = useMacInsetChrome();
   const section = state.botSettingsSection;
   const dialogRef = useRef<HTMLElement | null>(null);
@@ -79,8 +78,9 @@ export function BotSettingsDialog({ bot, onOpenVmWorkspace }: {
     dispatch({ type: "toggleComputer", open: false });
   };
   const dockedPanel = useDockedPanelWidth();
-  // The mascot's menu (right click on it, or the "..." button): Edit
-  // persona, Rename the bot, Put on the desktop, Make primary bot.
+  // The mascot's menu (a right click on the mascot, its pencil or the
+  // name): Edit persona, Rename the bot, Put on the desktop, Make primary
+  // bot. The pencil itself opens the persona editor.
   const [mascotMenu, setMascotMenu] = useState<MenuState | null>(null);
   const [renameRequest, setRenameRequest] = useState(0);
   const closeMascotMenu = useCallback(() => setMascotMenu(null), []);
@@ -152,26 +152,9 @@ export function BotSettingsDialog({ bot, onOpenVmWorkspace }: {
         {(macInset || browser) && <div className="content-topbar-strip" />}
         {/* Top bar: only the controls, the way Grok Bot's panel opens. On
             Windows it drops below the caption buttons (padClass). */}
-        <div className={cn("content-topbar relative flex h-12 shrink-0 items-center justify-between px-3", padClass)}>
+        <div {...dragProps} className={cn("content-topbar relative flex h-12 shrink-0 items-center justify-between px-3", padClass)}>
           <span />
           <div className="flex items-center gap-2">
-            <button
-              type="button"
-              data-mascot-menu-button=""
-              aria-label={t("persona.menu.open")}
-              title={t("persona.menu.open")}
-              aria-haspopup="menu"
-              aria-expanded={mascotMenu !== null}
-              onClick={(event) => {
-                const box = event.currentTarget.getBoundingClientRect();
-                setMascotMenu((open) => (open ? null : { botId: bot.id, x: box.left, y: box.bottom + 4 }));
-              }}
-              // The header's own round control, as Export and Close beside
-              // it (ExportTranscriptMenu: the same hover tone while open).
-              className={cn(CIRCLE_BUTTON, mascotMenu !== null && "bg-elevated-hover")}
-            >
-              <MoreHorizontal size={18} strokeWidth={1.75} />
-            </button>
             <ExportTranscriptMenu title={bot.name} messages={visibleMessages(bot)} botName={bot.name} />
             {showInspector && advanced && <button
               type="button"
@@ -209,10 +192,18 @@ export function BotSettingsDialog({ bot, onOpenVmWorkspace }: {
                 event.preventDefault();
                 setMascotMenu({ botId: bot.id, x: event.clientX, y: event.clientY });
               }}
+              onEdit={() => dispatch({ type: "openPersonaEditor", botId: bot.id, section: "overview" })}
             />
             {/* Name and label are edited where they show; the name stays
                 centered on its own line. The description is not shown here. */}
-            <div className="mt-2 flex max-w-full items-center justify-center">
+            <div
+              className="mt-2 flex max-w-full items-center justify-center"
+              // the bot's menu on the name too, as on the mascot
+              onContextMenu={(event) => {
+                event.preventDefault();
+                setMascotMenu({ botId: bot.id, x: event.clientX, y: event.clientY });
+              }}
+            >
               <InlineEditableText
                 id="bot-settings-title"
                 value={bot.name}
@@ -269,16 +260,6 @@ export function BotSettingsDialog({ bot, onOpenVmWorkspace }: {
 
           {tab === "details" && (
             <div className="flex flex-col gap-6 px-4 pb-6 pt-2">
-              {canEditBotField(state.config, bot, "backgroundReplies") && (
-                <section data-bot-settings-section="background-replies">
-                  <SwitchRow
-                    label={t("botPanel.backgroundReplies.label")}
-                    description={t("botPanel.backgroundReplies.description")}
-                    checked={bot.backgroundReplies !== false}
-                    onChange={(next) => derived.patch({ backgroundReplies: next })}
-                  />
-                </section>
-              )}
               <ActivitySection bot={bot} />
               <section data-bot-settings-section="routines" className="flex flex-col gap-2">
                 <RoutinesSection bot={bot} routines={derived.botRoutines} runs={state.routineRuns} grouped />

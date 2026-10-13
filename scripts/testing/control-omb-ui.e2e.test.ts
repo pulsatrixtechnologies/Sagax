@@ -127,7 +127,8 @@ describe("control-omb ui drives the real renderer", () => {
     await ui("type", info.ui, "--name", "Message Pepper", "--text", "Find the striped zebra");
     await ui("press", info.ui, "--keys", "Enter");
     await ui("wait-settle", info.ui, "--timeout", "60");
-    await ui("press", info.ui, "--keys", "Control+f");
+    await ui("eval", info.ui, "--js", `window.dispatchEvent(new KeyboardEvent("keydown", { key: "f", ctrlKey: true, bubbles: true, cancelable: true })); true`);
+    await expect.poll(async () => (await ui("snapshot", info.ui)).snapshot, { timeout: 10_000 }).toContain("Find in this conversation");
     await ui("type", info.ui, "--name", "Find in this conversation", "--text", "zebra");
     const highlighted = async () => (await ui("eval", info.ui, "--js", "[...CSS.highlights.get('search-result-text') ?? []][0]?.toString() ?? null")).result;
     await expect.poll(async () => (await ui("snapshot", info.ui)).snapshot, { timeout: 10_000 }).toContain("1 of 1");
@@ -152,7 +153,16 @@ describe("control-omb ui drives the real renderer", () => {
     await ui("type", info.ui, "--name", "Find in this conversation", "--text", "fake claude");
     await expect.poll(highlighted, { timeout: 10_000 }).toBe("fake claude");
     await ui("press", info.ui, "--keys", "Escape");
-    await ui("type", info.ui, "--name", "Search bots and messages", "--text", "zebra");
+    await ui("click", info.ui, "--name", "Search bots and messages");
+    await expect.poll(async () => (await ui("snapshot", info.ui)).snapshot, { timeout: 10_000 }).toContain("Command palette");
+    await ui("eval", info.ui, "--js", `(() => {
+      const input = document.querySelector('[role="dialog"][aria-label="Command palette"] input');
+      if (!(input instanceof HTMLInputElement)) throw new Error("palette input missing");
+      input.focus();
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set?.call(input, "zebra");
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      return input.value;
+    })()`);
     await expect.poll(async () => (await ui("eval", info.ui, "--js", "[...document.querySelectorAll('mark')].some(mark => mark.textContent === 'zebra')")).result, { timeout: 10_000 }).toBe(true);
     await ui("eval", info.ui, "--js", "[...document.querySelectorAll('mark')].find(mark => mark.textContent === 'zebra').closest('button').click(); true");
     await expect.poll(highlighted, { timeout: 10_000 }).toBe("zebra");
@@ -202,13 +212,13 @@ describe("control-omb ui drives the real renderer", () => {
     // Settings is its own chunk (src/components/lazy-screens.tsx): opened before
     // the idle prefetch has fetched it, it paints once the chunk arrives.
     await expect.poll(() => evaluate(`(() => {
-      const tab = [...document.querySelectorAll('button')].find(b => b.textContent.trim() === 'API keys');
+      const tab = [...document.querySelectorAll('button')].find(b => b.textContent.trim() === 'Models and accounts');
       tab?.click();
       return Boolean(tab);
     })()`), { timeout: 10_000 }).toBe(true);
-    // The shared OpenAI-compatible key lives under "Other", open once a key is saved.
-    await expect.poll(() => evaluate(`document.querySelector('[data-api-key-row="openaiCompat"]') !== null`), { timeout: 10_000 }).toBe(true);
-    await evaluate(`document.querySelector('[data-api-keys-other]').open = true; true`);
+    // The OpenAI-compatible key opens in its own dialog from the provider key list.
+    await expect.poll(() => evaluate(`(() => { const b = document.querySelector('[data-provider-key="openaiCompat"] button'); b?.click(); return Boolean(b); })()`), { timeout: 10_000 }).toBe(true);
+    await expect.poll(() => evaluate(`document.querySelector('[data-provider-key-dialog="openaiCompat"] [data-api-key-row="openaiCompat"]') !== null`), { timeout: 10_000 }).toBe(true);
 
     // A saved key with an untouched field can be checked again.
     await expect.poll(() => evaluate(`${testButton}?.disabled ?? null`), { timeout: 10_000 }).toBe(false);
@@ -274,16 +284,13 @@ describe("control-omb ui drives the real renderer", () => {
     const originalModel = originalBot.modelSelection.model;
     const models = await runControlOmb(["models", "--url", info.url]) as any;
     const options = models.instances.find((instance: any) => instance.instanceId === originalBot.modelSelection.instanceId).models.options;
-    const originalLabel = options.find((option: any) => option.id === originalModel).label;
     const nextModel = options.find((option: any) => option.id !== originalModel);
-    await ui("click", info.ui, "--name", originalLabel);
-    expect(await ui("eval", info.ui, "--js", "String(document.querySelector('[aria-label=\"Apply model changes to\"]') === null && Boolean(document.querySelector('[data-model-dropdown-trigger]')))"))
-      .toMatchObject({ result: "true" });
-    await ui("eval", info.ui, "--js", "document.querySelector('[data-model-dropdown-trigger]').click(); true");
+    await ui("eval", info.ui, "--js", "document.querySelector('[data-tour=\"model\"][aria-haspopup=\"listbox\"]').click(); true");
+    await expect.poll(async () => (await ui("eval", info.ui, "--js", "String(document.querySelector('[aria-label=\"Apply model changes to\"]') === null && Boolean(document.querySelector('[data-model-menu]')))")).result, { timeout: 10_000 }).toBe("true");
     const scopeShot = join(evidenceDir, "model-dropdown.png");
     mkdirSync(evidenceDir, { recursive: true });
     await ui("screenshot", info.ui, "--out", scopeShot);
-    await ui("click", info.ui, "--name", nextModel.label);
+    await ui("eval", info.ui, "--js", `document.querySelector('[data-model-menu] [data-model-option="${nextModel.id}"]').click(); true`);
     await expect.poll(async () => (await savedBot()).modelSelection.model, { timeout: 10_000 }).toBe(nextModel.id);
     expect((await savedBot()).tasks.find((task: any) => task.threadId === originalBot.threadId).modelSelection.model).toBe(nextModel.id);
     expect((await savedBot()).approvalMode).toBe(originalBot.approvalMode);
@@ -402,6 +409,17 @@ describe("control-omb ui drives the real renderer", () => {
     expect(collapsed.snapshot).toContain("Expand the run");
     expect(collapsed.snapshot).not.toContain('list "Run steps"');
 
+    await ui("click", info.ui, "--name", "You");
+    await ui("click", info.ui, "--name", "Settings");
+    await ui("click", info.ui, "--name", "Appearance");
+    await ui("eval", info.ui, "--js", `(() => {
+      const sw = document.querySelector('[aria-label="Show the Inspector button"]');
+      if (!sw) throw new Error("Show the Inspector button is missing");
+      if (sw.getAttribute("aria-checked") !== "true") sw.click();
+      return true;
+    })()`);
+    await ui("click", info.ui, "--name", "Close settings");
+    await expect.poll(async () => (await ui("snapshot", info.ui)).snapshot, { timeout: 10_000 }).toContain("Inspector");
     await ui("click", info.ui, "--name", "Inspector");
     const inspected = await ui("snapshot", info.ui);
     const runLog = (inspected.snapshot as string).slice((inspected.snapshot as string).indexOf('complementary "Inspector"'));

@@ -13,6 +13,7 @@ import {
   characterUnlocked,
   NOTHING_LOCKED,
   rewardedAppIcons,
+  rewardLineVisible,
   skinUnlocked,
   type AchievementDefinition,
   type AchievementItemState,
@@ -220,6 +221,19 @@ export function skinName(character: RewardCharacter, skin: string): string {
   return isMasteryCharacter(character) ? localized(masterySkinName(character, skin)) : skin;
 }
 
+/** Shown on a card: surprise copy while the character is locked, nothing for an unregistered item. */
+export function displayReward(reward: AchievementReward, unlocks: Unlocks, options?: { revealing?: boolean }): string | null {
+  if (!rewardLineVisible(reward)) return null;
+  const surprise = !options?.revealing && (reward.kind === "character" || reward.kind === "skin") && !characterUnlocked(unlocks, reward.character);
+  if (surprise && reward.kind === "character") return t("achievements.reward.surpriseCharacter");
+  if (surprise && reward.kind === "skin") return t("achievements.reward.surpriseLook");
+  return rewardLabel(reward);
+}
+
+function rewardIdName(id: string): string {
+  return id ? id[0]!.toUpperCase() + id.slice(1) : id;
+}
+
 /** "Skin unlocked: Galaxy (Owl)", "Character unlocked: Trombi", "Title unlocked: Rookie". */
 export function rewardLabel(reward: AchievementReward): string {
   switch (reward.kind) {
@@ -231,6 +245,14 @@ export function rewardLabel(reward: AchievementReward): string {
       return t("achievements.reward.appIcon");
     case "title":
       return t("achievements.reward.title", { name: localized(reward.name) });
+    case "emote":
+      return t("achievements.reward.emote", { name: rewardIdName(reward.id) });
+    case "move":
+      return t("achievements.reward.move", { name: rewardIdName(reward.id) });
+    case "accessory":
+      return t("achievements.reward.accessory", { name: rewardIdName(reward.id) });
+    case "effect":
+      return t("achievements.reward.effect", { name: rewardIdName(reward.id) });
   }
 }
 

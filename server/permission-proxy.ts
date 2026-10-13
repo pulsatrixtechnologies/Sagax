@@ -8,7 +8,8 @@
 //               would deny; the answer is the --permission-prompt-tool
 //               JSON contract ({behavior:"allow"|"deny", …}).
 //   ask_user  — the agent can pose a question mid-run and wait; the
-//               human's words come back verbatim.
+//               human's words come back verbatim. With multiSelect it is
+//               asked as a question card the person can pick several from.
 //
 // One tool arrives through `approve` that is not a permission at all: the
 // CLI's own AskUserQuestion. It is the tool the model actually reaches for
@@ -21,7 +22,7 @@
 // stdout is the MCP channel — never console.log here.
 import { connect } from "node:net";
 import { randomUUID } from "node:crypto";
-import { parseAskQuestions, questionAnswersByQuestion } from "../shared/ask-question.ts";
+import { parseAskQuestions, questionAnswersByQuestion, type AskQuestion } from "../shared/ask-question.ts";
 import { allowsTool, parseToolScope } from "../shared/tool-scope.ts";
 
 const selection = parseToolScope(process.env.SAGAX_PERMISSION_TOOL_SCOPE === undefined
@@ -84,6 +85,15 @@ function askBroker(ask: Record<string, unknown>): Promise<any> {
       dead();
     }
   });
+}
+
+/** A multiSelect ask_user as the one-question card AskUserQuestion already
+ * draws with checkboxes; flat choices can only ever be one tap. Null when
+ * the call asks for a single pick. */
+function multiSelectQuestion(args: Record<string, unknown>): AskQuestion[] | null {
+  if (args.multiSelect !== true) return null;
+  const options = Array.isArray(args.choices) ? args.choices : [];
+  return parseAskQuestions({ questions: [{ question: args.question, multiSelect: true, options }] });
 }
 
 // ── the CLI's own AskUserQuestion ──────────────────────────────────────
@@ -176,6 +186,10 @@ const TOOLS = [
           items: { type: "string" },
           description: "Optional 2-5 suggested answers, shown as one-tap buttons",
         },
+        multiSelect: {
+          type: "boolean",
+          description: "Set true when the person may pick more than one of the choices. Their picks come back joined with commas.",
+        },
       },
       required: ["question"],
     },
@@ -208,6 +222,7 @@ async function handle(msg: any) {
     }
     const askId = randomUUID();
     const isQuestion = name === "ask_user";
+    const picksSeveral = isQuestion ? multiSelectQuestion(args) : null;
     // the CLI may include its own suggested permission rules; on allow we
     // hand them straight back as updatedPermissions so claude stops asking
     // at its own layer — no invented rule syntax (agentcal)
@@ -218,10 +233,15 @@ async function handle(msg: any) {
         : null;
     const answer: any = await askBroker(
       isQuestion
-        ? { t: "ask", id: askId, kind: "question", tool: "ask_user", input: { question: args.question, choices: args.choices } }
+        ? { t: "ask", id: askId, kind: "question", tool: "ask_user", input: { question: args.question, choices: args.choices, ...(picksSeveral ? { questions: picksSeveral } : {}) } }
         : { t: "ask", id: askId, tool: args.tool_name, input: args.input },
     );
     let text = answer.message || "No answer was given — use your best judgment.";
+    // The card answers in its Q:/A: form; hand back just the picks, the way
+    // a one-tap answer arrives. Only the person's own words are unpacked.
+    if (picksSeveral && answer.source === "user" && typeof answer.message === "string") {
+      text = questionAnswersByQuestion(answer.message, picksSeveral)[picksSeveral[0]!.question] ?? text;
+    }
     if (!isQuestion) {
       if (answer.behavior === "allow") {
         const result: AllowPermissionResult = { behavior: "allow", updatedInput: args.input ?? {} };

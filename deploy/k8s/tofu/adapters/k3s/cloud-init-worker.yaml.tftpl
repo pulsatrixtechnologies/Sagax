@@ -1,0 +1,24 @@
+#cloud-config
+# Sagax sandbox worker. Disk encryption is the hypervisor's (LUKS, ZFS, Ceph,
+# EBS or Linode). This file does not carry a join token.
+write_files:
+  - path: /etc/rancher/k3s/config.yaml
+    permissions: "0600"
+    content: |
+      server: ${server_url}
+      token-file: /etc/sagax/k3s-token
+      kubelet-arg:
+        - anonymous-auth=false
+      node-label:
+%{ for key, value in labels ~}
+        - ${key}=${value}
+%{ endfor ~}
+      node-taint:
+        - ${taint}
+
+runcmd:
+  - install -d -m 0700 /etc/sagax
+  - test -x /usr/local/bin/k3s
+  - test -s /etc/sagax/k3s-token
+  - test "$(stat -c %a /etc/sagax/k3s-token)" = "600"
+  - systemctl enable --now k3s-agent

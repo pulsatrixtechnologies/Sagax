@@ -32,7 +32,7 @@ describe("RulesSection", () => {
     expect(html).toContain("Never send an email to a client without showing me the draft first.");
     expect(RULES_TEMPLATE.match(/^- /gm)).toHaveLength(3);
     // the examples sit in a comment: nothing of them counts against the budget
-    expect(html).toContain("1 of 60 lines");
+    expect(html).toContain("1 / 60 lines");
     // Save is enabled for the template: saving it creates the file
     expect(html).toMatch(/data-rules-save=""[^>]*>Save</);
   });
@@ -40,15 +40,15 @@ describe("RulesSection", () => {
   it("shows an existing file and counts it against 60 lines / 8 KB", () => {
     const html = render({ text: "# Rules\n\n- Never quote a price.\n", hash: "h", exists: true });
     expect(html).not.toContain("data-rules-starter");
-    expect(html).toContain("3 of 60 lines");
-    expect(html).toContain("7.8 KB load each turn");
+    expect(html).toContain("3 / 60 lines");
+    expect(html).toContain("/ 7.8 KB");
     expect(html).not.toContain('role="alert"');
   });
 
   it("warns when the rules would not load whole", () => {
     const text = Array.from({ length: 70 }, (_, i) => `- rule ${i}`).join("\n");
     const html = render({ text, hash: "h", exists: true });
-    expect(html).toContain("70 of 60 lines");
+    expect(html).toContain("70 / 60 lines");
     expect(html).toContain("Over budget: only the first 60 lines");
     expect(html).toContain('data-rules-counter="" class="text-danger"');
   });

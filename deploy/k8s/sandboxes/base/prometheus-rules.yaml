@@ -1,0 +1,92 @@
+# Alerts for the sandbox pool. Names are the headings of
+# docs/ops/sandboxes/incident-response.md. Metrics come from
+# kube-state-metrics, the kubelet, and Velero. None of them carry a person
+# key or a workspace path.
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: sagax-sandboxes
+  namespace: sagax-sandboxes
+  labels:
+    app.kubernetes.io/name: sagax-sandboxes
+spec:
+  groups:
+    - name: sagax-sandboxes
+      rules:
+        - alert: SagaxSandboxdDown
+          expr: >-
+            kube_deployment_spec_replicas{namespace="sagax-sandboxes",deployment="sagax-sandboxd"} > 0
+            and kube_deployment_status_replicas_available{namespace="sagax-sandboxes",deployment="sagax-sandboxd"} < 1
+          for: 2m
+          labels:
+            severity: page
+          annotations:
+            summary: The sandbox provisioner is not ready.
+            runbook: docs/ops/sandboxes/incident-response.md#sagaxsandboxddown
+        - alert: SagaxSandboxPendingTooLong
+          expr: >-
+            count(kube_pod_status_phase{namespace="sagax-sandboxes",phase="Pending",pod=~"sagax-user-.+"}) > 0
+          for: 3m
+          labels:
+            severity: page
+          annotations:
+            summary: A sandbox has been Pending longer than a node boot.
+            runbook: docs/ops/sandboxes/incident-response.md#sagaxsandboxpendingtoolong
+        - alert: SagaxSandboxPoolSaturated
+          expr: >-
+            count(kube_pod_status_phase{namespace="sagax-sandboxes",phase="Pending",pod=~"sagax-user-.+"}) > 0
+          for: 10m
+          labels:
+            severity: page
+          annotations:
+            summary: Sandboxes are still Pending after the scale-up window.
+            runbook: docs/ops/sandboxes/incident-response.md#sagaxsandboxpoolsaturated
+        - alert: SagaxSandboxWarmNotReady
+          expr: >-
+            kube_deployment_spec_replicas{namespace="sagax-sandboxes",deployment="sagax-sandbox-capacity"} > 0
+            and kube_deployment_status_replicas_available{namespace="sagax-sandboxes",deployment="sagax-sandbox-capacity"}
+            < kube_deployment_spec_replicas{namespace="sagax-sandboxes",deployment="sagax-sandbox-capacity"}
+          for: 10m
+          labels:
+            severity: ticket
+          annotations:
+            summary: The daytime warm node was requested and is not Ready.
+            runbook: docs/ops/sandboxes/incident-response.md#sagaxsandboxwarmnotready
+        - alert: SagaxSandboxdRestarting
+          expr: >-
+            increase(kube_pod_container_status_restarts_total{namespace="sagax-sandboxes",container="sandboxd"}[15m]) > 3
+          labels:
+            severity: page
+          annotations:
+            summary: The provisioner is restarting.
+            runbook: docs/ops/sandboxes/incident-response.md#sagaxsandboxdrestarting
+        - alert: SagaxSandboxNodeNotReady
+          expr: >-
+            (kube_node_status_condition{condition="Ready",status="true"} == 0)
+            and on(node) kube_node_labels{label_sagax_pulsatrix_ca_pool="sandboxes"}
+          for: 5m
+          labels:
+            severity: page
+          annotations:
+            summary: A sandbox node is not Ready.
+            runbook: docs/ops/sandboxes/incident-response.md#sagaxsandboxnodenotready
+        - alert: SagaxSandboxVolumeNearFull
+          expr: >-
+            kubelet_volume_stats_used_bytes{namespace="sagax-sandboxes"}
+            / kubelet_volume_stats_capacity_bytes{namespace="sagax-sandboxes"} > 0.85
+          for: 15m
+          labels:
+            severity: ticket
+          annotations:
+            summary: A workspace volume is past 85 percent.
+            runbook: docs/ops/sandboxes/incident-response.md#sagaxsandboxvolumenearfull
+        - alert: SagaxSandboxBackupStale
+          expr: >-
+            velero_backup_last_successful_timestamp{schedule="sagax-sandboxes-daily"}
+            < time() - 26 * 3600
+          for: 15m
+          labels:
+            severity: page
+          annotations:
+            summary: The daily sandbox backup is older than 26 hours.
+            runbook: docs/ops/sandboxes/incident-response.md#sagaxsandboxbackupstale

@@ -8,10 +8,15 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { writeFileAtomic } from "./atomic.ts";
 import { cloudHomePrompt } from "./system-prompt.ts";
+import { CONTROL_BUSY, CONTROL_REFUSAL_PLAIN, controlRefusal, createControlClient } from "./control-client.ts";
 import { freePortBlock } from "./testing/ports.ts";
 import { removeTempDir, waitForExit } from "./testing/cleanup.ts";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
+/** One computer call's wait on a busy desktop, shortened — but past the 2 s
+ * after which the bridges' old control client gave up and told the model a
+ * person had taken control. */
+const CALL_WAIT_MS = 3_000;
 let child: ChildProcess;
 let startServer: (computerWaitMaxMs?: number) => Promise<void>;
 let fixtureHome = "";
@@ -54,6 +59,9 @@ const dump = () => until(() => {
 const idle = (botId: string) => until(() => api("GET", "/api/bots?messages=0"), s => !s.bots.find((b: any) => b.id === botId)?.busy);
 const computer = (d: any) => d.mcpConfig.mcpServers.computer;
 const gate = (c: any) => fetch(c.env.SAGAX_CONTROL_URL, { headers: { authorization: `Bearer ${c.env.SAGAX_CONTROL_TOKEN}` } });
+// A screen tools/call's check, exactly as the mounted bridge makes it: the
+// real control client, with its own timeout.
+const check = (c: any) => createControlClient({ url: c.env.SAGAX_CONTROL_URL, token: c.env.SAGAX_CONTROL_TOKEN }).state(true);
 
 beforeAll(async () => {
   fixtureHome = mkdtempSync(join(tmpdir(), "omb-group-vm-"));
@@ -114,6 +122,7 @@ beforeAll(async () => {
         SAGAX_PORT: String(port), SAGAX_WEBHOOK_PORT: String(port + 1), SAGAX_STATIC_DIR: ui, SAGAX_TEST_VM_STATE: stateFile,
         SAGAX_BOX_API: `http://127.0.0.1:${boatPort}`,
         ...(computerWaitMaxMs ? { SAGAX_COMPUTER_WAIT_MAX_MS: String(computerWaitMaxMs) } : {}),
+        SAGAX_COMPUTER_CALL_WAIT_MS: String(CALL_WAIT_MS),
         SAGAX_USER_DATA: join(fixtureHome, "user-data"),
       }, stdio: ["ignore", "pipe", "pipe"],
     });
@@ -1031,11 +1040,14 @@ describe("Group Local VM ownership on the real isolated server", () => {
       const holderComputer = computer(await dump());
       expect(holderComputer).toBeTruthy();
       expect((await gate(holderComputer)).status).toBe(200);
-      // First screen tools/call: the gate fires the deferred claim, answers
-      // with the contention text, and the existing wait activity appears.
-      const first = await (await gate(autoComputer)).json();
-      expect(first).toMatchObject({ held: true, helpOpen: false,
-        blockedReason: "Another thread is using this computer. This call was not performed. Pause computer work until that thread finishes, then take a fresh screenshot before acting." });
+      // First screen tools/call: the gate fires the deferred claim and waits
+      // on it — past the old client's 2 s — then, still queued, says so,
+      // never that a person took control; the existing wait activity appears.
+      const started = Date.now();
+      const first = await check(autoComputer);
+      expect(first).toEqual({ held: true, helpOpen: false, blockedReason: CONTROL_BUSY });
+      expect(controlRefusal(first)).not.toBe(CONTROL_REFUSAL_PLAIN);
+      expect(Date.now() - started).toBeGreaterThanOrEqual(CALL_WAIT_MS - 200);
       await until(async () => {
  const state = await api("GET", "/api/bots?messages=30");
         return (state.bots.find((b: any) => b.id === auto.id)?.messages ?? [])
@@ -1048,7 +1060,7 @@ describe("Group Local VM ownership on the real isolated server", () => {
         return (state.bots.find((b: any) => b.id === auto.id)?.messages ?? [])
           .some((m: any) => m.kind === "activity" && String(m.tool?.name ?? "").startsWith("Computer free"));
       }, Boolean);
-      expect(await (await gate(autoComputer)).json()).toEqual({ held: false, helpOpen: false });
+      expect(await check(autoComputer)).toEqual({ held: false, helpOpen: false });
     } finally {
       writeFileSync(finishFile, "finish");
       await api("POST", `/api/bots/${auto.id}/interrupt`, {}); await api("POST", `/api/bots/${holder.id}/interrupt`, {});
@@ -1073,7 +1085,7 @@ describe("Group Local VM ownership on the real isolated server", () => {
       vmState({ failed: true });
       const refused = { held: true, helpOpen: false,
         blockedReason: expect.stringMatching(/^This turn could not claim the Local VM \(.+\)\. This call was not performed\. Do not retry computer work in this turn/) };
-      const first = await (await gate(autoComputer)).json() as any;
+      const first = await check(autoComputer);
       expect(first).toEqual(refused);
       // Honest about why. The contention text would send the model into a
       // screenshot loop waiting on a "thread" that does not exist.

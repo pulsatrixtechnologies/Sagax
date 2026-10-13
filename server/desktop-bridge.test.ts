@@ -64,6 +64,21 @@ function hub() {
   return { bridges, people };
 }
 
+describe("the organization's desktops for the admin console", () => {
+  it("lists each desktop with its person, name, platform and presence, and nothing secret", () => {
+    const { bridges, people } = hub();
+    const desktop = { ...registration(), version: "0.4.20" };
+    bridges.register(desktop, "ada-session", secret);
+    bridges.register(registration("Bob's PC"), "bob-session", "b".repeat(64));
+    const listed = bridges.inventory();
+    expect(listed.find((entry) => entry.person === ADA)).toEqual({ person: ADA, id: desktop.id, name: "Ada's Mac", platform: "darwin", online: true, lastSeenAt: expect.any(Number), localVm: true, version: "0.4.20" });
+    expect(JSON.stringify(listed)).not.toMatch(/aaaa|bbbb|session|attachments/);
+    // a session that ended takes its desktop away
+    people.delete("bob-session");
+    expect(bridges.inventory().map((entry) => entry.person)).toEqual([ADA]);
+  });
+});
+
 describe("the bridge relays only for its own signed-in person", () => {
   it("binds the desktop to the session's person, never to the body", async () => {
     const { bridges } = hub();

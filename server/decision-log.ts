@@ -46,6 +46,8 @@ export type DecisionKind =
   | "user-approved"
   | "user-denied"
   | "user-undone"
+  /** 2026-10-11: a permission card's own timeout passed with no answer */
+  | "expired"
   | "review-would-approve"
   | "review-would-deny";
 
@@ -77,7 +79,9 @@ export type DecisionSource =
   | "outbound"
   | "team-memory"
   | "auto-review"
-  | "auto-review-shadow";
+  | "auto-review-shadow"
+  /** the ask's own timeout (an `expired` row) */
+  | "timeout";
 
 /** Who answered a card, for `source: "user"` rows: a signed-in session (its
  * id, device label, and account email or id when it has one; a portal

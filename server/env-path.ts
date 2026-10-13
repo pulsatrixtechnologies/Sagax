@@ -76,6 +76,7 @@ function windowsKnownDirs(): string[] {
   const localAppData = process.env.LOCALAPPDATA ?? join(home, "AppData", "Local");
   return [
     join(appData, "npm"), // npm -g shims: claude, codex
+    join(home, ".kimi-code", "bin"), // recover Kimi installs after a GUI launch too
     join(home, ".grok", "bin"), // x.ai installer
     join(localAppData, "agy", "bin"), // Antigravity installer
     // Cursor installer: cursor-agent.* and its `agent` copies (MOCA-272)

@@ -86,8 +86,8 @@ describe("bot row with threads on never expands", () => {
 
   it.each([
     [{ busy: true }, 'class="sr-only">Working…'],
-    [{ activity: "waiting-on-you" }, '<span class="truncate">Waiting for you…'],
-    [{ waitingForTeammates: true }, '<span class="truncate">Waiting on a teammate…'],
+    [{ activity: "waiting-on-you" }, '<span dir="auto" class="truncate">Waiting for you…'],
+    [{ waitingForTeammates: true }, '<span dir="auto" class="truncate">Waiting on a teammate…'],
   ] as const)("keeps sole-thread activity visible after a reveal (%j)", (status, label) => {
     fixture.state.revealThread = { threadId: "current", nonce: 1 };
     render({ ...bot, ...status });

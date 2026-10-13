@@ -35,15 +35,17 @@ on:
       - scripts/build-production-image.sh
       - .github/workflows/docker.yml
 
+# One run per PR: a new push cancels the superseded run.
+concurrency:
+  group: docker-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 permissions:
   contents: read
 
 jobs:
   build-and-smoke:
-    if: (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
     name: build image + boot smoke
-    # The ephemeral self-hosted linux/x64 pool has no Docker daemon
-    # (unix:///var/run/docker.sock is absent). GitHub-hosted Ubuntu ships one.
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
@@ -79,9 +81,9 @@ jobs:
           done
           # the renderer is served by the server itself (SAGAX_STATIC_DIR)
           docker exec omb curl -sf http://127.0.0.1:8799/ | grep -qi "<html" || { docker logs omb; echo "UI not served"; exit 1; }
-          docker exec omb curl -sf http://127.0.0.1:8799/healthz > /tmp/healthz.json
-          grep -q '"ok":true' /tmp/healthz.json
-          grep -q openmausbot /tmp/healthz.json
+          docker exec omb curl -sf http://127.0.0.1:8799/healthz > /tmp/healthz.json || { docker logs omb; echo "healthz request failed"; exit 1; }
+          grep -q '"ok":true' /tmp/healthz.json || { echo "healthz body:"; cat /tmp/healthz.json; exit 1; }
+          grep -q openmausbot /tmp/healthz.json || { echo "healthz body:"; cat /tmp/healthz.json; exit 1; }
           for i in $(seq 1 60); do
             if docker logs omb 2>&1 | grep -q '\[engines\] self-check:'; then break; fi
             sleep 2
@@ -162,7 +164,7 @@ jobs:
           body() { curl -sk --max-time 10 "$@"; }
           H=https://localhost
           grep -q '"environmentId"' <<<"$(body $H/.well-known/openmausbot/environment)"   # descriptor is public
-          grep -q '^{"app":"openmausbot","product":"sagax"}$' <<<"$(body $H/api/health)"  # public probe: app and product, nothing else
+          grep -q '^{"app":"openmausbot","product":"sagax"}$' <<<"$(body $H/api/health)"  # the probe is public, and says only the app and product names
           test "$(code $H/api/bots)" = 403                                        # nothing else before pairing
           grep -q 'pair this device' <<<"$(body $H/api/bots)"
           grep -qi '<html' <<<"$(body $H/pair)"                                    # the UI shell is served so /pair can load
@@ -182,7 +184,13 @@ jobs:
           test "$(code -b "$jar" -H 'Origin: https://localhost' $H/api/auth/session)" = 200
           grep -q '"via":"cookie"' <<<"$(body -b "$jar" $H/api/auth/session)"
           grep -q '"label":"ci"' <<<"$(body -b "$jar" $H/api/auth/sessions)"        # listed for revocation
-          grep -q error <<<"$(body -X POST $H/hooks/wh_nope)"                      # hook path reaches the receiver without a session
+          # Hooks reach the webhook receiver without a session (not the app's
+          # pairing wall), and an unknown endpoint without its bearer is refused
+          # with the same 401 a wrong token gets: nothing says which part was wrong.
+          hook=$(curl -sk --max-time 10 -w '\n%{http_code}' -X POST $H/hooks/wh_nope)
+          test "$(tail -n1 <<<"$hook")" = 401
+          test "$(head -n1 <<<"$hook")" = '{"error":"Unauthorized"}'
+          test "$(code -X POST $H/hooks/not-a-hook)" = 404                         # only /hooks/wh_<id> is a hook
           # The event stream never ends, so curl's own --max-time exit (28) is expected;
           # the proof is that bytes arrived within the window (a buffering proxy sends none).
           sse=$( (curl -sk -b "$jar" -N --max-time 4 $H/api/events || true) | head -c 64 )
@@ -190,17 +198,16 @@ jobs:
           grep -q '"baseUrl":"https://localhost"' <<<"$(body -b "$jar" $H/api/webhooks)"   # SAGAX_WEBHOOK_PUBLIC_URL is advertised
           test "$(code $H/api/bots)" = 403                                        # and without the cookie it is still closed
           docker compose -f deploy/docker-compose.yml down -v
-      # Sagax has no personal Cloud home (server/index.ts keeps CLOUD_HOME
-      # null). The upstream smoke built deploy/fly/Dockerfile, which this
-      # tree does not ship.
+      # No Cloud Pro home image: deploy/fly/Dockerfile and
+      # dist-server/cloud-home-start.js are not in this tree (upstream
+      # #2407). Building that step failed the job after the engine gate.
 
   publish:
     name: publish to GHCR
     needs: build-and-smoke
     # Release dispatches on its published tag because GITHUB_TOKEN-created
     # tags do not start another workflow. A manual branch run is smoke-only.
-    if: (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && startsWith(github.ref, 'refs/tags/v')))
-    # Same Docker daemon requirement as build-and-smoke.
+    if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && startsWith(github.ref, 'refs/tags/v'))
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -230,18 +237,13 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: |
             ${{ steps.meta.outputs.labels }}
-            io.sagax.engine-set=none
+            io.sagax.engine-set=all
             org.opencontainers.image.revision=${{ github.sha }}
             org.opencontainers.image.created=${{ env.SAGAX_BUILD_TIME }}
-          # The public GHCR image carries no proprietary engine CLI
-          # (docs/custom-engines.md). Explicit, because the Dockerfile's default
-          # is the production set; private ACR builds (GOX) use
-          # scripts/build-production-image.sh (the full engine set).
           build-args: |
-            ENGINE_SET=none
-            SAGAX_REQUIRE_ENGINES=0
+            ENGINE_SET=all
+            SAGAX_REQUIRE_ENGINES=1
             SAGAX_COMMIT_SHA=${{ github.sha }}
             SAGAX_BUILD_TIME=${{ env.SAGAX_BUILD_TIME }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
-      # No Cloud home image is published: this tree does not ship that machine.

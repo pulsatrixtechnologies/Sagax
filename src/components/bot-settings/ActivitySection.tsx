@@ -2,7 +2,9 @@
 // /api/bots/:id/activity, narrowed by the server to what this person may
 // read: on an organization server their own threads only).
 //
-// Coding is code work only: running coding jobs (the server's `coding`:
+// Coding is code work only: the agents this bot launched that did code work
+// (launchedAgents' `coding`; the others, a dispatch run or bot-to-bot work,
+// are listed under Activity), running coding jobs (the server's `coding`:
 // edits to source files, version control, pull requests, file changes inside
 // a repository; never a title) with their repository and branch, then the
 // pull requests, branches and commits the bot's coding jobs of the window
@@ -37,11 +39,11 @@ import {
   type CodingWork,
   FINISHED_FADE_MS,
   type LiveView,
+  loadBotActivityDetail,
   type BotActivityFilter,
   type BotActivityItem,
   type BotActivityList,
   type BotLaunchedAgentItem,
-  loadBotActivityDetail,
 } from "@/lib/bot-activity";
 import { ActivityCard } from "./ActivityCard";
 import { LaunchedAgentsList } from "./LaunchedAgentsList";
@@ -223,15 +225,20 @@ export function CodeWorkList({ work, now }: { work: CodingWork; now: number }) {
 export function panelSections(list: BotActivityList | null, live?: LiveView) {
   const coding = list ? codingLive(list.items, live) : [];
   const work = list ? codingWork(list.items) : { pullRequests: [], branches: [], commits: [] };
+  // Launched agents split by their work: code under Coding, the rest (a
+  // dispatch run, bot-to-bot work) under Activity.
+  const launchedAll = list?.launchedAgents ?? [];
+  const launched = launchedAll.filter((item) => item.coding === true);
+  const launchedOther = launchedAll.filter((item) => item.coding !== true);
   const other = list ? activityLive(list.items, list.subagents, live) : [];
-  const launched = list?.launchedAgents ?? [];
   return {
     coding,
     work,
     launched,
+    launchedOther,
     other,
     showCoding: coding.length > 0 || launched.length > 0 || !codingWorkEmpty(work),
-    showActivity: other.length > 0,
+    showActivity: other.length > 0 || launchedOther.length > 0,
   };
 }
 
@@ -269,7 +276,7 @@ export function PanelSections({ list, live, actions, onOpenHistory, onOpenLaunch
   /** The newest list fetch failed. */
   error?: boolean;
 }) {
-  const { coding, work, launched, other, showCoding, showActivity } = panelSections(list, live);
+  const { coding, work, launched, launchedOther, other, showCoding, showActivity } = panelSections(list, live);
   if (list === null) {
     return error ? <p role="status" data-activity-error className="px-0.5 text-[12.5px] text-ink-tertiary">{t("botPanel.coding.error")}</p> : null;
   }
@@ -309,7 +316,8 @@ export function PanelSections({ list, live, actions, onOpenHistory, onOpenLaunch
             name="other"
             onOpenHistory={onOpenHistory}
           />
-          <ActivityList items={other} error={false} label={t("botPanel.activity.title")} {...actions} />
+          {launchedOther.length > 0 && onOpenLaunched && <LaunchedAgentsList items={launchedOther} onOpen={onOpenLaunched} label={t("botPanel.activity.title")} />}
+          {other.length > 0 && <ActivityList items={other} error={false} label={t("botPanel.activity.title")} {...actions} />}
         </section>
       )}
     </>
@@ -325,16 +333,15 @@ export function ActivitySection({ bot }: { bot: Bot }) {
   const stop = feed.stop;
   const actions: CardActions = { onOpen: setOpen, onStop: stop, stopping: feed.stopping, now: feed.now, fading: feed.live.fading };
 
+  useEffect(() => {
+    if (feed.deepLinked) setOpen(feed.deepLinked);
+  }, [feed.deepLinked]);
   const openLaunched = useCallback((item: BotLaunchedAgentItem) => {
     if (!item.threadId) return;
     loadBotActivityDetail(api, item.targetBotId, item.id)
       .then((detail) => setOpen(detail))
       .catch(() => {});
   }, []);
-
-  useEffect(() => {
-    if (feed.deepLinked) setOpen(feed.deepLinked);
-  }, [feed.deepLinked]);
 
   return (
     <>

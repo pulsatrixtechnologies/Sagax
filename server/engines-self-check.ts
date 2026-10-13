@@ -59,6 +59,25 @@ export interface EngineCheck {
 }
 
 const VERSION_TIMEOUT_MS = 20_000;
+/** How many `--version` probes run at once. All 11 at once (Promise.all)
+ * peaked near 3.9 GiB on GOX (2026-10-13) and the kernel OOM-killed children:
+ * several engine CLIs boot a whole Node or Python runtime just to print a
+ * version. Two at a time keeps the peak to the two largest. */
+export const ENGINE_PROBE_CONCURRENCY = 2;
+
+/** `items` mapped by `run`, at most `limit` at a time, results in input order. */
+export async function mapLimited<T, R>(items: readonly T[], limit: number, run: (item: T) => Promise<R>): Promise<R[]> {
+  const results: R[] = Array.from({ length: items.length });
+  let next = 0;
+  const worker = async () => {
+    while (next < items.length) {
+      const index = next++;
+      results[index] = await run(items[index]!);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.max(1, Math.min(limit, items.length)) }, worker));
+  return results;
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -144,13 +163,13 @@ export class EngineSelfCheck {
 /** Run every installed engine's `--version` once and log the result. */
 export async function runEngineSelfCheck(
   manifest: EngineManifest | null,
-  options: { probe?: VersionProbe; find?: (bin: string) => string[]; log?: (line: string) => void } = {},
+  options: { probe?: VersionProbe; find?: (bin: string) => string[]; log?: (line: string) => void; concurrency?: number } = {},
 ): Promise<EngineSelfCheck> {
   if (!manifest) return new EngineSelfCheck(null);
   const probe = options.probe ?? probeVersion;
   const find = options.find ?? findCliCandidates;
   const log = options.log ?? ((line: string) => console.log(line));
-  const checks = await Promise.all(manifest.installed.map(async (engine): Promise<EngineCheck> => {
+  const checks = await mapLimited(manifest.installed, options.concurrency ?? ENGINE_PROBE_CONCURRENCY, async (engine): Promise<EngineCheck> => {
     const base = { id: engine.id, name: engine.name, drivers: engine.drivers, bin: engine.bin, pinned: engine.version };
     const path = find(engine.bin)[0];
     if (!path) return { ...base, ok: false, error: `\`${engine.bin}\` is not on this server's PATH` };
@@ -161,7 +180,7 @@ export async function runEngineSelfCheck(
       const message = error instanceof Error ? error.message : String(error);
       return { ...base, path, ok: false, error: message.split(/\r?\n/)[0]!.slice(0, 300) };
     }
-  }));
+  });
   for (const check of checks) {
     log(check.ok
       ? `[engines] ${check.id}: ${check.version || "started"} (pinned ${check.pinned}, ${check.path})`

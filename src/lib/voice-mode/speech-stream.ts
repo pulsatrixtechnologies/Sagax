@@ -205,6 +205,16 @@ export class SpeechSocket {
     return undefined;
   }
 
+  /** Voice, speed or language changed. Reopen now when nothing is in
+   * flight, so the next clause finds the socket already on the new voice
+   * instead of paying the reconnect before its first audio. */
+  retune(settings: VoiceModeSettings): void {
+    if (this.state !== "open" && this.state !== "opening") return;
+    if (settingsKey(settings) === this.key) return;
+    if ([...this.clauses.values()].some((clause) => !clause.ended)) return;
+    this.reopen(settings);
+  }
+
   /** The call ended. */
   close(): void {
     if (this.timer) clearTimeout(this.timer);

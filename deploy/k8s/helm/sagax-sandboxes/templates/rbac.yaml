@@ -1,0 +1,105 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: sagax-sandboxd
+  namespace: {{ .Values.systemNamespace | quote }}
+  labels:
+    {{- include "sagax-sandboxes.labels" . | nindent 4 }}
+    app.kubernetes.io/name: sagax-sandboxd
+automountServiceAccountToken: true
+---
+# Role in the sandbox namespace only. No ClusterRole, no secrets, no nodes.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: sagax-sandboxd
+  namespace: {{ .Values.sandboxNamespace | quote }}
+  labels:
+    {{- include "sagax-sandboxes.labels" . | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "watch", "create", "delete"]
+  - apiGroups: [""]
+    resources: ["pods/exec"]
+    verbs: ["create"]
+  - apiGroups: [""]
+    resources: ["pods/log"]
+    verbs: ["get"]
+  - apiGroups: [""]
+    resources: ["persistentvolumeclaims"]
+    verbs: ["get", "list", "watch", "create", "delete"]
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["create"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: sagax-sandboxd
+  namespace: {{ .Values.sandboxNamespace | quote }}
+  labels:
+    {{- include "sagax-sandboxes.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: sagax-sandboxd
+subjects:
+  - kind: ServiceAccount
+    name: sagax-sandboxd
+    namespace: {{ .Values.systemNamespace | quote }}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: sagax-sandbox-warmer
+  namespace: {{ .Values.systemNamespace | quote }}
+  labels:
+    {{- include "sagax-sandboxes.labels" . | nindent 4 }}
+automountServiceAccountToken: false
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: sagax-sandbox-warmer
+  namespace: {{ .Values.systemNamespace | quote }}
+  labels:
+    {{- include "sagax-sandboxes.labels" . | nindent 4 }}
+rules:
+  - apiGroups: ["apps"]
+    resources: ["deployments/scale"]
+    resourceNames: ["sagax-sandbox-warmer"]
+    verbs: ["get", "update", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: sagax-sandbox-warmer
+  namespace: {{ .Values.systemNamespace | quote }}
+  labels:
+    {{- include "sagax-sandboxes.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: sagax-sandbox-warmer
+subjects:
+  - kind: ServiceAccount
+    name: sagax-sandbox-warmer
+    namespace: {{ .Values.systemNamespace | quote }}
+{{- if .Values.admin.kubernetesRbac.enabled }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: sagax-named-admins
+  labels:
+    {{- include "sagax-sandboxes.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cluster-admin
+subjects:
+  - kind: Group
+    apiGroup: rbac.authorization.k8s.io
+    name: {{ .Values.admin.group | quote }}
+{{- end }}

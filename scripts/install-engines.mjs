@@ -125,10 +125,6 @@ export function selectEngines(lock, { engineSet = "", engines = "", nativeEngine
   return { install, unavailable };
 }
 
-function sha256(buffer) {
-  return createHash("sha256").update(buffer).digest("hex");
-}
-
 /** Why an npm engine cannot be installed, or null. Exact version and a
  * sha512 integrity, never `latest` and never an unknown package. */
 export function npmPinError(engine) {
@@ -151,6 +147,10 @@ export function npmTarballUrl(pkg, version) {
 
 export function integrityMatches(buffer, integrity) {
   return integrity === `sha512-${createHash("sha512").update(buffer).digest("base64")}`;
+}
+
+function sha256(buffer) {
+  return createHash("sha256").update(buffer).digest("hex");
 }
 
 async function download(url, expected) {
@@ -184,11 +184,14 @@ async function installNpm(engines) {
     const scratch = mkdtempSync(join(tmpdir(), `engine-${engine.id}-`));
     const file = join(scratch, "package.tgz");
     writeFileSync(file, buffer);
-    // --ignore-scripts: the tarball is already checked. A root install script
-    // is not run, unless the lock says the package cannot work without its
-    // own postinstall (claude, kimi, opencode, droid place their native
-    // binary there). Native engines stay on their own hashed download.
-    const scripts = engine.installScripts === true ? [] : ["--ignore-scripts"];
+    // The tarball hash is already checked. A root install script runs only
+    // when the lock says the package cannot work without its own postinstall
+    // (claude, kimi, opencode, droid place their native binary there). npm 11
+    // runs that script only when the package is named. Every other npm engine
+    // is installed with scripts ignored.
+    const scripts = engine.installScripts === true
+      ? [`--allow-scripts=${engine.package}`]
+      : ["--ignore-scripts"];
     run("npm", ["install", "-g", ...scripts, "--loglevel=error", "--include=optional", "--no-fund", "--no-audit", file], {
       env: { ...process.env, npm_config_update_notifier: "false" },
     });

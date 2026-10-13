@@ -198,9 +198,7 @@ async function refreshTailnetNameOnce(
             return resolve(null);
           }
           try {
-            const dns = JSON.parse(stdout)?.Self?.DNSName;
-            // MagicDNS names are fully qualified, trailing dot and all
-            const trimmed = typeof dns === "string" && dns ? dns.replace(/\.$/, "") : null;
+            const trimmed = ownMagicDnsName(JSON.parse(stdout));
             onAttempt?.(cli, trimmed ? `ok: ${trimmed}` : "ran, but no MagicDNS name in status");
             resolve(trimmed);
           } catch {
@@ -218,6 +216,38 @@ async function refreshTailnetNameOnce(
     }
   }
   cachedTailnetName = null;
+}
+
+/** This machine's MagicDNS name, or null.
+ *
+ * Only `Self.DNSName` counts. A peer's name is never this computer. When
+ * the status names the logged-in tailnet (`CurrentTailnet.MagicDNSSuffix`),
+ * the name must be that suffix or sit under it. A peer that publishes the
+ * same name is refused. */
+export function ownMagicDnsName(status: unknown): string | null {
+  if (!status || typeof status !== "object") return null;
+  const record = status as {
+    Self?: { DNSName?: unknown };
+    CurrentTailnet?: { MagicDNSSuffix?: unknown };
+    Peer?: Record<string, { DNSName?: unknown }>;
+  };
+  const raw = record.Self?.DNSName;
+  if (typeof raw !== "string") return null;
+  const name = raw.replace(/\.$/, "").trim();
+  if (!name) return null;
+  const suffixRaw = record.CurrentTailnet?.MagicDNSSuffix;
+  if (typeof suffixRaw === "string" && suffixRaw.trim()) {
+    const suffix = suffixRaw.replace(/\.$/, "").trim();
+    const host = name.toLowerCase();
+    const tailnet = suffix.toLowerCase();
+    if (host !== tailnet && !host.endsWith(`.${tailnet}`)) return null;
+  }
+  const peers = record.Peer && typeof record.Peer === "object" ? Object.values(record.Peer) : [];
+  for (const peer of peers) {
+    const peerName = typeof peer?.DNSName === "string" ? peer.DNSName.replace(/\.$/, "").trim() : "";
+    if (peerName && peerName.toLowerCase() === name.toLowerCase()) return null;
+  }
+  return name;
 }
 
 /** Coalesce startup and user-triggered probes so a slower failure cannot

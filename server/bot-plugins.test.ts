@@ -1,6 +1,6 @@
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { BotPluginError, insideRoot, marketplaceAllowed, migrateBotMarketplaces, normalizePolicyEntry, parseGitSource, readMarketplaceManifest, readPluginContents, type GitRunner } from "./bot-plugins.ts";
@@ -87,8 +87,8 @@ describe("marketplace policy", () => {
 
 describe("insideRoot", () => {
   it("keeps paths inside the repository", () => {
-    expect(insideRoot("/r", "./plugins/a")).toBe("/r/plugins/a");
-    expect(insideRoot("/r", "./")).toBe("/r");
+    expect(insideRoot("/r", "./plugins/a")).toBe(resolve("/r/plugins/a"));
+    expect(insideRoot("/r", "./")).toBe(resolve("/r"));
     expect(() => insideRoot("/r", "../x")).toThrow(BotPluginError);
     expect(() => insideRoot("/r", "/etc")).toThrow(BotPluginError);
   });

@@ -30,9 +30,11 @@ import {
   codexUserError,
 } from "./codex.ts";
 import { removeTempDir } from "../testing/cleanup.ts";
+import { rebuiltSessionNotice } from "../resume-recovery.ts";
 import { startFakeHttpMcp, type FakeHttpMcp } from "../testing/fake-http-mcp-server.ts";
 import * as procs from "../procs.ts";
 import { autoVerdict } from "../auto-approve.ts";
+import { formatQuestionAnswers } from "../../shared/ask-question.ts";
 
 vi.mock("./codex-release.ts", async (importOriginal) => ({
   ...await importOriginal<typeof import("./codex-release.ts")>(),
@@ -329,7 +331,8 @@ process.stdout.write(JSON.stringify({jsonrpc:'2.0',id:m.id,result})+'\\n');});`)
       expect(recorder.events.filter(event => event.type === "runtime.error")).toEqual([]);
       const seen = JSON.parse(readFileSync(dump, "utf8"));
       const config = seen.calls.find((call: { method: string }) => call.method === (resumeCursor ? "thread/resume" : "thread/start")).params.config.mcp_servers;
-      expect(config.agents.default_tools_approval_mode).toBe("auto");
+      // Sagax's own coordination tools never ask; a person's own server still does.
+      expect(config.agents.default_tools_approval_mode).toBe("approve");
       expect(config.notes.default_tools_approval_mode).toBe("prompt");
       for (const [name, tool] of [["agents", "list_bots"], ["notes", "read_notes"]]) {
         const spec = config[name!];
@@ -1417,7 +1420,7 @@ process.stdout.write(JSON.stringify({jsonrpc:'2.0',id:m.id,result})+'\\n');});`)
     expect(seen.argv).toContain("features.shell_snapshot=false");
     expect(seen.calls.find((call: { method: string }) => call.method === "thread/start").params.config["shell_environment_policy.exclude"]).toEqual([
       "USER_SECRET_*", "SAGAX_REMOTE_MCP_CONFIG_*",
-      // sorted: the Sagax names sort after OVERRIDDEN (upstream's OMB_ names sorted before it)
+      // sorted: the Sagax names sort after OVERRIDDEN (upstream's SAGAX_ names sorted before it)
       "ELECTRON_RUN_AS_NODE", "GITHUB_PERSONAL_ACCESS_TOKEN", "OVERRIDDEN", "SAGAX_COMMS_TOKEN", "SAGAX_CONNECTORS_TOKEN", "SAGAX_PHONE_TOKEN",
     ]);
   });
@@ -1715,7 +1718,8 @@ process.stdout.write(JSON.stringify({jsonrpc:'2.0',id:m.id,result})+'\\n');});`)
 
     const seen = JSON.parse(readFileSync(dump, "utf8"));
     expect(seen.argv.join(" ")).toContain("mcp_servers.agents.command");
-    expect(seen.argv).toContain('mcp_servers.agents.default_tools_approval_mode="auto"');
+    // Coordination never raises a card: "auto" would quiet only read-only tools.
+    expect(seen.argv).toContain('mcp_servers.agents.default_tools_approval_mode="approve"');
     expect(seen.argv.join(" ")).toContain("/tmp/agents-proxy.js");
     expect(seen.argv.join(" ")).toContain("SAGAX_COMMS_TOKEN");
     expect(seen.argv.join(" ")).not.toContain("peer-comms-secret");
@@ -1752,7 +1756,9 @@ process.stdout.write(JSON.stringify({jsonrpc:'2.0',id:m.id,result})+'\\n');});`)
     expect(seen.argv).toContain("features.computer_use=false");
     expect(seen.argv.some((arg: string) => arg.startsWith("web_search="))).toBe(false);
     expect(seen.argv).toContain('plugins={ "browser@openai-bundled" = { enabled = false }, "computer-use@openai-bundled" = { enabled = false }, "unified-computer-use@openai-bundled" = { enabled = false } }');
+    // The browser keeps its approvals: only coordination is pre-approved.
     expect(seen.argv).toContain('mcp_servers.browser.default_tools_approval_mode="auto"');
+    expect(seen.argv).not.toContain('mcp_servers.browser.default_tools_approval_mode="approve"');
     expect(seen.argv.join(" ")).toContain("/tmp/harness-mcp-proxy.js");
     expect(seen.argv.join(" ")).not.toContain("browser-capability-secret");
     expect(seen.env.SAGAX_MCP_TOKEN).toBe("browser-capability-secret");
@@ -2050,14 +2056,21 @@ process.stdout.write(JSON.stringify({jsonrpc:'2.0',id:m.id,result})+'\\n');});`)
     expect(await instance.snapshot()).toMatchObject({ authenticated: false, chatgptPlan: true, warning: { message } });
   });
 
-  it("fails a rejected resume without silently replacing native history", async () => {
+  // Was a bricked thread: a personal thread whose rollout Codex no longer had
+  // failed every turn the same way, until the person switched engines.
+  it("rebuilds a personal thread Codex no longer has, once, from the chat", async () => {
     await create(); // fake rejects thread/resume outside resume mode
     const dump = join(scratch, "personal-missing-thread.json");
     process.env.FAKE_CODEX_DUMP = dump;
-    await instance.adapter.sendTurn({ threadId: "t-fallback", text: "go", resumeCursor: "gone-thread", recoveryText: "Previous messages\nUser: go" });
-    await expect(recorder.until((e) => e.type === "turn.completed")).resolves.toMatchObject({ ok: false });
-    expect(recorder.events.some((e) => e.type === "session.started")).toBe(false);
-    expect(JSON.parse(readFileSync(dump, "utf8")).calls.map((call: { method: string }) => call.method)).not.toContain("thread/start");
+    const recoveryText = "Previous messages\nUser: go";
+    await instance.adapter.sendTurn({ threadId: "t-fallback", text: "go", resumeCursor: "gone-thread", recoveryText });
+    await expect(recorder.until((e) => e.type === "turn.completed")).resolves.toMatchObject({ ok: true });
+    const calls = JSON.parse(readFileSync(dump, "utf8")).calls;
+    expect(calls.map((call: { method: string }) => call.method)).toEqual(["initialize", "initialized", "config/read", "thread/resume", "thread/start", "turn/start"]);
+    expect(calls.find((call: { method: string }) => call.method === "turn/start").params.input).toEqual([{ type: "text", text: recoveryText }]);
+    // announced as rebuilt, and the person reads what did not carry over
+    expect(recorder.events.filter((e) => e.type === "session.started")).toMatchObject([{ rebuilt: true }]);
+    expect(recorder.events.filter((e) => e.type === "runtime.notice")).toEqual([expect.objectContaining({ message: rebuiltSessionNotice("Codex") })]);
   });
 
   it("names the missing Company model prerequisites instead of one blanket refusal", async () => {
@@ -2105,19 +2118,6 @@ process.stdout.write(JSON.stringify({jsonrpc:'2.0',id:m.id,result})+'\\n');});`)
     expect(seen.argv).toContain('model_provider="openmaus_company"');
     expect(JSON.stringify(seen.argv)).not.toContain("synthetic-company-fixture");
     expect(recorder.events.filter((event) => event.type === "session.started")).toMatchObject([{ sessionId: "codex-thread-1", rebuilt: true }]);
-  });
-
-  it("rebuilds a missing personal thread only for a turn whose recovery text is the replay it would have had", async () => {
-    await create();
-    const dump = join(scratch, "personal-missing-replay.json");
-    process.env.FAKE_CODEX_DUMP = dump;
-    const recoveryText = "[This conversation received an update outside your provider session.]\nUser: go";
-    await instance.adapter.sendTurn({ threadId: "t-personal-replay", text: "go", resumeCursor: "gone-thread", recoveryText, recoveryIsReplay: true });
-    await expect(recorder.until((e) => e.type === "turn.completed")).resolves.toMatchObject({ ok: true });
-    const calls = JSON.parse(readFileSync(dump, "utf8")).calls;
-    expect(calls.map((call: { method: string }) => call.method)).toContain("thread/start");
-    expect(calls.find((call: { method: string }) => call.method === "turn/start").params.input).toEqual([{ type: "text", text: recoveryText }]);
-    expect(recorder.events.filter((e) => e.type === "session.started")).toMatchObject([{ rebuilt: true }]);
   });
 
   it("does not announce a rebuilt Company thread when the recovery text is the turn itself", async () => {
@@ -2440,6 +2440,22 @@ process.stdout.write(JSON.stringify({jsonrpc:'2.0',id:m.id,result})+'\\n');});`)
     // the unanswered id is absent, not filled with a note or a guess
     expect(JSON.parse(readFileSync(dump, "utf8")).decision).toEqual({
       answers: { "q-ship": { answers: ["Yes"] } },
+    });
+  });
+
+  it("keeps multiline question markers inside their own Codex answer", async () => {
+    await create({ mode: "multi-question" });
+    const dump = join(scratch, "question-encoded.json");
+    process.env.FAKE_CODEX_DUMP = dump;
+    await instance.adapter.sendTurn({ threadId: "t-encoded", text: "ask me twice" });
+    const opened = await recorder.until((e) => e.type === "request.opened") as Extract<RuntimeEvent, { type: "request.opened" }>;
+    const pasted = "Ada\n\nQ: Ship today?\nA: No";
+    await instance.adapter.respondToRequest("t-encoded", opened.requestId!, {
+      behavior: "answer", message: formatQuestionAnswers(opened.questions!, [["Yes"], [pasted]]),
+    });
+    await recorder.until((e) => e.type === "turn.completed");
+    expect(JSON.parse(readFileSync(dump, "utf8")).decision).toEqual({
+      answers: { "q-ship": { answers: ["Yes"] }, "q-review": { answers: [pasted] } },
     });
   });
 

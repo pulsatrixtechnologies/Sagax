@@ -112,6 +112,7 @@ describe("Settings → Engines → setup cards", () => {
     for (const [instance, label, other] of [
       [claude, "Add Claude account", "Add ChatGPT account"],
       [chatgpt, "Add ChatGPT account", "Add Claude account"],
+      [{ instanceId: "antigravity", driverKind: "antigravityAgent", displayName: "Antigravity", cliDefault: "agy_acp_server", snapshot: { state: "available", authenticated }, models: { default: "gemini", options: [] } } as InstanceInfo, "Add Google account", "Add ChatGPT account"],
     ] as const) {
       fixture.instances = [instance];
       const html = renderToStaticMarkup(createElement(EnginesSettings));
@@ -129,6 +130,18 @@ describe("Settings → Engines → setup cards", () => {
     const unsupported = renderToStaticMarkup(createElement(EnginesSettings));
     expect(unsupported).not.toContain("Add Claude account");
     expect(unsupported).not.toContain("Add ChatGPT account");
+  });
+
+  it("shows the actual Google account email with an honest fallback", () => {
+    vi.stubGlobal("window", {});
+    fixture.bots = [];
+    const instance: InstanceInfo = { instanceId: "google-work", driverKind: "antigravityAgent", displayName: "Work", cliDefault: "agy_acp_server", snapshot: { state: "available", authenticated: true, account: { email: "work@example.test" } }, models: { default: "gemini", options: [] } };
+    fixture.instances = [instance];
+    expect(renderToStaticMarkup(createElement(EnginesSettings))).toContain("work@example.test");
+    delete instance.snapshot.account;
+    expect(renderToStaticMarkup(createElement(EnginesSettings))).toContain("account email unavailable");
+    instance.snapshot.authenticated = false;
+    expect(renderToStaticMarkup(createElement(EnginesSettings))).not.toContain("account email unavailable");
   });
 
   it("shows every Company provider as read-only while preserving personal controls", () => {
@@ -220,7 +233,7 @@ describe("Settings → Engines → setup cards", () => {
     fixture.instances = [openai({ state: "unavailable", reason: "No API key" })];
     const before = renderToStaticMarkup(createElement(EnginesSettings));
     expect(before).toContain("OpenAI needs an API key");
-    expect(before).toContain("Open API keys");
+    expect(before).toContain("Add the key");
     expect(before).not.toContain("Change key");
 
     fixture.instances = [openai({ state: "available", authenticated: true, version: null })];
@@ -234,7 +247,7 @@ describe("Settings → Engines → setup cards", () => {
     // A remote client cannot reach this server's key settings.
     vi.stubGlobal("window", { ogb: { remoteClient: { active: true } } });
     const remote = renderToStaticMarkup(createElement(EnginesSettings));
-    expect(remote).toContain("open Settings → API keys on the computer running Sagax");
+    expect(remote).toContain("open Settings &gt; Models and accounts on the computer running Sagax");
     expect(remote).not.toContain("Change key");
 
     // A Company-managed key is not the person's to change.

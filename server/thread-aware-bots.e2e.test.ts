@@ -17,6 +17,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { removeTempDir, waitForExit } from "./testing/cleanup.ts";
+import { readHandoffs } from "./testing/handoff-rows.ts";
 import { freePortBlock } from "./testing/ports.ts";
 import { openSse } from "./testing/sse.ts";
 
@@ -133,7 +134,9 @@ const bots = async () => (await api("GET", "/api/bots?messages=0")).body.bots as
 const botState = async (botId: string) => (await bots()).find((bot) => bot.id === botId);
 const taskOf = async (botId: string, threadId: string) => (await botState(botId))?.tasks.find((task: any) => task.threadId === threadId);
 const messages = async (threadId: string) => (await api("GET", `/api/threads/${threadId}/messages?limit=100`)).body.messages as any[];
-const handoffs = (): any[] => JSON.parse(readFileSync(join(home, ".sagax", "room-handoffs.json"), "utf8"));
+/** The coordinated tree as the job runtime records it (runtime.db), in the
+ * node shape the server reads (coordinator.ts HandoffView). */
+const handoffs = (): any[] => readHandoffs(join(home, ".sagax"));
 const coordinated = async (headers: Record<string, string>, botId: string, message: string) => {
   const response = await api("POST", "/api/internal/coordinate-bots", { botIds: [botId], message }, headers);
   expect(response.status, JSON.stringify(response.body)).toBe(200);

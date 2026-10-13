@@ -4,7 +4,7 @@
 // node names, so failures are classified into a closed set of reasons.
 import { execFile } from "node:child_process";
 
-import { tailscaleCandidates, tailscaleEnvironment } from "../companion/src/listener.ts";
+import { ownMagicDnsName, tailscaleCandidates, tailscaleEnvironment } from "../companion/src/listener.ts";
 
 export interface TailscaleStatus {
   cli: string;
@@ -78,7 +78,7 @@ export function parseTailscaleStatus(cli: string, stdout: string): TailscaleStat
     return null;
   }
   const self = Reflect.get(Object(parsed), "Self");
-  const dns = Reflect.get(Object(self), "DNSName");
+  const dns = ownMagicDnsName(parsed);
   const ips = Reflect.get(Object(self), "TailscaleIPs");
   const state = Reflect.get(Object(parsed), "BackendState");
   return {

@@ -40,10 +40,14 @@ describe("a person's label", () => {
     vi.unstubAllGlobals();
   });
 
-  it("is drawn with the bot label's tag: same markup for a bot and a person", () => {
+  it("is drawn with the label tag; a bot row reads its title out instead of drawing it", () => {
     const botRow = inStore(createElement(BotListItem, { bot: bot("CTO"), density: "comfortable", onMenu: vi.fn() }));
     const personRow = inStore(createElement(GroupListItem, { group: dm, density: "comfortable", onMenu: vi.fn() }));
-    expect(rowTag.exec(botRow)?.[0]).toBe(rowTag.exec(personRow)?.[0]);
+    expect(rowTag.exec(personRow)?.[0]).toBe(renderToStaticMarkup(createElement(LabelTag, { text: "CTO", className: "max-w-[46%] shrink" })));
+    // upstream's bot row: name, then the last message; the title is in the
+    // avatar's tooltip and read out with the name
+    expect(rowTag.test(botRow)).toBe(false);
+    expect(botRow).toContain('<span class="sr-only">, CTO</span>');
     expect(rowTag.exec(personRow)?.[1]).toBe("CTO");
     expect(personRow.indexOf(">CTO<")).toBeGreaterThan(personRow.indexOf(">Ada<"));
   });

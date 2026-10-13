@@ -55,10 +55,11 @@ afterEach(() => { vi.unstubAllGlobals(); });
 
 describe("bot-first sidebar", () => {
   it.each([
-    { enabled: true, density: "comfortable", size: 36, spacing: ["min-h-[54px]", "gap-2", "py-2", "pl-2"] },
+    // the reference window's comfortable row: a 44px portrait, 56px tall
+    { enabled: true, density: "comfortable", size: 44, spacing: ["min-h-[56px]", "gap-1.5", "py-1.5", "pl-1"] },
     { enabled: true, density: "compact", size: 28, spacing: ["gap-2", "py-1.5", "pl-2"] },
     { enabled: true, density: "icons", size: 36, spacing: ["justify-center", "px-1", "py-1.5"] },
-    { enabled: false, density: "comfortable", size: 36, spacing: ["min-h-[54px]", "gap-2", "py-2", "pl-2"] },
+    { enabled: false, density: "comfortable", size: 44, spacing: ["min-h-[56px]", "gap-1.5", "py-1.5", "pl-1"] },
     { enabled: false, density: "compact", size: 28, spacing: ["gap-2", "py-1.5", "pl-2"] },
     { enabled: false, density: "icons", size: 36, spacing: ["justify-center", "px-1", "py-1.5"] },
   ] as const)("sizes bot portraits and row spacing in $density density with threads $enabled", ({ enabled, density, size, spacing }) => {
@@ -83,7 +84,8 @@ describe("bot-first sidebar", () => {
       const row = findElement(tree, "data-sidebar-bot-row", bot.id)!;
       row.props.onClick!({ type: "click", target: {} } as MouseEvent);
       expect(fixture.dispatch).toHaveBeenCalledExactlyOnceWith({ type: "select", id: bot.id });
-      // Selection reuses bot.threadId; it must not create or switch a task.
+      // Nobody has written here yet, so the selection is the bot's main
+      // thread too: opening it must not create or switch a task.
       expect(bot.threadId).toBe("last-selected");
       for (const key of ["Enter", " "]) {
         fixture.dispatch.mockClear();
@@ -110,6 +112,28 @@ describe("bot-first sidebar", () => {
       expect(fixture.dispatch.mock.calls).toEqual(enabled
         ? [[{ type: "select", id: bot.id }]]
         : [[{ type: "select", id: bot.id }], [{ type: "switchTask", botId: bot.id, threadId: "main" }]]);
+    }
+  });
+
+  it.each(densities)("opens the bot's main thread when threads are hidden, %s density", (density) => {
+    // Threads were on once: this window still sits on an older thread, and
+    // the person last wrote in another one, the bot's main thread
+    // (server/main-thread.ts). With the tree hidden, that is the
+    // conversation the bot opens to.
+    const used = { ...bot, mainThreadId: "idle-history" };
+    for (const enabled of [false, true]) {
+      fixture.showThreads = enabled;
+      const opened = enabled ? { type: "select", id: bot.id } : { type: "switchTask", botId: bot.id, threadId: "idle-history" };
+      let tree: ReactNode;
+      function Capture() { tree = BotListItem({ ...rowProps(density), bot: used }); return tree; }
+      renderToStaticMarkup(createElement(Capture));
+      const row = findElement(tree, "data-sidebar-bot-row", bot.id)!;
+      fixture.dispatch.mockClear();
+      row.props.onClick!({ type: "click", target: {} } as MouseEvent);
+      expect(fixture.dispatch).toHaveBeenCalledExactlyOnceWith(opened);
+      fixture.dispatch.mockClear();
+      row.props.onKeyDown!({ key: "Enter", preventDefault: vi.fn() } as unknown as KeyboardEvent);
+      expect(fixture.dispatch).toHaveBeenCalledExactlyOnceWith(opened);
     }
   });
 
@@ -170,6 +194,45 @@ describe("bot-first sidebar", () => {
     expect(disabled).not.toContain("New thread");
   });
 
+  it("Edit profile on the remote client's menu opens the panel without naming a section", () => {
+    vi.stubGlobal("window", { innerWidth: 1024, innerHeight: 768, ogb: { remoteClient: { active: true } } });
+    let tree: ReactNode;
+    // call the menu inside a render so its hooks run and the returned tree
+    // carries the items' handlers
+    function Capture() {
+      tree = BotContextMenu({ menu: { botId: bot.id, x: 0, y: 0 }, onClose: vi.fn(), onArchive: vi.fn(), onDelete: vi.fn(), onMoveToSection: vi.fn(), onRename: vi.fn() });
+      return tree;
+    }
+    const editProfile = () => {
+      const items: ReactElement<ElementProps>[] = [];
+      const walk = (node: ReactNode) => {
+        for (const child of Children.toArray(node)) {
+          if (!isValidElement<ElementProps>(child)) continue;
+          if (child.props.role === "menuitem") items.push(child);
+          walk(child.props.children);
+        }
+      };
+      walk(tree);
+      return items.find((item) => Children.toArray(item.props.children).includes("Edit Profile"))!;
+    };
+    const render = () => renderToStaticMarkup(createElement(Capture));
+
+    // the panel is closed: select the bot, then a bare open
+    render();
+    editProfile().props.onClick!({} as MouseEvent);
+    expect(fixture.dispatch.mock.calls).toEqual([
+      [{ type: "select", id: bot.id }],
+      [{ type: "toggleSettings", open: true }],
+    ]);
+
+    // already open: only the retarget, never a section
+    fixture.dispatch.mockClear();
+    fixture.state.settingsOpen = true;
+    render();
+    editProfile().props.onClick!({} as MouseEvent);
+    expect(fixture.dispatch.mock.calls).toEqual([[{ type: "select", id: bot.id }]]);
+  });
+
 
   it("does not change group collaboration histories or creation", () => {
     fixture.showThreads = false;
@@ -204,17 +267,19 @@ describe("group rows line up with bot rows", () => {
   const rowClass = (markup: string, marker: string) => markup.match(new RegExp(`${marker}[^>]*class="([^"]*)"`))?.[1]
     ?? markup.match(new RegExp(`class="([^"]*)"[^>]*${marker}`))?.[1] ?? "";
 
-  it.each([true, false])("keeps the bot row inset fixed and the room row inset for its chevron with showThreads=%s, no outline around stacked faces", (showThreads) => {
+  it.each([true, false])("puts a room row at the bot row's inset and 44px box with showThreads=%s in the header location, no outline around stacked faces", (showThreads) => {
     fixture.showThreads = showThreads;
     fixture.state.bots = [bot, pepper];
     const groupMarkup = renderToStaticMarkup(createElement(GroupListItem, { group: twoBots, density: "comfortable", onMenu: vi.fn() }));
     const botMarkup = renderToStaticMarkup(createElement(BotListItem, { bot: pepper, density: "comfortable", onMenu: vi.fn() }));
-    // rooms keep a chevron in thread mode; bot rows never move
-    expect(rowClass(groupMarkup, 'data-sidebar-group-row="group"').split(" ")).toContain(showThreads ? "pl-6" : "pl-2");
-    expect(rowClass(botMarkup, 'data-sidebar-bot-row="pepper"').split(" ")).toContain("pl-2");
+    // a room lists its threads under the row only in the sidebar location,
+    // like a bot and a person, so in the header location it never moves
+    expect(rowClass(groupMarkup, 'data-sidebar-group-row="group"').split(" ")).toContain("pl-1");
+    expect(rowClass(groupMarkup, 'data-sidebar-group-row="group"').split(" ")).not.toContain("pl-6");
+    expect(rowClass(botMarkup, 'data-sidebar-bot-row="pepper"').split(" ")).toContain("pl-1");
     expect(rowClass(botMarkup, 'data-sidebar-bot-row="pepper"').split(" ")).not.toContain("pl-6");
-    // same 36px avatar footprint as the bot row
-    expect(groupMarkup).toContain("relative shrink-0 size-9");
+    // same 44px avatar footprint as the bot row
+    expect(groupMarkup).toContain("relative shrink-0 size-11");
     expect(groupMarkup).not.toMatch(/ring-2 ring-panel/);
   });
 });
@@ -240,7 +305,7 @@ describe("people rows line up with bot rows", () => {
     const botMarkup = renderToStaticMarkup(createElement(BotListItem, { bot, density, onMenu: vi.fn() }));
     const personInset = inset(classOf(personMarkup, 'data-sidebar-group-row="dm-ada"'));
     const botInset = inset(classOf(botMarkup, `data-sidebar-bot-row="${bot.id}"`));
-    expect(personInset).toEqual(["pl-2"]);
+    expect(personInset).toEqual([density === "compact" ? "pl-2" : "pl-1"]);
     expect(personInset).toEqual(botInset);
     expect(personMarkup).not.toContain("Ada Example threads");
     // no achievement title or points on a person's row
@@ -293,7 +358,7 @@ describe("activity-only escape hatch", () => {
 
   it("switches directly to the requested work and offers no thread-management actions", () => {
     let tree: ReactNode;
-    function Capture() { tree = SidebarBotActivity({ bot, density: "comfortable", pendingQueued: fixture.state.pendingQueued!, dispatch: fixture.dispatch }); return tree; }
+    function Capture() { tree = SidebarBotActivity({ bot, rowThreadId: bot.threadId, density: "comfortable", pendingQueued: fixture.state.pendingQueued!, dispatch: fixture.dispatch }); return tree; }
     const markup = renderToStaticMarkup(createElement(Capture));
     findElement(tree, "data-sidebar-activity-row", "approval")!.props.onClick!({} as MouseEvent);
     expect(fixture.dispatch).toHaveBeenCalledExactlyOnceWith({ type: "switchTask", botId: bot.id, threadId: "approval" });
@@ -304,9 +369,32 @@ describe("activity-only escape hatch", () => {
 
   it("removes selected and settled activity but keeps unread completed replies", () => {
     const selected = { ...bot, threadId: "approval", tasks: bot.tasks!.map((task) => task.threadId === "working" ? { ...task, busy: false, activity: "idle" as const } : task) };
-    const markup = renderToStaticMarkup(createElement(SidebarBotActivity, { bot: selected, density: "compact", pendingQueued: fixture.state.pendingQueued!, dispatch: fixture.dispatch }));
+    const markup = renderToStaticMarkup(createElement(SidebarBotActivity, { bot: selected, rowThreadId: selected.threadId, density: "compact", pendingQueued: fixture.state.pendingQueued!, dispatch: fixture.dispatch }));
     expect(markup).not.toContain('data-sidebar-activity-row="approval"');
     expect(markup).not.toContain('data-sidebar-activity-row="working"');
     expect(markup).toContain('data-sidebar-activity-row="unread"');
+  });
+
+  it("lists a reply in the thread a bot was left on, since its row opens the main thread", () => {
+    // This window left Atlas on an older thread a routine's reply has since
+    // landed in; the person last wrote in another one, the main thread.
+    const left: Bot = { ...bot, threadId: "left-behind", mainThreadId: "main-chat", tasks: [
+      { threadId: "left-behind", title: "Routine report", createdAt: 1, unread: true },
+      { threadId: "main-chat", title: "Main chat", createdAt: 2, unread: true },
+    ] };
+    const rows = () => {
+      const markup = renderToStaticMarkup(createElement(BotListItem, { ...rowProps("comfortable"), bot: left }));
+      return ["left-behind", "main-chat"].filter((threadId) => markup.includes(`data-sidebar-activity-row="${threadId}"`));
+    };
+    fixture.showThreads = false;
+    expect(rows()).toEqual(["left-behind"]);
+    // On screen, the thread it shows is the row, and the main thread a sibling.
+    fixture.state.selectedId = left.id;
+    expect(rows()).toEqual(["main-chat"]);
+    // With threads shown nothing is listed under the bot (Sagax: the chat
+    // header's thread button is the one place for threads).
+    fixture.showThreads = true;
+    fixture.state.selectedId = "other-bot";
+    expect(rows()).toEqual([]);
   });
 });

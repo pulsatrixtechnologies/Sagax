@@ -32,6 +32,31 @@ or workspace/team ownership and computer-sharing grants. Full Access controls
 approval prompts; it does not sign in for you, enable a feature you disabled,
 or grant another bot access to a different workspace.
 
+### The level a new bot starts on
+
+On a solo server a new bot and its first thread start on **Approve for me**
+(a bot on This computer starts on Ask until its own warning).
+
+On an organization server the organization decides (2026-10-11). The
+console's New bot default (`defaults.approvalMode` of the admin API's
+`POST settings`, the same value as Settings > New bot defaults) sets it:
+**Approve for me** when it says `auto`, **Ask for approval** otherwise,
+including when no policy was ever saved. `full` and `custom` start on Ask
+too: they need the owner's own confirmation for that bot, which a bot that
+does not exist yet cannot have. New bot, the API and a Primary Bot creating
+a teammate follow it; a level the request names still wins, and imports and
+team backups still start on Ask. Existing bots and threads never move: the
+one-time switch of older bots from Ask to Approve for me does not run where
+new bots start on Ask.
+
+**Full access** on an organization server is off until an admin turns it on
+(Settings > Organization > Allow full access, or `allowFullAccess` in the
+admin API's `POST settings`). A saved choice, on or off, is kept. An
+organization that never saved it and whose bots already ran on Full keeps
+Full allowed: the first start of this version writes `allowFullAccess:
+true` once (an `org.settings` row in the admin activity log), so no bot
+changes level.
+
 The effective setting belongs to the source conversation. An existing Ask
 thread remains Ask even if the bot default is Full; a Full thread works without
 these extra prompts even if the bot default is Ask. Ask, Auto, and Custom retain
@@ -76,8 +101,16 @@ once** answers this request only. **Always allow this session** hands the
 provider its own remembered approval: Claude receives its suggested permission
 rules, and ACP agents such as Grok receive their `allow_always` option, or the
 driver repeats your answer for that exact operation until the native session
-ends. Sagax keeps no standing grant for a provider's tool. It is not
-offered for computer control or for a sandbox change.
+ends. API models (OpenAI-compatible, MiniMax, Mistral, Grok API) have no
+native session, so their driver keeps the allow for that bot, that exact tool
+and that exact server (as launched: a changed command, URL or credential is
+another server, and a bridge into a VM or a Boat is new each turn) for the
+rest of the conversation, in memory until the server restarts. Another bot in
+the same room asks again. Sagax keeps no standing grant for a provider's tool. It is not
+offered for computer control, for a sandbox change or on a guest's turn. The
+harness's own agents tools (coordinating teammates, threads, memory) never
+ask on Claude, Codex or API models: Sagax authorizes each of those
+routes itself.
 
 Auto-accept edits and Ask card whatever the provider asks about. Approve for
 me cards whatever the provider's reviewer leaves for you, with the note "The
@@ -95,6 +128,13 @@ runs in from the CLI's `init` frame; when Approve for me was requested and the
 session runs Manual, the chat shows one notice per session naming the model.
 Choose a model the reviewer supports, Auto-accept edits, or Full access to
 stop the prompts.
+
+### Changing a bot's engine
+
+A bot at **Full access** or **Custom** goes back to Ask before it changes
+engine, and the new engine's Full access is turned on again through its own
+confirmation. Switching to an engine that cannot run the bot's level (for
+example Auto-accept edits on Codex) also asks to choose Ask first.
 
 ### Antigravity: Ask, Edits, or Auto (full access)
 

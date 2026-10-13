@@ -88,3 +88,13 @@ export function computerParkedText(holder: ComputerHolder | null | undefined, ce
   const who = holder ? ` — ${holderPhrase(holder).replace(" is running ", " is still running ").replace(" is using it", " is still using it")}` : "";
   return `Computer still busy after ${minutes(ceilingMs)}${who}. Parked — it continues automatically when the computer is free.`;
 }
+
+/** What a computer call answers once a person's hold has outlasted the wait
+ * ceiling — the longest any turn waits for a computer, whoever has it. Until
+ * then each call waits for them inside the call; past it the turn stops
+ * waiting, as it did at every hold before calls waited, instead of calling
+ * again every 45 seconds for as long as they are away. */
+export function computerPersonAwayText(ceilingMs: number): string {
+  return `A person has had control of this computer for over ${minutes(ceilingMs)}, so this call was NOT performed and this turn stops waiting for them. ` +
+    "Pause this task: tell the person you are waiting for them to hand control back, and take a fresh screenshot before your next action once they have.";
+}

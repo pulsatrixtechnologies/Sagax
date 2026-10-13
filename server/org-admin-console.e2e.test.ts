@@ -13,6 +13,8 @@
 //       bulk, package and import, stop and delete
 //   C4  routines and approvals
 //   C5  connections, usage, logs, incidents, audit, settings
+//   C6  a bot's look and persona, its picture
+//   C7  the routines calendar: past and planned runs, by scope
 import { spawn, type ChildProcess } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { connect, type Socket } from "node:net";
@@ -212,7 +214,8 @@ posixOnly("Perspicax console: the Sagax admin routes", () => {
     expect(caps.status, caps.text).toBe(200);
     expect(caps.headers.get("x-sagax-admin-api")).toBe("1");
     const pkg = JSON.parse(readFileSync(join(SERVER_DIR, "..", "package.json"), "utf8")) as { forkVersion: string };
-    expect(caps.body).toMatchObject({ version: pkg.forkVersion, api: 4, permissionsVersion: 1 });
+    expect(caps.body).toMatchObject({ version: pkg.forkVersion, api: 5, permissionsVersion: 1 });
+    expect(caps.body.mascots.map((entry: { id: string }) => entry.id)).toEqual(["owl", "crab", "shape", "trombi", "bunbu", "shiba", "grump", "ogre", "frog"]);
     expect(caps.body.permissions.length).toBeGreaterThan(20);
     // api 4: every engine with its Cloud or Local group and how people get access
     expect(caps.body.engines.length).toBeGreaterThan(0);
@@ -461,7 +464,11 @@ posixOnly("Perspicax console: the Sagax admin routes", () => {
     expect((await admin("GET", `routines/${routineId}`, ALICE)).body.routine.lastRun).toMatchObject({ status: "ok" });
     const paused = await admin("POST", `routines/${routineId}/pause`, ALICE, { paused: true });
     expect(paused.body.routine.enabled).toBe(false);
-    const audit = (await admin("GET", `audit?category=bot&target=${routineId}`, ALICE)).body.rows as Array<any>;
+    // the pause row can land a moment after its answer: read until it shows
+    const audit = await waitFor(async () => {
+      const rows = (await admin("GET", `audit?category=bot&target=${routineId}`, ALICE)).body.rows as Array<any>;
+      return rows.some((row) => row.action === "routine.pause") ? rows : null;
+    }, 10_000);
     expect(audit.map((row) => row.action)).toEqual(expect.arrayContaining(["routine.resume", "routine.run_now", "routine.pause"]));
     expect(audit.find((row) => row.action === "routine.run_now")).toMatchObject({ actor: { via: "console", principalId: ids.alice } });
   }, 60_000);
@@ -498,7 +505,7 @@ posixOnly("Perspicax console: the Sagax admin routes", () => {
     const settings = await admin("GET", "settings", ALICE);
     expect(settings.status, settings.text).toBe(200);
     expect(settings.body).toMatchObject({
-      org: { allowFullAccess: true, orgKeyConfigured: true },
+      org: { allowFullAccess: false, orgKeyConfigured: true },
       policies: { allowedMarketplaces: null, allowedEngines: null },
       backup: { enabled: true, schedule: "daily 03:00 UTC", ok: true },
     });
@@ -524,5 +531,71 @@ posixOnly("Perspicax console: the Sagax admin routes", () => {
     expect(reset.body.settings.policies).toMatchObject({ allowedEngines: null, allowedMarketplaces: null });
     const audit = (await admin("GET", "audit?category=org&limit=50", ALICE)).body.rows as Array<any>;
     expect(audit.filter((row) => row.action === "org.settings" && row.actor.via === "console").map((row) => row.changed[0])).toEqual(expect.arrayContaining(["allowFullAccess", "allowedEngines", "pluginMarketplaces", "defaults"]));
+  }, 60_000);
+
+  it("C6: a bot's look and persona, its picture behind a strong ETag", async () => {
+    const pixel = await createBot(alice, "Pixel", "claude");
+    const plain = await admin("GET", `bots/${pixel.id}`, ALICE);
+    expect(plain.body.bot.look).toMatchObject({ kind: "default", character: "owl", family: "classics", skin: "none", image: null });
+    expect((await admin("GET", `bots/${pixel.id}/avatar`, ALICE)).body.code).toBe("not_found");
+    const dressed = await api("PATCH", `/api/bots/${pixel.id}`, alice, { title: "Design helper", description: "Draws the mockups.", mascotLook: { character: "bunbu", skins: { bunbu: "pastel" } } });
+    expect(dressed.status, dressed.text).toBe(200);
+    const listed = ((await admin("GET", "bots?q=pixel", ALICE)).body.items as Array<any>)[0];
+    expect(listed.look).toMatchObject({ kind: "mascot", character: "bunbu", family: "animals", skin: "pastel", image: null });
+    expect(listed.persona).toEqual({ displayName: "Pixel", title: "Design helper", description: "Draws the mockups." });
+
+    const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==", "base64");
+    const uploaded = await fetch(`${BASE}/api/attachments`, { method: "POST", headers: { "content-type": "image/png", cookie: alice.cookie! }, body: new Uint8Array(png) });
+    expect(uploaded.status).toBe(201);
+    const file = ((await uploaded.json()) as { path: string }).path.split(/[\\/]/).pop()!;
+    expect((await api("PATCH", `/api/bots/${pixel.id}`, alice, { avatarUrl: `/api/attachments/${file}`, avatarCrop: "circle" })).status).toBe(200);
+    const page = await admin("GET", `bots/${pixel.id}`, ALICE);
+    expect(page.body.bot.look).toMatchObject({ kind: "image", character: "bunbu", image: { crop: "circle", zoom: 1, focusX: 0.5, focusY: 0.5, type: "image/png", version: expect.stringMatching(/^[0-9a-f]{16}$/) } });
+    expect(page.text).not.toContain(file);
+    const picture = await fetch(`${BASE}/api/org/admin/bots/${pixel.id}/avatar`, { headers: { authorization: `Bearer ${console$(ALICE).bearer}` } });
+    expect(picture.status).toBe(200);
+    expect(Buffer.from(await picture.arrayBuffer())).toEqual(png);
+    expect(picture.headers.get("content-type")).toBe("image/png");
+    expect(picture.headers.get("cache-control")).toBe("private, no-cache");
+    expect(picture.headers.get("x-content-type-options")).toBe("nosniff");
+    expect(picture.headers.get("etag")).toBe(`"${page.body.bot.look.image.version}"`);
+    const again = await fetch(`${BASE}/api/org/admin/bots/${pixel.id}/avatar`, { headers: { authorization: `Bearer ${console$(ALICE).bearer}`, "if-none-match": picture.headers.get("etag")! } });
+    expect(again.status).toBe(304);
+    // a manager out of reach, and an employee, never see it
+    expect((await admin("GET", `bots/${pixel.id}/avatar`, MONA)).status).toBe(404);
+    expect((await admin("GET", `bots/${pixel.id}/avatar`, ZOE)).body.code).toBe("forbidden_role");
+  }, 60_000);
+
+  it("C7: the routines calendar: a run and the planned ones, by scope", async () => {
+    const clock = await createBot(alice, "Clock", "claude");
+    const created = await api("POST", "/api/routines", alice, { name: "Hourly check", botId: clock.id, prompt: "Check the clock.", enabled: true,
+      schedule: { type: "interval", everyMinutes: 60, anchorAt: Date.now() + 3_600_000 } });
+    expect(created.status, created.text).toBe(201);
+    const id = created.body.routine.id as string;
+    const started = await admin("POST", `routines/${id}/run`, ALICE, {});
+    expect(started.status, started.text).toBe(200);
+    await waitFor(async () => {
+      const got = await admin("GET", `routines/${id}/runs`, ALICE);
+      return (got.body.items as Array<any> | undefined)?.[0]?.status === "ok";
+    }, 40_000);
+    const window = `from=${Date.now() - 86_400_000}&to=${Date.now() + 86_400_000}`;
+    const all = await admin("GET", `routines/runs?scope=all&routine=${id}&${window}`, ALICE);
+    expect(all.status, all.text).toBe(200);
+    const items = all.body.items as Array<any>;
+    expect(items[0]).toMatchObject({
+      id: started.body.run.id, routineId: id, routineName: "Hourly check", botId: clock.id, botName: "Clock", state: "ok", planned: false,
+      trigger: "manual", owner: { principalId: ids.alice, name: "Alice" }, runAs: { principalId: ids.alice }, threadId: expect.any(String), endedAt: expect.any(Number),
+    });
+    const planned = items.filter((item) => item.planned);
+    expect(planned.length).toBeGreaterThanOrEqual(23);
+    expect(planned[0]).toMatchObject({ state: "planned", threadId: null, durationMs: expect.any(Number) });
+    expect(all.text).not.toContain("Check the clock.");
+    // a member sees their own routines only; a wider scope needs its permission
+    expect((await admin("GET", `routines/runs?${window}`, ZOE)).body.items.some((item: { routineId: string }) => item.routineId === id)).toBe(false);
+    expect((await admin("GET", `routines/runs?scope=team&${window}`, ZOE)).body).toMatchObject({ code: "routine_scope_not_allowed", permission: "routines.viewTeam" });
+    expect((await admin("GET", `routines/runs?scope=team&${window}`, MONA)).body.items.some((item: { routineId: string }) => item.routineId === id)).toBe(false);
+    expect((await admin("GET", "routines/runs?from=2026-01-01&to=2026-06-01", ALICE)).body.code).toBe("bad_request");
+    expect((await admin("GET", `routines/${id}`, ALICE)).status).toBe(200);
+    expect((await admin("POST", `routines/${id}/pause`, ALICE, { paused: true })).status).toBe(200);
   }, 60_000);
 });

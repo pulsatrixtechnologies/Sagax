@@ -337,7 +337,9 @@ async function locate(deps: OrgAdminFilesDeps, botId: string, roots: BotFileRoot
     }
     if (stat.isSymbolicLink()) throw new FileRefusal(403, "link_refused", "Links are not followed here.");
     if (!isInside(rootReal, real)) throw new FileRefusal(403, "outside_root", "This path leaves its folder.");
-    const disk = relative(rootReal, found.localPath);
+    // From the real path: a stored localPath can sit under a symlinked
+    // parent (macOS /var is /private/var) and would read as leaving the root.
+    const disk = relative(rootReal, real);
     if (!disk || disk.startsWith("..") || isAbsolute(disk)) throw new FileRefusal(403, "outside_root", "This path leaves its folder.");
     return { root: root.id, path: found.id, name: found.name, real, stat, rootDir: rootReal, segments: disk.split(sep).filter(Boolean) };
   }

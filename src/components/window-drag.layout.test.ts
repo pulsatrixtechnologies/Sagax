@@ -40,7 +40,7 @@ describe("window drag regions", () => {
   it("the chat and group header rows are .content-topbar (a drag region) with the name chip opted out", () => {
     for (const source of [chatView, groupView]) {
       const header = source.slice(source.indexOf('"content-topbar",') - 120, source.indexOf('"content-topbar",') + 600);
-      expect(header).toContain("headerDragStyle");
+      expect(header).toContain("{...headerDragProps}");
       expect(header).toContain("@container/chathead");
     }
     expect(chatView).toContain("style={headerNoDragStyle}");

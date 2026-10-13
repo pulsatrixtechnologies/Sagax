@@ -231,7 +231,14 @@ export function stampClockPlayback(metrics: {
   firstAudioAt?: number | boolean;
   ttsFirstByteAt?: number | boolean;
   firstSentenceAt?: number | boolean;
+  earlyStart?: boolean;
+  stoppedAt?: number;
+  endedAt?: number;
 }): void {
+  // held speculative TTS has first-byte timestamps before speech-end.
+  // stamping firstAudio here is what made real18 turn 16 wait 45 s for
+  // firstSentence after a leftover firstAudioAt.
+  if (metrics.earlyStart && metrics.endedAt === metrics.stoppedAt) return;
   if (
     metrics.firstAudioAt === undefined
     && typeof metrics.ttsFirstByteAt === "number"
@@ -243,8 +250,9 @@ export function stampClockPlayback(metrics: {
 
 /** A metrics event from VoiceCall does not carry a ClockPlayer fallback
  * stamp. Keep the one we already have unless the turn itself stamped. */
-export function mergeBenchMetrics<T extends { firstAudioAt?: number | boolean }>(prev: T, next: T): T {
+export function mergeBenchMetrics<T extends { firstAudioAt?: number | boolean; utteranceId?: string }>(prev: T, next: T): T {
   const out = { ...next };
+  if (prev.utteranceId && next.utteranceId && prev.utteranceId !== next.utteranceId) return out;
   if (out.firstAudioAt === undefined && prev.firstAudioAt !== undefined) out.firstAudioAt = prev.firstAudioAt;
   return out;
 }
@@ -662,12 +670,7 @@ export async function runVoiceLatencyBench(engine: BenchEngine = "claude"): Prom
       benchOwner.current = { threadId, callId, utteranceId, replyStarted: false };
       void api("POST", `/api/bots/${bot.id}/messages`, {
         threadId, text, sendId: utteranceId,
-        voiceCall: {
-          callId, utteranceId, language: voiceCallMarkLanguage(currentLang), duplex: true,
-          ...(turn.interrupted ? { interrupted: true } : {}),
-          ...(turn.continues ? { continues: true } : {}),
-          ...(turn.speculative ? { speculative: true } : {}),
-        },
+        voiceCall: { callId, utteranceId, language: voiceCallMarkLanguage(currentLang), duplex: true, ...(turn.interrupted ? { interrupted: true } : {}), ...(turn.continues ? { continues: true } : {}), ...((turn as { speculative?: boolean }).speculative ? { speculative: true } : {}) },
       }).then((sent) => {
         diag.sends.push({ status: sent.status, ok: sent.ok, superseded: sent.superseded });
         benchLog(`send status=${sent.status} ok=${sent.ok}`);

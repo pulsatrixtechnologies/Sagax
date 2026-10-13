@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { lazyClaimWaitMs, startAutoVmClaim, type AutoVmClaimSlot, type AutoVmClaimTable } from "./auto-vm-claims.ts";
+import { startAutoVmClaim, type AutoVmClaimSlot, type AutoVmClaimTable } from "./auto-vm-claims.ts";
 
 const slot = (claim: () => Promise<void>, generation = "gen-1"): AutoVmClaimSlot => ({
   owner: { threadId: "t1", generation },
@@ -127,41 +127,5 @@ describe("startAutoVmClaim", () => {
     await table.get("t1")!.begin;
     expect(table.get("t1")!.claimed).toBe(true);
     expect(onRejected).not.toHaveBeenCalled();
-  });
-});
-
-describe("lazyClaimWaitMs", () => {
-  it("waits only on the call that fires a fast claim", async () => {
-    const table: AutoVmClaimTable = new Map();
-    table.set("t1", { ...slot(async () => undefined), lazy: true });
-    expect(lazyClaimWaitMs(table.get("t1"), 5_000)).toBe(5_000);
-    startAutoVmClaim(table, "t1", "gen-1");
-    // Still running: a fast claim that has not landed is contention, answered at once.
-    expect(lazyClaimWaitMs(table.get("t1"), 5_000)).toBeNull();
-    await table.get("t1")!.begin;
-    expect(lazyClaimWaitMs(table.get("t1"), 5_000)).toBeNull();
-  });
-
-  it("waits on every call while a slow claim (a cloud computer starting) runs, and not once it settled", async () => {
-    let land!: () => void;
-    const table: AutoVmClaimTable = new Map();
-    table.set("t1", { ...slot(() => new Promise<void>((resolve) => { land = resolve; })), lazy: true, graceMs: 45_000 });
-    expect(lazyClaimWaitMs(table.get("t1"), 5_000)).toBe(45_000);
-    startAutoVmClaim(table, "t1", "gen-1");
-    expect(lazyClaimWaitMs(table.get("t1"), 5_000)).toBe(45_000);
-    land();
-    await table.get("t1")!.begin;
-    expect(lazyClaimWaitMs(table.get("t1"), 5_000)).toBeNull();
-
-    table.set("t2", { owner: { threadId: "t2", generation: "gen-1" }, lazy: true, graceMs: 45_000,
-      claim: async () => { throw new Error("no hours left"); } });
-    startAutoVmClaim(table, "t2", "gen-1");
-    await table.get("t2")!.begin;
-    expect(lazyClaimWaitMs(table.get("t2"), 5_000)).toBeNull();
-  });
-
-  it("never waits on an eager attach or a missing slot", () => {
-    expect(lazyClaimWaitMs(slot(async () => undefined), 5_000)).toBeNull();
-    expect(lazyClaimWaitMs(undefined, 5_000)).toBeNull();
   });
 });

@@ -1,11 +1,14 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { createServer, type ServerResponse } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, it } from "vitest";
 import { launchVerificationServer, runControlOmb } from "../scripts/control-omb.ts";
 import { request } from "../scripts/mcp-server.ts";
+import { rebuiltSessionNotice } from "./resume-recovery.ts";
 import { removeTempDir } from "./testing/cleanup.ts";
+import { readHandoffs } from "./testing/handoff-rows.ts";
 import { openSse } from "./testing/sse.ts";
 
 /** What a fixture turn was told: the instructions its process was launched
@@ -43,7 +46,9 @@ async function fixtureSession(test: (f: any) => Promise<void>, fakeEnv: NodeJS.P
       [specialist.id]: { reply: "CSV boundary cases verified" },
     };
     const save = () => writeFileSync(planPath, JSON.stringify(plan));
-    const nodes = () => existsSync(join(session.info.dataDir, "room-handoffs.json")) ? JSON.parse(readFileSync(join(session.info.dataDir, "room-handoffs.json"), "utf8")) : [];
+    // The coordinated turns as the runtime records them (DATA_DIR/runtime.db),
+    // projected onto the node shape the server reads (coordinator.ts HandoffView).
+    const nodes = () => readHandoffs(session.info.dataDir);
     const evidence = () => existsSync(`${planPath}.evidence.jsonl`) ? readFileSync(`${planPath}.evidence.jsonl`, "utf8").trim().split("\n").filter(Boolean).map(line => JSON.parse(line)) : [];
     const messages = async (threadId: string) => (await api(`/api/threads/${threadId}/messages`)).messages;
     const start = async () => { save(); return cli("send", "--bot", chief.id, "--task", chief.activeTaskId, "--text", "Please have Engineering build and independently verify a CSV export. Own the result."); };
@@ -264,8 +269,11 @@ it.each(["resume", "stop", "failed resume", "failed root"] as const)("keeps a gu
       expectedTurnId: waiting.activeTurnId, expectedExecutionId: waiting.executionId };
     if (action === "failed root") {
       await api("PATCH", `/api/bots/${f.chief.id}`, { chiefOfStaff: false, hidden: true });
+      // The runtime rechecks addresses before every dispatch (contract §8):
+      // the root is refused when its resume comes due, once the teammate
+      // mid-turn has settled, and nothing of it runs again.
+      writeFileSync(gate, "release the isolated teammate after its root lost its Chief");
       await expect.poll(() => f.nodes().find((node: any) => node.id === waiting.executionId)?.status, { timeout: 15_000 }).toBe("failed");
-      writeFileSync(gate, "release the isolated teammate after its root failed");
       const finalWait = await f.wait();
       evidence.push({ command: ["wait", "--bot", f.chief.id, "--task", threadId, "--timeout", "30"], result: finalWait });
       expect(finalWait.status).toBe("settled");
@@ -449,7 +457,8 @@ it("returns nested results after Claude rejects the source's prior resume cursor
   expect(f.nodes().every((node: any) => node.status === "completed")).toBe(true);
   expect(f.evidence().map((turn: any) => turn.botId)).toEqual([f.chief.id, f.chief.id, f.lead.id, f.specialist.id, f.lead.id, f.chief.id]);
   const transcript = await f.messages(f.chief.activeTaskId);
-  expect(transcript.some((message: any) => message.tool?.name?.includes("resume_rejected"))).toBe(true);
+  // the refused resume went on in a new session started from the chat, and said so
+  expect(transcript.some((message: any) => message.tool?.name === `notice: ${rebuiltSessionNotice("Claude Code")}`)).toBe(true);
 }, { FAKE_CLAUDE_MODE: "dead-session", FAKE_CLAUDE_EXIT_AFTER_TURN: "1" }), 45_000);
 
 it("uses recipient bot defaults for its new task, never the sender's or its selected old thread's settings", () => fixture(async f => {
@@ -701,7 +710,8 @@ it("queues a recipient at capacity, preserving its existing task and resuming on
 // the work: the new turn runs now, the assignments stay out, and it is told
 // which ones — otherwise the model assumes its fan-out died and resends it.
 it("runs a message sent while a teammate works, keeps the assignment, and names it in that turn", () => fixture(async f => {
-  f.plan[f.lead.id] = { delayMs: 4000, reply: "CSV export implemented" };
+  const gate = join(f.session.info.dataDir, "steered-assignment-ready");
+  f.plan[f.lead.id] = { gateFile: gate, reply: "CSV export implemented" };
   f.plan[f.chief.id] = { turns: [
     { steps: structuredClone(f.plan[f.chief.id].steps), reply: "Assigned to Engineering" },
     { reply: "Noted; Engineering is still working on it" },
@@ -711,6 +721,13 @@ it("runs a message sent while a teammate works, keeps the assignment, and names 
   await expect.poll(() => f.nodes().find((node: any) => node.parentId)?.status, { timeout: 15_000 }).toBe("running");
   const assignment = f.nodes().find((node: any) => node.parentId);
 
+  // The Chief's own assigning turn must have ended: a message sent while it
+  // is still finishing is steered into that live turn, which carries no
+  // outstanding-assignments note (slow Windows runners hit this).
+  await expect.poll(async () => {
+    const chief = (await f.api("/api/bots?messages=0")).bots.find((bot: any) => bot.id === f.chief.id);
+    return { busy: chief.busy, waitingForTeammates: chief.waitingForTeammates };
+  }, { timeout: 15_000 }).toEqual({ busy: false, waitingForTeammates: true });
   const receipt = await f.api(`/api/bots/${f.chief.id}/messages`, { text: "Also make sure the export is UTF-8.", threadId: f.chief.activeTaskId });
   // It ran; it was not held behind the outstanding work.
   expect(receipt.queued).toBeUndefined();
@@ -723,7 +740,8 @@ it("runs a message sent while a teammate works, keeps the assignment, and names 
   expect(told(steered)).toContain(assignment.id);
   expect(told(steered)).toContain("Engineering lead");
   // The teammate was never touched: it finishes and still returns here.
-  expect(f.nodes().find((node: any) => node.id === assignment.id).status).not.toBe("cancelled");
+  expect(f.nodes().find((node: any) => node.id === assignment.id).status).toBe("running");
+  writeFileSync(gate, "finish after the steered turn read its assignments");
   expect((await f.wait()).status).toBe("settled");
   expect(f.nodes().every((node: any) => node.status === "completed")).toBe(true);
   expect((await f.messages(f.chief.activeTaskId)).some((message: any) => message.tool?.name === "Engineering lead replied")).toBe(true);
@@ -853,15 +871,24 @@ it("deleting the waiting source cancels its tree and never recreates the deleted
 }), 45_000);
 
 it("withholds direct results when the owner's cross-team grant is revoked", () => fixture(async f => {
-  f.plan[f.lead.id] = { delayMs: 3000, reply: "PRIVATE_ENGINEERING_RESULT" };
+  // The grant goes while the teammate's engine is in its turn (its ready
+  // file is written from inside it): a record that says "running" is
+  // written at dispatch, before the turn is even set up.
+  const ready = join(f.session.info.dataDir, "private-work.ready");
+  const gate = join(f.session.info.dataDir, "private-work.gate");
+  f.plan[f.lead.id] = { readyFile: ready, gateFile: gate, reply: "PRIVATE_ENGINEERING_RESULT" };
   await f.start();
-  await expect.poll(() => f.nodes().find((node: any) => node.parentId)?.status, { timeout: 15_000 }).toBe("running");
+  await expect.poll(() => existsSync(ready), { timeout: 15_000 }).toBe(true);
   await f.api(`/api/bots/${f.chief.id}`, { managedSections: [] }, "PATCH");
+  writeFileSync(gate, "finish the private work after the grant went");
   expect((await f.wait()).status).toBe("settled");
-  expect(f.nodes().find((node: any) => node.parentId).status).toBe("failed");
+  // The Chief lost access while the teammate worked: whatever the Chief's
+  // review turn was told, the private result is not in it.
   const resumed = f.evidence().find((turn: any) => turn.botId === f.chief.id && turn.resumed);
+  expect(JSON.stringify(resumed), told(resumed).slice(-1_500)).not.toContain("PRIVATE_ENGINEERING_RESULT");
+  const child = f.nodes().find((node: any) => node.parentId);
+  expect(child.status, `${JSON.stringify(child)}\n${told(resumed).slice(-1_500)}`).toBe("failed");
   expect(resumed.prompt.message.content).toContain("Result withheld");
-  expect(JSON.stringify(resumed)).not.toContain("PRIVATE_ENGINEERING_RESULT");
 }), 45_000);
 
 it("retains returned direct reports for follow-up turns but rechecks access before replay", () => fixture(async f => {
@@ -913,7 +940,7 @@ it("runs the owed direct follow-up while the same bot works in another thread", 
   await expect.poll(async () => (await chiefTasks()).find((task: any) => task.title === "Independent hold")?.busy, { timeout: 20_000 }).toBe(true);
   // The owed follow-up belongs to this conversation alone: it must dispatch
   // even while the bot stays busy in its sibling thread.
-  const root = () => f.nodes().find((node: any) => node.key === "root");
+  const root = () => f.nodes().find((node: any) => !node.parentId);
   await expect.poll(() => root()?.status, { timeout: 10_000 }).toBe("running");
   writeFileSync(gate, "");
   await expect.poll(() => root()?.status, { timeout: 10_000 }).toBe("completed");
@@ -944,3 +971,107 @@ it("gives a teammate each request once, never also as a bare assistant line", ()
   expect(second.split("REQUEST_SECOND").length - 1).toBe(1);
   expect(second).not.toMatch(/^Assistant: @/m);
 }, { FAKE_CLAUDE_MODE: "dead-session" }), 60_000);
+
+/** The Engineering lead on an OpenAI-compatible engine served from loopback,
+ * where `answer` replies to every chat request. */
+async function onLoopbackEngine(f: any, answer: (res: ServerResponse) => void): Promise<() => Promise<void>> {
+  const llm = createServer(async (req, res) => {
+    for await (const _ of req) { /* drain */ }
+    if (req.url?.endsWith("/models")) { res.setHeader("content-type", "application/json"); res.end(JSON.stringify({ data: [{ id: "loop-model" }] })); return; }
+    answer(res);
+  });
+  await new Promise<void>(resolve => llm.listen(0, "127.0.0.1", resolve));
+  const port = (llm.address() as { port: number }).port;
+  await f.api("/api/config", { openaiCompat: { key: "fixture-loop-key", url: `http://127.0.0.1:${port}/v1`, model: "loop-model" } }, "PATCH");
+  await f.cli("set-model", "--bot", f.lead.id, "--instance", "openaiCompat", "--model", "loop-model");
+  return () => new Promise<void>(resolve => llm.close(() => resolve()));
+}
+
+// A teammate on an OpenAI-compatible engine stops at the 64-step cap. The
+// Chief that assigned the work is told so — the cap, what ran, where the
+// handoff is — and decides what to send next. No unattended `Continue:` task
+// starts beside it on the same work, whose result would never reach the Chief.
+it("returns a teammate's step cap to the Chief instead of continuing it unattended", () => fixture(async f => {
+  let calls = 0;
+  const close = await onLoopbackEngine(f, res => {
+    // Never a final answer: one more tool call, every round.
+    const call = { tool_calls: [{ index: 0, id: `call_${++calls}`, type: "function", function: { name: "missing_tool", arguments: "{}" } }] };
+    res.writeHead(200, { "content-type": "text/event-stream" });
+    res.end(`data: ${JSON.stringify({ choices: [{ index: 0, delta: call, finish_reason: "tool_calls" }] })}\n\ndata: [DONE]\n\n`);
+  });
+  try {
+    await f.start();
+    expect((await f.wait()).status).toBe("settled");
+    const child = f.nodes().find((node: any) => node.botId === f.lead.id);
+    expect(child.status).toBe("failed");
+    expect(child.result).toMatch(/^Stopped after 64 steps without a final answer\. The steps so far already ran, so ask only for what's left\. Before it stopped it made 64 tool calls: missing_tool ×64 \(64 failed\)\. Every step it took is listed in .+handoffs.+; to finish, assign what is left and point to that file\.$/);
+    const resumed = f.evidence().find((turn: any) => turn.botId === f.chief.id && turn.resumed);
+    expect(resumed.prompt.message.content).toContain("Stopped after 64 steps without a final answer");
+    const chip = (await f.messages(f.chief.activeTaskId)).find((message: any) => message.roomRequest?.phase === "result");
+    expect(chip.tool.name).toContain("Engineering lead — failed: Stopped after 64 steps without a final answer");
+    const lead = (await f.api("/api/bots")).bots.find((bot: any) => bot.id === f.lead.id);
+    expect(lead.tasks.map((task: any) => task.title).filter((title: string) => title.startsWith("Continue:"))).toEqual([]);
+    expect(calls).toBe(64);
+  } finally { await close(); }
+}), 60_000);
+
+// A usage limit is the provider's to state: the Chief hears it as said.
+it("tells the Chief a teammate's provider refused the turn, in the provider's words", () => fixture(async f => {
+  const close = await onLoopbackEngine(f, res => {
+    res.writeHead(429, { "content-type": "application/json" });
+    res.end(JSON.stringify({ error: { message: "Rate limit reached for loop-model: 30 requests per minute" } }));
+  });
+  try {
+    await f.start();
+    expect((await f.wait()).status).toBe("settled");
+    const child = f.nodes().find((node: any) => node.botId === f.lead.id);
+    expect(child.status).toBe("failed");
+    expect(child.result).toContain("429");
+    expect(child.result).toContain("Rate limit reached for loop-model: 30 requests per minute");
+    const resumed = f.evidence().find((turn: any) => turn.botId === f.chief.id && turn.resumed);
+    expect(resumed.prompt.message.content).toContain("Rate limit reached for loop-model");
+  } finally { await close(); }
+}), 45_000);
+
+// Saving provider settings replaces only the engines whose values changed:
+// another engine's key, or the same values again, never stops a teammate.
+it("keeps a teammate working through a provider settings save that does not touch its engine", () => fixture(async f => {
+  const gate = join(f.session.info.dataDir, "lead-ready");
+  f.plan[f.lead.id] = { gateFile: gate, reply: "CSV export implemented and checked" };
+  await f.start();
+  await expect.poll(() => f.nodes().find((node: any) => node.botId === f.lead.id)?.status, { timeout: 15_000 }).toBe("running");
+  const compat = async () => (await f.api("/api/instances")).instances.find((instance: any) => instance.instanceId === "openaiCompat");
+  expect((await compat()).snapshot.state).toBe("unavailable");
+  await f.api("/api/config", { openaiCompat: { key: "fixture-compat-key", url: "http://127.0.0.1:9/v1" } }, "PATCH");
+  // That engine took the new key...
+  expect((await compat()).snapshot.state).toBe("available");
+  await f.api("/api/config", { openaiCompat: { key: "fixture-compat-key", url: "http://127.0.0.1:9/v1" } }, "PATCH");
+  // ...and the Claude teammate kept its turn through both saves.
+  expect(f.nodes().find((node: any) => node.botId === f.lead.id).status).toBe("running");
+  writeFileSync(gate, "finish the teammate");
+  expect((await f.wait()).status).toBe("settled");
+  expect(f.nodes().find((node: any) => node.botId === f.lead.id)).toMatchObject({ status: "completed", result: "CSV export implemented and checked" });
+  const lead = (await f.api("/api/bots")).bots.find((bot: any) => bot.id === f.lead.id);
+  for (const task of lead.tasks) {
+    expect((await f.messages(task.threadId)).some((message: any) => message.tool?.name?.includes("provider settings changed"))).toBe(false);
+  }
+}), 45_000);
+
+// When a save does change a teammate's engine, its turn stops, and the Chief
+// is told that cause rather than "The coordinated turn was interrupted".
+it("tells the Chief a teammate's turn stopped because its engine's settings changed", () => fixture(async f => {
+  const gate = join(f.session.info.dataDir, "lead-ready");
+  f.plan[f.lead.id] = { gateFile: gate, reply: "Never reached" };
+  await f.start();
+  await expect.poll(() => f.nodes().find((node: any) => node.botId === f.lead.id)?.status, { timeout: 15_000 }).toBe("running");
+  await f.api("/api/config", { anthropic: { key: "fixture-anthropic-key" } }, "PATCH");
+  expect((await f.wait()).status).toBe("settled");
+  const child = f.nodes().find((node: any) => node.botId === f.lead.id);
+  expect(child.status).toBe("failed");
+  // The cause leads; what the turn did first follows only if it did anything
+  // before the save stopped it (a slow host can stop it before its first call).
+  expect(child.result).toMatch(/^Turn interrupted — provider settings changed\.(?: |$)/);
+  const resumed = f.evidence().find((turn: any) => turn.botId === f.chief.id && turn.resumed);
+  expect(resumed.prompt.message.content).toContain("Turn interrupted — provider settings changed.");
+  expect(resumed.prompt.message.content).not.toContain("The coordinated turn was interrupted");
+}), 45_000);

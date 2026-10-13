@@ -27,7 +27,7 @@ concurrency:
 jobs:
   thread-ui:
     name: iOS thread UI (iPhone + iPad simulators)
-    runs-on: [self-hosted, macOS, ARM64, sagax-release-mac]
+    runs-on: macos-latest
     # The iPhone suite and the iPad roster suite finished inside 60 minutes
     # with the iPad UI suite still running; the whole matrix needs about 85.
     timeout-minutes: 100
