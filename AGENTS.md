@@ -2972,6 +2972,26 @@ kernel OOM-killed engine children within two minutes of each start.
   container with 16 overdue routines: peak 5.25 GB and 37 engine processes
   before, 1.40 GB and 3 after.
 
+## App icon: the Pulsatrix logo (2026-10-14)
+
+The app's default icon is the official Pulsatrix owl mark (white outline,
+blue eyes and heartbeat line) on a night blue tile (JC, 2026-10-14). Every
+surface comes from one generator, `pnpm icons:generate`
+(`scripts/generate-app-icon.mjs`, helpers in `scripts/app-icon.mjs`): it
+composes the SVG sources from `public/brand/pulsatrix-owl-mark-color-tight.svg`
+(master `build/icon-pulsatrix.svg`, `build/icon.svg`, `public/app-icon.svg`,
+`ios/AppStore/app-icon-ios.svg`, the Icon Composer layers in
+`build/icon.icon/Assets/`), then rasterises the macOS iconset and `.icns`,
+`electron/resources/app-icon.png`, `build/icon.ico`, the web manifest PNGs,
+`public/apple-touch-icon.png` and the iOS AppIcon (RGB, no alpha channel).
+16 to 64 px use a thickened variant so the pulse line stays visible. Never
+edit an output by hand; change the composition and regenerate.
+`scripts/app-icon.test.mjs` fails when a source drifts from the mark. The
+Sagax owl, the default until then, stays in Settings > Appearance > App icon
+as "Owl" (`public/brand/sagax-owl-app-icon.svg`); the default choice keeps the
+id `sagax` so a saved reset still means "the bundle's icon". The Android
+launcher is a separate artwork.
+
 ## Upstream sync
 
 Last sync: 2026-10-12, upstream `milind-soni/OpenMausBot` main at

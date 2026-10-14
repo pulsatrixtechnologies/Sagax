@@ -1,4 +1,5 @@
-// Settings > Appearance > App icon: the Sagax owl, the owl in its skins, a
+// Settings > Appearance > App icon: the Pulsatrix logo (default), the Sagax
+// owl, the owl in its skins, a
 // shape, Trombi, Bunbu, the person's Primary Bot or an uploaded picture, each drawn
 // through the system's icon template so it sits in the Dock (or the taskbar)
 // like the other apps' icons. The desktop app keeps and shows the result
@@ -121,6 +122,10 @@ export function AppIconPicker() {
   async function artFor(choice: AppIconChoice): Promise<IconArt | null> {
     if (choice.art.kind === "default") {
       const image = await loadImage("/app-icon.svg");
+      return { image, width: 1024, height: 1024 };
+    }
+    if (choice.art.kind === "image") {
+      const image = await loadImage(choice.art.src);
       return { image, width: 1024, height: 1024 };
     }
     if (choice.art.kind === "glyph") {

@@ -1,5 +1,5 @@
-// The icons Settings > Appearance > App icon offers: the Sagax owl, the
-// owl in its skins, a shape, Trombi, Bunbu, Shiba, Grump, Ogre, Frog, the person's Primary Bot, or a picture
+// The icons Settings > Appearance > App icon offers: the Pulsatrix logo
+// (the default, the bundle's own icon), the Sagax owl, the owl in its skins, a shape, Trombi, Bunbu, Shiba, Grump, Ogre, Frog, the person's Primary Bot, or a picture
 // they upload. Pure data: the picker (src/components/settings/AppIconPicker)
 // draws each character with the app's own components and paints the result
 // through the system template (shared/app-icon-template.ts).
@@ -12,6 +12,8 @@ import { APP_ICON_TEMPLATES, appIconPlatform, type AppIconTemplate } from "../..
 
 export type AppIconArt =
   | { kind: "default" }
+  /** A finished icon picture the app serves (the former Sagax owl icon). */
+  | { kind: "image"; src: string }
   | { kind: "owl"; color: MascotColorName; skin: MascotSkinId }
   | { kind: "shape"; shape: MascotShape; skin: ShapeSkin; color: MascotColorName }
   | { kind: "trombi"; skin: TrombiSkin }
@@ -41,8 +43,15 @@ export type AppIconChoice = {
   fill?: number;
 };
 
-/** The default: the bundle's own icon. Choosing it resets. */
+/**
+ * The default: the bundle's own icon, the Pulsatrix logo on night blue
+ * (JC, 2026-10-14). Choosing it resets. The id predates the logo and stays,
+ * so a saved "sagax" choice still means "the default".
+ */
 export const DEFAULT_APP_ICON_ID = "sagax";
+
+/** The Sagax owl, the default icon until 2026-10-14, kept as a choice. */
+export const SAGAX_OWL_APP_ICON_ID = "sagax-owl";
 
 const owl = (skin: MascotSkinId, color: MascotColorName, background: readonly [string, string]): AppIconChoice => ({
   id: `owl:${skin}`,
@@ -53,7 +62,8 @@ const owl = (skin: MascotSkinId, color: MascotColorName, background: readonly [s
 });
 
 export const APP_ICON_CHOICES: readonly AppIconChoice[] = [
-  { id: DEFAULT_APP_ICON_ID, labelKey: "settings.appIcon.default", background: ["#3A3842", "#3A3842"], art: { kind: "default" }, fit: "cover" },
+  { id: DEFAULT_APP_ICON_ID, labelKey: "settings.appIcon.default", background: ["#0A1A44", "#020818"], art: { kind: "default" }, fit: "cover" },
+  { id: SAGAX_OWL_APP_ICON_ID, labelKey: "floatingBots.mascot.owl", background: ["#3A3842", "#3A3842"], art: { kind: "image", src: "/brand/sagax-owl-app-icon.svg" }, fit: "cover" },
   owl("none", "blue", ["#F7F9FC", "#DCE4EF"]),
   owl("snowy", "blue", ["#3C6E9E", "#1B3557"]),
   owl("barn", "orange", ["#F6E7CB", "#DDBB86"]),

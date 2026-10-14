@@ -69,7 +69,7 @@ function __dirnameOf() {
   return path.join(root, "electron");
 }
 
-test("the dev launcher compiles the owl and gives the clone its own bundle id", () => {
+test("the dev launcher compiles the app icon and gives the clone its own bundle id", () => {
   const script = fs.readFileSync(path.join(root, "scripts/dev-desktop.mjs"), "utf8");
   assert.match(script, /build\/icon\.icon/);
   assert.match(script, /CFBundleIdentifier", DEV_BUNDLE_ID/);
