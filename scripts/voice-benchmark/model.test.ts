@@ -3,6 +3,10 @@ import {
   compileVoiceBench,
   renderVoiceBenchMarkdown,
   VoiceBenchLedger,
+  voiceBenchExcludeWarmupFromExtrema,
+  voiceBenchIdleMs,
+  voiceBenchMaxMs,
+  voiceBenchSyntheticSttTimeoutMs,
   type CompileVoiceBenchInput,
   type VoiceBenchEvent,
   type VoiceBenchMark,
@@ -160,21 +164,64 @@ describe("compileVoiceBench", () => {
   });
 
   it("passes inclusive latency boundaries and rejects a turn above the maximum", () => {
-    expect(compileVoiceBench(fixture({ totals: [400, 800] })).passed).toBe(true);
-    expect(compileVoiceBench(fixture({ totals: [800, 2_500] })).passed).toBe(true);
-    expect(compileVoiceBench(fixture({ totals: [400, 2_501] })).passed).toBe(false);
+    expect(compileVoiceBench({ ...fixture({ totals: [400, 800] }), platform: "linux" }).passed).toBe(true);
+    expect(compileVoiceBench({ ...fixture({ totals: [800, 2_500] }), platform: "linux" }).passed).toBe(true);
+    expect(compileVoiceBench({ ...fixture({ totals: [400, 2_501] }), platform: "linux" }).passed).toBe(false);
+  });
+
+  it("selects the max latency gate by OS: 2500 ms on Linux and macOS, 6000 ms on Windows", () => {
+    expect(voiceBenchMaxMs("linux")).toBe(2500);
+    expect(voiceBenchMaxMs("darwin")).toBe(2500);
+    expect(voiceBenchMaxMs("win32")).toBe(6000);
+    expect(voiceBenchIdleMs("linux")).toBe(4_000);
+    expect(voiceBenchIdleMs("darwin")).toBe(4_000);
+    expect(voiceBenchIdleMs("win32")).toBe(200);
+    expect(voiceBenchSyntheticSttTimeoutMs("linux")).toBeUndefined();
+    expect(voiceBenchSyntheticSttTimeoutMs("darwin")).toBeUndefined();
+    expect(voiceBenchSyntheticSttTimeoutMs("win32")).toBe(400);
+    expect(voiceBenchExcludeWarmupFromExtrema("linux")).toBe(false);
+    expect(voiceBenchExcludeWarmupFromExtrema("darwin")).toBe(false);
+    expect(voiceBenchExcludeWarmupFromExtrema("win32")).toBe(true);
+    expect(compileVoiceBench({ ...fixture({ totals: [400, 2_501] }), platform: "linux" }).passed).toBe(false);
+    expect(compileVoiceBench({ ...fixture({ totals: [400, 2_501] }), platform: "darwin" }).passed).toBe(false);
+    expect(compileVoiceBench({ ...fixture({ totals: [400, 2_501] }), platform: "win32" }).passed).toBe(true);
+    expect(compileVoiceBench({ ...fixture({ totals: [400, 6_000] }), platform: "win32" }).gates.max).toEqual({
+      pass: true,
+      thresholdMs: 6000,
+      observedMs: 6000,
+    });
+    expect(compileVoiceBench({ ...fixture({ totals: [400, 6_001] }), platform: "win32" }).passed).toBe(false);
+  });
+
+  it("a slow cold start still fails the 2500 ms max gate on Linux and macOS", () => {
+    const input = fixture({ totals: [700, 900], warmupTotal: 4_260 });
+    const linux = compileVoiceBench({ ...input, platform: "linux" });
+    expect(linux.passed).toBe(false);
+    expect(linux.gates.max).toEqual({
+      pass: false,
+      thresholdMs: 2500,
+      observedMs: 4_260,
+    });
+    expect(compileVoiceBench({ ...input, platform: "darwin" }).gates.max.pass).toBe(false);
+    const windows = compileVoiceBench({ ...input, platform: "win32" });
+    expect(windows.gates.max).toEqual({
+      pass: true,
+      thresholdMs: 6000,
+      observedMs: 900,
+    });
   });
 
   it("uses warm turns after one explicit warm-up for the p50 gate", () => {
     const input = fixture({ totals: [700, 900], warmupTotal: 2_000 });
 
-    const report = compileVoiceBench(input);
+    const report = compileVoiceBench({ ...input, platform: "linux" });
     expect(report.gates.p50).toEqual({
       pass: true,
       thresholdMs: 800,
       observedMs: 700,
     });
     expect(report.gates.max.observedMs).toBe(2_000);
+    expect(compileVoiceBench({ ...input, platform: "win32" }).gates.max.observedMs).toBe(900);
   });
 
   it("requires exactly one explicit warm-up utterance", () => {

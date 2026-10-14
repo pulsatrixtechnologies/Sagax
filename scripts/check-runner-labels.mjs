@@ -26,7 +26,7 @@ const problems = []
 
 for (const file of readdirSync(dir).filter((f) => /\.ya?ml$/.test(f)).sort()) {
   const path = join(dir, file)
-  const lines = readFileSync(path, 'utf8').split('\n')
+  const lines = readFileSync(path, 'utf8').split(/\r?\n/)
   lines.forEach((line, i) => {
     const m = line.match(/^(\s*)runs-on:\s*(.*)$/)
     if (!m || line.trim().startsWith('#')) return
