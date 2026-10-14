@@ -1187,7 +1187,7 @@ const MessagesList = memo(function MessagesList({
               const card = m.card?.requestId && m.card.questionRequest ? (
                 <QuestionCard threadId={threadId} bot={{ name: botName }} message={m} />
               ) : m.card?.requestId && m.card.tool ? (
-                approvalCardStaysInChat(m.card) ? <ApprovalCard bot={{ name: botName }} botId={botId} message={m} threadId={threadId} /> : null
+                approvalCardStaysInChat(m.card) ? <ApprovalCard bot={{ name: botName }} message={m} threadId={threadId} /> : null
               ) : shouldHideOnboardingCard(m, transcript) ? null : (
                 <OptionCard botId={botId} threadId={threadId} message={m} />
               );

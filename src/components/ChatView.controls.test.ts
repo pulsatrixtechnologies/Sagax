@@ -299,7 +299,7 @@ describe("thread control placement", () => {
       expect(markup).toContain("waiting on the model");
       expect(markup).toContain("boom");
       expect(markup).toContain("Messaged @Ada");
-      expect(markup).toContain(">Allow</button>");
+      expect(markup).toContain("Allow once");
       expect(markup).toContain("run a command");
       expect(markup).toContain("a.json");
       expect(markup).toContain("done");

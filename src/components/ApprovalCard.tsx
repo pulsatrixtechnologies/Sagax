@@ -4,17 +4,15 @@
 // approval is a decision about one concrete action, so it shows the tool
 // and the actual command/path in monospace, and the choices carry their
 // own behavior instead of being matched by their label text.
-import { useState, type ReactNode } from "react";
-import { Check, ChevronDown, Clock, Info, ShieldCheck, Undo2, X } from "lucide-react";
-import { api, ApiError, useOptionalStore, type Bot, type Message, type OptionCardData } from "@/state/store";
-import { BotAvatar } from "@/components/Avatar";
-import { peerApproval, subtitleArgs, type PeerApproval } from "@/lib/peer-approval";
+import { useState } from "react";
+import { Check, ShieldCheck, Undo2, X } from "lucide-react";
+import { api, ApiError, useStore, type Bot, type Message, type OptionCardData } from "@/state/store";
 import { cn } from "@/lib/cn";
 import { t, tFromServer } from "@/lib/i18n";
 import type { LocaleKey } from "@/locales";
 import { SkillRequestPreview } from "@/components/SkillRequestPreview";
 import { ApprovalHeading, TechnicalDetails } from "@/components/ApprovalParts";
-import { approvalPlain, describeAllowRule, describeApproval, isTechnicalText, parseArgs, parseToolId, type ApprovalRisk, type ToolHints } from "@/lib/approval-describe";
+import { approvalPlain, describeAllowRule, describeApproval, isTechnicalText, parseToolId, type ApprovalRisk, type ToolHints } from "@/lib/approval-describe";
 import { composioActionPhrase, outboundSummary } from "@/lib/approval-summary";
 import { niceDate, niceTime, scheduleLabel } from "@/lib/schedule-label";
 import { cronScheduleLabel } from "../../shared/cron-label";
@@ -119,100 +117,38 @@ export function approvalPill(card: Pick<OptionCardData, "answered" | "expired" |
 }
 
 /** "Added to your Allow rules" with the rule in plain words and Edit rule,
- * under a card the person answered with Always allow: one small success
- * line. Edit rule opens the asking bot's Access, where Always allowed lists
- * it. */
-export function AllowRuleInset({ rule, botId }: { rule: string; botId?: string }) {
-  const store = useOptionalStore();
+ * under a card the person answered with Always allow. */
+function AllowRuleInset({ rule }: { rule: string }) {
+  const { dispatch } = useStore();
   return (
-    <div data-allow-rule className="mt-2 flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5 text-[12.5px] text-ink-secondary">
-      <Check size={13} aria-hidden="true" className="shrink-0 translate-y-[2px] text-success" />
-      <span className="font-medium text-ink">{t("approval.rule.added")}</span>
-      <span className="min-w-0">« {describeAllowRule(rule)} »</span>
-      {store && (
-        <button
-          type="button"
-          className="font-medium text-accent hover:underline"
-          onClick={() => store.dispatch({ type: "toggleSettings", open: true, section: "access", ...(botId ? { botId } : {}) })}
-        >
-          {t("approval.rule.edit")}
-        </button>
+    <div data-allow-rule className="mt-2 rounded-lg bg-inset px-3 py-2 text-[12.5px] text-ink-secondary">
+      <div className="font-medium text-ink">{t("approval.rule.added")}</div>
+      <div className="mt-0.5">« {describeAllowRule(rule)} »</div>
+      <button
+        type="button"
+        className="mt-1 text-accent hover:underline"
+        onClick={() => dispatch({ type: "toggleSettings", open: true, section: "access" })}
+      >
+        {t("approval.rule.edit")}
+      </button>
+    </div>
+  );
+}
+
+function StatusPill({ card }: { card: OptionCardData }) {
+  const pill = approvalPill(card);
+  if (!pill) return null;
+  return (
+    <span
+      data-status-pill={pill.tone}
+      className={cn(
+        "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[12px] font-medium",
+        pill.tone === "success" ? "bg-success/10 text-success" : pill.tone === "danger" ? "bg-danger/10 text-danger" : "bg-inset text-ink-secondary",
       )}
-    </div>
+    >
+      <span aria-hidden="true">•</span> {pill.label}
+    </span>
   );
-}
-
-/** Notes a normal confirmation does not need: the buttons already say it.
- * The others (sends on your behalf, a sandbox change, a safety review, an
- * answer that could not be delivered) are why this card is different. */
-const ROUTINE_HELD = new Set(["approval.held.native", "approval.held.gate"]);
-const ROUTINE_HELD_TEXT = new Set([
-  "The provider requires your approval for this action.",
-  "This bot asks before any action that changes something. Always allow stops asking for this one.",
-]);
-
-export function heldNoteWorthShowing(card: Pick<OptionCardData, "held" | "heldCode">): string | undefined {
-  if (card.heldCode ? ROUTINE_HELD.has(card.heldCode) : card.held && ROUTINE_HELD_TEXT.has(card.held)) return undefined;
-  return tFromServer(card.heldCode, card.held);
-}
-
-/** The reason, when it matters, as one quiet line. */
-export function HeldLine({ note }: { note?: string }) {
-  if (!note) return null;
-  return (
-    <div data-held-note className="mt-2 flex items-start gap-1.5 text-[12px] leading-snug text-ink-secondary">
-      <Info size={13} aria-hidden="true" className="mt-px shrink-0 text-ink-tertiary" />
-      <span>{note}</span>
-    </div>
-  );
-}
-
-type NamedBot = Pick<Bot, "id" | "name"> & Partial<Bot>;
-
-/** Who a teammate card writes to, by name and avatar, and what it says,
- * quoted and cut at a few lines with the rest one click away. */
-export function PeerRequest({ peer, bots }: { peer: PeerApproval; bots: readonly NamedBot[] }) {
-  const [whole, setWhole] = useState(false);
-  const message = peer.message ?? "";
-  const long = message.length > PEER_MESSAGE_PREVIEW;
-  const shown = long && !whole ? `${message.slice(0, PEER_MESSAGE_PREVIEW - 1).trimEnd()}…` : message;
-  return (
-    <div className="mt-2.5" data-peer-request={peer.kind}>
-      <ul aria-label={t("approval.peer.recipients")} className="flex flex-wrap gap-1.5">
-        {peer.botIds.map((id) => {
-          const bot = peerBot(bots, id);
-          return (
-            <li key={id} className="inline-flex max-w-[16rem] items-center gap-1.5 rounded-full bg-inset py-0.5 pl-0.5 pr-2.5 text-[12.5px] text-ink">
-              {bot?.color ? <BotAvatar bot={bot as Bot} size={20} animated={false} /> : <span aria-hidden="true" className="size-5 shrink-0 rounded-full bg-control" />}
-              <span className="truncate">{bot?.name ?? t("approval.peer.unknown")}</span>
-            </li>
-          );
-        })}
-      </ul>
-      {message && (
-        <blockquote aria-label={t("approval.peer.message")} className="mt-2 border-l-2 border-hairline pl-3 text-[13px] leading-relaxed text-ink">
-          <span className="whitespace-pre-wrap break-words">{shown}</span>
-          {long && (
-            <button type="button" onClick={() => setWhole((value) => !value)} className="ml-1.5 text-[12.5px] font-medium text-accent hover:underline">
-              {whole ? t("approval.peer.showLess") : t("approval.peer.showMore")}
-            </button>
-          )}
-        </blockquote>
-      )}
-    </div>
-  );
-}
-
-const PEER_MESSAGE_PREVIEW = 240;
-
-/** A teammate by id, or by the unique name a bot may write instead. */
-function peerBot(bots: readonly NamedBot[], idOrName: string): NamedBot | undefined {
-  return bots.find((bot) => bot.id === idOrName) ?? bots.find((bot) => bot.name.toLowerCase() === idOrName.toLowerCase());
-}
-
-/** The bots the store knows, for names and avatars ([] outside the app). */
-export function useKnownBots(): readonly NamedBot[] {
-  return useOptionalStore()?.state?.bots ?? [];
 }
 
 /** The tool's own name is noise to a human: Bash is "run a command",
@@ -276,41 +212,19 @@ export interface ToolApprovalView {
   server?: string;
   /** arguments for the details (pretty JSON when they are JSON) */
   args?: string;
-  /** the action alone, for a settled card's one-line receipt */
-  action: string;
-  /** a teammate tool: who it writes to and what it says */
-  peer?: PeerApproval;
 }
 
-export function toolApprovalView(card: OptionCardData, botName?: string, bots: readonly NamedBot[] = []): ToolApprovalView {
-  // the gate's subtitle is the tool id and its JSON: the arguments, not a line
-  const fromSubtitle = subtitleArgs(card);
-  const input = card.toolInput ?? fromSubtitle ?? card.subtitle;
+export function toolApprovalView(card: OptionCardData, botName?: string): ToolApprovalView {
+  const input = card.toolInput ?? card.subtitle;
   // the engine's own `<server>__<tool>` when `tool` is only a kind ("other")
   const tool = card.mcpTool ?? card.tool;
   const described = describeApproval(tool, input, card.toolHints);
   // "Allow Cryptic to view the schedule in ConnectWise PSA?" and one plain
   // line: the same generator the server uses for the push
   // (shared/approval-describe.ts), in this app's language.
-  const words = approvalPlain({ botName, tool, toolInput: input, detail: fromSubtitle !== undefined ? undefined : card.subtitle, hints: card.toolHints });
-  const technical = fromSubtitle !== undefined || isTechnicalText(card.subtitle);
+  const words = approvalPlain({ botName, tool, toolInput: input, detail: card.subtitle, hints: card.toolHints });
+  const technical = isTechnicalText(card.subtitle);
   const shown = technical || !card.subtitle?.trim() ? undefined : card.subtitle;
-  const args = described.argsJson ?? (fromSubtitle !== undefined ? prettyArgs(fromSubtitle) : technical ? card.subtitle : undefined);
-  const peer = peerApproval(card);
-  if (peer) {
-    const name = botName ?? t("approval.someone");
-    const first = peerBot(bots, peer.botIds[0]!)?.name ?? t("approval.peer.unknown");
-    const one = peer.botIds.length === 1;
-    return {
-      title: peer.kind === "ask" && one ? t("approval.peer.askOne", { name, target: first })
-        : one ? t("approval.peer.writeOne", { name, target: first }) : t("approval.peer.writeMany", { name, count: peer.botIds.length }),
-      action: peer.kind === "ask" && one ? t("approval.peer.actionAsk", { target: first })
-        : one ? t("approval.peer.actionOne", { target: first }) : t("approval.peer.actionMany", { count: peer.botIds.length }),
-      server: described.server,
-      args,
-      peer,
-    };
-  }
   // A held outbound action reads as what it sends and where, the way the
   // phones show it, not as the slug the bot happened to call.
   const outbound = outboundSummary(card);
@@ -320,14 +234,8 @@ export function toolApprovalView(card: OptionCardData, botName?: string, bots: r
     risk: described.risk,
     plain: shown,
     server: described.server,
-    args,
-    action: outbound?.headline ?? words.action,
+    args: described.argsJson ?? (technical ? card.subtitle : undefined),
   };
-}
-
-function prettyArgs(text: string): string {
-  const parsed = parseArgs(text);
-  return parsed ? JSON.stringify(parsed, null, 2) : text;
 }
 
 /** When a routine runs, in the plain words the receipt line uses. Never a
@@ -466,24 +374,16 @@ function AppliedChangeLine({
 
 export function ApprovalCard({
   bot,
-  botId,
   message,
   threadId,
-  defaultExpanded = false,
 }: {
   /** who is asking, for the "Name wants to …" line */
-  bot?: Pick<Bot, "name"> & Partial<Pick<Bot, "id">>;
-  /** the asking bot, when `bot` carries only its name: Edit rule opens its
-   * Access settings */
-  botId?: string;
+  bot?: Pick<Bot, "name">;
   message: Message;
   /** the conversation the card is in, for Undo on a change that applied
    * without a person */
   threadId?: string;
-  /** a settled card opens on its details (tests, previews) */
-  defaultExpanded?: boolean;
 }) {
-  const known = useKnownBots();
   const card = message.card;
   if (!card) return null;
   // A change that applied without a person reads as one line with Undo.
@@ -503,7 +403,7 @@ export function ApprovalCard({
   const isTeamSetup = Boolean(card.teamSetupRequest);
   const routineAction = card.routineRequest?.operation.action;
   const skillAction = card.skillRequest?.action;
-  const heldNote = heldNoteWorthShowing(card);
+  const heldNote = tFromServer(card.heldCode, card.held);
   const outcome = approvalCardOutcome(card);
   const displayTool = isRoutineRequest
     ? routineAction === "create" ? "schedule_routine" : "manage_routine"
@@ -526,22 +426,13 @@ export function ApprovalCard({
     : undefined;
 
   const isProposal = isRoutineRequest || isSkillRequest || isProfileRequest || isTeamSetup;
-  const view = isProposal ? undefined : toolApprovalView(card, bot?.name, known);
+  const view = isProposal ? undefined : toolApprovalView(card, bot?.name);
   const proposalTitle = isTeamSetup
     ? card.title
     : profileHeader ?? (bot
       ? t("approval.card.namedWantsTo", { name: bot.name, action: toolLabel(displayTool) })
       : t("approval.card.wantsTo", { action: toolLabel(displayTool) }));
   const open = !settled && !expired;
-  const askingBotId = botId ?? bot?.id;
-
-  // A tool approval someone answered (or nobody did in time) is a one-line
-  // receipt; its details and the Allow rule open from it.
-  if (view && !open) {
-    return (
-      <ApprovalReceipt card={card} view={view} heldNote={heldNote} byVoice={byVoice} botId={askingBotId} defaultExpanded={defaultExpanded} />
-    );
-  }
 
   return (
     <div
@@ -557,8 +448,6 @@ export function ApprovalCard({
         summary={view?.summary}
         risk={view?.risk}
       />
-
-      {view?.peer && <PeerRequest peer={view.peer} bots={known} />}
 
       {/* a proposal's text is what you confirm; a tool's command or URL is
           what runs. Raw JSON arguments stay behind the technical details. */}
@@ -585,14 +474,25 @@ export function ApprovalCard({
 
       {card.skillRequest && <SkillRequestPreview request={card.skillRequest} />}
 
-      <HeldLine note={heldNote} />
+      {heldNote && (
+        <div className="mt-2 rounded-lg border border-warning/30 bg-warning/10 px-3 py-2 text-[12.5px] text-warning">
+          {heldNote}
+        </div>
+      )}
+
+      {card.answered === "allow" && card.alwaysAllowed && <AllowRuleInset rule={card.alwaysAllowed} />}
 
       {/* The decision lives in the composer (one place to answer, and it
           can't be scrolled past); here we only record what happened. The
           technical details join the record once it is settled, so an open
           request is never shown twice in full. */}
       <div className="mt-2 flex items-center gap-1.5 text-[13px] text-ink-secondary">
-        {outcome ? (
+        {outcome && view ? (
+          <>
+            <StatusPill card={card} />
+            {byVoice}
+          </>
+        ) : outcome ? (
           <>
             {settled === "allow" && !expired ? <Check size={14} className="text-success" /> : <X size={14} />} {outcome}
             {byVoice}
@@ -611,64 +511,8 @@ export function ApprovalCard({
       {open && card.adminApproval && (
         <p className="mt-1 text-[12.5px] text-ink-secondary">{adminWillAnswerLine(card.adminNames)}</p>
       )}
-    </div>
-  );
-}
-
-/** A settled tool approval: one quiet row (status, then the action), that
- * opens on what was asked, the Allow rule it saved, and the full request. */
-function ApprovalReceipt({
-  card,
-  view,
-  heldNote,
-  byVoice,
-  botId,
-  defaultExpanded,
-}: {
-  card: OptionCardData;
-  view: ToolApprovalView;
-  heldNote?: string;
-  byVoice: ReactNode;
-  botId?: string;
-  defaultExpanded: boolean;
-}) {
-  const [expanded, setExpanded] = useState(defaultExpanded);
-  const known = useKnownBots();
-  const pill = approvalPill(card);
-  const tone = pill?.tone ?? "neutral";
-  const Icon = card.expired === true ? Clock : card.answered === "allow" ? Check : X;
-  const action = view.action ? view.action[0]!.toLocaleUpperCase() + view.action.slice(1) : "";
-  return (
-    <div className="w-full max-w-[840px]" data-approval-receipt={tone}>
-      <button
-        type="button"
-        aria-expanded={expanded}
-        onClick={() => setExpanded((value) => !value)}
-        className="group flex w-full min-w-0 items-center gap-1.5 rounded-lg px-1.5 py-1 text-left text-[13px] text-ink-secondary hover:bg-inset"
-      >
-        <Icon size={14} aria-hidden="true" className={cn("shrink-0", tone === "success" ? "text-success" : tone === "danger" ? "text-danger" : "text-ink-tertiary")} />
-        <span data-status-pill={tone} className={cn("shrink-0 font-medium", tone === "success" ? "text-success" : tone === "danger" ? "text-danger" : "text-ink-secondary")}>
-          {pill?.label}
-        </span>
-        {action && <span aria-hidden="true" className="shrink-0 text-ink-tertiary">·</span>}
-        <span className="min-w-0 truncate">{action}</span>
-        {byVoice}
-        <ChevronDown size={13} aria-hidden="true" className={cn("ml-auto shrink-0 text-ink-tertiary transition-transform", expanded ? "rotate-0" : "-rotate-90")} />
-      </button>
-      {expanded && (
-        <div className="ml-[22px] mt-1 border-l border-hairline/50 pb-1 pl-3" data-approval-receipt-details="">
-          <div className="text-[13px] text-ink">{view.title}</div>
-          {view.summary && <div className="mt-0.5 text-[12.5px] text-ink-secondary">{view.summary}</div>}
-          {view.peer && <PeerRequest peer={view.peer} bots={known} />}
-          {view.plain && (
-            <pre tabIndex={0} aria-label={t("approval.aria.details")} className="mt-2 max-h-24 overflow-auto whitespace-pre-wrap break-words rounded-lg bg-inset px-3 py-2 font-mono text-[12.5px] leading-relaxed text-ink">
-              {view.plain}
-            </pre>
-          )}
-          <HeldLine note={heldNote} />
-          {card.answered === "allow" && card.alwaysAllowed && <AllowRuleInset rule={card.alwaysAllowed} botId={botId} />}
-          {(view.args || card.tool) && <TechnicalDetails tool={card.mcpTool ?? card.tool} server={view.server} args={view.args} />}
-        </div>
+      {view && !open && (view.args || card.tool) && (
+        <TechnicalDetails tool={card.tool} server={view.server} args={view.args} />
       )}
     </div>
   );
