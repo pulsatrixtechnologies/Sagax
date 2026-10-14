@@ -1,4 +1,4 @@
-// xAI TTS runs on the harness with the Grok voice key, not the bot xAI key.
+// xAI TTS runs on the harness with the xAI key (one key for Grok bots and Grok voice since 2026-10-14).
 import { z } from "zod";
 import { WebSocket as WsWebSocket } from "ws";
 import type { Audio, Voice } from "./elevenlabs.ts";

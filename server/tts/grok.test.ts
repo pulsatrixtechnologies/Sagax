@@ -8,7 +8,8 @@ let contentType = "audio/mpeg";
 let audio = Buffer.from([0xff, 0xfb, 0x90, 0x00]);
 let voices: unknown = { voices: [{ voice_id: "ara", name: "Ara", description: "Warm" }] };
 const seen: Array<{ url: string; authorization?: string; body: string }> = [];
-const config: AppConfig = { xai: { key: "fixture-bot-key" }, tts: { provider: "xai", xaiKey: "fixture-voice-key", voice: "ara" } };
+// Since 2026-10-14 Grok voice runs on the xAI key, the one Grok bots use.
+const config: AppConfig = { xai: { key: "fixture-voice-key" }, tts: { provider: "xai", voice: "ara" } };
 const voice = () => import("./index.ts");
 
 beforeAll(async () => {
@@ -50,18 +51,17 @@ beforeEach(() => {
 });
 
 describe("Grok voice", () => {
-  it("uses only the Grok voice key and never the bot xAI key", async () => {
+  it("uses the xAI key and needs one", async () => {
     const { describeVoice, providerConfigured, voiceReady, speak, listVoices } = await voice();
-    const missing: AppConfig = { xai: { key: "fixture-bot-key" }, tts: { provider: "xai", key: "eleven-key", fishKey: "fish-key", voice: "ara" } };
+    const missing: AppConfig = { tts: { provider: "xai", key: "eleven-key", fishKey: "fish-key", voice: "ara" } };
     expect(providerConfigured(missing)).toBe(false);
     expect(voiceReady(missing)).toBe(false);
-    expect(() => speak(missing, "hi")).toThrow("separate from the xAI key");
+    expect(() => speak(missing, "hi")).toThrow("Add an xAI key");
     expect(await listVoices(missing)).toEqual([]);
     expect(seen).toHaveLength(0);
-    expect(describeVoice(config)).toEqual({ configured: true, ready: true, provider: "xai", voice: "ara", baseUrl: "", model: "" });
+    expect(describeVoice(config)).toEqual({ configured: true, ready: true, provider: "xai", voice: "ara", baseUrl: "", model: "", keys: { elevenlabs: false, fish: false } });
     expect(JSON.stringify(describeVoice(config))).not.toContain("fixture-voice-key");
-    expect(JSON.stringify(describeVoice(config))).not.toContain("fixture-bot-key");
-    const noVoice: AppConfig = { xai: config.xai, tts: { provider: "xai", xaiKey: config.tts?.xaiKey } };
+    const noVoice: AppConfig = { xai: config.xai, tts: { provider: "xai" } };
     expect(voiceReady(noVoice)).toBe(false);
     expect(voiceReady(noVoice, "eve")).toBe(true);
     expect(() => speak(noVoice, "hi")).toThrow("Pick a voice");

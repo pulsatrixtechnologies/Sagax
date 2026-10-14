@@ -556,11 +556,11 @@ const appConfigSchema = z.object({
   /** Voice settings and the selected voice id. `provider` picks the
    * engine: "elevenlabs" (default; needs `key`), "fish" (needs its own
    * `fishKey`; `fishModel` picks its speech model), "system" (the Mac's
-   * built-in voices, no key), "xai" (Grok TTS, its own `xaiKey`, never
-   * the bot `xai.key`), or "chatterbox" (a local OpenAI-compatible
+   * built-in voices, no key), "xai" (Grok TTS, on the xAI key `xai.key`
+   * since 2026-10-14), or "chatterbox" (a local OpenAI-compatible
    * Chatterbox server; `baseUrl` and `model` are settings, not secrets).
-   * Cloud keys stay separate so switching providers never overwrites or
-   * misuses the other key. */
+   * `xaiKey` is the Grok voice key of older builds, read only to fold it
+   * into `xai.key` (migrateGrokVoiceKey, loadConfig, foldGrokVoiceKeyPatch). */
   tts: z.object({
     key: optionalText,
     fishKey: optionalText,
@@ -1180,6 +1180,68 @@ export function ensureDirs() {
   for (const dir of [DATA_DIR, EVENTS_DIR, NATIVE_DIR]) mkdirSync(dir, { recursive: true });
   migrateLegacyFeatureFlags();
   migrateLegacyNewBotEffort();
+  migrateGrokVoiceKey();
+}
+
+/** What happens to a Grok voice key of an older build: it becomes the xAI
+ * key when none is saved, else the xAI key stays and the duplicate goes.
+ * Never logged with its value. */
+export type GrokVoiceKeyFold = "moved" | "dropped" | null;
+
+export function grokVoiceKeyFoldMessage(fold: Exclude<GrokVoiceKeyFold, null>): string {
+  return fold === "moved"
+    ? "[config] the Grok voice key is now the xAI key (Grok voice and Grok bots share one key)"
+    : "[config] Grok voice key not kept: an xAI key is already saved and Grok voice uses it";
+}
+
+/** 2026-10-14: Grok voice runs on the xAI key, so `tts.xaiKey` is folded
+ * into `xai.key` once, here, before the server's first loadConfig(). An
+ * `XAI_API_KEY` in the environment counts as a saved xAI key. */
+function migrateGrokVoiceKey(): void {
+  const p = join(DATA_DIR, "config.json");
+  try {
+    if (!existsSync(p)) return;
+    const raw = parseJson(readFileSync(p, "utf8"));
+    if (!isJsonRecord(raw) || !isJsonRecord(raw.tts) || !Object.hasOwn(raw.tts, "xaiKey")) return;
+    const voiceKey = typeof raw.tts.xaiKey === "string" ? raw.tts.xaiKey.trim() : "";
+    const savedXai = isJsonRecord(raw.xai) && typeof raw.xai.key === "string" ? raw.xai.key.trim() : "";
+    const envXai = process.env.XAI_API_KEY?.trim() ?? "";
+    const tts: JsonObject = { ...raw.tts };
+    delete tts.xaiKey;
+    const next: JsonObject = { ...raw, tts };
+    let fold: GrokVoiceKeyFold = null;
+    if (voiceKey && !savedXai && !envXai) {
+      next.xai = { ...(isJsonRecord(raw.xai) ? raw.xai : {}), key: voiceKey };
+      fold = "moved";
+    } else if (voiceKey) {
+      fold = "dropped";
+    }
+    writeFileAtomic(p, JSON.stringify(next, null, 2), { mode: 0o600 });
+    if (fold) console.log(grokVoiceKeyFoldMessage(fold));
+  } catch (error) {
+    // The key stays in the file: loadConfig() still folds it in memory.
+    console.error(`[config] could not fold the Grok voice key: ${error instanceof Error ? error.message : String(error)}`);
+  }
+}
+
+/** The same rule for a save: a client of an older build (or a bot's
+ * credential card) sending `tts.xaiKey` sets the xAI key when none is
+ * saved; otherwise the value is not kept. Clearing it clears nothing. */
+export function foldGrokVoiceKeyPatch(
+  patch: { tts?: { xaiKey?: string } & Record<string, unknown>; xai?: { key?: string; url?: string } },
+  savedXaiKey: string | undefined,
+  { allowMove = true }: { allowMove?: boolean } = {},
+): GrokVoiceKeyFold {
+  if (patch.tts?.xaiKey === undefined) return null;
+  const voiceKey = patch.tts.xaiKey.trim();
+  delete patch.tts.xaiKey;
+  if (Object.keys(patch.tts).length === 0) delete patch.tts;
+  if (!voiceKey) return null;
+  if (allowMove && !savedXaiKey?.trim() && patch.xai?.key === undefined) {
+    patch.xai = { ...patch.xai, key: voiceKey };
+    return "moved";
+  }
+  return "dropped";
 }
 
 /** `features.skillRecorder` became `features.skillAuthoring` when the Teach a
@@ -1296,7 +1358,12 @@ export function loadConfig(): AppConfig {
   const presetVoice = process.env.SAGAX_TTS_DEFAULT_VOICE?.trim();
   if (presetVoice && !cfg.tts.voice?.trim() && (cfg.tts.provider ?? "elevenlabs") === "elevenlabs") cfg.tts.voice = presetVoice;
   if (process.env.SAGAX_FISH_AUDIO_API_KEY !== undefined) cfg.tts.fishKey = process.env.SAGAX_FISH_AUDIO_API_KEY;
-  if (process.env.SAGAX_XAI_VOICE_KEY !== undefined) cfg.tts.xaiKey = process.env.SAGAX_XAI_VOICE_KEY;
+  // Grok voice runs on the xAI key (2026-10-14). A Grok voice key of an
+  // older build (the file, or the env a desktop shell of that build
+  // injects) fills the xAI key while none is saved, and is otherwise unused.
+  const legacyVoiceKey = (process.env.SAGAX_XAI_VOICE_KEY !== undefined ? process.env.SAGAX_XAI_VOICE_KEY : cfg.tts.xaiKey)?.trim();
+  if (legacyVoiceKey && !cfg.xai.key?.trim()) cfg.xai.key = legacyVoiceKey;
+  delete cfg.tts.xaiKey;
   cfg.decider = { ...cfg.decider };
   if (process.env.SAGAX_JEV_API_KEY !== undefined) cfg.decider.key = process.env.SAGAX_JEV_API_KEY;
   cfg.live = { ...cfg.live };
@@ -1363,7 +1430,6 @@ export function syncCredentialEnv(patch: Partial<Omit<AppConfig, "threads">>): v
     [patch.opencodeGo?.apiKey, "OPENCODE_API_KEY"],
     [patch.tts?.key, "SAGAX_TTS_KEY"],
     [patch.tts?.fishKey, "SAGAX_FISH_AUDIO_API_KEY"],
-    [patch.tts?.xaiKey, "SAGAX_XAI_VOICE_KEY"],
     [patch.decider?.key, "SAGAX_JEV_API_KEY"],
     [patch.imageGen?.key, "SAGAX_OPENAI_IMAGE_KEY"],
     [patch.imageGen?.customApiKey, "SAGAX_CUSTOM_IMAGE_KEY"],

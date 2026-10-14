@@ -34,9 +34,11 @@ export const CREDENTIAL_TARGETS = {
     placeholder: "Paste your Fish Audio API key",
     helpUrl: "https://fish.audio/app/api-keys/",
   },
+  // Kept as an id so older cards and agents still work; since 2026-10-14
+  // Grok voice runs on the xAI key, so this card saves that key.
   xaiVoiceKey: {
-    label: "Grok voice API key",
-    description: "Used only for Grok voice. Bots keep their own xAI key.",
+    label: "xAI API key",
+    description: "Used by Grok voice and by the built-in Grok provider.",
     placeholder: "xai-…",
     helpUrl: "https://console.x.ai/",
   },
@@ -54,7 +56,7 @@ export type CredentialConfig = {
   // The persisted config section keeps its historical name: cfg.box.
   box?: { token?: string };
   opencodeGo?: { apiKey?: string };
-  tts?: { key?: string; fishKey?: string; xaiKey?: string };
+  tts?: { key?: string; fishKey?: string };
   imageGen?: { key?: string };
 };
 
@@ -75,7 +77,7 @@ export function credentialConfigPatch(id: CredentialTargetId, value: string): Cr
     case "fishAudioKey":
       return { tts: { fishKey: value } };
     case "xaiVoiceKey":
-      return { tts: { xaiKey: value } };
+      return { xai: { key: value } };
     case "openaiImageApiKey":
       return { imageGen: { key: value } };
   }
@@ -94,7 +96,7 @@ export function credentialIsConfigured(config: CredentialConfig, id: CredentialT
     case "fishAudioKey":
       return Boolean(config.tts?.fishKey);
     case "xaiVoiceKey":
-      return Boolean(config.tts?.xaiKey);
+      return Boolean(config.xai?.key);
     case "openaiImageApiKey":
       return Boolean(config.imageGen?.key);
   }

@@ -63,6 +63,35 @@ export function migrateWorkspaceCredentials(config, credentials) {
   return { config: nextConfig, credentials: nextCredentials, configChanged, credentialsChanged };
 }
 
+/** 2026-10-14: Grok voice runs on the xAI key. A Grok voice key stored by
+ * an older build (`xaiVoiceKey`) becomes the xAI key (`xaiApiKey`) when
+ * none is stored; otherwise the xAI key stays and the duplicate is dropped.
+ * `outcome` lets the caller log what happened, never the value. Run after
+ * migrateWorkspaceCredentials, which first moves a plaintext `tts.xaiKey`
+ * into `xaiVoiceKey`. */
+export function foldGrokVoiceCredential(credentials) {
+  const next = { ...credentials };
+  if (!Object.hasOwn(next, "xaiVoiceKey")) return { credentials: next, changed: false, outcome: null };
+  const voice = typeof next.xaiVoiceKey === "string" ? next.xaiVoiceKey.trim() : "";
+  const xai = typeof next.xaiApiKey === "string" ? next.xaiApiKey.trim() : "";
+  delete next.xaiVoiceKey;
+  let outcome = null;
+  if (voice && !xai) {
+    next.xaiApiKey = voice;
+    outcome = "moved";
+  } else if (voice) {
+    outcome = "dropped";
+  }
+  return { credentials: next, changed: true, outcome };
+}
+
+/** The log line for foldGrokVoiceCredential's outcome. */
+export function grokVoiceFoldLog(outcome) {
+  if (outcome === "moved") return "credentials: the Grok voice key is now the xAI key (Grok voice and Grok bots share one key)";
+  if (outcome === "dropped") return "credentials: Grok voice key not kept: an xAI key is already stored and Grok voice uses it";
+  return null;
+}
+
 /** Env for the spawned server: one var per stored secret, nothing else.
  * The server treats each var as authoritative over its config.json field. */
 export function workspaceCredentialEnv(credentials) {

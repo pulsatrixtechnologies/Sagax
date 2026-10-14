@@ -220,6 +220,8 @@ import {
   localVmMaxInstances,
   localVmMode,
   parseConfigPatch,
+  foldGrokVoiceKeyPatch,
+  grokVoiceKeyFoldMessage,
   roomTurnTimeoutMinutes,
   mcpCallTimeoutMinutes,
   threadEventLogMaxBytes,
@@ -25740,9 +25742,9 @@ ROUTES.push(createMailSettingsRoutes({
 
 // Voice mode (server/voice-mode.ts): xAI speech to text and text to speech
 // for the floating voice bar, with the speaker's own xAI key (Perspicax),
-// else the organization's Grok voice key (Settings > API keys, tts.xaiKey).
-// The bot xAI key is not used. The key never leaves the server; the spoken
-// turn itself goes through the normal send route.
+// else the server's xAI key (Settings > Models and voice, xai.key; since
+// 2026-10-14 Grok voice has no key of its own). The key never leaves the
+// server; the spoken turn itself goes through the normal send route.
 ROUTES.push(createVoiceModeRoutes({
   organization: IDENTITY.kind === "perspicax",
   speaker: (auth) => {
@@ -25768,7 +25770,7 @@ ROUTES.push(createVoiceModeRoutes({
     }
     return { botId: bot.id, botName: bot.name, threadId: threadId ?? bot.threadId };
   },
-  serverKey: () => cfg.tts?.xaiKey,
+  serverKey: () => cfg.xai?.key,
   hasOwnKey: (sub) => perspicaxDirectory?.providerKeys(sub).includes("xai") ?? false,
   resolveOwnKey: (sub) => perspicaxDirectory ? perspicaxDirectory.resolveProviderKey(sub, "xai") : Promise.resolve({ ok: false as const, error: "link" as const }),
   keysUrl: () => perspicaxKeysUrl(),
@@ -38434,6 +38436,10 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       if (hostedModels && ["instances", "anthropic", "openai", "openrouter", "openaiCompat", "xai", "mistral", "cerebras", "groq", "opencodeGo"].some(key => Object.hasOwn(body, key))) return json(res, 403, { error: HOSTED_PROVIDER_SETTINGS_ERROR });
       if (profileManagedFor(auth) && writesManagedProfile(body)) return json(res, 403, MANAGED_PROFILE_REFUSAL);
       const patch = parseConfigPatch(body);
+      // Grok voice runs on the xAI key (2026-10-14): a Grok voice key from an
+      // older client fills the xAI key when none is saved. Logged, never the value.
+      const grokVoiceFold = foldGrokVoiceKeyPatch(patch, cfg.xai?.key, { allowMove: !hostedModels });
+      if (grokVoiceFold) console.log(grokVoiceKeyFoldMessage(grokVoiceFold));
       // A Cloud home is personal: nobody is invited to sign in to it.
       if (CLOUD_HOME && (patch.signIn?.admins?.length || patch.signIn?.members?.length)) {
         return json(res, 403, { error: CLOUD_PERSONAL_REFUSAL, code: "cloud_personal" });
@@ -38462,7 +38468,11 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         if (refusal) return json(res, 403, { error: refusal, code: "managed_policy" });
         patch.automaticRecovery.backup = checked.selection;
       }
-      if (!Object.keys(patch).length) return json(res, 400, { error: "nothing to save" });
+      if (!Object.keys(patch).length) {
+        // Only a Grok voice key that was not kept: nothing else to save.
+        if (grokVoiceFold) return json(res, 200, configForViewer(configForAccess(configStatus(), auth.scopes.includes("admin")), viewerIdentity(auth)));
+        return json(res, 400, { error: "nothing to save" });
+      }
       if (patch.decider) {
         // Saving a key is the "turn it on"; clearing it turns it off, or
         // falls back to Cloud Pro's included decisions where there are some.

@@ -17,7 +17,8 @@ const MAPPINGS: Array<[CredentialTargetId, CredentialConfig]> = [
   ["opencodeGoApiKey", { opencodeGo: { apiKey: "secret" } }],
   ["ttsKey", { tts: { key: "secret" } }],
   ["fishAudioKey", { tts: { fishKey: "secret" } }],
-  ["xaiVoiceKey", { tts: { xaiKey: "secret" } }],
+  // 2026-10-14: Grok voice runs on the xAI key; the old id saves that key.
+  ["xaiVoiceKey", { xai: { key: "secret" } }],
   ["openaiImageApiKey", { imageGen: { key: "secret" } }],
 ];
 
@@ -43,9 +44,8 @@ describe("credential request allowlist", () => {
     expect(credentialIsConfigured({ tts: { key: "" } }, "ttsKey")).toBe(false);
     expect(credentialIsConfigured({ tts: { fishKey: "secret" } }, "fishAudioKey")).toBe(true);
     expect(credentialIsConfigured({ tts: { fishKey: "" } }, "fishAudioKey")).toBe(false);
-    expect(credentialIsConfigured({ tts: { xaiKey: "secret" } }, "xaiVoiceKey")).toBe(true);
-    expect(credentialIsConfigured({ tts: { xaiKey: "" } }, "xaiVoiceKey")).toBe(false);
-    expect(credentialIsConfigured({ xai: { key: "secret" } }, "xaiVoiceKey")).toBe(false);
+    expect(credentialIsConfigured({ xai: { key: "secret" } }, "xaiVoiceKey")).toBe(true);
+    expect(credentialIsConfigured({ xai: { key: "" } }, "xaiVoiceKey")).toBe(false);
     expect(Object.keys(CREDENTIAL_TARGETS)).toHaveLength(7);
   });
 

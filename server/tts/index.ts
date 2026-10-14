@@ -29,9 +29,11 @@ export class NoVoiceConfigured extends Error {
  * included with Cloud Pro. Settings' own-key flows read cfg.tts.key instead. */
 const elevenLabs = (cfg: AppConfig) => voiceCredential(cfg.tts?.key);
 
-/** Grok voice has its own key. The xAI key bots run on is never read here. */
+/** Grok voice runs on the xAI key, the one Grok bots use (2026-10-14: one
+ * key per provider in Settings > Models and voice). A Grok voice key saved
+ * by an older build was folded into it by loadConfig(). */
 function grokVoiceKey(cfg: AppConfig): string | undefined {
-  const key = cfg.tts?.xaiKey?.trim();
+  const key = cfg.xai?.key?.trim();
   return key || undefined;
 }
 
@@ -93,6 +95,9 @@ export function describeVoice(cfg: AppConfig) {
     model: provider === "chatterbox" ? (cfg.tts?.model ?? "") : "",
     ...(provider === "fish" ? { fishModel: cfg.tts?.fishModel ?? fish.DEFAULT_FISH_MODEL } : {}),
     ...(included ? { included: true as const } : {}),
+    // Which voice keys are saved, whatever the engine: Settings lists them
+    // with the model keys. Booleans only, never a value.
+    keys: { elevenlabs: Boolean(cfg.tts?.key?.trim()), fish: Boolean(cfg.tts?.fishKey?.trim()) },
   };
 }
 
@@ -126,7 +131,7 @@ export function speak(cfg: AppConfig, text: string, voiceId?: string, run?: syst
   const provider = voiceProvider(cfg);
   if (provider === "xai") {
     const key = grokVoiceKey(cfg);
-    if (!key) throw new NoVoiceConfigured("key", "Add a Grok voice key in Settings. It is separate from the xAI key bots use.");
+    if (!key) throw new NoVoiceConfigured("key", "Add an xAI key in Settings > Models and voice. Grok voice uses it.");
     const voice = voiceId || cfg.tts?.voice;
     if (!voice) throw new NoVoiceConfigured("voice");
     return grok.synthesize(text, voice, key);

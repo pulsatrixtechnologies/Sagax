@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { JsonValue } from "./schema.ts";
 
 import { cacheUntilConfigChanges,
+  foldGrokVoiceKeyPatch,
   changedInstanceIds,
   customMcpServers,
   driverKeyBacked,
@@ -113,14 +114,29 @@ describe("configuration boundaries", () => {
     expect(() => parseConfigPatch({ tts: { provider: "unknown" } })).toThrow("provider");
   });
 
-  it("keeps the Grok voice key on tts.xaiKey and never copies it onto the bot xAI key", () => {
-    const parsed = parseConfigPatch({
-      xai: { key: "bot-key" },
-      tts: { provider: "xai", xaiKey: "voice-key", key: "eleven-key" },
-    });
-    expect(parsed.tts).toEqual({ provider: "xai", xaiKey: "voice-key", key: "eleven-key" });
-    expect(parsed.xai).toEqual({ key: "bot-key" });
-    expect(parsed.tts?.xaiKey).not.toBe(parsed.xai?.key);
+  // 2026-10-14: Grok voice runs on the xAI key. A Grok voice key sent by an
+  // older client fills the xAI key only while none is saved.
+  it("folds a Grok voice key from a save into the xAI key when none is saved", () => {
+    const patch = parseConfigPatch({ tts: { provider: "xai", xaiKey: " voice-key ", key: "eleven-key" } });
+    expect(foldGrokVoiceKeyPatch(patch, undefined)).toBe("moved");
+    expect(patch).toEqual({ tts: { provider: "xai", key: "eleven-key" }, xai: { key: "voice-key" } });
+  });
+
+  it("keeps the saved xAI key and drops the duplicate from a save", () => {
+    const patch = parseConfigPatch({ tts: { xaiKey: "voice-key" } });
+    expect(foldGrokVoiceKeyPatch(patch, "bot-key")).toBe("dropped");
+    expect(patch).toEqual({});
+    const both = parseConfigPatch({ xai: { key: "new-bot" }, tts: { xaiKey: "voice-key" } });
+    expect(foldGrokVoiceKeyPatch(both, undefined)).toBe("dropped");
+    expect(both).toEqual({ xai: { key: "new-bot" } });
+    // Clearing the old voice key never clears the xAI key.
+    const cleared = parseConfigPatch({ tts: { xaiKey: "" } });
+    expect(foldGrokVoiceKeyPatch(cleared, "bot-key")).toBeNull();
+    expect(cleared).toEqual({});
+    // A server whose model providers are hosted never takes a key this way.
+    const hosted = parseConfigPatch({ tts: { xaiKey: "voice-key" } });
+    expect(foldGrokVoiceKeyPatch(hosted, undefined, { allowMove: false })).toBe("dropped");
+    expect(hosted).toEqual({});
   });
 
   it("accepts only known Fish Audio speech models", () => {
@@ -1380,6 +1396,59 @@ describe("credential env narrowing", () => {
   });
 });
 
+describe("Grok voice key migration (2026-10-14)", () => {
+  const path = join(DATA_DIR, "config.json");
+  const readDisk = () => JSON.parse(readFileSync(path, "utf8"));
+  let savedXai: string | undefined;
+
+  beforeEach(() => {
+    mkdirSync(DATA_DIR, { recursive: true });
+    rmSync(path, { force: true });
+    savedXai = process.env.XAI_API_KEY;
+    delete process.env.XAI_API_KEY;
+  });
+  afterEach(() => {
+    rmSync(path, { force: true });
+    if (savedXai === undefined) delete process.env.XAI_API_KEY;
+    else process.env.XAI_API_KEY = savedXai;
+    vi.restoreAllMocks();
+  });
+
+  it("moves a Grok voice key to the empty xAI key once, at startup, and logs it without the value", () => {
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+    writeFileSync(path, JSON.stringify({ tts: { provider: "xai", voice: "ara", xaiKey: "voice-secret" } }));
+    ensureDirs();
+    expect(readDisk()).toEqual({ tts: { provider: "xai", voice: "ara" }, xai: { key: "voice-secret" } });
+    const lines = log.mock.calls.map((call) => String(call[0]));
+    expect(lines.some((line) => line.includes("Grok voice key is now the xAI key"))).toBe(true);
+    expect(lines.join("\n")).not.toContain("voice-secret");
+    if (process.platform !== "win32") expect(statSync(path).mode & 0o777).toBe(0o600);
+    // a second boot finds nothing left to migrate and leaves the file alone
+    const written = readFileSync(path, "utf8");
+    ensureDirs();
+    expect(readFileSync(path, "utf8")).toBe(written);
+  });
+
+  it("keeps a saved xAI key and forgets the duplicate, saying so in the log", () => {
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+    writeFileSync(path, JSON.stringify({ xai: { key: "bot-key" }, tts: { provider: "elevenlabs", xaiKey: "voice-secret" } }));
+    ensureDirs();
+    expect(readDisk()).toEqual({ xai: { key: "bot-key" }, tts: { provider: "elevenlabs" } });
+    const lines = log.mock.calls.map((call) => String(call[0])).join("\n");
+    expect(lines).toContain("Grok voice key not kept");
+    expect(lines).not.toContain("voice-secret");
+    expect(lines).not.toContain("bot-key");
+  });
+
+  it("counts an xAI key in the environment as saved", () => {
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    process.env.XAI_API_KEY = "env-bot";
+    writeFileSync(path, JSON.stringify({ tts: { xaiKey: "voice-secret" } }));
+    ensureDirs();
+    expect(readDisk()).toEqual({ tts: {} });
+  });
+});
+
 describe("legacy feature flag migration", () => {
   const path = join(DATA_DIR, "config.json");
   const readDisk = () => JSON.parse(readFileSync(path, "utf8"));
@@ -1838,36 +1907,37 @@ describe("credential env preference", () => {
     expect(process.env.SAGAX_FISH_AUDIO_API_KEY).toBe("fish-new");
   });
 
-  it("keeps provider xai when a voice-key save sends only tts.xaiKey", () => {
+  it("runs Grok voice on the xAI key and reports which voice keys are saved, never a value", () => {
     saveConfig({ tts: { provider: "xai", voice: "ara", key: "eleven-kept" }, xai: { key: "bot-kept" } });
-    const patch = parseConfigPatch({ tts: { xaiKey: "voice-secret" } });
-    expect(patch).toEqual({ tts: { xaiKey: "voice-secret" } });
-    saveConfig(patch);
     const cfg = loadConfig();
-    expect(cfg.tts).toMatchObject({ provider: "xai", voice: "ara", key: "eleven-kept", xaiKey: "voice-secret" });
-    expect(cfg.xai?.key).toBe("bot-kept");
     const status = describeVoice(cfg);
-    expect(status).toMatchObject({ configured: true, provider: "xai", voice: "ara" });
+    expect(status).toMatchObject({ configured: true, provider: "xai", voice: "ara", keys: { elevenlabs: true, fish: false } });
     expect(status).not.toHaveProperty("xaiKey");
     expect(status).not.toHaveProperty("key");
     const echoed = JSON.stringify(status);
-    expect(echoed).not.toContain("voice-secret");
     expect(echoed).not.toContain("bot-kept");
     expect(echoed).not.toContain("eleven-kept");
   });
 
-  it("syncCredentialEnv stores the Grok voice key apart from the bot xAI key", () => {
-    process.env.XAI_API_KEY = "bot-kept";
-    syncCredentialEnv({ tts: { xaiKey: "voice-new" } });
-    expect(process.env.SAGAX_XAI_VOICE_KEY).toBe("voice-new");
-    expect(process.env.XAI_API_KEY).toBe("bot-kept");
-    writeFileSync(join(DATA_DIR, "config.json"), JSON.stringify({ xai: { key: "file-bot" }, tts: { provider: "xai", xaiKey: "file-voice" } }));
-    expect(loadConfig().tts?.xaiKey).toBe("voice-new");
-    expect(loadConfig().xai?.key).toBe("bot-kept");
-    delete process.env.SAGAX_XAI_VOICE_KEY;
+  it("loadConfig folds an older Grok voice key into an empty xAI key, never over a saved one", () => {
+    const savedXai = process.env.XAI_API_KEY;
     delete process.env.XAI_API_KEY;
-    expect(loadConfig().tts?.xaiKey).toBe("file-voice");
-    expect(loadConfig().xai?.key).toBe("file-bot");
+    delete process.env.SAGAX_XAI_VOICE_KEY;
+    try {
+      writeFileSync(join(DATA_DIR, "config.json"), JSON.stringify({ tts: { provider: "xai", xaiKey: "file-voice" } }));
+      expect(loadConfig().xai?.key).toBe("file-voice");
+      expect(loadConfig().tts).not.toHaveProperty("xaiKey");
+      writeFileSync(join(DATA_DIR, "config.json"), JSON.stringify({ xai: { key: "file-bot" }, tts: { provider: "xai", xaiKey: "file-voice" } }));
+      expect(loadConfig().xai?.key).toBe("file-bot");
+      // The env a desktop shell of an older build injects counts too.
+      writeFileSync(join(DATA_DIR, "config.json"), JSON.stringify({ tts: { provider: "xai" } }));
+      process.env.SAGAX_XAI_VOICE_KEY = "env-voice";
+      expect(loadConfig().xai?.key).toBe("env-voice");
+    } finally {
+      delete process.env.SAGAX_XAI_VOICE_KEY;
+      if (savedXai === undefined) delete process.env.XAI_API_KEY;
+      else process.env.XAI_API_KEY = savedXai;
+    }
   });
 
   it("syncCredentialEnv keeps model and provider env in step with a save", () => {

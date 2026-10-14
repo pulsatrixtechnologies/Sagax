@@ -32,10 +32,10 @@
 //
 // Who pays (the order of engine-credentials.ts, for the person who speaks):
 //   organization server: the speaker's own xAI key in Perspicax, else the
-//   organization's Grok voice key (Settings > API keys, tts.xaiKey), else
+//   organization's xAI key (Settings > Models and voice, xai.key), else
 //   refused with an access card shown only to that person; a disabled
-//   person is refused. Solo server: the server's Grok voice key.
-//   The xAI key bots run on is never used here.
+//   person is refused. Solo server: the server's xAI key. Since
+//   2026-10-14 Grok voice and Grok bots share that one key.
 // Every request names a bot the person may use (the visibility gate already
 // hides the others) and, when given, a thread they may post to. Each speak
 // and transcribe is recorded in the usage ledger with `access` (the via).
@@ -120,7 +120,7 @@ export interface VoiceModeDeps {
   /** The bot and thread the person talks to, or why not (404 hides a bot
    * they may not use, like every other bot route). */
   target(auth: RequestAuth, botId: string, threadId: string | undefined): VoiceTarget | { status: number; error: string };
-  /** The organization's (or solo server's) Grok voice key: Settings > API keys. */
+  /** The organization's (or solo server's) xAI key: Settings > Models and voice. */
   serverKey(): string | undefined;
   /** The speaker's own keys listed in Perspicax (names only). */
   hasOwnKey(sub: string): boolean;
@@ -174,7 +174,7 @@ export async function resolveVoiceKey(deps: Pick<VoiceModeDeps, "organization" |
 }
 
 const REFUSAL_TEXT: Record<VoiceModeRefusalCause, string> = {
-  no_credentials: "Voice mode needs a Grok voice key. Add one in Settings > API keys. It is separate from the xAI key bots use.",
+  no_credentials: "Voice mode needs an xAI key. Add one in Settings > Models and voice.",
   payer_disabled: "Your access is turned off in your organization.",
   perspicax_unreachable: "Perspicax could not be reached to read your xAI key. Try again in a moment.",
 };

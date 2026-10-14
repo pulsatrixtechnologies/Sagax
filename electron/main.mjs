@@ -21,7 +21,7 @@ import {
   installDesktopCrashListeners,
   readSafeLogTail,
 } from "./diagnostics.mjs";
-import { migrateWorkspaceCredentials, workspaceCredentialEnv } from "./workspace-credentials.mjs";
+import { foldGrokVoiceCredential, grokVoiceFoldLog, migrateWorkspaceCredentials, workspaceCredentialEnv } from "./workspace-credentials.mjs";
 import { evictStartupCacheOnce } from "./startup-cache-eviction.mjs";
 import { activateExistingWindow, releaseSingleInstanceLock } from "./single-instance.mjs";
 import { pollServerIdentity } from "./server-boot-probe.mjs";
@@ -873,11 +873,15 @@ async function secureWorkspaceConfig() {
   try {
     const config = JSON.parse(fs.readFileSync(configPath, "utf8"));
     const migrated = migrateWorkspaceCredentials(config, secureCredentials);
+    // Grok voice runs on the xAI key (2026-10-14): fold an older Grok voice key into it.
+    const folded = foldGrokVoiceCredential(migrated.credentials);
     // credentials.bin first: if the OS store cannot take the secrets, the
     // plaintext stays put and the next boot retries — losing the only copy
     // is the one unacceptable outcome
-    if (migrated.credentialsChanged) await saveSecureCredentials(migrated.credentials);
-    secureCredentials = migrated.credentials;
+    if (migrated.credentialsChanged || folded.changed) await saveSecureCredentials(folded.credentials);
+    secureCredentials = folded.credentials;
+    const foldLine = grokVoiceFoldLog(folded.outcome);
+    if (foldLine) slog(foldLine);
     if (!migrated.configChanged) return;
     const temporary = `${configPath}.${process.pid}.tmp`;
     fs.writeFileSync(temporary, JSON.stringify(migrated.config, null, 2), { mode: 0o600 });
@@ -4322,7 +4326,6 @@ const CREDENTIAL_PATCH = {
   opencodeGoApiKey: (value) => ({ opencodeGo: { apiKey: value } }),
   ttsKey: (value) => ({ tts: { key: value } }),
   fishAudioKey: (value) => ({ tts: { fishKey: value } }),
-  xaiVoiceKey: (value) => ({ tts: { xaiKey: value } }),
   jevApiKey: (value) => ({ decider: { key: value } }),
   openaiImageApiKey: (value) => ({ imageGen: { key: value } }),
   customImageApiKey: (value) => ({ imageGen: { customApiKey: value } }),
@@ -4371,8 +4374,10 @@ async function saveWorkspaceCredential(name, value) {
   );
 }
 
+// "xaiVoiceKey" (an older renderer, a bot's credential card) is the xAI key
+// since Grok voice runs on it (2026-10-14).
 ipcMain.handle("credential:set", localOnly("credential:set", (_event, name, value) =>
-  saveWorkspaceCredential(name, value),
+  saveWorkspaceCredential(name === "xaiVoiceKey" ? "xaiApiKey" : name, value),
 ));
 
 ipcMain.handle("approvals:set-trusted-mode", localOnly("approvals:set-trusted-mode", (_event, botId, mode, options) => {

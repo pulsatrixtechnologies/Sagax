@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  foldGrokVoiceCredential,
+  grokVoiceFoldLog,
   migrateWorkspaceCredentials,
   workspaceCredentialEnv,
   WORKSPACE_CREDENTIALS,
@@ -151,5 +153,33 @@ describe("workspace credential env", () => {
     const credentials = Object.fromEntries(WORKSPACE_CREDENTIALS.map((c) => [c.name, `v-${c.name}`]));
     const env = workspaceCredentialEnv(credentials);
     expect(Object.keys(env).sort()).toEqual(WORKSPACE_CREDENTIALS.map((c) => c.env).sort());
+  });
+});
+
+describe("Grok voice key fold (2026-10-14)", () => {
+  it("makes a stored Grok voice key the xAI key when none is stored", () => {
+    const input = { xaiVoiceKey: " voice-secret ", ttsKey: "eleven" };
+    const result = foldGrokVoiceCredential(input);
+    expect(result).toEqual({ credentials: { xaiApiKey: "voice-secret", ttsKey: "eleven" }, changed: true, outcome: "moved" });
+    expect(input.xaiVoiceKey).toBe(" voice-secret ");
+    expect(grokVoiceFoldLog("moved")).not.toContain("voice-secret");
+  });
+
+  it("keeps the stored xAI key and drops the duplicate", () => {
+    const result = foldGrokVoiceCredential({ xaiVoiceKey: "voice-secret", xaiApiKey: "bot-key" });
+    expect(result).toEqual({ credentials: { xaiApiKey: "bot-key" }, changed: true, outcome: "dropped" });
+    expect(grokVoiceFoldLog("dropped")).toContain("not kept");
+  });
+
+  it("follows the plaintext migration: a config.json Grok voice key reaches the xAI key", () => {
+    const migrated = migrateWorkspaceCredentials({ tts: { xaiKey: "voice-secret", provider: "xai" } }, {});
+    const folded = foldGrokVoiceCredential(migrated.credentials);
+    expect(folded.credentials).toEqual({ xaiApiKey: "voice-secret" });
+    expect(workspaceCredentialEnv(folded.credentials)).toEqual({ XAI_API_KEY: "voice-secret" });
+  });
+
+  it("changes nothing when there is no Grok voice key", () => {
+    expect(foldGrokVoiceCredential({ xaiApiKey: "bot-key" })).toEqual({ credentials: { xaiApiKey: "bot-key" }, changed: false, outcome: null });
+    expect(grokVoiceFoldLog(null)).toBeNull();
   });
 });
