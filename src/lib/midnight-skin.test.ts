@@ -1,13 +1,14 @@
-// Midnight is night blue, not black. JC, 2026-10-14: with Midnight the
-// windows (rail, chat, bot panel, popovers, fields, routine cards) were
-// near-black (#070707 / #111111 / #262626) beside a night-blue desktop,
-// "les fenêtres sont trop noires". The palette moved to a night-blue ladder;
-// this pins that it stays blue and that its key pairs stay readable.
+// Midnight is Grok Bot's own dark theme. JC, 2026-10-14: "Le thème Midnight
+// de Sagax doit être identique au thème de Grok Bot." Grok Bot (0.70.2) ships
+// "Sand Light" and "Sand Dark"; its dark window is Sand Dark, a neutral ramp
+// (window #121212, rail #0e0e0e, pane #161616, raised #1f1f1f) with
+// translucent whites over it. This pins those values, and that the key pairs
+// stay readable.
 //
 // The full gate (every pair, every context, every skin) is
 // `pnpm check:contrast`, run by popover-contrast.test.ts. This file measures
-// the Midnight pairs named in the request on their own, with the WCAG
-// targets: primary and secondary text 4.5:1, quiet text and icons 3:1.
+// the Midnight pairs on their own, with the WCAG targets: primary and
+// secondary text 4.5:1, quiet text and icons 3:1.
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -73,23 +74,55 @@ const SURFACES = [
   "--color-elevated",
 ];
 
-describe("Midnight skin: night blue", () => {
+// Sand Dark, resolved: primitives neutral/0..5, base #f5f5f5 at Grok Bot's
+// dark opacities (text 66/54%, hover 6%, selected 10%, user bubble 18%).
+const GROK_BOT_SAND_DARK: Record<string, string> = {
+  "--color-app": "#121212",
+  "--color-sidebar": "#0e0e0e",
+  "--color-panel": "#161616",
+  "--color-inset": "#1b1b1b",
+  "--color-card": "#1f1f1f",
+  "--color-menu": "#1f1f1f",
+  "--color-raised": "#1f1f1f",
+  "--color-composer": "#1f1f1f",
+  "--color-control": "#282828",
+  "--color-raised-hover": "#2c2c2c",
+  "--color-bubble-user": "#3b3b3b",
+  "--color-ink": "#f5f5f5",
+  "--color-ink-secondary": "#f5f5f5a8",
+  "--color-ink-tertiary": "#f5f5f58a",
+  "--color-sidebar-ink": "#f5f5f5",
+  "--color-sidebar-ink-secondary": "#f5f5f5a8",
+  "--color-sidebar-hover": "#f5f5f50f",
+  "--color-sidebar-selected": "#f5f5f51a",
+  "--color-accent": "#f5f5f5",
+  "--color-accent-border": "#dbdbdb",
+  "--color-accent-ink": "#121212",
+  "--color-focus": "#1884fc",
+  "--color-unread": "#1884fc",
+  "--color-success": "#00ba69",
+  "--color-danger": "#ff6463",
+  "--color-warning": "#e28600",
+};
+
+describe("Midnight skin: Grok Bot's Sand Dark", () => {
   it("resolves every surface it paints", () => {
     for (const surface of SURFACES) expect(tokens[surface], surface).toMatch(/^#[0-9a-f]{6}$/);
   });
 
-  it("paints its windows blue, not black or grey", () => {
+  it("takes Grok Bot's values", () => {
+    for (const [token, value] of Object.entries(GROK_BOT_SAND_DARK)) expect(tokens[token], token).toBe(value);
+  });
+
+  it("paints neutral greys, as Grok Bot does", () => {
     for (const surface of SURFACES) {
       const { r, g, b } = rgb(tokens[surface]!);
-      // blue leads both other channels clearly: a navy, not a neutral grey
-      expect(b - Math.max(r, g), surface).toBeGreaterThanOrEqual(18);
-      // and the ground is not the old near-black (#070707 measured 0.002)
-      expect(luminance(rgb(tokens[surface]!)), surface).toBeGreaterThan(0.005);
+      expect(Math.max(r, g, b) - Math.min(r, g, b), surface).toBeLessThanOrEqual(2);
     }
   });
 
-  it("keeps the ladder: each step lighter than the one under it", () => {
-    const ladder = ["--color-app", "--color-panel", "--color-inset", "--color-card", "--color-raised", "--color-raised-hover", "--color-bubble-user"];
+  it("keeps Grok Bot's ladder: the rail under the window, each step lighter", () => {
+    const ladder = ["--color-sidebar", "--color-app", "--color-panel", "--color-inset", "--color-card", "--color-raised-hover", "--color-bubble-user"];
     const values = ladder.map((token) => luminance(rgb(tokens[token]!)));
     for (let i = 1; i < values.length; i++) expect(values[i], ladder[i]).toBeGreaterThan(values[i - 1]!);
   });

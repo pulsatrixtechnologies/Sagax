@@ -550,62 +550,65 @@
 }
 
 /* ── Midnight ──────────────────────────────────────────────────────────────
-   Night blue. Midnight started as the upstream palette, pixel-sampled from
-   the real Grok app: near-black greys (#070707 ground, #111111 rail, #262626
-   cards). JC, 2026-10-14: "les fenêtres sont trop noires" next to a night-
-   blue desktop. The ladder is unchanged (app < panel = sidebar < inset <
-   card = menu < raised = composer = control < raised-hover < user bubble),
-   only the values moved to a night blue: a touch lighter and more indigo
-   than Pulsatrix's #030b17 navy, so the two dark blue skins stay distinct.
-   The grey accent, the Pulsatrix-blue unread dot and the status tones are
-   kept; inks take a faint blue so white text does not buzz on navy.
+   Grok Bot's own dark theme. JC, 2026-10-14: "Le thème Midnight de Sagax
+   doit être identique au thème de Grok Bot." Grok Bot (0.70.2) ships two
+   themes, "Sand Light" and "Sand Dark", plus an accent choice (black or the
+   bot's colour); its dark window is Sand Dark. Every value below is a Sand
+   Dark value: a neutral ramp (window #121212, rail #0e0e0e, pane #161616,
+   raised #1f1f1f) and translucent whites over it (text 100/66/54%, hover 6%,
+   selected 10%, user bubble 18%), measured on the running app as well.
+   Same tokens, same ladder (sidebar < app < panel < inset < card = menu =
+   raised < raised-hover < user bubble); only the rail now sits below the
+   ground, as in Grok Bot.
 
-   The upstream white labels on the accent and danger fills (3.65:1 and
-   3.10:1) are gone: the accent carries a dark ink, and the red was lifted so
-   error text clears 4.5:1 on its own tint, so its label takes a near-black
-   too. Readable beats faithful here. Measured by pnpm check:contrast and
-   src/lib/midnight-skin.test.ts.
+   Four values are not Grok Bot's exact tone, because the contrast gate
+   holds them: the hairlines (Grok Bot's 6 to 10% dividers measure 1.2:1,
+   nudged to the 1.5:1 floor), the field and popover outline (Grok Bot draws
+   none at 3:1), the scrollbar (Grok Bot's 22% border) and the link ink
+   (Grok Bot's #4d9bff is 3.74:1 on the accent wash; its lighter blue
+   #7cb5ff is taken). Measured by
+   pnpm check:contrast and src/lib/midnight-skin.test.ts.
    ───────────────────────────────────────────────────────────────────────── */
 [data-skin="midnight"] {
   --code-color-scheme: dark;
-  --color-app: #0a1226;
-  --color-panel: #101a33;
-  --color-raised: #26355a;
-  --color-raised-hover: #2f4069;
-  --color-composer: #26355a;    /* = raised: unchanged */
+  --color-app: #121212;          /* Sand Dark chrome: window, chat, bot panel */
+  --color-panel: #161616;        /* Sand Dark pane: dialogs, banners */
+  --color-raised: #1f1f1f;       /* Sand Dark elevated: controls, composer */
+  --color-raised-hover: #2c2c2c; /* elevated-hover: 6% white over elevated */
+  --color-composer: #1f1f1f;    /* = raised */
   --color-composer-ring: transparent;
-  --color-card: #1d2a4a;
-  --color-menu: #1d2a4a;    /* = card: unchanged */
-  --color-popover-border: #6f7fa6;   /* field and popover outline: 3:1 on both */
-  --color-inset: #16213d;
-  --color-control: #26355a;       /* = raised: unchanged */
-  --color-hairline: #2a3a60;
-  --color-sidebar: #101a33;              /* = panel: unchanged */
-  --color-sidebar-ink: #f3f6fd;           /* = ink: unchanged */
-  --color-sidebar-ink-secondary: #b3bed8; /* = ink-secondary: unchanged */
-  --color-sidebar-hover: #8ea4dc24;       /* a blue-grey wash, not the neutral grey */
-  --color-sidebar-selected: #8ea4dc45;
-  --color-sidebar-hairline: #2c3c62;
+  --color-card: #1f1f1f;        /* elevated: cards, routine rows, bot bubble */
+  --color-menu: #1f1f1f;        /* elevated: popovers and menus */
+  --color-popover-border: #707070;   /* not Grok Bot: field and popover outline, 3:1 on both */
+  --color-inset: #1b1b1b;       /* fields: 4% white over the window */
+  --color-control: #282828;     /* a control on a card: 4% white over elevated */
+  --color-hairline: #353535;    /* not Grok Bot (10% white = #292929, 1.28:1): nudged to 1.5:1 */
+  --color-sidebar: #0e0e0e;     /* Sand Dark sidebar */
+  --color-sidebar-ink: #f5f5f5;           /* = ink */
+  --color-sidebar-ink-secondary: #f5f5f5a8; /* = ink-secondary */
+  --color-sidebar-hover: #f5f5f50f;       /* 6% white */
+  --color-sidebar-selected: #f5f5f51a;    /* 10% white: the selected row, #252525 on the rail */
+  --color-sidebar-hairline: #333333;      /* not Grok Bot (6% white = #1c1c1c): nudged to 1.5:1 */
   --sidebar-mark-on-dark: inline-block;
   --sidebar-mark-on-light: none;
-  --color-ink: #f3f6fd;
-  --color-ink-secondary: #b3bed8;
-  --color-ink-tertiary: #a6b2ce;
-  --color-accent: #d6d6d6;
-  --color-unread: #3c76f4;
-  --color-accent-border: #a3a3a3;
-  --color-accent-text: #e8e8e8;
-  --color-focus: #bdbdbd;    /* = @theme default: unchanged */
-  --color-accent-ink: #0a1226;   /* = app */
-  --color-bubble-user: #3a4d7d;
-  --color-bubble-user-ink: #f3f6fd;   /* = ink: unchanged */
-  --color-success: #38d591;
-  --color-danger: #ff7f8b;   /* #ff7280 measured 4.34:1 as error text on its 15% tint over the navy card */
-  --color-danger-ink: #0a1226;   /* = app: white measured 3.10:1 on the danger fill */
-  --color-success-ink: #072114;
-  --color-warning: #ff9800;
-  --color-scrollbar: #34466f;
-  --color-maus-line: #f3f6fd;
+  --color-ink: #f5f5f5;          /* Sand Dark base */
+  --color-ink-secondary: #f5f5f5a8;  /* 66% */
+  --color-ink-tertiary: #f5f5f58a;   /* 54% */
+  --color-accent: #f5f5f5;       /* primary fill = base, as Grok Bot's white buttons */
+  --color-unread: #1884fc;       /* blue fill bright */
+  --color-accent-border: #dbdbdb;  /* base hover */
+  --color-accent-text: #7cb5ff;  /* blue foreground hover: Grok Bot's #4d9bff measured 3.74:1 on the accent wash */
+  --color-focus: #1884fc;        /* focus ring = accent fill bright */
+  --color-accent-ink: #121212;   /* text on the white fill = chrome */
+  --color-bubble-user: #3b3b3b;  /* 18% white over the window */
+  --color-bubble-user-ink: #f5f5f5;  /* = ink */
+  --color-success: #00ba69;      /* green foreground */
+  --color-danger: #ff6463;       /* red foreground */
+  --color-danger-ink: #121212;   /* = app */
+  --color-success-ink: #121212;  /* = app */
+  --color-warning: #e28600;      /* yellow foreground */
+  --color-scrollbar: #444444;    /* 22% white: Grok Bot's strongest border */
+  --color-maus-line: #f5f5f5;
   --app-glow: none;
 
   --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "SF Pro Text",
