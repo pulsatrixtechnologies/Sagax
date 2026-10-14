@@ -17,24 +17,21 @@ on:
       - scripts/bundle-server.mjs
       - scripts/install-engines.mjs
       - scripts/engine-image-gate.mjs
-      - scripts/deploy-server.mjs
+      - scripts/gox-deploy.mjs
       - scripts/build-production-image.sh
       - engines.lock.json
       - package.json
       - pnpm-lock.yaml
       - .github/workflows/docker.yml
-      - "!deploy/**/*.md"
-  # Markdown under deploy/ is operator docs: it must not rebuild the image.
   pull_request:
     paths:
       - Dockerfile
       - .dockerignore
       - deploy/**
-      - "!deploy/**/*.md"
       - engines.lock.json
       - scripts/install-engines.mjs
       - scripts/engine-image-gate.mjs
-      - scripts/deploy-server.mjs
+      - scripts/gox-deploy.mjs
       - scripts/build-production-image.sh
       - .github/workflows/docker.yml
 
