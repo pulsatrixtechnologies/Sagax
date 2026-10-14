@@ -1,14 +1,16 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import {
   NPM_RUNTIME_PATCHES,
+  PIP_HASHED_DEPS,
   PIP_RUNTIME_PATCHES,
   cmpVersion,
   findPackageDirs,
   findVenvPips,
+  hashedRequirementsText,
   needsBump,
   parseArgs,
   patchNpmTree,
@@ -28,11 +30,26 @@ describe("runtime overlay pins", () => {
   });
 
   it("pins the Hermes venv packages that had a fix", () => {
+    expect(PIP_RUNTIME_PATCHES.map((patch) => patch.name)).toEqual(["PyJWT", "httpx2", "httpcore2"]);
     expect(PIP_RUNTIME_PATCHES.map((patch) => patch.spec)).toEqual([
       "PyJWT==2.15.1",
       "httpx2==2.13.1",
       "httpcore2==2.13.1",
     ]);
+    for (const patch of PIP_RUNTIME_PATCHES) {
+      expect(patch.hashes.length, patch.name).toBeGreaterThanOrEqual(2);
+      for (const hash of patch.hashes) expect(hash, patch.name).toMatch(/^sha256:[0-9a-f]{64}$/);
+    }
+    for (const dep of PIP_HASHED_DEPS) {
+      expect(dep.hashes.length, dep.spec).toBeGreaterThanOrEqual(2);
+      for (const hash of dep.hashes) expect(hash, dep.spec).toMatch(/^sha256:[0-9a-f]{64}$/);
+    }
+    const requirements = hashedRequirementsText();
+    expect(requirements).toMatch(/^PyJWT==2\.15\.1 \\/m);
+    expect(requirements).toContain("httpx2==2.13.1");
+    expect(requirements).toContain("httpcore2==2.13.1");
+    expect(requirements).toContain("--hash=sha256:6dff50fabc270ee5fd25d845d0b078ed20564579744d6d962850975996d2f9a4");
+    expect(requirements).toContain("--hash=sha256:e1e05d4f25f7d7d496bfb96748f6f4b67657b03da069b3a68c36069f3db73d0a");
   });
 });
 
@@ -110,13 +127,27 @@ describe("patchPipTrees", () => {
       expect(findVenvPips(root)).toEqual([pip]);
       const runs = [];
       const applied = patchPipTrees(root, PIP_RUNTIME_PATCHES, {
-        runPip: (bin, args) => runs.push({ bin, args }),
+        runPip: (bin, args) => {
+          const req = args[args.indexOf("-r") + 1];
+          runs.push({ bin, args, requirements: readFileSync(req, "utf8") });
+        },
       });
       expect(applied).toEqual([{ pip, specs: PIP_RUNTIME_PATCHES.map((p) => p.spec) }]);
-      expect(runs).toEqual([{
-        bin: pip,
-        args: ["install", "--no-cache-dir", "--disable-pip-version-check", "--upgrade", ...PIP_RUNTIME_PATCHES.map((p) => p.spec)],
-      }]);
+      expect(runs).toHaveLength(1);
+      expect(runs[0].bin).toBe(pip);
+      expect(runs[0].args.slice(0, 6)).toEqual([
+        "install",
+        "--no-cache-dir",
+        "--disable-pip-version-check",
+        "--upgrade",
+        "--require-hashes",
+        "-r",
+      ]);
+      expect(runs[0].args[6]).toMatch(/requirements\.txt$/);
+      expect(runs[0].requirements).toBe(hashedRequirementsText());
+      expect(runs[0].requirements).toContain("httpx2==2.13.1");
+      expect(runs[0].requirements).toContain("httpcore2==2.13.1");
+      expect(runs[0].requirements).toMatch(/--hash=sha256:[0-9a-f]{64}/);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

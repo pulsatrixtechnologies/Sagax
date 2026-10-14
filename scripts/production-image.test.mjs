@@ -15,6 +15,9 @@ describe("production image sources", () => {
     expect(dockerfile).not.toMatch(/FROM\s+\S*distroless/);
     expect(dockerfile).toContain("apt-get upgrade -y --no-install-recommends");
     expect(dockerfile).toContain("scripts/harden-image-deps.mjs");
+    expect(read("scripts/harden-image-deps.mjs")).toContain("--require-hashes");
+    expect(read("scripts/harden-image-deps.mjs")).toContain("httpx2==2.13.1");
+    expect(read("scripts/harden-image-deps.mjs")).toContain("httpcore2==2.13.1");
     expect(dockerfile).toContain("/usr/local/lib/node_modules/npm");
     expect(dockerfile).toContain("/opt/yarn-v1.22.22");
     expect(dockerfile).toContain("ENV ENGINE_SET=${ENGINE_SET}");

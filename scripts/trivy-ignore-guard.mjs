@@ -4,13 +4,18 @@
 // now has a FixedVersion, or when the review date has passed. Entries are
 // explicit CVE ids (no wildcards), each with a reason and Review date.
 //
+// Fail closed: an unusable scan, an empty ignore file, a whitespace
+// FixedVersion, an invalid calendar date, UNKNOWN severity, or a listed
+// CVE missing from the scan is an error (non-zero exit), never a pass.
+//
 //   node scripts/trivy-ignore-guard.mjs --ignore .trivyignore --scan scan.json
 import { readFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
 const CVE_LINE = /^CVE-\d{4}-\d+$/;
-const REVIEW = /Review\s+(\d{4}-\d{2}-\d{2})/;
+const REVIEW = /Review\s+(\d{4}-\d{2}-\d{2})/g;
 const REASON_OK = /no-dsa|pas de correctif dans trixie/i;
+const KNOWN_SEVERITY = new Set(["CRITICAL", "HIGH", "MEDIUM", "LOW", "NEGLIGIBLE"]);
 
 export function parseArgs(argv) {
   const out = { ignore: "", scan: "", today: "", gated: "" };
@@ -32,11 +37,27 @@ function utcToday(value) {
   return new Date().toISOString().slice(0, 10);
 }
 
+/** True only for a real UTC calendar day (`2099-99-99` is not). */
+export function isCalendarDate(value) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(value ?? ""));
+  if (!match) return false;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  return date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day;
+}
+
+function reviewDatesIn(reason) {
+  return [...String(reason).matchAll(REVIEW)].map((match) => match[1]);
+}
+
 /** Parse `.trivyignore`: one CVE per line, comment above with reason + Review date. */
 export function parseTrivyignore(text) {
   const errors = [];
   const entries = [];
-  const lines = String(text ?? "").split(/\r?\n/);
+  const source = String(text ?? "");
+  const lines = source.split(/\r?\n/);
   let comments = [];
   for (const raw of lines) {
     const line = raw.trim();
@@ -51,28 +72,43 @@ export function parseTrivyignore(text) {
       continue;
     }
     const reason = comments.join(" ").trim();
-    const review = reason.match(REVIEW);
+    const reviews = reviewDatesIn(reason);
     if (!reason) errors.push(`${line} is missing a comment`);
-    else if (!review) errors.push(`${line} is missing a Review date`);
+    else if (reviews.length === 0) errors.push(`${line} is missing a Review date`);
+    else if (reviews.length > 1) errors.push(`${line} has more than one Review date (${reviews.join(", ")})`);
+    else if (!isCalendarDate(reviews[0])) errors.push(`${line} has an invalid Review date ${reviews[0]}`);
     else if (!REASON_OK.test(reason)) {
       errors.push(`${line} comment must say Debian no-dsa or pas de correctif dans trixie`);
     }
     entries.push({
       id: line,
       reason,
-      reviewDate: review ? review[1] : "",
+      reviewDate: reviews.length === 1 && isCalendarDate(reviews[0]) ? reviews[0] : "",
     });
     comments = [];
   }
+  if (entries.length === 0) errors.push("ignore file lists no CVE");
   return { entries, errors };
 }
 
-function fixedVersionOf(finding) {
-  const value = finding?.FixedVersion;
-  return typeof value === "string" && value.trim() ? value.trim() : "";
+/**
+ * A FixedVersion of spaces is not "no fix". Only a missing or strictly
+ * empty string counts as unfixed.
+ */
+export function fixedVersionOf(finding) {
+  if (!finding || !Object.prototype.hasOwnProperty.call(finding, "FixedVersion")) return "";
+  const value = finding.FixedVersion;
+  if (value == null) return "";
+  if (typeof value !== "string") return String(value);
+  if (value === "") return "";
+  return value.trim() || "<whitespace>";
 }
 
-/** HIGH/CRITICAL rows from a Trivy JSON document. */
+function severityOf(finding) {
+  return String(finding?.Severity ?? "").trim().toUpperCase();
+}
+
+/** HIGH/CRITICAL/… rows from a Trivy JSON document. `Results` must already be an array. */
 export function findingsFromScan(scan) {
   const rows = [];
   for (const result of Array.isArray(scan?.Results) ? scan.Results : []) {
@@ -83,23 +119,92 @@ export function findingsFromScan(scan) {
   return rows;
 }
 
+/**
+ * Fail closed unless the document is an object with a `Results` array.
+ * `{}` and `{ Results: null }` are not scans.
+ */
+export function usableScan(scan) {
+  if (scan == null || typeof scan !== "object" || Array.isArray(scan)) {
+    return { ok: false, errors: ["scan is not a Trivy document"] };
+  }
+  if (!Object.prototype.hasOwnProperty.call(scan, "Results") || !Array.isArray(scan.Results)) {
+    return { ok: false, errors: ["scan Results is missing or not an array"] };
+  }
+  return { ok: true, errors: [] };
+}
+
+function unknownSeverityErrors(findings) {
+  const errors = [];
+  for (const finding of findings) {
+    const severity = severityOf(finding);
+    if (KNOWN_SEVERITY.has(severity)) continue;
+    const id = finding?.VulnerabilityID ?? "(missing id)";
+    errors.push(`${id} has unusable severity ${severity || "UNKNOWN"}`);
+  }
+  return errors;
+}
+
+/** Per-package vs unique CVE ids, to reconcile Trivy row counts with `.trivyignore`. */
+export function findingsSummary(scan) {
+  const usable = usableScan(scan);
+  if (!usable.ok) return { ok: false, errors: usable.errors, bySeverity: {}, unique: { CRITICAL: [], HIGH: [] } };
+  const bySeverity = {};
+  const unique = { CRITICAL: new Set(), HIGH: new Set() };
+  for (const finding of findingsFromScan(scan)) {
+    const severity = severityOf(finding);
+    bySeverity[severity] = (bySeverity[severity] ?? 0) + 1;
+    if (severity === "CRITICAL" || severity === "HIGH") {
+      unique[severity].add(finding.VulnerabilityID);
+    }
+  }
+  return {
+    ok: true,
+    errors: [],
+    bySeverity,
+    unique: {
+      CRITICAL: [...unique.CRITICAL].sort(),
+      HIGH: [...unique.HIGH].sort(),
+    },
+  };
+}
+
 /** Remaining CRITICAL/HIGH counts in a scan already filtered by `.trivyignore`. */
 export function highCriticalCounts(scan) {
   const counts = { CRITICAL: 0, HIGH: 0 };
   for (const finding of findingsFromScan(scan)) {
-    const severity = String(finding?.Severity ?? "").toUpperCase();
+    const severity = severityOf(finding);
     if (severity === "CRITICAL" || severity === "HIGH") counts[severity] += 1;
   }
   return counts;
 }
 
 /**
- * Fail closed when a listed CVE gained a Debian/Trivy fix, or the review
- * date is past. `today` is YYYY-MM-DD (UTC).
+ * Gated remaining-count check. An unusable document or UNKNOWN severity
+ * fails even when the CRITICAL/HIGH counts are zero.
+ */
+export function assessGatedScan(scan) {
+  const usable = usableScan(scan);
+  if (!usable.ok) return { ok: false, errors: usable.errors, counts: { CRITICAL: 0, HIGH: 0 } };
+  const findings = findingsFromScan(scan);
+  const errors = unknownSeverityErrors(findings);
+  const counts = highCriticalCounts(scan);
+  if (counts.CRITICAL) errors.push(`gated remaining critical=${counts.CRITICAL}`);
+  if (counts.HIGH) errors.push(`gated remaining high=${counts.HIGH}`);
+  return { ok: errors.length === 0, errors, counts };
+}
+
+/**
+ * Fail closed when a listed CVE gained a Debian/Trivy fix, the review
+ * date is past, the scan cannot be read, a listed id is missing, or a
+ * finding has UNKNOWN severity. `today` is YYYY-MM-DD (UTC).
  */
 export function assessIgnoreGuard({ ignoreText, scan, today } = {}) {
+  const usable = usableScan(scan);
   const parsed = parseTrivyignore(ignoreText);
-  const errors = [...parsed.errors];
+  const errors = [...usable.errors, ...parsed.errors];
+  if (!usable.ok) {
+    return { ok: false, errors, entries: parsed.entries, nowFixed: [] };
+  }
   const day = utcToday(today);
   const listed = new Map(parsed.entries.map((row) => [row.id, row]));
   for (const row of parsed.entries) {
@@ -107,14 +212,21 @@ export function assessIgnoreGuard({ ignoreText, scan, today } = {}) {
       errors.push(`${row.id} review date ${row.reviewDate} is past (today ${day})`);
     }
   }
+  const findings = findingsFromScan(scan);
+  errors.push(...unknownSeverityErrors(findings));
+  const seen = new Set();
   const nowFixed = [];
-  for (const finding of findingsFromScan(scan)) {
+  for (const finding of findings) {
     const id = finding?.VulnerabilityID;
     if (!id || !listed.has(id)) continue;
+    seen.add(id);
     const fixed = fixedVersionOf(finding);
     if (!fixed) continue;
     nowFixed.push({ id, fixed });
     errors.push(`${id} now has FixedVersion ${fixed}`);
+  }
+  for (const row of parsed.entries) {
+    if (!seen.has(row.id)) errors.push(`${row.id} is listed in .trivyignore but absent from the scan`);
   }
   return {
     ok: errors.length === 0,
@@ -124,19 +236,26 @@ export function assessIgnoreGuard({ ignoreText, scan, today } = {}) {
   };
 }
 
+function readJson(path) {
+  return JSON.parse(readFileSync(path, "utf8"));
+}
+
 function main() {
   const args = parseArgs(process.argv.slice(2));
   if (args.gated) {
-    const counts = highCriticalCounts(JSON.parse(readFileSync(args.gated, "utf8")));
-    console.log(`gated remaining: critical=${counts.CRITICAL} high=${counts.HIGH}`);
-    if (counts.CRITICAL || counts.HIGH) process.exit(1);
+    const result = assessGatedScan(readJson(args.gated));
+    if (!result.ok) {
+      for (const error of result.errors) console.error(`[trivy-ignore] ${error}`);
+      process.exit(1);
+    }
+    console.log(`gated remaining: critical=${result.counts.CRITICAL} high=${result.counts.HIGH}`);
     return;
   }
   if (!args.ignore || !args.scan) {
     throw new Error("usage: node scripts/trivy-ignore-guard.mjs --ignore <file> --scan <trivy.json>");
   }
   const ignoreText = readFileSync(args.ignore, "utf8");
-  const scan = JSON.parse(readFileSync(args.scan, "utf8"));
+  const scan = readJson(args.scan);
   const result = assessIgnoreGuard({ ignoreText, scan, today: args.today });
   for (const row of result.entries) {
     console.log(`[trivy-ignore] ${row.id} review ${row.reviewDate}`);

@@ -29,12 +29,94 @@ export const NPM_RUNTIME_PATCHES = [
   },
 ];
 
-/** Hermes venv packages. Specs are exact; pip never sees `latest`. */
+/** Hermes venv packages. Specs are exact; pip never sees `latest`. Hashes are wheel + sdist sha256. */
 export const PIP_RUNTIME_PATCHES = [
-  { name: "PyJWT", spec: "PyJWT==2.15.1" },
-  { name: "httpx2", spec: "httpx2==2.13.1" },
-  { name: "httpcore2", spec: "httpcore2==2.13.1" },
+  {
+    name: "PyJWT",
+    spec: "PyJWT==2.15.1",
+    hashes: [
+      "sha256:42d59d631f7768a1028a64c7ff581a9bf7519804daf91fc5b6c56e30eec5e193",
+      "sha256:4f259e80cdfb6b3fc18a7de51fd1ef9ec79652f25019bae68975ca2468a34df8",
+    ],
+  },
+  {
+    name: "httpx2",
+    spec: "httpx2==2.13.1",
+    hashes: [
+      "sha256:6dff50fabc270ee5fd25d845d0b078ed20564579744d6d962850975996d2f9a4",
+      "sha256:e48744a19e3af5ee48313d0ce5fe941d5422fae5705ea922a4aabf94d7800dfa",
+    ],
+  },
+  {
+    name: "httpcore2",
+    spec: "httpcore2==2.13.1",
+    hashes: [
+      "sha256:e1e05d4f25f7d7d496bfb96748f6f4b67657b03da069b3a68c36069f3db73d0a",
+      "sha256:e0aa977abe17e69a3b820a24542a6fa88702676d83880b8d194dcd18408e5103",
+    ],
+  },
 ];
+
+/** Transitive pins `pip --require-hashes` needs next to the overlay packages. */
+export const PIP_HASHED_DEPS = [
+  {
+    spec: "anyio==4.15.1",
+    hashes: [
+      "sha256:6152fdbbf9a77fdec97731721bebf7c4c44f7c29b424b0065826173efc7ed101",
+      "sha256:9f28306018cbd6d329e64a36d58256edff76dd996fe423bc957326e578b82a94",
+    ],
+  },
+  {
+    spec: "h11==0.16.0",
+    hashes: [
+      "sha256:63cf8bbe7522de3bf65932fda1d9c2772064ffb3dae62d55932da54b31cb6c86",
+      "sha256:4e35b956cf45792e4caa5885e69fba00bdbc6ffafbfa020300e549b208ee5ff1",
+    ],
+  },
+  {
+    spec: "idna==3.20",
+    hashes: [
+      "sha256:ab7ae7122974553370f0bdb919e1a960b2cd1bc1ef0276416d896db81c14582c",
+      "sha256:a7db850025b95ded1eae8a46181a1a6c56c92c96f0e2b005d9ff8dc0210cab44",
+    ],
+  },
+  {
+    spec: "sniffio==1.3.1",
+    hashes: [
+      "sha256:2f6da418d1f1e0fddd844478f41680e794e6051915791a034ff65e5f100525a2",
+      "sha256:f4324edc670a0f49750a81b895f35c3adb843cca46f0530f79fc1babb23789dc",
+    ],
+  },
+  {
+    spec: "truststore==0.10.5",
+    hashes: [
+      "sha256:9aaaedaefaf06d8b206278cf8b5012bc897f485a874503501e12d776df78951c",
+      "sha256:30d36967ccaded5cbb38d602c433f53600036c79d502f4533a49b60a03bbefcd",
+    ],
+  },
+  {
+    spec: "typing_extensions==4.16.0",
+    hashes: [
+      "sha256:481caa481374e813c1b176ada14e97f1f67a4539ce9cfeb3f350d78d6370c2e8",
+      "sha256:dc983d19a509c94dba722ee6abd33940f7c05a89e243c47e907eb4db6f1a43e5",
+    ],
+  },
+];
+
+export function hashedRequirementsText(patches = PIP_RUNTIME_PATCHES, deps = PIP_HASHED_DEPS) {
+  const rows = [...patches, ...deps];
+  if (rows.length === 0) return "";
+  return `${rows.map((row) => {
+    const hashes = row.hashes ?? [];
+    if (hashes.length === 0) throw new Error(`missing hashes for ${row.spec}`);
+    const hashLines = hashes.map((hash, index) => {
+      if (!/^sha256:[0-9a-f]{64}$/.test(hash)) throw new Error(`bad hash for ${row.spec}`);
+      const more = index < hashes.length - 1 ? " \\" : "";
+      return `    --hash=${hash}${more}`;
+    });
+    return `${row.spec} \\\n${hashLines.join("\n")}`;
+  }).join("\n")}\n`;
+}
 
 /** Numeric dotted versions only (`1.2.3`). Pre-releases compare as less than the same numbers. */
 export function cmpVersion(left, right) {
@@ -120,16 +202,33 @@ export function findVenvPips(root) {
     .sort();
 }
 
-export function patchPipTrees(root, patches = PIP_RUNTIME_PATCHES, { runPip } = {}) {
+export function patchPipTrees(root, patches = PIP_RUNTIME_PATCHES, { runPip, deps = PIP_HASHED_DEPS } = {}) {
   const specs = patches.map((patch) => patch.spec);
   if (specs.length === 0) return [];
+  const pips = findVenvPips(root);
+  if (pips.length === 0) return [];
   const applied = [];
   const pipRun = runPip ?? ((pip, args) => {
     execFileSync(pip, args, { stdio: "inherit" });
   });
-  for (const pip of findVenvPips(root)) {
-    pipRun(pip, ["install", "--no-cache-dir", "--disable-pip-version-check", "--upgrade", ...specs]);
-    applied.push({ pip, specs });
+  const scratch = mkdtempSync(join(tmpdir(), "harden-pip-"));
+  const requirements = join(scratch, "requirements.txt");
+  try {
+    writeFileSync(requirements, hashedRequirementsText(patches, deps));
+    for (const pip of pips) {
+      pipRun(pip, [
+        "install",
+        "--no-cache-dir",
+        "--disable-pip-version-check",
+        "--upgrade",
+        "--require-hashes",
+        "-r",
+        requirements,
+      ]);
+      applied.push({ pip, specs });
+    }
+  } finally {
+    rmSync(scratch, { recursive: true, force: true });
   }
   return applied;
 }
