@@ -1,6 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { createPortal } from "react-dom";
-import { ArrowLeft, ArrowRight, EllipsisVertical, Globe, Hand, Loader2, Maximize2, Minimize2, Plus, RotateCw, UserRound, X } from "lucide-react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { ArrowLeft, ArrowRight, EllipsisVertical, Globe, Hand, Loader2, Plus, RotateCw, UserRound, X } from "lucide-react";
 import { BrowserUnavailableNote } from "./SettingsLink";
 import { t } from "@/lib/i18n";
 import { api, useStore, type Bot } from "@/state/store";
@@ -9,6 +8,10 @@ import { BrowserViewport, type BrowserFrame } from "./BrowserViewport";
 import { createBrowserInputQueue } from "@/lib/browser-input-queue";
 import { createBrowserControl, type BrowserInteraction, type BrowserTakeStatus } from "@/lib/browser-control";
 import { resolveAddressBarInput } from "@/lib/browser-address";
+import { cn } from "@/lib/cn";
+import type { ScreenState } from "@/lib/desktop-local-vm";
+import { ComputerScreen, REVEALED_CONTROL, type ScreenAction } from "./computer/ComputerScreen";
+import { SandboxDesktopModal } from "./computer/SandboxDesktopModal";
 
 interface BrowserTab { tabId: string; title: string; url: string; active: boolean }
 type ViewerFrame = BrowserFrame & { viewerId: string; generation: number };
@@ -21,8 +24,10 @@ const NO_CONTROL = { held: false, controlling: false, owned: false };
 /** Closing a panel releases its lease. A new connection never silently
  * restores permission to type, and never replays old browser frames.
  * There is no Take control button: interacting takes the browser from the
- * bot, and a few idle seconds hand it back (see createBrowserControl). */
-export function LiveBrowser({ bot, hosted = false }: { bot: Bot; /** Inside the take-control window, which owns full screen. */ hosted?: boolean }) {
+ * bot, and a few idle seconds hand it back (see createBrowserControl).
+ * `control`: set by the take-control window; false (Release control) hands
+ * the browser back at once and leaves the page view-only. */
+export function LiveBrowser({ bot, control: allowed = true }: { bot: Bot; control?: boolean }) {
   const { state } = useStore();
   const [attempt, setAttempt] = useState(0);
   const [frame, setFrame] = useState<ViewerFrame | null>(null);
@@ -36,13 +41,11 @@ export function LiveBrowser({ bot, hosted = false }: { bot: Bot; /** Inside the 
   const [showTyping, setShowTyping] = useState(false);
   const [viewport, setViewport] = useState({ width: 1280, height: 720 });
   const [takeStatus, setTakeStatus] = useState<BrowserTakeStatus>("");
-  const [fullscreen, setFullscreen] = useState(false);
   // The server keeps the view open while the bot's own command holds the browser.
   const [busy, setBusy] = useState(false);
   const viewer = useRef("");
   const generation = useRef(0);
   const pendingOperation = useRef<number | null>(null);
-  const panel = useRef<HTMLDivElement>(null);
   const addressInput = useRef<HTMLInputElement>(null);
   const profilesDialog = useRef<HTMLDialogElement>(null);
   const typingDialog = useRef<HTMLDialogElement>(null);
@@ -206,20 +209,8 @@ export function LiveBrowser({ bot, hosted = false }: { bot: Bot; /** Inside the 
     };
   }, [bot.id, bot.browserProfile, attempt, action]);
 
-  // On macOS a full-screen element takes the whole window into native full
-  // screen, where minimize is disabled. The button has to lead back out, and
-  // it follows the document so Esc, the green button and View > Toggle Full
-  // Screen keep it honest too (MOCA-266).
-  useEffect(() => {
-    const update = () => setFullscreen(Boolean(panel.current) && document.fullscreenElement === panel.current);
-    document.addEventListener("fullscreenchange", update);
-    return () => document.removeEventListener("fullscreenchange", update);
-  }, []);
-  const toggleFullscreen = () => {
-    const leaving = Boolean(panel.current) && document.fullscreenElement === panel.current;
-    const request = leaving ? document.exitFullscreen() : panel.current?.requestFullscreen();
-    void request?.catch(() => setError(leaving ? "Could not leave full screen. Press Esc instead." : "Full screen is unavailable in this browser."));
-  };
+  // Release control in the window: hand the browser back now, not after the idle wait.
+  useEffect(() => { if (!allowed) browserControl.current?.handBack(); }, [allowed]);
 
   const execute = async (body: Record<string, unknown>) => {
     if (pendingOperation.current !== null) return;
@@ -247,7 +238,7 @@ export function LiveBrowser({ bot, hosted = false }: { bot: Bot; /** Inside the 
   // Usable whenever connected and no other window holds the browser: the
   // first real interaction takes control from the bot by itself.
   const heldElsewhere = control.held && !control.owned;
-  const interactive = connected && !heldElsewhere && !pending;
+  const interactive = allowed && connected && !heldElsewhere && !pending;
   // The dialog pins a lease; it cannot acquire one or freeze the field the
   // person picked. Click that page field first, before writing in the dialog.
   const typingReady = interactive && control.owned && control.controlling;
@@ -257,7 +248,7 @@ export function LiveBrowser({ bot, hosted = false }: { bot: Bot; /** Inside the 
   const commandsReady = interactive && !taking;
   const reconnecting = error === RECONNECT_MESSAGE;
   const pill = "flex max-w-full items-center gap-1.5 whitespace-nowrap rounded-full border bg-menu px-2.5 py-1 text-[11px] shadow-sm sm:text-[12px]";
-  return <div ref={panel} className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-hairline/40 bg-card text-ink">
+  return <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-hairline/40 bg-card text-ink">
     <div className="flex min-h-12 items-center gap-1 px-2 pt-1.5">
       <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto">
         {tabs.length ? tabs.map((tab) => <div key={tab.tabId} className={`flex max-w-52 shrink-0 items-center gap-1 rounded-xl px-1 text-[12px] ${tab.active ? "bg-inset text-ink" : "text-ink-secondary"}`}>
@@ -267,7 +258,6 @@ export function LiveBrowser({ bot, hosted = false }: { bot: Bot; /** Inside the 
         </div>) : <div className="flex items-center gap-2 rounded-xl bg-inset px-3 py-2 text-[12px] text-ink-secondary"><Globe size={13} />New tab</div>}
         <button className={`${button} shrink-0`} disabled={!commandsReady} aria-label="New tab" title="New tab" onClick={() => command({ type: "tab-new" })}><Plus size={17} /></button>
       </div>
-      {!hosted && <button className={button} title={fullscreen ? "Exit full screen" : "Full screen"} aria-label={fullscreen ? "Exit full screen" : "Full screen"} onClick={toggleFullscreen}>{fullscreen ? <Minimize2 size={16} /> : <Maximize2 size={16} />}</button>}
       {/* Profiles can't switch while this window holds the browser: opening them hands it back now, not after the idle wait. */}
       <button className={`${button} rounded-xl bg-inset p-2`} title={`Browser profile: ${profileName}`} aria-label="Browser profiles" aria-expanded={showProfiles} onClick={() => { browserControl.current?.handBack(); setShowProfiles(true); }}><UserRound size={16} /></button>
     </div>
@@ -326,60 +316,117 @@ export function LiveBrowser({ bot, hosted = false }: { bot: Bot; /** Inside the 
   </div>;
 }
 
-/** Like the VM tab: the pane shows an idle card, never a live stream. Take
- * control opens the browser in a full-screen window, and only then does the
- * live connection start. Leaving full screen or closing the window unmounts
- * LiveBrowser, which closes the EventSource and releases control. */
-export function BrowserIdleCard({ bot }: { bot: Bot }) {
-  const [open, setOpen] = useState(false);
-  return <>
-    <div data-browser-idle="" className="flex min-h-64 flex-1 flex-col items-center justify-center gap-3 p-6 text-center text-[13px] text-ink-secondary">
-      <Globe size={24} aria-hidden="true" />
-      <p>{t("browser.idle.help", { name: bot.name })}</p>
-      <button type="button" data-take-control="" onClick={() => setOpen(true)}
-        className="flex min-h-[44px] items-center gap-2 rounded-full bg-control px-4 py-2 text-[13px] font-medium text-ink hover:bg-raised-hover md:min-h-0">
+type PreviewState = "connecting" | "busy" | "live" | "offline" | "error";
+type PreviewFrame = { seq: number; src: string; viewerId: string };
+/** A closed browser or a failed preview is asked again this often. */
+const PREVIEW_RETRY_MS = 10_000;
+
+function usePageVisible(): boolean {
+  const [visible, setVisible] = useState(() => typeof document === "undefined" || document.visibilityState !== "hidden");
+  useEffect(() => {
+    const update = () => setVisible(document.visibilityState !== "hidden");
+    document.addEventListener("visibilitychange", update);
+    return () => document.removeEventListener("visibilitychange", update);
+  }, []);
+  return visible;
+}
+
+/** The Computer tab's live view of the bot's browser, like the VM's square:
+ * the same screencast as the take-control window, watch-only on the server
+ * (`?preview=1`: no launch, a lower frame rate, acknowledgements only). A
+ * closed browser is not opened just to be watched; it is asked again later. */
+export function useBrowserPreview(bot: Bot, enabled: boolean) {
+  const visible = usePageVisible();
+  const [state, setState] = useState<PreviewState>("connecting");
+  const [frame, setFrame] = useState<PreviewFrame | null>(null);
+  const [attempt, setAttempt] = useState(0);
+  useEffect(() => {
+    setFrame(null);
+    if (!enabled || !visible) return;
+    let stopped = false;
+    let viewerId = "";
+    let retry: ReturnType<typeof setTimeout> | undefined;
+    setState("connecting");
+    const source = new EventSource(`/api/bots/${encodeURIComponent(bot.id)}/browser/live?preview=1`);
+    const end = (next: PreviewState) => {
+      if (stopped) return;
+      stopped = true;
+      source.close();
+      setFrame(null);
+      setState(next);
+      retry = setTimeout(() => setAttempt((value) => value + 1), PREVIEW_RETRY_MS);
+    };
+    const listen = (name: string, handler: (data: any) => void) => source.addEventListener(name, (event) => {
+      if (stopped) return;
+      try { handler(JSON.parse((event as MessageEvent).data)); } catch { /* Malformed events are not rendered. */ }
+    });
+    listen("waiting", () => setState("busy"));
+    listen("ready", (data) => { if (typeof data.viewerId === "string") viewerId = data.viewerId; });
+    listen("frame", (data) => {
+      if (!viewerId || typeof data.seq !== "number" || typeof data.data !== "string") return;
+      setFrame({ seq: data.seq, viewerId, src: `data:image/${data.format === "png" ? "png" : "jpeg"};base64,${data.data}` });
+      setState("live");
+    });
+    listen("offline", () => end("offline"));
+    source.addEventListener("error", () => end("error"));
+    return () => { stopped = true; clearTimeout(retry); source.close(); };
+  }, [bot.id, bot.browserProfile, enabled, visible, attempt]);
+  // The server paces frames on acknowledgements: one per frame shown.
+  const acknowledge = useCallback((shown: PreviewFrame) => {
+    void api(`/api/bots/${encodeURIComponent(bot.id)}/browser/action`, { method: "POST", body: JSON.stringify({ type: "ack", seq: shown.seq, viewerId: shown.viewerId }) }).catch(() => {});
+  }, [bot.id]);
+  return { state, frame, acknowledge, retry: () => setAttempt((value) => value + 1) };
+}
+
+function PreviewImage({ frame, alt, acknowledge, onTakeControl }: { frame: PreviewFrame; alt: string; acknowledge: (frame: PreviewFrame) => void; onTakeControl: () => void }) {
+  // Acknowledge after the frame is painted (identical pixels fire no load event).
+  useEffect(() => { const tick = requestAnimationFrame(() => acknowledge(frame)); return () => cancelAnimationFrame(tick); }, [frame, acknowledge]);
+  return <div data-browser-preview="" className="absolute inset-0">
+    <img src={frame.src} alt={alt} draggable={false} className="h-full w-full select-none object-contain" />
+    {/* Watch-only, like the VM's square: one button in the middle takes the wheel. */}
+    <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+      <button type="button" onClick={onTakeControl} data-take-control=""
+        className={cn("flex min-h-[44px] items-center gap-2 rounded-full bg-black/65 px-4 py-2 text-[13px] font-medium text-white shadow-md backdrop-blur-sm hover:bg-black/80 md:min-h-0", REVEALED_CONTROL)}>
         <Hand size={15} aria-hidden="true" />{t("sandboxDesktop.takeControl")}
       </button>
     </div>
-    {open && <BrowserTakeoverWindow bot={bot} onClose={() => setOpen(false)} />}
+  </div>;
+}
+
+/** The bot's browser on the Computer tab, drawn as the VM's screen: a live
+ * preview in the same frame, and Take control opens the same window as the
+ * server environment's (SandboxDesktopModal), where LiveBrowser connects.
+ * While that window is open the square shows no second stream. */
+export function BrowserComputerScreen({ bot }: { bot: Bot }) {
+  const [takeover, setTakeover] = useState(false);
+  const preview = useBrowserPreview(bot, !takeover);
+  const caption = t("computer.browserOf", { name: bot.name });
+  const open = () => setTakeover(true);
+  const state: ScreenState = takeover || (preview.state === "live" && preview.frame) ? "running"
+    : preview.state === "offline" ? "off" : preview.state === "error" ? "error" : "starting";
+  const message = preview.state === "offline" ? t("browser.preview.offline", { name: bot.name })
+    : preview.state === "error" ? t("browser.preview.failed")
+    : preview.state === "busy" ? t("browser.preview.busy", { name: bot.name })
+    : t("browser.preview.connecting");
+  const actions: ScreenAction[] = preview.state === "offline" ? [{ label: t("sandboxDesktop.takeControl"), onClick: open, primary: true }]
+    : preview.state === "error" ? [{ label: t("computerScreen.retry"), onClick: preview.retry }, { label: t("sandboxDesktop.takeControl"), onClick: open }]
+    : [];
+  const live = takeover
+    ? <div data-browser-takeover-open="" className="flex h-full w-full items-center justify-center p-4 text-center text-[12px] text-ink-secondary">{t("sandboxDesktop.inWindow")}</div>
+    : preview.frame ? <PreviewImage frame={preview.frame} alt={caption} acknowledge={preview.acknowledge} onTakeControl={open} /> : undefined;
+  return <>
+    <ComputerScreen source="browser" icon={Globe} state={state} caption={caption} message={message} actions={actions} live={live} />
+    {takeover && <SandboxDesktopModal kind="browser" title={caption} state="running" onClose={() => setTakeover(false)}
+      screen={(control) => <LiveBrowser key={bot.id} bot={bot} control={control} />} />}
   </>;
 }
 
-export function BrowserTakeoverWindow({ bot, onClose }: { bot: Bot; onClose: () => void }) {
-  const panel = useRef<HTMLDivElement>(null);
-  const close = useRef(onClose);
-  close.current = onClose;
-  useEffect(() => {
-    const element = panel.current;
-    let entered = false;
-    // Leaving full screen (Esc, the system control) ends the session.
-    const change = () => {
-      if (element && document.fullscreenElement === element) entered = true;
-      else if (entered) close.current();
-    };
-    const key = (event: KeyboardEvent) => {
-      if (event.key === "Escape" && (event.metaKey || event.ctrlKey) && event.shiftKey) { event.preventDefault(); close.current(); }
-    };
-    document.addEventListener("fullscreenchange", change);
-    window.addEventListener("keydown", key, true);
-    if (element && typeof element.requestFullscreen === "function" && document.fullscreenEnabled !== false) void element.requestFullscreen().catch(() => {});
-    return () => {
-      document.removeEventListener("fullscreenchange", change);
-      window.removeEventListener("keydown", key, true);
-      if (element && document.fullscreenElement === element) void document.exitFullscreen().catch(() => {});
-    };
-  }, []);
-  const body = <div className="fixed inset-0 z-50 flex bg-black/60" data-browser-takeover="">
-    <div ref={panel} role="dialog" aria-modal="true" aria-label={t("computer.browserOf", { name: bot.name })} className="flex h-full w-full flex-col overflow-hidden bg-card">
-      <div className="flex items-center gap-2 border-b border-hairline px-3 py-2">
-        <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-ink">{t("computer.browserOf", { name: bot.name })}</span>
-        <button type="button" data-takeover-close="" aria-label={t("sandboxDesktop.closeWindow")} title={t("sandboxDesktop.closeWindow")} onClick={onClose}
-          className="flex size-8 items-center justify-center rounded-full text-ink hover:bg-raised-hover"><X size={14} aria-hidden="true" /></button>
-      </div>
-      <div className="flex min-h-0 flex-1 flex-col p-2"><LiveBrowser key={bot.id} bot={bot} hosted /></div>
-    </div>
-  </div>;
-  return typeof document === "undefined" ? body : createPortal(body, document.body);
+/** What the browser tab says when it cannot show the browser, in the screen's frame. */
+function BrowserNote({ caption, children }: { caption: string; children: ReactNode }) {
+  return <figure className="m-0 flex flex-col gap-1.5">
+    <div className="flex aspect-[16/10] min-h-fit w-full flex-col items-start justify-center gap-3 overflow-hidden rounded-2xl border border-hairline bg-card p-5">{children}</div>
+    <figcaption className="truncate text-center text-[13px] text-ink-secondary" title={caption}>{caption}</figcaption>
+  </figure>;
 }
 
 export function BrowserPanel({ bot }: { bot: Bot }) {
@@ -396,15 +443,16 @@ export function BrowserPanel({ bot }: { bot: Bot }) {
     catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
     finally { setRequested(false); }
   };
-  if (admin === false) return <div className="p-5 text-[13px] text-ink-secondary">Only admins of this installation can view or control saved browser sessions.</div>;
-  if (bot.browser === false) return <div className="p-5 text-[13px] text-ink-secondary">Enable the browser in this bot’s profile to use it.</div>;
+  const caption = t("computer.browserOf", { name: bot.name });
+  if (admin === false) return <BrowserNote caption={caption}><p className="text-[13px] text-ink-secondary">Only admins of this installation can view or control saved browser sessions.</p></BrowserNote>;
+  if (bot.browser === false) return <BrowserNote caption={caption}><p className="text-[13px] text-ink-secondary">Enable the browser in this bot’s profile to use it.</p></BrowserNote>;
   if (engine?.kind === "engine" && !installing && !engine.installError) return admin === null
-    ? <div className="p-5 text-[13px] text-ink-secondary">Loading browser…</div>
-    : <BrowserIdleCard key={bot.id} bot={bot} />;
-  return <div className="flex min-h-0 flex-1 flex-col items-start justify-center gap-3 rounded-xl bg-card p-5">
+    ? <BrowserNote caption={caption}><p className="text-[13px] text-ink-secondary">Loading browser…</p></BrowserNote>
+    : <BrowserComputerScreen key={bot.id} bot={bot} />;
+  return <BrowserNote caption={caption}>
     <div className="text-[15px] font-medium text-ink">{engine?.kind === "engine" ? "Browser installation incomplete" : "Browser engine not installed"}</div>
     <p className="text-[13px] leading-relaxed text-ink-secondary">{engine?.kind === "engine" ? "agent-browser is installed, but Chrome setup has not finished. Retry the browser installation." : <BrowserUnavailableNote config={state.config} />}</p>
     {engine?.installable || engine?.kind === "engine" ? <button type="button" onClick={() => void install()} disabled={installing || admin !== true} className="rounded-lg bg-accent px-3 py-1.5 text-[13px] font-medium text-accent-ink disabled:opacity-60">{installing ? "Installing… (a one-time download of about 160 MB)" : engine?.kind === "engine" ? "Retry browser installation" : "Install the browser engine"}</button> : null}
     {(engine?.installError || error) && <p role="alert" className="text-[12px] text-danger">{error ?? engine?.installError}</p>}
-  </div>;
+  </BrowserNote>;
 }

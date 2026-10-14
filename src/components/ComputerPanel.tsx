@@ -1664,7 +1664,7 @@ export function ComputerPanel({
     <div className={embedded ? "pb-5" : "flex-1 overflow-y-auto px-5 pb-5"}>
       {soloPicker}
       <div className="mt-3">
-        <BrowserScreen caption={t("computer.browserOf", { name: bot.name })}><BrowserPanel bot={bot} /></BrowserScreen>
+        <BrowserScreen><BrowserPanel bot={bot} /></BrowserScreen>
       </div>
     </div>
   ) : deviceBody;

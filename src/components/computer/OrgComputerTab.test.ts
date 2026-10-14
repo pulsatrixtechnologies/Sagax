@@ -12,7 +12,7 @@ import { localVmView, parseLocalVmAnswer, runtimeSummaryKey, type DesktopLocalVm
 import { formatBytes, powerState } from "@/lib/server-environment";
 import { BOT_SECTIONS } from "../bot-settings/sections";
 import { OrgComputerSettings } from "../settings/OrgComputerSettings";
-import { controlsAlwaysShown, showsStateChip } from "./ComputerScreen";
+import { ComputerScreen, controlsAlwaysShown, showsControlBar, showsStateChip } from "./ComputerScreen";
 import { activeComputer, OrgComputerTab, setupProgress } from "./OrgComputerTab";
 import { SandboxDesktopModal } from "./SandboxDesktopModal";
 import { WorksOnControl, worksOnTip } from "./WorksOnSetting";
@@ -141,9 +141,34 @@ describe("Computer tab on an organization server", () => {
     const running = renderToStaticMarkup(createElement(OrgComputerTab, { bridge: bridge(true, "computer"), place: "vm", computerOff: false, botName: "Luna", initialLocal: status({ ...STALE, state: "running", stale: null, folder: "/Users/jc/.openmausbot/vm-home", folderExists: true }) }));
     expect(running).toContain('data-controls="hidden"');
     expect(running).toMatch(/data-screen-controls="hidden"[^>]*pointer-events-none opacity-0/);
-    const off = renderToStaticMarkup(createElement(OrgComputerTab, { bridge: bridge(true, "computer"), place: "local", computerOff: false, botName: "Luna", initialLocal: status(null) }));
-    expect(off).toContain('data-screen-controls="shown"');
-    expect(off).toMatch(/<button[^>]*aria-label="Start"/);
+    // Off with nothing else to press: Play is shown at once.
+    const serverOff = renderToStaticMarkup(createElement(ComputerScreen, { source: "server", state: "off", caption: "Luna's screen", controls: { play: () => {} } }));
+    expect(serverOff).toContain('data-screen-controls="shown"');
+    expect(serverOff).toMatch(/<button[^>]*aria-label="Start"/);
+  });
+
+  // JC 2026-10-14: on the Local VM that is off, Démarrer sat on top of the
+  // floating Play / Pause / Stop bar. The off screen's own primary action
+  // replaces the bar; elsewhere the bar sits under the state, never over it.
+  it("never draws Démarrer and the control bar together on a machine that is off", () => {
+    expect(showsControlBar("off", { play: () => {} }, [{ label: "Start", onClick: () => {}, primary: true }])).toBe(false);
+    expect(showsControlBar("off", { play: () => {} }, [])).toBe(true);
+    expect(showsControlBar("running", { pause: () => {} }, [])).toBe(true);
+    expect(showsControlBar("off", undefined, [])).toBe(false);
+    const off = renderToStaticMarkup(createElement(OrgComputerTab, { bridge: bridge(true, "computer"), place: "local", computerOff: false, botName: "Luna",
+      initialLocal: status({ ...STALE, state: "exited", stale: null, folder: "/Users/jc/.openmausbot/vm-home", folderExists: true }) }));
+    expect(off).toContain('data-computer-screen="off"');
+    expect(off).toMatch(/<button[^>]*>Start<\/button>/);
+    expect(off).not.toContain("data-screen-controls");
+    // A state with the bar but no live screen keeps it in the screen's flow, under the words.
+    const serverOff = renderToStaticMarkup(createElement(ComputerScreen, { source: "server", state: "off", caption: "Luna's screen", message: "Off", controls: { play: () => {} } }));
+    expect(serverOff).toMatch(/data-screen-controls="shown" class="[^"]*mb-2 shrink-0/);
+    expect(serverOff).not.toMatch(/data-screen-controls="shown" class="[^"]*absolute/);
+  });
+
+  it("keeps the caption on one line, with the whole name in its tooltip", () => {
+    const markup = renderToStaticMarkup(createElement(ComputerScreen, { source: "local", state: "off", caption: "Assistant's screen · Jean-Christophes-Macbook-Pro.local", controls: {} }));
+    expect(markup).toMatch(/<figcaption class="truncate[^"]*" title="Assistant&#x27;s screen · Jean-Christophes-Macbook-Pro.local">/);
   });
 });
 

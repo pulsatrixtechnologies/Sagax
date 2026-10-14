@@ -9,7 +9,11 @@
 // Keys go to the VNC canvas while it has focus. Cmd/Ctrl+Shift+Escape always
 // closes; a plain Escape closes only when focus is not in the remote screen
 // (src/lib/sandbox-desktop.ts takeoverKey).
-import { useEffect, useRef, useState } from "react";
+//
+// The bot's browser takes control in this same window (BrowserPanel): its
+// live browser in place of the VNC screen, without Play / Pause / Stop.
+// Opening moves keyboard focus into the window; closing gives it back.
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { Eye, Hand, Maximize2, Minimize2, Pause, Play, Square, X } from "lucide-react";
 
@@ -20,15 +24,20 @@ import { takeoverKey } from "@/lib/sandbox-desktop";
 import { SandboxDesktopView } from "../SandboxDesktopView";
 import { screenStateLabel, type ScreenControls } from "./ComputerScreen";
 
-export function SandboxDesktopModal({ title, state, controls, busy = false, onClose, onConnected }: {
+export function SandboxDesktopModal({ title, state, controls, busy = false, onClose, onConnected, screen: content, kind = "sandbox" }: {
   /** "<Bot>'s screen": the environment the bot works in. */
   title: string;
   state: ScreenState;
-  controls: ScreenControls;
+  /** Play / Pause / Stop in the header; none for the browser. */
+  controls?: ScreenControls;
   busy?: boolean;
   /** Also releases control (the view unmounts). */
   onClose: () => void;
   onConnected?: () => void;
+  /** The live screen, given whether the person has control (the server
+   * environment's VNC desktop by default). */
+  screen?: (control: boolean) => ReactNode;
+  kind?: "sandbox" | "browser";
 }) {
   const [control, setControl] = useState(true);
   const [fullscreen, setFullscreen] = useState(false);
@@ -49,12 +58,15 @@ export function SandboxDesktopModal({ title, state, controls, busy = false, onCl
       close.current();
     };
     const screenChange = () => setFullscreen(document.fullscreenElement === panel.current && panel.current !== null);
+    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    panel.current?.focus({ preventScroll: true });
     window.addEventListener("keydown", capture, true);
     document.addEventListener("fullscreenchange", screenChange);
     return () => {
       window.removeEventListener("keydown", capture, true);
       document.removeEventListener("fullscreenchange", screenChange);
       if (document.fullscreenElement && document.fullscreenElement === panel.current) void document.exitFullscreen().catch(() => {});
+      if (opener?.isConnected) opener.focus({ preventScroll: true });
     };
   }, []);
 
@@ -64,9 +76,9 @@ export function SandboxDesktopModal({ title, state, controls, busy = false, onCl
   };
 
   const body = (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-[2px]" data-sandbox-takeover>
-      <div ref={panel} role="dialog" aria-modal="true" aria-label={title}
-        className={cn("flex flex-col overflow-hidden bg-card shadow-2xl", fullscreen ? "h-full w-full" : "h-[88vh] w-[92vw] rounded-2xl border border-hairline")}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-[2px]" data-sandbox-takeover data-takeover-kind={kind}>
+      <div ref={panel} role="dialog" aria-modal="true" aria-label={title} tabIndex={-1}
+        className={cn("flex flex-col overflow-hidden bg-card shadow-2xl outline-none", fullscreen ? "h-full w-full" : "h-[88vh] w-[92vw] rounded-2xl border border-hairline")}>
         <div className="flex flex-wrap items-center gap-2 border-b border-hairline px-3 py-2">
           <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-ink">{title}</span>
           <span data-power={state} className="flex items-center gap-1.5 rounded-full bg-control px-2 py-0.5 text-[11px] text-ink-secondary">
@@ -83,18 +95,18 @@ export function SandboxDesktopModal({ title, state, controls, busy = false, onCl
             <Hand size={12} aria-hidden="true" />
             {t(control ? "sandboxDesktop.releaseControl" : "sandboxDesktop.takeControl")}
           </button>
-          <div role="group" aria-label={t("computerScreen.controls")} className="flex items-center gap-0.5 rounded-full bg-control p-0.5">
+          {controls && <div role="group" aria-label={t("computerScreen.controls")} className="flex items-center gap-0.5 rounded-full bg-control p-0.5">
             <HeaderButton icon={Play} label={state === "paused" ? t("computerScreen.resume") : t("computerScreen.play")}
               onClick={state === "paused" ? controls.resume : controls.play} busy={busy} />
             <HeaderButton icon={Pause} label={t("computerScreen.pause")} onClick={controls.pause} busy={busy} />
             <HeaderButton icon={Square} label={t("computerScreen.stop")} onClick={controls.stop} busy={busy} />
-          </div>
+          </div>}
           <HeaderButton icon={fullscreen ? Minimize2 : Maximize2} label={t(fullscreen ? "sandboxDesktop.exitFullscreen" : "sandboxDesktop.fullscreen")}
             onClick={toggleFullscreen} busy={false} />
           <HeaderButton icon={X} label={t("sandboxDesktop.closeWindow")} onClick={onClose} busy={false} data-takeover-close />
         </div>
-        <div ref={screen} className="relative min-h-0 flex-1 bg-black">
-          <SandboxDesktopView embedded control={control} onConnected={onConnected} />
+        <div ref={screen} className={cn("relative min-h-0 flex-1", kind === "browser" ? "flex flex-col bg-card p-2" : "bg-black")}>
+          {content ? content(control) : <SandboxDesktopView embedded control={control} onConnected={onConnected} />}
         </div>
       </div>
     </div>

@@ -9,6 +9,11 @@
 // (Play / Pause / Stop here, Take control in SandboxDesktopView) show on
 // intent only (src/lib/hover-intent.ts), through `data-controls` on the
 // screen, except Play on a machine that is off: it is the only action.
+//
+// Nothing on the screen overlaps: when nothing is live, the bar sits under
+// the state in the screen's own flow (the screen grows rather than clip),
+// and a machine that is off with its own primary action (Démarrer) shows
+// that button alone, without the bar. The caption stays on one line.
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { AlertTriangle, Loader2, Monitor, Pause, Play, Square } from "lucide-react";
 
@@ -42,6 +47,14 @@ export function controlsAlwaysShown(state: ScreenState): boolean {
   return state === "off";
 }
 
+/** Whether the Play / Pause / Stop bar is drawn at all: not for a screen
+ * with no power (the bot's browser), and not on a machine that is off when
+ * the screen already offers its primary action (Démarrer replaces Play). */
+export function showsControlBar(state: ScreenState, controls: ScreenControls | undefined, actions: ScreenAction[]): boolean {
+  if (!controls) return false;
+  return !(state === "off" && actions.some((action) => action.primary));
+}
+
 /** Classes of a control that shows only while the screen's controls are
  * revealed (data-controls="shown" on the screen). */
 export const REVEALED_CONTROL = "opacity-0 pointer-events-none transition-opacity duration-200 focus-visible:opacity-100 group-data-[controls=shown]/screen:pointer-events-auto group-data-[controls=shown]/screen:opacity-100";
@@ -55,7 +68,7 @@ function useControlsRevealed(): [boolean, HoverIntent | null] {
 }
 
 export function ComputerScreen({
-  state, caption, live, message, actions = [], controls, busy = false, error, source,
+  state, caption, live, message, actions = [], controls, busy = false, error, source, icon,
 }: {
   state: ScreenState;
   caption: string;
@@ -64,15 +77,29 @@ export function ComputerScreen({
   /** What the screen says when nothing is live (never raw output). */
   message?: string | undefined;
   actions?: ScreenAction[];
-  controls: ScreenControls;
+  /** Play / Pause / Stop; a screen without power (the browser) has none. */
+  controls?: ScreenControls | undefined;
   busy?: boolean;
   error?: string | undefined;
-  source: "server" | "local";
+  source: "server" | "local" | "browser";
+  /** The state's icon when nothing is live (a monitor by default). */
+  icon?: typeof Monitor;
 }) {
   const showLive = Boolean(live) && (state === "running" || state === "paused");
-  const Icon = state === "starting" ? Loader2 : state === "error" ? AlertTriangle : Monitor;
+  const Icon = state === "starting" ? Loader2 : state === "error" ? AlertTriangle : icon ?? Monitor;
   const [revealed, intent] = useControlsRevealed();
   const shown = revealed || controlsAlwaysShown(state);
+  const bar = controls && showsControlBar(state, controls, actions) ? (
+    <div role="group" aria-label={t("computerScreen.controls")} data-screen-controls={shown ? "shown" : "hidden"}
+      className={cn("flex items-center gap-1 rounded-full bg-black/60 p-1 shadow-sm transition-opacity duration-200",
+        showLive ? "absolute bottom-2 left-1/2 -translate-x-1/2" : "mb-2 shrink-0",
+        shown ? "opacity-100" : "pointer-events-none opacity-0")}>
+      <ScreenButton icon={Play} label={state === "paused" ? t("computerScreen.resume") : t("computerScreen.play")}
+        onClick={state === "paused" ? controls.resume : controls.play} busy={busy} />
+      <ScreenButton icon={Pause} label={t("computerScreen.pause")} onClick={controls.pause} busy={busy} />
+      <ScreenButton icon={Square} label={t("computerScreen.stop")} onClick={controls.stop} busy={busy} />
+    </div>
+  ) : null;
   return (
     <figure className="m-0 flex flex-col gap-1.5" data-computer-screen={state} data-computer-source={source}>
       <div
@@ -82,9 +109,10 @@ export function ComputerScreen({
         onPointerDown={(event) => intent?.pointerDown(event.pointerType)}
         onFocus={() => intent?.focusIn()}
         onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) intent?.focusOut(); }}
-        className="group/screen relative flex aspect-[16/10] w-full items-center justify-center overflow-hidden rounded-2xl border border-hairline bg-card">
+        className={cn("group/screen relative flex aspect-[16/10] w-full items-center justify-center overflow-hidden rounded-2xl border border-hairline bg-card",
+          !showLive && "min-h-fit flex-col")}>
         {showLive ? live : (
-          <div className="flex max-w-[85%] flex-col items-center gap-2 text-center text-ink-secondary">
+          <div data-screen-empty="" className="flex min-h-0 max-w-[85%] flex-1 flex-col items-center justify-center gap-2 pb-2 pt-9 text-center text-ink-secondary">
             <Icon size={28} aria-hidden="true" className={cn(state === "starting" && "animate-spin", state === "error" && "text-warning")} />
             <span className="text-[13px] font-medium text-ink">{screenStateLabel(state)}</span>
             {message && <p role="status" className="text-[12px] leading-relaxed">{message}</p>}
@@ -106,17 +134,10 @@ export function ComputerScreen({
             {screenStateLabel(state)}
           </span>
         )}
-        <div role="group" aria-label={t("computerScreen.controls")} data-screen-controls={shown ? "shown" : "hidden"}
-          className={cn("absolute bottom-2 left-1/2 flex -translate-x-1/2 items-center gap-1 rounded-full bg-black/60 p-1 shadow-sm transition-opacity duration-200",
-            shown ? "opacity-100" : "pointer-events-none opacity-0")}>
-          <ScreenButton icon={Play} label={state === "paused" ? t("computerScreen.resume") : t("computerScreen.play")}
-            onClick={state === "paused" ? controls.resume : controls.play} busy={busy} />
-          <ScreenButton icon={Pause} label={t("computerScreen.pause")} onClick={controls.pause} busy={busy} />
-          <ScreenButton icon={Square} label={t("computerScreen.stop")} onClick={controls.stop} busy={busy} />
-        </div>
+        {bar}
       </div>
       {error && <p role="alert" className="text-[12px] text-danger">{error}</p>}
-      <figcaption className="text-center text-[13px] text-ink-secondary">{caption}</figcaption>
+      <figcaption className="truncate text-center text-[13px] text-ink-secondary" title={caption}>{caption}</figcaption>
     </figure>
   );
 }

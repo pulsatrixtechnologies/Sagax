@@ -102,7 +102,7 @@ export function OrgComputerTab({ bridge, place, computerOff, botName, initialLoc
         />
       )}
       {showingBrowser
-        ? <BrowserScreen caption={t("computer.browserOf", { name: botName })}>{browser}</BrowserScreen>
+        ? <BrowserScreen>{browser}</BrowserScreen>
         : source === "server"
         ? <ServerComputerScreen caption={caption} />
         : (
@@ -164,14 +164,10 @@ export function ScreenPicker({ items, chosen, onPick }: { items: ScreenPickerIte
   );
 }
 
-/** The bot's live browser in the screen's own frame, its name below. */
-export function BrowserScreen({ caption, children }: { caption: string; children: ReactNode }) {
-  return (
-    <div className="flex flex-col gap-1.5" data-browser-view="">
-      <div className="flex min-h-[360px] flex-col overflow-hidden rounded-md bg-card">{children}</div>
-      <p className="text-center text-[13px] text-ink-secondary">{caption}</p>
-    </div>
-  );
+/** The bot's browser in the picker's place. BrowserPanel draws it as a
+ * screen (ComputerScreen), its frame and its name below, like the others. */
+export function BrowserScreen({ children }: { children: ReactNode }) {
+  return <div className="flex flex-col" data-browser-view="">{children}</div>;
 }
 
 function usePageVisible(): boolean {
