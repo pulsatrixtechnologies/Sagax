@@ -34,6 +34,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { gunzipSync } from "node:zlib";
 import { assessProductionManifest, enginesRequired } from "./engine-image-gate.mjs";
+import { PINNED_PYTHON_APT, PINNED_PYTHON_BIN } from "./hermes-python.mjs";
 
 const ENGINES_ROOT = "/opt/sagax-engines";
 const BIN_DIR = "/usr/local/bin";
@@ -223,11 +224,18 @@ async function installNative(engine, arch) {
   return link(target, engine.bin);
 }
 
+function pythonReady(bin) {
+  const probe = spawnSync(bin, ["-c", "import sys, venv, ensurepip; assert sys.version_info[:2] == (3, 13)"], {
+    stdio: "ignore",
+  });
+  return probe.status === 0;
+}
+
 function ensurePython() {
-  const probe = spawnSync("python3", ["-c", "import venv, ensurepip"], { stdio: "ignore" });
-  if (probe.status === 0) return;
+  if (pythonReady(PINNED_PYTHON_BIN) || pythonReady("python3")) return;
   run("apt-get", ["update"]);
-  run("apt-get", ["install", "-y", "--no-install-recommends", "python3", "python3-venv"]);
+  run("apt-get", ["install", "-y", "--no-install-recommends", ...PINNED_PYTHON_APT]);
+  run("ln", ["-sfn", `/usr/bin/${PINNED_PYTHON_BIN}`, "/usr/local/bin/python3"]);
   rmSync("/var/lib/apt/lists", { recursive: true, force: true });
   mkdirSync("/var/lib/apt/lists/partial", { recursive: true });
 }

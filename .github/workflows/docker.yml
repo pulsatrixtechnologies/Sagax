@@ -56,14 +56,26 @@ jobs:
           tar -xzf /tmp/trivy.tgz -C "$HOME/bin" trivy
           echo "$HOME/bin" >> "$GITHUB_PATH"
           "$HOME/bin/trivy" --version
+      - name: Assemble exception list
+        # Private exceptions (reviewed periodically) come from a repository
+        # secret. Absent or empty: fail closed. Combined with the public
+        # ignore file so build and publish read the same list.
+        env:
+          TRIVYIGNORE_PRIVATE: ${{ secrets.TRIVYIGNORE_PRIVATE }}
+        run: |
+          set -euo pipefail
+          node scripts/combine-trivyignore.mjs \
+            --public .trivyignore \
+            --private-env TRIVYIGNORE_PRIVATE \
+            --out /tmp/trivyignore.ci
       - name: Vulnerability gate with .trivyignore
         run: |
           set -euo pipefail
           trivy image --scanners vuln --severity HIGH,CRITICAL \
-            --ignorefile .trivyignore --format table \
+            --ignorefile /tmp/trivyignore.ci --format table \
             openmausbot:ci
           trivy image --scanners vuln --severity HIGH,CRITICAL \
-            --ignorefile .trivyignore --format json --output /tmp/trivy-gated.json \
+            --ignorefile /tmp/trivyignore.ci --format json --output /tmp/trivy-gated.json \
             openmausbot:ci
           node scripts/trivy-ignore-guard.mjs --gated /tmp/trivy-gated.json
       - name: Ignore-list staleness guard
@@ -287,6 +299,15 @@ jobs:
             SAGAX_BUILD_TIME=${{ env.SAGAX_BUILD_TIME }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+      - name: Assemble exception list
+        env:
+          TRIVYIGNORE_PRIVATE: ${{ secrets.TRIVYIGNORE_PRIVATE }}
+        run: |
+          set -euo pipefail
+          node scripts/combine-trivyignore.mjs \
+            --public .trivyignore \
+            --private-env TRIVYIGNORE_PRIVATE \
+            --out /tmp/trivyignore.ci
       - name: Scan both platforms
         env:
           DIGEST: ${{ steps.build.outputs.digest }}
@@ -297,6 +318,7 @@ jobs:
             trivy image \
               --format cosign-vuln \
               --scanners vuln \
+              --ignorefile /tmp/trivyignore.ci \
               --timeout 30m \
               --platform "$platform" \
               --output "vuln-${name}.json" \
@@ -393,6 +415,15 @@ jobs:
             SAGAX_BUILD_TIME=${{ env.SAGAX_BUILD_TIME }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+      - name: Assemble exception list
+        env:
+          TRIVYIGNORE_PRIVATE: ${{ secrets.TRIVYIGNORE_PRIVATE }}
+        run: |
+          set -euo pipefail
+          node scripts/combine-trivyignore.mjs \
+            --public .trivyignore \
+            --private-env TRIVYIGNORE_PRIVATE \
+            --out /tmp/trivyignore.ci
       - name: Scan both platforms
         env:
           DIGEST: ${{ steps.build.outputs.digest }}
@@ -403,6 +434,7 @@ jobs:
             trivy image \
               --format cosign-vuln \
               --scanners vuln \
+              --ignorefile /tmp/trivyignore.ci \
               --timeout 30m \
               --platform "$platform" \
               --output "vuln-${name}.json" \

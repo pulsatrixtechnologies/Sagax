@@ -57,6 +57,8 @@ FROM node:24-trixie-slim@sha256:173f125896c3b47ddf056734c7ea789d04595a6a08769a8f
 RUN apt-get update \
   && apt-get upgrade -y --no-install-recommends \
   && apt-get install -y --no-install-recommends ca-certificates curl git \
+    libstdc++6 \
+    python3.13=3.13.5-2+deb13u5 python3.13-venv=3.13.5-2+deb13u5 \
     libxcb-shm0 libx11-xcb1 libx11-6 libxcb1 libxext6 libxrandr2 \
     libxcomposite1 libxcursor1 libxdamage1 libxfixes3 libxi6 libgtk-3-0t64 \
     libpangocairo-1.0-0 libpango-1.0-0 libatk1.0-0t64 libcairo-gobject2 \
@@ -64,6 +66,7 @@ RUN apt-get update \
     libfontconfig1 libdbus-1-3 libnss3 libnss3-tools libnspr4 \
     libatk-bridge2.0-0t64 libdrm2 libxkbcommon0 libatspi2.0-0t64 libcups2t64 \
     libxshmfence1 libgbm1 fonts-noto-color-emoji fonts-noto-cjk fonts-freefont-ttf \
+  && ln -sfn /usr/bin/python3.13 /usr/local/bin/python3 \
   && rm -rf /var/lib/apt/lists/* \
   && useradd --create-home --home-dir /data --shell /bin/bash maus \
   && install -d -o maus -g maus -m 0750 /run/sagax-sandboxd
@@ -96,8 +99,7 @@ ARG ENGINE_SET=all
 ARG ENGINES=""
 ARG NATIVE_ENGINES=""
 ARG SAGAX_REQUIRE_ENGINES=1
-ARG TARGETARCH
-COPY engines.lock.json scripts/install-engines.mjs scripts/engine-image-gate.mjs scripts/harden-image-deps.mjs /app/engines/
+COPY engines.lock.json scripts/install-engines.mjs scripts/engine-image-gate.mjs scripts/harden-image-deps.mjs scripts/hermes-python.mjs /app/engines/
 ENV ENGINE_SET=${ENGINE_SET} \
     ENGINES=${ENGINES} \
     NATIVE_ENGINES=${NATIVE_ENGINES} \
@@ -114,23 +116,15 @@ ENV ENGINE_SET= \
     NATIVE_ENGINES= \
     SAGAX_REQUIRE_ENGINES=
 # The bots' browser (docs/plans/browser-engine.md): the pinned agent-browser
-# and a Chrome for Testing with its libraries, so a server bot can browse.
-# Pin here and in server/browser-engine-release.ts together.
-# Chrome for Testing has no Linux ARM64 build (Apple silicon Docker), so
-# arm64 images use Debian's Chromium at the same path instead.
+# and Chrome for Testing, so a server bot can browse. Pin here and in
+# server/browser-engine-release.ts together. linux64 and linux-arm64 both
+# publish a zip; do not fall back to the Debian browser package.
 ARG AGENT_BROWSER_VERSION=0.38.2
-ARG TARGETARCH
 RUN npm install -g agent-browser@${AGENT_BROWSER_VERSION} \
-  && if [ "$TARGETARCH" = "arm64" ]; then \
-       apt-get update \
-       && apt-get install -y --no-install-recommends chromium \
-       && rm -rf /var/lib/apt/lists/* \
-       && mkdir -p /opt/openmausbot-browser \
-       && ln -s /usr/bin/chromium /opt/openmausbot-browser/chrome; \
-     else \
-       HOME=/opt/openmausbot-browser agent-browser install \
-       && ln -s /opt/openmausbot-browser/.agent-browser/browsers/chrome-*/chrome /opt/openmausbot-browser/chrome; \
-     fi \
+  && HOME=/opt/openmausbot-browser agent-browser install \
+  && ln -s /opt/openmausbot-browser/.agent-browser/browsers/chrome-*/chrome /opt/openmausbot-browser/chrome \
+  && test ! -e /usr/bin/chromium \
+  && test -x /opt/openmausbot-browser/chrome \
   && agent-browser --version
 # Overlay again after agent-browser, then drop the npm CLI and the Node
 # image's Yarn (only the installer used them), docs, and apt indexes. Node
