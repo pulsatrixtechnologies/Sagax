@@ -77,6 +77,7 @@ describe("install Chrome for Testing", () => {
     expect(dockerfile).not.toContain("agent-browser install");
     expect(dockerfile).not.toMatch(/apt-get install -y --no-install-recommends chromium/);
     expect(dockerfile).toContain("test ! -e /usr/bin/chromium");
+    expect(dockerfile).toContain("chrome --headless --disable-gpu --no-sandbox --version");
     expect(dockerfile).not.toMatch(/if \[ "\$TARGETARCH" = "arm64" \]/);
   });
 });

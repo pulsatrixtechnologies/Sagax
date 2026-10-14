@@ -127,6 +127,7 @@ RUN npm install -g agent-browser@${AGENT_BROWSER_VERSION} \
   && ln -s /opt/openmausbot-browser/.agent-browser/browsers/chrome-*/chrome /opt/openmausbot-browser/chrome \
   && test ! -e /usr/bin/chromium \
   && test -x /opt/openmausbot-browser/chrome \
+  && /opt/openmausbot-browser/chrome --headless --disable-gpu --no-sandbox --version \
   && agent-browser --version
 # Overlay again after agent-browser, then drop the npm CLI and the Node
 # image's Yarn (only the installer used them), docs, and apt indexes. Node
