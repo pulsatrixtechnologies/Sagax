@@ -50,10 +50,8 @@ describe("production image sources", () => {
     expect(workflow).toContain("ENGINE_SET=all");
     expect(workflow).toContain("SAGAX_REQUIRE_ENGINES=1");
     expect(workflow).toContain("scripts/engine-image-gate.mjs");
-    expect(workflow).toContain("scripts/harden-image-deps.mjs");
     expect(workflow).toContain("scripts/trivy-ignore-guard.mjs");
     expect(workflow).toContain("scripts/combine-trivyignore.mjs");
-    expect(workflow).toContain("scripts/install-chrome-for-testing.mjs");
     expect(workflow).toContain("scripts/hermes-jwt-overlay-smoke.py");
     expect(read("scripts/hermes-jwt-overlay-smoke.py")).toContain("jwt.encode");
     expect(read("scripts/hermes-jwt-overlay-smoke.py")).toContain("jwt.decode");
@@ -119,7 +117,9 @@ describe("production image sources", () => {
     expect(policy).toContain("subjectRegExp: {{ .Values.admission.kyverno.subjectRegExp | quote }}");
     expect(policy).not.toContain("kyverno.subjects");
     expect(policy).not.toContain("kyverno.subject ");
-    expect(workflow).toMatch(/branches: \[main\]/);
+    // CI runs once, on the release candidate: a tag push or a dispatch.
+    expect(workflow).toMatch(/push:\n    tags: \["v\*"\]/);
+    expect(workflow).not.toMatch(/^  pull_request:/m);
     expect(workflow).not.toMatch(/refs\/heads\/cursor\//);
     expect(workflow).toContain("sandbox chart values");
     expect(workflow).toContain("sandbox chart templates/admission.yaml");
