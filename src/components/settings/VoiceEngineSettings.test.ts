@@ -20,23 +20,37 @@ vi.mock("@/state/store", async (importOriginal) => {
 const { VoiceEngineSettings } = await import("./VoiceEngineSettings");
 
 describe("VoiceEngineSettings", () => {
-  it("edits the installation engine and key, not a bot's voice", () => {
+  // 2026-10-14: no key field here. The engine uses its key from the one list
+  // of keys above it; Grok voice uses the xAI key.
+  it("picks the installation engine and points at its key in the list, never a key field", () => {
     fixture.config = { tts: { configured: false, provider: "elevenlabs" } };
     const html = renderToStaticMarkup(createElement(VoiceEngineSettings));
     expect(html).toContain('aria-label="Voice engine"');
-    expect(html).toContain('aria-label="ElevenLabs key"');
-    expect(html).toContain("Get a key from ElevenLabs");
+    expect(html).toContain('data-voice-key="elevenlabs"');
+    expect(html).toContain("No ElevenLabs key in the list above yet.");
+    expect(html).toContain("Add a key");
+    expect(html).not.toContain("<input");
     expect(html).not.toContain("data-voice-picker");
     expect(html).not.toContain("Read replies aloud");
   });
 
-  it("asks for a Grok voice key, separate from the bot xAI key", () => {
-    fixture.config = { tts: { configured: false, provider: "xai" } };
+  it("runs Grok voice on the xAI key of the list, with no separate Grok key", () => {
+    fixture.config = { tts: { configured: true, provider: "xai" }, xai: { configured: true } };
     const html = renderToStaticMarkup(createElement(VoiceEngineSettings));
-    expect(html).toContain('aria-label="Grok key"');
-    expect(html).toContain("This key is only for Grok voice. Bots keep their own xAI key.");
-    expect(html).not.toContain("existing xAI key");
-    expect(html).not.toContain("ElevenLabs key");
+    expect(html).toContain('data-voice-key="xai"');
+    expect(html).toContain('data-voice-key-saved="true"');
+    expect(html).toContain("Uses the xAI key from the list above.");
+    expect(html).toContain("Replace or remove");
+    expect(html).not.toContain("Grok key");
+    expect(html).not.toContain("Bots keep their own xAI key");
+    expect(html).not.toContain('type="password"');
+  });
+
+  it("reads a voice key saved for an engine that is not selected", () => {
+    fixture.config = { tts: { configured: false, provider: "fish", keys: { elevenlabs: true, fish: true } } };
+    const html = renderToStaticMarkup(createElement(VoiceEngineSettings));
+    expect(html).toContain('data-voice-key="fishAudio"');
+    expect(html).toContain('data-voice-key-saved="true"');
   });
 
   it("asks for the Chatterbox server instead of a cloud key", () => {

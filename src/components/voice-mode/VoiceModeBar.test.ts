@@ -10,9 +10,9 @@ import { voiceAccessCardText } from "./VoiceModeBar";
 
 describe("voice access card", () => {
   it("speaks to the person it is about; the organization's key only for an admin", () => {
-    expect(voiceAccessCardText({ cause: "no_credentials", admin: false })).toEqual(["Voice mode needs a Grok voice key. Add one in Settings > API keys. It is separate from the xAI key bots use."]);
+    expect(voiceAccessCardText({ cause: "no_credentials", admin: false })).toEqual(["Voice mode needs an xAI key. Add one in Settings > Models and voice."]);
     expect(voiceAccessCardText({ cause: "no_credentials", admin: true })).toEqual([
-      "Voice mode needs a Grok voice key. Add one in Settings > API keys. It is separate from the xAI key bots use.",
+      "Voice mode needs an xAI key. Add one in Settings > Models and voice.",
       "As an admin, you can also set the organization's key in Settings > Connections.",
     ]);
     expect(voiceAccessCardText({ cause: "payer_disabled", admin: true })).toEqual(["Your account is disabled: voice mode can't run."]);

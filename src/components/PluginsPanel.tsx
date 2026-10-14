@@ -611,7 +611,7 @@ export function PluginsPanel() {
             onClick={() => {
               close();
               requestSettingsCard("connections.apps");
-              dispatch({ type: "toggleAppSettings", open: true, section: "connections" });
+              dispatch({ type: "toggleAppSettings", open: true, section: "connectedApps" });
             }}
           >
             {t("connectors.updateKey")}

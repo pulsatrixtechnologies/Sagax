@@ -1,7 +1,7 @@
 import { Fragment } from "react";
 import { browserUnavailableReason, type FeatureFlagConfig } from "@/lib/feature-flags";
 import { t } from "@/lib/i18n";
-import { openSettings, settingsLinkParts, settingsSectionLabel, type SettingsLinkTarget } from "@/lib/settings-link";
+import { currentSettingsSection, openSettings, settingsLinkParts, settingsSectionLabel, type SettingsLinkTarget } from "@/lib/settings-link";
 import { useStore } from "@/state/store";
 
 /** Renders `{name}` in `text` as a button that opens that settings target.
@@ -29,7 +29,7 @@ export function SettingsText({
             className="text-accent underline"
             onClick={() => openSettings(dispatch, target.section, target.cardId)}
           >
-            {settingsSectionLabel(target.section)}
+            {settingsSectionLabel(currentSettingsSection(target.section, target.cardId))}
           </button>
         );
       })}

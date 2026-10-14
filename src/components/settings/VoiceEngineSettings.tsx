@@ -1,5 +1,9 @@
-// The installation voice engine: provider, key, Chatterbox server and Fish
-// model. Every bot shares it. A bot's own voice stays in VoiceSettings.
+// The installation voice engine: which engine speaks, and its non-secret
+// settings (Fish model, Chatterbox server). Every bot shares it. A bot's own
+// voice stays in VoiceSettings. Since 2026-10-14 no key is typed here: each
+// engine uses its key from the one list above it (Settings > Models and
+// voice), Grok the xAI key. A Grok voice key of an older build was folded
+// into the xAI key (server/config.ts migrateGrokVoiceKey).
 import { useEffect, useState } from "react";
 import { Check, Loader2 } from "lucide-react";
 
@@ -7,7 +11,7 @@ import { api, useStore, type ConfigStatus } from "@/state/store";
 import { useDesktopCapabilities } from "@/components/DesktopCapabilities";
 import { t } from "@/lib/i18n";
 import { cn } from "@/lib/cn";
-import { saveCloudVoiceKey, voiceKeyDraftValue, type VoiceKeyDraft } from "@/lib/voice-key-draft";
+import { keyRowSaved, openProviderKeyDialog, type KeyRowId } from "./ProviderKeys";
 
 const FISH_MODELS = [
   { value: "s2.1-pro", label: "voice.fish.modelPro" },
@@ -18,13 +22,19 @@ type FishModel = (typeof FISH_MODELS)[number]["value"];
 const INPUT_CLASS = "w-full rounded-lg border border-hairline/40 bg-inset px-3 py-2 text-[13px] text-ink placeholder:text-ink-secondary focus:outline-none";
 const SAVE_CLASS = "flex w-[88px] shrink-0 items-center justify-center gap-1.5 rounded-lg bg-control py-2 text-[13px] text-ink hover:bg-raised-hover disabled:cursor-not-allowed disabled:opacity-50";
 
+/** The key row of the list a cloud voice engine runs on. */
+export function voiceKeyRow(provider: string | undefined): { row: KeyRowId; name: string } | null {
+  if (provider === "fish") return { row: "fishAudio", name: "Fish Audio" };
+  if (provider === "xai") return { row: "xai", name: "xAI" };
+  if (provider === "system" || provider === "chatterbox") return null;
+  return { row: "elevenlabs", name: "ElevenLabs" };
+}
+
 export function VoiceEngineSettings() {
   const { state, dispatch } = useStore();
   const tts = state.config?.tts;
-  const [keyDraft, setKeyDraft] = useState<VoiceKeyDraft>({ provider: null, value: "" });
   const [serverUrl, setServerUrl] = useState("");
   const [model, setModel] = useState("");
-  const [saving, setSaving] = useState(false);
   const [savingServer, setSavingServer] = useState(false);
   const [savingFishModel, setSavingFishModel] = useState(false);
   const [switching, setSwitching] = useState(false);
@@ -32,85 +42,28 @@ export function VoiceEngineSettings() {
 
   const { capabilities } = useDesktopCapabilities();
   const provider = tts?.provider ?? "elevenlabs";
-  const cloudProvider = provider === "fish"
-    ? {
-        id: "fish" as const,
-        name: "Fish Audio",
-        credential: "fishAudioKey" as const,
-        configField: "fishKey" as const,
-        keyUrl: "https://fish.audio/app/api-keys/",
-      }
-    : provider === "elevenlabs"
-      ? {
-          id: "elevenlabs" as const,
-          name: "ElevenLabs",
-          credential: "ttsKey" as const,
-          configField: "key" as const,
-          keyUrl: "https://elevenlabs.io/app/settings/api-keys",
-        }
-      : provider === "xai"
-        ? {
-            id: "xai" as const,
-            name: "Grok",
-            credential: "xaiVoiceKey" as const,
-            configField: "xaiKey" as const,
-            keyUrl: "https://console.x.ai/",
-          }
-        : null;
-  const key = cloudProvider ? voiceKeyDraftValue(keyDraft, cloudProvider.id) : "";
+  const keyRow = voiceKeyRow(provider);
   // A settings test can mount this card with an empty capabilities object.
   const host = (capabilities as { host?: { platform?: string } }).host;
   const systemVoicesAvailable = host?.platform === "darwin";
   const configured = Boolean(tts?.configured);
   const included = Boolean(tts?.included);
+  // The engine's key is saved in the list (or included with Cloud Pro).
+  const keySaved = keyRow ? keyRowSaved(keyRow.row, state.config) || (keyRow.row === "elevenlabs" && included) : false;
 
   useEffect(() => {
     setServerUrl(tts?.baseUrl ?? "");
     setModel(tts?.model ?? "");
   }, [tts?.baseUrl, tts?.model]);
 
-  // Discard an unsaved draft when the provider changes, including a change
-  // from another open client. The draft is tagged so a render that lands
-  // before this effect cannot send one provider's credential to another.
-  useEffect(() => {
-    setKeyDraft({ provider: null, value: "" });
-  }, [provider]);
-
   const setProvider = (next: "elevenlabs" | "fish" | "system" | "chatterbox" | "xai") => {
     if (!tts || next === provider || switching || (next === "system" && !systemVoicesAvailable)) return;
     setSwitching(true);
-    setKeyDraft({ provider: null, value: "" });
     setError(null);
     api("/api/config", { method: "PUT", body: JSON.stringify({ tts: { provider: next } }) })
       .then((status: ConfigStatus) => dispatch({ type: "configStatus", config: status }))
       .catch((e: Error) => setError(e.message))
       .finally(() => setSwitching(false));
-  };
-
-  const saveKey = () => {
-    const nextKey = key.trim();
-    if (!nextKey || !cloudProvider || keyDraft.provider !== cloudProvider.id) return Promise.resolve();
-    setSaving(true);
-    setError(null);
-    // Server mode refuses the desktop credential channel. The key then goes
-    // to this page's API. A 200 that still leaves the key disconnected is
-    // not a save: the draft stays and the error is shown.
-    return saveCloudVoiceKey(
-      { credential: cloudProvider.credential, configField: cloudProvider.configField, key: nextKey },
-      {
-        setCredential: window.ogb?.setCredential,
-        putConfig: (body) => api("/api/config", { method: "PUT", body: JSON.stringify(body) }),
-      },
-    )
-      .then((result) => {
-        if (!result.ok) {
-          setError(result.reason === "rejected" ? result.message : t("voice.engine.notSaved"));
-          return;
-        }
-        dispatch({ type: "configStatus", config: result.status });
-        setKeyDraft({ provider: null, value: "" });
-      })
-      .finally(() => setSaving(false));
   };
 
   const saveServer = () => {
@@ -168,46 +121,23 @@ export function VoiceEngineSettings() {
         ))}
       </div>
 
-      {cloudProvider && (
-        <div className="mt-4">
-          <div className="mb-1.5 flex items-center gap-2 text-[13px] text-ink-secondary">
-            <span className={cn("size-1.5 rounded-full", configured ? "bg-accent" : "bg-raised-hover")} />
-            <span>{t("voice.engine.key", { name: cloudProvider.name })}</span>
-            {configured && <span className="text-[11px] text-success">{included ? t("keys.includedWithCloudPro") : t("keys.connected")}</span>}
-          </div>
-          <div className="flex gap-2">
-            <input
-              type="password"
-              value={key}
-              onChange={(e) => setKeyDraft({ provider: cloudProvider.id, value: e.target.value })}
-              onKeyDown={(e) => e.key === "Enter" && key.trim() && void saveKey()}
-              placeholder={configured && !included ? t("voice.engine.replace") : t("voice.engine.paste", { name: cloudProvider.name })}
-              aria-label={t("voice.engine.key", { name: cloudProvider.name })}
-              autoComplete="off"
-              className={INPUT_CLASS}
-            />
-            <button
-              type="button"
-              onClick={() => void saveKey()}
-              disabled={saving || !key.trim()}
-              className={SAVE_CLASS}
-            >
-              {saving ? <Loader2 size={13} className="animate-spin" /> : <><Check size={13} />{t("common.save")}</>}
-            </button>
-          </div>
-          {!configured && (
-            <a
-              href={cloudProvider.keyUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="mt-1.5 inline-block text-[12px] font-medium text-accent hover:underline"
-            >
-              {t("voice.engine.getKey", { name: cloudProvider.name })}
-            </a>
-          )}
-          {cloudProvider.id === "xai" && (
-            <p className="mt-1.5 text-[12px] leading-relaxed text-ink-secondary">{t("voice.grok.separate")}</p>
-          )}
+      {keyRow && (
+        <div className="mt-4 flex items-center gap-3" data-voice-key={keyRow.row} data-voice-key-saved={keySaved ? "true" : "false"}>
+          <span className={cn("size-1.5 shrink-0 rounded-full", keySaved ? "bg-accent" : "bg-raised-hover")} />
+          <span className="min-w-0 flex-1 text-[13px] text-ink-secondary">
+            {keySaved
+              ? included && keyRow.row === "elevenlabs" && !keyRowSaved("elevenlabs", state.config)
+                ? t("keys.includedWithCloudPro")
+                : t("modelsVoice.voice.usesKey", { name: keyRow.name })
+              : t("modelsVoice.voice.needsKey", { name: keyRow.name })}
+          </span>
+          <button
+            type="button"
+            onClick={() => openProviderKeyDialog(keyRow.row)}
+            className="shrink-0 rounded-lg bg-control px-3 py-1.5 text-[12.5px] text-ink hover:bg-raised-hover"
+          >
+            {keySaved ? t("providerKeys.manage") : t("providerKeys.add")}
+          </button>
         </div>
       )}
 

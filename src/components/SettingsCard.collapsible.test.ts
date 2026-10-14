@@ -154,7 +154,7 @@ describe("collapsible settings card", () => {
 
 describe("collapsed card summaries", () => {
   it("summarizes About me, keys, cleanup, recovery and VM setup in one line each", async () => {
-    const { configuredSummary, cardsMatching } = await import("./SettingsModal");
+    const { connectedAppsSummary, cardsMatching } = await import("./SettingsModal");
     const { aboutMeFirstLine } = await import("./AboutMeSettings");
     const { threadCleanupSummary } = await import("./ThreadCleanupSettings");
     const { recoverySummary } = await import("./AutomaticRecoverySettings");
@@ -165,10 +165,10 @@ describe("collapsed card summaries", () => {
     expect(aboutMeFirstLine("I run an MSP")).toBe("I run an MSP");
     expect(aboutMeFirstLine("\n## Who I am\nTwo\nThree")).toBe("Who I am");
 
-    const config = { anthropic: { configured: true }, xai: { configured: false }, composio: { configured: true } } as never;
-    expect(configuredSummary(config, ["anthropic", "openaiCompat", "xai", "mistral"])).toBe("1 of 4 set");
-    expect(configuredSummary(config, ["composio"])).toBe("Set");
-    expect(configuredSummary(null, ["composio"])).toBe("Not set");
+    // Connected apps says what is true, never a bare "Not set" (2026-10-14).
+    expect(connectedAppsSummary({ composio: { configured: true, mode: "managed" } } as never)).toBe("Ready: connected apps run through your organization's service.");
+    expect(connectedAppsSummary({ composio: { configured: true, mode: "self-hosted" } } as never)).toBe("Composio key saved.");
+    expect(connectedAppsSummary(null)).toBe("No Composio key yet. Paste one below to connect apps.");
 
     expect(threadCleanupSummary(null, null)).toBe("Off");
     expect(threadCleanupSummary(30, 52_428_800)).toBe("Delete after 30 days · Trim at 50 MiB");
@@ -181,9 +181,10 @@ describe("collapsed card summaries", () => {
     expect(setupStep({ runtime: "podman", daemonUp: true, image: false } as never)).toBe(3);
 
     expect(cardsMatching("ab")).toEqual([]);
-    expect(cardsMatching("composio")).toEqual(["connections.apps"]);
+    expect(cardsMatching("composio")).toEqual([]);
     expect(cardsMatching("about")).toEqual(["general.aboutMe"]);
-    expect(cardsMatching("elevenlabs")).toEqual(["connections.voice"]);
+    expect(cardsMatching("openrouter")).toEqual(["engines.moreProviders"]);
+    expect(cardsMatching("live call")).toEqual(["voice.advanced"]);
     expect(cardsMatching("avatar")).toEqual(["connections.image"]);
   });
 

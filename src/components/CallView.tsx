@@ -116,7 +116,7 @@ export function CallTargetButton({
   const capabilityHelp = xaiVoice
     ? null
     : nativeHelp && voiceMode && !voiceMode.available
-      ? { label: t("voiceMode.unavailableLabel"), reason: t("voiceMode.unavailableReason") }
+      ? { label: t("voiceMode.needsXaiKeyLabel"), reason: t("voiceMode.needsXaiKeyReason") }
       : nativeHelp;
   const supported = xaiVoice || (capabilitiesReady && !capabilityHelp);
   const localVoice = localSystemVoiceActive();

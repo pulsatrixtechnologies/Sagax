@@ -1,24 +1,53 @@
-// Router and API-key setup lives under Settings → Connections: searching for
-// what people call it has to find it, and OpenCode's own sign-in is named
-// there for providers Sagax has no field for.
+// Settings > Models and voice (2026-10-14): one page instead of Integrations
+// and Models and accounts. One list of keys, model and voice alike, with the
+// rare ones folded under More providers unless saved; the voice engine
+// uses its key from that list (Grok the xAI key); Live calls under Advanced.
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@/lib/interface-mode", () => ({ useAdvancedMode: () => true, setAdvancedMode: () => {} }));
 import { setLocale } from "@/lib/i18n";
+import type { ConfigStatus } from "@/state/store";
 
-const fixture = vi.hoisted(() => ({ config: undefined as import("@/state/store").ConfigStatus | undefined }));
+const fixture = vi.hoisted(() => ({ config: undefined as import("@/state/store").ConfigStatus | undefined, section: "engines" as string, instances: [] as unknown[] }));
 vi.mock("./DesktopCapabilities", () => ({ useDesktopCapabilities: () => ({ capabilities: {} }) }));
 vi.mock("@/state/store", async (importOriginal) => ({
   ...await importOriginal<typeof import("@/state/store")>(),
   api: vi.fn(),
-  useStore: () => ({ state: { appSettingsSection: "connections", instances: [], config: fixture.config }, dispatch: vi.fn() }),
+  useStore: () => ({ state: { appSettingsSection: fixture.section, instances: fixture.instances, config: fixture.config }, dispatch: vi.fn(), refreshInstances: vi.fn() }),
 }));
 vi.mock("@/lib/analytics", () => ({ analyticsEnabled: () => false, setAnalyticsEnabled: vi.fn() }));
 
+const baseConfig = (over: Record<string, unknown> = {}) => ({
+  composio: { configured: false, mode: "unavailable" },
+  box: { configured: false },
+  vps: { configured: false, sshAlias: "" },
+  rooms: { turnTimeoutMinutes: 5 },
+  localVm: { mode: "shared", maxInstances: 2 },
+  tts: { configured: false, ready: false, voice: "", provider: "elevenlabs", keys: { elevenlabs: false, fish: false } },
+  live: { enabled: true, configured: false, voice: "", readTypedReplies: true, idleMinutes: 5 },
+  imageGen: { configured: false },
+  ...over,
+}) as unknown as ConfigStatus;
+
+async function page(): Promise<string> {
+  const { SettingsModal } = await import("./SettingsModal");
+  return renderToStaticMarkup(createElement(SettingsModal));
+}
+
+/** The markup of one part of the page, from its marker to the next one. */
+function part(html: string, from: string, to?: string): string {
+  const start = html.indexOf(from);
+  if (start < 0) return "";
+  const end = to ? html.indexOf(to, start) : -1;
+  return html.slice(start, end > start ? end : undefined);
+}
+
 beforeEach(() => {
-  fixture.config = undefined;
+  fixture.config = baseConfig();
+  fixture.section = "engines";
+  fixture.instances = [];
   vi.stubGlobal("window", {});
   vi.stubGlobal("document", { documentElement: { dataset: {} } });
   setLocale("en");
@@ -29,22 +58,118 @@ afterEach(() => {
   setLocale("en");
 });
 
-describe("Settings → Connections", () => {
-  it.each(["router", "OpenRouter", "base URL", "API key", "OpenAI", "Anthropic", "Groq"])("is found by searching for %s", async (typed) => {
+describe("Settings > Models and voice", () => {
+  it.each(["router", "OpenRouter", "base URL", "API key", "OpenAI", "Anthropic", "Groq", "ElevenLabs", "voice", "integrations", "Intégrations"])("is found by searching for %s", async (typed) => {
     const { SECTIONS, sectionMatches } = await import("./SettingsModal");
-    const connections = SECTIONS.find((entry) => entry.id === "connections")!;
+    const page = SECTIONS.find((entry) => entry.id === "engines")!;
     // the modal lowercases and trims what was typed before matching
-    expect(sectionMatches(connections, typed.trim().toLowerCase())).toBe(true);
+    expect(sectionMatches(page, typed.trim().toLowerCase())).toBe(true);
   });
 
-  // 2026-10-12: the model provider keys moved to Models and accounts; this
-  // page keeps a row that opens it, so old links still lead to the keys.
-  it("points at Models and accounts for the model provider keys", async () => {
-    const { SettingsModal } = await import("./SettingsModal");
-    const html = renderToStaticMarkup(createElement(SettingsModal));
-    expect(html).toContain('data-settings-card="connections.providers"');
-    expect(html).toContain("Model provider keys");
+  it("is one menu entry: no Integrations, no Models and accounts", async () => {
+    const { SECTIONS } = await import("./SettingsModal");
+    expect(SECTIONS.map((entry) => entry.id)).not.toContain("connections");
+    const html = await page();
+    expect(html.match(/>Models and voice</g)?.length).toBeGreaterThanOrEqual(1);
+    expect(html).not.toContain(">Integrations<");
+    expect(html).not.toContain("Models and accounts");
+    setLocale("fr");
+    const fr = await page();
+    expect(fr).toContain(">Modèles et voix<");
+    expect(fr).not.toContain(">Intégrations<");
+    expect(fr).not.toContain("Modèles et comptes");
+  });
+
+  it("opens from an old Integrations link", async () => {
+    fixture.section = "connections";
+    const html = await page();
+    expect(html).toContain("data-models-voice");
+    expect(html).toContain('data-keys-section=""');
+  });
+
+  it("orders Auto, Keys, Engines, Voice on one page", async () => {
+    const html = await page();
+    const at = (marker: string) => html.indexOf(marker);
+    expect(at("data-auto-model-explainer")).toBeGreaterThan(0);
+    expect(at("data-auto-model-explainer")).toBeLessThan(at("data-keys-section"));
+    expect(at("data-keys-section")).toBeLessThan(at('data-settings-card="engines.list"'));
+    expect(at('data-settings-card="engines.list"')).toBeLessThan(at("data-voice-section"));
+    // none ready: the engines stay open, to set one up
+    expect(part(html, 'data-settings-card="engines.list"', "data-voice-section")).toContain('data-open="true"');
+  });
+
+  it("folds the engines to one line once one is ready", async () => {
+    fixture.instances = [{
+      instanceId: "claude", displayName: "Claude", driverKind: "claudeAgent", cliDefault: "claude", access: "subscription",
+      snapshot: { state: "available", authenticated: true }, models: { default: "sonnet", options: [] },
+    }];
+    const engines = part(await page(), 'data-settings-card="engines.list"', "data-voice-section");
+    expect(engines).toContain('data-open="false"');
+    expect(engines).toContain("1 ready");
+  });
+
+  it("lists every key once, model and voice keys together, with no key field on the page", async () => {
+    const html = await page();
+    const keys = part(html, "data-keys-section", 'data-settings-card="engines.list"');
+    for (const id of ["anthropic", "openai", "xai", "elevenlabs", "fishAudio", "openrouter", "mistral", "openaiCompat", "opencodeGo"]) {
+      expect(keys.match(new RegExp(`data-provider-key="${id}"`, "g")), id).toHaveLength(1);
+    }
+    expect(html.match(/data-keys-section/g)).toHaveLength(1);
+    // keys are added in a dialog, never typed on the page
     expect(html).not.toContain('data-api-key-row="anthropic"');
+    expect(html).not.toContain('aria-label="Grok key"');
+    expect(html).not.toContain("Bots keep their own xAI key");
+  });
+
+  it("folds the rare providers under More providers, but never hides a saved one", async () => {
+    const html = await page();
+    const more = part(html, 'data-settings-card="engines.moreProviders"', 'data-settings-card="engines.list"');
+    expect(more).toContain('data-open="false"');
+    expect(more).toContain("More providers");
+    expect(more).toContain('data-provider-key="openrouter"');
+
+    fixture.config = baseConfig({ openrouter: { configured: true } });
+    const saved = await page();
+    const main = part(saved, "data-keys-section", 'data-settings-card="engines.moreProviders"');
+    expect(main).toMatch(/data-provider-key="openrouter" data-key-saved="true"/);
+    expect(part(saved, 'data-settings-card="engines.moreProviders"', 'data-settings-card="engines.list"')).not.toContain('data-provider-key="openrouter"');
+  });
+
+  it("shows a voice key saved for another engine in the list", async () => {
+    fixture.config = baseConfig({ tts: { configured: false, ready: false, voice: "", provider: "system", keys: { elevenlabs: true, fish: false } } });
+    const html = await page();
+    expect(html).toMatch(/data-provider-key="elevenlabs" data-key-saved="true"/);
+    expect(html).toMatch(/data-provider-key="fishAudio" data-key-saved="false"/);
+  });
+
+  it("chooses the voice engine only; Grok voice uses the xAI row; Live calls under a folded Advanced", async () => {
+    fixture.config = baseConfig({ xai: { configured: true }, tts: { configured: true, ready: false, voice: "", provider: "xai", keys: { elevenlabs: false, fish: false } } });
+    const html = await page();
+    const voice = part(html, "data-voice-section", 'data-settings-card="connections.image"');
+    expect(voice).toContain('aria-label="Voice engine"');
+    expect(voice).toContain("Uses the xAI key from the list above.");
+    expect(voice).not.toContain('type="password"');
+    const advanced = part(voice, 'data-settings-card="voice.advanced"');
+    expect(advanced).toContain('data-open="false"');
+    expect(advanced).toContain("Live calls (OpenAI)");
+    // folded, still applied: the switch keeps its saved value
+    expect(advanced).toContain("Read replies to typed messages");
+  });
+
+  it("translates the Live calls settings in French", async () => {
+    setLocale("fr");
+    const html = await page();
+    expect(html).toContain("Lire les réponses aux messages tapés");
+    expect(html).not.toContain("Read replies to typed messages");
+    expect(html).toContain(">Avancé<");
+    expect(html).toContain("Plus de fournisseurs");
+  });
+
+  it("leaves Connected apps out of this page", async () => {
+    fixture.config = baseConfig({ features: { connectedApps: true } });
+    const html = await page();
+    expect(html).not.toContain("platform.composio.dev");
+    expect(html).toContain(">Connected apps<");
   });
 
   it("points OpenCode users at `opencode auth login` in the OpenCode key dialog", async () => {
@@ -69,11 +194,21 @@ describe("Settings → Connections", () => {
     expect(html).not.toContain(">Optional<");
   });
 
-  it("lists each provider key as one row with its state and one action", async () => {
-    fixture.config = { anthropic: { configured: true } } as unknown as import("@/state/store").ConfigStatus;
-    const { PROVIDER_KEY_ROWS, ProviderKeyRows } = await import("./settings/ProviderKeys");
-    const html = renderToStaticMarkup(createElement(ProviderKeyRows, { rows: PROVIDER_KEY_ROWS }));
-    expect(html.match(/data-provider-key="/g)).toHaveLength(PROVIDER_KEY_ROWS.length);
+  it("opens a voice key in the same dialog as a model key", async () => {
+    const { ProviderKeyDialog, openProviderKeyDialog } = await import("./settings/ProviderKeys");
+    openProviderKeyDialog("fishAudio");
+    const html = renderToStaticMarkup(createElement(ProviderKeyDialog));
+    openProviderKeyDialog(null);
+    expect(html).toContain('data-provider-key-dialog="fishAudio"');
+    expect(html).toContain('data-api-key-row="fishAudio"');
+    expect(html).toContain("Fish Audio API keys");
+  });
+
+  it("lists each key as one row with its state and one action", async () => {
+    fixture.config = baseConfig({ anthropic: { configured: true } });
+    const { MAIN_KEY_ROWS, ProviderKeyRows } = await import("./settings/ProviderKeys");
+    const html = renderToStaticMarkup(createElement(ProviderKeyRows, { rows: MAIN_KEY_ROWS }));
+    expect(html.match(/data-provider-key="/g)).toHaveLength(MAIN_KEY_ROWS.length);
     expect(html).toMatch(/data-provider-key="anthropic".*Key saved.*Replace or remove/);
     expect(html).toMatch(/data-provider-key="openai".*No key.*Add a key/);
     expect(html).not.toContain("<input");

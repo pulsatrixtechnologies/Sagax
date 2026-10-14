@@ -5,15 +5,20 @@ import type { LocaleKey } from "@/locales";
 import { t } from "@/lib/i18n";
 import { requestSettingsCard } from "@/components/SettingsPrimitives";
 import type { AppSettingsSection } from "@/state/store";
+import { currentSettingsSection } from "@/lib/settings-sections";
+
+export { currentSettingsSection };
 
 const SECTION_LABEL = {
   general: "settings.section.general",
   organization: "settings.section.organization",
   appearance: "settings.section.appearance",
   experimental: "settings.section.experimental",
-  connections: "settings.section.connections",
+  // Integrations was merged into Models and voice (2026-10-14).
+  connections: "settings.section.modelsVoice",
+  connectedApps: "settings.section.connectedApps",
   decisionModel: "settings.section.decisionModel",
-  engines: "settings.section.engines",
+  engines: "settings.section.modelsVoice",
   companion: "settings.section.companion",
   computer: "settings.section.computer",
   usage: "settings.section.usage",
@@ -37,7 +42,7 @@ type SettingsDispatch = (action: { type: "toggleAppSettings"; open: true; sectio
 
 /** Opens Settings on a section, and a card when the sentence points at one. */
 export function openSettings(dispatch: SettingsDispatch, section: AppSettingsSection, cardId?: string): void {
-  dispatch({ type: "toggleAppSettings", open: true, section });
+  dispatch({ type: "toggleAppSettings", open: true, section: currentSettingsSection(section, cardId) });
   if (cardId) requestSettingsCard(cardId);
 }
 

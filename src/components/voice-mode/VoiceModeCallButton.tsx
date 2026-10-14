@@ -15,6 +15,7 @@ import { t } from "@/lib/i18n";
 import { refreshVoiceMode, useVoiceModeCheck, type VoiceModeCheck } from "@/lib/voice-mode/api";
 import { useMenuMotion } from "../MenuMotion";
 import { requestSettingsCard } from "../SettingsPrimitives";
+import { openProviderKeyDialog } from "../settings/ProviderKeys";
 import { voiceAccessCardText } from "./VoiceModeBar";
 
 export type VoiceUnavailableAction = "open-connections" | "add-key" | "retry";
@@ -143,12 +144,14 @@ export function VoiceModeCallButton({ targetId, targetName, botId, group, onStar
                   data-voice-action="open-connections"
                   onClick={() => {
                     setOpen(false);
-                    requestSettingsCard("connections.providers");
-                    dispatch({ type: "toggleAppSettings", open: true, section: "connections" });
+                    requestSettingsCard("engines.keys");
+                    dispatch({ type: "toggleAppSettings", open: true, section: "engines" });
+                    // Grok voice runs on the xAI key (2026-10-14): open its row.
+                    openProviderKeyDialog("xai");
                   }}
                   className="rounded-lg bg-accent px-3 py-1.5 text-[12px] font-medium text-accent-ink hover:brightness-110"
                 >
-                  {t("voiceMode.openConnections")}
+                  {t("voiceMode.openXaiKey")}
                 </button>
               )}
               {view.actions.includes("add-key") && keysUrl && (

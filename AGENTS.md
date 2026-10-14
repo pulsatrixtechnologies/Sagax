@@ -184,6 +184,35 @@ them with the link token (`server/perspicax-memory.ts`, `linkPostJson` in
   token, prompt or answer body is logged. `feedback` (`POST
   /api/v1/memory/feedback`) is in the client, not wired to a turn yet.
 
+## Settings > Models and voice (2026-10-14)
+
+One page (`EnginesSettings.tsx`, section id `engines`) replaced Integrations
+(`connections`) and Models and accounts. Keep these rules, covered by
+`src/components/SettingsModal.modelsVoice.test.ts`,
+`server/config.test.ts` ("Grok voice key migration") and
+`electron/workspace-credentials.test.mjs`:
+
+- Order: Auto in one line; Keys, one list of every key (model and voice:
+  `settings/ProviderKeys.tsx` `MAIN_KEY_ROWS`), each "saved / none" with one
+  action opening the key dialog, "Manage my keys in Perspicax" at its head on
+  an organization server; Engines folded to "N ready"; Voice (the engine
+  choice only), then image generation and the online computers.
+- Rare keys (`MORE_KEY_ROWS`, the cloud coding agents' keys) sit under "More
+  providers", folded; a saved one is always in the main list. Live calls and
+  their limits sit under Voice > Advanced, folded. Folding never resets a value.
+- Grok voice has no key of its own: it uses the xAI key (`xai.key`). A Grok
+  voice key of an older build (`tts.xaiKey`, `SAGAX_XAI_VOICE_KEY`, the
+  desktop's `xaiVoiceKey`) becomes the xAI key when none is saved, otherwise
+  it is dropped; both are logged without the value (`migrateGrokVoiceKey`,
+  `foldGrokVoiceKeyPatch`, `foldGrokVoiceCredential`). `GET /api/config`
+  says which voice keys are saved in `tts.keys`, booleans only.
+- Old links keep working: `connections` opens this page, or Connected apps
+  (its own section, `connectedApps`) for the `connections.apps` card
+  (`src/lib/settings-sections.ts`).
+- No raw server or schema error reaches the screen
+  (`src/lib/readable-error.ts`). The cloud agent keys file is a partial record
+  (`z.partialRecord`): a file without `codex` is valid.
+
 ## Mail settings
 
 Settings > Email (`src/components/MailSettings.tsx`, `server/mail-routes.ts`,
@@ -215,7 +244,7 @@ Covered by `src/components/SettingsModal.orgCleanup.test.ts`,
 `server/org-bot-force.test.ts`:
 
 - Connected apps (Composio) is experimental (`features.connectedApps`, off):
-  off hides the sidebar entry, the Settings > API keys card and the tour's
+  off hides the sidebar entry, the Settings > Connected apps page and the tour's
   apps steps. The claude.ai connectors status then shows in Settings > Model
   providers (`HarnessConnectorsSection placement="settings"`).
 - A person's own access lives on each engine card of Settings > Model

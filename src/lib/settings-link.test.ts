@@ -1,16 +1,30 @@
 import { describe, expect, it } from "vitest";
-import { settingsLinkParts, settingsSectionLabel } from "./settings-link";
+import { currentSettingsSection, openSettings, settingsLinkParts, settingsSectionLabel } from "./settings-link";
 import { setLocale } from "@/lib/i18n";
 
 describe("settings links", () => {
   it("names a section with the label Settings shows", () => {
     setLocale("en");
-    expect(settingsSectionLabel("connections")).toBe("Integrations");
+    expect(settingsSectionLabel("engines")).toBe("Models and voice");
+    expect(settingsSectionLabel("connectedApps")).toBe("Connected apps");
     expect(settingsSectionLabel("companion")).toBe("Pair devices");
     expect(settingsSectionLabel("experimental")).toBe("Experimental");
     setLocale("fr");
-    expect(settingsSectionLabel("connections")).toBe("Intégrations");
+    expect(settingsSectionLabel("engines")).toBe("Modèles et voix");
+    expect(settingsSectionLabel("connectedApps")).toBe("Apps connectées");
     setLocale("en");
+  });
+
+  // 2026-10-14: Integrations and Models and accounts are one page; an old
+  // link to Integrations opens it, or Connected apps for the Composio card.
+  it("redirects an old Integrations link to the page that holds it now", () => {
+    expect(currentSettingsSection("connections")).toBe("engines");
+    expect(currentSettingsSection("connections", "connections.voice")).toBe("engines");
+    expect(currentSettingsSection("connections", "connections.apps")).toBe("connectedApps");
+    expect(currentSettingsSection("memory")).toBe("memory");
+    const sent: unknown[] = [];
+    openSettings((action) => sent.push(action), "connections", "connections.apps");
+    expect(sent).toEqual([{ type: "toggleAppSettings", open: true, section: "connectedApps" }]);
   });
 
   it("splits a sentence on its settings placeholders", () => {

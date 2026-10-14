@@ -105,7 +105,7 @@ describe("an organization member", () => {
     const { memberHidesSection } = await import("./SettingsModal");
     const hidden = { editConfig: false, manageComputers: false, viewUsage: false, manageBackups: false, organization: true };
     expect(memberHidesSection("experimental", hidden)).toBe(true);
-    expect(memberHidesSection("connections", hidden)).toBe(true);
+    expect(memberHidesSection("connectedApps", hidden)).toBe(true);
     expect(memberHidesSection("decisionModel", hidden)).toBe(true);
     expect(memberHidesSection("usage", hidden)).toBe(true);
     expect(memberHidesSection("backups", hidden)).toBe(true);
@@ -141,11 +141,22 @@ describe("an organization member", () => {
 });
 
 describe("Connected apps is experimental", () => {
-  it("hides the Connected apps card in Settings until the experiment is on", async () => {
+  // 2026-10-14: Connected apps has its own Settings page, shown with the experiment.
+  it("hides the Connected apps page in Settings until the experiment is on", async () => {
+    fixture.section = "connectedApps";
+    const off = await render();
+    expect(off).not.toContain("platform.composio.dev");
+    expect(off).not.toContain('<option value="connectedApps"');
+    fixture.features = { connectedApps: true };
+    const on = await render();
+    expect(on).toContain("platform.composio.dev");
+    expect(on).toContain('<option value="connectedApps"');
+    // never a bare "Not set": it says what is true
+    expect(on).toContain("data-connected-apps-state");
+    expect(on).not.toContain(">Not set<");
+    // an old link to the Composio card in Integrations lands here too
     fixture.section = "connections";
     expect(await render()).not.toContain("platform.composio.dev");
-    fixture.features = { connectedApps: true };
-    expect(await render()).toContain("platform.composio.dev");
   });
 
   it("offers the switch under Experimental features, off by default", async () => {

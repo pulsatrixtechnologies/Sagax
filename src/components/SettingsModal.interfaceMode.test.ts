@@ -42,7 +42,7 @@ describe("Settings Simple and Advanced", () => {
     expect(html).not.toContain("data-settings-scope");
     expect(html).toContain('<option value="general"');
     expect(html).toContain('<option value="appearance"');
-    for (const id of ["connections", "engines", "usage", "computer", "experimental"]) {
+    for (const id of ["connections", "connectedApps", "engines", "usage", "computer", "experimental"]) {
       expect(html, id).not.toContain(`<option value="${id}"`);
     }
     expect(html).not.toContain('aria-label="Show tool calls in chat"');
@@ -54,9 +54,11 @@ describe("Settings Simple and Advanced", () => {
     const html = render();
     expect(html).toContain('aria-label="Advanced mode"');
     expect(html).toContain('aria-checked="true"');
-    for (const id of ["connections", "engines", "usage", "computer", "experimental"]) {
+    for (const id of ["engines", "usage", "computer", "experimental"]) {
       expect(html, id).toContain(`<option value="${id}"`);
     }
+    // Integrations is no longer an entry: it is part of Models and voice.
+    expect(html).not.toContain('<option value="connections"');
     expect(html).toContain('aria-label="Show tool calls in chat"');
   });
 });

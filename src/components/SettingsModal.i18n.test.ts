@@ -56,7 +56,7 @@ describe("Settings → General", () => {
     setLocale("en");
     const en = await renderSettings();
     expect(en).toContain("Settings");
-    expect(en).toContain("Models and accounts");
+    expect(en).toContain("Models and voice");
     expect(en).toContain("Maximum turn length");
   });
 

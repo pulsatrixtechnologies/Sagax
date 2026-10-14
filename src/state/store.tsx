@@ -5,6 +5,7 @@
 import { receiveThreadReadFrame } from "@/lib/read-receipts-feed";
 import { personaCategoryForSection } from "@/lib/persona-sections";
 import { withPrimaryBot } from "@/lib/primary-bot";
+import { currentSettingsSection } from "@/lib/settings-sections";
 import {
   createContext,
   useCallback,
@@ -871,6 +872,9 @@ export interface ConfigStatus {
     fishModel?: "s2.1-pro" | "s2.1-pro-free";
     /** ElevenLabs voice comes with Cloud Pro; no key is saved. */
     included?: boolean;
+    /** Which voice keys are saved, whatever the engine (2026-10-14). Grok
+     * voice uses the xAI key (`xai.configured`). Absent on older servers. */
+    keys?: { elevenlabs: boolean; fish: boolean };
   };
   /** The decision model: switches and whether a key is on file. The key
    * itself never comes back. `enabled` is the switch as it takes effect
@@ -1142,7 +1146,10 @@ export type AppSettingsSection =
   | "organization"
   | "appearance"
   | "experimental"
+  /** Merged into "engines" (Models and voice) on 2026-10-14; still accepted
+   * from old links and redirected (src/lib/settings-link.ts). */
   | "connections"
+  | "connectedApps"
   | "decisionModel"
   | "engines"
   | "companion"
@@ -2738,7 +2745,7 @@ export function reducer(state: AppState, action: Action): AppState {
         ...state,
         appSettingsOpen: open,
         activityOpen: open ? false : state.activityOpen,
-        appSettingsSection: action.section ?? state.appSettingsSection,
+        appSettingsSection: action.section ? currentSettingsSection(action.section) : state.appSettingsSection,
         appSettingsSubPage: open ? action.subPage ?? null : null,
         personPanelId: open ? null : state.personPanelId,
         appSettingsPhonePairing: action.phonePairing && open ? state.appSettingsPhonePairing + 1 : 0,

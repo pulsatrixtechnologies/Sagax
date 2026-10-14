@@ -6,9 +6,9 @@ import { useRetroSkin } from "./RetroChromeHost";
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { FLOATING_LIVELINESS, floatingBotPrefs, HOTKEY_CHOICES, hotkeyLabel, setFloatingBarkSound, setFloatingFlyAway, setFloatingHotkey, setFloatingLiveliness, subscribeFloatingBots, type FloatingLiveliness, type HotkeyChoice } from "@/lib/floating-bots";
 import { useCallSettings, writeCallSettings } from "@/lib/voice-mode/call-settings";
-import { Archive, Bell, BookOpen, Coins, FlaskConical, KeyRound, Mail, Monitor, Palette, ScrollText, Search, ShieldCheck, TabletSmartphone, Terminal, User, Users, X, Building2, Zap } from "lucide-react";
+import { Archive, Bell, BookOpen, Coins, FlaskConical, Mail, Monitor, Palette, Plug, ScrollText, Search, ShieldCheck, TabletSmartphone, Terminal, User, Users, X, Building2, Zap } from "lucide-react";
 import { api, useStore, type AppSettingsSection, type ConfigStatus } from "@/state/store";
-import { browserAvailable, builtInBrowserEnabled, boatComputerEnabled, browseBotsEnabled, connectedAppsEnabled, decisionModelEnabled, routinesInConversationEnabled, showToolCallsEnabled, skillAuthoringEnabled, vpsComputerEnabled } from "@/lib/feature-flags";
+import { browserAvailable, builtInBrowserEnabled, browseBotsEnabled, connectedAppsEnabled, decisionModelEnabled, routinesInConversationEnabled, showToolCallsEnabled, skillAuthoringEnabled } from "@/lib/feature-flags";
 import { usePerspicaxOrg } from "@/lib/perspicax-org";
 import { localeChoices, type LocaleKey } from "@/locales";
 import { t } from "@/lib/i18n";
@@ -18,11 +18,8 @@ import { launchBridges } from "@/lib/launch";
 import { servedPage } from "@/lib/desktop";
 import { brand } from "@/lib/brand";
 import { ManagedByOrganization, ServerModeCard, useServerMode } from "./ServerModeSettings";
-import { ApiKeyRow, VpsConnection } from "./ApiKeys";
+import { ApiKeyRow } from "./ApiKeys";
 import { DecisionModelSettings } from "./DecisionModelSettings";
-import { LiveCallInstallationSettings } from "./LiveCallSettings";
-import { ImageGenerationSettings } from "./settings/ImageGenerationSettings";
-import { VoiceEngineSettings } from "./settings/VoiceEngineSettings";
 import { useUpdaterState } from "@/lib/updater";
 import { EnginesSettings } from "./EnginesSettings";
 import { LocalComputerSection } from "./LocalComputerSection";
@@ -42,6 +39,7 @@ import { PrivacySettings } from "./PrivacySettings";
 import { OrgMemorySettings } from "./OrgMemorySettings";
 import { NotificationSettings } from "./NotificationSettings";
 import { BrowserUnavailableNote, SettingsText } from "./SettingsLink";
+import { currentSettingsSection } from "@/lib/settings-sections";
 
 import { shortcutLabel } from "./ShortcutHint";
 import { UsageSection } from "./UsageSection";
@@ -61,7 +59,6 @@ import { InitialsAvatar } from "./Avatar";
 import { profileInitials, profileLabel } from "./SidebarProfileMenu";
 import { ManagedProfileIdentity } from "./ManagedProfileIdentity";
 import { MyLabelField } from "./settings/MyLabelField";
-import { CloudAgentProvidersSettings } from "./settings/CloudAgentProvidersSettings";
 import { managedProfile } from "@/lib/profile-management";
 import { ThreadConcurrencySettings } from "./ThreadConcurrencySettings";
 import { AutomaticRecoverySettings } from "./AutomaticRecoverySettings";
@@ -102,9 +99,10 @@ export const SECTIONS: Array<{
   { id: "memory", labelKey: "settings.section.memory", icon: BookOpen, keywords: ["memory", "obsidian", "vault", "sync", "git", "perspicax", "mémoire", "cache", "pending"] },
   { id: "privacy", labelKey: "settings.section.privacy", icon: ShieldCheck, keywords: ["privacy", "read receipts", "seen", "vu", "confidentialité", "accusés de lecture", "presence", "online", "away", "offline", "last seen", "status", "en ligne", "absent", "hors ligne", "privacidade"] },
   { id: "experimental", labelKey: "settings.section.experimental", icon: FlaskConical, keywords: ["early", "preview", "learn", "skill", "authoring", "browser", "profiles"] },
-  { id: "connections", labelKey: "settings.section.connections", icon: KeyRound, keywords: ["keys", "api", "api key", "api keys", "connections", "composio", "box", "xai", "mistral", "cerebras", "vps", "router", "openrouter", "base url", "openai", "anthropic", "groq", "opencode", "provider"] },
   { id: "decisionModel", labelKey: "settings.section.decisionModel", icon: Zap, keywords: ["decision", "jev", "typesafe", "routing", "auto", "rooms", "who answers"] },
-  { id: "engines", labelKey: "settings.section.engines", icon: Terminal, keywords: ["models", "model providers", "engines", "claude", "codex", "grok", "providers", "cli", "sign in", "subscription"] },
+  // Models and voice (2026-10-14): Integrations and Models and accounts in one page.
+  { id: "engines", labelKey: "settings.section.modelsVoice", icon: Terminal, keywords: ["models", "model providers", "engines", "claude", "codex", "grok", "providers", "cli", "sign in", "subscription", "keys", "api", "api key", "api keys", "connections", "integrations", "intégrations", "clés", "xai", "mistral", "cerebras", "router", "openrouter", "base url", "openai", "anthropic", "groq", "opencode", "provider", "voice", "voix", "tts", "elevenlabs", "fish", "chatterbox", "live call", "image", "avatar", "box", "vps", "cursor", "cloud agents"] },
+  { id: "connectedApps", labelKey: "settings.section.connectedApps", icon: Plug, keywords: ["composio", "connected apps", "apps", "gmail", "slack", "notion", "apps connectées"] },
   { id: "companion", labelKey: "settings.section.companion", icon: TabletSmartphone, keywords: ["companion", "device", "phone", "desktop", "client", "host", "pair", "pairing", "mobile", "https", "secure", "tailscale", "wifi", "remote", "advanced", "domain", "dns", "self-hosted", "server", "caddy"] },
   { id: "computer", labelKey: "settings.section.computer", icon: Monitor, keywords: ["computer", "local vm", "vm", "virtual", "desktop", "ordinateur"] },
   { id: "usage", labelKey: "settings.section.usage", icon: Coins, keywords: ["tokens", "cost", "billing"] },
@@ -123,10 +121,10 @@ const CARD_KEYWORDS: Record<string, string[]> = {
   "general.threadCleanup": ["cleanup", "retention", "event log", "event-log", "log size"],
   "general.recovery": ["automatic recovery", "backup model", "fallback"],
   "general.mcpCalls": ["mcp", "timeout", "tool call"],
-  "connections.apps": ["composio"],
   "connections.integrations": ["box", "vps"],
-  "connections.voice": ["voice", "tts", "elevenlabs", "fish", "chatterbox", "live call"],
   "connections.image": ["image", "avatar", "gpt image"],
+  "engines.moreProviders": ["openrouter", "mistral", "opencode", "base url", "compatible", "cursor", "cloud agent"],
+  "voice.advanced": ["live call", "read replies", "hang up", "gpt-live"],
   "companion.domain": ["domain", "dns", "caddy"],
   "backups.import": ["import", "restore"],
 };
@@ -157,7 +155,7 @@ export function memberHidesSection(id: AppSettingsSection, input: {
   manageBackups: boolean;
   organization: boolean;
 }): boolean {
-  if (id === "experimental" || id === "connections" || id === "decisionModel" || id === "workspaces") return !input.editConfig;
+  if (id === "experimental" || id === "connectedApps" || id === "decisionModel" || id === "workspaces") return !input.editConfig;
   if (id === "usage") return !input.viewUsage;
   if (id === "backups") return !input.manageBackups;
   if (id === "computer") return !input.manageComputers && !input.organization;
@@ -301,14 +299,13 @@ function OperatorProfileFields() {
   );
 }
 
-type ConnectionKey = "openai" | "openrouter" | "anthropic" | "openaiCompat" | "xai" | "mistral" | "cerebras" | "groq" | "composio" | "box" | "vps" | "opencodeGo";
-
-/** "Set" / "Not set" for one connection, "2 of 4 set" for a group. Reads
- * only the configured flags the server returns; never a secret. */
-export function configuredSummary(config: ConfigStatus | null | undefined, keys: ConnectionKey[]): string {
-  const set = keys.filter((key) => Boolean((config?.[key] as { configured?: boolean } | undefined)?.configured)).length;
-  if (keys.length === 1) return set ? t("settings.card.set") : t("settings.card.notSet");
-  return t("settings.card.countSet", { count: set, total: keys.length });
+/** Connected apps in words (2026-10-14: it said "Not set" whatever the
+ * reason). Managed through the broker, a Composio key saved, or none yet. */
+export function connectedAppsSummary(config: ConfigStatus | null | undefined): string {
+  const mode = config?.composio?.mode;
+  if (mode === "managed") return t("connectedApps.state.managed");
+  if (mode === "self-hosted" || config?.composio?.configured) return t("connectedApps.state.keySaved");
+  return t("connectedApps.state.noKey");
 }
 
 /** Sub-pages pushed inside a section (src/components/SettingsSubPage.tsx):
@@ -1048,10 +1045,11 @@ export function SettingsModal() {
   // "Connect your phone" focuses the pairing this window can do: this
   // computer's phone flow, or the server's pairing code.
   const computerPairs = currentPhonePairingTarget(false) === "computer";
+  // An old "connections" (Integrations) section opens Models and voice.
   const section: AppSettingsSection =
     remoteActive && state.appSettingsSection !== "appearance" && state.appSettingsSection !== "organization" && state.appSettingsSection !== "notifications" && state.appSettingsSection !== "memory"
       ? "companion"
-      : state.appSettingsSection;
+      : currentSettingsSection(state.appSettingsSection);
   const dialogRef = useRef<HTMLDivElement>(null);
   const [query, setQuery] = useState("");
   useEffect(() => window.ogb?.environments?.onOpenSettings?.(() => setQuery("")), []);
@@ -1105,6 +1103,8 @@ export function SettingsModal() {
     .filter((entry) => !memberHidesSection(entry.id, { editConfig, manageComputers, viewUsage, manageBackups, organization }))
     // Decision model is an experimental section, off until its switch is on.
     .filter((entry) => entry.id !== "decisionModel" || decisionModelEnabled(state.config))
+    // Connected apps (Composio) is experimental too.
+    .filter((entry) => entry.id !== "connectedApps" || connectedAppsEnabled(state.config))
     // Simple hides technical sections. Their saved values stay.
     .filter((entry) => advanced || !simpleHidesSettingsSection(entry.id));
   const visibleSections = availableSections.filter((entry) => sectionMatches(entry, q));
@@ -1416,26 +1416,16 @@ export function SettingsModal() {
               </>
             )}
 
-            {section === "connections" && (
+            {/* Connected apps (2026-10-14): out of Integrations, its own page. */}
+            {section === "connectedApps" && connectedAppsEnabled(state.config) && (
               <>
                 {state.config?.composio.mode === "managed" ? (
                   <div className="rounded-lg border border-accent/25 bg-accent/10 px-3 py-2 text-[13px] text-accent-text">
                     {t("settings.connections.ready")}
                   </div>
                 ) : null}
-                {/* Model provider keys moved to Models and accounts (2026-10-12). */}
-                <SettingsSubPageRow
-                  cardId="connections.providers"
-                  title={t("keys.providers.title")}
-                  summary={configuredSummary(state.config, ["openai", "anthropic", "xai", "openrouter", "mistral", "cerebras", "groq", "openaiCompat"])}
-                  actionLabel={t("providerKeys.openPage")}
-                  onOpen={() => dispatch({ type: "toggleAppSettings", open: true, section: "engines" })}
-                />
-                <CloudAgentProvidersSettings />
-                {connectedAppsEnabled(state.config) && <Card
-                  collapsible
+                <Card
                   cardId="connections.apps"
-                  defaultOpen={false}
                   title={t("settings.connections.appsTitle")}
                   subtitle={<>
                     {t("settings.connections.appsSubtitle")}{" "}
@@ -1443,44 +1433,11 @@ export function SettingsModal() {
                       platform.composio.dev
                     </a>
                   </>}
-                  summary={configuredSummary(state.config, ["composio"])}
                 >
+                  <p className="mb-2 text-[12.5px] text-ink-secondary" data-connected-apps-state={state.config?.composio.mode ?? "unavailable"}>
+                    {connectedAppsSummary(state.config)}
+                  </p>
                   <ApiKeyRow section="composio" />
-                </Card>}
-                {(boatComputerEnabled(state.config) || vpsComputerEnabled(state.config)) && <Card
-                  collapsible
-                  cardId="connections.integrations"
-                  defaultOpen={false}
-                  title={t("keys.integrations.title")}
-                  summary={configuredSummary(state.config, ["box", "vps"])}
-                >
-                  <div className="flex flex-col gap-4">
-                    {boatComputerEnabled(state.config) && <ApiKeyRow section="box" />}
-                    {vpsComputerEnabled(state.config) && <VpsConnection />}
-                  </div>
-                </Card>}
-                <Card
-                  collapsible
-                  cardId="connections.voice"
-                  defaultOpen={false}
-                  title={t("voice.engine.title")}
-                  subtitle={t("voice.engine.subtitle")}
-                >
-                  <VoiceEngineSettings />
-                  <div className="mt-6 border-t border-hairline/40 pt-4">
-                    <div className="text-[15px] font-medium text-ink">{t("voice.live.title")}</div>
-                    <p className="mt-0.5 mb-3 text-[13px] text-ink-secondary">{t("voice.live.subtitle")}</p>
-                    <LiveCallInstallationSettings />
-                  </div>
-                </Card>
-                <Card
-                  collapsible
-                  cardId="connections.image"
-                  defaultOpen={false}
-                  title={t("imageGen.title")}
-                  subtitle={t("imageGen.subtitle")}
-                >
-                  <ImageGenerationSettings />
                 </Card>
               </>
             )}

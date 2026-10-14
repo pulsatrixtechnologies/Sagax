@@ -1,8 +1,11 @@
-// Settings > Connections: per-person API keys for external cloud coding agents.
+// Settings > Models and voice, keys: per-person API keys for external cloud
+// coding agents (Cursor, Claude Code, Codex). Under "More providers" until
+// one is saved (src/components/EnginesSettings.tsx).
 import { useCallback, useEffect, useState } from "react";
 
 import { api } from "@/state/store";
 import { t } from "@/lib/i18n";
+import { readableErrorMessage } from "@/lib/readable-error";
 import {
   loadCloudAgentProviders,
   removeCloudAgentProvider,
@@ -13,24 +16,37 @@ import {
 import { Card } from "../SettingsPrimitives";
 
 const inputClass = "w-full rounded-lg border border-border bg-ink/[0.03] px-2.5 py-1.5 text-[13px] text-ink placeholder:text-ink-secondary focus:border-border-strong focus:outline-none";
-const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
-export function CloudAgentProvidersSettings() {
+export interface CloudAgentProvidersState {
+  rows: CloudAgentProviderRow[] | null;
+  /** A sentence for the person, never the server's raw error. */
+  error: string | null;
+  refresh: () => Promise<void>;
+}
+
+/** The person's cloud agent keys, loaded once for the page. */
+export function useCloudAgentProviders(): CloudAgentProvidersState {
   const [rows, setRows] = useState<CloudAgentProviderRow[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const refresh = useCallback(async () => {
     try {
       setRows(await loadCloudAgentProviders(api));
       setError(null);
-    } catch (failure) {
-      setError(message(failure));
+    } catch {
+      // Whatever the server said, the person reads one plain sentence.
+      setError(t("cloudAgentProviders.loadError"));
     }
   }, []);
   useEffect(() => { void refresh(); }, [refresh]);
+  return { rows, error, refresh };
+}
+
+export function CloudAgentProvidersSettings({ state }: { state: CloudAgentProvidersState }) {
+  const { rows, error, refresh } = state;
 
   if (!rows) {
     return error
-      ? <p role="alert" className="text-[12.5px] text-danger">{error}</p>
+      ? <p role="alert" data-cloud-agent-providers-error className="text-[12.5px] text-danger">{error}</p>
       : <p className="text-[12.5px] text-ink-secondary">{t("cloudAgentProviders.loading")}</p>;
   }
 
@@ -38,6 +54,7 @@ export function CloudAgentProvidersSettings() {
     <Card
       collapsible
       cardId="connections.cloudAgents"
+      defaultOpen={false}
       title={t("cloudAgentProviders.title")}
       subtitle={t("cloudAgentProviders.subtitle")}
       summary={rows.some((row) => row.configured) ? t("cloudAgentProviders.summary.configured") : t("cloudAgentProviders.summary.empty")}
@@ -66,7 +83,7 @@ function ProviderRow({ row, onChanged }: { row: CloudAgentProviderRow; onChanged
       setToken("");
       setEditing(false);
     } catch (failure) {
-      setNote(message(failure));
+      setNote(readableErrorMessage(failure, t("cloudAgentProviders.actionError")));
     } finally {
       setBusy(false);
     }

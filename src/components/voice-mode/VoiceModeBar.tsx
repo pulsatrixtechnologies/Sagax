@@ -24,6 +24,7 @@ import { forgetVoiceprint } from "@/lib/voice-mode/speaker-id";
 import type { VoiceModeRefusalCause } from "../../../shared/voice-mode";
 import { BotAvatar } from "../Avatar";
 import { requestSettingsCard } from "../SettingsPrimitives";
+import { openProviderKeyDialog } from "../settings/ProviderKeys";
 import { HEIGHT_MOTION_CLASS, MENU_MOTION_MS, reducedMotion, useHeightReveal } from "../MenuMotion";
 import type { CallMetrics } from "./LiveCall";
 import { formatCallTime, phaseLabel } from "@/lib/voice-mode/call-labels";
@@ -53,7 +54,7 @@ function callDebug(): boolean {
 export function voiceAccessCardText(card: VoiceAccessCard): string[] {
   if (card.cause === "payer_disabled") return [t("voiceMode.noAccess.disabled")];
   if (card.cause === "perspicax_unreachable") return [t("voiceMode.noAccess.unreachable")];
-  return [t("voiceMode.noAccess.mine"), ...(card.admin ? [t("access.noAccess.mine.admin")] : [])];
+  return [t("voiceMode.noAccess.xaiKey"), ...(card.admin ? [t("access.noAccess.mine.admin")] : [])];
 }
 
 export interface VoiceModeBarProps {
@@ -510,12 +511,14 @@ export function VoiceModeBar(props: VoiceModeBarProps) {
                       type="button"
                       data-voice-action="open-connections"
                       onClick={() => {
-                        requestSettingsCard("connections.providers");
-                        dispatch({ type: "toggleAppSettings", open: true, section: "connections" });
+                        requestSettingsCard("engines.keys");
+                        dispatch({ type: "toggleAppSettings", open: true, section: "engines" });
+                        // Grok voice runs on the xAI key (2026-10-14): open its row.
+                        openProviderKeyDialog("xai");
                       }}
                       className="mr-1.5 mt-1.5 rounded-lg bg-accent px-2.5 py-1 text-[12px] font-medium text-accent-ink hover:brightness-110"
                     >
-                      {t("voiceMode.openConnections")}
+                      {t("voiceMode.openXaiKey")}
                     </button>
                   )}
                   {refusal.keysUrl && refusal.cause === "no_credentials" && (

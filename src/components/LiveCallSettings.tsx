@@ -87,7 +87,7 @@ export function LiveCallSettings({ onClose }: { onClose: () => void }) {
       </label>
       <div className="-mt-2 text-[11.5px] text-ink-tertiary">{t("call.live.voiceNext")}</div>
       <div className="text-[11.5px] text-ink-tertiary">
-        <SettingsText text={t("voice.live.inSettings")} links={{ settings: { section: "connections", cardId: "connections.voice" } }} />
+        <SettingsText text={t("voice.live.inSettings")} links={{ settings: { section: "engines", cardId: "voice.advanced" } }} />
       </div>
       {error && <div className="text-[12px] text-danger">{error}</div>}
     </div>

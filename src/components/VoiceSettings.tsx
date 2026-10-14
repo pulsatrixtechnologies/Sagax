@@ -124,7 +124,7 @@ export function VoiceSettings({
           ? <p className="mt-3 text-[13px] text-ink-secondary">{t("voice.bot.hostUnset")}</p>
           : (
             <p className="mt-3 text-[13px] text-ink-secondary">
-              <SettingsText text={t("voice.bot.setup")} links={{ settings: { section: "connections", cardId: "connections.voice" } }} />
+              <SettingsText text={t("voice.bot.setup")} links={{ settings: { section: "engines", cardId: "connections.voice" } }} />
             </p>
           )
       )}

@@ -21,11 +21,16 @@ import { ManageMyKeysLink } from "./settings/MyEngines";
 import { EngineConnect, paysWithText } from "./EngineConnect";
 import { HarnessConnectorsSection } from "./HarnessConnectorsSection";
 import { reloadMyEngines, useMyEngines, usePerspicaxOrg, type MyEngine } from "@/lib/perspicax-org";
-import { viewerCan, viewerIsOrgMember } from "@/lib/viewer";
-import { connectedAppsEnabled } from "@/lib/feature-flags";
+import { canEditConfig, viewerCan, viewerIsOrgMember } from "@/lib/viewer";
+import { boatComputerEnabled, connectedAppsEnabled, vpsComputerEnabled } from "@/lib/feature-flags";
 import { OrgHostToolsNote, orgRefusesEngine } from "./OrgHostToolsNote";
-import { HelpTip } from "./SettingsPrimitives";
-import { ENGINE_KEY_ROWS, PROVIDER_KEY_ROWS, ProviderKeyDialog, ProviderKeyRows } from "./settings/ProviderKeys";
+import { Card, HelpTip, cardCount } from "./SettingsPrimitives";
+import { KeyList, ProviderKeyDialog } from "./settings/ProviderKeys";
+import { CloudAgentProvidersSettings, useCloudAgentProviders } from "./settings/CloudAgentProvidersSettings";
+import { VoiceEngineSettings } from "./settings/VoiceEngineSettings";
+import { ImageGenerationSettings } from "./settings/ImageGenerationSettings";
+import { LiveCallInstallationSettings } from "./LiveCallSettings";
+import { ApiKeyRow, VpsConnection } from "./ApiKeys";
 
 interface ProbeResult {
   ok: boolean;
@@ -398,6 +403,12 @@ function EngineRow({ instance, mine, member = false, issuer = "" }: { instance: 
   );
 }
 
+/** Settings > Models and voice (2026-10-14): one page instead of
+ * Integrations and Models and accounts. Auto in one line; the keys, model
+ * and voice alike, in one list with the rare ones under More providers;
+ * the engines, folded to "N ready"; the voice engine, which uses its key from
+ * the list, with Live calls under Advanced; then image generation and, when
+ * their experiments are on, the online computers. */
 export function EnginesSettings() {
   const { state } = useStore();
   // every KNOWN-driver instance has cliDefault; unknown-driver shadows have
@@ -419,48 +430,113 @@ export function EnginesSettings() {
   const myEngines = useMyEngines();
   const mineOf = (instance: InstanceInfo) => (org ? myEngines?.find((engine) => engine.instanceId === instance.instanceId) : undefined);
   const shown = org ? orgEngineRows(rows, myEngines).filter((instance) => !member || mineOf(instance)) : rows;
+  const isReady = (instance: InstanceInfo) => { const mine = mineOf(instance); return mine ? mine.myTurns !== "none" : engineReady(instance); };
+  const readyCount = shown.filter(isReady).length;
 
   // Keys are an installation write: a member's own keys live in Perspicax.
-  const keys = !member && (typeof window === "undefined" || window.ogb?.remoteClient?.active !== true);
+  const remote = typeof window !== "undefined" && window.ogb?.remoteClient?.active === true;
+  const keys = !member && !remote;
+  // The voice engine, image generation and online computers write the
+  // installation too: shown to whoever may change it (Integrations was
+  // hidden the same way).
+  const installation = !member && canEditConfig(state.config);
   return (
-    <div className="flex min-w-0 flex-col gap-6 pb-2">
-      <div className="-mt-1 flex flex-wrap items-center justify-end gap-1">
-        {member && <p className="mr-auto text-[13px] text-ink-secondary">{t("myEngines.memberIntro")}</p>}
-        {org && <ManageMyKeysLink issuer={org.org.identity.issuer} />}
-        {!member && <RefreshEngines />}
-      </div>
+    <div className="flex min-w-0 flex-col gap-6 pb-2" data-models-voice="">
+      {member && (
+        <div className="-mt-1 flex flex-wrap items-center justify-end gap-1">
+          <p className="mr-auto text-[13px] text-ink-secondary">{t("myEngines.memberIntro")}</p>
+          {org && <ManageMyKeysLink issuer={org.org.identity.issuer} />}
+        </div>
+      )}
       {/* Auto (docs/plans/2026-10-08-auto-model.md): one line, the detail behind its info button. */}
       <section data-auto-model-explainer className="flex items-center gap-1.5">
         <h2 className="text-[13px] font-medium text-ink">{t("model.auto.settings.title")}</h2>
         <span className="text-[13px] text-ink-secondary">{t("model.auto.settings.short")}</span>
         <HelpTip label={t("settings.moreAbout", { title: t("model.auto.settings.title") })}>{t("model.auto.settings.body")}</HelpTip>
       </section>
-      {/* The claude.ai connectors of the person's own Claude account live in
-          Connected apps; while that experiment is off, their read-only
-          status shows here, next to the Claude sign-in that brings them. */}
-      {!connectedAppsEnabled(state.config) && <HarnessConnectorsSection placement="settings" />}
-      {keys && (
-        <section className="flex flex-col gap-2" data-settings-card="engines.keys">
-          <h2 className="flex items-center gap-1.5 text-[13px] font-medium text-ink">
-            {t("providerKeys.title")}
-            <HelpTip label={t("settings.moreAbout", { title: t("providerKeys.title") })}>{t("providerKeys.help")}</HelpTip>
-          </h2>
-          <ProviderKeyRows rows={PROVIDER_KEY_ROWS} />
-          <ProviderKeyRows rows={ENGINE_KEY_ROWS} />
-          <ProviderKeyDialog />
-        </section>
+      {keys && <KeysSection issuer={org?.org.identity.issuer} />}
+      <Card
+        collapsible
+        cardId="engines.list"
+        defaultOpen={readyCount === 0}
+        title={t("engines.title")}
+        summary={cardCount("ready", readyCount)}
+      >
+        <div className="flex flex-col gap-3" data-engines-list="">
+          {!member && <div className="-mt-1 flex justify-end"><RefreshEngines /></div>}
+          {/* The claude.ai connectors of the person's own Claude account live in
+              Connected apps; while that experiment is off, their read-only
+              status shows here, next to the Claude sign-in that brings them. */}
+          {!connectedAppsEnabled(state.config) && <HarnessConnectorsSection placement="settings" />}
+          <EngineSections
+            instances={shown}
+            renderEngine={(instance) => <EngineRow instance={instance} mine={mineOf(instance)} member={member} issuer={org?.org.identity.issuer} />}
+            isReady={isReady}
+          />
+          {member && org && myEngines !== null && shown.length === 0 && (
+            <p className="text-[13px] text-ink-secondary" data-member-no-engines>{t("myEngines.noneOnServer")}</p>
+          )}
+        </div>
+      </Card>
+      {installation && <VoiceSection />}
+      {installation && (
+        <Card collapsible cardId="connections.image" defaultOpen={false} title={t("imageGen.title")} subtitle={t("imageGen.subtitle")}>
+          <ImageGenerationSettings />
+        </Card>
       )}
-      <section className="flex flex-col gap-2">
-        <h2 className="text-[13px] font-medium text-ink">{t("engines.title")}</h2>
-        <EngineSections
-          instances={shown}
-          renderEngine={(instance) => <EngineRow instance={instance} mine={mineOf(instance)} member={member} issuer={org?.org.identity.issuer} />}
-          isReady={(instance) => { const mine = mineOf(instance); return mine ? mine.myTurns !== "none" : engineReady(instance); }}
-        />
-      </section>
-      {member && org && myEngines !== null && shown.length === 0 && (
-        <p className="text-[13px] text-ink-secondary" data-member-no-engines>{t("myEngines.noneOnServer")}</p>
+      {installation && (boatComputerEnabled(state.config) || vpsComputerEnabled(state.config)) && (
+        <Card collapsible cardId="connections.integrations" defaultOpen={false} title={t("keys.integrations.title")}>
+          <div className="flex flex-col gap-4">
+            {boatComputerEnabled(state.config) && <ApiKeyRow section="box" />}
+            {vpsComputerEnabled(state.config) && <VpsConnection />}
+          </div>
+        </Card>
       )}
+      {(keys || installation) && <ProviderKeyDialog />}
     </div>
+  );
+}
+
+/** One list of every key. "Manage my keys in Perspicax" leads it when the
+ * server is linked to an organization. The cloud coding agents' keys stay
+ * under More providers until one is saved. */
+function KeysSection({ issuer }: { issuer?: string }) {
+  const cloud = useCloudAgentProviders();
+  const cloudSaved = cloud.rows?.some((row) => row.configured) ?? false;
+  const cloudCard = <CloudAgentProvidersSettings state={cloud} />;
+  return (
+    <section className="flex flex-col gap-2" data-settings-card="engines.keys" data-keys-section="">
+      <div className="flex flex-wrap items-center gap-1.5">
+        <h2 className="flex items-center gap-1.5 text-[13px] font-medium text-ink">
+          {t("modelsVoice.keys.title")}
+          <HelpTip label={t("settings.moreAbout", { title: t("modelsVoice.keys.title") })}>{t("providerKeys.help")}</HelpTip>
+        </h2>
+        {issuer && <span className="ml-auto"><ManageMyKeysLink issuer={issuer} /></span>}
+      </div>
+      <KeyList moreExtra={cloudSaved ? undefined : cloudCard} />
+      {cloudSaved && cloudCard}
+    </section>
+  );
+}
+
+/** The voice engine only: which one speaks; its key is in the list above
+ * (Grok uses the xAI key). Live calls and their limits sit under Advanced,
+ * folded; values set there stay applied while it is folded. */
+function VoiceSection() {
+  return (
+    <section className="flex flex-col gap-2" data-settings-card="connections.voice" data-voice-section="">
+      <div>
+        <h2 className="text-[13px] font-medium text-ink">{t("modelsVoice.voice.title")}</h2>
+        <p className="mt-0.5 text-[12.5px] text-ink-secondary">{t("voice.engine.subtitle")}</p>
+      </div>
+      <VoiceEngineSettings />
+      <Card collapsible cardId="voice.advanced" defaultOpen={false} title={t("modelsVoice.voice.advanced")}>
+        <div data-voice-advanced="">
+          <div className="text-[13px] font-medium text-ink">{t("voice.live.title")}</div>
+          <p className="mb-3 mt-0.5 text-[12.5px] text-ink-secondary">{t("voice.live.subtitle")}</p>
+          <LiveCallInstallationSettings />
+        </div>
+      </Card>
+    </section>
   );
 }

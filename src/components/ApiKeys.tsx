@@ -9,7 +9,7 @@ import { useMenuMotion } from "./MenuMotion";
 import { t } from "@/lib/i18n";
 import type { LocaleKey } from "@/locales";
 
-export type ConfigSection = "composio" | "box" | "opencodeGo" | "anthropic" | "openai" | "openrouter" | "openaiCompat" | "xai" | "mistral" | "cerebras" | "groq";
+export type ConfigSection = "composio" | "box" | "opencodeGo" | "anthropic" | "openai" | "openrouter" | "openaiCompat" | "xai" | "mistral" | "cerebras" | "groq" | "elevenlabs" | "fishAudio";
 /** Sections whose key can be tried against the provider from the server. */
 export type TestableProvider = "anthropic" | "openai" | "openrouter" | "openaiCompat" | "xai" | "mistral" | "cerebras" | "groq";
 
@@ -47,14 +47,24 @@ const SECTIONS: Record<
   cerebras: { body: (v) => ({ cerebras: { key: v } }), flag: (c) => c.cerebras?.configured ?? false },
   groq: { body: (v) => ({ groq: { key: v } }), flag: (c) => c.groq?.configured ?? false },
   xai: { body: (v) => ({ xai: { key: v } }), flag: (c) => c.xai?.configured ?? false },
+  // Voice keys (2026-10-14): listed with the model keys, whatever the voice
+  // engine. `tts.keys` says which are saved; an older server sends none.
+  elevenlabs: {
+    body: (v) => ({ tts: { key: v } }),
+    flag: (c) => c.tts?.keys?.elevenlabs ?? false,
+    included: (c) => c.tts?.included === true,
+  },
+  fishAudio: { body: (v) => ({ tts: { fishKey: v } }), flag: (c) => c.tts?.keys?.fish ?? false },
 };
 
 // Provider keys have no desktop-shell slot yet and go through the server's
 // own 0600 config, the same place they live on a hosted server.
-const ELECTRON_CREDENTIAL: Partial<Record<ConfigSection, "composioApiKey" | "boxToken" | "opencodeGoApiKey">> = {
+const ELECTRON_CREDENTIAL: Partial<Record<ConfigSection, "composioApiKey" | "boxToken" | "opencodeGoApiKey" | "ttsKey" | "fishAudioKey">> = {
   composio: "composioApiKey",
   box: "boxToken",
   opencodeGo: "opencodeGoApiKey",
+  elevenlabs: "ttsKey",
+  fishAudio: "fishAudioKey",
 };
 
 const CREDENTIALS: Record<
@@ -160,9 +170,24 @@ const CREDENTIALS: Record<
   xai: {
     labelKey: "keys.xai.label",
     placeholder: "xai-…",
-    descriptionKey: "keys.xai.desc",
+    descriptionKey: "keys.xai.descVoice",
     href: "https://console.x.ai",
     linkLabelKey: "keys.xai.link",
+    optional: true,
+  },
+  elevenlabs: {
+    labelKey: "keys.elevenlabs.label",
+    placeholder: "sk_…",
+    descriptionKey: "keys.elevenlabs.desc",
+    href: "https://elevenlabs.io/app/settings/api-keys",
+    linkLabelKey: "keys.elevenlabs.link",
+    optional: true,
+  },
+  fishAudio: {
+    labelKey: "keys.fishAudio.label",
+    descriptionKey: "keys.fishAudio.desc",
+    href: "https://fish.audio/app/api-keys/",
+    linkLabelKey: "keys.fishAudio.link",
     optional: true,
   },
 };

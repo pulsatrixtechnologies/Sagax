@@ -96,6 +96,14 @@ describe("Settings → Engines → Grok", () => {
   });
 });
 
+/** The engine cards only: the page also holds the voice settings, whose
+ * Live calls row has its own "Change key". */
+function enginesList(html: string): string {
+  const start = html.indexOf("data-engines-list");
+  const end = html.indexOf("data-voice-section");
+  return html.slice(start, end > start ? end : undefined);
+}
+
 describe("Settings → Engines → setup cards", () => {
   it.each([true, false])("keeps account creation inside its provider card (authenticated: %s)", (authenticated) => {
     vi.stubGlobal("window", {});
@@ -231,13 +239,13 @@ describe("Settings → Engines → setup cards", () => {
       snapshot, models: { default: "gpt-5", options: [] },
     });
     fixture.instances = [openai({ state: "unavailable", reason: "No API key" })];
-    const before = renderToStaticMarkup(createElement(EnginesSettings));
+    const before = enginesList(renderToStaticMarkup(createElement(EnginesSettings)));
     expect(before).toContain("OpenAI needs an API key");
     expect(before).toContain("Add the key");
     expect(before).not.toContain("Change key");
 
     fixture.instances = [openai({ state: "available", authenticated: true, version: null })];
-    const saved = renderToStaticMarkup(createElement(EnginesSettings));
+    const saved = enginesList(renderToStaticMarkup(createElement(EnginesSettings)));
     expect(saved).toContain('data-engine-card="openai"');
     expect(saved).toContain('data-engine-setup-api-key="configured"');
     expect(saved).toContain("OpenAI uses your API key");
@@ -246,14 +254,14 @@ describe("Settings → Engines → setup cards", () => {
 
     // A remote client cannot reach this server's key settings.
     vi.stubGlobal("window", { ogb: { remoteClient: { active: true } } });
-    const remote = renderToStaticMarkup(createElement(EnginesSettings));
-    expect(remote).toContain("open Settings &gt; Models and accounts on the computer running Sagax");
+    const remote = enginesList(renderToStaticMarkup(createElement(EnginesSettings)));
+    expect(remote).toContain("open Settings &gt; Models and voice on the computer running Sagax");
     expect(remote).not.toContain("Change key");
 
     // A Company-managed key is not the person's to change.
     vi.stubGlobal("window", {});
     fixture.instances = [{ ...openai({ state: "available", authenticated: true, version: null }), managed: { organizationId: "org", organizationName: "Acme" } }];
-    expect(renderToStaticMarkup(createElement(EnginesSettings))).not.toContain("Change key");
+    expect(enginesList(renderToStaticMarkup(createElement(EnginesSettings)))).not.toContain("Change key");
   });
 });
 
