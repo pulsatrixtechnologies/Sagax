@@ -71,8 +71,8 @@ const decrypt = (data) => String(data).replace(/^enc:/, "");
 
 test("cloud folders are refused, Application Support is not", () => {
   assert.equal(cloudFolderReason("/Users/jc/Library/Mobile Documents/com~apple~CloudDocs/x"), "iCloud Drive");
-  assert.equal(cloudFolderReason("/Users/jc/Library/CloudStorage/OneDrive-GOX/x"), "a cloud storage folder");
-  assert.equal(cloudFolderReason("C:\\Users\\jc\\OneDrive - GOX\\x"), "OneDrive");
+  assert.equal(cloudFolderReason("/Users/jc/Library/CloudStorage/OneDrive-Example/x"), "a cloud storage folder");
+  assert.equal(cloudFolderReason("C:\\Users\\jc\\OneDrive - Example\\x"), "OneDrive");
   assert.equal(cloudFolderReason("/Users/jc/Library/Application Support/sagax/org-memory/vault"), null);
 });
 

@@ -108,7 +108,7 @@ describe("channel visibility", () => {
 
 describe("viewer id by principal", () => {
   it("uses the session principal", () => {
-    expect(channelViewerId({ kind: "session", session: { id: "s1", email: "z@gox.ca", principalId: "pr_11111111-1111-4111-8111-111111111111" } }))
+    expect(channelViewerId({ kind: "session", session: { id: "s1", email: "z@example.com", principalId: "pr_11111111-1111-4111-8111-111111111111" } }))
       .toBe("pr_11111111-1111-4111-8111-111111111111");
   });
   it("gives a session without a principal an id that sees no channel", () => {

@@ -114,7 +114,7 @@ test("the bridge publishes names, falls back for an older server, and probes aga
   await new Promise(resolve => org.listen(0, "127.0.0.1", resolve));
   const origin = `http://127.0.0.1:${org.address().port}`;
   const bridge = createDesktopBridge({
-    environment: () => ({ id: "org", name: "GOX", origin }), fetch: globalThis.fetch, cookieHeader: async () => "",
+    environment: () => ({ id: "org", name: "Example", origin }), fetch: globalThis.fetch, cookieHeader: async () => "",
     home: os.tmpdir(), attachmentsDir: path.join(os.tmpdir(), "omb-bridge-models"), activityFile: path.join(os.tmpdir(), `omb-bridge-models-${process.pid}.jsonl`),
     WebSocketImpl: null, retryMs: 50, localModelFreshMs: 300,
   });

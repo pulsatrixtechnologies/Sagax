@@ -4,7 +4,7 @@ metadata:
   name: sagax-sandboxd
   namespace: {{ .Values.systemNamespace | quote }}
   labels:
-    {{- include "sagax-sandboxes.labels" . | nindent 4 }}
+    {{- include "sandboxes.labels" . | nindent 4 }}
     app.kubernetes.io/name: sagax-sandboxd
 automountServiceAccountToken: true
 ---
@@ -15,7 +15,7 @@ metadata:
   name: sagax-sandboxd
   namespace: {{ .Values.sandboxNamespace | quote }}
   labels:
-    {{- include "sagax-sandboxes.labels" . | nindent 4 }}
+    {{- include "sandboxes.labels" . | nindent 4 }}
 rules:
   - apiGroups: [""]
     resources: ["pods"]
@@ -39,7 +39,7 @@ metadata:
   name: sagax-sandboxd
   namespace: {{ .Values.sandboxNamespace | quote }}
   labels:
-    {{- include "sagax-sandboxes.labels" . | nindent 4 }}
+    {{- include "sandboxes.labels" . | nindent 4 }}
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
@@ -55,7 +55,7 @@ metadata:
   name: sagax-sandbox-warmer
   namespace: {{ .Values.systemNamespace | quote }}
   labels:
-    {{- include "sagax-sandboxes.labels" . | nindent 4 }}
+    {{- include "sandboxes.labels" . | nindent 4 }}
 automountServiceAccountToken: false
 ---
 apiVersion: rbac.authorization.k8s.io/v1
@@ -64,7 +64,7 @@ metadata:
   name: sagax-sandbox-warmer
   namespace: {{ .Values.systemNamespace | quote }}
   labels:
-    {{- include "sagax-sandboxes.labels" . | nindent 4 }}
+    {{- include "sandboxes.labels" . | nindent 4 }}
 rules:
   - apiGroups: ["apps"]
     resources: ["deployments/scale"]
@@ -77,7 +77,7 @@ metadata:
   name: sagax-sandbox-warmer
   namespace: {{ .Values.systemNamespace | quote }}
   labels:
-    {{- include "sagax-sandboxes.labels" . | nindent 4 }}
+    {{- include "sandboxes.labels" . | nindent 4 }}
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
@@ -93,7 +93,7 @@ kind: ClusterRoleBinding
 metadata:
   name: sagax-named-admins
   labels:
-    {{- include "sagax-sandboxes.labels" . | nindent 4 }}
+    {{- include "sandboxes.labels" . | nindent 4 }}
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole

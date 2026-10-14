@@ -152,7 +152,7 @@ them, startup logs `push: APNs on (...)`.
 
 ## On the production VM (Perspicax infra)
 
-The `pulsabot` container already reads its secrets from
+The Sagax container already reads its secrets from
 `<INSTALL_ROOT>/secrets/sagax` (mounted at `/run/secrets/sagax`, files
 `root:10002` mode 0440, the container has group 10002), filled by
 `infra/scripts/vm-bootstrap.sh` from the Key Vault. The APNs key follows the

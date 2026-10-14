@@ -40,7 +40,7 @@ function inkColor(color: string | undefined): MausColor {
   return color && mausInk(color) ? (color as MausColor) : "blue";
 }
 
-function avatarBot(party: ExchangeParty, bots?: readonly Bot[]): { name: string; color: MausColor } & Partial<Bot> {
+export function avatarBot(party: ExchangeParty, bots?: readonly Bot[]): { name: string; color: MausColor } & Partial<Bot> {
   const found = party.id ? bots?.find((bot) => bot.id === party.id) : undefined;
   if (found) return found;
   return { name: party.name, color: inkColor(party.color) };
@@ -61,7 +61,7 @@ export function TranscriptDate({ at }: { at: number }) {
   );
 }
 
-function ExchangeSheet({ run, bots, showToolCalls, onClose }: { run: ExchangeRun; bots?: readonly Bot[]; showToolCalls: boolean; onClose: () => void }) {
+export function ExchangeSheet({ run, bots, showToolCalls, onClose }: { run: ExchangeRun; bots?: readonly Bot[]; showToolCalls: boolean; onClose: () => void }) {
   const column = useContext(ExchangeColumnContext);
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {

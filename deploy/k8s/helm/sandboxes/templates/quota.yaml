@@ -1,10 +1,10 @@
 apiVersion: v1
 kind: ResourceQuota
 metadata:
-  name: sagax-sandboxes
+  name: sandboxes
   namespace: {{ .Values.sandboxNamespace | quote }}
   labels:
-    {{- include "sagax-sandboxes.labels" . | nindent 4 }}
+    {{- include "sandboxes.labels" . | nindent 4 }}
 spec:
   hard:
     pods: {{ .Values.quota.pods | quote }}
@@ -16,10 +16,10 @@ spec:
 apiVersion: v1
 kind: LimitRange
 metadata:
-  name: sagax-sandboxes
+  name: sandboxes
   namespace: {{ .Values.sandboxNamespace | quote }}
   labels:
-    {{- include "sagax-sandboxes.labels" . | nindent 4 }}
+    {{- include "sandboxes.labels" . | nindent 4 }}
 spec:
   limits:
     - type: Container

@@ -1,23 +1,23 @@
 # Backup, restore, and the sandbox drill
 
 Workspaces are the per-person volumes (`SAGAX_SANDBOX_DISK_MB`, default
-2048). On the pool they are PersistentVolumeClaims in `<RESOURCE_GROUP>`,
+2048). On the pool they are PersistentVolumeClaims in `sandboxes`,
 reclaim `Retain`, on a disk class that detaches. The Docker volumes on
 the production VM stay the copy of record until that person has been cut over
 and one off-site backup of the PVC has succeeded.
 
 ## What is backed up
 
-Velero `Schedule` `<RESOURCE_GROUP>-daily` (`deploy/k8s/sandboxes/base/velero-schedule.yaml`):
+Velero `Schedule` `sandboxes-daily` (`deploy/k8s/sandboxes/base/velero-schedule.yaml`):
 
 - Cron `0 11 * * *` UTC (07:00 EDT, 06:00 EST), before the warm window.
-- The `<RESOURCE_GROUP>` namespace, volume snapshots included.
+- The `sandboxes` namespace, volume snapshots included.
 - TTL 720 hours (30 days).
-- Storage location `<RESOURCE_GROUP>`. On Azure that is a Blob container
-  (`adapters/azure/backup-location.yaml`) in `<RESOURCE_GROUP>`, which is
-  not the node disk. The storage account name is `REPLACE_STORAGE_ACCOUNT`
-  until the change record fills it. The credential secret `velero-azure`
-  is created outside git. source de vérité = goxcloud
+- Storage location `sandboxes`. On Azure that is a Blob container
+  (`adapters/azure/backup-location.yaml`), which is not the node disk.
+  The storage account name is `REPLACE_STORAGE_ACCOUNT` until the change
+  record fills it. The credential secret `velero-azure` is created
+  outside git.
 
 The production VM's existing disk backup is unchanged by this document. Do not
 turn it off as part of the sandbox cutover.
@@ -40,11 +40,11 @@ missed it.
    workspace. Open an incident (`incident-response.md`) if the volume
    was deleted or the backup is stale.
 2. Find the last successful backup:
-   `kubectl -n velero get backup -l velero.io/schedule-name=<RESOURCE_GROUP>-daily`.
+   `kubectl -n velero get backup -l velero.io/schedule-name=sandboxes-daily`.
 3. Restore only that claim into a new namespace first
-   (`<RESOURCE_GROUP>-drill`), not over the live claim.
+   (`sandboxes-drill`), not over the live claim.
 4. If the drill copy mounts and the file list matches the record, restore
-   the claim into `<RESOURCE_GROUP>` under the person's volume name while
+   the claim into `sandboxes` under the person's volume name while
    their sandbox is stopped.
 5. Their tools are unavailable from the stop until the pod is Ready.
    Estimate **15–30 minutes**. Everyone else stays up.
@@ -52,13 +52,13 @@ missed it.
 ## Drill
 
 Run before step 10 of the cutover, and once a quarter after that. The
-drill namespace is `<RESOURCE_GROUP>-drill`. Delete it at the end. Do not
+drill namespace is `sandboxes-drill`. Delete it at the end. Do not
 restore over the production Docker volumes.
 
 1. Confirm `SagaxSandboxBackupStale` is not firing. The alert exists only
    after Velero has published one success timestamp; the drill is what
    proves the first backup, and the alert covers the ones after it.
-2. Restore the latest backup into `<RESOURCE_GROUP>-drill`.
+2. Restore the latest backup into `sandboxes-drill`.
 3. Start one pod from `sagax-sandbox-pod-template` against a restored
    claim. `GET` the provisioner `/healthz`. List the workspace. Write
    one file, read it back, delete the pod.

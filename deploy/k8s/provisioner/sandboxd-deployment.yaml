@@ -6,7 +6,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: sagax-sandboxd
-  namespace: sagax-sandboxes
+  namespace: sandboxes
   labels:
     app: sagax-sandboxd
 spec:
@@ -98,7 +98,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: sagax-sandboxd
-  namespace: sagax-sandboxes
+  namespace: sandboxes
 spec:
   type: ClusterIP
   selector:

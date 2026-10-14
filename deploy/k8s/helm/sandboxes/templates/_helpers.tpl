@@ -1,11 +1,11 @@
-{{- define "sagax-sandboxes.labels" -}}
-app.kubernetes.io/name: sagax-sandboxes
+{{- define "sandboxes.labels" -}}
+app.kubernetes.io/name: sandboxes
 app.kubernetes.io/instance: {{ .Release.Name }}
 app.kubernetes.io/managed-by: {{ .Release.Service }}
 app.kubernetes.io/part-of: sagax
 {{- end -}}
 
-{{- define "sagax-sandboxes.storage.assert" -}}
+{{- define "sandboxes.storage.assert" -}}
 {{- if not .Values.storage.encrypted -}}
 {{- fail "storage.encrypted must be true (encryption at rest)" -}}
 {{- end -}}
@@ -18,7 +18,7 @@ app.kubernetes.io/part-of: sagax
 {{- end -}}
 {{- end -}}
 
-{{- define "sagax-sandboxes.backup.assert" -}}
+{{- define "sandboxes.backup.assert" -}}
 {{- if .Values.backup.enabled -}}
 {{- if eq .Values.backup.productionProvider .Values.backup.destination.provider -}}
 {{- fail "backup.destination.provider must differ from backup.productionProvider (offsite copy)" -}}
@@ -29,7 +29,7 @@ app.kubernetes.io/part-of: sagax
 {{- end -}}
 {{- end -}}
 
-{{- define "sagax-sandboxes.images.assert" -}}
+{{- define "sandboxes.images.assert" -}}
 {{- if not (has .Values.warmNode.pauseImage .Values.admission.allowedImages) -}}
 {{- fail "warmNode.pauseImage must be listed in admission.allowedImages" -}}
 {{- end -}}

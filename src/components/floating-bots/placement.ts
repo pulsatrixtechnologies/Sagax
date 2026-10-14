@@ -139,3 +139,26 @@ export function sideWithin({ side, body, homeBody: home, size, limits }: {
   if (!now.y && fits({ ...side, below: !side.below }).y) force.below = !side.below;
   return force;
 }
+
+/** The pill under the character's feet (the quick input, or the call's): its height and its gap to the character, px. */
+export const PILL = { height: 36, gap: 2 } as const;
+
+export type PillSide = "below" | "above";
+
+/**
+ * Where the pill goes: under the character's feet, unless that would reach
+ * past the bottom of its display's work area (under the macOS Dock or the
+ * Windows taskbar); then over its head, when the work area has room there.
+ * Main keeps the whole cluster on screen whichever side it lands on.
+ */
+export function pillSide({ body, workArea, pill = PILL }: { body: Rect; workArea: Rect; pill?: { height: number; gap: number } }): PillSide {
+  const below = body.y + body.height + pill.gap + pill.height;
+  if (below <= workArea.y + workArea.height) return "below";
+  const above = body.y - pill.gap - pill.height;
+  return above >= workArea.y ? "above" : "below";
+}
+
+/** The pill's top in the stage's coordinates, for a side. */
+export function pillTop(side: PillSide, owl: OwlBox, pill = PILL): number {
+  return side === "above" ? owl.top - pill.gap - pill.height : owl.top + owl.size + pill.gap;
+}

@@ -2,6 +2,19 @@
 // Flag off: the caller keeps today's steer-or-queue path. Flag on: a new
 // utterance replaces the in-flight turn and never enters the steer queue.
 
+/** The server runs the full-duplex call path (replace, opener) only when
+ * SAGAX_VOICE_FULL_DUPLEX=1. Off (the default), a duplex send takes the
+ * steer path every call had before 0.5.0. */
+export function voiceFullDuplexEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
+  return env.SAGAX_VOICE_FULL_DUPLEX === "1";
+}
+
+/** A call mark without the page's duplex and speculative flags. */
+export function withoutDuplexMarks<T extends { duplex?: boolean; speculative?: boolean }>(meta: T): T {
+  const { duplex: _duplex, speculative: _speculative, ...rest } = meta;
+  return rest as T;
+}
+
 export type DuplexAdmit =
   | { action: "start" }
   | { action: "steer" }

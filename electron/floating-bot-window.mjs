@@ -112,6 +112,74 @@ export function clampBodyToDisplays(bounds, body, workAreas) {
 }
 
 /**
+ * The box that must stay on screen: the character's own box, grown to take
+ * in what hangs on it (the quick input pill under or over its feet, the
+ * call's pill), both in window coordinates. Without `keep` it is the body.
+ */
+export function clusterBox(body, keep) {
+  if (!keep) return body;
+  const x = Math.min(body.x, keep.x);
+  const y = Math.min(body.y, keep.y);
+  return {
+    x,
+    y,
+    width: Math.max(body.x + body.width, keep.x + keep.width) - x,
+    height: Math.max(body.y + body.height, keep.y + keep.height) - y,
+  };
+}
+
+/**
+ * Keeps the whole floating cluster (the character and the pill hanging on it)
+ * inside one display's work area: never under the macOS Dock, the Windows
+ * taskbar, a Linux panel Electron reports in `workArea`, or the menu bar.
+ * When the union is taller or wider than every work area, the character stays
+ * inside and the pill may hang out.
+ */
+export function clampClusterToDisplays(bounds, body, keep, workAreas) {
+  const cluster = clusterBox(body, keep);
+  const fits = workAreas.some((area) => cluster.width <= area.width && cluster.height <= area.height);
+  return clampBodyToDisplays(bounds, fits ? cluster : body, workAreas);
+}
+
+/**
+ * Identifies a display independently of its resolution and scale: Electron's
+ * display id and the origin of its frame (DIP). A scale or resolution change
+ * on the same monitor keeps the same id and origin; the setup signature
+ * (which includes the size) still changes.
+ */
+export function displayIdentity(display) {
+  const b = display.bounds ?? display.workArea;
+  const id = isFiniteNumber(display.id) ? Math.round(display.id) : 0;
+  return `${id}@${Math.round(b.x)},${Math.round(b.y)}`;
+}
+
+export const DISPLAY_KEY_PREFIX = "display:";
+/** Map a leaked `display:<frame>` key (an earlier mixed table) onto today's identity, or null. */
+export function displayIdentityFromLegacyKey(key, displays) {
+  const raw = key.startsWith(DISPLAY_KEY_PREFIX) ? key.slice(DISPLAY_KEY_PREFIX.length) : key;
+  if (/^\d+@-?\d+,-?\d+$/.test(raw)) return raw;
+  const match = /^(-?\d+),(-?\d+),(\d+)x(\d+)$/.exec(raw);
+  if (!match) return null;
+  const x = Number(match[1]);
+  const y = Number(match[2]);
+  const width = Number(match[3]);
+  const height = Number(match[4]);
+  const found = displays.find((d) => {
+    const b = d.bounds ?? d.workArea;
+    return b.x === x && b.y === y && b.width === width && b.height === height;
+  });
+  return found ? displayIdentity(found) : null;
+}
+
+export function displayKeyAt(point, displays) {
+  const own = displays.find((d) => {
+    const b = d.bounds ?? d.workArea;
+    return point.x >= b.x && point.x < b.x + b.width && point.y >= b.y && point.y < b.y + b.height;
+  });
+  return own ? `${DISPLAY_KEY_PREFIX}${displayIdentity(own)}` : null;
+}
+
+/**
  * macOS (with "Displays have separate Spaces", its default) snaps a window
  * back when more than about a fifth of it reaches onto another display while
  * most of it is on the first: the move is undone a moment later. So there
@@ -565,22 +633,78 @@ export function sanitizeFloatingEvent(value) {
 }
 
 /**
- * Positions on disk: per display setup, per bot, a bottom-right corner. With
- * `v: 2` it is the character's own box's; without, an older save of the
- * window's corner.
+ * Positions on disk (`floating-bot-positions.json`): per display setup, per
+ * bot, a bottom-right corner. With `v: 2` it is the character's own box's;
+ * without, an older save of the window's corner. The first 32 keys only,
+ * same as older builds (`slice(0, 32)`): per-display spots never live here.
  */
+export const SETUP_POSITIONS_MAX = 32;
 export function sanitizePositions(value) {
   const clean = {};
   if (!value || typeof value !== "object" || Array.isArray(value)) return clean;
-  for (const [signature, bots] of Object.entries(value).slice(0, 32)) {
-    if (typeof signature !== "string" || signature.length > 512 || !bots || typeof bots !== "object") continue;
-    const entry = {};
-    for (const [botId, spot] of Object.entries(bots).slice(0, 64)) {
-      if (isBotId(botId) && spot && isFiniteNumber(spot.x) && isFiniteNumber(spot.y)) entry[botId] = { x: spot.x, y: spot.y, ...(spot.v === 2 ? { v: 2 } : {}) };
-    }
-    clean[signature] = entry;
+  for (const [signature, bots] of Object.entries(value).slice(0, SETUP_POSITIONS_MAX)) {
+    if (typeof signature !== "string" || signature.length > 512 || signature.startsWith(DISPLAY_KEY_PREFIX) || !bots || typeof bots !== "object") continue;
+    const entry = sanitizeBotSpots(bots, { keepTime: false });
+    if (Object.keys(entry).length) clean[signature] = entry;
   }
   return clean;
+}
+
+/**
+ * Pull `display:…` keys out of a mixed setups table (a build that wrote them
+ * in the same file). The leftover setups table is what an older build reads.
+ */
+export function purgeDisplayKeys(value) {
+  const setups = {};
+  const leaked = {};
+  if (!value || typeof value !== "object" || Array.isArray(value)) return { setups, leaked };
+  for (const [key, bots] of Object.entries(value)) {
+    if (typeof key === "string" && key.startsWith(DISPLAY_KEY_PREFIX)) leaked[key.slice(DISPLAY_KEY_PREFIX.length)] = bots;
+    else setups[key] = bots;
+  }
+  return { setups, leaked };
+}
+
+function sanitizeBotSpots(bots, { keepTime }) {
+  const entry = {};
+  if (!bots || typeof bots !== "object") return entry;
+  for (const [botId, spot] of Object.entries(bots).slice(0, 64)) {
+    if (isBotId(botId) && spot && isFiniteNumber(spot.x) && isFiniteNumber(spot.y)) {
+      entry[botId] = { x: spot.x, y: spot.y, ...(spot.v === 2 ? { v: 2 } : {}), ...(keepTime && isFiniteNumber(spot.t) && spot.t > 0 ? { t: spot.t } : {}) };
+    }
+  }
+  return entry;
+}
+
+/** Per-display spots (`floating-bot-display-spots.json`), keyed by `displayIdentity`. */
+export const DISPLAY_SPOTS_MAX = 64;
+export function sanitizeDisplaySpots(value) {
+  const clean = {};
+  if (!value || typeof value !== "object" || Array.isArray(value)) return clean;
+  for (const [key, bots] of Object.entries(value).slice(0, DISPLAY_SPOTS_MAX)) {
+    if (typeof key !== "string" || key.length > 128 || !bots || typeof bots !== "object") continue;
+    const identity = key.startsWith(DISPLAY_KEY_PREFIX) ? key.slice(DISPLAY_KEY_PREFIX.length) : key;
+    if (!/^\d+@-?\d+,-?\d+$/.test(identity)) continue;
+    const entry = sanitizeBotSpots(bots, { keepTime: true });
+    if (Object.keys(entry).length) clean[identity] = entry;
+  }
+  return clean;
+}
+
+/**
+ * The saved spot for a bot: the one kept for this exact display setup, else
+ * the latest one kept on a display that is still connected (same id and
+ * origin; resolution and scale may have changed). Null when neither is known.
+ */
+export function savedSpotFor(positions, displaySpots, botId, displays) {
+  const exact = positions[displaySignature(displays)]?.[botId];
+  if (exact) return exact;
+  let best = null;
+  for (const display of displays) {
+    const spot = displaySpots[displayIdentity(display)]?.[botId];
+    if (spot && (!best || (spot.t ?? 0) > (best.t ?? 0))) best = spot;
+  }
+  return best;
 }
 
 /* -------------------------------------------------------------- controller */
@@ -595,6 +719,8 @@ export function sanitizePositions(value) {
  * @param {string} deps.preload             path to floating-bot-preload.cjs
  * @param {() => unknown} [deps.readPositions]
  * @param {(positions: Record<string, Record<string, {x:number,y:number}>>) => void} [deps.writePositions]
+ * @param {() => unknown} [deps.readDisplaySpots]
+ * @param {(spots: Record<string, Record<string, {x:number,y:number,v?:number,t?:number}>>) => void} [deps.writeDisplaySpots]
  * @param {(event: any) => boolean} [deps.isTrustedMain]  the sender is this app's own UI (local, or bundled on an organization server)
  * @param {() => Promise<unknown>} [deps.whenReady]  resolves once Electron's app is ready (the screen module needs it)
  * @param {typeof import("electron").Menu} [deps.Menu]  native right-click menu (required for the mascot's menu to pop)
@@ -626,14 +752,54 @@ export function createFloatingBotWindows(deps) {
     log(`floating bots: ${line}`);
   };
   let positions = null;
+  let displaySpots = null;
   let silent = false;
+
+  const persistSetups = (next) => {
+    positions = next;
+    try {
+      deps.writePositions?.(next);
+    } catch {
+      /* the spot is only a convenience */
+    }
+  };
+  const persistDisplaySpots = (next) => {
+    displaySpots = next;
+    try {
+      deps.writeDisplaySpots?.(next);
+    } catch {
+      /* the spot is only a convenience */
+    }
+  };
+
+  const savedDisplaySpots = () => {
+    if (displaySpots) return displaySpots;
+    try {
+      displaySpots = sanitizeDisplaySpots(deps.readDisplaySpots?.());
+    } catch {
+      displaySpots = {};
+    }
+    return displaySpots;
+  };
 
   const savedPositions = () => {
     if (positions) return positions;
+    let raw = {};
     try {
-      positions = sanitizePositions(deps.readPositions?.());
+      raw = deps.readPositions?.() ?? {};
     } catch {
-      positions = {};
+      raw = {};
+    }
+    const { setups, leaked } = purgeDisplayKeys(raw);
+    positions = sanitizePositions(setups);
+    if (Object.keys(leaked).length) {
+      const mapped = {};
+      for (const [key, bots] of Object.entries(leaked)) {
+        const identity = displayIdentityFromLegacyKey(key, screen.getAllDisplays());
+        if (identity) mapped[identity] = bots;
+      }
+      persistDisplaySpots(sanitizeDisplaySpots({ ...savedDisplaySpots(), ...mapped }));
+      persistSetups(positions);
     }
     return positions;
   };
@@ -667,15 +833,20 @@ export function createFloatingBotWindows(deps) {
     const { width, height } = entry.win.getBounds();
     return width === FLOAT_HOME.width && height === FLOAT_HOME.height ? FLOAT_BODY : null;
   };
-  /** A window spot, moved so the character is fully on a screen (the whole window when its box is not known yet). */
+  /** A window spot, moved so the character and its pill are fully on a screen (the whole window when its box is not known yet). */
   const clampFor = (entry, bounds) => {
-    const body = entry ? bodyOf(entry) : null;
-    if (!body) return clampToDisplays(bounds, workAreas());
-    const placed = clampBodyToDisplays(bounds, body, workAreas());
+    const own = entry ? bodyOf(entry) : null;
+    if (!own) return clampToDisplays(bounds, workAreas());
+    const keep = entry.keep ?? null;
+    const areas = workAreas();
+    const placed = clampClusterToDisplays(bounds, own, keep, areas);
     if (!seams) return placed;
     // macOS undoes a move that puts too much of the window on a neighbouring display
+    const cluster = clusterBox(own, keep);
+    const fits = areas.some((area) => cluster.width <= area.width && cluster.height <= area.height);
+    const box = fits ? cluster : own;
     const displays = screen.getAllDisplays().map((display) => display.bounds ?? display.workArea);
-    return clampBodyToDisplays(keepOffNeighbours(placed, body, displays), body, workAreas());
+    return clampBodyToDisplays(keepOffNeighbours(placed, box, displays), box, areas);
   };
   /** The id a window speaks for now (a switch may have given it another bot). */
   const idOf = (entry) => {
@@ -692,17 +863,34 @@ export function createFloatingBotWindows(deps) {
     const all = savedPositions();
     const key = signature();
     // the character's own corner, whatever the balloon and the window's room do
-    all[key] = { ...all[key], [botId]: { x: x + body.x + body.width, y: y + body.y + body.height, v: 2 } };
-    try {
-      deps.writePositions?.(all);
-    } catch {
-      /* the spot is only a convenience */
+    const spot = { x: x + body.x + body.width, y: y + body.y + body.height, v: 2 };
+    const next = { ...all, [key]: { ...all[key], [botId]: spot } };
+    // keep 32 setup keys: an older build reads slice(0, 32) in insertion order
+    const setupKeys = Object.keys(next);
+    if (setupKeys.length > SETUP_POSITIONS_MAX) {
+      const drop = setupKeys.find((name) => name !== key);
+      if (drop) delete next[drop];
+    }
+    persistSetups(next);
+    // and for the display it stands on (a separate table: older builds never see it)
+    const own = displayKeyAt({ x: x + body.x + body.width / 2, y: y + body.y + body.height / 2 }, screen.getAllDisplays());
+    if (own) {
+      const identity = own.slice(DISPLAY_KEY_PREFIX.length);
+      const spots = savedDisplaySpots();
+      const nextSpots = { ...spots, [identity]: { ...spots[identity], [botId]: { ...spot, t: Date.now() } } };
+      const spotKeys = Object.keys(nextSpots);
+      if (spotKeys.length > DISPLAY_SPOTS_MAX) {
+        const drop = spotKeys.find((name) => name !== identity);
+        if (drop) delete nextSpots[drop];
+      }
+      persistDisplaySpots(nextSpots);
     }
   };
 
   const startBounds = (botId) => {
-    const saved = savedPositions()[signature()]?.[botId];
-    // the spot kept for this display setup, exactly (a setup that changed starts from the default spot)
+    const saved = savedSpotFor(savedPositions(), savedDisplaySpots(), botId, screen.getAllDisplays());
+    // the spot kept for this display setup, exactly, else the last one on a display still there
+    // (a setup with none of its displays starts from the default spot)
     const bounds = saved
       ? saved.v === 2
         ? { x: saved.x - FLOAT_BODY.x - FLOAT_BODY.width, y: saved.y - FLOAT_BODY.y - FLOAT_BODY.height, ...FLOAT_HOME }
@@ -748,7 +936,7 @@ export function createFloatingBotWindows(deps) {
     const made = created.getBounds();
     if (made.x !== start.x || made.y !== start.y) created.setBounds(start);
     // interactive and focusable as last set, so a repeated request costs nothing (and never flickers)
-    const entry = { win: created, snapshot: existing?.snapshot ?? pending.get(botId) ?? null, onTop: alwaysOnTop, autopilot: false, interactive: !clickThrough, focusable: false, body: null };
+    const entry = { win: created, snapshot: existing?.snapshot ?? pending.get(botId) ?? null, onTop: alwaysOnTop, autopilot: false, interactive: !clickThrough, focusable: false, body: null, keep: null };
     pending.delete(botId);
     floats.set(botId, entry);
     applyOnTop(created, alwaysOnTop);
@@ -984,7 +1172,9 @@ export function createFloatingBotWindows(deps) {
       };
       // the character keeps its distance to that corner until the page reports where it really is
       const body = bodyOf(found.entry);
-      found.entry.body = body ? bodyAfterResize(body, bounds, sized, { x: fromLeft ? "left" : "right", y: fromTop ? "top" : "bottom" }) : null;
+      const corner = { x: fromLeft ? "left" : "right", y: fromTop ? "top" : "bottom" };
+      found.entry.body = body ? bodyAfterResize(body, bounds, sized, corner) : null;
+      found.entry.keep = found.entry.keep ? bodyAfterResize(found.entry.keep, bounds, sized, corner) : null;
       // a drag's path was the window's old frame: the next step starts from this one
       found.entry.drag = null;
       const next = clampFor(found.entry, sized);
@@ -1010,6 +1200,8 @@ export function createFloatingBotWindows(deps) {
       // where it was drawn just before, as the page measured it (else what main last heard)
       const was = sanitizeBody(frame.from, bounds) ?? bodyOf(entry) ?? body;
       entry.body = body;
+      // the pill moves with the new layout: the page reports it again
+      entry.keep = null;
       entry.drag = null;
       const next = clampFor(entry, { x: bounds.x + was.x - body.x, y: bounds.y + was.y - body.y, ...size });
       place(entry.win, next);
@@ -1142,8 +1334,17 @@ export function createFloatingBotWindows(deps) {
     "floating-bots:body": (event, value) => {
       const found = senderFloat(event);
       if (!found) return;
-      const body = sanitizeBody(value, found.entry.win.getBounds());
-      if (body) found.entry.body = body;
+      const bounds = found.entry.win.getBounds();
+      const body = sanitizeBody(value, bounds);
+      if (!body) return;
+      found.entry.body = body;
+      // what hangs on the character (the input pill): kept on screen with it, never under the Dock or taskbar
+      found.entry.keep = value && typeof value === "object" ? sanitizeBody(value.keep, bounds) : null;
+      // a pill that just opened past the work area's edge brings the cluster back in (never mid-drag or mid-flight)
+      if (found.entry.keep && !found.entry.autopilot && !found.entry.drag) {
+        const next = clampFor(found.entry, bounds);
+        if (next.x !== bounds.x || next.y !== bounds.y) place(found.entry.win, next);
+      }
     },
     "floating-bots:autopilot": (event, on) => {
       const found = senderFloat(event);
@@ -1154,8 +1355,11 @@ export function createFloatingBotWindows(deps) {
     "floating-bots:moved": (event) => {
       const found = senderFloat(event);
       if (!found) return;
-      // the drag is over: the next one starts from where the window stands
+      // the drag is over: the next one starts from where the window stands, the whole cluster on screen
       found.entry.drag = null;
+      const bounds = found.entry.win.getBounds();
+      const next = clampFor(found.entry, bounds);
+      if (next.x !== bounds.x || next.y !== bounds.y) place(found.entry.win, next);
       clearTimeout(found.entry.rememberTimer);
       remember(found.botId);
     },

@@ -8,8 +8,8 @@ const require = createRequire(import.meta.url);
 const environments = require("./environments.cjs");
 
 const LOCAL = "http://127.0.0.1:48993";
-const VPS = "https://viernes.tail1.ts.net:9444";
-const OTHER = "https://other.tail1.ts.net:9444";
+const VPS = "https://host.example-tailnet.ts.net:9444";
+const OTHER = "https://other.example-tailnet.ts.net:9444";
 const mainSource = readFileSync(new URL("./main.mjs", import.meta.url), "utf8").replace(/\r\n/g, "\n");
 
 // The real appPermissionHandlers (the ones main.mjs installs) fed by the real
@@ -62,8 +62,8 @@ test("a remote page can never read the clipboard or gain another permission", ()
 
 test("only the exact active origin writes: another server, port, scheme, host, blank or unknown origin is denied", () => {
   const h = harness(viewing("vps"));
-  for (const url of [OTHER, "https://viernes.tail1.ts.net:9445/", "https://viernes.tail1.ts.net/", "http://viernes.tail1.ts.net:9444/",
-    "https://viernes.tail1.ts.net.evil.test:9444/", "about:blank", "data:text/html,x", "", "not a url", "http://127.0.0.1:1/"]) {
+  for (const url of [OTHER, "https://host.example-tailnet.ts.net:9445/", "https://host.example-tailnet.ts.net/", "http://host.example-tailnet.ts.net:9444/",
+    "https://host.example-tailnet.ts.net.evil.test:9444/", "about:blank", "data:text/html,x", "", "not a url", "http://127.0.0.1:1/"]) {
     assert.equal(h.request("clipboard-sanitized-write", url), false, url);
     assert.equal(h.check("clipboard-sanitized-write", url), false, url);
   }

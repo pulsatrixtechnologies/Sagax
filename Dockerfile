@@ -76,7 +76,7 @@ WORKDIR /app
 # own files so a code change does not reinstall the engines.
 #   ENGINE_SET      all (default). none and an empty value install nothing.
 #                   On 2026-10-12 a build that left this unset shipped
-#                   pulsa-bot-server:main-20004735 with engineSet none and
+#                   pulsa-bot-server:main-example1 with engineSet none and
 #                   installed []. open keeps redistributable engines; a list
 #                   of ids installs those. An empty --build-arg ENGINE_SET=
 #                   overrides this default, so SAGAX_REQUIRE_ENGINES=1 (also

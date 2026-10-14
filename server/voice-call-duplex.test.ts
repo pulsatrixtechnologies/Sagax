@@ -12,6 +12,8 @@ import {
   matchingVoiceSibling,
   pinVoiceInterrupt,
   waitForThreadIdle,
+  voiceFullDuplexEnabled,
+  withoutDuplexMarks,
 } from "./voice-call-duplex.ts";
 import {
   discardSteeredQueue,
@@ -110,6 +112,26 @@ describe("admitDuplexSend", () => {
     expect(admitDuplexSend({
       duplex: true, botBusy: false, stopping: false, queued: false, backgroundWork: true, newTopic: true, speculative: true,
     })).toEqual({ action: "start" });
+  });
+});
+
+describe("voiceFullDuplexEnabled", () => {
+  it("is off unless the server says SAGAX_VOICE_FULL_DUPLEX=1", () => {
+    expect(voiceFullDuplexEnabled({})).toBe(false);
+    expect(voiceFullDuplexEnabled({ SAGAX_VOICE_FULL_DUPLEX: "0" })).toBe(false);
+    expect(voiceFullDuplexEnabled({ SAGAX_VOICE_FULL_DUPLEX: "1" })).toBe(true);
+  });
+});
+
+describe("withoutDuplexMarks", () => {
+  it("drops duplex and speculative, keeps the rest", () => {
+    expect(withoutDuplexMarks({
+      callId: "call-0123456789",
+      duplex: true,
+      speculative: true,
+      utteranceId: "utt-1",
+      language: "fr",
+    })).toEqual({ callId: "call-0123456789", utteranceId: "utt-1", language: "fr" });
   });
 });
 

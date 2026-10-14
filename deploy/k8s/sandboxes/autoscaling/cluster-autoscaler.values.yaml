@@ -17,5 +17,5 @@ extraArgs:
 rbac:
   create: true
 # The adapter appends one entry: min:max:pool, with the pool labelled and
-# tainted sagax.pulsatrix.ca/pool=sandboxes.
+# tainted sagax.io/pool=sandboxes.
 autoscalingGroups: []

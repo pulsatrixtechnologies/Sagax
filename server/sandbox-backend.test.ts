@@ -111,7 +111,7 @@ describe("sandbox pool manifests", () => {
     const applied = [...overlay.resources, ...overlay.patches.map((patch) => patch.path)];
     expect(applied).not.toContain("karpenter.yaml");
     expect(applied.some((path) => path.includes("cluster-autoscaler"))).toBe(false);
-    expect(readFileSync(join(POOL, "adapters/azure/networkpolicy-gox.yaml"), "utf8")).toContain("192.0.2.10/32");
+    expect(readFileSync(join(POOL, "adapters/azure/networkpolicy-ingress.yaml"), "utf8")).toContain("192.0.2.10/32");
     const portable = documents(join(POOL, "autoscaling/karpenter-nodepool.yaml"))[0] as {
       spec: { template: { spec: { nodeClassRef: { group: string }; taints: { key: string }[] } }; disruption: { consolidateAfter: string } };
     };
@@ -126,7 +126,7 @@ describe("sandbox pool manifests", () => {
     expect(pool.spec.template.spec.nodeClassRef).toMatchObject({ group: "karpenter.azure.com", kind: "AKSNodeClass" });
     expect(pool.spec.limits.cpu).toBe("4");
     expect(pool.spec.disruption.consolidateAfter).toBe("10m");
-    expect(portable.spec.template.spec.taints[0]!.key).toBe("sagax.pulsatrix.ca/pool");
+    expect(portable.spec.template.spec.taints[0]!.key).toBe("sagax.io/pool");
     const azureCa = parse(readFileSync(join(POOL, "adapters/azure/cluster-autoscaler.values.yaml"), "utf8")) as { cloudProvider: string; autoscalingGroups: { maxSize: number }[] };
     const genericCa = parse(readFileSync(join(POOL, "autoscaling/cluster-autoscaler.values.yaml"), "utf8")) as { cloudProvider: string };
     expect(genericCa.cloudProvider).toBe("");
@@ -201,7 +201,7 @@ describe("sandbox pool runbooks", () => {
       expect(map).toContain(control);
     }
     expect(text("docs/ops/sandboxes/change-management.md")).toContain("develop");
-    expect(text("docs/ops/sandboxes/backup-restore.md")).toContain("<RESOURCE_GROUP>-drill");
+    expect(text("docs/ops/sandboxes/backup-restore.md")).toContain("sandboxes-drill");
     expect(text("docs/ops/sandboxes/access-review.md")).toContain("CC6.1");
   });
 });

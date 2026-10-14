@@ -12,9 +12,10 @@ storage:
     networkAccessPolicy: DenyAll
 
 # AKS API server. Restrict this to the Sagax VM and operator networks.
+# Replace the CIDR with the cluster API address before apply.
 apiServer:
   cidrs:
-    - 10.215.0.1/32
+    - 10.0.0.1/32
   port: 443
 
 # Entra ID groups receive Azure RBAC. Do not also bind cluster-admin here.

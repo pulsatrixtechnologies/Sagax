@@ -25,7 +25,7 @@ function section(start, end) {
 
 function fixture({ response = 0, packaged = false, serverReady = true, logout = true } = {}) {
   let state = env.withEnvironment({ environments: [], activeId: "local" }, { origin: "https://hosted.example.test" }, () => "h1");
-  state = env.withServerMode(env.withEnvironment(state, { origin: ORG, name: "GOX", org: true }, () => "o1"), "o1");
+  state = env.withServerMode(env.withEnvironment(state, { origin: ORG, name: "Example", org: true }, () => "o1"), "o1");
   const calls = { navigated: [], persisted: [], fetched: [], cleared: [], closed: 0, relaunched: 0, dialogs: [], forgotten: [] };
   const context = vm.createContext({
     environmentsState: state,
@@ -65,7 +65,7 @@ test("while server mode is on, nothing switches to this computer or another serv
   context.switchEnvironment("h1");
   assert.deepEqual(calls.persisted, []);
   assert.deepEqual(calls.navigated, []);
-  assert.throws(() => context.requireNotServerMode(), /connected to GOX/);
+  assert.throws(() => context.requireNotServerMode(), /connected to Example/);
 });
 
 test("leaving asks first; Cancel changes nothing", async () => {
@@ -74,7 +74,7 @@ test("leaving asks first; Cancel changes nothing", async () => {
   assert.equal(calls.dialogs.length, 1);
   assert.match(calls.dialogs[0].detail, /nothing on this computer is changed/);
   // Settings > General > Server says Sign out; the confirmation says the same
-  assert.equal(calls.dialogs[0].message, "Sign out of GOX?");
+  assert.equal(calls.dialogs[0].message, "Sign out of Example?");
   assert.deepEqual([...calls.dialogs[0].buttons], ["Sign out", "Cancel"]);
   assert.deepEqual(calls.fetched, []);
   assert.equal(context.environmentsState.serverModeId, "o1");
@@ -123,7 +123,7 @@ test("in server mode the bundled page sets what this computer lends to that serv
   const localOrigin = require("./local-origin.cjs");
   const LOCAL_PAGE = "http://127.0.0.1:48998";
   let state = env.withEnvironment({ environments: [], activeId: "local" }, { origin: "https://hosted.example.test" }, () => "h1");
-  state = env.withServerMode(env.withEnvironment(state, { origin: ORG, name: "GOX", org: true }, () => "o1"), "o1");
+  state = env.withServerMode(env.withEnvironment(state, { origin: ORG, name: "Example", org: true }, () => "o1"), "o1");
   const frame = { url: `${ORG}/` }, contents = { mainFrame: frame };
   const context = vm.createContext({
     desktopUiOnly: localOrigin.desktopUiOnly, senderIsLocal: localOrigin.isLocalSender,

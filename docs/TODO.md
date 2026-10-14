@@ -6,7 +6,7 @@ Backlog of requests not started yet. One entry per item: the request, who asked,
 
 Request: a bot or thread whose model points at a local engine that only exists on the person's desktop (pi on a desktop local model, `desk...::model`, #189) must not refuse the turn on the organization server. It should run there through the desktop bridge when the desktop is connected, and fall back to the person's connected cloud engine or the Auto pick (#153) with a notice when it cannot.
 
-Today (fix/routine-run-rpc-error): a thread whose own model has no credentials on the server for the payer gives way to its bot's model with a notice (`healOrgRefusedThreadModel` in `server/index.ts`), the way a model that is gone already did. On GOX this was Cryptic's "Team incidents" thread, pinned to `pi / desk8a1ada8002::qwen3.8-flash-next`, which refused every incident report with `no_access/no_credentials (pi)`.
+Today (fix/routine-run-rpc-error): a thread whose own model has no credentials on the server for the payer gives way to its bot's model with a notice (`healOrgRefusedThreadModel` in `server/index.ts`), the way a model that is gone already did. On production this was Cryptic's "Team incidents" thread, pinned to `pi / desk8a1ada8002::qwen3.8-flash-next`, which refused every incident report with `no_access/no_credentials (pi)`.
 
 Still open:
 

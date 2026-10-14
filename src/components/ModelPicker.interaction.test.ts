@@ -439,7 +439,7 @@ describe("the Grok list", () => {
 describe("on an organization server", () => {
   const issuer = "https://px.example.test";
   const orgOf = (viewerRole: "admin" | "member") => ({
-    org: { name: "GOX", identity: { kind: "perspicax", issuer } }, link: { state: "ok" }, viewerRole,
+    org: { name: "Example", identity: { kind: "perspicax", issuer } }, link: { state: "ok" }, viewerRole,
     settings: { memberBotsUseOrgKey: true },
   });
   const engine = (patch: Record<string, unknown> = {}) => ({
@@ -818,7 +818,7 @@ describe("the composer's model menu (2026-10-12)", () => {
   });
 
   it("leaves out an engine to install, and on an organization server one nothing pays for yet unless it is the bot's", () => {
-    fixture.org = { org: { name: "GOX", identity: { kind: "perspicax", issuer: "https://px.example.test" } }, link: { state: "ok" }, viewerRole: "member", settings: {} };
+    fixture.org = { org: { name: "Example", identity: { kind: "perspicax", issuer: "https://px.example.test" } }, link: { state: "ok" }, viewerRole: "member", settings: {} };
     const grok: InstanceInfo = {
       instanceId: "grok", driverKind: "grokAgent", displayName: "Grok", access: "subscription",
       snapshot: { state: "available", authenticated: true },
@@ -849,7 +849,7 @@ describe("the model window from the sidebar", () => {
 
 describe("Connected is said once", () => {
   it("leaves the header with the provider's name and refresh, and the access card says Connected with Disconnect", () => {
-    fixture.org = { org: { name: "GOX", identity: { kind: "perspicax", issuer: "https://px.example.test" } }, link: { state: "ok" }, viewerRole: "member", settings: {} };
+    fixture.org = { org: { name: "Example", identity: { kind: "perspicax", issuer: "https://px.example.test" } }, link: { state: "ok" }, viewerRole: "member", settings: {} };
     fixture.myEngines = [{
       instanceId: "claude", driver: "claudeAgent", displayName: "Claude", installed: true,
       subscription: { supported: true, signedIn: true }, myKey: false, orgKey: false, myTurns: "subscription",
@@ -872,7 +872,7 @@ describe("Connected is said once", () => {
 });
 
 describe("the organization's allowed model providers", () => {
-  const orgFixture = { org: { name: "GOX", identity: { kind: "perspicax", issuer: "https://px.example.test" } }, link: { state: "ok" }, viewerRole: "member", settings: {} };
+  const orgFixture = { org: { name: "Example", identity: { kind: "perspicax", issuer: "https://px.example.test" } }, link: { state: "ok" }, viewerRole: "member", settings: {} };
   const mine = (instanceId: string, driver: string, signedIn: boolean) => ({
     instanceId, driver, displayName: instanceId, installed: true,
     subscription: { supported: true, signedIn }, myKey: false, orgKey: true, myTurns: signedIn ? "subscription" : "org-key",

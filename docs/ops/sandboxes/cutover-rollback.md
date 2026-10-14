@@ -1,7 +1,7 @@
 # Cutover and rollback: production sandboxes to the Kubernetes pool
 
 Production today is the production VM `<VM_NAME>` in
-`<RESOURCE_GROUP>` (Canada Central, `Standard_D4pls_v6`). Sagax, the
+`<RESOURCE_GROUP>` (`<REGION>`, `<VM_SIZE>`). Sagax, the
 provisioner and the sandboxes share that VM, and the provisioner is the
 only container with the Docker socket (`docs/user-sandbox.md`).
 
@@ -70,7 +70,7 @@ Sagax container recreate. They are not measurements from the production VM.
 | 1 | Approve the change record. Build and record image digests. | Nobody | 0 |
 | 2 | Create the cluster and apply the Azure overlay with the provisioner at 0 replicas. Confirm the placeholder subnet was replaced. | Nobody | 0 |
 | 3 | Install **one** autoscaler (AKS node pool **or** Karpenter). Confirm a scale-up drill: one buffer replica goes Ready, then back to 0. | Nobody | 0. The drill's own node boot is 30–90 seconds and is not user traffic. |
-| 4 | Install Velero and take one backup of the empty namespace. Restore it into `<RESOURCE_GROUP>-drill` and delete that namespace. | Nobody | 0 |
+| 4 | Install Velero and take one backup of the empty namespace. Restore it into `sandboxes-drill` and delete that namespace. | Nobody | 0 |
 | 5 | Pick the canary person. Stop their Docker sandbox (`POST .../stop`). Copy `/workspace` to the PVC with `scripts/sandbox-workspace-migrate.ts --direction docker-to-pvc` and confirm the checksum line. | That person, if a bot is mid-command | **1–5 minutes** for that person. Everyone else: 0. |
 | 6 | Set `SAGAX_SANDBOX_CANARY_PEOPLE` to that person (and `SAGAX_SANDBOX_CANARY_BOTS` to every bot of theirs). Set `SAGAX_SANDBOXD_K8S_URL` and `SAGAX_SANDBOXD_TLS_CA`. Recreate **only** the Sagax container. | Every open websocket and voice call drops once | **20–40 seconds** for everyone. In-flight turns fail and can be sent again. Their sandboxes are not deleted. |
 | 7 | Watch one office day. `SagaxSandboxPendingTooLong` must not fire for the canary. | Nobody if the warm node is up. First command on a cold node adds **30–90 seconds** once. | 0 planned |
@@ -129,10 +129,10 @@ az aks nodepool add \
   --enable-cluster-autoscaler \
   --min-count 0 \
   --max-count 1 \
-  --node-vm-size Standard_D4ps_v6 \
+  --node-vm-size <VM_SIZE> \
   --os-sku Ubuntu \
-  --node-taints sagax.example.com/pool=sandboxes:NoSchedule \
-  --labels sagax.example.com/pool=sandboxes
+  --node-taints sagax.io/pool=sandboxes:NoSchedule \
+  --labels sagax.io/pool=sandboxes
 ```
 
 Self-managed clusters on Azure VMs use

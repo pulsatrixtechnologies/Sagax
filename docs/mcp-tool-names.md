@@ -1,6 +1,6 @@
 # MCP tool names on Grok: never drop a connector tool
 
-**Incident (2026-10-11).** Grok bots on the GOX server did not have
+**Incident (2026-10-11).** Grok bots on the production server did not have
 `cw_psa__query`, `cw_psa__write` or `cw_psa__action` from any Perspicax
 profile (`perspicax_profil_jean_christophe_limited`, `perspicax_dispatch_agent`).
 Grok names an MCP tool `server__tool` and *skips* a tool whose qualified key it

@@ -7,7 +7,7 @@
 -- in, so existing rows (and inserts by a Worker deployed before this change)
 -- keep their account. A row whose account is not configured refuses to act.
 ALTER TABLE installation_endpoints
-  ADD COLUMN provider_account TEXT NOT NULL DEFAULT '0c92969a82eb9e173b013a7e7a02333d'
+  ADD COLUMN provider_account TEXT NOT NULL DEFAULT '00000000000000000000000000000000'
   CHECK (length(provider_account) = 32);
 
 CREATE INDEX installation_endpoints_account_status_idx
@@ -38,7 +38,7 @@ CREATE TABLE managed_endpoint_account_capacity (
 INSERT INTO managed_endpoint_account_capacity
   (provider_account, scan_page, tunnel_count, dns_record_count, reclaim_pending,
    checked_at, capacity_rejected_at, capacity_rejected_code, updated_at)
-SELECT '0c92969a82eb9e173b013a7e7a02333d', scan_page, tunnel_count, dns_record_count,
+SELECT '00000000000000000000000000000000', scan_page, tunnel_count, dns_record_count,
        reclaim_pending, checked_at, capacity_rejected_at, capacity_rejected_code, updated_at
   FROM managed_endpoint_capacity
  WHERE id = 1;

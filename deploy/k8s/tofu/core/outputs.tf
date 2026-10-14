@@ -9,7 +9,7 @@ output "sandbox_pool" {
     arch              = "arm64"
     vcpus             = 4
     memory_gib        = 16
-    azure_vm_size     = "Standard_D4ps_v6"
+    azure_vm_size     = var.azure_vm_size
     aws_instance_type = "t4g.xlarge"
     # Linode has no 4 vCPU / 16 GiB plan. This is 6 vCPU / 16 GiB.
     linode_type       = "g6-standard-8"

@@ -2,9 +2,9 @@
 apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingAdmissionPolicy
 metadata:
-  name: sagax-sandboxes-images
+  name: sandboxes-images
   labels:
-    {{- include "sagax-sandboxes.labels" . | nindent 4 }}
+    {{- include "sandboxes.labels" . | nindent 4 }}
 spec:
   failurePolicy: Fail
   matchConstraints:
@@ -45,11 +45,11 @@ spec:
 apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingAdmissionPolicyBinding
 metadata:
-  name: sagax-sandboxes-images
+  name: sandboxes-images
   labels:
-    {{- include "sagax-sandboxes.labels" . | nindent 4 }}
+    {{- include "sandboxes.labels" . | nindent 4 }}
 spec:
-  policyName: sagax-sandboxes-images
+  policyName: sandboxes-images
   validationActions: ["Deny"]
   matchResources:
     namespaceSelector:
@@ -63,9 +63,9 @@ spec:
 apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingAdmissionPolicy
 metadata:
-  name: sagax-sandboxes-placement
+  name: sandboxes-placement
   labels:
-    {{- include "sagax-sandboxes.labels" . | nindent 4 }}
+    {{- include "sandboxes.labels" . | nindent 4 }}
 spec:
   failurePolicy: Fail
   matchConstraints:
@@ -87,11 +87,11 @@ spec:
 apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingAdmissionPolicyBinding
 metadata:
-  name: sagax-sandboxes-placement
+  name: sandboxes-placement
   labels:
-    {{- include "sagax-sandboxes.labels" . | nindent 4 }}
+    {{- include "sandboxes.labels" . | nindent 4 }}
 spec:
-  policyName: sagax-sandboxes-placement
+  policyName: sandboxes-placement
   validationActions: ["Deny"]
   matchResources:
     namespaceSelector:
@@ -103,9 +103,9 @@ spec:
 apiVersion: kyverno.io/v1
 kind: ClusterPolicy
 metadata:
-  name: sagax-sandboxes-verify-images
+  name: sandboxes-verify-images
   labels:
-    {{- include "sagax-sandboxes.labels" . | nindent 4 }}
+    {{- include "sandboxes.labels" . | nindent 4 }}
   annotations:
     policies.kyverno.io/title: Sagax sandbox image signature and scan
     policies.kyverno.io/severity: high

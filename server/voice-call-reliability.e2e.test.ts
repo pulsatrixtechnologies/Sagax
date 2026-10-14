@@ -15,8 +15,8 @@ import { VOICE_CALL_TURN_MARK } from "./voice-call-prompt.ts";
 
 const CALL_ID = "call-0123456789";
 
-async function callFixture(env: Record<string, string> = {}) {
-  const fixture = await launchVerificationServer();
+async function callFixture(env: Record<string, string> = {}, server: NodeJS.ProcessEnv = process.env) {
+  const fixture = await launchVerificationServer(server);
   const { url, dataDir } = fixture.info;
   const api = async (method: string, path: string, body?: unknown, status = 200) => {
     const response = await fetch(`${url}${path}`, {
@@ -292,6 +292,26 @@ it("duplex: new words while the long tool runs join that turn; the tool is not k
     expect(all.filter((m) => m.parallelTask)).toEqual([]);
     // the held Bash call was answered, not cancelled
     expect(all.some((m) => m.kind === "activity" && String(m.tool?.name ?? "").includes("Bash") && m.tool?.ok === false)).toBe(false);
+  } finally {
+    await t.fixture.close();
+  }
+}, 120_000);
+
+it("server duplex off (the product default): a duplex send while the bot thinks joins the turn, nothing is replaced or forked", async () => {
+  const t = await callFixture({ FAKE_CLAUDE_MODE: "slow" }, { ...process.env, SAGAX_VOICE_FULL_DUPLEX: "0" });
+  try {
+    await t.api("POST", `/api/bots/${t.bot.id}/voice/call`, { threadId: t.thread, callId: CALL_ID, state: "start" });
+    await t.send({ text: "[gate:off] look up the weather in Montreal", sendId: "send-off-0000000001", voiceCall: { callId: CALL_ID, duplex: true, utteranceId: "utt-off-0000001" } });
+    await expect.poll(t.busy, { timeout: 15_000 }).toBe(true);
+    const sent = await t.send({ text: "and in Quebec City", sendId: "send-off-0000000002", voiceCall: { callId: CALL_ID, duplex: true, speculative: true, utteranceId: "utt-off-0000002" } });
+    expect(sent.parallel).toBeUndefined();
+    expect(sent.steered).toBe(true);
+    t.open("off");
+    await expect.poll(async () => (await t.messages()).some((m) => m.role === "bot" && m.kind === "text" && String(m.text ?? "").includes("Montreal") && String(m.text ?? "").includes("Quebec City")), { timeout: 25_000 }).toBe(true);
+    const all = await t.messages();
+    expect(all.filter((m) => m.parallelTask)).toEqual([]);
+    // no duplex opener in the prompt on the default (steer) path
+    expect(t.prompts().join("\n")).not.toContain("A short first sentence may already have been spoken");
   } finally {
     await t.fixture.close();
   }

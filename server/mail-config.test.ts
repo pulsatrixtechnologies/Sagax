@@ -4,22 +4,22 @@ import { applyMailSettingsPatch, DEFAULT_MAIL_FROM_NAME, mailReady, mailSettings
 describe("mail settings", () => {
   it("lets a saved value win over the environment, which fills the rest", () => {
     const r = resolveMailSettings({
-      file: { provider: "sendgrid", from: "web@gox.ca", sendgrid: { apiKey: "SG.file" } },
-      env: { SAGAX_MAIL_PROVIDER: "smtp", SAGAX_MAIL_FROM: "env@gox.ca", SAGAX_SMTP_HOST: "smtp.gox.ca", SAGAX_SMTP_PORT: "587", SAGAX_SMTP_SECURE: "starttls", SAGAX_SMTP_PASSWORD: "pw" },
+      file: { provider: "sendgrid", from: "web@example.com", sendgrid: { apiKey: "SG.file" } },
+      env: { SAGAX_MAIL_PROVIDER: "smtp", SAGAX_MAIL_FROM: "env@example.com", SAGAX_SMTP_HOST: "smtp.example.com", SAGAX_SMTP_PORT: "587", SAGAX_SMTP_SECURE: "starttls", SAGAX_SMTP_PASSWORD: "pw" },
     });
     expect(r.settings.provider).toBe("sendgrid");
-    expect(r.settings.from).toBe("web@gox.ca");
+    expect(r.settings.from).toBe("web@example.com");
     expect(r.settings.sendgrid?.apiKey).toBe("SG.file");
-    expect(r.settings.smtp).toMatchObject({ host: "smtp.gox.ca", port: 587, secure: "starttls", password: "pw" });
+    expect(r.settings.smtp).toMatchObject({ host: "smtp.example.com", port: 587, secure: "starttls", password: "pw" });
     expect(r.envManaged.sort()).toEqual(["from", "provider", "smtp.host", "smtp.password", "smtp.port", "smtp.secure"]);
     expect(r.saved.sort()).toEqual(["from", "provider", "sendgrid.apiKey"]);
     expect(r.server.provider).toBe("smtp");
-    expect(r.server.from).toBe("env@gox.ca");
+    expect(r.server.from).toBe("env@example.com");
   });
 
   it("reads the sender name from SAGAX_MAIL_FROM_NAME and lets a saved one win", () => {
-    expect(resolveMailSettings({ file: undefined, env: { SAGAX_MAIL_FROM_NAME: "GOX" } }).settings.fromName).toBe("GOX");
-    const r = resolveMailSettings({ file: { fromName: "Pulsa" }, env: { SAGAX_MAIL_FROM_NAME: "GOX" } });
+    expect(resolveMailSettings({ file: undefined, env: { SAGAX_MAIL_FROM_NAME: "Example" } }).settings.fromName).toBe("Example");
+    const r = resolveMailSettings({ file: { fromName: "Pulsa" }, env: { SAGAX_MAIL_FROM_NAME: "Example" } });
     expect(r.settings.fromName).toBe("Pulsa");
     expect(r.envManaged).toContain("fromName");
     expect(r.saved).toContain("fromName");
@@ -111,8 +111,8 @@ function fragments(secret: string): string[] {
 
 describe("the mail settings view", () => {
   const resolved = () => resolveMailSettings({
-    file: { provider: "twilio", from: "bot@gox.ca", twilio: { apiKeySid: "SKfakesid", apiKeySecret: SAVED_SECRET }, smtp: { password: SMTP_SECRET } },
-    env: { SAGAX_MAIL_PROVIDER: "sendgrid", SAGAX_SENDGRID_API_KEY: ENV_SECRET, SAGAX_SMTP_HOST: "smtp.gox.ca" },
+    file: { provider: "twilio", from: "bot@example.com", twilio: { apiKeySid: "SKfakesid", apiKeySecret: SAVED_SECRET }, smtp: { password: SMTP_SECRET } },
+    env: { SAGAX_MAIL_PROVIDER: "sendgrid", SAGAX_SENDGRID_API_KEY: ENV_SECRET, SAGAX_SMTP_HOST: "smtp.example.com" },
   });
 
   it("never carries a secret, not even a fragment of one", () => {
@@ -129,7 +129,7 @@ describe("the mail settings view", () => {
   it("says where each value comes from and what the server would use", () => {
     const view = mailSettingsView(resolved());
     expect(view.fields.provider).toEqual({ source: "saved", serverDefault: true, value: "twilio", serverValue: "sendgrid" });
-    expect(view.fields["smtp.host"]).toEqual({ source: "server", serverDefault: true, value: "smtp.gox.ca", serverValue: "smtp.gox.ca" });
+    expect(view.fields["smtp.host"]).toEqual({ source: "server", serverDefault: true, value: "smtp.example.com", serverValue: "smtp.example.com" });
     expect(view.fields.fromName).toEqual({ source: "unset", serverDefault: false });
     expect(view.defaultFromName).toBe("Sagax");
     expect(view.ready).toBe(true);
@@ -139,9 +139,9 @@ describe("the mail settings view", () => {
 
 describe("a mail settings change", () => {
   it("sets, keeps and reverts fields one by one", () => {
-    const saved = { provider: "smtp" as const, from: "old@gox.ca", smtp: { host: "h", password: "fake-old" } };
-    const next = applyMailSettingsPatch(saved, mailSettingsPatchSchema.parse({ from: "new@gox.ca", "smtp.host": null, fromName: "GOX" }));
-    expect(next).toEqual({ provider: "smtp", from: "new@gox.ca", fromName: "GOX", smtp: { password: "fake-old" } });
+    const saved = { provider: "smtp" as const, from: "old@example.com", smtp: { host: "h", password: "fake-old" } };
+    const next = applyMailSettingsPatch(saved, mailSettingsPatchSchema.parse({ from: "new@example.com", "smtp.host": null, fromName: "Example" }));
+    expect(next).toEqual({ provider: "smtp", from: "new@example.com", fromName: "Example", smtp: { password: "fake-old" } });
     expect(saved.smtp.host).toBe("h");
     const cleared = applyMailSettingsPatch(next, mailSettingsPatchSchema.parse({ provider: null, from: null, fromName: null, "smtp.password": null }));
     expect(cleared).toEqual({});
@@ -155,13 +155,13 @@ describe("a mail settings change", () => {
   it("refuses unknown fields, a sender with a name in it, header breaks and bad ports", () => {
     for (const bad of [
       { to: "x@y.z" },
-      { from: "Sagax <bot@gox.ca>" },
+      { from: "Sagax <bot@example.com>" },
       { from: "not-an-address" },
-      { fromName: "GOX\r\nBcc: x@y.z" },
+      { fromName: "Example\r\nBcc: x@y.z" },
       { fromName: "A <b>" },
       { "smtp.port": 0 },
       { "smtp.port": 70000 },
-      { "smtp.host": "smtp gox" },
+      { "smtp.host": "smtp host" },
       { "sendgrid.apiKey": "" },
       { "twilio.apiKeySecret": "line\nbreak" },
       { provider: "pigeon" },

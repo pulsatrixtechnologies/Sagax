@@ -4,7 +4,7 @@ metadata:
   name: sagax-audit-policy
   namespace: {{ .Values.systemNamespace | quote }}
   labels:
-    {{- include "sagax-sandboxes.labels" . | nindent 4 }}
+    {{- include "sandboxes.labels" . | nindent 4 }}
 data:
   policy.yaml: |
     {{- .Files.Get "files/audit-policy.yaml" | nindent 4 }}

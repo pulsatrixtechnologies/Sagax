@@ -13,9 +13,9 @@ import type { OnboardingStatus } from "./onboarding";
 
 export type LaunchMode = "solo" | "server";
 
-/** The organization server the Server mode offers first. A build for
- * another organization sets SAGAX_DEFAULT_SERVER (vite.config.ts). */
-export const DEFAULT_SERVER_ADDRESS = "https://bot.pulsatrix.mcp.goxcloud.ca";
+/** Empty in the public tree. A build for an organization sets
+ * SAGAX_DEFAULT_SERVER (vite.config.ts). */
+export const DEFAULT_SERVER_ADDRESS = "";
 
 const BUILD_SERVER = typeof __SAGAX_DEFAULT_SERVER__ === "string" ? __SAGAX_DEFAULT_SERVER__ : "";
 

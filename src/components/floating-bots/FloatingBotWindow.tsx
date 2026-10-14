@@ -9,7 +9,7 @@
 import { Component, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ErrorInfo, type ReactNode } from "react";
 import { OwlAvatar } from "@/components/OwlAvatar";
 import { FloatingBotView, MASCOT_SIZE, MASCOT_STAGE, OWL_BOX, type FloatingMover, type MascotLayout } from "./FloatingBotView";
-import { effectSide, placeChat, sideWithin, type WindowLimits } from "./placement";
+import { effectSide, pillSide, placeChat, sideWithin, type WindowLimits } from "./placement";
 import { homeBody } from "./window-frame";
 
 /** The home window's size (electron/floating-bot-window.mjs FLOAT_HOME), when main did not say. */
@@ -49,6 +49,30 @@ export function bodyRectIn(root: HTMLElement | null): Rect | null {
 
 const sameRect = (a: Rect | null, b: Rect | null) => Boolean(a && b && a.x === b.x && a.y === b.y && a.width === b.width && a.height === b.height);
 
+/**
+ * What hangs on the character (window coordinates): the input pill or the
+ * call's pill, as drawn. Main keeps it on screen with the character, so the
+ * cluster never slips under the Dock or the taskbar. Null when none is shown.
+ */
+export function keepRectIn(root: HTMLElement | null): Rect | null {
+  const stage = root?.querySelector<HTMLElement>(".fb-stage");
+  if (!stage || stage.hasAttribute("data-away")) return null;
+  let keep: Rect | null = null;
+  for (const node of stage.querySelectorAll<HTMLElement>(".fb-call")) {
+    const box = node.getBoundingClientRect();
+    if (!box.width || !box.height) continue;
+    const rect = { x: Math.round(box.left), y: Math.round(box.top), width: Math.round(box.width), height: Math.round(box.height) };
+    if (!keep) {
+      keep = rect;
+      continue;
+    }
+    const x = Math.min(keep.x, rect.x);
+    const y = Math.min(keep.y, rect.y);
+    keep = { x, y, width: Math.max(keep.x + keep.width, rect.x + rect.width) - x, height: Math.max(keep.y + keep.height, rect.y + rect.height) - y };
+  }
+  return keep;
+}
+
 /** The layout for where the character stands now: the chat's side (the window's corner) and its room. */
 export function layoutFor(geometry: { body?: Rect; workArea: Rect; bounds?: Rect; limits?: WindowLimits | null } | null): MascotLayout | null {
   if (!geometry?.body) return null;
@@ -58,7 +82,8 @@ export function layoutFor(geometry: { body?: Rect; workArea: Rect; bounds?: Rect
   const force = sideWithin({ side: first.side, body: geometry.body, homeBody: (side) => homeBody(MASCOT_STAGE, OWL_BOX, size, side), size, limits: geometry.limits });
   const chat = force.below === undefined && force.right === undefined ? first : placeChat({ body: geometry.body, workArea: geometry.workArea, stage: MASCOT_STAGE, owl: OWL_BOX, force });
   // the effects beside the character, on the side away from the chat that the screen leaves room on
-  return { side: chat.side, chat, fx: effectSide({ body: geometry.body, workArea: geometry.workArea, chatSide: chat.side }) };
+  // the input pill under the feet, or over the head when the Dock or the taskbar is right under them
+  return { side: chat.side, chat, fx: effectSide({ body: geometry.body, workArea: geometry.workArea, chatSide: chat.side }), pill: pillSide({ body: geometry.body, workArea: geometry.workArea }) };
 }
 
 const sameLayout = (a: MascotLayout | null, b: MascotLayout | null) =>
@@ -197,12 +222,15 @@ export function FloatingBotWindow({ bridge = typeof window === "undefined" ? und
   // Where the character is drawn: main keeps that box on screen, and only that
   // box, so the mascot can stand right in a corner with its room hanging off.
   const body = useRef<Rect | null>(null);
+  const kept = useRef<Rect | null>(null);
   const reportBody = useCallback(() => {
     const rect = bodyRectIn(root.current);
-    if (!rect || sameRect(rect, body.current)) return;
+    const keep = rect ? keepRectIn(root.current) : null;
+    if (!rect || (sameRect(rect, body.current) && (keep ? sameRect(keep, kept.current) : !kept.current))) return;
     const first = !body.current;
     body.current = rect;
-    bridge?.setBody?.(rect);
+    kept.current = keep;
+    bridge?.setBody?.(rect, keep);
     // main knows the character's box now: where it stands decides the chat's side
     if (first) relayoutRef.current();
   }, [bridge]);
@@ -335,6 +363,9 @@ export function FloatingBotWindow({ bridge = typeof window === "undefined" ? und
     void bridge.frame(size.width, size.height, rect, from ?? undefined).then(
       () => {
         body.current = rect;
+        // main forgot the pill with the old layout: the next report sends it again
+        kept.current = null;
+        reportBodyRef.current();
         setRelaying(false);
       },
       () => setRelaying(false),
@@ -344,6 +375,12 @@ export function FloatingBotWindow({ bridge = typeof window === "undefined" ? und
   const menuAt = useMemo(() => (bridge?.popupMenu ? (x: number, y: number) => bridge.popupMenu!(x, y) : undefined), [bridge]);
   // the voice call's levels, straight from main (an older preload has none)
   const onLevels = useMemo(() => (bridge?.onLevel ? (listener: Parameters<NonNullable<FloatingWindowBridge["onLevel"]>>[0]) => bridge.onLevel!(listener) : undefined), [bridge]);
+
+  // the pill under (or over) the character came or went: main keeps the whole cluster on screen
+  const pillKey = `${Boolean(snapshot?.balloon)}-${Boolean(snapshot?.call)}-${layout?.pill ?? ""}`;
+  useLayoutEffect(() => {
+    reportBodyRef.current();
+  }, [pillKey]);
 
   // the chat opening: its room for where the character stands now (a display may have changed meanwhile)
   const chatOpen = Boolean(snapshot?.balloon);

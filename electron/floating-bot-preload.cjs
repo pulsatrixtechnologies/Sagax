@@ -21,9 +21,16 @@ contextBridge.exposeInMainWorld("floatingBotWindow", {
     anchorX: anchor && anchor.x === "left" ? "left" : "right",
     anchorY: anchor && anchor.y === "top" ? "top" : "bottom",
   }),
-  // the character's box in the window: main keeps it on screen, the rest may hang off
-  setBody: (rect) => ipcRenderer.send("floating-bots:body", rect && typeof rect === "object"
-    ? { x: finite(rect.x), y: finite(rect.y), width: finite(rect.width), height: finite(rect.height) }
+  // the character's box in the window: main keeps it on screen, the rest may hang off;
+  // `keep` is what hangs on it (the input pill), kept on screen with it
+  setBody: (rect, keep) => ipcRenderer.send("floating-bots:body", rect && typeof rect === "object"
+    ? {
+        x: finite(rect.x),
+        y: finite(rect.y),
+        width: finite(rect.width),
+        height: finite(rect.height),
+        keep: keep && typeof keep === "object" ? { x: finite(keep.x), y: finite(keep.y), width: finite(keep.width), height: finite(keep.height) } : null,
+      }
     : null),
   // a new layout of the window (the chat's room on another side): the character stays put on screen
   frame: (width, height, rect, from) => ipcRenderer.invoke("floating-bots:frame", {

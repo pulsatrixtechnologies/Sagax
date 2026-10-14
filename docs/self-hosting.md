@@ -866,8 +866,8 @@ welcome tour:
 
 - **No server**: the solo, local-first app. The welcome tour
   follows.
-- **Server**: the address of your organization's Sagax, prefilled with
-  `https://<HOST_FQDN>`. **Sign in** checks that the
+- **Server**: the address of your organization's Sagax (empty unless the
+  build sets `SAGAX_DEFAULT_SERVER`). **Sign in** checks that the
   server signs people in with Pulsatrix (its
   `/.well-known/openmausbot/environment` names a `perspicax` identity),
   saves it under Servers, selects it and starts its **Sign in with

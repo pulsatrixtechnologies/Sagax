@@ -83,7 +83,7 @@ export interface SandboxdConfig {
 
 const MiB = 1024 * 1024;
 
-/** Defaults sized for the GOX VM (4 vCPU, 8 GiB) next to Perspicax, Caddy,
+/** Defaults sized for the production VM (4 vCPU, 8 GiB) next to Perspicax, Caddy,
  * the Teams bot and the Sagax server: every environment can open its desktop
  * (Xvnc, openbox and Chromium measured near 250 MiB, a few heavy tabs well
  * under 1 GiB), so 1.5 GiB and one CPU each and at most two running at once:

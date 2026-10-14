@@ -12,12 +12,12 @@ import {
   deployImage,
   formatAlert,
   imagesToPrune,
-} from "./gox-deploy.mjs";
+} from "./deploy-server.mjs";
 
 const lock = JSON.parse(readFileSync(join(import.meta.dirname, "..", "engines.lock.json"), "utf8"));
 const required = productionEngineIds(lock);
-const candidate = "pulsa-bot-server:main-20004735";
-const previous = "pulsa-bot-server:main-167d8e13";
+const candidate = "pulsa-bot-server:main-example1";
+const previous = "pulsa-bot-server:main-example0";
 
 function fullManifest() {
   return {
@@ -88,7 +88,7 @@ describe("deployImage", () => {
 
   it("keeps a healthy image and prunes only other pulsa-bot-server tags", async () => {
     const images = [
-      { repo: "pulsa-bot-server", tag: "main-20004735", id: "sha256:running", ref: candidate },
+      { repo: "pulsa-bot-server", tag: "main-example1", id: "sha256:running", ref: candidate },
       { repo: "pulsa-bot-server", tag: "main-167d8e13", id: "sha256:prev", ref: previous },
       { repo: "pulsa-bot-server", tag: "main-old", id: "sha256:old", ref: "pulsa-bot-server:main-old" },
       { repo: "ubuntu", tag: "24.04", id: "sha256:ubuntu", ref: "ubuntu:24.04" },
@@ -180,10 +180,10 @@ describe("alertsFromLog", () => {
 
 describe("deploy script", () => {
   it("records the previous-image path and the exact caddy recreate", () => {
-    const script = readFileSync(join(import.meta.dirname, "..", "deploy", "gox", "deploy-pulsabot.sh"), "utf8");
+    const script = readFileSync(join(import.meta.dirname, "..", "deploy", "example", "deploy-server.sh"), "utf8");
     expect(script).toContain(PREV_FILE);
     expect(script).toContain(CADDY_RECREATE_COMMAND);
-    expect(script).toContain('exec node "$ROOT/scripts/gox-deploy.mjs"');
-    expect(PREV_FILE).toBe("/opt/pulsatrix/pulsabot-image.prev");
+    expect(script).toContain('exec node "$ROOT/scripts/deploy-server.mjs"');
+    expect(PREV_FILE).toBe("/opt/sagax/server-image.prev");
   });
 });

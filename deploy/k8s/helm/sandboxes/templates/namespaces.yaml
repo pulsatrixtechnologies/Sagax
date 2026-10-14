@@ -3,7 +3,7 @@ kind: Namespace
 metadata:
   name: {{ .Values.sandboxNamespace | quote }}
   labels:
-    {{- include "sagax-sandboxes.labels" . | nindent 4 }}
+    {{- include "sandboxes.labels" . | nindent 4 }}
     sagax.io/sandboxes: "true"
     pod-security.kubernetes.io/enforce: restricted
     pod-security.kubernetes.io/enforce-version: latest
@@ -15,7 +15,7 @@ kind: Namespace
 metadata:
   name: {{ .Values.systemNamespace | quote }}
   labels:
-    {{- include "sagax-sandboxes.labels" . | nindent 4 }}
+    {{- include "sandboxes.labels" . | nindent 4 }}
     sagax.io/sandbox-system: "true"
     pod-security.kubernetes.io/enforce: restricted
     pod-security.kubernetes.io/enforce-version: latest

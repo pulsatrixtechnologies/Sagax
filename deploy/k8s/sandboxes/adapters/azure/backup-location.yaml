@@ -4,16 +4,16 @@
 apiVersion: velero.io/v1
 kind: BackupStorageLocation
 metadata:
-  name: sagax-sandboxes
+  name: sandboxes
   namespace: velero
 spec:
   provider: azure
   objectStorage:
     bucket: sagax-sandbox-backups
-    prefix: gox
+    prefix: example
   credential:
     name: velero-azure
     key: cloud
   config:
-    resourceGroup: RG-PULSATRIX-GOX
+    resourceGroup: <RESOURCE_GROUP>
     storageAccount: REPLACE_STORAGE_ACCOUNT

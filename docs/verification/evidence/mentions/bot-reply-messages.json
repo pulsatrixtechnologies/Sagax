@@ -1,60 +1,60 @@
 {
   "channel": {
-    "id": "2ee9e176-5270-4211-9968-af5baa0eef39",
+    "id": "<CHANNEL_ID>",
     "name": "Design review",
     "memberIds": [
-      "b230497a-074d-48e4-acee-caa187801268",
-      "091fa543-75a2-4070-9d11-ada74913ce8b",
-      "044924fe-bf6c-45b9-89ae-5c8e5646fc83",
-      "a822e390-dd3c-4184-ad15-a107919a12c5"
+      "00000000-0000-4000-8000-000000000001",
+      "00000000-0000-4000-8000-000000000002",
+      "00000000-0000-4000-8000-000000000003",
+      "00000000-0000-4000-8000-000000000004"
     ],
     "bulletin": "",
     "defaultResponder": {
       "kind": "member",
-      "botId": "b230497a-074d-48e4-acee-caa187801268"
+      "botId": "00000000-0000-4000-8000-000000000001"
     },
     "section": null,
     "directMessage": false,
     "working": false,
     "busyBotId": null,
-    "activeTaskId": "203675be-7ee0-4c15-aa4e-cad37837dff5",
+    "activeTaskId": "00000000-0000-4000-8000-000000000005",
     "tasks": [
       {
-        "taskId": "203675be-7ee0-4c15-aa4e-cad37837dff5",
+        "taskId": "00000000-0000-4000-8000-000000000005",
         "title": "@Atlas Please ask the team to review.",
         "createdAt": 1788791339528,
         "active": true
       }
     ]
   },
-  "taskId": "203675be-7ee0-4c15-aa4e-cad37837dff5",
+  "taskId": "00000000-0000-4000-8000-000000000005",
   "messages": [
     {
-      "id": "85b0a503-0b8c-4d39-8072-255bee664c33",
+      "id": "00000000-0000-4000-8000-000000000006",
       "at": 1788791379440,
       "role": "user",
       "kind": "text",
       "text": "@Atlas Please ask the team to review."
     },
     {
-      "id": "43f084a1-dd3a-4767-a4fd-3d39a5812e7d",
+      "id": "00000000-0000-4000-8000-000000000007",
       "at": 1788791379695,
       "role": "bot",
       "kind": "text",
       "text": "@Juniper please review. @調査担当 確認してください。 @Atlas final check.\n\nReverse: @調査担当 then @Juniper.\n\nPlain prefixes: @調査担当者 @everyone調査. Neutral: @everyone.",
       "from": {
-        "botId": "044924fe-bf6c-45b9-89ae-5c8e5646fc83",
+        "botId": "00000000-0000-4000-8000-000000000003",
         "name": "Atlas",
         "color": "blue"
       }
     },
     {
-      "id": "2418b6f9-6184-4fd8-a49c-942a3e520c9c",
+      "id": "00000000-0000-4000-8000-000000000008",
       "at": 1788791379700,
       "role": "bot",
       "kind": "activity",
       "from": {
-        "botId": "044924fe-bf6c-45b9-89ae-5c8e5646fc83",
+        "botId": "00000000-0000-4000-8000-000000000003",
         "name": "Atlas",
         "color": "blue"
       },
@@ -65,24 +65,24 @@
       }
     },
     {
-      "id": "2f612158-90ba-4c93-a37d-79f0838d11c3",
+      "id": "00000000-0000-4000-8000-000000000009",
       "at": 1788791379876,
       "role": "bot",
       "kind": "text",
       "text": "hello from fake claude",
       "from": {
-        "botId": "b230497a-074d-48e4-acee-caa187801268",
+        "botId": "00000000-0000-4000-8000-000000000001",
         "name": "調査担当",
         "color": "orange"
       }
     },
     {
-      "id": "d910fcb0-fe28-4cf0-beb0-9662b3eb3f5c",
+      "id": "00000000-0000-4000-8000-000000000010",
       "at": 1788791379877,
       "role": "bot",
       "kind": "activity",
       "from": {
-        "botId": "b230497a-074d-48e4-acee-caa187801268",
+        "botId": "00000000-0000-4000-8000-000000000001",
         "name": "調査担当",
         "color": "orange"
       },
@@ -93,24 +93,24 @@
       }
     },
     {
-      "id": "83fd838f-a0a3-430b-a426-d3109b046a4e",
+      "id": "00000000-0000-4000-8000-000000000011",
       "at": 1788791380067,
       "role": "bot",
       "kind": "text",
       "text": "hello from fake claude",
       "from": {
-        "botId": "091fa543-75a2-4070-9d11-ada74913ce8b",
+        "botId": "00000000-0000-4000-8000-000000000002",
         "name": "Juniper",
         "color": "red"
       }
     },
     {
-      "id": "17a9952a-bdf7-4eb7-abf7-8acfdac86f65",
+      "id": "00000000-0000-4000-8000-000000000012",
       "at": 1788791380068,
       "role": "bot",
       "kind": "activity",
       "from": {
-        "botId": "091fa543-75a2-4070-9d11-ada74913ce8b",
+        "botId": "00000000-0000-4000-8000-000000000002",
         "name": "Juniper",
         "color": "red"
       },
@@ -121,24 +121,24 @@
       }
     },
     {
-      "id": "f34824e5-3555-4a33-89b9-57cbb07490c4",
+      "id": "00000000-0000-4000-8000-000000000013",
       "at": 1788791380268,
       "role": "bot",
       "kind": "text",
       "text": "hello from fake claude",
       "from": {
-        "botId": "a822e390-dd3c-4184-ad15-a107919a12c5",
+        "botId": "00000000-0000-4000-8000-000000000004",
         "name": "Otto",
         "color": "green"
       }
     },
     {
-      "id": "f4eff0c9-8a43-4453-8b0a-4d10c6b3c6bc",
+      "id": "00000000-0000-4000-8000-000000000014",
       "at": 1788791380269,
       "role": "bot",
       "kind": "activity",
       "from": {
-        "botId": "a822e390-dd3c-4184-ad15-a107919a12c5",
+        "botId": "00000000-0000-4000-8000-000000000004",
         "name": "Otto",
         "color": "green"
       },

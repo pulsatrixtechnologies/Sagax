@@ -1,11 +1,11 @@
-# Internal load balancer so the GOX VM can reach the provisioner without a
+# Internal load balancer so the production VM can reach the provisioner without a
 # public address. The Service in the base stays ClusterIP until this patch
 # is applied.
 apiVersion: v1
 kind: Service
 metadata:
   name: sagax-sandboxd
-  namespace: sagax-sandboxes
+  namespace: sandboxes
   annotations:
     service.beta.kubernetes.io/azure-load-balancer-internal: "true"
 spec:

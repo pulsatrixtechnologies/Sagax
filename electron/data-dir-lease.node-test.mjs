@@ -663,7 +663,7 @@ test("a live but unrelated Windows pid reused within the same boot is treated as
   }
 });
 
-// 2026-10-13, GOX: a killed container left a lease naming pid 7; after the
+// 2026-10-13, production: a killed container left a lease naming pid 7; after the
 // restart the container's own pid 7 was alive again and every start failed.
 // The probes stand in for /proc on macOS and Windows; the real reads are
 // exercised by the Linux test at the end.

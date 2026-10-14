@@ -59,7 +59,8 @@ describe("the phone-call instruction", () => {
     expect(text).toContain("Je regarde ça");
     expect(text).toContain("(their call is set to French)");
     expect(text).toContain("Keep your own persona and instructions");
-    expect(text).toContain("Do not repeat that acknowledgement");
+    // no duplex opener on this call: nothing to "not repeat"
+    expect(text).not.toContain("Do not repeat that acknowledgement");
     expect(text).toContain("call end_call");
     expect(text).toContain("Do not start new work after it");
     expect(text).not.toContain(VOICE_CALL_INTERRUPTED_NOTE);
@@ -93,6 +94,11 @@ describe("the phone-call instruction", () => {
     expect(text).toContain("weather in Montreal (still running in the background)");
     expect(text).toContain("time in Tokyo (current)");
     expect(text).not.toMatch(/[–—]/);
+  });
+
+  it("mentions an opener spoken by another model only on a duplex call", () => {
+    expect(voiceCallSection({ voiceCall: { callId: "call-0123456789" } }, undefined, "Ada")).not.toContain("A short first sentence");
+    expect(voiceCallSection({ voiceCall: { callId: "call-0123456789", duplex: true } }, undefined, "Ada")).toContain("A short first sentence");
   });
 
   it("marks every call turn's own words, since a live session gets the section only once", () => {

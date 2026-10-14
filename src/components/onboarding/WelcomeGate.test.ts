@@ -248,7 +248,7 @@ describe("the launch screen before the tour", () => {
   it("comes back after server mode was left (signed out), even with other servers saved", async () => {
     vi.stubGlobal("window", DESKTOP_PAGE);
     store.state = { ...store.state, config: { onboarding: { ...EMPTY_ONBOARDING, completedAt: "2026-09-23T00:00:00.000Z", version: WELCOME_VERSION, launchMode: "server" } } };
-    environmentsState.value = { environments: [{ id: "a", name: "GOX", origin: "https://bot.example.test" }] };
+    environmentsState.value = { environments: [{ id: "a", name: "Example", origin: "https://bot.example.test" }] };
     serverModeState.value = { active: true };
     expect(gate(LOCAL_VIEWER).tree).toBeNull();
     for (const effect of fixture.effects) effect();

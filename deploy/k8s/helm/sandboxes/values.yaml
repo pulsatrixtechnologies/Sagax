@@ -2,8 +2,8 @@
 # values-azure.yaml. The day/night schedule matches deploy/k8s/tofu/core.
 nameOverride: ""
 
-sandboxNamespace: sagax-sandboxes
-systemNamespace: sagax-sandbox-system
+sandboxNamespace: sandboxes
+systemNamespace: sandbox-system
 
 # Matches server/user-sandbox-spec.ts. One environment per person.
 sandbox:

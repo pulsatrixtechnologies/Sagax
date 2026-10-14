@@ -1,7 +1,7 @@
 # Grok approval gate (Sagax gates MCP calls; Grok runs in default mode)
 
 ## Why
-In `--permission-mode auto`, Grok runs its safety classifier before **every** MCP tool call. On GOX this measured 4–9 s (up to 17 s, and once an approval card for the read-only `agents__list_bots`) for tools that answer in under 0.5 s. Allow rules do not skip it over ACP (repro below). In `default` mode Grok runs MCP tools supplied by the ACP client with no prompt at all, so Sagax gates them itself.
+In `--permission-mode auto`, Grok runs its safety classifier before **every** MCP tool call. On production this measured 4–9 s (up to 17 s, and once an approval card for the read-only `agents__list_bots`) for tools that answer in under 0.5 s. Allow rules do not skip it over ACP (repro below). In `default` mode Grok runs MCP tools supplied by the ACP client with no prompt at all, so Sagax gates them itself.
 
 ## How it works
 - **Flag:** `DATA_DIR/grok-approval-gate.json`, either `{"bots": ["<botId>"]}` or `{"bots": "all"}`. A missing, empty or invalid file means off, and Grok runs in auto mode as before. The file is read on every turn; the next turn of each bot respawns Grok in the new mode.
@@ -41,7 +41,7 @@ The classifier gap is the time between `pending_interaction kind=permission` and
 | auto, `--allow '*'` | 6.8 s | none |
 | default, any rule or none | 0 s | none (the tool runs) |
 
-On GOX, the live ACP wire log shows `pending_interaction` for `agents__list_bots` from 00:25:43.001 to 00:25:51.474 UTC, with `--allow MCPTool(agents__list_bots)` on argv.
+On production, the live ACP wire log shows `pending_interaction` for `agents__list_bots` from 00:25:43.001 to 00:25:51.474 UTC, with `--allow MCPTool(agents__list_bots)` on argv.
 
 PreToolUse hooks cannot pre-approve: per the docs, a hook "allow" only means "not blocked".
 

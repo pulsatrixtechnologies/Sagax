@@ -63,13 +63,14 @@ says `by: "bot"`. A goodbye that fails or is interrupted drops the
 request and keeps the call, so a later turn does not inherit the hang-up.
 The page mutes at once and lets that goodbye finish before it leaves the
 call. A newer call is not ended by the old turn. The next written turn
-gets the ended note. On a call, words sent while the bot works always
-join its turn (no parallel or after chooser), unless Advanced >
-"Full-duplex conversation" is on: then a new utterance interrupts the
+gets the ended note. On a call, words sent while the bot works join its
+turn (no parallel or after chooser). Advanced > "Full-duplex conversation"
+is off by default on every channel. When the person turns it on and the
+server has `SAGAX_VOICE_FULL_DUPLEX=1`, a new utterance interrupts the
 in-flight turn, discards the steer queue, and starts only those words
-(issue #292). The flag is on by default in internal, TestFlight and
-dev builds (kill-switch in Advanced). Public App Store builds stay
-off. Typed chat still keeps its queue on Stop.
+(issue #292). Otherwise the page's duplex and speculative marks are
+dropped and the send takes the steer path. Typed chat still keeps its
+queue on Stop.
 
 ## Full-duplex conversation (issue #292)
 
@@ -81,7 +82,8 @@ steer queue: talking while the bot was thinking did not interrupt
 the next answer.
 
 `CallSettings.fullDuplex` (device-local, `omb.voiceCall.v1`, default
-on for internal / TestFlight / dev) plus `voiceCall.duplex` on the send:
+off on every channel; rev 3 drops the on that 0.5.x stored) plus
+`voiceCall.duplex` on the send, and only while `SAGAX_VOICE_FULL_DUPLEX=1`:
 confirmed speech while the bot is busy or speaking cancels that turn; the
 server never steers or queues those words. The thinking cue is 400 ms
 instead of 1200 ms so

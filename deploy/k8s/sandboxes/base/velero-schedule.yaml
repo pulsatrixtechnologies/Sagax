@@ -5,13 +5,13 @@
 apiVersion: velero.io/v1
 kind: Schedule
 metadata:
-  name: sagax-sandboxes-daily
+  name: sandboxes-daily
   namespace: velero
 spec:
   schedule: "0 11 * * *"
   template:
     includedNamespaces:
-      - sagax-sandboxes
+      - sandboxes
     snapshotVolumes: true
     ttl: 720h0m0s
-    storageLocation: sagax-sandboxes
+    storageLocation: sandboxes

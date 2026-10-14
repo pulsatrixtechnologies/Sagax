@@ -226,7 +226,8 @@ export interface FloatingWindowBridge {
   /** Size the window to what is drawn, keeping the character's corner in place (bottom-right unless said otherwise). */
   resize(width: number, height: number, anchor?: { x: "left" | "right"; y: "top" | "bottom" }): Promise<unknown>;
   /** Where the character is drawn in the window: main keeps that box on screen (optional: an older preload lacks it). */
-  setBody?(rect: FloatingRect): void;
+  /** `keep`: what hangs on the character (the input pill), kept on screen with it (an older preload drops it). */
+  setBody?(rect: FloatingRect, keep?: FloatingRect | null): void;
   /** A new layout of the window: this size, moved so the character stays put on the screen (optional: an older preload lacks it). */
   frame?(width: number, height: number, body: FloatingRect, from?: FloatingRect): Promise<FloatingRect | null>;
   setInteractive(on: boolean): void;

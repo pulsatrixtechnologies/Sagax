@@ -1,0 +1,3758 @@
+Sagax history-rewrite dry-runs (two local runs; nothing pushed).
+Run 1: --single-branch of main. Run 2: complete origin --mirror, refs/pull deleted before rewrite.
+
+## Run 1 — `git clone --mirror --single-branch --branch main`
+
+Source: `git clone --mirror --single-branch --branch main` of origin.
+Rewritten refs were not pushed. Public rewrite was not launched. No --force to origin.
+Live literals are replaced by placeholders only.
+Date (UTC): 2026-10-14T05:50:33Z
+Workspace HEAD at dry-run: d30a54d4ed1b5b097c901d0a6ea14d3b2a8e890c
+origin/main: fbda755fa97e486d26fa061bf410e43c8a444cc3
+git-filter-repo: a40bce548d2c
+
+git clone --mirror --single-branch --branch main \
+  --reference <WORKSPACE> \
+  https://github.com/pulsatrixtechnologies/Sagax.git \
+  <MIRROR>
+
+Refs after clone (before rewrite):
+  refs/heads/main  fbda755fa97e486d26fa061bf410e43c8a444cc3
+  refs/tags/*      29 tags that git fetched with --single-branch
+  refs/remotes/*   0
+  refs/pull/*      0
+
+git rev-list refs/heads/main | wc -l
+6069
+
+git rev-list --all | wc -l
+6070
+
+The extra commit (in --all, not on main) is a public release tag tip, not a
+dropped rewrite:
+
+  1a3ad70aa681e00474990e1c72b8be9b7b675ee3
+  Release Sagax 0.4.0: fork version and release notes
+  reachable from refs/tags/archive/release-0.4.0 only
+
+git --git-dir=<MIRROR> filter-repo --force --replace-text <out-of-repo-expressions> \
+  --path-rename deploy/<CLIENT_TOKEN>:deploy/example \
+  --path-rename deploy/<CLIENT_TOKEN>/deploy-pulsabot.sh:deploy/example/deploy-server.sh \
+  --path-rename deploy/k8s/helm/<CHART_OLD>:deploy/k8s/helm/sandboxes \
+  --path-rename scripts/<DEPLOY_HELPER>.mjs:scripts/deploy-server.mjs \
+  --path-rename scripts/<DEPLOY_HELPER>.test.mjs:scripts/deploy-server.test.mjs \
+  --path-rename deploy/k8s/sandboxes/adapters/azure/<NP_OLD>.yaml:deploy/k8s/sandboxes/adapters/azure/networkpolicy-ingress.yaml
+
+The image-gate workflow is not path-renamed (stays at main's filename).
+
+filter-repo exit 0. New history written in 315.24 seconds; completely finished
+after 315.87 seconds.
+
+git rev-list --all | wc -l
+6070
+
+git rev-list refs/heads/main | wc -l
+6069
+
+Dropped original SHAs: none.
+filter-repo/commit-map has a header line plus 6070 mappings (6071 lines).
+Every before SHA is present in column 1. None map to 000…0.
+--prune-empty did not remove a commit.
+
+This run supersedes earlier workspace-mirror transcripts (6080 and 6134).
+Those counted local branches and remotes of an agent checkout, not a
+fresh --mirror of main. They are not reproduced here.
+
+--- filter-repo stdout (raw bytes, CR unfolded to LF; otherwise unedited) ---
+
+The last progress write and the next warning share a line in the raw
+stream: `Parsed 6070 commitswarning: ...` (no CR/LF between them). That
+is how filter-repo emitted it.
+
+```
+Note: A branch outside the refs/remotes/ hierarchy was not removed;
+to delete it, use:
+  git branch -d main
+NOTICE: Removing 'origin' remote; see 'Why is my origin removed?'
+        in the manual if you want to push back there.
+        (was https://github.com/pulsatrixtechnologies/Sagax.git)
+
+Parsed 7 commits
+Parsed 27 commits
+Parsed 55 commits
+Parsed 72 commits
+Parsed 95 commits
+Parsed 118 commits
+Parsed 150 commits
+Parsed 180 commits
+Parsed 192 commits
+Parsed 207 commits
+Parsed 224 commits
+Parsed 241 commits
+Parsed 271 commits
+Parsed 284 commits
+Parsed 293 commits
+Parsed 305 commits
+Parsed 315 commits
+Parsed 319 commits
+Parsed 328 commits
+Parsed 335 commits
+Parsed 345 commits
+Parsed 351 commits
+Parsed 363 commits
+Parsed 386 commits
+Parsed 403 commits
+Parsed 410 commits
+Parsed 418 commits
+Parsed 423 commits
+Parsed 433 commits
+Parsed 438 commits
+Parsed 460 commits
+Parsed 473 commits
+Parsed 485 commits
+Parsed 498 commits
+Parsed 502 commits
+Parsed 515 commits
+Parsed 527 commits
+Parsed 555 commits
+Parsed 572 commits
+Parsed 582 commits
+Parsed 591 commits
+Parsed 601 commits
+Parsed 604 commits
+Parsed 612 commits
+Parsed 618 commits
+Parsed 626 commits
+Parsed 631 commits
+Parsed 648 commits
+Parsed 654 commits
+Parsed 671 commits
+Parsed 697 commits
+Parsed 720 commits
+Parsed 726 commits
+Parsed 731 commits
+Parsed 737 commits
+Parsed 753 commits
+Parsed 770 commits
+Parsed 795 commits
+Parsed 827 commits
+Parsed 848 commits
+Parsed 859 commits
+Parsed 896 commits
+Parsed 928 commits
+Parsed 935 commits
+Parsed 942 commits
+Parsed 952 commits
+Parsed 957 commits
+Parsed 961 commits
+Parsed 967 commits
+Parsed 970 commits
+Parsed 976 commits
+Parsed 983 commits
+Parsed 988 commits
+Parsed 991 commits
+Parsed 1002 commits
+Parsed 1008 commits
+Parsed 1014 commits
+Parsed 1024 commits
+Parsed 1025 commits
+Parsed 1029 commits
+Parsed 1038 commits
+Parsed 1043 commits
+Parsed 1049 commits
+Parsed 1051 commits
+Parsed 1053 commits
+Parsed 1058 commits
+Parsed 1069 commits
+Parsed 1078 commits
+Parsed 1088 commits
+Parsed 1098 commits
+Parsed 1113 commits
+Parsed 1121 commits
+Parsed 1125 commits
+Parsed 1134 commits
+Parsed 1138 commits
+Parsed 1140 commits
+Parsed 1147 commits
+Parsed 1168 commits
+Parsed 1175 commits
+Parsed 1189 commits
+Parsed 1197 commits
+Parsed 1201 commits
+Parsed 1203 commits
+Parsed 1205 commits
+Parsed 1209 commits
+Parsed 1211 commits
+Parsed 1221 commits
+Parsed 1231 commits
+Parsed 1244 commits
+Parsed 1253 commits
+Parsed 1257 commits
+Parsed 1260 commits
+Parsed 1272 commits
+Parsed 1281 commits
+Parsed 1284 commits
+Parsed 1294 commits
+Parsed 1296 commits
+Parsed 1300 commits
+Parsed 1307 commits
+Parsed 1309 commits
+Parsed 1318 commits
+Parsed 1322 commits
+Parsed 1326 commits
+Parsed 1331 commits
+Parsed 1338 commits
+Parsed 1341 commits
+Parsed 1345 commits
+Parsed 1356 commits
+Parsed 1361 commits
+Parsed 1369 commits
+Parsed 1374 commits
+Parsed 1377 commits
+Parsed 1386 commits
+Parsed 1395 commits
+Parsed 1410 commits
+Parsed 1413 commits
+Parsed 1416 commits
+Parsed 1421 commits
+Parsed 1426 commits
+Parsed 1430 commits
+Parsed 1432 commits
+Parsed 1442 commits
+Parsed 1445 commits
+Parsed 1449 commits
+Parsed 1450 commits
+Parsed 1456 commits
+Parsed 1466 commits
+Parsed 1470 commits
+Parsed 1487 commits
+Parsed 1493 commits
+Parsed 1498 commits
+Parsed 1505 commits
+Parsed 1511 commits
+Parsed 1513 commits
+Parsed 1519 commits
+Parsed 1522 commits
+Parsed 1530 commits
+Parsed 1533 commits
+Parsed 1535 commits
+Parsed 1536 commits
+Parsed 1539 commits
+Parsed 1542 commits
+Parsed 1543 commits
+Parsed 1546 commits
+Parsed 1547 commits
+Parsed 1559 commits
+Parsed 1563 commits
+Parsed 1568 commits
+Parsed 1571 commits
+Parsed 1573 commits
+Parsed 1574 commits
+Parsed 1582 commits
+Parsed 1587 commits
+Parsed 1590 commits
+Parsed 1592 commits
+Parsed 1594 commits
+Parsed 1596 commits
+Parsed 1597 commits
+Parsed 1601 commits
+Parsed 1602 commits
+Parsed 1606 commits
+Parsed 1607 commits
+Parsed 1610 commits
+Parsed 1615 commits
+Parsed 1618 commits
+Parsed 1620 commits
+Parsed 1629 commits
+Parsed 1632 commits
+Parsed 1635 commits
+Parsed 1640 commits
+Parsed 1642 commits
+Parsed 1644 commits
+Parsed 1647 commits
+Parsed 1649 commits
+Parsed 1654 commits
+Parsed 1656 commits
+Parsed 1658 commits
+Parsed 1659 commits
+Parsed 1662 commits
+Parsed 1667 commits
+Parsed 1672 commits
+Parsed 1673 commits
+Parsed 1674 commits
+Parsed 1679 commits
+Parsed 1683 commits
+Parsed 1689 commits
+Parsed 1690 commits
+Parsed 1696 commits
+Parsed 1699 commits
+Parsed 1706 commits
+Parsed 1708 commits
+Parsed 1710 commits
+Parsed 1712 commits
+Parsed 1714 commits
+Parsed 1716 commits
+Parsed 1717 commits
+Parsed 1718 commits
+Parsed 1720 commits
+Parsed 1722 commits
+Parsed 1723 commits
+Parsed 1726 commits
+Parsed 1727 commits
+Parsed 1728 commits
+Parsed 1731 commits
+Parsed 1733 commits
+Parsed 1736 commits
+Parsed 1739 commits
+Parsed 1751 commits
+Parsed 1766 commits
+Parsed 1778 commits
+Parsed 1781 commits
+Parsed 1789 commits
+Parsed 1792 commits
+Parsed 1793 commits
+Parsed 1795 commits
+Parsed 1804 commits
+Parsed 1815 commits
+Parsed 1818 commits
+Parsed 1822 commits
+Parsed 1827 commits
+Parsed 1832 commits
+Parsed 1837 commits
+Parsed 1842 commits
+Parsed 1844 commits
+Parsed 1847 commits
+Parsed 1849 commits
+Parsed 1859 commits
+Parsed 1861 commits
+Parsed 1868 commits
+Parsed 1871 commits
+Parsed 1873 commits
+Parsed 1875 commits
+Parsed 1878 commits
+Parsed 1880 commits
+Parsed 1882 commits
+Parsed 1883 commits
+Parsed 1884 commits
+Parsed 1887 commits
+Parsed 1891 commits
+Parsed 1893 commits
+Parsed 1897 commits
+Parsed 1904 commits
+Parsed 1907 commits
+Parsed 1912 commits
+Parsed 1914 commits
+Parsed 1917 commits
+Parsed 1920 commits
+Parsed 1926 commits
+Parsed 1930 commits
+Parsed 1933 commits
+Parsed 1940 commits
+Parsed 1957 commits
+Parsed 1965 commits
+Parsed 1966 commits
+Parsed 1971 commits
+Parsed 1972 commits
+Parsed 1976 commits
+Parsed 1979 commits
+Parsed 1981 commits
+Parsed 1983 commits
+Parsed 1987 commits
+Parsed 1991 commits
+Parsed 1993 commits
+Parsed 1994 commits
+Parsed 1996 commits
+Parsed 2000 commits
+Parsed 2003 commits
+Parsed 2006 commits
+Parsed 2011 commits
+Parsed 2014 commits
+Parsed 2015 commits
+Parsed 2018 commits
+Parsed 2025 commits
+Parsed 2030 commits
+Parsed 2032 commits
+Parsed 2034 commits
+Parsed 2036 commits
+Parsed 2037 commits
+Parsed 2040 commits
+Parsed 2043 commits
+Parsed 2049 commits
+Parsed 2058 commits
+Parsed 2064 commits
+Parsed 2072 commits
+Parsed 2085 commits
+Parsed 2088 commits
+Parsed 2106 commits
+Parsed 2108 commits
+Parsed 2112 commits
+Parsed 2113 commits
+Parsed 2114 commits
+Parsed 2116 commits
+Parsed 2119 commits
+Parsed 2123 commits
+Parsed 2125 commits
+Parsed 2126 commits
+Parsed 2127 commits
+Parsed 2129 commits
+Parsed 2130 commits
+Parsed 2131 commits
+Parsed 2133 commits
+Parsed 2142 commits
+Parsed 2144 commits
+Parsed 2148 commits
+Parsed 2159 commits
+Parsed 2161 commits
+Parsed 2163 commits
+Parsed 2165 commits
+Parsed 2169 commits
+Parsed 2185 commits
+Parsed 2216 commits
+Parsed 2222 commits
+Parsed 2242 commits
+Parsed 2249 commits
+Parsed 2251 commits
+Parsed 2254 commits
+Parsed 2259 commits
+Parsed 2265 commits
+Parsed 2276 commits
+Parsed 2281 commits
+Parsed 2285 commits
+Parsed 2289 commits
+Parsed 2292 commits
+Parsed 2294 commits
+Parsed 2296 commits
+Parsed 2298 commits
+Parsed 2301 commits
+Parsed 2303 commits
+Parsed 2305 commits
+Parsed 2311 commits
+Parsed 2316 commits
+Parsed 2326 commits
+Parsed 2328 commits
+Parsed 2336 commits
+Parsed 2337 commits
+Parsed 2338 commits
+Parsed 2339 commits
+Parsed 2345 commits
+Parsed 2347 commits
+Parsed 2348 commits
+Parsed 2357 commits
+Parsed 2367 commits
+Parsed 2372 commits
+Parsed 2405 commits
+Parsed 2418 commits
+Parsed 2435 commits
+Parsed 2439 commits
+Parsed 2441 commits
+Parsed 2452 commits
+Parsed 2453 commits
+Parsed 2454 commits
+Parsed 2456 commits
+Parsed 2457 commits
+Parsed 2469 commits
+Parsed 2471 commits
+Parsed 2479 commits
+Parsed 2490 commits
+Parsed 2494 commits
+Parsed 2496 commits
+Parsed 2497 commits
+Parsed 2516 commits
+Parsed 2517 commits
+Parsed 2532 commits
+Parsed 2548 commits
+Parsed 2561 commits
+Parsed 2572 commits
+Parsed 2583 commits
+Parsed 2597 commits
+Parsed 2600 commits
+Parsed 2601 commits
+Parsed 2602 commits
+Parsed 2610 commits
+Parsed 2617 commits
+Parsed 2618 commits
+Parsed 2620 commits
+Parsed 2621 commits
+Parsed 2629 commits
+Parsed 2640 commits
+Parsed 2644 commits
+Parsed 2647 commits
+Parsed 2662 commits
+Parsed 2666 commits
+Parsed 2667 commits
+Parsed 2668 commits
+Parsed 2677 commits
+Parsed 2680 commits
+Parsed 2681 commits
+Parsed 2682 commits
+Parsed 2685 commits
+Parsed 2689 commits
+Parsed 2692 commits
+Parsed 2694 commits
+Parsed 2695 commits
+Parsed 2701 commits
+Parsed 2703 commits
+Parsed 2705 commits
+Parsed 2706 commits
+Parsed 2708 commits
+Parsed 2710 commits
+Parsed 2712 commits
+Parsed 2718 commits
+Parsed 2726 commits
+Parsed 2733 commits
+Parsed 2742 commits
+Parsed 2751 commits
+Parsed 2752 commits
+Parsed 2755 commits
+Parsed 2758 commits
+Parsed 2760 commits
+Parsed 2761 commits
+Parsed 2762 commits
+Parsed 2776 commits
+Parsed 2783 commits
+Parsed 2784 commits
+Parsed 2785 commits
+Parsed 2786 commits
+Parsed 2788 commits
+Parsed 2789 commits
+Parsed 2791 commits
+Parsed 2792 commits
+Parsed 2794 commits
+Parsed 2800 commits
+Parsed 2802 commits
+Parsed 2804 commits
+Parsed 2806 commits
+Parsed 2808 commits
+Parsed 2813 commits
+Parsed 2814 commits
+Parsed 2816 commits
+Parsed 2817 commits
+Parsed 2819 commits
+Parsed 2823 commits
+Parsed 2825 commits
+Parsed 2829 commits
+Parsed 2830 commits
+Parsed 2833 commits
+Parsed 2839 commits
+Parsed 2845 commits
+Parsed 2847 commits
+Parsed 2849 commits
+Parsed 2851 commits
+Parsed 2859 commits
+Parsed 2861 commits
+Parsed 2865 commits
+Parsed 2866 commits
+Parsed 2871 commits
+Parsed 2873 commits
+Parsed 2874 commits
+Parsed 2879 commits
+Parsed 2881 commits
+Parsed 2882 commits
+Parsed 2886 commits
+Parsed 2888 commits
+Parsed 2889 commits
+Parsed 2891 commits
+Parsed 2896 commits
+Parsed 2899 commits
+Parsed 2901 commits
+Parsed 2903 commits
+Parsed 2905 commits
+Parsed 2907 commits
+Parsed 2914 commits
+Parsed 2916 commits
+Parsed 2918 commits
+Parsed 2920 commits
+Parsed 2922 commits
+Parsed 2923 commits
+Parsed 2925 commits
+Parsed 2926 commits
+Parsed 2927 commits
+Parsed 2928 commits
+Parsed 2931 commits
+Parsed 2941 commits
+Parsed 2944 commits
+Parsed 2945 commits
+Parsed 2947 commits
+Parsed 2948 commits
+Parsed 2950 commits
+Parsed 2953 commits
+Parsed 2959 commits
+Parsed 2960 commits
+Parsed 2964 commits
+Parsed 2967 commits
+Parsed 2972 commits
+Parsed 2973 commits
+Parsed 2978 commits
+Parsed 2979 commits
+Parsed 2980 commits
+Parsed 2981 commits
+Parsed 2983 commits
+Parsed 2984 commits
+Parsed 2987 commits
+Parsed 2988 commits
+Parsed 2990 commits
+Parsed 2993 commits
+Parsed 2995 commits
+Parsed 2996 commits
+Parsed 2999 commits
+Parsed 3000 commits
+Parsed 3006 commits
+Parsed 3009 commits
+Parsed 3011 commits
+Parsed 3012 commits
+Parsed 3013 commits
+Parsed 3014 commits
+Parsed 3015 commits
+Parsed 3017 commits
+Parsed 3021 commits
+Parsed 3022 commits
+Parsed 3024 commits
+Parsed 3025 commits
+Parsed 3028 commits
+Parsed 3032 commits
+Parsed 3035 commits
+Parsed 3037 commits
+Parsed 3045 commits
+Parsed 3046 commits
+Parsed 3047 commits
+Parsed 3050 commits
+Parsed 3051 commits
+Parsed 3053 commits
+Parsed 3056 commits
+Parsed 3058 commits
+Parsed 3062 commits
+Parsed 3063 commits
+Parsed 3064 commits
+Parsed 3065 commits
+Parsed 3066 commits
+Parsed 3067 commits
+Parsed 3068 commits
+Parsed 3073 commits
+Parsed 3074 commits
+Parsed 3075 commits
+Parsed 3076 commits
+Parsed 3078 commits
+Parsed 3079 commits
+Parsed 3086 commits
+Parsed 3087 commits
+Parsed 3089 commits
+Parsed 3090 commits
+Parsed 3091 commits
+Parsed 3092 commits
+Parsed 3097 commits
+Parsed 3098 commits
+Parsed 3100 commits
+Parsed 3104 commits
+Parsed 3109 commits
+Parsed 3111 commits
+Parsed 3116 commits
+Parsed 3120 commits
+Parsed 3121 commits
+Parsed 3124 commits
+Parsed 3126 commits
+Parsed 3127 commits
+Parsed 3132 commits
+Parsed 3133 commits
+Parsed 3135 commits
+Parsed 3136 commits
+Parsed 3139 commits
+Parsed 3140 commits
+Parsed 3141 commits
+Parsed 3142 commits
+Parsed 3147 commits
+Parsed 3150 commits
+Parsed 3152 commits
+Parsed 3159 commits
+Parsed 3162 commits
+Parsed 3163 commits
+Parsed 3169 commits
+Parsed 3170 commits
+Parsed 3172 commits
+Parsed 3175 commits
+Parsed 3177 commits
+Parsed 3181 commits
+Parsed 3183 commits
+Parsed 3189 commits
+Parsed 3192 commits
+Parsed 3195 commits
+Parsed 3197 commits
+Parsed 3199 commits
+Parsed 3200 commits
+Parsed 3206 commits
+Parsed 3212 commits
+Parsed 3213 commits
+Parsed 3214 commits
+Parsed 3215 commits
+Parsed 3217 commits
+Parsed 3218 commits
+Parsed 3220 commits
+Parsed 3222 commits
+Parsed 3225 commits
+Parsed 3226 commits
+Parsed 3230 commits
+Parsed 3231 commits
+Parsed 3232 commits
+Parsed 3233 commits
+Parsed 3246 commits
+Parsed 3248 commits
+Parsed 3252 commits
+Parsed 3267 commits
+Parsed 3294 commits
+Parsed 3303 commits
+Parsed 3306 commits
+Parsed 3308 commits
+Parsed 3315 commits
+Parsed 3316 commits
+Parsed 3322 commits
+Parsed 3323 commits
+Parsed 3324 commits
+Parsed 3328 commits
+Parsed 3331 commits
+Parsed 3334 commits
+Parsed 3336 commits
+Parsed 3340 commits
+Parsed 3343 commits
+Parsed 3344 commits
+Parsed 3345 commits
+Parsed 3347 commits
+Parsed 3348 commits
+Parsed 3349 commits
+Parsed 3351 commits
+Parsed 3353 commits
+Parsed 3362 commits
+Parsed 3363 commits
+Parsed 3364 commits
+Parsed 3365 commits
+Parsed 3366 commits
+Parsed 3368 commits
+Parsed 3370 commits
+Parsed 3374 commits
+Parsed 3375 commits
+Parsed 3383 commits
+Parsed 3384 commits
+Parsed 3390 commits
+Parsed 3391 commits
+Parsed 3392 commits
+Parsed 3393 commits
+Parsed 3396 commits
+Parsed 3398 commits
+Parsed 3403 commits
+Parsed 3405 commits
+Parsed 3408 commits
+Parsed 3418 commits
+Parsed 3420 commits
+Parsed 3423 commits
+Parsed 3432 commits
+Parsed 3434 commits
+Parsed 3439 commits
+Parsed 3449 commits
+Parsed 3458 commits
+Parsed 3465 commits
+Parsed 3467 commits
+Parsed 3469 commits
+Parsed 3472 commits
+Parsed 3473 commits
+Parsed 3475 commits
+Parsed 3476 commits
+Parsed 3480 commits
+Parsed 3481 commits
+Parsed 3485 commits
+Parsed 3489 commits
+Parsed 3491 commits
+Parsed 3495 commits
+Parsed 3497 commits
+Parsed 3498 commits
+Parsed 3499 commits
+Parsed 3500 commits
+Parsed 3501 commits
+Parsed 3506 commits
+Parsed 3508 commits
+Parsed 3512 commits
+Parsed 3514 commits
+Parsed 3519 commits
+Parsed 3523 commits
+Parsed 3534 commits
+Parsed 3537 commits
+Parsed 3539 commits
+Parsed 3545 commits
+Parsed 3547 commits
+Parsed 3550 commits
+Parsed 3551 commits
+Parsed 3552 commits
+Parsed 3554 commits
+Parsed 3557 commits
+Parsed 3564 commits
+Parsed 3565 commits
+Parsed 3567 commits
+Parsed 3568 commits
+Parsed 3569 commits
+Parsed 3570 commits
+Parsed 3572 commits
+Parsed 3573 commits
+Parsed 3578 commits
+Parsed 3580 commits
+Parsed 3583 commits
+Parsed 3584 commits
+Parsed 3585 commits
+Parsed 3586 commits
+Parsed 3588 commits
+Parsed 3592 commits
+Parsed 3596 commits
+Parsed 3599 commits
+Parsed 3600 commits
+Parsed 3601 commits
+Parsed 3603 commits
+Parsed 3604 commits
+Parsed 3606 commits
+Parsed 3607 commits
+Parsed 3610 commits
+Parsed 3611 commits
+Parsed 3612 commits
+Parsed 3614 commits
+Parsed 3616 commits
+Parsed 3618 commits
+Parsed 3619 commits
+Parsed 3620 commits
+Parsed 3623 commits
+Parsed 3624 commits
+Parsed 3625 commits
+Parsed 3626 commits
+Parsed 3628 commits
+Parsed 3630 commits
+Parsed 3632 commits
+Parsed 3633 commits
+Parsed 3634 commits
+Parsed 3636 commits
+Parsed 3637 commits
+Parsed 3638 commits
+Parsed 3640 commits
+Parsed 3641 commits
+Parsed 3645 commits
+Parsed 3647 commits
+Parsed 3649 commits
+Parsed 3651 commits
+Parsed 3653 commits
+Parsed 3654 commits
+Parsed 3655 commits
+Parsed 3656 commits
+Parsed 3657 commits
+Parsed 3664 commits
+Parsed 3668 commits
+Parsed 3669 commits
+Parsed 3670 commits
+Parsed 3672 commits
+Parsed 3674 commits
+Parsed 3677 commits
+Parsed 3678 commits
+Parsed 3679 commits
+Parsed 3680 commits
+Parsed 3683 commits
+Parsed 3685 commits
+Parsed 3686 commits
+Parsed 3689 commits
+Parsed 3691 commits
+Parsed 3693 commits
+Parsed 3695 commits
+Parsed 3698 commits
+Parsed 3701 commits
+Parsed 3703 commits
+Parsed 3705 commits
+Parsed 3707 commits
+Parsed 3708 commits
+Parsed 3709 commits
+Parsed 3710 commits
+Parsed 3713 commits
+Parsed 3714 commits
+Parsed 3718 commits
+Parsed 3720 commits
+Parsed 3721 commits
+Parsed 3724 commits
+Parsed 3725 commits
+Parsed 3729 commits
+Parsed 3731 commits
+Parsed 3732 commits
+Parsed 3734 commits
+Parsed 3736 commits
+Parsed 3740 commits
+Parsed 3742 commits
+Parsed 3747 commits
+Parsed 3755 commits
+Parsed 3757 commits
+Parsed 3758 commits
+Parsed 3760 commits
+Parsed 3763 commits
+Parsed 3765 commits
+Parsed 3766 commits
+Parsed 3767 commits
+Parsed 3772 commits
+Parsed 3784 commits
+Parsed 3790 commits
+Parsed 3792 commits
+Parsed 3794 commits
+Parsed 3795 commits
+Parsed 3798 commits
+Parsed 3800 commits
+Parsed 3801 commits
+Parsed 3803 commits
+Parsed 3804 commits
+Parsed 3806 commits
+Parsed 3809 commits
+Parsed 3818 commits
+Parsed 3823 commits
+Parsed 3824 commits
+Parsed 3825 commits
+Parsed 3826 commits
+Parsed 3827 commits
+Parsed 3828 commits
+Parsed 3829 commits
+Parsed 3830 commits
+Parsed 3832 commits
+Parsed 3841 commits
+Parsed 3845 commits
+Parsed 3847 commits
+Parsed 3861 commits
+Parsed 3866 commits
+Parsed 3872 commits
+Parsed 3873 commits
+Parsed 3876 commits
+Parsed 3879 commits
+Parsed 3880 commits
+Parsed 3883 commits
+Parsed 3889 commits
+Parsed 3893 commits
+Parsed 3905 commits
+Parsed 3907 commits
+Parsed 3918 commits
+Parsed 3919 commits
+Parsed 3920 commits
+Parsed 3923 commits
+Parsed 3925 commits
+Parsed 3926 commits
+Parsed 3933 commits
+Parsed 3935 commits
+Parsed 3937 commits
+Parsed 3939 commits
+Parsed 3942 commits
+Parsed 3944 commits
+Parsed 3947 commits
+Parsed 3948 commits
+Parsed 3951 commits
+Parsed 3955 commits
+Parsed 3956 commits
+Parsed 3963 commits
+Parsed 3968 commits
+Parsed 3970 commits
+Parsed 3972 commits
+Parsed 3973 commits
+Parsed 3975 commits
+Parsed 3977 commits
+Parsed 3978 commits
+Parsed 3982 commits
+Parsed 3984 commits
+Parsed 3987 commits
+Parsed 3988 commits
+Parsed 3989 commits
+Parsed 3990 commits
+Parsed 3995 commits
+Parsed 3997 commits
+Parsed 3998 commits
+Parsed 4002 commits
+Parsed 4003 commits
+Parsed 4005 commits
+Parsed 4006 commits
+Parsed 4007 commits
+Parsed 4008 commits
+Parsed 4009 commits
+Parsed 4010 commits
+Parsed 4012 commits
+Parsed 4013 commits
+Parsed 4014 commits
+Parsed 4015 commits
+Parsed 4016 commits
+Parsed 4017 commits
+Parsed 4018 commits
+Parsed 4026 commits
+Parsed 4027 commits
+Parsed 4028 commits
+Parsed 4033 commits
+Parsed 4034 commits
+Parsed 4037 commits
+Parsed 4040 commits
+Parsed 4046 commits
+Parsed 4050 commits
+Parsed 4057 commits
+Parsed 4067 commits
+Parsed 4068 commits
+Parsed 4072 commits
+Parsed 4073 commits
+Parsed 4079 commits
+Parsed 4086 commits
+Parsed 4093 commits
+Parsed 4100 commits
+Parsed 4117 commits
+Parsed 4118 commits
+Parsed 4124 commits
+Parsed 4125 commits
+Parsed 4127 commits
+Parsed 4135 commits
+Parsed 4147 commits
+Parsed 4155 commits
+Parsed 4166 commits
+Parsed 4168 commits
+Parsed 4170 commits
+Parsed 4173 commits
+Parsed 4182 commits
+Parsed 4190 commits
+Parsed 4192 commits
+Parsed 4200 commits
+Parsed 4201 commits
+Parsed 4202 commits
+Parsed 4203 commits
+Parsed 4204 commits
+Parsed 4207 commits
+Parsed 4209 commits
+Parsed 4213 commits
+Parsed 4220 commits
+Parsed 4223 commits
+Parsed 4226 commits
+Parsed 4230 commits
+Parsed 4231 commits
+Parsed 4233 commits
+Parsed 4235 commits
+Parsed 4236 commits
+Parsed 4237 commits
+Parsed 4243 commits
+Parsed 4244 commits
+Parsed 4246 commits
+Parsed 4247 commits
+Parsed 4248 commits
+Parsed 4253 commits
+Parsed 4255 commits
+Parsed 4257 commits
+Parsed 4259 commits
+Parsed 4260 commits
+Parsed 4262 commits
+Parsed 4267 commits
+Parsed 4273 commits
+Parsed 4274 commits
+Parsed 4275 commits
+Parsed 4276 commits
+Parsed 4279 commits
+Parsed 4280 commits
+Parsed 4281 commits
+Parsed 4282 commits
+Parsed 4283 commits
+Parsed 4285 commits
+Parsed 4286 commits
+Parsed 4295 commits
+Parsed 4297 commits
+Parsed 4301 commits
+Parsed 4302 commits
+Parsed 4305 commits
+Parsed 4308 commits
+Parsed 4309 commits
+Parsed 4311 commits
+Parsed 4312 commits
+Parsed 4313 commits
+Parsed 4318 commits
+Parsed 4320 commits
+Parsed 4321 commits
+Parsed 4328 commits
+Parsed 4331 commits
+Parsed 4334 commits
+Parsed 4335 commits
+Parsed 4336 commits
+Parsed 4338 commits
+Parsed 4343 commits
+Parsed 4348 commits
+Parsed 4357 commits
+Parsed 4358 commits
+Parsed 4360 commits
+Parsed 4362 commits
+Parsed 4363 commits
+Parsed 4364 commits
+Parsed 4368 commits
+Parsed 4372 commits
+Parsed 4374 commits
+Parsed 4375 commits
+Parsed 4376 commits
+Parsed 4377 commits
+Parsed 4378 commits
+Parsed 4379 commits
+Parsed 4380 commits
+Parsed 4381 commits
+Parsed 4382 commits
+Parsed 4383 commits
+Parsed 4395 commits
+Parsed 4403 commits
+Parsed 4404 commits
+Parsed 4407 commits
+Parsed 4409 commits
+Parsed 4416 commits
+Parsed 4417 commits
+Parsed 4418 commits
+Parsed 4420 commits
+Parsed 4425 commits
+Parsed 4428 commits
+Parsed 4432 commits
+Parsed 4433 commits
+Parsed 4434 commits
+Parsed 4437 commits
+Parsed 4441 commits
+Parsed 4443 commits
+Parsed 4444 commits
+Parsed 4446 commits
+Parsed 4451 commits
+Parsed 4454 commits
+Parsed 4457 commits
+Parsed 4460 commits
+Parsed 4462 commits
+Parsed 4466 commits
+Parsed 4468 commits
+Parsed 4472 commits
+Parsed 4473 commits
+Parsed 4477 commits
+Parsed 4479 commits
+Parsed 4482 commits
+Parsed 4485 commits
+Parsed 4487 commits
+Parsed 4490 commits
+Parsed 4496 commits
+Parsed 4498 commits
+Parsed 4504 commits
+Parsed 4507 commits
+Parsed 4511 commits
+Parsed 4515 commits
+Parsed 4517 commits
+Parsed 4520 commits
+Parsed 4523 commits
+Parsed 4525 commits
+Parsed 4528 commits
+Parsed 4531 commits
+Parsed 4533 commits
+Parsed 4536 commits
+Parsed 4538 commits
+Parsed 4541 commits
+Parsed 4547 commits
+Parsed 4549 commits
+Parsed 4551 commits
+Parsed 4553 commits
+Parsed 4556 commits
+Parsed 4558 commits
+Parsed 4560 commits
+Parsed 4562 commits
+Parsed 4565 commits
+Parsed 4570 commits
+Parsed 4572 commits
+Parsed 4575 commits
+Parsed 4576 commits
+Parsed 4578 commits
+Parsed 4580 commits
+Parsed 4581 commits
+Parsed 4583 commits
+Parsed 4586 commits
+Parsed 4587 commits
+Parsed 4588 commits
+Parsed 4589 commits
+Parsed 4592 commits
+Parsed 4594 commits
+Parsed 4595 commits
+Parsed 4596 commits
+Parsed 4604 commits
+Parsed 4606 commits
+Parsed 4607 commits
+Parsed 4610 commits
+Parsed 4611 commits
+Parsed 4612 commits
+Parsed 4615 commits
+Parsed 4617 commits
+Parsed 4619 commits
+Parsed 4620 commits
+Parsed 4621 commits
+Parsed 4622 commits
+Parsed 4623 commits
+Parsed 4624 commits
+Parsed 4625 commits
+Parsed 4626 commits
+Parsed 4627 commits
+Parsed 4628 commits
+Parsed 4629 commits
+Parsed 4630 commits
+Parsed 4632 commits
+Parsed 4633 commits
+Parsed 4635 commits
+Parsed 4638 commits
+Parsed 4639 commits
+Parsed 4650 commits
+Parsed 4651 commits
+Parsed 4652 commits
+Parsed 4655 commits
+Parsed 4659 commits
+Parsed 4664 commits
+Parsed 4665 commits
+Parsed 4668 commits
+Parsed 4669 commits
+Parsed 4671 commits
+Parsed 4673 commits
+Parsed 4674 commits
+Parsed 4675 commits
+Parsed 4676 commits
+Parsed 4677 commits
+Parsed 4678 commits
+Parsed 4679 commits
+Parsed 4683 commits
+Parsed 4691 commits
+Parsed 4692 commits
+Parsed 4696 commits
+Parsed 4718 commits
+Parsed 4726 commits
+Parsed 4727 commits
+Parsed 4729 commits
+Parsed 4731 commits
+Parsed 4742 commits
+Parsed 4744 commits
+Parsed 4747 commits
+Parsed 4751 commits
+Parsed 4753 commits
+Parsed 4756 commits
+Parsed 4762 commits
+Parsed 4764 commits
+Parsed 4765 commits
+Parsed 4767 commits
+Parsed 4770 commits
+Parsed 4771 commits
+Parsed 4772 commits
+Parsed 4774 commits
+Parsed 4778 commits
+Parsed 4782 commits
+Parsed 4784 commits
+Parsed 4785 commits
+Parsed 4786 commits
+Parsed 4788 commits
+Parsed 4790 commits
+Parsed 4791 commits
+Parsed 4792 commits
+Parsed 4793 commits
+Parsed 4796 commits
+Parsed 4797 commits
+Parsed 4801 commits
+Parsed 4803 commits
+Parsed 4808 commits
+Parsed 4809 commits
+Parsed 4813 commits
+Parsed 4815 commits
+Parsed 4816 commits
+Parsed 4820 commits
+Parsed 4827 commits
+Parsed 4829 commits
+Parsed 4830 commits
+Parsed 4834 commits
+Parsed 4835 commits
+Parsed 4840 commits
+Parsed 4845 commits
+Parsed 4847 commits
+Parsed 4848 commits
+Parsed 4849 commits
+Parsed 4852 commits
+Parsed 4854 commits
+Parsed 4858 commits
+Parsed 4860 commits
+Parsed 4864 commits
+Parsed 4868 commits
+Parsed 4870 commits
+Parsed 4871 commits
+Parsed 4875 commits
+Parsed 4877 commits
+Parsed 4880 commits
+Parsed 4881 commits
+Parsed 4882 commits
+Parsed 4884 commits
+Parsed 4885 commits
+Parsed 4888 commits
+Parsed 4893 commits
+Parsed 4895 commits
+Parsed 4901 commits
+Parsed 4902 commits
+Parsed 4912 commits
+Parsed 4916 commits
+Parsed 4918 commits
+Parsed 4926 commits
+Parsed 4927 commits
+Parsed 4931 commits
+Parsed 4935 commits
+Parsed 4938 commits
+Parsed 4939 commits
+Parsed 4940 commits
+Parsed 4942 commits
+Parsed 4943 commits
+Parsed 4946 commits
+Parsed 4947 commits
+Parsed 4948 commits
+Parsed 4949 commits
+Parsed 4961 commits
+Parsed 4962 commits
+Parsed 4963 commits
+Parsed 4964 commits
+Parsed 4965 commits
+Parsed 4972 commits
+Parsed 4973 commits
+Parsed 4976 commits
+Parsed 4978 commits
+Parsed 4981 commits
+Parsed 4982 commits
+Parsed 4983 commits
+Parsed 4984 commits
+Parsed 4985 commits
+Parsed 4989 commits
+Parsed 4996 commits
+Parsed 5002 commits
+Parsed 5003 commits
+Parsed 5006 commits
+Parsed 5008 commits
+Parsed 5009 commits
+Parsed 5015 commits
+Parsed 5016 commits
+Parsed 5026 commits
+Parsed 5028 commits
+Parsed 5029 commits
+Parsed 5030 commits
+Parsed 5031 commits
+Parsed 5034 commits
+Parsed 5035 commits
+Parsed 5039 commits
+Parsed 5040 commits
+Parsed 5044 commits
+Parsed 5045 commits
+Parsed 5052 commits
+Parsed 5053 commits
+Parsed 5056 commits
+Parsed 5059 commits
+Parsed 5063 commits
+Parsed 5065 commits
+Parsed 5067 commits
+Parsed 5068 commits
+Parsed 5070 commits
+Parsed 5080 commits
+Parsed 5082 commits
+Parsed 5083 commits
+Parsed 5085 commits
+Parsed 5087 commits
+Parsed 5088 commits
+Parsed 5089 commits
+Parsed 5092 commits
+Parsed 5094 commits
+Parsed 5096 commits
+Parsed 5097 commits
+Parsed 5101 commits
+Parsed 5102 commits
+Parsed 5105 commits
+Parsed 5106 commits
+Parsed 5110 commits
+Parsed 5114 commits
+Parsed 5116 commits
+Parsed 5118 commits
+Parsed 5123 commits
+Parsed 5124 commits
+Parsed 5128 commits
+Parsed 5131 commits
+Parsed 5132 commits
+Parsed 5133 commits
+Parsed 5135 commits
+Parsed 5138 commits
+Parsed 5139 commits
+Parsed 5141 commits
+Parsed 5145 commits
+Parsed 5146 commits
+Parsed 5147 commits
+Parsed 5149 commits
+Parsed 5150 commits
+Parsed 5152 commits
+Parsed 5153 commits
+Parsed 5155 commits
+Parsed 5158 commits
+Parsed 5159 commits
+Parsed 5160 commits
+Parsed 5161 commits
+Parsed 5163 commits
+Parsed 5164 commits
+Parsed 5165 commits
+Parsed 5166 commits
+Parsed 5168 commits
+Parsed 5169 commits
+Parsed 5172 commits
+Parsed 5173 commits
+Parsed 5174 commits
+Parsed 5175 commits
+Parsed 5177 commits
+Parsed 5179 commits
+Parsed 5182 commits
+Parsed 5183 commits
+Parsed 5184 commits
+Parsed 5185 commits
+Parsed 5188 commits
+Parsed 5190 commits
+Parsed 5191 commits
+Parsed 5192 commits
+Parsed 5194 commits
+Parsed 5196 commits
+Parsed 5197 commits
+Parsed 5199 commits
+Parsed 5200 commits
+Parsed 5201 commits
+Parsed 5203 commits
+Parsed 5204 commits
+Parsed 5205 commits
+Parsed 5208 commits
+Parsed 5210 commits
+Parsed 5211 commits
+Parsed 5212 commits
+Parsed 5213 commits
+Parsed 5214 commits
+Parsed 5215 commits
+Parsed 5216 commits
+Parsed 5217 commits
+Parsed 5218 commits
+Parsed 5219 commits
+Parsed 5220 commits
+Parsed 5222 commits
+Parsed 5223 commits
+Parsed 5224 commits
+Parsed 5225 commits
+Parsed 5226 commits
+Parsed 5231 commits
+Parsed 5232 commits
+Parsed 5233 commits
+Parsed 5241 commits
+Parsed 5243 commits
+Parsed 5246 commits
+Parsed 5249 commits
+Parsed 5255 commits
+Parsed 5257 commits
+Parsed 5258 commits
+Parsed 5259 commits
+Parsed 5260 commits
+Parsed 5261 commits
+Parsed 5262 commits
+Parsed 5265 commits
+Parsed 5266 commits
+Parsed 5271 commits
+Parsed 5272 commits
+Parsed 5273 commits
+Parsed 5282 commits
+Parsed 5284 commits
+Parsed 5285 commits
+Parsed 5286 commits
+Parsed 5287 commits
+Parsed 5289 commits
+Parsed 5290 commits
+Parsed 5291 commits
+Parsed 5292 commits
+Parsed 5297 commits
+Parsed 5298 commits
+Parsed 5299 commits
+Parsed 5303 commits
+Parsed 5305 commits
+Parsed 5308 commits
+Parsed 5312 commits
+Parsed 5313 commits
+Parsed 5321 commits
+Parsed 5328 commits
+Parsed 5329 commits
+Parsed 5330 commits
+Parsed 5331 commits
+Parsed 5341 commits
+Parsed 5344 commits
+Parsed 5347 commits
+Parsed 5348 commits
+Parsed 5352 commits
+Parsed 5362 commits
+Parsed 5363 commits
+Parsed 5364 commits
+Parsed 5365 commits
+Parsed 5366 commits
+Parsed 5368 commits
+Parsed 5370 commits
+Parsed 5372 commits
+Parsed 5373 commits
+Parsed 5376 commits
+Parsed 5378 commits
+Parsed 5379 commits
+Parsed 5380 commits
+Parsed 5381 commits
+Parsed 5382 commits
+Parsed 5388 commits
+Parsed 5390 commits
+Parsed 5391 commits
+Parsed 5393 commits
+Parsed 5396 commits
+Parsed 5398 commits
+Parsed 5405 commits
+Parsed 5406 commits
+Parsed 5409 commits
+Parsed 5411 commits
+Parsed 5414 commits
+Parsed 5416 commits
+Parsed 5417 commits
+Parsed 5418 commits
+Parsed 5419 commits
+Parsed 5420 commits
+Parsed 5421 commits
+Parsed 5422 commits
+Parsed 5424 commits
+Parsed 5426 commits
+Parsed 5432 commits
+Parsed 5442 commits
+Parsed 5445 commits
+Parsed 5447 commits
+Parsed 5448 commits
+Parsed 5450 commits
+Parsed 5495 commits
+Parsed 5497 commits
+Parsed 5499 commits
+Parsed 5504 commits
+Parsed 5506 commits
+Parsed 5509 commits
+Parsed 5510 commits
+Parsed 5511 commits
+Parsed 5512 commits
+Parsed 5513 commits
+Parsed 5514 commits
+Parsed 5515 commits
+Parsed 5516 commits
+Parsed 5518 commits
+Parsed 5519 commits
+Parsed 5521 commits
+Parsed 5522 commits
+Parsed 5523 commits
+Parsed 5526 commits
+Parsed 5527 commits
+Parsed 5530 commits
+Parsed 5531 commits
+Parsed 5532 commits
+Parsed 5533 commits
+Parsed 5534 commits
+Parsed 5536 commits
+Parsed 5537 commits
+Parsed 5540 commits
+Parsed 5541 commits
+Parsed 5545 commits
+Parsed 5546 commits
+Parsed 5547 commits
+Parsed 5548 commits
+Parsed 5549 commits
+Parsed 5552 commits
+Parsed 5553 commits
+Parsed 5554 commits
+Parsed 5557 commits
+Parsed 5559 commits
+Parsed 5567 commits
+Parsed 5568 commits
+Parsed 5569 commits
+Parsed 5571 commits
+Parsed 5572 commits
+Parsed 5576 commits
+Parsed 5578 commits
+Parsed 5582 commits
+Parsed 5584 commits
+Parsed 5585 commits
+Parsed 5591 commits
+Parsed 5594 commits
+Parsed 5600 commits
+Parsed 5624 commits
+Parsed 5625 commits
+Parsed 5626 commits
+Parsed 5633 commits
+Parsed 5647 commits
+Parsed 5650 commits
+Parsed 5655 commits
+Parsed 5665 commits
+Parsed 5668 commits
+Parsed 5672 commits
+Parsed 5686 commits
+Parsed 5689 commits
+Parsed 5690 commits
+Parsed 5691 commits
+Parsed 5698 commits
+Parsed 5701 commits
+Parsed 5702 commits
+Parsed 5705 commits
+Parsed 5708 commits
+Parsed 5711 commits
+Parsed 5712 commits
+Parsed 5716 commits
+Parsed 5727 commits
+Parsed 5730 commits
+Parsed 5734 commits
+Parsed 5736 commits
+Parsed 5739 commits
+Parsed 5741 commits
+Parsed 5742 commits
+Parsed 5745 commits
+Parsed 5746 commits
+Parsed 5750 commits
+Parsed 5752 commits
+Parsed 5755 commits
+Parsed 5758 commits
+Parsed 5759 commits
+Parsed 5762 commits
+Parsed 5766 commits
+Parsed 5768 commits
+Parsed 5772 commits
+Parsed 5773 commits
+Parsed 5778 commits
+Parsed 5789 commits
+Parsed 5800 commits
+Parsed 5801 commits
+Parsed 5804 commits
+Parsed 5805 commits
+Parsed 5806 commits
+Parsed 5807 commits
+Parsed 5816 commits
+Parsed 5818 commits
+Parsed 5819 commits
+Parsed 5820 commits
+Parsed 5821 commits
+Parsed 5822 commits
+Parsed 5823 commits
+Parsed 5824 commits
+Parsed 5825 commits
+Parsed 5826 commits
+Parsed 5827 commits
+Parsed 5828 commits
+Parsed 5829 commits
+Parsed 5830 commits
+Parsed 5831 commits
+Parsed 5832 commits
+Parsed 5833 commits
+Parsed 5835 commits
+Parsed 5836 commits
+Parsed 5837 commits
+Parsed 5839 commits
+Parsed 5841 commits
+Parsed 5842 commits
+Parsed 5843 commits
+Parsed 5845 commits
+Parsed 5847 commits
+Parsed 5848 commits
+Parsed 5849 commits
+Parsed 5852 commits
+Parsed 5853 commits
+Parsed 5854 commits
+Parsed 5855 commits
+Parsed 5856 commits
+Parsed 5863 commits
+Parsed 5878 commits
+Parsed 5879 commits
+Parsed 5886 commits
+Parsed 5888 commits
+Parsed 5889 commits
+Parsed 5891 commits
+Parsed 5904 commits
+Parsed 5905 commits
+Parsed 5906 commits
+Parsed 5907 commits
+Parsed 5909 commits
+Parsed 5910 commits
+Parsed 5911 commits
+Parsed 5912 commits
+Parsed 5913 commits
+Parsed 5916 commits
+Parsed 5917 commits
+Parsed 5918 commits
+Parsed 5919 commits
+Parsed 5926 commits
+Parsed 5935 commits
+Parsed 5939 commits
+Parsed 5940 commits
+Parsed 5942 commits
+Parsed 5943 commits
+Parsed 5945 commits
+Parsed 5946 commits
+Parsed 5950 commits
+Parsed 5958 commits
+Parsed 5968 commits
+Parsed 5972 commits
+Parsed 5973 commits
+Parsed 5976 commits
+Parsed 5978 commits
+Parsed 5980 commits
+Parsed 5994 commits
+Parsed 6005 commits
+Parsed 6007 commits
+Parsed 6008 commits
+Parsed 6010 commits
+Parsed 6012 commits
+Parsed 6014 commits
+Parsed 6018 commits
+Parsed 6019 commits
+Parsed 6020 commits
+Parsed 6021 commits
+Parsed 6022 commits
+Parsed 6036 commits
+Parsed 6045 commits
+Parsed 6051 commits
+Parsed 6052 commits
+Parsed 6058 commits
+Parsed 6062 commits
+Parsed 6069 commits
+Parsed 6070 commitswarning: disabling bitmap writing, as some objects are not being packed
+
+New history written in 315.24 seconds; now repacking/cleaning...
+Repacking your repo and cleaning out old unneeded objects
+Completely finished after 315.87 seconds.
+```
+
+rewritten_refs_pushed: no
+public_rewrite_launched: no
+git_push_invoked: no
+
+After rewrite, main tip is 0a4d62434add0049648837808d2308fa913f76c7 (local
+mirror only).
+
+Search after rewrite (live values from the private inventory; placeholders
+only). 30 ref tips (main + 29 tags):
+
+# <PREVIEW_DOMAIN>
+git grep -I -F '<class>' $(git for-each-ref --format='%(objectname)')
+# (empty)
+git log --all -S '<PREVIEW_DOMAIN>'
+# (empty)
+
+# <AKS_CLUSTER>
+git grep -I -F '<class>' $(git for-each-ref --format='%(objectname)')
+# (empty)
+git log --all -S '<AKS_CLUSTER>'
+# (empty)
+
+# <CHART_OLD>
+git grep -I -F '<class>' $(git for-each-ref --format='%(objectname)')
+# (empty)
+git log --all -S '<CHART_OLD>'
+# (empty)
+
+# <SYSNS_OLD>
+git grep -I -F '<class>' $(git for-each-ref --format='%(objectname)')
+# (empty)
+git log --all -S '<SYSNS_OLD>'
+# (empty)
+
+# <DEPLOY_HELPER>
+git grep -I -F '<class>' $(git for-each-ref --format='%(objectname)')
+# (empty)
+git log --all -S '<DEPLOY_HELPER>'
+# (empty)
+
+# <NP_OLD>
+git grep -I -F '<class>' $(git for-each-ref --format='%(objectname)')
+# (empty)
+git log --all -S '<NP_OLD>'
+# (empty)
+
+# <CLIENT_ZONE>
+git grep -I -F '<class>' $(git for-each-ref --format='%(objectname)')
+# (empty)
+git log --all -S '<CLIENT_ZONE>'
+# (empty)
+
+# <CLIENT_CLOUD>
+git grep -I -F '<class>' $(git for-each-ref --format='%(objectname)')
+# (empty)
+git log --all -S '<CLIENT_CLOUD>'
+# (empty)
+
+# <AKS_FQDN>
+git grep -I -F '<class>' $(git for-each-ref --format='%(objectname)')
+# (empty)
+git log --all -S '<AKS_FQDN>'
+# (empty)
+
+# <ACR>
+git grep -I -F '<class>' $(git for-each-ref --format='%(objectname)')
+# (empty)
+git log --all -S '<ACR>'
+# (empty)
+
+# <VAULT_A>
+git grep -I -F '<class>' $(git for-each-ref --format='%(objectname)')
+# (empty)
+git log --all -S '<VAULT_A>'
+# (empty)
+
+# <VAULT_B>
+git grep -I -F '<class>' $(git for-each-ref --format='%(objectname)')
+# (empty)
+git log --all -S '<VAULT_B>'
+# (empty)
+
+# <RG>
+git grep -I -F '<class>' $(git for-each-ref --format='%(objectname)')
+# (empty)
+git log --all -S '<RG>'
+# (empty)
+
+# <HOST_FQDN>
+git grep -I -F '<class>' $(git for-each-ref --format='%(objectname)')
+# (empty)
+git log --all -S '<HOST_FQDN>'
+# (empty)
+
+# <RESOURCE_GROUP>
+git grep -I -F '<class>' $(git for-each-ref --format='%(objectname)')
+# (empty)
+git log --all -S '<RESOURCE_GROUP>'
+# (empty)
+
+# <KEY_VAULT>
+git grep -I -F '<class>' $(git for-each-ref --format='%(objectname)')
+# (empty)
+git log --all -S '<KEY_VAULT>'
+# (empty)
+
+# <GUID_PREFIX>
+git grep -I -F '<class>' $(git for-each-ref --format='%(objectname)')
+# (empty)
+git log --all -S '<GUID_PREFIX>'
+# (empty)
+
+# <INSTALL_ROOT>
+git grep -I -F '<class>' $(git for-each-ref --format='%(objectname)')
+# (empty)
+git log --all -S '<INSTALL_ROOT>'
+# (empty)
+
+# <APPLE_TEAM_ID>
+git grep -I -F '<class>' $(git for-each-ref --format='%(objectname)')
+# (empty)
+git log --all -S '<APPLE_TEAM_ID>'
+# (empty)
+
+# <WF_OLD>
+git grep -I -F '<class>' $(git for-each-ref --format='%(objectname)')
+# (empty)
+git log --all -S '<WF_OLD>'
+# (empty)
+
+ALL_AFTER_ZERO=yes
+
+# ---------------------------------------------------------------------------
+
+Sagax history-rewrite dry-runs. Run 2 is the public-rewrite coverage.
+Rewritten refs were not pushed. Public rewrite was not launched. No --force to origin.
+Live literals are replaced by placeholders only.
+
+## Run 2 — complete `git clone --mirror` of origin (all heads + tags; pull excluded)
+
+Date (UTC): 2026-10-14T07:04:32Z
+Workspace HEAD at dry-run: ec994713c8c8c1bcc859d792815853f23071694d
+origin/main: fbda755fa97e486d26fa061bf410e43c8a444cc3
+git-filter-repo: a40bce548d2c
+
+git clone --mirror \
+  --reference <WORKSPACE> \
+  https://github.com/pulsatrixtechnologies/Sagax.git \
+  <MIRROR>
+
+A GitHub `--mirror` clone for this credential advertised `refs/pull/*`
+(445 refs). Those are not public branches. They were deleted before
+filter-repo, so the rewrite walked only `refs/heads/*` and `refs/tags/*`.
+
+Refs as cloned:
+
+```
+refs/heads/*    20
+refs/tags/*     30
+refs/remotes/*   0
+refs/pull/*    445
+git rev-list --all | wc -l
+6471
+```
+
+After `git update-ref -d` of every `refs/pull/*` (before rewrite):
+
+```
+refs/heads/*    20
+refs/tags/*     30
+refs/remotes/*   0
+refs/pull/*      0
+git rev-list refs/heads/main | wc -l
+6069
+git rev-list --all | wc -l
+6179
+```
+
+6179 − 6069 = 110 commits reachable from other public heads or tags
+and not from `main`. 6179 − 6070 (run 1 `--all`) = 109 commits that
+`--single-branch` of main did not walk.
+
+git --git-dir=<MIRROR> filter-repo --force --replace-text <out-of-repo-expressions> \
+  --path-rename deploy/<CLIENT_TOKEN>:deploy/example \
+  --path-rename deploy/<CLIENT_TOKEN>/deploy-pulsabot.sh:deploy/example/deploy-server.sh \
+  --path-rename deploy/k8s/helm/<CHART_OLD>:deploy/k8s/helm/sandboxes \
+  --path-rename scripts/<DEPLOY_HELPER>.mjs:scripts/deploy-server.mjs \
+  --path-rename scripts/<DEPLOY_HELPER>.test.mjs:scripts/deploy-server.test.mjs \
+  --path-rename deploy/k8s/sandboxes/adapters/azure/<NP_OLD>.yaml:deploy/k8s/sandboxes/adapters/azure/networkpolicy-ingress.yaml
+
+The image-gate workflow is not path-renamed.
+
+filter-repo exit 0. New history written in 333.95 seconds; completely finished
+after 334.92 seconds.
+
+git rev-list --all | wc -l
+6179
+
+git rev-list refs/heads/main | wc -l
+6069
+
+Dropped original SHAs: none.
+filter-repo/commit-map: 6179 mappings (no header counted in mapped=6179).
+Every before SHA is in column 1. None map to 000…0.
+--prune-empty did not remove a commit.
+
+Refs after rewrite: 20 heads, 30 tags, 0 remotes, 0 pull.
+
+--- filter-repo stdout (raw bytes, CR unfolded to LF; otherwise unedited) ---
+
+The last progress write and the next warning share a line in the raw
+stream: `Parsed 6179 commitswarning: ...` (no CR/LF between them).
+
+```
+Note: Some branches outside the refs/remotes/ hierarchy were not removed;
+to delete them, use:
+  git branch -d ci/image-gate-env
+  git branch -d ci/no-github-hosted-main
+  git branch -d cursor/codeql-hosted-153e
+  git branch -d cursor/docker-image-cves-5d72
+  git branch -d cursor/fix-windows-vitest-main-f621
+  git branch -d cursor/ghcr-multiarch-sign-attest-ed85
+  git branch -d cursor/hosted-runners-153e
+  git branch -d cursor/image-gate-engine-check-f362
+  git branch -d cursor/platform-dispatch-gate-153e
+  git branch -d cursor/public-repo-hygiene-167c
+  git branch -d cursor/term-guard-hosted-runner-3779
+  git branch -d develop
+  git branch -d docs/generic-deploy-targets
+  git branch -d feat/collapse-goto-conversation
+  git branch -d feat/voice-end-call
+  git branch -d fix/approvals-always-allowed
+  git branch -d fix/floating-mascot-dock
+  git branch -d fix/startup-memory-spike
+  git branch -d fix/voice-relief-duplex-off
+  git branch -d main
+NOTICE: Removing 'origin' remote; see 'Why is my origin removed?'
+        in the manual if you want to push back there.
+        (was https://github.com/pulsatrixtechnologies/Sagax.git)
+
+Parsed 9 commits
+Parsed 27 commits
+Parsed 57 commits
+Parsed 72 commits
+Parsed 93 commits
+Parsed 108 commits
+Parsed 139 commits
+Parsed 173 commits
+Parsed 185 commits
+Parsed 206 commits
+Parsed 214 commits
+Parsed 231 commits
+Parsed 255 commits
+Parsed 277 commits
+Parsed 287 commits
+Parsed 296 commits
+Parsed 305 commits
+Parsed 315 commits
+Parsed 319 commits
+Parsed 328 commits
+Parsed 335 commits
+Parsed 345 commits
+Parsed 351 commits
+Parsed 362 commits
+Parsed 385 commits
+Parsed 398 commits
+Parsed 408 commits
+Parsed 412 commits
+Parsed 419 commits
+Parsed 423 commits
+Parsed 433 commits
+Parsed 438 commits
+Parsed 460 commits
+Parsed 473 commits
+Parsed 485 commits
+Parsed 498 commits
+Parsed 500 commits
+Parsed 509 commits
+Parsed 525 commits
+Parsed 544 commits
+Parsed 564 commits
+Parsed 574 commits
+Parsed 587 commits
+Parsed 593 commits
+Parsed 602 commits
+Parsed 608 commits
+Parsed 614 commits
+Parsed 624 commits
+Parsed 628 commits
+Parsed 631 commits
+Parsed 648 commits
+Parsed 654 commits
+Parsed 671 commits
+Parsed 697 commits
+Parsed 717 commits
+Parsed 725 commits
+Parsed 729 commits
+Parsed 737 commits
+Parsed 750 commits
+Parsed 770 commits
+Parsed 793 commits
+Parsed 823 commits
+Parsed 839 commits
+Parsed 851 commits
+Parsed 860 commits
+Parsed 893 commits
+Parsed 923 commits
+Parsed 930 commits
+Parsed 941 commits
+Parsed 952 commits
+Parsed 957 commits
+Parsed 961 commits
+Parsed 965 commits
+Parsed 970 commits
+Parsed 976 commits
+Parsed 981 commits
+Parsed 984 commits
+Parsed 988 commits
+Parsed 991 commits
+Parsed 999 commits
+Parsed 1003 commits
+Parsed 1008 commits
+Parsed 1012 commits
+Parsed 1024 commits
+Parsed 1025 commits
+Parsed 1029 commits
+Parsed 1036 commits
+Parsed 1042 commits
+Parsed 1048 commits
+Parsed 1050 commits
+Parsed 1052 commits
+Parsed 1054 commits
+Parsed 1058 commits
+Parsed 1069 commits
+Parsed 1078 commits
+Parsed 1086 commits
+Parsed 1094 commits
+Parsed 1106 commits
+Parsed 1118 commits
+Parsed 1123 commits
+Parsed 1129 commits
+Parsed 1135 commits
+Parsed 1139 commits
+Parsed 1144 commits
+Parsed 1153 commits
+Parsed 1170 commits
+Parsed 1181 commits
+Parsed 1189 commits
+Parsed 1196 commits
+Parsed 1198 commits
+Parsed 1202 commits
+Parsed 1205 commits
+Parsed 1207 commits
+Parsed 1210 commits
+Parsed 1213 commits
+Parsed 1222 commits
+Parsed 1231 commits
+Parsed 1244 commits
+Parsed 1253 commits
+Parsed 1257 commits
+Parsed 1260 commits
+Parsed 1272 commits
+Parsed 1279 commits
+Parsed 1283 commits
+Parsed 1289 commits
+Parsed 1296 commits
+Parsed 1299 commits
+Parsed 1306 commits
+Parsed 1308 commits
+Parsed 1317 commits
+Parsed 1321 commits
+Parsed 1323 commits
+Parsed 1326 commits
+Parsed 1328 commits
+Parsed 1337 commits
+Parsed 1339 commits
+Parsed 1344 commits
+Parsed 1356 commits
+Parsed 1361 commits
+Parsed 1368 commits
+Parsed 1374 commits
+Parsed 1377 commits
+Parsed 1386 commits
+Parsed 1395 commits
+Parsed 1410 commits
+Parsed 1413 commits
+Parsed 1416 commits
+Parsed 1421 commits
+Parsed 1426 commits
+Parsed 1430 commits
+Parsed 1432 commits
+Parsed 1439 commits
+Parsed 1445 commits
+Parsed 1449 commits
+Parsed 1450 commits
+Parsed 1456 commits
+Parsed 1466 commits
+Parsed 1470 commits
+Parsed 1487 commits
+Parsed 1493 commits
+Parsed 1497 commits
+Parsed 1501 commits
+Parsed 1507 commits
+Parsed 1511 commits
+Parsed 1513 commits
+Parsed 1519 commits
+Parsed 1522 commits
+Parsed 1529 commits
+Parsed 1531 commits
+Parsed 1533 commits
+Parsed 1535 commits
+Parsed 1536 commits
+Parsed 1539 commits
+Parsed 1542 commits
+Parsed 1543 commits
+Parsed 1546 commits
+Parsed 1547 commits
+Parsed 1559 commits
+Parsed 1564 commits
+Parsed 1568 commits
+Parsed 1571 commits
+Parsed 1573 commits
+Parsed 1574 commits
+Parsed 1582 commits
+Parsed 1587 commits
+Parsed 1590 commits
+Parsed 1592 commits
+Parsed 1594 commits
+Parsed 1596 commits
+Parsed 1597 commits
+Parsed 1601 commits
+Parsed 1602 commits
+Parsed 1606 commits
+Parsed 1607 commits
+Parsed 1610 commits
+Parsed 1615 commits
+Parsed 1618 commits
+Parsed 1620 commits
+Parsed 1629 commits
+Parsed 1632 commits
+Parsed 1635 commits
+Parsed 1640 commits
+Parsed 1642 commits
+Parsed 1644 commits
+Parsed 1646 commits
+Parsed 1647 commits
+Parsed 1649 commits
+Parsed 1654 commits
+Parsed 1656 commits
+Parsed 1658 commits
+Parsed 1659 commits
+Parsed 1662 commits
+Parsed 1667 commits
+Parsed 1672 commits
+Parsed 1673 commits
+Parsed 1674 commits
+Parsed 1679 commits
+Parsed 1683 commits
+Parsed 1689 commits
+Parsed 1690 commits
+Parsed 1696 commits
+Parsed 1699 commits
+Parsed 1703 commits
+Parsed 1706 commits
+Parsed 1707 commits
+Parsed 1708 commits
+Parsed 1710 commits
+Parsed 1712 commits
+Parsed 1714 commits
+Parsed 1716 commits
+Parsed 1717 commits
+Parsed 1718 commits
+Parsed 1720 commits
+Parsed 1722 commits
+Parsed 1723 commits
+Parsed 1726 commits
+Parsed 1727 commits
+Parsed 1728 commits
+Parsed 1731 commits
+Parsed 1733 commits
+Parsed 1734 commits
+Parsed 1738 commits
+Parsed 1743 commits
+Parsed 1764 commits
+Parsed 1766 commits
+Parsed 1778 commits
+Parsed 1781 commits
+Parsed 1789 commits
+Parsed 1792 commits
+Parsed 1793 commits
+Parsed 1795 commits
+Parsed 1801 commits
+Parsed 1807 commits
+Parsed 1815 commits
+Parsed 1818 commits
+Parsed 1822 commits
+Parsed 1827 commits
+Parsed 1832 commits
+Parsed 1837 commits
+Parsed 1842 commits
+Parsed 1844 commits
+Parsed 1847 commits
+Parsed 1849 commits
+Parsed 1859 commits
+Parsed 1861 commits
+Parsed 1868 commits
+Parsed 1871 commits
+Parsed 1873 commits
+Parsed 1875 commits
+Parsed 1877 commits
+Parsed 1878 commits
+Parsed 1880 commits
+Parsed 1882 commits
+Parsed 1883 commits
+Parsed 1884 commits
+Parsed 1887 commits
+Parsed 1891 commits
+Parsed 1893 commits
+Parsed 1897 commits
+Parsed 1904 commits
+Parsed 1907 commits
+Parsed 1911 commits
+Parsed 1913 commits
+Parsed 1915 commits
+Parsed 1917 commits
+Parsed 1920 commits
+Parsed 1926 commits
+Parsed 1930 commits
+Parsed 1933 commits
+Parsed 1940 commits
+Parsed 1959 commits
+Parsed 1965 commits
+Parsed 1966 commits
+Parsed 1972 commits
+Parsed 1976 commits
+Parsed 1979 commits
+Parsed 1981 commits
+Parsed 1983 commits
+Parsed 1987 commits
+Parsed 1991 commits
+Parsed 1993 commits
+Parsed 1994 commits
+Parsed 1996 commits
+Parsed 2000 commits
+Parsed 2003 commits
+Parsed 2006 commits
+Parsed 2010 commits
+Parsed 2013 commits
+Parsed 2014 commits
+Parsed 2015 commits
+Parsed 2018 commits
+Parsed 2025 commits
+Parsed 2030 commits
+Parsed 2032 commits
+Parsed 2034 commits
+Parsed 2036 commits
+Parsed 2037 commits
+Parsed 2040 commits
+Parsed 2043 commits
+Parsed 2049 commits
+Parsed 2057 commits
+Parsed 2063 commits
+Parsed 2068 commits
+Parsed 2075 commits
+Parsed 2088 commits
+Parsed 2106 commits
+Parsed 2108 commits
+Parsed 2112 commits
+Parsed 2113 commits
+Parsed 2114 commits
+Parsed 2116 commits
+Parsed 2119 commits
+Parsed 2123 commits
+Parsed 2125 commits
+Parsed 2126 commits
+Parsed 2127 commits
+Parsed 2128 commits
+Parsed 2129 commits
+Parsed 2130 commits
+Parsed 2131 commits
+Parsed 2133 commits
+Parsed 2142 commits
+Parsed 2144 commits
+Parsed 2148 commits
+Parsed 2156 commits
+Parsed 2161 commits
+Parsed 2163 commits
+Parsed 2165 commits
+Parsed 2168 commits
+Parsed 2183 commits
+Parsed 2215 commits
+Parsed 2222 commits
+Parsed 2242 commits
+Parsed 2249 commits
+Parsed 2251 commits
+Parsed 2254 commits
+Parsed 2258 commits
+Parsed 2264 commits
+Parsed 2275 commits
+Parsed 2277 commits
+Parsed 2284 commits
+Parsed 2286 commits
+Parsed 2291 commits
+Parsed 2293 commits
+Parsed 2295 commits
+Parsed 2297 commits
+Parsed 2299 commits
+Parsed 2302 commits
+Parsed 2304 commits
+Parsed 2308 commits
+Parsed 2316 commits
+Parsed 2326 commits
+Parsed 2328 commits
+Parsed 2336 commits
+Parsed 2337 commits
+Parsed 2338 commits
+Parsed 2339 commits
+Parsed 2345 commits
+Parsed 2347 commits
+Parsed 2348 commits
+Parsed 2356 commits
+Parsed 2367 commits
+Parsed 2372 commits
+Parsed 2405 commits
+Parsed 2418 commits
+Parsed 2435 commits
+Parsed 2439 commits
+Parsed 2441 commits
+Parsed 2452 commits
+Parsed 2453 commits
+Parsed 2454 commits
+Parsed 2456 commits
+Parsed 2457 commits
+Parsed 2469 commits
+Parsed 2471 commits
+Parsed 2479 commits
+Parsed 2490 commits
+Parsed 2494 commits
+Parsed 2496 commits
+Parsed 2497 commits
+Parsed 2515 commits
+Parsed 2516 commits
+Parsed 2517 commits
+Parsed 2533 commits
+Parsed 2548 commits
+Parsed 2561 commits
+Parsed 2572 commits
+Parsed 2583 commits
+Parsed 2597 commits
+Parsed 2600 commits
+Parsed 2601 commits
+Parsed 2602 commits
+Parsed 2606 commits
+Parsed 2617 commits
+Parsed 2618 commits
+Parsed 2619 commits
+Parsed 2621 commits
+Parsed 2629 commits
+Parsed 2640 commits
+Parsed 2644 commits
+Parsed 2647 commits
+Parsed 2661 commits
+Parsed 2666 commits
+Parsed 2667 commits
+Parsed 2668 commits
+Parsed 2676 commits
+Parsed 2677 commits
+Parsed 2679 commits
+Parsed 2681 commits
+Parsed 2682 commits
+Parsed 2685 commits
+Parsed 2689 commits
+Parsed 2692 commits
+Parsed 2693 commits
+Parsed 2695 commits
+Parsed 2701 commits
+Parsed 2703 commits
+Parsed 2704 commits
+Parsed 2705 commits
+Parsed 2706 commits
+Parsed 2708 commits
+Parsed 2710 commits
+Parsed 2712 commits
+Parsed 2717 commits
+Parsed 2724 commits
+Parsed 2731 commits
+Parsed 2733 commits
+Parsed 2741 commits
+Parsed 2750 commits
+Parsed 2751 commits
+Parsed 2752 commits
+Parsed 2755 commits
+Parsed 2758 commits
+Parsed 2760 commits
+Parsed 2761 commits
+Parsed 2762 commits
+Parsed 2776 commits
+Parsed 2783 commits
+Parsed 2784 commits
+Parsed 2785 commits
+Parsed 2786 commits
+Parsed 2788 commits
+Parsed 2789 commits
+Parsed 2791 commits
+Parsed 2792 commits
+Parsed 2794 commits
+Parsed 2800 commits
+Parsed 2802 commits
+Parsed 2804 commits
+Parsed 2806 commits
+Parsed 2808 commits
+Parsed 2811 commits
+Parsed 2813 commits
+Parsed 2814 commits
+Parsed 2816 commits
+Parsed 2817 commits
+Parsed 2819 commits
+Parsed 2823 commits
+Parsed 2825 commits
+Parsed 2829 commits
+Parsed 2830 commits
+Parsed 2833 commits
+Parsed 2839 commits
+Parsed 2845 commits
+Parsed 2847 commits
+Parsed 2849 commits
+Parsed 2851 commits
+Parsed 2859 commits
+Parsed 2861 commits
+Parsed 2865 commits
+Parsed 2866 commits
+Parsed 2871 commits
+Parsed 2873 commits
+Parsed 2874 commits
+Parsed 2880 commits
+Parsed 2882 commits
+Parsed 2886 commits
+Parsed 2888 commits
+Parsed 2889 commits
+Parsed 2891 commits
+Parsed 2897 commits
+Parsed 2901 commits
+Parsed 2903 commits
+Parsed 2905 commits
+Parsed 2907 commits
+Parsed 2914 commits
+Parsed 2916 commits
+Parsed 2918 commits
+Parsed 2920 commits
+Parsed 2922 commits
+Parsed 2923 commits
+Parsed 2925 commits
+Parsed 2926 commits
+Parsed 2927 commits
+Parsed 2928 commits
+Parsed 2931 commits
+Parsed 2941 commits
+Parsed 2944 commits
+Parsed 2945 commits
+Parsed 2946 commits
+Parsed 2948 commits
+Parsed 2950 commits
+Parsed 2953 commits
+Parsed 2959 commits
+Parsed 2960 commits
+Parsed 2964 commits
+Parsed 2965 commits
+Parsed 2967 commits
+Parsed 2972 commits
+Parsed 2973 commits
+Parsed 2978 commits
+Parsed 2979 commits
+Parsed 2980 commits
+Parsed 2981 commits
+Parsed 2983 commits
+Parsed 2984 commits
+Parsed 2987 commits
+Parsed 2988 commits
+Parsed 2989 commits
+Parsed 2990 commits
+Parsed 2993 commits
+Parsed 2995 commits
+Parsed 2996 commits
+Parsed 2999 commits
+Parsed 3000 commits
+Parsed 3006 commits
+Parsed 3009 commits
+Parsed 3011 commits
+Parsed 3012 commits
+Parsed 3013 commits
+Parsed 3014 commits
+Parsed 3015 commits
+Parsed 3017 commits
+Parsed 3021 commits
+Parsed 3022 commits
+Parsed 3024 commits
+Parsed 3025 commits
+Parsed 3028 commits
+Parsed 3032 commits
+Parsed 3035 commits
+Parsed 3037 commits
+Parsed 3045 commits
+Parsed 3046 commits
+Parsed 3047 commits
+Parsed 3050 commits
+Parsed 3051 commits
+Parsed 3053 commits
+Parsed 3056 commits
+Parsed 3058 commits
+Parsed 3062 commits
+Parsed 3063 commits
+Parsed 3064 commits
+Parsed 3065 commits
+Parsed 3066 commits
+Parsed 3067 commits
+Parsed 3068 commits
+Parsed 3073 commits
+Parsed 3074 commits
+Parsed 3075 commits
+Parsed 3076 commits
+Parsed 3078 commits
+Parsed 3079 commits
+Parsed 3084 commits
+Parsed 3086 commits
+Parsed 3087 commits
+Parsed 3089 commits
+Parsed 3090 commits
+Parsed 3091 commits
+Parsed 3092 commits
+Parsed 3097 commits
+Parsed 3098 commits
+Parsed 3100 commits
+Parsed 3104 commits
+Parsed 3109 commits
+Parsed 3111 commits
+Parsed 3116 commits
+Parsed 3120 commits
+Parsed 3121 commits
+Parsed 3124 commits
+Parsed 3126 commits
+Parsed 3127 commits
+Parsed 3132 commits
+Parsed 3133 commits
+Parsed 3135 commits
+Parsed 3136 commits
+Parsed 3139 commits
+Parsed 3140 commits
+Parsed 3141 commits
+Parsed 3142 commits
+Parsed 3147 commits
+Parsed 3150 commits
+Parsed 3152 commits
+Parsed 3159 commits
+Parsed 3162 commits
+Parsed 3163 commits
+Parsed 3169 commits
+Parsed 3170 commits
+Parsed 3172 commits
+Parsed 3175 commits
+Parsed 3177 commits
+Parsed 3181 commits
+Parsed 3183 commits
+Parsed 3189 commits
+Parsed 3192 commits
+Parsed 3195 commits
+Parsed 3197 commits
+Parsed 3199 commits
+Parsed 3200 commits
+Parsed 3206 commits
+Parsed 3212 commits
+Parsed 3213 commits
+Parsed 3214 commits
+Parsed 3215 commits
+Parsed 3217 commits
+Parsed 3218 commits
+Parsed 3220 commits
+Parsed 3222 commits
+Parsed 3225 commits
+Parsed 3226 commits
+Parsed 3230 commits
+Parsed 3231 commits
+Parsed 3232 commits
+Parsed 3233 commits
+Parsed 3243 commits
+Parsed 3248 commits
+Parsed 3252 commits
+Parsed 3264 commits
+Parsed 3272 commits
+Parsed 3299 commits
+Parsed 3303 commits
+Parsed 3306 commits
+Parsed 3308 commits
+Parsed 3315 commits
+Parsed 3316 commits
+Parsed 3322 commits
+Parsed 3323 commits
+Parsed 3324 commits
+Parsed 3328 commits
+Parsed 3331 commits
+Parsed 3334 commits
+Parsed 3336 commits
+Parsed 3340 commits
+Parsed 3343 commits
+Parsed 3344 commits
+Parsed 3345 commits
+Parsed 3347 commits
+Parsed 3348 commits
+Parsed 3349 commits
+Parsed 3350 commits
+Parsed 3351 commits
+Parsed 3353 commits
+Parsed 3362 commits
+Parsed 3363 commits
+Parsed 3364 commits
+Parsed 3365 commits
+Parsed 3366 commits
+Parsed 3368 commits
+Parsed 3370 commits
+Parsed 3374 commits
+Parsed 3375 commits
+Parsed 3383 commits
+Parsed 3384 commits
+Parsed 3390 commits
+Parsed 3391 commits
+Parsed 3392 commits
+Parsed 3393 commits
+Parsed 3396 commits
+Parsed 3398 commits
+Parsed 3403 commits
+Parsed 3405 commits
+Parsed 3408 commits
+Parsed 3418 commits
+Parsed 3420 commits
+Parsed 3423 commits
+Parsed 3432 commits
+Parsed 3433 commits
+Parsed 3438 commits
+Parsed 3442 commits
+Parsed 3450 commits
+Parsed 3465 commits
+Parsed 3467 commits
+Parsed 3468 commits
+Parsed 3472 commits
+Parsed 3473 commits
+Parsed 3475 commits
+Parsed 3476 commits
+Parsed 3480 commits
+Parsed 3481 commits
+Parsed 3485 commits
+Parsed 3490 commits
+Parsed 3491 commits
+Parsed 3495 commits
+Parsed 3497 commits
+Parsed 3498 commits
+Parsed 3499 commits
+Parsed 3500 commits
+Parsed 3501 commits
+Parsed 3506 commits
+Parsed 3508 commits
+Parsed 3512 commits
+Parsed 3514 commits
+Parsed 3519 commits
+Parsed 3523 commits
+Parsed 3534 commits
+Parsed 3537 commits
+Parsed 3539 commits
+Parsed 3545 commits
+Parsed 3547 commits
+Parsed 3550 commits
+Parsed 3551 commits
+Parsed 3552 commits
+Parsed 3554 commits
+Parsed 3557 commits
+Parsed 3564 commits
+Parsed 3565 commits
+Parsed 3567 commits
+Parsed 3568 commits
+Parsed 3569 commits
+Parsed 3570 commits
+Parsed 3572 commits
+Parsed 3573 commits
+Parsed 3578 commits
+Parsed 3580 commits
+Parsed 3583 commits
+Parsed 3584 commits
+Parsed 3585 commits
+Parsed 3586 commits
+Parsed 3588 commits
+Parsed 3592 commits
+Parsed 3596 commits
+Parsed 3599 commits
+Parsed 3600 commits
+Parsed 3601 commits
+Parsed 3603 commits
+Parsed 3604 commits
+Parsed 3606 commits
+Parsed 3607 commits
+Parsed 3610 commits
+Parsed 3611 commits
+Parsed 3612 commits
+Parsed 3614 commits
+Parsed 3616 commits
+Parsed 3618 commits
+Parsed 3619 commits
+Parsed 3620 commits
+Parsed 3623 commits
+Parsed 3624 commits
+Parsed 3625 commits
+Parsed 3626 commits
+Parsed 3628 commits
+Parsed 3630 commits
+Parsed 3632 commits
+Parsed 3633 commits
+Parsed 3634 commits
+Parsed 3636 commits
+Parsed 3637 commits
+Parsed 3638 commits
+Parsed 3640 commits
+Parsed 3641 commits
+Parsed 3645 commits
+Parsed 3647 commits
+Parsed 3649 commits
+Parsed 3651 commits
+Parsed 3653 commits
+Parsed 3654 commits
+Parsed 3655 commits
+Parsed 3656 commits
+Parsed 3657 commits
+Parsed 3663 commits
+Parsed 3668 commits
+Parsed 3669 commits
+Parsed 3670 commits
+Parsed 3672 commits
+Parsed 3674 commits
+Parsed 3677 commits
+Parsed 3678 commits
+Parsed 3679 commits
+Parsed 3680 commits
+Parsed 3683 commits
+Parsed 3685 commits
+Parsed 3686 commits
+Parsed 3689 commits
+Parsed 3691 commits
+Parsed 3693 commits
+Parsed 3695 commits
+Parsed 3698 commits
+Parsed 3701 commits
+Parsed 3703 commits
+Parsed 3705 commits
+Parsed 3707 commits
+Parsed 3708 commits
+Parsed 3709 commits
+Parsed 3710 commits
+Parsed 3713 commits
+Parsed 3714 commits
+Parsed 3718 commits
+Parsed 3720 commits
+Parsed 3721 commits
+Parsed 3724 commits
+Parsed 3725 commits
+Parsed 3729 commits
+Parsed 3731 commits
+Parsed 3732 commits
+Parsed 3734 commits
+Parsed 3736 commits
+Parsed 3740 commits
+Parsed 3742 commits
+Parsed 3747 commits
+Parsed 3755 commits
+Parsed 3757 commits
+Parsed 3758 commits
+Parsed 3760 commits
+Parsed 3763 commits
+Parsed 3765 commits
+Parsed 3766 commits
+Parsed 3767 commits
+Parsed 3772 commits
+Parsed 3784 commits
+Parsed 3790 commits
+Parsed 3792 commits
+Parsed 3794 commits
+Parsed 3795 commits
+Parsed 3798 commits
+Parsed 3800 commits
+Parsed 3801 commits
+Parsed 3803 commits
+Parsed 3804 commits
+Parsed 3806 commits
+Parsed 3809 commits
+Parsed 3816 commits
+Parsed 3823 commits
+Parsed 3824 commits
+Parsed 3825 commits
+Parsed 3826 commits
+Parsed 3827 commits
+Parsed 3828 commits
+Parsed 3829 commits
+Parsed 3830 commits
+Parsed 3832 commits
+Parsed 3838 commits
+Parsed 3845 commits
+Parsed 3847 commits
+Parsed 3861 commits
+Parsed 3866 commits
+Parsed 3872 commits
+Parsed 3873 commits
+Parsed 3876 commits
+Parsed 3879 commits
+Parsed 3880 commits
+Parsed 3883 commits
+Parsed 3889 commits
+Parsed 3893 commits
+Parsed 3905 commits
+Parsed 3907 commits
+Parsed 3918 commits
+Parsed 3919 commits
+Parsed 3920 commits
+Parsed 3923 commits
+Parsed 3925 commits
+Parsed 3926 commits
+Parsed 3933 commits
+Parsed 3935 commits
+Parsed 3937 commits
+Parsed 3939 commits
+Parsed 3942 commits
+Parsed 3944 commits
+Parsed 3947 commits
+Parsed 3948 commits
+Parsed 3951 commits
+Parsed 3955 commits
+Parsed 3956 commits
+Parsed 3963 commits
+Parsed 3968 commits
+Parsed 3970 commits
+Parsed 3972 commits
+Parsed 3973 commits
+Parsed 3975 commits
+Parsed 3977 commits
+Parsed 3978 commits
+Parsed 3982 commits
+Parsed 3984 commits
+Parsed 3987 commits
+Parsed 3988 commits
+Parsed 3989 commits
+Parsed 3990 commits
+Parsed 3995 commits
+Parsed 3997 commits
+Parsed 3998 commits
+Parsed 4002 commits
+Parsed 4003 commits
+Parsed 4005 commits
+Parsed 4006 commits
+Parsed 4007 commits
+Parsed 4008 commits
+Parsed 4009 commits
+Parsed 4010 commits
+Parsed 4012 commits
+Parsed 4013 commits
+Parsed 4014 commits
+Parsed 4015 commits
+Parsed 4016 commits
+Parsed 4017 commits
+Parsed 4018 commits
+Parsed 4026 commits
+Parsed 4027 commits
+Parsed 4028 commits
+Parsed 4033 commits
+Parsed 4034 commits
+Parsed 4037 commits
+Parsed 4040 commits
+Parsed 4046 commits
+Parsed 4050 commits
+Parsed 4057 commits
+Parsed 4065 commits
+Parsed 4067 commits
+Parsed 4068 commits
+Parsed 4072 commits
+Parsed 4073 commits
+Parsed 4078 commits
+Parsed 4084 commits
+Parsed 4091 commits
+Parsed 4100 commits
+Parsed 4116 commits
+Parsed 4118 commits
+Parsed 4124 commits
+Parsed 4125 commits
+Parsed 4127 commits
+Parsed 4135 commits
+Parsed 4146 commits
+Parsed 4153 commits
+Parsed 4166 commits
+Parsed 4168 commits
+Parsed 4169 commits
+Parsed 4170 commits
+Parsed 4173 commits
+Parsed 4182 commits
+Parsed 4187 commits
+Parsed 4192 commits
+Parsed 4200 commits
+Parsed 4201 commits
+Parsed 4202 commits
+Parsed 4203 commits
+Parsed 4204 commits
+Parsed 4207 commits
+Parsed 4208 commits
+Parsed 4209 commits
+Parsed 4213 commits
+Parsed 4220 commits
+Parsed 4224 commits
+Parsed 4230 commits
+Parsed 4231 commits
+Parsed 4233 commits
+Parsed 4235 commits
+Parsed 4236 commits
+Parsed 4237 commits
+Parsed 4243 commits
+Parsed 4244 commits
+Parsed 4246 commits
+Parsed 4247 commits
+Parsed 4248 commits
+Parsed 4253 commits
+Parsed 4255 commits
+Parsed 4257 commits
+Parsed 4259 commits
+Parsed 4260 commits
+Parsed 4262 commits
+Parsed 4267 commits
+Parsed 4270 commits
+Parsed 4274 commits
+Parsed 4275 commits
+Parsed 4276 commits
+Parsed 4279 commits
+Parsed 4280 commits
+Parsed 4281 commits
+Parsed 4282 commits
+Parsed 4283 commits
+Parsed 4285 commits
+Parsed 4286 commits
+Parsed 4295 commits
+Parsed 4297 commits
+Parsed 4301 commits
+Parsed 4302 commits
+Parsed 4305 commits
+Parsed 4308 commits
+Parsed 4309 commits
+Parsed 4311 commits
+Parsed 4312 commits
+Parsed 4313 commits
+Parsed 4318 commits
+Parsed 4320 commits
+Parsed 4321 commits
+Parsed 4328 commits
+Parsed 4331 commits
+Parsed 4334 commits
+Parsed 4335 commits
+Parsed 4336 commits
+Parsed 4338 commits
+Parsed 4342 commits
+Parsed 4348 commits
+Parsed 4357 commits
+Parsed 4358 commits
+Parsed 4360 commits
+Parsed 4362 commits
+Parsed 4363 commits
+Parsed 4364 commits
+Parsed 4368 commits
+Parsed 4372 commits
+Parsed 4374 commits
+Parsed 4375 commits
+Parsed 4376 commits
+Parsed 4377 commits
+Parsed 4378 commits
+Parsed 4379 commits
+Parsed 4380 commits
+Parsed 4381 commits
+Parsed 4382 commits
+Parsed 4383 commits
+Parsed 4395 commits
+Parsed 4403 commits
+Parsed 4404 commits
+Parsed 4407 commits
+Parsed 4409 commits
+Parsed 4416 commits
+Parsed 4417 commits
+Parsed 4418 commits
+Parsed 4420 commits
+Parsed 4425 commits
+Parsed 4428 commits
+Parsed 4432 commits
+Parsed 4433 commits
+Parsed 4434 commits
+Parsed 4437 commits
+Parsed 4441 commits
+Parsed 4443 commits
+Parsed 4444 commits
+Parsed 4446 commits
+Parsed 4451 commits
+Parsed 4454 commits
+Parsed 4457 commits
+Parsed 4460 commits
+Parsed 4462 commits
+Parsed 4466 commits
+Parsed 4468 commits
+Parsed 4472 commits
+Parsed 4473 commits
+Parsed 4476 commits
+Parsed 4478 commits
+Parsed 4479 commits
+Parsed 4482 commits
+Parsed 4485 commits
+Parsed 4487 commits
+Parsed 4490 commits
+Parsed 4495 commits
+Parsed 4497 commits
+Parsed 4501 commits
+Parsed 4506 commits
+Parsed 4508 commits
+Parsed 4513 commits
+Parsed 4516 commits
+Parsed 4518 commits
+Parsed 4520 commits
+Parsed 4523 commits
+Parsed 4524 commits
+Parsed 4526 commits
+Parsed 4528 commits
+Parsed 4531 commits
+Parsed 4533 commits
+Parsed 4536 commits
+Parsed 4538 commits
+Parsed 4541 commits
+Parsed 4546 commits
+Parsed 4549 commits
+Parsed 4551 commits
+Parsed 4553 commits
+Parsed 4556 commits
+Parsed 4558 commits
+Parsed 4560 commits
+Parsed 4562 commits
+Parsed 4565 commits
+Parsed 4570 commits
+Parsed 4572 commits
+Parsed 4575 commits
+Parsed 4576 commits
+Parsed 4578 commits
+Parsed 4580 commits
+Parsed 4581 commits
+Parsed 4583 commits
+Parsed 4586 commits
+Parsed 4587 commits
+Parsed 4588 commits
+Parsed 4589 commits
+Parsed 4592 commits
+Parsed 4594 commits
+Parsed 4595 commits
+Parsed 4596 commits
+Parsed 4604 commits
+Parsed 4606 commits
+Parsed 4607 commits
+Parsed 4610 commits
+Parsed 4611 commits
+Parsed 4612 commits
+Parsed 4615 commits
+Parsed 4617 commits
+Parsed 4619 commits
+Parsed 4620 commits
+Parsed 4621 commits
+Parsed 4622 commits
+Parsed 4623 commits
+Parsed 4624 commits
+Parsed 4625 commits
+Parsed 4626 commits
+Parsed 4627 commits
+Parsed 4628 commits
+Parsed 4629 commits
+Parsed 4630 commits
+Parsed 4632 commits
+Parsed 4633 commits
+Parsed 4635 commits
+Parsed 4638 commits
+Parsed 4639 commits
+Parsed 4650 commits
+Parsed 4651 commits
+Parsed 4652 commits
+Parsed 4655 commits
+Parsed 4659 commits
+Parsed 4664 commits
+Parsed 4665 commits
+Parsed 4668 commits
+Parsed 4669 commits
+Parsed 4671 commits
+Parsed 4673 commits
+Parsed 4674 commits
+Parsed 4675 commits
+Parsed 4676 commits
+Parsed 4677 commits
+Parsed 4678 commits
+Parsed 4679 commits
+Parsed 4683 commits
+Parsed 4691 commits
+Parsed 4692 commits
+Parsed 4696 commits
+Parsed 4718 commits
+Parsed 4725 commits
+Parsed 4726 commits
+Parsed 4727 commits
+Parsed 4728 commits
+Parsed 4729 commits
+Parsed 4730 commits
+Parsed 4741 commits
+Parsed 4742 commits
+Parsed 4744 commits
+Parsed 4747 commits
+Parsed 4751 commits
+Parsed 4753 commits
+Parsed 4756 commits
+Parsed 4762 commits
+Parsed 4764 commits
+Parsed 4765 commits
+Parsed 4766 commits
+Parsed 4767 commits
+Parsed 4770 commits
+Parsed 4771 commits
+Parsed 4772 commits
+Parsed 4774 commits
+Parsed 4778 commits
+Parsed 4782 commits
+Parsed 4784 commits
+Parsed 4785 commits
+Parsed 4786 commits
+Parsed 4788 commits
+Parsed 4790 commits
+Parsed 4791 commits
+Parsed 4792 commits
+Parsed 4793 commits
+Parsed 4796 commits
+Parsed 4797 commits
+Parsed 4801 commits
+Parsed 4803 commits
+Parsed 4808 commits
+Parsed 4809 commits
+Parsed 4813 commits
+Parsed 4815 commits
+Parsed 4816 commits
+Parsed 4820 commits
+Parsed 4827 commits
+Parsed 4829 commits
+Parsed 4830 commits
+Parsed 4834 commits
+Parsed 4835 commits
+Parsed 4840 commits
+Parsed 4844 commits
+Parsed 4845 commits
+Parsed 4847 commits
+Parsed 4848 commits
+Parsed 4849 commits
+Parsed 4852 commits
+Parsed 4854 commits
+Parsed 4858 commits
+Parsed 4860 commits
+Parsed 4864 commits
+Parsed 4868 commits
+Parsed 4870 commits
+Parsed 4871 commits
+Parsed 4875 commits
+Parsed 4877 commits
+Parsed 4880 commits
+Parsed 4881 commits
+Parsed 4882 commits
+Parsed 4884 commits
+Parsed 4885 commits
+Parsed 4888 commits
+Parsed 4892 commits
+Parsed 4895 commits
+Parsed 4901 commits
+Parsed 4902 commits
+Parsed 4912 commits
+Parsed 4916 commits
+Parsed 4918 commits
+Parsed 4925 commits
+Parsed 4926 commits
+Parsed 4927 commits
+Parsed 4931 commits
+Parsed 4934 commits
+Parsed 4935 commits
+Parsed 4938 commits
+Parsed 4939 commits
+Parsed 4940 commits
+Parsed 4942 commits
+Parsed 4943 commits
+Parsed 4946 commits
+Parsed 4947 commits
+Parsed 4948 commits
+Parsed 4949 commits
+Parsed 4961 commits
+Parsed 4962 commits
+Parsed 4963 commits
+Parsed 4964 commits
+Parsed 4965 commits
+Parsed 4972 commits
+Parsed 4973 commits
+Parsed 4976 commits
+Parsed 4978 commits
+Parsed 4981 commits
+Parsed 4982 commits
+Parsed 4983 commits
+Parsed 4984 commits
+Parsed 4985 commits
+Parsed 4989 commits
+Parsed 4996 commits
+Parsed 5002 commits
+Parsed 5003 commits
+Parsed 5006 commits
+Parsed 5008 commits
+Parsed 5009 commits
+Parsed 5015 commits
+Parsed 5016 commits
+Parsed 5026 commits
+Parsed 5028 commits
+Parsed 5029 commits
+Parsed 5030 commits
+Parsed 5031 commits
+Parsed 5034 commits
+Parsed 5035 commits
+Parsed 5039 commits
+Parsed 5040 commits
+Parsed 5044 commits
+Parsed 5045 commits
+Parsed 5052 commits
+Parsed 5053 commits
+Parsed 5056 commits
+Parsed 5059 commits
+Parsed 5063 commits
+Parsed 5065 commits
+Parsed 5067 commits
+Parsed 5068 commits
+Parsed 5070 commits
+Parsed 5080 commits
+Parsed 5082 commits
+Parsed 5083 commits
+Parsed 5085 commits
+Parsed 5087 commits
+Parsed 5088 commits
+Parsed 5089 commits
+Parsed 5092 commits
+Parsed 5094 commits
+Parsed 5096 commits
+Parsed 5097 commits
+Parsed 5101 commits
+Parsed 5102 commits
+Parsed 5105 commits
+Parsed 5106 commits
+Parsed 5110 commits
+Parsed 5114 commits
+Parsed 5116 commits
+Parsed 5118 commits
+Parsed 5123 commits
+Parsed 5124 commits
+Parsed 5128 commits
+Parsed 5131 commits
+Parsed 5132 commits
+Parsed 5133 commits
+Parsed 5135 commits
+Parsed 5138 commits
+Parsed 5139 commits
+Parsed 5141 commits
+Parsed 5145 commits
+Parsed 5146 commits
+Parsed 5147 commits
+Parsed 5148 commits
+Parsed 5149 commits
+Parsed 5150 commits
+Parsed 5152 commits
+Parsed 5153 commits
+Parsed 5155 commits
+Parsed 5158 commits
+Parsed 5159 commits
+Parsed 5160 commits
+Parsed 5161 commits
+Parsed 5163 commits
+Parsed 5164 commits
+Parsed 5165 commits
+Parsed 5166 commits
+Parsed 5168 commits
+Parsed 5169 commits
+Parsed 5172 commits
+Parsed 5173 commits
+Parsed 5174 commits
+Parsed 5175 commits
+Parsed 5177 commits
+Parsed 5179 commits
+Parsed 5182 commits
+Parsed 5183 commits
+Parsed 5184 commits
+Parsed 5185 commits
+Parsed 5188 commits
+Parsed 5190 commits
+Parsed 5191 commits
+Parsed 5192 commits
+Parsed 5194 commits
+Parsed 5196 commits
+Parsed 5197 commits
+Parsed 5199 commits
+Parsed 5200 commits
+Parsed 5201 commits
+Parsed 5203 commits
+Parsed 5204 commits
+Parsed 5205 commits
+Parsed 5208 commits
+Parsed 5210 commits
+Parsed 5211 commits
+Parsed 5212 commits
+Parsed 5213 commits
+Parsed 5214 commits
+Parsed 5215 commits
+Parsed 5216 commits
+Parsed 5217 commits
+Parsed 5218 commits
+Parsed 5219 commits
+Parsed 5220 commits
+Parsed 5222 commits
+Parsed 5223 commits
+Parsed 5224 commits
+Parsed 5225 commits
+Parsed 5226 commits
+Parsed 5231 commits
+Parsed 5232 commits
+Parsed 5233 commits
+Parsed 5241 commits
+Parsed 5243 commits
+Parsed 5246 commits
+Parsed 5249 commits
+Parsed 5255 commits
+Parsed 5257 commits
+Parsed 5258 commits
+Parsed 5259 commits
+Parsed 5260 commits
+Parsed 5261 commits
+Parsed 5262 commits
+Parsed 5265 commits
+Parsed 5266 commits
+Parsed 5271 commits
+Parsed 5272 commits
+Parsed 5273 commits
+Parsed 5282 commits
+Parsed 5284 commits
+Parsed 5285 commits
+Parsed 5286 commits
+Parsed 5287 commits
+Parsed 5289 commits
+Parsed 5290 commits
+Parsed 5291 commits
+Parsed 5292 commits
+Parsed 5297 commits
+Parsed 5298 commits
+Parsed 5299 commits
+Parsed 5303 commits
+Parsed 5305 commits
+Parsed 5308 commits
+Parsed 5310 commits
+Parsed 5312 commits
+Parsed 5313 commits
+Parsed 5321 commits
+Parsed 5328 commits
+Parsed 5329 commits
+Parsed 5330 commits
+Parsed 5331 commits
+Parsed 5341 commits
+Parsed 5344 commits
+Parsed 5347 commits
+Parsed 5348 commits
+Parsed 5350 commits
+Parsed 5355 commits
+Parsed 5363 commits
+Parsed 5364 commits
+Parsed 5365 commits
+Parsed 5366 commits
+Parsed 5368 commits
+Parsed 5370 commits
+Parsed 5372 commits
+Parsed 5373 commits
+Parsed 5376 commits
+Parsed 5378 commits
+Parsed 5379 commits
+Parsed 5380 commits
+Parsed 5381 commits
+Parsed 5382 commits
+Parsed 5388 commits
+Parsed 5390 commits
+Parsed 5391 commits
+Parsed 5393 commits
+Parsed 5396 commits
+Parsed 5398 commits
+Parsed 5405 commits
+Parsed 5406 commits
+Parsed 5409 commits
+Parsed 5411 commits
+Parsed 5414 commits
+Parsed 5416 commits
+Parsed 5417 commits
+Parsed 5418 commits
+Parsed 5419 commits
+Parsed 5420 commits
+Parsed 5421 commits
+Parsed 5422 commits
+Parsed 5424 commits
+Parsed 5426 commits
+Parsed 5431 commits
+Parsed 5432 commits
+Parsed 5442 commits
+Parsed 5445 commits
+Parsed 5447 commits
+Parsed 5448 commits
+Parsed 5450 commits
+Parsed 5495 commits
+Parsed 5497 commits
+Parsed 5499 commits
+Parsed 5504 commits
+Parsed 5506 commits
+Parsed 5509 commits
+Parsed 5510 commits
+Parsed 5511 commits
+Parsed 5512 commits
+Parsed 5513 commits
+Parsed 5514 commits
+Parsed 5515 commits
+Parsed 5516 commits
+Parsed 5518 commits
+Parsed 5519 commits
+Parsed 5521 commits
+Parsed 5522 commits
+Parsed 5523 commits
+Parsed 5526 commits
+Parsed 5527 commits
+Parsed 5530 commits
+Parsed 5531 commits
+Parsed 5532 commits
+Parsed 5533 commits
+Parsed 5534 commits
+Parsed 5536 commits
+Parsed 5537 commits
+Parsed 5540 commits
+Parsed 5541 commits
+Parsed 5545 commits
+Parsed 5546 commits
+Parsed 5547 commits
+Parsed 5548 commits
+Parsed 5549 commits
+Parsed 5552 commits
+Parsed 5553 commits
+Parsed 5554 commits
+Parsed 5557 commits
+Parsed 5559 commits
+Parsed 5567 commits
+Parsed 5568 commits
+Parsed 5569 commits
+Parsed 5571 commits
+Parsed 5572 commits
+Parsed 5576 commits
+Parsed 5578 commits
+Parsed 5582 commits
+Parsed 5584 commits
+Parsed 5585 commits
+Parsed 5591 commits
+Parsed 5594 commits
+Parsed 5600 commits
+Parsed 5620 commits
+Parsed 5625 commits
+Parsed 5626 commits
+Parsed 5633 commits
+Parsed 5647 commits
+Parsed 5650 commits
+Parsed 5655 commits
+Parsed 5665 commits
+Parsed 5668 commits
+Parsed 5672 commits
+Parsed 5686 commits
+Parsed 5689 commits
+Parsed 5690 commits
+Parsed 5691 commits
+Parsed 5698 commits
+Parsed 5701 commits
+Parsed 5702 commits
+Parsed 5705 commits
+Parsed 5708 commits
+Parsed 5711 commits
+Parsed 5712 commits
+Parsed 5716 commits
+Parsed 5727 commits
+Parsed 5730 commits
+Parsed 5734 commits
+Parsed 5736 commits
+Parsed 5739 commits
+Parsed 5741 commits
+Parsed 5742 commits
+Parsed 5745 commits
+Parsed 5746 commits
+Parsed 5750 commits
+Parsed 5752 commits
+Parsed 5755 commits
+Parsed 5758 commits
+Parsed 5759 commits
+Parsed 5762 commits
+Parsed 5766 commits
+Parsed 5768 commits
+Parsed 5772 commits
+Parsed 5773 commits
+Parsed 5778 commits
+Parsed 5789 commits
+Parsed 5800 commits
+Parsed 5801 commits
+Parsed 5804 commits
+Parsed 5805 commits
+Parsed 5806 commits
+Parsed 5807 commits
+Parsed 5816 commits
+Parsed 5818 commits
+Parsed 5819 commits
+Parsed 5820 commits
+Parsed 5821 commits
+Parsed 5822 commits
+Parsed 5823 commits
+Parsed 5824 commits
+Parsed 5825 commits
+Parsed 5826 commits
+Parsed 5827 commits
+Parsed 5828 commits
+Parsed 5829 commits
+Parsed 5830 commits
+Parsed 5831 commits
+Parsed 5832 commits
+Parsed 5833 commits
+Parsed 5835 commits
+Parsed 5836 commits
+Parsed 5837 commits
+Parsed 5839 commits
+Parsed 5841 commits
+Parsed 5842 commits
+Parsed 5843 commits
+Parsed 5845 commits
+Parsed 5847 commits
+Parsed 5848 commits
+Parsed 5849 commits
+Parsed 5852 commits
+Parsed 5853 commits
+Parsed 5854 commits
+Parsed 5855 commits
+Parsed 5856 commits
+Parsed 5863 commits
+Parsed 5877 commits
+Parsed 5878 commits
+Parsed 5879 commits
+Parsed 5886 commits
+Parsed 5888 commits
+Parsed 5889 commits
+Parsed 5891 commits
+Parsed 5904 commits
+Parsed 5905 commits
+Parsed 5906 commits
+Parsed 5907 commits
+Parsed 5909 commits
+Parsed 5910 commits
+Parsed 5911 commits
+Parsed 5912 commits
+Parsed 5913 commits
+Parsed 5916 commits
+Parsed 5917 commits
+Parsed 5918 commits
+Parsed 5919 commits
+Parsed 5924 commits
+Parsed 5926 commits
+Parsed 5930 commits
+Parsed 5935 commits
+Parsed 5939 commits
+Parsed 5940 commits
+Parsed 5942 commits
+Parsed 5943 commits
+Parsed 5945 commits
+Parsed 5946 commits
+Parsed 5950 commits
+Parsed 5958 commits
+Parsed 5968 commits
+Parsed 5972 commits
+Parsed 5973 commits
+Parsed 5976 commits
+Parsed 5978 commits
+Parsed 5980 commits
+Parsed 5994 commits
+Parsed 6003 commits
+Parsed 6005 commits
+Parsed 6007 commits
+Parsed 6008 commits
+Parsed 6010 commits
+Parsed 6012 commits
+Parsed 6014 commits
+Parsed 6018 commits
+Parsed 6019 commits
+Parsed 6020 commits
+Parsed 6021 commits
+Parsed 6022 commits
+Parsed 6036 commits
+Parsed 6045 commits
+Parsed 6049 commits
+Parsed 6051 commits
+Parsed 6052 commits
+Parsed 6058 commits
+Parsed 6062 commits
+Parsed 6063 commits
+Parsed 6064 commits
+Parsed 6065 commits
+Parsed 6068 commits
+Parsed 6070 commits
+Parsed 6102 commits
+Parsed 6113 commits
+Parsed 6114 commits
+Parsed 6115 commits
+Parsed 6128 commits
+Parsed 6150 commits
+Parsed 6161 commits
+Parsed 6163 commits
+Parsed 6179 commitswarning: disabling bitmap writing, as some objects are not being packed
+
+New history written in 333.95 seconds; now repacking/cleaning...
+Repacking your repo and cleaning out old unneeded objects
+Completely finished after 334.92 seconds.
+```
+
+rewritten_refs_pushed: no
+public_rewrite_launched: no
+git_push_invoked: no
+
+Search after rewrite (live values from the private inventory; placeholders
+only). 50 ref tips (20 heads + 30 tags):
+
+# <PREVIEW_DOMAIN>
+git grep -I -F '<class>' $(git for-each-ref --format='%(objectname)')
+# (empty)
+git log --all -S '<PREVIEW_DOMAIN>'
+# (empty)
+
+# <AKS_CLUSTER>
+git grep -I -F '<class>' $(git for-each-ref --format='%(objectname)')
+# (empty)
+git log --all -S '<AKS_CLUSTER>'
+# (empty)
+
+# <CHART_OLD>
+git grep -I -F '<class>' $(git for-each-ref --format='%(objectname)')
+# (empty)
+git log --all -S '<CHART_OLD>'
+# (empty)
+
+# <SYSNS_OLD>
+git grep -I -F '<class>' $(git for-each-ref --format='%(objectname)')
+# (empty)
+git log --all -S '<SYSNS_OLD>'
+# (empty)
+
+# <DEPLOY_HELPER>
+git grep -I -F '<class>' $(git for-each-ref --format='%(objectname)')
+# (empty)
+git log --all -S '<DEPLOY_HELPER>'
+# (empty)
+
+# <NP_OLD>
+git grep -I -F '<class>' $(git for-each-ref --format='%(objectname)')
+# (empty)
+git log --all -S '<NP_OLD>'
+# (empty)
+
+# <CLIENT_ZONE>
+git grep -I -F '<class>' $(git for-each-ref --format='%(objectname)')
+# (empty)
+git log --all -S '<CLIENT_ZONE>'
+# (empty)
+
+# <CLIENT_CLOUD>
+git grep -I -F '<class>' $(git for-each-ref --format='%(objectname)')
+# (empty)
+git log --all -S '<CLIENT_CLOUD>'
+# (empty)
+
+# <AKS_FQDN>
+git grep -I -F '<class>' $(git for-each-ref --format='%(objectname)')
+# (empty)
+git log --all -S '<AKS_FQDN>'
+# (empty)
+
+# <ACR>
+git grep -I -F '<class>' $(git for-each-ref --format='%(objectname)')
+# (empty)
+git log --all -S '<ACR>'
+# (empty)
+
+# <VAULT_A>
+git grep -I -F '<class>' $(git for-each-ref --format='%(objectname)')
+# (empty)
+git log --all -S '<VAULT_A>'
+# (empty)
+
+# <VAULT_B>
+git grep -I -F '<class>' $(git for-each-ref --format='%(objectname)')
+# (empty)
+git log --all -S '<VAULT_B>'
+# (empty)
+
+# <RG>
+git grep -I -F '<class>' $(git for-each-ref --format='%(objectname)')
+# (empty)
+git log --all -S '<RG>'
+# (empty)
+
+# <HOST_FQDN>
+git grep -I -F '<class>' $(git for-each-ref --format='%(objectname)')
+# (empty)
+git log --all -S '<HOST_FQDN>'
+# (empty)
+
+# <RESOURCE_GROUP>
+git grep -I -F '<class>' $(git for-each-ref --format='%(objectname)')
+# (empty)
+git log --all -S '<RESOURCE_GROUP>'
+# (empty)
+
+# <KEY_VAULT>
+git grep -I -F '<class>' $(git for-each-ref --format='%(objectname)')
+# (empty)
+git log --all -S '<KEY_VAULT>'
+# (empty)
+
+# <GUID_PREFIX>
+git grep -I -F '<class>' $(git for-each-ref --format='%(objectname)')
+# (empty)
+git log --all -S '<GUID_PREFIX>'
+# (empty)
+
+# <INSTALL_ROOT>
+git grep -I -F '<class>' $(git for-each-ref --format='%(objectname)')
+# (empty)
+git log --all -S '<INSTALL_ROOT>'
+# (empty)
+
+# <APPLE_TEAM_ID>
+git grep -I -F '<class>' $(git for-each-ref --format='%(objectname)')
+# (empty)
+git log --all -S '<APPLE_TEAM_ID>'
+# (empty)
+
+# <WF_OLD>
+git grep -I -F '<class>' $(git for-each-ref --format='%(objectname)')
+# (empty)
+git log --all -S '<WF_OLD>'
+# (empty)
+
+ALL_AFTER_ZERO=yes

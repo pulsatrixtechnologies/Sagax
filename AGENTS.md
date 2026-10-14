@@ -681,9 +681,8 @@ probes the address (`orgJoin.probe`, Perspicax-linked servers only) then
 `orgJoin.join` saves the server and starts the existing **Sign in with
 Pulsatrix** (`electron/org-join.mjs`, `startPulsatrixSignIn` in
 `electron/main.mjs`). Do not add another sign-in path. The choice lives in
-`config.onboarding.launchMode`; the default address is
-`DEFAULT_SERVER_ADDRESS`, overridable at build time with
-`SAGAX_DEFAULT_SERVER`. The welcome tour and Settings > Organization no longer
+`config.onboarding.launchMode`; the address field is empty unless the build
+sets `SAGAX_DEFAULT_SERVER`. The welcome tour and Settings > Organization no longer
 offer the inherited managed-desktop Admin sign-in. Organization is Perspicax. See
 `docs/self-hosting.md` ("At launch: No server or Server").
 
@@ -1233,11 +1232,13 @@ fake xAI: `scripts/verify-voice-mode.ts`. Details: `docs/voice-mode-xai.md`.
   backoff) switch the call to POST for good, logged once; a clause failed
   before any audio is spoken over POST, one cut mid-way is never said twice.
   Barge-in ducks then cancels the bot's voice and interrupts its running
-  turn. "Full-duplex conversation" (Advanced, on by default in internal /
-  TestFlight / dev, kill-switch in the panel, `CallSettings.fullDuplex`):
-  talking while the bot works or speaks cancels that turn, discards the
-  steer queue, and starts only the latest utterance (`voiceCall.duplex`,
-  issue #292). Off: words said while it works join that turn. Tests:
+  turn. "Full-duplex conversation" (Advanced, off by default on every
+  channel, `CallSettings.fullDuplex`, rev 3): when the person turns it on
+  and the server has `SAGAX_VOICE_FULL_DUPLEX=1`, talking while the bot
+  works or speaks cancels that turn, discards the steer queue, and starts
+  only the latest utterance (`voiceCall.duplex`, issue #292). Off, the
+  page's duplex and speculative marks are dropped and words said while it
+  works join that turn. Tests:
   `call-logic.test.ts`, `voice-build.test.ts`,
   `call.test.ts`, `duplex-policy.test.ts`, `speech-fence.test.ts`,
   `speech-stream.test.ts`,
@@ -1457,6 +1458,26 @@ Electron restart (no HMR); launch-test them before committing.
 - Effects (signs, thought dots, Zzz, hearts, sparkles, confetti, Trombi's
   sparkle) are drawn in the lane beside the character (`.fb-fx[data-side]`),
   never over it; add a new one there.
+- The floating cluster (the character and the pill hanging on it: the quick
+  input "Écrire à ...", or the call's pill) never goes under the macOS Dock,
+  the Windows taskbar, a Linux panel Electron reports in `workArea`, or off
+  screen (2026-10-13). The page reports the pill's box with the character's
+  (`setBody(rect, keep)`, `keepRectIn`); main keeps their union inside the
+  display's `workArea`, never `bounds` (`clusterBox`, `clampClusterToDisplays`),
+  on every drag step, at drag end, when the pill opens, on `display-added`,
+  `display-removed`, `display-metrics-changed` (the Dock resized or hidden,
+  scale or resolution changed) and on show. When the union is taller or wider
+  than every work area, the character stays inside and the pill may hang out.
+  Where the Dock is right under its feet the pill goes over its head instead
+  (`pillSide` in `placement.ts`, `layout.pill`), the reply's bubble stacked
+  above it. Linux: the same `workArea` clamp; click-through stays off (a
+  compositor that reports `workArea === bounds` does not hide its panel).
+  Positions stay in `floating-bot-positions.json`: per display setup as before
+  (`{x, y, v: 2}`, 32 keys, the shape older builds `slice(0, 32)`). Per-display
+  spots live in a second file, `floating-bot-display-spots.json`, keyed by
+  `displayIdentity` (`<id>@<origin>`, not size or scale; 64 keys, with `t`).
+  A mixed `display:` key left in the setups file is purged on load. Tests:
+  `electron/floating-bot-cluster.test.mjs`.
 - A sleeping mascot is unmistakable (2026-10-13): the stage carries
   `data-asleep` when it naps or the brain's pose is `sleep` while it rests
   (`mascotAsleep` in `sleep.ts`; never while dragged, walking or flying).

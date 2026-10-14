@@ -25,7 +25,7 @@ One tree, four layers. The provisioner process is real: `SANDBOX_BACKEND=kuberne
 |---|---|---|
 | Provisioner | `provisioner/` | Namespace, Role, NetworkPolicies, quota and the Deployment the Kubernetes `sagax-sandboxd` runs from. |
 | Pool | `sandboxes/` | Weekday warm node, KEDA, autoscaler values, Azure adapter, alerts, Velero schedule. |
-| Chart | `helm/sagax-sandboxes/` | Namespaces, the `sagax-sandboxd` ServiceAccount, NetworkPolicies, a StorageClass, admission, a warm node, Velero backups. |
+| Chart | `helm/sandboxes/` | Namespaces, the `sagax-sandboxd` ServiceAccount, NetworkPolicies, a StorageClass, admission, a warm node, Velero backups. |
 | Modules | `tofu/` | A cloud-agnostic pool description (`tofu/core`) and adapters that can create a cluster. Every adapter defaults to off. |
 
 `SOC2.md` maps each piece to the AICPA Trust Services Criteria it can
@@ -34,7 +34,7 @@ audit report.
 
 ## Option 3, as built
 
-The production VM (`Standard_D4pls_v6`, arm64, Canada Central) stays the home of
+The production VM (`<VM_SIZE>`, arm64, `<REGION>`) stays the home of
 Pulsabot. Sandboxes move to a pool that speaks the Kubernetes API, so the
 same chart runs on k3s, AKS, EKS or LKE.
 
@@ -45,9 +45,9 @@ same chart runs on k3s, AKS, EKS or LKE.
   ConfigMap); this chart does not create those pods.
 - The control plane, or the k3s server, does not scale to zero. A CronJob
   has to run somewhere, and AKS refuses a system pool of zero.
-- The sandbox pool is arm64, 4 vCPU, 16 GiB: `Standard_D4ps_v6` on AKS,
+- The sandbox pool is arm64, 4 vCPU, 16 GiB: `<VM_SIZE>` on AKS,
   `t4g.xlarge` on AWS, `g6-standard-8` on Linode, 4 vCPU and 16 GiB on
-  Proxmox. Default maximum is 4 nodes. Canada Central's 10 vCPU quota has
+  Proxmox. Default maximum is 4 nodes. `<REGION>`'s 10 vCPU quota has
   to be raised before that maximum is real.
 - Images are multi-arch digests. Secrets are not in this tree: the chart
   does not render a Secret, and the k3s join token and etcd key are read
@@ -56,8 +56,8 @@ same chart runs on k3s, AKS, EKS or LKE.
 ## Chart
 
 ```sh
-helm lint deploy/k8s/helm/sagax-sandboxes
-helm template sagax-sandboxes deploy/k8s/helm/sagax-sandboxes
+helm lint deploy/k8s/helm/sandboxes
+helm template sandboxes deploy/k8s/helm/sandboxes
 ```
 
 Overlays are deep-merged, not replacements:
@@ -73,7 +73,7 @@ What the chart renders:
 
 | Object | Rule |
 |---|---|
-| `sagax-sandboxes`, `sagax-sandbox-system` | Pod Security `restricted`. |
+| `sandboxes`, `sandbox-system` | Pod Security `restricted`. |
 | ServiceAccount `sagax-sandboxd` | A Role in the sandbox namespace only: pods (including exec and log) and persistent volume claims. No secrets, no nodes, no cluster role. |
 | NetworkPolicy | Default deny. Sandbox egress is DNS plus the public internet, with the private, link-local, metadata and Azure WireServer ranges removed. No traffic between sandboxes. |
 | StorageClass | Encrypted, `Retain`, `WaitForFirstConsumer`. The chart refuses to render unless encryption is set. |
