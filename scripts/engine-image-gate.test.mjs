@@ -1,9 +1,9 @@
 import { spawnSync } from "node:child_process";
 import { chmodSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { delimiter, join } from "node:path";
 import { pathToFileURL } from "node:url";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
   assessEngineBinaries,
@@ -13,6 +13,7 @@ import {
   assessProductionManifest,
   assessStartupLog,
   invokedAsCli,
+  main,
   productionEngineBins,
   productionEngineIds,
 } from "./engine-image-gate.mjs";
@@ -52,6 +53,25 @@ function withTemp(run) {
 
 function runGate(args, extra = {}) {
   return spawnSync(process.execPath, [gateScript, ...args], { encoding: "utf8", ...extra });
+}
+
+// The same answers as the fake docker binary below, for main(argv, run) in
+// process: Windows cannot spawn an extensionless shebang script.
+function fakeDockerRun({ body, versions, missing = [] }) {
+  return (command, args) => {
+    if (command !== "docker") return { status: 2, stdout: "", stderr: "unexpected command\n" };
+    const flag = args.indexOf("--entrypoint");
+    const entry = flag >= 0 ? args[flag + 1] : "";
+    const rest = flag >= 0 ? args.slice(flag + 2) : args;
+    if (entry === "cat" && rest.includes("/app/engines/manifest.json")) {
+      return { status: 0, stdout: JSON.stringify(body), stderr: "" };
+    }
+    if (rest.includes("--version")) {
+      if (missing.includes(entry)) return { status: 127, stdout: "", stderr: "" };
+      return { status: 0, stdout: versions[entry] ?? "", stderr: "" };
+    }
+    return { status: 2, stdout: "", stderr: "unexpected docker argv\n" };
+  };
 }
 
 function writeFakeDocker(dir, { body, versions, missing = [] }) {
@@ -241,14 +261,33 @@ describe("engine-image-gate cli", () => {
     });
   });
 
-  it("probes each lock binary --version in the image and refuses a missing one", () => {
+  it("probes each lock binary --version in the image and refuses a missing one (in process)", () => {
+    const versions = Object.fromEntries(bins.map((engine) => [engine.bin, `${engine.bin} ${engine.version}\n`]));
+    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const argv = ["--image", "example-server:test"];
+      expect(main(argv, fakeDockerRun({ body: manifest("all"), versions }))).toBe(0);
+      expect(errors).not.toHaveBeenCalled();
+      expect(main(argv, fakeDockerRun({ body: manifest("all"), versions, missing: ["claude"] }))).not.toBe(0);
+      expect(errors.mock.calls.flat().join("\n")).toMatch(/claude: claude missing or --version failed/);
+    } finally {
+      errors.mockRestore();
+    }
+  });
+
+  // The CLI path puts a fake `docker` shebang script first on PATH. Windows
+  // cannot spawn an extensionless script (and the runner's real Docker would
+  // answer instead), so this end-to-end spawn runs where the gate runs: the
+  // GOX image gate workflow is ubuntu-latest. The in-process test above keeps
+  // the probe logic covered on every platform.
+  it.skipIf(process.platform === "win32")("probes each lock binary --version in the image and refuses a missing one", () => {
     const versions = Object.fromEntries(bins.map((engine) => [engine.bin, `${engine.bin} ${engine.version}\n`]));
     const ok = withTemp((dir) => {
       writeFakeDocker(dir, { body: manifest("all"), versions });
       const path = join(dir, "valid.json");
       writeFileSync(path, JSON.stringify(manifest("all")));
       return runGate(["--manifest", path, "--image", "example-server:test"], {
-        env: { ...process.env, PATH: `${dir}:${process.env.PATH}` },
+        env: { ...process.env, PATH: `${dir}${delimiter}${process.env.PATH}` },
       });
     });
     expect(ok.status).toBe(0);
@@ -259,7 +298,7 @@ describe("engine-image-gate cli", () => {
       const path = join(dir, "valid.json");
       writeFileSync(path, JSON.stringify(manifest("all")));
       return runGate(["--manifest", path, "--image", "example-server:test"], {
-        env: { ...process.env, PATH: `${dir}:${process.env.PATH}` },
+        env: { ...process.env, PATH: `${dir}${delimiter}${process.env.PATH}` },
       });
     });
     expect(missingBin.status).not.toBe(0);

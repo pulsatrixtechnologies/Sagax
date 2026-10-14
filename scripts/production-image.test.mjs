@@ -5,7 +5,8 @@ import { describe, expect, it } from "vitest";
 import { parseTrivyignore } from "./trivy-ignore-guard.mjs";
 
 const root = join(import.meta.dirname, "..");
-const read = (path) => readFileSync(join(root, path), "utf8");
+// A Windows checkout may hand back CRLF; the patterns below are written for LF.
+const read = (path) => readFileSync(join(root, path), "utf8").replace(/\r\n/g, "\n");
 
 function sandboxChart(file) {
   const helm = join(root, "deploy/k8s/helm");

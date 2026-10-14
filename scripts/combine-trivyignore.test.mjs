@@ -125,7 +125,10 @@ describe("combineTrivyignore", () => {
     expect(cli.stdout).not.toContain(PRIVATE_ID);
     expect(cli.combined).toContain(PRIVATE_ID);
     expect(cli.publicAfter).toBe(publicText);
-    expect(cli.outMode).toBe(0o600);
+    // Windows has no POSIX permission bits: chmod only toggles read-only and
+    // stat reports 0o666 whatever was asked, so the 0o600 check holds where
+    // the mode exists (Linux, macOS, the image builders).
+    if (process.platform !== "win32") expect(cli.outMode).toBe(0o600);
   });
 
   it("drops a private id already present in the public file", () => {
