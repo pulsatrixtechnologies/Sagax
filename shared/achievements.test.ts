@@ -11,6 +11,7 @@ import {
   rewardKey,
   rewardLineVisible,
   ruleStatus,
+  skinUnlocked,
 } from "./achievements.ts";
 
 describe("reward keys for crab items", () => {
@@ -44,6 +45,17 @@ describe("claude unlocks", () => {
     expect(characterUnlocked(empty, "owl")).toBe(true);
     expect(characterUnlocked(empty, "crab")).toBe(false);
     expect(characterUnlocked({ enforced: true, keys: new Set(["character:crab"]) }, "crab")).toBe(true);
+  });
+
+  it("lets an earned skin bring its character, Trombi's easter egg excepted (JC, 2026-10-14)", () => {
+    const pearl = { enforced: true, keys: new Set(["skin:crab:pearl", "skin:shape:outline", "skin:trombi:gold"]) };
+    expect(characterUnlocked(pearl, "crab")).toBe(true);
+    expect(characterUnlocked(pearl, "shape")).toBe(true);
+    expect(characterUnlocked(pearl, "bunbu")).toBe(false);
+    // Trombi stays hidden until its own command finds it
+    expect(characterUnlocked(pearl, "trombi")).toBe(false);
+    expect(skinUnlocked(pearl, "crab", "pearl")).toBe(true);
+    expect(skinUnlocked(pearl, "crab", "gold")).toBe(false);
   });
 
   it("scores eventStreak on progress.days[event], not activeDays", () => {

@@ -66,6 +66,20 @@ describe("Mastery unlock registry", () => {
     expect(masteryLock(none, "owl", "gold")).toEqual({ locked: false });
   });
 
+  it("lets an earned skin bring its character, in that skin only (JC, 2026-10-14)", () => {
+    // the rung of Shiba's first coat, before the character's own achievement
+    const coat = new Set([masteryKey("second-wind")]);
+    expect(masteryLock(coat, "shiba")).toEqual({ locked: false });
+    expect(masteryLock(coat, "shiba", "cream")).toEqual({ locked: false });
+    expect(masteryLock(coat, "shiba", "white")).toEqual({ locked: true, achievement: "quiet-nights" });
+    expect(masteryLock(coat, "grump")).toEqual({ locked: true, achievement: "reviewer" });
+    // a skin key as the snapshot lists it does the same
+    expect(masteryLock(new Set(["skin:frog:leaf"]), "frog", "leaf")).toEqual({ locked: false });
+    const unlocks = unlocksFor({ unlocked: { "second-wind": 1 }, grandfathered: [] }, ACHIEVEMENTS);
+    expect(characterUnlocked(unlocks, "shiba")).toBe(true);
+    expect(skinUnlocked(unlocks, "shiba", "cream")).toBe(true);
+  });
+
   it("feeds the general locks: what a person unlocked opens the registry's looks, a later-registered skin included", () => {
     const unlocks = unlocksFor({ unlocked: { "hands-off": 1, "quiet-nights": 1 }, grandfathered: [] }, ACHIEVEMENTS);
     expect(unlocks.keys.has("character:shiba")).toBe(true);

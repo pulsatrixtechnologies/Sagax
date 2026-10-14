@@ -198,6 +198,22 @@ export interface MasteryLock {
 }
 
 /**
+ * Has this person earned one of the character's own skins (not its free base
+ * skin)? Earning a skin lets them wear the character in it (JC, 2026-10-14):
+ * a skin unlocked on a character still locked was listed as a reward yet
+ * could be neither seen nor worn.
+ */
+function masterySkinEarned(keys: ReadonlySet<string>, character: string): boolean {
+  if (!isMasteryCharacter(character)) return false;
+  return masterySkins(character).some((skin) => {
+    if (MASTERY_BASE_SKINS.includes(skin)) return false;
+    if (keys.has(`skin:${character}:${skin}`)) return true;
+    const achievement = masteryUnlockFor(character, skin);
+    return achievement !== null && keys.has(masteryKey(achievement));
+  });
+}
+
+/**
  * Is this look locked for someone whose reward keys are `keys`? The helper
  * the look editor, the catalogue and the server's save check call. A Mastery
  * skin also needs its character.
@@ -205,7 +221,7 @@ export interface MasteryLock {
 export function masteryLock(keys: ReadonlySet<string>, character: string, skin?: string): MasteryLock {
   const characterAchievement = masteryUnlockFor(character);
   if (!characterAchievement) return { locked: false };
-  if (!keys.has(masteryKey(characterAchievement)) && !keys.has(`character:${character}`)) return { locked: true, achievement: characterAchievement };
+  if (!keys.has(masteryKey(characterAchievement)) && !keys.has(`character:${character}`) && !masterySkinEarned(keys, character)) return { locked: true, achievement: characterAchievement };
   if (skin === undefined) return { locked: false };
   const skinAchievement = masteryUnlockFor(character, skin);
   if (!skinAchievement) return { locked: false };

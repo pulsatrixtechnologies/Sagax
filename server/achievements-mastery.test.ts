@@ -226,6 +226,12 @@ describe("a locked look cannot be saved", () => {
     expect(lockedLookChange({ character: "shiba" }, { character: "shiba", skins: { shiba: "plain", shape: "gold" } }, shiba)).toBeNull();
   });
 
+  it("saves a character worn in a skin its person earned before the character itself", () => {
+    const coat = new Set([masteryKey("second-wind")]);
+    expect(lockedLookChange({ character: "owl" }, { character: "shiba", skins: { shiba: "cream" } }, coat)).toBeNull();
+    expect(lockedLookChange({ character: "owl" }, { character: "shiba", skins: { shiba: "white" } }, coat)).toMatchObject({ achievement: "quiet-nights", skin: "white" });
+  });
+
   it("never takes back what a bot already wears, and leaves the older characters to their own locks", () => {
     expect(lockedLookChange({ character: "shiba", skins: { shiba: "white" } }, { character: "shiba", skins: { shiba: "white" } }, none)).toBeNull();
     expect(lockedLookChange({ character: "owl" }, { character: "trombi", skins: { trombi: "holo" } }, none)).toBeNull();

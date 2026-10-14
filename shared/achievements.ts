@@ -536,7 +536,14 @@ export function unlocksFor(progress: Pick<AchievementProgress, "unlocked" | "gra
 export function characterUnlocked(unlocks: Unlocks, character: RewardCharacter): boolean {
   if (!unlocks.enforced) return true;
   if (isMasteryCharacter(character)) return !masteryLock(unlocks.keys, character).locked;
-  return DEFAULT_CHARACTERS.includes(character) || unlocks.keys.has(`character:${character}`);
+  if (DEFAULT_CHARACTERS.includes(character) || unlocks.keys.has(`character:${character}`)) return true;
+  // An earned skin lets its character be worn in it (JC, 2026-10-14): a skin
+  // rewarded on a character still locked was neither shown nor wearable.
+  // Trombi stays the easter egg: only its hidden command reveals it.
+  if (character === "trombi") return false;
+  const prefix = `skin:${character}:`;
+  for (const key of unlocks.keys) if (key.startsWith(prefix)) return true;
+  return false;
 }
 
 /**
