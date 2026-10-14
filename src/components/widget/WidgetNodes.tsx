@@ -75,7 +75,7 @@ export function WidgetNodeView({ node, where }: { node: WidgetNode; where: Widge
       const ink = INK[widgetString(node, "color") ?? ""];
       if (!(where.item && where.lead)) return <WidgetGlyph name={node.name} size={size} className={ink} />;
       return (
-        <span className={cn("flex size-10 shrink-0 items-center justify-center rounded-[10px] bg-inset group-hover/row:bg-composer", ink ?? "text-ink-secondary")}>
+        <span className={cn("flex size-10 shrink-0 items-center justify-center rounded-[10px] bg-inset group-hover/row:bg-composer group-aria-checked/row:bg-composer", ink ?? "text-ink-secondary")}>
           <WidgetGlyph name={node.name} size={size} />
         </span>
       );
@@ -157,6 +157,10 @@ function Layout({ node, where }: { node: WidgetNode; where: WidgetWhere }) {
   return <form noValidate onSubmit={(event) => event.preventDefault()} onKeyDown={onKeyDown} className={className} style={style}>{children}</form>;
 }
 
+/** The box of a list row, and what inside one takes a click of its own. */
+export const WIDGET_ROW = "flex min-h-[60px] w-full min-w-0 rounded-[12px] px-3 py-2.5 text-start";
+export const WIDGET_ROW_CONTROLS = "button, a, input, select, textarea, label, [role='button']";
+
 /** A list row: 60px, the whole of it the target when it has an action. A row
  * that holds a control of its own cannot be a button around a button, so it
  * takes the button's role and keys instead. */
@@ -165,7 +169,7 @@ export function WidgetListRow({ node }: { node: WidgetNode }) {
   const entry = form.actions.get(node.id);
   const live = widgetCanPress(form, entry);
   const style: CSSProperties = { gap: widgetNumber(node, "gap") ?? 12 };
-  const shape = cn("flex min-h-[60px] w-full min-w-0 rounded-[12px] px-3 py-2.5 text-start", ALIGN[widgetString(node, "align") ?? "center"]);
+  const shape = cn(WIDGET_ROW, ALIGN[widgetString(node, "align") ?? "center"]);
   const content = kids(node).map((child, index) => (
     <WidgetNodeView key={child.id ?? index} node={child} where={{ axis: "row", gap: style.gap as number, item: true, lead: index === 0 }} />
   ));
@@ -187,7 +191,7 @@ export function WidgetListRow({ node }: { node: WidgetNode }) {
       {...shared}
       onClick={(event) => {
         // a press on a button, field, link or row inside this one is that control's, not this row's
-        const inner = (event.target as Element).closest("button, a, input, select, textarea, label, [role='button']");
+        const inner = (event.target as Element).closest(WIDGET_ROW_CONTROLS);
         if (live && (!inner || inner === event.currentTarget)) form.press(node.id);
       }}
       onKeyDown={(event) => {

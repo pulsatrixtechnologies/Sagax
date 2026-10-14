@@ -239,6 +239,16 @@ export function WidgetDatePicker({ node, bare }: { node: WidgetNode; bare: boole
 const MARK = "shrink-0 peer-focus-visible:ring-2 peer-focus-visible:ring-focus";
 const MARK_IDLE = "shadow-[inset_0_0_0_1.5px_var(--color-ink-tertiary)]";
 
+/** The 18px ring one choice is marked with: empty, or filled with the accent. */
+export function WidgetRadioMark({ on, invalid = false }: { on: boolean; invalid?: boolean }) {
+  return (
+    <span
+      aria-hidden="true"
+      className={cn("size-[18px] rounded-full", MARK, on ? "shadow-[inset_0_0_0_5.5px_var(--color-accent)]" : invalid ? "shadow-[inset_0_0_0_1.5px_var(--color-danger)]" : MARK_IDLE)}
+    />
+  );
+}
+
 export function WidgetCheckbox({ node }: { node: WidgetNode }) {
   const field = useField(node);
   const checked = field.form.values[field.name] === true;
@@ -283,10 +293,7 @@ export function WidgetRadioGroup({ node }: { node: WidgetNode }) {
             data-widget-field={index === 0 ? field.name : undefined}
             className="peer sr-only"
           />
-          <span
-            aria-hidden="true"
-            className={cn("size-[18px] rounded-full", MARK, field.text === option.value ? "shadow-[inset_0_0_0_5.5px_var(--color-accent)]" : field.invalid ? "shadow-[inset_0_0_0_1.5px_var(--color-danger)]" : MARK_IDLE)}
-          />
+          <WidgetRadioMark on={field.text === option.value} invalid={field.invalid} />
           <span dir="auto" className="min-w-0">{option.label}</span>
         </label>
       ))}
