@@ -132,9 +132,9 @@ RUN npm install -g agent-browser@${AGENT_BROWSER_VERSION} \
        && ln -s /opt/openmausbot-browser/.agent-browser/browsers/chrome-*/chrome /opt/openmausbot-browser/chrome; \
      fi \
   && agent-browser --version
-# Overlay again after agent-browser, then drop the npm CLI (only the installer
-# used it), docs, and apt indexes. Node stays; engines and the bundled server
-# do not call npm at runtime.
+# Overlay again after agent-browser, then drop the npm CLI and the Node
+# image's Yarn (only the installer used them), docs, and apt indexes. Node
+# stays; engines and the bundled server do not call npm or yarn at runtime.
 RUN node /app/engines/harden-image-deps.mjs --root /opt/sagax-engines --root /usr/local/lib/node_modules \
   && apt-get update \
   && apt-get upgrade -y --no-install-recommends \
@@ -143,6 +143,7 @@ RUN node /app/engines/harden-image-deps.mjs --root /opt/sagax-engines --root /us
   && npm cache clean --force \
   && rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx \
     /usr/local/lib/node_modules/corepack /usr/local/bin/corepack \
+    /opt/yarn-v1.22.22 /usr/local/bin/yarn /usr/local/bin/yarnpkg \
     /root/.npm /root/.cache /tmp/*
 # DuckDB and resvg change on a version bump, not per commit: beneath the app files.
 COPY --from=build --chown=maus:maus /src/dist-native/duckdb/linux ./duckdb

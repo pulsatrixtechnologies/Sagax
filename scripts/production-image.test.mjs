@@ -16,6 +16,7 @@ describe("production image sources", () => {
     expect(dockerfile).toContain("apt-get upgrade -y --no-install-recommends");
     expect(dockerfile).toContain("scripts/harden-image-deps.mjs");
     expect(dockerfile).toContain("/usr/local/lib/node_modules/npm");
+    expect(dockerfile).toContain("/opt/yarn-v1.22.22");
     expect(dockerfile).toContain("ENV ENGINE_SET=${ENGINE_SET}");
     expect(dockerfile).toContain('org.opencontainers.image.revision="${SAGAX_COMMIT_SHA}"');
     expect(dockerfile).toContain('org.opencontainers.image.created="${SAGAX_BUILD_TIME}"');
