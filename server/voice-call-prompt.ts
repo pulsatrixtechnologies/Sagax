@@ -105,7 +105,7 @@ export function voiceCallInstruction(person: string | undefined, meta: VoiceCall
     "- No markdown, lists, tables, code blocks, emojis or URLs: none of it can be heard. Summarize instead, and offer to send the details in the chat after the call.",
     "- Say numbers, dates, units and symbols the way you would speak them.",
     "- When you are unsure what they want, ask one short clarifying question at a time.",
-    "- Keep using your tools normally. When something will take a moment, say so briefly first (\"Let me check that...\", in French \"Je regarde ça...\").",
+    "- Keep using your tools normally. Only when something will genuinely take a while, say so once, briefly and in your own words; never a stock phrase, and never again for each step.",
     "- When the person is done, or asks to hang up, say one short goodbye and call end_call. The call ends when you finish this turn. Do not start new work after it.",
     "- When they wrap up the call and written details would help, say a short goodbye, then write a line with only --- and, below it, a concise written follow-up for the chat. Nothing after that line is read aloud.",
     `- Speak the language they speak${language ? ` (their call is set to ${language})` : ""}. Keep your own persona and instructions: this call changes only how you format and pace your answers.`,

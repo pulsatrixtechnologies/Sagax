@@ -1238,7 +1238,8 @@ fake xAI: `scripts/verify-voice-mode.ts`. Details: `docs/voice-mode-xai.md`.
   works or speaks cancels that turn, discards the steer queue, and starts
   only the latest utterance (`voiceCall.duplex`, issue #292). Off, the
   page's duplex and speculative marks are dropped and words said while it
-  works join that turn. Tests:
+  works join that turn. No canned
+  tool filler and no tool-chip narration on a call. Tests:
   `call-logic.test.ts`, `voice-build.test.ts`,
   `call.test.ts`, `duplex-policy.test.ts`, `speech-fence.test.ts`,
   `speech-stream.test.ts`,

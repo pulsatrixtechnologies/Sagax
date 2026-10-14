@@ -88,9 +88,10 @@ confirmed speech while the bot is busy or speaking cancels that turn; the
 server never steers or queues those words. The thinking cue is 400 ms
 instead of 1200 ms so
 the line is not dead air. Approvals stay spoken yes or no and are not
-cancelled. Tools still run on the bot; the prompt already asks for a
-spoken "Je regarde ça..." before slow work. A duplex send that races
-another is latest-wins (the slower one is superseded, never queued).
+cancelled. Tools still run on the bot. The call speaks no canned filler
+and no tool-chip narration; the prompt asks the bot to say so once, in
+its own words, only when something will genuinely take a while. A duplex
+send that races another is latest-wins (the slower one is superseded, never queued).
 `startTurn` thread_busy is retried until the interrupt cap. Cancelled
 turns stop streaming (`content.delta` of that turnId is not broadcast).
 The client speech fence (`speech-fence.ts`, iOS `CallConversation`)

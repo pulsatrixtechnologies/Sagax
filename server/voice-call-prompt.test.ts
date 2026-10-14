@@ -56,7 +56,8 @@ describe("the phone-call instruction", () => {
     expect(text).toContain("never mention a transcript, dictation or voice mode");
     expect(text).toContain("one to three at a time");
     expect(text).toContain("No markdown, lists, tables, code blocks, emojis or URLs");
-    expect(text).toContain("Je regarde ça");
+    expect(text).not.toContain("Je regarde");
+    expect(text).toContain("never a stock phrase");
     expect(text).toContain("(their call is set to French)");
     expect(text).toContain("Keep your own persona and instructions");
     // no duplex opener on this call: nothing to "not repeat"

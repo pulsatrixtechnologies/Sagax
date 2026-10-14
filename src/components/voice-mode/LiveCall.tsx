@@ -25,7 +25,6 @@ import {
   interruptBot,
   noteUtteranceSent,
   settleReplies,
-  shouldNarrateToolChip,
   streamText,
   type SpeechFence,
 } from "@/lib/voice-mode/speech-fence";
@@ -37,17 +36,7 @@ import { readVoiceModeSettings } from "@/lib/voice-mode/settings";
 import { publishLiveCall, retractLiveCall, useLiveCall, type LiveCallData, type LiveCallMetrics } from "@/lib/voice-mode/live-call-store";
 import { noteVoiceCallEnded, noteVoiceCallRunning } from "@/lib/voice-call-clock";
 import { callBarLines } from "@/lib/voice-call-transcript";
-import { activeLocale, t } from "@/lib/i18n";
-import {
-  cancelToolFiller,
-  createToolFillerState,
-  noteToolFillerPlayed,
-  resetToolFiller,
-  shouldPlayToolFiller,
-  shouldSkipToolChip,
-  toolFillerLanguage,
-  toolFillerText,
-} from "@/lib/voice-mode/tool-filler";
+import { t } from "@/lib/i18n";
 import { announceTopic, callHasBackgroundWork, howToSpeakTopicResult, sourceUserId, topicLabel } from "@/lib/voice-mode/voice-topics";
 import { nextSpeakSlot, type SpeakItem, type SpeakPriority } from "@/lib/voice-mode/voice-speak-queue";
 import { isRoutineApproval, isSkillApproval, pendingApprovals, spokenApprovalPrompt } from "../PendingApproval";
@@ -121,7 +110,6 @@ export function LiveCallEngine({ bot }: { bot: Bot }) {
   const fence = useRef<SpeechFence>(createSpeechFence());
   /** The utterance the opener may speak for. Cleared when that turn is dropped. */
   const openerOwner = useRef<VoiceOpenerOwner | null>(null);
-  const filler = useRef(createToolFillerState());
   const pendingSpeak = useRef<Array<SpeakItem & { text: string; kind: "say" | "done" }>>([]);
   const drainSpeak = useCallback(() => {
     const live = call;
@@ -181,7 +169,6 @@ export function LiveCallEngine({ bot }: { bot: Bot }) {
         if (cut.unheard) lastCut.current = { unheard: cut.unheard };
         // what was being said is cut: the rest of that answer is not spoken
         fence.current = cancelSpeech(fence.current, streamingRef.current);
-        filler.current = cancelToolFiller(filler.current);
       }),
       live.on("interrupt-bot", (target) => {
         openerOwner.current = null;
@@ -198,10 +185,7 @@ export function LiveCallEngine({ bot }: { bot: Bot }) {
         });
       }),
     ];
-    void live.start().then(() => {
-      const language = toolFillerLanguage(readVoiceModeSettings().language, activeLocale());
-      void live.prefetchFiller(toolFillerText(language)).catch(() => {});
-    });
+    void live.start();
     return () => {
       for (const off of offs) off();
       live.end();
@@ -285,7 +269,6 @@ export function LiveCallEngine({ bot }: { bot: Bot }) {
       }
       // a new turn: a cut answer that settles after this send stays silent
       fence.current = noteUtteranceSent(fence.current);
-      filler.current = resetToolFiller(filler.current);
       const language = readVoiceModeSettings().language;
       // one id per utterance: the server delivers it once, whatever retries,
       // and logs its stages under it (the call's timeline uses the same)
@@ -431,27 +414,8 @@ export function LiveCallEngine({ bot }: { bot: Bot }) {
       }
     }
     drainSpeak();
-    const replies = fresh.filter((m) => m.role === "bot" && m.kind === "text" && m.text?.trim());
-    if (!replies.length && call.current.phase === "thinking") {
-      for (const m of fresh) {
-        if (m.kind !== "activity" || !m.tool) continue;
-        const toolKey = m.tool.itemId ?? m.id;
-        if (shouldPlayToolFiller(filler.current, {
-          thinking: true,
-          toolStarted: true,
-          toolKey,
-          speaking: call.player.busy || call.current.botAudible,
-        })) {
-          filler.current = noteToolFillerPlayed(filler.current, toolKey);
-          const language = toolFillerLanguage(readVoiceModeSettings().language, activeLocale());
-          void call.sayFiller(toolFillerText(language));
-        }
-      }
-      const chip = [...fresh].reverse().find((m) => m.kind === "activity" && m.tool?.spoken);
-      if (chip?.tool?.spoken && !shouldSkipToolChip(filler.current) && shouldNarrateToolChip({ duplex: readCallSettings().fullDuplex, playerBusy: call.player.busy })) {
-        void call.say(chip.tool.spoken);
-      }
-    }
+    // No canned filler ("je regarde") and no tool narration on a call:
+    // the bot's own words say when something takes time.
   }, [call, messages, approval, question, bot.name, drainSpeak]);
 
   useEffect(() => {
