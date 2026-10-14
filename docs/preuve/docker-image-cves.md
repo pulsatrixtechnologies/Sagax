@@ -27,13 +27,13 @@ lignes. Les ids eux-mêmes ne sont pas listés ici.
 | | amd64 avant | amd64 après | arm64 avant | arm64 après |
 |---|---:|---:|---:|---:|
 | CRITICAL (lignes) | 3 | 1 | 3 | 1 |
-| HIGH (lignes) | 125 | 108 | 128 | 111 |
+| HIGH (lignes) | 125 | 102 | 128 | 105 |
 | CRITICAL (CVE uniques) | 3 | 1 | 3 | 1 |
 | HIGH (CVE uniques) | 51 | 33 | 54 | 36 |
 | CVE uniques HIGH+CRITICAL | 54 | 34 | 57 | 37 |
 | node-pkg (lignes) | 10 | 0 | 10 | 0 |
 | python-pkg (lignes) | 9 | 0 | 9 | 0 |
-| os-pkgs (lignes) | 109 | 109 | 112 | 112 |
+| os-pkgs (lignes) | 109 | 103 | 112 | 106 |
 
 amd64 après, hors ignore : Node 0, Python 0, OS Debian seulement.
 Les identifiants uniques HIGH+CRITICAL du scan amd64 sont les 34 de
@@ -41,7 +41,7 @@ Les identifiants uniques HIGH+CRITICAL du scan amd64 sont les 34 de
 plusieurs paquets. Aucune de ces lignes n’a de `FixedVersion`.
 
 arm64 après : les mêmes ids, plus 3 HIGH Chromium sans `FixedVersion`
-(111 = 108 + 3). Ces 3 ids ne sont pas dans `.trivyignore`. La porte CI
+(105 = 102 + 3). Ces 3 ids ne sont pas dans `.trivyignore`. La porte CI
 construit linux/amd64 seulement.
 
 ## Porte avec `.trivyignore` (amd64 après)
@@ -76,4 +76,6 @@ au lieu de sauter l’overlay.
 Hermes 0.21.5 demande `PyJWT[crypto]==2.13.0`. L’overlay garde **2.15.1**
 (même API encode/decode, version corrigée). Le job Docker exécute
 `scripts/hermes-jwt-overlay-smoke.py` dans le venv Hermès de l’image :
-import, round-trip JWT, `hermes --version`.
+PyJWT 2.15.1, aller-retour RS256 (extra `[crypto]`), puis
+`verify_nas_fire_token` (le vérificateur JWT d’Hermes, Chronos),
+`hermes --version`.

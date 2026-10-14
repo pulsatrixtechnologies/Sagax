@@ -49,6 +49,8 @@ describe("production image sources", () => {
     expect(workflow).toContain("scripts/hermes-jwt-overlay-smoke.py");
     expect(read("scripts/hermes-jwt-overlay-smoke.py")).toContain("jwt.encode");
     expect(read("scripts/hermes-jwt-overlay-smoke.py")).toContain("jwt.decode");
+    expect(read("scripts/hermes-jwt-overlay-smoke.py")).toContain("algorithm=\"RS256\"");
+    expect(read("scripts/hermes-jwt-overlay-smoke.py")).toContain("verify_nas_fire_token");
     expect(read("scripts/hermes-jwt-overlay-smoke.py")).toContain("2.15.1");
     expect(read("scripts/hermes-jwt-overlay-smoke.py")).toContain("hermes-agent");
     expect(workflow).toContain("trivy_0.75.0_Linux-64bit.tar.gz");
