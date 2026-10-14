@@ -39,6 +39,12 @@ re-run the failed CI jobs; a release still waiting picks up the new attempt,
 and a release that already stopped needs only `gh run rerun <id> --failed`.
 `ship_without_ci` skips the wait, for emergencies only.
 
+Before the tag, dispatch the CI workflow on the release candidate SHA
+(Actions → CI → Run workflow). Do not tag until the Windows and macOS
+vitest jobs on that SHA have succeeded. A green push or merge-group run
+only ran Ubuntu, and the release job's CI gate does not check those
+platforms. `ship_without_ci` does not replace that dispatch.
+
 The workflow refuses to overwrite an already-published version. Manual Release
 runs still require `package.json`'s version to be bumped on the selected ref.
 A release is rejected if any installer, stable download
@@ -82,7 +88,9 @@ Sagax releases are built on a Mac, not by the workflows above:
    `pnpm smoke:launch --app release/mac-arm64/Sagax.app`, and again with
    `--user-data-copy` pointing at an existing userData folder (it is copied,
    never modified). Both must load the main window within 60 s.
-5. `node scripts/check-release-notes.mjs`, then
+5. Dispatch CI on this commit (Actions → CI → Run workflow) and wait until
+   the Windows and macOS vitest jobs on this SHA have succeeded. A green
+   push only ran Ubuntu. Then `node scripts/check-release-notes.mjs`, and
    `gh release create pulsa-vX.Y.Z --notes-file docs/releases/X.Y.Z.md`
    with every installer, zip, blockmap and both feeds, as a full release.
    The release body is that file. Do not write a different body: the
