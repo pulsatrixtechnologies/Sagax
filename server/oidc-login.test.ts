@@ -128,8 +128,8 @@ describe("interim sign-in routes on an organization server", () => {
 
 describe("a person's profile on an organization server", () => {
   it("is managed by Perspicax, edited in the issuer console's /console/me", () => {
-    const org = identityConfigFromEnv({ SAGAX_IDENTITY: "perspicax", SAGAX_PERSPICAX_ISSUER: "https://pulsatrix.mcp.goxcloud.ca", SAGAX_PUBLIC_URL: "https://bot.pulsatrix.mcp.goxcloud.ca" });
-    expect(profileManagement(org)).toEqual({ profileManagedBy: "perspicax", profileManageUrl: "https://pulsatrix.mcp.goxcloud.ca/console/me" });
+    const org = identityConfigFromEnv({ SAGAX_IDENTITY: "perspicax", SAGAX_PERSPICAX_ISSUER: "https://issuer.example.com", SAGAX_PUBLIC_URL: "https://sagax.example.com" });
+    expect(profileManagement(org)).toEqual({ profileManagedBy: "perspicax", profileManageUrl: "https://issuer.example.com/console/me" });
   });
 
   it("is the server's own on a solo server", () => {

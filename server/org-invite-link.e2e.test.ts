@@ -68,7 +68,7 @@ posixOnly("org invite links", () => {
     home = mkdtempSync(join(tmpdir(), "omb-org-invite-link-"));
     const data = join(home, ".sagax");
     mkdirSync(data, { recursive: true });
-    writeFileSync(join(data, "config.json"), JSON.stringify({ profile: { name: "JC", email: "jc@gox.ca" } }));
+    writeFileSync(join(data, "config.json"), JSON.stringify({ profile: { name: "JC", email: "jc@example.com" } }));
     captureFile = join(home, "mail-capture.jsonl");
     child = spawn(process.execPath, [join(SERVER_DIR, "index.ts")], {
       cwd: join(SERVER_DIR, ".."),
@@ -76,9 +76,9 @@ posixOnly("org invite links", () => {
         ...(process.env.PATH ? { PATH: process.env.PATH } : {}),
         ...(process.env.SystemRoot ? { SystemRoot: process.env.SystemRoot } : {}),
         HOME: home, USERPROFILE: home, SAGAX_LOCAL_VM_TEST_NAMESPACE: process.env.SAGAX_LOCAL_VM_TEST_NAMESPACE ?? "", SAGAX_PORT: String(PORT), SAGAX_WEBHOOK_PORT: String(PORT + 1),
-        SAGAX_MAIL_PROVIDER: "sendgrid", SAGAX_MAIL_FROM: "bot@gox.ca", SAGAX_SENDGRID_API_KEY: "test-key",
+        SAGAX_MAIL_PROVIDER: "sendgrid", SAGAX_MAIL_FROM: "bot@example.com", SAGAX_SENDGRID_API_KEY: "test-key",
         SAGAX_MAIL_CAPTURE_FILE: captureFile, SAGAX_TEST_SEAMS: "1",
-        SAGAX_PUBLIC_URL: "https://pulsa.gox.ca", SAGAX_ENVIRONMENT_LABEL: "GOX",
+        SAGAX_PUBLIC_URL: "https://server.example.com", SAGAX_ENVIRONMENT_LABEL: "Example",
       },
       stdio: ["ignore", "pipe", "pipe"],
     });
@@ -105,20 +105,20 @@ posixOnly("org invite links", () => {
   let cookie = "";
 
   it("gives the owner a /join link on the server's public address, and mails it, with no organization", async () => {
-    const org = await api("POST", "/api/org", { body: { name: "GOX", host: { kind: "server", url: "https://pulsa.gox.ca" } } });
+    const org = await api("POST", "/api/org", { body: { name: "Example", host: { kind: "server", url: "https://server.example.com" } } });
     expect(org).toMatchObject({ status: 410, body: { code: "interim_org_removed" } });
     expect(await api("GET", "/api/org")).toMatchObject({ status: 404, body: { code: "no_organization" } });
     const invite = await api("POST", "/api/org/invites", { body: { email: ZARA } });
     expect(invite.status, JSON.stringify(invite.body)).toBe(200);
-    expect(invite.body.link).toMatch(/^https:\/\/pulsa\.gox\.ca\/join#token=[0-9a-f]{32}$/);
+    expect(invite.body.link).toMatch(/^https:\/\/server\.example\.com\/join#token=[0-9a-f]{32}$/);
     token = /token=([0-9a-f]+)/.exec(invite.body.link)![1]!;
     expect(invite.body.mailed).toBe(true);
     const mail = await until(() => mails().find((m) => m.to === ZARA));
-    expect(mail?.text).toContain(`Open ${invite.body.link} within 7 days to join GOX.`);
+    expect(mail?.text).toContain(`Open ${invite.body.link} within 7 days to join Example.`);
     const listed = await api("GET", "/api/org/invites");
-    expect(listed.body.org).toMatchObject({ name: "GOX", host: { kind: "this-computer" } });
+    expect(listed.body.org).toMatchObject({ name: "Example", host: { kind: "this-computer" } });
     expect(listed.body.pendingInvites).toEqual([expect.objectContaining({ email: ZARA, link: invite.body.link })]);
-    expect(listed.body.people).toEqual([expect.objectContaining({ role: "owner", email: "jc@gox.ca" })]);
+    expect(listed.body.people).toEqual([expect.objectContaining({ role: "owner", email: "jc@example.com" })]);
   });
 
   it("lets a remote browser with no session preview the invite, masked", async () => {
@@ -126,7 +126,7 @@ posixOnly("org invite links", () => {
     expect([401, 403]).toContain(refused.status);
     const preview = await api("GET", `/api/org/invites/${token}/preview`, { headers: REMOTE });
     expect(preview.status).toBe(200);
-    expect(preview.body).toEqual({ status: "open", orgName: "GOX", email: "z***@example.test" });
+    expect(preview.body).toEqual({ status: "open", orgName: "Example", email: "z***@example.test" });
     const unknown = await api("GET", "/api/org/invites/ffffffffffffffffffffffffffffffff/preview", { headers: REMOTE });
     expect(unknown.body).toEqual({ status: "unknown" });
   });
@@ -134,7 +134,7 @@ posixOnly("org invite links", () => {
   it("joins as a member with a session cookie", async () => {
     const joined = await api("POST", `/api/org/invites/${token}/join`, { body: {}, headers: REMOTE });
     expect(joined.status, JSON.stringify(joined.body)).toBe(200);
-    expect(joined.body).toEqual({ status: "joined", orgName: "GOX" });
+    expect(joined.body).toEqual({ status: "joined", orgName: "Example" });
     expect(joined.cookie).toBeTruthy();
     expect(joined.cookie).toMatch(/HttpOnly/i);
     cookie = joined.cookie!.split(";")[0]!;

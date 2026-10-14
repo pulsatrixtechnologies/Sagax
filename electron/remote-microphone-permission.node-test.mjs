@@ -10,8 +10,8 @@ const environments = require("./environments.cjs");
 // A Live call on a self-hosted server (#2424): the active saved server hears
 // the microphone only after the person allowed it, asked on its first request.
 const LOCAL = "http://127.0.0.1:48993";
-const VPS = "https://viernes.tail1.ts.net:9444";
-const OTHER = "https://other.tail1.ts.net:9444";
+const VPS = "https://host.example-tailnet.ts.net:9444";
+const OTHER = "https://other.example-tailnet.ts.net:9444";
 const AUDIO = { isMainFrame: true, mediaTypes: ["audio"] };
 const mainSource = readFileSync(new URL("./main.mjs", import.meta.url), "utf8").replace(/\r\n/g, "\n");
 
@@ -85,7 +85,7 @@ test("once allowed, the active server hears the microphone: main frame, main win
     assert.equal(h.check(VPS, details), false, JSON.stringify(details));
   }
   assert.equal(await h.request(`${VPS}/`, AUDIO, { getURL: () => `${VPS}/` }), false, "another window");
-  for (const url of [OTHER, "https://viernes.tail1.ts.net:9445/", "http://viernes.tail1.ts.net:9444/", "https://viernes.tail1.ts.net.evil.test:9444/", "about:blank", ""]) {
+  for (const url of [OTHER, "https://host.example-tailnet.ts.net:9445/", "http://host.example-tailnet.ts.net:9444/", "https://host.example-tailnet.ts.net.evil.test:9444/", "about:blank", ""]) {
     assert.equal(await h.request(url), false, url);
   }
   assert.equal(h.ctx.asked.length, 1, "only the active origin's own request ever asks");

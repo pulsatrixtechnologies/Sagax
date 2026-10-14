@@ -2,6 +2,9 @@ module "core" {
   source = "../../core"
 
   name = var.name
+  # This stack does not create Azure nodes. The shared pool contract still
+  # requires a SKU that matches the Azure format check.
+  azure_vm_size = "Standard_Unset"
 }
 
 module "k3s" {

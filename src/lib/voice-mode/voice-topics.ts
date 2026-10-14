@@ -134,8 +134,8 @@ export function callHasBackgroundWork(messages: Array<{
   });
 }
 
-/** A new spoken topic forks into a parallel task only while the call
- * turn's own tool is in flight: replacing that turn would kill the work.
+/** New words join the running call turn (steer) instead of replacing it
+ * only while its own tool is in flight: replacing would kill the work.
  * A live parallel card does not count (a replace never touches it), nor a
  * chip an earlier, replaced utterance left unsettled. Barge-in stays
  * card-only (`callHasBackgroundWork`). */

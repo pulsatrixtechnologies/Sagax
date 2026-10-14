@@ -1,7 +1,8 @@
 module "core" {
   source = "../../core"
 
-  name = var.name
+  name          = var.name
+  azure_vm_size = var.azure_vm_size
 }
 
 module "azure" {
@@ -11,6 +12,7 @@ module "azure" {
   production                      = var.production
   name                            = module.core.name
   location                        = var.location
+  system_vm_size                  = var.system_vm_size
   admin_group_object_ids          = var.admin_group_object_ids
   entra_mfa_policy_id             = var.entra_mfa_policy_id
   lock_audit_immutability         = var.lock_audit_immutability

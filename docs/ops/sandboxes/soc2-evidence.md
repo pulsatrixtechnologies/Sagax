@@ -22,7 +22,7 @@ and does not deploy.
 | Restore drill | `backup-restore.md` and `templates/drill-record.md` | A1.3, CC7.5 | A filled drill record whose restore matched the RTO target or revised it |
 | Cutover and rollback | `cutover-rollback.md`, with an estimate per step | A1.2, CC7.5, CC8.1 | The change record for the canary, including the rollback command that was ready |
 | Access review | `access-review.md` and `base/rbac.yaml` | CC6.1, CC6.2, CC6.3 | A filled quarterly checklist |
-| Network boundary | `base/networkpolicy.yaml` (private ranges and the Azure WireServer denied) and `networkpolicy-gox.yaml` | CC6.6, CC6.7, C1.1 | The review confirming the GOX subnet replaced `192.0.2.10/32` and the load balancer is internal |
+| Network boundary | `base/networkpolicy.yaml` (private ranges and the Azure WireServer denied) and `networkpolicy-ingress.yaml` | CC6.6, CC6.7, C1.1 | The review confirming the production subnet replaced `192.0.2.10/32` and the load balancer is internal |
 | Isolation of the provisioner | Role limited to the namespace; sandbox pods do not mount a service account token | CC6.1, CC6.6 | The access-review diff against `rbac.yaml` |
 
 Criteria in short:

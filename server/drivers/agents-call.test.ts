@@ -328,3 +328,51 @@ describe("react_to_message and remove_reaction", () => {
     expect(refused).toEqual({ text: "Never react to your own message.", isError: true });
   });
 });
+
+describe("end_call", () => {
+  it("asks the harness to end the live call when this turn finishes", async () => {
+    const calls: Array<{ path: string; body: unknown }> = [];
+    const result = await callTool("end_call", {}, context({
+      client: {
+        api: async (path, init) => {
+          calls.push({ path, body: JSON.parse(String(init?.body)) });
+          return { ending: true };
+        },
+        apiResponse: async () => ({ ok: true, status: 200, body: {} }),
+      },
+    }));
+    expect(result.isError).toBeUndefined();
+    expect(result.text).toContain("The call will end when you finish this turn.");
+    expect(result.text).toContain("Do not start new work.");
+    expect(calls).toEqual([
+      { path: "/api/internal/voice-call/end", body: { fromBotId: "bot-voice", fromThreadId: "thread-voice" } },
+    ]);
+  });
+
+  it("tells the bot to stop when there is no live call", async () => {
+    const result = await callTool("end_call", {}, context({
+      client: {
+        api: async () => { throw new Error("There is no live phone call on this conversation. Do not call end_call."); },
+        apiResponse: async () => ({ ok: true, status: 200, body: {} }),
+      },
+    }));
+    expect(result).toEqual({
+      text: "There is no live phone call on this conversation. Do not call end_call.",
+      isError: true,
+    });
+  });
+
+  it("refuses an external runtime without calling the harness", async () => {
+    let called = false;
+    const result = await callTool("end_call", {}, context({
+      externalRuntime: true,
+      client: {
+        api: async () => { called = true; return {}; },
+        apiResponse: async () => ({ ok: true, status: 200, body: {} }),
+      },
+    }));
+    expect(called).toBe(false);
+    expect(result.isError).toBe(true);
+    expect(result.text).toContain("no live phone call");
+  });
+});

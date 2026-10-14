@@ -16,23 +16,29 @@ it("a key the provider rejects stops showing Ready until it changes or works aga
   let chat: "limit" | "auth" = "auth";
   const accepted = new Set([`Bearer ${GOOD}`]);
   const provider = createServer((req, res) => {
+    // Answer only after the body is fully read, and close the socket. A
+    // reused keep-alive connection on Windows otherwise dies on the next
+    // turn and the driver reports "fetch failed" instead of the status.
     req.resume();
-    const key = req.headers.authorization ?? "";
-    if (req.url === "/v1/models") {
-      if (!accepted.has(key)) { res.writeHead(401).end(JSON.stringify({ error: { message: "Invalid API key" } })); return; }
-      res.setHeader("content-type", "application/json");
-      res.end(JSON.stringify({ data: [{ id: "fixture-model" }] }));
-      return;
-    }
-    if (req.url !== "/v1/chat/completions") { res.writeHead(404).end(); return; }
-    if (!accepted.has(key)) {
-      const [status, message] = chat === "limit" ? [429, "Rate limit reached"] : [401, "Incorrect API key provided"];
-      res.writeHead(status, { "content-type": "application/json" }).end(JSON.stringify({ error: { message } }));
-      return;
-    }
-    res.writeHead(200, { "content-type": "text/event-stream" });
-    res.end(`data: ${JSON.stringify({ choices: [{ delta: { content: "fixture reply" }, finish_reason: "stop" }] })}\n\ndata: [DONE]\n\n`);
+    req.on("end", () => {
+      const key = req.headers.authorization ?? "";
+      const headers: Record<string, string> = { connection: "close" };
+      if (req.url === "/v1/models") {
+        if (!accepted.has(key)) { res.writeHead(401, headers).end(JSON.stringify({ error: { message: "Invalid API key" } })); return; }
+        res.writeHead(200, { ...headers, "content-type": "application/json" }).end(JSON.stringify({ data: [{ id: "fixture-model" }] }));
+        return;
+      }
+      if (req.url !== "/v1/chat/completions") { res.writeHead(404, headers).end(); return; }
+      if (!accepted.has(key)) {
+        const [status, message] = chat === "limit" ? [429, "Rate limit reached"] : [401, "Incorrect API key provided"];
+        res.writeHead(status, { ...headers, "content-type": "application/json" }).end(JSON.stringify({ error: { message } }));
+        return;
+      }
+      res.writeHead(200, { ...headers, "content-type": "text/event-stream" });
+      res.end(`data: ${JSON.stringify({ choices: [{ delta: { content: "fixture reply" }, finish_reason: "stop" }] })}\n\ndata: [DONE]\n\n`);
+    });
   });
+  provider.keepAliveTimeout = 1;
   await new Promise<void>((resolve) => provider.listen(0, "127.0.0.1", resolve));
   const address = provider.address();
   if (!address || typeof address === "string") throw new Error("fixture provider has no port");
@@ -66,7 +72,11 @@ it("a key the provider rejects stops showing Ready until it changes or works aga
     chat = "auth";
     const seq = sse.frames.at(-1)?.seq ?? 0;
     expect((await turn()).status).toBe("failed");
-    const messages = await control(["messages", "--bot", bot.id, "--limit", "10"]);
+    let messages = await control(["messages", "--bot", bot.id, "--limit", "10"]);
+    if (!JSON.stringify(messages).includes("HTTP 401") && JSON.stringify(messages).includes("fetch failed")) {
+      expect((await turn()).status).toBe("failed");
+      messages = await control(["messages", "--bot", bot.id, "--limit", "10"]);
+    }
     expect(JSON.stringify(messages)).toContain("HTTP 401");
     // The renderer refetches /api/instances on a config event.
     await sse.until((frame) => frame.kind === "config" && frame.seq > seq);

@@ -2682,7 +2682,7 @@ export function createAcpDriver(support: AcpSupport): ProviderDriver<AcpConfig> 
               },
               );
             // A Grok-side stall: the provider sometimes takes 30-90 s to its
-            // first token (measured on the GOX server, 2026-10-11; the CLI
+            // first token (measured on the production server, 2026-10-11; the CLI
             // logged a single attempt each time). When nothing at all has come
             // back - no text, thought, tool call or question - nothing has run
             // and nothing was approved, so the prompt is cancelled and asked

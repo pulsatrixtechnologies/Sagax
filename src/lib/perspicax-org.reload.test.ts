@@ -16,7 +16,7 @@ vi.mock("react", async (original) => ({
 vi.mock("@/state/store", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/state/store")>()),
   api: vi.fn((path: string) => path === "/api/org"
-    ? Promise.resolve({ org: { name: "GOX", identity: { kind: "perspicax", issuer: "https://px.example.test" } } })
+    ? Promise.resolve({ org: { name: "Example", identity: { kind: "perspicax", issuer: "https://px.example.test" } } })
     : new Promise((resolve) => { fixture.answers.push(resolve); })),
 }));
 

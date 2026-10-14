@@ -5,7 +5,7 @@ import { canEditConfig, canManageBackups, canManageComputers, canViewUsage, othe
 
 const ZARA = "pr_00000000-0000-4000-8000-000000000002";
 const member = { viewer: { operator: false, principalId: ZARA, email: "zara@example.test", name: "zara", role: "member", canCreateBots: true, operatorName: "JC" } } as ConfigStatus;
-const operator = { viewer: { operator: true, principalId: "pr_local", email: "jc@gox.ca", name: "JC", role: "owner", canCreateBots: true } } as ConfigStatus;
+const operator = { viewer: { operator: true, principalId: "pr_local", email: "jc@example.com", name: "JC", role: "owner", canCreateBots: true } } as ConfigStatus;
 
 describe("viewerCan (2026-10-09)", () => {
   it("reads the server's list, else the member defaults for a member, else everything", () => {
@@ -23,7 +23,7 @@ describe("viewerCan (2026-10-09)", () => {
 describe("viewer", () => {
   it("uses the server's principal, else the profile email, else local-owner", () => {
     expect(viewerActorId(member)).toBe(ZARA);
-    expect(viewerActorId({ profile: { name: "JC", email: "JC@gox.ca" } } as ConfigStatus)).toBe("jc@gox.ca");
+    expect(viewerActorId({ profile: { name: "JC", email: "JC@example.com" } } as ConfigStatus)).toBe("jc@example.com");
     expect(viewerActorId(null)).toBe("local-owner");
   });
 

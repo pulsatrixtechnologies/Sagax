@@ -1,49 +1,32 @@
-// Internal / TestFlight / dev hear full-duplex by default (issue #292,
-// Cryptic review). A public App Store / SAGAX_PUBLIC_RELEASE build stays
-// off. The Advanced toggle is the kill-switch.
+// Full-duplex is off by default on every channel. The Advanced toggle
+// turns it on. Rev 3 resets the rev-2 "on" every 0.5.x build stored as
+// its default.
 import { describe, expect, it } from "vitest";
 
-import { defaultFullDuplex, FULL_DUPLEX_REV, thisVoiceBuild } from "./voice-build";
+import { defaultFullDuplex, FULL_DUPLEX_REV } from "./voice-build";
 import { cleanCallSettings, DEFAULT_CALL_SETTINGS } from "./call-settings";
 
 describe("defaultFullDuplex", () => {
-  it("is on for internal, TestFlight and dev builds", () => {
-    expect(defaultFullDuplex({ dev: true })).toBe(true);
-    expect(defaultFullDuplex({ testFlight: true })).toBe(true);
-    expect(defaultFullDuplex()).toBe(true);
-  });
-
-  it("is off only for a public release channel", () => {
+  it("is off on every channel", () => {
+    expect(defaultFullDuplex({ dev: true })).toBe(false);
+    expect(defaultFullDuplex({ testFlight: true })).toBe(false);
     expect(defaultFullDuplex({ publicRelease: true })).toBe(false);
-    expect(defaultFullDuplex({ publicRelease: true, dev: true })).toBe(false);
-    expect(defaultFullDuplex({ publicRelease: true, testFlight: true })).toBe(false);
-  });
-
-  it("treats an unset SAGAX_PUBLIC_RELEASE as internal, so duplex stays on", () => {
-    const previous = process.env.SAGAX_PUBLIC_RELEASE;
-    delete process.env.SAGAX_PUBLIC_RELEASE;
-    try {
-      expect(thisVoiceBuild().publicRelease).toBe(false);
-      expect(defaultFullDuplex(thisVoiceBuild())).toBe(true);
-    } finally {
-      if (previous === undefined) delete process.env.SAGAX_PUBLIC_RELEASE;
-      else process.env.SAGAX_PUBLIC_RELEASE = previous;
-    }
+    expect(defaultFullDuplex()).toBe(false);
   });
 });
 
 describe("CallSettings.fullDuplex default", () => {
-  it("is on in this tree so JC hears it, with a kill-switch that persists", () => {
-    expect(DEFAULT_CALL_SETTINGS.fullDuplex).toBe(true);
-    expect(FULL_DUPLEX_REV).toBe(2);
-    expect(cleanCallSettings({ input: "auto", pause: "short" }).fullDuplex).toBe(true);
-    expect(cleanCallSettings({ fullDuplex: true, fullDuplexRev: 2 }).fullDuplex).toBe(true);
-    expect(cleanCallSettings({ fullDuplex: false, fullDuplexRev: 2 }).fullDuplex).toBe(false);
+  it("is off, and a person's own choice under rev 3 persists", () => {
+    expect(DEFAULT_CALL_SETTINGS.fullDuplex).toBe(false);
+    expect(FULL_DUPLEX_REV).toBe(3);
+    expect(cleanCallSettings({ input: "auto", pause: "short" }).fullDuplex).toBe(false);
+    expect(cleanCallSettings({ fullDuplex: true, fullDuplexRev: 3 }).fullDuplex).toBe(true);
+    expect(cleanCallSettings({ fullDuplex: false, fullDuplexRev: 3 }).fullDuplex).toBe(false);
   });
 
-  it("treats a stored false from the old default-off commit as stale", () => {
-    expect(cleanCallSettings({ fullDuplex: false }).fullDuplex).toBe(true);
-    expect(cleanCallSettings({ fullDuplex: false, fullDuplexRev: 1 }).fullDuplex).toBe(true);
-    expect(cleanCallSettings({ fullDuplex: "yes" }).fullDuplex).toBe(true);
+  it("drops the on that 0.5.x stored as its default (rev 2 and older)", () => {
+    expect(cleanCallSettings({ fullDuplex: true, fullDuplexRev: 2 }).fullDuplex).toBe(false);
+    expect(cleanCallSettings({ fullDuplex: true }).fullDuplex).toBe(false);
+    expect(cleanCallSettings({ fullDuplex: "yes" }).fullDuplex).toBe(false);
   });
 });

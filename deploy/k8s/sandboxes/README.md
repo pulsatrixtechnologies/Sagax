@@ -1,7 +1,7 @@
 # Sagax sandbox pool
 
 Portable Kubernetes layout for per-person server environments. The Sagax
-process on the GOX VM stays where it is. This tree is the sandbox pool
+process on the production VM stays where it is. This tree is the sandbox pool
 only. Azure files are an adapter; the base does not name an Azure API.
 
 Nothing here is applied by CI. Applying it creates cluster objects. Follow
@@ -31,7 +31,7 @@ in-memory idle clock the Docker provisioner holds today.
   `autoscaling/karpenter-nodepool.yaml` are the portable autoscaler
   configs. The Karpenter pool's `nodeClassRef` is a placeholder.
 - `adapters/azure/` adds the disk class, the internal load balancer, the
-  GOX ingress rule, and the Blob backup location. Autoscaler choice:
+  production ingress rule, and the Blob backup location. Autoscaler choice:
   `adapters/azure/cluster-autoscaler.values.yaml` (self-managed) or the
   AKS node pool command in the runbook, **or**
   `adapters/azure/karpenter.yaml`. Not both.
@@ -43,7 +43,7 @@ in-memory idle clock the Docker provisioner holds today.
 
 - `sagax-sandboxd` `replicas: 0` until the cutover runbook scales it.
   `SANDBOX_BACKEND=kubernetes` runs the Kubernetes backend.
-- The GOX NetworkPolicy allows `192.0.2.10/32` (TEST-NET-1) until the
+- The production NetworkPolicy allows `192.0.2.10/32` (TEST-NET-1) until the
   change record replaces it.
 - Workspace disks use a detachable class (`Retain`). A local-path volume
   pins the node and the pool cannot scale to zero.

@@ -5,7 +5,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: sagax-sandbox-capacity
-  namespace: sagax-sandboxes
+  namespace: sandboxes
   labels:
     app.kubernetes.io/name: sagax-sandbox-capacity
 spec:
@@ -23,12 +23,12 @@ spec:
       automountServiceAccountToken: false
       terminationGracePeriodSeconds: 0
       tolerations:
-        - key: sagax.pulsatrix.ca/pool
+        - key: sagax.io/pool
           operator: Equal
           value: sandboxes
           effect: NoSchedule
       nodeSelector:
-        sagax.pulsatrix.ca/pool: sandboxes
+        sagax.io/pool: sandboxes
       securityContext:
         runAsNonRoot: true
         runAsUser: 65534

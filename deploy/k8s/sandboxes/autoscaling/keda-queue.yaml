@@ -6,7 +6,7 @@ apiVersion: keda.sh/v1alpha1
 kind: ScaledObject
 metadata:
   name: sagax-sandbox-queue
-  namespace: sagax-sandboxes
+  namespace: sandboxes
 spec:
   scaleTargetRef:
     name: sagax-sandbox-buffer
@@ -19,7 +19,7 @@ spec:
   triggers:
     - type: redis
       metadata:
-        address: sagax-sandbox-queue.sagax-sandboxes.svc:6379
+        address: sagax-sandbox-queue.sandboxes.svc:6379
         listName: sagax-sandbox-pending
         listLength: "1"
         activationListLength: "1"

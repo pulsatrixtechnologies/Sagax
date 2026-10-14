@@ -1,9 +1,8 @@
-// True concurrency on a duplex voice call (issue #292, Review 3).
-// A new topic forks while the call thread's own tool runs (the work is
-// parked, not killed). Stop and correction still replace. A background
-// parallel task survives barge-in. While the call thread only thinks, a new
-// utterance replaces it: a call never turns the person's sentences into
-// parallel-task cards (2026-10-13, one card per partial and final).
+// A duplex voice call never turns the person's words into parallel tasks
+// (2026-10-13: one "Tâche en parallèle" card per partial and final, and a
+// spoken "Oui ca serait bien" run as its own failed task). While the call
+// turn only thinks, new words replace it. While its own tool runs, they join
+// that turn (steer): the work is not killed. Stop cancels it.
 // POSIX-gated like the other CLI e2es (the fakes are shebang scripts).
 import { spawn, type ChildProcess } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync, chmodSync } from "node:fs";
@@ -92,7 +91,7 @@ posixOnly("voice call true concurrency e2e", () => {
     base = `http://127.0.0.1:${port}`;
     child = spawn(process.execPath, [join(SERVER_DIR, "index.ts")], {
       cwd: join(SERVER_DIR, ".."),
-      env: { ...(process.env.PATH ? { PATH: process.env.PATH } : {}), HOME: home, USERPROFILE: home, SAGAX_PORT: String(port) },
+      env: { ...(process.env.PATH ? { PATH: process.env.PATH } : {}), HOME: home, USERPROFILE: home, SAGAX_PORT: String(port), SAGAX_VOICE_FULL_DUPLEX: "1" },
       stdio: ["ignore", "pipe", "pipe"],
     });
     child.stderr!.on("data", (c) => (stderr += c));
@@ -145,135 +144,51 @@ posixOnly("voice call true concurrency e2e", () => {
     expect(answers.map((m) => m.text)).toEqual([expect.stringContaining("would be able to check the ticket")]);
   }, 60_000);
 
-  it("a) B asked while A runs a tool: both complete, A is not cancelled", async () => {
-    const bot = await busyCall("thinkA");
+  it("a) B said while A runs a tool: B joins A's turn, A is not cancelled, no parallel task", async () => {
+    const bot = await busyCall("joinA");
     const b = await api("POST", `/api/bots/${bot.id}/messages`, {
       threadId: bot.threadId,
-      ...voice("[gate:thinkB] what time is it in Tokyo", "utt-thinkB"),
+      ...voice("what time is it in Tokyo", "utt-joinB"),
     });
     expect(b.status, JSON.stringify(b.body)).toBe(202);
-    expect(b.body.parallel?.state).toBe("running");
-    const bThread = b.body.parallel.threadId as string;
-    await waitFor(async () => (await tasks(bot.id)).filter((task) => task.busy).length >= 2, "A and B both running");
+    expect(b.body.parallel).toBeUndefined();
+    expect((await tasks(bot.id))).toHaveLength(1);
     expect((await getBot(bot.id)).busy).toBe(true);
-    expect((await tasks(bot.id)).find((task) => task.threadId === bot.threadId)?.busy).toBe(true);
-
-    open("thinkB");
-    await waitFor(async () => (await messages(bot.threadId)).some((m) => m.parallelTask?.role === "result" && m.parallelTask.threadId === bThread), "B result");
-    expect((await tasks(bot.id)).find((task) => task.threadId === bot.threadId)?.busy).toBe(true);
-
-    open("thinkA");
-    await waitFor(async () => (await tasks(bot.id)).every((task) => !task.busy), "both settled");
-    const main = await messages(bot.threadId);
-    const aReply = main.find((m) => m.role === "bot" && m.kind === "text" && m.text?.includes("look up the weather") && !m.parallelTask);
-    const bReply = main.find((m) => m.parallelTask?.role === "result" && m.parallelTask.threadId === bThread);
-    expect(aReply?.text).toContain("weather");
-    expect(bReply?.text).toContain("what time is it in Tokyo");
-    expect(aReply?.text).not.toContain("cancelled");
+    open("joinA");
+    await waitFor(async () => (await tasks(bot.id)).every((task) => !task.busy)
+      && !(await messages(bot.threadId)).some((m) => m.role === "user" && m.queued), "the call settled");
+    const thread = await messages(bot.threadId);
+    expect(thread.filter((m) => m.parallelTask)).toEqual([]);
+    const answers = thread.filter((m) => m.role === "bot" && m.kind === "text" && m.text?.startsWith("reply to:"));
+    expect(answers.map((m) => m.text).join("\n")).toContain("look up the weather");
+    expect(answers.map((m) => m.text).join("\n")).toContain("what time is it in Tokyo");
   }, 60_000);
 
-  it("a continues reissue of a new topic forks, it does not replace A", async () => {
+  it("a continues send of a different utterance while A runs a tool joins A, no parallel task", async () => {
     const bot = await busyCall("contA");
     const b = await api("POST", `/api/bots/${bot.id}/messages`, {
       threadId: bot.threadId,
-      text: "[gate:contB] what time is it in Tokyo",
+      text: "what time is it in Tokyo",
       voiceCall: { callId: CALL_ID, duplex: true, utteranceId: "utt-contB", continues: true },
     });
     expect(b.status, JSON.stringify(b.body)).toBe(202);
-    expect(b.body.parallel?.state).toBe("running");
-    const bThread = b.body.parallel.threadId as string;
-    await waitFor(async () => (await tasks(bot.id)).filter((task) => task.busy).length >= 2, "A and B both running");
-    expect((await tasks(bot.id)).find((task) => task.threadId === bot.threadId)?.busy).toBe(true);
-    open("contB");
-    await waitFor(async () => (await messages(bot.threadId)).some((m) => m.parallelTask?.role === "result" && m.parallelTask.threadId === bThread), "B result");
-    expect((await tasks(bot.id)).find((task) => task.threadId === bot.threadId)?.busy).toBe(true);
+    expect(b.body.parallel).toBeUndefined();
+    expect((await tasks(bot.id))).toHaveLength(1);
     open("contA");
-    await waitFor(async () => (await tasks(bot.id)).every((task) => !task.busy), "both settled");
+    await waitFor(async () => (await tasks(bot.id)).every((task) => !task.busy), "the call settled");
+    expect((await messages(bot.threadId)).filter((m) => m.parallelTask)).toEqual([]);
   }, 60_000);
 
-  it("b) three overlapping voice topics all complete", async () => {
-    const bot = await busyCall("threeA");
-    const b = await api("POST", `/api/bots/${bot.id}/messages`, {
-      threadId: bot.threadId,
-      ...voice("[gate:threeB] what time is it in Tokyo", "utt-threeB"),
-    });
-    const c = await api("POST", `/api/bots/${bot.id}/messages`, {
-      threadId: bot.threadId,
-      ...voice("[gate:threeC] draft a short hello email", "utt-threeC"),
-    });
-    expect(b.body.parallel?.state).toBe("running");
-    expect(c.body.parallel?.state).toBe("running");
-    await waitFor(async () => (await tasks(bot.id)).filter((task) => task.busy).length === 3, "three turns at once");
-    open("threeC");
-    open("threeB");
-    open("threeA");
-    await waitFor(async () => (await messages(bot.threadId)).filter((m) => m.parallelTask?.role === "result").length === 2
-      && (await tasks(bot.id)).every((task) => !task.busy), "all three settled");
-    const results = (await messages(bot.threadId)).filter((m) => m.parallelTask?.role === "result");
-    expect(results).toHaveLength(2);
-    expect(results.map((m) => m.text).join("\n")).toContain("what time is it in Tokyo");
-    expect(results.map((m) => m.text).join("\n")).toContain("draft a short hello email");
-  }, 60_000);
-
-  it("c) barge-in interrupt does not kill a running background task", async () => {
-    const bot = await busyCall("bargeA");
-    const b = await api("POST", `/api/bots/${bot.id}/messages`, {
-      threadId: bot.threadId,
-      ...voice("[gate:bargeB] summarize the last ticket", "utt-bargeB"),
-    });
-    const bThread = b.body.parallel.threadId as string;
-    await waitFor(async () => (await tasks(bot.id)).find((task) => task.threadId === bThread)?.busy === true, "B running");
-    const stopped = await api("POST", `/api/bots/${bot.id}/interrupt`, { threadId: bot.threadId });
-    expect(stopped.status).toBeLessThan(300);
-    await waitFor(async () => (await tasks(bot.id)).find((task) => task.threadId === bot.threadId)?.busy !== true, "A interrupted");
-    expect((await tasks(bot.id)).find((task) => task.threadId === bThread)?.busy).toBe(true);
-    open("bargeB");
-    await waitFor(async () => (await messages(bot.threadId)).some((m) => m.parallelTask?.role === "result" && m.parallelTask.threadId === bThread), "B result after barge-in");
-  }, 60_000);
-
-  it("e) over the per-person limit the extra task is queued then later runs", async () => {
-    expect((await api("PATCH", "/api/config", { threads: { maxParallelPerPerson: 1 } })).status).toBe(200);
-    try {
-      const bot = await busyCall("limA");
-      const first = await api("POST", `/api/bots/${bot.id}/messages`, {
-        threadId: bot.threadId,
-        ...voice("[gate:limB] first extra topic", "utt-limB"),
-      });
-      const second = await api("POST", `/api/bots/${bot.id}/messages`, {
-        threadId: bot.threadId,
-        ...voice("[gate:limC] second extra topic", "utt-limC"),
-      });
-      expect(first.body.parallel?.state).toBe("running");
-      expect(second.body.parallel?.state).toBe("queued");
-      const card = (await messages(bot.threadId)).find((m) => m.parallelTask?.threadId === second.body.parallel.threadId && m.parallelTask?.role === "card");
-      expect(card?.parallelTask?.state).toBe("queued");
-      open("limB");
-      await waitFor(async () => (await tasks(bot.id)).find((task) => task.threadId === second.body.parallel.threadId)?.busy === true, "queued task starts");
-      open("limC");
-      open("limA");
-      await waitFor(async () => (await messages(bot.threadId)).filter((m) => m.parallelTask?.role === "result").length === 2, "both extras finished");
-    } finally {
-      await api("PATCH", "/api/config", { threads: { maxParallelPerPerson: null } });
-    }
-  }, 90_000);
-
-  it("f) stop replaces the thinking turn; an unrelated background task keeps running", async () => {
+  it("f) stop while A runs a tool cancels A and starts nothing", async () => {
     const bot = await busyCall("stopA");
-    const b = await api("POST", `/api/bots/${bot.id}/messages`, {
-      threadId: bot.threadId,
-      ...voice("[gate:stopB] what about the weather in Paris", "utt-stopB"),
-    });
-    const bThread = b.body.parallel.threadId as string;
-    await waitFor(async () => (await tasks(bot.id)).find((task) => task.threadId === bThread)?.busy === true, "B running");
     const stop = await api("POST", `/api/bots/${bot.id}/messages`, {
       threadId: bot.threadId,
       ...voice("stop", "utt-stop"),
     });
     expect(stop.status, JSON.stringify(stop.body)).toBe(202);
     expect(stop.body.parallel).toBeUndefined();
-    await waitFor(async () => (await tasks(bot.id)).find((task) => task.threadId === bot.threadId)?.busy !== true, "stop cancelled A");
-    expect((await tasks(bot.id)).find((task) => task.threadId === bThread)?.busy).toBe(true);
-    open("stopB");
-    await waitFor(async () => (await messages(bot.threadId)).some((m) => m.parallelTask?.role === "result" && m.parallelTask.threadId === bThread), "B survived stop");
+    await waitFor(async () => (await tasks(bot.id)).every((task) => !task.busy), "stop cancelled A");
+    expect((await tasks(bot.id))).toHaveLength(1);
+    expect((await messages(bot.threadId)).filter((m) => m.parallelTask)).toEqual([]);
   }, 60_000);
 });

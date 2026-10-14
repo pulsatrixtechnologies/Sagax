@@ -227,7 +227,7 @@ test("the page's answer is the request handler's answer for its microphone", asy
   }
 });
 
-const REMOTE = "https://viernes.tail1.ts.net:9444";
+const REMOTE = "https://host.example-tailnet.ts.net:9444";
 
 test("a remote server may write clipboard text only as the active origin's main frame", () => {
   const write = "clipboard-sanitized-write";
@@ -243,8 +243,8 @@ test("a remote server may write clipboard text only as the active origin's main 
   }
   // Exact origin only.
   for (const requesting of [
-    "https://viernes.tail1.ts.net:9445/", "https://viernes.tail1.ts.net/", "http://viernes.tail1.ts.net:9444/",
-    "https://other.tail1.ts.net:9444/", "https://viernes.tail1.ts.net.evil.test:9444/", "https://evil.test/#https://viernes.tail1.ts.net:9444",
+    "https://host.example-tailnet.ts.net:9445/", "https://host.example-tailnet.ts.net/", "http://host.example-tailnet.ts.net:9444/",
+    "https://other.example-tailnet.ts.net:9444/", "https://host.example-tailnet.ts.net.evil.test:9444/", "https://evil.test/#https://host.example-tailnet.ts.net:9444",
     "about:blank", "data:text/html,x", "javascript:alert(1)", "not a url", "", null, undefined,
   ]) assert.equal(remoteClipboardWriteAllowed(write, requesting, REMOTE, { isMainFrame: true }), false, String(requesting));
   // No active remote server (Local, or a damaged value): nothing to match.

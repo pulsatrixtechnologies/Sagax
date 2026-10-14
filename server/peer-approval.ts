@@ -1,7 +1,8 @@
 // Harness-native peer-comm approval gate.
 //
-// A bot with `approvePeerComms = true` may not call ask_bot or
-// delegate_bot without a human approving the specific contact. The
+// A bot with `approvePeerComms = true` may not call ask_bot,
+// delegate_bot, send_to_bot or post_to_room without a human approving
+// the specific contact. The
 // approval rides on the same options-card flow provider permissions
 // already use: a card pushed into the SOURCE bot's thread with a
 // `requestId`, answered by the user via /api/bots/:id/respond (or
@@ -115,6 +116,7 @@ export interface PeerApprovalTarget {
 const ACTION_VERB: Record<PeerAction, string> = {
   ask_bot: "contact",
   delegate_bot: "delegate to",
+  send_to_bot: "send to",
   post_to_room: "post in",
 };
 
@@ -283,7 +285,7 @@ export function dismissStalePeerCards(bus: ApprovalBus): number {
     for (const message of bus.store.messagesFor(threadId)) {
       const card = message.card;
       if (!card?.requestId || card.answered || card.dismissed) continue;
-      if (card.tool !== "ask_bot" && card.tool !== "delegate_bot" && card.tool !== "post_to_room") continue;
+      if (card.tool !== "ask_bot" && card.tool !== "delegate_bot" && card.tool !== "send_to_bot" && card.tool !== "post_to_room") continue;
       if (pendingComms.has(card.requestId)) continue;
       const patched = bus.store.patchMessage(threadId, message.id, {
         card: { ...card, answered: "deny", dismissed: true },

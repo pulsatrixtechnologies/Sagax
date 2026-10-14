@@ -2220,7 +2220,7 @@ describe("the saved mail settings", () => {
 
   it("are written whole into config.json's mail block, owner-only, like the other config secrets", () => {
     writeFileSync(path, JSON.stringify({ profile: { name: "Ada" }, mail: { provider: "smtp", smtp: { host: "old" } } }));
-    const mail = { provider: "twilio" as const, from: "bot@example.com", fromName: "GOX", twilio: { apiKeySid: "SKfakesid", apiKeySecret: "fake-secret" } };
+    const mail = { provider: "twilio" as const, from: "bot@example.com", fromName: "Example", twilio: { apiKeySid: "SKfakesid", apiKeySecret: "fake-secret" } };
     saveConfig({ mail });
     expect(JSON.parse(readFileSync(path, "utf8"))).toEqual({ profile: { name: "Ada" }, mail });
     expect(loadConfig().mail).toEqual(mail);
@@ -2238,7 +2238,7 @@ describe("slice 8: the interim organization key", () => {
       profile: { name: "Ada" },
       signIn: { admins: ["ada@example.com"], members: ["@example.com"] },
       invites: [{ token: "t", email: "x@example.com", createdAt: 1, expiresAt: 2 }],
-      org: { name: "GOX", host: { kind: "server", url: "https://pulsa.gox.ca" }, ownerUserId: "ada@example.com" },
+      org: { name: "Example", host: { kind: "server", url: "https://server.example.com" }, ownerUserId: "ada@example.com" },
       mail: { provider: "smtp", from: "bot@example.com", smtp: { host: "smtp.example.com", port: 587 } },
     });
     expect(parsed.profile).toEqual({ name: "Ada" });

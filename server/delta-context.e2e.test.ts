@@ -248,7 +248,11 @@ it("offers a result that lands mid-turn after its source was stopped to the next
   await f.send("Please have Engineering build the export.");
   await expect.poll(() => f.nodes().find((node: any) => node.botId === f.lead.id)?.status, { timeout: 15_000 }).toBe("running");
   await f.api(`/api/bots/${f.chief.id}/interrupt`, { threadId: f.thread });
-  await f.wait();
+  // Interrupt stops the source. `wait` remaps that to failed when the
+  // interrupted turn left an error activity and no bot text yet (or a
+  // terminal failed tool after "Assigned"). The lead is still gated, so
+  // this is not settlement — only idle, like the other Stop tests below.
+  await f.idle();
 
   f.plan[f.chief.id] = { reply: "Working on something else", gateFile: f.gate("busy") };
   await f.send("Something unrelated while that finishes.");
@@ -705,7 +709,9 @@ const resultAcrossRestart = async (f: any, stripRecord: boolean) => {
   await f.send("Please have Engineering build the export.");
   await expect.poll(() => f.nodes().find((node: any) => node.botId === f.lead.id)?.status, { timeout: 15_000 }).toBe("running");
   await f.api(`/api/bots/${f.chief.id}/interrupt`, { threadId: f.thread });
-  await f.wait();
+  // Same remapping as the mid-turn Stop test: person-stopped is not
+  // `settled`. The lead stays gated until after the restart.
+  await f.idle();
   const versionGate = f.gate("restart-version");
   const probeLog = join(f.dataDir, "restart-probes.log");
   await f.restart((bots: any[]) => {

@@ -681,9 +681,8 @@ probes the address (`orgJoin.probe`, Perspicax-linked servers only) then
 `orgJoin.join` saves the server and starts the existing **Sign in with
 Pulsatrix** (`electron/org-join.mjs`, `startPulsatrixSignIn` in
 `electron/main.mjs`). Do not add another sign-in path. The choice lives in
-`config.onboarding.launchMode`; the default address is
-`DEFAULT_SERVER_ADDRESS`, overridable at build time with
-`SAGAX_DEFAULT_SERVER`. The welcome tour and Settings > Organization no longer
+`config.onboarding.launchMode`; the address field is empty unless the build
+sets `SAGAX_DEFAULT_SERVER`. The welcome tour and Settings > Organization no longer
 offer the inherited managed-desktop Admin sign-in. Organization is Perspicax. See
 `docs/self-hosting.md` ("At launch: No server or Server").
 
@@ -1064,8 +1063,8 @@ built-in driver is missing from the lock or a pin's `bin` differs from the
 driver's default `cli`.
 
 - Dockerfile: `scripts/install-engines.mjs` installs the selection named by
-  `ENGINE_SET` (`all` default, since the 2026-10-12 GOX image
-  `pulsa-bot-server:main-20004735` shipped `engineSet none` when the arg was
+  `ENGINE_SET` (`all` default, since the 2026-10-12 production image
+  `pulsa-bot-server:main-example1` shipped `engineSet none` when the arg was
   omitted; `none` and `open` are explicit opt-outs; or ids). The build also
   defaults `SAGAX_REQUIRE_ENGINES=1`, which fails the image when the set is
   not the full lock. `scripts/build-production-image.sh` and
@@ -1074,11 +1073,11 @@ driver's default `cli`.
   (`org.opencontainers.image.created`) and `io.sagax.engine-set`. The legacy
   `ENGINES` (npm specs) and `NATIVE_ENGINES` (native ids) build arguments
   still override the lock's npm and native sets; `none` drops a kind. A
-  non-empty override that drops an engine fails the require flag. GOX deploys
-  through `deploy/gox/deploy-pulsabot.sh`: it refuses the same short set,
+  non-empty override that drops an engine fails the require flag. Production deploys
+  through `deploy/example/deploy-server.sh`: it refuses the same short set,
   smoke-tests `/healthz` and the engine startup log, and on failure rolls
-  back to `/opt/pulsatrix/pulsabot-image.prev` then runs
-  `docker compose up -d --force-recreate --no-deps pulsabot-caddy`. Prune
+  back to `<INSTALL_ROOT>/server-image.prev` then runs
+  `docker compose up -d --force-recreate --no-deps <EDGE_SERVICE>`. Prune
   keeps the running image and that previous image.
 - Installed by `ENGINE_SET=all`: Claude Code, Codex, pi, Gemini CLI, Kimi
   Code, Qwen Code, OpenCode, Droid (npm, global), Grok Build and Cursor Agent
@@ -1090,10 +1089,14 @@ driver's default `cli`.
   licence published). API engines (Grok API, OpenAI-compatible, Mistral,
   Cerebras, MiniMax), Boat and custom ACP need no install.
 - Startup self-check (`server/engines-self-check.ts`, `SAGAX_ENGINES_MANIFEST`):
-  each preinstalled CLI runs `--version` once at boot, the result is logged
-  (`[engines] claude: ...`) and is the instance's installed state from then
-  on (`selfCheckedEngine` in `server/index.ts`): `engineInstalled` and
-  `/api/health` no longer probe those engines per request. A manifest whose
+  the image build already ran each CLI's `--version` and stored it as
+  `reported`. At boot the server checks that binary is on PATH and logs that
+  recorded line (`[engines] claude: ...`); it does not spawn the CLI again.
+  An entry with no `reported` line (a manifest from before this) is probed
+  one at a time (`ENGINE_PROBE_CONCURRENCY`). That result is the instance's
+  installed state from then on (`selfCheckedEngine` in `server/index.ts`):
+  `engineInstalled` and `/api/health` no longer probe those engines per
+  request. A manifest whose
   set is not `all`, or an engine that did not start, also logs
   `[engines] engine_missing ...`. An instance with
   its own `config.cli` is probed as before. An engine of `notPreinstalled`
@@ -1183,6 +1186,17 @@ fake xAI: `scripts/verify-voice-mode.ts`. Details: `docs/voice-mode-xai.md`.
 - The xAI key never reaches a client: the server proxies speech to text
   (`/voice/transcribe`) and text to speech (`/voice/speak`, `/voice/voices`);
   no route answers a key or a part of one.
+- Hang up: the person ends with `POST /api/bots/<id>/voice/call`
+  `{state:"end"}` for that call id. The bot ends with `end_call`, offered
+  only on a live call (`SAGAX_VOICE_CALL`). The session stays until that
+  turn finishes, so the goodbye is spoken, then the idle warm process is
+  released and that person's devices get `voice.call.ended`. A goodbye
+  that fails or is interrupted drops the request (`settleEnding`) and
+  keeps the call: the next turn is still on it. The next written turn
+  after a finished hang-up gets `voiceCallEndedNote`. An old turn cannot
+  end a newer call. Tests: `server/voice-call-session.test.ts`,
+  `src/lib/voice-mode/call-end.test.ts`,
+  `server/voice-call-reliability.e2e.test.ts`.
 - Who pays (`resolveVoiceKey`): on an organization server the speaker's own
   `xai` key in Perspicax, else the organization's (Settings > Connections),
   else an access card in that person's bar only (the audience rule of every
@@ -1218,11 +1232,13 @@ fake xAI: `scripts/verify-voice-mode.ts`. Details: `docs/voice-mode-xai.md`.
   backoff) switch the call to POST for good, logged once; a clause failed
   before any audio is spoken over POST, one cut mid-way is never said twice.
   Barge-in ducks then cancels the bot's voice and interrupts its running
-  turn. "Full-duplex conversation" (Advanced, on by default in internal /
-  TestFlight / dev, kill-switch in the panel, `CallSettings.fullDuplex`):
-  talking while the bot works or speaks cancels that turn, discards the
-  steer queue, and starts only the latest utterance (`voiceCall.duplex`,
-  issue #292). Off: words said while it works join that turn. Tests:
+  turn. "Full-duplex conversation" (Advanced, off by default on every
+  channel, `CallSettings.fullDuplex`, rev 3): when the person turns it on
+  and the server has `SAGAX_VOICE_FULL_DUPLEX=1`, talking while the bot
+  works or speaks cancels that turn, discards the steer queue, and starts
+  only the latest utterance (`voiceCall.duplex`, issue #292). Off, the
+  page's duplex and speculative marks are dropped and words said while it
+  works join that turn. Tests:
   `call-logic.test.ts`, `voice-build.test.ts`,
   `call.test.ts`, `duplex-policy.test.ts`, `speech-fence.test.ts`,
   `speech-stream.test.ts`,
@@ -1799,7 +1815,7 @@ console's bots gallery, routines calendar and computers. Keep these rules:
 
 ## A person's own connections, plugins and skills (organization mode, 2026-10-02)
 
-Owner report: on GOX nobody could add the GitHub MCP, log into GitHub or
+Owner report: in production nobody could add the GitHub MCP, log into GitHub or
 install plugins. Why: the server-wide MCP list was admin-only, hidden with
 Connected apps, shared one token by all and ran commands on the host;
 `claude plugin ...` typed by a bot hit the host Bash denial whatever

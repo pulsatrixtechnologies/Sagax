@@ -19,7 +19,7 @@ vi.mock("./DesktopCapabilities", () => ({ useDesktopCapabilities: () => ({ capab
 vi.mock("@/state/store", async (importOriginal) => ({
   ...await importOriginal<typeof import("@/state/store")>(),
   api: vi.fn(),
-  useStore: () => ({ state: { appSettingsSection: fixture.section, appSettingsSubPage: null, instances: [], bots: [], groups: [], config: fixture.viewer ? { rooms: { turnTimeoutMinutes: 5 }, viewer: fixture.viewer, profile: { aboutMe: "I run IT at GOX.\nAnswer in French." } } : undefined }, dispatch: vi.fn() }),
+  useStore: () => ({ state: { appSettingsSection: fixture.section, appSettingsSubPage: null, instances: [], bots: [], groups: [], config: fixture.viewer ? { rooms: { turnTimeoutMinutes: 5 }, viewer: fixture.viewer, profile: { aboutMe: "I run IT at Example.\nAnswer in French." } } : undefined }, dispatch: vi.fn() }),
 }));
 vi.mock("./ServerModeSettings", async (importOriginal) => ({
   ...await importOriginal<typeof import("./ServerModeSettings")>(),
@@ -67,12 +67,12 @@ function nestedCardBorders(html: string): string[] {
 
 describe("Settings in server mode", () => {
   it("General says which server, organization and person are signed in, and offers Sign out, not This computer", () => {
-    fixture.serverMode = { active: true, name: "GOX", origin: "https://bot.example.test" };
-    fixture.viewer = { name: "Jean Tremblay", email: "jean@gox.example", profileManagedBy: "perspicax", profileManageUrl: "https://px.example.test/console/me" };
+    fixture.serverMode = { active: true, name: "Example", origin: "https://bot.example.test" };
+    fixture.viewer = { name: "Jean Tremblay", email: "jean@example.com", profileManagedBy: "perspicax", profileManageUrl: "https://px.example.test/console/me" };
     const html = render();
     expect(html).toContain('Connected to <strong class="font-semibold text-ink">bot.example.test</strong>');
-    expect(html).toContain("Organization: GOX");
-    expect(html).toContain("Signed in as Jean Tremblay (jean@gox.example)");
+    expect(html).toContain("Organization: Example");
+    expect(html).toContain("Signed in as Jean Tremblay (jean@example.com)");
     expect(html).toContain("Sign out returns this app to the launch screen");
     expect(html).toMatch(/<button type="button" class="ui-button[^"]*">.*?Sign out<\/button>/);
     expect(html).not.toMatch(/>Change<\/button>/);
@@ -81,15 +81,15 @@ describe("Settings in server mode", () => {
 
   it("reads Se déconnecter in French", () => {
     setLocale("fr");
-    fixture.serverMode = { active: true, name: "GOX", origin: "https://bot.example.test" };
+    fixture.serverMode = { active: true, name: "Example", origin: "https://bot.example.test" };
     const html = render();
     expect(html).toContain("Connecté à <strong");
     expect(html).toContain("Se déconnecter");
   });
 
   it("General draws one card level: no bordered container inside a card", () => {
-    fixture.serverMode = { active: true, name: "GOX", origin: "https://bot.example.test" };
-    fixture.viewer = { name: "Jean Tremblay", email: "jean@gox.example", profileManagedBy: "perspicax", profileManageUrl: "https://px.example.test/console/me" };
+    fixture.serverMode = { active: true, name: "Example", origin: "https://bot.example.test" };
+    fixture.viewer = { name: "Jean Tremblay", email: "jean@example.com", profileManagedBy: "perspicax", profileManageUrl: "https://px.example.test/console/me" };
     const html = render();
     expect(html).toContain('data-testid="managed-profile"');
     expect(nestedCardBorders(html)).toEqual([]);
@@ -97,7 +97,7 @@ describe("Settings in server mode", () => {
     // not the operator, so the row stays hidden instead of offering a save
     // the server would refuse. It is still a row, not a card, for the operator.
     expect(html).not.toContain('data-settings-card="general.aboutMe"');
-    expect(html).not.toContain("I run IT at GOX.");
+    expect(html).not.toContain("I run IT at Example.");
     expect(html).not.toContain("<textarea");
   });
 
@@ -108,7 +108,7 @@ describe("Settings in server mode", () => {
 
   it("Remote access keeps the server's pairing card and shows this computer's part as managed", () => {
     fixture.section = "companion";
-    fixture.serverMode = { active: true, name: "GOX", origin: "https://bot.example.test" };
+    fixture.serverMode = { active: true, name: "Example", origin: "https://bot.example.test" };
     const html = render();
     expect(html).toContain("SERVER_PAIRING_CARD_MARKER");
     expect(html).toContain("Managed by your organization");
@@ -118,7 +118,7 @@ describe("Settings in server mode", () => {
   it("reads in French", () => {
     setLocale("fr");
     fixture.section = "companion";
-    fixture.serverMode = { active: true, name: "GOX", origin: "https://bot.example.test" };
+    fixture.serverMode = { active: true, name: "Example", origin: "https://bot.example.test" };
     expect(render()).toContain("Géré par votre organisation");
   });
 });

@@ -5,7 +5,7 @@
 `docker.sock` and is unchanged. The Kubernetes path does not open that socket
 and does not start a privileged egress helper. One person is one Pod and one
 PVC (`sagax-user-<key>`, `sagax-user-<key>-workspace`) in the namespace
-`sagax-sandboxes`. The key is the same 32-hex digest as the Docker backend.
+`sandboxes`. The key is the same 32-hex digest as the Docker backend.
 There is no bot parameter.
 
 The cluster can be k3s, AKS, EKS, LKE or a Kubernetes on Proxmox. The
@@ -48,7 +48,7 @@ emptyDir, because that policy allows no other egress.
 | Variable | Required | Meaning |
 |---|---|---|
 | `SANDBOX_BACKEND` | `kubernetes` | selects this backend |
-| `SAGAX_SANDBOX_K8S_NAMESPACE` | no | default `sagax-sandboxes`; must already exist |
+| `SAGAX_SANDBOX_K8S_NAMESPACE` | no | default `sandboxes`; must already exist |
 | `SAGAX_SANDBOX_K8S_STORAGE_CLASS` | yes | operator StorageClass |
 | `SAGAX_SANDBOX_K8S_REGISTRY` | yes | image registry prefix, lowercase, no trailing slash |
 | `SAGAX_SANDBOX_K8S_REQUIRE_SIGNED` | no | default true: the image ref must end in `@sha256:<64 hex>` |

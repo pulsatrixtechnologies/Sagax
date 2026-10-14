@@ -3,11 +3,18 @@
 enabled                 = false
 production              = false
 subscription_id         = "00000000-0000-0000-0000-000000000000"
-location                = "canadacentral"
-name                    = "sagax"
+# location, system_vm_size and azure_vm_size have no defaults. Replace the
+# placeholders with values from the change record before plan. Placeholders
+# fail the format checks (Azure region ^[a-z]+[a-z0-9]*$, SKU ^Standard_[A-Za-z0-9_]+$).
+location                = "<REGION>"
+system_vm_size          = "<VM_SIZE>"
+azure_vm_size           = "<VM_SIZE>"
+# Prefix for Azure names (the cluster is "${name}-aks"). Use a name that is
+# not a live cluster.
+name                    = "example"
 admin_group_object_ids  = ["00000000-0000-0000-0000-000000000000"]
 entra_mfa_policy_id     = "00000000-0000-0000-0000-000000000000"
 lock_audit_immutability = false
 api_server_authorized_ip_ranges = ["203.0.113.10/32"]
-audit_storage_account_name      = "sagaxsbxaudit0001"
-key_vault_name                  = "sagax-sbx-kv"
+audit_storage_account_name      = "examplesbxaudit001"
+key_vault_name                  = "example-sbx-kv"

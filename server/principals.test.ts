@@ -32,25 +32,25 @@ describe("principal registry", () => {
 
   it("creates one principal per account and finds it again", () => {
     const { reg } = registry();
-    const a = reg.forAccount({ email: "Zach@Gox.ca", controlPlaneUserId: "cp_1" });
-    expect(a).toMatchObject({ kind: "human", email: "zach@gox.ca", controlPlaneUserId: "cp_1" });
-    expect(reg.forAccount({ email: "zach@gox.ca", controlPlaneUserId: "cp_1" }).id).toBe(a.id);
+    const a = reg.forAccount({ email: "Zach@Example.com", controlPlaneUserId: "cp_1" });
+    expect(a).toMatchObject({ kind: "human", email: "zach@example.com", controlPlaneUserId: "cp_1" });
+    expect(reg.forAccount({ email: "zach@example.com", controlPlaneUserId: "cp_1" }).id).toBe(a.id);
     expect(reg.list()).toHaveLength(1);
   });
 
   it("keeps the principal when the account email changes", () => {
     const { reg } = registry();
-    const a = reg.forAccount({ email: "old@gox.ca", controlPlaneUserId: "cp_1" });
-    const b = reg.forAccount({ email: "new@gox.ca", controlPlaneUserId: "cp_1" });
+    const a = reg.forAccount({ email: "old@example.com", controlPlaneUserId: "cp_1" });
+    const b = reg.forAccount({ email: "new@example.com", controlPlaneUserId: "cp_1" });
     expect(b.id).toBe(a.id);
-    expect(b.email).toBe("new@gox.ca");
-    expect(reg.byEmail("old@gox.ca")).toBeNull();
+    expect(b.email).toBe("new@example.com");
+    expect(reg.byEmail("old@example.com")).toBeNull();
   });
 
   it("links an email-only principal to its account on first sign-in", () => {
     const { reg } = registry();
-    const a = reg.forAccount({ email: "zach@gox.ca" });
-    const b = reg.forAccount({ email: "zach@gox.ca", controlPlaneUserId: "cp_9" });
+    const a = reg.forAccount({ email: "zach@example.com" });
+    const b = reg.forAccount({ email: "zach@example.com", controlPlaneUserId: "cp_9" });
     expect(b.id).toBe(a.id);
     expect(b.controlPlaneUserId).toBe("cp_9");
   });
@@ -58,23 +58,23 @@ describe("principal registry", () => {
   it("has exactly one local operator and gives it the profile email", () => {
     const { reg } = registry();
     const a = reg.localOperator();
-    const b = reg.localOperator("jc@gox.ca");
+    const b = reg.localOperator("jc@example.com");
     expect(b.id).toBe(a.id);
-    expect(b).toMatchObject({ local: true, email: "jc@gox.ca" });
+    expect(b).toMatchObject({ local: true, email: "jc@example.com" });
     expect(reg.list().filter((p) => p.local)).toHaveLength(1);
   });
 
   it("persists across instances", () => {
     const { path, reg } = registry();
-    const a = reg.forAccount({ email: "zach@gox.ca", controlPlaneUserId: "cp_1" });
+    const a = reg.forAccount({ email: "zach@example.com", controlPlaneUserId: "cp_1" });
     const again = new PrincipalRegistry({ path });
-    expect(again.byId(a.id)).toMatchObject({ email: "zach@gox.ca" });
+    expect(again.byId(a.id)).toMatchObject({ email: "zach@example.com" });
     expect(JSON.parse(readFileSync(path, "utf8")).version).toBe(1);
   });
 
   it("recognizes principal ids", () => {
     expect(isPrincipalId("pr_00000000-0000-4000-8000-000000000000")).toBe(true);
-    expect(isPrincipalId("zach@gox.ca")).toBe(false);
+    expect(isPrincipalId("zach@example.com")).toBe(false);
     expect(isPrincipalId("local-owner")).toBe(false);
   });
 
@@ -91,19 +91,19 @@ describe("principal registry", () => {
 
   it("skips an oversized or malformed entry and keeps the local operator across a restart", () => {
     const { path, reg } = registry();
-    const local = reg.localOperator("jc@gox.ca");
-    const zach = reg.forAccount({ email: "zach@gox.ca" });
+    const local = reg.localOperator("jc@example.com");
+    const zach = reg.forAccount({ email: "zach@example.com" });
     const file = JSON.parse(readFileSync(path, "utf8"));
     file.principals.push(
-      { id: "pr_00000000-0000-4000-8000-0000000000ff", kind: "human", email: `${"a".repeat(400)}@gox.ca`, createdAt: 1 },
+      { id: "pr_00000000-0000-4000-8000-0000000000ff", kind: "human", email: `${"a".repeat(400)}@example.com`, createdAt: 1 },
       { id: "not-a-principal", kind: "human", createdAt: 1 },
       { id: "pr_00000000-0000-4000-8000-0000000000fe", kind: "human", local: true, createdAt: 1 },
     );
     writeFileSync(path, JSON.stringify(file));
     const again = new PrincipalRegistry({ path, now: () => 7 });
     expect(again.local()?.id).toBe(local.id);
-    expect(again.localOperator("jc@gox.ca").id).toBe(local.id);
-    expect(again.byId(zach.id)).toMatchObject({ email: "zach@gox.ca" });
+    expect(again.localOperator("jc@example.com").id).toBe(local.id);
+    expect(again.byId(zach.id)).toMatchObject({ email: "zach@example.com" });
     expect(again.list()).toHaveLength(2);
     // The original is kept beside the rewritten file.
     expect(existsSync(`${path}.corrupt-7`)).toBe(true);
@@ -112,12 +112,12 @@ describe("principal registry", () => {
 
   it("refuses an account email over 320 characters or without local@domain", () => {
     const { reg } = registry();
-    expect(() => reg.forAccount({ email: `${"a".repeat(400)}@gox.ca` })).toThrow(/account email/);
+    expect(() => reg.forAccount({ email: `${"a".repeat(400)}@example.com` })).toThrow(/account email/);
     expect(() => reg.forAccount({ email: "not-an-email" })).toThrow(/account email/);
-    expect(() => reg.forAccount({ email: "@gox.ca" })).toThrow(/account email/);
+    expect(() => reg.forAccount({ email: "@example.com" })).toThrow(/account email/);
     expect(reg.list()).toHaveLength(0);
-    expect(isAccountEmail("zach@gox.ca")).toBe(true);
-    expect(isAccountEmail(`${"a".repeat(320)}@gox.ca`)).toBe(false);
+    expect(isAccountEmail("zach@example.com")).toBe(true);
+    expect(isAccountEmail(`${"a".repeat(320)}@example.com`)).toBe(false);
   });
 
   it("reads the local operator without writing", () => {
@@ -130,13 +130,13 @@ describe("principal registry", () => {
 
   it("merges a restored file by id without replacing the local operator", () => {
     const mine = { id: "pr_00000000-0000-4000-8000-000000000001", kind: "human", local: true, createdAt: 1 };
-    const shared = { id: "pr_00000000-0000-4000-8000-000000000002", kind: "human", email: "zach@gox.ca", createdAt: 1 };
-    const theirs = { id: "pr_00000000-0000-4000-8000-000000000003", kind: "human", local: true, email: "old@gox.ca", createdAt: 1 };
+    const shared = { id: "pr_00000000-0000-4000-8000-000000000002", kind: "human", email: "zach@example.com", createdAt: 1 };
+    const theirs = { id: "pr_00000000-0000-4000-8000-000000000003", kind: "human", local: true, email: "old@example.com", createdAt: 1 };
     const merged = mergePrincipalFiles(
       { version: 1, principals: [mine, shared] },
-      { version: 1, principals: [{ ...shared, email: "changed@gox.ca" }, theirs] },
+      { version: 1, principals: [{ ...shared, email: "changed@example.com" }, theirs] },
     );
-    expect(merged.principals).toEqual([mine, shared, { id: theirs.id, kind: "human", email: "old@gox.ca", createdAt: 1 }]);
+    expect(merged.principals).toEqual([mine, shared, { id: theirs.id, kind: "human", email: "old@example.com", createdAt: 1 }]);
     expect(mergePrincipalFiles(undefined, { version: 1, principals: [theirs] }).principals).toEqual([theirs]);
   });
 
@@ -144,7 +144,7 @@ describe("principal registry", () => {
     const dir = mkdtempSync(join(tmpdir(), "principals-"));
     const nestedPath = join(dir, "subdir", "deep", "principals.json");
     const reg = new PrincipalRegistry({ path: nestedPath, now: () => 1000, newId: () => "pr_00000000-0000-4000-8000-000000000000" });
-    reg.forAccount({ email: "test@gox.ca" });
+    reg.forAccount({ email: "test@example.com" });
     expect(existsSync(nestedPath)).toBe(true);
   });
 });

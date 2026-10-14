@@ -1,5 +1,5 @@
 # Azure adapter. Includes the portable base plus the Azure storage, path
-# from the GOX VM, and backup location. It does not install an autoscaler:
+# from the production VM, and backup location. It does not install an autoscaler:
 # apply exactly one of cluster-autoscaler.values.yaml (k3s on Azure VMs, or
 # the AKS node pool in the cutover runbook) or karpenter.yaml.
 apiVersion: kustomize.config.k8s.io/v1beta1
@@ -7,7 +7,7 @@ kind: Kustomization
 resources:
   - ../../base
   - storageclass.yaml
-  - networkpolicy-gox.yaml
+  - networkpolicy-ingress.yaml
   - backup-location.yaml
 patches:
   - path: service-internal-lb.yaml

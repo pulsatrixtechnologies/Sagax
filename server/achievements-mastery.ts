@@ -20,7 +20,7 @@ const BUILT_IN_SERVERS: ReadonlySet<string> = new Set(["agents", "browser", "com
 /**
  * The integration a tool line used: `mcp__<server>__<tool>` names its MCP
  * server; a Perspicax profile (`perspicax_<slug>`) serves several APIs, each
- * one an integration (`mcp__perspicax_gox__cw_psa__query` is perspicax:cw_psa).
+ * one an integration (`mcp__perspicax_example__cw_psa__query` is perspicax:cw_psa).
  */
 export function integrationOfTool(name: string): string | null {
   const parts = name.split("__");

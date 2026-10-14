@@ -2,7 +2,7 @@
   "$schema": "../../node_modules/wrangler/config-schema.json",
   "name": "openmausbot-control-plane",
   "main": "src/index.ts",
-  "account_id": "0c92969a82eb9e173b013a7e7a02333d",
+  "account_id": "00000000000000000000000000000000",
   "compatibility_date": "2026-08-25",
   "compatibility_flags": ["nodejs_compat"],
   "workers_dev": false,
@@ -16,8 +16,8 @@
     "BETTER_AUTH_URL": "https://accounts.openmausbot.com",
     "EMAIL_FROM": "noreply@openmausbot.com",
     "ALLOWED_ORIGINS": "",
-    "CLOUDFLARE_ACCOUNT_ID": "0c92969a82eb9e173b013a7e7a02333d",
-    "CLOUDFLARE_ZONE_ID": "bae08399bb6f96eb7266c65ac0057eee",
+    "CLOUDFLARE_ACCOUNT_ID": "00000000000000000000000000000000",
+    "CLOUDFLARE_ZONE_ID": "00000000000000000000000000000000",
     "COMPANION_HOST_SUFFIX": "openmausbot.com",
     // More Cloudflare accounts for managed endpoints (README "Several
     // Cloudflare accounts"). Unset: the account above is the only one. A new

@@ -1,6 +1,6 @@
-# Perspicax infra: server environments on the GOX VM
+# Perspicax infra: server environments on the production VM
 
-GOX deploys Sagax from the Perspicax repository (`pulsatrix-v3`). The infra
+Production deploys Sagax from the Perspicax repository (`<PERSPICAX_REPO>`). The infra
 side of the per-person server environments (`docs/user-sandbox.md`) lives
 there, on branch `feat/sagax-sandbox-infra`; the operator documentation is
 `infra/README.md`, "Environnements serveur" (French). This file only records
@@ -17,12 +17,12 @@ the contract between the two repositories.
   - `sagax-sandbox-image`: pull only.
   - `pulsabot` gains `SAGAX_SANDBOXD_URL` (empty means no environments),
     `SAGAX_SANDBOXD_KEY_FILE=/run/secrets/sagax-sandboxd/key`,
-    `SAGAX_SANDBOX_INSTANCE=gox`, the read-only key mount and the
+    `SAGAX_SANDBOX_INSTANCE=<INSTANCE>`, the read-only key mount and the
     control network.
 
   The second profile lets a Sagax image without environments (an older tag,
   or `SAGAX_SANDBOX=off`) deploy without a crash-looping provisioner.
-- **Shared key:** `/opt/pulsatrix/secrets/sagax-sandboxd/key`, 64 hex
+- **Shared key:** `<INSTALL_ROOT>/secrets/sagax-sandboxd/key`, 64 hex
   characters, generated once by `vm-bootstrap.sh`, `root:10002`, mode 0440,
   mounted read-only into both containers. The provisioner's
   `ensureSandboxdKey` reads an existing file and never rewrites it.
@@ -51,7 +51,7 @@ the contract between the two repositories.
 
 ## Desktop in the server environment (Sagax PR feat/sandbox-desktop)
 
-No Perspicax patch is needed for GOX: its compose does not pin any
+No Perspicax patch is needed for production: its compose does not pin any
 `SAGAX_SANDBOX_*` limit (the defaults come from this code) and its Caddy
 `reverse_proxy` passes WebSockets. The points below are what to check if a
 deployment does pin them or filters the proxy. Nothing changes in the

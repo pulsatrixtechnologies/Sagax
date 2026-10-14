@@ -15,12 +15,12 @@ import { claudeDisallowedTools } from "../server/drivers/host-tools.ts";
 
 const HOST_ACTING = ["Bash", "BashOutput", "KillShell", "Read", "Write", "Edit", "MultiEdit", "NotebookEdit", "Glob", "Grep", "LS", "WebFetch", "EnterWorktree", "ExitWorktree", "Workflow"];
 
-/** GOX's standing allow rules (SAGAX_CLAUDE_ALLOW): an allow never beats the
+/** Standing allow rules (SAGAX_CLAUDE_ALLOW): an allow never beats the
  * organization deny. */
-const GOX_ALLOW = [
+const ORG_ALLOW = [
   "Bash(claude plugin marketplace add pulsatrixtechnologies/marketplace)",
-  "Bash(claude plugin marketplace add goxtechnologies/marketplace)",
-  "Bash(claude plugin marketplace add jencryzthers/marketplace)",
+  "Bash(claude plugin marketplace add example-org/marketplace)",
+  "Bash(claude plugin marketplace add example-plugins/marketplace)",
 ];
 
 async function initTools(withhold: boolean, allow: string[] = []): Promise<string[]> {
@@ -58,13 +58,13 @@ async function initTools(withhold: boolean, allow: string[] = []): Promise<strin
 
 const solo = await initTools(false);
 const org = await initTools(true);
-const orgWithAllow = await initTools(true, GOX_ALLOW);
+const orgWithAllow = await initTools(true, ORG_ALLOW);
 let failed = 0;
 const check = (label: string, ok: boolean, detail = "") => { console.log(`${ok ? "ok  " : "FAIL"} ${label}${detail ? `  (${detail})` : ""}`); if (!ok) failed++; };
 check("control: a solo turn has Bash", solo.includes("Bash"));
 const leaked = HOST_ACTING.filter((tool) => org.includes(tool));
 check("organization turn: no shell, file or fetch tool on the Sagax server", leaked.length === 0, leaked.join(",") || `${org.length} tools left`);
 check("organization turn: a Bash call cannot be made (tool absent)", !org.includes("Bash"));
-check("organization turn with GOX's SAGAX_CLAUDE_ALLOW rules: Bash still absent (deny wins)", !orgWithAllow.includes("Bash"));
+check("organization turn with standing SAGAX_CLAUDE_ALLOW rules: Bash still absent (deny wins)", !orgWithAllow.includes("Bash"));
 console.log(failed ? `\n${failed} check(s) failed` : "\nall checks passed");
 process.exit(failed ? 1 : 0);

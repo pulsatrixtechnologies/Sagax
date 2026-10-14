@@ -1,7 +1,7 @@
 // The tools a Grok bot keeps calling, so a fresh conversation can call them
 // directly. Grok reaches every Sagax MCP tool through search_tool then
 // use_tool; on a tool's first use in a conversation the search is a full
-// model round, and measured on the GOX server (2026-10-11) the round after it
+// model round, and measured on the production server (2026-10-11) the round after it
 // also lost the provider's prompt cache (512 of ~18k tokens cached). A bot
 // mostly calls the same few tools, so the ones it used successfully before
 // are named in a context section and the model goes straight to use_tool.

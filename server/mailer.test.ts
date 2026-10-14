@@ -8,12 +8,12 @@ describe("mailer", () => {
 
   it("sends through SendGrid's HTTP API", async () => {
     const fetchImpl = vi.fn(async () => new Response(null, { status: 202 }));
-    const mailer = createMailer({ provider: "sendgrid", from: "pulsa@gox.ca", sendgrid: { apiKey: "SG.k" } }, { fetchImpl: fetchImpl as unknown as typeof fetch })!;
-    await mailer.send({ to: "zach@gox.ca", subject: "Code", text: "12345678" });
+    const mailer = createMailer({ provider: "sendgrid", from: "pulsa@example.com", sendgrid: { apiKey: "SG.k" } }, { fetchImpl: fetchImpl as unknown as typeof fetch })!;
+    await mailer.send({ to: "zach@example.com", subject: "Code", text: "12345678" });
     const [url, init] = fetchImpl.mock.calls[0] as unknown as [string, RequestInit];
     expect(url).toBe("https://api.sendgrid.com/v3/mail/send");
     expect((init.headers as Record<string, string>).authorization).toBe("Bearer SG.k");
-    expect(JSON.parse(String(init.body))).toMatchObject({ from: { email: "pulsa@gox.ca" }, personalizations: [{ to: [{ email: "zach@gox.ca" }] }], subject: "Code" });
+    expect(JSON.parse(String(init.body))).toMatchObject({ from: { email: "pulsa@example.com" }, personalizations: [{ to: [{ email: "zach@example.com" }] }], subject: "Code" });
   });
 
   it("reports a SendGrid refusal without leaking the key", async () => {
@@ -25,8 +25,8 @@ describe("mailer", () => {
 
   it("sends through the Twilio Email API with Basic auth", async () => {
     const fetchImpl = vi.fn(async () => new Response(JSON.stringify({ operationId: "op-fake", operationLocation: "https://comms.twilio.com/v1/Emails/Operations/op-fake" }), { status: 202 }));
-    const mailer = createMailer({ provider: "twilio", from: "Sagax <pulsa@gox.ca>", twilio: { apiKeySid: "SKfakesid", apiKeySecret: "fake-secret" } }, { fetchImpl: fetchImpl as unknown as typeof fetch })!;
-    await mailer.send({ to: "zach@gox.ca", subject: "Code", text: "Your code: 12345678\n<ignore>" });
+    const mailer = createMailer({ provider: "twilio", from: "Sagax <pulsa@example.com>", twilio: { apiKeySid: "SKfakesid", apiKeySecret: "fake-secret" } }, { fetchImpl: fetchImpl as unknown as typeof fetch })!;
+    await mailer.send({ to: "zach@example.com", subject: "Code", text: "Your code: 12345678\n<ignore>" });
     const [url, init] = fetchImpl.mock.calls[0] as unknown as [string, RequestInit];
     expect(url).toBe("https://comms.twilio.com/v1/Emails");
     expect(init.method).toBe("POST");
@@ -34,18 +34,18 @@ describe("mailer", () => {
     expect(headers.authorization).toBe(`Basic ${Buffer.from("SKfakesid:fake-secret").toString("base64")}`);
     expect(headers["content-type"]).toBe("application/json");
     expect(JSON.parse(String(init.body))).toEqual({
-      from: { address: "pulsa@gox.ca", name: "Sagax" },
-      to: [{ address: "zach@gox.ca" }],
+      from: { address: "pulsa@example.com", name: "Sagax" },
+      to: [{ address: "zach@example.com" }],
       content: { subject: "Code", html: "Your code: 12345678<br>\n&lt;ignore&gt;", text: "Your code: 12345678\n<ignore>" },
     });
   });
 
   it("gives a bare Twilio sender address the default name Twilio requires", async () => {
     const fetchImpl = vi.fn(async () => new Response(null, { status: 202 }));
-    const mailer = createMailer({ provider: "twilio", from: "pulsa@gox.ca", twilio: { apiKeySid: "SKfakesid", apiKeySecret: "fake-secret" } }, { fetchImpl: fetchImpl as unknown as typeof fetch })!;
+    const mailer = createMailer({ provider: "twilio", from: "pulsa@example.com", twilio: { apiKeySid: "SKfakesid", apiKeySecret: "fake-secret" } }, { fetchImpl: fetchImpl as unknown as typeof fetch })!;
     await mailer.send({ to: "z@g.ca", subject: "s", text: "t" });
     const [, init] = fetchImpl.mock.calls[0] as unknown as [string, RequestInit];
-    expect(JSON.parse(String(init.body)).from).toEqual({ address: "pulsa@gox.ca", name: "Sagax" });
+    expect(JSON.parse(String(init.body)).from).toEqual({ address: "pulsa@example.com", name: "Sagax" });
   });
 
   it("reports a Twilio refusal without leaking the secret", async () => {
@@ -103,15 +103,15 @@ describe("mailer", () => {
 
   it("uses the configured sender name with every provider, and Sagax when none is set", async () => {
     const fetchImpl = vi.fn(async () => new Response(null, { status: 202 }));
-    const twilio = createMailer({ provider: "twilio", from: "p@g.ca", fromName: "GOX", twilio: { apiKeySid: "SKfakesid", apiKeySecret: "fake-secret" } }, { fetchImpl: fetchImpl as unknown as typeof fetch })!;
+    const twilio = createMailer({ provider: "twilio", from: "p@g.ca", fromName: "Example", twilio: { apiKeySid: "SKfakesid", apiKeySecret: "fake-secret" } }, { fetchImpl: fetchImpl as unknown as typeof fetch })!;
     await twilio.send({ to: "z@g.ca", subject: "s", text: "t" });
-    expect(JSON.parse(String((fetchImpl.mock.calls[0] as unknown as [string, RequestInit])[1].body)).from).toEqual({ address: "p@g.ca", name: "GOX" });
+    expect(JSON.parse(String((fetchImpl.mock.calls[0] as unknown as [string, RequestInit])[1].body)).from).toEqual({ address: "p@g.ca", name: "Example" });
     const sendgrid = createMailer({ provider: "sendgrid", from: "p@g.ca", sendgrid: { apiKey: "SG.k" } }, { fetchImpl: fetchImpl as unknown as typeof fetch })!;
     await sendgrid.send({ to: "z@g.ca", subject: "s", text: "t" });
     expect(JSON.parse(String((fetchImpl.mock.calls[1] as unknown as [string, RequestInit])[1].body)).from).toEqual({ email: "p@g.ca", name: "Sagax" });
     const sendMail = vi.fn(async () => ({}));
-    const smtp = createMailer({ provider: "smtp", from: "Old <p@g.ca>", fromName: "GOX", smtp: { host: "smtp.g.ca" } }, { smtpTransport: () => ({ sendMail }) })!;
+    const smtp = createMailer({ provider: "smtp", from: "Old <p@g.ca>", fromName: "Example", smtp: { host: "smtp.g.ca" } }, { smtpTransport: () => ({ sendMail }) })!;
     await smtp.send({ to: "z@g.ca", subject: "s", text: "t" });
-    expect(sendMail).toHaveBeenCalledWith(expect.objectContaining({ from: { name: "GOX", address: "p@g.ca" } }));
+    expect(sendMail).toHaveBeenCalledWith(expect.objectContaining({ from: { name: "Example", address: "p@g.ca" } }));
   });
 });

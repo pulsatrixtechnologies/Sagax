@@ -98,17 +98,18 @@ describe("launch screen", () => {
   });
 
 
-  it("server mode prefills the default address, checks the server, saves it and starts Sign in with Pulsatrix", async () => {
+  it("server mode starts with an empty address; a typed address is checked, saved and used for Sign in with Pulsatrix", async () => {
     mode("server").props.onClick!();
-    expect(input().props.value).toBe("https://bot.pulsatrix.mcp.goxcloud.ca");
+    expect(input().props.value).toBe("");
     expect(render().html).toContain("Sign in");
-    probe.mockResolvedValue({ origin: "https://bot.pulsatrix.mcp.goxcloud.ca", issuer: "https://px.example.test" });
+    input().props.onChange!({ target: { value: "https://sagax.example.test" } });
+    probe.mockResolvedValue({ origin: "https://sagax.example.test", issuer: "https://px.example.test" });
     join.mockResolvedValue({ ok: true });
     submit();
     await flush();
-    expect(probe).toHaveBeenCalledExactlyOnceWith("https://bot.pulsatrix.mcp.goxcloud.ca");
+    expect(probe).toHaveBeenCalledExactlyOnceWith("https://sagax.example.test");
     expect(store.api).toHaveBeenCalledWith("/api/config", expect.objectContaining({ body: JSON.stringify({ onboarding: { launchMode: "server" } }) }));
-    expect(join).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ origin: "https://bot.pulsatrix.mcp.goxcloud.ca", serverMode: true }));
+    expect(join).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ origin: "https://sagax.example.test", serverMode: true }));
     expect(onSolo).not.toHaveBeenCalled();
   });
 
@@ -134,6 +135,7 @@ describe("launch screen", () => {
 
   it("says when the server cannot be reached, and saves nothing", async () => {
     render("server");
+    input().props.onChange!({ target: { value: "https://sagax.example.test" } });
     probe.mockRejectedValue(new Error("Error invoking remote method 'org-join:probe': Error: That server could not be reached."));
     submit();
     await flush();
@@ -146,6 +148,7 @@ describe("launch screen", () => {
 
   it("says when the server is not linked to Perspicax", async () => {
     render("server");
+    input().props.onChange!({ target: { value: "https://sagax.example.test" } });
     probe.mockRejectedValue(new Error("That server does not sign people in with Pulsatrix."));
     submit();
     await flush();
@@ -155,7 +158,8 @@ describe("launch screen", () => {
 
   it("says when the sign-in could not start", async () => {
     render("server");
-    probe.mockResolvedValue({ origin: "https://bot.pulsatrix.mcp.goxcloud.ca", issuer: "https://px.example.test" });
+    input().props.onChange!({ target: { value: "https://sagax.example.test" } });
+    probe.mockResolvedValue({ origin: "https://sagax.example.test", issuer: "https://px.example.test" });
     join.mockRejectedValue(new Error("secret /path"));
     submit();
     await flush();

@@ -524,6 +524,13 @@ public struct CompanionState: Sendable {
         case let .botQueued(queues):
             replaceBotQueues(queues)
 
+        case let .voiceCallEnded(threadId, callId, by):
+            NotificationCenter.default.post(
+                name: .sagaxVoiceCallEnded,
+                object: nil,
+                userInfo: ["threadId": threadId, "callId": callId, "by": by]
+            )
+
         // Nothing to fold: config and provisioning state are not part of
         // this client's job yet.
         case .computer, .config, .nudge, .personLabel, .presenceChanged, .orgApprovals, .preferences, .threadRead, .unknown:

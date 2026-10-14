@@ -10,7 +10,7 @@ key, or an image pull secret. Commit the empty headings only.
 - Image digest (sandbox):
 - Cluster:
 - Autoscaler in use (cluster-autoscaler or Karpenter):
-- GOX subnet written into the NetworkPolicy (not `192.0.2.10/32`):
+- production subnet written into the NetworkPolicy (not `192.0.2.10/32`):
 - Approved by:
 - Applied by:
 - `kubectl diff` summary:

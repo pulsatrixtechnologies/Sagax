@@ -71,21 +71,20 @@ it("plays a sentence enqueued after cancel while the previous pump is still fini
   const player = new ClockPlayer();
   const started: string[] = [];
   player.events.onSentenceStart = (text) => started.push(text);
-  let closeOld: (() => void) | undefined;
   const oldAudio = new ReadableStream<Uint8Array>({
-    start(controller) {
-      closeOld = () => controller.close();
-    },
+    start() {},
   });
   player.enqueue({
     text: "old",
     audio: Promise.resolve({ body: oldAudio, sampleRate: 24_000 }),
     abort() {},
   });
-  for (let i = 0; i < 40 && !closeOld; i++) await new Promise((r) => setTimeout(r, 5));
-  expect(closeOld).toBeTypeOf("function");
+  for (let i = 0; i < 40 && !player.busy; i++) await new Promise((r) => setTimeout(r, 5));
+  expect(player.busy).toBe(true);
   await new Promise((r) => setTimeout(r, 15));
   await player.cancel();
+  for (let i = 0; i < 40 && player.busy; i++) await new Promise((r) => setTimeout(r, 5));
+  expect(player.busy).toBe(false);
   const newAudio = new ReadableStream<Uint8Array>({
     start(controller) {
       controller.enqueue(new Uint8Array(2 * 240));
@@ -97,9 +96,25 @@ it("plays a sentence enqueued after cancel while the previous pump is still fini
     audio: Promise.resolve({ body: newAudio, sampleRate: 24_000 }),
     abort() {},
   } as Sentence);
-  closeOld!();
   for (let i = 0; i < 40 && started.length === 0; i++) await new Promise((r) => setTimeout(r, 5));
   expect(started).toEqual(["new"]);
+});
+
+it("ClockPlayer cancel aborts an in-flight reader so busy clears", async () => {
+  const player = new ClockPlayer();
+  const audio = new ReadableStream<Uint8Array>({
+    start() {},
+  });
+  player.enqueue({
+    text: "hung",
+    audio: Promise.resolve({ body: audio, sampleRate: 24_000 }),
+    abort() {},
+  });
+  for (let i = 0; i < 40 && !player.busy; i++) await new Promise((r) => setTimeout(r, 5));
+  expect(player.busy).toBe(true);
+  await player.cancel();
+  for (let i = 0; i < 40 && player.busy; i++) await new Promise((r) => setTimeout(r, 5));
+  expect(player.busy).toBe(false);
 });
 
 it("drops a duplicate utterance on the same bench turn so admit does not fork a sibling", () => {

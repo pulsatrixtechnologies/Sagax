@@ -280,7 +280,7 @@ final class ServerPairingTests: XCTestCase {
 
     func testTheEventStreamNamesThisPhonesPushToken() async throws {
         ServerRequestStub.reset { _ in (200, Data("data: {\"kind\":\"hello\",\"cursor\":\"a:1\",\"resumed\":true}\n\n".utf8)) }
-        let client = CompanionClient(connection: Connection(name: "GOX", host: "bot.example.test", port: 443), token: "t", session: session)
+        let client = CompanionClient(connection: Connection(name: "Example", host: "bot.example.test", port: 443), token: "t", session: session)
         let token = String(repeating: "ab", count: 32)
         for try await _ in try client.events(since: nil, pushToken: token, streamingSession: session) {}
         let request = try XCTUnwrap(ServerRequestStub.captured().first)

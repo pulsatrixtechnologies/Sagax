@@ -4,15 +4,15 @@
 // identical call in this conversation and in any other one, and removing it
 // there makes the call ask again.
 //
-// Report (JC, 2026-10-13): the card said "Added to your Allow rules" and
-// "Always allowed", but the bot's Always allowed list read "Nothing yet" and
-// the same agents__coordinate_bots call asked again: the rule was saved on
-// the one thread only.
+// The card said "Added to your Allow rules" and "Always allowed", but the
+// bot's Always allowed list read "Nothing yet" and the same
+// agents__coordinate_bots call asked again: the rule was saved on the one
+// thread only.
 //
-// QA (2026-10-14): teammate tools (coordinate_bots, ask_bot, delegate_bot,
-// send_to_bot, post_to_room) pass the Grok gate only while peer review is
-// ACTIVE, so the server's own card decides them. With the revue off they
-// wait at the gate (fail closed). Covered below.
+// Teammate tools (coordinate_bots, ask_bot, delegate_bot, send_to_bot,
+// post_to_room) pass the Grok gate only while peer review is ACTIVE, so the
+// server's own card decides them. With the revue off they wait at the gate
+// (fail closed). Covered below.
 //
 // The real server runs against the fake ACP CLI in "mcp-call" mode: a turn
 // calls the listed agents tools through the mounted (gated) agents MCP.
@@ -77,6 +77,24 @@ function client(port: number) {
     });
     return { status: res.status, body: await res.json().catch(() => ({})) };
   };
+  /** Loopback owner-trust: no Origin, no Bearer — curl from 127.0.0.1. */
+  const originless = async (method: string, path: string, body?: unknown, headers?: Record<string, string>): Promise<{ status: number; body: any }> => {
+    const res = await fetch(`${base}${path}`, {
+      method,
+      headers: { ...(body ? { "content-type": "application/json" } : {}), ...headers },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    return { status: res.status, body: await res.json().catch(() => ({})) };
+  };
+  async function mintCapability(botId: string, threadId: string, kind: "agents" | "connectors" | "computer" | "data" = "agents"): Promise<string> {
+    const minted = await fetch(`${base}/api/testing/internal-capability`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-openmausbot-test-capability": CAPABILITY_KEY, origin: base },
+      body: JSON.stringify({ botId, threadId, kind }),
+    });
+    expect(minted.status).toBe(201);
+    return (await minted.json() as { token: string }).token;
+  }
   async function waitFor<T>(read: () => Promise<T | null | undefined>, ms = 30_000): Promise<T | null> {
     const deadline = Date.now() + ms;
     for (;;) {
@@ -98,14 +116,14 @@ function client(port: number) {
     const sent = await api("POST", `/api/bots/${botId}/messages`, { text, threadId });
     expect(sent.status, JSON.stringify(sent.body)).toBe(202);
   }
-  return { api, waitFor, messages, openCard, replyWith, botRow, send };
+  return { api, originless, mintCapability, waitFor, messages, openCard, replyWith, botRow, send };
 }
 
 posixOnly("Always allow on a gated MCP call is a rule of the bot", () => {
   let child: ChildProcess | undefined;
   let home: string | undefined;
   let log = { text: "" };
-  const { api, waitFor, messages, openCard, replyWith, botRow, send } = client(ALLOW_PORT);
+  const { api, originless, mintCapability, waitFor, messages, openCard, replyWith, botRow, send } = client(ALLOW_PORT);
 
   beforeAll(async () => {
     const started = await startGatedGrok({ port: ALLOW_PORT, mcpCalls: "agents:workspace_write" });
@@ -133,16 +151,30 @@ posixOnly("Always allow on a gated MCP call is a rule of the bot", () => {
 
     // A live turn token must not register Always allow as the owner (loopback
     // owner-trust otherwise treats a non-session Bearer as the operator).
-    const minted = await fetch(`http://127.0.0.1:${ALLOW_PORT}/api/testing/internal-capability`, {
-      method: "POST",
-      headers: { "content-type": "application/json", "x-openmausbot-test-capability": CAPABILITY_KEY, origin: `http://127.0.0.1:${ALLOW_PORT}` },
-      body: JSON.stringify({ botId: bot.id, threadId: bot.threadId }),
-    });
-    expect(minted.status).toBe(201);
-    const { token } = await minted.json() as { token: string };
+    const token = await mintCapability(bot.id, bot.threadId);
     const selfApprove = await api("POST", `/api/bots/${bot.id}/always-allow`, { threadId: bot.threadId, allowKey: ALLOW_KEY }, { authorization: `Bearer ${token}` });
     expect(selfApprove.status, JSON.stringify(selfApprove.body)).toBe(403);
     expect(selfApprove.body.code).toBe("turn_cannot_self_approve");
+
+    for (const kind of ["connectors", "computer", "data"] as const) {
+      const other = await mintCapability(bot.id, bot.threadId, kind);
+      const refused = await api("POST", `/api/bots/${bot.id}/always-allow`, { threadId: bot.threadId, allowKey: ALLOW_KEY }, { authorization: `Bearer ${other}` });
+      expect(refused.status, kind).toBe(403);
+      expect(refused.body.code, kind).toBe("turn_cannot_self_approve");
+    }
+
+    const ownerTrust = await originless("POST", `/api/bots/${bot.id}/always-allow`, { threadId: bot.threadId, allowKey: ALLOW_KEY });
+    expect(ownerTrust.status, JSON.stringify(ownerTrust.body)).toBe(403);
+    expect(ownerTrust.body.code).toBe("turn_cannot_self_approve");
+
+    const stillLive = await mintCapability(bot.id, bot.threadId);
+    const patchSelf = await api("PATCH", `/api/bots/${bot.id}`, { alwaysAllow: [ALLOW_KEY] }, { authorization: `Bearer ${stillLive}` });
+    expect(patchSelf.status, JSON.stringify(patchSelf.body)).toBe(403);
+    expect(patchSelf.body.code).toBe("turn_cannot_self_approve");
+
+    const originlessPatch = await originless("PATCH", `/api/bots/${bot.id}`, { alwaysAllow: [ALLOW_KEY] });
+    expect(originlessPatch.status, JSON.stringify(originlessPatch.body)).toBe(409);
+
     expect((await botRow(bot.id)).alwaysAllow ?? []).not.toContain(ALLOW_KEY);
 
     const saved = await api("POST", `/api/bots/${bot.id}/always-allow`, { threadId: bot.threadId, allowKey: ALLOW_KEY });

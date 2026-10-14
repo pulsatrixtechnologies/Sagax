@@ -89,7 +89,7 @@ organization server only sign in or add a key. The pins live in ONE file,
 [`scripts/install-engines.mjs`](../scripts/install-engines.mjs).
 The image default is that full set. On 2026-10-12 a build that left
 `ENGINE_SET` unset shipped `engineSet none` and no CLIs
-(`pulsa-bot-server:main-20004735`). `SAGAX_REQUIRE_ENGINES=1` (also the
+(`pulsa-bot-server:main-example1`). `SAGAX_REQUIRE_ENGINES=1` (also the
 default) fails a build that is not the full lock, including an explicit
 empty `--build-arg ENGINE_SET=`.
 

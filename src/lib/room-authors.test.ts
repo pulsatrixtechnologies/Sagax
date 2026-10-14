@@ -6,17 +6,17 @@ import { continuesRun, isOwnMessage, personDisplayName, personInitials, roomAuth
 
 const JC = "pr_jc";
 const ZACK = "pr_zack";
-const member = { viewer: { operator: false, principalId: JC, email: "jc@gox.ca", name: "JC", role: "member", canCreateBots: true, operatorName: "Operator Jo" } } as ConfigStatus;
-const operator = { viewer: { operator: true, principalId: "pr_local", email: "op@gox.ca", name: "Op", role: "owner", canCreateBots: true } } as ConfigStatus;
+const member = { viewer: { operator: false, principalId: JC, email: "jc@example.com", name: "JC", role: "member", canCreateBots: true, operatorName: "Operator Jo" } } as ConfigStatus;
+const operator = { viewer: { operator: true, principalId: "pr_local", email: "op@example.com", name: "Op", role: "owner", canCreateBots: true } } as ConfigStatus;
 const people = new Map<string, OrgDirectoryPerson>([
-  [ZACK, { principalId: ZACK, name: "Zachary Sellam", login: "zsellam", email: "zack@gox.ca", role: "member", disabled: false, avatarUrl: "/api/people/pr_zack/avatar?v=3" }],
-  ["pr_login", { principalId: "pr_login", name: "mlogin", login: "mlogin", email: "marie.l@gox.ca", role: "member", disabled: false }],
+  [ZACK, { principalId: ZACK, name: "Zachary Sellam", login: "zsellam", email: "zack@example.com", role: "member", disabled: false, avatarUrl: "/api/people/pr_zack/avatar?v=3" }],
+  ["pr_login", { principalId: "pr_login", name: "mlogin", login: "mlogin", email: "marie.l@example.com", role: "member", disabled: false }],
 ]);
 
 describe("room authors", () => {
   it("reads a person as their display name, else the address's local part, else the login", () => {
     expect(personDisplayName({ name: "Zachary Sellam", login: "zsellam" })).toBe("Zachary Sellam");
-    expect(personDisplayName({ name: "mlogin", login: "mlogin", email: "marie.l@gox.ca" })).toBe("marie.l");
+    expect(personDisplayName({ name: "mlogin", login: "mlogin", email: "marie.l@example.com" })).toBe("marie.l");
     expect(personDisplayName({ name: "", login: "mlogin" })).toBe("mlogin");
   });
 
@@ -31,7 +31,7 @@ describe("room authors", () => {
     expect(roomAuthor({ role: "user" }, operator, people)).toEqual({ kind: "self", key: "self" });
     expect(isOwnMessage({ role: "user", sender: { name: "JC", id: JC } }, member)).toBe(true);
     // An older server sends no viewer: every person line stays yours.
-    expect(roomAuthor({ role: "user", sender: { name: "zack@gox.ca", id: ZACK } }, null, people).kind).toBe("self");
+    expect(roomAuthor({ role: "user", sender: { name: "zack@example.com", id: ZACK } }, null, people).kind).toBe("self");
   });
 
   it("names other people from the directory, with their avatar", () => {

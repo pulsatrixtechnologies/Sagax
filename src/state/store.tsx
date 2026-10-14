@@ -35,6 +35,7 @@ import { onNudgeReceived, onNudgeSent, onNudgeSentEcho } from "@/lib/desktop-nud
 import { sameModelSelection } from "../../shared/thread-model";
 import { applyPresenceFrame } from "@/lib/presence";
 import { receiveOrgApprovalsFrame } from "@/lib/org-approvals";
+import { VOICE_CALL_ENDED_EVENT } from "@/lib/voice-mode/call-end";
 import type { MascotBodyId } from "../../shared/mascot-bodies";
 import type { MascotSkinId } from "../../shared/mascot-skins";
 import type { QuestionRequestCardData } from "../../shared/ask-question";
@@ -5054,6 +5055,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         case "voice.opener":
           if (typeof window !== "undefined") {
             window.dispatchEvent(new CustomEvent("sagax-voice-opener", { detail: frame }));
+          }
+          break;
+        case "voice.call.ended":
+          if (typeof window !== "undefined") {
+            window.dispatchEvent(new CustomEvent(VOICE_CALL_ENDED_EVENT, { detail: frame }));
           }
           break;
         // a nudge this person sent, on each of their windows: front, shake, ring

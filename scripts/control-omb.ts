@@ -356,6 +356,9 @@ export function verificationServerEnvironment(parentEnv: NodeJS.ProcessEnv, data
     TMPDIR: fixtureTemp,
     HERMES_HOME: join(dataDir, ".hermes"),
     SAGAX_DATA_DIR: dataDir,
+    // Verification servers run the full-duplex call path unless the caller
+    // turns it off (the product default is off, server/voice-call-duplex.ts).
+    SAGAX_VOICE_FULL_DUPLEX: parentEnv.SAGAX_VOICE_FULL_DUPLEX ?? "1",
     SAGAX_PORT: String(port),
     SAGAX_WEBHOOK_PORT: String(port + 1),
     // The fixture's default CLI behaviour; a caller that sets

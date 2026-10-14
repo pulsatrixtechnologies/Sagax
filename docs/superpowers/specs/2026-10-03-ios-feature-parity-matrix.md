@@ -727,7 +727,7 @@ WP9, WP12, WP6, WP4, WP11, WP10, WP13, WP16, WP14, WP15, WP17.
 
 ## 16. Mascot looks and sidebar sync (2026-10-09, branch `fix/ios-desktop-state-sync`)
 
-JC's report (TestFlight 0.4.9 build 14 against the GOX organization server, 0.4.15): bots
+JC's report (TestFlight 0.4.9 build 14 against the production organization server, 0.4.15): bots
 showed as the owl on the phone and not on Electron; sections deleted on the phone stayed on
 the desktop. Causes: the phone refused a look whose `skins` carried a key it did not know
 (the desktop's editor saves `skins.shape`, `skins.trombi` and `skins.bunbu` together, so

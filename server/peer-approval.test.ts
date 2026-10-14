@@ -174,7 +174,7 @@ describe("peer approval card lifecycle", () => {
     store.patchBot(from.id, { approvalMode: "full" });
     bus = { store, broadcast: () => {}, notify: frame => frames.push(frame),
       autoApply: (botId, threadId) => botId === from.id && threadId === fullThread };
-    for (const action of ["ask_bot", "delegate_bot", "post_to_room"] as const) {
+    for (const action of ["ask_bot", "delegate_bot", "send_to_bot", "post_to_room"] as const) {
       await expect(requestPeerApproval(bus, from, target, "ping", action, fullThread)).resolves.toBe("allow");
     }
     expect(store.messagesFor(fullThread).some(message => message.card?.requestId)).toBe(false);
@@ -272,6 +272,33 @@ describe("peer approval card lifecycle", () => {
     expect(
       store.messagesFor(background.threadId).find((message) => message.id === orphan.id)?.card?.dismissed,
     ).toBe(true);
+  });
+
+  it("raises send_to_bot as its own card, distinct from delegate_bot", async () => {
+    const verdict = requestPeerApproval(bus, from, target, "take this", "send_to_bot");
+    const card = pendingCard(store, from);
+    expect(card?.card?.tool).toBe("send_to_bot");
+    expect(card?.card?.allowKey).toBe(peerAllowKey("send_to_bot", target.id));
+    expect(card?.card?.title).toBe("@Asker wants to send to @Helper");
+    expect(card?.card?.allowKey).not.toBe(peerAllowKey("delegate_bot", target.id));
+    resolvePeerComms(bus, card!.card!.requestId!, "allow");
+    await expect(verdict).resolves.toBe("allow");
+  });
+
+  it("dismisses a stale send_to_bot card", () => {
+    store.appendMessage(from.threadId, {
+      role: "bot",
+      kind: "options",
+      card: {
+        title: "@Asker wants to send to @Helper",
+        subtitle: "take this",
+        options: ["Allow", "Deny"],
+        requestId: "stale-send-to-bot",
+        tool: "send_to_bot",
+      },
+    });
+    expect(dismissStalePeerCards(bus)).toBe(1);
+    expect(store.messagesFor(from.threadId).find((message) => message.card?.requestId === "stale-send-to-bot")?.card?.dismissed).toBe(true);
   });
 
   it("dismisses a stale card left in a room's thread, not just a bot's", () => {

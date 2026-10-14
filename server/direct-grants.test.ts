@@ -78,13 +78,13 @@ describe("direct grants", () => {
       });
       return answer!;
     };
-    const huge = `${"a".repeat(400)}@gox.ca`;
+    const huge = `${"a".repeat(400)}@example.com`;
     expect(await call("", huge)).toEqual({ status: 403, body: { error: "not-owner" } });
-    expect(await call("pr_other", "zach@gox.ca")).toEqual({ status: 403, body: { error: "not-owner" } });
+    expect(await call("pr_other", "zach@example.com")).toEqual({ status: 403, body: { error: "not-owner" } });
     expect(resolved).toEqual([]);
     expect((await call("pr_owner", huge)).status).toBe(400);
     expect((await call("pr_owner", "bob")).status).toBe(400);
-    expect(await call("pr_owner", "zach@gox.ca")).toEqual({ status: 200, body: { directGrants: ["pr_zach"] } });
+    expect(await call("pr_owner", "zach@example.com")).toEqual({ status: 200, body: { directGrants: ["pr_zach"] } });
     expect(patched).toEqual([{ id: "aurora", directGrants: ["pr_zach"] }]);
   });
 

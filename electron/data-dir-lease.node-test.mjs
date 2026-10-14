@@ -663,7 +663,7 @@ test("a live but unrelated Windows pid reused within the same boot is treated as
   }
 });
 
-// 2026-10-13, GOX: a killed container left a lease naming pid 7; after the
+// 2026-10-13, production: a killed container left a lease naming pid 7; after the
 // restart the container's own pid 7 was alive again and every start failed.
 // The probes stand in for /proc on macOS and Windows; the real reads are
 // exercised by the Linux test at the end.
@@ -707,9 +707,14 @@ test("process identity does not weaken exclusion: a live owner still blocks", (t
   plantOver(dataDir, base, { pid: process.pid, token: randomUUID(), pidns: "pid:[4026532002]", start: 900 });
   assert.throws(() => acquireDataDirLease(dataDir), /already using this data directory/i);
   // another container (another hostname) sharing the volume: its pid cannot be
-  // checked from here, so the old conservative check still applies
+  // checked from here. The same boot id still proves this computer, so the
+  // conservative check applies. Without a boot id (Windows), another hostname
+  // cannot be told apart from another computer and still fails closed.
   plantOver(dataDir, base, { pid: process.pid, token: randomUUID(), pidns: "pid:[4026532001]", start: 12, host: `${hostname()}-sibling` });
-  assert.throws(() => acquireDataDirLease(dataDir), /already using this data directory/i);
+  assert.throws(
+    () => acquireDataDirLease(dataDir),
+    base.boot === null ? /already owned by a process on another machine/i : /already using this data directory/i,
+  );
   // a record from an older build carries no identity: unchanged behaviour
   const { pidns: _ns, start: _start, ...legacy } = base;
   plantOver(dataDir, legacy, { pid: process.pid, token: randomUUID() });

@@ -4,7 +4,7 @@
 // that turn). Flag on: barge-in of audible speech cancels that reply.
 // Talking while it thinks does not interrupt at speech-start: the send
 // decides (server admitDuplexSend). It replaces the thinking turn, stops it,
-// or forks a new topic only while that turn's own tool runs.
+// or joins it while that turn's own tool runs. It never forks a task.
 
 export type BargeInEffect = "none" | "cancel-and-interrupt" | "cancel-speech-only";
 

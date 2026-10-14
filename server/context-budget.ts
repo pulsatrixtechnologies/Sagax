@@ -16,7 +16,7 @@ export function contextWindowFor(model: string | undefined, catalog?: ModelCatal
  * (config context.compactAt wins). Grok: half the window by default
  * (SAGAX_GROK_COMPACT_PERCENT, 10-90), so a long thread is summarised before
  * its whole context has to be read again after the provider's cache
- * expired: measured on GOX, 94-173k uncached tokens took 8.7-19.8 s to the
+ * expired: measured on production, 94-173k uncached tokens took 8.7-19.8 s to the
  * first update, against ~1.5 s for a 15-30k conversation. */
 export function defaultCompactAt(driverKind: string, env: NodeJS.ProcessEnv = process.env): number | undefined {
   if (driverKind !== "grokAgent") return undefined;
