@@ -18,6 +18,7 @@ on:
       - scripts/install-engines.mjs
       - scripts/engine-image-gate.mjs
       - scripts/harden-image-deps.mjs
+      - scripts/hermes-jwt-overlay-smoke.py
       - scripts/trivy-ignore-guard.mjs
       - scripts/gox-deploy.mjs
       - scripts/build-production-image.sh
@@ -36,6 +37,7 @@ on:
       - scripts/install-engines.mjs
       - scripts/engine-image-gate.mjs
       - scripts/harden-image-deps.mjs
+      - scripts/hermes-jwt-overlay-smoke.py
       - scripts/trivy-ignore-guard.mjs
       - scripts/gox-deploy.mjs
       - scripts/build-production-image.sh
@@ -130,9 +132,11 @@ jobs:
           done
           docker logs omb > /tmp/omb-engines.log 2>&1
           node scripts/engine-image-gate.mjs --startup-log /tmp/omb-engines.log
-          for bin in claude grok codex cursor-agent; do
+          for bin in claude grok codex cursor-agent hermes; do
             docker exec omb "$bin" --version
           done
+          docker exec -i omb sh -c 'python="$(dirname "$(readlink -f "$(command -v hermes)")")/python"; exec "$python" -' \
+            < scripts/hermes-jwt-overlay-smoke.py
           docker logs omb | tail -5
       - name: Prove the image runs the open-source edition
         # This distribution does not ship the source-available enterprise layer.

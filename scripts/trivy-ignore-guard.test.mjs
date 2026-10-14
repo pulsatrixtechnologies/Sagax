@@ -14,6 +14,10 @@ import {
 const root = join(import.meta.dirname, "..");
 const script = join(import.meta.dirname, "trivy-ignore-guard.mjs");
 
+/** Fictional ids only. Real scan identifiers stay in `.trivyignore`. */
+const LISTED = "CVE-0000-0001";
+const OTHER = "CVE-0000-0002";
+
 function ignoreFile(body) {
   return String(body).replace(/^\n/, "");
 }
@@ -40,7 +44,7 @@ function scan(findings) {
 
 const listed = ignoreFile(`
 # Debian no-dsa. Review 2026-11-13
-CVE-2026-6653
+${LISTED}
 `);
 
 function withTemp(run) {
@@ -73,22 +77,22 @@ describe("trivy ignore guard", () => {
   it("accepts listed CVEs that still have no FixedVersion before the review date", () => {
     const result = assessIgnoreGuard({
       ignoreText: listed,
-      scan: scan([{ id: "CVE-2026-6653", severity: "CRITICAL" }]),
+      scan: scan([{ id: LISTED, severity: "CRITICAL" }]),
       today: "2026-10-14",
     });
     expect(result.ok).toBe(true);
     expect(result.errors).toEqual([]);
-    expect(result.entries.map((row) => row.id)).toEqual(["CVE-2026-6653"]);
+    expect(result.entries.map((row) => row.id)).toEqual([LISTED]);
   });
 
   it("refuses a listed CVE that now has a FixedVersion", () => {
     const result = assessIgnoreGuard({
       ignoreText: listed,
-      scan: scan([{ id: "CVE-2026-6653", severity: "CRITICAL", fixed: "2.14.5+dfsg-0.1" }]),
+      scan: scan([{ id: LISTED, severity: "CRITICAL", fixed: "2.14.5+dfsg-0.1" }]),
       today: "2026-10-14",
     });
     expect(result.ok).toBe(false);
-    expect(result.errors.join("\n")).toMatch(/CVE-2026-6653/);
+    expect(result.errors.join("\n")).toMatch(LISTED);
     expect(result.errors.join("\n")).toMatch(/FixedVersion/);
     expect(result.errors.join("\n")).toMatch(/2\.14\.5\+dfsg-0\.1/);
   });
@@ -96,7 +100,7 @@ describe("trivy ignore guard", () => {
   it("refuses when the review date is past", () => {
     const result = assessIgnoreGuard({
       ignoreText: listed,
-      scan: scan([{ id: "CVE-2026-6653", severity: "CRITICAL" }]),
+      scan: scan([{ id: LISTED, severity: "CRITICAL" }]),
       today: "2026-11-14",
     });
     expect(result.ok).toBe(false);
@@ -159,14 +163,14 @@ describe("fail closed", () => {
   it("refuses a listed CVE whose FixedVersion is only spaces", () => {
     const result = assessIgnoreGuard({
       ignoreText: listed,
-      scan: scan([{ id: "CVE-2026-6653", severity: "CRITICAL", fixed: "   " }]),
+      scan: scan([{ id: LISTED, severity: "CRITICAL", fixed: "   " }]),
       today: "2026-10-14",
     });
     expect(result.ok).toBe(false);
     expect(result.errors.join("\n")).toMatch(/FixedVersion/);
     const cli = runGuard({
       ignore: listed,
-      scan: scan([{ id: "CVE-2026-6653", severity: "CRITICAL", fixed: "   " }]),
+      scan: scan([{ id: LISTED, severity: "CRITICAL", fixed: "   " }]),
       today: "2026-10-14",
     });
     expect(cli.status, cli.stderr + cli.stdout).not.toBe(0);
@@ -175,19 +179,19 @@ describe("fail closed", () => {
   it("refuses an invalid Review date 2099-99-99", () => {
     const ignore = ignoreFile(`
 # Debian no-dsa. Review 2099-99-99
-CVE-2026-6653
+${LISTED}
 `);
     const parsed = parseTrivyignore(ignore);
     expect(parsed.errors.join("\n")).toMatch(/invalid Review date 2099-99-99/);
     const result = assessIgnoreGuard({
       ignoreText: ignore,
-      scan: scan([{ id: "CVE-2026-6653", severity: "CRITICAL" }]),
+      scan: scan([{ id: LISTED, severity: "CRITICAL" }]),
       today: "2026-10-14",
     });
     expect(result.ok).toBe(false);
     const cli = runGuard({
       ignore,
-      scan: scan([{ id: "CVE-2026-6653", severity: "CRITICAL" }]),
+      scan: scan([{ id: LISTED, severity: "CRITICAL" }]),
       today: "2026-10-14",
     });
     expect(cli.status, cli.stderr + cli.stdout).not.toBe(0);
@@ -196,19 +200,19 @@ CVE-2026-6653
   it("refuses a comment that names two Review dates", () => {
     const ignore = ignoreFile(`
 # Debian no-dsa. Review 2026-11-13 Review 2026-12-01
-CVE-2026-6653
+${LISTED}
 `);
     const parsed = parseTrivyignore(ignore);
     expect(parsed.errors.join("\n")).toMatch(/more than one Review date/);
     const result = assessIgnoreGuard({
       ignoreText: ignore,
-      scan: scan([{ id: "CVE-2026-6653", severity: "CRITICAL" }]),
+      scan: scan([{ id: LISTED, severity: "CRITICAL" }]),
       today: "2026-10-14",
     });
     expect(result.ok).toBe(false);
     const cli = runGuard({
       ignore,
-      scan: scan([{ id: "CVE-2026-6653", severity: "CRITICAL" }]),
+      scan: scan([{ id: LISTED, severity: "CRITICAL" }]),
       today: "2026-10-14",
     });
     expect(cli.status, cli.stderr + cli.stdout).not.toBe(0);
@@ -220,13 +224,13 @@ CVE-2026-6653
     expect(parsed.errors.join("\n")).toMatch(/lists no CVE/);
     const result = assessIgnoreGuard({
       ignoreText: "",
-      scan: scan([{ id: "CVE-2026-6653", severity: "CRITICAL" }]),
+      scan: scan([{ id: LISTED, severity: "CRITICAL" }]),
       today: "2026-10-14",
     });
     expect(result.ok).toBe(false);
     const cli = runGuard({
       ignore: "",
-      scan: scan([{ id: "CVE-2026-6653", severity: "CRITICAL" }]),
+      scan: scan([{ id: LISTED, severity: "CRITICAL" }]),
       today: "2026-10-14",
     });
     expect(cli.status, cli.stderr + cli.stdout).not.toBe(0);
@@ -235,15 +239,15 @@ CVE-2026-6653
   it("refuses a finding whose severity is UNKNOWN", () => {
     const result = assessIgnoreGuard({
       ignoreText: listed,
-      scan: scan([{ id: "CVE-2026-6653", severity: "UNKNOWN" }]),
+      scan: scan([{ id: LISTED, severity: "UNKNOWN" }]),
       today: "2026-10-14",
     });
     expect(result.ok).toBe(false);
     expect(result.errors.join("\n")).toMatch(/UNKNOWN/);
-    const gated = assessGatedScan(scan([{ id: "CVE-2026-6653", severity: "UNKNOWN" }]));
+    const gated = assessGatedScan(scan([{ id: LISTED, severity: "UNKNOWN" }]));
     expect(gated.ok).toBe(false);
     expect(gated.errors.join("\n")).toMatch(/UNKNOWN/);
-    const cli = runGuard({ gated: scan([{ id: "CVE-2026-6653", severity: "UNKNOWN" }]) });
+    const cli = runGuard({ gated: scan([{ id: LISTED, severity: "UNKNOWN" }]) });
     expect(cli.status, cli.stderr + cli.stdout).not.toBe(0);
   });
 
@@ -269,7 +273,7 @@ CVE-2026-6653
   it("refuses a listed CVE that is absent from the scan", () => {
     const result = assessIgnoreGuard({
       ignoreText: listed,
-      scan: scan([{ id: "CVE-2026-99999", severity: "HIGH" }]),
+      scan: scan([{ id: OTHER, severity: "HIGH" }]),
       today: "2026-10-14",
     });
     expect(result.ok).toBe(false);
@@ -287,15 +291,15 @@ CVE-2026-6653
 describe("findingsSummary", () => {
   it("counts per-package rows separately from unique CVE ids", () => {
     const summary = findingsSummary(scan([
-      { id: "CVE-2026-6653", severity: "CRITICAL", pkg: "libxml2" },
-      { id: "CVE-2026-6653", severity: "CRITICAL", pkg: "libxml2-utils" },
-      { id: "CVE-2026-9538", severity: "HIGH", pkg: "openssl" },
-      { id: "CVE-2026-9538", severity: "HIGH", pkg: "libssl3" },
+      { id: LISTED, severity: "CRITICAL", pkg: "libxml2" },
+      { id: LISTED, severity: "CRITICAL", pkg: "libxml2-utils" },
+      { id: OTHER, severity: "HIGH", pkg: "openssl" },
+      { id: OTHER, severity: "HIGH", pkg: "libssl3" },
     ]));
     expect(summary.ok).toBe(true);
     expect(summary.bySeverity).toEqual({ CRITICAL: 2, HIGH: 2 });
-    expect(summary.unique.CRITICAL).toEqual(["CVE-2026-6653"]);
-    expect(summary.unique.HIGH).toEqual(["CVE-2026-9538"]);
+    expect(summary.unique.CRITICAL).toEqual([LISTED]);
+    expect(summary.unique.HIGH).toEqual([OTHER]);
   });
 });
 
@@ -303,9 +307,9 @@ describe("parseTrivyignore", () => {
   it("refuses a duplicated CVE id", () => {
     const ignore = ignoreFile(`
 # Debian no-dsa. Review 2026-11-13
-CVE-2026-6653
+${LISTED}
 # Debian no-dsa. Review 2026-11-13
-CVE-2026-6653
+${LISTED}
 `);
     const parsed = parseTrivyignore(ignore);
     expect(parsed.errors.join("\n")).toMatch(/more than once|duplicate/i);
@@ -314,7 +318,7 @@ CVE-2026-6653
   it("reads the repository ignore file as explicit CVEs with a reason and review date", () => {
     const parsed = parseTrivyignore(readFileSync(join(root, ".trivyignore"), "utf8"));
     expect(parsed.errors).toEqual([]);
-    expect(parsed.entries.length).toBeGreaterThan(0);
+    expect(parsed.entries).toHaveLength(34);
     expect(parsed.entries.some((row) => /[*?]/.test(row.id))).toBe(false);
     for (const row of parsed.entries) {
       expect(row.id).toMatch(/^CVE-\d{4}-\d+$/);
@@ -324,7 +328,6 @@ CVE-2026-6653
         row.id,
       ).toBe(true);
     }
-    expect(parsed.entries.some((row) => row.id === "CVE-2026-6653")).toBe(true);
     const ids = parsed.entries.map((row) => row.id);
     expect(new Set(ids).size).toBe(ids.length);
   });

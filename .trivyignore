@@ -72,9 +72,6 @@ CVE-2026-78410
 CVE-2026-82049
 
 # Debian no-dsa. Review 2026-11-13
-CVE-2026-8286
-
-# Debian no-dsa. Review 2026-11-13
 CVE-2026-8458
 
 # Pas de correctif dans trixie. Review 2026-11-13
@@ -100,9 +97,6 @@ CVE-2026-88806
 
 # Debian no-dsa. Review 2026-11-13
 CVE-2026-88807
-
-# Debian no-dsa. Review 2026-11-13
-CVE-2026-8927
 
 # Pas de correctif dans trixie. Review 2026-11-13
 CVE-2026-93990

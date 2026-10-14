@@ -29,17 +29,16 @@ lignes. Les ids eux-mêmes ne sont pas listés ici.
 | CRITICAL (lignes) | 3 | 1 | 3 | 1 |
 | HIGH (lignes) | 125 | 108 | 128 | 111 |
 | CRITICAL (CVE uniques) | 3 | 1 | 3 | 1 |
-| HIGH (CVE uniques) | 51 | 35 | 54 | 38 |
-| CVE uniques HIGH+CRITICAL | 54 | 36 | 57 | 39 |
+| HIGH (CVE uniques) | 51 | 33 | 54 | 36 |
+| CVE uniques HIGH+CRITICAL | 54 | 34 | 57 | 37 |
 | node-pkg (lignes) | 10 | 0 | 10 | 0 |
 | python-pkg (lignes) | 9 | 0 | 9 | 0 |
 | os-pkgs (lignes) | 109 | 109 | 112 | 112 |
 
-amd64 après, hors ignore : Node 0, Python 0, OS Debian seulement
-(108 HIGH + 1 CRITICAL). Les 36 CVE uniques de ce scan sont celles de
-`.trivyignore`. 108 lignes HIGH, ce sont les mêmes ids sur plusieurs
-paquets, pas 108 identifiants. Aucune de ces lignes n’a de
-`FixedVersion`.
+amd64 après, hors ignore : Node 0, Python 0, OS Debian seulement.
+Les identifiants uniques HIGH+CRITICAL du scan amd64 sont les 34 de
+`.trivyignore`. Plusieurs lignes HIGH, ce sont les mêmes ids sur
+plusieurs paquets. Aucune de ces lignes n’a de `FixedVersion`.
 
 arm64 après : les mêmes ids, plus 3 HIGH Chromium sans `FixedVersion`
 (111 = 108 + 3). Ces 3 ids ne sont pas dans `.trivyignore`. La porte CI
@@ -54,7 +53,7 @@ gated remaining: critical=0 high=0
 ## Garde-fou (JSON sans exceptions, amd64 après)
 
 ```
-[trivy-ignore] ok 36 exception(s), none have a FixedVersion
+[trivy-ignore] ok 34 exception(s), none have a FixedVersion
 ```
 
 Le garde-fou échoue fermé (exit ≠ 0) : scan `{}` ou `Results: null`
@@ -73,3 +72,8 @@ dans `.trivyignore` est aussi une erreur.
 sdist, plus les dépendances transitives épinglées que `--require-hashes`
 exige. S’il n’y a aucun `venv` sous `--root`, le script échoue (exit ≠ 0)
 au lieu de sauter l’overlay.
+
+Hermes 0.21.5 demande `PyJWT[crypto]==2.13.0`. L’overlay garde **2.15.1**
+(même API encode/decode, version corrigée). Le job Docker exécute
+`scripts/hermes-jwt-overlay-smoke.py` dans le venv Hermès de l’image :
+import, round-trip JWT, `hermes --version`.

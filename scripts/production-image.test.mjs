@@ -46,6 +46,11 @@ describe("production image sources", () => {
     expect(workflow).toContain("scripts/engine-image-gate.mjs");
     expect(workflow).toContain("scripts/harden-image-deps.mjs");
     expect(workflow).toContain("scripts/trivy-ignore-guard.mjs");
+    expect(workflow).toContain("scripts/hermes-jwt-overlay-smoke.py");
+    expect(read("scripts/hermes-jwt-overlay-smoke.py")).toContain("jwt.encode");
+    expect(read("scripts/hermes-jwt-overlay-smoke.py")).toContain("jwt.decode");
+    expect(read("scripts/hermes-jwt-overlay-smoke.py")).toContain("2.15.1");
+    expect(read("scripts/hermes-jwt-overlay-smoke.py")).toContain("hermes-agent");
     expect(workflow).toContain("trivy_0.75.0_Linux-64bit.tar.gz");
     expect(workflow).toContain("--ignorefile .trivyignore");
     expect(workflow).toContain("--ignorefile /tmp/trivyignore.empty");
