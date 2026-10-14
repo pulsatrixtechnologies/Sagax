@@ -2,7 +2,9 @@
 // WidgetMessage owns the state; a control reads and writes it by field name.
 // Select and DatePicker are the platform's own controls dressed as the
 // widget's field, so they keep the system menu, the calendar, the keyboard
-// and a screen reader's reading of them with no code here.
+// and a screen reader's reading of them with no code here. TimePicker and
+// DayPicker have no platform control that fits (WidgetTimePicker,
+// WidgetDayPicker); WidgetFields lays any of them out with its label.
 import { createContext, useContext } from "react";
 import { Calendar, Check, ChevronsUpDown, LoaderCircle, X } from "lucide-react";
 import { cn } from "@/lib/cn";
@@ -32,11 +34,21 @@ export interface WidgetForm {
   /** Remote images wait for a click, as they do in a bot's Markdown. */
   imagesAllowed: boolean;
   allowImages: () => void;
+  /** The fields a Label node in the widget names: their own `label` is not drawn a second time. */
+  labelled: ReadonlySet<string>;
+  /** The card is too narrow for a label and its field side by side (WIDGET_COMPACT_BELOW):
+   * such a row stacks, and its field takes the whole width. */
+  compact: boolean;
+  /** What the card is called, for a table it holds (its expanded view and its download). */
+  name: string;
 }
+
+/** Under this card width, in px, a row of a label and a field stacks. */
+export const WIDGET_COMPACT_BELOW = 400;
 
 const INERT: WidgetForm = {
   uid: "widget", values: {}, setValue: () => {}, locked: true, errorId: "widget-error", fields: new Map(), actions: new Map(),
-  press: () => {}, imagesAllowed: false, allowImages: () => {},
+  press: () => {}, imagesAllowed: false, allowImages: () => {}, labelled: new Set(), compact: false, name: "",
 };
 const WidgetFormContext = createContext<WidgetForm>(INERT);
 export const WidgetFormProvider = WidgetFormContext.Provider;
@@ -131,16 +143,24 @@ export function WidgetButton({ actionRef, label, look, iconStart, iconEnd, block
 
 // ── Fields ──────────────────────────────────────────────────────────────────
 
-/** The mock's field: 40 tall, 12 radius, on the inset. The border is clear
- * until the field is focused (styles.css paints it in the focus colour) or
- * a press stopped on it. */
-const FIELD =
-  "block h-10 w-full min-w-0 rounded-[12px] border border-transparent bg-inset px-3.5 text-[14px] leading-5 text-ink placeholder:text-ink-tertiary disabled:cursor-not-allowed disabled:opacity-60 aria-[invalid=true]:border-danger";
+/** The app's own field (Settings, dialogs): the inset well with a faint
+ * hairline, the skin's `rounded-lg`, 36px to sit level with a button. A
+ * focused field paints its border in the focus colour (styles.css); one a
+ * press stopped on keeps a danger border, and so does one the person left
+ * outside its `pattern` or its type (an email that is not one). */
+export const WIDGET_FIELD =
+  "block h-9 w-full min-w-0 rounded-lg border border-hairline/40 bg-inset px-3 text-[14px] leading-5 text-ink placeholder:text-ink-tertiary disabled:cursor-not-allowed disabled:opacity-60 user-invalid:border-danger aria-[invalid=true]:border-danger";
 /** Beside its label in a row a picker drops the box and shows its value alone. */
-const BARE =
-  "h-9 min-w-0 max-w-full cursor-pointer rounded-[10px] border border-transparent bg-transparent text-[14px] font-medium leading-5 text-ink enabled:hover:bg-ink/[0.07] disabled:cursor-not-allowed disabled:opacity-60 aria-[invalid=true]:border-danger";
+export const WIDGET_BARE =
+  "h-9 min-w-0 max-w-full cursor-pointer rounded-lg border border-transparent bg-transparent text-[14px] font-medium leading-5 text-ink enabled:hover:bg-ink/[0.07] disabled:cursor-not-allowed disabled:opacity-60 aria-[invalid=true]:border-danger";
+/** The small round action beside a field: clear it. */
+export const WIDGET_FIELD_ACTION =
+  "flex size-7 shrink-0 items-center justify-center rounded-full text-ink-tertiary hover:bg-ink/[0.07] hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus";
 
-function useField(node: WidgetNode) {
+export type WidgetFieldControl = ReturnType<typeof useWidgetField>;
+
+/** A field's value and everything every element that draws it carries. */
+export function useWidgetField(node: WidgetNode) {
   const form = useWidgetForm();
   const name = widgetString(node, "name") ?? "";
   const invalid = form.invalid === name;
@@ -164,8 +184,8 @@ function useField(node: WidgetNode) {
   };
 }
 
-/** What a screen reader calls a field: the label it is recorded under (its Label node, or a Checkbox's own
- * label), and where it has none, the words the bot gave it for this (`ariaLabel`, a placeholder) before its bare name. */
+/** What a screen reader calls a field: the label it is recorded under (its Label node, or its own
+ * `label`), and where it has none, the words the bot gave it for this (`ariaLabel`, a placeholder) before its bare name. */
 function spokenName(node: WidgetNode, recorded: string | undefined, name: string): string {
   return recorded && recorded !== name ? recorded : widgetString(node, "ariaLabel") ?? widgetString(node, "placeholder") ?? name;
 }
@@ -179,7 +199,7 @@ function optionsOf(node: WidgetNode): Array<{ label: string; value: string }> {
 }
 
 export function WidgetSelect({ node, bare }: { node: WidgetNode; bare: boolean }) {
-  const field = useField(node);
+  const field = useWidgetField(node);
   const open = node.clearable === true;
   return (
     <span className={cn("relative min-w-0 items-center", bare ? "inline-flex" : "flex w-full")}>
@@ -187,13 +207,13 @@ export function WidgetSelect({ node, bare }: { node: WidgetNode; bare: boolean }
         {...field.control}
         value={field.text}
         onChange={(event) => field.set(event.target.value)}
-        className={cn(bare ? BARE : FIELD, "appearance-none", bare ? "ps-2 pe-7 text-end [field-sizing:content]" : "pe-9", !field.text && "text-ink-tertiary")}
+        className={cn(bare ? WIDGET_BARE : WIDGET_FIELD, "appearance-none", bare ? "ps-2 pe-7 text-end [field-sizing:content]" : "pe-9", !field.text && "text-ink-tertiary")}
       >
         {/* the resting line; it can be chosen again only where the field may be cleared */}
         <option value="" disabled={!open} hidden={!open}>{widgetString(node, "placeholder") ?? t("widget.choose")}</option>
         {optionsOf(node).map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
       </select>
-      <ChevronsUpDown aria-hidden="true" size={14} className={cn("pointer-events-none absolute text-ink-tertiary", bare ? "end-2" : "end-3.5")} />
+      <ChevronsUpDown aria-hidden="true" size={14} className={cn("pointer-events-none absolute text-ink-tertiary", bare ? "end-2" : "end-3")} />
     </span>
   );
 }
@@ -204,11 +224,13 @@ const DATE_INDICATOR =
   "[&::-webkit-calendar-picker-indicator]:absolute [&::-webkit-calendar-picker-indicator]:inset-0 [&::-webkit-calendar-picker-indicator]:size-full [&::-webkit-calendar-picker-indicator]:cursor-pointer [&::-webkit-calendar-picker-indicator]:opacity-0";
 
 export function WidgetDatePicker({ node, bare }: { node: WidgetNode; bare: boolean }) {
-  const field = useField(node);
+  const field = useWidgetField(node);
+  // an empty date input shows its own dd/mm/yyyy; a placeholder takes its place until the field is focused
+  const placeholder = !field.text ? widgetString(node, "placeholder") : undefined;
   return (
     <span className={cn("min-w-0 items-center gap-1", bare ? "inline-flex" : "flex w-full")}>
       <span className={cn("relative flex min-w-0 items-center", !bare && "flex-1")}>
-        <Calendar aria-hidden="true" size={14} className={cn("pointer-events-none absolute z-[1] text-ink-secondary", bare ? "start-2" : "start-3.5")} />
+        <Calendar aria-hidden="true" size={14} className={cn("pointer-events-none absolute z-[1] text-ink-secondary", bare ? "start-2" : "start-3")} />
         <input
           {...field.control}
           type="date"
@@ -217,16 +239,19 @@ export function WidgetDatePicker({ node, bare }: { node: WidgetNode; bare: boole
           max={widgetString(node, "max")}
           onChange={(event) => field.set(event.target.value)}
           // the calendar and the day segments follow the skin, not the system
-          className={cn(bare ? BARE : FIELD, "relative tabular-nums [color-scheme:var(--code-color-scheme)]", bare ? "ps-7 pe-2" : "ps-9", DATE_INDICATOR)}
+          className={cn(
+            bare ? WIDGET_BARE : WIDGET_FIELD, "peer relative tabular-nums [color-scheme:var(--code-color-scheme)]", bare ? "ps-7 pe-2" : "ps-8", DATE_INDICATOR,
+            placeholder && "text-transparent focus:text-ink",
+          )}
         />
+        {placeholder && (
+          <span aria-hidden="true" className={cn("pointer-events-none absolute truncate text-[14px] leading-5 text-ink-tertiary peer-focus:hidden", bare ? "start-7 end-2" : "start-8 end-3")}>
+            {placeholder}
+          </span>
+        )}
       </span>
       {node.clearable === true && field.text && !field.disabled && (
-        <button
-          type="button"
-          aria-label={t("widget.clear", { label: field.control["aria-label"] })}
-          onClick={() => field.set("")}
-          className="flex size-7 shrink-0 items-center justify-center rounded-full text-ink-tertiary hover:bg-ink/[0.07] hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
-        >
+        <button type="button" aria-label={t("widget.clear", { label: field.control["aria-label"] })} onClick={() => field.set("")} className={WIDGET_FIELD_ACTION}>
           <X aria-hidden="true" size={14} />
         </button>
       )}
@@ -250,7 +275,7 @@ export function WidgetRadioMark({ on, invalid = false }: { on: boolean; invalid?
 }
 
 export function WidgetCheckbox({ node }: { node: WidgetNode }) {
-  const field = useField(node);
+  const field = useWidgetField(node);
   const checked = field.form.values[field.name] === true;
   const label = widgetString(node, "label");
   return (
@@ -267,18 +292,20 @@ export function WidgetCheckbox({ node }: { node: WidgetNode }) {
   );
 }
 
-export function WidgetRadioGroup({ node }: { node: WidgetNode }) {
-  const field = useField(node);
+/** `labelledBy` is the caption drawn above the group from its own `label`. */
+export function WidgetRadioGroup({ node, labelledBy }: { node: WidgetNode; labelledBy?: string }) {
+  const field = useWidgetField(node);
   const { id, "aria-invalid": invalid, "aria-describedby": describedBy, "aria-label": ariaLabel } = field.control;
   return (
     <div
       role="radiogroup"
       id={id}
-      aria-label={ariaLabel}
+      aria-label={labelledBy ? undefined : ariaLabel}
+      aria-labelledby={labelledBy}
       aria-required={field.control.required || undefined}
       aria-invalid={invalid}
       aria-describedby={describedBy}
-      className={cn("flex min-w-0", node.direction === "col" ? "flex-col gap-2.5" : "flex-wrap gap-x-[18px] gap-y-2.5", field.disabled && "opacity-60")}
+      className={cn("flex min-w-0", node.direction === "col" ? "flex-col gap-2.5" : "flex-wrap gap-x-[18px] gap-y-2", field.disabled && "opacity-60")}
     >
       {optionsOf(node).map((option, index) => (
         <label key={option.value} className={cn("relative inline-flex min-w-0 items-center gap-2 text-[14px] leading-5 text-ink", field.disabled ? "cursor-not-allowed" : "cursor-pointer")}>
@@ -302,7 +329,7 @@ export function WidgetRadioGroup({ node }: { node: WidgetNode }) {
 }
 
 export function WidgetInput({ node, bare }: { node: WidgetNode; bare: boolean }) {
-  const field = useField(node);
+  const field = useWidgetField(node);
   return (
     <input
       {...field.control}
@@ -315,13 +342,13 @@ export function WidgetInput({ node, bare }: { node: WidgetNode; bare: boolean })
       pattern={widgetString(node, "pattern")}
       onChange={(event) => field.set(event.target.value)}
       // beside its label the field is shorter and reads from the row's end
-      className={cn(FIELD, bare && "h-9 w-44 max-w-[60%] rounded-[10px] px-3 text-end")}
+      className={cn(WIDGET_FIELD, bare && "w-44 max-w-[60%] text-end")}
     />
   );
 }
 
 export function WidgetTextarea({ node }: { node: WidgetNode }) {
-  const field = useField(node);
+  const field = useWidgetField(node);
   const grows = node.autoResize === true;
   const maxRows = widgetNumber(node, "maxRows");
   return (
@@ -333,9 +360,9 @@ export function WidgetTextarea({ node }: { node: WidgetNode }) {
       maxLength={WIDGET_LIMITS.fieldValue}
       placeholder={widgetString(node, "placeholder")}
       onChange={(event) => field.set(event.target.value)}
-      className={cn(FIELD, "h-auto resize-none py-2.5", grows && "[field-sizing:content]")}
-      // 20px lines inside 10px of padding and the 1px border, top and bottom
-      style={grows && maxRows ? { maxHeight: maxRows * 20 + 22 } : undefined}
+      className={cn(WIDGET_FIELD, "h-auto resize-none py-2", grows && "[field-sizing:content]")}
+      // 20px lines inside 8px of padding and the 1px border, top and bottom
+      style={grows && maxRows ? { maxHeight: maxRows * 20 + 18 } : undefined}
     />
   );
 }

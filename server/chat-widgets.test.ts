@@ -321,10 +321,10 @@ describe("prepareWidgetPress", () => {
   it("turns confirm into the label and field lines, and settles with the sendId only when asked to", () => {
     const fake = fakeStore();
     const row = shown(fake, "routineForm");
-    const press = prepareWidgetPress(fake.store, THREAD, { messageId: row.id, ref: "confirm", values: { runs: "daily", report: "discord:releases", stopOnRed: false } }, SEND);
+    const press = prepareWidgetPress(fake.store, THREAD, { messageId: row.id, ref: "confirm", values: { days: "mon,tue,wed,thu,fri,sat,sun", report: "discord:releases", stopOnRed: false } }, SEND);
     expect(press).toMatchObject({
       ok: true, messageId: row.id, settles: true,
-      text: "Create routine\nRuns: Every day\nStarts: 2026-10-14\nAt: 9:00 AM\nReport to: Discord · #releases",
+      text: "Create routine\nRuns on: Every day\nStarts: 2026-10-14\nAt: 09:00\nReport to: Discord · #releases",
       // What was pressed, for the prompt: read off the stored widget, not off the text.
       label: "Create routine", action: { type: "routine.create", payload: { name: "release-check" } },
     });
@@ -339,7 +339,7 @@ describe("prepareWidgetPress", () => {
     // With the values that went with the press, defaults included, for the read-only Details view.
     expect(settled).toEqual({
       ref: "confirm", label: "Create routine", tone: "confirm", at: expect.any(Number), sendId: SEND,
-      values: { runs: "daily", starts: "2026-10-14", at: "9:00 AM", report: "discord:releases", stopOnRed: false },
+      values: { days: "mon,tue,wed,thu,fri,sat,sun", starts: "2026-10-14", at: "09:00", report: "discord:releases", stopOnRed: false },
     });
     expect(settled.at).toBeGreaterThanOrEqual(before);
     // The tree is still there for the Details view.
@@ -365,7 +365,7 @@ describe("prepareWidgetPress", () => {
     if (sent.ok) sent.settle();
     // A submit keeps its own form's fields.
     expect(payloadOf(fake, sink.id).settled).toEqual({
-      ref: submit.ref, label: "Send feedback", tone: "submit", at: expect.any(Number), sendId: SEND, values: { rating: "good", note: "Fast." },
+      ref: submit.ref, label: "Send feedback", tone: "submit", at: expect.any(Number), sendId: SEND, values: { rating: "good", email: "", note: "Fast." },
     });
 
     // A confirm on a widget with no fields has no values to keep.
@@ -399,7 +399,9 @@ describe("prepareWidgetPress", () => {
     const press = (values: unknown) => prepareWidgetPress(fake.store, THREAD, { messageId: row.id, ref: "confirm", values }, SEND);
     expect(press({ at: "  " })).toEqual({ ok: false, status: 400, error: "At is required." });
     expect(press({ nope: "x" })).toEqual({ ok: false, status: 400, error: 'There is no field named "nope" here.' });
-    expect(press({ runs: "hourly" })).toEqual({ ok: false, status: 400, error: "Runs must be one of the offered options." });
+    expect(press({ report: "slack" })).toEqual({ ok: false, status: 400, error: "Report to must be one of the offered options." });
+    expect(press({ at: "noonish" })).toEqual({ ok: false, status: 400, error: "At must be a time like 09:30." });
+    expect(press({ days: "funday" })).toEqual({ ok: false, status: 400, error: "Runs on must be days of the week." });
     expect(press({ stopOnRed: "yes" })).toEqual({ ok: false, status: 400, error: "Stop if any check is red must be on or off." });
     expect(prepareWidgetPress(fake.store, THREAD, { messageId: row.id, ref: "n999" }, SEND)).toEqual({ ok: false, status: 404, error: "That button is no longer on this widget." });
     expect(fake.patchMessage).not.toHaveBeenCalled();
@@ -422,7 +424,7 @@ describe("prepareWidgetPress", () => {
   it("resolves the same sendId again after it settled, and that settle() does nothing", () => {
     const fake = fakeStore();
     const row = shown(fake, "routineForm");
-    const body = { messageId: row.id, ref: "confirm", values: { runs: "monday" } };
+    const body = { messageId: row.id, ref: "confirm", values: { days: "mon" } };
     const first = prepareWidgetPress(fake.store, THREAD, body, SEND);
     if (!first.ok) throw new Error(first.error);
     first.settle();
@@ -473,7 +475,7 @@ describe("prepareWidgetPress", () => {
     const fake = fakeStore();
     const queued = shown(fake, "routineForm");
     const started = shown(fake, "pullRequests");
-    const waiting = prepareWidgetPress(fake.store, THREAD, { messageId: queued.id, ref: "confirm", values: { runs: "daily" } }, SEND);
+    const waiting = prepareWidgetPress(fake.store, THREAD, { messageId: queued.id, ref: "confirm", values: { days: "sat,sun" } }, SEND);
     const running = prepareWidgetPress(fake.store, THREAD, { messageId: started.id, ref: "confirm" }, "send-another-0123456789");
     if (!waiting.ok || !running.ok) throw new Error("expected both presses to resolve");
     waiting.settle("queue-1");
@@ -520,10 +522,10 @@ describe("prepareWidgetPress", () => {
       { messageId: row.id, ref: "" },
       { messageId: row.id, ref: "x".repeat(65) },
       { messageId: row.id, ref: 3 },
-      { messageId: row.id, ref: "confirm", values: "runs=daily" },
+      { messageId: row.id, ref: "confirm", values: "days=mon" },
       { messageId: row.id, ref: "confirm", values: ["daily"] },
-      { messageId: row.id, ref: "confirm", values: { runs: 3 } },
-      { messageId: row.id, ref: "confirm", values: { runs: { nested: "daily" } } },
+      { messageId: row.id, ref: "confirm", values: { days: 3 } },
+      { messageId: row.id, ref: "confirm", values: { days: { nested: "mon" } } },
       { messageId: row.id, ref: "confirm", rev: "0" },
     ];
     for (const widgetAction of malformed) {

@@ -96,7 +96,7 @@ it("shows, replaces and answers a widget on a bot's own conversation, once per p
     // ── the person answers it ──────────────────────────────────────────
     unlinkSync(gate);
     const sendId = "widget-press-0123456789";
-    const press = { threadId: bot.threadId, sendId, widgetAction: { messageId: draft.messageId, ref: "confirm", rev: 1, values: { runs: "daily", report: "discord:releases", stopOnRed: false } } };
+    const press = { threadId: bot.threadId, sendId, widgetAction: { messageId: draft.messageId, ref: "confirm", rev: 1, values: { days: "mon,tue,wed,thu,fri,sat,sun", report: "discord:releases", stopOnRed: false } } };
     // A press made on the tree the bot has since replaced (no rev is revision 0) is refused.
     for (const stale of [{ messageId: draft.messageId, ref: "confirm" }, { messageId: draft.messageId, ref: "confirm", rev: 0 }]) {
       expect(await api("POST", `/api/bots/${bot.id}/messages`, { threadId: bot.threadId, sendId, widgetAction: stale }, 409)).toEqual({ error: "This widget changed. Check it and press again." });
@@ -105,7 +105,7 @@ it("shows, replaces and answers a widget on a bot's own conversation, once per p
     expect(await api("POST", `/api/bots/${bot.id}/messages`, { ...press, widgetAction: { messageId: draft.messageId, ref: "n999", rev: 1 } }, 404)).toEqual({ error: "That button is no longer on this widget." });
     expect((await transcript()).filter((message) => message.role === "user")).toHaveLength(2);
 
-    const text = "Create routine\nRuns: Every day\nStarts: 2026-10-14\nAt: 9:00 AM\nReport to: Discord · #releases";
+    const text = "Create routine\nRuns on: Every day\nStarts: 2026-10-14\nAt: 09:00\nReport to: Discord · #releases";
     const first = await api("POST", `/api/bots/${bot.id}/messages`, press, 202);
     expect(first).toMatchObject({ ok: true, threadId: bot.threadId, message: { role: "user", kind: "text", text, replyToId: draft.messageId, sendId } });
     // The engine is handed the press as the answer to its widget, with the action it attached.
@@ -129,7 +129,7 @@ it("shows, replaces and answers a widget on a bot's own conversation, once per p
     const settled = (await transcript()).find((message) => message.id === draft.messageId).widget.settled;
     expect(settled).toEqual({
       ref: "confirm", label: "Create routine", tone: "confirm", at: expect.any(Number), sendId,
-      values: { runs: "daily", starts: "2026-10-14", at: "9:00 AM", report: "discord:releases", stopOnRed: false },
+      values: { days: "mon,tue,wed,thu,fri,sat,sun", starts: "2026-10-14", at: "09:00", report: "discord:releases", stopOnRed: false },
     });
 
     // The same press again: the same receipt, no second message, no second settle.
@@ -163,7 +163,7 @@ it("shows, replaces and answers a widget on a bot's own conversation, once per p
     expect(listed.find((message) => message.id === first.message.id)).toMatchObject({ role: "user", replyToId: draft.messageId });
     const exported = await (await fetch(`${fixture.info.url}/api/threads/${bot.threadId}/export`, { headers: { origin: fixture.info.url } })).text();
     expect(exported).toContain(`**Scout:**\n\n${shown.text}\n`);
-    expect(exported).toContain("Create routine\nRuns: Every day");
+    expect(exported).toContain("Create routine\nRuns on: Every day");
   } finally {
     const evidencePath = `${fixture.info.logPath}.chat-widgets.json`;
     writeFileSync(evidencePath, JSON.stringify(evidence, null, 2));

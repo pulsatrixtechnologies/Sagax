@@ -78,8 +78,21 @@ time, and it is a field like a `Select`. Each row has a `value` (its own, else
 the row's name, else its position), the list is required unless it says
 `required: false`, its rows may not carry `onClickAction`, and it must have a
 `confirm`, the only thing that can send the pick. The message a press is
-recorded as names the pick: `Pick this` then `Dinner tonight: Margherita pizza`. `title`, `caption`, `meta`, the selectable list, the `dot` badge variant
-and the `Progress` node are MausBot additions; everything else is ChatKit's.
+recorded as names the pick: `Pick this` then `Dinner tonight: Margherita pizza`. `title`, `caption`, `meta`, the selectable list, the `dot` badge variant,
+the `Progress`, `TimePicker` and `DayPicker` nodes and the `label` on every
+field are MausBot additions; everything else is ChatKit's.
+
+Every field may carry its own `label`. A renderer draws it above the control
+unless a `Label` node already names that field (a Checkbox draws it beside the
+box), and the message a press is recorded as uses it: a field's name in that
+message is its `Label` node, else its `label`, else the list's `title`, else
+the field name. Bots get two nudges to reach for a form on their own: the
+`show_widget` description and one line of the one-to-one system prompt
+(`WIDGET_PROMPT`), so "help me book a call" is answered with a date picker, a
+time picker, a length and a note, not a request to type them. Data and
+comparisons go in a markdown table in the reply, which keeps the chat's copy,
+search and CSV tools; a widget `Table` is drawn with the same table on the
+desktop.
 
 ### Nodes
 
@@ -97,11 +110,13 @@ and the `Progress` node are MausBot additions; everything else is ChatKit's.
 | Content | `Image` | `src` (https only), `alt?`, `fit?`, `position?`, `frame?`, `flush?`, `width?`, `height?`, `aspectRatio?`, `radius?` |
 | Content | `Icon` | `name`, `color?`, `size?: xs..3xl` |
 | Content | `Chart` | `data: Row[]`, `series: {type: "bar"\|"line"\|"area", dataKey, label?, stack?}[]`, `xAxis: {dataKey}`, `showYAxis?`, `showLegend?`, `showGrid?`, `height?` |
-| Content | `Progress` | `value` (0 to 1), `label?` |
+| Content | `Progress` | `value` (0 to 1; a number above 1 and up to 100, or a string like `"75%"`, is a percentage), `max?` (then `value / max`), `label?` |
 | Content | `Badge` | `label`, `color?: secondary\|success\|danger\|warning\|info\|discovery`, `variant?: soft\|solid\|outline\|dot`, `size?`, `pill?` |
 | Control | `Button` | `label?`, `iconStart?`, `iconEnd?`, `style`, `block?`, `disabled?`, `submit?`, `onClickAction?` |
 | Control | `Select` | `name`, `options: {label, value}[]`, `placeholder?`, `defaultValue?`, `clearable?`, `disabled?`, `block?` |
 | Control | `DatePicker` | `name`, `placeholder?`, `defaultValue?`, `min?`, `max?`, `clearable?`, `disabled?`, `block?` (ISO `YYYY-MM-DD`) |
+| Control | `TimePicker` | `name`, `placeholder?`, `defaultValue?`, `min?`, `max?`, `step?` (minutes, 1 to 60), `clearable?`, `disabled?`, `block?` (`HH:MM`, 24-hour; `9:05` is read as `09:05`) |
+| Control | `DayPicker` | `name`, `defaultValue?` (days of the week as `mon,wed,fri`, any spelling or order in, week order out), `disabled?`, `required?`; recorded as `Every day`, `Weekdays`, `Weekends` or `Mon, Thu` |
 | Control | `Checkbox` | `name`, `label?`, `defaultChecked?`, `disabled?`, `required?` |
 | Control | `RadioGroup` | `name`, `options`, `defaultValue?`, `direction?`, `disabled?`, `required?`, `ariaLabel?` |
 | Control | `Input` | `name`, `inputType?: text\|number\|email\|tel\|url`, `placeholder?`, `defaultValue?`, `required?`, `pattern?`, `disabled?` |
@@ -217,13 +232,16 @@ notifications, exports, old phones and replayed history all read it.
 
 One design language on all three platforms (the approved canvas):
 
-- Surface: the composer tone, 1px ring, 20px radius; soft shadow in light skins only.
+- Surface: the same as the app's ask and question cards: the composer tone, 1px ring, 24px radius on desktop (20px on phones), 16px padding, no shadow. Fields use the app's settings-field style.
 - Header: title 15/600, caption 13 secondary, meta 13 tertiary top right; `status` is the accent eyebrow line.
 - List rows: 60px, 40px thumbnail, whole row is the target, fill on hover or press. `limit` folds the rest behind "Show all".
 - Status: a 7px dot and a plain label (`Badge` `variant: "dot"`); soft pills for the other variants.
 - Actions: under the card, 10px away, `confirm` filled and `cancel` outlined; 36px on desktop, 48px on phones.
 - Settled: one tick line with the label and a Details toggle that shows the card read-only.
 - Width: up to 600px on desktop by `size` (`sm` 360, `md` 440, `lg`/`full` 600); full bubble width on phones.
+- Fit: the card measures its own width, not the window's. Below 400px a `Row[Label, Spacer, field]` stacks the label over a full-width field; fields in a row share it equally down to 160px each (140pt/dp on phones), then stack; rows of buttons and badges wrap. Nothing scrolls sideways.
+- Pickers: `TimePicker` opens a list of times every `step` minutes (a native time picker on phones) shown in the person's locale; `DayPicker` is seven round toggles, Monday first, with the Weekdays/Weekends/"Mon, Thu" caption under them.
+- Tables: a widget `Table` is drawn by the app's own rich table on desktop (search, sort, wrap, copy, CSV, expand), the one markdown tables in chat use.
 - Offline or cached thread on a phone: values readable, actions replaced by the existing "Reconnect to answer" line.
 - An unknown node type on an older client draws its children, or nothing.
 

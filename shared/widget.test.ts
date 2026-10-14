@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { WIDGET_SAMPLES } from "./widget-samples.ts";
 import {
-  parseWidgetInput, resolveWidgetAction, widgetActionByLabel, widgetActions, widgetFieldOptions, widgetFields, widgetInitialValues, widgetScope, widgetToText,
+  dayList, parseWidgetInput, resolveWidgetAction, widgetAdvice, widgetActionByLabel, widgetActions, widgetFieldOptions, widgetFields, widgetInitialValues, widgetScope, widgetToText,
   WIDGET_LIMITS, WIDGET_NODE_TYPES, type WidgetNode, type WidgetPayload, type WidgetRoot,
 } from "./widget.ts";
 
@@ -155,7 +155,7 @@ describe("widgetToText", () => {
   });
 
   it("reads as a form, a table, a chart and a status", () => {
-    expect(widgetToText(sample("routineForm"))).toContain("Runs · (Every weekday / Every day / Mondays)");
+    expect(widgetToText(sample("routineForm"))).toContain("Runs on · [Weekdays]");
     expect(widgetToText(sample("routineForm"))).toContain("[ ] Stop if any check is red");
     expect(widgetToText(sample("spendTable"))).toContain("Bot | Runs | Cost\nScout | 38 | $21.40");
     expect(widgetToText(sample("tokenChart"))).toContain("[chart: Opus, Sonnet]");
@@ -187,26 +187,26 @@ describe("widget actions", () => {
     const sink = sample("kitchenSink");
     const submit = widgetActions(sink).find((entry) => entry.tone === "submit")!;
     expect(widgetScope(sink, submit.ref).type).toBe("Form");
-    expect(widgetFields(widgetScope(sink, submit.ref), sink).map((entry) => [entry.name, entry.label])).toEqual([["rating", "How did the run go?"], ["note", "Note"]]);
+    expect(widgetFields(widgetScope(sink, submit.ref), sink).map((entry) => [entry.name, entry.label])).toEqual([["rating", "How did the run go?"], ["email", "Email"], ["note", "Note"]]);
     const form = sample("routineForm");
     expect(widgetScope(form, "confirm")).toBe(form);
-    expect(widgetInitialValues(form)).toEqual({ runs: "weekday", starts: "2026-10-14", at: "9:00 AM", report: "", stopOnRed: true });
+    expect(widgetInitialValues(form)).toEqual({ days: "mon,tue,wed,thu,fri", starts: "2026-10-14", at: "09:00", report: "", stopOnRed: true });
   });
 
   it("turns a confirm into the message the person is recorded as sending", () => {
-    const result = resolveWidgetAction(payload("routineForm"), "confirm", { runs: "daily", report: "discord:releases", stopOnRed: false });
+    const result = resolveWidgetAction(payload("routineForm"), "confirm", { days: "mon,tue,wed,thu,fri,sat,sun", report: "discord:releases", stopOnRed: false });
     expect(result).toEqual({
       ok: true, ref: "confirm", label: "Create routine", tone: "confirm",
       action: { type: "routine.create", payload: { name: "release-check" } },
-      values: { runs: "daily", starts: "2026-10-14", at: "9:00 AM", report: "discord:releases", stopOnRed: false },
-      text: "Create routine\nRuns: Every day\nStarts: 2026-10-14\nAt: 9:00 AM\nReport to: Discord · #releases",
+      values: { days: "mon,tue,wed,thu,fri,sat,sun", starts: "2026-10-14", at: "09:00", report: "discord:releases", stopOnRed: false },
+      text: "Create routine\nRuns on: Every day\nStarts: 2026-10-14\nAt: 09:00\nReport to: Discord · #releases",
     });
   });
 
   it("checks every value against the widget", () => {
     const form = payload("routineForm");
     expect(resolveWidgetAction(form, "confirm", { at: "  " })).toEqual({ ok: false, status: 400, error: "At is required." });
-    expect(resolveWidgetAction(form, "confirm", { runs: "hourly" })).toEqual({ ok: false, status: 400, error: "Runs must be one of the offered options." });
+    expect(resolveWidgetAction(form, "confirm", { report: "slack" })).toEqual({ ok: false, status: 400, error: "Report to must be one of the offered options." });
     expect(resolveWidgetAction(form, "confirm", { starts: "2026-10-01" })).toEqual({ ok: false, status: 400, error: "Starts is outside the dates offered." });
     expect(resolveWidgetAction(form, "confirm", { starts: "tomorrow" })).toEqual({ ok: false, status: 400, error: "Starts must be a date like 2026-10-14." });
     expect(resolveWidgetAction(form, "confirm", { stopOnRed: "yes" })).toEqual({ ok: false, status: 400, error: "Stop if any check is red must be on or off." });
@@ -219,7 +219,7 @@ describe("widget actions", () => {
     expect(resolveWidgetAction(payload("routineForm"), "cancel", { at: "" })).toMatchObject({ ok: true, tone: "cancel", values: {}, text: "Discard" });
     const sink = payload("kitchenSink");
     const later = widgetActions(sink.root).find((entry) => entry.label === "Ask me later")!;
-    expect(resolveWidgetAction(sink, later.ref, {})).toMatchObject({ ok: true, text: "Ask me later", values: { rating: "", note: "" } });
+    expect(resolveWidgetAction(sink, later.ref, {})).toMatchObject({ ok: true, text: "Ask me later", values: { rating: "", email: "", note: "" } });
     const submit = widgetActions(sink.root).find((entry) => entry.tone === "submit")!;
     expect(resolveWidgetAction(sink, submit.ref, {})).toEqual({ ok: false, status: 400, error: "How did the run go? is required." });
     expect(resolveWidgetAction(sink, submit.ref, { rating: "good", note: "Fast.\nNo retries." })).toMatchObject({ ok: true, tone: "submit", text: "Send feedback\nHow did the run go?: Good\nNote: Fast.\nNo retries." });
@@ -316,5 +316,78 @@ describe("widget actions", () => {
     expect(resolveWidgetAction(payload("pullRequests"), "n999", {})).toEqual({ ok: false, status: 404, error: "That button is no longer on this widget." });
     const sources = payload("sources");
     expect(resolveWidgetAction(sources, widgetActions(sources.root)[0].ref, {})).toMatchObject({ ok: false, status: 400 });
+  });
+});
+
+describe("times, days, labels and progress", () => {
+  it("reads a time of day and keeps it inside its range", () => {
+    const card = parsed({ type: "Card", children: [
+      { type: "TimePicker", name: "a", defaultValue: "9:05" },
+      { type: "TimePicker", name: "b", defaultValue: "25:00" },
+      { type: "TimePicker", name: "c", min: "09:00", max: "17:00", defaultValue: "08:00", step: 15 },
+      { type: "TimePicker", name: "d", min: "18:00", max: "09:00", defaultValue: "19:30:00" },
+    ] });
+    const [a, b, c, d] = card.children!;
+    expect(a.defaultValue).toBe("09:05");
+    expect("defaultValue" in b).toBe(false);
+    expect(c).toMatchObject({ min: "09:00", max: "17:00", step: 15 });
+    expect("defaultValue" in c).toBe(false);
+    expect(d).toMatchObject({ min: "18:00", defaultValue: "19:30" });
+    expect("max" in d).toBe(false);
+  });
+
+  it("reads days of the week in any spelling, in week order", () => {
+    const card = parsed({ type: "Card", children: [
+      { type: "DayPicker", name: "a", defaultValue: "Friday, monday,WED" },
+      { type: "DayPicker", name: "b", defaultValue: ["sun", "sat"] },
+      { type: "DayPicker", name: "c", defaultValue: "someday" },
+    ] });
+    expect(card.children!.map((node) => node.defaultValue)).toEqual(["mon,wed,fri", "sat,sun", undefined]);
+    expect(dayList("mon,tue,wed,thu,fri")).toBe("Weekdays");
+    expect(dayList("sat,sun")).toBe("Weekends");
+    expect(dayList("mon,tue,wed,thu,fri,sat,sun")).toBe("Every day");
+    expect(dayList("mon,thu")).toBe("Mon, Thu");
+  });
+
+  it("books a call: every field names itself by its own label", () => {
+    const book = payload("bookCall");
+    expect(widgetFields(book.root).map((field) => [field.name, field.label])).toEqual([["date", "Date"], ["time", "Time"], ["length", "Length"], ["note", "Note"]]);
+    const result = resolveWidgetAction(book, "confirm", { date: "2026-10-20", time: "16:45", length: "45", note: "Pricing for the team plan" });
+    expect(result).toMatchObject({ ok: true, values: { date: "2026-10-20", time: "16:45", length: "45", note: "Pricing for the team plan" } });
+    if (result.ok) expect(result.text).toBe("Book call\nDate: 2026-10-20\nTime: 16:45\nLength: 45 min\nNote: Pricing for the team plan");
+    expect(resolveWidgetAction(book, "confirm", { time: "4:45" })).toMatchObject({ ok: false, error: "Time is outside the times offered." });
+    expect(resolveWidgetAction(book, "confirm", { time: "teatime" })).toMatchObject({ ok: false, error: "Time must be a time like 09:30." });
+    expect(resolveWidgetAction(book, "confirm", { time: "" })).toMatchObject({ ok: false, error: "Time is required." });
+  });
+
+  it("sends the days a routine runs on as words", () => {
+    const routine = payload("routineForm");
+    const result = resolveWidgetAction(routine, "confirm", { days: "sat,sun", at: "07:30" });
+    expect(result).toMatchObject({ ok: true, values: { days: "sat,sun", at: "07:30" } });
+    if (result.ok) expect(result.text.split("\n").slice(0, 3)).toEqual(["Create routine", "Runs on: Weekends", "Starts: 2026-10-14"]);
+    expect(resolveWidgetAction(routine, "confirm", { days: "mon,someday" })).toMatchObject({ ok: false, error: "Runs on must be days of the week." });
+  });
+
+  it("reads a percentage as a percentage", () => {
+    const value = (progress: Record<string, unknown>) => parsed({ type: "Card", children: [{ type: "Progress", ...progress }] }).children![0].value;
+    expect(value({ value: 0.75 })).toBe(0.75);
+    expect(value({ value: 75 })).toBe(0.75);
+    expect(value({ value: "75%" })).toBe(0.75);
+    expect(value({ value: 1 })).toBe(1);
+    expect(value({ value: 3, max: 4 })).toBe(0.75);
+    expect(value({ value: 250 })).toBe(1);
+    expect(refusal({ type: "Card", children: [{ type: "Progress", value: -2 }] })).toBe("widget.children[0].value: is required: a number from 0 to 1.");
+  });
+
+  it("tells the bot to swap a typed time, date or days for a picker", () => {
+    const form = parsed({ type: "Card", confirm: { label: "Save", action: { type: "save" } }, children: [
+      { type: "Input", name: "at", label: "Time", placeholder: "e.g. 9:00 AM" },
+      { type: "Input", name: "which", label: "Which days" },
+      { type: "Input", name: "start", label: "Start date" },
+      { type: "Input", name: "what", label: "Remind me to" },
+    ] });
+    expect(widgetAdvice(form)).toBe('"Which days" asks the person to type what a DayPicker lets them pick. Call update_widget with a DayPicker in its place. "Time" asks the person to type what a TimePicker lets them pick. Call update_widget with a TimePicker in its place. "Start date" asks the person to type what a DatePicker lets them pick. Call update_widget with a DatePicker in its place.');
+    expect(widgetAdvice(sample("bookCall"))).toBeUndefined();
+    expect(widgetAdvice(sample("routineForm"))).toBeUndefined();
   });
 });

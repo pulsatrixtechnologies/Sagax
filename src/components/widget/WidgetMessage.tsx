@@ -5,29 +5,36 @@
 // settles it folds the card as soon as the server has taken it; the patched
 // row (`message.patch`) then replaces what was drawn here.
 // docs/superpowers/specs/2026-10-13-chat-widgets-design.md
-import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { CircleAlert, X } from "lucide-react";
 import { useStore, type Message } from "@/state/store";
 import { openExternalLink } from "@/lib/app-links";
 import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
 import {
-  widgetActions, widgetFields, widgetInitialValues, widgetScope, widgetString, type WidgetField, type WidgetPayload, type WidgetSettled, type WidgetValues,
+  widgetActions, widgetFields, widgetInitialValues, widgetScope, widgetString, type WidgetField, type WidgetNode, type WidgetPayload, type WidgetSettled,
+  type WidgetValues,
 } from "../../../shared/widget";
 import { ASK_QUIET_BUTTON, AskSettledLine, returnFocusToComposer } from "../AskCard";
 import { WidgetBody } from "./WidgetBody";
-import { widgetActionUrl, WidgetButton, WidgetFormProvider, WidgetGlyph, type WidgetForm } from "./WidgetControls";
+import { WIDGET_COMPACT_BELOW, widgetActionUrl, WidgetButton, WidgetFormProvider, WidgetGlyph, type WidgetForm } from "./WidgetControls";
 import { kids } from "./widget-style";
 import { newWidgetSendId, sendWidgetAction, type WidgetSendResult } from "./widget-send";
 
-/** Up to 600px on desktop, by the root's `size`. */
+/** Up to 600px on desktop, by the root's `size`, and never wider than the chat column. */
 const WIDTH: Record<string, string> = { sm: "max-w-[360px]", md: "max-w-[440px]", lg: "max-w-[600px]", full: "max-w-[600px]" };
-/** The composer's own surface, as on every in-chat ask. The lift is the ink
- * at the mock's two strengths, and only where the skin is a light one. */
-const SURFACE =
-  "w-full overflow-hidden rounded-[20px] bg-composer ring-1 ring-composer-ring transition-opacity [@container_style(--code-color-scheme:light)]:shadow-[0_1px_2px_color-mix(in_srgb,var(--color-ink)_4%,transparent),0_14px_30px_-20px_color-mix(in_srgb,var(--color-ink)_22%,transparent)]";
+/** The surface of every ask in the chat (AskCard, the question and sign-in cards): the composer's tone,
+ * its 1px ring, the 24px corner. No shadow of its own: nothing else in the thread floats. */
+const SURFACE = "w-full overflow-hidden rounded-3xl bg-composer ring-1 ring-composer-ring transition-opacity";
 /** How long a press that leaves the widget live shows its tick. */
 const SENT_MS = 1600;
+
+/** The fields a Label node names: a field's own `label` is drawn only where none does. */
+function labelledFields(node: WidgetNode, into = new Set<string>()): Set<string> {
+  if (node.type === "Label" && typeof node.fieldName === "string") into.add(node.fieldName);
+  for (const child of kids(node)) labelledFields(child, into);
+  return into;
+}
 
 /** A required field that a confirming press may not leave empty. */
 function isEmpty(field: WidgetField, values: WidgetValues): boolean {
@@ -61,7 +68,24 @@ function WidgetCard({ botId, threadId, messageId, payload }: { botId: string; th
   const settled = payload.settled ?? (rowSpoke ? undefined : settledHere);
   const isSettled = settled !== undefined;
   const uid = useId();
-  const frame = useRef<HTMLDivElement>(null);
+  const frame = useRef<HTMLDivElement | null>(null);
+  /** The card is too narrow for a label and a field side by side. Measured on the card itself, not the
+   * window: the chat column narrows with a side panel open as much as with a small window. */
+  const [compact, setCompact] = useState(false);
+  const watch = useCallback((element: HTMLDivElement | null) => {
+    frame.current = element;
+    if (!element) return;
+    const measure = () => {
+      const width = element.getBoundingClientRect().width;
+      // nothing laid out yet (a hidden Details, a test page): keep what was there
+      if (width > 0) setCompact(width < WIDGET_COMPACT_BELOW);
+    };
+    measure();
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(measure);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
   /** What the person changed, over the tree's own defaults. */
   const [edits, setEdits] = useState<WidgetValues>({});
   /** The ref being sent, until the server answers. */
@@ -97,6 +121,7 @@ function WidgetCard({ botId, threadId, messageId, payload }: { botId: string; th
 
   const actions = useMemo(() => new Map(widgetActions(root).map((entry) => [entry.ref, entry])), [root]);
   const fields = useMemo(() => new Map(widgetFields(root).map((field) => [field.name, field])), [root]);
+  const labelled = useMemo(() => labelledFields(root), [root]);
   // a settled card shows what went with the press, not the defaults it started from
   const values = useMemo(() => ({ ...widgetInitialValues(root), ...edits, ...settled?.values }), [root, edits, settled]);
 
@@ -160,6 +185,13 @@ function WidgetCard({ botId, threadId, messageId, payload }: { botId: string; th
   };
 
   const errorId = `${uid}-problem`;
+  const title = widgetString(root, "title");
+  const caption = widgetString(root, "caption");
+  const meta = widgetString(root, "meta");
+  const status = root.status && typeof root.status === "object" ? root.status as { text?: unknown; icon?: unknown } : {};
+  const statusText = typeof status.text === "string" ? status.text : undefined;
+  const headed = Boolean(title || caption || meta || statusText);
+  const name = title ?? statusText ?? t("widget.aria.card");
   const form: WidgetForm = {
     uid,
     values,
@@ -177,49 +209,46 @@ function WidgetCard({ botId, threadId, messageId, payload }: { botId: string; th
     press,
     imagesAllowed,
     allowImages: () => setImagesAllowed(true),
+    labelled,
+    compact,
+    name: title ?? statusText ?? "",
   };
-
-  const title = widgetString(root, "title");
-  const caption = widgetString(root, "caption");
-  const meta = widgetString(root, "meta");
-  const status = root.status && typeof root.status === "object" ? root.status as { text?: unknown; icon?: unknown } : {};
-  const statusText = typeof status.text === "string" ? status.text : undefined;
-  const headed = Boolean(title || caption || meta || statusText);
-  const name = title ?? statusText ?? t("widget.aria.card");
   const confirm = actions.get("confirm");
   const cancel = actions.get("cancel");
 
   const card = (
     <WidgetFormProvider value={form}>
       <div
-        ref={frame}
+        ref={watch}
         role="group"
         aria-label={name}
         aria-busy={pending !== undefined || undefined}
         data-widget={messageId}
         data-widget-state={settled ? "settled" : pending !== undefined ? "sending" : "live"}
+        data-widget-compact={compact || undefined}
         className={cn("w-full text-start", WIDTH[widgetString(root, "size") ?? "lg"] ?? WIDTH.lg)}
       >
         <div className={cn(SURFACE, pending !== undefined && "opacity-[0.55]")}>
           {headed && (
-            <div className={cn("flex items-start gap-3 px-5 pt-[18px]", kids(root).length ? "pb-[14px]" : "pb-[18px]")}>
+            // the header of a question card (AskCard): the ask in 15px, a line on why in 13px, a quiet count on the right
+            <div className={cn("flex items-start gap-3 px-4 pt-3.5", kids(root).length ? "pb-3" : "pb-3.5")}>
               <div className="min-w-0 flex-1">
                 {statusText && (
-                  <p className={cn("flex items-center gap-1.5 text-[12px] font-semibold leading-[18px] text-accent-text", (title || caption) && "mb-1.5")}>
+                  <p className={cn("flex items-center gap-1.5 text-[12.5px] font-semibold leading-[18px] text-accent-text", (title || caption) && "mb-1")}>
                     {typeof status.icon === "string" && <WidgetGlyph name={status.icon} size={14} />}
                     <bdi dir="auto" className="min-w-0 truncate">{statusText}</bdi>
                   </p>
                 )}
-                {title && <div title={title} className="truncate text-[15px] font-semibold leading-[22px] tracking-[-0.01em] text-ink"><bdi dir="auto">{title}</bdi></div>}
-                {caption && <div dir="auto" className="text-[13px] leading-[18px] text-ink-secondary">{caption}</div>}
+                {title && <div title={title} className="truncate text-[15px] font-semibold leading-6 text-ink"><bdi dir="auto">{title}</bdi></div>}
+                {caption && <div dir="auto" className="mt-0.5 text-[13px] leading-snug text-ink-secondary">{caption}</div>}
               </div>
-              {meta && <span dir="auto" className="shrink-0 whitespace-nowrap text-[13px] leading-[18px] tabular-nums text-ink-tertiary">{meta}</span>}
+              {meta && <span dir="auto" className="mt-1 shrink-0 whitespace-nowrap text-[12px] leading-4 tabular-nums text-ink-tertiary">{meta}</span>}
             </div>
           )}
           <WidgetBody root={root} headed={headed} />
           {problem && (
             // the reason sits inside the card, in the server's own sentence, and the card stays live
-            <div id={errorId} role="alert" className="mx-5 flex items-start gap-2 border-t border-ink/[0.08] pb-[14px] pt-3 text-[13px] leading-[18px] text-danger">
+            <div id={errorId} role="alert" className="mx-4 flex items-start gap-2 border-t border-ink/[0.12] pb-3.5 pt-3 text-[13px] leading-[18px] text-danger">
               <CircleAlert aria-hidden="true" size={14} className="mt-0.5 shrink-0" />
               <span dir="auto" className="min-w-0 break-words">{problem.text}</span>
             </div>

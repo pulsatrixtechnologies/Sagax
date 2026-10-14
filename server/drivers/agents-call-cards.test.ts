@@ -40,7 +40,7 @@ describe("the widget tools in the catalog", () => {
       },
       required: ["widget"],
     });
-    expect(show.description).toMatch(/^Show an interactive widget in this chat: a card, list, form, table or chart\./);
+    expect(show.description).toMatch(/^Show an interactive widget in this chat\. Reach for it yourself/);
     expect(show.description).toMatch(/Never ask for passwords here\. Not available in rooms\.$/);
     const update = tools.get("update_widget")!;
     expect(update.inputSchema).toEqual({

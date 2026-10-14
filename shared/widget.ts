@@ -96,11 +96,14 @@ export type WidgetValues = Record<string, string | boolean>;
 export type ParsedWidgetInput = { ok: true; value: WidgetRoot } | { ok: false; error: string };
 
 const ROOT_TYPES = new Set(["Card", "ListView"]);
-const FIELD_TYPES = new Set(["Select", "DatePicker", "Checkbox", "RadioGroup", "Input", "Textarea"]);
+const FIELD_TYPES = new Set(["Select", "DatePicker", "TimePicker", "DayPicker", "Checkbox", "RadioGroup", "Input", "Textarea"]);
 const TYPE_ALIASES: Record<string, string> = { TableRow: "Table.Row", TableCell: "Table.Cell" };
 const ACTION_TYPE = /^[A-Za-z0-9_.:-]{1,64}$/;
 const FIELD_NAME = /^[A-Za-z0-9_.-]{1,64}$/;
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+const TIME_OF_DAY = /^([01]\d|2[0-3]):[0-5]\d$/;
+/** Days of the week as a DayPicker stores them, in the order it draws them. */
+export const WIDGET_WEEKDAYS: readonly string[] = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
 
 class WidgetInputError extends Error {}
 
@@ -251,6 +254,32 @@ const isoDate: Reader = (raw) => {
   return year >= DATE_YEARS.min && year <= DATE_YEARS.max ? raw : undefined;
 };
 
+/** A time of day, "HH:MM" on a 24-hour clock. "9:05" and "09:05:00" are read as 09:05. */
+const timeOfDay: Reader = (raw) => {
+  const match = typeof raw === "string" ? /^(\d{1,2}):(\d{2})(?::\d{2})?$/.exec(raw.trim()) : null;
+  const value = match ? `${match[1].padStart(2, "0")}:${match[2]}` : undefined;
+  return value && TIME_OF_DAY.test(value) ? value : undefined;
+};
+
+/** Days of the week: an array or a comma list of names ("mon", "Monday",
+ * "MON"), stored as a comma list in week order with no repeats. */
+function weekdays(raw: unknown): string | undefined {
+  const items = Array.isArray(raw) ? raw : typeof raw === "string" ? raw.split(",") : [];
+  const picked = new Set(items.filter((item): item is string => typeof item === "string").map((item) => item.trim().toLowerCase().slice(0, 3)));
+  const days = WIDGET_WEEKDAYS.filter((day) => picked.has(day));
+  return days.length ? days.join(",") : undefined;
+}
+const weekdaysReader: Reader = (raw) => weekdays(raw);
+
+/** A Progress value: a fraction from 0 to 1. A bot that writes a percentage
+ * (75, or "75%") means a percentage. */
+const progressValue: Reader = (raw) => {
+  const percent = typeof raw === "string" ? /^\s*(\d+(?:\.\d+)?)\s*%\s*$/.exec(raw) : null;
+  const value = percent ? Number(percent[1]) / 100 : typeof raw === "string" && raw.trim() ? Number(raw) : raw;
+  if (typeof value !== "number" || !Number.isFinite(value) || value < 0) return undefined;
+  return clamp(value > 1 && value <= 100 ? value / 100 : value, 0, 1);
+};
+
 const action: Reader = (raw, path) => {
   if (raw === undefined || raw === null) return undefined;
   if (!isRecord(raw) || typeof raw.type !== "string" || !ACTION_TYPE.test(raw.type)) {
@@ -378,7 +407,9 @@ const ROOT: Record<string, Reader> = {
   title: line(WIDGET_LIMITS.title), caption: line(WIDGET_LIMITS.caption), meta: line(WIDGET_LIMITS.label), status,
   confirm: buttonSpec, cancel: buttonSpec,
 };
-const FIELD: Record<string, Reader> = { name: fieldName, disabled: on, required: on };
+/** Every control: its name, and a label drawn with it, which also names it in
+ * the message a press is recorded as. */
+const FIELD: Record<string, Reader> = { name: fieldName, label: line(WIDGET_LIMITS.title), disabled: on, required: on };
 const PLACEHOLDER = line(WIDGET_LIMITS.title);
 
 interface NodeSpec {
@@ -419,11 +450,14 @@ const SPECS: Record<string, NodeSpec> = {
   Icon: { props: { name: icon("dot"), color: inkColor, size: oneOf("xs", "sm", "md", "lg", "xl", "2xl", "3xl") } },
   Chart: { props: { data: chartData, series: chartSeries, xAxis: chartAxis, showYAxis: on, showLegend: off, showGrid: off, height: length(400), aspectRatio, flex: flexShare, width: length() } },
   Badge: { props: { label: line(WIDGET_LIMITS.label, "nonEmpty"), color: oneOf("secondary", "success", "danger", "warning", "info", "discovery"), variant: oneOf("soft", "solid", "outline", "dot"), size: oneOf("sm", "md", "lg"), pill: off } },
-  Progress: { props: { value: decimal(0, 1), label: line(WIDGET_LIMITS.caption) } },
+  Progress: { props: { value: progressValue, label: line(WIDGET_LIMITS.caption) } },
   Button: { props: { label: line(WIDGET_LIMITS.label), iconStart: icon(), iconEnd: icon(), block: on, disabled: on, submit: on, onClickAction: action } },
   Select: { props: { ...FIELD, options, placeholder: PLACEHOLDER, defaultValue: text(200), clearable: on, block: on } },
   DatePicker: { props: { ...FIELD, placeholder: PLACEHOLDER, defaultValue: isoDate, min: isoDate, max: isoDate, clearable: on, block: on } },
-  Checkbox: { props: { ...FIELD, label: line(WIDGET_LIMITS.title), defaultChecked: on } },
+  // MausBot additions: a time of day, and days of the week
+  TimePicker: { props: { ...FIELD, placeholder: PLACEHOLDER, defaultValue: timeOfDay, min: timeOfDay, max: timeOfDay, step: integer(1, 60), clearable: on, block: on } },
+  DayPicker: { props: { ...FIELD, defaultValue: weekdaysReader } },
+  Checkbox: { props: { ...FIELD, defaultChecked: on } },
   RadioGroup: { props: { ...FIELD, options, defaultValue: text(200), direction: oneOf("row", "col"), ariaLabel: line(WIDGET_LIMITS.title) } },
   Input: { props: { ...FIELD, inputType, placeholder: PLACEHOLDER, defaultValue: text(WIDGET_LIMITS.fieldValue), pattern: text(200) } },
   Textarea: { props: { ...FIELD, placeholder: PLACEHOLDER, defaultValue: text(WIDGET_LIMITS.fieldValue), rows: integer(1, 12), maxRows: integer(1, 20), autoResize: on } },
@@ -481,14 +515,20 @@ function normalize(input: unknown, path: string, depth: number, slot: "root" | "
   }
   if (type === "Button") node.style = buttonStyle(raw);
   if (type === "Icon") node.name ??= "dot";
-  if (type === "Progress" && node.value === undefined) return fail(`${path}.value`, "is required: a number from 0 to 1");
+  if (type === "Progress") {
+    const max = typeof raw.max === "number" && Number.isFinite(raw.max) && raw.max > 0 ? raw.max : undefined;
+    const given = typeof raw.value === "number" && Number.isFinite(raw.value) ? raw.value : undefined;
+    // {value: 3, max: 4} is three quarters
+    if (max !== undefined && given !== undefined) node.value = clamp(given / max, 0, 1);
+    if (node.value === undefined) return fail(`${path}.value`, "is required: a number from 0 to 1");
+  }
   if (type === "Image" && ++context.images > WIDGET_LIMITS.images) return fail(path, `the widget has more than ${WIDGET_LIMITS.images} images`);
   if (FIELD_TYPES.has(type)) {
     const name = node.name as string;
     if (context.fields.has(name)) return fail(`${path}.name`, `repeats the field name ${JSON.stringify(name)}`);
     context.fields.add(name);
     if (context.fields.size > WIDGET_LIMITS.fields) return fail(path, `the widget has more than ${WIDGET_LIMITS.fields} fields`);
-    if (type === "DatePicker") {
+    if (type === "TimePicker" || type === "DatePicker") {
       if (typeof node.min === "string" && typeof node.max === "string" && node.min > node.max) delete node.max;
       const picked = node.defaultValue;
       if (typeof picked === "string" && ((typeof node.min === "string" && picked < node.min) || (typeof node.max === "string" && picked > node.max))) delete node.defaultValue;
@@ -699,7 +739,7 @@ export function widgetFields(scope: WidgetNode, root: WidgetRoot = scope): Widge
   const fields: WidgetField[] = [];
   walk(scope, (node) => {
     if (typeof node.name !== "string" || !(FIELD_TYPES.has(node.type) || node.type === "ListView")) return;
-    const own = node.type === "Checkbox" ? widgetString(node, "label") : node.type === "ListView" ? widgetString(node, "title") : undefined;
+    const own = node.type === "ListView" ? widgetString(node, "title") : widgetString(node, "label");
     fields.push({ name: node.name, type: node.type, node, label: labels.get(node.name) ?? own ?? node.name });
   });
   return fields;
@@ -768,10 +808,25 @@ export function resolveWidgetAction(payload: WidgetPayload, ref: string, values:
     if (value.length > WIDGET_LIMITS.fieldValue) return { ok: false, status: 400, error: `${field.label} must be at most ${WIDGET_LIMITS.fieldValue} characters.` };
     if (mustFill && field.node.required === true && !value) return { ok: false, status: 400, error: `${field.label} is required.` };
     let shown = value;
+    let kept = value;
     if (value && (field.type === "Select" || field.type === "RadioGroup" || field.type === "ListView")) {
       const option = widgetFieldOptions(field.node).find((candidate) => candidate.value === value);
       if (!option) return { ok: false, status: 400, error: `${field.label} must be one of the offered options.` };
       shown = option.label;
+    }
+    if (value && field.type === "TimePicker") {
+      const time = timeOfDay(value, "");
+      if (time === undefined) return { ok: false, status: 400, error: `${field.label} must be a time like 09:30.` };
+      const min = widgetString(field.node, "min");
+      const max = widgetString(field.node, "max");
+      if ((min && (time as string) < min) || (max && (time as string) > max)) return { ok: false, status: 400, error: `${field.label} is outside the times offered.` };
+      kept = shown = time as string;
+    }
+    if (field.type === "DayPicker" && value) {
+      const days = weekdays(value);
+      if (!days || days.split(",").length !== value.split(",").length) return { ok: false, status: 400, error: `${field.label} must be days of the week.` };
+      kept = days;
+      shown = dayList(days);
     }
     if (value && field.type === "DatePicker") {
       if (isoDate(value, "") === undefined) return { ok: false, status: 400, error: `${field.label} must be a date like 2026-10-14.` };
@@ -779,21 +834,48 @@ export function resolveWidgetAction(payload: WidgetPayload, ref: string, values:
       const max = widgetString(field.node, "max");
       if ((min && value < min) || (max && value > max)) return { ok: false, status: 400, error: `${field.label} is outside the dates offered.` };
     }
-    clean[field.name] = value;
+    clean[field.name] = kept;
     // whole: this line is all the bot reads of what the person typed
     if (value) lines.push(`${field.label}: ${shown}`);
   }
   return done(clean, lines);
 }
 
-/** A word to the bot about a widget that parses but cannot do what it looks
- * like it is for: rows to choose between, a button to confirm with, and no
- * way to choose. Undefined when there is nothing to say. */
+/** A word to the bot about a widget that parses but does not do what it
+ * looks like it is for: rows to choose between and no way to choose, or a
+ * time, date or days the person is asked to type. Undefined when there is
+ * nothing to say. */
 export function widgetAdvice(root: WidgetRoot): string | undefined {
+  const notes: string[] = [];
   const rows = Array.isArray(root.children) ? root.children.length : 0;
-  if (root.type !== "ListView" || rows < 2 || !buttonSpecOf(root, "confirm") || widgetFields(root).length > 0) return undefined;
-  if (widgetActions(root).some((entry) => entry.kind === "item" || entry.kind === "button")) return undefined;
-  return "No row of this list can be chosen: the person can only confirm or cancel it as a whole. If they are meant to pick one row, call update_widget and give the ListView a name (and each row a value), so the rows become selectable and confirm sends the pick.";
+  if (root.type === "ListView" && rows >= 2 && buttonSpecOf(root, "confirm") && widgetFields(root).length === 0
+    && !widgetActions(root).some((entry) => entry.kind === "item" || entry.kind === "button")) {
+    notes.push("No row of this list can be chosen: the person can only confirm or cancel it as a whole. If they are meant to pick one row, call update_widget and give the ListView a name (and each row a value), so the rows become selectable and confirm sends the pick.");
+  }
+  const typed = widgetFields(root).filter((field) => field.type === "Input" || field.type === "Textarea");
+  const asks = (pattern: RegExp) => typed.filter((field) => pattern.test(`${field.name} ${field.label} ${widgetString(field.node, "placeholder") ?? ""}`)).map((field) => field.label);
+  const pickers: Array<[RegExp, string]> = [
+    [/\b(days?|weekdays?|weekly|repeat)\b/i, "DayPicker"],
+    [/\b(times?|o'?clock|hh:mm)\b|\b\d{1,2}(:\d{2})?\s?[ap]m\b|\b\d{1,2}:\d{2}\b/i, "TimePicker"],
+    [/\b(dates?|deadline|due)\b/i, "DatePicker"],
+  ];
+  const seen = new Set<string>();
+  for (const [pattern, picker] of pickers) {
+    const labels = asks(pattern).filter((label) => !seen.has(label));
+    labels.forEach((label) => seen.add(label));
+    if (labels.length) notes.push(`${labels.map((label) => JSON.stringify(label)).join(", ")} asks the person to type what a ${picker} lets them pick. Call update_widget with a ${picker} in its place.`);
+  }
+  return notes.length ? notes.join(" ") : undefined;
+}
+
+/** Days as a person says them: "Every day", "Weekdays", "Weekends", or the names. */
+export function dayList(days: string): string {
+  const picked = days.split(",").filter(Boolean);
+  if (picked.length === 7) return "Every day";
+  if (picked.join(",") === "mon,tue,wed,thu,fri") return "Weekdays";
+  if (picked.join(",") === "sat,sun") return "Weekends";
+  const names: Record<string, string> = { mon: "Mon", tue: "Tue", wed: "Wed", thu: "Thu", fri: "Fri", sat: "Sat", sun: "Sun" };
+  return picked.map((day) => names[day] ?? day).join(", ");
 }
 
 // ── Text fallback ───────────────────────────────────────────────────────────
@@ -818,7 +900,9 @@ function inlineText(node: WidgetNode): string {
       return `[ ] ${widgetString(node, "label") ?? String(node.name)}`;
     case "Select": case "RadioGroup":
       return `(${(Array.isArray(node.options) ? node.options as Array<{ label: string }> : []).slice(0, 6).map((option) => option.label).join(" / ")})`;
-    case "Input": case "Textarea": case "DatePicker":
+    case "DayPicker":
+      return `[${typeof node.defaultValue === "string" ? dayList(node.defaultValue) : "days"}]`;
+    case "Input": case "Textarea": case "DatePicker": case "TimePicker":
       return `[${widgetString(node, "placeholder") ?? String(node.name)}]`;
     default:
       return (Array.isArray(node.children) ? node.children : []).map(inlineText).filter(Boolean).join(" · ");

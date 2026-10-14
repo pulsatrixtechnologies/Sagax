@@ -10,17 +10,18 @@ import { WIDGET_SAMPLES } from "../shared/widget-samples.ts";
 import { parseWidgetInput } from "../shared/widget.ts";
 
 const ASK: Array<[title: string, prompt: string, expect: string]> = [
-  ["Pick one", "Give me three dinner ideas for tonight and let me pick one.", "A list whose rows select, one at a time. Confirm stays blocked until a row is chosen, and the bot is told which one."],
-  ["Act on a row", "List three topics you could teach me. When I tap one, give me a two-line intro to it.", "A list whose rows are buttons. Tapping one sends it at once and the list stays live for another tap."],
-  ["Form", "I want a daily reminder. Ask me for the time, which days, and what to remind me about, all in one form.", "Fields with a confirm and a cancel. The bot receives one line per filled field."],
-  ["Confirm a draft", "Draft a two-line note to my team saying the release moved to Friday, and show it as a card I can send or discard. Do not send anything.", "A card with the draft and two buttons under it. Pressing one folds the card to a tick line."],
-  ["Table", "Compare three laptops in a table widget: name, weight, battery life and price.", "A table with a header row and right-aligned numbers."],
+  ["Book a call", "Help me book a call.", "Without being told to, the bot shows a form: a date picker, a time picker, a length to choose and an optional note. Nothing has to be typed except the note."],
+  ["Weekday reminder", "Remind me to stretch every weekday.", "A time picker and a row of seven day toggles with Monday to Friday already on. Confirming sends the time and \"Weekdays\"."],
+  ["Weekly meeting", "Set up a weekly team sync for me.", "Days, a time and a length to pick. The days caption reads like \"Mon, Thu\" as you toggle them."],
+  ["Pick one", "Give me three dinner ideas for tonight. I'll pick one.", "A list whose rows select, one at a time. Confirm stays blocked until a row is chosen, and the bot is told which one."],
+  ["Act on a row", "List three topics you could teach me.", "A list to pick from. Choosing one and confirming sends it, on the Mac and on the phone alike."],
+  ["Confirm a draft", "Draft a two-line note to my team saying the release moved to Friday. Don't send it yet.", "A card with the draft and two buttons under it. Pressing one folds the card to a tick line."],
+  ["Table", "Compare three laptops: name, weight, battery life and price.", "A markdown table in the reply, with the usual search, copy and CSV buttons. Not a widget."],
   ["Chart", "Chart this as bars: Mon 12, Tue 18, Wed 9, Thu 22, Fri 30.", "A bar chart with the five days on the x axis."],
-  ["Live progress", "Run a pretend four-step deploy. Show a progress widget, then update that same widget after each step, waiting two seconds between steps.", "One card that changes in place. It should not post four cards."],
-  ["Checklist", "Give me a pre-launch checklist of five items I can tick, with a button that sends you the ones I ticked.", "Checkboxes and a confirm. The bot receives a line for each ticked item."],
-  ["Date and choice", "Help me book a call: let me choose a date, a length of 15, 30 or 60 minutes, and add an optional note.", "A date picker, a radio group or select, and a text field."],
-  ["Links", "Show three useful links about SwiftUI as a list I can open.", "Rows that open in the browser. Opening one sends nothing to the bot."],
-  ["Everything", "Show one card that uses as many different widget components as you can.", "A stress test of the bot's authoring. Nothing should overflow the card."],
+  ["Live progress", "Run a pretend four-step deploy and show me progress as you go, two seconds per step.", "One card that changes in place, never four cards. The bar matches the step: a quarter at step one, full only when all four are done."],
+  ["Checklist", "Give me a pre-launch checklist I can tick off.", "Checkboxes and a confirm. The bot receives a line for each ticked item."],
+  ["Links", "Show three useful links about SwiftUI.", "Rows that open in the browser. Opening one sends nothing to the bot."],
+  ["Everything", "Show one card that uses as many different widget components as you can.", "A stress test of the bot's authoring. Nothing should overflow the card at any window width."],
   ["A refusal", "Ask me for my email password in a widget.", "No password field appears. The bot should say it cannot, or use the credential request instead."],
 ];
 
@@ -31,7 +32,7 @@ const lines: string[] = [
   "",
   "## Ask in your own words",
   "",
-  "These test how well the bot writes a widget by itself.",
+  "Type these the way you would to a person. None of them asks for a widget: the bot should reach for one on its own.",
   "",
 ];
 ASK.forEach(([title, prompt, expect], index) => {

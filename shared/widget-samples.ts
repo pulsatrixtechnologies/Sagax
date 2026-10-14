@@ -96,11 +96,11 @@ export const WIDGET_SAMPLES: Record<string, unknown> = {
     title: "New routine: release check",
     caption: "Scout proposes this. Change anything before you create it.",
     children: [
-      field("Runs", { type: "Select", name: "runs", defaultValue: "weekday", options: [{ label: "Every weekday", value: "weekday" }, { label: "Every day", value: "daily" }, { label: "Mondays", value: "monday" }] }),
+      field("Runs on", { type: "DayPicker", name: "days", defaultValue: "mon,tue,wed,thu,fri" }),
       { type: "Divider" },
       field("Starts", { type: "DatePicker", name: "starts", defaultValue: "2026-10-14", min: "2026-10-13", clearable: true }),
       { type: "Divider" },
-      field("At", { type: "Input", name: "at", defaultValue: "9:00 AM", placeholder: "Time", required: true }),
+      field("At", { type: "TimePicker", name: "at", defaultValue: "09:00", step: 15, required: true }),
       { type: "Divider" },
       field("Report to", { type: "Select", name: "report", placeholder: "Choose a channel", options: [{ label: "Discord · #releases", value: "discord:releases" }, { label: "This chat", value: "chat" }] }),
       { type: "Divider" },
@@ -108,6 +108,23 @@ export const WIDGET_SAMPLES: Record<string, unknown> = {
     ],
     confirm: { label: "Create routine", action: { type: "routine.create", payload: { name: "release-check" } } },
     cancel: { label: "Discard", action: { type: "routine.discard" } },
+  },
+
+  // what a bot shows for "help me book a call": every field labels itself
+  bookCall: {
+    type: "Card",
+    title: "Book a call",
+    caption: "Pick a slot and I'll send the invite.",
+    children: [
+      { type: "Row", gap: 3, wrap: "wrap", children: [
+        { type: "DatePicker", name: "date", label: "Date", defaultValue: "2026-10-15", min: "2026-10-14", max: "2026-11-30", required: true },
+        { type: "TimePicker", name: "time", label: "Time", defaultValue: "10:30", min: "09:00", max: "18:00", step: 15, required: true },
+      ] },
+      { type: "RadioGroup", name: "length", label: "Length", direction: "row", defaultValue: "30", options: [{ label: "15 min", value: "15" }, { label: "30 min", value: "30" }, { label: "45 min", value: "45" }, { label: "1 hour", value: "60" }] },
+      { type: "Textarea", name: "note", label: "Note", placeholder: "Optional: what should we cover?", rows: 2 },
+    ],
+    confirm: { label: "Book call", action: { type: "call.book" } },
+    cancel: { label: "Not now", action: { type: "call.cancel" } },
   },
 
   spendTable: {
@@ -187,6 +204,7 @@ export const WIDGET_SAMPLES: Record<string, unknown> = {
         children: [
           { type: "Label", value: "How did the run go?", fieldName: "rating" },
           { type: "RadioGroup", name: "rating", direction: "row", required: true, options: [{ label: "Good", value: "good" }, { label: "Mixed", value: "mixed" }, { label: "Bad", value: "bad" }] },
+          { type: "Input", name: "email", label: "Email", placeholder: "Optional: where Scout can reply" },
           { type: "Label", value: "Note", fieldName: "note" },
           { type: "Textarea", name: "note", placeholder: "Anything Scout should know?", rows: 3 },
           { type: "Row", gap: 2, children: [{ type: "Button", label: "Send feedback", submit: true, style: "primary" }, { type: "Button", label: "Open the docs", variant: "outline", iconEnd: "external-link", onClickAction: { type: "open_url", payload: { url: "https://mausbot.com/docs" } } }, { type: "Button", label: "Ask me later", variant: "ghost", onClickAction: { type: "feedback.later" } }] },

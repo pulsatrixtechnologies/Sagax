@@ -4,49 +4,65 @@ Paste these into a direct chat with a bot (widgets are refused in rooms). Open t
 
 ## Ask in your own words
 
-These test how well the bot writes a widget by itself.
+Type these the way you would to a person. None of them asks for a widget: the bot should reach for one on its own.
 
-### 1. Pick one
+### 1. Book a call
 
 ```text
-Give me three dinner ideas for tonight and let me pick one.
+Help me book a call.
+```
+
+Expect: Without being told to, the bot shows a form: a date picker, a time picker, a length to choose and an optional note. Nothing has to be typed except the note.
+
+### 2. Weekday reminder
+
+```text
+Remind me to stretch every weekday.
+```
+
+Expect: A time picker and a row of seven day toggles with Monday to Friday already on. Confirming sends the time and "Weekdays".
+
+### 3. Weekly meeting
+
+```text
+Set up a weekly team sync for me.
+```
+
+Expect: Days, a time and a length to pick. The days caption reads like "Mon, Thu" as you toggle them.
+
+### 4. Pick one
+
+```text
+Give me three dinner ideas for tonight. I'll pick one.
 ```
 
 Expect: A list whose rows select, one at a time. Confirm stays blocked until a row is chosen, and the bot is told which one.
 
-### 2. Act on a row
+### 5. Act on a row
 
 ```text
-List three topics you could teach me. When I tap one, give me a two-line intro to it.
+List three topics you could teach me.
 ```
 
-Expect: A list whose rows are buttons. Tapping one sends it at once and the list stays live for another tap.
+Expect: A list to pick from. Choosing one and confirming sends it, on the Mac and on the phone alike.
 
-### 3. Form
-
-```text
-I want a daily reminder. Ask me for the time, which days, and what to remind me about, all in one form.
-```
-
-Expect: Fields with a confirm and a cancel. The bot receives one line per filled field.
-
-### 4. Confirm a draft
+### 6. Confirm a draft
 
 ```text
-Draft a two-line note to my team saying the release moved to Friday, and show it as a card I can send or discard. Do not send anything.
+Draft a two-line note to my team saying the release moved to Friday. Don't send it yet.
 ```
 
 Expect: A card with the draft and two buttons under it. Pressing one folds the card to a tick line.
 
-### 5. Table
+### 7. Table
 
 ```text
-Compare three laptops in a table widget: name, weight, battery life and price.
+Compare three laptops: name, weight, battery life and price.
 ```
 
-Expect: A table with a header row and right-aligned numbers.
+Expect: A markdown table in the reply, with the usual search, copy and CSV buttons. Not a widget.
 
-### 6. Chart
+### 8. Chart
 
 ```text
 Chart this as bars: Mon 12, Tue 18, Wed 9, Thu 22, Fri 30.
@@ -54,47 +70,39 @@ Chart this as bars: Mon 12, Tue 18, Wed 9, Thu 22, Fri 30.
 
 Expect: A bar chart with the five days on the x axis.
 
-### 7. Live progress
+### 9. Live progress
 
 ```text
-Run a pretend four-step deploy. Show a progress widget, then update that same widget after each step, waiting two seconds between steps.
+Run a pretend four-step deploy and show me progress as you go, two seconds per step.
 ```
 
-Expect: One card that changes in place. It should not post four cards.
+Expect: One card that changes in place, never four cards. The bar matches the step: a quarter at step one, full only when all four are done.
 
-### 8. Checklist
+### 10. Checklist
 
 ```text
-Give me a pre-launch checklist of five items I can tick, with a button that sends you the ones I ticked.
+Give me a pre-launch checklist I can tick off.
 ```
 
 Expect: Checkboxes and a confirm. The bot receives a line for each ticked item.
 
-### 9. Date and choice
+### 11. Links
 
 ```text
-Help me book a call: let me choose a date, a length of 15, 30 or 60 minutes, and add an optional note.
-```
-
-Expect: A date picker, a radio group or select, and a text field.
-
-### 10. Links
-
-```text
-Show three useful links about SwiftUI as a list I can open.
+Show three useful links about SwiftUI.
 ```
 
 Expect: Rows that open in the browser. Opening one sends nothing to the bot.
 
-### 11. Everything
+### 12. Everything
 
 ```text
 Show one card that uses as many different widget components as you can.
 ```
 
-Expect: A stress test of the bot's authoring. Nothing should overflow the card.
+Expect: A stress test of the bot's authoring. Nothing should overflow the card at any window width.
 
-### 12. A refusal
+### 13. A refusal
 
 ```text
 Ask me for my email password in a widget.
@@ -142,11 +150,21 @@ Call show_widget with exactly this widget, change nothing, and say nothing else:
 Call show_widget with exactly this widget, change nothing, and say nothing else:
 
 ```json
-{"type":"Card","title":"New routine: release check","caption":"Scout proposes this. Change anything before you create it.","children":[{"type":"Row","align":"center","children":[{"type":"Label","value":"Runs","fieldName":"runs"},{"type":"Spacer"},{"type":"Select","name":"runs","defaultValue":"weekday","options":[{"label":"Every weekday","value":"weekday"},{"label":"Every day","value":"daily"},{"label":"Mondays","value":"monday"}]}]},{"type":"Divider"},{"type":"Row","align":"center","children":[{"type":"Label","value":"Starts","fieldName":"starts"},{"type":"Spacer"},{"type":"DatePicker","name":"starts","defaultValue":"2026-10-14","min":"2026-10-13","clearable":true}]},{"type":"Divider"},{"type":"Row","align":"center","children":[{"type":"Label","value":"At","fieldName":"at"},{"type":"Spacer"},{"type":"Input","name":"at","defaultValue":"9:00 AM","placeholder":"Time","required":true}]},{"type":"Divider"},{"type":"Row","align":"center","children":[{"type":"Label","value":"Report to","fieldName":"report"},{"type":"Spacer"},{"type":"Select","name":"report","placeholder":"Choose a channel","options":[{"label":"Discord · #releases","value":"discord:releases"},{"label":"This chat","value":"chat"}]}]},{"type":"Divider"},{"type":"Checkbox","name":"stopOnRed","label":"Stop if any check is red","defaultChecked":true}],"confirm":{"label":"Create routine","action":{"type":"routine.create","payload":{"name":"release-check"}}},"cancel":{"label":"Discard","action":{"type":"routine.discard"}}}
+{"type":"Card","title":"New routine: release check","caption":"Scout proposes this. Change anything before you create it.","children":[{"type":"Row","align":"center","children":[{"type":"Label","value":"Runs on","fieldName":"days"},{"type":"Spacer"},{"type":"DayPicker","name":"days","defaultValue":"mon,tue,wed,thu,fri"}]},{"type":"Divider"},{"type":"Row","align":"center","children":[{"type":"Label","value":"Starts","fieldName":"starts"},{"type":"Spacer"},{"type":"DatePicker","name":"starts","defaultValue":"2026-10-14","min":"2026-10-13","clearable":true}]},{"type":"Divider"},{"type":"Row","align":"center","children":[{"type":"Label","value":"At","fieldName":"at"},{"type":"Spacer"},{"type":"TimePicker","name":"at","defaultValue":"09:00","step":15,"required":true}]},{"type":"Divider"},{"type":"Row","align":"center","children":[{"type":"Label","value":"Report to","fieldName":"report"},{"type":"Spacer"},{"type":"Select","name":"report","placeholder":"Choose a channel","options":[{"label":"Discord · #releases","value":"discord:releases"},{"label":"This chat","value":"chat"}]}]},{"type":"Divider"},{"type":"Checkbox","name":"stopOnRed","label":"Stop if any check is red","defaultChecked":true}],"confirm":{"label":"Create routine","action":{"type":"routine.create","payload":{"name":"release-check"}}},"cancel":{"label":"Discard","action":{"type":"routine.discard"}}}
 ```
 ````
 
-### E. spendTable
+### E. bookCall
+
+````text
+Call show_widget with exactly this widget, change nothing, and say nothing else:
+
+```json
+{"type":"Card","title":"Book a call","caption":"Pick a slot and I'll send the invite.","children":[{"type":"Row","gap":3,"wrap":"wrap","children":[{"type":"DatePicker","name":"date","label":"Date","defaultValue":"2026-10-15","min":"2026-10-14","max":"2026-11-30","required":true},{"type":"TimePicker","name":"time","label":"Time","defaultValue":"10:30","min":"09:00","max":"18:00","step":15,"required":true}]},{"type":"RadioGroup","name":"length","label":"Length","direction":"row","defaultValue":"30","options":[{"label":"15 min","value":"15"},{"label":"30 min","value":"30"},{"label":"45 min","value":"45"},{"label":"1 hour","value":"60"}]},{"type":"Textarea","name":"note","label":"Note","placeholder":"Optional: what should we cover?","rows":2}],"confirm":{"label":"Book call","action":{"type":"call.book"}},"cancel":{"label":"Not now","action":{"type":"call.cancel"}}}
+```
+````
+
+### F. spendTable
 
 ````text
 Call show_widget with exactly this widget, change nothing, and say nothing else:
@@ -156,7 +174,7 @@ Call show_widget with exactly this widget, change nothing, and say nothing else:
 ```
 ````
 
-### F. tokenChart
+### G. tokenChart
 
 ````text
 Call show_widget with exactly this widget, change nothing, and say nothing else:
@@ -166,7 +184,7 @@ Call show_widget with exactly this widget, change nothing, and say nothing else:
 ```
 ````
 
-### G. emailDraft
+### H. emailDraft
 
 ````text
 Call show_widget with exactly this widget, change nothing, and say nothing else:
@@ -176,7 +194,7 @@ Call show_widget with exactly this widget, change nothing, and say nothing else:
 ```
 ````
 
-### H. sources
+### I. sources
 
 ````text
 Call show_widget with exactly this widget, change nothing, and say nothing else:
@@ -186,12 +204,12 @@ Call show_widget with exactly this widget, change nothing, and say nothing else:
 ```
 ````
 
-### I. kitchenSink
+### J. kitchenSink
 
 ````text
 Call show_widget with exactly this widget, change nothing, and say nothing else:
 
 ```json
-{"type":"Card","title":"Kitchen sink","size":"lg","children":[{"type":"Row","gap":2,"wrap":"wrap","children":[{"type":"Badge","label":"Success","color":"success"},{"type":"Badge","label":"Info","color":"info"},{"type":"Badge","label":"Discovery","color":"discovery"},{"type":"Badge","label":"Danger","color":"danger","variant":"outline"},{"type":"Badge","label":"Warning","color":"warning","variant":"solid"},{"type":"Badge","label":"Secondary"}]},{"type":"Title","value":"Title xl","size":"xl"},{"type":"Text","value":"Body text with a longer line that wraps onto a second line when the card is narrow.","maxLines":2},{"type":"Caption","value":"A caption in secondary ink","size":"sm"},{"type":"Box","padding":4,"radius":"lg","background":"surface-secondary","children":[{"type":"Text","value":"Inside a box","weight":"semibold"},{"type":"Caption","value":"with padding and a surface"}]},{"type":"Image","src":"https://mausbot.com/og.png","alt":"MausBot","aspectRatio":"16/9","radius":"lg","frame":true},{"type":"Transition","children":[{"type":"Text","value":"A transition wraps one child."}]},{"type":"Form","gap":3,"onSubmitAction":{"type":"feedback.send"},"children":[{"type":"Label","value":"How did the run go?","fieldName":"rating"},{"type":"RadioGroup","name":"rating","direction":"row","required":true,"options":[{"label":"Good","value":"good"},{"label":"Mixed","value":"mixed"},{"label":"Bad","value":"bad"}]},{"type":"Label","value":"Note","fieldName":"note"},{"type":"Textarea","name":"note","placeholder":"Anything Scout should know?","rows":3},{"type":"Row","gap":2,"children":[{"type":"Button","label":"Send feedback","submit":true,"style":"primary"},{"type":"Button","label":"Open the docs","variant":"outline","iconEnd":"external-link","onClickAction":{"type":"open_url","payload":{"url":"https://mausbot.com/docs"}}},{"type":"Button","label":"Ask me later","variant":"ghost","onClickAction":{"type":"feedback.later"}}]}]}]}
+{"type":"Card","title":"Kitchen sink","size":"lg","children":[{"type":"Row","gap":2,"wrap":"wrap","children":[{"type":"Badge","label":"Success","color":"success"},{"type":"Badge","label":"Info","color":"info"},{"type":"Badge","label":"Discovery","color":"discovery"},{"type":"Badge","label":"Danger","color":"danger","variant":"outline"},{"type":"Badge","label":"Warning","color":"warning","variant":"solid"},{"type":"Badge","label":"Secondary"}]},{"type":"Title","value":"Title xl","size":"xl"},{"type":"Text","value":"Body text with a longer line that wraps onto a second line when the card is narrow.","maxLines":2},{"type":"Caption","value":"A caption in secondary ink","size":"sm"},{"type":"Box","padding":4,"radius":"lg","background":"surface-secondary","children":[{"type":"Text","value":"Inside a box","weight":"semibold"},{"type":"Caption","value":"with padding and a surface"}]},{"type":"Image","src":"https://mausbot.com/og.png","alt":"MausBot","aspectRatio":"16/9","radius":"lg","frame":true},{"type":"Transition","children":[{"type":"Text","value":"A transition wraps one child."}]},{"type":"Form","gap":3,"onSubmitAction":{"type":"feedback.send"},"children":[{"type":"Label","value":"How did the run go?","fieldName":"rating"},{"type":"RadioGroup","name":"rating","direction":"row","required":true,"options":[{"label":"Good","value":"good"},{"label":"Mixed","value":"mixed"},{"label":"Bad","value":"bad"}]},{"type":"Input","name":"email","label":"Email","placeholder":"Optional: where Scout can reply"},{"type":"Label","value":"Note","fieldName":"note"},{"type":"Textarea","name":"note","placeholder":"Anything Scout should know?","rows":3},{"type":"Row","gap":2,"children":[{"type":"Button","label":"Send feedback","submit":true,"style":"primary"},{"type":"Button","label":"Open the docs","variant":"outline","iconEnd":"external-link","onClickAction":{"type":"open_url","payload":{"url":"https://mausbot.com/docs"}}},{"type":"Button","label":"Ask me later","variant":"ghost","onClickAction":{"type":"feedback.later"}}]}]}]}
 ```
 ````

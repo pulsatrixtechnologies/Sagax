@@ -13,7 +13,7 @@ import { ALIGN, fourSides, kids } from "./widget-style";
 /** Rows that bring their own height (44px) and are parted by a rule, not by room. */
 const isRow = (node: WidgetNode | undefined): boolean => node?.type === "Row" || node?.type === "Checkbox";
 /** Rows of any kind sit closer to the card's edge than text does. */
-const isRows = (node: WidgetNode | undefined): boolean => isRow(node) || node?.type === "Table" || node?.type === "ListViewItem";
+const isRows = (node: WidgetNode | undefined): boolean => isRow(node) || node?.type === "ListViewItem";
 
 /** The room between two children of a card. A Divider carries its own. */
 function roomBetween(above: WidgetNode | undefined, below: WidgetNode | undefined): number {
@@ -25,10 +25,10 @@ export function WidgetBody({ root, headed }: { root: WidgetNode; headed: boolean
   const children = kids(root);
   if (root.type === "ListView") return <ListBody root={root} items={children} headed={headed} />;
   if (!children.length) return null;
-  // 20 at the sides. Under a header the header's own foot is the room above;
-  // without one, rows start 6 from the edge and anything else 18.
+  // 16 at the sides, as on every ask in the chat (AskCard). Under a header the header's own foot is the
+  // room above; without one, rows start 6 from the edge and anything else 16.
   const [top, right, bottom, left] = fourSides(root.padding)
-    ?? [headed ? 0 : isRows(children[0]) ? 6 : 18, 20, isRows(children[children.length - 1]) ? 8 : 18, 20];
+    ?? [headed ? 0 : isRows(children[0]) ? 6 : 16, 16, isRows(children[children.length - 1]) ? 6 : 16, 16];
   return (
     <div className="flex min-w-0 flex-col" style={{ padding: `${top}px ${right}px ${bottom}px ${left}px` }}>
       {children.map((child, index) => {

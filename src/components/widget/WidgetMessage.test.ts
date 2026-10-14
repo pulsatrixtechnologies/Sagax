@@ -58,11 +58,26 @@ function type(element: HTMLInputElement | HTMLTextAreaElement, value: string) {
   });
 }
 
-function choose(element: HTMLSelectElement, value: string) {
-  act(() => {
-    element.value = value;
-    element.dispatchEvent(new Event("change", { bubbles: true }));
+/** Open a TimePicker's list and take one of its times. The list is drawn over the page, outside the card. */
+function pickTime(name: string, time: string) {
+  act(() => field<HTMLButtonElement>(name).click());
+  const option = document.querySelector<HTMLElement>(`[role="option"][data-value="${time}"]`);
+  if (!option) throw new Error(`no ${time} in the list of ${name}`);
+  act(() => option.click());
+}
+
+/** The days a DayPicker has on, in week order. */
+const daysOn = () => all<HTMLButtonElement>('[data-day][aria-pressed="true"]').map((day) => day.dataset.day);
+
+/** A form whose one required field starts empty. */
+function emptyTimeForm(): WidgetRoot {
+  const parsed = parseWidgetInput({
+    type: "Card", title: "When",
+    children: [{ type: "Row", children: [{ type: "Label", value: "At", fieldName: "at" }, { type: "Spacer" }, { type: "TimePicker", name: "at", step: 30, required: true, clearable: true }] }],
+    confirm: { label: "Save time", action: { type: "time.save" } }, cancel: { label: "Never mind", action: { type: "time.cancel" } },
   });
+  if (!parsed.ok) throw new Error(parsed.error);
+  return parsed.value;
 }
 
 /** What the one POST carried. */
@@ -241,16 +256,23 @@ describe("drawing a widget", () => {
 
   it("ties a label to its field, and names a field that has none", () => {
     mount(row(sample("routineForm")));
-    const runs = field<HTMLSelectElement>("runs");
-    expect(all<HTMLLabelElement>("label").find((label) => label.textContent === "Runs")!.htmlFor).toBe(runs.id);
-    expect(runs.getAttribute("aria-label")).toBe("Runs");
+    const report = field<HTMLSelectElement>("report");
+    expect(all<HTMLLabelElement>("label").find((label) => label.textContent === "Report to")!.htmlFor).toBe(report.id);
+    expect(report.getAttribute("aria-label")).toBe("Report to");
+    // a group of days goes by its Label's words, and a click on them picks no day
+    expect(find('[role="group"][aria-label="Runs on"]')).not.toBeNull();
+    expect(all<HTMLLabelElement>("label").find((label) => label.textContent === "Runs on")!.htmlFor).toBe("");
+    const at = field<HTMLButtonElement>("at");
+    expect(at.getAttribute("role")).toBe("combobox");
+    expect(at.value).toBe("09:00");
+    expect(all<HTMLLabelElement>("label").find((label) => label.textContent === "At")!.htmlFor).toBe(at.id);
     expect(field<HTMLInputElement>("starts").type).toBe("date");
     expect(field<HTMLInputElement>("starts").min).toBe("2026-10-13");
     expect(field<HTMLInputElement>("stopOnRed").checked).toBe(true);
     // the offered options, and a resting line that cannot be chosen again
-    expect(Array.from(runs.options).map((option) => option.value)).toEqual(["", "weekday", "daily", "monday"]);
-    expect(runs.options[0]!.disabled).toBe(true);
-    expect(field<HTMLSelectElement>("report").value).toBe("");
+    expect(Array.from(report.options).map((option) => option.value)).toEqual(["", "discord:releases", "chat"]);
+    expect(report.options[0]!.disabled).toBe(true);
+    expect(report.value).toBe("");
   });
 });
 
@@ -285,19 +307,19 @@ describe("a settled widget", () => {
   });
 
   it("fills the read-only card from the values that went with the press, not from the defaults", () => {
-    const sent = { runs: "monday", starts: "2026-11-02", at: "7:15 AM", report: "chat", stopOnRed: false };
+    const sent = { days: "mon,thu", starts: "2026-11-02", at: "07:15", report: "chat", stopOnRed: false };
     mount(row(sample("routineForm"), { settled: { ref: "confirm", label: "Create routine", tone: "confirm", at: 2, values: sent } }));
     act(() => button(t("question.details"))!.click());
-    expect(field<HTMLSelectElement>("runs").value).toBe("monday");
+    expect(daysOn()).toEqual(["mon", "thu"]);
     expect(field<HTMLInputElement>("starts").value).toBe("2026-11-02");
-    expect(field<HTMLInputElement>("at").value).toBe("7:15 AM");
+    expect(field<HTMLButtonElement>("at").value).toBe("07:15");
     expect(field<HTMLSelectElement>("report").value).toBe("chat");
     expect(field<HTMLInputElement>("stopOnRed").checked).toBe(false);
     expect(all<HTMLInputElement>("[data-widget-field]").every((control) => control.disabled)).toBe(true);
 
     // a record with no values (an older row) still shows the card, at its defaults
     mount(row(sample("routineForm"), { settled: { ref: "confirm", label: "Create routine", tone: "confirm", at: 2 } }));
-    expect(field<HTMLSelectElement>("runs").value).toBe("weekday");
+    expect(daysOn()).toEqual(["mon", "tue", "wed", "thu", "fri"]);
     expect(field<HTMLInputElement>("stopOnRed").checked).toBe(true);
   });
 
@@ -315,8 +337,8 @@ describe("pressing", () => {
     let answer!: (response: Response) => void;
     fetchMock.mockImplementationOnce(() => new Promise<Response>((resolve) => { answer = resolve; }));
     mount(row(sample("routineForm")));
-    choose(field<HTMLSelectElement>("runs"), "daily");
-    type(field<HTMLInputElement>("at"), "8:30 AM");
+    act(() => find<HTMLButtonElement>('[data-day="sat"]')!.click());
+    pickTime("at", "08:30");
     act(() => field<HTMLInputElement>("stopOnRed").click());
     await press(button("Create routine")!);
 
@@ -327,7 +349,7 @@ describe("pressing", () => {
     expect(body).toEqual({
       threadId: "t1",
       sendId: expect.stringMatching(/^[0-9a-f-]{36}$/),
-      widgetAction: { messageId: "w1", ref: "confirm", rev: 0, values: { runs: "daily", starts: "2026-10-14", at: "8:30 AM", report: "", stopOnRed: false } },
+      widgetAction: { messageId: "w1", ref: "confirm", rev: 0, values: { days: "mon,tue,wed,thu,fri,sat", starts: "2026-10-14", at: "08:30", report: "", stopOnRed: false } },
     });
     expect("text" in body).toBe(false);
 
@@ -351,16 +373,17 @@ describe("pressing", () => {
     expect(find("[data-widget]")).toBeNull();
     // and Details shows what was sent, read-only
     act(() => button(t("question.details"))!.click());
-    expect(field<HTMLSelectElement>("runs").value).toBe("daily");
-    expect(field<HTMLInputElement>("at").value).toBe("8:30 AM");
+    expect(daysOn()).toEqual(["mon", "tue", "wed", "thu", "fri", "sat"]);
+    expect(field<HTMLButtonElement>("at").value).toBe("08:30");
     expect(field<HTMLInputElement>("stopOnRed").checked).toBe(false);
     expect(all<HTMLInputElement>("[data-widget-field]").every((control) => control.disabled)).toBe(true);
     expect(find('[data-widget-ref="confirm"]')).toBeNull();
 
     // the `message.patch` frame then replaces what was drawn here, with the server's own record
-    mount(row(sample("routineForm"), { settled: { ref: "confirm", label: "Create routine", tone: "confirm", at: 2, values: { runs: "daily", starts: "2026-10-14", at: "8:30", report: "", stopOnRed: false } } }));
+    // (an older record wrote the time without its leading zero; it reads the same)
+    mount(row(sample("routineForm"), { settled: { ref: "confirm", label: "Create routine", tone: "confirm", at: 2, values: { days: "mon,tue,wed,thu,fri,sat", starts: "2026-10-14", at: "8:30", report: "", stopOnRed: false } } }));
     expect(find('[data-ask-card="settled"]')!.textContent).toContain("Create routine");
-    expect(field<HTMLInputElement>("at").value).toBe("8:30");
+    expect(field<HTMLButtonElement>("at").value).toBe("08:30");
   });
 
   it("comes back to life when the server reopens a press that was cancelled in the queue", async () => {
@@ -492,10 +515,9 @@ describe("pressing", () => {
   });
 
   it("stops on the first empty required field, marks it, and posts nothing", async () => {
-    mount(row(sample("routineForm")));
-    const at = field<HTMLInputElement>("at");
-    type(at, "   ");
-    await press(button("Create routine")!);
+    mount(row(emptyTimeForm()));
+    const at = field<HTMLButtonElement>("at");
+    await press(button("Save time")!);
 
     expect(fetchMock).not.toHaveBeenCalled();
     expect(at.getAttribute("aria-invalid")).toBe("true");
@@ -506,21 +528,20 @@ describe("pressing", () => {
     expect(find('[data-widget="w1"]')!.getAttribute("data-widget-state")).toBe("live");
 
     // filling it clears the mark, and the press goes
-    type(at, "9:00 AM");
+    pickTime("at", "09:00");
     expect(at.getAttribute("aria-invalid")).toBeNull();
     expect(find('[role="alert"]')).toBeNull();
-    await press(button("Create routine")!);
-    expect(posted().body.widgetAction.values.at).toBe("9:00 AM");
+    await press(button("Save time")!);
+    expect(posted().body.widgetAction.values.at).toBe("09:00");
   });
 
   it("sends a cancel with no values, past an empty required field", async () => {
-    mount(row(sample("routineForm")));
-    type(field<HTMLInputElement>("at"), "");
-    await press(button("Discard")!);
+    mount(row(emptyTimeForm()));
+    await press(button("Never mind")!);
     expect(posted().body).toEqual({ threadId: "t1", sendId: expect.any(String), widgetAction: { messageId: "w1", ref: "cancel", rev: 0 } });
     // a cancel settles too: the line folds with a cross
     const line = find('[data-ask-card="settled"]')!;
-    expect(line.textContent).toContain("Discard");
+    expect(line.textContent).toContain("Never mind");
     expect(line.querySelector("svg.lucide-x")).not.toBeNull();
   });
 
@@ -564,7 +585,7 @@ describe("pressing", () => {
     type(find<HTMLTextAreaElement>("textarea")!, "Slow on the second step");
     await press(button("Send feedback")!);
     const submit = widgetActions(sample("kitchenSink")).find((entry) => entry.tone === "submit")!;
-    expect(posted().body.widgetAction).toEqual({ messageId: "w1", ref: submit.ref, rev: 0, values: { rating: "mixed", note: "Slow on the second step" } });
+    expect(posted().body.widgetAction).toEqual({ messageId: "w1", ref: submit.ref, rev: 0, values: { rating: "mixed", email: "", note: "Slow on the second step" } });
   });
 
   it("submits a form when Enter is pressed in one of its fields", async () => {
@@ -582,7 +603,7 @@ describe("pressing", () => {
     mount(row(sample("kitchenSink")));
     await press(button("Ask me later")!);
     const later = widgetActions(sample("kitchenSink")).find((entry) => entry.label === "Ask me later")!;
-    expect(posted().body.widgetAction).toEqual({ messageId: "w1", ref: later.ref, rev: 0, values: { rating: "", note: "" } });
+    expect(posted().body.widgetAction).toEqual({ messageId: "w1", ref: later.ref, rev: 0, values: { rating: "", email: "", note: "" } });
     expect(find('[data-widget="w1"]')!.getAttribute("data-widget-state")).toBe("live");
     expect(button("Ask me later")!.querySelector("svg.lucide-check")).not.toBeNull();
     expect(find('[role="status"]')!.textContent).toBe(t("widget.sent"));
@@ -618,18 +639,18 @@ describe("pressing", () => {
 
     // a line folded ahead of the patch frame does not outlive its tree either
     mount(row(sample("routineForm")));
-    type(field<HTMLInputElement>("at"), "6:00 AM");
+    pickTime("at", "06:00");
     await press(button("Create routine")!);
     expect(find('[data-ask-card="settled"]')!.textContent).toContain("Create routine");
     mount(row(sample("routineForm"), { rev: 1 }));
     expect(find('[data-ask-card="settled"]')).toBeNull();
     expect(find('[data-widget="w1"]')!.getAttribute("data-widget-state")).toBe("live");
-    expect(field<HTMLInputElement>("at").value).toBe("9:00 AM");
+    expect(field<HTMLButtonElement>("at").value).toBe("09:00");
     expect(button("Create routine")!.disabled).toBe(false);
     // the same revision redrawn (any other patch of the row) keeps what the card holds
-    type(field<HTMLInputElement>("at"), "7:00 AM");
+    pickTime("at", "07:00");
     mount(row(sample("routineForm"), { rev: 1 }));
-    expect(field<HTMLInputElement>("at").value).toBe("7:00 AM");
+    expect(field<HTMLButtonElement>("at").value).toBe("07:00");
   });
 
   it("shows the server's refusal of a press on a stale revision, and stays live", async () => {

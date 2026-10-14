@@ -54,7 +54,7 @@ export async function callCardTool(name: string, args: Json, context: ToolCallCo
   const masked = body.masked === true
     ? " Something in it read as a secret and was masked before it was stored. Never put secrets in a widget, and name a payload field key, token or password only when it holds one."
     : "";
-  // A list with a confirm button and no way to choose a row parses, and leaves the person nothing to pick.
+  // What parses but misleads: a list with nothing to choose, a time or a date to type.
   const advice = widgetAdvice(parsed.value);
   return {
     text: (updating

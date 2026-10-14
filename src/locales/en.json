@@ -7394,5 +7394,11 @@
   "widget.choose": "Choose",
   "widget.clear": "Clear {label}",
   "widget.progress": "Progress",
-  "widget.chart.label": "Chart of {series} across {count} points"
+  "widget.chart.label": "Chart of {series} across {count} points",
+  "widget.time.choose": "Choose a time",
+  "widget.time.options": "Times for {label}",
+  "widget.days.everyDay": "Every day",
+  "widget.days.weekdays": "Weekdays",
+  "widget.days.weekends": "Weekends",
+  "widget.days.none": "No days picked"
 }

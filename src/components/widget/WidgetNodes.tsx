@@ -9,12 +9,11 @@ import { widgetNumber, widgetString, type WidgetNode } from "../../../shared/wid
 import { ChatMarkdown } from "../ChatMarkdown";
 import { WidgetChart } from "./WidgetChart";
 import { WidgetBadge, WidgetImage, WidgetProgress } from "./WidgetContent";
+import { useWidgetForm, widgetActionUrl, widgetCanPress, widgetFieldId, WidgetButton, WidgetGlyph, type WidgetForm } from "./WidgetControls";
+import { WIDGET_CAPTION, WIDGET_FIELD_TYPES, WidgetFieldView } from "./WidgetFields";
+import { WidgetTable } from "./WidgetTable";
 import {
-  useWidgetForm, widgetActionUrl, widgetCanPress, widgetFieldId, WidgetButton, WidgetCheckbox, WidgetDatePicker, WidgetGlyph, WidgetInput,
-  WidgetRadioGroup, WidgetSelect, WidgetTextarea, type WidgetForm,
-} from "./WidgetControls";
-import {
-  ALIGN, BACKGROUND, boxStyle, CAPTION_SIZE, COL_SIZE, ICON_SIZE, INK, JUSTIFY, kids, TEXT_ALIGN, TEXT_SIZE, TITLE_SIZE, WEIGHT, widthStyle,
+  ALIGN, BACKGROUND, boxStyle, CAPTION_SIZE, ICON_SIZE, INK, JUSTIFY, kids, TEXT_ALIGN, TEXT_SIZE, TITLE_SIZE, WEIGHT, widthStyle,
 } from "./widget-style";
 
 /** What a node needs to know about where it is drawn. */
@@ -34,20 +33,21 @@ export interface WidgetWhere {
   room?: readonly [number, number];
   /** Already inside a Form: a Form further in is a plain box. */
   form?: boolean;
+  /** Inside a table cell: text takes the table's own size and wrapping unless it names its own. */
+  cell?: boolean;
 }
 
-const FIELDS = new Set(["Select", "DatePicker", "Checkbox", "RadioGroup", "Input", "Textarea"]);
-/** On a card these lines are a tint of the ink: the hairline token sits one
- * shade off the composer tone in the dark skins and would not show. */
-const RULE = "bg-ink/[0.08]";
+/** On a card these lines are a tint of the ink, as the question card's are:
+ * the hairline token sits one shade off the composer tone in the dark skins
+ * and would not show. */
+const RULE = "bg-ink/[0.12]";
 
 export function WidgetChildren({ nodes, where }: { nodes: WidgetNode[]; where: WidgetWhere }) {
   return <>{nodes.map((child, index) => <WidgetNodeView key={child.id ?? index} node={child} where={where} />)}</>;
 }
 
 export function WidgetNodeView({ node, where }: { node: WidgetNode; where: WidgetWhere }): ReactNode {
-  // beside its label in a row, a field drops its box unless it asks for the full width
-  const bare = where.axis === "row" && node.block !== true;
+  if (WIDGET_FIELD_TYPES.has(node.type)) return <WidgetFieldView node={node} where={where} />;
   switch (node.type) {
     case "Box": case "Row": case "Col": case "Form":
       return <Layout node={node} where={where} />;
@@ -60,7 +60,7 @@ export function WidgetNodeView({ node, where }: { node: WidgetNode; where: Widge
     case "Divider":
       return <Divider node={node} where={where} />;
     case "Table":
-      return <Table node={node} />;
+      return <WidgetTable node={node} drawCell={drawCell} />;
     case "Text": case "Title": case "Caption":
       return <TextNode node={node} where={where} />;
     case "Label":
@@ -98,18 +98,6 @@ export function WidgetNodeView({ node, where }: { node: WidgetNode; where: Widge
           disabled={node.disabled === true}
         />
       );
-    case "Select":
-      return <WidgetSelect node={node} bare={bare} />;
-    case "DatePicker":
-      return <WidgetDatePicker node={node} bare={bare} />;
-    case "Checkbox":
-      return <WidgetCheckbox node={node} />;
-    case "RadioGroup":
-      return <WidgetRadioGroup node={node} />;
-    case "Input":
-      return <WidgetInput node={node} bare={bare} />;
-    case "Textarea":
-      return <WidgetTextarea node={node} />;
     // Transition draws its one child. So does anything else that has children.
     default:
       return <WidgetChildren nodes={kids(node)} where={where} />;
@@ -128,24 +116,45 @@ function submitRef(node: WidgetNode, form: WidgetForm): string | undefined {
   return undefined;
 }
 
+/** Words that can name a field beside it. */
+const WORDS = new Set(["Label", "Text", "Caption", "Title"]);
+/** Things that sit side by side and may take another line when a row runs out of room. */
+const FLOWS = new Set(["Button", "Badge", "Spacer", ...WIDGET_FIELD_TYPES]);
+
+/** A row that pairs a field with the words for it (Row[Label, Spacer, field]): side by side while the
+ * card has room, and in a narrow card the words over a full-width field. */
+function pairsField(node: WidgetNode): boolean {
+  const children = kids(node);
+  return children.some((child) => WIDGET_FIELD_TYPES.has(child.type) && child.type !== "Checkbox") && children.some((child) => WORDS.has(child.type));
+}
+
+/** A row of buttons, badges or fields: it wraps rather than squeeze them or run past the card. */
+function flows(children: WidgetNode[]): boolean {
+  return children.length > 1 && children.every((child) => FLOWS.has(child.type));
+}
+
 function Layout({ node, where }: { node: WidgetNode; where: WidgetWhere }) {
   const form = useWidgetForm();
-  const axis = node.type === "Row" || (node.type !== "Col" && node.direction === "row") ? "row" : "col";
-  const gap = widgetNumber(node, "gap") ?? (axis === "row" ? 8 : node.type === "Form" ? 12 : 0);
+  const stacked = form.compact && node.type === "Row" && pairsField(node);
+  const axis = !stacked && (node.type === "Row" || (node.type !== "Col" && node.direction === "row")) ? "row" : "col";
+  // stacked, the words sit 6px over their field, as a Label above a field does
+  const gap = stacked ? 6 : widgetNumber(node, "gap") ?? (axis === "row" ? 8 : node.type === "Form" ? 12 : 0);
   const isForm = node.type === "Form";
+  // stacked, a spacer has nothing to push apart
+  const shown = stacked ? kids(node).filter((child) => child.type !== "Spacer") : kids(node);
   const className = cn(
     "flex min-w-0",
     axis === "row" ? "flex-row" : "flex-col",
-    ALIGN[widgetString(node, "align") ?? (axis === "row" ? "center" : "stretch")],
+    stacked ? ALIGN.stretch : ALIGN[widgetString(node, "align") ?? (axis === "row" ? "center" : "stretch")],
     JUSTIFY[widgetString(node, "justify") ?? ""],
-    node.wrap === true && "flex-wrap",
+    axis === "row" && (node.wrap === true || flows(shown)) && "flex-wrap",
     BACKGROUND[widgetString(node, "background") ?? ""],
     widgetNumber(node, "border") ? "border-solid border-ink/[0.12]" : null,
-    // label on one side, value on the other: the mock's 44px row
-    where.card && node.type === "Row" && "min-h-[44px]",
+    // label on one side, value on the other: the 44px row; stacked, it keeps the same room around it
+    where.card && node.type === "Row" && (stacked ? "py-2.5" : "min-h-[44px]"),
   );
   const style: CSSProperties = { gap, ...boxStyle(node) };
-  const children = <WidgetChildren nodes={kids(node)} where={{ axis, gap, item: where.item, form: where.form || isForm, room: gap > 0 ? [0, 0] : [8, 8] }} />;
+  const children = <WidgetChildren nodes={shown} where={{ axis, gap, item: where.item, form: where.form || isForm, room: gap > 0 ? [0, 0] : [8, 8] }} />;
   if (!isForm || where.form) return <div className={className} style={style}>{children}</div>;
   const onKeyDown = (event: KeyboardEvent<HTMLFormElement>) => {
     const target = event.target;
@@ -157,8 +166,9 @@ function Layout({ node, where }: { node: WidgetNode; where: WidgetWhere }) {
   return <form noValidate onSubmit={(event) => event.preventDefault()} onKeyDown={onKeyDown} className={className} style={style}>{children}</form>;
 }
 
-/** The box of a list row, and what inside one takes a click of its own. */
-export const WIDGET_ROW = "flex min-h-[60px] w-full min-w-0 rounded-[12px] px-3 py-2.5 text-start";
+/** The box of a list row, and what inside one takes a click of its own. Its 16px corners sit 8px inside
+ * the card's 24px ones, and its content starts 16px in, under the header's. */
+export const WIDGET_ROW = "flex min-h-[60px] w-full min-w-0 rounded-2xl px-2 py-2.5 text-start";
 export const WIDGET_ROW_CONTROLS = "button, a, input, select, textarea, label, [role='button']";
 
 /** A list row: 60px, the whole of it the target when it has an action. A row
@@ -209,7 +219,7 @@ export function WidgetListRow({ node }: { node: WidgetNode }) {
  * it, or Markdown (which may hold a link). Such a row cannot be a real button around them. */
 const CLICKABLE = new Set(["Button", "Image", "ListViewItem", "Markdown"]);
 function holdsControl(node: WidgetNode): boolean {
-  return kids(node).some((child) => CLICKABLE.has(child.type) || FIELDS.has(child.type) || holdsControl(child));
+  return kids(node).some((child) => CLICKABLE.has(child.type) || WIDGET_FIELD_TYPES.has(child.type) || holdsControl(child));
 }
 
 function Divider({ node, where }: { node: WidgetNode; where: WidgetWhere }) {
@@ -222,42 +232,9 @@ function Divider({ node, where }: { node: WidgetNode; where: WidgetWhere }) {
   return <div role="separator" className={cn("h-px shrink-0", RULE)} style={{ marginTop: before, marginBottom: after, ...(edge ? { marginLeft: -edge.left, marginRight: -edge.right } : {}) }} />;
 }
 
-const V_ALIGN: Record<string, string> = { start: "align-top", center: "align-middle", end: "align-bottom" };
-
-function Table({ node }: { node: WidgetNode }) {
-  const rows = kids(node);
-  const head = rows.findIndex((row) => row.header !== true);
-  const split = head < 0 ? rows.length : head;
-  const draw = (row: WidgetNode, ruled: boolean) => (
-    <tr key={row.id} className={cn(row.header === true ? "h-8 text-[12px] leading-4 text-ink-tertiary" : "h-10", ruled && "border-t border-ink/[0.08]")}>
-      {kids(row).map((cell, index) => {
-        const Cell = row.header === true ? "th" : "td";
-        const column = COL_SIZE[widgetString(cell, "colSize") ?? ""];
-        return (
-          <Cell
-            key={cell.id ?? index}
-            scope={row.header === true ? "col" : undefined}
-            colSpan={widgetNumber(cell, "colSpan")}
-            rowSpan={widgetNumber(cell, "rowSpan")}
-            className={cn("py-1.5 font-normal", index > 0 && "ps-3", TEXT_ALIGN[widgetString(cell, "align") ?? "start"], V_ALIGN[widgetString(cell, "vAlign") ?? "center"])}
-            // a width of its own wins over the column's size token
-            style={{ ...(column ? { width: column } : {}), ...boxStyle(cell) }}
-          >
-            <WidgetChildren nodes={kids(cell)} where={{ axis: "col", gap: 0 }} />
-          </Cell>
-        );
-      })}
-    </tr>
-  );
-  return (
-    <div className="min-w-0 overflow-x-auto">
-      <table className="w-full border-collapse text-[14px] leading-5 tabular-nums text-ink">
-        {split > 0 && <thead>{rows.slice(0, split).map((row) => draw(row, false))}</thead>}
-        <tbody>{rows.slice(split).map((row, index) => draw(row, index > 0 || split > 0))}</tbody>
-      </table>
-    </div>
-  );
-}
+/** What a table cell holds, drawn as the rest of the widget is. */
+const CELL: WidgetWhere = { axis: "col", gap: 0, cell: true };
+const drawCell = (cell: WidgetNode): ReactNode => <WidgetChildren nodes={kids(cell)} where={CELL} />;
 
 const TYPE: Record<string, { sizes: Record<string, readonly [string, number]>; weight?: string; ink: string }> = {
   Text: { sizes: TEXT_SIZE, ink: "text-ink" },
@@ -268,6 +245,8 @@ const TYPE: Record<string, { sizes: Record<string, readonly [string, number]>; w
 function TextNode({ node, where }: { node: WidgetNode; where: WidgetWhere }) {
   const face = TYPE[node.type] ?? TYPE.Text!;
   const [size, line] = face.sizes[widgetString(node, "size") ?? "md"] ?? face.sizes.md!;
+  // in a table a plain Text reads at the table's size, and wraps or clips with its Wrap toggle
+  const inCell = where.cell === true && widgetString(node, "size") === undefined;
   const maxLines = widgetNumber(node, "maxLines");
   const minLines = widgetNumber(node, "minLines");
   // a list row never wraps: its lines are one line each unless one asks for more
@@ -283,9 +262,9 @@ function TextNode({ node, where }: { node: WidgetNode; where: WidgetWhere }) {
       dir="auto"
       title={oneLine ? value : undefined}
       className={cn(
-        "min-w-0", size, WEIGHT[widgetString(node, "weight") ?? ""] ?? face.weight, INK[widgetString(node, "color") ?? ""] ?? face.ink,
+        "min-w-0", !inCell && size, WEIGHT[widgetString(node, "weight") ?? ""] ?? face.weight, INK[widgetString(node, "color") ?? ""] ?? face.ink,
         TEXT_ALIGN[widgetString(node, "textAlign") ?? ""], node.italic === true && "italic", node.lineThrough === true && "line-through",
-        oneLine ? "truncate" : "whitespace-pre-line break-words",
+        oneLine ? "truncate" : inCell ? "[.truncate>&]:truncate" : "whitespace-pre-line break-words",
       )}
       style={style}
     >
@@ -294,21 +273,21 @@ function TextNode({ node, where }: { node: WidgetNode; where: WidgetWhere }) {
   );
 }
 
-/** Above its field a label is 12/500 and sits 6px off it, whatever room the
- * stack leaves; beside it, in a row, it is the row's 14px in the secondary ink. */
+/** Above its field a label is the app's form caption, 6px off the field
+ * whatever room the stack leaves; beside it, in a row, it is the row's 14px
+ * in the secondary ink. */
 function LabelNode({ node, where }: { node: WidgetNode; where: WidgetWhere }) {
   const form = useWidgetForm();
   const field = form.fields.get(widgetString(node, "fieldName") ?? "");
   const above = where.axis === "col";
   return (
     <label
-      // a radio group goes by its own name: a click on its label must not pick the first option
-      htmlFor={field && field.type !== "RadioGroup" ? widgetFieldId(form, field.name) : undefined}
+      // a group goes by its own name: a click on its label must not pick the first option or day
+      htmlFor={field && field.type !== "RadioGroup" && field.type !== "DayPicker" ? widgetFieldId(form, field.name) : undefined}
       dir="auto"
       className={cn(
-        "min-w-0", above ? "ms-0.5 block" : "shrink-0",
-        TEXT_SIZE[widgetString(node, "size") ?? ""]?.[0] ?? (above ? "text-[12px] leading-4" : "text-[14px] leading-5"),
-        WEIGHT[widgetString(node, "weight") ?? ""] ?? (above ? "font-medium" : null), INK[widgetString(node, "color") ?? ""] ?? "text-ink-secondary",
+        "min-w-0", above ? WIDGET_CAPTION : "shrink-0 text-[14px] leading-5 text-ink-secondary",
+        TEXT_SIZE[widgetString(node, "size") ?? ""]?.[0], WEIGHT[widgetString(node, "weight") ?? ""], INK[widgetString(node, "color") ?? ""],
         TEXT_ALIGN[widgetString(node, "textAlign") ?? ""],
       )}
       style={{ ...widthStyle(node), ...(above ? { marginBottom: 6 - where.gap } : {}) }}
