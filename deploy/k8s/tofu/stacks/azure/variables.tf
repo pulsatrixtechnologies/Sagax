@@ -22,7 +22,7 @@ variable "name" {
 
 variable "location" {
   type    = string
-  default = "canadacentral"
+  default = "<REGION>"
 }
 
 variable "admin_group_object_ids" {

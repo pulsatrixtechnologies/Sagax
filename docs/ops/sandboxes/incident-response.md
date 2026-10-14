@@ -39,8 +39,8 @@ Page. A `sagax-user-*` pod has been Pending for 3 minutes. A node boot
 is 30–90 seconds, so 3 minutes means the autoscaler is not adding a node.
 
 1. Confirm only one of cluster-autoscaler and Karpenter is installed.
-2. Check the quota (Canada Central arm64). The Azure adapter ships a max
-   of one `Standard_D4ps_v6` beside the production VM.
+2. Check the quota (`<REGION>` arm64). The Azure adapter ships a max
+   of one `<VM_SIZE>` beside the production VM.
 3. If the buffer ScaledObject `sagax-sandbox-pending` is still applied
    and the driver is also creating pods, delete the ScaledObject. That
    is the double-reservation case. Downtime **0**.

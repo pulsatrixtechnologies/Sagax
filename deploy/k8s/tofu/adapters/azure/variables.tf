@@ -16,7 +16,7 @@ variable "name" {
 
 variable "location" {
   type    = string
-  default = "canadacentral"
+  default = "<REGION>"
 }
 
 variable "admin_group_object_ids" {
@@ -46,7 +46,7 @@ variable "api_server_authorized_ip_ranges" {
 variable "system_vm_size" {
   type        = string
   description = "Arm64 system pool. It stays up so system pods and the warm-node CronJob have a place to run. It is not the sandbox pool."
-  default     = "Standard_D2ps_v6"
+  default     = "<VM_SIZE>"
 }
 
 variable "kubernetes_version" {

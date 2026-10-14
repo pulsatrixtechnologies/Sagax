@@ -34,7 +34,7 @@ audit report.
 
 ## Option 3, as built
 
-The production VM (`Standard_D4pls_v6`, arm64, Canada Central) stays the home of
+The production VM (`<VM_SIZE>`, arm64, `<REGION>`) stays the home of
 Pulsabot. Sandboxes move to a pool that speaks the Kubernetes API, so the
 same chart runs on k3s, AKS, EKS or LKE.
 
@@ -45,9 +45,9 @@ same chart runs on k3s, AKS, EKS or LKE.
   ConfigMap); this chart does not create those pods.
 - The control plane, or the k3s server, does not scale to zero. A CronJob
   has to run somewhere, and AKS refuses a system pool of zero.
-- The sandbox pool is arm64, 4 vCPU, 16 GiB: `Standard_D4ps_v6` on AKS,
+- The sandbox pool is arm64, 4 vCPU, 16 GiB: `<VM_SIZE>` on AKS,
   `t4g.xlarge` on AWS, `g6-standard-8` on Linode, 4 vCPU and 16 GiB on
-  Proxmox. Default maximum is 4 nodes. Canada Central's 10 vCPU quota has
+  Proxmox. Default maximum is 4 nodes. `<REGION>`'s 10 vCPU quota has
   to be raised before that maximum is real.
 - Images are multi-arch digests. Secrets are not in this tree: the chart
   does not render a Secret, and the k3s join token and etcd key are read

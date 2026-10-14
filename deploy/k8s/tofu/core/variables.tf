@@ -50,7 +50,7 @@ variable "warm_nodes_night" {
 
 variable "max_nodes" {
   type        = number
-  description = "Upper bound of the sandbox pool. Canada Centre's 10 vCPU quota needs a raise before this can be large."
+  description = "Upper bound of the sandbox pool. <REGION>'s 10 vCPU quota needs a raise before this can be large."
   default     = 4
 
   validation {

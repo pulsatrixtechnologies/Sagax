@@ -45,7 +45,7 @@ spec:
         group: karpenter.azure.com
         kind: AKSNodeClass
         name: sandboxes
-  # 4 vCPU matches one Standard_D4ps_v6, the most the 2026-10-12 quota
+  # 4 vCPU matches one <VM_SIZE>, the most the 2026-10-12 quota
   # leaves beside the production VM. Raise it only in a reviewed change record.
   limits:
     cpu: "4"

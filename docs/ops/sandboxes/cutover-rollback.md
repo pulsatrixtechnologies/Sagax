@@ -1,7 +1,7 @@
 # Cutover and rollback: production sandboxes to the Kubernetes pool
 
 Production today is the production VM `<VM_NAME>` in
-`<RESOURCE_GROUP>` (the region and node size in the change record). Sagax, the
+`<RESOURCE_GROUP>` (`<REGION>`, `<VM_SIZE>`). Sagax, the
 provisioner and the sandboxes share that VM, and the provisioner is the
 only container with the Docker socket (`docs/user-sandbox.md`).
 
@@ -129,7 +129,7 @@ az aks nodepool add \
   --enable-cluster-autoscaler \
   --min-count 0 \
   --max-count 1 \
-  --node-vm-size Standard_D4ps_v6 \
+  --node-vm-size <VM_SIZE> \
   --os-sku Ubuntu \
   --node-taints sagax.io/pool=sandboxes:NoSchedule \
   --labels sagax.io/pool=sandboxes

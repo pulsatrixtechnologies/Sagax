@@ -127,8 +127,8 @@ resource "azurerm_kubernetes_cluster_node_pool" "sandboxes" {
 
   lifecycle {
     precondition {
-      condition     = var.pool.azure_vm_size == "Standard_D4ps_v6" && var.pool.warm_nodes_night == 0
-      error_message = "The sandbox pool is Standard_D4ps_v6 and its autoscaler minimum is the night value, 0. One daytime node is the Helm warm pod."
+      condition     = length(var.pool.azure_vm_size) > 0 && var.pool.warm_nodes_night == 0
+      error_message = "The sandbox pool azure_vm_size must be set (<VM_SIZE> in the change record) and its autoscaler minimum is the night value, 0. One daytime node is the Helm warm pod."
     }
   }
 }

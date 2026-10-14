@@ -3,7 +3,7 @@
 enabled                 = false
 production              = false
 subscription_id         = "00000000-0000-0000-0000-000000000000"
-location                = "canadacentral"
+location                = "<REGION>"
 # Prefix for Azure names (the cluster is "${name}-aks"). Use a name that is
 # not a live cluster.
 name                    = "example"

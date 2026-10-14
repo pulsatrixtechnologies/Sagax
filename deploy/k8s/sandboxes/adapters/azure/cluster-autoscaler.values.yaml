@@ -15,7 +15,7 @@ extraArgs:
   skip-nodes-with-local-storage: "false"
   expander: least-waste
   max-node-provision-time: 15m
-# One D4ps_v6 (4 vCPU, 16 GiB). The Canada Central arm64 quota seen on
+# One <VM_SIZE> (4 vCPU, 16 GiB). The <REGION> arm64 quota seen on
 # 2026-10-12 was 10 vCPU with 4 used by the production VM, so max is 1 node until
 # a quota increase. Raise max only in a reviewed change record.
 autoscalingGroups:
