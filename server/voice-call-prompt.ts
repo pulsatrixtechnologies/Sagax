@@ -13,7 +13,7 @@
 // ended, so the bot goes back to its written register.
 import type { Message } from "./store.ts";
 import { isVoiceModeLanguage, VOICE_MODE_LANGUAGES } from "../shared/voice-mode.ts";
-import { voiceCallTopicsNote, type VoiceTopic } from "../src/lib/voice-mode/voice-topics.ts";
+import type { VoiceTopic } from "../src/lib/voice-mode/voice-topics.ts";
 
 export type VoiceCallMeta = NonNullable<Message["voiceCall"]>;
 
@@ -128,11 +128,10 @@ export function voiceCallSection(
   message: Pick<Message, "voiceCall"> | undefined,
   previous: Pick<Message, "voiceCall"> | undefined,
   person: string | undefined,
-  topics?: VoiceTopic[],
+  _topics?: VoiceTopic[],
 ): string {
   if (message?.voiceCall) {
-    const note = topics?.length ? voiceCallTopicsNote(topics) : "";
-    return `\n\nPhone call:\n${voiceCallInstruction(person, message.voiceCall)}${note ? `\n${note}` : ""}`;
+    return `\n\nPhone call:\n${voiceCallInstruction(person, message.voiceCall)}`;
   }
   if (previous?.voiceCall) return `\n\nPhone call:\n${voiceCallEndedNote(person)}`;
   return "";

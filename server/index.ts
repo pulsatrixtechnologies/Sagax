@@ -700,7 +700,7 @@ import {
   pinVoiceInterrupt,
   waitForThreadIdle,
 } from "./voice-call-duplex.ts";
-import { callHasParkableWork, classifyVoiceIntent, topicsFromCallMessages } from "../src/lib/voice-mode/voice-topics.ts";
+import { callHasParkableWork, classifyVoiceIntent } from "../src/lib/voice-mode/voice-topics.ts";
 import { VoiceCallSessions, voiceCallTurnSettle } from "./voice-call-session.ts";
 import { VoiceCallWarmup } from "./voice-call-warmup.ts";
 import { callTurnEffort } from "./voice-call-effort.ts";
@@ -14974,7 +14974,6 @@ async function startTurn(
       userMessage,
       store.activePath(threadId).findLast((message) => message.role === "user" && message.id !== userMessage?.id && !message.peerAsk && message.at <= userMessage!.at),
       userMessage.sender?.name ?? botUserName(bot),
-      topicsFromCallMessages(store.activePath(threadId)),
     );
   // Organization server: where this turn's tools run, and for whom, decided
   // once (server/desktop-bridge.ts); the speaker's own attachments are
