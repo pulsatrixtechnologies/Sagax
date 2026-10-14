@@ -150,4 +150,28 @@ branch) because `1b3bbe5e` is in its unique history. Announce the SHA
 cut-over so local clones `git fetch` + reset rather than merge the old
 history back in.
 
+## 7. Purge de l'historique d'édition des PR
+
+GitHub conserve chaque révision du corps d'une PR et de ses commentaires
+(menu « Edited »). La réécriture git ne les touche pas. Aucune valeur n'est
+citée ici ; la liste de référence est l'inventaire privé de l'étape 2.
+
+a. **#437** : les révisions du corps qui contiennent l'ancien nom du dépôt
+   privé.
+b. **#444** : les révisions du corps qui contiennent l'inventaire de
+   vulnérabilités (déjà signalées), plus les commentaires concernés de #434.
+c. **Autres PR et commentaires du dépôt** : vérifier les corps, les
+   commentaires et les revues de toutes les autres PR pour toute valeur de
+   l'inventaire, et supprimer les révisions trouvées.
+
+Responsable, pour a, b et c : un administrateur du dépôt (compte admin de JC,
+opéré par l'équipe) supprime chaque révision via l'interface « Edited » →
+supprimer la révision. Si une révision ne peut pas être supprimée ou reste en
+cache, la demande va au Support GitHub, dans le même ticket que la purge des
+`refs/pull/*` (étape 4).
+
+## Checklist finale
+
+- [ ] Historique d'édition des corps et commentaires de PR purgé (#437, #444, #434, autres vérifiées)
+
 Do not execute any of the above from an agent session on #437.
