@@ -542,6 +542,7 @@ import {
   mentionPrompt,
   THREADS_PROMPT,
   WIDGET_PROMPT,
+  WIDGET_APPROVAL_PROMPT,
   RICH_OUTPUT_PROMPT,
   LEARN_PROMPT,
   PROFILE_PROMPT,
@@ -16074,7 +16075,7 @@ async function startTurn(
           // model mostly did not think to make.
           ? peerRosterSystemPrompt(sectionPeers, boundedCoordination)
           : "";
-      const credentialPrompt = integrations.agents ? CREDENTIAL_PROMPT + REACTION_PROMPT + (boundedCoordination ? "" : THREADS_PROMPT) + WIDGET_PROMPT : "";
+      const credentialPrompt = integrations.agents ? CREDENTIAL_PROMPT + REACTION_PROMPT + (boundedCoordination ? "" : THREADS_PROMPT) + WIDGET_PROMPT + WIDGET_APPROVAL_PROMPT : "";
       const routinePrompt = integrations.agents ? ROUTINE_PROMPT : "";
       const profilePrompt = integrations.agents ? PROFILE_PROMPT : "";
       const recallPrompt = integrations.agents && bot.memoryEnabled !== false ? SESSION_SEARCH_SYSTEM_PROMPT : "";

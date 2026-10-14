@@ -67,7 +67,7 @@ export function WidgetNodeView({ node, where }: { node: WidgetNode; where: Widge
       return <LabelNode node={node} where={where} />;
     case "Markdown":
       // the app's own renderer, with the chat's 1.75 line box brought down to the card's
-      return <div className="min-w-0 text-[14px] text-ink [&_.chat-md]:leading-[21px]!"><ChatMarkdown text={widgetString(node, "value") ?? ""} /></div>;
+      return <div className="min-w-0 text-[14px] text-ink [&_.chat-md]:leading-[21px]!"><ChatMarkdown inert text={widgetString(node, "value") ?? ""} /></div>;
     case "Image":
       return <WidgetImage node={node} where={where} />;
     case "Icon": {

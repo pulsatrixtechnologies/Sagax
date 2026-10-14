@@ -22,10 +22,10 @@ import { kids } from "./widget-style";
 import { newWidgetSendId, sendWidgetAction, type WidgetSendResult } from "./widget-send";
 
 /** Up to 600px on desktop, by the root's `size`, and never wider than the chat column. */
-const WIDTH: Record<string, string> = { sm: "max-w-[360px]", md: "max-w-[440px]", lg: "max-w-[600px]", full: "max-w-[600px]" };
+export const WIDTH: Record<string, string> = { sm: "max-w-[360px]", md: "max-w-[440px]", lg: "max-w-[600px]", full: "max-w-[600px]" };
 /** The surface of every ask in the chat (AskCard, the question and sign-in cards): the composer's tone,
  * its 1px ring, the 24px corner. No shadow of its own: nothing else in the thread floats. */
-const SURFACE = "w-full overflow-hidden rounded-3xl bg-composer ring-1 ring-composer-ring transition-opacity";
+export const SURFACE = "w-full overflow-hidden rounded-3xl bg-composer ring-1 ring-composer-ring transition-opacity";
 /** How long a press that leaves the widget live shows its tick. */
 const SENT_MS = 1600;
 

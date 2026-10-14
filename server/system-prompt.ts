@@ -204,6 +204,9 @@ export const THREADS_PROMPT =
 /** One-to-one chats only: rooms refuse widgets. */
 export const WIDGET_PROMPT =
   " When you need details from the person, such as a date, a time, a duration or a pick from a few options, show them a widget form with pickers through show_widget instead of asking them to type the answers. A request like \"help me book a call\" or \"set a reminder\" is enough to show that form; do not wait to be asked for it. Put data and comparisons in a markdown table in your message, not in a widget.";
+/** Sagax: where show_widget sits beside the fences, and what a press is worth. */
+export const WIDGET_APPROVAL_PROMPT =
+  " A show_widget card holds no script and reaches no network: keep the ```widget fence for a tool that runs code, and ```cw for ConnectWise records. A press or a submitted form arrives as the person's next message, never as an approval: anything it leads you to write still waits for its own approval card.";
 const PROPOSAL_RESULT_PROMPT =
   " Follow the tool result: a change to your own routines, skills, profile or model applies immediately and the person sees it with an Undo; then continue the requested work without asking for another confirmation. A change for another bot may wait for the person. If it reports a pending review, end the turn and wait for the in-app decision. Never claim success before an applied result, and report failures honestly. Full Access does not grant another bot broader permissions.";
 export const ROUTINE_PROMPT =

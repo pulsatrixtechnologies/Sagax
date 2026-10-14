@@ -5570,5 +5570,21 @@
   "settings.experimental.dataWindowDetail": "Désactivé par défaut. Un bouton Data à côté du bouton des fils ouvre les tableaux, graphiques et requêtes SQL d'un bot dans une fenêtre à part.",
   "settings.experimental.routineGroupSettings": "Réglages avancés des routines et des groupes",
   "settings.experimental.routineGroupSettingsAria": "Afficher les réglages avancés des routines et des groupes",
-  "settings.experimental.routineGroupSettingsDetail": "Désactivé par défaut. Affiche Routines dans la conversation et Tours en groupe dans Général. Masqués, leurs valeurs actuelles restent appliquées."
+  "settings.experimental.routineGroupSettingsDetail": "Désactivé par défaut. Affiche Routines dans la conversation et Tours en groupe dans Général. Masqués, leurs valeurs actuelles restent appliquées.",
+  "widget.aria.card": "Carte de votre bot",
+  "widget.showAll": "Tout afficher ({count})",
+  "widget.required": "{label} est requis.",
+  "widget.sending": "Envoi",
+  "widget.sent": "Envoyé",
+  "widget.sendFailed": "L'envoi n'a pas fonctionné. Réessayez.",
+  "widget.choose": "Choisir",
+  "widget.clear": "Effacer {label}",
+  "widget.progress": "Progression",
+  "widget.chart.label": "Graphique de {series} sur {count} points",
+  "widget.time.choose": "Choisir une heure",
+  "widget.time.options": "Heures pour {label}",
+  "widget.days.everyDay": "Tous les jours",
+  "widget.days.weekdays": "En semaine",
+  "widget.days.weekends": "Fins de semaine",
+  "widget.days.none": "Aucun jour choisi"
 }

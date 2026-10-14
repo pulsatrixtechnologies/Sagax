@@ -3059,3 +3059,38 @@ telemetry. Keep these rules, each covered by a test:
   `electron/no-phone-home.node-test.mjs`) fails when a bundle names a blocked
   host outside its reviewed allowlist; `server/no-phone-home.e2e.test.ts`
   audits a server start and a chat turn.
+
+## Declarative chat widgets (show_widget, ported from upstream 2026-10-14)
+
+A bot shows a card, list, form, table or chart with the agents tool
+`show_widget` (and replaces it with `update_widget`): message kind `widget`,
+a JSON tree in ChatKit's format, normalised once by `shared/widget.ts`
+(`parseWidgetInput`) and stored by `server/chat-widgets.ts`. The spec is
+`docs/superpowers/specs/2026-10-13-chat-widgets-design.md`. The files keep
+upstream's paths, names and data format so the next upstream sync merges:
+do not rename them or invent another format. Sagax keeps the send route
+inline in `server/index.ts` (upstream has `server/routes/bot-messages.ts`),
+so a press (`widgetAction` on `POST /api/bots/:id/messages`) is handled
+there.
+
+- A press or a submitted form is the person's next message, a reply to the
+  widget row, never an approval: a write it leads to still goes through the
+  bot's approval cards (`WIDGET_APPROVAL_PROMPT`).
+- No script and no network: unknown node types and props are refused or
+  dropped, images are https only behind "Load image", `open_url` opens only
+  http(s) on a press, and a `Markdown` node renders with
+  `<ChatMarkdown inert>` (an HTML ```widget, ```artifact or ```cw fence shows
+  as code; a YouTube link stays a link).
+- The existing ```cw, ```widget (HTML, `WidgetFrame`), ```artifact and
+  YouTube renderers are unchanged and separate.
+- Phones: Sagax's iOS and Android apps have no widget renderer yet (upstream
+  draws them in its separate mobile repo); they show the row's text fallback.
+
+Reusable card: `src/components/widget/WidgetCardFrame.tsx` draws the same
+surface, width steps (`size` sm/md/lg/full), header, problem line and footer
+as a widget, around any content, inside a `MessageBoundary` that falls back
+to `fallbackText`. The MCP Apps host (a `ui://` resource in a sandboxed
+iframe) should render in it (`flush` for an edge-to-edge iframe) rather than
+build its own bubble. Gallery: `src/gallery/chat-widgets.html`
+(`npx vite --config vite.gallery.config.ts`, then
+`/src/gallery/chat-widgets.html?skin=<id>&lang=<code>&only=<sample>&narrow=1`).
