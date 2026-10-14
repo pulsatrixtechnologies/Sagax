@@ -75,6 +75,20 @@ CVE-2026-88807 ; les paquets Debian `libx11-6` / `libxrender1` ne sont
 plus installés. Le CLI npm (ses `brace-expansion` imbriqués) n’est plus
 dans l’image de production.
 
-Le prototype ne pose pas les moteurs ni Chrome. L’overlay #444 reste
-pour le venv Hermes et les modules npm des moteurs. La CI de cette
-branche construit `ENGINE_SET=all` et applique le même seuil.
+Même prototype plus Chrome for Testing 155 et `agent-browser` 0.38.2
+(npm retiré ensuite) :
+
+```
+Report Summary
+┌───────────────────────────────────────────────────────┬──────────┬─────────────────┐
+│ Target                                                │ Type     │ Vulnerabilities │
+├───────────────────────────────────────────────────────┼──────────┼─────────────────┤
+│ sagax-os-proof:chrome (debian forky/sid)              │ debian   │        0        │
+│ usr/local/lib/node_modules/agent-browser/package.json │ node-pkg │        0        │
+└───────────────────────────────────────────────────────┴──────────┴─────────────────┘
+vulnerability attestation summary: critical=0 high=0
+```
+
+L’overlay #444 reste pour le venv Hermes et les modules npm des
+moteurs (déjà à 0 ligne langage sur l’image complète trixie). La CI
+de cette branche construit `ENGINE_SET=all` et applique le même seuil.
