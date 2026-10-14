@@ -17,12 +17,16 @@ on:
       - scripts/bundle-server.mjs
       - scripts/install-engines.mjs
       - scripts/engine-image-gate.mjs
+      - scripts/harden-image-deps.mjs
+      - scripts/hermes-jwt-overlay-smoke.py
+      - scripts/trivy-ignore-guard.mjs
       - scripts/gox-deploy.mjs
       - scripts/build-production-image.sh
       - scripts/vuln-attestation.mjs
       - engines.lock.json
       - package.json
       - pnpm-lock.yaml
+      - .trivyignore
       - .github/workflows/docker.yml
   pull_request:
     paths:
@@ -32,9 +36,13 @@ on:
       - engines.lock.json
       - scripts/install-engines.mjs
       - scripts/engine-image-gate.mjs
+      - scripts/harden-image-deps.mjs
+      - scripts/hermes-jwt-overlay-smoke.py
+      - scripts/trivy-ignore-guard.mjs
       - scripts/gox-deploy.mjs
       - scripts/build-production-image.sh
       - scripts/vuln-attestation.mjs
+      - .trivyignore
       - .github/workflows/docker.yml
 
 # One run per PR: a new push cancels the superseded run.
@@ -75,6 +83,34 @@ jobs:
             --manifest /tmp/engines-manifest.json \
             --labels /tmp/engines-labels.json \
             --sha "${{ github.sha }}"
+      - name: Install Trivy
+        run: |
+          set -euo pipefail
+          curl -fsSL -o /tmp/trivy.tgz \
+            https://github.com/aquasecurity/trivy/releases/download/v0.75.0/trivy_0.75.0_Linux-64bit.tar.gz
+          echo "c6e65abddb348e25f10549df887045629cf28cc72453cd1c63acb717316b3f3f  /tmp/trivy.tgz" | sha256sum -c
+          mkdir -p "$HOME/bin"
+          tar -xzf /tmp/trivy.tgz -C "$HOME/bin" trivy
+          echo "$HOME/bin" >> "$GITHUB_PATH"
+          "$HOME/bin/trivy" --version
+      - name: Vulnerability gate with .trivyignore
+        run: |
+          set -euo pipefail
+          trivy image --scanners vuln --severity HIGH,CRITICAL \
+            --ignorefile .trivyignore --format table \
+            openmausbot:ci
+          trivy image --scanners vuln --severity HIGH,CRITICAL \
+            --ignorefile .trivyignore --format json --output /tmp/trivy-gated.json \
+            openmausbot:ci
+          node scripts/trivy-ignore-guard.mjs --gated /tmp/trivy-gated.json
+      - name: Ignore-list staleness guard
+        run: |
+          set -euo pipefail
+          : > /tmp/trivyignore.empty
+          trivy image --scanners vuln --severity HIGH,CRITICAL \
+            --ignorefile /tmp/trivyignore.empty --format json --output /tmp/trivy-raw.json \
+            openmausbot:ci
+          node scripts/trivy-ignore-guard.mjs --ignore .trivyignore --scan /tmp/trivy-raw.json
       - name: Boot the container and prove the server + UI answer
         run: |
           set -euo pipefail
@@ -96,9 +132,11 @@ jobs:
           done
           docker logs omb > /tmp/omb-engines.log 2>&1
           node scripts/engine-image-gate.mjs --startup-log /tmp/omb-engines.log
-          for bin in claude grok codex cursor-agent; do
+          for bin in claude grok codex cursor-agent hermes; do
             docker exec omb "$bin" --version
           done
+          docker exec -i omb sh -c 'python="$(dirname "$(readlink -f "$(command -v hermes)")")/python"; exec "$python" -' \
+            < scripts/hermes-jwt-overlay-smoke.py
           docker logs omb | tail -5
       - name: Prove the image runs the open-source edition
         # This distribution does not ship the source-available enterprise layer.
