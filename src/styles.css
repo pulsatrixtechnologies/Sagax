@@ -550,56 +550,62 @@
 }
 
 /* ── Midnight ──────────────────────────────────────────────────────────────
-   The upstream palette, pixel-sampled from the real Grok app. Repeated here
-   (rather than relying on the `@theme` defaults) so that a `[data-skin]`
-   subtree can switch *back* to it — the picker needs that.
+   Night blue. Midnight started as the upstream palette, pixel-sampled from
+   the real Grok app: near-black greys (#070707 ground, #111111 rail, #262626
+   cards). JC, 2026-10-14: "les fenêtres sont trop noires" next to a night-
+   blue desktop. The ladder is unchanged (app < panel = sidebar < inset <
+   card = menu < raised = composer = control < raised-hover < user bubble),
+   only the values moved to a night blue: a touch lighter and more indigo
+   than Pulsatrix's #030b17 navy, so the two dark blue skins stay distinct.
+   The grey accent, the Pulsatrix-blue unread dot and the status tones are
+   kept; inks take a faint blue so white text does not buzz on navy.
 
    The upstream white labels on the accent and danger fills (3.65:1 and
    3.10:1) are gone: the accent carries a dark ink, and the red was lifted so
-   error text clears 4.5:1 on its own tint, so its label takes the app's
-   black too (7.6:1). Readable beats faithful here.
+   error text clears 4.5:1 on its own tint, so its label takes a near-black
+   too. Readable beats faithful here. Measured by pnpm check:contrast and
+   src/lib/midnight-skin.test.ts.
    ───────────────────────────────────────────────────────────────────────── */
 [data-skin="midnight"] {
   --code-color-scheme: dark;
-  --color-app: #070707;
-  --color-panel: #111111;
-  --color-raised: #2f2f2f;
-  --color-raised-hover: #3d3d3d;
-  --color-composer: #2f2f2f;    /* = raised: unchanged */
+  --color-app: #0a1226;
+  --color-panel: #101a33;
+  --color-raised: #26355a;
+  --color-raised-hover: #2f4069;
+  --color-composer: #26355a;    /* = raised: unchanged */
   --color-composer-ring: transparent;
-  --color-card: #262626;
-  --color-menu: #262626;    /* = card: unchanged */
-  --color-popover-border: #707070;   /* field and popover outline: 3:1 on both */
-  --color-inset: #191919;
-  --color-control: #2f2f2f;       /* = raised: Midnight is unchanged */
-  --color-hairline: #333333;
-  --color-sidebar: #111111;              /* = panel: unchanged */
-  --color-sidebar-ink: #fcfcfc;           /* = ink: unchanged */
-  --color-sidebar-ink-secondary: #fcfcfca1; /* #a5a5a5 on the rail, the reference window's preview and headers */
-  --color-sidebar-hover: #7777772c;       /* = hover: unchanged */
-  --color-sidebar-selected: #77777752;    /* = selected: unchanged */
-  --color-sidebar-hairline: #363636;      /* hairline (#333333) measures 1.49:1
-                                              on the sidebar; nudged to clear 1.5:1 */
+  --color-card: #1d2a4a;
+  --color-menu: #1d2a4a;    /* = card: unchanged */
+  --color-popover-border: #6f7fa6;   /* field and popover outline: 3:1 on both */
+  --color-inset: #16213d;
+  --color-control: #26355a;       /* = raised: unchanged */
+  --color-hairline: #2a3a60;
+  --color-sidebar: #101a33;              /* = panel: unchanged */
+  --color-sidebar-ink: #f3f6fd;           /* = ink: unchanged */
+  --color-sidebar-ink-secondary: #b3bed8; /* = ink-secondary: unchanged */
+  --color-sidebar-hover: #8ea4dc24;       /* a blue-grey wash, not the neutral grey */
+  --color-sidebar-selected: #8ea4dc45;
+  --color-sidebar-hairline: #2c3c62;
   --sidebar-mark-on-dark: inline-block;
   --sidebar-mark-on-light: none;
-  --color-ink: #fcfcfc;
-  --color-ink-secondary: #fcfcfc99;
-  --color-ink-tertiary: #fcfcfc90;
+  --color-ink: #f3f6fd;
+  --color-ink-secondary: #b3bed8;
+  --color-ink-tertiary: #a6b2ce;
   --color-accent: #d6d6d6;
   --color-unread: #3c76f4;
   --color-accent-border: #a3a3a3;
   --color-accent-text: #e8e8e8;
   --color-focus: #bdbdbd;    /* = @theme default: unchanged */
-  --color-accent-ink: #111111;
-  --color-bubble-user: #5a5a5a;
-  --color-bubble-user-ink: #fcfcfc;   /* = ink: unchanged */
+  --color-accent-ink: #0a1226;   /* = app */
+  --color-bubble-user: #3a4d7d;
+  --color-bubble-user-ink: #f3f6fd;   /* = ink: unchanged */
   --color-success: #38d591;
-  --color-danger: #ff7280;
-  --color-danger-ink: #070707;   /* white measured 3.10:1 on the danger fill; the app's black reads 7.6:1 */
+  --color-danger: #ff7f8b;   /* #ff7280 measured 4.34:1 as error text on its 15% tint over the navy card */
+  --color-danger-ink: #0a1226;   /* = app: white measured 3.10:1 on the danger fill */
   --color-success-ink: #072114;
   --color-warning: #ff9800;
-  --color-scrollbar: #3d3d3d;
-  --color-maus-line: #fcfcfc;
+  --color-scrollbar: #34466f;
+  --color-maus-line: #f3f6fd;
   --app-glow: none;
 
   --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "SF Pro Text",

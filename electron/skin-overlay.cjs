@@ -10,7 +10,7 @@
 const SKIN_CHROME = Object.freeze({
   pulsatrix: Object.freeze({ color: "#030b17", symbolColor: "#9aa6c2" }),
   "pulsatrix-light": Object.freeze({ color: "#eef2f8", symbolColor: "#545e6e" }),
-  midnight: Object.freeze({ color: "#070707", symbolColor: "#b5b5b5" }),
+  midnight: Object.freeze({ color: "#0a1226", symbolColor: "#b3bed8" }),
   atelier: Object.freeze({ color: "#f5f1eb", symbolColor: "#6b6559" }),
   foundry: Object.freeze({ color: "#100e0b", symbolColor: "#b0a696" }),
   lagoon: Object.freeze({ color: "#dfeceb", symbolColor: "#4d5c5b" }),
