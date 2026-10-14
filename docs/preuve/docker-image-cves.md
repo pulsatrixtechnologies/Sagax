@@ -58,9 +58,10 @@ gated remaining: critical=0 high=0
 ```
 
 Le garde-fou échoue fermé (exit ≠ 0) : scan `{}` ou `Results: null`
-(y compris `--gated`), `FixedVersion` faite d’espaces, date `2099-99-99`
-ou deux dates de revue, `.trivyignore` vide, sévérité `UNKNOWN`, CVE
-listée absente du scan, entrée LOW sans `VulnerabilityID` en `--gated`.
+(y compris `--gated`), `--gated` sur `{"Results":[]}`, `FixedVersion`
+faite d’espaces, date `2099-99-99` ou deux dates de revue, `.trivyignore`
+vide, sévérité `UNKNOWN`, identifiant listé absent du scan, entrée LOW
+sans `VulnerabilityID` en `--gated`.
 Un test par cas dans `scripts/trivy-ignore-guard.test.mjs`. Un id répété
 dans `.trivyignore` est aussi une erreur.
 

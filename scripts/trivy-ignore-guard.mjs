@@ -4,10 +4,11 @@
 // now has a FixedVersion, or when the review date has passed. Entries are
 // explicit CVE ids (no wildcards), each with a reason and Review date.
 //
-// Fail closed: an unusable scan, an empty ignore file, a whitespace
-// FixedVersion, an invalid calendar date, UNKNOWN severity, a listed
-// CVE missing from the scan, a duplicated ignore id, or a --gated row
-// with no VulnerabilityID (including LOW) is an error (non-zero exit).
+// Fail closed: an unusable scan, an empty Results array under --gated,
+// an empty ignore file, a whitespace FixedVersion, an invalid calendar
+// date, UNKNOWN severity, a listed id missing from the scan, a duplicated
+// ignore id, or a --gated row with no VulnerabilityID (including LOW)
+// is an error (non-zero exit).
 //
 //   node scripts/trivy-ignore-guard.mjs --ignore .trivyignore --scan scan.json
 import { readFileSync } from "node:fs";
@@ -195,12 +196,16 @@ export function highCriticalCounts(scan) {
 }
 
 /**
- * Gated remaining-count check. An unusable document or UNKNOWN severity
- * fails even when the CRITICAL/HIGH counts are zero.
+ * Gated remaining-count check. An unusable document, an empty Results
+ * array, UNKNOWN severity, or a row without an id fails even when the
+ * CRITICAL/HIGH counts are zero.
  */
 export function assessGatedScan(scan) {
   const usable = usableScan(scan);
   if (!usable.ok) return { ok: false, errors: usable.errors, counts: { CRITICAL: 0, HIGH: 0 } };
+  if (scan.Results.length === 0) {
+    return { ok: false, errors: ["scan Results is empty"], counts: { CRITICAL: 0, HIGH: 0 } };
+  }
   const findings = findingsFromScan(scan);
   const errors = [...unknownSeverityErrors(findings), ...missingIdErrors(findings)];
   const counts = highCriticalCounts(scan);

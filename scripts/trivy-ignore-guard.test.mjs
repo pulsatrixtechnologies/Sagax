@@ -144,6 +144,18 @@ describe("fail closed", () => {
     expect(cli.stdout).not.toMatch(/gated remaining: critical=0 high=0/);
   });
 
+  it("refuses --gated when Results is an empty array", () => {
+    const result = assessGatedScan({ Results: [] });
+    expect(result.ok).toBe(false);
+    expect(result.errors.join("\n")).toMatch(/Results/);
+    const cli = runGuard({ gated: { Results: [] } });
+    expect(cli.status, cli.stderr + cli.stdout).not.toBe(0);
+    expect(cli.stdout).not.toMatch(/gated remaining: critical=0 high=0/);
+    const raw = runGuard({ gated: '{"Results":[]}' });
+    expect(raw.status, raw.stderr + raw.stdout).not.toBe(0);
+    expect(raw.stdout).not.toMatch(/gated remaining: critical=0 high=0/);
+  });
+
   it("refuses a listed CVE whose FixedVersion is only spaces", () => {
     const result = assessIgnoreGuard({
       ignoreText: listed,
