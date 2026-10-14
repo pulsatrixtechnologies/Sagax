@@ -1,140 +1,46 @@
 Sagax history-rewrite dry-run (local clone --mirror only). Rewritten refs were not pushed.
 Public rewrite was not launched. No --force to origin. No --no-verify.
 Live literals are not in this file; commands use placeholders.
-Date (UTC): 2026-10-14T00:54:04Z
-Workspace HEAD: 06c4ad675b484484111892f1ecc90b9c0fa6d432
-git-filter-repo: a40bce548d2c
+The image-gate workflow was not path-renamed (it stays at main's filename).
 
-git clone --mirror <WORKSPACE> <MIRROR>
+git clone --mirror <WORKING_TREE> /tmp/sagax-rewrite-proof.git
+Cloning into bare repository '/tmp/sagax-rewrite-proof.git'...
+done.
 
 git rev-list --all | wc -l
-6127
+6080
 
-== filter-repo (replace-text + path-rename; --force only on the disposable mirror) ==
-git --git-dir=<MIRROR> filter-repo --force --replace-text <out-of-repo-expressions> \
-  --path-rename deploy/<CLIENT_TOKEN>:deploy/example \
-  --path-rename deploy/<CLIENT_TOKEN>/deploy-pulsabot.sh:deploy/example/deploy-server.sh \
-  --path-rename deploy/k8s/helm/<CHART_OLD>:deploy/k8s/helm/sandboxes \
-  --path-rename scripts/<DEPLOY_HELPER>.mjs:scripts/deploy-server.mjs \
-  --path-rename scripts/<DEPLOY_HELPER>.test.mjs:scripts/deploy-server.test.mjs \
-  --path-rename deploy/k8s/sandboxes/adapters/azure/<NP_OLD>.yaml:deploy/k8s/sandboxes/adapters/azure/networkpolicy-ingress.yaml \
-  --path-rename .github/workflows/<IMAGE_GATE>.yml:.github/workflows/image-gate.yml \
+git filter-repo --force --replace-text <OFF_REPO_EXPRESSIONS> \
+  --path-rename <OLD_DEPLOY_TREE>:deploy/example \
+  --path-rename <OLD_CHART_DIR>:deploy/k8s/helm/sandboxes \
+  --path-rename <OLD_HELPER_JS>:scripts/deploy-server.mjs \
+  --path-rename <OLD_HELPER_TEST>:scripts/deploy-server.test.mjs
+
 NOTICE: Removing 'origin' remote; see 'Why is my origin removed?'
         in the manual if you want to push back there.
-        (was <WORKSPACE>)
+        (was <WORKING_TREE>)
 
 Parsed 7 commits
-Parsed 27 commits
-Parsed 55 commits
-... 1633 Parsed-commit progress lines ...
-Parsed 6103 commits
-Parsed 6105 commits
-Parsed 6127 commits
-New history written in 322.66 seconds; now repacking/cleaning...
+… (filter-repo progress, one line per batch) …
+Parsed 6078 commits
+New history written in 338.78 seconds; now repacking/cleaning...
 Repacking your repo and cleaning out old unneeded objects
-Completely finished after 325.13 seconds.
+Completely finished after 341.35 seconds.
 
-Note: Some branches outside the refs/remotes/ hierarchy were not removed;
-to delete them, use:
-  git branch -d ci/image-gate-env
-  git branch -d ci/no-github-hosted-main
-  git branch -d cursor/codeql-hosted-153e
-  git branch -d cursor/fix-windows-vitest-main-f621
-  git branch -d cursor/ghcr-multiarch-sign-attest-ed85
-  git branch -d cursor/hosted-runners-153e
-  git branch -d cursor/image-gate-engine-check-f362
-  git branch -d cursor/platform-dispatch-gate-153e
-  git branch -d cursor/public-repo-hygiene-167c
-  git branch -d cursor/term-guard-hosted-runner-3779
-  git branch -d develop
-  git branch -d docs/generic-deploy-targets
-  git branch -d feat/collapse-goto-conversation
-  git branch -d feat/voice-end-call
-  git branch -d fix/approvals-always-allowed
-  git branch -d fix/floating-mascot-dock
-  git branch -d fix/startup-memory-spike
-  git branch -d fix/voice-relief-duplex-off
-  git branch -d main
+git rev-list --all | wc -l
+6078
 
-filter-repo elapsed_s: 325.18
-filter-repo exit: 0
+# tags 29 before / 29 after. refs/pull/* 0 / 0.
+# 6080 → 6078: filter-repo pruned two empty commits.
 
+git grep -E '<classes>' $(git rev-list --all)
 
-git --git-dir=<MIRROR> rev-list --all | wc -l
-6127
-
-git remote -v
-(none — origin removed by filter-repo, as expected)
-
-git grep -I -F [-i] -e '<CLASS>' $(git rev-list --all); echo $?
-Every class below was grepped against every SHA of git rev-list --all (6127 commits).
-git grep writes nothing when it finds no matches and exits 1.
-
-git grep -I -F -e '<PREVIEW_DOMAIN>' $(git rev-list --all); echo $?
+echo $?
 1
 
-git grep -I -F -e '<CLIENT_CLOUD_HOST>' $(git rev-list --all); echo $?
-1
-
-git grep -I -F -e '<HOST_FQDN>' $(git rev-list --all); echo $?
-1
-
-git grep -I -F -i -e '<CLIENT_ZONE>' $(git rev-list --all); echo $?
-1
-
-git grep -I -F -i -e '<CLIENT_CLOUD>' $(git rev-list --all); echo $?
-1
-
-git grep -I -F -e '<AKS_CLUSTER>' $(git rev-list --all); echo $?
-1
-
-git grep -I -F -e '<CHART_OLD>' $(git rev-list --all); echo $?
-1
-
-git grep -I -F -e '<SYSNS_OLD>' $(git rev-list --all); echo $?
-1
-
-git grep -I -F -e '<DEPLOY_HELPER>' $(git rev-list --all); echo $?
-1
-
-git grep -I -F -e '<NP_OLD>' $(git rev-list --all); echo $?
-1
-
-git grep -I -F -e '<IMAGE_GATE>' $(git rev-list --all); echo $?
-1
-
-git grep -I -F -e '<AKS_FQDN>' $(git rev-list --all); echo $?
-1
-
-git grep -I -F -e '<ACR>' $(git rev-list --all); echo $?
-1
-
-git grep -I -F -e '<VAULT_A>' $(git rev-list --all); echo $?
-1
-
-git grep -I -F -e '<VAULT_B>' $(git rev-list --all); echo $?
-1
-
-git grep -I -F -i -e '<RESOURCE_GROUP>' $(git rev-list --all); echo $?
-1
-
-git grep -I -F -e '<APPLE_TEAM_ID>' $(git rev-list --all); echo $?
-1
-
-git grep -I -F -e '<PERSPICAX_REPO>' $(git rev-list --all); echo $?
-1
-
-git grep -I -F -e '<INSTALL_ROOT>' $(git rev-list --all); echo $?
-1
-
-git grep -I -F -e '<AZURE_CONFIG>' $(git rev-list --all); echo $?
-1
-
-git grep -I -F -e '<PROM_LABEL>' $(git rev-list --all); echo $?
-1
-
-git grep -I -F -e '<COMPOSE_LEGACY>' $(git rev-list --all); echo $?
-1
+# stdout: (empty)  0 bytes.  REVS=6078.  ALL_AFTER_ZERO=yes.
+# `<classes>` is the -E union of every row in the private off-repo patterns
+# file. No live motif is written here.
 
 rewritten_refs_pushed: no
 public_rewrite_launched: no
