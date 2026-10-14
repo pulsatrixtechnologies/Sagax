@@ -1435,7 +1435,6 @@
   "keys.vps.descLink": "guia de configuração",
   "keys.vps.label": "VPS próprio",
   "keys.vps.removeAlias": "Remover o apelido salvo",
-  "library.openPlugins": "Plugins: abrir Conectar apps para este bot",
   "localAuto.body": "O modo Auto deixa este bot clicar, digitar e executar ferramentas neste computador sem perguntar antes. Ações destrutivas e sensíveis ainda param. Continue só se você estiver olhando.",
   "localAuto.ok": "OK",
   "localAuto.title": "Permitir o modo Auto neste computador?",

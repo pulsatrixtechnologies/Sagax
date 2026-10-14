@@ -2965,7 +2965,6 @@
   "lending.activity.empty": "Nothing yet. Every request from the server's bots will be listed here, including refused ones.",
   "lending.activity.refused": "refused",
   "lending.activity.title": "Activity on this computer",
-  "library.openPlugins": "Plugins: open Connect apps for this bot",
   "library.view.files": "Files",
   "library.view.skills": "Skills",
   "library.views": "Library views",
