@@ -11393,11 +11393,14 @@ bus.subscribe((event: RuntimeEvent) => {
         if (messageId) {
           // the whole tool object is replaced, so carry `spoken` across —
           // dropping it here would silently un-narrate every completed tool
-          const existing = store.messagesFor(event.threadId).find((m) => m.id === messageId)?.tool;
+          const row = store.messagesFor(event.threadId).find((m) => m.id === messageId);
+          const existing = row?.tool;
           toolName = existing?.name ?? "tool";
           const widget = event.ok && event.resultText ? cwToolWidget(toolName, existing?.input, event.resultText) : null;
+          // How long the call ran, for the step row's quiet duration.
+          const durationMs = row ? Math.max(0, Date.now() - row.at) : undefined;
           store.patchMessage(event.threadId, messageId, {
-            tool: { ...existing, name: toolName, ok: event.ok, output: event.output, ...(widget ? { widget } : {}) },
+            tool: { ...existing, name: toolName, ok: event.ok, output: event.output, ...(durationMs !== undefined ? { durationMs } : {}), ...(widget ? { widget } : {}) },
           });
           toolMessageByItem.delete(itemKey);
         }

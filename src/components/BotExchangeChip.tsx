@@ -9,7 +9,7 @@ import { BotAvatar } from "./Avatar";
 import { ConversationLink } from "./ConversationLink";
 import { activeLocale, t } from "@/lib/i18n";
 import { mausInk, type MausColor } from "@/lib/mascot";
-import { ToolActivity } from "./ToolActivity";
+import { ToolActivity, botNames } from "./ToolActivity";
 import {
   exchangeBody,
   exchangeSheetRow,
@@ -112,7 +112,7 @@ export function ExchangeSheet({ run, bots, showToolCalls, onClose }: { run: Exch
               <div key={message.id} className="contents">
                 {stamp}
                 <div data-mid={message.id} className="ps-4">
-                  <ToolActivity tool={message.tool!} />
+                  <ToolActivity tool={message.tool!} nameOf={botNames(bots)} />
                 </div>
               </div>
             );

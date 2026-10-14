@@ -1,12 +1,12 @@
-import { ClipboardList } from "lucide-react";
-
 import { t } from "@/lib/i18n";
 import type { Message } from "@/state/store";
+import { stepDuration, stepLabel } from "@/lib/step-label";
+import { StepRow } from "./StepRow";
 
-/** The work digest as one quiet chip under a reply: how many tool calls the
- * turn made and how many files it changed, with the full digest text as the
- * tooltip. Shown under the same setting as tool chips (Settings → Tool
- * calls), because it is the summary of exactly those. */
+/** The work digest as one quiet step row under a reply: how many tools the
+ * turn used and how many files it changed, opening to the digest itself.
+ * Shown under the same setting as tool steps (Settings → Tool calls),
+ * because it is the summary of exactly those. */
 export function DigestChip({ message }: { message: Message }) {
   const digest = message.digest;
   if (!digest) return null;
@@ -17,18 +17,45 @@ export function DigestChip({ message }: { message: Message }) {
   if (!digest.tools.length && !digest.toolCalls && !digest.toolsDropped &&
       !files && !digest.memory.length && !digest.memoryDropped) return null;
   const tools = digest.toolCalls ?? `${digest.tools.reduce((n, tool) => n + tool.count, 0)}${digest.toolsDropped ? "+" : ""}`;
-  const work = files === null
-    ? t("chat.digestChipNoFiles", { tools })
-    : t("chat.digestChip", { tools, files });
+  const used = t(String(tools) === "1" ? "step.digest.one" : "step.digest.many", { tools });
+  const changed = files ? t(files === 1 ? "step.digest.files.one" : "step.digest.files.many", { files }) : undefined;
   return (
     <div className="flex justify-start" data-testid="digest-chip">
-      <span
+      <StepRow
+        label={used}
+        target={changed}
+        duration={stepDuration(digest.durationMs)}
         title={message.text ?? t("chat.digestTitle")}
-        className="ui-chip max-w-[min(480px,100%)] border border-hairline/40 bg-panel text-ink-secondary"
       >
-        <ClipboardList size={12} />
-        <span className="truncate">{work}</span>
-      </span>
+        {() => <DigestDetail message={message} />}
+      </StepRow>
+    </div>
+  );
+}
+
+function DigestDetail({ message }: { message: Message }) {
+  const digest = message.digest!;
+  const files = digest.files ? [...digest.files.added, ...digest.files.changed, ...digest.files.deleted] : [];
+  return (
+    <div className="space-y-2 py-1 text-[12px] text-ink-secondary" data-testid="digest-detail">
+      {digest.tools.length > 0 && (
+        <ul className="space-y-0.5">
+          {digest.tools.map((tool) => (
+            <li key={tool.name} className="flex flex-wrap items-baseline gap-x-2">
+              <span className="text-ink">{stepLabel({ name: tool.name, ok: true })}</span>
+              <span className="tabular-nums text-ink-tertiary">×{tool.count}</span>
+              <code dir="ltr" className="font-mono text-[11px] text-ink-tertiary">{tool.name}</code>
+              {tool.failed ? <span className="text-danger/90">{t("toolDetail.failed")} ×{tool.failed}</span> : null}
+            </li>
+          ))}
+        </ul>
+      )}
+      {files.length > 0 && (
+        <ul className="space-y-0.5 font-mono text-[11.5px]" dir="ltr">
+          {files.slice(0, 12).map((file) => <li key={file} className="truncate">{file}</li>)}
+        </ul>
+      )}
+      {message.text && <p className="whitespace-pre-wrap break-words text-ink-tertiary">{message.text}</p>}
     </div>
   );
 }

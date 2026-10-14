@@ -1,63 +1,163 @@
-import { Check, ChevronRight, X } from "lucide-react";
 import { useState } from "react";
+import { Check, ChevronDown, Copy } from "lucide-react";
 import type { Message } from "@/state/store";
 import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
 import { placeLabelKey, type Place } from "@/lib/place";
+import { copyText } from "@/lib/copy-text";
+import { readStep, stepArgs, stepDuration, stepJson, stepPhase, stepResult, type StepNameOf } from "@/lib/step-label";
+import { parseArgs } from "@/lib/approval-describe";
 import { computerSelectTarget, toolExecutionTarget } from "../../shared/execution-target";
-import { nameIsCommand } from "@/lib/verify-steps";
 import { PlaceIcon } from "./PlaceIcon";
-import { WorkingDots } from "./WorkingIndicator";
+import { StepRow } from "./StepRow";
 
-/** A quiet disclosure, not a second inspector. Old messages and providers
- * without output keep their status and never invent a successful result. */
-/** `place` names where a screen or page tool ran, so a transcript shows the
+type Tool = NonNullable<Message["tool"]>;
+
+/** Turn a list of bots into the id-to-name reader a step label wants. */
+export function botNames(bots: ReadonlyArray<{ id: string; name: string }> | undefined): StepNameOf | undefined {
+  if (!bots?.length) return undefined;
+  return (id: string) => bots.find((bot) => bot.id === id)?.name;
+}
+
+/** One tool call as a quiet step row: what it did in plain words, how long
+ * it took, and a detail a person can read (the tool id, its arguments, the
+ * start of its result) with the full JSON one click further. Old messages
+ * and providers without output keep their status and never invent a
+ * successful result.
+ *
+ * `place` names where a screen or page tool ran, so a transcript shows the
  * place of every step, not just the current one. Absent for tools that touch
  * no screen. */
-export function ToolActivity({ tool, place = null }: { tool: NonNullable<Message["tool"]>; place?: Place | null }) {
-  const [expanded, setExpanded] = useState(false);
-  const failed = tool.ok === false;
+export function ToolActivity({ tool, place = null, nameOf, defaultOpen = false }: { tool: Tool; place?: Place | null; nameOf?: StepNameOf; defaultOpen?: boolean }) {
   // Auto Works on: the bot chose where it works from this step on.
   const switched = tool.ok === true ? computerSelectTarget(tool.name, tool.input) : null;
   if (switched) {
     const label = t(switched === "cloud" ? "toolTarget.cloud" : switched === "local_vm" ? "toolTarget.localVm" : "toolTarget.myComputer");
     return (
-      <span className="inline-flex w-fit max-w-full items-center gap-1.5 rounded-full bg-inset px-2 py-0.5 text-[12px] text-ink-secondary" data-testid="tool-computer-switch" data-target={switched}>
+      <span className="inline-flex w-fit max-w-full items-center gap-1.5 py-0.5 text-[13px] leading-5 text-ink-secondary" data-testid="tool-computer-switch" data-target={switched}>
         <PlaceIcon place={switched === "cloud" ? "cloud" : switched === "local_vm" ? "vm" : "local"} size={12} className="shrink-0 opacity-70" aria-hidden="true" />
         {t("toolTarget.workingOn", { place: label })}
       </span>
     );
   }
+  const phase = stepPhase(tool);
+  const reading = readStep(tool, nameOf);
   // Where the tool ran: the person's server environment or their own computer.
   const target = toolExecutionTarget(tool.name, place);
-  const status = tool.ok === undefined ? t("toolDetail.running") : failed ? t("toolDetail.failed") : t("toolDetail.completed");
+  const status = phase === "running" ? t("toolDetail.running") : phase === "failed" ? t("toolDetail.failed") : t("toolDetail.completed");
   return (
-    <details onToggle={(event) => setExpanded(event.currentTarget.open)} className="group/tool w-fit max-w-full rounded-xl border border-hairline/40 bg-panel text-[13px] open:w-[min(38rem,100%)]" data-testid="tool-activity">
-      <summary
-        role="button"
-        aria-expanded={expanded}
-        aria-label={t("toolDetail.label", { name: tool.name, status })}
-        className={cn("flex min-h-8 cursor-pointer list-none items-center gap-2 rounded-xl px-3 py-1.5 hover:bg-raised focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent [&::-webkit-details-marker]:hidden", failed ? "text-danger" : "text-ink-secondary")}
-      >
-        <span className="shrink-0" aria-hidden="true">{tool.ok === undefined ? <WorkingDots size={3.5} /> : failed ? <X size={13} /> : <Check size={13} className="text-success" />}</span>
-        {place && <PlaceIcon place={place} size={13} className="shrink-0 opacity-70" role="img" aria-label={t(placeLabelKey(place))} data-testid="tool-place" />}
-        <span className="min-w-0 max-w-[30rem] truncate font-mono">{tool.name}</span>
-        {target && <span className="shrink-0 rounded-full bg-inset px-1.5 py-0.5 text-[11px]" data-testid="tool-target" data-target={target}>{t(target === "user-sandbox" ? "toolTarget.userSandbox" : "toolTarget.userDesktop")}</span>}
-        {tool.summary && tool.summary !== tool.name && !nameIsCommand(tool.name) && <span className="min-w-0 flex-1 truncate font-mono" title={tool.summary}>{tool.summary}</span>}
-        <ChevronRight size={13} className="ml-auto shrink-0 group-open/tool:rotate-90" aria-hidden="true" />
-      </summary>
-      <div className="space-y-3 border-t border-hairline/40 p-3 text-ink-secondary">
-        <div className={cn("text-[11px] font-medium", failed && "text-danger")}>{status}</div>
-        <div>
-          <div className="mb-1 text-[11px] font-medium">{t("toolDetail.input")}</div>
-          <pre dir="ltr" className="max-h-52 overflow-auto rounded-lg bg-inset p-2.5 font-mono text-xs whitespace-pre-wrap break-words text-ink">{tool.input ?? tool.summary ?? tool.name}</pre>
-        </div>
-        <div>
-          <div className="mb-1 text-[11px] font-medium">{t("toolDetail.output")}</div>
-          {tool.output ? <pre dir="ltr" className="max-h-64 overflow-auto rounded-lg bg-inset p-2.5 font-mono text-xs whitespace-pre-wrap break-words text-ink">{tool.output}</pre> : <p className="text-xs">{tool.ok === undefined ? t("toolDetail.waiting") : t("toolDetail.noOutput")}</p>}
-        </div>
-        <p className="text-[11px] text-ink-secondary">{t("toolDetail.previewHint")}</p>
+    <StepRow
+      testId="tool-activity"
+      label={reading.label}
+      target={reading.target}
+      phase={phase}
+      defaultOpen={defaultOpen}
+      duration={phase === "running" ? undefined : stepDuration(tool.durationMs)}
+      ariaLabel={t("toolDetail.label", { name: reading.label, status })}
+      icon={place ? <PlaceIcon place={place} size={13} className="shrink-0" role="img" aria-label={t(placeLabelKey(place))} data-testid="tool-place" /> : undefined}
+      extra={target ? (
+        <span className="shrink-0 text-[11px] text-ink-tertiary" data-testid="tool-target" data-target={target}>
+          · {t(target === "user-sandbox" ? "toolTarget.userSandbox" : "toolTarget.userDesktop")}
+        </span>
+      ) : undefined}
+    >
+      {() => <ToolStepDetail tool={tool} status={status} />}
+    </StepRow>
+  );
+}
+
+const KEY = "text-[11px] text-ink-tertiary";
+const MONO_BLOCK = "max-h-52 overflow-auto rounded-md bg-inset px-2 py-1.5 font-mono text-[11.5px] leading-relaxed whitespace-pre-wrap break-words text-ink";
+
+/** What the open row shows, top to bottom: the technical name with its
+ * status and duration, the arguments in a few readable lines, the start of
+ * the result, then the whole record as JSON, folded and copyable. */
+export function ToolStepDetail({ tool, status }: { tool: Tool; status: string }) {
+  const phase = stepPhase(tool);
+  const args = stepArgs(tool.input);
+  const parsed = parseArgs(tool.input);
+  const command = typeof parsed?.command === "string" ? parsed.command : undefined;
+  const plainInput = !parsed && (tool.input ?? tool.summary);
+  const result = stepResult(tool.output);
+  const duration = stepDuration(tool.durationMs);
+  return (
+    <div className="space-y-2 py-1 text-[12px] text-ink-secondary" data-testid="tool-step-detail">
+      <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+        <span className={KEY}>{t("step.detail.tool")}</span>
+        <code dir="ltr" className="min-w-0 break-all font-mono text-[11.5px] text-ink">{tool.name}</code>
+        <span className={cn("text-[11px]", phase === "failed" ? "text-danger" : "text-ink-tertiary")}>
+          {status}{duration && phase !== "running" ? ` · ${duration}` : ""}
+        </span>
       </div>
-    </details>
+      {(args.length > 0 || plainInput) && (
+        <div>
+          <div className={cn(KEY, "mb-0.5")}>{t("step.detail.arguments")}</div>
+          {command ? (
+            <pre dir="ltr" className={MONO_BLOCK}>{command}</pre>
+          ) : args.length > 0 ? (
+            <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-0.5">
+              {args.map((pair) => (
+                <div key={pair.key} className="contents">
+                  <dt className="font-mono text-[11.5px] text-ink-tertiary">{pair.key}</dt>
+                  <dd className="min-w-0 break-words text-ink">{pair.value}</dd>
+                </div>
+              ))}
+            </dl>
+          ) : (
+            <pre dir="ltr" className={MONO_BLOCK}>{plainInput}</pre>
+          )}
+        </div>
+      )}
+      <div>
+        <div className={cn(KEY, "mb-0.5")}>{t("step.detail.result")}</div>
+        {result ? (
+          <>
+            <pre dir="ltr" className={MONO_BLOCK}>{result.text}</pre>
+            {result.cut && <p className="mt-0.5 text-[11px] text-ink-tertiary">{t("step.detail.truncated")}</p>}
+          </>
+        ) : (
+          <p className="text-[12px]">{phase === "running" ? t("toolDetail.waiting") : t("toolDetail.noOutput")}</p>
+        )}
+      </div>
+      <JsonFold json={stepJson(tool)} />
+      <p className="text-[11px] text-ink-tertiary">{t("toolDetail.previewHint")}</p>
+    </div>
+  );
+}
+
+function JsonFold({ json }: { json: string }) {
+  const [open, setOpen] = useState(false);
+  const [copied, setCopied] = useState<"idle" | "copied" | "failed">("idle");
+  const copy = async () => {
+    const outcome = await copyText(json);
+    if (outcome === "empty") return;
+    setCopied(outcome);
+    setTimeout(() => setCopied("idle"), 1_200);
+  };
+  return (
+    <div>
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          aria-expanded={open}
+          onClick={() => setOpen((value) => !value)}
+          className="inline-flex items-center gap-1 rounded text-[11px] text-ink-tertiary hover:text-ink focus-visible:outline-2 focus-visible:outline-accent"
+          data-testid="tool-step-json-toggle"
+        >
+          {t("step.detail.json")}
+          <ChevronDown size={12} aria-hidden="true" className={cn("transition-transform duration-150", open && "rotate-180")} />
+        </button>
+        <button
+          type="button"
+          onClick={() => void copy()}
+          className="inline-flex items-center gap-1 rounded text-[11px] text-ink-tertiary hover:text-ink focus-visible:outline-2 focus-visible:outline-accent"
+          data-testid="tool-step-json-copy"
+        >
+          {copied === "copied" ? <Check size={12} aria-hidden="true" /> : <Copy size={12} aria-hidden="true" />}
+          {copied === "copied" ? t("step.detail.copied") : copied === "failed" ? t("step.detail.copyFailed") : t("step.detail.copy")}
+        </button>
+      </div>
+      {open && <pre dir="ltr" data-testid="tool-step-json" className={cn(MONO_BLOCK, "mt-1 max-h-72")}>{json}</pre>}
+    </div>
   );
 }

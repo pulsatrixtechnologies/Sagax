@@ -91,7 +91,9 @@ import { VerifyCard } from "./VerifyCard";
 import { askText, runSkill, runSteps, runSummary, showRun, skillPrompt } from "@/lib/verify-steps";
 import { useShowRunCard } from "@/lib/run-card-preferences";
 import { sendsMessage, useSendKey } from "@/lib/send-key";
-import { ToolActivity } from "./ToolActivity";
+import { ToolActivity, botNames } from "./ToolActivity";
+import { StepRow } from "./StepRow";
+import { stepLabel } from "@/lib/step-label";
 import { DataResultChip } from "./DataResultChip";
 import { DataWindowButton } from "./DataWindowButton";
 import { ThreadRefText } from "./ThreadRefs";
@@ -847,7 +849,7 @@ function PeerLabel({ peer, autoModel }: { peer: PeerLine; autoModel?: Message["a
   );
 }
 
-/** A tool run: spinner while live, check/cross once settled. */
+/** A tool run as a quiet step row (StepRow), or a receipt that opens a conversation. */
 const ActivityChip = memo(function ActivityChip({ message, place = "auto" }: { message: Message; place?: EffectivePlace }) {
   const { bots, dispatch, botDmIds } = useChatRows();
   const tool = message.tool;
@@ -859,39 +861,20 @@ const ActivityChip = memo(function ActivityChip({ message, place = "auto" }: { m
   if (comm) {
     const withBot = bots.find((b) => b.id === comm.withBotId);
     const stay = botDmIds.has(comm.groupId);
-    const body = (
-      <>
-        <BotAvatar bot={withBot ?? { name: comm.withName, color: comm.withColor }} state="happy" size={16} animated={false} />
-        <span className="max-w-[480px] truncate">{tool.name}</span>
-      </>
-    );
-    if (stay) {
-      return (
-        <div className="flex justify-start">
-          <div
-            data-testid="bot-comm-chip"
-            className="flex items-center gap-2 rounded-full border border-hairline/40 bg-panel px-3 py-1.5 text-[13px] text-ink-secondary"
-          >
-            {body}
-          </div>
-        </div>
-      );
-    }
     return (
       <div className="flex justify-start">
-        <button
-          data-testid="bot-comm-chip"
-          onClick={() => dispatch({ type: "select", id: comm.groupId })}
-          title={t("chat.openConversationWith", { name: comm.withName })}
-          className="ui-pill"
-        >
-          {body}
-          <ChevronRight size={13} />
-        </button>
+        <StepRow
+          testId="bot-comm-chip"
+          label={stepLabel(tool, botNames(bots))}
+          phase={tool.ok === false ? "failed" : "done"}
+          icon={<BotAvatar bot={withBot ?? { name: comm.withName, color: comm.withColor }} state="happy" size={14} animated={false} />}
+          title={stay ? undefined : t("chat.openConversationWith", { name: comm.withName })}
+          onActivate={stay ? undefined : () => dispatch({ type: "select", id: comm.groupId })}
+        />
       </div>
     );
   }
-  return <ToolActivity tool={tool} place={toolPlace(tool.name, place)} />;
+  return <ToolActivity tool={tool} place={toolPlace(tool.name, place)} nameOf={botNames(bots)} />;
 });
 
 /** A routine run's receipt. It opens the run's own thread, so it follows
