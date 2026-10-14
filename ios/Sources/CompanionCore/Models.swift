@@ -1325,6 +1325,10 @@ public struct ModelOption: Codable, Hashable, Identifiable, Sendable {
     public var local: Bool? = nil
     /// A local model already loaded: listed first.
     public var loaded: Bool? = nil
+    /// The reasoning levels this model takes (`ModelEffort`); empty: none.
+    public var effortLevels: [String]? = nil
+    /// The level the engine runs it at when none is sent.
+    public var defaultEffort: String? = nil
 }
 
 /// One reasoning variant of a model (`shared/runtime-events.ts`).

@@ -67,12 +67,34 @@ describe("local model labels", () => {
       { id: "bare" },
     ]);
     expect([...labels.values()]).toEqual([
-      "DwarfStar: Qwen3.8 Flash Next (qwen3.8-flash-next)",
-      "DwarfStar: Qwen3.8 Flash Next (qwen3.8-flash-next-chat)",
+      "DwarfStar: Qwen3.8 Flash Next",
+      "DwarfStar: Qwen3.8 Flash Next Chat",
       "DwarfStar: Solo Model",
       "DwarfStar: bare",
     ]);
     expect(localModelLabels("", [{ id: "x", name: "X" }]).get("x")).toBe("X");
+  });
+
+  it("tells DwarfStar's three ids of one model apart by their ends, not by a truncated id (2026-10-13)", () => {
+    const labels = localModelLabels("DwarfStar", [
+      { id: "qwen3.8-flash-next", name: "Qwen3.8 Flash Next" },
+      { id: "qwen3.8-flash-next-chat", name: "Qwen3.8 Flash Next" },
+      { id: "qwen3.8-flash-next-reasoner", name: "Qwen3.8 Flash Next" },
+    ]);
+    expect([...labels.values()]).toEqual([
+      "DwarfStar: Qwen3.8 Flash Next",
+      "DwarfStar: Qwen3.8 Flash Next Chat",
+      "DwarfStar: Qwen3.8 Flash Next Reasoner",
+    ]);
+    expect(new Set(labels.values()).size).toBe(3);
+  });
+
+  it("keeps the id when ids under one name share no stem", () => {
+    const labels = localModelLabels("Ollama", [
+      { id: "qwen3:8b", name: "Qwen 3" },
+      { id: "qwen3-coder", name: "Qwen 3" },
+    ]);
+    expect([...labels.values()]).toEqual(["Ollama: Qwen 3 (qwen3:8b)", "Ollama: Qwen 3 (qwen3-coder)"]);
   });
 });
 

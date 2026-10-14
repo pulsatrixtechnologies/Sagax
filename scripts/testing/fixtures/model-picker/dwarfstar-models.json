@@ -1,0 +1,87 @@
+{
+  "object": "list",
+  "data": [
+    {
+      "id": "qwen3.8-flash-next",
+      "object": "model",
+      "created": 1767225600,
+      "owned_by": "ds4.c",
+      "name": "Qwen3.8 Flash Next",
+      "context_length": 262144,
+      "top_provider": {
+        "context_length": 262144,
+        "max_completion_tokens": 262144,
+        "is_moderated": false
+      },
+      "supported_parameters": [
+        "tools",
+        "tool_choice",
+        "max_tokens",
+        "temperature",
+        "top_p",
+        "top_k",
+        "min_p",
+        "ignore_eos",
+        "stop",
+        "seed",
+        "stream",
+        "reasoning_effort"
+      ]
+    },
+    {
+      "id": "qwen3.8-flash-next-chat",
+      "object": "model",
+      "created": 1767225600,
+      "owned_by": "ds4.c",
+      "name": "Qwen3.8 Flash Next",
+      "context_length": 262144,
+      "top_provider": {
+        "context_length": 262144,
+        "max_completion_tokens": 262144,
+        "is_moderated": false
+      },
+      "supported_parameters": [
+        "tools",
+        "tool_choice",
+        "max_tokens",
+        "temperature",
+        "top_p",
+        "top_k",
+        "min_p",
+        "ignore_eos",
+        "stop",
+        "seed",
+        "stream",
+        "reasoning_effort"
+      ]
+    },
+    {
+      "id": "qwen3.8-flash-next-reasoner",
+      "object": "model",
+      "created": 1767225600,
+      "owned_by": "ds4.c",
+      "name": "Qwen3.8 Flash Next",
+      "context_length": 262144,
+      "top_provider": {
+        "context_length": 262144,
+        "max_completion_tokens": 262144,
+        "is_moderated": false
+      },
+      "supported_parameters": [
+        "tools",
+        "tool_choice",
+        "max_tokens",
+        "temperature",
+        "top_p",
+        "top_k",
+        "min_p",
+        "ignore_eos",
+        "stop",
+        "seed",
+        "stream",
+        "reasoning_effort"
+      ]
+    }
+  ],
+  "_recorded": "ds4 (DwarfStar) GET /v1/models, 2026-10-13"
+}

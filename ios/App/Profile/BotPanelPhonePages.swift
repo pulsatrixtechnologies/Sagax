@@ -111,8 +111,9 @@ struct BotModelSection: View {
     }
     private var levels: [String] {
         guard !usesVariants else { return [] }
-        return UltracodeEffort.pickerLevels(instance?.capabilities?.effortLevels ?? [])
+        return ModelEffort.pickerLevels(modelOption, engine: instance?.capabilities?.effortLevels ?? [])
     }
+    private var modelOption: ModelOption? { instance?.models.options.first { $0.id == modelID } }
     private var draft: ModelSelection {
         var next = usesVariants
             ? ModelSelection(instanceId: instanceID, model: modelID, variant: variant)
@@ -123,7 +124,7 @@ struct BotModelSection: View {
     private var canApply: Bool {
         guard loaded, current.busy != true, let instance, instance.snapshot.isAvailable else { return false }
         let offered = modelID == instance.models.default || instance.models.options.contains { $0.id == modelID }
-        return offered && (effort.map { UltracodeEffort.accepts(effort: $0, in: instance.capabilities?.effortLevels ?? []) } ?? true) && draft != saved
+        return offered && (effort.map { ModelEffort.forModel($0, option: modelOption, engine: instance.capabilities?.effortLevels ?? []) != nil } ?? true) && draft != saved
     }
 
     var body: some View {
@@ -179,6 +180,8 @@ struct BotModelSection: View {
                 .disabled(instance?.snapshot.isAvailable != true)
                 .onValueChange(of: modelID) { model in
                     variant = instanceID == saved.instanceId && model == saved.model ? saved.variant : nil
+                    // a level the new model does not take goes back to its default
+                    effort = ModelEffort.forModel(effort, option: modelOption, engine: instance?.capabilities?.effortLevels ?? [])
                     // choosing a model pins it, as on the desktop
                     if model != saved.model { auto = false }
                     apply()
@@ -238,7 +241,7 @@ struct BotModelSection: View {
         guard let instance = instances.first(where: { $0.instanceId == id }) else { return }
         if id == saved.instanceId {
             modelID = saved.model
-            effort = saved.effort.flatMap { (instance.capabilities?.effortLevels ?? []).contains($0) ? $0 : nil }
+            effort = ModelEffort.forModel(saved.effort, option: instance.models.options.first { $0.id == saved.model }, engine: instance.capabilities?.effortLevels ?? [])
             variant = saved.variant
         } else {
             modelID = instance.models.default

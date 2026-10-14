@@ -236,9 +236,9 @@ describe("desktop local models", () => {
     expect(service.publish(owner, { endpoints: [{ id: "desk8002", label: "DwarfStar", models, details }] }).ok).toBe(true);
     const rows = service.modelsFor(owner);
     expect(rows.map((row) => row.label)).toEqual([
-      "DwarfStar: Qwen3.8 Flash Next (qwen3.8-flash-next)",
-      "DwarfStar: Qwen3.8 Flash Next (qwen3.8-flash-next-chat)",
-      "DwarfStar: Qwen3.8 Flash Next (qwen3.8-flash-next-reasoner)",
+      "DwarfStar: Qwen3.8 Flash Next",
+      "DwarfStar: Qwen3.8 Flash Next Chat",
+      "DwarfStar: Qwen3.8 Flash Next Reasoner",
       "DwarfStar: Solo Model",
     ]);
     expect(rows[0]?.contextWindow).toBe(262144);

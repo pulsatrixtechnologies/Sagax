@@ -1936,5 +1936,13 @@
   "chat.gotoGroup.count": "{count} बातचीत",
   "chat.gotoGroup.menu": "बातचीत",
   "chat.gotoGroup.with": "{count} बातचीत, साथ में",
-  "voiceMode.call.fullDuplexHelp": "किसी भी समय बॉट के ऊपर बोलें। वाणी मौजूदा बोला गया जवाब रोक देती है। जब वह सोच रहा हो तो नया विषय उस काम को चलता रहने देता है। डिफ़ॉल्ट रूप से बंद। सर्वर पर SAGAX_VOICE_FULL_DUPLEX=1 के बिना स्विच का कोई असर नहीं। बीच में रोकने के लिए चालू करें; बंद रहने दें ताकि काम करते समय कही बातें उसी दौर में जुड़ जाएँ।"
+  "voiceMode.call.fullDuplexHelp": "किसी भी समय बॉट के ऊपर बोलें। वाणी मौजूदा बोला गया जवाब रोक देती है। जब वह सोच रहा हो तो नया विषय उस काम को चलता रहने देता है। डिफ़ॉल्ट रूप से बंद। सर्वर पर SAGAX_VOICE_FULL_DUPLEX=1 के बिना स्विच का कोई असर नहीं। बीच में रोकने के लिए चालू करें; बंद रहने दें ताकि काम करते समय कही बातें उसी दौर में जुड़ जाएँ।",
+  "model.effort.defaultWith": "डिफ़ॉल्ट ({level})",
+  "model.fastTag": "तेज़",
+  "model.settings.aria": "इस मॉडल की सेटिंग्स",
+  "model.settings.fastHint": "इस मॉडल का तेज़ संस्करण चलाएँ (इसकी लागत अधिक हो सकती है)",
+  "model.settings.context": "संदर्भ",
+  "model.settings.contextTitle": "यह मॉडल बातचीत के {tokens} टोकन तक पढ़ता है",
+  "model.settings.model": "मॉडल",
+  "model.settings.back": "{title} से वापस"
 }

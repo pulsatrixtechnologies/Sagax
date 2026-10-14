@@ -127,6 +127,25 @@ describe("EffortRow", () => {
     );
     expect(labels).toContain("Ultracode");
   });
+  it("lists only the levels the bot's model takes, Default naming its own (2026-10-13)", () => {
+    const perModel = (options: InstanceInfo["models"]["options"]): InstanceInfo => ({ ...engine(["low", "medium", "high", "xhigh", "max"]), models: { default: "gpt-5.6", options } });
+    fixture.instances = [perModel([{ id: "gpt-5.6", label: "GPT-5.6", effortLevels: ["low", "medium", "high"], defaultEffort: "medium" }])];
+    const markup = renderToStaticMarkup(createElement(EffortRow, { bot: bot(), compact: true }));
+    expect([...markup.matchAll(/<option[^>]*>([^<]+)</g)].map((match) => match[1])).toEqual(["Default (Medium)", "Low", "Medium", "High", "Ultracode"]);
+    // a level kept from another model reads as Default, which is what runs
+    expect(levelButtons(renderToStaticMarkup(createElement(EffortRow, { bot: bot("max") }))).find((button) => button.pressed)?.label).toBe("Default (Medium)");
+    // a model with no effort control gets no row
+    fixture.instances = [perModel([{ id: "gpt-5.6", label: "GPT-5.6", effortLevels: [] }])];
+    expect(renderToStaticMarkup(createElement(EffortRow, { bot: bot() }))).toBe("");
+  });
+  it("keeps a level across a pick when the new model takes it, else lets its default run", () => {
+    const instance: InstanceInfo = { ...engine(["low", "medium", "high", "xhigh"]), models: { default: "gpt-5.6", options: [
+      { id: "gpt-5.6", label: "GPT-5.6", effortLevels: ["low", "medium", "high", "xhigh"] },
+      { id: "gpt-5.5", label: "GPT-5.5", effortLevels: ["low", "medium", "high"], defaultEffort: "medium" },
+    ] } };
+    expect(modelSelectionForPick({ instanceId: "codex", model: "gpt-5.6", effort: "xhigh" }, instance, "gpt-5.5")).toEqual({ instanceId: "codex", model: "gpt-5.5" });
+    expect(modelSelectionForPick({ instanceId: "codex", model: "gpt-5.6", effort: "high" }, instance, "gpt-5.5")).toEqual({ instanceId: "codex", model: "gpt-5.5", effort: "high" });
+  });
   it("renders nothing for an engine that declares no effort levels", () => {
     expect(renderEffort([engine()])).toBe("");
     // an engine that declares an empty list is the same promise as none

@@ -11,14 +11,19 @@ import Foundation
 
 public enum ModelPickerRules {
     /// `modelSelectionForPick`: switching models never carries an opaque
-    /// variant from the previous model; the effort stays on the same engine.
+    /// variant from the previous model; the effort stays on the same engine
+    /// when the new model takes it (`ModelEffort`).
     public static func selectionForPick(_ selection: ModelSelection, instance: Instance, model: String) -> ModelSelection {
         var next = ModelSelection(instanceId: instance.instanceId, model: model)
         if instance.instanceId == selection.instanceId {
             if instance.capabilities?.modelVariants == true {
                 if model == selection.model, let variant = selection.variant { next.variant = variant }
-            } else if let effort = selection.effort, !effort.isEmpty {
-                next.effort = effort
+            } else {
+                // a level the new model does not take is dropped: its default runs
+                // (an engine that did not say its levels keeps it, as before)
+                let option = instance.models.options.first { $0.id == model }
+                next.effort = instance.capabilities?.effortLevels.map { ModelEffort.forModel(selection.effort, option: option, engine: $0) }
+                    ?? selection.effort.flatMap { $0.isEmpty ? nil : $0 }
             }
         }
         return next

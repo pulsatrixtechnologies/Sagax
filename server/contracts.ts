@@ -620,6 +620,12 @@ export interface ModelCatalog {
     contextWindow?: number;
     /** Discovery hints; the native session revalidates these before each turn. */
     variants?: ModelVariantOption[];
+    /** Reasoning levels this model takes, as its engine reports them
+     * (shared/model-capabilities.ts). `[]`: no effort control. Absent:
+     * unknown, the driver's `capabilities.effortLevels` apply. */
+    effortLevels?: EffortLevel[];
+    /** The level the engine runs this model at when none is sent. */
+    defaultEffort?: EffortLevel;
   }>;
 }
 

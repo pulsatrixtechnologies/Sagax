@@ -1094,7 +1094,9 @@ export interface InstanceInfo {
       message: string;
     };
   };
-  models: { default: string; options: Array<{ id: string; label: string; custom?: boolean; loaded?: boolean; local?: boolean; anthropic?: boolean; provider?: string; contextWindow?: number; variants?: ModelVariantOption[] }> };
+  models: { default: string; options: Array<{ id: string; label: string; custom?: boolean; loaded?: boolean; local?: boolean; anthropic?: boolean; provider?: string; contextWindow?: number; variants?: ModelVariantOption[];
+    /** Per-model reasoning levels and default (shared/model-capabilities.ts). */
+    effortLevels?: EffortLevel[]; defaultEffort?: EffortLevel }> };
   capabilities?: {
     computerMcp?: boolean;
     agentsMcp?: boolean;

@@ -2779,5 +2779,13 @@
   "chat.gotoGroup.aria": "{count} conversas com {agents}: mostrar a lista",
   "chat.gotoGroup.count": "{count} conversas",
   "chat.gotoGroup.menu": "Conversas",
-  "chat.gotoGroup.with": "{count} conversas com"
+  "chat.gotoGroup.with": "{count} conversas com",
+  "model.effort.defaultWith": "Padrão ({level})",
+  "model.fastTag": "Rápido",
+  "model.settings.aria": "Ajustes deste modelo",
+  "model.settings.fastHint": "Usar a variante mais rápida deste modelo (pode custar mais)",
+  "model.settings.context": "Contexto",
+  "model.settings.contextTitle": "Este modelo lê até {tokens} tokens da conversa",
+  "model.settings.model": "Modelo",
+  "model.settings.back": "Voltar de {title}"
 }

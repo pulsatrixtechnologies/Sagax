@@ -53,10 +53,7 @@ name = "MiniMax M3 4bit (oMLX)"
     expect(readGrokModelCatalog({ HOME: home })).toEqual({
       default: "ollama-ornith-35b-bf16",
       options: [
-        { id: "grok-4.7", label: "Grok 4.7", contextWindow: 500_000 },
-        { id: "grok-4.7-build-fast", label: "Grok 4.7 Fast" },
-        { id: "grok-4.6", label: "Grok 4.6" },
-        { id: "grok-4.5", label: "Grok 4.5" },
+        ...STATIC_GROK_MODELS.options,
         { id: "ollama-ornith-35b-bf16", label: "ornith:35b-bf16 (Ollama)", custom: true },
         { id: "omlx-minimax-m3", label: "MiniMax M3 4bit (oMLX)", custom: true },
       ],
@@ -211,5 +208,47 @@ describe("dismissGrokModelCampaigns", () => {
     expect(dismissGrokModelCampaigns({ HOME: home })).toEqual(["grok-4.7-launch"]);
     expect(JSON.parse(readFileSync(join(grok, "campaigns_state.json"), "utf8"))).toEqual({ dismissed_ids: ["grok-4.6-launch", "grok-4.7-launch"], other: 1 });
     expect(dismissGrokModelCampaigns({ HOME: home })).toEqual([]);
+  });
+});
+
+describe("per-model reasoning levels (2026-10-13)", () => {
+  // What grok 1.0.52 answered in `initialize`, recorded for the picker preview.
+  const recorded = JSON.parse(readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../../../scripts/testing/fixtures/model-picker/grok-initialize.json"), "utf8"));
+
+  it("reads each model's levels and its default from initialize: grok-4.5 has no X-High", () => {
+    const models = grokModelsFromInitialize(recorded)!;
+    const byId = Object.fromEntries(models.map((model) => [model.id, model]));
+    expect(byId["grok-4.7"]).toMatchObject({ effortLevels: ["low", "medium", "high", "xhigh"], defaultEffort: "high" });
+    expect(byId["grok-4.7-build-fast"]).toMatchObject({ effortLevels: ["low", "medium", "high", "xhigh"], defaultEffort: "high" });
+    // grok-4.6 currently runs at xhigh, but the level Grok marks default is high
+    expect(byId["grok-4.6"]).toMatchObject({ effortLevels: ["low", "medium", "high", "xhigh"], defaultEffort: "high" });
+    expect(byId["grok-4.5"]).toMatchObject({ effortLevels: ["low", "medium", "high"], defaultEffort: "high" });
+  });
+
+  it("gives a model Grok lists without levels none, once Grok reports levels at all", () => {
+    const models = grokModelsFromInitialize({ _meta: { modelState: { availableModels: [
+      ...recorded._meta.modelState.availableModels,
+      { modelId: "qwen38-flash-next", name: "Qwen3.8 Flash-Next local (DwarfStar)", _meta: { totalContextTokens: 262144 } },
+    ] } } })!;
+    expect(models.find((model) => model.id === "qwen38-flash-next")?.effortLevels).toEqual([]);
+    // an older Grok that reports no levels leaves every model to the driver
+    expect(grokModelsFromInitialize({ _meta: { modelState: { availableModels: [{ modelId: "grok-4.5", name: "Grok 4.5" }] } } })![0]!.effortLevels).toBeUndefined();
+  });
+
+  it("reads the same facts from Grok's cached catalog", () => {
+    const home = mkdtempSync(join(tmpdir(), "grok-cache-efforts-"));
+    scratchDirs.push(home);
+    mkdirSync(join(home, ".grok"), { recursive: true });
+    writeFileSync(join(home, ".grok", "models_cache.json"), JSON.stringify({ models: {
+      "grok-4.5": { info: { name: "Grok 4.5", supports_reasoning_effort: true, reasoning_effort: "high", reasoning_efforts: [
+        { id: "high", value: "high", default: true }, { id: "medium", value: "medium", default: false }, { id: "low", value: "low", default: false },
+      ] } },
+      "grok-4.7": { info: { name: "Grok 4.7", supports_reasoning_effort: true, reasoning_efforts: [
+        { id: "xhigh", value: "xhigh", default: false }, { id: "high", value: "high", default: true },
+      ] } },
+    } }));
+    const models = readGrokModelsCache({ HOME: home })!;
+    expect(models.find((model) => model.id === "grok-4.5")).toMatchObject({ effortLevels: ["low", "medium", "high"], defaultEffort: "high" });
+    expect(models.find((model) => model.id === "grok-4.7")).toMatchObject({ effortLevels: ["high", "xhigh"], defaultEffort: "high" });
   });
 });

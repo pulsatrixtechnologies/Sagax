@@ -261,8 +261,8 @@ describe("mergeLocalInject", () => {
     expect(seen).toContain("http://127.0.0.1:8002/v1/models");
     const local = catalog.options.filter((option) => option.local);
     expect(local).toEqual([
-      { id: "dwarfstar::qwen3.8-flash-next", label: "DwarfStar: Qwen3.8 Flash Next (qwen3.8-flash-next)", custom: true, local: true, contextWindow: 262144 },
-      { id: "dwarfstar::qwen3.8-flash-next-chat", label: "DwarfStar: Qwen3.8 Flash Next (qwen3.8-flash-next-chat)", custom: true, local: true, contextWindow: 262144 },
+      { id: "dwarfstar::qwen3.8-flash-next", label: "DwarfStar: Qwen3.8 Flash Next", custom: true, local: true, contextWindow: 262144 },
+      { id: "dwarfstar::qwen3.8-flash-next-chat", label: "DwarfStar: Qwen3.8 Flash Next Chat", custom: true, local: true, contextWindow: 262144 },
     ]);
     expect(catalog.options[0]).toEqual({ id: "claude-sonnet-5", label: "Claude Sonnet 5" });
     const env: Record<string, string | undefined> = {};

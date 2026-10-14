@@ -44,7 +44,7 @@ import type {
 import { gateServer, resultBudget } from "../mcp-gate-config.ts";
 import { canUseMcpServer } from "../../shared/tool-scope.ts";
 import { assertToolScopeSupported } from "../../shared/tool-scope-support.ts";
-import { newEventId, newId, type TurnAccessInput } from "../contracts.ts";
+import { newEventId, newId, type EffortLevel, type TurnAccessInput } from "../contracts.ts";
 import { askInputDetail, askInputSummary, commandSummary, cwToolResult, toolDetailPreview } from "../tool-summary.ts";
 import { filesField, writtenFilesFromToolInput } from "../thread-files.ts";
 import { classifyError, computeBackoff, interruptibleDelay, RETRY_MAX_ATTEMPTS, USAGE_LIMIT } from "./retry.ts";
@@ -565,18 +565,22 @@ export interface ClaudeConfig {
   requireApiKey?: boolean;
 }
 
-// model catalog ported from upstream packages/contracts/src/model.ts
+// model catalog ported from upstream packages/contracts/src/model.ts. The
+// effort levels are what Claude Code 2.1.296 answered in its stream-json
+// `initialize` (`models[].supportedEffortLevels`, 2026-10-13): every 5.x model
+// takes low to max, Haiku 4.5 takes none (no `supportsEffort`).
+const CLAUDE_5_EFFORTS: EffortLevel[] = ["low", "medium", "high", "xhigh", "max"];
 export const STATIC_CLAUDE_MODELS: ModelCatalog = {
   default: "claude-sonnet-5",
   options: [
-    { id: "claude-fable-5-1", label: "Claude Fable 5.1" },
-    { id: "claude-fable-5", label: "Claude Fable 5" },
-    { id: "claude-opus-5-5", label: "Claude Opus 5.5", contextWindow: 1_000_000 },
-    { id: "claude-opus-5", label: "Claude Opus 5" },
-    { id: "claude-sonnet-5-5", label: "Claude Sonnet 5.5", contextWindow: 1_000_000 },
-    { id: "claude-sonnet-5", label: "Claude Sonnet 5" },
-    { id: "claude-haiku-5-5", label: "Claude Haiku 5.5", contextWindow: 1_000_000 },
-    { id: "claude-haiku-4-5", label: "Claude Haiku 4.5" },
+    { id: "claude-fable-5-1", label: "Claude Fable 5.1", effortLevels: CLAUDE_5_EFFORTS },
+    { id: "claude-fable-5", label: "Claude Fable 5", effortLevels: CLAUDE_5_EFFORTS },
+    { id: "claude-opus-5-5", label: "Claude Opus 5.5", contextWindow: 1_000_000, effortLevels: CLAUDE_5_EFFORTS },
+    { id: "claude-opus-5", label: "Claude Opus 5", effortLevels: CLAUDE_5_EFFORTS },
+    { id: "claude-sonnet-5-5", label: "Claude Sonnet 5.5", contextWindow: 1_000_000, effortLevels: CLAUDE_5_EFFORTS },
+    { id: "claude-sonnet-5", label: "Claude Sonnet 5", effortLevels: CLAUDE_5_EFFORTS },
+    { id: "claude-haiku-5-5", label: "Claude Haiku 5.5", contextWindow: 1_000_000, effortLevels: CLAUDE_5_EFFORTS },
+    { id: "claude-haiku-4-5", label: "Claude Haiku 4.5", effortLevels: [] },
   ],
 };
 

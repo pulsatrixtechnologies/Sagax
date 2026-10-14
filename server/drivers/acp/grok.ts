@@ -16,6 +16,8 @@ import { engineStartGate } from "../../engine-start-gate.ts";
 import type { DeviceSignIn } from "../device-auth.ts";
 import { decodeInjectId, hostApiKey, localHost, mergeLocalInject } from "../local-inject.ts";
 import { createAcpDriver, type AccountErrorCode, type AcpSupport } from "./core.ts";
+import { parseModelEffortFacts } from "../../../shared/model-capabilities.ts";
+import type { EffortLevel } from "../../../shared/wire.ts";
 import { grokHostToolArgs, grokOrgAgentProfile } from "../host-tools.ts";
 import { grokReadOnlyAllowRules } from "./grok-read-only-tools.ts";
 import { gateReadOnlyTools, grokApprovalGateEnabled } from "./grok-approval-gate.ts";
@@ -25,16 +27,23 @@ import { grokAliasBase, grokToolNameProblem } from "../../mcp-tool-names.ts";
 
 /** Fallback only, for when the engine cannot be asked (not installed, or no
  * answer). Grok 1.0.46 and 1.0.50 signed in to grok.com offer exactly these
- * four (`grok models`, ~/.grok/models_cache.json, verified 2026-10-08). */
+ * four (`grok models`, ~/.grok/models_cache.json, verified 2026-10-08). Their
+ * reasoning levels and defaults are what grok 1.0.52 answered in
+ * `initialize` on 2026-10-13 (scripts/testing/fixtures/model-picker). */
 export const STATIC_GROK_MODELS: ModelCatalog = {
   default: "grok-4.7",
   options: [
-    { id: "grok-4.7", label: "Grok 4.7", contextWindow: 500_000 },
-    { id: "grok-4.7-build-fast", label: "Grok 4.7 Fast" },
-    { id: "grok-4.6", label: "Grok 4.6" },
-    { id: "grok-4.5", label: "Grok 4.5" },
+    { id: "grok-4.7", label: "Grok 4.7", contextWindow: 500_000, effortLevels: ["low", "medium", "high", "xhigh"], defaultEffort: "high" },
+    { id: "grok-4.7-build-fast", label: "Grok 4.7 Fast", effortLevels: ["low", "medium", "high", "xhigh"], defaultEffort: "high" },
+    { id: "grok-4.6", label: "Grok 4.6", effortLevels: ["low", "medium", "high", "xhigh"], defaultEffort: "high" },
+    { id: "grok-4.5", label: "Grok 4.5", effortLevels: ["low", "medium", "high"], defaultEffort: "high" },
   ],
 };
+
+/** Every level any Grok model takes (the driver's capability). Each model's
+ * own list rides its catalog row, and a pick or a turn is held to it
+ * (shared/model-capabilities.ts): grok-4.5 refuses xhigh. */
+export const GROK_EFFORT_LEVELS = ["low", "medium", "high", "xhigh"] as const satisfies readonly EffortLevel[];
 
 /** Appended to the stable system half of every Grok turn (acp/core.ts
  * stableSystemHint): skip a search round for tools already discovered. */
@@ -150,12 +159,31 @@ export function readGrokModelsCache(env: Record<string, string | undefined> = pr
   if (!models || typeof models !== "object" || Array.isArray(models)) return null;
   const out: GrokCloudModel[] = [];
   for (const [id, entry] of Object.entries(models as Record<string, unknown>)) {
-    const info = (entry as { info?: { name?: unknown; hidden?: unknown; context_window?: unknown } } | null)?.info;
+    const info = (entry as { info?: { name?: unknown; hidden?: unknown; context_window?: unknown; reasoning_efforts?: unknown; reasoning_effort?: unknown; supports_reasoning_effort?: unknown } } | null)?.info;
     if (!SLUG.test(id) || info?.hidden === true) continue;
     const contextWindow = typeof info?.context_window === "number" && info.context_window > 0 ? info.context_window : undefined;
-    out.push({ id, label: typeof info?.name === "string" && info.name.trim() ? info.name.trim() : id, ...(contextWindow ? { contextWindow } : {}) });
+    out.push({
+      id, label: typeof info?.name === "string" && info.name.trim() ? info.name.trim() : id, ...(contextWindow ? { contextWindow } : {}),
+      ...grokEffortFacts(info?.reasoning_efforts, info?.reasoning_effort, info?.supports_reasoning_effort),
+    });
   }
-  return out.length ? out : null;
+  return out.length ? settleGrokEfforts(out) : null;
+}
+
+/** A Grok model's reasoning levels as Grok lists them (initialize `_meta`,
+ * or the cached catalog's `info`): `[{ id, value, label, default }]`, the
+ * one marked default first, else the model's current `reasoningEffort`. */
+function grokEffortFacts(levels: unknown, current: unknown, supported: unknown): Pick<GrokCloudModel, "effortLevels" | "defaultEffort"> {
+  const facts = parseModelEffortFacts(levels, current, supported);
+  return { ...(facts.effortLevels ? { effortLevels: [...facts.effortLevels] } : {}), ...(facts.defaultEffort ? { defaultEffort: facts.defaultEffort } : {}) };
+}
+
+/** A Grok that reports levels for some models reports them for every model
+ * that has any (grok 1.0.52): the others, local config blocks, take none.
+ * An older Grok that reports none leaves every model to the driver's list. */
+function settleGrokEfforts(models: GrokCloudModel[]): GrokCloudModel[] {
+  if (!models.some((model) => model.effortLevels)) return models;
+  return models.map((model) => (model.effortLevels ? model : { ...model, effortLevels: [] }));
 }
 
 /** What the engine answers in ACP `initialize` (`_meta.modelState`): every
@@ -164,16 +192,17 @@ export function grokModelsFromInitialize(init: unknown): GrokCloudModel[] | null
   const available = (init as { _meta?: { modelState?: { availableModels?: unknown } } } | null)?._meta?.modelState?.availableModels;
   if (!Array.isArray(available)) return null;
   const out: GrokCloudModel[] = [];
-  for (const entry of available as Array<{ modelId?: unknown; name?: unknown; _meta?: { totalContextTokens?: unknown } }>) {
+  for (const entry of available as Array<{ modelId?: unknown; name?: unknown; _meta?: { totalContextTokens?: unknown; reasoningEfforts?: unknown; reasoningEffort?: unknown; supportsReasoningEffort?: unknown } }>) {
     if (typeof entry?.modelId !== "string" || !SLUG.test(entry.modelId)) continue;
     const window = entry._meta?.totalContextTokens;
     out.push({
       id: entry.modelId,
       label: typeof entry.name === "string" && entry.name.trim() ? entry.name.trim() : entry.modelId,
       ...(typeof window === "number" && window > 0 ? { contextWindow: window } : {}),
+      ...grokEffortFacts(entry._meta?.reasoningEfforts, entry._meta?.reasoningEffort, entry._meta?.supportsReasoningEffort),
     });
   }
-  return out.length ? out : null;
+  return out.length ? settleGrokEfforts(out) : null;
 }
 
 const LIVE_MODELS_TTL_MS = 30_000;
@@ -691,10 +720,10 @@ const support: AcpSupport = {
     env,
     existsSync(join(grokHome(env), "auth.json")) ? await probeGrokModels(config.cli, env) : null,
   ), env),
-  // Grok's accepted levels vary by model and the CLI validates lazily — a
-  // rejected level only logs and falls back. Offer the intersection shared
-  // by every model in this driver's picker; notably, grok-4.5 rejects xhigh.
-  effortLevels: ["low", "medium", "high"],
+  // Grok's accepted levels vary by model and the CLI validates lazily: a
+  // rejected level only logs and falls back. The union is offered here and
+  // each model's own list (its catalog row) holds a pick and a turn to it.
+  effortLevels: GROK_EFFORT_LEVELS,
   // A voice call warms the process when it is accepted (initialize,
   // authenticate, session/load with no prompt): the first spoken turn is a
   // bare session/prompt (docs/voice-mode-xai.md, "Latency").

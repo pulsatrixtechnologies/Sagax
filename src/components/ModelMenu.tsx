@@ -175,7 +175,7 @@ function ModelSearchRow({ row, id, active, style, disabled, onHover, onPick }: {
       data-model-auto-row={row.kind === "auto" || undefined}
       data-follow-bot-model={row.kind === "follow" || undefined}
       data-model-unavailable={row.unavailable ? "" : undefined}
-      title={row.unavailable}
+      title={row.unavailable ?? row.title}
       // keep the focus in the search field
       onMouseDown={(event) => event.preventDefault()}
       onMouseMove={row.unavailable ? undefined : onHover}

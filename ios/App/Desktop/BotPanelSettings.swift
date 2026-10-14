@@ -78,7 +78,8 @@ struct BotPanelModel: View {
     }
     private var levels: [String] {
         guard instance?.capabilities?.modelVariants != true else { return [] }
-        return UltracodeEffort.pickerLevels(instance?.capabilities?.effortLevels ?? [])
+        let option = instance?.models.options.first { $0.id == selection.model }
+        return ModelEffort.pickerLevels(option, engine: instance?.capabilities?.effortLevels ?? [])
     }
 
     var body: some View {

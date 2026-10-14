@@ -68,6 +68,8 @@ vi.mock("@/lib/unready-providers-preference", () => ({
 
 const { ModelEngineRail, ModelPicker } = await import("./ModelPicker");
 const { ModelSearchList } = await import("./ModelMenu");
+const { ModelMenuSettings } = await import("./ModelMenuSettings");
+type ModelMenuSettingsProps = import("./ModelMenuSettings").ModelMenuSettingsProps;
 type MenuRow = import("@/lib/model-menu").ModelMenuRow;
 type MenuSection = import("@/lib/model-menu").ModelMenuSection;
 
@@ -159,6 +161,11 @@ function row(rendered: ReturnType<typeof render>, id: string): { props: MenuRow 
     }
   }
   return undefined as unknown as { props: MenuRow & { onPick: () => void } };
+}
+
+/** The composer menu's settings of the model in use. */
+function settings(rendered: ReturnType<typeof render>) {
+  return rendered.nodes.find((node) => node.type === ModelMenuSettings) as unknown as ReactElement<ModelMenuSettingsProps> | undefined;
 }
 
 function rail(rendered: ReturnType<typeof render>) {
@@ -810,11 +817,84 @@ describe("the composer's model menu (2026-10-12)", () => {
     expect(html).not.toContain("data-model-menu");
   });
 
-  it("carries the effort as one compact line, Advanced only", () => {
+  it("carries the model's settings below the list, its effort as Effort ›, Advanced only", () => {
     fixture.instances = [{ ...signedIn(), capabilities: { withholdsHostTools: true, effortLevels: ["low", "high"] } }];
-    const html = open(bot("claude", "claude-opus-5-5"), composer).html;
-    expect(html).toContain("data-model-menu-effort");
-    expect(html).toContain('aria-label="Reasoning effort"');
+    const opened = open(bot("claude", "claude-opus-5-5"), composer);
+    expect(opened.html).toContain("data-model-settings-effort");
+    expect(opened.html).toContain("data-model-settings-model");
+    expect(settings(opened)!.props.effort!.levels).toEqual(["low", "high", "ultracode"]);
+  });
+
+  // JC, 2026-10-13: the Effort list offered levels the model does not take.
+  const grokEngine = (): InstanceInfo => ({
+    instanceId: "grok", driverKind: "grokAgent", displayName: "Grok", access: "subscription",
+    snapshot: { state: "available", authenticated: true },
+    models: { default: "grok-4.7", options: [
+      { id: "grok-4.7", label: "Grok 4.7", contextWindow: 256_000, effortLevels: ["low", "medium", "high", "xhigh"], defaultEffort: "high" },
+      { id: "grok-4.7-build-fast", label: "Grok 4.7 Fast", contextWindow: 256_000, effortLevels: ["low", "medium", "high", "xhigh"], defaultEffort: "high" },
+      { id: "grok-4.5", label: "Grok 4.5", effortLevels: ["low", "medium", "high"], defaultEffort: "high" },
+      { id: "dwarfstar::qwen", label: "DwarfStar: Qwen", custom: true, local: true, effortLevels: [] },
+    ] },
+    capabilities: { withholdsHostTools: true, effortLevels: ["low", "medium", "high", "xhigh"] },
+  });
+  const withEffort = (forBot: Bot, effort: Bot["modelSelection"]["effort"]): Bot => ({ ...forBot, modelSelection: { ...forBot.modelSelection, effort } });
+
+  it("offers each model only the levels it takes, Default naming the model's own", () => {
+    fixture.instances = [grokEngine()];
+    expect(settings(open(bot("grok", "grok-4.7"), composer))!.props.effort).toMatchObject({ levels: ["low", "medium", "high", "xhigh", "ultracode"], modelDefault: "high" });
+    fixture.values = [];
+    expect(settings(open(bot("grok", "grok-4.5"), composer))!.props.effort!.levels).toEqual(["low", "medium", "high", "ultracode"]);
+    fixture.values = [];
+    // a model with no effort control gets no Effort row at all
+    const local = open(bot("grok", "dwarfstar::qwen"), composer);
+    expect(settings(local)!.props.effort).toBeUndefined();
+    expect(local.html).not.toContain("data-model-settings-effort");
+  });
+
+  it("resets the effort to the new model's default when it does not take the old one, and keeps it when it does", () => {
+    fixture.instances = [grokEngine()];
+    row(open(withEffort(bot("grok", "grok-4.7"), "xhigh"), composer), "grok-4.5")!.props.onPick();
+    expect(fixture.dispatch).toHaveBeenLastCalledWith(expect.objectContaining({ selection: { instanceId: "grok", model: "grok-4.5" } }));
+    fixture.values = [];
+    row(open(withEffort(bot("grok", "grok-4.7"), "medium"), composer), "grok-4.5")!.props.onPick();
+    expect(fixture.dispatch).toHaveBeenLastCalledWith(expect.objectContaining({ selection: { instanceId: "grok", model: "grok-4.5", effort: "medium" } }));
+  });
+
+  it("reads each row with the effort a pick would run, the stored one or the model's default", () => {
+    fixture.instances = [grokEngine()];
+    const opened = open(withEffort(bot("grok", "grok-4.7"), "xhigh"), composer);
+    expect(row(opened, "grok-4.7")!.props.detail).toBe("X-High");
+    expect(row(opened, "grok-4.5")!.props.detail).toBe("High");
+    expect(row(opened, "grok-4.5")!.props.title).toContain("Grok 4.5");
+  });
+
+  it("folds the fast twin into its model's row and switches it with Fast", () => {
+    fixture.instances = [grokEngine()];
+    const opened = open(bot("grok", "grok-4.7-build-fast"), composer);
+    expect(row(opened, "grok-4.7")).toBeUndefined();
+    const folded = row(opened, "grok-4.7-build-fast")!.props;
+    expect(folded.label).toBe("Grok 4.7");
+    expect(folded.detail).toBe("High Fast");
+    expect(folded.current).toBe(true);
+    const panel = settings(opened)!.props;
+    expect(panel.fast!.on).toBe(true);
+    expect(panel.contextWindow).toBe(256_000);
+    panel.fast!.onToggle();
+    expect(fixture.dispatch).toHaveBeenLastCalledWith(expect.objectContaining({ selection: { instanceId: "grok", model: "grok-4.7" } }));
+    // the menu stays open on a switch
+    expect(render(bot("grok", "grok-4.7-build-fast"), composer).html).toContain("data-model-menu");
+    fixture.values = [];
+    expect(settings(open(bot("grok", "grok-4.5"), composer))!.props.fast).toBeUndefined();
+  });
+
+  it("sets the effort from Effort › for this thread and the bot", () => {
+    fixture.instances = [grokEngine()];
+    const forBot = bot("grok", "grok-4.5");
+    settings(open(forBot, composer))!.props.effort!.onPick("low");
+    expect(fixture.dispatch).toHaveBeenLastCalledWith({
+      type: "setModel", botId: "atlas", threadId: "thread-atlas", updateBotDefault: true,
+      selection: { instanceId: "grok", model: "grok-4.5", effort: "low" },
+    });
   });
 
   it("leaves out an engine to install, and on an organization server one nothing pays for yet unless it is the bot's", () => {

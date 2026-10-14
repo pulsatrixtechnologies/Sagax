@@ -63,18 +63,35 @@ export interface LocalModelFacts {
 }
 
 /** Picker labels for one local server's models: "DwarfStar: Qwen3.8 Flash
- * Next". Several ids under one name keep their id so they stay apart. */
+ * Next". Several ids under one name stay apart by what tells them apart,
+ * not by the whole id (2026-10-13, JC: three rows read "DwarfStar: Qwen3.8
+ * Flash Next (qwen3.8-f..." once truncated). DwarfStar serves one model as
+ * `qwen3.8-flash-next`, `-chat` and `-reasoner`: the shortest id keeps the
+ * name, the others add their own end ("Chat", "Reasoner"). Ids that do not
+ * share a stem keep the id in parentheses. */
 export function localModelLabels(server: string, rows: readonly LocalModelFacts[]): Map<string, string> {
-  const counts = new Map<string, number>();
+  const groups = new Map<string, string[]>();
   for (const row of rows) {
     const name = row.name?.trim() || row.id;
-    counts.set(name, (counts.get(name) ?? 0) + 1);
+    groups.set(name, [...(groups.get(name) ?? []), row.id]);
   }
   const out = new Map<string, string>();
   for (const row of rows) {
     const name = row.name?.trim() || row.id;
-    const shown = (counts.get(name) ?? 0) > 1 && name !== row.id ? `${name} (${row.id})` : name;
+    const ids = groups.get(name) ?? [row.id];
+    const shown = ids.length > 1 && name !== row.id ? `${name}${sharedNameSuffix(row.id, ids)}` : name;
     out.set(row.id, server.trim() ? `${server.trim()}: ${shown}` : shown);
   }
   return out;
+}
+
+/** What follows a shared name for one id of its group: nothing for the stem
+ * every other id extends, " Chat" for `<stem>-chat`, else " (<id>)". */
+function sharedNameSuffix(id: string, ids: readonly string[]): string {
+  const stem = [...ids].sort((left, right) => left.length - right.length)[0]!;
+  const extendsStem = (candidate: string) => candidate === stem || /^[-_.:/]/.test(candidate.slice(stem.length)) && candidate.startsWith(stem);
+  if (!ids.every(extendsStem) || ids.filter((candidate) => candidate === stem).length > 1) return ` (${id})`;
+  if (id === stem) return "";
+  const words = id.slice(stem.length).split(/[-_.:/]+/).filter(Boolean);
+  return ` ${words.map((word) => word.charAt(0).toUpperCase() + word.slice(1)).join(" ")}`;
 }

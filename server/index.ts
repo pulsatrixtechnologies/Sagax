@@ -705,6 +705,7 @@ import { VoiceCallSessions, voiceCallTurnSettle } from "./voice-call-session.ts"
 import { VoiceCallWarmup } from "./voice-call-warmup.ts";
 import { callTurnEffort } from "./voice-call-effort.ts";
 import { effortAcceptedByEngine, resolveEngineTurnEffort } from "../shared/ultracode-effort.ts";
+import { effortAcceptedByModel, effortForModel } from "../shared/model-capabilities.ts";
 import { VoiceLatencyLog } from "./voice-latency.ts";
 import { unansweredCallMessage, VOICE_CALL_WATCHDOG_MS, voiceCallRecoveryPrompt } from "./voice-call-watchdog.ts";
 import * as grokVoice from "./tts/grok.ts";
@@ -5096,6 +5097,13 @@ function checkedModelSelection(
   const allowed = target?.adapter.capabilities.effortLevels ?? [];
   if (target && selection.effort !== undefined && !effortAcceptedByEngine(selection.effort, allowed)) {
     return { ok: false, status: 400, error: `effort "${selection.effort}" is not offered by this bot's engine` };
+  }
+  // A level the engine takes but this model does not (grok-4.5 and xhigh):
+  // the model's own default runs instead. A client from before per-model
+  // levels keeps the level across a model change; refusing would strand it.
+  if (target && selection.effort !== undefined &&
+    !effortAcceptedByModel(selection.effort, target.models.options.find((option) => option.id === selection.model), allowed)) {
+    delete selection.effort;
   }
   if (target && selection.variant !== undefined && !target.adapter.capabilities.modelVariants) {
     return { ok: false, status: 400, error: "model variants are not offered by this bot's engine" };
@@ -14875,20 +14883,24 @@ async function startTurn(
   // wherever it works: a cloud computer is a tool it mounts, never a reason
   // to swap the engine (the provider_not_configured incident).
   const model = bot.modelSelection.model;
-  const effort = bot.modelSelection.effort;
+  const askedEffort = bot.modelSelection.effort;
   const variant = bot.modelSelection.variant;
   // What this turn runs on, kept for the bot text it writes (a quiet line
   // under the reply shows it). A warm-up writes no reply.
   if (!warmOnly) turnRunByThread.set(threadId, turnRunFor(bot.modelSelection));
-  assertModelVariantSupported({ variant, effort }, instance.adapter.capabilities);
+  assertModelVariantSupported({ variant, effort: askedEffort }, instance.adapter.capabilities);
   // A selection can be persisted while its engine is offline. Re-check when
   // the engine returns so an old or unsupported value never reaches a CLI.
-  if (effort && !effortAcceptedByEngine(effort, instance.adapter.capabilities.effortLevels ?? [])) {
+  if (askedEffort && !effortAcceptedByEngine(askedEffort, instance.adapter.capabilities.effortLevels ?? [])) {
     throw Object.assign(
-      new Error(`effort "${effort}" is not offered by this bot's engine — choose another level in settings`),
+      new Error(`effort "${askedEffort}" is not offered by this bot's engine — choose another level in settings`),
       { status: 409 },
     );
   }
+  // The engine takes it but this model may not (shared/model-capabilities.ts):
+  // then nothing is sent and the model runs at its own default.
+  const effort = effortForModel(askedEffort, instance.models.options.find((option) => option.id === bot.modelSelection.model),
+    instance.adapter.capabilities.effortLevels);
 
   // an edit hands us its already-branched user message; a plain send appends
   let userMessage = opts?.userMessage;

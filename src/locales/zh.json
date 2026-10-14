@@ -2818,5 +2818,13 @@
   "chat.gotoGroup.count": "{count} 个对话",
   "chat.gotoGroup.menu": "对话",
   "chat.gotoGroup.with": "{count} 个对话，对象",
-  "voiceMode.call.fullDuplexHelp": "随时可以盖过机器人说话。语音会停下当前正在读出的回答。它思考时的新话题会让那项工作继续。默认关闭。服务器未设置 SAGAX_VOICE_FULL_DUPLEX=1 时，此开关无效。打开以打断；保持关闭则工作期间说的话并入该回合。"
+  "voiceMode.call.fullDuplexHelp": "随时可以盖过机器人说话。语音会停下当前正在读出的回答。它思考时的新话题会让那项工作继续。默认关闭。服务器未设置 SAGAX_VOICE_FULL_DUPLEX=1 时，此开关无效。打开以打断；保持关闭则工作期间说的话并入该回合。",
+  "model.effort.defaultWith": "默认（{level}）",
+  "model.fastTag": "快速",
+  "model.settings.aria": "此模型的设置",
+  "model.settings.fastHint": "使用此模型的快速版本（费用可能更高）",
+  "model.settings.context": "上下文",
+  "model.settings.contextTitle": "此模型最多读取 {tokens} 个对话 token",
+  "model.settings.model": "模型",
+  "model.settings.back": "从{title}返回"
 }

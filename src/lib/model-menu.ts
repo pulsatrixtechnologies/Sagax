@@ -21,6 +21,9 @@ export interface ModelMenuRow {
   current: boolean;
   /** Why it cannot be picked: shown dimmed with this as a tooltip. */
   unavailable?: string;
+  /** The tooltip otherwise: the whole name and detail, which a narrow menu
+   * truncates. */
+  title?: string;
   /** More words the search matches (the engine's name, the model id). */
   keywords?: string;
 }

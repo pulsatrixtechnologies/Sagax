@@ -13,6 +13,7 @@ import { engineStartGate } from "../engine-start-gate.ts";
 import { killCliTree, spawnCli } from "../procs.ts";
 import { codexHome } from "./codex-identity.ts";
 import { mergeLocalInject } from "./local-inject.ts";
+import { parseModelEffortFacts } from "../../shared/model-capabilities.ts";
 
 export const STATIC_CODEX_MODELS: ModelCatalog = {
   default: "gpt-5.6-sol",
@@ -63,6 +64,9 @@ interface CodexAppServerModel {
   displayName?: unknown;
   hidden?: unknown;
   isDefault?: unknown;
+  /** `[{ reasoningEffort, description }]` (codex model/list, 2026-10-13). */
+  supportedReasoningEfforts?: unknown;
+  defaultReasoningEffort?: unknown;
 }
 
 /** Ask the installed Codex CLI for the ChatGPT model catalog it can actually
@@ -157,9 +161,12 @@ export function readCodexAppServerModelCatalog(
         for (const row of models) {
           if (row.hidden === true || typeof row.id !== "string" || !MODEL_ID.test(row.id) || seen.has(row.id)) continue;
           seen.add(row.id);
+          const efforts = parseModelEffortFacts(row.supportedReasoningEfforts, row.defaultReasoningEffort);
           options.push({
             id: row.id,
             label: typeof row.displayName === "string" && row.displayName.trim() ? row.displayName : row.id,
+            ...(efforts.effortLevels ? { effortLevels: [...efforts.effortLevels] } : {}),
+            ...(efforts.defaultEffort ? { defaultEffort: efforts.defaultEffort } : {}),
           });
           if (row.isDefault === true) defaultModel = row.id;
         }

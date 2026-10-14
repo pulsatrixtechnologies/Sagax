@@ -37,7 +37,10 @@ import { useAutoModelPreview } from "@/lib/auto-model-preview";
 import { threadsOnOwnModel } from "../../shared/thread-model";
 import { ThreadModelsLine } from "./ThreadModelsLine";
 import { effortLabel } from "@/lib/effort-label";
-import { isUltracodeEffort, pickerEffortLevels, ULTRACODE_EFFORT } from "../../shared/ultracode-effort";
+import { isUltracodeEffort, ULTRACODE_EFFORT } from "../../shared/ultracode-effort";
+import { effortForModel, fastBaseOf, fastTwinOf, modelDefaultEffort, modelEffortLevels } from "../../shared/model-capabilities";
+import { ModelMenuSettings } from "./ModelMenuSettings";
+import type { EffortLevel } from "../../shared/wire";
 
 type ModelOption = InstanceInfo["models"]["options"][number];
 
@@ -122,15 +125,19 @@ export function EffortRow({
   if (instance?.capabilities?.modelVariants) {
     return <ModelVariantRow bot={bot} threadId={threadId} updateBotDefault={updateBotDefault} viewerLocal={viewerLocal} className={className} label={label} compact={compact} />;
   }
-  const nativeLevels = instance?.capabilities?.effortLevels;
-  // An engine with no levels gets no control at all, not an empty one.
-  if (!nativeLevels?.length) return null;
-  const levels = pickerEffortLevels(nativeLevels);
+  // Only the levels this model takes (shared/model-capabilities.ts): a model
+  // with none, or an engine with none, gets no control at all.
+  const option = instance?.models.options.find((candidate) => candidate.id === selection.model);
+  const levels = modelEffortLevels(option, instance?.capabilities?.effortLevels);
+  if (!levels.length) return null;
+  const modelDefault = modelDefaultEffort(option, instance?.capabilities?.effortLevels);
+  // A level stored before the model changed reads as Default, which is what runs.
+  const current = selection.effort && levels.includes(selection.effort) ? selection.effort : undefined;
 
   if (compact) return (
     <label className={cn("flex items-center justify-between gap-3", className)}>
       {label}
-      <select aria-label={t("model.effort.aria")} value={selection.effort ?? ""}
+      <select aria-label={t("model.effort.aria")} value={current ?? ""}
         onChange={(event) => {
           const effort = levels.find((level) => level === event.target.value);
           if (viewerLocal) {
@@ -141,7 +148,7 @@ export function EffortRow({
             selection: { ...selection, effort } });
         }}
         className="min-w-0 max-w-[65%] rounded-lg border border-hairline/40 bg-inset px-2 py-1.5 text-[12px] text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/70">
-        <option value="">{t("model.defaultTag")}</option>
+        <option value="">{modelDefault ? t("model.effort.defaultWith", { level: effortLabel(modelDefault) }) : t("model.defaultTag")}</option>
         {levels.map((level) => <option key={level} value={level}>{effortLabel(level)}</option>)}
       </select>
     </label>
@@ -157,7 +164,7 @@ export function EffortRow({
           <button
             key={level ?? "default"}
             type="button"
-            aria-pressed={selection.effort === level}
+            aria-pressed={current === level}
             title={
               level === undefined
                 ? t("model.effort.defaultTitle")
@@ -174,16 +181,18 @@ export function EffortRow({
             }}
             className={cn(
               "rounded-full border px-2.5 py-1 text-[12px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/70",
-              selection.effort === level && isUltracodeEffort(level)
+              current === level && isUltracodeEffort(level)
                 ? "ultracode-effort-chip ultracode-effort-chip-active"
-                : selection.effort === level
+                : current === level
                   ? "border-accent/60 bg-control text-ink"
                   : level === ULTRACODE_EFFORT
                     ? "ultracode-effort-option border-hairline/40 text-ink-secondary"
                     : "border-hairline/40 text-ink-secondary hover:bg-control/60 hover:text-ink",
             )}
           >
-            {level === undefined ? t("model.defaultTag") : effortLabel(level)}
+            {level === undefined
+              ? modelDefault ? t("model.effort.defaultWith", { level: effortLabel(modelDefault) }) : t("model.defaultTag")
+              : effortLabel(level)}
           </button>
         ))}
       </div>
@@ -282,13 +291,19 @@ export function ModelVariantRow({ bot, threadId, updateBotDefault, viewerLocal =
   );
 }
 
-/** Switching models must not carry an opaque variant from the previous model. */
+/** Switching models must not carry an opaque variant from the previous model,
+ * nor a level the new model does not take: then its own default runs
+ * (shared/model-capabilities.ts; grok-4.5 has no X-High). */
 export function modelSelectionForPick(selection: ModelSelection, instance: InstanceInfo, model: string): ModelSelection {
   const next: ModelSelection = { instanceId: instance.instanceId, model };
   if (instance.instanceId === selection.instanceId) {
     if (instance.capabilities?.modelVariants) {
       if (model === selection.model && selection.variant !== undefined) next.variant = selection.variant;
-    } else if (selection.effort) next.effort = selection.effort;
+    } else {
+      const option = instance.models.options.find((candidate) => candidate.id === model);
+      const effort = effortForModel(selection.effort, option, instance.capabilities?.effortLevels);
+      if (effort) next.effort = effort;
+    }
   }
   return next;
 }
@@ -811,7 +826,7 @@ export function ModelPicker({
   // updateBotDefault). Groups and new threads use the bot's model; existing
   // threads that follow the bot move with it, a thread on its own model
   // keeps it.
-  const pick = (instance: InstanceInfo, model: string) => {
+  const pick = (instance: InstanceInfo, model: string, keepOpen = false) => {
     if (bot.busy || instance.policy || notAllowed(instance)) return;
     const localRow = instance.models.options.find((option) => option.id === model && (option.local || isDesktopModelId(option.id)));
     if (localRow && localRowUnavailable(instance.driverKind, model, localRow.anthropic)) return;
@@ -828,7 +843,19 @@ export function ModelPicker({
       selection: modelSelectionForPick(selection, instance, model),
     });
     if (threadId) setChangedBotModel(true);
-    closeAll();
+    if (!keepOpen) closeAll();
+  };
+
+  /** The menu's Effort list: this person's level, for the model in use. */
+  const setEffort = (effort: EffortLevel | undefined) => {
+    if (bot.busy) return;
+    if (viewerLocal) {
+      saveViewerChoice(dispatch, bot.id, { effort: effort ?? null });
+      return;
+    }
+    const { variant: _variant, ...rest } = selection;
+    dispatch({ type: "setModel", botId: bot.id, threadId, ...(threadId ? { updateBotDefault: true } : {}),
+      selection: { ...rest, ...(effort ? { effort } : { effort: undefined }) } });
   };
 
   // Auto keeps the engine and base model; choosing a model pins it. The
@@ -881,35 +908,54 @@ export function ModelPicker({
   // provider (OpenRouter), the effort kept on the same engine, the variant
   // of the current model, Local. In a thread, the bot's own model is the
   // row above the engines ("<bot>'s model"), not a tag here.
-  const modelRow = (instance: InstanceInfo, option: ModelOption, local: boolean, unavailable: string | undefined, saysLocal: boolean): ModelMenuRow => {
-    const current = !autoOn && follows !== true && selection.instanceId === instance.instanceId && selection.model === option.id;
+  // The effort shown is the one a pick would run (Cursor's "Grok 4.7 High"):
+  // the level kept when this model takes it, else the model's own default.
+  // A folded row (`twin`, the composer's menu) stands for a model and its
+  // fast twin and says Fast while the bot runs the twin.
+  const modelRow = (instance: InstanceInfo, option: ModelOption, local: boolean, unavailable: string | undefined, saysLocal: boolean, twin?: ModelOption): ModelMenuRow => {
     const sameEngine = instance.instanceId === selection.instanceId;
-    const variant = sameEngine && selection.model === option.id ? selectedVariantLabel : undefined;
-    const effort = sameEngine && !instance.capabilities?.modelVariants && selection.effort ? effortLabel(selection.effort) : undefined;
+    const onTwin = Boolean(twin && sameEngine && selection.model === twin.id);
+    const runs = onTwin && twin ? twin : option;
+    const current = !autoOn && follows !== true && sameEngine && selection.model === runs.id;
+    const variant = sameEngine && selection.model === runs.id ? selectedVariantLabel : undefined;
+    const levels = instance.capabilities?.effortLevels;
+    const effortLevel = instance.capabilities?.modelVariants ? undefined
+      : effortForModel(sameEngine ? selection.effort : undefined, runs, levels) ?? modelDefaultEffort(runs, levels);
+    const runsWith = [variant ?? (effortLevel ? effortLabel(effortLevel) : undefined), onTwin ? t("model.fastTag") : undefined].filter(Boolean).join(" ");
+    const detail = [option.provider, runsWith || undefined, local && saysLocal ? t("model.localGroup") : undefined].filter(Boolean).join(" · ") || undefined;
     return {
       key: `${instance.instanceId}\u0000${option.id}`,
       kind: "model",
       instanceId: instance.instanceId,
-      modelId: option.id,
+      modelId: runs.id,
       label: option.label,
-      detail: [option.provider, variant ?? effort, local && saysLocal ? t("model.localGroup") : undefined].filter(Boolean).join(" · ") || undefined,
+      detail,
+      title: [option.label, detail, runs.id].filter(Boolean).join(" · "),
       tags: [
         option.id === instance.models.default ? t("model.defaultTag") : undefined,
         option.loaded ? t("model.loadedTag") : undefined,
       ].filter((tag): tag is string => Boolean(tag)),
       current,
       unavailable,
-      keywords: instance.displayName,
+      keywords: [instance.displayName, twin?.label, twin?.id].filter(Boolean).join(" "),
     };
   };
   // Under an engine's own heading a local model says Local; under Cloud
   // and Local headings (the window's engine mode) the heading says it.
-  const rowsOf = (instance: InstanceInfo, saysLocal: boolean) => {
+  // `fold`: a fast twin rides its model's row (the composer's menu, which
+  // has the Fast switch); the window lists both.
+  const rowsOf = (instance: InstanceInfo, saysLocal: boolean, fold = false) => {
     const catalog = catalogOf(instance);
+    const options = instance.models.options;
+    const shown = (option: ModelOption) => !fold || !fastBaseOf(options, option.id);
+    const twinOf = (option: ModelOption) => {
+      const id = fold ? fastTwinOf(options, option.id) : undefined;
+      return id ? options.find((candidate) => candidate.id === id) : undefined;
+    };
     return {
       catalog,
-      cloud: catalog.cloud.map((option) => modelRow(instance, option, false, undefined, saysLocal)),
-      local: catalog.local.map((option) => modelRow(instance, option, true, catalog.unavailable(option.id), saysLocal)),
+      cloud: catalog.cloud.filter(shown).map((option) => modelRow(instance, option, false, undefined, saysLocal, twinOf(option))),
+      local: catalog.local.filter(shown).map((option) => modelRow(instance, option, true, catalog.unavailable(option.id), saysLocal, twinOf(option))),
     };
   };
 
@@ -946,13 +992,15 @@ export function ModelPicker({
     const engine = myEngines?.find((candidate) => candidate.instanceId === instance.instanceId);
     return !engine || orgEngineState(engine) === "connected";
   });
-  const allSections: ModelMenuSection[] = [
+  const sectionsOf = (fold: boolean): ModelMenuSection[] => [
     { key: "top", rows: topRows },
     ...menuInstances.map((instance) => {
-      const { catalog, cloud, local } = rowsOf(instance, true);
+      const { catalog, cloud, local } = rowsOf(instance, true, fold);
       return { key: instance.instanceId, label: engineLabel(instance), note: catalog.signInFirst ? t("model.signInRequired") : undefined, rows: [...cloud, ...local] };
     }),
   ];
+  const allSections = sectionsOf(false);
+  const menuSections = sectionsOf(true);
 
   const onRow = (row: ModelMenuRow) => {
     if (row.kind === "auto") return chooseAuto();
@@ -1258,6 +1306,43 @@ export function ModelPicker({
     />
   );
 
+  // The settings of the model in use, under the composer's list (JC,
+  // 2026-10-13, Cursor's second panel): Fast when it has a fast twin, its
+  // context, Effort › with only the levels it takes, Model ›. On Auto the
+  // model changes per turn: only the effort stays.
+  const activeOptions = active?.models.options ?? [];
+  const activeOption = activeOptions.find((option) => option.id === selection.model);
+  const fastBase = active && !autoOn ? fastBaseOf(activeOptions, selection.model) : undefined;
+  const fastTwin = active && !autoOn ? fastTwinOf(activeOptions, selection.model) : undefined;
+  const engineEfforts = active?.capabilities?.effortLevels;
+  const menuEfforts = active?.capabilities?.modelVariants ? [] : modelEffortLevels(activeOption, engineEfforts);
+  const activeRows = active && !autoOn && !active.policy ? rowsOf(active, true, true) : null;
+  const settingsPanel = active ? (
+    <ModelMenuSettings
+      disabled={Boolean(bot.busy)}
+      fast={active && (fastBase || fastTwin) ? { on: Boolean(fastBase), onToggle: () => pick(active, (fastBase ?? fastTwin)!, true) } : undefined}
+      contextWindow={autoOn ? undefined : activeOption?.contextWindow}
+      variantRow={active.capabilities?.modelVariants ? (
+        <div data-model-menu-effort className="px-2 py-1.5">
+          <EffortRow bot={bot} threadId={threadId} updateBotDefault={Boolean(threadId)} compact
+            label={<span className="shrink-0 text-[12.5px] text-popover-ink-secondary">{effortTitle}</span>} />
+        </div>
+      ) : undefined}
+      effort={menuEfforts.length ? {
+        title: effortTitle,
+        levels: menuEfforts,
+        value: selection.effort && menuEfforts.includes(selection.effort) ? selection.effort : undefined,
+        modelDefault: modelDefaultEffort(activeOption, engineEfforts),
+        onPick: setEffort,
+      } : undefined}
+      model={activeRows ? {
+        label: modelLabel(active, fastBase ?? selection.model),
+        sections: [{ key: active.instanceId, label: engineLabel(active), rows: [...activeRows.cloud, ...activeRows.local] }],
+        onPick: onRow,
+      } : undefined}
+    />
+  ) : null;
+
   const footer = !advanced ? null : (
     <div className="flex shrink-0 border-t border-hairline/40">
       <button type="button" data-model-engines-link onClick={() => {
@@ -1363,13 +1448,8 @@ export function ModelPicker({
         menuMotion.className,
       )}
     >
-      <ModelSearchList variant="popover" autoFocus sections={allSections} onPick={onRow} onEscape={() => closeMenu(true)} disabled={Boolean(bot.busy)} />
-      {advanced && (active?.capabilities?.effortLevels?.length || active?.capabilities?.modelVariants) ? (
-        <div data-model-menu-effort className="border-t border-popover-hairline px-3.5 py-2">
-          <EffortRow bot={bot} threadId={threadId} updateBotDefault={Boolean(threadId)} compact
-            label={<span className="shrink-0 text-[12.5px] text-popover-ink-secondary">{effortTitle}</span>} />
-        </div>
-      ) : null}
+      <ModelSearchList variant="popover" autoFocus sections={menuSections} onPick={onRow} onEscape={() => closeMenu(true)} disabled={Boolean(bot.busy)} />
+      {advanced && settingsPanel}
       <div className="border-t border-popover-hairline px-1.5 pt-1">
         <ModelMenuItem variant="popover" data-model-edit onClick={openWindow}>
           <span>{t("model.edit")}</span>

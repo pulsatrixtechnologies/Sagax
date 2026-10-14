@@ -784,6 +784,28 @@ Two surfaces, one list (JC, 2026-10-12, after Cursor's composer menu):
 - The list is `ModelMenu.tsx` (`ModelSearchList`, popover tokens in the
   menu, page tokens in the window); its rules are `src/lib/model-menu.ts`.
   Effort words are translated (`effortLabel`, `model.effortLevel.*`).
+- Per-model efforts (JC, 2026-10-13): each catalog row carries the levels
+  its model takes and its default (`effortLevels`, `defaultEffort`), copied
+  from the engine: Grok's `initialize` `_meta.reasoningEfforts` (or
+  `models_cache.json`; grok-4.5 has no X-High), Codex's `model/list`
+  `supportedReasoningEfforts`, Claude Code's initialize
+  `supportedEffortLevels` (written into `STATIC_CLAUDE_MODELS`: Haiku 4.5
+  takes none). `[]` means no effort control, absent means the driver's
+  `capabilities.effortLevels`. Every surface reads them through
+  `shared/model-capabilities.ts` only (iOS: `ModelEffort.swift`): Effort
+  offers only those levels, Default names the model's own ("Default
+  (High)"), a pick keeps a level the new model takes and otherwise drops
+  it so the model's default runs, and the server does the same on a saved
+  selection and at turn time (an older client is never refused).
+- The composer menu (Advanced) ends with the settings of the model in use
+  (`ModelMenuSettings.tsx`, Cursor's second panel): Fast when the model has
+  a fast twin (`grok-4.7-build-fast`, folded into its model's row, which
+  then reads "High Fast"), its context window (shown, not chosen: no engine
+  lets Sagax pick it), Effort › and Model › (each a list over the whole
+  menu; Escape, the left arrow or Back returns). Each row reads the effort a
+  pick would run, the tooltip the whole name. Preview with recorded
+  catalogs and screenshots: `scripts/verify-model-picker-ui.ts --shots DIR`
+  (`PLAYWRIGHT_CHROMIUM` for a local Chromium).
 
 Thread scope stays out of both. On an organization server the window shows
 the speaker's engine card, the same minimal one as Settings
@@ -798,15 +820,17 @@ local models are not offered. Tests: `ModelPicker.interaction.test.ts`,
 `BotContextMenu.model.test.ts`, `src/lib/model-payers.test.ts`; real
 Electron: `scripts/verify-server-mode.ts` (org). iPad: `DesktopModelPicker`
 lists every model, always open, under its search (no Suggested or Show all);
-the composer menu and the Auto mode are not ported there yet.
+the composer menu, its model settings and the Auto mode are not ported there
+yet (its effort pickers do offer only the model's own levels).
 
 ### Local models in the picker
 
 Local rows (`host::model` inject ids, `local: true` on the option) show under
 a Local group below the engine's own models, in Simple and Advanced
 (`src/lib/local-models.ts`). Labels read "DwarfStar: Qwen3.8 Flash Next" from
-the server's `/v1/models` `name` (the id is added when several ids share one
-name) and `context_length` becomes `contextWindow`.
+the server's `/v1/models` `name`; several ids under one name keep what tells
+them apart ("... Flash Next Chat", "... Reasoner"; the id in parentheses when
+they share no stem) and `context_length` becomes `contextWindow`.
 
 - Which engines run them: `shared/local-model-engines.ts`. pi, Codex, Grok
   CLI, Kimi, Qwen, Droid, Hermes and OpenCode take an OpenAI-compatible base

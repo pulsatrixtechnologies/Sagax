@@ -27,6 +27,29 @@ final class ModelPickerRulesTests: XCTestCase {
         XCTAssertNil(ModelPickerRules.selectionForPick(withVariant, instance: grok, model: "g2").variant, "a variant never crosses models")
     }
 
+    // 2026-10-13: each model takes only its own levels (grok-4.5 has no xhigh).
+    func testThePickDropsALevelTheNewModelDoesNotTake() throws {
+        let json = """
+        {"instanceId":"grok","driverKind":"grokAgent","snapshot":{"state":"available","authenticated":true},
+         "models":{"default":"grok-4.7","options":[
+           {"id":"grok-4.7","label":"Grok 4.7","effortLevels":["low","medium","high","xhigh"],"defaultEffort":"high"},
+           {"id":"grok-4.5","label":"Grok 4.5","effortLevels":["low","medium","high"],"defaultEffort":"high"},
+           {"id":"local","label":"Local","effortLevels":[]}]},
+         "capabilities":{"effortLevels":["low","medium","high","xhigh"]}}
+        """
+        let grok = try JSONDecoder().decode(Instance.self, from: Data(json.utf8))
+        let xhigh = ModelSelection(instanceId: "grok", model: "grok-4.7", effort: "xhigh")
+        XCTAssertNil(ModelPickerRules.selectionForPick(xhigh, instance: grok, model: "grok-4.5").effort)
+        let medium = ModelSelection(instanceId: "grok", model: "grok-4.7", effort: "medium")
+        XCTAssertEqual(ModelPickerRules.selectionForPick(medium, instance: grok, model: "grok-4.5").effort, "medium")
+        let engine = grok.capabilities?.effortLevels ?? []
+        let option = { (id: String) in grok.models.options.first { $0.id == id } }
+        XCTAssertEqual(ModelEffort.pickerLevels(option("grok-4.5"), engine: engine), ["low", "medium", "high", "ultracode"])
+        XCTAssertEqual(ModelEffort.pickerLevels(option("local"), engine: engine), [])
+        XCTAssertEqual(ModelEffort.pickerLevels(nil, engine: engine), ["low", "medium", "high", "xhigh", "ultracode"])
+        XCTAssertEqual(ModelEffort.defaultLevel(option("grok-4.5"), engine: engine), "high")
+    }
+
     func testCloudAndLocalGroups() throws {
         let options = try JSONDecoder().decode([ModelOption].self, from: Data(#"""
         [{"id":"gpt-5","label":"GPT-5"},

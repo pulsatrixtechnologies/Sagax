@@ -1936,5 +1936,13 @@
   "chat.gotoGroup.count": "{count} conversaciones",
   "chat.gotoGroup.menu": "Conversaciones",
   "chat.gotoGroup.with": "{count} conversaciones con",
-  "voiceMode.call.fullDuplexHelp": "Hable por encima del bot en cualquier momento. El habla detiene la respuesta hablada en curso. Un tema nuevo mientras piensa deja ese trabajo en marcha. Desactivado por defecto. El interruptor no tiene efecto si el servidor no tiene SAGAX_VOICE_FULL_DUPLEX=1. Actívelo para interrumpir; déjelo apagado para que las palabras dichas mientras trabaja se unan a ese turno."
+  "voiceMode.call.fullDuplexHelp": "Hable por encima del bot en cualquier momento. El habla detiene la respuesta hablada en curso. Un tema nuevo mientras piensa deja ese trabajo en marcha. Desactivado por defecto. El interruptor no tiene efecto si el servidor no tiene SAGAX_VOICE_FULL_DUPLEX=1. Actívelo para interrumpir; déjelo apagado para que las palabras dichas mientras trabaja se unan a ese turno.",
+  "model.effort.defaultWith": "Predeterminado ({level})",
+  "model.fastTag": "Rápido",
+  "model.settings.aria": "Ajustes de este modelo",
+  "model.settings.fastHint": "Usar la variante más rápida de este modelo (puede costar más)",
+  "model.settings.context": "Contexto",
+  "model.settings.contextTitle": "Este modelo lee hasta {tokens} tokens de conversación",
+  "model.settings.model": "Modelo",
+  "model.settings.back": "Volver de {title}"
 }
