@@ -12,7 +12,7 @@ import { StoreProvider, useStore, type Bot, type Message } from "@/state/store";
 import "./styles.css";
 
 const params = new URLSearchParams(location.search);
-// ?scene=coordinate: the agents__coordinate_bots card JC reported (2026-10-13)
+// ?scene=coordinate: the agents__coordinate_bots teammate card
 const scene = params.get("scene");
 setLocale(params.get("lang") ?? "fr");
 applySkin((params.get("skin") ?? "midnight") as SkinId);
@@ -61,7 +61,7 @@ const TEAM = [
 ] as unknown as Bot[];
 const coordinateInput = {
   bot_ids: TEAM.map((bot) => bot.id),
-  message: "Ping from Cryptic, JC is on a voice call and wants a quick status from each of you: what are you working on right now, and is anything blocked? Reply in one or two lines.",
+  message: "Ping from Cryptic: a quick status from each of you — what are you working on right now, and is anything blocked? Reply in one or two lines.",
 };
 function coordinate(id: string, extra: Partial<NonNullable<Message["card"]>> = {}): Message {
   const json = JSON.stringify(coordinateInput);

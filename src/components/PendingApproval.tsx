@@ -14,7 +14,7 @@ import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
 import type { LocaleKey } from "@/locales";
 import { SkillRequestPreview } from "@/components/SkillRequestPreview";
-import { adminWillAnswerLine, heldNoteWorthShowing, HeldLine, PeerRequest, toolApprovalView, toolLabel, useKnownBots } from "./ApprovalCard";
+import { adminWillAnswerLine, heldNoteWorthShowing, HeldLine, PeerRequest, toolApprovalView, toolLabel, useKnownBots, useKnownGroups } from "./ApprovalCard";
 import { ApprovalHeading, TechnicalDetails } from "./ApprovalParts";
 import { describeApproval, isTechnicalText } from "@/lib/approval-describe";
 import { reviewedSkillSha256 } from "../../shared/skill-request";
@@ -210,10 +210,11 @@ export const PendingApprovalPanel = memo(function PendingApprovalPanel({
   locale?: string;
 }) {
   const known = useKnownBots();
+  const groups = useKnownGroups();
   const heldNote = heldNoteWorthShowing({ held: pending.held, heldCode: pending.heldCode });
   const card = pending.message.card;
   const proposal = isSkillApproval(pending) || isRoutineApproval(pending) || isProfileApproval(pending) || Boolean(card?.teamSetupRequest);
-  const view = !proposal && card ? toolApprovalView(card, bot?.name, known) : undefined;
+  const view = !proposal && card ? toolApprovalView(card, bot?.name, known, groups) : undefined;
   // never truncated: long commands wrap and scroll
   const visibleText = proposal ? pending.detail : pending.commandAllowlist?.command ?? view?.plain;
   return (
@@ -274,7 +275,7 @@ export const PendingApprovalPanel = memo(function PendingApprovalPanel({
           {visibleText}
         </pre>
       )}
-      {view?.peer && <PeerRequest peer={view.peer} bots={known} />}
+      {view?.peer && <PeerRequest peer={view.peer} bots={known} groups={groups} />}
       {card?.skillRequest && <SkillRequestPreview request={card.skillRequest} />}
       <HeldLine note={heldNote} />
       {view && (view.args || pending.tool) && (

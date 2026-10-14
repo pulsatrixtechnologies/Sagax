@@ -168,23 +168,29 @@ export function HeldLine({ note }: { note?: string }) {
 }
 
 type NamedBot = Pick<Bot, "id" | "name"> & Partial<Bot>;
+type NamedGroup = { id: string; name: string };
 
 /** Who a teammate card writes to, by name and avatar, and what it says,
- * quoted and cut at a few lines with the rest one click away. */
-export function PeerRequest({ peer, bots }: { peer: PeerApproval; bots: readonly NamedBot[] }) {
+ * quoted and cut at a few lines with the rest one click away. A post names
+ * the room instead of a bot. */
+export function PeerRequest({ peer, bots, groups = [] }: { peer: PeerApproval; bots: readonly NamedBot[]; groups?: readonly NamedGroup[] }) {
   const [whole, setWhole] = useState(false);
   const message = peer.message ?? "";
   const long = message.length > PEER_MESSAGE_PREVIEW;
   const shown = long && !whole ? `${message.slice(0, PEER_MESSAGE_PREVIEW - 1).trimEnd()}…` : message;
+  const rooms = peer.kind === "post";
+  const targets = rooms ? (peer.roomIds ?? []) : peer.botIds;
   return (
     <div className="mt-2.5" data-peer-request={peer.kind}>
       <ul aria-label={t("approval.peer.recipients")} className="flex flex-wrap gap-1.5">
-        {peer.botIds.map((id) => {
-          const bot = peerBot(bots, id);
+        {targets.map((id) => {
+          const bot = rooms ? undefined : peerBot(bots, id);
+          const room = rooms ? peerRoom(groups, id) : undefined;
+          const label = rooms ? (room?.name ?? t("approval.peer.unknownRoom")) : (bot?.name ?? t("approval.peer.unknown"));
           return (
             <li key={id} className="inline-flex max-w-[16rem] items-center gap-1.5 rounded-full bg-inset py-0.5 pl-0.5 pr-2.5 text-[12.5px] text-ink">
               {bot?.color ? <BotAvatar bot={bot as Bot} size={20} animated={false} /> : <span aria-hidden="true" className="size-5 shrink-0 rounded-full bg-control" />}
-              <span className="truncate">{bot?.name ?? t("approval.peer.unknown")}</span>
+              <span className="truncate">{label}</span>
             </li>
           );
         })}
@@ -210,9 +216,18 @@ function peerBot(bots: readonly NamedBot[], idOrName: string): NamedBot | undefi
   return bots.find((bot) => bot.id === idOrName) ?? bots.find((bot) => bot.name.toLowerCase() === idOrName.toLowerCase());
 }
 
+function peerRoom(groups: readonly NamedGroup[], idOrName: string): NamedGroup | undefined {
+  return groups.find((group) => group.id === idOrName) ?? groups.find((group) => group.name.toLowerCase() === idOrName.toLowerCase());
+}
+
 /** The bots the store knows, for names and avatars ([] outside the app). */
 export function useKnownBots(): readonly NamedBot[] {
   return useOptionalStore()?.state?.bots ?? [];
+}
+
+/** The rooms the store knows, for post_to_room names ([] outside the app). */
+export function useKnownGroups(): readonly NamedGroup[] {
+  return useOptionalStore()?.state?.groups ?? [];
 }
 
 /** The tool's own name is noise to a human: Bash is "run a command",
@@ -282,7 +297,7 @@ export interface ToolApprovalView {
   peer?: PeerApproval;
 }
 
-export function toolApprovalView(card: OptionCardData, botName?: string, bots: readonly NamedBot[] = []): ToolApprovalView {
+export function toolApprovalView(card: OptionCardData, botName?: string, bots: readonly NamedBot[] = [], groups: readonly NamedGroup[] = []): ToolApprovalView {
   // the gate's subtitle is the tool id and its JSON: the arguments, not a line
   const fromSubtitle = subtitleArgs(card);
   const input = card.toolInput ?? fromSubtitle ?? card.subtitle;
@@ -299,6 +314,16 @@ export function toolApprovalView(card: OptionCardData, botName?: string, bots: r
   const peer = peerApproval(card);
   if (peer) {
     const name = botName ?? t("approval.someone");
+    if (peer.kind === "post") {
+      const room = peerRoom(groups, peer.roomIds?.[0] ?? "")?.name ?? t("approval.peer.unknownRoom");
+      return {
+        title: t("approval.peer.postOne", { name, target: room }),
+        action: t("approval.peer.actionPost", { target: room }),
+        server: described.server,
+        args,
+        peer,
+      };
+    }
     const first = peerBot(bots, peer.botIds[0]!)?.name ?? t("approval.peer.unknown");
     const one = peer.botIds.length === 1;
     return {
@@ -484,6 +509,7 @@ export function ApprovalCard({
   defaultExpanded?: boolean;
 }) {
   const known = useKnownBots();
+  const groups = useKnownGroups();
   const card = message.card;
   if (!card) return null;
   // A change that applied without a person reads as one line with Undo.
@@ -526,7 +552,7 @@ export function ApprovalCard({
     : undefined;
 
   const isProposal = isRoutineRequest || isSkillRequest || isProfileRequest || isTeamSetup;
-  const view = isProposal ? undefined : toolApprovalView(card, bot?.name, known);
+  const view = isProposal ? undefined : toolApprovalView(card, bot?.name, known, groups);
   const proposalTitle = isTeamSetup
     ? card.title
     : profileHeader ?? (bot
@@ -558,7 +584,7 @@ export function ApprovalCard({
         risk={view?.risk}
       />
 
-      {view?.peer && <PeerRequest peer={view.peer} bots={known} />}
+      {view?.peer && <PeerRequest peer={view.peer} bots={known} groups={groups} />}
 
       {/* a proposal's text is what you confirm; a tool's command or URL is
           what runs. Raw JSON arguments stay behind the technical details. */}
@@ -634,6 +660,7 @@ function ApprovalReceipt({
 }) {
   const [expanded, setExpanded] = useState(defaultExpanded);
   const known = useKnownBots();
+  const groups = useKnownGroups();
   const pill = approvalPill(card);
   const tone = pill?.tone ?? "neutral";
   const Icon = card.expired === true ? Clock : card.answered === "allow" ? Check : X;
@@ -659,7 +686,7 @@ function ApprovalReceipt({
         <div className="ml-[22px] mt-1 border-l border-hairline/50 pb-1 pl-3" data-approval-receipt-details="">
           <div className="text-[13px] text-ink">{view.title}</div>
           {view.summary && <div className="mt-0.5 text-[12.5px] text-ink-secondary">{view.summary}</div>}
-          {view.peer && <PeerRequest peer={view.peer} bots={known} />}
+          {view.peer && <PeerRequest peer={view.peer} bots={known} groups={groups} />}
           {view.plain && (
             <pre tabIndex={0} aria-label={t("approval.aria.details")} className="mt-2 max-h-24 overflow-auto whitespace-pre-wrap break-words rounded-lg bg-inset px-3 py-2 font-mono text-[12.5px] leading-relaxed text-ink">
               {view.plain}

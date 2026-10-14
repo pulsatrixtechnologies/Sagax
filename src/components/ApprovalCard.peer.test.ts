@@ -1,9 +1,9 @@
-// The approval card JC reported (2026-10-13): Cryptic asking to use
-// agents__coordinate_bots read as the tool id, three UUIDs and raw JSON under
-// an amber "The provider requires your approval", and stayed full size once
-// answered. It now reads as who the bot writes to and what it says, keeps
-// the technical call collapsed, says nothing alarming for a normal
-// confirmation, and settles into a one-line receipt.
+// The approval card for agents__coordinate_bots: it used to read as the
+// tool id, three UUIDs and raw JSON under an amber "The provider requires
+// your approval", and stayed full size once answered. It now reads as who
+// the bot writes to and what it says, keeps the technical call collapsed,
+// says nothing alarming for a normal confirmation, and settles into a
+// one-line receipt.
 // @vitest-environment happy-dom
 import { createElement, type ReactElement } from "react";
 import { flushSync } from "react-dom";
@@ -26,7 +26,8 @@ const TEAM = [
   { id: IDS[2], name: "Orion", color: "orange" },
 ] as unknown as Bot[];
 const cryptic = { id: "cryptic", name: "Cryptic", color: "green" } as unknown as Bot;
-const MESSAGE = "Ping from Cryptic, JC is on a voice call and wants a quick status from each of you.";
+const ROOM = { id: "g-standup", name: "Standup" };
+const MESSAGE = "Ping from Cryptic: a quick status from each of you.";
 const ARGS = JSON.stringify({ bot_ids: IDS, message: MESSAGE });
 
 function coordinate(extra: Record<string, unknown> = {}): Message {
@@ -50,7 +51,7 @@ function coordinate(extra: Record<string, unknown> = {}): Message {
 }
 
 function withStore(element: ReactElement, dispatch = vi.fn()) {
-  const value = { dispatch, state: { bots: [cryptic, ...TEAM] } } as unknown as Parameters<typeof BotEditorStore>[0]["value"];
+  const value = { dispatch, state: { bots: [cryptic, ...TEAM], groups: [ROOM] } } as unknown as Parameters<typeof BotEditorStore>[0]["value"];
   return renderToStaticMarkup(createElement(BotEditorStore, { value, children: element }));
 }
 
@@ -68,6 +69,15 @@ describe("peerApproval", () => {
     expect(peerApproval({ ...coordinate().card!, toolInput: cut, subtitle: "" })).toMatchObject({ botIds: IDS, message: expect.stringMatching(/^Ping from Cryptic.*…$/) });
     expect(peerApproval({ tool: "other", mcpTool: "agents__ask_bot", subtitle: "", toolInput: JSON.stringify({ bot_id: IDS[1], message: "Status?" }) }))
       .toEqual({ kind: "ask", botIds: [IDS[1]], message: "Status?" });
+    expect(peerApproval({ tool: "other", mcpTool: "agents__send_to_bot", subtitle: "", toolInput: JSON.stringify({ bot_id: IDS[1], title: "Export", message: "Take this." }) }))
+      .toEqual({ kind: "write", botIds: [IDS[1]], message: "Take this." });
+    expect(peerApproval({ tool: "other", mcpTool: "agents__post_to_room", subtitle: "", toolInput: JSON.stringify({ group_id: ROOM.id, message: "Ship it." }) }))
+      .toEqual({ kind: "post", botIds: [], roomIds: [ROOM.id], message: "Ship it." });
+    // harness-native peer-review cards: bare tool name and allowKey, no JSON
+    expect(peerApproval({ tool: "send_to_bot", subtitle: "Take this.", allowKey: `send_to_bot:${IDS[1]}` }))
+      .toEqual({ kind: "write", botIds: [IDS[1]], message: "Take this." });
+    expect(peerApproval({ tool: "post_to_room", subtitle: "Ship it.", allowKey: `post_to_room:${ROOM.id}` }))
+      .toEqual({ kind: "post", botIds: [], roomIds: [ROOM.id], message: "Ship it." });
     // another server's tool of the same name is not a teammate tool
     expect(peerApproval({ tool: "other", mcpTool: "github__coordinate_bots", subtitle: "", toolInput: ARGS })).toBeUndefined();
   });
@@ -89,6 +99,40 @@ describe("a teammate approval card", () => {
   it("names a single teammate in the title", () => {
     const one = coordinate({ toolInput: JSON.stringify({ bot_ids: [IDS[1]], message: "Hi" }) });
     expect(visibleText(withStore(createElement(ApprovalCard, { bot: cryptic, message: one })))).toContain("Cryptic wants to write to Nova");
+  });
+
+  it("names send_to_bot as a write to that teammate", () => {
+    const message = {
+      id: "m-send", role: "bot", kind: "options", at: 1,
+      card: {
+        title: "Approval needed", subtitle: "Take this.",
+        options: ["Allow", "Deny"], requestId: "r-send",
+        tool: "send_to_bot", allowKey: `send_to_bot:${IDS[1]}`,
+      },
+    } as unknown as Message;
+    const text = visibleText(withStore(createElement(ApprovalCard, { bot: cryptic, message })));
+    expect(text).toContain("Cryptic wants to write to Nova");
+    expect(text).toContain("Take this.");
+    expect(text).not.toContain(IDS[1]);
+    expect(text).not.toContain("send_to_bot");
+  });
+
+  it("names post_to_room as a post in that room", () => {
+    const message = {
+      id: "m-post", role: "bot", kind: "options", at: 1,
+      card: {
+        title: "Approval needed", subtitle: "Ship it.",
+        options: ["Allow", "Deny"], requestId: "r-post",
+        tool: "post_to_room", allowKey: `post_to_room:${ROOM.id}`,
+      },
+    } as unknown as Message;
+    const html = withStore(createElement(ApprovalCard, { bot: cryptic, message }));
+    const text = visibleText(html);
+    expect(text).toContain("Cryptic wants to post in Standup");
+    expect(text).toContain("Ship it.");
+    expect(text).not.toContain(ROOM.id);
+    expect(text).not.toContain("post_to_room");
+    expect(html).toContain('data-peer-request="post"');
   });
 
   it("keeps the technical call one click away in the composer and offers Allow, Always allow and Deny", () => {
@@ -121,6 +165,20 @@ describe("a settled approval", () => {
       expect(html).toContain("data-approval-receipt");
       expect(visibleText(html).trim()).toBe(`${label} · Write to 3 bots`);
     }
+  });
+
+  it("collapses a post_to_room card to Post in <room>", () => {
+    const message = {
+      id: "m-post", role: "bot", kind: "options", at: 1,
+      card: {
+        title: "Approval needed", subtitle: "Ship it.",
+        options: ["Allow", "Deny"], requestId: "r-post",
+        tool: "post_to_room", allowKey: `post_to_room:${ROOM.id}`,
+        answered: "allow",
+      },
+    } as unknown as Message;
+    expect(visibleText(withStore(createElement(ApprovalCard, { bot: cryptic, message }))).trim())
+      .toBe("Allowed once · Post in Standup");
   });
 
   it("opens on click on the request, the saved rule and a working Edit rule for the asking bot", () => {
