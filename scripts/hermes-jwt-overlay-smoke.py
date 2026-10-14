@@ -88,6 +88,33 @@ rejected = verify_nas_fire_token(
 if rejected is not None:
     raise SystemExit(f"Hermes verify_nas_fire_token accepted a wrong audience: {rejected!r}")
 
+header, payload, signature = token.split(".")
+sig_bytes = bytearray(jwt.utils.base64url_decode(signature))
+sig_bytes[0] ^= 0x01
+tampered = f"{header}.{payload}.{jwt.utils.base64url_encode(bytes(sig_bytes)).decode()}"
+if verify_nas_fire_token(
+    token=tampered,
+    expected_audience="sagax-overlay-smoke",
+    jwks_or_key=pub_pem,
+    issuer="https://overlay.example.test",
+) is not None:
+    raise SystemExit("Hermes verify_nas_fire_token accepted a tampered RS256 signature")
+
+other_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+other_priv = other_key.private_bytes(
+    encoding=serialization.Encoding.PEM,
+    format=serialization.PrivateFormat.PKCS8,
+    encryption_algorithm=serialization.NoEncryption(),
+).decode()
+wrong_key_token = jwt.encode(claims, other_priv, algorithm="RS256")
+if verify_nas_fire_token(
+    token=wrong_key_token,
+    expected_audience="sagax-overlay-smoke",
+    jwks_or_key=pub_pem,
+    issuer="https://overlay.example.test",
+) is not None:
+    raise SystemExit("Hermes verify_nas_fire_token accepted a token signed by a second RSA key")
+
 hermes_version = version("hermes-agent")
 if not hermes_version.startswith("0.21"):
     raise SystemExit(f"expected hermes-agent 0.21.x, got {hermes_version}")
