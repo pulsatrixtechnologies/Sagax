@@ -1,0 +1,5 @@
+on: pull_request
+jobs:
+  a:
+    runs-on: foo-latest
+    steps: [{run: "true"}]
