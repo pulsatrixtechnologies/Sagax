@@ -1,9 +1,18 @@
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 const root = join(import.meta.dirname, "..");
 const read = (path) => readFileSync(join(root, path), "utf8");
+
+function sandboxChart(file) {
+  const helm = join(root, "deploy/k8s/helm");
+  const dir = readdirSync(helm).find((name) =>
+    readFileSync(join(helm, name, "Chart.yaml"), "utf8").includes("per-person sandboxes"),
+  );
+  if (!dir) throw new Error("sandbox chart not found");
+  return join("deploy/k8s/helm", dir, file);
+}
 
 describe("production image sources", () => {
   it("defaults the image to the full set and exports the build args", () => {
@@ -61,19 +70,23 @@ describe("production image sources", () => {
     expect(publish).toContain("startsWith(github.ref, 'refs/tags/v')");
     expect(publish).toContain("node scripts/vuln-attestation.mjs vuln.json vuln-amd64.json vuln-arm64.json");
     expect(publish).toContain("--platform");
-    const values = read("deploy/k8s/helm/sagax-sandboxes/values.yaml");
+    const values = read(sandboxChart("values.yaml"));
     const admission = values.slice(values.indexOf("admission:"));
     expect(admission).toContain(
       "subjectRegExp: '^https://github\\.com/pulsatrixtechnologies/Sagax/\\.github/workflows/docker\\.yml@refs/(heads/main|tags/v.*)$'",
     );
     expect(admission).not.toContain("pulsatrixtechnologies/sagax");
-    const policy = read("deploy/k8s/helm/sagax-sandboxes/templates/admission.yaml");
+    const policy = read(sandboxChart("templates/admission.yaml"));
     expect(policy).toContain("subjectRegExp: {{ .Values.admission.kyverno.subjectRegExp | quote }}");
     expect(policy).not.toContain("kyverno.subjects");
     expect(policy).not.toContain("kyverno.subject ");
+    expect(workflow).not.toContain("cursor/ghcr-multiarch-sign-attest-ed85");
+    expect(workflow).toContain("sandbox chart values");
+    expect(workflow).toContain("sandbox chart templates/admission.yaml");
     const proof = workflow.slice(workflow.indexOf("name: signing proof"));
-    expect(proof).toContain("github.ref_type == 'branch'");
-    expect(proof).toContain("refs/heads/cursor/ghcr-multiarch-sign-attest-ed85");
+    expect(proof).toContain(
+      "if: github.event_name == 'workflow_dispatch' && github.ref_type == 'branch'",
+    );
     expect(proof).toContain('echo "IMAGE=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/sagax-signing-test" >> "$GITHUB_ENV"');
     expect(proof).toContain("type=raw,value=pr436");
     expect(proof).toContain("platforms: linux/amd64,linux/arm64");
