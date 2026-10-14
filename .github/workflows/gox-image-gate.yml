@@ -1,11 +1,7 @@
-name: image gate
+name: GOX image gate
 
-# Check an already-built image with the same manifest gate production uses.
-# This workflow never deploys and never contacts a host. The host deploy is
-# deploy/example/deploy-server.sh, which refuses a short engine set, smoke-tests
-# /healthz and the engine startup log, and on failure rolls back to
-# <INSTALL_ROOT>/server-image.prev and runs:
-#   docker compose up -d --force-recreate --no-deps <EDGE_SERVICE>
+# Check an already-built image with the same manifest gate GOX uses.
+# This workflow never deploys and never contacts GOX.
 on:
   workflow_dispatch:
     inputs:
@@ -30,4 +26,4 @@ jobs:
         run: |
           set -euo pipefail
           docker pull "$IMAGE"
-          node scripts/deploy-server.mjs check --image "$IMAGE"
+          node scripts/gox-deploy.mjs check --image "$IMAGE"
