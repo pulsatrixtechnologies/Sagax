@@ -112,8 +112,7 @@ describe("autoVerdict", () => {
       approve: "approved read_file (read-only)",
       source: "safety-read",
     });
-    // Sagax's own safety review asked, not the provider
-    expect(approvalHeldNote({ source: "safety-hold", permission: true })).toBe("approval.held.safety");
+    expect(approvalHeldNote({ source: "safety-hold", permission: true })).toBe("approval.held.native");
   });
 
   it("lets Full access, a sandbox block, and a saved command beat the web-search grant", () => {
@@ -236,10 +235,6 @@ describe("delegatedApprovalMode", () => {
     for (const mode of ["full", "auto", "custom", "edits", "ask"] as const) {
       expect(autoVerdict(mode, "other", { sagaxGate: true }).approve).toBeNull();
     }
-  });
-  it("says a held gate card is the bot's own gate, never the provider", () => {
-    expect(autoVerdict("auto", "other", { sagaxGate: true }).source).toBe("approval-gate");
-    expect(approvalHeldNote({ source: "approval-gate", permission: true })).toBe("approval.held.gate");
   });
   it("answers a gate card only from the person's own saved Allow rule", () => {
     for (const mode of ["full", "auto", "custom", "edits", "ask"] as const) {

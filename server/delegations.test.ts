@@ -499,6 +499,27 @@ describe("drainDelegations", () => {
     expect(runTargetCalls[0]!.commsDepth).toBe(1);
   });
 
+  it("asks for a send_to_bot card on a one-way handoff, not delegate_bot", async () => {
+    store.patchBot(from.id, { approvePeerComms: true });
+    const opened = store.createTask(target.id, "Recipient", false)!;
+    queueDelegation(commsBus, from, {
+      toBotId: target.id, message: "Independent work", depth: 0, oneWay: true, targetThreadId: opened.threadId,
+    }, 1);
+    drainDelegations(commsBus, approvalBus, from.threadId, (toBotId, message, commsDepth) => {
+      runTargetCalls.push({ toBotId, message, commsDepth });
+    });
+    const card = await waitFor(() =>
+      store.messagesFor(from.threadId).find((m) => m.card?.requestId),
+    );
+    expect(card.card?.tool).toBe("send_to_bot");
+    expect(card.card?.allowKey).toBe(peerAllowKey("send_to_bot", target.id));
+    expect(card.card?.title).toContain("send to @Helper");
+    expect(card.card?.title).not.toContain("delegate to");
+    resolvePeerComms(approvalBus, card.card!.requestId!, "allow");
+    await waitFor(() => runTargetCalls.length === 1);
+    expect(runTargetCalls[0]!.toBotId).toBe(target.id);
+  });
+
   it("rechecks sections after a pending human approval before dispatch", async () => {
     store.patchBot(from.id, { approvePeerComms: true });
     const queued = queueDelegation(

@@ -775,7 +775,7 @@ async function processOne(
       sender,
       target,
       item.message,
-      "delegate_bot",
+      item.oneWay ? "send_to_bot" : "delegate_bot",
       sourceThreadId,
     );
     if (!pendingDelegations.get(sourceThreadId)?.some((candidate) => candidate.id === item.id)) return "settled";

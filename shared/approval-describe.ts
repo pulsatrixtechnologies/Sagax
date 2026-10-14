@@ -629,10 +629,12 @@ export function approvalPlain(
 export function describeAllowRule(key: string, words: ApprovalWords = ENGLISH_WORDS, nameOf?: (id: string) => string | undefined): string {
   const mcp = /^mcp:(.+)$/.exec(key);
   if (mcp) return words.t("approval.rule.tool", { action: capitalize(approvalAction(mcp[1], undefined, undefined, words)) });
-  const peer = /^(ask_bot|delegate_bot|post_to_room):(.+)$/.exec(key);
+  const peer = /^(ask_bot|delegate_bot|send_to_bot|post_to_room):(.+)$/.exec(key);
   if (peer) {
     const target = nameOf?.(peer[2]!) ?? peer[2]!;
-    const which = peer[1] === "ask_bot" ? "approval.rule.askBot" : peer[1] === "delegate_bot" ? "approval.rule.delegateBot" : "approval.rule.postToRoom";
+    const which = peer[1] === "ask_bot" ? "approval.rule.askBot"
+      : peer[1] === "post_to_room" ? "approval.rule.postToRoom"
+      : "approval.rule.delegateBot";
     return words.t(which, { target });
   }
   return key;
@@ -642,8 +644,8 @@ export function describeAllowRule(key: string, words: ApprovalWords = ENGLISH_WO
  * this exact server, any arguments. The arguments are not part of the key:
  * Always allow for `agents__workspace_write` answers every later call of
  * that tool, whatever it was asked to write. Peer rules (`ask_bot`,
- * `delegate_bot`, `post_to_room`) name the action and the target id, not
- * the message. */
+ * `delegate_bot`, `send_to_bot`, `post_to_room`) name the action and the
+ * target id, not the message. */
 export function mcpAllowKey(mcpTool: string): string | undefined {
   const parsed = parseToolId(mcpTool);
   return parsed.server ? `mcp:${parsed.server}__${parsed.name}` : undefined;

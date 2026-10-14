@@ -50,6 +50,8 @@ describe("allow rules", () => {
     expect(mcpAllowKey("Bash")).toBeUndefined();
     expect(describeAllowRule("mcp:agents__list_bots")).not.toMatch(/__/);
     expect(describeAllowRule("ask_bot:b1", undefined, () => "Dot")).toMatch(/Dot/);
+    expect(describeAllowRule("delegate_bot:b1", undefined, () => "Dot")).toMatch(/Dot/);
+    expect(describeAllowRule("send_to_bot:b1", undefined, () => "Dot")).toMatch(/Dot/);
     expect(describeAllowRule("post_to_room:g1", undefined, () => "Standup")).toMatch(/Standup/);
   });
 

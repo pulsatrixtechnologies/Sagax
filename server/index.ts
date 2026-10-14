@@ -3422,6 +3422,19 @@ function authorizedInternalCapability(header: string | string[] | undefined): In
   return externalRuntimeCapability(header);
 }
 
+/** A live turn of this bot: busy on a thread, speaking in a room, or holding
+ * an internal capability. Owner-trust loopback with no Origin looks like the
+ * operator, so Always allow must not take that path while the bot is working. */
+function botHasLiveInternalTurn(botId: string): boolean {
+  const bot = store.bot(botId);
+  if (bot?.busy || bot?.tasks?.some((task) => task.busy)) return true;
+  if (activeGroupTurnForBot(botId)) return true;
+  for (const capability of internalCapabilities.values()) {
+    if (capability.botId === botId && internalCapabilityIsActive(capability)) return true;
+  }
+  return false;
+}
+
 function internalCapabilityIsActive(capability: InternalCapability): boolean {
   if (capability.generation === EXTERNAL_RUNTIME_GENERATION) {
     return Boolean(capability.externalRuntime && capability.externalRuntime.botId === capability.botId &&
@@ -34556,10 +34569,13 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
     }
     m = path.match(/^\/api\/bots\/([\w-]+)\/always-allow$/);
     if (m && method === "POST") {
-      // A live turn bearer is not a person. On owner-trust loopback a
-      // non-session Authorization falls through to the operator, so refuse
-      // the capability before any grant (no self-approval).
-      if (authorizedInternalCapability(req.headers.authorization)) {
+      // A live turn is not a person. Any internal capability (agents,
+      // connectors, computer, data) is refused. On owner-trust loopback a
+      // request with no Origin and no session is the operator, so refuse
+      // that path too while this bot has a live turn.
+      const originlessLoopback = auth.kind === "loopback" && !DESKTOP_MANAGED
+        && !(typeof req.headers.origin === "string" && req.headers.origin.trim() !== "");
+      if (authorizedInternalCapability(req.headers.authorization) || (originlessLoopback && botHasLiveInternalTurn(m[1]))) {
         return json(res, 403, { error: "A turn cannot save its own Allow rule.", code: "turn_cannot_self_approve" });
       }
       const body = await readBody(req);
@@ -35173,6 +35189,9 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       if (section !== undefined && sectionKey(existingBot?.section) !== sectionKey(section)) loosened.push("section");
       if (Array.isArray(patch.alwaysAllow) && patch.alwaysAllow.some((key) => !(existingBot?.alwaysAllow ?? []).includes(key))) {
         loosened.push("alwaysAllow");
+      }
+      if (loosened.includes("alwaysAllow") && authorizedInternalCapability(req.headers.authorization)) {
+        return json(res, 403, { error: "A turn cannot save its own Allow rule.", code: "turn_cannot_self_approve" });
       }
       const allowBefore = [...(existingBot?.alwaysAllow ?? [])];
       if (body.mcpServers !== undefined && Array.isArray(existingBot?.mcpServers) &&
