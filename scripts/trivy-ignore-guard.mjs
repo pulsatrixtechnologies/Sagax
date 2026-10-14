@@ -5,8 +5,9 @@
 // explicit CVE ids (no wildcards), each with a reason and Review date.
 //
 // Fail closed: an unusable scan, an empty ignore file, a whitespace
-// FixedVersion, an invalid calendar date, UNKNOWN severity, or a listed
-// CVE missing from the scan is an error (non-zero exit), never a pass.
+// FixedVersion, an invalid calendar date, UNKNOWN severity, a listed
+// CVE missing from the scan, a duplicated ignore id, or a --gated row
+// with no VulnerabilityID (including LOW) is an error (non-zero exit).
 //
 //   node scripts/trivy-ignore-guard.mjs --ignore .trivyignore --scan scan.json
 import { readFileSync } from "node:fs";
@@ -70,6 +71,9 @@ export function parseTrivyignore(text) {
       errors.push(`wildcard or invalid CVE: ${line}`);
       comments = [];
       continue;
+    }
+    if (entries.some((row) => row.id === line)) {
+      errors.push(`${line} is listed more than once`);
     }
     const reason = comments.join(" ").trim();
     const reviews = reviewDatesIn(reason);
@@ -144,6 +148,18 @@ function unknownSeverityErrors(findings) {
   return errors;
 }
 
+/** A row with no CVE id is not a clean remainder, even at LOW. */
+function missingIdErrors(findings) {
+  const errors = [];
+  for (const finding of findings) {
+    const id = String(finding?.VulnerabilityID ?? "").trim();
+    if (id) continue;
+    const severity = severityOf(finding) || "UNKNOWN";
+    errors.push(`finding with severity ${severity} has no VulnerabilityID`);
+  }
+  return errors;
+}
+
 /** Per-package vs unique CVE ids, to reconcile Trivy row counts with `.trivyignore`. */
 export function findingsSummary(scan) {
   const usable = usableScan(scan);
@@ -186,7 +202,7 @@ export function assessGatedScan(scan) {
   const usable = usableScan(scan);
   if (!usable.ok) return { ok: false, errors: usable.errors, counts: { CRITICAL: 0, HIGH: 0 } };
   const findings = findingsFromScan(scan);
-  const errors = unknownSeverityErrors(findings);
+  const errors = [...unknownSeverityErrors(findings), ...missingIdErrors(findings)];
   const counts = highCriticalCounts(scan);
   if (counts.CRITICAL) errors.push(`gated remaining critical=${counts.CRITICAL}`);
   if (counts.HIGH) errors.push(`gated remaining high=${counts.HIGH}`);

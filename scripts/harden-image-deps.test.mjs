@@ -1,6 +1,8 @@
+import { spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -17,6 +19,8 @@ import {
   patchPipTrees,
   readPackageVersion,
 } from "./harden-image-deps.mjs";
+
+const script = fileURLToPath(new URL("./harden-image-deps.mjs", import.meta.url));
 
 describe("runtime overlay pins", () => {
   it("pins piscina and sharp to the releases that close the image scan, with sha512", () => {
@@ -148,6 +152,19 @@ describe("patchPipTrees", () => {
       expect(runs[0].requirements).toContain("httpx2==2.13.1");
       expect(runs[0].requirements).toContain("httpcore2==2.13.1");
       expect(runs[0].requirements).toMatch(/--hash=sha256:[0-9a-f]{64}/);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("fails when no venv is found", () => {
+    const root = mkdtempSync(join(tmpdir(), "harden-pip-missing-"));
+    try {
+      mkdirSync(join(root, "node_modules"), { recursive: true });
+      expect(() => patchPipTrees(root, PIP_RUNTIME_PATCHES, { runPip: () => {} })).toThrow(/no venv/);
+      const cli = spawnSync(process.execPath, [script, "--root", root], { encoding: "utf8" });
+      expect(cli.status, cli.stderr + cli.stdout).not.toBe(0);
+      expect(cli.stderr).toMatch(/no venv/);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

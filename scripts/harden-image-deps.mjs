@@ -206,7 +206,9 @@ export function patchPipTrees(root, patches = PIP_RUNTIME_PATCHES, { runPip, dep
   const specs = patches.map((patch) => patch.spec);
   if (specs.length === 0) return [];
   const pips = findVenvPips(root);
-  if (pips.length === 0) return [];
+  if (pips.length === 0) {
+    throw new Error(`pip overlay: no venv found under ${root || "(empty)"}`);
+  }
   const applied = [];
   const pipRun = runPip ?? ((pip, args) => {
     execFileSync(pip, args, { stdio: "inherit" });
@@ -254,7 +256,11 @@ async function main() {
   const pipApplied = [];
   for (const root of roots) {
     npmApplied.push(...await patchNpmTree(root));
+    if (findVenvPips(root).length === 0) continue;
     pipApplied.push(...patchPipTrees(root));
+  }
+  if (PIP_RUNTIME_PATCHES.length > 0 && pipApplied.length === 0) {
+    throw new Error("pip overlay: no venv found under --root");
   }
   for (const row of npmApplied) {
     console.log(`[harden] ${row.name}: ${row.from} -> ${row.to} (${row.dir})`);

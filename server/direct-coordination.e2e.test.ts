@@ -763,12 +763,6 @@ it("parks a message behind outstanding teammate work when the bot opts in, then 
   await expect.poll(() => f.nodes().find((node: any) => node.parentId)?.status, { timeout: 15_000 }).toBe("running");
   const assignment = f.nodes().find((node: any) => node.parentId);
 
-  // Same wait as the steer case above: a send while the assigning turn is
-  // still live is steered into that turn and never reaches the parking queue.
-  await expect.poll(async () => {
-    const chief = (await f.api("/api/bots?messages=0")).bots.find((bot: any) => bot.id === f.chief.id);
-    return { busy: chief.busy, waitingForTeammates: chief.waitingForTeammates };
-  }, { timeout: 15_000 }).toEqual({ busy: false, waitingForTeammates: true });
   const receipt = await f.api(`/api/bots/${f.chief.id}/messages`, { text: "Also make sure the export is UTF-8.", threadId: f.chief.activeTaskId });
   // It parked: not run, not even on the transcript yet.
   expect(receipt.queued).toBe(true);

@@ -235,6 +235,25 @@ CVE-2026-6653
     expect(cli.status, cli.stderr + cli.stdout).not.toBe(0);
   });
 
+  it("refuses --gated when a LOW finding has no VulnerabilityID", () => {
+    const gated = {
+      Results: [
+        {
+          Target: "openmausbot:ci (debian 13.7)",
+          Class: "os-pkgs",
+          Type: "debian",
+          Vulnerabilities: [{ Severity: "LOW", PkgName: "tzdata", InstalledVersion: "1" }],
+        },
+      ],
+    };
+    const result = assessGatedScan(gated);
+    expect(result.ok).toBe(false);
+    expect(result.errors.join("\n")).toMatch(/VulnerabilityID|no identifier|missing id/i);
+    const cli = runGuard({ gated });
+    expect(cli.status, cli.stderr + cli.stdout).not.toBe(0);
+    expect(cli.stdout).not.toMatch(/gated remaining: critical=0 high=0/);
+  });
+
   it("refuses a listed CVE that is absent from the scan", () => {
     const result = assessIgnoreGuard({
       ignoreText: listed,
@@ -269,6 +288,17 @@ describe("findingsSummary", () => {
 });
 
 describe("parseTrivyignore", () => {
+  it("refuses a duplicated CVE id", () => {
+    const ignore = ignoreFile(`
+# Debian no-dsa. Review 2026-11-13
+CVE-2026-6653
+# Debian no-dsa. Review 2026-11-13
+CVE-2026-6653
+`);
+    const parsed = parseTrivyignore(ignore);
+    expect(parsed.errors.join("\n")).toMatch(/more than once|duplicate/i);
+  });
+
   it("reads the repository ignore file as explicit CVEs with a reason and review date", () => {
     const parsed = parseTrivyignore(readFileSync(join(root, ".trivyignore"), "utf8"));
     expect(parsed.errors).toEqual([]);
@@ -283,5 +313,7 @@ describe("parseTrivyignore", () => {
       ).toBe(true);
     }
     expect(parsed.entries.some((row) => row.id === "CVE-2026-6653")).toBe(true);
+    const ids = parsed.entries.map((row) => row.id);
+    expect(new Set(ids).size).toBe(ids.length);
   });
 });
