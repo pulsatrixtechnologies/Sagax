@@ -277,6 +277,8 @@ describe("Handoffs", () => {
     f.event({ type: "steer.received", steerId: "steer-other" });
     f.event({ type: "turn.completed", ok: true });
     expect(unseenIds(order, f.records.get("claude")!)).toEqual(["m4", "m5"]);
+  });
+
   it("counts a widget the turn showed itself as received, so the resumed session is not offered it at the next turn", () => {
     // m3: the person's message. m4: the widget the turn showed with show_widget
     // (a context row with no turnId, so not one of the turn's replies). m5: its reply.
