@@ -29,20 +29,23 @@ describe("Plugins panel views", () => {
   it("main view: title, connected count, search, chips and sections of two-column rows", () => {
     const html = renderToStaticMarkup(createElement(ConnectAppsView, {
       items, loading: false, search: "", onSearch: noop, filter: "all", onFilter: noop, refreshing: false, onRefresh: noop, onClose: noop,
-      onOpenManage: noop, onOpenItem: noop, type: "any", onType: noop, onBotTemplates: noop, extraConnected: 1,
+      onOpenManage: noop, onOpenItem: noop, type: "any", onType: noop, extraConnected: 1,
       renderAction: (item) => item.action ? createElement("button", { type: "button" }, item.action === "connect" ? "Connect" : "Add") : null,
     }));
     expect(html).toContain("Connect apps");
     // Slack, the glitcho server and one Claude connector
     expect(html).toContain("3 connected");
     expect(html).toContain('placeholder="Search across apps and skills"');
-    expect(html).toMatch(/data-plugins-bot-templates[^>]*>Browse Bots<svg/);
+    expect(html).not.toContain("data-plugins-bot-templates");
+    expect(html).not.toContain("Browse Bots");
+    // the connected count sits next to the search field, not in the header
+    expect(html).toMatch(/placeholder="Search across apps and skills"[\s\S]*?data-plugins-connected/);
     // the reference's chips, in its order; types are not chips
     const chips = [...html.matchAll(/aria-pressed="(?:true|false)"[^>]*>([^<]+)</g)].map((match) => match[1]);
     expect(chips).toEqual(["All", "Password managers", "Productivity", "Communication", "Design", "Code"]);
     expect(html).toMatch(/aria-haspopup="menu"[^>]*>More</);
     expect(html).not.toMatch(/aria-pressed="false"[^>]*>(Connected apps|MCP servers|Skills)</);
-    expect(html).toMatch(/data-plugins-type[\s\S]*?All types/);
+    expect(html).not.toContain("data-plugins-type");
     // no top-level Connected apps / MCP servers tabs any more
     expect(html).not.toContain('role="tab"');
     expect(html).toContain('data-plugins-section="recommended"');

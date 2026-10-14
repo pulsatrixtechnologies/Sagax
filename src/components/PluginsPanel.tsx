@@ -28,7 +28,6 @@ import { t } from "@/lib/i18n";
 import { managedConnectorUnavailableReason } from "../../shared/connector-availability";
 import { isWhopServer } from "@/lib/whop-integration";
 import { skillsLibraryEnabled } from "@/lib/feature-flags";
-import { templatesEntryActions } from "@/lib/templates-entry";
 import { usePerspicaxOrg } from "@/lib/perspicax-org";
 import { useOwnerOrAdmin } from "@/lib/use-owner-or-admin";
 import { viewerCan } from "@/lib/viewer";
@@ -238,11 +237,6 @@ export function PluginsPanel() {
 
   const close = useCallback(() => dispatch({ type: "togglePlugins", open: false }), [dispatch]);
   const skillsLibraryOn = skillsLibraryEnabled(state.config);
-  /** Bot templates: closes Connect apps and opens Browse Bots on its
-   * Templates section (the one place for templates). */
-  const openBotTemplates = () => {
-    for (const action of templatesEntryActions("connectApps")) dispatch(action);
-  };
   const back = useCallback(() => setPage((current) => current.page === "detail" || current.page === "skill" ? { page: current.from } : { page: "main" }), []);
 
   // Focus and keys: Escape steps back one page, then closes.
@@ -779,7 +773,6 @@ export function PluginsPanel() {
         sourceLabel={pluginSourceLabel}
         extraSources={(shownMarketplaces ?? []).map((market) => market.name)}
         extraConnected={scope === "bot" ? 0 : claudeConnectors}
-        onBotTemplates={remoteClient ? undefined : openBotTemplates}
         refreshing={refreshing}
         onRefresh={refreshAll}
         onClose={close}

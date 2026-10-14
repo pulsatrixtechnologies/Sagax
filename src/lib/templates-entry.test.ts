@@ -61,15 +61,13 @@ describe("the templates entry points", () => {
     expect(renderToStaticMarkup(createElement(() => StartingRole({ draft, defaultsMode: true })))).not.toContain("Browse templates");
   });
 
-  it("Connect apps' Browse Bots button dispatches them", () => {
-    fixture.dispatch.mockReset();
+  it("Connect apps no longer offers Browse Bots (JC 2026-10-14)", () => {
     vi.stubGlobal("window", { addEventListener: () => {}, removeEventListener: () => {} });
     let tree!: ReturnType<typeof PluginsPanel>;
     renderToStaticMarkup(createElement(() => { tree = PluginsPanel(); return null; }));
     const view = nodes(tree).find((node) => node.type === ConnectAppsView);
-    expect(view?.props.onBotTemplates).toBeTypeOf("function");
-    view!.props.onBotTemplates!();
-    expect(fixture.dispatch.mock.calls.map(([action]) => action)).toEqual(templatesEntryActions("connectApps"));
+    expect(view).toBeDefined();
+    expect(view?.props.onBotTemplates).toBeUndefined();
     vi.unstubAllGlobals();
   });
 });

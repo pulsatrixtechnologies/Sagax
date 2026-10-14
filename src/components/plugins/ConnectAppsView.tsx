@@ -3,7 +3,7 @@
 // a short section per category. Installed rows open their detail page; the
 // others carry Add (nothing to sign in to) or Connect (an account).
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { ChevronDown, ChevronRight, ExternalLink, Loader2, RefreshCw, Search, SlidersHorizontal, X } from "lucide-react";
+import { ChevronDown, ChevronRight, Loader2, RefreshCw, Search, X } from "lucide-react";
 
 import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
@@ -148,7 +148,6 @@ export interface ConnectAppsViewProps {
   /** connectors a Claude account brings, counted in "N connected" */
   extraConnected?: number;
   /** "Bot templates", beside the search (absent: no button) */
-  onBotTemplates?: () => void;
   sourceLabel?: (source: string) => string;
   refreshing: boolean;
   onRefresh: () => void;
@@ -166,14 +165,13 @@ export interface ConnectAppsViewProps {
 }
 
 export function ConnectAppsView(props: ConnectAppsViewProps) {
-  const { items, loading, search, onSearch, filter, onFilter, type = "any", onType, extraSources = [], extraConnected = 0, onBotTemplates, sourceLabel,
+  const { items, loading, search, onSearch, filter, onFilter, type = "any", onType, extraSources = [], extraConnected = 0, sourceLabel,
     refreshing, onRefresh, onClose, onOpenManage, onOpenItem, renderAction, renderBelow, notices, scope } = props;
   const [limit, setLimit] = useState(PAGE);
   useEffect(() => setLimit(PAGE), [filter, type, search]);
 
   const sections = mainSections(items, search, filter, type, extraSources);
   const summary = connectedSummary(items, extraConnected);
-  const types: PluginTypeFilter[] = [...TYPE_FILTERS, ...extraSources.map((source) => `source:${source}` as PluginTypeFilter)];
   const moreActive = MORE_CHIPS.includes(filter);
   const single = sections.length === 1 && (search.trim() !== "" || filter !== "all" || type !== "any");
   const viewAll = (section: PluginSection) => {
@@ -187,25 +185,6 @@ export function ConnectAppsView(props: ConnectAppsViewProps) {
       <header className="flex items-start justify-between gap-4 px-6 pb-3 pt-6 sm:px-8">
         <h2 id="plugins-title" className="text-[17px] font-semibold leading-6 tracking-[-0.008em] text-ink">{t("connectApps.title")}</h2>
         <div className="flex items-center gap-1">
-          <button
-            type="button"
-            data-plugins-connected
-            onClick={onOpenManage}
-            className="flex items-center gap-2 rounded-full py-1 pl-1.5 pr-2 text-[12.5px] text-ink-secondary hover:bg-hover hover:text-ink"
-            aria-label={t("connectApps.manageAria", { count: summary.count })}
-          >
-            {summary.icons.length > 0 && (
-              <span className="flex -space-x-1.5" aria-hidden="true">
-                {summary.icons.map((item) => (
-                  <span key={item.key} className="rounded-lg ring-2 ring-elevated">
-                    <PluginIcon item={item} className="size-5 rounded-md" />
-                  </span>
-                ))}
-              </span>
-            )}
-            <span>{t("connectApps.connectedCount", { count: summary.count })}</span>
-            <ChevronRight size={14} aria-hidden="true" />
-          </button>
           <button type="button" onClick={onRefresh} disabled={refreshing} className="ui-icon-button disabled:opacity-50" title={t("connectors.refreshTitle")} aria-label={t("connectors.refreshTitle")}>
             <RefreshCw size={17} className={cn(refreshing && "animate-spin")} />
           </button>
@@ -235,17 +214,25 @@ export function ConnectAppsView(props: ConnectAppsViewProps) {
               className="min-w-0 flex-1 bg-transparent text-[13px] leading-[18px] text-ink placeholder:text-ink-secondary focus:outline-none"
             />
           </label>
-          {onBotTemplates && (
-            <button
-              type="button"
-              data-plugins-bot-templates
-              onClick={onBotTemplates}
-              className="flex shrink-0 items-center gap-1.5 rounded-[14px] border border-border px-3.5 py-2.5 text-[13px] leading-[18px] text-ink hover:bg-hover"
-            >
-              {t("connectApps.botTemplates")}
-              <ExternalLink size={13} className="text-ink-secondary" aria-hidden="true" />
-            </button>
-          )}
+          <button
+            type="button"
+            data-plugins-connected
+            onClick={onOpenManage}
+            className="flex shrink-0 items-center gap-2 rounded-[14px] border border-border px-3.5 py-2.5 text-[13px] leading-[18px] text-ink hover:bg-hover"
+            aria-label={t("connectApps.manageAria", { count: summary.count })}
+          >
+            {summary.icons.length > 0 && (
+              <span className="flex -space-x-1.5" aria-hidden="true">
+                {summary.icons.map((item) => (
+                  <span key={item.key} className="rounded-lg ring-2 ring-elevated">
+                    <PluginIcon item={item} className="size-5 rounded-md" />
+                  </span>
+                ))}
+              </span>
+            )}
+            <span>{t("connectApps.connectedCount", { count: summary.count })}</span>
+            <ChevronRight size={14} className="text-ink-secondary" aria-hidden="true" />
+          </button>
         </div>
         <div className="mt-3 flex flex-wrap items-center gap-1.5" role="toolbar" aria-label={t("connectApps.filtersAria")}>
           {MAIN_CHIPS.map((chip) => (
@@ -270,21 +257,6 @@ export function ConnectAppsView(props: ConnectAppsViewProps) {
             onSelect={onFilter}
             labelOf={(chip) => filterLabel(chip, sourceLabel)}
           />
-          {onType && (
-            <div className="ml-auto" data-plugins-type>
-              <Dropdown
-                label={filterLabel(type, sourceLabel)}
-                active={type !== "any"}
-                options={types}
-                value={type}
-                onSelect={onType}
-                labelOf={(option) => filterLabel(option, sourceLabel)}
-                align="right"
-                icon={<SlidersHorizontal size={12} aria-hidden="true" />}
-                ariaLabel={t("connectApps.typeAria", { type: filterLabel(type, sourceLabel) })}
-              />
-            </div>
-          )}
         </div>
       </div>
 
