@@ -10,7 +10,7 @@
 // sit on the name line. A private card stays a private note: nobody reads
 // another person's record, and the tab says they keep achievements private.
 import { useState } from "react";
-import { ExternalLink, EyeOff, Mail, MessageSquare, PanelRight, Users } from "lucide-react";
+import { ExternalLink, Mail, MessageSquare, PanelRight, Users } from "lucide-react";
 
 import { useStore } from "@/state/store";
 import { t } from "@/lib/i18n";
@@ -29,7 +29,7 @@ import {
   personTeams,
   sharedGroups,
 } from "@/lib/person-panel";
-import { hiddenKey, hideFromSidebar, showInSidebar, useSidebarHidden } from "@/lib/sidebar-hidden";
+import { hiddenKey, showInSidebar, useSidebarHidden } from "@/lib/sidebar-hidden";
 import { BotAvatar } from "./Avatar";
 import { PersonConnectionsSection } from "./PersonConnectionsSection";
 import { PersonAvatar } from "./MessageAuthor";
@@ -142,17 +142,6 @@ export function PersonPanel({ personId, directory: given }: { personId: string; 
               >
                 <MessageSquare size={14} aria-hidden />
                 {t("personPanel.message")}
-              </button>
-            )}
-            {dm && !isHidden && (
-              <button
-                type="button"
-                data-person-action="close"
-                onClick={() => hideFromSidebar("person", personId)}
-                className="ui-button inline-flex items-center gap-1.5"
-              >
-                <EyeOff size={14} aria-hidden />
-                {t("personPanel.closeConversation")}
               </button>
             )}
           </div>

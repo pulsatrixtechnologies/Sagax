@@ -1602,7 +1602,6 @@
   "personLabel.mine": "Meu rótulo",
   "personLabel.mineHint": "Exibido ao lado do seu nome, como o rótulo de um bot.",
   "personLabel.saveError": "Não foi possível salvar o rótulo.",
-  "personPanel.closeConversation": "Fechar conversa",
   "personPanel.connections.confirm.action": "Remover",
   "personPanel.connections.confirm.allBody": "Cada servidor MCP, a conexão do GitHub e os plugins dos bots desta pessoa serão removidos. As credenciais salvas são excluídas e um servidor MCP em execução que as usa é interrompido.",
   "personPanel.connections.confirm.allTitle": "Remover todas as conexões?",

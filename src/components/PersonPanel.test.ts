@@ -46,8 +46,8 @@ describe("PersonPanel", () => {
     expect(html).not.toContain(">Member<");
     expect(html).toContain("Operations");
     expect(html).toContain('data-person-action="message"');
-    expect(html).toContain('data-person-action="close"');
-    expect(html).toContain("Close conversation");
+    expect(html).not.toContain('data-person-action="close"');
+    expect(html).not.toContain("Close conversation");
     expect(html).not.toContain('data-person-action="hide"');
     expect(html).not.toContain('data-person-action="show"');
     expect(html).not.toContain("Manage in Perspicax");
