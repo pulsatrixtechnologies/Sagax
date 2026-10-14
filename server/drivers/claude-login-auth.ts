@@ -18,6 +18,7 @@ import { homedir } from "node:os";
 import { isAbsolute, join, resolve } from "node:path";
 import { stripVTControlCharacters } from "node:util";
 import type { ProviderAuthenticationStart, ProviderAuthenticationStatus } from "../contracts.ts";
+import { engineStartGate } from "../engine-start-gate.ts";
 import { killCliTree, spawnCli } from "../procs.ts";
 import { canonicalPath } from "./device-auth.ts";
 
@@ -277,7 +278,8 @@ export class ClaudeLoginController {
 
   /** `claude auth status --json`: signed in, signed out, or not answered. */
   private authStatus(env: NodeJS.ProcessEnv): Promise<"in" | "out" | "unknown"> {
-    return new Promise((resolveStatus) => {
+    // A Claude Code runtime per check: one engine start slot during boot.
+    return engineStartGate.run("probe", `${this.options.cli} auth status`, () => new Promise<"in" | "out" | "unknown">((resolveStatus) => {
       let child: ReturnType<typeof spawnCli>;
       try {
         child = spawnCli(this.options.cli, ["auth", "status", "--json"], { env: { ...env, NO_COLOR: "1" }, stdio: ["ignore", "pipe", "pipe"] });
@@ -309,7 +311,7 @@ export class ClaudeLoginController {
           resolveStatus("unknown");
         }
       });
-    });
+    }));
   }
 
   private login(flow: Flow): void {

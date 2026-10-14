@@ -28,6 +28,7 @@ import { PROVIDER_CREDENTIAL_ENV, stripWorkspaceCredentialEnv } from "../config.
 import { openStartupModelCatalog, writeStartupModelCache } from "../startup-model-catalog.ts";
 import { augmentedPath } from "../env-path.ts";
 import { describeSpawnFailure, execCli, killCliTree, spawnCli } from "../procs.ts";
+import { engineStartGate } from "../engine-start-gate.ts";
 import {
   deletePromptSplitReceipt,
   promptHalves,
@@ -508,6 +509,13 @@ function readPiDefaultModel(env: Record<string, string | undefined>): string {
  *  `get_available_models`, and parsing the response. A failed probe resolves
  *  with an empty catalog — the instance reports unavailable via snapshot. */
 export async function fetchPiModels(
+  cli: string,
+  env: Record<string, string | undefined>,
+): Promise<ModelCatalog> {
+  return engineStartGate.run("probe", `${cli} rpc (models)`, () => readPiModels(cli, env));
+}
+
+function readPiModels(
   cli: string,
   env: Record<string, string | undefined>,
 ): Promise<ModelCatalog> {
@@ -1356,7 +1364,8 @@ export const PiDriver: ProviderDriver<PiConfig> = {
     };
 
     const snapshot = async (): Promise<ProviderSnapshot> => {
-      const version = await new Promise<string | null>((resolve) => {
+      // Every pi-based instance probes at start: one engine start slot each.
+      const version = await engineStartGate.run("probe", `${config.cli} --version`, () => new Promise<string | null>((resolve) => {
         const child = spawnCli(config.cli, ["--version"], {
           stdio: ["ignore", "pipe", "pipe"],
           env: piEnvironment({ ...process.env, ...input.environment }),
@@ -1381,7 +1390,7 @@ export const PiDriver: ProviderDriver<PiConfig> = {
           clearTimeout(timer);
           resolve(out.trim() || null);
         });
-      });
+      }));
       if (!version) return { state: "unavailable", reason: `\`${config.cli}\` CLI not found` };
       // pi manages its own credentials (~/.pi/agent/auth.json); there is no
       // separate sign-in step the harness can probe, so treat it as authed.

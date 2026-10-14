@@ -271,6 +271,7 @@ import { ComputerControl } from "./computer-control.ts";
 import { augmentedPath, findCliCandidates, resetPathCache } from "./env-path.ts";
 import { registerEnginesBinDir } from "./engine-install.ts";
 import { EngineSelfCheck, readEngineManifest, runEngineSelfCheck, type EngineCheck } from "./engines-self-check.ts";
+import { engineStartGate, type EngineSlot } from "./engine-start-gate.ts";
 import { appendUsage, parseUsageRange, readUsage, flushUsageLedger, type UsageRow, type UsageTrigger } from "./usage-ledger.ts";
 import { loadPlanUsage, orgPlanAccounts, planAccountsFromInstances } from "./plan-usage.ts";
 import { GroupUsageReader } from "./group-thread-usage.ts";
@@ -1574,6 +1575,10 @@ let engineSelfCheck = new EngineSelfCheck(null);
 /** When the boot self-check finished (the console's Overview). */
 let engineSelfCheckAt: number | null = null;
 const SERVER_STARTED_AT = Date.now();
+// From here engine processes started by the boot itself (version and model
+// probes, routines caught up after the restart) share a small limit for the
+// first minutes (server/engine-start-gate.ts). A person's own turn does not.
+engineStartGate.beginBoot();
 void runEngineSelfCheck(readEngineManifest())
   .then((result) => { engineSelfCheck = result; engineSelfCheckAt = Date.now(); })
   .catch((error) => console.error(`[engines] self-check failed: ${error instanceof Error ? error.message : String(error)}`));
@@ -9759,6 +9764,43 @@ bus.subscribe(makeCapContinuationSubscriber({ store, startTurn, reportsToRequest
 // The rows are kept for the digest the fold writes at settle (registration
 // order: this subscriber runs before the fold, so the stash is ready).
 const memoryRowsByThread = new Map<string, MemoryJournalEntry[]>();
+/** Routine turns holding an engine start slot during boot, by thread. */
+const bootEngineSlots = new Map<string, { slot: EngineSlot; instance: ProviderInstance }>();
+/** Wait for an engine start slot for this routine turn. While it waits the
+ * watchdog treats the turn like one waiting for a computer, not a stall. */
+async function holdBootEngineSlot(threadId: string, label: string, instance: ProviderInstance): Promise<void> {
+  // A retry on the same thread (a backup engine) keeps the slot it holds.
+  const held = bootEngineSlots.get(threadId);
+  if (held) {
+    held.instance = instance;
+    return;
+  }
+  watchdog.setWaitingOnComputer(threadId, true);
+  try {
+    const slot = await engineStartGate.acquire("turn", label);
+    if (slot.gated) bootEngineSlots.set(threadId, { slot, instance });
+  } finally {
+    watchdog.setWaitingOnComputer(threadId, false);
+  }
+}
+/** Give the slot back. After a completed turn its engine process is closed
+ * too, not kept idle in the pool for ten minutes: the next routine waiting
+ * starts in the memory this one frees. */
+function releaseBootEngineSlot(threadId: string, closeIdleProcess: boolean): void {
+  const held = bootEngineSlots.get(threadId);
+  if (!held) return;
+  bootEngineSlots.delete(threadId);
+  if (closeIdleProcess) {
+    // After the driver's own settle bookkeeping: an idle process only.
+    setImmediate(() => {
+      try { held.instance.adapter.releaseWarmSession?.(threadId); } catch { /* the slot goes back regardless */ }
+      held.slot.release();
+    });
+  } else held.slot.release();
+}
+bus.subscribe((event: RuntimeEvent) => {
+  if (event.type === "turn.completed" || event.type === "session.exited") releaseBootEngineSlot(event.threadId, true);
+});
 bus.subscribe((event: RuntimeEvent) => {
   if (shouldIgnoreProviderEvent(event)) return;
   if (event.type === "turn.completed" || event.type === "session.exited") {
@@ -16225,6 +16267,13 @@ async function startTurn(
       const turnEffort = onCall || warmOnly
         ? callTurnEffort({ driverKind: instance.driverKind, levels: instance.adapter.capabilities.effortLevels, effort })
         : resolveEngineTurnEffort(effort, instance.driverKind, instance.adapter.capabilities.effortLevels);
+      // A routine run while the server boots waits for an engine start slot
+      // (server/engine-start-gate.ts): the runs that came due during a
+      // restart start two at a time instead of every engine at once.
+      if (opts?.automationSource && !warmOnly && !onCall && engineStartGate.booting) {
+        await holdBootEngineSlot(threadId, `${bot.name} (${instance.driverKind})`, instance);
+        if (!directTurnClaimIsCurrent(bot.id, dispatchClaimId, threadId)) throw new DirectTurnSetupCancelled("turn stopped while waiting for an engine slot");
+      }
       const dispatch = await guardTurnDispatch(withDesktopModelPerson(turnPlace.principal, () => {
         if (IDENTITY.kind === "perspicax") desktopLocalModels.assertAvailable(turnPlace.principal, model, instance.driverKind);
         return instance.adapter.sendTurn({
@@ -16365,6 +16414,8 @@ async function startTurn(
         drainDelegationWakes();
       }
     } catch (cause) {
+      // A turn that never started gives its engine start slot back.
+      releaseBootEngineSlot(threadId, false);
       if (warmOnly) {
         console.error(`[voice-call] warm skipped: ${cause instanceof Error ? cause.name : "error"}`);
         instance.adapter.releaseWarmSession?.(threadId);

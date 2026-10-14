@@ -13,6 +13,7 @@ import { parse as parseYaml } from "yaml";
 import type { ModelCatalog } from "../../contracts.ts";
 import { harnessHome } from "../../env-path.ts";
 import { resolveCli } from "../../procs.ts";
+import { engineStartGate } from "../../engine-start-gate.ts";
 import { decodeInjectId, hostApiKey, INJECT_SEP, localHost, mergeLocalInject } from "../local-inject.ts";
 import { DATA_DIR } from "../../config.ts";
 import { HERMES_PROVIDER_ENV, hermesManagedEnvText } from "../../engine-api-keys.ts";
@@ -282,7 +283,8 @@ export async function fetchHermesAcpModels(
   cli: string,
   env: Record<string, string | undefined>,
 ): Promise<{ id: string; label: string; custom: true }[]> {
-  return await new Promise((resolve) => {
+  // A Hermes ACP process: one engine start slot during boot.
+  return await engineStartGate.run("probe", `${cli} acp (models)`, () => new Promise<{ id: string; label: string; custom: true }[]>((resolve) => {
     let child: ReturnType<typeof spawn>;
     try {
       const resolved = resolveCli(cli, ["acp"], env);
@@ -383,7 +385,7 @@ export async function fetchHermesAcpModels(
       protocolVersion: 1,
       clientCapabilities: { fs: { readTextFile: false, writeTextFile: false } },
     });
-  });
+  }));
 }
 
 async function resolveModels(

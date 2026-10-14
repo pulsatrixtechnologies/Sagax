@@ -9,6 +9,7 @@ import { basename, join } from "node:path";
 
 import type { ModelCatalog } from "../contracts.ts";
 import { qualifiedModelLabel } from "../contracts.ts";
+import { engineStartGate } from "../engine-start-gate.ts";
 import { killCliTree, spawnCli } from "../procs.ts";
 import { codexHome } from "./codex-identity.ts";
 import { mergeLocalInject } from "./local-inject.ts";
@@ -73,7 +74,8 @@ export function readCodexAppServerModelCatalog(
   env: Record<string, string | undefined>,
   timeoutMs = 8_000,
 ): Promise<ModelCatalog | null> {
-  return new Promise((resolve) => {
+  // An engine process like a turn's: one engine start slot during boot.
+  return engineStartGate.run("probe", `${cli} app-server (models)`, () => new Promise<ModelCatalog | null>((resolve) => {
     const child = spawnCli(cli, ["app-server"], {
       cwd: homedir(),
       env,
@@ -174,7 +176,7 @@ export function readCodexAppServerModelCatalog(
     child.on("error", () => finish(null));
     child.on("close", () => finish(null));
     request("initialize", { clientInfo: { name: "openmausbot", version: "1" } }, "initialize");
-  });
+  }));
 }
 
 function unquote(raw: string): string {

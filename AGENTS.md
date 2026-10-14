@@ -2861,6 +2861,32 @@ still pushes the person's other phones. Tests: `server/push/hub.test.ts`,
 `server/push/devices.test.ts`,
 `ios/Tests/CompanionCoreTests/PeoplePresenceTests.swift`.
 
+## Engine processes at boot share one limit (2026-10-13)
+
+A restart used to start every engine at once: the engines' version, login
+and model probes, then every routine that came due while the server was down
+(each one a full engine process, an OpenCode ACP child near 550 MiB, kept
+idle in the pool for ten minutes afterwards). On an organization server (5 GiB container) the
+kernel OOM-killed engine children within two minutes of each start.
+`server/engine-start-gate.ts` bounds it. Keep these rules:
+
+- During the first 5 minutes after start (`SAGAX_BOOT_ENGINE_WINDOW_MS`) at
+  most 2 engine processes (`SAGAX_BOOT_ENGINE_SLOTS`, 0 = off) run at a time
+  for boot work. Probes go before turns; queued work keeps draining at the
+  limit after the window ends.
+- Probes take a slot: `execCli` on a known engine CLI (`isEngineCli`), and the
+  spawned catalog/status probes (OpenCode `acp`, Codex `app-server`, pi,
+  Grok, Hermes, `claude auth status`). A new spawned probe of an engine CLI
+  goes through `engineStartGate.run("probe", ...)` too.
+- A routine run's turn (`automationSource`) takes a slot before `sendTurn`
+  and holds it until `turn.completed`/`session.exited`; its idle process is
+  then closed (`releaseWarmSession`) instead of idling ten minutes. A
+  person's own turn, a voice call and peer or delegated turns never wait
+  here (a parent waiting on its child must not deadlock the slots).
+- Covered by `server/engine-start-gate.test.ts`. Measured in a 5 GiB
+  container with 16 overdue routines: peak 5.25 GB and 37 engine processes
+  before, 1.40 GB and 3 after.
+
 ## Upstream sync
 
 Last sync: 2026-10-12, upstream `milind-soni/OpenMausBot` main at

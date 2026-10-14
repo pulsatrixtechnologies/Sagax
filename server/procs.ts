@@ -21,6 +21,7 @@ import {
 import { existsSync } from "node:fs";
 import type { Readable, Writable } from "node:stream";
 import { join, posix, win32 } from "node:path";
+import { engineStartGate } from "./engine-start-gate.ts";
 import { resolveCliSpawn, splitCliString, type ResolvedSpawn } from "./env-path.ts";
 
 export function resolveCli(cli: string, args: string[] = [], env?: NodeJS.ProcessEnv): ResolvedSpawn {
@@ -151,9 +152,33 @@ export function execCli(
     queueMicrotask(() => cb(error instanceof Error ? error : new Error(String(error)), "", ""));
     return;
   }
-  execFile(resolved.command, resolved.args, { ...opts, windowsHide: true, encoding: "utf8" }, (err, stdout, stderr) =>
-    cb(err, stdout, stderr),
-  );
+  const run = (done: () => void = () => {}) => {
+    execFile(resolved.command, resolved.args, { ...opts, windowsHide: true, encoding: "utf8" }, (err, stdout, stderr) => {
+      done();
+      cb(err, stdout, stderr);
+    });
+  };
+  // A known engine CLI boots a whole runtime even to print its version:
+  // while the server boots, those probes share the engine start limit
+  // (server/engine-start-gate.ts).
+  if (!engineStartGate.booting || !isEngineCli(cli)) {
+    run();
+    return;
+  }
+  void engineStartGate.acquire("probe", `${cli} ${args.join(" ")}`).then((slot) => {
+    try {
+      run(() => slot.release());
+    } catch (error) {
+      slot.release();
+      cb(error instanceof Error ? error : new Error(String(error)), "", "");
+    }
+  });
+}
+
+/** Whether `cli` (a bare name or a path) runs one of the built-in engines. */
+export function isEngineCli(cli: string): boolean {
+  const name = cli.trim().split(/[\\/]/).pop()?.toLowerCase().replace(/\.(?:exe|cmd|bat)$/, "") ?? "";
+  return KNOWN_ENGINE_CLIS.has(name);
 }
 
 /** Human wording for a failed CLI spawn.

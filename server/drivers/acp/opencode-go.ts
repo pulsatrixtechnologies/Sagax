@@ -14,6 +14,7 @@ import { opencodeHostToolEnv, withheldWorkspace } from "../host-tools.ts";
 import { createAcpDriver, offeredModels, type AccountErrorCode, type AcpSupport } from "./core.ts";
 import type { ModelCatalog, ProviderErrorCode } from "../../contracts.ts";
 import { titleCaseModelId } from "../../contracts.ts";
+import { engineStartGate } from "../../engine-start-gate.ts";
 import { execCli, killCliTree, spawnCli } from "../../procs.ts";
 
 /** Nothing is offered until OpenCode itself answers. An invented default is
@@ -301,7 +302,8 @@ export async function probeOpenCodeSession(
   timeoutMs = DISCOVERY_TIMEOUT_MS,
 ): Promise<unknown> {
   const cwd = folder ?? await discoveryDirectory();
-  return new Promise((resolve, reject) => {
+  // About 550 MiB while it answers: one engine start slot during boot.
+  return engineStartGate.run("probe", `${cli} acp (models)`, () => new Promise((resolve, reject) => {
     let child: ReturnType<typeof spawnCli>;
     try {
       child = spawnCli(cli, ["acp"], { cwd, env: environment, stdio: ["pipe", "pipe", "pipe"] });
@@ -379,7 +381,7 @@ export async function probeOpenCodeSession(
       });
       return request("session/new", { cwd, mcpServers: [] });
     })().then((result) => finish(null, result), (error: Error) => finish(error));
-  });
+  }));
 }
 
 /** Ask the same OpenCode binary that will run ACP for its effective catalog.

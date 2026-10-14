@@ -12,6 +12,7 @@ import { parse as parseYaml } from "yaml";
 import type { ModelCatalog, ProviderErrorCode, TurnAccessInput } from "../../contracts.ts";
 import { harnessHome, splitCliString } from "../../env-path.ts";
 import { resolveCli } from "../../procs.ts";
+import { engineStartGate } from "../../engine-start-gate.ts";
 import type { DeviceSignIn } from "../device-auth.ts";
 import { decodeInjectId, hostApiKey, localHost, mergeLocalInject } from "../local-inject.ts";
 import { createAcpDriver, type AccountErrorCode, type AcpSupport } from "./core.ts";
@@ -195,7 +196,8 @@ export async function probeGrokModels(
   const key = `${cli}\0${grokHome(env)}`;
   const cached = liveModels.get(key);
   if (cached && now() - cached.at < LIVE_MODELS_TTL_MS) return cached.models;
-  const models = await new Promise<GrokCloudModel[] | null>((done) => {
+  // A Grok agent process: one engine start slot during boot.
+  const models = await engineStartGate.run("probe", `${cli} agent (models)`, () => new Promise<GrokCloudModel[] | null>((done) => {
     let settled = false;
     let child: ReturnType<typeof spawn>;
     const finish = (value: GrokCloudModel[] | null) => {
@@ -234,7 +236,7 @@ export async function probeGrokModels(
     });
     child.stdin?.on("error", () => finish(null));
     child.stdin?.write(`${JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: 1, clientCapabilities: {} } })}\n`);
-  });
+  }));
   // A failed probe is not cached: the next picker open asks again.
   if (models) liveModels.set(key, { at: now(), models });
   return models;
