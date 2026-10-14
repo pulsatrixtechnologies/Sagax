@@ -453,3 +453,26 @@ jobs:
             "${IMAGE}@${DIGEST}"
           docker buildx imagetools inspect "${IMAGE}:pr436"
           docker buildx imagetools inspect "${IMAGE}@${DIGEST}"
+
+  dispatch-signing-proof:
+    name: dispatch signing proof
+    # The credential that pushes this branch cannot create workflow_dispatch
+    # (it would need actions: write). This job asks the Actions token to
+    # dispatch the same workflow on the pull request head. That run is the
+    # signing proof. It does not run again on the dispatch itself.
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+      contents: read
+    steps:
+      - name: Request a branch dispatch of this workflow
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REF: ${{ github.event.pull_request.head.ref }}
+        run: |
+          set -euo pipefail
+          gh api --method POST \
+            -H "Accept: application/vnd.github+json" \
+            "/repos/${GITHUB_REPOSITORY}/actions/workflows/docker.yml/dispatches" \
+            -f "ref=${REF}"
