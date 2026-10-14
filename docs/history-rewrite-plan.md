@@ -88,6 +88,18 @@ seulement dans le fichier privé d'expressions, jamais ici) :
   `cloudflare/control-plane/wrangler.jsonc` → `<D1_DATABASE_ID_BROKER>` et
   `<D1_DATABASE_ID_CONTROL_PLANE>`, remplacés par l'UUID tout à zéro que le
   README du control-plane documente déjà.
+- les identifiants de vulnérabilités ouvertes exposés par #452 (corps,
+  commentaires, messages de commit, fichiers) et par `.trivyignore` (ainsi que
+  les tests et le code de `main` qui les citent) : une classe
+  `<OPEN_VULN_ID>` dans le fichier de remplacements hors dépôt, appliquée à
+  tous les commits concernés de la réécriture. Les valeurs ne figurent que
+  dans l'inventaire privé. Le contrôle `.trivyignore` doit garder une source
+  hors dépôt public après la réécriture.
+- les commits de #452 : la PR est fermée et sa branche supprimée, donc ses
+  commits n'arriveront pas sur `main` ; ils restent joignables seulement par
+  `refs/pull/452/head`. L'inventaire de la réécriture les couvre quand même
+  (vérification sur ce ref avant la demande au Support) et la purge Support
+  de l'étape 4 les retire.
 
 Do **not** rewrite official product contact addresses, product image names, or
 `SAGAX_*` environment variables.
@@ -114,9 +126,11 @@ delete at least:
 
 - `refs/pull/444/head`
 - `refs/pull/444/merge`
+- `refs/pull/452/head` (pas de `refs/pull/452/merge` : la PR est fermée sans
+  ref de fusion)
 
 and then to purge unreachable objects. A generic `refs/pull/*` purge covers
-the rest of the open and closed pull requests; 444 must not be omitted if
+the rest of the open and closed pull requests; 444 and 452 must not be omitted if
 Support asks for a short list.
 
 ## 5. Freeze / force-push sequence (operator only; not this PR)
@@ -161,8 +175,11 @@ b. **#444** : les révisions du corps qui contiennent l'inventaire de
 c. **Autres PR et commentaires du dépôt** : vérifier les corps, les
    commentaires et les revues de toutes les autres PR pour toute valeur de
    l'inventaire, et supprimer les révisions trouvées.
+d. **#452** : les révisions du corps qui contiennent des identifiants de
+   vulnérabilités ouvertes (le corps actuel est vide, l'historique
+   « Edited » les garde), plus tout commentaire concerné.
 
-Responsable, pour a, b et c : un administrateur du dépôt supprime chaque révision via l'interface « Edited » →
+Responsable, pour a, b, c et d : un administrateur du dépôt supprime chaque révision via l'interface « Edited » →
 supprimer la révision. Si une révision ne peut pas être supprimée ou reste en
 cache, la demande va au Support GitHub, dans le même ticket que la purge des
 `refs/pull/*` (étape 4).
@@ -170,5 +187,6 @@ cache, la demande va au Support GitHub, dans le même ticket que la purge des
 ## Checklist finale
 
 - [ ] Historique d'édition des corps et commentaires de PR purgé (#437, #444, #434, autres vérifiées)
+- [ ] Identifiants de vulnérabilités ouvertes : révisions de #452 purgées, `refs/pull/452/head` dans la demande au Support, `.trivyignore` et les commits concernés couverts par le fichier de remplacements hors dépôt
 
 Do not execute any of the above from an agent session on #437.
