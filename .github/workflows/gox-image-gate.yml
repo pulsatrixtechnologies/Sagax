@@ -25,7 +25,9 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Check the image manifest
+        env:
+          IMAGE: ${{ inputs.image }}
         run: |
           set -euo pipefail
-          docker pull "${{ inputs.image }}"
-          node scripts/deploy-server.mjs check --image "${{ inputs.image }}"
+          docker pull "$IMAGE"
+          node scripts/deploy-server.mjs check --image "$IMAGE"
