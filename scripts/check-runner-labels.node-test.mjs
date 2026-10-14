@@ -1,3 +1,6 @@
+// node:test, not vitest. runner-guard.yml runs this with `node --test` and no
+// install. Named *.node-test.mjs so vite.config.ts `scripts/**/*.test.mjs`
+// does not collect it (vitest would fail with "No test suite found").
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
