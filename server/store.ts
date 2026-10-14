@@ -3263,8 +3263,10 @@ export class Store {
 
   /** Rules removed from the bot's Always allowed list stop answering in
    * every conversation, including those that copied them when they were
-   * opened or where the rule was first given. Other rules a thread holds
-   * stay. One durable write. */
+   * opened or where the rule was first given. Only the revoked keys leave:
+   * other keys a thread holds stay. A thread-only grant of the same key is
+   * dropped too (Access said that tool is no longer always allowed). One
+   * durable write. */
   revokeAlwaysAllow(botId: string, keys: readonly string[]): BotRecord | null {
     const bot = this.bot(botId);
     if (!bot || !keys.length) return bot;

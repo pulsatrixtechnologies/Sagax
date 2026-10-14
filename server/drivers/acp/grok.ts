@@ -739,7 +739,7 @@ const support: AcpSupport = {
   // Grok in `default` mode, with no per-call classifier wait, and Sagax
   // holds every MCP call that is not reviewed read-only for a card.
   approvalGate: (config, turn) => !config.fullAuto && turn.approvalMode === "auto" && grokApprovalGateEnabled(turn.botId),
-  approvalReadOnly: (server, botId) => gateReadOnlyTools(server, botId),
+  approvalReadOnly: (server, botId, opts) => gateReadOnlyTools(server, botId, undefined, { peerReviewActive: opts?.peerReview === true }),
 
   spawnArgs: (config, turn, launch) => {
     const withhold = turn.withholdHostTools === true;

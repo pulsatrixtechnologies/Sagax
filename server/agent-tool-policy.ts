@@ -39,9 +39,9 @@ export const READ_ONLY_AGENT_TOOL_NAMES: ReadonlySet<string> = new Set([
  * setting, decided on the server where the call lands: "Ask me before
  * contacting other bots" (approvePeerComms, peerReviewRequired) shows its own
  * card, and the server's delegation depth, queue and room budgets bound them
- * whatever the level. The Grok approval gate lets them through so a bot set
- * to talk to its teammates without confirmation is not asked anyway, and a
- * bot set to ask is not asked twice (grok-approval-gate.ts). Not reads: never
+ * whatever the level. The Grok approval gate lets them through only while
+ * that revue is ACTIVE, so a bot set to ask is not asked twice; with the
+ * revue off they wait at the gate (grok-approval-gate.ts). Not reads: never
  * give them read-only annotations. */
 export const PEER_REVIEWED_AGENT_TOOL_NAMES: ReadonlySet<string> = new Set([
   "coordinate_bots",

@@ -154,6 +154,11 @@ export interface SendTurnInput {
   /** Per-bot approval policy, reasserted by providers on every turn so a
    * resumed native session cannot retain a stale, more permissive mode. */
   approvalMode?: ApprovalMode;
+  /** True when this turn's "Ask me before contacting other bots" is on
+   * (`peerReviewRequired`). The Grok approval gate then lets the agents
+   * teammate tools through so the server's own peer card decides them.
+   * Off or absent: those tools wait at the gate (fail closed). */
+  peerReview?: boolean;
   /** Fresh owner selection, independent of execution approval and resume state. */
   toolScope?: ToolScope;
   /** A guest drives this turn on an OMB Cloud home: it runs with no shell

@@ -47,11 +47,19 @@ describe("gateReadOnlyTools", () => {
     }
   });
 
-  it("lets the teammate tools through on Sagax's own agents server: the bot's peer review decides them", () => {
+  it("revue off: holds teammate tools (coordinate_bots, ask_bot, delegate_bot, send_to_bot, post_to_room)", () => {
     const agents = gateReadOnlyTools({ name: "agents", builtin: true });
+    for (const tool of ["coordinate_bots", "ask_bot", "delegate_bot", "send_to_bot", "post_to_room"]) {
+      expect(agents, `${tool} must wait at the gate while peer review is off`).not.toContain(tool);
+    }
+    expect(agents).toContain("list_bots");
+  });
+
+  it("lets the teammate tools through only when peer review is active: the bot's peer card decides them", () => {
+    const agents = gateReadOnlyTools({ name: "agents", builtin: true }, undefined, undefined, { peerReviewActive: true });
     for (const tool of ["coordinate_bots", "ask_bot", "delegate_bot", "send_to_bot", "post_to_room"]) expect(agents).toContain(tool);
     // a server that only borrows the name gets none of them
-    expect(gateReadOnlyTools({ name: "agents", builtin: false })).not.toContain("coordinate_bots");
+    expect(gateReadOnlyTools({ name: "agents", builtin: false }, undefined, undefined, { peerReviewActive: true })).not.toContain("coordinate_bots");
   });
 
   it("gives every other server nothing, whatever it is named", () => {

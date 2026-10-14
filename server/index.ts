@@ -288,7 +288,7 @@ import { entitled } from "./enterprise.ts";
 import { HOSTED_CONTRACT_HEADER, HOSTED_CONTRACT_METADATA, HOSTED_CONTRACT_VERSION } from "./hosted-contract.ts";
 import { cliCommandRefusal, describeSpawnFailure, execCli } from "./procs.ts";
 import { blockedTarget, buildSpendNotification, deliverableNotification, quietForCall, summarize, type Notification } from "./notify.ts";
-import { approvalPlain, mcpAllowKey } from "../shared/approval-describe.ts";
+import { allowKeyHolds, approvalPlain, mcpAllowKey } from "../shared/approval-describe.ts";
 import { serverApprovalWords } from "./approval-words.ts";
 import {
   isModelVariant,
@@ -3850,12 +3850,14 @@ function botForThread(botId: string, threadId: string): BotRecord | null {
 
 /** Whether a saved Allow rule answers a gated MCP call in this conversation:
  * the bot's own Always allowed list (Access settings), or a rule given in
- * this conversation only. A conversation keeps the rules it copied when it
+ * this conversation only. The bot's list is the standing rule for every
+ * conversation of this bot, whoever is speaking (the owner or a member the
+ * bot is shared with). A conversation keeps the rules it copied when it
  * opened, so the bot's list is read as well: a rule added later answers in
  * every conversation, and removing it there stops it everywhere
- * (store.revokeAlwaysAllow). */
+ * (store.revokeAlwaysAllow). There is no speaker argument on purpose. */
 function allowRuleHolds(botId: string, threadId: string, allowKey: string): boolean {
-  return Boolean(botForThread(botId, threadId)?.alwaysAllow?.includes(allowKey) || store.bot(botId)?.alwaysAllow?.includes(allowKey));
+  return allowKeyHolds(store.bot(botId)?.alwaysAllow, botForThread(botId, threadId)?.alwaysAllow, allowKey);
 }
 
 /** A warm claim holds setup bookkeeping only. It does not occupy the thread:
@@ -16219,6 +16221,7 @@ async function startTurn(
         ...(recalled && !warmOnly && !engineCommand ? { recalled } : {}),
         images: turnImages,
         approvalMode: auditFullAccessTurn(bot, threadId, approvalModeForTurn(bot, commsDepth > 0, threadId)),
+        ...(peerReviewRequired(bot, threadId) ? { peerReview: true } : {}),
         toolScope,
         ...(guestConfined ? { guestConfined: true, confinedWhy: confinedWhy(threadId) } : {}),
         model,
@@ -19154,6 +19157,7 @@ async function runGroupMemberTurn(
         ...(engineCommand ? { harnessCommand: { name: engineCommand.command.name, args: engineCommand.args, ...(engineCommand.command.path ? { path: engineCommand.command.path } : {}) } } : {}),
         images: turnImages,
         approvalMode: auditFullAccessTurn(readyBot, threadId, turnApprovalMode),
+        ...(peerReviewRequired(readyBot, threadId) ? { peerReview: true } : {}),
         toolScope: toolScopeForTurn(readyBot.id),
         ...(roomGuestConfined ? { guestConfined: true, confinedWhy: confinedWhy(threadId) } : {}),
         system: roomSystem.text,
@@ -34505,6 +34509,12 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
     }
     m = path.match(/^\/api\/bots\/([\w-]+)\/always-allow$/);
     if (m && method === "POST") {
+      // A live turn bearer is not a person. On owner-trust loopback a
+      // non-session Authorization falls through to the operator, so refuse
+      // the capability before any grant (no self-approval).
+      if (authorizedInternalCapability(req.headers.authorization)) {
+        return json(res, 403, { error: "A turn cannot save its own Allow rule.", code: "turn_cannot_self_approve" });
+      }
       const body = await readBody(req);
       requirePinnedClientThread(m[1], body?.threadId);
       const allowKey = typeof body.allowKey === "string" ? body.allowKey : "";

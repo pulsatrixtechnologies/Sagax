@@ -1265,6 +1265,37 @@ describe("Store", () => {
     );
   });
 
+  it("revoking Always allow drops that key on every conversation and leaves other thread keys", () => {
+    const store = new Store(selection);
+    const bot = store.createBot({ name: "Cryptic" }, { seedMessages: false });
+    const write = "mcp:agents__workspace_write";
+    const peer = "delegate_bot:other-bot";
+    const run = "mcp:agents__run_command";
+    store.patchBot(bot.id, { alwaysAllow: [write, peer] });
+    store.patchTask(bot.id, bot.threadId, { alwaysAllow: [write, peer] });
+    const other = store.createTask(bot.id, "Ada's conversation", false)!;
+    store.patchTask(bot.id, other.threadId, { alwaysAllow: [write, run] });
+    store.revokeAlwaysAllow(bot.id, [write]);
+    expect(store.bot(bot.id)?.alwaysAllow).toEqual([peer]);
+    expect(store.taskByThread(bot.id, bot.threadId)?.alwaysAllow).toEqual([peer]);
+    expect(store.taskByThread(bot.id, other.threadId)?.alwaysAllow).toEqual([run]);
+  });
+
+  it("the bot's Always allow answers in a conversation opened for another person even when that conversation copied none of it", () => {
+    const store = new Store(selection);
+    const bot = store.createBot({ name: "Shared" }, { seedMessages: false });
+    const write = "mcp:agents__workspace_write";
+    store.patchBot(bot.id, { alwaysAllow: [write] });
+    const ada = store.createTask(bot.id, "Ada", false, undefined, undefined, undefined, "ada@example.test")!;
+    expect(ada.ownerPrincipalId).toBe("ada@example.test");
+    store.patchTask(bot.id, ada.threadId, { alwaysAllow: [] });
+    expect(store.taskByThread(bot.id, ada.threadId)?.alwaysAllow).toEqual([]);
+    expect(store.bot(bot.id)?.alwaysAllow).toContain(write);
+    const threadKeys = store.projectBotForTask(bot.id, ada.threadId)?.alwaysAllow;
+    expect(threadKeys).toEqual([]);
+    expect(Boolean(threadKeys?.includes(write) || store.bot(bot.id)?.alwaysAllow?.includes(write))).toBe(true);
+  });
+
   it("persists a bot's effort level across a restart, defaulting to unset", () => {
     const store = new Store(selection);
     const bot = store.createBot();

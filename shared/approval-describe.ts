@@ -639,8 +639,24 @@ export function describeAllowRule(key: string, words: ApprovalWords = ENGLISH_WO
 }
 
 /** The always-allow key for one MCP tool on one bot: this exact tool of
- * this exact server, any arguments. */
+ * this exact server, any arguments. The arguments are not part of the key:
+ * Always allow for `agents__workspace_write` answers every later call of
+ * that tool, whatever it was asked to write. Peer rules (`ask_bot`,
+ * `delegate_bot`, `post_to_room`) name the action and the target id, not
+ * the message. */
 export function mcpAllowKey(mcpTool: string): string | undefined {
   const parsed = parseToolId(mcpTool);
   return parsed.server ? `mcp:${parsed.server}__${parsed.name}` : undefined;
+}
+
+/** Whether a saved Allow rule answers this call. `botKeys` is the bot's
+ * Access > Always allowed list (every conversation, whoever is speaking);
+ * `threadKeys` is this conversation's own copy. Either list is enough.
+ * There is no speaker argument on purpose. */
+export function allowKeyHolds(
+  botKeys: readonly string[] | undefined,
+  threadKeys: readonly string[] | undefined,
+  allowKey: string,
+): boolean {
+  return Boolean(threadKeys?.includes(allowKey) || botKeys?.includes(allowKey));
 }

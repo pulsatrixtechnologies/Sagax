@@ -3,7 +3,7 @@ import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { APPROVAL_EN, approvalPlain, describeAllowRule, mcpAllowKey, parseToolId } from "./approval-describe.ts";
+import { allowKeyHolds, APPROVAL_EN, approvalPlain, describeAllowRule, mcpAllowKey, parseToolId } from "./approval-describe.ts";
 
 const en = JSON.parse(readFileSync(join(import.meta.dirname, "..", "src", "locales", "en.json"), "utf8")) as Record<string, string>;
 const flat = (obj: Record<string, unknown>, prefix = ""): Record<string, string> =>
@@ -46,8 +46,23 @@ describe("approvalPlain", () => {
 describe("allow rules", () => {
   it("are one exact tool of one server, described in words", () => {
     expect(mcpAllowKey("mcp__agents__list_bots")).toBe("mcp:agents__list_bots");
+    expect(mcpAllowKey("agents__workspace_write")).toBe("mcp:agents__workspace_write");
     expect(mcpAllowKey("Bash")).toBeUndefined();
     expect(describeAllowRule("mcp:agents__list_bots")).not.toMatch(/__/);
     expect(describeAllowRule("ask_bot:b1", undefined, () => "Dot")).toMatch(/Dot/);
+    expect(describeAllowRule("post_to_room:g1", undefined, () => "Standup")).toMatch(/Standup/);
+  });
+
+  it("an MCP Allow rule is the tool of one server, any arguments", () => {
+    expect(mcpAllowKey("agents__workspace_write")).toBe("mcp:agents__workspace_write");
+    expect(mcpAllowKey("mcp__agents__workspace_write")).toBe("mcp:agents__workspace_write");
+  });
+
+  it("the bot's Always allow answers in every conversation, whoever is speaking", () => {
+    const write = "mcp:agents__workspace_write";
+    expect(allowKeyHolds([write], [], write)).toBe(true);
+    expect(allowKeyHolds([write], undefined, write)).toBe(true);
+    expect(allowKeyHolds(undefined, [write], write)).toBe(true);
+    expect(allowKeyHolds(["mcp:agents__run_command"], ["mcp:agents__list_bots"], write)).toBe(false);
   });
 });

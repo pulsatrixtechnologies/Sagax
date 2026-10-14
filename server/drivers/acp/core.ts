@@ -348,7 +348,7 @@ export interface AcpSupport {
    * same decision reaches spawnArgs as `launch.approvalGate`. */
   approvalGate?(config: AcpConfig, turn: SendTurnInput): boolean;
   /** The reviewed read-only tools of one mounted server (upstream names). */
-  approvalReadOnly?(server: { name: string; builtin: boolean; spec?: McpServerSpec }, botId?: string): string[];
+  approvalReadOnly?(server: { name: string; builtin: boolean; spec?: McpServerSpec }, botId?: string, opts?: { peerReview?: boolean }): string[];
   /** Provider credential variables this ACP child is allowed to inherit. */
   credentialEnv?: readonly string[];
   /** Select the model through a session config option instead of argv, for
@@ -1152,7 +1152,7 @@ export function createAcpDriver(support: AcpSupport): ProviderDriver<AcpConfig> 
             name: server.name,
             builtin: !custom.has(server.name),
             ...(custom.has(server.name) ? { spec: customSpecs[server.name] } : {}),
-          }, turn.botId) ?? [],
+          }, turn.botId, { peerReview: turn.peerReview === true }) ?? [],
         });
         // Sagax's own servers (agents, composio, browser, computer) name their
         // tools admissibly; connectors (Perspicax profiles, URL and stdio
