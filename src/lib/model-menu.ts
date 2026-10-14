@@ -26,6 +26,9 @@ export interface ModelMenuRow {
   title?: string;
   /** More words the search matches (the engine's name, the model id). */
   keywords?: string;
+  /** The model in use cannot run a turn now (src/lib/model-health.ts):
+   * said beside it, discreetly. */
+  warning?: string;
 }
 
 export interface ModelMenuSection {

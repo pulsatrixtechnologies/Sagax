@@ -41,6 +41,7 @@ import { isUltracodeEffort, ULTRACODE_EFFORT } from "../../shared/ultracode-effo
 import { effortForModel, fastBaseOf, fastTwinOf, modelDefaultEffort, modelEffortLevels } from "../../shared/model-capabilities";
 import { ModelMenuSettings } from "./ModelMenuSettings";
 import { favoriteKey, toggleModelFavorite, useModelFavorites } from "@/lib/model-favorites";
+import { engineRuns, modelUsable } from "@/lib/model-health";
 import type { EffortLevel } from "../../shared/wire";
 
 type ModelOption = InstanceInfo["models"]["options"][number];
@@ -599,6 +600,7 @@ export function ModelPicker({
   const myEngines = useMyEngines();
   const showUnready = useShowUnreadyProviders();
   const orgMode = org !== null;
+  const health = { orgMode, myEngines };
   const anyOpen = open || menu;
 
   const selection = bot.modelSelection;
@@ -973,6 +975,7 @@ export function ModelPicker({
     ...(follows !== undefined ? [{
       key: "follow", kind: "follow" as const, label: t("model.useBotModel", { name: profile.name }),
       detail: modelLabel(botModelInstance, profile.modelSelection.model), keywords: botModelName, current: follows,
+      warning: botModelInstance && !modelUsable(botModelInstance, profile.modelSelection.model, health) ? t("model.notResponding") : undefined,
     }] : []),
   ];
 
@@ -994,6 +997,10 @@ export function ModelPicker({
     const engine = myEngines?.find((candidate) => candidate.instanceId === instance.instanceId);
     return !engine || orgEngineState(engine) === "connected";
   });
+  // The bot's own engine when it cannot run (not installed, blocked): the
+  // composer's menu still shows the model in use, with its warning.
+  const currentEngineHidden = autoOn || follows === true ? [] : selectable.filter((instance) =>
+    instance.instanceId === selection.instanceId && !menuInstances.includes(instance) && !engineRuns(instance, health));
   const sectionsOf = (fold: boolean): ModelMenuSection[] => [
     { key: "top", rows: topRows },
     ...menuInstances.map((instance) => {
@@ -1002,7 +1009,29 @@ export function ModelPicker({
     }),
   ];
   const allSections = sectionsOf(false);
-  const menuSections = sectionsOf(true);
+  // The composer's menu lists only the models that can run a turn now
+  // (src/lib/model-health.ts, JC 2026-10-14): a provider left with none
+  // goes. The model in use stays, checked, saying it does not respond.
+  const menuSections: ModelMenuSection[] = [
+    { key: "top", rows: topRows },
+    ...[...currentEngineHidden, ...menuInstances].map((instance) => {
+      const { cloud, local } = rowsOf(instance, true, true);
+      const rows = [...cloud, ...local];
+      const ownCurrent = !autoOn && follows !== true && instance.instanceId === selection.instanceId;
+      const runsOf = (row: ModelMenuRow) => row.modelId !== undefined && modelUsable(instance, row.modelId, health);
+      const shown = rows.filter((row) => (row.current && ownCurrent) || runsOf(row));
+      if (ownCurrent && !shown.some((row) => row.current)) {
+        // a signed-out engine's catalog drops its cloud models: the one in use comes back
+        const option = instance.models.options.find((candidate) => candidate.id === selection.model);
+        if (option) shown.unshift(modelRow(instance, option, false, undefined, true));
+      }
+      return {
+        key: instance.instanceId,
+        label: engineLabel(instance),
+        rows: shown.map((row) => (row.current && !runsOf(row) ? { ...row, warning: t("model.notResponding") } : row)),
+      };
+    }).filter((section) => section.rows.length > 0),
+  ];
 
   const onRow = (row: ModelMenuRow) => {
     if (row.kind === "auto") return chooseAuto();

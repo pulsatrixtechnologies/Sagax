@@ -812,6 +812,53 @@ describe("the composer's model menu (2026-10-12)", () => {
     for (const each of lists(window)) expect((each.props as { submenus?: boolean }).submenus).toBeUndefined();
   });
 
+  // JC, 2026-10-14: hide the models that do not work (src/lib/model-health.ts).
+  describe("only the models that work", () => {
+    const gemini = (authenticated: boolean): InstanceInfo => ({
+      instanceId: "gemini", driverKind: "geminiAgent", displayName: "Gemini", access: "api",
+      snapshot: { state: "available", authenticated },
+      models: { default: "gemini-pro", options: [{ id: "gemini-pro", label: "Gemini Pro" }, { id: "dwarfstar::qwen", label: "DwarfStar: Qwen", custom: true, local: true }] },
+    });
+    const sectionKeys = (opened: ReturnType<typeof render>) => lists(opened)[0]!.props.sections.map((section) => section.key);
+    const rowIds = (opened: ReturnType<typeof render>, key: string) =>
+      lists(opened)[0]!.props.sections.find((section) => section.key === key)?.rows.map((candidate) => candidate.modelId);
+
+    it("hides a model its engine cannot run, which the window still shows greyed", () => {
+      fixture.instances = [signedIn(), gemini(true)];
+      const opened = open(bot("claude", "claude-opus-5-5"), composer);
+      expect(rowIds(opened, "gemini")).toEqual(["gemini-pro"]);
+    });
+
+    it("drops a provider with no model that works", () => {
+      fixture.instances = [signedIn(), gemini(false)];
+      const opened = open(bot("claude", "claude-opus-5-5"), composer);
+      expect(sectionKeys(opened)).toEqual(["top", "claude"]);
+      expect(opened.html).not.toContain('data-model-provider="gemini"');
+    });
+
+    it("keeps the model in use, checked, saying it does not respond", () => {
+      fixture.instances = [signedOut(), codex];
+      const opened = open(bot("claude", "claude-opus-5-5"), composer);
+      const claudeRows = lists(opened)[0]!.props.sections.find((section) => section.key === "claude")!.rows;
+      expect(claudeRows.map((candidate) => candidate.modelId)).toEqual(["claude-opus-5-5"]);
+      expect(claudeRows[0]).toMatchObject({ current: true, warning: "Not responding" });
+      // the root shows it with its warning
+      expect(opened.html).toContain("data-model-row-warning");
+      expect(opened.html).toContain("Not responding");
+      // a working one has no warning
+      fixture.values = [];
+      const working = lists(open(bot("codex", "gpt-5.6"), composer))[0]!.props.sections.find((section) => section.key === "codex")!.rows;
+      expect(working[0]!.warning).toBeUndefined();
+    });
+
+    it("keeps the model in use of an engine that is not installed any more", () => {
+      fixture.instances = [notFound(), codex];
+      const opened = open(bot("claude", "claude-opus-5-5"), composer);
+      expect(rowIds(opened, "claude")).toEqual(["claude-opus-5-5"]);
+      expect(sectionKeys(opened)).toEqual(["top", "claude", "codex"]);
+    });
+  });
+
   it("applies a pick at once and closes", () => {
     fixture.instances = [codex, signedIn()];
     const forBot = bot("claude", "claude-opus-5-5");

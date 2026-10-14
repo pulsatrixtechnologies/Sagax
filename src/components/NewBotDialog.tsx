@@ -36,6 +36,8 @@ import { botsReadOnlyText } from "@/lib/permissions";
 import { templatesEntryActions } from "@/lib/templates-entry";
 import { showBotZipImport } from "@/lib/bot-zip";
 import { BotZipImportDialog } from "./BotZipImport";
+import { refreshModelHealth, startingModel, type StartingModel } from "@/lib/model-health";
+import { useMyEngines, usePerspicaxOrg } from "@/lib/perspicax-org";
 
 const SECTIONS = ["Identity", "Soul", "Skills", "Memory", "Routines", "Access", "Model", "Permissions", "Voice & alerts"] as const;
 type Section = typeof SECTIONS[number];
@@ -167,6 +169,9 @@ export function LocalNewBotDialog({ defaultsMode = false, onClose, section, onCr
   const ownerOrAdmin = useOwnerOrAdmin();
   const choosesVisibility = !defaultsMode && typeof window !== "undefined" && servedPage() && ownerOrAdmin === true;
   const dialog = useRef<HTMLDivElement>(null);
+  const [startKind, setStartKind] = useState<StartingModel["kind"] | null>(null);
+  const configuredModel = useRef<ModelSelection | null>(null);
+  const appliedModel = useRef<ModelSelection | null>(null);
   const closeRef = useRef(() => {});
   closeRef.current = () => {
     if (onClose) onClose();
@@ -182,6 +187,7 @@ export function LocalNewBotDialog({ defaultsMode = false, onClose, section, onCr
         if (!selection || (selection.instanceId === "" && selection.model === "")) {
           defaults.profile.modelSelection = result.modelSelection;
         }
+        configuredModel.current = defaults.profile.modelSelection ?? null;
         // The level this server starts a new bot on (an organization's
         // policy, 2026-10-11) when the template names none; editing the
         // template itself keeps "none" so the policy keeps deciding.
@@ -194,6 +200,30 @@ export function LocalNewBotDialog({ defaultsMode = false, onClose, section, onCr
     return () => { cancelled = true; };
   }, [defaultsMode, section]);
   useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
+  // after the effects above: their order is the dialog's own
+  const org = usePerspicaxOrg();
+  const myEngines = useMyEngines();
+  // Whether the models work is checked in the background as the form opens
+  // (src/lib/model-health.ts: the engines' state the server already keeps,
+  // asked again at most once a minute); the new bot starts on one that works.
+  useEffect(() => {
+    if (!defaultsMode && parent.refreshInstances) void refreshModelHealth(() => parent.refreshInstances());
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [defaultsMode]);
+  const instances = parent.state.instances;
+  useEffect(() => {
+    const configured = configuredModel.current;
+    if (defaultsMode || !ready || !configured || instances.length === 0) return;
+    const current = draft.bot.modelSelection;
+    // a model the person chose in the form is theirs: never replaced
+    if (!sameModel(current, configured) && !(appliedModel.current && sameModel(current, appliedModel.current))) return;
+    const start = startingModel(configured, instances, { orgMode: org !== null, myEngines });
+    setStartKind(start.kind);
+    if (!sameModel(start.selection, current)) {
+      appliedModel.current = start.selection;
+      draft.setModel(start.selection);
+    }
+  }, [defaultsMode, ready, draft, instances, org, myEngines]);
   useEffect(() => () => draft.dispose(), [draft]);
   // Disabling the focused Create button drops focus to the page in Chromium.
   // Keep keyboard dismissal and focus trapping inside the pending dialog.
@@ -308,6 +338,20 @@ export function LocalNewBotDialog({ defaultsMode = false, onClose, section, onCr
         </div>
       </div>
       {error && <p role="alert" className="max-h-24 overflow-y-auto border-t border-hairline/40 px-5 py-3 text-[13px] text-danger">{error}</p>}
+      {ready && startKind === "none" && (
+        <div role="status" data-new-bot-no-model className="flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-hairline/40 px-5 py-3 text-[13px] text-warning">
+          <span>{t("newBot.model.none")}</span>
+          <button type="button" data-new-bot-model-settings onClick={() => {
+            closeRef.current();
+            parent.dispatch({ type: "toggleAppSettings", open: true, section: "engines" });
+          }} className="font-medium text-accent-text underline-offset-2 hover:underline">{t("newBot.model.openSettings")}</button>
+        </div>
+      )}
+      {ready && (startKind === "auto" || startKind === "first") && (
+        <p role="status" data-new-bot-model-switched className="border-t border-hairline/40 px-5 py-2 text-[12.5px] text-ink-secondary">
+          {t(startKind === "auto" ? "newBot.model.switchedAuto" : "newBot.model.switchedFirst")}
+        </p>
+      )}
       <div className="flex shrink-0 justify-end gap-2 border-t border-hairline/40 px-5 py-3">
         <button type="button" onClick={() => closeRef.current()} className="rounded-lg px-4 py-2 text-[13px] text-ink-secondary hover:bg-control">{t("common.cancel")}</button>
         <button type="button" disabled={!ready || saving || (!defaultsMode && !bot.name.trim())} onClick={() => void save()}
@@ -319,6 +363,10 @@ export function LocalNewBotDialog({ defaultsMode = false, onClose, section, onCr
       <LocalComputerAutoWarning open={warning === "local"} onCancel={() => setWarning(null)} onConfirm={() => { draft.consent.acknowledgeLocalAuto = true; setWarning(null); void save(); }} />
     </div>
   </div>;
+}
+
+function sameModel(a: ModelSelection | undefined, b: ModelSelection | undefined): boolean {
+  return Boolean(a && b) && a!.instanceId === b!.instanceId && a!.model === b!.model && Boolean(a!.auto) === Boolean(b!.auto);
 }
 
 function DraftSection({ active, draft, defaultsMode, onImported }: { active: Section; draft: BotCreationDraft; defaultsMode: boolean; onImported?: () => void }) {

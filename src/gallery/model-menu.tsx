@@ -1,6 +1,7 @@
 /** Isolated gallery for Playwright screenshots of the composer's model menu
  * with its provider submenus and favorites. Not shipped in the app.
- * ?skin=<id>&lang=<code>&open=<provider key>&q=<search>&favorites=1&narrow=1 */
+ * ?skin=<id>&lang=<code>&open=<provider key>&q=<search>&favorites=1&narrow=1
+ * &broken=1: the bot's model does not respond (src/lib/model-health.ts) */
 import { StrictMode, useEffect } from "react";
 import { createRoot } from "react-dom/client";
 import { ModelSearchList, type ModelMenuRow, type ModelMenuSection } from "../components/ModelMenu";
@@ -22,7 +23,8 @@ const defaultTag = t("model.defaultTag");
 const sections: ModelMenuSection[] = [
   { key: "top", rows: [
     { key: "auto", kind: "auto", label: t("model.auto.label"), detail: t("model.auto.rowHint"), current: false },
-    { key: "follow", kind: "follow", label: t("model.useBotModel", { name: "Dispatch" }), detail: "Claude Sonnet 5", current: true },
+    { key: "follow", kind: "follow", label: t("model.useBotModel", { name: "Dispatch" }), detail: "Claude Sonnet 5", current: true,
+      warning: params.get("broken") === "1" ? t("model.notResponding") : undefined },
   ] },
   { key: "claude", label: "Claude (API key)", rows: [
     model("claude", "claude-fable-5-1", "Claude Fable 5.1", { detail: "Élevé" }),

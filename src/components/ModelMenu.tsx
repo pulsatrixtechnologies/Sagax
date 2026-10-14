@@ -15,7 +15,7 @@
 // lists every provider's matches flat, as before; clearing the search
 // brings the submenus back. Every model row carries a star.
 import { useEffect, useId, useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
-import { Check, ChevronLeft, ChevronRight, Search, Star } from "lucide-react";
+import { TriangleAlert, Check, ChevronLeft, ChevronRight, Search, Star } from "lucide-react";
 
 import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
@@ -531,7 +531,7 @@ function ModelSearchRow({ row, id, domKey, active, style, disabled, nested = fal
       data-model-auto-row={row.kind === "auto" || undefined}
       data-follow-bot-model={row.kind === "follow" || undefined}
       data-model-unavailable={row.unavailable ? "" : undefined}
-      title={row.unavailable ?? row.title}
+      title={row.unavailable ?? (row.warning ? [row.title ?? row.label, row.warning].join(" · ") : row.title)}
       // keep the focus in the search field (a submenu's row takes it)
       onMouseDown={submenu ? undefined : (event) => event.preventDefault()}
       onMouseMove={row.unavailable ? undefined : onHover}
@@ -548,6 +548,12 @@ function ModelSearchRow({ row, id, domKey, active, style, disabled, nested = fal
         <span className="truncate">{row.label}</span>
         {row.detail && <span data-model-row-detail className={cn("min-w-0 shrink truncate", style.detail)}>{row.detail}</span>}
         {row.tags?.map((tag) => <span key={tag} data-model-row-tag className={cn("shrink-0 self-center rounded px-1.5 py-px text-[10.5px]", style.tag)}>{tag}</span>)}
+        {row.warning && (
+          <span data-model-row-warning className="flex shrink-0 items-center gap-1 self-center text-[11.5px] text-warning">
+            <TriangleAlert size={11} aria-hidden="true" />
+            {row.warning}
+          </span>
+        )}
       </span>
       <span className="flex shrink-0 items-center gap-1">
         {row.current && <Check size={14} aria-hidden="true" className={style.check} />}
