@@ -17,8 +17,8 @@ import type { RequestAuth } from "../request-auth.ts";
 export interface LocalComputerAutoRouteDeps {
   /** Null where no automatic start runs (organization server, cloud, self-hosted). */
   localVmAuto: LocalVmAutoStarter | null;
-  /** Why this computer may not host a desktop at all, or null when it may. */
-  hostRefusal: () => string | null;
+  /** Why this computer may not host a desktop at all, or undefined when it may. */
+  hostRefusal: () => string | undefined;
   /** True while any Local VM setup action is still running. */
   setupBusy: () => boolean;
   /** True while a bot is running a turn on a Local VM. */
