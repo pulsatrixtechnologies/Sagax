@@ -15,13 +15,15 @@
 // conversation's own turn, which is the chat. A running entry has a spinner,
 // elapsed time, current step and Stop where the viewer may. When it finishes
 // it reads "Finished" for FINISHED_LINGER_MS, fades out and leaves
-// (LiveActivity). A section with nothing to show is not drawn, title
+// (LiveActivity). Activity is drawn first, as "Ongoing activities", above
+// Coding and the History row; it replaces the separate rail that used to
+// open beside the chat. A section with nothing to show is not drawn, title
 // included. The section title opens ActivityListModal, the history (newest
 // first, by status, searchable), and a card opens ActivityDetailModal. The
 // list refetches when the bot's threads change (the store's event stream)
 // and polls while work runs.
 import { useCallback, useEffect, useState } from "react";
-import { Activity, ChevronRight, History, GitBranch, GitCommitHorizontal, GitMerge, GitPullRequest, GitPullRequestClosed, Loader2, SquareTerminal } from "lucide-react";
+import { ChevronRight, History, GitBranch, GitCommitHorizontal, GitMerge, GitPullRequest, GitPullRequestClosed, Layers, Loader2, SquareTerminal } from "lucide-react";
 
 import { api, type Bot } from "@/state/store";
 import { t } from "@/lib/i18n";
@@ -262,11 +264,13 @@ export function SectionHeader({ icon, title, name, onOpenHistory }: { icon: Reac
   );
 }
 
-/** Coding then Activity as Details draws them, each only when it has
- * something to show. With both hidden, one quiet History row keeps the
- * history reachable (the section titles open it otherwise). A first load
- * that failed is one quiet line; a later failed refresh keeps the last list.
- * Split out so it renders without the fetching. */
+/** Details' activity block, top down: Ongoing activities (parallel work
+ * running or just finished), then Coding, then one quiet History row. Each
+ * section is drawn only when it has something to show, title included; the
+ * History row stays (once the list loaded) so the history is always one
+ * click away, and the section titles open it too. A first load that failed
+ * is one quiet line; a later failed refresh keeps the last list. Split out so
+ * it renders without the fetching. */
 export function PanelSections({ list, live, actions, onOpenHistory, onOpenLaunched, error = false }: {
   list: BotActivityList | null;
   live?: LiveView;
@@ -280,21 +284,20 @@ export function PanelSections({ list, live, actions, onOpenHistory, onOpenLaunch
   if (list === null) {
     return error ? <p role="status" data-activity-error className="px-0.5 text-[12.5px] text-ink-tertiary">{t("botPanel.coding.error")}</p> : null;
   }
-  if (!showCoding && !showActivity) {
-    // Same header as Coding, Activity and Routines; 28px like Routines' row.
-    return (
-      <div className="flex min-h-7 items-center">
-        <SectionHeader
-          icon={<History size={16} aria-hidden="true" className="text-ink-secondary" />}
-          title={t("botPanel.history.title")}
-          name="all"
-          onOpenHistory={onOpenHistory}
-        />
-      </div>
-    );
-  }
   return (
     <>
+      {showActivity && (
+        <section data-bot-settings-section="activity" className="flex flex-col gap-2">
+          <SectionHeader
+            icon={<Layers size={16} aria-hidden="true" className="text-ink-secondary" />}
+            title={t("backgroundWork.title")}
+            name="other"
+            onOpenHistory={onOpenHistory}
+          />
+          {launchedOther.length > 0 && onOpenLaunched && <LaunchedAgentsList items={launchedOther} onOpen={onOpenLaunched} label={t("backgroundWork.title")} />}
+          {other.length > 0 && <ActivityList items={other} error={false} label={t("backgroundWork.title")} {...actions} />}
+        </section>
+      )}
       {showCoding && (
         <section data-bot-settings-section="coding" className="flex flex-col gap-2">
           <SectionHeader
@@ -308,18 +311,15 @@ export function PanelSections({ list, live, actions, onOpenHistory, onOpenLaunch
           <CodeWorkList work={work} now={actions.now ?? Date.now()} />
         </section>
       )}
-      {showActivity && (
-        <section data-bot-settings-section="activity" className="flex flex-col gap-2">
-          <SectionHeader
-            icon={<Activity size={16} aria-hidden="true" className="text-ink-secondary" />}
-            title={t("botPanel.activity.title")}
-            name="other"
-            onOpenHistory={onOpenHistory}
-          />
-          {launchedOther.length > 0 && onOpenLaunched && <LaunchedAgentsList items={launchedOther} onOpen={onOpenLaunched} label={t("botPanel.activity.title")} />}
-          {other.length > 0 && <ActivityList items={other} error={false} label={t("botPanel.activity.title")} {...actions} />}
-        </section>
-      )}
+      {/* Same header as the sections above and Routines; 28px like Routines' row. */}
+      <div className="flex min-h-7 items-center">
+        <SectionHeader
+          icon={<History size={16} aria-hidden="true" className="text-ink-secondary" />}
+          title={t("botPanel.history.title")}
+          name="all"
+          onOpenHistory={onOpenHistory}
+        />
+      </div>
     </>
   );
 }

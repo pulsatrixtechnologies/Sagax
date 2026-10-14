@@ -1,4 +1,5 @@
 import { Component, createContext, memo, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type Dispatch, type ReactNode } from "react";
+import { TeammatesWorkingChip } from "./TeammatesWorkingChip";
 import { ThreadLinkContext } from "@/components/ThreadLinkMenu";
 import { useShowThreads } from "@/lib/thread-preferences";
 import { useCopyFeedback } from "@/lib/copy-text";
@@ -1682,7 +1683,12 @@ export function ChatView({ bot: profile }: { bot: Bot }) {
             />
             <span className="truncate text-[14px] font-medium leading-5 text-ink">{bot.name}</span>
           </button>
-          {!bot.busy && bot.waitingForTeammates && <span className="truncate text-[12px] text-ink-secondary" role="status">Teammates working</span>}
+          <TeammatesWorkingChip
+            busy={bot.busy}
+            waitingForTeammates={bot.waitingForTeammates}
+            panelOpen={panelOpen}
+            onOpen={() => dispatch({ type: "toggleSettings", open: true })}
+          />
         </div>
         <div
           data-chathead-controls

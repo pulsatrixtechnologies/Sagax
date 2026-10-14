@@ -4524,12 +4524,6 @@
       "botPanel.activity.stop": "cae7d57bc067a514b8e34c9589631a95c7dc051638ddd2a190773269279a99df",
       "botPanel.activity.stopAria": "427b5bdce0f1f48dacc94b5969c6cf6d4fde3e3196545179484142feced2df74",
       "botPanel.activity.title": "38da1505ca8373288489495101b14f24ac95078f520ad64df18272aa6054f750",
-      "backgroundWork.empty": "3bfcd5cb54fe3bf4edf04efd143b0766115a9b82b91e527196872f377b424862",
-      "backgroundWork.error": "07e4dcc8adf20c5143ac4e8648f5e157c2b069892902aee4fceed22f4911405a",
-      "backgroundWork.loading": "8d272db6230ff7cc7c116dd87bd2ac1538d6b9302d2048ada356938730598ad8",
-      "backgroundWork.loadingDetail": "b1905aae7f24ef9c2122190699d117062038ebc443576a100bd03ceba5dbb5d8",
-      "backgroundWork.openDetail": "d1bf045bb524dae5b02c471c230958bcd1bf232d7a49367b1cdf977855a06b41",
-      "backgroundWork.openTranscript": "7047b9af7a4cd0703f857363d089bf8d411f164bf6f9377dda1b7bcfef390e69",
       "backgroundWork.title": "e595ed1412d4e5ca640476795ed9c58590498d5b7dfb136436c8530e967e9c2c",
       "botPanel.activity.via": "961e34875934c4a2b8f04ceabacbf057f21db2a0576e90e35cc145d493c61f53",
       "botPanel.activity.via.orgKey": "ac2493ea4b5521fe70ad7c7eac2a32561188aa2321847ad729af45b60e620fce",
@@ -5026,6 +5020,8 @@
       "chat.openConversationWith": "01746ba3e7fc4a7ed3c4d314b51be35730eecabedfe8c57995c2d977ecce0ed3",
       "chat.openProfile": "30981d8dc8fe1ec79e86941594e52290df892e4533d8845e6a8563a1b1d3d2a0",
       "chat.openProfileAria": "eafd73166fd6d063c71c5fe3e6ec807a0ea84cd7b0f34b6bf52997b979123a7b",
+      "chat.teammatesWorking": "4e25bf70623bf1d9609089780b49c0bbcfd35b3db71796abe8c16b135c4dd100",
+      "chat.teammatesWorking.open": "5c673aba80392a69c908b84251eb6e8d2d06f9c7b90c68af8f869753add1bb91",
       "chat.parallel.open": "ed077f3d8125d60dca1979c7133601bd187d47c73ed9975028f677e49e709942",
       "chat.parallel.openApproval": "aff0766a5290e117b8433c351bae7b7b23bed682b2369bd822d88a647cc58512",
       "chat.parallel.result": "267641a4f73ae165b64857190f56e9eb3aa23ec7c6387a6f222a3e6ad5eff473",
@@ -9273,7 +9269,8 @@
       "call.live.voice": "87bf2bc08589f0bd4a078db145c34ad5e14b8fda53c3ae65b78601294913df95",
       "call.live.voiceNext": "f327ac67d0d177c2c69f6625a47e459b840128ec58bce385cd466113edec022b",
       "engineSetup.checkFailed": "07cb9d6359e98093709c422397892efa8127e36a659a0e2cb94f0ab6d7e82da0",
-      "engineSetup.checked": "1015f00199cf7f0f9f63ef9a04ac8eb1cf27b25820ae9bf9a5bf9b4937d85c53"
+      "engineSetup.checked": "1015f00199cf7f0f9f63ef9a04ac8eb1cf27b25820ae9bf9a5bf9b4937d85c53",
+      "routines.empty": "8841ef2b40405adb56bbad8d96b691b3c3b87063ca4a1952b323f944fcde69fc"
     },
     "hi": {
       "approval.action.allowOnce": "168511d24d9ee03122b3200f929be11eaaedad45cb0ecb20a95f549b3e3f4d0f",

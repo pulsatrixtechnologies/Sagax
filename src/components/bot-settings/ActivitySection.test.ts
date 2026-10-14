@@ -13,6 +13,7 @@ import { LaunchedAgentsList } from "./LaunchedAgentsList";
 import type { BotLaunchedAgentItem } from "../../../shared/bot-launched-agents.ts";
 import { ActivityDetailBody } from "./ActivityDetailModal";
 import { ActivityListModal } from "./ActivityListModal";
+import { TeammatesWorkingChip } from "../TeammatesWorkingChip";
 import { activityLive, codingLive, codingWhere, codingWork, FINISHED_FADE_MS, FINISHED_LINGER_MS, formatActivityDuration, historyItems, isParallelWork, LiveActivity } from "@/lib/bot-activity";
 import type { Bot } from "@/state/store";
 
@@ -207,12 +208,28 @@ describe("Activity, live only", () => {
     const idle = sections({ items: [job("thread:old", { coding: true }), chat, parallel], subagents: [] });
     expect(idle).not.toContain("data-bot-settings-section");
     expect(idle).not.toContain("Nothing running.");
+    expect(idle).not.toContain("Ongoing activities");
+    expect(idle).not.toContain("No background work");
+    expect(idle).not.toContain("data-activity-empty");
     // something parallel runs: Activity only
     const busy = sections({ items: [routine, chat], subagents: [] });
     expect(busy).toContain('data-bot-settings-section="activity"');
     expect(busy).not.toContain('data-bot-settings-section="coding"');
     expect(busy).toContain("data-activity-card=\"run:r1\"");
     expect(busy).not.toContain("data-activity-card=\"thread:chat\"");
+  });
+
+  it("draws Ongoing activities first, above Coding and the History row", () => {
+    const code = job("thread:code", { coding: true, status: "running", endedAt: undefined });
+    const items = [routine, code];
+    const html = renderToStaticMarkup(createElement(PanelSections, { list: { items, subagents: [] }, live: liveOf(items), actions: { onOpen: () => {}, now: NOW }, onOpenHistory: () => {} }));
+    expect(html).toContain(">Ongoing activities<");
+    const at = (needle: string) => html.indexOf(needle);
+    expect(at('data-bot-settings-section="activity"')).toBeGreaterThan(-1);
+    expect(at('data-bot-settings-section="activity"')).toBeLessThan(at('data-bot-settings-section="coding"'));
+    expect(at('data-bot-settings-section="coding"')).toBeLessThan(at('data-activity-history="all"'));
+    // the cards keep their actions: open and stop
+    expect(html).toContain('data-activity-card="run:r1"');
   });
 });
 
@@ -222,10 +239,10 @@ const codeJob = (id: string, over: Partial<BotActivityItem> = {}) => job(id, {
   ...over,
 });
 
-describe("history and errors with both sections hidden", () => {
+describe("history and errors", () => {
   const props = (over: Partial<Parameters<typeof PanelSections>[0]> = {}) => ({ list: { items: [], subagents: [] }, live: liveOf([]), actions: { onOpen: () => {}, now: NOW }, onOpenHistory: () => {}, ...over });
 
-  it("keeps the history reachable through one quiet History row, only when both are hidden", () => {
+  it("keeps the history reachable through one quiet History row, below the sections", () => {
     const html = renderToStaticMarkup(createElement(PanelSections, props()));
     expect(html).toContain('data-activity-history="all"');
     expect(html).toContain(">History<");
@@ -237,16 +254,20 @@ describe("history and errors with both sections hidden", () => {
     expect(header(html)).toBe(header(renderToStaticMarkup(createElement(SectionHeader, { icon: null, title: "x", name: "coding", onOpenHistory: () => {} }))));
     expect(html).toContain('<h2 class="flex">');
     const onOpenHistory = vi.fn();
-    const row = PanelSections(props({ onOpenHistory })) as unknown as { props: { children: { type: unknown; props: { name: string; onOpenHistory: (f: string) => void } } } };
-    expect(row.props.children.type).toBe(SectionHeader);
-    expect(row.props.children.props.name).toBe("all");
-    row.props.children.props.onOpenHistory("coding");
+    type El = { type: unknown; props: { name?: string; onOpenHistory?: (f: string) => void; children?: unknown } };
+    const fragment = PanelSections(props({ onOpenHistory })) as unknown as { props: { children: Array<El | false> } };
+    const rowEl = fragment.props.children.filter(Boolean).at(-1) as El;
+    const rowHeader = rowEl.props.children as El;
+    expect(rowHeader.type).toBe(SectionHeader);
+    expect(rowHeader.props.name).toBe("all");
+    rowHeader.props.onOpenHistory!("coding");
     expect(onOpenHistory).toHaveBeenCalledWith("coding");
-    // a section is drawn: its title opens the history, no extra row
+    // a section is drawn: its title opens the history, and the History row stays below it
     const routine = job("run:r1", { kind: "routine", status: "running", endedAt: undefined });
     const busy = renderToStaticMarkup(createElement(PanelSections, props({ list: { items: [routine], subagents: [] }, live: liveOf([routine]) })));
     expect(busy).toContain('data-activity-history="other"');
-    expect(busy).not.toContain('data-activity-history="all"');
+    expect(busy).toContain('data-activity-history="all"');
+    expect(busy.indexOf('data-activity-history="other"')).toBeLessThan(busy.indexOf('data-activity-history="all"'));
     // still loading: nothing at all
     expect(renderToStaticMarkup(createElement(PanelSections, props({ list: null })))).toBe("");
   });
@@ -374,8 +395,8 @@ describe("launched agents by kind of work", () => {
     const panel = renderToStaticMarkup(createElement(PanelSections, {
       list, actions: { onOpen: () => {}, now: NOW }, onOpenHistory: () => {}, onOpenLaunched: () => {},
     }));
-    const coding = panel.slice(panel.indexOf('data-bot-settings-section="coding"'), panel.indexOf('data-bot-settings-section="activity"'));
-    const activity = panel.slice(panel.indexOf('data-bot-settings-section="activity"'));
+    const activity = panel.slice(panel.indexOf('data-bot-settings-section="activity"'), panel.indexOf('data-bot-settings-section="coding"'));
+    const coding = panel.slice(panel.indexOf('data-bot-settings-section="coding"'));
     expect(coding).toContain("Scout: Split the lexer");
     expect(coding).not.toContain("Dispatch");
     expect(coding).not.toContain("Orion");
@@ -447,7 +468,7 @@ describe("finished work leaves after 5 seconds", () => {
 describe("section headers and history", () => {
   const bot = { id: "pepper", name: "Pepper", tasks: [] } as unknown as Bot;
 
-  it("has no History button: the section titles open the history", () => {
+  it("section titles open the history; one History row stays below them", () => {
     // nothing loaded yet: no section at all
     expect(renderToStaticMarkup(createElement(ActivitySection, { bot }))).not.toContain("data-bot-settings-section");
     const items = [
@@ -455,11 +476,12 @@ describe("section headers and history", () => {
       job("run:r1", { kind: "routine", status: "running", endedAt: undefined }),
     ];
     const html = renderToStaticMarkup(createElement(PanelSections, { list: { items, subagents: [] }, actions: { onOpen: () => {}, now: NOW }, onOpenHistory: () => {} }));
-    expect(html).not.toMatch(/>History</);
+    expect(html.match(/>History</g)).toHaveLength(1);
     expect(html).not.toContain("data-activity-see-all");
     expect(html).toContain('data-activity-history="coding"');
     expect(html).toContain('data-activity-history="other"');
-    expect(html.indexOf('data-bot-settings-section="coding"')).toBeLessThan(html.indexOf('data-bot-settings-section="activity"'));
+    expect(html.indexOf('data-bot-settings-section="activity"')).toBeLessThan(html.indexOf('data-bot-settings-section="coding"'));
+    expect(html.indexOf('data-bot-settings-section="coding"')).toBeLessThan(html.indexOf('data-activity-history="all"'));
   });
 
   it("opens the history modal for that section when its title is clicked", () => {
@@ -490,5 +512,50 @@ describe("section headers and history", () => {
     expect(historyItems(items, "finished", "").map((item) => item.id)).toEqual(["thread:a"]);
     expect(historyItems(items, "failed", "").map((item) => item.id)).toEqual(["thread:b", "thread:d"]);
     expect(historyItems(items, "all", "  DIRECTIVE ").map((item) => item.id)).toEqual(["thread:a"]);
+  });
+});
+
+describe("no separate Ongoing activities rail beside the bot", () => {
+  it("opens the bot with its chat alone: ongoing work lives in Details", async () => {
+    const { readFileSync, existsSync } = await import("node:fs");
+    const { dirname, join } = await import("node:path");
+    const { fileURLToPath } = await import("node:url");
+    const here = dirname(fileURLToPath(import.meta.url));
+    const app = readFileSync(join(here, "../../App.tsx"), "utf8");
+    expect(app).not.toMatch(/BackgroundWorkPanel/);
+    expect(app).toMatch(/: bot \? \(\s*<ChatView bot=\{bot\} \/>/);
+    expect(existsSync(join(here, "../BackgroundWorkPanel.tsx"))).toBe(false);
+  });
+});
+
+describe("one place for ongoing work while the bot panel is open", () => {
+  it("draws a running activity once: in Details, not in the header chip nor a rail", async () => {
+    const work = job("thread:w1", { kind: "hop", title: "@Comet · work", status: "running", endedAt: undefined, startedBy: { kind: "bot", name: "Comet" }, canStop: true, threadId: "w1" });
+    const details = renderToStaticMarkup(createElement(PanelSections, { list: { items: [work], subagents: [] }, live: liveOf([work]), actions: { onOpen: () => {}, onStop: () => {}, now: NOW }, onOpenHistory: () => {} }));
+    const header = renderToStaticMarkup(createElement(TeammatesWorkingChip, { busy: false, waitingForTeammates: true, panelOpen: true, onOpen: () => {} }));
+    const { readFileSync } = await import("node:fs");
+    const { dirname, join } = await import("node:path");
+    const { fileURLToPath } = await import("node:url");
+    const app = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../../App.tsx"), "utf8");
+    const screen = details + header;
+    expect(screen.split('data-activity-card="thread:w1"')).toHaveLength(2);
+    expect(screen.split(">Ongoing activities<")).toHaveLength(2);
+    expect(header).toBe("");
+    expect(app).not.toMatch(/data-background-work-panel|BackgroundWorkPanel/);
+    // the stop action stays in Details
+    expect(details).toContain('data-activity-stop="thread:w1"');
+  });
+
+  it("keeps the header chip as an entry point while the panel is closed", () => {
+    const onOpen = vi.fn();
+    const html = renderToStaticMarkup(createElement(TeammatesWorkingChip, { busy: false, waitingForTeammates: true, panelOpen: false, onOpen }));
+    expect(html).toContain("data-teammates-working");
+    expect(html).toContain("Teammates working");
+    expect(html).toContain('title="Show ongoing activities"');
+    const chip = TeammatesWorkingChip({ busy: false, waitingForTeammates: true, panelOpen: false, onOpen }) as unknown as { props: { onClick: () => void } };
+    chip.props.onClick();
+    expect(onOpen).toHaveBeenCalledOnce();
+    expect(renderToStaticMarkup(createElement(TeammatesWorkingChip, { busy: true, waitingForTeammates: true, panelOpen: false, onOpen }))).toBe("");
+    expect(renderToStaticMarkup(createElement(TeammatesWorkingChip, { busy: false, waitingForTeammates: false, panelOpen: false, onOpen }))).toBe("");
   });
 });

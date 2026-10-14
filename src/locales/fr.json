@@ -625,12 +625,6 @@
   "botPanel.activity.stop": "Arrêter",
   "botPanel.activity.stopAria": "Arrêter {title}",
   "botPanel.activity.title": "Activité",
-  "backgroundWork.empty": "Aucune tâche en arrière-plan pour l'instant.",
-  "backgroundWork.error": "Impossible de charger les activités en cours.",
-  "backgroundWork.loading": "Chargement des activités…",
-  "backgroundWork.loadingDetail": "Chargement du détail…",
-  "backgroundWork.openDetail": "Voir le détail",
-  "backgroundWork.openTranscript": "Ouvrir la conversation",
   "backgroundWork.title": "Activités en cours",
   "botPanel.activity.via": "Payé avec",
   "botPanel.activity.via.orgKey": "Clé de l'organisation",
@@ -1127,6 +1121,8 @@
   "chat.openConversationWith": "Ouvrir la conversation avec {name}",
   "chat.openProfile": "Ouvrir le profil de l'agent",
   "chat.openProfileAria": "Ouvrir le profil de {name}",
+  "chat.teammatesWorking": "Coéquipiers au travail",
+  "chat.teammatesWorking.open": "Voir les activités en cours",
   "chat.parallel.open": "Ouvrir",
   "chat.parallel.openApproval": "Examiner",
   "chat.parallel.result": "Réponse de la tâche en parallèle · {title}",
@@ -5366,5 +5362,6 @@
   "call.live.voice": "Voix",
   "call.live.voiceNext": "Une nouvelle voix commence au prochain appel.",
   "engineSetup.checkFailed": "Impossible d'actualiser l'état des fournisseurs. L'état précédent reste affiché. {reason}",
-  "engineSetup.checked": "État des fournisseurs actualisé."
+  "engineSetup.checked": "État des fournisseurs actualisé.",
+  "routines.empty": "Aucune routine pour l'instant."
 }
