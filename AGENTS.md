@@ -1090,10 +1090,14 @@ driver's default `cli`.
   licence published). API engines (Grok API, OpenAI-compatible, Mistral,
   Cerebras, MiniMax), Boat and custom ACP need no install.
 - Startup self-check (`server/engines-self-check.ts`, `SAGAX_ENGINES_MANIFEST`):
-  each preinstalled CLI runs `--version` once at boot, the result is logged
-  (`[engines] claude: ...`) and is the instance's installed state from then
-  on (`selfCheckedEngine` in `server/index.ts`): `engineInstalled` and
-  `/api/health` no longer probe those engines per request. A manifest whose
+  the image build already ran each CLI's `--version` and stored it as
+  `reported`. At boot the server checks that binary is on PATH and logs that
+  recorded line (`[engines] claude: ...`); it does not spawn the CLI again.
+  An entry with no `reported` line (a manifest from before this) is probed
+  one at a time (`ENGINE_PROBE_CONCURRENCY`). That result is the instance's
+  installed state from then on (`selfCheckedEngine` in `server/index.ts`):
+  `engineInstalled` and `/api/health` no longer probe those engines per
+  request. A manifest whose
   set is not `all`, or an engine that did not start, also logs
   `[engines] engine_missing ...`. An instance with
   its own `config.cli` is probed as before. An engine of `notPreinstalled`
@@ -1183,6 +1187,17 @@ fake xAI: `scripts/verify-voice-mode.ts`. Details: `docs/voice-mode-xai.md`.
 - The xAI key never reaches a client: the server proxies speech to text
   (`/voice/transcribe`) and text to speech (`/voice/speak`, `/voice/voices`);
   no route answers a key or a part of one.
+- Hang up: the person ends with `POST /api/bots/<id>/voice/call`
+  `{state:"end"}` for that call id. The bot ends with `end_call`, offered
+  only on a live call (`SAGAX_VOICE_CALL`). The session stays until that
+  turn finishes, so the goodbye is spoken, then the idle warm process is
+  released and that person's devices get `voice.call.ended`. A goodbye
+  that fails or is interrupted drops the request (`settleEnding`) and
+  keeps the call: the next turn is still on it. The next written turn
+  after a finished hang-up gets `voiceCallEndedNote`. An old turn cannot
+  end a newer call. Tests: `server/voice-call-session.test.ts`,
+  `src/lib/voice-mode/call-end.test.ts`,
+  `server/voice-call-reliability.e2e.test.ts`.
 - Who pays (`resolveVoiceKey`): on an organization server the speaker's own
   `xai` key in Perspicax, else the organization's (Settings > Connections),
   else an access card in that person's bar only (the audience rule of every

@@ -916,3 +916,32 @@ final class CallQuietTests: XCTestCase {
         XCTAssertFalse(quiet.silences(threadId: "th-ara"), "hung up: it notifies again")
     }
 }
+
+final class BotHangupTests: XCTestCase {
+    func testWaitsForAGoodbyeThenHangsUp() {
+        XCTAssertEqual(BotHangup.decide(speaking: true, heardSpeech: false, elapsedMs: 0), .wait)
+        XCTAssertEqual(BotHangup.decide(speaking: true, heardSpeech: true, elapsedMs: BotHangup.capMs - 1), .wait)
+        XCTAssertEqual(BotHangup.decide(speaking: false, heardSpeech: true, elapsedMs: 0), .hangup)
+        XCTAssertEqual(BotHangup.decide(speaking: false, heardSpeech: false, elapsedMs: BotHangup.settleMs - 1), .wait)
+        XCTAssertEqual(BotHangup.decide(speaking: false, heardSpeech: false, elapsedMs: BotHangup.settleMs), .hangup)
+        XCTAssertEqual(BotHangup.decide(speaking: true, heardSpeech: true, elapsedMs: BotHangup.capMs), .hangup)
+    }
+
+    func testTheEndedFrameNamesTheCall() throws {
+        let frame = try JSONDecoder().decode(Frame.self, from: Data(#"{"kind":"voice.call.ended","audience":"ada","threadId":"th-1","callId":"call-0123456789","by":"bot"}"#.utf8))
+        guard case let .voiceCallEnded(threadId, callId, by) = frame else {
+            return XCTFail("decoded \(frame)")
+        }
+        XCTAssertEqual(threadId, "th-1")
+        XCTAssertEqual(frame.threadId, "th-1")
+        XCTAssertEqual(callId, "call-0123456789")
+        XCTAssertEqual(by, "bot")
+        let broken = try JSONDecoder().decode(Frame.self, from: Data(#"{"kind":"voice.call.ended","threadId":"th-1"}"#.utf8))
+        if case .unknown = broken {} else { XCTFail("decoded \(broken)") }
+
+        let posted = expectation(forNotification: .sagaxVoiceCallEnded, object: nil)
+        var store = Store()
+        store.apply(frame)
+        wait(for: [posted], timeout: 1)
+    }
+}

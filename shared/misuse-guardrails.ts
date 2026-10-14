@@ -114,7 +114,8 @@ const BLOCK_RULES: ReadonlyArray<{ category: MisuseCategory; pattern: RegExp }> 
   { category: "platform_exfiltration", pattern: /\/\.sagax\b|\/data\/\.openmausbot|\/var\/lib\/openmausbot|\/opt\/sagax\b/ },
   { category: "platform_exfiltration", pattern: /\/etc\/(shadow|passwd)\b/ },
   { category: "platform_exfiltration", pattern: /cl[ée] idp|fichier d['’]environnement du serveur|donn[ée]es d['’]un autre (client|locataire)/ },
-  { category: "destruction", pattern: /\brm\s+(-[a-z]*f[a-z]*\s+)+\/(?![\w.])/ },
+  // `[a-eg-z]*f` pins the first `f` so each flag cannot be split two ways (js/redos).
+  { category: "destruction", pattern: /\brm\s+(?:-[a-eg-z]*f[a-z]*\s+)+\/(?![\w.])/ },
   { category: "destruction", pattern: /\brm\s+-rf\s+~(\/|\s|$)/ },
   { category: "destruction", pattern: /\bmkfs(\.\w+)?\b/ },
   { category: "destruction", pattern: /\bdd\s+[^\n]{0,80}if=\/dev\/(zero|urandom)/ },

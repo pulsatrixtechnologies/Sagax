@@ -61,6 +61,8 @@ describe("the phone-call instruction", () => {
     expect(text).toContain("Keep your own persona and instructions");
     // no duplex opener on this call: nothing to "not repeat"
     expect(text).not.toContain("Do not repeat that acknowledgement");
+    expect(text).toContain("call end_call");
+    expect(text).toContain("Do not start new work after it");
     expect(text).not.toContain(VOICE_CALL_INTERRUPTED_NOTE);
     expect(text).not.toMatch(/[–—]/);
   });

@@ -127,5 +127,9 @@ describe("cache prime prompt and opener audience", () => {
     expect(voiceOpenerFrameAllowed(frame, undefined, "ada")).toBe(true);
     expect(voiceOpenerFrameAllowed(frame, "bob", "operator")).toBe(false);
     expect(voiceOpenerFrameAllowed({ kind: "message" }, "bob", "operator")).toBe(true);
+    const ended = { kind: "voice.call.ended", audience: "Ada" };
+    expect(voiceOpenerFrameAllowed(ended, "ada", "operator")).toBe(true);
+    expect(voiceOpenerFrameAllowed(ended, "bob", "operator")).toBe(false);
+    expect(voiceOpenerFrameAllowed({ kind: "voice.call.ended" }, "ada", "operator")).toBe(false);
   });
 });
