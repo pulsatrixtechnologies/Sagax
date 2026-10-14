@@ -14,6 +14,6 @@ describe("manual image gate workflow env", () => {
     expect(step?.run).toContain('docker pull "$IMAGE"');
     expect(step?.run).toMatch(/--image "\$IMAGE"/);
     expect(step?.run).not.toContain("${{ inputs.image }}");
-    expect(step?.run).not.toContain("engine-image-gate.mjs");
+    expect(step?.run).toContain("engine-image-gate.mjs");
   });
 });
