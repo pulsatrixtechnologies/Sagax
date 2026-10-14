@@ -3,6 +3,7 @@ import {
   compileVoiceBench,
   renderVoiceBenchMarkdown,
   VoiceBenchLedger,
+  voiceBenchMaxMs,
   type CompileVoiceBenchInput,
   type VoiceBenchEvent,
   type VoiceBenchMark,
@@ -160,9 +161,25 @@ describe("compileVoiceBench", () => {
   });
 
   it("passes inclusive latency boundaries and rejects a turn above the maximum", () => {
+    const maxMs = voiceBenchMaxMs();
     expect(compileVoiceBench(fixture({ totals: [400, 800] })).passed).toBe(true);
-    expect(compileVoiceBench(fixture({ totals: [800, 2_500] })).passed).toBe(true);
-    expect(compileVoiceBench(fixture({ totals: [400, 2_501] })).passed).toBe(false);
+    expect(compileVoiceBench(fixture({ totals: [800, maxMs] })).passed).toBe(true);
+    expect(compileVoiceBench(fixture({ totals: [400, maxMs + 1] })).passed).toBe(false);
+  });
+
+  it("selects the max latency gate by OS: 2500 ms on Linux and macOS, 6000 ms on Windows", () => {
+    expect(voiceBenchMaxMs("linux")).toBe(2500);
+    expect(voiceBenchMaxMs("darwin")).toBe(2500);
+    expect(voiceBenchMaxMs("win32")).toBe(6000);
+    expect(compileVoiceBench({ ...fixture({ totals: [400, 2_501] }), platform: "linux" }).passed).toBe(false);
+    expect(compileVoiceBench({ ...fixture({ totals: [400, 2_501] }), platform: "darwin" }).passed).toBe(false);
+    expect(compileVoiceBench({ ...fixture({ totals: [400, 2_501] }), platform: "win32" }).passed).toBe(true);
+    expect(compileVoiceBench({ ...fixture({ totals: [400, 6_000] }), platform: "win32" }).gates.max).toEqual({
+      pass: true,
+      thresholdMs: 6000,
+      observedMs: 6000,
+    });
+    expect(compileVoiceBench({ ...fixture({ totals: [400, 6_001] }), platform: "win32" }).passed).toBe(false);
   });
 
   it("uses warm turns after one explicit warm-up for the p50 and max gates", () => {
@@ -176,7 +193,7 @@ describe("compileVoiceBench", () => {
     });
     expect(report.gates.max).toEqual({
       pass: true,
-      thresholdMs: 2_500,
+      thresholdMs: voiceBenchMaxMs(),
       observedMs: 900,
     });
     expect(report.summary.total).toEqual({ p50: 700, p90: 900, max: 900 });

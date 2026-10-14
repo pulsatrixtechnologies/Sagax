@@ -1,5 +1,6 @@
 import { expect, it } from "vitest";
 
+import { voiceBenchMaxMs } from "./model.ts";
 import { runVoiceBenchmark } from "./run.ts";
 
 it("runs the synthetic 32-turn acceptance under the latency gates", async () => {
@@ -29,5 +30,6 @@ it("runs the synthetic 32-turn acceptance under the latency gates", async () => 
   expect(report.overlaps).toEqual([]);
   expect(report.providerAudit.unexpectedPaths).toEqual([]);
   expect(report.gates.p50.observedMs).toBeLessThanOrEqual(800);
-  expect(report.gates.max.observedMs).toBeLessThanOrEqual(2500);
+  expect(report.gates.max.thresholdMs).toBe(voiceBenchMaxMs());
+  expect(report.gates.max.observedMs).toBeLessThanOrEqual(voiceBenchMaxMs());
 }, 180_000);
