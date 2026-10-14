@@ -17,6 +17,7 @@ on:
       - scripts/bundle-server.mjs
       - scripts/install-engines.mjs
       - scripts/engine-image-gate.mjs
+      - scripts/harden-image-deps.mjs
       - scripts/gox-deploy.mjs
       - scripts/build-production-image.sh
       - engines.lock.json
@@ -31,6 +32,7 @@ on:
       - engines.lock.json
       - scripts/install-engines.mjs
       - scripts/engine-image-gate.mjs
+      - scripts/harden-image-deps.mjs
       - scripts/gox-deploy.mjs
       - scripts/build-production-image.sh
       - .github/workflows/docker.yml

@@ -11,6 +11,11 @@ describe("production image sources", () => {
     expect(dockerfile).toContain("ARG ENGINE_SET=all");
     expect(dockerfile).not.toContain("ARG ENGINE_SET=none");
     expect(dockerfile).toContain("ARG SAGAX_REQUIRE_ENGINES=1");
+    expect(dockerfile).toContain("node:24-trixie-slim@sha256:");
+    expect(dockerfile).not.toMatch(/FROM\s+\S*distroless/);
+    expect(dockerfile).toContain("apt-get upgrade -y --no-install-recommends");
+    expect(dockerfile).toContain("scripts/harden-image-deps.mjs");
+    expect(dockerfile).toContain("/usr/local/lib/node_modules/npm");
     expect(dockerfile).toContain("ENV ENGINE_SET=${ENGINE_SET}");
     expect(dockerfile).toContain('org.opencontainers.image.revision="${SAGAX_COMMIT_SHA}"');
     expect(dockerfile).toContain('org.opencontainers.image.created="${SAGAX_BUILD_TIME}"');
@@ -26,6 +31,7 @@ describe("production image sources", () => {
     expect(workflow).toContain("ENGINE_SET=all");
     expect(workflow).toContain("SAGAX_REQUIRE_ENGINES=1");
     expect(workflow).toContain("scripts/engine-image-gate.mjs");
+    expect(workflow).toContain("scripts/harden-image-deps.mjs");
     expect(workflow).toContain("--startup-log");
     expect(workflow).toContain("/healthz");
     expect(workflow).toContain("cursor-agent");
