@@ -1471,7 +1471,7 @@ Electron restart (no HMR); launch-test them before committing.
   setup as before (`{x, y, v: 2}`, read by older builds), plus per display
   (`display:<frame>`, with `t`), so a bot comes back to its spot on a display
   that is still there (`savedSpotFor`). Tests:
-  `electron/floating-bot-cluster.test.mjs`, `floating-bots/sleep.test.ts`.
+  `electron/floating-bot-cluster.test.mjs`.
 - The balloon wears the app's theme: the brain sends `theme` (the skin and
   the brand accent, `theme.ts`, followed live) and the window stamps it;
   Trombi keeps its Hibou 98 balloon whatever the theme.

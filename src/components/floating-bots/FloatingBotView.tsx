@@ -32,7 +32,6 @@ import { mascotFields, type FloatingEvent, type FloatingMenuItem, type FloatingP
 import { characterMoves, isMoveClip } from "./moves";
 import { CHAT_BALLOON, dockedWindowSize, type Size } from "./window-frame";
 import { effectLane, effectSide, pillTop, type ChatPlacement, type EffectSide, type PillSide } from "./placement";
-import { mascotAsleep } from "./sleep";
 import { useHeldMenuMotion } from "@/components/MenuMotion";
 import { ReplyBubble, ReplyPill, usesReplyBubble } from "./ReplyBubble";
 import { MascotCallCardView, MascotCallPill, type LevelSource, type MascotCallCard } from "./MascotCall";
@@ -573,7 +572,6 @@ export function FloatingBotView({ snapshot: given, onEvent, mover, interactive, 
   const pillShown = Boolean(call) || Boolean(balloon && usesReplyBubble(balloon, retro));
   const pillAbove = pillSideNow === "above" && pillShown;
   const cardOverlap = pillAbove ? pillTop("above", OWL_BOX) - CARD_GAP + 2 : STAGE.top - CARD_GAP + 8;
-  const asleep = !away && mascotAsleep(activity, snapshot.pose);
   // the call pill's card (settings, transcript) opens where the balloon goes
   const [callCard, setCallCard] = useState<MascotCallCard>(null);
   // a draft in the reply pill keeps the reply's bubble from fading
@@ -613,7 +611,7 @@ export function FloatingBotView({ snapshot: given, onEvent, mover, interactive, 
   // The effects (signs, hearts, the thought dots, the Zzz) go beside the character, never over
   // it: on the desktop the window's layout says which side; over the app, the viewport's room
   const [ownFx, setOwnFx] = useState<EffectSide>("right");
-  const fxShown = activity !== "idle" || Boolean(burst) || snapshot.pose === "think" || asleep;
+  const fxShown = activity !== "idle" || Boolean(burst) || snapshot.pose === "think";
   useLayoutEffect(() => {
     if (desk || !fxShown || typeof window === "undefined") return;
     const rect = stageRef.current?.getBoundingClientRect();
@@ -879,7 +877,6 @@ export function FloatingBotView({ snapshot: given, onEvent, mover, interactive, 
         className="fb-stage"
         data-pose={snapshot.pose}
         data-activity={activity}
-        data-asleep={asleep ? "" : undefined}
         data-3d=""
         data-away={away ? "" : undefined}
         data-call={call && !away ? (call.muted || call.phase === "held" ? "quiet" : call.phase) : undefined}
@@ -904,8 +901,8 @@ export function FloatingBotView({ snapshot: given, onEvent, mover, interactive, 
           {snapshot.pose === "think" && activity !== "flyOut" && activity !== "think" && (
             <span className="fb-thought"><span /><span /><span /></span>
           )}
-          {asleep && (
-            <span className="fb-zzz" data-sleep-glyphs=""><span>z</span><span>z</span><span>Z</span></span>
+          {activity === "sleep" && (
+            <span className="fb-zzz"><span>z</span><span>z</span><span>Z</span></span>
           )}
           <Emote activity={activity} hoot={snapshot.hints.hoot} />
           {burst && <Burst key={burst.key} kind={burst.kind} reduced={reduced} />}

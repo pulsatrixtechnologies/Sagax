@@ -25,7 +25,7 @@ export function crabExpressionForMood(mood: CrabMood): string {
     case "happy":
       return "happy";
     case "sleeping":
-      return "asleep";
+      return "sleepy";
     case "listening":
       return "attentive";
     case "speaking":
