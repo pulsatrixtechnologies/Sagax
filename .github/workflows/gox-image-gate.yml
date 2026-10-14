@@ -1,7 +1,7 @@
-name: image gate
+name: GOX image gate
 
-# Check an already-built image against the production engine-set gate.
-# This workflow never deploys.
+# Check an already-built image with the same manifest gate GOX uses.
+# This workflow never deploys and never contacts GOX.
 on:
   workflow_dispatch:
     inputs:
@@ -26,5 +26,4 @@ jobs:
         run: |
           set -euo pipefail
           docker pull "$IMAGE"
-          docker run --rm --entrypoint cat "$IMAGE" /app/engines/manifest.json > "$RUNNER_TEMP/engines-manifest.json"
-          node scripts/engine-image-gate.mjs --manifest "$RUNNER_TEMP/engines-manifest.json"
+          node scripts/gox-deploy.mjs check --image "$IMAGE"
