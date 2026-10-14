@@ -6,15 +6,7 @@ on:
   workflow_dispatch:
   push:
     tags: ["v*"]
-  pull_request:
-    paths:
-      - server/cli.ts
-      - server/tunnel.ts
-      - server/tailscale.ts
-      - server/pair-cli.ts
-      - scripts/build-npm-package.mjs
-      - scripts/bundle-server.mjs
-      - .github/workflows/npm-package.yml
+  # CI runs once, on the release candidate (manual dispatch): JC 2026-10-14.
 
 concurrency:
   group: npm-package-${{ github.event.pull_request.number || github.ref }}

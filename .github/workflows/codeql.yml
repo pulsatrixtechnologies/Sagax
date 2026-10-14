@@ -9,12 +9,7 @@ name: CodeQL
 # leave the variable unset. Query and extraction errors still fail the job.
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
-  pull_request:
-    branches: [main]
-  schedule:
-    - cron: "17 6 * * 1" # weekly, Monday 06:17 UTC
+  # CI runs once, on the release candidate (manual dispatch): JC 2026-10-14.
 
 concurrency:
   group: codeql-${{ github.event.pull_request.number || github.ref }}

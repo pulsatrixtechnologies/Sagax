@@ -5,45 +5,8 @@ on:
   # with the workflow token never fires push events on its own.
   workflow_dispatch:
   push:
-    branches: [main]
     tags: ["v*"]
-    paths:
-      - Dockerfile
-      - .dockerignore
-      - deploy/**
-      - server/**
-      - src/**
-      - enterprise/**
-      - scripts/bundle-server.mjs
-      - scripts/install-engines.mjs
-      - scripts/engine-image-gate.mjs
-      - scripts/harden-image-deps.mjs
-      - scripts/hermes-jwt-overlay-smoke.py
-      - scripts/trivy-ignore-guard.mjs
-      - scripts/gox-deploy.mjs
-      - scripts/build-production-image.sh
-      - scripts/vuln-attestation.mjs
-      - engines.lock.json
-      - package.json
-      - pnpm-lock.yaml
-      - .trivyignore
-      - .github/workflows/docker.yml
-  pull_request:
-    paths:
-      - Dockerfile
-      - .dockerignore
-      - deploy/**
-      - engines.lock.json
-      - scripts/install-engines.mjs
-      - scripts/engine-image-gate.mjs
-      - scripts/harden-image-deps.mjs
-      - scripts/hermes-jwt-overlay-smoke.py
-      - scripts/trivy-ignore-guard.mjs
-      - scripts/gox-deploy.mjs
-      - scripts/build-production-image.sh
-      - scripts/vuln-attestation.mjs
-      - .trivyignore
-      - .github/workflows/docker.yml
+  # CI runs once, on the release candidate (manual dispatch): JC 2026-10-14.
 
 # One run per PR: a new push cancels the superseded run.
 concurrency:

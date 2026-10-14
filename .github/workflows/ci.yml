@@ -2,15 +2,7 @@ name: CI
 
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
-  pull_request:
-  # The merge queue runs CI on the PR merged onto the current main BEFORE it
-  # lands, so a PR that is green alone but red together with what just
-  # merged is stopped in the queue instead of on main (that shape reddened
-  # main twice in Sep 2026). Turning the queue on is a branch-ruleset
-  # setting; this trigger is what lets CI report on those runs.
-  merge_group:
+  # CI runs once, on the release candidate (manual dispatch): JC 2026-10-14.
 
 # least privilege: CI only reads the checkout, it never writes back
 permissions:

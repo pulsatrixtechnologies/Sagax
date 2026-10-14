@@ -5,13 +5,7 @@ name: Windows browser vendor build
 
 on:
   workflow_dispatch:
-  pull_request:
-    paths:
-      - .github/workflows/browser-vendor-windows.yml
-      - scripts/build-windows-browser-vendor.mjs
-      - scripts/build-windows-browser-vendor.test.mjs
-      - scripts/smoke-browser-bundle.mjs
-      - third_party/browser/agent-browser-windows-stdio.patch
+  # CI runs once, on the release candidate (manual dispatch): JC 2026-10-14.
 
 concurrency:
   group: browser-vendor-${{ github.event.pull_request.number || github.ref }}

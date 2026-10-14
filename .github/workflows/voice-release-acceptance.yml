@@ -13,8 +13,7 @@ on:
         description: Commit to check out (defaults to the workflow sha)
         required: false
         type: string
-  schedule:
-    - cron: "17 6 * * *"
+  # CI runs once, on the release candidate (manual dispatch): JC 2026-10-14.
 
 permissions:
   contents: read

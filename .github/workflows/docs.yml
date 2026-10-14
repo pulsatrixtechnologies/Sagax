@@ -1,25 +1,8 @@
 name: Docs
 
 on:
-  pull_request:
-    paths:
-      - "apps/docs/**"
-      - "docs/screenshots/**"
-      - "public/app-icon.svg"
-      - "package.json"
-      - "pnpm-lock.yaml"
-      - "pnpm-workspace.yaml"
-      - ".github/workflows/docs.yml"
-  push:
-    branches: [main]
-    paths:
-      - "apps/docs/**"
-      - "docs/screenshots/**"
-      - "public/app-icon.svg"
-      - "package.json"
-      - "pnpm-lock.yaml"
-      - "pnpm-workspace.yaml"
-      - ".github/workflows/docs.yml"
+  workflow_dispatch:
+  # CI runs once, on the release candidate (manual dispatch): JC 2026-10-14.
 
 permissions:
   contents: read
