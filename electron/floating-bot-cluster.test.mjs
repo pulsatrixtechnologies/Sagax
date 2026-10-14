@@ -1,19 +1,26 @@
 // The floating cluster (the character and the pill hanging on it) on screen:
-// never under the macOS Dock or the Windows taskbar, wherever they sit, on
-// any display, kept on drag end, on a display change and on show; positions
-// kept per display setup and per display (floating-bot-positions.json).
+// never under the macOS Dock, the Windows taskbar or a Linux panel Electron
+// reports in workArea; positions kept per display setup (32 keys, the shape
+// an older build slice(0, 32) still reads) and per display in a second table.
 import { describe, expect, it, vi } from "vitest";
 
 import {
   clampClusterToDisplays,
   clusterBox,
   createFloatingBotWindows,
+  DISPLAY_KEY_PREFIX,
+  displayIdentity,
+  displayIdentityFromLegacyKey,
   displayKeyAt,
   FLOAT_BODY,
   FLOAT_HOME,
   FLOATING_QUERY,
+  isBotId,
+  purgeDisplayKeys,
+  sanitizeDisplaySpots,
   sanitizePositions,
   savedSpotFor,
+  SETUP_POSITIONS_MAX,
 } from "./floating-bot-window.mjs";
 import { displaySignature } from "./retro-assistant-window.mjs";
 
@@ -26,6 +33,9 @@ const DOCK_RIGHT = { x: 0, y: 25, width: 1370, height: 875 };
 const DOCK_HIDDEN = { x: 0, y: 25, width: 1440, height: 871 };
 // a Windows taskbar, 48 px, at the bottom of a 1920x1080 display
 const TASKBAR = { x: 0, y: 0, width: 1920, height: 1032 };
+// a GNOME-style panel Electron reports in workArea (48 px at the bottom)
+const LINUX_PANEL = { x: 0, y: 0, width: 1920, height: 1032 };
+const LINUX_FRAME = { x: 0, y: 0, width: 1920, height: 1080 };
 
 const PRIMARY = { id: 1, bounds: FRAME, workArea: DOCK_BOTTOM };
 const SECOND = { id: 2, bounds: { x: 1440, y: 0, width: 1920, height: 1080 }, workArea: { x: 1440, y: 0, width: 1920, height: 1040 } };
@@ -41,7 +51,33 @@ const onScreen = (bounds, keep) => {
   const box = clusterBox(BODY, keep);
   return { left: bounds.x + box.x, top: bounds.y + box.y, right: bounds.x + box.x + box.width, bottom: bounds.y + box.y + box.height };
 };
+const characterOnScreen = (bounds) => ({
+  left: bounds.x + BODY.x,
+  top: bounds.y + BODY.y,
+  right: bounds.x + BODY.x + BODY.width,
+  bottom: bounds.y + BODY.y + BODY.height,
+});
 const inside = (box, area) => box.left >= area.x && box.top >= area.y && box.right <= area.x + area.width && box.bottom <= area.y + area.height;
+
+/**
+ * How an older build reads floating-bot-positions.json (origin/main
+ * sanitizePositions): the first 32 keys, no skip of display:… entries.
+ */
+function oldSanitizePositions(value) {
+  const clean = {};
+  if (!value || typeof value !== "object" || Array.isArray(value)) return clean;
+  for (const [signature, bots] of Object.entries(value).slice(0, 32)) {
+    if (typeof signature !== "string" || signature.length > 512 || !bots || typeof bots !== "object") continue;
+    const entry = {};
+    for (const [botId, spot] of Object.entries(bots).slice(0, 64)) {
+      if (isBotId(botId) && spot && typeof spot.x === "number" && Number.isFinite(spot.x) && typeof spot.y === "number" && Number.isFinite(spot.y)) {
+        entry[botId] = { x: spot.x, y: spot.y, ...(spot.v === 2 ? { v: 2 } : {}) };
+      }
+    }
+    clean[signature] = entry;
+  }
+  return clean;
+}
 
 function fakeElectron({ displays = [PRIMARY] } = {}) {
   const handlers = new Map();
@@ -103,7 +139,7 @@ function fakeElectron({ displays = [PRIMARY] } = {}) {
 
 function setup(extra = {}) {
   const fake = fakeElectron(extra);
-  const saved = { positions: extra.positions };
+  const saved = { positions: extra.positions, displaySpots: extra.displaySpots };
   const focusMain = vi.fn();
   const logs = [];
   const controller = createFloatingBotWindows({
@@ -117,6 +153,8 @@ function setup(extra = {}) {
     preload: "/app/electron/floating-bot-preload.cjs",
     readPositions: () => saved.positions ?? {},
     writePositions: (positions) => { saved.positions = JSON.parse(JSON.stringify(positions)); },
+    readDisplaySpots: () => saved.displaySpots ?? {},
+    writeDisplaySpots: (spots) => { saved.displaySpots = JSON.parse(JSON.stringify(spots)); },
     focusMain,
     Menu: extra.Menu,
     log: (line) => logs.push(line),
@@ -185,6 +223,16 @@ describe("the floating cluster stays in the work area", () => {
     // off every screen: the nearest display
     expect(inside(onScreen(clampClusterToDisplays(at(-3000, 5000), BODY, PILL_BELOW, areas), PILL_BELOW), DOCK_BOTTOM)).toBe(true);
   });
+
+  it("when the mascot and its pill do not fit the work area, keeps the character inside", () => {
+    const tiny = { x: 0, y: 0, width: 180, height: 140 };
+    const placed = clampClusterToDisplays(at(0, 0), BODY, PILL_ABOVE, [tiny]);
+    expect(inside(characterOnScreen(placed), tiny)).toBe(true);
+    const cluster = onScreen(placed, PILL_ABOVE);
+    expect(inside(cluster, tiny)).toBe(false);
+    expect(cluster.right - cluster.left).toBeGreaterThan(tiny.width);
+    expect(cluster.bottom - cluster.top).toBeGreaterThan(tiny.height);
+  });
 });
 
 describe("the floating cluster in the window controller", () => {
@@ -243,29 +291,54 @@ describe("the floating cluster in the window controller", () => {
     const { open } = setup({ positions: { [key]: { bot_a: { x: 1200, y: 899, v: 2 } } } });
     expect(onScreen(open("bot_a").win.getBounds(), null).bottom).toBe(830);
   });
+
+  it("when the mascot and its pill overflow the work area, the character stays inside", () => {
+    const tiny = { x: 0, y: 0, width: 180, height: 140 };
+    const tinyDisplay = { id: 1, bounds: { x: 0, y: 0, width: 180, height: 140 }, workArea: tiny };
+    const { open, emit } = setup({ displays: [tinyDisplay] });
+    const { win, from } = open("bot_a");
+    emit("floating-bots:body", from, { ...BODY, keep: PILL_ABOVE });
+    expect(inside(characterOnScreen(win.getBounds()), tiny)).toBe(true);
+    expect(inside(onScreen(win.getBounds(), PILL_ABOVE), tiny)).toBe(false);
+  });
 });
 
-describe("positions per display", () => {
-  it("names the display a point is on by its frame", () => {
-    expect(displayKeyAt({ x: 10, y: 10 }, [PRIMARY, SECOND])).toBe("display:0,0,1440x900");
-    expect(displayKeyAt({ x: 2000, y: 10 }, [PRIMARY, SECOND])).toBe("display:1440,0,1920x1080");
+describe("positions: a separate display table, 32 setups an older build still reads", () => {
+  it("names the display a point is on by its id and origin, not its size", () => {
+    expect(displayKeyAt({ x: 10, y: 10 }, [PRIMARY, SECOND])).toBe("display:1@0,0");
+    expect(displayKeyAt({ x: 2000, y: 10 }, [PRIMARY, SECOND])).toBe("display:2@1440,0");
     expect(displayKeyAt({ x: -10, y: 10 }, [PRIMARY, SECOND])).toBeNull();
+    expect(displayIdentity(PRIMARY)).toBe("1@0,0");
   });
 
-  it("saves the spot for the setup and for the display, and an older file still reads", () => {
+  it("keeps the identity across a scale or resolution change", () => {
+    const hidpi = { id: 1, bounds: FRAME, workArea: DOCK_BOTTOM, scaleFactor: 2 };
+    const resized = {
+      id: 1,
+      bounds: { x: 0, y: 0, width: 1280, height: 800 },
+      workArea: { x: 0, y: 25, width: 1280, height: 705 },
+      scaleFactor: 1,
+    };
+    expect(displayIdentity(hidpi)).toBe("1@0,0");
+    expect(displayIdentity(resized)).toBe("1@0,0");
+    expect(displayIdentity(hidpi)).toBe(displayIdentity(PRIMARY));
+    expect(displaySignature([resized])).not.toBe(displaySignature([PRIMARY]));
+  });
+
+  it("saves the spot for the setup and for the display in two tables, and an older file still reads", () => {
     const first = setup({ displays: [PRIMARY, SECOND] });
     const { win, from } = first.open("bot_a");
     first.invoke("floating-bots:move-to", from, { x: 2000, y: 200 });
     first.emit("floating-bots:moved", from);
     const spot = win.getBounds();
     const corner = { x: spot.x + BODY.x + BODY.width, y: spot.y + BODY.y + BODY.height, v: 2 };
-    // the setup's entry keeps its old shape (an older build reads it as before)
     expect(first.saved.positions[displaySignature([PRIMARY, SECOND])].bot_a).toEqual(corner);
-    expect(first.saved.positions["display:1440,0,1920x1080"].bot_a).toMatchObject(corner);
-    expect(first.saved.positions["display:1440,0,1920x1080"].bot_a.t).toBeGreaterThan(0);
-    // an older file (no display entries, no t) sanitizes unchanged
+    expect(Object.keys(first.saved.positions).some((key) => key.startsWith(DISPLAY_KEY_PREFIX))).toBe(false);
+    expect(first.saved.displaySpots["2@1440,0"].bot_a).toMatchObject(corner);
+    expect(first.saved.displaySpots["2@1440,0"].bot_a.t).toBeGreaterThan(0);
     const old = { [displaySignature([PRIMARY])]: { bot_a: { x: 900, y: 800 }, bot_b: { x: 10, y: 10, v: 2 } } };
     expect(sanitizePositions(old)).toEqual(old);
+    expect(oldSanitizePositions(old)).toEqual(old);
   });
 
   it("brings a bot back to its spot on a display that is still there when the setup changed", () => {
@@ -274,19 +347,108 @@ describe("positions per display", () => {
     first.invoke("floating-bots:move-to", from, { x: 300, y: 100 });
     first.emit("floating-bots:moved", from);
     const spot = win.getBounds();
-    // the second display unplugged: a setup never seen, but the laptop is the same display
-    const again = setup({ displays: [PRIMARY], positions: first.saved.positions });
+    const again = setup({ displays: [PRIMARY], positions: first.saved.positions, displaySpots: first.saved.displaySpots });
     expect(again.open("bot_a").win.getBounds()).toMatchObject({ x: spot.x, y: spot.y });
+  });
+
+  it("after a scale or resolution change, restores the display spot and clamps it to the new work area", () => {
+    const first = setup({ displays: [PRIMARY] });
+    const { from } = first.open("bot_a");
+    first.invoke("floating-bots:move-to", from, { x: 900, y: 2000 });
+    first.emit("floating-bots:moved", from);
+    expect(onScreen(first.controller.window("bot_a").getBounds(), null).bottom).toBe(830);
+    const resized = {
+      id: 1,
+      bounds: { x: 0, y: 0, width: 1280, height: 800 },
+      workArea: { x: 0, y: 25, width: 1280, height: 705 },
+      scaleFactor: 1,
+    };
+    expect(displayIdentity(resized)).toBe(displayIdentity(PRIMARY));
+    const again = setup({ displays: [resized], positions: first.saved.positions, displaySpots: first.saved.displaySpots });
+    expect(onScreen(again.open("bot_a").win.getBounds(), null).bottom).toBe(730);
   });
 
   it("prefers the exact setup, then the latest display spot", () => {
     const positions = {
       [displaySignature([PRIMARY])]: { bot_a: { x: 500, y: 500, v: 2 } },
-      "display:0,0,1440x900": { bot_a: { x: 700, y: 700, v: 2, t: 2 } },
-      "display:1440,0,1920x1080": { bot_a: { x: 2000, y: 700, v: 2, t: 5 } },
     };
-    expect(savedSpotFor(positions, "bot_a", [PRIMARY])).toEqual({ x: 500, y: 500, v: 2 });
-    expect(savedSpotFor(positions, "bot_a", [PRIMARY, SECOND])).toEqual({ x: 2000, y: 700, v: 2, t: 5 });
-    expect(savedSpotFor(positions, "bot_b", [PRIMARY, SECOND])).toBeNull();
+    const displaySpots = {
+      "1@0,0": { bot_a: { x: 700, y: 700, v: 2, t: 2 } },
+      "2@1440,0": { bot_a: { x: 2000, y: 700, v: 2, t: 5 } },
+    };
+    expect(savedSpotFor(positions, displaySpots, "bot_a", [PRIMARY])).toEqual({ x: 500, y: 500, v: 2 });
+    expect(savedSpotFor(positions, displaySpots, "bot_a", [PRIMARY, SECOND])).toEqual({ x: 2000, y: 700, v: 2, t: 5 });
+    expect(savedSpotFor(positions, displaySpots, "bot_b", [PRIMARY, SECOND])).toBeNull();
+  });
+
+  it("une ancienne version relit une table pleine", () => {
+    const setups = {};
+    for (let i = 0; i < SETUP_POSITIONS_MAX; i += 1) {
+      setups[`setup-${String(i).padStart(2, "0")}|0,0,800x600`] = { bot_x: { x: i, y: i, v: 2 } };
+    }
+    const { open, emit, invoke, saved } = setup({ positions: setups, displays: [PRIMARY, SECOND] });
+    const { from } = open("bot_a");
+    invoke("floating-bots:move-to", from, { x: 2000, y: 200 });
+    emit("floating-bots:moved", from);
+    expect(Object.keys(saved.positions).some((key) => key.startsWith(DISPLAY_KEY_PREFIX))).toBe(false);
+    expect(Object.keys(saved.positions)).toHaveLength(SETUP_POSITIONS_MAX);
+    const old = oldSanitizePositions(saved.positions);
+    expect(Object.keys(old)).toHaveLength(SETUP_POSITIONS_MAX);
+    expect(Object.keys(old).sort()).toEqual(Object.keys(saved.positions).sort());
+    expect(old[displaySignature([PRIMARY, SECOND])].bot_a.v).toBe(2);
+    expect(saved.displaySpots["2@1440,0"].bot_a.v).toBe(2);
+  });
+
+  it("mixing display: keys into the setups table would starve an older slice(0, 32) reader", () => {
+    const mixed = {};
+    for (let i = 0; i < 40; i += 1) mixed[`display:${i},0,100x100`] = { bot_a: { x: i, y: i, v: 2, t: i } };
+    for (let i = 0; i < SETUP_POSITIONS_MAX; i += 1) mixed[`setup-${String(i).padStart(2, "0")}`] = { bot_a: { x: 100 + i, y: 100 + i, v: 2 } };
+    const old = oldSanitizePositions(mixed);
+    expect(Object.keys(old).every((key) => key.startsWith(DISPLAY_KEY_PREFIX))).toBe(true);
+    expect(Object.keys(old)).toHaveLength(SETUP_POSITIONS_MAX);
+    const { setups, leaked } = purgeDisplayKeys(mixed);
+    expect(Object.keys(leaked)).toHaveLength(40);
+    expect(Object.keys(sanitizePositions(setups))).toHaveLength(SETUP_POSITIONS_MAX);
+  });
+
+  it("purges mixed display: keys on load and maps a leaked frame onto today's identity", () => {
+    const mixed = {
+      "other-setup|1,1,800x600": { bot_b: { x: 1, y: 1, v: 2 } },
+      "display:0,0,1440x900": { bot_a: { x: 900, y: 800, v: 2, t: 9 } },
+    };
+    expect(displayIdentityFromLegacyKey("display:0,0,1440x900", [PRIMARY])).toBe("1@0,0");
+    const { open, saved } = setup({ positions: mixed, displays: [PRIMARY] });
+    open("bot_a");
+    expect(Object.keys(saved.positions).some((key) => key.startsWith(DISPLAY_KEY_PREFIX))).toBe(false);
+    expect(saved.displaySpots["1@0,0"].bot_a).toMatchObject({ x: 900, y: 800, v: 2, t: 9 });
+    expect(sanitizeDisplaySpots({ "display:1@0,0": { bot_a: { x: 1, y: 2, v: 2, t: 3 } } })["1@0,0"].bot_a).toMatchObject({ x: 1, y: 2, v: 2, t: 3 });
+  });
+});
+
+describe("Linux", () => {
+  it("stays clickable (no click-through) and keeps the cluster above a panel in workArea", () => {
+    const linuxDisplay = { id: 1, bounds: LINUX_FRAME, workArea: LINUX_PANEL };
+    const { open, emit, invoke } = setup({ displays: [linuxDisplay], platform: "linux" });
+    const { win, from } = open("bot_a");
+    expect(win.calls.some(([name]) => name === "setIgnoreMouseEvents")).toBe(false);
+    invoke("floating-bots:move-to", from, { x: 1500, y: 2000 });
+    emit("floating-bots:body", from, { ...BODY, keep: PILL_BELOW });
+    const box = onScreen(win.getBounds(), PILL_BELOW);
+    expect(box.bottom).toBe(LINUX_PANEL.height);
+    expect(inside(box, LINUX_PANEL)).toBe(true);
+    emit("floating-bots:set-interactive", from, false);
+    expect(win.calls.some(([name]) => name === "setIgnoreMouseEvents")).toBe(false);
+  });
+
+  it("when the compositor reports workArea equal to bounds, clamps to that full frame", () => {
+    const noStrut = { id: 1, bounds: LINUX_FRAME, workArea: LINUX_FRAME };
+    const placed = clampClusterToDisplays(at(1500, 2000), BODY, PILL_BELOW, [LINUX_FRAME]);
+    const box = onScreen(placed, PILL_BELOW);
+    expect(box.bottom).toBe(LINUX_FRAME.height);
+    expect(inside(box, LINUX_FRAME)).toBe(true);
+    const { open, invoke } = setup({ displays: [noStrut], platform: "linux" });
+    const { win, from } = open("bot_a");
+    invoke("floating-bots:move-to", from, { x: 1500, y: 2000 });
+    expect(onScreen(win.getBounds(), null).bottom).toBe(LINUX_FRAME.height);
   });
 });

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { mascotStage } from "./fit";
-import { BALLOON_SCREEN_SHARE, effectLane, effectSide, EFFECT_LANE, placeChat, sideWithin } from "./placement";
+import { BALLOON_SCREEN_SHARE, effectLane, effectSide, EFFECT_LANE, pillSide, pillTop, PILL, placeChat, sideWithin } from "./placement";
 import { homeBody } from "./window-frame";
 import { balloonSize, BALLOON_MIN } from "./Balloon";
 import { CHAT_BALLOON } from "./window-frame";
@@ -130,6 +130,29 @@ describe("next to a neighbouring display (macOS)", () => {
     const area = { x: 3440, y: 188, width: 1800, height: 1130 };
     const layout = layoutFor({ workArea: area, body: body(3554, 900), bounds: { x: 3377, y: 365, width: 352, height: 716 }, limits: { left: 3440 - 63 } })!;
     expect(layout.side).toEqual({ below: false, right: true });
+  });
+});
+
+describe("the input pill around the Dock and the taskbar", () => {
+  it("sits under the feet when there is room, over the head when the work area ends there", () => {
+    expect(pillSide({ body: body(800, 600), workArea: AREA })).toBe("below");
+    expect(pillTop("below", OWL)).toBe(OWL.top + OWL.size + PILL.gap);
+    expect(pillSide({ body: body(right - 120, bottom - 120), workArea: AREA })).toBe("above");
+    expect(pillTop("above", OWL)).toBe(OWL.top - PILL.gap - PILL.height);
+    const taskbar = { x: 0, y: 0, width: 1920, height: 1032 };
+    expect(pillSide({ body: { x: 1500, y: 1032 - 120, width: 120, height: 120 }, workArea: taskbar })).toBe("above");
+    // a Linux panel Electron reports in workArea is the same inset
+    const panel = { x: 0, y: 0, width: 1920, height: 1032 };
+    expect(pillSide({ body: { x: 100, y: 1032 - 120, width: 120, height: 120 }, workArea: panel })).toBe("above");
+    // a compositor that reports workArea === bounds: room under the feet is allowed
+    const frame = { x: 0, y: 0, width: 1920, height: 1080 };
+    expect(pillSide({ body: { x: 100, y: 900, width: 120, height: 120 }, workArea: frame })).toBe("below");
+  });
+
+  it("reaches layoutFor: over the head in the bottom-right corner", async () => {
+    const { layoutFor } = await import("./FloatingBotWindow");
+    expect(layoutFor({ workArea: AREA, body: body(800, 600) })!.pill).toBe("below");
+    expect(layoutFor({ workArea: AREA, body: body(right - 120, bottom - 120) })!.pill).toBe("above");
   });
 });
 

@@ -3706,6 +3706,7 @@ const retroAssistantWindow = createRetroAssistantWindow({
 // always-on-top window per bot. The main page is the brain and does every API
 // call; see electron/floating-bot-window.mjs.
 const FLOATING_BOT_POSITIONS = () => path.join(app.getPath("userData"), "floating-bot-positions.json");
+const FLOATING_BOT_DISPLAY_SPOTS = () => path.join(app.getPath("userData"), "floating-bot-display-spots.json");
 const floatingBotWindows = createFloatingBotWindows({
   whenReady: () => app.whenReady(),
   // development: the page comes from Vite, which may not answer yet at launch
@@ -3721,6 +3722,8 @@ const floatingBotWindows = createFloatingBotWindows({
   preload: path.join(__dirname, "floating-bot-preload.cjs"),
   readPositions: () => JSON.parse(fs.readFileSync(FLOATING_BOT_POSITIONS(), "utf8")),
   writePositions: (positions) => fs.writeFileSync(FLOATING_BOT_POSITIONS(), JSON.stringify(positions), { mode: 0o600 }),
+  readDisplaySpots: () => JSON.parse(fs.readFileSync(FLOATING_BOT_DISPLAY_SPOTS(), "utf8")),
+  writeDisplaySpots: (spots) => fs.writeFileSync(FLOATING_BOT_DISPLAY_SPOTS(), JSON.stringify(spots), { mode: 0o600 }),
   focusMain: () => {
     const win = mainWindow && !mainWindow.isDestroyed() ? mainWindow : null;
     if (!win) return;

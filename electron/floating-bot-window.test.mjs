@@ -573,6 +573,8 @@ describe("floating bots: positions and screens", () => {
     expect(sanitizePositions({ sig: { bot_a: { x: 1, y: 2 }, "bad id": { x: 1, y: 1 }, bot_b: { x: "1", y: 2 } } })).toEqual({ sig: { bot_a: { x: 1, y: 2 } } });
     expect(sanitizePositions(null)).toEqual({});
     expect(sanitizePositions([1, 2])).toEqual({});
+    // per-display spots never share this table (older builds slice the first 32 keys)
+    expect(sanitizePositions({ "display:1@0,0": { bot_a: { x: 1, y: 2, v: 2, t: 9 } }, sig: { bot_a: { x: 3, y: 4, v: 2, t: 9 } } })).toEqual({ sig: { bot_a: { x: 3, y: 4, v: 2 } } });
   });
 
   it("steps new bots across the bottom of the primary display", () => {
