@@ -38,6 +38,7 @@ import { showBotZipImport } from "@/lib/bot-zip";
 import { BotZipImportDialog } from "./BotZipImport";
 import { refreshModelHealth, startingModel, type StartingModel } from "@/lib/model-health";
 import { useMyEngines, usePerspicaxOrg } from "@/lib/perspicax-org";
+import { openModelKeysSettings } from "@/lib/settings-link";
 
 const SECTIONS = ["Identity", "Soul", "Skills", "Memory", "Routines", "Access", "Model", "Permissions", "Voice & alerts"] as const;
 type Section = typeof SECTIONS[number];
@@ -343,7 +344,7 @@ export function LocalNewBotDialog({ defaultsMode = false, onClose, section, onCr
           <span>{t("newBot.model.none")}</span>
           <button type="button" data-new-bot-model-settings onClick={() => {
             closeRef.current();
-            parent.dispatch({ type: "toggleAppSettings", open: true, section: "engines" });
+            openModelKeysSettings(parent.dispatch);
           }} className="font-medium text-accent-text underline-offset-2 hover:underline">{t("newBot.model.openSettings")}</button>
         </div>
       )}

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { currentSettingsSection, openSettings, settingsLinkParts, settingsSectionLabel } from "./settings-link";
+import { currentSettingsSection, openModelKeysSettings, openSettings, settingsLinkParts, settingsSectionLabel } from "./settings-link";
 import { setLocale } from "@/lib/i18n";
 
 describe("settings links", () => {
@@ -25,6 +25,13 @@ describe("settings links", () => {
     const sent: unknown[] = [];
     openSettings((action) => sent.push(action), "connections", "connections.apps");
     expect(sent).toEqual([{ type: "toggleAppSettings", open: true, section: "connectedApps" }]);
+  });
+
+  // New bot's "no model works" button opens the list of keys (PR #478).
+  it("opens Models and voice at its keys for a model that needs one", () => {
+    const sent: unknown[] = [];
+    openModelKeysSettings((action) => sent.push(action));
+    expect(sent).toEqual([{ type: "toggleAppSettings", open: true, section: "engines" }]);
   });
 
   it("splits a sentence on its settings placeholders", () => {

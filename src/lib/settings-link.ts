@@ -46,6 +46,12 @@ export function openSettings(dispatch: SettingsDispatch, section: AppSettingsSec
   if (cardId) requestSettingsCard(cardId);
 }
 
+/** Settings > Models and voice, at the list of keys: where a model that
+ * cannot run gets its key (New bot's "no model works" line, 2026-10-14). */
+export function openModelKeysSettings(dispatch: SettingsDispatch): void {
+  openSettings(dispatch, "engines", "engines.keys");
+}
+
 export type SettingsLinkPart = { kind: "text"; text: string } | { kind: "link"; name: string };
 
 /** `{name}` in a translated sentence is a settings link. Other text stays text. */
