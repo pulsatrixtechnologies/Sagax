@@ -12,6 +12,7 @@ import {
 import { appIconHintKey, appIconTargets, APP_ICON_CHOICES, DEFAULT_APP_ICON_ID, primaryBotChoice, UPLOAD_APP_ICON } from "../src/lib/app-icon-choices";
 import { appIconGlyphSvg } from "../src/lib/app-icon-glyphs";
 import { SHAPE_ART } from "../src/components/shape-art";
+import { stillFrame } from "../src/components/shape-engine";
 
 const bounds = (points: Array<[number, number]>) => ({
   minX: Math.min(...points.map((p) => p[0])),
@@ -126,9 +127,14 @@ describe("app icon choices", () => {
       expect(markup).toMatch(/^<svg xmlns="http:\/\/www.w3.org\/2000\/svg" viewBox="0 0 100 100"/);
       expect(markup).not.toMatch(/NaN|undefined/);
     }
-    // the white Shape is the Shapes circle's own outline, with two eyes
-    expect(appIconGlyphSvg("shape")).toContain(SHAPE_ART.circle.d);
-    expect(appIconGlyphSvg("shape").match(/<rect x=/g)).toHaveLength(2);
+    // the white Shape is the Shapes mascot, whole: the circle's own outline
+    // and the resting eyes the app draws, on a radial plate, no diagonal cut
+    const shape = appIconGlyphSvg("shape");
+    expect(shape).toContain(SHAPE_ART.circle.d);
+    expect(shape).toContain(stillFrame({ shape: "circle", expression: "neutral", color: "#FFFFFF" }).eyes);
+    expect(shape).toMatch(/<radialGradient id="bg"/);
+    expect(shape).not.toMatch(/<linearGradient id="bg"/);
+    expect(shape).toMatch(/translate\(50 49\) scale\(0\.68\)/);
     expect(appIconGlyphSvg("spark").match(/<path/g)).toHaveLength(10);
   });
 

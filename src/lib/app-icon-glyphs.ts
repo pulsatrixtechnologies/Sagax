@@ -1,9 +1,10 @@
 // Minimal white glyphs for dark app icons: original Sagax artwork (our own
 // spark and cube geometry, not another company's mark), drawn as standalone
 // SVG so the picker can paint them through the system template. Each sits in
-// a 0 0 100 100 box. The white Shape icon is the Shapes circle itself (its
-// outline and its eye proportions from shape-art.ts), large and shaded.
-import { EYES, SHAPE_ART } from "@/components/shape-art";
+// a 0 0 100 100 box. The white Shape icon is the Shapes mascot itself (its
+// outline from shape-art.ts, its resting eyes from shape-engine.ts), shaded.
+import { SHAPE_ART } from "@/components/shape-art";
+import { stillFrame } from "@/components/shape-engine";
 
 export type AppIconGlyph = "shape" | "spark" | "cube";
 
@@ -11,30 +12,36 @@ const svg = (body: string, defs = "") =>
   `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="512" height="512"><defs>${defs}</defs>${body}</svg>`;
 
 /**
- * The Shapes circle as a big glossy sphere rising from the bottom right,
- * cropped by the tile, its two eyes long dark capsules leaning together,
- * on a near-black diagonal ground. Fills the whole body (fit "cover").
+ * The Shapes mascot, whole and centred: the Shapes circle's own outline in a
+ * soft white to light grey, lit from the top left with a shade underneath,
+ * and its resting eyes (the neutral face the app draws, two dark capsules
+ * leaning a little) on an anthracite plate that is lighter in the middle.
+ * JC, 2026-10-14: the first version cropped a big sphere across the tile, so
+ * the icon read as a black and white diagonal cut, not as the mascot.
+ * Fills the whole body (fit "cover"): the plate is part of the drawing.
  */
 function shape(): string {
   const { d } = SHAPE_ART.circle;
-  // the circle is r 42 around (50, 50): about r 77 around (71, 90), so its
-  // edge runs from the left side up to the top right and the dark ground
-  // stays in the top-left region
-  const scale = 77 / 42;
-  const cx = 71;
-  const cy = 90;
-  // the Shapes eyes' proportions (about 1 : 2.2), large enough to read
-  const eyeW = EYES.rx * 2.6;
-  const eyeH = EYES.ry * 2.9;
-  const eye = (x: number, y: number) =>
-    `<rect x="${x - eyeW / 2}" y="${y - eyeH / 2}" width="${eyeW}" height="${eyeH}" rx="${eyeW / 2}" fill="#0B0B0D" transform="rotate(-20 ${x} ${y})"/>`;
+  // the neutral face, exactly as ShapeMascot draws it at rest
+  const { eyes } = stillFrame({ shape: "circle", expression: "neutral", color: "#FFFFFF" });
+  // the circle is r 40 around (50, 50) in the mascot's box; at 0.68 it takes
+  // a bit over half the tile, the margin Apple's glyph icons keep
+  const place = "translate(50 49) scale(0.68) translate(-50 -50)";
   return svg(
     `<rect width="100" height="100" fill="url(#bg)"/>` +
-      `<path d="${d}" fill="url(#ball)" transform="translate(${cx - 50 * scale} ${cy - 50 * scale}) scale(${scale})"/>` +
-      eye(47, 56) +
-      eye(73, 43),
-    `<linearGradient id="bg" x1="0" y1="0" x2="1" y2="0.35"><stop offset="0" stop-color="#121214"/><stop offset="1" stop-color="#2F2F33"/></linearGradient>` +
-      `<radialGradient id="ball" cx="0.32" cy="0.26" r="0.6"><stop offset="0" stop-color="#FFFFFF"/><stop offset="0.35" stop-color="#F1F1F3"/><stop offset="0.75" stop-color="#CFCFD4"/><stop offset="1" stop-color="#9E9EA5"/></radialGradient>`,
+      // a soft contact shadow under the body
+      `<ellipse cx="50" cy="79" rx="21" ry="3.6" fill="#000000" fill-opacity="0.35" filter="url(#blur)"/>` +
+      `<g transform="${place}" filter="url(#drop)">` +
+      `<path d="${d}" fill="url(#ball)"/>` +
+      // the turned-away side, a shade toward the bottom right
+      `<path d="${d}" fill="url(#shade)"/>` +
+      `<path d="${eyes}" fill="#141417"/>` +
+      `</g>`,
+    `<radialGradient id="bg" cx="0.5" cy="0.46" r="0.72"><stop offset="0" stop-color="#4B4C52"/><stop offset="0.6" stop-color="#2E2F34"/><stop offset="1" stop-color="#1E1F23"/></radialGradient>` +
+      `<radialGradient id="ball" cx="0.36" cy="0.3" r="0.78"><stop offset="0" stop-color="#FFFFFF"/><stop offset="0.45" stop-color="#F3F4F6"/><stop offset="0.8" stop-color="#DCDDE2"/><stop offset="1" stop-color="#C4C6CC"/></radialGradient>` +
+      `<radialGradient id="shade" cx="0.72" cy="0.82" r="0.55"><stop offset="0" stop-color="#8E9099" stop-opacity="0.32"/><stop offset="1" stop-color="#8E9099" stop-opacity="0"/></radialGradient>` +
+      `<filter id="blur" x="-30%" y="-200%" width="160%" height="500%"><feGaussianBlur stdDeviation="2"/></filter>` +
+      `<filter id="drop" x="-20%" y="-20%" width="140%" height="150%"><feDropShadow dx="0" dy="1.6" stdDeviation="1.8" flood-color="#000000" flood-opacity="0.35"/></filter>`,
   );
 }
 
