@@ -1956,7 +1956,8 @@
       "chat.gotoGroup.aria": "d3da87b3f0e55029efd0e39e6d91228655dca8eb0b1e8f98ce89c0ed2a8a3cbe",
       "chat.gotoGroup.count": "2889fc6b0647a2fedbc11147886e0a16d775f8adb722d01247db45081f924b64",
       "chat.gotoGroup.menu": "1d432f58690c2b4a9737b0a97f04b70bb4f0d9950d5177619039afe139f3b31e",
-      "chat.gotoGroup.with": "08f08cae64408ed5623d5741a737e4ce636efb8a583bd2d56b04ebc7b34803d3"
+      "chat.gotoGroup.with": "08f08cae64408ed5623d5741a737e4ce636efb8a583bd2d56b04ebc7b34803d3",
+      "voiceMode.call.fullDuplexHelp": "3691a56bbde2c74039d1ce04d8984c9a953ead10c06f8b548373ee66f7697ad1"
     },
     "es": {
       "approval.action.allowOnce": "168511d24d9ee03122b3200f929be11eaaedad45cb0ecb20a95f549b3e3f4d0f",
@@ -3895,7 +3896,8 @@
       "chat.gotoGroup.aria": "d3da87b3f0e55029efd0e39e6d91228655dca8eb0b1e8f98ce89c0ed2a8a3cbe",
       "chat.gotoGroup.count": "2889fc6b0647a2fedbc11147886e0a16d775f8adb722d01247db45081f924b64",
       "chat.gotoGroup.menu": "1d432f58690c2b4a9737b0a97f04b70bb4f0d9950d5177619039afe139f3b31e",
-      "chat.gotoGroup.with": "08f08cae64408ed5623d5741a737e4ce636efb8a583bd2d56b04ebc7b34803d3"
+      "chat.gotoGroup.with": "08f08cae64408ed5623d5741a737e4ce636efb8a583bd2d56b04ebc7b34803d3",
+      "voiceMode.call.fullDuplexHelp": "3691a56bbde2c74039d1ce04d8984c9a953ead10c06f8b548373ee66f7697ad1"
     },
     "fr": {
       "access.addKey": "8a9f02fd9bdb83ac02d3240dcade949d6f3ffa2fc0b3df528e348bb4d29ae639",
@@ -8317,7 +8319,7 @@
       "voiceMode.call.fasterEndOfTurnHelp": "d9320866da60ee4a0b9a40549e40d433364ce6be1ad0f56f1b1bb73954470529",
       "voiceMode.call.forget": "7e3a992acce8320eb34706e991f52e2817d32ff60fa6f36310f7706ef889b96e",
       "voiceMode.call.fullDuplex": "db5e4eb13754050fb9fd9bb90eed37b6b3ed07da9ca43a2b2108ef73b4f8a428",
-      "voiceMode.call.fullDuplexHelp": "4290598440c453ff5d47a2c3f090a76bc0d3173a70fc25bd67421b6982f93dae",
+      "voiceMode.call.fullDuplexHelp": "3691a56bbde2c74039d1ce04d8984c9a953ead10c06f8b548373ee66f7697ad1",
       "voiceMode.call.taskQueued": "020945e185745f854f349ede09ab5b4b8334b150c031930bf888632609ac261f",
       "voiceMode.call.handsFree": "12096979c20bfb6e3cd1d8feff2218bdcf8ce1f62af07f58156f74c3045aeaea",
       "voiceMode.call.input": "186352a881d0550e2da1f74e5c317770702bc2a0f9c3da69a10e27c14a217bac",
@@ -11158,7 +11160,8 @@
       "chat.gotoGroup.aria": "d3da87b3f0e55029efd0e39e6d91228655dca8eb0b1e8f98ce89c0ed2a8a3cbe",
       "chat.gotoGroup.count": "2889fc6b0647a2fedbc11147886e0a16d775f8adb722d01247db45081f924b64",
       "chat.gotoGroup.menu": "1d432f58690c2b4a9737b0a97f04b70bb4f0d9950d5177619039afe139f3b31e",
-      "chat.gotoGroup.with": "08f08cae64408ed5623d5741a737e4ce636efb8a583bd2d56b04ebc7b34803d3"
+      "chat.gotoGroup.with": "08f08cae64408ed5623d5741a737e4ce636efb8a583bd2d56b04ebc7b34803d3",
+      "voiceMode.call.fullDuplexHelp": "3691a56bbde2c74039d1ce04d8984c9a953ead10c06f8b548373ee66f7697ad1"
     },
     "ja": {
       "approval.action.allowOnce": "168511d24d9ee03122b3200f929be11eaaedad45cb0ecb20a95f549b3e3f4d0f",
@@ -15191,7 +15194,8 @@
       "chat.gotoGroup.aria": "d3da87b3f0e55029efd0e39e6d91228655dca8eb0b1e8f98ce89c0ed2a8a3cbe",
       "chat.gotoGroup.count": "2889fc6b0647a2fedbc11147886e0a16d775f8adb722d01247db45081f924b64",
       "chat.gotoGroup.menu": "1d432f58690c2b4a9737b0a97f04b70bb4f0d9950d5177619039afe139f3b31e",
-      "chat.gotoGroup.with": "08f08cae64408ed5623d5741a737e4ce636efb8a583bd2d56b04ebc7b34803d3"
+      "chat.gotoGroup.with": "08f08cae64408ed5623d5741a737e4ce636efb8a583bd2d56b04ebc7b34803d3",
+      "voiceMode.call.fullDuplexHelp": "3691a56bbde2c74039d1ce04d8984c9a953ead10c06f8b548373ee66f7697ad1"
     },
     "pt-br": {
       "access.routineDelegation.reason.no_right": "ac5fc48626b20107ca2c65df67b3c5abe42acd2044cdb994e0c73821b3cbb71b",
@@ -17721,7 +17725,7 @@
       "voiceMode.call.fasterEndOfTurn": "49803058d4f6522b3600c47e762aff5288f8b85703523915b45fa3baea6b69e2",
       "voiceMode.call.fasterEndOfTurnHelp": "d9320866da60ee4a0b9a40549e40d433364ce6be1ad0f56f1b1bb73954470529",
       "voiceMode.call.fullDuplex": "db5e4eb13754050fb9fd9bb90eed37b6b3ed07da9ca43a2b2108ef73b4f8a428",
-      "voiceMode.call.fullDuplexHelp": "4290598440c453ff5d47a2c3f090a76bc0d3173a70fc25bd67421b6982f93dae",
+      "voiceMode.call.fullDuplexHelp": "3691a56bbde2c74039d1ce04d8984c9a953ead10c06f8b548373ee66f7697ad1",
       "voiceMode.call.taskQueued": "020945e185745f854f349ede09ab5b4b8334b150c031930bf888632609ac261f",
       "voiceMode.call.streamingVoice": "2f13c2551cb53b46ece6634228cda8143a32167d9038423f42b9cd06e3ba45c4",
       "voiceMode.call.streamingVoiceHelp": "38dc3cb3ae644512ce95cd00064ecca1e2057ade41f2b84c1b9d1b2217d426f9",
@@ -20446,7 +20450,8 @@
       "chat.gotoGroup.aria": "d3da87b3f0e55029efd0e39e6d91228655dca8eb0b1e8f98ce89c0ed2a8a3cbe",
       "chat.gotoGroup.count": "2889fc6b0647a2fedbc11147886e0a16d775f8adb722d01247db45081f924b64",
       "chat.gotoGroup.menu": "1d432f58690c2b4a9737b0a97f04b70bb4f0d9950d5177619039afe139f3b31e",
-      "chat.gotoGroup.with": "08f08cae64408ed5623d5741a737e4ce636efb8a583bd2d56b04ebc7b34803d3"
+      "chat.gotoGroup.with": "08f08cae64408ed5623d5741a737e4ce636efb8a583bd2d56b04ebc7b34803d3",
+      "voiceMode.call.fullDuplexHelp": "3691a56bbde2c74039d1ce04d8984c9a953ead10c06f8b548373ee66f7697ad1"
     },
     "zh-tw": {
       "access.worksOn": "f85a852d83f31ae30da146438dd4cfa1a3b9c491c768fd20ae3c7e833097714e",
@@ -24331,7 +24336,8 @@
       "chat.gotoGroup.aria": "d3da87b3f0e55029efd0e39e6d91228655dca8eb0b1e8f98ce89c0ed2a8a3cbe",
       "chat.gotoGroup.count": "2889fc6b0647a2fedbc11147886e0a16d775f8adb722d01247db45081f924b64",
       "chat.gotoGroup.menu": "1d432f58690c2b4a9737b0a97f04b70bb4f0d9950d5177619039afe139f3b31e",
-      "chat.gotoGroup.with": "08f08cae64408ed5623d5741a737e4ce636efb8a583bd2d56b04ebc7b34803d3"
+      "chat.gotoGroup.with": "08f08cae64408ed5623d5741a737e4ce636efb8a583bd2d56b04ebc7b34803d3",
+      "voiceMode.call.fullDuplexHelp": "3691a56bbde2c74039d1ce04d8984c9a953ead10c06f8b548373ee66f7697ad1"
     },
     "zh": {
       "approval.action.allowOnce": "168511d24d9ee03122b3200f929be11eaaedad45cb0ecb20a95f549b3e3f4d0f",
@@ -27152,7 +27158,8 @@
       "chat.gotoGroup.aria": "d3da87b3f0e55029efd0e39e6d91228655dca8eb0b1e8f98ce89c0ed2a8a3cbe",
       "chat.gotoGroup.count": "2889fc6b0647a2fedbc11147886e0a16d775f8adb722d01247db45081f924b64",
       "chat.gotoGroup.menu": "1d432f58690c2b4a9737b0a97f04b70bb4f0d9950d5177619039afe139f3b31e",
-      "chat.gotoGroup.with": "08f08cae64408ed5623d5741a737e4ce636efb8a583bd2d56b04ebc7b34803d3"
+      "chat.gotoGroup.with": "08f08cae64408ed5623d5741a737e4ce636efb8a583bd2d56b04ebc7b34803d3",
+      "voiceMode.call.fullDuplexHelp": "3691a56bbde2c74039d1ce04d8984c9a953ead10c06f8b548373ee66f7697ad1"
     }
   }
 }

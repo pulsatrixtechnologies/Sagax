@@ -6366,7 +6366,7 @@
   "voiceMode.call.fasterEndOfTurnHelp": "Your intonation, read on this computer, can end a turn sooner when your sentence sounds finished. Not used with Patient.",
   "voiceMode.call.forget": "Forget my voice",
   "voiceMode.call.fullDuplex": "Full-duplex conversation",
-  "voiceMode.call.fullDuplexHelp": "Talk over the bot at any time. Speech stops the current spoken answer. A new topic while it thinks keeps that work running. Off by default. Turn on to interrupt; leave off so words said while it works join that turn.",
+  "voiceMode.call.fullDuplexHelp": "Talk over the bot at any time. Speech stops the current spoken answer. A new topic while it thinks keeps that work running. Off by default. The switch has no effect unless the server has SAGAX_VOICE_FULL_DUPLEX=1. Turn on to interrupt; leave off so words said while it works join that turn.",
   "voiceMode.call.taskQueued": "That one is waiting for a free slot.",
   "voiceMode.call.handsFree": "Hands-free",
   "voiceMode.call.input": "Microphone",

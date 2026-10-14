@@ -1935,5 +1935,6 @@
   "chat.gotoGroup.aria": "{count} conversaciones con {agents}: mostrar la lista",
   "chat.gotoGroup.count": "{count} conversaciones",
   "chat.gotoGroup.menu": "Conversaciones",
-  "chat.gotoGroup.with": "{count} conversaciones con"
+  "chat.gotoGroup.with": "{count} conversaciones con",
+  "voiceMode.call.fullDuplexHelp": "Hable por encima del bot en cualquier momento. El habla detiene la respuesta hablada en curso. Un tema nuevo mientras piensa deja ese trabajo en marcha. Desactivado por defecto. El interruptor no tiene efecto si el servidor no tiene SAGAX_VOICE_FULL_DUPLEX=1. Actívelo para interrumpir; déjelo apagado para que las palabras dichas mientras trabaja se unan a ese turno."
 }

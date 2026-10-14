@@ -3881,5 +3881,6 @@
   "chat.gotoGroup.aria": "與{agents}的 {count} 個對話：顯示清單",
   "chat.gotoGroup.count": "{count} 個對話",
   "chat.gotoGroup.menu": "對話",
-  "chat.gotoGroup.with": "{count} 個對話，對象"
+  "chat.gotoGroup.with": "{count} 個對話，對象",
+  "voiceMode.call.fullDuplexHelp": "隨時可以蓋過機器人說話。語音會停下目前正在唸出的回答。它思考時的新話題會讓那項工作繼續。預設關閉。伺服器未設定 SAGAX_VOICE_FULL_DUPLEX=1 時，此開關無效。打開以打斷；保持關閉則工作期間說的話併入該回合。"
 }

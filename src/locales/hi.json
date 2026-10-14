@@ -1935,5 +1935,6 @@
   "chat.gotoGroup.aria": "{agents} के साथ {count} बातचीत: सूची दिखाएँ",
   "chat.gotoGroup.count": "{count} बातचीत",
   "chat.gotoGroup.menu": "बातचीत",
-  "chat.gotoGroup.with": "{count} बातचीत, साथ में"
+  "chat.gotoGroup.with": "{count} बातचीत, साथ में",
+  "voiceMode.call.fullDuplexHelp": "किसी भी समय बॉट के ऊपर बोलें। वाणी मौजूदा बोला गया जवाब रोक देती है। जब वह सोच रहा हो तो नया विषय उस काम को चलता रहने देता है। डिफ़ॉल्ट रूप से बंद। सर्वर पर SAGAX_VOICE_FULL_DUPLEX=1 के बिना स्विच का कोई असर नहीं। बीच में रोकने के लिए चालू करें; बंद रहने दें ताकि काम करते समय कही बातें उसी दौर में जुड़ जाएँ।"
 }

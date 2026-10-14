@@ -2817,5 +2817,6 @@
   "chat.gotoGroup.aria": "与{agents}的 {count} 个对话：显示列表",
   "chat.gotoGroup.count": "{count} 个对话",
   "chat.gotoGroup.menu": "对话",
-  "chat.gotoGroup.with": "{count} 个对话，对象"
+  "chat.gotoGroup.with": "{count} 个对话，对象",
+  "voiceMode.call.fullDuplexHelp": "随时可以盖过机器人说话。语音会停下当前正在读出的回答。它思考时的新话题会让那项工作继续。默认关闭。服务器未设置 SAGAX_VOICE_FULL_DUPLEX=1 时，此开关无效。打开以打断；保持关闭则工作期间说的话并入该回合。"
 }

@@ -4029,5 +4029,6 @@
   "chat.gotoGroup.aria": "{agents}との {count} 件の会話: 一覧を表示",
   "chat.gotoGroup.count": "{count} 件の会話",
   "chat.gotoGroup.menu": "会話",
-  "chat.gotoGroup.with": "{count} 件の会話:"
+  "chat.gotoGroup.with": "{count} 件の会話:",
+  "voiceMode.call.fullDuplexHelp": "いつでもボットの上から話せます。発話は進行中の音声回答を止めます。考えている間の新しい話題は、その作業を続けさせます。既定ではオフです。サーバーに SAGAX_VOICE_FULL_DUPLEX=1 が無いと、このスイッチは効果がありません。割り込むにはオンに、作業中の言葉をそのターンに足すにはオフのままにしてください。"
 }

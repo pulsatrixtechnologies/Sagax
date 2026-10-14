@@ -4558,7 +4558,7 @@
   "voiceMode.call.fasterEndOfTurnHelp": "Votre intonation, analysée sur cet ordinateur, peut terminer un tour plus tôt quand votre phrase semble finie. Pas utilisé avec Patient.",
   "voiceMode.call.forget": "Oublier ma voix",
   "voiceMode.call.fullDuplex": "Conversation en duplex",
-  "voiceMode.call.fullDuplexHelp": "Parlez par-dessus le bot à tout moment. La parole arrête la réponse en cours. Un nouveau sujet pendant qu'il réfléchit laisse ce travail continuer. Désactivé par défaut. Activez pour interrompre; laissez éteint pour que les mots dits pendant qu'il travaille rejoignent ce tour.",
+  "voiceMode.call.fullDuplexHelp": "Parlez par-dessus le bot à tout moment. La parole arrête la réponse en cours. Un nouveau sujet pendant qu'il réfléchit laisse ce travail continuer. Désactivé par défaut. Le commutateur n'a aucun effet tant que le serveur n'a pas SAGAX_VOICE_FULL_DUPLEX=1. Activez pour interrompre; laissez éteint pour que les mots dits pendant qu'il travaille rejoignent ce tour.",
   "voiceMode.call.taskQueued": "Celui-là attend qu'une place se libère.",
   "voiceMode.call.handsFree": "Mains libres",
   "voiceMode.call.input": "Micro",
