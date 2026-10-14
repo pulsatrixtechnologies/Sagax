@@ -69,6 +69,11 @@ contrôle Trivy (build et publication) doit être vérifié avec ce fichier priv
 seul. Dry-run local (rien poussé) : 4 commits touchaient `.trivyignore` avant
 la passe, 0 commit et 0 blob après.
 
+Cette passe ne touche que les refs réécrits (`refs/heads/*`, `refs/tags/*`).
+Les blobs `.trivyignore` encore joignables par `refs/pull/*` (dont
+`refs/pull/444/*` et `refs/pull/452/head`) ne disparaissent qu'avec la purge
+du Support GitHub (étape 4).
+
 Classes only (live hostnames are **not** written here):
 
 ```
@@ -203,8 +208,7 @@ cache, la demande va au Support GitHub, dans le même ticket que la purge des
 
 - [ ] Précondition : PR de migration des entrées `.trivyignore` vers le fichier privé injecté par la CI fusionnée, plus aucune entrée sur `main`, contrôle Trivy (build et publication) vérifié avec le fichier privé seul
 - [ ] `.trivyignore` retiré de tout l'historique réécrit (`--invert-paths --path .trivyignore`), vérifié : aucun commit ni blob restant
-
 - [ ] Historique d'édition des corps et commentaires de PR purgé (#437, #444, #434, autres vérifiées)
-- [ ] Identifiants de vulnérabilités ouvertes : révisions de #452 purgées, `refs/pull/452/head` dans la demande au Support, `.trivyignore` et les commits concernés couverts par le fichier de remplacements hors dépôt
+- [ ] Identifiants de vulnérabilités ouvertes : révisions de #452 purgées, `refs/pull/452/head` dans la demande au Support, les autres commits concernés couverts par le fichier de remplacements hors dépôt, `.trivyignore` retiré par la passe `--invert-paths --path .trivyignore` (étape 2), ses blobs joignables par `refs/pull/*` purgés par le Support GitHub (étape 4)
 
 Do not execute any of the above from an agent session on #437.
