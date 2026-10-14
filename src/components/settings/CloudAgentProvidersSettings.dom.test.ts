@@ -42,6 +42,13 @@ describe("cloud agent keys in Settings", () => {
     expect(container.textContent).not.toContain("providers");
   });
 
+  it("shows nothing when the session has no person (401)", async () => {
+    fixture.api.mockRejectedValue(Object.assign(new Error("Unauthorized"), { status: 401 }));
+    act(() => root.render(createElement(Harness)));
+    await flush();
+    expect(container.textContent).toBe("");
+  });
+
   it("lists the providers when none has a key, codex included", async () => {
     fixture.api.mockResolvedValue({ providers: [
       { provider: "cursor", label: "Cursor", configured: false },

@@ -32,7 +32,14 @@ export function useCloudAgentProviders(): CloudAgentProvidersState {
     try {
       setRows(await loadCloudAgentProviders(api));
       setError(null);
-    } catch {
+    } catch (failure) {
+      // No person behind this session (the operator of a solo server with
+      // no sign-in): there are no per-person keys to show, so no card.
+      if ((failure as { status?: unknown } | null)?.status === 401) {
+        setRows([]);
+        setError(null);
+        return;
+      }
       // Whatever the server said, the person reads one plain sentence.
       setError(t("cloudAgentProviders.loadError"));
     }
@@ -44,6 +51,7 @@ export function useCloudAgentProviders(): CloudAgentProvidersState {
 export function CloudAgentProvidersSettings({ state }: { state: CloudAgentProvidersState }) {
   const { rows, error, refresh } = state;
 
+  if (rows && rows.length === 0) return null;
   if (!rows) {
     return error
       ? <p role="alert" data-cloud-agent-providers-error className="text-[12.5px] text-danger">{error}</p>
