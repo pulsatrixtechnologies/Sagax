@@ -14,9 +14,13 @@ const AAD = Buffer.from("sagax cloud-agent-credentials v1");
 const FILE = "cloud-agent-credentials.enc";
 const PRINCIPAL_ID = /^[A-Za-z0-9_.:-]{1,120}$/;
 
+// A partial record: a person saves one provider at a time. zod 4's
+// z.record over an enum requires every key, so a file holding only cursor
+// and claude (written before codex existed, or with codex never saved)
+// failed to parse and Settings showed the raw issue list (2026-10-14).
 const documentSchema = z.object({
   version: z.literal(1),
-  providers: z.record(
+  providers: z.partialRecord(
     z.enum(CLOUD_AGENT_PROVIDERS),
     z.object({
       token: z.string().min(1).max(16_384),
@@ -71,7 +75,10 @@ export class CloudAgentCredentialStore {
     decipher.setAuthTag(Buffer.from(tagB64, "base64"));
     decipher.setAAD(AAD);
     const json = Buffer.concat([decipher.update(Buffer.from(bodyB64, "base64")), decipher.final()]).toString("utf8");
-    const doc = documentSchema.parse(JSON.parse(json));
+    const parsed = documentSchema.safeParse(JSON.parse(json));
+    // Never the issue list: it names fields and reaches the person's screen.
+    if (!parsed.success) throw new Error("The saved cloud agent keys could not be read.");
+    const doc = parsed.data;
     this.cache.set(principalId, doc);
     return doc;
   }
