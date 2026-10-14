@@ -923,6 +923,7 @@ import { directoryIntervalMs, PerspicaxDirectory, type ModelProvider } from "./p
 import { duplicateNote, PerspicaxMemory } from "./perspicax-memory.ts";
 import { PERSPICAX_UNAVAILABLE_WHY, PerspicaxMcp, perspicaxUnavailableRow, type PerspicaxUnavailableReason } from "./perspicax-mcp.ts";
 import { createPerspicaxOrgRoutes, orgDirectoryEntries, type OrgSettings, type PendingAdminApproval } from "./perspicax-org-routes.ts";
+import { createMemorySyncTokenRoute } from "./perspicax-memory-sync-token.ts";
 import { ORG_FULL_ACCESS_DEFAULT_MARKER, orgFullAccessAllowed, orgFullAccessGrandfathered, orgFullAccessGrantRefusal, orgFullAccessHolds, orgNewBotApprovalMode, ORG_FULL_ACCESS_DISABLED } from "./org-full-access.ts";
 import { createInterimAttachRoutes, INTERIM_WINDOW_DAYS, interimWindowUntil, windowWithDays } from "./interim-attach-routes.ts";
 import { createLinkedSubjectsRoute, createOrgExportRoute } from "./org-export.ts";
@@ -25605,6 +25606,16 @@ if (IDENTITY.kind === "perspicax") {
       suspendedCount: (principalId) => (routines?.listRoutines() ?? [])
         .filter((routine) => routine.enabled && routine.suspended && effectiveRunAs(routine) === principalId).length,
     },
+  }));
+  // 2026-10-14: the desktop's Settings > Memory sets itself up with the
+  // person's own memory sync token, asked through the link
+  // (server/perspicax-memory-sync-token.ts). Never logged.
+  ROUTES.push(createMemorySyncTokenRoute({
+    issuer,
+    linkPost: (path, body, limits) => (perspicaxDirectory
+      ? perspicaxDirectory.linkPostJson(path, body, limits)
+      : Promise.resolve({ ok: false as const, error: "link" as const })),
+    log: (line) => console.log(line),
   }));
 } else {
   // Slice 8: the copy of the operator's own bots for an organization server.

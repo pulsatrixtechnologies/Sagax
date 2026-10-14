@@ -127,21 +127,32 @@ token kept by safeStorage (`token.bin`), given to git only as an
 line, never `.git/config`, never logged); generated files (`MEMORY.md`,
 `.gitignore`, `_pending/`, `directory/`) restored before a commit; the
 pending review items shown; a recommended `.obsidian` (Sync and Publish off,
-no community plugin) and an `obsidian://open` button. The cache is erased on
-`organization:disconnect`, when Perspicax answers 401 to the token (access
-ended), and from the button. Tests: `electron/org-memory-cache.node-test.mjs`
-(real git on bare repositories, the whole lifecycle), `src/lib/org-memory.test.ts`,
-`src/components/OrgMemorySettings.test.ts`. Not done yet: the token minted
-automatically for the signed-in person (today pasted from the Perspicax
-console page `/console/memory/sync`), a file watcher (the sync runs from the
-button). Why the token cannot be minted by Sagax yet (checked 2026-10-11
-against Perspicax 1.8.22): `POST /api/v1/memory/sync/token` accepts only the
-person's console cookie or one of their `pxat1.` API tokens
-(`resolve_caller`), never a `pulsa-bot` sign-in or delegation token, an
-exchanged `/mcp` token or the link token (403 outside the link routes), and
-Sagax holds none of the first two. It needs a Perspicax route for it, for
-example the link token minting for a directory person as `/memory/work`
-does, or a token exchange whose resource is the memory sync.
+no community plugin) written on the first "Open in Obsidian".
+
+Since 2026-10-14 it sets itself up, with no address or token to type: on an
+organization server signed in with Perspicax, `useOrgMemoryAuto` (App.tsx)
+calls `org-memory:auto` at load and every 15 minutes. Main asks the active
+organization server (`currentBundledOrigin`, the person's own session
+cookie) `GET /api/me/memory-sync-token` (who is signed in, no token) then,
+when needed, `POST` (their token: `server/perspicax-memory-sync-token.ts`,
+which asks Perspicax through the link `POST
+/api/v1/pulsabot/people/{sub}/memory-sync-token`, Perspicax 1.8.27+, for the
+session's own `idp.sub` only, `no-store`, never logged). The token goes from
+that answer to safeStorage, never to the page. It is renewed 7 days before
+its end or when Perspicax refuses it (one token per person: another
+computer of theirs rotates it); the copy is revoked
+(`DELETE /api/v1/memory/sync/token`) and erased when the person is out of
+the organization, signs out of that server (leave server mode, forget the
+server), another person signs in there, and on `organization:disconnect`.
+Settings > Memory is only listed on such a server and is a status line
+(synced with the organization, last sync, or why it failed with Try again),
+the review items and Open in Obsidian. An older Perspicax (404) leaves a
+connection made by hand before as it was and says the update is needed.
+Tests: `electron/org-memory-cache.node-test.mjs` (real git on bare
+repositories, the whole lifecycle, auto included), `src/lib/org-memory.test.ts`,
+`src/components/OrgMemorySettings.test.ts`,
+`server/perspicax-memory-sync-token.test.ts`. Not done yet: a file watcher
+(the sync runs on its timer).
 
 ## Organization memory signals (2026-10-11)
 

@@ -1,7 +1,10 @@
 // Settings > Memory: what the page shows of the organization memory cached
 // on this computer for Obsidian (electron/org-memory-cache.mjs, Perspicax
-// lot A.4). The desktop's main process does the work; the page only reads
-// its state and asks for a connect, a sync, an erase or the Obsidian link.
+// lot A.4). The desktop's main process does the work and, since 2026-10-14,
+// sets it up by itself from the organization server the person is signed in
+// to (no address, no token to type). The page only reads its state, asks for
+// a new attempt and opens the vault in Obsidian.
+import { useEffect, useState } from "react";
 
 /** One tier of the last sync, as the main process reports it. */
 export interface OrgMemoryTier {
@@ -24,9 +27,23 @@ export interface OrgMemoryItem {
   edit_of?: string;
 }
 
+/** Why the automatic setup or sync did not go through (never a server
+ * answer as such: the page says it in its own words). */
+export type OrgMemoryAutoError =
+  | "unreachable"
+  | "unsupported"
+  | "memory_off"
+  | "not_member"
+  | "signed_out"
+  | "no_org"
+  | "cloud_folder";
+
 export interface OrgMemoryState {
   connected: boolean;
   server: string | null;
+  /** `auto`: set up from the organization server; null or absent: by hand
+   * (before 2026-10-14) or not at all. */
+  mode?: "auto" | null;
   vault: string;
   cloned: boolean;
   obsidianConfigured: boolean;
@@ -39,45 +56,27 @@ export interface OrgMemoryState {
   pendingCount: number;
   lastSyncAt: number | null;
   lastError: string | null;
+  autoError?: OrgMemoryAutoError | null;
 }
 
 export interface OrgMemoryBridge {
   state(): Promise<OrgMemoryState>;
-  connect(input: { server: string; token: string }): Promise<OrgMemoryState>;
+  /** Set up (or renew) from the organization server, then sync. */
+  auto(): Promise<OrgMemoryState>;
   sync(): Promise<OrgMemoryState>;
   erase(): Promise<OrgMemoryState>;
   writeObsidianConfig(): Promise<OrgMemoryState>;
   openInObsidian(): Promise<boolean>;
 }
 
-/** The Perspicax console page where a person mints their memory sync token. */
-export function tokenPageUrl(server: string | null | undefined): string | null {
-  if (!server) return null;
-  try {
-    const url = new URL(server);
-    return `${url.origin}/console/memory/sync`;
-  } catch {
-    return null;
-  }
-}
+/** What the status line says. */
+export type OrgMemoryStatus = "setting-up" | "syncing" | "synced" | "failed";
 
-/** The address to suggest: the organization's Perspicax when the server
- * is signed in with it. */
-export function suggestedServer(issuer: string | null | undefined): string {
-  if (!issuer) return "";
-  try {
-    return new URL(issuer).origin;
-  } catch {
-    return "";
-  }
-}
-
-/** Where the page stands. */
-export type OrgMemoryPhase = "disconnected" | "connected" | "synced";
-
-export function orgMemoryPhase(state: OrgMemoryState | null): OrgMemoryPhase {
-  if (!state?.connected) return "disconnected";
-  return state.cloned && state.lastSyncAt ? "synced" : "connected";
+export function orgMemoryStatus(state: OrgMemoryState | null, running = false): OrgMemoryStatus {
+  if (running || state?.busy) return state?.connected ? "syncing" : "setting-up";
+  if (state?.autoError) return "failed";
+  if (state?.connected) return "synced";
+  return "setting-up";
 }
 
 /** The items still waiting, then the ones decided lately (refused first). */
@@ -90,4 +89,75 @@ export function orderedItems(items: OrgMemoryItem[]): OrgMemoryItem[] {
  * error. */
 export function tiersNeedingAttention(state: OrgMemoryState | null): OrgMemoryTier[] {
   return (state?.tiers ?? []).filter((t) => t.status === "refused" || t.status === "conflict" || t.status === "error");
+}
+
+// ── the automatic sync, shared by the app and the page ─────────────────
+
+/** How often the copy syncs while the app is open. */
+export const ORG_MEMORY_SYNC_MS = 15 * 60_000;
+
+let latest: OrgMemoryState | null = null;
+let running: Promise<OrgMemoryState | null> | null = null;
+const listeners = new Set<() => void>();
+const publish = () => {
+  for (const listener of listeners) listener();
+};
+
+/** One automatic attempt (a second call joins the running one). Never
+ * throws: a failure is in the state the main process answers. */
+export function runOrgMemoryAuto(bridge: OrgMemoryBridge): Promise<OrgMemoryState | null> {
+  if (running) return running;
+  running = bridge.auto().then(
+    (state) => {
+      latest = state;
+      return state;
+    },
+    () => latest,
+  ).finally(() => {
+    running = null;
+    publish();
+  });
+  publish();
+  return running;
+}
+
+/** The desktop app's bridge, or undefined (a browser, the phone). */
+export function orgMemoryBridge(): OrgMemoryBridge | undefined {
+  return typeof window === "undefined" ? undefined : window.ogb?.orgMemory;
+}
+
+/** Sets the copy up and keeps it synced while `active` (the app is on an
+ * organization server signed in with Perspicax), in the desktop app only. */
+export function useOrgMemoryAuto(active: boolean): void {
+  useEffect(() => {
+    const bridge = orgMemoryBridge();
+    if (!bridge || !active) return;
+    void runOrgMemoryAuto(bridge);
+    const timer = setInterval(() => void runOrgMemoryAuto(bridge), ORG_MEMORY_SYNC_MS);
+    return () => clearInterval(timer);
+  }, [active]);
+}
+
+/** The last known state and whether an attempt is running. */
+export function useOrgMemoryState(bridge: OrgMemoryBridge, initial: OrgMemoryState | null = null): { state: OrgMemoryState | null; running: boolean } {
+  const [, setTick] = useState(0);
+  const [own, setOwn] = useState<OrgMemoryState | null>(initial);
+  useEffect(() => {
+    let alive = true;
+    const listener = () => setTick((n) => n + 1);
+    listeners.add(listener);
+    void bridge.state().then((s) => { if (alive && !latest) setOwn(s); }).catch(() => {});
+    return () => {
+      alive = false;
+      listeners.delete(listener);
+    };
+  }, [bridge]);
+  return { state: latest ?? own, running: running !== null };
+}
+
+/** Tests only. */
+export function resetOrgMemoryForTests(): void {
+  latest = null;
+  running = null;
+  listeners.clear();
 }

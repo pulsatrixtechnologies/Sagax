@@ -574,6 +574,9 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   // A person's own connections (server/routes/person-connections.ts): their
   // GitHub account and their own MCP servers, the session's person only.
   { methods: ["GET"], path: /^\/api\/me\/connections$/, feature: "orgDirectory" },
+  // The person's own memory sync token for the desktop's Settings > Memory
+  // (server/perspicax-memory-sync-token.ts): the session's own sub only.
+  { methods: ["GET", "POST"], path: /^\/api\/me\/memory-sync-token$/, feature: "orgDirectory" },
   { methods: ["POST"], path: /^\/api\/me\/github\/(?:device|token)$/, feature: "orgDirectory" },
   { methods: ["DELETE"], path: /^\/api\/me\/github$/, feature: "orgDirectory" },
   { methods: ["POST"], path: /^\/api\/me\/mcp\/servers$/, feature: "orgDirectory" },

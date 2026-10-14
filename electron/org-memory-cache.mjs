@@ -24,7 +24,15 @@
 //     organization is disconnected), when Perspicax refuses the token (access
 //     ended), or from the button;
 //   - a recommended `.obsidian` folder turns off the Sync and Publish core
-//     plugins and lists no community plugin.
+//     plugins and lists no community plugin;
+//   - since 2026-10-14 it sets itself up (auto()): on an organization
+//     server signed in with Perspicax, the main process asks that server for
+//     the person's own memory sync token (POST /api/me/memory-sync-token,
+//     the person's session cookie; server/perspicax-memory-sync-token.ts),
+//     keeps it as above, mints a new one when fewer than RENEW_BEFORE_MS
+//     remain or Perspicax refuses it, and erases the copy (revoking the
+//     token) when the person is no longer of the organization. No token is
+//     ever typed, shown or answered to the page.
 //
 // Everything that touches the system (files, git, HTTP, encryption) is
 // injected so the tests drive it with a real git and a temporary folder.
@@ -36,6 +44,10 @@ export const VAULT_FOLDER = "vault";
 export const STATE_FILE = "state.json";
 export const TOKEN_FILE = "token.bin";
 export const TIER_NAME = /^(me|org|team-[A-Za-z0-9_-]{1,64})$/;
+/** A memory sync token is renewed when fewer than this many ms remain. */
+export const RENEW_BEFORE_MS = 7 * 86400_000;
+const SYNC_TOKEN = /^pxat1\.[A-Za-z0-9_-]{16,200}$/;
+const REVOKE_TIMEOUT_MS = 5_000;
 const GENERATED = [/^MEMORY\.md$/, /^\.gitignore$/, /^_pending\//, /^directory\//];
 
 /** Why a folder may not hold the cache, or null. */
@@ -120,6 +132,25 @@ export async function excludeFromBackup(dir, { platform = process.platform, run 
   return out.code === 0;
 }
 
+/**
+ * What POST /api/me/memory-sync-token answered, as an outcome: the token and
+ * the Perspicax address, or a code the page shows (never the answer itself).
+ * `ended`: the person's access to the organization is over (erase the copy).
+ */
+export function mintOutcome(status, body) {
+  const record = body && typeof body === "object" ? body : {};
+  if (status === 200) {
+    if (typeof record.token !== "string" || !SYNC_TOKEN.test(record.token) || typeof record.server !== "string") return { ok: false, code: "unreachable" };
+    const expiresAt = typeof record.expiresAt === "string" ? Date.parse(record.expiresAt) : NaN;
+    return { ok: true, token: record.token, server: record.server, expiresAt: Number.isFinite(expiresAt) ? expiresAt : null };
+  }
+  if (status === 401) return { ok: false, code: "signed_out", ended: true };
+  if (status === 403 && record.code === "not_member") return { ok: false, code: "not_member", ended: true };
+  if (status === 403 || status === 503) return { ok: false, code: "no_org" };
+  if (status === 404) return { ok: false, code: "unsupported" };
+  return { ok: false, code: "unreachable" };
+}
+
 function remoteLines(text) {
   return String(text ?? "")
     .split("\n")
@@ -129,7 +160,7 @@ function remoteLines(text) {
     .filter((line) => line && !/bearer|authorization/i.test(line));
 }
 
-const emptyState = () => ({ server: null, tiers: [], pending: [], pendingCount: 0, lastSyncAt: null, lastError: null });
+const emptyState = () => ({ server: null, mode: null, source: null, person: null, tokenExpiresAt: null, tiers: [], pending: [], pendingCount: 0, lastSyncAt: null, lastError: null, autoError: null });
 
 /**
  * The cache of one desktop.
@@ -140,8 +171,10 @@ const emptyState = () => ({ server: null, tiers: [], pending: [], pendingCount: 
  * @param {typeof fetch} deps.fetch
  * @param {(text: string) => Buffer} deps.encrypt  safeStorage.encryptString
  * @param {(data: Buffer) => string} deps.decrypt  safeStorage.decryptString
+ * @param {(method: "GET" | "POST") => Promise<{ status: number, body: unknown }>} [deps.orgServer]  /api/me/memory-sync-token on the organization server, as the person signed in there (GET: who, POST: their token)
+ * @param {() => string | null} [deps.source]  that organization server's origin
  */
-export function createOrgMemoryCache({ userData, run, fetch, encrypt, decrypt, fs = nodeFs, platform = process.platform, now = () => Date.now() }) {
+export function createOrgMemoryCache({ userData, run, fetch, encrypt, decrypt, orgServer = null, source = () => null, fs = nodeFs, platform = process.platform, now = () => Date.now() }) {
   const root = cacheRoot(userData);
   const vault = vaultPath(userData);
   const stateFile = path.join(root, STATE_FILE);
@@ -237,12 +270,130 @@ export function createOrgMemoryCache({ userData, run, fetch, encrypt, decrypt, f
     return { status: "pushed", messages: [...messages, ...remoteLines(pushed.stderr)] };
   }
 
-  async function eraseNow(reason = null) {
+  async function eraseNow(reason = null, autoError = null) {
     fs.rmSync(root, { recursive: true, force: true });
-    if (reason) writeState({ ...emptyState(), lastError: reason });
+    if (reason || autoError) writeState({ ...emptyState(), lastError: reason, autoError });
   }
 
-  async function syncNow() {
+  /** Best effort: revoke the kept token at Perspicax (it may revoke itself). */
+  async function revokeKept() {
+    const state = readState();
+    const token = readToken();
+    if (!state.server || !token) return;
+    try {
+      const response = await fetch(`${state.server}/api/v1/memory/sync/token`, {
+        method: "DELETE",
+        headers: { authorization: `Bearer ${token}`, accept: "application/json" },
+        signal: AbortSignal.timeout(REVOKE_TIMEOUT_MS),
+      });
+      await response.body?.cancel?.().catch?.(() => {});
+    } catch {
+      /* it expires on its own */
+    }
+  }
+
+  /** A failed automatic setup: an access that ended erases the copy;
+   * anything else keeps it and says why. */
+  async function autoFailed(outcome) {
+    if (outcome.ended) {
+      await revokeKept();
+      await eraseNow(null, outcome.code);
+    } else {
+      writeState({ ...readState(), autoError: outcome.code });
+    }
+    return api.state();
+  }
+
+  /** Ask the organization server for the person's token, check it against
+   * Perspicax and keep it. A copy from another Perspicax is erased first. */
+  async function renew(person = readState().person) {
+    if (!orgServer) return { ok: false, code: "no_org" };
+    let outcome;
+    try {
+      const answer = await orgServer("POST");
+      outcome = mintOutcome(answer?.status, answer?.body);
+    } catch {
+      outcome = { ok: false, code: "unreachable" };
+    }
+    if (!outcome.ok) return outcome;
+    let origin;
+    try {
+      origin = normalizeServer(outcome.server);
+    } catch {
+      return { ok: false, code: "unreachable" };
+    }
+    if (cloudFolderReason(vault)) return { ok: false, code: "cloud_folder" };
+    let tiers;
+    try {
+      tiers = await getJson(origin, outcome.token, "/api/v1/memory/sync/tiers");
+    } catch {
+      return { ok: false, code: "unreachable" };
+    }
+    if (tiers.enabled === false) return { ok: false, code: "memory_off" };
+    const previous = readState();
+    if (previous.server && previous.server !== origin) {
+      await revokeKept();
+      await eraseNow();
+    }
+    const kept = previous.server === origin ? readState() : emptyState();
+    fs.mkdirSync(root, { recursive: true, mode: 0o700 });
+    fs.writeFileSync(tokenFile, encrypt(outcome.token), { mode: 0o600 });
+    writeState({ ...kept, server: origin, mode: "auto", source: source(), person, tokenExpiresAt: outcome.expiresAt, lastError: null, autoError: null });
+    return { ok: true };
+  }
+
+  /** Who is signed in to the organization server: `{ person }`, or a
+   * failed outcome. */
+  async function whoIsSignedIn() {
+    let answer;
+    try {
+      answer = await orgServer("GET");
+    } catch {
+      return { ok: false, code: "unreachable" };
+    }
+    const person = answer?.body && typeof answer.body === "object" ? answer.body.person : undefined;
+    if (answer?.status === 200 && typeof person === "string" && person) return { ok: true, person };
+    if (answer?.status === 200) return { ok: false, code: "unreachable" };
+    return mintOutcome(answer?.status, answer?.body);
+  }
+
+  /** Set up (or renew) from the organization server, then sync. */
+  async function autoNow() {
+    let state = readState();
+    const from = source();
+    if (!from || !orgServer) {
+      // Not on an organization server: nothing to set up; a copy stays as it is.
+      return state.server ? syncNow() : autoFailed({ ok: false, code: "no_org" });
+    }
+    const mine = state.mode === "auto" && state.source === from;
+    const who = await whoIsSignedIn();
+    if (!who.ok) {
+      // Signed out of this server or out of its organization: its copy goes.
+      if (who.ended) return mine ? autoFailed(who) : autoFailed({ ...who, ended: false });
+      // Offline or an older server: a copy already here keeps syncing.
+      if (state.server && readToken() !== null && (who.code === "unreachable" || who.code === "unsupported")) return syncNow();
+      return autoFailed(who);
+    }
+    if (state.mode === "auto" && (state.source !== from || state.person !== who.person)) {
+      // Another organization server or another person: the copy leaves first.
+      await revokeKept();
+      await eraseNow();
+      state = readState();
+    }
+    const usable = state.mode === "auto" && state.server && readToken() !== null &&
+      !(state.tokenExpiresAt && state.tokenExpiresAt - now() < RENEW_BEFORE_MS);
+    if (!usable) {
+      const renewed = await renew(who.person);
+      if (!renewed.ok) {
+        // An older Perspicax: a connection made by hand keeps working.
+        if (renewed.code === "unsupported" && state.server && readToken() !== null) return syncNow();
+        return autoFailed(renewed);
+      }
+    }
+    return syncNow();
+  }
+
+  async function syncNow(again = false) {
     const state = readState();
     const token = readToken();
     if (!state.server || !token) throw new Error("Connect to Perspicax first");
@@ -252,10 +403,19 @@ export function createOrgMemoryCache({ userData, run, fetch, encrypt, decrypt, f
     try {
       tiers = await getJson(state.server, token, "/api/v1/memory/sync/tiers");
     } catch (error) {
+      if (error.accessEnded && state.mode === "auto" && !again && source() === state.source) {
+        // Rotated elsewhere (another computer of the person) or expired:
+        // ask for a new one before deciding the access ended.
+        const renewed = await renew();
+        if (renewed.ok) return syncNow(true);
+        if (renewed.ended) return autoFailed(renewed);
+        return autoFailed(renewed.code === "unreachable" || renewed.code === "no_org" ? renewed : { ...renewed, ended: true });
+      }
       if (error.accessEnded) {
         await eraseNow(error.message);
         return api.state();
       }
+      if (state.mode === "auto") return autoFailed({ ok: false, code: "unreachable" });
       throw error;
     }
     const fresh = !fs.existsSync(vault);
@@ -289,6 +449,7 @@ export function createOrgMemoryCache({ userData, run, fetch, encrypt, decrypt, f
       pendingCount: Number(pending.pending) || 0,
       lastSyncAt: now(),
       lastError: null,
+      autoError: null,
     });
     return api.state();
   }
@@ -324,6 +485,24 @@ export function createOrgMemoryCache({ userData, run, fetch, encrypt, decrypt, f
       writeState({ ...emptyState(), server: origin });
       return api.state();
     },
+    /** Set the sync up from the organization server the person is signed
+     * in to (or renew its token), then sync. Joins a running sync. */
+    async auto() {
+      busy ??= autoNow().finally(() => {
+        busy = null;
+      });
+      return busy;
+    },
+    /** The person left this organization server (sign-out, forgotten
+     * server): an automatic copy from it is revoked and erased. */
+    async forgetSource(origin) {
+      if (busy) await busy.catch(() => {});
+      const state = readState();
+      if (state.mode !== "auto" || !state.source || state.source !== origin) return api.state();
+      await revokeKept();
+      await eraseNow();
+      return api.state();
+    },
     /** One sync at a time; a second call joins the running one. */
     async sync() {
       busy ??= syncNow().finally(() => {
@@ -331,9 +510,10 @@ export function createOrgMemoryCache({ userData, run, fetch, encrypt, decrypt, f
       });
       return busy;
     },
-    /** Remove the vault, the token and the state. */
+    /** Remove the vault, the token (revoked at Perspicax) and the state. */
     async erase() {
       if (busy) await busy.catch(() => {});
+      await revokeKept();
       await eraseNow();
       return api.state();
     },

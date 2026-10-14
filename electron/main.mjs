@@ -2781,6 +2781,8 @@ async function leaveServerMode() {
       slog(`leave server mode: storage clear failed: ${error?.message ?? error}`);
     }
     try { sharingController().forget(locked); } catch {}
+    // The person's memory copy from that server leaves with them.
+    void orgMemoryCache().forgetSource(locked.origin).catch(() => {});
     floatingBotWindows.closeAll();
     retroAssistantWindow.close();
     persistEnvironments(withoutServerMode(environmentsState));
@@ -3086,6 +3088,8 @@ async function forgetEnvironment(id, purge = false) {
   // must not reload the local app or discard a Settings form/chat draft.
   if (wasActive) navigateMainWindow(activeOrigin());
   if (!env.origin) return { ok: true };
+  // The person's memory copy from that server leaves with them.
+  void orgMemoryCache().forgetSource(env.origin).catch(() => {});
   try {
     // Revoke the session on the server while the cookie is still here.
     const response = await session.defaultSession.fetch(`${env.origin}/api/auth/logout`, { method: "POST", credentials: "include", headers: { origin: env.origin }, signal: AbortSignal.timeout(5_000), bypassCustomProtocolHandlers: true });
@@ -3602,10 +3606,26 @@ ipcMain.handle("desktop:save-file", localOnly("desktop:save-file", async (event,
 }));
 
 // Settings > Memory: the local cache of the organization memory for
-// Obsidian (org-memory-cache.mjs). The page sends the Perspicax address and
-// a memory sync token once; the token is kept by safeStorage and never
-// handed back. Nothing here reads or opens a path the page names.
+// Obsidian (org-memory-cache.mjs). Since 2026-10-14 it sets itself up: main
+// asks the active organization server, with the person's own session
+// cookie, for their memory sync token (POST /api/me/memory-sync-token). The
+// token goes from that answer to safeStorage, never to the page, a log or
+// an error. Nothing here reads or opens a path or an address the page names.
 let orgMemoryCacheInstance = null;
+async function orgMemoryServerCall(method) {
+  const origin = currentBundledOrigin;
+  if (!origin) return { status: 403, body: { code: "identity_perspicax" } };
+  // main's own calls never go through the bundled-UI handler (bundled-ui.cjs)
+  const response = await session.defaultSession.fetch(`${origin}/api/me/memory-sync-token`, {
+    method, credentials: "include", redirect: "error", cache: "no-store", bypassCustomProtocolHandlers: true,
+    headers: { origin, accept: "application/json", ...(method === "POST" ? { "content-type": "application/json" } : {}) },
+    ...(method === "POST" ? { body: "{}" } : {}),
+    signal: AbortSignal.timeout(15_000),
+  });
+  let body = null;
+  try { body = JSON.parse(await response.text()); } catch { body = null; }
+  return { status: response.status, body };
+}
 function runQuiet(cmd, args, { cwd, env } = {}) {
   return new Promise((resolve) => {
     execFileCallback(cmd, args, { cwd, env: { ...process.env, ...env }, windowsHide: true, maxBuffer: 16 * 1024 * 1024 }, (error, stdout, stderr) => {
@@ -3619,12 +3639,11 @@ const orgMemoryCache = () => (orgMemoryCacheInstance ??= createOrgMemoryCache({
   fetch: (url, init) => net.fetch(url, init),
   encrypt: (text) => safeStorage.encryptString(text),
   decrypt: (data) => safeStorage.decryptString(data),
+  orgServer: orgMemoryServerCall,
+  source: () => currentBundledOrigin,
 }));
 ipcMain.handle("org-memory:state", desktopUiOnly("org-memory:state", () => orgMemoryCache().state()));
-ipcMain.handle("org-memory:connect", desktopUiOnly("org-memory:connect", (_event, input) => orgMemoryCache().connect({
-  server: typeof input?.server === "string" ? input.server : "",
-  token: typeof input?.token === "string" ? input.token : "",
-})));
+ipcMain.handle("org-memory:auto", desktopUiOnly("org-memory:auto", () => orgMemoryCache().auto()));
 ipcMain.handle("org-memory:sync", desktopUiOnly("org-memory:sync", () => orgMemoryCache().sync()));
 ipcMain.handle("org-memory:erase", desktopUiOnly("org-memory:erase", () => orgMemoryCache().erase()));
 ipcMain.handle("org-memory:obsidian-config", desktopUiOnly("org-memory:obsidian-config", () => {
@@ -3634,6 +3653,8 @@ ipcMain.handle("org-memory:obsidian-config", desktopUiOnly("org-memory:obsidian-
 ipcMain.handle("org-memory:open-obsidian", desktopUiOnly("org-memory:open-obsidian", async () => {
   const state = orgMemoryCache().state();
   if (!state.cloned) throw new Error("Sync the memory first");
+  // The recommended .obsidian folder, written once (never over the person's own).
+  orgMemoryCache().writeObsidianConfig();
   await shell.openExternal(state.obsidianUrl);
   return true;
 }));

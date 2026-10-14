@@ -461,10 +461,11 @@ const bridge = {
     },
   } : undefined,
   /** Settings > Memory: the organization memory cached for Obsidian
-   * (electron/org-memory-cache.mjs). The token goes in once, never back. */
+   * (electron/org-memory-cache.mjs). It sets itself up from the organization
+   * server; no token ever crosses this bridge. */
   orgMemory: {
     state: () => ipcRenderer.invoke("org-memory:state"),
-    connect: input => ipcRenderer.invoke("org-memory:connect", { server: String(input?.server ?? ""), token: String(input?.token ?? "") }),
+    auto: () => ipcRenderer.invoke("org-memory:auto"),
     sync: () => ipcRenderer.invoke("org-memory:sync"),
     erase: () => ipcRenderer.invoke("org-memory:erase"),
     writeObsidianConfig: () => ipcRenderer.invoke("org-memory:obsidian-config"),

@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
-import { orderedItems, orgMemoryPhase, suggestedServer, tiersNeedingAttention, tokenPageUrl, type OrgMemoryState } from "./org-memory";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { orderedItems, orgMemoryStatus, resetOrgMemoryForTests, runOrgMemoryAuto, tiersNeedingAttention, type OrgMemoryBridge, type OrgMemoryState } from "./org-memory";
 
 const base: OrgMemoryState = {
   connected: false,
@@ -18,23 +18,29 @@ const base: OrgMemoryState = {
 };
 
 describe("org memory (Settings > Memory)", () => {
-  it("walks the clone lifecycle: disconnected, connected, synced, erased", () => {
-    expect(orgMemoryPhase(null)).toBe("disconnected");
-    expect(orgMemoryPhase(base)).toBe("disconnected");
-    const connected = { ...base, connected: true, server: "https://px.example.com" };
-    expect(orgMemoryPhase(connected)).toBe("connected");
-    const synced = { ...connected, cloned: true, lastSyncAt: 1 };
-    expect(orgMemoryPhase(synced)).toBe("synced");
-    // erase() answers a state with nothing connected
-    expect(orgMemoryPhase({ ...base, lastError: null })).toBe("disconnected");
+  afterEach(() => resetOrgMemoryForTests());
+
+  it("says where the automatic setup stands", () => {
+    expect(orgMemoryStatus(null)).toBe("setting-up");
+    expect(orgMemoryStatus(base, true)).toBe("setting-up");
+    const synced = { ...base, connected: true, cloned: true, lastSyncAt: 1, mode: "auto" as const };
+    expect(orgMemoryStatus(synced)).toBe("synced");
+    expect(orgMemoryStatus({ ...synced, busy: true })).toBe("syncing");
+    expect(orgMemoryStatus({ ...synced, autoError: "unreachable" })).toBe("failed");
+    expect(orgMemoryStatus({ ...base, autoError: "not_member" })).toBe("failed");
   });
 
-  it("points to the token page of the organization's Perspicax", () => {
-    expect(suggestedServer("https://px.example.com/")).toBe("https://px.example.com");
-    expect(suggestedServer("not a url")).toBe("");
-    expect(suggestedServer(null)).toBe("");
-    expect(tokenPageUrl("https://px.example.com/anything")).toBe("https://px.example.com/console/memory/sync");
-    expect(tokenPageUrl("")).toBeNull();
+  it("runs one automatic attempt at a time and never throws", async () => {
+    let resolve: (s: OrgMemoryState) => void = () => {};
+    const bridge = { auto: vi.fn(() => new Promise<OrgMemoryState>((r) => { resolve = r; })) } as unknown as OrgMemoryBridge;
+    const first = runOrgMemoryAuto(bridge);
+    const second = runOrgMemoryAuto(bridge);
+    expect(bridge.auto).toHaveBeenCalledTimes(1);
+    resolve({ ...base, connected: true });
+    expect(await first).toMatchObject({ connected: true });
+    expect(await second).toMatchObject({ connected: true });
+    const failing = { auto: vi.fn(async () => { throw new Error("ipc"); }) } as unknown as OrgMemoryBridge;
+    expect(await runOrgMemoryAuto(failing)).toMatchObject({ connected: true });
   });
 
   it("lists pending items first, then refusals, and flags tiers that need the person", () => {

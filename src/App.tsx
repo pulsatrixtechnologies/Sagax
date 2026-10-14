@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Bot as BotIcon, Loader2, Menu, Plus } from "lucide-react";
 import { setInterfaceModeRole, useAdvancedMode } from "@/lib/interface-mode";
 import { usePerspicaxOrg } from "@/lib/perspicax-org";
+import { useOrgMemoryAuto } from "@/lib/org-memory";
 import { openBot, openNotificationTarget, StoreProvider, useStore } from "@/state/store";
 import { useShowThreads } from "@/lib/thread-preferences";
 import { useWelcomeViewer, WelcomeGate } from "@/components/onboarding/WelcomeGate";
@@ -153,6 +154,9 @@ function Shell() {
   // owner/admin is known. The choice itself is written only on the switch.
   const advanced = useAdvancedMode();
   const org = usePerspicaxOrg();
+  // Settings > Memory sets itself up and syncs on an organization server
+  // signed in with Perspicax (desktop app only).
+  useOrgMemoryAuto(org !== null);
   const serverMode = useServerMode();
   useEffect(() => {
     const viewer = state.config?.viewer;

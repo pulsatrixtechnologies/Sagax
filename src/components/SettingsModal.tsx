@@ -1078,8 +1078,10 @@ export function SettingsModal() {
     dispatch({ type: "toggleLaunch", open: true, mode: "server" });
   }, [soloDesktop, state.appSettingsSection, dispatch]);
   const availableSections = SECTIONS.filter((entry) => !remoteActive || entry.id === "companion" || entry.id === "appearance" || entry.id === "organization" || entry.id === "privacy" || entry.id === "notifications" || entry.id === "memory")
-    // the organization memory's local cache is the desktop app's (main process)
-    .filter((entry) => entry.id !== "memory" || orgMemoryAvailable())
+    // the organization memory's local cache is the desktop app's (main
+    // process), set up by itself on an organization server signed in with
+    // Perspicax: nothing to show anywhere else
+    .filter((entry) => entry.id !== "memory" || (orgMemoryAvailable() && perspicaxOrg !== null))
     // the desktop app in "No server" mode has no organization to show; it
     // joins one from General > Server, which brings this section back
     .filter((entry) => entry.id !== "organization" || !soloDesktop)
