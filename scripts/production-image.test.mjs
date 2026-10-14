@@ -85,6 +85,9 @@ describe("production image sources", () => {
     expect(proof).toContain("--type vuln \\");
     expect(proof).toContain('docker buildx imagetools inspect "${IMAGE}:pr436"');
     expect(proof).toContain('docker buildx imagetools inspect "${IMAGE}@${DIGEST}"');
+    expect(proof).toContain("continue-on-error: true");
+    const publishOnly = publish.slice(0, publish.indexOf("name: signing proof"));
+    expect(publishOnly).not.toContain("continue-on-error");
   });
 
   it("forwards the engine set from compose with an empty legacy ENGINES list", () => {
