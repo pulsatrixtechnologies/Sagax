@@ -1,5 +1,8 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 
@@ -31,4 +34,19 @@ test('repository workflows use only GitHub-hosted runners', () => {
   const r = guard(fileURLToPath(new URL('../.github/workflows', import.meta.url)))
   assert.equal(r.status, 0, r.stderr + r.stdout)
   assert.match(r.stdout, /every job uses a GitHub-hosted runner/)
+})
+
+test('flags a CRLF checkout of a self-hosted job', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'guard-crlf-'))
+  writeFileSync(
+    join(dir, 'w.yml'),
+    'on: pull_request\r\njobs:\r\n  a:\r\n    runs-on: [self-hosted, linux, x64]\r\n    steps: [{run: "true"}]\r\n',
+  )
+  try {
+    const r = guard(dir)
+    assert.equal(r.status, 1, r.stderr + r.stdout)
+    assert.match(r.stderr, /self-hosted/)
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
 })
