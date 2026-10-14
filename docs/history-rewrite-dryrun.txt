@@ -1759,3 +1759,91 @@ git grep -I -F -i \
 rewritten_refs_pushed: no
 public_rewrite_launched: no
 git_push_invoked: no
+
+## 6080 → 6078 (earlier dry-run, tip 7b9d79aff)
+
+Not empty commits. The two SHAs were reachable only from
+`refs/remotes/origin/main`. filter-repo then removed that remote
+(`NOTICE: Removing 'origin' remote` in the log). Local `main` and
+the PR tip had not merged them yet, so `git rev-list --all` lost
+exactly those two. They are public CI commits (#439, #431); no
+client token.
+
+```
+git rev-list --all | wc -l
+6080
+
+NOTICE: Removing 'origin' remote; see 'Why is my origin removed?'
+        in the manual if you want to push back there.
+        (was <WORKING_TREE>)
+
+Parsed 6078 commits
+New history written in 338.78 seconds; now repacking/cleaning...
+
+git rev-list --all | wc -l
+6078
+
+git --git-dir=<MIRROR> for-each-ref --format='%(refname)' refs/remotes | wc -l
+0
+```
+
+Which two, and why they are not on the kept refs:
+
+```
+git rev-list --oneline 7b9d79aff..origin/main
+bfa303e19 ci: pass the image ref through env in the image gate (#431)
+6dec43eb5 security(ci): term-guard on GitHub-hosted runner + fork guard (#439)
+
+git merge-base --is-ancestor 6dec43eb5 7b9d79aff; echo $?
+1
+git merge-base --is-ancestor bfa303e19 7b9d79aff; echo $?
+1
+git merge-base --is-ancestor 6dec43eb5 refs/heads/main; echo $?
+1
+git merge-base --is-ancestor bfa303e19 refs/heads/main; echo $?
+1
+
+git rev-list --count 7b9d79aff refs/heads/main \
+  refs/remotes/origin/develop \
+  refs/remotes/origin/docs/generic-deploy-targets \
+  refs/remotes/origin/feat/collapse-goto-conversation \
+  refs/remotes/origin/fix/android-roster-test \
+  refs/remotes/origin/fix/voice-relief-duplex-off \
+  --tags
+6078
+
+git rev-list --count 7b9d79aff refs/heads/main refs/remotes/origin/main \
+  refs/remotes/origin/develop \
+  refs/remotes/origin/docs/generic-deploy-targets \
+  refs/remotes/origin/feat/collapse-goto-conversation \
+  refs/remotes/origin/fix/android-roster-test \
+  refs/remotes/origin/fix/voice-relief-duplex-off \
+  --tags
+6080
+```
+
+They are not empty (filter-repo `--prune-empty` is not why they
+vanished). `git diff-tree --stat` on the originals:
+
+```
+git log -1 --format='commit %H%nparents %P%nsubject %s' 6dec43eb57bc0028f11edc24a0be51f3402702ea
+commit 6dec43eb57bc0028f11edc24a0be51f3402702ea
+parents bee6b7728bf85142d3d921d40ae747172f7ad6c9
+subject security(ci): term-guard on GitHub-hosted runner + fork guard (#439)
+
+git diff-tree --no-commit-id --name-only -r 6dec43eb5 | wc -l
+5
+
+git log -1 --format='commit %H%nparents %P%nsubject %s' bfa303e19ffa2f70beaf6b5315dfaafecae524b6
+commit bfa303e19ffa2f70beaf6b5315dfaafecae524b6
+parents 6dec43eb57bc0028f11edc24a0be51f3402702ea
+subject ci: pass the image ref through env in the image gate (#431)
+
+git diff-tree --no-commit-id --name-only -r bfa303e19 | wc -l
+2
+```
+
+Neither SHA is in the first dry-run's `filter-repo/commit-map` (6078
+rows, 1:1 with the kept heads+tags). After this PR merged `main`
+(`bbde75cf9`), those two sit on the PR branch; a later recapture that
+already has that merge (6134 above) stays 6134 → 6134.
