@@ -58,7 +58,7 @@ describe("production image sources", () => {
     expect(publish).toMatch(/aquasecurity\/setup-trivy@[0-9a-f]{40}/);
     expect(publish).toContain("version: v0.75.0");
     expect(publish).toContain("provenance: mode=max");
-    expect(publish).toContain('cosign sign --yes "${IMAGE}@${DIGEST}"');
+    expect(publish).toContain('cosign sign --yes "${STAGING}@${DIGEST}"');
     expect(publish).toContain("cosign attest --yes --type vuln --predicate vuln.json");
     expect(publish).toContain("https://cosign.sigstore.dev/attestation/vuln/v1");
     expect(publish).toContain("https://token.actions.githubusercontent.com");
@@ -102,6 +102,30 @@ describe("production image sources", () => {
     expect(proof).toContain("continue-on-error: true");
     const publishOnly = publish.slice(0, publish.indexOf("name: signing proof"));
     expect(publishOnly).not.toContain("continue-on-error");
+    expect(publishOnly).toContain(
+      'echo "STAGING=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/sagax-staging"',
+    );
+    expect(publishOnly).toContain("name=${{ env.STAGING }}");
+    expect(publishOnly).toContain('cosign sign --yes "${STAGING}@${DIGEST}"');
+    expect(publishOnly).toContain(
+      'cosign attest --yes --type vuln --predicate vuln.json "${STAGING}@${DIGEST}"',
+    );
+    expect(publishOnly).toContain('cosign copy "${STAGING}@${DIGEST}"');
+    const staged = publishOnly.indexOf("name=${{ env.STAGING }}");
+    const scanned = publishOnly.indexOf('"${STAGING}@${DIGEST}"');
+    const signed = publishOnly.indexOf('cosign sign --yes "${STAGING}@${DIGEST}"');
+    const attested = publishOnly.indexOf("cosign attest --yes --type vuln");
+    const promoted = publishOnly.indexOf("cosign copy");
+    expect(staged).toBeGreaterThan(-1);
+    expect(scanned).toBeGreaterThan(staged);
+    expect(signed).toBeGreaterThan(scanned);
+    expect(attested).toBeGreaterThan(signed);
+    expect(promoted).toBeGreaterThan(attested);
+    const buildOut = publishOnly.slice(
+      publishOnly.indexOf("id: build"),
+      publishOnly.indexOf("Scan both platforms"),
+    );
+    expect(buildOut).not.toContain("env.IMAGE");
   });
 
   it("forwards the engine set from compose with an empty legacy ENGINES list", () => {
