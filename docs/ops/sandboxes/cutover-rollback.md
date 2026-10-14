@@ -131,8 +131,8 @@ az aks nodepool add \
   --max-count 1 \
   --node-vm-size Standard_D4ps_v6 \
   --os-sku Ubuntu \
-  --node-taints sagax.pulsatrix.ca/pool=sandboxes:NoSchedule \
-  --labels sagax.pulsatrix.ca/pool=sandboxes
+  --node-taints sagax.example.com/pool=sandboxes:NoSchedule \
+  --labels sagax.example.com/pool=sandboxes
 ```
 
 Self-managed clusters on Azure VMs use

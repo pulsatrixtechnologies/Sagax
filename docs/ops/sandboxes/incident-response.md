@@ -81,7 +81,7 @@ minutes.
 
 ## SagaxSandboxNodeNotReady
 
-Page. A node labelled `sagax.pulsatrix.ca/pool=sandboxes` has not been
+Page. A node labelled `sagax.example.com/pool=sandboxes` has not been
 Ready for 5 minutes.
 
 1. See whether pods moved. A detached Azure disk can attach to the

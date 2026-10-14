@@ -1065,7 +1065,7 @@ driver's default `cli`.
 
 - Dockerfile: `scripts/install-engines.mjs` installs the selection named by
   `ENGINE_SET` (`all` default, since the 2026-10-12 production image
-  `pulsa-bot-server:main-20004735` shipped `engineSet none` when the arg was
+  `pulsa-bot-server:main-example1` shipped `engineSet none` when the arg was
   omitted; `none` and `open` are explicit opt-outs; or ids). The build also
   defaults `SAGAX_REQUIRE_ENGINES=1`, which fails the image when the set is
   not the full lock. `scripts/build-production-image.sh` and
@@ -1075,10 +1075,10 @@ driver's default `cli`.
   `ENGINES` (npm specs) and `NATIVE_ENGINES` (native ids) build arguments
   still override the lock's npm and native sets; `none` drops a kind. A
   non-empty override that drops an engine fails the require flag. Production deploys
-  through `deploy/gox/deploy-pulsabot.sh`: it refuses the same short set,
+  through `deploy/example/deploy-server.sh`: it refuses the same short set,
   smoke-tests `/healthz` and the engine startup log, and on failure rolls
-  back to `/opt/pulsatrix/pulsabot-image.prev` then runs
-  `docker compose up -d --force-recreate --no-deps pulsabot-caddy`. Prune
+  back to `<INSTALL_ROOT>/server-image.prev` then runs
+  `docker compose up -d --force-recreate --no-deps <EDGE_SERVICE>`. Prune
   keeps the running image and that previous image.
 - Installed by `ENGINE_SET=all`: Claude Code, Codex, pi, Gemini CLI, Kimi
   Code, Qwen Code, OpenCode, Droid (npm, global), Grok Build and Cursor Agent
