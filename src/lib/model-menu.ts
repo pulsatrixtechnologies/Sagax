@@ -64,7 +64,7 @@ export function pickableRows(sections: readonly ModelMenuSection[]): ModelMenuRo
 
 /** The row Enter picks: the one the person moved to, else the first match
  * while searching, else the current choice, else the first row. */
-export function activeRowKey(rows: readonly ModelMenuRow[], moved: string | null, searching: boolean): string | null {
+export function activeRowKey(rows: readonly Pick<ModelMenuRow, "key" | "current">[], moved: string | null, searching: boolean): string | null {
   if (moved && rows.some((row) => row.key === moved)) return moved;
   if (!searching) {
     const current = rows.find((row) => row.current);
@@ -74,7 +74,7 @@ export function activeRowKey(rows: readonly ModelMenuRow[], moved: string | null
 }
 
 /** One step of the arrow keys, wrapping at both ends. */
-export function stepRow(rows: readonly ModelMenuRow[], from: string | null, key: "ArrowDown" | "ArrowUp" | "Home" | "End"): string | null {
+export function stepRow(rows: readonly Pick<ModelMenuRow, "key">[], from: string | null, key: "ArrowDown" | "ArrowUp" | "Home" | "End"): string | null {
   if (rows.length === 0) return null;
   const at = rows.findIndex((row) => row.key === from);
   const next = key === "Home" ? 0
@@ -82,4 +82,61 @@ export function stepRow(rows: readonly ModelMenuRow[], from: string | null, key:
     : key === "ArrowDown" ? (at + 1) % rows.length
     : (at <= 0 ? rows.length : at) - 1;
   return rows[next]!.key;
+}
+
+// The composer's menu (JC, 2026-10-14: "too many models shown"): with an
+// empty search the root is short, Auto and the bot's model, the current
+// model when neither of them is it, the person's favorites, then one row
+// per provider that opens its models in a submenu. A search lists every
+// provider's matches flat, as before.
+
+export interface ModelMenuProvider {
+  /** `provider:` and the section's key: unique beside the rows' keys. */
+  key: string;
+  section: ModelMenuSection;
+  /** The current model is one of its rows. */
+  current: boolean;
+}
+
+export interface ModelMenuRoot {
+  /** Auto, the bot's model: the section without a heading. */
+  top: ModelMenuRow[];
+  /** The model in effect when no top row is checked and it is no favorite. */
+  current?: ModelMenuRow;
+  /** The starred models still offered, in the order they were starred. */
+  favorites: ModelMenuRow[];
+  providers: ModelMenuProvider[];
+}
+
+export const PROVIDER_KEY_PREFIX = "provider:";
+/** A favorite's row key in the root, beside the same model in its submenu. */
+export const FAVORITE_KEY_PREFIX = "favorite:";
+export const CURRENT_KEY_PREFIX = "current:";
+
+/** The root of the composer's menu. The top section is the one without a
+ * heading; every other section is a provider. */
+export function modelMenuRoot(sections: readonly ModelMenuSection[], favoriteKeys: readonly string[]): ModelMenuRoot {
+  const top = sections.filter((section) => !section.label).flatMap((section) => section.rows);
+  const engines = sections.filter((section) => section.label && section.rows.length > 0);
+  const models = engines.flatMap((section) => section.rows.filter((row) => row.kind === "model"));
+  const favorites = favoriteKeys.flatMap((key) => models.filter((row) => row.key === key).slice(0, 1));
+  const currentRow = top.some((row) => row.current) ? undefined : models.find((row) => row.current);
+  return {
+    top,
+    current: currentRow && !favoriteKeys.includes(currentRow.key) ? currentRow : undefined,
+    favorites,
+    providers: engines.map((section) => ({ key: `${PROVIDER_KEY_PREFIX}${section.key}`, section, current: section.rows.some((row) => row.current) })),
+  };
+}
+
+/** What the arrow keys reach in the root, in order: the rows that can be
+ * picked, under the keys the root draws them with, then the providers. */
+export function modelMenuRootEntries(root: ModelMenuRoot): Array<{ key: string; current: boolean; row?: ModelMenuRow; provider?: ModelMenuProvider }> {
+  const pickable = (row: ModelMenuRow) => !row.unavailable;
+  return [
+    ...root.top.filter(pickable).map((row) => ({ key: row.key, current: row.current, row })),
+    ...(root.current && pickable(root.current) ? [{ key: `${CURRENT_KEY_PREFIX}${root.current.key}`, current: true, row: root.current }] : []),
+    ...root.favorites.filter(pickable).map((row) => ({ key: `${FAVORITE_KEY_PREFIX}${row.key}`, current: row.current, row })),
+    ...root.providers.map((provider) => ({ key: provider.key, current: false, provider })),
+  ];
 }

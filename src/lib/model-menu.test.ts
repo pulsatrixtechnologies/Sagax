@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { activeRowKey, filterModelSections, foldSearch, pickableRows, stepRow, type ModelMenuRow, type ModelMenuSection } from "./model-menu";
+import { activeRowKey, filterModelSections, foldSearch, modelMenuRoot, modelMenuRootEntries, pickableRows, stepRow, type ModelMenuRow, type ModelMenuSection } from "./model-menu";
 
 const model = (key: string, label: string, extra: Partial<ModelMenuRow> = {}): ModelMenuRow => ({ key, kind: "model", modelId: key, label, current: false, ...extra });
 const sections: ModelMenuSection[] = [
@@ -52,5 +52,33 @@ describe("the model menu's keys", () => {
     expect(stepRow(rows, "opus", "End")).toBe("grok-4.7");
     expect(stepRow(rows, "opus", "Home")).toBe("auto");
     expect(stepRow([], null, "ArrowDown")).toBeNull();
+  });
+});
+
+describe("the nested root of the composer's menu", () => {
+  it("keeps Auto and the providers, no model rows, while nothing is starred", () => {
+    const root = modelMenuRoot(sections, []);
+    expect(root.top.map((row) => row.key)).toEqual(["auto"]);
+    expect(root.favorites).toEqual([]);
+    expect(root.providers.map((provider) => provider.key)).toEqual(["provider:claude", "provider:grok"]);
+    expect(root.providers.map((provider) => provider.current)).toEqual([true, false]);
+  });
+
+  it("shows the current model when no top row is checked, unless it is a favorite", () => {
+    expect(modelMenuRoot(sections, []).current?.key).toBe("sonnet");
+    expect(modelMenuRoot(sections, ["sonnet"]).current).toBeUndefined();
+    const onAuto = sections.map((section) => section.key === "top"
+      ? { ...section, rows: section.rows.map((row) => ({ ...row, current: true })) }
+      : { ...section, rows: section.rows.map((row) => ({ ...row, current: false })) });
+    expect(modelMenuRoot(onAuto, []).current).toBeUndefined();
+  });
+
+  it("lists the favorites still offered in the order they were starred", () => {
+    expect(modelMenuRoot(sections, ["grok-4.7", "gone", "opus"]).favorites.map((row) => row.key)).toEqual(["grok-4.7", "opus"]);
+  });
+
+  it("walks Auto, the current model, the favorites, then the providers", () => {
+    const entries = modelMenuRootEntries(modelMenuRoot(sections, ["grok-4.7", "local"]));
+    expect(entries.map((entry) => entry.key)).toEqual(["auto", "current:sonnet", "favorite:grok-4.7", "provider:claude", "provider:grok"]);
   });
 });

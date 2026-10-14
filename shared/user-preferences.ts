@@ -58,6 +58,8 @@ export const USER_PREFERENCE_KEYS = [
   "sagax.presenceVisible.v1",
   // the Automations page's scope and filters, per person (src/lib/routine-scope-prefs.ts)
   "sagax.routineScope.v1",
+  // the models starred in the composer's model menu (src/lib/model-favorites.ts)
+  "sagax.modelFavorites.v1",
 ] as const;
 
 export type UserPreferenceKey = (typeof USER_PREFERENCE_KEYS)[number];

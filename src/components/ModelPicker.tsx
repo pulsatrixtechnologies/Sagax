@@ -40,6 +40,7 @@ import { effortLabel } from "@/lib/effort-label";
 import { isUltracodeEffort, ULTRACODE_EFFORT } from "../../shared/ultracode-effort";
 import { effortForModel, fastBaseOf, fastTwinOf, modelDefaultEffort, modelEffortLevels } from "../../shared/model-capabilities";
 import { ModelMenuSettings } from "./ModelMenuSettings";
+import { favoriteKey, toggleModelFavorite, useModelFavorites } from "@/lib/model-favorites";
 import type { EffortLevel } from "../../shared/wire";
 
 type ModelOption = InstanceInfo["models"]["options"][number];
@@ -594,6 +595,7 @@ export function ModelPicker({
   // local models are not offered (src/lib/model-payers.ts).
   const org = usePerspicaxOrg();
   const advanced = useAdvancedMode();
+  const favoriteKeys = useModelFavorites();
   const myEngines = useMyEngines();
   const showUnready = useShowUnreadyProviders();
   const orgMode = org !== null;
@@ -924,7 +926,7 @@ export function ModelPicker({
     const runsWith = [variant ?? (effortLevel ? effortLabel(effortLevel) : undefined), onTwin ? t("model.fastTag") : undefined].filter(Boolean).join(" ");
     const detail = [option.provider, runsWith || undefined, local && saysLocal ? t("model.localGroup") : undefined].filter(Boolean).join(" · ") || undefined;
     return {
-      key: `${instance.instanceId}\u0000${option.id}`,
+      key: favoriteKey(instance.instanceId, option.id),
       kind: "model",
       instanceId: instance.instanceId,
       modelId: runs.id,
@@ -1443,12 +1445,13 @@ export function ModelPicker({
       }}
       {...menuMotion.exitProps}
       className={cn(
-        "z-50 flex max-h-[min(560px,calc(100dvh-96px))] max-w-[calc(100vw-16px)] flex-col overflow-hidden rounded-xl border border-popover-hairline popover-surface bg-popover py-1 text-popover-ink shadow-2xl shadow-black/50",
+        "z-50 flex max-h-[min(560px,calc(100dvh-96px))] max-w-[calc(100vw-16px)] flex-col rounded-xl border border-popover-hairline popover-surface bg-popover py-1 text-popover-ink shadow-2xl shadow-black/50",
         menuAt ? "fixed" : "absolute bottom-full right-0 mb-1.5",
         menuMotion.className,
       )}
     >
-      <ModelSearchList variant="popover" autoFocus sections={menuSections} onPick={onRow} onEscape={() => closeMenu(true)} disabled={Boolean(bot.busy)} />
+      <ModelSearchList variant="popover" autoFocus submenus sections={menuSections} onPick={onRow} onEscape={() => closeMenu(true)} disabled={Boolean(bot.busy)}
+        favorites={{ keys: favoriteKeys, onToggle: (row) => toggleModelFavorite(row.key) }} />
       {advanced && settingsPanel}
       <div className="border-t border-popover-hairline px-1.5 pt-1">
         <ModelMenuItem variant="popover" data-model-edit onClick={openWindow}>

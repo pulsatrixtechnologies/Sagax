@@ -794,6 +794,24 @@ describe("the composer's model menu (2026-10-12)", () => {
     expect(opened.html).toContain(">Edit…<");
   });
 
+  // JC, 2026-10-14: too many models shown. The root lists the providers,
+  // each opening its models in a submenu, and the stars.
+  it("nests the providers in submenus with stars, the window keeps its flat list", () => {
+    fixture.instances = [codex, signedIn()];
+    const forBot = bot("claude", "claude-opus-5-5");
+    const opened = open(forBot, composer);
+    const list = lists(opened)[0]! as unknown as ReactElement<{ submenus?: boolean; favorites?: { keys: readonly string[] } }>;
+    expect(list.props.submenus).toBe(true);
+    expect(list.props.favorites!.keys).toEqual([]);
+    // only the model in use, checked, sits in the root; the rest wait in submenus
+    expect([...opened.html.slice(opened.html.indexOf("data-model-menu")).matchAll(/data-model-option="([^"]+)"/g)].map((match) => match[1])).toEqual(["claude-opus-5-5"]);
+    expect(opened.html).toContain('data-model-provider="claude"');
+    expect(opened.html).toContain('aria-haspopup="menu"');
+    fixture.values = [];
+    const window = open(forBot) as ReturnType<typeof render>;
+    for (const each of lists(window)) expect((each.props as { submenus?: boolean }).submenus).toBeUndefined();
+  });
+
   it("applies a pick at once and closes", () => {
     fixture.instances = [codex, signedIn()];
     const forBot = bot("claude", "claude-opus-5-5");
