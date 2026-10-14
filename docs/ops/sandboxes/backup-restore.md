@@ -14,10 +14,10 @@ Velero `Schedule` `sagax-sandboxes-daily` (`deploy/k8s/sandboxes/base/velero-sch
 - The `sagax-sandboxes` namespace, volume snapshots included.
 - TTL 720 hours (30 days).
 - Storage location `sagax-sandboxes`. On Azure that is a Blob container
-  (`adapters/azure/backup-location.yaml`), which is not the node disk.
-  The storage account name is `REPLACE_STORAGE_ACCOUNT` until the change
-  record fills it. The credential secret `velero-azure` is created
-  outside git.
+  (`adapters/azure/backup-location.yaml`) in `<RESOURCE_GROUP>`, which is
+  not the node disk. The storage account name is `REPLACE_STORAGE_ACCOUNT`
+  until the change record fills it. The credential secret `velero-azure`
+  is created outside git. source de vérité = goxcloud
 
 The production VM's existing disk backup is unchanged by this document. Do not
 turn it off as part of the sandbox cutover.

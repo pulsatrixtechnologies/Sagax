@@ -13,8 +13,9 @@ change records. An empty template is not a review.
   or touch another namespace.
 - Humans and automation who can `kubectl exec` into a sandbox, change
   the node pool, or read a Velero backup.
-- On Azure: the role assignments on the cluster, the node resource
-  group, and the Blob account `REPLACE_STORAGE_ACCOUNT`.
+- On Azure: the role assignments on the cluster, `<RESOURCE_GROUP>`,
+  and the Blob account `REPLACE_STORAGE_ACCOUNT`.
+  source de vérité = goxcloud
 - On the production VM, until the socket is removed: who is in the Docker
   group that owns `/var/run/docker.sock`.
 - The HMAC key file. It stays mode 0440 and is never copied into a
