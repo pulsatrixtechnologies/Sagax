@@ -1,6 +1,6 @@
 # Grok turn latency: where the time goes
 
-Measured on the GOX server (bot.pulsatrix.mcp.goxcloud.ca), 2026-10-11, main-e002b38d.
+Measured on the production server (<HOST_FQDN>), 2026-10-11, main-e002b38d.
 
 ## Reading a turn from the logs
 

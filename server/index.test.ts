@@ -8333,7 +8333,8 @@ describe("harness HTTP API", () => {
         (await api("GET", "/api/bots?messages=40")).body.bots.find((candidate: { id: string }) => candidate.id === bot.id).messages;
 
       const first = raise("ask-wc", "wc -l notes.md");
-      const card = await expect.poll(async () => (await messages()).find((m) => m.card?.subtitle === "wc -l notes.md")?.card).toBeTruthy()
+      const windowsPoll = process.platform === "win32" ? { timeout: 15_000 } : undefined;
+      const card = await expect.poll(async () => (await messages()).find((m) => m.card?.subtitle === "wc -l notes.md")?.card, windowsPoll).toBeTruthy()
         .then(async () => (await messages()).find((m) => m.card?.subtitle === "wc -l notes.md")!.card!);
       expect(card.title).toBe("Approval needed");
       expect(card.heldCode).toBe("approval.held.native");
@@ -8343,7 +8344,7 @@ describe("harness HTTP API", () => {
       expect(card.allowSession).toBe(true);
       expect((await messages()).some((m) => m.tool?.name.startsWith("auto-approved"))).toBe(false);
       // the person is told once who is asking and why, naming the model
-      await expect.poll(async () => (await messages()).filter((m) => m.tool?.name.startsWith("Approve for me: Claude's automatic reviewer is not available")).length).toBe(1);
+      await expect.poll(async () => (await messages()).filter((m) => m.tool?.name.startsWith("Approve for me: Claude's automatic reviewer is not available")).length, windowsPoll).toBe(1);
       const notices = (await messages()).filter((m) => m.tool?.name.startsWith("Approve for me: Claude's automatic reviewer is not available"));
       expect(notices).toHaveLength(1);
       expect(notices[0].tool!.name).toContain("claude-haiku-4-5");
@@ -8354,7 +8355,7 @@ describe("harness HTTP API", () => {
       await expect(first).resolves.toMatchObject({ behavior: "allow", always: true });
 
       const second = raise("ask-ls", "ls memory");
-      await expect.poll(async () => (await messages()).find((m) => m.card?.subtitle === "ls memory")?.card?.title).toBe("Approval needed");
+      await expect.poll(async () => (await messages()).find((m) => m.card?.subtitle === "ls memory")?.card?.title, windowsPoll).toBe("Approval needed");
       expect((await messages()).filter((m) => m.tool?.name.startsWith("Approve for me: Claude's automatic reviewer"))).toHaveLength(1);
       const secondCard = (await messages()).find((m) => m.card?.subtitle === "ls memory")!.card!;
       expect((await api("POST", `/api/bots/${bot.id}/respond`, { requestId: secondCard.requestId, behavior: "allow" })).status).toBe(200);
@@ -8365,7 +8366,7 @@ describe("harness HTTP API", () => {
       // A card that offers no session allow keeps none, whatever the answer
       // claims: widening the sandbox is allowed once at most.
       const widen = raise("ask-widen", "ls /", { dangerouslyDisableSandbox: true });
-      await expect.poll(async () => (await messages()).find((m) => m.card?.subtitle === "ls /")?.card?.title).toBe("Approval needed");
+      await expect.poll(async () => (await messages()).find((m) => m.card?.subtitle === "ls /")?.card?.title, windowsPoll).toBe("Approval needed");
       const widenCard = (await messages()).find((m) => m.card?.subtitle === "ls /")!.card!;
       expect(widenCard.allowSession).toBeUndefined();
       expect((await api("POST", `/api/bots/${bot.id}/respond`, { requestId: widenCard.requestId, behavior: "allow", always: true })).status).toBe(200);

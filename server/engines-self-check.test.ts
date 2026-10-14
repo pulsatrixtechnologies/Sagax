@@ -89,8 +89,8 @@ describe("runEngineSelfCheck", () => {
     expect(lines.at(-1)).toBe("[engines] self-check: 1/3 preinstalled engine(s) start (image set all)");
   });
 
-  it("never runs more than two --version probes at once (2026-10-13: eleven at once OOM-killed GOX)", async () => {
-    expect(ENGINE_PROBE_CONCURRENCY).toBe(2);
+  it("never runs more than one --version probe at once when the manifest has no recorded version", async () => {
+    expect(ENGINE_PROBE_CONCURRENCY).toBe(1);
     const eleven: EngineManifest = {
       ...MANIFEST,
       installed: Array.from({ length: 11 }, (_, i) => ({ id: `e${i}`, name: `E${i}`, drivers: [`d${i}`], kind: "npm", version: "1", bin: `e${i}` })),
@@ -111,11 +111,63 @@ describe("runEngineSelfCheck", () => {
       },
       log: () => {},
     });
-    expect(peak).toBe(2);
+    expect(peak).toBe(1);
     expect(order).toHaveLength(11);
     // results keep the manifest's order however the probes finish
     expect(check.checks.map((c) => c.id)).toEqual(eleven.installed.map((e) => e.id));
     expect(check.checks.every((c) => c.ok)).toBe(true);
+  });
+
+  it("does not spawn a CLI whose image build already recorded --version", async () => {
+    const probed: string[] = [];
+    const lines: string[] = [];
+    const recorded: EngineManifest = {
+      ...MANIFEST,
+      installed: MANIFEST.installed.map((engine) => ({ ...engine, reported: `${engine.id} 1.2.3` })),
+    };
+    const check = await runEngineSelfCheck(recorded, {
+      find: (bin) => (bin === "hermes" ? [] : [`/usr/local/bin/${bin}`]),
+      probe: async (path) => {
+        probed.push(path);
+        return "must not run";
+      },
+      log: (line) => lines.push(line),
+    });
+    expect(probed).toEqual([]);
+    expect(check.forInstance("claudeAgent", "claude")).toMatchObject({ ok: true, version: "claude 1.2.3", path: "/usr/local/bin/claude" });
+    expect(check.forInstance("grokAgent", "grok")).toMatchObject({ ok: true, version: "grok 1.2.3" });
+    expect(check.forInstance("hermesAgent", "hermes")).toMatchObject({ ok: false, error: "`hermes` is not on this server's PATH" });
+    expect(lines.join("\n")).toContain("[engines] claude: claude 1.2.3 (pinned 2.1.288, /usr/local/bin/claude)");
+    expect(lines.join("\n")).toContain("[engines] hermes: FAILED, `hermes` is not on this server's PATH");
+    expect(lines.at(-1)).toBe("[engines] self-check: 2/3 preinstalled engine(s) start (image set all)");
+  });
+
+  it("probes only the engines with no recorded version, still one at a time", async () => {
+    let running = 0;
+    let peak = 0;
+    const probed: string[] = [];
+    const mixed: EngineManifest = {
+      ...MANIFEST,
+      installed: [
+        { ...MANIFEST.installed[0]!, reported: "claude from image" },
+        { ...MANIFEST.installed[1]! },
+        { ...MANIFEST.installed[2]! },
+      ],
+    };
+    await runEngineSelfCheck(mixed, {
+      find: (bin) => [`/usr/local/bin/${bin}`],
+      probe: async (path) => {
+        running += 1;
+        peak = Math.max(peak, running);
+        probed.push(path);
+        await new Promise((resolve) => setTimeout(resolve, 5));
+        running -= 1;
+        return "live";
+      },
+      log: () => {},
+    });
+    expect(peak).toBe(1);
+    expect(probed.sort()).toEqual(["/usr/local/bin/grok", "/usr/local/bin/hermes"]);
   });
 
   it("mapLimited keeps order, survives an empty list and a limit above the list", async () => {

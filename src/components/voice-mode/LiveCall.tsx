@@ -31,6 +31,7 @@ import {
 } from "@/lib/voice-mode/speech-fence";
 import { stageDurations } from "@/lib/voice-mode/latency";
 import { acceptVoiceOpener, VOICE_OPENER_EVENT, type VoiceOpenerOwner } from "@/lib/voice-mode/voice-opener";
+import { decideBotHangup, VOICE_CALL_ENDED_EVENT, type VoiceCallEndedDetail } from "@/lib/voice-mode/call-end";
 import type { CallState } from "@/lib/voice-mode/call-machine";
 import { readVoiceModeSettings } from "@/lib/voice-mode/settings";
 import { publishLiveCall, retractLiveCall, useLiveCall, type LiveCallData, type LiveCallMetrics } from "@/lib/voice-mode/live-call-store";
@@ -206,6 +207,43 @@ export function LiveCallEngine({ bot }: { bot: Bot }) {
       live.end();
     };
   }, [bot.id, dispatch]);
+
+  // The server said this call ended (the bot, or the person on another
+  // device). Mute at once so nothing new is said, let a goodbye finish,
+  // then leave the call. The button on this device does not wait.
+  useEffect(() => {
+    if (!call) return;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let stopped = false;
+    const onEnded = (event: Event) => {
+      const detail = (event as CustomEvent<VoiceCallEndedDetail>).detail;
+      if (!detail || detail.callId !== callId || detail.threadId !== threadRef.current) return;
+      if (detail.by !== "bot" && detail.by !== "person") return;
+      if (timer) clearTimeout(timer);
+      call.setMuted(true);
+      const started = Date.now();
+      let heardSpeech = false;
+      const tick = () => {
+        if (stopped) return;
+        const speaking = call.player.busy || call.current.botAudible || pendingSpeak.current.length > 0;
+        if (speaking) heardSpeech = true;
+        if (decideBotHangup({ speaking, heardSpeech, elapsedMs: Date.now() - started }) === "wait") {
+          timer = setTimeout(tick, 80);
+          return;
+        }
+        if (stopped) return;
+        call.end();
+        endCall(botRef.current.id);
+      };
+      tick();
+    };
+    window.addEventListener(VOICE_CALL_ENDED_EVENT, onEnded);
+    return () => {
+      stopped = true;
+      if (timer) clearTimeout(timer);
+      window.removeEventListener(VOICE_CALL_ENDED_EVENT, onEnded);
+    };
+  }, [call, callId]);
 
   // ── what the person said ───────────────────────────────────────────────
   const onUtterance = useCallback(

@@ -10,6 +10,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { expect, it } from "vitest";
 
 import { launchVerificationServer } from "../scripts/control-omb.ts";
+import { openSse } from "./testing/sse.ts";
 import { VOICE_CALL_TURN_MARK } from "./voice-call-prompt.ts";
 
 const CALL_ID = "call-0123456789";
@@ -292,6 +293,158 @@ it("duplex: new words while the long tool runs join that turn; the tool is not k
     // the held Bash call was answered, not cancelled
     expect(all.some((m) => m.kind === "activity" && String(m.tool?.name ?? "").includes("Bash") && m.tool?.ok === false)).toBe(false);
   } finally {
+    await t.fixture.close();
+  }
+}, 120_000);
+
+it("hangs up when the bot asks, after the goodbye turn, and when the person hangs up", async () => {
+  const t = await callFixture({ FAKE_CLAUDE_MODE: "slow", FAKE_CLAUDE_DUMP: "$DATA/fake-claude-dump.json" });
+  const events = await openSse(`${t.fixture.info.url}/api/events`);
+  const dumpPath = join(t.fixture.info.dataDir, "fake-claude-dump.json");
+  const dump = () => JSON.parse(readFileSync(dumpPath, "utf8"));
+  try {
+    await t.api("POST", `/api/bots/${t.bot.id}/voice/call`, { threadId: t.thread, callId: CALL_ID, state: "start" });
+    const replies = async () => (await t.messages()).filter((m) => m.role === "bot" && m.turnTerminal).length;
+    await t.send({ text: "[gate:hang] please wrap up", voiceCall: { callId: CALL_ID } });
+    await expect.poll(() => {
+      try {
+        if (!existsSync(dumpPath)) return false;
+        const body = dump();
+        return `${body.systemPrompt ?? ""}\n${JSON.stringify(body.prompt ?? "")}`.includes("call end_call");
+      } catch {
+        return false;
+      }
+    }, { timeout: 15_000 }).toBe(true);
+    const agents = dump().mcpConfig.mcpServers.agents.env;
+    expect(agents.SAGAX_VOICE_CALL).toBe("1");
+    const hangUp = (token: string) => fetch(`${t.fixture.info.url}/api/internal/voice-call/end`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+      body: JSON.stringify({ fromBotId: t.bot.id, fromThreadId: t.thread }),
+    });
+    const asked = await hangUp(agents.SAGAX_COMMS_TOKEN);
+    expect(asked.status).toBe(200);
+    expect(await asked.json()).toMatchObject({ ending: true, callId: CALL_ID });
+    // asking again does not drop the call before the turn finishes
+    expect((await hangUp(agents.SAGAX_COMMS_TOKEN)).status).toBe(200);
+    t.open("hang");
+    const byBot = await events.until((frame) => frame.kind === "voice.call.ended" && frame.by === "bot", 20_000);
+    expect(byBot.callId).toBe(CALL_ID);
+    expect(byBot.threadId).toBe(t.thread);
+    expect(typeof byBot.audience).toBe("string");
+    expect(String(byBot.audience).length).toBeGreaterThan(0);
+    await expect.poll(replies, { timeout: 15_000 }).toBe(1);
+    await t.send({ text: "in writing now" });
+    await expect.poll(replies, { timeout: 15_000 }).toBe(2);
+    expect(t.prompts().at(-1)).not.toContain(VOICE_CALL_TURN_MARK);
+
+    await t.api("POST", `/api/bots/${t.bot.id}/voice/call`, { threadId: t.thread, callId: CALL_ID, state: "start" });
+    await t.api("POST", `/api/bots/${t.bot.id}/voice/call`, { threadId: t.thread, callId: CALL_ID, state: "end" });
+    const byPerson = await events.until((frame) => frame.kind === "voice.call.ended" && frame.by === "person", 10_000);
+    expect(byPerson.callId).toBe(CALL_ID);
+    expect(byPerson.threadId).toBe(t.thread);
+
+    await t.send({ text: "[gate:idle] not on a call" });
+    await expect.poll(() => {
+      try {
+        if (!existsSync(dumpPath)) return false;
+        return JSON.stringify(dump().prompt ?? "").includes("not on a call");
+      } catch {
+        return false;
+      }
+    }, { timeout: 15_000 }).toBe(true);
+    const idle = dump().mcpConfig.mcpServers.agents.env;
+    expect(idle.SAGAX_VOICE_CALL).toBe("0");
+    const refused = await hangUp(idle.SAGAX_COMMS_TOKEN);
+    expect(refused.status).toBe(409);
+    t.open("idle");
+    await expect.poll(replies, { timeout: 15_000 }).toBe(3);
+    console.log([
+      "journal de session — raccrochage",
+      "tour d'appel: end_call est offert, l'instruction le nomme",
+      "le bot demande la fin pendant que le tour est retenu; la session tient jusqu'à la fin du tour",
+      "trame voice.call.ended, by bot, à la fin du tour",
+      "tour écrit suivant: plus une marque d'appel",
+      "la personne raccroche: trame voice.call.ended, by person",
+      "sans appel: la même demande répond 409",
+      "aucun jeton, aucun hôte",
+    ].join("\n"));
+  } finally {
+    events.close();
+    await t.fixture.close();
+  }
+}, 120_000);
+
+async function waitForCallDump(dumpPath: string, snippet: string): Promise<void> {
+  await expect.poll(() => {
+    try {
+      if (!existsSync(dumpPath)) return false;
+      const body = JSON.parse(readFileSync(dumpPath, "utf8"));
+      return `${body.systemPrompt ?? ""}\n${JSON.stringify(body.prompt ?? "")}`.includes(snippet);
+    } catch {
+      return false;
+    }
+  }, { timeout: 15_000 }).toBe(true);
+}
+
+function hangUpCall(url: string, botId: string, thread: string, token: string) {
+  return fetch(`${url}/api/internal/voice-call/end`, {
+    method: "POST",
+    headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+    body: JSON.stringify({ fromBotId: botId, fromThreadId: thread }),
+  });
+}
+
+it("a failed hang-up turn keeps the call; the next turn is still on it", async () => {
+  const t = await callFixture({
+    FAKE_CLAUDE_MODE: "slow",
+    FAKE_CLAUDE_DUMP: "$DATA/fake-claude-dump.json",
+    FAKE_CLAUDE_SLOW_FINISH_GATE: "$DATA/gates/fail",
+  });
+  const events = await openSse(`${t.fixture.info.url}/api/events`);
+  const dumpPath = join(t.fixture.info.dataDir, "fake-claude-dump.json");
+  try {
+    await t.api("POST", `/api/bots/${t.bot.id}/voice/call`, { threadId: t.thread, callId: CALL_ID, state: "start" });
+    await t.send({ text: "[gate:fail] please wrap up", voiceCall: { callId: CALL_ID } });
+    await waitForCallDump(dumpPath, "call end_call");
+    const token = JSON.parse(readFileSync(dumpPath, "utf8")).mcpConfig.mcpServers.agents.env.SAGAX_COMMS_TOKEN as string;
+    const asked = await hangUpCall(t.fixture.info.url, t.bot.id, t.thread, token);
+    expect(asked.status).toBe(200);
+    writeFileSync(join(t.fixture.info.dataDir, "gates", "fail"), "fail");
+    await expect.poll(t.busy, { timeout: 20_000 }).toBe(false);
+    expect(events.frames.filter((frame) => frame.kind === "voice.call.ended")).toEqual([]);
+    const replies = async () => (await t.messages()).filter((m) => m.role === "bot" && m.turnTerminal).length;
+    await t.send({ text: "still on the call" });
+    await expect.poll(replies, { timeout: 15_000 }).toBeGreaterThanOrEqual(1);
+    expect(t.prompts().at(-1)).toContain(VOICE_CALL_TURN_MARK);
+    expect(events.frames.filter((frame) => frame.kind === "voice.call.ended")).toEqual([]);
+  } finally {
+    events.close();
+    await t.fixture.close();
+  }
+}, 120_000);
+
+it("an interrupted hang-up turn keeps the call; the next turn is still on it", async () => {
+  const t = await callFixture({ FAKE_CLAUDE_MODE: "slow", FAKE_CLAUDE_DUMP: "$DATA/fake-claude-dump.json" });
+  const events = await openSse(`${t.fixture.info.url}/api/events`);
+  const dumpPath = join(t.fixture.info.dataDir, "fake-claude-dump.json");
+  try {
+    await t.api("POST", `/api/bots/${t.bot.id}/voice/call`, { threadId: t.thread, callId: CALL_ID, state: "start" });
+    await t.send({ text: "[gate:hang] please wrap up", voiceCall: { callId: CALL_ID } });
+    await waitForCallDump(dumpPath, "call end_call");
+    const token = JSON.parse(readFileSync(dumpPath, "utf8")).mcpConfig.mcpServers.agents.env.SAGAX_COMMS_TOKEN as string;
+    const asked = await hangUpCall(t.fixture.info.url, t.bot.id, t.thread, token);
+    expect(asked.status).toBe(200);
+    await t.api("POST", `/api/bots/${t.bot.id}/interrupt`, { threadId: t.thread });
+    await expect.poll(t.busy, { timeout: 20_000 }).toBe(false);
+    expect(events.frames.filter((frame) => frame.kind === "voice.call.ended")).toEqual([]);
+    const replies = async () => (await t.messages()).filter((m) => m.role === "bot" && m.turnTerminal).length;
+    await t.send({ text: "still on the call" });
+    await expect.poll(replies, { timeout: 15_000 }).toBeGreaterThanOrEqual(1);
+    expect(t.prompts().at(-1)).toContain(VOICE_CALL_TURN_MARK);
+    expect(events.frames.filter((frame) => frame.kind === "voice.call.ended")).toEqual([]);
+  } finally {
+    events.close();
     await t.fixture.close();
   }
 }, 120_000);

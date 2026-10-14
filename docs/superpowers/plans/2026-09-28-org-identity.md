@@ -64,25 +64,25 @@ function registry() {
 describe("principal registry", () => {
   it("creates one principal per account and finds it again", () => {
     const { reg } = registry();
-    const a = reg.forAccount({ email: "Zach@Gox.ca", controlPlaneUserId: "cp_1" });
-    expect(a).toMatchObject({ kind: "human", email: "zach@gox.ca", controlPlaneUserId: "cp_1" });
-    expect(reg.forAccount({ email: "zach@gox.ca", controlPlaneUserId: "cp_1" }).id).toBe(a.id);
+    const a = reg.forAccount({ email: "Zach@example.com", controlPlaneUserId: "cp_1" });
+    expect(a).toMatchObject({ kind: "human", email: "zach@example.com", controlPlaneUserId: "cp_1" });
+    expect(reg.forAccount({ email: "zach@example.com", controlPlaneUserId: "cp_1" }).id).toBe(a.id);
     expect(reg.list()).toHaveLength(1);
   });
 
   it("keeps the principal when the account email changes", () => {
     const { reg } = registry();
-    const a = reg.forAccount({ email: "old@gox.ca", controlPlaneUserId: "cp_1" });
-    const b = reg.forAccount({ email: "new@gox.ca", controlPlaneUserId: "cp_1" });
+    const a = reg.forAccount({ email: "old@example.com", controlPlaneUserId: "cp_1" });
+    const b = reg.forAccount({ email: "new@example.com", controlPlaneUserId: "cp_1" });
     expect(b.id).toBe(a.id);
-    expect(b.email).toBe("new@gox.ca");
-    expect(reg.byEmail("old@gox.ca")).toBeNull();
+    expect(b.email).toBe("new@example.com");
+    expect(reg.byEmail("old@example.com")).toBeNull();
   });
 
   it("links an email-only principal to its account on first sign-in", () => {
     const { reg } = registry();
-    const a = reg.forAccount({ email: "zach@gox.ca" });
-    const b = reg.forAccount({ email: "zach@gox.ca", controlPlaneUserId: "cp_9" });
+    const a = reg.forAccount({ email: "zach@example.com" });
+    const b = reg.forAccount({ email: "zach@example.com", controlPlaneUserId: "cp_9" });
     expect(b.id).toBe(a.id);
     expect(b.controlPlaneUserId).toBe("cp_9");
   });
@@ -90,23 +90,23 @@ describe("principal registry", () => {
   it("has exactly one local operator and gives it the profile email", () => {
     const { reg } = registry();
     const a = reg.localOperator();
-    const b = reg.localOperator("jc@gox.ca");
+    const b = reg.localOperator("jc@example.com");
     expect(b.id).toBe(a.id);
-    expect(b).toMatchObject({ local: true, email: "jc@gox.ca" });
+    expect(b).toMatchObject({ local: true, email: "jc@example.com" });
     expect(reg.list().filter((p) => p.local)).toHaveLength(1);
   });
 
   it("persists across instances", () => {
     const { path, reg } = registry();
-    const a = reg.forAccount({ email: "zach@gox.ca", controlPlaneUserId: "cp_1" });
+    const a = reg.forAccount({ email: "zach@example.com", controlPlaneUserId: "cp_1" });
     const again = new PrincipalRegistry({ path });
-    expect(again.byId(a.id)).toMatchObject({ email: "zach@gox.ca" });
+    expect(again.byId(a.id)).toMatchObject({ email: "zach@example.com" });
     expect(JSON.parse(readFileSync(path, "utf8")).version).toBe(1);
   });
 
   it("recognizes principal ids", () => {
     expect(isPrincipalId("pr_00000000-0000-4000-8000-000000000000")).toBe(true);
-    expect(isPrincipalId("zach@gox.ca")).toBe(false);
+    expect(isPrincipalId("zach@example.com")).toBe(false);
     expect(isPrincipalId("local-owner")).toBe(false);
   });
 });
@@ -277,26 +277,26 @@ const fresh = () => new PrincipalRegistry({ path: join(mkdtempSync(join(tmpdir()
 describe("identity migration", () => {
   it("maps emails and local-owner to principals and leaves principal ids alone", () => {
     const registry = fresh();
-    const local = registry.localOperator("jc@gox.ca");
+    const local = registry.localOperator("jc@example.com");
     expect(principalIdFor("local-owner", registry)).toBe(local.id);
-    expect(principalIdFor("JC@gox.ca", registry)).toBe(local.id);
-    const zach = principalIdFor("zach@gox.ca", registry);
+    expect(principalIdFor("JC@example.com", registry)).toBe(local.id);
+    const zach = principalIdFor("zach@example.com", registry);
     expect(zach).toMatch(/^pr_/);
     expect(principalIdFor(zach, registry)).toBe(zach);
   });
 
   it("rewrites org owner, humanIds, bot owners, grants and pairing sessions once", () => {
     const registry = fresh();
-    const local = registry.localOperator("jc@gox.ca");
+    const local = registry.localOperator("jc@example.com");
     const input = {
-      org: { ownerUserId: "jc@gox.ca" },
-      groups: [{ id: "g1", humanIds: ["jc@gox.ca", "zach@gox.ca"] }, { id: "g2" }],
-      bots: [{ id: "b1", ownerUserId: "local-owner", directGrants: ["zach@gox.ca"] }, { id: "b2" }],
-      sessions: [{ id: "s-phone" }, { id: "s-zach", email: "zach@gox.ca", userId: "cp_7" }],
+      org: { ownerUserId: "jc@example.com" },
+      groups: [{ id: "g1", humanIds: ["jc@example.com", "zach@example.com"] }, { id: "g2" }],
+      bots: [{ id: "b1", ownerUserId: "local-owner", directGrants: ["zach@example.com"] }, { id: "b2" }],
+      sessions: [{ id: "s-phone" }, { id: "s-zach", email: "zach@example.com", userId: "cp_7" }],
       registry,
     };
     const out = migrateIdentityRefs(input);
-    const zach = registry.byEmail("zach@gox.ca")!.id;
+    const zach = registry.byEmail("zach@example.com")!.id;
     expect(out.orgOwner).toBe(local.id);
     expect(out.groups).toEqual([{ id: "g1", humanIds: [local.id, zach] }]);
     expect(out.bots).toEqual([{ id: "b1", ownerUserId: local.id, directGrants: [zach] }]);
@@ -308,7 +308,7 @@ describe("identity migration", () => {
       org: { ownerUserId: out.orgOwner! },
       groups: [{ id: "g1", humanIds: out.groups[0]!.humanIds }, { id: "g2" }],
       bots: [{ id: "b1", ownerUserId: local.id, directGrants: [zach] }, { id: "b2" }],
-      sessions: [{ id: "s-phone", principalId: local.id }, { id: "s-zach", email: "zach@gox.ca", principalId: zach }],
+      sessions: [{ id: "s-phone", principalId: local.id }, { id: "s-zach", email: "zach@example.com", principalId: zach }],
       registry,
     });
     expect(again).toEqual({ groups: [], bots: [], sessions: [] });
@@ -437,7 +437,7 @@ describe("sessions carry a principal", () => {
 
   it("stores the principal of an account sign-in", () => {
     const sessions = registry;
-    const issued = sessions.issue({ label: "Mac", scopes: ["client"], email: "zach@gox.ca", userId: "cp_1", principalId: "pr_22222222-2222-4222-8222-222222222222" });
+    const issued = sessions.issue({ label: "Mac", scopes: ["client"], email: "zach@example.com", userId: "cp_1", principalId: "pr_22222222-2222-4222-8222-222222222222" });
     expect(sessions.authenticate(issued.token)?.principalId).toBe("pr_22222222-2222-4222-8222-222222222222");
   });
 
@@ -538,12 +538,12 @@ Add to `server/org-directory.test.ts`:
 import { roleOf } from "./org-directory.ts";
 
 describe("roles by principal", () => {
-  const lists = { ownerUserId: "pr_aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", admins: ["ana@gox.ca"], members: ["zach@gox.ca", "@client.com"] };
+  const lists = { ownerUserId: "pr_aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", admins: ["ana@example.com"], members: ["zach@example.com", "@client.com"] };
   it("finds the owner by principal id and others by email", () => {
     expect(roleOf({ ...lists, userId: "pr_aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" })).toBe("owner");
-    expect(roleOf({ ...lists, userId: "pr_bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", email: "Ana@gox.ca" })).toBe("admin");
-    expect(roleOf({ ...lists, userId: "pr_cccccccc-cccc-4ccc-8ccc-cccccccccccc", email: "zach@gox.ca" })).toBe("member");
-    expect(roleOf({ ...lists, userId: "pr_dddddddd-dddd-4ddd-8ddd-dddddddddddd", email: "stranger@gox.ca" })).toBeNull();
+    expect(roleOf({ ...lists, userId: "pr_bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", email: "Ana@example.com" })).toBe("admin");
+    expect(roleOf({ ...lists, userId: "pr_cccccccc-cccc-4ccc-8ccc-cccccccccccc", email: "zach@example.com" })).toBe("member");
+    expect(roleOf({ ...lists, userId: "pr_dddddddd-dddd-4ddd-8ddd-dddddddddddd", email: "stranger@example.com" })).toBeNull();
   });
   it("never makes someone owner because of their email", () => {
     expect(roleOf({ ...lists, ownerUserId: "pr_aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", userId: "pr_eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee", email: "pr_aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" })).toBeNull();
@@ -553,24 +553,24 @@ describe("roles by principal", () => {
 
 The `@client.com` domain entry stays literal-only here (`roleOf` does not expand domains; sign-in does). This test pins that behavior.
 
-In `server/org-record.test.ts`, change the existing "records the creator" test to use `host: { kind: "server", url: "https://pulsa.gox.ca" }` and expect that host. Then add:
+In `server/org-record.test.ts`, change the existing "records the creator" test to use `host: { kind: "server", url: "https://sagax.example.com" }` and expect that host. Then add:
 
 ```ts
   it("requires a server address for a new organization", () => {
-    expect(() => createOrg({ name: "GOX", ownerUserId: "pr_x", host: { kind: "this-computer" } })).toThrow(/server address/);
-    expect(() => createOrg({ name: "GOX", ownerUserId: "pr_x", host: { kind: "server", url: "http://10.0.0.5:8799" } })).toThrow(/server address/);
-    expect(createOrg({ name: "GOX", ownerUserId: "pr_x", host: { kind: "server", url: "http://localhost:8080" } }).host)
+    expect(() => createOrg({ name: "Acme", ownerUserId: "pr_x", host: { kind: "this-computer" } })).toThrow(/server address/);
+    expect(() => createOrg({ name: "Acme", ownerUserId: "pr_x", host: { kind: "server", url: "http://10.0.0.5:8799" } })).toThrow(/server address/);
+    expect(createOrg({ name: "Acme", ownerUserId: "pr_x", host: { kind: "server", url: "http://localhost:8080" } }).host)
       .toEqual({ kind: "server", url: "http://localhost:8080" });
-    expect(createOrg({ name: "GOX", ownerUserId: "pr_x", host: { kind: "server", url: "http://gox-fs01.tail1234.ts.net:8799" } }).host)
-      .toEqual({ kind: "server", url: "http://gox-fs01.tail1234.ts.net:8799" });
+    expect(createOrg({ name: "Acme", ownerUserId: "pr_x", host: { kind: "server", url: "http://host.tail1234.ts.net:8799" } }).host)
+      .toEqual({ kind: "server", url: "http://host.tail1234.ts.net:8799" });
   });
   it("keeps the principal id as given", () => {
-    expect(createOrg({ name: "GOX", ownerUserId: "pr_00000000-0000-4000-8000-000000000000", host: { kind: "server", url: "https://a.b" } }).ownerUserId)
+    expect(createOrg({ name: "Acme", ownerUserId: "pr_00000000-0000-4000-8000-000000000000", host: { kind: "server", url: "https://a.b" } }).ownerUserId)
       .toBe("pr_00000000-0000-4000-8000-000000000000");
   });
 ```
 
-In `server/org-routes.test.ts`, update every `createOrgRoute` / `createOrgRoutes` fixture that uses `this-computer` to the `https://pulsa.gox.ca` server host. Wherever deps are built, add `actorEmail: () => "<the email the test's actor had>"`.
+In `server/org-routes.test.ts`, update every `createOrgRoute` / `createOrgRoutes` fixture that uses `this-computer` to the `https://sagax.example.com` server host. Wherever deps are built, add `actorEmail: () => "<the email the test's actor had>"`.
 
 - [ ] **Step 2: Run tests to verify they fail**
 
@@ -658,7 +658,7 @@ git commit -m "feat: resolve org roles by principal and require a server address
 ```ts
 describe("viewer id by principal", () => {
   it("uses the session principal", () => {
-    expect(channelViewerId({ kind: "session", session: { id: "s1", email: "z@gox.ca", principalId: "pr_11111111-1111-4111-8111-111111111111" } }))
+    expect(channelViewerId({ kind: "session", session: { id: "s1", email: "z@example.com", principalId: "pr_11111111-1111-4111-8111-111111111111" } }))
       .toBe("pr_11111111-1111-4111-8111-111111111111");
   });
   it("gives a session without a principal an id that sees no channel", () => {
@@ -741,9 +741,9 @@ function actorEmail(auth: RequestAuth): string | undefined {
 
 - [ ] **Step 1: Write the failing e2e test**
 
-Boot the harness on a temp `DATA_DIR`. Seed `config.json` with a profile email `jc@gox.ca`, then:
+Boot the harness on a temp `DATA_DIR`. Seed `config.json` with a profile email `jc@example.com`, then:
 1. `POST /api/org` over loopback with `host: { kind: "this-computer" }`. Expect 400 with `/server address/`.
-2. `POST /api/org` with `host: { kind: "server", url: "https://pulsa.gox.ca" }`. Expect 200, and `org.ownerUserId` matches `/^pr_/`.
+2. `POST /api/org` with `host: { kind: "server", url: "https://sagax.example.com" }`. Expect 200, and `org.ownerUserId` matches `/^pr_/`.
 3. `POST /api/auth/pairing` over loopback (the pairing-code route), exchange the code on `POST /api/pair`, then `GET /api/org` with the session cookie. Expect 200. Then `GET /api/sessions` (or the route that lists sessions; `grep -n '"/api/sessions"' server/index.ts`) and expect the new session to carry the same `principalId` as the org owner.
 4. Restart the harness on the same `DATA_DIR`. `principals.json` still has exactly one `local: true` entry, and the org owner is unchanged.
 
@@ -841,8 +841,8 @@ describe("organization create form", () => {
   });
   it("accepts https, Tailscale and local Docker addresses only", () => {
     expect(orgHostFromInput("http://localhost:8080")).toEqual({ kind: "server", url: "http://localhost:8080" });
-    expect(orgHostFromInput("https://pulsa.gox.ca")).toEqual({ kind: "server", url: "https://pulsa.gox.ca" });
-    expect(orgHostFromInput("http://fs01.tail1234.ts.net:8799")).toEqual({ kind: "server", url: "http://fs01.tail1234.ts.net:8799" });
+    expect(orgHostFromInput("https://sagax.example.com")).toEqual({ kind: "server", url: "https://sagax.example.com" });
+    expect(orgHostFromInput("http://host.tail1234.ts.net:8799")).toEqual({ kind: "server", url: "http://host.tail1234.ts.net:8799" });
     expect(orgHostFromInput("http://10.0.0.5")).toBeNull();
     expect(orgHostFromInput("")).toBeNull();
   });

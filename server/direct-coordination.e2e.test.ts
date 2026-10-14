@@ -816,9 +816,20 @@ it("does not cancel a live coordination when an automation turn lands in the con
 // stops awaiting its teammates; a teammate already mid-turn keeps its own
 // provider process and its result is still recorded here.
 it("stops a waiting source without reaching into the teammate already working", () => fixture(async f => {
-  f.plan[f.lead.id] = { delayMs: 4000, reply: "Finished after the source was stopped" };
+  // Hold the teammate at a gate. A fixed delayMs can expire before Stop on a
+  // loaded runner, so the Chief starts its resume and wait() reports failed.
+  const childGate = join(f.session.info.dataDir, "child-ready");
+  f.plan[f.lead.id] = { gateFile: childGate, reply: "Finished after the source was stopped" };
   await f.start();
   await expect.poll(() => f.nodes().find((node: any) => node.parentId)?.status, { timeout: 15_000 }).toBe("running");
+  // Stop is a parked-conversation gesture. Hitting it while the Chief's
+  // assigning turn is still live interrupts that turn; wait() then reports
+  // failed (an error after the latest user line). The source is waiting
+  // only once that turn has settled and the conversation is parked.
+  await expect.poll(async () => {
+    const waiting = (await f.api("/api/bots?messages=0")).bots.find((bot: any) => bot.id === f.chief.id);
+    return !waiting.busy && waiting.tasks.find((task: any) => task.threadId === f.chief.activeTaskId)?.waitingForTeammates;
+  }, { timeout: 30_000 }).toBe(true);
   await f.api(`/api/bots/${f.chief.id}/interrupt`, { threadId: f.chief.activeTaskId });
 
   // The source stops awaiting immediately; the teammate keeps running.
@@ -830,6 +841,7 @@ it("stops a waiting source without reaching into the teammate already working", 
   expect(chip.threadRef).toMatchObject({ botId: f.lead.id, threadId: f.nodes().find((node: any) => node.parentId).threadId });
 
   // Its work lands: the result is recorded and reported into the stopped chat.
+  writeFileSync(childGate, "finish after the source was stopped");
   await expect.poll(() => f.nodes().find((node: any) => node.parentId)?.status, { timeout: 20_000 }).toBe("completed");
   expect(f.nodes().find((node: any) => node.parentId).result).toContain("Finished after the source was stopped");
   await expect.poll(async () => (await f.messages(f.chief.activeTaskId)).some((message: any) => message.tool?.name === "Engineering lead replied")).toBe(true);

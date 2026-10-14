@@ -136,10 +136,18 @@ export function testLocalVmListArgs(namespace: string): string[] {
  * Local VM bound there outlives the folder (a test's throwaway home), and
  * Docker then refuses to start it ("bind source path does not exist"). */
 export function workspaceIsTemporary(workspaceDir: string, temporaryRoot = tmpdir()): boolean {
-  const strip = (value: string) => resolve(value).replace(/^\/private(?=\/)/, "");
-  const root = strip(temporaryRoot);
-  const dir = strip(workspaceDir);
-  return dir === root || dir.startsWith(`${root}/`) || dir.startsWith(`${root}\\`);
+  const comparable = (value: string): string => {
+    const unix = value.replace(/\\/g, "/");
+    const peeled = unix.replace(/^\/private(?=\/)/, "");
+    // Tests pass macOS POSIX paths on every host. win32 path.resolve of
+    // `/private/var/...` becomes `D:\private\...` and never matches `/var/...`.
+    const posixOnWindows = process.platform === "win32" && peeled.startsWith("/");
+    const resolved = posixOnWindows ? peeled : resolve(peeled).replace(/\\/g, "/");
+    return resolved.replace(/^\/private(?=\/)/, "").replace(/\/+$/, "") || "/";
+  };
+  const root = comparable(temporaryRoot);
+  const dir = comparable(workspaceDir);
+  return dir === root || dir.startsWith(`${root}/`);
 }
 
 /** Why a Local VM may not be created for this folder: a real-named

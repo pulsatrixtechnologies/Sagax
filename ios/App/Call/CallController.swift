@@ -93,10 +93,23 @@ final class CallController: ObservableObject {
     private var previewVoice: String?
     private var callAlive: Timer?
     private var callEnd: (() -> Void)?
+    /// Kept for the life of the controller. `end()` clears `observers`, so
+    /// the server's hang-up must not live in that list.
+    private var serverHangupObserver: NSObjectProtocol?
+    private var serverHangup: Task<Void, Never>?
 
     private init() {
         voiceSettings = VoiceModeSettings.decode(UserDefaults.standard.string(forKey: VoiceModeSettings.storageKey))
         callSettings = CallSettings.decode(UserDefaults.standard.string(forKey: CallSettings.storageKey))
+        serverHangupObserver = NotificationCenter.default.addObserver(
+            forName: .sagaxVoiceCallEnded, object: nil, queue: .main
+        ) { [weak self] note in
+            let threadId = note.userInfo?["threadId"] as? String ?? ""
+            let callId = note.userInfo?["callId"] as? String ?? ""
+            Task { @MainActor in
+                self?.hangUpFromServer(threadId: threadId, callId: callId)
+            }
+        }
     }
 
     var active: Bool { target != nil }
@@ -353,6 +366,8 @@ final class CallController: ObservableObject {
     /// Hang up (the red X, CallKit's end button, or another call).
     func end(fromSystem: Bool = false) {
         guard target != nil else { return }
+        serverHangup?.cancel()
+        serverHangup = nil
         noteCallClockEnded()
         CallQuiet.shared.set(threadId, live: false)
         callAlive?.invalidate()
@@ -693,6 +708,31 @@ final class CallController: ObservableObject {
             return String(localized: "Open this chat to review the complete skill before enabling it. You can say no now to deny it.")
         case .approvalFailed:
             return String(localized: "I couldn't save that decision. Please try again.")
+        }
+    }
+
+    /// The server ended this call. Mute at once. A goodbye that is already
+    /// spoken finishes; then the call ends. The person's own button does
+    /// not wait, and `end()` has already cleared `target` before its echo
+    /// frame arrives, so this no-ops for the device that hung up.
+    private func hangUpFromServer(threadId: String, callId: String) {
+        guard serverHangupObserver != nil, target != nil, self.threadId == threadId, self.callId == callId else { return }
+        setMuted(true)
+        serverHangup?.cancel()
+        let started = Date()
+        serverHangup = Task { @MainActor in
+            var heardSpeech = false
+            while !Task.isCancelled {
+                let speaking = (self.player?.busy ?? false) || self.state.phase == .speaking
+                if speaking { heardSpeech = true }
+                let elapsed = Date().timeIntervalSince(started) * 1000
+                if BotHangup.decide(speaking: speaking, heardSpeech: heardSpeech, elapsedMs: elapsed) == .hangup {
+                    break
+                }
+                try? await Task.sleep(nanoseconds: 100_000_000)
+            }
+            guard !Task.isCancelled, self.target != nil, self.callId == callId else { return }
+            self.end()
         }
     }
 

@@ -1,10 +1,14 @@
 # Sagax harness server — hosted/self-hosted tenant image.
 #
 # Two stages: build the renderer + the self-contained server bundle, then ship
-# only those artifacts on a slim Node runtime. The server keeps binding
-# 127.0.0.1 inside the container (the loopback-trust invariant is the auth
-# model); deploy/docker-compose.yml puts Caddy in the same network namespace
-# to terminate TLS and authentication at the edge.
+# only those artifacts on a slim Node runtime. Distroless is not a fit: the
+# engine CLIs need git, Hermes needs a Python venv, Chrome needs GTK/X11
+# libraries, and the healthcheck uses curl. The runtime stays Debian slim,
+# upgrades its packages at build, overlays patched transitive deps, and drops
+# npm after install. The server keeps binding 127.0.0.1 inside the container
+# (the loopback-trust invariant is the auth model); deploy/docker-compose.yml
+# puts Caddy in the same network namespace to terminate TLS and authentication
+# at the edge.
 #
 #   docker build -t openmausbot .                                   (full engine set: the production default)
 #   docker build --build-arg ENGINE_SET=none --build-arg SAGAX_REQUIRE_ENGINES=0 -t openmausbot .
@@ -17,7 +21,9 @@
 # HOME is the /data volume, so engine CLI logins (~/.claude, ~/.codex, ...) and
 # Sagax's own state (/data/.openmausbot, kept for existing volumes) persist across container restarts.
 
-FROM node:24-trixie-slim AS build
+# node:24-trixie-slim as of 2026-10-06 (Node 24.21.0). Rebuild to pick a
+# newer tag; apt-get upgrade still applies Debian patches on top.
+FROM node:24-trixie-slim@sha256:173f125896c3b47ddf056734c7ea789d04595a6a08769a8f78e0df642781fb66 AS build
 WORKDIR /src
 # pinned to package.json#packageManager; corepack is being removed from Node
 RUN npm install -g pnpm@10.34.6
@@ -43,12 +49,13 @@ RUN arch="$(node -p 'process.arch === "arm64" ? "arm64" : "x64"')" \
   && chmod -R go-w dist-native/duckdb
 RUN pnpm build:server && pnpm exec vite build
 
-FROM node:24-trixie-slim
+FROM node:24-trixie-slim@sha256:173f125896c3b47ddf056734c7ea789d04595a6a08769a8f78e0df642781fb66
 # Install Chrome's Trixie libraries directly (Debian 13 renamed several with
 # a t64 suffix for its 64-bit time_t transition): agent-browser --with-deps
 # invokes sudo even as root, and this image deliberately does not ship sudo.
 # git + curl: agent CLIs shell out to git; curl backs the healthcheck
 RUN apt-get update \
+  && apt-get upgrade -y --no-install-recommends \
   && apt-get install -y --no-install-recommends ca-certificates curl git \
     libxcb-shm0 libx11-xcb1 libx11-6 libxcb1 libxext6 libxrandr2 \
     libxcomposite1 libxcursor1 libxdamage1 libxfixes3 libxi6 libgtk-3-0t64 \
@@ -90,12 +97,13 @@ ARG ENGINES=""
 ARG NATIVE_ENGINES=""
 ARG SAGAX_REQUIRE_ENGINES=1
 ARG TARGETARCH
-COPY engines.lock.json scripts/install-engines.mjs scripts/engine-image-gate.mjs /app/engines/
+COPY engines.lock.json scripts/install-engines.mjs scripts/engine-image-gate.mjs scripts/harden-image-deps.mjs /app/engines/
 ENV ENGINE_SET=${ENGINE_SET} \
     ENGINES=${ENGINES} \
     NATIVE_ENGINES=${NATIVE_ENGINES} \
     SAGAX_REQUIRE_ENGINES=${SAGAX_REQUIRE_ENGINES}
 RUN node /app/engines/install-engines.mjs --lock /app/engines/engines.lock.json --manifest /app/engines/manifest.json \
+  && node /app/engines/harden-image-deps.mjs --root /opt/sagax-engines --root /usr/local/lib/node_modules \
   && npm cache clean --force \
   && rm -rf /root/.npm /root/.cache /tmp/*
 # Captured before the ENV clear. An ENV of the same name overrides an ARG in
@@ -124,6 +132,19 @@ RUN npm install -g agent-browser@${AGENT_BROWSER_VERSION} \
        && ln -s /opt/openmausbot-browser/.agent-browser/browsers/chrome-*/chrome /opt/openmausbot-browser/chrome; \
      fi \
   && agent-browser --version
+# Overlay again after agent-browser, then drop the npm CLI and the Node
+# image's Yarn (only the installer used them), docs, and apt indexes. Node
+# stays; engines and the bundled server do not call npm or yarn at runtime.
+RUN node /app/engines/harden-image-deps.mjs --root /opt/sagax-engines --root /usr/local/lib/node_modules \
+  && apt-get update \
+  && apt-get upgrade -y --no-install-recommends \
+  && apt-get autoremove -y --purge \
+  && rm -rf /var/lib/apt/lists/* /usr/share/doc /usr/share/man /usr/share/info \
+  && npm cache clean --force \
+  && rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx \
+    /usr/local/lib/node_modules/corepack /usr/local/bin/corepack \
+    /opt/yarn-v1.22.22 /usr/local/bin/yarn /usr/local/bin/yarnpkg \
+    /root/.npm /root/.cache /tmp/*
 # DuckDB and resvg change on a version bump, not per commit: beneath the app files.
 COPY --from=build --chown=maus:maus /src/dist-native/duckdb/linux ./duckdb
 # The app itself last: a code change rebuilds only these layers.

@@ -1,14 +1,12 @@
 name: CodeQL
 
-# Advanced setup replacing CodeQL default setup. Default setup has no
-# concurrency control, so it queued one analysis per pushed commit. A repo
-# admin must switch default setup off (Settings > Code security > CodeQL
-# analysis) once this lands, or both will run.
+# Advanced setup beside CodeQL's default setup. Default setup stays on. It
+# already covers Swift, so this workflow has no Swift job. It analyzes
+# javascript-typescript, actions and python on ubuntu-latest.
 #
-# While default setup is still on, GitHub rejects SARIF from an advanced
-# configuration. Analysis still runs (so query/extraction errors fail the job),
-# but results are only uploaded when the repository variable
-# CODEQL_ADVANCED_UPLOAD is "true". Set it right after default setup is off.
+# Upload is off unless the repository variable CODEQL_ADVANCED_UPLOAD is
+# "true". While default setup is on, GitHub rejects a second SARIF upload, so
+# leave the variable unset. Query and extraction errors still fail the job.
 on:
   workflow_dispatch:
   push:
@@ -28,7 +26,7 @@ permissions:
 jobs:
   analyze:
     name: analyze (${{ matrix.language }})
-    runs-on: [self-hosted, linux, x64]
+    runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
       contents: read
@@ -37,43 +35,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # java-kotlin is left out: the Android sources are Kotlin, and CodeQL
-        # build-mode none extracts Java only, so the database came out empty.
-        # Kotlin needs a Gradle build with the Android SDK; add it once that
-        # build is available on the self-hosted runners.
+        # java-kotlin needs a Gradle build with the Android SDK; not included yet.
         include:
           - { language: javascript-typescript, build-mode: none }
           - { language: actions, build-mode: none }
           - { language: python, build-mode: none }
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: github/codeql-action/init@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
-        with:
-          languages: ${{ matrix.language }}
-          build-mode: ${{ matrix.build-mode }}
-      - uses: github/codeql-action/analyze@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
-        with:
-          category: /language:${{ matrix.language }}
-          upload: ${{ vars.CODEQL_ADVANCED_UPLOAD == 'true' && 'always' || 'never' }}
-
-  analyze-swift:
-    # Swift needs a macOS runner and a build (no build-mode none for Swift).
-    # macOS runners are the scarcest, so Swift runs on main pushes, the weekly
-    # schedule and manual runs, not on every PR.
-    if: github.event_name != 'pull_request'
-    name: analyze (${{ matrix.language }})
-    runs-on: [self-hosted, macos, arm64]
-    timeout-minutes: 60
-    permissions:
-      contents: read
-      security-events: write
-      actions: read
-    strategy:
-      matrix:
-        include:
-          - { language: swift, build-mode: autobuild }
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
