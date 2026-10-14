@@ -1,5 +1,8 @@
 // Rows at the foot of the sidebar, above the account row. Connected apps
-// and Browse Bots (each when its experimental flag is on) land here. Team map
+// and Browse Bots land here while Settings > Appearance > Sidebar shortcuts
+// is on (src/lib/sidebar-shortcuts-preferences.ts). Each icon plays a short
+// animation on hover or keyboard focus (`animation`, styles.css
+// `.sidebar-place-icon`), stilled by reduced motion. Team map
 // and Automations are in the account menu (SidebarProfileMenu). A failed
 // automation dots that row while the menu is closed.
 //
@@ -32,8 +35,13 @@ export interface SidebarPlace {
   attention?: boolean;
   /** `data-tour` id for the row */
   tourId?: string;
+  /** the icon's hover animation (styles.css `.sidebar-place-icon`) */
+  animation?: SidebarPlaceAnimation;
   onSelect: () => void;
 }
+
+/** puzzle: the piece wiggles into place; grid: the four tiles pop in turn. */
+export type SidebarPlaceAnimation = "puzzle" | "grid";
 
 /** The stack, the same in both layouts. */
 export const PLACES_STACK = "flex flex-col gap-0.5";
@@ -69,7 +77,13 @@ export function SidebarPlaces({ places, iconOnly = false }: { places: SidebarPla
                   : "text-sidebar-ink-secondary hover:bg-sidebar-hover hover:text-sidebar-ink",
               )}
             >
-              <Icon size={20} strokeWidth={1.75} aria-hidden="true" className={cn("shrink-0", place.active && "text-accent")} />
+              <Icon
+                size={20}
+                strokeWidth={1.75}
+                aria-hidden="true"
+                data-place-anim={place.animation}
+                className={cn("shrink-0", place.animation && "sidebar-place-icon", place.active && "text-accent")}
+              />
               {!iconOnly && <span className="min-w-0 flex-1 truncate text-[13px] leading-5">{place.label}</span>}
               {place.attention && (
                 <span

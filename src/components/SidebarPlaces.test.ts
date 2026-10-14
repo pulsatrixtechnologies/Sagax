@@ -1,9 +1,10 @@
 // SidebarPlaces lays out the rows it is given, as labels or as icon buttons.
-// The product passes Connected apps and Templates. This fixture still covers
+// The product passes Connected apps and Browse Bots. This fixture still covers
 // a four-row stack, including the attention dot and the tour anchors.
+import { readFileSync } from "node:fs";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { CalendarDays, Library, Network, Puzzle } from "lucide-react";
+import { CalendarDays, LayoutGrid, Library, Network, Puzzle } from "lucide-react";
 import { describe, expect, it } from "vitest";
 
 import { PLACE_ROW, PLACES_DIVIDER, PLACES_STACK, SidebarPlaces, type SidebarPlace } from "./SidebarPlaces";
@@ -78,6 +79,36 @@ describe("sidebar places", () => {
     expect(divider(collapsed)).toBe(divider(expanded));
     expect(divider(expanded)).toContain("bg-sidebar-hairline");
     expect(divider(expanded)).toContain(PLACES_DIVIDER);
+  });
+
+  it("marks the icons that animate on hover, and only those", () => {
+    const html = renderToStaticMarkup(createElement(SidebarPlaces, { places: [
+      { key: "plugins", label: "Connected apps", icon: Puzzle, animation: "puzzle", onSelect: () => {} },
+      { key: "browse-bots", label: "Browse Bots", icon: LayoutGrid, animation: "grid", onSelect: () => {} },
+      { key: "plain", label: "Plain", icon: Network, onSelect: () => {} },
+    ] }));
+    expect(html.match(/sidebar-place-icon/g)).toHaveLength(2);
+    expect(html).toContain('data-place-anim="puzzle"');
+    expect(html).toContain('data-place-anim="grid"');
+    expect(html).toMatch(/<svg[^>]*data-place-anim="grid"[^>]*>(<rect[^>]*><\/rect>){4}<\/svg>/);
+  });
+
+  it("animates the icons only without reduced motion (system or app setting)", () => {
+    const css = readFileSync(new URL("../styles.css", import.meta.url), "utf8");
+    // every rule that plays the keyframes sits in a no-preference block
+    const blocks = [...css.matchAll(/@media ([^{]*)\{((?:[^{}]*\{[^{}]*\})*)[^{}]*\}/g)];
+    const playing = blocks.filter((block) => /sidebar-place-(puzzle|grid)\b(?!\s*\{)/.test(block[2]!) && /animation:\s*sidebar-place-/.test(block[2]!));
+    expect(playing.length).toBe(2);
+    for (const block of playing) {
+      expect(block[1]).toContain("prefers-reduced-motion: no-preference");
+      // each selector also yields to the app's own reduced-motion switch
+      for (const rule of block[2]!.matchAll(/([^{}]+)\{[^{}]*animation/g)) {
+        expect(rule[1]).toContain(':root:not([data-reduced-motion="true"])');
+      }
+    }
+    // and nowhere outside those blocks
+    const outside = blocks.reduce((rest, block) => rest.replace(block[0], ""), css);
+    expect(outside).not.toMatch(/animation:\s*sidebar-place-/);
   });
 
   it("renders nothing without places", () => {

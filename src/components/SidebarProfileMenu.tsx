@@ -2,7 +2,10 @@
 //
 // The row is an avatar and a full name. Under the name, the viewer's own
 // title and points, each only while "Show my title" / "Show my points" is on;
-// with both off the name sits centred beside the avatar. The routines badge
+// with both off the name sits centred beside the avatar. While the sidebar
+// shortcuts (Connected apps, Browse Bots) sit above the row, the line is gone
+// for lack of room (`memberLine` false); Settings > Achievements and the
+// person panel still show both. The routines badge
 // (icon and count of active routines) sits at the right edge of the row and
 // opens Automations. Other people's rows never show title or points: those
 // live in a person's detail and on Settings > Achievements. The menu leads with Team map and
@@ -10,7 +13,7 @@
 // are any, sit above that pair with their own hairline. Your phone and
 // Help Center are not in this menu: the phone stays in Settings and on
 // the collapsed rail, and docs stay on About. Connected apps and Browse Bots
-// stay rows above this one when they are on (SidebarPlaces). It opens on
+// stay rows above this one while Sidebar shortcuts is on (SidebarPlaces). It opens on
 // click. The collapsed rail keeps its own avatar button.
 //
 // The update entry is the one item that reports progress in place, so it
@@ -320,12 +323,15 @@ export function profileMenuItems(input: {
   ];
 }
 
-export function SidebarProfileMenu({ avatarOnly = false, places = [] }: {
+export function SidebarProfileMenu({ avatarOnly = false, places = [], memberLine = true }: {
   /** just the avatar, for the collapsed (icons) rail; the name moves to the
    * tooltip and the menu keeps its width */
   avatarOnly?: boolean;
   /** Items listed before the profile items (Archived bots). */
   places?: SidebarMenuItem[];
+  /** the title and points line under the name; false while the sidebar
+   * shortcuts take the room above the row */
+  memberLine?: boolean;
 }) {
   const { state, dispatch } = useStore();
   const selfPrincipalId = viewerActorId(state.config);
@@ -340,7 +346,7 @@ export function SidebarProfileMenu({ avatarOnly = false, places = [] }: {
   const activeRoutines = activeRoutineCount(state.routines, state.bots, viewerActorId(state.config));
   const badgeEnabled = useShowRoutinesBadge();
   const showBadge = badgeEnabled && activeRoutines > 0;
-  const snapshot = achievements.status === "ready" ? achievements.snapshot : undefined;
+  const snapshot = memberLine && achievements.status === "ready" ? achievements.snapshot : undefined;
   const titleName = snapshot && snapshot.settings.showTitle !== false ? achievementTitleName(snapshot.settings.title) : null;
   const pointsText = snapshot && snapshot.settings.showPoints !== false ? formatPoints(snapshot.points) : null;
   const showLine = Boolean(titleName || pointsText);

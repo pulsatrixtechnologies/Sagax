@@ -77,6 +77,15 @@ describe("sidebar footer row", () => {
     expect(html).not.toContain("-mt-[21px]");
   });
 
+  it("drops the title and points line while the sidebar shortcuts take the room", () => {
+    resetAchievementsForTests({ status: "ready", snapshot: points() });
+    const html = renderToStaticMarkup(createElement(SidebarProfileMenu, { memberLine: false }));
+    expect(html).toContain(">Jean-Christophe Proulx</span>");
+    expect(html).not.toContain("data-member-line");
+    expect(html).not.toContain(">Commander<");
+    expect(html).not.toContain("data-gamertag");
+  });
+
   it("shows only the title, or only the points, when one switch is off", () => {
     const base = points();
     resetAchievementsForTests({ status: "ready", snapshot: { ...base, settings: { ...base.settings, showPoints: false } } });

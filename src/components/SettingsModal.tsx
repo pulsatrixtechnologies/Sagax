@@ -8,7 +8,7 @@ import { FLOATING_LIVELINESS, floatingBotPrefs, HOTKEY_CHOICES, hotkeyLabel, set
 import { useCallSettings, writeCallSettings } from "@/lib/voice-mode/call-settings";
 import { Archive, Bell, BookOpen, Coins, FlaskConical, Mail, Monitor, Palette, Plug, ScrollText, Search, ShieldCheck, TabletSmartphone, Terminal, User, Users, X, Building2, Zap } from "lucide-react";
 import { api, useStore, type AppSettingsSection, type ConfigStatus } from "@/state/store";
-import { browserAvailable, builtInBrowserEnabled, browseBotsEnabled, connectedAppsEnabled, decisionModelEnabled, routinesInConversationEnabled, showToolCallsEnabled, skillAuthoringEnabled } from "@/lib/feature-flags";
+import { browserAvailable, builtInBrowserEnabled, connectedAppsEnabled, decisionModelEnabled, routinesInConversationEnabled, showToolCallsEnabled, skillAuthoringEnabled } from "@/lib/feature-flags";
 import { usePerspicaxOrg } from "@/lib/perspicax-org";
 import { localeChoices, type LocaleKey } from "@/locales";
 import { t } from "@/lib/i18n";
@@ -77,6 +77,7 @@ import { setShowRunCard, useShowRunCard } from "@/lib/run-card-preferences";
 import { parseSendKey, SEND_KEYS, sendKeyLabel, setSendKey, useSendKey } from "@/lib/send-key";
 import { setShowSidebarLogo, useShowSidebarLogo } from "@/lib/sidebar-logo-preferences";
 import { setShowRoutinesBadge, useShowRoutinesBadge } from "@/lib/routines-badge-preferences";
+import { setSidebarShortcuts, useSidebarShortcuts } from "@/lib/sidebar-shortcuts-preferences";
 import { setShowInspectorButton, useShowInspectorButton } from "@/lib/inspector-preferences";
 import { effectiveLanguage, setLanguageChoice, useLanguageChoice } from "@/lib/language-preference";
 
@@ -717,6 +718,22 @@ function SidebarLogoRow() {
   );
 }
 
+/** Connected apps and Browse Bots as menu rows at the foot of the sidebar.
+ * On, the account row drops its title and points line for lack of room. */
+function SidebarShortcutsRow() {
+  const { state } = useStore();
+  const enabled = useSidebarShortcuts(state.config);
+  return (
+    <SettingRow title={t("settings.sidebarShortcuts.title")} subtitle={t("settings.sidebarShortcuts.subtitle")}>
+      <Switch
+        checked={enabled}
+        aria-label={t("settings.sidebarShortcuts.show")}
+        onClick={() => setSidebarShortcuts(!enabled)}
+      />
+    </SettingRow>
+  );
+}
+
 function RoutinesBadgeRow() {
   const enabled = useShowRoutinesBadge();
   return (
@@ -825,13 +842,12 @@ function ToolCallsRow() {
   );
 }
 
-type ExperimentalFeature = "skillAuthoring" | "browser" | "templates" | "connectedApps" | "decisionModel";
+type ExperimentalFeature = "skillAuthoring" | "browser" | "connectedApps" | "decisionModel";
 
 function ExperimentalFeaturesRow() {
   const { state, dispatch } = useStore();
   const skillAuthoring = skillAuthoringEnabled(state.config);
   const browser = builtInBrowserEnabled(state.config);
-  const browseBots = browseBotsEnabled(state.config);
   const connectedApps = connectedAppsEnabled(state.config);
   const decisionModel = decisionModelEnabled(state.config);
   const desktopBrowser = browserAvailable(state.config);
@@ -863,7 +879,7 @@ function ExperimentalFeaturesRow() {
       cardId="experimental.features"
       title={t("settings.experimental.title")}
       subtitle={t("settings.experimental.subtitle")}
-      summary={t("settings.card.countOn", { count: Number(skillAuthoring) + Number(browser) + Number(browseBots) + Number(connectedApps) + Number(decisionModel), total: 5 })}
+      summary={t("settings.card.countOn", { count: Number(skillAuthoring) + Number(browser) + Number(connectedApps) + Number(decisionModel), total: 4 })}
     >
       <div className="flex items-center justify-between gap-4">
         <div className="min-w-0">
@@ -898,21 +914,6 @@ function ExperimentalFeaturesRow() {
           aria-label={t("settings.experimental.browserAria")}
           disabled={saving !== null || (!browser && !desktopBrowser && !browserInstallable)}
           onClick={() => void toggle("browser", !browser)}
-          className="disabled:cursor-wait disabled:opacity-50"
-        />
-      </div>
-      <div className="mt-4 flex items-center justify-between gap-4 border-t border-hairline/30 pt-4" data-experimental-browse-bots>
-        <div className="min-w-0">
-          <div className="text-[14px] font-medium text-ink">{t("settings.experimental.browseBots")}</div>
-          <div className="mt-0.5 text-[12px] leading-relaxed text-ink-secondary">
-            {t("settings.experimental.browseBotsDetail")}
-          </div>
-        </div>
-        <Switch
-          checked={browseBots}
-          aria-label={t("settings.experimental.browseBotsAria")}
-          disabled={saving !== null}
-          onClick={() => void toggle("templates", !browseBots)}
           className="disabled:cursor-wait disabled:opacity-50"
         />
       </div>
@@ -1392,6 +1393,7 @@ export function SettingsModal() {
                   <SendKeyRow />
                   <SidebarDensityRow />
                   <SidebarLogoRow />
+                  {advanced && <SidebarShortcutsRow />}
                   <RoutinesBadgeRow />
                   {advanced && <InspectorButtonRow />}
                   <ShowThreadsRow />

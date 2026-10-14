@@ -2558,10 +2558,18 @@ its structural `src/styles/retro98.css`) and Meadow. Each skin is one mode
 Team map and Automations open from the account row at the foot of the
 sidebar (`SidebarProfileMenu`), in that order, with a hairline under the
 pair. Archived bots, when there are any, sit above the pair. Connected
-apps and Browse Bots (each when its experimental flag is on; Browse Bots is
-off by default and stored under the server's `features.templates` key) stay
-rows above that row (`SidebarPlaces`). Browse Bots opens the catalogue on its
-home view. The old Templates library is gone; New bot's "Browse templates",
+apps (puzzle) and Browse Bots (2x2 grid) stay rows above that row
+(`SidebarPlaces`) while Settings > Appearance > Sidebar shortcuts is on
+(2026-10-14, `src/lib/sidebar-shortcuts-preferences.ts`, per person in
+localStorage `sagax-sidebar-shortcuts`; Advanced mode only, Browse Bots not on
+a remote client). A person with no stored choice gets the old experimental
+switches' value once (`features.connectedApps` or `features.templates` on),
+written on first load. Each icon animates once on hover or keyboard focus
+(`.sidebar-place-icon` in `styles.css`), never under reduced motion. While the
+rows show, the account row drops the title and points line (`memberLine`);
+they stay on Settings > Achievements and in the person panel. There is no
+"Connect apps" pill and no Browse Bots experimental switch. Browse Bots opens
+the catalogue on its home view. The old Templates library is gone; New bot's "Browse templates",
 Connect apps' "Browse Bots" row and install links open the catalogue on its
 Templates section through `src/lib/templates-entry.ts`. Browse Bots is not in
 the composer To: menu, the mascot menu or the sidebar section menu. Your phone and Help Center are not in the menu.

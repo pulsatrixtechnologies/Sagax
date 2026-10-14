@@ -1,0 +1,71 @@
+/** Isolated gallery for Playwright screenshots of the sidebar foot with
+ * Settings > Appearance > Sidebar shortcuts on (the two menu rows, no title
+ * or points under the name) and off (the account row alone, title and
+ * points under the name). Not shipped in the app.
+ * The capture script answers /api itself (an empty roster).
+ * ?skin=<id>&lang=<code> */
+import { StrictMode } from "react";
+import { createRoot } from "react-dom/client";
+import { LayoutGrid, Puzzle } from "lucide-react";
+import { SidebarPlaces, type SidebarPlace } from "../components/SidebarPlaces";
+import { SidebarProfileMenu } from "../components/SidebarProfileMenu";
+import { resetAchievementsForTests } from "../lib/achievements";
+import { setLocale, t } from "../lib/i18n";
+import { applySkin, readSkin, SKIN_IDS, type SkinId } from "../lib/skins";
+import { StoreProvider } from "../state/store";
+import "../styles.css";
+
+const params = new URLSearchParams(location.search);
+const skinParam = params.get("skin") as SkinId | null;
+applySkin(skinParam && (SKIN_IDS as readonly string[]).includes(skinParam) ? skinParam : readSkin());
+setLocale(params.get("lang") ?? "fr");
+resetAchievementsForTests({
+  status: "ready",
+  snapshot: {
+    points: 195,
+    maxPoints: 1500,
+    level: { level: 2, from: 0, to: 200 },
+    unlockedCount: 0,
+    count: 0,
+    streak: 0,
+    rewards: [],
+    recent: [],
+    items: [],
+    settings: { showPoints: true, showTitle: true, toasts: true, native: false, public: false, title: "commander" },
+  },
+});
+
+const places: SidebarPlace[] = [
+  { key: "plugins", tourId: "nav-apps", label: t("sidebar.nav.connectedApps"), icon: Puzzle, animation: "puzzle", onSelect: () => {} },
+  { key: "browse-bots", label: t("sidebar.browseBots"), icon: LayoutGrid, animation: "grid", onSelect: () => {} },
+];
+
+function Foot({ on }: { on: boolean }) {
+  return (
+    <div className="flex w-[280px] flex-col rounded-xl border-[0.5px] border-hairline-weak bg-sidebar" data-gallery={on ? "on" : "off"}>
+      <div className="px-3 pt-3 text-[12px] text-sidebar-ink-secondary">{on ? "Raccourcis : activé" : "Raccourcis : désactivé"}</div>
+      <div className="h-24" />
+      <div className="pb-3 pl-2 pr-3 pt-1">
+        {on && <SidebarPlaces places={places} />}
+        <SidebarProfileMenu memberLine={!on} />
+      </div>
+    </div>
+  );
+}
+
+function Gallery() {
+  return (
+    <StoreProvider>
+      <div className="flex min-h-screen items-end gap-8 bg-app p-8 text-ink">
+        <Foot on />
+        <Foot on={false} />
+      </div>
+    </StoreProvider>
+  );
+}
+
+createRoot(document.getElementById("root")!).render(
+  <StrictMode>
+    <Gallery />
+  </StrictMode>,
+);

@@ -2101,6 +2101,48 @@ html[data-animations-paused] *::after {
   transition: none !important;
 }
 
+/* Sidebar shortcuts (SidebarPlaces): the row's icon plays once on hover or
+   keyboard focus. Connected apps' puzzle piece wiggles into place; Browse
+   Bots' four tiles pop in turn. Only for a pointer that hovers, and never
+   under reduced motion (the system setting or :root[data-reduced-motion]). */
+.sidebar-place-icon[data-place-anim="puzzle"],
+.sidebar-place-icon[data-place-anim="grid"] rect {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+@keyframes sidebar-place-puzzle {
+  0%, 100% { transform: rotate(0deg) scale(1); }
+  25% { transform: rotate(-14deg) scale(1.08); }
+  50% { transform: rotate(10deg) scale(1.08); }
+  75% { transform: rotate(-5deg) scale(1.02); }
+}
+@keyframes sidebar-place-grid {
+  0%, 100% { transform: scale(1); }
+  45% { transform: scale(0.55); }
+}
+@media (prefers-reduced-motion: no-preference) {
+  :root:not([data-reduced-motion="true"]) [data-sidebar-place]:focus-visible .sidebar-place-icon[data-place-anim="puzzle"] {
+    animation: sidebar-place-puzzle 0.6s ease-in-out;
+  }
+  :root:not([data-reduced-motion="true"]) [data-sidebar-place]:focus-visible .sidebar-place-icon[data-place-anim="grid"] rect {
+    animation: sidebar-place-grid 0.45s ease-in-out both;
+  }
+  :root:not([data-reduced-motion="true"]) [data-sidebar-place]:focus-visible .sidebar-place-icon[data-place-anim="grid"] rect:nth-child(2) { animation-delay: 0.07s; }
+  :root:not([data-reduced-motion="true"]) [data-sidebar-place]:focus-visible .sidebar-place-icon[data-place-anim="grid"] rect:nth-child(3) { animation-delay: 0.14s; }
+  :root:not([data-reduced-motion="true"]) [data-sidebar-place]:focus-visible .sidebar-place-icon[data-place-anim="grid"] rect:nth-child(4) { animation-delay: 0.21s; }
+}
+@media (hover: hover) and (prefers-reduced-motion: no-preference) {
+  :root:not([data-reduced-motion="true"]) [data-sidebar-place]:hover .sidebar-place-icon[data-place-anim="puzzle"] {
+    animation: sidebar-place-puzzle 0.6s ease-in-out;
+  }
+  :root:not([data-reduced-motion="true"]) [data-sidebar-place]:hover .sidebar-place-icon[data-place-anim="grid"] rect {
+    animation: sidebar-place-grid 0.45s ease-in-out both;
+  }
+  :root:not([data-reduced-motion="true"]) [data-sidebar-place]:hover .sidebar-place-icon[data-place-anim="grid"] rect:nth-child(2) { animation-delay: 0.07s; }
+  :root:not([data-reduced-motion="true"]) [data-sidebar-place]:hover .sidebar-place-icon[data-place-anim="grid"] rect:nth-child(3) { animation-delay: 0.14s; }
+  :root:not([data-reduced-motion="true"]) [data-sidebar-place]:hover .sidebar-place-icon[data-place-anim="grid"] rect:nth-child(4) { animation-delay: 0.21s; }
+}
+
 /* SupaMaus vector motion. The fast horizontal compression is the edge-on
    moment of a turn; face parallax, surface lighting, and orbiting vector marks
    sell the 3D rotation without duplicate silhouettes, raster frames, or WebGL. */

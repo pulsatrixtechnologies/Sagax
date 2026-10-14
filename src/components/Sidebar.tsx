@@ -37,7 +37,8 @@ import { peerLine } from "@/lib/peer-message";
 import { viewerMayDeleteGroup, viewerOwnsGroup } from "@/lib/group-owner";
 import { otherAuthorName, viewerActorId } from "@/lib/viewer";
 import { showBotArchive, showBotDelete, showBotRename, showServerSectionMove } from "@/lib/bot-capabilities";
-import { browseBotsEnabled, connectedAppsEnabled, llmThreadTitlesEnabled } from "@/lib/feature-flags";
+import { llmThreadTitlesEnabled } from "@/lib/feature-flags";
+import { migrateSidebarShortcuts, useSidebarShortcuts } from "@/lib/sidebar-shortcuts-preferences";
 import { templatesEntryActions } from "@/lib/templates-entry";
 import { useAdvancedMode } from "@/lib/interface-mode";
 
@@ -2567,6 +2568,12 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
   // Chosen in Settings > Appearance or by dragging the edge; one store.
   const advanced = useAdvancedMode();
   const density = useSidebarDensity();
+  // Settings > Appearance > Sidebar shortcuts. A person with no stored
+  // choice keeps what the experimental switches showed, written once.
+  const sidebarShortcuts = useSidebarShortcuts(state.config);
+  useEffect(() => {
+    migrateSidebarShortcuts(state.config);
+  }, [state.config]);
   const [sidebarWidth, setSidebarWidth] = useState(readSidebarWidth);
   // `collapsed` follows the drag itself: the density store answers a beat
   // later, and a second crossing in that beat must not toggle twice.
@@ -2889,27 +2896,28 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
   // same rule and order as the sidebar tree, so the bell can never
   // disagree with it.
   const pendingBotUndo = teamFeedback?.restoreBot;
-  // Connected apps and Browse Bots (each when its experimental flag is on)
-  // stay in view above the account row. Team map and Automations are in the account
-  // menu.
-  const places: SidebarPlace[] = [
-    // Connected apps is experimental (Settings > Experimental features).
-    ...(advanced && connectedAppsEnabled(state.config) ? [{
+  // Connected apps and Browse Bots stay in view above the account row while
+  // Settings > Appearance > Sidebar shortcuts is on (a per-person choice;
+  // src/lib/sidebar-shortcuts-preferences.ts). Their icons animate on hover.
+  // Team map and Automations are in the account menu.
+  const places: SidebarPlace[] = advanced && sidebarShortcuts ? [
+    {
       key: "plugins",
       tourId: "nav-apps",
       label: t("sidebar.nav.connectedApps"),
       icon: Puzzle,
+      animation: "puzzle",
       onSelect: () => dispatch({ type: "togglePlugins", open: true }),
-    }] : []),
-    // Browse Bots (the bot catalogue, on its home view): hidden until
-    // Settings > Experimental features turns it on.
-    ...(!remoteClient && advanced && browseBotsEnabled(state.config) ? [{
+    },
+    // Browse Bots: the bot catalogue, on its home view.
+    ...(!remoteClient ? [{
       key: "browse-bots",
       label: t("sidebar.browseBots"),
       icon: LayoutGrid,
+      animation: "grid" as const,
       onSelect: () => dispatch(openBotCatalog()),
     }] : []),
-  ];
+  ] : [];
   // Archived bots is housekeeping, not a place: it stays in the account menu.
   const accountPlaces: SidebarMenuItem[] = !remoteClient && archivedBots.length > 0 ? [{
     key: "archived",
@@ -3253,7 +3261,7 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
         ) : (
           // One row, the way Perspicax lays out its account footer: your
           // avatar and your full name, opening the profile menu.
-          <SidebarProfileMenu places={accountPlaces} />
+          <SidebarProfileMenu places={accountPlaces} memberLine={places.length === 0} />
         )}
       </div>
 

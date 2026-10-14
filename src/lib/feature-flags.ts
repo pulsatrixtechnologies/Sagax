@@ -46,8 +46,9 @@ export function routinesInConversationEnabled(config: FeatureFlagConfig | null |
   return config?.features?.routinesInConversation === true;
 }
 
-/** Connected apps (Composio): the sidebar's bottom-menu entry and the
- * Settings > Connections card. Experimental: off until switched on in
+/** Connected apps (Composio): the Settings > Connections card. (The
+ * sidebar's Connected apps row follows Settings > Appearance > Sidebar
+ * shortcuts; this switch only seeds that setting's first value.) Experimental: off until switched on in
  * Settings > Experimental features; mirrors the server's
  * connectedAppsEnabled. While off, the claude.ai connectors status shows in
  * Settings > Model providers. */
@@ -55,10 +56,10 @@ export function connectedAppsEnabled(config: FeatureFlagConfig | null | undefine
   return config?.features?.connectedApps === true;
 }
 
-/** The sidebar's Browse Bots entry (the bot catalogue). Experimental: off
- * until switched on in Settings > Experimental features. Stored under the
- * server's long-standing `templates` feature key (server templatesEnabled),
- * so no server change and an earlier choice carries over. */
+/** The former Experimental switch for the sidebar's Browse Bots row, stored
+ * under the server's long-standing `templates` feature key. The row now
+ * follows Settings > Appearance > Sidebar shortcuts; this value only seeds
+ * that setting for a person who never chose (sidebar-shortcuts-preferences). */
 export function browseBotsEnabled(config: FeatureFlagConfig | null | undefined): boolean {
   return config?.features?.templates === true;
 }

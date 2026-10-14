@@ -67,21 +67,29 @@ describe("Settings → Decision model", () => {
     expect(panel).toContain("A fast decision model that picks");
   });
 
-  it("hides the VPS and Boat switches and counts the five that remain, Browse Bots among them", async () => {
+  it("hides the VPS and Boat switches and counts the four that remain; Browse Bots moved to Appearance", async () => {
     fixture.section = "experimental";
     const off = await render();
-    expect(off).toContain("1 of 5 on");
+    expect(off).toContain("1 of 4 on");
     expect(off).toContain('data-experimental-feature="decisionModel"');
     expect(off).toContain("Decision model");
-    expect(off).toContain("data-experimental-browse-bots");
-    expect(off).toContain("Browse Bots");
+    expect(off).not.toContain("data-experimental-browse-bots");
+    expect(off).not.toContain("Browse Bots");
     expect(off).not.toContain("Templates");
     expect(off).not.toContain("VPS Computer");
     expect(off).not.toContain("Boat Computer");
     expect(off).toContain('aria-checked="false"');
 
     fixture.decisionModel = true;
-    expect(await render()).toContain("2 of 5 on");
+    expect(await render()).toContain("2 of 4 on");
+  });
+
+  it("offers Sidebar shortcuts in Appearance, seeded from the old experimental switches", async () => {
+    fixture.section = "appearance";
+    const html = await render();
+    const row = /<button[^>]*aria-label="Show the sidebar shortcuts"[^>]*>/.exec(html)?.[0] ?? "";
+    expect(html).toContain("Sidebar shortcuts");
+    expect(row).toContain('aria-checked="false"');
   });
 
   it("matches searches for decision, jev, typesafe, routing and auto", async () => {

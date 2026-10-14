@@ -8,27 +8,23 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("@/lib/interface-mode", () => ({ useAdvancedMode: () => true, setAdvancedMode: () => {} }));
 
 import { setLocale, t } from "@/lib/i18n";
+import { resetAchievementsForTests } from "@/lib/achievements";
+import type { AchievementSnapshot } from "../../shared/achievements";
 import type { SidebarDensity } from "@/lib/sidebar-preferences";
 import { StoreProvider } from "@/state/store";
 
-const fixture = vi.hoisted(() => ({ showLogo: true, density: "comfortable" as SidebarDensity, templates: undefined as boolean | undefined, connectedApps: undefined as boolean | undefined }));
+const fixture = vi.hoisted(() => ({ showLogo: true, density: "comfortable" as SidebarDensity, shortcuts: false }));
 
 vi.mock("@/lib/sidebar-preferences", async (importOriginal) => ({
   ...await importOriginal<typeof import("@/lib/sidebar-preferences")>(),
   useSidebarDensity: () => fixture.density,
 }));
 
-vi.mock("@/state/store", async (importOriginal) => {
-  const original = await importOriginal<typeof import("@/state/store")>();
-  return {
-    ...original,
-    useStore: () => {
-      const store = original.useStore();
-      if (fixture.templates === undefined && fixture.connectedApps === undefined) return store;
-      return { ...store, state: { ...store.state, config: { ...store.state.config, features: { skillAuthoring: true, templates: fixture.templates, connectedApps: fixture.connectedApps } } } };
-    },
-  };
-});
+vi.mock("@/lib/sidebar-shortcuts-preferences", async (importOriginal) => ({
+  ...await importOriginal<typeof import("@/lib/sidebar-shortcuts-preferences")>(),
+  useSidebarShortcuts: () => fixture.shortcuts,
+  migrateSidebarShortcuts: () => false,
+}));
 
 vi.mock("@/lib/sidebar-logo-preferences", async (importOriginal) => ({
   ...await importOriginal<typeof import("@/lib/sidebar-logo-preferences")>(),
@@ -36,6 +32,19 @@ vi.mock("@/lib/sidebar-logo-preferences", async (importOriginal) => ({
 }));
 
 import { paletteShortcutLabel, Sidebar } from "./Sidebar";
+
+const achievementSnapshot = (): AchievementSnapshot => ({
+  points: 195,
+  maxPoints: 1500,
+  level: { level: 2, from: 0, to: 200 },
+  unlockedCount: 0,
+  count: 0,
+  streak: 0,
+  rewards: [],
+  recent: [],
+  items: [],
+  settings: { showPoints: true, showTitle: true, toasts: true, native: false, public: false, title: "commander" },
+});
 
 const render = () => renderToStaticMarkup(
   createElement(StoreProvider, null, createElement(Sidebar, { open: true, onClose: () => {} })),
@@ -48,8 +57,9 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.unstubAllGlobals();
-  fixture.templates = undefined;
-  fixture.connectedApps = undefined;
+  fixture.shortcuts = false;
+  fixture.density = "comfortable";
+  resetAchievementsForTests();
   setLocale("en");
 });
 
@@ -116,30 +126,48 @@ describe("sidebar header", () => {
     },
   );
 
-  it("hides Browse Bots in the bottom menu until its experimental flag is on", () => {
+  // Settings > Appearance > Sidebar shortcuts (2026-10-14): on, the two menu
+  // rows with their animated icons and no title or points under the name;
+  // off, neither rows nor a "Connect apps" pill, and the line is back.
+  it("shows Connected apps and Browse Bots as menu rows, and no title or points, while Sidebar shortcuts is on", () => {
     fixture.density = "comfortable";
-    expect(render()).not.toContain(">Browse Bots</span>");
-    expect(render()).not.toContain(">Templates</span>");
-    fixture.templates = false;
-    expect(render()).not.toContain(">Browse Bots</span>");
-    fixture.templates = true;
+    fixture.shortcuts = true;
+    resetAchievementsForTests({ status: "ready", snapshot: achievementSnapshot() });
     const html = render();
+    const rows = [...html.matchAll(/data-sidebar-place="([^"]+)"/g)].map((match) => match[1]);
+    expect(rows).toEqual(["plugins", "browse-bots"]);
+    expect(html).toContain(">Connected apps</span>");
     expect(html).toContain(">Browse Bots</span>");
-    expect(html).not.toContain(">Templates</span>");
-    expect(html).not.toContain(">Connected apps</span>");
+    expect(html).toContain('data-tour="nav-apps"');
+    expect(html).toContain('data-place-anim="puzzle"');
+    expect(html).toContain('data-place-anim="grid"');
+    expect(html).not.toContain(">Connect apps<");
+    expect(html).not.toContain("data-member-line");
+    expect(html).not.toContain(">Commander<");
+    expect(html).not.toContain("data-gamertag");
   });
 
-  it("hides Connected apps in the bottom menu until its experimental flag is on", () => {
+  it("shows neither menu rows nor a Connect apps pill, and keeps title and points, while Sidebar shortcuts is off", () => {
     fixture.density = "comfortable";
-    expect(render()).not.toContain(">Connected apps</span>");
-    expect(render()).not.toContain('data-tour="nav-apps"');
-    fixture.connectedApps = false;
-    expect(render()).not.toContain(">Connected apps</span>");
-    fixture.connectedApps = true;
+    fixture.shortcuts = false;
+    resetAchievementsForTests({ status: "ready", snapshot: achievementSnapshot() });
     const html = render();
-    expect(html).toContain(">Connected apps</span>");
-    expect(html).not.toContain(">Team map</span>");
-    expect(html).not.toContain(">Automations</span>");
+    expect(html).not.toContain("data-sidebar-place=");
+    expect(html).not.toContain(">Connected apps</span>");
+    expect(html).not.toContain(">Browse Bots</span>");
+    expect(html).not.toContain(">Connect apps<");
+    expect(html).toContain("data-member-line");
+    expect(html).toContain(">Commander<");
+    expect(html).toContain("data-gamertag");
+  });
+
+  it("keeps the rows as icon buttons on the collapsed rail", () => {
+    fixture.density = "icons";
+    fixture.shortcuts = true;
+    const html = render();
+    expect(html).toContain('aria-label="Connected apps"');
+    expect(html).toContain('aria-label="Browse Bots"');
+    expect(html).toContain('data-place-anim="grid"');
   });
 
   it("hides the brand row when the sidebar logo is turned off, keeping search and New", () => {
