@@ -5,7 +5,10 @@ import { describe, expect, it } from "vitest";
 import {
   CHROME_FOR_TESTING_VERSION,
   CHROME_LINUX_PLATFORMS,
+  CHROME_LINUX_SHA256,
+  chromePlatformFromArch,
   chromePlatformsFromCatalog,
+  chromeZipSha256,
   chromeZipUrl,
 } from "./chrome-linux-arch.mjs";
 
@@ -20,6 +23,9 @@ describe("Chrome for Testing on both Linux architectures", () => {
     expect(chromeZipUrl(CHROME_FOR_TESTING_VERSION, "linux-arm64")).toBe(
       `https://storage.googleapis.com/chrome-for-testing-public/${CHROME_FOR_TESTING_VERSION}/linux-arm64/chrome-linux-arm64.zip`,
     );
+    expect(chromePlatformFromArch("arm64")).toBe("linux-arm64");
+    expect(chromeZipSha256("linux64")).toBe(CHROME_LINUX_SHA256.linux64);
+    expect(chromeZipSha256("linux-arm64")).toHaveLength(64);
     expect(() => chromeZipUrl("latest", "linux-arm64")).toThrow(/pinned/);
     expect(() => chromeZipUrl(CHROME_FOR_TESTING_VERSION, "win64")).toThrow(/Linux/);
   });
@@ -43,7 +49,8 @@ describe("Chrome for Testing on both Linux architectures", () => {
   });
 
   it("installs the same browser on every architecture and refuses the Debian fallback", () => {
-    expect(dockerfile).toContain("agent-browser install");
+    expect(dockerfile).toContain("install-chrome-for-testing.mjs");
+    expect(dockerfile).not.toContain("agent-browser install");
     expect(dockerfile).not.toMatch(/apt-get install -y --no-install-recommends chromium/);
     expect(dockerfile).toContain("test ! -e /usr/bin/chromium");
     expect(dockerfile).not.toMatch(/if \[ "\$TARGETARCH" = "arm64" \]/);

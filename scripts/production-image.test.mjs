@@ -27,6 +27,7 @@ describe("production image sources", () => {
     expect(dockerfile).toContain("apt-get upgrade -y --no-install-recommends");
     expect(dockerfile).toContain("scripts/harden-image-deps.mjs");
     expect(dockerfile).toContain("scripts/hermes-python.mjs");
+    expect(dockerfile).toContain("install-chrome-for-testing.mjs");
     expect(dockerfile).toContain("libstdc++6");
     expect(dockerfile).not.toMatch(/apt-get install -y --no-install-recommends chromium/);
     expect(read("scripts/harden-image-deps.mjs")).toContain("--require-hashes");
@@ -52,6 +53,7 @@ describe("production image sources", () => {
     expect(workflow).toContain("scripts/harden-image-deps.mjs");
     expect(workflow).toContain("scripts/trivy-ignore-guard.mjs");
     expect(workflow).toContain("scripts/combine-trivyignore.mjs");
+    expect(workflow).toContain("scripts/install-chrome-for-testing.mjs");
     expect(workflow).toContain("scripts/hermes-jwt-overlay-smoke.py");
     expect(read("scripts/hermes-jwt-overlay-smoke.py")).toContain("jwt.encode");
     expect(read("scripts/hermes-jwt-overlay-smoke.py")).toContain("jwt.decode");

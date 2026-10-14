@@ -118,10 +118,12 @@ ENV ENGINE_SET= \
 # The bots' browser (docs/plans/browser-engine.md): the pinned agent-browser
 # and Chrome for Testing, so a server bot can browse. Pin here and in
 # server/browser-engine-release.ts together. linux64 and linux-arm64 both
-# publish a zip; do not fall back to the Debian browser package.
+# publish a zip; the 0.38.2 installer still refuses linux-arm64, so the
+# image downloads that zip itself. Do not fall back to the Debian browser.
+COPY scripts/chrome-linux-arch.mjs scripts/install-chrome-for-testing.mjs /app/engines/
 ARG AGENT_BROWSER_VERSION=0.38.2
 RUN npm install -g agent-browser@${AGENT_BROWSER_VERSION} \
-  && HOME=/opt/openmausbot-browser agent-browser install \
+  && HOME=/opt/openmausbot-browser node /app/engines/install-chrome-for-testing.mjs \
   && ln -s /opt/openmausbot-browser/.agent-browser/browsers/chrome-*/chrome /opt/openmausbot-browser/chrome \
   && test ! -e /usr/bin/chromium \
   && test -x /opt/openmausbot-browser/chrome \
