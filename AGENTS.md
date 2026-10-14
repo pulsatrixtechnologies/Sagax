@@ -3023,6 +3023,29 @@ apps, so those paths stay ours on every later merge. To repeat:
   `mcp-oauth.key`, both left out of workspace backups). Upstream's own
   MCP sign-in manager and routes were not taken.
 
+## Media proxy destinations (2026-10-14)
+
+`GET /api/media/proxy/<token>` fetches a URL a bot gave, so it only reaches
+public destinations (`server/media-proxy-guard.ts`, `docs/media-proxy.md`).
+Keep these rules:
+
+- Loopback, unspecified, link-local, cloud metadata (169.254.169.254,
+  168.63.129.16, fd00:ec2::254), RFC 1918, CGNAT/Tailscale 100.64.0.0/10,
+  ULA, multicast, reserved ranges and IPv4 inside IPv6 are refused, ports
+  other than 80/443 too. The check runs on every resolved address
+  (`checkMediaDestination`), the socket connects to the checked address
+  (`lookup` hook in `requestCheckedUpstream`, own keep-alive agents), and
+  redirects are followed by hand (5 max) with the same check per hop.
+- `SAGAX_MEDIA_PROXY_ALLOW_HOSTS` (empty by default): host names, `*.suffix`,
+  IPs or CIDRs the operator allows (any port). A name never opens a metadata
+  address.
+- `rewriteHlsPlaylist` leaves a non-public literal host unproxied unless
+  allowed (`mediaUrlMayBeProxied`); other origins stay untouched.
+- A refusal answers a generic 403 and logs reason and host only
+  (`logMediaProxyRefusal`), never the token, path or query.
+- Tests that proxy a local upstream allow `127.0.0.1` explicitly (policy
+  option or `vi.stubEnv`). Tests: `server/media-proxy-guard.test.ts`.
+
 ## Release notes in the app
 
 Every release has `docs/releases/<version>.md`: the French part first, then a

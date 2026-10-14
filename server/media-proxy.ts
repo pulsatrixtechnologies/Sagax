@@ -1,13 +1,23 @@
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
-import type { ServerResponse } from "node:http";
-import { request as httpRequest } from "node:https";
-import { request as httpRequestHttp } from "node:http";
+import { Agent as HttpAgent, request as httpRequest, type IncomingMessage, type ServerResponse } from "node:http";
+import { Agent as HttpsAgent, request as httpsRequest } from "node:https";
+import type { LookupAddress } from "node:dns";
+import type { LookupFunction } from "node:net";
 import { URL } from "node:url";
 
 import type { SagaxVideoEmit, WireVideoWidget } from "../shared/video-widget.ts";
 import { normalizeVideoFormat, videoFormatFromUrl } from "../shared/video-widget.ts";
+import {
+  checkMediaDestination,
+  isNonPublicLiteralHost,
+  MediaProxyBlockedError,
+  mediaProxyPolicyFromEnv,
+  mediaUrlMayBeProxied,
+  type MediaProxyPolicy,
+  type MediaProxyResolver,
+} from "./media-proxy-guard.ts";
 
 const TOKEN_TTL_MS = 4 * 60 * 60_000;
 const MAX_BYTES = 512 * 1024 * 1024;
@@ -51,8 +61,7 @@ export function needsMediaProxy(url: string, source?: string): boolean {
     const parsed = new URL(url);
     if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return true;
     const host = parsed.hostname.toLowerCase();
-    if (host === "localhost" || host === "127.0.0.1" || host.endsWith(".local")) return true;
-    if (/^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(host)) return true;
+    if (host.endsWith(".local") || isNonPublicLiteralHost(host)) return true;
     if (parsed.username || parsed.password) return true;
   } catch {
     return true;
@@ -124,9 +133,17 @@ function isPlaylistContentType(contentType: string | undefined): boolean {
  * - absolute URIs on that same origin are proxied only when the browser
  *   could not reach them (private host, credentials);
  * - absolute URIs on any other origin are left untouched: the proxy never
- *   follows a playlist to a host it was not asked for.
+ *   follows a playlist to a host it was not asked for;
+ * - a URI whose host is a non-public IP literal or `localhost` is never
+ *   turned into a proxy path unless SAGAX_MEDIA_PROXY_ALLOW_HOSTS allows it
+ *   (a host name is checked after DNS resolution when the proxy fetches it).
  */
-export function rewriteHlsPlaylist(text: string, playlistUrl: string, mint: (url: string) => string): string {
+export function rewriteHlsPlaylist(
+  text: string,
+  playlistUrl: string,
+  mint: (url: string) => string,
+  policy: MediaProxyPolicy = mediaProxyPolicyFromEnv(),
+): string {
   let base: URL;
   try {
     base = new URL(playlistUrl);
@@ -144,6 +161,7 @@ export function rewriteHlsPlaylist(text: string, playlistUrl: string, mint: (url
     }
     if (resolved.protocol !== "http:" && resolved.protocol !== "https:") return raw;
     if (resolved.origin !== base.origin) return raw;
+    if (!mediaUrlMayBeProxied(resolved, policy)) return raw;
     const relative = !/^[a-z][a-z\d+.-]*:/i.test(value);
     if (!relative && !needsMediaProxy(resolved.href)) return raw;
     return mint(resolved.href);
@@ -162,6 +180,52 @@ export interface StreamProxiedMediaOptions {
   /** Thread the top-level token was minted for; nested HLS tokens inherit it. */
   threadId?: string;
   now?: number;
+  /** Destinations allowed besides public ones (default: SAGAX_MEDIA_PROXY_ALLOW_HOSTS). */
+  policy?: MediaProxyPolicy;
+  /** DNS resolver of the destination guard (tests pass a fake one). */
+  resolver?: MediaProxyResolver;
+}
+
+/** Redirects the proxy follows itself, each hop checked like the first URL. */
+const MAX_REDIRECTS = 5;
+
+// Sockets of the proxy live in their own pool: a kept-alive socket reused
+// here was always opened by the proxy toward an address it had checked.
+const proxyHttpAgent = new HttpAgent({ keepAlive: true });
+const proxyHttpsAgent = new HttpsAgent({ keepAlive: true });
+
+/**
+ * One GET to a destination the guard accepted, connected to the address the
+ * guard checked: the `lookup` hook hands that address to the socket, so no
+ * second DNS answer (a rebinding resolver) can redirect the connection.
+ */
+async function requestCheckedUpstream(
+  target: URL,
+  headers: Record<string, string> | undefined,
+  options: StreamProxiedMediaOptions,
+): Promise<IncomingMessage> {
+  const pinned = await checkMediaDestination(target, options.policy ?? mediaProxyPolicyFromEnv(), options.resolver);
+  const https = target.protocol === "https:";
+  const pinnedLookup: LookupFunction = (_hostname, lookupOptions, callback) => {
+    if (lookupOptions.all) (callback as unknown as (e: null, a: LookupAddress[]) => void)(null, [pinned]);
+    else callback(null, pinned.address, pinned.family);
+  };
+  return await new Promise<IncomingMessage>((resolve, reject) => {
+    const req = (https ? httpsRequest : httpRequest)(
+      {
+        hostname: target.hostname.replace(/^\[|\]$/g, ""),
+        port: target.port || (https ? 443 : 80),
+        path: target.pathname + target.search,
+        method: "GET",
+        headers,
+        agent: https ? proxyHttpsAgent : proxyHttpAgent,
+        lookup: pinnedLookup,
+      },
+      resolve,
+    );
+    req.on("error", reject);
+    req.end();
+  });
 }
 
 export async function streamProxiedMedia(
@@ -170,99 +234,102 @@ export async function streamProxiedMedia(
   rangeHeader?: string,
   options: StreamProxiedMediaOptions = {},
 ): Promise<void> {
-  const url = new URL(targetUrl);
-  const lib = url.protocol === "https:" ? httpRequest : httpRequestHttp;
   const playlistByPath = videoFormatFromUrl(targetUrl) === "hls";
   // A playlist is rewritten whole: never ask the upstream for a byte range of it.
   const forwardRange = rangeHeader && !playlistByPath ? rangeHeader : undefined;
+  const headers = forwardRange ? { Range: forwardRange } : undefined;
+  let current = new URL(targetUrl);
+  let upstream = await requestCheckedUpstream(current, headers, options);
+  for (let hop = 0; ; hop += 1) {
+    const status = upstream.statusCode ?? 502;
+    const location = upstream.headers.location;
+    if (status < 300 || status >= 400 || status === 304 || typeof location !== "string") break;
+    upstream.resume();
+    if (hop >= MAX_REDIRECTS) throw new MediaProxyBlockedError("too-many-redirects", current.hostname);
+    current = new URL(location, current);
+    upstream = await requestCheckedUpstream(current, headers, options);
+  }
+  const finalUrl = current.href;
+  const response = upstream;
   await new Promise<void>((resolve, reject) => {
-    const req = lib(
-      {
-        hostname: url.hostname,
-        port: url.port || (url.protocol === "https:" ? 443 : 80),
-        path: url.pathname + url.search,
-        method: "GET",
-        headers: forwardRange ? { Range: forwardRange } : undefined,
-      },
-      (upstream) => {
-        const status = upstream.statusCode ?? 502;
-        if (status >= 400) {
-          res.writeHead(status, { "content-type": "text/plain" });
+    const status = response.statusCode ?? 502;
+    if (status >= 300) {
+      res.writeHead(status >= 400 ? status : 502, { "content-type": "text/plain" });
+      res.end();
+      response.resume();
+      resolve();
+      return;
+    }
+    const ct = response.headers["content-type"];
+    const contentType = typeof ct === "string" ? ct : undefined;
+    if (status === 200 && (playlistByPath || isPlaylistContentType(contentType))) {
+      const chunks: Buffer[] = [];
+      let size = 0;
+      let aborted = false;
+      response.on("data", (chunk: Buffer) => {
+        if (aborted) return;
+        size += chunk.length;
+        if (size > MAX_PLAYLIST_BYTES) {
+          aborted = true;
+          response.destroy();
+          res.writeHead(502, { "content-type": "text/plain" });
           res.end();
-          upstream.resume();
           resolve();
           return;
         }
-        const ct = upstream.headers["content-type"];
-        const contentType = typeof ct === "string" ? ct : undefined;
-        if (status === 200 && (playlistByPath || isPlaylistContentType(contentType))) {
-          const chunks: Buffer[] = [];
-          let size = 0;
-          let aborted = false;
-          upstream.on("data", (chunk: Buffer) => {
-            if (aborted) return;
-            size += chunk.length;
-            if (size > MAX_PLAYLIST_BYTES) {
-              aborted = true;
-              upstream.destroy();
-              res.writeHead(502, { "content-type": "text/plain" });
-              res.end();
-              resolve();
-              return;
-            }
-            chunks.push(chunk);
-          });
-          upstream.on("end", () => {
-            if (aborted) return;
-            const now = options.now ?? Date.now();
-            const body = Buffer.from(
-              rewriteHlsPlaylist(Buffer.concat(chunks).toString("utf8"), targetUrl, (u) =>
-                mediaProxyPath(mintMediaProxyToken(u, options.threadId, now)),
-              ),
-              "utf8",
-            );
-            res.writeHead(200, {
-              "content-type": HLS_CONTENT_TYPE,
-              "content-length": String(body.length),
-              "cache-control": "no-store",
-            });
-            res.end(body);
-            resolve();
-          });
-          upstream.on("error", (error) => {
-            if (aborted) return;
-            reject(error);
-          });
-          return;
-        }
-        let bytes = 0;
-        const headers: Record<string, string> = {};
-        if (contentType) headers["content-type"] = contentType;
-        const cl = upstream.headers["content-length"];
-        if (typeof cl === "string") headers["content-length"] = cl;
-        const cr = upstream.headers["content-range"];
-        if (typeof cr === "string") headers["content-range"] = cr;
-        const ar = upstream.headers["accept-ranges"];
-        if (typeof ar === "string") headers["accept-ranges"] = ar;
-        res.writeHead(status, headers);
-        upstream.on("data", (chunk: Buffer) => {
-          bytes += chunk.length;
-          if (bytes > MAX_BYTES) {
-            upstream.destroy();
-            if (!res.writableEnded) res.end();
-            resolve();
-            return;
-          }
-          res.write(chunk);
+        chunks.push(chunk);
+      });
+      response.on("end", () => {
+        if (aborted) return;
+        const now = options.now ?? Date.now();
+        // Relative URIs resolve against the URL that answered (after redirects).
+        const body = Buffer.from(
+          rewriteHlsPlaylist(
+            Buffer.concat(chunks).toString("utf8"),
+            finalUrl,
+            (u) => mediaProxyPath(mintMediaProxyToken(u, options.threadId, now)),
+            options.policy,
+          ),
+          "utf8",
+        );
+        res.writeHead(200, {
+          "content-type": HLS_CONTENT_TYPE,
+          "content-length": String(body.length),
+          "cache-control": "no-store",
         });
-        upstream.on("end", () => {
-          if (!res.writableEnded) res.end();
-          resolve();
-        });
-        upstream.on("error", reject);
-      },
-    );
-    req.on("error", reject);
-    req.end();
+        res.end(body);
+        resolve();
+      });
+      response.on("error", (error) => {
+        if (aborted) return;
+        reject(error);
+      });
+      return;
+    }
+    let bytes = 0;
+    const out: Record<string, string> = {};
+    if (contentType) out["content-type"] = contentType;
+    const cl = response.headers["content-length"];
+    if (typeof cl === "string") out["content-length"] = cl;
+    const cr = response.headers["content-range"];
+    if (typeof cr === "string") out["content-range"] = cr;
+    const ar = response.headers["accept-ranges"];
+    if (typeof ar === "string") out["accept-ranges"] = ar;
+    res.writeHead(status, out);
+    response.on("data", (chunk: Buffer) => {
+      bytes += chunk.length;
+      if (bytes > MAX_BYTES) {
+        response.destroy();
+        if (!res.writableEnded) res.end();
+        resolve();
+        return;
+      }
+      res.write(chunk);
+    });
+    response.on("end", () => {
+      if (!res.writableEnded) res.end();
+      resolve();
+    });
+    response.on("error", reject);
   });
 }
