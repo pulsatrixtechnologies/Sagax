@@ -1,0 +1,45 @@
+name: Windows vitest
+
+# Shards 1/4 and 2/4 on a GitHub-hosted Windows runner, without waiting for
+# the Linux preflight. workflow_dispatch on ci.yml is not available to this
+# token, and that preflight is what was keeping these shards queued.
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  vitest:
+    # This branch only. Other pull requests keep the Windows shards in ci.yml.
+    if: github.head_ref == 'cursor/fix-windows-vitest-main-f621' || github.ref_name == 'cursor/fix-windows-vitest-main-f621'
+    name: vitest (windows-latest, shard ${{ matrix.shard }}/4)
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2]
+    runs-on: windows-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: pnpm/action-setup@ff378ebe6b225b0680b81c1ad4498ae0d1d3a5e3 # v6.0.10
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Prepare Electron test runtime
+        run: node --input-type=commonjs -e "require('electron')"
+      - name: Run tests
+        env:
+          SAGAX_VITEST_RETRY_LOG: ${{ runner.temp }}/vitest-retries.jsonl
+        run: pnpm exec vitest run --shard=${{ matrix.shard }}/4 --reporter=default --reporter=github-actions
+      - name: Report flaky tests that needed a retry
+        if: ${{ !cancelled() }}
+        env:
+          SAGAX_VITEST_RETRY_LOG: ${{ runner.temp }}/vitest-retries.jsonl
+        run: node scripts/testing/ci-retry-summary.mjs
+      - name: Broker and Electron unit tests
+        if: matrix.shard == 1
+        run: pnpm broker:test && pnpm test:electron
