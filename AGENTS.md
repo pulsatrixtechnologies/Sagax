@@ -1186,6 +1186,17 @@ fake xAI: `scripts/verify-voice-mode.ts`. Details: `docs/voice-mode-xai.md`.
 - The xAI key never reaches a client: the server proxies speech to text
   (`/voice/transcribe`) and text to speech (`/voice/speak`, `/voice/voices`);
   no route answers a key or a part of one.
+- Hang up: the person ends with `POST /api/bots/<id>/voice/call`
+  `{state:"end"}` for that call id. The bot ends with `end_call`, offered
+  only on a live call (`SAGAX_VOICE_CALL`). The session stays until that
+  turn finishes, so the goodbye is spoken, then the idle warm process is
+  released and that person's devices get `voice.call.ended`. A goodbye
+  that fails or is interrupted drops the request (`settleEnding`) and
+  keeps the call: the next turn is still on it. The next written turn
+  after a finished hang-up gets `voiceCallEndedNote`. An old turn cannot
+  end a newer call. Tests: `server/voice-call-session.test.ts`,
+  `src/lib/voice-mode/call-end.test.ts`,
+  `server/voice-call-reliability.e2e.test.ts`.
 - Who pays (`resolveVoiceKey`): on an organization server the speaker's own
   `xai` key in Perspicax, else the organization's (Settings > Connections),
   else an access card in that person's bar only (the audience rule of every

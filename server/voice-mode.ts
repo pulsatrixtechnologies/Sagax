@@ -154,7 +154,7 @@ export interface VoiceModeDeps {
    * send to it while the call lasts is a call turn. */
   callSession?: {
     start(target: VoiceTarget, callId: string, language?: string, auth?: RequestAuth): void;
-    end(target: VoiceTarget, callId: string): void;
+    end(target: VoiceTarget, callId: string, auth?: RequestAuth): void;
   };
   now?: () => number;
 }
@@ -428,7 +428,7 @@ export function createVoiceModeRoutes(deps: VoiceModeDeps): RouteHandler {
       const language = record.language === undefined ? undefined : record.language;
       if (language !== undefined && !isVoiceModeLanguage(language)) return json(res, 400, { error: "unknown language" });
       if (!deps.callSession) return json(res, 404, { error: "call sessions are not available" });
-      if (state === "end") deps.callSession.end(target, callId);
+      if (state === "end") deps.callSession.end(target, callId, auth);
       else deps.callSession.start(target, callId, language as string | undefined, auth);
       return json(res, 200, { ok: true });
     }

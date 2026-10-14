@@ -53,7 +53,17 @@ starts, stays alive and ends (`POST /api/bots/<id>/voice/call`
 `{threadId, callId, state}`), and every send to that thread while the call
 lasts is a call turn, whatever path it takes (typed words, a queued line
 steered with the Steer button, a retry). A call never closed expires after
-20 minutes without a turn. On a call, words sent while the bot works always
+20 minutes without a turn. The person hangs up with `state: "end"` for that
+call id only: the session drops, the idle warm process is released, and
+the person's other devices get `voice.call.ended` (`by: "person"`). The
+bot hangs up with `end_call`, offered only while the thread is on a live
+call. That request does not drop the session yet: the goodbye is still
+being written. When the turn finishes, the same cleanup runs and the frame
+says `by: "bot"`. A goodbye that fails or is interrupted drops the
+request and keeps the call, so a later turn does not inherit the hang-up.
+The page mutes at once and lets that goodbye finish before it leaves the
+call. A newer call is not ended by the old turn. The next written turn
+gets the ended note. On a call, words sent while the bot works always
 join its turn (no parallel or after chooser), unless Advanced >
 "Full-duplex conversation" is on: then a new utterance interrupts the
 in-flight turn, discards the steer queue, and starts only those words

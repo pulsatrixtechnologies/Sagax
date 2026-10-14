@@ -16,6 +16,10 @@ describe("tool policy coverage", () => {
     expect(inventory.length).toBeGreaterThan(300);
   });
 
+  it("still lists the hang-up route extracted from index.ts", () => {
+    expect(inventory.map(policyKey)).toContain("POST exact /api/internal/voice-call/end");
+  });
+
   it("has a policy row for every route", () => {
     const missing = inventory.filter((r) => !keys.has(policyKey(r))).map((r) => `${policyKey(r)}  (${r.file}:${r.line})`);
     expect(missing, "run: node scripts/tool-policy/generate.ts, then review the new rows").toEqual([]);

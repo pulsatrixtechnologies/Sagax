@@ -1141,6 +1141,10 @@ export type ServerFrame =
    * call (server/voice-first-sentence.ts). The speaker's streams only. Not
    * stored. iOS ignores the kind. */
   | { kind: "voice.opener"; audience: string; threadId: string; callId: string; utteranceId: string; text: string }
+  /** The live phone call ended. The speaker's streams only. `by` is who
+   * hung up. Not stored. The page stops the microphone and, when the bot
+   * hung up, lets the goodbye finish before it leaves the call. */
+  | { kind: "voice.call.ended"; audience: string; threadId: string; callId: string; by: "person" | "bot" }
   /** The config status object spread flat into the frame; its full typing
    * is the deferred client-model extraction (see j1-phase-bc-progress). */
   | ({ kind: "config" } & Record<string, unknown>);

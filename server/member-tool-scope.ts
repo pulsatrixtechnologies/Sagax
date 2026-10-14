@@ -46,6 +46,7 @@ export const MEMBER_OWN_SCOPE_AGENT_TOOLS: Readonly<Record<string, MemberToolFam
   retry_thread: "conversation",
   create_options_card: "conversation",
   send_voice_note: "conversation",
+  end_call: "conversation",
   request_credential: "conversation",
   memory_update: "memory",
   memory_log: "memory",

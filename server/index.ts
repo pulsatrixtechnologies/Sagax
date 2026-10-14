@@ -698,7 +698,7 @@ import {
   waitForThreadIdle,
 } from "./voice-call-duplex.ts";
 import { callHasParkableWork, classifyVoiceIntent, topicsFromCallMessages } from "../src/lib/voice-mode/voice-topics.ts";
-import { VoiceCallSessions } from "./voice-call-session.ts";
+import { VoiceCallSessions, voiceCallTurnSettle } from "./voice-call-session.ts";
 import { VoiceCallWarmup } from "./voice-call-warmup.ts";
 import { callTurnEffort } from "./voice-call-effort.ts";
 import { effortAcceptedByEngine, resolveEngineTurnEffort } from "../shared/ultracode-effort.ts";
@@ -905,6 +905,7 @@ import { ADMIN_ACTIVITY_CATEGORIES } from "./admin-activity.ts";
 import { createOrgMemberRoutes, type MemberPerson, type MemberRequest } from "./org-member-routes.ts";
 import { createOrgLinkRoutes, DirectoryRefreshScheduler } from "./org-link-routes.ts";
 import { internalAgentApiTool } from "./routes/agent-api-internal.ts";
+import { isInternalVoiceCallEnd } from "./routes/voice-call-internal.ts";
 import { createAgentApi, refuse as agentRefuse, SEND_FILE_MAX_BYTES as AGENT_SEND_FILE_MAX_BYTES, type AgentCaller, type AgentScope, type AgentSummary, type AuditEntry, type FileInput, type Refusal, type TurnState } from "./agent-api.ts";
 import { parseHideList, planHiddenAgentThreads, planHiddenBotThreads } from "./agent-threads.ts";
 import { MemberLiveText } from "./member-live-text.ts";
@@ -3539,6 +3540,9 @@ function agentsIntegration(
         const speaking = botForThread(botId, threadId) ?? store.bot(botId);
         return tts.voiceReady(cfg, speaking?.voice) && speaking?.voiceNotes !== false ? "1" : "0";
       })(),
+      // end_call is offered only while this thread is on a live phone call.
+      // The route re-checks; a turn that is not a call never sees the tool.
+      SAGAX_VOICE_CALL: voiceCalls.active(threadId) ? "1" : "0",
       // And for a role: team setup, bot creation and deletion, rooms and
       // retries are shown only to a Chief of Staff, whom their routes require.
       SAGAX_CHIEF_OF_STAFF: store.bot(botId)?.chiefOfStaff === true ? "1" : "0",
@@ -9085,7 +9089,7 @@ function sseFrameFor(
   // a person's preferences reach that person's own devices only
   if (payload?.kind === "preferences" && !preferencesFrameAllowed(payload, client.viewerId)) return null;
   if ((payload?.kind === "nudge" || payload?.kind === "nudge.sent") && !nudgeFrameAllowed(payload, client.viewerId, localPrincipalId())) return null;
-  if (payload?.kind === "voice.opener" && !voiceOpenerFrameAllowed(payload, client.viewerId, localPrincipalId())) return null;
+  if ((payload?.kind === "voice.opener" || payload?.kind === "voice.call.ended") && !voiceOpenerFrameAllowed(payload, client.viewerId, localPrincipalId())) return null;
   if (payload?.kind === "presence.changed" && !presenceFrameAllowed(payload, client)) return null;
   if (payload?.kind === "cloud.agent" && typeof payload.botId === "string") {
     const bot = store.bot(payload.botId);
@@ -11847,6 +11851,9 @@ bus.subscribe((event: RuntimeEvent) => {
         && (stoppedTurnId === undefined || completedTurnId === undefined || stoppedTurnId === completedTurnId);
       stoppedTurns.delete(event.threadId);
       const stopped = event.stopReason === "interrupted" || clientStopped;
+      // Hang up only when the goodbye finished. A failed or interrupted
+      // turn drops the request so a later turn does not inherit it.
+      finishVoiceCallRequestedByBot(event.threadId, voiceCallTurnSettle(event, stopped));
       // A run that broke — not one the person stopped, and not a routine's,
       // which reports through its own failure path — is the Primary Bot's to see.
       // A lazy computer-claim rejection already reported its failure and
@@ -12912,6 +12919,29 @@ function releaseWarmEngine(threadId: string): void {
   if (!bot) return;
   const live = store.projectBotForTask(bot.id, threadId) ?? bot;
   registry.get(live.modelSelection.instanceId)?.adapter.releaseWarmSession?.(threadId);
+}
+/** Who a hang-up frame is for: the person who hung up, else the thread's
+ * person, else the operator at this computer. */
+function voiceCallEndedAudience(threadId: string, auth?: RequestAuth): string {
+  const fromAuth = auth ? actorPrincipalId(auth).trim().toLowerCase() : "";
+  const fallback = (threadPersonKey(threadId) ?? achievementThreadPerson(threadId) ?? localPrincipalId() ?? "").trim().toLowerCase();
+  return fromAuth || fallback;
+}
+function broadcastVoiceCallEnded(threadId: string, callId: string, by: "person" | "bot", auth?: RequestAuth): void {
+  const audience = voiceCallEndedAudience(threadId, auth);
+  if (!audience) return;
+  broadcast({ kind: "voice.call.ended", audience, threadId, callId, by });
+}
+/** The bot asked to hang up. Run only when that turn has finished, so the
+ * goodbye is still a call turn, and only if this call is still the live one.
+ * A failed or interrupted goodbye drops the request and keeps the call. */
+function finishVoiceCallRequestedByBot(threadId: string, settle: ReturnType<typeof voiceCallTurnSettle>): void {
+  const ending = voiceCalls.settleEnding(threadId, settle);
+  if (!ending) return;
+  voiceWarmup.cancel(threadId, ending.callId);
+  releaseWarmEngine(threadId);
+  void perspicaxMcp?.endWarm(threadId);
+  broadcastVoiceCallEnded(threadId, ending.callId, "bot");
 }
 /** Each call turn's server stages, logged under its utterance id (server/voice-latency.ts). */
 const voiceLatency = new VoiceLatencyLog();
@@ -25663,13 +25693,15 @@ ROUTES.push(createVoiceModeRoutes({
         });
       }));
     },
-    end: (target, callId) => {
+    end: (target, callId, auth) => {
       // Drop the call first so a warm that is still retiring does not keep
-      // its Perspicax tokens. Then close the idle process.
+      // its Perspicax tokens. Then close the idle process. Other devices
+      // of this person hang up from the frame.
       if (!voiceCalls.end(target.threadId, callId)) return;
       voiceWarmup.cancel(target.threadId, callId);
       releaseWarmEngine(target.threadId);
       void perspicaxMcp?.endWarm(target.threadId);
+      broadcastVoiceCallEnded(target.threadId, callId, "person", auth);
     },
   },
   recordUsage: (usage) => {
@@ -31396,6 +31428,16 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           }
           throw error;
         }
+      }
+      if (isInternalVoiceCallEnd(method, path)) {
+        await readInternalBody();
+        const ending = voiceCalls.requestEnd(internalCapability.threadId);
+        if (!ending) {
+          return json(res, 409, { error: "There is no live phone call on this conversation. Do not call end_call." });
+        }
+        // The goodbye is still being written. The session, the warm process
+        // and the other devices wait until this turn finishes.
+        return json(res, 200, { ending: true, callId: ending.callId });
       }
       // Slice 5: a Perspicax MCP frame from the stdio bridge of this turn
       // (server/perspicax-mcp-bridge.ts). The Perspicax token never leaves
