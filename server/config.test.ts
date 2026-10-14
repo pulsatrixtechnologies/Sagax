@@ -31,7 +31,7 @@ import { cacheUntilConfigChanges,
   showToolCallsEnabled,
   routinesInConversationEnabled,
   connectedAppsEnabled,
-  templatesEnabled, vpsComputerEnabled, boatComputerEnabled, decisionModelEnabled,
+  templatesEnabled, vpsComputerEnabled, boatComputerEnabled, decisionModelEnabled, dataWindowEnabled, routineGroupSettingsEnabled,
   saveConfig,
   skillAuthoringEnabled,
   sharedComputersEnabled,
@@ -684,6 +684,13 @@ describe("configuration boundaries", () => {
     expect(decisionModelEnabled({ features: { decisionModel: false } })).toBe(false);
     expect(parseConfigPatch({ features: { decisionModel: true } })).toEqual({ features: { decisionModel: true } });
     expect(decisionModelEnabled({ features: { decisionModel: true } })).toBe(true);
+    expect(dataWindowEnabled({})).toBe(false);
+    expect(dataWindowEnabled({ features: { dataWindow: false } })).toBe(false);
+    expect(parseConfigPatch({ features: { dataWindow: true } })).toEqual({ features: { dataWindow: true } });
+    expect(dataWindowEnabled({ features: { dataWindow: true } })).toBe(true);
+    expect(routineGroupSettingsEnabled({})).toBe(false);
+    expect(parseConfigPatch({ features: { routineGroupSettings: true } })).toEqual({ features: { routineGroupSettings: true } });
+    expect(routineGroupSettingsEnabled({ features: { routineGroupSettings: true } })).toBe(true);
   });
 
   it("keeps tool-call chips off by default and accepts an explicit opt-in", () => {

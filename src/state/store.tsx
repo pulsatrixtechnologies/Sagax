@@ -909,7 +909,7 @@ export interface ConfigStatus {
   /** UI language override; "" (or absent) follows the system language. */
   language?: string;
   /** Opt-in flags. Absent means off. */
-  features?: { skillAuthoring: boolean; showToolCalls?: boolean; browser?: boolean; sharedComputers?: boolean; claudeUserMcp?: boolean; llmThreadTitles?: boolean; routinesInConversation?: boolean; connectedApps?: boolean; vpsComputer?: boolean; boatComputer?: boolean; decisionModel?: boolean; skillsLibrary?: boolean };
+  features?: { skillAuthoring: boolean; showToolCalls?: boolean; browser?: boolean; sharedComputers?: boolean; claudeUserMcp?: boolean; llmThreadTitles?: boolean; routinesInConversation?: boolean; connectedApps?: boolean; vpsComputer?: boolean; boatComputer?: boolean; decisionModel?: boolean; dataWindow?: boolean; routineGroupSettings?: boolean; skillsLibrary?: boolean };
   /** First-run progress: whether the welcome tour was finished and which
    * one-time hints were dismissed. Server-owned so it follows the workspace. */
   onboarding?: OnboardingStatus;
@@ -1311,8 +1311,8 @@ export interface AppState {
   /** The bot's table catalog as GET /data last reported it: DuckDB's own
    * list, not a copy on the sheet, so a load and a CREATE agree. */
   dataTables: Record<string, DataTable[]>;
-  dataResultFocus: { botId: string; id: string; requestId: number; consumed: boolean } | null;
-  /** Only the currently mounted Data view, not the last Open in Data request. */
+  /** The result in view in this bot's Data window (src/lib/data-window.ts),
+   * sent with the next message to that bot and thread. */
   dataView: import("@/lib/composer-attachments").DataViewContext | null;
   /** a search hit to scroll to once its thread is on screen; nonce lets the
    * same message be focused twice in a row */
@@ -1630,8 +1630,6 @@ export type Action =
   | { type: "toggleTriggers"; open?: boolean }
   | { type: "toggleNewBot"; open?: boolean }
   | { type: "toggleComputer"; open?: boolean }
-  | { type: "openDataResult"; botId: string; cardId: string }
-  | { type: "dataResultFocusConsumed"; requestId: number }
   | { type: "toggleInspector"; open?: boolean }
   | { type: "toggleActivity"; open?: boolean }
   | { type: "focusMessage"; threadId: string; messageId: string; matchText?: string }
@@ -2694,16 +2692,6 @@ export function reducer(state: AppState, action: Action): AppState {
       return { ...state, focusMessage: { ...state.focusMessage, consumed: true } };
     case "unreadDividerDone":
       return state.unreadDivider?.threadId === action.threadId ? { ...state, unreadDivider: null } : state;
-    case "openDataResult": {
-      if (!state.bots.some((bot) => bot.id === action.botId)) return state;
-      // The same path as clicking the bot, so unread and the read cursor
-      // settle the way `select` does; then the Computer panel opens on it.
-      const selected = reducer(reducer(state, { type: "select", id: action.botId }), { type: "toggleComputer", open: true });
-      return { ...selected, dataResultFocus: { botId: action.botId, id: action.cardId, requestId: (state.dataResultFocus?.requestId ?? 0) + 1, consumed: false } };
-    }
-    case "dataResultFocusConsumed":
-      return state.dataResultFocus?.requestId === action.requestId
-        ? { ...state, dataResultFocus: { ...state.dataResultFocus, consumed: true } } : state;
     case "toggleComputer": {
       const open = action.open ?? !state.computerOpen;
       return {
@@ -3257,7 +3245,6 @@ export const initialState: AppState = {
   computerControl: {},
   dataSheets: {},
   dataTables: {},
-  dataResultFocus: null,
   dataView: null,
   focusMessage: null,
   unreadDivider: null,
@@ -4332,9 +4319,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             () => {},
           );
           break;
-        case "openDataResult":
         case "select": {
-          const id = action.type === "select" ? action.id : action.botId;
+          const id = action.id;
           const bot = stateRef.current.bots.find((b) => b.id === id);
           const group = stateRef.current.groups.find((g) => g.id === id);
           if (bot?.unread) {

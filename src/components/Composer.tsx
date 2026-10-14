@@ -88,7 +88,7 @@ import { useParallelApprovals } from "./parallel-approvals";
 import { useBusySendPreference } from "@/lib/busy-send";
 import { useOnCall } from "@/lib/call";
 import { suggestBusySendMode, type BusySendMode } from "../../shared/parallel-tasks";
-import { skillAuthoringEnabled } from "@/lib/feature-flags";
+import { dataWindowEnabled, skillAuthoringEnabled } from "@/lib/feature-flags";
 import { useRetroSkin } from "./RetroChromeHost";
 import { mentionChoicesForQuery, mentionRowDescription } from "@/lib/mentions";
 import { serializeThreadRefs, threadTokenFromPaste, threadTokenSpacing } from "@/lib/thread-refs";
@@ -778,10 +778,10 @@ export function Composer({
       }
     }
     setBusyChoice(null);
-    // The viewed Data result travels as its own field of the send, never in
-    // the words: only for this bot's own thread, and never ahead of an
-    // opening command the server parses first.
-    const dataContext = dataContextFor(body, state.computerOpen ? state.dataView : null, !group && bot ? { botId: bot.id, threadId } : undefined);
+    // The viewed Data result (in this bot's Data window) travels as its own
+    // field of the send, never in the words: only for this bot's own thread,
+    // and never ahead of an opening command the server parses first.
+    const dataContext = dataContextFor(body, dataWindowEnabled(state.config) ? state.dataView : null, !group && bot ? { botId: bot.id, threadId } : undefined);
     const sentDraft: ComposerDraftSnapshot = {
       draftId,
       revision: draftRevision(draftId),

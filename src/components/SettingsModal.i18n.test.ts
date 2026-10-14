@@ -41,7 +41,6 @@ describe("Settings → General", () => {
     expect(pt).toContain("Configurações");
     expect(pt).toContain("Geral");
     expect(pt).toContain("Idioma do app");
-    expect(pt).toContain("Duração máxima do turno");
 
     // same module instance, no reload: a frozen label would still say
     // "Geral" here
@@ -57,7 +56,7 @@ describe("Settings → General", () => {
     const en = await renderSettings();
     expect(en).toContain("Settings");
     expect(en).toContain("Models and voice");
-    expect(en).toContain("Maximum turn length");
+    expect(en).toContain("Maximum running threads per bot");
   });
 
   it("offers a labeled compact section picker without removing desktop navigation", async () => {

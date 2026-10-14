@@ -222,14 +222,13 @@ describe("Settings → General, compact", () => {
     device();
     const { SettingsModal } = await import("./SettingsModal");
     const html = renderToStaticMarkup(createElement(StoreProvider, null, createElement(SettingsModal)));
-    for (const id of ["general.roomTurns", "general.threads", "general.recovery", "general.threadCleanup"]) {
+    for (const id of ["general.threads", "general.recovery", "general.threadCleanup"]) {
       expect(html).toContain(`data-settings-card="${id}" data-open="false"`);
     }
+    // Group turns waits behind Settings > Experimental (routineGroupSettings)
+    expect(html).not.toContain('data-settings-card="general.roomTurns"');
     expect(html).toContain(">Not set<");
-    expect(html).toContain(">5 min per turn<");
     expect(html).toContain(">3 per bot<");
-    // collapsed, not removed: the fields are still in the document
-    expect(html).toContain('id="room-turn-timeout"');
     // About me is edited on its sub-page; General shows its first line and Edit
     expect(html).toContain('data-settings-card="general.aboutMe" data-settings-subpage-row');
     expect(html).not.toContain('id="profile-about-me"');

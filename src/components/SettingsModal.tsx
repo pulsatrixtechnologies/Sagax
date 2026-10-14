@@ -8,7 +8,7 @@ import { FLOATING_LIVELINESS, floatingBotPrefs, HOTKEY_CHOICES, hotkeyLabel, set
 import { useCallSettings, writeCallSettings } from "@/lib/voice-mode/call-settings";
 import { Archive, Bell, BookOpen, Coins, FlaskConical, Mail, Monitor, Palette, Plug, ScrollText, Search, ShieldCheck, TabletSmartphone, Terminal, User, Users, X, Building2, Zap } from "lucide-react";
 import { api, useStore, type AppSettingsSection, type ConfigStatus } from "@/state/store";
-import { browserAvailable, builtInBrowserEnabled, connectedAppsEnabled, decisionModelEnabled, routinesInConversationEnabled, showToolCallsEnabled, skillAuthoringEnabled } from "@/lib/feature-flags";
+import { browserAvailable, builtInBrowserEnabled, connectedAppsEnabled, dataWindowEnabled, decisionModelEnabled, routineGroupSettingsEnabled, routinesInConversationEnabled, showToolCallsEnabled, skillAuthoringEnabled } from "@/lib/feature-flags";
 import { usePerspicaxOrg } from "@/lib/perspicax-org";
 import { localeChoices, type LocaleKey } from "@/locales";
 import { t } from "@/lib/i18n";
@@ -842,7 +842,7 @@ function ToolCallsRow() {
   );
 }
 
-type ExperimentalFeature = "skillAuthoring" | "browser" | "connectedApps" | "decisionModel";
+type ExperimentalFeature = "skillAuthoring" | "browser" | "connectedApps" | "decisionModel" | "dataWindow" | "routineGroupSettings";
 
 function ExperimentalFeaturesRow() {
   const { state, dispatch } = useStore();
@@ -850,6 +850,8 @@ function ExperimentalFeaturesRow() {
   const browser = builtInBrowserEnabled(state.config);
   const connectedApps = connectedAppsEnabled(state.config);
   const decisionModel = decisionModelEnabled(state.config);
+  const dataWindow = dataWindowEnabled(state.config);
+  const routineGroupSettings = routineGroupSettingsEnabled(state.config);
   const desktopBrowser = browserAvailable(state.config);
   const browserInstallable = state.config?.browserEngine?.installable === true;
   const browserBlockedOnWindows = window.ogb?.platform === "win32" && !desktopBrowser && !browserInstallable;
@@ -879,7 +881,7 @@ function ExperimentalFeaturesRow() {
       cardId="experimental.features"
       title={t("settings.experimental.title")}
       subtitle={t("settings.experimental.subtitle")}
-      summary={t("settings.card.countOn", { count: Number(skillAuthoring) + Number(browser) + Number(connectedApps) + Number(decisionModel), total: 4 })}
+      summary={t("settings.card.countOn", { count: Number(skillAuthoring) + Number(browser) + Number(connectedApps) + Number(decisionModel) + Number(dataWindow) + Number(routineGroupSettings), total: 6 })}
     >
       <div className="flex items-center justify-between gap-4">
         <div className="min-w-0">
@@ -948,6 +950,32 @@ function ExperimentalFeaturesRow() {
           aria-label={t("settings.experimental.decisionModel")}
           disabled={saving !== null}
           onClick={() => void toggle("decisionModel", !decisionModel)}
+          className="disabled:cursor-wait disabled:opacity-50"
+        />
+      </div>
+      <div className="mt-4 flex items-center justify-between gap-4 border-t border-hairline/30 pt-4" data-experimental-feature="dataWindow">
+        <div className="min-w-0">
+          <div className="text-[14px] font-medium text-ink">{t("settings.experimental.dataWindow")}</div>
+          <div className="mt-0.5 text-[12px] leading-relaxed text-ink-secondary">{t("settings.experimental.dataWindowDetail")}</div>
+        </div>
+        <Switch
+          checked={dataWindow}
+          aria-label={t("settings.experimental.dataWindowAria")}
+          disabled={saving !== null}
+          onClick={() => void toggle("dataWindow", !dataWindow)}
+          className="disabled:cursor-wait disabled:opacity-50"
+        />
+      </div>
+      <div className="mt-4 flex items-center justify-between gap-4 border-t border-hairline/30 pt-4" data-experimental-feature="routineGroupSettings">
+        <div className="min-w-0">
+          <div className="text-[14px] font-medium text-ink">{t("settings.experimental.routineGroupSettings")}</div>
+          <div className="mt-0.5 text-[12px] leading-relaxed text-ink-secondary">{t("settings.experimental.routineGroupSettingsDetail")}</div>
+        </div>
+        <Switch
+          checked={routineGroupSettings}
+          aria-label={t("settings.experimental.routineGroupSettingsAria")}
+          disabled={saving !== null}
+          onClick={() => void toggle("routineGroupSettings", !routineGroupSettings)}
           className="disabled:cursor-wait disabled:opacity-50"
         />
       </div>
@@ -1312,12 +1340,15 @@ export function SettingsModal() {
                   <LanguageRow />
                   {advanced && editConfig && <DefaultBotSettings />}
                 </div>
-                {advanced && !remoteActive && editConfig && (
+                {/* Routines in the conversation and Group turns show only with
+                    the experimental switch on; hidden, their saved values
+                    still apply (routineGroupSettingsEnabled). */}
+                {advanced && !remoteActive && editConfig && routineGroupSettingsEnabled(state.config) && (
                   <div className="rounded-[14px] border-[0.5px] border-border py-1">
                     <RoutinesInConversationRow />
                   </div>
                 )}
-                {advanced && editConfig && (
+                {advanced && editConfig && routineGroupSettingsEnabled(state.config) && (
                   <Card
                     collapsible
                     cardId="general.roomTurns"

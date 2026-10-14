@@ -52,6 +52,7 @@ const REMOTE_SAFE = new Set(["platform", "getCapabilities", "onCapabilitiesChang
 // (electron/bundled-ui.cjs) is the desktop's own UI on that server, so it
 // also gets the desktop-UI parts that hold no local data: floating bots and
 // the Hibou 98 assistant (windows that only draw what the page sends), the
+// Data window (this same page on its own route, opened by main), the
 // window's caption buttons, the app menu's Preferences and Release notes,
 // links in the system browser, native confirmations, this app's updater,
 // server mode's state and way out, chat links opened from outside the app
@@ -61,7 +62,7 @@ const REMOTE_SAFE = new Set(["platform", "getCapabilities", "onCapabilitiesChang
 // every one of these channels again (local-origin.cjs desktopUiOnly, and
 // sharingUiOnly for the server-mode server only). Nothing that reads this
 // computer's files, screen, logins or secrets is handed to the page.
-const BUNDLED_EXTRA = new Set(["floatingBots", "retroAssistant", "windowControls", "onOpenAppSettings", "openExternal", "confirm", "updater", "serverMode", "computerSharing", "appIcon", "orgMemory", "onChatLink"]);
+const BUNDLED_EXTRA = new Set(["floatingBots", "dataWindow", "retroAssistant", "windowControls", "onOpenAppSettings", "openExternal", "confirm", "updater", "serverMode", "computerSharing", "appIcon", "orgMemory", "onChatLink"]);
 let bundledPage = false;
 // main.mjs always answers this channel: a sendSync nobody answers would
 // block this page for good (a test harness must answer it too).
@@ -494,6 +495,16 @@ const bridge = {
       ipcRenderer.on("retro-assistant:detached-changed", handler);
       return () => ipcRenderer.removeListener("retro-assistant:detached-changed", handler);
     },
+  },
+  /** The Data window: a bot's Data results in a window of their own, one
+   * per bot (electron/data-window.mjs). Main opens it only for this app's
+   * own window and only while the experimental switch is on. */
+  dataWindow: {
+    open: (request) => ipcRenderer.invoke("data-window:open", {
+      botId: String(request?.botId ?? ""),
+      title: String(request?.title ?? ""),
+      ...(request?.cardId ? { cardId: String(request.cardId) } : {}),
+    }),
   },
   /** Floating bots: a bot on its own always-on-top window, one per bot. This
    * page is the brain; the windows only draw and report clicks

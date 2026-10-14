@@ -5363,5 +5363,16 @@
   "call.live.voiceNext": "Une nouvelle voix commence au prochain appel.",
   "engineSetup.checkFailed": "Impossible d'actualiser l'état des fournisseurs. L'état précédent reste affiché. {reason}",
   "engineSetup.checked": "État des fournisseurs actualisé.",
-  "routines.empty": "Aucune routine pour l'instant."
+  "routines.empty": "Aucune routine pour l'instant.",
+  "dataWindow.open": "Ouvrir la fenêtre Data",
+  "dataWindow.title": "Data : {name}",
+  "dataWindow.off": "La fenêtre Data est désactivée. Activez-la dans Réglages > Expérimental.",
+  "dataWindow.noBot": "Ce bot n'est pas disponible ici.",
+  "dataWindow.blocked": "Le navigateur a bloqué la nouvelle fenêtre. Autorisez les fenêtres surgissantes pour Sagax et réessayez.",
+  "settings.experimental.dataWindow": "Fenêtre Data",
+  "settings.experimental.dataWindowAria": "Activer la fenêtre Data",
+  "settings.experimental.dataWindowDetail": "Désactivé par défaut. Un bouton Data à côté du bouton des fils ouvre les tableaux, graphiques et requêtes SQL d'un bot dans une fenêtre à part.",
+  "settings.experimental.routineGroupSettings": "Réglages avancés des routines et des groupes",
+  "settings.experimental.routineGroupSettingsAria": "Afficher les réglages avancés des routines et des groupes",
+  "settings.experimental.routineGroupSettingsDetail": "Désactivé par défaut. Affiche Routines dans la conversation et Tours en groupe dans Général. Masqués, leurs valeurs actuelles restent appliquées."
 }

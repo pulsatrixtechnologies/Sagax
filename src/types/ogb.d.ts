@@ -321,6 +321,12 @@ const __SAGAX_DEFAULT_SERVER__: string;
       };
       /** Floating bots: one always-on-top window per bot (local desktop page only). */
       floatingBots?: import("../components/floating-bots/protocol").FloatingBotsBridge;
+      /** The Data window: one window per bot on the /data-window route
+       * (electron/data-window.mjs). Main refuses while the experimental
+       * switch is off. */
+      dataWindow?: {
+        open(request: { botId: string; title: string; cardId?: string }): Promise<"created" | "focused" | "refused">;
+      };
       /** The renderer-drawn Windows caption buttons; absent outside the
        * frameless Windows shell (macOS/Linux/browser keep native chrome). */
       windowControls?: {

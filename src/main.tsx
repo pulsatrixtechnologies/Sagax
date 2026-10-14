@@ -85,19 +85,27 @@ async function chooseRoot(): Promise<React.ReactNode> {
     const { DesktopViewer } = await import("./components/DesktopViewer");
     return <DesktopViewer />;
   }
+  // The experimental Data window: one bot's Data results on their own
+  // (src/components/data/DataWindow.tsx, electron/data-window.mjs).
+  const dataWindow = location.pathname === "/data-window";
   // A signed-in person on an organization server: their preferences come
   // from the server before the app draws (src/lib/user-preferences-sync.ts).
   if (session.kind === "session") {
     await syncUserPreferences();
     applySkin(readSkin());
     applyFont(readFont());
-    // online, away, offline (organization server; elsewhere the route answers 404)
-    void startPresence();
+    // online, away, offline (organization server; elsewhere the route answers
+    // 404). The main window reports it; a Data window beside it does not.
+    if (!dataWindow) void startPresence();
   }
   // The desktop app on a personal computer hands its look to the paired
   // phone (Same as my computer) and wears a look the phone chose
   // (src/lib/desktop-appearance-sync.ts). Elsewhere the route answers 404.
-  if (session.kind === "loopback") void syncDesktopAppearance();
+  if (session.kind === "loopback" && !dataWindow) void syncDesktopAppearance();
+  if (dataWindow) {
+    const { DataWindow } = await import("./components/data/DataWindow");
+    return <DataWindow />;
+  }
   return <App />;
 }
 

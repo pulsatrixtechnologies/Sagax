@@ -51,6 +51,7 @@ import { viewerBotsReadOnly, viewerCanCreateBots } from "@/lib/viewer";
 import { phonePairingSettingsAction, takePhonePairingRequest } from "@/lib/phone-pairing";
 import { botsReadOnlyText } from "@/lib/permissions";
 import { ModelWindowHost } from "./components/ModelWindowHost";
+import { DataWindowViewSync } from "@/components/DataWindowButton";
 import { useExternalChatLinks } from "@/hooks/use-external-chat-links";
 import { ChatNotice } from "@/components/ChatErrorBanner";
 
@@ -520,6 +521,7 @@ function Application() {
         <WelcomeGate viewer={viewer} />
         <GuidedTour />
         <LiveCallHost />
+        <DataWindowViewSync />
       </StoreProvider>
     </DesktopCapabilitiesProvider>
   );

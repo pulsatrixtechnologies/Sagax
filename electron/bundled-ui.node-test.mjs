@@ -201,7 +201,7 @@ test("the preload gives the bundled organization page the desktop-UI parts, and 
   const remote = preloadBridge({ pageOrigin: ORG, bundled: false });
   const bundled = preloadBridge({ pageOrigin: ORG, bundled: true });
   assert.deepEqual(bundled.syncCalls, ["workspace:bundled-ui"]);
-  for (const key of ["floatingBots", "retroAssistant", "windowControls", "onOpenAppSettings", "openExternal", "confirm", "updater", "serverMode", "computerSharing"]) {
+  for (const key of ["floatingBots", "dataWindow", "retroAssistant", "windowControls", "onOpenAppSettings", "openExternal", "confirm", "updater", "serverMode", "computerSharing"]) {
     assert.equal(remote.bridge[key], undefined, `a plain remote page has no ${key}`);
     assert.ok(bundled.bridge[key], `the bundled page has ${key}`);
   }
@@ -224,8 +224,8 @@ test("main draws the bundle only for the active organization server and trusts i
   assert.match(main, /function syncBundledUi\(\) \{\n  const origin = bundledOrigin\(environmentsState\);/);
   assert.match(main, /environmentsState = next;\n  syncBundledUi\(\);/, "every saved change re-syncs the handler");
   assert.match(main, /environmentsState = readEnvironments\(\);\n  syncBundledUi\(\);/, "and the first read at launch");
-  // floating bots and Hibou 98 follow the desktop's own UI, local or bundled
-  assert.equal((main.match(/isTrustedMain: \(event\) => isDesktopUiSender\(event\)/g) ?? []).length, 2);
+  // floating bots, Hibou 98 and the Data window follow the desktop's own UI, local or bundled
+  assert.equal((main.match(/isTrustedMain: \(event\) => isDesktopUiSender\(event\)/g) ?? []).length, 3);
   assert.match(main, /ipcMain\.on\("workspace:bundled-ui"/);
   assert.match(main, /event\.senderFrame === win\.webContents\.mainFrame/);
 });

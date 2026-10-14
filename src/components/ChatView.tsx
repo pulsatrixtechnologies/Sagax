@@ -93,6 +93,7 @@ import { useShowRunCard } from "@/lib/run-card-preferences";
 import { sendsMessage, useSendKey } from "@/lib/send-key";
 import { ToolActivity } from "./ToolActivity";
 import { DataResultChip } from "./DataResultChip";
+import { DataWindowButton } from "./DataWindowButton";
 import { ThreadRefText } from "./ThreadRefs";
 import { OptionCard, shouldHideOnboardingCard } from "./OptionCard";
 import { ApprovalCard, approvalCardStaysInChat } from "./ApprovalCard";
@@ -1704,6 +1705,7 @@ export function ChatView({ bot: profile }: { bot: Bot }) {
             botName={bot.name}
           />}
           <TaskPicker bot={bot} />
+          <DataWindowButton bot={bot} />
           {/* Share, Inspector and the panel toggle move into the bot panel's
               top bar while it is open, the way Grok Bot's do. */}
           {!remoteClient && !panelOpen && showInspector && advanced && <button

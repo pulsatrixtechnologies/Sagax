@@ -9270,7 +9270,18 @@
       "call.live.voiceNext": "f327ac67d0d177c2c69f6625a47e459b840128ec58bce385cd466113edec022b",
       "engineSetup.checkFailed": "07cb9d6359e98093709c422397892efa8127e36a659a0e2cb94f0ab6d7e82da0",
       "engineSetup.checked": "1015f00199cf7f0f9f63ef9a04ac8eb1cf27b25820ae9bf9a5bf9b4937d85c53",
-      "routines.empty": "8841ef2b40405adb56bbad8d96b691b3c3b87063ca4a1952b323f944fcde69fc"
+      "routines.empty": "8841ef2b40405adb56bbad8d96b691b3c3b87063ca4a1952b323f944fcde69fc",
+      "dataWindow.open": "d99f6d8875379bc52108b23cf5a550d4fe3e175ec4ff1d93d04fc6284876f413",
+      "dataWindow.title": "986d9badbf367c1fd73d030ebd6d61aa0b0519124735b40776e65c09ca21d119",
+      "dataWindow.off": "7d3238fb5fa7024523a9d46c8df0fcde000b9cfab2f293ec20713a73774adb6b",
+      "dataWindow.noBot": "f04cfe294ca300b3329f008d0aafa52cfce5491d150fc1f2784f3f58c38a72fa",
+      "dataWindow.blocked": "2ce8abf2c17455b9474e8353a2bb2dd0c3516fe06861cc121a81fc5c79551cee",
+      "settings.experimental.dataWindow": "05a20917cb7b487841b6a992ae71186e2e4b39d719e912f60eaada4113c05b26",
+      "settings.experimental.dataWindowAria": "c111040a8f21aedf0e044dc9e2d81d769cf6050ac3d1ab6cfd4b8409618493e1",
+      "settings.experimental.dataWindowDetail": "44bd6810c3679b6b871995892883392a75712ccf174a2c387518618bcc957202",
+      "settings.experimental.routineGroupSettings": "adf6515d3f40119441afe1b6aa53c44ae87b43a1b10853ed195441f8836d754d",
+      "settings.experimental.routineGroupSettingsAria": "eb979344ee5aac14719866768f3ca23c2fd8dfbc54ab0c4d10b55cd8c154c1c0",
+      "settings.experimental.routineGroupSettingsDetail": "4553dd00316c7a84344a1d3163e1debad13db4c158ee87850e4c0c7935a8dc1e"
     },
     "hi": {
       "approval.action.allowOnce": "168511d24d9ee03122b3200f929be11eaaedad45cb0ecb20a95f549b3e3f4d0f",
@@ -13861,7 +13872,6 @@
       "computer.cloud.new": "3317049f599d0c6ac13e681dab3ea74b11b0da8e6c06d7762c7a758ecdec08a0",
       "computer.cloud.asleep": "713e8119c3df286ce3f487980d035ffb04a3e97ab4a8a671a0892c9bbc2a2b72",
       "computer.browserSwitch.title": "eb74b89a9444a2a0f17721ce6f47e4798e98eab0e0cbc9ca69c1220e27fbceae",
-      "computer.tab.data": "cec3a9b89b2e391393d0f68e4bc12a9fa6cf358b3cdf79496dc442d52b8dd528",
       "computer.tab.files": "abc7e9892806b047b4d4786b3685285543f76ca314c4c76246d5f6544c7856c9",
       "computer.fullScreen": "674fe2acd0d5f47b46180dd66e26e349cd9c9db215046f5e86ea2f5728d18117",
       "computer.browserOff.title": "69560b5a2fa6653d61e011754788b8606e4a3e04a3cf4157040bec936d7d033d",

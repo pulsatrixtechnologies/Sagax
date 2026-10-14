@@ -2,17 +2,23 @@ import { useId, useState } from "react";
 import { ArrowUpRight, ChartNoAxesCombined, ChevronRight, Table2 } from "lucide-react";
 import { useStore, type Message } from "@/state/store";
 import { t } from "@/lib/i18n";
+import { dataWindowEnabled } from "@/lib/feature-flags";
+import { openDataWindow } from "@/lib/data-window";
 
 /** The query is a receipt of what ran, not the viewer's mutable SQL draft. */
 export function DataResultChip({ message }: { message: Message }) {
-  const { state, dispatch } = useStore();
+  const { state } = useStore();
   const [expanded, setExpanded] = useState(false);
   const queryId = useId();
   const result = message.dataResult;
   if (!result) return null;
   const Icon = result.kind === "chart" ? ChartNoAxesCombined : Table2;
   const companion = window.ogb?.remoteClient?.active === true;
-  const available = !companion && state.bots.some((bot) => bot.id === result.botId);
+  const owner = state.bots.find((bot) => bot.id === result.botId);
+  // The result opens in its bot's Data window (experimental): off, there is
+  // nowhere to open it.
+  const windowOn = dataWindowEnabled(state.config);
+  const available = !companion && windowOn && owner !== undefined;
   return (
     <div data-data-result={result.cardId} className="max-w-full overflow-hidden rounded-xl border border-hairline/40 bg-panel text-sm">
       <div className="flex items-center gap-3 px-3 py-2">
@@ -25,8 +31,10 @@ export function DataResultChip({ message }: { message: Message }) {
         <button
           type="button"
           disabled={!available}
-          title={companion ? t("data.openInWorkspace") : undefined}
-          onClick={() => dispatch({ type: "openDataResult", botId: result.botId, cardId: result.cardId })}
+          title={companion ? t("data.openInWorkspace") : !windowOn ? t("dataWindow.off") : undefined}
+          onClick={() => {
+            if (owner) void openDataWindow({ botId: owner.id, title: t("dataWindow.title", { name: owner.name }), cardId: result.cardId });
+          }}
           className="ml-auto flex shrink-0 items-center gap-1 text-xs text-accent hover:underline disabled:opacity-40"
         >
           {t("data.openResult")}<ArrowUpRight size={13} aria-hidden="true" />

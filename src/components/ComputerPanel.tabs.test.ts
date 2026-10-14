@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
-// The panel's tab follows the conversation and the place it works in. A
-// model change is neither, so it leaves a chosen Data tab alone.
+// The Computer tab shows the computer itself: Data moved to its own window
+// (the chat header's Data button, src/lib/data-window.ts).
 import { createElement } from "react";
 import { flushSync } from "react-dom";
 import { createRoot, type Root } from "react-dom/client";
@@ -75,10 +75,6 @@ const open = async (bot: Bot) => {
   flushSync(() => root!.render(createElement(BotEditorStore, { value: value(), children: createElement(ComputerPanel, { bot }) })));
   await settle();
 };
-// Sagax's Computer | Data control (a radio group above the computer view).
-const tab = (label: string) => [...document.querySelectorAll<HTMLButtonElement>('[data-computer-view] button')].find((candidate) => candidate.textContent?.trim() === label)!;
-const pressed = () => [...document.querySelectorAll<HTMLButtonElement>('[data-computer-view] button')].find((candidate) => candidate.getAttribute("aria-checked") === "true")?.textContent?.trim();
-
 beforeAll(() => {
   vi.stubGlobal("ogb", undefined);
 });
@@ -89,21 +85,18 @@ afterEach(() => {
 });
 
 describe("Computer panel tab", () => {
-  it("stays on Data through a model change and follows a conversation change", async () => {
+  it("shows the computer directly, with no Computer | Data picker and no Data view", async () => {
     await open(makeBot());
-    expect(pressed()).toBe("Computer");
-    flushSync(() => tab("Data").click());
-    await settle();
-    expect(pressed()).toBe("Data");
-    await vi.waitFor(() => expect(document.querySelector('[data-testid="data-panel"]')).not.toBeNull());
+    expect(document.querySelector("[data-computer-view]")).toBeNull();
+    expect(document.querySelector('[data-tour="computer-data"]')).toBeNull();
+    expect([...document.querySelectorAll("button")].some((button) => button.textContent?.trim() === "Data")).toBe(false);
+    expect(document.querySelector('[data-testid="data-panel"]')).toBeNull();
+    expect(document.body.textContent).toContain("Scout");
 
-    // A different model for this conversation: same place, same tab.
+    // Another conversation or model: still the computer, never Data.
     await open(makeBot({ modelSelection: { instanceId: "codex", model: "m" } }));
-    expect(pressed()).toBe("Data");
-    expect(document.querySelector('[data-testid="data-panel"]')).not.toBeNull();
-
-    // Another conversation is a new target: the panel follows it once.
     await open(makeBot({ threadId: "thread-2", tasks: [{ threadId: "thread-2", title: "Second", createdAt: 2, approvalMode: "ask" }] } as Partial<Bot>));
-    expect(pressed()).toBe("Computer");
+    expect(document.querySelector("[data-computer-view]")).toBeNull();
+    expect(document.querySelector('[data-testid="data-panel"]')).toBeNull();
   });
 });

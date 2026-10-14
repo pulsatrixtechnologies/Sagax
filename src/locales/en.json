@@ -6915,7 +6915,6 @@
   "composer.placeholder.reply": "Reply…",
   "computer.files.notShared": "Not shared",
   "computer.files.notSharedHint": "Ask the bot to share a file link in this chat to save a copy.",
-  "computer.tab.data": "Data",
   "engineSetup.antigravity.addAccount": "Add Google account",
   "engineSetup.antigravity.addAccountHint": "Creates a separate Antigravity sign-in. Connect Google in the new card, then choose that account in your bot’s model picker. Accounts do not rotate automatically.",
   "engineSetup.antigravity.emailUnavailable": "Signed in with Google · account email unavailable",
@@ -7187,5 +7186,16 @@
   "voiceMode.needsXaiKeyLabel": "Voice mode needs an xAI key",
   "voiceMode.needsXaiKeyReason": "Add an xAI key in Settings > Models and voice. Grok voice uses it.",
   "engineSetup.apiKey.remoteModelsVoice": "Enter the key in Settings > Models and voice on the computer running Sagax.",
-  "engineSetup.apiKey.configuredRemoteModelsVoice": "To change the key, open Settings > Models and voice on the computer running Sagax."
+  "engineSetup.apiKey.configuredRemoteModelsVoice": "To change the key, open Settings > Models and voice on the computer running Sagax.",
+  "dataWindow.open": "Open the Data window",
+  "dataWindow.title": "Data: {name}",
+  "dataWindow.off": "The Data window is off. Turn it on in Settings > Experimental.",
+  "dataWindow.noBot": "This bot is not available here.",
+  "dataWindow.blocked": "The browser blocked the new window. Allow pop-ups for Sagax and try again.",
+  "settings.experimental.dataWindow": "Data window",
+  "settings.experimental.dataWindowAria": "Turn on the Data window",
+  "settings.experimental.dataWindowDetail": "Off by default. A Data button next to the threads button opens a bot's tables, charts and SQL in a window of their own.",
+  "settings.experimental.routineGroupSettings": "Advanced routine and group settings",
+  "settings.experimental.routineGroupSettingsAria": "Show the advanced routine and group settings",
+  "settings.experimental.routineGroupSettingsDetail": "Off by default. Shows Routines in the conversation and Group turns under General. While hidden, their current values still apply."
 }

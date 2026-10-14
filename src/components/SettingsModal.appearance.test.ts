@@ -249,7 +249,6 @@ describe("Settings → Appearance", () => {
     fixture.section = "general";
     const html = render();
     expect(html).toContain("Profile");
-    expect(html).toContain("Maximum turn length");
     expect(html).toContain("Maximum running threads per bot");
     expect(html).toContain("Automatic recovery");
     expect(html).toContain('aria-label="App language"');

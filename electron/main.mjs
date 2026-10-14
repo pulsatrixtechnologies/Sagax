@@ -79,6 +79,7 @@ import {
 import { isKnownSkin, skinChrome } from "./skin-overlay.cjs";
 import { createRetroAssistantWindow, DETACHED_QUERY } from "./retro-assistant-window.mjs";
 import { createFloatingBotWindows, FLOATING_QUERY, waitForPage as waitForFloatingPage } from "./floating-bot-window.mjs";
+import { createDataWindows } from "./data-window.mjs";
 import { createMascotHotkey, createModifierProbe } from "./mascot-hotkey.mjs";
 import { readSecureCredentials } from "./secure-credentials.mjs";
 import { createControlPlaneClient } from "./control-plane-client.mjs";
@@ -3236,6 +3237,8 @@ function createWindow({ deferNavigation = false } = {}) {
   installWindowStatePersistence(win);
   applyUnreadBadge(win);
   if (restored.maximized && !startupScreen) win.maximize();
+  // Another server in this window: the previous server's Data windows go.
+  win.webContents.on("did-navigate", (_event, url) => dataWindows.mainNavigated(url));
   win.once("closed", () => {
     if (mainWindow === win) mainWindow = null;
     // the detached Hibou 98 assistant is driven by this window's page
@@ -3759,6 +3762,37 @@ const floatingBotWindows = createFloatingBotWindows({
     // in development the floating windows' troubles show in the terminal too
     if (!app.isPackaged) console.log(`[floating-bots] ${line}`);
   },
+});
+
+// The Data window (experimental): a bot's Data results in a window of their
+// own, one per bot, on the asking page's /data-window route. See
+// electron/data-window.mjs. Main asks the page's own server whether the
+// experimental switch is on before it opens anything.
+const dataWindows = createDataWindows({
+  BrowserWindow,
+  ipcMain,
+  getMainWindow: () => mainWindow,
+  isTrustedMain: (event) => isDesktopUiSender(event),
+  featureEnabled: async (origin) => {
+    const cookie = (await session.defaultSession.cookies.get({ url: origin })).map((entry) => `${entry.name}=${entry.value}`).join("; ");
+    const response = await session.defaultSession.fetch(`${origin}/api/config`, {
+      headers: cookie ? { cookie } : {},
+      signal: AbortSignal.timeout(5_000),
+      bypassCustomProtocolHandlers: true,
+    });
+    if (!response.ok) return false;
+    const status = await response.json().catch(() => null);
+    return status?.features?.dataWindow === true;
+  },
+  openExternal: (url) => {
+    try {
+      void shell.openExternal(externalOpenUrl(url)).catch(() => {});
+    } catch {
+      // not a web link, or one with embedded credentials: never opened
+    }
+  },
+  icon: () => currentWindowIcon(),
+  log: (line) => slog(line),
 });
 
 // The desktop mascot's call hotkey (Control+Option+Space by default): the
@@ -4814,6 +4848,7 @@ app.on("before-quit", (e) => {
   desktopShutdownStarted = true;
   retroAssistantWindow.close();
   floatingBotWindows.closeAll();
+  dataWindows.closeAll();
   mascotHotkey.dispose();
   startupScreen?.dispose();
   companyBackupSchedule?.close();

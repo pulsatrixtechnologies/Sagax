@@ -9,7 +9,10 @@ import { activityPreview, failedTurnCause } from "@/lib/failed-turn";
 import { roomActivityVisible } from "@/lib/room-activity";
 
 const dispatch = vi.fn();
-vi.mock("@/state/store", () => ({ useStore: () => ({ state: { bots: [{ id: "bot" }] }, dispatch }) }));
+const fixture = vi.hoisted(() => ({ dataWindow: true }));
+const openDataWindow = vi.hoisted(() => vi.fn(async () => "created"));
+vi.mock("@/state/store", () => ({ useStore: () => ({ state: { bots: [{ id: "bot", name: "Pepper" }], config: { features: { dataWindow: fixture.dataWindow } } }, dispatch }) }));
+vi.mock("@/lib/data-window", () => ({ openDataWindow }));
 import { DataResultChip } from "./DataResultChip";
 
 // As the server stores it: the tool that ran, with the card's title only in dataResult.
@@ -19,6 +22,7 @@ const message: Message = { id: "receipt", at: 1, role: "bot", kind: "activity", 
 describe("Data result receipt", () => {
   it("expands only the recorded SQL without opening the viewer", () => {
     dispatch.mockClear();
+    openDataWindow.mockClear();
     const container = document.createElement("div");
     const root = createRoot(container);
     const sql = "SELECT region, sum(revenue) AS revenue FROM orders GROUP BY region";
@@ -31,9 +35,9 @@ describe("Data result receipt", () => {
       expect(disclosure.getAttribute("aria-expanded")).toBe("true");
       expect(container.querySelector("pre code")!.textContent).toBe(sql);
       expect(container.querySelector("pre")!.parentElement!.id).toBe(disclosure.getAttribute("aria-controls"));
-      expect(dispatch).not.toHaveBeenCalled();
+      expect(openDataWindow).not.toHaveBeenCalled();
       container.querySelector<HTMLButtonElement>("button:not([aria-expanded])")!.click();
-      expect(dispatch).toHaveBeenCalledWith({ type: "openDataResult", botId: "bot", cardId: "c_1" });
+      expect(openDataWindow).toHaveBeenCalledWith({ botId: "bot", title: "Data: Pepper", cardId: "c_1" });
       flushSync(() => disclosure.click());
       expect(container.querySelector("pre")).toBeNull();
     } finally { root.unmount(); }
@@ -48,7 +52,8 @@ describe("Data result receipt", () => {
       expect(container.textContent).toContain("Open in Data");
       expect(container.querySelector("button[aria-expanded]")).toBeNull();
       container.querySelector("button")!.click();
-      expect(dispatch).toHaveBeenCalledWith({ type: "openDataResult", botId: "bot", cardId: "c_1" });
+      expect(openDataWindow).toHaveBeenCalledWith({ botId: "bot", title: "Data: Pepper", cardId: "c_1" });
+      expect(dispatch).not.toHaveBeenCalled();
       expect(container.querySelector("canvas,table,iframe")).toBeNull();
       flushSync(() => root.render(createElement(DataResultChip, { message: { ...message, dataResult: { ...message.dataResult!, botId: "deleted" } } })));
       expect(container.querySelector("button")!.disabled).toBe(true);
@@ -57,6 +62,21 @@ describe("Data result receipt", () => {
       expect(container.querySelector("button")!.disabled).toBe(true);
       expect(container.querySelector("button")!.title).toContain("companion");
     } finally { root.unmount(); vi.unstubAllGlobals(); }
+  });
+
+  it("cannot open anything while the experimental Data window is off", () => {
+    openDataWindow.mockClear();
+    fixture.dataWindow = false;
+    const container = document.createElement("div");
+    const root = createRoot(container);
+    try {
+      flushSync(() => root.render(createElement(DataResultChip, { message })));
+      const open = container.querySelector("button")!;
+      expect(open.disabled).toBe(true);
+      expect(open.title).toContain("Experimental");
+      open.click();
+      expect(openDataWindow).not.toHaveBeenCalled();
+    } finally { root.unmount(); fixture.dataWindow = true; }
   });
 
   it("is never read as a status row, a failed turn or a bare tool name, whatever the result is called", () => {

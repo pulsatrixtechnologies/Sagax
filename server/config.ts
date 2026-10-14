@@ -324,6 +324,14 @@ const featureConfigSchema = z.object({
   /** Settings > Decision model. Off unless explicitly enabled (experimental).
    * Does not change whether the decider runs. */
   decisionModel: z.boolean().optional(),
+  /** The Data window (a bot's DuckDB results in a window of their own,
+   * opened from the chat header). Off unless explicitly enabled
+   * (experimental). */
+  dataWindow: z.boolean().optional(),
+  /** Settings > General's Routines in the conversation row and Group turns
+   * card. Off unless explicitly enabled (experimental): hidden only, their
+   * saved values keep applying. */
+  routineGroupSettings: z.boolean().optional(),
   /** Experimental built-in browser. Off until explicitly enabled; each bot
    * also has its own switch. */
   browser: z.boolean().optional(),
@@ -770,7 +778,7 @@ export interface AppConfig {
    * seats shared by all conversations, with per-thread affinity (#1654). */
   localVm?: { mode?: "shared" | "per-bot" | "pool"; maxInstances?: number; idleTimeoutMinutes?: number };
   /** Opt-in product experiments. Every flag defaults to disabled. */
-  features?: { skillAuthoring?: boolean; showToolCalls?: boolean; browser?: boolean; sharedComputers?: boolean; claudeUserMcp?: boolean; llmThreadTitles?: boolean; autoRecall?: boolean; routinesInConversation?: boolean; connectedApps?: boolean; templates?: boolean; vpsComputer?: boolean; boatComputer?: boolean; decisionModel?: boolean; skillsLibrary?: boolean };
+  features?: { skillAuthoring?: boolean; showToolCalls?: boolean; browser?: boolean; sharedComputers?: boolean; claudeUserMcp?: boolean; llmThreadTitles?: boolean; autoRecall?: boolean; routinesInConversation?: boolean; connectedApps?: boolean; templates?: boolean; vpsComputer?: boolean; boatComputer?: boolean; decisionModel?: boolean; dataWindow?: boolean; routineGroupSettings?: boolean; skillsLibrary?: boolean };
   /** First-run progress; see onboardingConfigSchema. */
   onboarding?: { completedAt?: string; version?: number; reelSeen?: boolean; hintsSeen?: string[]; launchMode?: "solo" | "server"; firstTurnAt?: string };
   /** Named browser sessions any bot can be pointed at. */
@@ -1064,6 +1072,18 @@ export function boatComputerEnabled(cfg: AppConfig): boolean {
  * itself is unchanged: this only shows or hides that Settings section. */
 export function decisionModelEnabled(cfg: AppConfig): boolean {
   return cfg.features?.decisionModel === true;
+}
+
+/** The Data window and the chat header's Data button. Off unless
+ * explicitly enabled in Settings > Experimental features. */
+export function dataWindowEnabled(cfg: AppConfig): boolean {
+  return cfg.features?.dataWindow === true;
+}
+
+/** Settings > General shows Routines in the conversation and Group turns.
+ * Off unless explicitly enabled; display only, never their values. */
+export function routineGroupSettingsEnabled(cfg: AppConfig): boolean {
+  return cfg.features?.routineGroupSettings === true;
 }
 
 export function templatesEnabled(cfg: AppConfig): boolean {

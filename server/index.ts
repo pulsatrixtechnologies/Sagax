@@ -236,6 +236,8 @@ import {
   vpsComputerEnabled,
   boatComputerEnabled,
   decisionModelEnabled,
+  dataWindowEnabled,
+  routineGroupSettingsEnabled,
   claudeUserMcpEnabled,
   skillAuthoringEnabled,
   autoRecallEnabled,
@@ -21616,6 +21618,8 @@ function configStatus() {
       vpsComputer: vpsComputerEnabled(cfg),
       boatComputer: boatComputerEnabled(cfg),
       decisionModel: decisionModelEnabled(cfg),
+      dataWindow: dataWindowEnabled(cfg),
+      routineGroupSettings: routineGroupSettingsEnabled(cfg),
       browser: builtInBrowserEnabled(cfg),
       // Maintainer-only escape hatch, not a Settings toggle: the desktop
       // shell and the Settings UI read it so they offer nothing this server

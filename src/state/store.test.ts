@@ -65,11 +65,10 @@ describe("api refusals", () => {
 });
 
 describe("mounted Data view context", () => {
-  it("stores and clears the active view independently from one-shot result navigation", () => {
+  it("stores and clears the result in view", () => {
     const view = { botId: "pepper", threadId: "task", cardId: "c_1", draftSql: "select incomplete" };
     const opened = reducer(initialState, { type: "dataView", view });
     expect(opened.dataView).toEqual(view);
-    expect(opened.dataResultFocus).toBeNull();
     expect(reducer(opened, { type: "dataView", view: null }).dataView).toBeNull();
   });
 });

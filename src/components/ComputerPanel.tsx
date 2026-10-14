@@ -10,12 +10,11 @@ import { canWorkOnCloud } from "../../shared/cloud-computer";
 // its profile default owns lifecycle actions and the Works on picker.
 // An inherited team Boat is shown as a shared resource, managed from Team map;
 // it must never fall back to this host or become a private Cloud selection.
-import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { z } from "zod";
 import { waitForLocalVmReady } from "@/lib/local-vm-readiness";
 import {
   Columns2,
-  Database,
   Globe,
   Hand,
   Loader2,
@@ -67,10 +66,6 @@ import { BrowserPanel } from "./BrowserPanel";
 import { browserAvailable, builtInBrowserEnabled } from "@/lib/feature-flags";
 
 import { useDesktopBridgeStatus } from "@/lib/desktop-bridge";
-
-// The Data view's code (and, behind it, vega-embed and AG Grid) loads the
-// first time it opens, never with the app.
-const DataPanel = lazy(() => import("./data/DataPanel").then((module) => ({ default: module.DataPanel })));
 
 /** Keep local failure copy translatable while it remains in panel state. */
 class LocalizedPanelError extends Error {
@@ -362,20 +357,6 @@ export function ComputerPanel({
   const [viewerOpen, setViewerOpen] = useState(false);
   const [error, setError] = useState<Error | string | null>(null);
   const errorText = panelErrorText(error);
-  // Computer (the screen, ours) or Data (DuckDB analytics, src/components/data).
-  // The screen's polls pause while Data shows.
-  const [dataView, setDataView] = useState(false);
-  // Another conversation is a new target: the panel goes back to Computer
-  // once. A model change in the same conversation keeps the view.
-  const dataTarget = `${bot.id}\n${bot.threadId}`;
-  const [dataViewTarget, setDataViewTarget] = useState(dataTarget);
-  if (dataViewTarget !== dataTarget) {
-    setDataViewTarget(dataTarget);
-    setDataView(false);
-  }
-  const panelView: "computer" | "data" = dataView ? "data" : "computer";
-  const requestedDataResult = state.dataResultFocus?.botId === bot.id ? state.dataResultFocus : undefined;
-  const [dataRequest, setDataRequest] = useState<{ id: string; requestId: number }>();
   const androidStatus = useAndroidUsbDevices();
   const androidConnected = androidStatus.devices.length > 0;
   // Keep installation reachable before the engine is ready. Actual browser
@@ -410,19 +391,10 @@ export function ComputerPanel({
       setPending(null);
     }
     return () => { vmActionController.current?.abort(); };
-  }, [bot.id, bot.threadId, bot.computer, panelView]);
+  }, [bot.id, bot.threadId, bot.computer]);
   const selectedInstance = state.instances.find(
     (instance) => instance.instanceId === bot.modelSelection.instanceId,
   );
-  // A data result opened from the chat (openDataResult) shows the Data view
-  // with that card, once per request.
-  useEffect(() => {
-    if (!requestedDataResult || requestedDataResult.consumed) return;
-    setDataRequest(requestedDataResult);
-    setDataView(true);
-    dispatch({ type: "dataResultFocusConsumed", requestId: requestedDataResult.requestId });
-  }, [dispatch, requestedDataResult]);
-
   // Pause the screenshot poll while this bot's viewer is open; seed from the
   // live viewer so a remount/switch mid-session doesn't wrongly resume it.
   useEffect(() => {
@@ -465,9 +437,6 @@ export function ComputerPanel({
   // resolve the mode on open; boat endpoints are only ever hit on the
   // cloud path, so local/off can never render a JSON error as an image
   useEffect(() => {
-    // Other tabs own their surfaces. Do not provision a VM, wake a boat,
-    // or churn preview state while reading routine history.
-    if (panelView !== "computer") return;
     let alive = true;
     setResolvedComputerSelection(null);
     setTeamComputer(null);
@@ -710,7 +679,6 @@ export function ComputerPanel({
     vmSupported,
     cloudSupported,
     state.config?.vps?.sshAlias,
-    panelView,
     computerSelectionPersisted,
     surfaceReady,
     canManageCloud,
@@ -769,7 +737,7 @@ export function ComputerPanel({
   }, [cloudPreviewReady, bot.id, bot.threadId]);
 
   useEffect(() => {
-    if (panelView !== "computer" || !cloudPreviewReady || viewerOpen || !pageVisible || pending || controlPending) return;
+    if (!cloudPreviewReady || viewerOpen || !pageVisible || pending || controlPending) return;
     let inFlight = false;
     let lastAttemptAt = -Infinity;
     let retryDelay: number | null = null;
@@ -829,12 +797,12 @@ export function ComputerPanel({
       controller.abort();
       clearInterval(timer);
     };
-  }, [panelView, cloudPreviewReady, threadPath, cloudBackend, viewerOpen, pageVisible, pending, controlPending, previewRetry]);
+  }, [cloudPreviewReady, threadPath, cloudBackend, viewerOpen, pageVisible, pending, controlPending, previewRetry]);
 
   // Local VM preview comes directly from Cua Driver through the harness. It
   // does not use the password-protected noVNC viewer or cloud endpoints.
   useEffect(() => {
-    if (panelView !== "computer" || phase !== "vm" || !computerStatusCurrent || viewerOpen || !pageVisible) return;
+    if (phase !== "vm" || !computerStatusCurrent || viewerOpen || !pageVisible) return;
     const controller = new AbortController();
     let inFlight = false;
     let lastAttemptAt = -Infinity;
@@ -873,7 +841,7 @@ export function ComputerPanel({
       controller.abort();
       window.clearInterval(timer);
     };
-  }, [panelView, phase, computerStatusCurrent, threadPath, viewerOpen, pageVisible, bot.busy, setError, setPreviewError, setVmFrame]);
+  }, [phase, computerStatusCurrent, threadPath, viewerOpen, pageVisible, bot.busy, setError, setPreviewError, setVmFrame]);
 
   // local preview: frames from the Electron main process. The FIRST capture
   // attempt is what makes macOS show the Screen Recording prompt (there is
@@ -881,7 +849,7 @@ export function ComputerPanel({
   // the user denied — surface the Settings repair path instead of spinning.
   const [localMisses, setLocalMisses] = useState(0);
   useEffect(() => {
-    if (panelView !== "computer" || phase !== "local" || !computerStatusCurrent || !window.ogb || isLinux || !pageVisible) return;
+    if (phase !== "local" || !computerStatusCurrent || !window.ogb || isLinux || !pageVisible) return;
     let alive = true;
     setLocalMisses(0);
     const shoot = async () => {
@@ -901,7 +869,7 @@ export function ComputerPanel({
       alive = false;
       clearInterval(timer);
     };
-  }, [panelView, phase, computerStatusCurrent, isLinux, pageVisible, bot.busy, bot.id, bot.threadId]);
+  }, [phase, computerStatusCurrent, isLinux, pageVisible, bot.busy, bot.id, bot.threadId]);
 
   const frameSrc = !computerStatusCurrent ? null :
     phase === "vm"
@@ -1669,38 +1637,9 @@ export function ComputerPanel({
     </div>
   ) : deviceBody;
 
-  // Computer | Data above whatever the computer view shows (its own picker,
-  // Cloud and computers or Screen and Browser, stays inside it).
-  const viewPicker = (
-    <div className="mt-2 flex justify-center">
-      <div role="radiogroup" aria-label="Bot panel view" data-computer-view=""
-        className="flex max-w-full gap-0.5 rounded-full bg-control p-0.5">
-        {([["computer", t("computer.tab.computer"), Monitor], ["data", t("computer.tab.data"), Database]] as const).map(([key, label, Icon]) => {
-          const selected = panelView === key;
-          return (
-            <button key={key} type="button" role="radio" aria-checked={selected} data-computer-view-choice={key}
-              data-tour={key === "data" ? "computer-data" : undefined}
-              onClick={() => setDataView(key === "data")}
-              className={cn("flex min-w-0 shrink-0 cursor-pointer items-center gap-1.5 rounded-full px-2.5 py-1 text-[12.5px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60",
-                selected ? "bg-elevated text-ink shadow-sm" : "text-ink-secondary hover:text-ink")}>
-              <Icon size={12} aria-hidden="true" />
-              <span>{label}</span>
-            </button>
-          );
-        })}
-      </div>
-    </div>
-  );
-  const shown = <>
-    <div className={embedded ? undefined : "px-5"}>{viewPicker}</div>
-    {dataView ? (
-      <div data-computer-data="" className={cn("flex min-h-0 flex-col overflow-hidden", embedded ? "mt-3 h-[70vh] min-h-[420px] pb-5" : "flex-1 pt-3")}>
-        <Suspense fallback={<div className="flex flex-1 items-center justify-center text-[13px] text-ink-secondary" role="status">{t("data.loading")}</div>}>
-          <DataPanel key={bot.id} bot={bot} requestedCard={dataRequest} />
-        </Suspense>
-      </div>
-    ) : body}
-  </>;
+  // The computer view shows directly: Data opens in its own window from the
+  // chat header (experimental, src/lib/data-window.ts).
+  const shown = body;
 
   return (
     <>
