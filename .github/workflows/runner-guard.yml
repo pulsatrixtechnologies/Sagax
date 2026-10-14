@@ -5,7 +5,7 @@ on:
     paths:
       - .github/workflows/**
       - scripts/check-runner-labels.mjs
-      - scripts/check-runner-labels.test.mjs
+      - scripts/check-runner-labels.node-test.mjs
       - scripts/testing/runner-guard-fixtures/**
   push:
     branches: [main]
@@ -23,4 +23,4 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - run: node --test scripts/check-runner-labels.test.mjs
+      - run: node --test scripts/check-runner-labels.node-test.mjs

@@ -49,6 +49,13 @@
       "owner": "milind-soni",
       "reason": "Failed 7 runs (3 main runs) since Sep 24: Ubuntu 5, Windows 2. #2444 targeted it; delete this entry once no retry is reported for a week.",
       "since": "2026-10-08"
+    },
+    {
+      "file": "server/direct-coordination.e2e.test.ts",
+      "test": "stops a waiting source without reaching into the teammate already working",
+      "owner": "jencryzthers",
+      "reason": "Failed once on ubuntu-latest shard 2 of #437 (2026-10-14, 06c4ad675): wait() returned failed instead of settled after interrupt. File unchanged vs main; same shard later green on retry is expected.",
+      "since": "2026-10-14"
     }
   ]
 }
