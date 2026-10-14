@@ -515,8 +515,8 @@ export function compileVoiceBench(input: CompileVoiceBenchInput): VoiceBenchRepo
       stage,
       {
         p50: nearestRank(warmMeasuredTurns.map((turn) => turn.stages[stage]!), 0.5),
-        p90: nearestRank(measuredTurns.map((turn) => turn.stages[stage]!), 0.9),
-        max: Math.max(...measuredTurns.map((turn) => turn.stages[stage]!)),
+        p90: nearestRank(warmMeasuredTurns.map((turn) => turn.stages[stage]!), 0.9),
+        max: Math.max(...warmMeasuredTurns.map((turn) => turn.stages[stage]!)),
       },
     ]),
   ) as unknown as VoiceBenchSummary;

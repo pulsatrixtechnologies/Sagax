@@ -165,8 +165,8 @@ describe("compileVoiceBench", () => {
     expect(compileVoiceBench(fixture({ totals: [400, 2_501] })).passed).toBe(false);
   });
 
-  it("uses warm turns after one explicit warm-up for the p50 gate", () => {
-    const input = fixture({ totals: [700, 900], warmupTotal: 2_000 });
+  it("uses warm turns after one explicit warm-up for the p50 and max gates", () => {
+    const input = fixture({ totals: [700, 900], warmupTotal: 4_260 });
 
     const report = compileVoiceBench(input);
     expect(report.gates.p50).toEqual({
@@ -174,7 +174,12 @@ describe("compileVoiceBench", () => {
       thresholdMs: 800,
       observedMs: 700,
     });
-    expect(report.gates.max.observedMs).toBe(2_000);
+    expect(report.gates.max).toEqual({
+      pass: true,
+      thresholdMs: 2_500,
+      observedMs: 900,
+    });
+    expect(report.summary.total).toEqual({ p50: 700, p90: 900, max: 900 });
   });
 
   it("requires exactly one explicit warm-up utterance", () => {
