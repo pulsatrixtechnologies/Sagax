@@ -6,7 +6,7 @@
 // their threads, memory and computers), their own threads on other bots,
 // their server environment and /workspace, their saved settings, and signs
 // out every session of theirs. Perspicax has no account-deletion endpoint
-// for a linked server yet (pulsatrix-v3 route table, 2026-10-01): until it
+// for a linked server yet (<PRIVATE_REPO_NAME> route table, 2026-10-01): until it
 // does this answers 501 `perspicax_deletion_unavailable` and deletes nothing,
 // so an account is never half removed. The phone shows the row and explains.
 //

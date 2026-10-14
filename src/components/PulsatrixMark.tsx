@@ -1,5 +1,5 @@
 // The Pulsatrix owl-face mark (outlined face, blue eyes, heartbeat line), the
-// files Perspicax's console used before its C3 icon (pulsatrix-v3
+// files Perspicax's console used before its C3 icon (<PRIVATE_REPO_NAME>
 // console/src/assets/pulsatrix-mark.png and pulsatrix-logo-light.png), drawn
 // as plain images in their own colours: white strokes on dark rails, dark
 // strokes on light ones.

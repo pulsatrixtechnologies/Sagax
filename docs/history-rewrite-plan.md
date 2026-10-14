@@ -20,8 +20,10 @@ Walk **all** remaining `refs/heads/*` and `refs/tags/*` after pull refs are
 deleted. That includes `cursor/docker-image-cves-5d72`, the head of
 [PR #444](https://github.com/pulsatrixtechnologies/Sagax/pull/444).
 
-Commit `1b3bbe5eca386bf4bf4a5f28aa9ae51f66ad4fbf` on that branch: commit à
-purger. A rewrite that only walks `main` (dry-run 1) never sees that commit. Dry-run 2 of a
+Commit `1b3bbe5eca386bf4bf4a5f28aa9ae51f66ad4fbf` on that branch stores
+ungated Trivy JSON reports under `docs/preuve/trivy/`. Those files can
+carry registry, image and host strings that #437's HEAD does not contain.
+A rewrite that only walks `main` (dry-run 1) never sees that commit. Dry-run 2 of a
 complete origin `--mirror` did list `cursor/docker-image-cves-5d72` among the
 public heads; keep that branch in the rewrite. If the branch is deleted before
 the rewrite, the commit can still be reachable from `refs/pull/444/*` on
@@ -108,7 +110,7 @@ tags are rewritten, every existing PR still holds the old commits.
 File a GitHub Support request to purge `refs/pull/*` and run GC.
 
 **Name `refs/pull/444` explicitly in that request.** PR #444's `head` and
-`merge` refs keep commit `1b3bbe5e` (commit à purger) even if
+`merge` refs keep commit `1b3bbe5e` (the Trivy JSON) even if
 `cursor/docker-image-cves-5d72` is rewritten or deleted. Ask Support to
 delete at least:
 

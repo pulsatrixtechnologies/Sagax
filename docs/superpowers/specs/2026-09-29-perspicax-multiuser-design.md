@@ -368,7 +368,7 @@ Dans l'autre sens, le serveur Pulsa Bot appelle Perspicax avec le jeton `pxat1.`
 
 ### Une seule compose
 
-Elle vit dans le dépôt privé (`pulsatrix-v3/deploy/docker-compose.pulsabot.yml`, avec un `Caddyfile.pulsabot`); le dépôt Pulsa Bot la documente et garde sa propre `compose.yaml` pour le solo.
+Elle vit dans le dépôt privé (`<PRIVATE_REPO_NAME>/deploy/docker-compose.pulsabot.yml`, avec un `Caddyfile.pulsabot`); le dépôt Pulsa Bot la documente et garde sa propre `compose.yaml` pour le solo.
 
 | Service | Image | Rôle |
 |---|---|---|
@@ -517,7 +517,7 @@ Positions retenues (recommandation acceptée sauf avis contraire):
 - **Identité du MCP quand quelqu'un parle au bot d'un autre:** celle de qui parle; celle du propriétaire seulement pour ses routines. L'inverse donnerait à tout utilisateur d'un bot l'accès ConnectWise de son propriétaire.
 - **Administration de l'organisation:** les admins Perspicax. Aucun propriétaire d'organisation distinct; chaque bot garde son propriétaire humain.
 - **Courriel:** aucun dans Pulsa Bot. Les comptes se créent dans Perspicax, avec son mot de passe temporaire et son premier accès existants.
-- **Compose unique:** dans `pulsatrix-v3/deploy/`; Pulsa Bot garde sa compose solo et pointe vers l'autre.
+- **Compose unique:** dans `<PRIVATE_REPO_NAME>/deploy/`; Pulsa Bot garde sa compose solo et pointe vers l'autre.
 - **Rejoindre avec des bots locaux:** copier, puis offrir le retrait local bot par bot; fils et mémoire au choix par bot.
 - **Bots sans propriétaire humain:** pas en v1; les comptes de service servent au lien.
 
