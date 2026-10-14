@@ -80,7 +80,8 @@ describe("production image sources", () => {
     expect(policy).toContain("subjectRegExp: {{ .Values.admission.kyverno.subjectRegExp | quote }}");
     expect(policy).not.toContain("kyverno.subjects");
     expect(policy).not.toContain("kyverno.subject ");
-    expect(workflow).not.toContain("cursor/ghcr-multiarch-sign-attest-ed85");
+    expect(workflow).toMatch(/branches: \[main\]/);
+    expect(workflow).not.toMatch(/refs\/heads\/cursor\//);
     expect(workflow).toContain("sandbox chart values");
     expect(workflow).toContain("sandbox chart templates/admission.yaml");
     const proof = workflow.slice(workflow.indexOf("name: signing proof"));
