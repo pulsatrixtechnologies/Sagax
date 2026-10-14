@@ -33,6 +33,11 @@ describe("production image sources", () => {
     expect(workflow).toContain("SAGAX_REQUIRE_ENGINES=1");
     expect(workflow).toContain("scripts/engine-image-gate.mjs");
     expect(workflow).toContain("scripts/harden-image-deps.mjs");
+    expect(workflow).toContain("scripts/trivy-ignore-guard.mjs");
+    expect(workflow).toContain("trivy_0.75.0_Linux-64bit.tar.gz");
+    expect(workflow).toContain("--ignorefile .trivyignore");
+    expect(workflow).toContain("--ignorefile /tmp/trivyignore.empty");
+    expect(workflow).toContain(".trivyignore");
     expect(workflow).toContain("--startup-log");
     expect(workflow).toContain("/healthz");
     expect(workflow).toContain("cursor-agent");
