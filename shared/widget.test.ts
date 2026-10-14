@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { WIDGET_SAMPLES } from "./widget-samples.ts";
 import {
-  parseWidgetInput, resolveWidgetAction, widgetActionByLabel, widgetActions, widgetFields, widgetInitialValues, widgetScope, widgetToText,
+  parseWidgetInput, resolveWidgetAction, widgetActionByLabel, widgetActions, widgetFieldOptions, widgetFields, widgetInitialValues, widgetScope, widgetToText,
   WIDGET_LIMITS, WIDGET_NODE_TYPES, type WidgetNode, type WidgetPayload, type WidgetRoot,
 } from "./widget.ts";
 
@@ -269,6 +269,45 @@ describe("widget actions", () => {
     }
     const chart = parsed({ type: "Card", children: [{ type: "Chart", xAxis: "d", series: [{ dataKey: "v" }], data: [JSON.parse('{"d":"Mon","v":1,"__proto__":null}')] }] });
     expect(Object.keys((chart.children![0].data as object[])[0])).toEqual(["d", "v"]);
+  });
+
+  it("lets the person pick one row of a list with a name, and sends the pick with confirm", () => {
+    const root = sample("dinnerChoice");
+    expect(root).toMatchObject({ type: "ListView", name: "dish", required: true });
+    expect(root.children!.map((row) => row.value)).toEqual(["butter-chicken", "veggie-bowl", "pizza"]);
+    // the rows are a choice, not three presses
+    expect(widgetActions(root).map((entry) => entry.ref)).toEqual(["confirm", "cancel"]);
+    expect(widgetFields(root).map(({ name, type, label }) => ({ name, type, label }))).toEqual([{ name: "dish", type: "ListView", label: "Dinner tonight" }]);
+    expect(widgetFieldOptions(root)).toEqual([
+      { label: "Butter chicken with naan", value: "butter-chicken" },
+      { label: "Grilled veggie bowl with quinoa", value: "veggie-bowl" },
+      { label: "Margherita pizza", value: "pizza" },
+    ]);
+    expect(widgetInitialValues(root)).toEqual({ dish: "" });
+    const choice = { v: 1 as const, root };
+    expect(resolveWidgetAction(choice, "confirm", {})).toEqual({ ok: false, status: 400, error: "Dinner tonight is required." });
+    expect(resolveWidgetAction(choice, "confirm", { dish: "sushi" })).toEqual({ ok: false, status: 400, error: "Dinner tonight must be one of the offered options." });
+    expect(resolveWidgetAction(choice, "confirm", { dish: "pizza" })).toMatchObject({ ok: true, values: { dish: "pizza" }, text: "Pick this\nDinner tonight: Margherita pizza" });
+    expect(resolveWidgetAction(choice, "cancel", {})).toMatchObject({ ok: true, text: "None of these", values: {} });
+  });
+
+  it("gives every row of a named list a value of its own, and refuses a choice that cannot be made or sent", () => {
+    const rows = (...names: string[]) => names.map((value) => ({ type: "ListViewItem", children: [{ type: "Text", value }] }));
+    const confirm = { label: "Choose", action: { type: "choose" } };
+    // no value given: the row's name stands for it; nothing to name it by: its position
+    expect(parsed({ type: "ListView", name: "pick", confirm, children: rows("Alpha", "Beta") }).children!.map((row) => row.value)).toEqual(["Alpha", "Beta"]);
+    expect(parsed({ type: "ListView", name: "pick", confirm, children: [{ type: "ListViewItem", children: [{ type: "Icon", name: "star" }] }, { type: "ListViewItem", children: [{ type: "Icon", name: "bolt" }] }] }).children!.map((row) => row.value)).toEqual(["1", "2"]);
+    expect(parsed({ type: "ListView", name: "pick", required: false, defaultValue: "Beta", confirm, children: rows("Alpha", "Beta") })).toMatchObject({ defaultValue: "Beta" });
+    expect("required" in parsed({ type: "ListView", name: "pick", required: false, confirm, children: rows("Alpha", "Beta") })).toBe(false);
+    expect("defaultValue" in parsed({ type: "ListView", name: "pick", defaultValue: "Gamma", confirm, children: rows("Alpha", "Beta") })).toBe(false);
+    expect(refusal({ type: "ListView", name: "pick", children: rows("Alpha", "Beta") })).toBe("widget.confirm: a list with a name lets the person choose a row; it needs confirm: {label, action} to send the choice.");
+    expect(refusal({ type: "ListView", name: "pick", confirm, children: rows("Alpha") })).toBe("widget.children: a list with a name needs at least two rows to choose from.");
+    expect(refusal({ type: "ListView", name: "pick", confirm, children: rows("Same", "Same") })).toBe('widget.children[1].value: repeats the value "Same"; give each row its own value.');
+    expect(refusal({ type: "ListView", name: "pick", confirm, children: [{ type: "ListViewItem", onClickAction: { type: "open" }, children: [{ type: "Text", value: "A" }] }, ...rows("B")] }))
+      .toBe("widget.children[0].onClickAction: the rows of a list with a name are selected, not pressed; remove onClickAction from the rows, or remove name from the list.");
+    // a list without a name keeps no values: its rows are pressed or just read
+    const plain = parsed({ type: "ListView", defaultValue: "x", children: [{ type: "ListViewItem", value: "x", children: [{ type: "Text", value: "A" }] }] });
+    expect("defaultValue" in plain || "value" in plain.children![0]).toBe(false);
   });
 
   it("refuses a settled widget, an unknown ref and a device-only action", () => {

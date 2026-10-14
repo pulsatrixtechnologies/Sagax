@@ -43,7 +43,28 @@ const cells = (header: boolean, ...values: string[]) => ({
   })),
 });
 
+const dish = (value: string, title: string, detail: string, time: string) => ({
+  type: "ListViewItem",
+  value,
+  children: [{ type: "Col", flex: 1, children: [{ type: "Text", value: title, weight: "medium" }, { type: "Caption", value: detail }] }, { type: "Caption", value: time, color: "tertiary" }],
+});
+
 export const WIDGET_SAMPLES: Record<string, unknown> = {
+  // A list the person picks one row from: `name` makes its rows selectable.
+  dinnerChoice: {
+    type: "ListView",
+    name: "dish",
+    title: "Dinner tonight",
+    caption: "Pick one and I'll plan the rest.",
+    children: [
+      dish("butter-chicken", "Butter chicken with naan", "Rich, creamy, classic comfort food", "45 min"),
+      dish("veggie-bowl", "Grilled veggie bowl with quinoa", "Light, healthy, quick to prepare", "20 min"),
+      dish("pizza", "Margherita pizza", "Easy, crowd-pleasing, order-in friendly", "Order in"),
+    ],
+    confirm: { label: "Pick this", action: { type: "dinner.pick" } },
+    cancel: { label: "None of these", action: { type: "dinner.none" } },
+  },
+
   pullRequests: {
     type: "ListView",
     title: "Pull requests",

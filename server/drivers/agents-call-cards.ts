@@ -7,7 +7,7 @@
 // (createAgentCard) tells them apart by the body's `tool` and is where a
 // widget is stored; the checks here only save a round trip.
 import { parseOptionsCardInput, WATCHER_OPTIONS_CARD_BOT_ID } from "../../shared/options-card.ts";
-import { parseWidgetInput } from "../../shared/widget.ts";
+import { parseWidgetInput, widgetAdvice } from "../../shared/widget.ts";
 
 import type { ToolCallContext, ToolCallResult } from "./agents-call.ts";
 import type { Json } from "./agents-client.ts";
@@ -54,9 +54,11 @@ export async function callCardTool(name: string, args: Json, context: ToolCallCo
   const masked = body.masked === true
     ? " Something in it read as a secret and was masked before it was stored. Never put secrets in a widget, and name a payload field key, token or password only when it holds one."
     : "";
+  // A list with a confirm button and no way to choose a row parses, and leaves the person nothing to pick.
+  const advice = widgetAdvice(parsed.value);
   return {
     text: (updating
       ? `Updated widget ${messageId}.`
-      : `Shown as widget ${messageId}. If it asks the person something, end your turn now: their press arrives as their next message. To change it later, call update_widget with widget_id "${messageId}".`) + masked,
+      : `Shown as widget ${messageId}. If it asks the person something, end your turn now: their press arrives as their next message. To change it later, call update_widget with widget_id "${messageId}".`) + masked + (advice ? ` ${advice}` : ""),
   };
 }

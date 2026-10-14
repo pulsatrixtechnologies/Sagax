@@ -77,6 +77,19 @@ describe("show_widget", () => {
     expect(result.text).toMatch(/^Shown as widget m42\. .* Something in it read as a secret and was masked before it was stored\. Never put secrets in a widget, and name a payload field key, token or password only when it holds one\.$/);
   });
 
+  it("warns when a list has a confirm button and no row that can be chosen, and says nothing when one can", async () => {
+    const { context } = harness();
+    const rows = ["Butter chicken", "Veggie bowl", "Pizza"].map((value) => ({ type: "ListViewItem", children: [{ type: "Text", value }] }));
+    const confirm = { label: "Pick this", action: { type: "dinner.pick" } };
+    const stuck = await callTool("show_widget", { widget: { type: "ListView", title: "Dinner", children: rows, confirm } }, context);
+    expect(stuck.isError).toBeUndefined();
+    expect(stuck.text).toMatch(/ No row of this list can be chosen: the person can only confirm or cancel it as a whole\. If they are meant to pick one row, call update_widget and give the ListView a name \(and each row a value\), so the rows become selectable and confirm sends the pick\.$/);
+    const choice = await callTool("show_widget", { widget: { type: "ListView", name: "dish", title: "Dinner", children: rows, confirm } }, context);
+    expect(choice.text).not.toContain("No row of this list can be chosen");
+    const pressable = await callTool("show_widget", { widget: WIDGET_SAMPLES.pullRequests }, context);
+    expect(pressable.text).not.toContain("No row of this list can be chosen");
+  });
+
   it("sends fallback_text only when it is a string", async () => {
     const { apiResponse, context } = harness();
     await callTool("show_widget", { widget: WIDGET_SAMPLES.spendTable, fallback_text: "Spend by bot, last 7 days." }, context);

@@ -315,6 +315,8 @@ const fieldName: Reader = (raw, path) => (typeof raw === "string" && FIELD_NAME.
   ? raw
   : fail(path, 'is required: letters, digits and "_.-", at most 64'));
 
+const optionalFieldName: Reader = (raw, path) => (raw === undefined || raw === null ? undefined : fieldName(raw, path));
+
 const inputType: Reader = (raw, path) => {
   if (raw === "password") return fail(path, "password fields are not allowed in a widget; use request_credential for secrets");
   return oneOf("text", "number", "email", "tel", "url")(raw, path);
@@ -386,8 +388,10 @@ interface NodeSpec {
 
 const SPECS: Record<string, NodeSpec> = {
   Card: { props: { ...ROOT, size: oneOf("sm", "md", "lg", "full"), padding }, children: "any" },
-  ListView: { props: { ...ROOT, limit: integer(1, WIDGET_LIMITS.listItems) }, children: "items" },
-  ListViewItem: { props: { gap: spacing(), align: LAYOUT.align, onClickAction: action }, children: "any" },
+  // `name` makes the list a choice: its rows are selectable, one at a time, and
+  // the chosen row's `value` travels with confirm like any other field.
+  ListView: { props: { ...ROOT, limit: integer(1, WIDGET_LIMITS.listItems), name: optionalFieldName, defaultValue: line(200) }, children: "items" },
+  ListViewItem: { props: { gap: spacing(), align: LAYOUT.align, onClickAction: action, value: line(200) }, children: "any" },
   Box: { props: { ...LAYOUT, direction: oneOf("row", "col") }, children: "any" },
   Row: { props: LAYOUT, children: "any" },
   Col: { props: LAYOUT, children: "any" },
@@ -502,7 +506,41 @@ function normalize(input: unknown, path: string, depth: number, slot: "root" | "
     const childSlot = spec.children === "one" ? "any" : spec.children;
     node.children = kept.map((child, index) => normalize(child, `${path}.children[${index}]`, depth + 1, childSlot, context));
   }
+  if (type === "ListView") {
+    if (typeof node.name === "string") selectable(node, raw, path, context);
+    else {
+      // not a choice: a row's value and a default mean nothing here
+      delete node.defaultValue;
+      for (const row of node.children ?? []) delete row.value;
+    }
+  }
+  if (type === "ListViewItem" && slot !== "items") delete node.value;
   return node;
+}
+
+/** A list with a `name`: each row gets a distinct `value` (its own, else the
+ * row's name, else its position), a press on a row selects it, and the list
+ * is required unless it says otherwise. It needs `confirm`, the only thing
+ * that can send the choice. */
+function selectable(list: WidgetNode, raw: Record<string, unknown>, path: string, context: Context): void {
+  const name = list.name as string;
+  if (context.fields.has(name)) fail(`${path}.name`, `repeats the field name ${JSON.stringify(name)}`);
+  context.fields.add(name);
+  if (context.fields.size > WIDGET_LIMITS.fields) fail(path, `the widget has more than ${WIDGET_LIMITS.fields} fields`);
+  if (!isRecord(list.confirm)) fail(`${path}.confirm`, "a list with a name lets the person choose a row; it needs confirm: {label, action} to send the choice");
+  const rows = list.children ?? [];
+  if (rows.length < 2) fail(`${path}.children`, "a list with a name needs at least two rows to choose from");
+  const seen = new Set<string>();
+  rows.forEach((row, index) => {
+    const at = `${path}.children[${index}]`;
+    if (row.onClickAction !== undefined) fail(`${at}.onClickAction`, "the rows of a list with a name are selected, not pressed; remove onClickAction from the rows, or remove name from the list");
+    const value = widgetString(row, "value") ?? (firstText(row) || String(index + 1));
+    if (seen.has(value)) fail(`${at}.value`, `repeats the value ${JSON.stringify(value)}; give each row its own value`);
+    seen.add(value);
+    row.value = value;
+  });
+  if (raw.required !== false) list.required = true;
+  if (typeof list.defaultValue === "string" && !seen.has(list.defaultValue)) delete list.defaultValue;
 }
 
 /** Normalise untrusted model input into a canonical tree, or say what is
@@ -660,10 +698,23 @@ export function widgetFields(scope: WidgetNode, root: WidgetRoot = scope): Widge
   });
   const fields: WidgetField[] = [];
   walk(scope, (node) => {
-    if (!FIELD_TYPES.has(node.type) || typeof node.name !== "string") return;
-    fields.push({ name: node.name, type: node.type, node, label: labels.get(node.name) ?? (node.type === "Checkbox" ? widgetString(node, "label") : undefined) ?? node.name });
+    if (typeof node.name !== "string" || !(FIELD_TYPES.has(node.type) || node.type === "ListView")) return;
+    const own = node.type === "Checkbox" ? widgetString(node, "label") : node.type === "ListView" ? widgetString(node, "title") : undefined;
+    fields.push({ name: node.name, type: node.type, node, label: labels.get(node.name) ?? own ?? node.name });
   });
   return fields;
+}
+
+/** What a choice field offers: a Select's or RadioGroup's options, or the
+ * rows of a list with a name (each row's name, and the value it stands for). */
+export function widgetFieldOptions(node: WidgetNode): Array<{ label: string; value: string }> {
+  if (node.type === "ListView") {
+    return (Array.isArray(node.children) ? node.children : []).filter(isRecord).map((row) => {
+      const value = String((row as WidgetNode).value ?? "");
+      return { label: firstText(row as WidgetNode) || value, value };
+    });
+  }
+  return Array.isArray(node.options) ? node.options as Array<{ label: string; value: string }> : [];
 }
 
 /** What each field holds before the person touches it. */
@@ -717,8 +768,8 @@ export function resolveWidgetAction(payload: WidgetPayload, ref: string, values:
     if (value.length > WIDGET_LIMITS.fieldValue) return { ok: false, status: 400, error: `${field.label} must be at most ${WIDGET_LIMITS.fieldValue} characters.` };
     if (mustFill && field.node.required === true && !value) return { ok: false, status: 400, error: `${field.label} is required.` };
     let shown = value;
-    if (value && (field.type === "Select" || field.type === "RadioGroup")) {
-      const option = (Array.isArray(field.node.options) ? field.node.options as Array<{ label: string; value: string }> : []).find((candidate) => candidate.value === value);
+    if (value && (field.type === "Select" || field.type === "RadioGroup" || field.type === "ListView")) {
+      const option = widgetFieldOptions(field.node).find((candidate) => candidate.value === value);
       if (!option) return { ok: false, status: 400, error: `${field.label} must be one of the offered options.` };
       shown = option.label;
     }
@@ -733,6 +784,16 @@ export function resolveWidgetAction(payload: WidgetPayload, ref: string, values:
     if (value) lines.push(`${field.label}: ${shown}`);
   }
   return done(clean, lines);
+}
+
+/** A word to the bot about a widget that parses but cannot do what it looks
+ * like it is for: rows to choose between, a button to confirm with, and no
+ * way to choose. Undefined when there is nothing to say. */
+export function widgetAdvice(root: WidgetRoot): string | undefined {
+  const rows = Array.isArray(root.children) ? root.children.length : 0;
+  if (root.type !== "ListView" || rows < 2 || !buttonSpecOf(root, "confirm") || widgetFields(root).length > 0) return undefined;
+  if (widgetActions(root).some((entry) => entry.kind === "item" || entry.kind === "button")) return undefined;
+  return "No row of this list can be chosen: the person can only confirm or cancel it as a whole. If they are meant to pick one row, call update_widget and give the ListView a name (and each row a value), so the rows become selectable and confirm sends the pick.";
 }
 
 // ── Text fallback ───────────────────────────────────────────────────────────
