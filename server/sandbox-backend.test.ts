@@ -201,7 +201,7 @@ describe("sandbox pool runbooks", () => {
       expect(map).toContain(control);
     }
     expect(text("docs/ops/sandboxes/change-management.md")).toContain("develop");
-    expect(text("docs/ops/sandboxes/backup-restore.md")).toContain("sagax-sandboxes-drill");
+    expect(text("docs/ops/sandboxes/backup-restore.md")).toContain("<RESOURCE_GROUP>-drill");
     expect(text("docs/ops/sandboxes/access-review.md")).toContain("CC6.1");
   });
 });

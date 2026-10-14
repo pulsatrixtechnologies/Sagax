@@ -1064,8 +1064,8 @@ built-in driver is missing from the lock or a pin's `bin` differs from the
 driver's default `cli`.
 
 - Dockerfile: `scripts/install-engines.mjs` installs the selection named by
-  `ENGINE_SET` (`all` default, since the 2026-10-12 GOX image
-  `pulsa-bot-server:main-20004735` shipped `engineSet none` when the arg was
+  `ENGINE_SET` (`all` default, since the 2026-10-12 production image
+  `pulsa-bot-server:main-example1` shipped `engineSet none` when the arg was
   omitted; `none` and `open` are explicit opt-outs; or ids). The build also
   defaults `SAGAX_REQUIRE_ENGINES=1`, which fails the image when the set is
   not the full lock. `scripts/build-production-image.sh` and
@@ -1074,11 +1074,11 @@ driver's default `cli`.
   (`org.opencontainers.image.created`) and `io.sagax.engine-set`. The legacy
   `ENGINES` (npm specs) and `NATIVE_ENGINES` (native ids) build arguments
   still override the lock's npm and native sets; `none` drops a kind. A
-  non-empty override that drops an engine fails the require flag. GOX deploys
-  through `deploy/gox/deploy-pulsabot.sh`: it refuses the same short set,
+  non-empty override that drops an engine fails the require flag. Production deploys
+  through `deploy/example/deploy-server.sh`: it refuses the same short set,
   smoke-tests `/healthz` and the engine startup log, and on failure rolls
-  back to `/opt/pulsatrix/pulsabot-image.prev` then runs
-  `docker compose up -d --force-recreate --no-deps pulsabot-caddy`. Prune
+  back to `<INSTALL_ROOT>/server-image.prev` then runs
+  `docker compose up -d --force-recreate --no-deps <EDGE_SERVICE>`. Prune
   keeps the running image and that previous image.
 - Installed by `ENGINE_SET=all`: Claude Code, Codex, pi, Gemini CLI, Kimi
   Code, Qwen Code, OpenCode, Droid (npm, global), Grok Build and Cursor Agent
@@ -1799,7 +1799,7 @@ console's bots gallery, routines calendar and computers. Keep these rules:
 
 ## A person's own connections, plugins and skills (organization mode, 2026-10-02)
 
-Owner report: on GOX nobody could add the GitHub MCP, log into GitHub or
+Owner report: in production nobody could add the GitHub MCP, log into GitHub or
 install plugins. Why: the server-wide MCP list was admin-only, hidden with
 Connected apps, shared one token by all and ran commands on the host;
 `claude plugin ...` typed by a bot hit the host Bash denial whatever
