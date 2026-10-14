@@ -2294,7 +2294,8 @@ createInterface({ input: process.stdin }).on("line", (line) => {
 
   it("declares effort levels for Grok only", async () => {
     await create(GrokAgentDriver);
-    expect(instance.adapter.capabilities.effortLevels).toEqual(["low", "medium", "high"]);
+    // The union of the Grok models' levels; each model narrows it (grok-4.5 has no X-High).
+    expect(instance.adapter.capabilities.effortLevels).toEqual(["low", "medium", "high", "xhigh"]);
 
     await create(GeminiAgentDriver);
     expect(instance.adapter.capabilities.effortLevels).toBeUndefined();

@@ -12,7 +12,8 @@ import { fileURLToPath } from "node:url";
 const script = fileURLToPath(new URL("./measure-engine-startup-memory.mjs", import.meta.url));
 
 describe("engine startup memory", () => {
-  it("all-at-once exceeds two-at-a-time, and a recorded version spawns nothing", () => {
+  // The measure reads /proc (Linux, as in the server image and CI).
+  it.skipIf(process.platform !== "linux")("all-at-once exceeds two-at-a-time, and a recorded version spawns nothing", () => {
     const dir = mkdtempSync(join(tmpdir(), "engine-startup-mem-"));
     const out = join(dir, "report.json");
     const result = spawnSync(process.execPath, [

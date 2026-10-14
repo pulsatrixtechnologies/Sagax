@@ -11,7 +11,7 @@ import type { ModelCatalog, ProviderDriver, ProviderInstance, SendTurnInput } fr
 import { createAcpDriver, type AcpSupport } from "./drivers/acp/core.ts";
 import { ProviderRegistry } from "./harness/registry.ts";
 import * as procs from "./procs.ts";
-import { openStartupModelCatalog, writeStartupModelCache } from "./startup-model-catalog.ts";
+import { openStartupModelCatalog, readStartupModelCache, writeStartupModelCache } from "./startup-model-catalog.ts";
 
 const CACHED: ModelCatalog = {
   default: "cached-model",
@@ -113,6 +113,24 @@ describe("startup model catalogs", () => {
     vi.restoreAllMocks();
     rmSync(join(DATA_DIR, "bots.json"), { force: true });
     rmSync(join(DATA_DIR, "providers", "engine-models"), { recursive: true, force: true });
+  });
+
+  it("keeps each model's own effort levels and default across a restart", () => {
+    writeStartupModelCache("effort", {
+      default: "big",
+      options: [
+        { id: "big", label: "Big", effortLevels: ["low", "high", "max"], defaultEffort: "high" },
+        { id: "small", label: "Small", effortLevels: [] },
+        { id: "plain", label: "Plain" },
+        { id: "odd", label: "Odd", effortLevels: ["high", "turbo" as never], defaultEffort: "turbo" as never },
+      ],
+    });
+    expect(readStartupModelCache("effort")?.options).toEqual([
+      { id: "big", label: "Big", effortLevels: ["low", "high", "max"], defaultEffort: "high" },
+      { id: "small", label: "Small", effortLevels: [] },
+      { id: "plain", label: "Plain" },
+      { id: "odd", label: "Odd", effortLevels: ["high"] },
+    ]);
   });
 
   it("does not wait for a slow refresh when a later start already has a catalog", async () => {

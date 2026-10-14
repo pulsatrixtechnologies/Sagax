@@ -3,6 +3,7 @@
 // picked up. TLS verification stays on unless a lab flag is set on the auth.
 import { readFileSync } from "node:fs";
 import { request as httpsRequest } from "node:https";
+import { isIP } from "node:net";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { Duplex } from "node:stream";
@@ -125,7 +126,8 @@ export function kubernetesClient(auth: K8sAuth): K8sClient {
       port: url.port || 443,
       method,
       path: `${url.pathname}${url.search}`,
-      servername: url.hostname,
+      // SNI takes a host name only (Node 26 refuses an IP, e.g. KUBERNETES_SERVICE_HOST).
+      ...(isIP(url.hostname.replace(/^\[|\]$/g, "")) ? {} : { servername: url.hostname }),
       ...(auth.ca ? { ca: auth.ca } : {}),
       ...(auth.cert ? { cert: auth.cert } : {}),
       ...(auth.key ? { key: auth.key } : {}),

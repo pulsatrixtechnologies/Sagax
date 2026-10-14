@@ -28,9 +28,11 @@ function gateNeeds(runtime: string) {
 }
 
 describe("CI concurrency", () => {
-  it("supersedes old PR checks but never cancels a running main or merge-queue run", () => {
-    expect(workflow.on.push.branches).toEqual(["main"]);
-    expect(workflow.on).toHaveProperty("merge_group");
+  it("runs once, on the release candidate: dispatch only, never on a PR, push or merge queue (JC 2026-10-14)", () => {
+    expect(Object.keys(workflow.on)).toEqual(["workflow_dispatch"]);
+    expect(workflow.on).not.toHaveProperty("push");
+    expect(workflow.on).not.toHaveProperty("pull_request");
+    expect(workflow.on).not.toHaveProperty("merge_group");
     expect(workflow.concurrency["cancel-in-progress"]).toBe("${{ github.event_name == 'pull_request' }}");
   });
 
@@ -96,7 +98,8 @@ describe("CI concurrency", () => {
     const voice = parse(readFileSync(new URL("../.github/workflows/voice-release-acceptance.yml", import.meta.url), "utf8"));
     expect(voice.on).toHaveProperty("workflow_call");
     expect(voice.on).toHaveProperty("workflow_dispatch");
-    expect(voice.on).toHaveProperty("schedule");
+    // No schedule: CI runs once, on the release candidate.
+    expect(voice.on).not.toHaveProperty("schedule");
     const accept = voice.jobs.accept;
     expect(accept.steps.some((step: { run?: string }) => step.run === "pnpm voice:acceptance:real -- --enforce --out \"$RUNNER_TEMP/voice-acceptance\"")).toBe(true);
     expect(accept.steps.some((step: { env?: Record<string, string> }) =>
@@ -184,7 +187,7 @@ describe("CI concurrency", () => {
   });
 
   it("always starts the workflow and validates selection and docs before fanout", () => {
-    expect(workflow.on.pull_request).toBeNull();
+    expect(workflow.on.pull_request).toBeUndefined();
     expect(workflow.jobs.static.if).toBeUndefined();
     expect(workflow.jobs.static.steps[0].with["fetch-depth"]).toBe(0);
     expect(workflow.jobs.static.steps.find((step: { id?: string }) => step.id === "scope").run).toBe("node scripts/ci-scope.mjs");

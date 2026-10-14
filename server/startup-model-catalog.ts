@@ -8,6 +8,7 @@ import { dirname, join } from "node:path";
 import { writeFileAtomic } from "./atomic.ts";
 import { DATA_DIR } from "./config.ts";
 import type { ModelCatalog } from "./contracts.ts";
+import { parseModelEffortFacts } from "../shared/model-capabilities.ts";
 
 const SAFE_INSTANCE_ID = /^[\w.-]+$/;
 
@@ -55,9 +56,14 @@ function catalogFrom(value: unknown): ModelCatalog | null {
       provider?: unknown;
       contextWindow?: unknown;
       variants?: unknown;
+      effortLevels?: unknown;
+      defaultEffort?: unknown;
     };
     if (typeof option.id !== "string" || typeof option.label !== "string") return null;
     const variants = variantList(option.variants);
+    // A model's own effort levels survive a restart: absent would offer the
+    // driver's levels (Haiku 4.5 takes none) until the live refresh lands.
+    const effort = Array.isArray(option.effortLevels) ? parseModelEffortFacts(option.effortLevels, option.defaultEffort) : {};
     options.push({
       id: option.id,
       label: option.label,
@@ -68,6 +74,8 @@ function catalogFrom(value: unknown): ModelCatalog | null {
         ? { contextWindow: option.contextWindow }
         : {}),
       ...(variants ? { variants } : {}),
+      ...(effort.effortLevels ? { effortLevels: [...effort.effortLevels] } : {}),
+      ...(effort.defaultEffort ? { defaultEffort: effort.defaultEffort } : {}),
     });
   }
   return { default: raw.default, options };

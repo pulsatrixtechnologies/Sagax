@@ -101,7 +101,9 @@ export function sandboxdClient(baseUrl: string, key: () => string, fetchImpl: ty
       method,
       path,
       ca,
-      servername: base.hostname,
+      // SNI takes a host name only: Node 26 refuses an IP address here, and
+      // the certificate check still matches the IP against its SANs.
+      ...(isIP(base.hostname) ? {} : { servername: base.hostname }),
       rejectUnauthorized: true,
       timeout: timeoutMs,
       headers: {
@@ -132,7 +134,7 @@ export function sandboxdClient(baseUrl: string, key: () => string, fetchImpl: ty
     const req = request({
       hostname: base.hostname, port: base.port || (secure ? 443 : 80), method: "POST", path, timeout: 15_000,
       headers: { connection: "Upgrade", upgrade: protocol, [SANDBOXD_AUTH_HEADER]: signSandboxdRequest(key(), "POST", path, "") },
-      ...(secure ? { ca, servername: base.hostname, rejectUnauthorized: true } : {}),
+      ...(secure ? { ca, ...(isIP(base.hostname) ? {} : { servername: base.hostname }), rejectUnauthorized: true } : {}),
     });
     req.on("upgrade", (_res, socket, head) => {
       socket.setTimeout(0);
