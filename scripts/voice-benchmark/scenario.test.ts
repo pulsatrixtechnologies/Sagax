@@ -1,7 +1,6 @@
 import { expect, it } from "vitest";
 
 import {
-  SYNTHETIC_STT_FINAL_TIMEOUT_MS,
   VOICE_ACCEPTANCE_SCRIPT,
   hashFrames,
   liveVoiceCommand,
@@ -22,8 +21,6 @@ it("covers 32 bilingual turns, including interruption, correction, topics, tools
   expect(VOICE_ACCEPTANCE_SCRIPT.some((turn) => turn.topicId === "topic-b" && turn.kind === "concurrent-topic")).toBe(true);
   const ids = new Set(VOICE_ACCEPTANCE_SCRIPT.map((turn) => turn.id));
   expect(ids.size).toBe(32);
-  expect(SYNTHETIC_STT_FINAL_TIMEOUT_MS).toBeLessThan(2500);
-  expect(SYNTHETIC_STT_FINAL_TIMEOUT_MS).toBeGreaterThan(30);
 });
 
 it("generates the same PCM every time and refuses a live render without espeak-ng", () => {

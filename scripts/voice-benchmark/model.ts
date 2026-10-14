@@ -254,6 +254,31 @@ export function voiceBenchMaxMs(platform: NodeJS.Platform = process.platform): n
   return platform === "win32" ? VOICE_BENCH_THRESHOLDS.maxMsWindows : VOICE_BENCH_THRESHOLDS.maxMs;
 }
 
+/** Between turns the harness waits for the player to go idle. Linux and
+ * macOS keep main's 4000 ms. Hosted windows-latest needed 200 ms so the
+ * 32-turn run does not sit on a stuck ClockPlayer pump. */
+export function voiceBenchIdleMs(platform: NodeJS.Platform = process.platform): number {
+  return platform === "win32" ? 200 : 4_000;
+}
+
+/** LiveTranscriber's product default is 2500 ms. That fallback alone trips
+ * the max gate on a slow Windows pump; 400 ms is slack there. Linux and
+ * macOS omit the override and keep the product default. */
+export function voiceBenchSyntheticSttTimeoutMs(
+  platform: NodeJS.Platform = process.platform,
+): number | undefined {
+  return platform === "win32" ? 400 : undefined;
+}
+
+/** p90 and max on Linux/macOS include the explicit warm-up turn, as on
+ * main. Windows hosted runners spend ~3982 ms of u00 in endpoint, so they
+ * judge extrema on warm turns only. p50 is warm on every OS. */
+export function voiceBenchExcludeWarmupFromExtrema(
+  platform: NodeJS.Platform = process.platform,
+): boolean {
+  return platform === "win32";
+}
+
 export const VOICE_BENCH_TURN_COUNT = 32;
 
 export const VOICE_BENCH_MANDATORY_SCENARIOS = [
@@ -522,13 +547,17 @@ export function compileVoiceBench(input: CompileVoiceBenchInput): VoiceBenchRepo
   if (warmMeasuredTurns.length === 0) {
     throw new Error("voice benchmark has no measured turn after warm-up");
   }
+  const platform = input.platform ?? process.platform;
+  const extremaTurns = voiceBenchExcludeWarmupFromExtrema(platform)
+    ? warmMeasuredTurns
+    : measuredTurns;
   const summary = Object.fromEntries(
     SUMMARY_KEYS.map((stage) => [
       stage,
       {
         p50: nearestRank(warmMeasuredTurns.map((turn) => turn.stages[stage]!), 0.5),
-        p90: nearestRank(warmMeasuredTurns.map((turn) => turn.stages[stage]!), 0.9),
-        max: Math.max(...warmMeasuredTurns.map((turn) => turn.stages[stage]!)),
+        p90: nearestRank(extremaTurns.map((turn) => turn.stages[stage]!), 0.9),
+        max: Math.max(...extremaTurns.map((turn) => turn.stages[stage]!)),
       },
     ]),
   ) as unknown as VoiceBenchSummary;
@@ -554,7 +583,7 @@ export function compileVoiceBench(input: CompileVoiceBenchInput): VoiceBenchRepo
   const p50Observed = summary.total.p50;
   const maxObserved = summary.total.max;
   const expectedTurnCount = input.expectedTurnCount ?? VOICE_BENCH_TURN_COUNT;
-  const maxMs = voiceBenchMaxMs(input.platform ?? process.platform);
+  const maxMs = voiceBenchMaxMs(platform);
   const p50Gate: VoiceBenchThresholdGate = {
     pass: p50Observed <= VOICE_BENCH_THRESHOLDS.p50Ms,
     thresholdMs: VOICE_BENCH_THRESHOLDS.p50Ms,

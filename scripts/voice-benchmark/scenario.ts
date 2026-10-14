@@ -44,12 +44,6 @@ export const SYNTHETIC_VOICE_DELAYS = {
   audioStartDelayMs: 15,
 } as const satisfies Omit<VoiceBenchFixtureTiming, "scriptRevision">;
 
-/** Fallback when the fake STT socket never finalizes. LiveTranscriber's
- * product default is 2500 ms, which alone trips the max gate (2500). The
- * fixture answers in 30 ms; this is slack for a slow Windows pump, not a
- * live-provider wait. */
-export const SYNTHETIC_STT_FINAL_TIMEOUT_MS = 400;
-
 const SCRIPT: readonly VoiceScenarioTurn[] = [
   { id: "u00", language: "en", kind: "ordinary", topicId: "warmup", text: "Say hello.", expected: "complete", warmup: true },
   { id: "u01", language: "fr-CA", kind: "ordinary", topicId: "seq", text: "Quelle heure est-il?", expected: "complete" },

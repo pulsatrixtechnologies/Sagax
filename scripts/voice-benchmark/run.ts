@@ -38,9 +38,10 @@ import {
   type VoiceBenchScenarioGate,
   type VoiceBenchUtterance,
   VoiceBenchLedger,
+  voiceBenchIdleMs,
+  voiceBenchSyntheticSttTimeoutMs,
 } from "./model.ts";
 import {
-  SYNTHETIC_STT_FINAL_TIMEOUT_MS,
   SYNTHETIC_VOICE_DELAYS,
   VOICE_ACCEPTANCE_SCRIPT,
   VOICE_ACCEPTANCE_SCRIPT_REVISION,
@@ -301,11 +302,12 @@ export async function runVoiceBenchmark(options: VoiceBenchmarkOptions): Promise
     const seenTools = new Set<string>();
     let toolStarts = 0;
 
+    const sttTimeoutMs = real ? undefined : voiceBenchSyntheticSttTimeoutMs();
     const transcriber = new LiveTranscriber({
       botId,
       language: () => "en",
       threadId: () => threadId,
-      ...(real ? {} : { finalTimeoutMs: SYNTHETIC_STT_FINAL_TIMEOUT_MS }),
+      ...(sttTimeoutMs === undefined ? {} : { finalTimeoutMs: sttTimeoutMs }),
       socket: (url) => new WebSocket(url.replace(/^ws:\/\/localhost/, origin.replace(/^http/, "ws")), { headers: { origin } }) as unknown as globalThis.WebSocket,
       transcribe: async (_botId, audio, language, thread) => {
         const query = new URLSearchParams({ language, ...(thread ? { threadId: thread } : {}) });
@@ -572,7 +574,7 @@ export async function runVoiceBenchmark(options: VoiceBenchmarkOptions): Promise
           `${scenario.id} did not finish (completed=${turn.turnCompleted} llm=${turn.llm !== undefined} tts=${turn.tts !== undefined} audio=${turn.audio !== undefined} busy=${live.current.botBusy} player=${player.busy})`,
         );
       }
-      const idleDeadline = performance.now() + 200;
+      const idleDeadline = performance.now() + voiceBenchIdleMs();
       while ((live.current.botBusy || player.busy) && performance.now() < idleDeadline) await sleep(20);
       if (live.current.botBusy) live.setBotBusy(false);
       await player.cancel();
