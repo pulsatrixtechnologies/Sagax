@@ -68,17 +68,24 @@ The stored tree is **canonical**: the server normalises model input once
 | Type | Props |
 |---|---|
 | `Card` | `title?`, `caption?`, `meta?`, `status?: {text, icon?}`, `size?: "sm"\|"md"\|"lg"\|"full"`, `padding?`, `confirm?`, `cancel?`, `children` |
-| `ListView` | `title?`, `caption?`, `meta?`, `status?`, `limit?: number`, `confirm?`, `cancel?`, `children: ListViewItem[]` |
+| `ListView` | `title?`, `caption?`, `meta?`, `status?`, `limit?: number`, `confirm?`, `cancel?`, `name?`, `defaultValue?`, `required?`, `children: ListViewItem[]` |
 
 `confirm` and `cancel` are `{label, action}` and draw as the buttons under the
-card. `title`, `caption`, `meta`, the `dot` badge variant and the `Progress`
-node are MausBot additions; everything else is ChatKit's.
+card.
+
+A `ListView` with a `name` is a **choice**: its rows are selectable, one at a
+time, and it is a field like a `Select`. Each row has a `value` (its own, else
+the row's name, else its position), the list is required unless it says
+`required: false`, its rows may not carry `onClickAction`, and it must have a
+`confirm`, the only thing that can send the pick. The message a press is
+recorded as names the pick: `Pick this` then `Dinner tonight: Margherita pizza`. `title`, `caption`, `meta`, the selectable list, the `dot` badge variant
+and the `Progress` node are MausBot additions; everything else is ChatKit's.
 
 ### Nodes
 
 | Group | Type | Canonical props |
 |---|---|---|
-| Layout | `Box`, `Row`, `Col`, `Form`, `ListViewItem` | `children`, `gap?`, `padding?`, `align?`, `justify?`, `wrap?`, `flex?`, `width?`, `height?`, `minWidth?`, `maxWidth?`, `minHeight?`, `maxHeight?`, `aspectRatio?`, `background?`, `border?`, `radius?`; `Box.direction?: "row"\|"col"`; `Form.onSubmitAction?`; `ListViewItem.onClickAction?` |
+| Layout | `Box`, `Row`, `Col`, `Form`, `ListViewItem` (`value` on a row of a named list) | `children`, `gap?`, `padding?`, `align?`, `justify?`, `wrap?`, `flex?`, `width?`, `height?`, `minWidth?`, `maxWidth?`, `minHeight?`, `maxHeight?`, `aspectRatio?`, `background?`, `border?`, `radius?`; `Box.direction?: "row"\|"col"`; `Form.onSubmitAction?`; `ListViewItem.onClickAction?` |
 | Layout | `Spacer` | `minSize?` |
 | Layout | `Divider` | `spacing?`, `flush?` |
 | Layout | `Table` > `Table.Row` > `Table.Cell` | row `header?`; cell `children`, `align?`, `vAlign?`, `colSpan?`, `rowSpan?`, `width?`, `colSize?` |
@@ -183,7 +190,7 @@ text stays in replayed context.
 
 Two tools join the agents catalog (`server/drivers/agents-widget-tools.ts`, spread into `TOOL_DEFINITIONS`):
 
-- `show_widget({ widget, fallback_text? })` returns `Shown as widget <messageId>...`.
+- `show_widget({ widget, fallback_text? })` returns `Shown as widget <messageId>...`. When the widget parses but cannot do what it looks like it is for (a list with a confirm button and no row that can be chosen or pressed), the result also says so and names the fix, so the bot can correct it with `update_widget` in the same turn.
 - `update_widget({ widget_id, widget })` replaces a live widget's tree in place (a progress bar, a status). A settled widget, another bot's widget or another thread's widget is refused.
 
 Both go through the existing internal route `POST /api/internal/options-card`,
