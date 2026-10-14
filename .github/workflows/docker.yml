@@ -23,20 +23,17 @@ on:
       - package.json
       - pnpm-lock.yaml
       - .github/workflows/docker.yml
-      - "!deploy/**/*.md"
-  # Markdown under deploy/ is operator docs: it must not rebuild the image.
-  # Edits of this workflow file are exercised on push to main, not on the PR.
   pull_request:
     paths:
       - Dockerfile
       - .dockerignore
       - deploy/**
-      - "!deploy/**/*.md"
       - engines.lock.json
       - scripts/install-engines.mjs
       - scripts/engine-image-gate.mjs
       - scripts/gox-deploy.mjs
       - scripts/build-production-image.sh
+      - .github/workflows/docker.yml
 
 # One run per PR: a new push cancels the superseded run.
 concurrency:
