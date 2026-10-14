@@ -54,6 +54,21 @@ git filter-repo --force --replace-text /path/to/private/expressions.txt \
   --path-rename <OLD_NP_YAML>:deploy/k8s/sandboxes/adapters/azure/networkpolicy-ingress.yaml
 ```
 
+Puis, dans une passe séparée sur le même clone, retirer le fichier
+`.trivyignore` de tout l'historique (toutes ses versions passées, sur chaque
+ref réécrit) :
+
+```
+git filter-repo --force --invert-paths --path .trivyignore
+```
+
+Précondition : aucune réécriture tant que des entrées `.trivyignore` sont
+encore sur `main`. Les entrées passent d'abord dans un fichier privé injecté
+par la CI, dans une PR séparée fusionnée **avant** la réécriture, et le
+contrôle Trivy (build et publication) doit être vérifié avec ce fichier privé
+seul. Dry-run local (rien poussé) : 4 commits touchaient `.trivyignore` avant
+la passe, 0 commit et 0 blob après.
+
 Classes only (live hostnames are **not** written here):
 
 ```
@@ -185,6 +200,9 @@ cache, la demande va au Support GitHub, dans le même ticket que la purge des
 `refs/pull/*` (étape 4).
 
 ## Checklist finale
+
+- [ ] Précondition : PR de migration des entrées `.trivyignore` vers le fichier privé injecté par la CI fusionnée, plus aucune entrée sur `main`, contrôle Trivy (build et publication) vérifié avec le fichier privé seul
+- [ ] `.trivyignore` retiré de tout l'historique réécrit (`--invert-paths --path .trivyignore`), vérifié : aucun commit ni blob restant
 
 - [ ] Historique d'édition des corps et commentaires de PR purgé (#437, #444, #434, autres vérifiées)
 - [ ] Identifiants de vulnérabilités ouvertes : révisions de #452 purgées, `refs/pull/452/head` dans la demande au Support, `.trivyignore` et les commits concernés couverts par le fichier de remplacements hors dépôt
