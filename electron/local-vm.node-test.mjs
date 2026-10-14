@@ -86,6 +86,25 @@ test("detection matrix: each product from its endpoint", () => {
   assert.deepEqual(startRuntimeArgv("Colima", { platform: "darwin" }), ["colima", "start"]);
 });
 
+test("judgeContainer treats Windows and POSIX separators as the same folder", () => {
+  const win = "C:\\Users\\ada\\.openmausbot\\vm-home";
+  const posix = "C:/Users/ada/.openmausbot/vm-home";
+  assert.equal(judgeContainer(container({ source: posix, label: posix }), { workspace: win, platform: "win32", exists: () => true }).stale, null);
+  assert.equal(judgeContainer(container({ source: win, label: win }), { workspace: posix, platform: "win32", exists: () => true }).stale, null);
+  // GitHub Actions Windows: path.join("/Users/ada/.openmausbot", "vm-home") is
+  // "\Users\ada\.openmausbot\vm-home" while Docker inspect stays POSIX.
+  assert.equal(judgeContainer(container({ source: WORKSPACE, label: WORKSPACE }), { workspace: WORKSPACE.replaceAll("/", "\\"), platform: "win32", exists: () => true }).stale, null);
+});
+
+test("the Local VM workspace is joined with the injected platform's separators, not this host's", () => {
+  const win = createLocalVm({ dataDir: "C:\\Users\\ada\\.openmausbot", platform: "win32", exec: async () => no(""), exists: () => false });
+  assert.equal(win.workspace, "C:\\Users\\ada\\.openmausbot\\vm-home");
+  const darwin = createLocalVm({ dataDir: DATA, platform: "darwin", exec: async () => no(""), exists: () => false });
+  assert.equal(darwin.workspace, WORKSPACE);
+  const linux = createLocalVm({ dataDir: DATA, platform: "linux", exec: async () => no(""), exists: () => false });
+  assert.equal(linux.workspace, WORKSPACE);
+});
+
 test("a container bound to a deleted temp folder is stale, never started as is", async () => {
   const judged = judgeContainer(container({ source: STALE, label: null }), { workspace: WORKSPACE, platform: "darwin", exists: exists([]) });
   assert.equal(judged.stale, "missing_folder");
@@ -125,6 +144,25 @@ test("setup repairs the stale container on this app's folder, in steps", async (
   await vm.setup(spec());
   await settle(vm);
   assert.ok(!docker.calls.slice(before).some(call => / (rm|run) /.test(call)));
+});
+
+test("the workspace folder follows the VM platform, not this process", async () => {
+  const dataDir = "C:\\Users\\ada\\.openmausbot";
+  const workspace = `${dataDir}\\vm-home`;
+  const docker = fakeDocker();
+  const made = [];
+  const vm = createLocalVm({
+    exec: docker.exec, dataDir, home: "C:\\Users\\ada", platform: "win32", env: {},
+    exists: () => false, mkdir: async dir => { made.push(dir); },
+    makeTemp: async () => "/tmp/ctx", writeFile: async () => {}, removeDir: async () => {},
+  });
+  await vm.setup(spec());
+  const status = await settle(vm);
+  assert.equal(status.setup.state, "done", JSON.stringify(status.setup));
+  const run = docker.calls.find(call => call.startsWith("docker run "));
+  assert.ok(run.includes(`source=${workspace},`), run);
+  assert.ok(run.includes(`com.openmausbot.workspace-path=${workspace}`), run);
+  assert.deepEqual(made, [workspace]);
 });
 
 test("setup keeps a real folder it was bound to and prepares a missing image", async () => {

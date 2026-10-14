@@ -9,7 +9,11 @@ import vm from "node:vm";
 
 const require = createRequire(import.meta.url);
 const env = require("./environments.cjs");
-const source = readFileSync(new URL("./main.mjs", import.meta.url), "utf8");
+function sourceText(text) {
+  return String(text).replace(/\r\n/g, "\n");
+}
+
+const source = sourceText(readFileSync(new URL("./main.mjs", import.meta.url), "utf8"));
 const ORG = "https://org.example.test";
 const LOCAL = "http://127.0.0.1:48997";
 
@@ -96,6 +100,12 @@ test("a sign-out the server cannot confirm still leaves; a packaged app with no 
   assert.equal(context.environmentsState.serverModeId, undefined);
   assert.equal(calls.relaunched, 1);
   assert.deepEqual(calls.navigated, []);
+});
+
+test("a CRLF checkout of main.mjs still matches the server-mode wiring", () => {
+  const crlf = source.replace(/\n/g, "\r\n");
+  assert.match(sourceText(crlf), /createWindow\(\);\n  void upgradeSavedOrganizationServers\(\)/);
+  assert.match(sourceText(crlf), /\} else if \(app\.isPackaged && serverModeEnvironment\(readEnvironments\(\)\)\) \{\n[\s\S]{0,400}?slog\("server mode: the local server is not started"\);\n  \} else if \(app\.isPackaged\) \{\n    (?:const booted = )?await startServerPackaged\(\);/);
 });
 
 test("the packaged app starts no local server in server mode, and the window never falls back to Local", () => {

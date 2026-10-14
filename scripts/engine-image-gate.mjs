@@ -7,11 +7,14 @@
 //
 //   node scripts/engine-image-gate.mjs --manifest manifest.json --labels labels.json --sha <commit>
 //   node scripts/engine-image-gate.mjs --startup-log server.log
-import { readFileSync } from "node:fs";
+//   node scripts/engine-image-gate.mjs --image <ref>
+import { spawnSync } from "node:child_process";
+import { readFileSync, realpathSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const UTC_STAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/;
+const VERSION_TIMEOUT_MS = 20_000;
 
 /** True when the build asked the installer to refuse a short engine set. */
 export function enginesRequired(value) {
@@ -25,12 +28,41 @@ export function productionEngineIds(lock) {
   return engines.map((engine) => engine?.id).filter((id) => typeof id === "string" && id);
 }
 
+/** Lock engines that name a CLI, in lock order. */
+export function productionEngineBins(lock) {
+  const engines = Array.isArray(lock?.engines) ? lock.engines : [];
+  return engines
+    .filter((engine) => engine && typeof engine.id === "string" && engine.id && typeof engine.bin === "string" && engine.bin)
+    .map((engine) => ({
+      id: engine.id,
+      bin: engine.bin,
+      version: typeof engine.version === "string" ? engine.version : "",
+    }));
+}
+
+/** A production lock must list at least one engine id. Empty or missing fails closed. */
+export function assessLock(lock) {
+  if (!lock || typeof lock !== "object" || Array.isArray(lock)) {
+    return { ok: false, errors: ["lock has no engines"] };
+  }
+  if (!Array.isArray(lock.engines) || lock.engines.length === 0) {
+    return { ok: false, errors: ["lock has no engines"] };
+  }
+  const ids = productionEngineIds(lock);
+  if (ids.length === 0) {
+    return { ok: false, errors: ["lock has no engines"] };
+  }
+  return { ok: true, errors: [], ids };
+}
+
 /**
  * Whether a baked manifest is the full production set.
  * `installed` entries count only when they name an id and a bin.
+ * An empty lock never passes.
  */
 export function assessProductionManifest(manifest, lock) {
-  const errors = [];
+  const lockVerdict = assessLock(lock);
+  const errors = [...lockVerdict.errors];
   const set = String(manifest?.engineSet ?? "").trim();
   if (!set || set === "none") errors.push("engineSet is none");
   else if (set !== "all") errors.push("engineSet must be all");
@@ -39,8 +71,9 @@ export function assessProductionManifest(manifest, lock) {
       .filter((engine) => engine && typeof engine.id === "string" && engine.id && typeof engine.bin === "string" && engine.bin)
       .map((engine) => engine.id),
   );
-  const missing = productionEngineIds(lock).filter((id) => !installed.has(id));
-  if (missing.length) errors.push(`missing engines: ${missing.join(",")}`);
+  const required = lockVerdict.ok ? lockVerdict.ids : [];
+  const missing = required.filter((id) => !installed.has(id));
+  if (lockVerdict.ok && missing.length) errors.push(`missing engines: ${missing.join(",")}`);
   return { ok: errors.length === 0, errors, missing, engineSet: set || "none" };
 }
 
@@ -91,8 +124,64 @@ export function assessHealthz(body) {
   return { ok: errors.length === 0, errors };
 }
 
+/** First non-empty line of a `--version` probe. */
+export function versionLine(stdout, stderr) {
+  return `${stdout ?? ""}\n${stderr ?? ""}`.split(/\r?\n/).map((line) => line.trim()).find(Boolean) ?? "";
+}
+
+/**
+ * Each lock engine must have been probed in the image: the binary ran, and
+ * `--version` printed a line. An empty required list fails closed.
+ */
+export function assessEngineBinaries(required, probes) {
+  if (!Array.isArray(required) || required.length === 0) {
+    return { ok: false, errors: ["lock has no engines"] };
+  }
+  const errors = [];
+  const byId = new Map((probes ?? []).map((probe) => [probe.id, probe]));
+  for (const engine of required) {
+    const probe = byId.get(engine.id);
+    if (!probe) {
+      errors.push(`${engine.id}: ${engine.bin} was not probed`);
+      continue;
+    }
+    if (probe.error || probe.status !== 0) {
+      errors.push(`${engine.id}: ${engine.bin} missing or --version failed`);
+      continue;
+    }
+    if (!versionLine(probe.stdout, probe.stderr)) {
+      errors.push(`${engine.id}: ${engine.bin} --version was empty`);
+    }
+  }
+  return { ok: errors.length === 0, errors };
+}
+
+export function imageManifestArgv(image) {
+  return ["docker", "run", "--rm", "--entrypoint", "cat", image, "/app/engines/manifest.json"];
+}
+
+export function imageBinVersionArgv(image, bin) {
+  return ["docker", "run", "--rm", "--entrypoint", bin, image, "--version"];
+}
+
+export function probeImageBin(image, bin, run = spawnSync) {
+  const argv = imageBinVersionArgv(image, bin);
+  const result = run(argv[0], argv.slice(1), {
+    encoding: "utf8",
+    timeout: VERSION_TIMEOUT_MS,
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  return {
+    bin,
+    status: result.status ?? 1,
+    stdout: result.stdout ?? "",
+    stderr: result.stderr ?? "",
+    error: result.error ? result.error.message : "",
+  };
+}
+
 function parseArgs(argv) {
-  const options = { manifest: "", labels: "", sha: "", startupLog: "", lock: "" };
+  const options = { manifest: "", labels: "", sha: "", startupLog: "", lock: "", image: "" };
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
     if (arg === "--manifest") options.manifest = argv[++index] ?? "";
@@ -100,10 +189,11 @@ function parseArgs(argv) {
     else if (arg === "--sha") options.sha = argv[++index] ?? "";
     else if (arg === "--startup-log") options.startupLog = argv[++index] ?? "";
     else if (arg === "--lock") options.lock = argv[++index] ?? "";
+    else if (arg === "--image") options.image = argv[++index] ?? "";
     else throw new Error(`unknown argument: ${arg}`);
   }
-  if (!options.manifest && !options.labels && !options.startupLog) {
-    throw new Error("--manifest, --labels or --startup-log is required");
+  if (!options.manifest && !options.labels && !options.startupLog && !options.image) {
+    throw new Error("--manifest, --labels, --startup-log or --image is required");
   }
   return options;
 }
@@ -114,14 +204,37 @@ function report(prefix, verdict) {
   return 1;
 }
 
-function main(argv) {
+function loadLock(lockPath) {
+  const lock = JSON.parse(readFileSync(lockPath, "utf8"));
+  const verdict = assessLock(lock);
+  if (!verdict.ok) throw new Error(verdict.errors.join("; "));
+  return lock;
+}
+
+function readImageManifest(image, run = spawnSync) {
+  const argv = imageManifestArgv(image);
+  const result = run(argv[0], argv.slice(1), {
+    encoding: "utf8",
+    timeout: VERSION_TIMEOUT_MS,
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  if (result.error) throw result.error;
+  if (result.status !== 0) {
+    throw new Error((result.stderr || result.stdout || "docker run failed").trim().slice(0, 500));
+  }
+  return JSON.parse(result.stdout);
+}
+
+export function main(argv, run = spawnSync) {
   const options = parseArgs(argv);
   const lockPath = options.lock || join(dirname(fileURLToPath(import.meta.url)), "..", "engines.lock.json");
-  const lock = JSON.parse(readFileSync(lockPath, "utf8"));
+  const lock = loadLock(lockPath);
   let code = 0;
   if (options.manifest) {
     const manifest = JSON.parse(readFileSync(options.manifest, "utf8"));
     code |= report("[engines] engine_missing ", assessProductionManifest(manifest, lock));
+  } else if (options.image) {
+    code |= report("[engines] engine_missing ", assessProductionManifest(readImageManifest(options.image, run), lock));
   }
   if (options.labels) {
     const labels = JSON.parse(readFileSync(options.labels, "utf8"));
@@ -135,10 +248,28 @@ function main(argv) {
     const log = readFileSync(options.startupLog, "utf8");
     code |= report("[engines] ", assessStartupLog(log, productionEngineIds(lock)));
   }
+  if (options.image) {
+    const required = productionEngineBins(lock);
+    const probes = required.map((engine) => ({
+      id: engine.id,
+      ...probeImageBin(options.image, engine.bin, run),
+    }));
+    code |= report("[engines] ", assessEngineBinaries(required, probes));
+  }
   return code;
 }
 
-if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
+/** True when this file is the CLI entry, including a symlink to it. */
+export function invokedAsCli(argv1 = process.argv[1], moduleUrl = import.meta.url) {
+  if (!argv1) return false;
+  try {
+    return realpathSync(argv1) === realpathSync(fileURLToPath(moduleUrl));
+  } catch {
+    return false;
+  }
+}
+
+if (invokedAsCli()) {
   try {
     process.exit(main(process.argv.slice(2)));
   } catch (error) {

@@ -1,4 +1,7 @@
 import { spawnSync } from "node:child_process";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
@@ -27,5 +30,26 @@ describe("check-runner-labels", () => {
     const r = guard(fileURLToPath(new URL("../.github/workflows", import.meta.url)));
     expect(r.status, r.stderr + r.stdout).toBe(0);
     expect(r.stdout).toMatch(/every job uses a GitHub-hosted runner/);
+  });
+
+  it("reads a CRLF workflow the same as LF", () => {
+    const dir = mkdtempSync(join(tmpdir(), "runner-guard-crlf-"));
+    try {
+      writeFileSync(
+        join(dir, "w.yml"),
+        "on: pull_request\r\njobs:\r\n  a:\r\n    runs-on: windows-latest\r\n    steps: [{run: \"true\"}]\r\n",
+      );
+      const hosted = guard(dir);
+      expect(hosted.status, hosted.stderr + hosted.stdout).toBe(0);
+      writeFileSync(
+        join(dir, "w.yml"),
+        "on: pull_request\r\njobs:\r\n  a:\r\n    runs-on: self-hosted\r\n    steps: [{run: \"true\"}]\r\n",
+      );
+      const banned = guard(dir);
+      expect(banned.status, banned.stderr + banned.stdout).toBe(1);
+      expect(banned.stderr).toMatch(/uses a self-hosted label/);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
