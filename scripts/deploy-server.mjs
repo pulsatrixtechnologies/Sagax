@@ -4,7 +4,7 @@
 // Refuses an image whose manifest is not engineSet "all" with every engine
 // of engines.lock.json. After a switch, smoke-tests GET /healthz and the
 // engine startup log. On failure, rolls back to the image recorded in
-// /opt/pulsatrix/pulsabot-image.prev and recreates the edge:
+// /opt/sagax/server-image.prev and recreates the edge:
 //
 //   docker compose up -d --force-recreate --no-deps pulsabot-caddy
 //
@@ -27,8 +27,8 @@ import { fileURLToPath } from "node:url";
 
 import { assessHealthz, assessProductionManifest, assessStartupLog, productionEngineIds } from "./engine-image-gate.mjs";
 
-export const PREV_FILE = "/opt/pulsatrix/pulsabot-image.prev";
-export const IMAGE_FILE = "/opt/pulsatrix/pulsabot-image";
+export const PREV_FILE = "/opt/sagax/server-image.prev";
+export const IMAGE_FILE = "/opt/sagax/server-image";
 export const CADDY_SERVICE = "pulsabot-caddy";
 export const SERVER_SERVICE = "pulsabot";
 /** The edge recreate, exactly as production must run it after a rollback. */
@@ -159,7 +159,7 @@ function envConfig() {
   return {
     prevFile: process.env.PULSABOT_PREV_FILE || PREV_FILE,
     imageFile: process.env.PULSABOT_IMAGE_FILE || IMAGE_FILE,
-    composeDir: process.env.PULSABOT_COMPOSE_DIR || "/opt/pulsatrix",
+    composeDir: process.env.PULSABOT_COMPOSE_DIR || "/opt/sagax",
     service: process.env.PULSABOT_SERVICE || SERVER_SERVICE,
     container: process.env.PULSABOT_CONTAINER || SERVER_SERVICE,
   };

@@ -88,7 +88,7 @@ describe("deployImage", () => {
 
   it("keeps a healthy image and prunes only other pulsa-bot-server tags", async () => {
     const images = [
-      { repo: "pulsa-bot-server", tag: "main-20004735", id: "sha256:running", ref: candidate },
+      { repo: "pulsa-bot-server", tag: "main-example1", id: "sha256:running", ref: candidate },
       { repo: "pulsa-bot-server", tag: "main-167d8e13", id: "sha256:prev", ref: previous },
       { repo: "pulsa-bot-server", tag: "main-old", id: "sha256:old", ref: "pulsa-bot-server:main-old" },
       { repo: "ubuntu", tag: "24.04", id: "sha256:ubuntu", ref: "ubuntu:24.04" },
@@ -184,6 +184,6 @@ describe("deploy script", () => {
     expect(script).toContain(PREV_FILE);
     expect(script).toContain(CADDY_RECREATE_COMMAND);
     expect(script).toContain('exec node "$ROOT/scripts/deploy-server.mjs"');
-    expect(PREV_FILE).toBe("/opt/pulsatrix/pulsabot-image.prev");
+    expect(PREV_FILE).toBe("/opt/sagax/server-image.prev");
   });
 });

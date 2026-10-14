@@ -63,7 +63,7 @@ spec:
         - alert: SagaxSandboxNodeNotReady
           expr: >-
             (kube_node_status_condition{condition="Ready",status="true"} == 0)
-            and on(node) kube_node_labels{label_sagax_pulsatrix_ca_pool="sandboxes"}
+            and on(node) kube_node_labels{label_sagax_io_pool="sandboxes"}
           for: 5m
           labels:
             severity: page

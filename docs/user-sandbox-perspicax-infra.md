@@ -1,6 +1,6 @@
 # Perspicax infra: server environments on the production VM
 
-Production deploys Sagax from the Perspicax repository (`pulsatrix-v3`). The infra
+Production deploys Sagax from the Perspicax repository (`<PERSPICAX_REPO>`). The infra
 side of the per-person server environments (`docs/user-sandbox.md`) lives
 there, on branch `feat/sagax-sandbox-infra`; the operator documentation is
 `infra/README.md`, "Environnements serveur" (French). This file only records
@@ -22,7 +22,7 @@ the contract between the two repositories.
 
   The second profile lets a Sagax image without environments (an older tag,
   or `SAGAX_SANDBOX=off`) deploy without a crash-looping provisioner.
-- **Shared key:** `/opt/pulsatrix/secrets/sagax-sandboxd/key`, 64 hex
+- **Shared key:** `<INSTALL_ROOT>/secrets/sagax-sandboxd/key`, 64 hex
   characters, generated once by `vm-bootstrap.sh`, `root:10002`, mode 0440,
   mounted read-only into both containers. The provisioner's
   `ensureSandboxdKey` reads an existing file and never rewrites it.

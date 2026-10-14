@@ -5,7 +5,7 @@
 # engines.lock.json). A manifest of engineSet none is refused before the
 # running container changes. After the switch, GET /healthz and the engine
 # startup log are checked. Failure rolls back to the image in
-# /opt/pulsatrix/pulsabot-image.prev and recreates the edge with exactly:
+# /opt/sagax/server-image.prev and recreates the edge with exactly:
 #
 #   docker compose up -d --force-recreate --no-deps pulsabot-caddy
 #

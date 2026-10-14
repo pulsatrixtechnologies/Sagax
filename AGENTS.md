@@ -1076,8 +1076,8 @@ driver's default `cli`.
   non-empty override that drops an engine fails the require flag. Production deploys
   through `deploy/example/deploy-server.sh`: it refuses the same short set,
   smoke-tests `/healthz` and the engine startup log, and on failure rolls
-  back to `/opt/pulsatrix/pulsabot-image.prev` then runs
-  `docker compose up -d --force-recreate --no-deps pulsabot-caddy`. Prune
+  back to `<INSTALL_ROOT>/server-image.prev` then runs
+  `docker compose up -d --force-recreate --no-deps <EDGE_SERVICE>`. Prune
   keeps the running image and that previous image.
 - Installed by `ENGINE_SET=all`: Claude Code, Codex, pi, Gemini CLI, Kimi
   Code, Qwen Code, OpenCode, Droid (npm, global), Grok Build and Cursor Agent
