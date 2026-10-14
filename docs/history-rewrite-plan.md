@@ -198,8 +198,9 @@ c. **Autres PR et commentaires du dépôt** : vérifier les corps, les
 d. **#452** : les révisions du corps qui contiennent des identifiants de
    vulnérabilités ouvertes (le corps actuel est vide, l'historique
    « Edited » les garde), plus tout commentaire concerné.
+e. **#457** : les révisions antérieures du corps de #457.
 
-Responsable, pour a, b, c et d : un administrateur du dépôt supprime chaque révision via l'interface « Edited » →
+Responsable, pour a, b, c, d et e : un administrateur du dépôt supprime chaque révision via l'interface « Edited » →
 supprimer la révision. Si une révision ne peut pas être supprimée ou reste en
 cache, la demande va au Support GitHub, dans le même ticket que la purge des
 `refs/pull/*` (étape 4).
@@ -208,7 +209,7 @@ cache, la demande va au Support GitHub, dans le même ticket que la purge des
 
 - [ ] Précondition : PR de migration des entrées `.trivyignore` vers le fichier privé injecté par la CI fusionnée, plus aucune entrée sur `main`, contrôle Trivy (build et publication) vérifié avec le fichier privé seul
 - [ ] `.trivyignore` retiré de tout l'historique réécrit (`--invert-paths --path .trivyignore`), vérifié : aucun commit ni blob restant
-- [ ] Historique d'édition des corps et commentaires de PR purgé (#437, #444, #434, autres vérifiées)
+- [ ] Historique d'édition des corps et commentaires de PR purgé (#437, #444, #434, #452, #457, autres vérifiées)
 - [ ] Identifiants de vulnérabilités ouvertes : révisions de #452 purgées, `refs/pull/452/head` dans la demande au Support, les autres commits concernés couverts par le fichier de remplacements hors dépôt, `.trivyignore` retiré par la passe `--invert-paths --path .trivyignore` (étape 2), ses blobs joignables par `refs/pull/*` purgés par le Support GitHub (étape 4)
 
 Do not execute any of the above from an agent session on #437.
