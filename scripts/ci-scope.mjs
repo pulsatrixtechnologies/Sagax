@@ -57,7 +57,6 @@ export function selectPushScope(files, show) {
 // Pull requests, main pushes and merge groups run the suite on Linux
 // (ubuntu-latest) and skip the Windows, macOS and iOS jobs (platforms=false).
 // Only workflow_dispatch runs every platform.
-// This PR still runs Windows shards 1/4 and 2/4 via windows-vitest.yml.
 const ALL_OS = ["macos-latest", "ubuntu-latest", "windows-latest"];
 const PR_OS = ["ubuntu-latest"];
 const SHA = /^[a-f\d]{40}(?:[a-f\d]{24})?$/i;
