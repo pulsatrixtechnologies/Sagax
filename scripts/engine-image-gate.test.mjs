@@ -1,8 +1,13 @@
-import { readFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { assessHealthz, assessImageLabels, assessProductionManifest, assessStartupLog, productionEngineIds } from "./engine-image-gate.mjs";
+
+const gateScript = join(import.meta.dirname, "engine-image-gate.mjs");
+const workflow = readFileSync(join(import.meta.dirname, "..", ".github/workflows/gox-image-gate.yml"), "utf8");
 
 const lock = JSON.parse(readFileSync(join(import.meta.dirname, "..", "engines.lock.json"), "utf8"));
 const required = productionEngineIds(lock);
@@ -81,3 +86,38 @@ describe("assessHealthz", () => {
     expect(assessHealthz("nope").ok).toBe(false);
   });
 });
+
+function runManifest(body) {
+  const dir = mkdtempSync(join(tmpdir(), "engine-image-gate-"));
+  const path = join(dir, "manifest.json");
+  writeFileSync(path, JSON.stringify(body));
+  try {
+    return spawnSync(process.execPath, [gateScript, "--manifest", path], { encoding: "utf8" });
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+describe("engine-image-gate cli", () => {
+  it("exits 0 for a full production manifest and 1 for engineSet none", () => {
+    const ok = runManifest(manifest("all"));
+    expect(ok.status).toBe(0);
+    expect(ok.stderr).toBe("");
+
+    const bad = runManifest({ engineSet: "none", installed: [] });
+    expect(bad.status).toBe(1);
+    expect(bad.stderr).toMatch(/engineSet is none/);
+    expect(bad.stderr).toMatch(/missing engines:/);
+  });
+});
+
+describe("manual image gate workflow", () => {
+  it("runs the production engine-set script on the image manifest", () => {
+    expect(workflow).toMatch(/^name: image gate$/m);
+    expect(workflow).toContain("docker run --rm --entrypoint cat");
+    expect(workflow).toContain("/app/engines/manifest.json");
+    expect(workflow).toContain("scripts/engine-image-gate.mjs --manifest");
+    expect(workflow).not.toContain("gox-deploy.mjs");
+  });
+});
+
