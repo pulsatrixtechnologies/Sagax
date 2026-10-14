@@ -15,7 +15,7 @@
     {
       "binding": "DB",
       "database_name": "openmausbot-composio",
-      "database_id": "435bcde1-c017-416f-b041-7ffc508e9d88",
+      "database_id": "00000000-0000-0000-0000-000000000000",
       "migrations_dir": "migrations"
     }
   ],

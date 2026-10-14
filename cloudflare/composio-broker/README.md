@@ -15,8 +15,11 @@ Deployment for this repository:
 3. For an existing Worker, run `pnpm exec wrangler secret put COMPOSIO_API_KEY --config cloudflare/composio-broker/wrangler.jsonc`, then `pnpm broker:deploy`.
 4. For the very first deploy, put `COMPOSIO_API_KEY=...` in the ignored `.dev.vars.production` file and run `pnpm exec wrangler deploy --config cloudflare/composio-broker/wrangler.jsonc --secrets-file .dev.vars.production`. Delete the file immediately afterward.
 
-Forks should create their own D1 database and rate-limit namespaces, replace
-the IDs in `wrangler.jsonc`, deploy under their own Worker name, and set
+The committed `wrangler.jsonc` ships an all-zero D1 `database_id` placeholder.
+Before deploying, create the D1 database (`pnpm exec wrangler d1 create
+openmausbot-composio`) and put its real ID into your local copy of
+`wrangler.jsonc` (do not commit it). Forks should likewise create their own D1
+database and rate-limit namespaces, replace the IDs in `wrangler.jsonc`, deploy under their own Worker name, and set
 `SAGAX_COMPOSIO_BROKER_URL` in their packaged build. Running only the local
 server with a Composio project key remains the no-Cloudflare self-host path.
 
