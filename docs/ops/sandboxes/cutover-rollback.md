@@ -116,8 +116,10 @@ unless the Docker volume was destroyed. That restore is
 ## AKS node pool (cluster-autoscaler)
 
 Use this **or** `adapters/azure/karpenter.yaml`, not both. `max-count` 1
-matches the arm64 vCPU quota observed on 12 October 2026 (10 total, 4
-used by this VM). Raising it is a separate change record.
+is the starting cap. Azure counts vCPU quota per VM family and region:
+check the quota of the pool's own `--node-vm-size` family, which is not
+necessarily the production VM's family (the VM only counts against it when
+both are in the same family). Raising it is a separate change record.
 
 ```bash
 az aks nodepool add \

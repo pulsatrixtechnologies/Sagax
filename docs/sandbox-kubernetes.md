@@ -35,6 +35,17 @@ not mounted). DNS is public (`1.1.1.1`, `8.8.8.8`, or `SAGAX_SANDBOX_K8S_DNS`)
 so the deny list can include the cluster CIDR. An address inside the deny
 list is refused at startup.
 
+Without a node selector and a toleration, sandbox Pods go wherever the
+scheduler puts them, usually the system pool, and never on a dedicated pool
+that carries a `NoSchedule` taint. To run them on that pool, set
+`SAGAX_SANDBOX_K8S_NODE_SELECTOR` to the pool's label and
+`SAGAX_SANDBOX_K8S_TOLERATION` to its taint, exactly as the pool was
+created (the AKS command in `docs/ops/sandboxes/cutover-rollback.md` uses
+label and taint `sagax.io/pool=sandboxes`). Both are optional. A malformed
+value (missing `=` in a selector, an effect other than `NoSchedule`,
+`PreferNoSchedule` or `NoExecute`, a key that is not a label key) refuses
+the start. The provisioner itself stays off that pool.
+
 The namespace default deny also selects the provisioner. Apply
 `deploy/k8s/provisioner/networkpolicy-provisioner.yaml` first. That policy is
 only the provisioner label: TCP 443 and 6443 out, TCP 8791 in. Set
@@ -59,6 +70,8 @@ emptyDir, because that policy allows no other egress.
 | `SAGAX_SANDBOX_K8S_PULL_SECRET` | no | name of a pull Secret, never the token |
 | `SAGAX_SANDBOX_K8S_DNS` | no | 1 to 3 public IPv4 resolvers |
 | `SAGAX_SANDBOX_K8S_QUOTA_NAME` | no | default `sagax-sandbox-quota` |
+| `SAGAX_SANDBOX_K8S_NODE_SELECTOR` | no | `key=value[,key=value]`, Kubernetes label syntax, for example `sagax.io/pool=sandboxes`; becomes the Pod `nodeSelector` |
+| `SAGAX_SANDBOX_K8S_TOLERATION` | no | `key=value:Effect` (operator Equal) or `key:Effect` (operator Exists), comma separated, for example `sagax.io/pool=sandboxes:NoSchedule`; becomes the Pod `tolerations` |
 | `SAGAX_SANDBOX_K8S_API` | no | default `https://kubernetes.default.svc` |
 | `SAGAX_SANDBOX_K8S_KUBECONFIG` | no | out-of-cluster auth; otherwise the Pod's ServiceAccount. `SAGAX_SANDBOX_K8S_USE_KUBECONFIG=1` uses `KUBECONFIG`, or `~/.kube/config` when that is unset |
 | `SAGAX_SANDBOX_AUDIT_LOG` | no | default `/var/log/sagax/sandbox-audit.jsonl` |

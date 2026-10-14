@@ -43,6 +43,14 @@ spec:
               value: example.invalid
             - name: SAGAX_SANDBOX_K8S_STORAGE_CLASS
               value: must-set-encrypted
+            # A dedicated sandbox node pool: its label and its taint, as
+            # created (docs/sandbox-kubernetes.md). Empty: the scheduler
+            # chooses. Example: sagax.io/pool=sandboxes for both, the
+            # toleration as sagax.io/pool=sandboxes:NoSchedule.
+            - name: SAGAX_SANDBOX_K8S_NODE_SELECTOR
+              value: ""
+            - name: SAGAX_SANDBOX_K8S_TOLERATION
+              value: ""
             - name: SAGAX_SANDBOXD_TLS_CERT
               value: /var/run/sagax-tls/tls.crt
             - name: SAGAX_SANDBOXD_TLS_KEY

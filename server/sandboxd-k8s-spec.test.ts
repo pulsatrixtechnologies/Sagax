@@ -9,6 +9,8 @@ import {
   parseCpuQuantity,
   parseExecStatus,
   parseMemoryQuantity,
+  parseNodeSelector,
+  parseTolerations,
   podFromDockerSpec,
   podIsolationProblems,
   pvcSpec,
@@ -98,6 +100,65 @@ describe("kubernetes config guards", () => {
     expect(() => kubernetesSandboxConfigFromEnv(env({ SAGAX_SANDBOX_K8S_DNS: "10.1.1.1" }), sandbox)).toThrow(/egress deny/);
     expect(() => kubernetesSandboxConfigFromEnv(env({ SAGAX_SANDBOX_AUDIT_SHIP_URL: "http://collector.example/in" }), sandbox)).toThrow(/https/);
     expect(() => kubernetesSandboxConfigFromEnv(env({ SAGAX_SANDBOXD_TLS_INSECURE: "0" }), sandbox)).toThrow(/TLS_CERT/);
+  });
+});
+
+describe("dedicated node pool", () => {
+  it("parses a node selector and refuses a malformed one at start", () => {
+    expect(parseNodeSelector(undefined)).toBeUndefined();
+    expect(parseNodeSelector("  ")).toBeUndefined();
+    expect(parseNodeSelector("example.com/pool=sandboxes")).toEqual({ "example.com/pool": "sandboxes" });
+    expect(parseNodeSelector("example.com/pool=sandboxes, kubernetes.io/os=linux")).toEqual({
+      "example.com/pool": "sandboxes",
+      "kubernetes.io/os": "linux",
+    });
+    for (const bad of ["pool", "pool=", "=sandboxes", "Example.com/pool=x", "a/b/c=x", "pool=has space", "pool=x,pool=y", `pool=${"x".repeat(64)}`, "pool=x;rm"]) {
+      expect(() => parseNodeSelector(bad), bad).toThrow(/NODE_SELECTOR/);
+    }
+  });
+
+  it("parses tolerations with or without a value and refuses a malformed one at start", () => {
+    expect(parseTolerations("")).toBeUndefined();
+    expect(parseTolerations("example.com/sandboxes=true:NoSchedule")).toEqual([
+      { key: "example.com/sandboxes", operator: "Equal", value: "true", effect: "NoSchedule" },
+    ]);
+    expect(parseTolerations("example.com/sandboxes:NoExecute,dedicated=sbx:PreferNoSchedule")).toEqual([
+      { key: "example.com/sandboxes", operator: "Exists", effect: "NoExecute" },
+      { key: "dedicated", operator: "Equal", value: "sbx", effect: "PreferNoSchedule" },
+    ]);
+    for (const bad of ["example.com/sandboxes=true", "example.com/sandboxes=true:NoSchedul", ":NoSchedule", "=true:NoSchedule", "key=a b:NoSchedule", "key=true:noschedule"]) {
+      expect(() => parseTolerations(bad), bad).toThrow(/TOLERATION/);
+    }
+  });
+
+  it("reads both from the environment and refuses to start on a bad value", () => {
+    const sandbox = sandboxdConfigFromEnv(env());
+    expect(kubernetesSandboxConfigFromEnv(env(), sandbox).k8s.nodeSelector).toBeUndefined();
+    const parsed = kubernetesSandboxConfigFromEnv(env({
+      SAGAX_SANDBOX_K8S_NODE_SELECTOR: "example.com/pool=sandboxes",
+      SAGAX_SANDBOX_K8S_TOLERATION: "example.com/sandboxes=true:NoSchedule",
+    }), sandbox);
+    expect(parsed.k8s.nodeSelector).toEqual({ "example.com/pool": "sandboxes" });
+    expect(parsed.k8s.tolerations).toEqual([{ key: "example.com/sandboxes", operator: "Equal", value: "true", effect: "NoSchedule" }]);
+    expect(() => kubernetesSandboxConfigFromEnv(env({ SAGAX_SANDBOX_K8S_NODE_SELECTOR: "sandboxes" }), sandbox)).toThrow(/NODE_SELECTOR/);
+    expect(() => kubernetesSandboxConfigFromEnv(env({ SAGAX_SANDBOX_K8S_TOLERATION: "sandboxes=true" }), sandbox)).toThrow(/TOLERATION/);
+  });
+
+  it("places the pod on the pool and keeps it restricted", () => {
+    const sandbox = sandboxdConfigFromEnv(env());
+    const spec = sandboxContainerSpec(sandbox, key);
+    const plain = podFromDockerSpec(spec, k8sConfig()).spec as Record<string, unknown>;
+    expect(plain.nodeSelector).toBeUndefined();
+    expect(plain.tolerations).toBeUndefined();
+    const pod = podFromDockerSpec(spec, {
+      ...k8sConfig(),
+      nodeSelector: { "example.com/pool": "sandboxes" },
+      tolerations: [{ key: "example.com/sandboxes", operator: "Equal", value: "true", effect: "NoSchedule" }],
+    });
+    const placed = pod.spec as Record<string, unknown>;
+    expect(placed.nodeSelector).toEqual({ "example.com/pool": "sandboxes" });
+    expect(placed.tolerations).toEqual([{ key: "example.com/sandboxes", operator: "Equal", value: "true", effect: "NoSchedule" }]);
+    expect(podIsolationProblems(pod, key)).toEqual([]);
   });
 });
 
@@ -214,6 +275,8 @@ describe("image scripts and manifests", () => {
     expect(deployment).not.toContain("docker.sock");
     expect(deployment).toContain("example.invalid/sagax:must-set");
     expect(deployment).toContain("type: ClusterIP");
+    expect(deployment).toContain("SAGAX_SANDBOX_K8S_NODE_SELECTOR");
+    expect(deployment).toContain("SAGAX_SANDBOX_K8S_TOLERATION");
     const namespace = readFileSync(new URL("../deploy/k8s/provisioner/namespace.yaml", import.meta.url), "utf8");
     expect(namespace).toContain("restricted");
     const allow = readFileSync(new URL("../deploy/k8s/provisioner/networkpolicy-provisioner.yaml", import.meta.url), "utf8");

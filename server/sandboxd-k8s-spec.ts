@@ -37,6 +37,79 @@ export interface K8sSandboxConfig {
   pullSecret?: string;
   dnsNameservers: string[];
   quotaName: string;
+  /** Labels a node must carry to run sandbox pods (a dedicated pool). */
+  nodeSelector?: Record<string, string>;
+  /** Taints of that pool the sandbox pods tolerate. */
+  tolerations?: K8sToleration[];
+}
+
+export interface K8sToleration {
+  key: string;
+  operator: "Equal" | "Exists";
+  value?: string;
+  effect: "NoSchedule" | "PreferNoSchedule" | "NoExecute";
+}
+
+const LABEL_NAME = /^[A-Za-z0-9]([-A-Za-z0-9_.]{0,61}[A-Za-z0-9])?$/;
+const LABEL_PREFIX = /^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$/;
+const TAINT_EFFECTS = ["NoSchedule", "PreferNoSchedule", "NoExecute"] as const;
+
+/** A Kubernetes label or taint key: `name` or `prefix/name`. */
+function labelKey(raw: string): boolean {
+  const slash = raw.indexOf("/");
+  if (slash === -1) return raw.length <= 63 && LABEL_NAME.test(raw);
+  const prefix = raw.slice(0, slash);
+  const name = raw.slice(slash + 1);
+  return prefix.length > 0 && prefix.length <= 253 && LABEL_PREFIX.test(prefix) && name.length <= 63 && LABEL_NAME.test(name);
+}
+
+function labelValue(raw: string): boolean {
+  return raw.length <= 63 && LABEL_NAME.test(raw);
+}
+
+/** `SAGAX_SANDBOX_K8S_NODE_SELECTOR`: `key=value[,key=value...]`, for
+ * example `example.com/pool=sandboxes`. Empty or unset: no selector. Any
+ * malformed pair refuses the start. */
+export function parseNodeSelector(raw: string | undefined): Record<string, string> | undefined {
+  const text = raw?.trim() ?? "";
+  if (!text) return undefined;
+  const out: Record<string, string> = {};
+  for (const part of text.split(",")) {
+    const pair = part.trim();
+    const eq = pair.indexOf("=");
+    const key = eq === -1 ? "" : pair.slice(0, eq);
+    const value = eq === -1 ? "" : pair.slice(eq + 1);
+    if (!labelKey(key) || !labelValue(value)) throw new Error("SAGAX_SANDBOX_K8S_NODE_SELECTOR must be key=value pairs separated by commas (Kubernetes label syntax)");
+    if (key in out) throw new Error(`SAGAX_SANDBOX_K8S_NODE_SELECTOR names ${key} twice`);
+    out[key] = value;
+  }
+  return out;
+}
+
+/** `SAGAX_SANDBOX_K8S_TOLERATION`: `key=value:Effect` (operator Equal) or
+ * `key:Effect` (operator Exists), several separated by commas, for example
+ * `example.com/sandboxes=true:NoSchedule`. Empty or unset: none. Any
+ * malformed entry refuses the start. */
+export function parseTolerations(raw: string | undefined): K8sToleration[] | undefined {
+  const text = raw?.trim() ?? "";
+  if (!text) return undefined;
+  const out: K8sToleration[] = [];
+  for (const part of text.split(",")) {
+    const entry = part.trim();
+    const colon = entry.lastIndexOf(":");
+    const effect = colon === -1 ? "" : entry.slice(colon + 1);
+    const head = colon === -1 ? "" : entry.slice(0, colon);
+    const eq = head.indexOf("=");
+    const key = eq === -1 ? head : head.slice(0, eq);
+    const value = eq === -1 ? undefined : head.slice(eq + 1);
+    if (!(TAINT_EFFECTS as readonly string[]).includes(effect) || !labelKey(key) || (value !== undefined && !labelValue(value))) {
+      throw new Error("SAGAX_SANDBOX_K8S_TOLERATION must be key=value:Effect or key:Effect, separated by commas (Effect: NoSchedule, PreferNoSchedule or NoExecute)");
+    }
+    out.push(value === undefined
+      ? { key, operator: "Exists", effect: effect as K8sToleration["effect"] }
+      : { key, operator: "Equal", value, effect: effect as K8sToleration["effect"] });
+  }
+  return out;
 }
 
 export interface K8sGuards {
@@ -83,6 +156,8 @@ export function kubernetesSandboxConfigFromEnv(env: NodeJS.ProcessEnv, sandbox: 
       throw new Error(`SAGAX_SANDBOX_K8S_DNS ${address} is inside the egress deny list, so the sandbox could not resolve names`);
     }
   }
+  const nodeSelector = parseNodeSelector(env.SAGAX_SANDBOX_K8S_NODE_SELECTOR);
+  const tolerations = parseTolerations(env.SAGAX_SANDBOX_K8S_TOLERATION);
   const quotaName = dnsLabel(env.SAGAX_SANDBOX_K8S_QUOTA_NAME?.trim() || SANDBOX_QUOTA_NAME, "SAGAX_SANDBOX_K8S_QUOTA_NAME");
   const requireDigest = namedFlag(env.SAGAX_SANDBOX_K8S_REQUIRE_SIGNED, "SAGAX_SANDBOX_K8S_REQUIRE_SIGNED", true);
   const imageProblems = imageAdmissionProblems(sandbox.image, { registry, requireDigest });
@@ -112,6 +187,8 @@ export function kubernetesSandboxConfigFromEnv(env: NodeJS.ProcessEnv, sandbox: 
       ...(pullSecret ? { pullSecret } : {}),
       dnsNameservers,
       quotaName,
+      ...(nodeSelector ? { nodeSelector } : {}),
+      ...(tolerations ? { tolerations } : {}),
     },
     guards: {
       secretsEncryptedAttested,
@@ -219,6 +296,10 @@ export function podFromDockerSpec(spec: Obj, k8s: K8sSandboxConfig): Obj {
       dnsConfig: { nameservers: k8s.dnsNameservers, searches: [] },
       ...(k8s.runtimeClass ? { runtimeClassName: k8s.runtimeClass } : {}),
       ...(k8s.pullSecret ? { imagePullSecrets: [{ name: k8s.pullSecret }] } : {}),
+      // A dedicated node pool: its label selects it, its taint keeps every
+      // other workload off it and these pods tolerate that taint.
+      ...(k8s.nodeSelector ? { nodeSelector: { ...k8s.nodeSelector } } : {}),
+      ...(k8s.tolerations ? { tolerations: k8s.tolerations.map((toleration) => ({ ...toleration })) } : {}),
       securityContext: {
         runAsNonRoot: true,
         runAsUser: SANDBOX_UID,
