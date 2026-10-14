@@ -39,7 +39,8 @@ beforeAll(async () => {
 afterAll(async () => { await fixture?.close(); });
 
 describe("live browser route authorization", () => {
-  it.each([["GET", "live"], ["POST", "action"]])("keeps %s %s owner-only", async (method, suffix) => {
+  // The Computer tab's preview (live?preview=1) sits behind the same gate.
+  it.each([["GET", "live"], ["GET", "live?preview=1"], ["POST", "action"]])("keeps %s %s owner-only", async (method, suffix) => {
     const path = `/api/bots/${botId}/browser/${suffix}`;
     const body = method === "POST" ? { viewerId: "forged", type: "take" } : undefined;
     expect((await call(method, path, body, remote)).status).toBe(403);

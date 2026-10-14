@@ -9,6 +9,8 @@ const execute = promisify(execFile);
 const MAX_FRAME = 3 * 1024 * 1024;
 const MAX_BUFFER = 4 * 1024 * 1024;
 const HEARTBEAT_MS = 10_000;
+// The Computer tab's preview: a live thumbnail, not a control surface.
+const PREVIEW_FPS = 5;
 const COMMAND_TIMEOUT_MS = 30_000;
 const VIEWPORT_TIMEOUT_MS = 5_000;
 // Opening a view while the bot's own command holds the session: each stream
@@ -45,6 +47,13 @@ export class BrowserActionFailedError extends BrowserLiveError {
 
 /** The engine is there but did not answer in time: another command, usually
  * the bot's own, holds the same browser session. Not a missing engine. */
+/** A preview (watch-only) view found no running browser. It never launches
+ * one just to be watched: the card says the browser is closed and asks
+ * again later; taking control opens it. */
+export class BrowserOfflineError extends BrowserLiveError {
+  constructor() { super("The browser is not running.", 409); this.name = "BrowserOfflineError"; }
+}
+
 export class BrowserBusyError extends BrowserLiveError {
   constructor(message = "The browser is busy with another action and did not answer in time. Try again shortly.") {
     super(message, 503); this.name = "BrowserBusyError";
@@ -200,6 +209,9 @@ interface OpenOptions {
   owner: string;
   isCurrent: () => boolean;
   res: ServerResponse;
+  /** Watch-only: the Computer tab's live preview. It never launches or sizes
+   * the browser, streams at a lower rate, and can only acknowledge frames. */
+  preview?: boolean;
 }
 interface Viewer extends OpenOptions {
   id: string;
@@ -386,6 +398,10 @@ export class BrowserLive {
       }
     }
     const port = browserStreamPort(status);
+    if (viewer.preview) {
+      if (status.connected !== true) throw new BrowserOfflineError();
+      return port;
+    }
     // `open` without a URL is an idempotent launch, never navigation away from the bot's page.
     if (status.connected !== true) await this.command(viewer, ["open"]);
     // The status probe itself may have launched the browser. Give its page the
@@ -489,7 +505,7 @@ export class BrowserLive {
       // by close() included; a viewer closed meanwhile gets no socket.
       if (!this.current(viewer)) throw new BrowserLiveError("This browser view is no longer available.", 409);
       viewer.port = port;
-      const socket = new WebSocket(`ws://127.0.0.1:${port}/?pacing=ack&maxFps=15`);
+      const socket = new WebSocket(`ws://127.0.0.1:${port}/?pacing=ack&maxFps=${viewer.preview ? PREVIEW_FPS : 15}`);
       viewer.socket = socket;
       this.startEvents(viewer);
       viewer.waiting = false;
@@ -526,6 +542,13 @@ export class BrowserLive {
       }, HEARTBEAT_MS);
       viewer.heartbeat.unref();
     } catch (error) {
+      if (error instanceof BrowserOfflineError) {
+        // An expected answer, not a failure: say it on the stream and end it.
+        this.startEvents(viewer);
+        viewer.waiting = false;
+        this.send(viewer, { type: "offline" });
+        this.close(viewer); return;
+      }
       console.warn("browser-live:", error);
       if (options.res.headersSent) {
         // A view that waited out a busy browser gets the reason, and no
@@ -546,6 +569,8 @@ export class BrowserLive {
       throw new BrowserLiveError("This browser view is no longer available. Reopen the browser panel.", 404);
     }
     const action = parseBrowserLiveAction(body);
+    // A preview only watches: it acknowledges frames and nothing else.
+    if (viewer.preview && action.type !== "ack") throw new BrowserLiveError("This browser preview is view-only. Take control to use the browser.", 403);
     if (action.type === "restart") {
       if (viewer.restarting) throw new BrowserLiveError("The browser is already restarting.", 409);
       viewer.restarting = true;

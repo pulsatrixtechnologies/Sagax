@@ -698,3 +698,46 @@ describe("opening a view while the bot holds the browser", () => {
     await expect(a.action({ type: "reload" })).rejects.toThrow(/browser engine is installed/);
   });
 });
+
+describe("the Computer tab's watch-only preview", () => {
+  const openPreview = async (owner = "admin-a") => {
+    const res = new ResponseFixture();
+    await live.open({ botId: "bot-a", session: "profile-a", owner, isCurrent: () => true, res: res as unknown as ServerResponse, preview: true,
+      spec: { command: "/trusted/agent-browser", env: { AGENT_BROWSER_SESSION: "profile-a", AGENT_BROWSER_HEADLESS: "1" } } });
+    return { res, socket: SocketFixture.instances.at(-1), action: (body: unknown, as = owner) => live.action({ viewerId: res.id, botId: "bot-a", owner: as, body }) };
+  };
+
+  it("never launches a closed browser: it says offline and ends the stream", async () => {
+    execute.mockResolvedValueOnce(output({ ...ready, connected: false }));
+    const { res, socket } = await openPreview();
+    expect(execute.mock.calls.map((call) => call[1])).toEqual([["stream", "status", "--json", "--no-webmcp"]]);
+    expect(res.events("offline")).toHaveLength(1);
+    expect(res.events("ready")).toHaveLength(0);
+    expect(res.writableEnded).toBe(true);
+    expect(socket).toBeUndefined();
+  });
+
+  it("watches a running browser at a lower rate, without sizing its page", async () => {
+    const { res, socket } = await openPreview();
+    expect(socket!.url).toBe("ws://127.0.0.1:43210/?pacing=ack&maxFps=5");
+    expect(execute.mock.calls.map((call) => call[1])).toEqual([["stream", "status", "--json", "--no-webmcp"]]);
+    socket!.receive(frame);
+    expect(res.events("frame")).toHaveLength(1);
+  });
+
+  it("only acknowledges frames: taking control, input and navigation are refused", async () => {
+    const { socket, action } = await openPreview();
+    socket!.receive(frame);
+    await action({ type: "ack", seq: 1 });
+    expect(socket!.messages).toEqual([{ type: "ack", seq: 1 }]);
+    await expect(action({ type: "take" })).rejects.toMatchObject({ status: 403 });
+    await expect(action({ type: "navigate", url: "https://example.test/" })).rejects.toMatchObject({ status: 403 });
+    await expect(action({ type: "input_mouse", eventType: "mousePressed", x: 1, y: 1 })).rejects.toMatchObject({ status: 403 });
+    expect(held.size).toBe(0);
+  });
+
+  it("is bound to its owner: another person cannot use its viewer id", async () => {
+    const { action } = await openPreview();
+    await expect(action({ type: "ack", seq: 1 }, "another-admin")).rejects.toThrow("no longer available");
+  });
+});

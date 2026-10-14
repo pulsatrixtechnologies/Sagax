@@ -32386,7 +32386,8 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       };
       if (method === "GET" && liveBrowserMatch[2] === "live") {
         req.socket.setTimeout(0);
-        return await browserLive.open({ botId: bot.id, session: browser.session, spec: browser.spec, owner, isCurrent, res });
+        const preview = url.searchParams.get("preview") === "1";
+        return await browserLive.open({ botId: bot.id, session: browser.session, spec: browser.spec, owner, isCurrent, res, preview });
       }
       if (method === "POST" && liveBrowserMatch[2] === "action") {
         const body = await readBody(req, 32_768);
