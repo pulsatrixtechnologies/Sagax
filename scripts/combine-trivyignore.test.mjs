@@ -86,6 +86,28 @@ describe("combineTrivyignore", () => {
     expect(cli.stdout).not.toContain(PRIVATE_ID);
   });
 
+  it("accepts a configured private list with comments and zero entries", () => {
+    const publicText = listed(PUBLIC_ID);
+    const privateText = "# No private exception needed. Review 2026-11-13\n";
+    const result = combineTrivyignore({ publicText, privateText });
+    expect(result.ok).toBe(true);
+    expect(result.privateCount).toBe(0);
+    expect(result.combinedCount).toBe(1);
+    expect(result.text).toBe(publicText);
+
+    const cli = runCli({ publicText, privateText });
+    expect(cli.status).toBe(0);
+    expect(cli.combined).toBe(publicText);
+  });
+
+  it("still refuses a private list mixing a bad line with comments", () => {
+    const publicText = listed(PUBLIC_ID);
+    const privateText = "# Review 2026-11-13\nCVE-*\n";
+    expect(combineTrivyignore({ publicText, privateText }).errors).toEqual([
+      "private exception list is unusable",
+    ]);
+  });
+
   it("writes public then extra private ids and leaves the public file unchanged", () => {
     const publicText = listed(PUBLIC_ID);
     const privateText = listed(PRIVATE_ID);

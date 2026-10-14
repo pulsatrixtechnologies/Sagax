@@ -57,7 +57,10 @@ export function combineTrivyignore({ publicText, privateText } = {}) {
       combinedCount: 0,
     };
   }
-  if (priv.errors.length) {
+  // A configured list may hold zero entries (comments only) when the image
+  // needs no private exception: the secret is still required, nothing is masked.
+  const privateEmpty = priv.entries.length === 0 && priv.errors.every((e) => e === "ignore file lists no CVE");
+  if (priv.errors.length && !privateEmpty) {
     return {
       ok: false,
       errors: ["private exception list is unusable"],
