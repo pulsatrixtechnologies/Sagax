@@ -43,3 +43,7 @@ deploy/podman/.env
 deploy/podman/.env.*
 !deploy/podman/.env.example
 /.env
+
+# Local SwiftPM builds and App Store Connect archives (ipa, xcarchive, dSYM)
+.build/
+ios/.asc/
