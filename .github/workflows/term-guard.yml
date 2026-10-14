@@ -3,11 +3,13 @@
 # forbidden term. The term list is NOT stored in this repository: it
 # is read from the FORBIDDEN_TERMS Actions secret (newline-separated).
 #
-# pull_request_target is used so the secret is available for pull requests
-# from forks too. It is safe here because this job never checks out or runs
-# code from the pull request: it checks out the BASE branch (trusted) for the
-# guard script, and reads the PR's title, branch and diff only as data through
-# the API. If the secret is missing the job fails (fail closed).
+# pull_request_target runs in the base repository so the secret is available
+# for every pull request, including a fork. The job runs on a GitHub-hosted
+# runner and never checks out or runs code from the pull request: it checks
+# out the BASE branch (trusted) for the guard script, does not persist
+# credentials, and reads the PR diff and commits only as data through the
+# API with curl and jq. Event text is passed only through environment
+# variables. If the secret is missing the job fails (fail closed).
 name: term-guard
 
 on:
@@ -28,7 +30,7 @@ jobs:
     timeout-minutes: 5
     steps:
       - name: Check out base branch (trusted script only)
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           ref: ${{ github.event.pull_request.base.sha }}
           persist-credentials: false
@@ -47,16 +49,55 @@ jobs:
           done
           true
 
-      - name: Fetch PR diff (as data)
+      - name: Fetch PR diff and commits (as data)
         env:
           GH_TOKEN: ${{ github.token }}
           PR: ${{ github.event.pull_request.number }}
           REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
-          gh api -H "Accept: application/vnd.github.diff" "repos/$REPO/pulls/$PR" > "$RUNNER_TEMP/pr.diff"
+          case "$REPO" in
+            */*/*|*..*|/*|*/) echo "refusing repository coordinate" >&2; exit 1 ;;
+          esac
+          owner="${REPO%%/*}"
+          name="${REPO#*/}"
+          case "$owner" in ''|*[!A-Za-z0-9_.-]*) echo "refusing repository coordinate" >&2; exit 1 ;; esac
+          case "$name" in ''|*[!A-Za-z0-9_.-]*) echo "refusing repository coordinate" >&2; exit 1 ;; esac
+          case "$PR" in ''|*[!0-9]*) echo "refusing pull request coordinate" >&2; exit 1 ;; esac
+          api="https://api.github.com/repos/${REPO}/pulls/${PR}"
+          : > "$RUNNER_TEMP/commits.jsonl"
+          page=1
+          while [ "$page" -le 30 ]; do
+            hdr="$RUNNER_TEMP/commits.hdr"
+            body="$RUNNER_TEMP/commits.json"
+            curl --fail-with-body --silent --show-error \
+              --proto '=https' --tlsv1.2 \
+              --retry 3 --retry-delay 2 \
+              -D "$hdr" -o "$body" \
+              -H "Authorization: Bearer ${GH_TOKEN}" \
+              -H "Accept: application/vnd.github+json" \
+              -H "X-GitHub-Api-Version: 2022-11-28" \
+              "${api}/commits?per_page=100&page=${page}"
+            jq -e 'type == "array"' "$body" >/dev/null
+            jq -c '.[]' "$body" >> "$RUNNER_TEMP/commits.jsonl"
+            if ! grep -qi 'rel="next"' "$hdr"; then
+              break
+            fi
+            if [ "$page" -eq 30 ]; then
+              echo "refusing to read more than 30 commit pages" >&2
+              exit 1
+            fi
+            page=$((page + 1))
+          done
+          curl --fail-with-body --silent --show-error \
+            --proto '=https' --tlsv1.2 \
+            --retry 3 --retry-delay 2 \
+            -o "$RUNNER_TEMP/pr.diff" \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H "Accept: application/vnd.github.diff" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "$api"
           echo "diff bytes: $(wc -c < "$RUNNER_TEMP/pr.diff")"
-          gh api --paginate "repos/$REPO/pulls/$PR/commits?per_page=100" --jq '.[]' > "$RUNNER_TEMP/commits.jsonl"
           echo "commits: $(wc -l < "$RUNNER_TEMP/commits.jsonl")"
 
       - name: Scan title, branch, commits and diff

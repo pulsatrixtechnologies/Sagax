@@ -230,17 +230,15 @@ describe("CI concurrency", () => {
   });
 
   it("keeps node:test files out of the vitest include glob", () => {
-    // runner-guard.yml runs scripts/check-runner-labels.node-test.mjs with
-    // `node --test` and no install. A *.test.mjs copy is collected by
-    // vite.config.ts `scripts/**/*.test.mjs` and fails with "No test suite found".
+    // vite.config.ts collects scripts/**/*.test.mjs. A node:test file there
+    // fails the shard with "No test suite found". runner-guard.yml runs the
+    // checker script itself; its tests are vitest.
     const collected = [
       ...globSync("scripts/**/*.test.mjs", { cwd: root }),
       ...globSync("scripts/**/*.test.ts", { cwd: root }),
     ];
     const nodeTest = collected.filter((file) => /from ['"]node:test['"]/.test(readFileSync(join(root, file), "utf8")));
     expect(nodeTest).toEqual([]);
-    const guard = parse(readFileSync(new URL("../.github/workflows/runner-guard.yml", import.meta.url), "utf8"));
-    expect(guard.jobs.guard.steps.some((step: { run?: string }) => step.run === "node --test scripts/check-runner-labels.node-test.mjs")).toBe(true);
   });
 
   it("keeps the redundant Windows workflow available only for manual debugging", () => {

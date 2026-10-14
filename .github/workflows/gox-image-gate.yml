@@ -1,11 +1,7 @@
 name: GOX image gate
 
 # Check an already-built image with the same manifest gate GOX uses.
-# This workflow never deploys and never contacts GOX. The host deploy is
-# deploy/gox/deploy-pulsabot.sh, which refuses a short engine set, smoke-tests
-# /healthz and the engine startup log, and on failure rolls back to
-# /opt/pulsatrix/pulsabot-image.prev and runs:
-#   docker compose up -d --force-recreate --no-deps pulsabot-caddy
+# This workflow never deploys and never contacts GOX.
 on:
   workflow_dispatch:
     inputs:
@@ -25,7 +21,9 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Check the image manifest
+        env:
+          IMAGE: ${{ inputs.image }}
         run: |
           set -euo pipefail
-          docker pull "${{ inputs.image }}"
-          node scripts/gox-deploy.mjs check --image "${{ inputs.image }}"
+          docker pull "$IMAGE"
+          node scripts/gox-deploy.mjs check --image "$IMAGE"
