@@ -197,32 +197,33 @@ describe("the Appearance gallery", () => {
     expect(html).not.toContain("data-character-shape");
   });
 
-  it("lists unlocked and worn characters only, with no To unlock shelf for characters", () => {
+  it("lists every character, the locked ones greyed on To unlock, and Trombi only once found", () => {
     const lockedIds = (html: string) => [...html.matchAll(/data-character-option="([a-z]+)" data-locked=""/g)].map((match) => match[1]);
     const options = (html: string) => [...html.matchAll(/data-character-option="([a-z]+)"/g)].map((match) => match[1]);
     enforce([]);
     const html = render(undefined);
-    expect(options(html)).toEqual(["owl"]);
-    expect(html).not.toContain('data-character-option="crab"');
-    expect(html).not.toContain('data-character-option="shape"');
-    expect(html).not.toContain('data-character-option="ogre"');
-    expect(html).not.toContain('data-mascot-shelf="locked"');
-    expect(html).not.toContain('data-mascot-filter="locked"');
-    expect(lockedIds(html)).toEqual([]);
-    // locked skins stay out, the Mastery ones excepted
-    expect(html).not.toContain('data-tab="epic"');
+    expect(options(html)).toEqual(MASCOTS.map((entry) => entry.id).filter((id) => id !== "trombi"));
+    expect(lockedIds(html).sort()).toEqual(MASCOTS.map((entry) => entry.id).filter((id) => id !== "owl" && id !== "trombi").sort());
+    expect(html).toContain('data-mascot-shelf="locked"');
+    expect(html).toContain('data-mascot-filter="locked"');
+    // every rarity of the owl's skins is offered, the locked ones too
+    for (const tier of ["common", "rare", "epic", "legendary"]) expect(html).toMatch(new RegExp(`role="tab"[^>]*data-tab="${tier}"`));
     expect(html).toContain('data-mascot-skin-option="none"');
-    // the skin this bot already wears stays visible
     expect(render(undefined, "chrome")).toContain('data-mascot-skin-option="chrome"');
-    expect(render(undefined, "chrome")).not.toContain('data-mascot-skin-option="lightning"');
-    expect(options(render({ character: "crab" }))).toContain("crab");
+    expect(render(undefined, "chrome")).toMatch(/data-locked=""[^>]*data-mascot-skin-option="lightning"/);
+    // the worn character is never locked, and Trombi shows once worn or found
+    expect(lockedIds(render({ character: "crab" }))).not.toContain("crab");
+    expect(options(render({ character: "trombi" }))).toContain("trombi");
     enforce(["character:crab"]);
-    expect(options(render(undefined))).toEqual(expect.arrayContaining(["owl", "crab"]));
+    expect(lockedIds(render(undefined))).not.toContain("crab");
     setGrokAccountLinked(true);
-    expect(options(render(undefined))).not.toContain("shape");
+    expect(lockedIds(render(undefined))).toContain("shape");
     setGrokAccountLinked(false);
     enforce(["character:shape"]);
-    expect(options(render(undefined))).toContain("shape");
+    expect(lockedIds(render(undefined))).not.toContain("shape");
+    // an earned skin brings its character: the crab, worn in Pearl
+    enforce(["skin:crab:pearl"]);
+    expect(lockedIds(render(undefined))).not.toContain("crab");
   });
 
   it("offers a shape its shapes, colors, skins by rarity and its own moves, and nothing of the owl", () => {

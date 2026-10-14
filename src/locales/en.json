@@ -3188,6 +3188,7 @@
   "mascot.skin.spirit": "Spirit",
   "mascot.skin.title": "Skin",
   "mascot.skin.use": "Use the {skin} skin",
+  "mascot.skinCard.locked": "{name}, {tier}, locked. {hint}",
   "mascot.tier.common": "Common",
   "mascot.tier.epic": "Epic",
   "mascot.tier.legendary": "Legendary",

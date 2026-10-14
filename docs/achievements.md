@@ -89,6 +89,8 @@ imports no art, so it holds before the characters land and after.
   achievement unlocks (the catalog's rewards come from it).
 - An unlocked Mastery achievement adds the key `mastery:<id>` to the
   snapshot's `rewards`, so a skin registered later opens with it.
+- A skin's rung earned before the character's own achievement unlocks the
+  character too (worn in that skin), here and in the server's save check.
 
 ## How the server measures
 
@@ -133,10 +135,18 @@ Also fixed on the way: an approval answered from a thread
   has not unlocked: 403 `{ code: "look_locked", achievement, character,
   skin? }`. What a bot already wears is never taken back. Until a Mastery
   character lands, the look schema refuses it anyway (400).
-- **Look editor.** A Mastery character or skin stays in the picker, locked:
-  a padlock, the achievement's progress bar, and the hint "Unlock: Hands Off
-  (7/10)" (a secret's hint for a secret achievement). The older characters
-  keep hiding their locked skins as before.
+- **Look editor.** Every character and every skin stays in the picker
+  (JC, 2026-10-14), a locked one greyed and not selectable: a padlock, the
+  achievement's progress bar, and the hint "Unlock: Hands Off (7/10)" (a
+  secret's hint for a secret achievement) as its tooltip and label. Trombi
+  alone stays out until found (an easter egg).
+- **An earned skin brings its character.** A character counts as unlocked
+  once the person earned one of its skins above its base one
+  (`characterUnlocked`, `masteryLock`): a skin rewarded on a character still
+  locked used to be listed as a reward with no art, and the character stayed
+  out of the gallery, so the skin could be neither seen nor worn. Only the
+  earned skins (and the Common ones) are wearable; Trombi still waits for
+  its command.
 - **Achievements modal.** The Mastery category (Maîtrise) shows every card
   with its progress bar from 0 and what it unlocks: the character or its
   skins, greyed until unlocked (a placeholder until the character's art

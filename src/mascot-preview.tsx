@@ -21,6 +21,7 @@ import { OwlAvatar, type OwlAvatarHandle } from "@/components/OwlAvatar";
 import { AppearancePane } from "@/components/appearance/AppearancePane";
 import { OWL_WING_MOVES, type OwlWingMove } from "@/lib/owl/owl-art";
 import { StoreProvider, type Bot } from "@/state/store";
+import { loadAchievements, setAchievementsFetcher } from "@/lib/achievements";
 import { MASCOT_SKIN_IDS, botMascotSkin, type MascotSkinId } from "../shared/mascot-skins";
 import { botMascotLook } from "../shared/mascot-look";
 import "./styles.css";
@@ -559,8 +560,18 @@ function SidebarScene({ params }: { params: URLSearchParams }) {
   );
 }
 
-/** The real Appearance pane around a sample bot, at the persona editor's pane width: `?picker=1&color=black&skin=lightning&character=frog`. */
+/**
+ * The real Appearance pane around a sample bot, at the persona editor's pane width: `?picker=1&color=black&skin=lightning&character=frog`.
+ * `&rewards=skin:crab:pearl,character:shape` stands in for the person's reward keys (locked looks greyed with their padlock); without it nothing is unlocked but the owl.
+ */
 function PickerScene({ params }: { params: URLSearchParams }) {
+  useEffect(() => {
+    const rewards = params.get("rewards");
+    if (rewards === null) return;
+    const keys = rewards.split(",").map((key) => key.trim()).filter(Boolean);
+    setAchievementsFetcher(async () => new Response(JSON.stringify({ rewards: keys, items: [], recent: [] }), { status: 200, headers: { "content-type": "application/json" } }));
+    void loadAchievements();
+  }, [params]);
   const [bot, setBot] = useState<Bot>({
     id: "preview-bot",
     threadId: "preview-thread",
@@ -570,7 +581,7 @@ function PickerScene({ params }: { params: URLSearchParams }) {
     notifications: false,
     color: (params.get("color") ?? "black") as MausColor,
     mascotSkin: botMascotSkin(params.get("skin")),
-    mascotLook: botMascotLook({ character: params.get("character") ?? "owl" }),
+    mascotLook: botMascotLook({ character: params.get("character") ?? "owl", ...(params.get("lookSkin") ? { skins: { [params.get("character") ?? "owl"]: params.get("lookSkin") } } : {}) }),
     unread: false,
     modelSelection: { instanceId: "preview", model: "preview" },
     messages: [],

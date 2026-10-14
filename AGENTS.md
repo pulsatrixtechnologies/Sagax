@@ -1536,9 +1536,12 @@ Electron restart (no HMR); launch-test them before committing.
   previewed, not worn. Shapes unlocks with a linked Grok account. Trombi
   stays out of the gallery until its hidden command earns it (an easter egg
   behind a secret achievement; do not write the command down). Bunbu and
-  every skin above Common unlock with their achievement; a locked skin stays
-  out of the skin cards (a Mastery skin excepted) and a locked reward out of
-  the app icon picker. What a bot already wears stays listed. The phone
+  every skin above Common unlock with their achievement. Every skin card
+  shows (JC, 2026-10-14): a locked one greyed with the padlock, not
+  selectable (`aria-disabled`, a click does nothing), its tooltip and label
+  naming the achievement that unlocks it. An earned skin unlocks its
+  character (Trombi excepted), worn in that skin. A locked reward stays out
+  of the app icon picker. What a bot already wears stays listed. The phone
   follows the same rules from the server's reward keys and has no Grok
   detector of its own.
 - Bunbu is an original character of ours (a collectible-vinyl little monster:
@@ -2712,13 +2715,16 @@ rules, each covered by `shared/achievements-catalog.test.ts`,
   key does not link). Shapes unlocks when a Grok account is linked (the
   person's own sign-in or their own xAI key, reported as `grok.linked`).
   Trombi unlocks only from its hidden command (an easter egg; do not write
-  the command down), or on a device that already found it. Locked characters
-  are absent from every picker until unlocked. Every skin above Common, and
+  the command down), or on a device that already found it. A locked
+  character shows greyed on the look editor's To unlock shelf (Trombi stays
+  out until found). An earned skin unlocks its character too (Trombi
+  excepted, `characterUnlocked`, `masteryLock`). Every skin above Common, and
   Bunbu, is the reward of exactly one achievement. On first use a person keeps
   every character and skin their bots wear (`grandfatheredFromBots`); a later
   one-time `migratedCrab` pass keeps a crab that was already worn. What a bot
-  wears now stays in the editor. Locked rewards are hidden in the editor and
-  the app icon picker until they unlock. The server never refuses a look.
+  wears now stays in the editor. Locked skins show in the editor, greyed with
+  a padlock and the achievement that unlocks them; locked rewards stay out
+  of the app icon picker until they unlock. The server never refuses a look.
 - A server without the routes (404) locks nothing.
 - The unlock frame (`kind: "achievements"`, `audience`) reaches that
   person's streams only (`achievementFrameAllowed`). Nobody reads another

@@ -9,8 +9,8 @@
 //   one per family the registry uses, in MASCOT_FAMILIES order.
 //   Shelves: Yours (unlocked), To unlock (locked by an achievement), Premium
 //   (a paid edition not owned yet). The character the bot wears is always
-//   unlocked, so it is always on Yours. Locked characters stay out of the
-//   gallery, so To unlock is empty there.
+//   unlocked, so it is always on Yours. Locked characters sit on To unlock,
+//   greyed (Trombi excepted: out of the gallery until found).
 import type { LocaleKey } from "@/locales";
 
 /** The families, in the chip order. */

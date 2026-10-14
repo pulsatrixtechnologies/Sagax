@@ -11,7 +11,8 @@ import { setLocale } from "@/lib/i18n";
 import { resetAchievementsForTests } from "@/lib/achievements";
 import { StoreProvider, type Bot } from "@/state/store";
 import { NOTHING_LOCKED, type AchievementSnapshot } from "../../../shared/achievements";
-import { botMascotLook } from "../../../shared/mascot-look";
+import { botMascotLook, completeMascotLook, CRAB_SKINS } from "../../../shared/mascot-look";
+import { MASCOT_SKIN_IDS } from "../../../shared/mascot-skins";
 import MascotLookEditor, { type MascotLookPatch } from "../floating-bots/MascotLookEditor";
 import { AppearancePane, initialAppearanceMode } from "./AppearancePane";
 
@@ -162,16 +163,89 @@ describe("picking in the gallery", () => {
     expect(tile("frog").getAttribute("aria-pressed")).toBe("true");
   });
 
-  it("hides locked characters from the gallery", async () => {
+  it("shows locked characters greyed on To unlock, previewed but never worn", async () => {
     enforce([]);
     await mount(makeBot());
-    expect(host.querySelector('[data-character-option="ogre"]')).toBeNull();
-    expect(host.querySelector('[data-character-option="crab"]')).toBeNull();
-    expect(host.querySelector('[data-character-option="owl"]')).not.toBeNull();
-    expect(host.querySelector('[data-mascot-shelf="locked"]')).toBeNull();
-    expect(host.querySelector('[data-mascot-filter="locked"]')).toBeNull();
+    expect(tile("ogre").hasAttribute("data-locked")).toBe(true);
+    expect(tile("crab").hasAttribute("data-locked")).toBe(true);
+    expect(tile("owl").hasAttribute("data-locked")).toBe(false);
+    expect(host.querySelector('[data-mascot-shelf="locked"]')).not.toBeNull();
+    // Trombi is an easter egg: out until found
+    expect(host.querySelector('[data-character-option="trombi"]')).toBeNull();
+    await act(async () => tile("crab").click());
+    expect(host.querySelector("[data-mascot-detail]")?.getAttribute("data-mascot-detail")).toBe("crab");
+    expect(action().getAttribute("data-mascot-action")).toBe("locked");
     expect(patches).toEqual([]);
-    expect(action().getAttribute("data-mascot-action")).toBe("in-use");
+  });
+
+  /** Every skin card of the character shown, tab after tab. */
+  const allSkinCards = async (attribute: string) => {
+    const cards = new Map<string, HTMLButtonElement>();
+    const tabs = [...host.querySelectorAll<HTMLButtonElement>('[data-skin-tabs] [role="tab"]')];
+    for (const tab of tabs) {
+      await act(async () => tab.click());
+      for (const card of host.querySelectorAll<HTMLButtonElement>(`[${attribute}]`)) cards.set(card.getAttribute(attribute)!, card);
+    }
+    return cards;
+  };
+  /** Opens the tab holding a skin's card, then clicks it. */
+  const clickSkin = async (attribute: string, skin: string) => {
+    for (const tab of host.querySelectorAll<HTMLButtonElement>('[data-skin-tabs] [role="tab"]')) {
+      await act(async () => tab.click());
+      const card = host.querySelector<HTMLButtonElement>(`[${attribute}="${skin}"]`);
+      if (card) return act(async () => card.click());
+    }
+    throw new Error(`no card for ${skin}`);
+  };
+
+  it("lists every skin, a locked one with its padlock and how to unlock it, never selectable", async () => {
+    enforce([]);
+    await mount(makeBot());
+    const cards = await allSkinCards("data-mascot-skin-option");
+    expect([...cards.keys()].sort()).toEqual([...MASCOT_SKIN_IDS].sort());
+    const frost = cards.get("frost")!;
+    expect(frost.hasAttribute("data-locked")).toBe(true);
+    expect(frost.getAttribute("aria-disabled")).toBe("true");
+    expect(frost.querySelector(".unlock-lock svg.lucide-lock")).not.toBeNull();
+    expect(frost.getAttribute("title")).toMatch(/Unlock: /);
+    expect(frost.getAttribute("aria-label")).toMatch(/^Ice, Rare, locked\. Unlock: /);
+    await clickSkin("data-mascot-skin-option", "frost");
+    expect(patches).toEqual([]);
+    // the Common ones come with the owl
+    const snowy = cards.get("snowy")!;
+    expect(snowy.hasAttribute("data-locked")).toBe(false);
+    expect(snowy.querySelector(".unlock-lock")).toBeNull();
+  });
+
+  it("says how to unlock a locked skin in French too", async () => {
+    setLocale("fr");
+    enforce([]);
+    await mount(makeBot());
+    const frost = (await allSkinCards("data-mascot-skin-option")).get("frost")!;
+    expect(frost.getAttribute("title")).toMatch(/Pour débloquer : /);
+    expect(frost.getAttribute("aria-label")).toMatch(/verrouillé\. Pour débloquer : /);
+    setLocale("en");
+  });
+
+  it("wears an earned skin: its character unlocks, the skin is picked and saved with the bot", async () => {
+    // Pearl (Crab) earned, Claude never linked: the crab was hidden, its skin unusable
+    enforce(["skin:crab:pearl"]);
+    await mount(makeBot());
+    expect(tile("crab").hasAttribute("data-locked")).toBe(false);
+    await act(async () => tile("crab").click());
+    expect(patches).toEqual([{ mascotLook: expect.objectContaining({ character: "crab" }) }]);
+    await act(async () => root.render(createElement(MascotLookEditor, { bot: makeBot({ mascotLook: botMascotLook(patches[0]!.mascotLook) }), onPatch: (patch) => patches.push(patch) })));
+    const cards = await allSkinCards("data-crab-skin-option");
+    expect([...cards.keys()].sort()).toEqual([...CRAB_SKINS].sort());
+    expect(cards.get("pearl")!.hasAttribute("data-locked")).toBe(false);
+    expect(cards.get("gold")!.hasAttribute("data-locked")).toBe(true);
+    await clickSkin("data-crab-skin-option", "gold");
+    expect(patches).toHaveLength(1);
+    await clickSkin("data-crab-skin-option", "pearl");
+    const saved = patches[1]!.mascotLook!;
+    expect(saved).toMatchObject({ character: "crab", skins: expect.objectContaining({ crab: "pearl" }) });
+    // what is saved is what the bot stores and every avatar draws (BotRecord.mascotLook)
+    expect(completeMascotLook(botMascotLook(JSON.parse(JSON.stringify(saved)))).skins.crab).toBe("pearl");
   });
 
   it("narrows the tiles by chip and by search, and says when nothing matches", async () => {

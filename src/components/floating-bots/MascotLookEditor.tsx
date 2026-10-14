@@ -8,7 +8,9 @@
 //   one is sold, then one per family) and the shelves (Yours, Premium;
 //   wardrobe.ts), one tile per unlocked character of the registry
 //   (mascots.tsx) in the bot's color, plus the character the bot already
-//   wears. A locked character stays out. The arrow keys move across the tiles.
+//   wears. A locked character sits greyed on the To unlock shelf with its
+//   padlock and achievement (Trombi excepted: an easter egg, out until
+//   found). The arrow keys move across the tiles.
 //   Right, the detail: a preview stage of the character picked in the
 //   gallery (the real avatar, which plays the moves and the equip
 //   animation), its name and family, then that character's own options:
@@ -27,9 +29,11 @@
 //   opening on the current choice (editor-tabs.ts).
 //
 // An unlocked character saves at once when picked (as the avatar popover
-// did). A locked character stays out of the gallery, except the one the bot
-// already wears. Each character keeps its own skin, so switching and back
-// finds it again. Loaded lazily with the pane.
+// did). A locked character previews only. Every skin of a character shows
+// (JC, 2026-10-14): a locked one greyed with its padlock, not selectable,
+// its tooltip naming the achievement that unlocks it. Each character keeps
+// its own skin, so switching and back finds it again. Loaded lazily with
+// the pane.
 import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
 import { Check, Lock, Search } from "lucide-react";
 import { characterLock, lockHint, reportAchievement, skinLock, useUnlocks, type LockInfo } from "@/lib/achievements";
@@ -344,8 +348,9 @@ function LockBadge({ lock }: { lock: LockInfo }) {
 
 /**
  * A skin's card: its animated preview and its name, on its rarity's ground,
- * shimmering above Common. Locked skins are not offered, except a Mastery
- * skin (shared/mascot-unlocks.ts), shown locked with the achievement that unlocks it.
+ * shimmering above Common. A locked skin shows greyed with its padlock and
+ * the achievement that unlocks it (tooltip and label); it stays focusable so
+ * the tooltip reads, but a click does nothing.
  */
 function SkinCard({ tier, label, checked, disabled, onSelect, data, lock, children }: { tier: SkinTier; label: string; checked: boolean; disabled?: boolean; onSelect: () => void; data: Record<string, string>; lock?: LockInfo; children: ReactNode }) {
   const tierLabel = t(SKIN_TIER_LABEL[tier]);
@@ -355,16 +360,19 @@ function SkinCard({ tier, label, checked, disabled, onSelect, data, lock, childr
     <button
       type="button"
       role="radio"
-      disabled={disabled || locked}
+      disabled={disabled}
+      aria-disabled={locked || undefined}
       aria-checked={checked}
-      aria-label={locked ? `${label}, ${tierLabel}. ${hint}` : `${label}, ${tierLabel}`}
+      aria-label={locked ? t("mascot.skinCard.locked", { name: label, tier: tierLabel, hint }) : `${label}, ${tierLabel}`}
       title={locked ? `${label} (${tierLabel}). ${hint}` : `${label} (${tierLabel})`}
       data-tier={tier}
       data-locked={locked ? "" : undefined}
       data-unlock-achievement={locked ? lock?.achievement?.id : undefined}
       {...data}
-      onClick={onSelect}
-      className={cn(card, "skin-card relative h-[56px] gap-0 pt-0.5", focusRing, checked && on)}
+      onClick={() => {
+        if (!locked) onSelect();
+      }}
+      className={cn(card, "skin-card relative h-[56px] gap-0 pt-0.5", focusRing, checked && on, locked && "cursor-not-allowed hover:bg-inset")}
     >
       <span className="grid size-[36px] place-items-center" aria-hidden="true">
         {children}
@@ -381,12 +389,8 @@ function SkinCard({ tier, label, checked, disabled, onSelect, data, lock, childr
  * open tab's cards are drawn, so the pane animates a handful at most.
  */
 function SkinPicker<S extends string>({ skins, tierOf, selected, labelOf, idPrefix, dataKey, disabled, onSelect, preview, lockOf }: { skins: readonly S[]; tierOf: Readonly<Record<S, SkinTier>>; selected: S; labelOf: (skin: S) => string; idPrefix: string; dataKey: string; disabled?: boolean; onSelect: (skin: S) => void; preview: (skin: S) => ReactNode; lockOf?: (skin: S) => LockInfo }) {
-  // A locked skin stays out of the picker, but a Mastery one shows locked (the goal is to want it). The one this bot wears stays, so the current look never vanishes.
-  const offered = skins.filter((skin) => {
-    const lock = lockOf?.(skin);
-    return skin === selected || !lock?.locked || lock.mastery === true;
-  });
-  const tabs = skinTierTabs(offered, tierOf);
+  // Every skin shows, a locked one greyed with its padlock (the goal is to want it).
+  const tabs = skinTierTabs(skins, tierOf);
   const [tab, setTab] = useState<SkinTier>(() => skinTabFor(selected, skins, tierOf));
   const followed = useRef(selected);
   useEffect(() => {
@@ -554,7 +558,8 @@ export default function MascotLookEditor({ bot, disabled, onPatch: savePatch, on
   // what this person unlocked (src/lib/achievements.ts); what the bot wears now always stays.
   const unlocks = useUnlocks();
   const lockOf = (id: MascotCharacter): LockInfo => (id === look.character ? { locked: false } : characterLock(unlocks, id));
-  const listed = MASCOTS.filter((option) => option.id === look.character || !characterLock(unlocks, option.id).locked);
+  // Every character shows, a locked one on the To unlock shelf; Trombi only once found (an easter egg).
+  const listed = MASCOTS.filter((option) => option.id !== "trombi" || option.id === look.character || !characterLock(unlocks, option.id).locked);
   const onPatch = (patch: MascotLookPatch) => {
     savePatch(patch);
     reportAchievement("bot.customized", { key: patch.mascotLook?.character ?? look.character });
