@@ -63,7 +63,7 @@ export function inviteLinkBase(state: OrgState, fallback: string | null): string
   return fallback;
 }
 
-/** `zara@gox.ca` as `z***@gox.ca`: enough for the invited person to
+/** `zara@example.com` as `z***@example.com`: enough for the invited person to
  * recognize their address, not enough to harvest it. */
 export function maskEmail(email: string): string {
   const value = email.trim().toLowerCase();

@@ -74,7 +74,15 @@ public enum Frame: Sendable {
     case preferences(UserPreferences)
     /// `thread.read` (#270): a participant's read position moved, or reset.
     case threadRead(ThreadReadFrame)
+    /// `voice.call.ended`: the person or the bot hung up this call.
+    /// The phone leaves the call after a goodbye finishes.
+    case voiceCallEnded(threadId: String, callId: String, by: String)
     case unknown(kind: String)
+}
+
+extension Notification.Name {
+    /// The server ended a live voice call (`voice.call.ended`).
+    public static let sagaxVoiceCallEnded = Notification.Name("ca.pulsatrix.sagax.voiceCallEnded")
 }
 
 extension Frame: Decodable {
@@ -84,6 +92,7 @@ extension Frame: Decodable {
         case audience, fromId, fromName, at, open, principalId, label, people, count, added
         case preferences, updatedAt
         case participantId, read, reset
+        case callId, by
     }
 
     public init(from decoder: Decoder) throws {
@@ -189,6 +198,15 @@ extension Frame: Decodable {
             ))
         case "runtime":
             self = .runtime(try container.decode(RuntimeEvent.self, forKey: .event))
+        case "voice.call.ended":
+            guard let threadId = try? container.decode(String.self, forKey: .threadId),
+                  let callId = try? container.decode(String.self, forKey: .callId),
+                  let by = try? container.decode(String.self, forKey: .by),
+                  by == "person" || by == "bot" else {
+                self = .unknown(kind: kind)
+                return
+            }
+            self = .voiceCallEnded(threadId: threadId, callId: callId, by: by)
         default:
             // routines, and whatever the harness adds next
             self = .unknown(kind: kind)
@@ -210,6 +228,8 @@ extension Frame {
             return notification.threadId
         case let .runtime(event):
             return event.threadId
+        case let .voiceCallEnded(threadId, _, _):
+            return threadId
         default:
             return nil
         }

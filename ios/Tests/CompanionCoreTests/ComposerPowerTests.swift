@@ -145,7 +145,7 @@ final class ComposerSuggestionsTests: XCTestCase {
     func testMentionQueryAtTheEndOfTheDraft() {
         XCTAssertEqual(MentionQuery.at("hi @Sc"), MentionQuery(start: 3, query: "Sc"))
         XCTAssertEqual(MentionQuery.at("@"), MentionQuery(start: 0, query: ""))
-        XCTAssertNil(MentionQuery.at("mail me at jc@gox"), "user@host is not a tag")
+        XCTAssertNil(MentionQuery.at("mail me at jc@host"), "user@host is not a tag")
         XCTAssertNil(MentionQuery.at("@a\nb"))
         XCTAssertEqual(MentionQuery.at("hi @Sc")?.completing("hi @Sc", with: MentionChoice(id: "a", name: "Scout")), "hi @Scout ")
     }

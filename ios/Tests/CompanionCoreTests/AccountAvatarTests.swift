@@ -50,7 +50,7 @@ final class AccountAvatarTests: XCTestCase {
     }
 
     private func client() -> CompanionClient {
-        CompanionClient(connection: Connection(name: "GOX", host: "127.0.0.1", port: 8799), token: "phone-bearer", session: session)
+        CompanionClient(connection: Connection(name: "Example", host: "127.0.0.1", port: 8799), token: "phone-bearer", session: session)
     }
 
     // MARK: What the session names

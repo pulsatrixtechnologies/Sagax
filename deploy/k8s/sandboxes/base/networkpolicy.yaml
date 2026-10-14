@@ -6,7 +6,7 @@ apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
   name: default-deny
-  namespace: sagax-sandboxes
+  namespace: sandboxes
 spec:
   podSelector: {}
   policyTypes: ["Ingress", "Egress"]
@@ -15,7 +15,7 @@ apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
   name: sagax-sandboxd
-  namespace: sagax-sandboxes
+  namespace: sandboxes
 spec:
   podSelector:
     matchLabels:
@@ -60,7 +60,7 @@ apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
   name: sagax-sandbox
-  namespace: sagax-sandboxes
+  namespace: sandboxes
 spec:
   podSelector:
     matchLabels:

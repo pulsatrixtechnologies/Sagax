@@ -353,7 +353,7 @@ describe("encrypted full workspace backups", () => {
     writeFileSync(join(source, "note.txt"), "from before principals");
     const exported = await createWorkspaceBackup(source, { password: PASSWORD });
     const target = directory();
-    const local = new PrincipalRegistry({ path: join(target, "principals.json") }).localOperator("jc@gox.ca");
+    const local = new PrincipalRegistry({ path: join(target, "principals.json") }).localOperator("jc@example.com");
     const staged = await stageWorkspaceBackup(target, exported.path, { password: PASSWORD });
     commitPendingWorkspaceRestore(target, staged.id);
     expect(applyPendingWorkspaceRestore(target)).toMatchObject({ restored: true });
@@ -366,20 +366,20 @@ describe("encrypted full workspace backups", () => {
   it("merges an archive's principals by id and never replaces the destination's local operator", async () => {
     const source = directory();
     const sourceRegistry = new PrincipalRegistry({ path: join(source, "principals.json") });
-    const sourceLocal = sourceRegistry.localOperator("old@gox.ca");
-    const zach = sourceRegistry.forAccount({ email: "zach@gox.ca" });
+    const sourceLocal = sourceRegistry.localOperator("old@example.com");
+    const zach = sourceRegistry.forAccount({ email: "zach@example.com" });
     const exported = await createWorkspaceBackup(source, { password: PASSWORD });
     const target = directory();
     const targetRegistry = new PrincipalRegistry({ path: join(target, "principals.json") });
-    const local = targetRegistry.localOperator("jc@gox.ca");
+    const local = targetRegistry.localOperator("jc@example.com");
     const staged = await stageWorkspaceBackup(target, exported.path, { password: PASSWORD });
     commitPendingWorkspaceRestore(target, staged.id);
     expect(applyPendingWorkspaceRestore(target)).toMatchObject({ restored: true });
     const after = new PrincipalRegistry({ path: join(target, "principals.json") });
     expect(after.local()?.id).toBe(local.id);
     expect(after.list().filter((p) => p.local)).toHaveLength(1);
-    expect(after.byId(zach.id)).toMatchObject({ email: "zach@gox.ca" });
-    expect(after.byId(sourceLocal.id)).toMatchObject({ email: "old@gox.ca" });
+    expect(after.byId(zach.id)).toMatchObject({ email: "zach@example.com" });
+    expect(after.byId(sourceLocal.id)).toMatchObject({ email: "old@example.com" });
     expect(after.byId(sourceLocal.id)?.local).toBeUndefined();
   });
 

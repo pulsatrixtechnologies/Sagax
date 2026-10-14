@@ -132,6 +132,8 @@ import { collapseBotExchanges, exchangeJumpStays, startsNewStretch, visibleEdge,
 import { foldCollapsedEntry, voiceCallPlan, voiceCallVisibleSpan } from "@/lib/voice-call-transcript";
 import { VoiceCallCard } from "./VoiceCallCard";
 import { BotExchangeChip, ExchangeColumnProvider, TranscriptDate, useExchangeColumn } from "./BotExchangeChip";
+import { GotoGroupChip } from "./GotoGroupChip";
+import { collapseGotoLines, silentChatItem, type GotoGroup, type GotoTarget } from "@/lib/goto-lines";
 import { StatusActivityRow } from "@/components/StatusActivityRow";
 import { CancelledTurnRow } from "./CancelledTurnRow";
 import { ActivityRun } from "./ActivityRun";
@@ -163,7 +165,8 @@ const USER_COLLAPSE_LINES = 8;
 type ListedItem =
   | TranscriptItem
   | { kind: "exchange"; run: ExchangeRun }
-  | { kind: "voiceCall"; callId: string; messages: Message[] };
+  | { kind: "voiceCall"; callId: string; messages: Message[] }
+  | GotoGroup;
 
 /** What every row of the open chat reads besides its own message. The value
  * changes only when one of these does, so the memoized rows skip store
@@ -1029,9 +1032,10 @@ const MessagesList = memo(function MessagesList({
       }
     }
     flush();
-    return listed;
+    // Two or more "Go to conversation" lines in a row become one chip.
+    return collapseGotoLines(listed, (item) => silentChatItem(item, showToolCalls)) as ListedItem[];
     // eslint-disable-next-line react-hooks/exhaustive-deps -- the locale re-derives the turn labels
-  }, [messages, transcript, botId, botName, selfColor, locale, owners]);
+  }, [messages, transcript, botId, botName, selfColor, locale, owners, showToolCalls]);
   const windowIds = useMemo(() => new Set(messages.map((message) => message.id)), [messages]);
   const newestMessageId = messages.at(-1)?.id;
   let newestUserMessageId: string | undefined;
@@ -1052,7 +1056,11 @@ const MessagesList = memo(function MessagesList({
     <>
       {items.map((item, i) => {
         const edgeOf = (entry: ListedItem) =>
-          entry.kind === "voiceCall" ? voiceCallVisibleSpan(entry.messages, windowIds) : visibleEdge(entry);
+          entry.kind === "voiceCall"
+            ? voiceCallVisibleSpan(entry.messages, windowIds)
+            : entry.kind === "gotoGroup"
+              ? { first: entry.messages[0]!, last: entry.messages.at(-1)! }
+              : visibleEdge(entry);
         const hiddenRun = (entry: ListedItem) => entry.kind === "run" && !showToolCalls;
         let prev: Message | undefined;
         for (let j = i - 1; j >= 0; j--) {
@@ -1066,6 +1074,33 @@ const MessagesList = memo(function MessagesList({
         const divider = dividerAbove(
           item.kind === "message" ? [item.message] : item.kind === "exchange" ? item.run.messages : item.messages,
         );
+        if (item.kind === "gotoGroup") {
+          return (
+            <div key={item.id} className="contents">
+              {newDay && <TranscriptDate at={first.at} />}
+              {divider}
+              <div className="contents" data-mid={item.messages.find((message) => message.id === focusedId)?.id ?? item.messages[0]?.id}>
+                <GotoGroupChip
+                  group={item}
+                  bots={bots}
+                  groups={state.groups}
+                  showToolCalls={showToolCalls}
+                  focusedId={focusedId}
+                  onSelect={(target: GotoTarget) => {
+                    if (target.kind === "thread") {
+                      return openThread(dispatch, target.message.threadRef!, state, showThreads);
+                    }
+                    // Same rule as the lone line: another bot would leave this 1:1.
+                    if (!exchangeJumpStays(target.run.party.id, botId)) return false;
+                    const bot = bots.find((candidate) => candidate.id === target.run.party.id);
+                    if (!bot) return false;
+                    return openThread(dispatch, { botId: bot.id, threadId: bot.threadId }, state, showThreads);
+                  }}
+                />
+              </div>
+            </div>
+          );
+        }
         if (item.kind === "exchange") {
           return (
             <div key={item.run.id} className="contents">

@@ -7,7 +7,7 @@ const ORG = "https://sagax.example.test";
 const PNG = Buffer.concat([Buffer.from("89504e470d0a1a0a", "hex"), Buffer.from("avatar one")]);
 const PNG2 = Buffer.concat([Buffer.from("89504e470d0a1a0a", "hex"), Buffer.from("avatar two")]);
 const PERSON = "pr_11111111-1111-4111-8111-111111111111";
-const environments = (extra = {}) => ({ environments: [{ id: "org1", name: "GOX", origin: ORG, org: true }, { id: "home", name: "Home", origin: "https://home.example.test" }], activeId: "local", ...extra });
+const environments = (extra = {}) => ({ environments: [{ id: "org1", name: "Example", origin: ORG, org: true }, { id: "home", name: "Home", origin: "https://home.example.test" }], activeId: "local", ...extra });
 
 const answer = (status, body, type = "application/json") => ({
   ok: status >= 200 && status < 300,

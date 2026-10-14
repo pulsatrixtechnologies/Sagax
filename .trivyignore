@@ -1,0 +1,105 @@
+# OS packages Trivy reports as CRITICAL/HIGH with no FixedVersion in Debian
+# trixie. One CVE id per line, no wildcards. CI re-scans without this file
+# and fails when a listed id grows a FixedVersion, or after the review date.
+
+# Debian no-dsa. Review 2026-11-13
+CVE-2026-6653
+
+# Debian no-dsa. Review 2026-11-13
+CVE-2025-69720
+
+# Debian no-dsa. Review 2026-11-13
+CVE-2026-12064
+
+# Debian no-dsa. Review 2026-11-13
+CVE-2026-15308
+
+# Debian no-dsa. Review 2026-11-13
+CVE-2026-16742
+
+# Debian no-dsa. Review 2026-11-13
+CVE-2026-19445
+
+# Debian no-dsa. Review 2026-11-13
+CVE-2026-19553
+
+# Debian no-dsa. Review 2026-11-13
+CVE-2026-23949
+
+# Pas de correctif dans trixie. Review 2026-11-13
+CVE-2026-34980
+
+# Debian no-dsa. Review 2026-11-13
+CVE-2026-36849
+
+# Debian no-dsa. Review 2026-11-13
+CVE-2026-52490
+
+# Debian no-dsa. Review 2026-11-13
+CVE-2026-54369
+
+# Debian no-dsa. Review 2026-11-13
+CVE-2026-66046
+
+# Debian no-dsa. Review 2026-11-13
+CVE-2026-7210
+
+# Pas de correctif dans trixie. Review 2026-11-13
+CVE-2026-74860
+
+# Debian no-dsa. Review 2026-11-13
+CVE-2026-76642
+
+# Debian no-dsa. Review 2026-11-13
+CVE-2026-76956
+
+# Debian no-dsa. Review 2026-11-13
+CVE-2026-76957
+
+# Pas de correctif dans trixie. Review 2026-11-13
+CVE-2026-77214
+
+# Debian no-dsa. Review 2026-11-13
+CVE-2026-78408
+
+# Debian no-dsa. Review 2026-11-13
+CVE-2026-78409
+
+# Debian no-dsa. Review 2026-11-13
+CVE-2026-78410
+
+# Debian no-dsa. Review 2026-11-13
+CVE-2026-82049
+
+# Debian no-dsa. Review 2026-11-13
+CVE-2026-8458
+
+# Pas de correctif dans trixie. Review 2026-11-13
+CVE-2026-86138
+
+# Pas de correctif dans trixie. Review 2026-11-13
+CVE-2026-86139
+
+# Pas de correctif dans trixie. Review 2026-11-13
+CVE-2026-86140
+
+# Pas de correctif dans trixie. Review 2026-11-13
+CVE-2026-86142
+
+# Pas de correctif dans trixie. Review 2026-11-13
+CVE-2026-86143
+
+# Pas de correctif dans trixie. Review 2026-11-13
+CVE-2026-86144
+
+# Debian no-dsa. Review 2026-11-13
+CVE-2026-88806
+
+# Debian no-dsa. Review 2026-11-13
+CVE-2026-88807
+
+# Pas de correctif dans trixie. Review 2026-11-13
+CVE-2026-93990
+
+# Debian no-dsa. Review 2026-11-13
+CVE-2026-9538

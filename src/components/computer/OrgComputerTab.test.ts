@@ -64,7 +64,7 @@ describe("Computer tab on an organization server", () => {
       ...bridge(true, "computer"),
       desktops: [
         { id: "d1", name: "JeanChrophesMBP", platform: "darwin", online: true, busy: false, lastSeenAt: 1, capabilities: { localVm: true } },
-        { id: "d2", name: "GOX-PC-07", platform: "win32", online: true, busy: false, lastSeenAt: 5, capabilities: { localVm: true } },
+        { id: "d2", name: "office-PC-07", platform: "win32", online: true, busy: false, lastSeenAt: 5, capabilities: { localVm: true } },
         { id: "d3", name: "Old-Laptop", platform: "linux", online: false, busy: false, lastSeenAt: 9, capabilities: { localVm: true } },
         { id: "d4", name: "NoVm", platform: "darwin", online: true, busy: false, lastSeenAt: 3, capabilities: { localVm: false } },
       ],
@@ -81,13 +81,13 @@ describe("Computer tab on an organization server", () => {
     const markup = renderToStaticMarkup(createElement(OrgComputerTab, { bridge: two, place: "vm", computerOff: false, botName: "Luna" }));
     expect(markup).toContain('data-computer-picker=""');
     expect(markup).toContain(">Cloud<");
-    expect(markup).toContain(">GOX-PC-07<");
+    expect(markup).toContain(">office-PC-07<");
     expect(markup).toContain(">JeanChrophesMBP<");
     expect(markup).not.toContain("Old-Laptop");
     expect(markup).not.toContain(">NoVm<");
     // the bot works on the current computer: its chip is checked and dotted
-    expect(markup).toMatch(/aria-checked="true" data-computer-choice="desktop:d2"[^>]*title="GOX-PC-07: this bot works here"/);
-    expect(markup).toContain("Luna&#x27;s screen · GOX-PC-07");
+    expect(markup).toMatch(/aria-checked="true" data-computer-choice="desktop:d2"[^>]*title="office-PC-07: this bot works here"/);
+    expect(markup).toContain("Luna&#x27;s screen · office-PC-07");
     expect(markup).toContain('data-org-computer="user-desktop"');
   });
 

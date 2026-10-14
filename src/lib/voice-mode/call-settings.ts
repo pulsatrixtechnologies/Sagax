@@ -35,10 +35,10 @@ export interface CallSettings {
   fasterEndOfTurn: boolean;
   /** Advanced: talking while the bot works or speaks cancels that reply
    * and never stacks the next ones. Off: words said while it works join
-   * that turn (a steer). Default on for internal / TestFlight / dev. */
+   * that turn (a steer). Off by default on every channel. */
   fullDuplex: boolean;
-  /** Intent marker: a stored false without rev 2 is the old default, not
-   * a person turning the kill-switch off. */
+  /** Intent marker: a stored true without rev 3 is the 0.5.x default-on,
+   * not a person turning the switch on. */
   fullDuplexRev?: number;
 }
 

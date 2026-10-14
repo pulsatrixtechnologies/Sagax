@@ -4,7 +4,7 @@
 set -eu
 
 root=$(CDPATH= cd -- "$(dirname "$0")/../../.." && pwd)
-chart="$root/deploy/k8s/helm/sagax-sandboxes"
+chart="$root/deploy/k8s/helm/sandboxes"
 policy="$root/deploy/k8s/audit/policy.yaml"
 copy="$chart/files/audit-policy.yaml"
 
@@ -20,7 +20,7 @@ helm lint "$chart" -f "$chart/values-k3s.yaml"
 render() {
   out=$1
   shift
-  helm template sagax-sandboxes "$chart" "$@" > "$out"
+  helm template sandboxes "$chart" "$@" > "$out"
 }
 
 tmp=$(mktemp -d)
@@ -28,7 +28,7 @@ trap 'rm -rf "$tmp"' EXIT
 render "$tmp/default.yaml"
 render "$tmp/azure.yaml" -f "$chart/values-azure.yaml"
 render "$tmp/k3s.yaml" -f "$chart/values-k3s.yaml"
-helm template sagax-sandboxes "$chart" --set provisioner.enabled=true > "$tmp/provisioner.yaml"
+helm template sandboxes "$chart" --set provisioner.enabled=true > "$tmp/provisioner.yaml"
 
 for file in "$tmp/default.yaml" "$tmp/azure.yaml" "$tmp/k3s.yaml"; do
   for kind in Namespace ServiceAccount Role RoleBinding NetworkPolicy StorageClass ValidatingAdmissionPolicy ClusterPolicy Schedule; do

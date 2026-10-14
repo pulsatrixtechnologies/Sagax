@@ -1278,11 +1278,10 @@ describe("the two Advanced switches", () => {
 });
 
 describe("full-duplex conversation", () => {
-  it("is on by default in internal builds; an explicit kill-switch with rev 2 stays off", () => {
-    expect(DEFAULT_CALL_SETTINGS.fullDuplex).toBe(true);
-    expect(cleanCallSettings({ input: "auto", pause: "short" }).fullDuplex).toBe(true);
-    expect(cleanCallSettings({ fullDuplex: true, fullDuplexRev: 2 }).fullDuplex).toBe(true);
-    expect(cleanCallSettings({ fullDuplex: false, fullDuplexRev: 2 }).fullDuplex).toBe(false);
-    expect(cleanCallSettings({ fullDuplex: false }).fullDuplex).toBe(true);
+  it("is off by default; a person's choice under rev 3 persists", () => {
+    expect(DEFAULT_CALL_SETTINGS.fullDuplex).toBe(false);
+    expect(cleanCallSettings({ input: "auto", pause: "short" }).fullDuplex).toBe(false);
+    expect(cleanCallSettings({ fullDuplex: true, fullDuplexRev: 3 }).fullDuplex).toBe(true);
+    expect(cleanCallSettings({ fullDuplex: true, fullDuplexRev: 2 }).fullDuplex).toBe(false);
   });
 });

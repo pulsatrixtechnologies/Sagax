@@ -1,20 +1,10 @@
 name: iOS thread UI
 
 # The offline iPhone + iPad simulator suite from docs/verification/ios-threads.md.
-# It needs about 90 minutes of one macOS runner, and the account runs only five
-# macOS jobs at a time, so it is not part of every change's CI (ci.yml still
-# runs the Swift tests and the simulator build for iOS changes). It runs every
-# night, after main pushes that touch the app, and by hand from the Actions tab.
+# It needs about 90 minutes of one macOS runner, so it is not part of every
+# change's CI. macOS jobs run only by hand from the Actions tab.
 on:
   workflow_dispatch:
-  schedule:
-    - cron: "30 20 * * *"
-  push:
-    branches: [main]
-    paths:
-      - "ios/**"
-      - "scripts/verify-ios-thread-navigation-ci.sh"
-      - ".github/workflows/ios-thread-ui.yml"
 
 permissions:
   contents: read

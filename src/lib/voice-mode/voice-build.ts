@@ -1,9 +1,9 @@
-// Which builds hear full-duplex by default (issue #292). Internal,
-// TestFlight, Vite DEV and packaged Electron are ON so JC actually hears
-// it. A public App Store / SAGAX_PUBLIC_RELEASE channel stays OFF. The
-// Advanced toggle is the kill-switch either way.
+// Which builds hear full-duplex by default (issue #292). None: the
+// Advanced toggle turns it on, and the server honours it only with
+// SAGAX_VOICE_FULL_DUPLEX=1.
 
-export const FULL_DUPLEX_REV = 2;
+/** Rev 3: the "on" every 0.5.x build stored as its default is dropped. */
+export const FULL_DUPLEX_REV = 3;
 
 export interface VoiceBuildChannel {
   /** Vite DEV / unpackaged Electron */
@@ -14,11 +14,9 @@ export interface VoiceBuildChannel {
   publicRelease?: boolean;
 }
 
-/** Full-duplex is the call's default on every channel we ship today.
- * Public App Store is the only off-by-default channel. */
-export function defaultFullDuplex(channel: VoiceBuildChannel = {}): boolean {
-  if (channel.publicRelease) return false;
-  return true;
+/** Full-duplex is off by default on every channel. */
+export function defaultFullDuplex(_channel: VoiceBuildChannel = {}): boolean {
+  return false;
 }
 
 function envFlag(name: string): boolean {

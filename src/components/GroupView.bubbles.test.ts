@@ -52,7 +52,7 @@ function bubble(markup: string, text: string): string {
   return markup.slice(markup.lastIndexOf('class="', start), markup.indexOf('"', start));
 }
 
-const memberConfig = { viewer: { operator: false, principalId: JC, email: "jc@gox.ca", name: "JC", role: "member", canCreateBots: true, operatorName: "JC" } } as ConfigStatus;
+const memberConfig = { viewer: { operator: false, principalId: JC, email: "jc@example.com", name: "JC", role: "member", canCreateBots: true, operatorName: "JC" } } as ConfigStatus;
 
 beforeAll(() => vi.stubGlobal("window", {}));
 afterAll(() => vi.unstubAllGlobals());
@@ -115,7 +115,7 @@ describe("group chat bubbles", () => {
   });
 
   it("flips sides for the other viewer", () => {
-    const zackConfig = { viewer: { ...memberConfig.viewer!, principalId: ZACK, email: "zack@gox.ca", name: "Zachary Sellam" } } as ConfigStatus;
+    const zackConfig = { viewer: { ...memberConfig.viewer!, principalId: ZACK, email: "zack@example.com", name: "Zachary Sellam" } } as ConfigStatus;
     const markup = render(conversation.slice(0, 3), zackConfig);
     expect(rows(markup).map((row) => row.author)).toEqual(["person", "self", "self"]);
     expect(markup).toContain(">JC<");

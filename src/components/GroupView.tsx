@@ -11,6 +11,7 @@ import {
   useStore,
   formatTime,
   openNotificationTarget,
+  openThread,
   type Bot,
   type Group,
   type GroupDefaultResponder,
@@ -96,6 +97,8 @@ import { collapseBotExchanges, commIsBotDm, startsNewStretch, visibleEdge, type 
 import { foldCollapsedEntry, voiceCallPlan, voiceCallVisibleSpan } from "@/lib/voice-call-transcript";
 import { VoiceCallCard } from "./VoiceCallCard";
 import { BotExchangeChip, ExchangeColumnProvider, TranscriptDate, useExchangeColumn } from "./BotExchangeChip";
+import { GotoGroupChip } from "./GotoGroupChip";
+import { collapseGotoLines, type GotoGroup } from "@/lib/goto-lines";
 import { ActivityRun } from "./ActivityRun";
 import { CwActivityWidgets, CwWidgetView } from "./cw/CwWidgetView";
 import { useDesktopCapabilities, useCaptionChrome, useMacInsetChrome } from "./DesktopCapabilities";
@@ -125,7 +128,8 @@ import { personAvatarSrc } from "@/lib/profile-management";
 type RoomItem =
   | ActivityTranscriptItem
   | { kind: "exchange"; run: ExchangeRun }
-  | { kind: "voiceCall"; callId: string; messages: Message[] };
+  | { kind: "voiceCall"; callId: string; messages: Message[] }
+  | GotoGroup;
 
 /** One finished tool step in a room. Same pill the 1:1 chat uses, minus the
  * status glyph — a room reads as a conversation, not a build log. A chip
@@ -528,7 +532,10 @@ export const Transcript = memo(function Transcript({
       }
     }
     flush();
-    return listed;
+    // Two or more "Go to conversation" lines in a row become one chip. Hidden
+    // tool steps are already out; a folded run with Tool calls off draws nothing.
+    return collapseGotoLines(listed, (item) =>
+      item.kind === "run" && !showToolCalls && !item.messages.some((step) => step.tool?.widget)) as RoomItem[];
   }, [messages, showToolCalls, pairChannel, members, transcript, owners]);
   const windowIds = useMemo(() => new Set(messages.map((message) => message.id)), [messages]);
   // Seen by: each participant once, under the last line they have read.
@@ -605,6 +612,9 @@ export const Transcript = memo(function Transcript({
   const runs = useMemo(() => {
     const directory = people ?? NO_PEOPLE;
     const entries = items.map((item) => {
+      if (item.kind === "gotoGroup") {
+        return { first: item.messages[0]!, last: item.messages.at(-1)!, author: { kind: "none" as const, key: item.id } };
+      }
       if (item.kind === "exchange" || item.kind === "voiceCall") {
         const edge = item.kind === "voiceCall" ? voiceCallVisibleSpan(item.messages, windowIds) : visibleEdge(item);
         const key = item.kind === "exchange" ? `exchange:${item.run.id}` : `voice:${item.callId}`;
@@ -633,7 +643,11 @@ export const Transcript = memo(function Transcript({
     <>
       {items.map((item, i) => {
         const edgeOf = (entry: RoomItem) =>
-          entry.kind === "voiceCall" ? voiceCallVisibleSpan(entry.messages, windowIds) : visibleEdge(entry);
+          entry.kind === "voiceCall"
+            ? voiceCallVisibleSpan(entry.messages, windowIds)
+            : entry.kind === "gotoGroup"
+              ? { first: entry.messages[0]!, last: entry.messages.at(-1)! }
+              : visibleEdge(entry);
         const hiddenRun = (entry: RoomItem) => entry.kind === "run" && !showToolCalls;
         let prev: Message | undefined;
         for (let j = i - 1; j >= 0; j--) {
@@ -647,6 +661,26 @@ export const Transcript = memo(function Transcript({
         const divider = dividerAbove(
           item.kind === "message" ? [item.message] : item.kind === "exchange" ? item.run.messages : item.messages,
         );
+        if (item.kind === "gotoGroup") {
+          return (
+            <div key={item.id} className="contents">
+              {newDay && <TranscriptDate at={first.at} />}
+              {divider}
+              <div className="contents" data-mid={item.messages.find((message) => message.id === focusedId)?.id ?? item.messages[0]?.id}>
+                <GotoGroupChip
+                  group={item}
+                  bots={state.bots}
+                  groups={state.groups}
+                  showToolCalls={showToolCalls}
+                  focusedId={focusedId}
+                  // A room's exchange is read in this column, as its lone line is.
+                  onSelect={(target) =>
+                    target.kind === "thread" ? openThread(dispatch, target.message.threadRef!, state, showThreads) : false}
+                />
+              </div>
+            </div>
+          );
+        }
         if (item.kind === "exchange") {
           return (
             <div key={item.run.id} className="contents">

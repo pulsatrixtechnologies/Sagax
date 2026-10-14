@@ -204,7 +204,7 @@ test("the connector registers as the signed-in person and answers a job", async 
   const origin = `http://127.0.0.1:${server.address().port}`;
   const home = sandboxHome();
   const bridge = createDesktopBridge({
-    environment: () => ({ id: "org", name: "GOX", origin }), fetch: globalThis.fetch, cookieHeader: async () => "",
+    environment: () => ({ id: "org", name: "Example", origin }), fetch: globalThis.fetch, cookieHeader: async () => "",
     home, attachmentsDir: path.join(home, "tmp"), protectedPaths: [path.join(home, "app-data")], activityFile: path.join(home, "app-data", "bridge-activity.jsonl"),
     WebSocketImpl: null, hostname: "Ada-Mac", platform: "darwin", retryMs: 50,
   });
@@ -713,7 +713,7 @@ test("the connector sends a Local VM creation's progress to the server", async (
   const origin = `http://127.0.0.1:${server.address().port}`;
   const home = sandboxHome();
   const bridge = createDesktopBridge({
-    environment: () => ({ id: "org", name: "GOX", origin }), fetch: globalThis.fetch, cookieHeader: async () => "",
+    environment: () => ({ id: "org", name: "Example", origin }), fetch: globalThis.fetch, cookieHeader: async () => "",
     home, attachmentsDir: path.join(home, "tmp"), activityFile: path.join(home, "app-data", "bridge-activity.jsonl"),
     WebSocketImpl: null, retryMs: 50,
     localVm: vmFor(fakeRuntime({ image: true }), { confirmCreate: async () => true }),

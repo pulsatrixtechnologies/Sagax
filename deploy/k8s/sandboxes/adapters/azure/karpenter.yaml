@@ -4,7 +4,7 @@
 apiVersion: karpenter.azure.com/v1beta1
 kind: AKSNodeClass
 metadata:
-  name: sagax-sandboxes
+  name: sandboxes
 spec:
   imageFamily: Ubuntu
   osDiskSizeGB: 64
@@ -15,15 +15,15 @@ spec:
 apiVersion: karpenter.sh/v1
 kind: NodePool
 metadata:
-  name: sagax-sandboxes
+  name: sandboxes
 spec:
   template:
     metadata:
       labels:
-        sagax.pulsatrix.ca/pool: sandboxes
+        sagax.io/pool: sandboxes
     spec:
       taints:
-        - key: sagax.pulsatrix.ca/pool
+        - key: sagax.io/pool
           value: sandboxes
           effect: NoSchedule
       expireAfter: 720h
@@ -44,9 +44,9 @@ spec:
       nodeClassRef:
         group: karpenter.azure.com
         kind: AKSNodeClass
-        name: sagax-sandboxes
-  # 4 vCPU matches one Standard_D4ps_v6, the most the 2026-10-12 quota
-  # leaves beside the GOX VM. Raise it only in a reviewed change record.
+        name: sandboxes
+  # 4 vCPU matches one <VM_SIZE>, the most the 2026-10-12 quota
+  # leaves beside the production VM. Raise it only in a reviewed change record.
   limits:
     cpu: "4"
     memory: 16Gi

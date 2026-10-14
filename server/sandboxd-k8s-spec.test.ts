@@ -28,7 +28,7 @@ const key = sandboxKeyForPrincipal("default", "pr_00000000-0000-4000-8000-000000
 
 function k8sConfig(): K8sSandboxConfig {
   return {
-    namespace: "sagax-sandboxes",
+    namespace: "sandboxes",
     storageClass: "encrypted",
     registry: REGISTRY,
     requireDigest: true,
@@ -90,7 +90,7 @@ describe("kubernetes config guards", () => {
   it("requires the attestations, a registry, and refuses a resolver inside the deny list", () => {
     const sandbox = sandboxdConfigFromEnv(env());
     const parsed = kubernetesSandboxConfigFromEnv(env(), sandbox);
-    expect(parsed.k8s.namespace).toBe("sagax-sandboxes");
+    expect(parsed.k8s.namespace).toBe("sandboxes");
     expect(parsed.k8s.requireDigest).toBe(true);
     expect(parsed.guards.networkPolicyAttested).toBe(true);
     expect(() => kubernetesSandboxConfigFromEnv(env({ SAGAX_SANDBOX_K8S_SECRETS_ENCRYPTED: "false" }), sandbox)).toThrow(/SECRETS_ENCRYPTED/);
@@ -137,7 +137,7 @@ describe("network policy", () => {
     expect(spec.egress[0]!.to[0]!.ipBlock.cidr).toBe("0.0.0.0/0");
     expect(spec.egress[0]!.to[0]!.ipBlock.except).toEqual([...DEFAULT_EGRESS_DENY]);
     expect(JSON.stringify(policy)).not.toContain("::");
-    const deny = defaultDenyNetworkPolicy("sagax-sandboxes", "default");
+    const deny = defaultDenyNetworkPolicy("sandboxes", "default");
     expect((deny.spec as { podSelector: object; ingress?: unknown }).podSelector).toEqual({});
     expect((deny.spec as { ingress?: unknown }).ingress).toBeUndefined();
     expect((deny.metadata as { labels: Record<string, string> }).labels["com.pulsatrix.sagax.sandbox"]).toBe("egress");

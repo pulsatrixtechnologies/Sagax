@@ -96,7 +96,6 @@
   "approval.action.confirm": "Підтвердити",
   "approval.action.allowOnce": "Дозволити раз",
   "approval.held.native": "Провайдер вимагає вашого погодження на цю дію.",
-  "approval.held.safety": "Перевірка безпеки Sagax просить вас підтвердити цю дію.",
   "approval.held.sandbox": "Це змінює пісочницю провайдера, тому лише Повний доступ може погодити це автоматично.",
   "approval.held.undeliveredFull": "Повний доступ не зміг доставити це погодження.",
   "approval.held.undelivered": "«Погоджувати за мене» не змогло відповісти на це.",
@@ -2329,7 +2328,6 @@
   "approval.rule.added": "Додано до ваших правил дозволів",
   "approval.rule.edit": "Редагувати правило",
   "approval.details.viewFull": "Переглянути повний запит",
-  "approval.held.gate": "Цей бот питає перед будь-якою дією, що щось змінює. «Завжди дозволяти» припиняє питання для цієї дії.",
   "approval.details.hideFull": "Сховати повний запит",
   "attach.imageUnavailable": "Зображення недоступне",
   "attach.imageOutsideWorkspace": "Це зображення поза робочою папкою цього чату, тому його не можна показати тут",
@@ -2464,5 +2462,12 @@
   "settings.sendKey.subtitle": "Оберіть Shift+Enter або {key}, щоб Enter починав новий рядок, — зручно, коли метод введення підтверджує текст клавішею Enter, як-от під час введення японською. {key} надсилає за будь-якого вибору. Лише на цьому пристрої.",
   "computer.files.homeFolder": "Домашня папка",
   "computer.files.changeDefaultFolder": "Змінити типову папку",
-  "computer.files.pinnedFolderHint": "Ця розмова зберігає свою поточну папку. Змініть типову папку для нових розмов."
+  "computer.files.pinnedFolderHint": "Ця розмова зберігає свою поточну папку. Змініть типову папку для нових розмов.",
+  "chat.gotoGroup.agents": "Агентів: {count}",
+  "chat.gotoGroup.agentsOne": "1 агент",
+  "chat.gotoGroup.aria": "Розмов: {count}, з {agents}: показати список",
+  "chat.gotoGroup.count": "Розмов: {count}",
+  "chat.gotoGroup.menu": "Розмови",
+  "chat.gotoGroup.with": "Розмов: {count}, з",
+  "voiceMode.call.fullDuplexHelp": "Говоріть поверх бота будь-коли. Мовлення зупиняє поточну озвучену відповідь. Нова тема, поки він думає, лишає цю роботу в ході. Вимкнено за замовчуванням. Перемикач не діє, доки на сервері немає SAGAX_VOICE_FULL_DUPLEX=1. Увімкніть, щоб перервати; залиште вимкненим, щоб слова під час роботи долучалися до цього ходу."
 }

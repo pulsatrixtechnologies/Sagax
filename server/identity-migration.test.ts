@@ -10,30 +10,30 @@ const fresh = () => new PrincipalRegistry({ path: join(mkdtempSync(join(tmpdir()
 describe("identity migration", () => {
   it("maps emails and local-owner to principals and leaves principal ids alone", () => {
     const registry = fresh();
-    const local = registry.localOperator("jc@gox.ca");
+    const local = registry.localOperator("jc@example.com");
     expect(principalIdFor("local-owner", registry)).toBe(local.id);
-    expect(principalIdFor("JC@gox.ca", registry)).toBe(local.id);
-    const zach = principalIdFor("zach@gox.ca", registry);
+    expect(principalIdFor("JC@example.com", registry)).toBe(local.id);
+    const zach = principalIdFor("zach@example.com", registry);
     expect(zach).toMatch(/^pr_/);
     expect(principalIdFor(zach, registry)).toBe(zach);
   });
 
   it("rewrites org owner, humanIds, bot owners, grants and pairing sessions once", () => {
     const registry = fresh();
-    const local = registry.localOperator("jc@gox.ca");
+    const local = registry.localOperator("jc@example.com");
     const input = {
-      org: { ownerUserId: "jc@gox.ca" },
-      groups: [{ id: "g1", humanIds: ["jc@gox.ca", "zach@gox.ca"] }, { id: "g2" }],
-      bots: [{ id: "b1", ownerUserId: "local-owner", directGrants: ["zach@gox.ca"] }, { id: "b2" }],
+      org: { ownerUserId: "jc@example.com" },
+      groups: [{ id: "g1", humanIds: ["jc@example.com", "zach@example.com"] }, { id: "g2" }],
+      bots: [{ id: "b1", ownerUserId: "local-owner", directGrants: ["zach@example.com"] }, { id: "b2" }],
       sessions: [
         { id: "s-phone", scopes: ["admin", "client"] },
         { id: "s-kiosk", scopes: ["client"] },
-        { id: "s-zach", email: "zach@gox.ca", userId: "cp_7", scopes: ["client"] },
+        { id: "s-zach", email: "zach@example.com", userId: "cp_7", scopes: ["client"] },
       ],
       registry,
     };
     const out = migrateIdentityRefs(input);
-    const zach = registry.byEmail("zach@gox.ca")!.id;
+    const zach = registry.byEmail("zach@example.com")!.id;
     expect(out.orgOwner).toBe(local.id);
     expect(out.groups).toEqual([{ id: "g1", humanIds: [local.id, zach] }]);
     expect(out.bots).toEqual([{ id: "b1", ownerUserId: local.id, directGrants: [zach] }]);
@@ -48,7 +48,7 @@ describe("identity migration", () => {
       org: { ownerUserId: out.orgOwner! },
       groups: [{ id: "g1", humanIds: out.groups[0]!.humanIds }, { id: "g2" }],
       bots: [{ id: "b1", ownerUserId: local.id, directGrants: [zach] }, { id: "b2" }],
-      sessions: [{ id: "s-phone", principalId: local.id }, { id: "s-zach", email: "zach@gox.ca", principalId: zach }],
+      sessions: [{ id: "s-phone", principalId: local.id }, { id: "s-zach", email: "zach@example.com", principalId: zach }],
       registry,
     });
     expect(again).toEqual({ groups: [], bots: [], sessions: [], promoted: [] });
@@ -57,7 +57,7 @@ describe("identity migration", () => {
 
   it("skips sessions with userId but no email (incomplete migration state)", () => {
     const registry = fresh();
-    registry.localOperator("jc@gox.ca");
+    registry.localOperator("jc@example.com");
     const input = {
       org: null,
       groups: [],
@@ -74,18 +74,18 @@ describe("identity migration", () => {
 
   it("maps only the literal local-owner to the operator and drops blank refs", () => {
     const registry = fresh();
-    const local = registry.localOperator("jc@gox.ca");
+    const local = registry.localOperator("jc@example.com");
     expect(principalIdFor("", registry)).toBe("");
     expect(principalIdFor("   ", registry)).toBe("");
     expect(principalIdFor("Local-Owner", registry)).toBe(local.id);
     const out = migrateIdentityRefs({
       org: null,
-      groups: [{ id: "g1", humanIds: ["", "  ", "zach@gox.ca"] }],
-      bots: [{ id: "b1", ownerUserId: "local-owner", directGrants: ["", "zach@gox.ca", " "] }],
+      groups: [{ id: "g1", humanIds: ["", "  ", "zach@example.com"] }],
+      bots: [{ id: "b1", ownerUserId: "local-owner", directGrants: ["", "zach@example.com", " "] }],
       sessions: [],
       registry,
     });
-    const zach = registry.byEmail("zach@gox.ca")!.id;
+    const zach = registry.byEmail("zach@example.com")!.id;
     expect(out.groups).toEqual([{ id: "g1", humanIds: [zach] }]);
     expect(out.bots).toEqual([{ id: "b1", ownerUserId: local.id, directGrants: [zach] }]);
   });
@@ -93,7 +93,7 @@ describe("identity migration", () => {
   it("creates no principal for a ref that is not an account email", () => {
     const registry = fresh();
     registry.localOperator();
-    const huge = `${"a".repeat(400)}@gox.ca`;
+    const huge = `${"a".repeat(400)}@example.com`;
     expect(principalIdFor(huge, registry)).toBe(huge);
     expect(principalIdFor("bob", registry)).toBe("bob");
     const out = migrateIdentityRefs({ org: null, groups: [], bots: [], sessions: [{ id: "s", email: huge, scopes: ["client"] }], registry });
@@ -103,10 +103,10 @@ describe("identity migration", () => {
 
   it("applies the changes and names each promoted pairing session", () => {
     const registry = fresh();
-    const local = registry.localOperator("jc@gox.ca");
+    const local = registry.localOperator("jc@example.com");
     const lines: string[] = [];
     const patched: unknown[] = [];
-    let owner = "jc@gox.ca";
+    let owner = "jc@example.com";
     applyIdentityMigration({
       registry,
       org: { ownerUserId: owner },

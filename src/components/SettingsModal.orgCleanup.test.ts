@@ -56,7 +56,7 @@ const render = async () => {
   const { SettingsModal } = await import("./SettingsModal");
   return renderToStaticMarkup(createElement(SettingsModal));
 };
-const ORG = { org: { name: "GOX", identity: { kind: "perspicax" as const, issuer: "https://px.example.test" } } };
+const ORG = { org: { name: "Example", identity: { kind: "perspicax" as const, issuer: "https://px.example.test" } } };
 
 describe("Settings on an organization server", () => {
   it("leaves Email out on an organization server and keeps it on a solo server", async () => {

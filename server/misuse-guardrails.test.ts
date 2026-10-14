@@ -151,10 +151,10 @@ describe("sandbox hard limits", () => {
     expect(DEFAULT_EGRESS_DENY).toContain("169.254.0.0/16");
     expect(DEFAULT_EGRESS_DENY).toEqual(expect.arrayContaining(["10.0.0.0/8", "127.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"]));
     expect(DEFAULT_SANDBOX_LIMITS).toMatchObject({ memoryBytes: 1536 * 1024 * 1024, nanoCpus: 1_000_000_000, pidsLimit: 512 });
-    const key = sandboxKeyForPrincipal("gox", "pr_00000000-0000-4000-8000-000000000001");
+    const key = sandboxKeyForPrincipal("test", "pr_00000000-0000-4000-8000-000000000001");
     const config = sandboxdConfigFromEnv({
       SAGAX_SANDBOX_IMAGE: "sagax-sandbox:test",
-      SAGAX_SANDBOX_INSTANCE: "gox",
+      SAGAX_SANDBOX_INSTANCE: "test",
     });
     const spec = sandboxContainerSpec(config, key) as { HostConfig: Record<string, unknown> };
     expect(sandboxIsolationProblems(spec, key)).toEqual([]);

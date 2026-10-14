@@ -2724,7 +2724,7 @@ describe("RoutineManager", () => {
     expect(h.failed).toHaveLength(1);
   });
 
-  // rpc_error and auth_required: GOX 2026-10-08, a Grok 402 showed as a
+  // rpc_error and auth_required: production 2026-10-08, a Grok 402 showed as a
   // bare "Failed: rpc_error" in the routine modal. "quota" and
   // "stop_sequence": an account past its weekly limit (Oct 9-10).
   it.each(["error", "tool_error", "rpc_error", "auth_required", "quota", "stop_sequence"])(

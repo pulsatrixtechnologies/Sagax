@@ -1,11 +1,11 @@
-# Weekday warm window. America/Toronto follows the GOX daily cycle (quiet
+# Weekday warm window. America/Toronto follows the production daily cycle (quiet
 # at night and on weekends). KEDA owns this deployment's replicas; do not
 # also run a CronJob against it.
 apiVersion: keda.sh/v1alpha1
 kind: ScaledObject
 metadata:
   name: sagax-sandbox-warm
-  namespace: sagax-sandboxes
+  namespace: sandboxes
 spec:
   scaleTargetRef:
     name: sagax-sandbox-capacity

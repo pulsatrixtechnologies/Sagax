@@ -6,7 +6,7 @@ import XCTest
 @testable import CompanionCore
 
 final class PushTests: XCTestCase {
-    private let client = CompanionClient(connection: Connection(name: "GOX", host: "bot.example.test", port: 443), token: "t")
+    private let client = CompanionClient(connection: Connection(name: "Example", host: "bot.example.test", port: 443), token: "t")
 
     func testTheRegistrationIsWhatTheServerExpects() throws {
         let token = PushToken.hex(Data([0x00, 0xAB, 0x10, 0xFF]))

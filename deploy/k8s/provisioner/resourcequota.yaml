@@ -5,7 +5,7 @@ apiVersion: v1
 kind: ResourceQuota
 metadata:
   name: sagax-sandbox-quota
-  namespace: sagax-sandboxes
+  namespace: sandboxes
 spec:
   hard:
     pods: "10"

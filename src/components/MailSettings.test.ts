@@ -14,10 +14,10 @@ function view(fields: Partial<Record<MailField, MailFieldView>>, extra: Partial<
 
 const twilio = view({
   provider: { source: "saved", serverDefault: true, value: "twilio", serverValue: "smtp" },
-  from: { source: "server", serverDefault: true, value: "bot@gox.ca", serverValue: "bot@gox.ca" },
+  from: { source: "server", serverDefault: true, value: "bot@example.com", serverValue: "bot@example.com" },
   "twilio.apiKeySid": { source: "saved", serverDefault: false, value: "SKfakesid" },
   "twilio.apiKeySecret": { source: "saved", serverDefault: false, configured: true },
-}, { ready: true, testAddress: "boss@gox.ca" });
+}, { ready: true, testAddress: "boss@example.com" });
 
 function render(props: Partial<MailSettingsFormProps> = {}): string {
   return renderToStaticMarkup(createElement(MailSettingsForm, {
@@ -62,7 +62,7 @@ describe("Settings > Email", () => {
     const html = render();
     expect(html).toContain("Ready");
     expect(html).toContain("Send a test");
-    expect(html).toContain("boss@gox.ca");
+    expect(html).toContain("boss@example.com");
     expect(html).toContain('placeholder="Sagax"');
   });
 
@@ -98,8 +98,8 @@ describe("Settings > Email", () => {
 
 describe("the change Settings > Email sends", () => {
   it("sends only edited fields, clears a plain field with null, and skips an empty secret", () => {
-    expect(mailSettingsPatch({ from: "bot@gox.ca", fromName: "", "smtp.port": "2525", "smtp.password": "", "twilio.apiKeySecret": "fake-new" })).toEqual({
-      from: "bot@gox.ca",
+    expect(mailSettingsPatch({ from: "bot@example.com", fromName: "", "smtp.port": "2525", "smtp.password": "", "twilio.apiKeySecret": "fake-new" })).toEqual({
+      from: "bot@example.com",
       fromName: null,
       "smtp.port": 2525,
       "twilio.apiKeySecret": "fake-new",

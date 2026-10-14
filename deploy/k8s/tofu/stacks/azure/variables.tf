@@ -21,8 +21,33 @@ variable "name" {
 }
 
 variable "location" {
-  type    = string
-  default = "canadacentral"
+  type        = string
+  description = "Azure region. Required. No default: set it in terraform.tfvars from the change record."
+
+  validation {
+    condition     = can(regex("^[a-z]+[a-z0-9]*$", var.location))
+    error_message = "location must be an Azure region name: a lowercase letter, then lowercase letters or digits (for example <region>)."
+  }
+}
+
+variable "system_vm_size" {
+  type        = string
+  description = "Arm64 system pool SKU. Required. No default: set it in terraform.tfvars from the change record."
+
+  validation {
+    condition     = can(regex("^Standard_[A-Za-z0-9_]+$", var.system_vm_size))
+    error_message = "system_vm_size must be an Azure VM SKU of the form Standard_ followed by letters, digits or underscores."
+  }
+}
+
+variable "azure_vm_size" {
+  type        = string
+  description = "Sandbox pool SKU. Required. No default: set it in terraform.tfvars from the change record."
+
+  validation {
+    condition     = can(regex("^Standard_[A-Za-z0-9_]+$", var.azure_vm_size))
+    error_message = "azure_vm_size must be an Azure VM SKU of the form Standard_ followed by letters, digits or underscores."
+  }
 }
 
 variable "admin_group_object_ids" {

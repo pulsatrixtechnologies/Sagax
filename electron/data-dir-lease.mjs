@@ -94,7 +94,7 @@ function ownerPredatesThisBoot(owner) {
 }
 
 /**
- * Linux process identity beyond the pid (2026-10-13, GOX: a container killed
+ * Linux process identity beyond the pid (2026-10-13, production: a container killed
  * mid-run left a lease naming pid 7; the restarted container's own pid 7 was
  * alive again, so every start failed with DataDirLeaseError and the container
  * restart-looped). The boot id cannot tell those apart: every container on a

@@ -75,13 +75,13 @@ describe("marketplace policy", () => {
     expect(marketplaceAllowed({ mode: "any" }, parseGitSource("https://gitlab.com/x/y"))).toBe(true);
   });
   it("restricts to owner/repo, owner/* and exact URLs", () => {
-    const policy = { mode: "list" as const, allow: ["pulsatrixtechnologies/marketplace", "goxtechnologies/*", "https://gitlab.com/acme/plugins"] };
+    const policy = { mode: "list" as const, allow: ["pulsatrixtechnologies/marketplace", "example-org/*", "https://gitlab.com/acme/plugins"] };
     expect(marketplaceAllowed(policy, parseGitSource("PulsatrixTechnologies/marketplace"))).toBe(true);
-    expect(marketplaceAllowed(policy, parseGitSource("goxtechnologies/anything"))).toBe(true);
+    expect(marketplaceAllowed(policy, parseGitSource("example-org/anything"))).toBe(true);
     expect(marketplaceAllowed(policy, parseGitSource("https://gitlab.com/acme/plugins.git"))).toBe(false);
     expect(marketplaceAllowed(policy, parseGitSource("https://gitlab.com/acme/plugins"))).toBe(true);
     expect(marketplaceAllowed(policy, parseGitSource("evil/marketplace"))).toBe(false);
-    expect(normalizePolicyEntry("GOX/*")).toBe("gox/*");
+    expect(normalizePolicyEntry("Example/*")).toBe("example/*");
   });
 });
 

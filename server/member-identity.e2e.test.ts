@@ -21,7 +21,7 @@ const PORT = await freePortBlock([0, 1]);
 const BASE = `http://127.0.0.1:${PORT}`;
 const posixOnly = describe.skipIf(process.platform === "win32");
 const OWNER_NAME = "Jean-Christophe Proulx";
-const OWNER_EMAIL = "jc@gox.ca";
+const OWNER_EMAIL = "jc@example.com";
 const OWNER_ABOUT = "private note about the operator";
 const ZARA = "zara@example.test";
 const MAX = "max@example.test";

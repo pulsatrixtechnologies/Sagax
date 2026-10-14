@@ -91,6 +91,19 @@ describe("t", () => {
     }
   });
 
+  it("fullDuplexHelp is off by default, names the server flag, and ships in every language", () => {
+    // Rev 3 turned the Advanced switch off. A leftover "on by default" in a
+    // partial pack, or a help line that omits the server kill switch, would
+    // tell the person the toggle still runs duplex on its own.
+    const onByDefault = /on by default here|activado por defecto aqu[ií]|activé par défaut ici|aktiviert hier standardmäßig|ligado por padrão aqui|デフォルトではオン|默认开启|預設開啟|за замовчуванням увімкнен/i;
+    for (const { code } of localeChoices) {
+      const help = locales[code]?.["voiceMode.call.fullDuplexHelp"];
+      expect(help, `${code}: missing voiceMode.call.fullDuplexHelp`).toBeTruthy();
+      expect(help, code).toContain("SAGAX_VOICE_FULL_DUPLEX=1");
+      expect(help, code).not.toMatch(onByDefault);
+    }
+  });
+
   it("ships exactly one JSON catalog for every picker language", () => {
     const files = Object.keys(import.meta.glob("../locales/*.json", { eager: true }))
       .map((path) => path.split("/").at(-1))

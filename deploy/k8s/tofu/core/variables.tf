@@ -8,9 +8,19 @@ variable "name" {
   }
 }
 
+variable "azure_vm_size" {
+  type        = string
+  description = "Azure VM SKU for the sandbox pool. Required. No default: the Azure stack sets it from terraform.tfvars. Other stacks pass a dummy SKU that matches the same format so this module stays shareable."
+
+  validation {
+    condition     = can(regex("^Standard_[A-Za-z0-9_]+$", var.azure_vm_size))
+    error_message = "azure_vm_size must be an Azure VM SKU of the form Standard_ followed by letters, digits or underscores."
+  }
+}
+
 variable "timezone" {
   type        = string
-  description = "IANA timezone for the warm-node window. America/Toronto matches the GOX daytime."
+  description = "IANA timezone for the warm-node window. America/Toronto matches the production daytime."
   default     = "America/Toronto"
 }
 
@@ -50,7 +60,7 @@ variable "warm_nodes_night" {
 
 variable "max_nodes" {
   type        = number
-  description = "Upper bound of the sandbox pool. Canada Centre's 10 vCPU quota needs a raise before this can be large."
+  description = "Upper bound of the sandbox pool. <REGION>'s 10 vCPU quota needs a raise before this can be large."
   default     = 4
 
   validation {

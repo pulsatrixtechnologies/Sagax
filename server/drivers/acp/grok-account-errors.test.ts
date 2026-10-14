@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { classifyGrokError, describeGrokAccountError } from "./grok.ts";
 
 describe("Grok Build account refusals", () => {
-  it("reads xAI's 402 inside a JSON-RPC internal error as no credit left (GOX, grok 1.0.50, 2026-10-08)", () => {
+  it("reads xAI's 402 inside a JSON-RPC internal error as no credit left (production, grok 1.0.50, 2026-10-08)", () => {
     const recorded = {
       code: -32603,
       message: "Internal error",

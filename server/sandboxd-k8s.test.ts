@@ -92,7 +92,7 @@ function memoryCluster(): { client: K8sClient; objects: Map<string, Obj> } {
       return null;
     },
   };
-  objects.set("/api/v1/namespaces/sagax-sandboxes", { metadata: { name: "sagax-sandboxes" } });
+  objects.set("/api/v1/namespaces/sandboxes", { metadata: { name: "sandboxes" } });
   objects.set("/apis/storage.k8s.io/v1/storageclasses/encrypted", {
     metadata: { name: "encrypted", annotations: {} },
     parameters: { encrypted: "true" },
@@ -141,7 +141,7 @@ describe("kubernetes sandbox lifecycle", () => {
     const kinds = [...objects.values()].map((obj) => obj.kind);
     expect(kinds).toContain("NetworkPolicy");
     expect(kinds).not.toContain("Pod");
-    expect(objects.has("/apis/networking.k8s.io/v1/namespaces/sagax-sandboxes/networkpolicies/sagax-default-deny")).toBe(true);
+    expect(objects.has("/apis/networking.k8s.io/v1/namespaces/sandboxes/networkpolicies/sagax-default-deny")).toBe(true);
   });
 
   it("creates one pod and one claim, pauses without releasing the slot, then removes them", async () => {
@@ -150,8 +150,8 @@ describe("kubernetes sandbox lifecycle", () => {
     await service.installEgressPolicy();
     expect((await service.ensure(person)).state).toBe("running");
     const names = sandboxNames(person);
-    const podPath = `/api/v1/namespaces/sagax-sandboxes/pods/${names.container}`;
-    const claimPath = `/api/v1/namespaces/sagax-sandboxes/persistentvolumeclaims/${names.volume}`;
+    const podPath = `/api/v1/namespaces/sandboxes/pods/${names.container}`;
+    const claimPath = `/api/v1/namespaces/sandboxes/persistentvolumeclaims/${names.volume}`;
     expect(objects.has(podPath)).toBe(true);
     expect(objects.has(claimPath)).toBe(true);
     expect((await service.pause(person)).state).toBe("paused");
@@ -177,7 +177,7 @@ describe("kubernetes sandbox lifecycle", () => {
     const { service, objects, api, k8s, auditFile } = harness(dir);
     await service.installEgressPolicy();
     const names = sandboxNames(person);
-    objects.set(`/api/v1/namespaces/sagax-sandboxes/pods/${names.container}`, {
+    objects.set(`/api/v1/namespaces/sandboxes/pods/${names.container}`, {
       kind: "Pod",
       metadata: {
         name: names.container,
@@ -186,7 +186,7 @@ describe("kubernetes sandbox lifecycle", () => {
       status: { phase: "Running" },
     });
     await expect(service.ensure(person)).rejects.toMatchObject({ status: 409, code: "conflict" });
-    objects.delete(`/api/v1/namespaces/sagax-sandboxes/pods/${names.container}`);
+    objects.delete(`/api/v1/namespaces/sandboxes/pods/${names.container}`);
     expect(await api.imageExists("sagax-sandbox:local")).toBe(false);
     const storage = objects.get(`/apis/storage.k8s.io/v1/storageclasses/${k8s.storageClass}`)!;
     storage.parameters = {};

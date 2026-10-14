@@ -4,15 +4,15 @@
 apiVersion: karpenter.sh/v1
 kind: NodePool
 metadata:
-  name: sagax-sandboxes
+  name: sandboxes
 spec:
   template:
     metadata:
       labels:
-        sagax.pulsatrix.ca/pool: sandboxes
+        sagax.io/pool: sandboxes
     spec:
       taints:
-        - key: sagax.pulsatrix.ca/pool
+        - key: sagax.io/pool
           value: sandboxes
           effect: NoSchedule
       expireAfter: 720h
@@ -30,7 +30,7 @@ spec:
       nodeClassRef:
         group: karpenter.k8s.sagax.invalid
         kind: NodeClass
-        name: sagax-sandboxes
+        name: sandboxes
   limits:
     cpu: "16"
     memory: 64Gi
