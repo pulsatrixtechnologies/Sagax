@@ -251,17 +251,9 @@ final class TeamMapPeopleUITests: XCTestCase {
         XCTAssertFalse(app.staticTexts["person-role"].exists)
         let teams = app.descendants(matching: .any).matching(identifier: "person-teams").firstMatch
         XCTAssertTrue(teams.label.contains("Service Desk (manager)"), "teams: \(teams.label)")
-        // already talking: the conversation closes (never hidden, #219)
-        let close = app.buttons["person-close-conversation"]
-        XCTAssertTrue(close.exists)
-        close.tap()
-        try eventually("the conversation is closed in the synced preferences") { try hiddenPeople().contains(sam.lowercased()) }
-        XCTAssertTrue(waitForDisappearance(close))
-        // Message reopens it
-        let message = app.buttons["person-message"]
-        XCTAssertTrue(message.waitForExistence(timeout: 5))
-        message.tap()
-        try eventually("the conversation is open again") { try !hiddenPeople().contains(sam.lowercased()) }
+        // the sheet offers Message only, no Close conversation (JC 2026-10-14)
+        XCTAssertFalse(app.buttons["person-close-conversation"].exists)
+        XCTAssertTrue(app.buttons["person-message"].waitForExistence(timeout: 5))
     }
 
     @MainActor

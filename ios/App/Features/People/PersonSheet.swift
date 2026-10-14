@@ -143,7 +143,7 @@ struct PersonSheetContent: View {
     /// PersonPanel.tsx's header (#219): the name, then their title and
     /// points, then their label (editable by them, an admin or their team's
     /// manager), the role line only for an admin or a disabled account, then
-    /// Message and Close conversation.
+    /// Message (no Close conversation: JC 2026-10-14, as on desktop #469).
     private func header(_ model: PersonSheetModel) -> some View {
         VStack(spacing: 6) {
             PersonAvatar(initials: model.initials, size: 88, presenceId: personId)
@@ -188,19 +188,6 @@ struct PersonSheetContent: View {
                     .tint(Theme.textPrimary)
                     .disabled(people.opening)
                     .accessibilityIdentifier("person-message")
-                }
-                // #219: an open conversation closes; a closed one only
-                // offers Message
-                if let room = model.directRoom,
-                   !sidebarPrefs.prefs.hidden.keys.contains(SidebarHidden.groupKey(room, viewerId: session.roomViewer.actorId)) {
-                    Button {
-                        sidebarPrefs.hide(session, room: room)
-                    } label: {
-                        Label(String(localized: "Close conversation"), systemImage: "xmark")
-                    }
-                    .buttonStyle(.bordered)
-                    .tint(Theme.textPrimary)
-                    .accessibilityIdentifier("person-close-conversation")
                 }
             }
             .padding(.top, 10)
