@@ -8,6 +8,16 @@ variable "name" {
   }
 }
 
+variable "azure_vm_size" {
+  type        = string
+  description = "Azure VM SKU for the sandbox pool. Required. No default: the Azure stack sets it from terraform.tfvars. Other stacks pass a dummy SKU that matches the same format so this module stays shareable."
+
+  validation {
+    condition     = can(regex("^Standard_[A-Za-z0-9_]+$", var.azure_vm_size))
+    error_message = "azure_vm_size must be an Azure VM SKU of the form Standard_ followed by letters, digits or underscores."
+  }
+}
+
 variable "timezone" {
   type        = string
   description = "IANA timezone for the warm-node window. America/Toronto matches the production daytime."

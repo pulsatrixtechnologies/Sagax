@@ -3,7 +3,12 @@
 enabled                 = false
 production              = false
 subscription_id         = "00000000-0000-0000-0000-000000000000"
+# location, system_vm_size and azure_vm_size have no defaults. Replace the
+# placeholders with values from the change record before plan. Placeholders
+# fail the format checks (Azure region ^[a-z]+[a-z0-9]*$, SKU ^Standard_[A-Za-z0-9_]+$).
 location                = "<REGION>"
+system_vm_size          = "<VM_SIZE>"
+azure_vm_size           = "<VM_SIZE>"
 # Prefix for Azure names (the cluster is "${name}-aks"). Use a name that is
 # not a live cluster.
 name                    = "example"

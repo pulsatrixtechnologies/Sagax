@@ -127,8 +127,8 @@ resource "azurerm_kubernetes_cluster_node_pool" "sandboxes" {
 
   lifecycle {
     precondition {
-      condition     = length(var.pool.azure_vm_size) > 0 && var.pool.warm_nodes_night == 0
-      error_message = "The sandbox pool azure_vm_size must be set (<VM_SIZE> in the change record) and its autoscaler minimum is the night value, 0. One daytime node is the Helm warm pod."
+      condition     = can(regex("^Standard_[A-Za-z0-9_]+$", var.pool.azure_vm_size)) && var.pool.warm_nodes_night == 0
+      error_message = "The sandbox pool azure_vm_size must be an Azure VM SKU of the form Standard_ followed by letters, digits or underscores, and its autoscaler minimum is the night value, 0. One daytime node is the Helm warm pod."
     }
   }
 }
