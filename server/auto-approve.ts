@@ -130,7 +130,9 @@ function bareToolName(tool: string): string {
  * rule". `full-access` and `command-allowlist` are explicit user grants;
  * `web-search` is the one action Approve for me grants itself;
  * `native-approval` is a card the provider's own reviewer (Auto, or Custom's
- * config) left for the person; `explicit-approval-block` is a sandbox
+ * config) left for the person; `approval-gate` is a card Sagax's own gate
+ * held in Approve for me (grok-approval-gate.ts), never the provider's;
+ * `explicit-approval-block` is a sandbox
  * widening only Full may answer; `no-grant` is an Ask or Edits card, where
  * asking is the whole point. */
 export type AutoVerdictSource =
@@ -138,6 +140,7 @@ export type AutoVerdictSource =
   | "command-allowlist"
   | "web-search"
   | "native-approval"
+  | "approval-gate"
   | "explicit-approval-block"
   | "outbound-guard"
   | "allow-rule"
@@ -193,7 +196,8 @@ export function autoVerdict(
   // Full is separately consent-gated by the bot PATCH endpoint, and the
   // request.opened caller invokes this for permissions only, never questions.
   if (context?.sagaxGate && context.ruleAllowed) return { approve: `approved ${tool} (your Allow rule)`, source: "allow-rule" };
-  if (context?.sagaxGate) return { approve: null, source: mode === "auto" || mode === "custom" ? "native-approval" : "no-grant" };
+  // Sagax's own gate asked, not the provider: the card says so in its words.
+  if (context?.sagaxGate) return { approve: null, source: mode === "auto" || mode === "custom" ? "approval-gate" : "no-grant" };
   if (mode === "full") return { approve: `approved ${tool} (full access)`, source: "full-access" };
   if (context?.requiresExplicitApproval) return { approve: null, source: "explicit-approval-block" };
   if (isOutboundTool(tool)) return { approve: null, source: "outbound-guard" };
@@ -217,6 +221,8 @@ export function autoVerdict(
 export const HELD_NOTE = {
   "approval.held.outbound": "This sends something on your behalf, so it always asks first.",
   "approval.held.native": "The provider requires your approval for this action.",
+  "approval.held.gate": "This bot asks before any action that changes something. Always allow stops asking for this one.",
+  "approval.held.safety": "Sagax's safety review asks you to confirm this action.",
   "approval.held.sandbox":
     "This changes the provider sandbox, so only Full access can approve it automatically.",
   "approval.held.undeliveredFull": "Full access couldn't deliver this approval.",
@@ -234,7 +240,8 @@ export function approvalHeldNote(context: {
 }): HeldNoteKey | undefined {
   if (!context.permission) return undefined;
   if (context.source === "outbound-guard") return "approval.held.outbound";
-  if (context.source === "safety-hold") return "approval.held.native";
+  if (context.source === "safety-hold") return "approval.held.safety";
+  if (context.source === "approval-gate") return "approval.held.gate";
   if (context.source === "explicit-approval-block") return "approval.held.sandbox";
   if (context.source === "native-approval") return "approval.held.native";
   return undefined;
