@@ -136,7 +136,7 @@ spec:
               entries:
                 - keyless:
                     issuer: {{ .Values.admission.kyverno.issuer | quote }}
-                    subject: {{ .Values.admission.kyverno.subject | quote }}
+                    subjectRegExp: {{ .Values.admission.kyverno.subjectRegExp | quote }}
           attestations:
             - predicateType: https://cosign.sigstore.dev/attestation/vuln/v1
               conditions:

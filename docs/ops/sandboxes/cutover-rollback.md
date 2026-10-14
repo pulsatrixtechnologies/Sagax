@@ -1,7 +1,7 @@
-# Cutover and rollback: GOX sandboxes to the Kubernetes pool
+# Cutover and rollback: production sandboxes to the Kubernetes pool
 
-Production today is the GOX VM `azpxcgoxglley5tfv6mykvm` in
-`RG-PULSATRIX-GOX` (Canada Central, `Standard_D4pls_v6`). Sagax, the
+Production today is the production VM `<VM_NAME>` in
+`<RESOURCE_GROUP>` (Canada Central, `Standard_D4pls_v6`). Sagax, the
 provisioner and the sandboxes share that VM, and the provisioner is the
 only container with the Docker socket (`docs/user-sandbox.md`).
 
@@ -13,7 +13,7 @@ Do not apply the manifests, create a cluster, or run the `az` commands
 below until the change record in `change-management.md` is approved.
 This repository does not do that apply.
 
-Two provisioners run side by side. The GOX compose service stays
+Two provisioners run side by side. The production compose service stays
 `SANDBOX_BACKEND=docker` and keeps the Docker socket. A second process,
 `deploy/k8s/provisioner/`, runs with `SANDBOX_BACKEND=kubernetes` and
 talks to the Kubernetes API (`server/sandboxd-k8s.ts`). That value does
@@ -63,14 +63,14 @@ the digest in the change record. The build script does not push.
 Figures are estimates for a cutover done while the driver exists, from
 the idle-stop default (10 minutes), the audit's node-boot range (30–90
 seconds), a workspace copy of at most 2 GiB on the same region, and a
-Sagax container recreate. They are not measurements from the GOX VM.
+Sagax container recreate. They are not measurements from the production VM.
 
 | Step | What changes | Who is interrupted | Estimate |
 |---|---|---|---|
 | 1 | Approve the change record. Build and record image digests. | Nobody | 0 |
 | 2 | Create the cluster and apply the Azure overlay with the provisioner at 0 replicas. Confirm the placeholder subnet was replaced. | Nobody | 0 |
 | 3 | Install **one** autoscaler (AKS node pool **or** Karpenter). Confirm a scale-up drill: one buffer replica goes Ready, then back to 0. | Nobody | 0. The drill's own node boot is 30–90 seconds and is not user traffic. |
-| 4 | Install Velero and take one backup of the empty namespace. Restore it into `sagax-sandboxes-drill` and delete that namespace. | Nobody | 0 |
+| 4 | Install Velero and take one backup of the empty namespace. Restore it into `<RESOURCE_GROUP>-drill` and delete that namespace. | Nobody | 0 |
 | 5 | Pick the canary person. Stop their Docker sandbox (`POST .../stop`). Copy `/workspace` to the PVC with `scripts/sandbox-workspace-migrate.ts --direction docker-to-pvc` and confirm the checksum line. | That person, if a bot is mid-command | **1–5 minutes** for that person. Everyone else: 0. |
 | 6 | Set `SAGAX_SANDBOX_CANARY_PEOPLE` to that person (and `SAGAX_SANDBOX_CANARY_BOTS` to every bot of theirs). Set `SAGAX_SANDBOXD_K8S_URL` and `SAGAX_SANDBOXD_TLS_CA`. Recreate **only** the Sagax container. | Every open websocket and voice call drops once | **20–40 seconds** for everyone. In-flight turns fail and can be sent again. Their sandboxes are not deleted. |
 | 7 | Watch one office day. `SagaxSandboxPendingTooLong` must not fire for the canary. | Nobody if the warm node is up. First command on a cold node adds **30–90 seconds** once. | 0 planned |
@@ -121,7 +121,7 @@ used by this VM). Raising it is a separate change record.
 
 ```bash
 az aks nodepool add \
-  --resource-group RG-PULSATRIX-GOX \
+  --resource-group <RESOURCE_GROUP> \
   --cluster-name REPLACE_CLUSTER \
   --name sbox \
   --mode User \
@@ -131,8 +131,8 @@ az aks nodepool add \
   --max-count 1 \
   --node-vm-size Standard_D4ps_v6 \
   --os-sku Ubuntu \
-  --node-taints sagax.pulsatrix.ca/pool=sandboxes:NoSchedule \
-  --labels sagax.pulsatrix.ca/pool=sandboxes
+  --node-taints sagax.example.com/pool=sandboxes:NoSchedule \
+  --labels sagax.example.com/pool=sandboxes
 ```
 
 Self-managed clusters on Azure VMs use

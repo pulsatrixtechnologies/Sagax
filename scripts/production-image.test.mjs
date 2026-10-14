@@ -1,9 +1,18 @@
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 const root = join(import.meta.dirname, "..");
 const read = (path) => readFileSync(join(root, path), "utf8");
+
+function sandboxChart(file) {
+  const helm = join(root, "deploy/k8s/helm");
+  const dir = readdirSync(helm).find((name) =>
+    readFileSync(join(helm, name, "Chart.yaml"), "utf8").includes("per-person sandboxes"),
+  );
+  if (!dir) throw new Error("sandbox chart not found");
+  return join("deploy/k8s/helm", dir, file);
+}
 
 describe("production image sources", () => {
   it("defaults the image to the full set and exports the build args", () => {
@@ -34,6 +43,89 @@ describe("production image sources", () => {
     // it fails the job after the engine gate.
     expect(workflow).not.toMatch(/docker build -f deploy\/fly\/Dockerfile/);
     expect(workflow).not.toMatch(/file: deploy\/fly\/Dockerfile/);
+  });
+
+  it("publishes both architectures, signs the digest, and attests the scan", () => {
+    const workflow = read(".github/workflows/docker.yml");
+    const publish = workflow.slice(workflow.indexOf("name: publish to GHCR"));
+    expect(publish).toContain("runs-on: ubuntu-latest");
+    expect(publish).toContain("id-token: write");
+    expect(publish).toContain("packages: write");
+    expect(publish).toContain("platforms: linux/amd64,linux/arm64");
+    expect(publish).toMatch(/docker\/setup-qemu-action@[0-9a-f]{40}/);
+    expect(publish).toMatch(/sigstore\/cosign-installer@[0-9a-f]{40}/);
+    expect(publish).toContain("cosign-release: v3.0.6");
+    expect(publish).toMatch(/aquasecurity\/setup-trivy@[0-9a-f]{40}/);
+    expect(publish).toContain("version: v0.75.0");
+    expect(publish).toContain("provenance: mode=max");
+    expect(publish).toContain('cosign sign --yes "${STAGING}@${DIGEST}"');
+    expect(publish).toContain("cosign attest --yes --type vuln --predicate vuln.json");
+    expect(publish).toContain("https://cosign.sigstore.dev/attestation/vuln/v1");
+    expect(publish).toContain("https://token.actions.githubusercontent.com");
+    expect(publish).toContain(
+      "^https://github\\.com/pulsatrixtechnologies/Sagax/\\.github/workflows/docker\\.yml@refs/(heads/main|tags/v.*)$",
+    );
+    expect(publish).toContain('echo "IMAGE=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_ENV"');
+    expect(publish).not.toContain("ghcr.io/${{ github.repository }}");
+    expect(publish).toContain("startsWith(github.ref, 'refs/tags/v')");
+    expect(publish).toContain("node scripts/vuln-attestation.mjs vuln.json vuln-amd64.json vuln-arm64.json");
+    expect(publish).toContain("--platform");
+    const values = read(sandboxChart("values.yaml"));
+    const admission = values.slice(values.indexOf("admission:"));
+    expect(admission).toContain(
+      "subjectRegExp: '^https://github\\.com/pulsatrixtechnologies/Sagax/\\.github/workflows/docker\\.yml@refs/(heads/main|tags/v.*)$'",
+    );
+    expect(admission).not.toContain("pulsatrixtechnologies/sagax");
+    const policy = read(sandboxChart("templates/admission.yaml"));
+    expect(policy).toContain("subjectRegExp: {{ .Values.admission.kyverno.subjectRegExp | quote }}");
+    expect(policy).not.toContain("kyverno.subjects");
+    expect(policy).not.toContain("kyverno.subject ");
+    expect(workflow).toMatch(/branches: \[main\]/);
+    expect(workflow).not.toMatch(/refs\/heads\/cursor\//);
+    expect(workflow).toContain("sandbox chart values");
+    expect(workflow).toContain("sandbox chart templates/admission.yaml");
+    const proof = workflow.slice(workflow.indexOf("name: signing proof"));
+    expect(proof).toContain(
+      "if: github.event_name == 'workflow_dispatch' && github.ref_type == 'branch'",
+    );
+    expect(proof).toContain('echo "IMAGE=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/sagax-signing-test" >> "$GITHUB_ENV"');
+    expect(proof).toContain("type=raw,value=pr436");
+    expect(proof).toContain("platforms: linux/amd64,linux/arm64");
+    expect(proof).toContain('cosign sign --yes "${IMAGE}@${DIGEST}"');
+    expect(proof).toContain('cosign attest --yes --type vuln --predicate vuln.json "${IMAGE}@${DIGEST}"');
+    expect(proof).toContain("cosign verify \\");
+    expect(proof).toContain("--certificate-identity");
+    expect(proof).toContain("cosign verify-attestation \\");
+    expect(proof).toContain("--type vuln \\");
+    expect(proof).toContain('docker buildx imagetools inspect "${IMAGE}:pr436"');
+    expect(proof).toContain('docker buildx imagetools inspect "${IMAGE}@${DIGEST}"');
+    expect(proof).toContain("continue-on-error: true");
+    const publishOnly = publish.slice(0, publish.indexOf("name: signing proof"));
+    expect(publishOnly).not.toContain("continue-on-error");
+    expect(publishOnly).toContain(
+      'echo "STAGING=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/sagax-staging"',
+    );
+    expect(publishOnly).toContain("name=${{ env.STAGING }}");
+    expect(publishOnly).toContain('cosign sign --yes "${STAGING}@${DIGEST}"');
+    expect(publishOnly).toContain(
+      'cosign attest --yes --type vuln --predicate vuln.json "${STAGING}@${DIGEST}"',
+    );
+    expect(publishOnly).toContain('cosign copy "${STAGING}@${DIGEST}"');
+    const staged = publishOnly.indexOf("name=${{ env.STAGING }}");
+    const scanned = publishOnly.indexOf('"${STAGING}@${DIGEST}"');
+    const signed = publishOnly.indexOf('cosign sign --yes "${STAGING}@${DIGEST}"');
+    const attested = publishOnly.indexOf("cosign attest --yes --type vuln");
+    const promoted = publishOnly.indexOf("cosign copy");
+    expect(staged).toBeGreaterThan(-1);
+    expect(scanned).toBeGreaterThan(staged);
+    expect(signed).toBeGreaterThan(scanned);
+    expect(attested).toBeGreaterThan(signed);
+    expect(promoted).toBeGreaterThan(attested);
+    const buildOut = publishOnly.slice(
+      publishOnly.indexOf("id: build"),
+      publishOnly.indexOf("Scan both platforms"),
+    );
+    expect(buildOut).not.toContain("env.IMAGE");
   });
 
   it("forwards the engine set from compose with an empty legacy ENGINES list", () => {
