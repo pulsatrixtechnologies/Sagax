@@ -136,7 +136,7 @@ describe("Crab's rig", () => {
   it("shows a move's face, still, under reduced motion", () => {
     expect(crabReducedFace("hop")).toBeNull();
     expect(crabReducedFace("wave")?.expression).toBe("happy");
-    expect(crabReducedFace("sleep")?.blink).toBe(1);
+    expect(crabReducedFace("sleep")?.expression).toBe("asleep");
   });
 });
 

@@ -123,7 +123,7 @@ describe("Crab's look", () => {
     expect(crabExpressionForMood("thinking")).toBe("curious");
     expect(crabExpressionForMood("working")).toBe("attentive");
     expect(crabExpressionForMood("happy")).toBe("happy");
-    expect(crabExpressionForMood("sleeping")).toBe("sleepy");
+    expect(crabExpressionForMood("sleeping")).toBe("asleep");
     expect(crabExpressionForMood("listening")).toBe("attentive");
     expect(crabExpressionForMood("speaking")).toBe("excited");
     expect(crabExpressionForMood("idle")).toBe("neutral");

@@ -30,6 +30,7 @@ import { FrogMascot } from "@/components/FrogMascot";
 import { FROG_TRACKS, frogCueFor, frogHeldFor, frogMoveFor, type FrogDesktopState } from "@/components/frog-moves";
 import { CrabMascot } from "@/components/CrabMascot";
 import { CRAB_TRACKS, crabHeldFor, crabMoveFor } from "@/components/crab-moves";
+import { mascotAsleep } from "./sleep";
 import { fxMoveFor, useEquipBurst, useMoveBurst, useReducedMotion, type FxMoveRequest } from "@/components/skin-fx/skin-fx";
 import { completeMascotLook, MASCOT_SHAPES, type MascotCharacter, type MascotLook, type MascotShape } from "../../../shared/mascot-look";
 import { createFrameSmoother, type MascotActivity, type MascotFrame, type MascotTask } from "./behavior";
@@ -317,6 +318,8 @@ function TrombiThumb({ size, look }: MascotThumbProps) {
 /** Bunbu's face for a clip, and for the call's states: listening (alert) perks the ears, speaking moves the grin. */
 export function bunbuMoodFor(activity: MascotActivity, pose: FloatingPose): BunbuMood {
   if (activity === "sleep" || activity === "yawn") return "sleeping";
+  // the brain's sleep pose while it rests (never while carried or flying): asleep too
+  if (pose === "sleep" && mascotAsleep(activity, pose)) return "sleeping";
   if (["petted", "love", "celebrate", "dance", "jump", "wave", "spin", "backflip", "hop", "hopForward"].includes(activity)) return "happy";
   if (activity === "working" || activity === "flyOut" || activity === "return") return "working";
   if (activity === "think" || activity === "confused" || pose === "think") return "thinking";

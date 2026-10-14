@@ -70,9 +70,13 @@ export interface CrabEyeDraw {
 }
 
 /** Official still is 2x2 solid squares. Happy is a lower 2x1 squint (flag waver).
- *  Sleep is a higher lid. Open faces have no shine. */
+ *  Sleepy is a higher lid. Asleep is closed: a 4x1 dash on the eye's lower
+ *  row, wider than the eye so it never reads as a squint or a blink.
+ *  Open faces have no shine. */
 export function crabEyeDraw(face: string | null | undefined): CrabEyeDraw {
   switch (face) {
+    case "asleep":
+      return { pupils: [cell(5, 3, 4, 1), cell(15, 3, 4, 1)], shines: null };
     case "happy":
     case "laughing":
     case "proud":

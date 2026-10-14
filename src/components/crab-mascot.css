@@ -29,8 +29,9 @@
 .crab-live:not(.crab-rig) .crab-sparkles { opacity: 0; }
 .crab-live:not(.crab-rig).crab-mood-speaking .crab-whole { animation: crab-talk 0.42s ease-in-out infinite alternate; }
 .crab-live:not(.crab-rig).crab-mood-listening .crab-whole { animation: none; transform: rotate(-3deg); transition: transform 0.35s ease-out; }
-.crab-live:not(.crab-rig).crab-mood-sleeping .crab-eye { animation: none; transform: scaleY(0.12); }
-.crab-live:not(.crab-rig).crab-mood-sleeping .crab-whole { animation-duration: 3.6s; }
+/* asleep: the eyes are drawn closed (crab-art.ts "asleep"), a slow breath one cell high */
+.crab-live:not(.crab-rig).crab-mood-sleeping .crab-eye { animation: none; transform: none; }
+.crab-live:not(.crab-rig).crab-mood-sleeping .crab-whole { animation: crab-breathe 4.2s ease-in-out infinite; }
 .crab-live:not(.crab-rig).crab-mood-sleeping .crab-leg,
 .crab-live:not(.crab-rig).crab-mood-sleeping .crab-arm,
 .crab-live:not(.crab-rig).crab-mood-sleeping .crab-eyes { animation: none; }
@@ -42,6 +43,10 @@
 @keyframes crab-bob {
   0%, 40%, 100% { transform: translateY(0); }
   50%, 90% { transform: translateY(-4px); }
+}
+@keyframes crab-breathe {
+  0%, 35%, 100% { transform: translateY(0); }
+  45%, 70% { transform: translateY(-4px); }
 }
 @keyframes crab-blink {
   0%, 42%, 58%, 100% { transform: scaleY(1); }

@@ -1457,6 +1457,12 @@ Electron restart (no HMR); launch-test them before committing.
 - Effects (signs, thought dots, Zzz, hearts, sparkles, confetti, Trombi's
   sparkle) are drawn in the lane beside the character (`.fb-fx[data-side]`),
   never over it; add a new one there.
+- A sleeping mascot is unmistakable (2026-10-13): the stage carries
+  `data-asleep` when it naps or the brain's pose is `sleep` while it rests
+  (`mascotAsleep` in `sleep.ts`; never while dragged, walking or flying).
+  The shared layer dims the character and floats outlined "z Z" beside the
+  head; reduced motion keeps the glyphs still and the closed eyes. The crab
+  draws a closed-eye `asleep` face. Tests: `floating-bots/sleep.test.ts`.
 - The balloon wears the app's theme: the brain sends `theme` (the skin and
   the brand accent, `theme.ts`, followed live) and the window stamps it;
   Trombi keeps its Hibou 98 balloon whatever the theme.
