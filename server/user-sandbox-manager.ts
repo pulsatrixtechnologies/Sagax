@@ -14,6 +14,8 @@ import { sandboxRouteFromEnv, type SandboxBackend } from "./sandbox-route.ts";
 import type { SandboxdClient, SandboxdInfo } from "./user-sandbox-client.ts";
 import { SandboxdRequestError, validSandboxdUrl } from "./user-sandbox-client.ts";
 import { sandboxKeyForPrincipal } from "./user-sandbox-spec.ts";
+import { UserSandboxUnavailable } from "./user-sandbox-errors.ts";
+import { provisionerNotReached, provisionerUnreachable, sandboxWakeSettingsFromEnv, type SandboxClusterWaker, type SandboxWakeSettings, type WakeMode } from "./sandbox-k8s-wake.ts";
 
 export const DEFAULT_DELETE_GRACE_MS = 72 * 3600_000;
 
@@ -28,13 +30,7 @@ export interface UserSandboxView {
   error?: string;
 }
 
-export class UserSandboxUnavailable extends Error {
-  readonly code: string;
-  constructor(message: string, code: string) {
-    super(message);
-    this.code = code;
-  }
-}
+export { UserSandboxUnavailable };
 
 export interface UserSandboxManagerOptions {
   /** Docker provisioner. Also the only client when Kubernetes is not configured. */
@@ -43,11 +39,24 @@ export interface UserSandboxManagerOptions {
   kubernetes?: SandboxdClient;
   /** Per call, so a test can change the route. Production reads the environment each call. */
   backendFor?: (principalId: string, botId?: string) => SandboxBackend;
+  /** Starts the Kubernetes provisioner's cluster when it is stopped
+   * (server/sandbox-k8s-wake.ts). Without it an unreachable provisioner
+   * fails the call, as before 0.5.3. Never used for Docker. */
+  kubernetesWaker?: SandboxClusterWaker;
+  /** A call of this person waits for the cluster to start, or gave up
+   * waiting: the server says so in their running conversation. */
+  onClusterWait?: (event: ClusterWaitEvent) => void;
   instance: string;
   /** JSON file holding pending deletions (DATA_DIR/user-sandbox-deletions.json). */
   stateFile: string;
   graceMs?: number;
   now?: () => number;
+}
+
+export interface ClusterWaitEvent {
+  principalId: string;
+  botId?: string;
+  phase: "waiting" | "timeout";
 }
 
 export class UserSandboxManager {
@@ -76,14 +85,61 @@ export class UserSandboxManager {
     return sandboxKeyForPrincipal(this.options.instance, principalId);
   }
 
-  /** Docker, unless this person or this bot is on the Kubernetes canary. */
-  private clientFor(principalId: string, botId?: string): SandboxdClient {
+  /** Docker, unless this person or this bot is on the Kubernetes canary.
+   * `wake` (a bot's command, a start the person asked for) may start a
+   * stopped Kubernetes cluster and waits for it; `peek` (status, usage,
+   * quota) never starts it. Docker is never gated. */
+  private clientFor(principalId: string, botId?: string, mode: WakeMode = "peek"): SandboxdClient {
     const backend = this.options.backendFor?.(principalId, botId) ?? "docker";
     if (backend === "docker") return this.options.client;
     if (!this.options.kubernetes) {
       throw new UserSandboxUnavailable("This environment is set to Kubernetes, and that provisioner is not configured.", "kubernetes_unconfigured");
     }
-    return this.options.kubernetes;
+    if (!this.options.kubernetesWaker) return this.options.kubernetes;
+    return this.wakingClient(this.options.kubernetes, this.options.kubernetesWaker, { principalId, ...(botId ? { botId } : {}) }, mode);
+  }
+
+  /** The Kubernetes provisioner behind the cluster wake: wait while it
+   * starts, and when a call finds it gone, wake it (a call that certainly
+   * did not reach it is sent once more). */
+  private wakingClient(client: SandboxdClient, waker: SandboxClusterWaker, who: { principalId: string; botId?: string }, mode: WakeMode): SandboxdClient {
+    const notify = (phase: ClusterWaitEvent["phase"]) => {
+      try { this.options.onClusterWait?.({ ...who, phase }); } catch { /* a notice never fails the call */ }
+    };
+    const ready = async () => {
+      try {
+        await waker.ready(mode, () => notify("waiting"));
+      } catch (error) {
+        if ((error as { code?: unknown }).code === "cluster_start_timeout") notify("timeout");
+        throw error;
+      }
+    };
+    const run = async <T>(call: () => Promise<T>): Promise<T> => {
+      await ready();
+      try {
+        return await call();
+      } catch (error) {
+        if (!provisionerUnreachable(error)) throw error;
+        waker.markUnreachable();
+        if (mode !== "wake" || !provisionerNotReached(error)) throw error;
+        await ready();
+        return call();
+      }
+    };
+    return {
+      info: () => run(() => client.info()),
+      status: (key) => run(() => client.status(key)),
+      ensure: (key) => run(() => client.ensure(key)),
+      stop: (key) => run(() => client.stop(key)),
+      pause: (key) => run(() => client.pause(key)),
+      resume: (key) => run(() => client.resume(key)),
+      markUsed: (key) => run(() => client.markUsed(key)),
+      stats: (key) => run(() => client.stats(key)),
+      remove: (key, options) => run(() => client.remove(key, options)),
+      exec: (key, input) => run(() => client.exec(key, input)),
+      desktopStream: (key, options) => run(() => client.desktopStream(key, options)),
+      stdioStream: (key, spec) => run(() => client.stdioStream(key, spec)),
+    };
   }
 
   /** Stop and delete reach both provisioners so a revert does not leave the other one running. */
@@ -137,6 +193,11 @@ export class UserSandboxManager {
         ...(info?.egress === "missing" ? { error: "egress_policy" } : {}),
       };
     } catch (error) {
+      // The Kubernetes cluster is stopped (server/sandbox-k8s-wake.ts): the
+      // environment is off, and Start or the next bot turn starts it.
+      if (error instanceof UserSandboxUnavailable && error.code === "cluster_stopped") {
+        return { state: "stopped", lastUsedAt: null, workspaceBytes: null, overQuota: false, limits: null, idleMinutes: null, pendingDeletionAt, error: error.code };
+      }
       return {
         state: "unavailable", lastUsedAt: null, workspaceBytes: null, overQuota: false, limits: null,
         idleMinutes: null, pendingDeletionAt,
@@ -233,7 +294,7 @@ export class UserSandboxManager {
   async exec(principalId: string, input: SandboxExecInput, botId?: string): Promise<SandboxExecOutput> {
     this.refuseIfOut(principalId);
     try {
-      return await this.clientFor(principalId, botId).exec(this.keyFor(principalId), input);
+      return await this.clientFor(principalId, botId, "wake").exec(this.keyFor(principalId), input);
     } catch (error) {
       throw asUnavailable(error);
     }
@@ -253,7 +314,7 @@ export class UserSandboxManager {
   async power(principalId: string, action: "start" | "shutdown" | "pause" | "resume"): Promise<UserSandboxView> {
     if (action !== "shutdown") this.refuseIfOut(principalId);
     const key = this.keyFor(principalId);
-    const client = this.clientFor(principalId);
+    const client = this.clientFor(principalId, undefined, action === "start" || action === "resume" ? "wake" : "peek");
     await this.call(async () => {
       if (action === "shutdown") return client.stop(key);
       if (action === "pause") return client.pause(key);
@@ -322,7 +383,7 @@ export class UserSandboxManager {
       }
       console.error("user-sandbox: an environment from an older image had no desktop; updating it from the current image");
       await this.call(async () => {
-        const client = this.clientFor(principalId);
+        const client = this.clientFor(principalId, undefined, "wake");
         await client.remove(this.keyFor(principalId), { keepWorkspace: true });
         await client.ensure(this.keyFor(principalId));
       });
@@ -358,7 +419,7 @@ export class UserSandboxManager {
    * as a byte stream (server/sandbox-stdio-mcp.ts). Starts it when needed. */
   async stdioStream(principalId: string, spec: SandboxStdioSpec, botId?: string): Promise<Duplex> {
     this.refuseIfOut(principalId);
-    return this.call(() => this.clientFor(principalId, botId).stdioStream(this.keyFor(principalId), spec));
+    return this.call(() => this.clientFor(principalId, botId, "wake").stdioStream(this.keyFor(principalId), spec));
   }
 
   async workspaceOverQuota(principalId: string, botId?: string): Promise<boolean> {
@@ -374,7 +435,7 @@ export class UserSandboxManager {
   async reset(principalId: string): Promise<UserSandboxView> {
     this.refuseIfOut(principalId);
     const key = this.keyFor(principalId);
-    const client = this.clientFor(principalId);
+    const client = this.clientFor(principalId, undefined, "wake");
     await client.remove(key);
     await client.ensure(key);
     return this.status(principalId);
@@ -386,7 +447,7 @@ export class UserSandboxManager {
   async update(principalId: string): Promise<UserSandboxView> {
     this.refuseIfOut(principalId);
     const key = this.keyFor(principalId);
-    const client = this.clientFor(principalId);
+    const client = this.clientFor(principalId, undefined, "wake");
     await client.remove(key, { keepWorkspace: true });
     await client.ensure(key);
     return this.status(principalId);
@@ -487,6 +548,9 @@ export function userSandboxSettingsFromEnv(env: NodeJS.ProcessEnv = process.env)
   graceMs: number;
   kubernetesUrl: string | null;
   tlsCaFile: string | null;
+  /** The cluster wake (SAGAX_SANDBOX_K8S_WAKE_URL): only with a Kubernetes
+   * provisioner. The URL is a secret; never log this object. */
+  wake: SandboxWakeSettings | null;
 } | null {
   const url = env.SAGAX_SANDBOXD_URL?.trim();
   if (!url) return null;
@@ -511,5 +575,6 @@ export function userSandboxSettingsFromEnv(env: NodeJS.ProcessEnv = process.env)
     graceMs: graceHours * 3600_000,
     kubernetesUrl,
     tlsCaFile,
+    wake: kubernetesUrl ? sandboxWakeSettingsFromEnv(env) : null,
   };
 }

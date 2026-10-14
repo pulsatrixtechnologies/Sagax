@@ -4988,6 +4988,8 @@
       "chat.activity.searching": "03bd6fca9cf5c1fbb8ac32b7def4942459f0883a9adb4a210b81562cffab233d",
       "chat.activity.thinking": "a20d12c5e9c428c398b9d25e4dded1d6d3e599184e38b4d37bcb9d2d595ff8f7",
       "chat.activity.whosAround": "9f3df202b826b49c993ca529d3865a85f8696f4e8f1d29139385e46b89aae63e",
+      "chat.sandboxWakeTimeout": "e0ab0ab216b2bf7dbe13ff634fc47823de5f9abc844da4a6832568d9339b6e41",
+      "chat.sandboxWaking": "4c52665572371f1b1697c82082de6a3215c96fc17822898239e2d4a149d88645",
       "chat.activity.working": "a92f0449a9f7235bf69dc2e8ff7070bfae3f00ec8f8f26e5457a9beac53466ac",
       "chat.activity.writeFile": "8820b22786d9abcc296be16a94a88d97dee3a501491e8548d4724a9b9e8fd423",
       "chat.assistant": "391e405152779acc6b0f9429f3a4e27baf2af0deab2c37ba792311efa767d676",

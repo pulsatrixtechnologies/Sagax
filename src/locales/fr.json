@@ -1079,6 +1079,8 @@
   "chat.activity.searching": "Recherche",
   "chat.activity.thinking": "Réflexion",
   "chat.activity.whosAround": "Regarde qui est là",
+  "chat.sandboxWakeTimeout": "L'environnement n'a pas démarré à temps. Renvoyez le message dans quelques minutes.",
+  "chat.sandboxWaking": "Environnement en démarrage, ça peut prendre quelques minutes.",
   "chat.activity.working": "Au travail",
   "chat.activity.writeFile": "Écrit un fichier",
   "chat.assistant": "Assistant",

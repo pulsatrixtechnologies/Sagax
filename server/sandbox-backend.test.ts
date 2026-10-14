@@ -167,6 +167,7 @@ describe("sandbox pool runbooks", () => {
     expect(cutover).toContain("SAGAX_SANDBOX_CANARY_PEOPLE");
     expect(cutover).toContain("SAGAX_SANDBOXD_TLS_CA");
     expect(cutover).toContain("SAGAX_SANDBOX_K8S_REGISTRY");
+    expect(cutover).toContain("SAGAX_SANDBOX_K8S_WAKE_URL");
     expect(cutover).toContain("20–40 seconds");
     expect(cutover).toContain("1–5 minutes");
     expect(cutover).toContain("30–90 seconds");

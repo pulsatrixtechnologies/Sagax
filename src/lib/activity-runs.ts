@@ -12,6 +12,7 @@ import { autoWorkerLine } from "@/lib/auto-model";
 import { failedTurnCause } from "../../shared/failed-turn";
 import { isStoppedTurnName } from "../../shared/client-cancel";
 import { localDay } from "@/lib/transcript-derivations";
+import { SANDBOX_WAKE_NOTICE, SANDBOX_WAKE_TIMEOUT_NOTICE } from "../../shared/sandbox-wake";
 
 export type ActivityTranscriptItem =
   | { kind: "message"; message: Message }
@@ -28,6 +29,10 @@ export type TranscriptItem =
 export function statusActivity(message: Message): { kind: "recovery" | "notice" | "stopped"; text: string } | null {
   const name = message.kind === "activity" ? message.tool?.name : undefined;
   if (name?.startsWith("recovery:")) return { kind: "recovery", text: name.slice("recovery:".length).trim() };
+  // The Kubernetes cluster of the server environments is starting
+  // (server/sandbox-k8s-wake.ts): the server's fixed rows, in the person's language.
+  if (name === SANDBOX_WAKE_NOTICE) return { kind: "notice", text: t("chat.sandboxWaking") };
+  if (name === SANDBOX_WAKE_TIMEOUT_NOTICE) return { kind: "notice", text: t("chat.sandboxWakeTimeout") };
   if (name?.startsWith("notice:")) {
     // Auto's worker row reads in the person's language (src/lib/auto-model.ts).
     if (message.autoModel?.role === "worker") return { kind: "notice", text: autoWorkerLine(message.autoModel) };

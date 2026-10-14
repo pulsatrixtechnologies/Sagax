@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { describeRun, groupActivityRuns, groupTranscript, isRecoveryActivity, isToolStep, statusActivity } from "./activity-runs";
 import type { Message } from "@/state/store";
+import { SANDBOX_WAKE_NOTICE, SANDBOX_WAKE_TIMEOUT_NOTICE } from "../../shared/sandbox-wake";
 
 let seq = 0;
 const tool = (name: string, ok = true): Message =>
@@ -76,6 +77,11 @@ describe("groupActivityRuns", () => {
       expect(items.map(item => item.kind)).toEqual(["run", "message", "run"]);
       expect(items[1]).toEqual({ kind: "message", message: stopped });
     }
+  });
+
+  it("shows the cluster wake rows as notices in the person's language", () => {
+    expect(statusActivity(tool(SANDBOX_WAKE_NOTICE))).toEqual({ kind: "notice", text: "The server environment is starting. This can take a few minutes." });
+    expect(statusActivity(tool(SANDBOX_WAKE_TIMEOUT_NOTICE))).toEqual({ kind: "notice", text: "The server environment did not start in time. Send the message again in a few minutes." });
   });
 
   it("keeps a model notice visible between successful tool runs", () => {

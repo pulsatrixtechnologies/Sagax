@@ -33,6 +33,8 @@ Sagax chooses a provisioner per call (`server/sandbox-route.ts`):
 | `SAGAX_SANDBOX_ROUTE` | `kubernetes` sends everyone. `docker` sends everyone, lists included. Unset uses the lists. |
 | `SAGAX_SANDBOX_K8S_REGISTRY` | Image registry prefix on the Kubernetes provisioner. |
 | `SAGAX_SANDBOX_K8S_REQUIRE_SIGNED` | Default true: the image ref must end in `@sha256:<64 hex>`. `latest` is refused. |
+| `SAGAX_SANDBOX_K8S_WAKE_URL` | Optional. Secret https webhook that starts a stopped cluster. Sagax posts it when the Kubernetes provisioner does not answer, then waits. Never logged. |
+| `SAGAX_SANDBOX_K8S_WAKE_TIMEOUT_MS` | Optional. How long a call waits for the cluster to start. Default `480000` (8 minutes), at most `540000`. |
 
 Revert traffic without stopping either provisioner: set
 `SAGAX_SANDBOX_ROUTE=docker` and recreate only the Sagax process.
@@ -82,6 +84,40 @@ Sagax container recreate. They are not measurements from the production VM.
 Planned user-visible interruption for a one-person canary then a full
 flip: one or two **20–40 second** drops, plus **1–5 minutes** per person
 while that person's disk is copied. The VM is not deallocated.
+
+## Cluster stopped when idle
+
+When the cluster is stopped by a runbook after a period with no sandbox
+Pod, set `SAGAX_SANDBOX_K8S_WAKE_URL` on the Sagax container to the
+webhook that starts it, and recreate that container. The value is a
+secret: put it in the secret store of the Sagax container, never in the
+compose file, a change record or a ticket. The behaviour is in
+`docs/sandbox-kubernetes.md` ("Cluster stopped when idle").
+
+| Situation | What people see | Estimate |
+|---|---|---|
+| A turn needs the environment and the cluster is stopped | One row "The server environment is starting" in the conversation, then the tool call runs | the cluster start time, usually a few minutes, at most `SAGAX_SANDBOX_K8S_WAKE_TIMEOUT_MS` |
+| The cluster does not start in time | The tool call fails with "did not start in time"; the message can be sent again | the timeout |
+| The Computer tab while the cluster is stopped | The environment reads off; Start wakes the cluster | 0 until Start |
+
+Checks for the runbook, once:
+
+1. It counts only Pods labelled `com.pulsatrix.sagax.sandbox.user` in the
+   sandbox namespace, never the provisioner (`app=sagax-sandboxd`).
+2. Its idle window (for example 30 to 45 minutes) starts after the last
+   sandbox Pod is gone. Sagax sends no heartbeat; a Pod lives while its
+   person works and until `SAGAX_SANDBOX_IDLE_MINUTES` after their last
+   command.
+3. A start request on a running cluster does nothing harmful.
+4. Drill: stop the cluster, send a message to a canary bot that runs a
+   command, and confirm one webhook call, the row in the conversation, and
+   the command's answer. The Sagax log shows "start webhook accepted" and
+   "the Kubernetes provisioner answers again", never the URL.
+
+Rollback of the wake alone: unset `SAGAX_SANDBOX_K8S_WAKE_URL` and
+recreate the Sagax container. A stopped cluster then fails calls routed to
+Kubernetes, as before. To send everyone to Docker instead, use the
+rollback below.
 
 ## Health check after every step
 

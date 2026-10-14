@@ -82,6 +82,8 @@ emptyDir, because that policy allows no other egress.
 | `SAGAX_SANDBOX_CANARY_PEOPLE` | client | principal ids sent to Kubernetes |
 | `SAGAX_SANDBOX_CANARY_BOTS` | client | bot ids whose turns are sent to Kubernetes |
 | `SAGAX_SANDBOX_ROUTE` | client | `kubernetes` sends everyone; `docker` sends everyone back |
+| `SAGAX_SANDBOX_K8S_WAKE_URL` | client, no | secret https webhook that starts a stopped cluster (see "Cluster stopped when idle"); never logged, never passed to an engine |
+| `SAGAX_SANDBOX_K8S_WAKE_TIMEOUT_MS` | client, no | how long a call waits for the cluster to start; default `480000` (8 minutes), from `30000` to `540000` |
 
 `latest`, a bare name (`sagax-sandbox:local`) and a registry outside the
 prefix are refused. `ghcr.io/org` does not admit `ghcr.io/org-evil/...`.
@@ -103,6 +105,78 @@ cannot patch the quota.
 
 CPU figures need metrics-server. Without it, stats report cpu 0 and memory 0,
 and still report the memory limit.
+
+## Cluster stopped when idle
+
+An operator may stop the cluster when no sandbox Pod has run for a while
+(for example a scheduled runbook that stops the cluster after 30 to 45
+minutes with no Pod) and start it again through a webhook: one HTTPS
+`POST` to a secret URL. Set that URL in `SAGAX_SANDBOX_K8S_WAKE_URL` on the
+Sagax server and Sagax starts the cluster itself (`server/sandbox-k8s-wake.ts`):
+
+- A call routed to Kubernetes first checks the provisioner's unsigned
+  `GET /healthz` (5 seconds; a provisioner seen healthy in the last minute
+  is not checked again). No answer, a refused connection, a timeout or a
+  502, 503 or 504 with no provisioner body counts as unreachable. An error
+  the provisioner itself answers (a JSON `code`) does not.
+- A bot's command, a person's MCP server command, Start, Resume, Reset and
+  Update wake the cluster. Sagax posts the webhook, then polls `/healthz`
+  with backoff (2 seconds, up to 15 seconds between tries) until it answers
+  or `SAGAX_SANDBOX_K8S_WAKE_TIMEOUT_MS` passes. Then the call runs.
+- One wake at a time for the whole Sagax process. Every call that finds the
+  cluster down waits on the same wake, and the webhook is posted at most
+  once every 2 minutes, whatever the callers do. A webhook that failed is
+  posted again only after that window.
+- A call refused before it reached the provisioner (connection refused, no
+  route, 503 from the load balancer) is sent once more after the wake. A
+  timeout or a reset is not: the command may have run.
+- Reads never wake it: the Computer tab, status, usage, the disk quota check
+  and the voice call heartbeat. While the cluster is stopped the Computer
+  tab shows the environment off (Start wakes it); during a wake it reads
+  unavailable with the code `cluster_starting`.
+- The running conversation shows one status row: "The server environment
+  is starting. This can take a few minutes." (French: "Environnement en
+  démarrage, ça peut prendre quelques minutes."). The tool call then
+  resumes on its own. On timeout the call fails with "The server
+  environment did not start in time. Send the message again in a few
+  minutes." and a second row says so; the message can be sent again.
+- There is no fallback to Docker. A workspace is never in two places.
+- Docker calls are never gated, and without `SAGAX_SANDBOX_K8S_WAKE_URL`
+  nothing changes: an unreachable provisioner fails the call as before.
+
+The URL carries the webhook's token. It is read once at startup, never
+logged (the log says "start webhook accepted", "answered 500" or
+"unreachable (ENOTFOUND)"), never put in an error or an API answer, and
+stripped from every engine's environment with the control plane secrets
+(`CONTROL_PLANE_ENV`). Only https is accepted. A bad value stops the
+server with a message that names the variable, not the value.
+
+The default timeout (8 minutes) and the cap (9 minutes) stay under the 10
+minute cut an engine puts on one tool call and the 12 minute cut of the
+environment's MCP proxy, so the person gets the clear message rather than
+a cut connection. An engine with a shorter tool timeout of its own (Codex
+`tool_timeout_sec`) cuts the call earlier; the wake goes on, and the next
+call joins it.
+
+### Keeping the cluster up while it is used
+
+Sagax sends no heartbeat and calls no Azure API other than the webhook.
+The idle signal is the presence of sandbox Pods: a person's Pod exists from
+the first command until the provisioner's idle stop
+(`SAGAX_SANDBOX_IDLE_MINUTES`, default 10). Every command counts as use, a
+command still running is never stopped, and a voice call's heartbeat
+counts as use (`markUsed`). So the cluster stays up while anyone works,
+and the stop timer of the runbook starts when the last Pod is gone.
+
+What the runbook must do: count only sandbox Pods, those with the label
+`com.pulsatrix.sagax.sandbox.user` in the sandbox namespace, never the
+provisioner (`app=sagax-sandboxd`), which always runs. A paused
+environment has no Pod and does not keep the cluster up; Resume wakes it.
+The webhook should be harmless on a cluster that is already running
+(Sagax may post it when only the provisioner restarted). Stop and delete
+of a person signed out by Perspicax do not wake the cluster: they fail
+while it is stopped and the pending deletion is tried again every 5
+minutes.
 
 ## Images
 

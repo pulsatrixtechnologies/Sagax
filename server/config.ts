@@ -1443,10 +1443,13 @@ export const WORKSPACE_CREDENTIAL_ENV = [
  * SAGAX_COMPANY_API_KEY), so nothing here is ever an engine's input.
  * The Perspicax link settings belong here too: the link file holds the
  * server's link token, and an engine that learnt its path (or the issuer to
- * use it with) could read it as the same user. */
+ * use it with) could read it as the same user. The webhook that starts the
+ * sandboxes' Kubernetes cluster carries its token in its URL
+ * (server/sandbox-k8s-wake.ts). */
 export const CONTROL_PLANE_ENV = [
   "SAGAX_LICENSE_KEY", "SAGAX_INSTALLATION_CREDENTIAL",
   "SAGAX_PERSPICAX_LINK_FILE", "SAGAX_PERSPICAX_ISSUER", "SAGAX_PERSPICAX_INTERNAL_URL",
+  "SAGAX_SANDBOX_K8S_WAKE_URL",
 ] as const;
 export const CONTROL_PLANE_ENV_PREFIX = "SAGAX_CLOUD_";
 

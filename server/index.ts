@@ -939,7 +939,9 @@ import { opsRoutes, type ConnectionsView, type OpsDeps, type TestResult } from "
 import { createOrgImportRoute } from "./org-import-routes.ts";
 import { readSandboxdKey } from "./sandboxd-auth.ts";
 import { sandboxBackendFor, sandboxRouteFromEnv } from "./sandbox-route.ts";
-import { sandboxdClient } from "./user-sandbox-client.ts";
+import { sandboxdClient, sandboxdHealth } from "./user-sandbox-client.ts";
+import { SandboxClusterWaker } from "./sandbox-k8s-wake.ts";
+import { SANDBOX_WAKE_NOTICE, SANDBOX_WAKE_TIMEOUT_NOTICE } from "../shared/sandbox-wake.ts";
 import { UserSandboxManager, UserSandboxUnavailable, userSandboxSettingsFromEnv } from "./user-sandbox-manager.ts";
 import { createUserSandboxRoutes } from "./user-sandbox-routes.ts";
 import { remoteComputerForTurn, sandboxPrincipalForTurn, screenVisibleToPrincipal, USER_SANDBOX_MCP_NAME } from "./user-sandbox-routing.ts";
@@ -5554,12 +5556,19 @@ const userSandbox: UserSandboxManager | null = (() => {
   if (!settings) return null;
   let cachedKey = "";
   const sandboxdKey = () => (cachedKey ||= readSandboxdKey(settings.keyFile));
-  const kubernetes = settings.kubernetesUrl && settings.tlsCaFile
-    ? sandboxdClient(settings.kubernetesUrl, sandboxdKey, fetch, { ca: readFileSync(settings.tlsCaFile) })
+  const kubernetesTls = settings.kubernetesUrl && settings.tlsCaFile ? { ca: readFileSync(settings.tlsCaFile) } : null;
+  const kubernetes = settings.kubernetesUrl && kubernetesTls
+    ? sandboxdClient(settings.kubernetesUrl, sandboxdKey, fetch, kubernetesTls)
+    : undefined;
+  // The cluster wake (server/sandbox-k8s-wake.ts): only with a Kubernetes
+  // provisioner and a webhook. The URL stays inside the waker.
+  const kubernetesWaker = kubernetes && settings.kubernetesUrl && kubernetesTls && settings.wake
+    ? new SandboxClusterWaker({ settings: settings.wake, health: sandboxdHealth(settings.kubernetesUrl, kubernetesTls) })
     : undefined;
   const manager = new UserSandboxManager({
     client: sandboxdClient(settings.url, sandboxdKey),
     ...(kubernetes ? { kubernetes } : {}),
+    ...(kubernetesWaker ? { kubernetesWaker, onClusterWait: noteSandboxClusterWait } : {}),
     backendFor: (principalId, botId) => sandboxBackendFor(sandboxRouteFromEnv(), principalId, botId),
     instance: settings.instance,
     stateFile: join(DATA_DIR, "user-sandbox-deletions.json"),
@@ -5573,6 +5582,30 @@ if (userSandbox) {
     if (disabled) void userSandbox.personOut(person.id);
     else userSandbox.personBack(person.id);
   });
+}
+/** Turns that already got a cluster-wake row, by thread: `${generation}:${phase}`. */
+const sandboxWakeNoted = new Map<string, Set<string>>();
+/** The Kubernetes cluster of the server environments is starting (or did not
+ * start in time) for a call of this person: one status row in each of their
+ * running turns that works there, this bot's first. The turn itself waits;
+ * the tool call resumes on its own once the cluster answers. */
+function noteSandboxClusterWait(event: { principalId: string; botId?: string; phase: "waiting" | "timeout" }): void {
+  const person = event.principalId.trim().toLowerCase();
+  const running = [...turnWorkplaces.entries()].filter(([threadId, workplace]) =>
+    workplace.decision.target === "user-sandbox" && workplace.decision.principal === person
+    && activeInternalGenerationByThread.get(threadId) === workplace.generation);
+  const ofBot = event.botId ? running.filter(([, workplace]) => workplace.botId === event.botId) : [];
+  for (const [threadId, workplace] of ofBot.length ? ofBot : running) {
+    const mark = `${workplace.generation}:${event.phase}`;
+    const seen = sandboxWakeNoted.get(threadId) ?? new Set<string>();
+    if (seen.has(mark)) continue;
+    // keep only this generation's marks
+    for (const old of seen) if (!old.startsWith(`${workplace.generation}:`)) seen.delete(old);
+    seen.add(mark);
+    if (sandboxWakeNoted.size > 500) sandboxWakeNoted.clear();
+    sandboxWakeNoted.set(threadId, seen);
+    store.appendMessage(threadId, { role: "bot", kind: "activity", tool: { name: event.phase === "waiting" ? SANDBOX_WAKE_NOTICE : SANDBOX_WAKE_TIMEOUT_NOTICE, ok: true } });
+  }
 }
 /** A bot turn works in this person's server environment right now. */
 function userSandboxTurnRunning(principalId: string): boolean {

@@ -2,6 +2,7 @@
 // signed requests on the internal control network. Holds no Docker access.
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
+import { isIP } from "node:net";
 import { request as httpRequest } from "node:http";
 import { request as httpsRequest } from "node:https";
 import type { Duplex } from "node:stream";
@@ -174,4 +175,44 @@ export function sandboxdClient(baseUrl: string, key: () => string, fetchImpl: ty
       return upgrade(path, "sagax-rfb");
     },
   };
+}
+
+/** The provisioner's unsigned `GET /healthz`: true on 200, false on any
+ * other answer, a refused connection or a timeout. Used by the cluster wake
+ * (server/sandbox-k8s-wake.ts) to see whether the Kubernetes provisioner is
+ * up; it carries no key and starts nothing. */
+export function sandboxdHealth(baseUrl: string, tls?: SandboxdTls, fetchImpl: typeof fetch = fetch): (timeoutMs: number) => Promise<boolean> {
+  const ca = tls?.ca?.length ? tls.ca : caFromEnv();
+  const base = validSandboxdUrl(baseUrl, ca ? { ca } : undefined);
+  if (base.protocol !== "https:") {
+    return async (timeoutMs) => {
+      try {
+        const response = await fetchImpl(new URL("/healthz", base), { method: "GET", redirect: "error", signal: AbortSignal.timeout(timeoutMs) });
+        await response.body?.cancel().catch(() => {});
+        return response.status === 200;
+      } catch {
+        return false;
+      }
+    };
+  }
+  return (timeoutMs) => new Promise<boolean>((resolve) => {
+    const req = httpsRequest({
+      hostname: base.hostname,
+      port: base.port || 443,
+      method: "GET",
+      path: "/healthz",
+      ca,
+      // SNI takes a name only; an address is checked against the certificate's IP SANs.
+      ...(isIP(base.hostname.replace(/^\[|\]$/g, "")) ? {} : { servername: base.hostname }),
+      rejectUnauthorized: true,
+      timeout: timeoutMs,
+    }, (res) => {
+      res.resume();
+      res.on("end", () => resolve(res.statusCode === 200));
+      res.on("error", () => resolve(false));
+    });
+    req.on("timeout", () => req.destroy(new Error("the provisioner did not answer")));
+    req.on("error", () => resolve(false));
+    req.end();
+  });
 }

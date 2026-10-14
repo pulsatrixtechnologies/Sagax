@@ -1413,6 +1413,8 @@
   "chat.activity.searching": "Searching",
   "chat.activity.thinking": "Thinking",
   "chat.activity.whosAround": "Checking who's around",
+  "chat.sandboxWakeTimeout": "The server environment did not start in time. Send the message again in a few minutes.",
+  "chat.sandboxWaking": "The server environment is starting. This can take a few minutes.",
   "chat.activity.working": "Working",
   "chat.activity.writeFile": "Writing a file",
   "chat.advancedOnly": "In Advanced mode",
