@@ -15,7 +15,7 @@ export function createMediaWidgetRoutes(): RouteHandler {
       if (!body) return json(res, 403, { error: "Invalid or expired media link" });
       const range = req.headers.range;
       try {
-        await streamProxiedMedia(body.u, res, typeof range === "string" ? range : undefined);
+        await streamProxiedMedia(body.u, res, typeof range === "string" ? range : undefined, { threadId: body.t });
       } catch {
         if (!res.headersSent) json(res, 502, { error: "Could not reach the media source" });
       }

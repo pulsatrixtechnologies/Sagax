@@ -1,6 +1,6 @@
 import { memo, useCallback, useEffect, useRef, useState } from "react";
 
-import type { WireVideoWidget } from "../../../shared/video-widget.ts";
+import { isHlsVideo, type WireVideoWidget } from "../../../shared/video-widget.ts";
 import { t } from "@/lib/i18n";
 import { MediaPlayerChrome } from "./MediaPlayerChrome";
 
@@ -31,7 +31,8 @@ export const VideoPlayerWidget = memo(function VideoPlayerWidget({
     setError(null);
     let hls: { destroy: () => void } | undefined;
     const src = video.playbackUrl;
-    const isHls = /\.m3u8(\?|$)/i.test(src);
+    // Decided from the source before the media proxy hid its extension.
+    const isHls = isHlsVideo({ format: video.format, playbackUrl: src });
     if (isHls && !el.canPlayType("application/vnd.apple.mpegurl")) {
       void import("hls.js").then(({ default: Hls }) => {
         if (!videoRef.current || !Hls.isSupported()) {
@@ -55,7 +56,7 @@ export const VideoPlayerWidget = memo(function VideoPlayerWidget({
       el.src = src;
     }
     return () => hls?.destroy();
-  }, [video.playbackUrl, isLive]);
+  }, [video.playbackUrl, video.format, isLive]);
 
   useEffect(() => {
     if (showcase) {

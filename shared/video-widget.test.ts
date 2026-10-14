@@ -1,5 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { glitchoVideosFromTool, sagaxVideosFromJson, videosFromToolOutput, youtubeIdsInText, youtubeVideoId } from "./video-widget.ts";
+import {
+  glitchoVideosFromTool,
+  isHlsVideo,
+  normalizeVideoFormat,
+  sagaxVideosFromJson,
+  videoFormatFromUrl,
+  videosFromToolOutput,
+  youtubeIdsInText,
+  youtubeVideoId,
+} from "./video-widget.ts";
 
 describe("youtubeVideoId", () => {
   it("reads watch, youtu.be, embed and shorts URLs", () => {
@@ -21,7 +30,7 @@ describe("youtubeIdsInText", () => {
 describe("sagaxVideosFromJson", () => {
   it("reads sagaxVideos and sagaxVideo", () => {
     expect(sagaxVideosFromJson({ sagaxVideo: { url: "https://x.test/a.m3u8", kind: "live", title: "Live" } })).toEqual([
-      { kind: "live", url: "https://x.test/a.m3u8", title: "Live", streamer: undefined, source: undefined, posterUrl: undefined, durationMs: undefined },
+      { kind: "live", url: "https://x.test/a.m3u8", format: "hls", title: "Live", streamer: undefined, source: undefined, posterUrl: undefined, durationMs: undefined },
     ]);
     expect(sagaxVideosFromJson({ sagaxVideos: [{ playback_url: "https://x.test/v.mp4", duration: 120 }] })[0]).toMatchObject({
       kind: "vod",
@@ -54,5 +63,62 @@ describe("videosFromToolOutput", () => {
   it("prefers sagax envelope over glitcho heuristics", () => {
     const output = JSON.stringify({ sagaxVideos: [{ url: "https://a.test/x.m3u8" }] });
     expect(videosFromToolOutput("mcp__glitcho__list_followed", output)).toHaveLength(1);
+  });
+});
+
+describe("video format", () => {
+  it("reads the extension of the source URL, not its query", () => {
+    expect(videoFormatFromUrl("https://g.test/v1/share/live/ninja/index.m3u8?u=1&exp=2&t=abc")).toBe("hls");
+    expect(videoFormatFromUrl("https://g.test/clip.mp4?x=.m3u8")).toBe("mp4");
+    expect(videoFormatFromUrl("/api/media/proxy/eyJ1IjoiaHR0cHM6Ly9nLnRlc3QvYS5tM3U4In0.mac")).toBeUndefined();
+  });
+
+  it("normalizes declared formats and MIME types", () => {
+    expect(normalizeVideoFormat("HLS")).toBe("hls");
+    expect(normalizeVideoFormat("application/x-mpegURL")).toBe("hls");
+    expect(normalizeVideoFormat("application/vnd.apple.mpegurl; charset=utf-8")).toBe("hls");
+    expect(normalizeVideoFormat("video/mp4")).toBe("mp4");
+    expect(normalizeVideoFormat("dash")).toBeUndefined();
+  });
+
+  it("takes a declared format over the URL, and keys like hls_url", () => {
+    expect(sagaxVideosFromJson({ sagaxVideo: { url: "https://x.test/play?id=4", format: "hls" } })[0]?.format).toBe("hls");
+    expect(sagaxVideosFromJson({ sagaxVideo: { url: "https://x.test/play?id=4", mimeType: "video/mp4" } })[0]?.format).toBe("mp4");
+    expect(sagaxVideosFromJson({ sagaxVideo: { hls_url: "https://x.test/play?id=4" } })[0]?.format).toBe("hls");
+    expect(sagaxVideosFromJson({ sagaxVideo: { url: "https://x.test/play?id=4" } })[0]?.format).toBeUndefined();
+  });
+
+  it("decides HLS from format, and only sniffs the URL for older messages", () => {
+    expect(isHlsVideo({ format: "hls", playbackUrl: "/api/media/proxy/tok.mac" })).toBe(true);
+    expect(isHlsVideo({ format: "mp4", playbackUrl: "/api/media/proxy/tok.mac" })).toBe(false);
+    expect(isHlsVideo({ playbackUrl: "https://cdn.test/a.m3u8" })).toBe(true);
+    expect(isHlsVideo({ playbackUrl: "/api/media/proxy/tok.mac" })).toBe(false);
+  });
+
+  it("maps the Glitcho sagaxVideos envelope (live and recordings) to HLS", () => {
+    const live = JSON.stringify({
+      items: [{ login: "ninja" }],
+      sagaxVideos: [{
+        kind: "live",
+        url: "https://glitcho.test/v1/share/live/ninja/index.m3u8?u=7&exp=1760000000&t=sig",
+        title: "Ranked", streamer: "Ninja", source: "Glitcho", viewerCount: 1234,
+      }],
+    });
+    expect(videosFromToolOutput("mcp__glitcho__list_followed", live)).toEqual([
+      expect.objectContaining({ kind: "live", format: "hls", source: "Glitcho", viewerCount: 1234 }),
+    ]);
+    const vod = JSON.stringify({
+      items: [{ id: 42 }],
+      sagaxVideos: [{
+        kind: "vod",
+        url: "https://glitcho.test/v1/share/recordings/42/index.m3u8?u=7&exp=1760000000&t=sig",
+        title: "Hier", streamer: "Ninja", source: "Glitcho",
+        posterUrl: "https://glitcho.test/v1/share/recordings/42/thumbnail?u=7&exp=1760000000&t=sig",
+        durationMs: 5_400_000,
+      }],
+    });
+    expect(videosFromToolOutput("mcp__glitcho__list_recordings", vod)).toEqual([
+      expect.objectContaining({ kind: "vod", format: "hls", durationMs: 5_400_000, source: "Glitcho" }),
+    ]);
   });
 });

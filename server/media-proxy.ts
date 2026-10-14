@@ -7,9 +7,13 @@ import { request as httpRequestHttp } from "node:http";
 import { URL } from "node:url";
 
 import type { SagaxVideoEmit, WireVideoWidget } from "../shared/video-widget.ts";
+import { normalizeVideoFormat, videoFormatFromUrl } from "../shared/video-widget.ts";
 
 const TOKEN_TTL_MS = 4 * 60 * 60_000;
 const MAX_BYTES = 512 * 1024 * 1024;
+/** HLS playlists are text; a real one is a few KiB, a long VOD a few hundred. */
+const MAX_PLAYLIST_BYTES = 4 * 1024 * 1024;
+export const HLS_CONTENT_TYPE = "application/vnd.apple.mpegurl";
 
 function b64url(data: string | Buffer): string {
   return Buffer.from(data).toString("base64url");
@@ -93,9 +97,11 @@ export function wireVideoFromEmit(
   const posterUrl = emit.posterUrl && needsMediaProxy(emit.posterUrl, emit.source)
     ? mediaProxyPath(mintMediaProxyToken(emit.posterUrl, threadId, now))
     : emit.posterUrl;
+  const format = emit.format ?? videoFormatFromUrl(emit.url);
   return {
     kind: emit.kind ?? "vod",
     playbackUrl,
+    ...(format ? { format } : {}),
     title: emit.title,
     streamer: emit.streamer,
     source: emit.source,
@@ -104,13 +110,71 @@ export function wireVideoFromEmit(
   };
 }
 
+function isPlaylistContentType(contentType: string | undefined): boolean {
+  return normalizeVideoFormat(contentType) === "hls";
+}
+
+/**
+ * Rewrite the URIs of an HLS playlist (media or multivariant) so a player
+ * that loaded it from `/api/media/proxy/<token>` can still reach segments,
+ * keys, init maps and variant playlists:
+ * - relative URIs resolve against the upstream playlist URL and go back
+ *   through the proxy with their own signed token (same origin only, which
+ *   is the origin the server already chose to proxy);
+ * - absolute URIs on that same origin are proxied only when the browser
+ *   could not reach them (private host, credentials);
+ * - absolute URIs on any other origin are left untouched: the proxy never
+ *   follows a playlist to a host it was not asked for.
+ */
+export function rewriteHlsPlaylist(text: string, playlistUrl: string, mint: (url: string) => string): string {
+  let base: URL;
+  try {
+    base = new URL(playlistUrl);
+  } catch {
+    return text;
+  }
+  const rewrite = (raw: string): string => {
+    const value = raw.trim();
+    if (!value) return raw;
+    let resolved: URL;
+    try {
+      resolved = new URL(value, base);
+    } catch {
+      return raw;
+    }
+    if (resolved.protocol !== "http:" && resolved.protocol !== "https:") return raw;
+    if (resolved.origin !== base.origin) return raw;
+    const relative = !/^[a-z][a-z\d+.-]*:/i.test(value);
+    if (!relative && !needsMediaProxy(resolved.href)) return raw;
+    return mint(resolved.href);
+  };
+  return text
+    .split(/\r?\n/)
+    .map((line) => {
+      if (!line.trim()) return line;
+      if (line.startsWith("#")) return line.replace(/URI="([^"]*)"/g, (_m, uri: string) => `URI="${rewrite(uri)}"`);
+      return rewrite(line);
+    })
+    .join("\n");
+}
+
+export interface StreamProxiedMediaOptions {
+  /** Thread the top-level token was minted for; nested HLS tokens inherit it. */
+  threadId?: string;
+  now?: number;
+}
+
 export async function streamProxiedMedia(
   targetUrl: string,
   res: ServerResponse,
   rangeHeader?: string,
+  options: StreamProxiedMediaOptions = {},
 ): Promise<void> {
   const url = new URL(targetUrl);
   const lib = url.protocol === "https:" ? httpRequest : httpRequestHttp;
+  const playlistByPath = videoFormatFromUrl(targetUrl) === "hls";
+  // A playlist is rewritten whole: never ask the upstream for a byte range of it.
+  const forwardRange = rangeHeader && !playlistByPath ? rangeHeader : undefined;
   await new Promise<void>((resolve, reject) => {
     const req = lib(
       {
@@ -118,7 +182,7 @@ export async function streamProxiedMedia(
         port: url.port || (url.protocol === "https:" ? 443 : 80),
         path: url.pathname + url.search,
         method: "GET",
-        headers: rangeHeader ? { Range: rangeHeader } : undefined,
+        headers: forwardRange ? { Range: forwardRange } : undefined,
       },
       (upstream) => {
         const status = upstream.statusCode ?? 502;
@@ -129,10 +193,51 @@ export async function streamProxiedMedia(
           resolve();
           return;
         }
+        const ct = upstream.headers["content-type"];
+        const contentType = typeof ct === "string" ? ct : undefined;
+        if (status === 200 && (playlistByPath || isPlaylistContentType(contentType))) {
+          const chunks: Buffer[] = [];
+          let size = 0;
+          let aborted = false;
+          upstream.on("data", (chunk: Buffer) => {
+            if (aborted) return;
+            size += chunk.length;
+            if (size > MAX_PLAYLIST_BYTES) {
+              aborted = true;
+              upstream.destroy();
+              res.writeHead(502, { "content-type": "text/plain" });
+              res.end();
+              resolve();
+              return;
+            }
+            chunks.push(chunk);
+          });
+          upstream.on("end", () => {
+            if (aborted) return;
+            const now = options.now ?? Date.now();
+            const body = Buffer.from(
+              rewriteHlsPlaylist(Buffer.concat(chunks).toString("utf8"), targetUrl, (u) =>
+                mediaProxyPath(mintMediaProxyToken(u, options.threadId, now)),
+              ),
+              "utf8",
+            );
+            res.writeHead(200, {
+              "content-type": HLS_CONTENT_TYPE,
+              "content-length": String(body.length),
+              "cache-control": "no-store",
+            });
+            res.end(body);
+            resolve();
+          });
+          upstream.on("error", (error) => {
+            if (aborted) return;
+            reject(error);
+          });
+          return;
+        }
         let bytes = 0;
         const headers: Record<string, string> = {};
-        const ct = upstream.headers["content-type"];
-        if (typeof ct === "string") headers["content-type"] = ct;
+        if (contentType) headers["content-type"] = contentType;
         const cl = upstream.headers["content-length"];
         if (typeof cl === "string") headers["content-length"] = cl;
         const cr = upstream.headers["content-range"];
