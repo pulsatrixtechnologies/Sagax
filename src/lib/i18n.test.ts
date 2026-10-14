@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { documentLanguage, resolveLocale, setLocale, t, tFromServer } from "./i18n";
+import { documentLanguage, elideFrench, resolveLocale, setLocale, t, tFromServer } from "./i18n";
 import { en, localeChoices, locales } from "@/locales";
 
 afterEach(() => {
@@ -42,6 +42,23 @@ describe("t", () => {
     expect(t("team.moveMany", { count: 2 })).toBe("Move 2 bots");
     expect(t("team.deleteTitle", { name: "Research" })).toBe("Delete Research team?");
     expect(t("team.instructionsTitle", { name: "Research" })).toBe("Research shared instructions");
+  });
+
+  it("elides French \"de\" before a name that starts with a vowel, never in English", () => {
+    setLocale("fr");
+    expect(t("computer.screenOf", { name: "Assistant" })).toBe("Écran d'Assistant");
+    expect(t("computer.browserOf", { name: "Émile" })).toBe("Navigateur d'Émile");
+    expect(t("computer.screenOf", { name: "Pepper" })).toBe("Écran de Pepper");
+    expect(t("computer.screenOf", { name: "Hugo" })).toBe("Écran de Hugo");
+    setLocale("en");
+    expect(t("computer.screenOf", { name: "Assistant" })).toBe("Assistant's screen");
+  });
+
+  it("elideFrench touches only \"de\" as a word right before a placeholder", () => {
+    expect(elideFrench("Mode {name}", { name: "Auto" })).toBe("Mode {name}");
+    expect(elideFrench("De {name} à {other}", { name: "Ana", other: "Eve" })).toBe("D'{name} à {other}");
+    expect(elideFrench("Écran de {count}", { count: 8 })).toBe("Écran de {count}");
+    expect(elideFrench("Écran de {name}", {})).toBe("Écran de {name}");
   });
 
   it("setLocale reports the locale that actually took effect", () => {

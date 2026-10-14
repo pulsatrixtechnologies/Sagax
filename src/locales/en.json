@@ -6777,7 +6777,6 @@
   "settings.toolAccess.tier.read": "Read",
   "settings.toolAccess.tier.write": "Write",
   "settings.toolAccess.tier.admin": "Admin",
-  "browser.idle.help": "{name}’s browser opens in full screen when you take control. Nothing is streamed until then.",
   "model.effort.ultracode": "Ultracode",
   "model.effort.ultracodeHint": "Deep coding workflow on Claude; maximum effort on other providers.",
   "engineSetup.apiKey.clear": "Clear",
@@ -7165,5 +7164,9 @@
   "task.openLink": "Open {link}",
   "task.removeLink": "Remove link",
   "task.assignLink": "Assign to thread",
-  "task.unassignLink": "Remove from thread"
+  "task.unassignLink": "Remove from thread",
+  "browser.preview.offline": "{name}’s browser is closed. It opens at its next task, or take control to open it now.",
+  "browser.preview.connecting": "Connecting to the browser…",
+  "browser.preview.failed": "The browser preview could not connect.",
+  "browser.preview.busy": "{name} is using this browser. The preview appears when it’s free…"
 }

@@ -78,7 +78,21 @@ export function tFromServer(key: string | undefined, fallback: string | undefine
 export function t(key: LocaleKey, params?: Record<string, string | number>): string {
   const template = activePack[key] ?? en[key];
   if (!params) return template;
+  return interpolate(active === "fr" || active.startsWith("fr-") ? elideFrench(template, params) : template, params);
+}
+
+function interpolate(template: string, params: Record<string, string | number>): string {
   return template.replace(/\{(\w+)\}/g, (match, name: string) =>
     name in params ? String(params[name]) : match,
+  );
+}
+
+/** French elides "de" before a vowel: "Écran de {name}" with "Assistant"
+ * reads "Écran d'Assistant", with "Pepper" stays "Écran de Pepper". Only a
+ * placeholder's value decides; an "h" is left alone (aspirated or not, a
+ * name cannot tell). Pure, for tests. */
+export function elideFrench(template: string, params: Record<string, string | number>): string {
+  return template.replace(/(^|[\s(«"'’])([Dd])e \{(\w+)\}/g, (match, before: string, d: string, name: string) =>
+    name in params && /^[aeiouyàâäæéèêëîïôöœùûü]/iu.test(String(params[name]).trimStart()) ? `${before}${d}'{${name}}` : match,
   );
 }

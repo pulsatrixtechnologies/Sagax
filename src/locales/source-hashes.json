@@ -9088,7 +9088,6 @@
       "settings.toolAccess.tier.read": "9b9a8d05a7ec353bda84f9c1bb3178c299de3001b5e970508ddc889c487f92ca",
       "settings.toolAccess.tier.write": "3f00927a719345edd4a8316599d3b328857987547f8884306861161ffa09647e",
       "settings.toolAccess.tier.admin": "c1c224b03cd9bc7b6a86d77f5dace40191766c485cd55dc48caf9ac873335d6f",
-      "browser.idle.help": "ab0c86fb7e9daa97319da5299e47a4c0fc9fed3670f23c71eaa973be7ad657bd",
       "model.effort.ultracode": "15374cedc773b16efc40525fe617f5ab716048b2d0e93804122c98b9317f5283",
       "model.effort.ultracodeHint": "5071e89956c730137ce6c19b82913b7e44a38981b44113b571348df12ef24760",
       "attention.empty": "930ed80b9937a7061cf71885af485ab7668734d16f677cc88789c4725f1536e5",
@@ -9238,7 +9237,11 @@
       "model.settings.context": "a6e600a10fede40f648be37a700467776215ed2da3c271e9d02fa2987190a0a0",
       "model.settings.contextTitle": "a723c40584aa82ccc548c1d5d6f49c973454a26cedacb28e9770f4016ea5a1cf",
       "model.settings.model": "5e2c614c23f02239bc03c6c04fcb681950f9e72bf8fdff6be79c79841cbb10c0",
-      "model.settings.back": "44085d11cfc88d44a49e2d128647e63f1c8095b0ff7ed600a19eb34b0ee46814"
+      "model.settings.back": "44085d11cfc88d44a49e2d128647e63f1c8095b0ff7ed600a19eb34b0ee46814",
+      "browser.preview.offline": "0ac2b333f8a179392970cd65cabd39f6ae1d71124f756218eba224d8480f79d4",
+      "browser.preview.connecting": "3112948f34547d4dcb48fe6c60e59cea0961f8934418f32cb226ca19baffba0f",
+      "browser.preview.failed": "6f14dd94e05dffde7597639eaadf358c19fc14bfe38908b529bc3254e41ccd88",
+      "browser.preview.busy": "2f8c6444e294fa5fd621fb7b2693832ae2f04ffbb6ad0a13235a4fb3cb1f0195"
     },
     "hi": {
       "approval.action.allowOnce": "168511d24d9ee03122b3200f929be11eaaedad45cb0ecb20a95f549b3e3f4d0f",
