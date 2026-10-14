@@ -45,6 +45,9 @@ export const MEMBER_OWN_SCOPE_AGENT_TOOLS: Readonly<Record<string, MemberToolFam
   close_thread: "conversation",
   retry_thread: "conversation",
   create_options_card: "conversation",
+  // chat widgets (agents-widget-tools.ts): a card in the member's own conversation
+  show_widget: "conversation",
+  update_widget: "conversation",
   send_voice_note: "conversation",
   end_call: "conversation",
   request_credential: "conversation",
