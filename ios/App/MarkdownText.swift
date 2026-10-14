@@ -270,7 +270,12 @@ struct MarkdownText: View {
             EmailCardView(draft: email, pending: pending, identifier: identifier)
         } else if kind == .widget {
             if let page = RichBlocks.parseArtifactPage(code) {
-                ArtifactCardView(page: page, pending: pending, identifier: identifier)
+                // a YouTube page is the video itself: the player, not a page card
+                if !pending, let videoId = page.url.flatMap({ YouTubeLinks.videoId(from: $0) }) {
+                    YouTubeMiniPlayerView(videoId: videoId, identifier: identifier.map { "\($0)-yt" })
+                } else {
+                    ArtifactCardView(page: page, pending: pending, identifier: identifier)
+                }
             } else {
                 WidgetFrameView(code: code, pending: pending, identifier: identifier)
             }

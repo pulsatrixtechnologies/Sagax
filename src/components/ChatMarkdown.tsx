@@ -66,7 +66,7 @@ import {
   unclosedFenceOffset,
   type CalloutKind,
 } from "../lib/rich-blocks";
-import { parseCwWidgetText } from "../../shared/cw-widgets/validate.ts";
+import { cwWidgetRejection, parseCwWidgetText } from "../../shared/cw-widgets/validate.ts";
 import { CwWidgetView } from "./cw/CwWidgetView";
 import { ArtifactCard } from "./ArtifactCard";
 import { EmailCard } from "./EmailCard";
@@ -1254,11 +1254,26 @@ function ChatMarkdownComponent({ text, message, botId, mentionPeers = NO_MENTION
         if (kind === "cw" && !pending) {
           const widget = parseCwWidgetText(code);
           if (widget) return <CwWidgetView widget={widget} threadId={threadId} botId={botId} />;
+          // a widget the validator refused keeps its source, with the reason
+          const rejection = cwWidgetRejection(code);
+          if (rejection) {
+            return (
+              <div>
+                <CodeBlock code={code} lang={lang} />
+                <p role="note" className="mt-1 text-[11.5px] text-ink-secondary">
+                  {t("rich.cw.invalid", { reason: t(`rich.cw.invalid.${rejection.reason}`, { family: rejection.family ?? "" }) })}
+                </p>
+              </div>
+            );
+          }
         }
         const email = kind === "email" || !kind ? parseEmailBlock(code, lang) : null;
         if (email) return <EmailCard draft={email} pending={pending} />;
         if (kind === "widget") {
           const page = parseArtifactPage(code);
+          // a YouTube page is the video itself: the player, not a page card
+          const pageVideo = page?.url && !pending ? youtubeVideoId(page.url) : null;
+          if (pageVideo) return <YouTubeMiniPlayer videoId={pageVideo} message={scopedMessage} onSendToBot={youtubeSendToBot} />;
           if (page) return <ArtifactCard page={page} pending={pending} />;
           return <WidgetFrame code={code} pending={pending} />;
         }

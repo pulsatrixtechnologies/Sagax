@@ -4,6 +4,8 @@
 // block directly after the persona, and measures each section.
 import { describe, expect, it } from "vitest";
 
+import { CW_FAMILIES, CW_REQUIRED_FIELDS, CW_VIEWS, cwOrList } from "../shared/cw-widgets/schema.ts";
+import { parseCwWidgetText } from "../shared/cw-widgets/validate.ts";
 import { MISUSE_POLICY_PROMPT } from "../shared/misuse-guardrails.ts";
 import { soulSystemPrompt } from "./bot-folder.ts";
 import { BUILT_IN_BROWSER_SYSTEM_PROMPT } from "./browser-engine.ts";
@@ -291,6 +293,22 @@ describe("RICH_OUTPUT_PROMPT", () => {
     // the chart example in the prompt is valid JSON the renderer accepts
     const example = /```chart fence holding JSON such as (\{.*?\}) \(type/.exec(RICH_OUTPUT_PROMPT)?.[1];
     expect(() => JSON.parse(example ?? "")).not.toThrow();
+  });
+
+  it("teaches the exact cw families, views and record fields the validator draws", () => {
+    expect(RICH_OUTPUT_PROMPT).toContain(`family is ${cwOrList(CW_FAMILIES)} (nothing else draws)`);
+    expect(RICH_OUTPUT_PROMPT).toContain(`view is ${cwOrList(CW_VIEWS)}`);
+    for (const family of CW_FAMILIES) {
+      expect(RICH_OUTPUT_PROMPT).toContain(`${family}: ${CW_REQUIRED_FIELDS[family].join(", ")}`);
+    }
+    const example = /Example: (\{.*?\})\. A change/.exec(RICH_OUTPUT_PROMPT)?.[1];
+    expect(parseCwWidgetText(example ?? "")).not.toBeNull();
+    expect(RICH_OUTPUT_PROMPT).not.toMatch(/widget JSON \(family, view, records\)/);
+  });
+
+  it("tells the bot a bare YouTube link plays inline, outside any fence", () => {
+    expect(RICH_OUTPUT_PROMPT).toContain("To show a YouTube video, put its link alone on its own line: it plays inline; never wrap it in an ```artifact or ```widget fence.");
+    expect(RICH_OUTPUT_PROMPT).toContain("To show an image, a video file or a document, attach it or link its absolute path");
   });
 });
 

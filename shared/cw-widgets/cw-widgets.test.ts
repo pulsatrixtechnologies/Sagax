@@ -312,3 +312,39 @@ describe("widget actions", () => {
     });
   });
 });
+
+describe("the cw schema the prompt teaches", () => {
+  it("names exactly the families the validator draws, with their required fields", async () => {
+    const { CW_FAMILIES, CW_REQUIRED_FIELDS, CW_VIEWS, CW_WIDGET_EXAMPLE } = await import("./schema.ts");
+    for (const family of CW_FAMILIES) {
+      const record = Object.fromEntries(CW_REQUIRED_FIELDS[family].map((field) => [field, field === "id" ? 7 : "Seven"]));
+      for (const view of CW_VIEWS) {
+        expect(parseCwWidgetText(JSON.stringify({ family, view, records: [record] }))?.view).toBe(view);
+      }
+      // each required field is truly required (a ticket keeps id alone, summary is asked for clarity)
+      if (family !== "ticket") {
+        for (const field of CW_REQUIRED_FIELDS[family]) {
+          const { [field]: _dropped, ...rest } = record;
+          expect(parseCwWidgetText(JSON.stringify({ family, view: "card", records: [rest] }))).toBeNull();
+        }
+      }
+    }
+    for (const family of ["widget", "custom", "contact", "project"]) {
+      expect(parseCwWidgetText(JSON.stringify({ family, view: "card", records: [{ id: 1, name: "x", summary: "x" }] }))).toBeNull();
+    }
+    expect(parseCwWidgetText(CW_WIDGET_EXAMPLE)?.family).toBe("ticket");
+  });
+
+  it("says why a fence drew nothing", async () => {
+    const { cwWidgetRejection, cwWidgetRejectionText } = await import("./validate.ts");
+    const custom = cwWidgetRejection('{"family":"widget","view":"custom","records":[{"id":1}]}');
+    expect(custom).toEqual({ reason: "family", family: "widget" });
+    expect(cwWidgetRejectionText(custom!)).toBe('unknown family "widget"; use ticket, time, schedule, agreement or company');
+    expect(cwWidgetRejection("not json")).toEqual({ reason: "json" });
+    expect(cwWidgetRejection('{"family":"ticket","records":{}}')).toEqual({ reason: "records", family: "ticket" });
+    const empty = cwWidgetRejection('{"family":"company","records":[{"id":1}]}');
+    expect(empty).toEqual({ reason: "empty", family: "company" });
+    expect(cwWidgetRejectionText(empty!)).toBe("no usable record; each company record needs id and name");
+    expect(cwWidgetRejection('{"family":"ticket","records":[{"id":1,"summary":"x"}]}')).toBeNull();
+  });
+});

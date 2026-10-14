@@ -9,6 +9,7 @@ import { MISUSE_POLICY_PROMPT } from "../shared/misuse-guardrails.ts";
 import { soulSystemPrompt } from "./bot-folder.ts";
 import { teammateAvailabilityPrompt, type RosterMember } from "./peer-roster.ts";
 import type { ConnectorToolGrant } from "../shared/wire.ts";
+import { CW_FAMILIES, CW_REQUIRED_FIELDS, CW_VIEWS, CW_WIDGET_EXAMPLE, cwOrList } from "../shared/cw-widgets/schema.ts";
 
 export type PromptPart = { id: string; label: string; text: string };
 export type PromptSection = PromptPart & { bytes: number };
@@ -173,6 +174,13 @@ export function customMcpPrompt(names: string[]): string {
   const list = names.map((name) => `"${name}"`).join(", ");
   return ` The user also added ${names.length === 1 ? "an MCP server" : "MCP servers"} for you: ${list}. Use their available tools under the engine's normal approval rules.`;
 }
+/** The ```cw sentence, built from the validator's own constants
+ * (shared/cw-widgets/schema.ts) so it never names a family, a view or a
+ * field the chat would refuse. */
+const CW_FENCE_PROMPT =
+  ` To show ConnectWise records, use one \`\`\`cw fence holding a JSON object with family, view and records: family is ${cwOrList(CW_FAMILIES)} (nothing else draws); view is ${cwOrList(CW_VIEWS)} (card for one record); each record needs ${CW_FAMILIES.map((family) => `${family}: ${CW_REQUIRED_FIELDS[family].join(", ")}`).join("; ")} (other fields such as status, company or owner are optional).`
+  + ` Example: ${CW_WIDGET_EXAMPLE}. A change from that card waits for the person's approval; do not write to ConnectWise from the fence yourself.`;
+
 /** How the chat renders rich output (src/components/ChatMarkdown.tsx and
  * src/lib/rich-blocks.ts own the other side of each convention). Sent to
  * every bot whose replies land in the chat transcript. */
@@ -182,8 +190,9 @@ export const RICH_OUTPUT_PROMPT =
   + " For a chart, use a ```chart fence holding JSON such as {\"type\":\"bar\",\"title\":\"Tickets\",\"labels\":[\"Mon\",\"Tue\"],\"series\":[{\"name\":\"Opened\",\"data\":[4,7]}]} (type bar, line, area or pie) or CSV with a header row; for a large dataset, a ```csv fence becomes a sortable, filterable table."
   + " For an interactive tool (calculator, simulator, small form or visualization), use a ```widget fence with self-contained HTML, CSS and inline JavaScript; it runs in a sandbox with no network access, so inline all data and never load external scripts, fonts or images."
   + " When you have a hosted page the person can open, put it in one ```artifact fence holding JSON such as {\"title\":\"Report\",\"url\":\"https://example.com/page\"} (a real https URL only, never invented); it shows as a card with Open."
-  + " To show ConnectWise records (tickets, time entries, schedule, agreements or companies), use one ```cw fence holding the widget JSON (family, view, records). A change from that card waits for the person's approval; do not write to ConnectWise from the fence yourself."
-  + " To show an image, video or document, attach it or link its absolute path; a remote image loads only after the person allows it.";
+  + CW_FENCE_PROMPT
+  + " To show a YouTube video, put its link alone on its own line: it plays inline; never wrap it in an ```artifact or ```widget fence."
+  + " To show an image, a video file or a document, attach it or link its absolute path; a remote image loads only after the person allows it.";
 
 export const CREDENTIAL_PROMPT =
   " If a supported API key is missing for the service actually needed, use request_credential to create a secure credential request. Before requesting a computer-provider key, inspect the configured targets with select_computer; an existing self-hosted VPS does not need Boat credentials. Do not request a different provider's key merely because a task mentions cloud. A freshly QR-paired mobile app or the desktop app can show the secure entry card. Never claim it opened unless the request succeeded, and never ask the user to paste credentials into chat.";

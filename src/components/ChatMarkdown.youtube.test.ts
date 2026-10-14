@@ -39,3 +39,32 @@ describe("ChatMarkdown YouTube", () => {
     expect(html).not.toContain("youtube.com/watch");
   });
 });
+
+describe("ChatMarkdown YouTube artifact and invalid cw", () => {
+  const render = (text: string) =>
+    renderToStaticMarkup(
+      createElement(
+        StoreProvider,
+        null,
+        createElement(ThreadRefsContext.Provider, { value: { threads: [], currentBotId: undefined } }, createElement(ChatMarkdown, { text })),
+      ),
+    );
+
+  it("plays an ```artifact whose url is YouTube instead of showing a page card", () => {
+    const html = render('```artifact\n{"title":"Rick","url":"https://www.youtube.com/watch?v=dQw4w9WgXcQ"}\n```');
+    expect(html).toContain("dQw4w9WgXcQ");
+    expect(html).not.toContain("youtube.com/watch");
+    expect(html).not.toContain('aria-label="Page: Rick"');
+  });
+
+  it("keeps a non-YouTube artifact as a page card", () => {
+    const html = render('```artifact\n{"title":"Report","url":"https://example.com/page"}\n```');
+    expect(html).toContain("example.com/page");
+  });
+
+  it("shows an invalid ```cw as its source plus the reason", () => {
+    const html = render('```cw\n{"family":"widget","view":"custom","records":[{"id":1}]}\n```');
+    expect(html).toContain("Invalid ConnectWise widget: unknown family &quot;widget&quot;");
+    expect(html).toContain("custom");
+  });
+});

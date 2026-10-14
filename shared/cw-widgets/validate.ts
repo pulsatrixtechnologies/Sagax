@@ -26,6 +26,7 @@ import { looksLikeSchedule, scheduleFrom } from "./schedule.ts";
 import { agreementFrom, looksLikeAgreement } from "./agreement.ts";
 import { companyFrom, looksLikeCompany, safeWebsite } from "./company.ts";
 import { CW_BILLABLE } from "./actions.ts";
+import { CW_FAMILIES, CW_REQUIRED_FIELDS, cwOrList, isCwFamily } from "./schema.ts";
 
 function siteOf(value: unknown): CwSite | undefined {
   return isRecord(value) ? cwSite(value.host, value.company) : undefined;
@@ -246,5 +247,50 @@ export function parseCwWidgetText(source: string): CwWidget | null {
     return sanitizeCwWidget(JSON.parse(source));
   } catch {
     return null;
+  }
+}
+
+/** Why a ```cw fence's text drew nothing: "json" (not a JSON object),
+ * "version", "records" (no records array), "family" (unknown family) or
+ * "empty" (no record kept, each needs the family's required fields). */
+export interface CwWidgetRejection {
+  reason: "json" | "version" | "records" | "family" | "empty";
+  /** the family the text named, for "family" and "empty" */
+  family?: string;
+}
+
+/** The reason parseCwWidgetText returns null for this text, or null when it
+ * draws. */
+export function cwWidgetRejection(source: string): CwWidgetRejection | null {
+  if (parseCwWidgetText(source)) return null;
+  let value: unknown;
+  try {
+    value = source.length > 1_000_000 ? undefined : JSON.parse(source);
+  } catch {
+    value = undefined;
+  }
+  if (!isRecord(value)) return { reason: "json" };
+  if (value.v !== undefined && value.v !== CW_WIDGET_VERSION) return { reason: "version" };
+  const family = typeof value.family === "string" ? value.family.slice(0, 40) : String(value.family ?? "").slice(0, 40);
+  if (!isCwFamily(value.family)) return { reason: "family", family };
+  if (!Array.isArray(value.records)) return { reason: "records", family };
+  return { reason: "empty", family };
+}
+
+/** The rejection in English, as the bot should read it. */
+export function cwWidgetRejectionText(rejection: CwWidgetRejection): string {
+  switch (rejection.reason) {
+    case "json":
+      return "the fence must hold one JSON object";
+    case "version":
+      return `only version ${CW_WIDGET_VERSION} is supported`;
+    case "records":
+      return "records must be an array";
+    case "family":
+      return `unknown family "${rejection.family ?? ""}"; use ${cwOrList(CW_FAMILIES)}`;
+    case "empty": {
+      const required = isCwFamily(rejection.family) ? CW_REQUIRED_FIELDS[rejection.family] : ["id"];
+      return `no usable record; each ${rejection.family ?? ""} record needs ${cwOrList(required, "and")}`;
+    }
   }
 }
