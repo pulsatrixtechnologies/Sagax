@@ -245,9 +245,12 @@ One design language on all three platforms (the approved canvas):
 - Offline or cached thread on a phone: values readable, actions replaced by the existing "Reconnect to answer" line.
 - An unknown node type on an older client draws its children, or nothing.
 
-Platform notes: desktop draws charts as plain SVG from tokens (no Vega) and maps
-icons to lucide; iOS uses Swift Charts and SF Symbols; Android draws charts on a
-Canvas and maps icons onto `material-icons-core` plus existing drawables.
+Platform notes: desktop draws charts with the app's Vega-Lite pipeline (the spec
+comes from `shared/widget-chart.ts`, drawn with the one config in
+`shared/vega-config.ts` the Data panel uses, so a server can render the same
+spec headless) and maps icons to lucide; iOS uses Swift Charts and SF Symbols;
+Android draws charts on a Canvas and maps icons onto `material-icons-core` plus
+existing drawables.
 Images are https only and wait behind a "Load image" tap on every platform, the
 way external images in a bot's markdown already do on desktop, so a bot-written
 URL cannot make a device call out on its own. On phones the type is named
