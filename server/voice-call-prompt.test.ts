@@ -56,9 +56,7 @@ describe("the phone-call instruction", () => {
     expect(text).toContain("never mention a transcript, dictation or voice mode");
     expect(text).toContain("one to three at a time");
     expect(text).toContain("No markdown, lists, tables, code blocks, emojis or URLs");
-    // no stock filler to repeat ("Je regarde ça" on every tool, JC 2026-10-13)
-    expect(text).not.toContain("Je regarde");
-    expect(text).toContain("never a stock phrase");
+    expect(text).toContain("Je regarde ça");
     expect(text).toContain("(their call is set to French)");
     expect(text).toContain("Keep your own persona and instructions");
     // no duplex opener on this call: nothing to "not repeat"
@@ -84,11 +82,16 @@ describe("the phone-call instruction", () => {
     expect(voiceCallSection(undefined, undefined, "Ada")).toBe("");
   });
 
-  it("never lists open topics: an ordinary follow-up is not work running in the background", () => {
+  it("injects open topics into the call instruction", () => {
     const call = { voiceCall: { callId: "call-0123456789" } };
-    const text = voiceCallSection(call, undefined, "Ada");
-    expect(text).not.toContain("Open topics on this call");
-    expect(text).not.toContain("still running in the background");
+    const text = voiceCallSection(call, undefined, "Ada", [
+      { id: "a", label: "weather in Montreal", status: "background" },
+      { id: "b", label: "time in Tokyo", status: "active" },
+    ]);
+    expect(text).toContain("Open topics on this call");
+    expect(text).toContain("weather in Montreal (still running in the background)");
+    expect(text).toContain("time in Tokyo (current)");
+    expect(text).not.toMatch(/[–—]/);
   });
 
   it("mentions an opener spoken by another model only on a duplex call", () => {

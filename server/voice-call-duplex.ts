@@ -3,8 +3,8 @@
 // utterance replaces the in-flight turn and never enters the steer queue.
 
 /** The server runs the full-duplex call path (replace, opener) only when
- * SAGAX_VOICE_FULL_DUPLEX=1. Off (the default since 2026-10-13), a duplex
- * send takes the steer path every call had before 0.5.0. */
+ * SAGAX_VOICE_FULL_DUPLEX=1. Off (the default), a duplex send takes the
+ * steer path every call had before 0.5.0. */
 export function voiceFullDuplexEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
   return env.SAGAX_VOICE_FULL_DUPLEX === "1";
 }

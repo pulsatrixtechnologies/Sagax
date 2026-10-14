@@ -1219,13 +1219,12 @@ fake xAI: `scripts/verify-voice-mode.ts`. Details: `docs/voice-mode-xai.md`.
   before any audio is spoken over POST, one cut mid-way is never said twice.
   Barge-in ducks then cancels the bot's voice and interrupts its running
   turn. "Full-duplex conversation" (Advanced, off by default on every
-  channel since 2026-10-13, `CallSettings.fullDuplex`, rev 3): when the
-  person turns it on and the server has `SAGAX_VOICE_FULL_DUPLEX=1`,
-  talking while the bot works or speaks cancels that turn, discards the
-  steer queue, and starts only the latest utterance (`voiceCall.duplex`,
-  issue #292). Off, the page's duplex and speculative marks are dropped
-  and words said while it works join that turn. No canned tool filler
-  and no tool-chip narration on a call. Tests:
+  channel, `CallSettings.fullDuplex`, rev 3): when the person turns it on
+  and the server has `SAGAX_VOICE_FULL_DUPLEX=1`, talking while the bot
+  works or speaks cancels that turn, discards the steer queue, and starts
+  only the latest utterance (`voiceCall.duplex`, issue #292). Off, the
+  page's duplex and speculative marks are dropped and words said while it
+  works join that turn. Tests:
   `call-logic.test.ts`, `voice-build.test.ts`,
   `call.test.ts`, `duplex-policy.test.ts`, `speech-fence.test.ts`,
   `speech-stream.test.ts`,

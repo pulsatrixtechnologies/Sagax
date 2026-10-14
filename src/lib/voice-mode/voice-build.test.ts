@@ -1,7 +1,6 @@
-// Full-duplex is off by default on every channel since 2026-10-13 (JC: the
-// 0.5.0 duplex call forked tasks, spoke another model's opener and cut the
-// answer into fragments). The Advanced toggle turns it on. Rev 3 resets the
-// rev-2 "on" every 0.5.x build stored as its default.
+// Full-duplex is off by default on every channel. The Advanced toggle
+// turns it on. Rev 3 resets the rev-2 "on" every 0.5.x build stored as
+// its default.
 import { describe, expect, it } from "vitest";
 
 import { defaultFullDuplex, FULL_DUPLEX_REV } from "./voice-build";

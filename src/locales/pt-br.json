@@ -2663,7 +2663,7 @@
   "voiceMode.call.fasterEndOfTurn": "Fim de turno mais rápido",
   "voiceMode.call.fasterEndOfTurnHelp": "Sua entonação, analisada neste computador, pode encerrar um turno mais cedo quando sua frase parece terminada. Não é usado com Patient.",
   "voiceMode.call.fullDuplex": "Conversa em duplex",
-  "voiceMode.call.fullDuplexHelp": "Fale por cima do bot a qualquer momento. A fala interrompe a resposta falada atual. Um novo assunto enquanto ele pensa deixa esse trabalho continuar. Ligado por padrão aqui. Desligue para que as palavras ditas enquanto ele trabalha entrem nesse turno.",
+  "voiceMode.call.fullDuplexHelp": "Fale por cima do bot a qualquer momento. A fala interrompe a resposta falada atual. Um novo assunto enquanto ele pensa deixa esse trabalho continuar. Desligado por padrão. Ligue para interromper; deixe desligado para que as palavras ditas enquanto ele trabalha entrem nesse turno.",
   "voiceMode.call.taskQueued": "Esse está na fila, esperando uma vaga.",
   "voiceMode.call.streamingVoice": "Voz contínua",
   "voiceMode.call.streamingVoiceHelp": "A resposta começa a falar desde as primeiras palavras, por uma única conexão durante a chamada. Se essa conexão falhar, a chamada volta sozinha a uma solicitação por frase.",

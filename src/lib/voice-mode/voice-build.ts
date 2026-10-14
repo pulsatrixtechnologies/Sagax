@@ -1,7 +1,6 @@
-// Which builds hear full-duplex by default (issue #292). None since
-// 2026-10-13: the 0.5.0 duplex call forked tasks, spoke a separate model's
-// opener and sent half sentences. The Advanced toggle turns it on, and the
-// server honours it only with SAGAX_VOICE_FULL_DUPLEX=1.
+// Which builds hear full-duplex by default (issue #292). None: the
+// Advanced toggle turns it on, and the server honours it only with
+// SAGAX_VOICE_FULL_DUPLEX=1.
 
 /** Rev 3: the "on" every 0.5.x build stored as its default is dropped. */
 export const FULL_DUPLEX_REV = 3;

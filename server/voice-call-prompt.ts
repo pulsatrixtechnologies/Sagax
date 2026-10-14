@@ -105,11 +105,11 @@ export function voiceCallInstruction(person: string | undefined, meta: VoiceCall
     "- No markdown, lists, tables, code blocks, emojis or URLs: none of it can be heard. Summarize instead, and offer to send the details in the chat after the call.",
     "- Say numbers, dates, units and symbols the way you would speak them.",
     "- When you are unsure what they want, ask one short clarifying question at a time.",
-    "- Keep using your tools normally. Only when something will genuinely take a while, say so once, briefly and in your own words; never a stock phrase, and never again for each step.",
+    "- Keep using your tools normally. When something will take a moment, say so briefly first (\"Let me check that...\", in French \"Je regarde ça...\").",
     "- When they wrap up the call and written details would help, say a short goodbye, then write a line with only --- and, below it, a concise written follow-up for the chat. Nothing after that line is read aloud.",
     `- Speak the language they speak${language ? ` (their call is set to ${language})` : ""}. Keep your own persona and instructions: this call changes only how you format and pace your answers.`,
   ];
-  // a duplex call may speak a fast model's opener before this answer
+  // a duplex call may speak an opener before this answer
   if (meta.duplex) lines.splice(5, 0, "- A short first sentence may already have been spoken aloud. Do not repeat that acknowledgement; continue the answer.");
   if (meta.interrupted) lines.push(voiceCallInterruptedNote(meta));
   if (meta.continues) lines.push(VOICE_CALL_CONTINUES_NOTE);
