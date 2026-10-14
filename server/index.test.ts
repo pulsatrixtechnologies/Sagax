@@ -2822,8 +2822,15 @@ describe("harness HTTP API", () => {
       expect(card.detail).toContain("+Work carefully.");
       expect((await api("GET", "/api/bots?messages=0")).body.bots.length).toBe(before);
       // A team-setup card offers no "Always allow" to remember either.
+      // The browser sends Origin; without it, owner-trust loopback during a
+      // live turn is 403 (turn_cannot_self_approve).
       for (const allowKey of grants) {
-        expect((await api("POST", `/api/bots/${chief.id}/always-allow`, { threadId: chief.threadId, allowKey })).status).toBe(409);
+        const remembered = await fetch(`${BASE}/api/bots/${chief.id}/always-allow`, {
+          method: "POST",
+          headers: { "content-type": "application/json", origin: BASE },
+          body: JSON.stringify({ threadId: chief.threadId, allowKey }),
+        });
+        expect(remembered.status).toBe(409);
       }
       const denied = await fetch(`${BASE}/api/threads/${chief.threadId}/respond`, {
         method: "POST",
