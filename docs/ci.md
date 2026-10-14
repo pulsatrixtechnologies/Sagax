@@ -12,8 +12,10 @@ verification-documentation checks. Selection never skips the entire workflow.
   skips the runtime jobs. It does so only when the commit before the push has
   a green CI run of its own. Main's waiting run is replaced by each push, so
   without that check a replaced run's code would never be tested.
-- Merge groups and manual runs always run all jobs. Empty or unreadable diffs,
-  and a previous commit whose CI cannot be read, also fall back to all jobs.
+- A manual dispatch runs every platform. Merge groups run the Linux suite
+  only, the same as a pull request or a push to main. An empty or unreadable
+  diff, or a previous commit whose CI cannot be read, still runs the runtime
+  jobs, and still does not add Windows or macOS.
 
 PR selection uses a local merge-base diff with rename detection disabled, so
 moving a source file into documentation still selects its original runtime
@@ -24,8 +26,9 @@ skipped runtime job only when static validation passed and explicitly selected
 the docs-only path. Failures, cancellations, missing selection and unexpected
 skips fail the gate. Existing advisory jobs remain advisory.
 
-The separate shared-terminal smoke workflow is manual-only: its tests already
-run in the Windows Vitest/Electron jobs.
+The separate shared-terminal smoke workflow is manual-only. The Windows
+Vitest and Electron jobs that cover those tests also run only on a manual
+dispatch.
 
 ## Vitest shards
 
@@ -59,11 +62,10 @@ seven (four Vitest shards, two smokes, the iOS job with its hour-long
 simulator suite). With 25 open PRs the macOS jobs waited a median of six and a
 half hours. Now:
 
-- A PR runs the Vitest shards on Ubuntu and Windows; main pushes, merge groups
-  and manual runs add the macOS shards. Only a couple of test blocks are
-  macOS-only.
-- Every PR's macOS checks are one job: the packaged-server smoke and the
-  Electron smokes.
+- Pull requests, pushes to main and merge groups run the Vitest shards on
+  Ubuntu only. Windows, macOS and iOS run only from a manual dispatch.
+- The macOS packaged-server and Electron smokes, and the Windows CUA smoke,
+  run only from a manual dispatch.
 - `ci-stop-closed.yml` cancels a PR's CI run when the PR is merged or closed. PR runs share a group named by the PR number (`ci-pr-<n>`), never by `github.ref`: a merged PR's closed event reports the base branch as `github.ref`, which made every merge cancel main's CI (fixed Oct 3 2026).
 
 ## Main and releases
@@ -102,6 +104,13 @@ way: a re-run joins main's concurrency group, where it would cancel the
 newest merge's waiting run and re-run main-only deploys from an older tree.
 The script starts CI in the lane instead. A manual release can skip the
 wait with `ship_without_ci`, for emergencies only.
+
+That gate does not see Windows or macOS on a push or a merge group. Those
+events schedule Ubuntu vitest only, and a run whose scheduled vitest jobs
+passed is still proof to `release-ci.mjs`. Before tagging, dispatch CI on
+the release candidate SHA and wait until the Windows and macOS vitest jobs
+on that SHA have succeeded. `ship_without_ci` does not replace that
+dispatch.
 
 ## Flaky tests and Windows timeouts
 

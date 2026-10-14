@@ -10,7 +10,7 @@ import { selectCiScope, selectPushScope, versionOnlyPackageJson } from "./ci-sco
 
 const script = fileURLToPath(new URL("./ci-scope.mjs", import.meta.url));
 const ALL_OS = JSON.stringify(["macos-latest", "ubuntu-latest", "windows-latest"]);
-const PR_OS = JSON.stringify(["ubuntu-latest", "windows-latest"]);
+const PR_OS = JSON.stringify(["ubuntu-latest"]);
 const temporaryDirectories: string[] = [];
 afterEach(() => {
   for (const directory of temporaryDirectories.splice(0)) rmSync(directory, { recursive: true, force: true });
@@ -136,24 +136,18 @@ describe("CI scope CLI", () => {
       pull_request: { base: { sha: base }, head: { sha: kind === "invalid" ? "--help" : kind === "unavailable" ? "f".repeat(40) : base } },
     };
     const { output, stderr } = run(directory, "pull_request", payload);
-    expect(output).toBe(`runtime=true\nmobile=true\nvitest_os=${ALL_OS}\nplatforms=true\n`);
+    expect(output).toBe(`runtime=true\nmobile=true\nvitest_os=${PR_OS}\nplatforms=false\n`);
     expect(stderr).toContain("using all checks");
   });
 
-  it.each(["merge_group", "workflow_dispatch"])("runs everything for %s", (event) => {
+  it("runs every check on Linux only for merge_group", () => {
     const { directory } = fixture();
-    expect(run(directory, event, {}).output).toBe(`runtime=true\nmobile=true\nvitest_os=${ALL_OS}\nplatforms=true\n`);
+    expect(run(directory, "merge_group", {}).output).toBe(`runtime=true\nmobile=true\nvitest_os=${PR_OS}\nplatforms=false\n`);
   });
 
-  it("runs Vitest on Ubuntu and Windows for a runtime pull request, not macOS", () => {
-    const { directory, git, base } = fixture("server/index.ts");
-    writeFileSync(join(directory, "server/index.ts"), "changed\n");
-    git("commit", "--quiet", "-am", "change");
-    const { output } = run(directory, "pull_request", {
-      pull_request: { base: { sha: base }, head: { sha: git("rev-parse", "HEAD") } },
-    });
-    expect(output).toBe(`runtime=true\nmobile=false\nvitest_os=${PR_OS}\nplatforms=false\n`);
-    expect(JSON.parse(PR_OS)).toEqual(["ubuntu-latest", "windows-latest"]);
+  it("runs every platform only for workflow_dispatch", () => {
+    const { directory } = fixture();
+    expect(run(directory, "workflow_dispatch", {}).output).toBe(`runtime=true\nmobile=true\nvitest_os=${ALL_OS}\nplatforms=true\n`);
   });
 });
 
@@ -241,7 +235,7 @@ describe("CI scope CLI on a push to main", () => {
     const api = await fakeRunsApi({ [before]: [{ event: "pull_request", status: "completed", conclusion: "failure" }, ...green] });
     try {
       const { output, stderr } = await runPush(directory, { before, after }, { GITHUB_API_URL: api.url, GH_TOKEN: "t", GITHUB_REPOSITORY: "o/r" });
-      expect(output).toBe(`runtime=false\nmobile=false\nvitest_os=${ALL_OS}\nplatforms=true\n`);
+      expect(output).toBe(`runtime=false\nmobile=false\nvitest_os=${PR_OS}\nplatforms=false\n`);
       expect(stderr).toBe("");
       expect(api.requests).toEqual([`GET /repos/o/r/actions/workflows/ci.yml/runs?head_sha=${before}&per_page=100 Bearer t`]);
     } finally {
@@ -259,7 +253,7 @@ describe("CI scope CLI on a push to main", () => {
     const api = await fakeRunsApi({ [before]: runs });
     try {
       const { output, stderr } = await runPush(directory, { before, after }, { GITHUB_API_URL: api.url, GH_TOKEN: "t", GITHUB_REPOSITORY: "o/r" });
-      expect(output).toBe(`runtime=true\nmobile=true\nvitest_os=${ALL_OS}\nplatforms=true\n`);
+      expect(output).toBe(`runtime=true\nmobile=true\nvitest_os=${PR_OS}\nplatforms=false\n`);
       expect(stderr).toContain("has no green CI run of its own");
     } finally {
       await api.close();
@@ -269,7 +263,7 @@ describe("CI scope CLI on a push to main", () => {
   it("runs everything when the previous commit's CI cannot be read", async () => {
     const { directory, before, after } = pushFixture(bump);
     const { output, stderr } = await runPush(directory, { before, after }, { GH_TOKEN: undefined, GITHUB_REPOSITORY: undefined });
-    expect(output).toBe(`runtime=true\nmobile=true\nvitest_os=${ALL_OS}\nplatforms=true\n`);
+    expect(output).toBe(`runtime=true\nmobile=true\nvitest_os=${PR_OS}\nplatforms=false\n`);
     expect(stderr).toContain("using all checks");
   });
 
@@ -282,7 +276,7 @@ describe("CI scope CLI on a push to main", () => {
     const api = await fakeRunsApi({ [before]: green });
     try {
       const { output, stderr } = await runPush(directory, { before, after }, { GITHUB_API_URL: api.url, GH_TOKEN: "t", GITHUB_REPOSITORY: "o/r" });
-      expect(output).toBe(`runtime=true\nmobile=false\nvitest_os=${ALL_OS}\nplatforms=true\n`);
+      expect(output).toBe(`runtime=true\nmobile=false\nvitest_os=${PR_OS}\nplatforms=false\n`);
       expect(stderr).toBe("");
       expect(api.requests).toEqual([]);
     } finally {
@@ -297,7 +291,7 @@ describe("CI scope CLI on a push to main", () => {
   ])("falls back loudly for %s", async (_, payload) => {
     const { directory } = fixture();
     const { output, stderr } = await runPush(directory, payload, {});
-    expect(output).toBe(`runtime=true\nmobile=true\nvitest_os=${ALL_OS}\nplatforms=true\n`);
+    expect(output).toBe(`runtime=true\nmobile=true\nvitest_os=${PR_OS}\nplatforms=false\n`);
     expect(stderr).toContain("using all checks");
   });
 });

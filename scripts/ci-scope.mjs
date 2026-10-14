@@ -54,13 +54,12 @@ export function selectPushScope(files, show) {
   return scope;
 }
 
-// macOS runners are the scarce ones (five at a time for the whole account),
-// and only a couple of test blocks are macOS-only. To keep the shared runner
-// queue short, a PR runs the suite on Linux and Windows and skips the macOS
-// and iOS jobs (platforms=false). Main pushes, merge groups and manual runs
-// run every platform.
+// Pull requests, main pushes and merge groups run the suite on Linux
+// (ubuntu-latest) and skip the Windows, macOS and iOS jobs (platforms=false).
+// Only workflow_dispatch runs every platform.
+// This PR still runs Windows shards 1/4 and 2/4 via windows-vitest.yml.
 const ALL_OS = ["macos-latest", "ubuntu-latest", "windows-latest"];
-const PR_OS = ["ubuntu-latest", "windows-latest"];
+const PR_OS = ["ubuntu-latest"];
 const SHA = /^[a-f\d]{40}(?:[a-f\d]{24})?$/i;
 
 const git = (args) => execFileSync("git", args, { encoding: "utf8", timeout: 30_000, stdio: ["ignore", "pipe", "pipe"] });
@@ -91,8 +90,9 @@ async function previousCommitGreen(sha) {
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   let scope = { runtime: true, mobile: true };
-  let vitestOs = ALL_OS;
-  let platforms = true;
+  const manual = process.env.GITHUB_EVENT_NAME === "workflow_dispatch";
+  let vitestOs = manual ? ALL_OS : PR_OS;
+  let platforms = manual;
   if (process.env.GITHUB_EVENT_NAME === "pull_request") {
     try {
       const { pull_request: pr } = JSON.parse(readFileSync(process.env.GITHUB_EVENT_PATH, "utf8"));

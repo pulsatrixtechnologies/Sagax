@@ -54,6 +54,8 @@ jobs:
   smoke:
     name: Cold-start and restart on Windows
     needs: build
+    # Windows runs on manual dispatch only.
+    if: github.event_name == 'workflow_dispatch'
     runs-on: windows-latest
     timeout-minutes: 20
     steps:
