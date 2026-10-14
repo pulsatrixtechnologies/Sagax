@@ -75,7 +75,22 @@ literal:<VAULT_A>==><KEY_VAULT>
 literal:<VAULT_B>==><KEY_VAULT>
 regex:<RESOURCE_GROUP_CLASS>==><RESOURCE_GROUP>
 regex:@<CLIENT_ZONE>==>@example.com
+literal:<PRIVATE_REPO_NAME>==><PRIVATE_REPO>
+literal:<D1_DATABASE_ID_BROKER>==>00000000-0000-0000-0000-000000000000
+literal:<D1_DATABASE_ID_CONTROL_PLANE>==>00000000-0000-0000-0000-000000000000
 ```
+
+Inventaire ajouté après la fusion de `main` dans #437 (valeurs réelles
+seulement dans le fichier privé d'expressions, jamais ici) :
+
+- les chaînes `pulsatrix-v3` restantes (nom du dépôt privé) dans les specs
+  de `docs/superpowers/`, `server/routes/account.ts` et
+  `src/components/PulsatrixMark.tsx` → `<PRIVATE_REPO_NAME>`;
+- les deux `database_id` wrangler (D1) présents sur `main`, dans
+  `cloudflare/composio-broker/wrangler.jsonc` et
+  `cloudflare/control-plane/wrangler.jsonc` → `<D1_DATABASE_ID_BROKER>` et
+  `<D1_DATABASE_ID_CONTROL_PLANE>`, remplacés par l'UUID tout à zéro que le
+  README du control-plane documente déjà.
 
 Do **not** rewrite official product contact addresses, product image names, or
 `SAGAX_*` environment variables.
