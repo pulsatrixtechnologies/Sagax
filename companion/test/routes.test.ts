@@ -423,6 +423,13 @@ describe("iOS parity routes", () => {
     expect(denyReason({ method: "POST", path: "/api/mcp-oauth/callback", authenticated: false })?.status).toBe(401);
     expect(denyReason({ method: "GET", path: "/api/plugins/installed", authenticated: false })?.status).toBe(401);
   });
+
+  it("lets a native player fetch proxied media without the device token; the harness checks the signed path", () => {
+    expect(denyReason({ method: "GET", path: "/api/media/proxy/eyJ1IjoiaCJ9.c2ln", authenticated: false })).toBeNull();
+    expect(denyReason({ method: "POST", path: "/api/media/proxy/eyJ1IjoiaCJ9.c2ln", authenticated: false })?.status).toBe(401);
+    expect(denyReason({ method: "GET", path: "/api/media/proxy/", authenticated: false })?.status).toBe(401);
+    expect(denyReason({ method: "GET", path: "/api/media/proxy/a/b", authenticated: false })?.status).toBe(401);
+  });
 });
 
 // The Electron app in remote-client mode (window.ogb.remoteClient.active)

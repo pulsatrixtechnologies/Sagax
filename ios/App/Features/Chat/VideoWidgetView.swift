@@ -46,6 +46,10 @@ struct VideoWidgetView: View {
             loading = false
             return
         }
+        // AVPlayer fetches the playlist and its segments itself and sends no
+        // bearer. A proxied URL (/api/media/proxy/<token>) needs none: the
+        // server takes its signed, thread-bound, short-lived token as the
+        // authorization (server/routes/media-widgets.ts).
         let item = AVPlayerItem(url: url)
         let p = AVPlayer(playerItem: item)
         player = p

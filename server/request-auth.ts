@@ -387,8 +387,9 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   { methods: ["POST"], path: /^\/api\/auth\/pairing$/, feature: "orgPairing" },
   // What this person has lent (owner-scoped status, no secrets). Same gate.
   { methods: ["GET"], path: /^\/api\/shared-computers$/, feature: "sharedComputers" },
-  // Inline video widgets: proxied media (session cookie) and YouTube transcripts.
-  { methods: ["GET"], path: /^\/api\/media\/proxy\/.+/ },
+  // Inline video widgets: YouTube transcripts. Proxied media
+  // (/api/media/proxy/<token>) is answered before this gate: its signed token
+  // is the authorization (server/routes/media-widgets.ts).
   { methods: ["POST"], path: /^\/api\/youtube\/transcript$/ },
   // liveness, identity, the stream
   { methods: ["GET"], path: /^\/api\/health$/ },

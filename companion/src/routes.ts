@@ -374,7 +374,8 @@ const ALLOWED: ReadonlyArray<{ method: string; path: RegExp }> = [
   { method: "POST", path: /^\/api\/me\/achievements\/events$/ },
   { method: "PUT", path: /^\/api\/me\/achievements\/settings$/ },
   { method: "GET", path: /^\/api\/achievements\/public$/ },
-  // Inline video widgets: proxied media and YouTube transcripts (session auth).
+  // Inline video widgets: proxied media (also open without a device token,
+  // see denyReason) and YouTube transcripts (session auth).
   { method: "GET", path: /^\/api\/media\/proxy\/.+/ },
   { method: "POST", path: /^\/api\/youtube\/transcript$/ },
 
@@ -530,6 +531,11 @@ export function denyReason({ path, method, authenticated }: RouteRequest): Denia
   // which carries no device token: the single-use state bound to the
   // pending sign-in is its authorization, as on the harness itself.
   if (method === "GET" && path === "/api/mcp-oauth/callback") return null;
+  // Proxied media for the inline video widget: AVPlayer fetches the playlist
+  // and its segments itself and cannot add the device token. The signed,
+  // short-lived token in the path is the authorization, and the harness
+  // checks it (server/routes/media-widgets.ts) before anything is fetched.
+  if (method === "GET" && /^\/api\/media\/proxy\/[^/]+$/.test(path)) return null;
 
   if (!authenticated) {
     return { status: 401, error: "pair this device from Remote access settings on the host computer" };

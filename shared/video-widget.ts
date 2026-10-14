@@ -38,7 +38,7 @@ export function videoFormatFromUrl(url: string): VideoWidgetFormat | undefined {
 
 export interface WireVideoWidget {
   kind: VideoWidgetKind;
-  /** Client playback URL (often `/api/media/proxy/…`; never a secret). */
+  /** Client playback URL (often `/api/media/proxy/<token>`: a signed, thread-bound, 4 h capability for this one media URL, never a session credential). */
   playbackUrl: string;
   /** Stream container, decided server side from the original URL. Absent on older messages. */
   format?: VideoWidgetFormat;

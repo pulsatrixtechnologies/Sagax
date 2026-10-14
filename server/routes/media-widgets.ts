@@ -1,3 +1,4 @@
+import type { IncomingMessage, ServerResponse } from "node:http";
 import { z } from "zod";
 
 import { streamProxiedMedia, verifyMediaProxyToken } from "../media-proxy.ts";
@@ -6,21 +7,61 @@ import { PASS, type RouteHandler } from "./table.ts";
 
 const transcriptBody = z.object({ videoId: z.string().regex(/^[\w-]{11}$/) }).strict();
 
+/**
+ * GET /api/media/proxy/<token>, answered before the auth gate (server/index.ts).
+ *
+ * The signed token in the path is the authorization: native players
+ * (AVPlayer on iOS, a <video> element, a cast receiver) cannot add the
+ * session's bearer header to the playlist and segment requests they make.
+ * The token is an HMAC-SHA256 (192 bits kept) over the exact upstream URL,
+ * its expiry (4 h) and the thread it was minted for, with a key that never
+ * leaves the server; a token without a thread is refused here. It opens this
+ * one read-only route and nothing else: resolveRequestAuth never treats it as
+ * a session credential. Neither the token nor the upstream URL is logged.
+ *
+ * Returns false when the request is not for this route.
+ */
+export async function handleMediaProxy(
+  req: IncomingMessage,
+  res: ServerResponse,
+  path: string,
+  method: string,
+  now = Date.now(),
+): Promise<boolean> {
+  if (!(path.startsWith("/api/media/proxy/") && method === "GET")) return false;
+  const refuse = (status: number, error: string) => {
+    res.writeHead(status, { "content-type": "application/json", "cache-control": "no-store" });
+    res.end(JSON.stringify({ error }));
+  };
+  // Proxied bytes are media, never a page of this origin, and the token in
+  // this URL must not travel in a Referer.
+  res.setHeader("referrer-policy", "no-referrer");
+  res.setHeader("x-content-type-options", "nosniff");
+  res.setHeader("content-security-policy", "sandbox; default-src 'none'");
+  let token: string;
+  try {
+    token = decodeURIComponent(path.slice("/api/media/proxy/".length));
+  } catch {
+    refuse(403, "Invalid or expired media link");
+    return true;
+  }
+  const body = verifyMediaProxyToken(token, now);
+  if (!body || typeof body.t !== "string" || !body.t) {
+    refuse(403, "Invalid or expired media link");
+    return true;
+  }
+  const range = req.headers.range;
+  try {
+    await streamProxiedMedia(body.u, res, typeof range === "string" ? range : undefined, { threadId: body.t, now });
+  } catch {
+    if (!res.headersSent) refuse(502, "Could not reach the media source");
+    else if (!res.writableEnded) res.end();
+  }
+  return true;
+}
+
 export function createMediaWidgetRoutes(): RouteHandler {
   return async ({ req, res, path, method, auth, json, readBody }) => {
-    if (path.startsWith("/api/media/proxy/") && method === "GET") {
-      if (auth.kind !== "session") return json(res, 401, { error: "Unauthorized" });
-      const token = decodeURIComponent(path.slice("/api/media/proxy/".length));
-      const body = verifyMediaProxyToken(token);
-      if (!body) return json(res, 403, { error: "Invalid or expired media link" });
-      const range = req.headers.range;
-      try {
-        await streamProxiedMedia(body.u, res, typeof range === "string" ? range : undefined, { threadId: body.t });
-      } catch {
-        if (!res.headersSent) json(res, 502, { error: "Could not reach the media source" });
-      }
-      return;
-    }
     if (path === "/api/youtube/transcript" && method === "POST") {
       if (auth.kind !== "session") return json(res, 401, { error: "Unauthorized" });
       const parsed = transcriptBody.safeParse(await readBody(req));

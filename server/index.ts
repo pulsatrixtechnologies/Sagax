@@ -888,7 +888,7 @@ import { createPeopleDmRoutes } from "./routes/people-dms.ts";
 import { createGroupFolderRoutes } from "./routes/group-folders.ts";
 import { createNudgeRoutes } from "./routes/nudges.ts";
 import { createPersonLabelRoutes } from "./routes/person-labels.ts";
-import { createMediaWidgetRoutes } from "./routes/media-widgets.ts";
+import { createMediaWidgetRoutes, handleMediaProxy } from "./routes/media-widgets.ts";
 import { initMediaProxy } from "./media-proxy.ts";
 import { videoMessagesFromTool } from "./video-widget-turn.ts";
 import { createPresenceRoutes, presenceFrameAllowed, type PresenceViewer } from "./routes/presence.ts";
@@ -28242,6 +28242,10 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         serverName: environmentDescriptor({ environmentId: ENVIRONMENT_ID, desktopManaged: DESKTOP_MANAGED }).label,
       });
     }
+    // Inline video widgets: the signed token in the path is the
+    // authorization (routes/media-widgets.ts), so AVPlayer, <video> and a
+    // cast receiver can play without the session's header or cookie.
+    if (await handleMediaProxy(req, res, path, method)) return;
     const gate = resolveRequestAuth(req, {
       sessions,
       cookieName: SESSION_COOKIE,
