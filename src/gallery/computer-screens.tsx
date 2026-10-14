@@ -1,0 +1,87 @@
+/** Isolated gallery for Playwright screenshots (not shipped in the app): the
+ * Computer tab's screens at the bot panel's width. A Local VM that is off
+ * (Démarrer alone, no control bar over it), the server environment off (the
+ * bar under the words), the bot's browser live, closed, and its take-control
+ * window. The browser's stream is a stand-in EventSource. */
+import { StrictMode } from "react";
+import { createRoot } from "react-dom/client";
+import { BrowserComputerScreen } from "../components/BrowserPanel";
+import { ComputerScreen } from "../components/computer/ComputerScreen";
+import { SandboxDesktopModal } from "../components/computer/SandboxDesktopModal";
+import { setLocale, t } from "../lib/i18n";
+import { applySkin, readSkin } from "../lib/skins";
+import type { Bot } from "../state/store";
+import "../styles.css";
+
+const params = new URLSearchParams(location.search);
+const skinParam = params.get("skin");
+applySkin(skinParam === "daylight" || skinParam === "pulsatrix" ? skinParam : readSkin());
+setLocale(params.get("lang") ?? "fr");
+
+/** A page the stand-in browser shows. */
+function pagePicture(): string {
+  const canvas = document.createElement("canvas");
+  canvas.width = 1280; canvas.height = 800;
+  const g = canvas.getContext("2d")!;
+  g.fillStyle = "#f6f7f9"; g.fillRect(0, 0, 1280, 800);
+  g.fillStyle = "#1f6feb"; g.fillRect(0, 0, 1280, 72);
+  g.fillStyle = "#ffffff"; g.font = "bold 30px sans-serif"; g.fillText("Portail client", 40, 46);
+  g.fillStyle = "#222"; g.font = "bold 44px sans-serif"; g.fillText("Billets ouverts", 40, 150);
+  for (let row = 0; row < 6; row++) {
+    g.fillStyle = row % 2 ? "#ffffff" : "#eef1f5"; g.fillRect(40, 190 + row * 80, 1200, 72);
+    g.fillStyle = "#333"; g.font = "26px sans-serif"; g.fillText(`#29${7040 + row}  Imprimante du 2e étage`, 64, 236 + row * 80);
+  }
+  return canvas.toDataURL("image/png").split(",")[1]!;
+}
+
+class StandInSource {
+  private listeners = new Map<string, Array<(event: MessageEvent) => void>>();
+  constructor(url: string) {
+    setTimeout(() => {
+      if (url.includes("/bots/closed/")) { this.emit("offline", {}); return; }
+      this.emit("ready", { viewerId: "gallery" });
+      this.emit("frame", { seq: 1, data: pagePicture(), format: "png", metadata: { deviceWidth: 1280, deviceHeight: 800 } });
+    }, 50);
+  }
+  addEventListener(name: string, listener: (event: MessageEvent) => void) { this.listeners.set(name, [...this.listeners.get(name) ?? [], listener]); }
+  private emit(name: string, data: unknown) { for (const listener of this.listeners.get(name) ?? []) listener(new MessageEvent(name, { data: JSON.stringify(data) })); }
+  close() {}
+}
+(globalThis as { EventSource: unknown }).EventSource = StandInSource;
+
+const live = { id: "live", name: "Assistant", browserProfile: "own" } as unknown as Bot;
+const closed = { id: "closed", name: "Assistant", browserProfile: "own" } as unknown as Bot;
+const machine = "Jean-Christophes-Macbook-Pro.local";
+
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
+  return <section data-gallery={title}><h1 className="mb-3 text-[13px] font-semibold text-ink-secondary">{title}</h1>{children}</section>;
+}
+
+function Gallery() {
+  const modal = params.get("modal") === "browser";
+  return (
+    <div className="min-h-screen bg-app p-5 text-ink">
+      <div className="mx-auto flex w-[380px] flex-col gap-8">
+        <Section title="VM locale éteinte">
+          <ComputerScreen source="local" state="off" caption={`${t("computer.screenOf", { name: "Assistant" })} · ${machine}`}
+            message={t("computerScreen.localOff")} actions={[{ label: t("computerScreen.play"), onClick: () => {}, primary: true }]}
+            controls={{ play: () => {} }} />
+        </Section>
+        <Section title="Environnement serveur éteint">
+          <ComputerScreen source="server" state="off" caption={t("computer.screenOf", { name: "Assistant" })}
+            message={t("computerScreen.serverOff")} controls={{ play: () => {} }} />
+        </Section>
+        <Section title="Navigateur en direct"><BrowserComputerScreen bot={live} /></Section>
+        <Section title="Navigateur fermé"><BrowserComputerScreen bot={closed} /></Section>
+      </div>
+      {modal && <SandboxDesktopModal kind="browser" title={t("computer.browserOf", { name: "Assistant" })} state="running" onClose={() => {}}
+        screen={() => <img alt="" className="min-h-0 flex-1 rounded-2xl border border-hairline/40 object-contain" src={`data:image/png;base64,${pagePicture()}`} />} />}
+    </div>
+  );
+}
+
+createRoot(document.getElementById("root")!).render(
+  <StrictMode>
+    <Gallery />
+  </StrictMode>,
+);
