@@ -102,6 +102,15 @@ describe("npm integrity", () => {
   });
 });
 
+describe("ensurePython", () => {
+  it("falls back to python3.14, not the unversioned python3 metapackage", () => {
+    const src = readFileSync(join(import.meta.dirname, "install-engines.mjs"), "utf8");
+    expect(src).toContain("python3.14-venv");
+    expect(src).toContain("/usr/bin/python3.14");
+    expect(src).not.toContain("python3-venv");
+  });
+});
+
 describe("parseNpmSpec", () => {
   it("splits scoped and plain specs", () => {
     expect(parseNpmSpec("@openai/codex@0.160.0")).toEqual({ name: "@openai/codex", version: "0.160.0" });

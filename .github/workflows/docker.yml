@@ -19,14 +19,13 @@ on:
       - scripts/engine-image-gate.mjs
       - scripts/harden-image-deps.mjs
       - scripts/hermes-jwt-overlay-smoke.py
-      - scripts/trivy-ignore-guard.mjs
+      - scripts/install-patched-x11.sh
       - scripts/gox-deploy.mjs
       - scripts/build-production-image.sh
       - scripts/vuln-attestation.mjs
       - engines.lock.json
       - package.json
       - pnpm-lock.yaml
-      - .trivyignore
       - .github/workflows/docker.yml
   pull_request:
     paths:
@@ -38,11 +37,10 @@ on:
       - scripts/engine-image-gate.mjs
       - scripts/harden-image-deps.mjs
       - scripts/hermes-jwt-overlay-smoke.py
-      - scripts/trivy-ignore-guard.mjs
+      - scripts/install-patched-x11.sh
       - scripts/gox-deploy.mjs
       - scripts/build-production-image.sh
       - scripts/vuln-attestation.mjs
-      - .trivyignore
       - .github/workflows/docker.yml
 
 # One run per PR: a new push cancels the superseded run.
@@ -93,24 +91,14 @@ jobs:
           tar -xzf /tmp/trivy.tgz -C "$HOME/bin" trivy
           echo "$HOME/bin" >> "$GITHUB_PATH"
           "$HOME/bin/trivy" --version
-      - name: Vulnerability gate with .trivyignore
-        run: |
-          set -euo pipefail
-          trivy image --scanners vuln --severity HIGH,CRITICAL \
-            --ignorefile .trivyignore --format table \
-            openmausbot:ci
-          trivy image --scanners vuln --severity HIGH,CRITICAL \
-            --ignorefile .trivyignore --format json --output /tmp/trivy-gated.json \
-            openmausbot:ci
-          node scripts/trivy-ignore-guard.mjs --gated /tmp/trivy-gated.json
-      - name: Ignore-list staleness guard
+      - name: Require zero critical and high findings
         run: |
           set -euo pipefail
           : > /tmp/trivyignore.empty
           trivy image --scanners vuln --severity HIGH,CRITICAL \
-            --ignorefile /tmp/trivyignore.empty --format json --output /tmp/trivy-raw.json \
+            --ignorefile /tmp/trivyignore.empty --exit-code 1 \
+            --format table \
             openmausbot:ci
-          node scripts/trivy-ignore-guard.mjs --ignore .trivyignore --scan /tmp/trivy-raw.json
       - name: Boot the container and prove the server + UI answer
         run: |
           set -euo pipefail
@@ -329,11 +317,13 @@ jobs:
           DIGEST: ${{ steps.build.outputs.digest }}
         run: |
           set -euo pipefail
+          : > /tmp/trivyignore.empty
           for platform in linux/amd64 linux/arm64; do
             name="${platform#linux/}"
             trivy image \
               --format cosign-vuln \
               --scanners vuln \
+              --ignorefile /tmp/trivyignore.empty \
               --timeout 30m \
               --platform "$platform" \
               --output "vuln-${name}.json" \
@@ -435,11 +425,13 @@ jobs:
           DIGEST: ${{ steps.build.outputs.digest }}
         run: |
           set -euo pipefail
+          : > /tmp/trivyignore.empty
           for platform in linux/amd64 linux/arm64; do
             name="${platform#linux/}"
             trivy image \
               --format cosign-vuln \
               --scanners vuln \
+              --ignorefile /tmp/trivyignore.empty \
               --timeout 30m \
               --platform "$platform" \
               --output "vuln-${name}.json" \

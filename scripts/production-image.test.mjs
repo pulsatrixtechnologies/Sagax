@@ -1,4 +1,4 @@
-import { readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
@@ -21,9 +21,15 @@ describe("production image sources", () => {
     expect(dockerfile).not.toContain("ARG ENGINE_SET=none");
     expect(dockerfile).toContain("ARG SAGAX_REQUIRE_ENGINES=1");
     expect(dockerfile).toContain("node:24-trixie-slim@sha256:");
+    expect(dockerfile).toContain("debian:forky-slim@sha256:");
+    expect(dockerfile).toContain("python3.14");
+    expect(dockerfile).toContain("scripts/install-patched-x11.sh");
+    expect(dockerfile).not.toMatch(/apt-get install -y --no-install-recommends chromium/);
     expect(dockerfile).not.toMatch(/FROM\s+\S*distroless/);
     expect(dockerfile).toContain("apt-get upgrade -y --no-install-recommends");
     expect(dockerfile).toContain("scripts/harden-image-deps.mjs");
+    const froms = [...dockerfile.matchAll(/^FROM (\S+)/gm)].map((match) => match[1]);
+    expect(froms.at(-1)).toMatch(/^debian:forky-slim@sha256:[0-9a-f]{64}$/);
     expect(read("scripts/harden-image-deps.mjs")).toContain("--require-hashes");
     expect(read("scripts/harden-image-deps.mjs")).toContain("httpx2==2.13.1");
     expect(read("scripts/harden-image-deps.mjs")).toContain("httpcore2==2.13.1");
@@ -45,7 +51,9 @@ describe("production image sources", () => {
     expect(workflow).toContain("SAGAX_REQUIRE_ENGINES=1");
     expect(workflow).toContain("scripts/engine-image-gate.mjs");
     expect(workflow).toContain("scripts/harden-image-deps.mjs");
-    expect(workflow).toContain("scripts/trivy-ignore-guard.mjs");
+    expect(workflow).toContain("scripts/install-patched-x11.sh");
+    expect(workflow).not.toContain("scripts/trivy-ignore-guard.mjs");
+    expect(workflow).not.toContain("--ignorefile .trivyignore");
     expect(workflow).toContain("scripts/hermes-jwt-overlay-smoke.py");
     expect(read("scripts/hermes-jwt-overlay-smoke.py")).toContain("jwt.encode");
     expect(read("scripts/hermes-jwt-overlay-smoke.py")).toContain("jwt.decode");
@@ -54,9 +62,9 @@ describe("production image sources", () => {
     expect(read("scripts/hermes-jwt-overlay-smoke.py")).toContain("2.15.1");
     expect(read("scripts/hermes-jwt-overlay-smoke.py")).toContain("hermes-agent");
     expect(workflow).toContain("trivy_0.75.0_Linux-64bit.tar.gz");
-    expect(workflow).toContain("--ignorefile .trivyignore");
     expect(workflow).toContain("--ignorefile /tmp/trivyignore.empty");
-    expect(workflow).toContain(".trivyignore");
+    expect(workflow).toContain("--exit-code 1");
+    expect(existsSync(join(root, ".trivyignore"))).toBe(false);
     expect(workflow).toContain("--startup-log");
     expect(workflow).toContain("/healthz");
     expect(workflow).toContain("cursor-agent");
@@ -91,6 +99,7 @@ describe("production image sources", () => {
     expect(publish).not.toContain("ghcr.io/${{ github.repository }}");
     expect(publish).toContain("startsWith(github.ref, 'refs/tags/v')");
     expect(publish).toContain("node scripts/vuln-attestation.mjs vuln.json vuln-amd64.json vuln-arm64.json");
+    expect(publish).toContain("--ignorefile /tmp/trivyignore.empty");
     expect(publish).toContain("--platform");
     const values = read(sandboxChart("values.yaml"));
     const admission = values.slice(values.indexOf("admission:"));

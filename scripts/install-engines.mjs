@@ -224,10 +224,15 @@ async function installNative(engine, arch) {
 }
 
 function ensurePython() {
-  const probe = spawnSync("python3", ["-c", "import venv, ensurepip"], { stdio: "ignore" });
-  if (probe.status === 0) return;
+  for (const bin of ["python3", "python3.14"]) {
+    const probe = spawnSync(bin, ["-c", "import venv, ensurepip"], { stdio: "ignore" });
+    if (probe.status === 0) return;
+  }
+  // 3.14.8 on forky closes the HIGH CPython findings that 3.13 still carries.
+  // Do not install the unversioned python3 metapackage (it pulls 3.13).
   run("apt-get", ["update"]);
-  run("apt-get", ["install", "-y", "--no-install-recommends", "python3", "python3-venv"]);
+  run("apt-get", ["install", "-y", "--no-install-recommends", "python3.14", "python3.14-venv"]);
+  run("ln", ["-sfn", "/usr/bin/python3.14", "/usr/local/bin/python3"]);
   rmSync("/var/lib/apt/lists", { recursive: true, force: true });
   mkdirSync("/var/lib/apt/lists/partial", { recursive: true });
 }

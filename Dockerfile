@@ -1,14 +1,16 @@
 # Sagax harness server — hosted/self-hosted tenant image.
 #
 # Two stages: build the renderer + the self-contained server bundle, then ship
-# only those artifacts on a slim Node runtime. Distroless is not a fit: the
+# only those artifacts on a slim Debian runtime. Distroless is not a fit: the
 # engine CLIs need git, Hermes needs a Python venv, Chrome needs GTK/X11
-# libraries, and the healthcheck uses curl. The runtime stays Debian slim,
-# upgrades its packages at build, overlays patched transitive deps, and drops
-# npm after install. The server keeps binding 127.0.0.1 inside the container
-# (the loopback-trust invariant is the auth model); deploy/docker-compose.yml
-# puts Caddy in the same network namespace to terminate TLS and authentication
-# at the edge.
+# libraries, and the healthcheck uses curl. The runtime is Debian forky
+# (the suite that has the OS fixes trixie marked no-dsa). Node is copied
+# from the official image so we do not keep trixie's dpkg database. The
+# image upgrades its packages at build, overlays patched transitive deps,
+# replaces unfixed libX11/libXrender, and drops npm after install. The
+# server keeps binding 127.0.0.1 inside the container (the loopback-trust
+# invariant is the auth model); deploy/docker-compose.yml puts Caddy in
+# the same network namespace to terminate TLS and authentication at the edge.
 #
 #   docker build -t openmausbot .                                   (full engine set: the production default)
 #   docker build --build-arg ENGINE_SET=none --build-arg SAGAX_REQUIRE_ENGINES=0 -t openmausbot .
@@ -21,8 +23,9 @@
 # HOME is the /data volume, so engine CLI logins (~/.claude, ~/.codex, ...) and
 # Sagax's own state (/data/.openmausbot, kept for existing volumes) persist across container restarts.
 
-# node:24-trixie-slim as of 2026-10-06 (Node 24.21.0). Rebuild to pick a
-# newer tag; apt-get upgrade still applies Debian patches on top.
+# Official Node 24.21.0 (trixie) as of 2026-10-06. Index digest: amd64 + arm64.
+FROM node:24-trixie-slim@sha256:173f125896c3b47ddf056734c7ea789d04595a6a08769a8f78e0df642781fb66 AS node
+
 FROM node:24-trixie-slim@sha256:173f125896c3b47ddf056734c7ea789d04595a6a08769a8f78e0df642781fb66 AS build
 WORKDIR /src
 # pinned to package.json#packageManager; corepack is being removed from Node
@@ -49,25 +52,35 @@ RUN arch="$(node -p 'process.arch === "arm64" ? "arm64" : "x64"')" \
   && chmod -R go-w dist-native/duckdb
 RUN pnpm build:server && pnpm exec vite build
 
-FROM node:24-trixie-slim@sha256:173f125896c3b47ddf056734c7ea789d04595a6a08769a8f78e0df642781fb66
-# Install Chrome's Trixie libraries directly (Debian 13 renamed several with
-# a t64 suffix for its 64-bit time_t transition): agent-browser --with-deps
+# Debian forky (testing) as of 2026-10-06. Index digest: amd64 + arm64.
+FROM debian:forky-slim@sha256:3c80e257eff6274d593eb33a94bda5174ccd619836e6a728a73e11c97f2213e3
+COPY --from=node /usr/local /usr/local
+# Install Chrome's libraries directly (Debian renamed several with a t64
+# suffix for its 64-bit time_t transition): agent-browser --with-deps
 # invokes sudo even as root, and this image deliberately does not ship sudo.
-# git + curl: agent CLIs shell out to git; curl backs the healthcheck
+# git + curl: agent CLIs shell out to git; curl backs the healthcheck.
+# python3.14: Hermes venv; 3.13 on forky still carries HIGH CPython findings.
 RUN apt-get update \
   && apt-get upgrade -y --no-install-recommends \
   && apt-get install -y --no-install-recommends ca-certificates curl git \
-    libxcb-shm0 libx11-xcb1 libx11-6 libxcb1 libxext6 libxrandr2 \
+    libatomic1 python3.14 python3.14-venv \
+    libxcb-shm0 libxcb1 libxext6 libxrandr2 \
     libxcomposite1 libxcursor1 libxdamage1 libxfixes3 libxi6 libgtk-3-0t64 \
     libpangocairo-1.0-0 libpango-1.0-0 libatk1.0-0t64 libcairo-gobject2 \
-    libcairo2 libgdk-pixbuf-2.0-0 libxrender1 libasound2t64 libfreetype6 \
+    libcairo2 libgdk-pixbuf-2.0-0 libasound2t64 libfreetype6 \
     libfontconfig1 libdbus-1-3 libnss3 libnss3-tools libnspr4 \
     libatk-bridge2.0-0t64 libdrm2 libxkbcommon0 libatspi2.0-0t64 libcups2t64 \
     libxshmfence1 libgbm1 fonts-noto-color-emoji fonts-noto-cjk fonts-freefont-ttf \
+  && ln -sfn /usr/bin/python3.14 /usr/local/bin/python3 \
   && rm -rf /var/lib/apt/lists/* \
   && useradd --create-home --home-dir /data --shell /bin/bash maus \
   && install -d -o maus -g maus -m 0750 /run/sagax-sandboxd
 WORKDIR /app
+# libX11 / libXrender: forky still ships the HIGH findings with no FixedVersion.
+# Build the upstream commits, then drop the Debian packages (see the script).
+COPY scripts/install-patched-x11.sh /app/engines/install-patched-x11.sh
+RUN chmod +x /app/engines/install-patched-x11.sh \
+  && /app/engines/install-patched-x11.sh
 # The engine CLIs, pinned in ONE place: engines.lock.json (versions, npm
 # packages, native downloads with their SHA-256, the Python engine's source
 # archive). scripts/install-engines.mjs installs the selection, checks that
@@ -116,21 +129,13 @@ ENV ENGINE_SET= \
 # The bots' browser (docs/plans/browser-engine.md): the pinned agent-browser
 # and a Chrome for Testing with its libraries, so a server bot can browse.
 # Pin here and in server/browser-engine-release.ts together.
-# Chrome for Testing has no Linux ARM64 build (Apple silicon Docker), so
-# arm64 images use Debian's Chromium at the same path instead.
+# Chrome for Testing publishes linux-arm64; do not install Debian Chromium
+# (it re-pulls the vulnerable libx11 package and extra HIGH findings).
 ARG AGENT_BROWSER_VERSION=0.38.2
 ARG TARGETARCH
 RUN npm install -g agent-browser@${AGENT_BROWSER_VERSION} \
-  && if [ "$TARGETARCH" = "arm64" ]; then \
-       apt-get update \
-       && apt-get install -y --no-install-recommends chromium \
-       && rm -rf /var/lib/apt/lists/* \
-       && mkdir -p /opt/openmausbot-browser \
-       && ln -s /usr/bin/chromium /opt/openmausbot-browser/chrome; \
-     else \
-       HOME=/opt/openmausbot-browser agent-browser install \
-       && ln -s /opt/openmausbot-browser/.agent-browser/browsers/chrome-*/chrome /opt/openmausbot-browser/chrome; \
-     fi \
+  && HOME=/opt/openmausbot-browser agent-browser install \
+  && ln -s /opt/openmausbot-browser/.agent-browser/browsers/chrome-*/chrome /opt/openmausbot-browser/chrome \
   && agent-browser --version
 # Overlay again after agent-browser, then drop the npm CLI and the Node
 # image's Yarn (only the installer used them), docs, and apt indexes. Node
@@ -144,7 +149,11 @@ RUN node /app/engines/harden-image-deps.mjs --root /opt/sagax-engines --root /us
   && rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx \
     /usr/local/lib/node_modules/corepack /usr/local/bin/corepack \
     /opt/yarn-v1.22.22 /usr/local/bin/yarn /usr/local/bin/yarnpkg \
-    /root/.npm /root/.cache /tmp/*
+    /root/.npm /root/.cache /tmp/* \
+  && ! dpkg-query -W -f='${db:Status-Status}' libx11-6 2>/dev/null | grep -qx installed \
+  && ! dpkg-query -W -f='${db:Status-Status}' libxrender1 2>/dev/null | grep -qx installed \
+  && test -e /usr/local/lib/libX11.so.6 \
+  && test -e /usr/local/lib/libXrender.so.1
 # DuckDB and resvg change on a version bump, not per commit: beneath the app files.
 COPY --from=build --chown=maus:maus /src/dist-native/duckdb/linux ./duckdb
 # The app itself last: a code change rebuilds only these layers.
@@ -156,7 +165,6 @@ COPY --from=build --chown=maus:maus /src/dist ./dist
 ENV HOME=/data \
     AGENT_BROWSER_EXECUTABLE_PATH=/opt/openmausbot-browser/chrome \
     OMB_DUCKDB_DIR=/app/duckdb \
-    OMB_DATA_DIR=/data/.openmausbot \
     OMB_STATIC_DIR=/app/dist \
     OMB_PORT=8799 \
     OMB_WEBHOOK_PORT=8800 \
