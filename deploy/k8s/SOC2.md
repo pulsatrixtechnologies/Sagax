@@ -55,7 +55,7 @@ The criteria names are the AICPA Trust Services Criteria (2017).
 | Where | `templates/admission.yaml`: in-tree `ValidatingAdmissionPolicy`, and a Kyverno `ClusterPolicy` (`verifyImages`, keyless GitHub Actions, `vuln` attestation, Critical and High must be 0). |
 | Criteria | **CC6.8** prevention of unauthorized or malicious software. **CC8.1** only authorized changes are deployed. **CC7.1** a denied admission is a detected event. |
 | An auditor looks at | The policy, `validationFailureAction: Enforce`, and an admission denial for an unsigned image. |
-| Limit | Kyverno has to be installed first; the chart renders the policy and does not install the controller. The warmer and its CronJob are excluded from signature verification and are pinned by digest instead. The GitHub subject is a wildcard until the signing workflow is fixed. |
+| Limit | Kyverno has to be installed first; the chart renders the policy and does not install the controller. The warmer and its CronJob are excluded from signature verification and are pinned by digest instead. Fulcio keeps the repository name's canonical case. The certificate subject is matched by an anchored expression for this repository's docker.yml workflow on main or on a v* tag. The image publish workflow signs with that keyless identity and attaches the vulnerability attestation this policy reads. |
 
 ## Backups of volumes
 

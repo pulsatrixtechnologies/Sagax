@@ -118,12 +118,24 @@ test("the pre-release opt-in is off unless saved on", () => {
   }
 });
 
+function publishBlock(yml) {
+  return String(yml).replace(/\r\n/g, "\n").match(/^publish:\n((?:[ \t-].*\n)+)/m)?.[1] ?? "";
+}
+
 test("electron-builder publishes to the same repository", async () => {
   const { readFileSync } = await import("node:fs");
   const yml = readFileSync(new URL("../electron-builder.yml", import.meta.url), "utf8");
-  const publish = yml.match(/^publish:\n((?:[ \t-].*\n)+)/m)?.[1] ?? "";
+  const publish = publishBlock(yml);
   assert.match(publish, /provider: github/);
   assert.match(publish, /owner: pulsatrixtechnologies/);
   assert.match(publish, /repo: sagax/);
   assert.doesNotMatch(publish, /provider: (generic|s3|spaces|keygen|bitbucket|snapStore)/);
+});
+
+test("the publish block matches a CRLF checkout the way GitHub Actions Windows writes it", () => {
+  const yml = "appId: com.openmausbot.app\r\npublish:\r\n  - provider: github\r\n    owner: pulsatrixtechnologies\r\n    repo: sagax\r\n";
+  const publish = publishBlock(yml);
+  assert.match(publish, /provider: github/);
+  assert.match(publish, /owner: pulsatrixtechnologies/);
+  assert.match(publish, /repo: sagax/);
 });

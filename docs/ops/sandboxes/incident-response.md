@@ -6,7 +6,7 @@ Treat a firing alert as the start of the incident; do not wait for a
 person to write in.
 
 Severity `page` is answered when it fires, including outside the warm
-window. Severity `ticket` is answered the next business hour. The GOX
+window. Severity `ticket` is answered the next business hour. The production
 VM itself is not restarted as a first action.
 
 ## Roles
@@ -23,7 +23,7 @@ VM itself is not restarted as a first action.
 
 Page. The provisioner Deployment has replicas and none are Ready.
 
-1. `kubectl -n sagax-sandboxes describe deploy sagax-sandboxd` and the
+1. `kubectl -n <RESOURCE_GROUP> describe deploy sagax-sandboxd` and the
    last logs. `SANDBOX_BACKEND=kubernetes` on this Deployment is the
    Kubernetes provisioner. It stays up. People still on Docker are
    unaffected. Downtime **0** until a canary person calls it.
@@ -40,7 +40,7 @@ is 30–90 seconds, so 3 minutes means the autoscaler is not adding a node.
 
 1. Confirm only one of cluster-autoscaler and Karpenter is installed.
 2. Check the quota (Canada Central arm64). The Azure adapter ships a max
-   of one `Standard_D4ps_v6` beside the GOX VM.
+   of one `Standard_D4ps_v6` beside the production VM.
 3. If the buffer ScaledObject `sagax-sandbox-pending` is still applied
    and the driver is also creating pods, delete the ScaledObject. That
    is the double-reservation case. Downtime **0**.
@@ -81,7 +81,7 @@ minutes.
 
 ## SagaxSandboxNodeNotReady
 
-Page. A node labelled `sagax.pulsatrix.ca/pool=sandboxes` has not been
+Page. A node labelled `sagax.example.com/pool=sandboxes` has not been
 Ready for 5 minutes.
 
 1. See whether pods moved. A detached Azure disk can attach to the
@@ -112,7 +112,7 @@ Page. The last successful daily backup is older than 26 hours. The
 alert stays silent until Velero has published one success, so the first
 backup is proved by the drill, not by this alert.
 
-1. `kubectl -n velero describe schedule sagax-sandboxes-daily`.
+1. `kubectl -n velero describe schedule <RESOURCE_GROUP>-daily`.
 2. Do not cut over another person while this alert is firing.
 3. A restore from the previous good backup follows `backup-restore.md`.
 4. Rollback criterion: the backup has been stale for the whole canary

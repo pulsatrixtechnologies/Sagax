@@ -188,10 +188,18 @@ export function runtimeEnv(env = process.env, home = os.homedir(), platform = pr
   return { ...env, PATH: [...current, ...extra.filter(dir => !current.includes(dir))].join(":") };
 }
 
+/** Path helpers of the computer the Local VM lives on, not of this process.
+ * A Windows CI host must still join a darwin fixture with `/`, and Docker
+ * Desktop on Windows reports `/` and `\` interchangeably. */
+function hostPath(platform) {
+  return platform === "win32" ? path.win32 : path.posix;
+}
+
 function samePath(a, b, platform) {
   const clean = value => {
     let out = String(value ?? "").replace(/^\/host_mnt(?=\/)/, "");
     if (platform === "darwin") out = out.replace(/^\/private(?=\/)/, "");
+    if (platform === "win32") out = out.replaceAll("\\", "/");
     out = out.replace(/[\\/]+$/, "");
     return platform === "win32" || platform === "darwin" ? out.toLowerCase() : out;
   };
@@ -300,7 +308,11 @@ export function createLocalVm({
   confirmCreate = null, pollMs = 1000,
   idleStopMs = LOCAL_VM_IDLE_STOP_MS, now = Date.now, setTimer = setTimeout, clearTimer = clearTimeout,
 } = {}) {
-  const workspace = path.join(dataDir, "vm-home");
+  // The folder belongs to the machine named by `platform`, which tests set
+  // apart from this process. The host's path.join would rewrite a POSIX
+  // folder with this computer's separators, and a healthy VM then looks
+  // stale.
+  const workspace = hostPath(platform).join(dataDir, "vm-home");
   let job = null;
   let installJob = null;
   let confirming = false;

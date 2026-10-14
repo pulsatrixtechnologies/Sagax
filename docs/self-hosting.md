@@ -867,7 +867,7 @@ welcome tour:
 - **No server**: the solo, local-first app. The welcome tour
   follows.
 - **Server**: the address of your organization's Sagax, prefilled with
-  `https://bot.pulsatrix.mcp.goxcloud.ca`. **Sign in** checks that the
+  `https://<HOST_FQDN>`. **Sign in** checks that the
   server signs people in with Pulsatrix (its
   `/.well-known/openmausbot/environment` names a `perspicax` identity),
   saves it under Servers, selects it and starts its **Sign in with
@@ -990,7 +990,7 @@ there. Your bots copied there stay in the organization; your bots on this
 computer are unchanged.
 
 For several people on one server, run Sagax with Perspicax (the compose in
-`pulsatrix-v3/deploy`, `docker-compose.pulsabot.yml`): Perspicax owns the
+`<PERSPICAX_REPO>/deploy`, `docker-compose.sagax.yml`): Perspicax owns the
 accounts there, so an organization server (`SAGAX_IDENTITY=perspicax`) offers
 no emailed sign-in codes, invitation links or sign-in list, and an old
 `config.json` `org` key is ignored. A solo server keeps them, as below: its

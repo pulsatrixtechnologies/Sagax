@@ -15,6 +15,11 @@ const localOrigin = require("./local-origin.cjs");
 
 const ORG = "https://org.example.test";
 
+/** GitHub Actions Windows may check out CRLF; source matchers are written against LF. */
+function sourceText(text) {
+  return String(text).replace(/\r\n/g, "\n");
+}
+
 function bundleDir() {
   const dir = mkdtempSync(path.join(tmpdir(), "omb-bundled-ui-"));
   mkdirSync(path.join(dir, "assets"));
@@ -209,8 +214,13 @@ test("the preload gives the bundled organization page the desktop-UI parts, and 
   assert.ok(local.bridge.serverMode && local.bridge.environments);
 });
 
+test("a CRLF checkout of main.mjs still matches the bundled-ui wiring", () => {
+  const crlf = sourceText(readFileSync(new URL("./main.mjs", import.meta.url), "utf8")).replace(/\n/g, "\r\n");
+  assert.match(sourceText(crlf), /function syncBundledUi\(\) \{\n  const origin = bundledOrigin\(environmentsState\);/);
+});
+
 test("main draws the bundle only for the active organization server and trusts it for the desktop-UI channels", () => {
-  const main = readFileSync(new URL("./main.mjs", import.meta.url), "utf8");
+  const main = sourceText(readFileSync(new URL("./main.mjs", import.meta.url), "utf8"));
   assert.match(main, /function syncBundledUi\(\) \{\n  const origin = bundledOrigin\(environmentsState\);/);
   assert.match(main, /environmentsState = next;\n  syncBundledUi\(\);/, "every saved change re-syncs the handler");
   assert.match(main, /environmentsState = readEnvironments\(\);\n  syncBundledUi\(\);/, "and the first read at launch");

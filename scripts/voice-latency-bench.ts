@@ -328,6 +328,7 @@ export class ClockPlayer {
   private pumping = false;
   private nextTime = 0;
   private generation = 0;
+  private reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
   open() { return {} as AudioContext; }
   get output() { return null; }
   get busy() { return this.queue.length > 0 || this.pumping || performance.now() < this.nextTime; }
@@ -343,6 +344,10 @@ export class ClockPlayer {
     for (const sentence of this.queue) sentence.abort();
     this.queue = [];
     this.nextTime = 0;
+    this.pumping = false;
+    const reader = this.reader;
+    this.reader = undefined;
+    try { await reader?.cancel(); } catch { /* already closed */ }
   }
   tone() {}
   async close() { await this.cancel(); }
@@ -361,27 +366,38 @@ export class ClockPlayer {
           new Promise<null>((resolve) => { timer = setTimeout(() => resolve(null), 15_000); }),
         ]);
         if (timer) clearTimeout(timer);
-        if (!audio) continue;
+        if (!audio || mine !== this.generation) continue;
         const reader = audio.body.getReader();
+        this.reader = reader;
         let first = true;
-        for (;;) {
-          const { done, value } = await reader.read();
-          if (done || mine !== this.generation) break;
-          const now = performance.now();
-          const start = Math.max(now + 15, this.nextTime);
-          this.nextTime = start + (value.byteLength / 2 / audio.sampleRate) * 1000;
-          if (first) {
-            first = false;
-            setTimeout(() => {
-              if (mine === this.generation) this.events.onSentenceStart?.(sentence.text);
-            }, start - now);
+        try {
+          for (;;) {
+            let chunk: ReadableStreamReadResult<Uint8Array>;
+            try {
+              chunk = await reader.read();
+            } catch {
+              break;
+            }
+            const { done, value } = chunk;
+            if (done || mine !== this.generation) break;
+            const now = performance.now();
+            const start = Math.max(now + 15, this.nextTime);
+            this.nextTime = start + (value.byteLength / 2 / audio.sampleRate) * 1000;
+            if (first) {
+              first = false;
+              setTimeout(() => {
+                if (mine === this.generation) this.events.onSentenceStart?.(sentence.text);
+              }, start - now);
+            }
           }
+        } finally {
+          if (this.reader === reader) this.reader = undefined;
         }
       }
     } finally {
-      this.pumping = false;
+      if (mine === this.generation) this.pumping = false;
     }
-    if (this.queue.length) {
+    if (mine === this.generation && this.queue.length) {
       void this.pump();
       return;
     }

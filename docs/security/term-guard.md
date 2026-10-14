@@ -14,13 +14,14 @@ GitHub noreply address (`<id>+<login>@users.noreply.github.com`) for commits.
 - A hit prints only the location (`title`, `branch`, `path:line` or `file #N`),
   never the term; every term is also registered with `::add-mask::`.
 - Missing or empty secret: the job fails (fail closed).
-- Runs on `pull_request_target` so fork PRs are covered; it checks out only the
-  base branch's `scripts/ci/term-guard.py` and reads the PR as data through the
-  API. It never checks out or executes pull-request code.
+- Runs on `pull_request_target` so fork pull requests are scanned. The job
+  checks out only the base branch for the trusted guard script
+  (`scripts/ci/term-guard.py`). It never checks out the pull request head.
+  Title, branch, commits and the diff are read through the API as data.
 
 Tests: `python3 scripts/ci/term-guard.test.py`.
 
-Runs on self-hosted Linux runners only.
+Runs on a GitHub-hosted `ubuntu-latest` runner.
 
 ## Path allowlist
 

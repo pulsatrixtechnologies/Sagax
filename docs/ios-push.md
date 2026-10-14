@@ -4,7 +4,7 @@ The phone app shows notifications by itself only while it runs or lingers in
 the background with its live stream open. Once it is closed, or suspended
 for long, only Apple Push Notification service (APNs) can reach it. The
 organization server (Sagax in server mode, the `pulsabot` container on the
-GOX VM) therefore sends real APNs pushes.
+production VM) therefore sends real APNs pushes.
 
 ## What gets pushed
 
@@ -105,8 +105,8 @@ except the server's host table in `dist-server/`.
 
 ## Creating the APNs key (once, Apple Developer portal)
 
-1. Sign in to https://developer.apple.com/account with the Pulsatrix team
-   (Team ID `PP546MZVHZ`).
+1. Sign in to https://developer.apple.com/account with the Apple Developer
+   team (Team ID `<APPLE_TEAM_ID>`).
 2. Certificates, Identifiers & Profiles > **Keys** > **+**.
 3. Name it (for example `Sagax APNs`), check **Apple Push Notifications
    service (APNs)**, Configure: environment **Sandbox & Production**, then
@@ -141,7 +141,7 @@ environment when it registers and that one wins over
 | --- | --- |
 | `SAGAX_APNS_KEY_PATH` | the `.p8` file, mounted read-only |
 | `SAGAX_APNS_KEY_ID` | the 10 character Key ID |
-| `SAGAX_APNS_TEAM_ID` | `PP546MZVHZ` (the default) |
+| `SAGAX_APNS_TEAM_ID` | `<APPLE_TEAM_ID>` (the team's 10-character id) |
 | `SAGAX_APNS_BUNDLE_ID` | `ca.pulsatrix.sagax` (the default) |
 | `SAGAX_APNS_ENVIRONMENT` | `production` (the default) or `sandbox` |
 
@@ -150,10 +150,10 @@ nothing: phones still register, and the first push that would have gone out
 logs one line `push: APNs is not configured (...)`; after that, quiet. With
 them, startup logs `push: APNs on (...)`.
 
-## On the GOX VM (Perspicax infra)
+## On the production VM (Perspicax infra)
 
 The `pulsabot` container already reads its secrets from
-`/opt/pulsatrix/secrets/pulsabot` (mounted at `/run/secrets/pulsabot`, files
+`<INSTALL_ROOT>/secrets/sagax` (mounted at `/run/secrets/sagax`, files
 `root:10002` mode 0440, the container has group 10002), filled by
 `infra/scripts/vm-bootstrap.sh` from the Key Vault. The APNs key follows the
 same path. These changes belong to the Perspicax repository and are applied
@@ -162,24 +162,24 @@ by the orchestrator, not by this pull request.
 1. Put the key in the Key Vault (isolated `az` profile of Perspicax):
 
    ```sh
-   export AZURE_CONFIG_DIR=~/.azure-pulsatrix
-   vault=$(az keyvault list --resource-group rg-pulsatrix-gox --query '[0].name' -o tsv)
+   export AZURE_CONFIG_DIR=~/.azure-org
+   vault=$(az keyvault list --resource-group <RESOURCE_GROUP> --query '[0].name' -o tsv)
    az keyvault secret set --vault-name "$vault" --name sagax-apns-key-p8 \
      --file AuthKey_XXXXXXXXXX.p8 --encoding base64 --output none
    az keyvault secret set --vault-name "$vault" --name sagax-apns-key-id \
      --value XXXXXXXXXX --output none
    ```
 
-2. `infra/runtime/docker-compose.yml`, service `pulsabot`, under
+2. `infra/runtime/docker-compose.yml`, service `sagax`, under
    `environment:` (after `SAGAX_GITHUB_CLIENT_ID`):
 
    ```yaml
       # APNs pushes to the Sagax phone app (Sagax docs/ios-push.md). The key
       # file is written by vm-bootstrap.sh from the Key Vault; an empty
       # SAGAX_APNS_KEY_ID means no pushes (one log line).
-      SAGAX_APNS_KEY_PATH: /run/secrets/pulsabot/apns_key.p8
+      SAGAX_APNS_KEY_PATH: /run/secrets/sagax/apns_key.p8
       SAGAX_APNS_KEY_ID: ${SAGAX_APNS_KEY_ID:-}
-      SAGAX_APNS_TEAM_ID: PP546MZVHZ
+      SAGAX_APNS_TEAM_ID: <APPLE_TEAM_ID>
       SAGAX_APNS_BUNDLE_ID: ca.pulsatrix.sagax
       SAGAX_APNS_ENVIRONMENT: production
    ```
@@ -192,7 +192,7 @@ by the orchestrator, not by this pull request.
      # APNs key for pushes to the Sagax phone app (optional). Key Vault:
      # sagax-apns-key-p8 (the .p8, base64) and sagax-apns-key-id. Written
      # root:10002 0440 like idp_key; never in .env, Compose or a log.
-     apns_key_file=$pulsabot_secrets_dir/apns_key.p8
+     apns_key_file=$sagax_secrets_dir/apns_key.p8
      apns_key_b64=$(optional_secret sagax-apns-key-p8)
      apns_key_id=$(optional_secret sagax-apns-key-id)
      if [[ -n "$apns_key_b64" && "$apns_key_id" =~ ^[A-Z0-9]{10}$ ]]; then
@@ -216,7 +216,7 @@ by the orchestrator, not by this pull request.
 Nothing can be checked end to end without the real key. With the key on the
 VM and a TestFlight build:
 
-1. Open the app signed in to GOX once (it registers: `GET /api/push/devices`
+1. Open the app signed in to production once (it registers: `GET /api/push/devices`
    lists the phone, token masked).
 2. Close the app (swipe it away), then from another account send a direct
    message, then a nudge. The phone shows both; the nudge plays the nudge
