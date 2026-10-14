@@ -940,8 +940,8 @@ final class BotHangupTests: XCTestCase {
         if case .unknown = broken {} else { XCTFail("decoded \(broken)") }
 
         let posted = expectation(forNotification: .sagaxVoiceCallEnded, object: nil)
-        var store = Store()
-        store.apply(frame)
+        var state = CompanionState()
+        state.apply(frame)
         wait(for: [posted], timeout: 1)
     }
 }
