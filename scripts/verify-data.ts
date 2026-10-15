@@ -693,7 +693,7 @@ try {
       } catch (error) {
         chatFailure = error;
         res.writeHead(500, { "content-type": "application/json" });
-        res.end(JSON.stringify({ error: { message: String(error) } }));
+        res.end(JSON.stringify({ error: { message: "Data chat fixture failed" } }));
       }
     });
     await new Promise<void>((resolve) => upstream.listen(0, "127.0.0.1", resolve));
