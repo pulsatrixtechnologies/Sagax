@@ -4,8 +4,8 @@
 // plugin's own Python (px_flow.py, px_flow_action.py) on the same inputs.
 import { describe, expect, it } from "vitest";
 import {
-  FLOW_REGEX_MAX_PATTERN, FLOW_REGEX_MAX_TEXT, FLOW_TOOLS, FLOW_TOOL_NAMES, FLOW_TOOLS_MCP_NAME, callFlowTool, evalCondition,
-  groupUnits, similarKey,
+  FLOW_MAX_DAY_CUTS, FLOW_MAX_SPAN_DAYS, FLOW_REGEX_MAX_PATTERN, FLOW_REGEX_MAX_TEXT, FLOW_TOOLS, FLOW_TOOL_NAMES, FLOW_TOOLS_MCP_NAME, callFlowTool,
+  checkCondition, evalCondition, groupUnits, similarKey,
 } from "./flow-tools.ts";
 import { flowToolsRequest } from "./user-sandbox-proxy.ts";
 import { grokReadOnlyAllowRules, isFlowToolsServer } from "./drivers/acp/grok-read-only-tools.ts";
@@ -276,12 +276,71 @@ describe("the sagax-flow server", () => {
   });
 });
 
-describe("flow regex conditions refuse backtracking shapes", () => {
-  it("refuses nested quantifiers and back references, keeps plain patterns", async () => {
-    const { checkCondition } = await import("./flow-tools.js");
-    expect(() => checkCondition("title ~ (a+)+$")).toThrow(/nested quantifier/);
-    expect(() => checkCondition("title ~ (a|b*)*")).toThrow(/nested quantifier/);
-    expect(() => checkCondition("title ~ (x)\\1")).toThrow(/back reference/);
-    expect(() => checkCondition("title ~ ^(urgent|critical) .+")).not.toThrow();
+describe("flow patterns run in linear time", () => {
+  const evil = { t: `${"a".repeat(FLOW_REGEX_MAX_TEXT - 1)}b`, name: `${"a".repeat(5_000)}c` };
+
+  it("answers backtracking shapes at once and refuses back references", () => {
+    const started = Date.now();
+    // each of these takes seconds on 25 characters with the backtracking engine
+    for (const pattern of ["(a+)+$", "((a+))+$", "^(a|a)*$", "^(a|ab)*c", ".*.*.*x", "\\d+\\d+\\d+$"]) {
+      expect(evalCondition(`t ~ ${pattern}`, evil, NOW)).toBe(false);
+    }
+    expect(Date.now() - started).toBeLessThan(2_000);
+    expect(() => checkCondition("t ~ (x)\\1")).toThrow(/back references/);
+    expect(() => checkCondition("t ~ ^(urgent|critical) .+")).not.toThrow();
+  });
+
+  it("stays case-insensitive and keeps escapes as written", () => {
+    expect(evalCondition("t ~ ^URGENT\\b", { t: "Urgent: disk" }, NOW)).toBe(true);
+    expect(evalCondition("t ~ \\D\\d", { t: "x9" }, NOW)).toBe(true);
+    expect(evalCondition("t ~ ^\\S+$", { t: "a b" }, NOW)).toBe(false);
+  });
+
+  it("matches glob title motifs in linear time and names a malformed one", () => {
+    const started = Date.now();
+    const answer = call("flow_filter", { items: [evil], exclude: { titles: [`${"*a".repeat(40)}*b`] } }).json;
+    expect(answer.kept).toEqual([evil]);
+    expect(Date.now() - started).toBeLessThan(2_000);
+    expect(call("flow_filter", { items: [{ name: "Zed" }], exclude: { titles: ["z?d", "[!x]ed"] } }).json.excluded).toHaveLength(1);
+    const bad = call("flow_filter", { items: [{ name: "x" }], exclude: { titles: ["[z-a]*"] } });
+    expect(bad.isError).toBe(true);
+    expect(bad.content[0]!.text).toMatch(/bad title motif/);
+  });
+});
+
+describe("flow date ranges stay bounded", () => {
+  it("walks a whole-day item spanning centuries only inside the search window", () => {
+    const started = Date.now();
+    const items = Array.from({ length: 50 }, (_, id) => ({ id, dateStart: "1000-01-01T00:00:00Z", dateEnd: "9999-12-30T00:00:00Z", type: "V" }));
+    const answer = call("flow_free_slots", { time_zone: ZONE, items, whole_day_when: ["type = V"], default_window: ["08:00", "17:00"], minutes: 30, days: 60 });
+    expect(answer.json.slots).toEqual([]);
+    expect(Date.now() - started).toBeLessThan(2_000);
+    // a leave that ends inside the window still frees the days after it
+    const leave = [{ id: 1, dateStart: "1000-01-01T00:00:00Z", dateEnd: "2026-10-16T00:00:00Z", type: "V" }];
+    expect(call("flow_free_slots", { time_zone: ZONE, items: leave, whole_day_when: ["type = V"], default_window: ["08:00", "17:00"], minutes: 30, limit: 1 }).json.slots[0].day).toBe("2026-10-16");
+  });
+
+  it("refuses a member load entry longer than a year", () => {
+    const answer = call("flow_member_load", { entries: [{ id: 9, member: "tech1", dateStart: "1000-01-01T00:00:00Z", dateEnd: "9999-12-30T00:00:00Z" }] });
+    expect(answer.isError).toBe(true);
+    expect(answer.content[0]!.text).toMatch(new RegExp(`"9" spans more than ${FLOW_MAX_SPAN_DAYS} days`));
+    const year = call("flow_member_load", { entries: [{ member: "tech1", dateStart: "2026-01-01T05:00:00Z", dateEnd: "2027-01-01T05:00:00Z" }], time_zone: ZONE }).json;
+    expect(Object.keys(year.load.tech1)).toHaveLength(365);
+  });
+
+  it("refuses more day cuts than one call may make, quickly", () => {
+    const started = Date.now();
+    const entries = Array.from({ length: 5_000 }, (_, id) => ({ id, member: `m${id % 50}`, dateStart: "2026-01-01T05:00:00Z", dateEnd: "2027-01-01T04:00:00Z" }));
+    const answer = call("flow_member_load", { entries, time_zone: ZONE });
+    expect(answer.content[0]!.text).toMatch(new RegExp(`more than ${FLOW_MAX_DAY_CUTS} person-days`));
+    expect(Date.now() - started).toBeLessThan(5_000);
+  });
+});
+
+describe("flow optional and edge inputs", () => {
+  it("takes existing: null and numbers printed with an exponent", () => {
+    expect(call("flow_time_block", { time_zone: ZONE, day: "2026-10-14", start: "09:00", end: "10:00", existing: null }).json.rows[0].overlaps).toBeUndefined();
+    expect(call("flow_stats", { values: [1e-7, 5e-7] }).json).toMatchObject({ count: 2, sum: 6e-7, median: 3e-7 });
+    expect(call("flow_stats", { values: [1e21, 1] }).json).toMatchObject({ sum: 1e21 + 1, min: 1, max: 1e21 });
   });
 });

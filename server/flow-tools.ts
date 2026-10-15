@@ -17,6 +17,7 @@
 // plugin to these tools: docs/migration/flow-plugin-mapping.md.
 // Tests: server/flow-tools.test.ts.
 import { createHash } from "node:crypto";
+import { setFlagsFromString } from "node:v8";
 import { zonedParts, zonedTimeToUtc } from "../shared/zoned-time.ts";
 
 /** The MCP server the tools are mounted under. */
@@ -266,15 +267,40 @@ function toNumber(value: unknown): number | null {
 export const FLOW_REGEX_MAX_PATTERN = 200;
 export const FLOW_REGEX_MAX_TEXT = 10_000;
 
+// A length cap does not stop catastrophic backtracking ((a+)+$, (a|a)*$,
+// .*.*.*x take seconds on a few dozen characters), and no shape check
+// catches them all. So every model-written pattern runs on V8's linear-time
+// engine (the `l` flag): what it cannot run in linear time (back references,
+// lookarounds) is refused. The engine has no `i` flag: the pattern and the
+// text are folded to lower case instead (escapes kept as written).
+let linearEngine = false;
+
+function linearRegex(pattern: string, flags = ""): RegExp {
+  if (!linearEngine) {
+    setFlagsFromString("--enable-experimental-regexp-engine");
+    linearEngine = true;
+  }
+  return new RegExp(pattern, `${flags}l`);
+}
+
+/** The pattern in lower case, outside escapes (`\D`, `\p{Lu}` keep their meaning). */
+function foldPattern(pattern: string): string {
+  let out = "";
+  for (let i = 0; i < pattern.length; i += 1) {
+    if (pattern[i] !== "\\") { out += pattern[i]!.toLowerCase(); continue; }
+    const close = /[pP]/.test(pattern[i + 1] ?? "") && pattern[i + 2] === "{" ? pattern.indexOf("}", i) : -1;
+    const end = close === -1 ? i + 1 : close;
+    out += pattern.slice(i, end + 1);
+    i = end;
+  }
+  return out;
+}
+
 function conditionRegex(pattern: string, part: string): RegExp {
   if (pattern.length > FLOW_REGEX_MAX_PATTERN) fail(`regular expression longer than ${FLOW_REGEX_MAX_PATTERN} characters in ${JSON.stringify(part.slice(0, 80))}`);
-  // A length cap does not stop catastrophic backtracking: refuse a quantified
-  // group that itself holds a quantifier ((a+)+, (a|b*)*, (x{2,})+) and back
-  // references, the shapes that backtrack exponentially.
-  if (/\((?:[^()\\]|\\.)*[*+}](?:[^()\\]|\\.)*\)\s*[*+{]/.test(pattern) || /\\[1-9]|\\k</.test(pattern)) {
-    fail(`regular expression with a nested quantifier or back reference in ${JSON.stringify(part.slice(0, 80))}`);
+  try { return linearRegex(foldPattern(pattern)); } catch {
+    fail(`bad or unsupported regular expression in ${JSON.stringify(part.slice(0, 80))} (back references and lookarounds are not supported)`);
   }
-  try { return new RegExp(pattern, "i"); } catch { fail(`bad regular expression in ${JSON.stringify(part)}`); }
 }
 
 /** Throws on a malformed condition (so a list can be checked up front). */
@@ -301,7 +327,7 @@ export function evalCondition(cond: string, item: unknown, now: number): boolean
     else if (op === "is true") ok = value === true;
     else if (op === "is false") ok = value === false;
     else if (op === "~" || op === "!~") {
-      const found = conditionRegex(arg, part).test(asText(value).slice(0, FLOW_REGEX_MAX_TEXT));
+      const found = conditionRegex(arg, part).test(asText(value).slice(0, FLOW_REGEX_MAX_TEXT).toLowerCase());
       ok = op === "~" ? found : !found;
     } else if (op === "=" || op === "!=") ok = (asText(value) === arg) === (op === "=");
     else if (op === "in" || op === "!in") {
@@ -381,6 +407,10 @@ export function freeSlots(args: Item, clock: number): { slots: Slot[] } {
     const day = String(holiday.date ?? "").slice(0, 10);
     if (day) holidays.set(day, [...(holidays.get(day) ?? []), holiday]);
   }
+  // the days the search below can visit: a whole-day item is only walked
+  // inside them, so a leave spanning centuries costs no more than the search
+  const searchSteps = maxDays * 3 + 7;
+  const firstDay = localDayOf(after, zone), lastDay = addDays(firstDay, searchSteps - 1);
   const busyFixed: Array<[number, number]> = [];
   const blockedDays = new Set<string>();
   for (const item of items) {
@@ -390,7 +420,9 @@ export function freeSlots(args: Item, clock: number): { slots: Slot[] } {
         let b = localDay(item[endField] || item[startField], zone) ?? a;
         // a date-only end is the next midnight: exclusive
         if (a !== null && b !== null && b > a) b = addDays(b, -1);
-        for (let d = a; d !== null && b !== null && d <= b; d = addDays(d, 1)) blockedDays.add(d);
+        if (a === null || b === null) continue;
+        const to = b < lastDay ? b : lastDay;
+        for (let d = a > firstDay ? a : firstDay; d <= to; d = addDays(d, 1)) blockedDays.add(d);
       }
       continue;
     }
@@ -404,9 +436,9 @@ export function freeSlots(args: Item, clock: number): { slots: Slot[] } {
   }
 
   const slots: Slot[] = [];
-  let day = localDayOf(after, zone);
+  let day = firstDay;
   let counted = 0;
-  for (let step = 0; step < maxDays * 3 + 7; step += 1, day = addDays(day, 1)) {
+  for (let step = 0; step < searchSteps; step += 1, day = addDays(day, 1)) {
     if (counted >= maxDays || slots.length >= limit) break;
     const weekday = weekdayOf(day);
     let windowStart: number | null, windowEnd: number | null;
@@ -515,7 +547,7 @@ export function timeBlock(args: Item): { crosses_midnight: boolean; rows: BlockR
   }
   const spans: Array<[string, number, number]> = [[day, start, firstEnd]];
   if (crosses && end > 0) spans.push([addDays(day, 1), 0, end]);
-  const existing = args.existing === undefined ? null : itemsArg(args.existing, "existing");
+  const existing = args.existing === undefined || args.existing === null ? null : itemsArg(args.existing, "existing");
   const startField = stringArg(args.start_field, "start_field", "timeStart");
   const endField = stringArg(args.end_field, "end_field", "timeEnd");
   const rows = spans.map(([d, a, b]): BlockRow => {
@@ -539,10 +571,12 @@ export function timeBlock(args: Item): { crosses_midnight: boolean; rows: BlockR
 // scaled to integers by their own decimals, never added as floats.
 
 function decimalParts(value: number): { digits: bigint; scale: number } {
-  const text = value.toString();
-  if (/e/i.test(text)) fail(`${text} is out of range for exact arithmetic.`);
-  const [whole, frac = ""] = text.replace("-", "").split(".");
-  return { digits: BigInt((value < 0 ? "-" : "") + whole + frac), scale: frac.length };
+  // the shortest decimal JavaScript prints, exponent form (1e-7, 1e21) included
+  const [mantissa, exp = "0"] = value.toString().split(/e/i) as [string, string?];
+  const [whole, frac = ""] = mantissa.replace("-", "").split(".") as [string, string?];
+  const scale = frac.length - Number(exp);
+  const digits = BigInt((value < 0 ? "-" : "") + whole + frac);
+  return scale >= 0 ? { digits, scale } : { digits: digits * 10n ** BigInt(-scale), scale: 0 };
 }
 
 function scaled(value: number, scale: number): bigint {
@@ -813,7 +847,8 @@ export function groupUnits(args: Item): { groups: UnitGroup[]; alone: unknown[];
 /** A title motif, without regard to case: a glob when it holds * ? or [,
  * otherwise a substring. */
 function titleMotif(name: string, motif: string): boolean {
-  // collapse runs of * and cap both sides: a glob is compiled to a regex
+  // collapse runs of * and cap both sides: a glob is compiled to a regex,
+  // run on the linear-time engine (*a*a*a*b backtracks otherwise)
   const folded = name.toLowerCase().slice(0, FLOW_REGEX_MAX_TEXT), wanted = motif.toLowerCase().replace(/\*{2,}/g, "*").slice(0, FLOW_REGEX_MAX_PATTERN);
   if (!/[*?[]/.test(motif)) return folded.includes(wanted);
   let pattern = "";
@@ -830,7 +865,9 @@ function titleMotif(name: string, motif: string): boolean {
       i = close;
     } else pattern += c.replace(/[.+^${}()|\\/]/g, "\\$&");
   }
-  return new RegExp(`^${pattern}$`, "s").test(folded);
+  let compiled: RegExp;
+  try { compiled = linearRegex(`^${pattern}$`, "s"); } catch { fail(`bad title motif ${JSON.stringify(motif.slice(0, 80))}`); }
+  return compiled.test(folded);
 }
 
 export function filterItems(args: Item, clock: number): { kept: unknown[]; dropped: number; excluded: Array<{ item: unknown; reason: string }> } {
@@ -863,20 +900,30 @@ export function filterItems(args: Item, clock: number): { kept: unknown[]; dropp
 
 // ── flow_member_load ──────────────────────────────────────────────────
 
+/** The longest entry flow_member_load cuts into days, and the most day cuts
+ * of one call (each costs time-zone math: 5,000 year-long entries took 30 s). */
+export const FLOW_MAX_SPAN_DAYS = 366;
+export const FLOW_MAX_DAY_CUTS = 50_000;
+
 /** Booked hours per person and local day of the timed, blocking, not done
  * entries, cut at each local midnight. */
 export function memberLoad(args: Item): { load: Record<string, Record<string, number>>; member?: { member: string; day: string; hours: number; window: Record<string, number>; window_hours: number }; ranking?: Array<{ member: string; window_hours: number }> } {
   const zone = timeZoneArg(args.time_zone);
   const memberField = stringArg(args.member_field, "member_field", "member");
   const load: Record<string, Record<string, number>> = {};
+  let cuts = 0;
   for (const row of itemsArg(args.entries, "entries")) {
     if (row.blocking === false || row.doneFlag === true) continue;
     const ref = getPath(row, memberField);
     const member = isRecord(ref) ? asText(ref.identifier ?? ref.name) : asText(ref);
     const start = parseMoment(row.dateStart), end = parseMoment(row.dateEnd);
     if (!member || start === null || end === null || end <= start) continue;
+    // one cut per local day: a span of centuries would loop millions of times
+    if (end - start > FLOW_MAX_SPAN_DAYS * DAY_MS) fail(`entry ${JSON.stringify(asText(row.id ?? member))} spans more than ${FLOW_MAX_SPAN_DAYS} days; pass timed schedule entries.`);
     let cursor = start;
     while (cursor < end) {
+      cuts += 1;
+      if (cuts > FLOW_MAX_DAY_CUTS) fail(`entries cover more than ${FLOW_MAX_DAY_CUTS} person-days; pass fewer or shorter entries (only the days you need).`);
       const day = localDayOf(cursor, zone);
       const midnight = localAt(addDays(day, 1), 0, zone);
       const next = midnight > cursor ? Math.min(end, midnight) : end;
