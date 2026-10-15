@@ -6,7 +6,7 @@ exposes to a bot or an AI client. The machine-readable form is the registry in
 `server/mcp-permissions.ts`; `server/mcp-permissions.test.ts` fails when a
 catalog tool has no permission.
 
-Totals: capabilities 113, covered 113, gaps 0.
+Totals: capabilities 115, covered 115, gaps 0.
 
 Sources read: the agents tool catalog, the internal routes it calls
 (`/api/internal/*`), the member API (`docs/org-member-api.md`), and the
@@ -56,6 +56,7 @@ Reading the table:
 | workspace:search | sagax | `workspace_search` | `workspace:search` | covered |
 | agents:list | sagax | `list_agents` | `agents:list` | covered |
 | agents:find | sagax | `find_agents` | `agents:find` | covered |
+| agents:get | sagax | `get_agent` | `agents:get` | covered |
 | agents:await | sagax | `await_turn` | `agents:await` | covered |
 | transcript:read | sagax | `read_transcript` | `transcript:read` | covered |
 | transcript:page | sagax | `read_transcript_page` | `transcript:page` | covered |
@@ -100,6 +101,7 @@ Reading the table:
 | bots:create | sagax | `create_bot` | `bots:create` | covered |
 | bots:delete.propose | sagax | `propose_bot_deletion` | `bots:delete.propose` | covered |
 | agents:create | sagax | `create_agent` | `agents:create` | covered |
+| agents:delete | sagax | `delete_agent` | `agents:delete` | covered |
 | rooms:create | sagax | `create_room` | `rooms:create` | covered |
 | rooms:manage | sagax | `manage_room` | `rooms:manage` | covered |
 | teamsetup:propose | sagax | `propose_team_setup` | `teamsetup:propose` | covered |
