@@ -15,8 +15,8 @@ One permission per action, named `resource:verb` (`memory:save`,
 3. **Audit on every call, allowed and denied.** One record per call:
    time, principal, role, tool, permission, scope, decision, reason, and
    whether the denial was enforced. It never holds arguments, message text or
-   results. The proxy writes it as one `[mcp-audit]` JSON line on stderr; the
-   hook (`McpAuditHook`) is the seam for the server's activity log. A sink
+   results. It goes to the server's activity log (see Audit below), with a stderr
+   `[mcp-audit]` line as the fallback. A sink
    that throws never changes the decision.
 4. **Mode.** `SAGAX_MCP_PERMISSIONS`: `off`, `shadow` (default: denials are
    audited and the call goes through, so existing bots keep working while the
@@ -52,12 +52,35 @@ started, not take over someone else's.
 
 ## Dynamic keys
 
-Gateway APIs are many. Per-resource grants take the form
-`<api>:<resource>.<verb>` (for example `cw:ticket.update`) and narrow
-`api:write`, `api:query` or `api:action`: a call is allowed when the role
-holds the tier permission and the narrowed key is not denied. Resolution from
-the Perspicax catalog is not built yet (listed in `coverage.md` as the
-`api:*` gap).
+Gateway APIs are many. An `api_query`, `api_write` or `api_action` call names
+an API, a resource and a verb; the guard derives `<api>:<resource>.<verb>`
+(`cw:ticket.update`; a query is `.read`). A call is allowed when the role
+holds the tier permission and no deny rule matches the derived key.
+`SAGAX_MCP_DENY` lists the rules, comma separated: an exact key,
+`cw:ticket.*` or `cw:*`. A denied key is reported as `resource_denied` and the
+audit row carries `resource`. Segments must be plain slugs; when a catalog of
+the Perspicax APIs is passed to the guard (`ApiCatalog`), a name it does not
+list gives no key. Reading that catalog from Perspicax at turn time is not
+wired yet.
+
+## Where the guard runs
+
+- The agents proxy, for every Sagax tool.
+- `PerspicaxMcp.relay` (and so `callTool`), for every `tools/call` relayed to a
+  Perspicax profile, with the same mode and identity.
+
+Identity is set by the harness when it builds the integration
+(`mcpIdentityEnv`): the speaking person, their role (Perspicax admin is
+`admin`, manager is `operator`, anyone else `member`) and teams; a turn with
+no person is `service`.
+
+## Audit
+
+Both guards write to the server's activity log (category `security`, actions
+`mcp.call`, `mcp.shadow`, `mcp.deny`) through `POST /api/internal/mcp-audit`
+for the proxy and directly for the relay. Only the whitelisted fields of the
+record are kept. If the server cannot be reached, the proxy writes the
+`[mcp-audit]` line on stderr.
 
 ## Adding a tool
 
