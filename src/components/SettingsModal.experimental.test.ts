@@ -119,7 +119,10 @@ describe("Settings > General > Advanced", () => {
     expect(html).toContain("Group turns");
     expect(html).toContain(">12 min per turn<");
     expect(html.indexOf("Routines in the conversation")).toBeLessThan(html.indexOf("Group turns"));
-    for (const card of ["general.mcpCalls", "general.toolAccess"]) expect(html, card).toContain(`data-settings-card="${card}"`);
+    expect(html).toContain('data-settings-card="general.mcpCalls"');
+    // 2026-10-15: Tool access, Parallel conversations and Automatic recovery
+    // are each bot's own (bot editor); none is a Settings card any more.
+    for (const card of ["general.toolAccess", "general.threads", "general.recovery"]) expect(html, card).not.toContain(`data-settings-card="${card}"`);
     expect(fixture.api).not.toHaveBeenCalled();
   });
 

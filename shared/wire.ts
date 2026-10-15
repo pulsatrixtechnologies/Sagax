@@ -399,6 +399,17 @@ export interface WireBot {
   outbound?: { policy: "ask" | "allow"; dailyCap: number };
   /** Ordered backups used only by opt-in, pre-prompt startup recovery. */
   fallback?: Array<{ instanceId: string; model: string }>;
+  /** Per bot since 2026-10-15 (server/bot-runtime-settings.ts): its
+   * conversations that may work at once (1..10). Absent: the server default. */
+  maxConcurrentThreads?: number;
+  /** Parallel tasks one person may have running on this bot (1..10). */
+  maxParallelPerPerson?: number;
+  /** What a message sent while this bot works does by default. Absent: each
+   * person's own default (shared/parallel-tasks.ts BusySendPreference). */
+  busySend?: "ask" | "steer" | "parallel" | "after";
+  /** Automatic recovery for this bot: on, and its backup model (its
+   * `fallback` chain wins when it has one). Absent: the server default. */
+  automaticRecovery?: { enabled: boolean; backup?: ModelSelection };
   /** Whether this bot gets the app's built-in browser. */
   browser?: boolean;
   /** Memory upkeep: the harness captures facts from finished chats into

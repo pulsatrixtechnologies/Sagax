@@ -107,8 +107,9 @@ describe("independent bot tasks through the isolated control surface", () => {
     await control(["send", "--bot", peer.id, "--text", "Hold this review until I approve the check."]);
     const answers = await permission(models[1], "mailbox-approval");
     await expect.poll(async () => (await botState(peer.id)).activity).toBe("waiting-on-you");
-    // One thread per bot: the card's thread holds the peer's only slot.
-    expect((await api("PATCH", "/api/config", { threads: { maxConcurrentPerBot: 1 } })).status).toBe(200);
+    // One thread for this bot (its own setting since 2026-10-15): the card's
+    // thread holds the peer's only slot.
+    expect((await api("PATCH", `/api/bots/${peer.id}/runtime-settings`, { maxConcurrentThreads: 1 })).status).toBe(200);
     await control(["send", "--bot", chief.id, "--text", "Ask the reviewer to check the release notes, then return the result here."]);
     const token = (await dump(models[0])).mcpConfig.mcpServers.agents.env.SAGAX_COMMS_TOKEN;
     const roster = await internal(token, "GET", "/api/internal/agents");
@@ -159,7 +160,7 @@ describe("independent bot tasks through the isolated control surface", () => {
     await expect.poll(async () => (await botState(chief.id)).busy).toBe(false);
     // A card holds only its own thread: with a slot free, the work starts
     // beside it while the card still waits.
-    expect((await api("PATCH", "/api/config", { threads: { maxConcurrentPerBot: 3 } })).status).toBe(200);
+    expect((await api("PATCH", `/api/bots/${peer.id}/runtime-settings`, { maxConcurrentThreads: 3 })).status).toBe(200);
     await expect.poll(() => handoff()?.status, { timeout: 10_000 }).toBe("running");
     const peerNow = (await api("GET", "/api/bots")).body.bots.find((bot: any) => bot.id === peer.id);
     expect(peerNow.tasks.find((task: any) => task.threadId === peer.activeTaskId)?.activity).toBe("waiting-on-you");

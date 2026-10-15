@@ -30,6 +30,8 @@ import { LocalComputerAutoWarning } from "../LocalComputerAutoWarning";
 import { SwitchRow } from "../SettingsPrimitives";
 import { ManagedTeamsSettings } from "./ManagedTeamsSettings";
 import { OwnerPermissionsCard } from "./OwnerPermissionsCard";
+import { BotToolAccess } from "./BotToolAccess";
+import { BotParallelSettings } from "./BotParallelSettings";
 import { ProposalStatus } from "./ProposalStatus";
 import { PaneSection } from "./PaneSection";
 import { AdvancedFold } from "./AdvancedFold";
@@ -103,7 +105,12 @@ export function PermissionsSection({
   const showOutboundUi = advanced && showOutbound;
   // the owner always manages their own bot's permission mode and rules
   const showOwnerPermissions = !draft && viewerOwnsBot(state.config, bot);
-  if (!showPrimaryUi && !showApproval && !showContactUi && !showOutboundUi && !showOwnerPermissions) return null;
+  // 2026-10-15: this bot's tool access and parallel conversations (they were
+  // Settings > General > Advanced for every bot). Owner or admin; the server
+  // checks the same (server/routes/bot-runtime-settings.ts).
+  const showToolAccess = advanced && !draft && canEditBotField(state.config, bot, "toolScope");
+  const showParallel = advanced && !draft && canEditBotField(state.config, bot, "maxConcurrentThreads");
+  if (!showPrimaryUi && !showApproval && !showContactUi && !showOutboundUi && !showOwnerPermissions && !showToolAccess && !showParallel) return null;
 
   return (
     <div className="flex flex-col gap-5">
@@ -167,6 +174,9 @@ export function PermissionsSection({
       {/* 2026-10-14: the owner's permission mode and rules (the server
           answers only the owner; anyone else sees nothing here) */}
       {showOwnerPermissions && <OwnerPermissionsCard key={bot.id} bot={bot} />}
+
+      {showToolAccess && <BotToolAccess key={`tools:${bot.id}`} bot={bot} />}
+      {showParallel && <BotParallelSettings key={`parallel:${bot.id}`} bot={bot} />}
 
       {commandAllowlistTarget && <CommandAllowlistDialog
         key={`command-allowlist:${commandAllowlistTarget.botId}`}

@@ -54,5 +54,11 @@ Admin scope only (gate + handler). Policy rows are `tool-grants:admin`, never de
 - `POST /api/tool-grants` `{subject:{kind,id}, scope:"<area>:<tier>", expiresAt?}`: a bot must exist; admin-tier grants need an expiry within 30 days.
 - `POST /api/tool-grants/<id>/revoke`: keeps the row. Both writes go to the admin activity log (category `rights`).
 
+Per bot (2026-10-15, the bot editor's Permissions page; `server/routes/bot-runtime-settings.ts`): the bot's owner (with `bots.tools` on an organization server) or an admin.
+- `GET /api/bots/<id>/tool-grants`: that bot's rows only, with `state` and `mayGrantAdmin`.
+- `POST /api/bots/<id>/tool-grants` `{scope, expiresAt?}`: the subject is the bot in the path. An admin-tier grant is an admin's only (403 `admin_tier_admin_only`) and ends within 30 days.
+- `POST /api/bots/<id>/tool-grants/<grantId>/revoke`: only a grant of that bot (another bot's or a person's is 404). Both writes are audited as above.
+Their policy rows are `tool-grants:admin`, never default-enabled. A person's grants stay on the admin routes above, reviewed in Settings > General > Advanced ("People's tool access", shown only when some exist).
+
 ## B2.1: guard before the card
 An `agents__<tool>` (or `mcp__agents__<tool>`) permission request is checked before the card or Full access answers it: the bot's grant, then the grant of the person its turn speaks for. Audit rows (`agents.<tool>`, admin activity): `card` (pre_card, with guard decision and `speakerPrincipalId`), then `declined`/`expired` when nobody approves; an approved call is audited by the call itself (now with `speakerPrincipalId`). Enforce: `refused` and denied without a card. Shadow (default): recorded only.

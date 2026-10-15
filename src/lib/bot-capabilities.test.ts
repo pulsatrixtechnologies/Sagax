@@ -21,6 +21,19 @@ describe("canEditBotField", () => {
     expect(canEditBotField(granted, own, "chiefOfStaff")).toBe(false);
   });
 
+  it("opens a bot's parallel conversations, recovery and tool access to its owner with the permission (2026-10-15)", () => {
+    const behaviour = { viewer: { ...member.viewer!, permissions: ["bots.create", "bots.behaviour"] } } as ConfigStatus;
+    const tools = { viewer: { ...member.viewer!, permissions: ["bots.create", "bots.tools"] } } as ConfigStatus;
+    for (const field of ["maxConcurrentThreads", "maxParallelPerPerson", "busySend", "automaticRecovery"]) {
+      expect(canEditBotField(behaviour, own, field), field).toBe(true);
+      expect(canEditBotField(behaviour, other, field), field).toBe(false);
+      expect(canEditBotField(member, own, field), field).toBe(false);
+    }
+    // the bot editor's Tool access follows the tools permission
+    expect(canEditBotField(tools, own, "toolScope")).toBe(true);
+    expect(canEditBotField(behaviour, own, "toolScope")).toBe(false);
+  });
+
   it("lets a solo server, an admin and a missing viewer edit every field", () => {
     expect(canEditBotField(null, other, "cwd")).toBe(true);
     expect(canEditBotField({ viewer: { ...member.viewer!, role: "admin", operator: false } } as ConfigStatus, other, "approvalMode")).toBe(true);

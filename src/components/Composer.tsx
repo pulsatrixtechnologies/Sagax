@@ -87,6 +87,7 @@ import {
 import { BusySendChooser, moveBusyChoice } from "./BusySendChooser";
 import { useParallelApprovals } from "./parallel-approvals";
 import { useBusySendPreference } from "@/lib/busy-send";
+import { botBusySend } from "@/lib/bot-runtime-settings";
 import { useOnCall } from "@/lib/call";
 import { suggestBusySendMode, type BusySendMode } from "../../shared/parallel-tasks";
 import { dataWindowEnabled, skillAuthoringEnabled } from "@/lib/feature-flags";
@@ -204,7 +205,9 @@ export function Composer({
     : (bot?.name ?? t("composer.busy.theBot"));
   // A send while this 1:1 conversation works: join, parallel task or after
   // (shared/parallel-tasks.ts). "ask" offers the choice; null = closed.
-  const busySendPreference = useBusySendPreference();
+  // The bot's own default wins (bot editor > Permissions, 2026-10-15); a
+  // bot without one keeps the person's own earlier choice.
+  const busySendPreference = botBusySend(bot, useBusySendPreference());
   // on a voice call the words join the running turn: no chooser
   const onCall = useOnCall();
   const offersBusyChoice = Boolean(bot && !group && busy && onCall !== bot.id);

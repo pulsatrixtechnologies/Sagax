@@ -34,3 +34,14 @@ export function grantRequest(draft: GrantDraft, now: number):
   if (draft.tier === "admin" && (days === undefined || days > MAX_ADMIN_GRANT_DAYS)) return { ok: false, error: "settings.toolAccess.form.adminDays" };
   return { ok: true, body: { subject: { kind: "bot", id: draft.botId }, scope: `${area}:${draft.tier}`, ...(days ? { expiresAt: now + days * 86_400_000 } : {}) } };
 }
+
+/** The bot editor's form (POST /api/bots/:id/tool-grants): the bot is the
+ * one open, so the body carries only the scope and the end. */
+export function botGrantRequest(draft: Omit<GrantDraft, "botId">, now: number):
+  | { ok: true; body: { scope: string; expiresAt?: number } }
+  | { ok: false; error: "settings.toolAccess.form.badArea" | "settings.toolAccess.form.badDays" | "settings.toolAccess.form.adminDays" } {
+  const checked = grantRequest({ ...draft, botId: "this-bot" }, now);
+  if (!checked.ok) return checked.error === "settings.toolAccess.form.needBot" ? { ok: false, error: "settings.toolAccess.form.badArea" } : { ok: false, error: checked.error };
+  const { subject: _subject, ...body } = checked.body;
+  return { ok: true, body };
+}

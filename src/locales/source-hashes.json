@@ -11500,7 +11500,21 @@
       "browser.panel.retryInstall": "0906864a1b50272e89e5ddb9c2ac1c9d3b8aecb08cf4821edec488e4f2d9cfde",
       "browser.panel.install": "a3cabf5a9623a1f86da1a9951891b8a60b4d6b15affd2948efcf5a15e0b76891",
       "orgComputer.choice.button": "8ffefb6f2716d1eacfee9fa78ac8b1cb0bd4101e18537b7159899a152245f42a",
-      "orgComputer.choice.worksHereShort": "d85adb9f5b15edac644ed18d5bd629ad5d55b23e39989a94fd019a5440c2549e"
+      "orgComputer.choice.worksHereShort": "d85adb9f5b15edac644ed18d5bd629ad5d55b23e39989a94fd019a5440c2549e",
+      "botPanel.parallel.title": "14fd4c88dcbaf01b0787d8abd59fff83b471844da00c4848a41fb9fa5f574d7a",
+      "botPanel.parallel.help": "611026f84657855d5b4376c4981423a54bf83b64c8c5b1225bccf46def444042",
+      "botPanel.parallel.threads": "c243aa3f009b914cab28336cdc09c74505dcdb9b52f9e386dbf23b54609c1c56",
+      "botPanel.parallel.threadsHelp": "81e01ad0be7ec834e67f1da2e6477cd24be0f0d606fcf8ffc76305ef38453a01",
+      "botPanel.parallel.busySend": "e1920494bfdf48048de4435218647261380e1a57e57414b93dcc41589d7d6322",
+      "botPanel.parallel.busySendPersonal": "ab8efc3902f0e1797d6a98a8c843e3d47276eda252e05201b5fc5a541e67867f",
+      "botPanel.parallel.perPerson": "7edc60a9f31d4bb0e51fc9b82cc53650e1ffc9496c2fb4b1f6cd47c3b0d94498",
+      "botPanel.parallel.perPersonHelp": "ef2336b8faaf6b51320370b6c1525a570dd33adadc2c11de5dde366cededd4f5",
+      "botPanel.parallel.error": "7cb93c0b8af5c9bf40b29348181218b19f2afd15bf02eced097eae94b238dd54",
+      "botPanel.toolAccess.help": "69cbe72f19f00b7367c900589b3d567f1a2e26c1a33c51af72f407f76948ba8c",
+      "botPanel.toolAccess.empty": "52884cb0236040647a1fdc9c495953cad7c0e5ee670e3ef02c3ff31d746dea6d",
+      "botPanel.toolAccess.adminOnly": "184dcd7c017cd3132ebfb4e810abc129fb8441ad3def485478bbdaa2cc127a4f",
+      "settings.toolAccess.people.title": "1627e9817212b4d92372ba858f5ea25ff97d949074deffee3142b4459a6a128e",
+      "settings.toolAccess.people.subtitle": "933f93728ce145c1050496d9156e6d0f7c6e8caecfbd1e4426d3d7c6ec4b4cb4"
     },
     "hi": {
       "noEngines.title": "77a6e0966b7323ceae6973abb581b31d52263bb0ec8249e2b1c1b7ae1e586f04",
