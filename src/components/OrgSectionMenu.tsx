@@ -5,13 +5,12 @@
 // they share nothing, so there is no members or sharing item. A bot is
 // shared from its own panel; a group has its own people.
 import { useEffect, useRef, useState } from "react";
-import { ArrowDown, ArrowUp, ChevronsDownUp, ChevronsUpDown, Pencil, Plus, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowUp, ChevronsDownUp, ChevronsUpDown, Pencil, Trash2 } from "lucide-react";
 
 import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
 
 export interface OrgSectionMenuActions {
-  onNew: () => void;
   onRename?: () => void;
   onMoveUp?: () => void;
   onMoveDown?: () => void;
@@ -21,10 +20,11 @@ export interface OrgSectionMenuActions {
 }
 
 /** Which items a section's menu shows: General and the empty list area
- * create, move and fold; one of the person's own sections also renames and
- * deletes (its items go back to General). */
+ * move and fold; one of the person's own sections also renames and deletes
+ * (its items go back to General). A team is made from a bot's right-click
+ * menu, Move to › New team… (JC, 2026-10-15), not typed in the sidebar. */
 export function orgSectionMenuItems(input: { named: boolean; canMoveUp: boolean; canMoveDown: boolean; anyExpanded: boolean }): Array<keyof OrgSectionMenuActions> {
-  const items: Array<keyof OrgSectionMenuActions> = ["onNew"];
+  const items: Array<keyof OrgSectionMenuActions> = [];
   if (input.named) items.push("onRename");
   if (input.canMoveUp) items.push("onMoveUp");
   if (input.canMoveDown) items.push("onMoveDown");
@@ -34,14 +34,13 @@ export function orgSectionMenuItems(input: { named: boolean; canMoveUp: boolean;
 }
 
 const ITEM_KEYS = {
-  onNew: { label: "sidebar.section.new", Icon: Plus },
   onRename: { label: "sidebar.section.rename", Icon: Pencil },
   onMoveUp: { label: "sidebar.section.moveUp", Icon: ArrowUp },
   onMoveDown: { label: "sidebar.section.moveDown", Icon: ArrowDown },
   onCollapseAll: { label: "sidebar.section.collapseAll", Icon: ChevronsDownUp },
   onExpandAll: { label: "sidebar.section.expandAll", Icon: ChevronsUpDown },
   onDelete: { label: "sidebar.section.delete", Icon: Trash2 },
-} as const satisfies Record<keyof OrgSectionMenuActions, { label: string; Icon: typeof Plus }>;
+} as const satisfies Record<keyof OrgSectionMenuActions, { label: string; Icon: typeof Pencil }>;
 
 export function OrgSectionMenuItems({ items, actions }: { items: Array<keyof OrgSectionMenuActions>; actions: OrgSectionMenuActions }) {
   const item = "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[13px] leading-[18px] text-ink hover:bg-hover";
@@ -61,8 +60,7 @@ export function OrgSectionMenuItems({ items, actions }: { items: Array<keyof Org
   );
 }
 
-/** A section name typed in place (a new section, or a rename in the
- * header): Enter saves, Escape cancels. */
+/** A section name typed in place (a rename in the header): Enter saves, Escape cancels. */
 export function SectionNameInput({ initial = "", onSave, onCancel }: { initial?: string; onSave: (name: string) => Promise<string | null>; onCancel: () => void }) {
   const [value, setValue] = useState(initial);
   const [error, setError] = useState<string | null>(null);

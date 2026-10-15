@@ -1,6 +1,6 @@
-// The sidebar's bot menu (JC, 2026-10-14): five everyday items at the first
-// level (Pin, Rename, Edit bot, More ›, Archive); the rare ones one step
-// down under More.
+// The sidebar's bot menu follows Grok Bot's (JC, 2026-10-15): Pin, Move to ›,
+// Mark as Unread | Rename, Edit bot | Copy conversation ID | Hide from
+// sidebar, Archive, Delete | More › with the rare ones one step down.
 import { createElement, isValidElement, type ReactElement, type ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -86,12 +86,32 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals());
 
 describe("the sidebar's bot menu", () => {
-  it("keeps five items at the first level", () => {
+  it("lists the everyday items at the first level in Grok Bot's order", () => {
     const { html } = render();
-    expect(items(html)).toEqual(["pin", "rename", "edit", "more", "archive"]);
-    for (const label of [">Pin<", ">Rename the bot<", ">Edit bot<", ">More<", ">Archive<"]) expect(html).toContain(label);
+    expect(items(html)).toEqual(["pin", "move", "mark-unread", "rename", "edit", "copy-id", "hide", "archive", "delete", "more"]);
+    for (const label of [">Pin<", ">Move to<", ">Mark as Unread<", ">Rename the bot<", ">Edit bot<", ">Copy conversation ID<", ">Hide from sidebar<", ">More<", ">Archive<"]) expect(html).toContain(label);
     expect(html).not.toContain("Rename Bot");
     expect(html).not.toContain("Model…");
+  });
+
+  it("offers Move to in Simple and Advanced mode alike", () => {
+    expect(items(render().html)).toContain("move");
+    setAdvancedMode(true);
+    try {
+      expect(items(render().html)).toContain("move");
+    } finally {
+      setAdvancedMode(false);
+    }
+  });
+
+  it("keeps Delete in red, after Hide and Archive, and asks before deleting", () => {
+    const { html, props } = render();
+    expect(html).toMatch(/data-menu-item="delete"[^>]*class="[^"]*text-danger/);
+    // Delete is its own component (BotDeleteMenuItem), keyed "delete".
+    const nodes = fixture.portal as ReactElement<{ children: ReactNode[] }>;
+    const flat = (nodes.props.children as ReactNode[]).flat() as ReactElement<{ onClick: () => void }>[];
+    flat.find((node) => isValidElement(node) && node.key === "delete")!.props.onClick();
+    expect(props.onDelete).toHaveBeenCalledWith(expect.objectContaining({ id: bot.id }));
   });
 
   it("opens More without closing, and Edit bot opens the bot editor", () => {
@@ -107,19 +127,11 @@ describe("the sidebar's bot menu", () => {
 
   it("puts the rare actions under More", () => {
     const { html } = render("more");
-    expect(items(html)).toEqual(["back", "put-on-desktop", "model", "mark-unread", "mark-all-read", "hide"]);
+    expect(items(html)).toEqual(["back", "put-on-desktop", "model", "mark-all-read"]);
+    // No second Move to, Mark as Unread or Hide under More.
+    expect(html).not.toContain('data-menu-item="move"');
     expect(html).toContain('data-bot-menu-page="more"');
     expect(html).toContain(">Mark all conversations as read<");
-  });
-
-  it("offers Copy conversation ID in Advanced mode only", () => {
-    expect(items(render("more").html)).not.toContain("copy-id");
-    setAdvancedMode(true);
-    try {
-      expect(items(render("more").html)).toContain("copy-id");
-    } finally {
-      setAdvancedMode(false);
-    }
   });
 
   it("offers Model… under More and opens the model window on that bot", () => {
@@ -137,6 +149,8 @@ describe("the sidebar's bot menu", () => {
     expect(main).toContain(">Modifier le bot<");
     expect(main).toContain(">Épingler<");
     expect(main).toContain(">Plus<");
+    expect(main).toContain(">Déplacer vers<");
+    expect(main).toContain(">Marquer comme non lu<");
     const more = render("more").html;
     expect(more).toContain(">Modèle…<");
     expect(more).toContain(">Tout marquer comme lu<");

@@ -3336,7 +3336,7 @@ describe("harness HTTP API", () => {
       expect((await api("POST", `/api/groups/${room.id}/messages`, { text: "work in the virtual machine" })).status).toBe(202);
       await expect.poll(async () => JSON.stringify((await api("GET", `/api/threads/${room.threadId}/messages`)).body),
         { timeout: 5_000 }).toMatch(/fixture-plain-model can't use a Local VM\. Choose a model that can, such as Claude or ChatGPT\. Choose another model in Room VM refusal's settings\./);
-      expect(JSON.stringify((await api("GET", `/api/threads/${room.threadId}/messages`)).body)).not.toContain("Works on to Auto");
+      expect(JSON.stringify((await api("GET", `/api/threads/${room.threadId}/messages`)).body)).not.toContain("Workspace to Auto");
     } finally {
       if (roomId) await api("POST", `/api/groups/${roomId}/interrupt`, {}).catch(() => undefined);
       if (roomId) await api("DELETE", `/api/groups/${roomId}`).catch(() => undefined);
@@ -8481,14 +8481,14 @@ describe("harness HTTP API", () => {
       expect(ids).toContain("plan");
       expect(ids).not.toContain("browser");
       const text = await previewText();
-      expect(text).toContain("\"Works on\" setting is Off");
+      expect(text).toContain("\"Workspace\" setting is Off");
       expect(text).toContain("no computer and no built-in browser");
 
       // and the same sentence reaches a real turn, not only the preview
       rmSync(fakeClaudeDump, { force: true });
       expect((await api("POST", `/api/bots/${bot.id}/messages`, { text: "open a browser and check my calendar" })).status).toBe(202);
       const dispatched = (await readJsonFileWhenReady<{ systemPrompt: string }>(fakeClaudeDump, 15_000)).systemPrompt;
-      expect(dispatched).toContain("\"Works on\" setting is Off");
+      expect(dispatched).toContain("\"Workspace\" setting is Off");
       expect(dispatched).not.toContain("browser_navigate");
     } finally {
       await api("POST", `/api/bots/${bot.id}/interrupt`);

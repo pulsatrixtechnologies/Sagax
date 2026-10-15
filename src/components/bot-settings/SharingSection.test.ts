@@ -249,8 +249,8 @@ describe("slice 4: levels, teams and the section menu", () => {
   });
 
   it("the section menu is personal: no members or sharing item; General creates, moves and folds", () => {
-    expect(orgSectionMenuItems({ named: false, canMoveUp: false, canMoveDown: true, anyExpanded: true })).toEqual(["onNew", "onMoveDown", "onCollapseAll"]);
-    expect(orgSectionMenuItems({ named: true, canMoveUp: true, canMoveDown: false, anyExpanded: false })).toEqual(["onNew", "onRename", "onMoveUp", "onExpandAll", "onDelete"]);
+    expect(orgSectionMenuItems({ named: false, canMoveUp: false, canMoveDown: true, anyExpanded: true })).toEqual(["onMoveDown", "onCollapseAll"]);
+    expect(orgSectionMenuItems({ named: true, canMoveUp: true, canMoveDown: false, anyExpanded: false })).toEqual(["onRename", "onMoveUp", "onExpandAll", "onDelete"]);
     expect(orgSectionMenuItems({ named: true, canMoveUp: false, canMoveDown: false, anyExpanded: true })).not.toContain("onMembers");
   });
 

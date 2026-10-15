@@ -185,8 +185,8 @@ describe("bot-first sidebar", () => {
       const main = render();
       const more = render("more");
       expect(main).toContain("Rename the bot");
-      expect(more).toContain("Move to team");
-      expect(more).toContain("Hide from sidebar");
+      expect(main).toContain(">Move to<");
+      expect(main).toContain("Hide from sidebar");
       for (const html of [main, more]) {
         expect(html).not.toContain("New thread");
         expect(html).not.toContain("New folder");

@@ -154,7 +154,7 @@ describe("bot draft dialog", () => {
       setLocale("fr");
       try {
         const fr = page({ moreOpen: true });
-        for (const label of ["Identité", "Personnalité", "Compétences", "Mémoire", "Routines", "Accès", "Modèle", "Permissions", "Voix et alertes", "Plus d&#x27;options", "Commencer depuis"]) expect(fr).toContain(label);
+        for (const label of ["Identité", "Personnalité", "Compétences", "Mémoire", "Routines", "Accès", "Modèle", "Permissions", "Voix", "Plus d&#x27;options", "Commencer depuis"]) expect(fr).toContain(label);
         expect(fr).not.toMatch(/>(Identity|Soul|Skills|Memory|Access|Model|Voice &amp; alerts)</);
       } finally { setLocale("en"); }
     });

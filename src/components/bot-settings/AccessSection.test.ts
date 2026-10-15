@@ -208,7 +208,7 @@ describe("AccessSection Works on", () => {
     expect(places(render(makeBot()))).toEqual([]);
     fixture.config = { features: { boatComputer: true } } as Partial<ConfigStatus>;
     expect(places(render(makeBot()))).toEqual([]);
-    expect(render(makeBot())).not.toContain("Works on");
+    expect(render(makeBot())).not.toContain(">Workspace<");
   });
 
   it("has no Works on and no cloud backend on an organization server", () => {
@@ -217,7 +217,7 @@ describe("AccessSection Works on", () => {
       fixture.config = { features } as Partial<ConfigStatus>;
       const markup = render(makeBot());
       expect(places(markup)).toEqual([]);
-      expect(markup).not.toContain("Works on");
+      expect(markup).not.toContain(">Workspace<");
       expect(markup).not.toContain("Cloud is your server environment.");
       expect(markup).not.toContain("Cloud backend");
     }

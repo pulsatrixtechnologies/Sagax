@@ -55,8 +55,8 @@ describe("Computer tab on an organization server", () => {
     const ids = BOT_SECTIONS.map((entry) => entry.id);
     const worksOn = BOT_SECTIONS.find((entry) => entry.id === "worksOn");
     expect(ids.indexOf("worksOn")).toBe(ids.indexOf("access") + 1);
-    expect(worksOn?.label).toBe("Computer");
-    expect(worksOn?.labelKey).toBe("botSettings.nav.computer");
+    expect(worksOn?.label).toBe("Workspace");
+    expect(worksOn?.labelKey).toBe("computer.worksOn");
   });
 
   it("lists Cloud and each of the person's computers by name, and shows the one picked", () => {
@@ -177,7 +177,7 @@ describe("the bot's Works on", () => {
     const markup = renderToStaticMarkup(createElement(WorksOnControl, { value: "cloud", onChange: () => {}, disabled: {}, organization: true }));
     // a section of the Access pane (no card); its meaning behind the info button
     expect(markup).toContain('class="border-t border-hairline/40 pt-5"');
-    expect(markup).toContain('<h3 id="works-on-setting" class="text-[13px] font-medium text-ink">Works on</h3>');
+    expect(markup).toContain('<h3 id="works-on-setting" class="text-[13px] font-medium text-ink">Workspace</h3>');
     expect(markup).toMatch(/<span id="works-on-setting-hint">Where this bot works\./);
     expect(markup.match(/role="radio"/g)).toHaveLength(6);
     for (const label of [">Auto (Cloud)<", ">Cloud (server environment)<", ">Local VM<", ">This computer<", ">Browser<", ">Off<"]) expect(markup).toContain(label);
@@ -269,8 +269,8 @@ describe("Settings > Computer on an organization server", () => {
       initialServer: { configured: true, state: "stopped", limits: { memoryMb: 1024, cpus: 1, pids: 256, diskMb: 2048, tmpMb: 256 }, pendingDeletionAt: null },
     }));
     expect(markup).toContain("Where bots work");
-    expect(markup).toContain("Bots whose Works on is Local VM");
-    expect(markup).not.toContain("Each bot&#x27;s Works on decides");
+    expect(markup).toContain("Bots whose Workspace is Local VM");
+    expect(markup).not.toContain("Each bot&#x27;s Workspace decides");
     expect(markup).not.toContain('role="radiogroup"');
     expect(markup).toContain("Docker Desktop found and running");
     expect(markup).not.toContain("Install a supported container runtime first");
