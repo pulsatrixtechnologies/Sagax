@@ -375,7 +375,6 @@ still use the `SAGAX_*` names on purpose.
 | `SAGAX_IDENTITY` | solo | `perspicax` makes an organization server. |
 | `SAGAX_PERSPICAX_ISSUER` | none | The Perspicax address people sign in with. |
 | `SAGAX_MAIL_*` | none | Defaults for a solo server's mail; values saved in Settings > Email win. |
-| `SAGAX_DEFAULT_SERVER` | none | Build time only: the address the launch screen proposes for Server. |
 
 ## Build from source
 

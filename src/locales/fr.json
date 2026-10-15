@@ -2341,6 +2341,7 @@
   "launch.later": "Vous pourrez changer ce choix plus tard dans Réglages > Général.",
   "launch.server.address": "Adresse du serveur",
   "launch.server.body": "Connectez-vous au serveur {app} de votre organisation avec votre compte Pulsatrix.",
+  "launch.server.hint": "Demandez cette adresse à votre administrateur.",
   "launch.server.title": "Serveur",
   "launch.signIn": "Se connecter",
   "launch.solo.body": "Tout reste sur cet ordinateur : vos bots, vos conversations et vos clés.",

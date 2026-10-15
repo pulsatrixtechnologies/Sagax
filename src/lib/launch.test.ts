@@ -1,17 +1,27 @@
 import { describe, expect, it } from "vitest";
 
 import { EMPTY_ONBOARDING } from "./onboarding";
-import { DEFAULT_SERVER_ADDRESS, defaultServerAddress, launchBridges, launchDue, launchErrorKey, launchModePatch, serverModeBridge } from "./launch";
+import { DEFAULT_SERVER_ADDRESS, launchBridges, launchDue, launchErrorKey, launchModePatch, rememberedServerAddress, serverModeBridge } from "./launch";
 
 const environments = { state: async () => ({ environments: [] }) };
 const orgJoin = { probe: async () => ({ origin: "", issuer: "" }), join: async () => ({ ok: true }) };
 
 describe("launch screen", () => {
-  it("leaves the address empty unless the build names one", () => {
+  it("leaves the address empty: only a server this computer saved is proposed", () => {
     expect(DEFAULT_SERVER_ADDRESS).toBe("");
-    expect(defaultServerAddress()).toBe("");
-    expect(defaultServerAddress(" https://sagax.example.test ")).toBe("https://sagax.example.test");
-    expect(defaultServerAddress("")).toBe("");
+    expect(rememberedServerAddress(null)).toBe("");
+    expect(rememberedServerAddress({ environments: [] })).toBe("");
+    // a computer (not an organization) and a local environment are never proposed
+    expect(rememberedServerAddress({ environments: [
+      { id: "local", kind: "local" },
+      { id: "pc", kind: "remote", origin: "https://computer.example.test" },
+    ] })).toBe("");
+    const saved = [
+      { id: "a", kind: "remote" as const, origin: "https://a.example.test", org: true },
+      { id: "b", kind: "remote" as const, origin: " https://b.example.test ", org: true },
+    ];
+    expect(rememberedServerAddress({ activeId: "local", environments: saved })).toBe("https://b.example.test");
+    expect(rememberedServerAddress({ activeId: "a", environments: saved })).toBe("https://a.example.test");
   });
 
   it("is offered only by the desktop app's own window, which can add and sign in to a server", () => {

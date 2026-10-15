@@ -66,6 +66,8 @@ beforeEach(() => {
   store.api.mockResolvedValue({ onboarding: { launchMode: "solo" } });
   probe.mockReset();
   join.mockReset();
+  bridges.environments.state.mockReset();
+  bridges.environments.state.mockResolvedValue({ activeId: "local", environments: [] });
   onSolo.mockReset();
   setLocale("en");
 });
@@ -111,6 +113,41 @@ describe("launch screen", () => {
     expect(store.api).toHaveBeenCalledWith("/api/config", expect.objectContaining({ body: JSON.stringify({ onboarding: { launchMode: "server" } }) }));
     expect(join).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ origin: "https://sagax.example.test", serverMode: true }));
     expect(onSolo).not.toHaveBeenCalled();
+  });
+
+  it("server mode shows no server of ours: an empty field, an https placeholder and who to ask", async () => {
+    bridges.environments.state.mockResolvedValue({ activeId: "local", environments: [{ id: "local", kind: "local", name: "Local" }] });
+    render("server");
+    for (const effect of fixture.effects) effect();
+    await flush();
+    const field = input();
+    expect(field.props.value).toBe("");
+    expect((field.props as { placeholder?: string }).placeholder).toBe("https://…");
+    const html = render().html;
+    expect(html).toContain("Ask your administrator for this address");
+    expect(html).not.toMatch(/goxcloud|bot\.pulsatrix/);
+  });
+
+  it("proposes the organization server this computer already saved, never over a typed address", async () => {
+    bridges.environments.state.mockResolvedValue({
+      activeId: "local",
+      environments: [
+        { id: "local", kind: "local", name: "Local" },
+        { id: "pc", kind: "remote", name: "A computer", origin: "https://computer.example.test" },
+        { id: "org", kind: "remote", name: "Org", origin: "https://sagax.example.test", org: true },
+      ],
+    });
+    render("server");
+    for (const effect of fixture.effects) effect();
+    await flush();
+    expect(input().props.value).toBe("https://sagax.example.test");
+
+    fixture.values = [];
+    render("server");
+    input().props.onChange!({ target: { value: "https://typed.example.test" } });
+    for (const effect of fixture.effects) effect();
+    await flush();
+    expect(input().props.value).toBe("https://typed.example.test");
   });
 
   it("uses another address the person types", async () => {

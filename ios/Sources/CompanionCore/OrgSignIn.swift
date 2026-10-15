@@ -237,3 +237,16 @@ public struct OrgConnectFlow: Equatable, Sendable {
         return true
     }
 }
+
+/// "Your organization"'s Server address. No build ships a default server:
+/// the field starts empty, and the only address it brings back is the one
+/// this phone already used (kept under `storageKey`), so an existing
+/// sign-in keeps working.
+public enum OrgServerAddress {
+    public static let storageKey = "sagax.organization.lastServer"
+    public static let placeholder = "https://…"
+
+    public static func initial(in defaults: UserDefaults = .standard) -> String {
+        (defaults.string(forKey: storageKey) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+}

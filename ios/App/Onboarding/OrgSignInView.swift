@@ -6,10 +6,11 @@ import CompanionCore
 import SwiftUI
 
 enum OrgServerMemory {
-    static let key = "sagax.organization.lastServer"
+    static let key = OrgServerAddress.storageKey
 
+    /// Empty on a fresh install: only an address this phone already used.
     static var last: String {
-        get { UserDefaults.standard.string(forKey: key) ?? "" }
+        get { OrgServerAddress.initial() }
         set { UserDefaults.standard.set(newValue, forKey: key) }
     }
 
@@ -57,7 +58,7 @@ struct OrgSignInView: View {
 
             SectionLabel(text: "Server address")
             CardSection {
-                OnboardingField(placeholder: "bot.example.com", text: $address, identifier: "org-address")
+                OnboardingField(placeholder: LocalizedStringKey(OrgServerAddress.placeholder), text: $address, identifier: "org-address")
                     .disabled(flow.isBusy)
                     .onSubmit(start)
                 if let serverName, flow.offersSignIn {
