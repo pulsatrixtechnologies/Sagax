@@ -4,7 +4,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { createLocalVm, detectRuntime, judgeContainer, productFromEndpoint, startRuntimeArgv, validLocalVmSpec } from "./local-vm.mjs";
+import { createLocalVm, detectRuntime, judgeContainer, productFromEndpoint, publishedHostPort, runtimeError, startRuntimeArgv, validLocalVmSpec } from "./local-vm.mjs";
 
 const HOME = "/Users/ada";
 const DATA = `${HOME}/.openmausbot`;
@@ -186,6 +186,55 @@ test("setup never touches a container Sagax did not create", async () => {
   assert.equal(status.setup.state, "error");
   assert.equal(status.setup.code, "foreign_container");
   assert.ok(!docker.calls.some(call => / (rm|run) /.test(call)));
+});
+
+// Docker Desktop 4.94 (CLI 29.8) when 127.0.0.1:6080 is taken: `run -d`
+// creates the container, fails to start it, and ends with the --help line.
+const PORT_TAKEN = "docker: Error response from daemon: failed to set up container networking: driver failed programming external connectivity on endpoint openmausbot-computer (39dade10): Bind for 127.0.0.1:6080 failed: port is already allocated\n\nRun 'docker run --help' for more information\n";
+
+/** A Docker where another container publishes 127.0.0.1:6080 until stopped. */
+function portHeldDocker({ holder = "openmausbot-test-tlkf-306809-computer", managed = "1", testRun = "tlkf-306809" } = {}) {
+  const docker = fakeDocker({ existing: { ...container(), State: { Running: false, Status: "created" } } });
+  let held = true;
+  const exec = async argv => {
+    const [, verb, ...rest] = argv;
+    if (verb === "ps" && rest.includes("publish=6080")) { docker.calls.push(argv.join(" ")); return ok(held ? `${holder}\t${managed}\t${testRun}\n` : ""); }
+    if (verb === "stop" && rest[0] === holder) { docker.calls.push(argv.join(" ")); held = false; return ok(`${holder}\n`); }
+    if (verb === "run" && held) { docker.calls.push(argv.join(" ")); return { code: 125, stdout: "abc\n", stderr: PORT_TAKEN }; }
+    return docker.exec(argv);
+  };
+  return { ...docker, exec, calls: docker.calls };
+}
+
+test("a container error keeps its cause, not docker's --help trailer", () => {
+  assert.equal(runtimeError(PORT_TAKEN).includes("port is already allocated"), true);
+  assert.doesNotMatch(runtimeError(PORT_TAKEN), /--help|^docker:/);
+  assert.equal(runtimeError("Error: short-name resolution enforced\n"), "short-name resolution enforced");
+  assert.equal(runtimeError(""), "unknown error");
+  assert.equal(publishedHostPort(spec().run.docker), "6080");
+  assert.equal(publishedHostPort(["run", "-p", "127.0.0.1::6901", IMAGE]), null);
+});
+
+test("Repair frees the viewer port from a leftover test VM (stopped, never removed), then creates the VM", async () => {
+  const docker = portHeldDocker();
+  const vm = createLocalVm({ exec: docker.exec, dataDir: DATA, home: HOME, platform: "darwin", env: {}, exists: exists([]), mkdir: async () => {} });
+  await vm.setup(spec());
+  const status = await settle(vm);
+  assert.equal(status.setup.state, "done", JSON.stringify(status.setup));
+  assert.ok(docker.calls.includes("docker stop openmausbot-test-tlkf-306809-computer"));
+  assert.ok(!docker.calls.some(call => / rm .*test-tlkf/.test(call)));
+  assert.ok(docker.calls.findIndex(call => call.startsWith("docker stop ")) < docker.calls.findIndex(call => call.startsWith("docker run ")));
+});
+
+test("a port held by a container Sagax did not create is named, never stopped", async () => {
+  const docker = portHeldDocker({ holder: "my-novnc", managed: "", testRun: "" });
+  const vm = createLocalVm({ exec: docker.exec, dataDir: DATA, home: HOME, platform: "darwin", env: {}, exists: exists([]), mkdir: async () => {} });
+  await vm.setup(spec());
+  const status = await settle(vm);
+  assert.equal(status.setup.state, "error");
+  assert.equal(status.setup.code, "port_in_use");
+  assert.match(status.setup.error, /Port 6080 .* my-novnc/);
+  assert.ok(!docker.calls.some(call => / (stop|run) /.test(call)));
 });
 
 test("setup without any runtime says so (the UI then offers an install)", async () => {
