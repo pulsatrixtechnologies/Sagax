@@ -19,6 +19,7 @@ import { AGENT_API_TOOL_NAMES, catalogProfileFromEnv, SHARED_COMPUTER_TOOL_NAMES
 import { harnessClientFromEnv } from "./agents-client.ts";
 import type { HarnessClient, Json } from "./agents-client.ts";
 import { boundedAgentResult } from "./agents-result.ts";
+import { isClaimTool } from "../perspicax-claims.ts";
 
 export interface ToolCallContext {
   /** The calling bot's id (excluded from list_bots; the sender). */
@@ -408,6 +409,14 @@ export async function callTool(name: string, args: Json, context: ToolCallContex
   if (AGENT_API_TOOL_NAMES.has(name)) {
     const { ok, body } = await apiResponse(`/api/internal/agent-api/${name}`, { method: "POST", body: JSON.stringify(args ?? {}) });
     return { text: JSON.stringify(body), ...(ok ? {} : { isError: true }) };
+  }
+  // Claims (server/perspicax-claims.ts): the harness forwards them to
+  // Perspicax as the person speaking, with this bot as the holder.
+  if (isClaimTool(name)) {
+    if (EXTERNAL_RUNTIME) return { text: `Unknown tool: ${name}`, isError: true };
+    const { ok, body } = await apiResponse("/api/internal/perspicax/claims", { method: "POST", body: JSON.stringify({ tool: name, args: args ?? {} }) });
+    if (!ok) return { text: String(body.error ?? "Claims are unavailable in this turn."), isError: true };
+    return { text: JSON.stringify(body.result ?? null), ...(body.isError === true ? { isError: true } : {}) };
   }
   if (name === "vm_exec") {
     const { ok, body } = await apiResponse("/api/internal/vm-exec", {

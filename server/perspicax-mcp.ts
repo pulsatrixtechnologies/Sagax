@@ -155,6 +155,13 @@ export interface PerspicaxRelayAnswer {
   body?: unknown;
 }
 
+/** The answer of a Perspicax tool the harness calls itself (callTool): the
+ * tool's structured result and whether it is a tool error, or why no call
+ * was made. */
+export type PerspicaxToolAnswer =
+  | { ok: true; isError: boolean; value: unknown }
+  | { ok: false; code: "profile_not_mounted" | "access_ended" | "unreachable" | "rpc_error"; error: string };
+
 const key = (threadId: string, generation: string, profileId: string) => `${threadId}\u0000${generation}\u0000${profileId}`;
 const initKey = (threadId: string, profileId: string) => `${threadId}\u0000${profileId}`;
 /** Bounds the kept initialize params (one per thread and profile). */
@@ -230,6 +237,7 @@ export class PerspicaxMcp {
   /** The engine's last initialize params per thread and profile (reopen). */
   private readonly initParams = new Map<string, Json>();
   private reopens = 0;
+  private nativeCalls = 0;
 
   constructor(options: PerspicaxMcpOptions) {
     this.options = options;
@@ -425,6 +433,69 @@ export class PerspicaxMcp {
     } catch {
       return { status: 200, body: rpcError(id, -32000, "Perspicax sent an answer that is not JSON") };
     }
+  }
+
+  /** The live entry of a turn the bot can still use: the first mounted
+   * profile its bot still lists. */
+  private turnEntry(threadId: string, generation: string, botId: string): Entry | undefined {
+    const prefix = `${threadId}\u0000${generation}\u0000`;
+    const listed = this.options.botProfiles(botId) ?? [];
+    for (const [at, entry] of this.entries) {
+      if (at.startsWith(prefix) && entry.botId === botId && !entry.ended && listed.includes(entry.profileId)) return entry;
+    }
+    return undefined;
+  }
+
+  /** Whether this turn of the bot has a Perspicax profile mounted, so the
+   * harness may call a Perspicax tool in the speaker's name (callTool). */
+  hasMounted(threadId: string, generation: string, botId: string): boolean {
+    return this.turnEntry(threadId, generation, botId) !== undefined;
+  }
+
+  /** Call one Perspicax tool from the harness itself (a native tool, such
+   * as the claims), as the person who speaks in this turn: the token of the
+   * turn's first mounted profile, so Perspicax sees that person as the
+   * authenticated caller. A session is opened first when the entry has
+   * none, since a call that can change data is never replayed on a new one.
+   * Never throws; no token is logged or returned. */
+  async callTool(input: { threadId: string; generation: string; botId: string; name: string; args: Json }): Promise<PerspicaxToolAnswer> {
+    const entry = this.turnEntry(input.threadId, input.generation, input.botId);
+    if (!entry) return { ok: false, code: "profile_not_mounted", error: "no Perspicax profile is mounted in this turn" };
+    const link = this.options.link();
+    if (!link) return { ok: false, code: "access_ended", error: PERSPICAX_ACCESS_ENDED };
+    if (!entry.mcpSessionId && !(await this.reopen(link, entry))) {
+      return entry.ended
+        ? { ok: false, code: "access_ended", error: PERSPICAX_ACCESS_ENDED }
+        : { ok: false, code: "unreachable", error: "Perspicax is unavailable" };
+    }
+    const id = `sagax-native-${++this.nativeCalls}`;
+    const answer = await this.relay({
+      threadId: input.threadId,
+      generation: input.generation,
+      botId: input.botId,
+      profileId: entry.profileId,
+      frame: { jsonrpc: "2.0", id, method: "tools/call", params: { name: input.name, arguments: input.args } },
+    });
+    const body = answer.body;
+    if (answer.status !== 200 || !isObject(body)) {
+      const error = isObject(body) && typeof body.error === "string" ? body.error : `Perspicax answered HTTP ${answer.status}`;
+      return { ok: false, code: answer.status === 403 ? "profile_not_mounted" : "unreachable", error };
+    }
+    if (isObject(body.error)) {
+      const message = typeof body.error.message === "string" ? body.error.message : "Perspicax refused the call";
+      return { ok: false, code: message === PERSPICAX_ACCESS_ENDED ? "access_ended" : "rpc_error", error: message };
+    }
+    const result = isObject(body.result) ? body.result : {};
+    let value: unknown = result.structuredContent;
+    if (value === undefined && Array.isArray(result.content)) {
+      const text = result.content.find((block): block is Json => isObject(block) && block.type === "text");
+      try {
+        value = typeof text?.text === "string" ? (JSON.parse(text.text) as unknown) : null;
+      } catch {
+        value = text?.text ?? null;
+      }
+    }
+    return { ok: true, isError: result.isError === true, value: value ?? null };
   }
 
   /** POST one frame with the entry's token and session; a 401 renews the

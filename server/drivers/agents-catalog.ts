@@ -14,6 +14,7 @@ import { CREDENTIAL_TARGETS } from "../../shared/credential-request.ts";
 import { OPTIONS_CARD_LIMITS, WATCHER_OPTIONS_CARD_BOT_ID } from "../../shared/options-card.ts";
 import { agentToolAnnotations } from "../agent-tool-policy.ts";
 import { WIDGET_TOOL_DEFINITIONS } from "./agents-widget-tools.ts";
+import { CLAIM_TOOL_NAMES } from "../perspicax-claims.ts";
 
 /** Which tools a turn is shown. The harness decides each of these when it
  * builds the integration (server/index.ts agentsIntegration); the server
@@ -47,6 +48,9 @@ export interface CatalogProfile {
   botId: string;
   /** The agent-to-agent tools (server/agent-api.ts), in direct turns. */
   agentApi?: boolean;
+  /** The claim tools (server/perspicax-claims.ts): a Perspicax profile is
+   * mounted for the person speaking in this turn. Absent is off. */
+  claims?: boolean;
 }
 
 /** The profile a spawned proxy was given. Everything is off unless the
@@ -68,6 +72,7 @@ export function catalogProfileFromEnv(env: NodeJS.ProcessEnv): CatalogProfile {
     chief: env.SAGAX_CHIEF_OF_STAFF === "1",
     botId: env.SAGAX_BOT_ID ?? "",
     agentApi: env.SAGAX_AGENT_API === "1",
+    claims: env.SAGAX_CLAIMS === "1",
   };
 }
 
@@ -1305,6 +1310,43 @@ const AGENT_API_TOOLS = [
 });
 export const AGENT_API_TOOL_NAMES: ReadonlySet<string> = new Set(AGENT_API_TOOLS.map((tool) => tool.name));
 
+// Claims (server/perspicax-claims.ts): named leases kept by Perspicax so two
+// agents, of any harness, do not run the same job at once. The holder is the
+// person speaking and this bot; no argument names it.
+const CLAIM_NAME = {
+  type: "string",
+  maxLength: 128,
+  pattern: "^[a-z][a-z0-9_-]*(:[A-Za-z0-9._/@-]+)?$",
+  description: "The lease name: dispatch, routine:<name>, change:<repo>.",
+};
+const CLAIM_TTL = { type: "integer", minimum: 10, maximum: 86400, description: "Seconds until it ends unless renewed (default 900)." };
+export const CLAIM_TOOLS = [
+  {
+    name: "claim",
+    description: "Take a named lease before shared work (dispatch, routine:<name>, change:<repo>) so another agent does not do it at the same time. ok false, reason held_by_other: someone holds it; current says who, why and until when, so do not start. Renew while you work, release when done; it ends by itself at expires_at.",
+    inputSchema: { type: "object", additionalProperties: false, properties: { name: CLAIM_NAME, ttl_seconds: CLAIM_TTL, purpose: { type: "string", maxLength: 200, description: "One line others will see: what you are doing." } }, required: ["name"] },
+  },
+  {
+    name: "claim_renew",
+    description: "Extend a lease you hold. ok false: not_holder (someone else holds it) or not_held (it ended: claim it again).",
+    inputSchema: { type: "object", additionalProperties: false, properties: { name: CLAIM_NAME, ttl_seconds: CLAIM_TTL }, required: ["name"] },
+  },
+  {
+    name: "claim_release",
+    description: "Give back a lease you hold when the work is done.",
+    inputSchema: { type: "object", additionalProperties: false, properties: { name: CLAIM_NAME }, required: ["name"] },
+  },
+  {
+    name: "claim_list",
+    description: "Every live lease: name, holder, purpose, since, expires_at.",
+    inputSchema: { type: "object", additionalProperties: false, properties: {} },
+  },
+].map((tool) => {
+  const annotations = agentToolAnnotations(tool.name);
+  return annotations ? { ...tool, annotations } : tool;
+});
+if (CLAIM_TOOLS.map((tool) => tool.name).join() !== CLAIM_TOOL_NAMES.join()) throw new Error("CLAIM_TOOLS and CLAIM_TOOL_NAMES disagree");
+
 const SKILL_TOOL_NAMES = new Set(["skills_list", "skill_manage"]);
 // A workspace with computer sharing off refuses the routes behind these two,
 // so they must not be advertised at all: a model that sees a tool it cannot
@@ -1350,7 +1392,8 @@ export function availableTools(profile: CatalogProfile) {
 }
 
 function catalogTools(profile: CatalogProfile) {
-  const base = coreCatalogTools(profile);
+  const core = coreCatalogTools(profile);
+  const base = profile.claims && !profile.externalRuntime ? [...core, ...CLAIM_TOOLS] : core;
   if (!profile.agentApi || profile.externalRuntime) return base;
   return [...base, ...AGENT_API_TOOLS.filter((tool) => profile.chief || tool.name !== "create_agent")];
 }

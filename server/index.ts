@@ -928,6 +928,7 @@ import { createDirectGrantRoutes } from "./direct-grants.ts";
 import { directoryIntervalMs, PerspicaxDirectory, type ModelProvider } from "./perspicax-link.ts";
 import { duplicateNote, PerspicaxMemory } from "./perspicax-memory.ts";
 import { PERSPICAX_UNAVAILABLE_WHY, PerspicaxMcp, perspicaxUnavailableRow, type PerspicaxUnavailableReason } from "./perspicax-mcp.ts";
+import { runClaimTool } from "./perspicax-claims.ts";
 import { createPerspicaxOrgRoutes, orgDirectoryEntries, type OrgSettings, type PendingAdminApproval } from "./perspicax-org-routes.ts";
 import { createMemorySyncTokenRoute } from "./perspicax-memory-sync-token.ts";
 import { ORG_FULL_ACCESS_DEFAULT_MARKER, orgFullAccessAllowed, orgFullAccessGrandfathered, orgFullAccessGrantRefusal, orgFullAccessHolds, orgNewBotApprovalMode, ORG_FULL_ACCESS_DISABLED } from "./org-full-access.ts";
@@ -3554,6 +3555,9 @@ function agentsIntegration(
       // And for a role: team setup, bot creation and deletion, rooms and
       // retries are shown only to a Chief of Staff, whom their routes require.
       SAGAX_CHIEF_OF_STAFF: store.bot(botId)?.chiefOfStaff === true ? "1" : "0",
+      // The claim tools (server/perspicax-claims.ts) while this turn has a
+      // Perspicax profile mounted for the person speaking; the route re-checks.
+      SAGAX_CLAIMS: perspicaxMcp?.hasMounted(threadId, generation, botId) ? "1" : "0",
     },
   };
 }
@@ -31627,6 +31631,20 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         }
         res.writeHead(answer.status, { "content-type": "application/json", "cache-control": "no-store" });
         return res.end(JSON.stringify(answer.body));
+      }
+      // Claims (server/perspicax-claims.ts): a native agents tool forwarded to
+      // Perspicax in the speaker's name, through this turn's mounted profile.
+      // The holder is this capability's bot, never an argument.
+      if (method === "POST" && path === "/api/internal/perspicax/claims") {
+        const body = await readInternalBody();
+        const answer = await runClaimTool(perspicaxMcp ?? null, {
+          threadId: internalCapability.threadId,
+          generation: internalCapability.generation,
+          botId: internalCapability.botId,
+          tool: body.tool,
+          args: body.args,
+        });
+        return json(res, answer.status, answer.body);
       }
       if (method === "POST" && path === "/api/internal/connectors/mcp") {
         const body = await readInternalBody();
