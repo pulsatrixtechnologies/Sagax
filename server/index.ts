@@ -166,7 +166,7 @@ import { DataSheetRegistry } from "./data/sheet.ts";
 import { DataFailure } from "./data/types.ts";
 import { TeamComputers, teamComputerAssignment, teamComputerCreate, teamComputerOwner, type TeamComputerRecord } from "./team-computers.ts";
 import { instructionsLead } from "../shared/instructions-lead.ts";
-import { isEffortLevel, type BotVisibility, type CardAnswerer, type ResolvedSender, type SteerQueueReason, type WireAccessCard, type WireBot, type WireGroup, type WireTask } from "../shared/wire.ts";
+import { isEffortLevel, ROUTINE_CONVERSATION_HEADER, type BotVisibility, type CardAnswerer, type ResolvedSender, type SteerQueueReason, type WireAccessCard, type WireBot, type WireGroup, type WireTask } from "../shared/wire.ts";
 import { isPersistentQuestionCard, QUESTION_DISMISS_MESSAGE, shouldSettleRequestCard } from "../shared/ask-question.ts";
 import { parseToolScope, toolScopeWidens } from "../shared/tool-scope.ts";
 import type { TeamComputersPayload } from "../shared/team-computer.ts";
@@ -576,6 +576,7 @@ import { redactSecretsInText } from "./redact.ts";
 import * as vps from "./vps-computer.ts";
 import { runAsOptions, runAsRefusal, type RunAsChooser, type RunAsPerson } from "./routine-run-as.ts";
 import { parseRoutineScopeQuery, routineRunClearable, routineScopeRefusal, scopedRoutineListing, type RoutineScopeCaller, type RoutineScopeDeps, type RoutineScopeFacts } from "./routine-scope.ts";
+import { recordRoutineToggle, routineToggleForViewer } from "./routine-chat-events.ts";
 import { nextOccurrence, ROUTINE_RESTARTED, RoutineManager, setRoutineTimeZone, type Routine, type RoutineAdmission, type RoutineMemoryHint, type RoutineRun, type RoutineRunOn, type RoutineRunTrigger, type RoutineSuspendReason } from "./routines.ts";
 import { RoutineConsents, routineRenewMs, type RoutineConsentEnd } from "./org-routine-consent.ts";
 import { CalendarCallManager, type CalendarCall } from "./calendar-calls.ts";
@@ -8994,11 +8995,29 @@ function threadStillExists(threadId: string): boolean {
     bot.threadId === threadId || Boolean(bot.tasks?.some((task) => task.threadId === threadId)));
 }
 
+/** A routines line (server/routine-chat-events.ts) as this viewer gets it:
+ * the routines they can see (the Automations page's own rule, the person
+ * signed in), or null. A viewer with no person (a service) gets none. */
+function routineToggleForApprovalViewer<T>(message: T, viewer: ApprovalViewer): T | null {
+  return routineToggleForViewer(message, (routine) => {
+    if (!viewer.userId) return false;
+    const live = routines?.listRoutines().find((candidate) => candidate.id === routine.id);
+    return routineSeenBy(live ?? routine, viewer.userId);
+  });
+}
+
 function projectMessages<T>(threadId: string, messages: T[], viewer: ApprovalViewer): T[] {
   let changed = false;
   if (messages.some((message) => privateRowHidden(message, viewer))) {
     messages = messages.filter((message) => !privateRowHidden(message, viewer));
     changed = true;
+  }
+  if (messages.some((message) => (message as { kind?: unknown } | null)?.kind === "routines")) {
+    messages = messages.flatMap((message) => {
+      const shown = routineToggleForApprovalViewer(message, viewer);
+      if (shown !== message) changed = true;
+      return shown === null ? [] : [shown];
+    });
   }
   const next = messages.map((message) => {
     const projected = markDeadThreadChip(scopeApprovalMessage(threadId, message, viewer), threadStillExists);
@@ -9041,6 +9060,9 @@ function scopeChannelApproval(
     const message = payload.message;
     if (!threadId || !message || typeof message !== "object") return { action: "same" };
     if (privateRowHidden(message, viewer)) return { action: "drop" };
+    const toggle = routineToggleForApprovalViewer(message, viewer);
+    if (toggle === null) return { action: "drop" };
+    if (toggle !== message) return { action: "replace", payload: { ...payload, message: toggle } };
     const next = scopeApprovalMessage(threadId, message, viewer);
     if (next === message) return { action: "same" };
     return { action: "replace", payload: { ...payload, message: next } };
@@ -17224,6 +17246,23 @@ routines = new RoutineManager({
     return source.threadId;
   },
   createGoalTask: (groupId, title) => store.createGroupTask(groupId, title, false),
+  // 2026-10-15: "Disabled · 5 routines" in the conversation the change came
+  // from (server/routine-chat-events.ts); each viewer sees their own.
+  onEnabledChanged: (routine, change) => {
+    if (!threadStillExists(change.threadId)) return;
+    recordRoutineToggle(store, {
+      threadId: change.threadId,
+      action: change.enabled ? "enabled" : "disabled",
+      atMessageId: change.messageId,
+      routine: {
+        id: routine.id,
+        name: routine.name,
+        ...(routine.botId ? { botId: routine.botId } : {}),
+        ...(routine.groupId ? { groupId: routine.groupId } : {}),
+        ...(routine.runAs ? { runAs: routine.runAs } : {}),
+      },
+    });
+  },
   isResultsThread: (botId, threadId) => {
     const bot = store.bot(botId);
     const task = store.taskByThread(botId, threadId);
@@ -24933,6 +24972,23 @@ function searchHitVisibleNow(threadId: string, viewerId: string | undefined): bo
  * bot and room are gone is seen only by the person it runs as. Never the
  * legacy email-keyed VisibleSet alone: organization members carry no email,
  * so that set opens everything to them (slice 8 fix). */
+/** 2026-10-15: the conversation open in the app when the person switched a
+ * routine on or off (header ROUTINE_CONVERSATION_HEADER), where the line
+ * "Disabled · 1 routine" goes. Only the routine's own bot's thread (or its
+ * room's), and only one this person may read; anything else writes no line. */
+function routineConversationOf(req: IncomingMessage, routine: Routine | undefined, viewerId: string | undefined): { threadId: string } | undefined {
+  const raw = req.headers[ROUTINE_CONVERSATION_HEADER];
+  const threadId = typeof raw === "string" ? raw.trim() : "";
+  if (!routine || !threadId || !/^[\w.:-]{1,128}$/.test(threadId)) return undefined;
+  if (routine.groupId) {
+    const group = store.group(routine.groupId);
+    return group && group.threadId === threadId && (!viewerId || groupVisible(group, viewerId)) ? { threadId } : undefined;
+  }
+  const bot = routine.botId ? store.bot(routine.botId) : null;
+  if (!bot || !(bot.threadId === threadId || store.taskByThread(bot.id, threadId))) return undefined;
+  return botThreadReadable(bot, threadId, viewerId, "thread.read") ? { threadId } : undefined;
+}
+
 function routineSeenBy(value: { botId?: unknown; groupId?: unknown; runAs?: unknown; sourceThreadId?: unknown }, viewerId: string): boolean {
   if (typeof value.groupId === "string" && value.groupId) {
     const group = store.group(value.groupId);
@@ -32813,7 +32869,8 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       const writer = ownerAuthors && CLOUD_OWNER_KEY ? CLOUD_OWNER_KEY
         : auth.kind === "session" && !cloudOwnerSession(auth) ? actorKey(auth)
           : previous && !cloudOwnerPerson(previous) ? previous : CLOUD_NOBODY_KEY;
-      const routine = withRoutineWriter(writer, () => routines!.update(routineMatch![1], body, undefined, { ...routineActor(auth), ...runAsChoice }));
+      const conversation = routineConversationOf(req, existingRoutine, viewerId);
+      const routine = withRoutineWriter(writer, () => routines!.update(routineMatch![1], body, undefined, { ...routineActor(auth), ...runAsChoice, ...(conversation ? { conversation } : {}) }));
       if (routine) auditRoutineRunAs(auth, routine, runAsBefore);
       // The owner's own edit keeps (or, when it rewrites the instructions,
       // makes) the routine theirs. Anyone else's edit, of any field (its

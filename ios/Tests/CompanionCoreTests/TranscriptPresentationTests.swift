@@ -19,9 +19,9 @@ final class TranscriptPresentationTests: XCTestCase {
             let rows = transcriptRows(transcript, detail: detail)
             XCTAssertEqual(rows.map(\.id), ["user", "turn.turn-1", "answer"])
             XCTAssertEqual(rosterPreview(transcript, detail: detail), "The answer")
-            guard case let .assistantTurn(turn) = rows[1] else { return XCTFail("Missing narration fold") }
-            XCTAssertEqual(turn.messages.map(\.text), ["Let me check", "Checking again"])
-            XCTAssertEqual(turn.label, "Worked for 4s")
+            guard case let .activityRun(run) = rows[1] else { return XCTFail("Missing narration fold") }
+            XCTAssertEqual(run.messages.map(\.text), ["Let me check", "Checking again"])
+            XCTAssertEqual(run.englishLabel, "Worked for 4s")
         }
         // History caches must retain the markers, too.
         let roundTrip = try JSONDecoder().decode([Message].self, from: JSONEncoder().encode(transcript))

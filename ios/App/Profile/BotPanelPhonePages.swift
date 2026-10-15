@@ -93,17 +93,10 @@ struct BotModelSection: View {
         guard let saved = instances.first(where: { $0.instanceId == self.saved.instanceId }), !saved.snapshot.isAvailable else { return available }
         return [saved] + available
     }
-    private var modelChoices: [(id: String, label: String)] {
-        guard let instance else { return modelID.isEmpty ? [] : [(modelID, modelID)] }
-        var seen = Set<String>()
-        var out: [(id: String, label: String)] = []
-        if !instance.models.default.isEmpty {
-            seen.insert(instance.models.default)
-            out.append((instance.models.default, instance.models.options.first { $0.id == instance.models.default }?.label ?? instance.models.default))
-        }
-        for option in instance.models.options where seen.insert(option.id).inserted { out.append((option.id, option.label)) }
-        if !modelID.isEmpty, seen.insert(modelID).inserted { out.append((modelID, modelID)) }
-        return out
+    /// The menu row's value: the provider's model name, Auto when on.
+    private var modelLabel: String {
+        let name = instance?.models.options.first { $0.id == modelID }?.label ?? (modelID.isEmpty ? String(localized: "Default") : modelID)
+        return auto ? String(localized: "Auto · \(name)") : name
     }
     private var usesVariants: Bool { instance?.capabilities?.modelVariants == true }
     private var variantOptions: [ModelVariantOption]? {
@@ -152,40 +145,21 @@ struct BotModelSection: View {
                 .tint(Theme.toggleOn)
                 .disabled(current.busy == true)
                 .accessibilityIdentifier("model-auto")
-                Picker("Provider", selection: $instanceID) {
-                    if !instances.contains(where: { $0.instanceId == instanceID }) {
-                        Text("Current provider (unavailable)").tag(instanceID).disabled(true)
+                // The model menu (#477, #478, #518): providers in submenus,
+                // favorites, only the models that run.
+                NavigationLink {
+                    ModelMenuSheet(bot: current)
+                        .onDisappear(perform: syncFromServer)
+                } label: {
+                    HStack {
+                        Text("Model").foregroundStyle(Theme.textPrimary)
+                        Spacer()
+                        Text(verbatim: modelLabel).foregroundStyle(Theme.textSecondary).lineLimit(1)
                     }
-                    ForEach(instanceChoices) { item in
-                        Text(Self.label(item)).tag(item.instanceId).disabled(!item.snapshot.isAvailable)
-                    }
+                    .contentShape(Rectangle())
                 }
-                .onValueChange(of: instanceID) { selectDefaults(for: $0) }
-                Picker("Model", selection: $modelID) {
-                    // the dropdown's two headings (#261)
-                    let local = Set(instance.map { ModelPickerRules.groups($0.models.options, organization: organization).local.map(\.id) } ?? [])
-                    let cloud = modelChoices.filter { !local.contains($0.id) }
-                    let mine = modelChoices.filter { local.contains($0.id) }
-                    if mine.isEmpty {
-                        ForEach(cloud, id: \.id) { option in Text(option.label).tag(option.id) }
-                    } else {
-                        Section(String(localized: "Cloud")) {
-                            ForEach(cloud, id: \.id) { option in Text(option.label).tag(option.id) }
-                        }
-                        Section(String(localized: "Local")) {
-                            ForEach(mine, id: \.id) { option in Text(option.label).tag(option.id) }
-                        }
-                    }
-                }
-                .disabled(instance?.snapshot.isAvailable != true)
-                .onValueChange(of: modelID) { model in
-                    variant = instanceID == saved.instanceId && model == saved.model ? saved.variant : nil
-                    // a level the new model does not take goes back to its default
-                    effort = ModelEffort.forModel(effort, option: modelOption, engine: instance?.capabilities?.effortLevels ?? [])
-                    // choosing a model pins it, as on the desktop
-                    if model != saved.model { auto = false }
-                    apply()
-                }
+                .disabled(current.busy == true)
+                .accessibilityIdentifier("model-menu-open")
                 if let variantOptions {
                     ModelVariantPicker(options: variantOptions, saved: saved.variant, variant: $variant)
                         .onValueChange(of: variant) { _ in apply() }
@@ -237,18 +211,15 @@ struct BotModelSection: View {
         }
     }
 
-    private func selectDefaults(for id: String) {
-        guard let instance = instances.first(where: { $0.instanceId == id }) else { return }
-        if id == saved.instanceId {
-            modelID = saved.model
-            effort = ModelEffort.forModel(saved.effort, option: instance.models.options.first { $0.id == saved.model }, engine: instance.capabilities?.effortLevels ?? [])
-            variant = saved.variant
-        } else {
-            modelID = instance.models.default
-            effort = nil
-            variant = nil
-        }
-        apply()
+    /// After the menu: the choice it saved.
+    private func syncFromServer() {
+        let next = current.currentTaskModelSelection
+        saved = next
+        instanceID = next.instanceId
+        modelID = next.model
+        effort = next.effort
+        variant = next.variant
+        auto = next.auto == true
     }
 
     /// Saved as soon as the choice is complete, as the desktop's picker does.
@@ -263,12 +234,6 @@ struct BotModelSection: View {
                 saved = updated.projected(forThread: bot.threadId)?.currentTaskModelSelection ?? next
             }
         }
-    }
-
-    private static func label(_ instance: Instance) -> String {
-        let base = instance.displayName?.trimmingCharacters(in: .whitespacesAndNewlines)
-        let name = base.flatMap { $0.isEmpty ? nil : $0 } ?? instance.instanceId
-        return instance.snapshot.isAvailable ? name : "\(name) (Unavailable)"
     }
 }
 

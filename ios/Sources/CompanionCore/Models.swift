@@ -193,6 +193,11 @@ public struct ToolActivity: Codable, Hashable, Sendable {
     /// A ConnectWise widget drawn in place of the quiet tool chip. A bad
     /// widget is dropped; the rest of the activity still decodes.
     public var widget: CwWidget?
+    /// The call's arguments, as the JSON text the driver kept (the step
+    /// row reads its target here: which file, which command).
+    public var input: String? = nil
+    /// How long the call ran, set when it settles.
+    public var durationMs: Double? = nil
 
     public init(name: String, ok: Bool? = nil, spoken: String? = nil, setup: Bool? = nil, claudeUpdate: Bool? = nil, output: String? = nil, summary: String? = nil, widget: CwWidget? = nil) {
         self.name = name
@@ -206,7 +211,7 @@ public struct ToolActivity: Codable, Hashable, Sendable {
     }
 
     enum CodingKeys: String, CodingKey {
-        case name, ok, spoken, setup, claudeUpdate, output, summary, widget
+        case name, ok, spoken, setup, claudeUpdate, output, summary, widget, input, durationMs
     }
 
     public init(from decoder: Decoder) throws {
@@ -218,6 +223,8 @@ public struct ToolActivity: Codable, Hashable, Sendable {
         claudeUpdate = try box.decodeIfPresent(Bool.self, forKey: .claudeUpdate)
         output = try box.decodeIfPresent(String.self, forKey: .output)
         summary = try box.decodeIfPresent(String.self, forKey: .summary)
+        input = try? box.decodeIfPresent(String.self, forKey: .input)
+        durationMs = try? box.decodeIfPresent(Double.self, forKey: .durationMs)
         do {
             widget = try box.decodeIfPresent(CwWidget.self, forKey: .widget)
         } catch {
@@ -235,6 +242,8 @@ public struct ToolActivity: Codable, Hashable, Sendable {
         try box.encodeIfPresent(output, forKey: .output)
         try box.encodeIfPresent(summary, forKey: .summary)
         try box.encodeIfPresent(widget, forKey: .widget)
+        try box.encodeIfPresent(input, forKey: .input)
+        try box.encodeIfPresent(durationMs, forKey: .durationMs)
     }
 
     /// The output worth expanding the chip for; nil when there is none.

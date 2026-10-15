@@ -94,6 +94,7 @@ import { groupHumanLabel } from "@/lib/private-threads";
 import { ManageMembersPanel } from "./ManageMembersPanel";
 import { GroupAvatarStack, GroupPanel } from "./GroupPanel";
 import { NudgeLine } from "./NudgeLine";
+import { ConversationRoutineToggle } from "./RoutineToggleLine";
 import { groupActivityRuns, isStatusActivity, type ActivityTranscriptItem } from "@/lib/activity-runs";
 import { collapseBotExchanges, commIsBotDm, startsNewStretch, visibleEdge, type ExchangeRun } from "@/lib/bot-exchange";
 import { foldCollapsedEntry, voiceCallPlan, voiceCallVisibleSpan } from "@/lib/voice-call-transcript";
@@ -819,6 +820,8 @@ export const Transcript = memo(function Transcript({
             showToolCallsEnabled(state.config) ? <DigestChip message={m} /> : null
           ) : m.kind === "nudge" && m.nudge ? (
             <NudgeLine note={m.nudge} />
+          ) : m.kind === "routines" && m.routineToggle ? (
+            <ConversationRoutineToggle message={m} />
           ) : m.kind === "text" && (m.text || m.attachments?.length) ? (
             !user && isPureLeakedSystemHarnessMessage(m.text) && !m.attachments?.length ? null : (
               <RoomTextMessage

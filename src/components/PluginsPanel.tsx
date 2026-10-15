@@ -803,6 +803,7 @@ export function PluginsPanel() {
         renderAction={renderAction}
         renderBelow={renderBelow}
         notices={notices}
+        focus={state.pluginsFocusApps ?? undefined}
       />
     );
   }

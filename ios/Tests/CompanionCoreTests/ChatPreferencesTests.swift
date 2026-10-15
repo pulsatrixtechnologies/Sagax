@@ -32,15 +32,18 @@ final class ChatPreferencesTests: XCTestCase {
 
     // MARK: - Full
 
-    func testFullDropsToolActivityAndKeepsTextInOrder() {
+    func testFullFoldsToolStepsIntoOneLineBetweenTheTexts() {
         let messages = [text("a"), activity("b"), activity("c"), text("d")]
         let rows = transcriptRows(messages, detail: .full)
-        XCTAssertEqual(rows.map(\.id), ["a", "d"])
+        XCTAssertEqual(rows.map(\.id), ["a", "run.b", "d"])
+        guard case let .activityRun(run) = rows[1] else { return XCTFail("one step line") }
+        XCTAssertEqual(run.steps.map(\.id), ["b", "c"])
         XCTAssertEqual(messages.map(\.id), ["a", "b", "c", "d"], "hiding a row does not drop the stored message")
     }
 
-    /// The phone transcript: tool Success and Error lines go, the reply and
-    /// the question card stay, and a finished turn may still say "Worked for".
+    /// The phone transcript: a turn's tool steps and narration are one step
+    /// line, the reply and the question card stay; Hidden keeps only the
+    /// folded narration.
     func testToolActivityRowIsDroppedAndTextAndQuestionCardStay() {
         var user = Message(id: "user", role: .user, kind: .text, at: 1_000)
         user.text = "can you import this bot"
@@ -71,8 +74,9 @@ final class ChatPreferencesTests: XCTestCase {
         for detail in ActivityDetail.allCases {
             let rows = transcriptRows(messages, detail: detail)
             XCTAssertEqual(rows.map(\.id), ["user", "turn.turn", "answer", "ask"], "\(detail)")
-            guard case let .assistantTurn(turn) = rows[1] else { return XCTFail("the worked summary stays") }
-            XCTAssertEqual(turn.label, "Worked for 43s")
+            guard case let .activityRun(run) = rows[1] else { return XCTFail("the worked summary stays") }
+            XCTAssertEqual(run.englishLabel, "Worked for 43s")
+            XCTAssertEqual(run.steps.map(\.id), detail == .hidden ? [] : ["ok", "bad"], "\(detail)")
             guard case let .message(kept) = rows[0] else { return XCTFail("the text stays") }
             XCTAssertEqual(kept.attachments?.first?.name, "export-connectwise-psa.json")
             guard case let .message(asked) = rows[3] else { return XCTFail("the question card stays") }
@@ -100,8 +104,8 @@ final class ChatPreferencesTests: XCTestCase {
     func testReducedKeepsACompactionAndDropsTheToolRowsAroundIt() {
         let messages = [activity("a"), activity("b"), compaction("c"), activity("d"), activity("e")]
         let rows = transcriptRows(messages, detail: .reduced)
-        XCTAssertEqual(rows.map(\.id), ["c"])
-        XCTAssertEqual(rows[0].kind, .compaction)
+        XCTAssertEqual(rows.map(\.id), ["run.a", "c", "run.d"])
+        XCTAssertEqual(rows[1].kind, .compaction)
     }
 
     private func compaction(_ id: String, at: Double = 1) -> Message {
@@ -118,14 +122,21 @@ final class ChatPreferencesTests: XCTestCase {
 
     // MARK: - Reduced
 
-    func testReducedDropsToolActivityInsteadOfFoldingIt() {
+    func testReducedFoldsToolStepsIntoOneLine() {
         let messages = [text("a"), activity("b"), activity("c"), activity("d"), text("e")]
-        XCTAssertEqual(transcriptRows(messages, detail: .reduced).map(\.id), ["a", "e"])
+        XCTAssertEqual(transcriptRows(messages, detail: .reduced).map(\.id), ["a", "run.b", "e"])
     }
 
-    func testReducedDropsALoneToolActivity() {
+    func testALoneToolStepIsStillAStepLine() {
         let messages = [text("a"), activity("b"), text("c")]
-        XCTAssertEqual(transcriptRows(messages, detail: .reduced).map(\.id), ["a", "c"])
+        XCTAssertEqual(transcriptRows(messages, detail: .reduced).map(\.id), ["a", "run.b", "c"])
+    }
+
+    func testAnotherSpeakerStartsANewRun() {
+        var other = activity("c")
+        other.from = Sender(botId: "other", name: "Other", color: "blue")
+        let messages = [activity("a"), activity("b"), other]
+        XCTAssertEqual(transcriptRows(messages, detail: .full).map(\.id), ["run.a", "run.c"])
     }
 
     func testStatusNoticeIsNeverHiddenOrFolded() {
@@ -135,31 +146,37 @@ final class ChatPreferencesTests: XCTestCase {
         notice.tool = ToolActivity(name: "notice: Qwen is waiting on its model", ok: true)
         let messages = [activity("a"), activity("b"), notice, activity("c"), activity("d")]
         XCTAssertEqual(transcriptRows(messages, detail: .hidden).map(\.id), ["n"])
-        XCTAssertEqual(transcriptRows(messages, detail: .reduced).map(\.id), ["n"])
-        XCTAssertEqual(transcriptRows(messages, detail: .full).map(\.id), ["n"])
+        XCTAssertEqual(transcriptRows(messages, detail: .reduced).map(\.id), ["run.a", "n", "run.c"])
+        XCTAssertEqual(transcriptRows(messages, detail: .full).map(\.id), ["run.a", "n", "run.c"])
     }
 
-    func testAFailedToolCallIsDroppedWithTheOtherToolRows() {
-        // An Error badge on a tool receipt is still a tool row. A failed
+    func testAFailedToolCallFoldsWithTheOtherSteps() {
+        // A failed tool step is counted in the line ("1 failed"). A failed
         // turn, whose name starts with "error:", is a different row and stays.
         let messages = [activity("a"), activity("b"), activity("c", ok: false), activity("d"), activity("e")]
-        for detail in ActivityDetail.allCases {
-            XCTAssertTrue(transcriptRows(messages, detail: detail).isEmpty, "\(detail)")
+        XCTAssertTrue(transcriptRows(messages, detail: .hidden).isEmpty)
+        for detail in [ActivityDetail.full, .reduced] {
+            let rows = transcriptRows(messages, detail: detail)
+            XCTAssertEqual(rows.map(\.id), ["run.a"], "\(detail)")
+            guard case let .activityRun(run) = rows[0] else { return XCTFail("one line") }
+            XCTAssertEqual(StepGroup.summarize(run.messages).failed, 1)
         }
         var turn = activity("err", ok: false)
         turn.tool = ToolActivity(name: "error: boom", ok: false)
-        XCTAssertEqual(transcriptRows(messages + [turn], detail: .full).map(\.id), ["err"])
+        XCTAssertEqual(transcriptRows(messages + [turn], detail: .full).map(\.id), ["run.a", "err"])
     }
 
     func testReducedDropsToolRowsOnEitherSideOfText() {
         let messages = [activity("a"), activity("b"), text("c"), activity("d"), activity("e")]
-        XCTAssertEqual(transcriptRows(messages, detail: .reduced).map(\.id), ["c"])
+        XCTAssertEqual(transcriptRows(messages, detail: .reduced).map(\.id), ["run.a", "c", "run.d"])
     }
 
     func testARunningToolCallIsDroppedToo() {
         let messages = [activity("a"), activity("b", ok: nil)]
-        XCTAssertTrue(transcriptRows(messages, detail: .full).isEmpty)
-        XCTAssertTrue(transcriptRows(messages, detail: .reduced).isEmpty)
+        XCTAssertEqual(transcriptRows(messages, detail: .full).map(\.id), ["run.a"])
+        XCTAssertTrue(transcriptRows(messages, detail: .hidden).isEmpty)
+        guard case let .activityRun(run) = transcriptRows(messages, detail: .reduced)[0] else { return XCTFail("one line") }
+        XCTAssertEqual(StepGroup.summarize(run.messages).running?.id, "b")
     }
 
     /// Phone and iPad: every tool receipt leaves, including a running chip
@@ -208,6 +225,7 @@ final class ChatPreferencesTests: XCTestCase {
         for detail in ActivityDetail.allCases {
             let ids = transcriptRows(messages, detail: detail).map(\.id)
             XCTAssertFalse(ids.contains("run") || ids.contains("ok") || ids.contains("bad") || ids.contains("done"), "\(detail)")
+            XCTAssertEqual(ids.contains("run.run"), detail != .hidden, "the steps are one line, gone when Hidden")
             XCTAssertTrue(ids.contains("user") && ids.contains("n") && ids.contains("err") && ids.contains("par") && ids.contains("ask") && ids.contains("txt"), "\(detail)")
             XCTAssertTrue(ids.contains("comm") || ids.contains("run.comm"), "\(detail)")
             XCTAssertTrue(ids.contains("th") || ids.contains("run.comm"), "\(detail)")
@@ -219,11 +237,8 @@ final class ChatPreferencesTests: XCTestCase {
     func testRowCarriesTheTimeAndSenderOfItsFirstMessage() {
         // The transcript's date separators and bubble tails read these off
         // the row rather than the message, so a run must answer for itself.
-        // Opened-thread chips are not tool rows, so reduced still folds them.
-        var first = activity("a", at: 500)
-        first.threadRef = ThreadRef(botId: "b", threadId: "t1", title: "Opened")
-        var second = activity("b", at: 900)
-        second.threadRef = ThreadRef(botId: "b", threadId: "t2", title: "Opened later")
+        let first = activity("a", at: 500)
+        let second = activity("b", at: 900)
         let rows = transcriptRows([first, second], detail: .reduced)
         XCTAssertEqual(rows[0].at, 500)
         XCTAssertEqual(rows[0].kind, .activity)
@@ -291,8 +306,8 @@ final class ChatPreferencesTests: XCTestCase {
     // own row — a chip — beside the tool chips it sums up, never among them.
     func testADigestIsItsOwnRowAtFullAndReduced() {
         let messages = [text("a"), activity("b"), digest("c"), text("d"), digest("e")]
-        XCTAssertEqual(transcriptRows(messages, detail: .full).map(\.id), ["a", "c", "d", "e"])
-        XCTAssertEqual(transcriptRows(messages, detail: .reduced).map(\.id), ["a", "c", "d", "e"])
+        XCTAssertEqual(transcriptRows(messages, detail: .full).map(\.id), ["a", "run.b", "c", "d", "e"])
+        XCTAssertEqual(transcriptRows(messages, detail: .reduced).map(\.id), ["a", "run.b", "c", "d", "e"])
     }
 
     func testADigestIsHiddenWithTheActivityItSummarises() {
@@ -303,10 +318,9 @@ final class ChatPreferencesTests: XCTestCase {
     func testADigestIsNeverFoldedIntoARunOfActivity() {
         let messages = [activity("a"), activity("b"), digest("c"), activity("d"), activity("e")]
         let rows = transcriptRows(messages, detail: .reduced)
-        XCTAssertEqual(rows.map(\.id), ["c"])
-        guard case let .message(receipt) = rows[0] else { return XCTFail("digest should be a message row") }
+        XCTAssertEqual(rows.map(\.id), ["run.a", "c", "run.d"])
+        guard case let .message(receipt) = rows[1] else { return XCTFail("digest should be a message row") }
         XCTAssertEqual(receipt.kind, .digest)
-        XCTAssertFalse(rows.contains { if case .activityRun = $0 { return true } else { return false } })
     }
 
     func testVoiceCallTurnsAreOneCard() throws {
@@ -327,7 +341,7 @@ final class ChatPreferencesTests: XCTestCase {
         XCTAssertEqual(spokenLines(card.messages).map(\.text), ["hello there", "working on it", "hi back"])
         XCTAssertEqual(formatVoiceCallDuration(voiceCallDurationMs(card.messages, now: 0, clock: nil)), "00:34")
         XCTAssertEqual(rosterPreview(messages, detail: .full), "after")
-        XCTAssertFalse(rows.contains { if case .assistantTurn = $0 { return true } else { return false } })
+        XCTAssertFalse(rows.contains { if case .activityRun = $0 { return true } else { return false } })
 
         var fragment = Message(id: "f1", role: .user, kind: .text, at: 1)
         fragment.text = "hel"

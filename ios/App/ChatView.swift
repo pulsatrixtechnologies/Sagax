@@ -459,11 +459,9 @@ struct ChatView: View {
                                         openLink: openLink,
                                         openThread: openThread
                                     )
-                                case let .activityRun(items):
-                                    ActivityRunChip(items: items, openThread: openThread)
-                                case let .assistantTurn(turn):
-                                    AssistantTurnChip(
-                                        turn: turn, chat: current, openLink: openLink, openThread: openThread,
+                                case let .activityRun(run):
+                                    StepRunRow(
+                                        run: run, chat: current, openLink: openLink, openThread: openThread,
                                         revealedMessageId: revealedMessageId,
                                         scrollToMessage: { proxy.scrollTo($0, anchor: .center) }
                                     )
@@ -623,8 +621,8 @@ struct ChatView: View {
                     // Materialize the lazy folded row first. Its target bubble
                     // scrolls itself into view once expansion has laid it out.
                     let folded = transcript.first { row in
-                        if case let .assistantTurn(turn) = row {
-                            return turn.messages.contains { $0.id == messageId }
+                        if case let .activityRun(run) = row {
+                            return run.messages.contains { $0.id == messageId }
                         }
                         if case let .voiceCall(card) = row {
                             return card.messages.contains { $0.id == messageId }

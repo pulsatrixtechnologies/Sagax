@@ -100,9 +100,15 @@ final class DesktopSettingsUITests: XCTestCase {
         let search = app.textFields["desktop-settings.search"]
         search.tap()
         search.typeText("openrouter")
-        XCTAssertTrue(app.buttons["desktop-settings.nav.connections"].waitForExistence(timeout: 5))
+        // API keys is a card of Models and voice (#518)
+        XCTAssertTrue(app.buttons["desktop-settings.nav.engines"].waitForExistence(timeout: 5))
         XCTAssertFalse(app.buttons["desktop-settings.nav.backups"].exists)
-        XCTAssertTrue(app.secureTextFields["settings-key.openrouter"].waitForExistence(timeout: 5), "API keys opens")
+        XCTAssertFalse(app.buttons["desktop-settings.nav.companion"].exists, "Pair devices left the app")
+        // the search opens the API keys card
+        let key = app.secureTextFields["settings-key.openrouter"]
+        _ = key.waitForExistence(timeout: 5)
+        for _ in 0..<8 where !(key.exists && key.isHittable) { app.swipeUp() }
+        XCTAssertTrue(key.waitForExistence(timeout: 5), "API keys opens")
 
         settings.tap()
         XCTAssertFalse(settings.waitForExistence(timeout: 2))
