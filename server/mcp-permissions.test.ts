@@ -143,3 +143,14 @@ describe("guardToolCall", () => {
     expect(t.ran()).toBe(0);
   });
 });
+
+describe("coverage doc", () => {
+  it("states the registry's totals", async () => {
+    const { readFileSync } = await import("node:fs");
+    const doc = readFileSync(new URL("../docs/mcp/coverage.md", import.meta.url), "utf8");
+    const covered = MCP_PERMISSIONS.filter((x) => x.tool).length;
+    const gaps = MCP_PERMISSIONS.length - covered;
+    expect(doc).toContain(`Totals: capabilities ${MCP_PERMISSIONS.length}, covered ${covered}, gaps ${gaps}.`);
+    expect(doc.match(/\| MISSING \|/g)?.length).toBe(gaps);
+  });
+});
