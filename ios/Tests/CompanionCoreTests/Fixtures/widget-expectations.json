@@ -1,0 +1,239 @@
+{
+  "widget-dinnerChoice": {
+    "pressable": [
+      "confirm",
+      "cancel"
+    ],
+    "onDevice": [],
+    "settles": [
+      "confirm",
+      "cancel"
+    ],
+    "scopes": {
+      "confirm": {
+        "fields": [
+          "dish"
+        ],
+        "initial": {
+          "dish": ""
+        }
+      },
+      "cancel": {
+        "fields": [
+          "dish"
+        ],
+        "initial": {
+          "dish": ""
+        }
+      }
+    }
+  },
+  "widget-pullRequests": {
+    "pressable": [
+      "n2",
+      "n8",
+      "n14",
+      "confirm",
+      "cancel"
+    ],
+    "onDevice": [],
+    "settles": [
+      "confirm",
+      "cancel"
+    ],
+    "scopes": {
+      "n2": {
+        "fields": [],
+        "initial": {}
+      },
+      "n8": {
+        "fields": [],
+        "initial": {}
+      },
+      "n14": {
+        "fields": [],
+        "initial": {}
+      },
+      "confirm": {
+        "fields": [],
+        "initial": {}
+      },
+      "cancel": {
+        "fields": [],
+        "initial": {}
+      }
+    }
+  },
+  "widget-buildStatus": {
+    "pressable": [],
+    "onDevice": [],
+    "settles": [],
+    "scopes": {}
+  },
+  "widget-routineForm": {
+    "pressable": [
+      "confirm",
+      "cancel"
+    ],
+    "onDevice": [],
+    "settles": [
+      "confirm",
+      "cancel"
+    ],
+    "scopes": {
+      "confirm": {
+        "fields": [
+          "days",
+          "starts",
+          "at",
+          "report",
+          "stopOnRed"
+        ],
+        "initial": {
+          "days": "mon,tue,wed,thu,fri",
+          "starts": "2026-10-14",
+          "at": "09:00",
+          "report": "",
+          "stopOnRed": true
+        }
+      },
+      "cancel": {
+        "fields": [
+          "days",
+          "starts",
+          "at",
+          "report",
+          "stopOnRed"
+        ],
+        "initial": {
+          "days": "mon,tue,wed,thu,fri",
+          "starts": "2026-10-14",
+          "at": "09:00",
+          "report": "",
+          "stopOnRed": true
+        }
+      }
+    }
+  },
+  "widget-bookCall": {
+    "pressable": [
+      "confirm",
+      "cancel"
+    ],
+    "onDevice": [],
+    "settles": [
+      "confirm",
+      "cancel"
+    ],
+    "scopes": {
+      "confirm": {
+        "fields": [
+          "date",
+          "time",
+          "length",
+          "note"
+        ],
+        "initial": {
+          "date": "2026-10-15",
+          "time": "10:30",
+          "length": "30",
+          "note": ""
+        }
+      },
+      "cancel": {
+        "fields": [
+          "date",
+          "time",
+          "length",
+          "note"
+        ],
+        "initial": {
+          "date": "2026-10-15",
+          "time": "10:30",
+          "length": "30",
+          "note": ""
+        }
+      }
+    }
+  },
+  "widget-spendTable": {
+    "pressable": [],
+    "onDevice": [],
+    "settles": [],
+    "scopes": {}
+  },
+  "widget-tokenChart": {
+    "pressable": [],
+    "onDevice": [],
+    "settles": [],
+    "scopes": {}
+  },
+  "widget-emailDraft": {
+    "pressable": [
+      "confirm",
+      "cancel"
+    ],
+    "onDevice": [],
+    "settles": [
+      "confirm",
+      "cancel"
+    ],
+    "scopes": {
+      "confirm": {
+        "fields": [],
+        "initial": {}
+      },
+      "cancel": {
+        "fields": [],
+        "initial": {}
+      }
+    }
+  },
+  "widget-sources": {
+    "pressable": [],
+    "onDevice": [
+      "n2",
+      "n8"
+    ],
+    "settles": [],
+    "scopes": {}
+  },
+  "widget-kitchenSink": {
+    "pressable": [
+      "n25",
+      "n27"
+    ],
+    "onDevice": [
+      "n26"
+    ],
+    "settles": [
+      "n25"
+    ],
+    "scopes": {
+      "n25": {
+        "fields": [
+          "rating",
+          "email",
+          "note"
+        ],
+        "initial": {
+          "rating": "",
+          "email": "",
+          "note": ""
+        }
+      },
+      "n27": {
+        "fields": [
+          "rating",
+          "email",
+          "note"
+        ],
+        "initial": {
+          "rating": "",
+          "email": "",
+          "note": ""
+        }
+      }
+    }
+  }
+}

@@ -8,8 +8,8 @@ public extension CompanionClient {
     /// the stream ends or the consuming task is cancelled; a 409 or 503 (the
     /// bot's browser is off, or the engine is not installed) throws with the
     /// server's sentence.
-    func browserLive(botId: String) throws -> AsyncThrowingStream<BrowserLiveMessage, Error> {
-        var request = try makeRequest("GET", "/api/bots/\(botId)/browser/live")
+    func browserLive(botId: String, preview: Bool = false) throws -> AsyncThrowingStream<BrowserLiveMessage, Error> {
+        var request = try browserLiveRequest(botId: botId, preview: preview)
         request.setValue("text/event-stream", forHTTPHeaderField: "Accept")
         // a heartbeat comes every few seconds; a quiet gap is not an answer
         request.timeoutInterval = 90
@@ -49,6 +49,29 @@ public extension CompanionClient {
             }
             continuation.onTermination = { _ in task.cancel() }
         }
+    }
+
+    /// The stream's request. `preview` is the Computer tab's watch-only view:
+    /// the server never launches the browser for it, streams 5 frames a
+    /// second, and takes only acknowledgements from it.
+    func browserLiveRequest(botId: String, preview: Bool) throws -> URLRequest {
+        try makeRequest("GET", "/api/bots/\(botId)/browser/live",
+                        query: preview ? [URLQueryItem(name: "preview", value: "1")] : [])
+    }
+
+    /// `POST /api/bots/:id/browser/action`: one action of the take-control
+    /// window. Returns whether a take waited for the bot's own action to end
+    /// (the page may have moved meanwhile). A refusal throws the server's
+    /// sentence.
+    @discardableResult
+    func browserAction(botId: String, viewerId: String, action: BrowserLiveAction) async throws -> Bool {
+        var body = action.body
+        body["viewerId"] = viewerId
+        let request = try makeRequest("POST", "/api/bots/\(botId)/browser/action", body: body)
+        let (data, response) = try await perform(request)
+        try Self.check(response, data)
+        let reply = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+        return reply?["waited"] as? Bool ?? false
     }
 
     /// `POST /api/bots/:id/browser/action {viewerId, type: "ack", seq}`:

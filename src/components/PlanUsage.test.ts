@@ -4,8 +4,7 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { setLocale } from "@/lib/i18n";
-import { planRows, type PlanProvider, type PlanUsageReport } from "@/lib/plan-usage";
-import type { MyEngine } from "@/lib/perspicax-org";
+import { connectedPlanRows, planRows, type PlanProvider, type PlanUsageReport } from "@/lib/plan-usage";
 
 vi.mock("@/state/store", async (importOriginal) => ({
   ...await importOriginal<typeof import("@/state/store")>(),
@@ -27,15 +26,10 @@ function row(patch: Partial<PlanProvider>): PlanProvider {
 
 function render(report: PlanUsageReport | null, patch: Partial<PlanUsageViewProps> = {}): string {
   return renderToStaticMarkup(createElement(PlanUsageView, {
-    report, loading: false, error: "", now: Date.parse("2026-10-02T09:00:00Z"),
-    onRefresh: () => {}, myEngines: null, issuer: "", onOpenEngines: () => {}, ...patch,
+    report, loading: false, now: Date.parse("2026-10-02T09:00:00Z"),
+    onRefresh: () => {}, issuer: "", ...patch,
   }));
 }
-
-const engine = (patch: Partial<MyEngine> = {}): MyEngine => ({
-  instanceId: "claude", driver: "claudeAgent", displayName: "Claude", installed: true,
-  subscription: { supported: true, signedIn: false }, myKey: false, orgKey: false, myTurns: "none", ...patch,
-});
 
 beforeEach(() => {
   setLocale("en");
@@ -73,39 +67,42 @@ describe("Plan usage rows", () => {
     expect(html).not.toContain("Connect");
   });
 
-  it("not signed in, solo: Not signed in and a Connect button to Model providers", () => {
-    const html = render({ providers: [row({ state: "signed-out", error: "Not signed in" })] });
-    expect(html).toContain("Not signed in");
-    expect(html).toContain('data-plan-connect="claude"');
-    expect(html).toContain("Connect Claude");
-    expect(html).not.toContain("Sign in again");
-  });
-
-  it("not signed in, organization: the person's own engine card with its Connect button", () => {
-    const html = render(
-      { providers: [row({ state: "signed-out", error: "Not signed in" })] },
-      { myEngines: [engine()], issuer: "https://px.example.test" },
-    );
-    expect(html).toContain("Not signed in");
-    expect(html).toContain('data-engine-connect="claude"');
-    expect(html).toContain("Connect Claude");
-    expect(html).not.toContain("data-plan-connect");
-  });
-
-  it("error: the real reason in the person's language, with Try again", () => {
+  it("connected only: a provider in error or not signed in is not shown, no message, no Connect", () => {
+    const connected = row({ state: "windows", ok: true, plan: "Max", weekly: { available: true, remainingPercent: 84, usedPercent: 16, resetsAt: null } });
     const html = render({
       providers: [
-        row({ state: "error", error: "Could not reach Claude: rate limited (429), try again in a minute", failure: { kind: "http", status: 429 } }),
-        row({ id: "codex", name: "Codex", driver: "codex", instanceId: "codex", state: "error", failure: { kind: "network", code: "ENOTFOUND" } }),
+        row({ id: "grok", name: "Grok", driver: "grok", instanceId: "grok", state: "error", failure: { kind: "renewing" } }),
+        connected,
+        row({ id: "codex", name: "Codex", driver: "codex", instanceId: "codex", state: "signed-out", error: "Not signed in" }),
       ],
     });
-    expect(html).toContain("Could not reach Claude: rate limited (429), try again in a minute");
-    expect(html).toContain("Could not reach Codex: network error (ENOTFOUND)");
-    expect(html.match(/Try again/g)).toHaveLength(2);
-    setLocale("fr");
-    const fr = render({ providers: [row({ state: "error", failure: { kind: "timeout", seconds: 8 } })] });
-    expect(fr).toContain("Impossible de joindre Claude : aucune réponse en 8 s");
-    expect(fr).toContain("Réessayer");
+    expect(html).toContain('data-plan-row="claude"');
+    expect(html).not.toContain('data-plan-row="grok"');
+    expect(html).not.toContain('data-plan-row="codex"');
+    expect(html).not.toContain("Not signed in");
+    expect(html).not.toContain("Try again");
+    expect(html).not.toContain("Connect");
+    expect(html).not.toContain("Could not reach");
+    expect(html).toContain("data-plan-refresh");
+  });
+
+  it("no connected provider: no card at all, also while loading and after a failed read", () => {
+    expect(render({
+      providers: [
+        row({ state: "error", failure: { kind: "http", status: 429 } }),
+        row({ id: "codex", name: "Codex", driver: "codex", instanceId: "codex", state: "signed-out" }),
+      ],
+    })).toBe("");
+    expect(render({ providers: [] })).toBe("");
+    expect(render(null, { loading: true })).toBe("");
+  });
+
+  it("organization: the card ends with Manage my keys in Perspicax; solo has no such link", () => {
+    const report = { providers: [row({ state: "no-windows", ok: true })] };
+    const org = render(report, { issuer: "https://px.example.test" });
+    expect(org).toContain("data-plan-keys-link");
+    expect(org).toContain("Manage my keys in Perspicax");
+    expect(render(report)).not.toContain("data-plan-keys-link");
   });
 
   it("refresh: a spinner while it fetches, the rows stay", () => {
@@ -150,6 +147,18 @@ describe("planRows", () => {
       ["work", "Work Claude", "signed-out"],
       ["claudeApi", "Claude (API key)", "no-windows"],
     ]);
+  });
+
+  it("connectedPlanRows keeps only the providers that answer", () => {
+    const rows = connectedPlanRows({
+      providers: [
+        row({ id: "a", state: "windows", ok: true }),
+        row({ id: "b", name: "B", state: "no-windows", ok: true }),
+        row({ id: "c", name: "C", state: "signed-out" }),
+        row({ id: "d", name: "D", state: "error" }),
+      ],
+    });
+    expect(rows.map((entry) => entry.id)).toEqual(["a", "b"]);
   });
 
   it("an older server's real error stays an error, not a sign-in", () => {

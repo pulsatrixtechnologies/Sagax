@@ -1,21 +1,19 @@
 // Settings → Usage: remaining subscription allowance. This is not the token
 // ledger below it — each provider reports its own 5-hour and weekly windows.
 //
-// One row per provider (server/plan-usage.ts): its windows, "No plan
-// windows", "Not signed in" with Connect, or the real error with Try again.
-// On an organization server the server reads the person's own subscription
-// logins and Connect is their own engine card's (EngineConnect); in solo it
-// opens Settings > Model providers.
+// One row per connected provider (server/plan-usage.ts): its windows or "No
+// plan windows". Since 2026-10-15 a provider in error or not signed in is not
+// shown at all (no message, no Connect here), and with no connected provider
+// left the card itself is not drawn. On an organization server the card ends
+// with the link to the person's keys in Perspicax.
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Loader2, RefreshCw } from "lucide-react";
-import { api, useStore } from "@/state/store";
+import { ExternalLink, Loader2, RefreshCw } from "lucide-react";
+import { api } from "@/state/store";
 import { t } from "@/lib/i18n";
 import { cn } from "@/lib/cn";
-import { openSettings } from "@/lib/settings-link";
-import { reloadMyEngines, useMyEngines, usePerspicaxOrg, type MyEngine } from "@/lib/perspicax-org";
-import { planRows, type PlanRow, type PlanUsageReport, type PlanWindow } from "@/lib/plan-usage";
+import { perspicaxKeysUrl, usePerspicaxOrg } from "@/lib/perspicax-org";
+import { connectedPlanRows, planRows, type PlanRow, type PlanUsageReport, type PlanWindow } from "@/lib/plan-usage";
 import { usageLocale } from "@/lib/usage-personal";
-import { EngineConnect } from "./EngineConnect";
 
 function formatResetDistance(resetsAt: string | null, now: number): string | null {
   if (!resetsAt) return null;
@@ -144,36 +142,11 @@ function RowWindows({ provider, now }: { provider: PlanRow; now: number }) {
 export interface PlanUsageViewProps {
   report: PlanUsageReport | null;
   loading: boolean;
-  error: string;
   now: number;
   onRefresh: () => void;
-  /** Organization server: the person's own engines (GET /api/me/engines),
-   * whose card carries Connect. null in solo. */
-  myEngines: MyEngine[] | null;
+  /** Organization server: the Perspicax issuer, for "Manage my keys in
+   * Perspicax". Empty in solo, where there is no such link. */
   issuer: string;
-  /** Solo: open Settings > Model providers to sign in. */
-  onOpenEngines: () => void;
-}
-
-function SignedOut({ provider, myEngines, issuer, onOpenEngines, onRefresh }: { provider: PlanRow } & Pick<PlanUsageViewProps, "myEngines" | "issuer" | "onOpenEngines" | "onRefresh">) {
-  const mine = myEngines?.find((engine) => engine.instanceId === provider.instanceId);
-  return (
-    <div data-plan-state="signed-out" className="flex flex-col gap-2">
-      <p className="text-[13px] text-ink-secondary">{t("planUsage.notSignedIn")}</p>
-      {mine ? (
-        <EngineConnect engine={mine} issuer={issuer} onChanged={async () => { await reloadMyEngines(); onRefresh(); }} />
-      ) : (
-        <button
-          type="button"
-          data-plan-connect={provider.instanceId ?? provider.id}
-          onClick={onOpenEngines}
-          className="w-fit rounded-lg bg-accent px-3 py-1.5 text-[12.5px] font-semibold text-accent-ink hover:brightness-110"
-        >
-          {t("planUsage.connect", { name: provider.name })}
-        </button>
-      )}
-    </div>
-  );
 }
 
 /** The window a plan is read by: the week when the provider reports one,
@@ -230,9 +203,11 @@ function PlanSummary({ provider, now }: { provider: PlanRow; now: number }) {
 }
 
 /** The card's body, without fetching: every state is drawn from props.
- * 2026-10-14: "Plan" on Settings > Usage, the person's own subscriptions. */
-export function PlanUsageView({ report, loading, error, now, onRefresh, myEngines, issuer, onOpenEngines }: PlanUsageViewProps) {
-  const rows = planRows(report);
+ * 2026-10-14: "Plan" on Settings > Usage, the person's own subscriptions.
+ * 2026-10-15: only the connected providers; none, no card. */
+export function PlanUsageView({ report, loading, now, onRefresh, issuer }: PlanUsageViewProps) {
+  const rows = connectedPlanRows(report);
+  if (rows.length === 0) return null;
   return (
     <section data-settings-card="usage.plan" className="rounded-[14px] border-[0.5px] border-border px-3.5 py-3">
       <div className="flex items-center gap-2">
@@ -250,68 +225,52 @@ export function PlanUsageView({ report, loading, error, now, onRefresh, myEngine
           {loading ? <Loader2 size={13} className="animate-spin" data-plan-spinner /> : <RefreshCw size={13} />}
         </button>
       </div>
-      {loading && !report && <p role="status" className="mt-2 text-[13px] text-ink-secondary">{t("planUsage.loading")}</p>}
-      {error && <p role="alert" className="mt-2 text-[13px] text-danger">{error}</p>}
-      {report && rows.length === 0 && (
-        <p className="mt-2 text-[13px] text-ink-secondary">{t("planUsage.empty")}</p>
-      )}
-      {rows.length > 0 && (
-        <div className="mt-2 flex flex-col gap-4">
-          {rows.map((provider) => (
-            <div key={provider.id} data-plan-row={provider.id} className="border-t border-hairline/30 pt-3 first:border-t-0 first:pt-0">
-              <div className="mb-2 flex min-w-0 items-baseline gap-2">
-                <span className="truncate text-[13px] font-medium text-ink">{provider.name}</span>
-                {provider.plan && <span className="truncate text-[12px] text-ink-secondary">{provider.plan}</span>}
-              </div>
-              {provider.state === "windows" && <PlanSummary provider={provider} now={now} />}
-              {provider.state === "no-windows" && (
-                <p data-plan-state="no-windows" className="text-[13px] text-ink-secondary">
-                  {provider.access === "api-key" ? t("planUsage.apiKeyNoWindows") : t("planUsage.noWindows")}
-                </p>
-              )}
-              {provider.state === "signed-out" && (
-                <SignedOut provider={provider} myEngines={myEngines} issuer={issuer} onOpenEngines={onOpenEngines} onRefresh={onRefresh} />
-              )}
-              {provider.state === "error" && (
-                <div data-plan-state="error" className="flex flex-wrap items-center gap-x-3 gap-y-1">
-                  <p className="text-[13px] text-danger">{provider.message}</p>
-                  <button
-                    type="button"
-                    onClick={onRefresh}
-                    disabled={loading}
-                    className="rounded-md px-2 py-0.5 text-[12px] text-ink-secondary hover:bg-control hover:text-ink disabled:opacity-50"
-                  >
-                    {t("planUsage.tryAgain")}
-                  </button>
-                </div>
-              )}
+      <div className="mt-2 flex flex-col gap-4">
+        {rows.map((provider) => (
+          <div key={provider.id} data-plan-row={provider.id} className="border-t border-hairline/30 pt-3 first:border-t-0 first:pt-0">
+            <div className="mb-2 flex min-w-0 items-baseline gap-2">
+              <span className="truncate text-[13px] font-medium text-ink">{provider.name}</span>
+              {provider.plan && <span className="truncate text-[12px] text-ink-secondary">{provider.plan}</span>}
             </div>
-          ))}
-        </div>
+            {provider.state === "windows" && <PlanSummary provider={provider} now={now} />}
+            {provider.state === "no-windows" && (
+              <p data-plan-state="no-windows" className="text-[13px] text-ink-secondary">
+                {provider.access === "api-key" ? t("planUsage.apiKeyNoWindows") : t("planUsage.noWindows")}
+              </p>
+            )}
+          </div>
+        ))}
+      </div>
+      {issuer && (
+        <a
+          href={perspicaxKeysUrl(issuer)}
+          target="_blank"
+          rel="noreferrer noopener"
+          data-plan-keys-link
+          className="mt-3 flex w-fit items-center gap-1 text-[11.5px] text-ink-secondary hover:text-ink hover:underline"
+        >
+          {t("myEngines.manageKeys")} <ExternalLink size={11} aria-hidden="true" />
+        </a>
       )}
     </section>
   );
 }
 
 export function PlanUsage() {
-  const { dispatch } = useStore();
   const org = usePerspicaxOrg();
-  const myEngines = useMyEngines();
   const [report, setReport] = useState<PlanUsageReport | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
   const [now, setNow] = useState(() => Date.now());
   const refreshedDeadlines = useRef(new Set<string>());
 
   const load = useCallback(async (refresh = false) => {
     setLoading(true);
-    setError("");
     try {
       const data = await api<PlanUsageReport>(refresh ? "/api/plan-usage?refresh=1" : "/api/plan-usage");
       setReport(data);
       setNow(Date.now());
-    } catch (cause) {
-      setError(cause instanceof Error && cause.message ? cause.message : t("planUsage.fetchError"));
+    } catch {
+      // A failed read shows nothing: the card keeps the last connected rows.
     } finally {
       setLoading(false);
     }
@@ -338,12 +297,9 @@ export function PlanUsage() {
     <PlanUsageView
       report={report}
       loading={loading}
-      error={error}
       now={now}
       onRefresh={() => void load(true)}
-      myEngines={org ? myEngines : null}
       issuer={org?.org.identity.issuer ?? ""}
-      onOpenEngines={() => openSettings(dispatch, "engines", "engines.list")}
     />
   );
 }

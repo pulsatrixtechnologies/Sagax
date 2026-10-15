@@ -2032,7 +2032,9 @@ had no gh. Keep these rules, each covered by `server/org-connections.e2e.test.ts
 - Organization access tokens (`server/org-github-tokens.ts`,
   `DATA_DIR/org-github-tokens.enc`, the mcp-oauth vault key, left out of
   workspace backups): an admin keeps up to 20 labeled GitHub access tokens
-  on Settings > Organization > Plugins and GitHub. They are access tokens,
+  in Connect apps > Manage > Advanced > Organization sources and access
+  (OrgSourcesAccess, admins only; the Settings card is gone since
+  2026-10-15). They are access tokens,
   not extra OAuth App client ids. `PATCH /api/org/settings` applies one
   change (`add`, `remove`, `rename`, `replace`). A rename carries no secret
   and a replace is its own step. `GET /api/org` lists the label and a last-4
@@ -2756,10 +2758,18 @@ The Local VM in server mode lives on the person's computer
   ask them there. Auto and Cloud keep the existing computer viewer.
   The same picker sits above the screen (`ios/App/ComputerChooser.swift`,
   `PersonDesktopBridge.computerChoices` and `chosen`, `desktopId` on
-  `localVm(action:)`), and its Browser chip is browser mode: the bot's live
-  browser, watched only (`ios/App/BrowserLiveView.swift` over
-  `GET /api/bots/:id/browser/live`, each frame acknowledged; never input or
-  navigation from the phone; `BrowserLive.swift`, `BrowserLiveClient.swift`).
+  `localVm(action:)`), and its Browser chip is browser mode, drawn like the
+  VM as on the desktop (#473): the card is a live preview in the VM's 16:10
+  frame (`ios/App/BrowserLiveView.swift` over
+  `GET /api/bots/:id/browser/live?preview=1`, each frame acknowledged;
+  Connecting, Busy, Live, Closed (`offline`, asked again every 10 s) and
+  Error with Retry), and Take control opens a modal on the full stream where
+  a tap, a drag (wheel) and the keyboard drive the page and back, forward and
+  reload run (`POST /api/bots/:id/browser/action`: the first touch takes the
+  browser, 8 idle seconds or Hand back control release it, closing releases;
+  `BrowserLive.swift`, `BrowserLiveClient.swift`). While the modal is open the
+  card streams nothing. Screenshots: `-browserGallery
+  <live|offline|error|busy|connecting|takeover|window>` (DEBUG only).
   Tests: `ios/Tests/CompanionCoreTests/LocalVmComputerTests.swift`
   (`ComputerChoiceTests`), `BrowserLiveTests.swift` (`swift test` in
   `ios/`).
@@ -3205,8 +3215,17 @@ there.
   as code; a YouTube link stays a link).
 - The existing ```cw, ```widget (HTML, `WidgetFrame`), ```artifact and
   YouTube renderers are unchanged and separate.
-- Phones: Sagax's iOS and Android apps have no widget renderer yet (upstream
-  draws them in its separate mobile repo); they show the row's text fallback.
+- Phones: iOS draws them (`ios/App/Features/Chat/Widget/`: `ChatWidgetCard`
+  owns the form and the press, `ChatWidgetNodes` and `ChatWidgetFields` every
+  node; the shared readers are `ios/Sources/CompanionCore/ChatWidget.swift`).
+  A press posts `widgetAction` on the same send route; Swift Charts, SF
+  Symbols, system pickers; images wait behind "Load image"; a Markdown node is
+  inert (`MarkdownText(inert: true)`). In a room, or with no tree to draw, the
+  row shows its text. Tests: `ChatWidgetTests` (against the server's own
+  fixtures, regenerated with
+  `node --experimental-strip-types scripts/gen-widget-fixtures.ts ios/Tests/CompanionCoreTests/Fixtures`)
+  and `ChatWidgetsUITests` (`PARITY_WIDGETS=1 node ios/parity/fixture-server.mjs`).
+  Android shows the row's text fallback.
 
 Reusable card: `src/components/widget/WidgetCardFrame.tsx` draws the same
 surface, width steps (`size` sm/md/lg/full), header, problem line and footer

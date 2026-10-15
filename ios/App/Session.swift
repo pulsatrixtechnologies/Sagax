@@ -1206,6 +1206,29 @@ final class Session: ObservableObject {
         }
     }
 
+    /// A press on a chat widget (ChatWidgetCard.swift): the person's next
+    /// message, written by the server from the widget. The card shows the
+    /// server's own sentence when it says no, so this does not set
+    /// `actionError`.
+    func sendWidgetAction(
+        botId: String, threadId: String?, messageId: String, ref: String, rev: Int,
+        values: ChatWidgetValues?, sendId: String
+    ) async -> ChatWidgetSendResult {
+        guard let client else { return .failed(refused: false, message: nil) }
+        do {
+            try await client.sendWidgetAction(
+                botId: botId, threadId: threadId, messageId: messageId, ref: ref, rev: rev, values: values, sendId: sendId
+            )
+            return .sent
+        } catch let error as APIError {
+            if error.isUnauthorized { status = .unauthorized }
+            if case let .status(_, message) = error { return .failed(refused: true, message: message ?? error.errorDescription) }
+            return .failed(refused: false, message: nil)
+        } catch {
+            return .failed(refused: false, message: nil)
+        }
+    }
+
     func send(_ text: String, to chat: Chat) async {
         let connectionID = client?.connection.id
         var receipt: SendReceipt?

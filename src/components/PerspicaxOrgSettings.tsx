@@ -1,6 +1,6 @@
 // Settings > Organization on a server signed in with Perspicax (slice 3):
 // the link line, the viewer's role, and one link to the Perspicax console.
-// Below that card: interim people, sharing, full access, plugin policy and,
+// Below that card: interim people, sharing, full access and,
 // for admins, the server commands waiting for an admin.
 // Slice 4 adds Sharing in the organization (the bots whose sharing the
 // viewer administers; an admin can force-stop or force-delete any of them).
@@ -10,6 +10,13 @@
 // An admin also allows or refuses Full access for every bot (2026-10-01,
 // OrgFullAccessPolicy, server/org-full-access.ts).
 // People, teams and invitations live in Perspicax, never here.
+// 2026-10-15 (JC): Sharing in the organization (every bot of the
+// organization with its owner) is hidden from the app, like Activity, Email,
+// People and Installations (#518, #524): the app shows the person signed in,
+// views of everyone belong to Sagax Business and the Perspicax console.
+// OrgSharing and its server routes stay; an old link to the
+// "organization.sharing" card opens this page. A bot's owner still shares it
+// from the bot's own Shared with section.
 import { useEffect, useState } from "react";
 import { ExternalLink } from "lucide-react";
 
@@ -18,10 +25,8 @@ import type { PerspicaxOrg } from "@/lib/perspicax-org";
 import { setOrgApprovalsCount, useOrgApprovalsVersion } from "@/lib/org-approvals";
 import { api } from "@/state/store";
 import { Card } from "./SettingsPrimitives";
-import { OrgSharing } from "./settings/OrgSharing";
 import { InterimPeople } from "./settings/InterimPeople";
 
-import { OrgPluginPolicy } from "./settings/OrgPluginPolicy";
 import { OrgFullAccessPolicy } from "./settings/OrgFullAccessPolicy";
 
 interface PendingAdminApproval {
@@ -117,17 +122,7 @@ export function PerspicaxOrgSettings({ org, onChanged }: { org: PerspicaxOrg; on
         </div>
       </Card>
       {interimVisible && interim?.until ? <InterimPeople until={interim.until} onChanged={onChanged} /> : null}
-      <OrgSharing admin={admin} />
       {admin && <OrgFullAccessPolicy initial={org.settings.allowFullAccess !== false} onChanged={onChanged} />}
-      {admin && (
-        <OrgPluginPolicy
-          marketplaces={org.settings.pluginMarketplaces ?? { mode: "any" }}
-          github={org.settings.github ?? { clientId: null, fromEnvironment: false }}
-          tokens={org.settings.githubTokens ?? []}
-          tokensUnavailable={org.settings.githubTokensUnavailable === true}
-          onChanged={onChanged}
-        />
-      )}
       {admin && (
         <Card cardId="organization.adminApprovals" title={t("organization.adminApprovals.title")} summary={approvals?.length ? String(approvals.length) : ""}>
           {!approvals?.length ? (

@@ -1,5 +1,6 @@
 // One stretch of a bot's work, between two visible messages, as a single
-// quiet row: "Worked 2m 53s · 12 tools · 5 failed". It opens to the steps
+// quiet row: "Worked 2m 53s", the duration only, like "Thought 2s" in Grok
+// (the tools and failures are spoken by VoiceOver and seen once open). It opens to the steps
 // in order, each on a row of the same kind; the same step repeated back to
 // back reads once with a count ("Read a file ×3") and opens to each call.
 // A settled turn's narration sits among the steps where it was written.
@@ -45,14 +46,10 @@ export function ActivityRun({
         target={words.target}
         phase={words.phase}
         title={summary.tools ? describeRun(messages) : undefined}
+        ariaLabel={words.ariaLabel}
         forceOpen={hit}
         wide={narrated}
-        extra={(words.tools || words.failed) && (
-          <span className="flex shrink-0 items-center gap-1.5 tabular-nums" data-testid="activity-run-counts">
-            {words.tools && <span className="text-ink-tertiary">· {words.tools}</span>}
-            {words.failed && <span className="text-danger/80" data-testid="activity-run-failed">· {words.failed}</span>}
-          </span>
-        )}
+        quietChevron
       >
         {() => (
           <div className="flex flex-col gap-0.5 py-0.5">

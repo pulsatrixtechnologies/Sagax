@@ -149,3 +149,11 @@ export function planRows(report: PlanUsageReport | null): PlanRow[] {
   }
   return [...rows.filter((row) => row.access !== "api-key"), ...rows.filter((row) => row.access === "api-key")];
 }
+
+/** The rows the Plan card shows (2026-10-15): only providers that are
+ * connected and answer. A provider in error or not signed in is left out,
+ * with no message and no Connect button; Settings > Model providers is
+ * where a person signs in. */
+export function connectedPlanRows(report: PlanUsageReport | null): PlanRow[] {
+  return planRows(report).filter((row) => row.state === "windows" || row.state === "no-windows");
+}

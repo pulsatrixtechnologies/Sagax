@@ -1702,7 +1702,7 @@ public struct CompanionClient: Sendable {
         }
     }
 
-    private static func validSendID(_ value: String) -> Bool {
+    static func validSendID(_ value: String) -> Bool {
         (16...80).contains(value.utf8.count) && validRouteID(value)
     }
 

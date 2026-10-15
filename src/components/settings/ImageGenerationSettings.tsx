@@ -1,12 +1,17 @@
-// Installation image generation: provider, key, and a custom Images API.
-// Bot avatars only ask for a picture. They do not edit this connection.
-import { useEffect, useState } from "react";
+// Installation image generation: provider and a custom Images API. Bot
+// avatars only ask for a picture. They do not edit this connection. Since
+// 2026-10-15 no key is typed here: the OpenAI image key, the custom API's
+// optional key and the xAI key (Grok images) are rows of the Keys list on the
+// same page, and this card says whether the chosen provider's key is saved,
+// with "Add in Keys" when it is not (one place for every key).
+import { useState } from "react";
 import { Check, Loader2 } from "lucide-react";
 
 import { api, useStore, type ConfigStatus } from "@/state/store";
 import { t } from "@/lib/i18n";
 import type { LocaleKey } from "@/locales";
 import { normalizeImageGenerationUrl, type AvatarImageProvider } from "../../../shared/image-generation";
+import { KeyInKeys, type KeyRowId } from "./ProviderKeys";
 
 const PROVIDER_LABEL: Record<AvatarImageProvider, LocaleKey> = {
   openai: "imageGen.provider.openai",
@@ -18,29 +23,25 @@ const PROVIDER_HINT: Record<AvatarImageProvider, LocaleKey> = {
   xai: "imageGen.hint.xai",
   custom: "imageGen.hint.custom",
 };
-const PROVIDER_KEY: Record<AvatarImageProvider, LocaleKey> = {
-  openai: "imageGen.key.openai",
-  xai: "imageGen.key.xai",
-  custom: "imageGen.key.custom",
+/** The row of the Keys list each provider's key lives in. */
+const PROVIDER_KEY_ROW: Record<AvatarImageProvider, KeyRowId> = {
+  openai: "openaiImage",
+  xai: "xai",
+  custom: "customImage",
 };
 
 const INPUT_CLASS = "w-full min-w-0 rounded-lg border border-hairline/40 bg-inset px-3 py-2 text-[12.5px] text-ink placeholder:text-ink-secondary focus:outline-none disabled:opacity-50";
 const BUTTON_CLASS = "flex items-center justify-center gap-1.5 rounded-lg bg-control px-3 py-2 text-[12.5px] text-ink hover:bg-raised-hover disabled:opacity-50";
 
-const CREDENTIAL = {
-  openai: "openaiImageApiKey",
-  xai: "xaiApiKey",
-  custom: "customImageApiKey",
-} as const;
-
-export function ImageGenerationSettings() {
+/** `keysLink`: the Keys list is on this page, so a missing key links to its
+ * row (false in a remote window, where the list is not shown). */
+export function ImageGenerationSettings({ keysLink = true }: { keysLink?: boolean }) {
   const { state, dispatch } = useStore();
   const imageGen = state.config?.imageGen;
   const savedProvider = imageGen?.provider ?? "openai";
   const [providerDraft, setProviderDraft] = useState<AvatarImageProvider | null>(null);
   const [urlDraft, setUrlDraft] = useState<string | null>(null);
   const [modelDraft, setModelDraft] = useState<string | null>(null);
-  const [imageKey, setImageKey] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const provider = providerDraft ?? savedProvider;
@@ -56,12 +57,7 @@ export function ImageGenerationSettings() {
     customUrl.trim() !== (imageGen?.customUrl ?? "") ||
     customModel.trim() !== (imageGen?.customModel ?? "")
   ));
-  const unsaved = settingsDirty || !!imageKey.trim();
   const configured = provider === savedProvider && imageGen?.configured === true;
-
-  useEffect(() => {
-    setImageKey("");
-  }, [provider]);
 
   const saveConfig = async (patch: object) => {
     const status: ConfigStatus = await api("/api/config", {
@@ -71,23 +67,9 @@ export function ImageGenerationSettings() {
     dispatch({ type: "configStatus", config: status });
   };
 
-  const saveCredential = async (key: string) => {
-    const status: ConfigStatus = window.ogb?.setCredential
-      ? await window.ogb.setCredential(CREDENTIAL[provider], key)
-      : await api("/api/config", {
-          method: "PUT",
-          body: JSON.stringify(provider === "xai"
-            ? { xai: { key } }
-            : { imageGen: provider === "custom" ? { customApiKey: key } : { key } }),
-        });
-    dispatch({ type: "configStatus", config: status });
-    setImageKey("");
-  };
-
   const chooseProvider = async (next: AvatarImageProvider) => {
     if (busy) return;
     setProviderDraft(next);
-    setImageKey("");
     setUrlDraft(null);
     setModelDraft(null);
     setError(null);
@@ -104,40 +86,23 @@ export function ImageGenerationSettings() {
   };
 
   const saveConnection = async () => {
-    if (busy || (provider === "custom" && (!customUrl.trim() || !customModel.trim()))) return;
-    if (provider !== "custom" && !imageKey.trim()) return;
+    if (busy || provider !== "custom" || !customUrl.trim() || !customModel.trim()) return;
     setSaving(true);
     setError(null);
     try {
-      const url = provider === "custom" ? normalizeImageGenerationUrl(customUrl.trim()) : "";
+      const url = normalizeImageGenerationUrl(customUrl.trim());
       const model = customModel.trim();
-      if (provider === "custom" && (model.length > 200 || ["\r", "\n", "\0"].some((character) => model.includes(character)))) {
+      if (model.length > 200 || ["\r", "\n", "\0"].some((character) => model.includes(character))) {
         throw new Error(t("imageGen.modelError"));
       }
-      if (imageKey.trim()) await saveCredential(imageKey.trim());
-      if (provider === "custom") {
-        await saveConfig({ imageGen: {
-          provider,
-          customUrl: url,
-          customModel: model,
-        } });
-        setProviderDraft(null);
-        setUrlDraft(null);
-        setModelDraft(null);
-      }
-    } catch (saveError) {
-      setError(saveError instanceof Error ? saveError.message : String(saveError));
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const removeKey = async () => {
-    if (busy) return;
-    setSaving(true);
-    setError(null);
-    try {
-      await saveCredential("");
+      await saveConfig({ imageGen: {
+        provider,
+        customUrl: url,
+        customModel: model,
+      } });
+      setProviderDraft(null);
+      setUrlDraft(null);
+      setModelDraft(null);
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : String(saveError));
     } finally {
@@ -193,47 +158,26 @@ export function ImageGenerationSettings() {
         </>
       )}
 
-      <label className="block text-[11.5px] text-ink-secondary">
-        {t(PROVIDER_KEY[provider])}
-        <input
-          type="password"
-          value={imageKey}
-          disabled={busy}
-          onChange={(event) => setImageKey(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === "Enter") {
-              event.preventDefault();
-              void saveConnection();
-            }
-          }}
-          placeholder={keyConfigured ? t("imageGen.key.saved") : provider === "custom" ? t("imageGen.key.keyless") : t("imageGen.key.paste")}
-          aria-label={t(PROVIDER_KEY[provider])}
-          autoComplete="off"
-          className={`${INPUT_CLASS} mt-1`}
-        />
-      </label>
-      {provider === "xai" && (
-        <p className="text-[11px] leading-relaxed text-ink-secondary">{t("imageGen.xaiShares")}</p>
-      )}
-      {provider === "custom" && keyConfigured && (
-        <p className="text-[11px] leading-relaxed text-ink-secondary">{t("imageGen.customSaved")}</p>
-      )}
-      <div className="flex items-center justify-end gap-2">
-        {keyConfigured && (
-          <button type="button" onClick={() => void removeKey()} disabled={busy} className="mr-auto rounded-md py-1.5 text-[11.5px] text-ink-secondary hover:text-danger disabled:opacity-50">
-            {t("imageGen.removeKey")}
+      <KeyInKeys
+        row={PROVIDER_KEY_ROW[provider]}
+        saved={keyConfigured}
+        optional={provider === "custom"}
+        missing={provider === "custom" ? t("imageGen.key.none") : undefined}
+        link={keysLink}
+      />
+      {provider === "custom" && (
+        <div className="flex justify-end">
+          <button
+            type="button"
+            onClick={() => void saveConnection()}
+            disabled={busy || !customUrl.trim() || !customModel.trim() || (!settingsDirty && configured)}
+            className={BUTTON_CLASS}
+          >
+            {saving ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />}
+            {t("imageGen.saveConnection")}
           </button>
-        )}
-        <button
-          type="button"
-          onClick={() => void saveConnection()}
-          disabled={busy || (provider === "custom" ? !customUrl.trim() || !customModel.trim() || (!unsaved && configured) : !imageKey.trim())}
-          className={BUTTON_CLASS}
-        >
-          {saving ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />}
-          {provider === "custom" ? t("imageGen.saveConnection") : t("imageGen.saveKey")}
-        </button>
-      </div>
+        </div>
+      )}
       {error && <div role="alert" className="text-[12px] text-danger">{error}</div>}
     </div>
   );
