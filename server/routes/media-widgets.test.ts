@@ -29,6 +29,8 @@ describe("media proxy route without a session", () => {
   beforeEach(async () => {
     dir = mkdtempSync(join(tmpdir(), "sagax-media-route-"));
     initMediaProxy(dir);
+    // The test upstream listens on loopback, which the proxy refuses unless allowed.
+    vi.stubEnv("SAGAX_MEDIA_PROXY_ALLOW_HOSTS", "127.0.0.1");
     upstreamHits = [];
     upstream = createServer((req, res) => {
       upstreamHits.push(req.url ?? "");
@@ -63,6 +65,7 @@ describe("media proxy route without a session", () => {
     await close(app);
     await close(upstream);
     rmSync(dir, { recursive: true, force: true });
+    vi.unstubAllEnvs();
     vi.restoreAllMocks();
   });
 

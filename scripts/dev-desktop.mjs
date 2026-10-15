@@ -30,7 +30,7 @@ const ICON_NAME = "PulsaBotIcon";
 // Electron's own bundle id is com.github.Electron: macOS then files dev
 // notifications under that identity, with no permission entry and Electron's
 // icon (UNErrorDomain 1 on show). A Sagax-owned dev id gets its own
-// permission prompt and the owl.
+// permission prompt and the app icon.
 const DEV_BUNDLE_ID = "com.openmausbot.app.dev";
 
 function run(command, args) {
