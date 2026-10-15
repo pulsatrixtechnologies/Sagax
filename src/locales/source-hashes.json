@@ -9655,9 +9655,6 @@
       "settings.threadsView.hidden": "7e6fefff0f0aeb6ca93086d3855d0406bdd0ee53b56771f8c794cf07af6598b7",
       "usage.plan.title": "fa8ed0bdabdd6bcb1c0746f1d3e15212f7f3439d74339fbaaf16c60c0a80fb8e",
       "usage.plan.meter": "a74fcffba339eec2485848d6abd6c4c9b292fb8b87217e4fc0c9a410903717ee",
-      "usage.plan.weekSentence": "d27ba016d17f75a4f5cdce3af198ca4f1ca795989c76f2fdb87897841c7bedd6",
-      "usage.plan.fiveHourSentence": "87a446ce45b5d3b041a7cc9c1124ea8c6fa8359bf5388f213bd4615b34a6906d",
-      "usage.plan.renews": "1a0fd9cddb659f10599a1c9b9b675967c8e15650202a549987c660353c1ddb34",
       "usage.plan.details": "45989de49fb7f66dfe17a8fc26f3a02c7abcd74f7e8e6cf9f39fa0e3775780df",
       "usage.personal.costTitle": "204a5eb2cd28bcfdf3be9f8c765948e9e831609e3c57048cdbd6b8a94cf49126",
       "usage.personal.thisMonth": "7ec9e780731d74e9b1737ddfe10eebcbb338ff85f65ac3fcca751f07d331bd90",
@@ -11581,7 +11578,11 @@
       "settings.memory.obsidianMissing": "55554f336fe70a58345ef1e1754e963330578fe64fcdc2a55213e65f20107a6a",
       "settings.memory.obsidianAddVault": "d7630eece382f3c762a208ce611cd28c15dd4168540e02a2d89516cf51630af4",
       "settings.memory.attentionCount": "0bcdc68c43422eb44ba2dfa7c6d1a3805f72f7a334475b1b17094d9c184c33d0",
-      "settings.memory.refusedCount": "66d8168f6dd6688a2a4f6339dabda340b2b56f858b42ebd164259b30ed5ce923"
+      "settings.memory.refusedCount": "66d8168f6dd6688a2a4f6339dabda340b2b56f858b42ebd164259b30ed5ce923",
+      "usage.plan.windowWeek": "e78041ab51a818a22e2cfea6c15fe72e9e20092246f496f1670f7be3e42177a6",
+      "usage.plan.windowFiveHour": "a055a76a7f02db364c1cba5a8f956bf1fea2fffbfcc05a5365de5891c0376182",
+      "usage.plan.renewsShort": "31accbe72c83190097bd0d180cb174e48c9dd71cebed7af66765e69d0569705c",
+      "usage.personal.unavailable": "c514b3d249d8a138e6dd88ae0ad6c9cad17da185f173bd31fd5bc9589fbc4d30"
     },
     "hi": {
       "noEngines.title": "77a6e0966b7323ceae6973abb581b31d52263bb0ec8249e2b1c1b7ae1e586f04",

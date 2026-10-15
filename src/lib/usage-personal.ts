@@ -40,8 +40,11 @@ export function personalUsagePeriods(now = new Date()): {
   };
 }
 
-export function usageQuery(range: { from: string; to: string }, groupBy: "day" | "bot" | "model"): string {
-  return `/api/me/usage?from=${encodeURIComponent(range.from)}&to=${encodeURIComponent(range.to)}&groupBy=${groupBy}`;
+/** GET /api/me/usage (Sagax 0.5.4 and later); `legacy`: GET /api/usage?mine=1,
+ * the same person's own turns on a 0.5.3 server, which lacks the first. */
+export function usageQuery(range: { from: string; to: string }, groupBy: "day" | "bot" | "model", legacy = false): string {
+  const query = `from=${encodeURIComponent(range.from)}&to=${encodeURIComponent(range.to)}&groupBy=${groupBy}`;
+  return legacy ? `/api/usage?mine=1&${query}` : `/api/me/usage?${query}`;
 }
 
 export const costOf = (summary: PersonalUsageSummary | null | undefined): number =>
