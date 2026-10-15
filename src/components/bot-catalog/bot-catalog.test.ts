@@ -233,7 +233,7 @@ describe("the modal", () => {
   });
 
   it("is not in the sidebar section menu", () => {
-    expect(orgSectionMenuItems({ named: false, canMoveUp: false, canMoveDown: false, anyExpanded: true })).toEqual(["onNew", "onCollapseAll"]);
+    expect(orgSectionMenuItems({ named: false, canMoveUp: false, canMoveDown: false, anyExpanded: true })).toEqual(["onCollapseAll"]);
   });
 });
 

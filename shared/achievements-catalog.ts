@@ -281,7 +281,7 @@ const CATALOG: readonly AchievementDefinition[] = [
     id: "autopilot",
     category: "power",
     name: { en: "Autopilot", fr: "Pilote automatique" },
-    description: { en: "Let a bot pick the right computer by itself (Works on: Auto).", fr: "Laissez un robot choisir le bon ordinateur lui-même (Travaille sur : Auto)." },
+    description: { en: "Let a bot pick the right computer by itself (Workspace: Auto).", fr: "Laissez un robot choisir le bon ordinateur lui-même (Zone de travail : Auto)." },
     icon: "Navigation",
     points: 20,
     rule: { kind: "count", event: "computer.auto", target: 1 },

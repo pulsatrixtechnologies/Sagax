@@ -1,15 +1,16 @@
 // The bot editor ("Edit bot"): one bot's whole profile in a modal shaped like
 // Achievements (category-modal.ts: a left column of categories, one
-// scrolling pane, the close button top right). The left column lists six
-// groups (lib/persona-sections.ts, JC 2026-10-14); a group's page shows its
-// sections one under the other, each the same body the bot panel used to
-// show (useBotSectionContent), so both save through the same paths. A
+// scrolling pane, the close button top right). The left column lists the
+// groups (lib/persona-sections.ts); each section is its own page (JC
+// 2026-10-15), listed under its group while that group is open, each the
+// same body the bot panel used to show (useBotSectionContent), so both save
+// through the same paths. A
 // section this viewer may not change stays on its page and says why
 // (botSectionLock); nothing is hidden for lack of a permission. Opened from
 // the bot's "..." menu in the bot panel, and on Appearance from a click on
 // the bot's avatar (store action openPersonaEditor).
 import { useEffect, useMemo, useRef, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
-import { Brain, ChevronRight, Cpu, History, LayoutDashboard, Lock, type LucideIcon, ScrollText, ShieldCheck, X } from "lucide-react";
+import { Brain, Coins, Cpu, History, LayoutDashboard, Lock, type LucideIcon, Mic, ScrollText, ShieldCheck, X } from "lucide-react";
 
 import { useStore, type Bot, type BotSettingsSection } from "@/state/store";
 import { t } from "@/lib/i18n";
@@ -17,6 +18,7 @@ import { useAdvancedMode } from "@/lib/interface-mode";
 import { simpleHidesBotSection } from "@/lib/interface-visibility";
 import { canEditBotField } from "@/lib/bot-capabilities";
 import type { LocaleKey } from "@/locales";
+import { cn } from "@/lib/cn";
 import { useRetroSkin } from "../RetroChromeHost";
 import { shortcutLabel } from "../ShortcutHint";
 import { CATEGORY_MODAL, categoryNavItemClass, nextCategory, useCategoryModalKeyboard } from "../category-modal";
@@ -31,6 +33,7 @@ import {
   isPersonaCategory,
   personaCategoryForSection,
   personaGroupOf,
+  personaGroupSections,
   type PersonaCategory,
   type PersonaGroup,
 } from "@/lib/persona-sections";
@@ -45,8 +48,10 @@ const GROUP_ICON: Record<PersonaGroup, LucideIcon> = {
   instructions: ScrollText,
   memoryFiles: Brain,
   modelTools: Cpu,
-  behavior: ShieldCheck,
-  activity: History,
+  permissions: ShieldCheck,
+  voice: Mic,
+  usage: Coins,
+  changes: History,
 };
 
 export function personaCategoryLabel(id: BotSettingsSection): string {
@@ -55,12 +60,17 @@ export function personaCategoryLabel(id: BotSettingsSection): string {
   return entry.labelKey ? t(entry.labelKey) : entry.label;
 }
 
+/** A group that is one page, or that opens on a page of its own name, is
+ * named after that page (Permissions, Voice, Usage, Changes). */
 export function personaGroupLabel(id: PersonaGroup): string {
-  return t(`persona.group.${id}`);
+  const pages = personaGroupSections(id);
+  if (pages.length === 1) return personaCategoryLabel(pages[0]!);
+  if (isPersonaCategory(id as BotSettingsSection)) return personaCategoryLabel(id as BotSettingsSection);
+  return t(`persona.group.${id}` as LocaleKey);
 }
 
 /** Sections that keep an unsaved draft (their own Save button): mounted on
- * every page, shown only on their group's page. */
+ * every page, shown only on their own. */
 const KEEP_MOUNTED: ReadonlySet<PersonaCategory> = new Set(["memory", "rules", "files"]);
 
 function Note({ children, icon = true }: { children: ReactNode; icon?: boolean }) {
@@ -70,10 +80,6 @@ function Note({ children, icon = true }: { children: ReactNode; icon?: boolean }
       <span>{children}</span>
     </p>
   );
-}
-
-function SubHeading({ children }: { children: ReactNode }) {
-  return <h3 className="mb-3 mt-8 text-[14px] font-medium text-ink">{children}</h3>;
 }
 
 export function PersonaEditorModal() {
@@ -94,35 +100,46 @@ function PersonaEditor({ bot, section, onClose }: { bot: Bot; section: BotSettin
   const dialogRef = useRef<HTMLDivElement>(null);
   const navRef = useRef<HTMLElement>(null);
   const paneRef = useRef<HTMLDivElement>(null);
+  const focusNav = useRef(false);
   const { available, slackUrl, perspicaxOrg } = useBotSectionAvailability(bot.id);
 
   // Simple mode hides the same sections it hides in the bot panel; their
-  // saved values stay. A group left with no section is not listed.
-  // Nothing here is hidden for lack of a permission.
-  const shown = (id: PersonaCategory) => advanced || !simpleHidesBotSection(id);
+  // saved values stay. A page this server does not offer (Slack without an
+  // Admin page, Shared with off Perspicax, Who can see it where one person
+  // signs in) is not listed, and a group left with no page goes. Nothing
+  // here is hidden for lack of a permission.
+  const offered = (id: PersonaCategory) =>
+    id === "slack" || id === "sharing" || id === "visibility" ? available(id) : true;
+  const shown = (id: PersonaCategory) => (advanced || !simpleHidesBotSection(id)) && offered(id);
   const groups = useMemo(
     () => PERSONA_GROUPS
-      .map((group) => ({ id: group.id as PersonaGroup, sections: (group.sections as readonly PersonaCategory[]).filter((id) => advanced || !simpleHidesBotSection(id)) }))
+      .map((group) => ({ id: group.id as PersonaGroup, sections: (group.sections as readonly PersonaCategory[]).filter(shown) }))
       .filter((group) => group.sections.length > 0),
-    [advanced],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [advanced, slackUrl, perspicaxOrg, available("visibility")],
   );
-  const groupIds = groups.map((group) => group.id);
+  const pages = groups.flatMap((group) => group.sections);
   const target = personaCategoryForSection(section) ?? "overview";
-  const wanted = personaGroupOf(section);
-  const current: PersonaGroup = shown(target) && groupIds.includes(wanted) ? wanted : "profile";
-  const currentSections = groups.find((group) => group.id === current)?.sections ?? [];
+  // A link to a page this viewer does not get lands on its stand-in: Who
+  // can see it and Shared with stand for each other, else the group's home.
+  const current: PersonaCategory = pages.includes(target) ? target
+    : target === "visibility" && pages.includes("sharing") ? "sharing"
+      : target === "sharing" && pages.includes("visibility") ? "visibility"
+        : groups.find((group) => group.id === personaGroupOf(target))?.sections[0] ?? "overview";
+  const currentGroup: PersonaGroup = personaGroupOf(current);
   const choose = (id: PersonaGroup) => {
     const first = groups.find((group) => group.id === id)?.sections[0];
     if (first) dispatch({ type: "personaEditorSection", section: first });
   };
+  const choosePage = (id: PersonaCategory) => dispatch({ type: "personaEditorSection", section: id });
   const goTo = (id: BotSettingsSection) => {
     const category = personaCategoryForSection(id);
     if (category && shown(category)) dispatch({ type: "personaEditorSection", section: id });
   };
 
-  // The server overview and the history load when their page is up.
+  // The server overview loads on What it does, the history on Changes.
   const { renderSectionBody, dialogs, derived } = useBotSectionContent(bot, {
-    section: currentSections[0] ?? "overview",
+    section: current === "summary" ? "overview" : current,
     expanded: true,
     onOpenSection: (next) => {
       if (isPersonaCategory(next) || personaCategoryForSection(next) !== null) {
@@ -137,58 +154,39 @@ function PersonaEditor({ bot, section, onClose }: { bot: Bot; section: BotSettin
     slackUrl,
   });
 
-  // A link to a section further down a page scrolls to it.
+  // A new page starts at the top; after a key in the list, focus follows
+  // the page (its entry exists only once its group is open).
   useEffect(() => {
-    const pane = paneRef.current;
-    if (!pane) return;
-    if (currentSections[0] === target) {
-      pane.scrollTop = 0;
-      return;
-    }
-    pane.querySelector(`[data-persona-section="${target}"]`)?.scrollIntoView?.({ block: "start" });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [current, target]);
+    if (paneRef.current) paneRef.current.scrollTop = 0;
+    if (!focusNav.current) return;
+    focusNav.current = false;
+    const nav = navRef.current;
+    (nav?.querySelector<HTMLElement>(`[data-persona-page="${current}"]`)
+      ?? nav?.querySelector<HTMLElement>(`[data-persona-category="${currentGroup}"]`))?.focus();
+  }, [current, currentGroup]);
 
   useCategoryModalKeyboard(dialogRef, '[data-persona-nav] [aria-current="page"]', onClose);
 
+  // Up and Down walk every page in order, opening its group on the way.
   const onNavKey = (event: ReactKeyboardEvent<HTMLElement>) => {
-    const id = nextCategory(groupIds, current, event.key);
+    const id = nextCategory(pages, current, event.key);
     if (id === null) return;
     event.preventDefault();
-    choose(id);
-    navRef.current?.querySelector<HTMLElement>(`[data-persona-category="${id}"]`)?.focus();
+    focusNav.current = true;
+    choosePage(id);
   };
 
   const lockOf = (id: BotSettingsSection): LocaleKey | null => botSectionLock(state.config, bot, id);
   const memoryAllowed = canEditBotField(state.config, bot, "memoryEnabled");
   const unavailable = (id: PersonaCategory) => id === "perspicax" && perspicaxOrg === null;
   const groupLocked = (sections: readonly PersonaCategory[]) =>
-    sections.every((id) => id !== "overview" && id !== "appearance" && (lockOf(id) !== null || unavailable(id)));
+    sections.every((id) => lockOf(id) !== null || unavailable(id));
 
   const body = (id: PersonaCategory): ReactNode => {
-    if (id === "overview") {
-      const sharing: BotSettingsSection | null = available("sharing") ? "sharing" : available("visibility") ? "visibility" : null;
-      return (
-        <div className="flex flex-col">
-          <PersonaOverview bot={bot} derived={derived} />
-          {sharing && (
-            <>
-              <SubHeading>{personaCategoryLabel(sharing)}</SubHeading>
-              {renderSectionBody(sharing)}
-            </>
-          )}
-          {/* What the server says the bot does, reaches and won't do, the
-              prompt preview and the recent changes: one click away. */}
-          <details data-persona-summary="" className="group mt-8 border-t border-hairline/40 pt-5">
-            <summary className="flex cursor-pointer list-none items-center gap-1.5 text-[13px] font-medium text-ink [&::-webkit-details-marker]:hidden">
-              <ChevronRight size={14} aria-hidden="true" className="text-ink-secondary transition-transform group-open:rotate-90 motion-reduce:transition-none" />
-              {t("persona.overview.summary")}
-            </summary>
-            <div className="mt-4">{renderSectionBody("overview")}</div>
-          </details>
-        </div>
-      );
-    }
+    if (id === "overview") return <PersonaOverview bot={bot} derived={derived} />;
+    // What the server says the bot does, reaches and won't do, the prompt
+    // preview and the recent changes.
+    if (id === "summary") return renderSectionBody("overview");
     if (unavailable(id)) {
       return <Note icon={false}>{t("persona.unavailable.perspicax")}</Note>;
     }
@@ -206,27 +204,11 @@ function PersonaEditor({ bot, section, onClose }: { bot: Bot; section: BotSettin
         </div>
       );
     }
-    if (id === "access") {
-      const worksOn = (advanced || !simpleHidesBotSection("worksOn")) && lockOf("worksOn") === null;
-      return (
-        <div className="flex flex-col">
-          {/* Where it works first, then what it may reach. */}
-          {worksOn && <div className="mb-5">{renderSectionBody("worksOn")}</div>}
-          {renderSectionBody("access")}
-          {available("slack") && (
-            <div className="mt-5 border-t border-hairline/40 pt-5">
-              <h4 className="mb-3 text-[13px] font-medium text-ink">{personaCategoryLabel("slack")}</h4>
-              {renderSectionBody("slack")}
-            </div>
-          )}
-        </div>
-      );
-    }
     return renderSectionBody(id);
   };
 
   // Memory, Rules and Files have an explicit Save button: they stay mounted
-  // on every page so an unsaved draft survives a look at another group.
+  // on every page so an unsaved draft survives a look at another page.
   const kept = (id: PersonaCategory, onPage: boolean): ReactNode => {
     if (id === "memory") {
       if (!memoryAllowed || lockOf("memory") !== null) return null;
@@ -243,6 +225,11 @@ function PersonaEditor({ bot, section, onClose }: { bot: Bot; section: BotSettin
       />
     );
   };
+
+  // The page title: the group's name on its home and on a group of one
+  // page, the page's own name otherwise.
+  const groupPages = groups.find((group) => group.id === currentGroup)?.sections ?? [];
+  const title = current === "overview" || groupPages.length === 1 ? personaGroupLabel(currentGroup) : personaCategoryLabel(current);
 
   return (
     <div
@@ -273,20 +260,43 @@ function PersonaEditor({ bot, section, onClose }: { bot: Bot; section: BotSettin
           {groups.map(({ id, sections }) => {
             const Icon = GROUP_ICON[id];
             const locked = groupLocked(sections);
+            const open = currentGroup === id;
+            // A group of several pages lists them under it while it is open.
+            const subPages = open && sections.length > 1 ? sections : [];
             return (
-              <button
-                key={id}
-                type="button"
-                data-persona-category={id}
-                data-locked={locked ? "" : undefined}
-                onClick={() => choose(id)}
-                aria-current={current === id ? "page" : undefined}
-                className={categoryNavItemClass(current === id)}
-              >
-                <Icon size={15} className="shrink-0" aria-hidden="true" />
-                <span className="min-w-0 flex-1 truncate">{personaGroupLabel(id)}</span>
-                {locked && <Lock size={12} aria-label={t("persona.lockedBadge")} className="shrink-0 text-ink-tertiary" />}
-              </button>
+              <div key={id} className="flex flex-col gap-0.5">
+                <button
+                  type="button"
+                  data-persona-category={id}
+                  data-locked={locked ? "" : undefined}
+                  onClick={() => choose(id)}
+                  aria-current={open ? (subPages.length > 0 ? "true" : "page") : undefined}
+                  aria-expanded={sections.length > 1 ? open : undefined}
+                  className={categoryNavItemClass(open && subPages.length === 0)}
+                >
+                  <Icon size={15} className="shrink-0" aria-hidden="true" />
+                  <span className="min-w-0 flex-1 truncate">{personaGroupLabel(id)}</span>
+                  {locked && <Lock size={12} aria-label={t("persona.lockedBadge")} className="shrink-0 text-ink-tertiary" />}
+                </button>
+                {subPages.length > 0 && (
+                  <ul data-persona-subnav={id} aria-label={personaGroupLabel(id)} className="mb-1 ml-[17px] flex flex-col gap-0.5 border-l border-hairline/60 pl-2">
+                    {subPages.map((page) => (
+                      <li key={page}>
+                        <button
+                          type="button"
+                          data-persona-page={page}
+                          data-locked={lockOf(page) !== null || unavailable(page) ? "" : undefined}
+                          onClick={() => choosePage(page)}
+                          aria-current={current === page ? "page" : undefined}
+                          className={cn(categoryNavItemClass(current === page), "w-full py-[5px] text-[12.5px]", current === page ? "" : "text-ink-secondary")}
+                        >
+                          <span className="min-w-0 flex-1 truncate">{personaCategoryLabel(page)}</span>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
             );
           })}
         </nav>
@@ -305,42 +315,35 @@ function PersonaEditor({ bot, section, onClose }: { bot: Bot; section: BotSettin
             <select
               aria-label={t("persona.categories")}
               value={current}
-              onChange={(event) => choose(event.target.value as PersonaGroup)}
+              onChange={(event) => choosePage(event.target.value as PersonaCategory)}
               className={CATEGORY_MODAL.mobileSelect}
             >
-              {groups.map(({ id }) => (
-                <option key={id} value={id}>{personaGroupLabel(id)}</option>
+              {groups.map(({ id, sections }) => sections.length === 1 ? (
+                <option key={id} value={sections[0]}>{personaGroupLabel(id)}</option>
+              ) : (
+                <optgroup key={id} label={personaGroupLabel(id)}>
+                  {sections.map((page) => <option key={page} value={page}>{personaCategoryLabel(page)}</option>)}
+                </optgroup>
               ))}
             </select>
           </div>
-          <div ref={paneRef} className={CATEGORY_MODAL.pane} data-persona-pane={current}>
-            <h2 className={CATEGORY_MODAL.heading}>{personaGroupLabel(current)}</h2>
+          <div ref={paneRef} className={CATEGORY_MODAL.pane} data-persona-pane={currentGroup} data-persona-current={current}>
+            <h2 className={CATEGORY_MODAL.heading}>{title}</h2>
             <div className={CATEGORY_MODAL.body}>
-              {/* Every group keeps its place in the tree, so a section kept
+              {/* Every page keeps its place in the tree, so a section kept
                   mounted never remounts when the page changes. */}
-              {groups.map(({ id: group, sections }) => {
-                const onPage = group === current;
+              {pages.map((id) => {
+                const onPage = id === current;
+                const keep = KEEP_MOUNTED.has(id);
+                if (!onPage && !keep) return null;
+                const content = keep && !unavailable(id) && lockOf(id) === null && !(id === "memory" && !memoryAllowed)
+                  ? kept(id, onPage)
+                  : onPage ? body(id) : null;
+                if (!onPage && content === null) return null;
                 return (
-                  <div key={group} data-persona-group={group} hidden={!onPage}>
-                    {sections.map((id, index) => {
-                      const keep = KEEP_MOUNTED.has(id);
-                      if (!onPage && !keep) return null;
-                      const content = keep && !unavailable(id) && lockOf(id) === null && !(id === "memory" && !memoryAllowed)
-                        ? kept(id, onPage)
-                        : onPage ? body(id) : null;
-                      if (!onPage && content === null) return null;
-                      return (
-                        <section key={id} data-persona-section={id}>
-                          {/* The first section of a page is under the page title. */}
-                          {index > 0 && <SubHeading>{personaCategoryLabel(id)}</SubHeading>}
-                          {index === 0 && id !== "overview" && sections.length > 1 && (
-                            <h3 className="mb-3 text-[14px] font-medium text-ink">{personaCategoryLabel(id)}</h3>
-                          )}
-                          {content}
-                        </section>
-                      );
-                    })}
-                  </div>
+                  <section key={id} data-persona-section={id} hidden={!onPage}>
+                    {content}
+                  </section>
                 );
               })}
             </div>

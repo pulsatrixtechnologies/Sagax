@@ -95,4 +95,19 @@ describe("sidebar Unassigned section", () => {
     expect(html).toContain('data-sidebar-group-row="crew"');
     expect(html).toContain('data-section="Ops"');
   });
+
+  it("shows the bots without an Unassigned header when there is no team", () => {
+    fixture.state = { bots: [bot("mochi"), bot("dumpling")], groups: [], sections: [] };
+    const html = render();
+    expect(html).not.toContain('data-section="Unassigned"');
+    expect(html).toContain('data-sidebar-bot-row="mochi"');
+    expect(html).toContain('data-sidebar-bot-row="dumpling"');
+  });
+
+  it("types no team name in the sidebar: a team is made from a bot's Move to ›", () => {
+    fixture.state = { bots: [bot("mochi"), bot("ops", { section: "Ops" })], groups: [], sections: ["Ops"] };
+    const html = render();
+    expect(html).not.toContain("data-section-name-input");
+    expect(html).not.toContain('placeholder="Team name"');
+  });
 });

@@ -12,6 +12,7 @@ import {
   Star,
   EyeOff,
   Folder,
+  FolderInput,
   FolderMinus,
   FolderOpen,
   FolderPlus,
@@ -70,7 +71,6 @@ import { OrgSectionMenuItems, SectionNameInput, orgSectionMenuItems, type OrgSec
 import {
   EMPTY_PERSONAL_SECTIONS,
   assignToPersonalSection,
-  createPersonalSection,
   deletePersonalSection,
   editPersonalSections,
   itemKey,
@@ -734,6 +734,7 @@ export function RoomContextMenu({
           itemId={group.id}
           fallbackSection={group.section}
           dismissAttr="data-room-menu"
+          label={t("sidebar.bot.moveTo")}
           onAssign={(section) => {
             // Personal folders on an organization server. A people-DM refuses
             // a section patch, so this never writes the server's section.
@@ -950,12 +951,105 @@ function SectionPicker({
   );
 }
 
+/** The "Move to" submenu's content: the existing teams (checkmark on the
+ * current one), No team, then New team… which asks for the name in place.
+ * Exported for tests. */
+export function MoveToTeamList({
+  sections,
+  current,
+  onAssign,
+  initialCreating = false,
+}: {
+  sections: readonly string[];
+  /** the target's current team; "" = none */
+  current: string;
+  /** "" takes it out of its team */
+  onAssign: (section: string) => void;
+  initialCreating?: boolean;
+}) {
+  const [creating, setCreating] = useState(initialCreating);
+  const [draft, setDraft] = useState("");
+  const create = () => {
+    const name = draft.trim();
+    if (!name || name.length > 60) return;
+    onAssign(name);
+  };
+  const row = "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[13px] leading-[18px] text-ink hover:bg-hover";
+  return (
+    <>
+      {sections.map((section) => (
+        <button
+          key={section}
+          type="button"
+          role="menuitemradio"
+          aria-checked={section === current}
+          data-move-target={section}
+          onClick={() => onAssign(section)}
+          className={row}
+        >
+          <Folder size={16} className="shrink-0 text-ink" />
+          <span className="min-w-0 flex-1 truncate">{section}</span>
+          {section === current && <Check size={14} className="shrink-0 text-ink" />}
+        </button>
+      ))}
+      <button
+        type="button"
+        role="menuitemradio"
+        aria-checked={!current}
+        data-move-target=""
+        onClick={() => onAssign("")}
+        className={row}
+      >
+        <FolderMinus size={16} className="shrink-0 text-ink" />
+        <span className="min-w-0 flex-1">{t("sidebar.bot.noTeam")}</span>
+        {!current && <Check size={14} className="shrink-0 text-ink" />}
+      </button>
+      <div className="mx-2 my-1 h-[0.5px] bg-border" />
+      {creating ? (
+        <form
+          data-move-new-form=""
+          className="flex items-center gap-2 px-0.5 py-1"
+          onSubmit={(event) => {
+            event.preventDefault();
+            create();
+          }}
+        >
+          <input
+            autoFocus
+            maxLength={60}
+            value={draft}
+            onChange={(event) => setDraft(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); setCreating(false); setDraft(""); }
+            }}
+            placeholder={t("sidebar.section.newContextAria")}
+            aria-label={t("sidebar.section.newContextAria")}
+            className="min-w-0 flex-1 rounded-lg border border-border bg-ink/[0.03] px-2.5 py-1.5 text-[13px] leading-[18px] text-ink placeholder:text-ink-secondary focus:border-border-strong focus:outline-none"
+          />
+        </form>
+      ) : (
+        <button
+          type="button"
+          role="menuitem"
+          data-move-new=""
+          onClick={() => setCreating(true)}
+          className={row}
+        >
+          <FolderPlus size={16} className="shrink-0 text-ink" />
+          {t("sidebar.section.newContext")}
+        </button>
+      )}
+    </>
+  );
+}
+
 function MoveToSectionItem({
   itemKind,
   itemId,
   fallbackSection,
   dismissAttr,
   onAssign,
+  label = t("sidebar.bot.moveToSection"),
 }: {
   itemKind: SectionItemKind;
   itemId: string;
@@ -964,12 +1058,11 @@ function MoveToSectionItem({
   /** Keeps a click in the submenu from dismissing the menu that opened it. */
   dismissAttr: "data-bot-menu" | "data-room-menu";
   onAssign: (section: string) => void;
+  label?: string;
 }) {
   const { state } = useStore();
   const personal = usePersonalLayout();
   const [open, setOpen] = useState(false);
-  const [creating, setCreating] = useState(false);
-  const [draft, setDraft] = useState("");
   const triggerRef = useRef<HTMLButtonElement>(null);
   const closeTimer = useRef<number | null>(null);
   const sections = personal ? personalSectionNames(personal) : [...new Set([
@@ -978,11 +1071,6 @@ function MoveToSectionItem({
     ...state.groups.flatMap((group) => group.section ? [group.section] : []),
   ])];
   const current = (personal ? personalSectionOf(personal, itemKey(itemKind, itemId)) : fallbackSection)?.trim() ?? "";
-  const create = () => {
-    const name = draft.trim();
-    if (!name || name.length > 60) return;
-    onAssign(name);
-  };
   const show = () => {
     if (closeTimer.current !== null) window.clearTimeout(closeTimer.current);
     setOpen(true);
@@ -1010,6 +1098,7 @@ function MoveToSectionItem({
         ref={triggerRef}
         type="button"
         role="menuitem"
+        data-menu-item="move"
         aria-haspopup="menu"
         aria-expanded={open}
         onClick={(event) => {
@@ -1017,74 +1106,26 @@ function MoveToSectionItem({
           event.stopPropagation();
           show();
         }}
+        onKeyDown={(event) => {
+          if (event.key === "ArrowRight") { event.preventDefault(); show(); }
+        }}
         className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[13px] leading-[18px] text-ink hover:bg-hover"
       >
-        <FolderPlus size={16} className="text-ink" />
-        <span className="min-w-0 flex-1">{t("sidebar.bot.moveToSection")}</span>
+        <FolderInput size={16} className="text-ink" />
+        <span className="min-w-0 flex-1">{label}</span>
         <ChevronRight size={14} className="text-ink-tertiary" />
       </button>
       {open && submenuStyle && createPortal(
         <div
           role="menu"
           {...{ [dismissAttr]: "" }}
-          aria-label={t("sidebar.bot.moveToSection")}
+          aria-label={label}
           onMouseEnter={show}
           onMouseLeave={hide}
           style={{ top: submenuStyle.top, left: submenuStyle.left }}
           className="fixed z-50 max-h-[calc(100dvh-16px)] w-[240px] min-w-[200px] overflow-y-auto overscroll-contain rounded-xl border-[0.5px] border-border popover-surface bg-elevated p-1.5 flex flex-col gap-0.5 text-[13px] leading-[18px]"
         >
-          {sections.map((section) => (
-            <button
-              key={section}
-              type="button"
-              role="menuitem"
-              onClick={() => onAssign(section)}
-              className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[13px] leading-[18px] text-ink hover:bg-hover"
-            >
-              <Folder size={16} className="shrink-0 text-ink" />
-              <span className="min-w-0 flex-1 truncate">{section}</span>
-              {section === current && <Check size={14} className="shrink-0 text-ink" />}
-            </button>
-          ))}
-          <button
-            type="button"
-            role="menuitem"
-            onClick={() => onAssign("")}
-            className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[13px] leading-[18px] text-ink hover:bg-hover"
-          >
-            <Folder size={16} className="shrink-0 text-ink" />
-            <span className="min-w-0 flex-1">{t("sidebar.section.general")}</span>
-            {!current && <Check size={14} className="shrink-0 text-ink" />}
-          </button>
-          <div className="mx-2 my-1 h-[0.5px] bg-border" />
-          {creating ? (
-            <form
-              className="flex items-center gap-2 px-0.5 py-1"
-              onSubmit={(event) => {
-                event.preventDefault();
-                create();
-              }}
-            >
-              <input
-                autoFocus
-                value={draft}
-                onChange={(event) => setDraft(event.target.value)}
-                placeholder={t("sidebar.section.newContextAria")}
-                aria-label={t("sidebar.section.newContextAria")}
-                className="min-w-0 flex-1 rounded-lg border border-border bg-ink/[0.03] px-2.5 py-1.5 text-[13px] leading-[18px] text-ink placeholder:text-ink-secondary focus:border-border-strong focus:outline-none"
-              />
-            </form>
-          ) : (
-            <button
-              type="button"
-              role="menuitem"
-              onClick={() => setCreating(true)}
-              className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[13px] leading-[18px] text-ink hover:bg-hover"
-            >
-              <FolderPlus size={16} className="text-ink" />
-              {t("sidebar.section.newContext")}
-            </button>
-          )}
+          <MoveToTeamList sections={sections} current={current} onAssign={onAssign} />
         </div>,
         document.body,
       )}
@@ -1124,7 +1165,6 @@ export function BotContextMenu({
   initialPage?: "main" | "more";
 }) {
   const motion = useHeldMenuMotion(menu);
-  const advanced = useAdvancedMode();
   // The rare actions wait one step down, under More (JC, 2026-10-14).
   const [page, setPage] = useState<"main" | "more">(initialPage);
   useEffect(() => { if (menu) setPage(initialPage); }, [menu, initialPage]);
@@ -1349,12 +1389,15 @@ export function BotContextMenu({
     openForSettings();
     if (!state.settingsOpen) dispatch({ type: "toggleSettings", open: true });
   }, { id: "edit" });
+  // "Move to ›" sits at the first level, right under Pin, in Simple and
+  // Advanced alike (JC, 2026-10-15): right-click is the way to file a bot.
   const moveItem = canMoveSection ? <MoveToSectionItem
     key="move"
     itemKind="bot"
     itemId={bot.id}
     fallbackSection={bot.section}
     dismissAttr="data-bot-menu"
+    label={t("sidebar.bot.moveTo")}
     onAssign={(section) => {
       if (personal) {
         const failed = assignPersonalSection("bot", bot.id, section);
@@ -1369,9 +1412,12 @@ export function BotContextMenu({
     void copyText(bot.threadId);
   }, { id: "copy-id" });
 
+  // Grok Bot's order (JC, 2026-10-15): Pin, Move to ›, Mark as Unread |
+  // Rename, Edit bot | Copy conversation ID | Hide from sidebar, Archive,
+  // Delete | More › for the rare ones.
   const mainPage = remoteClient ? [
     floatItem,
-    ...(canMoveSection ? [item(<FolderPlus size={16} className="text-ink" />, t("sidebar.bot.moveToSection"), () => {
+    ...(canMoveSection ? [item(<FolderInput size={16} className="text-ink" />, t("sidebar.bot.moveTo"), () => {
       onClose();
       onMoveToSection?.(bot.id);
     }, { id: "move" })] : []),
@@ -1384,34 +1430,21 @@ export function BotContextMenu({
       () => dispatch({ type: "updateBot", botId: bot.id, patch: { pinned: !bot.pinned } }),
       { id: "pin" },
     ),
-    ...(canRename ? [item(<Pencil size={16} className="text-ink" />, t("persona.menu.rename"), () => onRename(bot.id), { id: "rename" })] : []),
-    editItem,
-    divider("d1"),
-    moreItem,
-    ...(archiveItem ? [archiveItem] : []),
-  ];
-  const morePage = [
-    backItem,
-    floatItem,
-    ...(primaryItem ? [primaryItem] : []),
-    item(<Cpu size={16} className="text-ink" />, t("sidebar.bot.model"), () => openModelWindow(bot.id), { id: "model" }),
-    divider("d-read"),
+    ...(moveItem ? [moveItem] : []),
     item(<BellDot size={16} className="text-ink" />, t("sidebar.bot.markUnread"), () =>
       dispatch({ type: "markUnread", botId: bot.id }), { id: "mark-unread" },
     ),
-    item(
-      readingBotId === bot.id ? <Loader2 size={16} className="animate-spin text-ink-secondary" /> : <CheckCheck size={16} className="text-ink-secondary" />,
-      readingBotId === bot.id ? t("sidebar.bot.markingAllRead") : t("sidebar.bot.markAllRead"),
-      () => { void readAll(bot); },
-      { id: "mark-all-read", disabled: readingBotId !== null || botUnreadThreadIds(bot).length === 0, keepOpen: true },
-    ),
+    divider("d-name"),
+    ...(canRename ? [item(<Pencil size={16} className="text-ink" />, t("persona.menu.rename"), () => onRename(bot.id), { id: "rename" })] : []),
+    editItem,
+    divider("d-id"),
+    copyIdItem,
     divider("d-place"),
-    ...(moveItem ? [moveItem] : []),
     // Only this person's sidebar: the bot, its owner and everyone else
     // keep it; Archive is the bot-wide action.
     item(<EyeOff size={16} className="text-ink" />, t("sidebar.hidden.hide"), () => hideFromSidebar("bot", bot.id), { id: "hide" }),
-    ...(advanced ? [copyIdItem] : []),
-    ...(canDelete ? [divider("d-delete"), <BotDeleteMenuItem
+    ...(archiveItem ? [archiveItem] : []),
+    ...(canDelete ? [<BotDeleteMenuItem
       key="delete"
       deleting={deleting}
       onClick={() => {
@@ -1419,6 +1452,21 @@ export function BotContextMenu({
         onDelete?.(bot);
       }}
     />] : []),
+    divider("d-more"),
+    moreItem,
+  ];
+  const morePage = [
+    backItem,
+    floatItem,
+    ...(primaryItem ? [primaryItem] : []),
+    item(<Cpu size={16} className="text-ink" />, t("sidebar.bot.model"), () => openModelWindow(bot.id), { id: "model" }),
+    divider("d-read"),
+    item(
+      readingBotId === bot.id ? <Loader2 size={16} className="animate-spin text-ink-secondary" /> : <CheckCheck size={16} className="text-ink-secondary" />,
+      readingBotId === bot.id ? t("sidebar.bot.markingAllRead") : t("sidebar.bot.markAllRead"),
+      () => { void readAll(bot); },
+      { id: "mark-all-read", disabled: readingBotId !== null || botUnreadThreadIds(bot).length === 0, keepOpen: true },
+    ),
   ];
 
   return createPortal(
@@ -1483,6 +1531,8 @@ export function BotDeleteMenuItem({ deleting, onClick }: { deleting: boolean; on
   return (
     <button
       type="button"
+      role="menuitem"
+      data-menu-item="delete"
       disabled={deleting}
       aria-busy={deleting || undefined}
       onClick={onClick}
@@ -2533,7 +2583,7 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.selectedId, state.activeView]);
   const [orgMenu, setOrgMenu] = useState<{ name: string | null; id: string | null; x: number; y: number } | null>(null);
-  const [sectionEdit, setSectionEdit] = useState<{ mode: "new" } | { mode: "rename"; name: string } | null>(null);
+  const [sectionEdit, setSectionEdit] = useState<{ mode: "rename"; name: string } | null>(null);
   // Organization: the viewer's own sections (personal-sections.ts). The
   // first time, they start from the sections the server gave their bots.
   const personalStored = usePersonalSections();
@@ -2565,12 +2615,6 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
   const closeOrgMenu = () => {
     (teamMenuReturn.current?.isConnected ? teamMenuReturn.current : sidebarRef.current)?.focus();
     setOrgMenu(null);
-  };
-  const createOrgSection = async (name: string): Promise<string | null> => {
-    const code = editPersonalSections((prefs) => createPersonalSection(prefs, name));
-    if (code) return sectionEditMessage(code);
-    setSectionEdit(null);
-    return null;
   };
   const renameOrgSection = async (oldName: string, name: string): Promise<string | null> => {
     const code = editPersonalSections((prefs) => renamePersonalSection(prefs, oldName, name));
@@ -2837,6 +2881,9 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
   // Organization: Unassigned (what is in no section of yours) stays on top.
   const generalOnTop = orgMode && orderedSectionIds.includes(GENERAL_SECTION_ID);
   const sectionIds = generalOnTop ? [GENERAL_SECTION_ID, ...orderedSectionIds.filter((id) => id !== GENERAL_SECTION_ID)] : orderedSectionIds;
+  // With no team of the person's own, Unassigned is the whole list: its
+  // rows show without a header (JC, 2026-10-15).
+  const loneGeneral = !sectionIds.some((sid) => sid !== GENERAL_SECTION_ID && sid !== BOT_CHATS_SECTION_ID);
   const layoutInteractive = sidebarLayoutInteractive(density, q);
   const sectionCollapsed = (id: string) =>
     sidebarSectionCollapsed(id, collapsedSections, density, q);
@@ -3094,9 +3141,6 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
       {/* Bot list. GET /api/org 404 keeps this roster. */}
       <div ref={listFade.ref} onScroll={listFade.onScroll} style={listFade.style} className={cn("flex-1 overflow-y-auto pb-6 pt-1", density === "icons" ? "px-2" : "pl-2 pr-3")}
         onContextMenu={orgMode ? (event) => { if (event.target === event.currentTarget || (event.target as HTMLElement).dataset?.sidebarEmpty !== undefined) openOrgMenu(event, null, null); } : undefined}>
-        {orgMode && sectionEdit?.mode === "new" && (
-          <SectionNameInput onSave={createOrgSection} onCancel={() => setSectionEdit(null)} />
-        )}
         {pinnedBots.length > 0 && (
           // The reference window's tiles: 95 x 115, 4px apart and centred as
           // a group, the first 16px under the head's row.
@@ -3179,7 +3223,7 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
                 )}
                 {density !== "icons" && sectionEdit?.mode === "rename" && team?.key && sectionEdit.name === team.key ? (
                   <SectionNameInput initial={team.key} onSave={(name) => renameOrgSection(team.key!, name)} onCancel={() => setSectionEdit(null)} />
-                ) : density !== "icons" && (
+                ) : density !== "icons" && !(id === GENERAL_SECTION_ID && loneGeneral) && (
                   <SidebarSectionHeader
                     name={team?.key || sectionLabel(id)}
                     onContextMenu={orgMode && layoutInteractive && id !== BOT_CHATS_SECTION_ID ? (event) => openOrgMenu(event, team?.key || null, id) : !remoteClient && layoutInteractive && sectionName ? (event) => {
@@ -3363,7 +3407,6 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
             const position = orgMenu.id ? sectionIds.indexOf(orgMenu.id) : -1;
             const anyExpanded = sectionIds.some((sid) => !collapsedSections.includes(sid));
             const actions: OrgSectionMenuActions = {
-              onNew: () => { closeOrgMenu(); setSectionEdit({ mode: "new" }); },
               onRename: () => { closeOrgMenu(); if (orgMenu.name) setSectionEdit({ mode: "rename", name: orgMenu.name }); },
               onMoveUp: () => { closeOrgMenu(); if (orgMenu.id) moveSidebarSection(orgMenu.id, -1); },
               onMoveDown: () => { closeOrgMenu(); if (orgMenu.id) moveSidebarSection(orgMenu.id, 1); },
