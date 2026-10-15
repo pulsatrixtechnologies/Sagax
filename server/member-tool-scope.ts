@@ -51,6 +51,11 @@ export const MEMBER_OWN_SCOPE_AGENT_TOOLS: Readonly<Record<string, MemberToolFam
   send_voice_note: "conversation",
   end_call: "conversation",
   request_credential: "conversation",
+  // claims (perspicax-claims.ts): a lease in Perspicax held by this bot for
+  // its person, through the turn's own Perspicax token; claim_list is a read
+  claim: "conversation",
+  claim_renew: "conversation",
+  claim_release: "conversation",
   memory_update: "memory",
   memory_log: "memory",
   group_memory_update: "memory",

@@ -31639,6 +31639,28 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       // The holder is this capability's bot, never an argument.
       if (method === "POST" && path === "/api/internal/perspicax/claims") {
         const body = await readInternalBody();
+        // The same misuse and safety review as a Perspicax MCP call: a claim's
+        // name and purpose are model-written and shown to others. claim_list
+        // carries nothing to review.
+        if (body.tool !== "claim_list" && body.args && typeof body.args === "object") {
+          const claimText = JSON.stringify({ tool: body.tool, args: body.args });
+          const speakerId = internalCapability.sandboxPrincipalId ?? internalCapability.desktopPrincipalId;
+          const claimMisuse = misuseTextRefusal(claimText, speakerId, "mcp", { botId: internalCapability.botId, threadId: internalCapability.threadId, tool: "perspicax" });
+          if (claimMisuse) return json(res, 200, { result: claimMisuse, isError: true });
+          const who = safetyPrincipal(internalCapability.threadId);
+          const claimHeld = await safetyToolHold({
+            text: claimText,
+            surface: "mcp",
+            tool: "perspicax",
+            known: true,
+            triage: who.triage || misuseActor(speakerId).triage,
+            ...(who.principalId || speakerId ? { principalId: who.principalId ?? speakerId } : {}),
+            threadId: internalCapability.threadId,
+            botId: internalCapability.botId,
+            review: safetyReviewer(internalCapability.botId),
+          });
+          if (claimHeld) return json(res, 200, { result: claimHeld, isError: true });
+        }
         const answer = await runClaimTool(perspicaxMcp ?? null, {
           threadId: internalCapability.threadId,
           generation: internalCapability.generation,
