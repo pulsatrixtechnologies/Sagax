@@ -159,21 +159,19 @@ function WorkspaceBackupForm() {
 
   const disabled = busy !== null || !status || status.busy || Boolean(status.pendingRestore);
   // 2026-10-14 (JC: "too many containers for simple backups"): one card, one
-  // short sentence with the details behind "What is included", and two
-  // actions side by side; each opens its own form in place.
+  // short sentence with what is included right under it (2026-10-15, JC: no
+  // need to fold it), and two actions side by side; each opens its own form
+  // in place.
   const actionClass = (open: boolean) => `cursor-pointer inline-flex items-center gap-2 rounded-lg border px-3 py-1.5 text-[13px] ${open ? "border-accent/50 bg-accent/10 text-ink" : "border-hairline/50 text-ink hover:bg-hover"}`;
   return <section data-settings-card="backups" className="flex flex-col gap-3 rounded-[14px] border-[0.5px] border-border px-3.5 py-3">
     <div>
       <h3 className="text-[13px] font-medium text-ink">{t("backup.title")}</h3>
       <p className="mt-0.5 text-[13px] leading-[18px] text-ink-secondary">{t("backup.short")}</p>
-      <details className="mt-1 text-[12.5px]" data-backup-included>
-        <summary className="cursor-pointer text-accent hover:underline">{t("backup.included")}</summary>
-        <ul className="mt-1.5 list-disc space-y-1 pl-4 leading-[17px] text-ink-secondary">
-          <li>{t("backup.scope")}</li>
-          <li>{t("backup.excluded")}</li>
-          <li className="text-warning">{t("backup.privacy")}</li>
-        </ul>
-      </details>
+      <ul className="mt-1.5 list-disc space-y-1 pl-4 text-[12.5px] leading-[17px] text-ink-secondary" data-backup-included>
+        <li>{t("backup.scope")}</li>
+        <li>{t("backup.excluded")}</li>
+        <li className="text-warning">{t("backup.privacy")}</li>
+      </ul>
     </div>
     {error && <p role="alert" className="break-words text-[13px] text-danger">{error}</p>}
     {status?.pendingRestore ? <div className="rounded-xl border border-warning/40 bg-warning/10 p-4 text-ink"><WorkspaceBackupRestartNotice /></div> : <>

@@ -11584,7 +11584,12 @@
       "persona.files.newKind.document": "d6bd8c0aeee80fedb2dbf05c973100c3db04be90c072a88572533f2684131a36",
       "persona.files.newKind.topic": "f44f67cde5703e03e89cc0c664cc399570b336c48ab73bc7bf4c3cc8f606cb3b",
       "persona.files.create": "4759498ac2a719c619e2c8cf8ee60af2d2407425e95d308eb208425b2a6d427a",
-      "persona.files.options": "e37afba745641c21dd29c40aa11a2259949d7539d2995dfa66f9ca586e69398d"
+      "persona.files.options": "e37afba745641c21dd29c40aa11a2259949d7539d2995dfa66f9ca586e69398d",
+      "botWorkplace.activity.connected": "7de724fea4fc3dd6726a3195f9f27aa06beeca70446886412a8e71cf4a88f15e",
+      "botWorkplace.activity.hide": "48c1eb7648df6d3fa8d91a17c2d261bcad23715f499b991eb55ff6b70510adc9",
+      "botWorkplace.activity.show": "f2d246986894911f4898ba092a95b43633b610c4db249c92eec075efca0286c3",
+      "settings.card.servers": "d4dfd6e5554389d59ade3aeff02e87abc5233255017e438805a0dce5d984f3b3",
+      "settings.card.serversOne": "cc61f87cc4b5ec07693ff524c10cfa19411b7567bb90a83048b0f507e42cae96"
     },
     "hi": {
       "noEngines.title": "77a6e0966b7323ceae6973abb581b31d52263bb0ec8249e2b1c1b7ae1e586f04",
