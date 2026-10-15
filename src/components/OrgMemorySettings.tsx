@@ -3,42 +3,41 @@
 // sets itself up from the organization server the person is signed in to
 // (electron/org-memory-cache.mjs auto()): no address, no token to type. The
 // page is a status line (synced with the organization, last sync, or why it
-// failed with a Try again), the review items, and Open in Obsidian. The
+// failed with a Try again), how many changes wait for a review (a count
+// only: the items, their titles, reasons and team ids stay in Perspicax and
+// the _pending folder), and Open in Obsidian. The
 // vault lives under Application Support, out of iCloud Drive, OneDrive and
 // Time Machine, and is erased when the person leaves the organization.
 import { useState } from "react";
 import { t } from "@/lib/i18n";
 import { usePerspicaxOrg } from "@/lib/perspicax-org";
 import {
-  orderedItems,
   orgMemoryStatus,
+  refusedCount,
   runOrgMemoryAuto,
   tiersNeedingAttention,
   useOrgMemoryState,
   type OrgMemoryAutoError,
   type OrgMemoryBridge,
-  type OrgMemoryItem,
+  type OrgMemoryOpenResult,
   type OrgMemoryState,
-  type OrgMemoryTier,
 } from "@/lib/org-memory";
 import type { LocaleKey } from "@/locales";
 import { SettingRow } from "./SettingsPrimitives";
 
-const STATUS_KEY: Record<OrgMemoryTier["status"], LocaleKey> = {
-  cloned: "settings.memory.status.cloned",
-  pushed: "settings.memory.status.pushed",
-  "up-to-date": "settings.memory.status.up-to-date",
-  refused: "settings.memory.status.refused",
-  conflict: "settings.memory.status.conflict",
-  error: "settings.memory.status.error",
+/** What the page says when Obsidian did not open the vault. */
+type OpenProblem = "not_installed" | "add_vault" | "failed";
+const OPEN_KEY: Record<OpenProblem, LocaleKey> = {
+  not_installed: "settings.memory.obsidianMissing",
+  add_vault: "settings.memory.obsidianAddVault",
+  failed: "settings.memory.openFailed",
 };
-const STATE_KEY: Record<OrgMemoryItem["state"], LocaleKey> = {
-  pending: "settings.memory.state.pending",
-  approved: "settings.memory.state.approved",
-  refused: "settings.memory.state.refused",
-  returned: "settings.memory.state.returned",
-  expired: "settings.memory.state.expired",
-};
+
+function openProblem(result: OrgMemoryOpenResult): OpenProblem | null {
+  if (result === true || result.ok) return null;
+  return result.reason in OPEN_KEY ? result.reason : "failed";
+}
+
 const ERROR_KEY: Record<OrgMemoryAutoError, LocaleKey> = {
   unreachable: "settings.memory.error.unreachable",
   unsupported: "settings.memory.error.unsupported",
@@ -58,13 +57,13 @@ export function OrgMemorySettings() {
   return <OrgMemoryPanel bridge={bridge} orgName={org?.org.name ?? null} />;
 }
 
-export function OrgMemoryPanel({ bridge, orgName, initial = null }: { bridge: OrgMemoryBridge; orgName: string | null; initial?: OrgMemoryState | null }) {
+export function OrgMemoryPanel({ bridge, orgName, initial = null, initialOpenProblem = null }: { bridge: OrgMemoryBridge; orgName: string | null; initial?: OrgMemoryState | null; initialOpenProblem?: OpenProblem | null }) {
   const { state, running } = useOrgMemoryState(bridge, initial);
   const [opening, setOpening] = useState(false);
-  const [openFailed, setOpenFailed] = useState(false);
+  const [problem, setProblem] = useState<OpenProblem | null>(initialOpenProblem);
   const status = orgMemoryStatus(state, running);
-  const attention = tiersNeedingAttention(state);
-  const items = orderedItems(state?.pending ?? []);
+  const attention = tiersNeedingAttention(state).length;
+  const refused = refusedCount(state?.pending ?? []);
   const errorKey = state?.autoError ? ERROR_KEY[state.autoError] ?? ERROR_KEY.unreachable : null;
 
   const title = state?.connected
@@ -78,11 +77,11 @@ export function OrgMemoryPanel({ bridge, orgName, initial = null }: { bridge: Or
 
   const openInObsidian = async () => {
     setOpening(true);
-    setOpenFailed(false);
+    setProblem(null);
     try {
-      await bridge.openInObsidian();
+      setProblem(openProblem(await bridge.openInObsidian()));
     } catch {
-      setOpenFailed(true);
+      setProblem("failed");
     } finally {
       setOpening(false);
     }
@@ -115,34 +114,24 @@ export function OrgMemoryPanel({ bridge, orgName, initial = null }: { bridge: Or
           </SettingRow>
         )}
       </div>
-      {openFailed && <p role="alert" className="text-[13px] text-danger">{t("settings.memory.openFailed")}</p>}
-
-      {attention.length > 0 && (
-        <ul className="space-y-1 text-[13px]" aria-label={t("settings.memory.attention")}>
-          {attention.map((tier) => (
-            <li key={tier.name}>
-              <span className="font-medium">{tier.label}</span>{": "}
-              <span className="text-warning">{t(STATUS_KEY[tier.status] ?? STATUS_KEY.error)}</span>
-              {tier.messages.length > 0 && (
-                <ul className="ml-4 list-disc text-[12px] text-ink-secondary">
-                  {tier.messages.slice(0, 8).map((m, i) => <li key={i}>{m}</li>)}
-                </ul>
-              )}
-            </li>
-          ))}
-        </ul>
+      {problem && (
+        <div role="alert" className="flex flex-wrap items-center gap-2 text-[13px]">
+          <span className={problem === "add_vault" ? "text-ink-secondary" : "text-danger"}>{t(OPEN_KEY[problem])}</span>
+          {state?.cloned && typeof bridge.showFolder === "function" && (
+            <button type="button" className="ui-button" onClick={() => void bridge.showFolder().catch(() => false)}>
+              {t("settings.memory.showFolder")}
+            </button>
+          )}
+        </div>
       )}
 
-      {items.length > 0 && (
-        <ul className="space-y-1 text-[13px]" aria-label={t("settings.memory.pending")}>
-          {items.map((item, i) => (
-            <li key={item.id ?? i}>
-              <span className={item.state === "refused" ? "text-danger" : item.state === "pending" ? "text-warning" : "text-ink-secondary"}>{t(STATE_KEY[item.state] ?? STATE_KEY.pending)}</span>{" "}
-              {item.title} <span className="text-ink-secondary">({item.tier}{item.edit_of ? `, ${t("settings.memory.edit")}` : ""})</span>
-              {item.reason && <span className="text-ink-secondary">: {item.reason}</span>}
-            </li>
-          ))}
-        </ul>
+      {(attention > 0 || refused > 0) && (
+        <p className="text-[12px] text-ink-secondary">
+          {[
+            attention > 0 ? t("settings.memory.attentionCount", { count: String(attention) }) : null,
+            refused > 0 ? t("settings.memory.refusedCount", { count: String(refused) }) : null,
+          ].filter(Boolean).join(" · ")}
+        </p>
       )}
     </div>
   );

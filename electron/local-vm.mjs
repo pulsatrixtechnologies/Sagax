@@ -417,13 +417,13 @@ export function createLocalVm({
       if (!imageReady) {
         step("image", { detail: "Downloading" });
         const pulled = await run(runtime, ["pull", spec.baseImage], 1800);
-        if (pulled.code !== 0) return fail("image", `Download failed: ${lastLine(pulled.stderr)}`, "pull_failed");
+        if (pulled.code !== 0) return fail("image", `Download failed: ${runtimeError(pulled.stderr)}`, "pull_failed");
         step("image", { detail: "Preparing" });
         const context = await makeTemp();
         try {
           await writeFile(path.join(context, "Dockerfile"), spec.dockerfile);
           const built = await run(runtime, ["build", "-t", spec.image, context], 1800);
-          if (built.code !== 0) return fail("image", `Preparing the image failed: ${lastLine(built.stderr)}`, "build_failed");
+          if (built.code !== 0) return fail("image", `Preparing the image failed: ${runtimeError(built.stderr)}`, "build_failed");
         } finally {
           await removeDir(context).catch(() => {});
         }
@@ -440,7 +440,7 @@ export function createLocalVm({
           if (existing.stale && existing.folder && existing.folderExists && !samePath(existing.folder, workspace, platform)) state.previousFolder = existing.folder;
           step("container", { detail: existing.stale ? "Repairing" : "Recreating" });
           const removed = await run(runtime, ["rm", "-f", spec.container], 120);
-          if (removed.code !== 0) return fail("container", `Could not remove the old Local VM: ${lastLine(removed.stderr)}`, "remove_failed");
+          if (removed.code !== 0) return fail("container", `Could not remove the old Local VM: ${runtimeError(removed.stderr)}`, "remove_failed");
           create = true;
         }
       }
@@ -448,8 +448,24 @@ export function createLocalVm({
         await mkdir(workspace);
         const password = randomBytes(9).toString("base64url");
         const args = spec.run[runtime.runtime].map(arg => arg.replaceAll(WORKSPACE_PLACEHOLDER, workspace).replaceAll(PASSWORD_PLACEHOLDER, password));
+        // The viewer's fixed host port: a container still holding it (a
+        // leftover test VM, another app) makes `run` create the VM, fail
+        // to start it, and every Repair fail the same way.
+        const hostPort = publishedHostPort(args);
+        if (hostPort) {
+          const held = await run(runtime, ["ps", "--filter", `publish=${hostPort}`, "--format", `{{.Names}}\t{{.Label "${LOCAL_VM_LABEL}"}}\t{{.Label "${TEST_RUN_LABEL}"}}`], 30);
+          // Podman has no publish filter: its own error then shows below.
+          const holders = held.code === 0 ? held.stdout.split("\n").map(line => line.trim().split("\t")).filter(([name]) => name && name !== spec.container) : [];
+          for (const [name, managed, testRun] of holders) {
+            if (managed !== "1" || !testRun) return fail("container", `Port ${hostPort} on this computer is used by the container ${name}. Stop it in your container app, then Repair.`, "port_in_use");
+            // A test run's Local VM left running: stopped (never removed).
+            step("container", { detail: `Stopping ${name}, which holds port ${hostPort}` });
+            const stopped = await run(runtime, ["stop", name], 120);
+            if (stopped.code !== 0) return fail("container", `Port ${hostPort} is used by ${name}, which could not be stopped: ${runtimeError(stopped.stderr)}`, "port_in_use");
+          }
+        }
         const created = await run(runtime, args, 300);
-        if (created.code !== 0) return fail("container", `Creating the Local VM failed: ${lastLine(created.stderr)}`, "create_failed");
+        if (created.code !== 0) return fail("container", `Creating the Local VM failed: ${runtimeError(created.stderr)}`, "create_failed");
       }
       step("container", { state: "done", detail: "" });
       // 4. Running.
@@ -458,7 +474,7 @@ export function createLocalVm({
       if (now?.state === "paused") await run(runtime, ["unpause", spec.container], 60);
       else if (now?.state !== "running") {
         const started = await run(runtime, ["start", spec.container], 120);
-        if (started.code !== 0) return fail("start", `Starting the Local VM failed: ${lastLine(started.stderr)}`, "start_failed");
+        if (started.code !== 0) return fail("start", `Starting the Local VM failed: ${runtimeError(started.stderr)}`, "start_failed");
       }
       step("start", { state: "done" });
       state.state = "done";
@@ -519,7 +535,7 @@ export function createLocalVm({
       if (vm?.stale) throw new Error(staleMessage(vm));
       if (vm.state === "running") return text(`${vm.name} is already running`);
       const answer = await run(runtime, [vm.state === "paused" ? "unpause" : "start", vm.name], 120);
-      if (answer.code !== 0) throw new Error(`Starting the Local VM failed: ${lastLine(answer.stderr)}`);
+      if (answer.code !== 0) throw new Error(`Starting the Local VM failed: ${runtimeError(answer.stderr)}`);
       return text(`${vm.name} started`);
     },
     async power(action) {
@@ -532,7 +548,7 @@ export function createLocalVm({
       if (action === "resume" && vm.state !== "paused") throw new Error("The Local VM is not paused.");
       if (action === "stop" && !["running", "paused"].includes(vm.state)) return text(`${vm.name} is already stopped`);
       const answer = await run(runtime, args, 120);
-      if (answer.code !== 0) throw new Error(`The Local VM did not ${action}: ${lastLine(answer.stderr)}`);
+      if (answer.code !== 0) throw new Error(`The Local VM did not ${action}: ${runtimeError(answer.stderr)}`);
       return text(`${vm.name}: ${action} done`);
     },
     async setup(spec) {
@@ -596,7 +612,7 @@ export function createLocalVm({
         const current = installJob;
         void exec([brew, ...chosen.brew], { timeoutSeconds: 1800, env: runEnv() }).then(answer => {
           current.state = answer.code === 0 ? "done" : "error";
-          current.error = answer.code === 0 ? null : lastLine(answer.stderr);
+          current.error = answer.code === 0 ? null : runtimeError(answer.stderr);
         });
         return text({ install: installJob });
       }
@@ -641,7 +657,23 @@ export function createLocalVm({
   return api;
 }
 
-function lastLine(value) {
-  const lines = String(value ?? "").trim().split("\n").filter(Boolean);
-  return (lines.at(-1) ?? "unknown error").slice(0, 400);
+/** What a container CLI said went wrong, not its trailer: Docker 25+ ends
+ * every `run` error with "Run 'docker run --help' for more information",
+ * which alone hid the real cause (a port already allocated). */
+export function runtimeError(value) {
+  const lines = String(value ?? "").split(/\r?\n/).map(line => line.trim()).filter(Boolean)
+    .filter(line => !/^(Run|See) '[\w -]+--help'( for more information)?\.?$/.test(line))
+    .map(line => line.replace(/^(docker|podman|Error): /, ""));
+  return (lines.slice(-3).join(" ") || "unknown error").slice(0, 600);
+}
+
+/** The host port a `run` recipe publishes on (`-p 127.0.0.1:6080:6901`), or
+ * null when the runtime picks one. */
+export function publishedHostPort(args) {
+  for (let index = 0; index < args.length - 1; index++) {
+    if (!["-p", "--publish"].includes(args[index])) continue;
+    const match = /^127\.0\.0\.1:(\d+):\d+(\/tcp)?$/.exec(args[index + 1]);
+    if (match) return match[1];
+  }
+  return null;
 }

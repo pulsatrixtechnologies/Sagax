@@ -471,6 +471,7 @@ const bridge = {
     erase: () => ipcRenderer.invoke("org-memory:erase"),
     writeObsidianConfig: () => ipcRenderer.invoke("org-memory:obsidian-config"),
     openInObsidian: () => ipcRenderer.invoke("org-memory:open-obsidian"),
+    showFolder: () => ipcRenderer.invoke("org-memory:show-folder"),
   },
   computerSharing: {
     state: id => ipcRenderer.invoke("sharing:state", id),
