@@ -101,17 +101,17 @@ export function botVersions<Row extends VersionRow>(rows: readonly Row[]): BotVe
 
 /** For each field changed after `versionId`: its value at that version and
  * now (rows newest first, as the server sends them). */
-export function versionComparison(rows: readonly VersionRow[], versionId: string): Array<{ field: string; then: string; now: string }> {
+export function versionComparison(rows: readonly VersionRow[], versionId: string): Array<{ field: string; atVersion: string; now: string }> {
   const oldestFirst = [...rows].reverse();
   const index = oldestFirst.findIndex((row) => row.id === versionId);
   if (index < 0) return [];
   let end = index;
   while (end + 1 < oldestFirst.length && sameChange(oldestFirst[end + 1]!, oldestFirst[index]!)) end++;
-  const fields = new Map<string, { field: string; then: string; now: string }>();
+  const fields = new Map<string, { field: string; atVersion: string; now: string }>();
   for (const row of oldestFirst.slice(end + 1)) {
     const entry = fields.get(row.field);
-    if (!entry) fields.set(row.field, { field: row.field, then: row.before ?? "", now: row.after ?? "" });
+    if (!entry) fields.set(row.field, { field: row.field, atVersion: row.before ?? "", now: row.after ?? "" });
     else entry.now = row.after ?? "";
   }
-  return [...fields.values()].filter((entry) => entry.then !== entry.now);
+  return [...fields.values()].filter((entry) => entry.atVersion !== entry.now);
 }

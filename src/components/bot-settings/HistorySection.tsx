@@ -91,7 +91,7 @@ export function lineDiff(then: string, now: string): DiffLine[] {
   if (a.length * b.length > 250_000) {
     return [...a.map((text) => ({ kind: "removed" as const, text })), ...b.map((text) => ({ kind: "added" as const, text }))];
   }
-  const lcs: number[][] = Array.from({ length: a.length + 1 }, () => new Array<number>(b.length + 1).fill(0));
+  const lcs: number[][] = Array.from({ length: a.length + 1 }, () => Array.from({ length: b.length + 1 }, () => 0));
   for (let i = a.length - 1; i >= 0; i--) {
     for (let j = b.length - 1; j >= 0; j--) {
       lcs[i]![j] = a[i] === b[j] ? lcs[i + 1]![j + 1]! + 1 : Math.max(lcs[i + 1]![j]!, lcs[i]![j + 1]!);
@@ -125,7 +125,7 @@ function Comparison({ rows, version }: { rows: HistoryRow[]; version: BotVersion
   return (
     <div className="flex flex-col gap-3" data-history-compare={version.id}>
       <p className="text-[12px] text-ink-secondary">{t("botPanel.history.compare")}</p>
-      {changes.map(({ field, then, now }) => (
+      {changes.map(({ field, atVersion: then, now }) => (
         <div key={field} data-history-diff={field}>
           <div className="mb-1 text-[12.5px] font-medium text-ink">{historyField(field)}</div>
           {field === "soul" ? (
