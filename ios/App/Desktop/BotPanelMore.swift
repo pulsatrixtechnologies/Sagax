@@ -20,7 +20,7 @@ extension DesktopPanelSection {
         switch self {
         case .overview: "Overview"
         case .slack: "Slack"
-        case .soul: "Soul"
+        case .soul: "Personality"
         case .skills: "Skills"
         case .memory: "Memory"
         case .access: "Access"
@@ -31,7 +31,7 @@ extension DesktopPanelSection {
         case .visibility: "Who can see it"
         case .sharing: "Shared with"
         case .perspicax: "Perspicax Profiles"
-        case .history: "History"
+        case .history: "Changes"
         case .usage: "Usage"
         }
     }
@@ -41,7 +41,7 @@ extension DesktopPanelSection {
         switch self {
         case .overview: String(localized: "Overview")
         case .slack: String(localized: "Slack")
-        case .soul: String(localized: "Soul")
+        case .soul: String(localized: "Personality")
         case .skills: String(localized: "Skills")
         case .memory: String(localized: "Memory")
         case .access: String(localized: "Access")
@@ -52,7 +52,7 @@ extension DesktopPanelSection {
         case .visibility: String(localized: "Who can see it")
         case .sharing: String(localized: "Shared with")
         case .perspicax: String(localized: "Perspicax Profiles")
-        case .history: String(localized: "History")
+        case .history: String(localized: "Changes")
         case .usage: String(localized: "Usage")
         }
     }
@@ -75,6 +75,31 @@ extension DesktopPanelSection {
         case .perspicax: "powerplug"
         case .history: "clock.arrow.circlepath"
         case .usage: "dollarsign.circle"
+        }
+    }
+}
+
+extension DesktopPanelGroup {
+    /// The group's label (`persona.group.*`).
+    var title: LocalizedStringKey {
+        switch self {
+        case .profile: "Profile"
+        case .instructions: "Instructions"
+        case .memoryFiles: "Memory and files"
+        case .modelTools: "Model and tools"
+        case .behavior: "Behavior"
+        case .activity: "History and usage"
+        }
+    }
+
+    var localizedTitle: String {
+        switch self {
+        case .profile: String(localized: "Profile")
+        case .instructions: String(localized: "Instructions")
+        case .memoryFiles: String(localized: "Memory and files")
+        case .modelTools: String(localized: "Model and tools")
+        case .behavior: String(localized: "Behavior")
+        case .activity: String(localized: "History and usage")
         }
     }
 }
@@ -110,8 +135,47 @@ struct BotPanelMore: View {
         }
     }
 
+    private func groupRows(_ rows: [DesktopPanelSection]) -> some View {
+        VStack(spacing: 0) {
+            ForEach(Array(rows.enumerated()), id: \.element) { index, section in
+                Button { model.panelSection = section } label: {
+                    HStack(spacing: 10) {
+                        Image(systemName: section.symbol)
+                            .font(.system(size: 13))
+                            .foregroundStyle(theme.inkSecondary)
+                            .frame(width: 15, height: 15)
+                        Text(section.title)
+                            .font(theme.font(13))
+                            .foregroundStyle(theme.ink)
+                            .lineLimit(1)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 10.5, weight: .medium))
+                            .foregroundStyle(theme.inkSecondary)
+                    }
+                    .padding(.horizontal, 12)
+                    .frame(height: 39.5)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .hoverEffect(.highlight)
+                .accessibilityIdentifier("desktop-panel-row.\(section.rawValue)")
+                if index < rows.count - 1 {
+                    Rectangle().fill(theme.hairlineWeak).frame(height: 1)
+                }
+            }
+        }
+        .padding(1)
+        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(theme.hairlineWeak, lineWidth: 1))
+    }
+
     private var list: some View {
-        let shown = sections.filter { $0.matches(query, label: $0.localizedTitle) }
+        let wanted = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        // a group's own name finds all its sections
+        let shown = sections.filter { section in
+            section.matches(query, label: section.localizedTitle)
+                || (!wanted.isEmpty && DesktopPanelGroup.of(section).localizedTitle.lowercased().contains(wanted))
+        }
         return VStack(spacing: 12) {
             HStack(spacing: 8) {
                 Image(systemName: "magnifyingglass")
@@ -129,44 +193,25 @@ struct BotPanelMore: View {
             .frame(height: 33.5)
             .background(theme.elevated, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(theme.hairlineWeak, lineWidth: 1))
-            VStack(spacing: 0) {
-                ForEach(Array(shown.enumerated()), id: \.element) { index, section in
-                    Button { model.panelSection = section } label: {
-                        HStack(spacing: 10) {
-                            Image(systemName: section.symbol)
-                                .font(.system(size: 13))
-                                .foregroundStyle(theme.inkSecondary)
-                                .frame(width: 15, height: 15)
-                            Text(section.title)
-                                .font(theme.font(13))
-                                .foregroundStyle(theme.ink)
-                                .lineLimit(1)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                            Image(systemName: "chevron.right")
-                                .font(.system(size: 10.5, weight: .medium))
-                                .foregroundStyle(theme.inkSecondary)
-                        }
-                        .padding(.horizontal, 12)
-                        .frame(height: 39.5)
-                        .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .hoverEffect(.highlight)
-                    .accessibilityIdentifier("desktop-panel-row.\(section.rawValue)")
-                    if index < shown.count - 1 {
-                        Rectangle().fill(theme.hairlineWeak).frame(height: 1)
-                    }
-                }
-                if shown.isEmpty {
-                    Text("Nothing matches “\(query.trimmingCharacters(in: .whitespacesAndNewlines))”")
-                        .font(theme.font(12.5))
+            // the editor's six groups (#518), each with its sections
+            ForEach(DesktopPanelGroup.visible(shown), id: \.self) { group in
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(group.title)
+                        .font(theme.font(12, .medium))
                         .foregroundStyle(theme.inkSecondary)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(12)
+                        .padding(.leading, 4)
+                    groupRows(group.sections(in: shown))
                 }
+                .accessibilityElement(children: .contain)
+                .accessibilityIdentifier("desktop-panel-group.\(group.rawValue)")
             }
-            .padding(1)
-            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(theme.hairlineWeak, lineWidth: 1))
+            if shown.isEmpty {
+                Text("Nothing matches “\(query.trimmingCharacters(in: .whitespacesAndNewlines))”")
+                    .font(theme.font(12.5))
+                    .foregroundStyle(theme.inkSecondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(12)
+            }
         }
         .padding(.leading, 17)
         .padding(.trailing, 16)

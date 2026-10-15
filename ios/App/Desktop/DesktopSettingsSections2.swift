@@ -32,6 +32,9 @@ struct DesktopOrganizationSettings: View {
         if session.surfaceGate.allows(.organizationSettings) {
             organizationRow
         }
+        // This iPad's own pairing (#518): Pair devices left the app, the
+        // device's own connection stays here
+        AnyView(DesktopThisDeviceCard(open: false))
     }
 
     private var organizationRow: some View {

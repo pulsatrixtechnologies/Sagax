@@ -197,7 +197,9 @@ final class NavigationMenusTests: XCTestCase {
         XCTAssertEqual(NavigationMenus.settings(gate: admin, connected: true, achievementsAvailable: true),
                        [.general, .appearance, .notifications, .experimental, .plugins, .pairDevices, .computer, .usage])
         XCTAssertEqual(NavigationMenus.settings(gate: member, connected: true, achievementsAvailable: true),
-                       [.general, .organization, .appearance, .notifications, .privacy, .plugins, .pairDevices, .computer, .usage])
+                       [.general, .organization, .appearance, .notifications, .plugins, .pairDevices, .computer, .usage])
+        XCTAssertTrue(NavigationMenus.showsPrivacy(gate: member, connected: true), "Privacy is a card of Notifications")
+        XCTAssertFalse(NavigationMenus.showsPrivacy(gate: admin, connected: true))
         XCTAssertEqual(NavigationMenus.settings(gate: SurfaceGate(scope: .sidecar, sidecarRoutes: []), connected: true, achievementsAvailable: true),
                        [.general, .appearance, .notifications, .plugins, .pairDevices, .computer, .usage])
         XCTAssertEqual(NavigationMenus.settings(gate: .unpaired, connected: false, achievementsAvailable: false),

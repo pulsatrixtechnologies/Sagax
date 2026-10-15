@@ -154,7 +154,7 @@ extension DesktopSettingsSection {
         case .connections: "API keys"
         case .myConnections: "My connections"
         case .decisionModel: "Decision model"
-        case .engines: "Model providers"
+        case .engines: "Models and voice"
         case .companion: "Pair devices"
         case .computer: "Local VM"
         case .usage: "Usage"
@@ -175,7 +175,7 @@ extension DesktopSettingsSection {
         case .connections: AppStrings.localized("API keys")
         case .myConnections: AppStrings.localized("My connections")
         case .decisionModel: AppStrings.localized("Decision model")
-        case .engines: AppStrings.localized("Model providers")
+        case .engines: AppStrings.localized("Models and voice")
         case .companion: AppStrings.localized("Pair devices")
         case .computer: AppStrings.localized("Local VM")
         case .usage: AppStrings.localized("Usage")
@@ -313,13 +313,34 @@ struct DesktopSettingsPage: View {
         case .connections: AnyView(DesktopAPIKeysSettings())
         case .myConnections: AnyView(DesktopMyConnectionsSettings())
         case .decisionModel: AnyView(DesktopDecisionModelSettings())
-        case .engines: AnyView(DesktopEnginesSettings())
+        // Models and voice (#518): the providers, then API keys and the
+        // Decision model as cards of the page
+        case .engines: AnyView(DesktopModelsVoiceSettings())
         case .companion: AnyView(DesktopPairDevicesSettings())
         case .computer: AnyView(DesktopComputerSettings())
         case .usage: AnyView(DesktopUsageSettings())
         // not drawn on the iPad yet; `available` never lists them
         case .people, .activity, .mail: AnyView(EmptyView())
         case .backups: AnyView(DesktopBackupsSettings())
+        }
+    }
+}
+
+/// Models and voice: model providers and accounts, then the keys and the
+/// decision model that were pages of their own.
+struct DesktopModelsVoiceSettings: View {
+    var body: some View {
+        AnyView(DesktopEnginesSettings())
+        DesktopSettingsCard(Text("API keys"), summary: Text("Providers and connected apps"), open: false, identifier: "engines.keys") {
+            VStack(alignment: .leading, spacing: 12) {
+                AnyView(DesktopAPIKeysSettings())
+            }
+        }
+        .padding(.top, 12)
+        DesktopSettingsCard(Text("Decision model"), summary: Text(verbatim: "Jev"), open: false, identifier: "engines.decisionModel") {
+            VStack(alignment: .leading, spacing: 12) {
+                AnyView(DesktopDecisionModelSettings())
+            }
         }
     }
 }

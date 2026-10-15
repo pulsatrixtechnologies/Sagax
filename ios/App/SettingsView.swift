@@ -202,7 +202,7 @@ private struct SettingsRootPage: View {
         case .computer:
             SettingsRow(title: "Computer", systemImage: "desktopcomputer", accessory: .chevron, height: 44.33, identifier: "settings-bot-computer") { navigator.push(.botComputer) }
         case .usage:
-            SettingsRow(title: "Usage", systemImage: "chart.bar", accessory: model.usagePercent.map { .valueChevron("\($0)%") } ?? .chevron, height: 44.33, identifier: "settings-usage") { navigator.push(.usage) }
+            SettingsRow(title: "Usage", systemImage: "chart.bar", accessory: .chevron, height: 44.33, identifier: "settings-usage") { navigator.push(.usage) }
         }
     }
 
@@ -288,7 +288,8 @@ private struct SettingsRootPage: View {
         case .appearance: navigator.push(.appearance)
         case .achievements: navigator.sheet = .achievements
         case .notifications: navigator.push(.notifications)
-        case .privacy: navigator.push(.privacy)
+        // Privacy is a card of Notifications (#518)
+        case .privacy: navigator.push(.notifications)
         case .experimental: navigator.push(.experimental)
         case .plugins: navigator.push(.plugins)
         case .account: navigator.push(.account)
@@ -342,39 +343,16 @@ struct SettingsSpacer: View {
 
 // MARK: - Usage
 
+/// Usage (#518): the signed-in person's own cost, by bot and by model.
+/// The installation's budget and other people's usage are managed in
+/// Sagax Business.
 struct UsageSettingsView: View {
     @Environment(\.themePalette) var themePalette
-    @EnvironmentObject private var model: SettingsModel
-    @EnvironmentObject private var session: Session
 
     var body: some View {
         SettingsPage(title: "Usage") {
-            SettingsCard {
-                SettingsRow(title: "This month", accessory: .value(model.usagePercent.map { "\($0)%" } ?? "—"), height: 44.33)
-                if let budget = model.usage?.budget {
-                    if let spent = budget.spentUsd {
-                        CardHairline(leadingInset: SettingsMetrics.rowInset)
-                        SettingsRow(title: "Spent", accessory: .value(Self.dollars(spent)), height: 43.67)
-                    }
-                    if let monthly = budget.monthlyUsd {
-                        CardHairline(leadingInset: SettingsMetrics.rowInset)
-                        SettingsRow(title: "Monthly budget", accessory: .value(Self.dollars(monthly)), height: 43.67)
-                    }
-                }
-            }
-            SettingsFooter(text: model.usage?.budget?.exceeded == true
-                ? "The monthly budget is used up. Bots pause new paid work until next month or until the budget is raised on the computer."
-                : "Spending on paid engines this month, against the budget set on the computer.")
-            // What each bot spent (ST10), then the History for an admin.
-            UsageByBotSection()
-            if session.surfaceGate.allows(.usageHistory) {
-                UsageHistorySection()
-            }
+            PersonalUsageSection()
         }
-    }
-
-    private static func dollars(_ value: Double) -> String {
-        value.formatted(.currency(code: "USD").precision(.fractionLength(2)))
     }
 }
 

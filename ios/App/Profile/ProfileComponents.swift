@@ -227,6 +227,11 @@ struct GlassMenuItem: Identifiable {
     let title: Text
     let systemImage: String
     var destructive = false
+    var disabled = false
+    /// A hairline above the item, and an optional small heading under it
+    /// (the desktop's divider and its "Export conversation" heading).
+    var dividerBefore = false
+    var heading: Text? = nil
     let action: () -> Void
 }
 
@@ -241,6 +246,18 @@ struct GlassMenuPanel: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             ForEach(items) { item in
+                if item.dividerBefore {
+                    Rectangle().fill(Theme.hairline.opacity(0.6)).frame(height: 0.5)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 4)
+                }
+                if let heading = item.heading {
+                    heading
+                        .font(.footnote)
+                        .foregroundStyle(Theme.textSecondary)
+                        .padding(.leading, Theme.Profile.menuIconColumn - 3)
+                        .frame(height: 24)
+                }
                 Button {
                     Haptics.selection()
                     close()
@@ -262,6 +279,8 @@ struct GlassMenuPanel: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                .disabled(item.disabled)
+                .opacity(item.disabled ? 0.4 : 1)
                 .accessibilityIdentifier("profile-menu.\(item.id)")
             }
         }

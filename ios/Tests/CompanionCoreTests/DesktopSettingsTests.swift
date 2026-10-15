@@ -13,11 +13,10 @@ final class DesktopSettingsTests: XCTestCase {
 
     func testAnAdminSessionListsTheDesktopSectionsInOrder() {
         let expected: [DesktopSettingsSection] = [
-            .general, .organization, .appearance, .experimental, .connections, .decisionModel, .engines,
-            .companion, .computer, .usage, .backups,
+            .general, .organization, .appearance, .experimental, .engines, .computer, .usage, .backups,
         ]
         XCTAssertEqual(DesktopSettingsSection.available(for: SurfaceGate(scope: .serverAdmin)), expected)
-        // an organization server adds My connections after API keys
+        // an organization server adds My connections after Models and voice
         var organization = expected
         organization.insert(.myConnections, at: 5)
         XCTAssertEqual(DesktopSettingsSection.available(for: SurfaceGate(scope: .serverAdmin, organization: true)), organization)
@@ -26,15 +25,24 @@ final class DesktopSettingsTests: XCTestCase {
     func testAClientOnAnOrganizationServerGetsMyConnections() {
         XCTAssertEqual(
             DesktopSettingsSection.available(for: SurfaceGate(scope: .serverClient, organization: true)),
-            [.organization, .myConnections, .appearance, .companion]
+            [.organization, .myConnections, .appearance]
         )
         XCTAssertTrue(DesktopSettingsSection.myConnections.matches("mes connexions", label: "My connections"))
     }
 
     func testASidecarAndAClientSessionGetTheRemoteClientSections() {
         for scope in [PairingScope.sidecar, .serverClient] {
-            XCTAssertEqual(DesktopSettingsSection.available(for: SurfaceGate(scope: scope)), [.organization, .appearance, .companion])
+            XCTAssertEqual(DesktopSettingsSection.available(for: SurfaceGate(scope: scope)), [.organization, .appearance])
         }
+    }
+
+    func testAFormerSectionOpensThePageThatHoldsItsCard() {
+        let all = DesktopSettingsSection.available(for: SurfaceGate(scope: .serverAdmin))
+        XCTAssertEqual(DesktopSettingsSection.resolve(.connections, available: all, visible: all), .engines)
+        XCTAssertEqual(DesktopSettingsSection.resolve(.decisionModel, available: all, visible: all), .engines)
+        XCTAssertEqual(DesktopSettingsSection.resolve(.companion, available: all, visible: all), .organization)
+        XCTAssertTrue(DesktopSettingsSection.engines.matches("jev", label: "Models and voice"))
+        XCTAssertTrue(DesktopSettingsSection.engines.matches("OpenRouter", label: "Models and voice"))
     }
 
     func testSearchMatchesTheLabelOrAKeywordIgnoringCase() {
