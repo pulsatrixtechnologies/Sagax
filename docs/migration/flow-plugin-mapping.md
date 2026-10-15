@@ -36,9 +36,11 @@ server, `sagax-flow` (`server/flow-tools.ts`, tests
   on the data those servers return.
 - Served by the workplace stdio proxy (`server/user-sandbox-proxy.ts`,
   `SAGAX_TOOL_SERVER=sagax-flow`), which answers in its own process. It
-  carries no capability and never calls the Sagax server. A slow call (a
-  pathological regular expression in a condition) only holds up that turn's
-  proxy.
+  carries no capability and never calls the Sagax server. A condition's
+  regular expression runs in that proxy's event loop, so it is capped at
+  200 characters and tried on the first 10,000 characters of the value
+  (`FLOW_REGEX_MAX_PATTERN`, `FLOW_REGEX_MAX_TEXT`); a backtracking pattern
+  can still hold up that proxy, which a warm session keeps.
 - Every tool is annotated read only. Claude pre-allows `mcp__sagax-flow`
   (like `computer_select`); Grok gets an allow rule and gate read-only entry
   for each tool, only for the harness's own proxy path; Codex mounts it with

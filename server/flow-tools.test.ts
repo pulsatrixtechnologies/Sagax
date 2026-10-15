@@ -4,7 +4,8 @@
 // plugin's own Python (px_flow.py, px_flow_action.py) on the same inputs.
 import { describe, expect, it } from "vitest";
 import {
-  FLOW_TOOLS, FLOW_TOOL_NAMES, FLOW_TOOLS_MCP_NAME, callFlowTool, evalCondition, groupUnits, similarKey,
+  FLOW_REGEX_MAX_PATTERN, FLOW_REGEX_MAX_TEXT, FLOW_TOOLS, FLOW_TOOL_NAMES, FLOW_TOOLS_MCP_NAME, callFlowTool, evalCondition,
+  groupUnits, similarKey,
 } from "./flow-tools.ts";
 import { flowToolsRequest } from "./user-sandbox-proxy.ts";
 import { grokReadOnlyAllowRules, isFlowToolsServer } from "./drivers/acp/grok-read-only-tools.ts";
@@ -113,6 +114,12 @@ describe("flow_stats", () => {
     expect(call("flow_stats", { items: [{ h: 1 }, { h: "x" }, { h: 3 }, {}], field: "h" }).json).toMatchObject({ count: 2, median: 2, skipped: 1 });
     expect(call("flow_stats", { values: [] }).json).toMatchObject({ count: 0, median: null });
   });
+
+  it("rounds values with more than 12 decimals instead of failing", () => {
+    expect(call("flow_stats", { values: [0.1 + 0.2, 1] }).json).toEqual({ count: 2, sum: 1.3, min: 0.3, max: 1, mean: 0.65, median: 0.65, skipped: 0 });
+    expect(call("flow_stats", { values: [1 / 3] }).json).toMatchObject({ sum: 0.333333333333, median: 0.333333333333 });
+    expect(call("flow_stats", { values: [-2 / 3, 0.5] }).json).toMatchObject({ min: -0.666666666667, max: 0.5 });
+  });
 });
 
 describe("flow_age_buckets", () => {
@@ -190,6 +197,14 @@ describe("flow_filter and conditions", () => {
     expect(() => evalCondition("priority", item, NOW)).toThrow(/bad condition/);
   });
 
+  it("caps the length of a regular expression and of the text it is tried on", () => {
+    expect(() => evalCondition(`priority ~ ${"a".repeat(FLOW_REGEX_MAX_PATTERN + 1)}`, { priority: "a" }, NOW)).toThrow(/longer than/);
+    expect(call("flow_filter", { items: [{ t: "x" }], where: [`t ~ ${"a".repeat(FLOW_REGEX_MAX_PATTERN + 1)}`] }).isError).toBe(true);
+    const long = { t: `${"a".repeat(FLOW_REGEX_MAX_TEXT)}needle` };
+    expect(evalCondition("t ~ needle", long, NOW)).toBe(false);
+    expect(evalCondition("t ~ ^a+$", long, NOW)).toBe(true);
+  });
+
   it("keeps, drops and sets apart by id or title motif", () => {
     const items = [
       { id: 1, name: "Weekly sync", done: false },
@@ -219,6 +234,23 @@ describe("flow_member_load", () => {
 });
 
 describe("the sagax-flow server", () => {
+  it("declares schemas OpenAI-style APIs accept: every array has items, every type is one string", () => {
+    const problems: string[] = [];
+    const walk = (node: unknown, at: string): void => {
+      if (Array.isArray(node)) { node.forEach((n, i) => walk(n, `${at}[${i}]`)); return; }
+      if (!node || typeof node !== "object") return;
+      const schema = node as Record<string, unknown>;
+      if ("type" in schema && typeof schema.type !== "string") problems.push(`${at}: type ${JSON.stringify(schema.type)}`);
+      if (schema.type === "array" && !schema.items) problems.push(`${at}: array without items`);
+      for (const [key, value] of Object.entries(schema)) {
+        if (key === "properties") for (const [name, prop] of Object.entries(value as object)) walk(prop, `${at}.${name}`);
+        else if (key === "items" || key === "anyOf") walk(value, `${at}.${key}`);
+      }
+    };
+    for (const tool of FLOW_TOOLS) walk(tool.inputSchema, tool.name);
+    expect(problems).toEqual([]);
+  });
+
   it("lists every tool as read only and answers calls in the proxy process", () => {
     const list = flowToolsRequest({ jsonrpc: "2.0", id: 1, method: "tools/list" }) as { result: { tools: typeof FLOW_TOOLS } };
     expect(list.result.tools.map((t) => t.name)).toEqual([...FLOW_TOOL_NAMES]);

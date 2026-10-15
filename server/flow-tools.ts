@@ -11,8 +11,9 @@
 // and their rules stay in the organization's own configuration.
 //
 // Mounted next to a turn's Perspicax profiles (server/index.ts
-// flowToolsIntegration), served by /api/internal/flow/mcp through the
-// workplace stdio proxy (server/user-sandbox-proxy.ts). Mapping of the
+// flowToolsIntegration) and answered inside the workplace stdio proxy's own
+// process (server/user-sandbox-proxy.ts flowToolsRequest), with no route,
+// capability or call to the server. Mapping of the
 // plugin to these tools: docs/migration/flow-plugin-mapping.md.
 // Tests: server/flow-tools.test.ts.
 import { createHash } from "node:crypto";
@@ -260,15 +261,23 @@ function toNumber(value: unknown): number | null {
   return null;
 }
 
+// The pattern comes from the model (and maybe a ticket's text) and runs in
+// the proxy's event loop: both it and the text it is tried on are capped.
+export const FLOW_REGEX_MAX_PATTERN = 200;
+export const FLOW_REGEX_MAX_TEXT = 10_000;
+
+function conditionRegex(pattern: string, part: string): RegExp {
+  if (pattern.length > FLOW_REGEX_MAX_PATTERN) fail(`regular expression longer than ${FLOW_REGEX_MAX_PATTERN} characters in ${JSON.stringify(part.slice(0, 80))}`);
+  try { return new RegExp(pattern, "i"); } catch { fail(`bad regular expression in ${JSON.stringify(part)}`); }
+}
+
 /** Throws on a malformed condition (so a list can be checked up front). */
 export function checkCondition(cond: string): void {
   for (const part of cond.split("&&").map((p) => p.trim())) {
     const m = COND_RE.exec(part);
     if (!m) fail(`bad condition ${JSON.stringify(part)}`);
     if (m[2] === "newer than" || m[2] === "older than") spanMs(m[3]!);
-    if (m[2] === "~" || m[2] === "!~") {
-      try { new RegExp(m[3]!.trim(), "i"); } catch { fail(`bad regular expression in ${JSON.stringify(part)}`); }
-    }
+    if (m[2] === "~" || m[2] === "!~") conditionRegex(m[3]!.trim(), part);
   }
 }
 
@@ -286,7 +295,7 @@ export function evalCondition(cond: string, item: unknown, now: number): boolean
     else if (op === "is true") ok = value === true;
     else if (op === "is false") ok = value === false;
     else if (op === "~" || op === "!~") {
-      const found = new RegExp(arg, "i").test(asText(value));
+      const found = conditionRegex(arg, part).test(asText(value).slice(0, FLOW_REGEX_MAX_TEXT));
       ok = op === "~" ? found : !found;
     } else if (op === "=" || op === "!=") ok = (asText(value) === arg) === (op === "=");
     else if (op === "in" || op === "!in") {
@@ -532,7 +541,10 @@ function decimalParts(value: number): { digits: bigint; scale: number } {
 
 function scaled(value: number, scale: number): bigint {
   const { digits, scale: own } = decimalParts(value);
-  return digits * 10n ** BigInt(scale - own);
+  if (own <= scale) return digits * 10n ** BigInt(scale - own);
+  // more decimals than the cap (0.1 + 0.2, 1/3): round half away from zero
+  const div = 10n ** BigInt(own - scale);
+  return (digits + (digits < 0n ? -div / 2n : div / 2n)) / div;
 }
 
 function unscale(value: bigint, scale: number): number {
@@ -915,7 +927,7 @@ export const FLOW_TOOLS = [
         end_field: { type: "string", description: "Default dateEnd." },
         occupies: { ...CONDITIONS, description: `Which timed items occupy their span (default: all). ${CONDITIONS.description}` },
         whole_day_when: { ...CONDITIONS, description: `Which date-only items block their whole day(s) (default: none). ${CONDITIONS.description}` },
-        calendar: { type: ["object", "null"], description: "Working hours: mondayStartTime, mondayEndTime, ... sundayEndTime (local HH:MM); a day without both is not worked." },
+        calendar: { type: "object", description: "Working hours: mondayStartTime, mondayEndTime, ... sundayEndTime (local HH:MM); a day without both is not worked." },
         default_window: { type: "array", items: { type: "string" }, description: "[HH:MM, HH:MM] Monday to Friday when there is no calendar." },
         holidays: { ...ITEMS, description: "{date: YYYY-MM-DD, allDayFlag?, timeStart?, timeEnd?}: an all-day holiday closes the day, a timed one is busy." },
         busy: { ...ITEMS, description: "{start, end} intervals also taken (claims, slots planned in this run)." },
@@ -993,7 +1005,7 @@ export const FLOW_TOOLS = [
       type: "object", additionalProperties: false, required: ["units", "group_by"],
       properties: {
         units: { ...ITEMS, description: "Each with id; for similar: summary, contactEmailAddress (or initialDescription with a From: line)." },
-        group_by: { type: "array", description: "[\"company.id\", \"resources\"] (one set) or [[\"resources\"], [\"similar\"]] (alternatives)." },
+        group_by: { type: "array", items: { anyOf: [{ type: "string" }, { type: "array", items: { type: "string" } }] }, description: "[\"company.id\", \"resources\"] (one set) or [[\"resources\"], [\"similar\"]] (alternatives)." },
         group_max: { type: "integer", minimum: 2 },
       },
     },
@@ -1009,8 +1021,8 @@ export const FLOW_TOOLS = [
         exclude: {
           type: "object", additionalProperties: false,
           properties: {
-            ids: { type: "array", description: "Ids (or {id}) to set apart." },
-            titles: { type: "array", description: "Title motifs (or {title}) to set apart." },
+            ids: { type: "array", items: { anyOf: [{ type: "string" }, { type: "number" }, { type: "object" }] }, description: "Ids (or {id}) to set apart." },
+            titles: { type: "array", items: { anyOf: [{ type: "string" }, { type: "object" }] }, description: "Title motifs (or {title}) to set apart." },
             id_field: { type: "string", description: "Default id." },
             title_field: { type: "string", description: "Default name." },
           },
