@@ -50,9 +50,11 @@ afterEach(() => {
 });
 
 describe("BotListItem", () => {
-  it("has no New thread or New folder buttons, only a keyboard-accessible bot menu", () => {
+  it("has a New thread button beside a keyboard-accessible bot menu, and no New folder", () => {
     const markup = renderRow(bot());
-    expect(markup).not.toContain('aria-label="New thread"');
+    // New thread is back on the row (JC, 2026-10-15)
+    expect(markup).toContain('aria-label="New thread"');
+    expect(markup).toContain('data-sidebar-bot-new-thread="atlas"');
     expect(markup).not.toContain("New folder");
     expect(markup).not.toContain("5.75rem");
     expect(markup).toContain('aria-label="Actions for Atlas"');

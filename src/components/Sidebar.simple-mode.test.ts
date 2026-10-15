@@ -155,8 +155,23 @@ describe("bot-first sidebar", () => {
     if (density !== "icons") {
       expect(markup).toContain('aria-current="page"');
       expect(markup).toMatch(/sr-only[^>]*>Unread threads</); // bold name plus a screen-reader label, no dot (478bd6216)
-      expect(markup).not.toContain('aria-label="New thread"');
+      // New thread beside the bot's "..." (JC, 2026-10-15)
+      expect(markup).toContain('aria-label="New thread"');
     }
+  });
+
+  it.each(["comfortable", "compact"] as const)("starts a thread from the row's New thread button, %s density", (density) => {
+    let tree: ReactNode;
+    function Capture() { tree = BotListItem(rowProps(density)); return tree; }
+    renderToStaticMarkup(createElement(Capture));
+    const button = findElement(tree, "data-sidebar-bot-new-thread", bot.id)!;
+    expect(button.props["aria-label"]).toBe("New thread");
+    // revealed on hover and keyboard focus, always visible on touch screens
+    expect(String(button.props.className)).toContain("group-focus-within:opacity-100");
+    expect(String(button.props.className)).toContain("touch:opacity-70");
+    fixture.dispatch.mockClear();
+    button.props.onClick!({} as MouseEvent);
+    expect(fixture.dispatch).toHaveBeenCalledExactlyOnceWith({ type: "newTask", botId: bot.id });
   });
 
   it.each(densities)("hides thread browsing and creation but keeps attention accessible in %s density", (density) => {
@@ -176,21 +191,39 @@ describe("bot-first sidebar", () => {
     expect(markup).toContain('aria-label="Atlas: Finished reply · Unread"');
   });
 
-  it("never offers thread or folder creation in the bot context menu", () => {
-    const render = (initialPage: "main" | "more" = "main") => renderToStaticMarkup(createElement(BotContextMenu, {
-      menu: { botId: bot.id, x: 0, y: 0 }, initialPage, onClose: vi.fn(), onArchive: vi.fn(), onDelete: vi.fn(), onMoveToSection: vi.fn(), onRename: vi.fn(),
-    }));
+  it("offers New thread first in the bot context menu with threads on, and no folder creation", () => {
+    const onClose = vi.fn();
+    const render = (initialPage: "main" | "more" = "main") => {
+      let tree: ReactNode;
+      function Capture() {
+        tree = BotContextMenu({
+          menu: { botId: bot.id, x: 0, y: 0 }, initialPage, onClose, onArchive: vi.fn(), onDelete: vi.fn(), onMoveToSection: vi.fn(), onRename: vi.fn(),
+        });
+        return tree;
+      }
+      return { html: renderToStaticMarkup(createElement(Capture)), tree: () => tree };
+    };
     for (const shown of [true, false]) {
       fixture.showThreads = shown;
       const main = render();
       const more = render("more");
-      expect(main).toContain("Rename the bot");
-      expect(main).toContain(">Move to<");
-      expect(main).toContain("Hide from sidebar");
-      for (const html of [main, more]) {
-        expect(html).not.toContain("New thread");
-        expect(html).not.toContain("New folder");
+      expect(main.html).toContain("Rename the bot");
+      expect(main.html).toContain(">Move to<");
+      expect(main.html).toContain("Hide from sidebar");
+      const ids = [...main.html.matchAll(/data-menu-item="([\w-]+)"/g)].map((match) => match[1]);
+      if (shown) {
+        // the first entry, at the first level (JC, 2026-10-15)
+        expect(ids[0]).toBe("new-thread");
+        expect(main.html).toContain(">New thread<");
+        fixture.dispatch.mockClear();
+        findElement(main.tree(), "data-menu-item", "new-thread")!.props.onClick!({} as MouseEvent);
+        expect(fixture.dispatch).toHaveBeenCalledExactlyOnceWith({ type: "newTask", botId: bot.id });
+        expect(onClose).toHaveBeenCalled();
+      } else {
+        expect(main.html).not.toContain("New thread");
       }
+      expect(more.html).not.toContain("New thread");
+      for (const html of [main.html, more.html]) expect(html).not.toContain("New folder");
     }
   });
 

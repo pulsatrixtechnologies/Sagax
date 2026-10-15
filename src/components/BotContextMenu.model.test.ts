@@ -1,4 +1,5 @@
-// The sidebar's bot menu follows Grok Bot's (JC, 2026-10-15): Pin, Move to ›,
+// The sidebar's bot menu follows Grok Bot's (JC, 2026-10-15): New thread |
+// Pin, Move to ›,
 // Mark as Unread | Rename, Edit bot | Copy conversation ID | Hide from
 // sidebar, Archive, Delete | More › with the rare ones one step down.
 import { createElement, isValidElement, type ReactElement, type ReactNode } from "react";
@@ -88,8 +89,8 @@ afterEach(() => vi.unstubAllGlobals());
 describe("the sidebar's bot menu", () => {
   it("lists the everyday items at the first level in Grok Bot's order", () => {
     const { html } = render();
-    expect(items(html)).toEqual(["pin", "move", "mark-unread", "rename", "edit", "copy-id", "hide", "archive", "delete", "more"]);
-    for (const label of [">Pin<", ">Move to<", ">Mark as Unread<", ">Rename the bot<", ">Edit bot<", ">Copy conversation ID<", ">Hide from sidebar<", ">More<", ">Archive<"]) expect(html).toContain(label);
+    expect(items(html)).toEqual(["new-thread", "pin", "move", "mark-unread", "rename", "edit", "copy-id", "hide", "archive", "delete", "more"]);
+    for (const label of [">New thread<", ">Pin<", ">Move to<", ">Mark as Unread<", ">Rename the bot<", ">Edit bot<", ">Copy conversation ID<", ">Hide from sidebar<", ">More<", ">Archive<"]) expect(html).toContain(label);
     expect(html).not.toContain("Rename Bot");
     expect(html).not.toContain("Model…");
   });

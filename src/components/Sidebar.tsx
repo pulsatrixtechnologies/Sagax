@@ -1412,10 +1412,18 @@ export function BotContextMenu({
     void copyText(bot.threadId);
   }, { id: "copy-id" });
 
-  // Grok Bot's order (JC, 2026-10-15): Pin, Move to ›, Mark as Unread |
+  // New thread comes first (JC, 2026-10-15): #518 had left the sidebar with
+  // no way to start a conversation with a bot. newTask selects the bot too.
+  // Threads turned off: no thread to start, as before.
+  const newThreadItem = showThreads ? item(<Plus size={16} className="text-ink" />, t("task.newShort"), () => {
+    dispatch({ type: "newTask", botId: bot.id });
+  }, { id: "new-thread" }) : null;
+
+  // Grok Bot's order (JC, 2026-10-15): New thread | Pin, Move to ›, Mark as Unread |
   // Rename, Edit bot | Copy conversation ID | Hide from sidebar, Archive,
   // Delete | More › for the rare ones.
   const mainPage = remoteClient ? [
+    ...(newThreadItem ? [newThreadItem] : []),
     floatItem,
     ...(canMoveSection ? [item(<FolderInput size={16} className="text-ink" />, t("sidebar.bot.moveTo"), () => {
       onClose();
@@ -1424,6 +1432,7 @@ export function BotContextMenu({
     editItem,
     copyIdItem,
   ] : [
+    ...(newThreadItem ? [newThreadItem, divider("d-new")] : []),
     item(
       bot.pinned ? <PinOff size={16} className="text-ink" /> : <Pin size={16} className="text-ink" />,
       bot.pinned ? t("sidebar.bot.unpin") : t("sidebar.bot.pin"),
@@ -2019,6 +2028,8 @@ export function BotListItem({
       : density === "compact"
         ? cn(inSidebar ? "gap-1.5 py-1 pl-6" : "gap-2 py-1.5 pl-2", "pr-9")
         : cn("min-h-[56px] gap-1.5 py-1.5 pr-9", inSidebar ? "pl-6" : "pl-1"),
+    // room for New thread beside the "..." while both show
+    !iconOnly && "group-hover:pr-[64px] group-focus-within:pr-[64px] max-md:pr-[64px] touch:pr-[64px]",
     // The Primary Bot is called out by the star on its avatar, not by
     // tinting the whole row: an accent border and fill read as "selected"
     // even when another bot was active.
@@ -2187,6 +2198,10 @@ export function BotListItem({
         <span className="pointer-events-none absolute bottom-1.5 right-1.5 size-2 rounded-full border border-sidebar bg-unread" />
       )}
       {!renaming && !deleting && !iconOnly && <>
+        {/* direct New thread, beside the "..." (JC, 2026-10-15) */}
+        {showThreads && <button type="button" data-sidebar-bot-new-thread={bot.id} aria-label={t("task.newShort")} title={t("task.newShort")}
+          onClick={() => dispatch({ type: "newTask", botId: bot.id })}
+          className="pointer-events-none absolute right-8 top-1/2 flex size-7 -translate-y-1/2 items-center justify-center rounded text-sidebar-ink-secondary opacity-0 hover:bg-sidebar-hover hover:text-sidebar-ink group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100 max-md:pointer-events-auto max-md:opacity-70 touch:pointer-events-auto touch:opacity-70"><Plus size={14} /></button>}
         <button type="button" aria-label={t("sidebar.bot.actions", { name: bot.name })} title={t("sidebar.bot.actions", { name: bot.name })} aria-haspopup="menu" onClick={(event) => { const rect = event.currentTarget.getBoundingClientRect(); onMenu({ botId: bot.id, x: rect.left, y: rect.bottom }); }}
           className="pointer-events-none absolute right-1 top-1/2 flex size-7 -translate-y-1/2 items-center justify-center rounded text-sidebar-ink-secondary opacity-0 hover:bg-sidebar-hover hover:text-sidebar-ink group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100 max-md:pointer-events-auto max-md:opacity-70 touch:pointer-events-auto touch:opacity-70"><MoreHorizontal size={15} /></button>
       </>}
