@@ -74,6 +74,7 @@ const switchNamed = (label: string) => fixture.switches.filter((props) => props[
 describe("Settings > Experimental", () => {
   it("offers the Data window, off by default, and no longer a switch for routine and group settings", async () => {
     fixture.section = "experimental";
+    fixture.features = { dataWindow: false };
     const html = await render();
     expect(html).toContain('data-experimental-feature="dataWindow"');
     expect(html).toContain("Data window");
@@ -83,8 +84,21 @@ describe("Settings > Experimental", () => {
     expect(html).not.toMatch(/[–—]/);
   });
 
+  it("keeps the Data window row on a server that predates it, greyed with the reason", async () => {
+    // An organization server older than Sagax 0.5.3 does not know the
+    // feature: its config has no dataWindow, and it refuses to save one.
+    fixture.section = "experimental";
+    const html = await render();
+    expect(html).toContain('data-experimental-feature="dataWindow"');
+    expect(html).toContain("This server does not offer the Data window yet");
+    const toggle = switchNamed("Turn on the Data window")!;
+    expect(toggle.checked).toBe(false);
+    expect((toggle as { disabled?: boolean }).disabled).toBe(true);
+  });
+
   it("saves each switch as its own server feature", async () => {
     fixture.section = "experimental";
+    fixture.features = { dataWindow: false };
     fixture.api.mockResolvedValue({ features: {} });
     await render();
     switchNamed("Turn on the Data window")!.onClick!({} as never);

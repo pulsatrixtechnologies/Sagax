@@ -7,7 +7,7 @@
 //   HOME=/opt/openmausbot-browser node scripts/install-chrome-for-testing.mjs
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { chmodSync, mkdirSync, mkdtempSync, readdirSync, renameSync, rmSync } from "node:fs";
+import { accessSync, chmodSync, constants, mkdirSync, mkdtempSync, readdirSync, renameSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -36,13 +36,34 @@ async function downloadZip(url) {
   return Buffer.from(await response.arrayBuffer());
 }
 
+// zipfile.extractall drops the Unix modes the zip stores: the 0.5.2 image
+// shipped chrome_crashpad_handler 0644, and every Chrome launch logged
+// FATAL posix_spawn .../chrome_crashpad_handler: Permission denied (13).
+// Apply each entry's permission bits (never setuid, setgid or sticky).
+const EXTRACT_WITH_MODES = [
+  "import os, sys, zipfile",
+  "z = zipfile.ZipFile(sys.argv[1])",
+  "for info in z.infolist():",
+  "    path = z.extract(info, sys.argv[2])",
+  "    mode = (info.external_attr >> 16) & 0o777",
+  "    if mode and not info.is_dir():",
+  "        os.chmod(path, mode)",
+].join("\n");
+
 function extractZip(zipPath, dest) {
-  const result = spawnSync(
-    "python3",
-    ["-c", "import sys, zipfile; zipfile.ZipFile(sys.argv[1]).extractall(sys.argv[2])", zipPath, dest],
-    { stdio: "inherit" },
-  );
+  const result = spawnSync("python3", ["-c", EXTRACT_WITH_MODES, zipPath, dest], { stdio: "inherit" });
   if (result.status !== 0) throw new Error("chrome archive extract failed");
+}
+
+// Chrome spawns this helper at every start; without the execute bit it
+// logs a FATAL and runs with no crash reporting.
+export const CHROME_EXECUTABLES = ["chrome", "chrome_crashpad_handler"];
+
+function assertExecutable(dest) {
+  for (const name of CHROME_EXECUTABLES) {
+    try { accessSync(join(dest, name), constants.X_OK); }
+    catch { throw new Error(`${name} is not executable after extract`); }
+  }
 }
 
 export async function installChromeForTesting({
@@ -51,6 +72,7 @@ export async function installChromeForTesting({
   version = CHROME_FOR_TESTING_VERSION,
   sha256,
   fetchZip = downloadZip,
+  extract = extractZip,
 } = {}) {
   const platform = chromePlatformFromArch(arch);
   const url = chromeZipUrl(version, platform);
@@ -65,7 +87,7 @@ export async function installChromeForTesting({
     const digest = createHash("sha256").update(bytes).digest("hex");
     if (digest !== expectedSha) throw new Error("chrome archive hash mismatch");
     await writeFile(zipPath, bytes);
-    extractZip(zipPath, scratch);
+    extract(zipPath, scratch);
     const unpacked = join(scratch, `chrome-${platform}`);
     const entries = readdirSync(unpacked);
     if (entries.length === 0) throw new Error("chrome archive layout is not the published zip");
@@ -77,6 +99,7 @@ export async function installChromeForTesting({
   }
   const binary = join(dest, "chrome");
   chmodSync(binary, 0o755);
+  assertExecutable(dest);
   return { platform, version, dest, binary };
 }
 

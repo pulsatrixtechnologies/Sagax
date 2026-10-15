@@ -1,7 +1,10 @@
 // Settings > Models and voice (2026-10-14): one page instead of Integrations
-// and Models and accounts. One list of keys, model and voice alike, with the
-// rare ones folded under More providers unless saved; the voice engine
-// uses its key from that list (Grok the xAI key); Live calls under Advanced.
+// and Models and accounts. One list of keys, model, voice and image alike,
+// with the rare ones folded under More providers unless saved, the only place
+// a key is managed (2026-10-15); the voice engine and image generation use
+// their key from that list (Grok the xAI key) and link to it when it is
+// missing; the ready engines in view, the others folded; Live calls under
+// Advanced.
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -87,36 +90,61 @@ describe("Settings > Models and voice", () => {
     expect(html).toContain('data-keys-section=""');
   });
 
+  const readyClaude = {
+    instanceId: "claude", displayName: "Claude", driverKind: "claudeAgent", cliDefault: "claude", access: "subscription",
+    snapshot: { state: "available", authenticated: true }, models: { default: "sonnet", options: [] },
+  };
+  const kimiToSetUp = {
+    instanceId: "kimi", displayName: "Kimi", driverKind: "kimiAgent", cliDefault: "kimi", access: "subscription",
+    snapshot: { state: "unavailable" }, models: { default: "", options: [] },
+  };
+
   it("orders Auto, Keys, Engines, Voice on one page", async () => {
+    fixture.instances = [kimiToSetUp];
     const html = await page();
     const at = (marker: string) => html.indexOf(marker);
     expect(at("data-auto-model-explainer")).toBeGreaterThan(0);
     expect(at("data-auto-model-explainer")).toBeLessThan(at("data-keys-section"));
     expect(at("data-keys-section")).toBeLessThan(at('data-settings-card="engines.list"'));
     expect(at('data-settings-card="engines.list"')).toBeLessThan(at("data-voice-section"));
-    // none ready: the engines stay open, to set one up
-    expect(part(html, 'data-settings-card="engines.list"', "data-voice-section")).toContain('data-open="true"');
+    // none ready: Needs setup opens by default, to set one up
+    expect(part(html, 'data-settings-card="engines.setup"', "data-voice-section")).toMatch(/^data-settings-card="engines.setup" data-open="true"/);
   });
 
-  it("folds the engines to one line once one is ready", async () => {
-    fixture.instances = [{
-      instanceId: "claude", displayName: "Claude", driverKind: "claudeAgent", cliDefault: "claude", access: "subscription",
-      snapshot: { state: "available", authenticated: true }, models: { default: "sonnet", options: [] },
-    }];
+  // 2026-10-15: the ready engines are never folded; only Needs setup is.
+  it("keeps the ready engines in view and folds only the ones to set up", async () => {
+    fixture.instances = [readyClaude, kimiToSetUp];
     const engines = part(await page(), 'data-settings-card="engines.list"', "data-voice-section");
-    expect(engines).toContain('data-open="false"');
-    expect(engines).toContain("1 ready");
+    const ready = part(engines, "data-engines-ready", 'data-settings-card="engines.setup"');
+    expect(ready).toContain(">Ready<");
+    expect(ready).toContain('data-engine-card="claude"');
+    expect(ready).not.toContain("data-open");
+    // Check again sits with the engines, outside any fold
+    expect(part(engines, 'data-settings-card="engines.list"', "data-engines-ready")).toContain("Check again");
+    const setup = part(engines, 'data-settings-card="engines.setup"');
+    expect(setup).toMatch(/^data-settings-card="engines.setup" data-open="false"/);
+    expect(setup).toContain("Needs setup");
+    expect(setup).toContain("1 model provider");
+    expect(setup).toContain('data-engine-card="kimi"');
+    expect(engines.match(/data-engine-card="claude"/g)).toHaveLength(1);
   });
 
-  // 2026-10-14: the voice keys are the Voice section's alone (one place each).
-  it("lists every model key once, the voice keys only in Voice, with no key field on the page", async () => {
+  // 2026-10-15: every key is managed in Keys, the voice and image keys too.
+  it("lists every key once in Keys, none in Voice or Image generation, with no key field on the page", async () => {
     const html = await page();
     const keys = part(html, "data-keys-section", 'data-settings-card="engines.list"');
-    for (const id of ["anthropic", "openai", "xai", "openrouter", "mistral", "openaiCompat", "opencodeGo"]) {
-      expect(keys.match(new RegExp(`data-provider-key="${id}"`, "g")), id).toHaveLength(1);
+    for (const id of ["anthropic", "openai", "xai", "openrouter", "mistral", "openaiCompat", "opencodeGo", "elevenlabs", "fishAudio", "openaiImage", "customImage"]) {
+      expect(html.match(new RegExp(`data-provider-key="${id}"`, "g")), id).toHaveLength(1);
+      expect(keys, id).toContain(`data-provider-key="${id}"`);
     }
-    for (const id of ["elevenlabs", "fishAudio"]) expect(html, id).not.toContain(`data-provider-key="${id}"`);
-    expect(part(html, "data-voice-section")).toContain('data-voice-key="elevenlabs"');
+    const voice = part(html, "data-voice-section", 'data-settings-card="connections.image"');
+    expect(voice).toContain("ElevenLabs key missing");
+    expect(voice).toContain('data-add-in-keys="elevenlabs"');
+    expect(voice).not.toContain("Add a key");
+    expect(voice).not.toContain("data-provider-key=");
+    const image = part(html, 'data-settings-card="connections.image"');
+    expect(image).not.toContain('type="password"');
+    expect(image).toContain('data-add-in-keys="openaiImage"');
     expect(html.match(/data-keys-section/g)).toHaveLength(1);
     // keys are added in a dialog, never typed on the page
     expect(html).not.toContain('data-api-key-row="anthropic"');
@@ -138,12 +166,43 @@ describe("Settings > Models and voice", () => {
     expect(part(saved, 'data-settings-card="engines.moreProviders"', 'data-settings-card="engines.list"')).not.toContain('data-provider-key="openrouter"');
   });
 
-  it("keeps a voice key out of the list even when saved", async () => {
+  it("puts a saved voice key in the main list, and Voice says it uses it", async () => {
     fixture.config = baseConfig({ tts: { configured: false, ready: false, voice: "", provider: "elevenlabs", keys: { elevenlabs: true, fish: false } } });
     const html = await page();
-    expect(html).not.toContain('data-provider-key="elevenlabs"');
+    const main = part(html, "data-keys-section", 'data-settings-card="engines.moreProviders"');
+    expect(main).toMatch(/data-provider-key="elevenlabs" data-key-saved="true"/);
+    expect(part(html, 'data-settings-card="engines.moreProviders"', 'data-settings-card="engines.list"')).toContain('data-provider-key="fishAudio"');
     expect(html).toMatch(/data-voice-key="elevenlabs" data-voice-key-saved="true"/);
-    expect(html).toContain("ElevenLabs key saved.");
+    expect(html).toContain("Uses the ElevenLabs key from Keys.");
+  });
+
+  // A key saved from the Voice section of an older build (tts.key, tts.fishKey)
+  // is the same credential: it shows as saved in Keys.
+  it("shows a Fish Audio key saved by an older build as saved in Keys", async () => {
+    fixture.config = baseConfig({ tts: { configured: true, ready: true, voice: "", provider: "fish", keys: { elevenlabs: false, fish: true } } });
+    const html = await page();
+    expect(part(html, "data-keys-section", 'data-settings-card="engines.moreProviders"')).toMatch(/data-provider-key="fishAudio" data-key-saved="true"/);
+  });
+
+  it("opens More providers and highlights the row when Voice asks for a key", async () => {
+    vi.useFakeTimers();
+    try {
+      const { revealKeyRow } = await import("./settings/ProviderKeys");
+      const { resetSettingsCards } = await import("./SettingsPrimitives");
+      fixture.config = baseConfig({ tts: { configured: false, ready: false, voice: "", provider: "fish", keys: { elevenlabs: false, fish: false } } });
+      expect(part(await page(), 'data-settings-card="engines.moreProviders"')).toMatch(/^data-settings-card="engines.moreProviders" data-open="false"/);
+      revealKeyRow("fishAudio", fixture.config);
+      const html = await page();
+      expect(part(html, 'data-settings-card="engines.moreProviders"')).toMatch(/^data-settings-card="engines.moreProviders" data-open="true"/);
+      expect(html).toMatch(/data-provider-key="fishAudio" data-key-saved="false" data-key-highlight="true"/);
+      // no dialog, no form: the person adds the key from the row
+      expect(html).not.toContain("data-provider-key-dialog");
+      vi.runAllTimers();
+      expect(await page()).not.toContain("data-key-highlight");
+      resetSettingsCards();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   // One OpenAI key (2026-10-14): Live calls use the OpenAI key of the list.
@@ -164,7 +223,8 @@ describe("Settings > Models and voice", () => {
     const html = await page();
     const voice = part(html, "data-voice-section", 'data-settings-card="connections.image"');
     expect(voice).toContain('aria-label="Voice engine"');
-    expect(voice).toContain("Uses the xAI key from the list above.");
+    expect(voice).toContain("Uses the xAI key from Keys.");
+    expect(voice).not.toContain("data-add-in-keys");
     expect(voice).not.toContain('type="password"');
     const advanced = part(voice, 'data-settings-card="voice.advanced"');
     expect(advanced).toContain('data-open="false"');

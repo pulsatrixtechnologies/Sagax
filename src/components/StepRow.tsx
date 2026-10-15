@@ -27,6 +27,7 @@ export function StepRow({
   testId,
   data,
   wide = false,
+  quietChevron = false,
 }: {
   label: string;
   /** what the step acted on, after the label in paler grey */
@@ -52,6 +53,8 @@ export function StepRow({
   data?: Record<string, string | undefined>;
   /** the detail takes the column's width (messages), not a reading width */
   wide?: boolean;
+  /** the chevron shows only on hover, focus or once open (the turn's line) */
+  quietChevron?: boolean;
 }) {
   const [open, setOpen] = useState(forceOpen || defaultOpen);
   useEffect(() => {
@@ -80,14 +83,19 @@ export function StepRow({
         <ChevronDown
           size={13}
           aria-hidden="true"
-          className={cn("shrink-0 text-ink-tertiary transition-transform duration-150", open && "rotate-180")}
+          data-quiet={quietChevron && !open ? "true" : undefined}
+          className={cn(
+            "shrink-0 text-ink-tertiary transition-[transform,opacity] duration-150",
+            open && "rotate-180",
+            quietChevron && !open && "opacity-0 group-hover/step:opacity-70 group-focus-visible/step:opacity-70",
+          )}
         />
       )}
       {onActivate && <ChevronRight size={13} aria-hidden="true" className="shrink-0 text-ink-tertiary" />}
     </>
   );
   const rowClass = cn(
-    "inline-flex w-fit max-w-full min-w-0 items-center gap-1.5 rounded-md py-0.5 text-start text-[13px] leading-5 text-ink-secondary",
+    "group/step inline-flex w-fit max-w-full min-w-0 items-center gap-1.5 rounded-md py-0.5 text-start text-[13px] leading-5 text-ink-secondary",
     interactive && "cursor-pointer hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent",
   );
   return (
