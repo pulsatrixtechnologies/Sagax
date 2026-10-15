@@ -5,6 +5,11 @@ import {
   MCP_ROLES,
   decide,
   guardToolCall,
+  deniedResourcesFromEnv,
+  mcpAuditRow,
+  mcpIdentityEnv,
+  resourceDenied,
+  resourceKeyForCall,
   permissionForTool,
   permissionModeFromEnv,
   principalFromEnv,
@@ -152,5 +157,64 @@ describe("coverage doc", () => {
     const gaps = MCP_PERMISSIONS.length - covered;
     expect(doc).toContain(`Totals: capabilities ${MCP_PERMISSIONS.length}, covered ${covered}, gaps ${gaps}.`);
     expect(doc.match(/\| MISSING \|/g)?.length).toBe(gaps);
+  });
+});
+
+describe("per-resource permissions", () => {
+  it("derives <api>:<resource>.<verb> from api_write, api_action and api_query", () => {
+    expect(resourceKeyForCall("api_write", { api: "CW", resource: "ticket", verb: "update" })).toBe("cw:ticket.update");
+    expect(resourceKeyForCall("api_action", { api: "cw", resource: "ticket", action: "close" })).toBe("cw:ticket.close");
+    expect(resourceKeyForCall("api_query", { api: "cw", resource: "ticket" })).toBe("cw:ticket.read");
+    expect(resourceKeyForCall("memory_save", { api: "cw", resource: "ticket", verb: "x" })).toBeNull();
+    expect(resourceKeyForCall("api_write", { api: "cw", resource: "../x", verb: "update" })).toBeNull();
+    expect(resourceKeyForCall("api_write", { api: "cw" })).toBeNull();
+  });
+
+  it("vets names against the Perspicax catalog when one is given", () => {
+    const catalog = new Map([["cw", new Set(["ticket"])]]);
+    expect(resourceKeyForCall("api_write", { api: "cw", resource: "ticket", verb: "update" }, catalog)).toBe("cw:ticket.update");
+    expect(resourceKeyForCall("api_write", { api: "cw", resource: "invented", verb: "update" }, catalog)).toBeNull();
+    expect(resourceKeyForCall("api_write", { api: "other", resource: "ticket", verb: "update" }, catalog)).toBeNull();
+  });
+
+  it("matches exact, resource-wide and api-wide deny rules", () => {
+    expect(resourceDenied("cw:ticket.update", ["cw:ticket.update"])).toBe(true);
+    expect(resourceDenied("cw:ticket.update", ["cw:ticket.*"])).toBe(true);
+    expect(resourceDenied("cw:ticket.update", ["cw:*"])).toBe(true);
+    expect(resourceDenied("cw:contact.update", ["cw:ticket.*"])).toBe(false);
+    expect(resourceDenied("cwx:ticket.update", ["cw:*"])).toBe(false);
+    expect(deniedResourcesFromEnv({ SAGAX_MCP_DENY: " CW:ticket.* , ,a:b.c" })).toEqual(["cw:ticket.*", "a:b.c"]);
+  });
+
+  it("refuses a denied resource in enforce mode, names it, and still audits it", async () => {
+    const rows: McpAuditRecord[] = [];
+    const options = { principal: { id: "p", role: "operator" }, mode: "enforce" as const, ownBotId: "b", audit: (r: McpAuditRecord) => rows.push(r), deniedResources: ["cw:ticket.*"] };
+    let ran = 0;
+    const run = async () => { ran++; return { text: "ok" }; };
+    const refused = await guardToolCall(options, "api_write", { api: "cw", resource: "ticket", verb: "update" }, run);
+    expect(refused).toMatchObject({ isError: true });
+    expect(refused.text).toContain("cw:ticket.update");
+    expect(ran).toBe(0);
+    expect(await guardToolCall(options, "api_write", { api: "cw", resource: "contact", verb: "update" }, run)).toEqual({ text: "ok" });
+    expect(rows.map((r) => [r.decision, r.reason, r.resource])).toEqual([["denied", "resource_denied", "cw:ticket.update"], ["allowed", "ok", "cw:contact.update"]]);
+  });
+});
+
+describe("harness identity and audit rows", () => {
+  it("maps the Perspicax role and the lack of a speaker", () => {
+    expect(mcpIdentityEnv({ botId: "b", principalId: "pr_a", perspicaxRole: "admin", teamIds: ["t1", "bad id!", "t2"] })).toEqual({ SAGAX_MCP_ROLE: "admin", SAGAX_MCP_PRINCIPAL: "pr_a", SAGAX_MCP_TEAMS: "t1,t2" });
+    expect(mcpIdentityEnv({ botId: "b", principalId: "pr_a", perspicaxRole: "manager" }).SAGAX_MCP_ROLE).toBe("operator");
+    expect(mcpIdentityEnv({ botId: "b", principalId: "pr_a", perspicaxRole: "employee" }).SAGAX_MCP_ROLE).toBe("member");
+    expect(mcpIdentityEnv({ botId: "b" })).toEqual({ SAGAX_MCP_ROLE: "service", SAGAX_MCP_PRINCIPAL: "b", SAGAX_MCP_TEAMS: "" });
+    expect(principalFromEnv(mcpIdentityEnv({ botId: "b", principalId: "pr_a", teamIds: ["t1"] }))).toEqual({ id: "pr_a", role: "member", teamIds: ["t1"] });
+  });
+
+  it("copies only whitelisted fields into the activity-log row", () => {
+    const record = { at: "2026-10-14T00:00:00.000Z", principal: "p", role: "viewer", tool: "api_write", permission: "api:write", scope: "self", decision: "denied", reason: "not_granted", enforced: true, secret: "x", args: { a: 1 } } as unknown as McpAuditRecord;
+    const row = mcpAuditRow(record, "bot1");
+    expect(row).toMatchObject({ category: "security", action: "mcp.deny", target: { kind: "bot", id: "bot1" }, after: { tool: "api_write", permission: "api:write", enforced: true } });
+    expect(JSON.stringify(row)).not.toMatch(/secret|args/);
+    expect(mcpAuditRow({ ...record, enforced: false }, "b").action).toBe("mcp.shadow");
+    expect(mcpAuditRow({ ...record, decision: "allowed", enforced: false }, "b").action).toBe("mcp.call");
   });
 });

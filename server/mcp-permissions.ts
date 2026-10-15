@@ -185,7 +185,7 @@ export interface McpDecision {
   permission: string;
   requiredScope: McpScope;
   grantedScope: McpScope | null;
-  reason: "ok" | "unknown_tool" | "unknown_role" | "not_granted" | "scope_too_narrow";
+  reason: "ok" | "unknown_tool" | "unknown_role" | "not_granted" | "scope_too_narrow" | "resource_denied";
 }
 
 export function decide(principal: McpPrincipal, tool: string, target: McpScope = "self"): McpDecision {
@@ -220,6 +220,44 @@ export function scopeForCall(args: Record<string, unknown> | undefined, ownBotId
   return "self";
 }
 
+const SEGMENT = /^[a-z0-9][a-z0-9_-]{0,63}$/;
+const API_TOOL_VERB: Record<string, string | undefined> = { api_query: "read", api_write: undefined, api_action: undefined };
+
+/** What the Perspicax catalog knows: api slug to its resource names. */
+export type ApiCatalog = ReadonlyMap<string, ReadonlySet<string>>;
+
+/** The per-resource key of an api_query, api_write or api_action call
+ * (`cw:ticket.update`), read from its arguments. Null when the call is not
+ * one of those, names no api, or names a segment that is not a plain slug.
+ * With a catalog, an api or resource it does not list gives null, so a made
+ * up name can never match a grant or a deny. */
+export function resourceKeyForCall(tool: string, args: Record<string, unknown> | undefined, catalog?: ApiCatalog): string | null {
+  if (!(tool in API_TOOL_VERB) || !args) return null;
+  const clean = (v: unknown) => (typeof v === "string" && SEGMENT.test(v.trim().toLowerCase()) ? v.trim().toLowerCase() : null);
+  const api = clean(args.api);
+  const resource = clean(args.resource);
+  const verb = API_TOOL_VERB[tool] ?? clean(tool === "api_action" ? args.action : args.verb);
+  if (!api || !resource || !verb) return null;
+  if (catalog) {
+    const known = catalog.get(api);
+    if (!known || !known.has(resource)) return null;
+  }
+  return `${api}:${resource}.${verb}`;
+}
+
+/** Deny rules for resource keys: exact (`cw:ticket.update`), `cw:ticket.*`
+ * or `cw:*`. Read from SAGAX_MCP_DENY, comma separated. */
+export function resourceDenied(key: string, rules: readonly string[]): boolean {
+  return rules.some((rule) => {
+    if (rule === key) return true;
+    if (rule.endsWith(".*")) return key.startsWith(rule.slice(0, -1));
+    if (rule.endsWith(":*")) return key.startsWith(rule.slice(0, -1));
+    return false;
+  });
+}
+
+export const deniedResourcesFromEnv = (env: NodeJS.ProcessEnv): string[] => (env.SAGAX_MCP_DENY || "").split(",").map((s) => s.trim().toLowerCase()).filter(Boolean);
+
 export type McpPermissionMode = "off" | "shadow" | "enforce";
 
 /** off skips the check, shadow audits a denial and lets the call through,
@@ -247,6 +285,8 @@ export interface McpAuditRecord {
   scope: McpScope;
   decision: "allowed" | "denied";
   reason: McpDecision["reason"];
+  /** The per-resource key for an api_* call, when one applies. */
+  resource?: string;
   /** False when the denial was only recorded (shadow mode). */
   enforced: boolean;
 }
@@ -258,6 +298,9 @@ export interface GuardOptions {
   mode: McpPermissionMode;
   ownBotId: string;
   audit: McpAuditHook;
+  /** Resource deny rules (see resourceDenied) and the catalog that vets names. */
+  deniedResources?: readonly string[];
+  catalog?: ApiCatalog;
   now?: () => Date;
 }
 
@@ -274,7 +317,11 @@ export const permissionDeniedText = (d: McpDecision): string =>
 export async function guardToolCall<R extends GuardedResult>(options: GuardOptions, tool: string, args: Record<string, unknown> | undefined, run: () => Promise<R>): Promise<R | GuardedResult> {
   if (options.mode === "off") return run();
   const scope = scopeForCall(args, options.ownBotId);
-  const decision = decide(options.principal, tool, scope);
+  let decision = decide(options.principal, tool, scope);
+  const resource = resourceKeyForCall(tool, args, options.catalog) ?? undefined;
+  if (decision.allowed && resource && resourceDenied(resource, options.deniedResources ?? [])) {
+    decision = { ...decision, allowed: false, permission: resource, reason: "resource_denied" };
+  }
   const enforced = options.mode === "enforce";
   const blocked = !decision.allowed && enforced;
   try {
@@ -287,6 +334,7 @@ export async function guardToolCall<R extends GuardedResult>(options: GuardOptio
       scope,
       decision: decision.allowed ? "allowed" : "denied",
       reason: decision.reason,
+      ...(resource ? { resource } : {}),
       enforced: !decision.allowed && enforced,
     });
   } catch {
@@ -294,4 +342,37 @@ export async function guardToolCall<R extends GuardedResult>(options: GuardOptio
   }
   if (blocked) return { text: permissionDeniedText(decision), isError: true };
   return run();
+}
+
+/** The identity variables the harness gives the proxy (docs/mcp/permissions.md,
+ * rule 5). A turn with no person speaking (a routine, a webhook) is a
+ * service; the Perspicax role maps admin to admin, manager to operator,
+ * anyone else to member. Nothing here is a credential. */
+export function mcpIdentityEnv(input: { botId: string; principalId?: string; perspicaxRole?: string; teamIds?: readonly string[] }): Record<string, string> {
+  const role: McpRole = !input.principalId ? "service" : input.perspicaxRole === "admin" ? "admin" : input.perspicaxRole === "manager" ? "operator" : "member";
+  return {
+    SAGAX_MCP_ROLE: role,
+    SAGAX_MCP_PRINCIPAL: input.principalId || input.botId,
+    SAGAX_MCP_TEAMS: (input.teamIds ?? []).filter((id) => /^[\w.:-]{1,128}$/.test(id)).join(","),
+  };
+}
+
+/** The activity-log row of one audit record. Fields are copied one by one:
+ * nothing else a proxy sends is kept. */
+export function mcpAuditRow(record: McpAuditRecord, botId: string) {
+  return {
+    category: "security" as const,
+    action: record.decision === "denied" ? (record.enforced ? "mcp.deny" : "mcp.shadow") : "mcp.call",
+    target: { kind: "bot", id: botId },
+    after: {
+      tool: String(record.tool).slice(0, 100),
+      permission: String(record.permission).slice(0, 100),
+      scope: record.scope,
+      role: String(record.role).slice(0, 40),
+      reason: record.reason,
+      enforced: record.enforced === true,
+      ...(record.resource ? { resource: String(record.resource).slice(0, 160) } : {}),
+    },
+    at: record.at,
+  };
 }
