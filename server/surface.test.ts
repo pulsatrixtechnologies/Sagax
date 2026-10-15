@@ -57,7 +57,7 @@ describe("resolveSurface", () => {
   it("Off mounts no computer and no browser, and says which setting did it", () => {
     const plan = resolveSurface({ destination: "off", browserOn: true });
     expect(plan).toMatchObject({ computer: "off", browser: false, pinned: null });
-    expect(plan.note).toMatch(/"Works on" setting is Off/);
+    expect(plan.note).toMatch(/"Workspace" setting is Off/);
     expect(plan.note).toMatch(/no computer and no built-in browser/);
     // the same whether or not a browser could have been mounted
     expect(resolveSurface({ destination: "off", browserOn: false })).toEqual(plan);

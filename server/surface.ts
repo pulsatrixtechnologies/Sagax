@@ -55,7 +55,7 @@ const NO_BROWSER_NOTE =
   " This bot is set to work in the built-in browser, but the built-in browser is switched off in App Settings, so you have no browser and no computer this turn — say so instead of guessing.";
 
 const OFF_NOTE =
-  " This bot's \"Works on\" setting is Off, so no computer and no built-in browser are mounted this turn: you cannot open a page, click, or type on any screen. If the user asks for something that needs one, tell them Works on is Off in this bot's settings — never claim you are opening a browser you do not have.";
+  " This bot's \"Workspace\" setting is Off, so no computer and no built-in browser are mounted this turn: you cannot open a page, click, or type on any screen. If the user asks for something that needs one, tell them Workspace is Off in this bot's settings — never claim you are opening a browser you do not have.";
 
 /** The note for a Team incidents turn whose computer could not be had (the
  * dispatch's skipComputer): it runs without it rather than refusing the

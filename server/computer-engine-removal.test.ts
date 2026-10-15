@@ -318,7 +318,7 @@ describe("the line a moved conversation shows", () => {
   it("says turns stop, and the one setting to change, where the person chose Cloud", () => {
     expect(computerEngineMoveText({ scope: "bot", cloud: false, noComputer: "works-on", askNow: false }, "Scout", "Mistral")).toBe(
       "Scout now uses Mistral. The Computer choice in the model list was removed. Mistral can't use a computer, " +
-      "so Scout can't reply on Mistral while its Works on is Cloud computer. Choose a model that can use a computer, or set Works on to Auto.");
+      "so Scout can't reply on Mistral while its Workspace is Cloud computer. Choose a model that can use a computer, or set Workspace to Auto.");
     expect(computerEngineMoveText({ scope: "conversation", cloud: false, noComputer: "pin", askNow: false }, "Scout", "Mistral")).toBe(
       "This conversation now uses Mistral. The Computer choice in the model list was removed. Mistral can't use a computer, " +
       "so Scout can't reply here while this conversation is pinned to its cloud computer. " +

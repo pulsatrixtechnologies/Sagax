@@ -1174,6 +1174,9 @@ export type BotSettingsSection =
   | "overview"
   /** The persona editor's Appearance: the mascot gallery and the picture sources. */
   | "appearance"
+  /** The persona editor's What it does: the server's summary of what the
+   * bot does, reaches and won't do, and the prompt preview. */
+  | "summary"
   /** Deep link to the Details tab. */
   | "details"
   | "slack"
@@ -2634,8 +2637,8 @@ export function reducer(state: AppState, action: Action): AppState {
     }
     case "toggleSettings": {
       // Only Details (and Routines) live in the bot panel. A deep link to any
-      // other section opens the persona editor on the matching category over
-      // the panel.
+      // other section opens the persona editor on that section's own page
+      // over the panel.
       const category = action.open !== false && action.section !== undefined ? personaCategoryForSection(action.section) : null;
       if (category !== null) {
         const targetId = action.botId ?? state.selectedId;

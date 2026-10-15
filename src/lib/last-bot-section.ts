@@ -10,6 +10,7 @@ export const LAST_BOT_SECTION_KEY = "openmausbot.lastBotSection.v1";
 export const BOT_SETTINGS_SECTION_IDS: readonly BotSettingsSection[] = [
   "overview",
   "appearance",
+  "summary",
   "slack",
   "soul",
   "rules",

@@ -124,7 +124,7 @@ describe("Auto guidance (prompt fixture)", () => {
   const text = autoComputerGuidance(auto(), true);
 
   it("names the tool, the start place and what is available", () => {
-    expect(text).toMatch(/^<workplace>This bot's Works on is Auto/);
+    expect(text).toMatch(/^<workplace>This bot's Workspace is Auto/);
     expect(text).toContain("computer_select");
     expect(text).toContain("This turn starts on the cloud (their server environment); available now: cloud, this_computer, local_vm.");
     expect(text).toContain("switch again mid-task");
