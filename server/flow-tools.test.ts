@@ -275,3 +275,13 @@ describe("the sagax-flow server", () => {
     expect(gateReadOnlyTools({ name: FLOW_TOOLS_MCP_NAME, builtin: false, spec: impostor })).toEqual([]);
   });
 });
+
+describe("flow regex conditions refuse backtracking shapes", () => {
+  it("refuses nested quantifiers and back references, keeps plain patterns", async () => {
+    const { checkCondition } = await import("./flow-tools.js");
+    expect(() => checkCondition("title ~ (a+)+$")).toThrow(/nested quantifier/);
+    expect(() => checkCondition("title ~ (a|b*)*")).toThrow(/nested quantifier/);
+    expect(() => checkCondition("title ~ (x)\\1")).toThrow(/back reference/);
+    expect(() => checkCondition("title ~ ^(urgent|critical) .+")).not.toThrow();
+  });
+});

@@ -268,6 +268,12 @@ export const FLOW_REGEX_MAX_TEXT = 10_000;
 
 function conditionRegex(pattern: string, part: string): RegExp {
   if (pattern.length > FLOW_REGEX_MAX_PATTERN) fail(`regular expression longer than ${FLOW_REGEX_MAX_PATTERN} characters in ${JSON.stringify(part.slice(0, 80))}`);
+  // A length cap does not stop catastrophic backtracking: refuse a quantified
+  // group that itself holds a quantifier ((a+)+, (a|b*)*, (x{2,})+) and back
+  // references, the shapes that backtrack exponentially.
+  if (/\((?:[^()\\]|\\.)*[*+}](?:[^()\\]|\\.)*\)\s*[*+{]/.test(pattern) || /\\[1-9]|\\k</.test(pattern)) {
+    fail(`regular expression with a nested quantifier or back reference in ${JSON.stringify(part.slice(0, 80))}`);
+  }
   try { return new RegExp(pattern, "i"); } catch { fail(`bad regular expression in ${JSON.stringify(part)}`); }
 }
 
@@ -807,7 +813,8 @@ export function groupUnits(args: Item): { groups: UnitGroup[]; alone: unknown[];
 /** A title motif, without regard to case: a glob when it holds * ? or [,
  * otherwise a substring. */
 function titleMotif(name: string, motif: string): boolean {
-  const folded = name.toLowerCase(), wanted = motif.toLowerCase();
+  // collapse runs of * and cap both sides: a glob is compiled to a regex
+  const folded = name.toLowerCase().slice(0, FLOW_REGEX_MAX_TEXT), wanted = motif.toLowerCase().replace(/\*{2,}/g, "*").slice(0, FLOW_REGEX_MAX_PATTERN);
   if (!/[*?[]/.test(motif)) return folded.includes(wanted);
   let pattern = "";
   for (let i = 0; i < wanted.length; i += 1) {
