@@ -5749,7 +5749,7 @@
   "remote.client.server.switchNote": "Confirmez l'adresse, puis terminez le jumelage sur la page du serveur. Le menu Serveur permet de revenir à cet ordinateur plus tard.",
   "remote.client.subtitle": "Utilisez cette app de bureau comme client sécurisé d'un Sagax qui tourne sur un autre ordinateur.",
   "settings.advancedPage.title": "Avancé",
-  "settings.advancedPage.summary": "MCP, accès aux outils, conversations parallèles, reprise, nettoyage, tours en groupe, routines, diagnostic",
+  "settings.advancedPage.summary": "Accès aux outils, conversations parallèles, reprise, nettoyage, diagnostic",
   "settings.advancedPage.open": "Ouvrir",
   "settings.addDevice.title": "Ajouter un appareil",
   "settings.addDevice.method": "Comment l'ajouter",

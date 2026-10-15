@@ -29,12 +29,12 @@ import { canEditConfig, canManageBackups, canManageComputers, viewerCan } from "
 import { BrowserProfilesManager } from "./BrowserProfilesManager";
 import { ThisComputerSettings } from "./DesktopWorkspaceSwitcher";
 import { OrganizationSettings } from "./OrganizationSettings";
-import { Card, SettingRow, Switch, requestSettingsCard, cardCount } from "./SettingsPrimitives";
+import { Card, SettingRow, Switch, requestSettingsCard, cardCount, takeRequestedSettingsCard } from "./SettingsPrimitives";
 import { PrivacySettings } from "./PrivacySettings";
 import { OrgMemorySettings } from "./OrgMemorySettings";
 import { NotificationSettings } from "./NotificationSettings";
 import { BrowserUnavailableNote, SettingsText } from "./SettingsLink";
-import { currentSettingsSection } from "@/lib/settings-sections";
+import { currentSettingsSection, isMovedOrganizationCard } from "@/lib/settings-sections";
 
 import { shortcutLabel } from "./ShortcutHint";
 import { UsageSection } from "./UsageSection";
@@ -81,15 +81,20 @@ const COMPOSIO_PLATFORM_URL = "https://platform.composio.dev";
 // label resolved here at module scope would freeze the language the app booted
 // in. The English keywords stay untranslated: they are a search index, and a
 // pack that omits them still matches what people type.
+/** Search words of the cards moved from General > Advanced to Organization
+ * (2026-10-15). On a desktop with no server they stay in General > Advanced,
+ * and General matches them there (sectionMatches `extra`). */
+export const ORGANIZATION_ADVANCED_KEYWORDS = ["routines", "conversation", "schedule", "mcp", "timeout", "group turns", "rooms"];
+
 export const SECTIONS: Array<{
   id: AppSettingsSection;
   labelKey: LocaleKey;
   icon: typeof User;
   keywords: string[];
 }> = [
-  { id: "general", labelKey: "settings.section.general", icon: User, keywords: ["profile", "name", "email", "about me", "about", "suggestions", "suggested", "memory", "updates", "effort", "new bots", "reasoning", "threads", "parallel", "concurrency", "cleanup", "retention", "event log", "event-log", "log size", "automatic recovery", "backup model", "fallback", "routines", "conversation", "schedule", "advanced", "avancé", "mcp", "timeout", "tool access", "accès aux outils", "group turns", "rooms", "prerelease", "pre-release", "diagnostics", "diagnostic"] },
+  { id: "general", labelKey: "settings.section.general", icon: User, keywords: ["profile", "name", "email", "about me", "about", "suggestions", "suggested", "memory", "updates", "effort", "new bots", "reasoning", "threads", "parallel", "concurrency", "cleanup", "retention", "event log", "event-log", "log size", "automatic recovery", "backup model", "fallback", "advanced", "avancé", "tool access", "accès aux outils", "prerelease", "pre-release", "diagnostics", "diagnostic"] },
   // 2026-10-14: Memory is a card of this page (it was its own section).
-  { id: "organization", labelKey: "settings.section.organization", icon: Building2, keywords: ["company", "organization", "organisation", "sign in", "enroll", "managed", "models", "disconnect", "workspace", "cloud", "hosted", "vps", "server", "servers", "connect", "pair", "switch", "local", "memory", "obsidian", "vault", "sync", "git", "perspicax", "mémoire", "cache", "pending", "domain", "dns", "caddy"] },
+  { id: "organization", labelKey: "settings.section.organization", icon: Building2, keywords: ["company", "organization", "organisation", "sign in", "enroll", "managed", "models", "disconnect", "workspace", "cloud", "hosted", "vps", "server", "servers", "connect", "pair", "switch", "local", "memory", "obsidian", "vault", "sync", "git", "perspicax", "mémoire", "cache", "pending", "domain", "dns", "caddy", ...ORGANIZATION_ADVANCED_KEYWORDS] },
   { id: "appearance", labelKey: "settings.section.appearance", icon: Palette, keywords: ["skin", "theme", "appearance", "advanced", "simple", "mode", "tools", "tool calls", "threads", "show threads", "hide threads", "sidebar", "hidden", "hide", "show", "density", "compact", "comfortable", "avatars", "display", "run", "this run", "run card", "commands", "mascot", "owl", "desktop", "fly", "floating", "app icon", "dock", "icon", "taskbar", "providers", "sign-in", "unconfigured", "fournisseurs", "connexion", "non configurés", "send", "enter", "return", "shift+enter", "ctrl+enter", "cmd+enter", "⌘+enter", "new line", "keyboard", "ime", "japanese"] },
   // 2026-10-14: Privacy is a card of this page on an organization server.
   { id: "notifications", labelKey: "settings.section.notifications", icon: Bell, keywords: ["notifications", "notification", "sound", "sounds", "mute", "silent", "chime", "alert", "alerts", "banner", "badge", "dock", "unread", "nudge", "wizz", "shake", "secousse", "son", "persistent", "stay", "privacy", "read receipts", "seen", "vu", "confidentialité", "accusés de lecture", "presence", "online", "away", "offline", "last seen", "status", "en ligne", "absent", "hors ligne", "privacidade"] },
@@ -120,7 +125,7 @@ const CARD_KEYWORDS: Record<string, string[]> = {
   "general.threads": ["parallel", "concurrency"],
   "general.threadCleanup": ["cleanup", "retention", "event log", "event-log", "log size"],
   "general.recovery": ["automatic recovery", "backup model", "fallback"],
-  "general.mcpCalls": ["mcp", "timeout", "tool call"],
+  "organization.mcpCalls": ["mcp", "timeout", "tool call"],
   "connections.integrations": ["box", "vps"],
   "connections.image": ["image", "avatar", "gpt image"],
   "engines.moreProviders": ["openrouter", "mistral", "opencode", "base url", "compatible", "cursor", "cloud agent"],
@@ -171,9 +176,9 @@ export function orgMemoryAvailable(): boolean {
   return typeof window !== "undefined" && Boolean(window.ogb?.orgMemory);
 }
 
-export function sectionMatches(section: (typeof SECTIONS)[number], query: string): boolean {
+export function sectionMatches(section: (typeof SECTIONS)[number], query: string, extra: string[] = []): boolean {
   if (!query) return true;
-  return [t(section.labelKey), ...section.keywords].some((part) => part.toLowerCase().includes(query));
+  return [t(section.labelKey), ...section.keywords, ...extra].some((part) => part.toLowerCase().includes(query));
 }
 
 function profilePhoto(file: File): Promise<string> {
@@ -1070,43 +1075,66 @@ function DesktopMascotsCard() {
   );
 }
 
-/** General > Advanced (2026-10-14): the technical cards of General on a page
- * of their own, shown in Advanced mode. Routines in the conversation and
- * Group turns live here only; the Experimental switch that hid them a second
- * time is gone, and their saved values apply whether or not anyone looks. */
-export function GeneralAdvancedSettings() {
+/** The desktop app in "No server" mode: Settings > Organization is hidden
+ * there (nothing to show until it joins one). */
+export function isSoloDesktop(config: ConfigStatus | null | undefined): boolean {
+  const remoteActive = window.ogb?.remoteClient?.active === true;
+  return !remoteActive && Boolean(launchBridges(window.ogb)) && config?.onboarding?.launchMode !== "server";
+}
+
+/** Organization > routines in the conversation, group turns and MCP calls
+ * (2026-10-15, JC: they were in General > Advanced; they set how the bots of
+ * the organization work). Admin or owner only, in Advanced mode, as before.
+ * A desktop with no server shows them in General > Advanced instead
+ * (Organization is hidden there): same cards, same ids. */
+export function OrganizationAdvancedCards() {
   const { state } = useStore();
   const remoteActive = window.ogb?.remoteClient?.active === true;
+  if (!canEditConfig(state.config)) return null;
+  return (
+    <>
+      {!remoteActive && (
+        <div className="rounded-[14px] border-[0.5px] border-border py-1" data-settings-card="organization.routinesInConversation">
+          <RoutinesInConversationRow />
+        </div>
+      )}
+      <Card
+        collapsible
+        cardId="organization.roomTurns"
+        defaultOpen={false}
+        title={t("settings.roomTurns.title")}
+        subtitle={t("settings.roomTurns.subtitle")}
+        summary={t("settings.card.roomTurns", { minutes: state.config?.rooms.turnTimeoutMinutes ?? 5 })}
+      >
+        <RoomTurnTimeoutSettings />
+      </Card>
+      <Card
+        collapsible
+        cardId="organization.mcpCalls"
+        defaultOpen={false}
+        title={t("settings.mcpCalls.title")}
+        subtitle={t("settings.mcpCalls.subtitle")}
+        summary={`${mcpCallTimeoutMinutes(state.config)} ${t("settings.mcpCalls.minutes")}`}
+      >
+        <McpCallTimeoutSettings />
+      </Card>
+    </>
+  );
+}
+
+/** General > Advanced (2026-10-14): the technical cards of General on a page
+ * of their own, shown in Advanced mode. 2026-10-15: routines in the
+ * conversation, group turns and MCP calls moved to Organization; they stay
+ * here on a desktop with no server, where Organization is hidden. Their
+ * saved values apply whether or not anyone looks. */
+export function GeneralAdvancedSettings() {
+  const { state } = useStore();
   const editConfig = canEditConfig(state.config);
   return (
     <div className="flex flex-col gap-3" data-general-advanced="">
+      {isSoloDesktop(state.config) && <OrganizationAdvancedCards />}
       {editConfig && (
         <>
-          {!remoteActive && (
-            <div className="rounded-[14px] border-[0.5px] border-border py-1">
-              <RoutinesInConversationRow />
-            </div>
-          )}
-          <Card
-            collapsible
-            cardId="general.roomTurns"
-            defaultOpen={false}
-            title={t("settings.roomTurns.title")}
-            subtitle={t("settings.roomTurns.subtitle")}
-            summary={t("settings.card.roomTurns", { minutes: state.config?.rooms.turnTimeoutMinutes ?? 5 })}
-          >
-            <RoomTurnTimeoutSettings />
-          </Card>
-          <Card
-            collapsible
-            cardId="general.mcpCalls"
-            defaultOpen={false}
-            title={t("settings.mcpCalls.title")}
-            subtitle={t("settings.mcpCalls.subtitle")}
-            summary={`${mcpCallTimeoutMinutes(state.config)} ${t("settings.mcpCalls.minutes")}`}
-          >
-            <McpCallTimeoutSettings />
-          </Card>
           <Card
             collapsible
             cardId="general.toolAccess"
@@ -1172,7 +1200,7 @@ export function SettingsModal() {
   // page whose server answers GET /api/org as Perspicax.
   const perspicaxOrg = usePerspicaxOrg();
   const organization = Boolean(lockedServer) || perspicaxOrg !== null;
-  const soloDesktop = !remoteActive && Boolean(launchBridges(window.ogb)) && state.config?.onboarding?.launchMode !== "server";
+  const soloDesktop = isSoloDesktop(state.config);
   // Whether a section id (a page, or a former page that is a card now) may
   // show for this viewer. A card keeps the rules its section had.
   const allowed = (id: AppSettingsSection): boolean => {
@@ -1213,8 +1241,14 @@ export function SettingsModal() {
   // A request for Settings > Organization (the Server menu, a deep link) on
   // a desktop with no server opens the launch screen on Server instead,
   // unless the page holds this computer's organization memory.
+  // A link to a card moved from General > Advanced (2026-10-15) opens
+  // General > Advanced there, where those cards stay.
   useEffect(() => {
     if (!soloDesktop || memoryShown || state.appSettingsSection !== "organization") return;
+    if (isMovedOrganizationCard(takeRequestedSettingsCard())) {
+      dispatch({ type: "toggleAppSettings", open: true, section: "general", subPage: "general.advanced" });
+      return;
+    }
     dispatch({ type: "toggleAppSettings", open: false, section: "general" });
     dispatch({ type: "toggleLaunch", open: true, mode: "server" });
   }, [soloDesktop, memoryShown, state.appSettingsSection, dispatch]);
@@ -1223,7 +1257,7 @@ export function SettingsModal() {
   // A page this viewer cannot see (an old link to Email where People is not
   // shown, a hidden page) draws the first page they can, at once.
   const section: AppSettingsSection = availableSections.some((entry) => entry.id === requested) ? requested : availableSections[0]?.id ?? requested;
-  const visibleSections = availableSections.filter((entry) => sectionMatches(entry, q));
+  const visibleSections = availableSections.filter((entry) => sectionMatches(entry, q, soloDesktop && entry.id === "general" ? ORGANIZATION_ADVANCED_KEYWORDS : []));
   const sectionLabelKey = SECTIONS.find((entry) => entry.id === section)?.labelKey;
   const subPageId = state.appSettingsSubPage;
   const subPage = subPageId && SUB_PAGES[subPageId]?.section === section ? SUB_PAGES[subPageId] : null;
@@ -1411,6 +1445,9 @@ export function SettingsModal() {
                     <OrgMemorySettings />
                   </Card>
                 )}
+                {/* From General > Advanced (2026-10-15): routines in the
+                    conversation, group turns, MCP calls. */}
+                {advanced && allowed("organization") && <OrganizationAdvancedCards />}
               </>
             )}
             {section === "general" && (
@@ -1441,9 +1478,10 @@ export function SettingsModal() {
                   {!remoteActive && <ReplayTourRow />}
                   <UpdatesRow />
                 </div>
-                {/* General > Advanced (2026-10-14): MCP, tool access,
-                    parallel conversations, recovery, cleanup, group turns,
-                    routines, pre-releases and diagnostics on one sub-page.
+                {/* General > Advanced (2026-10-14): tool access, parallel
+                    conversations, recovery, cleanup, pre-releases and
+                    diagnostics on one sub-page (routines, group turns and
+                    MCP calls went to Organization on 2026-10-15).
                     A search that names one of them shows them here. */}
                 {advanced && (q
                   ? <GeneralAdvancedSettings />

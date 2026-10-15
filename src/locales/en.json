@@ -7505,7 +7505,7 @@
   "step.turn.workedFor": "Worked {elapsed}",
   "model.allModels": "All models",
   "settings.advancedPage.title": "Advanced",
-  "settings.advancedPage.summary": "MCP, tool access, parallel conversations, recovery, cleanup, group turns, routines, diagnostics",
+  "settings.advancedPage.summary": "Tool access, parallel conversations, recovery, cleanup, diagnostics",
   "settings.advancedPage.open": "Open",
   "settings.addDevice.title": "Add a device",
   "settings.addDevice.method": "How to add it",

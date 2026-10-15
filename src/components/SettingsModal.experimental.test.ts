@@ -99,8 +99,8 @@ describe("Settings > General > Advanced", () => {
     const html = await render();
     expect(html).toContain('data-settings-card="general.advanced"');
     expect(html).not.toContain("Routines in the conversation");
-    expect(html).not.toContain('data-settings-card="general.roomTurns"');
-    expect(html).not.toContain('data-settings-card="general.mcpCalls"');
+    expect(html).not.toContain('data-settings-card="organization.roomTurns"');
+    expect(html).not.toContain('data-settings-card="organization.mcpCalls"');
     expect(html).not.toContain('data-settings-card="general.toolAccess"');
     expect(switchNamed("Run routines in the conversation")).toBeUndefined();
     // nothing is saved or reset by not showing them
@@ -108,23 +108,64 @@ describe("Settings > General > Advanced", () => {
     expect(fixture.dispatch).not.toHaveBeenCalled();
   });
 
-  it("shows routines and group turns on the sub-page with their current values, no experimental switch needed", async () => {
+  it("keeps cleanup, pre-releases and diagnostics on the sub-page; routines, group turns and MCP left for Organization", async () => {
     fixture.features = { routinesInConversation: true };
     fixture.subPage = "general.advanced";
     const html = await render();
     expect(html).toContain('data-settings-subpage="general.advanced"');
+    expect(html).toContain('data-settings-card="general.threadCleanup"');
+    expect(html).toContain('data-settings-card="general.toolAccess"');
+    expect(html).not.toContain("Routines in the conversation");
+    expect(html).not.toContain('data-settings-card="organization.roomTurns"');
+    expect(html).not.toContain('data-settings-card="organization.mcpCalls"');
+    expect(fixture.api).not.toHaveBeenCalled();
+  });
+});
+
+describe("Settings > Organization (cards from General > Advanced, 2026-10-15)", () => {
+  it("shows routines, group turns and MCP calls with their current values", async () => {
+    fixture.features = { routinesInConversation: true };
+    fixture.section = "organization";
+    const html = await render();
+    expect(html).toContain('data-settings-card="organization.routinesInConversation"');
     expect(html).toContain("Routines in the conversation");
     expect(switchNamed("Run routines in the conversation")?.checked).toBe(true);
-    expect(html).toContain('data-settings-card="general.roomTurns"');
-    expect(html).toContain("Group turns");
+    expect(html).toContain('data-settings-card="organization.roomTurns"');
     expect(html).toContain(">12 min per turn<");
+    expect(html).toContain('data-settings-card="organization.mcpCalls"');
     expect(html.indexOf("Routines in the conversation")).toBeLessThan(html.indexOf("Group turns"));
-    for (const card of ["general.mcpCalls", "general.toolAccess"]) expect(html, card).toContain(`data-settings-card="${card}"`);
+    // the cards another branch moves to each bot are not here
+    expect(html).not.toContain('data-settings-card="general.toolAccess"');
+    expect(html).not.toContain('data-settings-card="general.threadCleanup"');
     expect(fixture.api).not.toHaveBeenCalled();
   });
 
-  it("shows the advanced cards in place while a search names one of them", async () => {
-    const { cardsMatching } = await import("./SettingsModal");
-    expect(cardsMatching("mcp")).toContain("general.mcpCalls");
+  it("keeps them in General > Advanced on a desktop with no server, where Organization is hidden", async () => {
+    vi.stubGlobal("window", { ogb: { remoteClient: { active: false }, environments: {}, orgJoin: {} } });
+    const { isSoloDesktop } = await import("./SettingsModal");
+    expect(isSoloDesktop({} as never)).toBe(true);
+    fixture.subPage = "general.advanced";
+    const html = await render();
+    expect(html).toContain('data-settings-card="organization.roomTurns"');
+    expect(html).toContain('data-settings-card="organization.mcpCalls"');
+    expect(html).toContain('data-settings-card="general.threadCleanup"');
+  });
+
+  it("finds them by search and opens them from old and new links", async () => {
+    const { cardsMatching, SECTIONS, sectionMatches } = await import("./SettingsModal");
+    expect(cardsMatching("mcp")).toContain("organization.mcpCalls");
+    const org = SECTIONS.find((entry) => entry.id === "organization")!;
+    const general = SECTIONS.find((entry) => entry.id === "general")!;
+    for (const word of ["mcp", "group turns", "routines"]) {
+      expect(sectionMatches(org, word), word).toBe(true);
+      expect(sectionMatches(general, word), word).toBe(false);
+    }
+    expect(sectionMatches(general, "mcp", ["mcp"])).toBe(true);
+    const { currentSettingsSection, currentSettingsCard, isMovedOrganizationCard } = await import("@/lib/settings-sections");
+    expect(currentSettingsSection("general", "general.mcpCalls")).toBe("organization");
+    expect(currentSettingsSection("general", "organization.roomTurns")).toBe("organization");
+    expect(currentSettingsCard("general.roomTurns")).toBe("organization.roomTurns");
+    expect(isMovedOrganizationCard("general.threadCleanup")).toBe(false);
+    expect(currentSettingsSection("general", "general.threadCleanup")).toBe("general");
   });
 });
