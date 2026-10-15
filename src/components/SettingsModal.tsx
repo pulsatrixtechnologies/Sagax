@@ -860,6 +860,10 @@ function ExperimentalFeaturesRow() {
   const connectedApps = connectedAppsEnabled(state.config);
   const decisionModel = decisionModelEnabled(state.config);
   const dataWindow = dataWindowEnabled(state.config);
+  // A server that predates the Data window (Sagax 0.5.2 and earlier, e.g. an
+  // organization server not updated yet) sends no dataWindow and refuses to
+  // save one: the row stays, greyed, with the reason.
+  const dataWindowServed = typeof state.config?.features?.dataWindow === "boolean";
   const desktopBrowser = browserAvailable(state.config);
   const browserInstallable = state.config?.browserEngine?.installable === true;
   const browserBlockedOnWindows = window.ogb?.platform === "win32" && !desktopBrowser && !browserInstallable;
@@ -964,12 +968,14 @@ function ExperimentalFeaturesRow() {
       <div className="mt-4 flex items-center justify-between gap-4 border-t border-hairline/30 pt-4" data-experimental-feature="dataWindow">
         <div className="min-w-0">
           <div className="text-[14px] font-medium text-ink">{t("settings.experimental.dataWindow")}</div>
-          <div className="mt-0.5 text-[12px] leading-relaxed text-ink-secondary">{t("settings.experimental.dataWindowDetail")}</div>
+          <div className="mt-0.5 text-[12px] leading-relaxed text-ink-secondary">
+            {dataWindowServed ? t("settings.experimental.dataWindowDetail") : t("settings.experimental.dataWindowServerOld")}
+          </div>
         </div>
         <Switch
           checked={dataWindow}
           aria-label={t("settings.experimental.dataWindowAria")}
-          disabled={saving !== null}
+          disabled={saving !== null || (!dataWindow && !dataWindowServed)}
           onClick={() => void toggle("dataWindow", !dataWindow)}
           className="disabled:cursor-wait disabled:opacity-50"
         />

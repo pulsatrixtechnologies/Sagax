@@ -5519,6 +5519,7 @@
   "settings.experimental.dataWindow": "Fenêtre Data",
   "settings.experimental.dataWindowAria": "Activer la fenêtre Data",
   "settings.experimental.dataWindowDetail": "Désactivé par défaut. Un bouton Data à côté du bouton des fils ouvre les tableaux, graphiques et requêtes SQL d'un bot dans une fenêtre à part.",
+  "settings.experimental.dataWindowServerOld": "Ce serveur n'offre pas encore la fenêtre Data. Elle arrive avec Sagax 0.5.3 sur le serveur.",
   "settings.experimental.routineGroupSettings": "Réglages avancés des routines et des groupes",
   "settings.experimental.routineGroupSettingsAria": "Afficher les réglages avancés des routines et des groupes",
   "settings.experimental.routineGroupSettingsDetail": "Désactivé par défaut. Affiche Routines dans la conversation et Tours en groupe dans Général. Masqués, leurs valeurs actuelles restent appliquées.",

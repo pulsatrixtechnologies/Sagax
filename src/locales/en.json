@@ -7375,6 +7375,7 @@
   "settings.experimental.dataWindow": "Data window",
   "settings.experimental.dataWindowAria": "Turn on the Data window",
   "settings.experimental.dataWindowDetail": "Off by default. A Data button next to the threads button opens a bot's tables, charts and SQL in a window of their own.",
+  "settings.experimental.dataWindowServerOld": "This server does not offer the Data window yet. It comes with Sagax 0.5.3 on the server.",
   "settings.experimental.routineGroupSettings": "Advanced routine and group settings",
   "settings.experimental.routineGroupSettingsAria": "Show the advanced routine and group settings",
   "settings.experimental.routineGroupSettingsDetail": "Off by default. Shows Routines in the conversation and Group turns under General. While hidden, their current values still apply.",
