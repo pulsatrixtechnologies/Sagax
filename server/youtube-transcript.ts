@@ -3,9 +3,21 @@ export interface YoutubeTranscriptCue {
   text: string;
 }
 
+const NAMED_ENTITIES: Record<string, string> = { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'" };
+
+/** One decoding pass: each entity is read once, never the output of another. */
+function decodeEntitiesOnce(text: string): string {
+  return text.replace(/&(?:(amp|lt|gt|quot|apos)|#(\d+)|#x([0-9a-f]+));/gi, (match, name?: string, dec?: string, hex?: string) => {
+    if (name) return NAMED_ENTITIES[name.toLowerCase()]!;
+    const code = dec !== undefined ? Number.parseInt(dec, 10) : Number.parseInt(hex!, 16);
+    if (!Number.isFinite(code) || code < 1 || code > 0x10ffff || (code >= 0xd800 && code <= 0xdfff)) return match;
+    return String.fromCodePoint(code);
+  });
+}
+
+/** YouTube double-escapes caption text: HTML-escaped, then XML-escaped. Decode each layer once. */
 function decodeEntities(text: string): string {
-  const entities: Record<string, string> = { amp: "&", lt: "<", gt: ">", quot: '"', "#39": "'" };
-  return text.replace(/&(amp|lt|gt|quot|#39);/g, (_, name: string) => entities[name]);
+  return decodeEntitiesOnce(decodeEntitiesOnce(text));
 }
 
 function parseXmlTimedText(xml: string): YoutubeTranscriptCue[] {
@@ -14,7 +26,7 @@ function parseXmlTimedText(xml: string): YoutubeTranscriptCue[] {
   for (const block of blocks) {
     const start = block.match(/\bstart="([^"]+)"/);
     const inner = block.replace(/^<text[^>]*>/, "").replace(/<\/text>$/, "");
-    const text = decodeEntities(inner.replace(/<[^>]+>/g, "").trim());
+    const text = decodeEntities(inner.replace(/<[^>]+>/g, "")).replace(/\s*\n\s*/g, " ").trim();
     if (!text || !start) continue;
     const startSec = Number(start[1]);
     if (!Number.isFinite(startSec)) continue;

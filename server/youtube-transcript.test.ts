@@ -25,14 +25,26 @@ describe("fetchYoutubeTranscript", () => {
     ]);
   });
 
-  it("decodes entities once, never twice", async () => {
+  const captionsOf = async (xml: string) => {
     const html = `"captionTracks":[{"baseUrl":"https://www.youtube.com/api/timedtext?v=abc","languageCode":"fr"}]`;
-    const fetchImpl = async (url: string) => ({
-      ok: true,
-      text: async () => (url.includes("watch?v=") ? html : '<text start="0">a &amp;lt; b &quot;c&quot; &#39;d&#39;</text>'),
-    });
-    const cues = await fetchYoutubeTranscript("abc12345678", fetchImpl as unknown as typeof fetch);
-    expect(cues).toEqual([{ startMs: 0, text: `a &lt; b "c" 'd'` }]);
+    const fetchImpl = async (url: string) => ({ ok: true, text: async () => (url.includes("watch?v=") ? html : xml) });
+    return fetchYoutubeTranscript("abc12345678", fetchImpl as unknown as typeof fetch);
+  };
+
+  it("decodes YouTube's double-escaped caption text", async () => {
+    expect(await captionsOf('<text start="0">l&amp;#39;homme &amp;quot;x&amp;quot; &quot;y&quot; &#39;z&#39;</text>')).toEqual([
+      { startMs: 0, text: `l'homme "x" "y" 'z'` },
+    ]);
+  });
+
+  it("decodes the two layers only, never a third", async () => {
+    expect(await captionsOf('<text start="0">a &amp;amp;lt; b</text>')).toEqual([{ startMs: 0, text: "a &lt; b" }]);
+  });
+
+  it("decodes numeric entities and keeps a cue on one line", async () => {
+    expect(await captionsOf('<text start="0">un&#10;deux &#x E9; &#xE9;t&#233; &#0; &#x110000;</text>')).toEqual([
+      { startMs: 0, text: "un deux &#x E9; été &#0; &#x110000;" },
+    ]);
   });
 
   it("refuses when no caption tracks exist", async () => {
