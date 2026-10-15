@@ -55,8 +55,11 @@ export type ComputerSource = "local" | "server";
 const SERVER_ENVIRONMENT_CHANGED = "sagax:server-environment-changed";
 const announceServerEnvironment = () => { window.dispatchEvent(new Event(SERVER_ENVIRONMENT_CHANGED)); };
 
-/** Which computer this bot uses, from its Works on, and why (one sentence). */
+/** Which computer this bot uses, from its Works on, and why (one sentence).
+ * Auto starts on the person's computer when the Sagax app is connected
+ * (server/auto-computer.ts autoStartTarget), else in the cloud. */
 export function activeComputer(bridge: DesktopBridgeStatus, place: EffectivePlace): { source: ComputerSource; reason: "cloud" | "computer" | "notConnected" | "none" } {
+  if (place === "auto" && bridge.connected) return { source: "local", reason: "computer" };
   const computer = orgComputerFor(place);
   if (computer === "server") return { source: "server", reason: "cloud" };
   if (computer === "computer") return { source: "local", reason: bridge.connected ? "computer" : "notConnected" };

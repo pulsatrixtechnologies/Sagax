@@ -996,7 +996,9 @@ import { setDesktopInjectModels } from "./drivers/local-inject.ts";
 import { handleDesktopBridgeMcp } from "./desktop-bridge-tools.ts";
 import { cloudOnlyBot } from "./cloud-only-bots.ts";
 import { FLOW_TOOLS_MCP_NAME } from "./flow-tools.ts";
-import { AUTO_COMPUTER_MCP_NAME, COMPUTER_SELECT_TOOL, autoComputerGuidance, autoComputerReason, autoComputerToolRefusal, selectAutoComputer, type AutoComputerState, type FixedWorksOn } from "./auto-computer.ts";
+import { AUTO_COMPUTER_MCP_NAME, COMPUTER_SELECT_TOOL, autoComputerGuidance, autoComputerReason, autoComputerToolRefusal, autoStartLine, autoStartTarget, parseAutoComputerTarget, selectAutoComputer, type AutoComputerState, type AutoComputerTarget, type AutoStart, type FixedWorksOn } from "./auto-computer.ts";
+import { parseWorkspaceLine, workspaceLineName } from "../shared/workspace-line.ts";
+import { computerSelectTarget } from "../shared/execution-target.ts";
 import { attachDesktopTunnel, createBridgeAudit, createDesktopBridgeRoutes } from "./desktop-bridge-routes.ts";
 import { DesktopTunnels, startEgressProxy, type EgressProxy } from "./desktop-egress.ts";
 import { attachedFilesInText, attachmentChunks, attachmentIsTheirs, stageTurnAttachments, stagedName, SANDBOX_ATTACHMENTS_DIR, type StagingTarget, type TurnAttachedFile } from "./attachment-staging.ts";
@@ -4412,23 +4414,60 @@ function turnWorksOn(plan: { computer: ReturnType<typeof resolveSurface>["comput
 
 /** Organization server: the Auto computer state of one turn (who may be
  * reached, where it starts), or null when no person is known. Auto starts
- * in the person's server environment, as before (resolveBotWorkplace); the
- * desktop tools are mounted beside it only when their app is connected now
+ * where autoStartTarget put it (the person's computer when connected, else
+ * the cloud); the other places stay mounted beside it so the bot can switch
+ * (computer_select): the desktop tools only when their app is connected now
  * (and, for a routine, the owner allowed routines on their computer). */
-function autoComputerStateFor(decision: WorkplaceDecision, worksOn: { auto: boolean; fixed?: FixedWorksOn }, routine: boolean): AutoComputerState | null {
+function autoComputerStateFor(decision: WorkplaceDecision, worksOn: { auto: boolean; fixed?: FixedWorksOn }, routine: boolean, start: AutoStart | null, browserAvailable: boolean): AutoComputerState | null {
   if (IDENTITY.kind !== "perspicax" || !decision.principal) return null;
   if (decision.reason === "no-person" || decision.reason === "unknown") return null;
   const routinesAllowed = workplacePreference(decision.principal).routines;
   const desktopMounted = worksOn.auto && desktopBridges.connected(decision.principal) && (!routine || routinesAllowed);
+  // The start follows the decision: a computer place only when the turn
+  // really landed on the person's computer.
+  const onDesktop = decision.target === "user-desktop";
+  const selected: AutoComputerTarget | null = !worksOn.auto ? null
+    : start?.target && (start.target === "this_computer" || start.target === "local_vm") === onDesktop ? start.target
+    : decision.target === "user-sandbox" ? "cloud" : null;
   return {
     auto: worksOn.auto,
     ...(worksOn.fixed ? { fixed: worksOn.fixed } : {}),
-    selected: worksOn.auto && decision.target === "user-sandbox" ? "cloud" : null,
+    selected,
     routine,
     sandboxConfigured: Boolean(userSandbox),
     desktopMounted,
     routinesAllowed,
+    browserAvailable,
   };
+}
+
+/** Where an Auto turn of this thread wants to start: the workspace it was
+ * opened with (start_thread), else its temporary agent's (create_agent). */
+function autoWorkspaceWanted(bot: BotRecord, threadId: string): AutoComputerTarget | null {
+  return parseAutoComputerTarget(store.taskByThread(bot.id, threadId)?.autoWorkspace) ?? parseAutoComputerTarget(bot.temporary?.workspace);
+}
+
+/** The place this thread last showed: its last Workspace line, or the bot's
+ * last computer_select switch. Null when it never showed one. */
+function lastAutoPlace(threadId: string): AutoComputerTarget | null {
+  const messages = store.messagesFor(threadId);
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index]!;
+    if (message.kind !== "activity" || !message.tool) continue;
+    const line = parseWorkspaceLine(message.tool.name);
+    if (line) return line.target;
+    const switched = message.tool.ok === true ? computerSelectTarget(message.tool.name, message.tool.input) : null;
+    if (switched) return switched;
+  }
+  return null;
+}
+
+/** One discreet line in the thread when an Auto turn starts somewhere else
+ * than the thread last was, or could not start where it was sent. */
+function noteAutoWorkspace(threadId: string, start: AutoStart, explicit: boolean): void {
+  const line = autoStartLine(start, lastAutoPlace(threadId), explicit);
+  if (!line) return;
+  store.appendMessage(threadId, { role: "bot", kind: "activity", tool: { name: workspaceLineName(line), ok: true } });
 }
 
 /** Where this turn's tools run and for whom (server/desktop-bridge.ts
@@ -4557,6 +4596,10 @@ function mountUserSandbox(
     integrations.custom = { ...integrations.custom, [AUTO_COMPUTER_MCP_NAME]: workplaceIntegration(input.botId, input.threadId, input.generation) };
     if (auto.auto && auto.desktopMounted && !integrations.custom[DESKTOP_BRIDGE_MCP_NAME]) {
       integrations.custom = { ...integrations.custom, [DESKTOP_BRIDGE_MCP_NAME]: userDesktopIntegration(input.botId, input.threadId, input.generation, decision.principal) };
+    }
+    // Started on their computer: the cloud stays one switch away.
+    if (auto.auto && auto.sandboxConfigured && decision.target === "user-desktop" && !integrations.custom[USER_SANDBOX_MCP_NAME]) {
+      integrations.custom = { ...integrations.custom, [USER_SANDBOX_MCP_NAME]: userSandboxIntegration(input.botId, input.threadId, input.generation, decision.principal) };
     }
   }
 }
@@ -5677,7 +5720,7 @@ const sandboxWakeNoted = new Map<string, Set<string>>();
 function noteSandboxClusterWait(event: { principalId: string; botId?: string; phase: "waiting" | "timeout" }): void {
   const person = event.principalId.trim().toLowerCase();
   const running = [...turnWorkplaces.entries()].filter(([threadId, workplace]) =>
-    workplace.decision.target === "user-sandbox" && workplace.decision.principal === person
+    workplaceUsesSandbox(workplace) && workplace.decision.principal === person
     && activeInternalGenerationByThread.get(threadId) === workplace.generation);
   const ofBot = event.botId ? running.filter(([, workplace]) => workplace.botId === event.botId) : [];
   for (const [threadId, workplace] of ofBot.length ? ofBot : running) {
@@ -5692,11 +5735,16 @@ function noteSandboxClusterWait(event: { principalId: string; botId?: string; ph
     store.appendMessage(threadId, { role: "bot", kind: "activity", tool: { name: event.phase === "waiting" ? SANDBOX_WAKE_NOTICE : SANDBOX_WAKE_TIMEOUT_NOTICE, ok: true } });
   }
 }
+/** A turn works in the person's server environment: it started there, or
+ * it is Auto and switched there (computer_select). */
+function workplaceUsesSandbox(workplace: TurnWorkplace): boolean {
+  return workplace.decision.target === "user-sandbox" || (workplace.auto?.auto === true && workplace.auto.selected === "cloud");
+}
 /** A bot turn works in this person's server environment right now. */
 function userSandboxTurnRunning(principalId: string): boolean {
   const person = principalId.trim().toLowerCase();
   for (const workplace of turnWorkplaces.values()) {
-    if (workplace.decision.target === "user-sandbox" && workplace.decision.principal === person) return true;
+    if (workplaceUsesSandbox(workplace) && workplace.decision.principal === person) return true;
   }
   return false;
 }
@@ -13991,6 +14039,8 @@ async function startParallelTask(input: {
   auth?: RequestAuth;
   /** Live call: the request was said on the call. */
   voiceCall?: Message["voiceCall"];
+  /** start_thread `workspace`: where its Auto turns start. */
+  autoWorkspace?: AutoComputerTarget;
 }): Promise<{ ok: true; threadId: string; message: Message; parallel: { threadId: string; title: string; state: ParallelTaskState; cardMessageId: string } }> {
   const bot = store.bot(input.botId);
   const parentTask = bot ? store.taskByThread(bot.id, input.threadId) : undefined;
@@ -14024,7 +14074,10 @@ async function startParallelTask(input: {
   });
   // A worktree is the task's folder; otherwise it keeps its own private one
   // (never the conversation's: two turns never share a working folder).
-  store.patchTask(bot.id, child.threadId, { cwd: workspace.kind === "worktree" ? workspace.cwd : ensureTaskWorkspace(bot.id, child.threadId) });
+  store.patchTask(bot.id, child.threadId, {
+    cwd: workspace.kind === "worktree" ? workspace.cwd : ensureTaskWorkspace(bot.id, child.threadId),
+    ...(input.autoWorkspace ? { autoWorkspace: input.autoWorkspace } : {}),
+  });
   const now = Date.now();
   // The request line, in the conversation the person is reading. A task the
   // bot opened has no person's words to show: its card is the anchor.
@@ -15263,22 +15316,38 @@ async function startTurn(
   // Organization server: where this turn's tools run, and for whom, decided
   // once (server/desktop-bridge.ts); the speaker's own attachments are
   // pointed there and small text ones given inline.
-  const turnPlace = decideWorkplace({
-    desktopTargeted: plan.computer === "local" || plan.computer === "vm",
-    routine: routineLineage(speaker),
-    principal: sandboxPrincipalForTurn({
-      botOwnerPrincipalId: effectiveBotOwner(bot),
-      routine: routineLineage(speaker),
-      speakerPrincipalId: orgSpeakerPrincipal(bot, speaker),
-    }),
-    personAsked: !routineLineage(speaker) && Boolean(orgSpeakerPrincipal(bot, speaker)),
-  });
   const turnRemote = remoteComputerForTurn({
     organization: IDENTITY.kind === "perspicax",
     runOnCloud: opts?.runOn === "cloud" || cloudOnlyBot(bot.id),
     hasTeamComputer: Boolean(inheritedTeamComputer(bot)),
   });
-  const turnAuto = autoComputerStateFor(turnPlace, turnWorksOn(plan, turnRemote.forceCloud), routineLineage(speaker));
+  const turnWorks = turnWorksOn(plan, turnRemote.forceCloud);
+  const turnPrincipal = sandboxPrincipalForTurn({
+    botOwnerPrincipalId: effectiveBotOwner(bot),
+    routine: routineLineage(speaker),
+    speakerPrincipalId: orgSpeakerPrincipal(bot, speaker),
+  });
+  const turnPersonAsked = !routineLineage(speaker) && Boolean(orgSpeakerPrincipal(bot, speaker));
+  // Auto (JC 2026-10-15): the person's computer when it is connected (a
+  // routine only when they allowed it), else the cloud; a thread opened
+  // with a workspace starts there when allowed (server/auto-computer.ts).
+  const turnAutoWanted = turnWorks.auto ? autoWorkspaceWanted(bot, threadId) : null;
+  const turnAutoStart = turnWorks.auto && IDENTITY.kind === "perspicax" && turnPrincipal ? autoStartTarget({
+    wanted: turnAutoWanted,
+    routine: routineLineage(speaker),
+    personAsked: turnPersonAsked,
+    desktopConnected: desktopBridges.connected(turnPrincipal.trim().toLowerCase()),
+    routinesAllowed: workplacePreference(turnPrincipal.trim().toLowerCase()).routines,
+    sandboxConfigured: Boolean(userSandbox),
+    browserAvailable: plan.browser,
+  }) : null;
+  const turnPlace = decideWorkplace({
+    desktopTargeted: plan.computer === "local" || plan.computer === "vm" || turnAutoStart?.target === "this_computer" || turnAutoStart?.target === "local_vm",
+    routine: routineLineage(speaker),
+    principal: turnPrincipal,
+    personAsked: turnPersonAsked,
+  });
+  const turnAuto = autoComputerStateFor(turnPlace, turnWorks, routineLineage(speaker), turnAutoStart, plan.browser);
   // Each call turn's words carry the call mark themselves: a live session
   // gets the volatile call section only when it changed, so from the second
   // call turn on the section alone never reached the engine.
@@ -15318,6 +15387,9 @@ async function startTurn(
     opts?.onTurnSettled?.();
     return userMessage;
   }
+  // Auto: one discreet line when this turn starts on another place than the
+  // thread last showed, or could not start where it was sent.
+  if (turnAuto?.auto && turnAutoStart && !warmOnly && !opts.cardContinuation) noteAutoWorkspace(threadId, turnAutoStart, turnAutoWanted !== null);
   const recoveryUserMessageId = opts?.coordination
     ? store.activePath(threadId).findLast(m => m.role === "user" && m.kind === "text")?.id
     : userMessage.id;
@@ -16363,7 +16435,8 @@ async function startTurn(
         !(plan.computer === undefined && mountedComputer) &&
         // On the person's computer, web pages open in their own browser
         // (sagax-desktop browse), on their network, not on this server.
-        !(turnPlace.target === "user-desktop" && integrations.custom?.[DESKTOP_BRIDGE_MCP_NAME]) &&
+        // Auto keeps the built-in browser: it is one of the places it picks.
+        !(turnPlace.target === "user-desktop" && !turnAuto?.auto && integrations.custom?.[DESKTOP_BRIDGE_MCP_NAME]) &&
         builtInBrowserEnabled(cfg) &&
         liveBot.browser !== false &&
         instance.adapter.capabilities.browserMcp === true
@@ -16599,7 +16672,9 @@ async function startTurn(
         mentionTurn: tagged.length > 0 || Boolean(userMessage.voiceCall?.interrupted),
         integrations,
         ...(withholdHostToolsFor(instance) ? { withholdHostTools: true } : {}),
-        ...(() => { const networkProxy = turnNetworkProxy(threadId, bot.id, turnPlace); return networkProxy ? { networkProxy } : {}; })(),
+        // Auto may leave their computer mid-turn: the engine's own traffic
+        // goes through it only when the Workspace is fixed there.
+        ...(() => { const networkProxy = turnAuto?.auto ? undefined : turnNetworkProxy(threadId, bot.id, turnPlace); return networkProxy ? { networkProxy } : {}; })(),
         ...(integrations.browser && browserIsThePlace(plan) ? { preloadBrowserTools: true } : {}),
         mcpFromUserConfig: claudeUserMcpEnabled(cfg) && !managedPolicy.restrictsMcp(),
         claudeAiConnectors: claudeAiConnectorsFor(bot, instance, speaker, turnAccess?.via),
@@ -28368,7 +28443,7 @@ const agentApi = createAgentApi({
     const idleHours = input.idleHours ?? TEMP_AGENT_DEFAULT_IDLE_HOURS;
     if (caller.kind === "person") {
       const creator: TemporaryCreator = { kind: "person", principalId: caller.id.trim().toLowerCase() };
-      const record: TemporaryAgent = { via: "mcp", createdAt: now, ownerPrincipalId: temporaryOwner(creator, null), createdBy: creator, idleHours, lastActiveAt: now };
+      const record: TemporaryAgent = { via: "mcp", createdAt: now, ownerPrincipalId: temporaryOwner(creator, null), createdBy: creator, idleHours, lastActiveAt: now, ...(input.workspace ? { workspace: input.workspace } : {}) };
       if (temporaryActiveCount(store.bots.map((bot) => bot.temporary), temporaryQuotaKey(record)) >= TEMP_AGENT_QUOTA) {
         return agentRefuse(409, "temporary_quota", `You already have ${TEMP_AGENT_QUOTA} active temporary agents. Delete one with delete_agent first.`, { quota: TEMP_AGENT_QUOTA });
       }
@@ -28391,7 +28466,7 @@ const agentApi = createAgentApi({
     if (hostedModels && !hostedModels.allows(selection)) return agentRefuse(400, "model", hostedModels.error());
     const creator: TemporaryCreator = { kind: "bot", botId: chief.id, ...(caller.speakerPrincipalId ? { speakerPrincipalId: caller.speakerPrincipalId.trim().toLowerCase() } : {}) };
     const owner = temporaryOwner(creator, recordedBotOwner(chief) ?? null);
-    const record: TemporaryAgent = { via: "mcp", createdAt: now, ownerPrincipalId: owner, createdBy: creator, idleHours, lastActiveAt: now };
+    const record: TemporaryAgent = { via: "mcp", createdAt: now, ownerPrincipalId: owner, createdBy: creator, idleHours, lastActiveAt: now, ...(input.workspace ? { workspace: input.workspace } : {}) };
     if (temporaryActiveCount(store.bots.map((bot) => bot.temporary), temporaryQuotaKey(record)) >= TEMP_AGENT_QUOTA) {
       return agentRefuse(409, "temporary_quota", `${TEMP_AGENT_QUOTA} temporary agents are already active for this person. Delete one with delete_agent first.`, { quota: TEMP_AGENT_QUOTA });
     }
@@ -31911,6 +31986,15 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         const toBotId = typeof body.toBotId === "string" && body.toBotId.trim() ? body.toBotId.trim() : from.id;
         const target = store.bot(toBotId);
         if (!target) return json(res, 404, { error: "no such bot" });
+        // workspace: where a thread of this bot on Auto starts (sub-agents,
+        // server/auto-computer.ts). Checked again at each of its turns.
+        const autoWorkspace = body.workspace === undefined || body.workspace === null || body.workspace === "" ? null : parseAutoComputerTarget(body.workspace);
+        if (body.workspace !== undefined && body.workspace !== null && body.workspace !== "" && !autoWorkspace) {
+          return json(res, 400, { error: "workspace must be this_computer, browser, cloud or local_vm" });
+        }
+        if (autoWorkspace && target.id !== from.id) {
+          return json(res, 400, { error: "workspace is only for a thread on yourself: a teammate works where its own Workspace says" });
+        }
         const oneWay = body.oneWay === true;
         if (oneWay && target.id === from.id) {
           return json(res, 409, { error: "send_to_bot is cross-bot only; use start_thread to send independent work to yourself" });
@@ -31947,10 +32031,12 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
             const started = await startParallelTask({
               botId: from.id, threadId: fromThreadId, text: message, title, byBot: true,
               speaker, principalId: "principalId" in speaker ? speaker.principalId : undefined,
+              ...(autoWorkspace ? { autoWorkspace } : {}),
             });
             return json(res, 201, {
               threadId: started.parallel.threadId, title: started.parallel.title, botId: from.id, botName: from.name,
               self: true, parallel: true, state: started.parallel.state, limit: botMaxParallelPerPerson(from, cfg),
+              ...(autoWorkspace ? { workspace: autoWorkspace } : {}),
             });
           } catch (error) {
             return json(res, (error as { status?: number }).status ?? 409, { error: error instanceof Error ? error.message : String(error) });
@@ -31961,6 +32047,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           const task = store.createTask(from.id, title, false, projectId, { botId: from.id, name: from.name, at: Date.now() },
             inherited.approvalMode, openedThreadOwner(from, fromThreadId, from), inherited.modelSelection);
           if (!task) return json(res, 500, { error: "couldn't create that thread" });
+          if (autoWorkspace) store.patchTask(from.id, task.threadId, { autoWorkspace });
           threadStarters.set(task.threadId, openerFrom(fromThreadId));
           internalCapability.openedThreads += 1;
           const chip: Omit<Message, "id" | "at"> = {
@@ -31983,6 +32070,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
             botName: from.name,
             self: true,
             limit: botMaxConcurrentThreads(from, cfg),
+            ...(autoWorkspace ? { workspace: autoWorkspace } : {}),
             ...outcome,
           });
         }

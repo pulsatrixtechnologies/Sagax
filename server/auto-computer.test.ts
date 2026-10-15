@@ -6,28 +6,31 @@ import {
   autoComputerGuidance,
   autoComputerReason,
   autoComputerToolRefusal,
+  autoStartLine,
+  autoStartTarget,
   parseAutoComputerTarget,
   selectAutoComputer,
   type AutoComputerState,
 } from "./auto-computer.ts";
 import { AUTO_COMPUTER_SERVER, computerSelectTarget } from "../shared/execution-target.ts";
 import { PROXIED_TOOL_SERVERS } from "./user-sandbox-proxy.ts";
+import { parseWorkspaceLine, workspaceLineName } from "../shared/workspace-line.ts";
 
 const auto = (over: Partial<AutoComputerState> = {}): AutoComputerState => ({
-  auto: true, selected: "cloud", routine: false, sandboxConfigured: true, desktopMounted: true, routinesAllowed: false, ...over,
+  auto: true, selected: "cloud", routine: false, sandboxConfigured: true, desktopMounted: true, routinesAllowed: false, browserAvailable: true, ...over,
 });
 
 describe("computer_select availability", () => {
   it("is served by its own proxied tool server, named like the UI reads it", () => {
     expect(AUTO_COMPUTER_MCP_NAME).toBe(AUTO_COMPUTER_SERVER);
     expect(PROXIED_TOOL_SERVERS[AUTO_COMPUTER_MCP_NAME].endpoint).toBe("/api/internal/workplace/mcp");
-    expect(COMPUTER_SELECT_TOOL.inputSchema.properties.target.enum).toEqual(["cloud", "this_computer", "local_vm"]);
+    expect(COMPUTER_SELECT_TOOL.inputSchema.properties.target.enum).toEqual(["this_computer", "browser", "cloud", "local_vm"]);
   });
 
   it("lists what is available when called without a target", () => {
     const answer = selectAutoComputer(auto(), {}, true);
     expect(answer.ok).toBe(true);
-    expect(answer.text).toContain("cloud, this_computer, local_vm");
+    expect(answer.text).toContain("this_computer, browser, cloud, local_vm");
     expect(answer.changed).toBeUndefined();
   });
 
@@ -75,6 +78,8 @@ describe("computer_select availability", () => {
     expect(parseAutoComputerTarget("Local VM")).toBe("local_vm");
     expect(parseAutoComputerTarget("this-computer")).toBe("this_computer");
     expect(parseAutoComputerTarget("server")).toBe("cloud");
+    expect(parseAutoComputerTarget("computer")).toBe("this_computer");
+    expect(parseAutoComputerTarget("Navigateur")).toBe("browser");
   });
 
   it("reports a change only when the place changes, with the previous one", () => {
@@ -126,7 +131,7 @@ describe("Auto guidance (prompt fixture)", () => {
   it("names the tool, the start place and what is available", () => {
     expect(text).toMatch(/^<workplace>This bot's Workspace is Auto/);
     expect(text).toContain("computer_select");
-    expect(text).toContain("This turn starts on the cloud (their server environment); available now: cloud, this_computer, local_vm.");
+    expect(text).toContain("This turn starts on the cloud (their server environment); available now: this_computer, browser, cloud, local_vm.");
     expect(text).toContain("switch again mid-task");
     expect(text.endsWith("</workplace>")).toBe(true);
   });
@@ -134,7 +139,10 @@ describe("Auto guidance (prompt fixture)", () => {
   it("routes the person's own machine, isolated work and heavy work", () => {
     expect(text).toMatch(/this_computer: .*files.*apps.*local network.*USB.*camera.*Docker.*localhost/);
     expect(text).toMatch(/local_vm: isolated/);
-    expect(text).toMatch(/cloud: heavy or long tasks, internet browsing and scraping, .*laptop is closed.*not connected/);
+    expect(text).toMatch(/browser: pure web work/);
+    expect(text).toMatch(/cloud: work that must keep running while the person is away .*routine.*offline or asleep.*long job/);
+    expect(text).toContain("each new message starts over from the default (the person's computer when it is connected)");
+    expect(text).toMatch(/Sub-agents: start_thread .* and create_agent take a workspace too/);
   });
 
   it("lets the person's explicit words win, in French and English", () => {
@@ -147,15 +155,17 @@ describe("Auto guidance (prompt fixture)", () => {
   });
 
   it("lists only what can be reached", () => {
-    expect(autoComputerGuidance(auto({ desktopMounted: false }), false)).toContain("available now: cloud.");
-    expect(autoComputerGuidance(auto({ sandboxConfigured: false, selected: null }), true)).toContain("This turn starts on no computer; available now: this_computer, local_vm.");
+    expect(autoComputerGuidance(auto({ desktopMounted: false }), false)).toContain("available now: browser, cloud.");
+    expect(autoComputerGuidance(auto({ desktopMounted: false, browserAvailable: false }), false)).toContain("available now: cloud.");
+    expect(autoComputerGuidance(auto({ sandboxConfigured: false, selected: null }), true)).toContain("This turn starts on no computer; available now: this_computer, browser, local_vm.");
   });
 
   it("does not send the bot to computer_select for connector tools or to confirm where it already is", () => {
     expect(text).toContain("Connector and Sagax tools (ConnectWise, Pulsatrix memory and flow, agents, search, other MCP servers) run on the server wherever you are: they need no computer and no computer_select.");
     expect(text).toContain("Call computer_select only when a step needs a place other than the one you are on (not to confirm it).");
     expect(text).not.toContain("Select before the first tool call");
-    expect(text).toContain("Prefer the cloud; use the person's own computer only for what exists only there.");
+    expect(text).not.toContain("Prefer the cloud");
+    expect(text).toContain("Never work around a refusal");
   });
 
   it("has no long dashes", () => {
@@ -169,5 +179,89 @@ describe("the transcript chip", () => {
     expect(computerSelectTarget("sagax-computer__computer_select", "{\"target\": \"cloud\"}")).toBe("cloud");
     expect(computerSelectTarget("mcp__sagax-computer__computer_select", "{}")).toBeNull();
     expect(computerSelectTarget("mcp__sagax-desktop__run_command", "{\"target\":\"cloud\"}")).toBeNull();
+  });
+});
+
+describe("the browser as a place (per task)", () => {
+  it("switches to the browser for pure web work and back", () => {
+    const toBrowser = selectAutoComputer(auto({ selected: "this_computer" }), { target: "browser", reason: "read a public page" }, true);
+    expect(toBrowser).toMatchObject({ ok: true, target: "browser", from: "this_computer", changed: true });
+    expect(toBrowser.text).toContain("built-in browser tools");
+    // the shell and desktop tools wait for a switch back
+    expect(autoComputerToolRefusal("browser", "sagax-desktop", "run_command")).toContain("built-in browser");
+    expect(autoComputerToolRefusal("browser", "sagax-environment", "run_command")).toContain("built-in browser");
+    expect(selectAutoComputer(auto({ selected: "browser" }), { target: "this_computer" }, true)).toMatchObject({ ok: true, target: "this_computer", changed: true });
+  });
+
+  it("refuses the browser when it is turned off for the bot", () => {
+    const answer = selectAutoComputer(auto({ browserAvailable: false }), { target: "browser" }, true);
+    expect(answer.ok).toBe(false);
+    expect(answer.text).toContain("not available");
+    expect(answer.text).toContain("You still work on the cloud");
+  });
+
+  it("reads a browser switch for the transcript chip", () => {
+    expect(computerSelectTarget("mcp__sagax-computer__computer_select", "{\"target\":\"browser\"}")).toBe("browser");
+  });
+});
+
+describe("where an Auto turn starts (JC 2026-10-15)", () => {
+  const base = { routine: false, personAsked: true, desktopConnected: true, routinesAllowed: false, sandboxConfigured: true, browserAvailable: true };
+
+  it("defaults to the person's computer when it is connected", () => {
+    expect(autoStartTarget(base)).toEqual({ target: "this_computer", wanted: "this_computer", fallback: null });
+  });
+
+  it("falls back to the cloud, and says why, when the computer is offline", () => {
+    expect(autoStartTarget({ ...base, desktopConnected: false })).toEqual({ target: "cloud", wanted: "this_computer", fallback: "offline" });
+    // no cloud either: the browser, then nothing
+    expect(autoStartTarget({ ...base, desktopConnected: false, sandboxConfigured: false }).target).toBe("browser");
+    expect(autoStartTarget({ ...base, desktopConnected: false, sandboxConfigured: false, browserAvailable: false }).target).toBeNull();
+  });
+
+  it("gives a sub-agent its own workspace, and never one that is not allowed", () => {
+    expect(autoStartTarget({ ...base, wanted: "cloud" })).toMatchObject({ target: "cloud", fallback: null });
+    expect(autoStartTarget({ ...base, wanted: "local_vm" })).toMatchObject({ target: "local_vm", fallback: null });
+    expect(autoStartTarget({ ...base, wanted: "browser" })).toMatchObject({ target: "browser", fallback: null });
+    // the Local VM lives on their computer: offline means the cloud
+    expect(autoStartTarget({ ...base, wanted: "local_vm", desktopConnected: false })).toEqual({ target: "cloud", wanted: "local_vm", fallback: "offline" });
+    // the browser turned off for the bot: their computer instead
+    expect(autoStartTarget({ ...base, wanted: "browser", browserAvailable: false })).toEqual({ target: "this_computer", wanted: "browser", fallback: "unavailable" });
+  });
+
+  it("sends a routine to the cloud unless the owner allowed their computer AND it is online", () => {
+    const routine = { ...base, routine: true, personAsked: false };
+    expect(autoStartTarget(routine)).toEqual({ target: "cloud", wanted: "cloud", fallback: null });
+    expect(autoStartTarget({ ...routine, routinesAllowed: true })).toEqual({ target: "this_computer", wanted: "this_computer", fallback: null });
+    expect(autoStartTarget({ ...routine, routinesAllowed: true, desktopConnected: false })).toEqual({ target: "cloud", wanted: "this_computer", fallback: "offline" });
+    // a routine sub-agent sent to the computer without that permission
+    expect(autoStartTarget({ ...routine, wanted: "this_computer" })).toEqual({ target: "cloud", wanted: "this_computer", fallback: "routine-not-allowed" });
+  });
+
+  it("never reaches a computer nobody asked for", () => {
+    expect(autoStartTarget({ ...base, personAsked: false })).toMatchObject({ target: "cloud", fallback: "unavailable" });
+  });
+});
+
+describe("the thread line", () => {
+  it("says the place when it changes, and the fallback once", () => {
+    const onComputer = autoStartTarget({ routine: false, personAsked: true, desktopConnected: true, routinesAllowed: false, sandboxConfigured: true, browserAvailable: true });
+    expect(autoStartLine(onComputer, null, false)).toEqual({ target: "this_computer" });
+    expect(autoStartLine(onComputer, "this_computer", false)).toBeNull();
+    const offline = autoStartTarget({ routine: false, personAsked: true, desktopConnected: false, routinesAllowed: false, sandboxConfigured: true, browserAvailable: true });
+    expect(autoStartLine(offline, "this_computer", false)).toEqual({ target: "cloud", fallback: { wanted: "this_computer", reason: "offline" } });
+    // still offline next turn: nothing new to say
+    expect(autoStartLine(offline, "cloud", false)).toBeNull();
+    // a sub-agent sent somewhere it cannot go always says so
+    expect(autoStartLine(offline, "cloud", true)).not.toBeNull();
+  });
+
+  it("round-trips through the stored activity name", () => {
+    const line = { target: "cloud" as const, fallback: { wanted: "this_computer" as const, reason: "offline" as const } };
+    expect(workspaceLineName(line)).toBe("notice: Workspace: moved to the cloud: your computer is offline");
+    expect(parseWorkspaceLine(workspaceLineName(line))).toEqual(line);
+    expect(workspaceLineName({ target: "browser" })).toBe("notice: Workspace: In the browser");
+    expect(parseWorkspaceLine(workspaceLineName({ target: "local_vm" }))).toEqual({ target: "local_vm" });
+    expect(parseWorkspaceLine("notice: something else")).toBeNull();
   });
 });

@@ -27,8 +27,16 @@ const status = (vm: DesktopLocalVmStatus["vm"], extra: Partial<DesktopLocalVmSta
 const STALE = { name: "openmausbot-computer", state: "exited", managed: true, stale: "missing_folder" as const, folder: "/private/var/folders/5f/T/omb-org-mcp-Em133z/.openmausbot/vm-home", folderExists: false };
 
 describe("Computer tab on an organization server", () => {
-  it("shows the server environment for Auto and Cloud, even with the person's computer connected", () => {
-    for (const place of ["auto", "cloud"] as const) {
+  it("shows the person's computer for Auto when the Sagax app is connected (Auto starts there)", () => {
+    const markup = renderToStaticMarkup(createElement(OrgComputerTab, { bridge: bridge(true, "computer"), place: "auto", computerOff: false, botName: "Luna" }));
+    expect(markup).toContain('data-org-computer="user-desktop"');
+    expect(markup).toContain('data-computer-source="local"');
+    const offline = renderToStaticMarkup(createElement(OrgComputerTab, { bridge: bridge(false, "computer"), place: "auto", computerOff: false, botName: "Luna" }));
+    expect(offline).toContain('data-org-computer="user-sandbox"');
+  });
+
+  it("shows the server environment for Cloud, even with the person's computer connected", () => {
+    for (const place of ["cloud"] as const) {
       const markup = renderToStaticMarkup(createElement(OrgComputerTab, { bridge: bridge(true, "computer"), place, computerOff: false, botName: "Luna" }));
       expect(markup).toContain('data-org-computer="user-sandbox"');
       expect(markup).toContain('data-computer-source="server"');
@@ -181,7 +189,7 @@ describe("the bot's Works on", () => {
     expect(markup).toContain('<h3 id="works-on-setting" class="sr-only">Workspace</h3>');
     expect(markup).toMatch(/<p id="works-on-setting-hint"[^>]*>Where this bot works\./);
     expect(markup.match(/role="radio"/g)).toHaveLength(6);
-    for (const label of [">Auto (Cloud)<", ">Cloud (server environment)<", ">Local VM<", ">This computer<", ">Browser<", ">Off<"]) expect(markup).toContain(label);
+    for (const label of [">Auto · picks per task<", ">Cloud (server environment)<", ">Local VM<", ">This computer<", ">Browser<", ">Off<"]) expect(markup).toContain(label);
     expect(markup).toMatch(/aria-checked="true"[^>]*data-works-on-choice="cloud"/);
     expect(markup).toContain('title="Your own Linux machine on the organization server"');
     expect(markup).not.toContain("Cloud is your server environment.");
@@ -191,7 +199,7 @@ describe("the bot's Works on", () => {
     const markup = renderToStaticMarkup(createElement(WorksOnControl, { value: null, onChange: () => {}, disabled: { local: "Open the Sagax app on this computer" } }));
     expect(markup).toMatch(/disabled=""[^>]*title="This computer is not available: Open the Sagax app on this computer"[^>]*data-works-on-choice="local"/);
     expect(markup).toMatch(/aria-checked="true"[^>]*data-works-on-choice="auto"/);
-    expect(worksOnTip(null)).toMatch(/^Starts in your server environment \(Cloud\); the bot may switch/);
+    expect(worksOnTip(null)).toMatch(/^Picks the place for each task: your computer when the Sagax app is connected, the browser for web work, the cloud for routines/);
   });
 });
 
@@ -251,7 +259,8 @@ describe("the Local VM's view", () => {
   });
 
   it("says which computer the bot's Works on uses and why", () => {
-    expect(activeComputer(bridge(true, "computer"), "auto")).toEqual({ source: "server", reason: "cloud" });
+    expect(activeComputer(bridge(true, "computer"), "auto")).toEqual({ source: "local", reason: "computer" });
+    expect(activeComputer(bridge(false, "computer"), "auto")).toEqual({ source: "server", reason: "cloud" });
     expect(activeComputer(bridge(true, "computer"), "cloud")).toEqual({ source: "server", reason: "cloud" });
     expect(activeComputer(bridge(true, "server"), "vm")).toEqual({ source: "local", reason: "computer" });
     expect(activeComputer(bridge(false, "computer"), "local")).toEqual({ source: "local", reason: "notConnected" });

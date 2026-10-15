@@ -3339,7 +3339,7 @@
   "phoneApp.subtitle": "Scannez un code avec l’appareil photo de votre téléphone, ou ouvrez son lien sur le téléphone.",
   "phoneApp.title": "Obtenir l’app mobile",
   "place.action.tryAgain": "Réessayer",
-  "place.autoOrg": "Auto (infonuagique)",
+  "place.autoOrg": "Auto · choisit selon la tâche",
   "place.cloud": "Ordinateur cloud",
   "place.cloudOrg": "Infonuagique (environnement serveur)",
   "place.forConversation": "pour cette conversation",
@@ -4850,7 +4850,7 @@
   "worksOn.section": "Ordinateur",
   "worksOn.sectionTip": "Où ce bot travaille. Cloud est votre environnement serveur ; VM locale et Cet ordinateur utilisent votre propre ordinateur par l'app Sagax.",
   "worksOn.short.cloud": "Cloud",
-  "worksOn.tip.autoOrg": "Commence dans votre environnement serveur (Cloud) ; le bot peut passer à votre ordinateur ou à la VM locale pour une étape quand l'app Sagax est connectée",
+  "worksOn.tip.autoOrg": "Choisit l'endroit pour chaque tâche : votre ordinateur quand l'app Sagax est connectée, le navigateur pour le web, l'infonuagique pour les routines et le travail qui continue en votre absence, la VM locale pour isoler un travail. Jamais un endroit que vous n'avez pas autorisé",
   "settings.section.memory": "Mémoire",
   "settings.memory.desktopOnly": "La mémoire de l'organisation se garde pour Obsidian dans l'app de bureau. Ouvrez Sagax sur votre ordinateur pour la configurer.",
   "settings.memory.intro": "Sagax garde sur cet ordinateur une copie de la mémoire de l'organisation que vous pouvez lire (la vôtre, celle de vos équipes, celle de l'organisation) et l'ouvre dans Obsidian. Elle se configure toute seule avec votre connexion à l'organisation : rien à saisir. Une ligne modifiée remonte à Perspicax : votre mémoire tout de suite, une équipe ou l'organisation sous forme de proposition. La copie reste dans Application Support, hors d'iCloud Drive, de OneDrive et de Time Machine, et s'efface quand vous quittez l'organisation.",
@@ -7718,5 +7718,12 @@
   "chat.copyRequestId": "Copier l'ID de requête",
   "chat.copyRequestIdDone": "ID de requête copié",
   "reactions.quick": "Réactions rapides",
-  "reactions.more": "Plus de réactions"
+  "reactions.more": "Plus de réactions",
+  "workspaceLine.computer": "Sur votre ordinateur",
+  "workspaceLine.browser": "Dans le navigateur",
+  "workspaceLine.cloud": "Dans l'infonuagique",
+  "workspaceLine.localVm": "Dans la VM locale",
+  "workspaceLine.fallbackOffline": "Passé sur {place} : votre ordinateur est hors ligne",
+  "workspaceLine.fallbackRoutine": "Passé sur {place} : les routines n'ont pas accès à votre ordinateur",
+  "workspaceLine.fallbackUnavailable": "Passé sur {place} : {wanted} n'est pas disponible"
 }

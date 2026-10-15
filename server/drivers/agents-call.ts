@@ -822,6 +822,7 @@ export async function callTool(name: string, args: Json, context: ToolCallContex
     if (toBotId) body.toBotId = toBotId;
     if (folder) body.folder = folder;
     if (args.report_back === true) body.reportBack = true;
+    if (typeof args.workspace === "string" && args.workspace) body.workspace = args.workspace;
     const r = await api("/api/internal/threads", { method: "POST", body: JSON.stringify(body) });
     // A refusal opened nothing. A "failed" state opened the thread and could
     // not start its turn — that one still counts, and still has an id.

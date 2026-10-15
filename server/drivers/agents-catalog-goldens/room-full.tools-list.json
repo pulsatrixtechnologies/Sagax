@@ -285,6 +285,16 @@
           "report_back": {
             "type": "boolean",
             "description": "Optional, on yourself only: true runs it as a parallel task of this conversation. The person sees its live card here and its result is posted back here as a reply when it finishes. Use it when the person asks for something unrelated while you are busy, so both run at once."
+          },
+          "workspace": {
+            "type": "string",
+            "enum": [
+              "this_computer",
+              "browser",
+              "cloud",
+              "local_vm"
+            ],
+            "description": "Optional, on yourself, when your Workspace is Auto: where that thread works (this_computer = their files and apps, browser = web only, cloud = keeps running while they are away, local_vm = isolated). A place not allowed or offline falls back."
           }
         },
         "required": [

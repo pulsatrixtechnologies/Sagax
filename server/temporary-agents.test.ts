@@ -90,6 +90,9 @@ describe("temporary agents: the stored record", () => {
     const valid = { ...byPerson("pr_ana"), pinned: { principalId: "pr_ana", at: T0 }, archived: archiveMark({ kind: "bot", botId: "b1" }, "deleted", T0) };
     expect(cleanTemporaryAgent(JSON.parse(JSON.stringify(valid)))).toEqual(valid);
     expect(cleanTemporaryAgent({ ...valid, via: "app" })).toBeUndefined();
+    // its Auto workspace (create_agent workspace) is kept; anything else is dropped
+    expect(cleanTemporaryAgent({ ...valid, workspace: "cloud" })).toEqual({ ...valid, workspace: "cloud" });
+    expect(cleanTemporaryAgent({ ...valid, workspace: "mars" })).toEqual(valid);
     expect(cleanTemporaryAgent({ ...valid, createdBy: { kind: "robot" } })).toBeUndefined();
     expect(cleanTemporaryAgent({ ...valid, ownerPrincipalId: 5 })).toBeUndefined();
     expect(cleanTemporaryAgent(null)).toBeUndefined();

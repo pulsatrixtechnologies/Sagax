@@ -4405,7 +4405,7 @@
   "place.askAdmin": "Ask an Admin to change it.",
   "place.auto": "Auto",
   "place.autoDetail": "Picks the right place for each task",
-  "place.autoOrg": "Auto (Cloud)",
+  "place.autoOrg": "Auto · picks per task",
   "place.backOnAuto": "This conversation is back on Auto.",
   "place.browser": "Browser",
   "place.busy": "Wait for the current turn to finish",
@@ -6652,7 +6652,7 @@
   "worksOn.section": "Computer",
   "worksOn.sectionTip": "Where this bot works. Cloud is your server environment; Local VM and This computer use your own computer through the Sagax app.",
   "worksOn.short.cloud": "Cloud",
-  "worksOn.tip.autoOrg": "Starts in your server environment (Cloud); the bot may switch to your computer or the Local VM for a step when the Sagax app is connected",
+  "worksOn.tip.autoOrg": "Picks the place for each task: your computer when the Sagax app is connected, the browser for web work, the cloud for routines and work that continues while you are away, the Local VM to isolate work. Never a place you did not allow",
   "workspaces.addUser": "Add",
   "workspaces.adminEmail": "Admin email",
   "workspaces.anthropicKey": "Anthropic API key for this installation (optional)",
@@ -7718,5 +7718,12 @@
   "chat.copyRequestId": "Copy request ID",
   "chat.copyRequestIdDone": "Request ID copied",
   "reactions.quick": "Quick reactions",
-  "reactions.more": "More reactions"
+  "reactions.more": "More reactions",
+  "workspaceLine.computer": "On your computer",
+  "workspaceLine.browser": "In the browser",
+  "workspaceLine.cloud": "In the cloud",
+  "workspaceLine.localVm": "In the Local VM",
+  "workspaceLine.fallbackOffline": "Moved to {place}: your computer is offline",
+  "workspaceLine.fallbackRoutine": "Moved to {place}: routines may not use your computer",
+  "workspaceLine.fallbackUnavailable": "Moved to {place}: {wanted} is not available"
 }

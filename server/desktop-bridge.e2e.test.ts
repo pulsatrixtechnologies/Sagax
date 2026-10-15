@@ -98,17 +98,20 @@ async function waitFor<T>(read: () => Promise<T | null | undefined | false>, ms 
   }
 }
 
-type Message = { role: string; kind: string; text?: string };
+type Message = { id: string; role: string; kind: string; text?: string; tool?: { name: string } };
 const threadMessages = async (auth: Auth, threadId: string) => ((await api("GET", `/api/threads/${threadId}/messages`, auth)).body.messages ?? []) as Message[];
 
 async function turn(auth: Auth, bot: { id: string; threadId: string }, text: string): Promise<string> {
-  const before = (await threadMessages(auth, bot.threadId)).filter((m) => m.role === "bot" && m.kind === "text").length;
+  // The newest reply's id, not a count: the thread read is a window of the
+  // latest messages, so a count stops growing once a thread is long.
+  const before = (await threadMessages(auth, bot.threadId)).filter((m) => m.role === "bot" && m.kind === "text" && m.text).at(-1)?.id;
   if (existsSync(mcpDump)) rmSync(mcpDump);
-  const sent = await api("POST", `/api/bots/${bot.id}/messages`, auth, { text });
+  const sent = await api("POST", `/api/bots/${bot.id}/messages`, auth, { text, threadId: bot.threadId });
   expect(sent.status, sent.text).toBe(202);
   const reply = await waitFor(async () => {
     const replies = (await threadMessages(auth, bot.threadId)).filter((m) => m.role === "bot" && m.kind === "text" && m.text);
-    return replies.length > before ? replies.at(-1)! : null;
+    const last = replies.at(-1);
+    return last && last.id !== before ? last : null;
   }, 40_000);
   await waitFor(async () => !((await api("GET", "/api/bots", auth)).body.bots as Array<{ id: string; busy?: boolean }>).find((b) => b.id === bot.id)?.busy);
   return reply.text ?? "";
@@ -207,6 +210,8 @@ posixOnly("organization server: the desktop bridge", () => {
               { server: "sagax-computer", tool: "computer_select", arguments: { target: "cloud", reason: "scraping" }, when: "sur mon mac" },
               { server: "sagax-desktop", tool: "list_files", arguments: {}, when: "sur mon mac" },
               { server: "sagax-environment", tool: "list_files", arguments: {}, when: "sur mon mac" },
+              // Auto: a sub-agent sent to the cloud (start_thread workspace).
+              { server: "agents", tool: "start_thread", arguments: { title: "Cloud job", message: "run it", workspace: "cloud" }, when: "ouvre un fil infonuagique" },
             ]),
             FAKE_CLAUDE_MCP_DUMP: mcpDump,
             FAKE_CLAUDE_PROMPTS: prompts,
@@ -364,9 +369,53 @@ posixOnly("organization server: the desktop bridge", () => {
     expect(desktop.operations.length).toBe(before);
   }, 120_000);
 
-  it("the server environment for Auto even with the desktop connected, with the attachment copied to /workspace/attachments", async () => {
-    // The old per-person switch says "my computer"; Auto still means Cloud.
+  it("Auto starts on her computer when the Sagax app is connected, the cloud one switch away, with one line in the thread", async () => {
+    expect((await api("PATCH", `/api/bots/${aliceBot.id}`, alice, { computer: null })).status).toBe(200);
+    expect((await api("GET", "/api/me/desktop-bridge", alice)).body.connected).toBe(true);
+    const lines = async () => (await threadMessages(alice, aliceBot.threadId)).filter((m) => m.kind === "activity" && m.tool?.name?.startsWith("notice: Workspace:")).map((m) => m.tool!.name);
+    const already = (await lines()).length;
+    const file = await upload(alice, "auto.md", "auto side notes\n");
+    const before = desktop.operations.length;
+    const reply = await turn(alice, aliceBot, `read the attachment\n\n<attached-file path="${file.path}" name="auto.md" />`);
+    expect(reply).toContain("mcp:read_file:ok");
+    // Auto may leave her computer mid-turn: the engine's traffic stays here
+    expect(reply).toContain("proxy:none");
+    expect(dump().servers).toEqual(expect.arrayContaining(["sagax-desktop", "sagax-environment", "sagax-computer"]));
+    expect(dump().calls.find((call) => call.tool === "read_file" && call.server === "sagax-desktop")).toMatchObject({ ok: true });
+    expect(dump().calls.find((call) => call.tool === "read_file" && call.server === "sagax-environment")).toMatchObject({ ok: false });
+    expect(desktop.operations.slice(before).map((operation) => operation.action)).toContain("read_file");
+    expect(lastPrompt()).toContain("This turn starts on their own computer");
+    // one discreet line, said once while the place stays the same
+    expect((await lines()).slice(already)).toEqual(["notice: Workspace: On your computer"]);
+    await turn(alice, aliceBot, "run it");
+    expect((await lines()).length).toBe(already + 1);
+  }, 120_000);
+
+  it("Auto: a sub-agent opened with its own workspace works in the cloud while the conversation stays on her computer", async () => {
+    expect((await api("PATCH", `/api/bots/${aliceBot.id}`, alice, { computer: null })).status).toBe(200);
+    const beforeOps = desktop.operations.length;
+    const beforeExecs = docker.execs.length;
+    const reply = await turn(alice, aliceBot, "ouvre un fil infonuagique pour la suite");
+    expect(reply).toContain("mcp:start_thread:ok");
+    const bots = (await api("GET", "/api/bots", alice)).body.bots as Array<{ id: string; tasks?: Array<{ threadId: string; title: string }> }>;
+    const child = bots.find((bot) => bot.id === aliceBot.id)!.tasks!.find((task) => task.title === "Cloud job")!;
+    expect(child).toBeTruthy();
+    const childLines = await waitFor(async () => {
+      const found = (await threadMessages(alice, child.threadId)).filter((m) => m.kind === "activity" && m.tool?.name?.startsWith("notice: Workspace:"));
+      const replied = (await threadMessages(alice, child.threadId)).some((m) => m.role === "bot" && m.kind === "text" && m.text);
+      return found.length && replied ? found.map((m) => m.tool!.name) : null;
+    }, 60_000);
+    expect(childLines).toEqual(["notice: Workspace: In the cloud"]);
+    await waitFor(async () => !((await api("GET", "/api/bots", alice)).body.bots as Array<{ id: string; busy?: boolean }>).find((b) => b.id === aliceBot.id)?.busy);
+    // the child's "run it" ran in her server environment, never on her computer
+    expect(docker.execs.length).toBeGreaterThan(beforeExecs);
+    expect(desktop.operations.slice(beforeOps).map((operation) => operation.action)).not.toContain("run_command");
+  }, 120_000);
+
+  it("Cloud: the attachment is copied to /workspace/attachments in the server environment", async () => {
+    // The old per-person switch says "my computer"; a fixed Cloud stays there.
     expect((await api("PUT", "/api/me/preferences", alice, { preferences: { "sagax.botWorkplace.v1": JSON.stringify({ place: "computer", routines: false, network: "all" }) } })).status).toBe(200);
+    expect((await api("PATCH", `/api/bots/${aliceBot.id}`, alice, { computer: "cloud" })).status).toBe(200);
     expect((await api("GET", "/api/me/desktop-bridge", alice)).body.connected).toBe(true);
     const file = await upload(alice, "notes.md", "server side notes\n");
     const before = desktop.operations.length;
@@ -374,9 +423,7 @@ posixOnly("organization server: the desktop bridge", () => {
     expect(reply).toContain("mcp:read_file:ok");
     expect(reply).toContain("proxy:none");
     expect(dump().servers).toEqual(expect.arrayContaining(["sagax-environment"]));
-    // Her desktop tools are mounted beside it for computer_select, but the
-    // turn starts in the cloud: the attachment is read there.
-    expect(dump().calls.find((call) => call.tool === "read_file" && call.server === "sagax-desktop")).toMatchObject({ ok: false });
+    expect(dump().servers).not.toContain("sagax-desktop");
     expect(dump().calls.find((call) => call.tool === "read_file" && call.server === "sagax-environment")).toMatchObject({ ok: true });
     expect(lastPrompt()).toMatch(/\/workspace\/attachments\/[0-9a-f]{8}-notes\.md/);
     const copies = docker.execs.filter((entry) => entry.exec.Env.some((value) => /^SAGAX_PATH=\/workspace\/attachments\/[0-9a-f]{8}-notes\.md$/.test(value)));
@@ -393,6 +440,7 @@ posixOnly("organization server: the desktop bridge", () => {
     expect(lastPrompt()).toContain("a,b\\n1,2\\n");
     expect(lastPrompt()).toContain("Do not download it, do not open a browser, and do not sign in");
     expect(desktop.operations.length).toBe(before);
+    expect((await api("PATCH", `/api/bots/${aliceBot.id}`, alice, { computer: null })).status).toBe(200);
   }, 120_000);
 
   it("Auto: the bot switches to her computer and back to the cloud mid-turn, each switch audited", async () => {
@@ -402,8 +450,9 @@ posixOnly("organization server: the desktop bridge", () => {
     const { servers, calls } = dump();
     expect(servers).toEqual(expect.arrayContaining(["sagax-computer", "sagax-environment", "sagax-desktop"]));
     const [toMac, envWhileMac, desktopRun, toCloud, desktopWhileCloud, envList] = calls;
+    // Auto already starts on her computer: asking for it is not a switch
     expect(toMac).toMatchObject({ server: "sagax-computer", tool: "computer_select", ok: true });
-    expect(toMac!.text).toContain("Now working on their own computer");
+    expect(toMac!.text).toContain("You already work on their own computer");
     expect(envWhileMac).toMatchObject({ server: "sagax-environment", ok: false });
     expect(envWhileMac!.text).toContain("computer_select with target cloud");
     expect(desktopRun).toMatchObject({ server: "sagax-desktop", ok: true, text: "desktop:run_command" });
@@ -412,11 +461,10 @@ posixOnly("organization server: the desktop bridge", () => {
     expect(envList).toMatchObject({ server: "sagax-environment", ok: true });
     // only the one call made while she was selected reached her computer
     expect(desktop.operations.slice(before).map((operation) => operation.action)).toEqual(["run_command"]);
-    expect(lastPrompt()).toContain("This bot's Works on is Auto");
+    expect(lastPrompt()).toContain("This bot's Workspace is Auto");
     const activity = (await api("GET", "/api/admin-activity?what=computer", alice)).body.entries as Array<{ action: string; after: Record<string, unknown>; before: Record<string, unknown>; who: string; target: { id: string } }>;
     const switches = activity.filter((entry) => entry.action === "computer.switch" && entry.target.id === aliceBot.id).reverse();
     expect(switches.map((entry) => [entry.before.computer, entry.after.computer, entry.after.reason])).toEqual([
-      ["cloud", "this_computer", "her files are on her Mac"],
       ["this_computer", "cloud", "scraping"],
     ]);
     expect(switches[0]!.who).toBe("Alice");
@@ -432,7 +480,7 @@ posixOnly("organization server: the desktop bridge", () => {
     expect(calls[0]!.text).toContain("fixed to Cloud (server environment)");
     expect(calls.find((call) => call.server === "sagax-environment" && call.tool === "run_command")).toMatchObject({ ok: true });
     expect(desktop.operations.length).toBe(before);
-    expect(lastPrompt()).not.toContain("Works on is Auto");
+    expect(lastPrompt()).not.toContain("Workspace is Auto");
     expect((await api("PATCH", `/api/bots/${aliceBot.id}`, alice, { computer: null })).status).toBe(200);
   }, 120_000);
 

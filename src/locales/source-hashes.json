@@ -7193,7 +7193,7 @@
       "phoneApp.subtitle": "5765f0464355cc9452ab5c6428e367afd60160ab67505194a1e7d8159287ba86",
       "phoneApp.title": "3f5f9908276abefd9441baf9251777bbc262bbff2adff1aa0c71837eb680ff11",
       "place.action.tryAgain": "d8b8392e2c542950ca64867168e4ef87d4ad606882d5898f826b51c6d553988f",
-      "place.autoOrg": "f87ebcba0f85148d97aa08ebcd8df952068253a21ff6dc39ca49667a1ac183ba",
+      "place.autoOrg": "ed51ccce67f63bb1724584b48f420ecf55bd973425ba42dc3df37ddeba5b10f8",
       "place.cloud": "2f658fccaf37b611cf2e9a5d928d106608e63e65230cf8db1c1bbffa86196960",
       "place.cloudOrg": "fb1927092ea27067b3e961bf0ddcb5e5538250f9794bd1ebeb85411ec0df3768",
       "place.forConversation": "f7f6e1f5557345f464b436ee23c1b7a25b924eb3948be0d160c0390267801221",
@@ -8702,7 +8702,7 @@
       "worksOn.section": "76ed42d22129dc354362704eb4b54208041b68736f976932aada43bc0035f7c0",
       "worksOn.sectionTip": "4def718facaa055fed46fcd9e1979c12014f71fc089bad00efcb785d83267276",
       "worksOn.short.cloud": "b977b950c1ae31e5aeb9ef778cc20a66fc034eb81e738e0206104b677962c465",
-      "worksOn.tip.autoOrg": "2feae34d29065e9e0a795d80bb2497a629a3ad4f82ce1b50df395650bbe1d8a8",
+      "worksOn.tip.autoOrg": "6c372702fc8d35448b73aba7ff4822eb613e9346d89afe61b386ffc18eb9f811",
       "settings.section.memory": "c3963aedaac6c83c04cf8fb997b479c61e66b3caeecfadd2f2d4bd5b0aef1778",
       "settings.memory.desktopOnly": "8115eefacfc7222b495f6d05466a02d0f489eba8a25922ffd14d084295e28dc8",
       "settings.memory.intro": "e162d50c0b090eb00e73c94b9567710e26f6a64f13f401917d56a2e781ddf5b1",
@@ -11589,7 +11589,14 @@
       "browser.control.bot": "250b2c87bce44eb5987b1e38aee9a6c0997569083f3ebd03422401dd28d9153d",
       "browser.control.giveBack": "72151bf8fc255c6d8d19bf0f18a8d32257f4416041c92578d4ccbda55586b568",
       "browser.preview.notOpen": "5ef0be1731f6d7e105678ff7772d6c9ec40dbf26e0381a2a1f2cbeb08a7a7092",
-      "browser.preview.blank": "6e1038280ec61b6edfda611bda75fbde6c651b7bde5d97473098779aeceeffcc"
+      "browser.preview.blank": "6e1038280ec61b6edfda611bda75fbde6c651b7bde5d97473098779aeceeffcc",
+      "workspaceLine.computer": "9ae004807e086bb39007c150b04a6ec9c51224a9490cfef2ba87145c980e92a8",
+      "workspaceLine.browser": "e4048fa67ed9c7212eb8efa989c7ef270ace5c68fbe50581f92097bff1ed1a04",
+      "workspaceLine.cloud": "b3f7f4016185c383deb6fdf653116f191688e2970a97f88dc9f12e3caaf02270",
+      "workspaceLine.localVm": "2b8eab26b117ae284f4bc2ef7badda8d398dad90b92b72743e96c97e877d41f0",
+      "workspaceLine.fallbackOffline": "ed3e8ce110a45a98d1ea34b1cb7d7e5516bbd39250bd712c089ab308d7d8c185",
+      "workspaceLine.fallbackRoutine": "4c00851e43461ba4a70e8968f9fd80936a11516b99d1b2895144e9bcb82d29b3",
+      "workspaceLine.fallbackUnavailable": "744f51b6d427b11a5316e92a0937c8bbb4adc369de764f3b82678a7d806c21ee"
     },
     "hi": {
       "noEngines.title": "77a6e0966b7323ceae6973abb581b31d52263bb0ec8249e2b1c1b7ae1e586f04",

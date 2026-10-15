@@ -13,6 +13,9 @@ import { failedTurnCause } from "../../shared/failed-turn";
 import { isStoppedTurnName } from "../../shared/client-cancel";
 import { localDay } from "@/lib/transcript-derivations";
 import { SANDBOX_WAKE_NOTICE, SANDBOX_WAKE_TIMEOUT_NOTICE } from "../../shared/sandbox-wake";
+import { parseWorkspaceLine, type WorkspaceLine } from "../../shared/workspace-line";
+import type { SelectedComputer } from "../../shared/execution-target";
+import type { LocaleKey } from "@/locales";
 
 export type ActivityTranscriptItem =
   | { kind: "message"; message: Message }
@@ -33,6 +36,9 @@ export function statusActivity(message: Message): { kind: "recovery" | "notice" 
   // (server/sandbox-k8s-wake.ts): the server's fixed rows, in the person's language.
   if (name === SANDBOX_WAKE_NOTICE) return { kind: "notice", text: t("chat.sandboxWaking") };
   if (name === SANDBOX_WAKE_TIMEOUT_NOTICE) return { kind: "notice", text: t("chat.sandboxWakeTimeout") };
+  // Auto changed where the bot works (shared/workspace-line.ts).
+  const workspace = parseWorkspaceLine(name);
+  if (workspace) return { kind: "notice", text: workspaceLineText(workspace) };
   if (name?.startsWith("notice:")) {
     // Auto's worker row reads in the person's language (src/lib/auto-model.ts).
     if (message.autoModel?.role === "worker") return { kind: "notice", text: autoWorkerLine(message.autoModel) };
@@ -40,6 +46,23 @@ export function statusActivity(message: Message): { kind: "recovery" | "notice" 
   }
   if (name && isStoppedTurnName(name)) return { kind: "stopped", text: name.slice("stopped:".length).trim() };
   return null;
+}
+
+const WORKSPACE_ON: Record<SelectedComputer, LocaleKey> = {
+  this_computer: "workspaceLine.computer", browser: "workspaceLine.browser", cloud: "workspaceLine.cloud", local_vm: "workspaceLine.localVm",
+};
+const WORKSPACE_PLACE: Record<SelectedComputer, LocaleKey> = {
+  this_computer: "place.local", browser: "place.browser", cloud: "toolTarget.cloud", local_vm: "place.vm",
+};
+
+/** "Sur votre ordinateur", or "Passé sur Infonuagique : votre ordinateur est
+ * hors ligne" when Auto could not work where it wanted. */
+export function workspaceLineText(line: WorkspaceLine): string {
+  if (!line.fallback) return t(WORKSPACE_ON[line.target]);
+  const place = t(WORKSPACE_PLACE[line.target]);
+  if (line.fallback.reason === "offline") return t("workspaceLine.fallbackOffline", { place });
+  if (line.fallback.reason === "routine-not-allowed") return t("workspaceLine.fallbackRoutine", { place });
+  return t("workspaceLine.fallbackUnavailable", { place, wanted: t(WORKSPACE_PLACE[line.fallback.wanted]) });
 }
 
 /** Recovery changes this conversation's engine and must remain visible. */

@@ -409,6 +409,7 @@ const toolDefinitions = (externalRuntime: boolean) => [
         bot_id: { type: "string", description: "Optional: the teammate's id from list_bots. Leave out to open the thread on yourself." },
         folder: { type: "string", description: "Optional: the name of one of that bot's existing folders to file the thread under. Leave out unless the person named one." },
         report_back: { type: "boolean", description: "Optional, on yourself only: true runs it as a parallel task of this conversation. The person sees its live card here and its result is posted back here as a reply when it finishes. Use it when the person asks for something unrelated while you are busy, so both run at once." },
+        workspace: { type: "string", enum: ["this_computer", "browser", "cloud", "local_vm"], description: "Optional, on yourself, when your Workspace is Auto: where that thread works (this_computer = their files and apps, browser = web only, cloud = keeps running while they are away, local_vm = isolated). A place not allowed or offline falls back." },
       },
       required: ["title", "message"],
     },
@@ -1326,6 +1327,7 @@ const AGENT_API_TOOLS = [
       name: { type: "string", minLength: 1, maxLength: 80, description: "Display name." },
       description: { type: "string", maxLength: 1000, description: "What it does." },
       idle_hours: { type: "integer", minimum: 1, maximum: 720, description: "Hours without a prompt before it is archived; default 24." },
+      workspace: { type: "string", enum: ["this_computer", "browser", "cloud", "local_vm"], description: "Optional: where it works while its Workspace is Auto. A place not allowed or offline falls back." },
     }, required: ["name"] },
   },
   {

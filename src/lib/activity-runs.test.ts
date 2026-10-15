@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { describeRun, groupActivityRuns, groupTranscript, isRecoveryActivity, isToolStep, statusActivity } from "./activity-runs";
 import type { Message } from "@/state/store";
 import { SANDBOX_WAKE_NOTICE, SANDBOX_WAKE_TIMEOUT_NOTICE } from "../../shared/sandbox-wake";
+import { workspaceLineName } from "../../shared/workspace-line";
 
 let seq = 0;
 const tool = (name: string, ok = true): Message =>
@@ -95,6 +96,16 @@ describe("groupActivityRuns", () => {
   it("shows the cluster wake rows as notices in the person's language", () => {
     expect(statusActivity(tool(SANDBOX_WAKE_NOTICE))).toEqual({ kind: "notice", text: "The server environment is starting. This can take a few minutes." });
     expect(statusActivity(tool(SANDBOX_WAKE_TIMEOUT_NOTICE))).toEqual({ kind: "notice", text: "The server environment did not start in time. Send the message again in a few minutes." });
+  });
+
+  it("shows Auto's Workspace lines as notices in the person's language, never folded", () => {
+    expect(statusActivity(tool(workspaceLineName({ target: "this_computer" })))).toEqual({ kind: "notice", text: "On your computer" });
+    expect(statusActivity(tool(workspaceLineName({ target: "browser" })))).toEqual({ kind: "notice", text: "In the browser" });
+    expect(statusActivity(tool(workspaceLineName({ target: "cloud", fallback: { wanted: "this_computer", reason: "offline" } }))))
+      .toEqual({ kind: "notice", text: "Moved to Cloud: your computer is offline" });
+    expect(statusActivity(tool(workspaceLineName({ target: "this_computer", fallback: { wanted: "browser", reason: "unavailable" } }))))
+      .toEqual({ kind: "notice", text: "Moved to This computer: Browser is not available" });
+    expect(isToolStep(tool(workspaceLineName({ target: "cloud" })))).toBe(false);
   });
 
   it("keeps a model notice visible between successful tool runs", () => {
