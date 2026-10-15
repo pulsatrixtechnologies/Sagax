@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
-import { Ellipsis, SmilePlus } from "lucide-react";
+import { Ellipsis } from "lucide-react";
 import { popoverClosesOnKey, usePopoverDismiss } from "@/hooks/use-popover-dismiss";
 import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
@@ -55,11 +55,11 @@ export function MessageMenuItem({
   );
 }
 
-/** The quiet controls beside a chat message: the copy button and a "…" menu on
- * one row, the time under them. The rest (raw markdown, read aloud,
- * regenerate, edit, reply, pin) lives in the menu, so the column stays about
- * two buttons wide and never pushes into the bubble, even in the phone layout
- * or the narrow desktop panel.
+/** The quiet controls beside a chat message, in the order of a group's
+ * message (GroupView.tsx): reply, copy, react, then a "…" menu, the time
+ * under them. The rest (raw markdown, read aloud, regenerate, edit, pin)
+ * lives in the menu. JC, 2026-10-14: Reply sits in the row as in groups,
+ * and the reaction is the smiley alone (no second entry in the menu).
  *
  * Hover or keyboard focus on the message reveals it, touch screens always show
  * it. `visible` keeps it out while a mode the menu turned on needs to be seen
@@ -68,6 +68,7 @@ export function MessageBar({
   side,
   time,
   copy,
+  reply,
   react,
   visible = false,
   children,
@@ -76,8 +77,10 @@ export function MessageBar({
   time: string;
   /** The copy button, when the message has text to copy. */
   copy?: ReactNode;
-  /** Emoji reactions (src/components/Reactions.tsx): the smiley beside copy,
-   * its picker, and "Add reaction" (E) first in the menu. */
+  /** The reply button (ChatView.tsx ReplyAction), first in the row. */
+  reply?: ReactNode;
+  /** Emoji reactions (src/components/Reactions.tsx): the smiley after copy
+   * and its picker. */
   react?: { open: boolean; onOpenChange: (open: boolean) => void; onPick: (emoji: string) => void; mine?: readonly string[] };
   visible?: boolean;
   /** The menu's entries, as MessageMenuItem. */
@@ -107,7 +110,7 @@ export function MessageBar({
       )}
       onKeyDown={(event) => {
         if (!open) return;
-        // a letter chooses the menu entry that carries it (E: Add reaction)
+        // a letter chooses the menu entry that carries it
         if (event.key.length === 1 && !event.metaKey && !event.ctrlKey && !event.altKey) {
           const entry = rootRef.current?.querySelector<HTMLElement>(`[role="menuitem"][data-shortcut="${CSS.escape(event.key.toLowerCase())}"]:not(:disabled)`);
           if (entry) {
@@ -122,8 +125,9 @@ export function MessageBar({
       }}
     >
       <div className={cn("flex items-center", mirrored && "flex-row-reverse")}>
-        {react && <ReactButton open={react.open} onToggle={() => react.onOpenChange(!react.open)} />}
+        {reply}
         {copy}
+        {react && <ReactButton open={react.open} onToggle={() => react.onOpenChange(!react.open)} />}
         <button
           type="button"
           onClick={() => setOpen((value) => !value)}
@@ -162,9 +166,6 @@ export function MessageBar({
             )}
             {...motion.exitProps}
           >
-            {react && (
-              <MessageMenuItem label={t("reactions.add")} icon={<SmilePlus size={14} />} shortcut="e" onSelect={() => react.onOpenChange(true)} />
-            )}
             {children}
           </div>
         </CloseMenu.Provider>

@@ -885,6 +885,23 @@ describe("PiDriver turns (fake CLI)", () => {
     expect(instance.adapter.hasSession("t-tool")).toBe(false);
   });
 
+  it("names the server and tool a pi-mcp-adapter `mcp` call ran, not the gateway", async () => {
+    await create("mcpgateway");
+    await instance.adapter.sendTurn({ threadId: "t-gateway", text: "look it up" });
+    await recorder.until((e) => e.type === "turn.completed");
+    const started = recorder.events.filter((event) => event.type === "item.started") as Array<{ title: string; input?: string }>;
+    expect(started.map((event) => event.title)).toEqual([
+      "mcp__pulsatrix-psa__cw_psa__query",
+      "mcp__pulsatrix-psa__api_search",
+      "mcp",
+    ]);
+    // the arguments are the tool's own, so the step reads "tickets", not the gateway's envelope
+    expect(JSON.parse(started[0]!.input!)).toEqual({ resource: "service.tickets", id: "296221" });
+    expect(JSON.parse(started[1]!.input!)).toEqual({ query: "schedule today" });
+    const completed = recorder.events.filter((event) => event.type === "item.completed" && (event as { itemType: string }).itemType === "tool");
+    expect(completed.map((event) => (event as { ok: boolean }).ok)).toEqual([true, false, true]);
+  });
+
   it("emits each assistant text block before the tool that follows it", async () => {
     await create("interleave");
     await instance.adapter.sendTurn({ threadId: "t-interleave", text: "go", model: "ollama-cloud/glm-5.2" });

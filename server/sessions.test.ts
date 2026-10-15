@@ -17,6 +17,7 @@ import {
   PAIRING_RESTART_HINT_MS,
   SESSION_TTL_MS,
   BOT_ACT_SESSION_TTL_MS,
+  isBotActSession,
   SessionRegistry,
   STREAM_TICKET_TTL_MS,
   SESSION_MAX_AGE_MS,
@@ -297,6 +298,9 @@ describe("sessions", () => {
     expect(authed?.scopes).toEqual(issued.session.scopes);
     expect(authed?.ephemeral).toBe(true);
     expect(authed?.principalId).toBe("person-1");
+    // 2026-10-14: the copy is the bot, never the person choosing their approval rules
+    expect(isBotActSession(authed!)).toBe(true);
+    expect(isBotActSession(registry.authenticate(issued.token)!)).toBe(false);
     expect(readFileSync(file(), "utf8")).toBe(before);
     expect(registry.list().map((session) => session.id)).toEqual([issued.session.id]);
     expect(registry.forPrincipal("person-1").map((session) => session.id)).toEqual([issued.session.id]);

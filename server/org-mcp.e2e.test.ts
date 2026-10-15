@@ -221,6 +221,7 @@ posixOnly("Perspicax organization, slice 5: MCP for the person who speaks", () =
               { server: "agents", tool: "start_thread", arguments: { title: "Own job", message: "ping own job" }, when: "OPEN-OWN" },
               { server: "agents", tool: "coordinate_bots", arguments: { bot_ids: ["Xavier"], message: "check the board for the person", request_key: "bob-hop" }, when: "COORD-XAVIER" },
               { server: "perspicax_*", tool: "api_list", arguments: {} },
+              { server: "sagax-flow", tool: "flow_stats", arguments: { values: [1.5, 2.25, 10, 0.1] } },
             ]),
             FAKE_CLAUDE_MCP_DUMP: mcpDump,
           },
@@ -272,7 +273,12 @@ posixOnly("Perspicax organization, slice 5: MCP for the person who speaks", () =
     expect(reply).toContain("mcp:api_list:ok");
     const mcp = JSON.parse(readFileSync(mcpDump, "utf8")) as { servers: string[]; calls: Array<{ server: string; tool: string; listed: boolean; ok: boolean; text: string }> };
     expect(mcp.servers).toContain("perspicax_dispatch");
-    expect(mcp.calls).toEqual([{ server: "perspicax_dispatch", tool: "api_list", listed: true, ok: true, text: `profile ${PROFILE.id} for ${BOB.sub}` }]);
+    // Pulsatrix Flow's compute rides with the Perspicax tools, answered by
+    // the turn's own proxy process (server/flow-tools.ts)
+    expect(mcp.calls).toEqual([
+      { server: "perspicax_dispatch", tool: "api_list", listed: true, ok: true, text: `profile ${PROFILE.id} for ${BOB.sub}` },
+      { server: "sagax-flow", tool: "flow_stats", listed: true, ok: true, text: JSON.stringify({ count: 4, sum: 13.85, min: 0.1, max: 10, mean: 3.4625, median: 1.875, skipped: 0 }) },
+    ]);
     const exchanges = idp.exchanges.slice(exchangesBefore);
     expect(exchanges.map((e) => ({ sub: e.sub, profile: e.profile, ok: e.ok }))).toEqual([{ sub: BOB.sub, profile: PROFILE.id, ok: true }]);
     const calls = idp.mcpRequests.filter((r) => r.method === "POST");
@@ -341,6 +347,8 @@ posixOnly("Perspicax organization, slice 5: MCP for the person who speaks", () =
     expect(reply).toContain("mcp:absent");
     const engine = JSON.parse(readFileSync(dump, "utf8")) as { mcpConfig: { mcpServers: Record<string, unknown> }; systemPrompt: string };
     expect(Object.keys(engine.mcpConfig.mcpServers).some((name) => name.startsWith("perspicax_"))).toBe(false);
+    // no Perspicax tools mounted, so no Flow compute either
+    expect(Object.keys(engine.mcpConfig.mcpServers)).not.toContain("sagax-flow");
     expect(engine.systemPrompt).toContain('Perspicax tools of profile "Dispatch" are not available in this turn: the person speaking does not hold this profile in Perspicax.');
     // its own paragraph, never glued to the section before it
     expect(engine.systemPrompt).toMatch(/\n\nPerspicax tools of profile "Dispatch"/);

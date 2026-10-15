@@ -1,24 +1,19 @@
-// The persona editor's Overview header: the mascot (Appearance on click),
-// name, label and short description edited in place, a summary of the
-// engine, model, owner and sharing, and the quick actions (Rename, Put on
-// the desktop, Make primary bot, Export as zip, Archive). Every write goes
-// through the existing paths: the bot patch queue, the floating-bots store,
-// POST /api/bots/:id/primary and PATCH hidden; the zip is a download of
-// GET /api/bots/:id/export.zip (src/lib/bot-zip.ts).
-import { useState, useSyncExternalStore, type ReactNode } from "react";
-import { Archive, FileArchive, Pencil, PictureInPicture2, Star } from "lucide-react";
+// The bot editor's Profile header: the mascot (Appearance on click), name,
+// label and short description edited in place, and a summary of the engine,
+// model, owner and sharing. The bot's actions (Rename, Put on the desktop,
+// Make primary bot, Export, Archive) are in the bot's "..." menu in the bot
+// panel (bot-settings/BotActionsMenu.tsx). Every write goes through the
+// existing paths: the bot patch queue.
+import { type ReactNode } from "react";
+import { Star } from "lucide-react";
 
 import { useStore, type Bot } from "@/state/store";
 import { t } from "@/lib/i18n";
+import { canEditBotField, showBotRename } from "@/lib/bot-capabilities";
 import { cn } from "@/lib/cn";
-import { canEditBotField, showBotArchive, showBotRename } from "@/lib/bot-capabilities";
-import { archiveBlockReason, primaryBotOffer, requestBotHidden, requestPrimaryBot } from "@/lib/bot-quick-actions";
 import { isViewersPrimaryBot, viewerOwnsBot } from "@/lib/primary-bot";
 import { viewerActorId } from "@/lib/viewer";
-import { downloadBotZip, showBotZipExport } from "@/lib/bot-zip";
-import { Switch } from "../SettingsPrimitives";
 import { botEngine } from "@/lib/failed-turn";
-import { isBotFloating, subscribeFloatingBots, toggleFloatingBot } from "@/lib/floating-bots";
 import { useOrgPeople } from "@/lib/perspicax-org";
 import { BOT_PROFILE_LIMITS } from "../../../shared/bot-profile";
 import { BotProfileAvatarCard } from "../BotProfileAvatarCard";
@@ -54,89 +49,23 @@ function Fact({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
-function ActionButton({ icon, label, onClick, disabled, reason, id }: {
-  icon: ReactNode;
-  label: string;
-  onClick: () => void;
-  disabled?: boolean;
-  reason?: string;
-  id: string;
-}) {
-  return (
-    <div className="flex min-w-0 flex-col">
-      <button
-        type="button"
-        data-persona-action={id}
-        onClick={onClick}
-        disabled={disabled}
-        title={reason}
-        className={cn(
-          "flex items-center gap-1.5 rounded-lg bg-control px-3 py-1.5 text-[13px] text-ink",
-          disabled ? "cursor-default opacity-50" : "hover:bg-raised-hover",
-        )}
-      >
-        {icon}
-        {label}
-      </button>
-      {disabled && reason && <span data-persona-action-reason={id} className="sr-only">{reason}</span>}
-    </div>
-  );
-}
-
-export function PersonaOverview({ bot, derived, onClose }: {
+export function PersonaOverview({ bot, derived }: {
   bot: Bot;
   derived: ReturnType<typeof useBotSettingsDerived>;
-  onClose: () => void;
 }) {
-  const { state, dispatch } = useStore();
-  const [renameRequest, setRenameRequest] = useState(0);
-  const [confirmArchive, setConfirmArchive] = useState(false);
-  const [exporting, setExporting] = useState(false);
-  const [withConversations, setWithConversations] = useState(false);
-  const [withSharing, setWithSharing] = useState(false);
-  const [exported, setExported] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const floating = useSyncExternalStore(subscribeFloatingBots, () => isBotFloating(bot.id), () => false);
+  const { state } = useStore();
   const people = useOrgPeople();
   const viewerId = viewerActorId(state.config);
   const engine = botEngine(bot, state.instances);
   const canRename = showBotRename(state.config, bot);
   const canDescribe = canEditBotField(state.config, bot, "description");
-  const primary = primaryBotOffer(state.config, bot);
   const isPrimary = isViewersPrimaryBot(bot, viewerId);
-  const archiveAllowed = showBotArchive(state.config);
-  const archiveBlocked = archiveBlockReason(state.bots, bot);
-  const exportAllowed = showBotZipExport(state.config, bot);
-  const shared = (bot.grants?.length ?? 0) > 0 || bot.visibility !== undefined;
   const owner = viewerOwnsBot(bot, viewerId)
     ? t("persona.overview.ownerYou")
     : (() => {
       const person = people.get(bot.ownerUserId?.trim().toLowerCase() ?? "");
       return person?.name || person?.login || bot.ownerUserId || "";
     })();
-  const fail = (cause: unknown) => dispatch({ type: "error", message: cause instanceof Error ? cause.message : String(cause) });
-
-  const makePrimary = () => {
-    if (!primary.allowed || busy) return;
-    setBusy(true);
-    void requestPrimaryBot(bot.id)
-      .then((next) => dispatch({ type: "botPatched", bot: next }))
-      .catch(fail)
-      .finally(() => setBusy(false));
-  };
-  const archive = () => {
-    if (busy || archiveBlocked) return;
-    setBusy(true);
-    const next = state.bots.find((candidate) => !candidate.hidden && candidate.id !== bot.id);
-    void requestBotHidden(bot.id, true)
-      .then((archived) => {
-        dispatch({ type: "botPatched", bot: archived });
-        if (state.selectedId === bot.id && next) dispatch({ type: "select", id: next.id });
-        onClose();
-      })
-      .catch(fail)
-      .finally(() => setBusy(false));
-  };
 
   return (
     <div className="flex flex-col gap-5" data-persona-overview="">
@@ -151,7 +80,6 @@ export function PersonaOverview({ bot, derived, onClose }: {
             maxLength={BOT_PROFILE_LIMITS.name}
             ariaLabel={t("botPanel.name.edit")}
             onSave={canRename ? (name) => derived.patch({ name }) : undefined}
-            editRequest={renameRequest}
             className="text-[19px] font-semibold leading-7 text-ink"
           />
           <InlineEditableText
@@ -196,89 +124,6 @@ export function PersonaOverview({ bot, derived, onClose }: {
         <Fact label={t("persona.overview.sharing")}>{personaSharingSummary(bot)}</Fact>
       </dl>
 
-      <div>
-        <div className="sr-only">{t("persona.overview.actions")}</div>
-        <div className="flex flex-wrap items-start gap-2">
-          <ActionButton
-            id="rename"
-            icon={<Pencil size={14} />}
-            label={t("persona.action.rename")}
-            onClick={() => setRenameRequest((count) => count + 1)}
-            disabled={!canRename}
-            reason={canRename ? undefined : t("persona.locked.owner")}
-          />
-          <ActionButton
-            id={floating ? "remove-from-desktop" : "put-on-desktop"}
-            icon={<PictureInPicture2 size={14} />}
-            label={floating ? t("floatingBots.menu.unfloat") : t("floatingBots.menu.float")}
-            onClick={() => toggleFloatingBot(bot.id)}
-          />
-          <ActionButton
-            id="make-primary"
-            icon={<Star size={14} />}
-            label={t("sidebar.bot.makePrimary")}
-            onClick={makePrimary}
-            disabled={!primary.allowed || busy}
-            reason={primary.allowed ? undefined : t(primary.reason)}
-          />
-          {exportAllowed && !exporting && (
-            <ActionButton
-              id="export-zip"
-              icon={<FileArchive size={14} />}
-              label={t("botZip.export")}
-              onClick={() => { setExporting(true); setExported(false); setConfirmArchive(false); }}
-            />
-          )}
-          {archiveAllowed && !confirmArchive && (
-            <ActionButton
-              id="archive"
-              icon={<Archive size={14} />}
-              label={t("sidebar.bot.archive")}
-              onClick={() => setConfirmArchive(true)}
-              disabled={archiveBlocked !== null || busy}
-              reason={archiveBlocked ? t(archiveBlocked) : undefined}
-            />
-          )}
-        </div>
-        {/* Export asks what to include here, in the pane. */}
-        {exporting && (
-          <div role="group" data-persona-export-zip="" className="mt-3 flex flex-col gap-2 rounded-xl bg-hover p-3 text-[13px] text-ink">
-            <span className="text-ink-secondary">{t("botZip.exportBody", { name: bot.name })}</span>
-            <label className="flex items-center justify-between gap-3">
-              <span className="min-w-0"><span className="block">{t("botZip.includeConversations")}</span><span className="block text-[12px] text-ink-secondary">{t("botZip.includeConversationsHint")}</span></span>
-              <Switch checked={withConversations} onClick={() => setWithConversations((value) => !value)} aria-label={t("botZip.includeConversations")} data-persona-export-conversations="" />
-            </label>
-            {shared && (
-              <label className="flex items-center justify-between gap-3">
-                <span>{t("botZip.includeSharing")}</span>
-                <Switch checked={withSharing} onClick={() => setWithSharing((value) => !value)} aria-label={t("botZip.includeSharing")} data-persona-export-sharing="" />
-              </label>
-            )}
-            {exported && <span role="status" className="text-[12px] text-ink-secondary">{t("botZip.exportStarted")}</span>}
-            <div className="flex justify-end gap-2">
-              <button type="button" onClick={() => setExporting(false)} className="rounded-lg px-3 py-1.5 text-ink-secondary hover:bg-control hover:text-ink">
-                {exported ? t("common.close") : t("common.cancel")}
-              </button>
-              <button type="button" data-persona-export-download="" onClick={() => { downloadBotZip(bot.id, { conversations: withConversations, sharing: shared && withSharing }); setExported(true); }}
-                className="rounded-lg bg-control px-3 py-1.5 text-ink hover:bg-raised-hover">
-                {t("botZip.download")}
-              </button>
-            </div>
-          </div>
-        )}
-        {/* Archive asks here, in the pane: no dialog over the modal. */}
-        {confirmArchive && (
-          <div role="group" data-persona-archive-confirm="" className="mt-3 flex flex-wrap items-center gap-2 rounded-xl bg-hover p-3 text-[13px] text-ink">
-            <span className="min-w-0 flex-1">{t("sidebar.confirm.archiveBody", { name: bot.name })}</span>
-            <button type="button" onClick={() => setConfirmArchive(false)} className="rounded-lg px-3 py-1.5 text-ink-secondary hover:bg-control hover:text-ink">
-              {t("common.cancel")}
-            </button>
-            <button type="button" onClick={archive} disabled={busy} className="rounded-lg bg-control px-3 py-1.5 text-ink hover:bg-raised-hover disabled:opacity-50">
-              {t("sidebar.bot.archive")}
-            </button>
-          </div>
-        )}
-      </div>
     </div>
   );
 }

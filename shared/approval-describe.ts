@@ -266,7 +266,8 @@ const RESOURCES: Array<[RegExp, string]> = [
 
 function resourceKey(raw: string | undefined): string | undefined {
   if (!raw) return undefined;
-  const clean = raw.toLowerCase().replace(/[^a-z0-9/_ -]/g, "");
+  // `service.notes`: the dot separates the module from the resource
+  const clean = raw.toLowerCase().replace(/\./g, "/").replace(/[^a-z0-9/_ -]/g, "");
   const joined = clean.replace(/[/_ -]+/g, "");
   const last = clean.split(/[/_ -]+/).filter(Boolean).pop() ?? "";
   for (const candidate of [joined, last]) {

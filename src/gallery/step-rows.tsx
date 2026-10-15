@@ -1,19 +1,18 @@
-/** Isolated gallery for Playwright screenshots of the chat's step rows,
- * before (bordered monospace pills) and after (quiet rows like a reasoning
- * line). Not shipped in the app. ?skin=<id>&lang=<code>&view=before|after */
+/** Isolated gallery for Playwright screenshots of the chat's step rows on a
+ * long turn: before (one row per step, as #488 drew them: "Used 6 tools",
+ * "Could not use mcp" ten times over) and after (one group per turn, the
+ * steps inside, the same step merged with a count). Not shipped in the app.
+ * ?skin=<id>&lang=<code>&view=before|after|after-open|after-live */
 import { StrictMode, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
-import { Check, ChevronRight, ClipboardList, X } from "lucide-react";
 import { ActivityRun } from "../components/ActivityRun";
 import { BotAvatar } from "../components/Avatar";
 import { DigestChip } from "../components/DigestChip";
 import { StepRow } from "../components/StepRow";
 import { ToolActivity } from "../components/ToolActivity";
-import { TurnNarrationRun } from "../components/TurnNarrationRun";
-import { WorkingDots } from "../components/WorkingIndicator";
 import { setLocale, t } from "../lib/i18n";
 import { applySkin, readSkin, SKIN_IDS, type SkinId } from "../lib/skins";
-import { stepLabel } from "../lib/step-label";
+import { stepLabel, stepDuration } from "../lib/step-label";
 import type { Message } from "../state/store";
 import "../styles.css";
 
@@ -46,12 +45,32 @@ const failed: Tool = { name: "Bash", ok: false, durationMs: 800, input: JSON.str
 const resumed: Tool = { name: "Resumed with Wren, Olive results, reviewing", ok: true };
 const sentTo: Tool = { name: "Sent to Wren", ok: true };
 
-const runSteps: Message[] = [
-  { id: "r1", role: "bot", kind: "activity", at: 1, tool: { name: "Read", ok: true, durationMs: 400, input: JSON.stringify({ file_path: "/srv/docs/gecko/ententes.md" }) } },
-  { id: "r2", role: "bot", kind: "activity", at: 2, tool: { name: "Grep", ok: true, durationMs: 900, input: JSON.stringify({ pattern: "renouvellement" }) } },
-  { id: "r3", role: "bot", kind: "activity", at: 3, tool: tickets },
-  { id: "r4", role: "bot", kind: "activity", at: 4, tool: web },
+// The long turn of the capture (2026-10-14): Pi's `mcp` gateway, a ticket
+// and its notes read in ConnectWise, five calls refused, narration between.
+const gateway = (id: string, at: number, ok: boolean | undefined, args: Record<string, unknown>, tool = "cw_psa__query", output?: string): Message => ({
+  id, role: "bot", kind: "activity", at,
+  tool: { name: "mcp", ...(ok === undefined ? {} : { ok }), durationMs: ok === undefined ? undefined : 2_000, input: JSON.stringify({ server: "pulsatrix-psa", tool, args }), output },
+});
+const said = (id: string, at: number, text: string): Message => ({ id, role: "bot", kind: "text", at, text, turnId: "turn-long" });
+const refused = "{\"code\":\"params_invalid\",\"hint\":\"parent is the id of the object the sub-resource belongs to\"}";
+const longTurn: Message[] = [
+  said("n1", 1_000, "Je lis le billet #296221."),
+  { id: "l1", role: "bot", kind: "activity", at: 2_000, tool: { name: "Read", ok: true, durationMs: 400, input: JSON.stringify({ file_path: "/srv/notes/296221.md" }) } },
+  gateway("l2", 3_000, true, { resource: "service.tickets", id: "296221" }),
+  gateway("l3", 6_000, true, { resource: "service.tickets", id: "296221", fields: "summary" }),
+  gateway("l4", 9_000, false, { parent: ["service.tickets", "296221"], resource: "service.notes" }, "cw_psa__query", refused),
+  gateway("l5", 12_000, false, { parent: ["service.tickets", "296221"], resource: "service.notes" }, "cw_psa__query", refused),
+  said("n2", 20_000, "Les notes demandent un autre format, je réessaie."),
+  gateway("l6", 30_000, true, { resource: "service.notes", parent: "296221" }),
+  gateway("l7", 60_000, false, { action: "get", resource: "ticket", id: "296221" }, "cw_psa__query", refused),
+  gateway("l8", 90_000, false, { id: "296221" }, "cw_psa_ticket_get", refused),
+  { id: "l9", role: "bot", kind: "activity", at: 120_000, tool: { name: "Bash", ok: true, durationMs: 800, input: JSON.stringify({ command: "jq '.items[0].summary' ticket.json" }) } },
+  { id: "l10", role: "bot", kind: "activity", at: 121_000, tool: { name: "Bash", ok: true, durationMs: 700, input: JSON.stringify({ command: "jq '.items | length' notes.json" }) } },
+  gateway("l11", 150_000, false, { resource: "service.notes", parent: "296221", fields: "*" }, "cw_psa__query", refused),
+  gateway("l12", 170_000, true, { resource: "service.notes", parent: "296221", orderBy: "id desc" }),
 ];
+const LONG_ELAPSED = 173_000;
+const liveTurn: Message[] = [...longTurn.filter((message) => message.kind === "activity").slice(0, 8), gateway("l13", 172_000, undefined, { resource: "service.notes", parent: "296221" })];
 const digest: Message = {
   id: "dg", role: "bot", kind: "digest", at: 5, text: "Travail observé pendant ce tour.",
   digest: {
@@ -71,62 +90,59 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
   );
 }
 
-/* ---- Before: the pills as main drew them (#480) ---- */
-function OldTool({ tool }: { tool: Tool }) {
-  const failedTool = tool.ok === false;
-  return (
-    <div className="w-fit max-w-full rounded-xl border border-hairline/40 bg-panel text-[13px]">
-      <div className={`flex min-h-8 items-center gap-2 rounded-xl px-3 py-1.5 ${failedTool ? "text-danger" : "text-ink-secondary"}`}>
-        <span className="shrink-0">{tool.ok === undefined ? <WorkingDots size={3.5} /> : failedTool ? <X size={13} /> : <Check size={13} className="text-success" />}</span>
-        <span className="min-w-0 max-w-[30rem] truncate font-mono">{tool.name}</span>
-        <ChevronRight size={13} className="ml-auto shrink-0" />
-      </div>
-    </div>
-  );
-}
-function OldRun({ label }: { label: string }) {
-  return (
-    <div className="flex justify-start">
-      <span className="flex items-center gap-2 rounded-full border border-hairline/40 bg-panel px-3 py-1.5 text-[13px] text-ink-secondary">
-        <Check size={13} className="text-success" /><span className="max-w-[480px] truncate">{label}</span><ChevronRight size={13} />
-      </span>
-    </div>
-  );
-}
-function OldDigest() {
-  return (
-    <div className="flex justify-start">
-      <span className="ui-chip max-w-[min(480px,100%)] border border-hairline/40 bg-panel text-ink-secondary">
-        <ClipboardList size={12} /><span className="truncate">{t("chat.digestChip", { tools: 3, files: 1 })}</span>
-      </span>
-    </div>
-  );
-}
-function OldComm() {
-  return (
-    <div className="flex justify-start">
-      <span className="ui-pill"><BotAvatar bot={{ name: "Wren", color: "green" }} state="happy" size={16} animated={false} /><span>{sentTo.name}</span><ChevronRight size={13} /></span>
-    </div>
-  );
-}
+/* ---- Before: one row per step, as #488 drew them ---- */
+const groupOf = (steps: Message[]) => {
+  // #488 folded only finished steps and broke a run at every failure
+  const rows: Array<{ label: string; failed?: boolean }> = [{ label: t("chat.run.workedFor", { elapsed: stepDuration(LONG_ELAPSED)! }) }];
+  let done = 0;
+  const flush = () => {
+    if (done > 1) rows.push({ label: t("step.group.many", { count: done }) });
+    else if (done === 1) rows.push({ label: t("step.use.done", { name: "mcp" }) });
+    done = 0;
+  };
+  for (const step of steps) {
+    if (step.kind !== "activity") continue;
+    if (step.tool?.ok === false) {
+      flush();
+      rows.push({ label: t("step.use.failed", { name: "mcp" }), failed: true });
+    } else done += 1;
+  }
+  flush();
+  return rows;
+};
 
 function Before() {
   return (
-    <>
-      <Section title="En cours"><OldTool tool={running} /></Section>
-      <Section title="Coordination"><OldTool tool={coordinate} /><OldComm /><OldTool tool={resumed} /></Section>
-      <Section title="Terminé"><OldTool tool={tickets} /><OldTool tool={web} /></Section>
-      <Section title="Échec"><OldTool tool={failed} /></Section>
-      <Section title="Groupe"><OldRun label="4 étapes · Read, Grep, mcp__claude_ai_Pulsatrix_Perspicax__cw_psa__find_tickets +1 de plus" /></Section>
-      <Section title="Résumé du tour"><OldDigest /><OldRun label={t("chat.run.workedFor", { elapsed: "14s" })} /></Section>
-    </>
+    <Section title="Avant : une ligne par étape">
+      {groupOf(longTurn).map((row, i) => (
+        <StepRow key={i} label={row.label} phase={row.failed ? "failed" : "done"}>{() => null}</StepRow>
+      ))}
+    </Section>
+  );
+}
+
+function Long({ messages, elapsedMs, open = false }: { messages: Message[]; elapsedMs?: number; open?: boolean }) {
+  return (
+    <ActivityRun
+      messages={messages}
+      elapsedMs={elapsedMs}
+      focusedId={open ? messages.find((message) => message.kind === "activity")?.id : undefined}
+      nameOf={nameOf}
+      renderStep={(message) => <ToolActivity tool={message.tool!} nameOf={nameOf} />}
+      renderMessage={(message) => <div className="self-start rounded-[18px] bg-card px-3 py-2 text-[13px] text-ink">{message.text}</div>}
+    />
   );
 }
 
 function After() {
   return (
     <>
-      <Section title="En cours"><ToolActivity tool={running} /></Section>
+      <Section title="Après : un groupe par tour">
+        <Long messages={longTurn} elapsedMs={LONG_ELAPSED} open={view === "after-open"} />
+      </Section>
+      {view === "after-live" && (
+        <Section title="En cours"><Long messages={liveTurn} /></Section>
+      )}
       <Section title="Coordination">
         <ToolActivity tool={coordinate} nameOf={nameOf} />
         <StepRow
@@ -136,22 +152,14 @@ function After() {
         />
         <ToolActivity tool={resumed} />
       </Section>
-      <Section title="Terminé"><ToolActivity tool={tickets} /><ToolActivity tool={web} /></Section>
-      <Section title="Échec"><ToolActivity tool={failed} /></Section>
-      <Section title="Groupe">
-        <ActivityRun messages={runSteps} forceOpen={view === "after-open"}>
-          {runSteps.map((message) => <ToolActivity key={message.id} tool={message.tool!} />)}
-        </ActivityRun>
+      <Section title="Seules">
+        <ToolActivity tool={running} />
+        <ToolActivity tool={tickets} />
+        <ToolActivity tool={web} />
+        <ToolActivity tool={failed} />
       </Section>
-      <Section title="Résumé du tour">
-        <DigestChip message={digest} />
-        <TurnNarrationRun label={t("chat.run.workedFor", { elapsed: "14s" })}>
-          <div className="self-start rounded-[18px] bg-card px-3 py-2 text-[13px] text-ink">Je regarde les billets de GECKO.</div>
-        </TurnNarrationRun>
-      </Section>
-      <Section title="Détail déplié">
-        <ToolActivity tool={tickets} defaultOpen />
-      </Section>
+      <Section title="Résumé du tour"><DigestChip message={digest} /></Section>
+      <Section title="Détail déplié"><ToolActivity tool={tickets} defaultOpen /></Section>
     </>
   );
 }
@@ -160,9 +168,9 @@ function Gallery() {
   return (
     <div className="min-h-screen bg-app p-8 text-ink">
       <div className="mx-auto flex max-w-xl flex-col gap-5" data-gallery={view}>
-        <div className="self-end rounded-[18px] bg-bubble-user px-3 py-2 text-[13px] text-ink">Fais le point sur GECKO avec Wren et Olive</div>
+        <div className="self-end rounded-[18px] bg-bubble-user px-3 py-2 text-[13px] text-ink">Résume le billet #296221</div>
         {view === "before" ? <Before /> : <After />}
-        <div className="self-start rounded-[18px] bg-card px-3 py-2 text-[13px] text-ink">Voici le résumé : 3 billets ouverts, 1 entente à renouveler.</div>
+        <div className="self-start rounded-[18px] bg-card px-3 py-2 text-[13px] text-ink">Voici le résumé du billet #296221 : gabarit de courriel dans Bamboo, 4 notes.</div>
       </div>
     </div>
   );

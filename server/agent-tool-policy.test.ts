@@ -20,6 +20,7 @@ describe("built-in agent tool read policy", () => {
       "workspace_search",
       "list_agents",
       "find_agents",
+      "get_agent",
       "await_turn",
       "read_transcript",
       "read_transcript_page",
@@ -31,6 +32,7 @@ describe("built-in agent tool read policy", () => {
       "find_cloud_agent_by_pr",
       "cloud_agent_transcript",
       "list_cloud_agent_artifacts",
+      "claim_list",
     ]);
     for (const name of READ_ONLY_AGENT_TOOL_NAMES) {
       expect(isReadOnlyAgentTool(name)).toBe(true);

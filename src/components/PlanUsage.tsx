@@ -14,7 +14,7 @@ import { cn } from "@/lib/cn";
 import { openSettings } from "@/lib/settings-link";
 import { reloadMyEngines, useMyEngines, usePerspicaxOrg, type MyEngine } from "@/lib/perspicax-org";
 import { planRows, type PlanRow, type PlanUsageReport, type PlanWindow } from "@/lib/plan-usage";
-import { Card } from "./SettingsPrimitives";
+import { usageLocale } from "@/lib/usage-personal";
 import { EngineConnect } from "./EngineConnect";
 
 function formatResetDistance(resetsAt: string | null, now: number): string | null {
@@ -176,12 +176,67 @@ function SignedOut({ provider, myEngines, issuer, onOpenEngines, onRefresh }: { 
   );
 }
 
-/** The card's body, without fetching: every state is drawn from props. */
+/** The window a plan is read by: the week when the provider reports one,
+ * else the 5-hour window. */
+export function mainWindow(provider: PlanRow): { kind: "weekly" | "fiveHour"; window: PlanWindow } | null {
+  if (provider.weekly.available && provider.weekly.usedPercent != null) return { kind: "weekly", window: provider.weekly };
+  if (provider.fiveHour.available && provider.fiveHour.usedPercent != null) return { kind: "fiveHour", window: provider.fiveHour };
+  return null;
+}
+
+function renewalDate(resetsAt: string | null): string | null {
+  if (!resetsAt) return null;
+  const at = Date.parse(resetsAt);
+  if (!Number.isFinite(at)) return null;
+  try {
+    return new Intl.DateTimeFormat(usageLocale(), { weekday: "long", day: "numeric", month: "long", hour: "numeric", minute: "2-digit" }).format(at);
+  } catch {
+    return null;
+  }
+}
+
+/** One gauge and one sentence per plan (2026-10-14); the 5-hour window,
+ * other windows and the per-model detail fold under Details. */
+function PlanSummary({ provider, now }: { provider: PlanRow; now: number }) {
+  const main = mainWindow(provider);
+  if (!main) return <RowWindows provider={provider} now={now} />;
+  const used = Math.round(Math.min(100, Math.max(0, main.window.usedPercent ?? 0)));
+  const renews = renewalDate(main.window.resetsAt);
+  const hasDetail = (main.kind === "weekly" && provider.fiveHour.available) || provider.extra.length > 0 || provider.models.length > 0;
+  return (
+    <div className="flex flex-col gap-1.5" data-plan-main={main.kind}>
+      <div
+        className="h-2 overflow-hidden rounded-full bg-inset"
+        role="meter"
+        aria-label={t("usage.plan.meter", { name: provider.name })}
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={used}
+      >
+        <div className={cn("h-full rounded-full", usageTone(used))} style={{ width: `${used}%` }} />
+      </div>
+      <p className="text-[13px] text-ink">
+        {t(main.kind === "weekly" ? "usage.plan.weekSentence" : "usage.plan.fiveHourSentence", { used, remaining: 100 - used })}
+        {renews && <> {t("usage.plan.renews", { date: renews })}</>}
+      </p>
+      {hasDetail && (
+        <details className="text-[12.5px]">
+          <summary className="cursor-pointer text-ink-secondary hover:text-ink">{t("usage.plan.details")}</summary>
+          <div className="mt-2"><RowWindows provider={provider} now={now} /></div>
+        </details>
+      )}
+    </div>
+  );
+}
+
+/** The card's body, without fetching: every state is drawn from props.
+ * 2026-10-14: "Plan" on Settings > Usage, the person's own subscriptions. */
 export function PlanUsageView({ report, loading, error, now, onRefresh, myEngines, issuer, onOpenEngines }: PlanUsageViewProps) {
   const rows = planRows(report);
   return (
-    <Card title={t("planUsage.title")} subtitle={t("planUsage.subtitle")}>
-      <div className="mb-3 flex justify-end">
+    <section data-settings-card="usage.plan" className="rounded-[14px] border-[0.5px] border-border px-3.5 py-3">
+      <div className="flex items-center gap-2">
+        <h3 className="text-[13px] font-medium text-ink">{t("usage.plan.title")}</h3>
         <button
           type="button"
           onClick={onRefresh}
@@ -190,25 +245,25 @@ export function PlanUsageView({ report, loading, error, now, onRefresh, myEngine
           aria-label={t("planUsage.refresh")}
           title={t("planUsage.refresh")}
           data-plan-refresh
-          className="rounded-md p-2 text-ink-secondary hover:bg-control hover:text-ink disabled:opacity-50"
+          className="ml-auto rounded-md p-1.5 text-ink-secondary hover:bg-control hover:text-ink disabled:opacity-50"
         >
-          {loading ? <Loader2 size={14} className="animate-spin" data-plan-spinner /> : <RefreshCw size={14} />}
+          {loading ? <Loader2 size={13} className="animate-spin" data-plan-spinner /> : <RefreshCw size={13} />}
         </button>
       </div>
-      {loading && !report && <p role="status" className="text-[13px] text-ink-secondary">{t("planUsage.loading")}</p>}
-      {error && <p role="alert" className="mb-3 text-[13px] text-danger">{error}</p>}
+      {loading && !report && <p role="status" className="mt-2 text-[13px] text-ink-secondary">{t("planUsage.loading")}</p>}
+      {error && <p role="alert" className="mt-2 text-[13px] text-danger">{error}</p>}
       {report && rows.length === 0 && (
-        <p className="text-[13px] text-ink-secondary">{t("planUsage.empty")}</p>
+        <p className="mt-2 text-[13px] text-ink-secondary">{t("planUsage.empty")}</p>
       )}
       {rows.length > 0 && (
-        <div className="flex flex-col gap-4">
+        <div className="mt-2 flex flex-col gap-4">
           {rows.map((provider) => (
             <div key={provider.id} data-plan-row={provider.id} className="border-t border-hairline/30 pt-3 first:border-t-0 first:pt-0">
               <div className="mb-2 flex min-w-0 items-baseline gap-2">
-                <span className="truncate text-[14px] font-medium text-ink">{provider.name}</span>
+                <span className="truncate text-[13px] font-medium text-ink">{provider.name}</span>
                 {provider.plan && <span className="truncate text-[12px] text-ink-secondary">{provider.plan}</span>}
               </div>
-              {provider.state === "windows" && <RowWindows provider={provider} now={now} />}
+              {provider.state === "windows" && <PlanSummary provider={provider} now={now} />}
               {provider.state === "no-windows" && (
                 <p data-plan-state="no-windows" className="text-[13px] text-ink-secondary">
                   {provider.access === "api-key" ? t("planUsage.apiKeyNoWindows") : t("planUsage.noWindows")}
@@ -234,7 +289,7 @@ export function PlanUsageView({ report, loading, error, now, onRefresh, myEngine
           ))}
         </div>
       )}
-    </Card>
+    </section>
   );
 }
 
@@ -288,7 +343,7 @@ export function PlanUsage() {
       onRefresh={() => void load(true)}
       myEngines={org ? myEngines : null}
       issuer={org?.org.identity.issuer ?? ""}
-      onOpenEngines={() => openSettings(dispatch, "engines")}
+      onOpenEngines={() => openSettings(dispatch, "engines", "engines.list")}
     />
   );
 }

@@ -1,45 +1,80 @@
-// A folded stretch of finished tool steps: one quiet row, "Used 4 tools",
-// that opens to the steps themselves, each on its own row of the same kind.
+// One stretch of a bot's work, between two visible messages, as a single
+// quiet row: "Worked 2m 53s · 12 tools · 5 failed". It opens to the steps
+// in order, each on a row of the same kind; the same step repeated back to
+// back reads once with a count ("Read a file ×3") and opens to each call.
+// A settled turn's narration sits among the steps where it was written.
 //
-// Collapsed by default. A search hit inside a run opens it, and a run stays
-// open once the user has opened it. Failed steps never enter a folded run.
+// While the bot still works, the row says what it is doing now (the words
+// shimmer like "Thinking") and changes in place: the steps never pile up.
+// Collapsed by default. A search hit inside opens it, and it stays open
+// once the person has opened it.
+import type { ReactNode } from "react";
 import type { Message } from "@/state/store";
 import { describeRun } from "@/lib/activity-runs";
-import { stepDuration, stepGroupLabel } from "@/lib/step-label";
+import { mergeSteps, stepGroupWords, summarizeSteps } from "@/lib/step-group";
+import { stepDuration, type StepNameOf } from "@/lib/step-label";
 import { StepRow } from "./StepRow";
-
-/** The time the steps ran, added up, when every step knows its own. */
-export function runDuration(messages: Message[]): number | undefined {
-  let total = 0;
-  for (const message of messages) {
-    const ms = message.tool?.durationMs;
-    if (ms === undefined) return undefined;
-    total += ms;
-  }
-  return total;
-}
 
 export function ActivityRun({
   messages,
-  forceOpen = false,
-  children,
+  elapsedMs,
+  focusedId,
+  nameOf,
+  renderStep,
+  renderMessage,
 }: {
   messages: Message[];
-  /** landing on a step inside this run — a search hit cannot scroll to a
-   * row that a fold has kept out of the DOM */
-  forceOpen?: boolean;
-  /** the individual steps, rendered by whichever transcript owns them */
-  children: React.ReactNode;
+  /** how long the bot worked, when known */
+  elapsedMs?: number;
+  /** a search hit: the group, and the merged row holding it, open */
+  focusedId?: string | null;
+  nameOf?: StepNameOf;
+  /** one tool step's own row, as the transcript that owns it draws it */
+  renderStep: (message: Message) => ReactNode;
+  /** anything else in the group (a turn's narration) */
+  renderMessage?: (message: Message) => ReactNode;
 }) {
+  const summary = summarizeSteps(messages);
+  const words = stepGroupWords(summary, elapsedMs, nameOf);
+  const narrated = messages.some((message) => message.kind !== "activity");
+  const hit = Boolean(focusedId) && messages.some((message) => message.id === focusedId);
   return (
-    <div className="flex justify-start" data-testid="activity-run">
+    <div className="flex justify-start" data-testid="activity-run" data-live={summary.running ? "true" : undefined}>
       <StepRow
-        label={stepGroupLabel(messages.length)}
-        duration={stepDuration(runDuration(messages))}
-        title={describeRun(messages)}
-        forceOpen={forceOpen}
+        label={words.label}
+        target={words.target}
+        phase={words.phase}
+        title={summary.tools ? describeRun(messages) : undefined}
+        forceOpen={hit}
+        wide={narrated}
+        extra={(words.tools || words.failed) && (
+          <span className="flex shrink-0 items-center gap-1.5 tabular-nums" data-testid="activity-run-counts">
+            {words.tools && <span className="text-ink-tertiary">· {words.tools}</span>}
+            {words.failed && <span className="text-danger/80" data-testid="activity-run-failed">· {words.failed}</span>}
+          </span>
+        )}
       >
-        {() => <div className="flex flex-col gap-0.5 py-0.5">{children}</div>}
+        {() => (
+          <div className="flex flex-col gap-0.5 py-0.5">
+            {mergeSteps(messages, nameOf).map((entry) => {
+              if (entry.kind === "message") return <div key={entry.id} className="contents">{renderMessage?.(entry.message)}</div>;
+              if (entry.messages.length === 1) return <div key={entry.id} className="contents">{renderStep(entry.messages[0]!)}</div>;
+              return (
+                <StepRow
+                  key={entry.id}
+                  testId="activity-run-repeat"
+                  label={`${entry.label} ×${entry.messages.length}`}
+                  target={entry.target}
+                  phase={entry.phase}
+                  duration={stepDuration(entry.durationMs)}
+                  forceOpen={Boolean(focusedId) && entry.messages.some((message) => message.id === focusedId)}
+                >
+                  {() => <div className="flex flex-col gap-0.5 py-0.5">{entry.messages.map((message) => <div key={message.id} className="contents">{renderStep(message)}</div>)}</div>}
+                </StepRow>
+              );
+            })}
+          </div>
+        )}
       </StepRow>
     </div>
   );

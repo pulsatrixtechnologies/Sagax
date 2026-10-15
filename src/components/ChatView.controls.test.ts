@@ -75,8 +75,9 @@ describe("thread control placement", () => {
     expect(markup).toMatch(/<textarea[^>]*disabled=""[^>]*aria-busy="true"/);
     expect(markup).not.toContain("Finish group setup");
   });
-  // JC, 2026-10-08: one chat bar for both modes, Advanced's.
-  it("renders the same composer row in Simple and Advanced mode", () => {
+  // JC, 2026-10-08: one chat bar for both modes, Advanced's. JC, 2026-10-14:
+  // except the place chip, which Simple hides like the bot's Works on.
+  it("renders the same composer row in Simple and Advanced mode, the place chip Advanced only", () => {
     const composerOf = (advanced: boolean) => {
       setAdvancedMode(advanced);
       fixture.approval = null;
@@ -91,7 +92,10 @@ describe("thread control placement", () => {
     try {
       const simple = composerOf(false);
       const advanced = composerOf(true);
-      expect(simple.row).toBe(advanced.row);
+      expect(simple.row).not.toContain('data-testid="place-chip"');
+      expect(advanced.row).toContain('data-testid="place-chip"');
+      const withoutPlace = (row: string) => row.replace(/<div class="relative flex items-center"><button[^>]*data-testid="place-chip"[\s\S]*?<\/button><\/div>/, "");
+      expect(withoutPlace(advanced.row)).toBe(simple.row);
       expect(simple.props).toMatchObject({ align: "left" });
       expect(Object.keys(simple.props ?? {})).toEqual(Object.keys(advanced.props ?? {}));
       // paperclip, approval icon, the message field, then the model chip
@@ -104,6 +108,13 @@ describe("thread control placement", () => {
     } finally {
       setAdvancedMode(false);
     }
+  });
+
+  it("keeps the place chip in Simple while this conversation has a pinned place to take back", () => {
+    setAdvancedMode(false);
+    const pinned: Bot = { ...bot, busy: false, tasks: [{ ...bot.tasks![0]!, surface: "local" }] };
+    expect(renderToStaticMarkup(createElement(ChatView, { bot: pinned }))).toContain('data-testid="place-chip"');
+    expect(renderToStaticMarkup(createElement(ChatView, { bot: { ...bot, busy: false } }))).not.toContain('data-testid="place-chip"');
   });
 
   it("offers trusted modes in the composer without requiring a Full bot default", () => {

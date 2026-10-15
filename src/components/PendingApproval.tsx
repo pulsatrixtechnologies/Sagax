@@ -303,11 +303,14 @@ export function PendingApprovalActions({
   const isTeamSetup = Boolean(pending.message.card?.teamSetupRequest);
   const isSuggestion = Boolean(pending.message.card?.teamSetupRequest?.suggestion);
   const durableRequest = isRoutineRequest || isSkillRequest || isProfileRequest || isTeamSetup;
-  const canRememberCommand = ownerOrAdmin === true && !durableRequest && !pending.allowKey && Boolean(pending.commandAllowlist);
+  // 2026-10-14: the owner's own rule this card can remember (Always allow /
+  // Always deny), which replaces the older per-bot grants on the card.
+  const ownerRule = !durableRequest && !pending.message.card?.adminApproval ? pending.message.card?.ownerRule : undefined;
+  const canRememberCommand = ownerOrAdmin === true && !durableRequest && !ownerRule && !pending.allowKey && Boolean(pending.commandAllowlist);
   const reviewedSha256 = pending.message.card?.skillRequest
     ? reviewedSkillSha256(pending.message.card.skillRequest)
     : undefined;
-  const decide = (behavior: "allow" | "deny", always = false, rememberCommand = false) =>
+  const decide = (behavior: "allow" | "deny", always = false, rememberCommand = false, rule?: "allow" | "deny") =>
     dispatch({
       type: "decideRequest",
       threadId: pending.threadId ?? threadId,
@@ -320,6 +323,7 @@ export function PendingApprovalActions({
       alwaysAllow: always && bot && pending.allowKey ? { botId: bot.id, key: pending.allowKey } : undefined,
       always: always && !pending.allowKey && pending.allowSession ? true : undefined,
       rememberCommand: rememberCommand || undefined,
+      rule,
     });
 
   const base = "rounded-full px-3.5 py-1.5 text-[13.5px] transition-colors";
@@ -341,8 +345,16 @@ export function PendingApprovalActions({
       </div>
     );
   }
+  const destructiveKind = ownerRule?.destructive === "delete" ? t("approval.rule.kind.delete")
+    : ownerRule?.destructive === "bulk" ? t("approval.rule.kind.bulk")
+      : ownerRule?.destructive === "external-message" ? t("approval.rule.kind.externalMessage") : undefined;
   return (
     <div className="flex flex-wrap items-center gap-2 px-4 pb-3 pt-2">
+      {destructiveKind && (
+        <p className="w-full text-[12.5px] text-warning" data-destructive-note>
+          {t("approval.rule.destructive", { kind: destructiveKind })}
+        </p>
+      )}
       {!durableRequest && (
         <button type="button" onClick={onCancelTurn} className={quiet}>
           {t("approval.action.cancelTurn")}
@@ -357,7 +369,29 @@ export function PendingApprovalActions({
         >
           {isSuggestion ? t("approval.action.notNow") : isRoutineRequest || isProfileRequest || isTeamSetup ? t("approval.action.cancel") : t("approval.action.deny")}
         </button>
-        {!durableRequest && bot && pending.allowKey && (
+        {ownerRule && (
+          <button
+            type="button"
+            onClick={() => decide("deny", false, false, "deny")}
+            title={t("approval.action.alwaysDenyRuleHint", { rule: ownerRule.description })}
+            className={secondary}
+            data-owner-rule="deny"
+          >
+            {t("approval.action.alwaysDeny")}
+          </button>
+        )}
+        {ownerRule && (
+          <button
+            type="button"
+            onClick={() => decide("allow", false, false, "allow")}
+            title={t("approval.action.alwaysAllowRuleHint", { name: bot?.name ?? t("approval.someone"), rule: ownerRule.description })}
+            className={secondary}
+            data-owner-rule="allow"
+          >
+            {t("approval.action.alwaysAllow")}
+          </button>
+        )}
+        {!ownerRule && !durableRequest && bot && pending.allowKey && (
           <button
             type="button"
             onClick={() => decide("allow", true)}
@@ -367,7 +401,7 @@ export function PendingApprovalActions({
             {t("approval.action.alwaysAllow")}
           </button>
         )}
-        {!durableRequest && !pending.allowKey && !canRememberCommand && pending.allowSession && (
+        {!ownerRule && !durableRequest && !pending.allowKey && !canRememberCommand && pending.allowSession && (
           <button
             type="button"
             onClick={() => decide("allow", true)}

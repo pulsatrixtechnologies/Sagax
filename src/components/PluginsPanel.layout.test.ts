@@ -26,9 +26,9 @@ beforeEach(() => vi.stubGlobal("window", { addEventListener: noop, removeEventLi
 afterEach(() => vi.unstubAllGlobals());
 
 describe("Plugins panel views", () => {
-  it("main view: title, connected count, search, chips and sections of two-column rows", () => {
+  it("main view: title, connected count, search, All plus one Category menu, sections of two-column rows", () => {
     const html = renderToStaticMarkup(createElement(ConnectAppsView, {
-      items, loading: false, search: "", onSearch: noop, filter: "all", onFilter: noop, refreshing: false, onRefresh: noop, onClose: noop,
+      items, loading: false, search: "", onSearch: noop, filter: "all", onFilter: noop, onClose: noop,
       onOpenManage: noop, onOpenItem: noop, type: "any", onType: noop, extraConnected: 1,
       renderAction: (item) => item.action ? createElement("button", { type: "button" }, item.action === "connect" ? "Connect" : "Add") : null,
     }));
@@ -40,10 +40,13 @@ describe("Plugins panel views", () => {
     expect(html).not.toContain("Browse Bots");
     // the connected count sits next to the search field, not in the header
     expect(html).toMatch(/placeholder="Search across apps and skills"[\s\S]*?data-plugins-connected/);
-    // the reference's chips, in its order; types are not chips
+    // one chip (All) and one Category menu; types are not chips
     const chips = [...html.matchAll(/aria-pressed="(?:true|false)"[^>]*>([^<]+)</g)].map((match) => match[1]);
-    expect(chips).toEqual(["All", "Password managers", "Productivity", "Communication", "Design", "Code"]);
-    expect(html).toMatch(/aria-haspopup="menu"[^>]*>More</);
+    expect(chips).toEqual(["All"]);
+    expect(html).toMatch(/aria-haspopup="menu"[^>]*aria-label="Category"[^>]*>Category</);
+    expect(html).not.toMatch(/>More</);
+    // no Refresh in the header: the panel refreshes when it opens
+    expect(html).not.toContain('aria-label="Refresh');
     expect(html).not.toMatch(/aria-pressed="false"[^>]*>(Connected apps|MCP servers|Skills)</);
     expect(html).not.toContain("data-plugins-type");
     // no top-level Connected apps / MCP servers tabs any more
@@ -98,7 +101,7 @@ describe("Plugins panel views", () => {
     expect(readOnly).not.toContain('type="submit"');
   });
 
-  it("detail page: header with Uninstall, accounts, collapsible tools, details", () => {
+  it("detail page: the switch and one \"...\" menu by the name, accounts, collapsible tools, details", () => {
     const item = items.find((entry) => entry.key === "mcp:glitcho")!;
     const html = renderToStaticMarkup(createElement(PluginDetailView, {
       item, subtitle: "https://qc1.example.net/mcp", busy: false, onBack: noop, onClose: noop, onUninstall: noop,
@@ -108,7 +111,10 @@ describe("Plugins panel views", () => {
       details: [{ label: "Source", value: "Added manually" }, { label: "Transport", value: "HTTP" }],
     }));
     expect(html).toContain('aria-label="Back"');
-    expect(html).toContain("Uninstall");
+    // Turned on beside the name; Update, Test, Edit and Uninstall wait in the menu
+    expect(html).toMatch(/data-plugin-enabled[^>]*>Turned on<button[^>]*aria-label="Turn glitcho off"/);
+    expect(html).toContain('aria-label="More actions for glitcho"');
+    expect(html).not.toContain("Uninstall");
     expect(html).toContain("Accounts");
     expect(html).toMatch(/qc1\.example\.net[\s\S]*?Connected/);
     expect(html).toContain("1 of 2 enabled");
@@ -117,13 +123,13 @@ describe("Plugins panel views", () => {
     expect(html).toContain("HTTP");
   });
 
-  it("manage page has a Providers tab listing every provider with its honest line", () => {
+  it("manage page lists the providers under Advanced, with their honest line", () => {
     const html = renderToStaticMarkup(createElement(ManageView, {
       items, countLabel: () => "", sourceLabel: (source) => source, onBack: noop, onClose: noop, onOpenItem: noop,
       onAddManually: noop, onPasteConfig: noop, refreshing: false, onRefresh: noop, providers: createElement("div", null, "PROVIDERS"),
     }));
-    expect(html).toMatch(/role="tab" aria-selected="true"[^>]*>Plugins and skills</);
-    expect(html).toMatch(/role="tab" aria-selected="false"[^>]*>Providers</);
+    expect(html).not.toContain('role="tab"');
+    expect(html).toMatch(/<details[^>]*data-plugins-advanced[^>]*>[\s\S]*data-plugins-manage="providers"[\s\S]*>Providers<[\s\S]*PROVIDERS/);
     const instances = [
       { instanceId: "claude", driverKind: "claudeAgent", displayName: "Claude", snapshot: { state: "available", account: { email: "jc@example.com" } } },
       { instanceId: "codex", driverKind: "codex", displayName: "Codex", snapshot: { state: "available" } },

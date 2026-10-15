@@ -43,6 +43,7 @@ import {
 } from "@/lib/memory";
 import { ApiError, useStore, type Bot } from "@/state/store";
 import { HelpTip, SwitchRow } from "../SettingsPrimitives";
+import { AdvancedFold } from "./AdvancedFold";
 import { MarkdownEditor } from "../markdown/MarkdownEditor";
 import { inputCls } from "./field";
 import { PaneEmpty, PaneSection } from "./PaneSection";
@@ -484,17 +485,8 @@ export function MemorySection({ bot, active = true, onToggle }: { bot: Bot; acti
             <span className="truncate font-mono text-[12.5px] text-ink">MEMORY.md</span>
             <span className="ml-auto shrink-0 text-[12px] text-ink-secondary">{t("botPanel.memory.open")}</span>
           </button>
-          <MemoryGauge index={overview.index} />
         </PaneSection>
       )}
-
-      {bot.memoryEnabled !== false && <MemoryUpkeepCard
-        enabled={bot.memoryUpkeep !== false}
-        status={upkeep}
-        tidying={tidying}
-        onToggle={toggleUpkeep}
-        onTidy={() => void tidyNow()}
-      />}
 
       {editing && (
         <MemoryEditorDialog
@@ -541,21 +533,33 @@ export function MemorySection({ bot, active = true, onToggle }: { bot: Bot; acti
         </PaneSection>
       )}
 
-      {overview && overview.logs.length > 0 && (
-        <PaneSection title={t("botPanel.memory.logs")} help={t("botPanel.memory.logsHint")}>
-          <MemoryFileRows
-            files={overview.logs}
-            empty={t("botPanel.memory.noneYet")}
-            selected={editing?.path}
-            onOpen={(file) => void open(file.path)}
-            onDelete={(file) => void remove(file)}
-          />
-        </PaneSection>
-      )}
+      {/* The size gauges, the upkeep, the daily logs and the change log:
+          folded, one click away. */}
+      <AdvancedFold id="memory">
+        {overview && <MemoryGauge index={overview.index} />}
+        {bot.memoryEnabled !== false && <MemoryUpkeepCard
+          enabled={bot.memoryUpkeep !== false}
+          status={upkeep}
+          tidying={tidying}
+          onToggle={toggleUpkeep}
+          onTidy={() => void tidyNow()}
+        />}
+        {overview && overview.logs.length > 0 && (
+          <PaneSection title={t("botPanel.memory.logs")} help={t("botPanel.memory.logsHint")}>
+            <MemoryFileRows
+              files={overview.logs}
+              empty={t("botPanel.memory.noneYet")}
+              selected={editing?.path}
+              onOpen={(file) => void open(file.path)}
+              onDelete={(file) => void remove(file)}
+            />
+          </PaneSection>
+        )}
 
-      <PaneSection title={t("botPanel.memory.changes")} help={t("botPanel.memory.changesHelp")}>
-        <MemoryJournalList rows={journal} botName={bot.name} reverting={reverting} onRevert={(row) => void revert(row)} />
-      </PaneSection>
+        <PaneSection title={t("botPanel.memory.changes")} help={t("botPanel.memory.changesHelp")}>
+          <MemoryJournalList rows={journal} botName={bot.name} reverting={reverting} onRevert={(row) => void revert(row)} />
+        </PaneSection>
+      </AdvancedFold>
 
       {notice && <div role="status" className="text-[12.5px] text-ink-secondary">{notice}</div>}
       {error && <div role="alert" className="text-[12.5px] text-danger">{error}</div>}

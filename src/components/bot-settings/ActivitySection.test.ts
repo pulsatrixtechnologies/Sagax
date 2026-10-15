@@ -219,7 +219,7 @@ describe("Activity, live only", () => {
     expect(busy).not.toContain("data-activity-card=\"thread:chat\"");
   });
 
-  it("draws Ongoing activities first, above Coding and the History row", () => {
+  it("draws Ongoing activities first, above Coding, with no separate history row", () => {
     const code = job("thread:code", { coding: true, status: "running", endedAt: undefined });
     const items = [routine, code];
     const html = renderToStaticMarkup(createElement(PanelSections, { list: { items, subagents: [] }, live: liveOf(items), actions: { onOpen: () => {}, now: NOW }, onOpenHistory: () => {} }));
@@ -227,7 +227,7 @@ describe("Activity, live only", () => {
     const at = (needle: string) => html.indexOf(needle);
     expect(at('data-bot-settings-section="activity"')).toBeGreaterThan(-1);
     expect(at('data-bot-settings-section="activity"')).toBeLessThan(at('data-bot-settings-section="coding"'));
-    expect(at('data-bot-settings-section="coding"')).toBeLessThan(at('data-activity-history="all"'));
+    expect(at('data-activity-history="all"')).toBe(-1);
     // the cards keep their actions: open and stop
     expect(html).toContain('data-activity-card="run:r1"');
   });
@@ -242,10 +242,10 @@ const codeJob = (id: string, over: Partial<BotActivityItem> = {}) => job(id, {
 describe("history and errors", () => {
   const props = (over: Partial<Parameters<typeof PanelSections>[0]> = {}) => ({ list: { items: [], subagents: [] }, live: liveOf([]), actions: { onOpen: () => {}, now: NOW }, onOpenHistory: () => {}, ...over });
 
-  it("keeps the history reachable through one quiet History row, below the sections", () => {
+  it("keeps the history reachable through one quiet All history row when no section is drawn", () => {
     const html = renderToStaticMarkup(createElement(PanelSections, props()));
     expect(html).toContain('data-activity-history="all"');
-    expect(html).toContain(">History<");
+    expect(html).toContain(">All history<");
     expect(html).not.toContain("text-ink-tertiary");
     expect(html).not.toContain("data-bot-settings-section");
     // the row is the shared SectionHeader, not copied classes: its button
@@ -262,12 +262,11 @@ describe("history and errors", () => {
     expect(rowHeader.props.name).toBe("all");
     rowHeader.props.onOpenHistory!("coding");
     expect(onOpenHistory).toHaveBeenCalledWith("coding");
-    // a section is drawn: its title opens the history, and the History row stays below it
+    // a section is drawn: its title opens the history, and the extra row goes
     const routine = job("run:r1", { kind: "routine", status: "running", endedAt: undefined });
     const busy = renderToStaticMarkup(createElement(PanelSections, props({ list: { items: [routine], subagents: [] }, live: liveOf([routine]) })));
     expect(busy).toContain('data-activity-history="other"');
-    expect(busy).toContain('data-activity-history="all"');
-    expect(busy.indexOf('data-activity-history="other"')).toBeLessThan(busy.indexOf('data-activity-history="all"'));
+    expect(busy).not.toContain('data-activity-history="all"');
     // still loading: nothing at all
     expect(renderToStaticMarkup(createElement(PanelSections, props({ list: null })))).toBe("");
   });
@@ -340,6 +339,16 @@ describe("Coding, code work only", () => {
     expect(done).not.toContain("data-activity-card");
     expect(done).toContain("#42 Split the lexer");
     expect(panelSections({ items: [codeJob("thread:empty")], subagents: [] }, liveOf([])).showCoding).toBe(false);
+  });
+
+  it("keeps the Git links (pull requests, branches, commits) for Advanced mode", () => {
+    const simple = renderToStaticMarkup(createElement(PanelSections, { list: { items: [shipped], subagents: [] }, live: liveOf([shipped]), actions: { onOpen: () => {}, now: NOW }, onOpenHistory: () => {}, advanced: false }));
+    expect(simple).not.toContain("#42 Split the lexer");
+    expect(simple).not.toContain("data-code-work");
+    // finished work with only Git links draws no Coding section in Simple
+    expect(simple).not.toContain('data-bot-settings-section="coding"');
+    expect(simple).toContain('data-activity-history="all"');
+    expect(panelSections({ items: [shipped], subagents: [] }, liveOf([shipped]), false).showCoding).toBe(false);
   });
 
   it("draws launched cloud agents in one grouped card with failed PR link", () => {
@@ -468,7 +477,7 @@ describe("finished work leaves after 5 seconds", () => {
 describe("section headers and history", () => {
   const bot = { id: "pepper", name: "Pepper", tasks: [] } as unknown as Bot;
 
-  it("section titles open the history; one History row stays below them", () => {
+  it("section titles open the history; no extra History row below them", () => {
     // nothing loaded yet: no section at all
     expect(renderToStaticMarkup(createElement(ActivitySection, { bot }))).not.toContain("data-bot-settings-section");
     const items = [
@@ -476,12 +485,12 @@ describe("section headers and history", () => {
       job("run:r1", { kind: "routine", status: "running", endedAt: undefined }),
     ];
     const html = renderToStaticMarkup(createElement(PanelSections, { list: { items, subagents: [] }, actions: { onOpen: () => {}, now: NOW }, onOpenHistory: () => {} }));
-    expect(html.match(/>History</g)).toHaveLength(1);
+    expect(html).not.toContain(">All history<");
     expect(html).not.toContain("data-activity-see-all");
     expect(html).toContain('data-activity-history="coding"');
     expect(html).toContain('data-activity-history="other"');
     expect(html.indexOf('data-bot-settings-section="activity"')).toBeLessThan(html.indexOf('data-bot-settings-section="coding"'));
-    expect(html.indexOf('data-bot-settings-section="coding"')).toBeLessThan(html.indexOf('data-activity-history="all"'));
+    expect(html).not.toContain('data-activity-history="all"');
   });
 
   it("opens the history modal for that section when its title is clicked", () => {

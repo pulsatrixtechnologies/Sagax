@@ -120,6 +120,29 @@ function realLocation(path: string): string {
   }
 }
 
+/** Built-in MCP servers that act on the shared host (its desktop, its
+ * browser, its files, a shell): never the owner's to approve. */
+export const HOST_LEVEL_MCP_SERVERS: ReadonlySet<string> = new Set([
+  "computer", "sagax-computer", "sagax-desktop", "sagax-environment", "browser", "shell", "files", "terminal",
+]);
+
+/** Engine tools that never touch the host: a web search runs at the
+ * provider, the task list is the turn's own. */
+const OWNER_SCOPED_BUILTINS = new Set(["websearch", "web_search", "todowrite", "todo_write"]);
+
+/** 2026-10-14: a tool within the owner's own rights (spec
+ * 2026-10-14-bot-owner-permissions.md, section 2): an owner-scoped built-in,
+ * or a tool of an MCP server that acts through the owner's identity
+ * elsewhere and is not a host-level built-in. */
+export function ownerScopedTool(tool: string, ownerScopedMcpServer?: (server: string) => boolean): boolean {
+  if (OWNER_SCOPED_BUILTINS.has(tool.toLowerCase())) return true;
+  const match = /^(?:mcp__)?([A-Za-z0-9][A-Za-z0-9_.-]*?)__([A-Za-z0-9][A-Za-z0-9_.-]*)$/.exec(tool);
+  if (!match || !ownerScopedMcpServer) return false;
+  const server = match[1]!;
+  if (HOST_LEVEL_MCP_SERVERS.has(server.toLowerCase()) || server.toLowerCase() === "agents") return false;
+  return ownerScopedMcpServer(server);
+}
+
 /** Whether a permission card of a member's bot on an organization server
  * waits for an organization admin (JC rule until per-owner containers). Every
  * bot shares one container, one user and one HOME, so a write to the shared
@@ -129,13 +152,25 @@ function realLocation(path: string): string {
  * workspace outside any dot folder (.claude, .git, .mcp.json can hold
  * commands), and a built-in Sagax tool that stays in the member's own scope
  * (./member-tool-scope.ts: list_bots, the bot's threads, memory, its own
- * setup, messages to its own bots). Everything else, a shell command first,
- * needs an admin. `tool` is the provider's own name for the tool, an MCP
+ * setup, messages to its own bots), and since 2026-10-14 a tool within the
+ * owner's own rights (ownerScopedTool: a remote or personal MCP server, a
+ * web search). Everything else, a shell command first, needs an admin. `tool` is the provider's own name for the tool, an MCP
  * tool qualified with its server (`agents__list_bots`), never the model's
  * arguments. */
-export function memberBotAdminApproval(input: { tool?: string; command?: unknown; paths?: string[]; workspaceRoot: string }): boolean {
+export function memberBotAdminApproval(input: {
+  tool?: string;
+  command?: unknown;
+  paths?: string[];
+  workspaceRoot: string;
+  /** 2026-10-14 (bot owner permissions): whether this MCP server acts
+   * through its owner's identity elsewhere (a remote server mounted for the
+   * bot, or a personal connection of the owner, which runs in their own
+   * environment). Absent: no MCP server is. */
+  ownerScopedMcpServer?: (server: string) => boolean;
+}): boolean {
   if (serverCommandApproval(input)) return true;
   if (memberOwnScopeTool(input.tool?.trim())) return false;
+  if (ownerScopedTool(input.tool?.trim() ?? "", input.ownerScopedMcpServer)) return false;
   const tool = input.tool?.trim().toLowerCase() ?? "";
   if (!WORKSPACE_FILE_TOOLS.has(tool)) return true;
   if (!input.paths?.length) return true;

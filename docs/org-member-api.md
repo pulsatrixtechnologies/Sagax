@@ -47,7 +47,7 @@ Code: `server/org-member-routes.ts`, wired in `server/index.ts`
 | `clients.routinesRun` | off | run a routine now, read a run |
 | `clients.approvalsAnswer` | off (the bot's owner holds it for their own bots) | allow or deny a card |
 | `clients.peopleNudge` | off | nudge a person |
-| `clients.agentsCreate` | off | create an agent with `agents/create_agent` |
+| `clients.agentsCreate` | off | create a temporary agent with `agents/create_agent`, delete one with `agents/delete_agent` |
 
 Keys have two segments (`group.name`): Perspicax refuses a catalogue with
 any other shape, so the plan's `clients.bots.read` is written
@@ -256,14 +256,14 @@ id, at}`. The nudge cooldown and refusals are Sagax's.
 
 ### `POST agents/{tool}`
 
-The ten agent-to-agent tools ([agent-api.md](agent-api.md)) for the person's
+The twelve agent-to-agent tools ([agent-api.md](agent-api.md)) for the person's
 AI client. The body is the tool's arguments. Each tool checks its own scope:
 
 | Permission | Tools |
 |---|---|
 | `clients.botsRead` | the read tools |
 | `clients.botsMessage` | `send_prompt` |
-| `clients.agentsCreate` | `create_agent` |
+| `clients.agentsCreate` | `create_agent`, `delete_agent` |
 
 A missing scope answers 403 `forbidden_scope`. `send_prompt` accepts up to
 64 MiB, so it can carry files as base64. Every other body stays capped at

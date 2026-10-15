@@ -19,7 +19,7 @@ import { PluginsPanel } from "@/components/PluginsPanel";
 import { ConnectAppsView } from "@/components/plugins/ConnectAppsView";
 import { templatesEntryActions } from "./templates-entry";
 
-type Node = ReactElement<{ children?: ReactNode; onClick?: () => void; onBotTemplates?: () => void; "data-new-bot-browse-templates"?: string }>;
+type Node = ReactElement<{ children?: ReactNode; onClick?: () => void; onBotTemplates?: () => void; "data-new-bot-browse-templates"?: string; "data-new-bot-start"?: boolean; value?: string; onChange?: (event: unknown) => void }>;
 function nodes(value: ReactNode): Node[] {
   if (!isValidElement(value)) return [];
   const node = value as Node;
@@ -55,10 +55,12 @@ describe("the templates entry points", () => {
     const draft = new BotCreationDraft(EMPTY_BOT_DEFAULTS, () => {});
     let tree!: ReturnType<typeof StartingRole>;
     const html = renderToStaticMarkup(createElement(() => { tree = StartingRole({ draft, defaultsMode: false }); return tree; }));
-    expect(html).toContain(">Browse templates</button>");
-    nodes(tree).find((node) => node.props["data-new-bot-browse-templates"] !== undefined)?.props.onClick?.();
+    // one of the ways to start, in the Start from list (JC 2026-10-14)
+    expect(html).toContain(">Template from the catalog…</option>");
+    const value = nodes(tree).find((node) => node.props["data-new-bot-browse-templates"] !== undefined)?.props.value;
+    nodes(tree).find((node) => node.props["data-new-bot-start"] !== undefined)?.props.onChange?.({ target: { value } });
     expect(fixture.dispatch.mock.calls.map(([action]) => action)).toEqual(templatesEntryActions("newBot"));
-    expect(renderToStaticMarkup(createElement(() => StartingRole({ draft, defaultsMode: true })))).not.toContain("Browse templates");
+    expect(renderToStaticMarkup(createElement(() => StartingRole({ draft, defaultsMode: true })))).not.toContain("Template from the catalog");
   });
 
   it("Connect apps no longer offers Browse Bots (JC 2026-10-14)", () => {

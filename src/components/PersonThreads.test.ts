@@ -51,6 +51,12 @@ let root: Root;
 const render = async (element: ReturnType<typeof createElement>) => { await act(async () => { root.render(element); }); };
 const button = (label: string) => [...host.querySelectorAll<HTMLButtonElement>("button")].find((candidate) =>
   candidate.getAttribute("aria-label") === label || candidate.textContent?.trim() === label);
+/** A row's ThreadMenu lives in a portal on the body, not under `host`. */
+const menuItem = (id: string) => document.body.querySelector(`[data-thread-menu-item="${id}"]`) ?? undefined;
+const menuPage = (page: string) => document.body.querySelector(`[data-thread-menu="${page}"]`) ?? undefined;
+const menuButton = (page: string, label: string) =>
+  [...(document.body.querySelectorAll(`[data-thread-menu="${page}"] button`) ?? [])].find((candidate) =>
+    candidate.getAttribute("aria-label") === label || candidate.textContent?.trim() === label);
 const click = async (target: Element | undefined) => {
   expect(target, "control not found").toBeTruthy();
   await act(async () => { (target as HTMLElement).click(); });
@@ -108,21 +114,32 @@ describe("the header picker on a person", () => {
     expect(text).toContain("Budget");
     expect(text).toContain("Finance");
     expect(host.querySelector('[data-picker-folder="f1"]')).not.toBeNull();
-    // the folder of a row: the same Move control as a bot's
-    const move = host.querySelector<HTMLSelectElement>('select[aria-label="Move Budget to folder"]')!;
-    expect([...move.options].map((option) => option.textContent)).toEqual(["No folder", "💼 Finance"]);
+    // the folder of a row: the same Move menu as a bot's (More › Move)
+    await click(button("Actions for Budget"));
+    await click(menuItem("more"));
+    await click(menuItem("move"));
+    const movePage = menuPage("move")!;
+    expect([...movePage.querySelectorAll("[data-thread-menu-item]")].map((item) => item.textContent)).toEqual(["Move to folder", "💼Finance", "No folder"]);
   });
 
   it("switches, pins, files, deletes and creates through the person conversation's own actions", async () => {
     await render(createElement(PersonThreadPicker, { group: person, initialOpen: true }));
     await click([...host.querySelectorAll("button")].find((candidate) => candidate.textContent?.includes("Budget")));
     expect(fixture.dispatch).toHaveBeenCalledWith({ type: "switchGroupTask", groupId: "dm", threadId: "budget" });
-    await click(host.querySelectorAll('button[aria-label="Pin"]')[0]);
+    // Pin waits behind the row's "..." menu now
+    await click(button("Actions for Budget"));
+    await click(menuItem("pin"));
     expect(fixture.dispatch).toHaveBeenCalledWith(expect.objectContaining({ type: "updateGroupTask", groupId: "dm", patch: { pinned: true } }));
-    const move = host.querySelector<HTMLSelectElement>('select[aria-label="Move Budget to folder"]')!;
-    await act(async () => { move.value = ""; move.dispatchEvent(new Event("change", { bubbles: true })); });
+    // out of the folder: More › Move › No folder
+    await click(button("Actions for Budget"));
+    await click(menuItem("more"));
+    await click(menuItem("move"));
+    await click(menuItem("folder-none"));
     expect(fixture.dispatch).toHaveBeenCalledWith({ type: "updateGroupTask", groupId: "dm", threadId: "budget", patch: { projectId: null } });
-    await click(host.querySelectorAll('button[aria-label="Delete thread"]')[0]);
+    // delete: More › Delete
+    await click(button("Actions for Budget"));
+    await click(menuItem("more"));
+    await click(menuItem("delete"));
     expect(fixture.dispatch).toHaveBeenCalledWith(expect.objectContaining({ type: "deleteGroupTask", groupId: "dm" }));
     await click(button("New thread"));
     expect(fixture.dispatch).toHaveBeenCalledWith({ type: "newGroupTask", groupId: "dm" });
@@ -131,16 +148,24 @@ describe("the header picker on a person", () => {
   it("the row's ... menu: copy link, archive and snooze, never a generated title or an approval refresh", async () => {
     await render(createElement(PersonThreadPicker, { group: person, initialOpen: true }));
     await click(button("Actions for Budget"));
-    const panel = host.querySelector('[data-picker-thread-actions="budget"]')!;
-    expect(panel.textContent).toContain("Archive");
-    expect(panel.textContent).toContain("Until new activity");
-    expect(panel.textContent).not.toContain("Regenerate");
-    expect(panel.textContent).not.toContain("permissions");
-    await click([...panel.querySelectorAll("button")].find((candidate) => candidate.textContent === "Archive"));
+    const main = menuPage("main")!;
+    expect(main.textContent).toContain("Archive");
+    expect(main.textContent).toContain("Snooze");
+    await click(menuItem("more"));
+    const more = menuPage("more")!;
+    expect(more.textContent).toContain("Copy link");
+    expect(more.textContent).not.toContain("Regenerate");
+    expect(more.textContent).not.toContain("permissions");
+    // the row's button toggles: close the open menu before opening it again
+    await act(async () => { host.dispatchEvent(new MouseEvent("mousedown", { bubbles: true })); });
+    await click(button("Actions for Budget"));
+    await click(menuButton("main", "Archive"));
     expect(fixture.dispatch).toHaveBeenCalledWith({ type: "updateGroupTask", groupId: "dm", threadId: "budget", patch: { archivedAt: expect.any(Number) } });
     await click(button("Actions for Budget"));
-    const again = host.querySelector('[data-picker-thread-actions="budget"]')!;
-    await click([...again.querySelectorAll("button")].find((candidate) => candidate.textContent === "Until new activity"));
+    await click(menuItem("snooze"));
+    const snoozePage = menuPage("snooze")!;
+    expect(snoozePage.textContent).toContain("Until new activity");
+    await click(menuButton("snooze", "Until new activity"));
     expect(fixture.dispatch).toHaveBeenCalledWith({ type: "updateGroupTask", groupId: "dm", threadId: "budget", patch: { snoozedUntil: 0 } });
   });
 });
@@ -195,7 +220,7 @@ describe("the sidebar tree on a person", () => {
     expect(fixture.dispatch).toHaveBeenCalledWith({ type: "updateGroupTask", groupId: "dm", threadId: "budget", patch: { projectId: null } });
   });
 
-  it("creates a thread in a folder and a folder from the list and folder context menus", async () => {
+  it("creates a thread and a folder from the list and folder context menus", async () => {
     fixture.location = "sidebar";
     await render(createElement(PersonThreadList, { group: person, name: "Bob", selected: true }));
     const list = host.querySelector('[aria-label="Bob threads"]');
@@ -207,8 +232,6 @@ describe("the sidebar tree on a person", () => {
     expect(listMenu).not.toBeNull();
     await click([...listMenu!.querySelectorAll("button")].find((candidate) => candidate.textContent?.trim() === "New thread"));
     expect(fixture.dispatch).toHaveBeenCalledWith({ type: "newGroupTask", groupId: "dm" });
-    await click(button("New thread in Finance"));
-    expect(fixture.dispatch).toHaveBeenCalledWith({ type: "newGroupTask", groupId: "dm", projectId: "f1" });
     await act(async () => {
       list!.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: 20, clientY: 40 }));
     });

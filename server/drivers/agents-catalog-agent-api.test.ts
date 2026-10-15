@@ -7,16 +7,18 @@ import { AGENT_API_TOOL_NAMES, availableTools, catalogProfileFromEnv } from "./a
 const names = (env: Record<string, string>) => availableTools(catalogProfileFromEnv({ SAGAX_BOT_ID: "b1", ...env })).map((tool) => tool.name);
 
 describe("agents catalog: the agent-to-agent tools", () => {
-  it("mounts the ten tools in a direct turn when the harness turns them on", () => {
+  it("mounts the twelve tools in a direct turn when the harness turns them on", () => {
     const chief = names({ SAGAX_AGENT_API: "1", SAGAX_CHIEF_OF_STAFF: "1" });
     for (const tool of AGENT_TOOL_NAMES) expect(chief).toContain(tool);
     expect([...AGENT_API_TOOL_NAMES].sort()).toEqual([...AGENT_TOOL_NAMES].sort());
   });
 
-  it("create_agent is a Primary Bot's only", () => {
+  it("create_agent and delete_agent are a Primary Bot's only; get_agent is every bot's", () => {
     const member = names({ SAGAX_AGENT_API: "1" });
     expect(member).toContain("send_prompt");
+    expect(member).toContain("get_agent");
     expect(member).not.toContain("create_agent");
+    expect(member).not.toContain("delete_agent");
   });
 
   it("is off by default and for an external runtime; the harness alone decides rooms; old tools stay", () => {
@@ -47,5 +49,6 @@ describe("agents catalog: the agent-to-agent tools", () => {
     expect(schema("send_prompt").mode!.enum).toEqual(["fire_and_forget", "blocking", "async"]);
     expect(schema("send_prompt").on_busy!.enum).toEqual(["supersede", "reject", "queue"]);
     expect(schema("find_agents").status!.enum).toEqual(["running", "idle"]);
+    expect(schema("create_agent").idle_hours!.maximum).toBe(720);
   });
 });

@@ -74,7 +74,11 @@ export function lastSeen(lastSeenAt: number, now = Date.now()): string {
 const button = "ui-button ui-button-primary";
 const quiet = "ui-button";
 
-/** Settings → Remote access: mint a one-time pairing code with a QR for
+/** `embedded`: the body only, as the pairing-code method of Settings >
+ * Pair devices' one "Add a device" card (2026-10-14); standalone it is that
+ * card itself (in a browser, on another server).
+ *
+ * Settings → Remote access: mint a one-time pairing code with a QR for
  * the phone app (or for a non-phone client — MCP, `openmausbot pair`, a
  * second desktop app), and see or sign out the devices that hold a
  * session. Shown for every client of a server: a hosted server reached
@@ -87,7 +91,7 @@ const quiet = "ui-button";
  * devices listed, and one line saying why. `focusRequest` counts up when
  * "Connect your phone" opened Settings here: the card scrolls into view with
  * focus on Create pairing code, once it knows what it may show. */
-export function ServerPairingCard({ initialSession = null, initialPairingCodes = true, initialAuthority = "local", perspicaxLinked = false, cloudHome = false, focusRequest = 0 }: { initialSession?: SessionState | null; initialPairingCodes?: boolean; initialAuthority?: "local" | "portal"; perspicaxLinked?: boolean; cloudHome?: boolean; focusRequest?: number }) {
+export function ServerPairingCard({ initialSession = null, initialPairingCodes = true, initialAuthority = "local", perspicaxLinked = false, cloudHome = false, focusRequest = 0, embedded = false }: { initialSession?: SessionState | null; initialPairingCodes?: boolean; initialAuthority?: "local" | "portal"; perspicaxLinked?: boolean; cloudHome?: boolean; focusRequest?: number; embedded?: boolean }) {
   const [session, setSession] = useState<SessionState | null>(initialSession);
   // A hosted workspace, a portal membership, or a linked Perspicax
   // organisation refuses pairing codes: people sign in with OAuth.
@@ -149,9 +153,11 @@ export function ServerPairingCard({ initialSession = null, initialPairingCodes =
     if (pairingBlockedReason(session) !== "chat-only") return null;
     return (
       <div ref={root} tabIndex={-1} data-phone-pairing="server" className="scroll-mt-4 rounded-xl focus:outline-none">
-        <Card collapsible cardId="companion.pairing" title={t("remote.serverPairing.title")} subtitle={t(offered ? "remote.serverPairing.subtitle" : "remote.serverPairing.portalSubtitle")} summary={t("settings.card.chatOnly")}>
-          <p data-server-pairing-chat-only className="mt-3 text-[13px] text-ink-secondary">{t(offered ? "remote.serverPairing.chatOnly" : "remote.serverPairing.portalChatOnly")}</p>
-        </Card>
+        {embedded
+          ? <p data-server-pairing-chat-only className="text-[13px] text-ink-secondary">{t(offered ? "remote.serverPairing.chatOnly" : "remote.serverPairing.portalChatOnly")}</p>
+          : <Card collapsible cardId="companion.pairing" title={t("settings.addDevice.title")} subtitle={t(offered ? "remote.serverPairing.subtitle" : "remote.serverPairing.portalSubtitle")} summary={t("settings.card.chatOnly")}>
+              <p data-server-pairing-chat-only className="mt-3 text-[13px] text-ink-secondary">{t(offered ? "remote.serverPairing.chatOnly" : "remote.serverPairing.portalChatOnly")}</p>
+            </Card>}
       </div>
     );
   }
@@ -189,15 +195,8 @@ export function ServerPairingCard({ initialSession = null, initialPairingCodes =
     if (result !== "empty") setCopied(result);
   }
 
-  return (
-    <div ref={root} tabIndex={-1} data-phone-pairing="server" className="scroll-mt-4 rounded-xl focus:outline-none">
-    <Card
-      collapsible
-      cardId="companion.pairing"
-      title={t("remote.serverPairing.title")}
-      subtitle={t(offered ? "remote.serverPairing.subtitle" : "remote.serverPairing.portalSubtitle")}
-      summary={cardCount("devices", devices.length)}
-    >
+  const body = (
+    <>
       {offered && cloudHome ? <p data-server-pairing-personal className="mt-3 text-[13px] text-ink-secondary">{t("remote.serverPairing.cloudPersonal")}</p> : null}
       {offered ? <div className="mt-3 flex flex-wrap items-center gap-3">
         {cloudHome ? null : <>
@@ -271,7 +270,21 @@ export function ServerPairingCard({ initialSession = null, initialPairingCodes =
         </ul>
       )}
       {error ? <p className="mt-3 text-[13px] text-danger">{error}</p> : null}
-    </Card>
+    </>
+  );
+  return (
+    <div ref={root} tabIndex={-1} data-phone-pairing="server" className="scroll-mt-4 rounded-xl focus:outline-none">
+      {embedded ? body : (
+        <Card
+          collapsible
+          cardId="companion.pairing"
+          title={t("settings.addDevice.title")}
+          subtitle={t(offered ? "remote.serverPairing.subtitle" : "remote.serverPairing.portalSubtitle")}
+          summary={cardCount("devices", devices.length)}
+        >
+          {body}
+        </Card>
+      )}
     </div>
   );
 }

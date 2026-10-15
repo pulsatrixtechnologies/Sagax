@@ -144,6 +144,36 @@ describe("the admin gate on a member's bot", () => {
     expect(gate("mcp__computer__click")).toBe(true);
     expect(gate("Write", [join(root, "thread-1", "a.ts")], { command: "ls", cwd: root })).toBe(true);
   });
+  // 2026-10-14 (bot owner permissions): the owner answers what stays within
+  // their own rights; the admin only what goes beyond them.
+  const ownerGate = (tool: string, command?: unknown) => memberBotAdminApproval({
+    tool, command, workspaceRoot: root,
+    ownerScopedMcpServer: (server) => server === "perspicax_gox" || server === "my_remote",
+  });
+  it("lets the owner answer a tool of a remote or personal MCP server and a web search", () => {
+    expect(ownerGate("mcp__perspicax_gox__cw_psa__query")).toBe(false);
+    expect(ownerGate("perspicax_gox__cw_psa__write")).toBe(false);
+    expect(ownerGate("mcp__my_remote__create_issue")).toBe(false);
+    expect(ownerGate("WebSearch")).toBe(false);
+    expect(ownerGate("TodoWrite")).toBe(false);
+  });
+  it("still sends to an admin what goes beyond the owner's rights", () => {
+    // an unknown server, a host-level built-in server, a shell, a fetch from the host
+    expect(ownerGate("mcp__someone_else__query")).toBe(true);
+    expect(ownerGate("mcp__computer__click")).toBe(true);
+    expect(ownerGate("mcp__browser__navigate")).toBe(true);
+    expect(ownerGate("mcp__sagax-computer__run")).toBe(true);
+    expect(ownerGate("agents__act")).toBe(true);
+    expect(ownerGate("Bash", { command: "ls", cwd: root })).toBe(true);
+    expect(ownerGate("WebFetch")).toBe(true);
+    expect(ownerGate("other")).toBe(true);
+    // a remote server tool named like a shell is still a command
+    expect(ownerGate("mcp__my_remote__run_shell")).toBe(true);
+    expect(ownerGate("mcp__perspicax_gox__query", { command: "ls", cwd: root })).toBe(true);
+  });
+  it("sends every MCP tool to an admin when nothing says which servers are the owner's", () => {
+    expect(gate("mcp__perspicax_gox__cw_psa__query")).toBe(true);
+  });
 });
 
 describe("the key_refused card", () => {

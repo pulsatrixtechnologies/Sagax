@@ -145,6 +145,12 @@ export interface OptionCardData {
   expiresAt?: number;
   /** the narrow grant "always allow" remembers, e.g. "Bash:git" */
   allowKey?: string;
+  /** 2026-10-14 (bot owner permissions): the rule "Always allow" or
+   * "Always deny" would save for the bot's owner: the tool, its target
+   * read from the arguments, the destructive kind and plain words. */
+  ownerRule?: { tool: string; scope: Record<string, string>; destructive?: "delete" | "bulk" | "external-message"; description: string };
+  /** The owner's rule saved when answering this card. */
+  ruleSaved?: { id: string; behavior: "allow" | "ask" | "deny"; description: string };
   /** the Allow rule saved when this card was answered (server/index.ts) */
   alwaysAllowed?: string;
   allowSession?: boolean;
@@ -1568,6 +1574,9 @@ export type Action =
       always?: boolean;
       /** Remember the server-validated exact command and answer atomically. */
       rememberCommand?: boolean;
+      /** 2026-10-14: save the card's ownerRule as the owner's rule (Always
+       * allow / Always deny), atomically with the answer. */
+      rule?: "allow" | "deny";
       /** Local UI recovery hook for voice flows. Never sent to the server. */
       onError?: (message: string) => void;
     }
@@ -4149,6 +4158,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
                 reviewedSha256: action.reviewedSha256,
                 always: action.always,
                 rememberCommand: action.rememberCommand,
+                rule: action.rule,
               }),
             });
           void waitForExecutionSettings(executionBotsBeforeAction, action.threadId)

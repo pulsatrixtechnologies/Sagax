@@ -41,7 +41,9 @@ function notCopiedLine(entry: OrgExportAnswer["summary"]["notCopied"][number]): 
   return t("orgJoin.notCopied.botNotChosen", { name: entry.name });
 }
 
-export function JoinPerspicaxCard() {
+/** `embedded`: the body only, as the Perspicax method of Settings >
+ * Organization's one "Connect to a server" card (2026-10-14). */
+export function JoinPerspicaxCard({ embedded = false }: { embedded?: boolean } = {}) {
   const { state: store } = useStore();
   const bridge = window.ogb?.remoteClient?.active ? undefined : window.ogb?.orgJoin;
   const bots = useMemo(() => offeredBots(store.bots ?? [], store.config?.viewer?.principalId), [store.bots, store.config?.viewer?.principalId]);
@@ -104,8 +106,7 @@ export function JoinPerspicaxCard() {
   };
 
   const summary = preview?.summary;
-  return (
-    <Card collapsible cardId="organization.joinPerspicax" title={t("orgJoin.title")} summary={t("orgJoin.summary")}>
+  const body = (
       <div className="flex flex-col gap-3 text-[13px]">
         <p className="leading-relaxed text-ink-secondary">{t("orgJoin.intro")}</p>
         {bots.length === 0 ? <p className="text-ink-secondary">{t("orgJoin.noBots")}</p> : (
@@ -175,6 +176,11 @@ export function JoinPerspicaxCard() {
           </div>
         )}
       </div>
+  );
+  if (embedded) return body;
+  return (
+    <Card collapsible cardId="organization.joinPerspicax" title={t("orgJoin.title")} summary={t("orgJoin.summary")}>
+      {body}
     </Card>
   );
 }

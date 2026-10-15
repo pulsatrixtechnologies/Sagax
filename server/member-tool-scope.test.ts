@@ -5,7 +5,7 @@ import { builtinAgentToolName, HOST_LEVEL_AGENT_TOOLS, MEMBER_OWN_SCOPE_AGENT_TO
 
 const everything: CatalogProfile = {
   externalRuntime: false, coordinating: false, ownThreadCreation: true, skillAuthoring: true, sharedComputers: true,
-  voiceNotes: true, cloudHome: false, memoryEnabled: true, groupMemory: true, chief: true, botId: "bot-1",
+  voiceNotes: true, cloudHome: false, memoryEnabled: true, groupMemory: true, chief: true, claims: true, botId: "bot-1",
 };
 
 /** Every tool the agents catalog can show, across the profiles that change it. */
@@ -43,6 +43,10 @@ describe("member tool scope on an organization server", () => {
     expect(memberOwnScopeTool("agents__memory_update")).toBe("memory");
     expect(memberOwnScopeTool("agents__propose_routine")).toBe("own-setup");
     expect(memberOwnScopeTool("agents__end_call")).toBe("conversation");
+    expect(memberOwnScopeTool("agents__claim")).toBe("conversation");
+    expect(memberOwnScopeTool("agents__claim_renew")).toBe("conversation");
+    expect(memberOwnScopeTool("agents__claim_release")).toBe("conversation");
+    expect(memberOwnScopeTool("agents__claim_list")).toBe("read");
   });
 
   it("keeps the host-level agents tools, other servers and look-alikes behind the admin gate", () => {

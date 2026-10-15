@@ -19,6 +19,9 @@
 //       ends with the structured summary
 //   M7  the agent-to-agent tools (agents/{tool}): a person's AI client lists,
 //       sends (blocking and async + await_turn) and reads pages; scopes hold
+//   M8  Perspicax #321: create_agent makes a temporary agent the app never
+//       shows; get_agent reads its profile; only its owner or an admin pins
+//       or deletes it; delete_agent archives it and keeps it on disk
 import { spawn, type ChildProcess } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { request } from "node:http";
@@ -422,11 +425,68 @@ posixOnly("Perspicax AI clients: the Sagax member API", () => {
     // scopes: create needs clients.agentsCreate (off for members); Zoe holds no client key
     expect((await member("POST", "agents/create_agent", BOB, { name: "Nova" })).body).toMatchObject({ code: "forbidden_scope", scope: "agents.create" });
     expect((await member("POST", "agents/list_agents", ZOE, {})).body).toMatchObject({ code: "forbidden_scope" });
-    expect((await member("POST", "agents/delete_agent", BOB, {})).status).toBe(404);
+    expect((await member("POST", "agents/delete_agent", BOB, {})).body).toMatchObject({ code: "forbidden_scope", scope: "agents.create" });
 
     const audit = await api("GET", "/api/org/admin/audit?category=client", { bearer: idp.consoleAssertion({ sub: ALICE.sub, aud: BASE, role: "admin" }) });
     const rows = (audit.body.rows as Array<any>).filter((row) => String(row.action).startsWith("agents."));
     expect(rows.find((row) => row.action === "agents.send_prompt")).toMatchObject({ actor: { kind: "person", name: "Bob" } });
     expect(JSON.stringify(rows)).not.toContain("sum the invoices");
+  }, 90_000);
+
+  it("M8: temporary agents: hidden from the app, profile, owner-only pin and delete, archive kept on disk", async () => {
+    const events = await openStream(alice);
+    const made = await member("POST", "agents/create_agent", ALICE, { name: "Scratch 321", description: "One branch only", idle_hours: 2 });
+    expect(made.status, made.text).toBe(200);
+    expect(made.body.agent).toMatchObject({ name: "Scratch 321", temporary: true });
+    const id = made.body.agent.id as string;
+
+    // the app never lists it, not even to its owner, and no live frame names it
+    expect(((await api("GET", "/api/bots?messages=0", alice)).body.bots as Array<any>).some((bot) => bot.id === id)).toBe(false);
+    // the AI client and the other agents reach it
+    expect(((await member("POST", "agents/list_agents", ALICE, {})).body.agents as Array<any>).find((agent) => agent.id === id)).toMatchObject({ temporary: true });
+
+    const got = await member("POST", "agents/get_agent", ALICE, { agent_id: id });
+    expect(got.status, got.text).toBe(200);
+    expect(got.body).toMatchObject({
+      agent: { id, name: "Scratch 321", temporary: true },
+      owner: { principal_id: ids.alice },
+      temporary: { idle_hours: 2, pinned: false },
+    });
+    expect(got.body.profile).toMatchObject({ voice_settings: expect.any(Object), headings: expect.any(Array) });
+    expect(String(got.body.profile_url)).toBe(`${idp.issuer.replace(/\/+$/, "")}/console/sagax/bots/${id}`);
+    expect(got.body.temporary.expires_at).toBeGreaterThan(Date.now());
+
+    // another person: out of their reach, and never theirs to pin
+    expect((await member("POST", "agents/get_agent", BOB, { agent_id: id })).body.code).toBe("unknown_agent");
+    const bobPin = await api("PUT", `/api/bots/${id}/temporary-pin`, bob, { pinned: true });
+    expect(bobPin.status, bobPin.text).not.toBe(200);
+    // the owner pins it: it no longer expires
+    const pinned = await api("PUT", `/api/bots/${id}/temporary-pin`, alice, { pinned: true });
+    expect(pinned.status, pinned.text).toBe(200);
+    expect((await member("POST", "agents/get_agent", ALICE, { agent_id: id })).body.temporary).toMatchObject({ pinned: true, expires_at: null });
+
+    // delete_agent archives it: gone from every list, its conversation kept
+    const deleted = await member("POST", "agents/delete_agent", ALICE, { agent_id: id });
+    expect(deleted.status, deleted.text).toBe(200);
+    expect(deleted.body).toMatchObject({ agent_id: id, archived: true });
+    expect(deleted.body.purge_at - deleted.body.archived_at).toBe(30 * 24 * 3_600_000);
+    expect(((await member("POST", "agents/list_agents", ALICE, {})).body.agents as Array<any>).some((agent) => agent.id === id)).toBe(false);
+    expect((await member("POST", "agents/get_agent", ALICE, { agent_id: id })).body.code).toBe("unknown_agent");
+    expect((await member("POST", "agents/delete_agent", ALICE, { agent_id: id })).body.code).toBe("unknown_agent");
+    const stored = (JSON.parse(readFileSync(join(home, ".sagax", "bots.json"), "utf8")) as Array<any>).find((bot) => bot.id === id);
+    expect(stored.temporary).toMatchObject({ ownerPrincipalId: ids.alice, idleHours: 2, archived: { reason: "deleted", by: { kind: "person", principalId: ids.alice } } });
+    expect((await api("POST", `/api/bots/${id}/messages`, alice, { text: "still there?" })).status).toBe(410);
+    // a lasting bot is never deleted from here
+    expect((await member("POST", "agents/delete_agent", ALICE, { agent_id: bots.atlas!.id })).body.code).toBe("not_temporary");
+
+    await sleep(500);
+    events.close();
+    expect(events.text()).not.toContain(id);
+
+    const audit = await api("GET", "/api/org/admin/audit?category=client", { bearer: idp.consoleAssertion({ sub: ALICE.sub, aud: BASE, role: "admin" }) });
+    const rows = audit.body.rows as Array<any>;
+    expect(rows.find((row) => row.action === "agents.create_agent" && row.after?.outcome === "ok")?.after).toMatchObject({ temporary: true, idleHours: 2 });
+    expect(rows.find((row) => row.action === "agents.delete_agent" && row.after?.outcome === "ok")).toMatchObject({ target: { kind: "bot", id }, actor: { kind: "person", name: "Alice" } });
+    expect(rows.some((row) => row.action === "agents.temporary.pinned")).toBe(true);
   }, 90_000);
 });

@@ -1,6 +1,6 @@
-// The persona editor: the Achievements shell, one category per More
-// section, the same section bodies as the bot panel, and locked sections
-// shown with their reason instead of hidden.
+// The bot editor: the Achievements shell, six groups (JC 2026-10-14) whose
+// pages show the bot panel's own section bodies one under the other, and
+// locked sections shown with their reason instead of hidden.
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -57,8 +57,8 @@ vi.mock("@/state/store", async (importOriginal) => {
   };
 });
 
-const { PersonaEditorModal, PERSONA_CATEGORIES, personaCategoryMatches } = await import("./PersonaEditorModal");
-const { personaCategoryForSection } = await import("@/lib/persona-sections");
+const { PersonaEditorModal, PERSONA_GROUPS } = await import("./PersonaEditorModal");
+const { personaCategoryForSection, personaGroupOf } = await import("@/lib/persona-sections");
 
 const bot = {
   id: "pepper", threadId: "t", name: "Pepper", title: "Research", description: "Finds sources.", notifications: true,
@@ -85,20 +85,43 @@ beforeEach(() => {
 });
 afterEach(() => vi.unstubAllGlobals());
 
+/** The markup of one group's page (shown or kept hidden). */
+function groupHtml(html: string, group: string): { hidden: boolean; html: string } {
+  const start = html.indexOf(`data-persona-group="${group}"`);
+  if (start < 0) return { hidden: true, html: "" };
+  const next = html.indexOf("data-persona-group=", start + 1);
+  const chunk = html.slice(start, next < 0 ? undefined : next);
+  return { hidden: /^data-persona-group="\w+" hidden=""/.test(chunk), html: chunk };
+}
+const groupsOf = (html: string) => [...html.matchAll(/data-persona-category="(\w+)"/g)].map((match) => match[1]);
+
 describe("persona editor shell", () => {
-  it("uses the Achievements shell and lists the categories in order", () => {
+  it("uses the Achievements shell and lists the six groups in order", () => {
     const html = render("overview");
     expect(html).toContain('role="dialog"');
     expect(html).toContain('aria-modal="true"');
     expect(html).toContain("data-persona-modal");
     expect(html).toContain("h-[min(700px,calc(100dvh-96px))] w-[min(900px,calc(100vw-40px))]");
     expect(html).toContain("w-[198px]");
-    const listed = [...html.matchAll(/data-persona-category="(\w+)"/g)].map((match) => match[1]);
-    expect(listed).toEqual([...PERSONA_CATEGORIES]);
-    expect(listed).toEqual(["overview", "appearance", "soul", "rules", "skills", "memory", "files", "access", "model", "permissions", "voice", "perspicax", "history", "usage"]);
-    expect(html).toContain('data-persona-search=""');
-    expect(html).toContain(">Persona<");
+    expect(groupsOf(html)).toEqual(PERSONA_GROUPS.map((group) => group.id));
+    expect(groupsOf(html)).toEqual(["profile", "instructions", "memoryFiles", "modelTools", "behavior", "activity"]);
+    for (const label of ["Profile", "Instructions", "Memory and files", "Model and tools", "Behavior", "History and usage"]) {
+      expect(html).toContain(`>${label}</span>`);
+    }
+    // six entries need no search box; one label for the editor
+    expect(html).not.toContain("data-persona-search");
+    expect(html).toContain(">Edit bot<");
+    expect(html).not.toContain(">Persona<");
     expect(html).toContain('aria-current="page"');
+  });
+
+  it("names the groups in French", () => {
+    setLocale("fr");
+    const html = render("overview");
+    for (const label of ["Profil", "Instructions", "Mémoire et fichiers", "Modèle et outils", "Comportement", "Historique et utilisation"]) {
+      expect(html).toContain(`>${label}</span>`);
+    }
+    expect(html).toContain(">Modifier le bot<");
   });
 
   it("renders nothing when closed or when the bot is gone", () => {
@@ -108,83 +131,73 @@ describe("persona editor shell", () => {
     expect(renderToStaticMarkup(createElement(PersonaEditorModal))).toBe("");
   });
 
-  it("searches categories by name and by the words their section answers to", () => {
-    expect(personaCategoryMatches("model", "engine")).toBe(true);
-    expect(personaCategoryMatches("soul", "persona")).toBe(true);
-    expect(personaCategoryMatches("usage", "tokens")).toBe(true);
-    expect(personaCategoryMatches("usage", "zzz")).toBe(false);
-  });
-
-  it("follows Simple mode: the sections it hides in the bot panel are not listed", () => {
+  it("follows Simple mode: the sections it hides in the bot panel are not shown, and an empty group goes", () => {
     fixture.advanced = false;
-    const listed = [...render("overview").matchAll(/data-persona-category="(\w+)"/g)].map((match) => match[1]);
-    // Rules and Files stay in Simple mode (Files hides its badges' details)
-    expect(listed).toEqual(["overview", "appearance", "soul", "rules", "memory", "files", "model", "permissions", "voice"]);
+    const html = render("overview");
+    expect(groupsOf(html)).toEqual(["profile", "instructions", "memoryFiles", "modelTools", "behavior"]);
+    const instructions = groupHtml(render("soul"), "instructions").html;
+    expect(instructions).toContain('data-section-body="soul"');
+    expect(instructions).toContain('data-section-body="rules"');
+    expect(instructions).not.toContain('data-section-body="skills"');
+    const tools = groupHtml(render("model"), "modelTools").html;
+    expect(tools).toContain('data-section-body="model"');
+    expect(tools).not.toContain('data-section-body="access"');
+    expect(tools).not.toContain('data-section-body="perspicax"');
   });
 });
 
-describe("persona editor categories", () => {
-  const bodies: Record<string, string[]> = {
-    appearance: ["appearance"],
-    soul: ["soul"],
-    skills: ["skills"],
-    access: ["access", "worksOn"],
-    model: ["model"],
-    permissions: ["permissions"],
-    voice: ["voice"],
-    perspicax: ["perspicax"],
-    history: ["history"],
-    usage: ["usage"],
+describe("persona editor groups", () => {
+  const pages: Record<string, { section: BotSettingsSection; bodies: string[] }> = {
+    profile: { section: "overview", bodies: ["avatar", "overview", "sharing", "appearance"] },
+    instructions: { section: "soul", bodies: ["soul", "rules", "skills"] },
+    memoryFiles: { section: "memory", bodies: ["memory", "files"] },
+    modelTools: { section: "model", bodies: ["model", "worksOn", "access", "perspicax"] },
+    behavior: { section: "permissions", bodies: ["permissions", "voice"] },
+    activity: { section: "history", bodies: ["history", "usage"] },
   };
-  for (const [category, expected] of Object.entries(bodies)) {
-    it(`${category} shows the bot panel's own section`, () => {
-      const html = render(category as BotSettingsSection);
-      expect(html).toContain(`data-persona-pane="${category}"`);
-      for (const name of expected) expect(html).toContain(`data-section-body="${name}"`);
+  for (const [group, { section, bodies }] of Object.entries(pages)) {
+    it(`${group} shows its sections one under the other`, () => {
+      const html = render(section);
+      expect(html).toContain(`data-persona-pane="${group}"`);
+      const page = groupHtml(html, group);
+      expect(page.hidden).toBe(false);
+      for (const name of bodies) expect(page.html, name).toContain(`data-section-body="${name}"`);
       expect(html).not.toContain("data-persona-locked");
-      // the pane's heading is the category
       expect(html).toMatch(/<h2[^>]*>[^<]+<\/h2>/);
     });
   }
 
-  for (const category of ["rules", "files"]) {
-    it(`${category} stays mounted like memory and shows only on its own category`, () => {
+  it("opens a deep link to a section on its group", () => {
+    expect(personaGroupOf("appearance")).toBe("profile");
+    expect(personaGroupOf("skills")).toBe("instructions");
+    expect(personaGroupOf("files")).toBe("memoryFiles");
+    expect(personaGroupOf("worksOn")).toBe("modelTools");
+    expect(personaGroupOf("slack")).toBe("modelTools");
+    expect(personaGroupOf("perspicax")).toBe("modelTools");
+    expect(personaGroupOf("voice")).toBe("behavior");
+    expect(personaGroupOf("usage")).toBe("activity");
+    expect(personaGroupOf("sharing")).toBe("profile");
+    expect(personaCategoryForSection("appearance")).toBe("appearance");
+    expect(render("appearance")).toContain('data-persona-pane="profile"');
+    expect(render("access")).toContain('data-persona-pane="modelTools"');
+    expect(render("usage")).toContain('data-persona-pane="activity"');
+    // each section keeps its anchor for the scroll
+    expect(render("access")).toContain('data-persona-section="access"');
+  });
+
+  for (const category of ["memory", "rules", "files"]) {
+    it(`${category} stays mounted on every page and shows only on its group's page`, () => {
       const own = render(category as BotSettingsSection);
-      expect(own).toContain(`data-persona-pane="${category}"`);
-      expect(own).toMatch(new RegExp(`<div><div data-section-body="${category}"></div></div>`));
+      const group = personaGroupOf(category as BotSettingsSection);
+      expect(groupHtml(own, group).html).toContain(`data-section-body="${category}"`);
       const elsewhere = render("model");
-      expect(elsewhere).toMatch(new RegExp(`<div hidden=""><div data-section-body="${category}"></div></div>`));
+      const page = groupHtml(elsewhere, group);
+      expect(page.hidden).toBe(true);
+      expect(page.html).toContain(`data-section-body="${category}"`);
     });
   }
 
-  it("finds Appearance by the words people use for the bot's look", () => {
-    for (const word of ["mascot", "avatar", "skin", "color", "character", "look"]) expect(personaCategoryMatches("appearance", word), word).toBe(true);
-    expect(personaCategoryMatches("appearance", "zzz")).toBe(false);
-    expect(render("appearance")).toMatch(/<h2[^>]*>Appearance<\/h2>/);
-  });
-
-  it("lands a deep link to Appearance on its own category, never locked", () => {
-    expect(personaCategoryForSection("appearance")).toBe("appearance");
-    const state = { config: memberConfig };
-    const listed = [...render("overview", state).matchAll(/data-persona-category="(\w+)"( data-locked="")?/g)];
-    expect(listed.find((match) => match[1] === "appearance")?.[2]).toBeUndefined();
-  });
-
-  it("finds Rules and Files by the words people use for them", () => {
-    expect(personaCategoryMatches("rules", "constraints")).toBe(true);
-    expect(personaCategoryMatches("files", "docs")).toBe(true);
-    expect(personaCategoryMatches("files", "upload")).toBe(true);
-  });
-
-  it("memory stays mounted and shows only on its own category", () => {
-    const onMemory = render("memory");
-    expect(onMemory).toContain('data-section-body="memory"');
-    expect(onMemory).toMatch(/<div><div data-section-body="memory"><\/div><\/div>/);
-    const elsewhere = render("model");
-    expect(elsewhere).toMatch(/<div hidden=""><div data-section-body="memory"><\/div><\/div>/);
-  });
-
-  it("overview shows the mascot, name, label, description, facts and quick actions, then the server overview", () => {
+  it("profile shows the mascot, name, label, description and facts, and no quick actions (they are in the bot's \"...\" menu)", () => {
     const html = render("overview");
     expect(html).toContain('data-section-body="avatar"');
     expect(html).toContain(">Pepper<");
@@ -193,8 +206,9 @@ describe("persona editor categories", () => {
     for (const label of ["Engine", "Model", "Owner", "Sharing"]) expect(html).toContain(`>${label}</dt>`);
     expect(html).toContain(">opus</dd>");
     expect(html).toContain(">You</dd>");
-    const actions = [...html.matchAll(/data-persona-action="([\w-]+)"/g)].map((match) => match[1]);
-    expect(actions).toEqual(["rename", "put-on-desktop", "make-primary", "export-zip", "archive"]);
+    // Every action moved to the bot's "..." menu (BotActionsMenu); the
+    // overview itself has none left (2026-10-14)
+    expect(html).not.toContain("data-persona-action");
     expect(html).toContain('data-section-body="overview"');
     // on a Perspicax server the sharing list sits under the overview
     expect(html).toContain('data-section-body="sharing"');
@@ -206,48 +220,55 @@ describe("persona editor categories", () => {
     expect(html).not.toContain('data-section-body="perspicax"');
     expect(html).toContain("Perspicax profiles are offered on a server signed in with Perspicax.");
   });
+
+  it("names Soul Personality, Skills Compétences and History Changes in French", () => {
+    setLocale("fr");
+    const html = render("soul");
+    expect(html).toContain(">Règles</h3>");
+    expect(html).toContain(">Compétences</h3>");
+    expect(html).not.toContain(">Skills<");
+    expect(html).not.toContain(">Soul<");
+    const activity = render("history");
+    expect(activity).toContain(">Changements</h3>");
+  });
 });
 
 describe("persona editor for an organization member", () => {
   it("opens Rules and Files on a bot she owns, like the Soul, while Memory stays an admin's", () => {
     const owned = { ...bot, ownerUserId: "pr_me" } as Bot;
     const state = { config: memberConfig, bots: [owned, other] };
-    const listed = [...render("overview", state).matchAll(/data-persona-category="(\w+)"( data-locked="")?/g)];
-    const locked = listed.filter((match) => match[2]).map((match) => match[1]);
-    expect(locked).not.toContain("soul");
-    expect(locked).not.toContain("rules");
-    expect(locked).not.toContain("files");
-    expect(locked).toContain("memory");
-    expect(render("rules", state)).toContain('data-section-body="rules"');
-    expect(render("files", state)).toContain('data-section-body="files"');
+    const instructions = groupHtml(render("soul", state), "instructions").html;
+    expect(instructions).toContain('data-section-body="soul"');
+    expect(instructions).toContain('data-section-body="rules"');
+    const memory = groupHtml(render("memory", state), "memoryFiles").html;
+    expect(memory).toContain('data-section-body="files"');
+    expect(memory).not.toContain('data-section-body="memory"');
+    expect(memory).toContain("Only this bot&#x27;s owner or an admin can change this.");
   });
 
   it("shows a bot they do not own locked, with the reason, never hidden", () => {
     const state = { config: memberConfig };
-    const listed = [...render("overview", state).matchAll(/data-persona-category="(\w+)"( data-locked="")?/g)];
-    expect(listed.map((match) => match[1])).toEqual([...PERSONA_CATEGORIES]);
-    const locked = listed.filter((match) => match[2]).map((match) => match[1]);
-    expect(locked).toEqual(expect.arrayContaining(["soul", "rules", "memory", "files", "access", "permissions", "history"]));
-    // a locked Rules or Files category shows the reason, never the editor
-    for (const category of ["rules", "files"] as const) {
-      const pane = render(category, state);
-      expect(pane).not.toContain(`data-section-body="${category}"`);
-      expect(pane).toContain("Only this bot&#x27;s owner or an admin can change this.");
-    }
-
-    const soul = render("soul", state);
-    expect(soul).not.toContain('data-section-body="soul"');
-    expect(soul).toContain("Only this bot&#x27;s owner or an admin can change this.");
-    expect(soul).toContain("Be brief.");
-    expect(soul).toContain('aria-readonly="true"');
+    expect(groupsOf(render("overview", state))).toEqual(PERSONA_GROUPS.map((group) => group.id));
+    const instructions = groupHtml(render("soul", state), "instructions").html;
+    expect(instructions).not.toContain('data-section-body="soul"');
+    expect(instructions).not.toContain('data-section-body="rules"');
+    expect(instructions).toContain("Only this bot&#x27;s owner or an admin can change this.");
+    expect(instructions).toContain("Be brief.");
+    expect(instructions).toContain('aria-readonly="true"');
+    const files = groupHtml(render("files", state), "memoryFiles").html;
+    expect(files).not.toContain('data-section-body="files"');
 
     const history = render("history", state);
     expect(history).not.toContain('data-section-body="history"');
     expect(history).toContain("A bot&#x27;s change history is for admins.");
 
     const overview = render("overview", state);
-    expect(overview).toMatch(/data-persona-action="rename" disabled=""/);
-    expect(overview).toContain('data-persona-action-reason="make-primary"');
+    expect(overview).not.toContain('data-persona-action="rename"');
+    expect(overview).not.toContain('data-persona-action="make-primary"');
     expect(overview).not.toContain('data-persona-action="archive"');
+    // a group where nothing can be changed shows the lock in the list
+    const locked = [...overview.matchAll(/data-persona-category="(\w+)"( data-locked="")?/g)].filter((match) => match[2]).map((match) => match[1]);
+    expect(locked).toContain("memoryFiles");
+    expect(locked).not.toContain("profile");
   });
 });

@@ -45,12 +45,28 @@ export const MEMBER_OWN_SCOPE_AGENT_TOOLS: Readonly<Record<string, MemberToolFam
   close_thread: "conversation",
   retry_thread: "conversation",
   create_options_card: "conversation",
+  // the person's own rights decide through act; a nudge is rate limited
+  run_routine: "conversation",
+  answer_approval: "conversation",
+  nudge_person: "conversation",
+  // Perspicax gateway tools (PERSPICAX_TOOLS): Perspicax applies the person's
+  // grants; the admin ones (api_reload, review_write) are host level below
+  memory_recall: "read", memory_search: "read", memory_feedback: "read",
+  memory_write: "memory", memory_propose: "memory", memory_forget: "memory",
+  api_list: "read", api_search: "read", api_describe: "read", api_lookup: "read",
+  api_plan: "read", api_result_query: "read", identity: "read", flow: "read",
+  api_upload: "conversation", flow_action: "conversation",
   // chat widgets (agents-widget-tools.ts): a card in the member's own conversation
   show_widget: "conversation",
   update_widget: "conversation",
   send_voice_note: "conversation",
   end_call: "conversation",
   request_credential: "conversation",
+  // claims (perspicax-claims.ts): a lease in Perspicax held by this bot for
+  // its person, through the turn's own Perspicax token; claim_list is a read
+  claim: "conversation",
+  claim_renew: "conversation",
+  claim_release: "conversation",
   memory_update: "memory",
   memory_log: "memory",
   group_memory_update: "memory",
@@ -83,7 +99,7 @@ export const MEMBER_OWN_SCOPE_AGENT_TOOLS: Readonly<Record<string, MemberToolFam
  *   archive_cloud_agent
  *                   a cloud coding agent run on a provider account */
 export const HOST_LEVEL_AGENT_TOOLS: ReadonlySet<string> = new Set([
-  "act", "add_mcp_server", "attach_file", "vm_exec", "shared_computer",
+  "act", "manage_pairing", "manage_settings", "api_reload", "review_write", "add_mcp_server", "attach_file", "vm_exec", "shared_computer",
   "list_terminal_resources", "offer_shell_terminal",
   "launch_cloud_agent", "cloud_agent_follow_up", "cancel_cloud_agent", "archive_cloud_agent",
 ]);

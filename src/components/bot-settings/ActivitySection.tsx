@@ -16,7 +16,7 @@
 // elapsed time, current step and Stop where the viewer may. When it finishes
 // it reads "Finished" for FINISHED_LINGER_MS, fades out and leaves
 // (LiveActivity). Activity is drawn first, as "Ongoing activities", above
-// Coding and the History row; it replaces the separate rail that used to
+// Coding (the All history row shows only when neither is drawn); it replaces the separate rail that used to
 // open beside the chat. A section with nothing to show is not drawn, title
 // included. The section title opens ActivityListModal, the history (newest
 // first, by status, searchable), and a card opens ActivityDetailModal. The
@@ -29,6 +29,7 @@ import { api, type Bot } from "@/state/store";
 import { t } from "@/lib/i18n";
 import { cn } from "@/lib/cn";
 import { openExternalLink } from "@/lib/app-links";
+import { useAdvancedMode } from "@/lib/interface-mode";
 import {
   activityLive,
   codeWorkWhen,
@@ -224,9 +225,10 @@ export function CodeWorkList({ work, now }: { work: CodingWork; now: number }) {
 /** What Details shows for Coding and Activity, given the loaded list:
  * each section's entries, and whether it is drawn at all. Nothing loaded
  * yet (or a failed first load) draws neither. */
-export function panelSections(list: BotActivityList | null, live?: LiveView) {
+export function panelSections(list: BotActivityList | null, live?: LiveView, advanced = true) {
   const coding = list ? codingLive(list.items, live) : [];
-  const work = list ? codingWork(list.items) : { pullRequests: [], branches: [], commits: [] };
+  // The pull requests, branches and commits are for Advanced mode only.
+  const work = list && advanced ? codingWork(list.items) : { pullRequests: [], branches: [], commits: [] };
   // Launched agents split by their work: code under Coding, the rest (a
   // dispatch run, bot-to-bot work) under Activity.
   const launchedAll = list?.launchedAgents ?? [];
@@ -265,13 +267,13 @@ export function SectionHeader({ icon, title, name, onOpenHistory }: { icon: Reac
 }
 
 /** Details' activity block, top down: Ongoing activities (parallel work
- * running or just finished), then Coding, then one quiet History row. Each
- * section is drawn only when it has something to show, title included; the
- * History row stays (once the list loaded) so the history is always one
- * click away, and the section titles open it too. A first load that failed
+ * running or just finished), then Coding. Each section is drawn only when it
+ * has something to show, title included, and its title opens the history.
+ * When neither is drawn (once the list loaded), one quiet "All history" row
+ * keeps the history one click away. A first load that failed
  * is one quiet line; a later failed refresh keeps the last list. Split out so
  * it renders without the fetching. */
-export function PanelSections({ list, live, actions, onOpenHistory, onOpenLaunched, error = false }: {
+export function PanelSections({ list, live, actions, onOpenHistory, onOpenLaunched, error = false, advanced = true }: {
   list: BotActivityList | null;
   live?: LiveView;
   actions: CardActions;
@@ -279,8 +281,10 @@ export function PanelSections({ list, live, actions, onOpenHistory, onOpenLaunch
   onOpenLaunched?: (item: BotLaunchedAgentItem) => void;
   /** The newest list fetch failed. */
   error?: boolean;
+  /** Advanced mode: the Git links (pull requests, branches, commits) show. */
+  advanced?: boolean;
 }) {
-  const { coding, work, launched, launchedOther, other, showCoding, showActivity } = panelSections(list, live);
+  const { coding, work, launched, launchedOther, other, showCoding, showActivity } = panelSections(list, live, advanced);
   if (list === null) {
     return error ? <p role="status" data-activity-error className="px-0.5 text-[12.5px] text-ink-tertiary">{t("botPanel.coding.error")}</p> : null;
   }
@@ -311,20 +315,24 @@ export function PanelSections({ list, live, actions, onOpenHistory, onOpenLaunch
           <CodeWorkList work={work} now={actions.now ?? Date.now()} />
         </section>
       )}
-      {/* Same header as the sections above and Routines; 28px like Routines' row. */}
-      <div className="flex min-h-7 items-center">
-        <SectionHeader
-          icon={<History size={16} aria-hidden="true" className="text-ink-secondary" />}
-          title={t("botPanel.history.title")}
-          name="all"
-          onOpenHistory={onOpenHistory}
-        />
-      </div>
+      {/* Only when no section title opens the history: same header as
+          Routines, 28px like its row. */}
+      {!showActivity && !showCoding && (
+        <div className="flex min-h-7 items-center">
+          <SectionHeader
+            icon={<History size={16} aria-hidden="true" className="text-ink-secondary" />}
+            title={t("botPanel.history.all")}
+            name="all"
+            onOpenHistory={onOpenHistory}
+          />
+        </div>
+      )}
     </>
   );
 }
 
 export function ActivitySection({ bot }: { bot: Bot }) {
+  const advanced = useAdvancedMode();
   const feed = useBotActivityFeed(bot);
   const [open, setOpen] = useState<BotActivityItem | null>(null);
   const [all, setAll] = useState<BotActivityFilter | null>(null);
@@ -345,7 +353,7 @@ export function ActivitySection({ bot }: { bot: Bot }) {
 
   return (
     <>
-      <PanelSections list={list} live={feed.live} actions={actions} onOpenHistory={setAll} onOpenLaunched={openLaunched} error={error} />
+      <PanelSections list={list} live={feed.live} actions={actions} onOpenHistory={setAll} onOpenLaunched={openLaunched} error={error} advanced={advanced} />
       {all && (
         <ActivityListModal
           botId={bot.id}

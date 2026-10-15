@@ -968,11 +968,19 @@ export function liveCallsEnabled(env: NodeJS.ProcessEnv = process.env): boolean 
   return env.SAGAX_LIVE_CALLS === "1";
 }
 
+/** The key a Live call uses: a key saved for Live calls only (older
+ * installs), else the OpenAI key of Settings > Models and voice. One OpenAI
+ * key is enough since 2026-10-14. */
+export function liveCallKey(cfg: AppConfig): string {
+  return cfg.live?.key?.trim() || cfg.openai?.key?.trim() || "";
+}
+
 export function liveSettingsFor(cfg: AppConfig, env: NodeJS.ProcessEnv = process.env): LiveSettings {
   const minutes = cfg.live?.idleMinutes;
   return {
     enabled: liveCallsEnabled(env),
-    configured: Boolean(cfg.live?.key?.trim()),
+    configured: Boolean(liveCallKey(cfg)),
+    ...(cfg.live?.key?.trim() ? { separateKey: true } : {}),
     voice: cfg.live?.voice ?? "",
     readTypedReplies: cfg.live?.readTypedReplies ?? true,
     idleMinutes: Number.isInteger(minutes) && minutes! >= 1 && minutes! <= 60 ? minutes! : LIVE_IDLE_MINUTES_DEFAULT,

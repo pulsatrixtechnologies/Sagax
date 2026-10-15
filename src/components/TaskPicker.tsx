@@ -6,7 +6,7 @@
 // long job and a quick question can sit side by side under one agent.
 import { copyText } from "@/lib/copy-text";
 import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { Archive, ArchiveRestore, BellOff, Check, ChevronLeft, Clock, FolderInput, Link2, Loader2, MessagesSquare, MoreHorizontal, Pencil, Pin, PinOff, Plus, RefreshCw, Search, Trash2 } from "lucide-react";
+import { Check, ChevronLeft, MessagesSquare, MoreHorizontal, Plus, Search } from "lucide-react";
 import { api, currentTaskBot, useStore, type Bot, type BotProject, type Group, type GroupTaskUpdatePatch, type Task } from "@/state/store";
 import { approvalModeFor } from "../../shared/approval-mode";
 import { llmThreadTitlesEnabled } from "@/lib/feature-flags";
@@ -26,7 +26,8 @@ import { BotProjectDialog, FolderActions, FolderIcon, NewThreadButton } from "./
 import { useShowThreads, useThreadsLocationChoice } from "@/lib/thread-preferences";
 import { threadsOffReturnTarget } from "./thread-home";
 import { threadsWhenTreeHidden } from "./SidebarBotActivity";
-import { formatUpdatedAt, isArchived, isSnoozed, nextSixPm, orderedThreadList, threadByline, threadRecency, threadUpdatedLabel, tomorrowNineAm, useRelativeNow, useSnoozeExpiry } from "./SidebarThreadRow";
+import { formatUpdatedAt, orderedThreadList, threadByline, threadRecency, threadUpdatedLabel, useRelativeNow, useSnoozeExpiry } from "./SidebarThreadRow";
+import { ThreadMenu, type ThreadMenuActions } from "./ThreadMenu";
 
 /** Click-to-switch used to close this menu immediately, which unmounted the
  * row before a double-click (or right-click) could start a rename. Linger
@@ -116,38 +117,28 @@ export type PickerFolderActions = {
   onMarkRead: (projectId: string, onSaved: () => void) => void;
 };
 
-const PANEL_ITEM = "flex w-full items-center gap-2 rounded px-2.5 py-1.5 text-left text-[12px] text-popover-ink hover:bg-popover-hover disabled:opacity-40";
-
-/** The extra actions of one picker row, unfolded under it: what the sidebar
- * thread row's menu offered (JC, 2026-10-08: the header button is the only
- * way to reach a bot's threads). Rename, pin, move and delete stay on the row. */
-export function ThreadActionsPanel({ task, actions, regenerating, onRegenerate, onDone }: {
-  task: PickerTask;
-  actions: PickerThreadActions;
-  regenerating: boolean;
-  onRegenerate: () => void;
-  onDone: () => void;
-}) {
-  const working = Boolean(task.busy) || task.activity === "working";
-  const archived = isArchived(task);
-  const snoozed = isSnoozed(task);
-  return (
-    <div role="group" aria-label={t("task.actions", { title: task.title })} data-picker-thread-actions={task.threadId} className="mx-2.5 mb-1.5 rounded-lg border border-popover-hairline bg-popover-field p-1">
-      {actions.onCopyLink && <button type="button" onClick={() => { actions.onCopyLink?.(task.threadId); onDone(); }} className={PANEL_ITEM}><Link2 size={12} />{t("task.copyLink")}</button>}
-      {actions.onRegenerateTitle && <button type="button" disabled={regenerating} aria-busy={regenerating} onClick={onRegenerate} className={PANEL_ITEM}>{regenerating ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}{regenerating ? t("task.regeneratingTitle") : t("task.regenerateTitle")}</button>}
-      {actions.onArchive && <button type="button" disabled={working} onClick={() => { actions.onArchive?.(task.threadId, archived ? null : Date.now()); onDone(); }} className={PANEL_ITEM}>{archived ? <ArchiveRestore size={12} /> : <Archive size={12} />}{archived ? t("task.unarchive") : t("task.archive")}</button>}
-      {actions.onSnooze && <div className="px-2.5 pt-1">
-        <span className="flex items-center gap-2 text-[11px] text-popover-ink-secondary"><Clock size={12} />{t("task.snooze")}</span>
-        <div className="mt-0.5">
-          {[{ label: t("task.snoozeUntilActivity"), at: 0 }, { label: t("task.snoozeTonight"), at: nextSixPm() }, { label: t("task.snoozeTomorrow"), at: tomorrowNineAm() }].map((preset) => (
-            <button key={preset.label} type="button" disabled={working} onClick={() => { actions.onSnooze?.(task.threadId, preset.at); onDone(); }} className={PANEL_ITEM}>{preset.label}</button>
-          ))}
-        </div>
-      </div>}
-      {actions.onSnooze && snoozed && <button type="button" onClick={() => { actions.onSnooze?.(task.threadId, null); onDone(); }} className={PANEL_ITEM}><BellOff size={12} />{t("task.stopSnoozing")}</button>}
-      {actions.onRefreshPermissions && <button type="button" disabled={working} title={t("task.refreshPermissionsHint")} onClick={() => { actions.onRefreshPermissions?.(task.threadId); onDone(); }} className={PANEL_ITEM}><RefreshCw size={12} />{t("task.refreshPermissions")}</button>}
-    </div>
-  );
+/** A picker row's actions, from the owner's callbacks: the same menu as the
+ * sidebar's thread rows (ThreadMenu), opened from the row's one "..." button. */
+export function pickerRowActions(task: Pick<PickerTask, "threadId">, given: {
+  onRename: () => void;
+  onDelete: (threadId: string) => void;
+  onMove?: (threadId: string, projectId: string | null) => void;
+  onPin?: (threadId: string, pinned: boolean) => void;
+  threadActions?: PickerThreadActions;
+}): ThreadMenuActions {
+  const id = task.threadId;
+  const extra = given.threadActions;
+  return {
+    onRename: given.onRename,
+    onDelete: () => given.onDelete(id),
+    ...(given.onPin ? { onPin: (pinned: boolean) => given.onPin!(id, pinned) } : {}),
+    ...(given.onMove ? { onMove: (folderId: string | null) => given.onMove!(id, folderId) } : {}),
+    ...(extra?.onArchive ? { onArchive: (archivedAt: number | null) => extra.onArchive!(id, archivedAt) } : {}),
+    ...(extra?.onSnooze ? { onSnooze: (until: number | null) => extra.onSnooze!(id, until) } : {}),
+    ...(extra?.onCopyLink ? { onCopyLink: () => extra.onCopyLink!(id) } : {}),
+    ...(extra?.onRegenerateTitle ? { onRegenerateTitle: (onSettled: (ok: boolean) => void) => extra.onRegenerateTitle!(id, onSettled) } : {}),
+    ...(extra?.onRefreshPermissions ? { onRefreshPermissions: () => extra.onRefreshPermissions!(id) } : {}),
+  };
 }
 
 function ConversationTaskPicker({
@@ -193,8 +184,8 @@ function ConversationTaskPicker({
   const [renaming, setRenaming] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
   const [query, setQuery] = useState("");
-  const [actionsFor, setActionsFor] = useState<string | null>(null);
-  const [regenerating, setRegenerating] = useState<string | null>(null);
+  const [rowMenu, setRowMenu] = useState<{ threadId: string; left: number; top: number } | null>(null);
+  const rowMenuAnchor = useRef<HTMLElement | null>(null);
   const [folderMenu, setFolderMenu] = useState<{ projectId: string; left: number; top: number } | null>(null);
   const ref = useRef<HTMLDivElement>(null);
   const dismissTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -214,7 +205,7 @@ function ConversationTaskPicker({
 
   const closeMenu = () => {
     clearDismiss();
-    setActionsFor(null);
+    setRowMenu(null);
     setFolderMenu(null);
     setRenaming(null);
     setQuery("");
@@ -243,7 +234,7 @@ function ConversationTaskPicker({
 
   useEffect(() => {
     if (!open) {
-      setActionsFor(null);
+      setRowMenu(null);
       setFolderMenu(null);
       if (dismissTimer.current) {
         clearTimeout(dismissTimer.current);
@@ -442,68 +433,36 @@ function ConversationTaskPicker({
                       </div>
                     </button>
                   )}
-                  {onPin && renaming !== task.threadId && (
-                    <button
-                      type="button"
-                      onClick={() => onPin(task.threadId, task.pinned !== true)}
-                      aria-label={task.pinned === true ? t("sidebar.bot.unpin") : t("sidebar.bot.pin")}
-                      title={task.pinned === true ? t("sidebar.bot.unpin") : t("sidebar.bot.pin")}
-                      className="rounded p-1 text-popover-ink-secondary opacity-0 hover:bg-popover-hover hover:text-popover-ink focus-visible:opacity-100 group-hover:opacity-100 touch:opacity-70"
-                    >
-                      {task.pinned === true ? <PinOff size={13} /> : <Pin size={13} />}
-                    </button>
-                  )}
                   {renaming !== task.threadId && (
                     <button
                       type="button"
-                      onClick={() => startRename(task)}
-                      aria-label={t("task.renameNamed", { title: task.title })}
-                      title={t("task.renameTitle")}
-                      className="rounded p-1 text-popover-ink-secondary opacity-0 hover:bg-popover-hover hover:text-popover-ink focus-visible:opacity-100 group-hover:opacity-100 touch:opacity-70"
-                    >
-                      <Pencil size={13} />
-                    </button>
-                  )}
-                  {folders && onMove && folders.length > 0 && <label title={t("folder.move")} className="relative rounded p-1 text-popover-ink-secondary opacity-0 hover:bg-popover-hover hover:text-popover-ink focus-within:opacity-100 group-hover:opacity-100 touch:opacity-70">
-                    <FolderInput size={13} />
-                    <select aria-label={t("folder.moveNamed", { title: task.title })} value={folders.some((project) => project.id === task.projectId) ? task.projectId : ""}
-                      onFocus={clearDismiss} onChange={(event) => { clearDismiss(); onMove(task.threadId, event.target.value || null); }}
-                      className="absolute inset-0 w-full cursor-pointer opacity-0">
-                      <option value="">{t("folder.none")}</option>
-                      {folders.map((project) => <option key={project.id} value={project.id}>{project.emoji ? `${project.emoji} ` : ""}{project.name}</option>)}
-                    </select>
-                  </label>}
-                  {threadActions && renaming !== task.threadId && (
-                    <button
-                      type="button"
-                      onClick={() => { clearDismiss(); setActionsFor((current) => current === task.threadId ? null : task.threadId); }}
+                      data-picker-row-menu={task.threadId}
+                      onClick={(event) => {
+                        clearDismiss();
+                        if (rowMenu?.threadId === task.threadId) { setRowMenu(null); return; }
+                        rowMenuAnchor.current = event.currentTarget;
+                        const rect = event.currentTarget.getBoundingClientRect();
+                        setRowMenu({ threadId: task.threadId, left: rect.left, top: rect.bottom + 4 });
+                      }}
                       aria-label={t("task.actions", { title: task.title })}
                       title={t("task.actions", { title: task.title })}
-                      aria-expanded={actionsFor === task.threadId}
-                      className={cn("rounded p-1 text-popover-ink-secondary hover:bg-popover-hover hover:text-popover-ink focus-visible:opacity-100 group-hover:opacity-100 touch:opacity-70", actionsFor === task.threadId ? "opacity-100" : "opacity-0")}
+                      aria-haspopup="menu"
+                      aria-expanded={rowMenu?.threadId === task.threadId}
+                      className={cn("rounded p-1 text-popover-ink-secondary hover:bg-popover-hover hover:text-popover-ink focus-visible:opacity-100 group-hover:opacity-100 touch:opacity-70", rowMenu?.threadId === task.threadId ? "opacity-100" : "opacity-0")}
                     >
                       <MoreHorizontal size={13} />
                     </button>
                   )}
-                  <button
-                    type="button"
-                    onClick={() => onDelete(task.threadId)}
-                    disabled={Boolean(task.busy) || busy && active}
-                    aria-label={t("task.deleteAria")}
-                    title={t("task.deleteTitle")}
-                    className="rounded p-1 text-popover-ink-secondary opacity-0 hover:bg-popover-hover hover:text-danger focus-visible:opacity-100 group-hover:opacity-100 disabled:opacity-20 touch:opacity-70 touch:disabled:opacity-20"
-                  >
-                    <Trash2 size={13} />
-                  </button>
                 </div>
-                {threadActions && actionsFor === task.threadId && <ThreadActionsPanel task={task} actions={threadActions}
-                  regenerating={regenerating === task.threadId}
-                  onRegenerate={() => {
-                    if (!threadActions.onRegenerateTitle || regenerating) return;
-                    setRegenerating(task.threadId);
-                    threadActions.onRegenerateTitle(task.threadId, (ok) => { setRegenerating(null); if (ok) setActionsFor(null); });
-                  }}
-                  onDone={() => setActionsFor(null)} />}
+                <ThreadMenu tone="popover" task={task} folders={folders} anchorRef={rowMenuAnchor} onClose={() => setRowMenu(null)}
+                  position={rowMenu?.threadId === task.threadId ? { left: rowMenu.left, top: rowMenu.top } : null}
+                  actions={pickerRowActions(task, {
+                    onRename: () => startRename(task),
+                    onDelete: (id) => { if (!(busy && id === threadId)) onDelete(id); },
+                    ...(onMove && folders?.length ? { onMove } : {}),
+                    ...(onPin ? { onPin } : {}),
+                    ...(threadActions ? { threadActions } : {}),
+                  })} />
                 </Fragment>
               );
             })}

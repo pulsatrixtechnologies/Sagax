@@ -492,6 +492,11 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   // (clientSessionIsComputerOwner), never on an organization server.
   { methods: ["POST"], path: /^\/api\/bots\/[\w-]+\/connector-cards\/[\w-]+\/authorize$/ },
   { methods: ["POST"], path: /^\/api\/bots\/[\w-]+\/always-allow$/ }, // must match a pending card
+  // 2026-10-14: a person's own approval rules and their bots' permission
+  // modes; the handlers keep both to the person (and the bot's owner).
+  { methods: ["GET"], path: /^\/api\/approval-rules$/ },
+  { methods: ["PATCH", "DELETE"], path: /^\/api\/approval-rules\/[\w-]+$/ },
+  { methods: ["GET", "PUT"], path: /^\/api\/bots\/[\w-]+\/permission-mode$/ },
   // rooms
   { methods: ["GET", "POST"], path: /^\/api\/groups$/ },
   { methods: ["POST"], path: /^\/api\/groups\/[\w-]+\/messages$/ },

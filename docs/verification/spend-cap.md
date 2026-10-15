@@ -1,5 +1,7 @@
 # Spend cap and sell prices
 
+> 2026-10-14: Settings > Usage in the app shows the signed-in person's own usage only; the spend limit and sell price cards left the app (the organization's admin console manages them). The server routes below are unchanged.
+
 ## Sub-features
 
 - Refuse every new turn once the month's cost (reported, plus estimates for
@@ -53,7 +55,7 @@ folder whose `server/index.js` exports such a `register()`, and
 ## Unit regressions
 
 ```sh
-pnpm exec vitest run server/spend.test.ts server/model-prices.test.ts server/prices.ts server/config.test.ts src/components/UsageBudget.test.ts server/usage-ledger.test.ts src/lib/notify.test.ts
+pnpm exec vitest run server/spend.test.ts server/model-prices.test.ts server/prices.ts server/config.test.ts server/usage-ledger.test.ts src/lib/notify.test.ts
 ```
 
 These cover price precedence and cached-input pricing, month-to-date sums

@@ -154,6 +154,28 @@ repositories, the whole lifecycle, auto included), `src/lib/org-memory.test.ts`,
 `server/perspicax-memory-sync-token.test.ts`. Not done yet: a file watcher
 (the sync runs on its timer).
 
+## Pulsatrix Flow compute (sagax-flow, 2026-10-14)
+
+`flow` and `flow_action` are Perspicax's tools, relayed through the
+`perspicax_<profile>` servers; Sagax does not implement them. The
+deterministic arithmetic of the marketplace plugin `pulsatrix-flow`
+(`px_flow.py`, `px_flow_action.py`) is native: `server/flow-tools.ts`, the
+`sagax-flow` server (`flow_free_slots`, `flow_time_block`, `flow_overlaps`,
+`flow_stats`, `flow_age_buckets`, `flow_group_units`, `flow_filter`,
+`flow_member_load`). Mapping of the whole plugin:
+`docs/migration/flow-plugin-mapping.md`. Keep these rules, covered by
+`server/flow-tools.test.ts` and `server/org-mcp.e2e.test.ts`:
+
+- Pure functions of their arguments. No organization fact (time zone,
+  hours, holidays, midnight split time, boards, people, client rules) is
+  built in or copied from the plugin's library; the caller passes it.
+- Mounted only on a turn where a Perspicax profile server is mounted
+  (`perspicaxTurnIntegration`), answered inside the workplace stdio proxy
+  (`flowToolsRequest`), with no capability and no call to the server.
+- Every tool is read only: Claude pre-allows `mcp__sagax-flow`, Grok's rules
+  and gate accept it only for the harness's own proxy path
+  (`isFlowToolsServer`), Codex mounts it as a workplace proxy.
+
 ## Organization memory signals (2026-10-11)
 
 Perspicax keeps the organization's work log and a duplicate detector over
@@ -517,6 +539,38 @@ and `server/store.org-approval-default.test.ts`:
   never moves existing bots. A later choice of Ask stays. Edits, Full and
   Custom stay. A grant revoked at that start stays Ask, threads included.
   Import and team backup still force Ask.
+
+## Bot owner permissions: owner route, modes, rules per person (2026-10-14)
+
+A bot acts with its owner's rights (spec
+`docs/superpowers/specs/2026-10-14-bot-owner-permissions.md`). Keep these
+rules, covered by `server/owner-approval.test.ts`,
+`server/engine-access.test.ts` and `server/org-sharing.e2e.test.ts` (S3-7d):
+
+- Only what goes beyond the owner's rights is an admin card
+  (`memberBotAdminApproval`): a server command, a file outside the bot's
+  workspace, a host-level `agents` tool or built-in MCP server (`computer`,
+  `browser`, `shell`...), an unknown server or tool. A remote or personal MCP
+  server, Sagax's own `perspicax_*` mounts, Composio and a web search are
+  the owner's (`ownerScopedTool`, `ownerScopedMcpServerFor`).
+- On the owner route, the owner's rules then the bot's mode answer before a
+  card (`ownerDecision`): deny wins, then ask, then allow. A rule is one
+  tool plus a target read from the arguments, kept per person
+  (`owner-approvals.json`, never shared between people). A destructive call
+  (delete, bulk change, external email or SMS) is allowed only by an allow
+  rule made for that kind, in every mode.
+- Modes: Approval (default), Automatic approval, Bypass (explicit
+  confirmation, `bots.fullAccess`, org Full access policy, journaled as
+  `owner-bypass`). A mode belongs to the owner who chose it; a new owner
+  starts on Approval. No mode or rule answers an admin card, a safety hold,
+  a sandbox widening, a question, a guest's turn or a teammate tool.
+- Routes live in `server/routes/owner-approvals.ts`, the owner's only;
+  `act` cannot reach their writes (`tool-policy.generated.ts`), and a bot-act
+  session copy (`isBotActSession`) is never the rule manager, so a bot
+  cannot save a rule while answering a card through `act`.
+- Rule scopes read `api`, `resource` and `verb` / `action` like the MCP
+  permission registry's per-resource key (PR #508, `resourceKeyForCall`):
+  #508 is the role guard before the call, this is the approval after it.
 
 ## Server log on disk and expired approvals (2026-10-11)
 

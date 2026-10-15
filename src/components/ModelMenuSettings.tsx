@@ -1,10 +1,11 @@
 // The settings of the model in use, under the composer's model list (JC,
 // 2026-10-13, after Cursor's model menu): Fast (only when the model has a
-// fast twin), its context window, Effort › (only the levels this model
-// takes, src/../shared/model-capabilities.ts) and Model › (the engine's
-// models). A › row opens its list over the whole menu; Escape, the left
-// arrow or Back returns to these rows with the focus on the row that opened
-// it. Rendered by ModelPicker.tsx, which owns what each choice does.
+// fast twin) and Effort › (only the levels this model takes,
+// src/../shared/model-capabilities.ts). JC, 2026-10-14: no Model › (the
+// provider submenus above already list the engine's models) and no Context
+// line (information, not a choice). Effort › opens its list over the whole
+// menu; Escape, the left arrow or Back returns to these rows with the focus
+// on Effort. Rendered by ModelPicker.tsx, which owns what each choice does.
 import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { Check, ChevronLeft, ChevronRight } from "lucide-react";
 
@@ -13,20 +14,10 @@ import { isUltracodeEffort } from "../../shared/ultracode-effort";
 import { cn } from "@/lib/cn";
 import { effortLabel } from "@/lib/effort-label";
 import { t } from "@/lib/i18n";
-import { ModelSearchList, type ModelMenuRow, type ModelMenuSection } from "./ModelMenu";
-
-/** "256K", "1M": a context window as the menu shows it. */
-export function contextLabel(tokens: number): string {
-  if (tokens >= 1_000_000) return `${Number((tokens / 1_000_000).toFixed(1))}M`;
-  return `${Math.round(tokens / 1_000)}K`;
-}
 
 export interface ModelMenuSettingsProps {
   /** The model has a fast twin: the switch, on while it runs the twin. */
   fast?: { on: boolean; onToggle: () => void };
-  /** Its context window in tokens, when known. Shown, not chosen: no engine
-   * lets Sagax pick it yet. */
-  contextWindow?: number;
   /** Its reasoning levels; absent when the model has no effort control. */
   effort?: {
     title: string;
@@ -36,28 +27,25 @@ export interface ModelMenuSettingsProps {
     modelDefault?: EffortLevel;
     onPick: (level: EffortLevel | undefined) => void;
   };
-  /** The engine's models, to switch without leaving the menu. */
-  model?: { label: string; sections: ModelMenuSection[]; onPick: (row: ModelMenuRow) => void };
   /** A row of its own instead of Effort (an engine with model variants). */
   variantRow?: ReactNode;
   disabled?: boolean;
 }
 
-type View = "effort" | "model" | null;
+type View = "effort" | null;
 
 const ROW = "flex w-full min-h-8 items-center justify-between gap-3 rounded-lg px-2 py-1.5 text-left text-[13px] text-popover-ink outline-none hover:bg-popover-hover focus-visible:bg-popover-hover focus-visible:ring-2 focus-visible:ring-focus disabled:opacity-50";
 
-export function ModelMenuSettings({ fast, contextWindow, effort, model, variantRow, disabled = false }: ModelMenuSettingsProps) {
+export function ModelMenuSettings({ fast, effort, variantRow, disabled = false }: ModelMenuSettingsProps) {
   const [view, setView] = useState<View>(null);
   const effortRef = useRef<HTMLButtonElement>(null);
-  const modelRef = useRef<HTMLButtonElement>(null);
-  const back = (from: Exclude<View, null>) => {
+  const back = () => {
     setView(null);
     // the row that opened the list gets the focus back once it is drawn again
-    requestAnimationFrame(() => (from === "effort" ? effortRef : modelRef).current?.focus());
+    requestAnimationFrame(() => effortRef.current?.focus());
   };
 
-  if (!fast && contextWindow === undefined && !effort && !model && !variantRow) return null;
+  if (!fast && !effort && !variantRow) return null;
   const effortValue = effort?.value ?? effort?.modelDefault;
   return (
     <div data-model-settings role="group" aria-label={t("model.settings.aria")} className="border-t border-popover-hairline px-1.5 py-1">
@@ -69,12 +57,6 @@ export function ModelMenuSettings({ fast, contextWindow, effort, model, variantR
             <span className={cn("absolute top-[2px] size-[14px] rounded-full bg-white shadow transition-[left]", fast.on ? "left-[16px]" : "left-[2px]")} />
           </span>
         </button>
-      )}
-      {contextWindow !== undefined && (
-        <div data-model-settings-context className={cn(ROW, "hover:bg-transparent")} title={t("model.settings.contextTitle", { tokens: contextWindow.toLocaleString() })}>
-          <span>{t("model.settings.context")}</span>
-          <span className="text-popover-ink-secondary">{contextLabel(contextWindow)}</span>
-        </div>
       )}
       {variantRow ?? (effort && (
         <button ref={effortRef} type="button" data-model-settings-effort disabled={disabled} aria-haspopup="menu" aria-expanded={view === "effort"}
@@ -88,32 +70,12 @@ export function ModelMenuSettings({ fast, contextWindow, effort, model, variantR
           </span>
         </button>
       ))}
-      {model && (
-        <button ref={modelRef} type="button" data-model-settings-model disabled={disabled} aria-haspopup="menu" aria-expanded={view === "model"}
-          title={model.label} onClick={() => setView("model")} className={ROW}>
-          <span className="shrink-0">{t("model.settings.model")}</span>
-          <span className="flex min-w-0 items-center gap-1 text-popover-ink-secondary">
-            <span className="truncate">{model.label}</span>
-            <ChevronRight size={14} aria-hidden="true" className="shrink-0" />
-          </span>
-        </button>
-      )}
       {view === "effort" && effort && (
-        <EffortSubmenu {...effort} disabled={disabled} onBack={() => back("effort")}
+        <EffortSubmenu {...effort} disabled={disabled} onBack={back}
           onPick={(level) => {
             effort.onPick(level);
-            back("effort");
+            back();
           }} />
-      )}
-      {view === "model" && model && (
-        <Submenu title={t("model.settings.model")} onBack={() => back("model")}>
-          <ModelSearchList variant="popover" autoFocus sections={model.sections} disabled={disabled}
-            label={t("model.settings.model")} onEscape={() => back("model")}
-            onPick={(row) => {
-              model.onPick(row);
-              back("model");
-            }} />
-        </Submenu>
       )}
     </div>
   );

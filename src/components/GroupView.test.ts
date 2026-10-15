@@ -168,9 +168,9 @@ describe("room header", () => {
     expect(nudgeLineText(groupNote, "pr_ada")).toBe("Jean-Christophe sent a nudge in this chat.");
     setLocale("fr");
     try {
-      expect(nudgeLineText(note, "pr_jean")).toBe("Tu as envoyé une secousse à Ada.");
-      expect(nudgeLineText(note, "PR_ADA")).toBe("Jean-Christophe t'a envoyé une secousse.");
-      expect(nudgeLineText(groupNote, "pr_jean")).toBe("Tu as envoyé une secousse dans Launch planning.");
+      expect(nudgeLineText(note, "pr_jean")).toBe("Vous avez envoyé une secousse à Ada.");
+      expect(nudgeLineText(note, "PR_ADA")).toBe("Jean-Christophe vous a envoyé une secousse.");
+      expect(nudgeLineText(groupNote, "pr_jean")).toBe("Vous avez envoyé une secousse dans Launch planning.");
       expect(nudgeLineText(groupNote, "pr_ada")).toBe("Jean-Christophe a envoyé une secousse dans cette conversation.");
     } finally {
       setLocale("en");

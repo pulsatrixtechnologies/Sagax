@@ -176,7 +176,7 @@ export function GroupPanel({
         <span />
         <div className="flex items-center gap-2">
           <ExportTranscriptMenu title={group.name} messages={group.messages} isGroup />
-          <button type="button" onClick={closePanel} aria-label="Close" title="Close" className={CIRCLE_BUTTON}>
+          <button type="button" onClick={closePanel} aria-label={t("common.close")} title={t("common.close")} className={CIRCLE_BUTTON}>
             <PanelRight size={18} strokeWidth={1.75} />
           </button>
         </div>

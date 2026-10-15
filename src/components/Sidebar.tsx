@@ -55,13 +55,13 @@ import { activityPreview, botEngine } from "@/lib/failed-turn";
 import { activeLocale, t } from "@/lib/i18n";
 import { copyText } from "@/lib/copy-text";
 import { isViewersPrimaryBot, viewerOwnsBot } from "@/lib/primary-bot";
-import { primaryBotOffer, requestPrimaryBot } from "@/lib/bot-quick-actions";
+import { requestPrimaryBot } from "@/lib/bot-quick-actions";
 import { PrimaryBotPicker } from "./PrimaryBotPicker";
 import { useOrgPeople, usePerspicaxOrg } from "@/lib/perspicax-org";
 import { peopleDmPeer } from "@/lib/people-dm";
 import { LabelTag, PersonLabelTag } from "./LabelTag";
 import { nudgeLineText } from "@/lib/nudge-line";
-import { Cpu, Eye, UserRound } from "lucide-react";
+import { ChevronLeft, Cpu, Eye, UserRound } from "lucide-react";
 import { openModelWindow } from "@/lib/model-window";
 import { entriesToUnhide, hiddenKey, hiddenKeySet, hideFromSidebar, showInSidebar, useSidebarHidden } from "@/lib/sidebar-hidden";
 import { closedDmToReopen, groupHiddenKey, hiddenSidebarRows, withoutHiddenEntries } from "@/lib/sidebar-hidden-entries";
@@ -1020,14 +1020,14 @@ function MoveToSectionItem({
         className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[13px] leading-[18px] text-ink hover:bg-hover"
       >
         <FolderPlus size={16} className="text-ink" />
-        <span className="min-w-0 flex-1">Move to</span>
+        <span className="min-w-0 flex-1">{t("sidebar.bot.moveToSection")}</span>
         <ChevronRight size={14} className="text-ink-tertiary" />
       </button>
       {open && submenuStyle && createPortal(
         <div
           role="menu"
           {...{ [dismissAttr]: "" }}
-          aria-label="Move to"
+          aria-label={t("sidebar.bot.moveToSection")}
           onMouseEnter={show}
           onMouseLeave={hide}
           style={{ top: submenuStyle.top, left: submenuStyle.left }}
@@ -1053,7 +1053,7 @@ function MoveToSectionItem({
             className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[13px] leading-[18px] text-ink hover:bg-hover"
           >
             <Folder size={16} className="shrink-0 text-ink" />
-            <span className="min-w-0 flex-1">Unassigned</span>
+            <span className="min-w-0 flex-1">{t("sidebar.section.general")}</span>
             {!current && <Check size={14} className="shrink-0 text-ink" />}
           </button>
           <div className="mx-2 my-1 h-[0.5px] bg-border" />
@@ -1069,8 +1069,8 @@ function MoveToSectionItem({
                 autoFocus
                 value={draft}
                 onChange={(event) => setDraft(event.target.value)}
-                placeholder="Section name"
-                aria-label="Create section"
+                placeholder={t("sidebar.section.newContextAria")}
+                aria-label={t("sidebar.section.newContextAria")}
                 className="min-w-0 flex-1 rounded-lg border border-border bg-ink/[0.03] px-2.5 py-1.5 text-[13px] leading-[18px] text-ink placeholder:text-ink-secondary focus:border-border-strong focus:outline-none"
               />
             </form>
@@ -1082,7 +1082,7 @@ function MoveToSectionItem({
               className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[13px] leading-[18px] text-ink hover:bg-hover"
             >
               <FolderPlus size={16} className="text-ink" />
-              Create section
+              {t("sidebar.section.newContext")}
             </button>
           )}
         </div>,
@@ -1103,6 +1103,7 @@ export function BotContextMenu({
   onReplacePrimary,
   variant = "sidebar",
   onEditPersona,
+  initialPage = "main",
 }: {
   menu: MenuState | null;
   onClose: () => void;
@@ -1119,8 +1120,16 @@ export function BotContextMenu({
   onMakePrimary?: (bot: Bot) => void;
   /** Open "Choose a primary Bot" to hand the role to another of their bots. */
   onReplacePrimary?: (bot: Bot) => void;
+  /** Opens on that page: the everyday actions, or More (tests). */
+  initialPage?: "main" | "more";
 }) {
   const motion = useHeldMenuMotion(menu);
+  const advanced = useAdvancedMode();
+  // The rare actions wait one step down, under More (JC, 2026-10-14).
+  const [page, setPage] = useState<"main" | "more">(initialPage);
+  useEffect(() => { if (menu) setPage(initialPage); }, [menu, initialPage]);
+  const pageRef = useRef(page);
+  pageRef.current = page;
   const shown = motion.value;
   const { state, dispatch } = useStore();
   const showThreads = useShowThreads();
@@ -1176,11 +1185,19 @@ export function BotContextMenu({
     return () => { if (opener?.isConnected) opener.focus(); };
   }, [menu]);
   useEffect(() => {
+    if (menu) menuRef.current?.querySelector<HTMLButtonElement>("button:not([disabled])")?.focus();
+  }, [page]); // the first item of the page just shown
+  useEffect(() => {
     if (!menu) return;
     const onDown = (e: MouseEvent) => {
       if (!(e.target instanceof Element) || !e.target.closest("[data-bot-menu]")) onClose();
     };
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    // Escape steps back from More first, then closes.
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      if (pageRef.current !== "main") setPage("main");
+      else onClose();
+    };
     window.addEventListener("mousedown", onDown);
     window.addEventListener("keydown", onKey);
     window.addEventListener("blur", onClose);
@@ -1248,6 +1265,7 @@ export function BotContextMenu({
     <PictureInPicture2 size={16} className="text-ink" />,
     floating ? t("floatingBots.menu.unfloat") : t("floatingBots.menu.float"),
     () => toggleFloatingBot(bot.id),
+    { id: floating ? "remove-from-desktop" : "put-on-desktop" },
   );
   // The Primary Bot (one per person): its own menu offers to hand the role
   // to another of the viewer's bots; the viewer's other bots offer to take
@@ -1276,115 +1294,146 @@ export function BotContextMenu({
     document.body,
   );
   if (variant === "mascot") {
-    const primary = primaryBotOffer(state.config, bot);
+    // Rename stays where the name shows (the panel), and Make primary bot in
+    // the sidebar menu's More: this menu keeps the two avatar actions.
     return menuFrame([
-      item(<UserRoundPen size={16} className="text-ink" />, t("persona.edit"), () => onEditPersona?.(bot), { id: "edit-persona" }),
-      item(<Pencil size={16} className="text-ink" />, t("persona.menu.rename"), () => onRename(bot.id), {
-        id: "rename",
-        disabled: !canRename,
-        hint: canRename ? undefined : t("persona.locked.owner"),
-        showHint: true,
-      }),
+      item(<UserRoundPen size={16} className="text-ink" />, t("botPanel.editBot"), () => onEditPersona?.(bot), { id: "edit-persona" }),
       item(
         <PictureInPicture2 size={16} className="text-ink" />,
         floating ? t("floatingBots.menu.unfloat") : t("floatingBots.menu.float"),
         () => toggleFloatingBot(bot.id),
         { id: floating ? "remove-from-desktop" : "put-on-desktop" },
       ),
-      item(<Star size={16} className="text-ink" />, t("sidebar.bot.makePrimary"), () => onMakePrimary?.(bot), {
-        id: "make-primary",
-        disabled: !primary.allowed || !onMakePrimary,
-        hint: primary.allowed ? undefined : t(primary.reason),
-        showHint: true,
-      }),
     ]);
   }
+
+  const chevron = <ChevronRight size={14} className="ml-auto shrink-0 text-ink-tertiary" />;
+  const moreItem = (
+    <button
+      key="more"
+      type="button"
+      role="menuitem"
+      data-menu-item="more"
+      aria-haspopup="menu"
+      onClick={() => setPage("more")}
+      className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[13px] leading-[18px] text-ink hover:bg-hover"
+    >
+      <MoreHorizontal size={16} className="text-ink" />
+      <span className="min-w-0 flex-1">{t("menu.more")}</span>
+      {chevron}
+    </button>
+  );
+  const backItem = (
+    <button
+      key="back"
+      type="button"
+      role="menuitem"
+      data-menu-item="back"
+      onClick={() => setPage("main")}
+      className="flex w-full items-center gap-1.5 rounded-md px-2 py-1 text-left text-[12px] font-medium leading-4 text-ink-secondary hover:bg-hover"
+    >
+      <ChevronLeft size={14} aria-hidden="true" />
+      {t("menu.more")}
+    </button>
+  );
+  const archiveItem = canArchive ? item(
+    <Archive size={16} className="text-ink" />,
+    t("sidebar.bot.archive"),
+    () => onArchive?.(bot),
+    { id: "archive", disabled: archiveBlocked, hint: archiveHint },
+  ) : null;
+  // One label for the bot editor everywhere: "Edit bot". Without the
+  // editor (the companion connection) it opens the bot's panel.
+  const editItem = item(<UserRoundPen size={16} className="text-ink" />, t("botPanel.editBot"), () => {
+    if (onEditPersona && !remoteClient) { onEditPersona(bot); return; }
+    openForSettings();
+    if (!state.settingsOpen) dispatch({ type: "toggleSettings", open: true });
+  }, { id: "edit" });
+  const moveItem = canMoveSection ? <MoveToSectionItem
+    key="move"
+    itemKind="bot"
+    itemId={bot.id}
+    fallbackSection={bot.section}
+    dismissAttr="data-bot-menu"
+    onAssign={(section) => {
+      if (personal) {
+        const failed = assignPersonalSection("bot", bot.id, section);
+        if (failed) dispatch({ type: "error", message: failed });
+      } else {
+        dispatch({ type: "updateBot", botId: bot.id, patch: { section: section || undefined } });
+      }
+      onClose();
+    }}
+  /> : null;
+  const copyIdItem = item(<ClipboardCopy size={16} className="text-ink" />, t("sidebar.copyConversationId"), () => {
+    void copyText(bot.threadId);
+  }, { id: "copy-id" });
+
+  const mainPage = remoteClient ? [
+    floatItem,
+    ...(canMoveSection ? [item(<FolderPlus size={16} className="text-ink" />, t("sidebar.bot.moveToSection"), () => {
+      onClose();
+      onMoveToSection?.(bot.id);
+    }, { id: "move" })] : []),
+    editItem,
+    copyIdItem,
+  ] : [
+    item(
+      bot.pinned ? <PinOff size={16} className="text-ink" /> : <Pin size={16} className="text-ink" />,
+      bot.pinned ? t("sidebar.bot.unpin") : t("sidebar.bot.pin"),
+      () => dispatch({ type: "updateBot", botId: bot.id, patch: { pinned: !bot.pinned } }),
+      { id: "pin" },
+    ),
+    ...(canRename ? [item(<Pencil size={16} className="text-ink" />, t("persona.menu.rename"), () => onRename(bot.id), { id: "rename" })] : []),
+    editItem,
+    divider("d1"),
+    moreItem,
+    ...(archiveItem ? [archiveItem] : []),
+  ];
+  const morePage = [
+    backItem,
+    floatItem,
+    ...(primaryItem ? [primaryItem] : []),
+    item(<Cpu size={16} className="text-ink" />, t("sidebar.bot.model"), () => openModelWindow(bot.id), { id: "model" }),
+    divider("d-read"),
+    item(<BellDot size={16} className="text-ink" />, t("sidebar.bot.markUnread"), () =>
+      dispatch({ type: "markUnread", botId: bot.id }), { id: "mark-unread" },
+    ),
+    item(
+      readingBotId === bot.id ? <Loader2 size={16} className="animate-spin text-ink-secondary" /> : <CheckCheck size={16} className="text-ink-secondary" />,
+      readingBotId === bot.id ? t("sidebar.bot.markingAllRead") : t("sidebar.bot.markAllRead"),
+      () => { void readAll(bot); },
+      { id: "mark-all-read", disabled: readingBotId !== null || botUnreadThreadIds(bot).length === 0, keepOpen: true },
+    ),
+    divider("d-place"),
+    ...(moveItem ? [moveItem] : []),
+    // Only this person's sidebar: the bot, its owner and everyone else
+    // keep it; Archive is the bot-wide action.
+    item(<EyeOff size={16} className="text-ink" />, t("sidebar.hidden.hide"), () => hideFromSidebar("bot", bot.id), { id: "hide" }),
+    ...(advanced ? [copyIdItem] : []),
+    ...(canDelete ? [divider("d-delete"), <BotDeleteMenuItem
+      key="delete"
+      deleting={deleting}
+      onClick={() => {
+        onClose();
+        onDelete?.(bot);
+      }}
+    />] : []),
+  ];
 
   return createPortal(
     <div
       ref={menuRef}
       data-bot-menu
       data-sidebar
+      data-bot-menu-page={page}
       role="menu"
       aria-label={t("sidebar.bot.actions", { name: bot.name })}
       onKeyDown={navigateThreadMenu}
       style={{ top: shown.y, left: shown.x }}
       className={cn("fixed z-40 max-h-[calc(100dvh-16px)] w-[228px] min-w-[200px] max-w-[calc(100vw-16px)] overflow-y-auto overscroll-contain rounded-xl border-[0.5px] border-border popover-surface bg-elevated p-1.5 flex flex-col gap-0.5 text-[13px] leading-[18px]", motion.className)} {...motion.exitProps}
     >
-      {floatItem}
-      {divider("float")}
-      {remoteClient ? [
-        ...(canMoveSection ? [item(<FolderPlus size={16} className="text-ink" />, t("sidebar.bot.moveToSection"), () => {
-          onClose();
-          onMoveToSection?.(bot.id);
-        })] : []),
-        item(<Pencil size={16} className="text-ink" />, t("sidebar.bot.editProfile"), () => {
-          openForSettings();
-          if (!state.settingsOpen) dispatch({ type: "toggleSettings", open: true });
-        }),
-        item(<ClipboardCopy size={16} className="text-ink" />, t("sidebar.copyConversationId"), () => {
-          void copyText(bot.threadId);
-        }),
-      ] : [
-        item(
-          bot.pinned ? <PinOff size={16} className="text-ink" /> : <Pin size={16} className="text-ink" />,
-          bot.pinned ? t("sidebar.bot.unpin") : t("sidebar.bot.pin"),
-          () => dispatch({ type: "updateBot", botId: bot.id, patch: { pinned: !bot.pinned } }),
-        ),
-        ...(canMoveSection ? [<MoveToSectionItem
-          key="move"
-          itemKind="bot"
-          itemId={bot.id}
-          fallbackSection={bot.section}
-          dismissAttr="data-bot-menu"
-          onAssign={(section) => {
-            if (personal) {
-              const failed = assignPersonalSection("bot", bot.id, section);
-              if (failed) dispatch({ type: "error", message: failed });
-            } else {
-              dispatch({ type: "updateBot", botId: bot.id, patch: { section: section || undefined } });
-            }
-            onClose();
-          }}
-        />] : []),
-        item(<BellDot size={16} className="text-ink" />, t("sidebar.bot.markUnread"), () =>
-          dispatch({ type: "markUnread", botId: bot.id }),
-        ),
-        item(
-          readingBotId === bot.id ? <Loader2 size={16} className="animate-spin text-ink-secondary" /> : <CheckCheck size={16} className="text-ink-secondary" />,
-          readingBotId === bot.id ? t("sidebar.bot.markingAllRead") : t("sidebar.bot.markAllRead"),
-          () => { void readAll(bot); },
-          { disabled: readingBotId !== null || botUnreadThreadIds(bot).length === 0, keepOpen: true },
-        ),
-        divider("d1"),
-        item(<Cpu size={16} className="text-ink" />, t("sidebar.bot.model"), () => openModelWindow(bot.id), { id: "model" }),
-        ...(canRename ? [item(<Pencil size={16} className="text-ink" />, "Rename Bot", () => onRename(bot.id))] : []),
-        item(<ClipboardCopy size={16} className="text-ink" />, t("sidebar.copyConversationId"), () => {
-          void copyText(bot.threadId);
-        }),
-        divider("d2"),
-        // Only this person's sidebar: the bot, its owner and everyone else
-        // keep it; Archive (below) is the bot-wide action.
-        item(<EyeOff size={16} className="text-ink" />, t("sidebar.hidden.hide"), () => hideFromSidebar("bot", bot.id)),
-        ...(canArchive ? [item(
-          <Archive size={16} className="text-ink" />,
-          t("sidebar.bot.archive"),
-          () => onArchive?.(bot),
-          {
-            disabled: archiveBlocked,
-            hint: archiveHint,
-          },
-        )] : []),
-        ...(canDelete ? [<BotDeleteMenuItem
-          key="delete"
-          deleting={deleting}
-          onClick={() => {
-            onClose();
-            onDelete?.(bot);
-          }}
-        />] : []),
-      ]}
-      {primaryItem && <>{divider("primary")}{primaryItem}</>}
+      {page === "more" && !remoteClient ? morePage : mainPage}
       {readError?.botId === bot.id && <p role="alert" className="px-3.5 py-2 text-[12px] text-danger">{readError.message}</p>}
     </div>,
     document.body,
@@ -1539,7 +1588,7 @@ function ThreadTree({ ownerId, ownerName, owner, folderOwner, openThreadId, task
   const locale = activeLocale();
   const renderThread = (task: ThreadTreeTask) => {
     return <SidebarThreadRow key={task.threadId} task={{ ...task, ...rowState?.(task) }} ownerId={ownerId} current={selected && task.threadId === openThreadId} compact={density === "compact"} folders={projects} activityLabel={task.threadId === openThreadId ? activeActivityLabel : undefined}
-      now={stampClock(threadRecency(task), now)} locale={locale} {...actions} onCreateThread={() => onNew()} onCreateFolder={() => setCreatingProject(true)} />;
+      now={stampClock(threadRecency(task), now)} locale={locale} {...actions} />;
   };
   const ungrouped = visibleTasks.filter((task) => !projects.some((project) => project.id === task.projectId));
   const projectToEdit = projects.find((project) => project.id === editingProject);
@@ -1690,8 +1739,8 @@ function ThreadTree({ ownerId, ownerName, owner, folderOwner, openThreadId, task
               <span className="shrink-0 text-[10px] font-normal opacity-50">{projectTasks.length}</span>
               {!open && (waiting ? <span className="text-[10px] text-warning">{t("task.waiting")}</span> : working ? <Loader2 size={10} className="shrink-0 animate-spin text-success" /> : projectTasks.some((task) => task.unread) ? <span className="size-1.5 shrink-0 rounded-full bg-unread" aria-label={t("task.unreadMany")} /> : null)}
             </button>
-            <button type="button" title={t("task.newIn", { name: project.name })} aria-label={t("task.newIn", { name: project.name })} onClick={() => onNew(project.id)}
-              className="flex size-6 items-center justify-center rounded opacity-0 hover:bg-sidebar-hover hover:text-sidebar-ink focus-visible:opacity-100 group-hover/folder:opacity-100 max-md:opacity-70 touch:opacity-70"><Plus size={12} /></button>
+            {/* New thread here is in the folder's "..." menu: one place, not a
+                second hover button beside it. */}
             <FolderActions project={project} canMoveUp={index > 0} canMoveDown={index < projects.length - 1} canMarkRead={canMarkRead(project.id)} saving={reordering || markingRead}
               menu={folderMenu?.projectId === project.id ? folderMenu : null} onMenuChange={(menu) => setFolderMenu(menu ? { ...menu, projectId: project.id } : null)}
               onEdit={() => setEditingProject(project.id)} onMove={(direction, onSaved) => saveOrder(moveFolder(projectIds, project.id, direction), onSaved)}

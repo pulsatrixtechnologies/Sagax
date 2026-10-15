@@ -57,7 +57,7 @@ describe("sidebar rows", () => {
     expect(markup).not.toContain("Chief of Staff");
 
     setLocale("fr");
-    expect(renderRow(bot({ chiefOfStaff: true }))).toContain('aria-label="Robot principal"');
+    expect(renderRow(bot({ chiefOfStaff: true }))).toContain('aria-label="Bot principal"');
 
     setLocale("ja");
     expect(renderRow(bot())).toContain(`aria-label="${t("sidebar.bot.actions", { name: "Atlas" })}"`);

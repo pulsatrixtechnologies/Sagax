@@ -68,14 +68,32 @@ describe("Settings on an organization server", () => {
     expect(organizationHidesSection("privacy", true)).toBe(false);
     expect(organizationHidesSection("privacy", false)).toBe(true);
 
-    fixture.section = "usage";
+    // 2026-10-14: Email and Activity are hidden in the app (Sagax Business
+    // manages them); Privacy is a card of Notifications
+    fixture.section = "people";
     const solo = await render();
-    expect(solo).toContain(">Email<");
-    expect(solo).not.toContain(">Privacy<");
+    expect(solo).not.toContain("MAIL_SETTINGS_MARKER");
+    expect(solo).not.toContain('<option value="mail"');
+    expect(solo).not.toContain('<option value="activity"');
+    fixture.section = "notifications";
+    expect(await render()).not.toContain('data-settings-card="notifications.privacy"');
     fixture.org = ORG;
-    const org = await render();
-    expect(org).not.toContain(">Email<");
-    expect(org).toContain(">Privacy<");
+    const privacy = await render();
+    expect(privacy).toContain('data-settings-card="notifications.privacy"');
+    expect(privacy).toContain(">Privacy<");
+    expect(privacy).not.toContain('<option value="privacy"');
+  });
+
+  it("opens an old Email or Activity link on the nearest page, and Privacy on its card", async () => {
+    for (const section of ["mail", "activity"] as const) {
+      fixture.section = section;
+      const html = await render();
+      expect(html, section).not.toContain("MAIL_SETTINGS_MARKER");
+      expect(html, section).toContain('<option value="general" selected="">General</option>');
+    }
+    fixture.org = ORG;
+    fixture.section = "privacy";
+    expect(await render()).toContain('data-settings-card="notifications.privacy"');
   });
 
   it("names the Local VM page Computer (Ordinateur), with the same content", async () => {
@@ -141,8 +159,8 @@ describe("an organization member", () => {
 });
 
 describe("Connected apps is experimental", () => {
-  // 2026-10-14: Connected apps has its own Settings page, shown with the experiment.
-  it("hides the Connected apps page in Settings until the experiment is on", async () => {
+  // 2026-10-14: Connected apps is a card of Models and voice, shown with the experiment.
+  it("hides the Connected apps card until the experiment is on", async () => {
     fixture.section = "connectedApps";
     const off = await render();
     expect(off).not.toContain("platform.composio.dev");
@@ -150,13 +168,14 @@ describe("Connected apps is experimental", () => {
     fixture.features = { connectedApps: true };
     const on = await render();
     expect(on).toContain("platform.composio.dev");
-    expect(on).toContain('<option value="connectedApps"');
+    expect(on).toContain('data-settings-card="connections.apps"');
+    expect(on).not.toContain('<option value="connectedApps"');
     // never a bare "Not set": it says what is true
     expect(on).toContain("data-connected-apps-state");
     expect(on).not.toContain(">Not set<");
-    // an old link to the Composio card in Integrations lands here too
+    // an old link to the Composio card in Integrations lands on the same page
     fixture.section = "connections";
-    expect(await render()).not.toContain("platform.composio.dev");
+    expect(await render()).toContain("platform.composio.dev");
   });
 
   it("offers the switch under Experimental features, off by default", async () => {

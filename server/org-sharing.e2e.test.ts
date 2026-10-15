@@ -21,7 +21,7 @@
 //   S3-10 the directory is the backstop: a disabled person's session ends
 //   S3-11 the authenticated health lists the engines and whether installed
 import { spawn, type ChildProcess } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { connect, type Socket } from "node:net";
 import { request } from "node:http";
 import { tmpdir } from "node:os";
@@ -704,6 +704,138 @@ posixOnly("Perspicax organization, slice 3: directory, sharing with a user, acce
       await api("POST", `/api/bots/${bram.id}/interrupt`, erin, {});
     }
   }, 60_000);
+
+  it("S3-7d (2026-10-14): a member's bot asks its owner, never an admin, for what stays in the owner's rights; rules, modes and the admin route", async () => {
+    const erin = await signIn(ERIN);
+    const cora = await createBot(erin, "Cora", "hold");
+    const holdDump = join(home, "hold-dump.json");
+    rmSync(holdDump, { force: true });
+    expect((await api("POST", `/api/bots/${cora.id}/messages`, erin, { text: "update my tickets" })).status).toBe(202);
+    await waitFor(async () => existsSync(holdDump), 20_000);
+    const socketPath = (JSON.parse(readFileSync(holdDump, "utf8")) as { mcpConfig: any }).mcpConfig.mcpServers.ogb.args.at(-1) as string;
+    const sockets: Socket[] = [];
+    // ask, then either a card shows up or the answer comes back without one
+    const ask = async (tool: string, input: Record<string, unknown>) => {
+      const socket = connect(socketPath);
+      sockets.push(socket);
+      await new Promise<void>((resolve, reject) => { socket.once("connect", resolve); socket.once("error", reject); });
+      const id = `s37d-${sockets.length}`;
+      let answer: any;
+      let buffer = "";
+      socket.on("data", (chunk) => { buffer += chunk; if (buffer.includes("\n")) answer = JSON.parse(buffer.split("\n")[0]!); });
+      socket.write(JSON.stringify({ t: "ask", id, kind: "permission", tool, input }) + "\n");
+      const settled = await waitFor(async () => {
+        if (answer) return { card: null as any };
+        const got = await api("GET", `/api/threads/${cora.threadId}/messages?limit=200`, erin);
+        const card = (got.body.messages as Array<{ card?: any }> | undefined)?.find((m) => m.card?.requestId === id)?.card;
+        return card ? { card } : null;
+      });
+      return { id, card: settled.card, answer: () => answer };
+    };
+    const respond = (auth: Auth, requestId: string, extra: Record<string, unknown> = {}) =>
+      api("POST", `/api/threads/${cora.threadId}/respond`, auth, { requestId, behavior: "allow", ...extra });
+    const CW = "mcp__perspicax_gox__cw_psa__write";
+    try {
+      // a ConnectWise write through Perspicax (the owner's own tokens): the owner's card
+      const first = await ask(CW, { resource: "service/tickets/41", operation: "update", body: { status: "In progress" } });
+      expect(first.card, "a card for the owner").toBeTruthy();
+      expect(first.card.adminApproval).toBeUndefined();
+      expect(first.card.ownerRule).toMatchObject({ tool: "perspicax_gox__cw_psa__write", scope: { resource: "service/tickets", operation: "update" } });
+      // never in an admin's queue
+      expect(((await api("GET", "/api/org/approvals", alice)).body.approvals as Array<{ requestId: string }>).some((row) => row.requestId === first.id)).toBe(false);
+      // an admin cannot answer, or save a rule on, someone else's owner card
+      expect([403, 404]).toContain((await respond(alice, first.id, { rule: "allow" })).status);
+      // a rule must agree with the answer
+      expect((await respond(erin, first.id, { behavior: "deny", rule: "allow" })).status).toBe(400);
+      // Always allow: saved for Erin, then the answer goes out
+      const saved = await respond(erin, first.id, { rule: "allow" });
+      expect(saved.status, saved.text).toBe(200);
+      await waitFor(async () => first.answer()?.behavior === "allow");
+      const mine = (await api("GET", "/api/approval-rules", erin)).body.rules as Array<Record<string, any>>;
+      expect(mine).toEqual([expect.objectContaining({ botId: cora.id, behavior: "allow", scope: { resource: "service/tickets", operation: "update" } })]);
+      // kept per person: Alice (an admin) has none of Erin's rules
+      expect((await api("GET", "/api/approval-rules", alice)).body.rules).toEqual([]);
+
+      // the same kind of call no longer asks
+      const again = await ask(CW, { resource: "service/tickets/77", operation: "update", body: { status: "Waiting" } });
+      expect(again.card).toBeNull();
+      expect(again.answer()?.behavior).toBe("allow");
+
+      // a delete is destructive: the allow rule does not cover it
+      const del = await ask(CW, { resource: "service/tickets/77", operation: "delete" });
+      expect(del.card).toBeTruthy();
+      expect(del.card.ownerRule.destructive).toBe("delete");
+      // Always deny: refused now and from then on, without a card
+      expect((await respond(erin, del.id, { behavior: "deny", rule: "deny" })).status).toBe(200);
+      await waitFor(async () => del.answer()?.behavior === "deny");
+      const delAgain = await ask(CW, { resource: "service/tickets/78", operation: "delete" });
+      expect(delAgain.card).toBeNull();
+      expect(delAgain.answer()?.behavior).toBe("deny");
+
+      // modes: the owner's only
+      expect([403, 404]).toContain((await api("PUT", `/api/bots/${cora.id}/permission-mode`, alice, { mode: "auto" })).status);
+      expect((await api("GET", `/api/bots/${cora.id}/permission-mode`, erin)).body.mode).toBe("approval");
+      expect((await api("PUT", `/api/bots/${cora.id}/permission-mode`, erin, { mode: "auto" })).status).toBe(200);
+      const schedule = await ask(CW, { resource: "schedule/entries", operation: "create", body: {} });
+      expect(schedule.card).toBeNull();
+      expect(schedule.answer()?.behavior).toBe("allow");
+      // an edited rule: only its owner edits it; Ask every time keeps a card even in auto
+      const ruleIdEarly = mine[0]!.id as string;
+      expect((await api("PATCH", `/api/approval-rules/${ruleIdEarly}`, alice, { behavior: "ask" })).status).toBe(404);
+      const toAsk = await api("PATCH", `/api/approval-rules/${ruleIdEarly}`, erin, { behavior: "ask" });
+      expect(toAsk.status, toAsk.text).toBe(200);
+      expect(toAsk.body.rule).toMatchObject({ behavior: "ask", scope: { resource: "service/tickets", operation: "update" } });
+      const askRule = await ask(CW, { resource: "service/tickets/80", operation: "update", body: {} });
+      expect(askRule.card, "an Ask every time rule still asks in auto").toBeTruthy();
+      expect((await respond(erin, askRule.id)).status).toBe(200);
+      await waitFor(async () => askRule.answer()?.behavior === "allow");
+      expect((await api("PATCH", `/api/approval-rules/${ruleIdEarly}`, erin, { behavior: "allow" })).status).toBe(200);
+      // auto still asks for a destructive call no rule covers
+      const bulk = await ask(CW, { resource: "service/tickets", operation: "update", ids: [1, 2, 3], body: { status: "Closed" } });
+      expect(bulk.card?.ownerRule?.destructive).toBe("bulk");
+      expect((await respond(erin, bulk.id, { behavior: "deny" })).status).toBe(200);
+
+      // bypass needs an explicit confirmation
+      const unconfirmed = await api("PUT", `/api/bots/${cora.id}/permission-mode`, erin, { mode: "bypass" });
+      expect(unconfirmed.status).toBe(400);
+      expect(unconfirmed.body.code).toBe("bypass_confirmation_required");
+      // and the organization's Full access policy: off, Bypass stays off
+      expect((await api("PATCH", "/api/org/settings", alice, { allowFullAccess: false })).status).toBe(200);
+      const policyOff = await api("PUT", `/api/bots/${cora.id}/permission-mode`, erin, { mode: "bypass", confirmBypass: true });
+      expect(policyOff.status).toBe(403);
+      expect(policyOff.body.code).toBe("bypass_not_allowed");
+      expect((await api("GET", `/api/bots/${cora.id}/permission-mode`, erin)).body.canBypass).toBe(false);
+      expect((await api("PATCH", "/api/org/settings", alice, { allowFullAccess: true })).status).toBe(200);
+      expect((await api("PUT", `/api/bots/${cora.id}/permission-mode`, erin, { mode: "bypass", confirmBypass: true })).status).toBe(200);
+      const project = await ask(CW, { resource: "project/projects", operation: "update", body: {} });
+      expect(project.card).toBeNull();
+      expect(project.answer()?.behavior).toBe("allow");
+      // bypass asks nothing but writes every approval to the journal
+      const journal = join(realpathSync(join(home, ".sagax")), "decisions");
+      await waitFor(async () => existsSync(journal) && readdirSync(journal).some((file) =>
+        readFileSync(join(journal, file), "utf8").split("\n").some((line) => line.includes(`"requestId":"${project.id}"`) && line.includes(`"source":"owner-bypass"`))));
+      // no mode reaches past the owner's rights: a server command still waits for an admin
+      const shell = await ask("Bash", { command: "cat /etc/hostname" });
+      expect(shell.card.adminApproval).toBe(true);
+      expect(shell.card.ownerRule).toBeUndefined();
+      expect((await respond(erin, shell.id, { rule: "allow" })).status).toBe(403);
+      expect((await respond(alice, shell.id, { rule: "allow" })).status).toBe(400);
+      expect((await respond(alice, shell.id)).status).toBe(200);
+      await waitFor(async () => shell.answer()?.behavior === "allow");
+
+      // revoke: the rule goes, the next ticket update asks again (back on approval)
+      expect((await api("PUT", `/api/bots/${cora.id}/permission-mode`, erin, { mode: "approval" })).status).toBe(200);
+      const ruleId = mine[0]!.id as string;
+      expect((await api("DELETE", `/api/approval-rules/${ruleId}`, alice)).status).toBe(404);
+      expect((await api("DELETE", `/api/approval-rules/${ruleId}`, erin)).status).toBe(200);
+      const asksAgain = await ask(CW, { resource: "service/tickets/90", operation: "update", body: {} });
+      expect(asksAgain.card).toBeTruthy();
+      expect((await respond(erin, asksAgain.id)).status).toBe(200);
+    } finally {
+      for (const socket of sockets) socket.destroy();
+      await api("POST", `/api/bots/${cora.id}/interrupt`, erin, {});
+    }
+  }, 90_000);
 
   it("S3-10: a person disabled in Perspicax is logged out by the directory, with no back-channel push", async () => {
     const dave = await signIn(DAVE);

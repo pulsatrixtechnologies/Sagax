@@ -24,6 +24,7 @@ import {
   Power,
   ChevronLeft,
   PanelRight,
+  Settings2,
 } from "lucide-react";
 import { canEditBotField } from "@/lib/bot-capabilities";
 import { canManageKeys } from "@/lib/viewer";
@@ -45,6 +46,7 @@ import { LocalScreenPreview } from "./LocalScreenPreview";
 import { LinuxLocalControl } from "./LinuxLocalControl";
 import { MacLocalControl } from "./MacLocalControl";
 import { LocalComputerAutoWarning } from "./LocalComputerAutoWarning";
+import { ComputerMoreMenu, type ComputerMoreItem } from "./computer/ComputerMoreMenu";
 import {
   busyBoatView,
   instanceSupportsLocalComputer,
@@ -1243,6 +1245,40 @@ export function ComputerPanel({
     </div>
   ) : null;
 
+  // The main desktop action shows when no help request or hand-back card
+  // already offers it: a ready Local VM, or a ready cloud computer.
+  const primaryDesktop = (phase === "vm" || cloudPreviewReady) && !control.helpReason;
+  const moreItems: ComputerMoreItem[] = [];
+  if (phase === "vm" && vmStatus?.mode === "per-bot" && window.ogb?.desktopWorkspace && onOpenVmWorkspace) {
+    moreItems.push({ id: "two-desktops", icon: <Columns2 size={14} />, label: t("computer.twoDesktops"), title: t("computer.twoDesktopsTitle"), disabled: pending !== null, onSelect: () => onOpenVmWorkspace(bot.id) });
+  }
+  if (cloudPreviewReady && canManageCloud && (cloudBackend === "vps" || boatState !== "archived")) {
+    moreItems.push({
+      id: "sleep",
+      icon: pending === "sleep" ? <Loader2 size={14} className="animate-spin" /> : <Moon size={14} />,
+      label: t("vm.cloud.sleep"),
+      title: t("computer.sleepTitle"),
+      // the server refuses sleep while a turn owns the boat (409)
+      disabled: pending === "sleep" || profileBot.busy,
+      onSelect: () => run("sleep"),
+    });
+  }
+  // (the boat phases keep their own Works on button in the status card)
+  if (editComputer && primaryDesktop) {
+    moreItems.push({ id: "works-on", icon: <Settings2 size={14} />, label: t("computer.worksOn"), onSelect: () => dispatch({ type: "toggleSettings", open: true, section: "worksOn" }) });
+  }
+  if (editComputer && canManageVm && phase === "vm" && vmStatus?.mode === "per-bot") {
+    moreItems.push({
+      id: "delete-vm",
+      icon: pending === "vm-delete" ? <Loader2 size={14} className="animate-spin" /> : <Power size={14} />,
+      label: t("computer.deleteVm"),
+      title: profileBot.busy ? t("computer.deleteVmBlocked") : t("computer.deleteVmTitle", { name: bot.name }),
+      disabled: pending !== null || profileBot.busy,
+      danger: true,
+      onSelect: () => void runVmAction("vm-delete"),
+    });
+  }
+
   const deviceBody = (
       <div className={embedded ? "pb-5" : "flex-1 overflow-y-auto px-5 pb-5"}>
           {soloPicker}
@@ -1456,22 +1492,6 @@ export function ComputerPanel({
           </div>
         )}
 
-        {phase === "vm" &&
-          vmStatus?.mode === "per-bot" &&
-          window.ogb?.desktopWorkspace &&
-          onOpenVmWorkspace && (
-            <button
-              type="button"
-              onClick={() => onOpenVmWorkspace(bot.id)}
-              disabled={pending !== null}
-              className="mt-3 flex w-full items-center justify-center gap-2 rounded-lg border border-accent/30 bg-accent/10 py-2 text-[13px] font-medium text-ink hover:bg-accent/15 disabled:opacity-50"
-              title={t("computer.twoDesktopsTitle")}
-            >
-              <Columns2 size={14} />
-              {t("computer.twoDesktops")}
-            </button>
-          )}
-
         {/* Who is driving — take the wheel / hand it back */}
         {(cloudPreviewReady || phase === "vm" || currentTeamComputer) && control.helpReason && !control.held && (
           <div className="mt-3 rounded-xl border border-warning/25 bg-warning/10 p-4">
@@ -1519,77 +1539,27 @@ export function ComputerPanel({
             </button>
           </div>
         )}
-        {phase === "vm" && vmViewerUrl && control.held && (
-          <button
-            onClick={() => void openDesktop()}
-            disabled={pending === "join"}
-            className="mt-3 flex w-full items-center justify-center gap-2 rounded-lg bg-control py-2 text-[13px] text-ink hover:bg-raised-hover disabled:opacity-50"
-            title={t("computer.openVmDesktopTitle")}
-          >
-            {pending === "join" ? <Loader2 size={14} className="animate-spin" /> : <Monitor size={14} />}
-            {t("computer.openLiveDesktop")}
-          </button>
-        )}
-        {phase === "vm" && !control.held && !control.helpReason && (
-          <button
-            onClick={() => void openDesktop()}
-            disabled={controlPending || pending === "join" || !vmViewerUrl}
-            className="mt-3 flex w-full items-center justify-center gap-2 rounded-lg bg-control py-2 text-[13px] text-ink hover:bg-raised-hover disabled:opacity-50"
-            title={t("computer.takeControlVmTitle")}
-          >
-            {pending === "join" ? <Loader2 size={14} className="animate-spin" /> : <Hand size={14} />}
-            {t("computer.takeControl")}
-          </button>
-        )}
-        {editComputer && canManageVm && phase === "vm" && vmStatus?.mode === "per-bot" && (
-          <button
-            onClick={() => void runVmAction("vm-delete")}
-            disabled={pending !== null || profileBot.busy}
-            className="mt-2 flex w-full items-center justify-center gap-2 rounded-lg border border-danger/30 py-2 text-[13px] text-danger hover:bg-danger/10 disabled:opacity-50"
-            title={profileBot.busy ? t("computer.deleteVmBlocked") : t("computer.deleteVmTitle", { name: bot.name })}
-          >
-            {pending === "vm-delete" ? <Loader2 size={14} className="animate-spin" /> : <Power size={14} />}
-            {t("computer.deleteVm")}
-          </button>
-        )}
-        {/* Cloud-only actions */}
-        {cloudPreviewReady && (
-          <div className="mt-3 flex gap-2">
-            {!control.held && !control.helpReason && (
+        {/* One main action: Open live desktop (it takes the wheel first when
+            the bot holds it). The rest (two desktops, Sleep, Delete the VM,
+            Works on) sits in the "..." beside it. */}
+        {(primaryDesktop || moreItems.length > 0) && (
+          <div className="mt-3 flex gap-2" data-computer-actions="">
+            {primaryDesktop && (
               <button
-                onClick={() =>
-                  void openDesktop()
-                }
-                disabled={controlPending || pending === "join"}
-                className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-control py-2 text-[13px] text-ink hover:bg-raised-hover disabled:opacity-50"
-                title={t("computer.takeControlTitle")}
-              >
-                {pending === "join" ? <Loader2 size={14} className="animate-spin" /> : <Hand size={14} />}
-                {t("computer.takeControl")}
-              </button>
-            )}
-            {control.held && (
-              <button
+                type="button"
+                data-computer-open-desktop=""
                 onClick={() => void openDesktop()}
-                disabled={pending === "join"}
+                disabled={(!control.held && controlPending) || pending === "join" || (phase === "vm" && !vmViewerUrl)}
                 className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-control py-2 text-[13px] text-ink hover:bg-raised-hover disabled:opacity-50"
+                title={control.held
+                  ? (phase === "vm" ? t("computer.openVmDesktopTitle") : undefined)
+                  : t(phase === "vm" ? "computer.takeControlVmTitle" : "computer.takeControlTitle")}
               >
                 {pending === "join" ? <Loader2 size={14} className="animate-spin" /> : <Monitor size={14} />}
                 {t("computer.openLiveDesktop")}
               </button>
             )}
-            {canManageCloud && (cloudBackend === "vps" || boatState !== "archived") && (
-              <button
-                onClick={() => run("sleep")}
-                // the server refuses sleep while a turn owns the boat (409)
-                disabled={pending === "sleep" || profileBot.busy}
-                className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-control px-3 py-2 text-[13px] text-ink hover:bg-raised-hover disabled:opacity-50"
-                title={t("computer.sleepTitle")}
-              >
-                {pending === "sleep" ? <Loader2 size={14} className="animate-spin" /> : <Moon size={14} />}
-                {t("vm.cloud.sleep")}
-              </button>
-            )}
+            {moreItems.length > 0 && <ComputerMoreMenu items={moreItems} />}
           </div>
         )}
 
@@ -1677,13 +1647,13 @@ export function ComputerPanel({
             dispatch({ type: "toggleComputer", open: false });
             dispatch({ type: "toggleSettings", open: true });
           }}
-          aria-label="Back"
-          title="Back"
+          aria-label={t("computer.back")}
+          title={t("computer.back")}
           className="absolute left-2.5 flex size-8 items-center justify-center rounded-full bg-raised text-ink-secondary hover:text-ink"
         >
           <ChevronLeft size={16} />
         </button>
-        <span className="truncate text-[14px] font-semibold text-ink">Computer</span>
+        <span className="truncate text-[14px] font-semibold text-ink">{t("botPanel.tab.computer")}</span>
         <button
           type="button"
           onClick={() => dispatch({ type: "toggleComputer", open: false })}

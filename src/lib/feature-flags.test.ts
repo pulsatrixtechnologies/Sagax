@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { builtInBrowserEnabled, connectedAppsEnabled, dataWindowEnabled, decisionModelEnabled, llmThreadTitlesEnabled, routineGroupSettingsEnabled, routinesInConversationEnabled, sharedComputersEnabled, showToolCallsEnabled, skillAuthoringEnabled } from "./feature-flags";
+import { builtInBrowserEnabled, connectedAppsEnabled, dataWindowEnabled, decisionModelEnabled, llmThreadTitlesEnabled, routinesInConversationEnabled, sharedComputersEnabled, showToolCallsEnabled, skillAuthoringEnabled } from "./feature-flags";
 
 describe("experimental feature flags", () => {
   it("keeps skill authoring on by default, before and after the config arrives", () => {
@@ -59,12 +59,6 @@ describe("experimental feature flags", () => {
     expect(dataWindowEnabled({ features: {} })).toBe(false);
     expect(dataWindowEnabled({ features: { dataWindow: false } })).toBe(false);
     expect(dataWindowEnabled({ features: { dataWindow: true } })).toBe(true);
-  });
-
-  it("hides the routine and group settings unless the experimental option is on", () => {
-    expect(routineGroupSettingsEnabled(null)).toBe(false);
-    expect(routineGroupSettingsEnabled({ features: {} })).toBe(false);
-    expect(routineGroupSettingsEnabled({ features: { routineGroupSettings: true } })).toBe(true);
   });
 
   it("offers Regenerate title only while the server has generated titles on", () => {

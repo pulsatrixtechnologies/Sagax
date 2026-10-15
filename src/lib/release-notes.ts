@@ -161,7 +161,8 @@ export function sanitizeReleaseMarkdown(source: string): string {
     previous = text;
     // Comments too, in the same loop: removing a tag can join the pieces
     // of one (`<!<b>--`), and removing a comment can join a tag.
-    text = text.replace(/<!--[\s\S]*?-->/g, "").replace(HTML_TAG, "");
+    text = text.replace(/<!--[\s\S]*?-->/g, "");
+    text = text.replace(HTML_TAG, "");
   }
   // An opener left without its end starts no comment in the text shown.
   // Repeatedly: removing one opener can join the pieces of another (`<!<!----`).

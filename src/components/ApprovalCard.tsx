@@ -107,10 +107,12 @@ export function approvalCardStaysInChat(
 }
 
 /** The status pill of a settled tool approval, as Grok Bot shows it. */
-export function approvalPill(card: Pick<OptionCardData, "answered" | "expired" | "undone" | "alwaysAllowed">): { label: string; tone: "success" | "danger" | "neutral" } | undefined {
+export function approvalPill(card: Pick<OptionCardData, "answered" | "expired" | "undone" | "alwaysAllowed" | "ruleSaved">): { label: string; tone: "success" | "danger" | "neutral" } | undefined {
   if (card.expired === true) return { label: t("approval.pill.expired"), tone: "neutral" };
   if (!card.answered) return undefined;
   if (card.undone === true) return { label: t("approval.status.undone"), tone: "neutral" };
+  if (card.answered === "allow" && card.ruleSaved?.behavior === "allow") return { label: t("approval.pill.alwaysAllowed"), tone: "success" };
+  if (card.answered === "deny" && card.ruleSaved?.behavior === "deny") return { label: t("approval.pill.alwaysDenied"), tone: "danger" };
   if (card.answered === "allow" && card.alwaysAllowed) return { label: t("approval.pill.alwaysAllowed"), tone: "success" };
   if (card.answered === "allow") return { label: t("approval.pill.allowedOnce"), tone: "success" };
   return { label: t("approval.pill.declined"), tone: "danger" };
@@ -128,6 +130,25 @@ function AllowRuleInset({ rule }: { rule: string }) {
         type="button"
         className="mt-1 text-accent hover:underline"
         onClick={() => dispatch({ type: "toggleSettings", open: true, section: "access" })}
+      >
+        {t("approval.rule.edit")}
+      </button>
+    </div>
+  );
+}
+
+/** 2026-10-14: the owner's rule saved with this answer, in its words, with
+ * a way to the rules page. */
+function OwnerRuleInset({ rule }: { rule: NonNullable<OptionCardData["ruleSaved"]> }) {
+  const { dispatch } = useStore();
+  return (
+    <div data-owner-rule-saved={rule.behavior} className="mt-2 rounded-lg bg-inset px-3 py-2 text-[12.5px] text-ink-secondary">
+      <div className="font-medium text-ink">{rule.behavior === "deny" ? t("approval.rule.savedDeny") : t("approval.rule.savedAllow")}</div>
+      <div className="mt-0.5">« {rule.description} »</div>
+      <button
+        type="button"
+        className="mt-1 text-accent hover:underline"
+        onClick={() => dispatch({ type: "toggleSettings", open: true, section: "permissions" })}
       >
         {t("approval.rule.edit")}
       </button>
@@ -481,6 +502,7 @@ export function ApprovalCard({
       )}
 
       {card.answered === "allow" && card.alwaysAllowed && <AllowRuleInset rule={card.alwaysAllowed} />}
+      {card.answered && card.ruleSaved && <OwnerRuleInset rule={card.ruleSaved} />}
 
       {/* The decision lives in the composer (one place to answer, and it
           can't be scrolled past); here we only record what happened. The

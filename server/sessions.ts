@@ -54,6 +54,14 @@ export function cookieMaxAgeSeconds(session: { expiresAt: number }, now = Date.n
 export const STREAM_TICKET_TTL_MS = 5 * 60_000;
 /** How long a bot-act copy of a person's session lasts. It is not renewed. */
 export const BOT_ACT_SESSION_TTL_MS = 60_000;
+/** The label of a bot-act copy of a person's session (delegate). */
+export const BOT_ACT_SESSION_LABEL = "Bot act";
+
+/** A bot's 60-second copy of its person's session (`act`): it acts as the
+ * person, but it is never the person choosing their own approval rules. */
+export function isBotActSession(session: Pick<SessionRecord, "ephemeral" | "label">): boolean {
+  return session.ephemeral === true && session.label === BOT_ACT_SESSION_LABEL;
+}
 /** Per-source slow-down only. A 60-bit code cannot be guessed online in
  * five minutes whatever the rate, so the lock exists to make noise visible,
  * not to protect the secret; it is kept short because sources are shared
@@ -732,7 +740,7 @@ export class SessionRegistry {
     const record: SessionRecord = {
       id: randomUUID(),
       tokenHash: sha256(token),
-      label: "Bot act",
+      label: BOT_ACT_SESSION_LABEL,
       scopes: [...source.scopes],
       createdAt: now,
       lastSeenAt: now,

@@ -1,4 +1,6 @@
-// Shared by bot settings and the bot's side panel.
+// Shared by bot settings and the bot's side panel. The list keeps one action
+// (New schedule); a row opens the routine's page, which holds Run now, Pause
+// or Resume, Edit, the run logs and Delete.
 import { CalendarClock, ChevronLeft, FileText, PanelRight, Plus, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { useStore, type Bot } from "@/state/store";
@@ -51,6 +53,7 @@ export function RoutinesSection({ bot, routines, runs, defaultRunOn, grouped = f
         <RunNowButton routine={detail} bot={bot} className="flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-hairline/50 bg-panel py-2.5 text-[13px] font-medium text-ink hover:bg-raised disabled:opacity-50" />
         <button type="button" onClick={() => toggle(detail)} className="flex-1 rounded-lg border border-hairline/50 bg-panel py-2.5 text-[13px] font-medium text-ink hover:bg-raised">{detail.enabled ? t("botPanel.routines.pause") : t("botPanel.routines.resume")}</button>
         <button type="button" onClick={() => setEditing(detail)} className="flex-1 rounded-lg border border-hairline/50 bg-panel py-2.5 text-[13px] font-medium text-ink hover:bg-raised">{t("botPanel.routines.edit")}</button>
+        <button type="button" data-routine-logs aria-label={t("routines.logs")} title={t("routines.logs")} onClick={() => dispatch({ type: "showRoutines", section: "logs", botId: bot.id })} className="flex size-10 items-center justify-center rounded-lg border border-hairline/50 text-ink-secondary hover:bg-raised hover:text-ink"><FileText size={16} /></button>
         <button type="button" aria-label={t("common.delete")} onClick={() => { dispatch({ type: "deleteRoutine", routineId: detail.id }); setDetailId(null); }} className="flex size-10 items-center justify-center rounded-lg border border-hairline/50 text-ink-secondary hover:bg-raised hover:text-danger"><Trash2 size={16} /></button>
       </div>
       {editing && editing !== "new" && <RoutineEditor key={detail.id} routine={detail} bots={[bot]} lockedBotId={bot.id} defaultRunOn={defaultRunOn} onClose={() => setEditing(null)} />}
@@ -62,9 +65,8 @@ export function RoutinesSection({ bot, routines, runs, defaultRunOn, grouped = f
       <CalendarClock size={16} className="text-ink-secondary" />
       <h2 className="min-w-0 flex-1 text-[13px] font-normal leading-[18px] text-ink-secondary">{t("computer.tab.routines")}</h2>
       <button type="button" onClick={() => setEditing("new")} aria-label={t("computer.routines.create")} title={t("computer.routines.create")} className="ui-icon-button"><Plus size={15} /></button>
-      <button type="button" onClick={() => dispatch({ type: "showRoutines", section: "logs", botId: bot.id })} aria-label={t("routines.logs")} title={t("routines.logs")} className="ui-icon-button"><FileText size={14} /></button>
     </div>
-    <RoutineList routines={routines} viewerPrincipalId={state.config?.viewer?.principalId ?? null} runs={runs} loading={state.routinesLoadState === "loading" && routines.length === 0} error={state.routinesLoadState === "error"} onOpen={(routine) => setDetailId(routine.id)} onToggle={toggle} grouped={grouped} />
+    <RoutineList routines={routines} viewerPrincipalId={state.config?.viewer?.principalId ?? null} runs={runs} loading={state.routinesLoadState === "loading" && routines.length === 0} error={state.routinesLoadState === "error"} onOpen={(routine) => setDetailId(routine.id)} grouped={grouped} toggle={false} />
     {editing === "new" && <RoutineEditor key={`${bot.id}-new`} bots={[bot]} lockedBotId={bot.id} defaultRunOn={defaultRunOn} onClose={() => setEditing(null)} />}
   </div>;
 }

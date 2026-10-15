@@ -22,14 +22,17 @@ import {
   List,
   LoaderCircle,
   MessageSquare,
+  MoreHorizontal,
   Music,
   RotateCcw,
   Search,
+  SlidersHorizontal,
   X,
   type LucideIcon,
 } from "lucide-react";
 
 import { api, useStore, type Bot } from "@/state/store";
+import { useAdvancedMode } from "@/lib/interface-mode";
 import { cn } from "@/lib/cn";
 import { activeLocale, t } from "@/lib/i18n";
 import { formatSize } from "@/lib/composer-attachments";
@@ -227,6 +230,7 @@ function meta(file: ThreadFile): string {
  * back into the chat. FilesBrowser is everything the person sees. */
 export function FilesSection({ bot }: { bot: Bot }) {
   const { state, dispatch } = useStore();
+  const advanced = useAdvancedMode();
   const threadId = bot.threadId;
   const [files, setFiles] = useState<ThreadFile[] | null>(null);
   const [error, setError] = useState(false);
@@ -285,11 +289,11 @@ export function FilesSection({ bot }: { bot: Bot }) {
     }
   };
 
-  return <FilesBrowser key={threadId} threadId={threadId} files={files} error={error} onRetry={() => void load()} onJump={jump} />;
+  return <FilesBrowser key={threadId} threadId={threadId} files={files} error={error} onRetry={() => void load()} onJump={jump} advanced={advanced} />;
 }
 
 /** Filters, search, sort, grid or list, and each file's actions. */
-export function FilesBrowser({ threadId, files, error, onRetry, onJump, initialFilter = "all", initialView }: {
+export function FilesBrowser({ threadId, files, error, onRetry, onJump, initialFilter = "all", initialView, advanced = false, openMenus }: {
   threadId: string;
   /** null while the first load is in flight. */
   files: ThreadFile[] | null;
@@ -298,6 +302,10 @@ export function FilesBrowser({ threadId, files, error, onRetry, onJump, initialF
   onJump: (file: ThreadFile) => void;
   initialFilter?: FileFilter;
   initialView?: "grid" | "list";
+  /** Advanced mode: each file's menu also offers Copy path. */
+  advanced?: boolean;
+  /** Tests: render the Filter menu, or every menu, already open. */
+  openMenus?: "filter" | "all";
 }) {
   const [filter, setFilter] = useState<FileFilter>(initialFilter);
   const [origin, setOrigin] = useState<FileOrigin>("all");
@@ -369,29 +377,35 @@ export function FilesBrowser({ threadId, files, error, onRetry, onJump, initialF
 
   const actionButton = "flex size-7 shrink-0 items-center justify-center rounded-md text-ink-secondary transition-colors hover:bg-hover hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 disabled:cursor-not-allowed disabled:opacity-40";
 
+  // One "..." per file: Show in chat, Download, and Copy path in Advanced.
   const actions = (file: ThreadFile, className?: string) => {
-    const path = file.available ? copyablePath(file.localPath ?? file.path) : null;
+    const path = advanced && file.available ? copyablePath(file.localPath ?? file.path) : null;
     return (
-      <div className={cn("flex items-center gap-0.5", className)}>
-        <button type="button" onClick={() => onJump(file)} aria-label={t("botPanel.files.jump")} title={t("botPanel.files.jump")} className={actionButton}>
-          <MessageSquare size={14} />
-        </button>
-        <button type="button" disabled={!file.available} onClick={() => download(file)} aria-label={t("botPanel.files.downloadAria", { name: file.name })} title={t("attach.download")} className={actionButton}>
-          <Download size={14} />
-        </button>
-        {path && (
-          <button type="button" onClick={() => copyPath(path)} aria-label={t("botPanel.files.copyPath")} title={path} className={actionButton}>
-            <Copy size={14} />
-          </button>
+      <PopoverMenu
+        className={className}
+        buttonClass={actionButton}
+        label={t("botPanel.files.moreAria", { name: file.name })}
+        icon={<MoreHorizontal size={14} />}
+        menuLabel={file.name}
+        defaultOpen={openMenus === "all"}
+        data-file-menu={file.id}
+      >
+        {(close) => (
+          <>
+            <MenuItem icon={<MessageSquare size={14} />} label={t("botPanel.files.jump")} onClick={() => { close(); onJump(file); }} />
+            <MenuItem icon={<Download size={14} />} label={t("attach.download")} ariaLabel={t("botPanel.files.downloadAria", { name: file.name })} disabled={!file.available} onClick={() => { close(); download(file); }} />
+            {path && <MenuItem icon={<Copy size={14} />} label={t("botPanel.files.copyPath")} title={path} onClick={() => { close(); copyPath(path); }} />}
+          </>
         )}
-      </div>
+      </PopoverMenu>
     );
   };
 
-  const selectClass = "min-w-0 flex-1 rounded-lg border border-hairline-weak bg-elevated px-2 py-1.5 text-[12.5px] text-ink focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/60";
   const emptyText = search.trim()
     ? t("botPanel.files.noMatch", { query: search.trim() })
     : t(`botPanel.files.empty.${activeFilter}`);
+  // The filter button says when something narrows or reorders the list.
+  const narrowed = activeFilter !== "all" || origin !== "all" || sort !== "newest";
 
   return (
     <div className="flex flex-col gap-3" data-files-section>
@@ -413,52 +427,49 @@ export function FilesBrowser({ threadId, files, error, onRetry, onJump, initialF
             className="w-full min-w-0 bg-transparent text-[13px] text-ink placeholder:text-ink-secondary focus:outline-none"
           />
         </label>
-        <div className="flex shrink-0 items-center rounded-lg border border-hairline-weak p-0.5">
-          {(["grid", "list"] as const).map((mode) => {
-            const Icon = mode === "grid" ? LayoutGrid : List;
-            const label = t(mode === "grid" ? "botPanel.files.viewGrid" : "botPanel.files.viewList");
-            return (
-              <button
-                key={mode}
-                type="button"
-                aria-pressed={view === mode}
-                aria-label={label}
-                title={label}
-                onClick={() => chooseView(mode)}
-                className={cn("flex size-7 items-center justify-center rounded-md transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60", view === mode ? "bg-elevated-hover text-ink" : "text-ink-secondary hover:text-ink")}
-              >
-                <Icon size={14} />
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      {visibleFilters.length > 0 && <div role="group" aria-label={t("botPanel.files.filterAria")} className="flex flex-wrap gap-1.5">
-        {visibleFilters.map((id) => (
-          <button
-            key={id}
-            type="button"
-            aria-pressed={filter === id}
-            onClick={() => setFilter(id)}
-            className={cn(
-              "flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[12px] leading-4 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60",
-              filter === id ? "border-transparent bg-ink text-app" : "border-hairline-weak text-ink-secondary hover:text-ink",
-            )}
-          >
-            {t(`botPanel.files.filter.${id}`)}
-            <span className={cn("tabular-nums", filter === id ? "text-app/70" : "text-ink-tertiary")}>{counts[id]}</span>
-          </button>
-        ))}
-      </div>}
-
-      <div className="flex items-center gap-2">
-        <select value={origin} onChange={(event) => setOrigin(event.target.value as FileOrigin)} aria-label={t("botPanel.files.originAria")} className={selectClass}>
-          {(["all", "bot", "you"] as const).map((id) => <option key={id} value={id}>{t(`botPanel.files.origin.${id}`)}</option>)}
-        </select>
-        <select value={sort} onChange={(event) => setSort(event.target.value as FileSort)} aria-label={t("botPanel.files.sortAria")} className={selectClass}>
-          {(["newest", "name", "size"] as const).map((id) => <option key={id} value={id}>{t(`botPanel.files.sort.${id}`)}</option>)}
-        </select>
+        {/* One Filter button: type, origin, sort and view in one menu. */}
+        <PopoverMenu
+          buttonClass={cn("relative flex h-[30px] shrink-0 items-center gap-1.5 rounded-lg border border-hairline-weak px-2.5 text-[12.5px] text-ink-secondary transition-colors hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60", narrowed && "text-ink")}
+          label={t("botPanel.files.filterButton")}
+          icon={<><SlidersHorizontal size={14} aria-hidden="true" /><span>{t("botPanel.files.filterButton")}</span>{narrowed && <span data-files-narrowed className="size-1.5 rounded-full bg-accent" aria-hidden="true" />}</>}
+          menuLabel={t("botPanel.files.filterButton")}
+          defaultOpen={openMenus === "filter" || openMenus === "all"}
+          data-files-filter=""
+          wide
+        >
+          {() => (
+            <>
+              {visibleFilters.length > 0 && (
+                <MenuGroup label={t("botPanel.files.filterAria")}>
+                  {visibleFilters.map((id) => (
+                    <MenuRadio key={id} checked={filter === id} onClick={() => setFilter(id)} data-files-type={id}>
+                      <span className="flex-1">{t(`botPanel.files.filter.${id}`)}</span>
+                      <span className="tabular-nums text-ink-tertiary">{counts[id]}</span>
+                    </MenuRadio>
+                  ))}
+                </MenuGroup>
+              )}
+              <MenuGroup label={t("botPanel.files.originAria")}>
+                {(["all", "bot", "you"] as const).map((id) => (
+                  <MenuRadio key={id} checked={origin === id} onClick={() => setOrigin(id)} data-files-origin={id}>{t(`botPanel.files.origin.${id}`)}</MenuRadio>
+                ))}
+              </MenuGroup>
+              <MenuGroup label={t("botPanel.files.sortAria")}>
+                {(["newest", "name", "size"] as const).map((id) => (
+                  <MenuRadio key={id} checked={sort === id} onClick={() => setSort(id)} data-files-sort={id}>{t(`botPanel.files.sort.${id}`)}</MenuRadio>
+                ))}
+              </MenuGroup>
+              <MenuGroup label={t("botPanel.files.viewAria")}>
+                {(["list", "grid"] as const).map((mode) => (
+                  <MenuRadio key={mode} checked={view === mode} onClick={() => chooseView(mode)} data-files-view-choice={mode}>
+                    {mode === "grid" ? <LayoutGrid size={14} aria-hidden="true" /> : <List size={14} aria-hidden="true" />}
+                    {t(mode === "grid" ? "botPanel.files.viewGrid" : "botPanel.files.viewList")}
+                  </MenuRadio>
+                ))}
+              </MenuGroup>
+            </>
+          )}
+        </PopoverMenu>
       </div>
 
       <p className="sr-only" aria-live="polite">{files ? t("botPanel.files.count", { count: shown.length }) : ""}</p>
@@ -506,7 +517,7 @@ export function FilesBrowser({ threadId, files, error, onRetry, onJump, initialF
                     {file.available ? (file.size === null ? t(`botPanel.files.source.${file.source}`) : formatSize(file.size)) : t("botPanel.files.unavailable")}
                   </div>
                 </div>
-                {actions(file, "absolute right-1 top-1 rounded-lg bg-panel/90 opacity-0 shadow-sm backdrop-blur-sm transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 touch:opacity-100 motion-reduce:transition-none")}
+                {actions(file, "absolute right-1 top-1 rounded-lg bg-panel/90 opacity-0 shadow-sm backdrop-blur-sm transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 has-[[aria-expanded=true]]:opacity-100 touch:opacity-100 motion-reduce:transition-none")}
               </li>
             );
           })}
@@ -545,5 +556,78 @@ export function FilesBrowser({ threadId, files, error, onRetry, onJump, initialF
       )}
       {media && <MediaPreviewDialog threadId={threadId} file={media.file} kind={media.kind} onClose={() => setMedia(null)} />}
     </div>
+  );
+}
+
+/** A button that opens a small menu under it; a click outside or Escape
+ * closes it. The menu's items get `close` to shut it after acting. */
+function PopoverMenu({ label, icon, buttonClass, menuLabel, children, className, defaultOpen = false, wide = false, ...data }: {
+  label: string;
+  icon: React.ReactNode;
+  buttonClass: string;
+  menuLabel: string;
+  children: (close: () => void) => React.ReactNode;
+  className?: string;
+  defaultOpen?: boolean;
+  wide?: boolean;
+} & Record<`data-${string}`, string>) {
+  const [open, setOpen] = useState(defaultOpen);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const onPointer = (event: PointerEvent) => {
+      if (event.target instanceof Node && !ref.current?.contains(event.target)) setOpen(false);
+    };
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.stopPropagation();
+      setOpen(false);
+    };
+    window.addEventListener("pointerdown", onPointer);
+    window.addEventListener("keydown", onKey, true);
+    return () => {
+      window.removeEventListener("pointerdown", onPointer);
+      window.removeEventListener("keydown", onKey, true);
+    };
+  }, [open]);
+  const close = () => setOpen(false);
+  return (
+    <div ref={ref} className={cn("relative", className)} {...data}>
+      <button type="button" aria-label={label} title={label} aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen((value) => !value)} className={buttonClass}>
+        {icon}
+      </button>
+      {open && (
+        <div role="menu" aria-label={menuLabel} className={cn("absolute right-0 top-full z-30 mt-1 flex flex-col gap-0.5 rounded-xl border-[0.5px] border-border bg-elevated p-1.5 text-[13px] leading-[18px] shadow-lg popover-surface", wide ? "w-[220px]" : "w-[200px]")}>
+          {children(close)}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function MenuItem({ icon, label, ariaLabel, title, disabled, onClick }: { icon: React.ReactNode; label: string; ariaLabel?: string; title?: string; disabled?: boolean; onClick: () => void }) {
+  return (
+    <button type="button" role="menuitem" disabled={disabled} aria-label={ariaLabel} title={title} onClick={onClick} className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-ink hover:bg-hover disabled:cursor-not-allowed disabled:opacity-40">
+      <span className="shrink-0 text-ink-secondary">{icon}</span>
+      <span className="min-w-0 flex-1 truncate">{label}</span>
+    </button>
+  );
+}
+
+function MenuGroup({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div role="group" aria-label={label} className="flex flex-col gap-0.5 border-b border-hairline-weak pb-1 last:border-b-0 last:pb-0">
+      <div className="px-2 pt-1 text-[11.5px] leading-4 text-ink-tertiary">{label}</div>
+      {children}
+    </div>
+  );
+}
+
+function MenuRadio({ checked, onClick, children, ...data }: { checked: boolean; onClick: () => void; children: React.ReactNode } & Record<`data-${string}`, string>) {
+  return (
+    <button type="button" role="menuitemradio" aria-checked={checked} onClick={onClick} className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-ink hover:bg-hover" {...data}>
+      <Check size={13} aria-hidden="true" className={cn("shrink-0", checked ? "text-ink" : "invisible")} />
+      {children}
+    </button>
   );
 }

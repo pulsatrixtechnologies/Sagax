@@ -49,6 +49,12 @@ describe("releaseHighlights", () => {
     expect(releaseHighlights("Bug fixes and improvements.")).toEqual([]);
   });
 
+  it("strips tags nested so that removing one would form another", () => {
+    const [line] = releaseHighlights("<li>Safe <scr<script>ipt>text.</li>");
+    expect(line).toMatch(/^Safe /);
+    expect(line).not.toMatch(/<[^>]*>/);
+  });
+
   it("drops links to their label, author credits and long tails", () => {
     expect(releaseHighlights("* Fix [the loader](https://x.dev/a) by @someone in https://github.com/x/y/pull/1")).toEqual(["Fix the loader"]);
     const long = releaseHighlights(`- ${"word ".repeat(40)}`)[0]!;

@@ -3,8 +3,11 @@
 // this section only keeps the "View full" dialog for the blurb itself.
 // Moved out of SettingsPanel.tsx (its header, avatar card, Name, Title,
 // and Instructions block) with only the label and helper text changed.
+// New bot shows it in two parts (2026-10-14): "main" on the one page (avatar,
+// name with one random name button, description) and "more" under More
+// options (the label and the full description dialog).
 import { useState } from "react";
-import { BookOpen } from "lucide-react";
+import { BookOpen, Dices } from "lucide-react";
 
 import { useStore, type Bot } from "@/state/store";
 import type { MausMotion, MausState } from "@/lib/mascot";
@@ -26,6 +29,7 @@ export function IdentitySection({
   mascotMotion,
   namePlaceholder,
   showAvatar = true,
+  part = "all",
 }: {
   bot: Bot;
   patch: (patch: BotPatch) => void;
@@ -34,27 +38,32 @@ export function IdentitySection({
   namePlaceholder?: string;
   /** The bot panel shows the avatar card at its top, above the tabs. */
   showAvatar?: boolean;
+  /** Which fields: all of them, the New bot page's own ("main"), or the
+   * ones it keeps under More options ("more"). */
+  part?: "all" | "main" | "more";
 }) {
   const [instructionsOpen, setInstructionsOpen] = useState(false);
   const { draft } = useBotEditor();
   const { state } = useStore();
+  const main = part !== "more";
+  const more = part !== "main";
 
   return (
     <div className="flex flex-col gap-4">
-      {showAvatar && <BotProfileAvatarCard bot={bot} activeState={activeState} mascotMotion={mascotMotion} onPatch={patch} />}
-      <PackageProvenance bot={bot} />
+      {main && showAvatar && <BotProfileAvatarCard bot={bot} activeState={activeState} mascotMotion={mascotMotion} onPatch={patch} />}
+      {main && <PackageProvenance bot={bot} />}
 
-      <div>
+      {main && <div>
         <div className="mb-1.5 flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
           <label htmlFor={`bot-name-${bot.id}`} className="text-[13px] text-ink-secondary">{t("botPanel.identity.name")}</label>
-          {draft && <div className="flex flex-wrap gap-1">
-            {(["female", "male"] as const).map(kind => <button
-              key={kind}
-              type="button"
-              className="rounded-md px-2 py-1 text-xs text-ink-secondary hover:bg-control hover:text-ink"
-              onClick={() => patch({ name: randomBotName(kind, bot.name, state.bots.map(existing => existing.name)) })}
-            >{t(kind === "female" ? "newBot.randomFemaleName" : "newBot.randomMaleName")}</button>)}
-          </div>}
+          {draft && <button
+            type="button"
+            data-random-name=""
+            aria-label={t("newBot.randomName")}
+            title={t("newBot.randomName")}
+            className="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-ink-secondary hover:bg-control hover:text-ink"
+            onClick={() => patch({ name: randomBotName(Math.random() < 0.5 ? "female" : "male", bot.name, state.bots.map(existing => existing.name)) })}
+          ><Dices size={14} aria-hidden="true" /></button>}
         </div>
         <input
           id={`bot-name-${bot.id}`}
@@ -64,8 +73,8 @@ export function IdentitySection({
           placeholder={namePlaceholder}
           onChange={(e) => patch({ name: e.target.value })}
         />
-      </div>
-      <Field label={t("botPanel.identity.label")}>
+      </div>}
+      {more && <Field label={t("botPanel.identity.label")}>
         <input
           className={inputCls}
           maxLength={BOT_PROFILE_LIMITS.title}
@@ -73,19 +82,28 @@ export function IdentitySection({
           value={bot.title}
           onChange={(e) => patch({ title: e.target.value })}
         />
-      </Field>
-      <div className="block">
+      </Field>}
+      {part === "more" && <div>
+        <button
+          type="button"
+          onClick={() => setInstructionsOpen(true)}
+          className="flex items-center gap-1.5 rounded-md px-1.5 py-1 text-[11.5px] font-medium text-accent-text hover:bg-accent/10"
+        >
+          <BookOpen size={12} /> {t("botPanel.identity.viewFull")}
+        </button>
+      </div>}
+      {main && <div className="block">
         <div className="mb-1.5 flex items-center justify-between gap-3">
           <label htmlFor={`bot-instructions-${bot.id}`} className="text-[13px] text-ink-secondary">
             {t("botPanel.identity.description")}
           </label>
-          <button
+          {part === "all" && <button
             type="button"
             onClick={() => setInstructionsOpen(true)}
             className="flex items-center gap-1.5 rounded-md px-1.5 py-1 text-[11.5px] font-medium text-accent-text hover:bg-accent/10"
           >
             <BookOpen size={12} /> {t("botPanel.identity.viewFull")}
-          </button>
+          </button>}
         </div>
         <textarea
           id={`bot-instructions-${bot.id}`}
@@ -106,7 +124,7 @@ export function IdentitySection({
             </span>
           )}
         </div>
-      </div>
+      </div>}
 
       {instructionsOpen && <BotInstructionsDialog bot={bot} inline={draft} onClose={() => setInstructionsOpen(false)} />}
     </div>

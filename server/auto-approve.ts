@@ -144,6 +144,12 @@ export type AutoVerdictSource =
   | "safety-hold"
   | "safety-read"
   | "widget-approval"
+  /** 2026-10-14 (bot owner permissions): the owner's own rule, the bot's
+   * automatic approval mode, its bypass mode, or a Deny rule. */
+  | "owner-rule"
+  | "owner-auto"
+  | "owner-bypass"
+  | "owner-rule-deny"
   | "no-grant";
 
 export interface AutoVerdict {

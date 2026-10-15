@@ -11,9 +11,12 @@ import {
   readUsage,
   summarizeUsage,
   usageCsv,
+  usageRowsFor,
+  type UsageViewer,
   USAGE_GROUPINGS,
   type UsageGroupBy,
 } from "../usage-ledger.ts";
+import type { RequestAuth } from "../request-auth.ts";
 import { PASS, type RouteHandler } from "./table.ts";
 
 export interface UsageRouteDeps {
@@ -26,12 +29,21 @@ export interface UsageRouteDeps {
   currency(): string;
 }
 
+export function usageViewerOf(auth: RequestAuth): UsageViewer {
+  if (auth.kind === "loopback") return { kind: "operator" };
+  const { principalId, email } = auth.session;
+  return principalId || email ? { kind: "person", principalId, email } : { kind: "operator" };
+}
+
 export function createUsageRoutes(deps: UsageRouteDeps): RouteHandler {
-  return async ({ res, url, path, method, json }) => {
+  return async ({ res, url, path, method, json, auth }) => {
     if (!(method === "GET" && (path === "/api/usage" || path === "/api/usage.csv"))) return PASS;
     const range = parseUsageRange(url.searchParams.get("from"), url.searchParams.get("to"));
     if (!range) return json(res, 400, { error: "from and to must be YYYY-MM-DD, from no later than to, at most a year apart" });
-    const rows = readUsage(deps.dataDir, range);
+    // ?mine=1 (2026-10-14): only the requester's own turns, for the app's
+    // Settings > Usage; the organization's totals belong to its admin console.
+    const all = readUsage(deps.dataDir, range);
+    const rows = url.searchParams.get("mine") === "1" ? usageRowsFor(all, usageViewerOf(auth)) : all;
     // The operator's price list is applied only with the billing entitlement.
     const prices = deps.prices();
     if (path === "/api/usage.csv") {

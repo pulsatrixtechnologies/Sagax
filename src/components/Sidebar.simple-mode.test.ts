@@ -177,24 +177,24 @@ describe("bot-first sidebar", () => {
   });
 
   it("never offers thread or folder creation in the bot context menu", () => {
-    const render = () => renderToStaticMarkup(createElement(BotContextMenu, {
-      menu: { botId: bot.id, x: 0, y: 0 }, onClose: vi.fn(), onArchive: vi.fn(), onDelete: vi.fn(), onMoveToSection: vi.fn(), onRename: vi.fn(),
+    const render = (initialPage: "main" | "more" = "main") => renderToStaticMarkup(createElement(BotContextMenu, {
+      menu: { botId: bot.id, x: 0, y: 0 }, initialPage, onClose: vi.fn(), onArchive: vi.fn(), onDelete: vi.fn(), onMoveToSection: vi.fn(), onRename: vi.fn(),
     }));
-    const enabled = render();
-    expect(enabled).toContain("Move to");
-    expect(enabled).toContain("Rename Bot");
-    expect(enabled).toContain("Hide from sidebar");
-    expect(enabled).not.toContain("New thread");
-    expect(enabled).not.toContain("New folder");
-    fixture.showThreads = false;
-    const disabled = render();
-    expect(disabled).toContain("Move to");
-    expect(disabled).toContain("Rename Bot");
-    expect(disabled).toContain("Hide from sidebar");
-    expect(disabled).not.toContain("New thread");
+    for (const shown of [true, false]) {
+      fixture.showThreads = shown;
+      const main = render();
+      const more = render("more");
+      expect(main).toContain("Rename the bot");
+      expect(more).toContain("Move to team");
+      expect(more).toContain("Hide from sidebar");
+      for (const html of [main, more]) {
+        expect(html).not.toContain("New thread");
+        expect(html).not.toContain("New folder");
+      }
+    }
   });
 
-  it("Edit profile on the remote client's menu opens the panel without naming a section", () => {
+  it("Edit bot on the remote client's menu opens the panel without naming a section", () => {
     vi.stubGlobal("window", { innerWidth: 1024, innerHeight: 768, ogb: { remoteClient: { active: true } } });
     let tree: ReactNode;
     // call the menu inside a render so its hooks run and the returned tree
@@ -213,7 +213,7 @@ describe("bot-first sidebar", () => {
         }
       };
       walk(tree);
-      return items.find((item) => Children.toArray(item.props.children).includes("Edit Profile"))!;
+      return items.find((item) => Children.toArray(item.props.children).includes("Edit bot"))!;
     };
     const render = () => renderToStaticMarkup(createElement(Capture));
 

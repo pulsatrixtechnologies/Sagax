@@ -68,8 +68,27 @@ describe("Organization settings without the hosted Admin portal", () => {
     for (const effect of fixture.effects) effect();
     await flush();
     const view = render();
-    expect(view.html).toContain("Join a Perspicax server");
+    // 2026-10-14: one "Connect to a server" card, open while nothing is
+    // connected, on its Perspicax method (the only one without a desktop bridge)
+    expect(view.html).toContain("Connect to a server");
+    expect(view.html).toContain('data-settings-card="organization.connect" data-open="true"');
+    expect(view.html).toContain('data-connect-wizard="perspicax"');
+    expect(view.html).not.toContain('data-settings-card="organization.joinPerspicax"');
+    expect(view.html).not.toContain('data-settings-card="organization.connectServer"');
     expect(view.html).not.toContain("Create an organization");
     expect(view.html).not.toContain("Sign in with your organization");
+  });
+});
+
+describe("Connect to a server: one card for the ways in", () => {
+  it("offers Perspicax, a Sagax server and another computer by what this window can do", async () => {
+    const { connectTargets } = await import("./ConnectServerWizard");
+    // another computer needs a code from its Pair devices, hidden since 2026-10-14
+    expect(connectTargets({ environments: true, remoteClient: true, remoteActive: false })).toEqual(["perspicax", "server"]);
+    expect(connectTargets({ environments: true, remoteClient: true, remoteActive: false, computerPairing: true })).toEqual(["perspicax", "server", "computer"]);
+    // a browser: Perspicax only (the copy of the bots is downloaded)
+    expect(connectTargets({ environments: false, remoteClient: false, remoteActive: false })).toEqual(["perspicax"]);
+    // already another computer's client: that card shows Disconnect instead
+    expect(connectTargets({ environments: true, remoteClient: true, remoteActive: true })).toEqual(["server"]);
   });
 });

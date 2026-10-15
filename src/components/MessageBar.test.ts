@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
-// The bar beside a message holds the copy button, the "…" and the time. Every
-// other control is a labelled entry in the "…" menu, so the column stays two
-// buttons wide.
+// The bar beside a 1:1 message holds reply, copy, the smiley, the "…" and
+// the time, in the order of a group's message. Every other control is a
+// labelled entry in the "…" menu.
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -98,13 +98,14 @@ describe("MessageBar", () => {
 });
 
 describe("MessageBar: reactions", () => {
-  async function renderReact(open: boolean, onOpenChange = vi.fn(), onPick = vi.fn()) {
+  async function renderReact(open: boolean, onOpenChange = vi.fn(), onPick = vi.fn(), reply = false) {
     await act(async () => {
       root.render(
         createElement(MessageBar, {
           side: "bot",
           time: "2:45 PM",
           copy: createElement("button", { type: "button", "aria-label": "Copy message" }),
+          reply: reply ? createElement("button", { type: "button", "aria-label": "Reply" }) : undefined,
           react: { open, onOpenChange, onPick, mine: ["👍"] },
           children: [createElement(MessageMenuItem, { key: "raw", label: "Show raw markdown", icon: null, onSelect: () => {} })],
         }),
@@ -113,25 +114,16 @@ describe("MessageBar: reactions", () => {
     return { onOpenChange, onPick };
   }
 
-  it("puts the smiley before copy, and Add reaction (E) first in the menu", async () => {
-    const { onOpenChange } = await renderReact(false);
+  // JC, 2026-10-14: one way to react (the smiley), reply in the row as in a group.
+  it("lays out reply, copy, the smiley and the … in a group's order, with no reaction entry in the menu", async () => {
+    const { onOpenChange } = await renderReact(false, vi.fn(), vi.fn(), true);
     const buttons = [...bar().querySelectorAll("button")].map((button) => button.getAttribute("aria-label"));
-    expect(buttons).toEqual(["Add reaction", "Copy message", "Message actions"]);
+    expect(buttons).toEqual(["Reply", "Copy message", "Add reaction", "Message actions"]);
     await act(async () => bar().querySelector<HTMLButtonElement>("[data-react-button]")!.click());
     expect(onOpenChange).toHaveBeenLastCalledWith(true);
     await act(async () => handle().click());
-    expect(items()[0]).toBe("Add reactionE");
-    expect(host.querySelector('[role="menuitem"]')!.getAttribute("aria-keyshortcuts")).toBe("E");
-  });
-
-  it("opens the picker from the … menu with the E key", async () => {
-    const { onOpenChange } = await renderReact(false);
-    await act(async () => handle().click());
-    await act(async () => {
-      host.querySelector<HTMLElement>('[role="menuitem"]')!.dispatchEvent(new KeyboardEvent("keydown", { key: "e", bubbles: true }));
-    });
-    expect(onOpenChange).toHaveBeenCalledWith(true);
-    expect(handle().getAttribute("aria-expanded")).toBe("false");
+    expect(items()).toEqual(["Show raw markdown"]);
+    expect(host.querySelector('[role="menuitem"][aria-keyshortcuts]')).toBeNull();
   });
 
   it("shows the picker while open and keeps the bar visible", async () => {

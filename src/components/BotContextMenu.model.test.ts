@@ -1,10 +1,12 @@
-// The sidebar's bot menu reaches the model window (2026-10-12): Model…
-// opens it on that bot through ModelWindowHost.
+// The sidebar's bot menu (JC, 2026-10-14): five everyday items at the first
+// level (Pin, Rename, Edit bot, More ›, Archive); the rare ones one step
+// down under More.
 import { createElement, isValidElement, type ReactElement, type ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AppState, Bot } from "@/state/store";
 import { setLocale } from "@/lib/i18n";
+import { setAdvancedMode } from "@/lib/interface-mode";
 
 const fixture = vi.hoisted(() => ({
   portal: null as ReactNode,
@@ -43,11 +45,13 @@ const handlers = () => ({
   onRename: vi.fn(),
   onMakePrimary: vi.fn(),
   onEditPersona: vi.fn(),
+  onArchive: vi.fn(),
+  onDelete: vi.fn(),
 });
 
-function render(target: Bot = bot, props = handlers()) {
+function render(page: "main" | "more" = "main", target: Bot = bot, props = handlers()) {
   fixture.state = { bots: [target, { ...bot, id: "other", name: "Other" } as Bot], ...fixture.state };
-  const html = renderToStaticMarkup(createElement(BotContextMenu, { variant: "sidebar", menu: { botId: target.id, x: 10, y: 10 }, ...props }));
+  const html = renderToStaticMarkup(createElement(BotContextMenu, { variant: "sidebar", initialPage: page, menu: { botId: target.id, x: 10, y: 10 }, ...props }));
   return { html, props };
 }
 
@@ -82,8 +86,44 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals());
 
 describe("the sidebar's bot menu", () => {
-  it("offers Model… and opens the model window on that bot", () => {
-    const { html, props } = render();
+  it("keeps five items at the first level", () => {
+    const { html } = render();
+    expect(items(html)).toEqual(["pin", "rename", "edit", "more", "archive"]);
+    for (const label of [">Pin<", ">Rename the bot<", ">Edit bot<", ">More<", ">Archive<"]) expect(html).toContain(label);
+    expect(html).not.toContain("Rename Bot");
+    expect(html).not.toContain("Model…");
+  });
+
+  it("opens More without closing, and Edit bot opens the bot editor", () => {
+    const { props } = render();
+    const found = buttons();
+    found.get("more")!.props.onClick();
+    expect(props.onClose).not.toHaveBeenCalled();
+    found.get("edit")!.props.onClick();
+    expect(props.onEditPersona).toHaveBeenCalledWith(expect.objectContaining({ id: bot.id }));
+    found.get("rename")!.props.onClick();
+    expect(props.onRename).toHaveBeenCalledWith(bot.id);
+  });
+
+  it("puts the rare actions under More", () => {
+    const { html } = render("more");
+    expect(items(html)).toEqual(["back", "put-on-desktop", "model", "mark-unread", "mark-all-read", "hide"]);
+    expect(html).toContain('data-bot-menu-page="more"');
+    expect(html).toContain(">Mark all conversations as read<");
+  });
+
+  it("offers Copy conversation ID in Advanced mode only", () => {
+    expect(items(render("more").html)).not.toContain("copy-id");
+    setAdvancedMode(true);
+    try {
+      expect(items(render("more").html)).toContain("copy-id");
+    } finally {
+      setAdvancedMode(false);
+    }
+  });
+
+  it("offers Model… under More and opens the model window on that bot", () => {
+    const { html, props } = render("more");
     expect(items(html)).toContain("model");
     expect(html).toContain(">Model…<");
     buttons().get("model")!.props.onClick();
@@ -91,8 +131,15 @@ describe("the sidebar's bot menu", () => {
     expect(props.onClose).toHaveBeenCalledOnce();
   });
 
-  it("says it in French", () => {
+  it("says it in French, bot and not robot", () => {
     setLocale("fr");
-    expect(render().html).toContain(">Modèle…<");
+    const main = render().html;
+    expect(main).toContain(">Modifier le bot<");
+    expect(main).toContain(">Épingler<");
+    expect(main).toContain(">Plus<");
+    const more = render("more").html;
+    expect(more).toContain(">Modèle…<");
+    expect(more).toContain(">Tout marquer comme lu<");
+    expect(more).not.toContain("robot");
   });
 });
