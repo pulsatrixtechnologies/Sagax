@@ -99,6 +99,7 @@ struct DesktopSettingsModal: View {
             }
         }
         .environmentObject(model)
+        .environment(\.desktopSettingsQuery, query)
         .task {
             model.attach(session)
             await model.load()
@@ -329,19 +330,44 @@ struct DesktopSettingsPage: View {
 /// Models and voice: model providers and accounts, then the keys and the
 /// decision model that were pages of their own.
 struct DesktopModelsVoiceSettings: View {
+    @Environment(\.desktopSettingsQuery) private var query
+
+    /// A search for a key or the decision model opens its card, as the
+    /// desktop's `cardsMatching` does.
+    private func searched(_ section: DesktopSettingsSection) -> Bool {
+        let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        return q.count >= 3 && section.matches(q, label: "")
+    }
+
     var body: some View {
+        let keys = searched(.connections)
+        let decision = searched(.decisionModel)
         AnyView(DesktopEnginesSettings())
-        DesktopSettingsCard(Text("API keys"), summary: Text("Providers and connected apps"), open: false, identifier: "engines.keys") {
+        DesktopSettingsCard(Text("API keys"), summary: Text("Providers and connected apps"), open: keys, identifier: "engines.keys") {
             VStack(alignment: .leading, spacing: 12) {
                 AnyView(DesktopAPIKeysSettings())
             }
         }
+        .id("keys-\(keys)")
         .padding(.top, 12)
-        DesktopSettingsCard(Text("Decision model"), summary: Text(verbatim: "Jev"), open: false, identifier: "engines.decisionModel") {
+        DesktopSettingsCard(Text("Decision model"), summary: Text(verbatim: "Jev"), open: decision, identifier: "engines.decisionModel") {
             VStack(alignment: .leading, spacing: 12) {
                 AnyView(DesktopDecisionModelSettings())
             }
         }
+        .id("decision-\(decision)")
+    }
+}
+
+private struct DesktopSettingsQueryKey: EnvironmentKey {
+    static let defaultValue = ""
+}
+
+extension EnvironmentValues {
+    /// The Settings modal's search, for a page whose cards open on a match.
+    var desktopSettingsQuery: String {
+        get { self[DesktopSettingsQueryKey.self] }
+        set { self[DesktopSettingsQueryKey.self] = newValue }
     }
 }
 
