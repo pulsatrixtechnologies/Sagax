@@ -381,9 +381,12 @@ final class BotPanelDetailsUITests: XCTestCase {
         XCTAssertEqual(try bot(named: "Ara")?["mascotSkin"] as? String ?? "none", "none", "a locked skin is not saved")
     }
 
-    /// Character row (BP6): Owl is always there; Crab is absent until character:crab is in rewards.
+    /// Character row (BP6, #475): every character shows. Shiba, until
+    /// character:shiba (or one of its skins) is in rewards, carries the
+    /// padlock: a tap previews it ("nothing is saved") and the server keeps
+    /// the owl.
     @MainActor
-    func testLockedCrabIsAbsentFromTheCharacterRow() throws {
+    func testALockedCharacterShowsWithItsPadlockAndPreviewsOnly() throws {
         let rewards = (try api("GET", "/api/me/achievements", allowFailure: true) as? [String: Any])?["rewards"] as? [String]
         guard let rewards else { throw XCTSkip("this server keeps no achievements: nothing is locked") }
         let ara = try XCTUnwrap(try bot(named: "Ara"))
@@ -393,18 +396,18 @@ final class BotPanelDetailsUITests: XCTestCase {
         let app = launchProfile()
         element("profile-mascot", in: app).tap()
         XCTAssertTrue(app.buttons["Owl"].firstMatch.waitForExistence(timeout: 15), "Owl stays on the row")
-        if rewards.contains("character:crab") {
-            XCTAssertTrue(app.buttons["Crab"].firstMatch.waitForExistence(timeout: 10), "unlocked crab is on the row")
-        } else {
-            // First paint is lockedUntilLoaded (owl only): wait until a locked tile leaves before asserting Crab is gone.
-            let sentinel = rewards.contains("character:ogre") ? "Shape" : "Ogre"
-            XCTAssertTrue(waitGone(app.buttons[sentinel].firstMatch, timeout: 15), "unlocks dropped \(sentinel)")
-            XCTAssertFalse(app.buttons["Crab"].firstMatch.exists, "locked crab is absent")
+        XCTAssertTrue(app.buttons["Crab"].firstMatch.waitForExistence(timeout: 10), "every character is on the row")
+        let shiba = app.buttons["Shiba"].firstMatch
+        XCTAssertTrue(shiba.waitForExistence(timeout: 10), "every character is on the row")
+        guard !rewards.contains(where: { $0 == "character:shiba" || $0.hasPrefix("skin:shiba:") }) else {
+            throw XCTSkip("Shiba is unlocked on this fixture")
         }
-    }
-
-    private func waitGone(_ element: XCUIElement, timeout: TimeInterval) -> Bool {
-        let gone = expectation(for: NSPredicate(format: "exists == false"), evaluatedWith: element)
-        return XCTWaiter().wait(for: [gone], timeout: timeout) == .completed
+        XCTAssertEqual(shiba.value as? String, "Locked")
+        shiba.tap()
+        XCTAssertTrue(element("character-skin-preview", in: app).waitForExistence(timeout: 5), "a locked character previews")
+        attach("Locked Shiba preview", app)
+        RunLoop.current.run(until: Date().addingTimeInterval(2))
+        let worn = (try bot(named: "Ara")?["mascotLook"] as? [String: Any])?["character"] as? String
+        XCTAssertEqual(worn ?? "owl", "owl", "a locked character is not saved")
     }
 }

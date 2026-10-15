@@ -65,7 +65,7 @@
     {
       "binding": "DB",
       "database_name": "openmausbot-control-plane",
-      "database_id": "8a7c34ed-5428-4ae2-8722-fef2fe9bf160",
+      "database_id": "00000000-0000-0000-0000-000000000000",
       "migrations_dir": "migrations"
     }
   ],

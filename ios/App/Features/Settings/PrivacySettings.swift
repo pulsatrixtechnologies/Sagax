@@ -2,20 +2,34 @@
 // synced preference `sagax.presenceVisible.v1` ("0" hides). Hidden, the
 // person reads as offline with no last-seen time for everyone, admins
 // included; they still see their own state "(hidden from others)".
-// Organization servers only.
+// Organization servers only. Since #518 it is a card of Settings >
+// Notifications (`PrivacyPresenceCard`); the page stays for old links.
 import CompanionCore
 import SwiftUI
 
 struct PrivacySettingsView: View {
     @Environment(\.themePalette) var themePalette
-    @EnvironmentObject private var session: Session
-    @State private var visible = true
-    @State private var loaded = false
 
     static let key = "sagax.presenceVisible.v1"
 
     var body: some View {
         SettingsPage(title: "Privacy") {
+            PrivacyPresenceCard()
+        }
+    }
+}
+
+/// "Show when I am online", as a card.
+struct PrivacyPresenceCard: View {
+    @Environment(\.themePalette) var themePalette
+    @EnvironmentObject private var session: Session
+    @State private var visible = true
+    @State private var loaded = false
+
+    private static var key: String { PrivacySettingsView.key }
+
+    var body: some View {
+        Group {
             SettingsCard {
                 SettingsRow(
                     title: "Show when I am online",

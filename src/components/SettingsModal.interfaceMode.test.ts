@@ -42,9 +42,11 @@ describe("Settings Simple and Advanced", () => {
     expect(html).not.toContain("data-settings-scope");
     expect(html).toContain('<option value="general"');
     expect(html).toContain('<option value="appearance"');
-    for (const id of ["connections", "connectedApps", "engines", "usage", "computer", "experimental"]) {
+    for (const id of ["connections", "connectedApps", "engines", "computer", "experimental"]) {
       expect(html, id).not.toContain(`<option value="${id}"`);
     }
+    // 2026-10-15: Usage (the person's own plan and cost) shows in Simple too
+    expect(html).toContain('<option value="usage"');
     expect(html).not.toContain('aria-label="Show tool calls in chat"');
     expect(html).not.toContain("Maximum turn length");
   });

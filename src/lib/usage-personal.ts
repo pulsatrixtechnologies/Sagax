@@ -1,7 +1,7 @@
 // Settings > Usage (2026-10-14): the signed-in person's own usage only. The
 // organization's totals, per-person tables, budgets and prices live in its
 // admin console (Sagax Business). Pure helpers, so the page is tested
-// without a server: the periods asked of GET /api/usage?mine=1, the cost of
+// without a server: the periods asked of GET /api/me/usage, the cost of
 // a period, its trend against the period before, the 30-day sparkline and
 // the top of a breakdown.
 import { activeLocale } from "@/lib/i18n";
@@ -41,7 +41,7 @@ export function personalUsagePeriods(now = new Date()): {
 }
 
 export function usageQuery(range: { from: string; to: string }, groupBy: "day" | "bot" | "model"): string {
-  return `/api/usage?mine=1&from=${encodeURIComponent(range.from)}&to=${encodeURIComponent(range.to)}&groupBy=${groupBy}`;
+  return `/api/me/usage?from=${encodeURIComponent(range.from)}&to=${encodeURIComponent(range.to)}&groupBy=${groupBy}`;
 }
 
 export const costOf = (summary: PersonalUsageSummary | null | undefined): number =>

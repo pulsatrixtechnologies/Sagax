@@ -1,5 +1,6 @@
-# Egress for sagax-sandboxd only: the Kubernetes API (443 or 6443) and
-# ingress on the signed provisioner port. Sandbox Pods do not carry this
+# Egress for sagax-sandboxd only: the Kubernetes API (443 or 6443), the
+# cluster DNS that resolves kubernetes.default.svc, and ingress on the
+# signed provisioner port. Sandbox Pods do not carry this
 # label, so they do not inherit the allow. Apply this before the default
 # deny policy, or the provisioner loses the API on the next request.
 apiVersion: networking.k8s.io/v1
@@ -19,6 +20,18 @@ spec:
         - protocol: TCP
           port: 8791
   egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
     - ports:
         - protocol: TCP
           port: 443

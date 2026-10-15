@@ -17,7 +17,6 @@ interface BrowserTab { tabId: string; title: string; url: string; active: boolea
 type ViewerFrame = BrowserFrame & { viewerId: string; generation: number };
 const button = "rounded-md p-1.5 text-ink-secondary hover:bg-inset hover:text-ink disabled:opacity-40 disabled:cursor-not-allowed";
 const RECONNECT_DELAYS = [1_000, 2_000, 4_000, 8_000, 15_000];
-const RECONNECT_MESSAGE = "Connection interrupted. Reconnecting the browser view…";
 
 const NO_CONTROL = { held: false, controlling: false, owned: false };
 
@@ -43,6 +42,10 @@ export function LiveBrowser({ bot, control: allowed = true }: { bot: Bot; contro
   const [takeStatus, setTakeStatus] = useState<BrowserTakeStatus>("");
   // The server keeps the view open while the bot's own command holds the browser.
   const [busy, setBusy] = useState(false);
+  // Last useState of this component: the test fixture (BrowserPanel.test.ts)
+  // seeds the earlier ones by call order.
+  // The stream dropped and an automatic reconnect is under way (not a failure).
+  const [reconnecting, setReconnecting] = useState(false);
   const viewer = useRef("");
   const generation = useRef(0);
   const pendingOperation = useRef<number | null>(null);
@@ -57,8 +60,8 @@ export function LiveBrowser({ bot, control: allowed = true }: { bot: Bot; contro
   const urlEditing = useRef(false);
   const reconnectCount = useRef(0);
   const connectionProfile = useRef("");
-  const profileName = bot.browserProfile === "guest" ? "Temporary browser"
-    : state.config?.browserProfiles?.find((profile) => profile.id === bot.browserProfile)?.name ?? `${bot.name}’s own browser`;
+  const profileName = bot.browserProfile === "guest" ? t("browser.profile.temporary")
+    : state.config?.browserProfiles?.find((profile) => profile.id === bot.browserProfile)?.name ?? t("browser.profile.own", { name: bot.name });
   useEffect(() => { if (showProfiles) profilesDialog.current?.showModal(); else profilesDialog.current?.close(); }, [showProfiles]);
   useEffect(() => {
     // Typed text goes to the field the person picked, so keep control while they write it.
@@ -67,7 +70,7 @@ export function LiveBrowser({ bot, control: allowed = true }: { bot: Bot; contro
   }, [showTyping]);
 
   const action = useCallback(async (body: Record<string, unknown>, expected = viewer.current) => {
-    if (!expected) throw new Error("Open the browser connection first.");
+    if (!expected) throw new Error(t("browser.live.openFirst"));
     // 120s matches the server's browser requestTimeoutMs: restart replies can
     // be legitimately slow (see the reconnect note in the stream error
     // handler), but a wedged request must surface an error instead of
@@ -105,7 +108,7 @@ export function LiveBrowser({ bot, control: allowed = true }: { bot: Bot; contro
     let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
     viewer.current = ""; pendingOperation.current = null; haltMessage.current = "";
     urlEditing.current = false;
-    setFrame(null); setTabs([]); setAddress(""); setConnected(false); setError(""); setBusy(false);
+    setFrame(null); setTabs([]); setAddress(""); setConnected(false); setError(""); setReconnecting(false); setBusy(false);
     setControl({ held: false, controlling: false, owned: false }); setPending(false);
     controlNow.current = NO_CONTROL; setTakeStatus("");
     const source = new EventSource(`/api/bots/${encodeURIComponent(bot.id)}/browser/live`);
@@ -138,6 +141,7 @@ export function LiveBrowser({ bot, control: allowed = true }: { bot: Bot; contro
         onError: setError,
         onHalted: () => setError(haltMessage.current),
       });
+      setReconnecting(false);
       setConnected(true);
     });
     // A ready event alone is not recovery: a flapping stream can open and
@@ -167,7 +171,7 @@ export function LiveBrowser({ bot, control: allowed = true }: { bot: Bot; contro
       // switch or reconnect. It must not clear the replacement viewer/input.
       if (stopped || !ownsConnection()) return;
       stopped = true;
-      let message = "Browser connection ended. Reconnect to continue watching.";
+      let message = t("browser.live.ended");
       let retryable = !(event instanceof MessageEvent);
       if (event instanceof MessageEvent) {
         try {
@@ -179,7 +183,7 @@ export function LiveBrowser({ bot, control: allowed = true }: { bot: Bot; contro
       const delay = retryable ? RECONNECT_DELAYS[reconnectCount.current] : undefined;
       if (delay !== undefined) {
         reconnectCount.current++;
-        message = RECONNECT_MESSAGE;
+        message = t("browser.live.reconnecting");
         reconnectTimer = setTimeout(() => {
           if (!ownsConnection()) return;
           // Reopen observation only, not browser commands or a human lease.
@@ -187,7 +191,7 @@ export function LiveBrowser({ bot, control: allowed = true }: { bot: Bot; contro
           setAttempt((value) => value + 1);
         }, delay);
       }
-      setError(message); setBusy(false); setConnected(false); setFrame(null); setControl({ held: false, controlling: false, owned: false });
+      setError(message); setReconnecting(delay !== undefined); setBusy(false); setConnected(false); setFrame(null); setControl({ held: false, controlling: false, owned: false });
       controlNow.current = NO_CONTROL; setTakeStatus("");
       // Keep this generation alive: a successful restart closes its stream
       // before the action reply arrives, and must still reconnect afterward.
@@ -246,48 +250,47 @@ export function LiveBrowser({ bot, control: allowed = true }: { bot: Bot; contro
   // repeated click cannot pile up behind it. Page input still buffers.
   const taking = takeStatus === "pending" || takeStatus === "slow";
   const commandsReady = interactive && !taking;
-  const reconnecting = error === RECONNECT_MESSAGE;
   const pill = "flex max-w-full items-center gap-1.5 whitespace-nowrap rounded-full border bg-menu px-2.5 py-1 text-[11px] shadow-sm sm:text-[12px]";
   return <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-hairline/40 bg-card text-ink">
     <div className="flex min-h-12 items-center gap-1 px-2 pt-1.5">
       <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto">
         {tabs.length ? tabs.map((tab) => <div key={tab.tabId} className={`flex max-w-52 shrink-0 items-center gap-1 rounded-xl px-1 text-[12px] ${tab.active ? "bg-inset text-ink" : "text-ink-secondary"}`}>
           <Globe size={13} className="ml-1.5 shrink-0 opacity-60" />
-          <button className="truncate px-1 py-2 text-left disabled:cursor-default" disabled={!commandsReady} onClick={() => command({ type: "tab-select", tabId: tab.tabId })} title={tab.title || tab.url}>{tab.title || "New tab"}</button>
-          <button className={button} aria-label={`Close ${tab.title || "tab"}`} disabled={!commandsReady} onClick={() => command({ type: "tab-close", tabId: tab.tabId })}><X size={13} /></button>
-        </div>) : <div className="flex items-center gap-2 rounded-xl bg-inset px-3 py-2 text-[12px] text-ink-secondary"><Globe size={13} />New tab</div>}
-        <button className={`${button} shrink-0`} disabled={!commandsReady} aria-label="New tab" title="New tab" onClick={() => command({ type: "tab-new" })}><Plus size={17} /></button>
+          <button className="truncate px-1 py-2 text-left disabled:cursor-default" disabled={!commandsReady} onClick={() => command({ type: "tab-select", tabId: tab.tabId })} title={tab.title || tab.url}>{tab.title || t("browser.tab.new")}</button>
+          <button className={button} aria-label={tab.title ? t("browser.tab.close", { title: tab.title }) : t("browser.tab.closeUntitled")} disabled={!commandsReady} onClick={() => command({ type: "tab-close", tabId: tab.tabId })}><X size={13} /></button>
+        </div>) : <div className="flex items-center gap-2 rounded-xl bg-inset px-3 py-2 text-[12px] text-ink-secondary"><Globe size={13} />{t("browser.tab.new")}</div>}
+        <button className={`${button} shrink-0`} disabled={!commandsReady} aria-label={t("browser.tab.new")} title={t("browser.tab.new")} onClick={() => command({ type: "tab-new" })}><Plus size={17} /></button>
       </div>
       {/* Profiles can't switch while this window holds the browser: opening them hands it back now, not after the idle wait. */}
-      <button className={`${button} rounded-xl bg-inset p-2`} title={`Browser profile: ${profileName}`} aria-label="Browser profiles" aria-expanded={showProfiles} onClick={() => { browserControl.current?.handBack(); setShowProfiles(true); }}><UserRound size={16} /></button>
+      <button className={`${button} rounded-xl bg-inset p-2`} title={t("browser.profile.current", { name: profileName })} aria-label={t("browser.profiles.open")} aria-expanded={showProfiles} onClick={() => { browserControl.current?.handBack(); setShowProfiles(true); }}><UserRound size={16} /></button>
     </div>
-    <form className="flex h-12 items-center gap-1 border-b border-hairline/40 px-2" onSubmit={(e) => { e.preventDefault(); const url = resolveAddressBarInput(address); if (commandsReady && url) command({ type: "navigate", url }); else if (address.trim()) setError("Enter a web address or something to search for."); }}>
+    <form className="flex h-12 items-center gap-1 border-b border-hairline/40 px-2" onSubmit={(e) => { e.preventDefault(); const url = resolveAddressBarInput(address); if (commandsReady && url) command({ type: "navigate", url }); else if (address.trim()) setError(t("browser.address.invalid")); }}>
       <div className="flex shrink-0 items-center">
-        <button type="button" className={button} disabled={!commandsReady} aria-label="Back" onClick={() => command({ type: "back" })}><ArrowLeft size={17} /></button>
-        <button type="button" className={button} disabled={!commandsReady} aria-label="Forward" onClick={() => command({ type: "forward" })}><ArrowRight size={17} /></button>
-        <button type="button" className={button} disabled={!commandsReady} aria-label="Reload page" onClick={() => command({ type: "reload" })}><RotateCw size={17} /></button>
+        <button type="button" className={button} disabled={!commandsReady} aria-label={t("browser.nav.back")} onClick={() => command({ type: "back" })}><ArrowLeft size={17} /></button>
+        <button type="button" className={button} disabled={!commandsReady} aria-label={t("browser.nav.forward")} onClick={() => command({ type: "forward" })}><ArrowRight size={17} /></button>
+        <button type="button" className={button} disabled={!commandsReady} aria-label={t("browser.nav.reload")} onClick={() => command({ type: "reload" })}><RotateCw size={17} /></button>
       </div>
-      <input ref={addressInput} aria-label="Browser address" readOnly={!commandsReady} value={address} onChange={(e) => setAddress(e.target.value)} onFocus={(e) => { urlEditing.current = true; if (commandsReady) e.target.select(); }} onBlur={() => { urlEditing.current = false; }} placeholder={connected ? "about:blank" : "Connecting…"} spellCheck={false} className="mx-1 min-w-0 flex-1 rounded-lg bg-transparent px-2 py-1.5 text-center text-[12px] outline-none placeholder:text-ink-secondary focus:bg-inset focus:text-left" />
+      <input ref={addressInput} aria-label={t("browser.address.label")} readOnly={!commandsReady} value={address} onChange={(e) => setAddress(e.target.value)} onFocus={(e) => { urlEditing.current = true; if (commandsReady) e.target.select(); }} onBlur={() => { urlEditing.current = false; }} placeholder={connected ? "about:blank" : t("browser.live.connecting")} spellCheck={false} className="mx-1 min-w-0 flex-1 rounded-lg bg-transparent px-2 py-1.5 text-center text-[12px] outline-none placeholder:text-ink-secondary focus:bg-inset focus:text-left" />
       <details className="relative shrink-0">
-        <summary className={`${button} list-none cursor-pointer [&::-webkit-details-marker]:hidden`} aria-label="Browser menu" title="Browser menu"><EllipsisVertical size={17} /></summary>
+        <summary className={`${button} list-none cursor-pointer [&::-webkit-details-marker]:hidden`} aria-label={t("browser.menu.label")} title={t("browser.menu.label")}><EllipsisVertical size={17} /></summary>
         <div className="absolute right-0 top-full z-20 mt-2 flex w-44 flex-col rounded-xl border border-hairline/50 bg-card p-1.5 text-[12px] shadow-xl">
-          <button type="button" className="rounded-md px-3 py-2 text-left hover:bg-inset disabled:opacity-40" disabled={!typingReady} onClick={(e) => { e.currentTarget.closest("details")?.removeAttribute("open"); setShowTyping(true); }}>Type or paste text…</button>
-          <button type="button" className="rounded-md px-3 py-2 text-left hover:bg-inset" onClick={(e) => { e.currentTarget.closest("details")?.removeAttribute("open"); reconnect(); }}>Reconnect view</button>
+          <button type="button" className="rounded-md px-3 py-2 text-left hover:bg-inset disabled:opacity-40" disabled={!typingReady} onClick={(e) => { e.currentTarget.closest("details")?.removeAttribute("open"); setShowTyping(true); }}>{t("browser.menu.type")}</button>
+          <button type="button" className="rounded-md px-3 py-2 text-left hover:bg-inset" onClick={(e) => { e.currentTarget.closest("details")?.removeAttribute("open"); reconnect(); }}>{t("browser.menu.reconnect")}</button>
           <button type="button" className="rounded-md px-3 py-2 text-left hover:bg-inset disabled:opacity-40" disabled={!connected || pending || taking} onClick={(e) => {
             e.currentTarget.closest("details")?.removeAttribute("open");
-            if (!window.confirm("Restart this profile’s browser? Open tabs will close. Saved logins are kept. Stop any bots using it first.")) return;
+            if (!window.confirm(t("browser.menu.restartConfirm"))) return;
             void execute({ type: "restart" });
-          }}>Restart browser…</button>
+          }}>{t("browser.menu.restart")}</button>
         </div>
       </details>
     </form>
-    {error && <div role={reconnecting ? "status" : "alert"} className={`flex items-center justify-between gap-2 border-b border-hairline/30 px-3 py-2 text-[12px] ${reconnecting ? "text-ink-secondary" : "text-danger"}`}><span>{error}</span>{!connected && <button className="shrink-0 underline" onClick={reconnect}>Reconnect</button>}</div>}
+    {error && <div role={reconnecting ? "status" : "alert"} className={`flex items-center justify-between gap-2 border-b border-hairline/30 px-3 py-2 text-[12px] ${reconnecting ? "text-ink-secondary" : "text-danger"}`}><span>{error}</span>{!connected && <button className="shrink-0 underline" onClick={reconnect}>{t("browser.live.reconnect")}</button>}</div>}
     <div className="relative min-h-0 flex-1 overflow-hidden bg-inset/40">
       {frame ? <BrowserViewport frame={frame} {...viewport} driving={interactive} input={input}
         onReturnToToolbar={() => addressInput.current?.focus()}
         acknowledge={(seq) => { if (generation.current === frame.generation && viewer.current === frame.viewerId) void action({ type: "ack", seq }, frame.viewerId).catch(() => {}); }}
-        onDecodeError={() => { if (generation.current === frame.generation && viewer.current === frame.viewerId) setError("A browser frame could not be decoded. Close and reopen the panel to reconnect."); }} />
-        : <div className="flex min-h-64 flex-col items-center justify-center gap-3 p-6 text-center text-[13px] text-ink-secondary">{connected && heldElsewhere ? <Hand size={24} /> : error && !reconnecting ? <Globe size={24} /> : <Loader2 size={24} className="animate-spin" />}<span>{heldElsewhere ? "Live view paused for human control" : reconnecting ? "Reconnecting…" : error ? "Browser disconnected" : busy ? t("browser.live.botBusy", { name: bot.name }) : "Opening the live browser…"}</span></div>}
+        onDecodeError={() => { if (generation.current === frame.generation && viewer.current === frame.viewerId) setError(t("browser.frame.decodeError")); }} />
+        : <div className="flex min-h-64 flex-col items-center justify-center gap-3 p-6 text-center text-[13px] text-ink-secondary">{connected && heldElsewhere ? <Hand size={24} /> : error && !reconnecting ? <Globe size={24} /> : <Loader2 size={24} className="animate-spin" />}<span>{heldElsewhere ? t("browser.live.heldElsewhere") : reconnecting ? t("browser.live.reconnectingShort") : error ? t("browser.live.disconnected") : busy ? t("browser.live.botBusy", { name: bot.name }) : t("browser.live.opening")}</span></div>}
       {/* Status only, never a control: it floats over the top of the page,
           readable at any panel width, and every click passes through it. */}
       <div role="status" className="pointer-events-none absolute inset-x-0 top-2 flex justify-center px-3">
@@ -301,17 +304,17 @@ export function LiveBrowser({ bot, control: allowed = true }: { bot: Bot; contro
       </div>
     </div>
     <dialog ref={profilesDialog} onClose={() => setShowProfiles(false)} onClick={(e) => { if (e.target === e.currentTarget) setShowProfiles(false); }} className="m-auto w-[min(420px,calc(100%-32px))] max-h-[80vh] overflow-auto rounded-2xl border border-hairline/50 bg-card p-5 text-ink shadow-2xl backdrop:bg-black/40">
-      <div className="mb-4 flex items-center justify-between"><h2 className="text-[15px] font-medium">Browser profiles</h2><button className={button} aria-label="Close browser profiles" onClick={() => setShowProfiles(false)}><X size={16} /></button></div>
+      <div className="mb-4 flex items-center justify-between"><h2 className="text-[15px] font-medium">{t("browser.profiles.open")}</h2><button className={button} aria-label={t("browser.profiles.close")} onClick={() => setShowProfiles(false)}><X size={16} /></button></div>
       {/* Opening this hands an idle hold back at once; say why the switcher waits otherwise. */}
       {(heldElsewhere || (control.owned && (pending || taking))) && <p className="mb-3 text-[12px] text-ink-secondary">{t(heldElsewhere ? "browser.profiles.heldElsewhere" : "browser.profiles.busy")}</p>}
       <BrowserProfilesManager bot={bot} disabled={pending || control.held} onProfileChanged={() => { setShowProfiles(false); reconnect(); }} />
     </dialog>
     <dialog ref={typingDialog} onClose={() => setShowTyping(false)} className="m-auto w-[min(420px,calc(100%-32px))] rounded-2xl border border-hairline/50 bg-card p-5 text-ink shadow-2xl backdrop:bg-black/40">
-      <div className="mb-3 flex items-center justify-between"><h2 className="text-[14px] font-medium">Type into the selected page field</h2><button className={button} aria-label="Close typing" onClick={() => setShowTyping(false)}><X size={16} /></button></div>
+      <div className="mb-3 flex items-center justify-between"><h2 className="text-[14px] font-medium">{t("browser.typing.title")}</h2><button className={button} aria-label={t("browser.typing.close")} onClick={() => setShowTyping(false)}><X size={16} /></button></div>
       <form className="flex flex-col gap-3" onSubmit={(e) => {
       e.preventDefault(); const field = e.currentTarget.elements.namedItem("pageText") as HTMLInputElement;
       if (typingReady && field.value) { input({ type: "input_keyboard", eventType: "char", text: field.value }); field.value = ""; setShowTyping(false); }
-    }}><input name="pageText" aria-label="Text for the page" autoComplete="off" maxLength={4096} placeholder="Type or paste text" className="rounded-lg bg-inset px-3 py-2 text-[13px] outline-none focus:ring-1 focus:ring-accent" /><button disabled={!typingReady} className="self-end rounded-lg bg-accent px-4 py-2 text-[12px] text-accent-ink disabled:opacity-40">Type</button></form>
+    }}><input name="pageText" aria-label={t("browser.typing.field")} autoComplete="off" maxLength={4096} placeholder={t("browser.typing.placeholder")} className="rounded-lg bg-inset px-3 py-2 text-[13px] outline-none focus:ring-1 focus:ring-accent" /><button disabled={!typingReady} className="self-end rounded-lg bg-accent px-4 py-2 text-[12px] text-accent-ink disabled:opacity-40">{t("browser.typing.send")}</button></form>
     </dialog>
   </div>;
 }
@@ -444,15 +447,15 @@ export function BrowserPanel({ bot }: { bot: Bot }) {
     finally { setRequested(false); }
   };
   const caption = t("computer.browserOf", { name: bot.name });
-  if (admin === false) return <BrowserNote caption={caption}><p className="text-[13px] text-ink-secondary">Only admins of this installation can view or control saved browser sessions.</p></BrowserNote>;
-  if (bot.browser === false) return <BrowserNote caption={caption}><p className="text-[13px] text-ink-secondary">Enable the browser in this bot’s profile to use it.</p></BrowserNote>;
+  if (admin === false) return <BrowserNote caption={caption}><p className="text-[13px] text-ink-secondary">{t("browser.panel.adminOnly")}</p></BrowserNote>;
+  if (bot.browser === false) return <BrowserNote caption={caption}><p className="text-[13px] text-ink-secondary">{t("browser.panel.enable")}</p></BrowserNote>;
   if (engine?.kind === "engine" && !installing && !engine.installError) return admin === null
-    ? <BrowserNote caption={caption}><p className="text-[13px] text-ink-secondary">Loading browser…</p></BrowserNote>
+    ? <BrowserNote caption={caption}><p className="text-[13px] text-ink-secondary">{t("browser.panel.loading")}</p></BrowserNote>
     : <BrowserComputerScreen key={bot.id} bot={bot} />;
   return <BrowserNote caption={caption}>
-    <div className="text-[15px] font-medium text-ink">{engine?.kind === "engine" ? "Browser installation incomplete" : "Browser engine not installed"}</div>
-    <p className="text-[13px] leading-relaxed text-ink-secondary">{engine?.kind === "engine" ? "agent-browser is installed, but Chrome setup has not finished. Retry the browser installation." : <BrowserUnavailableNote config={state.config} />}</p>
-    {engine?.installable || engine?.kind === "engine" ? <button type="button" onClick={() => void install()} disabled={installing || admin !== true} className="rounded-lg bg-accent px-3 py-1.5 text-[13px] font-medium text-accent-ink disabled:opacity-60">{installing ? "Installing… (a one-time download of about 160 MB)" : engine?.kind === "engine" ? "Retry browser installation" : "Install the browser engine"}</button> : null}
+    <div className="text-[15px] font-medium text-ink">{engine?.kind === "engine" ? t("browser.panel.incomplete") : t("browser.panel.notInstalled")}</div>
+    <p className="text-[13px] leading-relaxed text-ink-secondary">{engine?.kind === "engine" ? t("browser.panel.incompleteHint") : <BrowserUnavailableNote config={state.config} />}</p>
+    {engine?.installable || engine?.kind === "engine" ? <button type="button" onClick={() => void install()} disabled={installing || admin !== true} className="rounded-lg bg-accent px-3 py-1.5 text-[13px] font-medium text-accent-ink disabled:opacity-60">{installing ? t("browser.panel.installing") : engine?.kind === "engine" ? t("browser.panel.retryInstall") : t("browser.panel.install")}</button> : null}
     {(engine?.installError || error) && <p role="alert" className="text-[12px] text-danger">{error ?? engine?.installError}</p>}
   </BrowserNote>;
 }

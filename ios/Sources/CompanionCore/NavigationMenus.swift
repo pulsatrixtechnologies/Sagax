@@ -321,15 +321,21 @@ public enum NavigationMenus {
     /// Experimental, Plugins (where the desktop keeps its connections),
     /// Pair devices, Computer, Usage. The desktop's My connections (an
     /// organization person's own GitHub and MCP tokens) has no phone page yet.
+    /// Notifications > Privacy: an organization server's people see each
+    /// other's presence.
+    public static func showsPrivacy(gate: SurfaceGate, connected: Bool) -> Bool {
+        connected && gate.organization
+    }
+
     public static func settings(gate: SurfaceGate, connected: Bool, achievementsAvailable: Bool) -> [PhoneSettingsSection] {
         var sections: [PhoneSettingsSection] = [.general]
         if gate.allows(.organizationSettings) { sections.append(.organization) }
         sections.append(.appearance)
-        // Notifications (#222); Privacy with "Show when I am online" (#167)
-        // on an organization server. Achievements left Settings for their
-        // own window from the account menu (#220).
+        // Notifications (#222). Privacy ("Show when I am online", #167) is
+        // a card of Notifications on an organization server since the
+        // desktop's menus were simplified (#518). Achievements left Settings
+        // for their own window from the account menu (#220).
         sections.append(.notifications)
-        if connected, gate.organization { sections.append(.privacy) }
         _ = achievementsAvailable
         if connected, gate.allows(.experimentalSettings) { sections.append(.experimental) }
         if connected { sections.append(.plugins) }

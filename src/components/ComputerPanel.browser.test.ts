@@ -10,10 +10,10 @@ const fixture = vi.hoisted(() => {
   vi.stubGlobal("document", { visibilityState: "visible" });
   const view = { current: "browser" };
   vi.stubGlobal("localStorage", { getItem: () => view.current });
-  return { config: {} as FeatureFlagConfig & { cloudHome?: boolean }, view };
+  return { config: {} as FeatureFlagConfig & { cloudHome?: boolean }, view, advanced: true };
 });
-// These cover the Advanced panel; ComputerPanel.simple.test.ts covers Simple.
-vi.mock("@/lib/interface-mode", () => ({ useAdvancedMode: () => true, setAdvancedMode: () => {} }));
+// These cover the Advanced panel unless a test switches fixture.advanced off.
+vi.mock("@/lib/interface-mode", () => ({ useAdvancedMode: () => fixture.advanced, setAdvancedMode: () => {} }));
 vi.mock("@/state/store", async (importOriginal) => ({
   ...await importOriginal<typeof import("@/state/store")>(),
   useStore: () => ({
@@ -56,12 +56,26 @@ describe("Browser panel installation access", () => {
     expect(off).not.toContain('data-computer-choice="browser"');
     const missingEngine = render({ features: { browser: true }, browserEngine: missing });
     expect(missingEngine).toContain('data-computer-choice="browser"');
-    expect(missingEngine).toContain('aria-checked="true" data-computer-choice="screen"');
+    expect(missingEngine).toContain('aria-selected="true" data-computer-choice="screen"');
     expect(missingEngine).not.toContain("Install the browser engine");
     const ready = render({ features: { browser: true }, browserEngine: { kind: "engine" } }, true);
     expect(ready).toContain(">Browser<");
     expect(ready).not.toContain("Loading browser…");
     expect(ready).not.toContain("data-browser-view");
+  });
+
+  it("chooses the screen with one drop-down, in Simple and Advanced mode alike", () => {
+    for (const advanced of [true, false]) {
+      fixture.advanced = advanced;
+      const markup = render({ features: { browser: true }, browserEngine: missing });
+      // one button naming the screen shown, opening a list of the same choices
+      expect(markup, `advanced=${advanced}`).toMatch(/<button[^>]*aria-haspopup="listbox"[^>]*aria-expanded="false"/);
+      expect(markup).toContain('aria-label="Screen shown: Screen"');
+      expect(markup).toMatch(/role="listbox" aria-label="Show the screen of"[^>]*hidden=""/);
+      expect(markup.match(/role="option"/g)).toHaveLength(2);
+      expect(markup).not.toContain('role="radiogroup"');
+    }
+    fixture.advanced = true;
   });
 
   it("keeps the per-bot opt-in gate", () => {

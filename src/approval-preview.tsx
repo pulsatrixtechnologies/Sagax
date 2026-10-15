@@ -1,5 +1,5 @@
 // Dev gallery for the approval cards (chat card + composer panel), like
-// mascot-preview.html. Served by Vite in dev at /approval-preview.html;
+// dev/previews/mascot-preview.html. Served by Vite in dev at /dev/previews/approval-preview.html;
 // not part of the packaged app. ?lang=fr|en&skin=<id>
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";

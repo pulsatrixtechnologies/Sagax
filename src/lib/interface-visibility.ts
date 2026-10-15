@@ -4,6 +4,8 @@
 // pinned (Composer), and the providers behind "All models ›" (ModelMenu). Hiding never changes a
 // stored value, and nothing in these lists is required to chat: engine
 // sign-in stays on the model picker and the empty-engines screen.
+// 2026-10-15: Usage shows in Simple too: it is the person's own plan and
+// cost, and a member (Simple by default) must see it.
 import type { AppSettingsSection, BotSettingsSection } from "@/state/store";
 
 const HIDDEN_SETTINGS: ReadonlySet<AppSettingsSection> = new Set([
@@ -13,7 +15,6 @@ const HIDDEN_SETTINGS: ReadonlySet<AppSettingsSection> = new Set([
   "decisionModel",
   "engines",
   "computer",
-  "usage",
   "mail",
   "activity",
   "backups",

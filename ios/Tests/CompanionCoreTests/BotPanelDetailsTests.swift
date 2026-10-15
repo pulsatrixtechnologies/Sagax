@@ -364,6 +364,37 @@ final class BotPanelDetailsTests: XCTestCase {
         XCTAssertEqual(MascotUnlocks.tier(.trombi, skin: "retro98"), .common)
     }
 
+    /// #475: an earned skin unlocks its character, worn in that skin; every
+    /// character is listed (Trombi once found), and a lock names its achievement.
+    func testAnEarnedSkinUnlocksItsCharacterAndEveryCharacterIsListed() {
+        let pearl = MascotUnlocks(enforced: true, keys: ["skin:crab:pearl"])
+        XCTAssertTrue(pearl.characterUnlocked(.crab), "Pearl earned without a linked Claude account: the crab is yours")
+        XCTAssertTrue(pearl.skinUnlocked(.crab, skin: "pearl"))
+        XCTAssertTrue(pearl.skinUnlocked(.crab, skin: "plain"), "its Common skins come with it")
+        XCTAssertFalse(pearl.skinUnlocked(.crab, skin: "gold"))
+        XCTAssertFalse(MascotUnlocks(enforced: true, keys: ["skin:trombi:gold"]).characterUnlocked(.trombi), "Trombi stays the easter egg")
+        XCTAssertTrue(MascotUnlocks(enforced: true, keys: ["skin:shiba:cream"]).characterUnlocked(.shiba))
+        XCTAssertFalse(MascotUnlocks(enforced: true, keys: ["skin:shiba:plain"]).characterUnlocked(.shiba), "a Mastery base skin unlocks nothing")
+
+        let idle = MascotUnlocks.lockedUntilLoaded
+        XCTAssertEqual(idle.listedCharacters(current: .owl), MascotCharacter.allCases.filter { $0 != .trombi })
+        XCTAssertTrue(idle.listedCharacters(current: .trombi).contains(.trombi), "what the bot wears stays listed")
+        XCTAssertTrue(MascotUnlocks(enforced: true, keys: ["character:trombi"]).listedCharacters(current: .owl).contains(.trombi))
+        XCTAssertEqual(MascotUnlocks.demo.listedCharacters(current: .owl), [.owl])
+
+        XCTAssertEqual(idle.lockAchievement(.crab)?.id, "claude-linked")
+        XCTAssertEqual(idle.lockAchievement(.crab, skin: "pearl")?.id, "claude-linked", "a locked character names its own unlock")
+        XCTAssertEqual(pearl.lockAchievement(.crab, skin: "pearl")?.id, "hello-bot")
+        XCTAssertEqual(idle.lockAchievement(.shiba, skin: "cream")?.id, "hands-off")
+        XCTAssertNil(MascotUnlocks.nothingLocked.lockAchievement(.owl, skin: "none"))
+
+        var look = MascotLook.owl.complete
+        look.setSkin("pearl", for: .crab)
+        XCTAssertEqual(look.skinID(.crab), "pearl")
+        XCTAssertEqual(CompleteMascotLook.skinIDs(.crab).count, CrabSkin.allCases.count)
+        XCTAssertNil(look.skinID(.owl))
+    }
+
     func testAServerWithoutAchievementsLocksNothing() throws {
         let missing = expectation(description: "404")
         Task {

@@ -6,7 +6,7 @@ import { useRetroSkin } from "./RetroChromeHost";
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { FLOATING_LIVELINESS, floatingBotPrefs, HOTKEY_CHOICES, hotkeyLabel, setFloatingBarkSound, setFloatingFlyAway, setFloatingHotkey, setFloatingLiveliness, subscribeFloatingBots, type FloatingLiveliness, type HotkeyChoice } from "@/lib/floating-bots";
 import { useCallSettings, writeCallSettings } from "@/lib/voice-mode/call-settings";
-import { Archive, Bell, Coins, FlaskConical, Monitor, Palette, Search, Terminal, User, Users, X, Building2 } from "lucide-react";
+import { Archive, Bell, Coins, FlaskConical, Monitor, Palette, Search, Terminal, User, X, Building2 } from "lucide-react";
 import { api, useStore, type AppSettingsSection, type ConfigStatus } from "@/state/store";
 import { browserAvailable, builtInBrowserEnabled, connectedAppsEnabled, dataWindowEnabled, decisionModelEnabled, routinesInConversationEnabled, showToolCallsEnabled, skillAuthoringEnabled } from "@/lib/feature-flags";
 import { usePerspicaxOrg } from "@/lib/perspicax-org";
@@ -23,10 +23,9 @@ import { DecisionModelSettings } from "./DecisionModelSettings";
 import { useUpdaterState } from "@/lib/updater";
 import { EnginesSettings } from "./EnginesSettings";
 import { LocalComputerSection } from "./LocalComputerSection";
-import { PeopleSection } from "./PeopleSection";
 import { peopleListServed, readMembership } from "../lib/membership";
 import { useOwnerOrAdmin } from "@/lib/use-owner-or-admin";
-import { canEditConfig, canManageBackups, canManageComputers, canViewUsage, viewerCan } from "@/lib/viewer";
+import { canEditConfig, canManageBackups, canManageComputers, viewerCan } from "@/lib/viewer";
 import { BrowserProfilesManager } from "./BrowserProfilesManager";
 import { ThisComputerSettings } from "./DesktopWorkspaceSwitcher";
 import { OrganizationSettings } from "./OrganizationSettings";
@@ -40,7 +39,7 @@ import { currentSettingsSection } from "@/lib/settings-sections";
 import { shortcutLabel } from "./ShortcutHint";
 import { UsageSection } from "./UsageSection";
 import { LicenseExpiryBanner } from "./LicenseExpiryBanner";
-import { WorkspacesSection, workspacesAvailable } from "./WorkspacesSection";
+import { workspacesAvailable } from "./WorkspacesSection";
 import { SkinPicker } from "./SkinPicker";
 import { SidebarHiddenSettings } from "./SidebarHiddenSettings";
 import { SKINS, readSkin } from "@/lib/skins";
@@ -99,10 +98,10 @@ export const SECTIONS: Array<{
   // one page; Connected apps and Decision model are cards of it.
   { id: "engines", labelKey: "settings.section.modelsVoice", icon: Terminal, keywords: ["models", "model providers", "engines", "claude", "codex", "grok", "providers", "cli", "sign in", "subscription", "keys", "api", "api key", "api keys", "connections", "integrations", "intégrations", "clés", "xai", "mistral", "cerebras", "router", "openrouter", "base url", "openai", "anthropic", "groq", "opencode", "provider", "voice", "voix", "tts", "elevenlabs", "fish", "chatterbox", "live call", "image", "avatar", "box", "vps", "cursor", "cloud agents", "composio", "connected apps", "apps", "gmail", "slack", "notion", "apps connectées", "decision", "jev", "typesafe", "routing", "auto", "who answers"] },
   { id: "computer", labelKey: "settings.section.computer", icon: Monitor, keywords: ["computer", "local vm", "vm", "virtual", "desktop", "ordinateur"] },
-  { id: "usage", labelKey: "settings.section.usage", icon: Coins, keywords: ["tokens", "cost", "billing"] },
-  { id: "people", labelKey: "settings.section.people", icon: Users, keywords: ["people", "users", "invite", "sign in", "members", "admins", "access"] },
+  { id: "usage", labelKey: "settings.section.usage", icon: Coins, keywords: ["tokens", "cost", "billing", "plan", "forfait", "coût"] },
+  // 2026-10-15: People and Installations are hidden in the app, like Email,
+  // Activity and Pair devices (settings-sections.ts HIDDEN).
   { id: "backups", labelKey: "settings.section.backups", icon: Archive, keywords: ["export", "import", "restore", "full backup", "password", "recovery"] },
-  { id: "workspaces", labelKey: "settings.section.workspaces", icon: Building2, keywords: ["clients", "tenants", "fleet", "workspaces", "installation", "installations"] },
 ];
 
 /** Former sections that are a card of another page now (2026-10-14), by the
@@ -151,16 +150,16 @@ export function organizationHidesSection(id: AppSettingsSection, organization: b
 
 /** Sections whose every control writes the installation. Hidden (not greyed)
  * when the viewer cannot edit it. Computer stays for an organization member:
- * their own server environment is not an installation computer. */
+ * their own server environment is not an installation computer. Usage stays
+ * for everyone (2026-10-15): it shows the person's own usage only
+ * (GET /api/me/usage). */
 export function memberHidesSection(id: AppSettingsSection, input: {
   editConfig: boolean;
   manageComputers: boolean;
-  viewUsage: boolean;
   manageBackups: boolean;
   organization: boolean;
 }): boolean {
   if (id === "experimental" || id === "connectedApps" || id === "decisionModel" || id === "workspaces") return !input.editConfig;
-  if (id === "usage") return !input.viewUsage;
   if (id === "backups") return !input.manageBackups;
   if (id === "computer") return !input.manageComputers && !input.organization;
   return false;
@@ -1165,7 +1164,6 @@ export function SettingsModal() {
   const ownerOrAdmin = useOwnerOrAdmin();
   const editConfig = canEditConfig(state.config);
   const manageComputers = canManageComputers(state.config);
-  const viewUsage = canViewUsage(state.config);
   const manageBackups = canManageBackups(state.config);
   // Server mode: this app shows its organization's server only (src/lib/launch.ts).
   const serverMode = useServerMode();
@@ -1204,7 +1202,7 @@ export function SettingsModal() {
     // (2026-10-09: and to a person whose profile includes people.activityLog)
     if (id === "activity" && !(servedPage() && (ownerOrAdmin === true || (perspicaxOrg !== null && viewerCan(state.config, "people.activityLog"))))) return false;
     // Installation writes the server refuses with 403: hide the section.
-    if (memberHidesSection(id, { editConfig, manageComputers, viewUsage, manageBackups, organization })) return false;
+    if (memberHidesSection(id, { editConfig, manageComputers, manageBackups, organization })) return false;
     // Decision model and Connected apps (Composio) are experimental, off until their switch is on.
     if (id === "decisionModel" && !decisionModelEnabled(state.config)) return false;
     if (id === "connectedApps" && !connectedAppsEnabled(state.config)) return false;
@@ -1555,8 +1553,6 @@ export function SettingsModal() {
             {section === "computer" && <LocalComputerSection />}
 
             {section === "usage" && <UsageSection />}
-            {section === "people" && <PeopleSection />}
-            {section === "workspaces" && <WorkspacesSection />}
             {section === "notifications" && (
               <>
                 <NotificationSettings />

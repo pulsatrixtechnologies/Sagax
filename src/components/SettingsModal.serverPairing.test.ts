@@ -58,9 +58,11 @@ describe("Settings > Pair devices is hidden", () => {
     expect(html).not.toContain("SERVER_PAIRING_CARD_MARKER");
   });
 
-  it("keeps People where the server serves a sign-in list", () => {
+  // 2026-10-15: People is hidden in the app too, even where the server
+  // serves a sign-in list (its routes stay).
+  it("leaves People out even where the server serves a sign-in list", () => {
     vi.stubGlobal("window", {});
     fixture.config = { signIn: {} };
-    expect(render()).toContain(">People<");
+    expect(render()).not.toContain(">People<");
   });
 });

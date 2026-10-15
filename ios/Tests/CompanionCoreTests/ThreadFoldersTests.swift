@@ -167,7 +167,9 @@ final class ThreadFoldersTests: XCTestCase {
     func testBotThreadMenuFollowsTheDesktopOrder() throws {
         let task = try bot().tasks![0]
         let plan = ThreadMenuPlan(task: task, ownerIsBot: true, folders: try bot().folders, generatedTitles: true, canDelete: true)
-        XCTAssertEqual(plan.items, [.copyLink, .rename, .regenerateTitle, .moveToFolder, .pin, .archive, .snooze, .delete])
+        XCTAssertEqual(plan.items, [.rename, .pin, .archive, .snooze, .more])
+        XCTAssertEqual(plan.more, [.moveToFolder, .copyLink, .regenerateTitle, .delete])
+        XCTAssertFalse(plan.stopsSnoozing)
         XCTAssertTrue(plan.disabled.isEmpty)
     }
 
@@ -177,10 +179,12 @@ final class ThreadFoldersTests: XCTestCase {
         XCTAssertFalse(noTitles.shows(.regenerateTitle))
         XCTAssertFalse(noTitles.shows(.moveToFolder), "no folders, no picker")
         let room = ThreadMenuPlan(task: task, ownerIsBot: false, folders: try bot().folders, generatedTitles: true, canDelete: true)
-        XCTAssertEqual(room.items, [.copyLink, .rename, .pin, .delete])
+        XCTAssertEqual(room.items, [.rename, .pin, .more])
+        XCTAssertEqual(room.more, [.copyLink, .delete])
         task.snoozedUntil = 0
         let snoozed = ThreadMenuPlan(task: task, ownerIsBot: true, folders: [], generatedTitles: false, canDelete: true)
         XCTAssertTrue(snoozed.shows(.stopSnoozing))
+        XCTAssertTrue(snoozed.stopsSnoozing, "Stop snoozing sits inside Snooze")
     }
 
     func testWorkingThreadDisablesArchiveSnoozeAndDelete() throws {
