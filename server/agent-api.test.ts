@@ -49,14 +49,14 @@ function world(options: { replyAfterPolls?: number; reply?: (prompt: string) => 
   const key = (caller: AgentCaller) => `${caller.kind}:${caller.id}`;
   const owners = new Map<string, string>();
   const archived: string[] = [];
-  const created: Array<{ name: string; idleHours?: number }> = [];
+  const created: Array<{ name: string; idleHours?: number; workspace?: string }> = [];
   const deps: AgentApiDeps = {
     agents: (caller) => agents.filter((agent) => !archived.includes(agent.id) && (options.reachable ? options.reachable(caller, agent) : true)),
     async createAgent(caller, input) {
       const agent = { id: `bot-${++ids}`, name: input.name, description: input.description, status: "idle" as const, temporary: true };
       agents.push(agent);
       owners.set(agent.id, key(caller));
-      created.push({ name: input.name, ...(input.idleHours !== undefined ? { idleHours: input.idleHours } : {}) });
+      created.push({ name: input.name, ...(input.idleHours !== undefined ? { idleHours: input.idleHours } : {}), ...(input.workspace ? { workspace: input.workspace } : {}) });
       return agent;
     },
     profile(caller, agentId) {
@@ -234,6 +234,18 @@ describe("create_agent", () => {
     expect(w.created.at(-1)).toEqual({ name: "Default" });
     // a duplicate of a temporary agent points at delete_agent
     expect(String((await w.api.call(person("pr_1"), "create_agent", { name: "scratch" })).body.message)).toContain("delete_agent");
+  });
+
+  it("gives a temporary agent its own Auto workspace (sub-agents, JC 2026-10-15)", async () => {
+    const w = world();
+    expect((await w.api.call(person("pr_1"), "create_agent", { name: "Cloud worker", workspace: "cloud" })).status).toBe(200);
+    expect(w.created.at(-1)).toEqual({ name: "Cloud worker", workspace: "cloud" });
+    expect(w.audits.at(-1)!.entry.detail).toMatchObject({ workspace: "cloud" });
+    expect((await w.api.call(person("pr_1"), "create_agent", { name: "VM worker", workspace: "local_vm" })).status).toBe(200);
+    expect(w.created.at(-1)).toEqual({ name: "VM worker", workspace: "local_vm" });
+    const bad = await w.api.call(person("pr_1"), "create_agent", { name: "Mars", workspace: "mars" });
+    expect(bad.status).toBe(400);
+    expect(String(bad.body.message)).toContain("this_computer, browser, cloud, local_vm");
   });
 
   it("passes a dependency's refusal through (the quota, a temporary agent creating another)", async () => {

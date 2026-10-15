@@ -32,10 +32,11 @@ export function ToolActivity({ tool, place = null, nameOf, defaultOpen = false }
   // Auto Works on: the bot chose where it works from this step on.
   const switched = tool.ok === true ? computerSelectTarget(tool.name, tool.input) : null;
   if (switched) {
-    const label = t(switched === "cloud" ? "toolTarget.cloud" : switched === "local_vm" ? "toolTarget.localVm" : "toolTarget.myComputer");
+    const label = t(switched === "cloud" ? "toolTarget.cloud" : switched === "local_vm" ? "toolTarget.localVm" : switched === "browser" ? "place.browser" : "toolTarget.myComputer");
+    const icon: Place = switched === "cloud" ? "cloud" : switched === "local_vm" ? "vm" : switched === "browser" ? "browser" : "local";
     return (
       <span className="inline-flex w-fit max-w-full items-center gap-1.5 py-0.5 text-[13px] leading-5 text-ink-secondary" data-testid="tool-computer-switch" data-target={switched}>
-        <PlaceIcon place={switched === "cloud" ? "cloud" : switched === "local_vm" ? "vm" : "local"} size={12} className="shrink-0 opacity-70" aria-hidden="true" />
+        <PlaceIcon place={icon} size={12} className="shrink-0 opacity-70" aria-hidden="true" />
         {t("toolTarget.workingOn", { place: label })}
       </span>
     );

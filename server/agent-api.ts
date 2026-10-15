@@ -101,6 +101,9 @@ export const AGENT_NAME_MAX = 80;
 export const AGENT_DESCRIPTION_MAX = 1_000;
 export const ENTRY_TEXT_MAX = 16_000;
 export const REPLY_MAX_CHARS = 32_000;
+/** create_agent's workspace: where its Auto turns start (server/auto-computer.ts). */
+export type AgentWorkspace = "this_computer" | "browser" | "cloud" | "local_vm";
+const AGENT_WORKSPACES: readonly AgentWorkspace[] = ["this_computer", "browser", "cloud", "local_vm"];
 /** create_agent's idle_hours (server/temporary-agents.ts). */
 export const IDLE_HOURS_MAX = TEMP_AGENT_IDLE_HOURS_MAX;
 /** How long a turn handle stays valid. */
@@ -233,7 +236,7 @@ export interface AgentApiDeps {
   agents(caller: AgentCaller): AgentSummary[] | Promise<AgentSummary[]>;
   /** Create one temporary agent for the caller; it greets the user itself.
    * idleHours is the caller's expiry, else the server's default. */
-  createAgent(caller: AgentCaller, input: { name: string; description: string; idleHours?: number }): Promise<AgentSummary | Refusal>;
+  createAgent(caller: AgentCaller, input: { name: string; description: string; idleHours?: number; workspace?: AgentWorkspace }): Promise<AgentSummary | Refusal>;
   /** The full profile of a reachable agent, as this caller may read it. */
   profile(caller: AgentCaller, agentId: string): AgentProfile | Refusal | Promise<AgentProfile | Refusal>;
   /** Archive a temporary agent (its conversations are kept for a while). */
@@ -648,7 +651,7 @@ export function createAgentApi(deps: AgentApiDeps): AgentApi {
     },
 
     async create_agent(caller, args) {
-      const bad = onlyKeys(args, ["name", "description", "idle_hours"]);
+      const bad = onlyKeys(args, ["name", "description", "idle_hours", "workspace"]);
       if (bad) return bad;
       const name = typeof args.name === "string" ? args.name.trim() : "";
       if (!name || name.length > AGENT_NAME_MAX || /[\r\n]/.test(name)) return refuse(400, "bad_request", `name is the display name: one line, 1 to ${AGENT_NAME_MAX} characters.`);
@@ -657,9 +660,11 @@ export function createAgentApi(deps: AgentApiDeps): AgentApi {
       if (description.length > AGENT_DESCRIPTION_MAX) return refuse(400, "bad_request", `description is at most ${AGENT_DESCRIPTION_MAX} characters.`);
       const idleHours = intArg(args, "idle_hours", 1, IDLE_HOURS_MAX, undefined);
       if (isRefusal(idleHours)) return idleHours;
+      const workspace = args.workspace === undefined || args.workspace === null ? undefined : AGENT_WORKSPACES.find((value) => value === args.workspace);
+      if (args.workspace !== undefined && args.workspace !== null && !workspace) return refuse(400, "bad_request", `workspace is one of ${AGENT_WORKSPACES.join(", ")}.`);
       const existing = (await deps.agents(caller)).find((agent) => agent.name.trim().toLocaleLowerCase() === name.toLocaleLowerCase());
       if (existing) return refuse(409, "agent_exists", `An agent named ${existing.name} already exists (id ${existing.id}). Use it instead of creating another${existing.temporary ? ", or delete it first with delete_agent" : ""}.`);
-      const created = await deps.createAgent(caller, { name, description, ...(idleHours !== undefined ? { idleHours } : {}) });
+      const created = await deps.createAgent(caller, { name, description, ...(idleHours !== undefined ? { idleHours } : {}), ...(workspace ? { workspace } : {}) });
       if (isRefusal(created)) return created;
       return ok({
         agent: wireSummary(created),
@@ -909,6 +914,7 @@ export function createAgentApi(deps: AgentApiDeps): AgentApi {
           detail.created = (shaped.body.agent as { id?: string } | undefined)?.id ?? null;
           detail.temporary = true;
           if (typeof args.idle_hours === "number") detail.idleHours = args.idle_hours;
+          if (typeof args.workspace === "string") detail.workspace = args.workspace;
         }
         if (tool === "delete_agent" && shaped.status < 400) {
           detail.archived = true;

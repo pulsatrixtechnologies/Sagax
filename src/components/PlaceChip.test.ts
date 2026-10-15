@@ -136,7 +136,7 @@ describe("the composer's place menu (regression: #54 left only Follow this bot's
   it("on an organization server says Auto means Cloud", () => {
     fixture.organization = true;
     const html = renderToStaticMarkup(createElement(PlaceMenuProbe, { bot: { ...bot, computer: undefined } }));
-    expect(html).toContain("Currently Auto (Cloud)");
+    expect(html).toContain("Currently Auto · picks per task");
     expect(html).toContain("Your own Linux machine on the organization server");
   });
 

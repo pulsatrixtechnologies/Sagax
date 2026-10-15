@@ -43,6 +43,9 @@ export interface TemporaryAgent {
   /** Pinned by a person: it never expires (delete_agent still archives it). */
   pinned?: { principalId: string; at: number };
   archived?: { at: number; by: ArchiveActor; reason: "deleted" | "expired"; purgeAt: number };
+  /** Where its Auto turns start (create_agent `workspace`,
+   * server/auto-computer.ts autoStartTarget); checked at every turn. */
+  workspace?: "this_computer" | "browser" | "cloud" | "local_vm";
 }
 
 const PRINCIPAL = /^[\w:.@-]{1,200}$/;
@@ -85,6 +88,7 @@ export function cleanTemporaryAgent(value: unknown): TemporaryAgent | undefined 
   if (archived && by && finite(archived.at) && finite(archived.purgeAt) && (archived.reason === "deleted" || archived.reason === "expired")) {
     out.archived = { at: archived.at, by, reason: archived.reason, purgeAt: archived.purgeAt };
   }
+  if (v.workspace === "this_computer" || v.workspace === "browser" || v.workspace === "cloud" || v.workspace === "local_vm") out.workspace = v.workspace;
   return out;
 }
 

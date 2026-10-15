@@ -58,9 +58,11 @@ describe("ToolActivity", () => {
   it("shows a computer switch as a small line, not a tool disclosure", () => {
     const chip = (target: string, ok?: boolean) => renderToStaticMarkup(createElement(ToolActivity, { tool: { name: "mcp__sagax-computer__computer_select", ok, input: JSON.stringify({ target, reason: "her files" }) } }));
     expect(chip("this_computer", true)).toContain('data-testid="tool-computer-switch"');
-    expect(chip("this_computer", true)).toContain("Working on: My computer");
-    expect(chip("cloud", true)).toContain("Working on: Cloud");
-    expect(chip("local_vm", true)).toContain("Working on: Local VM");
+    expect(chip("this_computer", true)).toContain("Workspace: My computer");
+    expect(chip("cloud", true)).toContain("Workspace: Cloud");
+    expect(chip("local_vm", true)).toContain("Workspace: Local VM");
+    expect(chip("browser", true)).toContain("Workspace: Browser");
+    expect(chip("browser", true)).toContain('data-target="browser"');
     expect(chip("this_computer", true)).not.toContain("data-step-row");
     // a refused switch keeps its details (the reason it failed)
     expect(chip("this_computer", false)).toContain("data-step-row");

@@ -57,9 +57,9 @@ describe("one Works on control", () => {
   });
 
   it("names every place on an organization server the way the composer chip does", () => {
-    expect(labels(control({}, true))).toEqual(["Auto (Cloud)", "Cloud (server environment)", "Local VM", "This computer", "Browser", "Off"]);
+    expect(labels(control({}, true))).toEqual(["Auto · picks per task", "Cloud (server environment)", "Local VM", "This computer", "Browser", "Off"]);
     expect(worksOnTip(null, null, false)).toBe("Choose automatically");
-    expect(worksOnTip(null)).toMatch(/^Starts in your server environment \(Cloud\); the bot may switch/);
+    expect(worksOnTip(null)).toMatch(/^Picks the place for each task: your computer when the Sagax app is connected/);
   });
 
   it("says why an option is disabled, in the tooltip", () => {

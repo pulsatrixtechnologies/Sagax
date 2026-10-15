@@ -30,7 +30,7 @@ export function toolExecutionTarget(toolName: string, place?: string | null): To
  * sync with AUTO_COMPUTER_MCP_NAME in server/auto-computer.ts. */
 export const AUTO_COMPUTER_SERVER = "sagax-computer";
 
-export type SelectedComputer = "cloud" | "this_computer" | "local_vm";
+export type SelectedComputer = "cloud" | "this_computer" | "local_vm" | "browser";
 
 /** A computer_select call that named a target: where the bot works from
  * that step on, read from the call's input. Null for any other tool, or a
@@ -38,6 +38,6 @@ export type SelectedComputer = "cloud" | "this_computer" | "local_vm";
 export function computerSelectTarget(toolName: string, input?: string | null): SelectedComputer | null {
   const name = toolName.toLowerCase();
   if (!fromServer(name, AUTO_COMPUTER_SERVER) || !name.endsWith("computer_select")) return null;
-  const match = /"target"\s*:\s*"(cloud|this_computer|local_vm)"/.exec(input ?? "");
+  const match = /"target"\s*:\s*"(cloud|this_computer|local_vm|browser)"/.exec(input ?? "");
   return match ? match[1] as SelectedComputer : null;
 }

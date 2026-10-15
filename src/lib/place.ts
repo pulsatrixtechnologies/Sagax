@@ -40,7 +40,7 @@ export function isComputerPlace(place: EffectivePlace): place is "cloud" | "vm" 
 }
 
 /** On an organization server Cloud is the server environment and Auto
- * means Cloud, and their names say so. */
+ * picks the place per task (server/auto-computer.ts), and their names say so. */
 export function placeLabelKey(place: EffectivePlace, organization = false): LocaleKey {
   if (organization && place === "cloud") return "place.cloudOrg";
   if (organization && place === "auto") return "place.autoOrg";
@@ -48,8 +48,10 @@ export function placeLabelKey(place: EffectivePlace, organization = false): Loca
 }
 
 /** The computer an organization server's turn uses for this place: the
- * person's server environment for Auto and Cloud, their own computer
- * (through the Sagax app) for Local VM and This computer. */
+ * person's server environment for Cloud, their own computer (through the
+ * Sagax app) for Local VM and This computer. Auto reads as the server here
+ * (no composer notice); it starts on their computer when it is connected
+ * and picks per task (OrgComputerTab activeComputer). */
 export function orgComputerFor(place: EffectivePlace): "server" | "computer" | null {
   if (place === "auto" || place === "cloud") return "server";
   if (place === "vm" || place === "local") return "computer";
