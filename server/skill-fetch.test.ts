@@ -56,7 +56,7 @@ describe("skill fetch host pinning", () => {
     "https://user:pass@raw.githubusercontent.com/a/b/main/SKILL.md",
   ])("refuses a download_url that leaves the pinned raw host: %s", async (download_url) => {
     const fetcher = vi.fn(async (input: string | URL | Request) => {
-      if (String(input).includes("api.github.com")) {
+      if (new URL(String(input)).hostname === "api.github.com") {
         return Response.json([{ type: "file", name: "SKILL.md", path: "SKILL.md", download_url }]);
       }
       return new Response("# evil");

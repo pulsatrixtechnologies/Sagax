@@ -53,9 +53,10 @@ export function tsv(columns: string[], rows: Cell[][]): string {
   return [columns.map(clean).join("\t"), ...rows.map((row) => row.map((cell) => clean(cellText(cell))).join("\t"))].join("\n");
 }
 
-/** A GitHub-flavoured Markdown table of the rows. Pipes are escaped. */
+/** A GitHub-flavoured Markdown table of the rows. Backslashes and pipes are
+ * escaped, so a cell's own backslash never unescapes a pipe. */
 export function markdownTable(columns: string[], rows: Cell[][]): string {
-  const clean = (text: string) => text.replace(/\|/g, "\\|").replace(/[\r\n]+/g, " ");
+  const clean = (text: string) => text.replace(/[\\|]/g, "\\$&").replace(/[\r\n]+/g, " ");
   const line = (cells: string[]) => `| ${cells.map(clean).join(" | ")} |`;
   return [line(columns), `| ${columns.map(() => "---").join(" | ")} |`, ...rows.map((row) => line(row.map(cellText)))].join("\n");
 }
