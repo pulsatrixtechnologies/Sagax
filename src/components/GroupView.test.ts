@@ -58,9 +58,10 @@ describe("RoomToolChip", () => {
     expect(render({ ...base, threadRef: { ...base.threadRef!, gone: false } })).toContain("Go to conversation");
   });
 
-  it("leaves an ordinary step as a plain pill", () => {
+  it("leaves an ordinary step as a quiet step row that goes nowhere", () => {
     const markup = render(chip());
-    expect(markup).not.toContain("<button");
+    expect(markup).toContain("data-step-row");
+    expect(markup).not.toContain('title="Open');
     expect(markup).toContain("Posted in Standup");
   });
 

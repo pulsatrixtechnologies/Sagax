@@ -234,9 +234,20 @@ function ModelTable({ model, dir, caption }: ModelTableProps) {
   );
 }
 
-export interface TableCell { text: string; content?: ReactNode }
-export interface TableColumn extends TableCell { align?: "left" | "center" | "right" }
-export interface RichTableProps { columns: TableColumn[]; rows: TableCell[][]; name?: string; expanded?: boolean; direction?: "rtl" | "ltr" }
+/** A cell may set its own alignment over its column's (a chat widget's cells do). */
+export interface TableCell { text: string; content?: ReactNode; align?: TableAlign; vAlign?: "top" | "middle" | "bottom" }
+export type TableAlign = "left" | "center" | "right" | "start" | "end";
+/** `width` fixes a column's px width instead of reading it from the text. */
+export interface TableColumn extends TableCell { width?: number }
+export interface RichTableProps {
+  columns: TableColumn[];
+  rows: TableCell[][];
+  name?: string;
+  expanded?: boolean;
+  direction?: "rtl" | "ltr";
+  /** The columns have no names: the heading row is left out, and so is sorting. */
+  headless?: boolean;
+}
 
 /** Native modal supplies focus containment, Escape, inert background and focus restoration. */
 export function TableDialog({ title, onClose, children, returnFocus }: { title: string; onClose: () => void; children: ReactNode; returnFocus: HTMLElement | null }) {
@@ -260,7 +271,7 @@ export function TableDialog({ title, onClose, children, returnFocus }: { title: 
   );
 }
 
-function GridTable({ columns, rows, name = t("table.title"), expanded = false, direction = "ltr" }: RichTableProps) {
+function GridTable({ columns, rows, name = t("table.title"), expanded = false, direction = "ltr", headless = false }: RichTableProps) {
   const [query, setQuery] = useState("");
   const deferredQuery = useDeferredValue(query);
   const [sort, setSort] = useState<TableSort>(null);
@@ -301,7 +312,7 @@ function GridTable({ columns, rows, name = t("table.title"), expanded = false, d
         <button type="button" className="table-action" aria-label={t("table.download")} title={t("table.download")} onClick={download}><Download size={14} /></button>
         {!large && <button type="button" className="table-action" aria-label={t("table.expand")} title={t("table.expand")} onClick={(event) => { trigger.current = event.currentTarget; setOpen(true); }}><Maximize2 size={14} /></button>}
       </div>
-      <TableViewport columns={columns} rows={rows} order={order} name={name} wrap={wrap} large={large} sort={sort} direction={direction}
+      <TableViewport columns={columns} rows={rows} order={order} name={name} wrap={wrap} large={large} sort={sort} direction={direction} headless={headless}
         onSort={(column) => setSort(sort?.column !== column ? { column, descending: false } : !sort.descending ? { column, descending: true } : null)} />
       <footer className="flex flex-wrap items-center justify-between gap-2 border-t border-hairline/40 px-3 py-2 text-[11px] text-ink-secondary">
         <span role="status">{t("table.count", { shown: order.length.toLocaleString(), total: rows.length.toLocaleString(), columns: columns.length })}</span>
@@ -312,7 +323,7 @@ function GridTable({ columns, rows, name = t("table.title"), expanded = false, d
   return <><div hidden={open}>{surface(expanded)}</div>{open && <TableDialog title={name} returnFocus={trigger.current} onClose={() => setOpen(false)}>{surface(true)}</TableDialog>}</>;
 }
 
-function TableViewport({ columns, rows, order, name, wrap, large, sort, onSort, direction }: RichTableProps & {
+function TableViewport({ columns, rows, order, name, wrap, large, sort, onSort, direction, headless = false }: RichTableProps & {
   order: number[]; wrap: boolean; large: boolean; sort: TableSort; onSort: (column: number) => void;
 }) {
   const scroll = useRef<HTMLDivElement>(null);
@@ -325,7 +336,7 @@ function TableViewport({ columns, rows, order, name, wrap, large, sort, onSort, 
     return () => observer.disconnect();
   }, []);
   const virtual = order.length > 80;
-  const widths = useMemo(() => columns.map((column, index) => Math.min(320, Math.max(140,
+  const widths = useMemo(() => columns.map((column, index) => column.width ?? Math.min(320, Math.max(140,
     Math.max(column.text.length, ...rows.slice(0, 100).map((row) => Math.min(40, row[index]?.text.length ?? 0))) * 7 + 40,
   ))), [columns, rows]);
   const numeric = useMemo(() => columns.map((_, index) => {
@@ -344,7 +355,7 @@ function TableViewport({ columns, rows, order, name, wrap, large, sort, onSort, 
     style={{ maxHeight: large ? "65dvh" : 400 }}>
     <table dir={direction} aria-label={name} aria-rowcount={order.length + 1} className="w-full table-fixed border-separate border-spacing-0 text-[13px]" style={{ minWidth: widths.reduce((a, b) => a + b, 0) }}>
       <colgroup>{widths.map((width, index) => <col key={index} style={{ width }} />)}</colgroup>
-      <thead ref={heading} className="sticky top-0 z-10 bg-raised"><tr aria-rowindex={1}>
+      <thead ref={heading} hidden={headless} className="sticky top-0 z-10 bg-raised"><tr aria-rowindex={1}>
         {columns.map((column, index) => <th key={index} scope="col" aria-sort={sort?.column === index ? sort.descending ? "descending" : "ascending" : "none"}
           className="h-10 border-b border-hairline/60 px-3 py-2 font-medium" style={{ textAlign: alignment(column, index) }}>
           <div className="flex items-center gap-1">
@@ -361,7 +372,7 @@ function TableViewport({ columns, rows, order, name, wrap, large, sort, onSort, 
           className={item.index % 2 ? "bg-inset/35 hover:bg-raised/70" : "hover:bg-raised/70"}>
           {columns.map((column, index) => {
             const cell = rows[order[item.index]!]![index];
-            return <td key={index} className="border-b border-hairline/20 px-3 py-2.5 align-top tabular-nums" style={{ textAlign: alignment(column, index) }}>
+            return <td key={index} className="border-b border-hairline/20 px-3 py-2.5 align-top tabular-nums" style={{ textAlign: cell?.align ?? alignment(column, index), verticalAlign: cell?.vAlign }}>
               <div dir="auto" title={!wrap ? cell?.text : undefined} className={wrap ? "whitespace-pre-wrap break-words [overflow-wrap:anywhere]" : "truncate"}>{cell?.content ?? cell?.text}</div>
             </td>;
           })}

@@ -2,6 +2,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { z } from "zod";
 
 import { streamProxiedMedia, verifyMediaProxyToken } from "../media-proxy.ts";
+import { logMediaProxyRefusal, MediaProxyBlockedError } from "../media-proxy-guard.ts";
 import { fetchYoutubeTranscript } from "../youtube-transcript.ts";
 import { PASS, type RouteHandler } from "./table.ts";
 
@@ -18,6 +19,11 @@ const transcriptBody = z.object({ videoId: z.string().regex(/^[\w-]{11}$/) }).st
  * leaves the server; a token without a thread is refused here. It opens this
  * one read-only route and nothing else: resolveRequestAuth never treats it as
  * a session credential. Neither the token nor the upstream URL is logged.
+ *
+ * The upstream URL came from a bot: server/media-proxy-guard.ts refuses
+ * loopback, private, link-local, metadata and other non-public destinations
+ * (after DNS, on every redirect) unless SAGAX_MEDIA_PROXY_ALLOW_HOSTS allows
+ * them, with a generic 403 here and the reason in one server log line.
  *
  * Returns false when the request is not for this route.
  */
@@ -53,7 +59,15 @@ export async function handleMediaProxy(
   const range = req.headers.range;
   try {
     await streamProxiedMedia(body.u, res, typeof range === "string" ? range : undefined, { threadId: body.t, now });
-  } catch {
+  } catch (error) {
+    if (error instanceof MediaProxyBlockedError) {
+      // The reason goes to the server log (reason and host only); the client
+      // gets one generic answer whatever the destination was.
+      logMediaProxyRefusal(error);
+      if (!res.headersSent) refuse(403, "Media source not allowed");
+      else if (!res.writableEnded) res.end();
+      return true;
+    }
     if (!res.headersSent) refuse(502, "Could not reach the media source");
     else if (!res.writableEnded) res.end();
   }

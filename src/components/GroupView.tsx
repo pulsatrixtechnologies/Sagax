@@ -5,7 +5,7 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { activeLocale, t } from "@/lib/i18n";
 import { useShowThreads } from "@/lib/thread-preferences";
-import { ArrowDown, ChevronDown, ChevronRight, FolderOpen, PanelRight, Pin, X } from "lucide-react";
+import { ArrowDown, ChevronDown, FolderOpen, PanelRight, Pin, X } from "lucide-react";
 import {
   api,
   useStore,
@@ -23,7 +23,9 @@ import { ScreenFrame } from "./ScreenFrame";
 import { effectivePlace, placeLabelKey } from "@/lib/place";
 import { ThreadChip } from "./ThreadChip";
 import { withoutDeadThreadChips } from "@/lib/dead-thread-chips";
-import { ToolActivity } from "./ToolActivity";
+import { ToolActivity, botNames } from "./ToolActivity";
+import { StepRow } from "./StepRow";
+import { stepLabel } from "@/lib/step-label";
 import { ThreadRefText } from "./ThreadRefs";
 import { TurnPresence } from "./TurnPresence";
 import { showToolCallsEnabled } from "@/lib/feature-flags";
@@ -131,13 +133,13 @@ type RoomItem =
   | { kind: "voiceCall"; callId: string; messages: Message[] }
   | GotoGroup;
 
-/** One finished tool step in a room. Same pill the 1:1 chat uses, minus the
- * status glyph — a room reads as a conversation, not a build log. A chip
+/** One finished tool step in a room: the same quiet step row the 1:1 chat
+ * uses (StepRow). A row
  * that links somewhere ("Posted in #Standup", a bot⇄bot exchange) opens it,
  * as it would in a 1:1 — a receipt the person cannot follow is only half a
  * receipt. When the linked channel IS this room (an ask made from here is
  * mirrored back into it) there is nowhere to go, so it stays a plain,
- * visible pill. A member's failed turn is not a step at all: it is the row a
+ * visible row. A member's failed turn is not a step at all: it is the row a
  * 1:1 chat shows for the same failure, sign-in card and all, for the engine
  * that member ran on. */
 export function RoomToolChip({ message, roomId }: { message: Message; roomId?: string }) {
@@ -149,56 +151,28 @@ export function RoomToolChip({ message, roomId }: { message: Message; roomId?: s
     return <FailedTurnRow tool={tool} engine={botEngine(state.bots.find((b) => b.id === message.from?.botId), state.instances)} botId={message.from?.botId} />;
   }
   const comm = message.comm;
-  if (comm && comm.groupId !== roomId) {
-    const withBot = state.bots.find((b) => b.id === comm.withBotId);
-    const body = (
-      <>
-        <BotAvatar bot={withBot ?? { name: comm.withName, color: comm.withColor }} state="happy" size={16} animated={false} />
-        <span className="max-w-[480px] truncate">{tool.name}</span>
-      </>
-    );
-    // A bot-to-bot DM is read in this column. Selecting it would leave the room.
-    if (commIsBotDm(comm, state.groups ?? [])) {
-      return (
-        <div className="flex justify-start">
-          <div className="flex items-center gap-2 rounded-full border border-hairline/40 bg-panel px-3 py-1.5 text-[13px] text-ink-secondary">
-            {body}
-          </div>
-        </div>
-      );
-    }
-    return (
-      <div className="flex justify-start">
-        <button
-          type="button"
-          onClick={() => {
-            dispatch({ type: "select", id: comm.groupId });
-            const destination = state.groups.find(g => g.id === comm.groupId);
-            if (comm.threadId && destination?.tasks?.some(task => task.threadId === comm.threadId)) {
-              dispatch({ type: "switchGroupTask", groupId: comm.groupId, threadId: comm.threadId });
-            }
-          }}
-          title={t("room.openBot", { name: comm.withName })}
-          className="ui-pill"
-        >
-          {body}
-          <ChevronRight size={13} />
-        </button>
-      </div>
-    );
-  }
-  if (!comm) return <ToolActivity tool={tool} />;
+  const nameOf = botNames(state.bots);
+  if (!comm) return <ToolActivity tool={tool} nameOf={nameOf} />;
+  const withBot = state.bots.find((b) => b.id === comm.withBotId);
+  const avatar = <BotAvatar bot={withBot ?? { name: comm.withName, color: comm.withColor }} state="happy" size={14} animated={false} />;
+  // A bot-to-bot DM is read in this column. Selecting it would leave the
+  // room, and a chip about this very room has nowhere to go.
+  const goes = comm.groupId !== roomId && !commIsBotDm(comm, state.groups ?? []);
   return (
     <div className="flex justify-start">
-      <div
-        className={cn(
-          "ui-pill",
-          tool.ok === false && "text-danger",
-        )}
-      >
-        {comm && <BotAvatar bot={state.bots.find(b => b.id === comm.withBotId) ?? { name: comm.withName, color: comm.withColor }} state="happy" size={16} animated={false} />}
-        <span className={cn("max-w-[480px] truncate", !comm && "font-mono")}>{tool.name}</span>
-      </div>
+      <StepRow
+        label={stepLabel(tool, nameOf)}
+        phase={tool.ok === false ? "failed" : "done"}
+        icon={avatar}
+        title={goes ? t("room.openBot", { name: comm.withName }) : undefined}
+        onActivate={goes ? () => {
+          dispatch({ type: "select", id: comm.groupId });
+          const destination = state.groups.find(g => g.id === comm.groupId);
+          if (comm.threadId && destination?.tasks?.some(task => task.threadId === comm.threadId)) {
+            dispatch({ type: "switchGroupTask", groupId: comm.groupId, threadId: comm.threadId });
+          }
+        } : undefined}
+      />
     </div>
   );
 }

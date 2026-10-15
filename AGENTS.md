@@ -2999,6 +2999,26 @@ kernel OOM-killed engine children within two minutes of each start.
   container with 16 overdue routines: peak 5.25 GB and 37 engine processes
   before, 1.40 GB and 3 after.
 
+## App icon: the Pulsatrix logo (2026-10-14)
+
+The app's default icon is the official Pulsatrix owl mark (white outline,
+blue eyes and heartbeat line) on a night blue tile (JC, 2026-10-14). Every
+surface comes from one generator, `pnpm icons:generate`
+(`scripts/generate-app-icon.mjs`, helpers in `scripts/app-icon.mjs`): it
+composes the SVG sources from `public/brand/pulsatrix-owl-mark-color-tight.svg`
+(master `build/icon-pulsatrix.svg`, `build/icon.svg`, `public/app-icon.svg`,
+`ios/AppStore/app-icon-ios.svg`, the Icon Composer layers in
+`build/icon.icon/Assets/`), then rasterises the macOS iconset and `.icns`,
+`electron/resources/app-icon.png`, `build/icon.ico`, the web manifest PNGs,
+`public/apple-touch-icon.png` and the iOS AppIcon (RGB, no alpha channel).
+16 to 64 px use a thickened variant so the pulse line stays visible. Never
+edit an output by hand; change the composition and regenerate.
+`scripts/app-icon.test.mjs` fails when a source drifts from the mark. The
+Sagax owl, the default until then, stays in Settings > Appearance > App icon
+as "Owl" (`public/brand/sagax-owl-app-icon.svg`); the default choice keeps the
+id `sagax` so a saved reset still means "the bundle's icon". The Android
+launcher is a separate artwork.
+
 ## Upstream sync
 
 Last sync: 2026-10-12, upstream `milind-soni/OpenMausBot` main at
@@ -3029,6 +3049,29 @@ apps, so those paths stay ours on every later merge. To repeat:
 - MCP sign-in is ours (`server/mcp-oauth.ts`, vault `mcp-oauth.enc` and
   `mcp-oauth.key`, both left out of workspace backups). Upstream's own
   MCP sign-in manager and routes were not taken.
+
+## Media proxy destinations (2026-10-14)
+
+`GET /api/media/proxy/<token>` fetches a URL a bot gave, so it only reaches
+public destinations (`server/media-proxy-guard.ts`, `docs/media-proxy.md`).
+Keep these rules:
+
+- Loopback, unspecified, link-local, cloud metadata (169.254.169.254,
+  168.63.129.16, fd00:ec2::254), RFC 1918, CGNAT/Tailscale 100.64.0.0/10,
+  ULA, multicast, reserved ranges and IPv4 inside IPv6 are refused, ports
+  other than 80/443 too. The check runs on every resolved address
+  (`checkMediaDestination`), the socket connects to the checked address
+  (`lookup` hook in `requestCheckedUpstream`, own keep-alive agents), and
+  redirects are followed by hand (5 max) with the same check per hop.
+- `SAGAX_MEDIA_PROXY_ALLOW_HOSTS` (empty by default): host names, `*.suffix`,
+  IPs or CIDRs the operator allows (any port). A name never opens a metadata
+  address.
+- `rewriteHlsPlaylist` leaves a non-public literal host unproxied unless
+  allowed (`mediaUrlMayBeProxied`); other origins stay untouched.
+- A refusal answers a generic 403 and logs reason and host only
+  (`logMediaProxyRefusal`), never the token, path or query.
+- Tests that proxy a local upstream allow `127.0.0.1` explicitly (policy
+  option or `vi.stubEnv`). Tests: `server/media-proxy-guard.test.ts`.
 
 ## Release notes in the app
 
@@ -3086,3 +3129,38 @@ telemetry. Keep these rules, each covered by a test:
   `electron/no-phone-home.node-test.mjs`) fails when a bundle names a blocked
   host outside its reviewed allowlist; `server/no-phone-home.e2e.test.ts`
   audits a server start and a chat turn.
+
+## Declarative chat widgets (show_widget, ported from upstream 2026-10-14)
+
+A bot shows a card, list, form, table or chart with the agents tool
+`show_widget` (and replaces it with `update_widget`): message kind `widget`,
+a JSON tree in ChatKit's format, normalised once by `shared/widget.ts`
+(`parseWidgetInput`) and stored by `server/chat-widgets.ts`. The spec is
+`docs/superpowers/specs/2026-10-13-chat-widgets-design.md`. The files keep
+upstream's paths, names and data format so the next upstream sync merges:
+do not rename them or invent another format. Sagax keeps the send route
+inline in `server/index.ts` (upstream has `server/routes/bot-messages.ts`),
+so a press (`widgetAction` on `POST /api/bots/:id/messages`) is handled
+there.
+
+- A press or a submitted form is the person's next message, a reply to the
+  widget row, never an approval: a write it leads to still goes through the
+  bot's approval cards (`WIDGET_APPROVAL_PROMPT`).
+- No script and no network: unknown node types and props are refused or
+  dropped, images are https only behind "Load image", `open_url` opens only
+  http(s) on a press, and a `Markdown` node renders with
+  `<ChatMarkdown inert>` (an HTML ```widget, ```artifact or ```cw fence shows
+  as code; a YouTube link stays a link).
+- The existing ```cw, ```widget (HTML, `WidgetFrame`), ```artifact and
+  YouTube renderers are unchanged and separate.
+- Phones: Sagax's iOS and Android apps have no widget renderer yet (upstream
+  draws them in its separate mobile repo); they show the row's text fallback.
+
+Reusable card: `src/components/widget/WidgetCardFrame.tsx` draws the same
+surface, width steps (`size` sm/md/lg/full), header, problem line and footer
+as a widget, around any content, inside a `MessageBoundary` that falls back
+to `fallbackText`. The MCP Apps host (a `ui://` resource in a sandboxed
+iframe) should render in it (`flush` for an edge-to-edge iframe) rather than
+build its own bubble. Gallery: `src/gallery/chat-widgets.html`
+(`npx vite --config vite.gallery.config.ts`, then
+`/src/gallery/chat-widgets.html?skin=<id>&lang=<code>&only=<sample>&narrow=1`).

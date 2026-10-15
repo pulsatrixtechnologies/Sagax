@@ -13,6 +13,10 @@ import {
   verifyMediaProxyToken,
   wireVideoFromEmit,
 } from "./media-proxy.ts";
+import { parseMediaProxyAllowList } from "./media-proxy-guard.ts";
+
+// The fixtures below are private hosts the operator allowed explicitly.
+const LAB = parseMediaProxyAllowList("127.0.0.1, 10.0.0.5");
 
 describe("media proxy", () => {
   beforeEach(() => {
@@ -78,7 +82,7 @@ describe("rewriteHlsPlaylist", () => {
       "https://cdn.public.example/seg3.ts",
       "",
     ].join("\r\n");
-    const out = rewriteHlsPlaylist(playlist, "http://127.0.0.1:8080/v1/share/recordings/4/index.m3u8?t=s", mint).split("\n");
+    const out = rewriteHlsPlaylist(playlist, "http://127.0.0.1:8080/v1/share/recordings/4/index.m3u8?t=s", mint, LAB).split("\n");
     expect(out[0]).toBe("#EXTM3U");
     expect(out[2]).toBe(`#EXT-X-MAP:URI="${mint("http://127.0.0.1:8080/v1/share/recordings/4/init.mp4")}"`);
     expect(out[3]).toBe(`#EXT-X-KEY:METHOD=AES-128,URI="${mint("http://127.0.0.1:8080/v1/share/recordings/keys/k1?x=1")}"`);
@@ -96,7 +100,7 @@ describe("rewriteHlsPlaylist", () => {
 
   it("rewrites variant playlists of a multivariant playlist", () => {
     const playlist = "#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=800000\nlow/index.m3u8\n";
-    const out = rewriteHlsPlaylist(playlist, "http://10.0.0.5/live/master.m3u8", mint);
+    const out = rewriteHlsPlaylist(playlist, "http://10.0.0.5/live/master.m3u8", mint, LAB);
     expect(out).toContain(mint("http://10.0.0.5/live/low/index.m3u8"));
   });
 });
@@ -142,7 +146,7 @@ describe("streamProxiedMedia over HLS", () => {
         res.end();
         return;
       }
-      void streamProxiedMedia(body.u, res, req.headers.range, { threadId: body.t });
+      void streamProxiedMedia(body.u, res, req.headers.range, { threadId: body.t, policy: LAB });
     });
     await new Promise<void>((r) => proxy.listen(0, "127.0.0.1", r));
     proxyBase = `http://127.0.0.1:${(proxy.address() as AddressInfo).port}`;

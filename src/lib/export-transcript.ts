@@ -90,7 +90,8 @@ export function formatTranscriptMarkdown(options: ExportTranscriptOptions): stri
 
     const messageLines: string[] = [];
 
-    // Main text content
+    // Main text content. A widget row exports here too: its `text` is the
+    // readable version of the card, written by the server (widgetToText).
     const userContent = isUser ? splitTranscriptAttachments(message.text ?? "", false, false) : null;
     const text = userContent?.display ?? message.text;
     if (text?.trim()) {

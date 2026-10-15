@@ -1,11 +1,13 @@
 import { readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { createAgentCard } from "./chat-widgets.ts";
 import { DATA_DIR } from "./config.ts";
 import { Store, UNTITLED_TASK } from "./store.ts";
 import { RoutineManager } from "./routines.ts";
 import { createTeamBackup, importTeamBackup } from "./team-backup.ts";
 import { parseTeamBackup } from "../shared/team-backup.ts";
+import { WIDGET_SAMPLES } from "../shared/widget-samples.ts";
 import { soulFile, soulHash } from "./bot-folder.ts";
 import { appendMemoryLog, readMemoryFile, readMemoryLog, readMemoryTopic, searchMemoryFiles, updateMemory, workspaceDir, writeMemoryTopic } from "./workspace.ts";
 
@@ -351,6 +353,23 @@ describe("additive portable team backups", () => {
     const reloaded = new Store(selection);
     expect(reloaded.bots.filter((bot) => bot.chiefOfStaff).map((bot) => bot.id)).toEqual([leaders[0]!.id]);
     expect(reloaded.bot(leaders[0]!.id)?.managedSections).toHaveLength(1);
+  });
+
+  it("backs a widget up as its text fallback and restores it as plain text, with the answer still a reply to it", () => {
+    const { store, routines, scout } = fixture();
+    const shown = createAgentCard({ store, bot: scout, threadId: scout.threadId, input: { tool: "show_widget", widget: WIDGET_SAMPLES.spendTable } });
+    if (!shown.ok) throw new Error(shown.error);
+    store.appendMessage(scout.threadId, { role: "user", kind: "text", text: "Looks right", replyToId: shown.messageId });
+    const fallback = "**Spend by bot** · Last 7 days · $42.10\nBot | Runs | Cost\nScout | 38 | $21.40\nChief of Staff | 7 | $9.85\nKiwi | 52 | $6.35\nJev | 11 | $4.50";
+    const backup = createTeamBackup(store, routines.listRoutines(), "My team");
+    const saved = backup.bots.find((bot) => bot.key === scout.id)!.tasks[0].messages;
+    expect(saved.map((message) => [message.role, message.text])).toEqual([["bot", fallback], ["user", "Looks right"]]);
+    expect(JSON.stringify(saved)).not.toContain("Table.Row");
+    const restored = importTeamBackup(store, routines, JSON.parse(JSON.stringify(backup)), selection());
+    const [card, answer] = store.messagesFor(restored.bots.find((bot) => bot.name === "Scout 2")!.threadId);
+    expect(card).toMatchObject({ role: "bot", kind: "text", text: fallback });
+    expect(card).not.toHaveProperty("widget");
+    expect(answer).toMatchObject({ role: "user", kind: "text", text: "Looks right", replyToId: card.id });
   });
 
   it("backs up room history even when old deletions left dangling memberships and routines", () => {

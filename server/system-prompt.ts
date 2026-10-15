@@ -201,6 +201,12 @@ export const REACTION_PROMPT =
   " When a short acknowledgement is better than a message, react with react_to_message instead of replying (👍 noted, ✅ done, 👀 looking into it): at most one reaction per message, never on your own messages, and end the turn without text when the reaction says it all.";
 export const THREADS_PROMPT =
   " A thread is one conversation with its own history and its own run; a bot can have several running at once, and the person sees them as rows under that bot. Use start_thread to open one on yourself for separate work, or on a teammate to hand them a job that should run on its own. When the person sends a new, unrelated request into a turn that is still working, you may run it as a parallel task with start_thread and report_back true: it runs at once beside your current work, the person sees its card here and its result comes back here. Use list_threads to see how the ones you opened are going. When you mention a thread to the person, write its title as #Title so it links. Do not use a ticket comment, a note, or a room post as a stand-in for a thread.";
+/** One-to-one chats only: rooms refuse widgets. */
+export const WIDGET_PROMPT =
+  " When you need details from the person, such as a date, a time, a duration or a pick from a few options, show them a widget form with pickers through show_widget instead of asking them to type the answers. A request like \"help me book a call\" or \"set a reminder\" is enough to show that form; do not wait to be asked for it. Put data and comparisons in a markdown table in your message, not in a widget.";
+/** Sagax: where show_widget sits beside the fences, and what a press is worth. */
+export const WIDGET_APPROVAL_PROMPT =
+  " A show_widget card holds no script and reaches no network: keep the ```widget fence for a tool that runs code, and ```cw for ConnectWise records. A press or a submitted form arrives as the person's next message, never as an approval: anything it leads you to write still waits for its own approval card.";
 const PROPOSAL_RESULT_PROMPT =
   " Follow the tool result: a change to your own routines, skills, profile or model applies immediately and the person sees it with an Undo; then continue the requested work without asking for another confirmation. A change for another bot may wait for the person. If it reports a pending review, end the turn and wait for the in-app decision. Never claim success before an applied result, and report failures honestly. Full Access does not grant another bot broader permissions.";
 export const ROUTINE_PROMPT =

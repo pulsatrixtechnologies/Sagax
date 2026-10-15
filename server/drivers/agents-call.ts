@@ -9,12 +9,12 @@
 // proxy can serve many turns of a warm engine, and only the harness knows
 // where a turn begins.
 import { CREDENTIAL_TARGETS, isCredentialTargetId } from "../../shared/credential-request.ts";
-import { parseOptionsCardInput, WATCHER_OPTIONS_CARD_BOT_ID } from "../../shared/options-card.ts";
 import { normalizeCronSchedule } from "../../shared/routine-schedule.ts";
 
 import { peerName } from "../peer-roster.ts";
 import { renderPeerDeliveryReceipts, type PeerDeliveryOutcome, type PeerDeliveryReceipt } from "../peer-delivery.ts";
 import { CLOUD_AGENT_READ_TOOLS, CLOUD_AGENT_WRITE_TOOLS, cloudAgentToolAction } from "../../shared/cloud-agents.ts";
+import { callCardTool, CARD_TOOL_NAMES } from "./agents-call-cards.ts";
 import { AGENT_API_TOOL_NAMES, catalogProfileFromEnv, SHARED_COMPUTER_TOOL_NAMES, WEEKDAYS } from "./agents-catalog.ts";
 import { harnessClientFromEnv } from "./agents-client.ts";
 import type { HarnessClient, Json } from "./agents-client.ts";
@@ -432,20 +432,8 @@ export async function callTool(name: string, args: Json, context: ToolCallContex
     if (!ok) return { text: String(body.error ?? "Could not attach that file."), isError: true };
     return { text: `Attached ${String(body.name ?? "the file")} (${Number(body.bytes ?? 0)} bytes). It now appears in the chat with a preview.` };
   }
-  if (name === "create_options_card") {
-    if (BOT_ID !== WATCHER_OPTIONS_CARD_BOT_ID) {
-      return { text: "create_options_card is not enabled for this bot.", isError: true };
-    }
-    const parsed = parseOptionsCardInput(args);
-    if (!parsed.ok) return { text: parsed.error, isError: true };
-    const result = await api("/api/internal/options-card", {
-      method: "POST",
-      body: JSON.stringify(parsed.value),
-    });
-    return {
-      text: `Rendered the native options card in this Watcher thread (message ${String(result.messageId ?? "created")}). Wait for the person's click or custom response; the card itself authorizes no external action.`,
-    };
-  }
+  // create_options_card, show_widget, update_widget (agents-call-cards.ts).
+  if (CARD_TOOL_NAMES.has(name)) return callCardTool(name, args, context);
   if (name === "act") {
     if (EXTERNAL_RUNTIME) return { text: "Unknown tool: act", isError: true };
     const { status, body } = await apiResponse("/api/internal/act", {

@@ -3,6 +3,8 @@ import { fromMarkdown } from "mdast-util-from-markdown";
 
 import { visibleMessages, type Bot, type Message } from "@/state/store";
 import { composeMessage, fileAttachment } from "./composer-attachments";
+import { WIDGET_SAMPLES } from "../../shared/widget-samples";
+import { parseWidgetInput, widgetToText } from "../../shared/widget";
 import {
   copyTranscriptToClipboard,
   downloadMarkdownTranscript,
@@ -149,6 +151,25 @@ describe("export-transcript", () => {
     expect(markdown).toContain("Options: `React`, `Vue`, `Svelte`");
     expect(markdown).toContain("Selected: **React**");
     expect(markdown).toContain("📎 _Attachment:_ `/tmp/screenshot.png`");
+  });
+
+  it("exports a widget row as its readable text, never as its tree", () => {
+    const parsed = parseWidgetInput(WIDGET_SAMPLES.pullRequests);
+    if (!parsed.ok) throw new Error(parsed.error);
+    const text = widgetToText(parsed.value);
+    const messages: Message[] = [
+      { id: "w1", role: "bot", kind: "widget", text, at: 1, widget: { v: 1, root: parsed.value, settled: { ref: "confirm", label: "Merge the two ready", tone: "confirm", at: 2 } } },
+      { id: "u1", role: "user", kind: "text", text: "Merge the two ready", at: 3, replyToId: "w1" },
+    ];
+    const markdown = formatTranscriptMarkdown({ title: "Scout", messages, botName: "Scout", exportedAt: fixedDate });
+    expect(text).toContain("**Pull requests**");
+    expect(markdown).toContain(`### **Scout**`);
+    expect(markdown).toContain(text);
+    expect(markdown).toContain("- iOS: mid-turn steer");
+    expect(markdown).not.toContain("ListViewItem");
+    expect(markdown).not.toContain("[object Object]");
+    // the answer is the person's own next line
+    expect(markdown.indexOf("### **User**")).toBeGreaterThan(markdown.indexOf(text));
   });
 
   it("slugifies filenames accurately", () => {

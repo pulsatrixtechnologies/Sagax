@@ -28,6 +28,8 @@ import {
   WEBHOOK_PROMPT,
   SIGN_IN_PROMPT,
   RICH_OUTPUT_PROMPT,
+  WIDGET_PROMPT,
+  WIDGET_APPROVAL_PROMPT,
   type ComputerPromptKind,
 } from "./system-prompt.ts";
 
@@ -347,5 +349,16 @@ describe("buildSystemPrompt volatile sections", () => {
       { id: "recent", text: "\n\nRecent: pong." },
     ]);
     expect(built.volatile).toBe(built.volatileSections.map((section) => section.text).join(""));
+  });
+});
+
+describe("WIDGET_PROMPT and WIDGET_APPROVAL_PROMPT", () => {
+  it("send bots to show_widget for a form, and keep a press apart from an approval", () => {
+    expect(WIDGET_PROMPT).toContain("show_widget");
+    expect(WIDGET_APPROVAL_PROMPT).toMatch(/no script and reaches no network/);
+    expect(WIDGET_APPROVAL_PROMPT).toMatch(/never as an approval/);
+    expect(WIDGET_APPROVAL_PROMPT).toMatch(/its own approval card/);
+    // no em or en dash in Sagax's own words
+    expect(WIDGET_APPROVAL_PROMPT).not.toMatch(/[\u2013\u2014]/);
   });
 });

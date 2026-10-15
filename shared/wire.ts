@@ -33,6 +33,7 @@ import type { ModelRequestCardData } from "./model-request.ts";
 import type { SkillRequestCardData } from "./skill-request.ts";
 import type { QuestionRequestCardData } from "./ask-question.ts";
 import type { RoutineRunCardData } from "./routine-run.ts";
+import type { WidgetPayload } from "./widget.ts";
 import type { GroupGoalRunCardData } from "./group-goal-run.ts";
 import type { RuntimeEvent } from "./runtime-events.ts";
 import type { Notification } from "./notification.ts";
@@ -534,7 +535,7 @@ export interface WireMessage {
   roomRequest?: { id: string; phase: "request" | "result" };
   id: string;
   role: "bot" | "user";
-  kind: "text" | "options" | "activity" | "screen" | "video" | "connector" | "secret" | "routine.run" | "goal.run" | "digest" | "compaction" | "access" | "nudge" | "call";
+  kind: "text" | "options" | "activity" | "screen" | "video" | "connector" | "secret" | "routine.run" | "goal.run" | "digest" | "compaction" | "access" | "nudge" | "call" | "widget";
   text?: string;
   /** An accepted nudge. The app draws one line from these names: first
    * person for the sender, the sender's name for everyone else. `groupId`
@@ -564,6 +565,10 @@ export interface WireMessage {
     | { kind: "audio"; path: string; mime: string; durationMs?: number }
   >;
   card?: OptionCardData;
+  /** widget rows (kind "widget"): a bot-authored UI tree (shared/widget.ts).
+   * `text` is always its readable fallback, for clients that do not know
+   * the kind. */
+  widget?: WidgetPayload;
   connector?: ConnectorCardData;
   secret?: SecretRequestCardData;
   /** One idempotently updated status card for a routine run. */
@@ -577,6 +582,8 @@ export interface WireMessage {
   /** activity messages: tool name + outcome. */
   tool?: {
     name: string; ok?: boolean; spoken?: string; setup?: boolean; terminal?: boolean; summary?: string; input?: string; output?: string;
+    /** how long the call ran, set when it settles (the step row's duration) */
+    durationMs?: number;
     /** error rows: the installed Claude Code is too old for the model, and
      * the UI can offer to update it in place. */
     claudeUpdate?: boolean;

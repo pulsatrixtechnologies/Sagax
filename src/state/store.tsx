@@ -219,10 +219,10 @@ export interface SecretRequestCardData {
   error?: string;
 }
 
-export interface Message {
+export interface Message extends Pick<import("../../shared/wire").WireMessage, "widget"> {
   id: string;
   role: "bot" | "user";
-  kind: "text" | "options" | "activity" | "screen" | "video" | "connector" | "secret" | "routine.run" | "goal.run" | "digest" | "compaction" | "access" | "nudge" | "call";
+  kind: "text" | "options" | "activity" | "screen" | "video" | "connector" | "secret" | "routine.run" | "goal.run" | "digest" | "compaction" | "access" | "nudge" | "call" | "widget";
   text?: string;
   /** An accepted nudge. Drawn per viewer from these names, not as a bubble.
    * `groupId` is set when the line belongs to that group chat. */
@@ -253,7 +253,7 @@ export interface Message {
    * narration of the same chip ("reading a file"), used by call mode. */
   /** `setup` marks an error fixed by installing something, not by retrying.
    * `summary` is the call's input on one redacted line (the shell command). */
-  tool?: { name: string; ok?: boolean; spoken?: string; setup?: boolean; claudeUpdate?: boolean; place?: PlaceRow; summary?: string; input?: string; output?: string ; itemId?: string; outputPath?: string; fullResult?: boolean; widget?: import("../../shared/cw-widgets/types").CwWidget };
+  tool?: { name: string; ok?: boolean; spoken?: string; setup?: boolean; claudeUpdate?: boolean; place?: PlaceRow; summary?: string; input?: string; output?: string ; durationMs?: number; itemId?: string; outputPath?: string; fullResult?: boolean; widget?: import("../../shared/cw-widgets/types").CwWidget };
   /** user messages sent into a running turn — the model saw it mid-turn */
   steered?: boolean;
   /** a user message that did not come from typing here: through the

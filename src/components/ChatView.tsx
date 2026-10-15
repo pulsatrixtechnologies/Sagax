@@ -1,4 +1,4 @@
-import { Component, createContext, memo, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type Dispatch, type ReactNode } from "react";
+import { createContext, memo, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type Dispatch } from "react";
 import { TeammatesWorkingChip } from "./TeammatesWorkingChip";
 import { ThreadLinkContext } from "@/components/ThreadLinkMenu";
 import { useShowThreads } from "@/lib/thread-preferences";
@@ -91,14 +91,16 @@ import { VerifyCard } from "./VerifyCard";
 import { askText, runSkill, runSteps, runSummary, showRun, skillPrompt } from "@/lib/verify-steps";
 import { useShowRunCard } from "@/lib/run-card-preferences";
 import { sendsMessage, useSendKey } from "@/lib/send-key";
-import { ToolActivity } from "./ToolActivity";
+import { ToolActivity, botNames } from "./ToolActivity";
+import { StepRow } from "./StepRow";
+import { stepLabel } from "@/lib/step-label";
 import { DataResultChip } from "./DataResultChip";
 import { DataWindowButton } from "./DataWindowButton";
 import { ThreadRefText } from "./ThreadRefs";
-import { OptionCard, shouldHideOnboardingCard } from "./OptionCard";
-import { ApprovalCard, approvalCardStaysInChat } from "./ApprovalCard";
+import { optionsCardRow } from "./OptionsCardRow";
+import { MessageBoundary } from "./MessageBoundary";
+import { WidgetMessage } from "./widget/WidgetMessage";
 import { OwnerSettled, OwnerWait } from "./OwnerWait";
-import { QuestionCard } from "./QuestionCard";
 import { Composer } from "./Composer";
 import { ChatErrorBanner, ChatNotice } from "./ChatErrorBanner";
 import { ChatFindBar } from "./ChatFindBar";
@@ -411,24 +413,8 @@ export function FailedTurnRow({ tool, engine, onRetry, botId, threadId }: {
   );
 }
 
-/** One bad markdown node must not white-screen the app — the transcript
- * degrades to a plain-text bubble instead. Rooms use the same boundary. */
-export class MessageBoundary extends Component<{ children: ReactNode; fallbackText: string }, { failed: boolean }> {
-  state = { failed: false };
-  static getDerivedStateFromError() {
-    return { failed: true };
-  }
-  render() {
-    if (this.state.failed) {
-      return (
-        <div className="chat-text w-fit max-w-[min(80%,560px,calc(100%-82px))] rounded-[18px] bg-card px-3 py-[7px] text-[13px] leading-5 whitespace-pre-wrap text-ink">
-          {this.props.fallbackText}
-        </div>
-      );
-    }
-    return this.props.children;
-  }
-}
+/** The text fallback for a row that will not draw. Rooms import it from here. */
+export { MessageBoundary };
 
 /** Inline editor a user bubble turns into: the send key sends (forking the
  * conversation), Esc cancels. Any other Enter is a newline, like the composer. */
@@ -847,7 +833,7 @@ function PeerLabel({ peer, autoModel }: { peer: PeerLine; autoModel?: Message["a
   );
 }
 
-/** A tool run: spinner while live, check/cross once settled. */
+/** A tool run as a quiet step row (StepRow), or a receipt that opens a conversation. */
 const ActivityChip = memo(function ActivityChip({ message, place = "auto" }: { message: Message; place?: EffectivePlace }) {
   const { bots, dispatch, botDmIds } = useChatRows();
   const tool = message.tool;
@@ -859,39 +845,20 @@ const ActivityChip = memo(function ActivityChip({ message, place = "auto" }: { m
   if (comm) {
     const withBot = bots.find((b) => b.id === comm.withBotId);
     const stay = botDmIds.has(comm.groupId);
-    const body = (
-      <>
-        <BotAvatar bot={withBot ?? { name: comm.withName, color: comm.withColor }} state="happy" size={16} animated={false} />
-        <span className="max-w-[480px] truncate">{tool.name}</span>
-      </>
-    );
-    if (stay) {
-      return (
-        <div className="flex justify-start">
-          <div
-            data-testid="bot-comm-chip"
-            className="flex items-center gap-2 rounded-full border border-hairline/40 bg-panel px-3 py-1.5 text-[13px] text-ink-secondary"
-          >
-            {body}
-          </div>
-        </div>
-      );
-    }
     return (
       <div className="flex justify-start">
-        <button
-          data-testid="bot-comm-chip"
-          onClick={() => dispatch({ type: "select", id: comm.groupId })}
-          title={t("chat.openConversationWith", { name: comm.withName })}
-          className="ui-pill"
-        >
-          {body}
-          <ChevronRight size={13} />
-        </button>
+        <StepRow
+          testId="bot-comm-chip"
+          label={stepLabel(tool, botNames(bots))}
+          phase={tool.ok === false ? "failed" : "done"}
+          icon={<BotAvatar bot={withBot ?? { name: comm.withName, color: comm.withColor }} state="happy" size={14} animated={false} />}
+          title={stay ? undefined : t("chat.openConversationWith", { name: comm.withName })}
+          onActivate={stay ? undefined : () => dispatch({ type: "select", id: comm.groupId })}
+        />
       </div>
     );
   }
-  return <ToolActivity tool={tool} place={toolPlace(tool.name, place)} />;
+  return <ToolActivity tool={tool} place={toolPlace(tool.name, place)} nameOf={botNames(bots)} />;
 });
 
 /** A routine run's receipt. It opens the run's own thread, so it follows
@@ -1201,7 +1168,8 @@ const MessagesList = memo(function MessagesList({
           }
           if (m.state === "waiting-on-owner") return <OwnerWait ownerName={m.ownerName ?? ""} />;
           if (m.state === "owner-settled") return <OwnerSettled message={m} />;
-          switch (m.kind) {
+          // a widget row whose tree never arrived still reads as its text
+          switch (m.kind === "widget" && !m.widget ? "text" : m.kind) {
             case "access":
               return m.access ? (
                 <AccessCard
@@ -1214,27 +1182,11 @@ const MessagesList = memo(function MessagesList({
               return m.secret ? <SecretRequestCard botId={botId} threadId={threadId} message={m} /> : null;
             case "connector":
               return m.connector ? <ConnectorCard botId={botId} threadId={threadId} message={m} /> : null;
-            case "options": {
-              // a live permission ask gets the approval box; a structured
-              // ask gets the question box; anything else keeps the list
-              // card. The first-run quiz drops out once they talk.
-              // Cards are bot-authored and persisted, so one that will not
-              // draw must fall back to its text on every open, not take the
-              // whole page down every time this chat is selected.
-              const card = m.card?.requestId && m.card.questionRequest ? (
-                <QuestionCard threadId={threadId} bot={{ name: botName }} message={m} />
-              ) : m.card?.requestId && m.card.tool ? (
-                approvalCardStaysInChat(m.card) ? <ApprovalCard bot={{ name: botName }} message={m} threadId={threadId} /> : null
-              ) : shouldHideOnboardingCard(m, transcript) ? null : (
-                <OptionCard botId={botId} threadId={threadId} message={m} />
-              );
-              if (!card) return null;
-              return (
-                <MessageBoundary fallbackText={m.card?.subtitle || m.card?.title || ""}>
-                  {card}
-                </MessageBoundary>
-              );
-            }
+            case "options":
+              return optionsCardRow({ message: m, transcript, botId, botName, threadId });
+            case "widget":
+              // bot-authored and persisted: one that throws while drawing falls back to its text
+              return <MessageBoundary fallbackText={m.text ?? ""}><WidgetMessage botId={botId} threadId={threadId} message={m} /></MessageBoundary>;
             case "routine.run":
               return <RoutineRunRow message={m} botId={botId} />;
             case "call":

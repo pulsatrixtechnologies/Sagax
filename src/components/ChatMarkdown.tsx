@@ -1174,8 +1174,13 @@ const MAY_LINK_THREAD = /#|openmausbot|sagax/i;
 const NO_THREAD_REFS: ThreadRefsValue = { threads: [] };
 
 /** Render message Markdown with math, protected code, scoped attachments, and mentions. */
-function ChatMarkdownComponent({ text, message, botId, mentionPeers = NO_MENTION_PEERS, everyone = false, youtubeSendToBot, delivered }: {
+function ChatMarkdownComponent({ text, message, botId, mentionPeers = NO_MENTION_PEERS, everyone = false, youtubeSendToBot, delivered, inert = false }: {
   text: string; message?: MessageAttachmentContext; botId?: string;
+  /** Markdown inside a declarative chat widget (src/components/widget):
+   * nothing in it runs code, reaches the network on its own or offers a
+   * write. An HTML ```widget, ```artifact or ```cw fence shows as code and a
+   * YouTube link stays a link instead of a player. */
+  inert?: boolean;
   mentionPeers?: readonly MentionPeer[]; everyone?: boolean;
   /** When set, the YouTube widget can hand a fetched transcript to the bot. */
   youtubeSendToBot?: (text: string) => void;
@@ -1250,7 +1255,7 @@ function ChatMarkdownComponent({ text, message, botId, mentionPeers = NO_MENTION
         if (lang.trim().toLowerCase() === "mermaid") {
           return <MermaidDiagram code={code} />;
         }
-        const kind = richFenceKind(lang);
+        const kind = inert && (richFenceKind(lang) === "widget" || richFenceKind(lang) === "cw") ? null : richFenceKind(lang);
         if (kind === "cw" && !pending) {
           const widget = parseCwWidgetText(code);
           if (widget) return <CwWidgetView widget={widget} threadId={threadId} botId={botId} />;
@@ -1354,7 +1359,7 @@ function ChatMarkdownComponent({ text, message, botId, mentionPeers = NO_MENTION
           const copy = delivered && Object.hasOwn(delivered, fileName(localPath)) ? delivered[fileName(localPath)] : undefined;
           return <LocalFileLink filePath={copy ?? localPath} name={copy ? fileName(localPath) : undefined} message={scopedMessage}>{children}</LocalFileLink>;
         }
-        const ytId = href ? youtubeVideoId(href) : null;
+        const ytId = href && !inert ? youtubeVideoId(href) : null;
         if (ytId) {
           return (
             <YouTubeMiniPlayer
@@ -1467,7 +1472,7 @@ function ChatMarkdownComponent({ text, message, botId, mentionPeers = NO_MENTION
         return <hr className="border-hairline/40" />;
       },
     } as Components;
-  }, [threadId, messageId, botId, threads, currentBotId, openFence, prefix, delivered]);
+  }, [threadId, messageId, botId, threads, currentBotId, openFence, prefix, delivered, inert]);
   // KaTeX loads the first time a message actually holds math (ensureChatKatex).
   const needsMath = normalizedSourceHasMath(source);
   const [katexReady, setKatexReady] = useState(() => katexPlugin !== null);
@@ -1527,6 +1532,7 @@ export const ChatMarkdown = memo(ChatMarkdownComponent, (previous, next) => (
   && previous.message?.messageId === next.message?.messageId
   && previous.youtubeSendToBot === next.youtubeSendToBot
   && previous.botId === next.botId
+  && previous.inert === next.inert
   && sameDelivered(previous.delivered, next.delivered)
 ));
 
