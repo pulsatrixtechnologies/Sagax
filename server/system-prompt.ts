@@ -181,6 +181,16 @@ const CW_FENCE_PROMPT =
   ` To show ConnectWise records, use one \`\`\`cw fence holding a JSON object with family, view and records: family is ${cwOrList(CW_FAMILIES)} (nothing else draws); view is ${cwOrList(CW_VIEWS)} (card for one record); each record needs ${CW_FAMILIES.map((family) => `${family}: ${CW_REQUIRED_FIELDS[family].join(", ")}`).join("; ")} (other fields such as status, company or owner are optional).`
   + ` Example: ${CW_WIDGET_EXAMPLE}. A change from that card waits for the person's approval; do not write to ConnectWise from the fence yourself.`;
 
+/** The shadcn/ui kit every ```widget document carries (src/lib/widget-kit.ts):
+ * the bot builds with its classes so the widget blends into the chat. */
+const WIDGET_KIT_PROMPT =
+  " The widget document already has a shadcn/ui stylesheet themed from the person's skin: variables --background (transparent), --foreground, --card, --primary, --secondary, --muted, --muted-foreground, --accent, --destructive, --success, --warning, --border, --input, --ring, --radius and --chart-1 to --chart-5, and classes"
+  + " .card, .card-header, .card-title, .card-description, .card-action, .card-content, .card-footer, .eyebrow, .icon-tile, .count, .btn (with .btn-secondary, .btn-outline, .btn-ghost, .btn-destructive, .btn-sm, .btn-lg, .btn-icon), .badge (with .badge-secondary, .badge-outline, .badge-success, .badge-warning, .badge-destructive), .input, .search (a label around an .input, with a magnifier), .textarea, .select, .checkbox, .radio, .switch, .label, .field, .tabs, .tabs-list, .tabs-trigger[aria-selected], .table (td.id, td.title, td.num), .separator, .progress, .alert, .avatar, .skeleton, .kbd, .stat, .row, .stack, .grid and .muted."
+  + " Build every widget from one .card with these classes; never set a background on html or body, your own colors, fonts or font sizes: use the variables (var(--chart-1) in an SVG), so the widget follows the app's theme."
+  + " Example: <div class=\"card\"><div class=\"card-header\"><div><div class=\"eyebrow\">ConnectWise</div><div class=\"card-title\">Tickets</div></div><span class=\"count\">2 of 2</span><div class=\"card-action\"><label class=\"search\"><input class=\"input\" placeholder=\"Search\"></label></div></div>"
+  + "<table class=\"table\"><thead><tr><th>#</th><th>Ticket</th><th>Status</th></tr></thead><tbody><tr><td class=\"id\">48213</td><td class=\"title\">Printer offline</td><td><span class=\"badge badge-warning\">New</span></td></tr></tbody></table></div>."
+  + " A ```cw fence draws only on its own in your message, never inside a ```widget or a show_widget card, where it stays text.";
+
 /** How the chat renders rich output (src/components/ChatMarkdown.tsx and
  * src/lib/rich-blocks.ts own the other side of each convention). Sent to
  * every bot whose replies land in the chat transcript. */
@@ -189,6 +199,7 @@ export const RICH_OUTPUT_PROMPT =
   + " When you write an email for the person, put it in one ```email fence: header lines To:, Cc:, Bcc: and Subject: (only the ones that apply), a blank line, then the body in Markdown; it shows as a draft card with Copy and Open in mail app, and nothing is sent."
   + " For a chart, use a ```chart fence holding JSON such as {\"type\":\"bar\",\"title\":\"Tickets\",\"labels\":[\"Mon\",\"Tue\"],\"series\":[{\"name\":\"Opened\",\"data\":[4,7]}]} (type bar, line, area or pie) or CSV with a header row; for a large dataset, a ```csv fence becomes a sortable, filterable table."
   + " For an interactive tool (calculator, simulator, small form or visualization), use a ```widget fence with self-contained HTML, CSS and inline JavaScript; it runs in a sandbox with no network access, so inline all data and never load external scripts, fonts or images."
+  + WIDGET_KIT_PROMPT
   + " When you have a hosted page the person can open, put it in one ```artifact fence holding JSON such as {\"title\":\"Report\",\"url\":\"https://example.com/page\"} (a real https URL only, never invented); it shows as a card with Open."
   + CW_FENCE_PROMPT
   + " To show a YouTube video, put its link alone on its own line: it plays inline; never wrap it in an ```artifact or ```widget fence."

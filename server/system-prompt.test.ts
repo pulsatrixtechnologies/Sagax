@@ -32,6 +32,7 @@ import {
   WIDGET_APPROVAL_PROMPT,
   type ComputerPromptKind,
 } from "./system-prompt.ts";
+import { WIDGET_KIT_CSS } from "../src/lib/widget-kit.ts";
 
 describe("resolveComputerPromptKind", () => {
   // One ladder for the settings preview, a direct turn, and a room turn,
@@ -306,6 +307,23 @@ describe("RICH_OUTPUT_PROMPT", () => {
     const example = /Example: (\{.*?\})\. A change/.exec(RICH_OUTPUT_PROMPT)?.[1];
     expect(parseCwWidgetText(example ?? "")).not.toBeNull();
     expect(RICH_OUTPUT_PROMPT).not.toMatch(/widget JSON \(family, view, records\)/);
+  });
+
+  it("teaches the widget kit: only classes the kit draws, no ground or colors of the widget's own", () => {
+    for (const name of ["--background", "--foreground", "--card", "--primary", "--muted-foreground", "--destructive", "--border", "--input", "--ring", "--radius", "--chart-1"]) {
+      expect(RICH_OUTPUT_PROMPT).toContain(name);
+    }
+    const named = new Set([...RICH_OUTPUT_PROMPT.matchAll(/(?<![\w-])\.([a-z][a-z0-9-]*)/g)].map((match) => match[1]!));
+    const classes = [...named].filter((name) => !["md", "ts", "js"].includes(name));
+    expect(classes).toEqual(expect.arrayContaining(["card", "card-header", "card-title", "btn", "badge", "table", "input", "tabs-trigger", "eyebrow"]));
+    for (const name of classes) expect(WIDGET_KIT_CSS, name).toMatch(new RegExp(`\\.${name}(?![\\w-])`));
+    const example = /Example: (<div class="card">.*?<\/div>)\./.exec(RICH_OUTPUT_PROMPT)?.[1] ?? "";
+    expect(example).toContain("badge-warning");
+    for (const match of example.matchAll(/class="([^"]+)"/g)) {
+      for (const name of match[1]!.split(/\s+/)) expect(WIDGET_KIT_CSS, name).toMatch(new RegExp(`\\.${name}(?![\\w-])`));
+    }
+    expect(RICH_OUTPUT_PROMPT).toContain("never set a background on html or body, your own colors, fonts or font sizes");
+    expect(RICH_OUTPUT_PROMPT).toContain("never inside a ```widget or a show_widget card");
   });
 
   it("tells the bot a bare YouTube link plays inline, outside any fence", () => {
