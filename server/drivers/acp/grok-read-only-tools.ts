@@ -13,13 +13,16 @@
 // - the built-in agents server: READ_ONLY_AGENT_TOOL_NAMES, the same reviewed
 //   catalog that sets their MCP readOnlyHint annotations;
 // - Perspicax bridges (the harness-held proxy, identified by its exact
-//   script path): the explicit list below.
+//   script path): the explicit list below;
+// - the Pulsatrix Flow compute server (server/flow-tools.ts, the workplace
+//   proxy under the name sagax-flow): every tool, all pure computation.
 // Third-party servers, names, prefixes and annotations never grant a rule.
 // Everything else (writes, actions, sends, approvals, commands, unknown
 // tools) keeps the classifier and its cards unchanged.
 import type { McpServerSpec } from "../../contracts.ts";
 import { READ_ONLY_AGENT_TOOL_NAMES } from "../../agent-tool-policy.ts";
 import { SPAWNED_PROXIES } from "../../proxy-paths.ts";
+import { FLOW_TOOL_NAMES, FLOW_TOOLS_MCP_NAME } from "../../flow-tools.ts";
 
 /** Perspicax connector tools reviewed as read-only (JC, 2026-10-11). Never
  * add cw_psa__write/action, memory_write/forget/promote, sagax_send/approve/
@@ -54,6 +57,15 @@ export function isPerspicaxBridge(server: McpServerSpec | undefined, bridgePath:
     && typeof spec.env?.SAGAX_PERSPICAX_PROFILE === "string" && spec.env.SAGAX_PERSPICAX_PROFILE !== "";
 }
 
+/** Whether a custom server is the harness's own Pulsatrix Flow compute
+ * server (server/flow-tools.ts): pure functions of their arguments, every
+ * tool read only. Identified by the exact proxy path and its server name. */
+export function isFlowToolsServer(server: McpServerSpec | undefined, proxyPath: string = SPAWNED_PROXIES.userSandbox): boolean {
+  if (!server || "url" in server) return false;
+  const spec = server as { args?: unknown; env?: Record<string, unknown> };
+  return Array.isArray(spec.args) && spec.args[0] === proxyPath && spec.env?.SAGAX_TOOL_SERVER === FLOW_TOOLS_MCP_NAME;
+}
+
 /** Grok's admissible alias of a reviewed tool name (`_` runs -> `_`). */
 function grokAlias(tool: string): string {
   return tool.replace(/_{2,}/g, "_");
@@ -67,7 +79,12 @@ export function grokReadOnlyAllowRules(integrations: Integrations, bridgePath?: 
   }
   for (const [server, spec] of Object.entries(integrations?.custom ?? {})) {
     // a custom entry cannot stand in for the built-in agents server
-    if (server === "agents" || !SAFE_SERVER.test(server) || !isPerspicaxBridge(spec, bridgePath)) continue;
+    if (server === "agents" || !SAFE_SERVER.test(server)) continue;
+    if (server === FLOW_TOOLS_MCP_NAME && isFlowToolsServer(spec)) {
+      for (const tool of FLOW_TOOL_NAMES) names.add(`${server}__${tool}`);
+      continue;
+    }
+    if (!isPerspicaxBridge(spec, bridgePath)) continue;
     for (const tool of PERSPICAX_READ_ONLY_TOOLS) {
       names.add(`${server}__${tool}`);
       // Grok cannot name a tool with a second `__`; Sagax's MCP gate

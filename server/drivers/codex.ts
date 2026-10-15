@@ -28,6 +28,7 @@ import { describeSpawnFailure, execCli, killCliTree, spawnCli } from "../procs.t
 import { isHarnessOwnedMcpEnvName } from "../mcp-registry.ts";
 import { USER_SANDBOX_MCP_NAME } from "../user-sandbox-routing.ts";
 import { AUTO_COMPUTER_MCP_NAME } from "../auto-computer.ts";
+import { FLOW_TOOLS_MCP_NAME } from "../flow-tools.ts";
 import { DESKTOP_BRIDGE_MCP_NAME } from "../../shared/bot-workplace.ts";
 
 import type {
@@ -651,7 +652,8 @@ export function codexNativeIncomingLogMessage(
 }
 
 /** Sagax's own workplace proxies (server environment, desktop bridge,
- * computer_select) reach a driver through integrations.custom, and each one
+ * computer_select, Pulsatrix Flow's compute) reach a driver through
+ * integrations.custom, and each one
  * carries its own capability under the same variable names
  * (SAGAX_SANDBOX_TOKEN, SAGAX_TOOL_SERVER, ...). Codex runs every MCP server
  * from one app-server environment, so those names would collide, and the
@@ -660,7 +662,7 @@ export function codexNativeIncomingLogMessage(
  * proxy restores the plain names at start (user-sandbox-proxy.ts). Only the
  * prefix and ELECTRON_RUN_AS_NODE (needed before the process starts, never
  * a secret) travel as values in argv. */
-const SAGAX_WORKPLACE_PROXIES = new Set([USER_SANDBOX_MCP_NAME, AUTO_COMPUTER_MCP_NAME, DESKTOP_BRIDGE_MCP_NAME]);
+const SAGAX_WORKPLACE_PROXIES = new Set([USER_SANDBOX_MCP_NAME, AUTO_COMPUTER_MCP_NAME, DESKTOP_BRIDGE_MCP_NAME, FLOW_TOOLS_MCP_NAME]);
 /** Read by user-sandbox-proxy.ts (PROXY_ENV_PREFIX_VARIABLE there; the proxy
  * is a standalone script, so the name is spelled in both places). */
 const PROXY_ENV_PREFIX_VARIABLE = "SAGAX_PROXY_ENV_PREFIX";

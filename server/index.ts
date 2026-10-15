@@ -961,6 +961,7 @@ import { withDesktopModelPerson } from "./desktop-model-grant.ts";
 import { setDesktopInjectModels } from "./drivers/local-inject.ts";
 import { handleDesktopBridgeMcp } from "./desktop-bridge-tools.ts";
 import { cloudOnlyBot } from "./cloud-only-bots.ts";
+import { FLOW_TOOLS_MCP_NAME } from "./flow-tools.ts";
 import { AUTO_COMPUTER_MCP_NAME, COMPUTER_SELECT_TOOL, autoComputerGuidance, autoComputerReason, autoComputerToolRefusal, selectAutoComputer, type AutoComputerState, type FixedWorksOn } from "./auto-computer.ts";
 import { attachDesktopTunnel, createBridgeAudit, createDesktopBridgeRoutes } from "./desktop-bridge-routes.ts";
 import { DesktopTunnels, startEgressProxy, type EgressProxy } from "./desktop-egress.ts";
@@ -4337,6 +4338,17 @@ function workplaceIntegration(botId: string, threadId: string, generation: strin
   };
 }
 
+/** Pulsatrix Flow's compute tools ("sagax-flow", server/flow-tools.ts): the
+ * same stdio proxy, answering in its own process. Pure functions of their
+ * arguments, so it carries no capability at all. */
+function flowToolsIntegration() {
+  return {
+    command: process.execPath,
+    args: [SPAWNED_PROXIES.userSandbox],
+    env: { ...AGENTS_NODE_FLAG, SAGAX_TOOL_SERVER: FLOW_TOOLS_MCP_NAME },
+  };
+}
+
 /** A turn's Works on as computer_select reads it: Auto, or the fixed place. */
 function turnWorksOn(plan: { computer: ReturnType<typeof resolveSurface>["computer"]; browser: boolean; pinned: ReturnType<typeof resolveSurface>["pinned"] }, forced: boolean): { auto: boolean; fixed?: FixedWorksOn } {
   if (forced) return { auto: false, fixed: "cloud" };
@@ -4730,6 +4742,9 @@ async function perspicaxTurnIntegration(input: {
       },
     };
   }
+  // Pulsatrix Flow's compute (server/flow-tools.ts) rides with the
+  // Perspicax tools whose data it works on.
+  if (Object.keys(custom).length && !taken.has(FLOW_TOOLS_MCP_NAME)) custom[FLOW_TOOLS_MCP_NAME] = flowToolsIntegration();
   if (!plan.unavailable.length) return { custom, prompt: "" };
   const lines = plan.unavailable.map((entry) => entry.reason === "no_delegation"
     ? `Perspicax tools of profile "${entry.name}" are not available in this routine run: ${PERSPICAX_UNAVAILABLE_WHY.no_delegation}.`
