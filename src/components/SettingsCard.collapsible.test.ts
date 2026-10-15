@@ -230,9 +230,11 @@ describe("Settings → General, compact", () => {
       expect(html).not.toContain(`data-settings-card="${id}"`);
     }
     const advanced = renderToStaticMarkup(createElement(StoreProvider, null, createElement(GeneralAdvancedSettings)));
-    for (const id of ["general.threads", "general.recovery", "general.threadCleanup", "general.roomTurns", "general.mcpCalls", "general.toolAccess"]) {
+    for (const id of ["general.threads", "general.recovery", "general.threadCleanup", "general.toolAccess"]) {
       expect(advanced).toContain(`data-settings-card="${id}" data-open="false"`);
     }
+    // 2026-10-15: group turns and MCP calls are cards of Organization
+    for (const id of ["organization.roomTurns", "organization.mcpCalls"]) expect(advanced).not.toContain(`data-settings-card="${id}"`);
     expect(advanced).toContain(">3 per bot<");
     expect(html).toContain(">Not set<");
     // About me is edited on its sub-page; General shows its first line and Edit

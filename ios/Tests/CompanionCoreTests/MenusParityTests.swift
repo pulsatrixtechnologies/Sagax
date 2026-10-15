@@ -87,9 +87,40 @@ final class MenusParityTests: XCTestCase {
         let client = CompanionClient(connection: Connection(name: "Mac", host: "127.0.0.1", port: 8810), token: "t")
         let request = try client.personalUsageRequest((from: "2026-03-01", to: "2026-03-31"), groupBy: .model)
         let items = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems ?? []
-        XCTAssertEqual(request.url?.path, "/api/usage")
-        XCTAssertTrue(items.contains(URLQueryItem(name: "mine", value: "1")))
+        XCTAssertEqual(request.url?.path, "/api/me/usage", "any member reads their own usage (#524)")
+        XCTAssertFalse(items.contains { $0.name == "mine" })
         XCTAssertTrue(items.contains(URLQueryItem(name: "groupBy", value: "model")))
+        let legacy = try client.personalUsageRequest((from: "2026-03-01", to: "2026-03-31"), groupBy: .bot, legacy: true)
+        XCTAssertEqual(legacy.url?.path, "/api/usage")
+        XCTAssertTrue((URLComponents(url: legacy.url!, resolvingAgainstBaseURL: false)?.queryItems ?? []).contains(URLQueryItem(name: "mine", value: "1")))
+    }
+
+    func testAnOlderServerFallsBackToTheAdminRouteOn404() async throws {
+        UsageRouteStub.reset()
+        UsageRouteStub.missing = ["/api/me/usage"]
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [UsageRouteStub.self]
+        let session = URLSession(configuration: configuration)
+        defer { session.invalidateAndCancel() }
+        let client = CompanionClient(connection: Connection(name: "Mac", host: "127.0.0.1", port: 8810), token: "t", session: session)
+        let usage = try await client.personalUsage()
+        XCTAssertEqual(usage.month.total?.turns, 3)
+        let paths = UsageRouteStub.paths()
+        XCTAssertEqual(paths.first, "/api/me/usage", "the new route first")
+        XCTAssertEqual(paths.filter { $0 == "/api/me/usage" }.count, 1, "one try, then the fallback")
+        XCTAssertEqual(paths.filter { $0 == "/api/usage" }.count, 5)
+    }
+
+    func testANewServerAnswersFromMeUsageOnly() async throws {
+        UsageRouteStub.reset()
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [UsageRouteStub.self]
+        let session = URLSession(configuration: configuration)
+        defer { session.invalidateAndCancel() }
+        let client = CompanionClient(connection: Connection(name: "Mac", host: "127.0.0.1", port: 8810), token: "t", session: session)
+        _ = try await client.personalUsage()
+        XCTAssertEqual(Set(UsageRouteStub.paths()), ["/api/me/usage"])
+        XCTAssertEqual(UsageRouteStub.paths().count, 5)
     }
 
     func testTrendDailyCostsAndRanking() throws {
@@ -107,4 +138,43 @@ final class MenusParityTests: XCTestCase {
         XCTAssertEqual(PersonalUsageRules.ranked(summary).map(\.key), ["day:2026-03-02", "day:2026-03-04"])
         XCTAssertEqual(PersonalUsageRules.cost(summary), 1.75)
     }
+}
+
+/// Answers every usage read with a small summary, or 404 for `missing` paths.
+private final class UsageRouteStub: URLProtocol {
+    private static let lock = NSLock()
+    nonisolated(unsafe) private static var seen: [String] = []
+    nonisolated(unsafe) static var missing: Set<String> = []
+
+    static func reset() {
+        lock.lock(); defer { lock.unlock() }
+        seen = []
+        missing = []
+    }
+
+    static func paths() -> [String] {
+        lock.lock(); defer { lock.unlock() }
+        return seen
+    }
+
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+
+    override func startLoading() {
+        let path = request.url?.path ?? ""
+        Self.lock.lock()
+        Self.seen.append(path)
+        let absent = Self.missing.contains(path)
+        Self.lock.unlock()
+        let body = absent
+            ? #"{"error":"not found"}"#
+            : #"{"groupBy":"day","groups":[],"total":{"key":"total","label":"Total","turns":3,"costUsd":0.5}}"#
+        let response = HTTPURLResponse(url: request.url!, statusCode: absent ? 404 : 200, httpVersion: "HTTP/1.1",
+                                       headerFields: ["Content-Type": "application/json"])!
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: Data(body.utf8))
+        client?.urlProtocolDidFinishLoading(self)
+    }
+
+    override func stopLoading() {}
 }

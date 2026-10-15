@@ -10,6 +10,13 @@
 // An admin also allows or refuses Full access for every bot (2026-10-01,
 // OrgFullAccessPolicy, server/org-full-access.ts).
 // People, teams and invitations live in Perspicax, never here.
+// 2026-10-15 (JC): Sharing in the organization (every bot of the
+// organization with its owner) is hidden from the app, like Activity, Email,
+// People and Installations (#518, #524): the app shows the person signed in,
+// views of everyone belong to Sagax Business and the Perspicax console.
+// OrgSharing and its server routes stay; an old link to the
+// "organization.sharing" card opens this page. A bot's owner still shares it
+// from the bot's own Shared with section.
 import { useEffect, useState } from "react";
 import { ExternalLink } from "lucide-react";
 
@@ -18,7 +25,6 @@ import type { PerspicaxOrg } from "@/lib/perspicax-org";
 import { setOrgApprovalsCount, useOrgApprovalsVersion } from "@/lib/org-approvals";
 import { api } from "@/state/store";
 import { Card } from "./SettingsPrimitives";
-import { OrgSharing } from "./settings/OrgSharing";
 import { InterimPeople } from "./settings/InterimPeople";
 
 import { OrgPluginPolicy } from "./settings/OrgPluginPolicy";
@@ -117,7 +123,6 @@ export function PerspicaxOrgSettings({ org, onChanged }: { org: PerspicaxOrg; on
         </div>
       </Card>
       {interimVisible && interim?.until ? <InterimPeople until={interim.until} onChanged={onChanged} /> : null}
-      <OrgSharing admin={admin} />
       {admin && <OrgFullAccessPolicy initial={org.settings.allowFullAccess !== false} onChanged={onChanged} />}
       {admin && (
         <OrgPluginPolicy

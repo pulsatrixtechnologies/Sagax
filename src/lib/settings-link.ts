@@ -5,7 +5,7 @@ import type { LocaleKey } from "@/locales";
 import { t } from "@/lib/i18n";
 import { requestSettingsCard } from "@/components/SettingsPrimitives";
 import type { AppSettingsSection } from "@/state/store";
-import { currentSettingsSection, mergedSettingsCard } from "@/lib/settings-sections";
+import { currentSettingsCard, currentSettingsSection, mergedSettingsCard } from "@/lib/settings-sections";
 
 export { currentSettingsSection, mergedSettingsCard };
 
@@ -48,7 +48,7 @@ type SettingsDispatch = (action: { type: "toggleAppSettings"; open: true; sectio
  * A section that became a card of another page opens that card. */
 export function openSettings(dispatch: SettingsDispatch, section: AppSettingsSection, cardId?: string): void {
   dispatch({ type: "toggleAppSettings", open: true, section: currentSettingsSection(section, cardId) });
-  const card = cardId ?? mergedSettingsCard(section);
+  const card = cardId ? currentSettingsCard(cardId) : mergedSettingsCard(section);
   if (card) requestSettingsCard(card);
 }
 

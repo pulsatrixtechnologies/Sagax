@@ -145,13 +145,17 @@ function chooseCardOpen(id: string, open: boolean): void {
 /** Opens the collapsible settings card `id` and scrolls it into view, now if
  * it is mounted or as soon as it mounts (a deep link opens Settings first). */
 export function requestSettingsCard(id: string): void {
+  lastRequestedCard = id;
   chooseCardOpen(id, true);
   let frames = 0;
   const reveal = () => {
     try {
       const card = [...document.querySelectorAll<HTMLElement>("[data-settings-card]")].find((node) => node.dataset.settingsCard === id);
-      if (card) card.scrollIntoView?.({ block: "nearest" });
-      else if (++frames < 30) requestAnimationFrame(reveal);
+      if (card) {
+        card.scrollIntoView?.({ block: "nearest" });
+        if (lastRequestedCard === id) lastRequestedCard = null;
+      } else if (++frames < 30) requestAnimationFrame(reveal);
+      else if (lastRequestedCard === id) lastRequestedCard = null;
     } catch {
       /* no document outside the renderer */
     }
@@ -159,9 +163,20 @@ export function requestSettingsCard(id: string): void {
   if (typeof requestAnimationFrame === "function") requestAnimationFrame(reveal);
 }
 
+let lastRequestedCard: string | null = null;
+
+/** The card a link asked for last, read once: Settings uses it to send a
+ * link to a moved card where that card is shown on this computer. */
+export function takeRequestedSettingsCard(): string | null {
+  const id = lastRequestedCard;
+  lastRequestedCard = null;
+  return id;
+}
+
 /** Test seam: drop the in-memory choices so storage is read again. */
 export function resetSettingsCards(): void {
   cardChoices = null;
+  lastRequestedCard = null;
 }
 
 function useCardOpen(id: string, defaultOpen: boolean) {
