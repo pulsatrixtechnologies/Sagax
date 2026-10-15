@@ -3,10 +3,11 @@
 // (`max-lg:absolute`). Its tabs are the current desktop's
 // (`bot-settings/panel-tabs.ts`): Details (Coding, Activity, Routines),
 // Library (Files, Skills, Plugins: BotPanelLibrary.swift), Computer; no More
-// tab. Edit persona is a pencil on the mascot and the mascot's menu, as
-// on the desktop (no labeled button under the tabs). It opens every other
-// section behind a searchable list in a sheet, the persona editor
-// (`PersonaEditorModal.tsx`). The name and label are edited where they
+// tab. Edit bot is a pencil on the mascot and the first entry of the
+// bot's one "..." menu (`BotActionsMenu.tsx`, #518), which also holds
+// Rename, the Primary Bot, the export and Archive. It opens every other
+// section behind a searchable list of six groups in a sheet, the bot
+// editor (`PersonaEditorModal.tsx`). The name and label are edited where they
 // show, under the mascot (`InlineEditableText.tsx`). Which tabs and sections a pairing shows is
 // `DesktopPanelTab` / `DesktopPanelSection` / `DesktopPersonaEditor`
 // (CompanionCore), from `SurfaceGate`.
@@ -57,12 +58,18 @@ private struct BotPanelContent: View {
     let docked: Bool
 
     @State private var sharedFile: ShareFile?
-    @State private var exportOpen = false
+    /// The bot's one "..." menu (`BotActionsMenu.tsx`, #518).
+    @State private var menuOpen = false
+    @State private var viewerId: String?
+    @State private var renaming = false
+    @State private var renameDraft = ""
+    @State private var confirmingArchive = false
+    @State private var exportingZip = false
+    @State private var pickingPrimary = false
+    @State private var primaryWorking = false
     @State private var slackURL: URL?
     /// A name, label or description field is open: Escape cancels it, not the panel.
     @State private var inlineEditing = false
-    /// Appearance > Show the Inspector button (`sagax-show-inspector-button`, off by default).
-    @AppStorage(DesktopInspectorButton.key) private var showInspector = false
 
     private var current: Bot { session.state.bot(bot.id) ?? bot }
     private var tabs: [DesktopPanelTab] { DesktopPanelTab.visible(gate: session.surfaceGate, slack: slackURL != nil) }
@@ -110,8 +117,34 @@ private struct BotPanelContent: View {
                 .environment(\.desktopTheme, theme)
         }
         .task(id: session.connection?.id) {
+            async let config = session.configStatus()
             if session.surfaceGate.allows(.botSlack) {
                 slackURL = await session.profileClient?.slackManagementURL(botId: bot.id)
+            }
+            viewerId = PrimaryBotRules.viewerId(config: await config)
+        }
+        .sheet(isPresented: $exportingZip) { BotZipExportSheet(bot: current) { exportingZip = false }.environmentObject(session) }
+        .sheet(isPresented: $pickingPrimary) {
+            PrimaryBotPicker(currentId: current.id, viewerId: viewerId ?? "local-owner") { _ in }
+                .environmentObject(session)
+        }
+        .confirmationDialog(Text("Archive \(current.name)?"), isPresented: $confirmingArchive, titleVisibility: .visible) {
+            Button("Archive") {
+                let target = current
+                Task { if await session.setArchived(target, archived: true) { model.togglePanel() } }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Its conversations are kept. Archived bots in the account menu brings it back.")
+        }
+        .alert("Rename the bot", isPresented: $renaming) {
+            TextField("Name", text: $renameDraft)
+                .accessibilityIdentifier("desktop-panel-rename-field")
+            Button("Cancel", role: .cancel) {}
+            Button("Save") {
+                let target = current
+                let draft = renameDraft
+                Task { await session.renameBot(target, to: draft) }
             }
         }
         .accessibilityElement(children: .contain)
@@ -124,15 +157,12 @@ private struct BotPanelContent: View {
     private var topBar: some View {
         HStack(spacing: 8) {
             Spacer(minLength: 0)
-            DesktopRoundButton(systemImage: "square.and.arrow.up", label: "Export conversation", active: exportOpen, icon: .share) { exportOpen.toggle() }
+            DesktopRoundButton(systemImage: "ellipsis", label: "Bot menu", active: menuOpen, icon: .ellipsis) { menuOpen.toggle() }
                 .overlay(alignment: .topTrailing) {
-                    if exportOpen { exportMenu }
+                    if menuOpen { actionsMenu }
                 }
                 .zIndex(1)
-            if showInspector, session.surfaceGate.allows(.inspector) {
-                DesktopRoundButton(systemImage: "ladybug", label: "Inspector") { model.requestInspector() }
-                    .accessibilityIdentifier("desktop-panel-inspector")
-            }
+                .accessibilityIdentifier("desktop-panel-menu")
             DesktopRoundButton(systemImage: "sidebar.right", label: "Close", icon: .panelRight) { model.togglePanel() }
                 .keyboardShortcut(inlineEditing ? KeyboardShortcut("w", modifiers: [.command, .control, .option, .shift]) : KeyboardShortcut(.escape, modifiers: []))
                 .accessibilityIdentifier("desktop-panel-close")
@@ -142,40 +172,98 @@ private struct BotPanelContent: View {
         .zIndex(2)
     }
 
-    private var exportMenu: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Text("Export Conversation")
-                .font(theme.font(12))
-                .foregroundStyle(theme.inkSecondary)
-                .padding(.horizontal, 14)
-                .padding(.top, 10)
-                .padding(.bottom, 4)
-            DesktopMenuRow(systemImage: "doc.on.doc", title: Text("Copy as Markdown")) {
-                exportOpen = false
-                Task {
-                    if let url = await session.export(threadId: current.threadId, format: "markdown"),
-                       let text = try? String(contentsOf: url, encoding: .utf8) {
-                        PlatformBridge.copyToPasteboard(text)
-                    }
+    private var menuPlan: BotActionsMenuPlan {
+        let gate = session.surfaceGate
+        return BotActionsMenuPlan(
+            gate: gate, bot: current, viewerId: viewerId, editable: DesktopPersonaEditor.offered(gate: gate, slack: slackURL != nil),
+            zipExport: gate.scope != .sidecar && (session.canAdminister || PrimaryBotRules.viewerOwns(current, viewerId: session.roomViewer.actorId)),
+            inspector: true,
+            activeBotCount: session.state.bots.filter { $0.hidden != true }.count
+        )
+    }
+
+    /// The bot's one "..." menu: Edit bot, Rename, Primary Bot; the
+    /// conversation's export and the bot's .zip; Archive, Inspector.
+    private var actionsMenu: some View {
+        let plan = menuPlan
+        return VStack(alignment: .leading, spacing: 0) {
+            ForEach(Array(plan.groups.enumerated()), id: \.offset) { index, group in
+                if index > 0 {
+                    Rectangle().fill(theme.border).frame(height: 0.5).padding(.horizontal, 8).padding(.vertical, 4)
                 }
-            }
-            DesktopMenuRow(systemImage: "arrow.down.to.line", title: Text("Download as .md")) {
-                exportOpen = false
-                Task {
-                    if let url = await session.export(threadId: current.threadId, format: "markdown") {
-                        sharedFile = ShareFile(url: url)
-                    }
+                if group.contains(.copyConversation) {
+                    Text("Export conversation")
+                        .font(theme.font(12))
+                        .foregroundStyle(theme.inkSecondary)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                }
+                ForEach(group, id: \.self) { item in
+                    menuRow(item, enabled: plan.enables(item) && !(item == .makePrimary && primaryWorking))
                 }
             }
         }
-        .padding(.horizontal, 6)
-        .padding(.bottom, 6)
-        .frame(width: 219, alignment: .leading)
+        .padding(6)
+        .frame(width: 248, alignment: .leading)
         .background(theme.menu, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(theme.border, lineWidth: 1))
         .shadow(color: .black.opacity(0.25), radius: 14, y: 8)
         .fixedSize()
         .alignmentGuide(.top) { d in d[.top] - 40 }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("desktop-panel-actions")
+    }
+
+    @ViewBuilder
+    private func menuRow(_ item: BotActionsMenuItem, enabled: Bool) -> some View {
+        let (icon, title): (String, LocalizedStringKey) = {
+            switch item {
+            case .editBot: return ("person.crop.circle.badge.pencil", "Edit bot")
+            case .rename: return ("pencil", "Rename the bot")
+            case .makePrimary: return ("star", "Make primary bot")
+            case .replacePrimary: return ("arrow.left.arrow.right", "Replace with different Bot")
+            case .copyConversation: return ("doc.on.doc", "Copy as Markdown")
+            case .downloadConversation: return ("arrow.down.to.line", "Download as .md")
+            case .exportZip: return ("doc.zipper", "Export the bot (.zip)")
+            case .archive: return ("archivebox", "Archive…")
+            case .inspector: return ("ladybug", "Inspector")
+            }
+        }()
+        DesktopMenuRow(systemImage: icon, title: Text(title)) {
+            menuOpen = false
+            perform(item)
+        }
+        .disabled(!enabled)
+        .opacity(enabled ? 1 : 0.4)
+        .accessibilityIdentifier("desktop-panel-action.\(item.rawValue)")
+    }
+
+    private func perform(_ item: BotActionsMenuItem) {
+        switch item {
+        case .editBot: model.showPersona()
+        case .rename:
+            renameDraft = current.name
+            renaming = true
+        case .makePrimary:
+            Task { await PrimaryBotActions.make(current.id, session: session, done: { _ in }, working: $primaryWorking) }
+        case .replacePrimary: pickingPrimary = true
+        case .copyConversation:
+            Task {
+                if let url = await session.export(threadId: current.threadId, format: "markdown"),
+                   let text = try? String(contentsOf: url, encoding: .utf8) {
+                    PlatformBridge.copyToPasteboard(text)
+                }
+            }
+        case .downloadConversation:
+            Task {
+                if let url = await session.export(threadId: current.threadId, format: "markdown") {
+                    sharedFile = ShareFile(url: url)
+                }
+            }
+        case .exportZip: exportingZip = true
+        case .archive: confirmingArchive = true
+        case .inspector: model.requestInspector()
+        }
     }
 
     // MARK: Tabs
@@ -239,7 +327,7 @@ private struct BotPersonaEditorSheet: View {
                     DesktopRoundButton(systemImage: "chevron.left", label: "Back") { model.panelSection = nil }
                         .accessibilityIdentifier("desktop-panel-back")
                 }
-                Text("Edit persona")
+                Text("Edit bot")
                     .font(theme.font(15, .semibold))
                     .foregroundStyle(theme.ink)
                 Spacer(minLength: 0)

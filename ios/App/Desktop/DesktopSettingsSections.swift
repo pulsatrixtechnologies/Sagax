@@ -12,10 +12,62 @@ import CompanionCore
 
 // MARK: - General
 
+/// General (#518): Profile, About me, Language and new bots' effort; the
+/// technical cards (routines in the conversation, group turns, parallel
+/// threads, recovery, event log cleanup) wait on the Advanced sub-page.
 struct DesktopGeneralSettings: View {
+    @State private var advanced = false
+
+    var body: some View {
+        if advanced {
+            AnyView(DesktopGeneralAdvancedSettings { advanced = false })
+        } else {
+            AnyView(DesktopGeneralMainSettings { advanced = true })
+        }
+    }
+}
+
+/// A row that opens a sub-page (`SettingsSubPageRow`): title, summary and
+/// a chevron.
+struct DesktopSubPageRow: View {
+    @Environment(\.desktopTheme) private var theme
+    let title: Text
+    var summary: Text? = nil
+    let identifier: String
+    let open: () -> Void
+
+    var body: some View {
+        Button(action: open) {
+            HStack(spacing: 12) {
+                VStack(alignment: .leading, spacing: 2) {
+                    DesktopText(title)
+                    if let summary {
+                        DesktopText(summary, size: 12.5, line: 17, color: \.inkSecondary)
+                            .lineLimit(2)
+                            .multilineTextAlignment(.leading)
+                    }
+                }
+                Spacer(minLength: 0)
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(theme.inkSecondary)
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 12)
+            .padding(1)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(DesktopHoverFill(radius: 14))
+        .desktopHairlineBox()
+        .accessibilityIdentifier(identifier)
+    }
+}
+
+private struct DesktopGeneralMainSettings: View {
     @EnvironmentObject private var model: DesktopSettingsModel
     @AppStorage(PrefKey.language) private var language = AppLanguage.system.rawValue
     @State private var editingAboutMe = false
+    let openAdvanced: () -> Void
 
     var body: some View {
         let config = model.config
@@ -52,7 +104,7 @@ struct DesktopGeneralSettings: View {
                 help: Text("How hard every new bot thinks from its first message. A bot can change its own level; model providers without this level keep their default.")
             ) {
                 DesktopSelect(
-                    options: [("", AppStrings.localized("Provider default"))] + DesktopEffort.levels.map { ($0, Self.effortLabel($0)) },
+                    options: [("", AppStrings.localized("Provider default"))] + DesktopEffort.levels.map { ($0, DesktopGeneralSettings.effortLabel($0)) },
                     selection: config?.newBots?.effort ?? "",
                     label: Text("Effort for new bots"),
                     identifier: "desktop-settings.effort",
@@ -61,6 +113,47 @@ struct DesktopGeneralSettings: View {
                 )
             }
         }
+        DesktopSubPageRow(
+            title: Text("Advanced"),
+            summary: Text("Parallel threads, recovery, cleanup, group turns, routines"),
+            identifier: "desktop-settings.advanced",
+            open: openAdvanced
+        )
+    }
+
+    private func setEffort(_ value: String) {
+        Task { _ = await model.apply(.newBotEffort(value.isEmpty ? nil : value), key: "effort") }
+    }
+
+    private var aboutMeSummary: Text {
+        let first = (model.config?.profile?.aboutMe ?? "")
+            .split(whereSeparator: \.isNewline).first.map(String.init)?
+            .trimmingCharacters(in: .whitespaces) ?? ""
+        return first.isEmpty ? Text("Not set") : Text(verbatim: first)
+    }
+}
+
+/// General > Advanced: the technical cards, under Back.
+private struct DesktopGeneralAdvancedSettings: View {
+    @Environment(\.desktopTheme) private var theme
+    @EnvironmentObject private var model: DesktopSettingsModel
+    let close: () -> Void
+
+    var body: some View {
+        let config = model.config
+        let saving = !model.saving.isEmpty
+        Button(action: close) {
+            HStack(spacing: 4) {
+                Image(systemName: "chevron.left").font(.system(size: 12, weight: .medium))
+                DesktopText(Text("General"), size: 12.5, color: \.inkSecondary)
+            }
+            .foregroundStyle(theme.inkSecondary)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("desktop-settings.advanced-back")
+        DesktopText(Text("Advanced"), size: 14, weight: .medium, line: 20)
+            .accessibilityAddTraits(.isHeader)
         DesktopSettingsGroup {
             DesktopSettingRow(
                 title: Text("Routines in the conversation"),
@@ -150,18 +243,9 @@ struct DesktopGeneralSettings: View {
                 .padding(.top, 8)
         }
     }
+}
 
-    private func setEffort(_ value: String) {
-        Task { _ = await model.apply(.newBotEffort(value.isEmpty ? nil : value), key: "effort") }
-    }
-
-    private var aboutMeSummary: Text {
-        let first = (model.config?.profile?.aboutMe ?? "")
-            .split(whereSeparator: \.isNewline).first.map(String.init)?
-            .trimmingCharacters(in: .whitespaces) ?? ""
-        return first.isEmpty ? Text("Not set") : Text(verbatim: first)
-    }
-
+extension DesktopGeneralSettings {
     static func effortLabel(_ level: String) -> String {
         level == "xhigh" ? "X-High" : level.prefix(1).uppercased() + level.dropFirst()
     }
@@ -614,65 +698,96 @@ struct DesktopDecisionModelSettings: View {
 
 // MARK: - Usage
 
+/// Usage (#518, `UsageSection.tsx`): the signed-in person's own usage.
+/// Plan, Cost (this month, its trend, the last 30 days), then a folded
+/// breakdown by bot and by model, all from `GET /api/usage?mine=1`. The
+/// installation's spend limit, other people and the history by person are
+/// Sagax Business's.
 struct DesktopUsageSettings: View {
     @Environment(\.desktopTheme) private var theme
     @EnvironmentObject private var session: Session
-    @EnvironmentObject private var model: DesktopSettingsModel
-    @State private var limitDraft = ""
+    @StateObject private var personal = PersonalUsageModel()
 
     var body: some View {
-        let rows = UsageByBot.rows(session.state.bots)
-        // I-sync: the current renderer's Plan usage, above the token ledger
         AnyView(DesktopPlanUsageCard())
-        DesktopSettingsCard(
-            Text("Usage"),
-            subtitle: Text("Tokens and cost per bot, added up from every settled turn. Only providers that report a price show one."),
-            identifier: "usage.bots"
-        ) {
-            if rows.isEmpty {
-                DesktopText("Nothing spent yet. Figures appear after a bot's first turn.", line: 19.5, color: \.inkSecondary)
-            } else {
-                DesktopUsageTable(rows: rows)
+        DesktopSettingsCard(Text("Cost"), identifier: "usage.cost") {
+            AnyView(cost)
+        }
+        .task(id: session.connection?.id) { await personal.load(session.settingsClient) }
+        if let usage = personal.usage, !usage.isEmpty {
+            DesktopSettingsCard(Text("By bot and by model"), summary: Text("This month"), open: false, identifier: "usage.breakdown") {
+                VStack(alignment: .leading, spacing: 16) {
+                    DesktopUsageGroupList(title: Text("By bot"), groups: PersonalUsageRules.ranked(usage.byBot), kind: "bot")
+                    DesktopUsageGroupList(title: Text("By model"), groups: PersonalUsageRules.ranked(usage.byModel), kind: "model")
+                }
             }
         }
-        let budget = model.usage?.budget
-        DesktopSettingsCard(
-            Text("Monthly spend limit"),
-            summary: Text(verbatim: DesktopSettingsSummary.spend(budget?.spentUsd ?? 0, of: budget?.monthlyUsd ?? model.config?.budgets?.monthlyUsd)),
-            subtitle: Text("Once the month's cost reaches the limit, no bot in this installation starts a turn until an admin raises it."),
-            open: false, identifier: "usage.budget"
-        ) {
-            HStack(spacing: 10) {
-                DesktopText("Limit per month (USD)")
-                Spacer(minLength: 0)
-                TextField(text: $limitDraft, prompt: Text(verbatim: String(format: "%.2f", model.config?.budgets?.monthlyUsd ?? 0))) {
-                    Text("Limit per month (USD)")
-                }
-                .keyboardType(.decimalPad)
-                .font(theme.font(13))
-                .foregroundStyle(theme.ink)
-                .multilineTextAlignment(.trailing)
-                .padding(.horizontal, 10)
-                .frame(width: 120, height: 33)
-                .background(theme.inset, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(theme.border, lineWidth: 1))
-                .accessibilityIdentifier("desktop-settings.budget")
-                Button("Save") {
-                    guard let value = Double(limitDraft.replacingOccurrences(of: ",", with: ".")) else { return }
-                    Task {
-                        if await model.apply(.monthlyBudget(value), key: "budget") == nil {
-                            limitDraft = ""
-                            await model.reloadUsage()
+    }
+
+    @ViewBuilder
+    private var cost: some View {
+        if personal.failed {
+            DesktopText("Your usage could not be loaded. Try again later.", color: \.danger)
+        } else if let usage = personal.usage {
+            if usage.isEmpty {
+                DesktopText("Nothing spent yet. Your cost shows after your bots' first turns.", color: \.inkSecondary)
+            } else {
+                HStack(alignment: .bottom, spacing: 12) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        DesktopText(verbatim: PersonalUsageModel.cost(usage.cost), size: 22, weight: .semibold, line: 30)
+                            .monospacedDigit()
+                            .accessibilityIdentifier("desktop-settings.usage-cost")
+                        DesktopText(verbatim: PersonalUsageModel.monthLine(usage), size: 12.5, line: 17, color: \.inkSecondary)
+                        if usage.estimated {
+                            DesktopText("Part of it is estimated from public prices.", size: 12, line: 17, color: \.inkSecondary)
                         }
                     }
+                    Spacer(minLength: 0)
+                    VStack(alignment: .trailing, spacing: 2) {
+                        UsageSparkline(values: PersonalUsageRules.dailyCosts(usage.days30, range: PersonalUsagePeriods().days30),
+                                       color: theme.accent)
+                        DesktopText("Last 30 days", size: 11.5, line: 16, color: \.inkSecondary)
+                    }
                 }
-                .buttonStyle(DesktopButtonStyle(kind: .control))
-                .disabled(Double(limitDraft.replacingOccurrences(of: ",", with: ".")) == nil)
             }
+        } else {
+            ProgressView().controlSize(.small)
         }
-        if session.surfaceGate.allows(.usageHistory) {
-            DesktopSettingsCard(Text("History"), summary: Text("This month"), open: false, identifier: "usage.history") {
-                UsageHistorySection()
+    }
+}
+
+/// One list of the breakdown: the top five, then Show all.
+struct DesktopUsageGroupList: View {
+    @Environment(\.desktopTheme) private var theme
+    let title: Text
+    let groups: [UsageGroup]
+    let kind: String
+    @State private var all = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            DesktopText(title, size: 12, weight: .medium, color: \.inkSecondary)
+            if groups.isEmpty {
+                DesktopText("Nothing this month.", color: \.inkSecondary)
+            }
+            ForEach(all ? groups : Array(groups.prefix(5))) { group in
+                HStack(spacing: 12) {
+                    DesktopText(verbatim: group.label).lineLimit(1)
+                    Spacer(minLength: 0)
+                    DesktopText(Text("\(group.turns) turns"), color: \.inkSecondary).monospacedDigit()
+                    DesktopText(verbatim: group.costUsd.map(PersonalUsageModel.cost) ?? "·")
+                        .monospacedDigit()
+                        .frame(width: 80, alignment: .trailing)
+                }
+                .padding(.vertical, 6)
+                .overlay(alignment: .top) { Rectangle().fill(theme.hairline.opacity(0.3)).frame(height: 1) }
+                .accessibilityIdentifier("desktop-settings.usage-\(kind).\(group.key)")
+            }
+            if groups.count > 5 {
+                Button(all ? "Show less" : "Show all (\(groups.count))") { all.toggle() }
+                    .font(theme.font(12.5))
+                    .foregroundStyle(theme.accent)
+                    .buttonStyle(.plain)
             }
         }
     }
@@ -722,22 +837,25 @@ struct DesktopBackupsSettings: View {
     @State private var error: String?
     @State private var shared: DesktopSharedFile?
 
+    @State private var includedOpen = false
+
+    /// Backups in one card (#518, `WorkspaceBackupSettings`): what a backup
+    /// is, what it includes, the export, and where a restore happens.
     var body: some View {
-        DesktopSettingsCard(Text("What a backup includes"), summary: Text("Bots, chats and files; no credentials"),
-                            open: false, identifier: "backups.scope") {
-            VStack(alignment: .leading, spacing: 8) {
-                DesktopText("A password-protected backup of this installation: bots, conversations, instructions, local files, and non-secret settings.", color: \.inkSecondary)
-                DesktopText("Saved account credentials and connections are not included. Reconnect your accounts on a new machine; existing credentials on the destination stay unchanged. External CLI sign-ins and remote VM disks are not included.", color: \.inkSecondary)
-                DesktopText("Chats, drafts, and user files are not automatically redacted and may contain pasted secrets. Keep this backup private and save its password safely; it cannot be recovered.", color: \.inkSecondary)
-            }
-        }
         DesktopSettingsCard(
-            Text("Export full backup"),
-            summary: Text("Password protected"),
-            subtitle: Text("Use a password of at least 12 characters. You will need it to import this backup."),
-            identifier: "backups.export"
+            Text("Full backup"),
+            subtitle: Text("An encrypted copy of your bots, conversations and files, to restore here or on another computer."),
+            identifier: "backups.full"
         ) {
             VStack(alignment: .leading, spacing: 12) {
+                DesktopDisclosure(title: Text("What is included"), open: $includedOpen) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        DesktopText("A password-protected backup of this installation: bots, conversations, instructions, local files, and non-secret settings.", color: \.inkSecondary)
+                        DesktopText("Saved account credentials and connections are not included. Reconnect your accounts on a new machine; existing credentials on the destination stay unchanged. External CLI sign-ins and remote VM disks are not included.", color: \.inkSecondary)
+                        DesktopText("Chats, drafts, and user files are not automatically redacted and may contain pasted secrets. Keep this backup private and save its password safely; it cannot be recovered.", color: \.warning)
+                    }
+                }
+                DesktopText("Use a password of at least 12 characters. You will need it to import this backup.", size: 12.5, line: 17, color: \.inkSecondary)
                 passwordField(Text("Backup password"), text: $password, identifier: "desktop-settings.backup-password")
                 passwordField(Text("Confirm backup password"), text: $confirm, identifier: "desktop-settings.backup-confirm")
                 let ready = password.count >= 12 && password == confirm && !exporting
@@ -754,12 +872,9 @@ struct DesktopBackupsSettings: View {
                 if let error {
                     DesktopText(verbatim: error, size: 12, line: 17, color: \.danger)
                 }
+                DesktopText("Restoring replaces this installation and restarts it. Restore from Sagax on the computer, where the backup file is.",
+                            size: 12, line: 17, color: \.inkSecondary)
             }
-        }
-        DesktopSettingsCard(Text("Import backup"), summary: Text("Restore from a .ombbackup file"),
-                            subtitle: Text("Restoring replaces this installation and restarts it. Restore from Sagax on the computer, where the backup file is."),
-                            open: false, identifier: "backups.import") {
-            EmptyView()
         }
         .sheet(item: $shared) { file in
             DesktopShareSheet(url: file.url)

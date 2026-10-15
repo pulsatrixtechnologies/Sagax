@@ -20786,7 +20786,7 @@
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Définir comme robot principal"
+            "value": "Définir comme bot principal"
           }
         },
         "pt-BR": {
@@ -21424,7 +21424,7 @@
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Remplacer par un autre robot"
+            "value": "Remplacer par un autre bot"
           }
         },
         "pt-BR": {
@@ -60405,6 +60405,502 @@
           "stringUnit": {
             "state": "translated",
             "value": "Cette connexion a expiré. Commencez de nouveau."
+          }
+        }
+      }
+    },
+    "Snoozed": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Snoozed"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "En veille"
+          }
+        }
+      }
+    },
+    "Edit bot": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Edit bot"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Modifier le bot"
+          }
+        }
+      }
+    },
+    "Rename the bot": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Rename the bot"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Renommer le bot"
+          }
+        }
+      }
+    },
+    "Export the bot (.zip)": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Export the bot (.zip)"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Exporter le bot (.zip)"
+          }
+        }
+      }
+    },
+    "Archive…": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Archive…"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Archiver…"
+          }
+        }
+      }
+    },
+    "Bot menu": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bot menu"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Menu du bot"
+          }
+        }
+      }
+    },
+    "Its conversations are kept. Archived bots in the account menu brings it back.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Its conversations are kept. Archived bots in the account menu brings it back."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ses conversations sont conservées. Vous pouvez le ramener depuis Bots archivés, dans le menu du compte."
+          }
+        }
+      }
+    },
+    "Personality": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Personality"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Personnalité"
+          }
+        }
+      }
+    },
+    "Memory and files": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Memory and files"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mémoire et fichiers"
+          }
+        }
+      }
+    },
+    "Model and tools": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Model and tools"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Modèle et outils"
+          }
+        }
+      }
+    },
+    "Behavior": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Behavior"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Comportement"
+          }
+        }
+      }
+    },
+    "History and usage": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "History and usage"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Historique et utilisation"
+          }
+        }
+      }
+    },
+    "Models and voice": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Models and voice"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Modèles et voix"
+          }
+        }
+      }
+    },
+    "Parallel threads, recovery, cleanup, group turns, routines": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Parallel threads, recovery, cleanup, group turns, routines"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fils parallèles, reprise, nettoyage, tours en groupe, routines"
+          }
+        }
+      }
+    },
+    "Providers and connected apps": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Providers and connected apps"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fournisseurs et apps connectées"
+          }
+        }
+      }
+    },
+    "Full backup": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Full backup"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sauvegarde complète"
+          }
+        }
+      }
+    },
+    "An encrypted copy of your bots, conversations and files, to restore here or on another computer.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "An encrypted copy of your bots, conversations and files, to restore here or on another computer."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Une copie chiffrée de vos bots, conversations et fichiers, à restaurer ici ou sur un autre ordinateur."
+          }
+        }
+      }
+    },
+    "What is included": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "What is included"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ce qui est inclus"
+          }
+        }
+      }
+    },
+    "By bot and by model": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "By bot and by model"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Par bot et par modèle"
+          }
+        }
+      }
+    },
+    "By bot": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "By bot"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Par bot"
+          }
+        }
+      }
+    },
+    "Your usage could not be loaded. Try again later.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Your usage could not be loaded. Try again later."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Impossible de charger votre utilisation. Réessayez plus tard."
+          }
+        }
+      }
+    },
+    "Nothing spent yet. Your cost shows after your bots' first turns.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nothing spent yet. Your cost shows after your bots' first turns."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Rien de dépensé pour l'instant. Votre coût s'affiche après les premiers tours de vos bots."
+          }
+        }
+      }
+    },
+    "Part of it is estimated from public prices.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Part of it is estimated from public prices."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Une partie est estimée selon les prix publics."
+          }
+        }
+      }
+    },
+    "This month, %lld turns": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This month, %lld turns"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ce mois-ci, %lld tours"
+          }
+        }
+      }
+    },
+    "%lld%% more than last month": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld%% more than last month"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld %% de plus que le mois dernier"
+          }
+        }
+      }
+    },
+    "%lld%% less than last month": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld%% less than last month"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld %% de moins que le mois dernier"
+          }
+        }
+      }
+    },
+    "Same as last month": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Same as last month"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Comme le mois dernier"
+          }
+        }
+      }
+    },
+    "Nothing this month.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nothing this month."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Rien ce mois-ci."
+          }
+        }
+      }
+    },
+    "Show all (%lld)": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Show all (%lld)"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Voir tout (%lld)"
+          }
+        }
+      }
+    },
+    "Ongoing activities": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ongoing activities"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Activités en cours"
+          }
+        }
+      }
+    },
+    "All history": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "All history"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tout l'historique"
           }
         }
       }

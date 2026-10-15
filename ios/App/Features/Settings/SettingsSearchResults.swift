@@ -46,7 +46,7 @@ struct SettingsSearchResults: View {
             switch destination {
             case .organization: return sections.contains(.organization)
             case .achievements: return sections.contains(.achievements)
-            case .privacy: return sections.contains(.privacy)
+            case .privacy: return NavigationMenus.showsPrivacy(gate: gate, connected: connected)
             case .experimental: return sections.contains(.experimental)
             case .plugins, .botComputer, .usage, .rules, .timeZone: return connected
             default: return true

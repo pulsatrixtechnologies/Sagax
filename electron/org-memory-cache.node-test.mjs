@@ -284,7 +284,8 @@ test("auto: sets itself up from the organization server, renews, and leaves with
     assert.equal(org.minted(), 1);
 
     // Close to its end: renewed.
-    clock += 90 * 86400_000 - RENEW_BEFORE_MS + 1;
+    // The fake server dates its token with the real clock, a few ms after `clock`: leave a margin.
+    clock += 90 * 86400_000 - RENEW_BEFORE_MS + 60_000;
     await cache.auto();
     assert.equal(org.minted(), 2);
 

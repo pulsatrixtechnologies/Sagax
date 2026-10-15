@@ -187,7 +187,8 @@ describe("the store", () => {
     expect(store.modeOf("bot-a", ALICE)).toBe("bypass");
     expect(store.modeOf("bot-a", BOB)).toBe("approval");
     const file = join(dir, "owner-approvals.json");
-    expect(statSync(file).mode & 0o777).toBe(0o600);
+    // Windows has no POSIX file modes: statSync reports 0o666 whatever chmod asked.
+    if (process.platform !== "win32") expect(statSync(file).mode & 0o777).toBe(0o600);
     const reopened = new OwnerApprovalStore(file);
     expect(reopened.modeOf("bot-a", ALICE)).toBe("bypass");
     reopened.forgetBot("bot-a");

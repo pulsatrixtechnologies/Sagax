@@ -1,6 +1,9 @@
 // iPad I4b: the bot panel's Details tab as the current desktop draws it
-// (`BotSettingsDialog.tsx` "details"): Coding and Activity, the bot's live
-// work (`bot-settings/ActivitySection.tsx`, `ActivityCard.tsx`), then its
+// (`BotSettingsDialog.tsx` "details"): the ongoing activities first, at the
+// top and only while something runs (#483: they replaced the rail beside
+// the chat), then Coding, the bot's live work
+// (`bot-settings/ActivitySection.tsx`, `ActivityCard.tsx`), All history
+// when neither shows, then its
 // Routines in one grouped card (`RoutinesSection` with `grouped`), and the
 // name, label and description fields edited in place at the panel's top
 // (`InlineEditableText.tsx`).
@@ -152,11 +155,18 @@ struct BotPanelDetails: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 24) {
             if showsActivity {
+                // Ongoing activities: one place, at the top, absent when
+                // nothing runs (no empty card). The server keeps them to
+                // what this person may read.
+                if let other = activity.other, !other.isEmpty {
+                    AnyView(liveSection(.other, icon: .activity, title: "Ongoing activities", items: other, showsError: false))
+                        .accessibilityIdentifier("desktop-panel-ongoing")
+                }
                 if activity.showsCodingSection {
                     AnyView(codingSection)
                 }
-                if activity.showsActivitySection {
-                    AnyView(liveSection(.other, icon: .activity, title: "Activity", items: activity.other, showsError: false))
+                if activity.list != nil, !activity.showsCodingSection, (activity.other ?? []).isEmpty {
+                    AnyView(allHistoryRow)
                 }
             }
             AnyView(BotPanelRoutines(bot: bot))
@@ -185,7 +195,13 @@ struct BotPanelDetails: View {
         }
     }
 
-    // MARK: Coding, Activity
+    // MARK: Ongoing activities, Coding
+
+    /// "All history": the history, while no section above shows.
+    private var allHistoryRow: some View {
+        PanelSectionHeader(icon: .activity, title: "All history") { route = .history(.other) }
+            .accessibilityIdentifier("desktop-panel-history.all")
+    }
 
     private var codingSection: some View {
         VStack(alignment: .leading, spacing: 8) {
