@@ -1,16 +1,17 @@
 // Plugins, main view ("Connect apps"): every app, MCP server, catalog plugin
 // and skill in one list, with search across all of them, category chips and
 // a short section per category. Installed rows open their detail page; the
-// others carry Add (nothing to sign in to) or Connect (an account).
+// others carry Add (nothing to sign in to) or Connect (an account). The
+// filter row is All plus one Category menu; the connection state refreshes
+// when the panel opens (Refresh stays in Manage).
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { ChevronDown, ChevronRight, Loader2, RefreshCw, Search, X } from "lucide-react";
+import { ChevronDown, ChevronRight, Loader2, Search, X } from "lucide-react";
 
 import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
 import type { LocaleKey } from "@/locales";
 import {
-  MAIN_CATEGORIES,
-  MORE_CATEGORIES,
+  CATEGORY_ORDER,
   connectedSummary,
   mainSections,
   type PluginFilter,
@@ -20,11 +21,10 @@ import {
 } from "@/lib/plugins-model";
 import { PluginIcon, PluginStatusLabel } from "./PluginParts";
 
-/** The chips in the row, in order (the reference's); more categories sit
- * under More. Kinds and sources are not chips: they are the small type
- * filter at the end of the row. */
-export const MAIN_CHIPS: PluginFilter[] = ["all", ...MAIN_CATEGORIES];
-export const MORE_CHIPS: PluginFilter[] = [...MORE_CATEGORIES];
+/** The row: All, then one Category menu that holds every category in the
+ * section order. Kinds and sources are not in the row. */
+export const MAIN_CHIPS: PluginFilter[] = ["all"];
+export const CATEGORY_CHIPS: PluginFilter[] = [...CATEGORY_ORDER];
 export const TYPE_FILTERS: PluginTypeFilter[] = ["any", "apps", "mcp", "skills"];
 
 const FILTER_KEY: Record<string, LocaleKey> = {
@@ -69,7 +69,7 @@ export function sectionTitle(section: Pick<PluginSection, "id">, sourceLabel?: (
   return t(SECTION_KEY[section.id] ?? "connectApps.section.other");
 }
 
-/** A small menu under a pill: More categories, or the type filter. */
+/** A small menu under a pill: the Category menu. */
 function Dropdown<T extends string>({ label, active, options, value, onSelect, labelOf, align = "left", icon, ariaLabel }: {
   label: string;
   active: boolean;
@@ -149,8 +149,6 @@ export interface ConnectAppsViewProps {
   extraConnected?: number;
   /** "Bot templates", beside the search (absent: no button) */
   sourceLabel?: (source: string) => string;
-  refreshing: boolean;
-  onRefresh: () => void;
   onClose: () => void;
   onOpenManage: () => void;
   onOpenItem: (item: PluginItem) => void;
@@ -166,13 +164,13 @@ export interface ConnectAppsViewProps {
 
 export function ConnectAppsView(props: ConnectAppsViewProps) {
   const { items, loading, search, onSearch, filter, onFilter, type = "any", onType, extraSources = [], extraConnected = 0, sourceLabel,
-    refreshing, onRefresh, onClose, onOpenManage, onOpenItem, renderAction, renderBelow, notices, scope } = props;
+    onClose, onOpenManage, onOpenItem, renderAction, renderBelow, notices, scope } = props;
   const [limit, setLimit] = useState(PAGE);
   useEffect(() => setLimit(PAGE), [filter, type, search]);
 
   const sections = mainSections(items, search, filter, type, extraSources);
   const summary = connectedSummary(items, extraConnected);
-  const moreActive = MORE_CHIPS.includes(filter);
+  const categoryActive = CATEGORY_CHIPS.includes(filter);
   const single = sections.length === 1 && (search.trim() !== "" || filter !== "all" || type !== "any");
   const viewAll = (section: PluginSection) => {
     if (!section.filter) return;
@@ -185,9 +183,6 @@ export function ConnectAppsView(props: ConnectAppsViewProps) {
       <header className="flex items-start justify-between gap-4 px-6 pb-3 pt-6 sm:px-8">
         <h2 id="plugins-title" className="text-[17px] font-semibold leading-6 tracking-[-0.008em] text-ink">{t("connectApps.title")}</h2>
         <div className="flex items-center gap-1">
-          <button type="button" onClick={onRefresh} disabled={refreshing} className="ui-icon-button disabled:opacity-50" title={t("connectors.refreshTitle")} aria-label={t("connectors.refreshTitle")}>
-            <RefreshCw size={17} className={cn(refreshing && "animate-spin")} />
-          </button>
           <button
             type="button"
             data-tour="apps-close"
@@ -250,9 +245,10 @@ export function ConnectAppsView(props: ConnectAppsViewProps) {
             </button>
           ))}
           <Dropdown
-            label={moreActive ? filterLabel(filter, sourceLabel) : t("connectApps.filter.more")}
-            active={moreActive}
-            options={MORE_CHIPS}
+            label={categoryActive ? filterLabel(filter, sourceLabel) : t("connectApps.filter.category")}
+            active={categoryActive}
+            options={CATEGORY_CHIPS}
+            ariaLabel={t("connectApps.filter.category")}
             value={filter}
             onSelect={onFilter}
             labelOf={(chip) => filterLabel(chip, sourceLabel)}

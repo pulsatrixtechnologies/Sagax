@@ -5,7 +5,7 @@ import { ConnectedWorkspacesSettings } from "./ConnectedWorkspacesSettings";
 import { RemoteComputerSection } from "./RemoteComputerSection";
 import { CustomDomainSettings } from "./CustomDomainSettings";
 import { PerspicaxOrgSettings } from "./PerspicaxOrgSettings";
-import { JoinPerspicaxCard } from "./JoinPerspicaxCard";
+import { ConnectServerWizard } from "./ConnectServerWizard";
 import { OrgDirectory, type OrgPersonView, type PendingInviteView } from "./OrgDirectory";
 import type { OrgRole } from "../../server/org-directory.ts";
 import { isPerspicaxOrg, type PerspicaxOrg } from "@/lib/perspicax-org";
@@ -147,16 +147,15 @@ export function OrganizationSettings() {
   // leave, or the active remote-client connection and its disconnect action).
   // Waits for the organization load so it settles into one shape instead of
   // swapping components once the load resolves.
-  const joinOrConnect = !orgReady ? null : showJoinOnly
-    ? <>
-        <JoinPerspicaxCard />
-        <RemoteComputerSection />
-      </>
-    : <>
-        {!remoteActive && <JoinPerspicaxCard />}
-        <ConnectedWorkspacesSettings />
-        {remoteActive && <RemoteComputerSection />}
-      </>;
+  // 2026-10-14: one "Connect to a server" card holds the three ways in
+  // (Perspicax, a Sagax server's link, another computer); open while
+  // nothing is connected yet. A desktop that is another computer's client
+  // keeps that connection's card, with Disconnect.
+  const joinOrConnect = !orgReady ? null : <>
+    {!showJoinOnly && <ConnectedWorkspacesSettings />}
+    {remoteActive && <RemoteComputerSection />}
+    <ConnectServerWizard defaultOpen={showJoinOnly} />
+  </>;
   return <>
     {joinOrConnect}
     {directory}

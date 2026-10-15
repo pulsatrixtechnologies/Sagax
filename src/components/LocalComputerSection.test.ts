@@ -13,6 +13,7 @@ vi.mock("@/state/store", async (importOriginal) => {
 import {
   CloudComputersCard,
   LocalComputerSection,
+  LocalVmAutoStatus,
   LocalVmIdleTimeoutSetting,
   LocalVmInventoryCard,
   VpsComputersCard,
@@ -20,7 +21,11 @@ import {
   cloudComputerInventoryState,
   computerInventoryRequest,
   confirmComputerAction,
+  localVmAutoAction,
+  localVmAutoLabel,
+  localVmEnsurePlan,
   localVmInventoryState,
+  localVmResetPlan,
   parseLocalVmIdleTimeoutMinutes,
   reconcileCloudInventoryPayload,
   perBotLocalVmDeletePlan,
@@ -29,6 +34,7 @@ import {
   vpsComputerInventoryState,
   vpsComputerShortId,
   type CloudComputerInventoryInstance,
+  type LocalVmAutoState,
   type LocalVmInventoryInstance,
   type VpsComputerInventoryInstance,
 } from "./LocalComputerSection";
@@ -555,6 +561,96 @@ describe("Settings → Computers", () => {
     expect(titles).not.toContain("Cloud computers");
     expect(titles).toContain("Local VM");
     expect(titles).toContain("Setup");
+  });
+});
+
+describe("Local VM automatic care", () => {
+  const auto = (patch: Partial<LocalVmAutoState>): LocalVmAutoState => ({
+    phase: "idle",
+    step: null,
+    problem: null,
+    detail: null,
+    attempts: 0,
+    nextRetryAt: null,
+    stoppedByPerson: false,
+    ...patch,
+  });
+  const row = (props: Partial<Parameters<typeof LocalVmAutoStatus>[0]> = {}) =>
+    renderToStaticMarkup(createElement(LocalVmAutoStatus, {
+      auto: auto({ phase: "running" }),
+      perBot: false,
+      busy: false,
+      onEnsure: () => {},
+      onReset: () => {},
+      ...props,
+    }));
+
+  it("labels what the care is doing, and stays quiet when the badge says it", () => {
+    expect(localVmAutoLabel(auto({ phase: "starting", step: "image" }))).toBe("Downloading the desktop image…");
+    expect(localVmAutoLabel(auto({ phase: "starting", step: "start" }))).toBe("Starting the Local VM desktop…");
+    expect(localVmAutoLabel(auto({ phase: "checking" }))).toBe("Checking the Local VM…");
+    expect(localVmAutoLabel(auto({ phase: "stopped", stoppedByPerson: true }))).toBe("You stopped the Local VM: it stays down until you start it.");
+    expect(localVmAutoLabel(auto({ phase: "waiting", nextRetryAt: Date.now() + 30_000 }))).toMatch(/^New automatic attempt at /);
+    expect(localVmAutoLabel(auto({ phase: "running" }))).toBeNull();
+    expect(localVmAutoLabel(auto({ phase: "idle" }))).toBeNull();
+  });
+
+  it("says each problem in the person's language", () => {
+    expect(localVmAutoLabel(auto({ phase: "problem", problem: "image_failed" }))).toBe("The desktop image could not be downloaded.");
+    expect(localVmAutoLabel(auto({ phase: "problem", problem: "no_runtime" }))).toBe("No container runtime is installed.");
+    setLocale("fr");
+    expect(localVmAutoLabel(auto({ phase: "problem", problem: "no_runtime" }))).toBe("Aucun moteur de conteneurs n'est installé.");
+    expect(localVmAutoLabel(auto({ phase: "starting", step: "container" }))).toBe("Création de la VM locale…");
+  });
+
+  it("offers the person's action only where one helps", () => {
+    expect(localVmAutoAction(auto({ phase: "stopped", stoppedByPerson: true }))).toBe("start");
+    expect(localVmAutoAction(auto({ phase: "problem", problem: "start_failed" }))).toBe("retry");
+    expect(localVmAutoAction(auto({ phase: "waiting", nextRetryAt: Date.now() + 30_000 }))).toBe("retry");
+    expect(localVmAutoAction(auto({ phase: "starting", step: "image" }))).toBeNull();
+    expect(localVmAutoAction(auto({ phase: "running" }))).toBeNull();
+  });
+
+  it("starts without asking and resets only once confirmed", () => {
+    const ensure = localVmEnsurePlan();
+    expect(ensure.confirmation).toBeNull();
+    expect(ensure.request).toEqual([
+      "/api/local-computer/ensure",
+      { method: "POST", headers: { "content-type": "application/json" }, body: '{"reason":"person"}' },
+    ]);
+
+    const confirm = vi.fn(() => true);
+    const reset = confirmComputerAction(localVmResetPlan(false), confirm);
+    expect(reset).toEqual([
+      "/api/local-computer/reset",
+      { method: "POST", headers: { "content-type": "application/json" }, body: '{"confirm":true}' },
+    ]);
+    expect(confirm).toHaveBeenCalledWith("Delete this computer's Local VM and let Sagax create it again? Files saved on this computer are kept.");
+    expect(confirmComputerAction(localVmResetPlan(true), () => false)).toBeNull();
+    expect(confirm).toHaveBeenCalledTimes(1);
+  });
+
+  it("renders the care line only where the desktop app runs it", () => {
+    expect(row({ auto: null })).toBe("");
+    const done = row();
+    expect(done).not.toContain("data-local-vm-auto-action");
+    expect(done).toContain('data-local-vm-reset');
+    expect(done).toContain("Reset");
+
+    const failed = row({ auto: auto({ phase: "problem", problem: "image_failed", detail: "registry timeout" }) });
+    expect(failed).toContain("The desktop image could not be downloaded.");
+    expect(failed).toContain("registry timeout");
+    expect(failed).toContain('data-local-vm-auto-action="retry"');
+    expect(failed).toContain("Retry now");
+
+    const stopped = row({ auto: auto({ phase: "stopped", stoppedByPerson: true }) });
+    expect(stopped).toContain('data-local-vm-auto-action="start"');
+    expect(stopped).toContain("Start");
+    expect(stopped).toContain("You stopped the Local VM: it stays down until you start it.");
+
+    const working = row({ auto: auto({ phase: "starting", step: "container" }), busy: true });
+    expect(working).toContain("Creating the Local VM…");
+    expect(working).toContain("disabled");
   });
 });
 

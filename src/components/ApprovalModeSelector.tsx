@@ -84,10 +84,10 @@ export function approvalModeSelectionRequiresLocalDesktop(
 }
 
 /** How much this bot may do on its own. In the composer it is an icon
- * beside the message field that opens the full menu, the same in Simple and
- * Advanced mode. `wide` is the bot settings control: the full menu in
- * Advanced, the two stacked choices ("Ask me first", "Decide for me") in
- * Simple. */
+ * beside the message field that opens a menu: the five levels in Advanced,
+ * the same two choices as the bot settings ("Ask me first", "Decide for
+ * me") in Simple (JC, 2026-10-14). `wide` is the bot settings control: the
+ * full menu in Advanced, the two stacked choices in Simple. */
 export function ApprovalModeSelector({
   approvalMode,
   autoApprove,
@@ -163,7 +163,8 @@ export function ApprovalModeSelector({
   }, [open]);
 
   const CurrentIcon = current.Icon;
-  const triggerDisabled = disabled && !onManageCommandAllowlist;
+  // The allowlist is Advanced only: in Simple a busy bot greys the icon.
+  const triggerDisabled = disabled && !(advanced && onManageCommandAllowlist);
   const modesDisabled = disabled || requiresLocalDesktop;
   const allowlistAction = onManageCommandAllowlist && (
     <button
@@ -180,17 +181,18 @@ export function ApprovalModeSelector({
       {t("commandAllowlist.title")}
     </button>
   );
-  // Bot settings in Simple offer two choices and leave any other saved level
-  // untouched until the person picks one of them. Decide is absent when this
-  // engine has no auto mode (hiding, not a disabled row). The composer always
-  // shows the icon and the full menu below, whatever the mode.
+  // Simple offers two choices, in the bot settings and in the composer, and
+  // leaves any other saved level untouched until the person picks one of
+  // them. Decide is absent when this engine has no auto mode (hiding, not a
+  // disabled row). The five levels and the command allowlist stay in
+  // Advanced.
+  const canDecide = visibleOptions.some((option) => option.mode === "auto");
+  const known = mode === "ask" || (mode === "auto" && canDecide);
+  const choices = [
+    { mode: "ask" as const, label: t("approvalMode.simple.ask"), hint: t("approvalMode.simple.askHint") },
+    ...(canDecide ? [{ mode: "auto" as const, label: t("approvalMode.simple.decide"), hint: t("approvalMode.simple.decideHint") }] : []),
+  ];
   if (!advanced && wide) {
-    const canDecide = visibleOptions.some((option) => option.mode === "auto");
-    const known = mode === "ask" || (mode === "auto" && canDecide);
-    const choices = [
-      { mode: "ask" as const, label: t("approvalMode.simple.ask"), hint: t("approvalMode.simple.askHint") },
-      ...(canDecide ? [{ mode: "auto" as const, label: t("approvalMode.simple.decide"), hint: t("approvalMode.simple.decideHint") }] : []),
-    ];
     const choiceClass = cn(
       "flex min-w-0 flex-1 flex-col rounded-lg border px-2.5 py-1.5 text-left",
       "border-hairline/40 bg-inset hover:bg-raised disabled:cursor-not-allowed disabled:opacity-45",
@@ -261,7 +263,45 @@ export function ApprovalModeSelector({
             motion.className,
           )}
         >
-          {visibleOptions.map((option) => {
+          {!advanced && (
+            <>
+              {choices.map((choice) => {
+                const selected = known && mode === choice.mode;
+                const Icon = choice.mode === "ask" ? Hand : ShieldCheck;
+                return (
+                  <button
+                    key={choice.mode}
+                    type="button"
+                    role="menuitemradio"
+                    aria-checked={selected}
+                    disabled={modesDisabled}
+                    data-approval-choice={choice.mode}
+                    title={disabled ? t("approvalMode.busy") : requiresLocalDesktop ? t("approvalMode.customLocalOnly") : undefined}
+                    onClick={() => {
+                      if (modesDisabled) return;
+                      onSelect(choice.mode);
+                      setOpen(false);
+                    }}
+                    className={cn(
+                      "flex items-start gap-2 rounded-md px-2 py-1.5 text-left hover:bg-hover",
+                      modesDisabled && "cursor-not-allowed opacity-45 hover:bg-transparent",
+                    )}
+                  >
+                    <Icon size={16} className="mt-px shrink-0 text-ink" />
+                    <span className="flex min-w-0 flex-1 flex-col">
+                      <span className="flex items-center justify-between gap-3 text-[13px] leading-[18px] text-ink">
+                        {choice.label}
+                        {selected && <Check size={14} className="shrink-0" />}
+                      </span>
+                      <span className="text-[12px] leading-4 text-ink-tertiary">{choice.hint}</span>
+                    </span>
+                  </button>
+                );
+              })}
+              {!known && <p data-approval-custom className="px-2 py-1 text-[12px] leading-4 text-ink-secondary">{t("approvalMode.simple.custom")}</p>}
+            </>
+          )}
+          {advanced && visibleOptions.map((option) => {
             const selected = option.mode === mode;
             const Icon = option.Icon;
             // The organization turned Full off: shown, greyed, with why.
@@ -308,7 +348,7 @@ export function ApprovalModeSelector({
               </Fragment>
             );
           })}
-          {!visibleOptions.some((option) => option.mode === "full") && allowlistAction}
+          {advanced && !visibleOptions.some((option) => option.mode === "full") && allowlistAction}
         </div>
       )}
     </div>

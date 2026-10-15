@@ -48,6 +48,7 @@ import { cacheUntilConfigChanges,
   withInstanceCli,
   WORKSPACE_CREDENTIAL_ENV,
   liveSettingsFor,
+  liveCallKey,
   LIVE_IDLE_MINUTES_DEFAULT,
   mergeOpenCodeProviderKeys,
   openCodeProviderKeys,
@@ -2173,8 +2174,16 @@ describe("live settings", () => {
   });
   it("reports saved values and never the key", () => {
     const settings = liveSettingsFor({ live: { key: "sk-test", voice: "sol", readTypedReplies: false, idleMinutes: 12 } } as AppConfig, {});
-    expect(settings).toEqual({ enabled: false, configured: true, voice: "sol", readTypedReplies: false, idleMinutes: 12 });
+    expect(settings).toEqual({ enabled: false, configured: true, separateKey: true, voice: "sol", readTypedReplies: false, idleMinutes: 12 });
     expect(JSON.stringify(settings)).not.toContain("sk-test");
+  });
+  it("uses the OpenAI key when no separate Live calls key is saved (one OpenAI key, 2026-10-14)", () => {
+    const shared = { openai: { key: "sk-openai" } } as AppConfig;
+    expect(liveSettingsFor(shared, {})).toEqual({ enabled: false, configured: true, voice: "", readTypedReplies: true, idleMinutes: 5 });
+    expect(liveCallKey(shared)).toBe("sk-openai");
+    // an older install's separate key still wins until it is removed
+    expect(liveCallKey({ openai: { key: "sk-openai" }, live: { key: " sk-live " } } as AppConfig)).toBe("sk-live");
+    expect(liveCallKey({} as AppConfig)).toBe("");
   });
   it("accepts idle minutes from 1 to 60 only", () => {
     expect(() => parseConfigPatch({ live: { idleMinutes: 0 } })).toThrow();

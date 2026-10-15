@@ -41,6 +41,7 @@ import { splitTranscriptCitations, type CitationAttachment } from "@/lib/citatio
 import { LocalComputerAutoWarning } from "./LocalComputerAutoWarning";
 import { PlaceChip } from "./PlaceChip";
 import { effectivePlace } from "@/lib/place";
+import { useAdvancedMode } from "@/lib/interface-mode";
 import { FullAccessWarning } from "./FullAccessWarning";
 import { ApprovalModeSelector } from "./ApprovalModeSelector";
 import { ModelPicker } from "./ModelPicker";
@@ -167,6 +168,7 @@ export function Composer({
   const sendKey = useSendKey();
   const sendLabel = sendKeyLabel(sendKey);
   const remoteClient = window.ogb?.remoteClient?.active === true;
+  const advanced = useAdvancedMode();
   // Unified target: a 1:1 bot thread or a room. In a room the @ picker
   // offers members plus @everyone; explicit mentions override the room's
   // configured default responder.
@@ -697,7 +699,9 @@ export function Composer({
     }
     dispatch({ type: "updateTask", botId: modeBot.id, threadId: modeBot.threadId, patch: { approvalMode: mode } });
   };
-  // An icon left of the message field, the same in Simple and Advanced.
+  // An icon left of the message field. Its menu holds this conversation's
+  // level (the bot settings hold the bot's default): two choices in Simple,
+  // the five levels in Advanced (ApprovalModeSelector).
   const approvalControl = modeBot && approvalEngine && !remoteClient ? (
     <ApprovalModeSelector
       approvalMode={modeBot.approvalMode}
@@ -1157,10 +1161,14 @@ export function Composer({
               >
                 <Paperclip size={17} />
               </button>
-              {group && !group.dm && (
+              {/* /goal starts the mode (the "/" menu); the chip appears only
+                  while it is on, says so, and turns it off (JC, 2026-10-14:
+                  one entry, the chip only when it shows the current goal). */}
+              {group && !group.dm && effectiveChannelMode === "goal" && (
                 <button
                   type="button"
-                  aria-pressed={effectiveChannelMode === "goal"}
+                  data-composer-goal
+                  aria-pressed
                   aria-label={t("composer.goal.aria")}
                   title={t("composer.goal.title")}
                   onClick={() => {
@@ -1176,21 +1184,19 @@ export function Composer({
                       });
                       return;
                     }
-                    setChannelMode((current) => current === "goal" ? "chat" : "goal");
+                    setChannelMode("chat");
                   }}
-                  className={cn(
-                    "flex h-8 items-center gap-1.5 whitespace-nowrap rounded-full border px-3 text-[13px] transition-colors",
-                    effectiveChannelMode === "goal"
-                      ? "border-accent/35 bg-accent/10 text-accent"
-                      : "border-hairline/20 bg-transparent text-ink-secondary hover:bg-raised hover:text-ink",
-                  )}
+                  className="flex h-8 items-center gap-1.5 whitespace-nowrap rounded-full border border-accent/35 bg-accent/10 px-3 text-[13px] text-accent transition-colors"
                 >
                   <Target size={14} aria-hidden="true" />
-                  {effectiveChannelMode === "goal" ? "/goal" : t("composer.goal.chip")}
+                  /goal
                 </button>
               )}
               {approvalControl}
-              {modeBot && !remoteClient && (
+              {/* Where this conversation works (the bot settings hold the
+                  bot's Works on). Simple hides it like Works on, unless
+                  this conversation has a pinned place to take back. */}
+              {modeBot && !remoteClient && (advanced || Boolean(composerTask?.surface)) && (
                 <PlaceChip
                   bot={modeBot}
                   task={composerTask}

@@ -35,6 +35,7 @@ describe("data helpers", () => {
   it("copies as TSV and Markdown without breaking the shape", () => {
     expect(tsv(["a", "b"], [["x\ty", null], [1, true]])).toBe("a\tb\nx y\t\n1\ttrue");
     expect(markdownTable(["a|b", "c"], [["x|y", "z\nw"]])).toBe("| a\\|b | c |\n| --- | --- |\n| x\\|y | z w |");
+    expect(markdownTable(["a\\|b"], [["c\\"]])).toBe("| a\\\\\\|b |\n| --- |\n| c\\\\ |");
   });
 
   it("gives numbers narrow columns and text wide ones", () => {

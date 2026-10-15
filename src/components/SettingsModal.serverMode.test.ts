@@ -106,12 +106,15 @@ describe("Settings in server mode", () => {
     expect(render()).toContain("THIS_COMPUTER_MARKER");
   });
 
-  it("Remote access keeps the server's pairing card and shows this computer's part as managed", () => {
+  // 2026-10-14: Pair devices is hidden (devices sign in with the
+  // organization): an old link to it opens General, in French as well.
+  it("opens General for an old Pair devices link, with no pairing card", () => {
     fixture.section = "companion";
     fixture.serverMode = { active: true, name: "Example", origin: "https://bot.example.test" };
     const html = render();
-    expect(html).toContain("SERVER_PAIRING_CARD_MARKER");
-    expect(html).toContain("Managed by your organization");
+    expect(html).toContain('<option value="general" selected="">General</option>');
+    expect(html).not.toContain('<option value="companion"');
+    expect(html).not.toContain("SERVER_PAIRING_CARD_MARKER");
     expect(html).not.toContain("LOCAL_COMPANION_MARKER");
   });
 
@@ -119,6 +122,8 @@ describe("Settings in server mode", () => {
     setLocale("fr");
     fixture.section = "companion";
     fixture.serverMode = { active: true, name: "Example", origin: "https://bot.example.test" };
-    expect(render()).toContain("Géré par votre organisation");
+    const html = render();
+    expect(html).toContain('<option value="general" selected="">Général</option>');
+    expect(html).not.toContain("Jumeler des appareils");
   });
 });

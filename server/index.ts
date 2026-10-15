@@ -204,10 +204,12 @@ import {
   poolLocalVmTarget,
   SHARED_LOCAL_VM_TARGET,
   setupCommands,
+  startContainerRuntime,
   VM_WORKSPACE_GUEST,
   type LocalVmTarget,
   type Runtime,
 } from "./container-computer.ts";
+import { LocalVmAutoStarter } from "./local-vm-auto.ts";
 import { attachForTurn, deliveredCopy, saveBotAttachment } from "./bot-attachment.ts";
 import {
   cacheUntilConfigChanges,
@@ -268,6 +270,7 @@ import {
   CLAUDE_API_INSTANCE,
   liveCallsEnabled,
   liveSettingsFor,
+  liveCallKey,
   mergeOpenCodeProviderKeys,
   openCodeProviderKeys,
 } from "./config.ts";
@@ -858,6 +861,7 @@ import { diskSpace, folderBytes } from "./disk-usage.ts";
 import { autoReviewThreadMode, createBotSettingsStore, hostTimeZone } from "./bot-settings.ts";
 import { turnClockEnabled, turnTimeZone, withTurnClock } from "./turn-clock.ts";
 import { createComputerInputRoutes, createVmScreenshotRoute } from "./routes/computer-input.ts";
+import { createLocalComputerAutoRoutes } from "./routes/local-computer-auto.ts";
 import { createUserPreferenceRoutes } from "./routes/user-preferences.ts";
 import { createUserPreferenceStore, preferencesFrameAllowed, type PersonPreferences } from "./user-preferences.ts";
 import { createViewerBotOverrideRoutes } from "./routes/viewer-bot-overrides.ts";
@@ -969,6 +973,7 @@ import { withDesktopModelPerson } from "./desktop-model-grant.ts";
 import { setDesktopInjectModels } from "./drivers/local-inject.ts";
 import { handleDesktopBridgeMcp } from "./desktop-bridge-tools.ts";
 import { cloudOnlyBot } from "./cloud-only-bots.ts";
+import { FLOW_TOOLS_MCP_NAME } from "./flow-tools.ts";
 import { AUTO_COMPUTER_MCP_NAME, COMPUTER_SELECT_TOOL, autoComputerGuidance, autoComputerReason, autoComputerToolRefusal, selectAutoComputer, type AutoComputerState, type FixedWorksOn } from "./auto-computer.ts";
 import { attachDesktopTunnel, createBridgeAudit, createDesktopBridgeRoutes } from "./desktop-bridge-routes.ts";
 import { DesktopTunnels, startEgressProxy, type EgressProxy } from "./desktop-egress.ts";
@@ -4360,6 +4365,17 @@ function workplaceIntegration(botId: string, threadId: string, generation: strin
   };
 }
 
+/** Pulsatrix Flow's compute tools ("sagax-flow", server/flow-tools.ts): the
+ * same stdio proxy, answering in its own process. Pure functions of their
+ * arguments, so it carries no capability at all. */
+function flowToolsIntegration() {
+  return {
+    command: process.execPath,
+    args: [SPAWNED_PROXIES.userSandbox],
+    env: { ...AGENTS_NODE_FLAG, SAGAX_TOOL_SERVER: FLOW_TOOLS_MCP_NAME },
+  };
+}
+
 /** A turn's Works on as computer_select reads it: Auto, or the fixed place. */
 function turnWorksOn(plan: { computer: ReturnType<typeof resolveSurface>["computer"]; browser: boolean; pinned: ReturnType<typeof resolveSurface>["pinned"] }, forced: boolean): { auto: boolean; fixed?: FixedWorksOn } {
   if (forced) return { auto: false, fixed: "cloud" };
@@ -4753,6 +4769,9 @@ async function perspicaxTurnIntegration(input: {
       },
     };
   }
+  // Pulsatrix Flow's compute (server/flow-tools.ts) rides with the
+  // Perspicax tools whose data it works on.
+  if (Object.keys(custom).length && !taken.has(FLOW_TOOLS_MCP_NAME)) custom[FLOW_TOOLS_MCP_NAME] = flowToolsIntegration();
   if (!plan.unavailable.length) return { custom, prompt: "" };
   const lines = plan.unavailable.map((entry) => entry.reason === "no_delegation"
     ? `Perspicax tools of profile "${entry.name}" are not available in this routine run: ${PERSPICAX_UNAVAILABLE_WHY.no_delegation}.`
@@ -11225,6 +11244,61 @@ void (async () => {
   // Startup inspection is a backstop, not a reason to keep the app offline.
   // The Settings inventory remains available for a later explicit retry.
 });
+
+/** The desktop app's own server keeps its Local VM up by itself
+ * (server/local-vm-auto.ts): at launch, when a bot needs it, and after a
+ * failure with a growing delay. Never on an organization server (the Local
+ * VM there lives on each person's computer, electron/local-vm.mjs), a
+ * Cloud home, or a self-hosted server without the desktop app. */
+const localVmAuto = DESKTOP_MANAGED && !CLOUD_HOME && IDENTITY.kind !== "perspicax" && !process.env.SAGAX_LOCAL_VM_TEST_NAMESPACE
+  ? new LocalVmAutoStarter({
+    mode: () => localVmMode(cfg),
+    allowed: () => managedPolicy.computerAllowed("localVm") && !hostComputerRefusal(),
+    status: () => containerComputerStatus(undefined, undefined, SHARED_LOCAL_VM_TARGET),
+    startRuntime: (status) => startContainerRuntime(status.runtime),
+    prepareImage: async () => {
+      if (localVmImageBusy || localVmModeChangeBusy) throw new Error("another Local VM setup action is still running");
+      localVmImageBusy = true;
+      try { return await containerComputerAction("pull", undefined, undefined, SHARED_LOCAL_VM_TARGET); } finally { localVmImageBusy = false; }
+    },
+    create: () => localVmAutoLifecycle("run"),
+    start: () => localVmAutoLifecycle("start"),
+    remove: () => localVmAutoLifecycle("remove"),
+    busy: () => localVmImageBusy || localVmModeChangeBusy || localVmLifecycleBusy.has(SHARED_LOCAL_VM_TARGET.key),
+    wait: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+    now: () => Date.now(),
+    schedule: (run, ms) => { const timer = setTimeout(run, ms); timer.unref?.(); return timer; },
+    cancel: (handle) => clearTimeout(handle as NodeJS.Timeout),
+    desktopWaitMs: LOCAL_VM_DESKTOP_WAIT_MS,
+  })
+  : null;
+
+/** One lifecycle step of the automatic start, with the same guards as the
+ * Settings routes: never while a bot holds the desktop or a setup runs. */
+async function localVmAutoLifecycle(action: "run" | "start" | "remove") {
+  const target = SHARED_LOCAL_VM_TARGET;
+  if (localVmImageBusy || localVmModeChangeBusy || localVmLifecycleBusy.has(target.key)) {
+    throw new Error("another Local VM setup action is still running");
+  }
+  if (action === "remove" && (localVmLeaseFor(target).current(localVmOwnerBusy) || localVmActiveThreads.has(target.key))) {
+    throw new Error("the Local VM is being used by a bot");
+  }
+  localVmLifecycleBusy.add(target.key);
+  try {
+    const status = await containerComputerAction(action, undefined, undefined, target);
+    if (action === "remove") localVmIdleFor(target).cancel();
+    else {
+      localVmSeen.add(target.key);
+      localVmIdleFor(target).touch();
+    }
+    return status;
+  } finally {
+    localVmLifecycleBusy.delete(target.key);
+  }
+}
+
+// At launch: bring the Local VM up in the background.
+if (localVmAuto) setTimeout(() => { void localVmAuto.ensure("launch"); }, 3_000).unref?.();
 
 async function localVmInventoryPayload() {
   const runtime = await containerRuntimeStatus();
@@ -21492,6 +21566,8 @@ async function localVmPayload(target: LocalVmTarget, auth: RequestAuth) {
     max_instances: localVmMaxInstances(cfg),
     // The UI hides the per-bot choice: one environment per person instead.
     organization: IDENTITY.kind === "perspicax",
+    // The automatic start on the desktop app (null elsewhere).
+    auto: localVmAuto?.snapshot() ?? null,
   };
 }
 
@@ -21515,6 +21591,9 @@ async function readyLocalVmForTurn(botId: string, target: LocalVmTarget, isCurre
     noteLocalVmSeen(target, status);
     if (!isCurrent()) return status;
     const action = localVmWakeAction(status);
+    // Not something a turn may fix itself (image missing, older image,
+    // runtime stopped): the automatic start takes it in the background.
+    if (!status.ready && !action && target.key === SHARED_LOCAL_VM_TARGET.key) void localVmAuto?.ensure("bot");
     if (status.ready || !action || !status.runtime) return status;
     // An organization server never creates a desktop on itself (the claim is
     // refused too; this keeps a turn from even starting one).
@@ -22943,6 +23022,38 @@ ROUTES.push(createVmScreenshotRoute<BotRecord>({
     localVmIdleFor(target).touch();
     return containerComputerFrame(undefined, undefined, target);
   },
+}));
+ROUTES.push(createLocalComputerAutoRoutes({
+  localVmAuto,
+  hostRefusal: () => hostComputerRefusal(),
+  setupBusy: () => localVmImageBusy || localVmModeChangeBusy || localVmLifecycleBusy.size > 0,
+  botUsesLocalVm: () => localVmActiveThreads.size > 0,
+  botHoldsLease: (targets) => targets.some((target) => localVmLeaseFor(target).current(localVmOwnerBusy)),
+  listTargets: async () => {
+    const targets: LocalVmTarget[] = [SHARED_LOCAL_VM_TARGET];
+    const runtime = await containerRuntimeStatus();
+    if (runtime.runtime && runtime.daemonUp) {
+      const perBot = await discoverExistingPerBotLocalVms(store.bots, runtime.runtime).catch(() => []);
+      targets.push(...perBot.map(({ target }) => target));
+    }
+    return targets;
+  },
+  withLifecycleBusy: async (targets, run) => {
+    for (const target of targets) localVmLifecycleBusy.add(target.key);
+    try {
+      await run();
+    } finally {
+      for (const target of targets) localVmLifecycleBusy.delete(target.key);
+    }
+  },
+  removeVm: async (target) => {
+    const status = await containerComputerStatus(undefined, undefined, target);
+    // A container Sagax did not create is left alone.
+    if (status.container === "missing" || !status.managed) return;
+    await containerComputerAction("remove", undefined, undefined, target);
+    localVmIdleFor(target).cancel();
+  },
+  sharedPayload: (auth) => localVmPayload(SHARED_LOCAL_VM_TARGET, auth),
 }));
 ROUTES.push(createComputerInputRoutes<BotRecord>({
   bot: (id) => store.bot(id) ?? undefined,
@@ -28034,7 +28145,7 @@ const liveCalls = new LiveCallController({
     return task.activity === "waiting-on-you" ? "waiting" : "working";
   },
   broadcast: (frame) => broadcast(frame, { adminOnly: true }),
-  settings: () => ({ key: cfg.live?.key ?? "", ...liveSettingsFor(cfg) }),
+  settings: () => ({ key: liveCallKey(cfg), ...liveSettingsFor(cfg) }),
   createSession: ({ key, sdp, botId, threadId, voice }) => {
     // Defense in depth: no OpenAI session while Live calls are off (the routes already 404).
     if (!liveCallsEnabled()) throw new Error("Live calls are not available on this server.");
@@ -37537,7 +37648,10 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         if (action === "run" || action === "start") {
           localVmSeen.add(SHARED_LOCAL_VM_TARGET.key);
           localVmIdleFor(SHARED_LOCAL_VM_TARGET).touch();
+          localVmAuto?.personStarted();
         }
+        // The person stopped it: nothing restarts it by itself this session.
+        if (action === "stop") localVmAuto?.personStopped();
         if (action === "stop" || action === "remove") localVmIdleFor(SHARED_LOCAL_VM_TARGET).cancel();
         return json(res, 200, {
           ...localVmViewerStatus(status, auth),

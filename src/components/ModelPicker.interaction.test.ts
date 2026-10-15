@@ -882,11 +882,14 @@ describe("the composer's model menu (2026-10-12)", () => {
     expect(html).not.toContain("data-model-menu");
   });
 
-  it("carries the model's settings below the list, its effort as Effort ›, Advanced only", () => {
+  // JC, 2026-10-14: no Model › (the provider submenus list the same models)
+  // and no Context line.
+  it("carries the model's settings below the list, its effort as Effort ›, without Model › or Context, Advanced only", () => {
     fixture.instances = [{ ...signedIn(), capabilities: { withholdsHostTools: true, effortLevels: ["low", "high"] } }];
     const opened = open(bot("claude", "claude-opus-5-5"), composer);
     expect(opened.html).toContain("data-model-settings-effort");
-    expect(opened.html).toContain("data-model-settings-model");
+    expect(opened.html).not.toContain("data-model-settings-model");
+    expect(opened.html).not.toContain("data-model-settings-context");
     expect(settings(opened)!.props.effort!.levels).toEqual(["low", "high", "ultracode"]);
   });
 
@@ -943,7 +946,6 @@ describe("the composer's model menu (2026-10-12)", () => {
     expect(folded.current).toBe(true);
     const panel = settings(opened)!.props;
     expect(panel.fast!.on).toBe(true);
-    expect(panel.contextWindow).toBe(256_000);
     panel.fast!.onToggle();
     expect(fixture.dispatch).toHaveBeenLastCalledWith(expect.objectContaining({ selection: { instanceId: "grok", model: "grok-4.7" } }));
     // the menu stays open on a switch

@@ -94,14 +94,15 @@ describe("RoutinesSection", () => {
     expect(markup).toContain("No schedules yet.");
   });
 
-  // The bot panel lists each routine with its name, when it runs, and a
-  // pause switch. The instruction opens in the detail. Run logs stay separate.
-  it("renders each routine's name with its pause switch", () => {
+  // The bot panel lists each routine with its name and when it runs. Pause,
+  // Resume, the run logs and Delete live on the routine's own page.
+  it("renders each routine's name without a switch on the row", () => {
     const markup = render([activeRoutine, pausedRoutine], []);
     expect(markup).toContain("Morning brief");
     expect(markup).toContain("Weekly digest");
-    expect(markup).toContain('aria-label="Pause"');
-    expect(markup).toContain('aria-label="Resume"');
+    expect(markup).not.toContain('aria-label="Pause"');
+    expect(markup).not.toContain('aria-label="Resume"');
+    expect(markup).not.toContain('role="switch"');
   });
 
   it("shows when an enabled routine runs, and marks a disabled one paused", () => {
@@ -116,11 +117,14 @@ describe("RoutinesSection", () => {
     expect(markup.indexOf("Morning brief")).toBeLessThan(markup.indexOf("Weekly digest"));
   });
 
-  it("offers a new schedule and the bot's run logs from the header", () => {
+  it("keeps one action in the header (new schedule); the run logs move to the routine's page", () => {
     const markup = render([activeRoutine], [finishedRun]);
     expect(markup).toContain('aria-label="Create schedule"');
-    expect(markup).toContain('aria-label="Run logs"');
+    expect(markup).not.toContain('aria-label="Run logs"');
     expect(markup).not.toContain("Next ");
+    const source = readFileSync(new URL("./RoutinesSection.tsx", import.meta.url), "utf8");
+    const detail = source.slice(source.indexOf("if (detail)"), source.indexOf("return <div className=\"flex flex-col gap-3\">"));
+    for (const needle of ["RunNowButton", "botPanel.routines.pause", "botPanel.routines.edit", "data-routine-logs", "section: \"logs\"", "deleteRoutine"]) expect(detail).toContain(needle);
   });
 
   it("does not print the viewer's name twice when they own the routine and it runs as them", () => {

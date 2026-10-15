@@ -559,7 +559,8 @@ try {
       await browser("click", header + " .ag-header-cell-label");
       await until(async () => await evaluate(`${cell(0, "order.id")}?.textContent === '1'`), "Clearing sort did not restore source order");
       const headerWidth = await evaluate(`document.querySelector(${JSON.stringify(header)}).getBoundingClientRect().width`);
-      await drag(`document.querySelector(${JSON.stringify(header + " .ag-header-cell-resize")})`, 70, 0);
+      // `header` is a constant with double quotes only, so a single-quoted literal holds it.
+      await drag(`document.querySelector('${header} .ag-header-cell-resize')`, 70, 0);
       assert((await evaluate(`document.querySelector(${JSON.stringify(header)}).getBoundingClientRect().width`)) > headerWidth + 60, "Native column drag did not resize the column");
       const setFilter = async (value: string, column = "All columns") => {
         await click("Filter");
@@ -693,7 +694,7 @@ try {
       } catch (error) {
         chatFailure = error;
         res.writeHead(500, { "content-type": "application/json" });
-        res.end(JSON.stringify({ error: { message: String(error) } }));
+        res.end(JSON.stringify({ error: { message: "Data chat fixture failed" } }));
       }
     });
     await new Promise<void>((resolve) => upstream.listen(0, "127.0.0.1", resolve));

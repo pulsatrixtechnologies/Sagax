@@ -39,8 +39,13 @@ const ROWS: Record<KeyRowId, { section: ConfigSection; nameKey: LocaleKey; test?
   openaiCompat: { section: "openaiCompat", nameKey: "providerKeys.openaiCompat", test: "openaiCompat", saved: (c) => c.openaiCompat?.configured ?? false },
   opencodeGo: { section: "opencodeGo", nameKey: "providerKeys.opencode", saved: (c) => (c.opencodeGo?.configured ?? false) || (c.opencodeGo?.providerKeys?.length ?? 0) > 0 },
 };
-/** The keys most people need: the big model providers and the voices. */
-export const MAIN_KEY_ROWS = ["anthropic", "openai", "xai", "elevenlabs", "fishAudio"] as const satisfies readonly KeyRowId[];
+/** The keys most people need: the big model providers. The voice keys
+ * (ElevenLabs, Fish Audio) are managed in the Voice section only since
+ * 2026-10-14: one place each, not two on the same page. Grok voice uses the
+ * xAI key of this list. */
+export const MAIN_KEY_ROWS = ["anthropic", "openai", "xai"] as const satisfies readonly KeyRowId[];
+/** Keys the Voice section opens (the same dialog), never listed here. */
+export const VOICE_KEY_ROWS = ["elevenlabs", "fishAudio"] as const satisfies readonly KeyRowId[];
 /** Rarer keys, under "More providers" until one is saved: a saved key is
  * always in the main list, never hidden. */
 export const MORE_KEY_ROWS = ["openrouter", "mistral", "openaiCompat", "opencodeGo"] as const satisfies readonly KeyRowId[];

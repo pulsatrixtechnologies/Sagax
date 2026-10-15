@@ -1,7 +1,7 @@
 // Permissions: how autonomously this bot acts: the approval level (ask /
 // auto / full / custom), review-routine approvals, whether it asks before
-// contacting other bots, and whether it is its person's Primary Bot
-// (formerly Chief of Staff). Moved from SettingsPanel.tsx (Chief of Staff ~720-755,
+// contacting other bots, and, while it is its person's Primary Bot
+// (formerly Chief of Staff), that role. Moved from SettingsPanel.tsx (Chief of Staff ~720-755,
 // Ask-before-contacting ~757-776, Approval level ~990-1010, Review routine
 // approvals ~1013-1050).
 //
@@ -31,6 +31,7 @@ import { SwitchRow } from "../SettingsPrimitives";
 import { ManagedTeamsSettings } from "./ManagedTeamsSettings";
 import { ProposalStatus } from "./ProposalStatus";
 import { PaneSection } from "./PaneSection";
+import { AdvancedFold } from "./AdvancedFold";
 import type { useBotSettingsDerived } from "./useBotSettingsDerived";
 import { useBotEditor } from "./BotEditorContext";
 
@@ -93,7 +94,10 @@ export function PermissionsSection({
   const showTeams = canEditBotField(state.config, bot, "managedSections", { draft });
   const showOutbound = canEditBotField(state.config, bot, "outbound", { draft });
   // Simple keeps the approval level and hides the rest. Values stay.
-  const showPrimaryUi = advanced && showPrimary;
+  // Making a saved bot primary is in the bot's "..." menu (BotActionsMenu);
+  // this pane shows the role only while the bot holds it (to leave it and
+  // pick the teams it coordinates), and on a draft.
+  const showPrimaryUi = advanced && showPrimary && (draft || Boolean(bot.chiefOfStaff));
   const showContactUi = advanced && showContact;
   const showOutboundUi = advanced && showOutbound;
   if (!showPrimaryUi && !showApproval && !showContactUi && !showOutboundUi) return null;
@@ -155,16 +159,6 @@ export function PermissionsSection({
           orgFullAccess={orgFullAccess}
           onManageCommandAllowlist={advanced && !draft && ownerOrAdmin === true ? () => setCommandAllowlistTarget({ botId: bot.id, botName: bot.name }) : undefined}
         />
-        {!draft && advanced && approvalMode === "full" && trustedModesAvailable && <button
-          type="button" disabled={Boolean(bot.busy)}
-          className="mt-3 text-[13px] text-ink-secondary hover:text-ink hover:underline disabled:opacity-40"
-          onClick={() => { setAllThreads(true); setFullAccessTarget(bot.id); }}
-        >{t("botPanel.permissions.applyFull")}</button>}
-        {!draft && advanced && ownerOrAdmin === true && <button
-          type="button"
-          className="mt-3 block text-[13px] text-ink-secondary hover:text-ink hover:underline"
-          onClick={() => setCommandAllowlistTarget({ botId: bot.id, botName: bot.name })}
-        >{t("commandAllowlist.manage")}</button>}
       </PaneSection>}
 
       {commandAllowlistTarget && <CommandAllowlistDialog
@@ -172,7 +166,21 @@ export function PermissionsSection({
         {...commandAllowlistTarget}
         onClose={() => setCommandAllowlistTarget(null)}
       />}
-      {!draft && showOutboundUi && <OutboundControl key={bot.id} bot={bot} onChange={(outbound) => patch({ outbound })} />}
+      {/* Applying Full to every thread, the command list (also in the
+          approval menu) and sending on your behalf: folded. */}
+      {!draft && advanced && (showApproval || showOutboundUi) && <AdvancedFold id="permissions">
+        {showApproval && approvalMode === "full" && trustedModesAvailable && <button
+          type="button" disabled={Boolean(bot.busy)}
+          className="self-start text-[13px] text-ink-secondary hover:text-ink hover:underline disabled:opacity-40"
+          onClick={() => { setAllThreads(true); setFullAccessTarget(bot.id); }}
+        >{t("botPanel.permissions.applyFull")}</button>}
+        {showApproval && ownerOrAdmin === true && <button
+          type="button"
+          className="self-start text-[13px] text-ink-secondary hover:text-ink hover:underline"
+          onClick={() => setCommandAllowlistTarget({ botId: bot.id, botName: bot.name })}
+        >{t("commandAllowlist.manage")}</button>}
+        {showOutboundUi && <OutboundControl key={bot.id} bot={bot} onChange={(outbound) => patch({ outbound })} />}
+      </AdvancedFold>}
       <LocalComputerAutoWarning
         open={localAutoWarning !== null}
         onCancel={() => setLocalAutoWarning(null)}

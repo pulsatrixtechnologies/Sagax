@@ -20,7 +20,7 @@ vi.mock("@/lib/sidebar-hidden", async (original) => ({
 const { SidebarHiddenSettings } = await import("./SidebarHiddenSettings");
 
 describe("SidebarHiddenSettings", () => {
-  it("lists hidden bots and groups, never a closed person conversation", () => {
+  it("counts hidden bots and groups, never a closed person conversation, and points to the sidebar's list", () => {
     fixture.bots = [{ id: "maya", name: "Maya", messages: [] } as unknown as Bot];
     fixture.groups = [
       { id: "ops", name: "Ops", messages: [] } as unknown as Group,
@@ -32,8 +32,11 @@ describe("SidebarHiddenSettings", () => {
       { kind: "person", id: "pr_ada", at: 1 },
     ];
     const html = renderToStaticMarkup(createElement(SidebarHiddenSettings));
-    expect(html).toContain("Maya");
-    expect(html).toContain("Ops");
+    // the list itself is the Hidden row at the foot of the sidebar: one place
+    expect(html).toContain("Hidden (2)");
+    expect(html).toContain("foot of the sidebar");
+    expect(html).not.toContain("Maya");
+    expect(html).not.toContain("data-settings-hidden");
     expect(html).not.toContain("Ada Example");
   });
 

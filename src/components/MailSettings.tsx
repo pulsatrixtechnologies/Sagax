@@ -262,7 +262,8 @@ export function MailSettings() {
   };
 
   return (
-    <Card title={t("settings.mail.title")} subtitle={t("settings.mail.subtitle")}>
+    // A card of Settings > People since 2026-10-14 (it was its own page).
+    <Card collapsible cardId="people.mail" title={t("settings.mail.title")} subtitle={t("settings.mail.subtitle")}>
       {loading && <p role="status" className="flex items-center gap-2 text-[13px] text-ink-secondary"><Loader2 size={14} className="animate-spin" />{t("settings.mail.loading")}</p>}
       {organization && <MailOrganizationNote />}
       {status && (

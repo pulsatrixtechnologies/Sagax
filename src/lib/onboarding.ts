@@ -149,7 +149,9 @@ export function beatsFor(options: BeatOptions): BeatId[] {
   if (options.reel) beats.push("reel");
   beats.push("engines");
   if (options.dictation) beats.push("permissions");
-  beats.push("phone", "bot");
+  // No phone beat since 2026-10-14: devices sign in through the
+  // organization (OAuth), not with a pairing code from this app.
+  beats.push("bot");
   return beats;
 }
 

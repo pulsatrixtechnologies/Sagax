@@ -70,6 +70,10 @@ belong to the fixture's disposable workspace.
 
 ## What is real and what is substituted
 
+> 2026-10-14: the `CompanyBackupSettings` renderer was removed (unmounted
+> since 1130d0ef7, Sagax no longer offers company cloud backups). The
+> native side below remains; this recipe documents it as it was.
+
 The fixture uses real Electron, the production `electron/preload.cjs`, the
 `CompanyBackupSettings` renderer, and the native `company-backups.mjs` transfer
 module. It mounts the standalone backup panel, not the entire Settings shell.
@@ -146,7 +150,7 @@ retained evidence is separate from disposable workspace data.
 
 ```sh
 node --test electron/company-backups.node-test.mjs
-pnpm exec vitest run src/components/CompanyBackupSettings.test.ts src/components/WorkspaceBackupSettings.test.ts src/components/OrganizationSettings.test.ts
+pnpm exec vitest run src/components/WorkspaceBackupSettings.test.ts src/components/OrganizationSettings.test.ts
 ```
 
 The native unit fixtures additionally cover bounded responses, unsafe storage

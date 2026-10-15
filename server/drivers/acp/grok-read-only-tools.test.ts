@@ -14,6 +14,7 @@ const agents = { command: "node", args: ["/fixture/agents-proxy.mjs"], env: {} }
 const WRITES = [
   "cw_psa__write", "cw_psa__action", "cw_psa__update_ticket", "cw_psa__log_time",
   "memory_write", "memory_forget", "memory_promote", "memory_propose", "memory_feedback",
+  "memory_save", "memory_remove", "memory_suggestions",
   "sagax_send", "sagax_approve", "sagax_nudge", "sagax_routine_run",
   "flow_action", "ask_person", "api_upload", "run_command", "write_file",
 ];

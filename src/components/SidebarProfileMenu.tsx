@@ -307,7 +307,7 @@ export function profileMenuItems(input: {
       : []),
     {
       key: "shortcuts",
-      label: "Keyboard shortcuts",
+      label: t("sidebar.menu.shortcuts"),
       icon: <Keyboard size={18} />,
       trailing: input.shortcutsTrailing,
       onSelect: input.handlers.onShortcuts,

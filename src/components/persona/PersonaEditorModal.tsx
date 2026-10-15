@@ -1,13 +1,15 @@
-// The persona editor: one bot's whole profile in a modal shaped like
+// The bot editor ("Edit bot"): one bot's whole profile in a modal shaped like
 // Achievements (category-modal.ts: a left column of categories, one
-// scrolling pane, the close button top right). Each category shows the same
-// section the bot panel used to show under More (useBotSectionContent), so both
-// save through the same paths. A section this viewer may not change stays
-// in the list and says why (botSectionLock); nothing is hidden for lack of a
-// permission. Opened from the mascot's menu in the bot panel, and on
-// Appearance from a click on the bot's avatar (store action openPersonaEditor).
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
-import { ChevronRight, Lock, Search, X } from "lucide-react";
+// scrolling pane, the close button top right). The left column lists six
+// groups (lib/persona-sections.ts, JC 2026-10-14); a group's page shows its
+// sections one under the other, each the same body the bot panel used to
+// show (useBotSectionContent), so both save through the same paths. A
+// section this viewer may not change stays on its page and says why
+// (botSectionLock); nothing is hidden for lack of a permission. Opened from
+// the bot's "..." menu in the bot panel, and on Appearance from a click on
+// the bot's avatar (store action openPersonaEditor).
+import { useEffect, useMemo, useRef, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
+import { Brain, ChevronRight, Cpu, History, LayoutDashboard, Lock, type LucideIcon, ScrollText, ShieldCheck, X } from "lucide-react";
 
 import { useStore, type Bot, type BotSettingsSection } from "@/state/store";
 import { t } from "@/lib/i18n";
@@ -23,12 +25,29 @@ import { MemorySection } from "../bot-settings/MemorySection";
 import { RulesSection } from "../bot-settings/RulesSection";
 import { WorkspaceFilesSection } from "../bot-settings/WorkspaceFilesSection";
 import { botSectionLock, useBotSectionAvailability, useBotSectionContent } from "../bot-settings/useBotSectionContent";
-import { PERSONA_CATEGORIES, isPersonaCategory, type PersonaCategory } from "@/lib/persona-sections";
+import {
+  PERSONA_CATEGORIES,
+  PERSONA_GROUPS,
+  isPersonaCategory,
+  personaCategoryForSection,
+  personaGroupOf,
+  type PersonaCategory,
+  type PersonaGroup,
+} from "@/lib/persona-sections";
 import { PersonaOverview } from "./PersonaOverview";
 
-export { PERSONA_CATEGORIES, isPersonaCategory, type PersonaCategory };
+export { PERSONA_CATEGORIES, PERSONA_GROUPS, isPersonaCategory, type PersonaCategory, type PersonaGroup };
 
 const ENTRY = new Map(BOT_SECTIONS.map((entry) => [entry.id, entry]));
+
+const GROUP_ICON: Record<PersonaGroup, LucideIcon> = {
+  profile: LayoutDashboard,
+  instructions: ScrollText,
+  memoryFiles: Brain,
+  modelTools: Cpu,
+  behavior: ShieldCheck,
+  activity: History,
+};
 
 export function personaCategoryLabel(id: BotSettingsSection): string {
   const entry = ENTRY.get(id);
@@ -36,13 +55,13 @@ export function personaCategoryLabel(id: BotSettingsSection): string {
   return entry.labelKey ? t(entry.labelKey) : entry.label;
 }
 
-/** Search over the category names and the words each section answers to. */
-export function personaCategoryMatches(id: BotSettingsSection, query: string): boolean {
-  const q = query.trim().toLowerCase();
-  if (!q) return true;
-  const entry = ENTRY.get(id);
-  return [personaCategoryLabel(id), entry?.label ?? id, ...(entry?.keywords ?? [])].some((part) => part.toLowerCase().includes(q));
+export function personaGroupLabel(id: PersonaGroup): string {
+  return t(`persona.group.${id}`);
 }
+
+/** Sections that keep an unsaved draft (their own Save button): mounted on
+ * every page, shown only on their group's page. */
+const KEEP_MOUNTED: ReadonlySet<PersonaCategory> = new Set(["memory", "rules", "files"]);
 
 function Note({ children, icon = true }: { children: ReactNode; icon?: boolean }) {
   return (
@@ -74,40 +93,66 @@ function PersonaEditor({ bot, section, onClose }: { bot: Bot; section: BotSettin
   const retroSkin = useRetroSkin();
   const dialogRef = useRef<HTMLDivElement>(null);
   const navRef = useRef<HTMLElement>(null);
-  const [query, setQuery] = useState("");
+  const paneRef = useRef<HTMLDivElement>(null);
   const { available, slackUrl, perspicaxOrg } = useBotSectionAvailability(bot.id);
 
   // Simple mode hides the same sections it hides in the bot panel; their
-  // saved values stay. Nothing here is hidden for lack of a permission.
-  const categories = useMemo(
-    () => PERSONA_CATEGORIES.filter((id) => advanced || !simpleHidesBotSection(id)),
+  // saved values stay. A group left with no section is not listed.
+  // Nothing here is hidden for lack of a permission.
+  const shown = (id: PersonaCategory) => advanced || !simpleHidesBotSection(id);
+  const groups = useMemo(
+    () => PERSONA_GROUPS
+      .map((group) => ({ id: group.id as PersonaGroup, sections: (group.sections as readonly PersonaCategory[]).filter((id) => advanced || !simpleHidesBotSection(id)) }))
+      .filter((group) => group.sections.length > 0),
     [advanced],
   );
-  const listed = categories.filter((id) => personaCategoryMatches(id, query));
-  const current: PersonaCategory = isPersonaCategory(section) && categories.includes(section) ? section : "overview";
-  const choose = (id: PersonaCategory) => dispatch({ type: "personaEditorSection", section: id });
+  const groupIds = groups.map((group) => group.id);
+  const target = personaCategoryForSection(section) ?? "overview";
+  const wanted = personaGroupOf(section);
+  const current: PersonaGroup = shown(target) && groupIds.includes(wanted) ? wanted : "profile";
+  const currentSections = groups.find((group) => group.id === current)?.sections ?? [];
+  const choose = (id: PersonaGroup) => {
+    const first = groups.find((group) => group.id === id)?.sections[0];
+    if (first) dispatch({ type: "personaEditorSection", section: first });
+  };
+  const goTo = (id: BotSettingsSection) => {
+    const category = personaCategoryForSection(id);
+    if (category && shown(category)) dispatch({ type: "personaEditorSection", section: id });
+  };
 
+  // The server overview and the history load when their page is up.
   const { renderSectionBody, dialogs, derived } = useBotSectionContent(bot, {
-    section: current,
+    section: currentSections[0] ?? "overview",
     expanded: true,
-    onOpenSection: (target) => {
-      if (isPersonaCategory(target)) {
-        if (advanced || !simpleHidesBotSection(target)) choose(target);
+    onOpenSection: (next) => {
+      if (isPersonaCategory(next) || personaCategoryForSection(next) !== null) {
+        goTo(next);
         return;
       }
       // Routines and the other Details sections live in the bot panel.
       onClose();
-      dispatch({ type: "toggleSettings", open: true, section: target, botId: bot.id });
+      dispatch({ type: "toggleSettings", open: true, section: next, botId: bot.id });
     },
     returnFocusRef: dialogRef,
     slackUrl,
   });
 
+  // A link to a section further down a page scrolls to it.
+  useEffect(() => {
+    const pane = paneRef.current;
+    if (!pane) return;
+    if (currentSections[0] === target) {
+      pane.scrollTop = 0;
+      return;
+    }
+    pane.querySelector(`[data-persona-section="${target}"]`)?.scrollIntoView?.({ block: "start" });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [current, target]);
+
   useCategoryModalKeyboard(dialogRef, '[data-persona-nav] [aria-current="page"]', onClose);
 
   const onNavKey = (event: ReactKeyboardEvent<HTMLElement>) => {
-    if (event.target instanceof HTMLInputElement && event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
-    const id = nextCategory(listed, current, event.key);
+    const id = nextCategory(groupIds, current, event.key);
     if (id === null) return;
     event.preventDefault();
     choose(id);
@@ -116,13 +161,16 @@ function PersonaEditor({ bot, section, onClose }: { bot: Bot; section: BotSettin
 
   const lockOf = (id: BotSettingsSection): LocaleKey | null => botSectionLock(state.config, bot, id);
   const memoryAllowed = canEditBotField(state.config, bot, "memoryEnabled");
+  const unavailable = (id: PersonaCategory) => id === "perspicax" && perspicaxOrg === null;
+  const groupLocked = (sections: readonly PersonaCategory[]) =>
+    sections.every((id) => id !== "overview" && id !== "appearance" && (lockOf(id) !== null || unavailable(id)));
 
   const body = (id: PersonaCategory): ReactNode => {
     if (id === "overview") {
       const sharing: BotSettingsSection | null = available("sharing") ? "sharing" : available("visibility") ? "visibility" : null;
       return (
         <div className="flex flex-col">
-          <PersonaOverview bot={bot} derived={derived} onClose={onClose} />
+          <PersonaOverview bot={bot} derived={derived} />
           {sharing && (
             <>
               <SubHeading>{personaCategoryLabel(sharing)}</SubHeading>
@@ -141,7 +189,7 @@ function PersonaEditor({ bot, section, onClose }: { bot: Bot; section: BotSettin
         </div>
       );
     }
-    if (id === "perspicax" && perspicaxOrg === null) {
+    if (unavailable(id)) {
       return <Note icon={false}>{t("persona.unavailable.perspicax")}</Note>;
     }
     const lock = lockOf(id);
@@ -158,17 +206,16 @@ function PersonaEditor({ bot, section, onClose }: { bot: Bot; section: BotSettin
         </div>
       );
     }
-    // mounted below so an unsaved draft survives
-    if (id === "memory" || id === "rules" || id === "files") return null;
     if (id === "access") {
       const worksOn = (advanced || !simpleHidesBotSection("worksOn")) && lockOf("worksOn") === null;
       return (
         <div className="flex flex-col">
+          {/* Where it works first, then what it may reach. */}
+          {worksOn && <div className="mb-5">{renderSectionBody("worksOn")}</div>}
           {renderSectionBody("access")}
-          {worksOn && <div className="mt-5">{renderSectionBody("worksOn")}</div>}
           {available("slack") && (
             <div className="mt-5 border-t border-hairline/40 pt-5">
-              <h3 className="mb-3 text-[13px] font-medium text-ink">{personaCategoryLabel("slack")}</h3>
+              <h4 className="mb-3 text-[13px] font-medium text-ink">{personaCategoryLabel("slack")}</h4>
               {renderSectionBody("slack")}
             </div>
           )}
@@ -176,6 +223,25 @@ function PersonaEditor({ bot, section, onClose }: { bot: Bot; section: BotSettin
       );
     }
     return renderSectionBody(id);
+  };
+
+  // Memory, Rules and Files have an explicit Save button: they stay mounted
+  // on every page so an unsaved draft survives a look at another group.
+  const kept = (id: PersonaCategory, onPage: boolean): ReactNode => {
+    if (id === "memory") {
+      if (!memoryAllowed || lockOf("memory") !== null) return null;
+      return <MemorySection bot={bot} active={onPage} onToggle={(enabled) => derived.patch({ memoryEnabled: enabled })} />;
+    }
+    if (lockOf(id) !== null) return null;
+    if (id === "rules") return <RulesSection bot={bot} active={onPage} />;
+    return (
+      <WorkspaceFilesSection
+        bot={bot}
+        active={onPage}
+        memoryEditable={memoryAllowed && lockOf("memory") === null}
+        onOpenSection={goTo}
+      />
+    );
   };
 
   return (
@@ -204,31 +270,9 @@ function PersonaEditor({ bot, section, onClose }: { bot: Bot; section: BotSettin
             <div className="truncate">{t("persona.title")}</div>
             <div className="truncate text-[12px] font-normal text-ink-secondary">{bot.name}</div>
           </div>
-          <label className="mb-1.5 flex shrink-0 items-center gap-1.5 rounded-lg border border-hairline-weak bg-elevated px-2 py-1">
-            <Search size={13} aria-hidden="true" className="shrink-0 text-ink-secondary" />
-            <input
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter" && listed[0]) {
-                  event.preventDefault();
-                  choose(listed[0]);
-                }
-                if (event.key === "Escape" && query) {
-                  event.preventDefault();
-                  event.stopPropagation();
-                  setQuery("");
-                }
-              }}
-              placeholder={t("persona.search")}
-              aria-label={t("persona.searchLabel")}
-              data-persona-search=""
-              className="w-full min-w-0 bg-transparent text-[12.5px] text-ink placeholder:text-ink-secondary focus:outline-none"
-            />
-          </label>
-          {listed.map((id) => {
-            const Icon = ENTRY.get(id)?.icon;
-            const locked = id !== "overview" && (lockOf(id) !== null || (id === "perspicax" && perspicaxOrg === null));
+          {groups.map(({ id, sections }) => {
+            const Icon = GROUP_ICON[id];
+            const locked = groupLocked(sections);
             return (
               <button
                 key={id}
@@ -239,15 +283,12 @@ function PersonaEditor({ bot, section, onClose }: { bot: Bot; section: BotSettin
                 aria-current={current === id ? "page" : undefined}
                 className={categoryNavItemClass(current === id)}
               >
-                {Icon && <Icon size={15} className="shrink-0" aria-hidden="true" />}
-                <span className="min-w-0 flex-1 truncate">{personaCategoryLabel(id)}</span>
+                <Icon size={15} className="shrink-0" aria-hidden="true" />
+                <span className="min-w-0 flex-1 truncate">{personaGroupLabel(id)}</span>
                 {locked && <Lock size={12} aria-label={t("persona.lockedBadge")} className="shrink-0 text-ink-tertiary" />}
               </button>
             );
           })}
-          {listed.length === 0 && (
-            <div className="px-2 py-2 text-[12.5px] leading-relaxed text-ink-secondary">{t("persona.noMatch", { query: query.trim() })}</div>
-          )}
         </nav>
 
         <div className={CATEGORY_MODAL.content}>
@@ -264,42 +305,44 @@ function PersonaEditor({ bot, section, onClose }: { bot: Bot; section: BotSettin
             <select
               aria-label={t("persona.categories")}
               value={current}
-              onChange={(event) => choose(event.target.value as PersonaCategory)}
+              onChange={(event) => choose(event.target.value as PersonaGroup)}
               className={CATEGORY_MODAL.mobileSelect}
             >
-              {categories.map((id) => (
-                <option key={id} value={id}>{personaCategoryLabel(id)}</option>
+              {groups.map(({ id }) => (
+                <option key={id} value={id}>{personaGroupLabel(id)}</option>
               ))}
             </select>
           </div>
-          <div className={CATEGORY_MODAL.pane} data-persona-pane={current}>
-            <h2 className={CATEGORY_MODAL.heading}>{personaCategoryLabel(current)}</h2>
+          <div ref={paneRef} className={CATEGORY_MODAL.pane} data-persona-pane={current}>
+            <h2 className={CATEGORY_MODAL.heading}>{personaGroupLabel(current)}</h2>
             <div className={CATEGORY_MODAL.body}>
-              {body(current)}
-              {/* Memory has an explicit Save button: it stays mounted so an
-                  unsaved draft survives a look at another category. */}
-              {memoryAllowed && lockOf("memory") === null && (
-                <div hidden={current !== "memory"}>
-                  <MemorySection bot={bot} active={current === "memory"} onToggle={(enabled) => derived.patch({ memoryEnabled: enabled })} />
-                </div>
-              )}
-              {/* Rules and Files (the bot workspace, docs/bot-workspace.md)
-                  stay mounted the same way, for the same reason. */}
-              {lockOf("rules") === null && (
-                <div hidden={current !== "rules"}>
-                  <RulesSection bot={bot} active={current === "rules"} />
-                </div>
-              )}
-              {lockOf("files") === null && categories.includes("files") && (
-                <div hidden={current !== "files"}>
-                  <WorkspaceFilesSection
-                    bot={bot}
-                    active={current === "files"}
-                    memoryEditable={memoryAllowed && lockOf("memory") === null}
-                    onOpenSection={(target) => { if (isPersonaCategory(target)) choose(target); }}
-                  />
-                </div>
-              )}
+              {/* Every group keeps its place in the tree, so a section kept
+                  mounted never remounts when the page changes. */}
+              {groups.map(({ id: group, sections }) => {
+                const onPage = group === current;
+                return (
+                  <div key={group} data-persona-group={group} hidden={!onPage}>
+                    {sections.map((id, index) => {
+                      const keep = KEEP_MOUNTED.has(id);
+                      if (!onPage && !keep) return null;
+                      const content = keep && !unavailable(id) && lockOf(id) === null && !(id === "memory" && !memoryAllowed)
+                        ? kept(id, onPage)
+                        : onPage ? body(id) : null;
+                      if (!onPage && content === null) return null;
+                      return (
+                        <section key={id} data-persona-section={id}>
+                          {/* The first section of a page is under the page title. */}
+                          {index > 0 && <SubHeading>{personaCategoryLabel(id)}</SubHeading>}
+                          {index === 0 && id !== "overview" && sections.length > 1 && (
+                            <h3 className="mb-3 text-[14px] font-medium text-ink">{personaCategoryLabel(id)}</h3>
+                          )}
+                          {content}
+                        </section>
+                      );
+                    })}
+                  </div>
+                );
+              })}
             </div>
           </div>
           {retroSkin && (

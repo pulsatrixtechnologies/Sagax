@@ -148,6 +148,7 @@ export const TOOL_POLICY_ROWS: readonly ToolPolicy[] = [
   {"method":"POST","kind":"exact","route":"/api/live/session","tier":"write","readOnly":false,"scope":"live:write","defaultEnabled":true},
   {"method":"PATCH","kind":"exact","route":"/api/live/settings","tier":"write","readOnly":false,"scope":"live:write","defaultEnabled":true},
   {"method":"GET","kind":"exact","route":"/api/local-computer","tier":"read","readOnly":true,"scope":"local-computer:read","defaultEnabled":true},
+  {"method":"ANY","kind":"exact","route":"/api/local-computer/ensure","tier":"write","readOnly":false,"scope":"local-computer:write","defaultEnabled":true},
   {"method":"GET","kind":"exact","route":"/api/local-computer/instances","tier":"read","readOnly":true,"scope":"local-computer:read","defaultEnabled":true},
   {"method":"POST","kind":"exact","route":"/api/local-computer/interrupt","tier":"write","readOnly":false,"scope":"local-computer:write","defaultEnabled":true},
   {"method":"POST","kind":"exact","route":"/api/local-computer/screenshot","tier":"write","readOnly":false,"scope":"local-computer:write","defaultEnabled":true},

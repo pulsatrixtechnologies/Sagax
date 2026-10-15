@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
-// The chat header's Data button: absent while the experimental switch is
-// off, a round button beside the threads button while it is on.
+// The bot's Data window item (the conversation's "..." menu): absent while
+// the experimental switch is off, an item that opens this bot's window
+// while it is on.
 import { createElement } from "react";
 import { flushSync } from "react-dom";
 import { createRoot, type Root } from "react-dom/client";
@@ -14,8 +15,13 @@ vi.mock("@/state/store", () => ({
 }));
 vi.mock("@/lib/data-window", async (importOriginal) => ({ ...await importOriginal<typeof import("@/lib/data-window")>(), openDataWindow }));
 
-const { DataWindowButton, DataWindowViewSync } = await import("./DataWindowButton");
-const { CIRCLE_BUTTON } = await import("@/lib/circle-button");
+const { useDataWindowItem, DataWindowViewSync } = await import("./DataWindowButton");
+
+/** Shows the item the hook returns as a button, or nothing. */
+function DataWindowProbe({ bot }: { bot: { id: string; name: string } }) {
+  const item = useDataWindowItem(bot);
+  return item ? createElement("button", { "data-data-window-button": "", "aria-label": item.label, onClick: item.onOpen }) : null;
+}
 const { postDataWindowMessage } = await import("@/lib/data-window");
 
 let root: Root | null = null;
@@ -37,29 +43,28 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-describe("Data button", () => {
+describe("Data item", () => {
   it("is absent while the experimental switch is off", () => {
-    const container = render(createElement(DataWindowButton, { bot: { id: "scout", name: "Scout" } }));
-    expect(container.querySelector("[data-data-window-button]")).toBeNull();
+    const container = render(createElement(DataWindowProbe, { bot: { id: "scout", name: "Scout" } }));
     expect(container.querySelector("button")).toBeNull();
   });
 
-  it("shows as a round button with an accessible name and opens this bot's window", async () => {
+  it("opens this bot's window, and says so in the chat when the browser blocks it", async () => {
     fixture.dataWindow = true;
-    const container = render(createElement(DataWindowButton, { bot: { id: "scout", name: "Scout" } }));
+    const container = render(createElement(DataWindowProbe, { bot: { id: "scout", name: "Scout" } }));
     const button = container.querySelector<HTMLButtonElement>("[data-data-window-button]")!;
-    expect(button).not.toBeNull();
     expect(button.getAttribute("aria-label")).toBe("Open the Data window");
-    for (const token of CIRCLE_BUTTON.split(" ")) expect(button.className).toContain(token);
-    expect(button.querySelector("svg.lucide-database")).not.toBeNull();
     button.click();
     expect(openDataWindow).toHaveBeenCalledWith({ botId: "scout", title: "Data: Scout" });
+    openDataWindow.mockImplementationOnce(async () => "blocked");
+    button.click();
+    await vi.waitFor(() => expect(dispatch).toHaveBeenCalledWith({ type: "error", message: expect.stringContaining("blocked") }));
   });
 
   it("is absent on the companion connection, where Data is not served", () => {
     fixture.dataWindow = true;
     vi.stubGlobal("ogb", { remoteClient: { active: true } });
-    const container = render(createElement(DataWindowButton, { bot: { id: "scout", name: "Scout" } }));
+    const container = render(createElement(DataWindowProbe, { bot: { id: "scout", name: "Scout" } }));
     expect(container.querySelector("button")).toBeNull();
   });
 });

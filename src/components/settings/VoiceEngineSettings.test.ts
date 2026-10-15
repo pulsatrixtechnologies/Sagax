@@ -22,12 +22,15 @@ const { VoiceEngineSettings } = await import("./VoiceEngineSettings");
 describe("VoiceEngineSettings", () => {
   // 2026-10-14: no key field here. The engine uses its key from the one list
   // of keys above it; Grok voice uses the xAI key.
-  it("picks the installation engine and points at its key in the list, never a key field", () => {
+  // 2026-10-14: the ElevenLabs and Fish Audio keys are managed here only,
+  // not in the key list as well.
+  it("picks the installation engine and manages its voice key here, never a key field", () => {
     fixture.config = { tts: { configured: false, provider: "elevenlabs" } };
     const html = renderToStaticMarkup(createElement(VoiceEngineSettings));
     expect(html).toContain('aria-label="Voice engine"');
     expect(html).toContain('data-voice-key="elevenlabs"');
-    expect(html).toContain("No ElevenLabs key in the list above yet.");
+    expect(html).toContain("No ElevenLabs key yet.");
+    expect(html).not.toContain("list above");
     expect(html).toContain("Add a key");
     expect(html).not.toContain("<input");
     expect(html).not.toContain("data-voice-picker");

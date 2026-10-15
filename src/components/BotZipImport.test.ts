@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-// The bot zip in the app: the persona editor's "Export as zip" downloads
+// The bot zip in the app: the bot's "..." menu "Export the bot (.zip)" downloads
 // with the chosen parts, New bot's "Import from zip" opens the import, and
 // the import shows the server's preview before anything is created.
 import { act, createElement } from "react";
@@ -15,7 +15,7 @@ vi.mock("@/lib/perspicax-org", () => ({ useOrgPeople: () => new Map() }));
 vi.mock("../BotProfileAvatarCard", () => ({ BotProfileAvatarCard: () => null }));
 
 import { BotZipImportPanel } from "./BotZipImport";
-import { PersonaOverview } from "./persona/PersonaOverview";
+import { BotActionsMenu } from "./bot-settings/BotActionsMenu";
 import { StartingRole } from "./NewBotDialog";
 import { botZipExportUrl, botZipLineText } from "@/lib/bot-zip";
 import type { Bot } from "@/state/store";
@@ -97,13 +97,19 @@ describe("import from zip", () => {
     expect(fixture.dispatch).not.toHaveBeenCalled();
   });
 
-  it("New bot offers Import from zip next to Browse templates", async () => {
+  it("New bot offers Import from zip in Start from, next to Browse templates", async () => {
     fixture.api.mockResolvedValue({ presets: [] });
     const draft = { preset: undefined, patch: vi.fn(), choosePreset: vi.fn(), uploadAvatar: vi.fn() };
     act(() => { root.render(createElement(StartingRole, { draft: draft as never, defaultsMode: false })); });
     await flush();
-    expect(container.querySelector("[data-new-bot-import-zip]")?.textContent).toBe("Import from zip");
-    click("[data-new-bot-import-zip]");
+    expect(container.querySelector("[data-new-bot-import-zip]")?.textContent).toBe("Zip file…");
+    const start = container.querySelector("[data-new-bot-start]") as HTMLSelectElement;
+    act(() => {
+      start.value = (container.querySelector("[data-new-bot-import-zip]") as HTMLOptionElement).value;
+      start.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    // the list keeps what it showed: picking an action never chooses a role
+    expect(draft.patch).not.toHaveBeenCalled();
     expect(document.querySelector("[data-bot-zip-dialog]")).not.toBeNull();
     // the installation's defaults are not a bot: no import there
     act(() => { root.render(createElement(StartingRole, { draft: draft as never, defaultsMode: true })); });
@@ -112,19 +118,19 @@ describe("import from zip", () => {
 });
 
 describe("export as zip", () => {
-  it("the persona Overview downloads the zip with the parts chosen", () => {
+  it("the bot's \"...\" menu downloads the zip with the parts chosen", () => {
     const clicked: string[] = [];
     vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function (this: HTMLAnchorElement) { clicked.push(this.getAttribute("href") ?? ""); });
-    const bot = { id: "atlas", name: "Atlas", title: "", description: "", color: "purple", modelSelection: { instanceId: "fixture", model: "m" }, grants: [{ target: "user:x", level: "use" }] } as unknown as Bot;
-    const derived = { patch: vi.fn(), activeState: "idle", mascotMotion: null } as never;
-    act(() => { root.render(createElement(PersonaOverview, { bot, derived, onClose: vi.fn() })); });
-    click("[data-persona-action=export-zip]");
-    expect(container.querySelector("[data-persona-export-zip]")?.textContent).toContain("Secrets and tokens never leave");
-    click("[data-persona-export-conversations]");
-    click("[data-persona-export-sharing]");
-    click("[data-persona-export-download]");
+    const bot = { id: "atlas", name: "Atlas", title: "", description: "", color: "purple", messages: [], modelSelection: { instanceId: "fixture", model: "m" }, grants: [{ target: "user:x", level: "use" }] } as unknown as Bot;
+    act(() => { root.render(createElement(BotActionsMenu, { bot, anchor: { x: 0, y: 0 }, onAnchor: vi.fn(), onRename: vi.fn() })); });
+    const inBody = (selector: string) => act(() => { (document.querySelector(selector) as HTMLElement).click(); });
+    inBody("[data-menu-item=export-zip]");
+    expect(document.querySelector("[data-bot-zip-export]")?.textContent).toContain("Secrets and tokens never leave");
+    inBody("[data-bot-zip-conversations]");
+    inBody("[data-bot-zip-sharing]");
+    inBody("[data-bot-zip-download]");
     expect(clicked).toEqual(["/api/bots/atlas/export.zip?conversations=1&sharing=1"]);
-    expect(container.querySelector("[data-persona-export-zip] [role=status]")?.textContent).toBe("The download has started.");
+    expect(document.querySelector("[data-bot-zip-export] [role=status]")?.textContent).toBe("The download has started.");
   });
 
   it("names the parts in the URL and translates the preview lines", () => {

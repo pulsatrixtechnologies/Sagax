@@ -20,7 +20,7 @@ beforeEach(() => setLocale("en"));
 describe("RulesSection", () => {
   it("explains what goes where and says team rules come from Perspicax", () => {
     const html = render({ text: "", hash: "h", exists: false });
-    expect(html).toContain("Hard constraints the bot checks every turn; identity goes in Soul, facts go in Memory.");
+    expect(html).toContain("Hard constraints the bot checks every turn; identity goes in Personality, facts go in Memory.");
     expect(html).toContain("data-rules-inheritance");
     expect(html).toContain("Team and organization rules will come from the Perspicax memory tiers");
     expect(html).toContain("Only rules specific to this bot belong here.");

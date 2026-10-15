@@ -1,8 +1,9 @@
 // Plugins > Manage, after the reference's "Plugins and skills" page: what is
 // installed (apps, MCP servers, marketplace plugins) as a grid of cards,
 // then the private skills of this installation. Adding an MCP server by
-// hand, pasting a config, marketplaces and the settings for every server sit
-// below, in a collapsed Advanced zone.
+// hand, pasting a config, marketplaces, the engine providers and the
+// settings for every server sit below, in a collapsed Advanced zone (the
+// engine accounts also live in Settings > Models and voices).
 import { useState, type ReactNode } from "react";
 import { BookOpen, ChevronDown, ClipboardPaste, Plus, RefreshCw } from "lucide-react";
 
@@ -38,15 +39,13 @@ export interface ManageViewProps {
   personal?: ReactNode;
   /** opens Advanced at first sight (a form inside it is open) */
   advancedOpen?: boolean;
-  /** the Providers tab: engine accounts and the connectors they bring */
+  /** engine accounts and the connectors they bring, a section of Advanced */
   providers?: ReactNode;
   /** the install scope (everyone, or one bot) above the installed cards */
   scope?: ReactNode;
   /** one bot's plugins: no private skills and no personal connections */
   pluginsOnly?: boolean;
 }
-
-export type ManageTab = "plugins" | "providers";
 
 /** Connected in green, anything else a muted Not connected (Off for a
  * server switched off on purpose). */
@@ -63,37 +62,12 @@ export function ManageView(props: ManageViewProps) {
   const { items, countLabel, sourceLabel, onBack, onClose, onOpenItem, onAddManually, onPasteConfig, onNewSkill, addDisabled, addTitle, refreshing, onRefresh,
     forms, children, personal, advancedOpen, providers, scope, pluginsOnly } = props;
   const [showAll, setShowAll] = useState(false);
-  const [tab, setTab] = useState<ManageTab>("plugins");
   const installed = installedPlugins(items);
   const shown = showAll ? installed : installed.slice(0, INSTALLED_PREVIEW);
   const skills = items.filter((item) => item.kind === "skill").sort((a, b) => a.name.localeCompare(b.name));
   return (
     <>
       <PluginPageHeader titleId="plugins-title" title={t("connectApps.manage.title")} backLabel={t("connectApps.backToMain")} onBack={onBack} onClose={onClose} />
-      {providers && (
-        <div className="px-6 sm:px-8">
-          <div className="flex gap-1 border-b border-hairline/60" role="tablist" aria-label={t("connectApps.manage.tabsAria")}>
-            {(["plugins", "providers"] as const).map((item) => (
-              <button
-                key={item}
-                type="button"
-                role="tab"
-                aria-selected={tab === item}
-                onClick={() => setTab(item)}
-                className={cn(
-                  "-mb-px border-b-2 px-2.5 pb-2 text-[13px] transition-colors",
-                  tab === item ? "border-accent font-medium text-ink" : "border-transparent text-ink-secondary hover:text-ink",
-                )}
-              >
-                {t(item === "plugins" ? "connectApps.manage.tabPlugins" : "connectApps.manage.tabProviders")}
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-      {tab === "providers" && providers ? (
-        <div className="min-h-0 flex-1 overflow-y-auto px-6 pb-7 pt-4 sm:px-8" role="tabpanel" data-plugins-manage="providers">{providers}</div>
-      ) : (
       <div className="min-h-0 flex-1 overflow-y-auto px-6 pb-7 pt-4 sm:px-8" data-plugins-manage>
         {scope && <div className="mb-4">{scope}</div>}
         <section data-plugins-installed>
@@ -186,10 +160,15 @@ export function ManageView(props: ManageViewProps) {
             )}
             {!pluginsOnly && forms}
             {children}
+            {providers && (
+              <section className="mt-6" data-plugins-manage="providers">
+                <h3 className="mb-2 text-[13px] font-semibold text-ink">{t("connectApps.manage.tabProviders")}</h3>
+                {providers}
+              </section>
+            )}
           </div>
         </details>
       </div>
-      )}
     </>
   );
 }

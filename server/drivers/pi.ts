@@ -70,6 +70,7 @@ import { piHostToolArgs } from "./host-tools.ts";
 import { canUseMcpServer, parseToolScope } from "../../shared/tool-scope.ts";
 import { gateServer, mcpStdioServer, resultBudget } from "../mcp-gate-config.ts";
 import { remoteMcpSpec } from "../mcp-http.ts";
+import { readMcpGatewayCall } from "../../shared/mcp-gateway-call.ts";
 
 const DRIVER_KIND = "piAgent";
 const PI_ARGS = ["--mode", "rpc", "--no-session"];
@@ -838,6 +839,9 @@ export const PiDriver: ProviderDriver<PiConfig> = {
         }
       })();
       let assistantText = "";
+      // a tool's resolved name between its start and its end (gateway calls)
+      const toolNames = new Map<string, string>();
+      const mcpServerNames = Object.keys(mcpServers ?? {});
       // set when a compaction event arrives this turn; gates the receipt
       // write below so a compacted-around delivery is never claimed
       let compactionObserved = false;
@@ -1016,19 +1020,28 @@ export const PiDriver: ProviderDriver<PiConfig> = {
           }
           case "tool_execution_start": {
             flushAssistantText();
+            // pi-mcp-adapter's single `mcp` tool: the step names the server
+            // and tool it ran (shared/mcp-gateway-call.ts), never "mcp".
+            const gateway = readMcpGatewayCall(typeof evt.toolName === "string" ? evt.toolName : undefined, evt.args, mcpServerNames);
+            const toolName = gateway?.kind === "tool" ? gateway.id : typeof evt.toolName === "string" ? evt.toolName : undefined;
+            const args = gateway?.kind === "tool" ? gateway.args : evt.args;
+            if (typeof evt.toolCallId === "string" && toolName) toolNames.set(evt.toolCallId, toolName);
             emit({
               ...base(threadId, turnId),
               type: "item.started",
               itemType: "tool",
               itemId: evt.toolCallId,
-              title: String(evt.toolName ?? "tool").slice(0, 80),
-              summary: commandSummary(evt.args),
-              input: toolDetailPreview(evt.args),
-              ...filesField(writtenFilesFromToolInput(typeof evt.toolName === "string" ? evt.toolName : undefined, evt.args)),
+              title: String(toolName ?? "tool").slice(0, 80),
+              summary: commandSummary(args),
+              input: toolDetailPreview(args),
+              ...filesField(writtenFilesFromToolInput(toolName, args)),
             });
             return;
           }
           case "tool_execution_end": {
+            const toolName = (typeof evt.toolCallId === "string" ? toolNames.get(evt.toolCallId) : undefined)
+              ?? (typeof evt.toolName === "string" ? evt.toolName : undefined);
+            if (typeof evt.toolCallId === "string") toolNames.delete(evt.toolCallId);
             emit({
               ...base(threadId, turnId),
               type: "item.completed",
@@ -1036,7 +1049,7 @@ export const PiDriver: ProviderDriver<PiConfig> = {
               itemId: evt.toolCallId,
               ok: !evt.isError,
               output: toolDetailPreview(evt.result),
-              ...(evt.isError ? {} : cwToolResult(typeof evt.toolName === "string" ? evt.toolName : undefined, evt.result)),
+              ...(evt.isError ? {} : cwToolResult(toolName, evt.result)),
             });
             return;
           }

@@ -1,5 +1,7 @@
 # Usage ledger
 
+> 2026-10-14: Settings > Usage reads `GET /api/usage?mine=1` (the requester's own turns, `usageRowsFor` in server/usage-ledger.ts). The History card and its groupings left the app.
+
 ## Sub-features
 
 - Append one row per settled turn to `<data>/usage/YYYY-MM.jsonl`: bot, model,
@@ -76,7 +78,7 @@ waits for settlement, and checks that the tooltip separates 10 uncached input,
 headline. Its JSON evidence sits next to the fixture log; no live account is used.
 
 ```sh
-pnpm exec vitest run server/usage-ledger.test.ts src/components/UsageHistory.test.ts server/request-auth.test.ts
+pnpm exec vitest run server/usage-ledger.test.ts src/components/UsageSection.test.ts server/request-auth.test.ts
 ```
 
 These cover month files and 0600 modes, torn lines, clamped tokens, a blocked

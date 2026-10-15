@@ -1347,6 +1347,31 @@ export function containerComputerMcp(
   };
 }
 
+/** How the automatic start (local-vm-auto.ts) starts an installed runtime
+ * whose engine is stopped: a fixed argv, never a shell line. Linux needs
+ * sudo for Docker, so there it stays the person's step. */
+export function runtimeStartArgv(runtime: Runtime | null, platform: NodeJS.Platform = process.platform): string[] | null {
+  if (runtime === "container") return ["container", "system", "start"];
+  if (runtime === "podman" && platform !== "linux") return ["podman", "machine", "start"];
+  if (runtime === "docker" && platform === "darwin") return ["open", "-a", "Docker"];
+  return null;
+}
+
+export async function startContainerRuntime(
+  runtime: Runtime | null,
+  runner: CommandRunner = sh,
+  platform: NodeJS.Platform = process.platform,
+): Promise<boolean> {
+  const argv = runtimeStartArgv(runtime, platform);
+  if (!argv) return false;
+  try {
+    await runner(argv[0]!, argv.slice(1), 120_000);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /** Commands shown as a transparent fallback. Normal setup builds the pinned
  * derivative through the API, so users do not need to author a Dockerfile. */
 export function setupCommands(

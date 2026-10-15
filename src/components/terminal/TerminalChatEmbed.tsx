@@ -52,7 +52,7 @@ export function TerminalChatEmbed({ embed }: { embed: TerminalEmbed }) {
     try {
       term.loadAddon(new WebglAddon());
     } catch {
-      /* canvas fallback */
+      /* DOM renderer fallback */
     }
     term.open(host);
     fit.fit();

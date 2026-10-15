@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { setLocale } from "@/lib/i18n";
-import { readStep, stepArgs, stepDuration, stepGroupLabel, stepJson, stepLabel, stepPhase, stepResult } from "./step-label";
+import { readStep, stepArgs, stepDuration, stepJson, stepLabel, stepPhase, stepResult } from "./step-label";
 
 afterEach(() => {
   setLocale("en");
@@ -31,6 +31,11 @@ describe("step labels in plain words", () => {
     expect(stepLabel({ name: "mcp__claude_ai_Pulsatrix_Perspicax__cw_psa__find_tickets", ok: true })).toBe("Viewed tickets in ConnectWise PSA");
     expect(stepLabel({ name: "mcp__claude_ai_Pulsatrix_Perspicax__sentinelone__query", ok: true, input: JSON.stringify({ resource: "threats" }) })).toBe("Viewed alerts in SentinelOne");
     expect(readStep({ name: "mcp__pulsatrix__cw_psa__get_ticket", ok: true, input: JSON.stringify({ ticketId: 297048 }) }).target).toBe("#297048");
+  });
+
+  it("labels the simplified memory tools like the ones they replace", () => {
+    expect(stepLabel({ name: "mcp__perspicax__memory_find", ok: true })).toBe(stepLabel({ name: "mcp__perspicax__memory_search", ok: true }));
+    expect(stepLabel({ name: "mcp__perspicax__memory_save", ok: true })).toBe(stepLabel({ name: "mcp__perspicax__memory_write", ok: true }));
   });
 
   it("falls back to 'Used <tool>' for an unknown tool", () => {
@@ -91,8 +96,41 @@ describe("step detail helpers", () => {
     expect(json).toEqual({ tool: "mcp__agents__coordinate_bots", ok: true, input: { bot_ids: ["b1"] }, output: { ok: true } });
   });
 
-  it("names a group by its count", () => {
-    expect(stepGroupLabel(1)).toBe("Used 1 tool");
-    expect(stepGroupLabel(4)).toBe("Used 4 tools");
+});
+
+describe("an MCP call names its server and tool", () => {
+  // pi-mcp-adapter's `mcp` gateway, as rows stored before the driver named the tool
+  const gateway = (args: Record<string, unknown>, ok?: boolean) => ({ name: "mcp", ok, input: JSON.stringify(args) });
+  const tickets = { server: "pulsatrix-psa", tool: "cw_psa__query", args: { resource: "service.tickets", id: "296221" } };
+
+  it("reads a gateway call as the product tool it ran, never 'Used mcp'", () => {
+    expect(stepLabel(gateway(tickets, true))).toBe("Viewed tickets in ConnectWise PSA");
+    expect(stepLabel(gateway(tickets))).toBe("Viewing tickets in ConnectWise PSA");
+    expect(stepLabel(gateway({ tool: "pulsatrix-psa_cw_psa__query", args: "{\"resource\": \"schedule.entries\"}" }, true))).toContain("ConnectWise PSA");
+    expect(stepLabel(gateway(tickets, true))).not.toMatch(/\bmcp\b/);
+  });
+
+  it("names the product and the real tool when a call failed", () => {
+    expect(stepLabel(gateway(tickets, false))).toBe("Could not use ConnectWise PSA (cw_psa__query)");
+    expect(stepLabel({ name: "mcp__pulsatrix-psa__cw_psa__query", ok: false, input: JSON.stringify(tickets.args) })).toBe("Could not use ConnectWise PSA (cw_psa__query)");
+    // no product known: the server, titled, stands in
+    expect(stepLabel({ name: "mcp__acme-crm__lookup_widget", ok: false })).toBe("Could not use Acme Crm (lookup_widget)");
+  });
+
+  it("reads the gateway's housekeeping in words, with a readable fallback", () => {
+    expect(stepLabel(gateway({ server: "pulsatrix-psa" }, true))).toBe("Checked pulsatrix-psa");
+    expect(stepLabel(gateway({ action: "auth-start", server: "pulsatrix-psa" }, false))).toBe("Could not connect to pulsatrix-psa");
+    expect(readStep(gateway({ search: "schedule today" }, true))).toEqual({ label: "Searched for MCP tools", target: "schedule today" });
+    expect(stepLabel({ name: "mcp", ok: false })).toBe("Could not reach the MCP servers");
+  });
+
+  it("speaks French when the interface is in French", () => {
+    setLocale("fr");
+    expect(stepLabel(gateway(tickets, true))).toBe("A consulté les billets dans ConnectWise PSA");
+    expect(stepLabel(gateway(tickets, false))).toBe("N'a pas pu utiliser ConnectWise PSA (cw_psa__query)");
+    expect(stepLabel({ name: "mcp", ok: false })).toBe("N'a pas pu joindre les serveurs MCP");
+    expect(stepLabel({ name: "Read", ok: true })).toBe("A lu un fichier");
+    expect(stepDuration(173_000)).toBe("2 min 53 s");
+    expect(stepDuration(4_000)).toBe("4 s");
   });
 });

@@ -51,18 +51,29 @@ describe("Settings → General", () => {
     expect(ja).not.toContain(">Geral<");
   });
 
+  it("says Réglages in French, with the Advanced row translated", async () => {
+    setLocale("fr");
+    const fr = await renderSettings();
+    expect(fr).toContain(">Réglages<");
+    expect(fr).toContain("MCP, accès aux outils, conversations parallèles");
+    expect(fr).not.toMatch(/[\u2013\u2014]/);
+  });
+
   it("stays English when no language is picked", async () => {
     setLocale("en");
     const en = await renderSettings();
     expect(en).toContain("Settings");
     expect(en).toContain("Models and voice");
-    expect(en).toContain("Maximum running threads per bot");
+    // the technical cards are one row away, on General > Advanced
+    expect(en).toContain("MCP, tool access, parallel conversations");
   });
 
   it("offers a labeled compact section picker without removing desktop navigation", async () => {
     const html = await renderSettings();
     expect(html).toMatch(/<select[^>]*aria-label="Settings"[^>]*sm:hidden/);
-    expect(html).toContain('<option value="companion">Pair devices</option>');
+    expect(html).toContain('<option value="appearance">Appearance</option>');
+    // Pair devices is hidden since 2026-10-14
+    expect(html).not.toContain('<option value="companion"');
     expect(html).toMatch(/<nav[^>]*hidden[^>]*sm:flex/);
     expect(html).toContain('id="app-settings-title" class="sr-only"');
   });

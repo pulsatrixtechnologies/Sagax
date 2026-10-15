@@ -1,99 +1,182 @@
-// App settings → Usage: what every bot has spent, so "which of my bots is
-// costing me money" is answerable without a provider dashboard. Figures are
-// banked per settled turn on each task (server/store.ts addTaskUsage) and
-// summed here; nothing is fetched.
-import { useStore } from "@/state/store";
-import { BotAvatar } from "./Avatar";
-import { Card, cardCount } from "./SettingsPrimitives";
+// Settings > Usage (2026-10-14, redrawn): the signed-in person's own usage.
+// Two simple cards on top, Plan (their subscriptions' allowance) and Cost
+// (this month, its trend against the same days of last month, a 30-day
+// sparkline), then one folded breakdown by bot and by model. Every figure
+// comes from GET /api/usage?mine=1, which keeps only the requester's turns
+// (server/routes/usage.ts). Per-person tables, organization totals, budgets
+// and sell prices belong to the organization's admin console, which an
+// organization admin reaches from the link at the bottom.
+import { useEffect, useState } from "react";
+import { ExternalLink } from "lucide-react";
+import { api, useStore } from "@/state/store";
 import { t } from "@/lib/i18n";
-import { botUsage, cachedUsageNote, costCaption, formatTokens, formatUsd, hasFiniteCost, headlineTokens, sumUsage, tokensColumnLabel, usageDetail } from "@/lib/usage";
-import { UsageHistory } from "./UsageHistory";
-import { PlanUsage } from "./PlanUsage";
+import { cn } from "@/lib/cn";
 import { canViewUsage } from "@/lib/viewer";
+import { viewerIsOrgAdmin } from "@/lib/group-owner";
+import { usePerspicaxOrg } from "@/lib/perspicax-org";
+import {
+  costOf,
+  costTrend,
+  dailyCosts,
+  formatCost,
+  personalUsagePeriods,
+  rankedGroups,
+  usageQuery,
+  type PersonalUsageGroup,
+  type PersonalUsageSummary,
+} from "@/lib/usage-personal";
+import { PlanUsage } from "./PlanUsage";
+import { perspicaxConsoleUrl } from "./PerspicaxOrgSettings";
+import { Card } from "./SettingsPrimitives";
+
+export interface PersonalUsage {
+  month: PersonalUsageSummary;
+  previous: PersonalUsageSummary;
+  days30: PersonalUsageSummary;
+  byBot: PersonalUsageSummary;
+  byModel: PersonalUsageSummary;
+}
+
+export async function loadPersonalUsage(now = new Date(), get: <T>(path: string) => Promise<T> = api): Promise<PersonalUsage> {
+  const periods = personalUsagePeriods(now);
+  const [month, previous, days30, byBot, byModel] = await Promise.all([
+    get<PersonalUsageSummary>(usageQuery(periods.month, "day")),
+    get<PersonalUsageSummary>(usageQuery(periods.previous, "day")),
+    get<PersonalUsageSummary>(usageQuery(periods.days30, "day")),
+    get<PersonalUsageSummary>(usageQuery(periods.month, "bot")),
+    get<PersonalUsageSummary>(usageQuery(periods.month, "model")),
+  ]);
+  return { month, previous, days30, byBot, byModel };
+}
 
 export function UsageSection() {
   const { state } = useStore();
-  // Plan usage and history are admin reads. Mounting them as a member polls 403.
+  // The ledger is an admin read on this server. Mounting it as a member polls 403.
   if (!canViewUsage(state.config)) return null;
   return <UsageDetails />;
 }
 
 function UsageDetails() {
   const { state } = useStore();
-  const rows = state.bots
-    .filter((b) => !b.hidden)
-    .map((bot) => {
-      const usage = botUsage(bot);
-      const instance = state.instances.find((i) => i.instanceId === bot.modelSelection.instanceId);
-      return { bot, usage, billing: instance?.snapshot.billing };
-    })
-    .filter((r) => r.usage.turns > 0)
-    // money first, then volume. Non-finite/missing costs sort last.
-    .sort((a, b) => {
-      const costOf = (value: number | null | undefined) =>
-        hasFiniteCost(value) ? value : Number.NEGATIVE_INFINITY;
-      return costOf(b.usage.costUsd) - costOf(a.usage.costUsd) || headlineTokens(b.usage) - headlineTokens(a.usage);
-    });
-  const total = sumUsage(rows.map((r) => r.usage));
-  const billings = new Set(rows.map((r) => r.billing));
-  const cachedNote = cachedUsageNote(total);
-
+  const org = usePerspicaxOrg();
+  const [usage, setUsage] = useState<PersonalUsage | null>(null);
+  const [error, setError] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    loadPersonalUsage().then((next) => { if (alive) setUsage(next); }, () => { if (alive) setError(true); });
+    return () => { alive = false; };
+  }, []);
   return (
     <>
-    <PlanUsage />
-    <Card
-      collapsible
-      cardId="usage.bots"
-      title={t("usage.title")}
-      subtitle={t("usage.subtitle")}
-      summary={rows.length === 0
-        ? t("settings.card.nothingYet")
-        : [cardCount("turns", total.turns), hasFiniteCost(total.costUsd) ? formatUsd(total.costUsd) : formatTokens(headlineTokens(total))].join(" · ")}
-    >
-      {rows.length === 0 ? (
-        <div className="text-[13px] text-ink-secondary">{t("usage.empty")}</div>
+      <PlanUsage />
+      <CostCard usage={usage} error={error} />
+      {usage && <BreakdownCard usage={usage} />}
+      {org && viewerIsOrgAdmin(state.config) && (
+        <a
+          href={perspicaxConsoleUrl(org.org.identity.issuer)}
+          target="_blank"
+          rel="noopener noreferrer"
+          data-usage-org-link
+          className="inline-flex w-fit items-center gap-1 text-[12.5px] text-ink-secondary hover:text-ink hover:underline"
+        >
+          {t("usage.personal.manageOrg")}
+          <ExternalLink size={12} aria-hidden="true" />
+        </a>
+      )}
+    </>
+  );
+}
+
+/** A tiny line of the last 30 days' cost, oldest at the left. */
+export function Sparkline({ values }: { values: number[] }) {
+  const width = 120;
+  const height = 28;
+  const max = Math.max(...values, 0);
+  if (values.length < 2 || max <= 0) return <span aria-hidden="true" className="block h-7 w-[120px] border-b border-hairline/50" />;
+  const step = width / (values.length - 1);
+  const points = values.map((value, index) => `${(index * step).toFixed(1)},${(height - 2 - (value / max) * (height - 4)).toFixed(1)}`).join(" ");
+  return (
+    <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} aria-hidden="true" data-usage-sparkline className="text-accent">
+      <polyline points={points} fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinejoin="round" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+export function CostCard({ usage, error }: { usage: PersonalUsage | null; error: boolean }) {
+  const periods = personalUsagePeriods();
+  const current = costOf(usage?.month);
+  const trend = usage ? costTrend(current, costOf(usage.previous)) : null;
+  const estimated = (usage?.month.total.estimatedUsd ?? 0) > 0;
+  return (
+    <section data-settings-card="usage.cost" className="rounded-[14px] border-[0.5px] border-border px-3.5 py-3">
+      <h3 className="text-[13px] font-medium text-ink">{t("usage.personal.costTitle")}</h3>
+      {error ? (
+        <p role="alert" className="mt-2 text-[13px] text-danger">{t("usage.personal.error")}</p>
+      ) : !usage ? (
+        <p role="status" className="mt-2 text-[13px] text-ink-secondary">{t("planUsage.loading")}</p>
+      ) : usage.month.total.turns === 0 && usage.days30.total.turns === 0 ? (
+        <p className="mt-2 text-[13px] text-ink-secondary" data-usage-empty>{t("usage.personal.empty")}</p>
       ) : (
-        <div className="flex flex-col">
-          <div className="grid grid-cols-[1fr_auto_auto_auto] gap-x-5 border-b border-hairline/40 pb-2 text-[11.5px] font-medium uppercase tracking-wide text-ink-secondary">
-            <span>{t("usage.colBot")}</span>
-            <span className="text-right">{t("usage.colTurns")}</span>
-            <span className="text-right">{tokensColumnLabel(total)}</span>
-            <span className="text-right">{t("usage.colCost")}</span>
+        <div className="mt-2 flex flex-wrap items-end justify-between gap-3">
+          <div className="min-w-0">
+            <div className="text-[22px] font-semibold tabular-nums text-ink" data-usage-cost>{formatCost(current)}</div>
+            <p className="text-[12.5px] text-ink-secondary">
+              {t("usage.personal.thisMonth", { turns: usage.month.total.turns })}
+              {trend !== null && (
+                <> · <span data-usage-trend={trend} className={cn(trend > 0 ? "text-warning" : "text-success")}>
+                  {t(trend > 0 ? "usage.personal.trendUp" : trend < 0 ? "usage.personal.trendDown" : "usage.personal.trendSame", { percent: Math.abs(trend) })}
+                </span></>
+              )}
+            </p>
+            {estimated && <p className="mt-0.5 text-[12px] text-ink-secondary">{t("usage.personal.estimated")}</p>}
           </div>
-          {rows.map(({ bot, usage }) => (
-            <div key={bot.id} className="grid grid-cols-[1fr_auto_auto_auto] items-center gap-x-5 border-b border-hairline/20 py-2 text-[13px]">
-              <span className="flex min-w-0 items-center gap-2 text-ink">
-                <BotAvatar bot={bot} state="idle" size={22} animated={false} />
-                <span className="truncate">{bot.name}</span>
-              </span>
-              <span className="text-right tabular-nums text-ink-secondary">{usage.turns}</span>
-              <span className="text-right tabular-nums text-ink" title={usageDetail(usage)}>
-                {formatTokens(headlineTokens(usage))}
-              </span>
-              <span className="text-right tabular-nums text-ink">{hasFiniteCost(usage.costUsd) ? formatUsd(usage.costUsd) : <span className="text-ink-secondary">—</span>}</span>
-            </div>
-          ))}
-          <div className="grid grid-cols-[1fr_auto_auto_auto] items-center gap-x-5 pt-2.5 text-[13px] font-medium text-ink">
-            <span>{t("usage.allBots")}</span>
-            <span className="text-right tabular-nums">{total.turns}</span>
-            <span className="text-right tabular-nums" title={usageDetail(total)}>{formatTokens(headlineTokens(total))}</span>
-            <span className="text-right tabular-nums">{hasFiniteCost(total.costUsd) ? formatUsd(total.costUsd) : "—"}</span>
+          <div className="flex flex-col items-end gap-0.5">
+            <Sparkline values={dailyCosts(usage.days30, periods.days30)} />
+            <span className="text-[11.5px] text-ink-secondary">{t("usage.personal.last30")}</span>
           </div>
-          {cachedNote && (
-            <div className="mt-3 text-[12px] leading-relaxed text-ink-secondary">{cachedNote}</div>
-          )}
-          {hasFiniteCost(total.costUsd) && (
-            <div className="mt-3 text-[12px] leading-relaxed text-ink-secondary">
-              {t("usage.costLine", {
-                caption:
-                  billings.size === 1 ? costCaption([...billings][0]) : t("usage.costMixed"),
-              })}
-            </div>
-          )}
         </div>
       )}
+    </section>
+  );
+}
+
+const TOP = 5;
+
+function GroupList({ title, groups, kind }: { title: string; groups: PersonalUsageGroup[]; kind: "bot" | "model" }) {
+  const [all, setAll] = useState(false);
+  const shown = all ? groups : groups.slice(0, TOP);
+  return (
+    <div data-usage-list={kind}>
+      <div className="text-[12px] font-medium text-ink-secondary">{title}</div>
+      {groups.length === 0 ? (
+        <p className="mt-1 text-[13px] text-ink-secondary">{t("usage.personal.none")}</p>
+      ) : (
+        <ul className="mt-1 divide-y divide-hairline/30">
+          {shown.map((group) => (
+            <li key={group.key} className="flex items-center gap-3 py-1.5 text-[13px]">
+              <span className="min-w-0 flex-1 truncate text-ink" title={group.label}>{group.label}</span>
+              <span className="shrink-0 tabular-nums text-ink-secondary">{t("usage.personal.turns", { turns: group.turns })}</span>
+              <span className="w-20 shrink-0 text-right tabular-nums text-ink">{typeof group.costUsd === "number" ? formatCost(group.costUsd) : "·"}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+      {groups.length > TOP && (
+        <button type="button" onClick={() => setAll((open) => !open)} className="mt-1 text-[12.5px] text-accent hover:underline">
+          {all ? t("usage.personal.showLess") : t("usage.personal.showAll", { count: groups.length })}
+        </button>
+      )}
+    </div>
+  );
+}
+
+function BreakdownCard({ usage }: { usage: PersonalUsage }) {
+  return (
+    <Card collapsible cardId="usage.breakdown" defaultOpen={false} title={t("usage.personal.breakdown")} summary={t("usage.personal.breakdownSummary")}>
+      <div className="flex flex-col gap-4">
+        <GroupList kind="bot" title={t("usage.personal.byBot")} groups={rankedGroups(usage.byBot)} />
+        <GroupList kind="model" title={t("usage.personal.byModel")} groups={rankedGroups(usage.byModel)} />
+      </div>
     </Card>
-    <UsageHistory />
-    </>
   );
 }

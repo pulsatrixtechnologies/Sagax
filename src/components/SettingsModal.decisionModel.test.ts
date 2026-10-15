@@ -1,5 +1,7 @@
-// Decision model is an experimental Settings section. Off, it is absent from
-// navigation. On, it is its own item, findable by what people would type.
+// Decision model is an experimental card of Settings > Models and voice
+// (2026-10-14; it was a section of its own). Off, it is nowhere. On, the
+// card shows on that page, findable by what people would type, and an old
+// link to the section opens that page.
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -51,26 +53,29 @@ const render = async () => {
 };
 
 describe("Settings → Decision model", () => {
-  it("stays out of navigation until the experimental switch is on", async () => {
+  it("is never a menu entry, and a card of Models and voice once the experimental switch is on", async () => {
+    fixture.section = "engines";
     const off = await render();
     expect(off).not.toContain('<option value="decisionModel">');
     expect(off).not.toContain("A fast decision model that picks");
 
     fixture.decisionModel = true;
     const on = await render();
-    expect(on).toContain('<option value="decisionModel">Decision model</option>');
-    expect(on).not.toContain("A fast decision model that picks");
+    expect(on).not.toContain('<option value="decisionModel">');
+    expect(on).toContain('data-settings-card="engines.decisionModel"');
+    expect(on).toContain("A fast decision model that picks");
 
+    // an old link to the section opens the page that holds the card
     fixture.section = "decisionModel";
     const panel = await render();
-    expect(panel).toContain('<option value="decisionModel"');
+    expect(panel).toContain('<option value="engines" selected="">');
     expect(panel).toContain("A fast decision model that picks");
   });
 
-  it("hides the VPS and Boat switches and counts the six that remain; Browse Bots moved to Appearance", async () => {
+  it("hides the VPS and Boat switches and counts the five that remain; Browse Bots moved to Appearance", async () => {
     fixture.section = "experimental";
     const off = await render();
-    expect(off).toContain("1 of 6 on");
+    expect(off).toContain("1 of 5 on");
     expect(off).toContain('data-experimental-feature="decisionModel"');
     expect(off).toContain("Decision model");
     expect(off).not.toContain("data-experimental-browse-bots");
@@ -81,7 +86,7 @@ describe("Settings → Decision model", () => {
     expect(off).toContain('aria-checked="false"');
 
     fixture.decisionModel = true;
-    expect(await render()).toContain("2 of 6 on");
+    expect(await render()).toContain("2 of 5 on");
   });
 
   it("offers Sidebar shortcuts in Appearance, seeded from the old experimental switches", async () => {
@@ -94,7 +99,7 @@ describe("Settings → Decision model", () => {
 
   it("matches searches for decision, jev, typesafe, routing and auto", async () => {
     const { SECTIONS, sectionMatches } = await import("./SettingsModal");
-    const section = SECTIONS.find((entry) => entry.id === "decisionModel")!;
+    const section = SECTIONS.find((entry) => entry.id === "engines")!;
     for (const query of ["decision", "jev", "typesafe", "routing", "auto"]) expect(sectionMatches(section, query)).toBe(true);
     expect(sectionMatches(section, "backups")).toBe(false);
   });

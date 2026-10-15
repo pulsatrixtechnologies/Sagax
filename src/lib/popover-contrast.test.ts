@@ -77,14 +77,16 @@ describe("skin contrast", () => {
 
 describe("TaskPicker popover tokens", () => {
   const source = readFileSync(join(root, "src", "components", "TaskPicker.tsx"), "utf8");
-  // The popover body: the row actions panel and everything from the open
-  // popover to its New thread footer.
-  const panel = source.slice(source.indexOf("const PANEL_ITEM ="), source.indexOf("function ConversationTaskPicker("));
+  // The popover body: everything from the open popover to its New thread
+  // footer. A row's actions are the shared ThreadMenu, opened popover-toned.
   const popover = source.slice(source.indexOf("{motion.shown && ("), source.indexOf('{t("task.newShort")}'));
 
-  it("finds both regions", () => {
-    expect(panel.length).toBeGreaterThan(200);
+  it("finds the popover region", () => {
     expect(popover.length).toBeGreaterThan(500);
+  });
+
+  it("opens each row's actions as a popover-toned ThreadMenu", () => {
+    expect(source).toMatch(/<ThreadMenu tone="popover"/);
   });
 
   it("wears popover-surface on the popover itself", () => {
@@ -92,7 +94,7 @@ describe("TaskPicker popover tokens", () => {
   });
 
   it("uses popover tokens only for text, fills and borders", () => {
-    const classes = [...`${panel}\n${popover}`.matchAll(/(?:^|[\s"'`])((?:[a-z-]+:)*(?:text|bg|border|placeholder:text)-([a-z][\w-]*)(?:\/\d+)?)(?=[\s"'`])/g)]
+    const classes = [...popover.matchAll(/(?:^|[\s"'`])((?:[a-z-]+:)*(?:text|bg|border|placeholder:text)-([a-z][\w-]*)(?:\/\d+)?)(?=[\s"'`])/g)]
       .map((match) => match[1]);
     const colourTokens = classes.filter((cls) => /-(ink|accent|card|menu|inset|raised|panel|hairline|app|elevated|control|composer|popover)/.test(cls));
     const offenders = colourTokens.filter((cls) => !/(?:^|:)(?:text|bg|border)-popover\b/.test(cls) && !/(?:^|:)text-popover-/.test(cls));

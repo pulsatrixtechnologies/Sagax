@@ -222,15 +222,15 @@ describe("persistence patches", () => {
 
 describe("beat machine", () => {
   it("lists beats for the desktop app with the reel off", () => {
-    expect(beatsFor({ dictation: true, reel: false })).toEqual(["hello", "engines", "permissions", "phone", "bot"]);
+    expect(beatsFor({ dictation: true, reel: false })).toEqual(["hello", "engines", "permissions", "bot"]);
   });
 
   it("drops the permissions beat where there is no microphone to ask for", () => {
-    expect(beatsFor({ dictation: false, reel: false })).toEqual(["hello", "engines", "phone", "bot"]);
+    expect(beatsFor({ dictation: false, reel: false })).toEqual(["hello", "engines", "bot"]);
   });
 
   it("slots the reel after hello when enabled", () => {
-    expect(beatsFor({ dictation: false, reel: true })).toEqual(["hello", "reel", "engines", "phone", "bot"]);
+    expect(beatsFor({ dictation: false, reel: true })).toEqual(["hello", "reel", "engines", "bot"]);
   });
 
   it("always ends on the bot beat", () => {
@@ -244,7 +244,7 @@ describe("beat machine", () => {
 
   it("gives a hosted workspace a greeting and the bot, nothing about this computer", () => {
     expect(beatsFor({ dictation: true, reel: true, hosted: true })).toEqual(["hello", "bot"]);
-    expect(beatsFor({ dictation: true, reel: true, hosted: false })).toEqual(["hello", "reel", "engines", "permissions", "phone", "bot"]);
+    expect(beatsFor({ dictation: true, reel: true, hosted: false })).toEqual(["hello", "reel", "engines", "permissions", "bot"]);
   });
 
   it("walks forward and back and stops at the ends", () => {

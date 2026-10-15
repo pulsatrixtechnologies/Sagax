@@ -1,14 +1,13 @@
 import { memo, useEffect, useRef, useState } from "react";
-import { createPortal } from "react-dom";
-import { Archive, ArchiveRestore, BellOff, Clock, Clock3, FolderInput, FolderPlus, Link2, Link2Off, Loader2, MoreHorizontal, Pencil, Pin, PinOff, Plus, RefreshCw, Trash2 } from "lucide-react";
+import { Clock3, Loader2, MoreHorizontal, Pin } from "lucide-react";
 import type { BotProject, Task } from "@/state/store";
 import { cn } from "@/lib/cn";
-import { useHeldMenuMotion } from "./MenuMotion";
 import { t } from "@/lib/i18n";
 import { nextRename } from "@/lib/rename";
 import { threadRefUrl } from "@/lib/thread-refs";
 import { copyText } from "@/lib/copy-text";
 import { ConfirmDialog } from "./ConfirmDialog";
+import { ThreadMenu, nextSixPm, tomorrowNineAm } from "./ThreadMenu";
 import { THREAD_DRAG_TYPE } from "@/lib/folder-order";
 import { threadLinkLabel } from "../../shared/thread-link";
 
@@ -114,23 +113,8 @@ export const isArchived = (task: Pick<Task, "archivedAt">): boolean => task.arch
 export const isSnoozed = (task: Pick<Task, "snoozedUntil">, now = Date.now()): boolean =>
   task.snoozedUntil !== undefined && (task.snoozedUntil === 0 || task.snoozedUntil > now);
 
-/** The next local 6 PM — "later today", rolling to tomorrow evening once
- * tonight's is already past. Local on purpose: it is the person's evening;
- * the server stores the absolute moment either way. */
-export const nextSixPm = () => {
-  const when = new Date();
-  when.setHours(18, 0, 0, 0);
-  if (when.getTime() <= Date.now()) when.setDate(when.getDate() + 1);
-  return when.getTime();
-};
-
-/** Tomorrow morning at 9 local: a clean overnight break, no new deps. */
-export const tomorrowNineAm = () => {
-  const when = new Date();
-  when.setDate(when.getDate() + 1);
-  when.setHours(9, 0, 0, 0);
-  return when.getTime();
-};
+// Snooze presets live with the one thread menu; re-exported for callers.
+export { nextSixPm, tomorrowNineAm };
 
 /** Working is activity or flag: the wire can carry either alone, so the
  * visibility filter, the Working status, and the busy-disabled actions must
@@ -264,8 +248,6 @@ type ThreadRowProps = {
   onLink?: (task: ThreadRowTask, link: string | null) => void;
   /** Copy this bot's current approval level and saved approvals onto this thread. */
   onRefreshPermissions?: (task: ThreadRowTask) => void;
-  onCreateThread?: () => void;
-  onCreateFolder?: () => void;
 };
 
 /** Same fields, each the same value: lists build each row's task afresh
@@ -283,15 +265,12 @@ const sameThreadRow = ({ task: previousTask, ...previous }: ThreadRowProps, { ta
 
 /** One quiet row for bot and group histories. Surface denotes selection;
  * working/waiting/unread remain independent signals, never different cards. */
-export const SidebarThreadRow = memo(function SidebarThreadRow({ task, ownerId, current, compact, folders, onSelect, onRename, onRegenerateTitle, onDelete, onMove, onArchive, onPin, onSnooze, onLink, onRefreshPermissions, onCreateThread, onCreateFolder, activityLabel, now }: ThreadRowProps) {
+export const SidebarThreadRow = memo(function SidebarThreadRow({ task, ownerId, current, compact, folders, onSelect, onRename, onRegenerateTitle, onDelete, onMove, onArchive, onPin, onSnooze, onLink, onRefreshPermissions, activityLabel, now }: ThreadRowProps) {
   const [menu, setMenu] = useState<{ left: number; top: number } | null>(null);
-  const menuMotion = useHeldMenuMotion(menu);
   const [renaming, setRenaming] = useState(false);
   const [draft, setDraft] = useState(task.title);
   const [deleting, setDeleting] = useState(false);
-  const [regenerating, setRegenerating] = useState(false);
   const finishing = useRef(false);
-  const menuRef = useRef<HTMLDivElement>(null);
   const actionRef = useRef<HTMLButtonElement>(null);
   const status = task.activity === "waiting-on-you" ? t("task.waiting") : isWaitingOnTeammate(task) ? t("task.waitingOnTeammate") : isWorking(task) ? activityLabel ?? t("chat.activity.working") : task.queued ? t("task.queued") : null;
   const byline = threadByline(task);
@@ -301,21 +280,9 @@ export const SidebarThreadRow = memo(function SidebarThreadRow({ task, ownerId, 
   const closed = Boolean(task.closedBy) && !status;
   const archived = isArchived(task);
   const snoozed = isSnoozed(task);
-  const openMenu = (x: number, y: number) => setMenu({ left: Math.max(8, Math.min(x, window.innerWidth - 228)), top: Math.max(8, Math.min(y, window.innerHeight - 230)) });
+  const openMenu = (x: number, y: number) => setMenu({ left: Math.max(8, Math.min(x, window.innerWidth - 228)), top: Math.max(8, Math.min(y, window.innerHeight - 200)) });
   const canDrag = Boolean(onMove) && !renaming;
   const startRename = () => { finishing.current = false; setDraft(task.title); setRenaming(true); setMenu(null); };
-  const copyLink = () => {
-    setMenu(null);
-    // A failed write leaves the link available to copy again.
-    void copyText(threadRefUrl({ botId: ownerId, threadId: task.threadId }));
-  };
-  // The menu stays open on "Regenerating…" until the answer lands; a failure
-  // keeps it open behind the error so the person can rename by hand.
-  const regenerateTitle = () => {
-    if (!onRegenerateTitle || regenerating) return;
-    setRegenerating(true);
-    onRegenerateTitle(task, (ok) => { setRegenerating(false); if (ok) setMenu(null); });
-  };
   const finishRename = (save: boolean) => {
     if (finishing.current) return;
     finishing.current = true;
@@ -323,32 +290,6 @@ export const SidebarThreadRow = memo(function SidebarThreadRow({ task, ownerId, 
     setRenaming(false);
     if (title) onRename(task, title);
   };
-  useEffect(() => {
-    if (!menu) return;
-    menuRef.current?.querySelector<HTMLButtonElement>("button")?.focus();
-    const outside = (event: MouseEvent) => {
-      if (event.target instanceof Node && !menuRef.current?.contains(event.target) && !actionRef.current?.contains(event.target)) setMenu(null);
-    };
-    window.addEventListener("mousedown", outside);
-    return () => window.removeEventListener("mousedown", outside);
-  }, [menu]);
-  /* The snooze presets make the menu taller than the 190px first guess, and
-   * the folder picker can grow it after open: clamp the bottom edge against
-   * the rendered height so the final actions stay reachable for lower rows. */
-  useEffect(() => {
-    if (!menu || !menuRef.current) return;
-    const keepOnScreen = () => {
-      const el = menuRef.current;
-      if (!el) return;
-      const top = Math.max(8, window.innerHeight - el.offsetHeight - 8);
-      setMenu((current) => (current && current.top > top ? { ...current, top } : current));
-    };
-    keepOnScreen();
-    const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(keepOnScreen);
-    observer?.observe(menuRef.current);
-    window.addEventListener("resize", keepOnScreen);
-    return () => { observer?.disconnect(); window.removeEventListener("resize", keepOnScreen); };
-  }, [menu]);
   return <>
     <div
       draggable={canDrag}
@@ -397,36 +338,19 @@ export const SidebarThreadRow = memo(function SidebarThreadRow({ task, ownerId, 
         <MoreHorizontal size={13} />
       </button>
     </div>
-    {menuMotion.shown && menuMotion.value && createPortal(<div ref={menuRef} data-thread-overlay role="group" aria-label={t("task.actions", { title: task.title })} style={menuMotion.value}
-      className={cn("fixed z-50 max-h-[calc(100vh-16px)] w-[220px] overflow-y-auto rounded-lg border border-hairline/50 popover-surface bg-card p-1 shadow-xl", menuMotion.className)} {...menuMotion.exitProps}
-      onKeyDown={(event) => { if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); setMenu(null); actionRef.current?.focus(); } }}>
-      {onCreateThread && <button type="button" onClick={() => { setMenu(null); onCreateThread(); }} className="flex w-full items-center gap-2 rounded px-2.5 py-2 text-left text-[12px] text-ink hover:bg-raised"><Plus size={12} />{t("task.newShort")}</button>}
-      {onCreateFolder && <button type="button" onClick={() => { setMenu(null); onCreateFolder(); }} className="flex w-full items-center gap-2 rounded px-2.5 py-2 text-left text-[12px] text-ink hover:bg-raised"><FolderPlus size={12} />{t("folder.new")}</button>}
-      {(onCreateThread || onCreateFolder) && <div className="mx-2 my-1 h-px bg-hairline/50" />}
-      <button type="button" onClick={copyLink} className="flex w-full items-center gap-2 rounded px-2.5 py-2 text-left text-[12px] text-ink hover:bg-raised"><Link2 size={12} />{t("task.copyLink")}</button>
-      <button type="button" onClick={startRename} className="flex w-full items-center gap-2 rounded px-2.5 py-2 text-left text-[12px] text-ink hover:bg-raised"><Pencil size={12} />{t("task.renameAria")}</button>
-      {onRegenerateTitle && <button type="button" disabled={regenerating} aria-busy={regenerating} onClick={regenerateTitle} className="flex w-full items-center gap-2 rounded px-2.5 py-2 text-left text-[12px] text-ink hover:bg-raised disabled:opacity-40">{regenerating ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}{regenerating ? t("task.regeneratingTitle") : t("task.regenerateTitle")}</button>}
-      {onMove && Boolean(folders?.length) && <label className="block rounded px-2.5 py-2 text-[12px] text-ink"><span className="mb-1 flex items-center gap-2 text-ink-secondary"><FolderInput size={12} />{t("folder.move")}</span>
-        <select aria-label={t("folder.moveNamed", { title: task.title })} value={folders?.some((folder) => folder.id === task.projectId) ? task.projectId : ""}
-          onChange={(event) => { onMove(task, event.target.value || null); setMenu(null); }} className="w-full rounded border border-hairline/40 bg-card px-1 py-1 text-ink outline-none">
-          <option value="">{t("folder.none")}</option>{folders?.map((folder) => <option key={folder.id} value={folder.id}>{folder.emoji ? `${folder.emoji} ` : ""}{folder.name}</option>)}
-        </select>
-      </label>}
-      {onPin && <button type="button" onClick={() => { setMenu(null); onPin(task, task.pinned !== true); }} className="flex w-full items-center gap-2 rounded px-2.5 py-2 text-left text-[12px] text-ink hover:bg-raised">{task.pinned === true ? <PinOff size={12} /> : <Pin size={12} />}{task.pinned === true ? t("sidebar.bot.unpin") : t("sidebar.bot.pin")}</button>}
-      {onLink && task.link && <button type="button" onClick={() => { setMenu(null); onLink(task, null); }} className="flex w-full items-center gap-2 rounded px-2.5 py-2 text-left text-[12px] text-ink hover:bg-raised"><Link2Off size={12} />{t("task.removeLink")}</button>}
-      {onArchive && <button type="button" disabled={isWorking(task)} onClick={() => { setMenu(null); onArchive(task, isArchived(task) ? null : Date.now()); }} className="flex w-full items-center gap-2 rounded px-2.5 py-2 text-left text-[12px] text-ink hover:bg-raised disabled:opacity-40">{archived ? <ArchiveRestore size={12} /> : <Archive size={12} />}{archived ? t("task.unarchive") : t("task.archive")}</button>}
-      {onSnooze && <div className="px-2.5 pt-1">
-        <span className="flex items-center gap-2 text-[11px] text-ink-secondary"><Clock size={12} />{t("task.snooze")}</span>
-        <div className="mt-0.5 flex flex-col">
-          {[{ label: t("task.snoozeUntilActivity"), at: 0 }, { label: t("task.snoozeTonight"), at: nextSixPm() }, { label: t("task.snoozeTomorrow"), at: tomorrowNineAm() }].map((preset) => (
-            <button key={preset.label} type="button" disabled={isWorking(task)} onClick={() => { setMenu(null); onSnooze(task, preset.at); }} className="flex w-full items-center rounded px-2.5 py-1.5 text-left text-[12px] text-ink hover:bg-raised disabled:opacity-40">{preset.label}</button>
-          ))}
-        </div>
-      </div>}
-      {onSnooze && snoozed && <button type="button" onClick={() => { setMenu(null); onSnooze(task, null); }} className="flex w-full items-center gap-2 rounded px-2.5 py-2 text-left text-[12px] text-ink hover:bg-raised"><BellOff size={12} />{t("task.stopSnoozing")}</button>}
-      {onRefreshPermissions && <button type="button" disabled={isWorking(task)} title={t("task.refreshPermissionsHint")} onClick={() => { setMenu(null); onRefreshPermissions(task); }} className="flex w-full items-center gap-2 rounded px-2.5 py-2 text-left text-[12px] text-ink hover:bg-raised disabled:opacity-40"><RefreshCw size={12} />{t("task.refreshPermissions")}</button>}
-      <button type="button" disabled={isWorking(task)} onClick={() => { setMenu(null); setDeleting(true); }} className="flex w-full items-center gap-2 rounded px-2.5 py-2 text-left text-[12px] text-danger hover:bg-raised disabled:opacity-40"><Trash2 size={12} />{t("task.deleteAria")}</button>
-    </div>, document.body)}
+    <ThreadMenu task={task} folders={folders} position={menu} onClose={() => setMenu(null)} anchorRef={actionRef} actions={{
+      onRename: startRename,
+      onDelete: () => setDeleting(true),
+      ...(onPin ? { onPin: (pinned: boolean) => onPin(task, pinned) } : {}),
+      ...(onArchive ? { onArchive: (archivedAt: number | null) => onArchive(task, archivedAt) } : {}),
+      ...(onSnooze ? { onSnooze: (until: number | null) => onSnooze(task, until) } : {}),
+      ...(onMove ? { onMove: (folderId: string | null) => onMove(task, folderId) } : {}),
+      // A failed write leaves the link available to copy again.
+      onCopyLink: () => { void copyText(threadRefUrl({ botId: ownerId, threadId: task.threadId })); },
+      ...(onRegenerateTitle ? { onRegenerateTitle: (onSettled: (ok: boolean) => void) => onRegenerateTitle(task, onSettled) } : {}),
+      ...(onLink ? { onRemoveLink: () => onLink(task, null) } : {}),
+      ...(onRefreshPermissions ? { onRefreshPermissions: () => onRefreshPermissions(task) } : {}),
+    }} />
     <ConfirmDialog open={deleting} title={t("task.deleteConfirm")} body={t("task.deleteBody", { title: task.title })} confirmLabel={t("task.deleteAria")}
       onCancel={() => setDeleting(false)} onConfirm={() => { if (!isWorking(task)) onDelete(task); setDeleting(false); }} returnFocusRef={actionRef} />
   </>;

@@ -48,4 +48,9 @@ describe("plainPreviewText", () => {
   it("folds every line break and run of spaces into one line", () => {
     expect(plainPreviewText("  one\n\n\ttwo   three \n")).toBe("one two three");
   });
+
+  it("leaves no inline tag behind when one is split by another", () => {
+    expect(plainPreviewText("a <sp<b>an>bold</sp</b>an> word")).toBe("a bold word");
+    expect(plainPreviewText("x <br<i>/> y")).not.toContain("<br");
+  });
 });

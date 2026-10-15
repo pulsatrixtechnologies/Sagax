@@ -16,8 +16,10 @@ import {
   triggerLabel,
   usageCsv,
   usageFileFor,
+  usageRowsFor,
   type UsageRow,
 } from "./usage-ledger.ts";
+import { usageViewerOf } from "./routes/usage.ts";
 
 function row(overrides: Partial<UsageRow> = {}): Omit<UsageRow, "at"> & { at?: string } {
   return {
@@ -272,5 +274,35 @@ describe("organization admin usage (slice 7)", () => {
   it("keys a person by principal when the row names one", () => {
     expect(triggerKey({ kind: "user", principalId: P1, email: "a@example.test" })).toBe(`principal:${P1}`);
     expect(triggerKey({ kind: "user", email: "A@example.test" })).toBe("user:a@example.test");
+  });
+});
+
+// Settings > Usage shows the person's own usage only (2026-10-14).
+describe("usage of the person asking (?mine=1)", () => {
+  const at = "2026-10-14T12:00:00.000Z";
+  const rows = [
+    { ...row({ trigger: { kind: "owner" } }), at },
+    { ...row({ trigger: { kind: "user", principalId: "p-ada" } }), at },
+    { ...row({ trigger: { kind: "user", email: "Bob@Example.com" } }), at },
+    { ...row({ trigger: { kind: "routine", routineId: "r1", runAsPrincipalId: "p-ada" } }), at },
+    { ...row({ trigger: { kind: "routine", routineId: "r2" } }), at },
+    { ...row({ trigger: { kind: "bot", botId: "b2" } }), at },
+  ] as UsageRow[];
+  const kinds = (list: UsageRow[]) => list.map((entry) => JSON.stringify(entry.trigger));
+
+  it("gives a person their own turns and the routines run as them, nobody else's", () => {
+    expect(kinds(usageRowsFor(rows, { kind: "person", principalId: "p-ada" }))).toEqual([JSON.stringify(rows[1]!.trigger), JSON.stringify(rows[3]!.trigger)]);
+    expect(kinds(usageRowsFor(rows, { kind: "person", email: "bob@example.com" }))).toEqual([JSON.stringify(rows[2]!.trigger)]);
+    expect(usageRowsFor(rows, { kind: "person", principalId: "p-nobody" })).toEqual([]);
+  });
+
+  it("gives the operator every turn no signed-in person asked for", () => {
+    expect(kinds(usageRowsFor(rows, { kind: "operator" }))).toEqual([rows[0], rows[4], rows[5]].map((entry) => JSON.stringify(entry!.trigger)));
+  });
+
+  it("reads who asks from the request", () => {
+    expect(usageViewerOf({ kind: "loopback", scopes: ["admin", "client"] })).toEqual({ kind: "operator" });
+    expect(usageViewerOf({ kind: "session", via: "cookie", scopes: ["admin"], session: { principalId: "p-ada" } as never })).toEqual({ kind: "person", principalId: "p-ada", email: undefined });
+    expect(usageViewerOf({ kind: "session", via: "bearer", scopes: ["admin"], session: {} as never })).toEqual({ kind: "operator" });
   });
 });

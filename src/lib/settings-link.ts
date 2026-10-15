@@ -5,31 +5,35 @@ import type { LocaleKey } from "@/locales";
 import { t } from "@/lib/i18n";
 import { requestSettingsCard } from "@/components/SettingsPrimitives";
 import type { AppSettingsSection } from "@/state/store";
-import { currentSettingsSection } from "@/lib/settings-sections";
+import { currentSettingsSection, mergedSettingsCard } from "@/lib/settings-sections";
 
-export { currentSettingsSection };
+export { currentSettingsSection, mergedSettingsCard };
 
 const SECTION_LABEL = {
   general: "settings.section.general",
   organization: "settings.section.organization",
   appearance: "settings.section.appearance",
   experimental: "settings.section.experimental",
-  // Integrations was merged into Models and voice (2026-10-14).
+  // Integrations, Connected apps and Decision model are in Models and voice
+  // (2026-10-14); Privacy, Memory and Email are cards of Notifications,
+  // Organization and People. A pointer names the page that shows them.
   connections: "settings.section.modelsVoice",
-  connectedApps: "settings.section.connectedApps",
-  decisionModel: "settings.section.decisionModel",
+  connectedApps: "settings.section.modelsVoice",
+  decisionModel: "settings.section.modelsVoice",
   engines: "settings.section.modelsVoice",
-  companion: "settings.section.companion",
+  // Pair devices, Activity and Email are hidden (2026-10-14): a pointer
+  // names the page an old link opens.
+  companion: "settings.section.general",
   computer: "settings.section.computer",
   usage: "settings.section.usage",
   people: "settings.section.people",
-  mail: "settings.section.mail",
-  activity: "settings.section.activity",
+  mail: "settings.section.people",
+  activity: "settings.section.general",
   backups: "settings.section.backups",
   workspaces: "settings.section.workspaces",
-  privacy: "settings.section.privacy",
+  privacy: "settings.section.notifications",
   notifications: "settings.section.notifications",
-  memory: "settings.section.memory",
+  memory: "settings.section.organization",
 } as const satisfies Record<AppSettingsSection, LocaleKey>;
 
 export type SettingsLinkTarget = { section: AppSettingsSection; cardId?: string };
@@ -40,10 +44,12 @@ export function settingsSectionLabel(section: AppSettingsSection): string {
 
 type SettingsDispatch = (action: { type: "toggleAppSettings"; open: true; section: AppSettingsSection }) => void;
 
-/** Opens Settings on a section, and a card when the sentence points at one. */
+/** Opens Settings on a section, and a card when the sentence points at one.
+ * A section that became a card of another page opens that card. */
 export function openSettings(dispatch: SettingsDispatch, section: AppSettingsSection, cardId?: string): void {
   dispatch({ type: "toggleAppSettings", open: true, section: currentSettingsSection(section, cardId) });
-  if (cardId) requestSettingsCard(cardId);
+  const card = cardId ?? mergedSettingsCard(section);
+  if (card) requestSettingsCard(card);
 }
 
 /** Settings > Models and voice, at the list of keys: where a model that

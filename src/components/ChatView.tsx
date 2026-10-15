@@ -1,4 +1,5 @@
 import { createContext, memo, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type Dispatch } from "react";
+import { downloadBotZip, showBotZipExport } from "@/lib/bot-zip";
 import { TeammatesWorkingChip } from "./TeammatesWorkingChip";
 import { ThreadLinkContext } from "@/components/ThreadLinkMenu";
 import { useShowThreads } from "@/lib/thread-preferences";
@@ -14,10 +15,7 @@ import {
   Check,
   ChevronLeft,
   ChevronRight,
-  Bug,
-  PanelRight,
   Copy,
-  MessageSquareReply,
 
   Code,
   Eye,
@@ -95,7 +93,7 @@ import { ToolActivity, botNames } from "./ToolActivity";
 import { StepRow } from "./StepRow";
 import { stepLabel } from "@/lib/step-label";
 import { DataResultChip } from "./DataResultChip";
-import { DataWindowButton } from "./DataWindowButton";
+import { useDataWindowItem } from "./DataWindowButton";
 import { ThreadRefText } from "./ThreadRefs";
 import { optionsCardRow } from "./OptionsCardRow";
 import { MessageBoundary } from "./MessageBoundary";
@@ -124,7 +122,6 @@ import { SpeakMenuItem } from "./SpeakButton";
 import { CallOverlay, VoiceCallDock } from "./CallView";
 import { effectivePlace, toolPlace, type EffectivePlace } from "@/lib/place";
 import { cn } from "@/lib/cn";
-import { CIRCLE_BUTTON } from "@/lib/circle-button";
 import { useShowInspectorButton } from "@/lib/inspector-preferences";
 import { activeLocale, t } from "@/lib/i18n";
 import { usePerspicaxOrg } from "@/lib/perspicax-org";
@@ -142,7 +139,6 @@ import { StatusActivityRow } from "@/components/StatusActivityRow";
 import { CancelledTurnRow } from "./CancelledTurnRow";
 import { ActivityRun } from "./ActivityRun";
 import { CwActivityWidgets, CwWidgetView } from "./cw/CwWidgetView";
-import { TurnNarrationRun } from "./TurnNarrationRun";
 import { webhookMessageView } from "@/lib/webhook-message";
 import { splitTranscriptAttachments } from "@/lib/composer-attachments";
 import { useComposerDockPad } from "@/lib/composer-dock";
@@ -232,11 +228,14 @@ function useDrawnBots(bots: readonly Bot[]): readonly Bot[] {
   return cache.current.bots;
 }
 
-/** Reply to one message: the curved back arrow beside a room's bubble (a
- * 1:1 chat keeps reply in its message bar menu). */
-export function ReplyAction({ onReply }: { onReply: () => void }) {
+/** A button of the bar beside a 1:1 message, like its copy button. */
+const MESSAGE_BAR_BUTTON = "rounded-md p-1.5 text-ink-secondary hover:bg-raised hover:text-ink";
+
+/** Reply to one message: the curved back arrow beside the bubble, in a
+ * room and in a 1:1 chat alike (JC, 2026-10-14). */
+export function ReplyAction({ onReply, className = messageActionClass }: { onReply: () => void; className?: string }) {
   return (
-    <button type="button" onClick={onReply} aria-label={t("chat.replyToMessage")} title={t("chat.reply")} className={messageActionClass}>
+    <button type="button" onClick={onReply} aria-label={t("chat.replyToMessage")} title={t("chat.reply")} className={className}>
       <Reply size={14} aria-hidden="true" />
     </button>
   );
@@ -604,6 +603,7 @@ const Bubble = memo(function Bubble({
             side="user"
             time={formatTime(message.at)}
             copy={visibleText.trim() ? <CopyButton text={visibleText} className="opacity-100" /> : undefined}
+            reply={<ReplyAction onReply={() => onReply(message)} className={MESSAGE_BAR_BUTTON} />}
             react={react}
           >
             {/* editing rewinds the thread, so it waits for the turn to end —
@@ -611,7 +611,6 @@ const Bubble = memo(function Bubble({
             {message.kind === "text" && !webhookView && !hasAttachments && !busy && !message.id.startsWith("optimistic-") && (
               <MessageMenuItem label={t("chat.editMessage")} icon={<Pencil size={14} />} onSelect={() => onStartEdit(message.id)} />
             )}
-            <MessageMenuItem label={t("chat.reply")} icon={<MessageSquareReply size={14} />} onSelect={() => onReply(message)} />
             <MessageMenuItem
               label={pinned ? t("chat.unpinMessage") : t("chat.pinMessage")}
               icon={pinned ? <PinOff size={14} /> : <Pin size={14} />}
@@ -742,6 +741,7 @@ const Bubble = memo(function Bubble({
             time={formatTime(message.at)}
             visible={viewRaw || speaking}
             copy={text ? <CopyButton text={text} className="opacity-100" /> : undefined}
+            reply={<ReplyAction onReply={() => onReply(message)} className={MESSAGE_BAR_BUTTON} />}
             react={react}
           >
             {text && (
@@ -758,7 +758,6 @@ const Bubble = memo(function Bubble({
             {!busy && onRegenerate && (
               <MessageMenuItem label={t("chat.regenerate")} icon={<RefreshCw size={14} />} onSelect={onRegenerate} />
             )}
-            <MessageMenuItem label={t("chat.reply")} icon={<MessageSquareReply size={14} />} onSelect={() => onReply(message)} />
             <MessageMenuItem
               label={pinned ? t("chat.unpinMessage") : t("chat.pinMessage")}
               icon={pinned ? <PinOff size={14} /> : <Pin size={14} />}
@@ -1030,7 +1029,7 @@ const MessagesList = memo(function MessagesList({
             : entry.kind === "gotoGroup"
               ? { first: entry.messages[0]!, last: entry.messages.at(-1)! }
               : visibleEdge(entry);
-        const hiddenRun = (entry: ListedItem) => entry.kind === "run" && !showToolCalls;
+        const hiddenRun = (entry: ListedItem) => entry.kind === "run" && !showToolCalls && entry.messages.every((step) => step.kind === "activity");
         let prev: Message | undefined;
         for (let j = i - 1; j >= 0; j--) {
           const candidate = items[j]!;
@@ -1109,49 +1108,44 @@ const MessagesList = memo(function MessagesList({
             </div>
           );
         }
-        if (item.kind === "turn") {
-          return (
-            <div key={item.id} className="contents">
-              {newDay && <TranscriptDate at={first.at} />}
-              {divider}
-              <TurnNarrationRun
-                label={item.label}
-                forceOpen={item.messages.some((message) => message.id === focusedId)}
-              >
-                {item.messages.map((message) => (
-                  <div key={message.id} className="contents" data-mid={message.id}>
-                    <Bubble
-                      message={message}
-                      editing={false}
-                      pinned={message.id === pinnedMessageId}
-                      onStartEdit={onStartEdit}
-                      onCancelEdit={onCancelEdit}
-                      onSubmitEdit={onSubmitEdit}
-                      replyTarget={lookups.replyTarget(message)}
-                      onReply={onReply}
-                    />
-                  </div>
-                ))}
-              </TurnNarrationRun>
-            </div>
-          );
-        }
         if (item.kind === "run") {
           const hasWidget = item.messages.some((step) => step.tool?.widget);
+          // Tool calls off: the steps go, a turn's narration stays folded.
+          const shown = showToolCalls ? item.messages : item.messages.filter((step) => step.kind !== "activity");
           // Hidden steps still carry the divider: the reply under them is new.
-          if (!showToolCalls && !hasWidget) return divider && <div key={item.id} className="contents">{divider}</div>;
+          if (!shown.length && !hasWidget) return divider && <div key={item.id} className="contents">{divider}</div>;
           return (
             <div key={item.id} className="contents">
               {newDay && <TranscriptDate at={first.at} />}
               {divider}
               <CwActivityWidgets messages={item.messages} threadId={threadId} botId={botId} />
-              {showToolCalls && <ActivityRun messages={item.messages} forceOpen={item.messages.some((step) => step.id === focusedId)}>
-                {item.messages.map((step) => (
-                  <div key={step.id} className="contents" data-mid={step.id}>
-                    <ActivityChip message={step} place={place} />
-                  </div>
-                ))}
-              </ActivityRun>}
+              {shown.length > 0 && (
+                <ActivityRun
+                  messages={shown}
+                  elapsedMs={item.elapsedMs}
+                  focusedId={focusedId}
+                  nameOf={botNames(bots)}
+                  renderStep={(step) => (
+                    <div className="contents" data-mid={step.id}>
+                      <ActivityChip message={step} place={place} />
+                    </div>
+                  )}
+                  renderMessage={(message) => (
+                    <div className="contents" data-mid={message.id}>
+                      <Bubble
+                        message={message}
+                        editing={false}
+                        pinned={message.id === pinnedMessageId}
+                        onStartEdit={onStartEdit}
+                        onCancelEdit={onCancelEdit}
+                        onSubmitEdit={onSubmitEdit}
+                        replyTarget={lookups.replyTarget(message)}
+                        onReply={onReply}
+                      />
+                    </div>
+                  )}
+                />
+              )}
             </div>
           );
         }
@@ -1338,6 +1332,7 @@ export function ChatView({ bot: profile }: { bot: Bot }) {
   const showInspector = useShowInspectorButton();
   const advanced = useAdvancedMode();
   const bot = useMemo(() => currentTaskBot(profile), [profile]);
+  const dataItem = useDataWindowItem(bot);
   const { state, dispatch } = useStore();
   const showThreads = useShowThreads();
   const remoteClient = window.ogb?.remoteClient?.active === true;
@@ -1621,8 +1616,8 @@ export function ChatView({ bot: profile }: { bot: Bot }) {
           <button
             onClick={() => dispatch({ type: "toggleSettings", open: true })}
             className="flex min-w-0 items-center gap-2 rounded-full border-[0.5px] border-hairline-weak bg-elevated py-[7.5px] pl-[7.5px] pr-[13.5px] transition-colors duration-[120ms] hover:bg-elevated-hover"
-            title={t("chat.openProfile")}
-            aria-label={t("chat.openProfileAria", { name: bot.name })}
+            title={t("chat.openPanel")}
+            aria-label={t("chat.openPanelAria", { name: bot.name })}
           >
             <BotAvatar
               bot={bot}
@@ -1651,33 +1646,19 @@ export function ChatView({ bot: profile }: { bot: Bot }) {
           // buttons clear the 26px overlay while the rest of the layout stays.
           style={controlsShiftStyle}
         >
+          {/* One "..." for the conversation: share and export, then the
+              Inspector (Advanced) and Data (Experimental). The pill opens
+              the bot's panel; while the panel is open its top bar carries
+              this same menu. */}
           {!panelOpen && <ExportTranscriptMenu
             title={bot.name}
             messages={messages}
             botName={bot.name}
+            onExportBot={showBotZipExport(state.config, bot) ? () => downloadBotZip(bot.id, { conversations: false, sharing: false }) : undefined}
+            {...(!remoteClient && showInspector && advanced ? { onToggleInspector: () => dispatch({ type: "toggleInspector" }), inspectorOpen: state.inspectorOpen } : {})}
+            {...(dataItem ? { data: dataItem } : {})}
           />}
           <TaskPicker bot={bot} />
-          <DataWindowButton bot={bot} />
-          {/* Share, Inspector and the panel toggle move into the bot panel's
-              top bar while it is open, the way Grok Bot's do. */}
-          {!remoteClient && !panelOpen && showInspector && advanced && <button
-            onClick={() => dispatch({ type: "toggleInspector" })}
-            aria-label={t("chat.inspector")}
-            aria-pressed={state.inspectorOpen}
-            className={cn(CIRCLE_BUTTON, state.inspectorOpen && "bg-elevated-hover")}
-            title={t("chat.inspectorHint")}
-          >
-            <Bug size={18} strokeWidth={1.75} />
-          </button>}
-          {!panelOpen && <button
-            type="button"
-            onClick={() => dispatch({ type: "toggleSettings", open: true })}
-            aria-label={t("chat.openProfile")}
-            title={t("chat.openProfile")}
-            className={CIRCLE_BUTTON}
-          >
-            <PanelRight size={18} strokeWidth={1.75} />
-          </button>}
         </div>
       </div>
 

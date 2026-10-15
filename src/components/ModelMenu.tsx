@@ -14,14 +14,19 @@
 // window has no room for it, replaces the menu with a Back row. Typing
 // lists every provider's matches flat, as before; clearing the search
 // brings the submenus back. Every model row carries a star.
+//
+// Simple mode (`groupProviders`, JC 2026-10-14): one "All models ›" row
+// under Auto, the bot's model and the favorites. It lists the providers in
+// place of the root, with a Back row; each provider opens its submenu as
+// above.
 import { useEffect, useId, useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { TriangleAlert, Check, ChevronLeft, ChevronRight, Search, Star } from "lucide-react";
 
 import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
 import {
-  activeRowKey, filterModelSections, modelMenuRoot, modelMenuRootEntries, pickableRows, stepRow,
-  CURRENT_KEY_PREFIX, FAVORITE_KEY_PREFIX,
+  activeRowKey, filterModelSections, groupedModelMenuEntries, modelMenuRoot, modelMenuRootEntries, pickableRows, stepRow,
+  ALL_MODELS_KEY, CURRENT_KEY_PREFIX, FAVORITE_KEY_PREFIX,
   type ModelMenuProvider, type ModelMenuRow, type ModelMenuSection,
 } from "@/lib/model-menu";
 
@@ -100,7 +105,7 @@ function canHover(): boolean {
   }
 }
 
-export function ModelSearchList({ sections, onPick, variant, autoFocus = false, onEscape, disabled = false, label, favorites, submenus = false }: {
+export function ModelSearchList({ sections, onPick, variant, autoFocus = false, onEscape, disabled = false, label, favorites, submenus = false, groupProviders = false }: {
   sections: ModelMenuSection[];
   onPick: (row: ModelMenuRow) => void;
   variant: "popover" | "window";
@@ -114,11 +119,14 @@ export function ModelSearchList({ sections, onPick, variant, autoFocus = false, 
   favorites?: ModelMenuFavorites;
   /** A short root with one submenu per provider while the search is empty. */
   submenus?: boolean;
+  /** With `submenus`: the providers behind one "All models ›" row (Simple). */
+  groupProviders?: boolean;
 }) {
   const style = STYLE[variant];
   const [query, setQuery] = useState("");
   const [moved, setMoved] = useState<string | null>(null);
   const [openSub, setOpenSub] = useState<OpenSubmenu | null>(null);
+  const [allOpen, setAllOpen] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const boxRef = useRef<HTMLDivElement>(null);
@@ -128,7 +136,9 @@ export function ModelSearchList({ sections, onPick, variant, autoFocus = false, 
   const nested = submenus && !searching;
   const shown = filterModelSections(sections, query);
   const root = nested ? modelMenuRoot(shown, favorites?.keys ?? []) : null;
-  const entries = root ? modelMenuRootEntries(root) : null;
+  const grouped = Boolean(root) && groupProviders;
+  const showingAll = grouped && allOpen;
+  const entries = root ? (groupProviders ? groupedModelMenuEntries(root, allOpen) : modelMenuRootEntries(root)) : null;
   const rows = entries ?? pickableRows(shown);
   const active = activeRowKey(rows, moved, searching);
   const flatIds = shown.flatMap((section) => section.rows);
@@ -179,6 +189,20 @@ export function ModelSearchList({ sections, onPick, variant, autoFocus = false, 
     clearTimer();
     timer.current = setTimeout(fn, HOVER_MS);
   };
+  // "All models ›" (Simple): the providers in place of the root, and back
+  const openAll = () => {
+    clearTimer();
+    setOpenSub(null);
+    setAllOpen(true);
+    setMoved(null);
+  };
+  const closeAll = () => {
+    clearTimer();
+    setOpenSub(null);
+    setAllOpen(false);
+    setMoved(ALL_MODELS_KEY);
+    requestAnimationFrame(() => inputRef.current?.focus());
+  };
 
   const onKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
     if (event.key === "ArrowDown" || event.key === "ArrowUp") {
@@ -188,6 +212,11 @@ export function ModelSearchList({ sections, onPick, variant, autoFocus = false, 
       return;
     }
     const entry = entries?.find((candidate) => candidate.key === active);
+    if (entry && "all" in entry && entry.all && (event.key === "ArrowRight" || event.key === "Enter")) {
+      event.preventDefault();
+      openAll();
+      return;
+    }
     if (entry?.provider && (event.key === "ArrowRight" || event.key === "Enter")) {
       event.preventDefault();
       openSubmenu(entry.provider, "keyboard");
@@ -196,6 +225,11 @@ export function ModelSearchList({ sections, onPick, variant, autoFocus = false, 
     if (event.key === "ArrowLeft" && openSub) {
       event.preventDefault();
       closeSubmenu(false);
+      return;
+    }
+    if (event.key === "ArrowLeft" && showingAll && !searching) {
+      event.preventDefault();
+      closeAll();
       return;
     }
     if (event.key === "Enter") {
@@ -216,6 +250,12 @@ export function ModelSearchList({ sections, onPick, variant, autoFocus = false, 
         event.stopPropagation();
         setQuery("");
         setMoved(null);
+        return;
+      }
+      if (showingAll) {
+        event.preventDefault();
+        event.stopPropagation();
+        closeAll();
         return;
       }
       if (onEscape) {
@@ -266,6 +306,7 @@ export function ModelSearchList({ sections, onPick, variant, autoFocus = false, 
             setQuery(event.target.value);
             setMoved(null);
             if (openSub) setOpenSub(null);
+            if (allOpen) setAllOpen(false);
           }}
           onKeyDown={onKeyDown}
           className={style.input}
@@ -273,20 +314,40 @@ export function ModelSearchList({ sections, onPick, variant, autoFocus = false, 
       </label>
       {root ? (
         <div ref={listRef} id={listboxId} role="menu" aria-label={label ?? t("model.models")} data-model-list className={style.list}>
-          {root.top.length + (root.current ? 1 : 0) > 0 && (
+          {showingAll && (
+            <button type="button" data-model-all-back onMouseDown={(event) => event.preventDefault()} onClick={closeAll}
+              aria-label={t("model.settings.back", { title: t("model.allModels") })}
+              className="mb-1 flex w-full items-center gap-1 rounded-lg px-2 py-1.5 text-left text-[12.5px] font-medium text-popover-ink-secondary outline-none hover:bg-popover-hover hover:text-popover-ink focus-visible:ring-2 focus-visible:ring-focus">
+              <ChevronLeft size={14} aria-hidden="true" />
+              <span>{t("model.back")}</span>
+              <span aria-hidden="true" className="truncate font-normal">· {t("model.allModels")}</span>
+            </button>
+          )}
+          {!showingAll && root.top.length + (root.current ? 1 : 0) > 0 && (
             <div role="group" data-model-section="top" className="py-0.5">
               {root.top.map((row) => <ModelSearchRow key={row.key} {...rowProps(row, row.key)} />)}
               {root.current && <ModelSearchRow {...rowProps(root.current, `${CURRENT_KEY_PREFIX}${root.current.key}`)} />}
             </div>
           )}
-          {root.favorites.length > 0 && (
+          {!showingAll && root.favorites.length > 0 && (
             <div role="group" aria-label={t("model.favorites")} data-model-favorites className={cn("py-0.5", style.divider)}>
               <div aria-hidden="true" className={style.heading}>{t("model.favorites")}</div>
               {root.favorites.map((row) => <ModelSearchRow key={row.key} {...rowProps(row, `${FAVORITE_KEY_PREFIX}${row.key}`)} />)}
             </div>
           )}
-          {root.providers.length > 0 && (
-            <div role="group" aria-label={t("model.providers")} data-model-providers className={cn("py-0.5", style.divider)}>
+          {grouped && !showingAll && root.providers.length > 0 && (
+            <div role="group" data-model-all-group className={cn("py-0.5", style.divider)}>
+              <AllModelsRow id={optionId(ALL_MODELS_KEY)} style={style} active={active === ALL_MODELS_KEY}
+                current={root.providers.some((provider) => provider.current)}
+                onHover={() => {
+                  setMoved(ALL_MODELS_KEY);
+                  if (openSub) later(leaveSubmenu);
+                }}
+                onOpen={openAll} />
+            </div>
+          )}
+          {(!grouped || showingAll) && root.providers.length > 0 && (
+            <div role="group" aria-label={t("model.providers")} data-model-providers className={cn("py-0.5", !showingAll && style.divider)}>
               {root.providers.map((provider) => (
                 <ProviderRow key={provider.key} provider={provider} id={optionId(provider.key)} style={style}
                   active={provider.key === active} expanded={openSub?.key === provider.key}
@@ -338,6 +399,42 @@ export function ModelSearchList({ sections, onPick, variant, autoFocus = false, 
           }}
         />
       )}
+    </div>
+  );
+}
+
+/** Simple's "All models ›": the providers, listed in place of the root. */
+function AllModelsRow({ id, style, active, current, onHover, onOpen }: {
+  id: string;
+  style: Style;
+  active: boolean;
+  /** The model in effect is under one of the providers. */
+  current: boolean;
+  onHover: () => void;
+  onOpen: () => void;
+}) {
+  return (
+    <div
+      id={id}
+      role="menuitem"
+      aria-haspopup="menu"
+      data-model-row-key={ALL_MODELS_KEY}
+      data-model-all
+      // keep the focus in the search field
+      onMouseDown={(event) => event.preventDefault()}
+      onMouseEnter={onHover}
+      onClick={onOpen}
+      className={cn(
+        "flex min-h-8 cursor-default items-center justify-between gap-2 rounded-lg px-2 py-1.5 text-[13px]",
+        style.row,
+        active && style.active,
+      )}
+    >
+      <span className="truncate">{t("model.allModels")}</span>
+      <span className="flex shrink-0 items-center gap-1">
+        {current && <span data-model-provider-current aria-hidden="true" className={cn("size-1.5 rounded-full bg-current", style.check)} />}
+        <ChevronRight size={14} aria-hidden="true" className={style.detail} />
+      </span>
     </div>
   );
 }

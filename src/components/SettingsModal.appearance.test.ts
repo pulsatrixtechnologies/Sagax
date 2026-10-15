@@ -6,7 +6,7 @@ import type { SendKey } from "@/lib/send-key";
 import { en, locales } from "@/locales";
 import type { AppSettingsSection } from "@/state/store";
 import type { Switch } from "./SettingsPrimitives";
-import { SECTIONS, sectionMatches, SettingsModal } from "./SettingsModal";
+import { chooseThreadsView, SECTIONS, sectionMatches, SettingsModal } from "./SettingsModal";
 
 vi.mock("@/lib/interface-mode", () => ({ useAdvancedMode: () => true, setAdvancedMode: () => {} }));
 
@@ -14,6 +14,7 @@ const fixture = vi.hoisted(() => ({
   section: "appearance" as AppSettingsSection,
   showThreads: true,
   setShowThreads: vi.fn(),
+  setThreadsLocation: vi.fn(),
   showRunCard: true,
   setShowRunCard: vi.fn(),
   sidebarDensity: "comfortable" as "comfortable" | "compact" | "icons",
@@ -45,7 +46,7 @@ vi.mock("@/lib/thread-preferences", () => ({
   useShowThreadsChoice: () => fixture.showThreads,
   setShowThreads: fixture.setShowThreads,
   useThreadsLocationChoice: () => "header",
-  setThreadsLocation: vi.fn(),
+  setThreadsLocation: fixture.setThreadsLocation,
 }));
 vi.mock("@/lib/run-card-preferences", () => ({
   useShowRunCard: () => fixture.showRunCard,
@@ -119,7 +120,10 @@ describe("Settings → Appearance", () => {
     const html = render();
     expect(html).toContain('<option value="appearance" selected="">Appearance</option>');
     expect(html).toContain("Midnight");
-    expect(html).toContain('aria-label="Show threads"');
+    // one choice for whether and where threads show (2026-10-14)
+    expect(html).toContain('aria-label="Conversation threads"');
+    expect(html).not.toContain('aria-label="Show threads"');
+    expect(html).not.toContain('aria-label="Threads location"');
     expect(html).toContain('aria-label="Show tool calls in chat"');
     expect(html).not.toContain("on this device only");
     expect(html).not.toContain("data-settings-scope");
@@ -132,15 +136,30 @@ describe("Settings → Appearance", () => {
     expect(html).not.toContain("Maximum turn length");
   });
 
-  it.each([true, false])("only updates the local preference when the switch is %s", (enabled) => {
+  it.each([true, false])("shows the saved thread choice (shown: %s) as one selector", (enabled) => {
     fixture.showThreads = enabled;
-    render();
-    const toggle = fixture.switches.find((props) => props["aria-label"] === "Show threads")!;
-    expect(toggle.checked).toBe(enabled);
-    toggle.onClick!({} as never);
-    expect(fixture.setShowThreads).toHaveBeenCalledWith(!enabled);
+    const html = render();
+    const select = /<select aria-label="Conversation threads"[\s\S]*?<\/select>/.exec(html)?.[0] ?? "";
+    expect(select).toContain(enabled ? '<option value="header" selected="">In the chat header</option>' : '<option value="hidden" selected="">Hidden</option>');
+    expect(select).toContain(">In the sidebar<");
+  });
+
+  it("only updates the local preferences when a thread choice is made", () => {
+    chooseThreadsView("hidden");
+    expect(fixture.setShowThreads).toHaveBeenCalledWith(false);
+    expect(fixture.setThreadsLocation).not.toHaveBeenCalled();
+    chooseThreadsView("sidebar");
+    expect(fixture.setThreadsLocation).toHaveBeenCalledWith("sidebar");
+    expect(fixture.setShowThreads).toHaveBeenLastCalledWith(true);
     expect(fixture.api).not.toHaveBeenCalled();
     expect(fixture.dispatch).not.toHaveBeenCalled();
+  });
+
+  it("folds the desktop mascot rows into one card", () => {
+    const html = render();
+    const card = /data-settings-card="appearance.mascots"[\s\S]*?<\/h3>/.exec(html)?.[0] ?? "";
+    expect(card).toContain('data-open="false"');
+    expect(card).toContain("Desktop mascots");
   });
 
   it("no longer holds the notification switches: they have their own section", () => {
@@ -249,10 +268,11 @@ describe("Settings → Appearance", () => {
     fixture.section = "general";
     const html = render();
     expect(html).toContain("Profile");
-    expect(html).toContain("Maximum running threads per bot");
-    expect(html).toContain("Automatic recovery");
     expect(html).toContain('aria-label="App language"');
-    expect(html).toContain("Diagnostics");
+    // the technical cards are on General > Advanced (2026-10-14)
+    expect(html).toContain('data-settings-card="general.advanced"');
+    expect(html).not.toContain("Maximum running threads per bot");
+    expect(html).not.toContain("Automatic recovery");
     expect(html).not.toContain('aria-label="Show threads"');
     expect(html).not.toContain('aria-label="Choose sidebar density"');
     expect(html).not.toContain('aria-label="Show tool calls in chat"');
@@ -264,13 +284,14 @@ describe("Settings → Appearance", () => {
     vi.stubGlobal("window", { ogb: { remoteClient: { active: true } } });
     const html = render();
     expect(html).toContain('<option value="appearance" selected="">Appearance</option>');
-    expect(html).toContain('<option value="companion">Pair devices</option>');
+    // Pair devices is hidden since 2026-10-14
+    expect(html).not.toContain('<option value="companion"');
     expect(html).not.toContain('<option value="general">');
     expect(html).not.toContain('<option value="connections">');
     expect(html).not.toContain('<option value="engines">');
     expect(html).not.toContain('<option value="backups">');
     expect(html).toContain("Midnight");
-    expect(html).toContain('aria-label="Show threads"');
+    expect(html).toContain('aria-label="Conversation threads"');
     // this computer's notification switches stay reachable from a remote page
     expect(html).toContain('<option value="notifications">Notifications</option>');
     expect(html).toContain('aria-label="Choose sidebar density"');
@@ -281,15 +302,15 @@ describe("Settings → Appearance", () => {
     fixture.section = "backups";
     const html = render();
     expect(html).toContain('<option value="backups" selected="">Backups</option>');
-    expect(html).toContain("Export full backup");
-    expect(html).toContain('type="file" accept=".sagaxbackup"');
-    expect(html).toContain("Older team backups and shareable templates");
+    // one card, two actions; each form opens in place (2026-10-14)
+    expect(html).toContain('data-backup-action="export"');
+    expect(html).toContain('data-backup-action="import"');
   });
 
   it("renders Appearance and its controls in Japanese", () => {
     setLocale("ja");
     const html = render();
-    for (const key of ["settings.section.appearance", "settings.threadDisplay.show"] as const) {
+    for (const key of ["settings.section.appearance", "settings.sendKey.title"] as const) {
       expect(locales.ja[key], key).toBeTruthy();
       expect(locales.ja[key], key).not.toBe(en[key]);
       expect(html, key).toContain(locales.ja[key]!);
@@ -302,9 +323,10 @@ describe("Settings → Appearance", () => {
       setLocale("zz");
       const html = render();
       expect(html).toContain("Appearance");
-      expect(html).toContain('aria-label="Show threads"');
+      expect(html).toContain('aria-label="Conversation threads"');
       expect(html).toContain("all conversation history and running work");
       expect(html).not.toContain("settings.threadDisplay");
+      expect(html).not.toContain("settings.threadsView");
     } finally {
       delete locales.zz;
       setLocale("en");

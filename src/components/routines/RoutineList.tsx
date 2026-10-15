@@ -20,7 +20,7 @@ export function routineSuspendedText(reason: RoutineSuspendReason): string {
   return t("routines.suspended", { reason: t(SUSPEND_REASON_KEYS[reason]) });
 }
 
-export function RoutineList({ routines, viewerPrincipalId, loading, error, onOpen, onToggle, grouped = false }: {
+export function RoutineList({ routines, viewerPrincipalId, loading, error, onOpen, onToggle, grouped = false, toggle = true }: {
   routines: Routine[];
   /** Slice 6: the signed-in person on an organization server. */
   viewerPrincipalId?: string | null;
@@ -33,6 +33,9 @@ export function RoutineList({ routines, viewerPrincipalId, loading, error, onOpe
   onToggle?: (routine: Routine) => void;
   /** The bot panel: one rounded card, rows split by hairlines. */
   grouped?: boolean;
+  /** Draw the on/off switch on each row (the bot panel leaves Pause and
+   * Resume to the routine's own page). */
+  toggle?: boolean;
 }) {
   const sorted = [...routines].sort((a, b) => Number(b.enabled) - Number(a.enabled) || (a.nextRunAt ?? Infinity) - (b.nextRunAt ?? Infinity) || a.name.localeCompare(b.name));
   return <div aria-label={t("routines.list")}>
@@ -63,13 +66,13 @@ export function RoutineList({ routines, viewerPrincipalId, loading, error, onOpe
                   </span>
                 )}
               </button>
-              <Switch
+              {toggle && <Switch
                 checked={routine.enabled}
                 disabled={readOnly}
                 title={readOnly ? t("routines.scope.readOnly") : undefined}
                 aria-label={routine.enabled ? t("botPanel.routines.pause") : t("botPanel.routines.resume")}
                 onClick={() => { if (!readOnly) onToggle?.(routine); }}
-              />
+              />}
             </div>
           );
         })}

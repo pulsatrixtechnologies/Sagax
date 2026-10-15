@@ -393,7 +393,9 @@ export function useConnectedApps() {
   }, []);
 
   useEffect(() => {
-    void loadConnectionInventory();
+    // Opening the panel refreshes the connection state (the cached
+    // inventory shows meanwhile): the main view has no Refresh button.
+    void loadConnectionInventory(true);
     void loadCatalog();
     return () => {
       // an unmounted panel ignores any answer still in flight

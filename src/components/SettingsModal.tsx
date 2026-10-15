@@ -6,9 +6,9 @@ import { useRetroSkin } from "./RetroChromeHost";
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { FLOATING_LIVELINESS, floatingBotPrefs, HOTKEY_CHOICES, hotkeyLabel, setFloatingBarkSound, setFloatingFlyAway, setFloatingHotkey, setFloatingLiveliness, subscribeFloatingBots, type FloatingLiveliness, type HotkeyChoice } from "@/lib/floating-bots";
 import { useCallSettings, writeCallSettings } from "@/lib/voice-mode/call-settings";
-import { Archive, Bell, BookOpen, Coins, FlaskConical, Mail, Monitor, Palette, Plug, ScrollText, Search, ShieldCheck, TabletSmartphone, Terminal, User, Users, X, Building2, Zap } from "lucide-react";
+import { Archive, Bell, Coins, FlaskConical, Monitor, Palette, Search, Terminal, User, Users, X, Building2 } from "lucide-react";
 import { api, useStore, type AppSettingsSection, type ConfigStatus } from "@/state/store";
-import { browserAvailable, builtInBrowserEnabled, connectedAppsEnabled, dataWindowEnabled, decisionModelEnabled, routineGroupSettingsEnabled, routinesInConversationEnabled, showToolCallsEnabled, skillAuthoringEnabled } from "@/lib/feature-flags";
+import { browserAvailable, builtInBrowserEnabled, connectedAppsEnabled, dataWindowEnabled, decisionModelEnabled, routinesInConversationEnabled, showToolCallsEnabled, skillAuthoringEnabled } from "@/lib/feature-flags";
 import { usePerspicaxOrg } from "@/lib/perspicax-org";
 import { localeChoices, type LocaleKey } from "@/locales";
 import { t } from "@/lib/i18n";
@@ -17,18 +17,14 @@ import { completionPatch } from "@/lib/onboarding";
 import { launchBridges } from "@/lib/launch";
 import { servedPage } from "@/lib/desktop";
 import { brand } from "@/lib/brand";
-import { ManagedByOrganization, ServerModeCard, useServerMode } from "./ServerModeSettings";
+import { ServerModeCard, useServerMode } from "./ServerModeSettings";
 import { ApiKeyRow } from "./ApiKeys";
 import { DecisionModelSettings } from "./DecisionModelSettings";
 import { useUpdaterState } from "@/lib/updater";
 import { EnginesSettings } from "./EnginesSettings";
 import { LocalComputerSection } from "./LocalComputerSection";
-import { CompanionSection } from "./CompanionSection";
-import { ServerPairingCard } from "./ServerPairingCard";
 import { PeopleSection } from "./PeopleSection";
 import { peopleListServed, readMembership } from "../lib/membership";
-import { ActivitySection } from "./ActivitySection";
-import { MailSettings } from "./MailSettings";
 import { useOwnerOrAdmin } from "@/lib/use-owner-or-admin";
 import { canEditConfig, canManageBackups, canManageComputers, canViewUsage, viewerCan } from "@/lib/viewer";
 import { BrowserProfilesManager } from "./BrowserProfilesManager";
@@ -72,7 +68,6 @@ import { simpleHidesSettingsSection } from "@/lib/interface-visibility";
 import { setShowThreads, setThreadsLocation, useShowThreadsChoice, useThreadsLocationChoice, type ThreadsLocation } from "@/lib/thread-preferences";
 import { setShowUnreadyProviders, useShowUnreadyProviders } from "@/lib/unready-providers-preference";
 import { parseSidebarDensity, setSidebarDensity, SIDEBAR_DENSITIES, useSidebarDensity, type SidebarDensity } from "@/lib/sidebar-preferences";
-import { currentPhonePairingTarget } from "@/lib/phone-pairing";
 import { setShowRunCard, useShowRunCard } from "@/lib/run-card-preferences";
 import { parseSendKey, SEND_KEYS, sendKeyLabel, setSendKey, useSendKey } from "@/lib/send-key";
 import { setShowSidebarLogo, useShowSidebarLogo } from "@/lib/sidebar-logo-preferences";
@@ -93,26 +88,31 @@ export const SECTIONS: Array<{
   icon: typeof User;
   keywords: string[];
 }> = [
-  { id: "general", labelKey: "settings.section.general", icon: User, keywords: ["profile", "name", "email", "about me", "about", "suggestions", "suggested", "memory", "updates", "effort", "new bots", "reasoning", "threads", "parallel", "concurrency", "cleanup", "retention", "event log", "event-log", "log size", "automatic recovery", "backup model", "fallback", "routines", "conversation", "schedule"] },
-  { id: "organization", labelKey: "settings.section.organization", icon: Building2, keywords: ["company", "organization", "organisation", "sign in", "enroll", "managed", "models", "disconnect", "workspace", "cloud", "hosted", "vps", "server", "servers", "connect", "pair", "switch", "local"] },
+  { id: "general", labelKey: "settings.section.general", icon: User, keywords: ["profile", "name", "email", "about me", "about", "suggestions", "suggested", "memory", "updates", "effort", "new bots", "reasoning", "threads", "parallel", "concurrency", "cleanup", "retention", "event log", "event-log", "log size", "automatic recovery", "backup model", "fallback", "routines", "conversation", "schedule", "advanced", "avancé", "mcp", "timeout", "tool access", "accès aux outils", "group turns", "rooms", "prerelease", "pre-release", "diagnostics", "diagnostic"] },
+  // 2026-10-14: Memory is a card of this page (it was its own section).
+  { id: "organization", labelKey: "settings.section.organization", icon: Building2, keywords: ["company", "organization", "organisation", "sign in", "enroll", "managed", "models", "disconnect", "workspace", "cloud", "hosted", "vps", "server", "servers", "connect", "pair", "switch", "local", "memory", "obsidian", "vault", "sync", "git", "perspicax", "mémoire", "cache", "pending", "domain", "dns", "caddy"] },
   { id: "appearance", labelKey: "settings.section.appearance", icon: Palette, keywords: ["skin", "theme", "appearance", "advanced", "simple", "mode", "tools", "tool calls", "threads", "show threads", "hide threads", "sidebar", "hidden", "hide", "show", "density", "compact", "comfortable", "avatars", "display", "run", "this run", "run card", "commands", "mascot", "owl", "desktop", "fly", "floating", "app icon", "dock", "icon", "taskbar", "providers", "sign-in", "unconfigured", "fournisseurs", "connexion", "non configurés", "send", "enter", "return", "shift+enter", "ctrl+enter", "cmd+enter", "⌘+enter", "new line", "keyboard", "ime", "japanese"] },
-  { id: "notifications", labelKey: "settings.section.notifications", icon: Bell, keywords: ["notifications", "notification", "sound", "sounds", "mute", "silent", "chime", "alert", "alerts", "banner", "badge", "dock", "unread", "nudge", "wizz", "shake", "secousse", "son", "persistent", "stay"] },
-  { id: "memory", labelKey: "settings.section.memory", icon: BookOpen, keywords: ["memory", "obsidian", "vault", "sync", "git", "perspicax", "mémoire", "cache", "pending"] },
-  { id: "privacy", labelKey: "settings.section.privacy", icon: ShieldCheck, keywords: ["privacy", "read receipts", "seen", "vu", "confidentialité", "accusés de lecture", "presence", "online", "away", "offline", "last seen", "status", "en ligne", "absent", "hors ligne", "privacidade"] },
+  // 2026-10-14: Privacy is a card of this page on an organization server.
+  { id: "notifications", labelKey: "settings.section.notifications", icon: Bell, keywords: ["notifications", "notification", "sound", "sounds", "mute", "silent", "chime", "alert", "alerts", "banner", "badge", "dock", "unread", "nudge", "wizz", "shake", "secousse", "son", "persistent", "stay", "privacy", "read receipts", "seen", "vu", "confidentialité", "accusés de lecture", "presence", "online", "away", "offline", "last seen", "status", "en ligne", "absent", "hors ligne", "privacidade"] },
   { id: "experimental", labelKey: "settings.section.experimental", icon: FlaskConical, keywords: ["early", "preview", "learn", "skill", "authoring", "browser", "profiles"] },
-  { id: "decisionModel", labelKey: "settings.section.decisionModel", icon: Zap, keywords: ["decision", "jev", "typesafe", "routing", "auto", "rooms", "who answers"] },
-  // Models and voice (2026-10-14): Integrations and Models and accounts in one page.
-  { id: "engines", labelKey: "settings.section.modelsVoice", icon: Terminal, keywords: ["models", "model providers", "engines", "claude", "codex", "grok", "providers", "cli", "sign in", "subscription", "keys", "api", "api key", "api keys", "connections", "integrations", "intégrations", "clés", "xai", "mistral", "cerebras", "router", "openrouter", "base url", "openai", "anthropic", "groq", "opencode", "provider", "voice", "voix", "tts", "elevenlabs", "fish", "chatterbox", "live call", "image", "avatar", "box", "vps", "cursor", "cloud agents"] },
-  { id: "connectedApps", labelKey: "settings.section.connectedApps", icon: Plug, keywords: ["composio", "connected apps", "apps", "gmail", "slack", "notion", "apps connectées"] },
-  { id: "companion", labelKey: "settings.section.companion", icon: TabletSmartphone, keywords: ["companion", "device", "phone", "desktop", "client", "host", "pair", "pairing", "mobile", "https", "secure", "tailscale", "wifi", "remote", "advanced", "domain", "dns", "self-hosted", "server", "caddy"] },
+  // Models and voice (2026-10-14): Integrations and Models and accounts in
+  // one page; Connected apps and Decision model are cards of it.
+  { id: "engines", labelKey: "settings.section.modelsVoice", icon: Terminal, keywords: ["models", "model providers", "engines", "claude", "codex", "grok", "providers", "cli", "sign in", "subscription", "keys", "api", "api key", "api keys", "connections", "integrations", "intégrations", "clés", "xai", "mistral", "cerebras", "router", "openrouter", "base url", "openai", "anthropic", "groq", "opencode", "provider", "voice", "voix", "tts", "elevenlabs", "fish", "chatterbox", "live call", "image", "avatar", "box", "vps", "cursor", "cloud agents", "composio", "connected apps", "apps", "gmail", "slack", "notion", "apps connectées", "decision", "jev", "typesafe", "routing", "auto", "who answers"] },
   { id: "computer", labelKey: "settings.section.computer", icon: Monitor, keywords: ["computer", "local vm", "vm", "virtual", "desktop", "ordinateur"] },
   { id: "usage", labelKey: "settings.section.usage", icon: Coins, keywords: ["tokens", "cost", "billing"] },
   { id: "people", labelKey: "settings.section.people", icon: Users, keywords: ["people", "users", "invite", "sign in", "members", "admins", "access"] },
-  { id: "mail", labelKey: "settings.section.mail", icon: Mail, keywords: ["email", "mail", "courriel", "smtp", "sendgrid", "twilio", "sender", "invitations", "sign-in codes"] },
-  { id: "activity", labelKey: "settings.section.activity", icon: ScrollText, keywords: ["activity", "audit", "log", "history", "who changed", "approvals", "decisions", "admin"] },
   { id: "backups", labelKey: "settings.section.backups", icon: Archive, keywords: ["export", "import", "restore", "full backup", "password", "recovery"] },
   { id: "workspaces", labelKey: "settings.section.workspaces", icon: Building2, keywords: ["clients", "tenants", "fleet", "workspaces", "installation", "installations"] },
 ];
+
+/** Former sections that are a card of another page now (2026-10-14), by the
+ * page that holds them. Each keeps its own visibility rules: the card shows
+ * where the section would have, and its page shows when the card does. */
+const HOSTED_CARDS: Partial<Record<AppSettingsSection, AppSettingsSection[]>> = {
+  engines: ["connectedApps", "decisionModel"],
+  notifications: ["privacy"],
+  organization: ["memory"],
+};
 
 /** Collapsible cards a search opens: a match on these words means the person
  * is looking for what the card holds, so it should not stay folded. */
@@ -127,6 +127,9 @@ const CARD_KEYWORDS: Record<string, string[]> = {
   "engines.moreProviders": ["openrouter", "mistral", "opencode", "base url", "compatible", "cursor", "cloud agent"],
   "voice.advanced": ["live call", "read replies", "hang up", "gpt-live"],
   "companion.domain": ["domain", "dns", "caddy"],
+  "connections.apps": ["composio", "connected apps"],
+  "engines.decisionModel": ["decision", "jev", "typesafe"],
+  "organization.memory": ["obsidian", "vault"],
   "backups.import": ["import", "restore"],
 };
 
@@ -313,6 +316,7 @@ export function connectedAppsSummary(config: ConfigStatus | null | undefined): s
  * the section they belong to, their title and their page. */
 const SUB_PAGES: Record<string, { section: AppSettingsSection; titleKey: LocaleKey; render: () => React.ReactNode }> = {
   "general.aboutMe": { section: "general", titleKey: "settings.profile.aboutMe", render: () => <AboutMeEditor /> },
+  "general.advanced": { section: "general", titleKey: "settings.advancedPage.title", render: () => <GeneralAdvancedSettings /> },
 };
 
 /** This app's updates, which download by themselves. Shown once the desktop
@@ -647,15 +651,37 @@ function SidebarDensityRow() {
   );
 }
 
-function ShowThreadsRow() {
+type ThreadsView = "hidden" | ThreadsLocation;
+
+/** Hidden keeps the last place, for when threads come back. */
+export function chooseThreadsView(next: ThreadsView): void {
+  if (next === "hidden") {
+    setShowThreads(false);
+    return;
+  }
+  setThreadsLocation(next);
+  setShowThreads(true);
+}
+
+/** One choice for whether and where conversation threads show (2026-10-14:
+ * it was "Conversations" on/off plus "Threads location", greyed while off).
+ * Both stored values stay: hiding keeps the last place for when they return. */
+function ThreadsViewRow() {
   const enabled = useShowThreadsChoice();
+  const location = useThreadsLocationChoice();
+  const value: ThreadsView = enabled ? location : "hidden";
   return (
-    <SettingRow title={t("settings.threadDisplay.title")} subtitle={t("settings.threadDisplay.short")} help={t("settings.threadDisplay.subtitle")}>
-      <Switch
-        checked={enabled}
-        aria-label={t("settings.threadDisplay.show")}
-        onClick={() => setShowThreads(!enabled)}
-      />
+    <SettingRow title={t("settings.threadsView.title")} subtitle={t("settings.threadsView.subtitle")} help={t("settings.threadDisplay.subtitle")}>
+      <select
+        aria-label={t("settings.threadsView.title")}
+        value={value}
+        onChange={(event) => chooseThreadsView(event.target.value as ThreadsView)}
+        className="rounded-lg border border-border bg-ink/[0.03] px-2.5 py-1.5 text-[13px] leading-[18px] text-ink focus:border-border-strong focus:outline-none"
+      >
+        <option value="hidden">{t("settings.threadsView.hidden")}</option>
+        <option value="header">{t("settings.threadsLocation.header")}</option>
+        <option value="sidebar">{t("settings.threadsLocation.sidebar")}</option>
+      </select>
     </SettingRow>
   );
 }
@@ -669,25 +695,6 @@ function ShowUnreadyProvidersRow() {
         aria-label={t("settings.unreadyProviders.show")}
         onClick={() => setShowUnreadyProviders(!enabled)}
       />
-    </SettingRow>
-  );
-}
-
-function ThreadsLocationRow() {
-  const enabled = useShowThreadsChoice();
-  const location = useThreadsLocationChoice();
-  return (
-    <SettingRow title={t("settings.threadsLocation.title")} subtitle={t("settings.threadsLocation.subtitle")}>
-      <select
-        aria-label={t("settings.threadsLocation.aria")}
-        value={location}
-        disabled={!enabled}
-        onChange={(event) => setThreadsLocation(event.target.value as ThreadsLocation)}
-        className="rounded-lg border border-border bg-ink/[0.03] px-2.5 py-1.5 text-[13px] leading-[18px] text-ink focus:border-border-strong focus:outline-none disabled:opacity-50"
-      >
-        <option value="header">{t("settings.threadsLocation.header")}</option>
-        <option value="sidebar">{t("settings.threadsLocation.sidebar")}</option>
-      </select>
     </SettingRow>
   );
 }
@@ -842,7 +849,10 @@ function ToolCallsRow() {
   );
 }
 
-type ExperimentalFeature = "skillAuthoring" | "browser" | "connectedApps" | "decisionModel" | "dataWindow" | "routineGroupSettings";
+// 2026-10-14: "Advanced routine and group settings" left this list. Routines
+// in the conversation and Group turns are in General > Advanced, a sub-page
+// only Advanced mode shows: one way to reach them, not two locks.
+type ExperimentalFeature = "skillAuthoring" | "browser" | "connectedApps" | "decisionModel" | "dataWindow";
 
 function ExperimentalFeaturesRow() {
   const { state, dispatch } = useStore();
@@ -851,7 +861,6 @@ function ExperimentalFeaturesRow() {
   const connectedApps = connectedAppsEnabled(state.config);
   const decisionModel = decisionModelEnabled(state.config);
   const dataWindow = dataWindowEnabled(state.config);
-  const routineGroupSettings = routineGroupSettingsEnabled(state.config);
   const desktopBrowser = browserAvailable(state.config);
   const browserInstallable = state.config?.browserEngine?.installable === true;
   const browserBlockedOnWindows = window.ogb?.platform === "win32" && !desktopBrowser && !browserInstallable;
@@ -881,7 +890,7 @@ function ExperimentalFeaturesRow() {
       cardId="experimental.features"
       title={t("settings.experimental.title")}
       subtitle={t("settings.experimental.subtitle")}
-      summary={t("settings.card.countOn", { count: Number(skillAuthoring) + Number(browser) + Number(connectedApps) + Number(decisionModel) + Number(dataWindow) + Number(routineGroupSettings), total: 6 })}
+      summary={t("settings.card.countOn", { count: Number(skillAuthoring) + Number(browser) + Number(connectedApps) + Number(decisionModel) + Number(dataWindow), total: 5 })}
     >
       <div className="flex items-center justify-between gap-4">
         <div className="min-w-0">
@@ -966,19 +975,6 @@ function ExperimentalFeaturesRow() {
           className="disabled:cursor-wait disabled:opacity-50"
         />
       </div>
-      <div className="mt-4 flex items-center justify-between gap-4 border-t border-hairline/30 pt-4" data-experimental-feature="routineGroupSettings">
-        <div className="min-w-0">
-          <div className="text-[14px] font-medium text-ink">{t("settings.experimental.routineGroupSettings")}</div>
-          <div className="mt-0.5 text-[12px] leading-relaxed text-ink-secondary">{t("settings.experimental.routineGroupSettingsDetail")}</div>
-        </div>
-        <Switch
-          checked={routineGroupSettings}
-          aria-label={t("settings.experimental.routineGroupSettingsAria")}
-          disabled={saving !== null}
-          onClick={() => void toggle("routineGroupSettings", !routineGroupSettings)}
-          className="disabled:cursor-wait disabled:opacity-50"
-        />
-      </div>
       {error ? <p role="alert" className="mt-2 text-[12px] text-danger">{error}</p> : null}
     </Card>
   );
@@ -1053,6 +1049,87 @@ function DiagnosticsRow() {
   );
 }
 
+/** The six desktop mascot rows in one folded card (2026-10-14: they were a
+ * third of Appearance). Folded, every value set here still applies. */
+function DesktopMascotsCard() {
+  return (
+    <Card
+      collapsible
+      cardId="appearance.mascots"
+      defaultOpen={false}
+      title={t("settings.mascotsCard.title")}
+      subtitle={t("settings.mascotsCard.subtitle")}
+    >
+      <div className="-mx-3.5 -mb-1">
+        <FloatingFlyAwayRow />
+        <FloatingLivelinessRow />
+        <FloatingBarkSoundRow />
+        <FloatingHotkeyRow />
+        <FloatingCaptionsRow />
+      </div>
+    </Card>
+  );
+}
+
+/** General > Advanced (2026-10-14): the technical cards of General on a page
+ * of their own, shown in Advanced mode. Routines in the conversation and
+ * Group turns live here only; the Experimental switch that hid them a second
+ * time is gone, and their saved values apply whether or not anyone looks. */
+export function GeneralAdvancedSettings() {
+  const { state } = useStore();
+  const remoteActive = window.ogb?.remoteClient?.active === true;
+  const editConfig = canEditConfig(state.config);
+  return (
+    <div className="flex flex-col gap-3" data-general-advanced="">
+      {editConfig && (
+        <>
+          {!remoteActive && (
+            <div className="rounded-[14px] border-[0.5px] border-border py-1">
+              <RoutinesInConversationRow />
+            </div>
+          )}
+          <Card
+            collapsible
+            cardId="general.roomTurns"
+            defaultOpen={false}
+            title={t("settings.roomTurns.title")}
+            subtitle={t("settings.roomTurns.subtitle")}
+            summary={t("settings.card.roomTurns", { minutes: state.config?.rooms.turnTimeoutMinutes ?? 5 })}
+          >
+            <RoomTurnTimeoutSettings />
+          </Card>
+          <Card
+            collapsible
+            cardId="general.mcpCalls"
+            defaultOpen={false}
+            title={t("settings.mcpCalls.title")}
+            subtitle={t("settings.mcpCalls.subtitle")}
+            summary={`${mcpCallTimeoutMinutes(state.config)} ${t("settings.mcpCalls.minutes")}`}
+          >
+            <McpCallTimeoutSettings />
+          </Card>
+          <Card
+            collapsible
+            cardId="general.toolAccess"
+            defaultOpen={false}
+            title={t("settings.toolAccess.title")}
+            subtitle={t("settings.toolAccess.subtitle")}
+          >
+            <ToolAccessSettings />
+          </Card>
+          <ThreadConcurrencySettings />
+          <AutomaticRecoverySettings />
+          <ThreadCleanupSettings />
+        </>
+      )}
+      <div className="rounded-[14px] border-[0.5px] border-border py-1 empty:hidden">
+        <PrereleaseRow />
+        <DiagnosticsRow />
+      </div>
+    </div>
+  );
+}
+
 function InterfaceModeRow() {
   const advanced = useAdvancedMode();
   return (
@@ -1071,14 +1148,15 @@ export function SettingsModal() {
   const advanced = useAdvancedMode();
   const retroSkin = useRetroSkin();
   const remoteActive = window.ogb?.remoteClient?.active === true;
-  // "Connect your phone" focuses the pairing this window can do: this
-  // computer's phone flow, or the server's pairing code.
-  const computerPairs = currentPhonePairingTarget(false) === "computer";
-  // An old "connections" (Integrations) section opens Models and voice.
-  const section: AppSettingsSection =
-    remoteActive && state.appSettingsSection !== "appearance" && state.appSettingsSection !== "organization" && state.appSettingsSection !== "notifications" && state.appSettingsSection !== "memory"
-      ? "companion"
-      : currentSettingsSection(state.appSettingsSection);
+  // An old section id opens the page that holds it now. A remote client
+  // shows this desktop's own pages only (Appearance, Organization,
+  // Notifications); Pair devices, its old landing page, is hidden since
+  // 2026-10-14, so it lands on Appearance.
+  const current = currentSettingsSection(state.appSettingsSection);
+  const requested: AppSettingsSection =
+    remoteActive && current !== "appearance" && current !== "organization" && current !== "notifications"
+      ? "appearance"
+      : current;
   const dialogRef = useRef<HTMLDivElement>(null);
   const [query, setQuery] = useState("");
   useEffect(() => window.ogb?.environments?.onOpenSettings?.(() => setQuery("")), []);
@@ -1097,45 +1175,56 @@ export function SettingsModal() {
   const perspicaxOrg = usePerspicaxOrg();
   const organization = Boolean(lockedServer) || perspicaxOrg !== null;
   const soloDesktop = !remoteActive && Boolean(launchBridges(window.ogb)) && state.config?.onboarding?.launchMode !== "server";
-  // A request for Settings > Organization (the Server menu, a deep link) on
-  // a desktop with no server opens the launch screen on Server instead.
-  useEffect(() => {
-    if (!soloDesktop || state.appSettingsSection !== "organization") return;
-    dispatch({ type: "toggleAppSettings", open: false, section: "general" });
-    dispatch({ type: "toggleLaunch", open: true, mode: "server" });
-  }, [soloDesktop, state.appSettingsSection, dispatch]);
-  const availableSections = SECTIONS.filter((entry) => !remoteActive || entry.id === "companion" || entry.id === "appearance" || entry.id === "organization" || entry.id === "privacy" || entry.id === "notifications" || entry.id === "memory")
+  // Whether a section id (a page, or a former page that is a card now) may
+  // show for this viewer. A card keeps the rules its section had.
+  const allowed = (id: AppSettingsSection): boolean => {
+    // a remote client shows the pages that are about this desktop
+    if (remoteActive && !["appearance", "organization", "privacy", "notifications", "memory"].includes(id)) return false;
     // the organization memory's local cache is the desktop app's (main
     // process), set up by itself on an organization server signed in with
     // Perspicax: nothing to show anywhere else
-    .filter((entry) => entry.id !== "memory" || (orgMemoryAvailable() && perspicaxOrg !== null))
+    if (id === "memory" && !(orgMemoryAvailable() && perspicaxOrg !== null)) return false;
     // the desktop app in "No server" mode has no organization to show; it
     // joins one from General > Server, which brings this section back
-    .filter((entry) => entry.id !== "organization" || !soloDesktop)
+    if (id === "organization" && soloDesktop) return false;
     // the operator's screen for other workspaces exists only where a fleet agent does
-    .filter((entry) => entry.id !== "workspaces" || workspacesAvailable(state.config))
+    if (id === "workspaces" && !workspacesAvailable(state.config)) return false;
     // sign-in by email is a served solo server's (the desktop app pairs
     // devices under Remote access), or the read-only view of a hosted
     // workspace whose members the organisation's Admin decides. An
     // organization server sends no sign-in list: Perspicax owns its people.
     // A served page, in a browser or drawn by the desktop app on that server
     // (electron/bundled-ui.cjs): the same server shows the same sections.
-    .filter((entry) => entry.id !== "people" || (servedPage() && (readMembership(state.config).authority === "portal" || peopleListServed(state.config))))
+    if (id === "people" && !(servedPage() && (readMembership(state.config).authority === "portal" || peopleListServed(state.config)))) return false;
     // how the server sends sign-in codes and invitations: its admins and
     // the operator, on the desktop and on the web
-    .filter((entry) => entry.id !== "mail" || ownerOrAdmin === true)
-    .filter((entry) => !organizationHidesSection(entry.id, organization))
+    if (id === "mail" && ownerOrAdmin !== true) return false;
+    if (organizationHidesSection(id, organization)) return false;
     // the activity log belongs to a workspace served to a browser, and to its admins
     // (2026-10-09: and to a person whose profile includes people.activityLog)
-    .filter((entry) => entry.id !== "activity" || (servedPage() && (ownerOrAdmin === true || (perspicaxOrg !== null && viewerCan(state.config, "people.activityLog")))))
+    if (id === "activity" && !(servedPage() && (ownerOrAdmin === true || (perspicaxOrg !== null && viewerCan(state.config, "people.activityLog"))))) return false;
     // Installation writes the server refuses with 403: hide the section.
-    .filter((entry) => !memberHidesSection(entry.id, { editConfig, manageComputers, viewUsage, manageBackups, organization }))
-    // Decision model is an experimental section, off until its switch is on.
-    .filter((entry) => entry.id !== "decisionModel" || decisionModelEnabled(state.config))
-    // Connected apps (Composio) is experimental too.
-    .filter((entry) => entry.id !== "connectedApps" || connectedAppsEnabled(state.config))
+    if (memberHidesSection(id, { editConfig, manageComputers, viewUsage, manageBackups, organization })) return false;
+    // Decision model and Connected apps (Composio) are experimental, off until their switch is on.
+    if (id === "decisionModel" && !decisionModelEnabled(state.config)) return false;
+    if (id === "connectedApps" && !connectedAppsEnabled(state.config)) return false;
     // Simple hides technical sections. Their saved values stay.
-    .filter((entry) => advanced || !simpleHidesSettingsSection(entry.id));
+    return advanced || !simpleHidesSettingsSection(id);
+  };
+  const memoryShown = allowed("memory");
+  // A request for Settings > Organization (the Server menu, a deep link) on
+  // a desktop with no server opens the launch screen on Server instead,
+  // unless the page holds this computer's organization memory.
+  useEffect(() => {
+    if (!soloDesktop || memoryShown || state.appSettingsSection !== "organization") return;
+    dispatch({ type: "toggleAppSettings", open: false, section: "general" });
+    dispatch({ type: "toggleLaunch", open: true, mode: "server" });
+  }, [soloDesktop, memoryShown, state.appSettingsSection, dispatch]);
+  // A page shows when it is allowed, or when one of the cards it holds is.
+  const availableSections = SECTIONS.filter((entry) => allowed(entry.id) || (HOSTED_CARDS[entry.id] ?? []).some(allowed));
+  // A page this viewer cannot see (an old link to Email where People is not
+  // shown, a hidden page) draws the first page they can, at once.
+  const section: AppSettingsSection = availableSections.some((entry) => entry.id === requested) ? requested : availableSections[0]?.id ?? requested;
   const visibleSections = availableSections.filter((entry) => sectionMatches(entry, q));
   const sectionLabelKey = SECTIONS.find((entry) => entry.id === section)?.labelKey;
   const subPageId = state.appSettingsSubPage;
@@ -1315,7 +1404,17 @@ export function SettingsModal() {
             </h2>
             <div className="flex flex-col gap-3 px-4 pb-6 pt-4 sm:px-8">
             <LicenseExpiryBanner config={state.config} />
-            {section === "organization" && <OrganizationSettings />}
+            {section === "organization" && (
+              <>
+                {allowed("organization") && <OrganizationSettings />}
+                {/* Memory (2026-10-14): a card of Organization, not a page. */}
+                {memoryShown && (
+                  <Card collapsible cardId="organization.memory" title={t("settings.section.memory")}>
+                    <OrgMemorySettings />
+                  </Card>
+                )}
+              </>
+            )}
             {section === "general" && (
               <>
                 {lockedServer ? <ServerModeCard state={lockedServer} /> : <ThisComputerSettings />}
@@ -1340,58 +1439,25 @@ export function SettingsModal() {
                   <LanguageRow />
                   {advanced && editConfig && <DefaultBotSettings />}
                 </div>
-                {/* Routines in the conversation and Group turns show only with
-                    the experimental switch on; hidden, their saved values
-                    still apply (routineGroupSettingsEnabled). */}
-                {advanced && !remoteActive && editConfig && routineGroupSettingsEnabled(state.config) && (
-                  <div className="rounded-[14px] border-[0.5px] border-border py-1">
-                    <RoutinesInConversationRow />
-                  </div>
-                )}
-                {advanced && editConfig && routineGroupSettingsEnabled(state.config) && (
-                  <Card
-                    collapsible
-                    cardId="general.roomTurns"
-                    defaultOpen={false}
-                    title={t("settings.roomTurns.title")}
-                    subtitle={t("settings.roomTurns.subtitle")}
-                    summary={t("settings.card.roomTurns", { minutes: state.config?.rooms.turnTimeoutMinutes ?? 5 })}
-                  >
-                    <RoomTurnTimeoutSettings />
-                  </Card>
-                )}
-                {advanced && editConfig && (
-                  <Card
-                    collapsible
-                    cardId="general.mcpCalls"
-                    defaultOpen={false}
-                    title={t("settings.mcpCalls.title")}
-                    subtitle={t("settings.mcpCalls.subtitle")}
-                    summary={`${mcpCallTimeoutMinutes(state.config)} ${t("settings.mcpCalls.minutes")}`}
-                  >
-                    <McpCallTimeoutSettings />
-                  </Card>
-                )}
-                {advanced && editConfig && (
-                  <Card
-                    collapsible
-                    cardId="general.toolAccess"
-                    defaultOpen={false}
-                    title={t("settings.toolAccess.title")}
-                    subtitle={t("settings.toolAccess.subtitle")}
-                  >
-                    <ToolAccessSettings />
-                  </Card>
-                )}
-                {advanced && editConfig && <ThreadConcurrencySettings />}
-                {advanced && editConfig && <AutomaticRecoverySettings />}
-                {advanced && editConfig && <ThreadCleanupSettings />}
                 <div className="rounded-[14px] border-[0.5px] border-border py-1">
                   {!remoteActive && <ReplayTourRow />}
                   <UpdatesRow />
-                  {advanced && <PrereleaseRow />}
-                  {advanced && <DiagnosticsRow />}
                 </div>
+                {/* General > Advanced (2026-10-14): MCP, tool access,
+                    parallel conversations, recovery, cleanup, group turns,
+                    routines, pre-releases and diagnostics on one sub-page.
+                    A search that names one of them shows them here. */}
+                {advanced && (q
+                  ? <GeneralAdvancedSettings />
+                  : (
+                    <SettingsSubPageRow
+                      cardId="general.advanced"
+                      title={t("settings.advancedPage.title")}
+                      summary={t("settings.advancedPage.summary")}
+                      actionLabel={t("settings.advancedPage.open")}
+                      onOpen={() => openSubPage("general.advanced")}
+                    />
+                  ))}
               </>
             )}
 
@@ -1413,6 +1479,7 @@ export function SettingsModal() {
                   <Card
                     collapsible
                     cardId="appearance.appIcon"
+                    defaultOpen={false}
                     title={t("settings.appIcon.title")}
                     subtitle={t("settings.appIcon.subtitle")}
                   >
@@ -1423,22 +1490,19 @@ export function SettingsModal() {
                   <FontRow />
                   <SendKeyRow />
                   <SidebarDensityRow />
-                  <SidebarLogoRow />
+                  <ThreadsViewRow />
+                  {/* Simple shows what most people change; the rest is Advanced (2026-10-14). */}
+                  {advanced && <SidebarLogoRow />}
                   {advanced && <SidebarShortcutsRow />}
-                  <RoutinesBadgeRow />
+                  {advanced && <RoutinesBadgeRow />}
                   {advanced && <InspectorButtonRow />}
-                  <ShowThreadsRow />
-                  <ThreadsLocationRow />
-                  <ShowUnreadyProvidersRow />
-                  <SidebarHiddenSettings />
-                  <FloatingFlyAwayRow />
-                  <FloatingLivelinessRow />
-                  <FloatingBarkSoundRow />
-                  <FloatingHotkeyRow />
-                  <FloatingCaptionsRow />
+                  {advanced && <ShowUnreadyProvidersRow />}
+                  {/* Simple: the sidebar's own "Hidden (N)" row brings entries back. */}
+                  {advanced && <SidebarHiddenSettings />}
                   {advanced && !remoteActive && editConfig && <ToolCallsRow />}
                   {advanced && <RunCardRow />}
                 </div>
+                <DesktopMascotsCard />
               </>
             )}
 
@@ -1449,71 +1513,62 @@ export function SettingsModal() {
               </>
             )}
 
-            {/* Connected apps (2026-10-14): out of Integrations, its own page. */}
-            {section === "connectedApps" && connectedAppsEnabled(state.config) && (
-              <>
-                {state.config?.composio.mode === "managed" ? (
-                  <div className="rounded-lg border border-accent/25 bg-accent/10 px-3 py-2 text-[13px] text-accent-text">
-                    {t("settings.connections.ready")}
-                  </div>
-                ) : null}
-                <Card
-                  cardId="connections.apps"
-                  title={t("settings.connections.appsTitle")}
-                  subtitle={<>
-                    {t("settings.connections.appsSubtitle")}{" "}
-                    <a href={COMPOSIO_PLATFORM_URL} target="_blank" rel="noopener noreferrer" className="text-accent hover:underline">
-                      platform.composio.dev
-                    </a>
-                  </>}
-                >
-                  <p className="mb-2 text-[12.5px] text-ink-secondary" data-connected-apps-state={state.config?.composio.mode ?? "unavailable"}>
-                    {connectedAppsSummary(state.config)}
-                  </p>
-                  <ApiKeyRow section="composio" />
-                </Card>
-              </>
-            )}
-
-            {section === "decisionModel" && decisionModelEnabled(state.config) && <DecisionModelSettings />}
-
             {section === "engines" && (
-              <EnginesSettings />
+              <>
+                <EnginesSettings />
+                {/* Connected apps (Composio) and Decision model (2026-10-14):
+                    cards of Models and voice, shown while their experiment is on. */}
+                {allowed("connectedApps") && (
+                  <Card
+                    collapsible
+                    cardId="connections.apps"
+                    title={t("settings.connections.appsTitle")}
+                    summary={connectedAppsSummary(state.config)}
+                  >
+                    {state.config?.composio.mode === "managed" ? (
+                      <div className="mb-2 rounded-lg border border-accent/25 bg-accent/10 px-3 py-2 text-[13px] text-accent-text">
+                        {t("settings.connections.ready")}
+                      </div>
+                    ) : null}
+                    <p className="mb-2 text-[13px] leading-[18px] text-ink-secondary">
+                      {t("settings.connections.appsSubtitle")}{" "}
+                      <a href={COMPOSIO_PLATFORM_URL} target="_blank" rel="noopener noreferrer" className="text-accent hover:underline">
+                        platform.composio.dev
+                      </a>
+                    </p>
+                    <p className="mb-2 text-[12.5px] text-ink-secondary" data-connected-apps-state={state.config?.composio.mode ?? "unavailable"}>
+                      {connectedAppsSummary(state.config)}
+                    </p>
+                    <ApiKeyRow section="composio" />
+                  </Card>
+                )}
+                {allowed("decisionModel") && (
+                  <Card collapsible cardId="engines.decisionModel" title={t("settings.section.decisionModel")}>
+                    <DecisionModelSettings />
+                  </Card>
+                )}
+              </>
             )}
 
             {section === "backups" && <WorkspaceBackupSettings />}
-
-            {section === "companion" && (
-              <>
-                <p className="text-[13px] leading-relaxed text-ink-secondary">{t("settings.companion.ownDevices")}</p>
-                {/* mints an admin/client session token for anything that isn't the phone companion
-                    flow (MCP clients, `openmausbot pair`, a second desktop app), and pairs phones to a
-                    hosted server. Shown for the desktop app's own server (#950) AND when this desktop is
-                    a remote client of a hosted workspace: its requests carry that server's session, and
-                    Settings there is the only place that server's phones can be paired from (MOCA-84).
-                    The server decides who may act (an owner or an admin session), not this gate. */}
-                <ServerPairingCard
-                  focusRequest={computerPairs ? 0 : state.appSettingsPhonePairing}
-                  initialPairingCodes={readMembership(state.config).pairingCodes}
-                  initialAuthority={readMembership(state.config).authority}
-                  perspicaxLinked={perspicaxOrg !== null && perspicaxOrg.link.state !== "missing"}
-                />
-                {lockedServer
-                  ? <ManagedByOrganization cardId="companion.managed" title={t("remote.desktopOnly.title", { app: brand().name })} />
-                  : !remoteActive && <CompanionSection profileEmail={state.config?.profile?.email} focusRequest={computerPairs ? state.appSettingsPhonePairing : 0} />}
-              </>
-            )}
 
             {section === "computer" && <LocalComputerSection />}
 
             {section === "usage" && <UsageSection />}
             {section === "people" && <PeopleSection />}
-            {section === "mail" && <MailSettings />}
-            {section === "activity" && <ActivitySection />}
             {section === "workspaces" && <WorkspacesSection />}
-            {section === "privacy" && <PrivacySettings />}
-            {section === "memory" && <OrgMemorySettings />}
-            {section === "notifications" && <NotificationSettings />}
+            {section === "notifications" && (
+              <>
+                <NotificationSettings />
+                {/* Privacy (2026-10-14): what other people of the organization see. */}
+                {allowed("privacy") && (
+                  <section data-settings-card="notifications.privacy" className="flex flex-col gap-2">
+                    <h3 className="mt-2 text-[13px] font-medium text-ink">{t("settings.section.privacy")}</h3>
+                    <PrivacySettings />
+                  </section>
+                )}
+              </>
+            )}
             </div>
           </div>
           )}
