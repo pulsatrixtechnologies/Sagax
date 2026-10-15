@@ -16,7 +16,16 @@ struct ChatListView: View {
     @AppStorage(PrefKey.activityDetail) private var activityDetail = ActivityDetail.full.rawValue
     @AppStorage(PrefKey.rosterDensity) private var rosterDensity = RosterDensity.default.rawValue
     @AppStorage(PrefKey.updatesButton) var showUpdatesButton = false
-    @AppStorage(PrefKey.rosterChromeAtTop) private var rosterChromeAtTop = false
+    @AppStorage(PrefKey.rosterChromeAtTop) private var storedChromeAtTop = false
+    /// Search, + and the Updates pill at the top (the Personalization
+    /// switch). Never on an iPad: there the top row would push the avatar
+    /// under the window controls, so the chrome stays at the bottom as on
+    /// the iPhone's default (JC, 2026-10-15).
+    private var rosterChromeAtTop: Bool {
+        storedChromeAtTop && UIDevice.current.userInterfaceIdiom != .pad
+    }
+    /// The width the iPad's window controls take at the top leading corner.
+    @State private var windowControlsInset: CGFloat = 0
     /// Driven so that making a bot can open it. Value-based navigation alone
     /// cannot push without a tap, and a new bot appearing silently at the
     /// bottom of the roster is a poor answer to pressing +.
@@ -341,8 +350,10 @@ struct ChatListView: View {
             Color.clear.frame(width: 44, height: 44)
         }
         .padding(.horizontal, 16)
+        .padding(.leading, windowControlsInset)
         .padding(.top, 4)
         .padding(.bottom, 12)
+        .windowControlsInset($windowControlsInset)
     }
 
     private var headerSubtitle: String {
@@ -1380,8 +1391,10 @@ extension ChatListView {
             }
         }
         .padding(.horizontal, Theme.Metric.screenEdge)
+        .padding(.leading, windowControlsInset)
         .padding(.top, HomeMetrics.headerTop)
         .padding(.bottom, rosterChromeAtTop ? 8 : 0)
+        .windowControlsInset($windowControlsInset)
     }
 
     /// Search and + at the trailing edge (top placement) or in the bottom bar.
