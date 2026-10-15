@@ -3,13 +3,13 @@
 // same days of last month, a 30-day sparkline; on top since 2026-10-15),
 // then Plan (their connected subscriptions' allowance, absent when none),
 // then one folded breakdown by bot and by model. Every figure
-// comes from GET /api/me/usage, which keeps only the requester's turns
+// comes from GET /api/me/usage (or, on a 0.5.3 server, GET /api/usage?mine=1), which keeps only the requester's turns
 // (server/routes/usage.ts) and is open to every member (2026-10-15). Per-person tables, organization totals, budgets
 // and sell prices belong to the organization's admin console, which an
 // organization admin reaches from the link at the bottom.
 import { useEffect, useState, type ReactNode } from "react";
 import { ExternalLink } from "lucide-react";
-import { api, useStore } from "@/state/store";
+import { api, ApiError, useStore } from "@/state/store";
 import { t } from "@/lib/i18n";
 import { cn } from "@/lib/cn";
 import { canViewUsage } from "@/lib/viewer";
@@ -38,16 +38,57 @@ export interface PersonalUsage {
   byModel: PersonalUsageSummary;
 }
 
-export async function loadPersonalUsage(now = new Date(), get: <T>(path: string) => Promise<T> = api): Promise<PersonalUsage> {
+/** The Cost card's error: "failed" for a read that failed, "unavailable"
+ * when the server answers neither route (older than per-person cost). */
+export type PersonalUsageError = "failed" | "unavailable";
+
+/** No per-person cost on this server: it knows neither GET /api/me/usage nor
+ * lets this person read GET /api/usage?mine=1. */
+export class PersonalUsageUnavailable extends Error {
+  constructor() {
+    super("personal usage unavailable");
+    this.name = "PersonalUsageUnavailable";
+  }
+}
+
+/** A server older than 0.5.4 does not know GET /api/me/usage: an admin
+ * session meets a 404, a member's session the admin scope every unknown
+ * route requires (403). 0.5.4 opens the route to every member, so that
+ * refusal never comes from a server that has it. */
+function olderServer(error: unknown): boolean {
+  if (!(error instanceof ApiError)) return false;
+  if (error.status === 404) return true;
+  return error.status === 403 && typeof error.body?.error === "string" && /lacks the admin scope/.test(error.body.error);
+}
+
+async function readPersonalUsage(now: Date, get: <T>(path: string) => Promise<T>, legacy: boolean): Promise<PersonalUsage> {
   const periods = personalUsagePeriods(now);
-  const [month, previous, days30, byBot, byModel] = await Promise.all([
-    get<PersonalUsageSummary>(usageQuery(periods.month, "day")),
-    get<PersonalUsageSummary>(usageQuery(periods.previous, "day")),
-    get<PersonalUsageSummary>(usageQuery(periods.days30, "day")),
-    get<PersonalUsageSummary>(usageQuery(periods.month, "bot")),
-    get<PersonalUsageSummary>(usageQuery(periods.month, "model")),
+  // the month first: an older server answers it with a refusal before any other read
+  const month = await get<PersonalUsageSummary>(usageQuery(periods.month, "day", legacy));
+  const [previous, days30, byBot, byModel] = await Promise.all([
+    get<PersonalUsageSummary>(usageQuery(periods.previous, "day", legacy)),
+    get<PersonalUsageSummary>(usageQuery(periods.days30, "day", legacy)),
+    get<PersonalUsageSummary>(usageQuery(periods.month, "bot", legacy)),
+    get<PersonalUsageSummary>(usageQuery(periods.month, "model", legacy)),
   ]);
   return { month, previous, days30, byBot, byModel };
+}
+
+/** GET /api/me/usage once; on a server older than 0.5.4, the same person's
+ * turns from GET /api/usage?mine=1 (as iOS, #535). When that is refused too,
+ * PersonalUsageUnavailable. */
+export async function loadPersonalUsage(now = new Date(), get: <T>(path: string) => Promise<T> = api): Promise<PersonalUsage> {
+  try {
+    return await readPersonalUsage(now, get, false);
+  } catch (error) {
+    if (!olderServer(error)) throw error;
+  }
+  try {
+    return await readPersonalUsage(now, get, true);
+  } catch (error) {
+    if (error instanceof ApiError && (error.status === 403 || error.status === 404)) throw new PersonalUsageUnavailable();
+    throw error;
+  }
 }
 
 /** Plan windows come from GET /api/plan-usage: a person's own on an
@@ -67,10 +108,13 @@ export function UsageSection() {
   const { state } = useStore();
   const org = usePerspicaxOrg();
   const [usage, setUsage] = useState<PersonalUsage | null>(null);
-  const [error, setError] = useState(false);
+  const [error, setError] = useState<PersonalUsageError | null>(null);
   useEffect(() => {
     let alive = true;
-    loadPersonalUsage().then((next) => { if (alive) setUsage(next); }, () => { if (alive) setError(true); });
+    loadPersonalUsage().then(
+      (next) => { if (alive) setUsage(next); },
+      (failure) => { if (alive) setError(failure instanceof PersonalUsageUnavailable ? "unavailable" : "failed"); },
+    );
     return () => { alive = false; };
   }, []);
   return (
@@ -113,7 +157,7 @@ export function Sparkline({ values }: { values: number[] }) {
   );
 }
 
-export function CostCard({ usage, error }: { usage: PersonalUsage | null; error: boolean }) {
+export function CostCard({ usage, error }: { usage: PersonalUsage | null; error: PersonalUsageError | null }) {
   const periods = personalUsagePeriods();
   const current = costOf(usage?.month);
   const trend = usage ? costTrend(current, costOf(usage.previous)) : null;
@@ -121,7 +165,9 @@ export function CostCard({ usage, error }: { usage: PersonalUsage | null; error:
   return (
     <section data-settings-card="usage.cost" className="rounded-[14px] border-[0.5px] border-border px-3.5 py-3">
       <h3 className="text-[13px] font-medium text-ink">{t("usage.personal.costTitle")}</h3>
-      {error ? (
+      {error === "unavailable" ? (
+        <p role="status" className="mt-2 text-[13px] text-ink-secondary" data-usage-unavailable>{t("usage.personal.unavailable")}</p>
+      ) : error ? (
         <p role="alert" className="mt-2 text-[13px] text-danger">{t("usage.personal.error")}</p>
       ) : !usage ? (
         <p role="status" className="mt-2 text-[13px] text-ink-secondary">{t("planUsage.loading")}</p>

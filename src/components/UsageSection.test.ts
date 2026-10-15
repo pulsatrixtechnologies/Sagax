@@ -14,8 +14,9 @@ vi.mock("@/state/store", async (importOriginal) => ({
   useStore: () => ({ state: { instances: [], bots: [], config: {} }, dispatch: () => {} }),
 }));
 
-import { CostCard, loadPersonalUsage, planUsageShown, UsageLayout, type PersonalUsage } from "./UsageSection";
-import { PlanUsageView } from "./PlanUsage";
+import { ApiError } from "@/state/store";
+import { CostCard, loadPersonalUsage, PersonalUsageUnavailable, planUsageShown, UsageLayout, type PersonalUsage } from "./UsageSection";
+import { PlanUsageView, renewalDate } from "./PlanUsage";
 
 const NOW = new Date("2026-10-14T15:00:00Z");
 const summary = (cost: number, turns: number, groups: PersonalUsageSummary["groups"] = []): PersonalUsageSummary => ({
@@ -47,6 +48,42 @@ describe("what Settings > Usage asks the server", () => {
     expect(paths.some((path) => path.includes("groupBy=user"))).toBe(false);
   });
 
+  // 2026-10-15: the desktop 0.5.4 read GET /api/me/usage from a 0.5.3 server
+  // (GOX), which does not know it: the Cost card said "try again later".
+  it("falls back once to GET /api/usage?mine=1 when the server does not know /api/me/usage (404)", async () => {
+    const get = vi.fn(async (path: string) => {
+      if (path.startsWith("/api/me/usage")) throw new ApiError("not found", 404, { error: "not found" });
+      return summary(2, 1);
+    });
+    const usage = await loadPersonalUsage(NOW, get as never);
+    const paths = get.mock.calls.map(([path]) => path);
+    expect(paths.filter((path) => path.startsWith("/api/me/usage"))).toHaveLength(1);
+    const legacy = paths.filter((path) => path.startsWith("/api/usage?mine=1&"));
+    expect(legacy).toHaveLength(5);
+    expect(legacy).toContain("/api/usage?mine=1&from=2026-10-01&to=2026-10-14&groupBy=day");
+    expect(usage.month.total.costUsd).toBe(2);
+  });
+
+  it("falls back too when a member's session meets the admin scope an older server asks of an unknown route", async () => {
+    const get = vi.fn(async (path: string) => {
+      if (path.startsWith("/api/me/usage")) throw new ApiError("forbidden", 403, { error: "forbidden: this session lacks the admin scope" });
+      return summary(0, 0);
+    });
+    await loadPersonalUsage(NOW, get as never);
+    expect(get.mock.calls.filter(([path]) => path.startsWith("/api/usage?mine=1&"))).toHaveLength(5);
+  });
+
+  it("says the server is too old when the fallback is refused too, and keeps other failures as failures", async () => {
+    const refused = vi.fn(async (path: string) => {
+      throw path.startsWith("/api/me/usage") ? new ApiError("not found", 404, { error: "not found" }) : new ApiError("forbidden", 403, { error: "usage.view" });
+    });
+    await expect(loadPersonalUsage(NOW, refused as never)).rejects.toBeInstanceOf(PersonalUsageUnavailable);
+    expect(refused.mock.calls).toHaveLength(2);
+    const broken = vi.fn(async () => { throw new ApiError("boom", 500, { error: "boom" }); });
+    await expect(loadPersonalUsage(NOW, broken as never)).rejects.toMatchObject({ status: 500 });
+    expect(broken.mock.calls).toHaveLength(1);
+  });
+
   it("compares with the same days of a shorter last month", () => {
     expect(personalUsagePeriods(new Date("2026-03-31T12:00:00Z")).previous).toEqual({ from: "2026-02-01", to: "2026-02-28" });
     expect(usageQuery({ from: "2026-10-01", to: "2026-10-14" }, "bot")).toBe("/api/me/usage?from=2026-10-01&to=2026-10-14&groupBy=bot");
@@ -56,7 +93,7 @@ describe("what Settings > Usage asks the server", () => {
 describe("the page's order", () => {
   it("puts the Cost card on top, above the Plan card", () => {
     const html = renderToStaticMarkup(createElement(UsageLayout, {
-      cost: createElement(CostCard, { usage: null, error: false }),
+      cost: createElement(CostCard, { usage: null, error: null }),
       plan: createElement(PlanUsageView, {
         report: { providers: [{ id: "claude", name: "Claude", driver: "claude", plan: null, ok: true, error: null, state: "no-windows" }] },
         loading: false, now: NOW.getTime(), onRefresh: () => {}, issuer: "",
@@ -120,7 +157,7 @@ describe("Cost card", () => {
   });
 
   it("shows this month's cost, the trend and a 30-day sparkline", () => {
-    const html = renderToStaticMarkup(createElement(CostCard, { usage: usage(12, 10), error: false }));
+    const html = renderToStaticMarkup(createElement(CostCard, { usage: usage(12, 10), error: null }));
     expect(html).toContain("data-usage-cost");
     expect(html).toContain("$12.00");
     expect(html).toContain("20% more than last month");
@@ -128,9 +165,18 @@ describe("Cost card", () => {
     expect(html).not.toMatch(/[–—]/);
   });
 
+  it("says honestly that an older server has no per-person cost, instead of try again later", () => {
+    setLocale("fr");
+    const html = renderToStaticMarkup(createElement(CostCard, { usage: null, error: "unavailable" }));
+    expect(html).toContain("data-usage-unavailable");
+    expect(html).toContain("Ce serveur ne fournit pas encore le coût par personne.");
+    expect(html).not.toContain("Réessayez plus tard");
+    expect(renderToStaticMarkup(createElement(CostCard, { usage: null, error: "failed" }))).toContain("Réessayez plus tard");
+  });
+
   it("says so plainly when nothing was spent, in French", () => {
     setLocale("fr");
-    const html = renderToStaticMarkup(createElement(CostCard, { usage: { ...usage(0, 0), month: summary(0, 0), days30: summary(0, 0) }, error: false }));
+    const html = renderToStaticMarkup(createElement(CostCard, { usage: { ...usage(0, 0), month: summary(0, 0), days30: summary(0, 0) }, error: null }));
     expect(html).toContain("data-usage-empty");
     expect(html).toContain("Rien de dépensé pour l&#x27;instant.");
   });
@@ -143,7 +189,7 @@ describe("Plan card", () => {
     weekly: { available: true, remainingPercent: 60, usedPercent: 40, resetsAt: "2026-10-16T13:00:00Z" }, extra: [], models: [], ...patch,
   });
 
-  it("reads the plan by the week: one gauge, one sentence with the renewal, the rest under Details", () => {
+  it("reads the plan by the week: one gauge, a short line of figures, the window and renewal under it, the rest under Details", () => {
     setLocale("fr");
     const html = renderToStaticMarkup(createElement(PlanUsageView, {
       report: { providers: [provider({})] }, loading: false, now: NOW.getTime(),
@@ -151,9 +197,31 @@ describe("Plan card", () => {
     }));
     expect(html).toContain('data-plan-main="weekly"');
     expect(html).toContain('aria-valuenow="40"');
-    expect(html).toContain("40 % du forfait de la semaine utilisé, il vous reste 60 %.");
-    expect(html).toContain("Renouvellement le");
+    expect(html).toContain("40\u00a0% utilisé");
+    expect(html).toContain("60\u00a0% restant");
+    expect(html).toMatch(/data-plan-figures[^>]*tabular-nums|tabular-nums[^>]*data-plan-figures/);
+    expect(html).toContain("Semaine · se renouvelle ");
+    expect(html).not.toContain("du forfait de la semaine");
     expect(html).toContain(">Détails<");
     expect(html).toContain(">Forfait<");
+  });
+
+  it("names the 5-hour session when the provider has no week, in English", () => {
+    const html = renderToStaticMarkup(createElement(PlanUsageView, {
+      report: { providers: [provider({ weekly: { available: false, remainingPercent: null, usedPercent: null, resetsAt: null } })] },
+      loading: false, now: NOW.getTime(), onRefresh: () => {}, issuer: "",
+    }));
+    expect(html).toContain('data-plan-main="fiveHour"');
+    expect(html).toContain("10% used");
+    expect(html).toContain("90% left");
+    expect(html).toContain("5-hour session");
+  });
+
+  it("never breaks a renewal between the day and its month, or inside 19 h 59", () => {
+    const fr = renewalDate("2026-10-21T23:59:00Z", "fr-CA", "America/New_York");
+    expect(fr).toBe("mer.\u00a021\u00a0oct., 19\u00a0h\u00a059");
+    const en = renewalDate("2026-10-21T23:59:00Z", "en", "America/New_York");
+    expect(en).toMatch(/^Wed, Oct\u00a021, 7:59[\u00a0\u202f]PM$/);
+    expect(renewalDate(null)).toBeNull();
   });
 });

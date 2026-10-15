@@ -157,19 +157,27 @@ export function mainWindow(provider: PlanRow): { kind: "weekly" | "fiveHour"; wi
   return null;
 }
 
-function renewalDate(resetsAt: string | null): string | null {
+const NBSP = "\u00a0";
+
+/** The renewal as a short date and time ("mer. 21 oct., 19 h 59", "Wed, Oct
+ * 21, 7:59 PM"). Every space but the one after a comma is non-breaking, so
+ * a narrow card never parts the day from its month or "19 h" from "59". */
+export function renewalDate(resetsAt: string | null, locale = usageLocale(), timeZone?: string): string | null {
   if (!resetsAt) return null;
   const at = Date.parse(resetsAt);
   if (!Number.isFinite(at)) return null;
   try {
-    return new Intl.DateTimeFormat(usageLocale(), { weekday: "long", day: "numeric", month: "long", hour: "numeric", minute: "2-digit" }).format(at);
+    const parts = new Intl.DateTimeFormat(locale, { weekday: "short", day: "numeric", month: "short", hour: "numeric", minute: "2-digit", timeZone }).formatToParts(at);
+    return parts.map((part) => part.type === "literal" && part.value.includes(",") ? part.value : part.value.replace(/ /g, NBSP)).join("");
   } catch {
     return null;
   }
 }
 
-/** One gauge and one sentence per plan (2026-10-14); the 5-hour window,
- * other windows and the per-model detail fold under Details. */
+/** One gauge per plan (2026-10-14); under it, since 2026-10-15, a short line
+ * (used on the left, left on the right) and a smaller one naming the window
+ * and its renewal. The 5-hour window, other windows and the per-model
+ * detail fold under Details. */
 function PlanSummary({ provider, now }: { provider: PlanRow; now: number }) {
   const main = mainWindow(provider);
   if (!main) return <RowWindows provider={provider} now={now} />;
@@ -188,9 +196,13 @@ function PlanSummary({ provider, now }: { provider: PlanRow; now: number }) {
       >
         <div className={cn("h-full rounded-full", usageTone(used))} style={{ width: `${used}%` }} />
       </div>
-      <p className="text-[13px] text-ink">
-        {t(main.kind === "weekly" ? "usage.plan.weekSentence" : "usage.plan.fiveHourSentence", { used, remaining: 100 - used })}
-        {renews && <> {t("usage.plan.renews", { date: renews })}</>}
+      <div className="flex items-baseline justify-between gap-3 text-[13px] tabular-nums" data-plan-figures>
+        <span className="text-ink">{t("planUsage.used", { used })}</span>
+        <span className="text-ink-secondary">{t("planUsage.left", { remaining: 100 - used })}</span>
+      </div>
+      <p className="text-[12px] text-ink-secondary" data-plan-window>
+        {t(main.kind === "weekly" ? "usage.plan.windowWeek" : "usage.plan.windowFiveHour")}
+        {renews && <> · {t("usage.plan.renewsShort", { date: renews })}</>}
       </p>
       {hasDetail && (
         <details className="text-[12.5px]">
