@@ -1008,6 +1008,7 @@ import {
 import { createDeciderRoutes } from "./routes/decider.ts";
 import { createThreadModelRoutes } from "./routes/thread-models.ts";
 import { createUndoRoutes } from "./routes/undo.ts";
+import { createBotVersionRoutes } from "./routes/bot-versions.ts";
 import { createDesktopViewer, desktopViewerUrl, SANDBOX_VIEWER_TARGET } from "./routes/desktop-viewer.ts";
 import { localDesktopTarget, localVmViewerStatus, sandboxDesktopTarget, viewerTargetId } from "./desktop-viewer-targets.ts";
 import { createAntigravityLeftoverRoutes } from "./routes/antigravity-leftovers.ts";
@@ -23040,6 +23041,41 @@ ROUTES.push(createThreadModelRoutes({
   reply: (botId) => publicBot(store.bot(botId)!),
 }));
 // Undo on the one-line receipt of a change that applied without a person.
+// Changes as a version history: restore a whole version (JC 2026-10-15).
+ROUTES.push(createBotVersionRoutes({
+  exists: (botId) => Boolean(store.bot(botId)),
+  ownerOrAdmin: (auth, botId) => {
+    const bot = store.bot(botId);
+    return Boolean(bot) && ownerOrAdminOf(auth, bot!);
+  },
+  rows: async (botId) => {
+    await flushProfileHistory(botId);
+    return readHistory(botId, Number.MAX_SAFE_INTEGER).reverse();
+  },
+  revision: (botId) => {
+    const bot = store.bot(botId);
+    return bot ? profileRevision(bot) : null;
+  },
+  apply: (auth, botId, patch) => {
+    const bot = store.bot(botId);
+    if (!bot) return { status: 404, error: "no such bot" };
+    // Same rule as PATCH /profile on a Cloud home: only the owner's own
+    // devices change what rides every one of the owner's turns.
+    if (CLOUD_HOME && !cloudOwnerSession(auth)) {
+      return { status: 403, error: "On this Cloud only its owner can change a bot's name, title, description, instructions or notifications." };
+    }
+    const parsed = parseBotProfilePatch(patch, true);
+    if (!parsed.ok) return { status: 400, error: parsed.error };
+    const before = profileSnapshot(bot);
+    const updated = store.patchBotProfile(botId, parsed.patch);
+    if (!updated) return { status: 404, error: "no such bot" };
+    recordProfileChange(botId, "user", "restore", before, profileSnapshot(updated));
+    recordPersonaSave(auth, botId, before, profileSnapshot(updated));
+    const visible = wireBot(updated);
+    broadcast({ kind: "bot", bot: visible });
+    return { bot: visible };
+  },
+}));
 ROUTES.push(createUndoRoutes({
   // Undo answers the card like "allow" does: owner-only first (approvalAnswerRefusal), then who may answer in this thread.
   refusal: (auth, threadId, requestId) => approvalAnswerRefusal(auth, threadId, requestId) ?? cardAnswerRefusal(auth, threadId, requestId, "allow"),

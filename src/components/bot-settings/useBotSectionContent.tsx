@@ -1,6 +1,6 @@
 // The body of each bot settings section and the reads behind them (the
 // server overview and prompt preview, the file-backed history and its
-// rollback). Shared by the bot panel's More tab (BotSettingsDialog) and the
+// version restore). Shared by the bot panel's More tab (BotSettingsDialog) and the
 // persona editor (persona/PersonaEditorModal), so both show the same
 // controls and save through the same paths.
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
@@ -109,7 +109,7 @@ export function useBotSectionContent(bot: Bot, {
   const [historyRevision, setHistoryRevision] = useState<string | null>(null);
   const historyRequest = useRef(0);
   const [rollingBack, setRollingBack] = useState(false);
-  const [rollbackTarget, setRollbackTarget] = useState<{ id: string; expectedRevision: string } | null>(null);
+  const [restoreTarget, setRestoreTarget] = useState<{ id: string; expectedRevision: string; fields: string } | null>(null);
 
   // The bot-record fields the server-built overview and system-prompt
   // preview actually read (OverviewFacts.bot plus the prompt's persona
@@ -198,7 +198,7 @@ export function useBotSectionContent(bot: Bot, {
     const request = ++historyRequest.current;
     setHistoryError(false);
     return flushBotPatches(bot.id)
-      .then(() => api(`/api/bots/${bot.id}/history?limit=100`))
+      .then(() => api(`/api/bots/${bot.id}/history?limit=100&full=1`))
       .then((data: { rows: HistoryRow[]; revision: string }) => {
         if (request !== historyRequest.current) return;
         setHistoryRows(data.rows);
@@ -216,22 +216,21 @@ export function useBotSectionContent(bot: Bot, {
     return () => { historyRequest.current++; };
   }, [section, loadHistory, historyAllowed]);
 
-  // A rollback failure (the row's soul text no longer round-trips the
-  // server's validation, say) still reloads history so the list matches
-  // the server's actual state, but also surfaces the server's message
-  // through the app's error toast, as SoulField's Apply/Discard.
-  const rollbackHistory = async (target: { id: string; expectedRevision: string }) => {
+  // Restoring a version: a failure (the bot changed meanwhile, say) still
+  // reloads history so the list matches the server, and says why through
+  // the app's error toast.
+  const restoreVersion = async (target: { id: string; expectedRevision: string }) => {
     if (rollingBack) return;
-    setRollbackTarget(null);
+    setRestoreTarget(null);
     setRollingBack(true);
     try {
       await flushBotPatches(bot.id);
-      await api(`/api/bots/${bot.id}/history/rollback`, {
+      await api(`/api/bots/${bot.id}/history/restore`, {
         method: "POST",
-        body: JSON.stringify(target),
+        body: JSON.stringify({ id: target.id, expectedRevision: target.expectedRevision }),
       });
     } catch (e: unknown) {
-        dispatch({ type: "error", message: e instanceof Error ? e.message : t("botPanel.history.undoError") });
+      dispatch({ type: "error", message: e instanceof Error ? e.message : t("botPanel.history.restoreError") });
     } finally {
       await loadHistory();
       setRollingBack(false);
@@ -311,10 +310,10 @@ export function useBotSectionContent(bot: Bot, {
             bot={bot}
             rows={historyRows}
             refreshError={historyRows !== null && historyError}
-            onRollback={(rowId) => {
-              if (historyRevision) setRollbackTarget({ id: rowId, expectedRevision: historyRevision });
+            onRestore={(versionId, fields) => {
+              if (historyRevision) setRestoreTarget({ id: versionId, expectedRevision: historyRevision, fields });
             }}
-            rollingBack={rollingBack || !historyRevision}
+            restoring={rollingBack || !historyRevision}
           />
         );
       case "usage":
@@ -326,14 +325,14 @@ export function useBotSectionContent(bot: Bot, {
 
   const dialogs = (
     <ConfirmDialog
-      open={rollbackTarget !== null}
-      title={t("botPanel.history.restoreTitle")}
-      body={t("botPanel.history.restoreBody")}
-      confirmLabel={t("botPanel.history.restoreConfirm")}
+      open={restoreTarget !== null}
+      title={t("botPanel.history.restoreVersionTitle")}
+      body={t("botPanel.history.restoreVersionBody", { fields: restoreTarget?.fields ?? "" })}
+      confirmLabel={t("botPanel.history.restoreVersion")}
       tone="neutral"
       returnFocusRef={returnFocusRef}
-      onCancel={() => setRollbackTarget(null)}
-      onConfirm={() => { if (rollbackTarget) void rollbackHistory(rollbackTarget); }}
+      onCancel={() => setRestoreTarget(null)}
+      onConfirm={() => { if (restoreTarget) void restoreVersion(restoreTarget); }}
     />
   );
 

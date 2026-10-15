@@ -307,6 +307,7 @@ export const TOOL_POLICY_ROWS: readonly ToolPolicy[] = [
   {"method":"ANY","kind":"pattern","route":"^\\/api\\/bots\\/([\\w-]+)\\/grants\\/([^/]+)$","tier":"write","readOnly":false,"scope":"bots:write","defaultEnabled":true},
   {"method":"ANY","kind":"pattern","route":"^\\/api\\/bots\\/([\\w-]+)\\/grants$","tier":"write","readOnly":false,"scope":"bots:write","defaultEnabled":true},
   {"method":"ANY","kind":"pattern","route":"^\\/api\\/bots\\/([\\w-]+)\\/harness-commands$","tier":"write","readOnly":false,"scope":"bots:write","defaultEnabled":true},
+  {"method":"ANY","kind":"pattern","route":"^\\/api\\/bots\\/([\\w-]+)\\/history\\/restore$","tier":"write","readOnly":false,"scope":"bots:write","defaultEnabled":true},
   {"method":"POST","kind":"pattern","route":"^\\/api\\/bots\\/([\\w-]+)\\/history\\/rollback$","tier":"write","readOnly":false,"scope":"bots:write","defaultEnabled":true},
   {"method":"GET","kind":"pattern","route":"^\\/api\\/bots\\/([\\w-]+)\\/history$","tier":"read","readOnly":true,"scope":"bots:read","defaultEnabled":true},
   {"method":"POST","kind":"pattern","route":"^\\/api\\/bots\\/([\\w-]+)\\/interrupt$","tier":"write","readOnly":false,"scope":"bots:write","defaultEnabled":true},
