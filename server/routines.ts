@@ -419,6 +419,10 @@ export interface RoutineManagerOptions {
    * reads with the run's prompt. Fails open: a throw, a null or a slow
    * answer (ROUTINE_MEMORY_HINT_MAX_MS) starts the run as if not asked. */
   memoryHint?: (run: RoutineRun, prompt: string) => Promise<{ hint: RoutineMemoryHint; note: string } | null>;
+  /** 2026-10-15: a routine turned on or off from a conversation (a routine
+   * card, its Undo, the person's switch while the conversation is open).
+   * Changes made elsewhere (the console, a deleted bot) never call it. */
+  onEnabledChanged?: (routine: Routine, change: RoutineEnabledChange) => void;
 }
 
 /** The longest a run's start waits for the memory hint. */
@@ -427,7 +431,23 @@ export const ROUTINE_MEMORY_HINT_MAX_MS = 2_000;
 /** Slice 6: who writes a routine. `actorPrincipalId`: the signed-in person
  * (D5: whoever rewrites the work runs it); `runAs`: the person chosen in the
  * routine modal, already authorized by the route, which wins. */
-export interface RoutineWriteMeta { actorPrincipalId?: string; runAs?: string }
+export interface RoutineWriteMeta {
+  actorPrincipalId?: string;
+  runAs?: string;
+  /** 2026-10-15: the conversation this change was made from (the person's
+   * switch while it is open, an Undo in it). A routine card's own request
+   * names its conversation already. */
+  conversation?: { threadId: string; messageId?: string };
+}
+
+/** Where a routine turned on or off was changed from, for its line in that
+ * conversation (server/routine-chat-events.ts). */
+export interface RoutineEnabledChange {
+  enabled: boolean;
+  threadId: string;
+  /** the routine card the change was confirmed on, when there is one */
+  messageId?: string;
+}
 
 /** Slice 6: routine fields whose edit moves runAs to the editor. */
 const WORK_FIELDS = ["prompt", "botId", "groupId", "target", "attachments"] as const;
@@ -1389,6 +1409,14 @@ export class RoutineManager {
     }, discardResults);
     for (const run of cancelledRuns) this.emitRun(run);
     this.emitRoutine(routine);
+    const conversation = request ? { threadId: request.threadId, messageId: request.messageId } : meta?.conversation;
+    if (enabledChanged && conversation?.threadId && this.options.onEnabledChanged) {
+      try {
+        this.options.onEnabledChanged(cloneRoutine(routine), { enabled: routine.enabled, ...conversation });
+      } catch {
+        // The change is committed; its line in the conversation is a courtesy.
+      }
+    }
     return this.routineWithHealth(routine);
   }
 

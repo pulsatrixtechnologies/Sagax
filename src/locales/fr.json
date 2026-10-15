@@ -7601,5 +7601,16 @@
   "window.close": "Fermer",
   "window.maximize": "Agrandir",
   "window.minimize": "Réduire",
-  "window.restore": "Restaurer"
+  "window.restore": "Restaurer",
+  "chat.routineToggle.disabled": "Désactivé",
+  "chat.routineToggle.enabled": "Activé",
+  "chat.routineToggle.countOne": "{count} routine",
+  "chat.routineToggle.countMany": "{count} routines",
+  "chat.routineToggle.aria": "{action} : {routines}. Les afficher",
+  "chat.routineToggle.menuAria": "Routines modifiées pendant ce tour",
+  "chat.routineToggle.open": "Ouvrir la routine {name}",
+  "chat.routineToggle.unavailable": "Cette routine ne vous est plus accessible",
+  "chat.connectApps.pill": "Connecter des applications",
+  "chat.connectApps.aria": "Connecter des applications : {apps}",
+  "connectApps.section.needed": "Nécessaires dans cette conversation"
 }

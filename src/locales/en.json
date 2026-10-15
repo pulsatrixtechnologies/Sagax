@@ -7601,5 +7601,16 @@
   "botSettings.nav.skills": "Skills",
   "computer.back": "Back",
   "computer.more": "More computer actions",
-  "botPanel.moreOptions": "More options"
+  "botPanel.moreOptions": "More options",
+  "chat.routineToggle.disabled": "Disabled",
+  "chat.routineToggle.enabled": "Enabled",
+  "chat.routineToggle.countOne": "{count} routine",
+  "chat.routineToggle.countMany": "{count} routines",
+  "chat.routineToggle.aria": "{action}: {routines}. Show them",
+  "chat.routineToggle.menuAria": "Routines changed in this turn",
+  "chat.routineToggle.open": "Open routine {name}",
+  "chat.routineToggle.unavailable": "This routine is no longer available to you",
+  "chat.connectApps.pill": "Connect apps",
+  "chat.connectApps.aria": "Connect apps: {apps}",
+  "connectApps.section.needed": "Needed in this conversation"
 }
