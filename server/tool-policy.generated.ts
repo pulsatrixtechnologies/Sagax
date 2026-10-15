@@ -95,6 +95,7 @@ export const TOOL_POLICY_ROWS: readonly ToolPolicy[] = [
   {"method":"POST","kind":"exact","route":"/api/internal/options-card","tier":"write","readOnly":false,"scope":"internal:write","defaultEnabled":true},
   {"method":"ANY","kind":"exact","route":"/api/internal/personal-mcp","tier":"write","readOnly":false,"scope":"internal:write","defaultEnabled":true},
   {"method":"POST","kind":"exact","route":"/api/internal/personal-mcp","tier":"write","readOnly":false,"scope":"internal:write","defaultEnabled":true},
+  {"method":"POST","kind":"exact","route":"/api/internal/perspicax/claims","tier":"write","readOnly":false,"scope":"internal:write","defaultEnabled":true},
   {"method":"ANY","kind":"exact","route":"/api/internal/perspicax/mcp","tier":"write","readOnly":false,"scope":"internal:write","defaultEnabled":true},
   {"method":"POST","kind":"exact","route":"/api/internal/perspicax/mcp","tier":"write","readOnly":false,"scope":"internal:write","defaultEnabled":true},
   {"method":"ANY","kind":"exact","route":"/api/internal/phone/claim","tier":"write","readOnly":false,"scope":"internal:write","defaultEnabled":true},

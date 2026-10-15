@@ -928,7 +928,8 @@ import { createDirectGrantRoutes } from "./direct-grants.ts";
 import { directoryIntervalMs, PerspicaxDirectory, type ModelProvider } from "./perspicax-link.ts";
 import { duplicateNote, PerspicaxMemory } from "./perspicax-memory.ts";
 import { PERSPICAX_UNAVAILABLE_WHY, PerspicaxMcp, perspicaxUnavailableRow, type PerspicaxUnavailableReason } from "./perspicax-mcp.ts";
-import { runClaimTool, withClaimsFlag } from "./perspicax-claims.ts";
+import { withClaimsFlag } from "./perspicax-claims.ts";
+import { createPerspicaxClaimsInternalRoutes } from "./routes/perspicax-claims-internal.ts";
 import { createPerspicaxOrgRoutes, orgDirectoryEntries, type OrgSettings, type PendingAdminApproval } from "./perspicax-org-routes.ts";
 import { createMemorySyncTokenRoute } from "./perspicax-memory-sync-token.ts";
 import { ORG_FULL_ACCESS_DEFAULT_MARKER, orgFullAccessAllowed, orgFullAccessGrandfathered, orgFullAccessGrantRefusal, orgFullAccessHolds, orgNewBotApprovalMode, ORG_FULL_ACCESS_DISABLED } from "./org-full-access.ts";
@@ -22640,6 +22641,28 @@ const cloudMoveRoutes = async (..._args: unknown[]): Promise<boolean> => false;
 // Route modules (server/routes/README.md). `workspaceAccess` is assigned at
 // boot, after this line, so the dependency reads it per request.
 ROUTES.push(createMcpToolNameRoutes());
+// The claim tools' internal route: called from the internal block, after its
+// capability gate, so it is not in ROUTES.
+const perspicaxClaimsInternal = createPerspicaxClaimsInternalRoutes({
+  perspicaxMcp: () => perspicaxMcp,
+  review: async (text, capability) => {
+    const speakerId = capability.sandboxPrincipalId ?? capability.desktopPrincipalId;
+    const misuse = misuseTextRefusal(text, speakerId, "mcp", { botId: capability.botId, threadId: capability.threadId, tool: "perspicax" });
+    if (misuse) return misuse;
+    const who = safetyPrincipal(capability.threadId);
+    return (await safetyToolHold({
+      text,
+      surface: "mcp",
+      tool: "perspicax",
+      known: true,
+      triage: who.triage || misuseActor(speakerId).triage,
+      ...(who.principalId || speakerId ? { principalId: who.principalId ?? speakerId } : {}),
+      threadId: capability.threadId,
+      botId: capability.botId,
+      review: safetyReviewer(capability.botId),
+    })) ?? null;
+  },
+});
 ROUTES.push(createHostedSlackRoutes({ bot: (id) => store.bot(id), hostedReady: () => Boolean(workspaceAccess) && entitled("admin") }));
 // Install statuses come from the organization library's own state, never
 // its file, so New bot cannot disagree with it. No organization: none.
@@ -31634,42 +31657,9 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         res.writeHead(answer.status, { "content-type": "application/json", "cache-control": "no-store" });
         return res.end(JSON.stringify(answer.body));
       }
-      // Claims (server/perspicax-claims.ts): a native agents tool forwarded to
-      // Perspicax in the speaker's name, through this turn's mounted profile.
-      // The holder is this capability's bot, never an argument.
-      if (method === "POST" && path === "/api/internal/perspicax/claims") {
-        const body = await readInternalBody();
-        // The same misuse and safety review as a Perspicax MCP call: a claim's
-        // name and purpose are model-written and shown to others. claim_list
-        // carries nothing to review.
-        if (body.tool !== "claim_list" && body.args && typeof body.args === "object") {
-          const claimText = JSON.stringify({ tool: body.tool, args: body.args });
-          const speakerId = internalCapability.sandboxPrincipalId ?? internalCapability.desktopPrincipalId;
-          const claimMisuse = misuseTextRefusal(claimText, speakerId, "mcp", { botId: internalCapability.botId, threadId: internalCapability.threadId, tool: "perspicax" });
-          if (claimMisuse) return json(res, 200, { result: claimMisuse, isError: true });
-          const who = safetyPrincipal(internalCapability.threadId);
-          const claimHeld = await safetyToolHold({
-            text: claimText,
-            surface: "mcp",
-            tool: "perspicax",
-            known: true,
-            triage: who.triage || misuseActor(speakerId).triage,
-            ...(who.principalId || speakerId ? { principalId: who.principalId ?? speakerId } : {}),
-            threadId: internalCapability.threadId,
-            botId: internalCapability.botId,
-            review: safetyReviewer(internalCapability.botId),
-          });
-          if (claimHeld) return json(res, 200, { result: claimHeld, isError: true });
-        }
-        const answer = await runClaimTool(perspicaxMcp ?? null, {
-          threadId: internalCapability.threadId,
-          generation: internalCapability.generation,
-          botId: internalCapability.botId,
-          tool: body.tool,
-          args: body.args,
-        });
-        return json(res, answer.status, answer.body);
-      }
+      // Claims (server/routes/perspicax-claims-internal.ts), behind the
+      // capability checked above.
+      if ((await perspicaxClaimsInternal({ res, path, method, json, capability: internalCapability, readBody: readInternalBody })) !== PASS) return;
       if (method === "POST" && path === "/api/internal/connectors/mcp") {
         const body = await readInternalBody();
         // Reading a streamed MCP body yields to ordinary settings requests.
