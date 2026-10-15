@@ -257,6 +257,17 @@ struct MessageRow: View {
             if let video = message.video {
                 VideoWidgetView(video: video)
             }
+        case .widget:
+            // A bot's card, list or form (show_widget); its text when there is
+            // no tree to draw, or in a room, where widgets are refused.
+            ChatWidgetMessageView(
+                chat: chat, message: message,
+                fallback: AnyView(Group {
+                    if let text = message.text, !text.isEmpty {
+                        TextBubble(message: message, chat: chat, tailed: endsRun, openLink: openLink, cwAsk: askCw)
+                    }
+                })
+            )
         case .digest:
             // Not a bubble: a chip saying the turn did something, opening
             // onto what. No "Paid with" any more (#201): who paid stays in

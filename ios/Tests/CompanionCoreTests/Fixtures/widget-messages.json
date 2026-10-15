@@ -1,0 +1,1732 @@
+{
+  "messages": [
+    {
+      "id": "widget-dinnerChoice",
+      "at": 1791930000000,
+      "role": "bot",
+      "kind": "widget",
+      "text": "**Dinner tonight** · Pick one and I'll plan the rest.\n- Butter chicken with naan · Rich, creamy, classic comfort food · 45 min\n- Grilled veggie bowl with quinoa · Light, healthy, quick to prepare · 20 min\n- Margherita pizza · Easy, crowd-pleasing, order-in friendly · Order in\n[Pick this] [None of these]",
+      "widget": {
+        "v": 1,
+        "root": {
+          "type": "ListView",
+          "id": "n1",
+          "title": "Dinner tonight",
+          "caption": "Pick one and I'll plan the rest.",
+          "confirm": {
+            "label": "Pick this",
+            "action": {
+              "type": "dinner.pick"
+            }
+          },
+          "cancel": {
+            "label": "None of these",
+            "action": {
+              "type": "dinner.none"
+            }
+          },
+          "name": "dish",
+          "children": [
+            {
+              "type": "ListViewItem",
+              "id": "n2",
+              "value": "butter-chicken",
+              "children": [
+                {
+                  "type": "Col",
+                  "id": "n3",
+                  "flex": 1,
+                  "children": [
+                    {
+                      "type": "Text",
+                      "id": "n4",
+                      "value": "Butter chicken with naan",
+                      "weight": "medium"
+                    },
+                    {
+                      "type": "Caption",
+                      "id": "n5",
+                      "value": "Rich, creamy, classic comfort food"
+                    }
+                  ]
+                },
+                {
+                  "type": "Caption",
+                  "id": "n6",
+                  "value": "45 min",
+                  "color": "tertiary"
+                }
+              ]
+            },
+            {
+              "type": "ListViewItem",
+              "id": "n7",
+              "value": "veggie-bowl",
+              "children": [
+                {
+                  "type": "Col",
+                  "id": "n8",
+                  "flex": 1,
+                  "children": [
+                    {
+                      "type": "Text",
+                      "id": "n9",
+                      "value": "Grilled veggie bowl with quinoa",
+                      "weight": "medium"
+                    },
+                    {
+                      "type": "Caption",
+                      "id": "n10",
+                      "value": "Light, healthy, quick to prepare"
+                    }
+                  ]
+                },
+                {
+                  "type": "Caption",
+                  "id": "n11",
+                  "value": "20 min",
+                  "color": "tertiary"
+                }
+              ]
+            },
+            {
+              "type": "ListViewItem",
+              "id": "n12",
+              "value": "pizza",
+              "children": [
+                {
+                  "type": "Col",
+                  "id": "n13",
+                  "flex": 1,
+                  "children": [
+                    {
+                      "type": "Text",
+                      "id": "n14",
+                      "value": "Margherita pizza",
+                      "weight": "medium"
+                    },
+                    {
+                      "type": "Caption",
+                      "id": "n15",
+                      "value": "Easy, crowd-pleasing, order-in friendly"
+                    }
+                  ]
+                },
+                {
+                  "type": "Caption",
+                  "id": "n16",
+                  "value": "Order in",
+                  "color": "tertiary"
+                }
+              ]
+            }
+          ],
+          "required": true
+        }
+      }
+    },
+    {
+      "id": "widget-pullRequests",
+      "at": 1791930001000,
+      "role": "bot",
+      "kind": "widget",
+      "text": "**Pull requests** · mausbot-mobile · 3 open\n- iOS: mid-turn steer · #750 · 4 files · passed 2h ago · Ready\n- Android: thread pin parity · #739 · 2 files · passed 5h ago · Ready\n- iOS: file links, send, attach · #719 · 9 files · 1 test failing · Failing\n[Merge the two ready] [Fix #719 first]",
+      "widget": {
+        "v": 1,
+        "root": {
+          "type": "ListView",
+          "id": "n1",
+          "title": "Pull requests",
+          "caption": "mausbot-mobile",
+          "meta": "3 open",
+          "confirm": {
+            "label": "Merge the two ready",
+            "action": {
+              "type": "pr.merge",
+              "payload": {
+                "prs": [
+                  750,
+                  739
+                ]
+              }
+            }
+          },
+          "cancel": {
+            "label": "Fix #719 first",
+            "action": {
+              "type": "pr.fix",
+              "payload": {
+                "pr": 719
+              }
+            }
+          },
+          "children": [
+            {
+              "type": "ListViewItem",
+              "id": "n2",
+              "gap": 12,
+              "onClickAction": {
+                "type": "pr.open",
+                "payload": {
+                  "pr": 750
+                }
+              },
+              "children": [
+                {
+                  "type": "Icon",
+                  "id": "n3",
+                  "name": "pull-request",
+                  "color": "secondary"
+                },
+                {
+                  "type": "Col",
+                  "id": "n4",
+                  "flex": 1,
+                  "children": [
+                    {
+                      "type": "Text",
+                      "id": "n5",
+                      "value": "iOS: mid-turn steer",
+                      "weight": "medium",
+                      "truncate": true
+                    },
+                    {
+                      "type": "Caption",
+                      "id": "n6",
+                      "value": "#750 · 4 files · passed 2h ago",
+                      "truncate": true
+                    }
+                  ]
+                },
+                {
+                  "type": "Badge",
+                  "id": "n7",
+                  "label": "Ready",
+                  "color": "success",
+                  "variant": "dot"
+                }
+              ]
+            },
+            {
+              "type": "ListViewItem",
+              "id": "n8",
+              "gap": 12,
+              "onClickAction": {
+                "type": "pr.open",
+                "payload": {
+                  "pr": 739
+                }
+              },
+              "children": [
+                {
+                  "type": "Icon",
+                  "id": "n9",
+                  "name": "pull-request",
+                  "color": "secondary"
+                },
+                {
+                  "type": "Col",
+                  "id": "n10",
+                  "flex": 1,
+                  "children": [
+                    {
+                      "type": "Text",
+                      "id": "n11",
+                      "value": "Android: thread pin parity",
+                      "weight": "medium",
+                      "truncate": true
+                    },
+                    {
+                      "type": "Caption",
+                      "id": "n12",
+                      "value": "#739 · 2 files · passed 5h ago",
+                      "truncate": true
+                    }
+                  ]
+                },
+                {
+                  "type": "Badge",
+                  "id": "n13",
+                  "label": "Ready",
+                  "color": "success",
+                  "variant": "dot"
+                }
+              ]
+            },
+            {
+              "type": "ListViewItem",
+              "id": "n14",
+              "gap": 12,
+              "onClickAction": {
+                "type": "pr.open",
+                "payload": {
+                  "pr": 719
+                }
+              },
+              "children": [
+                {
+                  "type": "Icon",
+                  "id": "n15",
+                  "name": "pull-request",
+                  "color": "secondary"
+                },
+                {
+                  "type": "Col",
+                  "id": "n16",
+                  "flex": 1,
+                  "children": [
+                    {
+                      "type": "Text",
+                      "id": "n17",
+                      "value": "iOS: file links, send, attach",
+                      "weight": "medium",
+                      "truncate": true
+                    },
+                    {
+                      "type": "Caption",
+                      "id": "n18",
+                      "value": "#719 · 9 files · 1 test failing",
+                      "truncate": true
+                    }
+                  ]
+                },
+                {
+                  "type": "Badge",
+                  "id": "n19",
+                  "label": "Failing",
+                  "color": "danger",
+                  "variant": "dot"
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "widget-buildStatus",
+      "at": 1791930002000,
+      "role": "bot",
+      "kind": "widget",
+      "text": "Uploading\n**Build 25 to TestFlight** · OpenMausMobile 1.4.0 (25)\nabout 40s left 62%\nArchived · 9:41 PM\nSigned · 9:42 PM\nUploading to App Store Connect · now\nProcessing · waiting",
+      "widget": {
+        "v": 1,
+        "root": {
+          "type": "Card",
+          "id": "n1",
+          "title": "Build 25 to TestFlight",
+          "caption": "OpenMausMobile 1.4.0 (25)",
+          "status": {
+            "text": "Uploading",
+            "icon": "upload"
+          },
+          "children": [
+            {
+              "type": "Progress",
+              "id": "n2",
+              "value": 0.62,
+              "label": "about 40s left"
+            },
+            {
+              "type": "Divider",
+              "id": "n3",
+              "spacing": 12,
+              "flush": true
+            },
+            {
+              "type": "Col",
+              "id": "n4",
+              "gap": 8,
+              "children": [
+                {
+                  "type": "Row",
+                  "id": "n5",
+                  "gap": 8,
+                  "align": "center",
+                  "children": [
+                    {
+                      "type": "Icon",
+                      "id": "n6",
+                      "name": "check",
+                      "color": "success",
+                      "size": "sm"
+                    },
+                    {
+                      "type": "Text",
+                      "id": "n7",
+                      "value": "Archived",
+                      "size": "sm"
+                    },
+                    {
+                      "type": "Spacer",
+                      "id": "n8"
+                    },
+                    {
+                      "type": "Caption",
+                      "id": "n9",
+                      "value": "9:41 PM",
+                      "color": "tertiary"
+                    }
+                  ]
+                },
+                {
+                  "type": "Row",
+                  "id": "n10",
+                  "gap": 8,
+                  "align": "center",
+                  "children": [
+                    {
+                      "type": "Icon",
+                      "id": "n11",
+                      "name": "check",
+                      "color": "success",
+                      "size": "sm"
+                    },
+                    {
+                      "type": "Text",
+                      "id": "n12",
+                      "value": "Signed",
+                      "size": "sm"
+                    },
+                    {
+                      "type": "Spacer",
+                      "id": "n13"
+                    },
+                    {
+                      "type": "Caption",
+                      "id": "n14",
+                      "value": "9:42 PM",
+                      "color": "tertiary"
+                    }
+                  ]
+                },
+                {
+                  "type": "Row",
+                  "id": "n15",
+                  "gap": 8,
+                  "align": "center",
+                  "children": [
+                    {
+                      "type": "Icon",
+                      "id": "n16",
+                      "name": "empty-circle",
+                      "color": "tertiary",
+                      "size": "sm"
+                    },
+                    {
+                      "type": "Text",
+                      "id": "n17",
+                      "value": "Uploading to App Store Connect",
+                      "size": "sm"
+                    },
+                    {
+                      "type": "Spacer",
+                      "id": "n18"
+                    },
+                    {
+                      "type": "Caption",
+                      "id": "n19",
+                      "value": "now",
+                      "color": "tertiary"
+                    }
+                  ]
+                },
+                {
+                  "type": "Row",
+                  "id": "n20",
+                  "gap": 8,
+                  "align": "center",
+                  "children": [
+                    {
+                      "type": "Icon",
+                      "id": "n21",
+                      "name": "empty-circle",
+                      "color": "tertiary",
+                      "size": "sm"
+                    },
+                    {
+                      "type": "Text",
+                      "id": "n22",
+                      "value": "Processing",
+                      "size": "sm"
+                    },
+                    {
+                      "type": "Spacer",
+                      "id": "n23"
+                    },
+                    {
+                      "type": "Caption",
+                      "id": "n24",
+                      "value": "waiting",
+                      "color": "tertiary"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "widget-routineForm",
+      "at": 1791930003000,
+      "role": "bot",
+      "kind": "widget",
+      "text": "**New routine: release check** · Scout proposes this. Change anything before you create it.\nRuns on · [Weekdays]\nStarts · [starts]\nAt · [at]\nReport to · (Discord · #releases / This chat)\n[ ] Stop if any check is red\n[Create routine] [Discard]",
+      "widget": {
+        "v": 1,
+        "root": {
+          "type": "Card",
+          "id": "n1",
+          "title": "New routine: release check",
+          "caption": "Scout proposes this. Change anything before you create it.",
+          "confirm": {
+            "label": "Create routine",
+            "action": {
+              "type": "routine.create",
+              "payload": {
+                "name": "release-check"
+              }
+            }
+          },
+          "cancel": {
+            "label": "Discard",
+            "action": {
+              "type": "routine.discard"
+            }
+          },
+          "children": [
+            {
+              "type": "Row",
+              "id": "n2",
+              "align": "center",
+              "children": [
+                {
+                  "type": "Label",
+                  "id": "n3",
+                  "value": "Runs on",
+                  "fieldName": "days"
+                },
+                {
+                  "type": "Spacer",
+                  "id": "n4"
+                },
+                {
+                  "type": "DayPicker",
+                  "id": "n5",
+                  "name": "days",
+                  "defaultValue": "mon,tue,wed,thu,fri"
+                }
+              ]
+            },
+            {
+              "type": "Divider",
+              "id": "n6"
+            },
+            {
+              "type": "Row",
+              "id": "n7",
+              "align": "center",
+              "children": [
+                {
+                  "type": "Label",
+                  "id": "n8",
+                  "value": "Starts",
+                  "fieldName": "starts"
+                },
+                {
+                  "type": "Spacer",
+                  "id": "n9"
+                },
+                {
+                  "type": "DatePicker",
+                  "id": "n10",
+                  "name": "starts",
+                  "defaultValue": "2026-10-14",
+                  "min": "2026-10-13",
+                  "clearable": true
+                }
+              ]
+            },
+            {
+              "type": "Divider",
+              "id": "n11"
+            },
+            {
+              "type": "Row",
+              "id": "n12",
+              "align": "center",
+              "children": [
+                {
+                  "type": "Label",
+                  "id": "n13",
+                  "value": "At",
+                  "fieldName": "at"
+                },
+                {
+                  "type": "Spacer",
+                  "id": "n14"
+                },
+                {
+                  "type": "TimePicker",
+                  "id": "n15",
+                  "name": "at",
+                  "required": true,
+                  "defaultValue": "09:00",
+                  "step": 15
+                }
+              ]
+            },
+            {
+              "type": "Divider",
+              "id": "n16"
+            },
+            {
+              "type": "Row",
+              "id": "n17",
+              "align": "center",
+              "children": [
+                {
+                  "type": "Label",
+                  "id": "n18",
+                  "value": "Report to",
+                  "fieldName": "report"
+                },
+                {
+                  "type": "Spacer",
+                  "id": "n19"
+                },
+                {
+                  "type": "Select",
+                  "id": "n20",
+                  "name": "report",
+                  "options": [
+                    {
+                      "label": "Discord · #releases",
+                      "value": "discord:releases"
+                    },
+                    {
+                      "label": "This chat",
+                      "value": "chat"
+                    }
+                  ],
+                  "placeholder": "Choose a channel"
+                }
+              ]
+            },
+            {
+              "type": "Divider",
+              "id": "n21"
+            },
+            {
+              "type": "Checkbox",
+              "id": "n22",
+              "name": "stopOnRed",
+              "label": "Stop if any check is red",
+              "defaultChecked": true
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "widget-bookCall",
+      "at": 1791930004000,
+      "role": "bot",
+      "kind": "widget",
+      "text": "**Book a call** · Pick a slot and I'll send the invite.\n[date] · [time]\n(15 min / 30 min / 45 min / 1 hour)\n[Optional: what should we cover?]\n[Book call] [Not now]",
+      "widget": {
+        "v": 1,
+        "root": {
+          "type": "Card",
+          "id": "n1",
+          "title": "Book a call",
+          "caption": "Pick a slot and I'll send the invite.",
+          "confirm": {
+            "label": "Book call",
+            "action": {
+              "type": "call.book"
+            }
+          },
+          "cancel": {
+            "label": "Not now",
+            "action": {
+              "type": "call.cancel"
+            }
+          },
+          "children": [
+            {
+              "type": "Row",
+              "id": "n2",
+              "gap": 12,
+              "wrap": true,
+              "children": [
+                {
+                  "type": "DatePicker",
+                  "id": "n3",
+                  "name": "date",
+                  "label": "Date",
+                  "required": true,
+                  "defaultValue": "2026-10-15",
+                  "min": "2026-10-14",
+                  "max": "2026-11-30"
+                },
+                {
+                  "type": "TimePicker",
+                  "id": "n4",
+                  "name": "time",
+                  "label": "Time",
+                  "required": true,
+                  "defaultValue": "10:30",
+                  "min": "09:00",
+                  "max": "18:00",
+                  "step": 15
+                }
+              ]
+            },
+            {
+              "type": "RadioGroup",
+              "id": "n5",
+              "name": "length",
+              "label": "Length",
+              "options": [
+                {
+                  "label": "15 min",
+                  "value": "15"
+                },
+                {
+                  "label": "30 min",
+                  "value": "30"
+                },
+                {
+                  "label": "45 min",
+                  "value": "45"
+                },
+                {
+                  "label": "1 hour",
+                  "value": "60"
+                }
+              ],
+              "defaultValue": "30",
+              "direction": "row"
+            },
+            {
+              "type": "Textarea",
+              "id": "n6",
+              "name": "note",
+              "label": "Note",
+              "placeholder": "Optional: what should we cover?",
+              "rows": 2
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "widget-spendTable",
+      "at": 1791930005000,
+      "role": "bot",
+      "kind": "widget",
+      "text": "**Spend by bot** · Last 7 days · $42.10\nBot | Runs | Cost\nScout | 38 | $21.40\nChief of Staff | 7 | $9.85\nKiwi | 52 | $6.35\nJev | 11 | $4.50",
+      "widget": {
+        "v": 1,
+        "root": {
+          "type": "Card",
+          "id": "n1",
+          "title": "Spend by bot",
+          "caption": "Last 7 days",
+          "meta": "$42.10",
+          "children": [
+            {
+              "type": "Table",
+              "id": "n2",
+              "children": [
+                {
+                  "type": "Table.Row",
+                  "id": "n3",
+                  "header": true,
+                  "children": [
+                    {
+                      "type": "Table.Cell",
+                      "id": "n4",
+                      "children": [
+                        {
+                          "type": "Text",
+                          "id": "n5",
+                          "value": "Bot",
+                          "size": "sm",
+                          "color": "secondary"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "Table.Cell",
+                      "id": "n6",
+                      "children": [
+                        {
+                          "type": "Text",
+                          "id": "n7",
+                          "value": "Runs",
+                          "size": "sm",
+                          "color": "secondary"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "Table.Cell",
+                      "id": "n8",
+                      "align": "end",
+                      "children": [
+                        {
+                          "type": "Text",
+                          "id": "n9",
+                          "value": "Cost",
+                          "size": "sm",
+                          "color": "secondary"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "Table.Row",
+                  "id": "n10",
+                  "children": [
+                    {
+                      "type": "Table.Cell",
+                      "id": "n11",
+                      "children": [
+                        {
+                          "type": "Text",
+                          "id": "n12",
+                          "value": "Scout",
+                          "size": "sm"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "Table.Cell",
+                      "id": "n13",
+                      "children": [
+                        {
+                          "type": "Text",
+                          "id": "n14",
+                          "value": "38",
+                          "size": "sm"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "Table.Cell",
+                      "id": "n15",
+                      "align": "end",
+                      "children": [
+                        {
+                          "type": "Text",
+                          "id": "n16",
+                          "value": "$21.40",
+                          "size": "sm"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "Table.Row",
+                  "id": "n17",
+                  "children": [
+                    {
+                      "type": "Table.Cell",
+                      "id": "n18",
+                      "children": [
+                        {
+                          "type": "Text",
+                          "id": "n19",
+                          "value": "Chief of Staff",
+                          "size": "sm"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "Table.Cell",
+                      "id": "n20",
+                      "children": [
+                        {
+                          "type": "Text",
+                          "id": "n21",
+                          "value": "7",
+                          "size": "sm"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "Table.Cell",
+                      "id": "n22",
+                      "align": "end",
+                      "children": [
+                        {
+                          "type": "Text",
+                          "id": "n23",
+                          "value": "$9.85",
+                          "size": "sm"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "Table.Row",
+                  "id": "n24",
+                  "children": [
+                    {
+                      "type": "Table.Cell",
+                      "id": "n25",
+                      "children": [
+                        {
+                          "type": "Text",
+                          "id": "n26",
+                          "value": "Kiwi",
+                          "size": "sm"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "Table.Cell",
+                      "id": "n27",
+                      "children": [
+                        {
+                          "type": "Text",
+                          "id": "n28",
+                          "value": "52",
+                          "size": "sm"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "Table.Cell",
+                      "id": "n29",
+                      "align": "end",
+                      "children": [
+                        {
+                          "type": "Text",
+                          "id": "n30",
+                          "value": "$6.35",
+                          "size": "sm"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "Table.Row",
+                  "id": "n31",
+                  "children": [
+                    {
+                      "type": "Table.Cell",
+                      "id": "n32",
+                      "children": [
+                        {
+                          "type": "Text",
+                          "id": "n33",
+                          "value": "Jev",
+                          "size": "sm"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "Table.Cell",
+                      "id": "n34",
+                      "children": [
+                        {
+                          "type": "Text",
+                          "id": "n35",
+                          "value": "11",
+                          "size": "sm"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "Table.Cell",
+                      "id": "n36",
+                      "align": "end",
+                      "children": [
+                        {
+                          "type": "Text",
+                          "id": "n37",
+                          "value": "$4.50",
+                          "size": "sm"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "widget-tokenChart",
+      "at": 1791930006000,
+      "role": "bot",
+      "kind": "widget",
+      "text": "**Token spend** · Last 7 days · all bots · $42.10\n[chart: Opus, Sonnet]\nFriday is the peak. The weekend ran on Sonnet only.",
+      "widget": {
+        "v": 1,
+        "root": {
+          "type": "Card",
+          "id": "n1",
+          "title": "Token spend",
+          "caption": "Last 7 days · all bots",
+          "meta": "$42.10",
+          "children": [
+            {
+              "type": "Chart",
+              "id": "n2",
+              "data": [
+                {
+                  "day": "Wed",
+                  "opus": 4.1,
+                  "sonnet": 1.9
+                },
+                {
+                  "day": "Thu",
+                  "opus": 5.6,
+                  "sonnet": 2.2
+                },
+                {
+                  "day": "Fri",
+                  "opus": 9.4,
+                  "sonnet": 2.4
+                },
+                {
+                  "day": "Sat",
+                  "opus": 4.9,
+                  "sonnet": 2.1
+                },
+                {
+                  "day": "Sun",
+                  "opus": 0,
+                  "sonnet": 2.3
+                },
+                {
+                  "day": "Mon",
+                  "opus": 2.6,
+                  "sonnet": 1.6
+                },
+                {
+                  "day": "Tue",
+                  "opus": 1.7,
+                  "sonnet": 1.3
+                }
+              ],
+              "series": [
+                {
+                  "type": "bar",
+                  "dataKey": "opus",
+                  "label": "Opus",
+                  "stack": "spend"
+                },
+                {
+                  "type": "bar",
+                  "dataKey": "sonnet",
+                  "label": "Sonnet",
+                  "stack": "spend"
+                }
+              ],
+              "xAxis": {
+                "dataKey": "day"
+              },
+              "height": 160
+            },
+            {
+              "type": "Caption",
+              "id": "n3",
+              "value": "Friday is the peak. The weekend ran on Sonnet only."
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "widget-emailDraft",
+      "at": 1791930007000,
+      "role": "bot",
+      "kind": "widget",
+      "text": "TO · iOS testers (3)\nSUBJECT · Build 25 is on TestFlight\nHi all,\n\nBuild 25 is ready to test. It adds **mid-turn steer** and tappable file links.\n\nReply here if anything looks off.\n[Send email] [Discard]",
+      "widget": {
+        "v": 1,
+        "root": {
+          "type": "Card",
+          "id": "n1",
+          "confirm": {
+            "label": "Send email",
+            "action": {
+              "type": "email.send"
+            }
+          },
+          "cancel": {
+            "label": "Discard",
+            "action": {
+              "type": "email.discard"
+            }
+          },
+          "size": "md",
+          "children": [
+            {
+              "type": "Row",
+              "id": "n2",
+              "gap": 12,
+              "children": [
+                {
+                  "type": "Caption",
+                  "id": "n3",
+                  "value": "TO",
+                  "weight": "semibold",
+                  "color": "tertiary",
+                  "width": 64
+                },
+                {
+                  "type": "Text",
+                  "id": "n4",
+                  "value": "iOS testers (3)"
+                }
+              ]
+            },
+            {
+              "type": "Divider",
+              "id": "n5",
+              "flush": true
+            },
+            {
+              "type": "Row",
+              "id": "n6",
+              "gap": 12,
+              "children": [
+                {
+                  "type": "Caption",
+                  "id": "n7",
+                  "value": "SUBJECT",
+                  "weight": "semibold",
+                  "color": "tertiary",
+                  "width": 64
+                },
+                {
+                  "type": "Text",
+                  "id": "n8",
+                  "value": "Build 25 is on TestFlight",
+                  "weight": "medium"
+                }
+              ]
+            },
+            {
+              "type": "Divider",
+              "id": "n9",
+              "flush": true
+            },
+            {
+              "type": "Markdown",
+              "id": "n10",
+              "value": "Hi all,\n\nBuild 25 is ready to test. It adds **mid-turn steer** and tappable file links.\n\nReply here if anything looks off."
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "widget-sources",
+      "at": 1791930008000,
+      "role": "bot",
+      "kind": "widget",
+      "text": "**Sources** · What Scout read for this answer\n- ChatKit widgets guide · developers.openai.com\n- Widget Builder gallery · widgets.chatkit.studio\n- shared/wire.ts · OpenMausBot · this computer",
+      "widget": {
+        "v": 1,
+        "root": {
+          "type": "ListView",
+          "id": "n1",
+          "title": "Sources",
+          "caption": "What Scout read for this answer",
+          "limit": 2,
+          "children": [
+            {
+              "type": "ListViewItem",
+              "id": "n2",
+              "onClickAction": {
+                "type": "open_url",
+                "payload": {
+                  "url": "https://developers.openai.com/api/docs/guides/chatkit-widgets"
+                }
+              },
+              "children": [
+                {
+                  "type": "Icon",
+                  "id": "n3",
+                  "name": "globe"
+                },
+                {
+                  "type": "Col",
+                  "id": "n4",
+                  "flex": 1,
+                  "children": [
+                    {
+                      "type": "Text",
+                      "id": "n5",
+                      "value": "ChatKit widgets guide",
+                      "weight": "medium"
+                    },
+                    {
+                      "type": "Caption",
+                      "id": "n6",
+                      "value": "developers.openai.com"
+                    }
+                  ]
+                },
+                {
+                  "type": "Icon",
+                  "id": "n7",
+                  "name": "external-link",
+                  "color": "tertiary"
+                }
+              ]
+            },
+            {
+              "type": "ListViewItem",
+              "id": "n8",
+              "onClickAction": {
+                "type": "open_url",
+                "payload": {
+                  "url": "https://widgets.chatkit.studio/gallery"
+                }
+              },
+              "children": [
+                {
+                  "type": "Icon",
+                  "id": "n9",
+                  "name": "globe"
+                },
+                {
+                  "type": "Col",
+                  "id": "n10",
+                  "flex": 1,
+                  "children": [
+                    {
+                      "type": "Text",
+                      "id": "n11",
+                      "value": "Widget Builder gallery",
+                      "weight": "medium"
+                    },
+                    {
+                      "type": "Caption",
+                      "id": "n12",
+                      "value": "widgets.chatkit.studio"
+                    }
+                  ]
+                },
+                {
+                  "type": "Icon",
+                  "id": "n13",
+                  "name": "external-link",
+                  "color": "tertiary"
+                }
+              ]
+            },
+            {
+              "type": "ListViewItem",
+              "id": "n14",
+              "children": [
+                {
+                  "type": "Icon",
+                  "id": "n15",
+                  "name": "document"
+                },
+                {
+                  "type": "Col",
+                  "id": "n16",
+                  "flex": 1,
+                  "children": [
+                    {
+                      "type": "Text",
+                      "id": "n17",
+                      "value": "shared/wire.ts",
+                      "weight": "medium"
+                    },
+                    {
+                      "type": "Caption",
+                      "id": "n18",
+                      "value": "OpenMausBot · this computer"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "widget-kitchenSink",
+      "at": 1791930009000,
+      "role": "bot",
+      "kind": "widget",
+      "text": "**Kitchen sink**\nSuccess · Info · Discovery · Danger · Warning · Secondary\nTitle xl\nBody text with a longer line that wraps onto a second line when the card is narrow.\nA caption in secondary ink\nInside a box\nwith padding and a surface\n[image: MausBot]\nA transition wraps one child.\nHow did the run go?\n(Good / Mixed / Bad)\n[Optional: where Scout can reply]\nNote\n[Anything Scout should know?]\n[Send feedback] · [Open the docs] · [Ask me later]",
+      "widget": {
+        "v": 1,
+        "root": {
+          "type": "Card",
+          "id": "n1",
+          "title": "Kitchen sink",
+          "size": "lg",
+          "children": [
+            {
+              "type": "Row",
+              "id": "n2",
+              "gap": 8,
+              "wrap": true,
+              "children": [
+                {
+                  "type": "Badge",
+                  "id": "n3",
+                  "label": "Success",
+                  "color": "success"
+                },
+                {
+                  "type": "Badge",
+                  "id": "n4",
+                  "label": "Info",
+                  "color": "info"
+                },
+                {
+                  "type": "Badge",
+                  "id": "n5",
+                  "label": "Discovery",
+                  "color": "discovery"
+                },
+                {
+                  "type": "Badge",
+                  "id": "n6",
+                  "label": "Danger",
+                  "color": "danger",
+                  "variant": "outline"
+                },
+                {
+                  "type": "Badge",
+                  "id": "n7",
+                  "label": "Warning",
+                  "color": "warning",
+                  "variant": "solid"
+                },
+                {
+                  "type": "Badge",
+                  "id": "n8",
+                  "label": "Secondary"
+                }
+              ]
+            },
+            {
+              "type": "Title",
+              "id": "n9",
+              "value": "Title xl",
+              "size": "xl"
+            },
+            {
+              "type": "Text",
+              "id": "n10",
+              "value": "Body text with a longer line that wraps onto a second line when the card is narrow.",
+              "maxLines": 2
+            },
+            {
+              "type": "Caption",
+              "id": "n11",
+              "value": "A caption in secondary ink",
+              "size": "sm"
+            },
+            {
+              "type": "Box",
+              "id": "n12",
+              "padding": [
+                16,
+                16,
+                16,
+                16
+              ],
+              "background": "secondary",
+              "radius": 12,
+              "children": [
+                {
+                  "type": "Text",
+                  "id": "n13",
+                  "value": "Inside a box",
+                  "weight": "semibold"
+                },
+                {
+                  "type": "Caption",
+                  "id": "n14",
+                  "value": "with padding and a surface"
+                }
+              ]
+            },
+            {
+              "type": "Image",
+              "id": "n15",
+              "src": "https://mausbot.com/og.png",
+              "alt": "MausBot",
+              "frame": true,
+              "aspectRatio": 1.7777777777777777,
+              "radius": 12
+            },
+            {
+              "type": "Transition",
+              "id": "n16",
+              "children": [
+                {
+                  "type": "Text",
+                  "id": "n17",
+                  "value": "A transition wraps one child."
+                }
+              ]
+            },
+            {
+              "type": "Form",
+              "id": "n18",
+              "gap": 12,
+              "onSubmitAction": {
+                "type": "feedback.send"
+              },
+              "children": [
+                {
+                  "type": "Label",
+                  "id": "n19",
+                  "value": "How did the run go?",
+                  "fieldName": "rating"
+                },
+                {
+                  "type": "RadioGroup",
+                  "id": "n20",
+                  "name": "rating",
+                  "required": true,
+                  "options": [
+                    {
+                      "label": "Good",
+                      "value": "good"
+                    },
+                    {
+                      "label": "Mixed",
+                      "value": "mixed"
+                    },
+                    {
+                      "label": "Bad",
+                      "value": "bad"
+                    }
+                  ],
+                  "direction": "row"
+                },
+                {
+                  "type": "Input",
+                  "id": "n21",
+                  "name": "email",
+                  "label": "Email",
+                  "placeholder": "Optional: where Scout can reply"
+                },
+                {
+                  "type": "Label",
+                  "id": "n22",
+                  "value": "Note",
+                  "fieldName": "note"
+                },
+                {
+                  "type": "Textarea",
+                  "id": "n23",
+                  "name": "note",
+                  "placeholder": "Anything Scout should know?",
+                  "rows": 3
+                },
+                {
+                  "type": "Row",
+                  "id": "n24",
+                  "gap": 8,
+                  "children": [
+                    {
+                      "type": "Button",
+                      "id": "n25",
+                      "label": "Send feedback",
+                      "submit": true,
+                      "style": "primary"
+                    },
+                    {
+                      "type": "Button",
+                      "id": "n26",
+                      "label": "Open the docs",
+                      "iconEnd": "external-link",
+                      "onClickAction": {
+                        "type": "open_url",
+                        "payload": {
+                          "url": "https://mausbot.com/docs"
+                        }
+                      },
+                      "style": "secondary"
+                    },
+                    {
+                      "type": "Button",
+                      "id": "n27",
+                      "label": "Ask me later",
+                      "onClickAction": {
+                        "type": "feedback.later"
+                      },
+                      "style": "quiet"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "widget-settled",
+      "at": 1791930020000,
+      "role": "bot",
+      "kind": "widget",
+      "text": "**Pull requests** · mausbot-mobile · 3 open\n- iOS: mid-turn steer · #750 · 4 files · passed 2h ago · Ready\n- Android: thread pin parity · #739 · 2 files · passed 5h ago · Ready\n- iOS: file links, send, attach · #719 · 9 files · 1 test failing · Failing\n[Merge the two ready] [Fix #719 first]",
+      "widget": {
+        "v": 1,
+        "root": {
+          "type": "ListView",
+          "id": "n1",
+          "title": "Pull requests",
+          "caption": "mausbot-mobile",
+          "meta": "3 open",
+          "confirm": {
+            "label": "Merge the two ready",
+            "action": {
+              "type": "pr.merge",
+              "payload": {
+                "prs": [
+                  750,
+                  739
+                ]
+              }
+            }
+          },
+          "cancel": {
+            "label": "Fix #719 first",
+            "action": {
+              "type": "pr.fix",
+              "payload": {
+                "pr": 719
+              }
+            }
+          },
+          "children": [
+            {
+              "type": "ListViewItem",
+              "id": "n2",
+              "gap": 12,
+              "onClickAction": {
+                "type": "pr.open",
+                "payload": {
+                  "pr": 750
+                }
+              },
+              "children": [
+                {
+                  "type": "Icon",
+                  "id": "n3",
+                  "name": "pull-request",
+                  "color": "secondary"
+                },
+                {
+                  "type": "Col",
+                  "id": "n4",
+                  "flex": 1,
+                  "children": [
+                    {
+                      "type": "Text",
+                      "id": "n5",
+                      "value": "iOS: mid-turn steer",
+                      "weight": "medium",
+                      "truncate": true
+                    },
+                    {
+                      "type": "Caption",
+                      "id": "n6",
+                      "value": "#750 · 4 files · passed 2h ago",
+                      "truncate": true
+                    }
+                  ]
+                },
+                {
+                  "type": "Badge",
+                  "id": "n7",
+                  "label": "Ready",
+                  "color": "success",
+                  "variant": "dot"
+                }
+              ]
+            },
+            {
+              "type": "ListViewItem",
+              "id": "n8",
+              "gap": 12,
+              "onClickAction": {
+                "type": "pr.open",
+                "payload": {
+                  "pr": 739
+                }
+              },
+              "children": [
+                {
+                  "type": "Icon",
+                  "id": "n9",
+                  "name": "pull-request",
+                  "color": "secondary"
+                },
+                {
+                  "type": "Col",
+                  "id": "n10",
+                  "flex": 1,
+                  "children": [
+                    {
+                      "type": "Text",
+                      "id": "n11",
+                      "value": "Android: thread pin parity",
+                      "weight": "medium",
+                      "truncate": true
+                    },
+                    {
+                      "type": "Caption",
+                      "id": "n12",
+                      "value": "#739 · 2 files · passed 5h ago",
+                      "truncate": true
+                    }
+                  ]
+                },
+                {
+                  "type": "Badge",
+                  "id": "n13",
+                  "label": "Ready",
+                  "color": "success",
+                  "variant": "dot"
+                }
+              ]
+            },
+            {
+              "type": "ListViewItem",
+              "id": "n14",
+              "gap": 12,
+              "onClickAction": {
+                "type": "pr.open",
+                "payload": {
+                  "pr": 719
+                }
+              },
+              "children": [
+                {
+                  "type": "Icon",
+                  "id": "n15",
+                  "name": "pull-request",
+                  "color": "secondary"
+                },
+                {
+                  "type": "Col",
+                  "id": "n16",
+                  "flex": 1,
+                  "children": [
+                    {
+                      "type": "Text",
+                      "id": "n17",
+                      "value": "iOS: file links, send, attach",
+                      "weight": "medium",
+                      "truncate": true
+                    },
+                    {
+                      "type": "Caption",
+                      "id": "n18",
+                      "value": "#719 · 9 files · 1 test failing",
+                      "truncate": true
+                    }
+                  ]
+                },
+                {
+                  "type": "Badge",
+                  "id": "n19",
+                  "label": "Failing",
+                  "color": "danger",
+                  "variant": "dot"
+                }
+              ]
+            }
+          ]
+        },
+        "settled": {
+          "ref": "confirm",
+          "label": "Merge the two ready",
+          "tone": "confirm",
+          "at": 1791930060000,
+          "sendId": "send-1"
+        }
+      }
+    },
+    {
+      "id": "widget-answer",
+      "at": 1791930060000,
+      "role": "user",
+      "kind": "text",
+      "text": "Merge the two ready",
+      "replyToId": "widget-settled"
+    },
+    {
+      "id": "widget-future",
+      "at": 1791930070000,
+      "role": "bot",
+      "kind": "widget",
+      "text": "**From the future**\nStill readable",
+      "widget": {
+        "v": 1,
+        "sparkle": true,
+        "root": {
+          "type": "Card",
+          "id": "n1",
+          "title": "From the future",
+          "glow": 3,
+          "children": [
+            {
+              "type": "Carousel",
+              "id": "n2",
+              "autoplay": true,
+              "children": [
+                {
+                  "type": "Text",
+                  "id": "n3",
+                  "value": "Still readable"
+                }
+              ]
+            },
+            {
+              "type": "Hologram",
+              "id": "n4"
+            },
+            {
+              "type": "Text",
+              "value": "No id on this one"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "widget-broken",
+      "at": 1791930080000,
+      "role": "bot",
+      "kind": "widget",
+      "text": "A widget this build cannot read",
+      "widget": {
+        "v": 1,
+        "root": "nope"
+      }
+    }
+  ],
+  "hasMore": false
+}

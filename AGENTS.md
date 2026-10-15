@@ -3180,8 +3180,17 @@ there.
   as code; a YouTube link stays a link).
 - The existing ```cw, ```widget (HTML, `WidgetFrame`), ```artifact and
   YouTube renderers are unchanged and separate.
-- Phones: Sagax's iOS and Android apps have no widget renderer yet (upstream
-  draws them in its separate mobile repo); they show the row's text fallback.
+- Phones: iOS draws them (`ios/App/Features/Chat/Widget/`: `ChatWidgetCard`
+  owns the form and the press, `ChatWidgetNodes` and `ChatWidgetFields` every
+  node; the shared readers are `ios/Sources/CompanionCore/ChatWidget.swift`).
+  A press posts `widgetAction` on the same send route; Swift Charts, SF
+  Symbols, system pickers; images wait behind "Load image"; a Markdown node is
+  inert (`MarkdownText(inert: true)`). In a room, or with no tree to draw, the
+  row shows its text. Tests: `ChatWidgetTests` (against the server's own
+  fixtures, regenerated with
+  `node --experimental-strip-types scripts/gen-widget-fixtures.ts ios/Tests/CompanionCoreTests/Fixtures`)
+  and `ChatWidgetsUITests` (`PARITY_WIDGETS=1 node ios/parity/fixture-server.mjs`).
+  Android shows the row's text fallback.
 
 Reusable card: `src/components/widget/WidgetCardFrame.tsx` draws the same
 surface, width steps (`size` sm/md/lg/full), header, problem line and footer
