@@ -1,0 +1,417 @@
+// The quiet actions beside a chat message, shared by 1:1 chats (MessageBar)
+// and rooms (MessageActions), on a bot's answer and on a person's bubble.
+//
+// JC, 2026-10-15: the same shapes and measures as Grok Bot's message tray,
+// in Sagax's skin tokens so every skin draws it:
+//
+// - the row: smiley (react), reply, "…"; 24px square buttons, 6px corners,
+//   2px apart, 16px thin icons, a 6% ink wash on hover and 10% when pressed
+//   (120ms colour transition);
+// - the smiley opens a pill of quick reactions (👍 👎 ❤️ 😂 🎉, then "more
+//   reactions"): 32px round cells, 20px emoji, 4px apart, 6px inside;
+// - "…" opens a menu (12px corners, 6px inside, 200px wide at least) that
+//   starts with the same reactions, then Reply, Copy, Copy request ID, then
+//   Sagax's own entries (edit, read aloud, raw markdown, regenerate, pin)
+//   under a half-pixel divider. Rows are 30px high, 13px/18px text, 6px
+//   corners, 8px between the 16px icon and the label.
+//
+// Keyboard: every popup takes focus on open, the arrows and Home/End move in
+// it, Escape closes it and gives focus back to the button that opened it.
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type ReactNode,
+  type RefObject,
+} from "react";
+import { Copy, Ellipsis, Reply, Smile, SmilePlus } from "lucide-react";
+
+import { popoverClosesOnKey, usePopoverDismiss } from "@/hooks/use-popover-dismiss";
+import { cn } from "@/lib/cn";
+import { copyText } from "@/lib/copy-text";
+import { t } from "@/lib/i18n";
+import { BAR_REACTIONS } from "../../shared/reactions";
+import { useMenuMotion } from "./MenuMotion";
+import { ReactionPicker } from "./Reactions";
+
+/** One size and stroke for every icon in the row and its menu. */
+export const HOVER_ICON = { size: 16, strokeWidth: 1.5 } as const;
+
+/** A button of the row: 24px, 6px corners, muted until hovered or pressed. */
+export const HOVER_ACTION_BUTTON =
+  "inline-flex size-6 shrink-0 items-center justify-center rounded-[6px] border-0 bg-transparent p-0 text-ink-secondary transition-colors duration-[120ms] hover:bg-ink/[0.06] active:bg-ink/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus aria-expanded:bg-ink/[0.06] disabled:cursor-not-allowed disabled:opacity-50";
+
+/** The floating surface both popups sit on: elevated, a half-pixel edge and
+ * the skin's popover shadow. */
+const POPUP_SURFACE = "absolute z-40 border-[0.5px] border-border bg-elevated popover-surface";
+
+const EMOJI_CELL =
+  "inline-flex size-8 shrink-0 items-center justify-center rounded-full border-0 p-0 text-[20px] leading-none text-ink transition-colors duration-[120ms] hover:bg-ink/[0.06] active:bg-ink/10 focus-visible:bg-ink/[0.06] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus";
+
+const MENU_ROW =
+  "flex min-h-[30px] w-full items-center gap-2 rounded-[6px] border-0 bg-transparent px-2 py-1.5 text-start text-[13px] leading-[18px] text-ink hover:bg-ink/[0.06] focus-visible:bg-ink/[0.06] focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent";
+
+const CloseMenu = createContext<() => void>(() => {});
+
+/** One entry of the "…" menu: an icon and a label. Choosing it closes the
+ * menu. `hidden` keeps an entry in the tree but out of sight and reach. */
+export function MessageMenuItem({
+  label,
+  icon,
+  onSelect,
+  disabled = false,
+  active = false,
+  hidden = false,
+  shortcut,
+  title,
+}: {
+  label: string;
+  icon: ReactNode;
+  onSelect: () => void;
+  disabled?: boolean;
+  /** A mode that is on (raw markdown, speaking). */
+  active?: boolean;
+  hidden?: boolean;
+  /** One letter that chooses this entry while the menu is open. */
+  shortcut?: string;
+  title?: string;
+}) {
+  const close = useContext(CloseMenu);
+  return (
+    <button
+      type="button"
+      role="menuitem"
+      disabled={disabled}
+      title={title}
+      aria-checked={active || undefined}
+      aria-keyshortcuts={shortcut ? shortcut.toUpperCase() : undefined}
+      data-shortcut={shortcut?.toLowerCase()}
+      onClick={() => {
+        close();
+        onSelect();
+      }}
+      className={cn(MENU_ROW, active && "text-accent", hidden && "hidden")}
+    >
+      <span className={cn("flex size-[18px] shrink-0 items-center justify-center", active ? "text-accent" : "text-ink-secondary")} aria-hidden="true">{icon}</span>
+      <span className="min-w-0 flex-1 truncate">{label}</span>
+      {shortcut && <kbd className="shrink-0 font-sans text-[11px] text-ink-tertiary">{shortcut.toUpperCase()}</kbd>}
+    </button>
+  );
+}
+
+/** The quick reactions in a row, then "more reactions". Shared by the pill
+ * and the head of the "…" menu. */
+function QuickReactionRow({ mine, onPick, onMore }: { mine: readonly string[]; onPick: (emoji: string) => void; onMore: () => void }) {
+  return (
+    <div role="group" aria-label={t("reactions.quick")} className="flex flex-row items-center gap-1" data-quick-reactions>
+      {BAR_REACTIONS.map((emoji) => {
+        const marked = mine.includes(emoji);
+        return (
+          <button
+            key={emoji}
+            type="button"
+            role="menuitemcheckbox"
+            aria-checked={marked}
+            aria-label={t("reactions.reactWith", { emoji })}
+            title={emoji}
+            data-quick-reaction={emoji}
+            onClick={() => onPick(emoji)}
+            className={cn(EMOJI_CELL, marked && "bg-ink/[0.08] hover:bg-ink/[0.08]")}
+          >
+            {emoji}
+          </button>
+        );
+      })}
+      <button
+        type="button"
+        role="menuitem"
+        aria-label={t("reactions.more")}
+        title={t("reactions.more")}
+        data-more-reactions
+        onClick={onMore}
+        className={cn(EMOJI_CELL, "text-ink-secondary")}
+      >
+        <SmilePlus size={20} strokeWidth={1.5} aria-hidden="true" />
+      </button>
+    </div>
+  );
+}
+
+/** The focusable entries of a popup, in order, without hidden or disabled ones. */
+function entries(popup: HTMLElement | null): HTMLElement[] {
+  if (!popup) return [];
+  return [...popup.querySelectorAll<HTMLElement>('[role="menuitem"], [role="menuitemcheckbox"]')].filter(
+    (entry) => !(entry as HTMLButtonElement).disabled && !entry.classList.contains("hidden"),
+  );
+}
+
+/** Arrows, Home and End move through a popup's entries. */
+function moveFocus(event: KeyboardEvent<HTMLElement>, popup: HTMLElement | null) {
+  const items = entries(popup);
+  if (!items.length) return;
+  const index = items.indexOf(document.activeElement as HTMLElement);
+  const step: Record<string, number | "home" | "end"> = { ArrowDown: 1, ArrowRight: 1, ArrowUp: -1, ArrowLeft: -1, Home: "home", End: "end" };
+  const move = step[event.key];
+  if (move === undefined) return;
+  event.preventDefault();
+  const next = move === "home" ? 0 : move === "end" ? items.length - 1 : (index + move + items.length) % items.length;
+  items[next]?.focus();
+}
+
+/** Below the trigger unless that runs off the window; then above. */
+function usePlacement(open: boolean, trigger: RefObject<HTMLElement | null>, popup: RefObject<HTMLElement | null>) {
+  const [above, setAbove] = useState(false);
+  useLayoutEffect(() => {
+    if (!open) return;
+    const box = popup.current?.getBoundingClientRect();
+    const anchor = trigger.current?.getBoundingClientRect();
+    if (!box || !anchor) return;
+    setAbove(anchor.bottom + 4 + box.height > window.innerHeight - 8 && anchor.top - 4 - box.height > 8);
+  }, [open, trigger, popup]);
+  return above;
+}
+
+type Popup = "reactions" | "picker" | "menu" | null;
+
+export type HoverReactions = {
+  /** The emojis this viewer already put on the message. */
+  mine: readonly string[];
+  onPick: (emoji: string) => void;
+};
+
+/** The row of quiet actions and its two popups. `onOpenChange` tells the
+ * container a popup is open, so it keeps the row in view. `persistent`
+ * holds controls of a mode the person turned on (raw markdown, reading
+ * aloud), drawn after "…". `children` are Sagax's own menu entries
+ * (MessageMenuItem), under Reply, Copy and Copy request ID. */
+export function MessageHoverActions({
+  side,
+  onReply,
+  copy,
+  requestId,
+  react,
+  persistent,
+  onOpenChange,
+  children,
+}: {
+  side: "user" | "bot";
+  onReply?: () => void;
+  /** The message's text, when it has any to copy. */
+  copy?: string;
+  /** What "Copy request ID" puts on the clipboard. */
+  requestId?: string;
+  react?: HoverReactions;
+  persistent?: ReactNode;
+  onOpenChange?: (open: boolean) => void;
+  children?: ReactNode;
+}) {
+  const rootRef = useRef<HTMLDivElement>(null);
+  const reactRef = useRef<HTMLButtonElement>(null);
+  const moreRef = useRef<HTMLButtonElement>(null);
+  const barRef = useRef<HTMLDivElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const barId = useId();
+  const menuId = useId();
+  const [popup, setPopupState] = useState<Popup>(null);
+  const [announce, setAnnounce] = useState("");
+  const mirrored = side === "user";
+  const barMotion = useMenuMotion(popup === "reactions");
+  const menuMotion = useMenuMotion(popup === "menu");
+  const barAbove = usePlacement(popup === "reactions", reactRef, barRef);
+  const menuAbove = usePlacement(popup === "menu", moreRef, menuRef);
+
+  const onOpenChangeRef = useRef(onOpenChange);
+  onOpenChangeRef.current = onOpenChange;
+  const setPopup = (next: Popup) => {
+    setPopupState(next);
+    onOpenChangeRef.current?.(next !== null);
+  };
+  const close = (focus: RefObject<HTMLElement | null>) => {
+    setPopup(null);
+    focus.current?.focus();
+  };
+
+  usePopoverDismiss(popup === "reactions" || popup === "menu", rootRef, () => setPopup(null));
+
+  useEffect(() => {
+    if (popup === "reactions") entries(barRef.current)[0]?.focus();
+    if (popup === "menu") entries(menuRef.current)[0]?.focus();
+  }, [popup]);
+
+  const pick = (emoji: string, from: RefObject<HTMLElement | null>) => {
+    react?.onPick(emoji);
+    close(from);
+  };
+
+  const onPopupKey = (event: KeyboardEvent<HTMLDivElement>, popupRef: RefObject<HTMLElement | null>, from: RefObject<HTMLElement | null>) => {
+    if (popoverClosesOnKey(event.nativeEvent)) {
+      event.preventDefault();
+      event.stopPropagation();
+      close(from);
+      return;
+    }
+    if (event.key === "Tab") {
+      setPopup(null);
+      return;
+    }
+    // a letter chooses the menu entry that carries it
+    if (event.key.length === 1 && !event.metaKey && !event.ctrlKey && !event.altKey) {
+      const entry = popupRef.current?.querySelector<HTMLElement>(`[role="menuitem"][data-shortcut="${CSS.escape(event.key.toLowerCase())}"]:not(:disabled)`);
+      if (entry) {
+        event.preventDefault();
+        entry.click();
+        return;
+      }
+    }
+    moveFocus(event, popupRef.current);
+  };
+
+  const copied = (key: "chat.copyMessageDone" | "chat.copyRequestIdDone") => setAnnounce(t(key));
+  // Grok Bot's placement: under the row, from the bubble's side
+  const edge = mirrored ? "end-0" : "start-0";
+  const replyIcon = <Reply {...HOVER_ICON} aria-hidden="true" className={cn(mirrored && "-scale-x-100")} />;
+
+  return (
+    <div
+      ref={rootRef}
+      role="toolbar"
+      aria-label={t("chat.messageActions")}
+      data-hover-actions
+      data-popup={popup ?? undefined}
+      className={cn("relative flex flex-row flex-nowrap items-center gap-0.5 select-none", mirrored && "flex-row-reverse")}
+      onKeyDown={(event) => {
+        if (!(event.target instanceof Element) || event.target.parentElement !== rootRef.current) return;
+        if (event.key === "ArrowRight" || event.key === "ArrowLeft") {
+          const buttons = [...(rootRef.current?.querySelectorAll<HTMLButtonElement>(":scope > button:not(:disabled)") ?? [])];
+          const index = buttons.indexOf(document.activeElement as HTMLButtonElement);
+          if (index < 0) return;
+          event.preventDefault();
+          const forward = (event.key === "ArrowRight") !== mirrored;
+          buttons[(index + (forward ? 1 : -1) + buttons.length) % buttons.length]?.focus();
+        }
+      }}
+    >
+      {react && (
+        <button
+          ref={reactRef}
+          type="button"
+          data-react-button
+          aria-label={t("reactions.add")}
+          title={t("reactions.add")}
+          aria-haspopup="menu"
+          aria-expanded={popup === "reactions" || popup === "picker"}
+          aria-controls={popup === "reactions" ? barId : undefined}
+          onClick={() => setPopup(popup === "reactions" || popup === "picker" ? null : "reactions")}
+          className={HOVER_ACTION_BUTTON}
+        >
+          <Smile {...HOVER_ICON} aria-hidden="true" />
+        </button>
+      )}
+      {onReply && (
+        <button type="button" data-reply-button onClick={onReply} aria-label={t("chat.replyToMessage")} title={t("chat.reply")} className={HOVER_ACTION_BUTTON}>
+          {replyIcon}
+        </button>
+      )}
+      <button
+        ref={moreRef}
+        type="button"
+        data-more-button
+        onClick={() => setPopup(popup === "menu" ? null : "menu")}
+        aria-label={t("chat.messageActions")}
+        title={t("chat.messageActions")}
+        aria-haspopup="menu"
+        aria-expanded={popup === "menu"}
+        aria-controls={popup === "menu" ? menuId : undefined}
+        className={HOVER_ACTION_BUTTON}
+      >
+        <Ellipsis {...HOVER_ICON} aria-hidden="true" />
+      </button>
+      {persistent}
+      <span className="sr-only" aria-live="polite">{announce}</span>
+
+      {react && barMotion.shown && (
+        <div
+          ref={barRef}
+          id={barId}
+          role="menu"
+          aria-label={t("reactions.quick")}
+          aria-orientation="horizontal"
+          data-reaction-bar
+          onKeyDown={(event) => onPopupKey(event, barRef, reactRef)}
+          className={cn(POPUP_SURFACE, "w-max rounded-full p-1.5", barAbove ? "bottom-full mb-1" : "top-full mt-1", edge, barMotion.className)}
+          {...barMotion.exitProps}
+        >
+          <QuickReactionRow mine={react.mine} onPick={(emoji) => pick(emoji, reactRef)} onMore={() => setPopup("picker")} />
+        </div>
+      )}
+
+      {react && popup === "picker" && (
+        <ReactionPicker
+          align={mirrored ? "end" : "start"}
+          mine={react.mine}
+          onPick={react.onPick}
+          onClose={() => close(reactRef)}
+        />
+      )}
+
+      {menuMotion.shown && (
+        <CloseMenu.Provider value={() => close(moreRef)}>
+          <div
+            ref={menuRef}
+            id={menuId}
+            role="menu"
+            aria-label={t("chat.messageActions")}
+            data-message-menu
+            onKeyDown={(event) => onPopupKey(event, menuRef, moreRef)}
+            className={cn(
+              POPUP_SURFACE,
+              "flex w-max min-w-[200px] max-w-[min(18rem,calc(100vw-2rem))] flex-col gap-0.5 rounded-[12px] p-1.5",
+              menuAbove ? "bottom-full mb-1" : "top-full mt-1",
+              edge,
+              menuMotion.className,
+            )}
+            {...menuMotion.exitProps}
+          >
+            {react && (
+              <>
+                <QuickReactionRow mine={react.mine} onPick={(emoji) => pick(emoji, moreRef)} onMore={() => setPopup("picker")} />
+                <div role="separator" className="-mx-1.5 my-1 border-t-[0.5px] border-border" />
+              </>
+            )}
+            {onReply && <MessageMenuItem label={t("chat.reply")} icon={replyIcon} onSelect={onReply} />}
+            {copy && (
+              <MessageMenuItem
+                label={t("chat.copy")}
+                icon={<Copy {...HOVER_ICON} />}
+                onSelect={() => {
+                  void copyText(copy).then((result) => { if (result === "copied") copied("chat.copyMessageDone"); });
+                }}
+              />
+            )}
+            {requestId && (
+              <MessageMenuItem
+                label={t("chat.copyRequestId")}
+                icon={<Copy {...HOVER_ICON} />}
+                onSelect={() => {
+                  void copyText(requestId).then((result) => { if (result === "copied") copied("chat.copyRequestIdDone"); });
+                }}
+              />
+            )}
+            {children && (
+              // Sagax's own entries; the divider goes when every one is hidden
+              <div className="hidden flex-col gap-0.5 has-[>[role=menuitem]:not(.hidden)]:flex" data-menu-extra>
+                <div role="separator" className="-mx-1.5 my-1 border-t-[0.5px] border-border" />
+                {children}
+              </div>
+            )}
+          </div>
+        </CloseMenu.Provider>
+      )}
+    </div>
+  );
+}

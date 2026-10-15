@@ -7,39 +7,34 @@ type Props = Parameters<typeof MessageActions>[0];
 
 const pin: MessageMenuItem = { key: "pin", icon: null, label: "Pin message", onSelect: () => {} };
 
-const render = (props: Partial<Omit<Props, "children">> = {}) =>
+const render = (props: Partial<Props> = {}) =>
   renderToStaticMarkup(
     createElement(MessageActions, {
       side: "bot",
+      onReply: () => {},
+      copy: "an answer",
+      react: { mine: [], onPick: () => {} },
       ...props,
-      children: [
-        createElement("button", { type: "button", key: "reply" }, "reply"),
-        createElement("button", { type: "button", key: "copy" }, "copy"),
-      ],
     }),
   );
 
+const labels = (html: string) => [...html.matchAll(/<button[^>]*aria-label="([^"]+)"/g)].map((match) => match[1]);
+
 describe("MessageActions", () => {
-  it("shows only reply and copy, hidden until the message is hovered or focused", () => {
+  it("shows react, reply and …, hidden until the message is hovered or focused", () => {
     const html = render({ menu: [pin] });
-    expect(html).toContain(">reply<");
-    expect(html).toContain(">copy<");
+    expect(labels(html)).toEqual(["Add reaction", "Reply to message", "Message actions"]);
     expect(html).toContain("opacity-0");
     expect(html).toContain("pointer-events-none");
     expect(html).not.toContain('data-shown="true"');
   });
 
-  it("moves the rest behind a closed more menu", () => {
+  it("keeps copy and the moved actions behind a closed … menu", () => {
     const html = render({ menu: [pin] });
-    expect(html).toContain('aria-label="Message actions"');
     expect(html).toContain('aria-haspopup="menu"');
     expect(html).toContain('aria-expanded="false"');
-    // the moved actions are not in the row
     expect(html).not.toContain("Pin message");
-  });
-
-  it("drops the more button when nothing is in the menu", () => {
-    expect(render()).not.toContain('aria-haspopup="menu"');
+    expect(html).not.toContain(">Copy<");
   });
 
   it("stays out while a control must remain reachable", () => {

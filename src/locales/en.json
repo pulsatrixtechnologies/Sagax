@@ -7601,5 +7601,10 @@
   "botSettings.nav.skills": "Skills",
   "computer.back": "Back",
   "computer.more": "More computer actions",
-  "botPanel.moreOptions": "More options"
+  "botPanel.moreOptions": "More options",
+  "chat.copy": "Copy",
+  "chat.copyRequestId": "Copy request ID",
+  "chat.copyRequestIdDone": "Request ID copied",
+  "reactions.quick": "Quick reactions",
+  "reactions.more": "More reactions"
 }

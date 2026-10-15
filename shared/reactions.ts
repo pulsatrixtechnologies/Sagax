@@ -28,6 +28,11 @@ export interface MessageReaction {
 /** The quick picker, in order. */
 export const QUICK_REACTIONS = ["👍", "❤️", "😂", "🎉", "👀", "🙏", "✅", "❌"] as const;
 
+/** The quick reactions of a message's hover row and "…" menu, in order
+ * (the pill Grok Bot shows; JC, 2026-10-15). The full picker keeps
+ * QUICK_REACTIONS first. */
+export const BAR_REACTIONS = ["👍", "👎", "❤️", "😂", "🎉"] as const;
+
 /** Distinct emojis one message can carry; past that a new one is refused. */
 export const MAX_REACTION_EMOJIS = 24;
 /** UTF-16 length of one emoji sequence (a family or a flag with modifiers

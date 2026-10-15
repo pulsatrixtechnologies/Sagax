@@ -7601,5 +7601,10 @@
   "window.close": "Fermer",
   "window.maximize": "Agrandir",
   "window.minimize": "Réduire",
-  "window.restore": "Restaurer"
+  "window.restore": "Restaurer",
+  "chat.copy": "Copier",
+  "chat.copyRequestId": "Copier l'ID de requête",
+  "chat.copyRequestIdDone": "ID de requête copié",
+  "reactions.quick": "Réactions rapides",
+  "reactions.more": "Plus de réactions"
 }

@@ -69,8 +69,10 @@ describe("room message actions", () => {
   it("gives a bot reply the same tray as a 1:1 answer", () => {
     const html = markup([text("a", "bot", "The build is green")]);
     expect(html).toContain('data-testid="message-actions"');
-    expect(html).toContain("Copy message");
+    expect(html).toContain('aria-label="Add reaction"');
     expect(html).toContain("Reply to message");
+    // copy and copy request ID wait in the … menu, as in Grok Bot
+    expect(html).not.toContain("Copy request ID");
     expect(html).toContain('aria-haspopup="menu"');
     // the rest waits in the more menu, as in a 1:1 chat
     expect(html).not.toContain("Show raw markdown");
@@ -83,9 +85,9 @@ describe("room message actions", () => {
     flushSync(() => root.render(createElement(Transcript, {
       group: { ...room, messages }, members: [lead], locale: "en", messages, transcript: messages, onReply: () => {},
     })));
-    flushSync(() => host.querySelector<HTMLButtonElement>('button[aria-haspopup="menu"]')!.click());
+    flushSync(() => host.querySelector<HTMLButtonElement>("[data-more-button]")!.click());
     const items = [...host.querySelectorAll<HTMLButtonElement>("[role=menuitem]")];
-    expect(items.map((item) => item.textContent)).toEqual(expect.arrayContaining(["Read this aloud", "Show raw markdown", "Pin message", "Copy message ID"]));
+    expect(items.map((item) => item.textContent)).toEqual(expect.arrayContaining(["Read this aloud", "Show raw markdown", "Pin message", "Reply", "Copy", "Copy request ID"]));
     const speak = items.find((item) => item.textContent === "Read this aloud");
     expect(speak?.title).toBe("Add an ElevenLabs key in an agent profile to read messages aloud");
     expect(speak?.disabled).toBe(true);
@@ -93,7 +95,7 @@ describe("room message actions", () => {
 
   it("copies a person's message and folds a long one", () => {
     const html = markup([text("u", "user", "word ".repeat(200))]);
-    expect(html).toContain("Copy message");
+    expect(html).toContain("Reply to message");
     expect(html).toContain("Show full message");
     expect(html).not.toContain("Show raw markdown");
   });

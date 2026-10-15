@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
-// The bar beside a 1:1 message holds reply, copy, the smiley, the "…" and
-// the time, in the order of a group's message. Every other control is a
-// labelled entry in the "…" menu.
+// The bar beside a 1:1 message: react, reply and … in a row (the tray of
+// MessageHoverActions, Grok Bot's shapes), the time under them. Copy, Copy
+// request ID and every other control are labelled entries of the … menu.
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -11,26 +11,31 @@ import { MessageBar, MessageMenuItem } from "./MessageBar";
 let host: HTMLDivElement;
 let root: Root;
 const bar = () => host.querySelector<HTMLElement>("[data-message-bar]")!;
-const handle = () => bar().querySelector<HTMLButtonElement>('button[aria-label="Message actions"]')!;
-const items = () => [...host.querySelectorAll<HTMLElement>('[role="menuitem"]')].map((item) => item.textContent);
+const handle = () => bar().querySelector<HTMLButtonElement>("[data-more-button]")!;
+const items = () =>
+  [...host.querySelectorAll<HTMLElement>('[data-message-menu]:not([aria-hidden="true"]) [role="menuitem"]:not([data-more-reactions])')]
+    .filter((item) => !item.classList.contains("hidden"))
+    .map((item) => item.textContent);
 
-async function render(side: "bot" | "user" = "bot", onSelect = vi.fn()) {
+async function render(side: "bot" | "user" = "bot", onSelect = vi.fn(), react = false) {
+  const onPick = vi.fn();
   await act(async () => {
     root.render(
       createElement(MessageBar, {
         side,
         time: "1:54 PM",
-        copy: createElement("button", { type: "button", "aria-label": "Copy message" }),
+        copy: "an answer",
+        onReply: () => {},
+        requestId: "m1",
+        react: react ? { mine: ["👍"], onPick } : undefined,
         children: [
           createElement(MessageMenuItem, { key: "raw", label: "Show raw markdown", icon: null, onSelect }),
-          createElement(MessageMenuItem, { key: "speak", label: "Read this aloud", icon: null, onSelect: () => {} }),
           createElement(MessageMenuItem, { key: "regen", label: "Regenerate response", icon: null, onSelect: () => {} }),
-          createElement(MessageMenuItem, { key: "edit", label: "Edit message", icon: null, onSelect: () => {} }),
         ],
       }),
     );
   });
-  return onSelect;
+  return { onSelect, onPick };
 }
 
 beforeEach(() => {
@@ -45,28 +50,31 @@ afterEach(async () => {
 });
 
 describe("MessageBar", () => {
-  it("shows only the time, copy and the … handle, with no menu open", async () => {
-    await render();
-    const buttons = [...bar().querySelectorAll("button")].map((button) => button.getAttribute("aria-label"));
-    expect(buttons).toEqual(["Copy message", "Message actions"]);
-    expect(bar().textContent).toContain("1:54 PM");
+  it("shows react, reply, … and the time under them, with no menu open", async () => {
+    await render("bot", vi.fn(), true);
+    const buttons = [...bar().querySelectorAll("[data-hover-actions] > button")].map((button) => button.getAttribute("aria-label"));
+    expect(buttons).toEqual(["Add reaction", "Reply to message", "Message actions"]);
+    expect(bar().querySelector("[data-message-time]")!.textContent).toBe("1:54 PM");
+    expect(bar().className).toContain("flex-col");
     expect(items()).toEqual([]);
     expect(handle().getAttribute("aria-haspopup")).toBe("menu");
     expect(handle().getAttribute("aria-expanded")).toBe("false");
   });
 
-  it("holds the other controls in the … menu, with their labels", async () => {
+  it("holds Reply, Copy, Copy request ID, then the message's own entries in the … menu", async () => {
     await render();
     await act(async () => handle().click());
     expect(handle().getAttribute("aria-expanded")).toBe("true");
-    expect(items()).toEqual(["Show raw markdown", "Read this aloud", "Regenerate response", "Edit message"]);
-    expect(host.querySelector('[role="menu"]')).not.toBeNull();
+    expect(items()).toEqual(["Reply", "Copy", "Copy request ID", "Show raw markdown", "Regenerate response"]);
+    expect(bar().dataset.open).toBe("true");
+    expect(bar().className).toContain("opacity-100");
   });
 
   it("runs an entry and closes the menu", async () => {
-    const onSelect = await render();
+    const { onSelect } = await render();
     await act(async () => handle().click());
-    await act(async () => host.querySelector<HTMLElement>('[role="menuitem"]')!.click());
+    const raw = [...host.querySelectorAll<HTMLElement>('[role="menuitem"]')].find((item) => item.textContent === "Show raw markdown")!;
+    await act(async () => raw.click());
     expect(onSelect).toHaveBeenCalledTimes(1);
     expect(handle().getAttribute("aria-expanded")).toBe("false");
   });
@@ -75,64 +83,27 @@ describe("MessageBar", () => {
     await render();
     await act(async () => handle().click());
     await act(async () => {
-      window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+      document.activeElement!.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
     });
     expect(handle().getAttribute("aria-expanded")).toBe("false");
   });
 
-  it("never grows past the copy button, the handle and the time, on either side", async () => {
+  it("opens under the row from the bubble's side", async () => {
     for (const side of ["bot", "user"] as const) {
       await render(side);
-      // stacked, not in a row: the time sits under the two buttons
-      expect(bar().className).toContain("flex-col");
-      expect(bar().className).toContain("shrink-0");
-      expect(bar().querySelector("[data-message-time]")!.className).toContain("whitespace-nowrap");
-      // the menu opens over the message, anchored to the edge away from the screen edge
       await act(async () => handle().click());
-      const menu = host.querySelector('[role="menu"]')!;
-      expect(menu.className).toContain(side === "bot" ? "right-0" : "left-0");
-      expect(menu.className).toContain("max-w-[min(16rem,calc(100vw-2rem))]");
+      const menu = host.querySelector<HTMLElement>("[data-message-menu]")!;
+      expect(menu.className).toContain(side === "bot" ? "start-0" : "end-0");
+      expect(menu.className).toContain("top-full");
       await act(async () => handle().click());
     }
   });
-});
 
-describe("MessageBar: reactions", () => {
-  async function renderReact(open: boolean, onOpenChange = vi.fn(), onPick = vi.fn(), reply = false) {
-    await act(async () => {
-      root.render(
-        createElement(MessageBar, {
-          side: "bot",
-          time: "2:45 PM",
-          copy: createElement("button", { type: "button", "aria-label": "Copy message" }),
-          reply: reply ? createElement("button", { type: "button", "aria-label": "Reply" }) : undefined,
-          react: { open, onOpenChange, onPick, mine: ["👍"] },
-          children: [createElement(MessageMenuItem, { key: "raw", label: "Show raw markdown", icon: null, onSelect: () => {} })],
-        }),
-      );
-    });
-    return { onOpenChange, onPick };
-  }
-
-  // JC, 2026-10-14: one way to react (the smiley), reply in the row as in a group.
-  it("lays out reply, copy, the smiley and the … in a group's order, with no reaction entry in the menu", async () => {
-    const { onOpenChange } = await renderReact(false, vi.fn(), vi.fn(), true);
-    const buttons = [...bar().querySelectorAll("button")].map((button) => button.getAttribute("aria-label"));
-    expect(buttons).toEqual(["Reply", "Copy message", "Add reaction", "Message actions"]);
+  it("sends a quick reaction from the smiley's pill", async () => {
+    const { onPick } = await render("bot", vi.fn(), true);
     await act(async () => bar().querySelector<HTMLButtonElement>("[data-react-button]")!.click());
-    expect(onOpenChange).toHaveBeenLastCalledWith(true);
-    await act(async () => handle().click());
-    expect(items()).toEqual(["Show raw markdown"]);
-    expect(host.querySelector('[role="menuitem"][aria-keyshortcuts]')).toBeNull();
-  });
-
-  it("shows the picker while open and keeps the bar visible", async () => {
-    const { onPick, onOpenChange } = await renderReact(true);
     expect(bar().className).toContain("opacity-100");
-    const picker = host.querySelector<HTMLElement>("[data-reaction-picker]")!;
-    expect(picker.getAttribute("role")).toBe("dialog");
-    await act(async () => picker.querySelector<HTMLButtonElement>('[data-quick-reaction="🎉"]')!.click());
+    await act(async () => host.querySelector<HTMLButtonElement>('[data-reaction-bar] [data-quick-reaction="🎉"]')!.click());
     expect(onPick).toHaveBeenCalledWith("🎉");
-    expect(onOpenChange).toHaveBeenCalledWith(false);
   });
 });
