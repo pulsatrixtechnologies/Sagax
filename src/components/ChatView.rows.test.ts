@@ -239,25 +239,33 @@ describe("chat transcript rows", () => {
       };
       const tick = (ms: number) => act(async () => { await vi.advanceTimersByTimeAsync(ms); });
       // an answer that recorded its turn: model "m" labelled Model M, effort Medium
+      // JC, 2026-10-15: the line is laid out from the start and only fades
+      // in, so the answer above it never moves (same rows, same height)
+      const line = () => document.querySelector("[data-turn-run]")!;
+      const layout = () => [...rowOf("m2").children].map((child) => `${child.tagName}:${child.getAttribute("data-turn-run") ?? ""}`).join(",");
+      const before = layout();
+      expect(line().className).toContain("invisible");
+      expect(line().className).toContain("opacity-0");
+      expect(line().getAttribute("aria-hidden")).toBe("true");
+      // keyboard focus in the message shows it too
+      expect(line().className).toContain("group-focus-within:visible");
       hover("m2", "pointerover");
       await tick(1199);
-      expect(document.querySelector("[data-turn-run]")).toBeNull();
+      expect(line().className).toContain("invisible");
       await tick(1);
-      const line = document.querySelector("[data-turn-run]")!;
-      expect(line.textContent).toBe("Model M · effort Medium");
-      expect(line.getAttribute("aria-hidden")).toBe("false");
-      expect(rowOf("m2").contains(line)).toBe(true);
+      expect(line().textContent).toBe("Model M · effort Medium");
+      expect(line().getAttribute("aria-hidden")).toBe("false");
+      expect(line().className).not.toContain(" invisible");
+      expect(rowOf("m2").contains(line())).toBe(true);
+      expect(layout()).toBe(before);
       hover("m2", "pointerout");
-      await tick(0);
-      expect(document.querySelector("[data-turn-run]")!.className).toContain("opacity-0");
       await tick(200);
-      expect(document.querySelector("[data-turn-run]")).toBeNull();
+      expect(line().className).toContain("opacity-0");
+      expect(layout()).toBe(before);
       // the person's own message, and an answer with no record: nothing
+      expect(document.querySelectorAll("[data-turn-run]")).toHaveLength(1);
       for (const id of ["m0", "m5"]) {
-        hover(id, "pointerover");
-        await tick(5000);
-        expect(document.querySelector("[data-turn-run]")).toBeNull();
-        hover(id, "pointerout");
+        expect(rowOf(id).querySelector("[data-turn-run]")).toBeNull();
       }
     } finally {
       vi.useRealTimers();

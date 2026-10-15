@@ -206,6 +206,31 @@ them with the link token (`server/perspicax-memory.ts`, `linkPostJson` in
   token, prompt or answer body is logged. `feedback` (`POST
   /api/v1/memory/feedback`) is in the client, not wired to a turn yet.
 
+## Per-bot runtime settings (2026-10-15)
+
+Parallel conversations, Automatic recovery and Tool access are each bot's
+own, in the bot editor (Permissions page: `BotToolAccess`,
+`BotParallelSettings`; Model page: `BotRecoverySettings`), no longer cards of
+Settings > General > Advanced. Keep these rules, covered by
+`server/bot-runtime-settings.test.ts`, `server/routes/bot-runtime-settings.test.ts`
+and `server/bot-runtime-settings.e2e.test.ts`:
+
+- Bot fields `maxConcurrentThreads`, `maxParallelPerPerson`, `busySend`,
+  `automaticRecovery` (`server/bot-runtime-settings.ts`). The runtime reads
+  the bot's value everywhere (thread capacity, parallel admission, recovery
+  backups, `start_thread` limits); a bot without one reads the global value
+  of config.json (`threads.*`, `automaticRecovery`), kept as the server
+  default and no longer edited in the app.
+- Migration once at start (marker `bot-runtime-settings.v1`): every
+  existing bot without a value takes the global one. `busySend` was each
+  person's device choice: absent keeps it (`botBusySend` in the composer).
+- New bots: New bot defaults may carry the four fields; otherwise the
+  server default applies.
+- `GET|PATCH /api/bots/:id/runtime-settings`, `GET|POST
+  /api/bots/:id/tool-grants`, `POST .../tool-grants/:grantId/revoke`: owner
+  (with `bots.behaviour` / `bots.tools`) or admin, audited (`bot.runtime_settings`,
+  `tool_grants.*`); admin-tier grants stay an admin's. Never an agent tool.
+
 ## Settings > Models and voice (2026-10-14)
 
 One page (`EnginesSettings.tsx`, section id `engines`) replaced Integrations

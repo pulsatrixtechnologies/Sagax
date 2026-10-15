@@ -880,6 +880,15 @@ import { lockedLookChange, masteryDelegationFacts, masteryFrameFacts, masteryReq
 import { grandfatheredFromBots, migratedCrabFromBots } from "../shared/achievements.ts";
 import { createBotMemoryRoutes } from "./routes/bot-memory.ts";
 import { createToolGrantRoutes } from "./routes/tool-grants.ts";
+import { createBotRuntimeSettingsRoutes } from "./routes/bot-runtime-settings.ts";
+import {
+  botMaxConcurrentThreads,
+  botMaxParallelPerPerson,
+  botRecoveryBackups,
+  planRuntimeSettingsMigration,
+  RUNTIME_SETTINGS_MIGRATION_MARKER,
+  withoutRemovedBackup,
+} from "./bot-runtime-settings.ts";
 import { createBotWorkspaceRoutes } from "./routes/bot-workspace.ts";
 import { createBotRulesRoutes } from "./routes/bot-rules.ts";
 import { createBotSkillUploadRoutes } from "./routes/bot-skill-upload.ts";
@@ -3929,7 +3938,7 @@ function parksBehindCoordination(botId: string, threadId: string): boolean {
 function botAtThreadCapacity(botId: string): boolean {
   // Setup/dispatch reservations still occupy a slot even if an early
   // completion event has already cleared the stored busy flag.
-  return store.tasks(botId).filter((task) => threadBusy(botId, task.threadId)).length >= maxConcurrentBotThreads(cfg);
+  return store.tasks(botId).filter((task) => threadBusy(botId, task.threadId)).length >= botMaxConcurrentThreads(store.bot(botId), cfg);
 }
 
 function hasDirectDispatch(botId: string): boolean {
@@ -5037,6 +5046,11 @@ async function moveOffComputerEngine(): Promise<void> {
   if (named(cfg.automaticRecovery?.backup)) {
     saveConfig({ automaticRecovery: { enabled: false } });
     cfg.automaticRecovery = { enabled: false };
+  }
+  // Each bot's own backup (server/bot-runtime-settings.ts) on a removed engine.
+  for (const candidate of store.bots) {
+    const cleared = withoutRemovedBackup(candidate.automaticRecovery, (id) => removed.has(id));
+    if (cleared !== candidate.automaticRecovery) store.patchBot(candidate.id, { automaticRecovery: cleared });
   }
   const defaults = named(cfg.defaultModelSelection) || named(cfg.newBotDefaults?.profile.modelSelection);
   if (!defaults && !store.bots.some(bot => named(bot.modelSelection) || bot.fallback?.some(named) ||
@@ -13947,7 +13961,7 @@ function pendingParallelTask(threadId: string): { bot: BotRecord; task: TaskReco
 function parallelTaskBlocked(botId: string, threadId: string): boolean {
   const task = store.taskByThread(botId, threadId);
   if (!task?.parallelOf) return false;
-  return parallelBlocked({ task, tasks: store.tasks(botId), limit: maxParallelTasksPerPerson(cfg), busy: (id) => threadBusy(botId, id) });
+  return parallelBlocked({ task, tasks: store.tasks(botId), limit: botMaxParallelPerPerson(store.bot(botId), cfg), busy: (id) => threadBusy(botId, id) });
 }
 
 function patchParallelCard(parentThreadId: string, cardId: string | undefined, patch: Partial<ParallelTaskRef>) {
@@ -13985,7 +13999,7 @@ async function startParallelTask(input: {
     // A task of a task would answer into a conversation nobody is reading.
     throw Object.assign(new Error("this conversation is already a parallel task; send it here or in the main conversation"), { status: 409, code: "parallel_nested" });
   }
-  const limit = maxParallelTasksPerPerson(cfg);
+  const limit = botMaxParallelPerPerson(bot, cfg);
   const admission = parallelAdmission({
     tasks: store.tasks(bot.id),
     principalId: input.principalId,
@@ -15043,7 +15057,7 @@ async function startTurn(
     throw Object.assign(new Error("the bot is already working in a channel — wait for it to finish"), { status: 409, code: "thread_busy" });
   }
   if (botAtThreadCapacity(botId)) {
-    throw Object.assign(new Error(`this bot has reached its limit of ${maxConcurrentBotThreads(cfg)} parallel threads — wait for one to finish`), { status: 409, code: "thread_limit" });
+    throw Object.assign(new Error(`this bot has reached its limit of ${botMaxConcurrentThreads(store.bot(botId), cfg)} parallel threads — wait for one to finish`), { status: 409, code: "thread_limit" });
   }
   // Steering is never a cancel. A message sent while teammates are working
   // runs now, with their assignments still attached: they keep running and
@@ -16556,8 +16570,8 @@ async function startTurn(
         // A warm uses the same flag so the first spoken turn's contract matches.
         ...(onCall || warmOnly ? { keepWarm: true } : {}),
         ...(warmOnly ? { warmOnly: true, ...(onCall ? { cachePrime: true } : {}), ...(opts?.warmSignal ? { warmSignal: opts.warmSignal } : {}) } : {}),
-        startupRecovery: !warmOnly && cfg.automaticRecovery?.enabled === true &&
-          (opts?.automaticRecoveryIndex ?? 0) < ((liveBot ?? bot).fallback?.length || (cfg.automaticRecovery.backup ? 1 : 0)),
+        startupRecovery: !warmOnly &&
+          (opts?.automaticRecoveryIndex ?? 0) < botRecoveryBackups(liveBot ?? bot, cfg).length,
         text: warmOnly ? "" : (engineCommand ? engineCommand.engineText : withRecalled(recalled, dispatchContext.turnText)),
         ...(engineCommand ? { harnessCommand: { name: engineCommand.command.name, args: engineCommand.args, ...(engineCommand.command.path ? { path: engineCommand.command.path } : {}) } } : {}),
         ...(recalled && !warmOnly && !engineCommand ? { recalled } : {}),
@@ -16796,9 +16810,8 @@ async function startTurn(
         }
       }
       const current = store.projectBotForTask(bot.id, threadId);
-      const backups = cfg.automaticRecovery?.enabled
-        ? current?.fallback?.length ? current.fallback : cfg.automaticRecovery.backup ? [cfg.automaticRecovery.backup] : []
-        : [];
+      // The bot's own recovery setting (server/bot-runtime-settings.ts).
+      const backups = botRecoveryBackups(current, cfg);
       const nextIndex = backups.findIndex((candidate, index) => index >= (opts?.automaticRecoveryIndex ?? 0) &&
         registry.get(candidate.instanceId)?.enabled &&
         (candidate.instanceId !== instanceId || candidate.model !== model));
@@ -24984,6 +24997,22 @@ function hideEarlierAgentThreads(): void {
 /** Once (marker `agent-threads-hidden.v2`): bot-to-bot threads still shown,
  * and the operator's `agent-threads-hide.list` (agent-threads.ts
  * planHiddenBotThreads). Counts only in the log. */
+/** Once (marker `bot-runtime-settings.v1`, JC 2026-10-15): the global
+ * parallel conversations and automatic recovery values become each existing
+ * bot's own (server/bot-runtime-settings.ts). A bot with a value keeps it.
+ * Counts only in the log. */
+function migrateBotRuntimeSettings(): void {
+  const marker = join(DATA_DIR, RUNTIME_SETTINGS_MIGRATION_MARKER);
+  if (existsSync(marker)) return;
+  try {
+    const plan = planRuntimeSettingsMigration(store.bots, cfg);
+    for (const entry of plan) store.patchBot(entry.botId, entry.patch);
+    writeFileSync(marker, `${new Date().toISOString()} ${plan.length}\n`, { mode: 0o600 });
+    console.log(`[bot-runtime-settings] ${plan.length} bot(s) took the global parallel conversations and recovery values`);
+  } catch (error) {
+    console.warn(`[bot-runtime-settings] could not copy the global values onto the bots: ${error instanceof Error ? error.message : String(error)}`);
+  }
+}
 function hideBotThreadsOnce(): void {
   const marker = join(DATA_DIR, "agent-threads-hidden.v2");
   if (existsSync(marker)) return;
@@ -28245,6 +28274,58 @@ ROUTES.push(createToolGrantRoutes({
     ...(detail.subject && (detail.subject as { kind: string }).kind === "bot" ? { target: { kind: "bot", id: (detail.subject as { id: string }).id } } : {}),
     after: detail, actor: adminActorFor(auth, req),
   }),
+}));
+// A bot's own parallel conversations, automatic recovery and tool access
+// (server/routes/bot-runtime-settings.ts, JC 2026-10-15): the bot's owner
+// (with bots.behaviour / bots.tools on an organization server) or an admin.
+ROUTES.push(createBotRuntimeSettingsRoutes({
+  bot: (id) => store.bot(id),
+  global: () => cfg,
+  mayManage: (auth, target, area) => {
+    const record = store.bot(target.id);
+    if (!record) return false;
+    if (auth.kind === "loopback") return auth.trust !== "service";
+    if (auth.scopes.includes("admin")) return true;
+    if (callerBotsReadOnly(auth) || !memberOwnsBot(auth, record)) return false;
+    return IDENTITY.kind === "perspicax" && callerCan(auth, area === "tools" ? "bots.tools" : "bots.behaviour");
+  },
+  isAdmin: (auth) => auth.kind === "loopback" ? auth.trust !== "service" : auth.scopes.includes("admin"),
+  checkBackup: (selection) => {
+    const checked = checkedModelSelection(selection, undefined, true);
+    if (!checked.ok) return { ok: false, status: checked.status, error: checked.error };
+    const target = registry.get(checked.selection.instanceId);
+    if (!target?.enabled) return { ok: false, status: 400, error: "Enable the backup engine before selecting it for recovery." };
+    const refusal = policyModelRefusal(target);
+    if (refusal) return { ok: false, status: 403, error: refusal, code: "managed_policy" };
+    return { ok: true, selection: checked.selection };
+  },
+  save: (botId, patch) => {
+    const updated = store.patchBot(botId, patch);
+    if (updated) broadcast({ kind: "bot", bot: wireBot(updated) });
+    // A higher limit lets waiting work start, as a Settings change used to.
+    if (updated && (patch.maxConcurrentThreads !== undefined || patch.maxParallelPerPerson !== undefined)) {
+      drainQueuedSends();
+      drainDelegationWakes();
+      drainConnectorResumes();
+      drainComputerResumes();
+      drainSecretResumes();
+      drainTeamSetupResumes();
+    }
+    return updated;
+  },
+  grants: toolGrants,
+  audit: (action, auth, req, detail) => appendAdminAction(DATA_DIR, action === "bot.runtime_settings"
+    ? {
+      category: "bot", action,
+      target: { kind: "bot", ...(detail.bot as { id: string; name?: string }) },
+      changed: detail.changed as string[], before: detail.before as Record<string, unknown>, after: detail.after as Record<string, unknown>,
+      actor: adminActorFor(auth, req),
+    }
+    : {
+      category: "rights", action,
+      target: { kind: "bot", id: (detail.subject as { id: string }).id },
+      after: detail, actor: adminActorFor(auth, req),
+    }),
 }));
 // B2.1: the guard before the approval card (server/agent-tool-card-guard.ts).
 const agentCardGuard = createAgentCardGuard({
@@ -31869,7 +31950,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
             });
             return json(res, 201, {
               threadId: started.parallel.threadId, title: started.parallel.title, botId: from.id, botName: from.name,
-              self: true, parallel: true, state: started.parallel.state, limit: maxParallelTasksPerPerson(cfg),
+              self: true, parallel: true, state: started.parallel.state, limit: botMaxParallelPerPerson(from, cfg),
             });
           } catch (error) {
             return json(res, (error as { status?: number }).status ?? 409, { error: error instanceof Error ? error.message : String(error) });
@@ -31901,7 +31982,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
             botId: from.id,
             botName: from.name,
             self: true,
-            limit: maxConcurrentBotThreads(cfg),
+            limit: botMaxConcurrentThreads(from, cfg),
             ...outcome,
           });
         }
@@ -31951,7 +32032,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         // An honest forecast, not a promise: the handoff starts when this
         // turn ends, and by then the target's slots are taken by whatever is
         // running there plus the threads this turn already opened ahead.
-        const limit = maxConcurrentBotThreads(cfg);
+        const limit = botMaxConcurrentThreads(target, cfg);
         const running = store.tasks(target.id).filter((candidate) => threadBusy(target.id, candidate.threadId)).length;
         const ahead = pendingDelegationSnapshot().filter(
           (pending) => pending.toBotId === target.id && pending.targetThreadId !== undefined && pending.targetThreadId !== task.threadId,
@@ -40528,6 +40609,7 @@ restoreChannelMessages();
 migrateThreadOwners();
 hideEarlierAgentThreads();
 hideBotThreadsOnce();
+migrateBotRuntimeSettings();
 
 server.listen(PORT, "127.0.0.1", async () => {
   companyRuntimeReady();

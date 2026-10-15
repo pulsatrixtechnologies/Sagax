@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-// Reply and copy show only while the pointer is over the message or keyboard
+// The row (react, reply, …) shows only while the pointer is over the message or keyboard
 // focus is inside it, and on touch after a tap or long press on the message.
 // The more button opens a menu of the moved actions that closes on Escape,
 // a press outside or a pick.
@@ -17,7 +17,8 @@ const body = () => host.querySelector<HTMLElement>("p")!;
 const tray = () => host.querySelector<HTMLElement>('[data-testid="message-actions"]')!;
 const shown = () => tray().dataset.shown === "true";
 const more = () => tray().querySelector<HTMLButtonElement>('button[aria-haspopup="menu"]')!;
-const items = () => [...host.querySelectorAll<HTMLButtonElement>("[role=menuitem]")];
+// a closing menu stays drawn for its 200ms exit, inert and aria-hidden
+const items = () => [...host.querySelectorAll<HTMLButtonElement>('[role=menu]:not([aria-hidden="true"]) [role=menuitem]')];
 
 const pointer = (type: string, target: Element, pointerType: string) =>
   act(async () => {
@@ -38,7 +39,6 @@ async function render(forceOpen = false) {
             { key: "pin", icon: null, label: "Pin message", onSelect: () => picked.push("pin") },
             { key: "raw", icon: null, label: "Show raw markdown", onSelect: () => picked.push("raw") },
           ],
-          children: createElement("button", { type: "button" }, "copy"),
         }),
       ),
     );

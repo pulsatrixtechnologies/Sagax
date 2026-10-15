@@ -43,7 +43,7 @@ import { continuesRun, personDisplayName, personInitials, roomAuthor, runCorners
 import { botIdOfParticipant, messageParticipant, seenRows, type ThreadReads } from "@/lib/read-receipts";
 import { useReportRead, useThreadReads } from "@/lib/read-receipts-feed";
 import { SeenByRow, SEEN_AVATAR_SIZE, type SeenFace } from "./SeenBy";
-import { ReactButton, ReactionChips, ReactionPicker } from "./Reactions";
+import { ReactionChips } from "./Reactions";
 import { myReactions, reactionSelfIds, useToggleReaction } from "@/lib/reactions";
 import type { OrgDirectoryPerson } from "@/lib/perspicax-org";
 import { StatusActivityRow } from "@/components/StatusActivityRow";
@@ -52,7 +52,7 @@ import { defaultResponderName, effectiveDefaultResponder, groupResponseHint, jev
 import { openSettings } from "@/lib/settings-link";
 import { ChatMarkdown } from "./ChatMarkdown";
 import { VideoPlayerWidget } from "./video/VideoPlayerWidget";
-import { CopyButton, FailedTurnRow, MessageBoundary, ReplyAction } from "./ChatView";
+import { FailedTurnRow, MessageBoundary } from "./ChatView";
 import { MESSAGE_ROW, MessageActions, messageActionClass } from "./MessageActions";
 import { useBotMessageMenu, userMessageMenu, type PinAction } from "./message-menu";
 import { RawMarkdownView, RawToggleAction } from "./RawMarkdownToggle";
@@ -245,12 +245,12 @@ function RoomTextMessage({
 }) {
   const { state, dispatch } = useStore();
   const user = m.role === "user";
-  // Emoji reactions (src/components/Reactions.tsx): the smiley beside the
-  // message opens the picker above the row; the chips sit under the bubble.
-  const [picking, setPicking] = useState(false);
+  // Emoji reactions (src/components/Reactions.tsx): the smiley of the hover
+  // row and the head of its "…" menu; the chips sit under the bubble.
   const toggleReactionOn = useToggleReaction(group.threadId, dispatch);
   const reactable = !m.id.startsWith("optimistic-");
-  const reactButton = reactable ? <ReactButton open={picking} onToggle={() => setPicking((open) => !open)} className={messageActionClass} /> : null;
+  const react = reactable ? { mine: myReactions(m.reactions, reactionSelf), onPick: (emoji: string) => toggleReactionOn(m.id, emoji) } : undefined;
+  const requestId = m.id.startsWith("optimistic-") ? undefined : m.id;
   // a bot's leaked internal system lines never reach the reader
   const rawText = user ? (m.text ?? "") : stripLeakedSystemHarnessMessages(m.text ?? "");
   const cited = user && m.text ? splitTranscriptCitations(m.text) : null;
@@ -291,20 +291,8 @@ function RoomTextMessage({
       {...{ [MESSAGE_ROW]: "" }}
     >
       <div className={cn("relative flex w-full items-end gap-1.5", mine ? "justify-end" : "justify-start")}>
-        {picking && (
-          <ReactionPicker
-            align={mine ? "end" : "start"}
-            mine={myReactions(m.reactions, reactionSelf)}
-            onPick={(emoji) => toggleReactionOn(m.id, emoji)}
-            onClose={() => setPicking(false)}
-          />
-        )}
         {mine && (
-          <MessageActions side="user" forceOpen={picking} menu={userMessageMenu({ messageId: m.id, pin })}>
-            <ReplyAction onReply={() => onReply(m)} />
-            {Boolean(display.trim()) && <CopyButton text={display} className={messageActionClass} />}
-            {reactButton}
-          </MessageActions>
+          <MessageActions side="user" menu={userMessageMenu({ pin })} onReply={() => onReply(m)} copy={display.trim() ? display : undefined} requestId={requestId} react={react} />
         )}
         <div
           data-chat-bubble
@@ -403,23 +391,27 @@ function RoomTextMessage({
           )}
         </div>
         {!mine && user && (
-          <MessageActions side="bot" forceOpen={picking} menu={userMessageMenu({ messageId: m.id, pin })}>
-            <ReplyAction onReply={() => onReply(m)} />
-            {Boolean(display.trim()) && <CopyButton text={display} className={messageActionClass} />}
-            {reactButton}
-          </MessageActions>
+          <MessageActions side="bot" menu={userMessageMenu({ pin })} onReply={() => onReply(m)} copy={display.trim() ? display : undefined} requestId={requestId} react={react} />
         )}
         {!user && (
-          <MessageActions side="bot" forceOpen={viewRaw || speaking || picking} menu={botMenu}>
-            <ReplyAction onReply={() => onReply(m)} />
-            {botText && <CopyButton text={botText} className={messageActionClass} />}
-            {reactButton}
-            {/* a state the person turned on keeps its switch in view */}
-            {botText && viewRaw && <RawToggleAction active onToggle={() => setViewRaw(false)} className={messageActionClass} />}
-            {botText && speaking && (
-              <SpeakButton text={botText} botId={speakerBot?.id} messageId={m.id} voiceId={speakerBot?.voice} tts={state.config?.tts} localVoice={localSystemVoiceActive()} className={cn(messageActionClass, "text-accent")} />
-            )}
-          </MessageActions>
+          <MessageActions
+            side="bot"
+            forceOpen={viewRaw || speaking}
+            menu={botMenu}
+            onReply={() => onReply(m)}
+            copy={botText || undefined}
+            requestId={requestId}
+            react={react}
+            persistent={
+              // a state the person turned on keeps its switch in view
+              <>
+                {botText && viewRaw && <RawToggleAction active onToggle={() => setViewRaw(false)} className={messageActionClass} />}
+                {botText && speaking && (
+                  <SpeakButton text={botText} botId={speakerBot?.id} messageId={m.id} voiceId={speakerBot?.voice} tts={state.config?.tts} localVoice={localSystemVoiceActive()} className={cn(messageActionClass, "text-accent")} />
+                )}
+              </>
+            }
+          />
         )}
         <span className="self-end pb-1 text-[11px] tabular-nums text-ink-tertiary opacity-0 transition-opacity group-hover:opacity-100">
           {formatTime(m.at)}

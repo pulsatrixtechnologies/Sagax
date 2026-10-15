@@ -104,7 +104,7 @@ export function SpeakMenuItem(props: Parameters<typeof useSpeakControl>[0]) {
       disabled={!ready}
       active={mine}
       onSelect={toggle}
-      icon={preparing ? <Loader2 size={14} className="animate-spin" /> : mine ? <Square size={14} className="fill-current" /> : <Volume2 size={14} />}
+      icon={preparing ? <Loader2 size={16} strokeWidth={1.5} className="animate-spin" /> : mine ? <Square size={16} strokeWidth={1.5} className="fill-current" /> : <Volume2 size={16} strokeWidth={1.5} />}
     />
   );
 }

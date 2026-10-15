@@ -14,6 +14,8 @@
 //   ```cw     a ConnectWise widget (application/vnd.sagax.cw+json)
 // Claude harness <antArtifact> tags are rewritten by liftClaudeChatBlocks.
 
+import { WIDGET_KIT_CSS, WIDGET_THEME_LISTENER, widgetThemeFromTokens, type WidgetTheme } from "./widget-kit";
+
 export type RichFenceKind = "email" | "widget" | "chart" | "csv" | "cw";
 
 export {
@@ -215,15 +217,15 @@ export function clampWidgetHeight(value: unknown): number | null {
  * policy is in force before the first widget script parses; a widget that
  * adds its own CSP can only narrow it further. The size reporter is ours and
  * posts only a number. */
-export function buildWidgetDocument(source: string, scheme: "light" | "dark"): string {
-  const dark = scheme === "dark";
-  const base = `:root{color-scheme:${scheme};--omb-bg:${dark ? "#1b1b1b" : "#ffffff"};--omb-fg:${dark ? "#f2f2f2" : "#161616"};--omb-muted:${dark ? "#a3a3a3" : "#5c5c5c"};--omb-border:${dark ? "#3a3a3a" : "#dedede"};--omb-accent:${dark ? "#3987e5" : "#2a78d6"}}`
-    + "html,body{margin:0;padding:0}body{padding:12px;background:var(--omb-bg);color:var(--omb-fg);font:13px/20px Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;overflow-x:auto}"
-    + "button,input,select,textarea{font:inherit}*,*::before,*::after{box-sizing:border-box}"
-    + "@media (prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;transition-duration:.01ms!important}}";
-  const reporter = `(function(){var last=0;function send(){var h=Math.ceil(Math.max(document.documentElement.scrollHeight,document.body?document.body.scrollHeight:0));if(h!==last){last=h;parent.postMessage({type:${JSON.stringify(WIDGET_MESSAGE)},height:h},"*");}}`
-    + "addEventListener('load',send);if(typeof ResizeObserver!=='undefined'){new ResizeObserver(send).observe(document.documentElement);}setTimeout(send,50);setTimeout(send,500);})();";
-  return `<!doctype html><html><head><meta http-equiv="Content-Security-Policy" content="${WIDGET_CSP}"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>${base}</style><script>${reporter}</script></head><body>${source}</body></html>`;
+export function buildWidgetDocument(source: string, theme: WidgetTheme | "light" | "dark", font = ""): string {
+  const resolved = typeof theme === "string" ? widgetThemeFromTokens({ "--code-color-scheme": theme }) : theme;
+  // the body's own height, not the viewport's: the frame shrinks to a short
+  // widget instead of keeping the empty space of its first height
+  const reporter = `(function(){var last=0;function send(){var b=document.body;var h=Math.ceil(b?Math.max(b.getBoundingClientRect().height,b.scrollHeight):document.documentElement.scrollHeight);if(h!==last){last=h;parent.postMessage({type:${JSON.stringify(WIDGET_MESSAGE)},height:h},"*");}}`
+    + "addEventListener('load',send);if(typeof ResizeObserver!=='undefined'){var o=new ResizeObserver(send);o.observe(document.documentElement);addEventListener('DOMContentLoaded',function(){if(document.body)o.observe(document.body);});}setTimeout(send,50);setTimeout(send,500);})();";
+  // theme first, kit second, the widget's own <style> last: a widget that
+  // sets its own colors still wins over the kit
+  return `<!doctype html><html><head><meta http-equiv="Content-Security-Policy" content="${WIDGET_CSP}"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style id="sagax-theme">${resolved.css}</style><style id="sagax-kit">${font}${WIDGET_KIT_CSS}</style><script>${reporter}${WIDGET_THEME_LISTENER}</script></head><body>${source}</body></html>`;
 }
 
 // ---------------------------------------------------------------------------

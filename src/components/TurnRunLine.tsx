@@ -17,8 +17,10 @@ export function turnRunText(
 }
 
 /** A quiet line under a bot reply with the model and effort that wrote it.
- * The caller decides when it shows (a pointer resting on the reply); this
- * only fades. */
+ * The caller decides when it shows (a pointer resting on the reply, or
+ * keyboard focus inside the message row, a `group`); this only fades. It
+ * is always laid out, so showing it never pushes the reply above it
+ * (JC, 2026-10-15). */
 export function TurnRunLine({ run, visible }: { run: NonNullable<Message["turnRun"]>; visible: boolean }) {
   const { state } = useStore();
   return (
@@ -27,7 +29,7 @@ export function TurnRunLine({ run, visible }: { run: NonNullable<Message["turnRu
       aria-hidden={!visible}
       className={cn(
         "mt-1 px-1 text-[11px] leading-4 text-ink-tertiary transition-opacity duration-200",
-        visible ? "opacity-100" : "opacity-0",
+        visible ? "visible opacity-100" : "invisible opacity-0 group-focus-within:visible group-focus-within:opacity-100",
       )}
     >
       {turnRunText(run, state.instances)}

@@ -441,6 +441,13 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   { methods: ["POST", "PATCH", "DELETE"], path: /^\/api\/bots\/[\w-]+\/tasks\/[\w-]+$/ },
   { methods: ["POST"], path: /^\/api\/bots\/[\w-]+\/tasks\/[\w-]+\/title$/ }, // Regenerate title: a rename by the bot's own engine
   { methods: ["PATCH"], path: /^\/api\/bots\/[\w-]+\/profile$/ },
+  // A bot's own parallel conversations, automatic recovery and tool access
+  // (server/routes/bot-runtime-settings.ts): the handler lets through the
+  // bot's owner (with bots.behaviour / bots.tools) or an admin; an
+  // admin-tier grant stays an admin's.
+  { methods: ["GET", "PATCH"], path: /^\/api\/bots\/[\w-]+\/runtime-settings$/ },
+  { methods: ["GET", "POST"], path: /^\/api\/bots\/[\w-]+\/tool-grants$/ },
+  { methods: ["POST"], path: /^\/api\/bots\/[\w-]+\/tool-grants\/tg_[\w-]+\/revoke$/ },
   { methods: ["PATCH"], path: /^\/api\/bots\/[\w-]+$/ }, // display fields only, or the owner's own bot: see clientBotPatchViolation
   // iOS parity (docs/ios-companion.md): the owner's (or an admin's) picture
   // generation, and the bot profile's Links, Media and Files tabs. The

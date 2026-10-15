@@ -12,6 +12,8 @@ import { useStore, type Bot } from "@/state/store";
 import { botWithViewerSettings, useViewerBotOverride, viewerLocalBotSettings } from "@/lib/viewer-bot-overrides";
 import { useBotEditor } from "./BotEditorContext";
 import { ThreadModelsLine } from "../ThreadModelsLine";
+import { botRecovery } from "@/lib/bot-runtime-settings";
+import { BotRecoverySettings } from "./BotRecoverySettings";
 
 export function ModelSection({ bot }: { bot: Bot }) {
   const advanced = useAdvancedMode();
@@ -65,7 +67,10 @@ export function ModelSection({ bot }: { bot: Bot }) {
           </div>
         }
       />}
-      {advanced && !draft && state.config?.automaticRecovery?.enabled === true && canEditBotField(state.config, bot, "fallback") && <FallbackChain bot={bot} onChange={(fallback) => dispatch({ type: "updateBot", botId: bot.id, patch: { fallback } })} />}
+      {/* 2026-10-15: this bot's automatic recovery (it was Settings >
+          General > Advanced for every bot), then its ordered backups. */}
+      {advanced && !draft && canEditBotField(state.config, bot, "automaticRecovery") && <BotRecoverySettings key={`recovery:${bot.id}`} bot={bot} />}
+      {advanced && !draft && botRecovery(bot, state.config).enabled && canEditBotField(state.config, bot, "fallback") && <FallbackChain bot={bot} onChange={(fallback) => dispatch({ type: "updateBot", botId: bot.id, patch: { fallback } })} />}
     </div>
   );
 }

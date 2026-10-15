@@ -1,13 +1,14 @@
 import { Children, createElement, isValidElement, type ReactElement, type ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { ConfigStatus, InstanceInfo } from "@/state/store";
-import { AutomaticRecoverySettings } from "./AutomaticRecoverySettings";
-import { Switch } from "./SettingsPrimitives";
+import type { Bot, ConfigStatus, InstanceInfo } from "@/state/store";
+import { BotRecoverySettings } from "./BotRecoverySettings";
+import { Switch } from "../SettingsPrimitives";
 
 const fixture = vi.hoisted(() => ({
   values: [] as unknown[], index: 0,
   config: {} as Pick<ConfigStatus, "automaticRecovery">,
+  bot: { id: "b1", name: "Bot" } as Bot,
   instances: [] as InstanceInfo[],
   api: vi.fn(), dispatch: vi.fn(),
 }));
@@ -38,15 +39,15 @@ function nodes(value: ReactNode): Node[] {
 }
 function render() {
   let tree: ReactNode = null;
-  function Capture() { fixture.index = 0; tree = AutomaticRecoverySettings(); return tree; }
+  function Capture() { fixture.index = 0; tree = BotRecoverySettings({ bot: fixture.bot }); return tree; }
   const html = renderToStaticMarkup(createElement(Capture));
   const all = nodes(tree);
   return {
     html,
     toggle: all.find(node => node.type === Switch)!,
-    engine: all.find(node => node.props.id === "automatic-recovery-engine")!,
-    model: all.find(node => node.props.id === "automatic-recovery-model")!,
-    save: all.find(node => node.type === "button")!,
+    engine: all.find(node => node.props.id === "bot-recovery-engine-b1")!,
+    model: all.find(node => node.props.id === "bot-recovery-model-b1")!,
+    save: all.find(node => node.type === "button" && node.props.type === "button")!,
   };
 }
 const click = (node: Node) => (node.props.onClick as () => void)();
@@ -56,13 +57,14 @@ const flush = async () => { for (let i = 0; i < 10; i++) await Promise.resolve()
 beforeEach(() => {
   fixture.values = [];
   fixture.config = {};
+  fixture.bot = { id: "b1", name: "Bot" } as Bot;
   fixture.instances = [{ instanceId: "backup", driverKind: "codex", displayName: "Backup engine",
     snapshot: { state: "available", authenticated: true }, models: { default: "m", options: [{ id: "m", label: "Backup model" }] } }];
   fixture.api.mockReset();
   fixture.dispatch.mockReset().mockImplementation(({ config }: { config: ConfigStatus }) => { fixture.config = config; });
 });
 
-describe("AutomaticRecoverySettings", () => {
+describe("BotRecoverySettings (per bot, 2026-10-15)", () => {
   it("starts off and explains scope, bounded recovery, no replay and provider charges", () => {
     const view = render();
     expect(view.toggle.props.checked).toBe(false);
@@ -74,9 +76,10 @@ describe("AutomaticRecoverySettings", () => {
     expect(view.html).toContain("Only this thread switches; bot defaults stay unchanged.");
     expect(view.html).toContain("Permissions stay unchanged; some provider switches need confirmation.");
     expect(view.html).toContain("can incur charges from its provider");
-    expect(view.html).toContain('for="automatic-recovery-engine"');
-    expect(view.html).toContain('for="automatic-recovery-model"');
-    expect(view.html).toContain('aria-describedby="automatic-recovery-help automatic-recovery-scope"');
+    expect(view.html).toContain('for="bot-recovery-engine-b1"');
+    expect(view.html).toContain('for="bot-recovery-model-b1"');
+    expect(view.html).toContain('aria-describedby="bot-recovery-b1-help"');
+    expect(view.html).toContain("data-bot-recovery");
   });
 
   it("requires a ready backup, preserves drafts through broadcasts and failed saves, and saves only once", async () => {
@@ -84,7 +87,7 @@ describe("AutomaticRecoverySettings", () => {
     expect(render().save.props.disabled).toBe(true);
     choose(render().engine, "backup");
     choose(render().model, "m");
-    fixture.config = { automaticRecovery: { enabled: false } };
+    fixture.bot = { ...fixture.bot, automaticRecovery: { enabled: false } };
     expect(render().toggle.props.checked).toBe(true);
     expect(render().model.props.value).toBe("m");
     let reject!: (cause: Error) => void;
@@ -92,7 +95,7 @@ describe("AutomaticRecoverySettings", () => {
     click(render().save);
     click(render().save);
     expect(fixture.api).toHaveBeenCalledTimes(1);
-    expect(fixture.api).toHaveBeenCalledWith("/api/config", { method: "PUT", body: JSON.stringify({ automaticRecovery: { enabled: true, backup: { instanceId: "backup", model: "m" } } }) });
+    expect(fixture.api).toHaveBeenCalledWith("/api/bots/b1/runtime-settings", { method: "PATCH", body: JSON.stringify({ automaticRecovery: { enabled: true, backup: { instanceId: "backup", model: "m" } } }) });
     expect(render().toggle.props.disabled).toBe(true);
     reject(new Error("Fixture save failed"));
     await flush();
@@ -100,33 +103,44 @@ describe("AutomaticRecoverySettings", () => {
     expect(render().html).toContain("Fixture save failed");
     expect(render().model.props.value).toBe("m");
     expect(render().save.props.disabled).toBe(false);
-    fixture.api.mockResolvedValueOnce({ automaticRecovery: { enabled: true, backup: { instanceId: "backup", model: "m" } } });
+    fixture.api.mockResolvedValueOnce({ stored: { automaticRecovery: { enabled: true, backup: { instanceId: "backup", model: "m" } } } });
     click(render().save);
     await flush();
-    expect(fixture.dispatch).toHaveBeenCalledOnce();
+    // the bot's own value, shown at once; nothing global is touched
+    expect(fixture.dispatch).not.toHaveBeenCalled();
     expect(render().save.props.disabled).toBe(true);
+    expect(render().toggle.props.checked).toBe(true);
     expect(render().html).not.toContain("Fixture save failed");
   });
 
   it("keeps a saved unavailable backup visible and allows disabling it", async () => {
-    fixture.config = { automaticRecovery: { enabled: true, backup: { instanceId: "gone", model: "old" } } };
+    fixture.bot = { ...fixture.bot, automaticRecovery: { enabled: true, backup: { instanceId: "gone", model: "old" } } };
     expect(render().engine.props.value).toBe("gone");
     expect(render().html).toContain("gone (unavailable)");
     expect(render().save.props.disabled).toBe(true);
     click(render().toggle);
-    fixture.api.mockResolvedValueOnce({ automaticRecovery: { enabled: false, backup: { instanceId: "gone", model: "old" } } });
+    fixture.api.mockResolvedValueOnce({ stored: { automaticRecovery: { enabled: false } } });
     click(render().save);
     await flush();
-    expect(fixture.api).toHaveBeenCalledWith("/api/config", { method: "PUT", body: JSON.stringify({ automaticRecovery: { enabled: false, backup: { instanceId: "gone", model: "old" } } }) });
+    expect(fixture.api).toHaveBeenCalledWith("/api/bots/b1/runtime-settings", { method: "PATCH", body: JSON.stringify({ automaticRecovery: { enabled: false, backup: { instanceId: "gone", model: "old" } } }) });
   });
 
   it("clears an incomplete selection when turning recovery off", async () => {
     click(render().toggle);
     choose(render().engine, "backup");
     click(render().toggle);
-    fixture.api.mockResolvedValueOnce({ automaticRecovery: { enabled: false } });
+    fixture.api.mockResolvedValueOnce({ stored: { automaticRecovery: { enabled: false } } });
     click(render().save);
     await flush();
-    expect(fixture.api).toHaveBeenCalledWith("/api/config", { method: "PUT", body: JSON.stringify({ automaticRecovery: { enabled: false } }) });
+    expect(fixture.api).toHaveBeenCalledWith("/api/bots/b1/runtime-settings", { method: "PATCH", body: JSON.stringify({ automaticRecovery: { enabled: false } }) });
+  });
+});
+
+describe("BotRecoverySettings defaults", () => {
+  it("a bot with no value of its own shows the server default", () => {
+    fixture.config = { automaticRecovery: { enabled: true, backup: { instanceId: "backup", model: "m" } } };
+    const view = render();
+    expect(view.toggle.props.checked).toBe(true);
+    expect(view.model.props.value).toBe("m");
   });
 });

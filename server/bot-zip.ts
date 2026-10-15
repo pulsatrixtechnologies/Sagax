@@ -30,6 +30,7 @@
 // routine and webhook off, approval Full or Custom back to Ask, a member's
 // copy without host settings (memberImportReset), and a rollback that
 // removes everything the import wrote when any step fails.
+import { botRuntimeSettingsShape } from "./bot-runtime-settings.ts";
 import { randomUUID } from "node:crypto";
 import { closeSync, createWriteStream, lstatSync, mkdirSync, openSync, readdirSync, readFileSync, readSync, rmSync, statSync, writeFileSync } from "node:fs";
 import type { IncomingMessage } from "node:http";
@@ -116,6 +117,10 @@ export const BOT_FIELD_POLICY: { readonly [K in keyof BotRecord]-?: FieldPolicy 
   instructionsLead: { drop: "recomputed from SOUL.md" },
   modelSelection: "settings",
   fallback: "settings",
+  maxConcurrentThreads: "settings",
+  maxParallelPerPerson: "settings",
+  busySend: "settings",
+  automaticRecovery: "settings",
   autoApprove: "settings",
   approvalMode: "settings",
   alwaysAllow: "host",
@@ -717,6 +722,10 @@ const selectionSchema = z.object({
 const settingsSchema = z.object({
   modelSelection: selectionSchema.optional(),
   fallback: z.array(z.object({ instanceId: z.string().min(1).max(80), model: z.string().min(1).max(200) })).max(10).optional(),
+  maxConcurrentThreads: botRuntimeSettingsShape.maxConcurrentThreads,
+  maxParallelPerPerson: botRuntimeSettingsShape.maxParallelPerPerson,
+  busySend: botRuntimeSettingsShape.busySend,
+  automaticRecovery: z.object({ enabled: z.boolean(), backup: selectionSchema.optional() }).optional(),
   autoApprove: z.boolean().optional(),
   approvalMode: z.string().refine(isApprovalMode).optional(),
   speakReplies: z.boolean().optional(),
@@ -870,6 +879,15 @@ export async function importBotZip(host: BotZipHost, inspected: InspectedBotZip,
       ...(settings.connectorScopes ? { connectorScopes: settings.connectorScopes } : {}),
       ...(settings.outbound ? { outbound: settings.outbound } : {}),
       ...(settings.fallback ? { fallback: settings.fallback.filter((entry) => host.engineUsable(entry as ModelSelection)) } : {}),
+      ...(settings.maxConcurrentThreads !== undefined ? { maxConcurrentThreads: settings.maxConcurrentThreads } : {}),
+      ...(settings.maxParallelPerPerson !== undefined ? { maxParallelPerPerson: settings.maxParallelPerPerson } : {}),
+      ...(settings.busySend !== undefined ? { busySend: settings.busySend } : {}),
+      // A backup this server cannot run arrives off, never pointing nowhere.
+      ...(settings.automaticRecovery ? {
+        automaticRecovery: settings.automaticRecovery.enabled && settings.automaticRecovery.backup && host.engineUsable(settings.automaticRecovery.backup as ModelSelection)
+          ? { enabled: true, backup: settings.automaticRecovery.backup as ModelSelection }
+          : { enabled: false },
+      } : {}),
       ...(settings.assignedSkills ? { assignedSkills: settings.assignedSkills } : {}),
       ...(projects?.length ? { projects } : {}),
       ...(settings.playbooks ? { playbooks: settings.playbooks } : {}),

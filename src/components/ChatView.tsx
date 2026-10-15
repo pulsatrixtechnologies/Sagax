@@ -30,6 +30,7 @@ import {
 import { WorkingDots } from "@/components/WorkingIndicator";
 import { TerminalChatEmbed } from "@/components/terminal/TerminalChatEmbed";
 import { MessageBar, MessageMenuItem } from "./MessageBar";
+import { HOVER_ICON } from "./MessageHoverActions";
 import { messageActionClass } from "@/components/MessageActions";
 import { TurnRunLine } from "./TurnRunLine";
 import { useHoverDwell } from "@/hooks/use-hover-dwell";
@@ -229,9 +230,6 @@ function useDrawnBots(bots: readonly Bot[]): readonly Bot[] {
   if (cache.current.signature !== signature) cache.current = { signature, bots };
   return cache.current.bots;
 }
-
-/** A button of the bar beside a 1:1 message, like its copy button. */
-const MESSAGE_BAR_BUTTON = "rounded-md p-1.5 text-ink-secondary hover:bg-raised hover:text-ink";
 
 /** Reply to one message: the curved back arrow beside the bubble, in a
  * room and in a 1:1 chat alike (JC, 2026-10-14). */
@@ -510,14 +508,11 @@ const Bubble = memo(function Bubble({
   onReply: (message: Message) => void;
 }) {
   const { botId, threadId, botName, viewerName, voiceId, tts, localVoice, busy, bots, mentionPeers, focus, dispatch, onBranch, reactionSelf } = useChatRows();
-  // Emoji reactions (src/components/Reactions.tsx): the picker beside the
-  // copy button, the chips under the bubble.
-  const [picking, setPicking] = useState(false);
+  // Emoji reactions (src/components/Reactions.tsx): the smiley of the hover
+  // row and the head of its "…" menu, the chips under the bubble.
   const toggleReactionOn = useToggleReaction(threadId, dispatch);
   const reactable = message.kind === "text" && !message.id.startsWith("optimistic-");
   const react = reactable ? {
-    open: picking,
-    onOpenChange: setPicking,
     onPick: (emoji: string) => toggleReactionOn(message.id, emoji),
     mine: myReactions(message.reactions, reactionSelf),
   } : undefined;
@@ -604,18 +599,19 @@ const Bubble = memo(function Bubble({
           <MessageBar
             side="user"
             time={formatTime(message.at)}
-            copy={visibleText.trim() ? <CopyButton text={visibleText} className="opacity-100" /> : undefined}
-            reply={<ReplyAction onReply={() => onReply(message)} className={MESSAGE_BAR_BUTTON} />}
+            copy={visibleText.trim() ? visibleText : undefined}
+            onReply={() => onReply(message)}
+            requestId={message.id.startsWith("optimistic-") ? undefined : message.id}
             react={react}
           >
             {/* editing rewinds the thread, so it waits for the turn to end —
                 same rule as the version switcher below */}
             {message.kind === "text" && !webhookView && !hasAttachments && !busy && !message.id.startsWith("optimistic-") && (
-              <MessageMenuItem label={t("chat.editMessage")} icon={<Pencil size={14} />} onSelect={() => onStartEdit(message.id)} />
+              <MessageMenuItem label={t("chat.editMessage")} icon={<Pencil {...HOVER_ICON} />} onSelect={() => onStartEdit(message.id)} />
             )}
             <MessageMenuItem
               label={pinned ? t("chat.unpinMessage") : t("chat.pinMessage")}
-              icon={pinned ? <PinOff size={14} /> : <Pin size={14} />}
+              icon={pinned ? <PinOff {...HOVER_ICON} /> : <Pin {...HOVER_ICON} />}
               onSelect={togglePin}
               hidden={remoteClient}
             />
@@ -742,14 +738,15 @@ const Bubble = memo(function Bubble({
             side="bot"
             time={formatTime(message.at)}
             visible={viewRaw || speaking}
-            copy={text ? <CopyButton text={text} className="opacity-100" /> : undefined}
-            reply={<ReplyAction onReply={() => onReply(message)} className={MESSAGE_BAR_BUTTON} />}
+            copy={text || undefined}
+            onReply={() => onReply(message)}
+            requestId={message.id.startsWith("optimistic-") ? undefined : message.id}
             react={react}
           >
             {text && (
               <MessageMenuItem
                 label={t(viewRaw ? "chat.showRenderedMarkdown" : "chat.showRawMarkdown")}
-                icon={viewRaw ? <Eye size={14} /> : <Code size={14} />}
+                icon={viewRaw ? <Eye {...HOVER_ICON} /> : <Code {...HOVER_ICON} />}
                 active={viewRaw}
                 onSelect={() => setViewRaw((r) => !r)}
               />
@@ -758,11 +755,11 @@ const Bubble = memo(function Bubble({
               <SpeakMenuItem text={text} botId={botId} messageId={message.id} voiceId={voiceId} tts={tts} localVoice={localVoice} />
             )}
             {!busy && onRegenerate && (
-              <MessageMenuItem label={t("chat.regenerate")} icon={<RefreshCw size={14} />} onSelect={onRegenerate} />
+              <MessageMenuItem label={t("chat.regenerate")} icon={<RefreshCw {...HOVER_ICON} />} onSelect={onRegenerate} />
             )}
             <MessageMenuItem
               label={pinned ? t("chat.unpinMessage") : t("chat.pinMessage")}
-              icon={pinned ? <PinOff size={14} /> : <Pin size={14} />}
+              icon={pinned ? <PinOff {...HOVER_ICON} /> : <Pin {...HOVER_ICON} />}
               onSelect={togglePin}
               hidden={remoteClient}
             />
@@ -770,7 +767,8 @@ const Bubble = memo(function Bubble({
         )}
       </div>
       <ReactionChips reactions={message.reactions} selfIds={reactionSelf} bots={bots} end={user} onToggle={(emoji) => toggleReactionOn(message.id, emoji)} />
-      {dwell.mounted && message.turnRun && <TurnRunLine run={message.turnRun} visible={dwell.shown} />}
+      {/* always laid out, only faded in: the answer above never moves (JC, 2026-10-15) */}
+      {!user && !peer && message.turnRun && <TurnRunLine run={message.turnRun} visible={dwell.shown} />}
       {forks.length > 1 && (
         <div className="mt-1 flex items-center gap-0.5 pr-1 text-[12px] text-ink-secondary">
           <button

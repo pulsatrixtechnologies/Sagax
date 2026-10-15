@@ -644,6 +644,13 @@ export interface Bot {
   connectorScopes?: { apps: Record<string, "read" | "write"> };
   outbound?: { policy: "ask" | "allow"; dailyCap: number };
   fallback?: Array<{ instanceId: string; model: string }>;
+  /** Per bot since 2026-10-15 (server/bot-runtime-settings.ts), edited in
+   * the bot editor. Absent: the server default (or, for busySend, the
+   * person's own earlier default). */
+  maxConcurrentThreads?: number;
+  maxParallelPerPerson?: number;
+  busySend?: "ask" | "steer" | "parallel" | "after";
+  automaticRecovery?: { enabled: boolean; backup?: ModelSelection };
   /** Whether this bot gets the app's built-in browser (Browser tab). On unless switched off. */
   browser?: boolean;
   /** Memory upkeep (Bot settings → Memory): background capture and the

@@ -153,11 +153,10 @@ describe("collapsible settings card", () => {
 });
 
 describe("collapsed card summaries", () => {
-  it("summarizes About me, keys, cleanup, recovery and VM setup in one line each", async () => {
+  it("summarizes About me, keys, cleanup and VM setup in one line each", async () => {
     const { connectedAppsSummary, cardsMatching } = await import("./SettingsModal");
     const { aboutMeFirstLine } = await import("./AboutMeSettings");
     const { threadCleanupSummary } = await import("./ThreadCleanupSettings");
-    const { recoverySummary } = await import("./AutomaticRecoverySettings");
     const { setupStep } = await import("./LocalComputerSection");
 
     expect(aboutMeFirstLine(undefined)).toBe("Not set");
@@ -172,10 +171,6 @@ describe("collapsed card summaries", () => {
 
     expect(threadCleanupSummary(null, null)).toBe("Off");
     expect(threadCleanupSummary(30, 52_428_800)).toBe("Delete after 30 days · Trim at 50 MiB");
-
-    const instances = [{ instanceId: "claude", displayName: "Claude", models: { options: [{ id: "sonnet", label: "Sonnet" }] } }];
-    expect(recoverySummary(undefined, instances)).toBe("Off");
-    expect(recoverySummary({ enabled: true, backup: { instanceId: "claude", model: "sonnet" } }, instances)).toBe("On: Claude · Sonnet");
 
     expect(setupStep({ runtime: undefined, daemonUp: false, image: false } as never)).toBe(1);
     expect(setupStep({ runtime: "podman", daemonUp: true, image: false } as never)).toBe(3);
@@ -226,16 +221,20 @@ describe("Settings → General, compact", () => {
     const html = renderToStaticMarkup(createElement(StoreProvider, null, createElement(SettingsModal)));
     // 2026-10-14: the technical cards are one row away, on their own page
     expect(html).toContain('data-settings-card="general.advanced" data-settings-subpage-row');
-    for (const id of ["general.threads", "general.recovery", "general.threadCleanup", "general.roomTurns", "general.mcpCalls"]) {
+    for (const id of ["general.threadCleanup", "general.roomTurns", "general.mcpCalls"]) {
       expect(html).not.toContain(`data-settings-card="${id}"`);
     }
     const advanced = renderToStaticMarkup(createElement(StoreProvider, null, createElement(GeneralAdvancedSettings)));
-    for (const id of ["general.threads", "general.recovery", "general.threadCleanup", "general.toolAccess"]) {
+    for (const id of ["general.threadCleanup"]) {
       expect(advanced).toContain(`data-settings-card="${id}" data-open="false"`);
     }
+    // 2026-10-15: each bot's own now, in its editor (bot-settings/)
+    for (const id of ["general.threads", "general.recovery", "general.toolAccess"]) {
+      expect(advanced).not.toContain(`data-settings-card="${id}"`);
+    }
+    expect(advanced).not.toContain(">3 per bot<");
     // 2026-10-15: group turns and MCP calls are cards of Organization
     for (const id of ["organization.roomTurns", "organization.mcpCalls"]) expect(advanced).not.toContain(`data-settings-card="${id}"`);
-    expect(advanced).toContain(">3 per bot<");
     expect(html).toContain(">Not set<");
     // About me is edited on its sub-page; General shows its first line and Edit
     expect(html).toContain('data-settings-card="general.aboutMe" data-settings-subpage-row');

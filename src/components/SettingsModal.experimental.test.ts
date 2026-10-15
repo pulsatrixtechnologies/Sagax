@@ -128,7 +128,9 @@ describe("Settings > General > Advanced", () => {
     const html = await render();
     expect(html).toContain('data-settings-subpage="general.advanced"');
     expect(html).toContain('data-settings-card="general.threadCleanup"');
-    expect(html).toContain('data-settings-card="general.toolAccess"');
+    // 2026-10-15: Tool access, Parallel conversations and Automatic recovery
+    // are each bot's own (bot editor); none is a Settings card any more.
+    for (const card of ["general.toolAccess", "general.threads", "general.recovery"]) expect(html, card).not.toContain(`data-settings-card="${card}"`);
     expect(html).not.toContain("Routines in the conversation");
     expect(html).not.toContain('data-settings-card="organization.roomTurns"');
     expect(html).not.toContain('data-settings-card="organization.mcpCalls"');

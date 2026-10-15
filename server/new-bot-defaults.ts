@@ -5,6 +5,7 @@ import { EFFORT_LEVELS } from "../shared/wire.ts";
 import { isModelVariant } from "./contracts.ts";
 import { normalizeCronSchedule } from "../shared/routine-schedule.ts";
 import { parseToolScope, type ToolScope } from "../shared/tool-scope.ts";
+import { botRuntimeSettingsShape } from "./bot-runtime-settings.ts";
 
 const strings = (max: number, length: number) => z.array(z.string().max(length)).max(max);
 const clock = z.string().regex(/^(?:[01]\d|2[0-3]):[0-5]\d$/);
@@ -46,6 +47,8 @@ export const botDefaultsProfileSchema = profilePatchSchema.extend({
   toolScope: z.custom<ToolScope>((value) => value !== undefined && parseToolScope(value).ok, "Invalid tool selection")
     .transform((value) => { const parsed = parseToolScope(value); return parsed.ok ? parsed.scope! : value; }).nullable().optional(),
   parkDirectMessages: z.boolean().optional(),
+  // Per bot since 2026-10-15 (server/bot-runtime-settings.ts).
+  ...botRuntimeSettingsShape,
 }).strict();
 
 const scheduleSchema = z.discriminatedUnion("type", [

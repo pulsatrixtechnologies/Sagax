@@ -1,7 +1,6 @@
 // What moves into a message's "more" menu, built the same way for 1:1 chats
 // and rooms, bot answers and the person's own bubbles.
-import { Code, Copy, Eye, Pencil, Pin, PinOff, RefreshCw, Square, Volume2 } from "lucide-react";
-import { copyText } from "@/lib/copy-text";
+import { Code, Eye, Pencil, Pin, PinOff, RefreshCw, Square, Volume2 } from "lucide-react";
 import { t } from "@/lib/i18n";
 import type { ConfigStatus } from "@/state/store";
 import { ACTION_ICON, type MessageMenuItem } from "@/components/MessageActions";
@@ -20,11 +19,8 @@ function pinItem(pin: PinAction | undefined): MessageMenuItem[] {
   }];
 }
 
-function idItem(messageId: string): MessageMenuItem {
-  return { key: "copy-id", icon: <Copy {...ACTION_ICON} />, label: t("chat.copyMessageId"), onSelect: () => { void copyText(messageId); } };
-}
-
-/** A bot answer: read aloud, raw markdown, regenerate, pin, copy its id. */
+/** A bot answer: read aloud, raw markdown, regenerate, pin. Reply, Copy and
+ * Copy request ID come first in every message's menu (MessageHoverActions). */
 export function useBotMessageMenu({
   text,
   botId,
@@ -71,15 +67,14 @@ export function useBotMessageMenu({
     });
   }
   if (onRegenerate) items.push({ key: "regenerate", icon: <RefreshCw {...ACTION_ICON} />, label: t("chat.regenerate"), onSelect: onRegenerate });
-  items.push(...pinItem(pin), idItem(messageId));
+  items.push(...pinItem(pin));
   return items;
 }
 
-/** The person's own message: edit, pin, copy its id. */
-export function userMessageMenu({ messageId, onEdit, pin }: { messageId: string; onEdit?: () => void; pin?: PinAction }): MessageMenuItem[] {
+/** The person's own message: edit, pin. */
+export function userMessageMenu({ onEdit, pin }: { onEdit?: () => void; pin?: PinAction }): MessageMenuItem[] {
   return [
     ...(onEdit ? [{ key: "edit", icon: <Pencil {...ACTION_ICON} />, label: t("chat.editMessage"), onSelect: onEdit }] : []),
     ...pinItem(pin),
-    idItem(messageId),
   ];
 }

@@ -46,12 +46,10 @@ import { FONT_IDS, applyFont, readFont, type FontId } from "@/lib/fonts";
 import { RoomTurnTimeoutSettings } from "./RoomTurnTimeoutSettings";
 import { AboutMeEditor, aboutMeFirstLine } from "./AboutMeSettings";
 import { McpCallTimeoutSettings } from "./McpCallTimeoutSettings";
-import { ToolAccessSettings } from "./ToolAccessSettings";
+import { PeopleToolAccessSettings } from "./ToolAccessSettings";
 import { mcpCallTimeoutMinutes } from "@/lib/mcp-call-timeout";
 import { SettingsSubPage, SettingsSubPageRow } from "./SettingsSubPage";
 import { AccountCard } from "./settings/AccountCard";
-import { ThreadConcurrencySettings } from "./ThreadConcurrencySettings";
-import { AutomaticRecoverySettings } from "./AutomaticRecoverySettings";
 import { ThreadCleanupSettings } from "./ThreadCleanupSettings";
 import { DefaultBotSettings } from "./NewBotDialog";
 import { AppIconPicker, appIconAvailable } from "./settings/AppIconPicker";
@@ -117,9 +115,7 @@ const HOSTED_CARDS: Partial<Record<AppSettingsSection, AppSettingsSection[]>> = 
  * is looking for what the card holds, so it should not stay folded. */
 const CARD_KEYWORDS: Record<string, string[]> = {
   "general.aboutMe": ["about me"],
-  "general.threads": ["parallel", "concurrency"],
   "general.threadCleanup": ["cleanup", "retention", "event log", "event-log", "log size"],
-  "general.recovery": ["automatic recovery", "backup model", "fallback"],
   "organization.mcpCalls": ["mcp", "timeout", "tool call"],
   "connections.integrations": ["box", "vps"],
   "connections.image": ["image", "avatar", "gpt image"],
@@ -1011,17 +1007,10 @@ export function GeneralAdvancedSettings() {
       {isSoloDesktop(state.config) && <OrganizationAdvancedCards />}
       {editConfig && (
         <>
-          <Card
-            collapsible
-            cardId="general.toolAccess"
-            defaultOpen={false}
-            title={t("settings.toolAccess.title")}
-            subtitle={t("settings.toolAccess.subtitle")}
-          >
-            <ToolAccessSettings />
-          </Card>
-          <ThreadConcurrencySettings />
-          <AutomaticRecoverySettings />
+          {/* 2026-10-15: Tool access, Parallel conversations and Automatic
+              recovery are each bot's own, in its editor (Permissions and
+              Model pages). A person's grants stay here. */}
+          <PeopleToolAccessSettings />
           <ThreadCleanupSettings />
         </>
       )}
