@@ -86,3 +86,10 @@ export async function runClaimTool(
   }
   return { status: 200, body: { result: answer.value, isError: answer.isError } };
 }
+
+/** The agents integration with its claim-tools flag set from whether a
+ * Perspicax profile is mounted now. A path that builds the agents tools before
+ * it mounts the profile calls this once the mount is done. */
+export function withClaimsFlag<T extends { env: Record<string, string> }>(agents: T, mounted: boolean): T {
+  return { ...agents, env: { ...agents.env, SAGAX_CLAIMS: mounted ? "1" : "0" } };
+}

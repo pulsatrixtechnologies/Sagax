@@ -8,7 +8,7 @@ import { describe, expect, it } from "vitest";
 import { availableTools, catalogProfileFromEnv } from "./drivers/agents-catalog.ts";
 import { callTool, type ToolCallContext } from "./drivers/agents-call.ts";
 import type { ExchangeResult } from "./perspicax-link.ts";
-import { CLAIM_TOOL_NAMES, claimArguments, claimHolder, runClaimTool } from "./perspicax-claims.ts";
+import { CLAIM_TOOL_NAMES, claimArguments, claimHolder, runClaimTool, withClaimsFlag } from "./perspicax-claims.ts";
 import { PerspicaxMcp, type PerspicaxMcpLink } from "./perspicax-mcp.ts";
 
 const ISS = "https://px.example.test";
@@ -170,5 +170,18 @@ describe("claims", () => {
     // After the turn ends, nothing is mounted any more.
     await mcp.endGeneration("t1", "g1");
     expect(mcp.hasMounted("t1", "g1", "b1")).toBe(false);
+  });
+});
+
+describe("claim tools listed after a late mount", () => {
+  it("withClaimsFlag turns the flag on for the catalog without touching the rest", () => {
+    const built = { command: "node", args: ["proxy"], env: { SAGAX_CLAIMS: "0", SAGAX_BOT_ID: "b1" } };
+    const mounted = withClaimsFlag(built, true);
+    expect(mounted.env).toEqual({ SAGAX_CLAIMS: "1", SAGAX_BOT_ID: "b1" });
+    expect(built.env.SAGAX_CLAIMS).toBe("0");
+    const listed = availableTools(catalogProfileFromEnv(mounted.env)).map((tool) => tool.name);
+    expect(CLAIM_TOOL_NAMES.every((name) => listed.includes(name))).toBe(true);
+    const unlisted = availableTools(catalogProfileFromEnv(withClaimsFlag(mounted, false).env)).map((tool) => tool.name);
+    expect(CLAIM_TOOL_NAMES.some((name) => unlisted.includes(name))).toBe(false);
   });
 });
