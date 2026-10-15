@@ -71,6 +71,13 @@ public enum PlanUsageRules {
         used >= 90 ? .danger : used >= 70 ? .warning : .success
     }
 
+    /// `connectedPlanRows` (2026-10-15): only the providers that are connected
+    /// and answer. One in error or not signed in is left out, and with none
+    /// left the Plan card is not drawn.
+    public static func connected(_ report: PlanUsageReport?) -> [PlanUsageReport.Provider] {
+        (report?.providers ?? []).filter(\.ok)
+    }
+
     /// A deadline that has passed since the report: ask the providers again.
     public static func hasDueReset(_ report: PlanUsageReport, now: Date) -> Bool {
         report.providers.contains { provider in
