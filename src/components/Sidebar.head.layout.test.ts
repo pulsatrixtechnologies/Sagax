@@ -47,7 +47,7 @@ describe("sidebar head buttons", () => {
     expect(head).not.toMatch(/CIRCLE_BUTTON\b(?!_)/);
   });
 
-  it("have rail tokens that equal the frame's on every skin but Pulsatrix Light", () => {
+  it("have rail tokens that equal the frame's on every skin but Pulsatrix Light and Midnight", () => {
     const theme = styles.slice(styles.indexOf("@theme inline {"));
     expect(theme).toContain("--color-sidebar-elevated: color-mix(in srgb, var(--color-sidebar-ink) 3%, var(--color-sidebar));");
     expect(theme).toContain("--color-elevated: color-mix(in srgb, var(--color-ink) 3%, var(--color-panel));");
@@ -56,7 +56,8 @@ describe("sidebar head buttons", () => {
     for (const block of styles.matchAll(/\[data-skin="([\w-]+)"\] \{([\s\S]*?)\n\}/g)) {
       const [, skin, body] = block;
       const token = (name: string) => body!.match(new RegExp(`--color-${name}:\\s*([^;]+);`))?.[1];
-      if (skin === "pulsatrix-light") {
+      // Midnight is Grok Bot's Sand Dark (#491): its rail is darker than the pane.
+      if (skin === "pulsatrix-light" || skin === "midnight") {
         expect(token("sidebar")).not.toBe(token("panel"));
         continue;
       }

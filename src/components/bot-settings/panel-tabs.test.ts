@@ -21,6 +21,6 @@ describe("bot panel tabs", () => {
 
   it("labels the persona entry", () => {
     expect(en["botPanel.editPersona"]).toBe("Edit persona");
-    expect(fr["botPanel.editPersona"]).toBe("Modifier la persona");
+    expect(fr["botPanel.editPersona"]).toBe("Modifier le bot");
   });
 });
