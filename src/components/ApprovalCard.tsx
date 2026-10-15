@@ -12,6 +12,7 @@ import { t, tFromServer } from "@/lib/i18n";
 import type { LocaleKey } from "@/locales";
 import { SkillRequestPreview } from "@/components/SkillRequestPreview";
 import { ApprovalHeading, TechnicalDetails } from "@/components/ApprovalParts";
+import { StepRow } from "@/components/StepRow";
 import { approvalPlain, describeAllowRule, describeApproval, isTechnicalText, parseToolId, type ApprovalRisk, type ToolHints } from "@/lib/approval-describe";
 import { composioActionPhrase, outboundSummary } from "@/lib/approval-summary";
 import { niceDate, niceTime, scheduleLabel } from "@/lib/schedule-label";
@@ -153,22 +154,6 @@ function OwnerRuleInset({ rule }: { rule: NonNullable<OptionCardData["ruleSaved"
         {t("approval.rule.edit")}
       </button>
     </div>
-  );
-}
-
-function StatusPill({ card }: { card: OptionCardData }) {
-  const pill = approvalPill(card);
-  if (!pill) return null;
-  return (
-    <span
-      data-status-pill={pill.tone}
-      className={cn(
-        "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[12px] font-medium",
-        pill.tone === "success" ? "bg-success/10 text-success" : pill.tone === "danger" ? "bg-danger/10 text-danger" : "bg-inset text-ink-secondary",
-      )}
-    >
-      <span aria-hidden="true">•</span> {pill.label}
-    </span>
   );
 }
 
@@ -455,6 +440,60 @@ export function ApprovalCard({
       : t("approval.card.wantsTo", { action: toolLabel(displayTool) }));
   const open = !settled && !expired;
 
+  // One card per request (JC, 2026-10-15): the box above the composer shows
+  // a tool request in full with its buttons; the thread only says it waits,
+  // as a quiet step line. A proposal (routine, skill, profile, team setup)
+  // keeps its card: what it changes, and for whom, is reviewed there.
+  if (open && view) {
+    return (
+      <StepRow
+        testId="approval-waiting"
+        data={{ "data-tour": "approval", "data-approval-waiting": card.requestId }}
+        icon={<ShieldCheck size={13} aria-hidden="true" className="text-accent" />}
+        label={card.adminApproval ? t("approval.waitingForAdmin") : t("approval.status.waitingApproval")}
+        target={card.adminApproval ? adminWillAnswerLine(card.adminNames) : undefined}
+      />
+    );
+  }
+
+  // Answered or expired, a tool approval is a one-line receipt (#455) that
+  // opens on what was asked, the saved rule and the technical details.
+  if (view) {
+    const pill = approvalPill(card);
+    // what was asked, as an action: "Send to Linear", "View accounts in Twilio"
+    const outbound = outboundSummary(card);
+    const action = outbound ? outbound.headline.replace(/\s*[?？]$/, "") : toolLabel(card.mcpTool ?? card.tool, card.toolInput ?? card.subtitle, card.toolHints);
+    return (
+      <StepRow
+        testId="approval-receipt"
+        data={{ "data-approval-receipt": pill?.tone }}
+        icon={<span data-status-pill={pill?.tone} className="flex">
+          {pill?.tone === "success" ? <Check size={13} aria-hidden="true" className="text-success" />
+            : <X size={13} aria-hidden="true" className={pill?.tone === "danger" ? "text-danger" : "text-ink-tertiary"} />}
+        </span>}
+        label={pill?.label ?? outcome ?? ""}
+        target={action ? action[0]!.toLocaleUpperCase() + action.slice(1) : undefined}
+        extra={byVoice}
+      >
+        {() => (
+          <div className="flex flex-col gap-1 text-[12.5px] text-ink-secondary">
+            <div className="text-ink">{view.title}</div>
+            {view.summary && <div>{view.summary}</div>}
+            {view.plain && (
+              <pre tabIndex={0} aria-label={t("approval.aria.details")} className="max-h-24 overflow-auto whitespace-pre-wrap break-words rounded-lg bg-inset px-3 py-2 font-mono text-[12.5px] leading-relaxed text-ink">
+                {view.plain}
+              </pre>
+            )}
+            {heldNote && <div className="text-warning">{heldNote}</div>}
+            {card.answered === "allow" && card.alwaysAllowed && <AllowRuleInset rule={card.alwaysAllowed} />}
+            {card.answered && card.ruleSaved && <OwnerRuleInset rule={card.ruleSaved} />}
+            {(view.args || card.tool) && <TechnicalDetails tool={card.tool} server={view.server} args={view.args} />}
+          </div>
+        )}
+      </StepRow>
+    );
+  }
+
   return (
     <div
       data-tour={open ? "approval" : undefined}
@@ -465,33 +504,26 @@ export function ApprovalCard({
     >
       <ApprovalHeading
         bot={bot}
-        title={view ? view.title : proposalTitle}
-        summary={view?.summary}
-        risk={view?.risk}
+        title={proposalTitle}
       />
 
-      {/* a proposal's text is what you confirm; a tool's command or URL is
-          what runs. Raw JSON arguments stay behind the technical details. */}
-      {(isProposal || view?.plain) && (
-        <pre
-          tabIndex={0}
-          aria-label={
-            isRoutineRequest
-              ? t("approval.aria.routineDetails")
-              : isSkillRequest
-                ? t("approval.aria.skillDetails")
-                : isProfileRequest
-                  ? t("approval.aria.profileChange")
-                  : t("approval.aria.details")
-          }
-          className={cn(
-            "mt-2 overflow-auto whitespace-pre-wrap break-words rounded-lg bg-inset px-3 py-2 font-mono text-[12.5px] leading-relaxed text-ink",
-            isProposal ? "max-h-40" : "max-h-24",
-          )}
-        >
-          {isProposal ? card.subtitle : view?.plain}
-        </pre>
-      )}
+      {/* a proposal's text is what you confirm (a tool request reads as the
+          step line or the receipt above) */}
+      <pre
+        tabIndex={0}
+        aria-label={
+          isRoutineRequest
+            ? t("approval.aria.routineDetails")
+            : isSkillRequest
+              ? t("approval.aria.skillDetails")
+              : isProfileRequest
+                ? t("approval.aria.profileChange")
+                : t("approval.aria.details")
+        }
+        className="mt-2 max-h-40 overflow-auto whitespace-pre-wrap break-words rounded-lg bg-inset px-3 py-2 font-mono text-[12.5px] leading-relaxed text-ink"
+      >
+        {card.subtitle}
+      </pre>
 
       {card.skillRequest && <SkillRequestPreview request={card.skillRequest} />}
 
@@ -509,12 +541,7 @@ export function ApprovalCard({
           technical details join the record once it is settled, so an open
           request is never shown twice in full. */}
       <div className="mt-2 flex items-center gap-1.5 text-[13px] text-ink-secondary">
-        {outcome && view ? (
-          <>
-            <StatusPill card={card} />
-            {byVoice}
-          </>
-        ) : outcome ? (
+        {outcome ? (
           <>
             {settled === "allow" && !expired ? <Check size={14} className="text-success" /> : <X size={14} />} {outcome}
             {byVoice}
@@ -522,20 +549,10 @@ export function ApprovalCard({
         ) : (
           <>
             <ShieldCheck size={14} className="text-accent" />
-            {isProposal
-              ? t("approval.status.waitingConfirmation")
-              : card.adminApproval
-                ? t("approval.waitingForAdmin")
-                : t("approval.status.waitingAnswer")}
+            {t("approval.status.waitingConfirmation")}
           </>
         )}
       </div>
-      {open && card.adminApproval && (
-        <p className="mt-1 text-[12.5px] text-ink-secondary">{adminWillAnswerLine(card.adminNames)}</p>
-      )}
-      {view && !open && (view.args || card.tool) && (
-        <TechnicalDetails tool={card.tool} server={view.server} args={view.args} />
-      )}
     </div>
   );
 }

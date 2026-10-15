@@ -40,35 +40,49 @@ function ask(id: string, tool: string, input: string, extra: Record<string, unkn
 }
 
 describe("human approval card", () => {
-  it("shows a plain title, summary and risk chip, and hides the raw id and JSON while open", () => {
+  it("shows a plain title, summary and risk chip in the composer's box, and hides the raw id and JSON", () => {
     setLocale("fr");
-    const html = renderToStaticMarkup(createElement(ApprovalCard, { bot, message: ask("a", TOOL, ARGS) }));
+    const [pending] = pendingApprovals([ask("a", TOOL, ARGS)]);
+    const html = renderToStaticMarkup(createElement(PendingApprovalPanel, { pending: pending!, count: 1, index: 0, bot }));
     expect(html).toContain("Autoriser Cryptic à consulter l&#x27;horaire dans ConnectWise PSA ?");
     expect(html).toContain("jcproulx");
     expect(html).toContain("Lecture seule");
-    expect(html).toContain("En attente de votre réponse ci-dessous");
     expect(html).not.toContain(TOOL);
     expect(html).not.toContain("conditions");
     expect(html).not.toContain("mcp perspicax");
-    // the open card defers the details to the composer: no duplicate
-    expect(html).not.toContain("Voir la demande complète");
   });
 
-  it("offers the collapsed technical details once settled", () => {
+  it("leaves one quiet waiting line in the thread while the box above the composer asks (JC, 2026-10-15)", () => {
+    setLocale("fr");
+    const html = renderToStaticMarkup(createElement(ApprovalCard, { bot, message: ask("a", TOOL, ARGS) }));
+    expect(html).toContain("En attente de votre autorisation");
+    expect(html).toContain("data-step-row");
+    expect(html).toContain('data-tour="approval"');
+    // the request is not shown a second time
+    expect(html).not.toContain("Autoriser Cryptic");
+    expect(html).not.toContain("Lecture seule");
+    expect(html).not.toContain("Voir la demande complète");
+    expect(html).not.toContain("<button");
+  });
+
+  it("reads as a one-line receipt once settled, with the details behind it", () => {
     const message = ask("a", TOOL, ARGS);
     message.card!.answered = "allow";
     const html = renderToStaticMarkup(createElement(ApprovalCard, { bot, message }));
-    expect(html).toContain("View the full request");
+    expect(html).toContain('data-testid="approval-receipt"');
+    expect(html).toContain("Allowed once");
+    expect(html).toContain("View the schedule in ConnectWise PSA");
     expect(html).toContain('aria-expanded="false"');
     expect(html).not.toContain("conditions");
   });
 
-  it("keeps a command readable on the card: it is what runs", () => {
+  it("keeps a command readable in the composer's box: it is what runs", () => {
     const message: Message = {
       id: "cmd", role: "bot", kind: "options", at: 1,
       card: { title: "Approval needed", subtitle: "pnpm test", options: ["Allow", "Deny"], requestId: "req-cmd", tool: "Bash" },
     };
-    const html = renderToStaticMarkup(createElement(ApprovalCard, { bot, message }));
+    const [pending] = pendingApprovals([message]);
+    const html = renderToStaticMarkup(createElement(PendingApprovalPanel, { pending: pending!, count: 1, index: 0, bot }));
     expect(html).toContain("Allow Cryptic to run a command?");
     expect(html).toContain("pnpm test");
     expect(html).toContain("Runs an action");

@@ -24,13 +24,13 @@ describe("Allow rule receipt", () => {
     expect(approvalPill({ answered: "allow" })?.label).toMatch(/once/i);
     expect(approvalPill({ answered: "deny", alwaysAllowed: card.allowKey })?.label).toMatch(/declined/i);
   });
-  it("shows the rule and Edit rule under an always-allowed card", () => {
+  it("reads Always allowed on the receipt line; the rule and Edit rule open under it", () => {
     const message = { id: "m1", role: "bot", kind: "options", card: { ...card, answered: "allow", alwaysAllowed: card.allowKey } } as unknown as Message;
     const html = render(createElement(ApprovalCard, { bot: { name: "Dispatch" }, message }));
-    expect(html).toContain("data-allow-rule");
-    expect(html).toContain("Added to your Allow rules");
-    expect(html).toContain("Edit rule");
+    expect(html).toContain("Always allowed");
+    expect(html).toContain('aria-expanded="false"');
     const once = { ...message, card: { ...message.card!, alwaysAllowed: undefined } } as Message;
-    expect(render(createElement(ApprovalCard, { bot: { name: "Dispatch" }, message: once }))).not.toContain("data-allow-rule");
+    expect(render(createElement(ApprovalCard, { bot: { name: "Dispatch" }, message: once }))).toContain("Allowed once");
+    // the opened receipt (ApprovalCard.single-card.test.ts) shows the rule
   });
 });

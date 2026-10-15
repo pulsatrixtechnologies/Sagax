@@ -53,9 +53,13 @@ describe("German approval cards", () => {
       message,
     }));
 
-    expect(markup).toContain("Darf Mochi einen Befehl ausführen?");
-    expect(markup).toContain('aria-label="Details zur Freigabe"');
-    expect(markup).toContain("Wartet unten auf deine Antwort");
+    // one card per request (2026-10-15): the composer's box asks, the
+    // thread keeps a waiting line
+    expect(markup).toContain("data-approval-waiting");
+    expect(markup).not.toContain("Darf Mochi einen Befehl ausführen?");
+    const { pending } = commandApproval();
+    const strip = renderToStaticMarkup(createElement(PendingApprovalPanel, { pending, count: 1, index: 0, bot: { name: "Mochi" } as Bot }));
+    expect(strip).toContain("Darf Mochi einen Befehl ausführen?");
   });
 
   it("renders a denied command approval in German", () => {
@@ -163,9 +167,13 @@ describe("Brazilian Portuguese approval cards", () => {
       message,
     }));
 
-    expect(markup).toContain("Deixar Mochi executar um comando?");
-    expect(markup).toContain('aria-label="Detalhes da aprovação"');
-    expect(markup).toContain("Aguardando sua resposta abaixo");
+    // one card per request (2026-10-15): the composer's box asks, the
+    // thread keeps a waiting line
+    expect(markup).toContain("data-approval-waiting");
+    expect(markup).not.toContain("Deixar Mochi executar um comando?");
+    const { pending } = commandApproval();
+    const strip = renderToStaticMarkup(createElement(PendingApprovalPanel, { pending, count: 1, index: 0, bot: { name: "Mochi" } as Bot }));
+    expect(strip).toContain("Deixar Mochi executar um comando?");
   });
 
   it("renders a denied command approval in Brazilian Portuguese", () => {

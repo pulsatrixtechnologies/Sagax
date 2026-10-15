@@ -99,6 +99,36 @@ describe("Always allow / Allow once / Deny", () => {
   });
 });
 
+describe("Always allow on a read card (JC, 2026-10-15: Rocket reading Twilio accounts)", () => {
+  const TWILIO_QUERY = "mcp__perspicax_gox__twilio_api__query";
+  const accounts = (extra: Record<string, unknown> = {}) => JSON.stringify({ resource: "Accounts", fields: ["sid", "friendlyName"], limit: 5, ...extra });
+  let dir = "";
+  afterEach(() => { if (dir) rmSync(dir, { recursive: true, force: true }); });
+
+  it("saves the card's rule for this person and scope, and the same request no longer asks", () => {
+    dir = mkdtempSync(join(tmpdir(), "owner-approvals-"));
+    const file = join(dir, "owner-approvals.json");
+    const first: RuleCall = { ownerId: ALICE, botId: "rocket", tool: TWILIO_QUERY, input: accounts() };
+    // before: a card, with Always allow to offer
+    expect(ownerDecision({ mode: "approval", rules: [], call: first })).toEqual({ kind: "card", reason: "no-rule" });
+    const candidate = ruleCandidateFor(first);
+    expect(candidate).toMatchObject({ tool: "perspicax_gox__twilio_api__query", scope: { resource: "accounts" } });
+    expect(candidate.destructive).toBeUndefined();
+    // Always allow: the server saves the candidate for the bot's owner
+    new OwnerApprovalStore(file).add({ ownerId: ALICE, botId: "rocket", tool: candidate.tool, scope: candidate.scope, behavior: "allow", description: candidate.description });
+    // kept on disk: a restart still knows it
+    const rules = new OwnerApprovalStore(file).rulesOf(ALICE, "rocket");
+    expect(rules).toEqual([expect.objectContaining({ ownerId: ALICE, botId: "rocket", behavior: "allow", scope: { resource: "accounts" } })]);
+    // the same request, and the same kind with other fields, pass without a card
+    expect(ownerDecision({ mode: "approval", rules, call: first })).toMatchObject({ kind: "allow", source: "owner-rule" });
+    expect(ownerDecision({ mode: "approval", rules, call: { ...first, input: accounts({ limit: 50 }) } })).toMatchObject({ kind: "allow", source: "owner-rule" });
+    // another target, another bot of hers or another person still ask
+    expect(ownerDecision({ mode: "approval", rules, call: { ...first, input: JSON.stringify({ resource: "Calls" }) } })).toEqual({ kind: "card", reason: "no-rule" });
+    expect(new OwnerApprovalStore(file).rulesOf(ALICE, "other-bot")).toEqual([]);
+    expect(ownerDecision({ mode: "approval", rules: new OwnerApprovalStore(file).rulesOf(BOB, "rocket"), call: { ...first, ownerId: BOB } })).toEqual({ kind: "card", reason: "no-rule" });
+  });
+});
+
 describe("destructive actions need their own explicit Always rule", () => {
   it("detects a delete, a bulk change and an external message", () => {
     expect(destructiveKindOf({ tool: CW_WRITE, input: ticketDelete })).toBe("delete");

@@ -27,6 +27,14 @@ const createRoutineOperation = {
   },
 };
 
+/** An open tool request reads in full in the composer's box, its one card
+ * (JC, 2026-10-15); the thread keeps a quiet waiting line. */
+function openRequestHtml(message: Message, bot?: Bot): string {
+  const pending: Pending = pendingApprovals([message])[0]
+    ?? { message, requestId: message.card!.requestId!, tool: message.card!.tool ?? "", detail: message.card!.subtitle };
+  return renderToStaticMarkup(createElement(PendingApprovalPanel, { pending, count: 1, index: 0, bot }));
+}
+
 describe("ApprovalCard decided by voice", () => {
   const bash = (answered: string, via?: "call"): Message => ({
     id: "bash-card",
@@ -402,7 +410,7 @@ describe("ApprovalCard tool-call kinds", () => {
   const bot = { id: "bot-1", name: "Scout" } as never as Bot;
 
   it("speaks a verb phrase when the driver only knows the ACP kind", () => {
-    const html = renderToStaticMarkup(createElement(ApprovalCard, { bot, message: kindMessage("other") }));
+    const html = openRequestHtml(kindMessage("other"), bot);
     expect(html).toContain("Allow Scout to take an action?");
     expect(html).not.toContain("wants to other");
   });
@@ -420,13 +428,13 @@ describe("ApprovalCard tool-call kinds", () => {
       ["mcp__ogb__computer_batch", "use computer batch"],
     ];
     for (const [tool, phrase] of cases) {
-      const html = renderToStaticMarkup(createElement(ApprovalCard, { bot, message: kindMessage(tool) }));
+      const html = openRequestHtml(kindMessage(tool), bot);
       expect(html).toContain(`Allow Scout to ${phrase}?`);
     }
   });
 
   it("reads grammatically when no tool is known", () => {
-    const html = renderToStaticMarkup(createElement(ApprovalCard, { message: kindMessage(undefined) }));
+    const html = openRequestHtml(kindMessage(undefined));
     expect(html).toContain("Allow this bot to take an action?");
     expect(html).not.toContain("Allow this bot to an action");
   });
@@ -512,19 +520,25 @@ describe("ApprovalCard outbound holds", () => {
   const bot = { id: "bot-1", name: "Kiwi" } as never as Bot;
 
   it("names the app and the actions instead of the tool slug", () => {
-    const html = renderToStaticMarkup(createElement(ApprovalCard, { bot, message: outboundMessage() }));
+    const html = openRequestHtml(outboundMessage(), bot);
     expect(html).toContain("Send to Linear?");
     expect(html).toContain("Create linear comment ×2");
     expect(html).not.toContain("LINEAR CREATE LINEAR COMMENT");
     expect(html).not.toContain("LINEAR_CREATE_LINEAR_COMMENT");
     expect(html).toContain("issueId");
-    expect(html).toContain("Waiting for your answer below");
+    // the thread only says it waits: the request is not shown twice
+    const line = renderToStaticMarkup(createElement(ApprovalCard, { bot, message: outboundMessage() }));
+    expect(line).toContain("Waiting for your approval");
+    expect(line).not.toContain("Send to Linear?");
   });
 
   it("keeps the settled status line", () => {
+    // a one-line receipt once answered (#455), the request one click away
     const html = renderToStaticMarkup(createElement(ApprovalCard, { bot, message: outboundMessage("allow") }));
-    expect(html).toContain("Send to Linear?");
-    expect(html).toContain("Allowed");
+    expect(html).toContain("Allowed once");
+    expect(html).toContain("Send to Linear");
+    expect(html).toContain('data-testid="approval-receipt"');
+    expect(html).toContain('aria-expanded="false"');
   });
 
   it("heads the composer strip the same way", () => {
@@ -539,7 +553,7 @@ describe("ApprovalCard outbound holds", () => {
   it("reads the subtitle back for a card from an older computer", () => {
     const message = outboundMessage();
     message.card!.outboundRequest = { tool: "LINEAR_CREATE_LINEAR_COMMENT", app: "Linear" };
-    const html = renderToStaticMarkup(createElement(ApprovalCard, { bot, message }));
+    const html = openRequestHtml(message, bot);
     expect(html).toContain("Send to Linear?");
     expect(html).toContain("Create linear comment ×2");
   });
@@ -548,7 +562,7 @@ describe("ApprovalCard outbound holds", () => {
     const message = outboundMessage();
     message.card!.outboundRequest = undefined;
     message.card!.tool = "mcp__composio__LINEAR_CREATE_LINEAR_COMMENT";
-    const html = renderToStaticMarkup(createElement(ApprovalCard, { bot, message }));
+    const html = openRequestHtml(message, bot);
     expect(html).toContain("Allow Kiwi to create linear comment?");
   });
 });
