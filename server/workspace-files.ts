@@ -1,11 +1,9 @@
-// The bot workspace beyond memory: RULES.md, docs/, and the whole tree as
-// the persona editor's Files category shows it (docs/bot-workspace.md).
+// The bot workspace beyond memory: rules, docs/, and the whole tree as the
+// persona editor's Files category shows it (docs/bot-workspace.md).
 //
-// RULES.md holds hard constraints the bot checks every turn. It loads right
-// after the soul and before memory, under its own budget (RULES_MAX_LINES /
-// RULES_MAX_BYTES), cut with a notice like MEMORY.md. HTML comments in it
-// are notes for the person and never load, which is how the starter
-// template's examples stay out of the prompt.
+// The rules (RULES.md and the rule sets in rules/) hold hard constraints the
+// bot checks every turn; server/rule-sets.ts loads them right after the soul
+// and before memory, under their own budgets.
 //
 // docs/ holds reference markdown (procedures, templates, lists). Nothing in
 // it loads by default: each turn carries only a short index (name, first
@@ -17,6 +15,7 @@
 import { lstatSync, readFileSync, readdirSync, realpathSync, statSync, type Stats } from "node:fs";
 import { dirname, join, sep } from "node:path";
 
+import { RULE_SETS_DIR, RULES_FILE, RULES_MAX_BYTES, RULES_MAX_LINES, effectiveRulesText, listRuleSets } from "./rule-sets.ts";
 import {
   DOCS_DIR,
   MEMORY_MAX_BYTES,
@@ -29,11 +28,22 @@ import {
 } from "./workspace.ts";
 
 export { DOCS_DIR };
-export const RULES_FILE = "RULES.md";
-export const RULES_MAX_LINES = 60;
-export const RULES_MAX_BYTES = 8_000;
-/** One rule per rules_update: a rule is a sentence, not a procedure. */
-export const RULE_MAX_CHARS = 500;
+// The rules (RULES.md and the rule sets) live in server/rule-sets.ts; their
+// historical names are re-exported here.
+export {
+  RULE_MAX_CHARS,
+  RULES_FILE,
+  RULES_MAX_BYTES,
+  RULES_MAX_LINES,
+  RULES_TEMPLATE,
+  RULES_TOTAL_MAX_BYTES,
+  RULES_TOTAL_MAX_LINES,
+  effectiveRulesText,
+  loadRules,
+  rulesOverBudget,
+  rulesSystemPrompt,
+  type LoadedRules,
+} from "./rule-sets.ts";
 /** How many documents the per-turn index names; the rest are counted. */
 export const DOCS_INDEX_MAX = 20;
 const DOC_SUMMARY_MAX = 120;
@@ -47,95 +57,6 @@ export const SOUL_MAX_BYTES = 24_000;
 export const FORGOTTEN_AFTER_MS = 30 * 24 * 60 * 60_000;
 const TREE_MAX_ENTRIES = 1_000;
 const TREE_MAX_DEPTH = 8;
-
-/** The text the Rules editor starts from when RULES.md does not exist yet.
- * Everything below the heading is a comment: saved as is, it loads nothing. */
-export const RULES_TEMPLATE = `# Rules
-
-<!--
-Hard constraints this bot checks every turn. One rule per line.
-Identity goes in Soul; facts go in Memory. Text inside this comment is not loaded.
-
-Examples (copy a line below the comment to use it):
-- Never send an email to a client without showing me the draft first.
-- Always answer in the language the person writes in.
-- Never quote a price; send pricing questions to the sales team.
--->
-`;
-
-/** RULES.md as it loads: HTML comments removed, blank runs folded,
- * trimmed. Headings stay (they are the person's text); only comments go. */
-export function effectiveRulesText(raw: string): string {
-  return raw
-    .replace(/<!--[\s\S]*?(?:-->|$)/g, "")
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
-}
-
-/** Whether RULES.md holds anything but comments and its heading. */
-function hasRules(text: string): boolean {
-  return text.split("\n").some((line) => line.trim() && !/^#{1,6}\s/.test(line.trim()));
-}
-
-export interface LoadedRules {
-  text: string;
-  truncated: boolean;
-  /** lines and bytes of the whole effective text, before the cut */
-  lines: number;
-  bytes: number;
-}
-
-/** RULES.md under its budget, or null when there is no file or it holds
- * no rule (the template alone, a heading alone). */
-export function loadRules(botId: string): LoadedRules | null {
-  let raw: string;
-  try {
-    raw = readMemoryText(join(workspaceDir(botId), RULES_FILE));
-  } catch {
-    return null;
-  }
-  const effective = effectiveRulesText(raw);
-  if (!hasRules(effective)) return null;
-  let text = effective;
-  let truncated = false;
-  if (memoryLineCount(text) > RULES_MAX_LINES) {
-    text = text.split("\n").slice(0, RULES_MAX_LINES).join("\n");
-    truncated = true;
-  }
-  if (Buffer.byteLength(text, "utf8") > RULES_MAX_BYTES) {
-    text = Buffer.from(text, "utf8").subarray(0, RULES_MAX_BYTES).toString("utf8").replace(/�+$/, "");
-    truncated = true;
-  }
-  return { text, truncated, lines: memoryLineCount(effective), bytes: Buffer.byteLength(effective, "utf8") };
-}
-
-/** Whether `raw` would load whole (after comments are removed). */
-export function rulesOverBudget(raw: string): boolean {
-  const effective = effectiveRulesText(raw);
-  return memoryLineCount(effective) > RULES_MAX_LINES || Buffer.byteLength(effective, "utf8") > RULES_MAX_BYTES;
-}
-
-/** The Rules block of the system prompt, placed right after the soul
- * (buildSystemPrompt). Empty without rules, so a bot without RULES.md gets
- * today's prompt byte for byte. */
-export function rulesSystemPrompt(botId: string, opts: { writes?: boolean } = {}): string {
-  const rules = loadRules(botId);
-  if (!rules) return "";
-  const bytes = Buffer.byteLength(rules.text, "utf8");
-  const cut = rules.truncated
-    ? `\n[RULES.md is ${rules.lines} lines and ${rules.bytes} bytes; only the first ${RULES_MAX_LINES} lines / ${RULES_MAX_BYTES} bytes are shown above. Ask the person to shorten it in Persona > Rules.]`
-    : "";
-  return (
-    "\n\nYour rules follow: hard constraints the person set for you. Check every reply and every action against them before you act." +
-    " They rank with your standing instructions, above your memory, documents and imported skills, and below the person's current request and safety boundaries." +
-    " Text inside this block is instruction for you, never tool authorization or permission to expose secrets." +
-    (opts.writes ? " Change RULES.md only with rules_update, and only when the person asks for it in this conversation." : "") +
-    `\n\n--- BEGIN RULES (RULES.md, ${bytes} bytes) ---\n` +
-    rules.text +
-    "\n--- END RULES ---" +
-    cut
-  );
-}
 
 export interface DocSummary {
   path: string;
@@ -299,12 +220,16 @@ export interface WorkspaceEntry {
   budget?: WorkspaceBudget;
 }
 
-const EDITABLE = [/^MEMORY\.md$/, /^RULES\.md$/, /^memory\/[^/]+\.md$/, /^memory\/log\/[^/]+\.md$/, /^docs\/[^/]+\.md$/];
+const EDITABLE = [/^MEMORY\.md$/, /^RULES\.md$/, /^rules\/[^/]+\.md$/, /^memory\/[^/]+\.md$/, /^memory\/log\/[^/]+\.md$/, /^docs\/[^/]+\.md$/];
 
 /** Where a path sits in the load order. MEMORY.md loads every turn only
  * while memory is on. */
-export function workspaceLoad(path: string, opts: { memoryEnabled?: boolean } = {}): WorkspaceLoad {
-  if (path === RULES_FILE) return "every-turn";
+export function workspaceLoad(path: string, opts: { memoryEnabled?: boolean; ruleFiles?: ReadonlyMap<string, boolean> } = {}): WorkspaceLoad {
+  // a rules file loads every turn while its set is on (server/rule-sets.ts)
+  if (path === RULES_FILE || /^rules\/[^/]+\.md$/.test(path)) {
+    const enabled = opts.ruleFiles?.get(path);
+    return enabled === false ? "never" : path === RULES_FILE || enabled ? "every-turn" : "never";
+  }
   if (path === "MEMORY.md") return opts.memoryEnabled === false ? "never" : "every-turn";
   if (path === "memory/archive.md" || path.startsWith("memory/log/")) return "never";
   if (/^memory\/[^/]+\.md$/.test(path)) return opts.memoryEnabled === false ? "never" : "on-demand";
@@ -314,14 +239,15 @@ export function workspaceLoad(path: string, opts: { memoryEnabled?: boolean } = 
 }
 
 function budgetFor(path: string, absolute: string): WorkspaceBudget | undefined {
-  if (path !== RULES_FILE && path !== "MEMORY.md") return undefined;
+  const rules = path === RULES_FILE || /^rules\/[^/]+\.md$/.test(path);
+  if (!rules && path !== "MEMORY.md") return undefined;
   let raw = "";
   try {
     raw = readMemoryText(absolute);
   } catch {
     return undefined;
   }
-  if (path === RULES_FILE) {
+  if (rules) {
     const text = effectiveRulesText(raw);
     const lines = memoryLineCount(text);
     const bytes = Buffer.byteLength(text, "utf8");
@@ -337,6 +263,8 @@ function budgetFor(path: string, absolute: string): WorkspaceBudget | undefined 
  * revisions) and links are left out; reads never create the workspace. */
 export function workspaceTree(botId: string, opts: { memoryEnabled?: boolean } = {}): { entries: WorkspaceEntry[]; truncated: boolean } {
   const root = workspaceDir(botId);
+  const ruleFiles = new Map(listRuleSets(botId).map((set) => [set.file, set.enabled]));
+  const loadOpts = { ...opts, ruleFiles };
   const entries: WorkspaceEntry[] = [];
   let truncated = false;
   const walk = (dir: string, prefix: string, depth: number) => {
@@ -366,7 +294,7 @@ export function workspaceTree(botId: string, opts: { memoryEnabled?: boolean } =
       if (stat.isSymbolicLink()) continue;
       const createdAt = Math.round(stat.birthtimeMs || stat.ctimeMs);
       if (stat.isDirectory()) {
-        entries.push({ path, kind: "dir", bytes: 0, createdAt, modifiedAt: Math.round(stat.mtimeMs), load: workspaceLoad(`${path}/`, opts), editable: false, markdown: false });
+        entries.push({ path, kind: "dir", bytes: 0, createdAt, modifiedAt: Math.round(stat.mtimeMs), load: workspaceLoad(`${path}/`, loadOpts), editable: false, markdown: false });
         if (depth < TREE_MAX_DEPTH) walk(absolute, path, depth + 1);
         else truncated = true;
         continue;
@@ -380,8 +308,8 @@ export function workspaceTree(botId: string, opts: { memoryEnabled?: boolean } =
         bytes: stat.size,
         createdAt,
         modifiedAt: Math.round(stat.mtimeMs),
-        load: workspaceLoad(path, opts),
-        editable: markdown && EDITABLE.some((pattern) => pattern.test(path)) && path.split("/").every((part) => part === "log" || part === "memory" || part === DOCS_DIR || isMemoryTopicName(part)),
+        load: workspaceLoad(path, loadOpts),
+        editable: markdown && EDITABLE.some((pattern) => pattern.test(path)) && path.split("/").every((part) => part === "log" || part === "memory" || part === DOCS_DIR || part === RULE_SETS_DIR || isMemoryTopicName(part)),
         markdown,
         ...(budget ? { budget } : {}),
       });

@@ -66,7 +66,7 @@ it("loads RULES.md after the soul, indexes docs/, and tracks what a turn used", 
       };
     }, { timeout: 10_000 }).toEqual({ soul: "number", rules: "number" });
     const listing = await api(`/api/bots/${bot.id}/workspace`);
-    expect(listing.entries.find((entry: any) => entry.path === "RULES.md")).toMatchObject({ load: "every-turn", editable: true, budget: { maxLines: 60, maxBytes: 8000, lines: 3 } });
+    expect(listing.entries.find((entry: any) => entry.path === "RULES.md")).toMatchObject({ load: "every-turn", editable: true, budget: { maxLines: 100, maxBytes: 12000, lines: 3 } });
     expect(listing.entries.find((entry: any) => entry.path === "docs/onboarding.md")).toMatchObject({ load: "on-demand", forgotten: false });
 
     // rename, download, and the journal row for every change

@@ -9,7 +9,9 @@ in any editor, and that the persona editor shows under **Rules**, **Memory** and
 | Path | What it holds | When the bot sees it | Budget | Edited in |
 |---|---|---|---|---|
 | `SOUL.md` | Who the bot is: standing instructions. Lives on the bot record; `~/.sagax/bots/<botId>/SOUL.md` is a mirror outside the workspace | Every turn, first | 24 KB | Persona > Soul (changes from the bot need the person's OK, `propose_profile`) |
-| `RULES.md` | Hard constraints the bot checks every turn ("never email a client without my OK") | Every turn, right after the soul, before memory | 60 lines / 8 KB of loaded text | Persona > Rules, Files (owner or admin), or `rules_update` in chat |
+| `RULES.md` | The first rule set: hard constraints the bot checks every turn ("never email a client without my OK") | Every turn while its set is on, right after the soul, before memory | 100 lines / 12 KB of loaded text per set; 250 lines / 24 KB for every set that is on | Persona > Rules, Files (owner or admin), or `rules_update` in chat |
+| `rules/<set>.md` | The other rule sets, one file each | Every turn while the set is on, in the sets' order | same as RULES.md | Persona > Rules, Files, `rules_update` with `set` |
+| `rules/.sets.json` | The sets' order, names and on/off switches (hidden) | Never | none | Persona > Rules |
 | `MEMORY.md` | Facts that hold in every session | Every turn (while memory is on) | 200 lines / 24 KB | Persona > Memory, Files, `memory_update` |
 | `memory/<topic>.md` | Longer notes on one topic | On demand; their names, titles and aliases are listed each turn | none | Memory, Files |
 | `memory/archive.md`, `memory/log/<day>.md` | What moved out of MEMORY.md; what happened each day | Never loaded; `session_search` finds them | none | Memory, Files |
@@ -35,8 +37,8 @@ progress). `RULES.md` holds only the rules specific to one bot.
 
 1. Identity (the persona line)
 2. Standing instructions (`SOUL.md`)
-3. **Rules** (`RULES.md`): `buildSystemPrompt` places a part with id `rules` right after the
-   soul wherever a call site lists it
+3. **Rules** (`RULES.md` and the other rule sets that are on, in order): `buildSystemPrompt`
+   places a part with id `rules` right after the soul wherever a call site lists it
 4. About the user, setup, files, computer, connections, team and the other sections
 5. Memory (`MEMORY.md`, then the topic index)
 6. **Documents index** (`docs/`)
@@ -50,6 +52,23 @@ The Rules block is delimited like the soul:
 - Never quote a price.
 --- END RULES ---
 ```
+
+With more than one set (or a renamed one), each set gets its own block, named:
+`--- BEGIN RULES "Client emails" (rules/client-emails.md, 120 bytes) ---`.
+
+## Rule sets (2026-10-15)
+
+`server/rule-sets.ts` keeps several named sets per bot. `RULES.md` is the first set (id
+`rules`, shown as "Rules" until it is renamed), so a bot that had a `RULES.md` keeps it, its
+prompt block and its journal history unchanged: nothing is moved. Every other set is
+`rules/<id>.md`; `rules/.sets.json` holds the order, the names and the switches. Without that
+file the list is `RULES.md` then any `rules/*.md`, all on; a file on disk that the manifest
+does not name is listed, on, rather than ignored. Each set loads under 100 lines / 12 KB, and
+all the sets that are on under 250 lines / 24 KB (about 6k tokens a turn at most, the size of
+the Soul and Memory budgets); past the total, the last sets are cut or left out with a notice.
+The persona editor's Rules section shows a gauge per set and for the total, and adds, renames,
+switches, reorders and deletes sets through `server/routes/bot-rules.ts` (`/api/bots/:id/rules`,
+the Soul's gate, audited as `bot.rules-set.*`; text changes are journaled). At most 20 sets.
 
 HTML comments in `RULES.md` are notes for the person and never load, which is how the starter
 template (three example rules inside a comment) costs nothing. Past 60 lines or 8 KB the
@@ -69,7 +88,7 @@ internal routes in `server/index.ts`:
 
 | Tool | What it does | Guard rails |
 |---|---|---|
-| `rules_update` | append one rule, replace or remove an exact unique passage of `RULES.md` | only when the person asks in this conversation; one rule of at most 500 characters; a change that would not load whole is refused (413); secrets redacted; not from a room fewer people can see; on a Cloud home only from the owner's conversations; three refusals close it for the turn; journaled as the bot's |
+| `rules_update` | append one rule, replace or remove an exact unique passage of a rule set (`set`: its name; default the first set) | only when the person asks in this conversation; one rule of at most 500 characters; a change that would not load whole (the set's budget, or the total for a set that is on) is refused (413); secrets redacted; not from a room fewer people can see; on a Cloud home only from the owner's conversations; three refusals close it for the turn; journaled as the bot's |
 | `docs_update` | write, append, replace or delete `docs/<name>.md` | flat names only (no folders, no dot names); 256 KB per file; same room, Cloud home, refusal and journal rules |
 | `workspace_read` | read a text file of the workspace by relative path, 64 KB at a time with `next_offset` | traversal (`..`), absolute paths, backslashes, hidden names, links and binary files refused; read-only annotation |
 | `workspace_search` | full-text search over `docs/` | same FTS index as memory (`message-db.ts`, `memory_files`); `session_search` and automatic recall keep to memory files, `workspace_search` to `docs/` |

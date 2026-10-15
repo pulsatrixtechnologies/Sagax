@@ -37,8 +37,11 @@ export const MEMORY_INDEX = "MEMORY.md";
  * store too, so the editor, the journal and its revert treat them exactly
  * like memory files: same containment, scrub, modes and conflict check. */
 export const RULES_PATH = "RULES.md";
+/** The folder of the extra rule sets (server/rule-sets.ts): one markdown
+ * file per set, `rules/<id>.md`. RULES.md stays the first set's file. */
+export const RULE_SETS_DIR = "rules";
 
-export type MemoryDocKind = "index" | "topic" | "log" | "rules" | "doc";
+export type MemoryDocKind = "index" | "topic" | "log" | "rules" | "ruleset" | "doc";
 
 export interface MemoryDocRef {
   /** The workspace-relative path as the API spells it. */
@@ -73,7 +76,7 @@ export class MemoryStoreError extends Error {
 const BOT_ID = /^[\w-]{1,128}$/;
 
 function pathError(path: string): MemoryStoreError {
-  return new MemoryStoreError("path", 400, `not a memory file: ${JSON.stringify(path)}; use MEMORY.md, memory/<topic>.md, memory/log/<day>.md, RULES.md or docs/<name>.md`);
+  return new MemoryStoreError("path", 400, `not a memory file: ${JSON.stringify(path)}; use MEMORY.md, memory/<topic>.md, memory/log/<day>.md, RULES.md, rules/<set>.md or docs/<name>.md`);
 }
 
 /** Only three shapes exist: the index, one topic file directly under
@@ -89,6 +92,9 @@ export function parseMemoryPath(path: string): MemoryDocRef {
   const parts = path.split("/");
   if (parts.length === 2 && parts[0] === DOCS_DIR && isMemoryTopicName(parts[1])) {
     return { path, kind: "doc", name: parts[1] };
+  }
+  if (parts.length === 2 && parts[0] === RULE_SETS_DIR && isMemoryTopicName(parts[1])) {
+    return { path, kind: "ruleset", name: parts[1] };
   }
   if (parts.length === 2 && parts[0] === "memory" && isMemoryTopicName(parts[1])) {
     return { path, kind: "topic", name: parts[1] };
@@ -107,6 +113,7 @@ function relativeSegments(ref: MemoryDocRef): string[] {
   if (ref.kind === "index") return [MEMORY_INDEX];
   if (ref.kind === "rules") return [RULES_PATH];
   if (ref.kind === "doc") return [DOCS_DIR, ref.name];
+  if (ref.kind === "ruleset") return [RULE_SETS_DIR, ref.name];
   if (ref.kind === "topic") return ["memory", ref.name];
   return ["memory", "log", ref.name];
 }
@@ -265,7 +272,11 @@ export function workspaceDocPaths(botId: string): string[] {
   } catch {
     // no rules file: nothing to watch
   }
-  return [...paths, ...listMarkdown(join(root, DOCS_DIR), DOCS_DIR).map((file) => file.path)];
+  return [
+    ...paths,
+    ...listMarkdown(join(root, RULE_SETS_DIR), RULE_SETS_DIR).map((file) => file.path),
+    ...listMarkdown(join(root, DOCS_DIR), DOCS_DIR).map((file) => file.path),
+  ];
 }
 
 export interface MemoryDoc {
@@ -312,6 +323,7 @@ export function writeMemoryDoc(
   ensureWorkspace(botId);
   if (ref.kind === "log") mkdirSync(join(workspaceDir(botId), "memory", "log"), { recursive: true, mode: 0o700 });
   if (ref.kind === "doc") mkdirSync(join(workspaceDir(botId), DOCS_DIR), { recursive: true, mode: 0o700 });
+  if (ref.kind === "ruleset") mkdirSync(join(workspaceDir(botId), RULE_SETS_DIR), { recursive: true, mode: 0o700 });
   const absolute = resolveMemoryPath(botId, path);
   const after = redactSecretsInText(text);
   const bytes = Buffer.byteLength(after, "utf8");

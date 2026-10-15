@@ -10,8 +10,8 @@ export const RULES_PATH = "RULES.md";
 export const DOCS_DIR = "docs";
 /** Mirrors server/workspace-files.ts; the server's list carries the live
  * values, these are the fallback before it answers. */
-export const RULES_MAX_LINES = 60;
-export const RULES_MAX_BYTES = 8_000;
+export const RULES_MAX_LINES = 100;
+export const RULES_MAX_BYTES = 12_000;
 
 export type WorkspaceLoad = "every-turn" | "on-demand" | "never";
 
@@ -43,7 +43,7 @@ export interface WorkspaceListing {
   workspacePath: string;
   now: number;
   forgottenAfterDays: number;
-  budgets: { rules: { maxLines: number; maxBytes: number }; memory: { maxLines: number; maxBytes: number }; soul: { maxBytes: number } };
+  budgets: { rules: { maxLines: number; maxBytes: number }; rulesTotal?: { maxLines: number; maxBytes: number }; memory: { maxLines: number; maxBytes: number }; soul: { maxBytes: number } };
   rulesTemplate: string;
   soul: WorkspaceEntry;
   entries: WorkspaceEntry[];
@@ -58,9 +58,10 @@ export function workspaceDownloadUrl(botId: string, path: string): string {
   return `/api/bots/${encodeURIComponent(botId)}/workspace/download?path=${encodeURIComponent(path)}`;
 }
 
-/** Is `path` one /workspace/file serves: RULES.md or docs/<name>.md. */
+/** Is `path` one /workspace/file serves: RULES.md, a rule set
+ * (rules/<set>.md) or docs/<name>.md. */
 export function isRulesOrDoc(path: string): boolean {
-  return path === RULES_PATH || /^docs\/[^/]+\.md$/.test(path);
+  return path === RULES_PATH || /^rules\/[^/.][^/]*\.md$/.test(path) || /^docs\/[^/]+\.md$/.test(path);
 }
 
 const fileUrl = (botId: string, path?: string) =>

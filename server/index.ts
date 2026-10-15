@@ -881,6 +881,8 @@ import { grandfatheredFromBots, migratedCrabFromBots } from "../shared/achieveme
 import { createBotMemoryRoutes } from "./routes/bot-memory.ts";
 import { createToolGrantRoutes } from "./routes/tool-grants.ts";
 import { createBotWorkspaceRoutes } from "./routes/bot-workspace.ts";
+import { createBotRulesRoutes } from "./routes/bot-rules.ts";
+import { createBotSkillUploadRoutes } from "./routes/bot-skill-upload.ts";
 import { docsIndexPrompt, readWorkspaceText, rulesSystemPrompt, WorkspacePathError } from "./workspace-files.ts";
 import { updateDoc, updateRules } from "./workspace-tools.ts";
 import { markWorkspaceUse, promptSectionPaths } from "./workspace-usage.ts";
@@ -23061,6 +23063,69 @@ ROUTES.push(createBotWorkspaceRoutes({
       cloudOwnerSession(auth) ? lendingMemory.trustedWrite(botId, write) : write(),
   } : {}),
 }));
+// The persona editor's Rules section as rule sets (server/routes/bot-rules.ts,
+// server/rule-sets.ts): the Soul edit's gate, like the Files category.
+ROUTES.push(createBotRulesRoutes({
+  bot: (id) => store.bot(id),
+  mayEdit: (auth, botId) => {
+    const bot = store.bot(botId);
+    return Boolean(bot) && ownerOrAdminOf(auth, bot!) && !callerBotsReadOnly(auth);
+  },
+  ...(lendingMemory ? {
+    ownersWrite: <T,>(auth: RequestAuth, botId: string, write: () => T): T =>
+      cloudOwnerSession(auth) ? lendingMemory.trustedWrite(botId, write) : write(),
+  } : {}),
+  audit: (auth, req, row) => {
+    if (DESKTOP_MANAGED || !adminActivityRecording()) return;
+    appendAdminAction(DATA_DIR, {
+      category: "bot",
+      action: row.action,
+      target: { kind: "bot", id: row.botId, ...(store.bot(row.botId)?.name ? { name: store.bot(row.botId)!.name } : {}) },
+      changed: [`rules.${row.setId}`, ...(row.changed ?? []).map((field) => `rules.${row.setId}.${field}`)],
+      ...(row.before ? { before: row.before } : {}),
+      ...(row.after ? { after: row.after } : {}),
+      actor: adminActorFor(auth, req),
+    });
+  },
+}));
+/** Who may read (change false) or change a bot's skills: on an
+ * organization server, a person who may use the bot reads them and its
+ * owner, a manager or an organization admin changes them (#65 rights);
+ * never while an admin manages this person's integrations. */
+function botSkillsRefusal(auth: RequestAuth, botId: string, change: boolean): { status: number; body: Record<string, unknown> } | null {
+  const target = store.bot(botId);
+  if (!target) return { status: 404, body: { error: "no such bot" } };
+  if (IDENTITY.kind !== "perspicax") return null;
+  const level = viewerBotLevel(auth, target);
+  if (level === null && !orgAdminCaller(auth)) return { status: 404, body: { error: "no such bot" } };
+  if (change && level !== "owner" && level !== "manage" && !orgAdminCaller(auth)) return { status: 403, body: { error: "Only the bot's owner, or someone who manages it, can change its skills.", code: "skills_owner_only" } };
+  // Perspicax `sagax_integrations: off`: an admin manages their skills.
+  if (change && integrationsLocked(auth)) return { status: 403, body: integrationsRefusal(auth) };
+  return null;
+}
+// Skills > Upload (server/routes/bot-skill-upload.ts): SKILL.md files and
+// zipped skill folders, previewed, then added disabled like an import.
+ROUTES.push(createBotSkillUploadRoutes({
+  bot: (id) => store.bot(id),
+  refusal: (auth, botId) => botSkillsRefusal(auth, botId, true),
+  existingNames: (botId) => {
+    const bot = store.bot(botId);
+    if (!bot) return [];
+    return [...new Set([...listSkills(botId).map((skill) => skill.name), ...(bot.assignedSkills ?? [])])];
+  },
+  install: (botId, source, files) => installSkill(botId, source, files),
+  audit: (auth, req, row) => {
+    if (DESKTOP_MANAGED || !adminActivityRecording()) return;
+    appendAdminAction(DATA_DIR, {
+      category: "bot",
+      action: "bot.skill-upload",
+      target: { kind: "bot", id: row.botId, ...(store.bot(row.botId)?.name ? { name: store.bot(row.botId)!.name } : {}) },
+      changed: row.names.map((name) => `skills.${name}`),
+      after: { skills: row.names, files: row.files, enabled: false },
+      actor: adminActorFor(auth, req),
+    });
+  },
+}));
 // The usage ledger (JSON and CSV). Admin scope stays in server/request-auth.ts.
 ROUTES.push(createUsageRoutes({
   dataDir: DATA_DIR,
@@ -29705,7 +29770,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         }
         const body = await readInternalBody();
         const result = ownersWrite(() => path === "/api/internal/workspace/rules"
-          ? updateRules(internalSender.id, { action: body.action, text: body.text, oldText: body.oldText }, { threadId: internalCapability.threadId })
+          ? updateRules(internalSender.id, { action: body.action, text: body.text, oldText: body.oldText, ...(typeof body.set === "string" ? { set: body.set } : {}) }, { threadId: internalCapability.threadId })
           : updateDoc(internalSender.id, { action: body.action, path: body.path, text: body.text, oldText: body.oldText }, { threadId: internalCapability.threadId }));
         if (!result.ok) internalCapability.memoryRefusals = (internalCapability.memoryRefusals ?? 0) + 1;
         if (!result.ok) return json(res, result.code === "conflict" ? 409 : result.code === "over-budget" ? 413 : result.code === "missing" ? 404 : 400, result);
@@ -36120,17 +36185,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
     // person enables after reading. See server/skills.ts for the policy.
     // Organization server: a member reaches these (CLIENT_ALLOW, orgDirectory)
     // for a bot they may use (reads) or own or manage (changes, #65 rights).
-    const skillBotRefusal = (botId: string, change: boolean): { status: number; body: Record<string, unknown> } | null => {
-      const target = store.bot(botId);
-      if (!target) return { status: 404, body: { error: "no such bot" } };
-      if (IDENTITY.kind !== "perspicax") return null;
-      const level = viewerBotLevel(auth, target);
-      if (level === null && !orgAdminCaller(auth)) return { status: 404, body: { error: "no such bot" } };
-      if (change && level !== "owner" && level !== "manage" && !orgAdminCaller(auth)) return { status: 403, body: { error: "Only the bot's owner, or someone who manages it, can change its skills.", code: "skills_owner_only" } };
-      // Perspicax `sagax_integrations: off`: an admin manages their skills.
-      if (change && integrationsLocked(auth)) return { status: 403, body: integrationsRefusal(auth) };
-      return null;
-    };
+    const skillBotRefusal = (botId: string, change: boolean) => botSkillsRefusal(auth, botId, change);
     {
       const skillRoute = /^\/api\/bots\/([\w-]+)\/(?:skill-template|skills(?:\/[a-z0-9-]+)?)$/.exec(path);
       if (skillRoute) {

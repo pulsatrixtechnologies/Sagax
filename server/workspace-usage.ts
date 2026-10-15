@@ -119,7 +119,11 @@ export function promptSectionPaths(sections: ReadonlyArray<{ id: string; text: s
   for (const section of sections) {
     if (!section.text) continue;
     if (section.id === "soul") paths.push("SOUL.md");
-    else if (section.id === "rules") paths.push("RULES.md");
+    // each rule set's block names its file (server/rule-sets.ts)
+    else if (section.id === "rules") {
+      const files = [...section.text.matchAll(/^--- BEGIN RULES(?: "(?:[^"\\]|\\.)*")? \(((?:RULES\.md|rules\/[^/,\s]+\.md)), \d+ bytes\) ---$/gm)].map((match) => match[1]!);
+      paths.push(...(files.length ? files : ["RULES.md"]));
+    }
     // the memory block carries MEMORY.md's text only when it has some
     else if (section.id === "memory" && section.text.includes("Your memory (MEMORY.md):")) paths.push("MEMORY.md");
   }

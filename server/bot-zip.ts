@@ -383,7 +383,7 @@ export function planBotZip(host: BotZipHost, botId: string, options: BotZipExpor
     addFile(`workspace/${file.rel}`, file.path, file.size);
     if (file.rel === "MEMORY.md" || file.rel.startsWith("memory/")) memory += 1;
     else if (file.rel.startsWith("docs/")) docs += 1;
-    else if (file.rel.toUpperCase() === "RULES.MD") includes.rules = true;
+    else if (file.rel.toUpperCase() === "RULES.MD" || file.rel.startsWith("rules/")) includes.rules = true;
     else if (!file.rel.startsWith("skills/")) workspace += 1;
   }
   Object.assign(includes, { memory, docs, workspace });
