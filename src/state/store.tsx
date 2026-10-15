@@ -18,6 +18,7 @@ import {
   type ReactNode,
 } from "react";
 import { flushSync } from "react-dom";
+import { ROUTINE_CONVERSATION_HEADER } from "../../shared/wire";
 import type { BotVisibility, CardAnswerer, CloudBackend, ConnectorToolGrant, EffortLevel, InstalledPackageMetadata, LiveCallState, LiveSettings, ServerFrame, GroupThreadUsage, SteerQueueReason, VoiceCallMark } from "../../shared/wire";
 import { DATA_ROUTES, type DataSheet, type DataTable } from "../../shared/data-surface";
 import type { TurnDigest } from "../../shared/digest";
@@ -221,10 +222,10 @@ export interface SecretRequestCardData {
   error?: string;
 }
 
-export interface Message extends Pick<import("../../shared/wire").WireMessage, "widget"> {
+export interface Message extends Pick<import("../../shared/wire").WireMessage, "widget" | "routineToggle"> {
   id: string;
   role: "bot" | "user";
-  kind: "text" | "options" | "activity" | "screen" | "video" | "connector" | "secret" | "routine.run" | "goal.run" | "digest" | "compaction" | "access" | "nudge" | "call" | "widget";
+  kind: "text" | "options" | "activity" | "screen" | "video" | "connector" | "secret" | "routine.run" | "goal.run" | "digest" | "compaction" | "access" | "nudge" | "call" | "widget" | "routines";
   text?: string;
   /** An accepted nudge. Drawn per viewer from these names, not as a bubble.
    * `groupId` is set when the line belongs to that group chat. */
@@ -1248,6 +1249,12 @@ export interface AppState {
   /** The bot Connect apps opens on, in its "For this bot" scope (a bot
    * panel sent the person there); null: the workspace scope. */
   pluginsBotId: string | null;
+  /** 2026-10-15: the apps a conversation needs (its Connect apps pill,
+   * src/lib/connect-apps-signal.ts): Connect apps opens with them first. */
+  pluginsFocusApps: string[] | null;
+  /** 2026-10-15: a routine to show on its page in the bot panel (a routine
+   * line in the conversation was clicked); RoutinesSection opens it once. */
+  routineFocus: { botId: string; routineId: string } | null;
   /** A place inside Connect apps to open at: "orgAccess" is Manage >
    * Advanced > Organization sources and access (an old link to Settings >
    * Organization > Plugins and GitHub lands there). */
@@ -1641,13 +1648,15 @@ export type Action =
   | { type: "revealThread"; threadId: string }
   | { type: "setThreadReturn"; threadReturn: AppState["threadReturn"] }
   | { type: "toggleSettings"; open?: boolean; section?: BotSettingsSection; botId?: string }
+  | { type: "openRoutine"; botId: string; routineId: string }
+  | { type: "routineFocused" }
   | { type: "openPersonPanel"; personId: string | null }
   /** Open a bot's panel on Details with one Coding activity item shown
    * (`run:<routineRunId>` or `thread:<threadId>`), e.g. from the owner's
    * notification of a routine run refused in another person's thread. */
   | { type: "openBotActivity"; botId: string; itemId: string }
   | { type: "botActivityOpened" }
-  | { type: "togglePlugins"; open?: boolean; surface?: "apps" | "mcp"; botId?: string | null; page?: "orgAccess" | null }
+  | { type: "togglePlugins"; open?: boolean; surface?: "apps" | "mcp"; botId?: string | null; page?: "orgAccess" | null; focusApps?: string[] }
   | { type: "toggleTriggers"; open?: boolean }
   | { type: "toggleNewBot"; open?: boolean }
   | { type: "toggleComputer"; open?: boolean }
@@ -2664,6 +2673,13 @@ export function reducer(state: AppState, action: Action): AppState {
         appSettingsOpen: open ? false : state.appSettingsOpen,
       };
     }
+    case "openRoutine": {
+      const opened = reducer(state, { type: "toggleSettings", open: true, section: "routines", botId: action.botId });
+      if (opened === state) return state;
+      return { ...opened, routineFocus: { botId: action.botId, routineId: action.routineId } };
+    }
+    case "routineFocused":
+      return state.routineFocus ? { ...state, routineFocus: null } : state;
     case "openBotActivity": {
       const opened = reducer(state, { type: "toggleSettings", open: true, section: "routines", botId: action.botId });
       if (opened === state) return state;
@@ -2681,6 +2697,7 @@ export function reducer(state: AppState, action: Action): AppState {
         // open keeps the bot it is on.
         pluginsBotId: !open ? null : action.page === "orgAccess" ? null : action.botId !== undefined ? action.botId : state.pluginsOpen ? state.pluginsBotId : null,
         pluginsPage: open ? action.page ?? null : null,
+        pluginsFocusApps: !open ? null : action.focusApps?.length ? action.focusApps : state.pluginsOpen ? state.pluginsFocusApps : null,
         ...(open ? { settingsOpen: false, appSettingsOpen: false, achievementsOpen: false, newBotOpen: false, shortcutsOpen: false, triggersOpen: false } : {}),
       };
     }
@@ -3248,6 +3265,8 @@ export const initialState: AppState = {
   pluginsOpen: false,
   pluginsSurface: "apps",
   pluginsBotId: null,
+  pluginsFocusApps: null,
+  routineFocus: null,
   pluginsPage: null,
   triggersOpen: false,
   newBotOpen: false,
@@ -4008,12 +4027,19 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         case "createRoutine":
           api("/api/routines", { method: "POST", body: JSON.stringify(action.input) }).catch(showError);
           break;
-        case "updateRoutine":
+        case "updateRoutine": {
+          // Switched on or off while its bot's conversation is open: that
+          // conversation gets the "Disabled · 1 routine" line (the server
+          // checks the routine is that bot's and the thread the person's).
+          const open = stateRef.current.bots.find((candidate) => candidate.id === stateRef.current.selectedId);
+          const conversation = action.patch.enabled !== undefined && open?.threadId ? open.threadId : null;
           api(`/api/routines/${action.routineId}`, {
             method: "PATCH",
             body: JSON.stringify(action.patch),
+            ...(conversation ? { headers: { "content-type": "application/json", [PERSON_THREADS_HEADER]: "1", [ROUTINE_CONVERSATION_HEADER]: conversation } } : {}),
           }).catch(showError);
           break;
+        }
         case "deleteRoutine":
           api(`/api/routines/${action.routineId}`, { method: "DELETE" }).catch(showError);
           break;

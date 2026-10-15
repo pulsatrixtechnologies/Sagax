@@ -3210,3 +3210,24 @@ iframe) should render in it (`flush` for an edge-to-edge iframe) rather than
 build its own bubble. Gallery: `src/gallery/chat-widgets.html`
 (`npx vite --config vite.gallery.config.ts`, then
 `/src/gallery/chat-widgets.html?skin=<id>&lang=<code>&only=<sample>&narrow=1`).
+
+## Conversation events: routines turned on or off, Connect apps (2026-10-15)
+
+- A turn that turns routines on or off leaves ONE line per action and per
+  turn in that conversation, "Disabled · 5 routines" (kind `routines`,
+  `routineToggle`, `server/routine-chat-events.ts`). It is written from
+  `RoutineManager.update` (`onEnabledChanged`) when the change names its
+  conversation: a routine card (its request), its Undo, or the person's own
+  switch while the routine's bot conversation is open (the client sends
+  `x-sagax-conversation`; the server keeps it only for that bot's thread the
+  person may read). The console, a deleted bot and the calendar write none.
+  It is a stored row (stays after a reload), never model context, a receipt
+  for previews (`src/lib/receipts.ts`). Every read and live frame keeps only
+  the routines the viewer can see (`routineSeenBy`); a line with none of
+  theirs is not sent, and the fallback text never names a routine.
+- The Connect apps pill shows under the last message only when the latest
+  turn needed an app that is not connected (`src/lib/connect-apps-signal.ts`):
+  a connected-app call refused for a missing connection, or a connection
+  card that failed or was set aside. Never while the turn runs, never on an
+  empty conversation. It opens Connect apps with those apps first
+  (`pluginsFocusApps`, section "needed").

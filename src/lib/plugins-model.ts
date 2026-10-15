@@ -376,7 +376,7 @@ const catalogued = (item: PluginItem) => item.kind === "app" || item.kind === "f
 
 /** The main view's sections. With a search, a chip or a type, one list of
  * matches; otherwise a short preview per category, each with View all. */
-export function mainSections(items: readonly PluginItem[], query: string, filter: PluginFilter, type: PluginTypeFilter = "any", extraSources: readonly string[] = []): PluginSection[] {
+export function mainSections(items: readonly PluginItem[], query: string, filter: PluginFilter, type: PluginTypeFilter = "any", extraSources: readonly string[] = [], focus: readonly string[] = []): PluginSection[] {
   const visible = items.filter((item) => matchesQuery(item, query) && matchesFilter(item, filter) && matchesType(item, type));
   if (query.trim()) {
     const sorted = [...visible].sort(byInstalledThenName);
@@ -390,6 +390,13 @@ export function mainSections(items: readonly PluginItem[], query: string, filter
   const preview = (id: string, sectionFilter: PluginSection["filter"], list: PluginItem[]) => {
     if (list.length) sections.push({ id, filter: sectionFilter, items: list.slice(0, SECTION_PREVIEW), total: list.length });
   };
+  // 2026-10-15: the apps a conversation needs (its Connect apps pill), in
+  // the order it named them, ahead of everything else.
+  if (focus.length) {
+    const wanted = focus.map((slug) => slug.toLowerCase());
+    const needed = wanted.flatMap((slug) => visible.filter((item) => item.kind === "app" && item.id.toLowerCase() === slug));
+    if (needed.length) sections.push({ id: "needed", filter: null, items: needed, total: needed.length });
+  }
   preview("recommended", null, visible.filter((item) => item.recommended && !item.installed));
   for (const source of extraSources) {
     preview(`source:${source}`, { type: `source:${source}` }, visible.filter((item) => item.source === source && !item.parent).sort(byInstalledThenName));

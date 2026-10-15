@@ -40,12 +40,40 @@ export function paysWithText(engine: Pick<MyEngine, "myTurns" | "installed" | "n
   return t("engineConnect.notConnected");
 }
 
-export function EngineConnect({ engine, issuer, onChanged, className }: {
+/** The person's own subscription on this engine signs out (Disconnect, here
+ * and on the model window's provider row). */
+export async function signOutMyEngine(instanceId: string): Promise<void> {
+  await api(`/api/me/engines/${encodeURIComponent(instanceId)}/login/sign-out`, { method: "POST", body: "{}" });
+}
+
+/** The card has something to show besides the status line and Disconnect:
+ * a Connect button, or the link to the person's keys in Perspicax. */
+export function engineConnectHasAction(engine: MyEngine): boolean {
+  const { supported, signedIn } = engine.subscription;
+  return engine.installed && !signedIn && (supported || keyProviderDriver(engine.driver));
+}
+
+/** The one status line, as a paragraph. */
+export function PaysWithLine({ engine, className = "text-[12px]" }: { engine: MyEngine; className?: string }) {
+  return (
+    <p data-pays-with={engine.installed ? engine.myTurns : engine.notAvailable ? "not-available" : "not-installed"}
+      title={engine.installed ? undefined : engine.notAvailable}
+      className={cn("text-ink-secondary", className)}>{paysWithText(engine)}</p>
+  );
+}
+
+export function EngineConnect({ engine, issuer, onChanged, className, statusLine = true, disconnect: showDisconnect = true }: {
   engine: MyEngine;
   issuer: string;
   /** Reload the person's engines after a sign-in or sign-out. */
   onChanged: () => Promise<unknown> | void;
   className?: string;
+  /** The "Pays with" line; the model window shows it under the engine's
+   * name instead. */
+  statusLine?: boolean;
+  /** Connected and Disconnect; the model window puts Disconnect on the
+   * provider's row instead (2026-10-15). */
+  disconnect?: boolean;
 }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -58,7 +86,7 @@ export function EngineConnect({ engine, issuer, onChanged, className }: {
     setBusy(true);
     setError("");
     try {
-      await api(`${loginBase}/sign-out`, { method: "POST", body: "{}" });
+      await signOutMyEngine(engine.instanceId);
       await onChanged();
     } catch {
       setError(t("myEngines.failed"));
@@ -69,10 +97,8 @@ export function EngineConnect({ engine, issuer, onChanged, className }: {
 
   return (
     <section data-engine-connect={engine.instanceId} className={cn("flex min-w-0 flex-col gap-2", className)}>
-      <p data-pays-with={engine.installed ? engine.myTurns : engine.notAvailable ? "not-available" : "not-installed"}
-        title={engine.installed ? undefined : engine.notAvailable}
-        className="text-[12px] text-ink-secondary">{paysWithText(engine)}</p>
-      {engine.installed && supported && (signedIn ? (
+      {statusLine && <PaysWithLine engine={engine} />}
+      {engine.installed && supported && (signedIn ? showDisconnect && (
         <div data-engine-connected className="flex min-w-0 flex-wrap items-center justify-between gap-2">
           <span className="flex items-center gap-1.5 text-[12.5px] text-success"><Check size={13} aria-hidden="true" />{t("engineConnect.connected")}</span>
           <button type="button" disabled={busy} onClick={() => void disconnect()}
