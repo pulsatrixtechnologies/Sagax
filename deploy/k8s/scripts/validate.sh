@@ -76,6 +76,13 @@ if printf '%s\n' "$role" | grep -Eq "secrets|nodes|\"\\*\""; then
   exit 1
 fi
 
+# kubectl scale (the warm CronJobs) reads the Deployment before the scale
+# subresource: the warmer Role must allow get on deployments.
+if ! grep -A3 'resources: \["deployments"\]' "$tmp/default.yaml" | grep -q 'sagax-sandbox-warmer'; then
+  echo "sagax-sandbox-warmer Role cannot read its Deployment" >&2
+  exit 1
+fi
+
 check_stack() {
   stack="$1"
   echo "tofu validate $stack"
