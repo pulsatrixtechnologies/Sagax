@@ -106,10 +106,11 @@ describe("bot actions menu viewport placement", () => {
 });
 
 describe("bot actions menu: hide versus archive", () => {
-  it("keeps Archive (the bot) at the first level and Hide from sidebar (this person only) under More", () => {
+  it("keeps Hide from sidebar (this person only) and Archive (the bot) apart, both at the first level", () => {
     const html = render();
     expect(html).toContain(">Archive</button>");
-    expect(html).not.toContain("Hide from sidebar");
-    expect(render(990, 795, "more")).toContain(">Hide from sidebar</button>");
+    expect(html).toContain(">Hide from sidebar</button>");
+    expect(html.indexOf(">Hide from sidebar</button>")).toBeLessThan(html.indexOf(">Archive</button>"));
+    expect(render(990, 795, "more")).not.toContain("Hide from sidebar");
   });
 });

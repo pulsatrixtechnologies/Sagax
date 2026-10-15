@@ -5897,6 +5897,8 @@
   "sidebar.section.newContext": "Nouvelle équipe…",
   "sidebar.section.newContextAria": "Nom de la nouvelle équipe",
   "sidebar.bot.moveToSection": "Déplacer vers une équipe",
+  "sidebar.bot.moveTo": "Déplacer vers",
+  "sidebar.bot.noTeam": "Aucune équipe",
   "sidebar.bot.markAllReadFailed": "Impossible de tout marquer comme lu. Les conversations déjà lues le restent. Réessayez.",
   "sidebar.bot.actions": "Actions pour {name}",
   "sidebar.bot.markingAllRead": "Marquage des conversations comme lues…",

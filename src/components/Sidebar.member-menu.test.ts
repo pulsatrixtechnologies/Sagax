@@ -183,7 +183,7 @@ describe("person row menu", () => {
     t("sidebar.copyConversationId"),
     t("sidebar.hidden.close"),
     ...(pinned ? [t("sidebar.bot.unpin")] : []),
-    t("sidebar.bot.moveToSection"),
+    t("sidebar.bot.moveTo"),
     t("sidebar.bot.markUnread"),
   ];
 
@@ -195,7 +195,7 @@ describe("person row menu", () => {
     expect(open.html).not.toContain(t("sidebar.room.renameChannel"));
     expect(open.html).not.toContain(t("sidebar.room.deleteChannel"));
     // one move, the submenu: never the room's section picker beside it
-    expect(open.html.split(t("sidebar.bot.moveToSection")).length).toBe(2);
+    expect(open.html.split(`>${t("sidebar.bot.moveTo")}<`).length).toBe(2);
     expect(open.html).not.toContain("Force stop");
 
     const pinned = openRoom(personRow(true));
@@ -270,7 +270,11 @@ describe("person row menu", () => {
     expect(labels).toContain(t("persona.menu.rename"));
     expect(labels).not.toContain("Rename Bot");
     expect(labels).not.toContain(t("personPanel.view"));
-    // the rare ones one step down, under More
+    // Move to › and Mark as Unread at the first level (JC, 2026-10-15)
+    expect(html).toContain(`>${t("sidebar.bot.moveTo")}<`);
+    expect(html).toContain('aria-haspopup="menu"');
+    expect(labels).toContain(t("sidebar.bot.markUnread"));
+    // the rare ones one step down, under More, without a second Move to
     fixture.portal = null;
     const more = renderToStaticMarkup(createElement(BotContextMenu, {
       menu: { botId: "ara", x: 10, y: 10 },
@@ -281,9 +285,8 @@ describe("person row menu", () => {
       onMoveToSection: vi.fn(),
       onRename: vi.fn(),
     }));
-    expect(more).toContain(`>${t("sidebar.bot.moveToSection")}<`);
-    expect(more).toContain('aria-haspopup="menu"');
-    expect(labelsOf(fixture.portal)).toContain(t("sidebar.bot.markUnread"));
+    expect(more).not.toContain(`>${t("sidebar.bot.moveTo")}<`);
+    expect(labelsOf(fixture.portal)).not.toContain(t("sidebar.bot.markUnread"));
   });
 
   it("hides rename, archive, delete and a server section move from a member who does not own the bot", () => {
@@ -315,6 +318,9 @@ describe("person row menu", () => {
     expect(labels).not.toContain(t("persona.menu.rename"));
     expect(html).not.toContain(t("sidebar.bot.archive"));
     expect(labels).toContain(t("sidebar.bot.unpin"));
+    expect(html).not.toContain(`>${t("sidebar.bot.moveTo")}<`);
+    expect(labels).toContain(t("sidebar.hidden.hide"));
+    expect(html).not.toContain('data-menu-item="delete"');
     fixture.portal = null;
     const more = renderToStaticMarkup(createElement(BotContextMenu, {
       menu: { botId: "ara", x: 10, y: 10 },
@@ -326,7 +332,6 @@ describe("person row menu", () => {
       onRename: vi.fn(),
     }));
     expect(more).not.toContain(t("common.delete"));
-    expect(more).not.toContain(`>${t("sidebar.bot.moveToSection")}<`);
-    expect(labelsOf(fixture.portal)).toContain(t("sidebar.hidden.hide"));
+    expect(more).not.toContain(`>${t("sidebar.bot.moveTo")}<`);
   });
 });

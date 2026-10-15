@@ -5833,6 +5833,8 @@
   "sidebar.bot.markUnread": "Mark as Unread",
   "sidebar.bot.model": "Model…",
   "sidebar.bot.moveToSection": "Move to team",
+  "sidebar.bot.moveTo": "Move to",
+  "sidebar.bot.noTeam": "No team",
   "sidebar.bot.pin": "Pin",
   "sidebar.bot.replacePrimary": "Replace with different Bot",
   "sidebar.bot.unpin": "Unpin",
