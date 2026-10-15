@@ -87,7 +87,7 @@ export function StepRow({
           className={cn(
             "shrink-0 text-ink-tertiary transition-[transform,opacity] duration-150",
             open && "rotate-180",
-            quietChevron && !open && "opacity-0 group-hover/step:opacity-70 group-focus-visible/step:opacity-70",
+            quietChevron && !open && "opacity-0 group-hover/step:opacity-70 group-focus-visible/step:opacity-70 touch:opacity-70",
           )}
         />
       )}

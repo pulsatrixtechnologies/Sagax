@@ -4383,7 +4383,7 @@
   "sidebar.confirm.archiveTitle": "Archiver {name} ?",
   "sidebar.confirm.deleteBody": "Cela supprime définitivement {name}, ses conversations, ses fichiers, sa mémoire et tout ordinateur qui lui appartient, y compris les fichiers et connexions de navigateur de cet ordinateur. Les ordinateurs partagés de l'équipe sont conservés. C'est irréversible.",
   "sidebar.confirm.deleteTitle": "Supprimer {name} ?",
-  "sidebar.copyConversationId": "Copier l'identifiant de la conversation",
+  "sidebar.copyConversationId": "Copier l'ID de la conversation",
   "sidebar.density.chooseAria": "Choisir la densité de la barre latérale",
   "sidebar.density.collapse": "Réduire aux avatars",
   "sidebar.density.collapseAria": "Réduire la barre latérale aux avatars",
