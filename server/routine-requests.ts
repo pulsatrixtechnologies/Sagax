@@ -1389,7 +1389,8 @@ export class RoutineRequestService {
           const patch = operation.action === "update"
             ? restorePatch(undo.before!, now)
             : { enabled: operation.action === "pause" };
-          if (!this.routines.update(routineId, patch)) return stale;
+          // The Undo is said in this conversation: its line says so too.
+          if (!this.routines.update(routineId, patch, undefined, { conversation: { threadId: args.threadId, messageId: message.id } })) return stale;
           break;
         }
         case "delete": {

@@ -2733,10 +2733,18 @@ The Local VM in server mode lives on the person's computer
   ask them there. Auto and Cloud keep the existing computer viewer.
   The same picker sits above the screen (`ios/App/ComputerChooser.swift`,
   `PersonDesktopBridge.computerChoices` and `chosen`, `desktopId` on
-  `localVm(action:)`), and its Browser chip is browser mode: the bot's live
-  browser, watched only (`ios/App/BrowserLiveView.swift` over
-  `GET /api/bots/:id/browser/live`, each frame acknowledged; never input or
-  navigation from the phone; `BrowserLive.swift`, `BrowserLiveClient.swift`).
+  `localVm(action:)`), and its Browser chip is browser mode, drawn like the
+  VM as on the desktop (#473): the card is a live preview in the VM's 16:10
+  frame (`ios/App/BrowserLiveView.swift` over
+  `GET /api/bots/:id/browser/live?preview=1`, each frame acknowledged;
+  Connecting, Busy, Live, Closed (`offline`, asked again every 10 s) and
+  Error with Retry), and Take control opens a modal on the full stream where
+  a tap, a drag (wheel) and the keyboard drive the page and back, forward and
+  reload run (`POST /api/bots/:id/browser/action`: the first touch takes the
+  browser, 8 idle seconds or Hand back control release it, closing releases;
+  `BrowserLive.swift`, `BrowserLiveClient.swift`). While the modal is open the
+  card streams nothing. Screenshots: `-browserGallery
+  <live|offline|error|busy|connecting|takeover|window>` (DEBUG only).
   Tests: `ios/Tests/CompanionCoreTests/LocalVmComputerTests.swift`
   (`ComputerChoiceTests`), `BrowserLiveTests.swift` (`swift test` in
   `ios/`).
@@ -3182,8 +3190,17 @@ there.
   as code; a YouTube link stays a link).
 - The existing ```cw, ```widget (HTML, `WidgetFrame`), ```artifact and
   YouTube renderers are unchanged and separate.
-- Phones: Sagax's iOS and Android apps have no widget renderer yet (upstream
-  draws them in its separate mobile repo); they show the row's text fallback.
+- Phones: iOS draws them (`ios/App/Features/Chat/Widget/`: `ChatWidgetCard`
+  owns the form and the press, `ChatWidgetNodes` and `ChatWidgetFields` every
+  node; the shared readers are `ios/Sources/CompanionCore/ChatWidget.swift`).
+  A press posts `widgetAction` on the same send route; Swift Charts, SF
+  Symbols, system pickers; images wait behind "Load image"; a Markdown node is
+  inert (`MarkdownText(inert: true)`). In a room, or with no tree to draw, the
+  row shows its text. Tests: `ChatWidgetTests` (against the server's own
+  fixtures, regenerated with
+  `node --experimental-strip-types scripts/gen-widget-fixtures.ts ios/Tests/CompanionCoreTests/Fixtures`)
+  and `ChatWidgetsUITests` (`PARITY_WIDGETS=1 node ios/parity/fixture-server.mjs`).
+  Android shows the row's text fallback.
 
 Reusable card: `src/components/widget/WidgetCardFrame.tsx` draws the same
 surface, width steps (`size` sm/md/lg/full), header, problem line and footer
@@ -3193,3 +3210,24 @@ iframe) should render in it (`flush` for an edge-to-edge iframe) rather than
 build its own bubble. Gallery: `src/gallery/chat-widgets.html`
 (`npx vite --config vite.gallery.config.ts`, then
 `/src/gallery/chat-widgets.html?skin=<id>&lang=<code>&only=<sample>&narrow=1`).
+
+## Conversation events: routines turned on or off, Connect apps (2026-10-15)
+
+- A turn that turns routines on or off leaves ONE line per action and per
+  turn in that conversation, "Disabled · 5 routines" (kind `routines`,
+  `routineToggle`, `server/routine-chat-events.ts`). It is written from
+  `RoutineManager.update` (`onEnabledChanged`) when the change names its
+  conversation: a routine card (its request), its Undo, or the person's own
+  switch while the routine's bot conversation is open (the client sends
+  `x-sagax-conversation`; the server keeps it only for that bot's thread the
+  person may read). The console, a deleted bot and the calendar write none.
+  It is a stored row (stays after a reload), never model context, a receipt
+  for previews (`src/lib/receipts.ts`). Every read and live frame keeps only
+  the routines the viewer can see (`routineSeenBy`); a line with none of
+  theirs is not sent, and the fallback text never names a routine.
+- The Connect apps pill shows under the last message only when the latest
+  turn needed an app that is not connected (`src/lib/connect-apps-signal.ts`):
+  a connected-app call refused for a missing connection, or a connection
+  card that failed or was set aside. Never while the turn runs, never on an
+  empty conversation. It opens Connect apps with those apps first
+  (`pluginsFocusApps`, section "needed").

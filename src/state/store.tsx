@@ -18,6 +18,7 @@ import {
   type ReactNode,
 } from "react";
 import { flushSync } from "react-dom";
+import { ROUTINE_CONVERSATION_HEADER } from "../../shared/wire";
 import type { BotVisibility, CardAnswerer, CloudBackend, ConnectorToolGrant, EffortLevel, InstalledPackageMetadata, LiveCallState, LiveSettings, ServerFrame, GroupThreadUsage, SteerQueueReason, VoiceCallMark } from "../../shared/wire";
 import { DATA_ROUTES, type DataSheet, type DataTable } from "../../shared/data-surface";
 import type { TurnDigest } from "../../shared/digest";
@@ -59,7 +60,9 @@ import { firstUnreadMessageId, threadOpensUnread, threadReadCursor } from "@/lib
 import type { ComputerStart } from "@/lib/computer-start";
 import { answerResponse, dismissResponse } from "@/lib/card-answer";
 import { currentCall, voiceCallId } from "@/lib/call";
-import { readLastConversation, rememberConversation } from "@/lib/last-conversation";
+import { forgetConversation, readLastConversation, rememberConversation } from "@/lib/last-conversation";
+import { fallbackSelection, selectionListed, selectionNewlyHidden } from "@/lib/selection-fallback";
+import { hiddenKeySet, readSidebarHidden, useSidebarHidden } from "@/lib/sidebar-hidden";
 import { readLastBotSection, rememberBotSection } from "@/lib/last-bot-section";
 import { approvalWithdrawKey, showNotification, withdrawNotification, type NotificationTarget } from "@/lib/notify";
 import { useShowThreads } from "@/lib/thread-preferences";
@@ -219,10 +222,10 @@ export interface SecretRequestCardData {
   error?: string;
 }
 
-export interface Message extends Pick<import("../../shared/wire").WireMessage, "widget"> {
+export interface Message extends Pick<import("../../shared/wire").WireMessage, "widget" | "routineToggle"> {
   id: string;
   role: "bot" | "user";
-  kind: "text" | "options" | "activity" | "screen" | "video" | "connector" | "secret" | "routine.run" | "goal.run" | "digest" | "compaction" | "access" | "nudge" | "call" | "widget";
+  kind: "text" | "options" | "activity" | "screen" | "video" | "connector" | "secret" | "routine.run" | "goal.run" | "digest" | "compaction" | "access" | "nudge" | "call" | "widget" | "routines";
   text?: string;
   /** An accepted nudge. Drawn per viewer from these names, not as a bubble.
    * `groupId` is set when the line belongs to that group chat. */
@@ -1224,6 +1227,9 @@ export interface AppState {
   liveCallLookupSeq: number;
   /** selected chat — a bot id OR a group id */
   selectedId: string;
+  /** The person's sidebar hidden keys (src/lib/sidebar-hidden.ts): a
+   * restored or fallback selection never lands on one of them. */
+  sidebarHiddenKeys: ReadonlySet<string>;
   activeView: "chat" | "team-map" | "routines";
   routines: Routine[];
   routineRuns: RoutineRun[];
@@ -1243,6 +1249,12 @@ export interface AppState {
   /** The bot Connect apps opens on, in its "For this bot" scope (a bot
    * panel sent the person there); null: the workspace scope. */
   pluginsBotId: string | null;
+  /** 2026-10-15: the apps a conversation needs (its Connect apps pill,
+   * src/lib/connect-apps-signal.ts): Connect apps opens with them first. */
+  pluginsFocusApps: string[] | null;
+  /** 2026-10-15: a routine to show on its page in the bot panel (a routine
+   * line in the conversation was clicked); RoutinesSection opens it once. */
+  routineFocus: { botId: string; routineId: string } | null;
   /** A place inside Connect apps to open at: "orgAccess" is Manage >
    * Advanced > Organization sources and access (an old link to Settings >
    * Organization > Plugins and GitHub lands there). */
@@ -1457,6 +1469,9 @@ export type Action =
       resumeId?: string;
     }
   | { type: "botQueues"; queues: AppState["pendingQueued"] }
+  /** The person's sidebar hidden list changed (closed, hid, showed, or it
+   * arrived from another device). */
+  | { type: "sidebarHidden"; keys: ReadonlySet<string> }
   | { type: "sections"; sections: string[] }
   | { type: "sectionDeleted"; section: string; sections: string[] }
   | { type: "showRoutines"; section?: "schedule" | "logs"; view?: "calendar" | "list"; botId?: string; routineId?: string; runStatus?: RoutineRunStatusFilter }
@@ -1633,13 +1648,15 @@ export type Action =
   | { type: "revealThread"; threadId: string }
   | { type: "setThreadReturn"; threadReturn: AppState["threadReturn"] }
   | { type: "toggleSettings"; open?: boolean; section?: BotSettingsSection; botId?: string }
+  | { type: "openRoutine"; botId: string; routineId: string }
+  | { type: "routineFocused" }
   | { type: "openPersonPanel"; personId: string | null }
   /** Open a bot's panel on Details with one Coding activity item shown
    * (`run:<routineRunId>` or `thread:<threadId>`), e.g. from the owner's
    * notification of a routine run refused in another person's thread. */
   | { type: "openBotActivity"; botId: string; itemId: string }
   | { type: "botActivityOpened" }
-  | { type: "togglePlugins"; open?: boolean; surface?: "apps" | "mcp"; botId?: string | null; page?: "orgAccess" | null }
+  | { type: "togglePlugins"; open?: boolean; surface?: "apps" | "mcp"; botId?: string | null; page?: "orgAccess" | null; focusApps?: string[] }
   | { type: "toggleTriggers"; open?: boolean }
   | { type: "toggleNewBot"; open?: boolean }
   | { type: "toggleComputer"; open?: boolean }
@@ -2045,11 +2062,12 @@ export function reducer(state: AppState, action: Action): AppState {
       const known = (id: string) => action.bots.some((b) => b.id === id) || action.groups.some((g) => g.id === id);
       const resume = action.resumeId;
       // A remembered conversation only counts while it still resolves to a
-      // visible bot or a room; a deleted or hidden one falls back as before.
-      const resumed =
-        resume && (action.bots.some((b) => b.id === resume && !b.hidden) || action.groups.some((g) => g.id === resume)) ? resume : "";
+      // conversation the sidebar lists; a deleted, hidden or closed one
+      // falls back, and the fallback is listed too or nothing at all.
+      const hidden = state.sidebarHiddenKeys;
+      const resumed = resume && selectionListed(action.bots, action.groups, resume, hidden) ? resume : "";
       const selectedId =
-        state.selectedId && known(state.selectedId) ? state.selectedId : resumed || (action.bots[0]?.id ?? action.groups.find((g) => !g.dm)?.id ?? "");
+        state.selectedId && known(state.selectedId) ? state.selectedId : resumed || fallbackSelection(action.bots, action.groups, hidden);
       const hydrated = {
         ...state,
         bots: action.bots.map((bot) => {
@@ -2223,8 +2241,16 @@ export function reducer(state: AppState, action: Action): AppState {
     }
     case "groupDeleted": {
       const groups = state.groups.filter((g) => g.id !== action.groupId);
-      const selectedId = state.selectedId === action.groupId ? (state.bots[0]?.id ?? groups.find((g) => !g.dm)?.id ?? "") : state.selectedId;
+      const selectedId = state.selectedId === action.groupId ? fallbackSelection(state.bots, groups, state.sidebarHiddenKeys) : state.selectedId;
       return { ...state, groups, selectedId };
+    }
+    case "sidebarHidden": {
+      const next = { ...state, sidebarHiddenKeys: action.keys };
+      // Closing or hiding the open conversation (here or on another device)
+      // leaves it: the next listed one opens, else the empty state.
+      return selectionNewlyHidden(state.bots, state.groups, state.selectedId, state.sidebarHiddenKeys, action.keys)
+        ? { ...next, selectedId: fallbackSelection(state.bots, state.groups, action.keys) }
+        : next;
     }
     case "instances":
       return { ...state, instances: action.instances };
@@ -2305,7 +2331,7 @@ export function reducer(state: AppState, action: Action): AppState {
     case "deleteBot": {
       const bots = state.bots.filter((b) => b.id !== action.botId);
       const selectedId =
-        state.selectedId === action.botId ? (bots.find((b) => !b.hidden)?.id ?? bots[0]?.id ?? "") : state.selectedId;
+        state.selectedId === action.botId ? fallbackSelection(bots, state.groups, state.sidebarHiddenKeys) : state.selectedId;
       const { [action.botId]: _deleted, ...deletingBots } = state.deletingBots;
       return reconcileModelVariantSessions({ ...state, bots, selectedId, deletingBots });
     }
@@ -2647,6 +2673,13 @@ export function reducer(state: AppState, action: Action): AppState {
         appSettingsOpen: open ? false : state.appSettingsOpen,
       };
     }
+    case "openRoutine": {
+      const opened = reducer(state, { type: "toggleSettings", open: true, section: "routines", botId: action.botId });
+      if (opened === state) return state;
+      return { ...opened, routineFocus: { botId: action.botId, routineId: action.routineId } };
+    }
+    case "routineFocused":
+      return state.routineFocus ? { ...state, routineFocus: null } : state;
     case "openBotActivity": {
       const opened = reducer(state, { type: "toggleSettings", open: true, section: "routines", botId: action.botId });
       if (opened === state) return state;
@@ -2664,6 +2697,7 @@ export function reducer(state: AppState, action: Action): AppState {
         // open keeps the bot it is on.
         pluginsBotId: !open ? null : action.page === "orgAccess" ? null : action.botId !== undefined ? action.botId : state.pluginsOpen ? state.pluginsBotId : null,
         pluginsPage: open ? action.page ?? null : null,
+        pluginsFocusApps: !open ? null : action.focusApps?.length ? action.focusApps : state.pluginsOpen ? state.pluginsFocusApps : null,
         ...(open ? { settingsOpen: false, appSettingsOpen: false, achievementsOpen: false, newBotOpen: false, shortcutsOpen: false, triggersOpen: false } : {}),
       };
     }
@@ -3217,6 +3251,7 @@ export const initialState: AppState = {
   liveCallVersion: 0,
   liveCallLookupSeq: 0,
   selectedId: "",
+  sidebarHiddenKeys: new Set<string>(),
   activeView: "chat",
   routines: [],
   routineRuns: [],
@@ -3230,6 +3265,8 @@ export const initialState: AppState = {
   pluginsOpen: false,
   pluginsSurface: "apps",
   pluginsBotId: null,
+  pluginsFocusApps: null,
+  routineFocus: null,
   pluginsPage: null,
   triggersOpen: false,
   newBotOpen: false,
@@ -3662,7 +3699,8 @@ const StoreContext = createContext<{
  * "overview"/false and the reducer never touches localStorage. */
 function restoreBotSettingsSection(state: AppState): AppState {
   const section = readLastBotSection();
-  return section ? { ...state, botSettingsSection: section, botSettingsSectionStored: true } : state;
+  const withHidden = { ...state, sidebarHiddenKeys: hiddenKeySet(readSidebarHidden()) };
+  return section ? { ...withHidden, botSettingsSection: section, botSettingsSectionStored: true } : withHidden;
 }
 
 export function StoreProvider({ children }: { children: ReactNode }) {
@@ -3716,6 +3754,23 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (state.selectedId) rememberConversation(state.selectedId);
   }, [state.selectedId]);
+  // A remembered conversation that no longer resolves to a listed one
+  // (deleted, hidden, closed) is forgotten once the snapshot says nothing
+  // is open, so the next launch does not try to resume it.
+  useEffect(() => {
+    if (!state.hydrated || state.selectedId) return;
+    const remembered = readLastConversation();
+    if (remembered && !selectionListed(state.bots, state.groups, remembered, state.sidebarHiddenKeys)) forgetConversation();
+  }, [state.hydrated, state.selectedId, state.bots, state.groups, state.sidebarHiddenKeys]);
+  // The sidebar hidden list lives in a synced preference; the reducer gets
+  // it as data so a restored or fallback selection can respect it.
+  const sidebarHidden = useSidebarHidden();
+  useEffect(() => {
+    const keys = hiddenKeySet(sidebarHidden);
+    const current = stateRef.current.sidebarHiddenKeys;
+    if (keys.size === current.size && [...keys].every((key) => current.has(key))) return;
+    rawDispatch({ type: "sidebarHidden", keys });
+  }, [sidebarHidden]);
   // Rail clicks, deep links and remembered openings all carry the accordion
   // flag, so only a section actually viewed is written; a bare open that
   // stays collapsed never is.
@@ -3972,12 +4027,19 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         case "createRoutine":
           api("/api/routines", { method: "POST", body: JSON.stringify(action.input) }).catch(showError);
           break;
-        case "updateRoutine":
+        case "updateRoutine": {
+          // Switched on or off while its bot's conversation is open: that
+          // conversation gets the "Disabled · 1 routine" line (the server
+          // checks the routine is that bot's and the thread the person's).
+          const open = stateRef.current.bots.find((candidate) => candidate.id === stateRef.current.selectedId);
+          const conversation = action.patch.enabled !== undefined && open?.threadId ? open.threadId : null;
           api(`/api/routines/${action.routineId}`, {
             method: "PATCH",
             body: JSON.stringify(action.patch),
+            ...(conversation ? { headers: { "content-type": "application/json", [PERSON_THREADS_HEADER]: "1", [ROUTINE_CONVERSATION_HEADER]: conversation } } : {}),
           }).catch(showError);
           break;
+        }
         case "deleteRoutine":
           api(`/api/routines/${action.routineId}`, { method: "DELETE" }).catch(showError);
           break;

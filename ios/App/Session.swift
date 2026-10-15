@@ -304,6 +304,25 @@ final class Session: ObservableObject {
                 }
                 focusedMessageId = "progress2"
             }
+            if arguments.contains("-chat-steps-preview"),
+               let url = Bundle.main.url(forResource: "ChatStepsPreview", withExtension: "json"),
+               let data = try? Data(contentsOf: url),
+               let steps = try? JSONDecoder().decode([Message].self, from: data) {
+                // A turn's tool steps among its narration (the step line),
+                // each row chained to the one before as the server stores them.
+                var chained = ((state.messages["preview-gmail"] ?? []) + steps).sorted { $0.at < $1.at }
+                for index in chained.indices.dropFirst() { chained[index].parentId = chained[index - 1].id }
+                state.messages["preview-gmail"] = chained
+                // The turn is over: the bot is idle, so its model can change.
+                if let index = state.bots.firstIndex(where: { $0.threadId == "preview-gmail" }) {
+                    state.bots[index].busy = false
+                    state.bots[index].tasks = state.bots[index].tasks?.map { task in
+                        var idle = task
+                        idle.busy = false
+                        return idle
+                    }
+                }
+            }
             if arguments.contains("-cards-top") {
                 // The cards chat from its first cards (the theme captures).
                 focusedMessageId = "c-tool"
@@ -1203,6 +1222,29 @@ final class Session: ObservableObject {
     func requestCwAction(_ action: CwActionBody, threadId: String, botId: String?) async {
         await perform { client in
             try await client.requestCwAction(threadId: threadId, action: action, botId: botId)
+        }
+    }
+
+    /// A press on a chat widget (ChatWidgetCard.swift): the person's next
+    /// message, written by the server from the widget. The card shows the
+    /// server's own sentence when it says no, so this does not set
+    /// `actionError`.
+    func sendWidgetAction(
+        botId: String, threadId: String?, messageId: String, ref: String, rev: Int,
+        values: ChatWidgetValues?, sendId: String
+    ) async -> ChatWidgetSendResult {
+        guard let client else { return .failed(refused: false, message: nil) }
+        do {
+            try await client.sendWidgetAction(
+                botId: botId, threadId: threadId, messageId: messageId, ref: ref, rev: rev, values: values, sendId: sendId
+            )
+            return .sent
+        } catch let error as APIError {
+            if error.isUnauthorized { status = .unauthorized }
+            if case let .status(_, message) = error { return .failed(refused: true, message: message ?? error.errorDescription) }
+            return .failed(refused: false, message: nil)
+        } catch {
+            return .failed(refused: false, message: nil)
         }
     }
 
@@ -2256,6 +2298,14 @@ final class Session: ObservableObject {
     /// The model catalog lives on the paired computer because availability
     /// depends on which engines are installed and signed in there.
     func modelInstances() async -> [Instance] {
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("-model-menu-preview"),
+           let url = Bundle.main.url(forResource: "ModelMenuPreview", withExtension: "json"),
+           let data = try? Data(contentsOf: url),
+           let list = try? JSONDecoder().decode(InstanceList.self, from: data) {
+            return list.instances
+        }
+        #endif
         guard let client else { return [] }
         do {
             return try await client.instances()
