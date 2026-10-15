@@ -9,8 +9,8 @@
 // On an organization server, Local VM and This computer use
 // LocalVmComputerPanel instead: a still and power buttons, no Take control.
 // Cloud uses SandboxDesktopScreen (the desktop's SandboxDesktopView). There
-// `ComputerChooser` on top lists Cloud, Other VMs and Browser; the host
-// name sits under Other VMs. Browser mode shows the bot's live browser.
+// `ComputerChooser` on top lists Cloud and Other VMs; the host name sits
+// under Other VMs. iOS offers no Browser entry (the desktop keeps its own).
 import SwiftUI
 import UIKit
 import CompanionCore
@@ -58,9 +58,10 @@ struct BotPanelComputer: View {
         return showsLocalVm
     }
 
-    private var browserOffered: Bool {
-        DesktopWorksOnRules.browserAvailable(config) && DesktopWorksOnRules.browserFeature(config) && current.browser != false
-    }
+    /// The bots' browser is never offered on iOS (JC, 2026-10-15): no
+    /// Browser entry in the chooser and no live browser in place of the
+    /// screen. The desktop keeps its own.
+    private var browserOffered: Bool { false }
 
     /// Browser mode: picked, or the bot works on its browser and nothing
     /// else was picked.

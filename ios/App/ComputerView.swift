@@ -15,7 +15,7 @@
 // power buttons, and it never takes control. Cloud uses `SandboxDesktopScreen`
 // (GET /api/desktop-viewer/sandbox/me), because POST computer/screenshot
 // answers 409 org_user_sandbox. `ComputerChooser` above the screen lists
-// Cloud, Other VMs and Browser; the host name sits under Other VMs.
+// Cloud and Other VMs (no Browser on iOS); the host name sits under Other VMs.
 import SwiftUI
 import CompanionCore
 import UIKit
@@ -95,11 +95,10 @@ struct ComputerView: View {
         return showsLocalVm
     }
 
-    /// Browser mode is offered: the server has the built-in browser and this
-    /// bot's own switch is not off.
-    private var browserOffered: Bool {
-        DesktopWorksOnRules.browserAvailable(config) && DesktopWorksOnRules.browserFeature(config) && current.browser != false
-    }
+    /// The bots' browser is never offered on iOS (JC, 2026-10-15): no
+    /// Browser entry in the chooser and no live browser in place of the
+    /// screen. The desktop keeps its own.
+    private var browserOffered: Bool { false }
 
     /// Browser mode: picked, or the bot works on its browser and nothing
     /// else was picked.
