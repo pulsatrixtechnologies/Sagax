@@ -15,7 +15,7 @@ import { peerName } from "../peer-roster.ts";
 import { renderPeerDeliveryReceipts, type PeerDeliveryOutcome, type PeerDeliveryReceipt } from "../peer-delivery.ts";
 import { CLOUD_AGENT_READ_TOOLS, CLOUD_AGENT_WRITE_TOOLS, cloudAgentToolAction } from "../../shared/cloud-agents.ts";
 import { callCardTool, CARD_TOOL_NAMES } from "./agents-call-cards.ts";
-import { AGENT_API_TOOL_NAMES, catalogProfileFromEnv, SHARED_COMPUTER_TOOL_NAMES, WEEKDAYS } from "./agents-catalog.ts";
+import { AGENT_API_TOOL_NAMES, catalogProfileFromEnv, PERSPICAX_TOOL_NAMES, SHARED_COMPUTER_TOOL_NAMES, WEEKDAYS } from "./agents-catalog.ts";
 import { harnessClientFromEnv } from "./agents-client.ts";
 import type { HarnessClient, Json } from "./agents-client.ts";
 import { boundedAgentResult } from "./agents-result.ts";
@@ -398,6 +398,33 @@ function recallWhen(at: unknown, dateOnly: boolean): string {
   return dateOnly ? day : `${day} ${pad(said.getHours())}:${pad(said.getMinutes())}`;
 }
 
+/** The act request a wrapper tool stands for: always a plain /api route, so
+ * the person's own rights and the bot's approval mode decide. */
+export function wrapperAct(name: string, args: Json): Json | { error: string } {
+  const str = (v: unknown) => (typeof v === "string" ? v.trim() : "");
+  if (name === "answer_approval") {
+    const threadId = str(args.thread_id);
+    const requestId = str(args.request_id);
+    if (!/^[\w-]+$/.test(threadId) || !requestId) return { error: "answer_approval needs thread_id and request_id." };
+    if (args.decision !== "allow" && args.decision !== "deny") return { error: "decision is allow or deny." };
+    return { method: "POST", path: `/api/threads/${threadId}/respond`, body: { requestId, behavior: args.decision } };
+  }
+  if (name === "nudge_person") {
+    const principalId = str(args.principal_id);
+    const groupId = str(args.group_id);
+    if (!principalId === !groupId) return { error: "Give principal_id or group_id, not both." };
+    return { method: "POST", path: "/api/nudges", body: principalId ? { principalId } : { groupId } };
+  }
+  if (name === "manage_pairing") {
+    if (args.action === "list") return { method: "GET", path: "/api/auth/pairing" };
+    if (args.action === "create") return { method: "POST", path: "/api/auth/pairing", body: Array.isArray(args.scopes) ? { scopes: args.scopes } : {} };
+    return { error: "action is list or create." };
+  }
+  if (args.action === "get") return { method: "GET", path: "/api/config" };
+  if (args.action === "patch" && args.patch && typeof args.patch === "object" && !Array.isArray(args.patch)) return { method: "PATCH", path: "/api/config", body: args.patch as Json };
+  return { error: "action is get, or patch with a patch object." };
+}
+
 export async function callTool(name: string, args: Json, context: ToolCallContext): Promise<ToolCallResult> {
   // The names this body has always used, so it reads (and diffs) as it did
   // when these were the proxy's module-level constants.
@@ -434,6 +461,21 @@ export async function callTool(name: string, args: Json, context: ToolCallContex
   }
   // create_options_card, show_widget, update_widget (agents-call-cards.ts).
   if (CARD_TOOL_NAMES.has(name)) return callCardTool(name, args, context);
+  if (name === "answer_approval" || name === "nudge_person" || name === "manage_pairing" || name === "manage_settings" || PERSPICAX_TOOL_NAMES.has(name)) {
+    if (EXTERNAL_RUNTIME) return { text: `Unknown tool: ${name}`, isError: true };
+    if (PERSPICAX_TOOL_NAMES.has(name)) {
+      const { status, body } = await apiResponse("/api/internal/perspicax/tool", { method: "POST", body: JSON.stringify({ tool: name, args }) });
+      const text = String(body.text ?? body.error ?? "").slice(0, 12000);
+      if (status >= 400 || body.error || body.isError) return { text: text || "Perspicax refused the call.", isError: true };
+      return { text: text || "Done." };
+    }
+    const act = wrapperAct(name, args);
+    if ("error" in act) return { text: act.error, isError: true };
+    const { status, body } = await apiResponse("/api/internal/act", { method: "POST", body: JSON.stringify(act) });
+    const text = String(body.text ?? body.error ?? "").slice(0, 8000);
+    if (status >= 400 || body.error) return { text: text || "The action was refused.", isError: true };
+    return { text: text || "Done." };
+  }
   if (name === "act") {
     if (EXTERNAL_RUNTIME) return { text: "Unknown tool: act", isError: true };
     const { status, body } = await apiResponse("/api/internal/act", {

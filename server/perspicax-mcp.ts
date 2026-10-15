@@ -358,6 +358,28 @@ export class PerspicaxMcp {
     return plan;
   }
 
+  /** Call one tool of a mounted profile for the speaker of this turn, as the
+   * agents tools do (server/perspicax-tools.ts). Opens the MCP session when
+   * the bridge has none. Never throws; a refusal is `isError`. */
+  async callTool(input: { threadId: string; generation: string; botId: string; tool: string; args: unknown }): Promise<{ status: number; body: Json }> {
+    const entry = [...this.entries.values()].find((e) => e.threadId === input.threadId && e.generation === input.generation && e.botId === input.botId && !e.ended);
+    if (!entry) return { status: 403, body: { error: "no Perspicax profile is mounted in this turn", code: "profile_not_mounted" } };
+    const args = isObject(input.args) ? input.args : {};
+    const run = () => this.relay({ threadId: input.threadId, generation: input.generation, botId: input.botId, profileId: entry.profileId, frame: { jsonrpc: "2.0", id: `sagax-tool-${++this.reopens}`, method: "tools/call", params: { name: input.tool, arguments: args } } });
+    if (!entry.mcpSessionId) {
+      const link = this.options.link();
+      if (!link || !(await this.reopen(link, entry))) return { status: 200, body: { isError: true, text: "Perspicax is unavailable" } };
+    }
+    const answer = await run();
+    const frame = isObject(answer.body) ? answer.body : null;
+    if (!frame) return { status: 200, body: { isError: true, text: "Perspicax sent no answer" } };
+    if (isObject(frame.error)) return { status: 200, body: { isError: true, text: String(frame.error.message ?? "Perspicax refused the call") } };
+    const result = isObject(frame.result) ? frame.result : {};
+    const content = Array.isArray(result.content) ? result.content : [];
+    const text = content.flatMap((c) => (isObject(c) && typeof c.text === "string" ? [c.text] : [])).join("\n");
+    return { status: 200, body: { text, isError: result.isError === true } };
+  }
+
   /** Relay one JSON-RPC frame from a bridge to Perspicax /mcp. */
   async relay(input: { threadId: string; generation: string; botId: string; profileId: string; frame: unknown }): Promise<PerspicaxRelayAnswer> {
     const entry = this.entries.get(key(input.threadId, input.generation, input.profileId));

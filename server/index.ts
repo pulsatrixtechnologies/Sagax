@@ -927,6 +927,7 @@ import { acceptOpenInvitesForEmail, createPublicInviteRoutes, createSoloOrgRoute
 import { createDirectGrantRoutes } from "./direct-grants.ts";
 import { directoryIntervalMs, PerspicaxDirectory, type ModelProvider } from "./perspicax-link.ts";
 import { duplicateNote, PerspicaxMemory } from "./perspicax-memory.ts";
+import { PERSPICAX_TOOL_NAMES } from "./drivers/agents-catalog.ts";
 import { PERSPICAX_UNAVAILABLE_WHY, PerspicaxMcp, perspicaxUnavailableRow, type PerspicaxUnavailableReason } from "./perspicax-mcp.ts";
 import { createPerspicaxOrgRoutes, orgDirectoryEntries, type OrgSettings, type PendingAdminApproval } from "./perspicax-org-routes.ts";
 import { createMemorySyncTokenRoute } from "./perspicax-memory-sync-token.ts";
@@ -3554,6 +3555,9 @@ function agentsIntegration(
       // And for a role: team setup, bot creation and deletion, rooms and
       // retries are shown only to a Chief of Staff, whom their routes require.
       SAGAX_CHIEF_OF_STAFF: store.bot(botId)?.chiefOfStaff === true ? "1" : "0",
+      // The Perspicax gateway tools on an organization server linked to Perspicax;
+      // /api/internal/perspicax/tool re-checks that a profile is mounted.
+      SAGAX_PERSPICAX_TOOLS: IDENTITY.kind === "perspicax" && perspicaxMcp ? "1" : "0",
     },
   };
 }
@@ -29722,6 +29726,34 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
             .slice(0, 100)
             .map((routine) => agentRoutine(routine, latestRuns.get(routine.id))),
         });
+      }
+      // Perspicax gateway tools (PERSPICAX_TOOLS): one agents tool forwarded to
+      // the mounted profile in the speaker's name, after the same misuse and
+      // safety review as a Perspicax MCP call.
+      if (method === "POST" && path === "/api/internal/perspicax/tool") {
+        const body = await readInternalBody();
+        const tool = typeof body.tool === "string" ? body.tool : "";
+        if (!PERSPICAX_TOOL_NAMES.has(tool)) return json(res, 400, { error: "unknown Perspicax tool" });
+        if (!perspicaxMcp) return json(res, 403, { error: "Perspicax is not linked to this server." });
+        const text = JSON.stringify({ tool, args: body.args });
+        const speakerId = internalCapability.sandboxPrincipalId ?? internalCapability.desktopPrincipalId;
+        const misuse = misuseTextRefusal(text, speakerId, "mcp", { botId: internalCapability.botId, threadId: internalCapability.threadId, tool: "perspicax" });
+        if (misuse) return json(res, 200, { text: misuse, isError: true });
+        const who = safetyPrincipal(internalCapability.threadId);
+        const held = await safetyToolHold({
+          text,
+          surface: "mcp",
+          tool: "perspicax",
+          known: true,
+          triage: who.triage || misuseActor(speakerId).triage,
+          ...(who.principalId || speakerId ? { principalId: who.principalId ?? speakerId } : {}),
+          threadId: internalCapability.threadId,
+          botId: internalCapability.botId,
+          review: safetyReviewer(internalCapability.botId),
+        });
+        if (held) return json(res, 200, { text: held, isError: true });
+        const answer = await perspicaxMcp.callTool({ threadId: internalCapability.threadId, generation: internalCapability.generation, botId: internalCapability.botId, tool, args: body.args });
+        return json(res, answer.status, answer.body);
       }
       if (method === "POST" && path === "/api/internal/routine-run") {
         const body = (await readInternalBody()) as { routineId?: unknown };
