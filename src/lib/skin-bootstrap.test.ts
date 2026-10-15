@@ -16,8 +16,11 @@ describe("skin bootstrap before hydration", () => {
   });
 
   it("escapes script-breaking characters in embedded JSON", () => {
-    const out = scriptSafeJson(["</script><b>", "a b c", "x\\/y"]);
-    expect(out).not.toMatch(/[<>/  ]/);
-    expect(JSON.parse(out)).toEqual(["</script><b>", "a b c", "x\\/y"]);
+    const input = ["</script><b>", "a\u2028b\u2029c", "x\\/y"];
+    const out = scriptSafeJson(input);
+    expect(out).not.toMatch(/[<>/\u2028\u2029]/);
+    expect(out).toContain("\\u2028");
+    expect(out).toContain("\\u2029");
+    expect(JSON.parse(out)).toEqual(input);
   });
 });
