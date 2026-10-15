@@ -82,7 +82,7 @@ const BARE: Record<string, Kind> = {
   close_thread: "closeThread",
   list_threads: "listThreads",
   memory_update: "memory", memory_log: "memory", group_memory_update: "memory", rules_update: "memory", docs_update: "memory", memory_write: "memory",
-  memory_save: "memory",
+  memory_save: "memory", memory_remove: "memory", memory_forget: "memory", memory_suggestions: "memory",
   memory_search: "memorySearch", memory_recall: "memorySearch", memory_find: "memorySearch",
   session_search: "readConversations", session_read: "readConversations", read_transcript: "readConversations",
   read_transcript_page: "readConversations", read_latest_page: "readConversations",
