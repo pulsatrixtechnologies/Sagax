@@ -75,17 +75,17 @@ extension OnboardingPage where Footer == EmptyView {
     }
 }
 
-/// The big Sagax owl with a title and a line under it.
+/// The Pulsatrix logo with a title and a line under it (the brand, not a
+/// bot: the mascots stay for the bots).
 struct OnboardingHero: View {
     @Environment(\.themePalette) var themePalette
     let title: LocalizedStringKey
     let subtitle: LocalizedStringKey
-    var color = "blue"
-    var mascotSize: CGFloat = 104
+    var logoSize: CGFloat = 96
 
     var body: some View {
         VStack(spacing: 14) {
-            BrandMascotView(owlColor: color, size: mascotSize)
+            PulsatrixLogoMark(size: logoSize)
                 .padding(.top, 18)
                 .padding(.bottom, 6)
                 .accessibilityHidden(true)

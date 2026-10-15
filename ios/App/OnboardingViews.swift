@@ -12,8 +12,7 @@ struct NotificationOnboardingView: View {
         OnboardingPage {
             OnboardingHero(
                 title: "Stay in the loop",
-                subtitle: "Get alerts while Sagax is open or was recently in the background. Alerts stop after iOS fully suspends or closes the app.",
-                color: "green"
+                subtitle: "Get alerts while Sagax is open or was recently in the background. Alerts stop after iOS fully suspends or closes the app."
             )
             CardSection {
                 CardRow(title: "Approvals that are waiting for you", systemImage: "checkmark.circle")

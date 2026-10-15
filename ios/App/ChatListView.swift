@@ -31,7 +31,7 @@ struct ChatListView: View {
     @State private var showingAutomations = false
     /// WP15: the Team map (TM1), from a long press on "+".
     @State private var showingTeamMap = false
-    /// The places' Connected apps and Templates (Settings > Experimental).
+    /// Connect apps and Templates as sheets (the iPhone list shows no places: they live in the avatar menu).
     @State private var showingConnectedApps = false
     @State private var showingTemplates = false
     /// What the account menu opens besides Settings.
@@ -460,8 +460,6 @@ struct ChatListView: View {
                 botRows(summaries(for: section.bots))
             }
         }
-
-        HomePlacesSection(places: places, open: openPlace)
     }
 
     /// Between one section and the next title.
@@ -790,20 +788,6 @@ struct ChatListView: View {
             Task {
                 if let chat = await PeopleDirectory.shared.openConversation(with: id, session: session) { path.append(chat) }
             }
-        }
-    }
-
-    /// The places at the foot of the list.
-    private var places: [HomePlace] {
-        NavigationMenus.places(gate: session.surfaceGate, connected: session.connection != nil, features: flags.features)
-    }
-
-    private func openPlace(_ place: HomePlace) {
-        switch place {
-        case .teamMap: showingTeamMap = true
-        case .automations: showingAutomations = true
-        case .connectedApps: showingConnectedApps = true
-        case .templates: showingTemplates = true
         }
     }
 
@@ -1509,8 +1493,6 @@ extension ChatListView {
         }
 
         HomeHiddenEntries(rows: layout.hiddenRows, prefs: sidebarPrefs)
-
-        HomePlacesSection(places: places, open: openPlace)
     }
 
     /// One collapsible home section. `named` is a section of the person's or

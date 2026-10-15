@@ -1,5 +1,5 @@
 // The first screen, and the home of a phone that is not connected: the
-// Sagax owl and three ways in. An organization signs people in with
+// Pulsatrix logo and three ways in. An organization signs people in with
 // Pulsatrix; a computer pairs with its QR code; the demo needs nothing.
 import SwiftUI
 

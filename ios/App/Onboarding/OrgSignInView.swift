@@ -48,8 +48,7 @@ struct OrgSignInView: View {
             OnboardingHero(
                 title: "Your organization",
                 subtitle: "Sagax opens your organization's Pulsatrix sign-in. Your private chats, your keys and your permissions come with you.",
-                color: "purple",
-                mascotSize: 88
+                logoSize: 80
             )
 
             if let error = flow.error {
