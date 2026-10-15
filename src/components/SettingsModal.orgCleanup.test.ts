@@ -34,7 +34,7 @@ vi.mock("./ServerModeSettings", async (importOriginal) => ({
   ...await importOriginal<typeof import("./ServerModeSettings")>(),
   useServerMode: () => null,
 }));
-vi.mock("./DesktopWorkspaceSwitcher", () => ({ ThisComputerSettings: () => null }));
+vi.mock("./DesktopWorkspaceSwitcher", () => ({ useDesktopWorkspace: () => ({ available: false, current: null, open: false, error: "", openMenu: () => {} }) }));
 vi.mock("./MailSettings", () => ({ MailSettings: () => "MAIL_SETTINGS_MARKER" }));
 vi.mock("./LocalComputerSection", () => ({ LocalComputerSection: () => "LOCAL_COMPUTER_MARKER" }));
 
