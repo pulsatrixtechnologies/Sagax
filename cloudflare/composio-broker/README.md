@@ -18,7 +18,9 @@ Deployment for this repository:
 The committed `wrangler.jsonc` ships an all-zero D1 `database_id` placeholder.
 Before deploying, create the D1 database (`pnpm exec wrangler d1 create
 openmausbot-composio`) and put its real ID into your local copy of
-`wrangler.jsonc` (do not commit it). Forks should likewise create their own D1
+`wrangler.jsonc` (do not commit it). The CI deploy on `main` injects it from
+the `COMPOSIO_BROKER_D1_DATABASE_ID` repository secret and refuses to deploy
+without it. Forks should likewise create their own D1
 database and rate-limit namespaces, replace the IDs in `wrangler.jsonc`, deploy under their own Worker name, and set
 `SAGAX_COMPOSIO_BROKER_URL` in their packaged build. Running only the local
 server with a Composio project key remains the no-Cloudflare self-host path.
