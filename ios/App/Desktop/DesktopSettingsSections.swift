@@ -699,7 +699,8 @@ struct DesktopDecisionModelSettings: View {
 // MARK: - Usage
 
 /// Usage (#518, `UsageSection.tsx`): the signed-in person's own usage.
-/// Plan, Cost (this month, its trend, the last 30 days), then a folded
+/// Cost (this month, its trend, the last 30 days) on top, then Plan (only
+/// connected providers, absent when none, 2026-10-15), then a folded
 /// breakdown by bot and by model, all from `GET /api/usage?mine=1`. The
 /// installation's spend limit, other people and the history by person are
 /// Sagax Business's.
@@ -709,11 +710,11 @@ struct DesktopUsageSettings: View {
     @StateObject private var personal = PersonalUsageModel()
 
     var body: some View {
-        AnyView(DesktopPlanUsageCard())
         DesktopSettingsCard(Text("Cost"), identifier: "usage.cost") {
             AnyView(cost)
         }
         .task(id: session.connection?.id) { await personal.load(session.settingsClient) }
+        AnyView(DesktopPlanUsageCard())
         if let usage = personal.usage, !usage.isEmpty {
             DesktopSettingsCard(Text("By bot and by model"), summary: Text("This month"), open: false, identifier: "usage.breakdown") {
                 VStack(alignment: .leading, spacing: 16) {

@@ -86,7 +86,7 @@ describe("Computer tab on an organization server", () => {
     expect(markup).not.toContain("Old-Laptop");
     expect(markup).not.toContain(">NoVm<");
     // the bot works on the current computer: its chip is checked and dotted
-    expect(markup).toMatch(/aria-checked="true" data-computer-choice="desktop:d2"[^>]*title="office-PC-07: this bot works here"/);
+    expect(markup).toMatch(/aria-selected="true" data-computer-choice="desktop:d2"[^>]*title="office-PC-07: this bot works here"/);
     expect(markup).toContain("Luna&#x27;s screen · office-PC-07");
     expect(markup).toContain('data-org-computer="user-desktop"');
   });

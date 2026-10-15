@@ -61,6 +61,16 @@ describe("Data item", () => {
     await vi.waitFor(() => expect(dispatch).toHaveBeenCalledWith({ type: "error", message: expect.stringContaining("blocked") }));
   });
 
+  it("says the window is off when the desktop refuses to open it, instead of doing nothing", async () => {
+    // A server that does not report the switch on (an organization server
+    // older than the Data window) makes the desktop refuse: say so.
+    fixture.dataWindow = true;
+    openDataWindow.mockImplementationOnce(async () => "refused");
+    const container = render(createElement(DataWindowProbe, { bot: { id: "scout", name: "Scout" } }));
+    container.querySelector<HTMLButtonElement>("[data-data-window-button]")!.click();
+    await vi.waitFor(() => expect(dispatch).toHaveBeenCalledWith({ type: "error", message: expect.stringContaining("The Data window is off") }));
+  });
+
   it("is absent on the companion connection, where Data is not served", () => {
     fixture.dataWindow = true;
     vi.stubGlobal("ogb", { remoteClient: { active: true } });

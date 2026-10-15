@@ -368,6 +368,9 @@ public struct Message: Codable, Hashable, Identifiable, Sendable {
         case access
         /// The receipt of a room goal; `goalRun` carries it (`GoalRunCard.tsx`).
         case goalRun = "goal.run"
+        /// A bot-authored card, list or form (`show_widget`); `widget`
+        /// carries the tree and `text` its readable fallback.
+        case widget
         /// A kind this build has never heard of.
         ///
         /// Not decorative. `kind` is not optional, so without this a single
@@ -487,6 +490,8 @@ public struct Message: Codable, Hashable, Identifiable, Sendable {
     public var digest: MessageDigest? = nil
     /// `kind == .video`: inline player payload.
     public var video: WireVideoWidget? = nil
+    /// `kind == .widget`: the bot's widget tree (ChatWidget.swift).
+    public var widget: ChatWidgetPayload? = nil
 
     public var date: Date { Date(timeIntervalSince1970: at / 1000) }
 

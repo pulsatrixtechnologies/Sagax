@@ -402,6 +402,28 @@ posixOnly("organization: a person's own GitHub, MCP servers, plugins and skills"
     expect((await api("PATCH", "/api/org/settings", alice, { pluginMarketplaces: { mode: "any" } })).status).toBe(200);
   }, 120_000);
 
+  it("OC-5b: Connect apps > Organization sources and access saves through the live route, never echoes a token, and refuses a member", async () => {
+    const clientId = await api("PATCH", "/api/org/settings", alice, { githubClientId: " Ov23liExampleClient " });
+    expect(clientId.status, clientId.text).toBe(200);
+    expect(clientId.body.settings.github).toMatchObject({ clientId: "Ov23liExampleClient" });
+    const secret = "ghp_" + "e2e".repeat(12) + "9876";
+    const added = await api("PATCH", "/api/org/settings", alice, { githubTokens: { op: "add", label: "Depots internes", token: secret } });
+    expect(added.status, added.text).toBe(200);
+    expect(added.text).not.toContain(secret);
+    const listed = added.body.settings.githubTokens as Array<{ id: string; label: string; hint: string }>;
+    expect(listed.map((entry) => entry.label)).toContain("Depots internes");
+    const read = await api("GET", "/api/org", alice);
+    expect(read.text).not.toContain(secret);
+    expect(read.body.settings.githubTokens.map((entry: { label: string }) => entry.label)).toContain("Depots internes");
+    // a member sees none of it and cannot change it
+    const memberRead = await api("GET", "/api/org", bob);
+    expect(memberRead.body.settings).not.toHaveProperty("githubTokens");
+    expect((await api("PATCH", "/api/org/settings", bob, { githubClientId: "Ov23liOther" })).status).toBe(403);
+    const id = listed.find((entry) => entry.label === "Depots internes")!.id;
+    expect((await api("PATCH", "/api/org/settings", alice, { githubTokens: { op: "remove", id } })).status).toBe(200);
+    expect((await api("PATCH", "/api/org/settings", alice, { githubClientId: null })).status).toBe(200);
+  });
+
   it("OC-6: a member adds a skill to their own bot", async () => {
     const text = "---\nname: greet\ndescription: Greet people\n---\nSay hello.";
     const created = await api("POST", `/api/bots/${bobBot.id}/skill-template`, bob, { name: "greet", description: "Greet people", text, source: "template", enabled: true });

@@ -122,7 +122,7 @@ extension CompanionState {
         switch last.kind {
         // The new card kinds read as their text until their cards land
         // (WP2), exactly as they did while they decoded as `unknown`.
-        case .text, .unknown, .connector, .access, .goalRun: return last.text ?? ""
+        case .text, .unknown, .connector, .access, .goalRun, .widget: return last.text ?? ""
         case .options: return last.card?.title ?? ""
         case .secret: return last.secret?.label ?? last.text ?? "Credential required"
         case .activity: return last.tool?.name ?? ""
