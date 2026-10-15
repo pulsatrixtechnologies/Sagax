@@ -30,7 +30,7 @@ vi.mock("./ServerModeSettings", async (importOriginal) => ({
   ...await importOriginal<typeof import("./ServerModeSettings")>(),
   useServerMode: () => null,
 }));
-vi.mock("./DesktopWorkspaceSwitcher", () => ({ ThisComputerSettings: () => null }));
+vi.mock("./DesktopWorkspaceSwitcher", () => ({ useDesktopWorkspace: () => ({ available: false, current: null, open: false, error: "", openMenu: () => {} }) }));
 
 beforeEach(() => {
   fixture.section = "general";
@@ -87,7 +87,7 @@ describe("sub-page navigation", () => {
     expect(html).toContain("Saves as you type");
     expect(html).toContain(aboutMeCount(fixture.aboutMe.length));
     // the section itself is not drawn under the page
-    expect(html).not.toContain('data-settings-card="general.profile"');
+    expect(html).not.toContain('data-settings-card="general.account"');
   });
 
   it("reads Général > À propos de moi in French", async () => {

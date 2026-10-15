@@ -2007,7 +2007,9 @@ had no gh. Keep these rules, each covered by `server/org-connections.e2e.test.ts
 - Organization access tokens (`server/org-github-tokens.ts`,
   `DATA_DIR/org-github-tokens.enc`, the mcp-oauth vault key, left out of
   workspace backups): an admin keeps up to 20 labeled GitHub access tokens
-  on Settings > Organization > Plugins and GitHub. They are access tokens,
+  in Connect apps > Manage > Advanced > Organization sources and access
+  (OrgSourcesAccess, admins only; the Settings card is gone since
+  2026-10-15). They are access tokens,
   not extra OAuth App client ids. `PATCH /api/org/settings` applies one
   change (`add`, `remove`, `rename`, `replace`). A rename carries no secret
   and a replace is its own step. `GET /api/org` lists the label and a last-4

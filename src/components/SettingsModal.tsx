@@ -17,7 +17,7 @@ import { completionPatch } from "@/lib/onboarding";
 import { launchBridges } from "@/lib/launch";
 import { servedPage } from "@/lib/desktop";
 import { brand } from "@/lib/brand";
-import { ServerModeCard, useServerMode } from "./ServerModeSettings";
+import { useServerMode } from "./ServerModeSettings";
 import { ApiKeyRow } from "./ApiKeys";
 import { DecisionModelSettings } from "./DecisionModelSettings";
 import { useUpdaterState } from "@/lib/updater";
@@ -27,7 +27,6 @@ import { peopleListServed, readMembership } from "../lib/membership";
 import { useOwnerOrAdmin } from "@/lib/use-owner-or-admin";
 import { canEditConfig, canManageBackups, canManageComputers, viewerCan } from "@/lib/viewer";
 import { BrowserProfilesManager } from "./BrowserProfilesManager";
-import { ThisComputerSettings } from "./DesktopWorkspaceSwitcher";
 import { OrganizationSettings } from "./OrganizationSettings";
 import { Card, SettingRow, Switch, requestSettingsCard, cardCount, takeRequestedSettingsCard } from "./SettingsPrimitives";
 import { PrivacySettings } from "./PrivacySettings";
@@ -50,11 +49,7 @@ import { McpCallTimeoutSettings } from "./McpCallTimeoutSettings";
 import { ToolAccessSettings } from "./ToolAccessSettings";
 import { mcpCallTimeoutMinutes } from "@/lib/mcp-call-timeout";
 import { SettingsSubPage, SettingsSubPageRow } from "./SettingsSubPage";
-import { InitialsAvatar } from "./Avatar";
-import { profileInitials, profileLabel } from "./SidebarProfileMenu";
-import { ManagedProfileIdentity } from "./ManagedProfileIdentity";
-import { MyLabelField } from "./settings/MyLabelField";
-import { managedProfile } from "@/lib/profile-management";
+import { AccountCard } from "./settings/AccountCard";
 import { ThreadConcurrencySettings } from "./ThreadConcurrencySettings";
 import { AutomaticRecoverySettings } from "./AutomaticRecoverySettings";
 import { ThreadCleanupSettings } from "./ThreadCleanupSettings";
@@ -180,132 +175,6 @@ export function orgMemoryAvailable(): boolean {
 export function sectionMatches(section: (typeof SECTIONS)[number], query: string, extra: string[] = []): boolean {
   if (!query) return true;
   return [t(section.labelKey), ...section.keywords, ...extra].some((part) => part.toLowerCase().includes(query));
-}
-
-function profilePhoto(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onerror = () => reject(reader.error ?? new Error(t("settings.profile.photoReadError")));
-    reader.onload = () => {
-      const image = new Image();
-      image.onerror = () => reject(new Error(t("settings.profile.photoReadError")));
-      image.onload = () => {
-        const size = 256;
-        const canvas = document.createElement("canvas");
-        canvas.width = size;
-        canvas.height = size;
-        const ctx = canvas.getContext("2d");
-        if (!ctx) {
-          reject(new Error(t("settings.profile.photoReadError")));
-          return;
-        }
-        const scale = Math.max(size / image.width, size / image.height);
-        const width = image.width * scale;
-        const height = image.height * scale;
-        ctx.drawImage(image, (size - width) / 2, (size - height) / 2, width, height);
-        resolve(canvas.toDataURL("image/jpeg", 0.85));
-      };
-      image.src = String(reader.result);
-    };
-    reader.readAsDataURL(file);
-  });
-}
-
-/** Name, email, and photo. Shared context has its own autosave. Someone
- * signed in to another person's server sees who they are signed in as: the
- * editable profile is the operator's, and saving it would overwrite theirs.
- * On an organization server the name and email are Perspicax's: read-only,
- * with a link to change them there (the server's answer, never a guess). */
-function ProfileFields() {
-  const { state } = useStore();
-  const viewer = state.config?.viewer;
-  const managed = managedProfile(viewer);
-  const identity = managed
-    ? <ManagedProfileIdentity profile={managed} flat />
-    : viewer && !viewer.operator ? <SignedInIdentity name={viewer.name} email={viewer.email} /> : <OperatorProfileFields />;
-  return <>{identity}<MyLabelField /></>;
-}
-
-
-function SignedInIdentity({ name, email }: { name: string; email: string }) {
-  return (
-    <div className="flex items-center gap-3">
-      <InitialsAvatar initials={profileInitials({ name, email })} size={36} />
-      <div className="min-w-0 flex-1">
-        <div className="truncate text-[14px] font-semibold text-ink">{profileLabel({ name, email })}</div>
-        {email && <div className="mt-0.5 truncate text-[13px] text-ink-secondary">{email}</div>}
-        <div className="mt-0.5 text-[12px] text-ink-secondary">{t("settings.profile.signedInAs")}</div>
-      </div>
-    </div>
-  );
-}
-
-function OperatorProfileFields() {
-  const { state, dispatch } = useStore();
-  const fileRef = useRef<HTMLInputElement>(null);
-  const [name, setName] = useState(state.config?.profile?.name ?? "");
-  const [email, setEmail] = useState(state.config?.profile?.email ?? "");
-  const [avatarUrl, setAvatarUrl] = useState(state.config?.profile?.avatarUrl ?? "");
-  const [menuOpen, setMenuOpen] = useState(false);
-  useEffect(() => {
-    setName(state.config?.profile?.name ?? "");
-    setEmail(state.config?.profile?.email ?? "");
-    setAvatarUrl(state.config?.profile?.avatarUrl ?? "");
-  }, [state.config?.profile?.name, state.config?.profile?.email, state.config?.profile?.avatarUrl]);
-
-  const save = (next: { name?: string; email?: string; avatarUrl?: string } = {}) => {
-    const profile = {
-      name: (next.name ?? name).trim(),
-      email: (next.email ?? email).trim().toLowerCase(),
-      avatarUrl: next.avatarUrl ?? avatarUrl,
-    };
-    void fetch("/api/config", {
-      method: "PUT",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ profile }),
-    })
-      .then((r) => { if (!r.ok) throw new Error(t("settings.profile.photoSaveError")); return r.json(); })
-      .then((config: ConfigStatus) => {
-        if (config.profile) dispatch({ type: "profileSaved", profile: config.profile });
-      })
-      .catch(() => {});
-  };
-
-  const choosePhoto = (file: File | undefined) => {
-    if (!file) return;
-    void profilePhoto(file).then((url) => {
-      setAvatarUrl(url);
-      save({ avatarUrl: url });
-    }).catch(() => {});
-  };
-
-  const initials = (name.trim() || email.trim() || "?").slice(0, 1).toUpperCase();
-  return (
-    <div className="flex items-center gap-3">
-        <div className="relative">
-          <button
-            type="button"
-            aria-label={t("settings.profile.changeAvatar")}
-            aria-expanded={menuOpen}
-            onClick={() => setMenuOpen((open) => !open)}
-            className="flex size-9 items-center justify-center overflow-hidden rounded-full bg-raised text-[13px] font-semibold text-ink"
-          >
-            {avatarUrl ? <img src={avatarUrl} alt="" className="size-full object-cover" /> : initials}
-          </button>
-          {menuOpen && (
-            <div className="absolute left-0 top-full z-10 mt-2 flex min-w-[200px] flex-col gap-0.5 rounded-xl border-[0.5px] border-border bg-elevated p-1.5 text-[13px] leading-[18px]">
-              <button type="button" onClick={() => { setMenuOpen(false); fileRef.current?.click(); }} className="block w-full rounded-md px-2 py-1.5 text-left text-[13px] leading-[18px] text-ink hover:bg-hover">{t("settings.profile.uploadPhoto")}</button>
-              {avatarUrl && <button type="button" onClick={() => { setAvatarUrl(""); setMenuOpen(false); save({ avatarUrl: "" }); }} className="block w-full rounded-md px-2 py-1.5 text-left text-[13px] leading-[18px] text-ink hover:bg-hover">{t("settings.profile.removePhoto")}</button>}
-            </div>
-          )}
-          <input ref={fileRef} type="file" accept="image/*" className="hidden" aria-label={t("settings.profile.uploadAvatar")} onChange={(event) => { choosePhoto(event.target.files?.[0]); event.target.value = ""; }} />
-        </div>
-        <div className="min-w-0 flex-1">
-          <input aria-label={t("settings.profile.name")} value={name} onChange={(e) => setName(e.target.value)} onBlur={() => save()} placeholder={t("settings.profile.name")} className="w-full bg-transparent text-[14px] font-semibold text-ink placeholder:text-ink-secondary focus:outline-none" />
-          <input type="email" aria-label={t("phone.signIn.email")} value={email} onChange={(e) => setEmail(e.target.value)} onBlur={() => save()} placeholder="you@example.com" className="mt-0.5 w-full bg-transparent text-[13px] text-ink-secondary placeholder:text-ink-secondary focus:outline-none" />
-        </div>
-    </div>
-  );
 }
 
 /** Connected apps in words (2026-10-14: it said "Not set" whatever the
@@ -1453,15 +1322,8 @@ export function SettingsModal() {
             )}
             {section === "general" && (
               <>
-                {lockedServer ? <ServerModeCard state={lockedServer} /> : <ThisComputerSettings />}
-                <Card
-                  collapsible
-                  cardId="general.profile"
-                  title={t("settings.profile.title")}
-                  summary={state.config?.profile?.name || state.config?.profile?.email || t("settings.card.notSet")}
-                >
-                  <ProfileFields />
-                </Card>
+                {/* 2026-10-15: one account card (who, label, server, Sign out) */}
+                <AccountCard lockedServer={lockedServer} />
                 {(!state.config?.viewer || state.config.viewer.operator) && (
                   <SettingsSubPageRow
                     cardId="general.aboutMe"

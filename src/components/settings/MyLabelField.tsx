@@ -1,6 +1,7 @@
-// Settings > General, under the profile: the person's own label
-// (src/lib/person-labels.ts), edited as a bot's label is in its panel.
-// Sagax's own field, on a solo server and on an organization server alike.
+// Settings > General, in the account card right under the person's name: their
+// own label (src/lib/person-labels.ts), edited in place as a bot's label is in
+// its panel. The pencil always shows so the line reads as editable. Sagax's
+// own field, on a solo server and on an organization server alike.
 import { useStore } from "@/state/store";
 import { t } from "@/lib/i18n";
 import { savePersonLabel, usePersonLabel } from "@/lib/person-labels";
@@ -13,11 +14,7 @@ export function MyLabelField() {
   const label = usePersonLabel(principalId);
   if (!principalId) return null;
   return (
-    <div className="mt-2 flex items-center justify-between gap-3 border-t border-hairline-weak pt-2" data-my-label="">
-      <div className="min-w-0">
-        <div className="text-[13px] text-ink">{t("personLabel.mine")}</div>
-        <div className="text-[12px] text-ink-secondary">{t("personLabel.mineHint")}</div>
-      </div>
+    <div className="-ml-1.5 flex min-w-0" data-my-label="">
       <InlineEditableText
         value={label}
         maxLength={PERSON_LABEL_MAX}
@@ -25,7 +22,8 @@ export function MyLabelField() {
         ariaLabel={t("personLabel.edit")}
         onSave={(next) => { void savePersonLabel(principalId, next).catch(() => dispatch({ type: "error", message: t("personLabel.saveError") })); }}
         muted
-        className="shrink-0 text-[12.5px] leading-4"
+        className="justify-start text-[12.5px] leading-4 [&_svg]:opacity-100"
+        inputClassName="text-left"
       />
     </div>
   );

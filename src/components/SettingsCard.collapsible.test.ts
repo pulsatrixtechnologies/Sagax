@@ -240,8 +240,9 @@ describe("Settings → General, compact", () => {
     // About me is edited on its sub-page; General shows its first line and Edit
     expect(html).toContain('data-settings-card="general.aboutMe" data-settings-subpage-row');
     expect(html).not.toContain('id="profile-about-me"');
-    // every other card on the page is the collapsible kind, Profile included
-    expect(html).toContain('data-settings-card="general.profile" data-open="true"');
-    expect(html.match(/data-settings-card="[^"]*"(?! data-open| data-settings-subpage-row)/g)).toBeNull();
+    // every other card on the page is the collapsible kind; the account card
+    // (2026-10-15) is always open, never collapsed
+    expect(html).not.toContain('data-settings-card="general.profile"');
+    expect(html.match(/data-settings-card="[^"]*"(?! data-open| data-settings-subpage-row)/g)).toEqual(['data-settings-card="general.account"']);
   });
 });
