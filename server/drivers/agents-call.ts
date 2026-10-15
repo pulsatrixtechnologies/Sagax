@@ -470,7 +470,7 @@ export async function callTool(name: string, args: Json, context: ToolCallContex
       return { text: text || "Done." };
     }
     const act = wrapperAct(name, args);
-    if ("error" in act) return { text: act.error, isError: true };
+    if ("error" in act) return { text: String(act.error), isError: true };
     const { status, body } = await apiResponse("/api/internal/act", { method: "POST", body: JSON.stringify(act) });
     const text = String(body.text ?? body.error ?? "").slice(0, 8000);
     if (status >= 400 || body.error) return { text: text || "The action was refused.", isError: true };
