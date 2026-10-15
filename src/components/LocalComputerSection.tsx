@@ -11,6 +11,7 @@ import {
   ExternalLink,
   Loader2,
   Moon,
+  Play,
   RefreshCw,
   RotateCcw,
   Server,
@@ -28,6 +29,18 @@ import { canManageComputers } from "@/lib/viewer";
 import { OrgComputerSettings } from "./settings/OrgComputerSettings";
 
 type Action = "pull" | "run" | "start" | "stop" | "remove" | "recreate";
+
+/** The automatic Local VM care's state, as the desktop app's own server
+ * reports it (a mirror of server/local-vm-auto.ts's LocalVmAutoSnapshot). */
+export interface LocalVmAutoState {
+  phase: "idle" | "checking" | "starting" | "running" | "stopped" | "waiting" | "problem";
+  step: "runtime" | "image" | "container" | "start" | null;
+  problem: "no_runtime" | "runtime_stopped" | "foreign" | "unsupported" | "image_failed" | "start_failed" | null;
+  detail: string | null;
+  attempts: number;
+  nextRetryAt: number | null;
+  stoppedByPerson: boolean;
+}
 
 interface Status {
   platform: string;
@@ -57,6 +70,9 @@ interface Status {
   /** An organization server: one environment per person, no VM per bot. */
   organization?: boolean;
   max_instances: number;
+  /** The automatic care's state (null on an organization or self-hosted
+   * server, where nothing starts the Local VM by itself). */
+  auto: LocalVmAutoState | null;
   commands: {
     install: string | null;
     runtimeStart: string | null;
@@ -350,6 +366,25 @@ export function vpsComputerRemovePlan(instance: VpsComputerInventoryInstance): C
     request: jsonPostRequest(`/api/computers/vps/${encodeURIComponent(instance.name)}/remove`, {
       confirmName: instance.name,
     }),
+  };
+}
+
+/** The person's own Start or Retry: a fresh budget for the automatic care
+ * (a new download allowance and attempt count), answered at once. */
+export function localVmEnsurePlan(): ComputerActionPlan {
+  return {
+    confirmation: null,
+    request: jsonPostRequest("/api/local-computer/ensure", { reason: "person" }),
+  };
+}
+
+/** Reset: delete this computer's Local VMs (the shared one and, in per-bot
+ * mode, each bot's), keep the files saved on this computer, then let the
+ * automatic care create the shared one again. */
+export function localVmResetPlan(perBot: boolean): ComputerActionPlan {
+  return {
+    confirmation: t(perBot ? "vm.reset.confirmPerBot" : "vm.reset.confirm"),
+    request: jsonPostRequest("/api/local-computer/reset", { confirm: true }),
   };
 }
 
@@ -954,6 +989,106 @@ export function LocalVmIdleTimeoutSetting({
   );
 }
 
+const AUTO_STEP_KEYS: Record<NonNullable<LocalVmAutoState["step"]>, LocaleKey> = {
+  runtime: "vm.auto.starting.runtime",
+  image: "vm.auto.starting.image",
+  container: "vm.auto.starting.container",
+  start: "vm.auto.starting.start",
+};
+
+const AUTO_PROBLEM_KEYS: Record<NonNullable<LocalVmAutoState["problem"]>, LocaleKey> = {
+  no_runtime: "vm.auto.problem.no_runtime",
+  runtime_stopped: "vm.auto.problem.runtime_stopped",
+  foreign: "vm.auto.problem.foreign",
+  unsupported: "vm.auto.problem.unsupported",
+  image_failed: "vm.auto.problem.image_failed",
+  start_failed: "vm.auto.problem.start_failed",
+};
+
+/** What the automatic care is doing, in one line; null when the state badge
+ * already says it (idle, or running and ready). */
+export function localVmAutoLabel(auto: LocalVmAutoState): string | null {
+  switch (auto.phase) {
+    case "checking":
+      return t("vm.auto.checking");
+    case "starting":
+      return t(auto.step ? AUTO_STEP_KEYS[auto.step] : "vm.auto.starting.container");
+    case "waiting":
+      return t("vm.auto.waiting", {
+        time: new Date(auto.nextRetryAt ?? Date.now()).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+      });
+    case "problem":
+      return t(auto.problem ? AUTO_PROBLEM_KEYS[auto.problem] : "vm.auto.problem.start_failed");
+    case "stopped":
+      return t("vm.auto.stopped");
+    default:
+      return null;
+  }
+}
+
+/** The person's way forward: their own Start after they stopped it, or a
+ * Retry now instead of the next automatic attempt. Null while it works. */
+export function localVmAutoAction(auto: LocalVmAutoState): "start" | "retry" | null {
+  if (auto.phase === "stopped") return "start";
+  if (auto.phase === "problem" || auto.phase === "waiting") return "retry";
+  return null;
+}
+
+/** The automatic care's line in the state card: what it is doing, the
+ * person's Start or Retry, and Reset. Nowhere (null) on a server where no
+ * automatic care runs. */
+export function LocalVmAutoStatus({ auto, perBot, busy, onEnsure, onReset }: {
+  auto: LocalVmAutoState | null;
+  perBot: boolean;
+  /** A setup action, a policy save, or the ensure/reset itself is running. */
+  busy: boolean;
+  onEnsure: () => void;
+  onReset: () => void;
+}) {
+  if (!auto) return null;
+  const label = localVmAutoLabel(auto);
+  const action = localVmAutoAction(auto);
+  const working = auto.phase === "checking" || auto.phase === "starting";
+  return (
+    <div data-local-vm-auto className="mt-3 flex flex-wrap items-center gap-2">
+      {label && (
+        <span data-local-vm-auto-label className="flex min-w-0 items-center gap-1.5 text-[12.5px] text-ink-secondary">
+          {working && <Loader2 size={12} className="shrink-0 animate-spin" />}
+          {auto.phase === "problem" && <AlertTriangle size={12} className="shrink-0 text-warning" />}
+          <span className="min-w-0">
+            {label}
+            {auto.detail && (auto.phase === "problem" || auto.phase === "waiting") ? ` · ${auto.detail}` : ""}
+          </span>
+        </span>
+      )}
+      {action && (
+        <button
+          type="button"
+          data-local-vm-auto-action={action}
+          aria-busy={busy}
+          disabled={busy}
+          onClick={onEnsure}
+          className="flex items-center gap-1.5 rounded-lg bg-accent px-2.5 py-1 text-[12.5px] font-medium text-accent-ink hover:brightness-110 disabled:opacity-50"
+        >
+          {action === "start" ? <Play size={12} /> : <RotateCcw size={12} />}
+          {t(action === "start" ? "vm.auto.start" : "vm.auto.retry")}
+        </button>
+      )}
+      <button
+        type="button"
+        data-local-vm-reset
+        aria-busy={busy}
+        disabled={busy}
+        onClick={onReset}
+        title={perBot ? t("vm.reset.confirmPerBot") : t("vm.reset.confirm")}
+        className="flex items-center gap-1.5 rounded-lg border border-hairline/40 px-2.5 py-1 text-[12.5px] text-ink-secondary hover:bg-control hover:text-ink disabled:opacity-40"
+      >
+        <RefreshCw size={12} /> {t("vm.reset.action")}
+      </button>
+    </div>
+  );
+}
+
 export function LocalComputerSection() {
   const { state: storeState } = useStore();
   // Installation inventories are admin routes. A member's own computer is
@@ -973,6 +1108,7 @@ export function LocalComputerSection() {
   useEffect(() => () => actionController.current?.abort(), []);
   const [error, setError] = useState<string | null>(null);
   const [policyPending, setPolicyPending] = useState(false);
+  const [autoPending, setAutoPending] = useState<"ensure" | "reset" | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
   const [inventory, setInventory] = useState<LocalVmInventoryInstance[]>([]);
   const [inventoryMax, setInventoryMax] = useState(2);
@@ -1269,6 +1405,52 @@ export function LocalComputerSection() {
     }
   };
 
+  const autoBusy = pending !== null || autoPending !== null || policyPending;
+
+  // The person's own Start or Retry: a fresh budget for the automatic care.
+  // The answer says where the care is right now; the poll brings the rest.
+  const ensureVm = async () => {
+    if (autoBusy) return;
+    setAutoPending("ensure");
+    setError(null);
+    try {
+      const [url, init] = localVmEnsurePlan().request;
+      const response = await fetch(url, init);
+      const body = await response.json().catch(() => ({})) as { auto?: LocalVmAutoState | null; error?: string };
+      if (!response.ok) throw new Error(body.error ?? t("vm.auto.ensureError"));
+      setStatus((current) => current ? { ...current, auto: body.auto ?? current.auto } : current);
+      setAnnouncement(t("vm.auto.announce"));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setAutoPending(null);
+    }
+  };
+
+  // Reset: delete this computer's Local VMs and let the automatic care
+  // create the shared one again. A bot using one, or a setup action still
+  // running, answers 409 and is said in the person's language.
+  const resetVm = async () => {
+    if (autoBusy) return;
+    const perBotNow = status?.mode === "per-bot";
+    const request = confirmComputerAction(localVmResetPlan(perBotNow), (message) => window.confirm(message));
+    if (!request) return;
+    setAutoPending("reset");
+    setError(null);
+    try {
+      const response = await fetch(...request);
+      const body = await response.json().catch(() => ({})) as { error?: string; code?: string };
+      if (!response.ok) throw new Error(body.code === "in_use" ? t("vm.reset.inUse") : (body.error ?? t("vm.reset.error")));
+      setStatus(body as Status);
+      if (perBotNow) setInventoryRefreshKey((key) => key + 1);
+      setAnnouncement(t("vm.reset.announce"));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setAutoPending(null);
+    }
+  };
+
   const actOnCloudComputer = async (action: CloudAction, instance: CloudComputerInventoryInstance) => {
     const request = confirmComputerAction(
       cloudComputerActionPlan(action, instance),
@@ -1488,6 +1670,13 @@ export function LocalComputerSection() {
             </a>
           )}
         </div>
+        <LocalVmAutoStatus
+          auto={status?.auto ?? null}
+          perBot={perBot}
+          busy={autoBusy}
+          onEnsure={() => void ensureVm()}
+          onReset={() => void resetVm()}
+        />
         {error && <div role="alert" className="mt-3 rounded-lg bg-danger/10 px-3 py-2 text-[12px] text-danger">{error}</div>}
       </Card>
 
