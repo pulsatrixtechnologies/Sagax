@@ -1227,11 +1227,12 @@ export async function callTool(name: string, args: Json, context: ToolCallContex
     }
     const { body: r } = await apiResponse("/api/internal/workspace/rules", {
       method: "POST",
-      body: JSON.stringify({ fromBotId: BOT_ID, fromThreadId: THREAD_ID, action: args.action, text: args.text, oldText: args.old_text }),
+      body: JSON.stringify({ fromBotId: BOT_ID, fromThreadId: THREAD_ID, action: args.action, text: args.text, oldText: args.old_text, ...(typeof args.set === "string" && args.set.trim() ? { set: args.set } : {}) }),
     });
     if (r.error || r.ok !== true) return { text: String(r.error ?? "The rules change was not confirmed."), isError: true };
     const rule = typeof r.entry === "string" && r.entry ? ` Rule: ${r.entry}` : "";
-    return { text: `RULES.md updated (${String(r.lines)} lines, ${String(r.bytes)} bytes); it applies from your next turn.${rule}` };
+    const file = typeof r.path === "string" && r.path ? r.path : "RULES.md";
+    return { text: `${file} updated (${String(r.lines)} lines, ${String(r.bytes)} bytes); it applies from your next turn.${rule}` };
   }
   if (name === "docs_update") {
     if (!["write", "append", "replace", "delete"].includes(String(args.action)) || typeof args.path !== "string" || !args.path.trim()) {
