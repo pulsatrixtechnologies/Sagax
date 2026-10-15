@@ -1,8 +1,9 @@
 // iPad I-sync: Settings > Usage > Plan usage (`PlanUsage.tsx`): each
-// signed-in provider's remaining allowance (name 14 medium and the plan 12,
+// connected provider's remaining allowance (name 14 medium and the plan 12,
 // then the 5-hour, weekly, extra and per-model windows: a 72 pt label, the
 // headline "72% left · resets in 2h 30m" and a 6 pt meter in the usage
-// tone), or the provider's error in red. Refresh asks the providers again;
+// tone). Since 2026-10-15 a provider in error or not signed in is not shown,
+// and with none connected the card is not drawn at all. Refresh asks the providers again;
 // a window whose reset has passed refreshes on its own (checked every 30 s).
 import SwiftUI
 import CompanionCore
@@ -13,10 +14,24 @@ struct DesktopPlanUsageCard: View {
 
     @State private var report: PlanUsageReport?
     @State private var loading = true
-    @State private var error = ""
     @State private var now = Date()
 
     var body: some View {
+        let providers = PlanUsageRules.connected(report)
+        Group {
+            if !providers.isEmpty { AnyView(card(providers)) }
+        }
+        .task(id: session.connection?.id) {
+            await load(refresh: false)
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(30))
+                now = Date()
+                if let report, !loading, PlanUsageRules.hasDueReset(report, now: now) { await load(refresh: true) }
+            }
+        }
+    }
+
+    private func card(_ providers: [PlanUsageReport.Provider]) -> some View {
         DesktopSettingsCard(
             Text("Plan usage"),
             subtitle: Text("Remaining allowance on each signed-in provider. 5-hour and weekly windows, when that plan has them."),
@@ -38,33 +53,8 @@ struct DesktopPlanUsageCard: View {
                     .accessibilityLabel(Text("Refresh"))
                 }
                 .padding(.bottom, 12)
-                AnyView(content)
-            }
-        }
-        .task(id: session.connection?.id) {
-            await load(refresh: false)
-            while !Task.isCancelled {
-                try? await Task.sleep(for: .seconds(30))
-                now = Date()
-                if let report, !loading, PlanUsageRules.hasDueReset(report, now: now) { await load(refresh: true) }
-            }
-        }
-    }
-
-    @ViewBuilder
-    private var content: some View {
-        if loading && report == nil {
-            DesktopText(Text("Checking plan usage…"), color: \.inkSecondary)
-        }
-        if !error.isEmpty {
-            DesktopText(verbatim: error, size: 13, line: 18, color: \.danger).padding(.bottom, 12)
-        }
-        if let report {
-            if report.providers.isEmpty {
-                DesktopText(Text("No Claude, Codex, or Grok account is configured."), color: \.inkSecondary)
-            } else {
                 VStack(alignment: .leading, spacing: 12) {
-                    ForEach(Array(report.providers.enumerated()), id: \.element.id) { index, provider in
+                    ForEach(Array(providers.enumerated()), id: \.element.id) { index, provider in
                         if index > 0 { Rectangle().fill(theme.hairline.opacity(0.3)).frame(height: 1) }
                         AnyView(providerView(provider))
                     }
@@ -99,8 +89,6 @@ struct DesktopPlanUsageCard: View {
                         }
                     }
                 }
-            } else {
-                Text(verbatim: provider.error ?? "").font(theme.font(13)).foregroundStyle(theme.danger)
             }
         }
     }
@@ -156,12 +144,10 @@ struct DesktopPlanUsageCard: View {
     private func load(refresh: Bool) async {
         guard let client = session.settingsClient else { loading = false; return }
         loading = true
-        error = ""
-        do {
-            report = try await client.planUsage(refresh: refresh)
+        // A failed read shows nothing: the card keeps the last connected rows.
+        if let next = try? await client.planUsage(refresh: refresh) {
+            report = next
             now = Date()
-        } catch {
-            self.error = error.localizedDescription.isEmpty ? String(localized: "Could not load plan usage.") : error.localizedDescription
         }
         loading = false
     }
