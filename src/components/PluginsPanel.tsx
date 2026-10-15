@@ -77,6 +77,7 @@ import {
 import { ConnectAppsView } from "./plugins/ConnectAppsView";
 import { ManageView } from "./plugins/ManageView";
 import { MarketplacesSection } from "./plugins/MarketplacesSection";
+import { OrgSourcesAccess, showOrgSourcesAccess } from "./plugins/OrgSourcesAccess";
 import { PluginStatusLabel } from "./plugins/PluginParts";
 import { AddAccountButton, PluginDetailView, SignInButton, type DetailAccount, type PluginDetailProps } from "./plugins/PluginDetailView";
 import { SkillPage } from "./plugins/SkillPage";
@@ -156,6 +157,9 @@ export function PluginsPanel() {
   const serverMode = useServerMode();
   const perspicaxOrg = usePerspicaxOrg();
   const organization = Boolean(serverMode?.active) || perspicaxOrg !== null;
+  // Organization sources and access: an organization admin only (the server
+  // answers 403 to anyone else).
+  const orgAdmin = perspicaxOrg?.viewerRole === "admin";
   const [featured, setFeatured] = useState<FeaturedListing[] | null>(null);
   const [skills, setSkills] = useState<SkillsLibrarySkillWire[] | null>(null);
   const [installing, setInstalling] = useState<string | null>(null);
@@ -236,6 +240,25 @@ export function PluginsPanel() {
   }, [loadBotView]);
 
   const close = useCallback(() => dispatch({ type: "togglePlugins", open: false }), [dispatch]);
+  // A link to Organization sources and access (the old Settings >
+  // Organization > Plugins and GitHub card): Manage, for everyone, with
+  // Advanced open at that section.
+  const orgAccessRequested = state.pluginsPage === "orgAccess";
+  useEffect(() => {
+    if (!orgAccessRequested) return;
+    setScopeChoice("workspace");
+    setPage({ page: "manage" });
+  }, [orgAccessRequested]);
+  useEffect(() => {
+    if (!orgAccessRequested || !orgAdmin || page.page !== "manage") return;
+    let frames = 0;
+    const reveal = () => {
+      const section = dialogRef.current?.querySelector<HTMLElement>("[data-plugins-org-access]");
+      if (section) section.scrollIntoView?.({ block: "start" });
+      else if (++frames < 30) requestAnimationFrame(reveal);
+    };
+    requestAnimationFrame(reveal);
+  }, [orgAccessRequested, orgAdmin, page.page]);
   const skillsLibraryOn = skillsLibraryEnabled(state.config);
   const back = useCallback(() => setPage((current) => current.page === "detail" || current.page === "skill" ? { page: current.from } : { page: "main" }), []);
 
@@ -695,7 +718,7 @@ export function PluginsPanel() {
             <MyConnectionsSettings />
           </section>
         ) : undefined}
-        advancedOpen={mcp.editing === "new" || mcp.importOpen}
+        advancedOpen={mcp.editing === "new" || mcp.importOpen || orgAccessRequested}
         onAddManually={mcp.startAdd}
         onPasteConfig={mcp.toggleImport}
         addDisabled={mcp.busy !== null || mcp.restricted}
@@ -724,6 +747,7 @@ export function PluginsPanel() {
           tokens={marketTokens}
           needsToken={marketTokens ? marketNeedsToken : null}
         />
+        {perspicaxOrg && showOrgSourcesAccess(perspicaxOrg, scope) && <OrgSourcesAccess initial={perspicaxOrg.settings} />}
         {scope === "workspace" && (
           <section className="mt-6">
             <h3 className="mb-2 text-[13px] font-semibold text-ink">{t("connectApps.manage.settings")}</h3>

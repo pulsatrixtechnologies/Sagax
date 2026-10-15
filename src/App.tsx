@@ -148,7 +148,7 @@ function Shell() {
   const previousViewRef = useRef(state.activeView);
   const calendarOriginRef = useRef<"chat" | "team-map">("chat");
   // Someone with no bot of their own still opens on a group they are in.
-  const { group, bot } = mainConversation(state.bots, state.groups, state.selectedId);
+  const { group, bot } = mainConversation(state.bots, state.groups, state.selectedId, state.sidebarHiddenKeys);
   const calendarOpen = state.activeView === "routines";
   // Simple is the default until an explicit choice or an organization
   // owner/admin is known. The choice itself is written only on the switch.

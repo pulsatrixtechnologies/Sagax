@@ -476,6 +476,7 @@ struct DesktopAppGlow: View {
 private struct DesktopShellRouting: ViewModifier {
     @ObservedObject var model: DesktopShellModel
     @EnvironmentObject private var session: Session
+    @ObservedObject private var sidebarPrefs = SidebarPrefsModel.shared
 
     func body(content: Content) -> some View {
         content
@@ -488,6 +489,16 @@ private struct DesktopShellRouting: ViewModifier {
                 guard let chat else { return }
                 model.open(chat)
                 session.consumePendingChat()
+            }
+            // The open conversation disappears (deleted on the server) or the
+            // person closes or hides it: the column shows its empty state,
+            // never a conversation the sidebar no longer has (bug 2026-10-15).
+            .onValueChangePair(of: session.state.rooms.map(\.id)) { previous, _ in leaveIfGone(wasIn: previous) }
+            .onValueChangePair(of: session.state.bots.map(\.id)) { previous, _ in leaveIfGone(wasIn: previous) }
+            .onValueChangePair(of: sidebarPrefs.prefs.hidden) { previous, next in
+                if let chat = model.selected, OpenConversation.newlyHidden(chat, previous: previous, next: next) {
+                    model.selected = nil
+                }
             }
             .task {
                 if let chat = session.notificationChat {
@@ -507,6 +518,13 @@ private struct DesktopShellRouting: ViewModifier {
                 await session.loadAccount()
                 await SidebarPrefsModel.shared.load(session)
             }
+    }
+
+    /// Only a conversation that was there counts as gone: one opened from a
+    /// notification before the snapshot lands stays.
+    private func leaveIfGone(wasIn previous: [String]) {
+        guard let chat = model.selected, previous.contains(chat.id) else { return }
+        if !OpenConversation.present(chat, in: session.state) { model.selected = nil }
     }
 
     /// The desktop opens on a conversation: the Primary Bot, else the first bot.

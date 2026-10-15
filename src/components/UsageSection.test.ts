@@ -1,5 +1,5 @@
-// Settings > Usage (2026-10-14): the signed-in person's own usage. Plan and
-// Cost on top, one folded breakdown by bot and model, nothing about other
+// Settings > Usage (2026-10-14): the signed-in person's own usage. Cost then
+// Plan on top (2026-10-15), one folded breakdown by bot and model, nothing about other
 // people. Every figure is asked of GET /api/me/usage (2026-10-15: open to every member).
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -14,7 +14,7 @@ vi.mock("@/state/store", async (importOriginal) => ({
   useStore: () => ({ state: { instances: [], bots: [], config: {} }, dispatch: () => {} }),
 }));
 
-import { CostCard, loadPersonalUsage, planUsageShown, type PersonalUsage } from "./UsageSection";
+import { CostCard, loadPersonalUsage, planUsageShown, UsageLayout, type PersonalUsage } from "./UsageSection";
 import { PlanUsageView } from "./PlanUsage";
 
 const NOW = new Date("2026-10-14T15:00:00Z");
@@ -50,6 +50,24 @@ describe("what Settings > Usage asks the server", () => {
   it("compares with the same days of a shorter last month", () => {
     expect(personalUsagePeriods(new Date("2026-03-31T12:00:00Z")).previous).toEqual({ from: "2026-02-01", to: "2026-02-28" });
     expect(usageQuery({ from: "2026-10-01", to: "2026-10-14" }, "bot")).toBe("/api/me/usage?from=2026-10-01&to=2026-10-14&groupBy=bot");
+  });
+});
+
+describe("the page's order", () => {
+  it("puts the Cost card on top, above the Plan card", () => {
+    const html = renderToStaticMarkup(createElement(UsageLayout, {
+      cost: createElement(CostCard, { usage: null, error: false }),
+      plan: createElement(PlanUsageView, {
+        report: { providers: [{ id: "claude", name: "Claude", driver: "claude", plan: null, ok: true, error: null, state: "no-windows" }] },
+        loading: false, now: NOW.getTime(), onRefresh: () => {}, issuer: "",
+      }),
+      rest: createElement("div", { "data-rest": "" }),
+    }));
+    const cost = html.indexOf('data-settings-card="usage.cost"');
+    const plan = html.indexOf('data-settings-card="usage.plan"');
+    expect(cost).toBeGreaterThanOrEqual(0);
+    expect(plan).toBeGreaterThan(cost);
+    expect(html.indexOf("data-rest")).toBeGreaterThan(plan);
   });
 });
 
@@ -128,8 +146,8 @@ describe("Plan card", () => {
   it("reads the plan by the week: one gauge, one sentence with the renewal, the rest under Details", () => {
     setLocale("fr");
     const html = renderToStaticMarkup(createElement(PlanUsageView, {
-      report: { providers: [provider({})] }, loading: false, error: "", now: NOW.getTime(),
-      onRefresh: () => {}, myEngines: null, issuer: "", onOpenEngines: () => {},
+      report: { providers: [provider({})] }, loading: false, now: NOW.getTime(),
+      onRefresh: () => {}, issuer: "",
     }));
     expect(html).toContain('data-plan-main="weekly"');
     expect(html).toContain('aria-valuenow="40"');

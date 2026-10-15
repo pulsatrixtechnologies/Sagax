@@ -1,9 +1,11 @@
 // Settings > Usage (#518, `UsageSection.tsx` and `usage-personal.ts`): the
 // signed-in person's own usage only. Plan, then Cost (this month, its trend
 // against the same days of last month, the last 30 days), then a folded
-// breakdown by bot and by model. Every figure comes from
-// `GET /api/usage?mine=1`, which keeps only the requester's turns. Per-person
-// tables, organization totals and budgets belong to Sagax Business.
+// breakdown by bot and by model. Every figure comes from `GET /api/me/usage`
+// (#524: any signed-in member, their own turns only); a server older than
+// that answers 404 and the page falls back to the admin's
+// `GET /api/usage?mine=1`. Per-person tables, organization totals and
+// budgets belong to Sagax Business.
 import Foundation
 
 /// The three periods the page asks for, inclusive UTC days (YYYY-MM-DD).
@@ -114,22 +116,34 @@ public enum PersonalUsageRules {
 }
 
 public extension CompanionClient {
-    /// The page's five reads of `GET /api/usage?mine=1`.
+    /// The page's five reads of `GET /api/me/usage`, or of
+    /// `GET /api/usage?mine=1` when the server does not know the first (404).
     func personalUsage(now: Date = Date()) async throws -> PersonalUsage {
+        do {
+            return try await personalUsage(now: now, legacy: false)
+        } catch let APIError.status(code, _) where code == 404 {
+            return try await personalUsage(now: now, legacy: true)
+        }
+    }
+
+    private func personalUsage(now: Date, legacy: Bool) async throws -> PersonalUsage {
         let periods = PersonalUsagePeriods(now: now)
-        async let month = send(try personalUsageRequest(periods.month, groupBy: .day), as: UsageHistory.self)
-        async let previous = send(try personalUsageRequest(periods.previous, groupBy: .day), as: UsageHistory.self)
-        async let days30 = send(try personalUsageRequest(periods.days30, groupBy: .day), as: UsageHistory.self)
-        async let byBot = send(try personalUsageRequest(periods.month, groupBy: .bot), as: UsageHistory.self)
-        async let byModel = send(try personalUsageRequest(periods.month, groupBy: .model), as: UsageHistory.self)
+        // the month first: a 404 there means an older server, before any other read
+        let month = try await send(try personalUsageRequest(periods.month, groupBy: .day, legacy: legacy), as: UsageHistory.self)
+        async let previous = send(try personalUsageRequest(periods.previous, groupBy: .day, legacy: legacy), as: UsageHistory.self)
+        async let days30 = send(try personalUsageRequest(periods.days30, groupBy: .day, legacy: legacy), as: UsageHistory.self)
+        async let byBot = send(try personalUsageRequest(periods.month, groupBy: .bot, legacy: legacy), as: UsageHistory.self)
+        async let byModel = send(try personalUsageRequest(periods.month, groupBy: .model, legacy: legacy), as: UsageHistory.self)
         return try await PersonalUsage(month: month, previous: previous, days30: days30, byBot: byBot, byModel: byModel)
     }
 
-    func personalUsageRequest(_ range: (from: String, to: String), groupBy: UsageGroupBy) throws -> URLRequest {
-        try makeRequest("GET", "/api/usage", query: [
-            URLQueryItem(name: "mine", value: "1"),
+    /// `GET /api/me/usage?from=&to=&groupBy=`; `legacy`: `GET /api/usage?mine=1&…`.
+    func personalUsageRequest(_ range: (from: String, to: String), groupBy: UsageGroupBy, legacy: Bool = false) throws -> URLRequest {
+        var query = [
             URLQueryItem(name: "from", value: range.from), URLQueryItem(name: "to", value: range.to),
             URLQueryItem(name: "groupBy", value: groupBy.rawValue),
-        ])
+        ]
+        if legacy { query.insert(URLQueryItem(name: "mine", value: "1"), at: 0) }
+        return try makeRequest("GET", legacy ? "/api/usage" : "/api/me/usage", query: query)
     }
 }

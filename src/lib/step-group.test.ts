@@ -64,6 +64,7 @@ describe("the group's one line", () => {
     expect(summarizeSteps(turn)).toEqual({ tools: 12, failed: 5, running: undefined });
     expect(stepGroupWords(summarizeSteps(turn), 173_000)).toEqual({
       label: "Worked 2m 53s", tools: "12 tools", failed: "5 failed", target: undefined, phase: "done",
+      ariaLabel: "Worked 2m 53s, 12 tools, 5 failed, press to see the detail",
     });
     expect(stepGroupWords(summarizeSteps([step("Read", true), step("Bash", true)]), 400)).toMatchObject({ label: "Worked", tools: "2 tools", failed: undefined });
     expect(stepGroupWords(summarizeSteps([said("…")]), 12_000)).toMatchObject({ label: "Worked 12s", tools: undefined });
@@ -73,12 +74,14 @@ describe("the group's one line", () => {
     const live = [...turn, step("mcp", undefined, tickets)];
     const words = stepGroupWords(summarizeSteps(live), undefined);
     expect(words).toMatchObject({ label: "Viewing tickets in ConnectWise PSA", phase: "running", tools: "13 tools", failed: "5 failed" });
+    expect(words.ariaLabel).toBe("Viewing tickets in ConnectWise PSA, service.tickets, 13 tools, 5 failed, press to see the detail");
   });
 
   it("speaks French when the interface is in French", () => {
     setLocale("fr");
     expect(stepGroupWords(summarizeSteps(turn), 173_000)).toMatchObject({
       label: "A travaillé 2 min 53 s", tools: "12 outils", failed: "5 échecs",
+      ariaLabel: "A travaillé 2 min 53 s, 12 outils, 5 échecs, appuyez pour voir le détail",
     });
     expect(stepGroupWords(summarizeSteps([step("Read", true), step("Read", false)]), undefined)).toMatchObject({
       label: "A travaillé", tools: "2 outils", failed: "1 échec",

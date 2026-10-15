@@ -9,7 +9,7 @@ import { useMenuMotion } from "./MenuMotion";
 import { t } from "@/lib/i18n";
 import type { LocaleKey } from "@/locales";
 
-export type ConfigSection = "composio" | "box" | "opencodeGo" | "anthropic" | "openai" | "openrouter" | "openaiCompat" | "xai" | "mistral" | "cerebras" | "groq" | "elevenlabs" | "fishAudio";
+export type ConfigSection = "composio" | "box" | "opencodeGo" | "anthropic" | "openai" | "openrouter" | "openaiCompat" | "xai" | "mistral" | "cerebras" | "groq" | "elevenlabs" | "fishAudio" | "openaiImage" | "customImage";
 /** Sections whose key can be tried against the provider from the server. */
 export type TestableProvider = "anthropic" | "openai" | "openrouter" | "openaiCompat" | "xai" | "mistral" | "cerebras" | "groq";
 
@@ -55,16 +55,23 @@ const SECTIONS: Record<
     included: (c) => c.tts?.included === true,
   },
   fishAudio: { body: (v) => ({ tts: { fishKey: v } }), flag: (c) => c.tts?.keys?.fish ?? false },
+  // Image keys (2026-10-15): the OpenAI image key is its own credential
+  // (imageGen.key), the custom Images API's key is optional. Grok images use
+  // the xAI key.
+  openaiImage: { body: (v) => ({ imageGen: { key: v } }), flag: (c) => c.imageGen?.openaiConfigured === true },
+  customImage: { body: (v) => ({ imageGen: { customApiKey: v } }), flag: (c) => c.imageGen?.customKeyConfigured === true },
 };
 
 // Provider keys have no desktop-shell slot yet and go through the server's
 // own 0600 config, the same place they live on a hosted server.
-const ELECTRON_CREDENTIAL: Partial<Record<ConfigSection, "composioApiKey" | "boxToken" | "opencodeGoApiKey" | "ttsKey" | "fishAudioKey">> = {
+const ELECTRON_CREDENTIAL: Partial<Record<ConfigSection, "composioApiKey" | "boxToken" | "opencodeGoApiKey" | "ttsKey" | "fishAudioKey" | "openaiImageApiKey" | "customImageApiKey">> = {
   composio: "composioApiKey",
   box: "boxToken",
   opencodeGo: "opencodeGoApiKey",
   elevenlabs: "ttsKey",
   fishAudio: "fishAudioKey",
+  openaiImage: "openaiImageApiKey",
+  customImage: "customImageApiKey",
 };
 
 const CREDENTIALS: Record<
@@ -188,6 +195,22 @@ const CREDENTIALS: Record<
     descriptionKey: "keys.fishAudio.desc",
     href: "https://fish.audio/app/api-keys/",
     linkLabelKey: "keys.fishAudio.link",
+    optional: true,
+  },
+  openaiImage: {
+    labelKey: "keys.openaiImage.label",
+    placeholder: "sk-…",
+    descriptionKey: "keys.openaiImage.desc",
+    href: "https://platform.openai.com/api-keys",
+    linkLabelKey: "keys.openai.link",
+    optional: true,
+  },
+  customImage: {
+    labelKey: "keys.customImage.label",
+    placeholderKey: "keys.customImage.placeholder",
+    descriptionKey: "keys.customImage.desc",
+    href: "https://platform.openai.com/docs/api-reference/images",
+    linkLabelKey: "keys.customImage.link",
     optional: true,
   },
 };
