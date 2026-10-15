@@ -1,0 +1,83 @@
+[
+  {
+    "id": "step-1",
+    "role": "bot",
+    "kind": "activity",
+    "at": 1789088400200,
+    "turnId": "preview-turn",
+    "tool": {
+      "name": "Read",
+      "ok": true,
+      "input": "{\"file_path\": \"/repo/checkout/build.log\"}",
+      "durationMs": 120,
+      "output": "error: cannot find module 'left-pad'"
+    }
+  },
+  {
+    "id": "step-2",
+    "role": "bot",
+    "kind": "activity",
+    "at": 1789088400300,
+    "turnId": "preview-turn",
+    "tool": {
+      "name": "Read",
+      "ok": true,
+      "input": "{\"file_path\": \"/repo/checkout/package.json\"}",
+      "durationMs": 90
+    }
+  },
+  {
+    "id": "step-3",
+    "role": "bot",
+    "kind": "activity",
+    "at": 1789088400400,
+    "turnId": "preview-turn",
+    "tool": {
+      "name": "Read",
+      "ok": true,
+      "input": "{\"file_path\": \"/repo/checkout/pnpm-lock.yaml\"}",
+      "durationMs": 150
+    }
+  },
+  {
+    "id": "step-4",
+    "role": "bot",
+    "kind": "activity",
+    "at": 1789088401200,
+    "turnId": "preview-turn",
+    "tool": {
+      "name": "mcp",
+      "ok": true,
+      "input": "{\"server\": \"pulsatrix-psa\", \"tool\": \"cw_psa__query\", \"args\": {\"resource\": \"service/tickets\", \"conditions\": \"summary contains 'checkout'\"}}",
+      "durationMs": 2400,
+      "output": "3 tickets"
+    }
+  },
+  {
+    "id": "step-5",
+    "role": "bot",
+    "kind": "activity",
+    "at": 1789088401500,
+    "turnId": "preview-turn",
+    "tool": {
+      "name": "Bash",
+      "ok": true,
+      "input": "{\"command\": \"pnpm install --frozen-lockfile\"}",
+      "durationMs": 8100
+    }
+  },
+  {
+    "id": "step-6",
+    "role": "bot",
+    "kind": "activity",
+    "at": 1789088401800,
+    "turnId": "preview-turn",
+    "tool": {
+      "name": "WebFetch",
+      "ok": false,
+      "input": "{\"url\": \"https://registry.npmjs.org/left-pad\"}",
+      "durationMs": 3000,
+      "output": "fetch failed: 503"
+    }
+  }
+]

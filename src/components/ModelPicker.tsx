@@ -9,8 +9,8 @@
 // same row and write through the same action.
 import { Fragment, useCallback, useEffect, useRef, useState, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { ChevronDown, ChevronRight, Info, KeyRound, Loader2, Plus, RefreshCw, Sparkles, X } from "lucide-react";
-import { useStore, type Bot, type InstanceInfo, type ModelSelection } from "@/state/store";
+import { ChevronDown, ChevronRight, Info, KeyRound, Loader2, LogOut, Plus, RefreshCw, Sparkles, X } from "lucide-react";
+import { api, useStore, type Bot, type ConfigStatus, type InstanceInfo, type ModelSelection } from "@/state/store";
 import type { ModelVariantOption } from "../../shared/runtime-events";
 import { isDesktopModelId, localModelRows, localRowUnavailable, refreshLocalModelsOnOpen, runsLoopbackModels } from "@/lib/local-models";
 import { engineAllowed } from "../../shared/org-allowed-engines";
@@ -28,6 +28,8 @@ import { t } from "@/lib/i18n";
 import { reloadMyEngines, useMyEngines, usePerspicaxOrg } from "@/lib/perspicax-org";
 import { orgEngineState } from "@/lib/model-payers";
 import { ModelPickerPayers } from "./ModelPickerPayers";
+import { PaysWithLine, signOutMyEngine } from "./EngineConnect";
+import { ConfirmDialog } from "./ConfirmDialog";
 import { OrgHostToolsNote, orgRefusesEngine } from "./OrgHostToolsNote";
 import { COMPACT_SQUARE } from "@/lib/compact-chip";
 import { saveViewerBotOverride } from "@/lib/viewer-bot-overrides";
@@ -310,12 +312,33 @@ export function modelSelectionForPick(selection: ModelSelection, instance: Insta
   return next;
 }
 
+/** The config section of a pasted provider key, for the key engines that run
+ * on exactly one (server/config.ts API_KEY_FLEET and the key drivers):
+ * removing it is PUT /api/config with an empty key, as Settings does. */
+const KEY_SECTION: Record<string, "anthropic" | "openai" | "xai" | "openrouter" | "mistral" | "cerebras" | "groq"> = {
+  claudeApi: "anthropic", openai: "openai", xaiApi: "xai", openrouter: "openrouter", mistral: "mistral", cerebras: "cerebras", groq: "groq",
+};
+
+export function removableKeySection(instance: InstanceInfo): (typeof KEY_SECTION)[string] | null {
+  return hasSavedApiKey(instance) ? KEY_SECTION[instance.instanceId] ?? null : null;
+}
+
+/** The small action at the end of a provider's row in the model window:
+ * Disconnect a signed-in subscription, or remove a saved key. */
+export interface RailRowAction {
+  kind: "signOut" | "removeKey";
+  /** "Disconnect Grok", "Remove the xAI key": the tooltip and the name. */
+  label: string;
+  busy: boolean;
+  run: () => void;
+}
+
 /** Once any key is saved, the keys shortcut is also the way to fix one. */
 function apiKeysLabel(instances: InstanceInfo[]): string {
   return t(instances.some(hasSavedApiKey) ? "model.addOrChangeApiKeys" : "model.addApiKeys");
 }
 
-export function ModelEngineRail({ instances, selectedInstance, claudeInstance, openaiInstance, onSelect, onAddApiKeys, wide = false, statusOf, notAllowed, showUnready: showUnreadyProp, auto }: {
+export function ModelEngineRail({ instances, selectedInstance, claudeInstance, openaiInstance, onSelect, onAddApiKeys, wide = false, statusOf, notAllowed, showUnready: showUnreadyProp, auto, rowAction }: {
   instances: InstanceInfo[];
   /** The window's first mode: Auto, every allowed engine's models together. */
   auto?: { on: boolean; selected: boolean; onSelect: () => void };
@@ -335,6 +358,10 @@ export function ModelEngineRail({ instances, selectedInstance, claudeInstance, o
   /** Organization server: a provider the organization does not allow,
    * listed once (the person connected it before) and never selectable. */
   notAllowed?: (instance: InstanceInfo) => boolean;
+  /** The modal's provider column: the action at the end of a provider's
+   * row (Disconnect, remove the key), shown on hover and focus and always on
+   * the selected row. `label` is the row's name. */
+  rowAction?: (instance: InstanceInfo, label: string) => RailRowAction | undefined;
   /** Appearance setting: list sign-in required / no access in every group.
    * Off by default: they stay hidden. The picker passes the saved preference. */
   showUnready?: boolean;
@@ -362,10 +389,12 @@ export function ModelEngineRail({ instances, selectedInstance, claudeInstance, o
     const managedBy = blocked ? t("model.notAllowed")
       : target.policy ? t("policy.managedBy", { organization: target.policy.organizationName }) : undefined;
     const statusLabel = managedBy ?? status?.label ?? engineStatus(target);
+    const action = wide ? rowAction?.(target, label) : undefined;
     if (wide) return (
+      <div key={instance.instanceId} data-rail-row={family ?? instance.instanceId}
+        className="group relative flex min-w-[9.5rem] shrink-0 sm:min-w-0 sm:w-full">
       <button
         type="button"
-        key={instance.instanceId}
         data-rail-provider={family ?? instance.instanceId}
         data-rail-not-allowed={blocked || undefined}
         disabled={blocked}
@@ -377,8 +406,9 @@ export function ModelEngineRail({ instances, selectedInstance, claudeInstance, o
         aria-label={managedBy ? `${label} · ${managedBy}` : label}
         aria-describedby={`model-rail-status-${instance.instanceId}`}
         aria-pressed={selected}
-        className={cn("relative flex min-w-[9.5rem] shrink-0 items-center gap-2.5 rounded-lg px-2.5 py-2 text-left sm:min-w-0 sm:w-full",
-          selected ? "bg-selected ring-1 ring-hairline/50" : "hover:bg-hover", managedBy && "opacity-50", blocked && "cursor-not-allowed hover:bg-transparent")}
+        className={cn("relative flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left",
+          selected ? "bg-selected ring-1 ring-hairline/50" : "hover:bg-hover", managedBy && "opacity-50", blocked && "cursor-not-allowed hover:bg-transparent",
+          action && "pr-10")}
       >
         <span className="relative flex size-7 shrink-0 items-center justify-center rounded-md bg-inset">
           <InstanceProviderMark instance={target} size={16} />
@@ -396,6 +426,24 @@ export function ModelEngineRail({ instances, selectedInstance, claudeInstance, o
           </span>
         </span>
       </button>
+      {action && (
+        <button
+          type="button"
+          data-rail-row-action={action.kind}
+          disabled={action.busy}
+          onClick={action.run}
+          aria-label={action.label}
+          title={action.label}
+          className={cn(
+            "absolute right-1.5 top-1/2 flex size-7 -translate-y-1/2 items-center justify-center rounded-md text-ink-secondary",
+            "hover:bg-control hover:text-ink focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/70 disabled:cursor-wait",
+            selected || action.busy ? "opacity-100" : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100",
+          )}
+        >
+          {action.busy ? <Loader2 size={14} className="animate-spin" aria-hidden="true" /> : <LogOut size={14} aria-hidden="true" />}
+        </button>
+      )}
+      </div>
     );
     return (
       <button
@@ -581,6 +629,10 @@ export function ModelPicker({
   const [autoInfo, setAutoInfo] = useState(false);
   const [menuAt, setMenuAt] = useState<{ right: number; bottom: number } | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  // A provider row's action under way (its instance id), and the key whose
+  // removal waits for a yes.
+  const [rowBusy, setRowBusy] = useState<string | null>(null);
+  const [keyToRemove, setKeyToRemove] = useState<{ instance: InstanceInfo; label: string } | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -792,6 +844,51 @@ export function ModelPicker({
   const openApiKeys = () => {
     closeWindow();
     dispatch({ type: "toggleAppSettings", open: true, section: "connections" });
+  };
+
+  // The provider row's action (2026-10-15): the same requests as the
+  // engine card's Disconnect and Settings' key removal.
+  const signOutRow = async (instance: InstanceInfo) => {
+    setRowBusy(instance.instanceId);
+    try {
+      await signOutMyEngine(instance.instanceId);
+      await reloadMyEngines();
+    } catch {
+      dispatch({ type: "error", message: t("model.rail.disconnectFailed", { name: instance.displayName }) });
+    } finally {
+      setRowBusy(null);
+    }
+  };
+  const removeKey = async (instance: InstanceInfo) => {
+    const section = removableKeySection(instance);
+    setKeyToRemove(null);
+    if (!section) return;
+    setRowBusy(instance.instanceId);
+    try {
+      const status = await api<ConfigStatus>("/api/config", { method: "PUT", body: JSON.stringify({ [section]: { key: "" } }) });
+      dispatch({ type: "configStatus", config: status });
+      await refreshInstances();
+      if (orgMode) await reloadMyEngines();
+    } catch (cause) {
+      dispatch({ type: "error", message: cause instanceof Error ? cause.message : t("model.rail.removeKeyFailed") });
+    } finally {
+      setRowBusy(null);
+    }
+  };
+  // A key is the server's: removed from here by whoever may change its
+  // settings (anyone on a solo server, an admin on an organization one),
+  // never from a paired remote client.
+  const keysHere = window.ogb?.remoteClient?.active !== true && (!orgMode || org?.viewerRole === "admin");
+  const rowAction = (instance: InstanceInfo, label: string): RailRowAction | undefined => {
+    const busy = rowBusy === instance.instanceId;
+    const mine = orgMode ? myEngines?.find((engine) => engine.instanceId === instance.instanceId) : undefined;
+    if (mine?.installed && mine.subscription.supported && mine.subscription.signedIn) {
+      return { kind: "signOut", label: t("model.rail.disconnect", { name: label }), busy, run: () => void signOutRow(instance) };
+    }
+    if (keysHere && removableKeySection(instance)) {
+      return { kind: "removeKey", label: t("model.rail.removeKey", { name: label }), busy, run: () => setKeyToRemove({ instance, label }) };
+    }
+    return undefined;
   };
 
   const selectRail = (instance: InstanceInfo) => {
@@ -1221,8 +1318,8 @@ export function ModelPicker({
   );
 
   // The provider's name and the refresh icon. Whether the person is
-  // connected is said once, on the access card below (Connected and
-  // Disconnect), and in the provider column.
+  // connected is said in the provider column, whose row also disconnects
+  // (2026-10-15); what pays for their turns is one small line under the name.
   const header = railInstance && (
     <div className="shrink-0 pb-1">
       <div className="flex items-center justify-between gap-3">
@@ -1230,6 +1327,7 @@ export function ModelPicker({
           <h2 id="model-picker-title" className="truncate text-[16px] font-semibold text-ink">
             {signInFamily(railInstance) ? SIGN_IN_FAMILY_LABEL[signInFamily(railInstance)!] : railInstance.displayName}
           </h2>
+          {orgMode && railEngine && !routineThread && !railInstance.policy && <PaysWithLine engine={railEngine} className="mt-0.5 truncate text-[11.5px]" />}
         </div>
         <div className="flex shrink-0 items-center gap-1 pr-10">
           <button
@@ -1420,6 +1518,7 @@ export function ModelPicker({
     onAddApiKeys: advanced && window.ogb?.remoteClient?.active !== true ? openApiKeys : undefined,
     ...(orgMode && myEngines ? { statusOf: orgStatusOf } : {}),
     ...(orgMode ? { notAllowed } : {}),
+    rowAction,
     ...(!viewerLocal ? { auto: { on: autoOn, selected: autoPane, onSelect: () => setRailId(AUTO_RAIL) } } : {}),
     showUnready,
   };
@@ -1451,6 +1550,14 @@ export function ModelPicker({
           <X size={18} aria-hidden="true" />
         </button>
         {pickerInstances.length > 0 && <ModelEngineRail {...railProps} wide />}
+        <ConfirmDialog
+          open={keyToRemove !== null}
+          title={t("model.rail.removeKeyTitle", { name: keyToRemove?.label ?? "" })}
+          body={t("model.rail.removeKeyBody")}
+          confirmLabel={t("model.rail.removeKeyConfirm")}
+          onCancel={() => setKeyToRemove(null)}
+          onConfirm={() => { if (keyToRemove) void removeKey(keyToRemove.instance); }}
+        />
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
           <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-4 pb-4 pt-4 sm:px-6 sm:pt-5">
             {autoPane ? (

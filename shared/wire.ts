@@ -531,12 +531,33 @@ export interface VoiceCallMark {
   speculative?: boolean;
 }
 
+/** The header a client sends with a routine switched on or off while a
+ * conversation is open: that conversation's thread id, where the server
+ * writes its "Disabled · 1 routine" line (server/routine-chat-events.ts). */
+export const ROUTINE_CONVERSATION_HEADER = "x-sagax-conversation";
+
+/** WireMessage.routineToggle: the routines one turn turned on or off. */
+export interface RoutineToggleEvent {
+  action: "enabled" | "disabled";
+  /** The user message that started the turn (the line groups by it); the
+   * thread's first message id, or "", when no person spoke first. */
+  turnKey: string;
+  /** In the order they changed; the name as it was then. */
+  routines: Array<{ id: string; name: string; botId?: string; groupId?: string; runAs?: string }>;
+}
+
 export interface WireMessage {
   roomRequest?: { id: string; phase: "request" | "result" };
   id: string;
   role: "bot" | "user";
-  kind: "text" | "options" | "activity" | "screen" | "video" | "connector" | "secret" | "routine.run" | "goal.run" | "digest" | "compaction" | "access" | "nudge" | "call" | "widget";
+  kind: "text" | "options" | "activity" | "screen" | "video" | "connector" | "secret" | "routine.run" | "goal.run" | "digest" | "compaction" | "access" | "nudge" | "call" | "widget" | "routines";
   text?: string;
+  /** kind "routines" (2026-10-15): one compact line in the conversation
+   * saying this turn turned routines on or off (server/routine-chat-events.ts).
+   * Each viewer receives only the routines they can see; `text` is the
+   * fallback line ("Disabled 5 routines") for clients that do not know the
+   * kind, recounted for that viewer. */
+  routineToggle?: RoutineToggleEvent;
   /** An accepted nudge. The app draws one line from these names: first
    * person for the sender, the sender's name for everyone else. `groupId`
    * marks a line in that group chat. A direct nudge has no groupId. A

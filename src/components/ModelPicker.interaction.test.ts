@@ -27,6 +27,7 @@ const fixture = vi.hoisted(() => {
     // state.config: an organization server's allowed model providers ride on it
     config: null as unknown,
     showUnready: false,
+    api: (async () => ({})) as (path: string, init?: RequestInit) => Promise<unknown>,
   };
 });
 vi.mock("@/lib/perspicax-org", async (importOriginal) => ({
@@ -46,11 +47,21 @@ vi.mock("react", async (original) => ({
   },
   useEffect: () => {},
 }));
+// The key removal's confirmation portals to <body>; drawn in place here.
+vi.mock("./ConfirmDialog", async () => {
+  const { createElement } = await import("react");
+  return {
+    ConfirmDialog: (props: { open: boolean; title: string; body: string; confirmLabel: string }) => props.open
+      ? createElement("div", { role: "alertdialog", "data-confirm": "" }, props.title, " ", props.body, " ", props.confirmLabel)
+      : null,
+  };
+});
 // Menu animation has its own lifecycle checks; this hook fixture does not
 // emulate React's render-time state retries.
 vi.mock("./MenuMotion", () => ({ useMenuMotion: (open: boolean) => ({ shown: open, closing: false, className: "" }) }));
 vi.mock("@/state/store", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/state/store")>()),
+  api: (path: string, init?: RequestInit) => fixture.api(path, init),
   useStore: () => ({
     state: { instances: fixture.instances, bots: fixture.bots, modelVariantSessions: {}, config: fixture.config },
     dispatch: fixture.dispatch,
@@ -187,6 +198,7 @@ beforeEach(() => {
   fixture.bots = [];
   fixture.config = null;
   fixture.showUnready = false;
+  fixture.api = vi.fn(async () => ({}));
 });
 afterEach(() => vi.useRealTimers());
 
@@ -571,17 +583,24 @@ describe("on an organization server", () => {
     expect(fixture.dispatch).toHaveBeenCalledWith(expect.objectContaining({ type: "setModel", selection: expect.objectContaining({ instanceId: "claude", model: desk[0]!.id }) }));
   });
 
-  it("shows Connected and Disconnect once the person's subscription is signed in, for an admin too", () => {
+  it("drops the access card once the person's subscription is signed in: what pays is a line under the name, Disconnect sits on the row", () => {
     fixture.org = orgOf("admin");
     fixture.myEngines = [engine({ subscription: { supported: true, signedIn: true }, myKey: true, myTurns: "subscription" })];
     fixture.instances = [signedIn()];
     const html = menu(open(bot("claude", "claude-opus-5-5")).html);
-    expect(html).toContain("Pays with: your subscription");
-    expect(html).toContain("data-engine-connected");
-    expect(html).toContain(">Disconnect<");
+    const pane = html.slice(html.indexOf('id="model-picker-title"'));
+    expect(pane).toContain("Pays with: your subscription");
+    expect(pane).toContain('data-pays-with="subscription"');
+    expect(pane).not.toContain("data-model-payers");
+    expect(pane).not.toContain("data-engine-connected");
+    expect(pane).not.toContain(">Disconnect<");
     expect(html).not.toContain("Connect Claude");
     expect(html).not.toContain("data-engine-keys-link");
     expect(html).not.toContain("data-payer=");
+    // the provider's row carries the action, named for it
+    expect(html).toContain('data-rail-row-action="signOut"');
+    expect(html).toContain('aria-label="Disconnect Claude"');
+    expect(html).toContain('title="Disconnect Claude"');
   });
 
   it("says Not connected when nothing pays yet, without the old warnings", () => {
@@ -995,7 +1014,7 @@ describe("the model window from the sidebar", () => {
 });
 
 describe("Connected is said once", () => {
-  it("leaves the header with the provider's name and refresh, and the access card says Connected with Disconnect", () => {
+  it("leaves the header with the provider's name, what pays and refresh; Connected and Disconnect stay in the provider column", () => {
     fixture.org = { org: { name: "Example", identity: { kind: "perspicax", issuer: "https://px.example.test" } }, link: { state: "ok" }, viewerRole: "member", settings: {} };
     fixture.myEngines = [{
       instanceId: "claude", driver: "claudeAgent", displayName: "Claude", installed: true,
@@ -1006,10 +1025,14 @@ describe("Connected is said once", () => {
     // The right pane starts at its title; the provider column comes before it.
     const pane = html.slice(html.indexOf('id="model-picker-title"'));
     expect(pane).not.toContain("data-model-status");
-    expect(pane.match(/Connected/g)).toHaveLength(1);
-    expect(pane).toContain("data-engine-connected");
-    expect(pane).toContain(">Disconnect<");
+    expect(pane).not.toContain("Connected");
+    expect(pane).not.toContain("data-engine-connected");
+    expect(pane).not.toContain(">Disconnect<");
+    expect(pane).toContain("Pays with: your subscription");
     expect(pane).toContain("data-model-refresh");
+    const column = html.slice(0, html.indexOf('id="model-picker-title"'));
+    expect(column).toContain("Connected");
+    expect(column).toContain('aria-label="Disconnect Claude"');
   });
 
   it("has no status badge in the header on a solo server either", () => {
@@ -1111,5 +1134,125 @@ describe("the organization's allowed model providers", () => {
     expect(rail(opened)!.props.instances.map((instance) => instance.instanceId)).toEqual(["claude"]);
     expect(menu(opened.html)).toContain("model-picker-title");
     expect(row(opened, "gpt-5.6")).toBeUndefined();
+  });
+});
+
+describe("the provider row's disconnect (2026-10-15)", () => {
+  type RowAction = import("./ModelPicker").RailRowAction;
+  type RailProps = Parameters<typeof ModelEngineRail>[0];
+  const railProps = (rendered: ReturnType<typeof render>) => rail(rendered)!.props as unknown as RailProps;
+  const orgOf = (viewerRole: "admin" | "member") => ({
+    org: { name: "Example", identity: { kind: "perspicax", issuer: "https://px.example.test" } }, link: { state: "ok" }, viewerRole, settings: {},
+  });
+  const grok: InstanceInfo = {
+    instanceId: "grok", driverKind: "grokAgent", displayName: "Grok", access: "subscription",
+    snapshot: { state: "available", authenticated: true },
+    models: { default: "grok-4.7", options: [{ id: "grok-4.7", label: "Grok 4.7" }] },
+  };
+  const xai: InstanceInfo = {
+    instanceId: "xaiApi", driverKind: "grok", displayName: "xAI", access: "api",
+    snapshot: { state: "available", authenticated: true },
+    models: { default: "grok-4.7", options: [{ id: "grok-4.7", label: "Grok 4.7" }] },
+  };
+  const mine = (instanceId: string, driver: string, signedIn: boolean) => ({
+    instanceId, driver, displayName: instanceId, installed: true,
+    subscription: { supported: driver !== "grok", signedIn }, myKey: false, orgKey: true, myTurns: signedIn ? "subscription" : "org-key",
+  });
+  /** The column drawn alone, so its own buttons can be read and clicked. */
+  const column = (props: RailProps) => nodes(ModelEngineRail({ ...props, wide: true }));
+  const rowButton = (props: RailProps, provider: string) => column(props).find((node) =>
+    node.props["data-rail-row"] === provider)!;
+  const actionOf = (props: RailProps, provider: string) => nodes(rowButton(props, provider).props.children)
+    .find((node) => node.props["data-rail-row-action"]) as Node | undefined;
+
+  it("puts a Disconnect icon on a signed-in subscription's row, named, with a tooltip, visible on hover and focus and always when selected", () => {
+    fixture.org = orgOf("member");
+    fixture.myEngines = [mine("grok", "grokAgent", true), mine("claude", "claudeAgent", false)];
+    fixture.instances = [grok, signedOut()];
+    const props = railProps(open(bot("grok", "grok-4.7")));
+    const icon = actionOf(props, "grok")!;
+    expect(icon.type).toBe("button");
+    expect(icon.props.type).toBe("button");
+    expect(icon.props["aria-label"]).toBe("Disconnect Grok");
+    expect(icon.props.title).toBe("Disconnect Grok");
+    // selected: always shown
+    expect(icon.props.className).toContain("opacity-100");
+    expect(icon.props.className).not.toContain("opacity-0");
+    const html = renderToStaticMarkup(createElement(ModelEngineRail, { ...props, wide: true }));
+    expect(html).toMatch(/data-rail-row-action="signOut"[^>]*aria-label="Disconnect Grok"/);
+    expect(html).toContain('aria-hidden="true"');
+    // a row that is not selected shows it on hover and focus
+    const other = actionOf({ ...props, selectedInstance: signedOut() }, "grok")!;
+    expect(other.props.className).toContain("opacity-0");
+    expect(other.props.className).toContain("group-hover:opacity-100");
+    expect(other.props.className).toContain("group-focus-within:opacity-100");
+    // no subscription signed in: nothing to disconnect
+    expect(actionOf(props, "claude")).toBeUndefined();
+  });
+
+  it("signs out through the same route as the card's Disconnect did, then reloads the person's engines", async () => {
+    fixture.org = orgOf("member");
+    fixture.myEngines = [mine("grok", "grokAgent", true)];
+    fixture.instances = [grok];
+    const props = railProps(open(bot("grok", "grok-4.7")));
+    const action = props.rowAction!(grok, "Grok") as RowAction;
+    expect(action.kind).toBe("signOut");
+    action.run();
+    await vi.waitFor(() => expect(fixture.api).toHaveBeenCalledWith("/api/me/engines/grok/login/sign-out", { method: "POST", body: "{}" }));
+    expect(fixture.dispatch).not.toHaveBeenCalledWith(expect.objectContaining({ type: "error" }));
+  });
+
+  it("says so when the sign-out fails", async () => {
+    fixture.org = orgOf("member");
+    fixture.myEngines = [mine("grok", "grokAgent", true)];
+    fixture.instances = [grok];
+    fixture.api = vi.fn(async () => { throw new Error("offline"); });
+    const props = railProps(open(bot("grok", "grok-4.7")));
+    props.rowAction!(grok, "Grok")!.run();
+    await vi.waitFor(() => expect(fixture.dispatch).toHaveBeenCalledWith({ type: "error", message: "Grok could not be disconnected." }));
+  });
+
+  it("removes a saved API key only after a short confirmation, with the same request as Settings", async () => {
+    fixture.instances = [grok, xai];
+    const status = { xai: { configured: false } };
+    fixture.api = vi.fn(async () => status);
+    const forBot = bot("xaiApi", "grok-4.7");
+    const props = railProps(open(forBot));
+    const icon = actionOf(props, "xaiApi")!;
+    expect(icon.props["aria-label"]).toBe("Remove the xAI key");
+    (icon.props.onClick as () => void)();
+    expect(fixture.api).not.toHaveBeenCalled();
+    const asked = render(forBot);
+    expect(menu(asked.html)).toContain("Remove the xAI key?");
+    const dialog = asked.nodes.find((node) => typeof node.props.onConfirm === "function")!;
+    expect(dialog.props.open).toBe(true);
+    (dialog.props.onConfirm as () => void)();
+    await vi.waitFor(() => expect(fixture.api).toHaveBeenCalledWith("/api/config", { method: "PUT", body: JSON.stringify({ xai: { key: "" } }) }));
+    await vi.waitFor(() => expect(fixture.dispatch).toHaveBeenCalledWith({ type: "configStatus", config: status }));
+    expect(fixture.refreshInstances).toHaveBeenCalled();
+  });
+
+  it("cancelling the confirmation keeps the key", () => {
+    fixture.instances = [grok, xai];
+    const forBot = bot("xaiApi", "grok-4.7");
+    railProps(open(forBot)).rowAction!(xai, "xAI")!.run();
+    const asked = render(forBot);
+    const dialog = asked.nodes.find((node) => typeof node.props.onCancel === "function" && typeof node.props.onConfirm === "function")!;
+    (dialog.props.onCancel as () => void)();
+    expect(menu(render(forBot).html)).not.toContain("data-confirm");
+    expect(fixture.api).not.toHaveBeenCalled();
+  });
+
+  it("leaves the organization's key alone for a member, and a subscription with nothing signed in", () => {
+    fixture.org = orgOf("member");
+    fixture.myEngines = [mine("grok", "grokAgent", false), mine("xaiApi", "grok", false)];
+    fixture.instances = [grok, xai];
+    const props = railProps(open(bot("grok", "grok-4.7")));
+    expect(props.rowAction!(xai, "xAI")).toBeUndefined();
+    expect(props.rowAction!(grok, "Grok")).toBeUndefined();
+    fixture.org = orgOf("admin");
+    fixture.values = [];
+    fixture.own = 0;
+    expect(railProps(open(bot("grok", "grok-4.7"))).rowAction!(xai, "xAI")?.kind).toBe("removeKey");
   });
 });

@@ -338,31 +338,29 @@ final class BotAdvancedUITests: XCTestCase {
         }
     }
 
-    // MARK: Duplicate (BA19)
+    // MARK: The bot's one "..." menu (#518)
 
+    /// The menu holds Edit bot, Rename, the export and Archive (Duplicate
+    /// left it with the desktop's); Rename saves through the server.
     @MainActor
-    func testDuplicateMakesACopy() throws {
+    func testTheBotMenuRenamesTheBot() throws {
         try requirePanel()
-        for copy in try bots() where copy["name"] as? String == "Ara copy" {
-            if let copyId = copy["id"] as? String { try api("DELETE", "/api/bots/\(copyId)", allowFailure: true) }
-        }
+        let id = try araId()
         let app = launchAdvanced()
-        // the panel's top bar menu
+        app.navigationBars.buttons.firstMatch.tap()
         element("profile-more", in: app).tap()
-        let duplicate = element("profile-menu.duplicate", in: app)
-        XCTAssertTrue(duplicate.waitForExistence(timeout: 10))
-        duplicate.tap()
-        var copyId: String?
-        try eventually("Ara copy exists on the server") {
-            copyId = try bots().first { $0["name"] as? String == "Ara copy" }?["id"] as? String
-            return copyId != nil
+        XCTAssertTrue(element("profile-menu.edit-bot", in: app).waitForExistence(timeout: 10))
+        XCTAssertTrue(element("profile-menu.copy-markdown", in: app).exists)
+        XCTAssertFalse(element("profile-menu.duplicate", in: app).exists)
+        element("profile-menu.rename", in: app).tap()
+        let field = element("panel-rename-field", in: app)
+        XCTAssertTrue(field.waitForExistence(timeout: 10))
+        field.tap()
+        field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: 12) + "Ara renamed")
+        app.alerts.buttons["Save"].tap()
+        try eventually("the server has the new name") {
+            (try bots().first { $0["id"] as? String == id }?["name"] as? String) == "Ara renamed"
         }
-        XCTAssertTrue(element("panel-toast", in: app).waitForExistence(timeout: 10), "the panel says the copy was added")
-        if let copyId {
-            let source = (try api("GET", "/api/bots/\(try araId())/soul") as? [String: Any])?["soul"] as? String
-            let copied = (try api("GET", "/api/bots/\(copyId)/soul") as? [String: Any])?["soul"] as? String
-            XCTAssertEqual(copied, source, "the copy carries the instructions")
-            try api("DELETE", "/api/bots/\(copyId)", allowFailure: true)
-        }
+        try api("PATCH", "/api/bots/\(id)/profile", ["name": "Ara"])
     }
 }

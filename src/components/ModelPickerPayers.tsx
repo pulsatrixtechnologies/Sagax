@@ -1,12 +1,15 @@
 // The model picker on an organization server (Perspicax): the person's own
 // access to the engine being browsed, the same minimal card as Settings >
-// Model providers (EngineConnect: what pays today, Connect or Disconnect).
+// Model providers (EngineConnect), less what the window says elsewhere: what
+// pays today sits under the engine's name and Disconnect on the provider's
+// row (2026-10-15), so the card shows only while there is something to do
+// (Connect, or the link to the person's keys).
 // The payer order is the server's (src/lib/model-payers.ts,
 // server/engine-credentials.ts) and is not drawn as a list. The server's own
 // engine login is an admin setting in Settings and never signed in from here.
 import { t } from "@/lib/i18n";
 import type { MyEngine } from "@/lib/perspicax-org";
-import { EngineConnect } from "./EngineConnect";
+import { EngineConnect, engineConnectHasAction } from "./EngineConnect";
 
 export function ModelPickerPayers({ engine, issuer, routine = false, onChanged }: {
   engine: MyEngine;
@@ -23,9 +26,10 @@ export function ModelPickerPayers({ engine, issuer, routine = false, onChanged }
     </section>
   );
 
+  if (!engineConnectHasAction(engine)) return null;
   return (
     <div data-model-payers className="rounded-xl border border-hairline/40 bg-control/30 p-3">
-      <EngineConnect engine={engine} issuer={issuer} onChanged={onChanged} />
+      <EngineConnect engine={engine} issuer={issuer} onChanged={onChanged} statusLine={false} disconnect={false} />
     </div>
   );
 }
