@@ -93,11 +93,11 @@ public struct AssistantTurnFold: Hashable, Sendable {
     }
 }
 
-/// A transcript entry: a message, a run of tools, or completed narration.
+/// A transcript entry: a message, or one stretch of work (tool steps and a
+/// settled turn's narration) read as a single line.
 public enum TranscriptRow: Identifiable, Hashable, Sendable {
     case message(Message)
-    case activityRun([Message])
-    case assistantTurn(AssistantTurnFold)
+    case activityRun(StepRun)
     case voiceCall(VoiceCallCardModel)
 
     /// The message a row answers for — its first, which is the one whose
@@ -105,8 +105,7 @@ public enum TranscriptRow: Identifiable, Hashable, Sendable {
     public var head: Message {
         switch self {
         case let .message(message): message
-        case let .activityRun(items): items[0]
-        case let .assistantTurn(turn): turn.messages[0]
+        case let .activityRun(run): run.messages[0]
         case let .voiceCall(card): card.messages[0]
         }
     }
@@ -114,8 +113,7 @@ public enum TranscriptRow: Identifiable, Hashable, Sendable {
     public var id: String {
         switch self {
         case let .message(message): message.id
-        case let .activityRun(items): "run.\(items[0].id)"
-        case let .assistantTurn(turn): "turn.\(turn.turnId)"
+        case let .activityRun(run): run.id
         case let .voiceCall(card): "voice.\(card.callId)"
         }
     }
@@ -126,8 +124,7 @@ public enum TranscriptRow: Identifiable, Hashable, Sendable {
     public var endAt: Double {
         switch self {
         case let .message(message): message.at
-        case let .activityRun(items): items.last?.at ?? head.at
-        case let .assistantTurn(turn): turn.messages.last?.at ?? head.at
+        case let .activityRun(run): run.messages.last?.at ?? head.at
         case let .voiceCall(card): card.messages.last?.at ?? head.at
         }
     }
@@ -146,16 +143,15 @@ public func rosterPreview(_ messages: [Message], detail: ActivityDetail) -> Stri
     // The digest is a row in the chat now, as a chip, but never the line
     // under a chat's name: it follows every reply, so it would be the
     // preview of every chat and say nothing about any of them.
-    let messages = messages.filter { $0.kind != .digest }
+    // Tool steps are never the line under a chat either: only the bot's
+    // words, or the "Worked for" of a turn whose narration folded.
+    let messages = messages.filter { $0.kind != .digest && !isToolActivityRow($0) }
     guard let last = transcriptRows(messages, detail: detail).last else { return "" }
     switch last {
     case let .message(message):
         return previewText(of: message)
-    case let .activityRun(items):
-        let running = items.contains { $0.tool?.ok == nil }
-        return "\(running ? "Running" : "Ran") \(items.count) steps"
-    case let .assistantTurn(turn):
-        return turn.label
+    case let .activityRun(run):
+        return run.englishLabel
     case let .voiceCall(card):
         return spokenLines(card.messages).last?.text ?? ""
     }
@@ -185,7 +181,7 @@ public struct RosterPreviewLine: Hashable, Sendable {
 /// `rosterPreview` plus the icon kind, folded by the same rules.
 public func rosterPreviewLine(_ messages: [Message], detail: ActivityDetail) -> RosterPreviewLine {
     let text = rosterPreview(messages, detail: detail)
-    let visible = messages.filter { $0.kind != .digest }
+    let visible = messages.filter { $0.kind != .digest && !isToolActivityRow($0) }
     guard case let .message(last)? = transcriptRows(visible, detail: detail).last else {
         return RosterPreviewLine(text: text, kind: .plain)
     }
@@ -245,10 +241,10 @@ public func isStatusNotice(_ message: Message) -> Bool {
     message.kind == .activity && (message.tool?.name.hasPrefix("notice:") ?? false)
 }
 
-/// A per-tool receipt, the Success and Error lines such as
-/// `mcp_sagax-environment__run_command`. It stays in the store and is left
-/// out of the transcript at every activity level. Phone and iPad share
-/// `transcriptRows`, so this is the only filter.
+/// A tool step, running, done or failed, such as
+/// `mcp_sagax-environment__run_command`. It never shows as a chip of its
+/// own: a turn's steps fold into one step line (`StepRun`, desktop #488 and
+/// #518), and Hidden leaves them out. Phone and iPad share `transcriptRows`.
 ///
 /// Not a tool row: a status notice, a failed turn (`error:`), a parallel
 /// task card, or a chip that opens another conversation.
@@ -280,10 +276,11 @@ public func settledPermissionLeavesChat(_ message: Message) -> Bool {
 
 /// Folds a transcript to the requested level of detail.
 ///
-/// Per-tool activity is omitted at every level. The Success and Error
-/// receipts stay stored and never become rows. A status notice, a failed
-/// turn, a parallel task card, and a chip that opens another conversation
-/// stay. A link chip whose step failed is never folded into a run.
+/// Every stretch of one bot's work, its tool steps and a settled turn's
+/// narration, becomes one step line ("Worked 15s · 2 tools") that opens on
+/// the steps (src/lib/activity-runs.ts). Hidden drops the steps and keeps
+/// the narration folded. A status notice, a failed turn, a parallel task
+/// card, and a chip that opens another conversation stay rows of their own.
 ///
 /// A digest is a row of its own, drawn as a chip: never folded into a run
 /// of the tool chips it summarises, never counted as one of their steps,
@@ -319,15 +316,23 @@ public func transcriptRows(_ messages: [Message], detail: ActivityDetail) -> [Tr
 
     var rows: [TranscriptRow] = []
     var run: [Message] = []
+    var turnElapsed: Double?
+    var turnID: String?
 
-    // A run of one is not worth a summary — emit the chip itself.
+    // One step on its own still reads as the step line; narration is
+    // folded even alone, the answer under it is what shows.
     func flush() {
-        if run.count > 1 {
-            rows.append(.activityRun(run))
-        } else {
-            rows.append(contentsOf: run.map(TranscriptRow.message))
+        if !run.isEmpty {
+            rows.append(.activityRun(StepRun(messages: run, elapsed: turnElapsed ?? StepGroup.span(run), turnId: turnID)))
         }
         run.removeAll()
+        turnElapsed = nil
+        turnID = nil
+    }
+    // A run is one bot's work: another speaker starts a new one.
+    func join(_ message: Message) {
+        if let first = run.first, first.role != message.role || first.from?.botId != message.from?.botId { flush() }
+        run.append(message)
     }
 
     var seenVoice = Set<String>()
@@ -342,14 +347,20 @@ public func transcriptRows(_ messages: [Message], detail: ActivityDetail) -> [Tr
         case .keep:
             break
         }
-        if let turn = folds[message.id] {
-            flush()
-            rows.append(.assistantTurn(turn))
+        if hiddenIDs.contains(message.id) {
+            join(message)
+            if let fold = folds[message.id] {
+                turnElapsed = fold.elapsed
+                turnID = fold.turnId
+            }
             continue
         }
-        if hiddenIDs.contains(message.id) { continue }
-        // Display only. The message remains in the thread store.
-        if isToolActivityRow(message) { continue }
+        // A tool step joins the stretch of work; with activity Hidden the
+        // steps go and a turn's narration stays folded.
+        if isToolActivityRow(message) {
+            if detail != .hidden { join(message) }
+            continue
+        }
         if settledPermissionLeavesChat(message) { continue }
         // A parallel task's live card and a failed turn are not receipts:
         // the desktop draws them whatever the tool-call setting says, and
@@ -360,30 +371,16 @@ public func transcriptRows(_ messages: [Message], detail: ActivityDetail) -> [Tr
             continue
         }
         // Which credentials paid for a turn (organization servers) shows even
-        // when tool chips are hidden, as the desktop's TurnAccessChip does.
-        // Tool chips already left via isToolActivityRow. Hidden only drops
-        // the digest and compaction summaries of those calls, never a
-        // notice, a failed turn, a parallel card, or a comm/thread chip.
+        // when activity is hidden, as the desktop's TurnAccessChip does.
+        // Hidden drops the digest and compaction summaries of the steps,
+        // never a notice, a failed turn, a parallel card, or a comm chip.
         let paidBy = message.kind == .digest && message.digest?.access != nil
         if detail == .hidden && (message.kind == .digest || message.kind == .compaction) && !paidBy { continue }
         // A turn that touched nothing leaves a digest with nothing to show;
         // an empty row would still cost the transcript a gap.
         if message.kind == .digest && !paidBy && DigestSummary(text: message.text ?? "").isEmpty { continue }
-        if detail != .reduced {
-            rows.append(.message(message))
-            continue
-        }
-        guard message.kind == .activity else {
-            flush()
-            rows.append(.message(message))
-            continue
-        }
-        if message.tool?.ok == false || isStatusNotice(message) {
-            flush()
-            rows.append(.message(message))
-            continue
-        }
-        run.append(message)
+        flush()
+        rows.append(.message(message))
     }
     flush()
     return rows

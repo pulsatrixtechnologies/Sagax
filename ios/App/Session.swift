@@ -304,6 +304,13 @@ final class Session: ObservableObject {
                 }
                 focusedMessageId = "progress2"
             }
+            if arguments.contains("-chat-steps-preview"),
+               let url = Bundle.main.url(forResource: "ChatStepsPreview", withExtension: "json"),
+               let data = try? Data(contentsOf: url),
+               let steps = try? JSONDecoder().decode([Message].self, from: data) {
+                // A turn's tool steps among its narration (the step line).
+                state.messages["preview-gmail"] = ((state.messages["preview-gmail"] ?? []) + steps).sorted { $0.at < $1.at }
+            }
             if arguments.contains("-cards-top") {
                 // The cards chat from its first cards (the theme captures).
                 focusedMessageId = "c-tool"
@@ -2256,6 +2263,14 @@ final class Session: ObservableObject {
     /// The model catalog lives on the paired computer because availability
     /// depends on which engines are installed and signed in there.
     func modelInstances() async -> [Instance] {
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("-model-menu-preview"),
+           let url = Bundle.main.url(forResource: "ModelMenuPreview", withExtension: "json"),
+           let data = try? Data(contentsOf: url),
+           let list = try? JSONDecoder().decode(InstanceList.self, from: data) {
+            return list.instances
+        }
+        #endif
         guard let client else { return [] }
         do {
             return try await client.instances()

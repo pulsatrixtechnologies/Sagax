@@ -40,6 +40,8 @@ struct DesktopComposerPill: View {
     let draftChanged: (String, String) -> Void
 
     @State private var modelLabel: String?
+    /// The model menu (#477, #478, #518), as the desktop chip opens it.
+    @State private var modelMenuOpen = false
     @State private var menu: DesktopComposerMenu? = DesktopComposerPill.parityMenu
 
     #if DEBUG
@@ -164,7 +166,7 @@ struct DesktopComposerPill: View {
     }
 
     private func modelChip(_ label: String) -> some View {
-        Button(action: openModel) {
+        Button { if bot != nil { modelMenuOpen = true } else { openModel() } } label: {
             HStack(spacing: 4) {
                 Text(verbatim: label)
                     .font(theme.font(13))
@@ -182,6 +184,16 @@ struct DesktopComposerPill: View {
         .padding(.bottom, 2.25)
         .accessibilityLabel(Text("Model: \(label)"))
         .accessibilityIdentifier("desktop-composer-model")
+        .popover(isPresented: $modelMenuOpen) {
+            if let bot {
+                ModelMenuSheet(bot: bot, close: { modelMenuOpen = false })
+                    .environmentObject(session)
+                    .frame(minWidth: 340, idealWidth: 360, minHeight: 480, idealHeight: 560)
+            }
+        }
+        .onValueChange(of: modelMenuOpen) { open in
+            if !open { Task { await loadModelLabel() } }
+        }
     }
 
     private var dictationButton: some View {

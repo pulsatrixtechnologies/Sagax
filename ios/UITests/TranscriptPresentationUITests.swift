@@ -38,9 +38,9 @@ final class TranscriptPresentationUITests: XCTestCase {
     @MainActor
     func testHiddenFoldsNarrationAndWebhookPayloadCanBeExpanded() {
         let app = launchPreview(detail: "hidden")
-        let fold = app.buttons["assistant-turn.preview-turn"]
+        let fold = app.buttons["step-group.preview-turn"]
         XCTAssertTrue(fold.waitForExistence(timeout: 5))
-        XCTAssertEqual(fold.label, "Worked for 4s")
+        XCTAssertEqual(fold.label, "Worked 4s")
         XCTAssertTrue(app.staticTexts["The build failed because a dependency is missing."].exists)
         XCTAssertFalse(contains("Let me inspect", in: app))
         XCTAssertTrue(app.staticTexts["Triage the build failure."].exists)
@@ -65,7 +65,7 @@ final class TranscriptPresentationUITests: XCTestCase {
     @MainActor
     func testHiddenSuppressesLiveReasoning() {
         let app = launchPreview(detail: "hidden", reasoning: true)
-        XCTAssertTrue(app.buttons["assistant-turn.preview-turn"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["step-group.preview-turn"].waitForExistence(timeout: 5))
         XCTAssertFalse(contains("Thinking…", in: app))
         XCTAssertTrue(app.descendants(matching: .any).matching(NSPredicate(format: "label == %@", "Pepper is working")).firstMatch.exists)
     }
@@ -74,7 +74,7 @@ final class TranscriptPresentationUITests: XCTestCase {
     func testFullKeepsLiveReasoningAvailable() {
         let app = launchPreview(detail: "full", reasoning: true)
         XCTAssertTrue(app.staticTexts["Thinking…"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.buttons["assistant-turn.preview-turn"].exists)
+        XCTAssertTrue(app.buttons["step-group.preview-turn"].exists)
     }
 
     @MainActor
