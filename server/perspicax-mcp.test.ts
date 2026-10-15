@@ -423,8 +423,9 @@ describe("PerspicaxMcp: a session Perspicax dropped", () => {
     expect(perspicaxSessionLost(500, "")).toBe(false);
     expect(perspicaxReplayable(call("cw_psa__query", 1))).toBe(true);
     expect(perspicaxReplayable(call("memory_search", 1))).toBe(true);
+    expect(perspicaxReplayable(call("memory_find", 1))).toBe(true);
     expect(perspicaxReplayable({ jsonrpc: "2.0", id: 1, method: "tools/list" })).toBe(true);
-    for (const name of ["cw_psa__write", "cw_psa__action", "memory_write", "sagax_send", "flow_action", "cw_psa_query", "unknown"]) {
+    for (const name of ["cw_psa__write", "cw_psa__action", "memory_write", "memory_save", "memory_remove", "memory_suggestions", "sagax_send", "flow_action", "cw_psa_query", "unknown"]) {
       expect(perspicaxReplayable(call(name, 1)), name).toBe(false);
     }
   });

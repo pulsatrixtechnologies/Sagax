@@ -22,11 +22,15 @@ import { READ_ONLY_AGENT_TOOL_NAMES } from "../../agent-tool-policy.ts";
 import { SPAWNED_PROXIES } from "../../proxy-paths.ts";
 
 /** Perspicax connector tools reviewed as read-only (JC, 2026-10-11). Never
- * add cw_psa__write/action, memory_write/forget/promote, sagax_send/approve/
+ * add cw_psa__write/action, memory_write/forget/promote, memory_save/remove/
+ * suggestions, sagax_send/approve/
  * nudge, flow_action, or anything whose effect depends on input. */
 export const PERSPICAX_READ_ONLY_TOOLS: ReadonlySet<string> = new Set([
   "memory_recall",
   "memory_search",
+  // The simplified memory model (Perspicax docs/design/memory-v2.md): its
+  // schema is query, place, tags and limit; it reads and never writes.
+  "memory_find",
   "api_search",
   "api_describe",
   "api_result_query",

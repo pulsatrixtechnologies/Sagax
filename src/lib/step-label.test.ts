@@ -33,6 +33,11 @@ describe("step labels in plain words", () => {
     expect(readStep({ name: "mcp__pulsatrix__cw_psa__get_ticket", ok: true, input: JSON.stringify({ ticketId: 297048 }) }).target).toBe("#297048");
   });
 
+  it("labels the simplified memory tools like the ones they replace", () => {
+    expect(stepLabel({ name: "mcp__perspicax__memory_find", ok: true })).toBe(stepLabel({ name: "mcp__perspicax__memory_search", ok: true }));
+    expect(stepLabel({ name: "mcp__perspicax__memory_save", ok: true })).toBe(stepLabel({ name: "mcp__perspicax__memory_write", ok: true }));
+  });
+
   it("falls back to 'Used <tool>' for an unknown tool", () => {
     expect(stepLabel({ name: "frobnicate_widgets", ok: true })).toBe("Used frobnicate widgets");
     expect(stepLabel({ name: "frobnicate", ok: false })).toBe("Could not use frobnicate");
