@@ -59,7 +59,9 @@ import { firstUnreadMessageId, threadOpensUnread, threadReadCursor } from "@/lib
 import type { ComputerStart } from "@/lib/computer-start";
 import { answerResponse, dismissResponse } from "@/lib/card-answer";
 import { currentCall, voiceCallId } from "@/lib/call";
-import { readLastConversation, rememberConversation } from "@/lib/last-conversation";
+import { forgetConversation, readLastConversation, rememberConversation } from "@/lib/last-conversation";
+import { fallbackSelection, selectionListed, selectionNewlyHidden } from "@/lib/selection-fallback";
+import { hiddenKeySet, readSidebarHidden, useSidebarHidden } from "@/lib/sidebar-hidden";
 import { readLastBotSection, rememberBotSection } from "@/lib/last-bot-section";
 import { approvalWithdrawKey, showNotification, withdrawNotification, type NotificationTarget } from "@/lib/notify";
 import { useShowThreads } from "@/lib/thread-preferences";
@@ -1224,6 +1226,9 @@ export interface AppState {
   liveCallLookupSeq: number;
   /** selected chat — a bot id OR a group id */
   selectedId: string;
+  /** The person's sidebar hidden keys (src/lib/sidebar-hidden.ts): a
+   * restored or fallback selection never lands on one of them. */
+  sidebarHiddenKeys: ReadonlySet<string>;
   activeView: "chat" | "team-map" | "routines";
   routines: Routine[];
   routineRuns: RoutineRun[];
@@ -1453,6 +1458,9 @@ export type Action =
       resumeId?: string;
     }
   | { type: "botQueues"; queues: AppState["pendingQueued"] }
+  /** The person's sidebar hidden list changed (closed, hid, showed, or it
+   * arrived from another device). */
+  | { type: "sidebarHidden"; keys: ReadonlySet<string> }
   | { type: "sections"; sections: string[] }
   | { type: "sectionDeleted"; section: string; sections: string[] }
   | { type: "showRoutines"; section?: "schedule" | "logs"; view?: "calendar" | "list"; botId?: string; routineId?: string; runStatus?: RoutineRunStatusFilter }
@@ -2041,11 +2049,12 @@ export function reducer(state: AppState, action: Action): AppState {
       const known = (id: string) => action.bots.some((b) => b.id === id) || action.groups.some((g) => g.id === id);
       const resume = action.resumeId;
       // A remembered conversation only counts while it still resolves to a
-      // visible bot or a room; a deleted or hidden one falls back as before.
-      const resumed =
-        resume && (action.bots.some((b) => b.id === resume && !b.hidden) || action.groups.some((g) => g.id === resume)) ? resume : "";
+      // conversation the sidebar lists; a deleted, hidden or closed one
+      // falls back, and the fallback is listed too or nothing at all.
+      const hidden = state.sidebarHiddenKeys;
+      const resumed = resume && selectionListed(action.bots, action.groups, resume, hidden) ? resume : "";
       const selectedId =
-        state.selectedId && known(state.selectedId) ? state.selectedId : resumed || (action.bots[0]?.id ?? action.groups.find((g) => !g.dm)?.id ?? "");
+        state.selectedId && known(state.selectedId) ? state.selectedId : resumed || fallbackSelection(action.bots, action.groups, hidden);
       const hydrated = {
         ...state,
         bots: action.bots.map((bot) => {
@@ -2219,8 +2228,16 @@ export function reducer(state: AppState, action: Action): AppState {
     }
     case "groupDeleted": {
       const groups = state.groups.filter((g) => g.id !== action.groupId);
-      const selectedId = state.selectedId === action.groupId ? (state.bots[0]?.id ?? groups.find((g) => !g.dm)?.id ?? "") : state.selectedId;
+      const selectedId = state.selectedId === action.groupId ? fallbackSelection(state.bots, groups, state.sidebarHiddenKeys) : state.selectedId;
       return { ...state, groups, selectedId };
+    }
+    case "sidebarHidden": {
+      const next = { ...state, sidebarHiddenKeys: action.keys };
+      // Closing or hiding the open conversation (here or on another device)
+      // leaves it: the next listed one opens, else the empty state.
+      return selectionNewlyHidden(state.bots, state.groups, state.selectedId, state.sidebarHiddenKeys, action.keys)
+        ? { ...next, selectedId: fallbackSelection(state.bots, state.groups, action.keys) }
+        : next;
     }
     case "instances":
       return { ...state, instances: action.instances };
@@ -2301,7 +2318,7 @@ export function reducer(state: AppState, action: Action): AppState {
     case "deleteBot": {
       const bots = state.bots.filter((b) => b.id !== action.botId);
       const selectedId =
-        state.selectedId === action.botId ? (bots.find((b) => !b.hidden)?.id ?? bots[0]?.id ?? "") : state.selectedId;
+        state.selectedId === action.botId ? fallbackSelection(bots, state.groups, state.sidebarHiddenKeys) : state.selectedId;
       const { [action.botId]: _deleted, ...deletingBots } = state.deletingBots;
       return reconcileModelVariantSessions({ ...state, bots, selectedId, deletingBots });
     }
@@ -3212,6 +3229,7 @@ export const initialState: AppState = {
   liveCallVersion: 0,
   liveCallLookupSeq: 0,
   selectedId: "",
+  sidebarHiddenKeys: new Set<string>(),
   activeView: "chat",
   routines: [],
   routineRuns: [],
@@ -3656,7 +3674,8 @@ const StoreContext = createContext<{
  * "overview"/false and the reducer never touches localStorage. */
 function restoreBotSettingsSection(state: AppState): AppState {
   const section = readLastBotSection();
-  return section ? { ...state, botSettingsSection: section, botSettingsSectionStored: true } : state;
+  const withHidden = { ...state, sidebarHiddenKeys: hiddenKeySet(readSidebarHidden()) };
+  return section ? { ...withHidden, botSettingsSection: section, botSettingsSectionStored: true } : withHidden;
 }
 
 export function StoreProvider({ children }: { children: ReactNode }) {
@@ -3710,6 +3729,23 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (state.selectedId) rememberConversation(state.selectedId);
   }, [state.selectedId]);
+  // A remembered conversation that no longer resolves to a listed one
+  // (deleted, hidden, closed) is forgotten once the snapshot says nothing
+  // is open, so the next launch does not try to resume it.
+  useEffect(() => {
+    if (!state.hydrated || state.selectedId) return;
+    const remembered = readLastConversation();
+    if (remembered && !selectionListed(state.bots, state.groups, remembered, state.sidebarHiddenKeys)) forgetConversation();
+  }, [state.hydrated, state.selectedId, state.bots, state.groups, state.sidebarHiddenKeys]);
+  // The sidebar hidden list lives in a synced preference; the reducer gets
+  // it as data so a restored or fallback selection can respect it.
+  const sidebarHidden = useSidebarHidden();
+  useEffect(() => {
+    const keys = hiddenKeySet(sidebarHidden);
+    const current = stateRef.current.sidebarHiddenKeys;
+    if (keys.size === current.size && [...keys].every((key) => current.has(key))) return;
+    rawDispatch({ type: "sidebarHidden", keys });
+  }, [sidebarHidden]);
   // Rail clicks, deep links and remembered openings all carry the accordion
   // flag, so only a section actually viewed is written; a bare open that
   // stays collapsed never is.
