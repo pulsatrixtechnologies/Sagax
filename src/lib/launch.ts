@@ -13,14 +13,23 @@ import type { OnboardingStatus } from "./onboarding";
 
 export type LaunchMode = "solo" | "server";
 
-/** Empty in the public tree. A build for an organization sets
- * SAGAX_DEFAULT_SERVER (vite.config.ts). */
+/** The launch screen's Server address starts empty: no build ships an
+ * organization's server as a default. The only address it proposes is one
+ * this computer already saved (an organization server in environments.json),
+ * so an existing connection is not lost. */
 export const DEFAULT_SERVER_ADDRESS = "";
 
-const BUILD_SERVER = typeof __SAGAX_DEFAULT_SERVER__ === "string" ? __SAGAX_DEFAULT_SERVER__ : "";
+type SavedEnvironments = {
+  activeId?: string;
+  environments?: Array<{ id: string; kind?: "local" | "remote"; origin?: string; org?: boolean }>;
+};
 
-export function defaultServerAddress(override: string = BUILD_SERVER): string {
-  return override.trim() || DEFAULT_SERVER_ADDRESS;
+/** The organization server this computer already saved, or "". The active
+ * one first, then the most recently saved one. */
+export function rememberedServerAddress(state: SavedEnvironments | null | undefined): string {
+  const saved = (state?.environments ?? []).filter((e) => e.kind !== "local" && e.org === true && typeof e.origin === "string" && e.origin.trim());
+  const active = saved.find((e) => e.id === state?.activeId);
+  return (active ?? saved[saved.length - 1])?.origin?.trim() ?? DEFAULT_SERVER_ADDRESS;
 }
 
 export interface LaunchBridges {

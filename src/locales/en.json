@@ -3111,6 +3111,7 @@
   "launch.later": "You can change this later in Settings > General.",
   "launch.server.address": "Server address",
   "launch.server.body": "Sign in to your organization's {app} server with your Pulsatrix account.",
+  "launch.server.hint": "Ask your administrator for this address.",
   "launch.server.title": "Server",
   "launch.signIn": "Sign in",
   "launch.solo.body": "Everything stays on this computer: your bots, conversations and keys.",

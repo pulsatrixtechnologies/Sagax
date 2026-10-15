@@ -183,8 +183,6 @@ jobs:
           rm "$RUNNER_TEMP/cert.p12"
 
       - name: Package both architectures
-        env:
-          SAGAX_DEFAULT_SERVER: ${{ secrets.SAGAX_DEFAULT_SERVER }}
         run: pnpm package:mac
 
       - name: "Gate: both packaged apps use the canonical updater feed"
@@ -344,8 +342,6 @@ jobs:
         shell: bash
         run: rm -rf dist dist-server release
       - name: Package (win)
-        env:
-          SAGAX_DEFAULT_SERVER: ${{ secrets.SAGAX_DEFAULT_SERVER }}
         run: pnpm package:win
       - name: "Gate: bundled browser works with an empty home"
         run: node scripts/smoke-browser-bundle.mjs --resources "${{ github.workspace }}/release/win-unpacked/resources"
@@ -430,8 +426,6 @@ jobs:
       - name: Prove overlay-free X11 input routing
         run: dbus-run-session -- xvfb-run -a pnpm smoke:cua-x11-input
       - name: Package (linux)
-        env:
-          SAGAX_DEFAULT_SERVER: ${{ secrets.SAGAX_DEFAULT_SERVER }}
         run: pnpm package:linux
       - name: Verify the packaged updater target
         run: |

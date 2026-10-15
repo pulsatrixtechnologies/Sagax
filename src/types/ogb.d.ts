@@ -27,8 +27,6 @@ declare global {
 /** Fork version inlined by Vite. Official base is __BASE_VERSION__. */
 const __APP_VERSION__: string;
 const __BASE_VERSION__: string;
-/** The launch screen's prefilled server address (vite.config.ts, env SAGAX_DEFAULT_SERVER). */
-const __SAGAX_DEFAULT_SERVER__: string;
 
   type DesktopSharedFolder = import("../../electron/computer-sharing.mjs").SharedFolder;
   type DesktopComputerSharing = import("../../electron/computer-sharing.mjs").SharingState;
@@ -178,6 +176,8 @@ const __SAGAX_DEFAULT_SERVER__: string;
             kind?: "local" | "remote";
             name: string;
             origin?: string;
+            /** An organization server (signs people in with Pulsatrix). */
+            org?: boolean;
             dataDir?: string;
             missing?: boolean;
           }>;

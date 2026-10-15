@@ -8,13 +8,13 @@
 // is the OIDC client and the desktop only opens it.
 //
 // The card is the welcome flow's card, so the two read as one surface.
-import { useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { Laptop, Server } from "lucide-react";
 import { MausAvatar } from "@/components/Avatar";
 import { brand } from "@/lib/brand";
 import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
-import { defaultServerAddress, launchErrorKey, launchModePatch, type LaunchBridges, type LaunchMode } from "@/lib/launch";
+import { DEFAULT_SERVER_ADDRESS, launchErrorKey, launchModePatch, rememberedServerAddress, type LaunchBridges, type LaunchMode } from "@/lib/launch";
 import { serverAddress } from "@/lib/org-join";
 import { readPreferences } from "@/lib/user-preferences-sync";
 import { api, useStore } from "@/state/store";
@@ -40,10 +40,26 @@ export function LaunchScreen({
 }) {
   const { dispatch } = useStore();
   const [mode, setMode] = useState<LaunchMode>(initialMode);
-  const [address, setAddress] = useState(() => defaultServerAddress());
+  const [address, setAddress] = useState(DEFAULT_SERVER_ADDRESS);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const pending = useRef(false);
+
+  // No build proposes a server: only an organization server this computer
+  // already saved comes back, and never over what the person typed.
+  useEffect(() => {
+    let live = true;
+    void Promise.resolve()
+      .then(() => bridges.environments.state())
+      .then((state) => {
+        const remembered = rememberedServerAddress(state);
+        if (live && remembered) setAddress((current) => current || remembered);
+      })
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, [bridges]);
 
   const remember = async (choice: LaunchMode) => {
     try {
@@ -170,8 +186,11 @@ export function LaunchScreen({
                 spellCheck={false}
                 maxLength={2048}
                 dir="ltr"
+                placeholder="https://…"
+                aria-describedby="launch-server-hint"
                 className={inputClass}
               />
+              <span id="launch-server-hint" className="text-[11.5px]">{t("launch.server.hint")}</span>
             </label>
           )}
           {error && <p role="alert" className="text-[12.5px] text-danger">{error}</p>}

@@ -800,8 +800,9 @@ probes the address (`orgJoin.probe`, Perspicax-linked servers only) then
 `orgJoin.join` saves the server and starts the existing **Sign in with
 Pulsatrix** (`electron/org-join.mjs`, `startPulsatrixSignIn` in
 `electron/main.mjs`). Do not add another sign-in path. The choice lives in
-`config.onboarding.launchMode`; the address field is empty unless the build
-sets `SAGAX_DEFAULT_SERVER`. The welcome tour and Settings > Organization no longer
+`config.onboarding.launchMode`; the address field starts empty (no build
+ships a default server) and proposes only an organization server this
+computer already saved in `environments.json`. The welcome tour and Settings > Organization no longer
 offer the inherited managed-desktop Admin sign-in. Organization is Perspicax. See
 `docs/self-hosting.md` ("At launch: No server or Server").
 

@@ -866,8 +866,9 @@ welcome tour:
 
 - **No server**: the solo, local-first app. The welcome tour
   follows.
-- **Server**: the address of your organization's Sagax (empty unless the
-  build sets `SAGAX_DEFAULT_SERVER`). **Sign in** checks that the
+- **Server**: the address of your organization's Sagax (empty: ask your
+  administrator; no build ships a default server, and only an organization
+  server this computer already saved is proposed again). **Sign in** checks that the
   server signs people in with Pulsatrix (its
   `/.well-known/openmausbot/environment` names a `perspicax` identity),
   saves it under Servers, selects it and starts its **Sign in with
@@ -927,9 +928,6 @@ app is open, and each action goes through the bot's usual approvals. A
 routine, another person, or a person whose app is not connected gets a plain
 refusal. The server must have computer sharing on in its `config.json`
 (`"features": { "sharedComputers": true }`).
-
-Another organization's build sets `SAGAX_DEFAULT_SERVER=https://...` when it
-runs `vite build` (vite.config.ts); the address is only a prefill.
 
 The tour's engines beat no longer offers the inherited Sagax Admin
 sign-in (`admin.openmausbot.com`); its row now opens Server mode.
