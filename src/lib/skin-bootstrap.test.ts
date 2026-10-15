@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { skinBootstrapInlineScript, skinIdFromStored } from "./skin-bootstrap";
+import { scriptSafeJson, skinBootstrapInlineScript, skinIdFromStored } from "./skin-bootstrap";
 
 describe("skin bootstrap before hydration", () => {
   it("reads the last cached skin id", () => {
@@ -13,5 +13,11 @@ describe("skin bootstrap before hydration", () => {
     expect(script).toContain("omb-skin");
     expect(script).toContain("document.documentElement.dataset.skin");
     expect(script).toContain("midnight");
+  });
+
+  it("escapes script-breaking characters in embedded JSON", () => {
+    const out = scriptSafeJson(["</script><b>", "a b c", "x\\/y"]);
+    expect(out).not.toMatch(/[<>/  ]/);
+    expect(JSON.parse(out)).toEqual(["</script><b>", "a b c", "x\\/y"]);
   });
 });
