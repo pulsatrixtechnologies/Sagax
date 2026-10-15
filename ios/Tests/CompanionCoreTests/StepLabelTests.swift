@@ -132,6 +132,10 @@ final class StepLabelTests: XCTestCase {
         XCTAssertEqual(words.label, "A travaillé 15 s")
         XCTAssertEqual(words.tools, "2 outils")
         XCTAssertEqual(words.failed, "1 échec")
+        // the row draws the duration only; VoiceOver reads the whole count
+        XCTAssertTrue(words.accessibility.hasPrefix("A travaillé 15 s, 2 outils, 1 échec"), words.accessibility)
+        let spoken = StepWords(locale: Locale(identifier: "fr_CA")) { $0 == "step.turn.a11y" ? "{summary}, appuyez pour voir le détail" : StepLabelTests.french[$0] }
+        XCTAssertEqual(StepGroup.words(summary, elapsed: 15_000, words: spoken).accessibility, "A travaillé 15 s, 2 outils, 1 échec, appuyez pour voir le détail")
         XCTAssertEqual(StepGroup.words(StepGroup.summarize([]), elapsed: nil, words: en).label, "Worked")
         done.append(step("c", tool("Bash", ok: nil, input: ["command": "pnpm i"])))
         let live = StepGroup.words(StepGroup.summarize(done), elapsed: nil, words: en)

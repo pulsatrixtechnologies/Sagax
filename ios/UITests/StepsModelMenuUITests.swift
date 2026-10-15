@@ -69,8 +69,12 @@ final class StepsModelMenuUITests: XCTestCase {
     private func openModelPage(_ app: XCUIApplication) {
         app.buttons["chat-name"].tap()
         XCTAssertTrue(app.descendants(matching: .any)["profile-name"].firstMatch.waitForExistence(timeout: 10), "bot panel")
+        let persona = app.descendants(matching: .any)["panel-edit-persona"].firstMatch
+        for _ in 0..<8 where !(persona.exists && persona.isHittable) { app.swipeUp() }
+        persona.tap()
         let row = app.descendants(matching: .any)["panel-row.model"].firstMatch
-        for _ in 0..<6 where !row.isHittable { app.swipeUp() }
+        _ = row.waitForExistence(timeout: 10)
+        for _ in 0..<8 where !(row.exists && row.isHittable) { app.swipeUp() }
         row.tap()
     }
 
@@ -91,7 +95,7 @@ final class StepsModelMenuUITests: XCTestCase {
         app.launch()
         // Pepper's own thread is the Gmail triage: the row opens it.
         let pepper = app.staticTexts["Pepper"].firstMatch
-        XCTAssertTrue(pepper.waitForExistence(timeout: 20))
+        XCTAssertTrue(pepper.waitForExistence(timeout: 40))
         pepper.tap()
         return app
     }

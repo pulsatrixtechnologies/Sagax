@@ -40,7 +40,7 @@ final class TranscriptPresentationUITests: XCTestCase {
         let app = launchPreview(detail: "hidden")
         let fold = app.buttons["step-group.preview-turn"]
         XCTAssertTrue(fold.waitForExistence(timeout: 5))
-        XCTAssertEqual(fold.label, "Worked 4s")
+        XCTAssertEqual(fold.label, "Worked 4s, press to see the detail")
         XCTAssertTrue(app.staticTexts["The build failed because a dependency is missing."].exists)
         XCTAssertFalse(contains("Let me inspect", in: app))
         XCTAssertTrue(app.staticTexts["Triage the build failure."].exists)
@@ -99,10 +99,11 @@ final class TranscriptPresentationUITests: XCTestCase {
         // threads under each bot row (#210: the default is the chat header)
         app.launchArguments += ["-omb-threads-location", "sidebar"]
         app.launch()
-        let threads = app.buttons["threads-toggle.preview-pepper"]
-        XCTAssertTrue(threads.waitForExistence(timeout: 10))
-        threads.tap()
-        app.buttons["thread.preview-gmail"].tap()
+        // Pepper's own thread is the Gmail triage: the row opens it in
+        // either list density.
+        let pepper = app.staticTexts["Pepper"].firstMatch
+        XCTAssertTrue(pepper.waitForExistence(timeout: 40))
+        pepper.tap()
         return app
     }
 

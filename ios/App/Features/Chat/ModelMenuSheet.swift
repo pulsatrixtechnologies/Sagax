@@ -49,7 +49,9 @@ struct ModelMenuSheet: View {
     @ObservedObject private var favorites = ModelFavoritesStore.shared
     /// The bot as the open thread sees it (`projected(forThread:)`).
     let bot: Bot
-    let close: () -> Void
+    /// Closes the menu; nil when it is a pushed page (it pops itself).
+    var close: (() -> Void)? = nil
+    @Environment(\.dismiss) private var dismiss
 
     private enum Page: Hashable { case root, all, provider(String) }
 
@@ -84,8 +86,19 @@ struct ModelMenuSheet: View {
         )
     }
 
+    private func finish() {
+        if let close { close() } else { dismiss() }
+    }
+
     var body: some View {
-        NavigationStack {
+        if close != nil {
+            NavigationStack { menu }
+        } else {
+            menu
+        }
+    }
+
+    private var menu: some View {
             List {
                 if !loaded {
                     HStack { Text("Loading models"); Spacer(); ProgressView() }
@@ -104,13 +117,14 @@ struct ModelMenuSheet: View {
             .navigationTitle(Text("Model"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button(action: close) { Text("Done") }.accessibilityIdentifier("model-menu-done")
+                if close != nil {
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button(action: finish) { Text("Done") }.accessibilityIdentifier("model-menu-done")
+                    }
                 }
             }
             .disabled(saving || current.busy == true)
             .overlay { if saving { ProgressView() } }
-        }
         .task {
             instances = await session.modelInstances()
             allowedEngines = await session.configStatus()?.allowedEngines
@@ -263,16 +277,16 @@ struct ModelMenuSheet: View {
     private func pick(_ row: ModelMenuRow) {
         switch row.kind {
         case .auto:
-            guard selection.auto != true else { return close() }
+            guard selection.auto != true else { return finish() }
             var next = selection
             next.auto = true
             apply(next, updateBotDefault: true)
         case .follow:
-            guard follows == false else { return close() }
+            guard follows == false else { return finish() }
             apply(profile.modelSelection, updateBotDefault: false)
         case .model:
             guard let instance = instances.first(where: { $0.instanceId == row.instanceId }), let model = row.modelId else { return }
-            if row.current && selection.auto != true { return close() }
+            if row.current && selection.auto != true { return finish() }
             apply(ModelPickerRules.selectionForPick(selection, instance: instance, model: model), updateBotDefault: true)
         }
     }
@@ -282,7 +296,7 @@ struct ModelMenuSheet: View {
         Task {
             _ = await session.updateModel(next, for: current, updateBotDefault: updateBotDefault)
             saving = false
-            close()
+            finish()
         }
     }
 }

@@ -1,5 +1,6 @@
-// One stretch of a bot's work as a single row: "Worked 2m 53s · 12 tools ·
-// 5 failed". Opened, the steps in order, with the same step repeated back
+// One stretch of a bot's work as a single row: "Worked 2m 53s", the
+// duration only, like "Thought 2s" in Grok (the count of tools and failures
+// is read by VoiceOver and seen by opening the row). Opened, the steps in order, with the same step repeated back
 // to back read once with a count ("Read a file ×3"). While the bot still
 // works, the row says what it is doing now. The desktop's
 // src/lib/step-group.ts, rule for rule.
@@ -64,10 +65,13 @@ public struct StepGroupWords: Hashable, Sendable {
     public var label: String
     /// What the running step acts on.
     public var target: String?
-    /// "12 tools".
+    /// "12 tools": not drawn on the row, only spoken.
     public var tools: String?
-    /// "5 failed", drawn in a quiet danger colour.
+    /// "5 failed": not drawn on the row, only spoken.
     public var failed: String?
+    /// The whole count for VoiceOver: "Worked 2m 53s, 12 tools, 5 failed,
+    /// press to see the detail".
+    public var accessibility: String
     public var phase: StepPhase
 }
 
@@ -122,15 +126,22 @@ public enum StepGroup {
         let failed = summary.failed > 0
             ? words.t(summary.failed == 1 ? "step.turn.failed.one" : "step.turn.failed.many", ["count": String(summary.failed)])
             : nil
+        func spoken(_ parts: String?...) -> String {
+            let summary = parts.compactMap { $0 }.joined(separator: ", ")
+            let sentence = words.t("step.turn.a11y", ["summary": summary])
+            // a catalog without the key (an older one) reads the parts alone
+            return sentence == "step.turn.a11y" ? summary : sentence
+        }
         if let running = summary.running?.tool {
             let reading = StepLabel.read(running, words: words, nameOf: nameOf)
-            return StepGroupWords(label: reading.label, target: reading.target, tools: tools, failed: failed, phase: .running)
+            return StepGroupWords(
+                label: reading.label, target: reading.target, tools: tools, failed: failed,
+                accessibility: spoken(reading.label, reading.target, tools, failed), phase: .running
+            )
         }
         let duration = elapsed.flatMap { $0 >= 1_000 ? StepLabel.duration($0, words: words) : nil }
-        return StepGroupWords(
-            label: duration.map { words.t("step.turn.workedFor", ["elapsed": $0]) } ?? words.t("step.turn.worked"),
-            tools: tools, failed: failed, phase: .done
-        )
+        let label = duration.map { words.t("step.turn.workedFor", ["elapsed": $0]) } ?? words.t("step.turn.worked")
+        return StepGroupWords(label: label, tools: tools, failed: failed, accessibility: spoken(label, tools, failed), phase: .done)
     }
 
     /// How long a stretch of steps ran: from the first start to the last

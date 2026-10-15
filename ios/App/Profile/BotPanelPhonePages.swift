@@ -68,7 +68,6 @@ struct BotModelSection: View {
     @State private var busy = false
     /// Auto (#153): the best model per task, picked by the server.
     @State private var auto: Bool
-    @State private var menuOpen = false
 
     init(bot: Bot) {
         self.bot = bot
@@ -148,16 +147,17 @@ struct BotModelSection: View {
                 .accessibilityIdentifier("model-auto")
                 // The model menu (#477, #478, #518): providers in submenus,
                 // favorites, only the models that run.
-                Button { menuOpen = true } label: {
+                NavigationLink {
+                    ModelMenuSheet(bot: current)
+                        .onDisappear(perform: syncFromServer)
+                } label: {
                     HStack {
                         Text("Model").foregroundStyle(Theme.textPrimary)
                         Spacer()
                         Text(verbatim: modelLabel).foregroundStyle(Theme.textSecondary).lineLimit(1)
-                        Image(systemName: "chevron.right").font(.footnote.weight(.semibold)).foregroundStyle(Theme.textTertiary)
                     }
                     .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
                 .disabled(current.busy == true)
                 .accessibilityIdentifier("model-menu-open")
                 if let variantOptions {
@@ -204,10 +204,6 @@ struct BotModelSection: View {
             }
         }
         .overlay { if busy { ProgressView() } }
-        .sheet(isPresented: $menuOpen, onDismiss: syncFromServer) {
-            ModelMenuSheet(bot: current, close: { menuOpen = false })
-                .environmentObject(session)
-        }
         .task {
             instances = session.canAdminister ? await session.modelInstances() : []
             allowedEngines = await session.configStatus()?.allowedEngines

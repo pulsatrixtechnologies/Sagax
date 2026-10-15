@@ -1,6 +1,7 @@
 // One stretch of a bot's work in the chat, the desktop's ActivityRun and
-// StepRow (#488, #518): one quiet line, "Worked 15s · 2 tools ⌄", grey
-// words in the interface font, no frame. It opens on the steps in order,
+// StepRow (#488, #518): one quiet line, "Worked 15s", the duration only
+// like "Thought 2s" in Grok, small grey words, no frame. The count of tools
+// and failures is spoken by VoiceOver and seen once open. It opens on the steps in order,
 // each on a row of the same kind; the same step repeated back to back reads
 // once with a count ("Read a file ×3") and opens to each call; the server
 // an MCP call went through is named. A settled turn's narration sits among
@@ -59,12 +60,11 @@ struct StepRunRow: View {
             } label: {
                 StepLineLabel(
                     label: line.label, target: line.target, phase: line.phase,
-                    extra: [line.tools, line.failed].compactMap { $0 }.isEmpty ? nil : (line.tools, line.failed),
-                    duration: nil, expandable: true, expanded: expanded
+                    expandable: true, expanded: expanded, quietChevron: true
                 )
             }
             .buttonStyle(.plain)
-            .accessibilityLabel([line.label, line.target, line.tools, line.failed].compactMap { $0 }.joined(separator: ", "))
+            .accessibilityLabel(line.accessibility)
             .accessibilityIdentifier("step-group.\(run.turnId ?? run.messages[0].id)")
 
             if expanded {
@@ -107,11 +107,12 @@ struct StepLineLabel: View {
     let label: String
     var target: String? = nil
     var phase: StepPhase = .done
-    /// "· 2 tools" and "· 1 failed".
-    var extra: (String?, String?)? = nil
     var duration: String? = nil
     var expandable = false
     var expanded = false
+    /// The turn's line: a faint chevron until it is open (the desktop shows
+    /// it on hover only; a phone has no hover).
+    var quietChevron = false
 
     var body: some View {
         HStack(spacing: 6) {
@@ -126,8 +127,6 @@ struct StepLineLabel: View {
                     .lineLimit(1)
                     .truncationMode(.middle)
             }
-            if let tools = extra?.0 { Text(verbatim: "· \(tools)").foregroundStyle(Theme.textTertiary).lineLimit(1).fixedSize() }
-            if let failed = extra?.1 { Text(verbatim: "· \(failed)").foregroundStyle(Theme.danger.opacity(0.8)).lineLimit(1).fixedSize() }
             if let duration {
                 Text(verbatim: duration).foregroundStyle(Theme.textTertiary.opacity(0.8)).monospacedDigit().fixedSize()
             }
@@ -137,6 +136,7 @@ struct StepLineLabel: View {
                     .font(.system(size: 10, weight: .semibold))
                     .foregroundStyle(Theme.textTertiary)
                     .rotationEffect(.degrees(expanded ? 180 : 0))
+                    .opacity(quietChevron && !expanded ? 0.45 : 1)
             }
         }
         .font(.system(size: 13))

@@ -66486,6 +66486,29 @@
           }
         }
       }
+    },
+    "step.turn.a11y": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "{summary}, press to see the detail"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "{summary}, appuyez pour voir le détail"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "{summary}, toque para ver o detalhe"
+          }
+        }
+      }
     }
   },
   "version": "1.0"
