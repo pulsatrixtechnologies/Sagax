@@ -48,6 +48,8 @@ export const TIER_NAME = /^(me|org|team-[A-Za-z0-9_-]{1,64})$/;
 export const RENEW_BEFORE_MS = 7 * 86400_000;
 const SYNC_TOKEN = /^pxat1\.[A-Za-z0-9_-]{16,200}$/;
 const REVOKE_TIMEOUT_MS = 5_000;
+/** A Perspicax answer that never comes fails the sync instead of hanging it. */
+const JSON_TIMEOUT_MS = 30_000;
 const GENERATED = [/^MEMORY\.md$/, /^\.gitignore$/, /^_pending\//, /^directory\//];
 
 /** Why a folder may not hold the cache, or null. */
@@ -202,6 +204,10 @@ export function createOrgMemoryCache({ userData, run, fetch, encrypt, decrypt, o
 
   const gitEnv = (token) => ({
     GIT_TERMINAL_PROMPT: "0",
+    // A stalled transfer ends (under 1 KB/s for a minute) instead of keeping
+    // the sync busy for good (Settings > Memory stuck on "Syncing...").
+    GIT_HTTP_LOW_SPEED_LIMIT: "1000",
+    GIT_HTTP_LOW_SPEED_TIME: "60",
     GIT_CONFIG_COUNT: "2",
     GIT_CONFIG_KEY_0: "http.extraHeader",
     GIT_CONFIG_VALUE_0: `Authorization: Bearer ${token}`,
@@ -214,7 +220,7 @@ export function createOrgMemoryCache({ userData, run, fetch, encrypt, decrypt, o
   });
 
   async function getJson(server, token, route) {
-    const response = await fetch(`${server}${route}`, { headers: { authorization: `Bearer ${token}`, accept: "application/json" } });
+    const response = await fetch(`${server}${route}`, { headers: { authorization: `Bearer ${token}`, accept: "application/json" }, signal: AbortSignal.timeout(JSON_TIMEOUT_MS) });
     if (response.status === 401) {
       const error = new Error("Perspicax refused the memory sync token (expired, revoked, or your access ended)");
       error.accessEnded = true;
@@ -454,6 +460,10 @@ export function createOrgMemoryCache({ userData, run, fetch, encrypt, decrypt, o
     return api.state();
   }
 
+  /** The state a finished run answers: read while it was still running, it
+   * said busy, and the page then showed "Syncing..." until the next run. */
+  const settled = (state) => ({ ...state, busy: busy !== null });
+
   const api = {
     root,
     vault,
@@ -491,7 +501,7 @@ export function createOrgMemoryCache({ userData, run, fetch, encrypt, decrypt, o
       busy ??= autoNow().finally(() => {
         busy = null;
       });
-      return busy;
+      return settled(await busy);
     },
     /** The person left this organization server (sign-out, forgotten
      * server): an automatic copy from it is revoked and erased. */
@@ -508,7 +518,7 @@ export function createOrgMemoryCache({ userData, run, fetch, encrypt, decrypt, o
       busy ??= syncNow().finally(() => {
         busy = null;
       });
-      return busy;
+      return settled(await busy);
     },
     /** Remove the vault, the token (revoked at Perspicax) and the state. */
     async erase() {

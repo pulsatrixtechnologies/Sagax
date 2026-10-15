@@ -66,8 +66,19 @@ export interface OrgMemoryBridge {
   sync(): Promise<OrgMemoryState>;
   erase(): Promise<OrgMemoryState>;
   writeObsidianConfig(): Promise<OrgMemoryState>;
-  openInObsidian(): Promise<boolean>;
+  /** Opens the vault in Obsidian (electron/obsidian-vault.mjs). */
+  openInObsidian(): Promise<OrgMemoryOpenResult>;
+  /** Shows the vault folder in the Finder (Explorer, files). */
+  showFolder(): Promise<boolean>;
 }
+
+/** What Open in Obsidian did: opened, or why not (`add_vault`: Obsidian is
+ * open on its vault chooser, the person picks Open folder as vault). An
+ * older desktop answers `true`. */
+export type OrgMemoryOpenResult =
+  | true
+  | { ok: true }
+  | { ok: false; reason: "not_installed" | "add_vault" | "failed" };
 
 /** What the status line says. */
 export type OrgMemoryStatus = "setting-up" | "syncing" | "synced" | "failed";
@@ -79,10 +90,11 @@ export function orgMemoryStatus(state: OrgMemoryState | null, running = false): 
   return "setting-up";
 }
 
-/** The items still waiting, then the ones decided lately (refused first). */
-export function orderedItems(items: OrgMemoryItem[]): OrgMemoryItem[] {
-  const rank = (i: OrgMemoryItem) => (i.state === "pending" ? 0 : i.state === "refused" ? 1 : 2);
-  return [...items].sort((a, b) => rank(a) - rank(b));
+/** How many of the person's proposals a reviewer refused lately: the page
+ * shows a count only, never the items (their titles, reasons and team ids
+ * stay in Perspicax and the _pending folder). */
+export function refusedCount(items: OrgMemoryItem[]): number {
+  return items.filter((i) => i.state === "refused").length;
 }
 
 /** The tiers whose last sync needs the person: a refusal, a conflict, an
@@ -112,7 +124,8 @@ export function runOrgMemoryAuto(bridge: OrgMemoryBridge): Promise<OrgMemoryStat
       latest = state;
       return state;
     },
-    () => latest,
+    // A failed call keeps no stale "syncing" state: read it again.
+    () => bridge.state().then((state) => (latest = state), () => latest),
   ).finally(() => {
     running = null;
     publish();

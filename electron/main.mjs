@@ -106,6 +106,7 @@ import { createManagedDesktopClient, createManagedDesktopRelay, createManagedDes
 import { createOrgLibrary } from "./org-library.mjs";
 import { createCompanyBackups } from "./company-backups.mjs";
 import { createOrgMemoryCache } from "./org-memory-cache.mjs";
+import { openFolderInObsidian } from "./obsidian-vault.mjs";
 import { createCompanyBackupSchedule } from "./company-backup-schedule.mjs";
 import { keepUserDataInPlace, RUNTIME_NAME } from "./user-data-location.mjs";
 import { migrateSafeStorageKeychain } from "./keychain-migration.mjs";
@@ -3662,8 +3663,20 @@ ipcMain.handle("org-memory:open-obsidian", desktopUiOnly("org-memory:open-obsidi
   if (!state.cloned) throw new Error("Sync the memory first");
   // The recommended .obsidian folder, written once (never over the person's own).
   orgMemoryCache().writeObsidianConfig();
-  await shell.openExternal(state.obsidianUrl);
-  return true;
+  // obsidian://open only opens a folder Obsidian already lists as a vault
+  // (obsidian-vault.mjs): register it first when Obsidian is closed, else
+  // open its vault chooser and let the page say what to pick.
+  return openFolderInObsidian({
+    folder: state.vault,
+    appData: app.getPath("appData"),
+    installed: () => Boolean(app.getApplicationNameForProtocol("obsidian://")),
+    openUrl: (url) => shell.openExternal(url),
+  });
+}));
+ipcMain.handle("org-memory:show-folder", desktopUiOnly("org-memory:show-folder", async () => {
+  const state = orgMemoryCache().state();
+  if (!state.cloned) return false;
+  return (await shell.openPath(state.vault)) === "";
 }));
 
 // Settings > Appearance > App icon. The page draws every icon through the

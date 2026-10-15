@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { orderedItems, orgMemoryStatus, resetOrgMemoryForTests, runOrgMemoryAuto, tiersNeedingAttention, type OrgMemoryBridge, type OrgMemoryState } from "./org-memory";
+import { orgMemoryStatus, refusedCount, resetOrgMemoryForTests, runOrgMemoryAuto, tiersNeedingAttention, type OrgMemoryBridge, type OrgMemoryState } from "./org-memory";
 
 const base: OrgMemoryState = {
   connected: false,
@@ -39,17 +39,26 @@ describe("org memory (Settings > Memory)", () => {
     resolve({ ...base, connected: true });
     expect(await first).toMatchObject({ connected: true });
     expect(await second).toMatchObject({ connected: true });
-    const failing = { auto: vi.fn(async () => { throw new Error("ipc"); }) } as unknown as OrgMemoryBridge;
+    const failing = { auto: vi.fn(async () => { throw new Error("ipc"); }), state: vi.fn(async () => { throw new Error("ipc"); }) } as unknown as OrgMemoryBridge;
     expect(await runOrgMemoryAuto(failing)).toMatchObject({ connected: true });
   });
 
-  it("lists pending items first, then refusals, and flags tiers that need the person", () => {
-    const items = orderedItems([
+  it("a failed attempt reads the state again instead of keeping Syncing", async () => {
+    const bridge = {
+      auto: vi.fn(async () => { throw new Error("ipc"); }),
+      state: vi.fn(async () => ({ ...base, connected: true, cloned: true, lastSyncAt: 2 })),
+    } as unknown as OrgMemoryBridge;
+    const state = await runOrgMemoryAuto(bridge);
+    expect(state).toMatchObject({ connected: true, busy: false, lastSyncAt: 2 });
+    expect(orgMemoryStatus(state)).toBe("synced");
+  });
+
+  it("counts recent refusals only, and flags tiers that need the person", () => {
+    expect(refusedCount([
       { tier: "org", title: "A", state: "approved" },
       { tier: "org", title: "B", state: "refused", reason: "trop long" },
       { tier: "team-x", title: "C", state: "pending", path: "team-x/_pending/c.md" },
-    ]);
-    expect(items.map((i) => i.title)).toEqual(["C", "B", "A"]);
+    ])).toBe(1);
     const state = {
       ...base,
       tiers: [

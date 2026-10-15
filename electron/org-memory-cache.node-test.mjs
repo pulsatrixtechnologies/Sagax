@@ -178,6 +178,8 @@ test("connect, clone, push a change, show pending, erase", async () => {
     assert.equal(perspicax.calls[0].authorization, `Bearer ${TOKEN}`);
 
     let state = await cache.sync();
+    // The answer of a finished sync is not busy (the page showed "Syncing..." for good).
+    assert.equal(state.busy, false);
     assert.deepEqual(state.tiers.map((t) => [t.name, t.status]), [["me", "cloned"], ["org", "cloned"]]);
     assert.equal(state.pendingCount, 1);
     assert.equal(state.pending[0].path, "org/_pending/01k9.md");
@@ -269,6 +271,7 @@ test("auto: sets itself up from the organization server, renews, and leaves with
     // First run: no form, no token typed; the person's own token is minted.
     let state = await cache.auto();
     assert.equal(state.connected, true);
+    assert.equal(state.busy, false);
     assert.equal(state.mode, "auto");
     assert.equal(state.server, "https://px.example.test");
     assert.equal(state.person, "pr_alice");
