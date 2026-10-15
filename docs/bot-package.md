@@ -107,7 +107,7 @@ under the new bot's own folders.
 A bot's marketplace, and a skill imported from GitHub, is read with, in
 order: the token saved for that marketplace on that bot, the acting
 person's GitHub connection (Connect apps > Personal), then the
-organization's GitHub tokens (Settings > Organization > Plugins and GitHub).
+organization's GitHub tokens (Connect apps > Manage > Organization sources and access).
 GitHub's API says first which one reads the repository; the clone then
 sends that token as a basic auth header through git's environment, never
 the URL, the argv, a file or a log. When none reads it, the answer names

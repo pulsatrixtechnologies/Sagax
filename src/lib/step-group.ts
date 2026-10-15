@@ -1,5 +1,6 @@
-// One stretch of a bot's work as a single row: "Worked 2m 53s · 12 tools ·
-// 5 failed". Opened, the steps in order, each on a row of the same kind,
+// One stretch of a bot's work as a single row: "Worked 2m 53s", nothing
+// more (the count of tools and failures is read by VoiceOver and seen by
+// opening the row). Opened, the steps in order, each on a row of the same kind,
 // with the same step repeated back to back read once with a count ("Read a
 // file ×3"). While the bot still works, the row says what it is doing now.
 import type { Message } from "@/state/store";
@@ -73,10 +74,13 @@ export type StepGroupWords = {
   label: string;
   /** what the running step acts on */
   target?: string;
-  /** "12 tools" */
+  /** "12 tools": not drawn on the row, only spoken */
   tools?: string;
-  /** "5 failed", drawn in a quiet danger colour */
+  /** "5 failed": not drawn on the row, only spoken */
   failed?: string;
+  /** the whole count for VoiceOver: "Worked 2m 53s, 12 tools, 5 failed,
+   * press to see the detail" */
+  ariaLabel: string;
   phase: StepPhase;
 };
 
@@ -84,15 +88,12 @@ export type StepGroupWords = {
 export function stepGroupWords(summary: StepGroupSummary, elapsedMs: number | undefined, nameOf?: StepNameOf): StepGroupWords {
   const tools = summary.tools > 0 ? t(summary.tools === 1 ? "step.turn.tools.one" : "step.turn.tools.many", { count: summary.tools }) : undefined;
   const failed = summary.failed > 0 ? t(summary.failed === 1 ? "step.turn.failed.one" : "step.turn.failed.many", { count: summary.failed }) : undefined;
+  const spoken = (...parts: Array<string | undefined>) => t("step.turn.a11y", { summary: parts.filter(Boolean).join(", ") });
   if (summary.running) {
     const reading = readStep(summary.running.tool, nameOf);
-    return { label: reading.label, target: reading.target, tools, failed, phase: "running" };
+    return { label: reading.label, target: reading.target, tools, failed, ariaLabel: spoken(reading.label, reading.target, tools, failed), phase: "running" };
   }
   const elapsed = elapsedMs !== undefined && elapsedMs >= 1_000 ? stepDuration(elapsedMs) : undefined;
-  return {
-    label: elapsed ? t("step.turn.workedFor", { elapsed }) : t("step.turn.worked"),
-    tools,
-    failed,
-    phase: "done",
-  };
+  const label = elapsed ? t("step.turn.workedFor", { elapsed }) : t("step.turn.worked");
+  return { label, tools, failed, ariaLabel: spoken(label, tools, failed), phase: "done" };
 }

@@ -23,3 +23,13 @@ export function rememberConversation(id: string): void {
     // Private windows may refuse storage; the choice still holds this session.
   }
 }
+
+/** Forget the remembered conversation (it no longer resolves to one the
+ * person can see), so the next launch opens on its own choice. */
+export function forgetConversation(): void {
+  try {
+    globalThis.localStorage?.removeItem(LAST_CONVERSATION_KEY);
+  } catch {
+    // Storage refused: nothing to forget.
+  }
+}

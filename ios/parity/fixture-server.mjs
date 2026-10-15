@@ -70,6 +70,8 @@ import { composerLabHook } from "./composer-lab.mjs";
 import { ROUTINE_LAB, seedRoutineLab, seedRoutineLabRuns } from "./routine-lab.mjs";
 // PARITY_RICH=1: a bot whose transcript holds every rich block, for the WP14 UI tests (rich-lab.mjs).
 import { RICH_LAB, seedRichLabBot, seedRichLabTranscript } from "./rich-lab.mjs";
+// PARITY_WIDGETS=1: every chat widget sample for the widget UI tests (widget-lab.mjs).
+import { WIDGET_LAB, seedWidgetLabBot, seedWidgetLabTranscript } from "./widget-lab.mjs";
 // PARITY_PLUGINS=1: connected apps, MCP sign-in and a bot without apps for the WP9 UI tests (plugin-lab.mjs).
 import {
   PLUGIN_LAB, closePluginLab, pluginLabHook, pluginLabServerEnv, seedPluginLab, startPluginLabBroker,
@@ -734,12 +736,14 @@ async function main() {
   if (ROUTINE_LAB) await seedRoutineLab(base, api, seeded.ids);
   if (PLUGIN_LAB) await seedPluginLab(base, api, ROOT, seeded.ids);
   if (RICH_LAB) await seedRichLabBot(base, api);
+  if (WIDGET_LAB) await seedWidgetLabBot(base, api);
   await stopServer(child);
 
   seedTranscripts(dataDir, seeded);
   if (CARD_LAB) seedCardLabTranscripts(dataDir);
   if (ROUTINE_LAB) seedRoutineLabRuns(dataDir);
   if (RICH_LAB) seedRichLabTranscript(dataDir, png);
+  if (WIDGET_LAB) seedWidgetLabTranscript(dataDir);
   seedCommandRules(dataDir, seeded);
   const ownerMode = process.env.PARITY_OWNER === "1";
   if (ownerMode) {

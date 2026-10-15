@@ -4,11 +4,11 @@
 // binary (`<cli> --version`, same PATH a real turn uses); a failed probe
 // asks before registering: the classic miss is a path the terminal sees
 // but this GUI app can't.
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Check, ChevronDown, Loader2, RefreshCw, TriangleAlert } from "lucide-react";
 
 import { api, useStore, type InstanceInfo } from "@/state/store";
-import { EngineCard, EngineSections, RefreshEngines, engineReady } from "./EngineLibrary";
+import { EngineCard, RefreshEngines, engineReady } from "./EngineLibrary";
 import { cn } from "@/lib/cn";
 import { useMenuMotion } from "./MenuMotion";
 import { t } from "@/lib/i18n";
@@ -24,7 +24,7 @@ import { reloadMyEngines, useMyEngines, usePerspicaxOrg, type MyEngine } from "@
 import { canEditConfig, viewerCan, viewerIsOrgMember } from "@/lib/viewer";
 import { boatComputerEnabled, connectedAppsEnabled, vpsComputerEnabled } from "@/lib/feature-flags";
 import { OrgHostToolsNote, orgRefusesEngine } from "./OrgHostToolsNote";
-import { Card, HelpTip, cardCount } from "./SettingsPrimitives";
+import { Card, HelpTip } from "./SettingsPrimitives";
 import { KeyList, ProviderKeyDialog } from "./settings/ProviderKeys";
 import { CloudAgentProvidersSettings, useCloudAgentProviders } from "./settings/CloudAgentProvidersSettings";
 import { VoiceEngineSettings } from "./settings/VoiceEngineSettings";
@@ -404,11 +404,13 @@ function EngineRow({ instance, mine, member = false, issuer = "" }: { instance: 
 }
 
 /** Settings > Models and voice (2026-10-14): one page instead of
- * Integrations and Models and accounts. Auto in one line; the keys, model
- * and voice alike, in one list with the rare ones under More providers;
- * the engines, folded to "N ready"; the voice engine, which uses its key from
- * the list, with Live calls under Advanced; then image generation and, when
- * their experiments are on, the online computers. */
+ * Integrations and Models and accounts. Auto in one line; every key (model,
+ * voice and image) in one list with the rare ones under More providers, the
+ * only place a key is managed (2026-10-15); the engines, the ready ones in
+ * view and the others folded under Needs setup; the voice engine, which uses
+ * its key from the list, with Live calls under Advanced; then image
+ * generation (its key also in the list) and, when their experiments are on,
+ * the online computers. */
 export function EnginesSettings() {
   const { state } = useStore();
   // every KNOWN-driver instance has cliDefault; unknown-driver shadows have
@@ -431,7 +433,6 @@ export function EnginesSettings() {
   const mineOf = (instance: InstanceInfo) => (org ? myEngines?.find((engine) => engine.instanceId === instance.instanceId) : undefined);
   const shown = org ? orgEngineRows(rows, myEngines).filter((instance) => !member || mineOf(instance)) : rows;
   const isReady = (instance: InstanceInfo) => { const mine = mineOf(instance); return mine ? mine.myTurns !== "none" : engineReady(instance); };
-  const readyCount = shown.filter(isReady).length;
 
   // Keys are an installation write: a member's own keys live in Perspicax.
   const remote = typeof window !== "undefined" && window.ogb?.remoteClient?.active === true;
@@ -455,33 +456,18 @@ export function EnginesSettings() {
         <HelpTip label={t("settings.moreAbout", { title: t("model.auto.settings.title") })}>{t("model.auto.settings.body")}</HelpTip>
       </section>
       {keys && <KeysSection issuer={org?.org.identity.issuer} />}
-      <Card
-        collapsible
-        cardId="engines.list"
-        defaultOpen={readyCount === 0}
-        title={t("engines.title")}
-        summary={cardCount("ready", readyCount)}
-      >
-        <div className="flex flex-col gap-3" data-engines-list="">
-          {!member && <div className="-mt-1 flex justify-end"><RefreshEngines /></div>}
-          {/* The claude.ai connectors of the person's own Claude account live in
-              Connected apps; while that experiment is off, their read-only
-              status shows here, next to the Claude sign-in that brings them. */}
-          {!connectedAppsEnabled(state.config) && <HarnessConnectorsSection placement="settings" />}
-          <EngineSections
-            instances={shown}
-            renderEngine={(instance) => <EngineRow instance={instance} mine={mineOf(instance)} member={member} issuer={org?.org.identity.issuer} />}
-            isReady={isReady}
-          />
-          {member && org && myEngines !== null && shown.length === 0 && (
-            <p className="text-[13px] text-ink-secondary" data-member-no-engines>{t("myEngines.noneOnServer")}</p>
-          )}
-        </div>
-      </Card>
-      {installation && <VoiceSection />}
+      <EnginesSection
+        engines={shown}
+        isReady={isReady}
+        refresh={!member}
+        renderEngine={(instance) => <EngineRow instance={instance} mine={mineOf(instance)} member={member} issuer={org?.org.identity.issuer} />}
+        connectors={!connectedAppsEnabled(state.config)}
+        empty={Boolean(member && org && myEngines !== null && shown.length === 0)}
+      />
+      {installation && <VoiceSection keysLink={keys} />}
       {installation && (
         <Card collapsible cardId="connections.image" defaultOpen={false} title={t("imageGen.title")} subtitle={t("imageGen.subtitle")}>
-          <ImageGenerationSettings />
+          <ImageGenerationSettings keysLink={keys} />
         </Card>
       )}
       {installation && (boatComputerEnabled(state.config) || vpsComputerEnabled(state.config)) && (
@@ -519,17 +505,78 @@ function KeysSection({ issuer }: { issuer?: string }) {
   );
 }
 
-/** The voice engine only: which one speaks; its key is in the list above
- * (Grok uses the xAI key). Live calls and their limits sit under Advanced,
- * folded; values set there stay applied while it is folded. */
-function VoiceSection() {
+/** The engines (2026-10-15): the ready ones always in view, with Check
+ * again; the ones to set up folded under "Needs setup" with their count,
+ * open by default only while none is ready. A card that changes group
+ * remounts (its sign-in or CLI draft is done by then: it changed state). */
+function EnginesSection({ engines, isReady, refresh, renderEngine, connectors, empty }: {
+  engines: InstanceInfo[];
+  isReady: (instance: InstanceInfo) => boolean;
+  /** Check again: whoever manages the server's engines. */
+  refresh: boolean;
+  renderEngine: (instance: InstanceInfo) => ReactNode;
+  /** The read-only claude.ai connectors, while Connected apps is off. */
+  connectors: boolean;
+  /** An organization member with no engine on this server. */
+  empty: boolean;
+}) {
+  const ready = engines.filter(isReady);
+  const setup = engines.filter((instance) => !isReady(instance));
+  const count = (n: number) => t(n === 1 ? "engines.library.countOne" : "engines.library.count", { count: n });
+  const grid = "grid grid-cols-[repeat(auto-fit,minmax(min(100%,280px),1fr))] items-start gap-3";
+  return (
+    <section className="flex flex-col gap-3" data-settings-card="engines.list" data-engines-list="">
+      <div className="flex flex-wrap items-center gap-1.5">
+        <h2 className="text-[13px] font-medium text-ink">{t("engines.title")}</h2>
+        {refresh && <span className="ml-auto"><RefreshEngines /></span>}
+      </div>
+      {/* The claude.ai connectors of the person's own Claude account live in
+          Connected apps; while that experiment is off, their read-only
+          status shows here, next to the Claude sign-in that brings them. */}
+      {connectors && <HarnessConnectorsSection placement="settings" />}
+      {ready.length > 0 && (
+        <div className="flex flex-col gap-2" data-engines-ready="">
+          <div className="flex items-center justify-between gap-3">
+            <h3 className="text-[12px] font-semibold text-ink-secondary">{t("onboarding.engines.ready")}</h3>
+            <span className="text-[11px] tabular-nums text-ink-secondary">{count(ready.length)}</span>
+          </div>
+          <div className={grid}>
+            {ready.map((instance) => <div key={instance.instanceId} className="contents">{renderEngine(instance)}</div>)}
+          </div>
+        </div>
+      )}
+      {setup.length > 0 && (
+        <Card
+          collapsible
+          cardId="engines.setup"
+          defaultOpen={ready.length === 0}
+          title={t("onboarding.engines.needsSetup")}
+          summary={count(setup.length)}
+        >
+          <div className={grid} data-engines-setup="">
+            {setup.map((instance) => <div key={instance.instanceId} className="contents">{renderEngine(instance)}</div>)}
+          </div>
+        </Card>
+      )}
+      {engines.length === 0 && !empty && <p className="py-2 text-[13px] text-ink-secondary">{t("engines.none")}</p>}
+      {empty && <p className="text-[13px] text-ink-secondary" data-member-no-engines>{t("myEngines.noneOnServer")}</p>}
+    </section>
+  );
+}
+
+/** The voice engine only: which one speaks, and its own settings. Its key is
+ * a row of the Keys list (Grok uses the xAI key): this section only says
+ * whether it is saved, with "Add in Keys" when it is missing (2026-10-15).
+ * Live calls and their limits sit under Advanced, folded; values set there
+ * stay applied while it is folded. */
+function VoiceSection({ keysLink }: { keysLink: boolean }) {
   return (
     <section className="flex flex-col gap-2" data-settings-card="connections.voice" data-voice-section="">
       <div>
         <h2 className="text-[13px] font-medium text-ink">{t("modelsVoice.voice.title")}</h2>
         <p className="mt-0.5 text-[12.5px] text-ink-secondary">{t("voice.engine.subtitle")}</p>
       </div>
-      <VoiceEngineSettings />
+      <VoiceEngineSettings keysLink={keysLink} />
       <Card collapsible cardId="voice.advanced" defaultOpen={false} title={t("modelsVoice.voice.advanced")}>
         <div data-voice-advanced="">
           <div className="text-[13px] font-medium text-ink">{t("voice.live.title")}</div>

@@ -5,7 +5,7 @@ import type { LocaleKey } from "@/locales";
 import { t } from "@/lib/i18n";
 import { requestSettingsCard } from "@/components/SettingsPrimitives";
 import type { AppSettingsSection } from "@/state/store";
-import { currentSettingsSection, mergedSettingsCard } from "@/lib/settings-sections";
+import { currentSettingsCard, currentSettingsSection, mergedSettingsCard } from "@/lib/settings-sections";
 
 export { currentSettingsSection, mergedSettingsCard };
 
@@ -42,13 +42,23 @@ export function settingsSectionLabel(section: AppSettingsSection): string {
   return t(SECTION_LABEL[section]);
 }
 
-type SettingsDispatch = (action: { type: "toggleAppSettings"; open: true; section: AppSettingsSection }) => void;
+type SettingsDispatch = (action:
+  | { type: "toggleAppSettings"; open: true; section: AppSettingsSection }
+  | { type: "togglePlugins"; open: true; page: "orgAccess" }) => void;
+
+/** Cards that moved out of Settings: Plugins and GitHub is Connect apps >
+ * Manage > Organization sources and access (2026-10-15). */
+const MOVED_TO_CONNECT_APPS = new Set(["organization.plugins"]);
 
 /** Opens Settings on a section, and a card when the sentence points at one.
  * A section that became a card of another page opens that card. */
 export function openSettings(dispatch: SettingsDispatch, section: AppSettingsSection, cardId?: string): void {
+  if (cardId && MOVED_TO_CONNECT_APPS.has(cardId)) {
+    dispatch({ type: "togglePlugins", open: true, page: "orgAccess" });
+    return;
+  }
   dispatch({ type: "toggleAppSettings", open: true, section: currentSettingsSection(section, cardId) });
-  const card = cardId ?? mergedSettingsCard(section);
+  const card = cardId ? currentSettingsCard(cardId) : mergedSettingsCard(section);
   if (card) requestSettingsCard(card);
 }
 

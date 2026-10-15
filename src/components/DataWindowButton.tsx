@@ -9,8 +9,8 @@ import { openDataWindow, subscribeDataWindowMessages } from "@/lib/data-window";
 import { t } from "@/lib/i18n";
 
 /** The "Open the Data window" item for this bot, or null where Data is off.
- * A blocked pop-up says so in the chat's error banner (the menu is gone by
- * then). */
+ * A blocked pop-up or a refused window says so in the chat's error banner
+ * (the menu is gone by then). */
 export function useDataWindowItem(bot: Pick<Bot, "id" | "name">): { label: string; onOpen: () => void } | null {
   const { state, dispatch } = useStore();
   if (!dataWindowEnabled(state.config) || window.ogb?.remoteClient?.active === true) return null;
@@ -19,6 +19,10 @@ export function useDataWindowItem(bot: Pick<Bot, "id" | "name">): { label: strin
     onOpen: () => {
       void openDataWindow({ botId: bot.id, title: t("dataWindow.title", { name: bot.name }) }).then((result) => {
         if (result === "blocked") dispatch({ type: "error", message: t("dataWindow.blocked") });
+        // The desktop asks the page's server again before it opens anything
+        // (electron/data-window.mjs): a server that does not report the
+        // switch on refuses, which used to do nothing at all.
+        else if (result === "refused") dispatch({ type: "error", message: t("dataWindow.off") });
       });
     },
   };

@@ -66,11 +66,13 @@ describe("a group of steps", () => {
   const renderStep = (message: Message) => createElement(ToolActivity, { tool: message.tool! });
   const renderMessage = (message: Message) => createElement("p", null, message.text);
 
-  it("reads as one line with the time and the tools, then lists each step as its own row", () => {
+  it("reads as one line with the time only, then lists each step as its own row", () => {
     const node = mount(createElement(ActivityRun, { messages: steps, elapsedMs: 6_000, renderStep }));
     const row = node.querySelector("button")!;
-    expect(row.textContent).toContain("Worked 6s");
-    expect(row.textContent).toContain("3 tools");
+    // folded: the duration alone, like "Thought 2s"; the count is spoken only
+    expect(row.textContent).toBe("Worked 6s");
+    expect(row.getAttribute("aria-label")).toBe("Worked 6s, 3 tools, press to see the detail");
+    expect(row.querySelector("svg")?.getAttribute("data-quiet")).toBe("true");
     expect(node.querySelectorAll("[data-step-row]")).toHaveLength(1);
     click(row);
     const rows = node.querySelectorAll("[data-step-detail] [data-step-row]");
@@ -87,17 +89,19 @@ describe("a group of steps", () => {
     expect(node.querySelectorAll("[data-step-detail] [data-step-row]")).toHaveLength(3);
   });
 
-  it("counts failures in the summary only, and merges the same step repeated", () => {
+  it("keeps failures out of the folded line, shows them once open, and merges the same step repeated", () => {
     const tickets = JSON.stringify({ server: "pulsatrix-psa", tool: "cw_psa__query", args: { resource: "service.tickets" } });
     const failed = (id: string): Message => ({ id, role: "bot", kind: "activity", at: 1, tool: { name: "mcp", ok: false, input: tickets } });
     const done = (id: string): Message => ({ id, role: "bot", kind: "activity", at: 1, tool: { name: "mcp", ok: true, input: tickets } });
     const node = mount(createElement(ActivityRun, { messages: [done("1"), failed("2"), failed("3"), failed("4"), done("5")], renderStep }));
     const row = node.querySelector("button")!;
-    expect(row.textContent).toContain("5 tools");
-    expect(node.querySelector('[data-testid="activity-run-failed"]')?.textContent).toContain("3 failed");
-    // the summary row itself stays quiet: only the count is in danger
-    expect(row.querySelector("[data-step-label]")?.className).not.toContain("text-danger");
+    expect(row.textContent).toBe("Worked");
+    expect(row.textContent).not.toContain("failed");
+    expect(row.getAttribute("aria-label")).toBe("Worked, 5 tools, 3 failed, press to see the detail");
+    // no red on the folded line
+    expect(row.querySelector(".text-danger, [class*='text-danger']")).toBeNull();
     click(row);
+    expect(row.querySelector("svg")?.getAttribute("data-quiet")).toBeNull();
     const labels = [...node.querySelectorAll("[data-step-detail] > div > [data-step-row] > button [data-step-label], [data-step-detail] > div > .contents > [data-step-row] > button [data-step-label]")]
       .map((label) => label.textContent);
     expect(labels).toEqual([
@@ -117,14 +121,16 @@ describe("a group of steps", () => {
     const label = node.querySelector("[data-step-label]")!;
     expect(label.textContent).toBe("Searching the web");
     expect(label.className).toContain("thinking-shimmer");
+    expect(node.querySelector("button")?.textContent).not.toContain("tools");
+    expect(node.querySelector("button")?.getAttribute("aria-label")).toContain("Searching the web");
     expect(node.querySelector('[data-testid="activity-run"]')?.getAttribute("data-live")).toBe("true");
   });
 
-  it("reads a short turn's narration and tools as one line: Worked 15s · 2 tools", () => {
+  it("reads a short turn's narration and tools as one line: Worked 15s", () => {
     const narration: Message = { id: "n0", role: "bot", kind: "text", at: 1, text: "Let me check.", turnId: "t" };
     const node = mount(createElement(ActivityRun, { messages: [narration, steps[0]!, steps[1]!], elapsedMs: 15_000, renderStep, renderMessage }));
     expect(node.querySelectorAll("[data-step-row]")).toHaveLength(1);
-    expect(node.querySelector("button")?.textContent).toMatch(/^Worked 15s\s*· 2 tools/);
+    expect(node.querySelector("button")?.textContent).toBe("Worked 15s");
     click(node.querySelector("button"));
     expect(node.textContent).toContain("Let me check.");
     expect(node.querySelectorAll("[data-step-detail] [data-step-row]")).toHaveLength(2);

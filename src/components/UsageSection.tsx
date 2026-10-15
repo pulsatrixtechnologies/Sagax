@@ -1,12 +1,13 @@
 // Settings > Usage (2026-10-14, redrawn): the signed-in person's own usage.
-// Two simple cards on top, Plan (their subscriptions' allowance) and Cost
-// (this month, its trend against the same days of last month, a 30-day
-// sparkline), then one folded breakdown by bot and by model. Every figure
+// Two simple cards on top, Cost first (this month, its trend against the
+// same days of last month, a 30-day sparkline; on top since 2026-10-15),
+// then Plan (their connected subscriptions' allowance, absent when none),
+// then one folded breakdown by bot and by model. Every figure
 // comes from GET /api/me/usage, which keeps only the requester's turns
 // (server/routes/usage.ts) and is open to every member (2026-10-15). Per-person tables, organization totals, budgets
 // and sell prices belong to the organization's admin console, which an
 // organization admin reaches from the link at the bottom.
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { ExternalLink } from "lucide-react";
 import { api, useStore } from "@/state/store";
 import { t } from "@/lib/i18n";
@@ -56,6 +57,11 @@ export function planUsageShown(input: { organization: boolean; viewUsage: boolea
   return input.organization || input.viewUsage;
 }
 
+/** The page's order (2026-10-15): Cost on top, then Plan, then the rest. */
+export function UsageLayout({ cost, plan, rest }: { cost: ReactNode; plan: ReactNode; rest: ReactNode }) {
+  return <>{cost}{plan}{rest}</>;
+}
+
 /** Every member sees this page (2026-10-15): it shows their own usage only. */
 export function UsageSection() {
   const { state } = useStore();
@@ -68,23 +74,27 @@ export function UsageSection() {
     return () => { alive = false; };
   }, []);
   return (
-    <>
-      {planUsageShown({ organization: org !== null, viewUsage: canViewUsage(state.config) }) && <PlanUsage />}
-      <CostCard usage={usage} error={error} />
-      {usage && <BreakdownCard usage={usage} />}
-      {org && viewerIsOrgAdmin(state.config) && (
-        <a
-          href={perspicaxConsoleUrl(org.org.identity.issuer)}
-          target="_blank"
-          rel="noopener noreferrer"
-          data-usage-org-link
-          className="inline-flex w-fit items-center gap-1 text-[12.5px] text-ink-secondary hover:text-ink hover:underline"
-        >
-          {t("usage.personal.manageOrg")}
-          <ExternalLink size={12} aria-hidden="true" />
-        </a>
+    <UsageLayout
+      cost={<CostCard usage={usage} error={error} />}
+      plan={planUsageShown({ organization: org !== null, viewUsage: canViewUsage(state.config) }) && <PlanUsage />}
+      rest={(
+        <>
+          {usage && <BreakdownCard usage={usage} />}
+          {org && viewerIsOrgAdmin(state.config) && (
+            <a
+              href={perspicaxConsoleUrl(org.org.identity.issuer)}
+              target="_blank"
+              rel="noopener noreferrer"
+              data-usage-org-link
+              className="inline-flex w-fit items-center gap-1 text-[12.5px] text-ink-secondary hover:text-ink hover:underline"
+            >
+              {t("usage.personal.manageOrg")}
+              <ExternalLink size={12} aria-hidden="true" />
+            </a>
+          )}
+        </>
       )}
-    </>
+    />
   );
 }
 
