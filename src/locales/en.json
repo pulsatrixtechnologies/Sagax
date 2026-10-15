@@ -7497,6 +7497,7 @@
   "step.mcp.status.failed": "Could not reach {server}",
   "step.mcp.status.running": "Checking {server}",
   "step.mcpTool.failed": "Could not use {product} ({tool})",
+  "step.turn.a11y": "{summary}, press to see the detail",
   "step.turn.failed.many": "{count} failed",
   "step.turn.failed.one": "1 failed",
   "step.turn.tools.many": "{count} tools",

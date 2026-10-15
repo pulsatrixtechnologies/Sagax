@@ -5665,6 +5665,7 @@
   "step.mcp.status.failed": "N'a pas pu joindre {server}",
   "step.mcp.status.running": "Vérifie {server}",
   "step.mcpTool.failed": "N'a pas pu utiliser {product} ({tool})",
+  "step.turn.a11y": "{summary}, appuyez pour voir le détail",
   "step.turn.failed.many": "{count} échecs",
   "step.turn.failed.one": "1 échec",
   "step.turn.tools.many": "{count} outils",

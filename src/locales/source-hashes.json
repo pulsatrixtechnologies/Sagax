@@ -9564,6 +9564,7 @@
       "step.mcp.status.failed": "491bc7f14de99b556cd7ae9bd75d159cb467d6b1c1368f3ea6e479c30c668949",
       "step.mcp.status.running": "167fd0c44f318909326b5b8caabff22ef8603c409277e083563ab9923301a03c",
       "step.mcpTool.failed": "8450b6d43de9abb4a9928fc82ed0586d8196f41dcf46b39afa418c702e87188f",
+      "step.turn.a11y": "8a92bed869e66719be1236370dc9ad9c4ee1b9c5419a97c6597d193c24705dcf",
       "step.turn.failed.many": "cd8f5051cba3686a4506eaa275f7fbb7776bc93045e74642e38338450eb05d8e",
       "step.turn.failed.one": "91bd58c83335b24dadd9f8ebb7aa193b272dd033949486fca9499c4e0bb7d1ab",
       "step.turn.tools.many": "8967f65fd94c3169acb735828294875b5b7157780bd2ad1ef38107c7d8aebf7f",
