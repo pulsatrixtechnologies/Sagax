@@ -53,6 +53,24 @@ describe("ConnectWise widget", () => {
     expect(html).not.toContain("http://bois.example");
   });
 
+  it("draws a valid ```cw fence however the bot lays it out", () => {
+    const widget = { family: "ticket", view: "list", records: [
+      { id: 297048, summary: "RS&DE | suivi $1,200", status: "Nouveau", company: "GOX", actualHours: 1.5 },
+      { id: 297049, summary: "Imprimante", status: { name: "En analyse" }, company: { name: "Acme" } },
+    ] };
+    const layouts = [
+      "```cw\n" + JSON.stringify(widget) + "\n```",
+      "Voici les billets :\n\n```cw\n" + JSON.stringify(widget, null, 2) + "\n```\n\nCoût $5 et $10.",
+      "| a | b |\n|---|---|\n| 1 | 2 |\n\n```CW\n" + JSON.stringify(widget, null, 2) + "\n```",
+      "1. Billets :\n\n   ```cw\n   " + JSON.stringify(widget) + "\n   ```",
+    ];
+    for (const text of layouts) {
+      const html = renderToStaticMarkup(createElement(ChatMarkdown, { text, botId: "bot-1", message: { threadId: "thread-1", messageId: "m1" } }));
+      expect(html).toContain('data-cw-widget="ticket"');
+      expect(html).toContain("RS&amp;DE | suivi $1,200");
+    }
+  });
+
   it("posts the approval request to Sagax and nowhere else", async () => {
     const calls: Array<{ path: string; body: unknown }> = [];
     const action: CwAction = { kind: "schedule.done", entryId: 33011, done: true };
