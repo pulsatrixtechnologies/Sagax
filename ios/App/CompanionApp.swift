@@ -48,7 +48,7 @@ struct CompanionApp: App {
     /// The paired app. The debug preview is a separate branch of the
     /// window, so a screenshot launch never opens the event stream.
     private var liveRoot: some View {
-        MascotGalleryGate { RootView() }
+        MascotGalleryGate { BrowserGalleryGate { RootView() } }
                 .environmentObject(session)
                 // One modifier is the whole language seam. SwiftUI resolves a
                 // `LocalizedStringKey` against the environment's locale, so

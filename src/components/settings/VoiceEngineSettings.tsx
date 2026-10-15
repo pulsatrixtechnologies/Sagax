@@ -1,9 +1,11 @@
 // The installation voice engine: which engine speaks, and its non-secret
 // settings (Fish model, Chatterbox server). Every bot shares it. A bot's own
-// voice stays in VoiceSettings. Since 2026-10-14 no key is typed here: each
-// engine uses its key from the one list above it (Settings > Models and
-// voice), Grok the xAI key. A Grok voice key of an older build was folded
-// into the xAI key (server/config.ts migrateGrokVoiceKey).
+// voice stays in VoiceSettings. No key is typed or managed here: each engine
+// uses its key from the Keys list (Settings > Models and voice), Grok the xAI
+// key, and since 2026-10-15 this card only says whether that key is saved,
+// with "Add in Keys" when it is missing (one place for every key). A Grok
+// voice key of an older build was folded into the xAI key (server/config.ts
+// migrateGrokVoiceKey).
 import { useEffect, useState } from "react";
 import { Check, Loader2 } from "lucide-react";
 
@@ -11,7 +13,7 @@ import { api, useStore, type ConfigStatus } from "@/state/store";
 import { useDesktopCapabilities } from "@/components/DesktopCapabilities";
 import { t } from "@/lib/i18n";
 import { cn } from "@/lib/cn";
-import { keyRowSaved, openProviderKeyDialog, type KeyRowId } from "./ProviderKeys";
+import { KeyInKeys, keyRowSaved, type KeyRowId } from "./ProviderKeys";
 
 const FISH_MODELS = [
   { value: "s2.1-pro", label: "voice.fish.modelPro" },
@@ -23,14 +25,16 @@ const INPUT_CLASS = "w-full rounded-lg border border-hairline/40 bg-inset px-3 p
 const SAVE_CLASS = "flex w-[88px] shrink-0 items-center justify-center gap-1.5 rounded-lg bg-control py-2 text-[13px] text-ink hover:bg-raised-hover disabled:cursor-not-allowed disabled:opacity-50";
 
 /** The key row of the list a cloud voice engine runs on. */
-export function voiceKeyRow(provider: string | undefined): { row: KeyRowId; name: string } | null {
-  if (provider === "fish") return { row: "fishAudio", name: "Fish Audio" };
-  if (provider === "xai") return { row: "xai", name: "xAI" };
+export function voiceKeyRow(provider: string | undefined): KeyRowId | null {
+  if (provider === "fish") return "fishAudio";
+  if (provider === "xai") return "xai";
   if (provider === "system" || provider === "chatterbox") return null;
-  return { row: "elevenlabs", name: "ElevenLabs" };
+  return "elevenlabs";
 }
 
-export function VoiceEngineSettings() {
+/** `keysLink`: the Keys list is on this page, so a missing key links to its
+ * row (false in a remote window, where the list is not shown). */
+export function VoiceEngineSettings({ keysLink = true }: { keysLink?: boolean }) {
   const { state, dispatch } = useStore();
   const tts = state.config?.tts;
   const [serverUrl, setServerUrl] = useState("");
@@ -49,7 +53,7 @@ export function VoiceEngineSettings() {
   const configured = Boolean(tts?.configured);
   const included = Boolean(tts?.included);
   // The engine's key is saved in the list (or included with Cloud Pro).
-  const keySaved = keyRow ? keyRowSaved(keyRow.row, state.config) || (keyRow.row === "elevenlabs" && included) : false;
+  const keySaved = keyRow ? keyRowSaved(keyRow, state.config) : false;
 
   useEffect(() => {
     setServerUrl(tts?.baseUrl ?? "");
@@ -122,22 +126,8 @@ export function VoiceEngineSettings() {
       </div>
 
       {keyRow && (
-        <div className="mt-4 flex items-center gap-3" data-voice-key={keyRow.row} data-voice-key-saved={keySaved ? "true" : "false"}>
-          <span className={cn("size-1.5 shrink-0 rounded-full", keySaved ? "bg-accent" : "bg-raised-hover")} />
-          <span className="min-w-0 flex-1 text-[13px] text-ink-secondary">
-            {keySaved
-              ? included && keyRow.row === "elevenlabs" && !keyRowSaved("elevenlabs", state.config)
-                ? t("keys.includedWithCloudPro")
-                : keyRow.row === "xai" ? t("modelsVoice.voice.usesKey", { name: keyRow.name }) : t("modelsVoice.voice.keySaved", { name: keyRow.name })
-              : keyRow.row === "xai" ? t("modelsVoice.voice.needsKey", { name: keyRow.name }) : t("modelsVoice.voice.keyMissing", { name: keyRow.name })}
-          </span>
-          <button
-            type="button"
-            onClick={() => openProviderKeyDialog(keyRow.row)}
-            className="shrink-0 rounded-lg bg-control px-3 py-1.5 text-[12.5px] text-ink hover:bg-raised-hover"
-          >
-            {keySaved ? t("providerKeys.manage") : t("providerKeys.add")}
-          </button>
+        <div className="mt-3" data-voice-key={keyRow} data-voice-key-saved={keySaved || (keyRow === "elevenlabs" && included) ? "true" : "false"}>
+          <KeyInKeys row={keyRow} saved={keySaved} included={keyRow === "elevenlabs" && included} link={keysLink} />
         </div>
       )}
 

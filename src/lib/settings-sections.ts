@@ -31,10 +31,36 @@ const HIDDEN: Partial<Record<AppSettingsSection, AppSettingsSection>> = {
   workspaces: "general",
 };
 
+/** Cards of General > Advanced that moved to Organization (2026-10-15, JC):
+ * they set how the organization's bots work, not this computer. Old card id
+ * to new card id. Thread cleanup, pre-releases and diagnostics stay in
+ * General > Advanced. On a desktop with no server (Organization hidden) the
+ * same cards stay in General > Advanced, under their new ids. */
+export const ORGANIZATION_CARDS_MOVED: Record<string, string> = {
+  "general.routinesInConversation": "organization.routinesInConversation",
+  "general.roomTurns": "organization.roomTurns",
+  "general.mcpCalls": "organization.mcpCalls",
+};
+
+const ORGANIZATION_CARD_IDS = new Set(Object.values(ORGANIZATION_CARDS_MOVED));
+
+/** The id a card has today: an old General > Advanced card id names its
+ * Organization card. */
+export function currentSettingsCard(cardId: string): string {
+  return ORGANIZATION_CARDS_MOVED[cardId] ?? cardId;
+}
+
+/** Whether a card is one of those moved from General > Advanced. */
+export function isMovedOrganizationCard(cardId: string | null | undefined): boolean {
+  return Boolean(cardId) && ORGANIZATION_CARD_IDS.has(currentSettingsCard(cardId!));
+}
+
 export function currentSettingsSection(section: AppSettingsSection, cardId?: string): AppSettingsSection {
   // An old "connections" link to the Composio card opens Connected apps,
   // which is itself a card of Models and voice now.
   if (section === "connections" && cardId === "connections.apps") return "engines";
+  // A link to a card moved to Organization opens Organization.
+  if (cardId && isMovedOrganizationCard(cardId)) return "organization";
   return MERGED[section]?.section ?? HIDDEN[section] ?? section;
 }
 

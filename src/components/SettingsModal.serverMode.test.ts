@@ -14,6 +14,7 @@ const fixture = vi.hoisted(() => ({
   section: "general" as AppSettingsSection,
   serverMode: null as null | { active: false } | { active: true; name: string; origin: string },
   viewer: undefined as undefined | Record<string, unknown>,
+  workspace: { available: false, current: null as null | { local: boolean; name: string; origin?: string }, open: false, error: "", openMenu: () => {} },
 }));
 vi.mock("./DesktopCapabilities", () => ({ useDesktopCapabilities: () => ({ capabilities: {} }) }));
 vi.mock("@/state/store", async (importOriginal) => ({
@@ -25,7 +26,7 @@ vi.mock("./ServerModeSettings", async (importOriginal) => ({
   ...await importOriginal<typeof import("./ServerModeSettings")>(),
   useServerMode: () => fixture.serverMode,
 }));
-vi.mock("./DesktopWorkspaceSwitcher", () => ({ ThisComputerSettings: () => "THIS_COMPUTER_MARKER" }));
+vi.mock("./DesktopWorkspaceSwitcher", () => ({ useDesktopWorkspace: () => fixture.workspace }));
 vi.mock("./CompanionSection", () => ({ CompanionSection: () => "LOCAL_COMPANION_MARKER" }));
 vi.mock("./ServerPairingCard", () => ({ ServerPairingCard: () => "SERVER_PAIRING_CARD_MARKER" }));
 vi.mock("./RemoteComputerSection", () => ({ RemoteComputerSection: () => null }));
@@ -36,6 +37,7 @@ beforeEach(() => {
   fixture.section = "general";
   fixture.serverMode = null;
   fixture.viewer = undefined;
+  fixture.workspace = { available: false, current: null, open: false, error: "", openMenu: () => {} };
   setLocale("en");
   vi.stubGlobal("document", { documentElement: { dataset: {} } });
   // this app's bundle on the organization server: a reduced bridge, no remoteClient
@@ -66,32 +68,53 @@ function nestedCardBorders(html: string): string[] {
 }
 
 describe("Settings in server mode", () => {
-  it("General says which server, organization and person are signed in, and offers Sign out, not This computer", () => {
+  it("General is one account card: who, label, email with Sign out, managed by the organization, then the help line", () => {
     fixture.serverMode = { active: true, name: "Example", origin: "https://bot.example.test" };
-    fixture.viewer = { name: "Jean Tremblay", email: "jean@example.com", profileManagedBy: "perspicax", profileManageUrl: "https://px.example.test/console/me" };
+    fixture.viewer = { principalId: "pr_jean", name: "Jean Tremblay", email: "jean@example.com", profileManagedBy: "perspicax", profileManageUrl: "https://px.example.test/console/me" };
     const html = render();
-    expect(html).toContain('Connected to <strong class="font-semibold text-ink">bot.example.test</strong>');
-    expect(html).toContain("Organization: Example");
-    expect(html).toContain("Signed in as Jean Tremblay (jean@example.com)");
-    expect(html).toContain("Sign out returns this app to the launch screen");
+    const card = html.slice(html.indexOf('data-settings-card="general.account"'));
+    expect(html.match(/data-settings-card="general\.(?:account|profile|serverMode)"/g)).toEqual(['data-settings-card="general.account"']);
+    // in order: name, label, email + Sign out, managed, Edit in Perspicax, help
+    const order = [">Jean Tremblay<", "Add a label", ">jean@example.com<", "Sign out</button>", "Managed by your organization", "Edit in Perspicax", "Your bots run on this server."];
+    const positions = order.map((text) => card.indexOf(text));
+    expect(positions.every((at) => at >= 0)).toBe(true);
+    expect([...positions].sort((x, y) => x - y)).toEqual(positions);
+    // the server and the organization one hover away, never repeated as text
+    expect(card).toContain('title="Connected to bot.example.test · Organization: Example"');
+    expect(html).not.toContain("Signed in as");
+    expect(html.match(/Jean Tremblay/g)).toHaveLength(1);
+    expect(html.match(/jean@example\.com/g)).toHaveLength(1);
     expect(html).toMatch(/<button type="button" class="ui-button[^"]*">.*?Sign out<\/button>/);
     expect(html).not.toMatch(/>Change<\/button>/);
-    expect(html).not.toContain("THIS_COMPUTER_MARKER");
+    expect(html).not.toContain("Switch server");
   });
 
   it("reads Se déconnecter in French", () => {
     setLocale("fr");
     fixture.serverMode = { active: true, name: "Example", origin: "https://bot.example.test" };
+    fixture.viewer = { principalId: "pr_jean", name: "Jean Tremblay", email: "jean@example.com", profileManagedBy: "perspicax", profileManageUrl: "https://px.example.test/console/me" };
     const html = render();
-    expect(html).toContain("Connecté à <strong");
     expect(html).toContain("Se déconnecter");
+    expect(html).toContain("Ajouter une étiquette");
+    expect(html).toContain("Géré par votre organisation");
+    expect(html).toContain("Modifier dans Perspicax");
+    expect(html).toContain('title="Connecté à bot.example.test · Organisation : Example"');
+  });
+
+  it("a server whose profile is not managed names the server in the help line", () => {
+    fixture.serverMode = { active: true, name: "Example", origin: "https://bot.example.test" };
+    fixture.viewer = { principalId: "pr_jean", name: "Jean Tremblay", email: "jean@example.com" };
+    const html = render();
+    expect(html).toContain('Connected to <strong class="font-semibold text-ink">bot.example.test</strong>');
+    expect(html).not.toContain("Managed by your organization");
+    expect(html).toContain("Sign out</button>");
   });
 
   it("General draws one card level: no bordered container inside a card", () => {
     fixture.serverMode = { active: true, name: "Example", origin: "https://bot.example.test" };
     fixture.viewer = { name: "Jean Tremblay", email: "jean@example.com", profileManagedBy: "perspicax", profileManageUrl: "https://px.example.test/console/me" };
     const html = render();
-    expect(html).toContain('data-testid="managed-profile"');
+    expect(html).toContain('data-testid="account-identity"');
     expect(nestedCardBorders(html)).toEqual([]);
     // About me is the operator's shared profile. This signed-in person is
     // not the operator, so the row stays hidden instead of offering a save
@@ -101,9 +124,19 @@ describe("Settings in server mode", () => {
     expect(html).not.toContain("<textarea");
   });
 
-  it("keeps This computer when the app is not in server mode", () => {
+  it("on a personal server: editable name and email, the label, the server switcher and the local help line", () => {
     fixture.serverMode = { active: false };
-    expect(render()).toContain("THIS_COMPUTER_MARKER");
+    fixture.viewer = { principalId: "pr_me", operator: true };
+    fixture.workspace = { available: true, current: { local: true, name: "This Mac" }, open: false, error: "", openMenu: () => {} };
+    const html = render();
+    expect(html.match(/data-settings-card="general\.(?:account|profile|serverMode)"/g)).toEqual(['data-settings-card="general.account"']);
+    expect(html).toContain('aria-label="Your name"');
+    expect(html).toContain("Add a label");
+    expect(html).toContain('aria-label="Switch server: This Mac"');
+    expect(html).toContain("No server: your bots, conversations and keys stay on this computer.");
+    expect(html).not.toContain("Managed by your organization");
+    expect(html).not.toContain("Edit in Perspicax");
+    expect(html).not.toContain("Sign out</button>");
   });
 
   // 2026-10-14: Pair devices is hidden (devices sign in with the

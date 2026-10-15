@@ -120,7 +120,11 @@ ENV ENGINE_SET= \
 # server/browser-engine-release.ts together. linux64 and linux-arm64 both
 # publish a zip; the 0.38.2 installer still refuses linux-arm64, so the
 # image downloads that zip itself. Do not fall back to the Debian browser.
-COPY scripts/chrome-linux-arch.mjs scripts/install-chrome-for-testing.mjs /app/engines/
+# chrome-launch-check starts Chrome as agent-browser does and fails the build
+# on a crash handler FATAL or a missing DevToolsActivePort (`--version` never
+# spawns chrome_crashpad_handler: the 0.5.2 image passed it with that helper
+# not executable).
+COPY scripts/chrome-linux-arch.mjs scripts/install-chrome-for-testing.mjs scripts/chrome-launch-check.mjs /app/engines/
 ARG AGENT_BROWSER_VERSION=0.38.2
 RUN npm install -g agent-browser@${AGENT_BROWSER_VERSION} \
   && HOME=/opt/openmausbot-browser node /app/engines/install-chrome-for-testing.mjs \
@@ -128,6 +132,7 @@ RUN npm install -g agent-browser@${AGENT_BROWSER_VERSION} \
   && test ! -e /usr/bin/chromium \
   && test -x /opt/openmausbot-browser/chrome \
   && /opt/openmausbot-browser/chrome --headless --disable-gpu --no-sandbox --version \
+  && node /app/engines/chrome-launch-check.mjs /opt/openmausbot-browser/chrome \
   && agent-browser --version
 # Overlay again after agent-browser, then drop the npm CLI and the Node
 # image's Yarn (only the installer used them), docs, and apt indexes. Node
